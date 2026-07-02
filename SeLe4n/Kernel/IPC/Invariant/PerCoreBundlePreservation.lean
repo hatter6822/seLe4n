@@ -10,6 +10,7 @@
 import SeLe4n.Kernel.IPC.Invariant
 import SeLe4n.Kernel.IPC.Invariant.PerCoreBundle
 import SeLe4n.Kernel.Scheduler.Operations.Selection
+import SeLe4n.Kernel.IPC.CrossCore.EndpointCall
 
 /-!
 # WS-SM SM6.D.2 — Per-operation preservation of the per-core IPC bundle
@@ -142,6 +143,29 @@ theorem passiveServerIdle_perCore_of_frameOnCore {st st' : SystemState} {c : Cor
       hFrame.pullback tid tcb' hTcb' hUnbound' hNotInQ' hNotCurrent' hAllowed
     rw [← hIpc]
     exact hInv tid tcb hTcb hUnbound hNotInQ hNotCurrent
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D.2 exactness: the boot-pinned D6 frame
+(`passiveServerIdleFrame`, `Defs.lean`) is **exactly** the per-core frame
+instantiated at `bootCoreId` — the two families differ only in that the
+boot form reads TCB slots through raw `objects[·]?` lookups while the
+per-core form routes through the typed `getTcb?`.  This is the formal
+single-source guarantee for the frame algebra: any boot frame can be
+consumed as a per-core frame at the boot core and vice versa, so the two
+proof layers can never drift apart semantically. -/
+theorem passiveServerIdleFrameOnCore_boot_iff (st st' : SystemState) :
+    passiveServerIdleFrameOnCore st st' bootCoreId ↔ passiveServerIdleFrame st st' := by
+  constructor
+  · intro h
+    refine ⟨fun tid tcb' hTcb' hU hQ hC hNA => ?_⟩
+    obtain ⟨tcb, hTcb, hUnbound, hNotInQ, hNotCurrent, hIpc⟩ :=
+      h.pullback tid tcb' ((getTcb?_eq_some_iff st' tid tcb').mpr hTcb') hU hQ hC hNA
+    exact ⟨tcb, (getTcb?_eq_some_iff st tid tcb).mp hTcb, hUnbound, hNotInQ, hNotCurrent, hIpc⟩
+  · intro h
+    refine ⟨fun tid tcb' hTcb' hU hQ hC hNA => ?_⟩
+    obtain ⟨tcb, hTcb, hUnbound, hNotInQ, hNotCurrent, hIpc⟩ :=
+      h.pullback tid tcb' ((getTcb?_eq_some_iff st' tid tcb').mp hTcb') hU hQ hC hNA
+    exact ⟨tcb, (getTcb?_eq_some_iff st tid tcb).mpr hTcb, hUnbound, hNotInQ, hNotCurrent, hIpc⟩
 
 -- ============================================================================
 -- §2  Per-store / per-scheduler-op micro-frames (all cores, no idle crutch)
@@ -1347,6 +1371,412 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull_perCore
     (passiveServerIdle_perCore_of_frameOnCore
       (endpointReplyRecv_passiveServerIdleFrameOnCore st st' endpointId receiver replyTarget msg replyId c
         hReceiverReady hObjInv hStep)
+      (hInv c).passiveServerIdle)
+
+-- ============================================================================
+-- §5  Cross-core scheduler-primitive micro-frames (production home)
+-- ============================================================================
+--
+-- The two cross-core scheduler primitives' per-core passive frames — used
+-- by the staged SM6.A cross-core call mirror AND by the production SM6.D
+-- whole-bundle closures for the cross-core notification/reply/receive
+-- transitions.
+
+/-- SM6.D.2 micro-frame (cross-core): `enqueueRunnableOnCore` only *adds* `tid`
+to core `c`'s run queue — it never removes any thread from any core's queue.
+So every pre-state run-queue member is preserved. -/
+theorem enqueueRunnableOnCore_mem_old (st : SystemState) (c c' : CoreId)
+    (tid x : SeLe4n.ThreadId)
+    (hMem : x ∈ st.scheduler.runQueueOnCore c') :
+    x ∈ (enqueueRunnableOnCore st c tid).scheduler.runQueueOnCore c' := by
+  cases hTcb : st.getTcb? tid with
+  | none => simp only [enqueueRunnableOnCore, hTcb]; exact hMem
+  | some tcb =>
+    simp only [enqueueRunnableOnCore, hTcb]
+    split
+    · exact hMem
+    · by_cases hcc : c' = c
+      · subst hcc
+        simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+        exact (RunQueue.mem_insert _ _ _ _).mpr (Or.inl hMem)
+      · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne st.scheduler c c' _ (Ne.symm hcc)]
+        exact hMem
+
+open SeLe4n.Model.SystemState in
+/-- SM6.D.2 micro-frame (cross-core): `wakeThread` of an already-`.ready`
+thread frames every core's slice — the object map is element-wise
+unchanged, every core's `current` is untouched, and the wake only *adds*
+the woken thread to its home core's run queue. -/
+theorem wakeThread_passiveServerIdleFrameOnCore_of_ready
+    (st : SystemState) (wtid : SeLe4n.ThreadId) (ec : CoreId) (wtcb : TCB) {c : CoreId}
+    (hWGet : st.getTcb? wtid = some wtcb) (hWReady : wtcb.ipcState = .ready)
+    (hObjInv : st.objects.invExt) :
+    passiveServerIdleFrameOnCore st (wakeThread st wtid ec).1 c := by
+  refine ⟨fun tid tcb' hTcb' hUnbound' hNotInQ' hNotCurrent' _ => ?_⟩
+  have hGetEq : (wakeThread st wtid ec).1.getTcb? tid = st.getTcb? tid := by
+    unfold SystemState.getTcb?
+    rw [wakeThread_objects_getElem_eq_of_ready st wtid ec wtcb hWGet hWReady hObjInv tid.toObjId]
+  rw [hGetEq] at hTcb'
+  refine ⟨tcb', hTcb', hUnbound', ?_, ?_, rfl⟩
+  · intro hIn
+    exact hNotInQ' (enqueueRunnableOnCore_mem_old st (determineTargetCore st wtid) c wtid tid hIn)
+  · rwa [show (wakeThread st wtid ec).1 = enqueueRunnableOnCore st (determineTargetCore st wtid) wtid from rfl,
+      enqueueRunnableOnCore_currentOnCore st (determineTargetCore st wtid) wtid c] at hNotCurrent'
+
+open SeLe4n.Model.SystemState in
+/-- SM6.D.2 micro-frame (cross-core): `removeRunnableOnCore` on core `oc`
+frames every core `c`'s slice given the removed thread is bound or
+already in an allowed state. -/
+theorem removeRunnableOnCore_passiveServerIdleFrameOnCore
+    (st : SystemState) (removed : SeLe4n.ThreadId) (oc : CoreId) {c : CoreId}
+    (hRemoved : ∀ tcb, st.getTcb? removed = some tcb →
+      tcb.schedContextBinding ≠ .unbound ∨ passiveServerIdleAllowed tcb.ipcState) :
+    passiveServerIdleFrameOnCore st (removeRunnableOnCore st removed oc) c := by
+  refine ⟨fun tid tcb' hTcb' hUnbound' hNotInQ' hNotCurrent' hNA => ?_⟩
+  rw [getTcb?_congr_objects (removeRunnableOnCore_preserves_objects st removed oc) tid] at hTcb'
+  by_cases hEq : tid = removed
+  · subst hEq
+    rcases hRemoved tcb' hTcb' with hB | hA
+    · exact absurd hUnbound' hB
+    · exact absurd hA hNA
+  · refine ⟨tcb', hTcb', hUnbound', ?_, ?_, rfl⟩
+    · intro hIn
+      apply hNotInQ'
+      by_cases hoc : oc = c
+      · subst hoc
+        rw [removeRunnableOnCore_runQueueOnCore_self]
+        exact (RunQueue.mem_remove _ _ _).mpr ⟨hIn, hEq⟩
+      · rw [removeRunnableOnCore_runQueueOnCore_ne st removed oc c hoc]; exact hIn
+    · intro hCur
+      apply hNotCurrent'
+      by_cases hoc : oc = c
+      · subst hoc
+        rw [removeRunnableOnCore_currentOnCore_self, hCur, if_neg (fun h => hEq (Option.some.inj h))]
+      · rw [removeRunnableOnCore_currentOnCore_ne st removed oc c hoc]; exact hCur
+
+-- ============================================================================
+-- §6  SM6.D.2: the WithCaps trio — per-core frames + per-core bundle
+-- ============================================================================
+--
+-- The live `.send` dispatch routes through `endpointSendDualWithCaps` (and
+-- the capability-carrying receive/call variants exist on the same footing),
+-- so the per-core bundle layer must cover the WithCaps compositions too:
+-- base transition + `lookupCspaceRoot` + `ipcUnwrapCaps`.  The cap-transfer
+-- step writes only CNode caps (every TCB slot survives byte-identical and
+-- the scheduler is untouched), so its per-core frame is immediate from the
+-- backward transport; each WithCaps frame then composes the §3 base frame
+-- with it, and the per-core bundle theorems ride the single-core WithCaps
+-- whole-bundle theorems through the SM6.D.1 bridges.
+
+open SeLe4n.Model.SystemState in
+/-- SM6.D.2 micro-frame: `ipcUnwrapCaps` frames every core's slice — it
+writes only CNode caps (`ipcUnwrapCaps_tcb_backward`) and never touches the
+scheduler (`ipcUnwrapCaps_preserves_scheduler`). -/
+theorem ipcUnwrapCaps_passiveServerIdleFrameOnCore
+    (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (slotBase : SeLe4n.Slot) (grantRight : Bool)
+    (st st' : SystemState) (summary : CapTransferSummary) {c : CoreId}
+    (hObjInv : st.objects.invExt)
+    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st
+      = .ok (summary, st')) :
+    passiveServerIdleFrameOnCore st st' c :=
+  passiveServerIdleFrameOnCore_of_backward
+    (fun tid tcb' hTcb' =>
+      ⟨tcb', (getTcb?_eq_some_iff st tid tcb').mpr
+        (ipcUnwrapCaps_tcb_backward msg senderRoot receiverRoot slotBase grantRight st st'
+          summary tid.toObjId tcb' hObjInv hStep
+          ((getTcb?_eq_some_iff st' tid tcb').mp hTcb')), rfl, rfl⟩)
+    (ipcUnwrapCaps_preserves_scheduler msg senderRoot receiverRoot slotBase grantRight
+      st st' summary hStep)
+
+open SeLe4n.Model.SystemState in
+/-- SM6.D.2: `endpointSendDualWithCaps` frames every core's slice
+(`endpointSendDual` + the TCB-preserving `ipcUnwrapCaps`). -/
+theorem endpointSendDualWithCaps_passiveServerIdleFrameOnCore
+    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (st st' : SystemState) (summary : CapTransferSummary) (c : CoreId)
+    (hObjInv : st.objects.invExt)
+    (hSenderNotUnbound : ∀ (tcb : TCB), st.getTcb? sender = some tcb →
+        tcb.schedContextBinding ≠ .unbound)
+    (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
+             senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+    passiveServerIdleFrameOnCore st st' c := by
+  simp only [endpointSendDualWithCaps] at hStep
+  cases hSend : endpointSendDual endpointId sender msg st with
+  | error e => simp [hSend] at hStep
+  | ok pair =>
+    rcases pair with ⟨_, stMid⟩
+    have hFMid := endpointSendDual_passiveServerIdleFrameOnCore st stMid endpointId sender msg c
+      hObjInv hSenderNotUnbound hSend
+    have hObjInvMid := endpointSendDual_preserves_objects_invExt st stMid endpointId sender msg
+      hObjInv hSend
+    simp [hSend] at hStep
+    cases hEp : st.getEndpoint? endpointId with
+    | none => simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hFMid
+    | some ep =>
+      simp [hEp] at hStep
+      cases hHead : ep.receiveQ.head with
+      | none => simp [hHead] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hFMid
+      | some receiverId =>
+        simp [hHead] at hStep
+        by_cases hEmpty : msg.caps = #[]
+        · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hFMid
+        · simp [hEmpty] at hStep
+          cases hLookup : lookupCspaceRoot stMid receiverId with
+          | none => simp [hLookup] at hStep
+          | some recvRoot =>
+            simp [hLookup] at hStep
+            exact hFMid.trans (ipcUnwrapCaps_passiveServerIdleFrameOnCore msg senderCspaceRoot
+              recvRoot receiverSlotBase _ stMid st' summary hObjInvMid hStep)
+
+open SeLe4n.Model.SystemState in
+/-- SM6.D.2: `endpointReceiveDualWithCaps` frames every core's slice
+(`endpointReceiveDual` + the TCB-preserving `ipcUnwrapCaps`). -/
+theorem endpointReceiveDualWithCaps_passiveServerIdleFrameOnCore
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId) (endpointRights : AccessRightSet)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (st st' : SystemState) (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
+    (c : CoreId)
+    (hReceiverReady : ∀ (tcb : TCB), st.getTcb? receiver = some tcb →
+        tcb.ipcState = .ready)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId endpointRights
+             receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
+    passiveServerIdleFrameOnCore st st' c := by
+  simp only [endpointReceiveDualWithCaps] at hStep
+  cases hRecv : endpointReceiveDual endpointId receiver replyId st with
+  | error e => simp [hRecv] at hStep
+  | ok pair =>
+    rcases pair with ⟨sid, stMid⟩
+    have hFMid := endpointReceiveDual_passiveServerIdleFrameOnCore st stMid endpointId receiver
+      sid replyId c hReceiverReady hObjInv hRecv
+    have hObjInvMid := endpointReceiveDual_preserves_objects_invExt st stMid endpointId receiver
+      sid replyId hObjInv hRecv
+    simp [hRecv] at hStep
+    cases hTcb : stMid.getTcb? receiver with
+    | none => simp [hTcb] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hFMid
+    | some receiverTcb =>
+      simp [hTcb] at hStep
+      cases hMsg : receiverTcb.pendingMessage with
+      | none => simp [hMsg] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hFMid
+      | some msg =>
+        simp [hMsg] at hStep
+        split at hStep
+        · obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hFMid
+        · cases hLookup : lookupCspaceRoot stMid sid with
+          | none => simp only [hLookup] at hStep; contradiction
+          | some senderRoot =>
+            simp only [hLookup] at hStep
+            cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
+                receiverSlotBase (endpointRights.mem .grant) stMid with
+            | error e => simp [hUnwrap] at hStep
+            | ok pair =>
+              rcases pair with ⟨s, stFinal⟩
+              simp [hUnwrap] at hStep
+              obtain ⟨⟨_, _⟩, rfl⟩ := hStep
+              exact hFMid.trans (ipcUnwrapCaps_passiveServerIdleFrameOnCore msg senderRoot
+                receiverCspaceRoot receiverSlotBase _ stMid stFinal s hObjInvMid hUnwrap)
+
+open SeLe4n.Model.SystemState in
+/-- SM6.D.2: `endpointCallWithCaps` frames every core's slice
+(`endpointCall` + the TCB-preserving `ipcUnwrapCaps`). -/
+theorem endpointCallWithCaps_passiveServerIdleFrameOnCore
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
+    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (st st' : SystemState) (summary : CapTransferSummary) (c : CoreId)
+    (hObjInv : st.objects.invExt)
+    (hCallerNotUnbound : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
+        tcb.schedContextBinding ≠ .unbound)
+    (hStep : endpointCallWithCaps endpointId caller msg endpointRights
+             callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+    passiveServerIdleFrameOnCore st st' c := by
+  simp only [endpointCallWithCaps] at hStep
+  cases hCall : endpointCall endpointId caller msg st with
+  | error e => simp [hCall] at hStep
+  | ok pair =>
+    rcases pair with ⟨_, stMid⟩
+    have hFMid := endpointCall_passiveServerIdleFrameOnCore st stMid endpointId caller msg c
+      hObjInv hCallerNotUnbound hCall
+    have hObjInvMid : stMid.objects.invExt :=
+      endpointCall_preserves_objects_invExt st stMid endpointId caller msg hObjInv hCall
+    simp [hCall] at hStep
+    cases hEp : st.getEndpoint? endpointId with
+    | none => simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hFMid
+    | some ep =>
+      simp [hEp] at hStep
+      cases hHead : ep.receiveQ.head with
+      | none => simp [hHead] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hFMid
+      | some receiverId =>
+        simp [hHead] at hStep
+        by_cases hEmpty : msg.caps = #[]
+        · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hFMid
+        · simp [hEmpty] at hStep
+          cases hLookup : lookupCspaceRoot stMid receiverId with
+          | none => simp [hLookup] at hStep
+          | some recvRoot =>
+            simp [hLookup] at hStep
+            exact hFMid.trans (ipcUnwrapCaps_passiveServerIdleFrameOnCore msg callerCspaceRoot
+              recvRoot receiverSlotBase _ stMid st' summary hObjInvMid hStep)
+
+open SeLe4n.Model.SystemState in
+/-- SM6.D.2 (send, capability-carrying): `endpointSendDualWithCaps` — the
+transition behind the **live** `.send` dispatch — preserves every core's
+view of the IPC invariant bundle. -/
+theorem endpointSendDualWithCaps_preserves_ipcInvariantFull_perCore
+    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (hInv : ipcInvariantFull_smp st)
+    (hObjInv : st.objects.invExt)
+    (hDualQueue' : dualQueueSystemInvariant st')
+    (hBadge' : badgeWellFormed st')
+    (hWtpmn' : waitingThreadsPendingMessageNone st')
+    (hAllBudgetsNone : allTimeoutBudgetsNone st)
+    (hRCLRecip' : replyCallerLinkageReciprocal st')
+    (hFreshSender : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.sendQ.head ≠ some sender ∧ ep.sendQ.tail ≠ some sender ∧
+      ep.receiveQ.head ≠ some sender ∧ ep.receiveQ.tail ≠ some sender)
+    (hSendTailFresh : ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
+      st.objects[endpointId]? = some (.endpoint ep) →
+      ep.sendQ.tail = some tailTid →
+      ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+        st.objects[epId']? = some (.endpoint ep') →
+        (epId' ≠ endpointId →
+          ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
+        (epId' = endpointId →
+          ep'.receiveQ.tail ≠ some tailTid))
+    (hSenderNotRecv : ∀ (tcb : TCB), st.getTcb? sender = some tcb →
+        ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
+    (hSenderNotReply : ∀ (tcb : TCB), st.getTcb? sender = some tcb →
+        ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
+    (hSenderNotUnbound : ∀ (tcb : TCB), st.getTcb? sender = some tcb →
+        tcb.schedContextBinding ≠ .unbound)
+    (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
+             senderCspaceRoot receiverSlotBase st = .ok (summary, st'))
+    (c : CoreId) :
+    ipcInvariantFull_perCore st' c :=
+  ipcInvariantFull_perCore_of_full
+    (endpointSendDualWithCaps_preserves_ipcInvariantFull endpointId sender msg endpointRights
+      senderCspaceRoot receiverSlotBase st st' summary (ipcInvariantFull_of_smp hInv) hObjInv
+      hDualQueue' hBadge' hWtpmn' hAllBudgetsNone hRCLRecip' hFreshSender hSendTailFresh
+      hSenderNotRecv
+      (fun tcb hRaw => hSenderNotReply tcb ((getTcb?_eq_some_iff st sender tcb).mpr hRaw))
+      (fun tcb hRaw => hSenderNotUnbound tcb ((getTcb?_eq_some_iff st sender tcb).mpr hRaw))
+      hStep)
+    (passiveServerIdle_perCore_of_frameOnCore
+      (endpointSendDualWithCaps_passiveServerIdleFrameOnCore endpointId sender msg
+        endpointRights senderCspaceRoot receiverSlotBase st st' summary c hObjInv
+        hSenderNotUnbound hStep)
+      (hInv c).passiveServerIdle)
+
+open SeLe4n.Model.SystemState in
+/-- SM6.D.2 (receive, capability-carrying): `endpointReceiveDualWithCaps`
+preserves every core's view of the IPC invariant bundle. -/
+theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull_perCore
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId) (endpointRights : AccessRightSet)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (st st' : SystemState) (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
+    (hInv : ipcInvariantFull_smp st)
+    (hObjInv : st.objects.invExt)
+    (hDualQueue' : dualQueueSystemInvariant st')
+    (hBadge' : badgeWellFormed st')
+    (hWtpmn' : waitingThreadsPendingMessageNone st')
+    (hAllBudgetsNone : allTimeoutBudgetsNone st)
+    (hRCLRecip' : replyCallerLinkageReciprocal st')
+    (hFreshReceiver : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.sendQ.head ≠ some receiver ∧ ep.sendQ.tail ≠ some receiver ∧
+      ep.receiveQ.head ≠ some receiver ∧ ep.receiveQ.tail ≠ some receiver)
+    (hRecvTailFresh : ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
+      st.objects[endpointId]? = some (.endpoint ep) →
+      ep.receiveQ.tail = some tailTid →
+      ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+        st.objects[epId']? = some (.endpoint ep') →
+        (epId' ≠ endpointId →
+          ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
+        (epId' = endpointId →
+          ep'.sendQ.tail ≠ some tailTid))
+    (hReplyIdValid : ∀ rid, replyId = some rid → replyIdEstablishFresh st rid)
+    (hReceiverNotRecv : ∀ (tcb : TCB), st.getTcb? receiver = some tcb →
+        ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
+    (hReceiverReady : ∀ (tcb : TCB), st.getTcb? receiver = some tcb →
+        tcb.ipcState = .ready)
+    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId endpointRights
+             receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st'))
+    (c : CoreId) :
+    ipcInvariantFull_perCore st' c :=
+  ipcInvariantFull_perCore_of_full
+    (endpointReceiveDualWithCaps_preserves_ipcInvariantFull endpointId receiver replyId
+      endpointRights receiverCspaceRoot receiverSlotBase st st' senderId summary
+      (ipcInvariantFull_of_smp hInv) hObjInv hDualQueue' hBadge' hWtpmn' hAllBudgetsNone
+      hRCLRecip' hFreshReceiver hRecvTailFresh hReplyIdValid hReceiverNotRecv
+      (fun tcb hRaw => hReceiverReady tcb ((getTcb?_eq_some_iff st receiver tcb).mpr hRaw))
+      hStep)
+    (passiveServerIdle_perCore_of_frameOnCore
+      (endpointReceiveDualWithCaps_passiveServerIdleFrameOnCore endpointId receiver replyId
+        endpointRights receiverCspaceRoot receiverSlotBase st st' senderId summary c
+        hReceiverReady hObjInv hStep)
+      (hInv c).passiveServerIdle)
+
+open SeLe4n.Model.SystemState in
+/-- SM6.D.2 (call, capability-carrying): `endpointCallWithCaps` preserves
+every core's view of the IPC invariant bundle. -/
+theorem endpointCallWithCaps_preserves_ipcInvariantFull_perCore
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
+    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (hInv : ipcInvariantFull_smp st)
+    (hObjInv : st.objects.invExt)
+    (hDualQueue' : dualQueueSystemInvariant st')
+    (hBadge' : badgeWellFormed st')
+    (hWtpmn' : waitingThreadsPendingMessageNone st')
+    (hAllBudgetsNone : allTimeoutBudgetsNone st)
+    (hRCLRecip' : replyCallerLinkageReciprocal st')
+    (hFreshCaller : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.sendQ.head ≠ some caller ∧ ep.sendQ.tail ≠ some caller ∧
+      ep.receiveQ.head ≠ some caller ∧ ep.receiveQ.tail ≠ some caller)
+    (hSendTailFresh : ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
+      st.objects[endpointId]? = some (.endpoint ep) →
+      ep.sendQ.tail = some tailTid →
+      ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+        st.objects[epId']? = some (.endpoint ep') →
+        (epId' ≠ endpointId →
+          ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
+        (epId' = endpointId →
+          ep'.receiveQ.tail ≠ some tailTid))
+    (hCallerNotRecv : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
+        ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
+    (hCallerNotReply : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
+        ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
+    (hCallerNotUnbound : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
+        tcb.schedContextBinding ≠ .unbound)
+    (hCallerReady : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
+        tcb.ipcState = .ready)
+    (hStep : endpointCallWithCaps endpointId caller msg endpointRights
+             callerCspaceRoot receiverSlotBase st = .ok (summary, st'))
+    (c : CoreId) :
+    ipcInvariantFull_perCore st' c :=
+  ipcInvariantFull_perCore_of_full
+    (endpointCallWithCaps_preserves_ipcInvariantFull endpointId caller msg endpointRights
+      callerCspaceRoot receiverSlotBase st st' summary (ipcInvariantFull_of_smp hInv) hObjInv
+      hDualQueue' hBadge' hWtpmn' hAllBudgetsNone hRCLRecip' hFreshCaller hSendTailFresh
+      hCallerNotRecv
+      (fun tcb hRaw => hCallerNotReply tcb ((getTcb?_eq_some_iff st caller tcb).mpr hRaw))
+      (fun tcb hRaw => hCallerNotUnbound tcb ((getTcb?_eq_some_iff st caller tcb).mpr hRaw))
+      (fun tcb hRaw => hCallerReady tcb ((getTcb?_eq_some_iff st caller tcb).mpr hRaw))
+      hStep)
+    (passiveServerIdle_perCore_of_frameOnCore
+      (endpointCallWithCaps_passiveServerIdleFrameOnCore endpointId caller msg endpointRights
+        callerCspaceRoot receiverSlotBase st st' summary c hObjInv hCallerNotUnbound hStep)
       (hInv c).passiveServerIdle)
 
 end SeLe4n.Kernel

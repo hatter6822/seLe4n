@@ -24,7 +24,52 @@ Plan:
 SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
-**Current sub-phase: SM6.D IPC across-core invariant bundle LANDED (v0.32.58).**
+**Current sub-phase: SM6.D IPC across-core invariant bundle LANDED
+(v0.32.58) — completed v0.32.59.**  The v0.32.59 completion pass closed
+the recorded OnCore proof-depth debt: every cross-core IPC transition now
+carries a production whole-bundle theorem and a per-core flagship,
+unconditional over success/failure.  The new production transfer layer
+[`SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean`](../SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean)
+ships pointwise-lookup congruences for all twenty conjuncts
+(`…_of_getElem_eq`, assembled by `ipcInvariantFull_of_getElem_eq`) plus
+the `OffSchedulerAgrees` relation (objects pointwise-equal, every
+non-scheduler field equal) with step congruences for the scheduler
+substitutions (`ensureRunnable`/`removeRunnable{,OnCore}`/ready-thread
+`wakeThread`) and the store steps (`storeObject`,
+`storeTcbIpcStateAndMessage`, `consumeReply`, `consumeCallerReply`).
+Per-operation *agreement dichotomies* (`…_post_agrees`: the cross-core
+transition either fails, returning the pre-state, or its single-core
+counterpart succeeds from the same pre-state with an off-scheduler-agreeing
+post-state) then carry the single-core whole-bundle theorems across:
+`notificationSignalOnCore` / `notificationWaitOnCore`
+([`NotificationInvariant.lean`](../SeLe4n/Kernel/IPC/CrossCore/NotificationInvariant.lean)
+§3–§6) and `endpointReplyOnCore` (single-core `endpointReply`
+instantiated at the recorded server, so delegated reply capabilities are
+covered) / `endpointReceiveDualOnCore`
+([`EndpointReplyInvariant.lean`](../SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean)
+§4–§9).  The composed `endpointReplyRecvOnCore` closes
+**compositionally** through its two legs — the representation-dependent
+`replyStashValid` fold is read at each leg's own input state — with the
+receive leg's pre-state facts transported across the reply leg by new
+effect characterisations (`endpointReplyOnCore_tcb_backward` /
+`_endpoint_backward` / `_preserves_replyIdEstablishFresh` /
+`_reuse_freshens`); its `hReplyIdValid` premise is disjunctive, covering
+faithful seL4-MCS **one-object reuse** (the answered caller's in-use
+reply object, freed by the reply leg's folded consume, may be re-supplied
+for the next caller).  The capability-carrying trio behind the live
+`.send` dispatch is covered too:
+`endpointSendDualWithCaps/endpointReceiveDualWithCaps/endpointCallWithCaps_preserves_ipcInvariantFull_perCore`
++ `ipcUnwrapCaps_passiveServerIdleFrameOnCore`
+(`PerCoreBundlePreservation.lean` §6).  The D6 frame algebra is formally
+single-sourced (`passiveServerIdleFrameOnCore_boot_iff`: the boot-pinned
+frame is exactly the per-core frame at `bootCoreId`), the duplicated
+lookup-congruence lemmas were deduplicated out of the staged SM6.A
+mirror, and the stale AN3-B conjunct-count prose in `Defs.lean` was
+corrected to twenty.  All axiom-clean.  Remaining tracked debt is
+recorded in the plan's SM6.D scope note: the bound-notification delivery
+path's whole-bundle closure (needs the `endpointQueueRemoveDual`
+per-conjunct suite) and `withLockSet` bundle carriage (needs per-conjunct
+lock-write congruences).
 The full IPC invariant bundle is restricted to per-core views and proven
 preserved by every IPC operation.  `ipcInvariantFull_perCore`
 ([`SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean`](../SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean),

@@ -15,6 +15,7 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointReply
 import SeLe4n.Kernel.IPC.Invariant
 import SeLe4n.Kernel.IPC.Invariant.PerCoreBundle
 import SeLe4n.Kernel.IPC.Invariant.PerCoreBundlePreservation
+import SeLe4n.Kernel.IPC.Invariant.LookupCongruence
 import SeLe4n.Kernel.Concurrency.Locks.Serializability
 
 /-!
@@ -402,25 +403,6 @@ theorem wakeThread_donationOwnerFrame_of_ready
      ⟨ownerTcb, by
        rw [wakeThread_objects_getElem_eq_of_ready st wtid ec wtcb hWGet hWReady hObjInv owner.toObjId]; exact hOwner,
        hU, hR⟩⟩
-
-/-- D6 (per-core): `enqueueRunnableOnCore` only *adds* `tid` to core `c`'s run queue — it never
-removes any thread from any core's queue.  So every pre-state run-queue member is preserved. -/
-theorem enqueueRunnableOnCore_mem_old (st : SystemState) (c c' : CoreId)
-    (tid x : SeLe4n.ThreadId)
-    (hMem : x ∈ st.scheduler.runQueueOnCore c') :
-    x ∈ (enqueueRunnableOnCore st c tid).scheduler.runQueueOnCore c' := by
-  cases hTcb : st.getTcb? tid with
-  | none => simp only [enqueueRunnableOnCore, hTcb]; exact hMem
-  | some tcb =>
-    simp only [enqueueRunnableOnCore, hTcb]
-    split
-    · exact hMem
-    · by_cases hcc : c' = c
-      · subst hcc
-        simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-        exact (RunQueue.mem_insert _ _ _ _).mpr (Or.inl hMem)
-      · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne st.scheduler c c' _ (Ne.symm hcc)]
-        exact hMem
 
 open SeLe4n.Model.SystemState in
 /-- D6 (per-core): `wakeThread` frames `passiveServerIdle` when the woken thread is already
@@ -942,75 +924,13 @@ an object lookup, so neither can disturb a lookup-only predicate.  (Distinct
 from the existing `*_of_objects_eq` family, which needs *structural* object
 equality; the cross-core wake only delivers pointwise lookup equality, since a
 Robin-Hood re-insert of an identical value may differ in array representation
-while agreeing on every lookup.) -/
+while agreeing on every lookup.)
 
-/-- Pointwise-lookup transport of a `queueNext` reachability path. -/
-theorem QueueNextPath_of_getElem_eq {s1 s2 : SystemState}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?) {a b : SeLe4n.ThreadId}
-    (hp : QueueNextPath s2 a b) : QueueNextPath s1 a b := by
-  induction hp with
-  | single x y tcbA hObj hNext => exact .single x y tcbA (by rw [← hEq]; exact hObj) hNext
-  | cons x y z tcbA hObj hNext _ ih => exact .cons x y z tcbA (by rw [← hEq]; exact hObj) hNext ih
-
-/-- Pointwise-lookup transport of TCB-queue chain acyclicity. -/
-theorem tcbQueueChainAcyclic_of_getElem_eq {s1 s2 : SystemState}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (h : tcbQueueChainAcyclic s1) : tcbQueueChainAcyclic s2 :=
-  fun tid hp => h tid (QueueNextPath_of_getElem_eq hEq hp)
-
-/-- Pointwise-lookup transport of doubly-linked TCB-queue link integrity. -/
-theorem tcbQueueLinkIntegrity_of_getElem_eq {s1 s2 : SystemState}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (h : tcbQueueLinkIntegrity s1) : tcbQueueLinkIntegrity s2 := by
-  obtain ⟨hFwd, hRev⟩ := h
-  refine ⟨fun a tcbA hA b hNext => ?_, fun b tcbB hB a hPrev => ?_⟩
-  · rw [hEq] at hA
-    obtain ⟨tcbB, hB, hPrev⟩ := hFwd a tcbA hA b hNext
-    exact ⟨tcbB, by rw [hEq]; exact hB, hPrev⟩
-  · rw [hEq] at hB
-    obtain ⟨tcbA, hA, hNext⟩ := hRev b tcbB hB a hPrev
-    exact ⟨tcbA, by rw [hEq]; exact hA, hNext⟩
-
-/-- Pointwise-lookup transport of single-queue well-formedness. -/
-theorem intrusiveQueueWellFormed_of_getElem_eq {s1 s2 : SystemState}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?) {q : IntrusiveQueue}
-    (h : intrusiveQueueWellFormed q s1) : intrusiveQueueWellFormed q s2 := by
-  obtain ⟨hP1, hP2, hP3⟩ := h
-  refine ⟨hP1, fun hd hHead => ?_, fun tl hTail => ?_⟩
-  · obtain ⟨tcb, hObj, hPrev⟩ := hP2 hd hHead
-    exact ⟨tcb, by rw [hEq]; exact hObj, hPrev⟩
-  · obtain ⟨tcb, hObj, hNext⟩ := hP3 tl hTail
-    exact ⟨tcb, by rw [hEq]; exact hObj, hNext⟩
-
-/-- Pointwise-lookup transport of an endpoint's dual-queue well-formedness. -/
-theorem dualQueueEndpointWellFormed_of_getElem_eq {s1 s2 : SystemState}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?) {epId : SeLe4n.ObjId}
-    (h : dualQueueEndpointWellFormed epId s1) : dualQueueEndpointWellFormed epId s2 := by
-  unfold dualQueueEndpointWellFormed at h ⊢
-  rw [hEq]
-  revert h
-  cases s1.objects[epId]? with
-  | none => exact fun _ => trivial
-  | some obj =>
-    cases obj with
-    | endpoint ep =>
-      exact fun h => ⟨intrusiveQueueWellFormed_of_getElem_eq hEq h.1,
-                      intrusiveQueueWellFormed_of_getElem_eq hEq h.2⟩
-    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ | reply _ =>
-      exact fun _ => trivial
-
-/-- WS-SM SM6.A.1: the dual-queue system invariant is preserved by any state
-change that leaves every object lookup intact.  Assembles the four sub-predicate
-congruences above. -/
-theorem dualQueueSystemInvariant_of_getElem_eq {s1 s2 : SystemState}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (h : dualQueueSystemInvariant s1) : dualQueueSystemInvariant s2 := by
-  obtain ⟨hEp, hLink, hAcyc⟩ := h
-  refine ⟨fun epId ep hObj => ?_,
-          tcbQueueLinkIntegrity_of_getElem_eq hEq hLink,
-          tcbQueueChainAcyclic_of_getElem_eq hEq hAcyc⟩
-  rw [hEq] at hObj
-  exact dualQueueEndpointWellFormed_of_getElem_eq hEq (hEp epId ep hObj)
+The congruence lemmas themselves (`QueueNextPath_of_getElem_eq` …
+`dualQueueSystemInvariant_of_getElem_eq`, and the full per-conjunct family
+covering all twenty `ipcInvariantFull` conjuncts) live in the **production**
+module `SeLe4n.Kernel.IPC.Invariant.LookupCongruence`; this staged file
+consumes them via import. -/
 
 -- ============================================================================
 -- §6  SM6.A.1 — `dualQueueSystemInvariant` preservation
@@ -2230,24 +2150,10 @@ theorem endpointCallOnCore_preserves_endpointQueueTailBlockedConsistent
 
 /-! `allPendingMessagesBounded` and `badgeWellFormed` are likewise lookup-only,
 so the cross-core scheduler steps frame them; the message stores reuse the
-single-core per-step lemmas (the payload is bounded by the entry guards). -/
-
-/-- Pointwise-lookup transport of pending-message boundedness. -/
-theorem allPendingMessagesBounded_of_getElem_eq {s1 s2 : SystemState}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (h : allPendingMessagesBounded s1) : allPendingMessagesBounded s2 := by
-  intro tid tcb msg hObj hPend
-  rw [hEq] at hObj
-  exact h tid tcb msg hObj hPend
-
-/-- Pointwise-lookup transport of badge well-formedness (notification + cap). -/
-theorem badgeWellFormed_of_getElem_eq {s1 s2 : SystemState}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (h : badgeWellFormed s1) : badgeWellFormed s2 := by
-  obtain ⟨hNtfn, hCap⟩ := h
-  refine ⟨fun oid ntfn badge hObj hBadge => ?_, fun oid cn slot cap badge hObj hLk hBadge => ?_⟩
-  · rw [hEq] at hObj; exact hNtfn oid ntfn badge hObj hBadge
-  · rw [hEq] at hObj; exact hCap oid cn slot cap badge hObj hLk hBadge
+single-core per-step lemmas (the payload is bounded by the entry guards).
+The pointwise-lookup congruences (`allPendingMessagesBounded_of_getElem_eq`,
+`badgeWellFormed_of_getElem_eq`) are imported from the production
+`SeLe4n.Kernel.IPC.Invariant.LookupCongruence`. -/
 
 /-- `removeRunnableOnCore` frames pending-message boundedness. -/
 theorem removeRunnableOnCore_preserves_allPendingMessagesBounded
@@ -2738,58 +2644,6 @@ theorem endpointCallOnCore_preserves_ipcInvariantFull
 -- core-parameterised mirror of `endpointCallOnCore_passiveServerIdleFrame`,
 -- built from the SM6.D.2 micro-frames plus the two cross-core scheduler
 -- primitives' per-core frames.  No idle-core assumption anywhere.
-
-open SeLe4n.Model.SystemState in
-/-- SM6.D.2 micro-frame (cross-core): `wakeThread` of an already-`.ready`
-thread frames every core's slice — the object map is element-wise
-unchanged, every core's `current` is untouched, and the wake only *adds*
-the woken thread to its home core's run queue. -/
-theorem wakeThread_passiveServerIdleFrameOnCore_of_ready
-    (st : SystemState) (wtid : SeLe4n.ThreadId) (ec : CoreId) (wtcb : TCB) {c : CoreId}
-    (hWGet : st.getTcb? wtid = some wtcb) (hWReady : wtcb.ipcState = .ready)
-    (hObjInv : st.objects.invExt) :
-    passiveServerIdleFrameOnCore st (wakeThread st wtid ec).1 c := by
-  refine ⟨fun tid tcb' hTcb' hUnbound' hNotInQ' hNotCurrent' _ => ?_⟩
-  have hGetEq : (wakeThread st wtid ec).1.getTcb? tid = st.getTcb? tid := by
-    unfold SystemState.getTcb?
-    rw [wakeThread_objects_getElem_eq_of_ready st wtid ec wtcb hWGet hWReady hObjInv tid.toObjId]
-  rw [hGetEq] at hTcb'
-  refine ⟨tcb', hTcb', hUnbound', ?_, ?_, rfl⟩
-  · intro hIn
-    exact hNotInQ' (enqueueRunnableOnCore_mem_old st (determineTargetCore st wtid) c wtid tid hIn)
-  · rwa [show (wakeThread st wtid ec).1 = enqueueRunnableOnCore st (determineTargetCore st wtid) wtid from rfl,
-      enqueueRunnableOnCore_currentOnCore st (determineTargetCore st wtid) wtid c] at hNotCurrent'
-
-open SeLe4n.Model.SystemState in
-/-- SM6.D.2 micro-frame (cross-core): `removeRunnableOnCore` on core `oc`
-frames every core `c`'s slice given the removed thread is bound or
-already in an allowed state. -/
-theorem removeRunnableOnCore_passiveServerIdleFrameOnCore
-    (st : SystemState) (removed : SeLe4n.ThreadId) (oc : CoreId) {c : CoreId}
-    (hRemoved : ∀ tcb, st.getTcb? removed = some tcb →
-      tcb.schedContextBinding ≠ .unbound ∨ passiveServerIdleAllowed tcb.ipcState) :
-    passiveServerIdleFrameOnCore st (removeRunnableOnCore st removed oc) c := by
-  refine ⟨fun tid tcb' hTcb' hUnbound' hNotInQ' hNotCurrent' hNA => ?_⟩
-  rw [getTcb?_congr_objects (removeRunnableOnCore_preserves_objects st removed oc) tid] at hTcb'
-  by_cases hEq : tid = removed
-  · subst hEq
-    rcases hRemoved tcb' hTcb' with hB | hA
-    · exact absurd hUnbound' hB
-    · exact absurd hA hNA
-  · refine ⟨tcb', hTcb', hUnbound', ?_, ?_, rfl⟩
-    · intro hIn
-      apply hNotInQ'
-      by_cases hoc : oc = c
-      · subst hoc
-        rw [removeRunnableOnCore_runQueueOnCore_self]
-        exact (RunQueue.mem_remove _ _ _).mpr ⟨hIn, hEq⟩
-      · rw [removeRunnableOnCore_runQueueOnCore_ne st removed oc c hoc]; exact hIn
-    · intro hCur
-      apply hNotCurrent'
-      by_cases hoc : oc = c
-      · subst hoc
-        rw [removeRunnableOnCore_currentOnCore_self, hCur, if_neg (fun h => hEq (Option.some.inj h))]
-      · rw [removeRunnableOnCore_currentOnCore_ne st removed oc c hoc]; exact hCur
 
 open SeLe4n.Model.SystemState in
 /-- SM6.D.2: `endpointCallOnCore` frames every core's slice — the

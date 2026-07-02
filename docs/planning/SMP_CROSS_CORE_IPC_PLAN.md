@@ -24,8 +24,9 @@ bundle (15 conjuncts post-R4) carries through per-core under
    notification (W), receiver TCB (W if unblock).
 3. **Reply path** across cores (SM6.C): caller TCB (W), reply
    object (W), receiver TCB (W).
-4. **IPC invariant bundle per-core** (SM6.D): 15-conjunct
-   bundle, restricted to per-core endpoint/notification views.
+4. **IPC invariant bundle per-core** (SM6.D): the full invariant
+   bundle (15 conjuncts as planned; twenty at landing time),
+   restricted to per-core endpoint/notification views.
 5. **Cancellation** across cores (SM6.E): atomic under lock-set.
 6. **Tests + fixtures** (SM6.F).
 
@@ -526,19 +527,69 @@ unchanged from SM6.A/B/C: the transitions are pure and the
 fold (Cor 2.1.11), so the per-core bundle holds at every 2PL commit
 point.
 
-> **Scope note (recorded, not silent).**  The six per-operation theorems
-> cover the six canonical IPC transitions (send / receive / call / reply
-> + replyRecv / signal / wait) plus the cross-core call
-> (`endpointCallOnCore`) — the one cross-core transition with a
-> whole-bundle theorem (SM6.A).  Extending whole-bundle preservation to
-> the remaining OnCore variants (`notificationSignalOnCore`,
-> `notificationWaitOnCore`, `endpointReplyOnCore`,
-> `endpointReceiveDualOnCore`, `endpointReplyRecvOnCore` — currently at
-> `ipcInvariant`/`objects.invExt` depth per their SM6.B/SM6.C landing
-> bars) is tracked SM6.B/SM6.C proof-depth debt; the per-core bundle and
-> its bridges are transition-agnostic, so each such extension is exactly
-> one `…_preserves_ipcInvariantFull` theorem plus one per-core passive
-> frame away.
+> **Scope note (updated at the v0.32.59 completion pass).**  The former
+> OnCore proof-depth gap is **closed**: every cross-core transition now
+> carries a whole-bundle theorem and a per-core flagship —
+> `notificationSignalOnCore` / `notificationWaitOnCore`
+> (`IPC/CrossCore/NotificationInvariant.lean` §3–§6) and
+> `endpointReplyOnCore` / `endpointReceiveDualOnCore` /
+> `endpointReplyRecvOnCore` (`IPC/CrossCore/EndpointReplyInvariant.lean`
+> §4–§11), all `…_preserves_ipcInvariantFull{,_perCore}`,
+> **unconditional over success/failure** (error paths return the
+> pre-state).  The proof lever is the SM6.D transfer layer
+> (`IPC/Invariant/LookupCongruence.lean`, production): pointwise-lookup
+> congruences for every conjunct + the `OffSchedulerAgrees` relation,
+> consumed by per-operation *agreement dichotomies* (`…_post_agrees`) —
+> a cross-core transition either fails or runs the same object-store
+> spine as its single-core counterpart and diverges only in scheduler
+> placement, so the single-core whole-bundle theorem carries across.
+> The composed `endpointReplyRecvOnCore` is closed **compositionally**
+> through its two legs (the `replyStashValid` fold is read at each
+> leg's own input state, avoiding cross-state fold alignment), with the
+> receive leg's pre-state facts transported across the reply leg by the
+> effect characterisations `endpointReplyOnCore_tcb_backward` /
+> `_endpoint_backward` / `_preserves_replyIdEstablishFresh` /
+> `_reuse_freshens`; its `hReplyIdValid` premise is **disjunctive**,
+> covering the faithful seL4-MCS one-object-reuse pattern the runtime
+> fold enables.  The capability-carrying trio behind the live `.send`
+> dispatch is likewise covered
+> (`endpointSendDualWithCaps/endpointReceiveDualWithCaps/endpointCallWithCaps_preserves_ipcInvariantFull_perCore`
+> + `ipcUnwrapCaps_passiveServerIdleFrameOnCore`,
+> `PerCoreBundlePreservation.lean` §6).
+>
+> **Remaining tracked debt (recorded, not silent):**
+> 1. **Bound-notification delivery** (`notificationSignalBoundOnCore`):
+>    whole-bundle preservation of the bound-TCB delivery path needs the
+>    `endpointQueueRemoveDual` per-conjunct suite (~14 of the twenty
+>    conjuncts lack `endpointQueueRemoveDual_preserves_…` lemmas — the
+>    queue-splice PopHead-class proofs).  Closure target:
+>    `endpointQueueRemoveDual_preserves_<conjunct>` (membership / NoDup
+>    / next-blocking / head- and tail-blocked / next-target first) →
+>    `notificationSignalBoundOnCore_preserves_ipcInvariantFull{,_perCore}`.
+>    Already covered today: `objects.invExt`, `ipcInvariant`,
+>    `dualQueueSystemInvariant`, the scheduler contract, and the SM6.B
+>    lock-set/2PL theorems.
+> 2. **`withLockSet` bundle preservation**: the lock acquire/release
+>    steps rewrite an object's *lock* field, so the lookup-congruence
+>    layer does not apply; carrying `ipcInvariantFull_perCore` through
+>    the runtime `withLockSet` bracket needs a semantic-fields-agree
+>    relation plus per-conjunct lock-write congruences.  Closure target:
+>    `acquireLockOnObject/releaseLockOnObject_preserves_ipcInvariantFull`
+>    → `withLockSet_preserves_ipcInvariantFull_perCore` (the generic
+>    `withLockSet_invariant_preserved` fold is already in place, cf.
+>    `objects.invExt`).  Until then the bundle holds at every 2PL commit
+>    point via the transitions' purity + the `…_atomic_under_lockSet`
+>    theorems, exactly as at v0.32.58.
+> 3. **Completeness sugar** (non-load-bearing): per-conjunct `_smp_iff`
+>    exactness for the fourteen unnamed conjuncts (the aggregate
+>    exactness `ipcInvariantFull_smp_iff_full_and_passive_smp` already
+>    subsumes their round-trip), a named `ipcInvariantCore_perCore`
+>    slice, and relocating `threadHomeCore` onto `TCB` as a method.
+>    Sharper per-core theorem forms are deliberately *not* queued: the
+>    whole-bundle theorems already take the global bundle
+>    (`ipcInvariantFull st`), and `ipcInvariantFull_perCore_of_full` is
+>    the one-application sharp lift for any consumer holding a per-core
+>    passive slice.
 
 | Sub | Description | Landed symbol | Status |
 |-----|-------------|---------------|--------|
@@ -548,6 +599,7 @@ point.
 | SM6.D.4 | `endpointQueueNoDup_perCore` | def + bridges + `endpointQueueNoDup_smp_iff` | ✓ |
 | SM6.D.5 | `queueNextBlockingConsistent_perCore` | def + bridges + `queueNextBlockingConsistent_smp_iff` | ✓ |
 | SM6.D.6 | `queueHeadBlockedConsistent_perCore` | def + bridges + `queueHeadBlockedConsistent_smp_iff` | ✓ |
+| SM6.D completion (v0.32.59) | OnCore whole-bundle closures + WithCaps trio + transfer layer | `LookupCongruence.lean` (per-conjunct `…_of_getElem_eq` ×20 + `ipcInvariantFull_of_getElem_eq` + `OffSchedulerAgrees` + step congruences); `notificationSignalOnCore/notificationWaitOnCore/endpointReplyOnCore/endpointReceiveDualOnCore_post_agrees` + `…_preserves_ipcInvariantFull{,_perCore}`; compositional `endpointReplyRecvOnCore_preserves_ipcInvariantFull{,_perCore}` (+ transports `endpointReplyOnCore_tcb_backward/_endpoint_backward/_preserves_replyIdEstablishFresh/_reuse_freshens`); `endpointSendDualWithCaps/endpointReceiveDualWithCaps/endpointCallWithCaps_preserves_ipcInvariantFull_perCore` + `ipcUnwrapCaps_passiveServerIdleFrameOnCore`; boot-frame exactness `passiveServerIdleFrameOnCore_boot_iff` | ✓ |
 
 (The remaining fourteen bundle conjuncts also received per-core forms +
 both bridges each — `tcbQueueLinkIntegrity/tcbQueueChainAcyclic/

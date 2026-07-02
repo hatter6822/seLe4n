@@ -705,6 +705,28 @@ run_check "INVARIANT" rg -n '^theorem endpointReplyRecv_preserves_ipcInvariantFu
 run_check "INVARIANT" rg -n '^theorem notificationSignal_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
 run_check "INVARIANT" rg -n '^theorem notificationWait_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
 run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean
+# WS-SM SM6.D completion — lookup-congruence transfer layer, boot-frame
+# exactness, the cross-core (OnCore) whole-bundle closures + per-core
+# flagships for notification/reply/receive/replyRecv (production), and the
+# capability-carrying (WithCaps) trio behind the live `.send` dispatch.
+run_check "INVARIANT" rg -n '^theorem ipcInvariantFull_of_getElem_eq' SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean
+run_check "INVARIANT" rg -n '^structure OffSchedulerAgrees' SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean
+run_check "INVARIANT" rg -n '^theorem wakeThread_offSchedulerAgrees_of_ready' SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean
+run_check "INVARIANT" rg -n '^theorem consumeCallerReply_offSchedulerAgrees' SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean
+run_check "INVARIANT" rg -n '^theorem passiveServerIdleFrameOnCore_boot_iff' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalOnCore_post_agrees' SeLe4n/Kernel/IPC/CrossCore/NotificationInvariant.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalOnCore_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/CrossCore/NotificationInvariant.lean
+run_check "INVARIANT" rg -n '^theorem notificationWaitOnCore_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/CrossCore/NotificationInvariant.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyOnCore_post_agrees' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyOnCore_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_post_agrees' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyOnCore_reuse_freshens' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean
+run_check "INVARIANT" rg -n '^theorem ipcUnwrapCaps_passiveServerIdleFrameOnCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointSendDualWithCaps_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointCallWithCaps_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
 run_check "INVARIANT" rg -n '^theorem intrusiveQueueWellFormed_empty' SeLe4n/Kernel/IPC/Invariant/Structural/
 run_check "INVARIANT" rg -n '^theorem tcbQueueLink_forward_safe' SeLe4n/Kernel/IPC/Invariant/Structural/
 run_check "INVARIANT" rg -n '^theorem tcbQueueLink_reverse_safe' SeLe4n/Kernel/IPC/Invariant/Structural/

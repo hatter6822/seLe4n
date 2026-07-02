@@ -1982,12 +1982,15 @@ def ipcInvariantCore (st : SystemState) : Prop :=
   passiveServerIdle st ∧ donationBudgetTransfer st ∧
   blockedOnReplyHasTarget st
 
-/-- WS-SM SM6.D (PR #822 review): the full IPC invariant — the 15 structural
-conjuncts (`ipcInvariantCore`) **plus** the bidirectional `replyCallerLinkage`
-(16th conjunct) tying every `TCB.replyObject` to a reciprocating `Reply.caller`,
-**plus** the `pendingReceiveReplyWellFormed` server-first stash conjunct (17th,
-PR #822 review 6J9Kjg/6J9Kp6) tying every `TCB.pendingReceiveReply` to a still-
-`.blockedOnReceive` server holding a free existing Reply.
+/-- WS-SM SM6.D (PR #822 review): the full IPC invariant — **twenty conjuncts**:
+the 15 structural conjuncts (`ipcInvariantCore`) **plus** the bidirectional
+`replyCallerLinkage` (16th) tying every `TCB.replyObject` to a reciprocating
+`Reply.caller`, **plus** the `pendingReceiveReplyWellFormed` server-first stash
+conjunct (17th, PR #822 review 6J9Kjg/6J9Kp6) tying every
+`TCB.pendingReceiveReply` to a still-`.blockedOnReceive` server holding a free
+existing Reply, **plus** the reply-object hardening trio added during the
+SM6.D deep audits (`donationOwnerUnique` 18th,
+`endpointQueueTailBlockedConsistent` 19th, `queueNextTargetBlocked` 20th).
 The core is split out so the reply-store building blocks (`storeObject_reply` /
 `storeObject_tcb_replyObject`) — whose *intermediate* state legitimately breaks the
 reciprocal link — can be sequenced through the core before `linkCallerReply` /
@@ -2039,8 +2042,10 @@ theorem ipcInvariantFull_of_core_replyCallerLinkage {st : SystemState}
 -- The legacy tuple form above is preserved as the primary definition so
 -- every existing consumer that destructures `ipcInvariantFull` via tuple
 -- projections continues to typecheck.  The block below layers a named
--- `structure IpcInvariantFull` over the same 15 conjuncts (was 16
--- before the WS-RC R4.C.7 close-out retired `uniqueWaiters`), a
+-- `structure IpcInvariantFull` over the same conjuncts (twenty at
+-- v0.32.58: 15 structural post-R4.C.7 — `uniqueWaiters` retired — plus
+-- the reply-linkage/stash/hardening quintet added through the SM6.D
+-- reply-object audits), a
 -- bidirectional `ipcInvariantFull_iff_IpcInvariantFull` bridge, and
 -- per-field projection theorems (installed as `@[simp]`) so callers
 -- can write `hInv.donationOwnerValid` (or any other conjunct name) in

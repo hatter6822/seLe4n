@@ -13,6 +13,8 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointCallInvariant
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDispatch
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallEntry
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallNiPerCore
+import SeLe4n.Kernel.IPC.CrossCore.NotificationInvariant
+import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyInvariant
 import SeLe4n.Kernel.SyscallDispatchEntry
 import SeLe4n.Testing.StateBuilder
 
@@ -436,6 +438,34 @@ private def runRendezvousChecks : IO Unit := do
 #check @passiveServerIdleFrameOnCore
 #check @passiveServerIdle_perCore_of_frameOnCore
 #check @endpointCallOnCore_passiveServerIdleFrameOnCore
+-- SM6.D completion — the lookup-congruence transfer layer:
+#check @ipcInvariantFull_of_getElem_eq
+#check @OffSchedulerAgrees
+#check @wakeThread_offSchedulerAgrees_of_ready
+#check @storeTcbIpcStateAndMessage_offSchedulerAgrees
+#check @consumeCallerReply_offSchedulerAgrees
+#check @passiveServerIdleFrameOnCore_boot_iff
+-- SM6.D completion — cross-core (OnCore) whole-bundle closures + flagships:
+#check @notificationSignalOnCore_post_agrees
+#check @notificationWaitOnCore_post_agrees
+#check @notificationSignalOnCore_preserves_ipcInvariantFull
+#check @notificationWaitOnCore_preserves_ipcInvariantFull
+#check @notificationSignalOnCore_preserves_ipcInvariantFull_perCore
+#check @notificationWaitOnCore_preserves_ipcInvariantFull_perCore
+#check @endpointReplyOnCore_post_agrees
+#check @endpointReceiveDualOnCore_post_agrees
+#check @endpointReplyOnCore_preserves_ipcInvariantFull
+#check @endpointReceiveDualOnCore_preserves_ipcInvariantFull
+#check @endpointReplyOnCore_preserves_ipcInvariantFull_perCore
+#check @endpointReceiveDualOnCore_preserves_ipcInvariantFull_perCore
+#check @endpointReplyOnCore_reuse_freshens
+#check @endpointReplyRecvOnCore_preserves_ipcInvariantFull
+#check @endpointReplyRecvOnCore_preserves_ipcInvariantFull_perCore
+-- SM6.D completion — the capability-carrying (WithCaps) trio:
+#check @ipcUnwrapCaps_passiveServerIdleFrameOnCore
+#check @endpointSendDualWithCaps_preserves_ipcInvariantFull_perCore
+#check @endpointReceiveDualWithCaps_preserves_ipcInvariantFull_perCore
+#check @endpointCallWithCaps_preserves_ipcInvariantFull_perCore
 
 /-- SM6.D.1 exact decomposition: the ∀-core bundle is equivalent to the global
 bundle plus the per-core passive-idle slices — nothing is weakened. -/
@@ -474,6 +504,114 @@ example (st st' : SystemState) (ntfnId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
 /-- SM6.D: the freshly-booted system satisfies every core's bundle view. -/
 example (c : CoreId) : ipcInvariantFull_perCore (default : SystemState) c :=
   default_ipcInvariantFull_perCore c
+
+/-- SM6.D completion (representative): the **cross-core** signal preserves
+every core's bundle view, unconditionally over success/failure. -/
+example (st : SystemState) (ntfnId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (ec c : CoreId)
+    (hInv : ipcInvariantFull_smp st) (hObjInv : st.objects.invExt)
+    (hWtpmn' : waitingThreadsPendingMessageNone (notificationSignalOnCore ntfnId badge ec st).1)
+    (hRCLRecip' : replyCallerLinkageReciprocal (notificationSignalOnCore ntfnId badge ec st).1)
+    (hNWC : notificationWaiterConsistent st)
+    (hAllBudgetsNone : allTimeoutBudgetsNone st) :
+    ipcInvariantFull_perCore (notificationSignalOnCore ntfnId badge ec st).1 c :=
+  notificationSignalOnCore_preserves_ipcInvariantFull_perCore ntfnId badge ec st hInv hObjInv
+    hWtpmn' hRCLRecip' hNWC hAllBudgetsNone c
+
+/-- SM6.D completion (representative): the **cross-core** reply preserves the
+whole twenty-conjunct bundle for any reply-cap holder (delegated authority
+included — the recorded server's single-core effect carries across the
+off-scheduler agreement dichotomy). -/
+example (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (ec : CoreId)
+    (st : SystemState)
+    (hInv : ipcInvariantFull st) (hObjInv : st.objects.invExt)
+    (hWtpmn' : waitingThreadsPendingMessageNone (endpointReplyOnCore replier target msg ec st).1)
+    (hDOV' : donationOwnerValid (endpointReplyOnCore replier target msg ec st).1)
+    (hAllBudgetsNone : allTimeoutBudgetsNone st) :
+    ipcInvariantFull (endpointReplyOnCore replier target msg ec st).1 :=
+  endpointReplyOnCore_preserves_ipcInvariantFull replier target msg ec st hInv hObjInv
+    hWtpmn' hDOV' hAllBudgetsNone
+
+/-- SM6.D completion (seL4-MCS one-object reuse): the composed cross-core
+`replyRecv` accepts a reply object that is *in use by the answered caller* —
+the reply leg's folded consume frees it before the receive leg re-stashes it.
+The disjunctive `hReplyIdValid` premise's reuse arm is exercised here. -/
+example (endpointId : SeLe4n.ObjId) (receiver replyTarget : SeLe4n.ThreadId)
+    (msg : IpcMessage) (rid : SeLe4n.ReplyId) (ec c : CoreId) (st : SystemState)
+    (hInv : ipcInvariantFull_smp st) (hObjInv : st.objects.invExt)
+    (hWtpmn' : waitingThreadsPendingMessageNone
+      (endpointReplyRecvOnCore endpointId receiver replyTarget msg (some rid) ec st).1)
+    (hRCLRecip' : replyCallerLinkageReciprocal
+      (endpointReplyRecvOnCore endpointId receiver replyTarget msg (some rid) ec st).1)
+    (hDOVMid : donationOwnerValid (endpointReplyOnCore receiver replyTarget msg ec st).1)
+    (hAllBudgetsNone : allTimeoutBudgetsNone st)
+    (hFreshReceiver : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.sendQ.head ≠ some receiver ∧ ep.sendQ.tail ≠ some receiver ∧
+      ep.receiveQ.head ≠ some receiver ∧ ep.receiveQ.tail ≠ some receiver)
+    (hRecvTailFresh : ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
+      st.objects[endpointId]? = some (.endpoint ep) →
+      ep.receiveQ.tail = some tailTid →
+      ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+        st.objects[epId']? = some (.endpoint ep') →
+        (epId' ≠ endpointId →
+          ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
+        (epId' = endpointId → ep'.sendQ.tail ≠ some tailTid))
+    -- the reuse arm: `rid` is the answered caller's in-use reply object
+    (hUnstashed : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB), st.getTcb? tid = some tcb →
+        tcb.pendingReceiveReply ≠ some rid)
+    (hPresent : ∃ r, st.getReply? rid = some r)
+    (hLinked : ∃ tcbT, st.getTcb? replyTarget = some tcbT ∧ tcbT.replyObject = some rid)
+    (hReceiverNotRecv : ∀ (tcb : TCB), st.getTcb? receiver = some tcb →
+        ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
+    (hReceiverReady : ∀ (tcb : TCB), st.getTcb? receiver = some tcb →
+        tcb.ipcState = .ready) :
+    ipcInvariantFull_perCore
+      (endpointReplyRecvOnCore endpointId receiver replyTarget msg (some rid) ec st).1 c :=
+  endpointReplyRecvOnCore_preserves_ipcInvariantFull_perCore endpointId receiver replyTarget
+    msg (some rid) ec st hInv hObjInv hWtpmn' hRCLRecip' hDOVMid hAllBudgetsNone
+    hFreshReceiver hRecvTailFresh
+    (fun rid' hRid' => Or.inr (by
+      obtain rfl : rid = rid' := Option.some.inj hRid'
+      exact ⟨hUnstashed, hPresent, hLinked⟩))
+    hReceiverNotRecv hReceiverReady c
+
+/-- SM6.D completion (representative): the capability-carrying send — the
+transition behind the **live** `.send` dispatch — preserves every core's
+bundle view. -/
+example (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (st st' : SystemState) (summary : CapTransferSummary) (c : CoreId)
+    (hInv : ipcInvariantFull_smp st) (hObjInv : st.objects.invExt)
+    (hDualQueue' : dualQueueSystemInvariant st') (hBadge' : badgeWellFormed st')
+    (hWtpmn' : waitingThreadsPendingMessageNone st')
+    (hAllBudgetsNone : allTimeoutBudgetsNone st)
+    (hRCLRecip' : replyCallerLinkageReciprocal st')
+    (hFreshSender : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.sendQ.head ≠ some sender ∧ ep.sendQ.tail ≠ some sender ∧
+      ep.receiveQ.head ≠ some sender ∧ ep.receiveQ.tail ≠ some sender)
+    (hSendTailFresh : ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
+      st.objects[endpointId]? = some (.endpoint ep) →
+      ep.sendQ.tail = some tailTid →
+      ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+        st.objects[epId']? = some (.endpoint ep') →
+        (epId' ≠ endpointId →
+          ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
+        (epId' = endpointId → ep'.receiveQ.tail ≠ some tailTid))
+    (hSenderNotRecv : ∀ (tcb : TCB), st.getTcb? sender = some tcb →
+        ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
+    (hSenderNotReply : ∀ (tcb : TCB), st.getTcb? sender = some tcb →
+        ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
+    (hSenderNotUnbound : ∀ (tcb : TCB), st.getTcb? sender = some tcb →
+        tcb.schedContextBinding ≠ .unbound)
+    (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
+             senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+    ipcInvariantFull_perCore st' c :=
+  endpointSendDualWithCaps_preserves_ipcInvariantFull_perCore endpointId sender msg
+    endpointRights senderCspaceRoot receiverSlotBase st st' summary hInv hObjInv
+    hDualQueue' hBadge' hWtpmn' hAllBudgetsNone hRCLRecip' hFreshSender hSendTailFresh
+    hSenderNotRecv hSenderNotReply hSenderNotUnbound hStep c
 
 /-- SM6.D runtime: `threadHomeCore` and `determineTargetCore` agree on the
 suite fixtures (pinned → home core, unpinned → boot core). -/

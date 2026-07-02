@@ -46,3 +46,11 @@ import SeLe4n.Kernel.SyscallDispatchEntry
 -- the staged `IPC.CrossCore.EndpointCallInvariant`).
 import SeLe4n.Kernel.IPC.Invariant.PerCoreBundle
 import SeLe4n.Kernel.IPC.Invariant.PerCoreBundlePreservation
+-- WS-SM SM6.D (completion): pointwise-lookup congruences for every
+-- `ipcInvariantFull` conjunct + the `OffSchedulerAgrees` relation and its
+-- step congruences — the transfer layer that carries the single-core
+-- whole-bundle theorems across the cross-core scheduler substitutions.
+-- (Consumed by the production `NotificationInvariant` /
+-- `EndpointReplyInvariant` whole-bundle closures; imported here explicitly
+-- so the congruence surface is directly production-anchored.)
+import SeLe4n.Kernel.IPC.Invariant.LookupCongruence
