@@ -1035,7 +1035,14 @@ opaque ffiSuspendThread : UInt64 → BaseIO UInt32
     - `suspendThread` returns `.error e`: forward `e`'s discriminant
       and leave `kernelStateRef` unchanged.
     - `suspendThread` returns `.ok st'`: install `st'` as the new
-      kernel state and return `0` (`KernelError::Ok`-equivalent slot). -/
+      kernel state and return `0` (`KernelError::Ok`-equivalent slot).
+
+    **WS-SM SM6.E**: the live Rust atomicity bracket
+    (`sele4n_suspend_thread`) now resolves the **cross-core** entry
+    `suspend_thread_cross_core` (`SyscallDispatchEntry.suspendThreadCrossCoreEntry`,
+    backed by the verified per-core `suspendThreadOnCore`: home-core
+    deschedule + remote `.reschedule` SGI after the commit).  This
+    boot-pinned form remains the single-core entry. -/
 @[export suspend_thread_inner]
 def suspendThreadInner (tid : UInt64) : BaseIO UInt32 := do
   let st ← getKernelState

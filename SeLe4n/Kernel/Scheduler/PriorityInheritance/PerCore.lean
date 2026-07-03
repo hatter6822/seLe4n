@@ -1363,6 +1363,12 @@ core's run queue *changed* across `pre → post`.  Two material cases:
   *effective* run-queue bucket (`resolveEffectivePrioDeadline`) changed: a PIP boost
   (PR #811 P2-2).  An *immaterial* boost (effective priority unchanged on an
   already-runnable thread) migrates no bucket and so fires nothing.
+* a **deschedule** (WS-SM SM6.E) — the thread was *actively current* on its remote
+  home core in `pre` and in `post` is neither current nor queued there: a
+  cross-core suspend/cancellation removed it, so the home core must be poked to
+  stop executing it and dispatch a successor.  (Without this rule a live
+  `.tcbSuspend` of a remote-running victim would leave that core executing the
+  suspended thread until its next timer tick.)
 
 Factored out so the dispatch theorems reference it by name (the single object-store
 read site, mirroring `waitersOf`'s raw iteration). -/
@@ -1386,6 +1392,12 @@ def crossCoreSgiBody (pre post : SystemState) (execCore : CoreId) (oid : ObjId)
             && ((SeLe4n.Kernel.resolveEffectivePrioDeadline pre tpre).1
                   == (SeLe4n.Kernel.resolveEffectivePrioDeadline post tpost).1) then none
         else some (home, SgiKind.reschedule)
+      else if (pre.scheduler.currentOnCore home == some tpost.tid)
+          && !(post.scheduler.currentOnCore home == some tpost.tid) then
+        -- WS-SM SM6.E (descheduled-current): the victim was running on its remote
+        -- home core and a cross-core cancellation removed it (not re-queued, not
+        -- current) — poke that core so it stops executing the suspended thread.
+        some (home, SgiKind.reschedule)
       else none
     | none => none
   | _ => none
@@ -1413,7 +1425,9 @@ theorem crossCoreSgiBody_reschedule (pre post : SystemState) (ec : CoreId) (oid 
         · split at h
           · simp at h
           · simp only [Option.some.injEq] at h; rw [← h]
-        · simp at h
+        · split at h
+          · simp only [Option.some.injEq] at h; rw [← h]
+          · simp at h
     · simp at h
   · simp at h
 
@@ -1452,6 +1466,31 @@ theorem crossCoreSgiBody_remote_wake (pre post : SystemState) (execCore : CoreId
   simp only [hPre]
   rw [if_neg (by simpa using hRemote), if_pos hPostRq,
       if_neg (by simp [hPreNotRq])]
+
+/-- WS-SM SM6.E (the deschedule-SGI rule, positive direction): a thread that was
+**actively current** on a *remote* home core in `pre` and in `post` is neither
+current nor queued there makes the dispatch body emit a `.reschedule` SGI to that
+home core — the cross-core poke a suspend/cancellation of a running victim
+warrants, so the remote core stops executing it.  The suspend-side companion of
+`crossCoreSgiBody_remote_wake`. -/
+theorem crossCoreSgiBody_remote_deschedule (pre post : SystemState) (execCore : CoreId)
+    (oid : ObjId) (tpost tpre : TCB)
+    (hPost : post.objects[oid]? = some (.tcb tpost))
+    (hPre : pre.getTcb? tpost.tid = some tpre)
+    (hRemote : SeLe4n.Kernel.determineTargetCore post tpost.tid ≠ execCore)
+    (hPostNotRq : tpost.tid ∉
+        post.scheduler.runQueueOnCore (SeLe4n.Kernel.determineTargetCore post tpost.tid))
+    (hPreCur : pre.scheduler.currentOnCore (SeLe4n.Kernel.determineTargetCore post tpost.tid)
+        = some tpost.tid)
+    (hPostNotCur : post.scheduler.currentOnCore
+        (SeLe4n.Kernel.determineTargetCore post tpost.tid) ≠ some tpost.tid) :
+    crossCoreSgiBody pre post execCore oid
+      = some (SeLe4n.Kernel.determineTargetCore post tpost.tid, SgiKind.reschedule) := by
+  unfold crossCoreSgiBody
+  rw [hPost]
+  simp only [hPre]
+  rw [if_neg (by simpa using hRemote), if_neg hPostNotRq,
+      if_pos (by simp [hPreCur, hPostNotCur])]
 
 /-- WS-SM SM5.F.4: every SGI the diff-based dispatch emits is a `.reschedule` — it
 pokes cores only to reschedule, never with a foreign SGI kind. -/

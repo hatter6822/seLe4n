@@ -14,6 +14,9 @@ import SeLe4n.Kernel.IPC.Invariant
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDispatch
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyDispatch
 import SeLe4n.Kernel.IPC.CrossCore.NotificationBindDispatch
+-- WS-SM SM6.E: the live per-core suspend (`suspendThreadOnCore`) behind the
+-- `.tcbSuspend` arm — the victim is descheduled on its *home* core.
+import SeLe4n.Kernel.IPC.CrossCore.Cancellation
 import SeLe4n.Kernel.Capability.Invariant
 import SeLe4n.Kernel.Scheduler.Operations
 
@@ -997,6 +1000,14 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
         | .ok ((), st') => .ok ((), st')
     | _ => fun _ => .error .invalidCapability
   -- D1: TCB suspend — target thread from capability
+  -- WS-SM SM6.E (live cross-core wiring): route through the per-core
+  -- `suspendThreadOnCore` — the victim is descheduled on its *home* core
+  -- (`determineTargetCore`), not the boot core, and a remote-running victim's
+  -- home core is poked.  The executing core is the caller's
+  -- (`determineExecutingCore`, the SM6.A per-core caller-identification).
+  -- The surfaced SGI is dropped at this pure layer: on the live path the
+  -- FFI seam (`syscallDispatchCrossCoreEntry`) re-derives and fires it from
+  -- the state diff (`crossCoreSgiBody`'s SM6.E descheduled-current rule).
   | .tcbSuspend =>
     some <| match cap.target with
     | .object objId =>
@@ -1007,8 +1018,9 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
         match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
         | .error e => .error e
         | .ok vtid =>
-            match Lifecycle.Suspend.suspendThread st vtid with
-            | .ok st' => .ok ((), st')
+            match Lifecycle.Suspend.suspendThreadOnCore st vtid
+                (determineExecutingCore st tid) with
+            | .ok (st', _) => .ok ((), st')
             | .error e => .error e
     | _ => fun _ => .error .invalidCapability
   -- D1: TCB resume — target thread from capability

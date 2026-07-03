@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.IPC.CrossCore.Cancellation
+import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
 import SeLe4n.Testing.StateBuilder
 
 /-!
@@ -96,7 +97,7 @@ open SeLe4n.Testing
 
 -- SM6.E write coverage (cancellation footprints + the enclosing suspend
 -- footprint, member-by-member):
-#check @mem_insertOrMerge_write_of_mem_write
+#check @LockSet.mem_insertOrMerge_write_of_mem_write
 #check @mem_write_lockSetExtendOpt
 #check @lockSet_cancelIpcBlocking_victim_tcb_write_mem
 #check @lockSet_cancelIpcBlocking_blocked_endpoint_write_mem
@@ -140,6 +141,41 @@ open SeLe4n.Testing
 
 -- SM6.E flagship:
 #check @cancellation_cross_core_correct
+
+-- SM6.E completion cut: the closed-form composition, resolution frames,
+-- per-key lookup keystones, ipcInvariant preservation, observational
+-- atomicity, live per-core suspend, and the SGI deschedule rule.
+#check @SeLe4n.Kernel.RobinHood.RHTable.fold_preserves_of_lookup
+#check @spliceOutMidQueueNode_tcb_lookup
+#check @removeFromAllEndpointQueues_tcb_lookup
+#check @removeFromAllNotificationWaitLists_tcb_lookup
+#check @cancelIpcBlocking_tcb_lookup
+#check @cancelIpcBlocking_getTcb?_none
+#check @cancelIpcBlocking_determineTargetCore_eq
+#check @cancelIpcBlocking_getTcb?_isSome_eq
+#check @cancelIpcBlockingOnCore_eq_descheduleThread_closed
+#check @notificationQueueWellFormed_filter_correct
+#check @cancelIpcBlocking_preserves_ipcInvariant
+#check @cancelIpcBlockingOnCore_preserves_ipcInvariant
+#check @cancelDonationOnCore_preserves_ipcInvariant
+#check @descheduleThread_preserves_ipcInvariant
+#check @updateObjectLockAt_getTcb?_ipcState
+#check @acquireLockOnObject_preserves_objects_invExt
+#check @releaseLockOnObject_preserves_objects_invExt
+#check @cancellationObserver_acquireInsensitiveOn
+#check @cancellationObserver_releaseInsensitiveOn
+#check @cancelIpcBlockingOnCore_observer_atomic
+#check @cancelIpcBlockingOnCore_bootHome_state_eq
+#check @descheduleThread_fully_descheduled
+#check @cancelBoundDonationOnCore_replenishments_purged
+#check @cancelDonationOnCore_bootHome_ok
+#check @cancelDonationOnCore_bootHome_error
+#check @Lifecycle.Suspend.suspendThreadOnCore
+#check @Lifecycle.Suspend.suspendThreadOnCore_rejects_absent
+#check @Lifecycle.Suspend.suspendThreadOnCore_rejects_inactive
+#check @Lifecycle.Suspend.suspendThreadOnCore_sgi_remote_reschedule
+#check @Lifecycle.Suspend.suspendThreadOnCore_local_no_sgi
+#check @PriorityInheritance.crossCoreSgiBody_remote_deschedule
 
 -- ============================================================================
 -- §2  Elaboration-time examples: headline theorems applied
@@ -227,6 +263,9 @@ private def cnRoot : SeLe4n.ObjId := ⟨300⟩
 private def victimTid : SeLe4n.ThreadId := ⟨710⟩
 private def ownerTid : SeLe4n.ThreadId := ⟨711⟩
 private def bystanderTid : SeLe4n.ThreadId := ⟨712⟩
+private def prevTid : SeLe4n.ThreadId := ⟨713⟩
+private def nextTid : SeLe4n.ThreadId := ⟨714⟩
+private def runnerTid : SeLe4n.ThreadId := ⟨715⟩
 
 private def mkTcb (tid : Nat) (prio : Nat) (aff : Option CoreId) : TCB :=
   { tid := ⟨tid⟩, priority := ⟨prio⟩, domain := ⟨0⟩, cspaceRoot := cnRoot,
@@ -401,7 +440,8 @@ private def runReplyCancelChecks : IO Unit := do
 private def stRunningRemote : SystemState :=
   let base :=
     (BootstrapBuilder.empty
-      |>.withObject victimTid.toObjId (.tcb (mkTcb 710 30 (some core1)))
+      |>.withObject victimTid.toObjId (.tcb { mkTcb 710 30 (some core1) with
+          threadState := .Running })
       |>.withObject bystanderTid.toObjId (.tcb (mkTcb 712 20 none))
       |>.withRunnable [bystanderTid]
       |>.build)
@@ -511,12 +551,18 @@ private def runBoundDonationCancelChecks : IO Unit := do
 -- ----------------------------------------------------------------------------
 
 private def stDonated : SystemState :=
-  (BootstrapBuilder.empty
-    |>.withObject victimTid.toObjId (.tcb { mkTcb 710 30 (some core1) with
-        schedContextBinding := .donated scId ownerTid })
-    |>.withObject ownerTid.toObjId (.tcb (mkTcb 711 25 none))
-    |>.withObject scId.toObjId (.schedContext (mkSc (some victimTid) true))
-    |>.build)
+  let base :=
+    (BootstrapBuilder.empty
+      |>.withObject victimTid.toObjId (.tcb { mkTcb 710 30 (some core1) with
+          schedContextBinding := .donated scId ownerTid })
+      |>.withObject ownerTid.toObjId (.tcb (mkTcb 711 25 none))
+      |>.withObject scId.toObjId (.schedContext (mkSc (some victimTid) true))
+      |>.build)
+  -- Seed the SC's pending replenishment on the VICTIM's home core (core 1),
+  -- per the SM5.H affinity discipline (per-core ticks enqueue there while the
+  -- donated server runs).
+  let rq1 := (base.scheduler.replenishQueueOnCore core1).insert scId 42
+  { base with scheduler := base.scheduler.setReplenishQueueOnCore core1 rq1 }
 
 private def runDonatedDonationCancelChecks : IO Unit := do
   IO.println "--- §3.7 SM6.E.3 donated-donation cancel (return to owner) ---"
@@ -538,6 +584,14 @@ private def runDonatedDonationCancelChecks : IO Unit := do
     (match st'.getTcb? victimTid with
      | some t => decide (t.schedContextBinding = .unbound)
      | none => false)
+  -- §2b replenishment migration: the SC's pending replenishment moves from
+  -- the victim's home core (core 1) to the owner's home core (boot) at its
+  -- original eligibility time.
+  assertBool "SC replenishment is migrated off the victim's home core"
+    (!(st'.scheduler.replenishQueueOnCore core1).entries.any (fun e => e.1 == scId))
+  assertBool "SC replenishment lands on the owner's home core at its original time"
+    ((st'.scheduler.replenishQueueOnCore bootCoreId).entries.any
+      (fun e => e.1 == scId && e.2 == 42))
   -- Owner TCB write lock in the footprint (the plan row's "receiver TCB").
   let ls := lockSet_cancelDonationOnCore stDonated victimTid
   assertBool "original-owner TCB write lock is in the donation footprint"
@@ -586,6 +640,240 @@ private def runDispatcherEdgeChecks : IO Unit := do
          | _, _ => false)
   | none => assertBool "setup: bracket fixture available" false
 
+-- ----------------------------------------------------------------------------
+-- Scenario H (SM6.E completion): notification waiter-list state correction.
+-- ----------------------------------------------------------------------------
+
+private def stNtfnTwoWaiters? : Option SystemState :=
+  let base :=
+    (BootstrapBuilder.empty
+      |>.withObject nId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty })
+      |>.withObject victimTid.toObjId (.tcb (mkTcb 710 30 (some core1)))
+      |>.withObject bystanderTid.toObjId (.tcb (mkTcb 712 20 none))
+      |>.withRunnable [victimTid, bystanderTid]
+      |>.build)
+  match notificationWaitOnCore nId victimTid bootCoreId base with
+  | (st1, .ok none) =>
+      match notificationWaitOnCore nId bystanderTid bootCoreId st1 with
+      | (st2, .ok none) => some st2
+      | _ => none
+  | _ => none
+
+private def runNotificationStateCorrectionChecks : IO Unit := do
+  IO.println "--- §3.9 SM6.E notification sole-waiter state correction ---"
+  -- Sole waiter: cancelling the ONLY waiter must transition the notification
+  -- back to `.idle` (the `removeFromAllNotificationWaitLists` invariant fix —
+  -- pre-fix the sweep left an ipcInvariant-violating `.waiting` + `[]`).
+  match stNtfnBlocked? with
+  | some st =>
+      let tcb := victimTcb st
+      let (st', _) := cancelIpcBlockingOnCore victimTid tcb bootCoreId st
+      assertBool "sole-waiter cancel: notification transitions to .idle"
+        (match st'.objects[nId]? with
+         | some (.notification n) =>
+             decide (n.state = .idle ∧ n.waitingThreads.val = []
+               ∧ n.pendingBadge = none)
+         | _ => false)
+  | none => assertBool "setup: sole-waiter fixture available" false
+  -- Two waiters: cancelling one keeps the notification `.waiting` with the
+  -- other still queued (the correction fires only on the last removal).
+  match stNtfnTwoWaiters? with
+  | some st =>
+      let tcb := victimTcb st
+      let (st', _) := cancelIpcBlockingOnCore victimTid tcb bootCoreId st
+      assertBool "two-waiter cancel: notification stays .waiting with the other waiter"
+        (match st'.objects[nId]? with
+         | some (.notification n) =>
+             decide (n.state = .waiting ∧ n.waitingThreads.val = [bystanderTid])
+         | _ => false)
+  | none => assertBool "setup: two-waiter fixture available" false
+
+-- ----------------------------------------------------------------------------
+-- Scenario I (SM6.E completion): mid-queue splice — a 3-deep endpoint queue.
+-- ----------------------------------------------------------------------------
+
+private def stThreeDeep? : Option SystemState :=
+  let base :=
+    (BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject prevTid.toObjId (.tcb (mkTcb 713 30 none))
+      |>.withObject victimTid.toObjId (.tcb (mkTcb 710 30 (some core1)))
+      |>.withObject nextTid.toObjId (.tcb (mkTcb 714 30 none))
+      |>.withRunnable [prevTid, victimTid, nextTid]
+      |>.build)
+  match endpointCallOnCore epId prevTid IpcMessage.empty bootCoreId base with
+  | (st1, .ok none) =>
+      match endpointCallOnCore epId victimTid IpcMessage.empty bootCoreId st1 with
+      | (st2, .ok none) =>
+          match endpointCallOnCore epId nextTid IpcMessage.empty bootCoreId st2 with
+          | (st3, .ok none) => some st3
+          | _ => none
+      | _ => none
+  | _ => none
+
+private def runMidQueueSpliceChecks : IO Unit := do
+  IO.println "--- §3.10 SM6.E mid-queue splice (3-deep endpoint queue) ---"
+  match stThreeDeep? with
+  | some st =>
+      assertBool "setup: send queue spans prev..next with the victim mid-queue"
+        (match st.objects[epId]?, st.getTcb? victimTid with
+         | some (.endpoint ep), some vt =>
+             decide (ep.sendQ.head = some prevTid ∧ ep.sendQ.tail = some nextTid
+               ∧ vt.queuePrev = some prevTid ∧ vt.queueNext = some nextTid)
+         | _, _ => false)
+      let tcb := victimTcb st
+      let (st', _) := cancelIpcBlockingOnCore victimTid tcb bootCoreId st
+      -- The interior links are re-spliced around the removed victim.
+      assertBool "predecessor's queueNext is patched to the successor"
+        (match st'.getTcb? prevTid with
+         | some t => decide (t.queueNext = some nextTid)
+         | none => false)
+      assertBool "successor's queuePrev is patched to the predecessor"
+        (match st'.getTcb? nextTid with
+         | some t => decide (t.queuePrev = some prevTid)
+         | none => false)
+      -- Head/tail survive; the queue-mates stay blocked and keep their homes
+      -- (the `spliceOutMidQueueNode_tcb_lookup` frame, operationally).
+      assertBool "send-queue head/tail still span prev..next"
+        (match st'.objects[epId]? with
+         | some (.endpoint ep) =>
+             decide (ep.sendQ.head = some prevTid ∧ ep.sendQ.tail = some nextTid)
+         | _ => false)
+      assertBool "queue-mates keep their ipcState and cpuAffinity"
+        (match st'.getTcb? prevTid, st'.getTcb? nextTid with
+         | some p, some n =>
+             decide (p.ipcState = .blockedOnCall epId ∧ n.ipcState = .blockedOnCall epId
+               ∧ p.cpuAffinity = none ∧ n.cpuAffinity = none)
+         | _, _ => false)
+  | none => assertBool "setup: 3-deep call queue fixture available" false
+
+-- ----------------------------------------------------------------------------
+-- Scenario J (SM6.E completion): mirror SGI — boot-homed victim cancelled
+-- from a remote executing core.
+-- ----------------------------------------------------------------------------
+
+private def stRunningBoot : SystemState :=
+  let base :=
+    (BootstrapBuilder.empty
+      |>.withObject victimTid.toObjId (.tcb { mkTcb 710 30 none with
+          threadState := .Running })
+      |>.build)
+  { base with scheduler := base.scheduler.setCurrentOnCore bootCoreId (some victimTid) }
+
+private def runMirrorSgiChecks : IO Unit := do
+  IO.println "--- §3.11 SM6.E mirror SGI (boot-homed victim, remote canceller) ---"
+  let tcb := victimTcb stRunningBoot
+  let (st', sgi) := cancelIpcBlockingOnCore victimTid tcb core1 stRunningBoot
+  assertBool "cancelling a boot-running victim FROM core 1 pokes the boot core"
+    (decide (sgi = some (bootCoreId, SgiKind.reschedule)))
+  assertBool "victim is cleared from the boot core's current slot"
+    (decide (st'.scheduler.currentOnCore bootCoreId ≠ some victimTid))
+
+-- ----------------------------------------------------------------------------
+-- Scenario K (SM6.E live wiring): the per-core suspend `suspendThreadOnCore`.
+-- ----------------------------------------------------------------------------
+
+private def stSuspendLocal : SystemState :=
+  let base :=
+    (BootstrapBuilder.empty
+      |>.withObject victimTid.toObjId (.tcb { mkTcb 710 30 (some core1) with
+          threadState := .Running })
+      |>.withObject runnerTid.toObjId (.tcb { mkTcb 715 20 (some core1) with
+          threadState := .Ready })
+      |>.build)
+  let st1 := enqueueRunnableOnCore base core1 runnerTid
+  { st1 with scheduler := st1.scheduler.setCurrentOnCore core1 (some victimTid) }
+
+private def runPerCoreSuspendChecks : IO Unit := do
+  IO.println "--- §3.12 SM6.E live per-core suspend (suspendThreadOnCore) ---"
+  match victimTid.toValid? with
+  | none => assertBool "setup: victim ValidThreadId" false
+  | some vtid =>
+      -- (a) REMOTE: victim running on core 1, suspended from the boot core.
+      match suspendThreadOnCore stRunningRemote vtid bootCoreId with
+      | .ok (st', sgi) =>
+          assertBool "remote suspend fires a reschedule SGI to the victim's home core"
+            (decide (sgi = some (core1, SgiKind.reschedule)))
+          assertBool "remote suspend sets the victim .Inactive"
+            (match st'.getTcb? victimTid with
+             | some t => decide (t.threadState = .Inactive)
+             | none => false)
+          assertBool "remote suspend fully descheduled the victim on core 1"
+            (decide (st'.scheduler.currentOnCore core1 ≠ some victimTid)
+              && decide (victimTid ∉ st'.scheduler.runQueueOnCore core1))
+          -- (d) the diff seam re-derives the same poke (the SM6.E
+          -- descheduled-current rule of `crossCoreSgiBody`).
+          assertBool "computeCrossCoreSgis recovers the deschedule SGI from the diff"
+            ((PriorityInheritance.computeCrossCoreSgis stRunningRemote st' bootCoreId).any
+              (fun p => p.1 == core1 && p.2 == SgiKind.reschedule))
+      | .error _ => assertBool "remote suspend succeeds" false
+      -- (b) LOCAL: the executing core suspends its own current thread —
+      -- no SGI, and the queued successor is dispatched inline.
+      match suspendThreadOnCore stSuspendLocal vtid core1 with
+      | .ok (st', sgi) =>
+          assertBool "local suspend surfaces no SGI" (decide (sgi = none))
+          assertBool "local suspend dispatches the queued successor inline"
+            (decide (st'.scheduler.currentOnCore core1 = some runnerTid))
+      | .error _ => assertBool "local suspend succeeds" false
+      -- (c) rejection: an already-.Inactive victim.
+      let stInactive :=
+        (BootstrapBuilder.empty
+          |>.withObject victimTid.toObjId (.tcb { mkTcb 710 30 (some core1) with
+              threadState := .Inactive })
+          |>.build)
+      assertBool "suspending an .Inactive victim is rejected with illegalState"
+        (match suspendThreadOnCore stInactive vtid bootCoreId with
+         | .error .illegalState => true
+         | _ => false)
+      -- (e) single-core inertness: a boot-homed victim suspended on boot.
+      match suspendThreadOnCore stRunningBoot vtid bootCoreId with
+      | .ok (st', sgi) =>
+          assertBool "boot-local suspend surfaces no SGI" (decide (sgi = none))
+          assertBool "boot-local suspend fires nothing through the diff seam"
+            (decide (PriorityInheritance.computeCrossCoreSgis stRunningBoot st'
+              bootCoreId = []))
+      | .error _ => assertBool "boot-local suspend succeeds" false
+
+-- ----------------------------------------------------------------------------
+-- Scenario L (SM6.E completion): send-/receive-blocked victims (direct
+-- fixtures for the two teardown arms the call path does not reach).
+-- ----------------------------------------------------------------------------
+
+private def runSendReceiveCancelChecks : IO Unit := do
+  IO.println "--- §3.13 SM6.E cancel send-/receive-blocked victims ---"
+  let stSend :=
+    (BootstrapBuilder.empty
+      |>.withObject epId (.endpoint { sendQ := { head := some victimTid, tail := some victimTid } })
+      |>.withObject victimTid.toObjId (.tcb { mkTcb 710 30 (some core1) with
+          ipcState := .blockedOnSend epId })
+      |>.build)
+  let (stS, sgiS) := cancelIpcBlockingOnCore victimTid (victimTcb stSend) bootCoreId stSend
+  assertBool "send-blocked cancel: victim .ready, no SGI, send queue emptied"
+    (decide (sgiS = none)
+      && (match stS.getTcb? victimTid with
+          | some t => decide (t.ipcState = .ready)
+          | none => false)
+      && (match stS.objects[epId]? with
+          | some (.endpoint ep) =>
+              decide (ep.sendQ.head ≠ some victimTid ∧ ep.sendQ.tail ≠ some victimTid)
+          | _ => false))
+  let stRecv :=
+    (BootstrapBuilder.empty
+      |>.withObject epId (.endpoint { receiveQ := { head := some victimTid, tail := some victimTid } })
+      |>.withObject victimTid.toObjId (.tcb { mkTcb 710 30 (some core1) with
+          ipcState := .blockedOnReceive epId })
+      |>.build)
+  let (stR, sgiR) := cancelIpcBlockingOnCore victimTid (victimTcb stRecv) bootCoreId stRecv
+  assertBool "receive-blocked cancel: victim .ready, no SGI, receive queue emptied"
+    (decide (sgiR = none)
+      && (match stR.getTcb? victimTid with
+          | some t => decide (t.ipcState = .ready)
+          | none => false)
+      && (match stR.objects[epId]? with
+          | some (.endpoint ep) =>
+              decide (ep.receiveQ.head ≠ some victimTid ∧ ep.receiveQ.tail ≠ some victimTid)
+          | _ => false))
+
 -- ============================================================================
 -- Aggregate runner
 -- ============================================================================
@@ -600,6 +888,11 @@ def runSmpCancellationChecks : IO Unit := do
   runBoundDonationCancelChecks
   runDonatedDonationCancelChecks
   runDispatcherEdgeChecks
+  runNotificationStateCorrectionChecks
+  runMidQueueSpliceChecks
+  runMirrorSgiChecks
+  runPerCoreSuspendChecks
+  runSendReceiveCancelChecks
   IO.println "SmpCancellationSuite: all checks passed."
 
 end SeLe4n.Testing.SmpCancellation

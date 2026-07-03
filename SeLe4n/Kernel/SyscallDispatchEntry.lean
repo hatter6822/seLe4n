@@ -17,6 +17,8 @@
 
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
 import SeLe4n.Kernel.Concurrency.Runtime
+-- WS-SM SM6.E: the per-core suspend behind `suspendThreadCrossCoreEntry`.
+import SeLe4n.Kernel.IPC.CrossCore.Cancellation
 import SeLe4n.Platform.FFI
 
 /-!
@@ -124,5 +126,39 @@ theorem syscallDispatchCrossCoreEntry_sgis_nil_single_core
       determineTargetCore post t = Concurrency.bootCoreId) :
     PriorityInheritance.computeCrossCoreSgis pre post Concurrency.bootCoreId = [] :=
   PriorityInheritance.computeCrossCoreSgis_nil_single_core pre post hAllBoot
+
+/-- **WS-SM SM6.E**: the cross-core-aware suspend entry — the per-core seam the
+Rust `sele4n_suspend_thread` atomicity bracket resolves against (the suspend
+analogue of `syscallDispatchCrossCoreEntry`, superseding the boot-pinned
+`Platform.FFI.suspendThreadInner`).  Reads the executing core from the hardware
+(`currentCoreId`), runs the verified per-core
+`Lifecycle.Suspend.suspendThreadOnCore` atomically against the kernel state ref
+(committing the post-state; the pre-state is kept on every error), then —
+*after* the commit — fires the surfaced cross-core `.reschedule` SGI: the poke
+that stops a remote home core from continuing to execute the suspended victim.
+Sentinel `tid`s are rejected at the boundary exactly as `suspendThreadInner`.
+
+**Single-core inertness (trace safety).**  On an all-boot deployment the
+victim's home core is the executing boot core, so no SGI is ever surfaced
+(`suspendThreadOnCore_local_no_sgi`) and the entry commits the same
+post-state with no IPI. -/
+@[export suspend_thread_cross_core]
+def suspendThreadCrossCoreEntry (tid : UInt64) : BaseIO UInt32 := do
+  let execCore ← Concurrency.currentCoreId
+  let result ← Platform.FFI.modifyGetKernelState (fun st =>
+    let threadId := SeLe4n.ThreadId.ofNat tid.toNat
+    match threadId.toValid? with
+    | none =>
+        ((Platform.FFI.KernelError.toUInt32 .invalidArgument,
+          ([] : List (CoreId × SgiKind))), st)
+    | some vtid =>
+        match Lifecycle.Suspend.suspendThreadOnCore st vtid execCore with
+        | Except.ok (st', some sgi) => (((0 : UInt32), [sgi]), st')
+        | Except.ok (st', none) =>
+            (((0 : UInt32), ([] : List (CoreId × SgiKind))), st')
+        | Except.error e =>
+            ((Platform.FFI.KernelError.toUInt32 e, ([] : List (CoreId × SgiKind))), st))
+  Concurrency.fireCrossCoreSgis result.2
+  pure result.1
 
 end SeLe4n.Kernel

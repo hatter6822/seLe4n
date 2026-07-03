@@ -244,7 +244,24 @@ mirroring the SM3.B lock-set pre-resolution discipline; this coincides with
 post-teardown resolution because the teardown never touches the scheduler
 (`cancelIpcBlocking_scheduler_eq`) nor any TCB's `cpuAffinity`
 (`restoreToReady` / the sweeps rewrite only IPC and queue-link fields) — the
-coincidence is explicit in `cancelIpcBlockingOnCore_eq_descheduleThread`.
+coincidence is explicit in `cancelIpcBlockingOnCore_eq_descheduleThread` and
+closed unconditionally (over `invExt`) in
+`cancelIpcBlockingOnCore_eq_descheduleThread_closed`.
+
+**TOCTOU caveat (pre-resolution vs. concurrent mutation).**  Pre-state
+resolution is check-then-use: between the `determineTargetCore` read and the
+home-core removal, a concurrent affinity change could in principle move the
+victim.  In the sequential model this window does not exist; on hardware it
+is closed *structurally*, not by luck: (1) the whole transition runs inside
+the suspend syscall's 2PL bracket holding the victim's TCB **write** lock
+(`lockSet_cancelIpcBlocking` ∋ `tcbLock victim`), and any affinity change
+goes through `setThreadCpuAffinityOp`, whose dispatch is `.write`-gated on
+the same target TCB — the lock conflict serialises the two; and (2) the
+AN9-D FFI bracket (`with_interrupts_disabled` around
+`suspend_thread_cross_core`) excludes same-core ISR interleavings.  The
+same argument covers every pre-resolved read in this module
+(`cancelDonationOnCore`'s home resolution, `suspendThreadOnCore`'s
+G7-precapture).
 
 Returns the post-state paired with the optional cross-core SGI to emit after
 the state commit.  Total (the single-core teardown is pure), so a
@@ -299,14 +316,174 @@ single-core `cancelBoundDonation` — the SM5.A backward-compatibility bridge. -
     cancelBoundDonationOnCore st tid tcb bootCoreId
       = cancelBoundDonation st tid tcb := rfl
 
+-- ----------------------------------------------------------------------------
+-- §2b  The donated arm across cores — replenishment migration (SM6.E.3)
+-- ----------------------------------------------------------------------------
+-- `returnDonatedSchedContext` re-binds the SC from the server (victim) back to
+-- the original owner with object writes only.  Under the SM5.H affinity
+-- discipline (`replenishQueueAffinityConsistentOnCore`) an SC's pending
+-- replenishments live on its **bound thread's** home core's queue — per-core
+-- ticks enqueue on the tick's core while the server runs — so a cross-core
+-- donated return that merely re-binds strands the entries on the *server's*
+-- home core.  The per-core donated arm therefore migrates them to the owner's
+-- home core after the return (`migrateSchedContextReplenishment`, the same
+-- production primitive the live `.tcbSetAffinity` path uses), restoring the
+-- affinity invariant at the cancellation boundary.  Self-migration (shared
+-- home core — in particular the whole single-core config) is a definitional
+-- no-op, so the single-core semantics is recovered exactly
+-- (`cancelDonatedDonationOnCore_eq_of_sharedHome`).
+
+/-- Local frame (production twin of the staged SM5.H lemma): the replenishment
+migration writes only replenish-queue slots — `objects` is untouched. -/
+theorem migrateSchedContextReplenishment_objects_eq (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (fromCore toCore : CoreId) :
+    (migrateSchedContextReplenishment st scId fromCore toCore).objects
+      = st.objects := by
+  unfold migrateSchedContextReplenishment
+  split <;> rfl
+
+/-- Local frame: the migration is the identity on the self-pair. -/
+theorem migrateSchedContextReplenishment_self_eq (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (c : CoreId) :
+    migrateSchedContextReplenishment st scId c c = st := by
+  unfold migrateSchedContextReplenishment
+  rw [if_pos rfl]
+
+/-- Local frame: the migration never disturbs any core's run queue or current
+slot (it writes only replenish-queue slots). -/
+theorem migrateSchedContextReplenishment_runQueue_current_eq (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (fromCore toCore c : CoreId) :
+    (migrateSchedContextReplenishment st scId fromCore toCore).scheduler.runQueueOnCore c
+        = st.scheduler.runQueueOnCore c
+    ∧ (migrateSchedContextReplenishment st scId fromCore toCore).scheduler.currentOnCore c
+        = st.scheduler.currentOnCore c := by
+  unfold migrateSchedContextReplenishment
+  split
+  · exact ⟨rfl, rfl⟩
+  · constructor <;> simp
+
+/-- Local frame: a core that is neither endpoint of the migration keeps its
+replenish queue. -/
+theorem migrateSchedContextReplenishment_replenishQueue_other_eq (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (fromCore toCore c : CoreId)
+    (hFrom : fromCore ≠ c) (hTo : toCore ≠ c) :
+    (migrateSchedContextReplenishment st scId fromCore toCore).scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c := by
+  unfold migrateSchedContextReplenishment
+  split
+  · rfl
+  · simp [SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_ne _ _ _ _ hTo,
+      SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_ne _ _ _ _ hFrom]
+
+/-- Local (production twin of the staged SM5.H purge lemma): on a genuine
+cross-core migration the source core's queue is purged of the SC. -/
+theorem migrateSchedContextReplenishment_from_eq (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (fromCore toCore : CoreId)
+    (hne : fromCore ≠ toCore) :
+    (migrateSchedContextReplenishment st scId fromCore toCore).scheduler.replenishQueueOnCore fromCore
+      = ReplenishQueue.remove (st.scheduler.replenishQueueOnCore fromCore) scId := by
+  unfold migrateSchedContextReplenishment
+  rw [if_neg hne]
+  simp [SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_ne _ _ _ _
+    (fun h => hne h.symm)]
+
+/-- WS-SM SM6.E.3 (donated arm across cores): cancel a donated SchedContext
+binding **and migrate its pending replenishments home**.
+
+The R5.A `cancelDonatedDonation` return (`cleanupDonatedSchedContext` →
+`returnDonatedSchedContext`, object writes only) followed by the
+replenishment migration from the **victim's** home core (where per-core ticks
+enqueued them while the server ran on the donated budget) to the **original
+owner's** home core — the SC's post-return bound thread, whose home core the
+SM5.H affinity invariant names as the entries' required residence.  The
+victim's home is pre-resolved from the pre-state (the return never touches
+`cpuAffinity`); the owner's home is read post-return.  Self-migration —
+shared home core, and in particular every single-core configuration — is a
+definitional no-op (`migrateSchedContextReplenishment_self_eq`), recovering
+the single-core arm exactly (`cancelDonatedDonationOnCore_eq_of_sharedHome`).
+
+Returns `.error .illegalState` on a non-`.donated` binding, exactly like the
+single-core arm. -/
+def cancelDonatedDonationOnCore (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) : Except KernelError SystemState :=
+  match tcb.schedContextBinding with
+  | .donated scId originalOwner =>
+      match cleanupDonatedSchedContext st tid with
+      | .error e => .error e
+      | .ok st' =>
+          .ok (migrateSchedContextReplenishment st' scId
+                (determineTargetCore st tid) (determineTargetCore st' originalOwner))
+  | _ => .error .illegalState
+
+/-- WS-SM SM6.E.3: when the victim and the original owner share a home core —
+in particular in every single-core configuration — the per-core donated arm
+is exactly the single-core `cancelDonatedDonation` (the migration self-pair
+is a definitional no-op). -/
+theorem cancelDonatedDonationOnCore_eq_of_sharedHome (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId)
+    (owner : SeLe4n.ThreadId)
+    (hBind : tcb.schedContextBinding = .donated scId owner)
+    (hHome : ∀ st', cleanupDonatedSchedContext st tid = .ok st' →
+        determineTargetCore st' owner = determineTargetCore st tid) :
+    cancelDonatedDonationOnCore st tid tcb = cancelDonatedDonation st tid tcb := by
+  unfold cancelDonatedDonationOnCore cancelDonatedDonation
+  simp only [hBind]
+  cases hC : cleanupDonatedSchedContext st tid with
+  | error e => rfl
+  | ok st' =>
+      simp only []
+      rw [hHome st' hC, migrateSchedContextReplenishment_self_eq]
+
+/-- WS-SM SM6.E.3: the per-core donated arm preserves `objects.invExt` — the
+return preserves it and the migration never touches `objects`. -/
+theorem cancelDonatedDonationOnCore_preserves_objects_invExt
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hInv : st.objects.invExt)
+    (h : cancelDonatedDonationOnCore st tid tcb = .ok st') :
+    st'.objects.invExt := by
+  unfold cancelDonatedDonationOnCore at h
+  split at h
+  · -- `.donated` arm.
+    split at h
+    · cases h
+    · injection h with h
+      subst h
+      rw [migrateSchedContextReplenishment_objects_eq]
+      exact cleanupDonatedSchedContext_preserves_objects_invExt _ _ _ hInv (by assumption)
+  · cases h
+
+/-- WS-SM SM6.E.3: the per-core donated arm never disturbs any core's run
+queue or current slot (return: object writes only; migration: replenish
+slots only). -/
+theorem cancelDonatedDonationOnCore_runQueue_current_eq
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (c : CoreId)
+    (h : cancelDonatedDonationOnCore st tid tcb = .ok st') :
+    st'.scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c
+    ∧ st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c := by
+  unfold cancelDonatedDonationOnCore at h
+  split at h
+  · split at h
+    · cases h
+    · injection h with h
+      subst h
+      rename_i st1 hClean
+      have hS := cleanupDonatedSchedContext_scheduler_eq st st1 tid hClean
+      obtain ⟨hRQ, hCur⟩ := migrateSchedContextReplenishment_runQueue_current_eq
+        st1 _ (determineTargetCore st tid) _ c
+      constructor
+      · rw [hRQ, hS]
+      · rw [hCur, hS]
+  · cases h
+
 /-- WS-SM SM6.E.3 (plan §3.1): donation cancellation across cores — the R5.A
 dispatcher, per-core.
 
 Dispatches on the victim's `schedContextBinding` exactly as the single-core
 `cancelDonation`: `.unbound` is a no-op, `.bound` routes to the per-core
 unbind arm (replenish-queue purge on the victim's *home* core,
-`determineTargetCore`), `.donated` routes to `cancelDonatedDonation`
-(object writes only — `returnDonatedSchedContext` is core-independent).
+`determineTargetCore`), `.donated` routes to the per-core donated arm
+`cancelDonatedDonationOnCore` (the R5.A return **plus** the replenishment
+migration to the original owner's home core — see §2b).
 
 Returns the post-state paired with the `Except` outcome; on an error the
 **pre-state** is returned so a `withLockSet` bracket still releases cleanly
@@ -322,7 +499,7 @@ def cancelDonationOnCore (tid : SeLe4n.ThreadId) (tcb : TCB)
       | .ok st' => (st', .ok ())
       | .error e => (st, .error e)
   | .donated _ _ =>
-      match cancelDonatedDonation st tid tcb with
+      match cancelDonatedDonationOnCore st tid tcb with
       | .ok st' => (st', .ok ())
       | .error e => (st, .error e)
 
@@ -391,6 +568,62 @@ theorem cancelIpcBlockingOnCore_ready_eq_descheduleThread
     rw [hReady]
   unfold cancelIpcBlockingOnCore descheduleThread
   rw [hId]
+
+/-- WS-SM SM6.E (resolution frame): the teardown never moves the victim's
+home core — `cancelIpcBlocking` preserves TCB-kind and `cpuAffinity` at
+every key (`cancelIpcBlocking_tcb_lookup`) and never materialises a TCB at
+an unresolved key (`cancelIpcBlocking_getTcb?_none`), so
+`determineTargetCore` reads the same affinity before and after. -/
+theorem cancelIpcBlocking_determineTargetCore_eq
+    (st : SystemState) (victim : SeLe4n.ThreadId) (tcb : TCB)
+    (hInv : st.objects.invExt) :
+    determineTargetCore (cancelIpcBlocking st victim tcb) victim
+      = determineTargetCore st victim := by
+  cases hT : st.getTcb? victim with
+  | none =>
+    have hPost := cancelIpcBlocking_getTcb?_none st victim tcb hInv hT
+    simp only [determineTargetCore, hPost, hT]
+  | some t0 =>
+    obtain ⟨t', hL', hAff'⟩ := cancelIpcBlocking_tcb_lookup st victim tcb
+      victim.toObjId t0 hInv
+      ((SystemState.getTcb?_eq_some_iff st victim t0).mp hT)
+    have hPost : (cancelIpcBlocking st victim tcb).getTcb? victim = some t' :=
+      (SystemState.getTcb?_eq_some_iff _ victim t').mpr hL'
+    simp only [determineTargetCore, hPost, hT, hAff']
+
+/-- WS-SM SM6.E (resolution frame): the teardown preserves the victim's
+`getTcb?`-resolution status — a resolvable victim stays resolvable (the
+IPC-field rewrites keep the TCB kind) and an unresolvable one stays
+unresolvable. -/
+theorem cancelIpcBlocking_getTcb?_isSome_eq
+    (st : SystemState) (victim : SeLe4n.ThreadId) (tcb : TCB)
+    (hInv : st.objects.invExt) :
+    ((cancelIpcBlocking st victim tcb).getTcb? victim).isSome
+      = (st.getTcb? victim).isSome := by
+  cases hT : st.getTcb? victim with
+  | none => rw [cancelIpcBlocking_getTcb?_none st victim tcb hInv hT]
+  | some t0 =>
+    obtain ⟨t', hL', _⟩ := cancelIpcBlocking_tcb_lookup st victim tcb
+      victim.toObjId t0 hInv
+      ((SystemState.getTcb?_eq_some_iff st victim t0).mp hT)
+    rw [(SystemState.getTcb?_eq_some_iff _ victim t').mpr hL']
+    rfl
+
+/-- WS-SM SM6.E (closed form): the pre-resolved cross-core cancellation
+composite **is** `descheduleThread ∘ cancelIpcBlocking`, conditioned only on
+the standing Robin-Hood store invariant — the two resolution-coincidence
+hypotheses of `cancelIpcBlockingOnCore_eq_descheduleThread` are discharged
+unconditionally by the teardown's TCB lookup frames
+(`cancelIpcBlocking_tcb_lookup` / `cancelIpcBlocking_getTcb?_none`,
+`Lifecycle.Invariant.SuspendPreservation`). -/
+theorem cancelIpcBlockingOnCore_eq_descheduleThread_closed
+    (victim : SeLe4n.ThreadId) (tcb : TCB) (executingCore : CoreId)
+    (st : SystemState) (hInv : st.objects.invExt) :
+    cancelIpcBlockingOnCore victim tcb executingCore st
+      = descheduleThread (cancelIpcBlocking st victim tcb) victim executingCore :=
+  cancelIpcBlockingOnCore_eq_descheduleThread victim tcb executingCore st
+    (cancelIpcBlocking_determineTargetCore_eq st victim tcb hInv)
+    (cancelIpcBlocking_getTcb?_isSome_eq st victim tcb hInv)
 
 -- ============================================================================
 -- §4  SGI emission of the cross-core cancellation composite
@@ -652,36 +885,11 @@ theorem lockSet_cancelDonationOnCore_correct (st : SystemState)
 -- §7  Write coverage — every cancellation write is under a declared write lock
 -- ============================================================================
 
-/-- A **write**-mode pair survives any `insertOrMerge`: the merge branch maps
-`(l', .write)` to `(l', .write.lub m) = (l', .write)` when the keys coincide
-(write is the `AccessMode.lub` top) and leaves it untouched otherwise; the
-prepend branch keeps it in the tail.  The mode-aware strengthening of
-`mem_insertOrMerge_of_mem_of_ne` — no key-distinctness side-condition. -/
-theorem mem_insertOrMerge_write_of_mem_write (S : LockSet) (l : LockId)
-    (m : AccessMode) (l' : LockId)
-    (hMem : (l', AccessMode.write) ∈ S.pairs) :
-    (l', AccessMode.write) ∈ (S.insertOrMerge l m).pairs := by
-  unfold LockSet.insertOrMerge
-  split
-  · -- Merge branch: the map fixes write-mode pairs.
-    apply List.mem_map.mpr
-    refine ⟨(l', AccessMode.write), hMem, ?_⟩
-    by_cases hEq : l' = l
-    · subst hEq
-      simp [AccessMode.lub_write_left]
-    · simp [hEq]
-  · -- Prepend branch.
-    exact List.mem_cons_of_mem _ hMem
-
-/-- Write-mode membership survives an optional extension (`none` is identity,
-`some` is an `insertOrMerge`). -/
-theorem mem_write_lockSetExtendOpt (S : LockSet)
-    (opt : Option (LockId × AccessMode)) (l' : LockId)
-    (hMem : (l', AccessMode.write) ∈ S.pairs) :
-    (l', AccessMode.write) ∈ (lockSetExtendOpt S opt).pairs := by
-  cases opt with
-  | none => exact hMem
-  | some p => exact mem_insertOrMerge_write_of_mem_write S p.fst p.snd l' hMem
+-- The mode-aware membership helpers `mem_insertOrMerge_write_of_mem_write`
+-- (`Concurrency/Locks/LockSet.lean`, next to `mem_insertOrMerge_of_mem_of_ne`)
+-- and `mem_write_lockSetExtendOpt` (`Concurrency/Locks/LockSetTransitions.lean`,
+-- next to `lockSetExtendOpt`) live with the generic `LockSet` algebra they
+-- belong to; the coverage families below consume them.
 
 /-- WS-SM SM6.E.1 (coverage): the **victim TCB write lock** — under which the
 cancellation clears the victim's IPC fields — is a declared member of the
@@ -1028,10 +1236,113 @@ theorem cancelDonationOnCore_preserves_objects_invExt
           exact cancelBoundDonationOnCore_preserves_objects_invExt _ _ _ _ _ hInv hE
       | error e => exact hInv
   | donated scId owner =>
-      cases hE : cancelDonatedDonation st tid tcb with
+      cases hE : cancelDonatedDonationOnCore st tid tcb with
       | ok st' =>
-          exact cancelDonatedDonation_preserves_objects_invExt _ _ _ _ hInv hE
+          exact cancelDonatedDonationOnCore_preserves_objects_invExt _ _ _ _ hInv hE
       | error e => exact hInv
+
+/-- WS-SM SM6.E: the cross-core deschedule preserves `ipcInvariant` — it
+never touches the object store. -/
+theorem descheduleThread_preserves_ipcInvariant
+    (st : SystemState) (tid : SeLe4n.ThreadId) (executingCore : CoreId)
+    (hIpc : ipcInvariant st) :
+    ipcInvariant (descheduleThread st tid executingCore).1 :=
+  ipcInvariant_of_objects_eq (descheduleThread_objects_eq st tid executingCore) hIpc
+
+/-- WS-SM SM6.E: the cross-core cancellation preserves `ipcInvariant` — the
+object-level effect is exactly the single-core teardown's
+(`cancelIpcBlocking_preserves_ipcInvariant`), including the notification
+sweep's state-correcting waiter filter; the deschedule never touches
+`objects`. -/
+theorem cancelIpcBlockingOnCore_preserves_ipcInvariant
+    (victim : SeLe4n.ThreadId) (tcb : TCB) (executingCore : CoreId)
+    (st : SystemState) (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
+    ipcInvariant (cancelIpcBlockingOnCore victim tcb executingCore st).1 :=
+  ipcInvariant_of_objects_eq
+    (cancelIpcBlockingOnCore_objects_eq victim tcb executingCore st)
+    (cancelIpcBlocking_preserves_ipcInvariant st victim tcb hInv hIpc)
+
+/-- WS-SM SM6.E.3: `cancelBoundDonationOnCore` preserves `ipcInvariant` — the
+per-core replenish-queue purge does not touch `objects`; the object writes
+are the SchedContext deactivation and TCB unbind inserts, both
+non-notification. -/
+theorem cancelBoundDonationOnCore_preserves_ipcInvariant
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (rqCore : CoreId)
+    (hInv : st.objects.invExt) (hIpc : ipcInvariant st)
+    (h : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') :
+    ipcInvariant st' := by
+  cases hB : tcb.schedContextBinding with
+  | bound scId =>
+    simp only [cancelBoundDonationOnCore, hB] at h
+    injection h with h
+    subst h
+    cases st.getSchedContext? scId with
+    | none =>
+      split
+      · intro oid ntfn hL
+        exact hIpc oid ntfn (notification_lookup_of_insert_no_notification
+          _ tid.toObjId _ hInv (fun _ hEq => KernelObject.noConfusion hEq) oid ntfn hL)
+      · exact ipcInvariant_of_objects_eq rfl hIpc
+    | some sc =>
+      have hInv1 : (st.objects.insert scId.toObjId
+          (.schedContext { sc with boundThread := none, isActive := false })).invExt :=
+        RobinHood.RHTable.insert_preserves_invExt _ _ _ hInv
+      split
+      · intro oid ntfn hL
+        have hL1 := notification_lookup_of_insert_no_notification
+          _ tid.toObjId _ hInv1 (fun _ hEq => KernelObject.noConfusion hEq) oid ntfn hL
+        exact hIpc oid ntfn (notification_lookup_of_insert_no_notification
+          _ scId.toObjId _ hInv (fun _ hEq => KernelObject.noConfusion hEq) oid ntfn hL1)
+      · intro oid ntfn hL
+        exact hIpc oid ntfn (notification_lookup_of_insert_no_notification
+          _ scId.toObjId _ hInv (fun _ hEq => KernelObject.noConfusion hEq) oid ntfn hL)
+  | unbound =>
+    simp only [cancelBoundDonationOnCore, hB] at h
+    cases h
+  | donated _ _ =>
+    simp only [cancelBoundDonationOnCore, hB] at h
+    cases h
+
+/-- WS-SM SM6.E.3: the per-core donated arm preserves `ipcInvariant` — the
+return writes SchedContext/TCB objects only and the replenishment migration
+never touches `objects`. -/
+theorem cancelDonatedDonationOnCore_preserves_ipcInvariant
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hInv : st.objects.invExt) (hIpc : ipcInvariant st)
+    (h : cancelDonatedDonationOnCore st tid tcb = .ok st') :
+    ipcInvariant st' := by
+  unfold cancelDonatedDonationOnCore at h
+  split at h
+  · split at h
+    · cases h
+    · injection h with h
+      subst h
+      exact ipcInvariant_of_objects_eq
+        (migrateSchedContextReplenishment_objects_eq _ _ _ _)
+        (cleanupDonatedSchedContext_preserves_ipcInvariant _ _ _ hInv hIpc
+          (by assumption))
+  · cases h
+
+/-- WS-SM SM6.E.3: the per-core donation-cancellation dispatcher preserves
+`ipcInvariant` on every arm and every outcome (the error paths return the
+pre-state). -/
+theorem cancelDonationOnCore_preserves_ipcInvariant
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (st : SystemState)
+    (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
+    ipcInvariant (cancelDonationOnCore tid tcb st).1 := by
+  unfold cancelDonationOnCore
+  cases hB : tcb.schedContextBinding with
+  | unbound => exact hIpc
+  | bound scId =>
+      cases hE : cancelBoundDonationOnCore st tid tcb (determineTargetCore st tid) with
+      | ok st' =>
+          exact cancelBoundDonationOnCore_preserves_ipcInvariant _ _ _ _ _ hInv hIpc hE
+      | error e => exact hIpc
+  | donated scId owner =>
+      cases hE : cancelDonatedDonationOnCore st tid tcb with
+      | ok st' =>
+          exact cancelDonatedDonationOnCore_preserves_ipcInvariant _ _ _ _ hInv hIpc hE
+      | error e => exact hIpc
 
 /-- WS-SM SM6.E.3: `cancelDonatedDonation` preserves the **full** scheduler
 (the donated-arm return is object writes only) — the ∀-core strengthening of
@@ -1113,10 +1424,9 @@ theorem cancelDonationOnCore_runQueue_current_eq
       | ok st' => exact cancelBoundDonationOnCore_runQueue_current_eq st st' tid tcb _ c hE
       | error e => exact ⟨rfl, rfl⟩
   | donated scId owner =>
-      cases hE : cancelDonatedDonation st tid tcb with
+      cases hE : cancelDonatedDonationOnCore st tid tcb with
       | ok st' =>
-          have hS := cancelDonatedDonation_scheduler_eq st st' tid tcb hE
-          exact ⟨congrArg (·.runQueueOnCore c) hS, congrArg (·.currentOnCore c) hS⟩
+          exact cancelDonatedDonationOnCore_runQueue_current_eq st st' tid tcb c hE
       | error e => exact ⟨rfl, rfl⟩
 
 -- ============================================================================
@@ -1187,5 +1497,826 @@ theorem cancellation_cross_core_correct
           cancelIpcBlocking_scheduler_eq]
   · -- (4) object-level fidelity
     exact cancelIpcBlockingOnCore_objects_eq victim tcb executingCore st
+
+-- ============================================================================
+-- §12  SM6.E — Scheduler-domain (`SchedLockId`) lock footprints
+-- ============================================================================
+-- The SM3.B object-domain `LockSet` footprints (§5) cover the cancellation's
+-- kernel-object writes; the scheduler-slot writes — the home core's run-queue
+-- and current slots (the deschedule) and the replenish-queue slots (the
+-- donation purge / migration) — live in the SM5 `SchedLockId` domain
+-- (`object < runQueue < replenishQueue`, plan §4.4).  These are the
+-- cancellation counterparts of SM5.C's `wakeThreadLockSet` and SM5.D's
+-- `timerTickOnCoreLockSet`: declarative footprints with the standard
+-- length / write-only / membership / Nodup / ascending-order lemma family,
+-- consumed by the future `SchedLockId`-level `withLockSet` bracket (the
+-- tracked SM5.I closure target).  Per the SM5.B convention, a core's
+-- `runQueue ⟨c⟩` lock guards **all** of core `c`'s scheduler slots (run
+-- queue *and* current slot — cf. `switchToThreadOnCoreLockSet`, which writes
+-- the current slot under the same two-lock footprint).
+
+/-- WS-SM SM6.E: the scheduler-domain footprint of `descheduleThread` — the
+object-store table **write** lock (the `getTcb?` ghost-guard resolution and
+`determineTargetCore` read ride the same table discipline as the wake's) and
+the home core's run-queue **write** lock (the dequeue + current-slot clear).
+Definitionally the `wakeThreadLockSet` — the deschedule is the wake's dual
+and touches exactly the dual slots
+(`descheduleThreadLockSet_eq_wakeThreadLockSet`). -/
+def descheduleThreadLockSet (target : CoreId) :
+    List (SchedLockId × Concurrency.AccessMode) :=
+  [ (SchedLockId.object schedObjStoreLockId, .write)
+  , (SchedLockId.runQueue ⟨target⟩, .write) ]
+
+/-- WS-SM SM6.E: the deschedule footprint **is** the wake footprint — the
+dual operations serialise against each other on exactly the same two locks,
+which is what makes a concurrent wake/cancel race on the same victim
+impossible under the `SchedLockId` bracket (the plan §7 "cancellation
+interleaves with wake" risk row, scheduler-domain half). -/
+theorem descheduleThreadLockSet_eq_wakeThreadLockSet (target : CoreId) :
+    descheduleThreadLockSet target = wakeThreadLockSet target := rfl
+
+/-- SM6.E: the deschedule footprint is the two-lock set. -/
+@[simp] theorem descheduleThreadLockSet_length (target : CoreId) :
+    (descheduleThreadLockSet target).length = 2 := rfl
+
+/-- SM6.E: every lock in the deschedule footprint is acquired in **write**
+mode. -/
+theorem descheduleThreadLockSet_write_only (target : CoreId) :
+    ∀ p ∈ descheduleThreadLockSet target, p.2 = Concurrency.AccessMode.write :=
+  wakeThreadLockSet_write_only target
+
+/-- SM6.E: the object-store write lock is in the deschedule footprint. -/
+theorem descheduleThreadLockSet_contains_objStore_write (target : CoreId) :
+    (SchedLockId.object schedObjStoreLockId, Concurrency.AccessMode.write)
+      ∈ descheduleThreadLockSet target :=
+  wakeThreadLockSet_contains_objStore_write target
+
+/-- SM6.E: the home core's run-queue write lock is in the deschedule
+footprint — it guards the dequeue and the current-slot clear. -/
+theorem descheduleThreadLockSet_contains_runQueue_write (target : CoreId) :
+    (SchedLockId.runQueue ⟨target⟩, Concurrency.AccessMode.write)
+      ∈ descheduleThreadLockSet target :=
+  wakeThreadLockSet_contains_runQueue_write target
+
+/-- SM6.E: the deschedule footprint's projected keys are duplicate-free. -/
+theorem descheduleThreadLockSet_keys_nodup (target : CoreId) :
+    ((descheduleThreadLockSet target).map (·.1)).Nodup :=
+  wakeThreadLockSet_keys_nodup target
+
+/-- SM6.E: the deschedule footprint's keys form a `SchedLockId`-ascending
+acquisition sequence. -/
+theorem descheduleThreadLockSet_pairwise_le (target : CoreId) :
+    ((descheduleThreadLockSet target).map (·.1)).Pairwise (· ≤ ·) :=
+  wakeThreadLockSet_pairwise_le target
+
+/-- WS-SM SM6.E: the scheduler-domain footprint of `cancelIpcBlockingOnCore`
+— exactly the deschedule footprint at the victim's home core (the object
+teardown's kernel-object writes are the §5 object-domain `LockSet`'s
+concern; the composite's only scheduler-slot writes are the home-core
+deschedule). -/
+def cancelIpcBlockingOnCoreSchedLockSet (home : CoreId) :
+    List (SchedLockId × Concurrency.AccessMode) :=
+  descheduleThreadLockSet home
+
+/-- WS-SM SM6.E: the scheduler-domain footprint of `cancelBoundDonationOnCore`
+— the object-store table write lock (the SC + TCB rebinding rides the table
+discipline) and the purge core's replenish-queue **write** lock. -/
+def cancelBoundDonationOnCoreSchedLockSet (rqCore : CoreId) :
+    List (SchedLockId × Concurrency.AccessMode) :=
+  [ (SchedLockId.object schedObjStoreLockId, .write)
+  , (SchedLockId.replenishQueue ⟨rqCore⟩, .write) ]
+
+/-- SM6.E: the bound-arm footprint is the two-lock set. -/
+@[simp] theorem cancelBoundDonationOnCoreSchedLockSet_length (rqCore : CoreId) :
+    (cancelBoundDonationOnCoreSchedLockSet rqCore).length = 2 := rfl
+
+/-- SM6.E: every lock in the bound-arm footprint is acquired in **write**
+mode. -/
+theorem cancelBoundDonationOnCoreSchedLockSet_write_only (rqCore : CoreId) :
+    ∀ p ∈ cancelBoundDonationOnCoreSchedLockSet rqCore,
+      p.2 = Concurrency.AccessMode.write := by
+  intro p hp
+  simp only [cancelBoundDonationOnCoreSchedLockSet, List.mem_cons,
+    List.not_mem_nil, or_false] at hp
+  rcases hp with h | h <;> subst h <;> rfl
+
+/-- SM6.E: the object-store write lock is in the bound-arm footprint. -/
+theorem cancelBoundDonationOnCoreSchedLockSet_contains_objStore_write
+    (rqCore : CoreId) :
+    (SchedLockId.object schedObjStoreLockId, Concurrency.AccessMode.write)
+      ∈ cancelBoundDonationOnCoreSchedLockSet rqCore := by
+  simp [cancelBoundDonationOnCoreSchedLockSet]
+
+/-- SM6.E: the purge core's replenish-queue write lock is in the bound-arm
+footprint — it guards the SC-entry removal. -/
+theorem cancelBoundDonationOnCoreSchedLockSet_contains_replenishQueue_write
+    (rqCore : CoreId) :
+    (SchedLockId.replenishQueue ⟨rqCore⟩, Concurrency.AccessMode.write)
+      ∈ cancelBoundDonationOnCoreSchedLockSet rqCore := by
+  simp [cancelBoundDonationOnCoreSchedLockSet]
+
+/-- SM6.E: the bound-arm footprint's projected keys are duplicate-free. -/
+theorem cancelBoundDonationOnCoreSchedLockSet_keys_nodup (rqCore : CoreId) :
+    ((cancelBoundDonationOnCoreSchedLockSet rqCore).map (·.1)).Nodup := by
+  simp [cancelBoundDonationOnCoreSchedLockSet]
+
+/-- SM6.E: the bound-arm footprint's keys form a `SchedLockId`-ascending
+acquisition sequence (object < replenishQueue, plan §4.4). -/
+theorem cancelBoundDonationOnCoreSchedLockSet_pairwise_le (rqCore : CoreId) :
+    ((cancelBoundDonationOnCoreSchedLockSet rqCore).map (·.1)).Pairwise (· ≤ ·) := by
+  have hle : SchedLockId.object schedObjStoreLockId
+      ≤ SchedLockId.replenishQueue (⟨rqCore⟩ : ReplenishQueueLockId) :=
+    (SchedLockId.object_lt_replenishQueue _ _).1
+  simp only [cancelBoundDonationOnCoreSchedLockSet, List.map_cons, List.map_nil]
+  exact List.Pairwise.cons
+    (fun a ha => by rcases List.mem_singleton.mp ha with rfl; exact hle)
+    (List.Pairwise.cons (fun a ha => by simp at ha) List.Pairwise.nil)
+
+/-- WS-SM SM6.E: the scheduler-domain footprint of the per-core **donated**
+arm `cancelDonatedDonationOnCore` — the object-store table write lock plus
+the replenish-queue write locks of **both** migration endpoints (the
+victim's home core, purged, and the original owner's home core, receiving),
+emitted in `CoreId`-ascending order so the list is itself the canonical
+acquisition sequence.  On a shared home core the two endpoints coincide and
+the footprint collapses to the bound-arm shape. -/
+def cancelDonatedDonationOnCoreSchedLockSet (victimHome ownerHome : CoreId) :
+    List (SchedLockId × Concurrency.AccessMode) :=
+  (SchedLockId.object schedObjStoreLockId, .write) ::
+    (if victimHome = ownerHome then
+      [ (SchedLockId.replenishQueue ⟨victimHome⟩, .write) ]
+    else if victimHome ≤ ownerHome then
+      [ (SchedLockId.replenishQueue ⟨victimHome⟩, .write)
+      , (SchedLockId.replenishQueue ⟨ownerHome⟩, .write) ]
+    else
+      [ (SchedLockId.replenishQueue ⟨ownerHome⟩, .write)
+      , (SchedLockId.replenishQueue ⟨victimHome⟩, .write) ])
+
+/-- SM6.E: every lock in the donated-arm footprint is acquired in **write**
+mode. -/
+theorem cancelDonatedDonationOnCoreSchedLockSet_write_only
+    (victimHome ownerHome : CoreId) :
+    ∀ p ∈ cancelDonatedDonationOnCoreSchedLockSet victimHome ownerHome,
+      p.2 = Concurrency.AccessMode.write := by
+  intro p hp
+  simp only [cancelDonatedDonationOnCoreSchedLockSet, List.mem_cons] at hp
+  rcases hp with h | hp
+  · subst h; rfl
+  · split at hp
+    · simp only [List.mem_cons, List.not_mem_nil, or_false] at hp
+      subst hp; rfl
+    · split at hp <;>
+        (simp only [List.mem_cons, List.not_mem_nil, or_false] at hp
+         rcases hp with h | h <;> subst h <;> rfl)
+
+/-- SM6.E: the victim's home-core replenish-queue write lock is in the
+donated-arm footprint (the migration source / purge slot). -/
+theorem cancelDonatedDonationOnCoreSchedLockSet_contains_victimHome_write
+    (victimHome ownerHome : CoreId) :
+    (SchedLockId.replenishQueue ⟨victimHome⟩, Concurrency.AccessMode.write)
+      ∈ cancelDonatedDonationOnCoreSchedLockSet victimHome ownerHome := by
+  unfold cancelDonatedDonationOnCoreSchedLockSet
+  by_cases hEq : victimHome = ownerHome
+  · simp [hEq]
+  · by_cases hLe : victimHome ≤ ownerHome <;> simp [hEq, hLe]
+
+/-- SM6.E: the owner's home-core replenish-queue write lock is in the
+donated-arm footprint (the migration destination). -/
+theorem cancelDonatedDonationOnCoreSchedLockSet_contains_ownerHome_write
+    (victimHome ownerHome : CoreId) :
+    (SchedLockId.replenishQueue ⟨ownerHome⟩, Concurrency.AccessMode.write)
+      ∈ cancelDonatedDonationOnCoreSchedLockSet victimHome ownerHome := by
+  unfold cancelDonatedDonationOnCoreSchedLockSet
+  by_cases hEq : victimHome = ownerHome
+  · simp [hEq]
+  · by_cases hLe : victimHome ≤ ownerHome <;> simp [hEq, hLe]
+
+/-- SM6.E: the donated-arm footprint's projected keys are duplicate-free —
+the two replenish endpoints are distinct locks exactly when the homes
+differ, and the shared-home branch carries the slot once. -/
+theorem cancelDonatedDonationOnCoreSchedLockSet_keys_nodup
+    (victimHome ownerHome : CoreId) :
+    ((cancelDonatedDonationOnCoreSchedLockSet victimHome ownerHome).map (·.1)).Nodup := by
+  unfold cancelDonatedDonationOnCoreSchedLockSet
+  by_cases hEq : victimHome = ownerHome
+  · subst hEq
+    simp
+  · by_cases hLe : victimHome ≤ ownerHome
+    · simp only [hEq, hLe, if_true, if_false, List.map_cons, List.map_nil]
+      refine List.nodup_cons.mpr ⟨?_, List.nodup_cons.mpr ⟨?_, List.nodup_cons.mpr ⟨List.not_mem_nil, List.nodup_nil⟩⟩⟩
+      · intro h
+        rcases List.mem_cons.mp h with h | h
+        · cases h
+        · rcases List.mem_singleton.mp h with h; cases h
+      · intro h
+        have h' := List.mem_singleton.mp h
+        injection h' with h''
+        exact hEq (congrArg ReplenishQueueLockId.core h'')
+    · simp only [hEq, hLe, if_false, List.map_cons, List.map_nil]
+      refine List.nodup_cons.mpr ⟨?_, List.nodup_cons.mpr ⟨?_, List.nodup_cons.mpr ⟨List.not_mem_nil, List.nodup_nil⟩⟩⟩
+      · intro h
+        rcases List.mem_cons.mp h with h | h
+        · cases h
+        · rcases List.mem_singleton.mp h with h; cases h
+      · intro h
+        have h' := List.mem_singleton.mp h
+        injection h' with h''
+        exact hEq (congrArg ReplenishQueueLockId.core h'').symm
+
+/-- SM6.E: the donated-arm footprint's keys form a `SchedLockId`-ascending
+acquisition sequence — object < replenishQueue cross-domain, and the two
+replenish endpoints are emitted in `CoreId`-ascending order. -/
+theorem cancelDonatedDonationOnCoreSchedLockSet_pairwise_le
+    (victimHome ownerHome : CoreId) :
+    ((cancelDonatedDonationOnCoreSchedLockSet victimHome ownerHome).map (·.1)).Pairwise (· ≤ ·) := by
+  have hObjLe : ∀ (c : CoreId), SchedLockId.object schedObjStoreLockId
+      ≤ SchedLockId.replenishQueue (⟨c⟩ : ReplenishQueueLockId) :=
+    fun c => (SchedLockId.object_lt_replenishQueue _ _).1
+  unfold cancelDonatedDonationOnCoreSchedLockSet
+  by_cases hEq : victimHome = ownerHome
+  · subst hEq
+    simp only [List.map_cons]
+    exact List.Pairwise.cons
+      (fun a ha => by rcases List.mem_singleton.mp ha with rfl; exact hObjLe _)
+      (List.Pairwise.cons (fun a ha => by simp at ha) List.Pairwise.nil)
+  · by_cases hLe : victimHome ≤ ownerHome
+    · simp only [hEq, hLe, if_true, if_false, List.map_cons, List.map_nil]
+      refine List.Pairwise.cons ?_ (List.Pairwise.cons ?_
+        (List.Pairwise.cons (fun a ha => by simp at ha) List.Pairwise.nil))
+      · intro a ha
+        rcases List.mem_cons.mp ha with rfl | ha
+        · exact hObjLe _
+        · rcases List.mem_singleton.mp ha with rfl; exact hObjLe _
+      · intro a ha
+        rcases List.mem_singleton.mp ha with rfl
+        exact hLe
+    · simp only [hEq, hLe, if_false, List.map_cons, List.map_nil]
+      have hGe : ownerHome ≤ victimHome :=
+        (Nat.le_total victimHome.val ownerHome.val).resolve_left hLe
+      refine List.Pairwise.cons ?_ (List.Pairwise.cons ?_
+        (List.Pairwise.cons (fun a ha => by simp at ha) List.Pairwise.nil))
+      · intro a ha
+        rcases List.mem_cons.mp ha with rfl | ha
+        · exact hObjLe _
+        · rcases List.mem_singleton.mp ha with rfl; exact hObjLe _
+      · intro a ha
+        rcases List.mem_singleton.mp ha with rfl
+        exact hGe
+
+/-- WS-SM SM6.E: the scheduler-domain footprint of the donation-cancellation
+**dispatcher** `cancelDonationOnCore` — the union over its arms: the
+`.unbound` arm touches no scheduler slot, the `.bound` arm purges the
+victim's home-core replenish queue (the `victimHome` member), and the
+`.donated` arm additionally writes the owner's home-core queue (the
+migration destination).  The donated-arm footprint is exactly that union. -/
+def cancelDonationOnCoreSchedLockSet (victimHome ownerHome : CoreId) :
+    List (SchedLockId × Concurrency.AccessMode) :=
+  cancelDonatedDonationOnCoreSchedLockSet victimHome ownerHome
+
+/-- WS-SM SM6.E: the scheduler-domain footprint of the cross-core suspend
+pipeline (`suspendThreadOnCore`, the G2..G7 composite): the object-store
+table write lock, the victim's home-core **run-queue** write lock (the G4
+deschedule + G7 current handling), and the replenish-queue write locks of
+the donation arms (victim home = purge/migration source, owner home = the
+migration destination), in the plan §4.4 cross-domain ascending order
+`object < runQueue < replenishQueue`. -/
+def suspendThreadOnCoreSchedLockSet (home ownerHome : CoreId) :
+    List (SchedLockId × Concurrency.AccessMode) :=
+  (SchedLockId.object schedObjStoreLockId, .write) ::
+  (SchedLockId.runQueue ⟨home⟩, .write) ::
+    (if home = ownerHome then
+      [ (SchedLockId.replenishQueue ⟨home⟩, .write) ]
+    else if home ≤ ownerHome then
+      [ (SchedLockId.replenishQueue ⟨home⟩, .write)
+      , (SchedLockId.replenishQueue ⟨ownerHome⟩, .write) ]
+    else
+      [ (SchedLockId.replenishQueue ⟨ownerHome⟩, .write)
+      , (SchedLockId.replenishQueue ⟨home⟩, .write) ])
+
+/-- SM6.E: the suspend footprint's keys form a `SchedLockId`-ascending
+acquisition sequence — the full three-domain ladder
+`object < runQueue < replenishQueue` with the replenish endpoints in
+`CoreId`-ascending order. -/
+theorem suspendThreadOnCoreSchedLockSet_pairwise_le (home ownerHome : CoreId) :
+    ((suspendThreadOnCoreSchedLockSet home ownerHome).map (·.1)).Pairwise (· ≤ ·) := by
+  have hObjRQ : SchedLockId.object schedObjStoreLockId
+      ≤ SchedLockId.runQueue (⟨home⟩ : RunQueueLockId) :=
+    (SchedLockId.object_lt_runQueue _ _).1
+  have hObjRep : ∀ (c : CoreId), SchedLockId.object schedObjStoreLockId
+      ≤ SchedLockId.replenishQueue (⟨c⟩ : ReplenishQueueLockId) :=
+    fun c => (SchedLockId.object_lt_replenishQueue _ _).1
+  have hRQRep : ∀ (c : CoreId), SchedLockId.runQueue (⟨home⟩ : RunQueueLockId)
+      ≤ SchedLockId.replenishQueue (⟨c⟩ : ReplenishQueueLockId) :=
+    fun c => (SchedLockId.runQueue_lt_replenishQueue _ _).1
+  unfold suspendThreadOnCoreSchedLockSet
+  by_cases hEq : home = ownerHome
+  · subst hEq
+    simp only [List.map_cons]
+    refine List.Pairwise.cons ?_ (List.Pairwise.cons ?_
+      (List.Pairwise.cons (fun a ha => by simp at ha) List.Pairwise.nil))
+    · intro a ha
+      rcases List.mem_cons.mp ha with rfl | ha
+      · exact hObjRQ
+      · rcases List.mem_singleton.mp ha with rfl; exact hObjRep _
+    · intro a ha
+      rcases List.mem_singleton.mp ha with rfl; exact hRQRep _
+  · by_cases hLe : home ≤ ownerHome
+    · simp only [hEq, hLe, if_true, if_false, List.map_cons, List.map_nil]
+      refine List.Pairwise.cons ?_ (List.Pairwise.cons ?_
+        (List.Pairwise.cons ?_
+          (List.Pairwise.cons (fun a ha => by simp at ha) List.Pairwise.nil)))
+      · intro a ha
+        rcases List.mem_cons.mp ha with rfl | ha
+        · exact hObjRQ
+        rcases List.mem_cons.mp ha with rfl | ha
+        · exact hObjRep _
+        · rcases List.mem_singleton.mp ha with rfl; exact hObjRep _
+      · intro a ha
+        rcases List.mem_cons.mp ha with rfl | ha
+        · exact hRQRep _
+        · rcases List.mem_singleton.mp ha with rfl; exact hRQRep _
+      · intro a ha
+        rcases List.mem_singleton.mp ha with rfl
+        exact hLe
+    · simp only [hEq, hLe, if_false, List.map_cons, List.map_nil]
+      have hGe : ownerHome ≤ home :=
+        (Nat.le_total home.val ownerHome.val).resolve_left hLe
+      refine List.Pairwise.cons ?_ (List.Pairwise.cons ?_
+        (List.Pairwise.cons ?_
+          (List.Pairwise.cons (fun a ha => by simp at ha) List.Pairwise.nil)))
+      · intro a ha
+        rcases List.mem_cons.mp ha with rfl | ha
+        · exact hObjRQ
+        rcases List.mem_cons.mp ha with rfl | ha
+        · exact hObjRep _
+        · rcases List.mem_singleton.mp ha with rfl; exact hObjRep _
+      · intro a ha
+        rcases List.mem_cons.mp ha with rfl | ha
+        · exact hRQRep _
+        · rcases List.mem_singleton.mp ha with rfl; exact hRQRep _
+      · intro a ha
+        rcases List.mem_singleton.mp ha with rfl
+        exact hGe
+
+-- ============================================================================
+-- §13  SM6.E — the live per-core suspend (the `.tcbSuspend` dispatch target)
+-- ============================================================================
+
+namespace Lifecycle.Suspend
+
+/-- WS-SM SM6.E (live wiring): the **complete** per-core suspend — the
+cross-core analogue of `suspendThread`, exactly as `resumeThreadOnCore`
+(SM5.F.6) is the cross-core analogue of `resumeThread`.
+
+The single-core G1–G7 pipeline generalised across cores:
+
+* **G1** — TCB lookup + `.Inactive` rejection (unchanged).
+* **G7-precapture** — whether the victim is actively current is read on its
+  **home** core (`determineTargetCore`, pre-state resolution per the SM3.B
+  discipline) instead of the boot core.
+* **G2 (PIP revert + IPC teardown)** — the unchanged object-level steps
+  (`revertPriorityInheritance`, `cancelIpcBlocking`): both write only
+  objects, so they are core-independent (a remote chain member's run-queue
+  re-bucketing is poked by the diff seam's re-bucketing rule, exactly as on
+  the single-core revert path).
+* **G3 (donation)** — dispatches to the **per-core** arms:
+  `cancelBoundDonationOnCore` purges the replenish queue of the victim's
+  *home* core (the SM5.H affinity discipline) and
+  `cancelDonatedDonationOnCore` migrates the returned SchedContext's
+  replenishments to the original owner's home core (§2b).
+* **G4** — `removeRunnableOnCore` on the victim's **home** core.  The
+  single-core form's bootCore-pinned `removeRunnable` left a remote victim
+  queued/current on its home core — the multi-core correctness gap this
+  wiring closes.
+* **G5/G6** — pending-state clear + `.Inactive` write (unchanged).
+* **G7 (reschedule)** — mirrors `resumeThreadOnCore`'s H5 local/remote seam:
+  * **LOCAL** (home = `executingCore`): the executing core suspended its own
+    current thread — run the per-core reschedule handler inline
+    (`handleRescheduleSgiOnCore`; the current slot was just vacated, so the
+    preemption gate passes unconditionally and the successor is dispatched,
+    or the core stays idle when its queue is empty).
+  * **REMOTE** (home ≠ `executingCore`): return the `.reschedule` SGI the
+    home core must receive so it stops executing the suspended thread — the
+    same SGI the diff seam re-derives (`crossCoreSgiBody`'s SM6.E
+    descheduled-current rule) on the generic syscall path.
+
+Errors mirror `suspendThread`: `invalidArgument` for a non-TCB target,
+`illegalState` for an already-`.Inactive` one, and the G3 donation-arm
+errors propagate. -/
+def suspendThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThreadId)
+    (executingCore : CoreId)
+    : Except KernelError (SystemState × Option (CoreId × SgiKind)) :=
+  let tid : SeLe4n.ThreadId := vtid.val
+  -- AK7-clean: every TCB read goes through the typed `getTcb?` accessor
+  -- (unlike the single-core `suspendThread`'s raw G1/G6 lookups —
+  -- `resumeThreadOnCore`'s reader discipline, mirrored).
+  match st.getTcb? tid with
+  | some tcb =>
+    if tcb.threadState == .Inactive then .error .illegalState
+    else
+      -- home core of the victim (pre-state resolution; the teardown never
+      -- moves it — `cancelIpcBlocking_determineTargetCore_eq`)
+      let home := determineTargetCore st tid
+      let wasCurrentHome : Bool := (st.scheduler.currentOnCore home) == some tid
+      let st := PriorityInheritance.revertPriorityInheritance st tid
+      let st := cancelIpcBlockingValid st vtid tcb
+      let tcb' := (st.getTcb? tid).getD tcb
+      match (match tcb'.schedContextBinding with
+             | .unbound => (Except.ok st : Except KernelError SystemState)
+             | .bound _ => cancelBoundDonationOnCore st tid tcb' home
+             | .donated _ _ => cancelDonatedDonationOnCore st tid tcb') with
+      | .error e => .error e
+      | .ok st =>
+      let st := removeRunnableOnCore st tid home
+      let st := clearPendingStateValid st vtid
+      let st := match st.getTcb? tid with
+        | some tcb'' =>
+          { st with objects := st.objects.insert tid.toObjId (.tcb { tcb'' with
+              threadState := .Inactive }) }
+        | none => st
+      if wasCurrentHome then
+        if home == executingCore then
+          match handleRescheduleSgiOnCore st executingCore with
+          | .ok st' => .ok (st', none)
+          | .error e => .error e
+        else
+          .ok (st, some (home, SgiKind.reschedule))
+      else
+        .ok (st, none)
+  | none => .error .invalidArgument
+
+/-- WS-SM SM6.E: a target that does not resolve to a TCB is rejected with
+`invalidArgument`, exactly as `suspendThread`. -/
+theorem suspendThreadOnCore_rejects_absent (st : SystemState)
+    (vtid : SeLe4n.ValidThreadId) (ec : CoreId)
+    (hGet : st.getTcb? vtid.val = none) :
+    suspendThreadOnCore st vtid ec = .error .invalidArgument := by
+  simp only [suspendThreadOnCore, hGet]
+
+/-- WS-SM SM6.E: an already-`.Inactive` victim is rejected with
+`illegalState`, exactly as `suspendThread`. -/
+theorem suspendThreadOnCore_rejects_inactive (st : SystemState)
+    (vtid : SeLe4n.ValidThreadId) (ec : CoreId) (tcb : TCB)
+    (hGet : st.getTcb? vtid.val = some tcb)
+    (hInactive : tcb.threadState = .Inactive) :
+    suspendThreadOnCore st vtid ec = .error .illegalState := by
+  simp only [suspendThreadOnCore, hGet, hInactive, beq_self_eq_true, if_true]
+
+/-- WS-SM SM6.E (SGI discipline): every SGI the per-core suspend surfaces is
+a `.reschedule` targeting the victim's **home** core, emitted only when that
+home is **remote** (home ≠ `executingCore`) — the local case reschedules
+inline and surfaces nothing. -/
+theorem suspendThreadOnCore_sgi_remote_reschedule (st st' : SystemState)
+    (vtid : SeLe4n.ValidThreadId) (ec : CoreId) (c : CoreId) (k : SgiKind)
+    (h : suspendThreadOnCore st vtid ec = .ok (st', some (c, k))) :
+    c = determineTargetCore st vtid.val ∧ k = SgiKind.reschedule ∧ c ≠ ec := by
+  simp only [suspendThreadOnCore] at h
+  split at h
+  · split at h
+    · cases h
+    · split at h
+      · cases h
+      · split at h
+        · split at h
+          · split at h
+            · injection h with h
+              injection h with h1 h2
+              cases h2
+            · cases h
+          · rename_i hNotLocal
+            injection h with h
+            injection h with h1 h2
+            injection h2 with h2
+            injection h2 with hc hk
+            refine ⟨hc.symm, hk.symm, ?_⟩
+            subst hc
+            exact fun hEq => hNotLocal (by simp [hEq])
+        · injection h with h
+          injection h with h1 h2
+          cases h2
+  · cases h
+
+/-- WS-SM SM6.E: a victim homed on the executing core surfaces no SGI — the
+reschedule (when needed) happened inline. -/
+theorem suspendThreadOnCore_local_no_sgi (st st' : SystemState)
+    (vtid : SeLe4n.ValidThreadId) (ec : CoreId) (sgi : Option (CoreId × SgiKind))
+    (hLocal : determineTargetCore st vtid.val = ec)
+    (h : suspendThreadOnCore st vtid ec = .ok (st', sgi)) :
+    sgi = none := by
+  simp only [suspendThreadOnCore] at h
+  split at h
+  · split at h
+    · cases h
+    · split at h
+      · cases h
+      · split at h
+        · split at h
+          · split at h
+            · injection h with h
+              injection h with h1 h2
+              exact h2.symm
+            · cases h
+          · rename_i hNotLocal
+            exact absurd (by simp [hLocal]) hNotLocal
+        · injection h with h
+          injection h with h1 h2
+          exact h2.symm
+  · cases h
+
+end Lifecycle.Suspend
+
+-- ============================================================================
+-- §14  SM6.E — observational atomicity of the cancellation (SM3.C.7 guarded)
+-- ============================================================================
+-- The §8/§9 atomicity theorems record the 2PL 3-phase shape structurally;
+-- this section gives the *observational* content for the cancellation's
+-- decisive business observable: the victim's `ipcState`.  Lock acquire /
+-- release write only per-object `lock` fields (`updateObjectLockAt`), so an
+-- `ipcState` observer — guarded by the store invariant `invExt`, which the
+-- lock writes preserve — sees exactly the cancellation's own transition
+-- through the whole `withLockSet` bracket, never a lock-machinery
+-- intermediate (`lockSet_observer_atomic_on`, the SM3.C.7 guarded capstone).
+
+/-- WS-SM SM6.E: acquiring a per-object lock preserves the store invariant —
+its only store write is an `updateObjectAt` insert. -/
+theorem acquireLockOnObject_preserves_objects_invExt (s : SystemState)
+    (core : CoreId) (l : LockId) (m : Concurrency.AccessMode)
+    (h : s.objects.invExt) :
+    (acquireLockOnObject s core l m).objects.invExt := by
+  unfold acquireLockOnObject
+  split
+  all_goals first
+    | exact h
+    | (unfold updateObjectLockAt
+       split
+       · unfold updateObjectAt
+         split
+         · exact RobinHood.RHTable.insert_preserves_invExt _ _ _ h
+         · exact h
+       · exact h)
+
+/-- WS-SM SM6.E: releasing a per-object lock preserves the store invariant. -/
+theorem releaseLockOnObject_preserves_objects_invExt (s : SystemState)
+    (core : CoreId) (l : LockId) (m : Concurrency.AccessMode)
+    (h : s.objects.invExt) :
+    (releaseLockOnObject s core l m).objects.invExt := by
+  unfold releaseLockOnObject
+  split
+  all_goals first
+    | exact h
+    | (unfold updateObjectLockAt
+       split
+       · unfold updateObjectAt
+         split
+         · exact RobinHood.RHTable.insert_preserves_invExt _ _ _ h
+         · exact h
+       · exact h)
+
+/-- WS-SM SM6.E: a lock-only object write is invisible to the victim's
+`ipcState` observer — `updateObjectLockAt` rewrites only the stored object's
+`lock` field, preserving every business field and every other key. -/
+theorem updateObjectLockAt_getTcb?_ipcState (s : SystemState) (l : LockId)
+    (op : Concurrency.RwLockOp) (tid : SeLe4n.ThreadId)
+    (hExt : s.objects.invExt) :
+    ((updateObjectLockAt s l op).getTcb? tid).map TCB.ipcState
+      = (s.getTcb? tid).map TCB.ipcState := by
+  unfold updateObjectLockAt
+  split
+  · unfold updateObjectAt
+    cases hg : s.objects.get? l.objId with
+    | none => rfl
+    | some obj =>
+      simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+      by_cases hk : (l.objId == tid.toObjId) = true
+      · have hk' : l.objId = tid.toObjId := eq_of_beq hk
+        rw [← hk',
+            SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self
+              s.objects l.objId _ hExt,
+            hg]
+        cases obj <;> rfl
+      · rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne
+              s.objects l.objId tid.toObjId _ hk hExt]
+  · rfl
+
+/-- WS-SM SM6.E: the cancellation's decisive business observable — the
+victim's `ipcState` (the field the teardown transitions and the wake/suspend
+race would corrupt). -/
+def cancellationVictimIpcStateObserver (victim : SeLe4n.ThreadId) :=
+  fun s : SystemState => (s.getTcb? victim).map TCB.ipcState
+
+/-- WS-SM SM6.E: the victim-`ipcState` observer is `invExt`-guardedly
+acquire-insensitive — every lock acquire is a lock-field-only write. -/
+theorem cancellationObserver_acquireInsensitiveOn (core : CoreId)
+    (victim : SeLe4n.ThreadId) :
+    AcquireInsensitiveOn (fun s => s.objects.invExt) core
+      (cancellationVictimIpcStateObserver victim) := by
+  intro s l m hExt
+  show ((acquireLockOnObject s core l m).getTcb? victim).map TCB.ipcState
+    = (s.getTcb? victim).map TCB.ipcState
+  unfold acquireLockOnObject
+  split
+  all_goals first
+    | rfl
+    | exact updateObjectLockAt_getTcb?_ipcState s l _ victim hExt
+
+/-- WS-SM SM6.E: the victim-`ipcState` observer is `invExt`-guardedly
+release-insensitive. -/
+theorem cancellationObserver_releaseInsensitiveOn (core : CoreId)
+    (victim : SeLe4n.ThreadId) :
+    ReleaseInsensitiveOn (fun s => s.objects.invExt) core
+      (cancellationVictimIpcStateObserver victim) := by
+  intro s l m hExt
+  show ((releaseLockOnObject s core l m).getTcb? victim).map TCB.ipcState
+    = (s.getTcb? victim).map TCB.ipcState
+  unfold releaseLockOnObject
+  split
+  all_goals first
+    | rfl
+    | exact updateObjectLockAt_getTcb?_ipcState s l _ victim hExt
+
+/-- WS-SM SM6.E (observational atomicity, plan §5.3 for the cancellation):
+under the cancellation's declared 2PL lock-set the victim-`ipcState`
+observer sees exactly the cancellation transition — the acquire fold shows
+it the pre-state view and the release fold is invisible; no lock-machinery
+intermediate is ever observable.  Instantiates the SM3.C.7 guarded capstone
+(`lockSet_observer_atomic_on`) at the `invExt` guard, discharged by the lock
+primitives' own store-invariant stability and the cancellation's `invExt`
+preservation. -/
+theorem cancelIpcBlockingOnCore_observer_atomic
+    (victim : SeLe4n.ThreadId) (tcb : TCB) (executingCore : CoreId)
+    (blEp blN : Option SeLe4n.ObjId) (consumedReplyId : Option SeLe4n.ReplyId)
+    (s : SystemState) (hInv : s.objects.invExt) :
+    cancellationVictimIpcStateObserver victim
+        (acquireAll executingCore
+          (lockSet_cancelIpcBlocking victim blEp blN
+            consumedReplyId).lockAcquireSequence s)
+      = cancellationVictimIpcStateObserver victim s
+    ∧ cancellationVictimIpcStateObserver victim
+        (withLockSet (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId)
+          executingCore (cancelIpcBlockingOnCore victim tcb executingCore) s).1
+      = cancellationVictimIpcStateObserver victim
+          (cancelIpcBlockingOnCore victim tcb executingCore
+            (acquireAll executingCore
+              (lockSet_cancelIpcBlocking victim blEp blN
+                consumedReplyId).lockAcquireSequence s)).1 := by
+  have hAcqStable : ∀ (s' : SystemState) l m, s'.objects.invExt →
+      (acquireLockOnObject s' executingCore l m).objects.invExt :=
+    fun s' l m h => acquireLockOnObject_preserves_objects_invExt s' executingCore l m h
+  have hInvAcq : (acquireAll executingCore
+      (lockSet_cancelIpcBlocking victim blEp blN
+        consumedReplyId).lockAcquireSequence s).objects.invExt :=
+    (acquireAll_lockInsensitiveOn _ executingCore _
+      (cancellationObserver_acquireInsensitiveOn executingCore victim) hAcqStable
+      _ s hInv).2
+  exact lockSet_observer_atomic_on _ executingCore _ s
+    (fun st => st.objects.invExt)
+    (cancellationVictimIpcStateObserver victim)
+    (cancellationObserver_acquireInsensitiveOn executingCore victim)
+    (cancellationObserver_releaseInsensitiveOn executingCore victim)
+    hAcqStable
+    (fun s' l m h => releaseLockOnObject_preserves_objects_invExt s' executingCore l m h)
+    hInv
+    (cancelIpcBlockingOnCore_preserves_objects_invExt victim tcb executingCore _ hInvAcq)
+
+-- ============================================================================
+-- §15  SM6.E — boot-instance bridges + placement/affinity corollaries
+-- ============================================================================
+
+/-- WS-SM SM6.E: at a bootCore-homed victim (in particular every single-core
+configuration) the cross-core cancellation's state is exactly the boot-pinned
+`removeRunnable` over the single-core teardown. -/
+theorem cancelIpcBlockingOnCore_bootHome_state_eq
+    (victim : SeLe4n.ThreadId) (tcb : TCB) (executingCore : CoreId)
+    (st : SystemState)
+    (hHome : determineTargetCore st victim = bootCoreId) :
+    (cancelIpcBlockingOnCore victim tcb executingCore st).1
+      = removeRunnable (cancelIpcBlocking st victim tcb) victim := by
+  rw [cancelIpcBlockingOnCore_state_eq, hHome, removeRunnableOnCore_bootCoreId]
+
+/-- WS-SM SM6.E (placement corollary): under the run-queue placement
+discipline — the victim is queued/current only on its home core — the
+deschedule removes it from **every** core: the home core by the removal, and
+every other core vacuously by the pre-state placement plus the per-core
+locality frames. -/
+theorem descheduleThread_fully_descheduled
+    (st : SystemState) (tid : SeLe4n.ThreadId) (executingCore : CoreId)
+    (hPlacement : ∀ c : CoreId, c ≠ determineTargetCore st tid →
+        tid ∉ st.scheduler.runQueueOnCore c
+        ∧ st.scheduler.currentOnCore c ≠ some tid) :
+    ∀ c : CoreId,
+      tid ∉ (descheduleThread st tid executingCore).1.scheduler.runQueueOnCore c
+      ∧ (descheduleThread st tid executingCore).1.scheduler.currentOnCore c
+          ≠ some tid := by
+  intro c
+  by_cases hc : c = determineTargetCore st tid
+  · subst hc
+    exact descheduleThread_descheduled_on_home st tid executingCore
+  · obtain ⟨hRQ, hCur⟩ :=
+      descheduleThread_independent_of_other_core st tid executingCore c
+        (fun h => hc h.symm)
+    rw [hRQ, hCur]
+    exact hPlacement c hc
+
+/-- WS-SM SM6.E (affinity corollary, the SM5.H purge-completeness): under the
+replenishment-affinity discipline — the SchedContext's pending replenishments
+live only on the purge core's queue — the per-core bound arm removes **all**
+of them system-wide: the purge core's by the `remove`, every other core's
+vacuously by the pre-state affinity plus the per-core frames. -/
+theorem cancelBoundDonationOnCore_replenishments_purged
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (rqCore : CoreId)
+    (scId : SeLe4n.SchedContextId)
+    (hB : tcb.schedContextBinding = .bound scId)
+    (hOnlyHome : ∀ c : CoreId, c ≠ rqCore →
+        ∀ e ∈ (st.scheduler.replenishQueueOnCore c).entries, e.1 ≠ scId)
+    (h : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') :
+    ∀ c : CoreId, ∀ e ∈ (st'.scheduler.replenishQueueOnCore c).entries,
+      e.1 ≠ scId := by
+  simp only [cancelBoundDonationOnCore, hB] at h
+  injection h with h
+  subst h
+  intro c e hMem
+  cases hSC : st.getSchedContext? scId with
+  | none =>
+    revert hMem
+    simp only [hSC]
+    split
+    all_goals
+      (by_cases hc : c = rqCore
+       · subst hc
+         simp only [SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_self]
+         intro hMem hEq
+         have hf := (List.mem_filter.mp hMem).2
+         simp [hEq] at hf
+       · simp only [SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_ne
+             _ _ _ _ (fun hEq => hc hEq.symm)]
+         intro hMem
+         exact hOnlyHome c hc e hMem)
+  | some sc =>
+    revert hMem
+    simp only [hSC]
+    split
+    all_goals
+      (by_cases hc : c = rqCore
+       · subst hc
+         simp only [SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_self]
+         intro hMem hEq
+         have hf := (List.mem_filter.mp hMem).2
+         simp [hEq] at hf
+       · simp only [SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_ne
+             _ _ _ _ (fun hEq => hc hEq.symm)]
+         intro hMem
+         exact hOnlyHome c hc e hMem)
+
+/-- WS-SM SM6.E: at a bootCore-homed victim with a shared-home donated owner
+(in particular every single-core configuration), the per-core donation
+dispatcher's success outcome is exactly the single-core `cancelDonation`'s. -/
+theorem cancelDonationOnCore_bootHome_ok
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (st st' : SystemState)
+    (hHome : determineTargetCore st tid = bootCoreId)
+    (hOwnerHome : ∀ scId owner, tcb.schedContextBinding = .donated scId owner →
+        ∀ stR, cleanupDonatedSchedContext st tid = .ok stR →
+          determineTargetCore stR owner = determineTargetCore st tid)
+    (hOk : cancelDonation st tid tcb = .ok st') :
+    cancelDonationOnCore tid tcb st = (st', .ok ()) := by
+  cases hB : tcb.schedContextBinding with
+  | unbound =>
+    simp only [cancelDonation, hB] at hOk
+    injection hOk with hOk
+    subst hOk
+    simp only [cancelDonationOnCore, hB]
+  | bound scId =>
+    simp only [cancelDonation, hB] at hOk
+    simp only [cancelDonationOnCore, hB, hHome, cancelBoundDonationOnCore_bootCoreId,
+      hOk]
+  | donated scId owner =>
+    simp only [cancelDonation, hB] at hOk
+    simp only [cancelDonationOnCore, hB,
+      cancelDonatedDonationOnCore_eq_of_sharedHome st tid tcb scId owner hB
+        (hOwnerHome scId owner hB)]
+    simp only [hOk]
+
+/-- WS-SM SM6.E: the error twin of `cancelDonationOnCore_bootHome_ok` — the
+dispatcher returns the pre-state with the single-core arm's error. -/
+theorem cancelDonationOnCore_bootHome_error
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (st : SystemState) (e : KernelError)
+    (hHome : determineTargetCore st tid = bootCoreId)
+    (hOwnerHome : ∀ scId owner, tcb.schedContextBinding = .donated scId owner →
+        ∀ stR, cleanupDonatedSchedContext st tid = .ok stR →
+          determineTargetCore stR owner = determineTargetCore st tid)
+    (hErr : cancelDonation st tid tcb = .error e) :
+    cancelDonationOnCore tid tcb st = (st, .error e) := by
+  cases hB : tcb.schedContextBinding with
+  | unbound =>
+    simp only [cancelDonation, hB] at hErr
+    cases hErr
+  | bound scId =>
+    simp only [cancelDonation, hB] at hErr
+    simp only [cancelDonationOnCore, hB, hHome, cancelBoundDonationOnCore_bootCoreId,
+      hErr]
+  | donated scId owner =>
+    simp only [cancelDonation, hB] at hErr
+    simp only [cancelDonationOnCore, hB,
+      cancelDonatedDonationOnCore_eq_of_sharedHome st tid tcb scId owner hB
+        (hOwnerHome scId owner hB)]
+    simp only [hErr]
 
 end SeLe4n.Kernel

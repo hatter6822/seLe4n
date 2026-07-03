@@ -579,6 +579,17 @@ def suspendThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
   | some (.tcb tcb) =>
     if tcb.threadState == .Inactive then .error .illegalState
     else
+      -- G7-precapture (WS-SM SM6.E fix): whether the victim is the boot
+      -- core's current thread must be read BEFORE G4's `removeRunnableValid`
+      -- runs — `removeRunnable` clears the current slot when it holds the
+      -- victim, so the pre-fix post-G4 read at G7 made the reschedule guard
+      -- unsatisfiable (dead code): suspending the running thread left
+      -- `current = none` without dispatching a successor.  The intermediate
+      -- steps G2..G6 never write the current slot (`cancelIpcBlocking` and
+      -- `clearPendingState` are scheduler-silent, the donation arms touch
+      -- only the replenish queue, PIP reversion re-buckets run-queue
+      -- entries), so the entry-time read is the just-before-G4 value.
+      let wasCurrent : Bool := (st.scheduler.currentOnCore bootCoreId) == some tid
       -- D4-N: Revert PIP before cleanup — if this thread has pipBoost or is
       -- in a blocking chain, recompute priorities for upstream servers
       let st := PriorityInheritance.revertPriorityInheritance st tid
@@ -631,8 +642,14 @@ def suspendThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
           { st with objects := st.objects.insert tid.toObjId (.tcb { tcb'' with
               threadState := .Inactive }) }
         | _ => st
-      -- G7: If suspended thread was current, trigger reschedule
-      if (st.scheduler.currentOnCore bootCoreId) == some tid then
+      -- G7: If suspended thread was current, trigger reschedule.
+      -- WS-SM SM6.E fix: dispatch on the G7-precapture (entry-time) value —
+      -- the post-G4 current slot never holds the victim (see the precapture
+      -- note above), so reading it here made this arm unreachable.
+      -- `schedule` goes idle gracefully (`setCurrentThread none`) when the
+      -- run queue holds no eligible successor, so suspending the last
+      -- runnable thread still succeeds.
+      if wasCurrent then
         match schedule st with
         | .ok ((), st') => .ok st'
         | .error e => .error e

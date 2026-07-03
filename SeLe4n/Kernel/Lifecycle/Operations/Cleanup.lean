@@ -146,13 +146,30 @@ def removeFromAllEndpointQueues (st : SystemState) (tid : SeLe4n.ThreadId) : Sys
 
 /-- R4-A.2 (M-12): Remove a ThreadId from all notification waiting lists.
     Iterates over all notification objects in `st.objects` and filters out
-    `tid` from each notification's `waitingThreads` list. -/
+    `tid` from each notification's `waitingThreads` list.
+
+    **WS-SM SM6.E (invariant fix)**: removing the **last** waiter of a
+    `.waiting` notification must transition its state to `.idle` — the
+    well-formedness predicate `notificationQueueWellFormed` requires a
+    `.waiting` notification to carry a nonempty waiter list, so the
+    pre-fix sweep left a sole-waiter cancellation in an `ipcInvariant`-
+    violating `.waiting`-with-`[]` state.  This mirrors the single-op
+    removal discipline (`notificationSignalOnCore`'s
+    `if rest.isEmpty then .idle else .waiting`).  A `.waiting`
+    notification has `pendingBadge = none`, so the `.idle` transition
+    is well-formed by construction; `.idle`/`.active` notifications
+    have empty waiter lists, so the filter (and hence the state
+    correction) is value-preserving for them. -/
 def removeFromAllNotificationWaitLists (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
   st.objects.fold st fun acc oid obj =>
     match obj with
     | .notification notif =>
+      let wt' := notif.waitingThreads.filter (· != tid)
       let notif' : Notification := {
-        notif with waitingThreads := notif.waitingThreads.filter (· != tid) }
+        notif with
+          waitingThreads := wt'
+          state := if notif.state = .waiting ∧ wt'.val.isEmpty then .idle
+                   else notif.state }
       { acc with objects := acc.objects.insert oid (.notification notif') }
     | _ => acc
 

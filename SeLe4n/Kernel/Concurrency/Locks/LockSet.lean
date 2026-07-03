@@ -420,6 +420,29 @@ theorem mem_insertOrMerge_of_mem_of_ne (S : LockSet) (l : LockId) (m : AccessMod
     -- Prepend case: pairs = (l, m) :: S.pairs.
     exact List.mem_cons_of_mem _ hMem
 
+/-- WS-SM SM6.E: a **write**-mode pair survives any `insertOrMerge`: the merge
+branch maps `(l', .write)` to `(l', .write.lub m) = (l', .write)` when the keys
+coincide (write is the `AccessMode.lub` top) and leaves it untouched otherwise;
+the prepend branch keeps it in the tail.  The mode-aware strengthening of
+`mem_insertOrMerge_of_mem_of_ne` — no key-distinctness side-condition — powering
+the write-coverage membership families (`lockSet_tcbSuspend_*_write_mem`,
+`lockSet_cancelIpcBlocking_*_write_mem`, …). -/
+theorem mem_insertOrMerge_write_of_mem_write (S : LockSet) (l : LockId)
+    (m : AccessMode) (l' : LockId)
+    (hMem : (l', AccessMode.write) ∈ S.pairs) :
+    (l', AccessMode.write) ∈ (S.insertOrMerge l m).pairs := by
+  unfold LockSet.insertOrMerge
+  split
+  · -- Merge branch: the map fixes write-mode pairs.
+    apply List.mem_map.mpr
+    refine ⟨(l', AccessMode.write), hMem, ?_⟩
+    by_cases hEq : l' = l
+    · subst hEq
+      simp [AccessMode.lub_write_left]
+    · simp [hEq]
+  · -- Prepend branch.
+    exact List.mem_cons_of_mem _ hMem
+
 /-- WS-SM SM3.B: every element of `S₁.union S₂` traces back to an
 element of `S₁` or has its `fst` key matching some element's `fst`
 in `S₂`.

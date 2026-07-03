@@ -854,23 +854,26 @@ pub extern "C" fn ffi_rw_lock_release_write_count(handle: u64) -> u64 {
 /// satisfies the
 /// `suspendThread_atomicity_precondition` from the Lean model.
 ///
-/// The inner symbol `suspend_thread_inner` is provided by the Lean
-/// compiler from the kernel's `@[export suspend_thread_inner]`
-/// declaration (see `SeLe4n/Platform/FFI.lean`).  A direct call to
-/// the inner symbol from outside this wrapper bypasses the atomicity
-/// guarantee and flagged with the `#[must_use]` discipline note in
-/// the Lean docstring.  After WS-RC R2.B the Lean wrapper substantively
-/// routes into `Kernel.Lifecycle.Suspend.suspendThread` via the
-/// kernel-state IO.Ref rather than returning a stub error.
+/// The inner symbol `suspend_thread_cross_core` is provided by the Lean
+/// compiler from the kernel's `@[export suspend_thread_cross_core]`
+/// declaration (see `SeLe4n/Kernel/SyscallDispatchEntry.lean`).  A direct
+/// call to the inner symbol from outside this wrapper bypasses the
+/// atomicity guarantee and flagged with the `#[must_use]` discipline note
+/// in the Lean docstring.  After WS-RC R2.B the Lean wrapper substantively
+/// routes into the verified suspend handler via the kernel-state IO.Ref
+/// rather than returning a stub error; after WS-SM SM6.E it is the
+/// **per-core** `suspendThreadOnCore` (the victim is descheduled on its
+/// *home* core, and a remote-running victim's home core is poked with a
+/// `.reschedule` SGI after the state commit — single-core inert).
 ///
 /// Returns: `KernelError::Ok = 0` on success, the kernel-error
 /// discriminant otherwise.
 ///
-/// Lean binding: see comment on `suspend_thread_inner` below.
+/// Lean binding: see comment on `suspend_thread_cross_core` below.
 #[no_mangle]
 pub extern "C" fn sele4n_suspend_thread(tid: u64) -> u32 {
     crate::interrupts::with_interrupts_disabled(|| {
-        // SAFETY: in production builds `suspend_thread_inner` is a
+        // SAFETY: in production builds `suspend_thread_cross_core` is a
         // Lean-emitted `extern "C"` symbol; calling an extern "C"
         // function is unsafe.  In test builds it is a Rust-side
         // safe stub.  We use `unsafe` unconditionally so the
@@ -878,7 +881,7 @@ pub extern "C" fn sele4n_suspend_thread(tid: u64) -> u32 {
         // suppresses the test-only warning.
         #[allow(unused_unsafe)]
         unsafe {
-            suspend_thread_inner(tid)
+            suspend_thread_cross_core(tid)
         }
     })
 }
@@ -919,7 +922,10 @@ pub extern "C" fn cache_ic_iallu() {
     crate::cache::ic_iallu();
 }
 
-// AN9-D inner — Lean-emitted `suspendThread` dispatch entry.
+// AN9-D inner (WS-SM SM6.E: per-core form) — Lean-emitted
+// `suspendThreadCrossCoreEntry` dispatch entry: the verified per-core
+// `suspendThreadOnCore` (home-core deschedule + remote `.reschedule`
+// SGI after the commit; single-core inert).
 //
 // **DO NOT CALL DIRECTLY** from any path other than
 // `sele4n_suspend_thread`.  Calling this without the
@@ -934,7 +940,7 @@ pub extern "C" fn cache_ic_iallu() {
 // discipline can still be exercised without a full Lean build.
 #[cfg(not(test))]
 extern "C" {
-    fn suspend_thread_inner(tid: u64) -> u32;
+    fn suspend_thread_cross_core(tid: u64) -> u32;
 }
 
 /// AN9-D test stub: returns `KernelError::NotImplemented = 17` so the
@@ -942,7 +948,7 @@ extern "C" {
 /// the full Lean kernel build artefact.
 #[cfg(test)]
 #[no_mangle]
-extern "C" fn suspend_thread_inner(_tid: u64) -> u32 {
+extern "C" fn suspend_thread_cross_core(_tid: u64) -> u32 {
     17 // KernelError::NotImplemented
 }
 

@@ -242,6 +242,17 @@ def lockSetExtendOpt (S : LockSet) (p : Option (LockId × AccessMode)) :
   | none => S
   | some (l, m) => S.insertOrMerge l m
 
+/-- WS-SM SM6.E: write-mode membership survives an optional extension (`none`
+is identity, `some` is an `insertOrMerge` — covered by
+`mem_insertOrMerge_write_of_mem_write`). -/
+theorem mem_write_lockSetExtendOpt (S : LockSet)
+    (opt : Option (LockId × AccessMode)) (l' : LockId)
+    (hMem : (l', AccessMode.write) ∈ S.pairs) :
+    (l', AccessMode.write) ∈ (lockSetExtendOpt S opt).pairs := by
+  cases opt with
+  | none => exact hMem
+  | some p => exact LockSet.mem_insertOrMerge_write_of_mem_write S p.fst p.snd l' hMem
+
 -- ============================================================================
 -- SM3.B.3 — Per-transition lockSet declarations
 -- ============================================================================

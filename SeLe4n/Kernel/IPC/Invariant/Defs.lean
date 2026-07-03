@@ -732,6 +732,15 @@ theorem pendingReceiveReplyWellFormed_of_objects_eq {st st' : SystemState}
   unfold pendingReceiveReplyWellFormed SystemState.getTcb? SystemState.getReply? at h ⊢
   rw [hObjs]; exact h
 
+/-- WS-SM SM6.E: `ipcInvariant` reads only the object store, so any
+transition that leaves the object store unchanged frames it (the cross-core
+deschedule, the replenishment migration, per-core scheduler-queue edits). -/
+theorem ipcInvariant_of_objects_eq {st st' : SystemState}
+    (hObjs : st'.objects = st.objects) (h : ipcInvariant st) :
+    ipcInvariant st' := by
+  intro oid ntfn hL
+  exact h oid ntfn (hObjs ▸ hL)
+
 -- ============================================================================
 -- WS-SM SM6.D (#7.1 fold): upstream reply-link / server-first-stash frames.
 --

@@ -1053,6 +1053,216 @@ theorem cancelIpcBlocking_preserves_objects_invExt
     exact restoreToReady_invExt _ _
       (removeFromAllNotificationWaitLists_preserves_objects_invExt st tid hInv)
 
+-- ============================================================================
+-- WS-SM SM6.E: per-key TCB lookup frames of the cancellation teardown
+-- ============================================================================
+-- The teardown never changes the *kind* or the `cpuAffinity` of a key that
+-- holds a TCB (it rewrites IPC/queue-link fields only), and never
+-- materialises a TCB at the victim's key when none was there.  These frames
+-- discharge the `cancelIpcBlockingOnCore_eq_descheduleThread` resolution
+-- hypotheses (`determineTargetCore` / `getTcb?` coincidence) into the
+-- invExt-only closed form (`IPC.CrossCore.Cancellation` §3).
+
+/-- WS-SM SM6.E: `restoreToReady` preserves TCB-kind and `cpuAffinity` at
+every key — the conditional rewrite clears IPC and queue-link fields only. -/
+theorem restoreToReady_tcb_lookup
+    (st : SystemState) (tid : SeLe4n.ThreadId) (k : SeLe4n.ObjId) (t0 : TCB)
+    (hInv : st.objects.invExt)
+    (hPre : st.objects[k]? = some (.tcb t0)) :
+    ∃ t' : TCB, (restoreToReady st tid).objects[k]? = some (.tcb t')
+      ∧ t'.cpuAffinity = t0.cpuAffinity := by
+  unfold restoreToReady
+  cases hT : st.getTcb? tid with
+  | none => exact ⟨t0, hPre, rfl⟩
+  | some t =>
+    exact insert_tcb_rewrite_lookup st.objects tid.toObjId k t _ t0 hInv
+      ((SystemState.getTcb?_eq_some_iff st tid t).mp hT) rfl hPre
+
+/-- WS-SM SM6.E: `clearTcbReplyObject` preserves TCB-kind and `cpuAffinity`
+at every key — the conditional rewrite clears `replyObject` only. -/
+theorem clearTcbReplyObject_tcb_lookup
+    (st : SystemState) (tid : SeLe4n.ThreadId) (k : SeLe4n.ObjId) (t0 : TCB)
+    (hInv : st.objects.invExt)
+    (hPre : st.objects[k]? = some (.tcb t0)) :
+    ∃ t' : TCB, (clearTcbReplyObject st tid).objects[k]? = some (.tcb t')
+      ∧ t'.cpuAffinity = t0.cpuAffinity := by
+  unfold clearTcbReplyObject
+  cases hT : st.getTcb? tid with
+  | none => exact ⟨t0, hPre, rfl⟩
+  | some t =>
+    exact insert_tcb_rewrite_lookup st.objects tid.toObjId k t _ t0 hInv
+      ((SystemState.getTcb?_eq_some_iff st tid t).mp hT) rfl hPre
+
+/-- WS-SM SM6.E: `clearReplyObjectCaller` leaves every TCB-holding key
+untouched — its only write is a `.reply` value, whose key can never alias a
+TCB-holding key. -/
+theorem clearReplyObjectCaller_tcb_lookup_eq
+    (st : SystemState) (rid : SeLe4n.ReplyId) (k : SeLe4n.ObjId) (t0 : TCB)
+    (hInv : st.objects.invExt)
+    (hPre : st.objects[k]? = some (.tcb t0)) :
+    (clearReplyObjectCaller st rid).objects[k]? = st.objects[k]? := by
+  unfold clearReplyObjectCaller
+  cases hR : st.getReply? rid with
+  | none => rfl
+  | some r =>
+    have hRead : st.objects[rid.toObjId]? = some (.reply r) :=
+      (SystemState.getReply?_eq_some_iff st rid r).mp hR
+    have hNe : ¬(rid.toObjId == k) = true := fun hbeq => by
+      have hk : rid.toObjId = k := eq_of_beq hbeq
+      rw [hk] at hRead
+      have hclash := hPre.symm.trans hRead
+      injection hclash with hclash
+      injection hclash
+    exact RobinHood.RHTable.getElem?_insert_ne _ _ _ _ hNe hInv
+
+/-- WS-SM SM6.E: `consumeReplyLink` preserves TCB-kind and `cpuAffinity` at
+every key — the TCB leg is an affinity-preserving rewrite and the Reply leg
+never touches a TCB-holding key. -/
+theorem consumeReplyLink_tcb_lookup
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (k : SeLe4n.ObjId) (t0 : TCB)
+    (hInv : st.objects.invExt)
+    (hPre : st.objects[k]? = some (.tcb t0)) :
+    ∃ t' : TCB, (consumeReplyLink st tid tcb).objects[k]? = some (.tcb t')
+      ∧ t'.cpuAffinity = t0.cpuAffinity := by
+  unfold consumeReplyLink
+  cases tcb.replyObject with
+  | none => exact ⟨t0, hPre, rfl⟩
+  | some rid =>
+    obtain ⟨t₁, hL1, hAff1⟩ := clearTcbReplyObject_tcb_lookup st tid k t0 hInv hPre
+    exact ⟨t₁,
+      (clearReplyObjectCaller_tcb_lookup_eq (clearTcbReplyObject st tid) rid k t₁
+        (clearTcbReplyObject_preserves_objects_invExt st tid hInv) hL1).trans hL1,
+      hAff1⟩
+
+/-- WS-SM SM6.E: `cancelIpcBlocking` preserves TCB-kind and `cpuAffinity` at
+every key — each `ipcState` arm composes the sweep frames with the teardown
+rewrites, none of which changes a stored TCB's kind or `cpuAffinity`. -/
+theorem cancelIpcBlocking_tcb_lookup
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (k : SeLe4n.ObjId) (t0 : TCB)
+    (hInv : st.objects.invExt)
+    (hPre : st.objects[k]? = some (.tcb t0)) :
+    ∃ t' : TCB, (cancelIpcBlocking st tid tcb).objects[k]? = some (.tcb t')
+      ∧ t'.cpuAffinity = t0.cpuAffinity := by
+  unfold cancelIpcBlocking
+  cases tcb.ipcState with
+  | ready => exact ⟨t0, hPre, rfl⟩
+  | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
+    obtain ⟨hInvE, t₁, hL1, hAff1⟩ :=
+      removeFromAllEndpointQueues_tcb_lookup st tid k t0 hInv hPre
+    obtain ⟨t₂, hL2, hAff2⟩ :=
+      restoreToReady_tcb_lookup (removeFromAllEndpointQueues st tid) tid k t₁
+        hInvE hL1
+    exact ⟨t₂, hL2, hAff2.trans hAff1⟩
+  | blockedOnReply _ _ =>
+    obtain ⟨t₁, hL1, hAff1⟩ := restoreToReady_tcb_lookup st tid k t0 hInv hPre
+    obtain ⟨t₂, hL2, hAff2⟩ :=
+      consumeReplyLink_tcb_lookup (restoreToReady st tid) tid tcb k t₁
+        (restoreToReady_invExt st tid hInv) hL1
+    exact ⟨t₂, hL2, hAff2.trans hAff1⟩
+  | blockedOnNotification _ =>
+    obtain ⟨hInvN, t₁, hL1, hAff1⟩ :=
+      removeFromAllNotificationWaitLists_tcb_lookup st tid k t0 hInv hPre
+    obtain ⟨t₂, hL2, hAff2⟩ :=
+      restoreToReady_tcb_lookup (removeFromAllNotificationWaitLists st tid) tid k t₁
+        hInvN hL1
+    exact ⟨t₂, hL2, hAff2.trans hAff1⟩
+
+/-- WS-SM SM6.E: `restoreToReady` is the identity when the thread resolves
+to no TCB — the rewrite is guarded on the TCB read. -/
+theorem restoreToReady_eq_self_of_getTcb?_none
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (h : st.getTcb? tid = none) :
+    restoreToReady st tid = st := by
+  unfold restoreToReady
+  rw [h]
+
+/-- WS-SM SM6.E: `clearTcbReplyObject` is the identity when the thread
+resolves to no TCB. -/
+theorem clearTcbReplyObject_eq_self_of_getTcb?_none
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (h : st.getTcb? tid = none) :
+    clearTcbReplyObject st tid = st := by
+  unfold clearTcbReplyObject
+  rw [h]
+
+/-- WS-SM SM6.E: `clearReplyObjectCaller` never materialises a TCB at a key
+holding none — its only write is a `.reply` value. -/
+theorem clearReplyObjectCaller_no_tcb
+    (st : SystemState) (rid : SeLe4n.ReplyId) (k : SeLe4n.ObjId)
+    (hInv : st.objects.invExt)
+    (hNo : ∀ t : TCB, st.objects[k]? ≠ some (.tcb t)) :
+    ∀ t : TCB, (clearReplyObjectCaller st rid).objects[k]? ≠ some (.tcb t) := by
+  intro t
+  unfold clearReplyObjectCaller
+  cases st.getReply? rid with
+  | none => exact hNo t
+  | some r =>
+    intro h
+    by_cases hx : (rid.toObjId == k) = true
+    · have hk : rid.toObjId = k := eq_of_beq hx
+      subst hk
+      have hclash := (RobinHood.RHTable.getElem?_insert_self
+        st.objects rid.toObjId _ hInv).symm.trans h
+      injection hclash with hclash
+      injection hclash
+    · exact hNo t ((RobinHood.RHTable.getElem?_insert_ne
+        st.objects rid.toObjId k _ hx hInv).symm.trans h)
+
+/-- WS-SM SM6.E: the teardown never materialises a TCB at the victim's key —
+`getTcb?`-resolution failure is preserved by `cancelIpcBlocking` (the sweeps
+write endpoint/notification values, the guarded TCB rewrites are identities,
+and the Reply write can never alias the victim's key into a TCB). -/
+theorem cancelIpcBlocking_getTcb?_none
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hInv : st.objects.invExt)
+    (hT : st.getTcb? tid = none) :
+    (cancelIpcBlocking st tid tcb).getTcb? tid = none := by
+  have hNo : ∀ t : TCB, st.objects[tid.toObjId]? ≠ some (.tcb t) := fun t h => by
+    have hSome := (SystemState.getTcb?_eq_some_iff st tid t).mpr h
+    rw [hT] at hSome
+    cases hSome
+  unfold cancelIpcBlocking
+  cases tcb.ipcState with
+  | ready => exact hT
+  | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
+    obtain ⟨hInvE, hNoE⟩ := removeFromAllEndpointQueues_no_tcb st tid hInv hNo
+    have hTE : (removeFromAllEndpointQueues st tid).getTcb? tid = none := by
+      cases hX : (removeFromAllEndpointQueues st tid).getTcb? tid with
+      | none => rfl
+      | some t =>
+        exact absurd ((SystemState.getTcb?_eq_some_iff _ tid t).mp hX) (hNoE t)
+    show (restoreToReady (removeFromAllEndpointQueues st tid) tid).getTcb? tid
+      = none
+    rw [restoreToReady_eq_self_of_getTcb?_none _ tid hTE]
+    exact hTE
+  | blockedOnReply _ _ =>
+    show (consumeReplyLink (restoreToReady st tid) tid tcb).getTcb? tid = none
+    rw [restoreToReady_eq_self_of_getTcb?_none st tid hT]
+    unfold consumeReplyLink
+    cases tcb.replyObject with
+    | none => exact hT
+    | some rid =>
+      simp only []
+      rw [clearTcbReplyObject_eq_self_of_getTcb?_none st tid hT]
+      cases hX : (clearReplyObjectCaller st rid).getTcb? tid with
+      | none => rfl
+      | some t =>
+        exact absurd ((SystemState.getTcb?_eq_some_iff _ tid t).mp hX)
+          (clearReplyObjectCaller_no_tcb st rid tid.toObjId hInv hNo t)
+  | blockedOnNotification _ =>
+    obtain ⟨hInvN, hNoN⟩ := removeFromAllNotificationWaitLists_no_tcb st tid hInv hNo
+    have hTN : (removeFromAllNotificationWaitLists st tid).getTcb? tid = none := by
+      cases hX : (removeFromAllNotificationWaitLists st tid).getTcb? tid with
+      | none => rfl
+      | some t =>
+        exact absurd ((SystemState.getTcb?_eq_some_iff _ tid t).mp hX) (hNoN t)
+    show (restoreToReady (removeFromAllNotificationWaitLists st tid) tid).getTcb? tid
+      = none
+    rw [restoreToReady_eq_self_of_getTcb?_none _ tid hTN]
+    exact hTN
+
 /-- WS-SM SM6.E: `cancelBoundDonation` preserves `objects.invExt` — the bound
 arm's object writes are the SchedContext deactivation insert and the TCB
 unbind insert (the replenish-queue and `scThreadIndex` edits do not touch
@@ -1100,5 +1310,155 @@ theorem cancelDonation_preserves_objects_invExt
   · injection h with h; subst h; exact hInv
   · exact cancelBoundDonation_preserves_objects_invExt _ _ _ _ hInv h
   · exact cancelDonatedDonation_preserves_objects_invExt _ _ _ _ hInv h
+
+-- ============================================================================
+-- WS-SM SM6.E: cancellation preserves `ipcInvariant`
+-- ============================================================================
+-- The notification well-formedness invariant across the cancellation
+-- teardown and the donation arms: every object write is either a
+-- non-notification insert (TCB rewrites, the Reply-caller clear, the
+-- SchedContext unbind) or the notification sweep's filter-corrected rewrite
+-- (well-formed by `notificationQueueWellFormed_filter_correct`).
+
+/-- WS-SM SM6.E: `restoreToReady` preserves `ipcInvariant` — its only write
+is a `.tcb` rewrite. -/
+theorem restoreToReady_preserves_ipcInvariant
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
+    ipcInvariant (restoreToReady st tid) := by
+  unfold restoreToReady
+  cases st.getTcb? tid with
+  | none => exact hIpc
+  | some t => exact ipcInvariant_insert_tcb st tid.toObjId _ hInv hIpc
+
+/-- WS-SM SM6.E: `clearTcbReplyObject` preserves `ipcInvariant` — its only
+write is a `.tcb` rewrite. -/
+theorem clearTcbReplyObject_preserves_ipcInvariant
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
+    ipcInvariant (clearTcbReplyObject st tid) := by
+  unfold clearTcbReplyObject
+  cases st.getTcb? tid with
+  | none => exact hIpc
+  | some t => exact ipcInvariant_insert_tcb st tid.toObjId _ hInv hIpc
+
+/-- WS-SM SM6.E: `clearReplyObjectCaller` preserves `ipcInvariant` — its only
+write is a `.reply` rewrite. -/
+theorem clearReplyObjectCaller_preserves_ipcInvariant
+    (st : SystemState) (rid : SeLe4n.ReplyId)
+    (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
+    ipcInvariant (clearReplyObjectCaller st rid) := by
+  unfold clearReplyObjectCaller
+  cases st.getReply? rid with
+  | none => exact hIpc
+  | some r =>
+    exact ipcInvariant_insert_no_notification st rid.toObjId
+      (.reply { r with caller := none }) hInv
+      (fun _ h => KernelObject.noConfusion h) hIpc
+
+/-- WS-SM SM6.E: `consumeReplyLink` preserves `ipcInvariant` — both legs of
+the reply-link sever are non-notification writes. -/
+theorem consumeReplyLink_preserves_ipcInvariant
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
+    ipcInvariant (consumeReplyLink st tid tcb) := by
+  unfold consumeReplyLink
+  cases tcb.replyObject with
+  | none => exact hIpc
+  | some rid =>
+    exact clearReplyObjectCaller_preserves_ipcInvariant _ rid
+      (clearTcbReplyObject_preserves_objects_invExt st tid hInv)
+      (clearTcbReplyObject_preserves_ipcInvariant st tid hInv hIpc)
+
+/-- WS-SM SM6.E: `cancelIpcBlocking` preserves `ipcInvariant` — every
+`ipcState` arm composes the sweeps' notification-safe rewrites with the
+non-notification teardown writes. -/
+theorem cancelIpcBlocking_preserves_ipcInvariant
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
+    ipcInvariant (cancelIpcBlocking st tid tcb) := by
+  unfold cancelIpcBlocking
+  cases tcb.ipcState with
+  | ready => exact hIpc
+  | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
+    exact restoreToReady_preserves_ipcInvariant _ tid
+      (removeFromAllEndpointQueues_preserves_objects_invExt st tid hInv)
+      (removeFromAllEndpointQueues_preserves_ipcInvariant st tid hInv hIpc)
+  | blockedOnReply _ _ =>
+    exact consumeReplyLink_preserves_ipcInvariant _ tid tcb
+      (restoreToReady_invExt st tid hInv)
+      (restoreToReady_preserves_ipcInvariant st tid hInv hIpc)
+  | blockedOnNotification _ =>
+    exact restoreToReady_preserves_ipcInvariant _ tid
+      (removeFromAllNotificationWaitLists_preserves_objects_invExt st tid hInv)
+      (removeFromAllNotificationWaitLists_preserves_ipcInvariant st tid hInv hIpc)
+
+/-- WS-SM SM6.E: `cancelBoundDonation` preserves `ipcInvariant` — the bound
+arm's object writes are the SchedContext deactivation insert and the TCB
+unbind insert; the replenish-queue and `scThreadIndex` edits do not touch
+the object store. -/
+theorem cancelBoundDonation_preserves_ipcInvariant
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hInv : st.objects.invExt) (hIpc : ipcInvariant st)
+    (h : cancelBoundDonation st tid tcb = .ok st') :
+    ipcInvariant st' := by
+  cases hB : tcb.schedContextBinding with
+  | bound scId =>
+    simp only [cancelBoundDonation, hB] at h
+    injection h with h
+    subst h
+    cases hSC : st.getSchedContext? scId with
+    | none =>
+      -- No SchedContext write: the only object write is the TCB unbind.
+      split
+      · intro oid ntfn hL
+        exact hIpc oid ntfn (notification_lookup_of_insert_no_notification
+          _ tid.toObjId _ hInv (fun _ hEq => KernelObject.noConfusion hEq) oid ntfn hL)
+      · exact ipcInvariant_of_objects_eq rfl hIpc
+    | some sc =>
+      have hInv1 : (st.objects.insert scId.toObjId
+          (.schedContext { sc with boundThread := none, isActive := false })).invExt :=
+        RobinHood.RHTable.insert_preserves_invExt _ _ _ hInv
+      split
+      · intro oid ntfn hL
+        have hL1 := notification_lookup_of_insert_no_notification
+          _ tid.toObjId _ hInv1 (fun _ hEq => KernelObject.noConfusion hEq) oid ntfn hL
+        exact hIpc oid ntfn (notification_lookup_of_insert_no_notification
+          _ scId.toObjId _ hInv (fun _ hEq => KernelObject.noConfusion hEq) oid ntfn hL1)
+      · intro oid ntfn hL
+        exact hIpc oid ntfn (notification_lookup_of_insert_no_notification
+          _ scId.toObjId _ hInv (fun _ hEq => KernelObject.noConfusion hEq) oid ntfn hL)
+  | unbound =>
+    simp only [cancelBoundDonation, hB] at h
+    cases h
+  | donated _ _ =>
+    simp only [cancelBoundDonation, hB] at h
+    cases h
+
+/-- WS-SM SM6.E: `cancelDonatedDonation` preserves `ipcInvariant` — the
+donated arm delegates to `cleanupDonatedSchedContext` (non-notification
+`storeObject` steps). -/
+theorem cancelDonatedDonation_preserves_ipcInvariant
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hInv : st.objects.invExt) (hIpc : ipcInvariant st)
+    (h : cancelDonatedDonation st tid tcb = .ok st') :
+    ipcInvariant st' := by
+  unfold cancelDonatedDonation at h
+  split at h
+  · exact cleanupDonatedSchedContext_preserves_ipcInvariant _ _ _ hInv hIpc h
+  · cases h
+
+/-- WS-SM SM6.E: the `cancelDonation` dispatcher preserves `ipcInvariant` on
+every arm (`.unbound` identity, `.bound` unbind, `.donated` return). -/
+theorem cancelDonation_preserves_ipcInvariant
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hInv : st.objects.invExt) (hIpc : ipcInvariant st)
+    (h : cancelDonation st tid tcb = .ok st') :
+    ipcInvariant st' := by
+  unfold cancelDonation at h
+  split at h
+  · injection h with h; subst h; exact hIpc
+  · exact cancelBoundDonation_preserves_ipcInvariant _ _ _ _ hInv hIpc h
+  · exact cancelDonatedDonation_preserves_ipcInvariant _ _ _ _ hInv hIpc h
 
 end SeLe4n.Kernel.Lifecycle.Suspend

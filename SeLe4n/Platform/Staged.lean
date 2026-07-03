@@ -460,6 +460,16 @@ import SeLe4n.Kernel.IPC.CrossCore.NotificationSignalNI
 -- / ∀-core `lowEquivalent_smp` (a high reply waking a high caller is invisible on
 -- *every* core), built on the SM6.A per-core wake/store projection family.
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyNI
+-- WS-SM SM6.E: cross-core cancellation non-interference —
+-- `descheduleThread_cancellation_NI{,_smp}` +
+-- `cancelIpcBlockingOnCore_{,ready_}cancellation_NI{,_smp}` +
+-- `cancelDonatedDonationOnCore_cancellation_NI{,_smp}` + the ∀-core
+-- replenish-queue / migration projection frames.  Every SM6.E-new state
+-- effect (home-core deschedule, rqCore-parametrised purge, replenishment
+-- migration) is discharged substantively; the composites consume the
+-- single-core teardown/return projection obligations that the production
+-- closure forms (`suspendThread_preserves_projection` G3/G5) document.
+import SeLe4n.Kernel.IPC.CrossCore.CancellationNI
 -- WS-SM SM6.A: the cross-core-aware syscall dispatch entry —
 -- `syscallDispatchCrossCoreEntry` (`@[export lean_syscall_dispatch_cross_core]`).
 -- Runs the verified `syscallDispatchFromAbi` atomically via `modifyGetKernelState`,
