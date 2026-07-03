@@ -1063,6 +1063,16 @@ private def runDisinheritanceSchedulingChecks : IO Unit := do
             ((PriorityInheritance.computeCrossCoreSgis stRemoteDeboost st' bootCoreId).any
               (fun p => p.1 == core2 && p.2 == SgiKind.reschedule))
       | .error _ => assertBool "remote-deboost suspend succeeds" false
+      -- (d) footprint (PR #831 review 3): the executing core's run-queue
+      -- write lock is a declared member of the suspend scheduler-domain
+      -- footprint (the G7 local preemption gate writes under it), alongside
+      -- the victim's home-core run-queue lock.
+      assertBool "suspend sched footprint covers the executing core's run queue"
+        (decide ((SchedLockId.runQueue ⟨bootCoreId⟩, Concurrency.AccessMode.write)
+          ∈ suspendThreadOnCoreSchedLockSet core1 bootCoreId core1))
+      assertBool "suspend sched footprint still covers the victim home run queue"
+        (decide ((SchedLockId.runQueue ⟨core1⟩, Concurrency.AccessMode.write)
+          ∈ suspendThreadOnCoreSchedLockSet core1 bootCoreId core1))
 
 -- ============================================================================
 -- Aggregate runner

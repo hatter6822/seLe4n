@@ -1,3 +1,39 @@
+## v0.32.64 — WS-SM SM6.E: suspend scheduler-lock footprint closure (PR #831 review 3)
+
+Remediates the third PR #831 Codex review (three P2s on the v0.32.63 cut):
+
+* **Executing-core run-queue lock declared.**  `suspendThreadOnCoreSchedLockSet`
+  now takes the executing core and lists BOTH run-queue write locks (victim
+  home + executing core, one entry when they coincide) — the G7
+  local-disinheritance preemption gate writes under the executing core's
+  queue.  The same-kind segments are factored through the new
+  `sortedSchedCorePair` (`CoreId`-ascending; `_map_fst_mem` / `_pairwise_le`),
+  and the footprint's ascending-acquisition theorem is re-proven
+  compositionally (`List.pairwise_append`).
+* **Chain-member run-queue writes declared dynamic.**  The G2b
+  `propagatePipChainCrossCore` re-buckets each chain member's run queue on
+  ITS home core — state-discovered, so outside any static footprint (the
+  SM3.C.11 argument).  The SM3.C consumer contract now requires the walker
+  to hold, per chain step, the member's TCB write lock AND its home-core
+  `SchedLockId.runQueue` write lock (both CAS-try under the bounded-retry
+  budget; the hold-and-wait-free deadlock argument is unchanged).  Covers
+  the `.call`/`.reply`/`.replyRecv` walks identically.
+* **Preemption-gate SchedContext soundness documented.**
+  `candidateOutranksCurrentOnCore` compares TCB-field
+  `effectiveRunQueuePriority`; under the maintained
+  `boundThreadPriorityConsistent` invariant this provably equals the
+  SchedContext-aware `resolveEffectivePrioDeadline` bucket
+  (`resolveEffectivePrioDeadline_fst_eq_effectiveRunQueuePriority_of_agree`),
+  so a SchedContext-priced candidate is never wrongly rejected; the gate's
+  docstring now states the dependency and the obligation to switch forms if
+  the invariant is ever relaxed.
+
+Tests: `SmpCancellationSuite` 91 → 93 assertions (§3.15(d) footprint
+membership for both run-queue locks).  Golden trace byte-identical.
+Version bumped 0.32.63 → 0.32.64.
+
+Refs: docs/planning/SMP_CROSS_CORE_IPC_PLAN.md §5 (SM6.E completion note)
+
 ## v0.32.63 — WS-SM SM6.E: disinheritance scheduling points (PR #831 review 2)
 
 Remediates the second PR #831 Codex review (two P2s on the v0.32.62 cut):

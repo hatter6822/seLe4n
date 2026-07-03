@@ -1252,7 +1252,20 @@ strictly outrank core `c`'s current thread by *effective* run-queue priority
 
 The `_, _ => true` arm (current TID does not resolve to a TCB) is unreachable
 under `currentThreadValidOnCore`; it dispatches the run-queue-validated
-candidate as a making-progress recovery rather than keeping a corrupt current. -/
+candidate as a making-progress recovery rather than keeping a corrupt current.
+
+**SchedContext-priority soundness (PR #831 review 3).**  The gate compares
+the TCB-field `effectiveRunQueuePriority` (base vs `pipBoost`), not the
+SchedContext-aware `resolveEffectivePrioDeadline` the selector uses.  Under
+the maintained `boundThreadPriorityConsistent` invariant (a bound/donated
+SchedContext's `priority` equals its thread's TCB `priority` —
+`Scheduler/Invariant/PerCore.lean`), the two agree for every thread:
+`resolveEffectivePrioDeadline_fst_eq_effectiveRunQueuePriority_of_agree`
+(above) is exactly that bridge, so a SchedContext-priced candidate selected
+by `chooseThreadEffectiveOnCore` is never wrongly rejected here.  The
+TCB-field form is kept because it needs no store lookups on the hot
+preemption gate; if the priority-agreement invariant is ever relaxed, this
+gate must switch to `resolveEffectivePrioDeadline` in the same commit. -/
 def candidateOutranksCurrentOnCore (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) : Bool :=
   match st.scheduler.currentOnCore c with

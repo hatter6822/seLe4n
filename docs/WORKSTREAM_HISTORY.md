@@ -25,7 +25,7 @@ SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
 **Current sub-phase: SM6.E cancellation across cores LANDED (v0.32.60) —
-completed v0.32.61; PR-review cuts v0.32.62–63.**
+completed v0.32.61; PR-review cuts v0.32.62–64.**
 
 **PR-review cut (v0.32.62, PR #831 P2 + its root causes).**  The review
 flagged that the `suspend_thread_cross_core` FFI entry fired only the
@@ -79,6 +79,22 @@ preserved.  Suite §3.15 (the deboosted boot current preempted inline by
 a mid-priority bystander and re-enqueued at base priority, single-core
 mirror, the remote still-current poke) — 91 assertions / 15 groups;
 golden trace byte-identical.
+
+**PR-review cut 3 (v0.32.64) — scheduler-lock footprint closure.**
+`suspendThreadOnCoreSchedLockSet` gains the executing core: both run-queue
+write locks (victim home + executing core, coinciding to one entry) via the
+shared `sortedSchedCorePair` segment shape, the ascending-acquisition
+theorem re-proven compositionally (`List.pairwise_append`).  The SM3.C.11
+chain-walk contract now requires each step to hold the member's TCB write
+lock AND its home-core `SchedLockId.runQueue` write lock — the
+`updatePipBoostOnCore` re-bucketing is state-discovered, so it lives in the
+dynamic extension, not the static footprint; the declaration covers the
+`.call`/`.reply`/`.replyRecv` walks identically.
+`candidateOutranksCurrentOnCore`'s TCB-field comparison is documented sound
+under the maintained `boundThreadPriorityConsistent` invariant (the
+`resolveEffectivePrioDeadline_fst_eq_effectiveRunQueuePriority_of_agree`
+bridge), with the obligation to switch forms if the invariant is relaxed.
+Suite §3.15(d) — 93 assertions / 15 groups; trace byte-identical.
 
 The v0.32.61 completion cut closed the four
 tracked-debt items of the landing (full record in the plan's §SM6.E

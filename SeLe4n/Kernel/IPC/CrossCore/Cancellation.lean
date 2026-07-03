@@ -1772,90 +1772,113 @@ def cancelDonationOnCoreSchedLockSet (victimHome ownerHome : CoreId) :
     List (SchedLockId × Concurrency.AccessMode) :=
   cancelDonatedDonationOnCoreSchedLockSet victimHome ownerHome
 
+/-- WS-SM SM6.E (PR #831 review 3): a `CoreId`-ascending sorted pair of
+same-kind scheduler locks — the shared shape of the suspend footprint's
+run-queue and replenish-queue segments (one entry when the cores coincide,
+two in `CoreId`-ascending order otherwise). -/
+def sortedSchedCorePair (f : CoreId → SchedLockId) (a b : CoreId) :
+    List (SchedLockId × Concurrency.AccessMode) :=
+  if a = b then [ (f a, .write) ]
+  else if a ≤ b then [ (f a, .write), (f b, .write) ]
+  else [ (f b, .write), (f a, .write) ]
+
+/-- Every key of a sorted pair is one of the two endpoints. -/
+theorem sortedSchedCorePair_map_fst_mem {f : CoreId → SchedLockId}
+    {a b : CoreId} {x : SchedLockId}
+    (hx : x ∈ (sortedSchedCorePair f a b).map (·.1)) : x = f a ∨ x = f b := by
+  unfold sortedSchedCorePair at hx
+  split at hx
+  · simp only [List.map_cons, List.map_nil, List.mem_singleton] at hx
+    exact Or.inl hx
+  · split at hx
+    · simp only [List.map_cons, List.map_nil, List.mem_cons,
+        List.not_mem_nil, or_false] at hx
+      exact hx
+    · simp only [List.map_cons, List.map_nil, List.mem_cons,
+        List.not_mem_nil, or_false] at hx
+      exact hx.symm
+
+/-- A sorted pair's keys ascend under any `CoreId`-monotone lock constructor. -/
+theorem sortedSchedCorePair_pairwise_le (f : CoreId → SchedLockId) (a b : CoreId)
+    (hMono : ∀ c d : CoreId, c ≤ d → f c ≤ f d) :
+    ((sortedSchedCorePair f a b).map (·.1)).Pairwise (· ≤ ·) := by
+  unfold sortedSchedCorePair
+  split
+  · simp
+  · split
+    · rename_i hne hle
+      simp only [List.map_cons, List.map_nil]
+      exact List.Pairwise.cons
+        (fun x hx => by rcases List.mem_singleton.mp hx with rfl; exact hMono _ _ hle)
+        (List.Pairwise.cons (fun x hx => by simp at hx) List.Pairwise.nil)
+    · rename_i hne hnle
+      have hge : b ≤ a := (Nat.le_total a.val b.val).resolve_left hnle
+      simp only [List.map_cons, List.map_nil]
+      exact List.Pairwise.cons
+        (fun x hx => by rcases List.mem_singleton.mp hx with rfl; exact hMono _ _ hge)
+        (List.Pairwise.cons (fun x hx => by simp at hx) List.Pairwise.nil)
+
 /-- WS-SM SM6.E: the scheduler-domain footprint of the cross-core suspend
 pipeline (`suspendThreadOnCore`, the G2..G7 composite): the object-store
-table write lock, the victim's home-core **run-queue** write lock (the G4
-deschedule + G7 current handling), and the replenish-queue write locks of
-the donation arms (victim home = purge/migration source, owner home = the
-migration destination), in the plan §4.4 cross-domain ascending order
-`object < runQueue < replenishQueue`. -/
-def suspendThreadOnCoreSchedLockSet (home ownerHome : CoreId) :
+table write lock, the **run-queue** write locks of the victim's home core
+(the G4 deschedule + G7 current handling) AND the executing core (the G7
+local-disinheritance preemption gate `handleRescheduleSgiOnCore` may
+switch/re-enqueue under the executing core's queue when the G2b PIP revert
+deboosted its current thread — PR #831 review 3; one entry when
+`home = executingCore`), and the replenish-queue write locks of the donation
+arms (victim home = purge/migration source, owner home = the migration
+destination), in the plan §4.4 cross-domain ascending order
+`object < runQueue < replenishQueue` with each same-kind segment in
+`CoreId`-ascending order.
+
+**Dynamic chain extension (declared, not static — PR #831 review 3).**  The
+G2b PIP revert (`propagatePipChainCrossCore` from the captured blocking
+server) re-buckets each chain member's run queue on **that member's** home
+core (`updatePipBoostOnCore`).  The chain is state-discovered, so no static
+footprint can enumerate those cores — exactly the SM3.C.11 argument for the
+chain members' TCB locks.  The obligation is declared by
+`pipChainStart_tcbSuspend` (SM3.B.3): the SM3.C.11 walker must acquire, per
+chain step, the member's TCB **write** lock *and* its home-core
+`SchedLockId.runQueue` **write** lock together (see the amended SM3.C
+consumer contract in `LockSetTransitions.lean`).  The same declaration
+covers the `.call`/`.reply`/`.replyRecv` walks, which run the identical
+`updatePipBoostOnCore` re-bucketing. -/
+def suspendThreadOnCoreSchedLockSet (home executingCore ownerHome : CoreId) :
     List (SchedLockId × Concurrency.AccessMode) :=
   (SchedLockId.object schedObjStoreLockId, .write) ::
-  (SchedLockId.runQueue ⟨home⟩, .write) ::
-    (if home = ownerHome then
-      [ (SchedLockId.replenishQueue ⟨home⟩, .write) ]
-    else if home ≤ ownerHome then
-      [ (SchedLockId.replenishQueue ⟨home⟩, .write)
-      , (SchedLockId.replenishQueue ⟨ownerHome⟩, .write) ]
-    else
-      [ (SchedLockId.replenishQueue ⟨ownerHome⟩, .write)
-      , (SchedLockId.replenishQueue ⟨home⟩, .write) ])
+  (sortedSchedCorePair (fun c => SchedLockId.runQueue ⟨c⟩) home executingCore
+    ++ sortedSchedCorePair (fun c => SchedLockId.replenishQueue ⟨c⟩) home ownerHome)
 
 /-- SM6.E: the suspend footprint's keys form a `SchedLockId`-ascending
 acquisition sequence — the full three-domain ladder
-`object < runQueue < replenishQueue` with the replenish endpoints in
-`CoreId`-ascending order. -/
-theorem suspendThreadOnCoreSchedLockSet_pairwise_le (home ownerHome : CoreId) :
-    ((suspendThreadOnCoreSchedLockSet home ownerHome).map (·.1)).Pairwise (· ≤ ·) := by
-  have hObjRQ : SchedLockId.object schedObjStoreLockId
-      ≤ SchedLockId.runQueue (⟨home⟩ : RunQueueLockId) :=
-    (SchedLockId.object_lt_runQueue _ _).1
+`object < runQueue < replenishQueue` with each same-kind segment's endpoints
+in `CoreId`-ascending order. -/
+theorem suspendThreadOnCoreSchedLockSet_pairwise_le
+    (home executingCore ownerHome : CoreId) :
+    ((suspendThreadOnCoreSchedLockSet home executingCore ownerHome).map (·.1)).Pairwise
+      (· ≤ ·) := by
+  have hObjRQ : ∀ (c : CoreId), SchedLockId.object schedObjStoreLockId
+      ≤ SchedLockId.runQueue (⟨c⟩ : RunQueueLockId) :=
+    fun c => (SchedLockId.object_lt_runQueue _ _).1
   have hObjRep : ∀ (c : CoreId), SchedLockId.object schedObjStoreLockId
       ≤ SchedLockId.replenishQueue (⟨c⟩ : ReplenishQueueLockId) :=
     fun c => (SchedLockId.object_lt_replenishQueue _ _).1
-  have hRQRep : ∀ (c : CoreId), SchedLockId.runQueue (⟨home⟩ : RunQueueLockId)
-      ≤ SchedLockId.replenishQueue (⟨c⟩ : ReplenishQueueLockId) :=
-    fun c => (SchedLockId.runQueue_lt_replenishQueue _ _).1
+  have hRQRep : ∀ (c d : CoreId), SchedLockId.runQueue (⟨c⟩ : RunQueueLockId)
+      ≤ SchedLockId.replenishQueue (⟨d⟩ : ReplenishQueueLockId) :=
+    fun c d => (SchedLockId.runQueue_lt_replenishQueue _ _).1
   unfold suspendThreadOnCoreSchedLockSet
-  by_cases hEq : home = ownerHome
-  · subst hEq
-    simp only [List.map_cons]
-    refine List.Pairwise.cons ?_ (List.Pairwise.cons ?_
-      (List.Pairwise.cons (fun a ha => by simp at ha) List.Pairwise.nil))
-    · intro a ha
-      rcases List.mem_cons.mp ha with rfl | ha
-      · exact hObjRQ
-      · rcases List.mem_singleton.mp ha with rfl; exact hObjRep _
-    · intro a ha
-      rcases List.mem_singleton.mp ha with rfl; exact hRQRep _
-  · by_cases hLe : home ≤ ownerHome
-    · simp only [hEq, hLe, if_true, if_false, List.map_cons, List.map_nil]
-      refine List.Pairwise.cons ?_ (List.Pairwise.cons ?_
-        (List.Pairwise.cons ?_
-          (List.Pairwise.cons (fun a ha => by simp at ha) List.Pairwise.nil)))
-      · intro a ha
-        rcases List.mem_cons.mp ha with rfl | ha
-        · exact hObjRQ
-        rcases List.mem_cons.mp ha with rfl | ha
-        · exact hObjRep _
-        · rcases List.mem_singleton.mp ha with rfl; exact hObjRep _
-      · intro a ha
-        rcases List.mem_cons.mp ha with rfl | ha
-        · exact hRQRep _
-        · rcases List.mem_singleton.mp ha with rfl; exact hRQRep _
-      · intro a ha
-        rcases List.mem_singleton.mp ha with rfl
-        exact hLe
-    · simp only [hEq, hLe, if_false, List.map_cons, List.map_nil]
-      have hGe : ownerHome ≤ home :=
-        (Nat.le_total home.val ownerHome.val).resolve_left hLe
-      refine List.Pairwise.cons ?_ (List.Pairwise.cons ?_
-        (List.Pairwise.cons ?_
-          (List.Pairwise.cons (fun a ha => by simp at ha) List.Pairwise.nil)))
-      · intro a ha
-        rcases List.mem_cons.mp ha with rfl | ha
-        · exact hObjRQ
-        rcases List.mem_cons.mp ha with rfl | ha
-        · exact hObjRep _
-        · rcases List.mem_singleton.mp ha with rfl; exact hObjRep _
-      · intro a ha
-        rcases List.mem_cons.mp ha with rfl | ha
-        · exact hRQRep _
-        · rcases List.mem_singleton.mp ha with rfl; exact hRQRep _
-      · intro a ha
-        rcases List.mem_singleton.mp ha with rfl
-        exact hGe
+  rw [List.map_cons, List.map_append, List.pairwise_cons]
+  refine ⟨?_, ?_⟩
+  · intro x hx
+    rcases List.mem_append.mp hx with hx | hx
+    · rcases sortedSchedCorePair_map_fst_mem hx with rfl | rfl <;> exact hObjRQ _
+    · rcases sortedSchedCorePair_map_fst_mem hx with rfl | rfl <;> exact hObjRep _
+  · rw [List.pairwise_append]
+    refine ⟨sortedSchedCorePair_pairwise_le _ _ _ (fun c d h => h),
+      sortedSchedCorePair_pairwise_le _ _ _ (fun c d h => h), ?_⟩
+    intro x hx y hy
+    rcases sortedSchedCorePair_map_fst_mem hx with rfl | rfl <;>
+    rcases sortedSchedCorePair_map_fst_mem hy with rfl | rfl <;> exact hRQRep _ _
 
 -- ============================================================================
 -- §13  SM6.E — the live per-core suspend (the `.tcbSuspend` dispatch target)

@@ -930,7 +930,16 @@ transition `<τ>` will invoke a PIP chain walk starting at
    - Acquire the next chain TCB's lock in **`ObjId.val` ascending
      order** to preserve the SM0.I total order on
      `LockKind.tcb`-level locks (deadlock-freedom obligation).
-   - Update `pipBoost` under the chain TCB's write lock.
+   - Update `pipBoost` under the chain TCB's write lock, AND —
+     WS-SM SM6.E (PR #831 review 3) — hold the member's home-core
+     `SchedLockId.runQueue` **write** lock for the same step: the
+     per-core boost (`updatePipBoostOnCore`, reached via
+     `pipBoostWithWake` / `propagatePipChainCrossCore`) re-buckets
+     the member's run queue on **its** home core, a
+     scheduler-domain write no static footprint can enumerate
+     (the chain is state-discovered).  Both locks are CAS-try
+     acquisitions under the bounded-retry budget, so the
+     hold-and-wait-free deadlock argument is unchanged.
 3. Release in reverse order.
 
 If `pipChainStart_<τ> args = none`, no chain walk is invoked by
