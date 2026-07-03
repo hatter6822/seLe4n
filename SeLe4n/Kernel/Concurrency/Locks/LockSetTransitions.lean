@@ -911,8 +911,17 @@ transition `<τ>` will invoke a PIP chain walk starting at
 `startTid` **after** the static-lockSet action completes.  SM3.C
 **must**:
 
-1. Acquire the static `lockSet_<τ> args` first (which includes
-   `startTid` itself when chain-walk is triggered).
+1. Acquire the static `lockSet_<τ> args` first.  For the three
+   IPC markers the static set happens to include `startTid`
+   itself (the chain start is the receiver/caller, already a
+   static-footprint member); for `pipChainStart_tcbSuspend`
+   (SM6.E) the chain start is the victim's captured upstream
+   blocking server, which is NOT in `lockSet_tcbSuspend` — the
+   walker's first CAS-acquisition covers it (the SM3.C.11 walk
+   path includes `startTid`; `PipChainPath.singleton`).
+   Deadlock-freedom never rested on static inclusion: dynamic
+   chain locks are try-acquired (CAS) under bounded retries, so
+   the walker never hold-and-waits (SM3.C.11.a strategy step 4).
 2. After the core action mutates state, invoke a dynamic
    chain-walk locking strategy starting at `startTid`.  The walk
    must:
@@ -988,6 +997,23 @@ replyRecv succeeds.  Symmetric to `pipChainStart_endpointReply`. -/
     (_donatedScId : Option SchedContextId)
     (_donatedOriginalOwnerTid : Option ThreadId) : Option ThreadId :=
   some callerTid
+
+/-- WS-SM SM6.E (suspend PIP-revert ordering fix): chain-start hint for
+`.tcbSuspend`.
+
+`suspendThread` / `suspendThreadOnCore` invoke the PIP revert walk from the
+victim's **captured upstream blocking server** — the D4-N
+capture → clear → revert-from-server order (`timeoutThread`'s discipline):
+the reply-blocking edge is read at G2-precapture, `cancelIpcBlocking` clears
+the victim's `ipcState`, and the walk then recomputes each chain member's
+`pipBoost` from the post-teardown `waitersOf` (which no longer includes the
+victim), genuinely dropping the victim's donation.  A victim that was not
+reply-blocked at entry (`blockingServer` = `none`) triggers no walk.  So the
+chain-start signal is exactly the captured server. -/
+@[inline] def pipChainStart_tcbSuspend
+    (_victimTid : ThreadId)
+    (capturedBlockingServer : Option ThreadId) : Option ThreadId :=
+  capturedBlockingServer
 
 -- ============================================================================
 -- SM3.B.4 — permittedKinds and lockSet_consistent

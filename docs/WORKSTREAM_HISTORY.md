@@ -25,7 +25,40 @@ SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
 **Current sub-phase: SM6.E cancellation across cores LANDED (v0.32.60) —
-completed v0.32.61.**  The v0.32.61 completion cut closed the four
+completed v0.32.61; PR-review cut v0.32.62.**
+
+**PR-review cut (v0.32.62, PR #831 P2 + its root causes).**  The review
+flagged that the `suspend_thread_cross_core` FFI entry fired only the
+surfaced victim-deschedule SGI, leaving remote PIP re-bucketing cores
+unpoked; investigating surfaced two deeper layers, all three fixed:
+**(1) the suspend PIP-revert ordering fix** — a **third pre-existing
+single-core defect**: `suspendThread` ran `revertPriorityInheritance` at
+the *victim*, *before* `cancelIpcBlocking` cleared the victim's
+`ipcState`, so each chain member's `pipBoost` recomputed from a
+`waitersOf` still containing the victim (a fixed-point no-op — a server
+retained the suspended victim's donated priority indefinitely; the SM6.C
+replay barrier means no later reply-path revert ever runs for the
+consumed reply).  Both `suspendThread` and `suspendThreadOnCore` now use
+`timeoutThread`'s D4-N capture → clear → revert-from-server order.
+**(2) per-core bucket migration** — `suspendThreadOnCore`'s revert walk
+is the SM5.F.4 `propagatePipChainCrossCore` (revert-capable per
+`revert_eq_propagate`), migrating each chain member's run-queue bucket on
+**its** home core (`updatePipBoostOnCore`), closing the suspend path's
+SM5.F per-core-PIP-migration gap.  **(3) diff-fired suspend-entry SGIs**
+(the review's exact ask) — `suspendThreadCrossCoreEntry` fires
+`computeCrossCoreSgis pre post execCore` exactly as
+`syscallDispatchCrossCoreEntry`, so the G2b re-bucketing pokes ride the
+diff alongside the re-derived victim poke.  The chain-walk obligation is
+declared: `pipChainStart_tcbSuspend` (the fourth `pipChainStart_<τ>`
+marker; SM3.B inventory 98 → 99, chainStart 3 → 4) with the SM3.C
+consumer contract amended for a non-static chain start (the walker's
+first CAS-acquisition covers the captured server; deadlock-freedom rests
+on bounded-retry try-acquisition).  Suite §3.14 (PIP-donation drop:
+boost dropped, home-core bucket re-keyed 200 → 50, diff pokes both
+remote cores, single-core mirror) — 84 assertions / 14 groups; golden
+trace byte-identical.
+
+The v0.32.61 completion cut closed the four
 tracked-debt items of the landing (full record in the plan's §SM6.E
 completion note): **(1) the live `.tcbSuspend` cross-core dispatch** —
 `suspendThreadOnCore` (Cancellation.lean §13, the `resumeThreadOnCore`

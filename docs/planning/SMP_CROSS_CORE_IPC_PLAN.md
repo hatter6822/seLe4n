@@ -616,7 +616,7 @@ donationOwnerUnique/endpointQueueTailBlockedConsistent/
 queueNextTargetBlocked`, each `_perCore` — so the aggregate is fully
 per-core, not just the four named rows.)
 
-### SM6.E — Cancellation across cores (3 PRs, 6 sub-tasks) — LANDED (v0.32.60) + completion cut (v0.32.61)
+### SM6.E — Cancellation across cores (3 PRs, 6 sub-tasks) — LANDED (v0.32.60) + completion cut (v0.32.61) + PR-review cut (v0.32.62)
 
 Deliverable module: `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean`
 (**production** — imported by `SeLe4n.lean`), plus the single-core
@@ -666,7 +666,7 @@ formal content of "the cancellation sub-operations run inside the
 | SM6.E.3 | `cancelDonation` (R5.A) under lock-set | `lockSet_cancelDonation` + pre-resolution (`cancelBindingSc?`/`cancelDonatedOwner?`) + state-resolved form + consistency + write coverage + the per-core arms `cancelBoundDonationOnCore` (home-core replenish purge: `_replenishQueue_purged`/`_replenishQueue_ne`/`_runQueue_current_eq`) and dispatcher `cancelDonationOnCore` (error paths return the pre-state) | ✓ |
 | SM6.E.4 | `cancelDonation_atomic_under_lockSet` | landed (exact plan name) + the per-core companion `cancelDonationOnCore_atomic_under_lockSet` | ✓ |
 | SM6.E.5 | Cross-core cancellation (spans cores) | `descheduleThread` (wakeThread dual: `_emits_sgi_if_remote_current`, `_no_sgi_if_local`/`_no_sgi_if_not_current`/`_no_sgi_if_ghost`, `_descheduled_on_home`, `_independent_of_other_core`) + `cancelIpcBlockingOnCore` (reductions `_state_eq`/`_objects_eq`/`_eq_descheduleThread`/`_ready_eq_descheduleThread`, SGI family, `_preserves_objects_invExt`) + the flagship `cancellation_cross_core_correct` (remote poke ∧ full home-core deschedule ∧ per-core locality ∧ object-level fidelity) | ✓ |
-| SM6.E.6 | 6 cancellation scenarios | `tests/SmpCancellationSuite.lean` — 13 scenario groups / 76 assertions (endpoint-/notification-/reply-blocked remote-homed victims; running-remote SGI vs running-local no-SGI; bound-donation home-core purge; donated return-to-owner **with §2b replenishment-migration assertions**; dispatcher identity + ghost + `withLockSet` bracket; **completion cut**: notification sole-waiter state correction + two-waiter retention, 3-deep mid-queue splice link patches, mirror SGI (boot-homed victim cancelled from a remote core), the live `suspendThreadOnCore` (remote SGI + diff-seam recovery + local inline successor dispatch + `.Inactive` rejection + single-core inertness), and send-/receive-blocked teardown arms), wired Tier-2 (`smp_cancellation_suite`) + Tier-3 anchors | ✓ |
+| SM6.E.6 | 6 cancellation scenarios | `tests/SmpCancellationSuite.lean` — 14 scenario groups / 84 assertions (endpoint-/notification-/reply-blocked remote-homed victims; running-remote SGI vs running-local no-SGI; bound-donation home-core purge; donated return-to-owner **with §2b replenishment-migration assertions**; dispatcher identity + ghost + `withLockSet` bracket; **completion cut**: notification sole-waiter state correction + two-waiter retention, 3-deep mid-queue splice link patches, mirror SGI (boot-homed victim cancelled from a remote core), the live `suspendThreadOnCore` (remote SGI + diff-seam recovery + local inline successor dispatch + `.Inactive` rejection + single-core inertness), and send-/receive-blocked teardown arms; **v0.32.62 PR-review cut**: the §3.14 PIP-donation-drop scenario — suspending a reply-blocked client drops the server's donated `pipBoost`, re-keys the server's home-core run-queue bucket, and the diff seam pokes both the server's and the victim's home cores; single-core mirror), wired Tier-2 (`smp_cancellation_suite`) + Tier-3 anchors | ✓ |
 
 Supporting invariant surface (single-core, production):
 `cancelIpcBlocking_preserves_objects_invExt` (+ per-helper lemmas
@@ -780,6 +780,43 @@ reschedule unreachable (now a G7-precapture read, mirrored by
 `suspendThreadOnCore`; suite §3.12 exercises the successor dispatch).
 The TOCTOU shape of pre-state resolution is documented at the resolution
 sites (lock-conflict serialisation + the AN9-D interrupt bracket).
+
+**PR-review cut (v0.32.62) — PR #831 P2 remediation + the two root-cause
+layers beneath it:**
+
+1. **Suspend PIP-revert ordering fix (a third pre-existing single-core
+   defect).**  `suspendThread` ran `revertPriorityInheritance` at the
+   *victim*, *before* `cancelIpcBlocking` cleared the victim's `ipcState`,
+   so every chain member's `pipBoost` recomputed from a `waitersOf` still
+   containing the victim — a fixed-point no-op: a server holding the
+   suspended victim's donated priority retained it indefinitely (the
+   SM6.C replay barrier means no later reply-path revert runs for the
+   consumed reply).  Both `suspendThread` and `suspendThreadOnCore` now
+   use `timeoutThread`'s D4-N capture → clear → revert-from-server order
+   (G2-precapture via `blockingServer`; the walk runs on the
+   post-teardown state).
+2. **Per-core bucket migration.**  `suspendThreadOnCore`'s revert walk is
+   the SM5.F.4 `propagatePipChainCrossCore` (revert-capable per
+   `revert_eq_propagate`): each chain member's run-queue bucket migrates
+   on **its** home core (`updatePipBoostOnCore`), closing the SM5.F
+   per-core-PIP-migration gap for the suspend path (previously tracked at
+   the timeout site).
+3. **Diff-fired suspend-entry SGIs (the review's exact ask).**
+   `suspendThreadCrossCoreEntry` fires
+   `computeCrossCoreSgis pre post execCore` — exactly as
+   `syscallDispatchCrossCoreEntry` — so the G2b re-bucketing pokes ride
+   the diff alongside the re-derived victim-deschedule poke
+   (`crossCoreSgiBody_remote_deschedule`); single-core inertness via
+   `computeCrossCoreSgis_nil_single_core`.
+4. **Chain-walk obligation declared.**  `pipChainStart_tcbSuspend` (the
+   fourth `pipChainStart_<τ>` marker; SM3.B inventory 98 → 99, chainStart
+   3 → 4), with the SM3.C consumer contract amended: the suspend chain
+   start (the captured server) is not a static-footprint member — the
+   SM3.C.11 walker's first CAS-acquisition covers it (deadlock-freedom
+   rests on bounded-retry try-acquisition, not static inclusion).
+
+Suite §3.14 (PIP-donation drop: boost dropped, home-core bucket re-keyed,
+diff pokes both remote cores, single-core mirror); trace byte-identical.
 
 ### SM6.F — Tests + fixtures (3 PRs, 6 sub-tasks)
 

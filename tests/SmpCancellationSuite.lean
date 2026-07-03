@@ -874,6 +874,103 @@ private def runSendReceiveCancelChecks : IO Unit := do
               decide (ep.receiveQ.head ≠ some victimTid ∧ ep.receiveQ.tail ≠ some victimTid)
           | _ => false))
 
+-- ----------------------------------------------------------------------------
+-- Scenario M (SM6.E PIP-revert ordering fix): suspending a reply-blocked
+-- client drops the server's donated boost (D4-N capture → clear →
+-- revert-from-server), migrates the server's bucket on ITS home core
+-- (`updatePipBoostOnCore` via the SM5.F.4 chain walk), and the diff seam
+-- derives the re-bucketing poke (the PR #831 review fix).
+-- ----------------------------------------------------------------------------
+
+private def serverTid : SeLe4n.ThreadId := ⟨716⟩
+private def core2 : CoreId := ⟨2, by decide⟩
+
+/-- A high-priority victim (prio 200, home core 1, running current there)
+reply-blocked on a PIP-boosted server (base prio 50, `pipBoost` 200, home
+core 2, runnable there).  Pre-fix, `suspendThread`'s revert-at-the-victim
+ran before the victim left `waitersOf(server)`, so the recompute was a
+fixed-point no-op and the server retained the suspended victim's donated
+priority indefinitely. -/
+private def stPipDonation : SystemState :=
+  let base :=
+    (BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject rId.toObjId (.reply { replyId := rId, caller := some victimTid })
+      |>.withObject victimTid.toObjId (.tcb { mkTcb 710 200 (some core1) with
+          threadState := .Running,
+          ipcState := .blockedOnReply epId (some serverTid),
+          replyObject := some rId })
+      |>.withObject serverTid.toObjId (.tcb { mkTcb 716 50 (some core2) with
+          threadState := .Ready,
+          pipBoost := some ⟨200⟩ })
+      |>.build)
+  let st1 := enqueueRunnableOnCore base core2 serverTid
+  { st1 with scheduler := st1.scheduler.setCurrentOnCore core1 (some victimTid) }
+
+private def runPipDonationDropChecks : IO Unit := do
+  IO.println "--- §3.14 SM6.E PIP donation drop on suspend (ordering fix) ---"
+  match victimTid.toValid? with
+  | none => assertBool "setup: victim ValidThreadId" false
+  | some vtid =>
+      assertBool "setup: server runnable on core 2 carrying the donated boost"
+        ((match stPipDonation.getTcb? serverTid with
+          | some s => decide (s.pipBoost = some ⟨200⟩)
+          | none => false)
+          && decide (serverTid ∈ stPipDonation.scheduler.runQueueOnCore core2)
+          && decide ((stPipDonation.scheduler.runQueueOnCore core2).threadPriority[serverTid]?
+              = some ⟨200⟩))
+      match suspendThreadOnCore stPipDonation vtid bootCoreId with
+      | .ok (st', sgi) =>
+          -- (i) the ordering fix: the revert runs AFTER the teardown, from the
+          -- captured server, so the recompute sees `waitersOf(server)` without
+          -- the victim and genuinely drops the donation.
+          assertBool "suspend drops the server's donated pipBoost"
+            (match st'.getTcb? serverTid with
+             | some s => decide (s.pipBoost = none)
+             | none => false)
+          -- (ii) per-core migration: the server stays runnable on ITS home
+          -- core and its recorded bucket drops 200 → 50 (the boot-pinned
+          -- `updatePipBoost` would have left the core-2 bucket at the stale
+          -- 200 — the SM5.F per-core-PIP-migration gap this closes).
+          assertBool "server stays runnable on core 2 across the bucket migration"
+            (decide (serverTid ∈ st'.scheduler.runQueueOnCore core2))
+          assertBool "server's core-2 bucket is re-keyed to its base priority"
+            (decide ((st'.scheduler.runQueueOnCore core2).threadPriority[serverTid]?
+              = some ⟨50⟩))
+          -- (iii) the review fix: the diff seam derives the core-2
+          -- re-bucketing poke the FFI suspend entry now fires.
+          assertBool "diff seam pokes core 2 for the server re-bucketing"
+            ((PriorityInheritance.computeCrossCoreSgis stPipDonation st' bootCoreId).any
+              (fun p => p.1 == core2 && p.2 == SgiKind.reschedule))
+          assertBool "diff seam still pokes core 1 for the victim deschedule"
+            ((PriorityInheritance.computeCrossCoreSgis stPipDonation st' bootCoreId).any
+              (fun p => p.1 == core1 && p.2 == SgiKind.reschedule))
+          assertBool "surfaced SGI remains the victim's home-core poke"
+            (decide (sgi = some (core1, SgiKind.reschedule)))
+      | .error _ => assertBool "PIP-donation suspend succeeds" false
+      -- Single-core mirror: the boot pipeline (`suspendThread`) drops the
+      -- boost through the same capture → clear → revert-from-server order.
+      let stBootPip :=
+        (BootstrapBuilder.empty
+          |>.withObject epId (.endpoint {})
+          |>.withObject rId.toObjId (.reply { replyId := rId, caller := some victimTid })
+          |>.withObject victimTid.toObjId (.tcb { mkTcb 710 200 none with
+              threadState := .Running,
+              ipcState := .blockedOnReply epId (some serverTid),
+              replyObject := some rId })
+          |>.withObject serverTid.toObjId (.tcb { mkTcb 716 50 none with
+              threadState := .Ready,
+              pipBoost := some ⟨200⟩ })
+          |>.withRunnable [serverTid]
+          |>.build)
+      match suspendThread stBootPip vtid with
+      | .ok st' =>
+          assertBool "single-core suspend also drops the server's donated boost"
+            (match st'.getTcb? serverTid with
+             | some s => decide (s.pipBoost = none)
+             | none => false)
+      | .error _ => assertBool "single-core PIP suspend succeeds" false
+
 -- ============================================================================
 -- Aggregate runner
 -- ============================================================================
@@ -893,6 +990,7 @@ def runSmpCancellationChecks : IO Unit := do
   runMirrorSgiChecks
   runPerCoreSuspendChecks
   runSendReceiveCancelChecks
+  runPipDonationDropChecks
   IO.println "SmpCancellationSuite: all checks passed."
 
 end SeLe4n.Testing.SmpCancellation

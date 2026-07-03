@@ -1873,11 +1873,20 @@ The single-core G1–G7 pipeline generalised across cores:
 * **G7-precapture** — whether the victim is actively current is read on its
   **home** core (`determineTargetCore`, pre-state resolution per the SM3.B
   discipline) instead of the boot core.
-* **G2 (PIP revert + IPC teardown)** — the unchanged object-level steps
-  (`revertPriorityInheritance`, `cancelIpcBlocking`): both write only
-  objects, so they are core-independent (a remote chain member's run-queue
-  re-bucketing is poked by the diff seam's re-bucketing rule, exactly as on
-  the single-core revert path).
+* **G2 (IPC teardown) + G2b (per-core PIP revert)** — the upstream blocking
+  server is captured BEFORE `cancelIpcBlocking` clears the victim's
+  `ipcState` (the D4-N capture → clear → revert-from-server order
+  `timeoutThread` uses; see the `suspendThread` ordering-fix note), and the
+  revert then walks the chain from that server on the post-teardown state —
+  `waitersOf` no longer includes the victim, so each chain member's
+  `pipBoost` genuinely drops the victim's donation.  Per-core: the walk is
+  the SM5.F.4 `propagatePipChainCrossCore` (functionally revert-capable —
+  `revert_eq_propagate`'s recompute-from-current-`waitersOf` argument),
+  which migrates each chain member's run-queue bucket on **its** home core
+  via `updatePipBoostOnCore` — not the boot-pinned `updatePipBoost` — and
+  the cross-core `.reschedule` pokes the re-bucketing warrants are
+  re-derived by the diff seam (`computeCrossCoreSgis`, fired by both
+  `.tcbSuspend` entry paths).
 * **G3 (donation)** — dispatches to the **per-core** arms:
   `cancelBoundDonationOnCore` purges the replenish queue of the victim's
   *home* core (the SM5.H affinity discipline) and
@@ -1917,8 +1926,18 @@ def suspendThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThreadId)
       -- moves it — `cancelIpcBlocking_determineTargetCore_eq`)
       let home := determineTargetCore st tid
       let wasCurrentHome : Bool := (st.scheduler.currentOnCore home) == some tid
-      let st := PriorityInheritance.revertPriorityInheritance st tid
+      -- G2-precapture (D4-N, SM6.E ordering fix — see `suspendThread`): the
+      -- reply-blocking edge is read before G2 clears it.
+      let maybeBlockingServer := PriorityInheritance.blockingServer st tid
       let st := cancelIpcBlockingValid st vtid tcb
+      -- G2b (D4-N × SM5.F.4): revert the PIP chain from the captured server
+      -- on the post-teardown state, migrating each chain member's run-queue
+      -- bucket on its OWN home core (the boot-pinned `revertPriorityInheritance`
+      -- migrated only the boot queue — the SM5.F per-core-PIP-migration gap).
+      let st := match maybeBlockingServer with
+        | some serverId =>
+          (PriorityInheritance.propagatePipChainCrossCore st serverId executingCore).1
+        | none => st
       let tcb' := (st.getTcb? tid).getD tcb
       match (match tcb'.schedContextBinding with
              | .unbound => (Except.ok st : Except KernelError SystemState)

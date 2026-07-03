@@ -1,3 +1,52 @@
+## v0.32.62 — WS-SM SM6.E: suspend PIP-revert ordering fix + diff-fired suspend-entry SGIs (PR #831 review)
+
+Remediates the PR #831 review finding (P2: the `suspend_thread_cross_core`
+FFI entry fired only the surfaced victim-deschedule SGI, leaving remote
+PIP re-bucketing cores unpoked until their next timer tick) and the two
+root-cause layers beneath it:
+
+* **Suspend PIP-revert ordering fix (pre-existing single-core defect).**
+  `suspendThread` ran `revertPriorityInheritance` at the *victim*, *before*
+  `cancelIpcBlocking` cleared the victim's `ipcState` — so every chain
+  member's `pipBoost` recomputed from a `waitersOf` that still contained the
+  victim (a fixed-point no-op), and a server holding the suspended victim's
+  donated priority retained it indefinitely (the reply-replay barrier means
+  no later reply-path revert runs for the consumed reply).  Both
+  `suspendThread` and `suspendThreadOnCore` now use `timeoutThread`'s D4-N
+  capture → clear → revert-from-server order: the upstream blocking server is
+  captured at G2-precapture (`blockingServer`), the teardown clears the
+  victim's `ipcState`, and the revert walks the chain from the captured
+  server on the post-teardown state — genuinely dropping the donation.
+* **Per-core bucket migration for the suspend revert.**  The per-core
+  suspend's revert walk is now the SM5.F.4 `propagatePipChainCrossCore`
+  (revert-capable per `revert_eq_propagate`), migrating each chain member's
+  run-queue bucket on **its** home core via `updatePipBoostOnCore` — the
+  boot-pinned `updatePipBoost` migrated only the boot queue (the SM5.F
+  per-core-PIP-migration gap, previously tracked at the timeout site).
+* **Diff-fired suspend-entry SGIs (the review's exact ask).**
+  `suspendThreadCrossCoreEntry` now fires
+  `computeCrossCoreSgis pre post execCore` — exactly as
+  `syscallDispatchCrossCoreEntry` — instead of only the surfaced victim SGI:
+  the victim-deschedule poke is re-derived by the SM6.E descheduled-current
+  rule, and the G2b re-bucketing pokes ride the same diff.  Single-core
+  inertness now cites `computeCrossCoreSgis_nil_single_core`.
+* **Chain-walk obligation declared.**  New `pipChainStart_tcbSuspend`
+  chain-start marker (the fourth `pipChainStart_<τ>` signal; SM3.B inventory
+  98 → 99 entries, `chainStart` category 3 → 4), with the SM3.C consumer
+  contract amended: the suspend chain start (the captured server) is not a
+  static-footprint member — the SM3.C.11 walker's first CAS-acquisition
+  covers it, and deadlock-freedom rests on bounded-retry try-acquisition,
+  not static inclusion.
+
+Tests: `SmpCancellationSuite` 76 → 84 assertions / 14 scenario groups — new
+§3.14 PIP-donation-drop scenario (boost dropped, core-2 bucket re-keyed
+200 → 50, diff seam pokes both the server's and the victim's home cores,
+single-core mirror); `LockSetSuite` inventory counts + the
+`pipChainStart_tcbSuspend` none/some examples.  Golden trace byte-identical.
+Version bumped 0.32.61 → 0.32.62.
+
+Refs: docs/planning/SMP_CROSS_CORE_IPC_PLAN.md §5 (SM6.E completion note)
+
 ## v0.32.61 — WS-SM SM6.E completion cut: live cross-core `.tcbSuspend`, cancellation NI, ipcInvariant closure, observational atomicity
 
 Closes the four tracked-debt items of the v0.32.60 SM6.E landing (full record in

@@ -1199,6 +1199,16 @@ this obligation at the type level:
 * `pipChainStart_endpointReply : ... → Option ThreadId`
 * `pipChainStart_replyRecv : ... → Option ThreadId`
 
+WS-SM SM6.E (the suspend PIP-revert ordering fix) added a fourth:
+* `pipChainStart_tcbSuspend : ... → Option ThreadId` — the
+  suspend pipeline reverts the chain from the victim's
+  **captured upstream blocking server** (the D4-N
+  capture → clear → revert-from-server order), so the chain
+  start is *not* a member of the static `lockSet_tcbSuspend`;
+  the SM3.C.11 walker's first CAS-acquisition covers it (the
+  walk path includes `startTid`), and deadlock-freedom rests on
+  the bounded-retry try-acquisition, not static inclusion.
+
 These return `some startTid` if the transition triggers PIP
 propagation from `startTid`, `none` otherwise.  SM3.C.11 wires
 the dynamic chain-walk machinery that consumes these signals

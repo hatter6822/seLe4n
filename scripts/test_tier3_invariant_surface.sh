@@ -2155,10 +2155,11 @@ import SeLe4n.Kernel.Concurrency.LockSet
 #check @SeLe4n.Kernel.Concurrency.lockSet_consistent_tcbSetPriority
 #check @SeLe4n.Kernel.Concurrency.lockSet_consistent_tcbSetMCPriority
 #check @SeLe4n.Kernel.Concurrency.lockSet_consistent_tcbSetIPCBuffer
--- SM3.B.3 audit-pass-5 — PIP-chain-walk start markers.
+-- SM3.B.3 audit-pass-5 — PIP-chain-walk start markers (+ SM6.E suspend).
 #check @SeLe4n.Kernel.Concurrency.pipChainStart_endpointCall
 #check @SeLe4n.Kernel.Concurrency.pipChainStart_endpointReply
 #check @SeLe4n.Kernel.Concurrency.pipChainStart_replyRecv
+#check @SeLe4n.Kernel.Concurrency.pipChainStart_tcbSuspend
 -- SM3.B Inventory aggregator.
 #check @SeLe4n.Kernel.Concurrency.LockSetCategory
 #check @SeLe4n.Kernel.Concurrency.LockSetTheorem

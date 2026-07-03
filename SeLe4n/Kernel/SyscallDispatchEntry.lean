@@ -134,14 +134,22 @@ analogue of `syscallDispatchCrossCoreEntry`, superseding the boot-pinned
 (`currentCoreId`), runs the verified per-core
 `Lifecycle.Suspend.suspendThreadOnCore` atomically against the kernel state ref
 (committing the post-state; the pre-state is kept on every error), then —
-*after* the commit — fires the surfaced cross-core `.reschedule` SGI: the poke
-that stops a remote home core from continuing to execute the suspended victim.
-Sentinel `tid`s are rejected at the boundary exactly as `suspendThreadInner`.
+*after* the commit — fires the **diff-recovered** cross-core `.reschedule`
+SGIs (`computeCrossCoreSgis` over the committed pre/post pair), exactly as
+`syscallDispatchCrossCoreEntry`.  The diff subsumes the single SGI
+`suspendThreadOnCore` surfaces (the victim-deschedule poke is re-derived by
+the diff seam's SM6.E descheduled-current rule,
+`crossCoreSgiBody_remote_deschedule`) and additionally recovers the G2b
+PIP-revert pokes — a suspend that severs a donation chain lowers remote
+chain members' effective run-queue buckets, and each such member's home
+core must re-run its scheduler (PR #831 review: the pre-fix entry fired
+only the surfaced victim SGI, leaving the re-bucketed cores unpoked until
+their next timer tick).  Sentinel `tid`s are rejected at the boundary
+exactly as `suspendThreadInner`.
 
-**Single-core inertness (trace safety).**  On an all-boot deployment the
-victim's home core is the executing boot core, so no SGI is ever surfaced
-(`suspendThreadOnCore_local_no_sgi`) and the entry commits the same
-post-state with no IPI. -/
+**Single-core inertness (trace safety).**  On an all-boot deployment every
+diff-derived SGI list is empty (`computeCrossCoreSgis_nil_single_core`), so
+the entry commits the same post-state with no IPI. -/
 @[export suspend_thread_cross_core]
 def suspendThreadCrossCoreEntry (tid : UInt64) : BaseIO UInt32 := do
   let execCore ← Concurrency.currentCoreId
@@ -153,9 +161,9 @@ def suspendThreadCrossCoreEntry (tid : UInt64) : BaseIO UInt32 := do
           ([] : List (CoreId × SgiKind))), st)
     | some vtid =>
         match Lifecycle.Suspend.suspendThreadOnCore st vtid execCore with
-        | Except.ok (st', some sgi) => (((0 : UInt32), [sgi]), st')
-        | Except.ok (st', none) =>
-            (((0 : UInt32), ([] : List (CoreId × SgiKind))), st')
+        | Except.ok (st', _) =>
+            (((0 : UInt32),
+              PriorityInheritance.computeCrossCoreSgis st st' execCore), st')
         | Except.error e =>
             ((Platform.FFI.KernelError.toUInt32 e, ([] : List (CoreId × SgiKind))), st))
   Concurrency.fireCrossCoreSgis result.2

@@ -590,11 +590,30 @@ def suspendThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
       -- only the replenish queue, PIP reversion re-buckets run-queue
       -- entries), so the entry-time read is the just-before-G4 value.
       let wasCurrent : Bool := (st.scheduler.currentOnCore bootCoreId) == some tid
-      -- D4-N: Revert PIP before cleanup — if this thread has pipBoost or is
-      -- in a blocking chain, recompute priorities for upstream servers
-      let st := PriorityInheritance.revertPriorityInheritance st tid
+      -- D4-N (WS-SM SM6.E ordering fix): capture the upstream blocking server
+      -- BEFORE G2 clears the victim's `ipcState` (the reply-blocking edge is
+      -- the only record of the chain), and run the PIP revert AFTER G2.
+      -- `revertPriorityInheritance` recomputes each chain member's `pipBoost`
+      -- from the *current* `waitersOf`; the pre-fix revert-at-the-victim ran
+      -- before the victim left the server's waiter set, so every link
+      -- recomputed to its old value (a no-op) and the server retained the
+      -- suspended victim's donated boost indefinitely — the reply-replay
+      -- barrier means no later reply-path revert ever runs for the consumed
+      -- reply either.  `timeoutThread` (D4-N) has always used this
+      -- capture → clear → revert-from-server order; the suspend pipeline now
+      -- matches it.  (The victim's own `pipBoost` is deliberately NOT
+      -- recomputed: its waiters stay blocked on it across suspension, so its
+      -- boost is still earned — and the old victim-leg recompute was a
+      -- fixed-point no-op for exactly that reason.)
+      let maybeBlockingServer := PriorityInheritance.blockingServer st tid
       -- G2: Cancel IPC blocking — AN10-residual-1 (commit 3): typed entry-point.
       let st := cancelIpcBlockingValid st vtid tcb
+      -- G2b (D4-N): revert PIP from the captured upstream server — now that
+      -- the victim's `ipcState` is cleared, `waitersOf` no longer includes
+      -- it, so the chain recompute genuinely drops the victim's donation.
+      let st := match maybeBlockingServer with
+        | some serverId => PriorityInheritance.revertPriorityInheritance st serverId
+        | none => st
       -- AI2-D (M-20) / AF5-H (AF-28): Re-lookup is necessary because
       -- `cancelIpcBlocking` modifies the TCB via `clearTcbIpcFields`, which
       -- updates `ipcState`, `queuePrev`, `queueNext`, and `queuePPrev`.

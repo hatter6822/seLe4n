@@ -32,14 +32,16 @@ advance, so SM3.C.11 introduces a *dynamic* extension to the
 2PL discipline that preserves deadlock-freedom under the SM0.I
 total order on `LockId`.
 
-## Three structural signals from SM3.B
+## Four structural signals from SM3.B
 
 SM3.B.3 (audit-pass-5) exposes the chain start point at the type
-level via three signals:
+level via four signals (the fourth added by WS-SM SM6.E's suspend
+PIP-revert ordering fix):
 
 * `pipChainStart_endpointCall : ... → Option ThreadId`
 * `pipChainStart_endpointReply : ... → Option ThreadId`
 * `pipChainStart_replyRecv : ... → Option ThreadId`
+* `pipChainStart_tcbSuspend : ... → Option ThreadId`
 
 When non-`none`, the kernel transition will walk the chain
 beginning at the returned `ThreadId` after the core action
@@ -86,7 +88,7 @@ The strategy preserves deadlock-freedom (Theorem 3.7.1) because:
 ## Used by
 
 SM3.C.11.b — the per-transition `withLockSet` wrappers for the
-3 PIP-invoking transitions consume `pipChainStart_<τ>` after the
+4 PIP-invoking transitions consume `pipChainStart_<τ>` after the
 static lock-set is held and `action` completes.
 -/
 
