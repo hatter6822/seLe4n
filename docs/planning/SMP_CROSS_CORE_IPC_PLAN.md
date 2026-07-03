@@ -566,9 +566,13 @@ point.
 >    `endpointQueueRemoveDual_preserves_<conjunct>` (membership / NoDup
 >    / next-blocking / head- and tail-blocked / next-target first) →
 >    `notificationSignalBoundOnCore_preserves_ipcInvariantFull{,_perCore}`.
->    Already covered today: `objects.invExt`, `ipcInvariant`,
->    `dualQueueSystemInvariant`, the scheduler contract, and the SM6.B
->    lock-set/2PL theorems.
+>    Already covered today: at the **bound-op level**, `objects.invExt`
+>    and `ipcInvariant` (`NotificationBind.lean`, + the dispatch-level
+>    mirrors) plus the SM6.B lock-set/2PL theorems; at the
+>    **`endpointQueueRemoveDual` step level**, additionally
+>    `dualQueueSystemInvariant`, the scheduler contract
+>    (`…_ipcSchedulerContractPredicates{,_smp}`), `tail_of_nonTail`, and
+>    the tcb/endpoint/notification transports.
 > 2. **`withLockSet` bundle preservation**: the lock acquire/release
 >    steps rewrite an object's *lock* field, so the lookup-congruence
 >    layer does not apply; carrying `ipcInvariantFull_perCore` through

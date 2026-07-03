@@ -76,7 +76,7 @@ Tests: `tests/SmpCrossCoreCallSuite.lean` §SM6.D extended with the completion s
 (#-anchors for the transfer layer, the OnCore closures, the WithCaps trio) and four new
 elaboration-time theorem applications — including a one-object-reuse instantiation of the
 composed replyRecv flagship exercising the disjunctive premise's reuse arm.  Tier-3
-invariant-surface anchors extended (+20 checks).  Validation: `test_full.sh`, AK7 cascade
+invariant-surface anchors extended (+18 checks).  Validation: `test_full.sh`, AK7 cascade
 monotonicity, production/staged partition, axiom audit (`propext`/`Classical.choice`/
 `Quot.sound` only) all green; trace byte-identical.
 

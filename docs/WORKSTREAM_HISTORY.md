@@ -100,11 +100,11 @@ compositions) built on the SM4.B independence algebra with **no idle-core
 assumption** — the theorems hold with all four cores actively scheduling.
 All axiom-clean.  Tests: `tests/SmpCrossCoreCallSuite.lean` §SM6.D (surface
 anchors, theorem witnesses, runtime home-core coherence; suite now 35
-runtime assertions) + Tier-3 invariant-surface anchors.  Recorded scope
-note: whole-bundle preservation for the remaining OnCore transitions
-(signal/wait/reply/receive/replyRecv OnCore, at `ipcInvariant` depth per
-their SM6.B/SM6.C landing bars) is tracked SM6.B/SM6.C proof-depth debt —
-the bundle and bridges are transition-agnostic.
+runtime assertions) + Tier-3 invariant-surface anchors.  The scope note
+recorded at this landing — whole-bundle preservation for the remaining
+OnCore transitions (signal/wait/reply/receive/replyRecv OnCore, then at
+`ipcInvariant` depth per their SM6.B/SM6.C landing bars) tracked as
+proof-depth debt — was **closed by the v0.32.59 completion pass above**.
 
 **Prior sub-phase: SM6.C reply path across cores LANDED (v0.31.77).**  The reply
 syscalls are lifted to SMP and wired **live** into the kernel's `.reply` /
