@@ -727,6 +727,37 @@ run_check "INVARIANT" rg -n '^theorem ipcUnwrapCaps_passiveServerIdleFrameOnCore
 run_check "INVARIANT" rg -n '^theorem endpointSendDualWithCaps_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
 run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
 run_check "INVARIANT" rg -n '^theorem endpointCallWithCaps_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
+# WS-SM SM6.E cancellation across cores — the per-core deschedule primitive
+# (the wakeThread dual), the cross-core cancellation composite + its SGI
+# family, the per-core donation-cancellation arms + home-core replenish
+# purge, the lockSet_cancelIpcBlocking / lockSet_cancelDonation footprints
+# (+ suspend-footprint coverage incl. the SM6.E consumed-Reply extension),
+# the 2PL atomicity theorems, invExt preservation, and the flagship.
+run_check "INVARIANT" rg -n '^def descheduleThread' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^def cancelIpcBlockingOnCore' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^def cancelBoundDonationOnCore' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^def cancelDonationOnCore' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^def lockSet_cancelIpcBlocking' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^def lockSet_cancelDonation' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem descheduleThread_emits_sgi_if_remote_current' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_emits_sgi_if_remote_current' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_no_sgi_if_not_current' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_consistent_cancelIpcBlocking' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_consistent_cancelDonation' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem mem_insertOrMerge_write_of_mem_write' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_tcbSuspend_consumed_reply_write_mem' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_atomic_under_lockSet' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_atomic_under_lockSet' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelDonation_atomic_under_lockSet' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelDonationOnCore_atomic_under_lockSet' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_preserves_objects_invExt' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelBoundDonationOnCore_replenishQueue_purged' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancellation_cross_core_correct' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_preserves_objects_invExt' SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean
+run_check "INVARIANT" rg -n '^theorem cancelDonation_preserves_objects_invExt' SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean
+run_check "INVARIANT" rg -n '^theorem removeFromAllEndpointQueues_preserves_objects_invExt' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^def runSmpCancellationChecks' tests/SmpCancellationSuite.lean
+run_check "INVARIANT" rg -n '^run_check(_with_timeout)? "TRACE" lake exe smp_cancellation_suite' scripts/test_tier2_negative.sh
 run_check "INVARIANT" rg -n '^theorem intrusiveQueueWellFormed_empty' SeLe4n/Kernel/IPC/Invariant/Structural/
 run_check "INVARIANT" rg -n '^theorem tcbQueueLink_forward_safe' SeLe4n/Kernel/IPC/Invariant/Structural/
 run_check "INVARIANT" rg -n '^theorem tcbQueueLink_reverse_safe' SeLe4n/Kernel/IPC/Invariant/Structural/

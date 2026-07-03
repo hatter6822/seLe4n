@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.32.59.
+Lean 4.28.0 toolchain, Lake build system, version 0.32.60.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -182,14 +182,14 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~30565 lines)
+- `CHANGELOG.md` (~30664 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~20449 lines)
-- `docs/WORKSTREAM_HISTORY.md` (~8785 lines)
+- `docs/WORKSTREAM_HISTORY.md` (~8861 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~6631 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4764 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~4542 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~4339 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~4342 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
 - `tests/NegativeStateSuite.lean` (~4036 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3911 lines)
@@ -201,7 +201,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Testing/MainTraceHarness.lean` (~3196 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~3140 lines)
 - `docs/dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md` (~3134 lines)
-- `docs/gitbook/12-proof-and-invariant-map.md` (~3078 lines)
+- `docs/gitbook/12-proof-and-invariant-map.md` (~3079 lines)
 - `SeLe4n/Model/Object/Structures.lean` (~3044 lines)
 - `docs/planning/SMP_RUST_HAL_PLAN.md` (~3014 lines)
 - `SeLe4n/Kernel/API.lean` (~2918 lines)
@@ -232,11 +232,11 @@ To find files that need pagination today, run:
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
 - `SeLe4n/Model/Object/Types.lean` (~1959 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.1_WORKSTREAM_PLAN.md` (~1917 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~1911 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~1905 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/TicketLock.lean` (~1901 lines)
 - `docs/dev_history/planning/V3E_IPC_UNWRAP_CAPS_LOOP_COMPOSITION_PLAN.md` (~1891 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md` (~1889 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~1854 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1854 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.6_WORKSTREAM_PLAN.md` (~1801 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.21_WORKSTREAM_PLAN.md` (~1800 lines)
@@ -264,8 +264,8 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` (~1342 lines)
 - `docs/planning/SMP_PANIC_HANG_REMEDIATION_PLAN.md` (~1342 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean` (~1337 lines)
+- `tests/LockSetSuite.lean` (~1326 lines)
 - `SeLe4n/Platform/FFI.lean` (~1323 lines)
-- `tests/LockSetSuite.lean` (~1317 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1316 lines)
 - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~1276 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreDomain.lean` (~1267 lines)
@@ -274,8 +274,9 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` (~1237 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1233 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1216 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~1203 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean` (~1200 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~1190 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~1191 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean` (~1184 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1184 lines)
 - `docs/dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md` (~1178 lines)
@@ -287,6 +288,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/RobinHood/Bridge.lean` (~1111 lines)
 - `docs/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md` (~1111 lines)
 - `SeLe4n/Machine.lean` (~1105 lines)
+- `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~1104 lines)
 - `tests/PerObjectLockSuite.lean` (~1097 lines)
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
 - `SeLe4n/Kernel/Scheduler/RunQueue.lean` (~1050 lines)
@@ -297,7 +299,6 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/InformationFlow/Policy.lean` (~1023 lines)
 - `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~1007 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~1002 lines)
-- `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~986 lines)
 - `docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md` (~984 lines)
 - `docs/dev_history/planning/WS_X_LEAN_ETHEREUM_FORMALIZATION_PLAN.md` (~958 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` (~943 lines)
@@ -324,6 +325,7 @@ To find files that need pagination today, run:
 - `tests/WithLockSetSuite.lean` (~809 lines)
 - `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` (~808 lines)
 - `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` (~806 lines)
+- `docs/planning/SMP_CROSS_CORE_IPC_PLAN.md` (~801 lines)
 
 This bullet block is a **curated snapshot**, not a static enumeration.
 `scripts/find_large_lean_files.sh --check` (called from
@@ -652,7 +654,7 @@ documentation lives under `docs/` and `docs/gitbook/`.
   primitives with formal mutex/fairness theorems; SGI INTID 0..4 reserved
   for kernel SMP coordination (SM0.H).
 
-  **Phase status** (current version: v0.32.59):
+  **Phase status** (current version: v0.32.60):
 
   | Phase | Status | Version | Summary |
   |-------|--------|---------|---------|
@@ -668,7 +670,8 @@ documentation lives under `docs/` and `docs/gitbook/`.
   | SM6.B | LANDED | v0.31.68→76 | Notification across cores + **bound notifications, LIVE**. `notificationSignalOnCore` (head waiter wake via SM5.C `wakeThread` to its home core, `.reschedule` SGI; signaller does not block) + `notificationWaitOnCore` (caller block via per-core `removeRunnableOnCore`). Theorems: SGI emission (`_remote_wake{,_preState}` + duals), multi-waiter discipline (`_wakes_head`+`_remaining_waiters`), 2PL atomicity, per-core wake locality, notification↔TCB binding lock-set membership, lock-set correctness + coherence (`notificationSignalWaiter?_eq_wake_head`), `ipcInvariant`/`objects.invExt` preservation, boot-core + per-core/∀-core (`lowEquivalent_smp`) NI of signal AND wait. **v0.31.70 bound notifications**: `Notification.boundTCB` field + `bind`/`unbindNotification` + `notificationSignalBound{,OnCore}` (bound-TCB-BlockedOnReceive delivery: dequeue from endpoint, deliver badge, cross-core wake) wired **LIVE** through `API`'s `.notificationSignal` arms via `notificationSignalBoundCrossCoreDispatch{,Checked}` (info-flow-checked); keystone moved to `PerCoreWake` to keep SM6.A `EndpointCallInvariant`/SM3 locks staged. Promoted to production (partition 57→55); trace byte-identical. `tests/SmpCrossCoreNotificationSuite.lean` (42 assertions). **v0.31.71 bind/unbind-notification syscalls**: `tcbBind/UnbindNotification` SyscallId (26/27) threaded through the full Lean ABI (encodings/`count` 26→28, `permittedKinds` + `lockSet_tcb{Bind,Unbind}Notification` + consistency + inventory 92→96, enforcement-boundary, dispatch arms, decoders) + the Rust `sele4n-types`/`sele4n-hal` mirrors + conformance; live via `API.dispatchCapabilityOnly`; trace fixture `[XVAL-002]` line updated (26→28 variants). **v0.31.72 audit closure**: the live cross-core wake now pokes the remote core — the diff-based SGI re-derivation `crossCoreSgiBody` (SM5.F.4) gated only on an effective-bucket change (PIP boost), so a wake (which leaves priority unchanged) re-derived no SGI and the remote thread waited for the next timer tick; it now also fires `.reschedule` for a thread newly runnable on a remote home core (`crossCoreSgiBody_remote_wake`), fixing SM6.A receivers + SM6.B waiters/bound TCBs (single-core inertness preserved). Hardening: badge-value pinning in the notification suite, SmpPipSuite wake-firing assertions, per-variant conformance roundtrips (98). **v0.31.73 PR-review remediation**: #2 signal/wait now carry `boundTCB := ntfn.boundTCB` (an ordinary signal no longer destroys a bound notification's binding); #3 the checked bound dispatch also gates `notification→receiver` (no badge leak to a low bound TCB); #4 `.notificationWait` routes per-core via `notificationWaitCrossCoreDispatch{,Checked}`; #5 `lockSet_notificationSignalBoundOnCore` covers the bound-delivery endpoint+TCB writes (`permittedKinds .notificationSignal` += `.endpoint`). **v0.31.74**: review #1 closed — `.tcbBindNotification` resolves the notification via a *capability* in the caller's CSpace (`msgRegs[0]` a CPtr through the verified `syscallLookupCap`), so a TCB-cap holder can no longer bind an arbitrary notification by raw ObjId; `unbindNotification` unchanged. **v0.31.75 tracked-debt closure**: single-core `notificationSignal`/`notificationWait` now also carry `boundTCB := ntfn.boundTCB` (dependent invariant proofs updated; trace byte-identical), and `SyscallDispatchSuite` gains a CSpace-with-caps `.tcbBindNotification` authority test (authorized bind / no-cap→`.invalidCapability` / read-only-cap→`.illegalAuthority`). **v0.31.76 deep-audit closure**: the bound-delivery 2PL footprint is now proven-covered (`lockSet_notificationSignalBoundOnCore_{endpoint,boundTcb}_write_mem` via the forward lemma `insertOrMerge_preserves_mem_of_ne`). Recorded proof-depth debt: bound-delivery non-interference (`endpointQueueRemoveDual` relinks the dequeued TCB's queue neighbours, so all-high NI needs a dual-queue endpoint-label invariant the codebase lacks; the covert channel is already prevented by the #3 flow gate). Closure target: `endpointQueueRemoveDual_preserves_projection{,OnCore}` → `notificationSignalBoundOnCore_delivery_path_NI{,_smp}`. |
   | SM6.C | LANDED | v0.31.77 | Reply path across cores + **live `.reply`/`.replyRecv` dispatch**.  `endpointReplyOnCore` (the unblocked caller — the recorded `blockedOnReply` thread — woken via SM5.C `wakeThread` on its *home* core with a `.reschedule` SGI; the replier does *not* block), `endpointReceiveDualOnCore` (the replyRecv receive leg: server blocked on *its own* core via `removeRunnableOnCore`, a `blockedOnSend` rendezvous sender woken on *its* home core), `endpointReplyRecvOnCore` (both legs, SGI union).  Theorems: cross-core wake SGI (`endpointReplyOnCore_remote_wake` + local/error duals), lock-set correctness (`endpointReplyOnCore_lockSet_correct` + `endpointReplyRecv_lockSet_correct` + state-resolved), payload delivery to the *right* TCB (`_perCore_delivery`), reply-state lifecycle (caller-TCB write lock `lockSet_endpointReply_target_tcb_write_mem`), reply-replay barrier + confused-deputy (`_replay_rejected` / `_not_blocked_eq` / `_wrong_replier_eq` — a delivered reply leaves the caller `.ready`, so replay fails closed), 2PL atomicity, per-core wake locality, `ipcInvariant`/`objects.invExt` preservation, boot-core + per-core/∀-core (`lowEquivalent_smp`) NI, donation-chain lock-set extension (`lockSet_endpointReply_donation_extension`) + cross-core return (`applyReplyDonationOnCore`, bootCore-bridged) + PIP reversion (`propagatePipChainCrossCore`), chain-length bound (`endpointReply_donation_chain_length_bounded`, ≤ fuel = objectIndex.length).  **Live**: `API.dispatchWithCap{,Checked}` `.reply` / `.replyRecv` arms route through `endpointReply{,Recv}CrossCoreDispatch{,Checked}` (executing core via `determineExecutingCore`); `EndpointReply` / `EndpointReplyInvariant` / `EndpointReplyDispatch` promoted to production (partition 55→56 staged, only `EndpointReplyNI` staged); the two `checkedDispatch_{reply,replyRecv}_eq_unchecked_when_allowed` equivalence theorems re-proven via the cross-core flow-allowed lemmas; trace byte-identical.  `tests/SmpCrossCoreReplySuite.lean` (27 assertions). |
   | SM6.D | LANDED | v0.32.58→59 | IPC across-core invariant bundle.  `ipcInvariantFull_perCore` (`IPC/Invariant/PerCoreBundle.lean`, production): the twenty-conjunct `ipcInvariantFull` restricted to per-core views — thread-subject conjuncts restricted to threads homed on core `c` (`threadHomeCore` = `cpuAffinity`.getD boot, provably the wake target: `determineTargetCore_eq_threadHomeCore`); shared-object clauses carried whole; `passiveServerIdle` via the SM4.D per-core form.  Exact decomposition `ipcInvariantFull_smp_iff_full_and_passive_smp` (∀-core bundle ↔ global + per-core passive slices); the four plan-named conjuncts (D.3–D.6: queue membership / NoDup / next-blocking / head-blocked) ship per-conjunct `_smp_iff` exactness + `_perCore_of_global` / `_of_forall_perCore` bridges; boot witness `default_ipcInvariantFull_smp`.  **SM6.D.2 preservation** (`PerCoreBundlePreservation.lean`, production): all six IPC ops (send/receive/call/reply+replyRecv/signal/wait) preserve every core's bundle view (`…_preserves_ipcInvariantFull_perCore` ×7) + the cross-core flagship `endpointCallOnCore_preserves_ipcInvariantFull_perCore` (staged with SM6.A) — nineteen conjuncts ride the single-core whole-bundle theorems through the bridges; the per-core passive slice rides the new `passiveServerIdleFrameOnCore` micro-frame family (SM4.B independence algebra, **no idle-core assumption**).  Axiom-clean.  Tests: `SmpCrossCoreCallSuite` §SM6.D (35 assertions) + Tier-3 anchors.  Note: the plan's "15 conjuncts" grew to 20 during the SM6.D reply-object hardening (v0.31.115→v0.32.57, findings A/D/E + the reply-fold); the 15-conjunct core is `ipcInvariantCore_of_smp`.  **v0.32.59 completion**: the OnCore proof-depth gap is CLOSED — production whole-bundle closures + per-core flagships for every cross-core transition: `notificationSignalOnCore`/`notificationWaitOnCore` (`NotificationInvariant.lean` §3–§6) and `endpointReplyOnCore`/`endpointReceiveDualOnCore`/`endpointReplyRecvOnCore` (`EndpointReplyInvariant.lean` §4–§11), all `…_preserves_ipcInvariantFull{,_perCore}` and unconditional over success/failure, via the new production transfer layer `IPC/Invariant/LookupCongruence.lean` (per-conjunct `…_of_getElem_eq` ×20 + `OffSchedulerAgrees` + step congruences) consumed by per-op agreement dichotomies (`…_post_agrees`); `endpointReplyRecvOnCore` closes **compositionally** (leg-wise `replyStashValid` fold reads; reply-leg transports `endpointReplyOnCore_tcb_backward`/`_endpoint_backward`/`_preserves_replyIdEstablishFresh`/`_reuse_freshens`) with a **disjunctive** `hReplyIdValid` covering seL4-MCS one-object reuse; the WithCaps trio behind the live `.send` (`endpointSendDualWithCaps`/`endpointReceiveDualWithCaps`/`endpointCallWithCaps`) gets `…_preserves_ipcInvariantFull_perCore` + `ipcUnwrapCaps_passiveServerIdleFrameOnCore` (`PerCoreBundlePreservation.lean` §6); boot-frame exactness `passiveServerIdleFrameOnCore_boot_iff` single-sources the D6 frame algebra.  Remaining tracked debt (plan §SM6.D scope note): bound-delivery whole-bundle (`endpointQueueRemoveDual` per-conjunct suite → `notificationSignalBoundOnCore_preserves_ipcInvariantFull{,_perCore}`) and `withLockSet` bundle carriage (`acquireLockOnObject/releaseLockOnObject_preserves_ipcInvariantFull` → `withLockSet_preserves_ipcInvariantFull_perCore`). |
-  | SM6.E–SM9 | PENDING | — | Cross-core cancellation, TLB shootdown, info-flow, release closure (→ v1.0.0) |
+  | SM6.E | LANDED | v0.32.60 | Cancellation across cores.  `descheduleThread` (the SM5.C `wakeThread` dual: home-core removal via `removeRunnableOnCore`, `.reschedule` SGI iff the victim was **actively current on a remote home core** — merely-queued victims need no poke, local victims reschedule synchronously, ghost-guard mirrored) + `cancelIpcBlockingOnCore` (the suspend pipeline's G2+G4+G7 slice across cores: the pure single-core teardown, then home-core deschedule + remote poke; reductions, SGI family, `objects.invExt` preservation) + per-core donation cancellation (`cancelBoundDonationOnCore` purges the SC's replenishments from the **victim's home core's** queue, fixing the single-core arm's `bootCoreId` hardcode; bootCore bridge is `rfl`; dispatcher `cancelDonationOnCore` returns the pre-state on error) — all **production** (`IPC/CrossCore/Cancellation.lean`, imported by `SeLe4n.lean`; staged partition unchanged at 56).  Lock-set migration (SM6.E.1/.3): `lockSet_cancelIpcBlocking` (victim TCB W + blocked-on endpoint/notification W + consumed Reply W) and `lockSet_cancelDonation` (victim TCB W + SC W + donated-owner TCB W), state-resolved forms, consistency vs `permittedKinds .tcbSuspend`, and member-by-member suspend-footprint coverage (`lockSet_tcbSuspend_*_write_mem` ×6).  **Footprint gap closed**: the SM6.D reply-fold's `reply.caller` write is now declared — `permittedKinds .tcbSuspend` += `.reply`, `lockSet_tcbSuspend` gains `consumedReplyId` (5 extensions, size 8 = `maxLockSetSize` exactly).  Atomicity (SM6.E.2/.4): `cancelIpcBlocking_atomic_under_lockSet` / `cancelDonation_atomic_under_lockSet` (exact plan names) + the OnCore companions.  Flagship `cancellation_cross_core_correct` (remote poke ∧ full home-core deschedule ∧ per-core locality ∧ object-level fidelity).  Single-core invExt surface: `cancelIpcBlocking`/`cancelDonation`(+arms)/`cleanupDonatedSchedContext`/`removeFromAll*`/`consumeReplyLink` `_preserves_objects_invExt` (`returnDonatedSchedContext_preserves_objects_invExt` de-privatised).  Tracked debt (plan §SM6.E note): live `.tcbSuspend` cross-core dispatch wiring (`suspendThreadOnCore` + arm flip); cancellation NI (staged `CancellationNI` via sweep projection lemmas); whole-bundle preservation (per-conjunct sweep lemmas).  `tests/SmpCancellationSuite.lean` (54 assertions, 8 scenario groups; Tier-2 `smp_cancellation_suite` + Tier-3 anchors). |
+  | SM6.F–SM9 | PENDING | — | SM6 tests+fixtures closure, TLB shootdown, info-flow, release closure (→ v1.0.0) |
 
   **Plans**: master overview at
   [`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`](docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md);

@@ -115,6 +115,17 @@ The 4 affected syscalls and their donation extensions:
     originalOwner TCB.  Suspended TCB already in lockSet; SC
     and originalOwner TCB are new.
 
+  WS-SM SM6.E additionally threads `consumedReplyId : Option
+  ReplyId` (default `none`): suspending a `.blockedOnReply`
+  target consumes its reply forward link (`cancelIpcBlocking` →
+  `consumeReplyLink` writes `reply.caller := none`), so that
+  Reply object's write lock joins the footprint.  The
+  per-sub-operation footprints `lockSet_cancelIpcBlocking` /
+  `lockSet_cancelDonation` (SM6.E, in
+  `IPC.CrossCore.Cancellation`) are member-by-member covered by
+  this suspend footprint — see the
+  `lockSet_tcbSuspend_*_write_mem` family there.
+
 The caller is expected to pre-inspect the relevant TCB (under
 the ObjStore read-lock + the TCB's read-lock acquired
 temporarily for the inspection — sound under non-strict 2PL)
@@ -690,13 +701,24 @@ dispatches on the suspended TCB's `schedContextBinding`:
   `donatedOriginalOwnerTid := some originalOwner`.
 
 The caller pre-resolves these by inspecting the suspended TCB's
-`schedContextBinding` field before computing the lockSet. -/
+`schedContextBinding` field before computing the lockSet.
+
+WS-SM SM6.E (reply-link teardown extension): a target that is
+`.blockedOnReply` with a live `replyObject` forward link has that
+link consumed during suspension (`cancelIpcBlocking` →
+`consumeReplyLink` clears `reply.caller`), so the footprint carries
+an optional **reply write lock**.  The caller pre-resolves
+`consumedReplyId` from the target TCB (`.blockedOnReply` ∧
+`replyObject = some rid` → `some rid`); the parameter defaults to
+`none` so pre-SM6.E call sites (no reply-blocked target) are
+unchanged. -/
 def lockSet_tcbSuspend (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (targetTcbTid : ThreadId)
     (blockedEndpointObjId : Option ObjId)
     (blockedNotificationObjId : Option ObjId)
     (bindingScId : Option SchedContextId)
-    (donatedOriginalOwnerTid : Option ThreadId) : LockSet :=
+    (donatedOriginalOwnerTid : Option ThreadId)
+    (consumedReplyId : Option ReplyId := none) : LockSet :=
   let base := lockSetOfList
     [(tcbLock callerTid, .read),
      (cnodeLock cnodeRootObjId, .read),
@@ -707,8 +729,10 @@ def lockSet_tcbSuspend (callerTid : ThreadId)
     (blockedNotificationObjId.map (fun n => (notificationLock n, .write)))
   let withSc := lockSetExtendOpt withN
     (bindingScId.map (fun sc => (schedContextLock sc, .write)))
-  lockSetExtendOpt withSc
+  let withOwner := lockSetExtendOpt withSc
     (donatedOriginalOwnerTid.map (fun ot => (tcbLock ot, .write)))
+  lockSetExtendOpt withOwner
+    (consumedReplyId.map (fun r => (replyLock r, .write)))
 
 /-- WS-SM SM3.B.3: `lockSet` for `tcbResume`.
 
@@ -1021,8 +1045,15 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- SchedContext via `updatePrioritySource` (audit-pass-6 extension).
   -- `.tcbSetIPCBuffer` reads the target's VSpaceRoot via
   -- `validateIpcBufferAddress` (audit-pass-6 extension).
+  -- WS-SM SM6.E: suspending a `.blockedOnReply` caller consumes its
+  -- single-use reply link (`cancelIpcBlocking` → `consumeReplyLink`
+  -- writes `reply.caller := none` — the SM6.D reply-object fold), so the
+  -- suspend footprint also covers a `.reply` write lock.  Without it the
+  -- reply-link teardown would mutate the Reply object outside the
+  -- acquired 2PL set, racing a concurrent `.receive`/`.reply` that
+  -- holds the same Reply's `replyLock` on another core.
   | .tcbSuspend =>
-      [.tcb, .cnode, .endpoint, .notification, .schedContext]
+      [.tcb, .cnode, .endpoint, .notification, .schedContext, .reply]
   | .tcbResume =>
       [.tcb, .cnode]
   | .tcbSetPriority | .tcbSetMCPriority =>
@@ -1225,6 +1256,26 @@ theorem lockSet_consistent_base_plus_four_opts
   lockSet_consistent_extendOpt _ _ _
     (lockSet_consistent_base_plus_three_opts base opt₁ opt₂ opt₃ permitted
       hBase hOpt₁ hOpt₂ hOpt₃) hOpt₄
+
+/-- WS-SM SM6.E builder: combine with five optional extensions.  Used by
+`lockSet_consistent_tcbSuspend` after SM6.E expanded `lockSet_tcbSuspend`
+with the `consumedReplyId` arg (the reply-link teardown write lock). -/
+theorem lockSet_consistent_base_plus_five_opts
+    (base : List (LockId × AccessMode))
+    (opt₁ opt₂ opt₃ opt₄ opt₅ : Option (LockId × AccessMode))
+    (permitted : List LockKind)
+    (hBase : ∀ p ∈ base, p.fst.kind ∈ permitted)
+    (hOpt₁ : ∀ pp, opt₁ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₂ : ∀ pp, opt₂ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₃ : ∀ pp, opt₃ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₄ : ∀ pp, opt₄ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₅ : ∀ pp, opt₅ = some pp → pp.fst.kind ∈ permitted) :
+    ∀ p ∈ (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
+              (lockSetExtendOpt (lockSetOfList base) opt₁) opt₂) opt₃) opt₄) opt₅).pairs,
+      p.fst.kind ∈ permitted :=
+  lockSet_consistent_extendOpt _ _ _
+    (lockSet_consistent_base_plus_four_opts base opt₁ opt₂ opt₃ opt₄ permitted
+      hBase hOpt₁ hOpt₂ hOpt₃ hOpt₄) hOpt₅
 
 -- ============================================================================
 -- SM3.B.4 — lockSet_consistent per-transition theorems
@@ -1713,16 +1764,18 @@ theorem lockSet_consistent_tcbUnbindNotification (callerTid : ThreadId)
         exact absurd hMem (by intro h; cases h))
 
 /-- WS-SM SM3.B.4 for `.tcbSuspend` (audit-pass-3: donation-cancel
-extension — 4 optional args). -/
+extension — 4 optional args; WS-SM SM6.E: + the `consumedReplyId`
+reply-link teardown write lock — 5 optional args). -/
 theorem lockSet_consistent_tcbSuspend (callerTid : ThreadId)
     (cnRoot : ObjId) (targetTcb : ThreadId)
     (blEp : Option ObjId) (blN : Option ObjId)
     (bindingScId : Option SchedContextId)
-    (donatedOriginalOwnerTid : Option ThreadId) :
+    (donatedOriginalOwnerTid : Option ThreadId)
+    (consumedReplyId : Option ReplyId := none) :
     ∀ p ∈ (lockSet_tcbSuspend callerTid cnRoot targetTcb blEp blN
-              bindingScId donatedOriginalOwnerTid).pairs,
+              bindingScId donatedOriginalOwnerTid consumedReplyId).pairs,
       p.fst.kind ∈ permittedKinds .tcbSuspend :=
-  lockSet_consistent_base_plus_four_opts _ _ _ _ _ _
+  lockSet_consistent_base_plus_five_opts _ _ _ _ _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -1747,6 +1800,10 @@ theorem lockSet_consistent_tcbSuspend (callerTid : ThreadId)
         cases donatedOriginalOwnerTid with
         | none => simp at hpp
         | some ot => simp at hpp; rw [← hpp]; simp; decide)
+    (by intro pp hpp
+        cases consumedReplyId with
+        | none => simp at hpp
+        | some r => simp at hpp; rw [← hpp]; simp; decide)
 
 /-- WS-SM SM3.B.4 for `.tcbResume`. -/
 theorem lockSet_consistent_tcbResume (callerTid : ThreadId)

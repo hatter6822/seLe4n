@@ -691,6 +691,16 @@ theorem size_le_4 (L : List (LockId × AccessMode))
   refine Nat.le_trans (Nat.add_le_add_right (size_le_3 L o₁ o₂ o₃) 1) ?_
   omega
 
+/-- WS-SM SM6.E shape helper: five optional extensions over a base list
+(the `tcbSuspend` footprint after the reply-link teardown extension). -/
+theorem size_le_5 (L : List (LockId × AccessMode))
+    (o₁ o₂ o₃ o₄ o₅ : Option (LockId × AccessMode)) :
+    (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
+      (lockSetExtendOpt (lockSetOfList L) o₁) o₂) o₃) o₄) o₅).size ≤ L.length + 5 := by
+  refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
+  refine Nat.le_trans (Nat.add_le_add_right (size_le_4 L o₁ o₂ o₃ o₄) 1) ?_
+  omega
+
 /-- Local tactic shorthand: reduce a concrete `[…].length (+k)` to a numeral
 and discharge the `≤ maxLockSetSize` goal. -/
 local macro "size_bound" : tactic =>
@@ -807,10 +817,11 @@ theorem lockSet_schedContextUnbind_size_le (a : ThreadId) (b : ObjId)
   exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
 
 theorem lockSet_tcbSuspend_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
-    (d e : Option ObjId) (f : Option SchedContextId) (g : Option ThreadId) :
-    (lockSet_tcbSuspend a b c d e f g).size ≤ maxLockSetSize := by
+    (d e : Option ObjId) (f : Option SchedContextId) (g : Option ThreadId)
+    (h : Option ReplyId := none) :
+    (lockSet_tcbSuspend a b c d e f g h).size ≤ maxLockSetSize := by
   unfold lockSet_tcbSuspend maxLockSetSize
-  exact Nat.le_trans (size_le_4 _ _ _ _ _) (by size_bound)
+  exact Nat.le_trans (size_le_5 _ _ _ _ _ _) (by size_bound)
 
 theorem lockSet_tcbResume_size_le (a : ThreadId) (b : ObjId) (c : ThreadId) :
     (lockSet_tcbResume a b c).size ≤ maxLockSetSize := by
@@ -861,7 +872,7 @@ theorem lockSetTransitions_within_bound :
     (∀ a b c d, (lockSet_schedContextConfigure a b c d).size ≤ maxLockSetSize) ∧
     (∀ a b c d, (lockSet_schedContextBind a b c d).size ≤ maxLockSetSize) ∧
     (∀ a b c d, (lockSet_schedContextUnbind a b c d).size ≤ maxLockSetSize) ∧
-    (∀ a b c d e f g, (lockSet_tcbSuspend a b c d e f g).size ≤ maxLockSetSize) ∧
+    (∀ a b c d e f g h, (lockSet_tcbSuspend a b c d e f g h).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_tcbResume a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c d, (lockSet_tcbSetPriority a b c d).size ≤ maxLockSetSize) ∧
     (∀ a b c d, (lockSet_tcbSetMCPriority a b c d).size ≤ maxLockSetSize) ∧
@@ -876,7 +887,8 @@ theorem lockSetTransitions_within_bound :
    lockSet_serviceRegister_size_le, lockSet_serviceRevoke_size_le,
    lockSet_serviceQuery_size_le, lockSet_schedContextConfigure_size_le,
    lockSet_schedContextBind_size_le, lockSet_schedContextUnbind_size_le,
-   lockSet_tcbSuspend_size_le, lockSet_tcbResume_size_le,
+   fun a b c d e f g h => lockSet_tcbSuspend_size_le a b c d e f g h,
+   lockSet_tcbResume_size_le,
    lockSet_tcbSetPriority_size_le, lockSet_tcbSetMCPriority_size_le,
    lockSet_tcbSetIPCBuffer_size_le⟩
 
@@ -914,11 +926,12 @@ def KernelOperation.ofReplyRecv (a : ThreadId) (b : ObjId) (c : ThreadId)
   ⟨lockSet_replyRecv a b c d e f g, lockSet_replyRecv_size_le a b c d e f g⟩
 
 /-- WS-SM SM3.D.6: build the `KernelOperation` for a `tcbSuspend` (the
-4-extension transition). -/
+5-extension transition — WS-SM SM6.E added the optional reply-link
+teardown write lock `h` for a `.blockedOnReply` target). -/
 def KernelOperation.ofTcbSuspend (a : ThreadId) (b : ObjId) (c : ThreadId)
-    (d e : Option ObjId) (f : Option SchedContextId) (g : Option ThreadId) :
-    KernelOperation :=
-  ⟨lockSet_tcbSuspend a b c d e f g, lockSet_tcbSuspend_size_le a b c d e f g⟩
+    (d e : Option ObjId) (f : Option SchedContextId) (g : Option ThreadId)
+    (h : Option ReplyId := none) : KernelOperation :=
+  ⟨lockSet_tcbSuspend a b c d e f g h, lockSet_tcbSuspend_size_le a b c d e f g h⟩
 
 -- ============================================================================
 -- §6d — Worst-case response time (contention-sensitive)

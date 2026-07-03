@@ -351,4 +351,14 @@ run_check_with_timeout "TRACE" lake exe smp_cross_core_notification_suite
 # lock-set extension, and the SM6.C.9 PIP-reversion chain-length bound.
 run_check_with_timeout "TRACE" lake exe smp_cross_core_reply_suite
 
+# WS-SM SM6.E cross-core cancellation: exercises the cancelIpcBlockingOnCore /
+# cancelDonationOnCore / lockSet_cancelIpcBlocking computations on the SM6.E
+# scenarios — cancelling endpoint- / notification- / reply-blocked victims
+# homed on a remote core, the actively-running remote victim's `.reschedule`
+# SGI (vs the local / not-current no-SGI duals), the per-core bound-donation
+# replenish-queue purge on the victim's home core, the donated
+# return-to-owner arm, the dispatcher `.unbound` identity + ghost-victim
+# fail-closed paths, and the `withLockSet` bracket's operational atomicity.
+run_check_with_timeout "TRACE" lake exe smp_cancellation_suite
+
 finalize_report

@@ -8,6 +8,11 @@
 -/
 
 import SeLe4n.Kernel.Lifecycle.Suspend
+-- WS-SM SM6.E: cleanup-primitive `objects.invExt` lemmas
+-- (`removeFromAll*_preserves_objects_invExt`,
+-- `cleanupDonatedSchedContext_preserves_objects_invExt`), composed by the
+-- cancellation invariant surface below.
+import SeLe4n.Kernel.Lifecycle.Operations.CleanupPreservation
 
 /-! # D1-I: Suspension & Resumption Preservation Theorems
 
@@ -982,5 +987,118 @@ theorem resumeThread_pipBoost_consistent_with_blocking_graph
       tcb'.pipBoost = PriorityInheritance.computeMaxWaiterPriority st' vtid.val := by
   intro tcb' hLookup
   rw [hPipBoostFromRestore tcb' hLookup, ← hCmwpFrame]
+
+-- ============================================================================
+-- WS-SM SM6.E: cancellation preserves `objects.invExt`
+-- ============================================================================
+-- The single-core cancellation invariant surface consumed by the SM6.E
+-- cross-core cancellation module (`IPC.CrossCore.Cancellation`): every
+-- cancellation arm is a composition of store-sweep removals
+-- (`removeFromAll*`, CleanupPreservation), single-object `insert`s, and
+-- `storeObject` steps — each preserving the Robin-Hood external invariant.
+
+/-- WS-SM SM6.E: `clearReplyObjectCaller` preserves `objects.invExt` (a
+single conditional Reply-object `insert`). -/
+theorem clearReplyObjectCaller_preserves_objects_invExt
+    (st : SystemState) (rid : SeLe4n.ReplyId)
+    (hInv : st.objects.invExt) :
+    (clearReplyObjectCaller st rid).objects.invExt := by
+  unfold clearReplyObjectCaller
+  cases st.getReply? rid with
+  | none => exact hInv
+  | some r => exact RobinHood.RHTable.insert_preserves_invExt _ _ _ hInv
+
+/-- WS-SM SM6.E: `clearTcbReplyObject` preserves `objects.invExt` (a single
+conditional TCB `insert`). -/
+theorem clearTcbReplyObject_preserves_objects_invExt
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) :
+    (clearTcbReplyObject st tid).objects.invExt := by
+  unfold clearTcbReplyObject
+  cases st.getTcb? tid with
+  | none => exact hInv
+  | some t => exact RobinHood.RHTable.insert_preserves_invExt _ _ _ hInv
+
+/-- WS-SM SM6.E: `consumeReplyLink` preserves `objects.invExt` (both legs of
+the reply-link sever are conditional single inserts). -/
+theorem consumeReplyLink_preserves_objects_invExt
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hInv : st.objects.invExt) :
+    (consumeReplyLink st tid tcb).objects.invExt := by
+  unfold consumeReplyLink
+  cases tcb.replyObject with
+  | none => exact hInv
+  | some rid =>
+    exact clearReplyObjectCaller_preserves_objects_invExt _ _
+      (clearTcbReplyObject_preserves_objects_invExt _ _ hInv)
+
+/-- WS-SM SM6.E: `cancelIpcBlocking` preserves `objects.invExt` — every
+`ipcState` arm composes a store-sweep removal (endpoint queues / notification
+waiter lists), the reply-link consume, and the `restoreToReady` TCB clear,
+each of which preserves the Robin-Hood external invariant. -/
+theorem cancelIpcBlocking_preserves_objects_invExt
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hInv : st.objects.invExt) :
+    (cancelIpcBlocking st tid tcb).objects.invExt := by
+  unfold cancelIpcBlocking
+  cases tcb.ipcState with
+  | ready => exact hInv
+  | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
+    exact restoreToReady_invExt _ _
+      (removeFromAllEndpointQueues_preserves_objects_invExt st tid hInv)
+  | blockedOnReply _ _ =>
+    exact consumeReplyLink_preserves_objects_invExt _ _ _
+      (restoreToReady_invExt _ _ hInv)
+  | blockedOnNotification _ =>
+    exact restoreToReady_invExt _ _
+      (removeFromAllNotificationWaitLists_preserves_objects_invExt st tid hInv)
+
+/-- WS-SM SM6.E: `cancelBoundDonation` preserves `objects.invExt` — the bound
+arm's object writes are the SchedContext deactivation insert and the TCB
+unbind insert (the replenish-queue and `scThreadIndex` edits do not touch
+`objects`). -/
+theorem cancelBoundDonation_preserves_objects_invExt
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hInv : st.objects.invExt)
+    (h : cancelBoundDonation st tid tcb = .ok st') :
+    st'.objects.invExt := by
+  unfold cancelBoundDonation at h
+  split at h
+  · -- `.bound scId` arm.
+    injection h with h
+    subst h
+    dsimp only
+    repeat' first
+      | exact hInv
+      | exact RobinHood.RHTable.insert_preserves_invExt _ _ _ hInv
+      | apply RobinHood.RHTable.insert_preserves_invExt
+      | split
+  · -- `.donated` / `.unbound`: rejected with `.illegalState`.
+    cases h
+
+/-- WS-SM SM6.E: `cancelDonatedDonation` preserves `objects.invExt` — the
+donated arm delegates to `cleanupDonatedSchedContext`. -/
+theorem cancelDonatedDonation_preserves_objects_invExt
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hInv : st.objects.invExt)
+    (h : cancelDonatedDonation st tid tcb = .ok st') :
+    st'.objects.invExt := by
+  unfold cancelDonatedDonation at h
+  split at h
+  · exact cleanupDonatedSchedContext_preserves_objects_invExt _ _ _ hInv h
+  · cases h
+
+/-- WS-SM SM6.E: the `cancelDonation` dispatcher preserves `objects.invExt`
+on every arm (`.unbound` identity, `.bound` unbind, `.donated` return). -/
+theorem cancelDonation_preserves_objects_invExt
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hInv : st.objects.invExt)
+    (h : cancelDonation st tid tcb = .ok st') :
+    st'.objects.invExt := by
+  unfold cancelDonation at h
+  split at h
+  · injection h with h; subst h; exact hInv
+  · exact cancelBoundDonation_preserves_objects_invExt _ _ _ _ hInv h
+  · exact cancelDonatedDonation_preserves_objects_invExt _ _ _ _ hInv h
 
 end SeLe4n.Kernel.Lifecycle.Suspend

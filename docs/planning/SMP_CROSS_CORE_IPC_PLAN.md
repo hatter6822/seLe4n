@@ -616,16 +616,107 @@ donationOwnerUnique/endpointQueueTailBlockedConsistent/
 queueNextTargetBlocked`, each `_perCore` — so the aggregate is fully
 per-core, not just the four named rows.)
 
-### SM6.E — Cancellation across cores (3 PRs, 6 sub-tasks)
+### SM6.E — Cancellation across cores (3 PRs, 6 sub-tasks) — LANDED (v0.32.60)
 
-| Sub | Description | Theorem | Est |
-|-----|-------------|---------|-----|
-| SM6.E.1 | Migrate `cancelIpcBlocking` to lock-set | (refactor) | M |
-| SM6.E.2 | `cancelIpcBlocking_atomic_under_lockSet` | Theorem | M |
-| SM6.E.3 | `cancelDonation` (R5.A) under lock-set | (refactor) | M |
-| SM6.E.4 | `cancelDonation_atomic_under_lockSet` | Theorem | M |
-| SM6.E.5 | Cross-core cancellation (spans cores) | `cancellation_cross_core_correct` | L |
-| SM6.E.6 | 6 cancellation scenarios | Tests | M |
+Deliverable module: `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean`
+(**production** — imported by `SeLe4n.lean`), plus the single-core
+cancellation invariant surface in
+`Lifecycle/Invariant/SuspendPreservation.lean` and
+`Lifecycle/Operations/CleanupPreservation.lean`, and the
+`lockSet_tcbSuspend` / `permittedKinds .tcbSuspend` reply extension in
+`Concurrency/Locks/LockSetTransitions.lean`.
+
+**Architecture.**  The cross-core cancellation composite is the
+G2+G4+G7 slice of the suspend pipeline generalised across cores:
+`cancelIpcBlockingOnCore` runs the (pure, scheduler-silent) single-core
+object teardown `cancelIpcBlocking`, then removes the victim from its
+**home** core's run queue / current slot (the new `descheduleThread`
+primitive — the SM5.C `wakeThread` dual), surfacing a `.reschedule` SGI
+exactly when the victim was **actively current on a remote core** (a
+merely-queued remote victim needs no poke; a victim current on the
+executing core is rescheduled synchronously by the caller; a `tid` that
+resolves to no TCB pokes nothing — the wake ghost-guard, mirrored).
+The donation side (`cancelBoundDonationOnCore` /
+`cancelDonationOnCore`) fixes the single-core arm's hardcoded
+`bootCoreId` replenish-queue purge: the SC's pending replenishments are
+purged from the **victim's home core's** queue (SM5.H
+`replenishQueueAffinityConsistentOnCore` places them there), with the
+single-core form recovered definitionally at the boot core
+(`cancelBoundDonationOnCore_bootCoreId`, the SM5.A bridge pattern).
+
+**Footprint honesty (SM6.E.1).**  The plan's §3.1 cancellation rows
+landed as `lockSet_cancelIpcBlocking` (victim TCB W; blocked-on
+endpoint/notification W; **and the consumed Reply object W** — the
+SM6.D reply-object fold made `cancelIpcBlocking` sever
+`reply.caller` on the `.blockedOnReply` arm, a write the suspend
+footprint had never declared) and `lockSet_cancelDonation` (victim TCB
+W; SchedContext W; donated-arm original-owner TCB W).  Closing that gap
+required extending `permittedKinds .tcbSuspend` with `.reply` and
+threading an optional `consumedReplyId` through `lockSet_tcbSuspend`
+(now a 5-extension footprint, size 8 = `maxLockSetSize` exactly).
+Both cancellation footprints are member-by-member covered by the
+enclosing suspend footprint (`lockSet_tcbSuspend_*_write_mem` ×6) — the
+formal content of "the cancellation sub-operations run inside the
+`.tcbSuspend` 2PL bracket with every write under a held lock".
+
+| Sub | Description | Landed symbol | Status |
+|-----|-------------|---------------|--------|
+| SM6.E.1 | Migrate `cancelIpcBlocking` to lock-set | `lockSet_cancelIpcBlocking` + pre-resolution (`cancelBlockedEndpoint?`/`cancelBlockedNotification?`/`cancelConsumedReply?`) + state-resolved `lockSet_cancelIpcBlockingOnCore` + consistency/Nodup (`lockSet_consistent_cancelIpcBlocking`, `cancelIpcBlockingOnCore_lockSet_correct`) + write coverage (`lockSet_cancelIpcBlocking_{victim_tcb,blocked_endpoint,blocked_notification,consumed_reply}_write_mem`) + suspend coverage (`lockSet_tcbSuspend_*_write_mem`, incl. the new `consumedReplyId` extension) | ✓ |
+| SM6.E.2 | `cancelIpcBlocking_atomic_under_lockSet` | landed (exact plan name) + the cross-core companion `cancelIpcBlockingOnCore_atomic_under_lockSet` (both via `lockSet_atomic_under_2pl`) | ✓ |
+| SM6.E.3 | `cancelDonation` (R5.A) under lock-set | `lockSet_cancelDonation` + pre-resolution (`cancelBindingSc?`/`cancelDonatedOwner?`) + state-resolved form + consistency + write coverage + the per-core arms `cancelBoundDonationOnCore` (home-core replenish purge: `_replenishQueue_purged`/`_replenishQueue_ne`/`_runQueue_current_eq`) and dispatcher `cancelDonationOnCore` (error paths return the pre-state) | ✓ |
+| SM6.E.4 | `cancelDonation_atomic_under_lockSet` | landed (exact plan name) + the per-core companion `cancelDonationOnCore_atomic_under_lockSet` | ✓ |
+| SM6.E.5 | Cross-core cancellation (spans cores) | `descheduleThread` (wakeThread dual: `_emits_sgi_if_remote_current`, `_no_sgi_if_local`/`_no_sgi_if_not_current`/`_no_sgi_if_ghost`, `_descheduled_on_home`, `_independent_of_other_core`) + `cancelIpcBlockingOnCore` (reductions `_state_eq`/`_objects_eq`/`_eq_descheduleThread`/`_ready_eq_descheduleThread`, SGI family, `_preserves_objects_invExt`) + the flagship `cancellation_cross_core_correct` (remote poke ∧ full home-core deschedule ∧ per-core locality ∧ object-level fidelity) | ✓ |
+| SM6.E.6 | 6 cancellation scenarios | `tests/SmpCancellationSuite.lean` — 8 scenario groups / 54 assertions (endpoint-/notification-/reply-blocked remote-homed victims; running-remote SGI vs running-local no-SGI; bound-donation home-core purge; donated return-to-owner; dispatcher identity + ghost + `withLockSet` bracket), wired Tier-2 (`smp_cancellation_suite`) + Tier-3 anchors | ✓ |
+
+Supporting invariant surface (single-core, production):
+`cancelIpcBlocking_preserves_objects_invExt` (+ per-helper lemmas
+`spliceOutMidQueueNode`/`removeFromAllEndpointQueues`/
+`removeFromAllNotificationWaitLists`/`consumeReplyLink`/
+`clearReplyObjectCaller`/`clearTcbReplyObject` `_preserves_objects_invExt`),
+`cancelBoundDonation`/`cancelDonatedDonation`/`cancelDonation`
+`_preserves_objects_invExt`,
+`cleanupDonatedSchedContext_preserves_objects_invExt`, and the ∀-core
+`cancelDonatedDonation_scheduler_eq`.
+(`returnDonatedSchedContext_preserves_objects_invExt` was promoted from
+`private` to feed the donated arm.)
+
+> **Remaining tracked debt (recorded, not silent):**
+> 1. **Live `.tcbSuspend` cross-core dispatch**: `suspendThread`'s G4/G7
+>    remain bootCore-pinned in the live syscall path; the wiring that
+>    routes the `.tcbSuspend` dispatch through
+>    `cancelIpcBlockingOnCore` / `cancelDonationOnCore` under a
+>    `withLockSet` bracket over the state-resolved footprints — with the
+>    surfaced SGI fired after the state commit (the SM6.A
+>    `syscallDispatchCrossCoreEntry` pattern) — is the phase follow-on,
+>    exactly as SM6.A landed its theorem surface one cut before the live
+>    dispatch flip (v0.31.65 → v0.31.66).  Closure target:
+>    `suspendThreadOnCore` + the dispatch-arm flip + trace evidence.
+> 2. **Cancellation non-interference**: `cancelIpcBlockingOnCore`'s
+>    boot-core `projectState` + per-core/∀-core `lowEquivalent_smp` NI
+>    (a high victim's cancellation invisible to a low observer) needs
+>    per-helper projection lemmas for the store sweeps
+>    (`removeFromAllEndpointQueues` / `removeFromAllNotificationWaitLists`
+>    are `objects.fold`s, outside the SM6.A/B/C per-store projection
+>    family).  Closure target:
+>    `removeFromAllEndpointQueues_preserves_projection{,OnCore}` (+ the
+>    notification twin) → `cancelIpcBlockingOnCore_cancel_path_NI{,_smp}`
+>    as a staged `CancellationNI` module (the SM6.B/C NI pattern).
+> 3. **Whole-bundle preservation for cancellation**:
+>    `cancelIpcBlockingOnCore_preserves_ipcInvariantFull{,_perCore}`
+>    needs per-conjunct sweep lemmas
+>    (`removeFromAllEndpointQueues_preserves_<conjunct>` — the
+>    queue-splice PopHead-class proofs, kin of the SM6.D
+>    `endpointQueueRemoveDual` debt).  `objects.invExt` preservation is
+>    already closed (above); the bundle-level story currently rides the
+>    suspend pipeline's sequential-model coverage.
+> 4. **Pre/post resolution discharge**: the two frame hypotheses of
+>    `cancelIpcBlockingOnCore_eq_descheduleThread` (the teardown
+>    preserves `determineTargetCore` and TCB-resolution status) are
+>    semantically unconditional but need table-aware fold-lookup lemmas
+>    (`getTcb?` through the endpoint sweep) to discharge closed-form;
+>    the transition itself is unaffected (it pre-resolves from the
+>    pre-state by definition, justified by
+>    `cancelIpcBlocking_scheduler_eq`).
 
 ### SM6.F — Tests + fixtures (3 PRs, 6 sub-tasks)
 
@@ -667,7 +758,7 @@ per-core, not just the four named rows.)
 - [ ] All 6 IPC operations under lock-set.
 - [ ] Cross-core wake works for call/signal/reply.
 - [x] `ipcInvariantFull_perCore` preserved by all 6 ops (SM6.D, v0.32.58 — the bundle grew to twenty conjuncts by landing time; the fifteen-conjunct core is `ipcInvariantCore_of_smp`).
-- [ ] Cancellation atomic under lock-set.
+- [x] Cancellation atomic under lock-set (SM6.E, v0.32.60 — `cancelIpcBlocking_atomic_under_lockSet` / `cancelDonation_atomic_under_lockSet` + the OnCore companions; footprints covered member-by-member by the reply-extended `lockSet_tcbSuspend`).
 - [ ] 2-thread cross-core IPC works.
 - [ ] 4-thread SMP rendezvous test passes.
 - [ ] Tier 0..4 green.
@@ -686,9 +777,12 @@ per-core, not just the four named rows.)
 - `endpointReply_perCore_delivery`
 - `donation_perCore_consistent`
 - `ipcInvariantFull_perCore`
-- `cancelIpcBlocking_atomic_under_lockSet`
-- `cancelDonation_atomic_under_lockSet`
-- `cancellation_cross_core_correct`
+- `cancelIpcBlocking_atomic_under_lockSet` (landed, SM6.E — plus the
+  cross-core companion `cancelIpcBlockingOnCore_atomic_under_lockSet`)
+- `cancelDonation_atomic_under_lockSet` (landed, SM6.E — plus
+  `cancelDonationOnCore_atomic_under_lockSet`)
+- `cancellation_cross_core_correct` (landed, SM6.E — remote poke ∧
+  home-core deschedule ∧ per-core locality ∧ object-level fidelity)
 - 6 per-operation preservation theorems
 
 ## Appendix A — Verification commands

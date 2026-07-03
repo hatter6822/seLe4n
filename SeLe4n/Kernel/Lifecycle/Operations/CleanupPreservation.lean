@@ -8,6 +8,9 @@
 -/
 
 import SeLe4n.Kernel.Lifecycle.Operations.Cleanup
+-- WS-SM SM6.E: `returnDonatedSchedContext_preserves_objects_invExt` (AI4-A),
+-- consumed by `cleanupDonatedSchedContext_preserves_objects_invExt`.
+import SeLe4n.Kernel.IPC.Invariant.Defs
 
 /-!
 AN4-G.5 (LIF-M05) child module extracted from
@@ -132,6 +135,87 @@ theorem removeFromAllNotificationWaitLists_serviceRegistry_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (removeFromAllNotificationWaitLists st tid).serviceRegistry = st.serviceRegistry :=
   (removeFromAllNotificationWaitLists_preserves st tid).2.2
+
+-- ============================================================================
+-- WS-SM SM6.E: cleanup primitives preserve `objects.invExt`
+-- ============================================================================
+-- The per-step Robin-Hood external invariant, needed by the SM6.E
+-- cancellation invariant surface (`cancelIpcBlocking_preserves_objects_invExt`
+-- composes these with `restoreToReady_invExt`).  Every mutation below is an
+-- `objects.insert`, so each step is `RHTable.insert_preserves_invExt` and the
+-- store-wide sweeps compose via `RHTable.fold_preserves`.
+
+/-- WS-SM SM6.E: `spliceOutMidQueueNode` preserves `objects.invExt` — the two
+link patches (predecessor `queueNext`, successor `queuePrev`) are each a
+single conditional `objects.insert`. -/
+theorem spliceOutMidQueueNode_preserves_objects_invExt
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) :
+    (spliceOutMidQueueNode st tid).objects.invExt := by
+  unfold spliceOutMidQueueNode
+  split
+  · exact hInv
+  · -- Some-TCB arm: the two link patches are each a conditional insert over
+    -- the previous table.  Every match leaf is either the untouched table
+    -- (`hInv`) or a chain of at most two `insert`s over it; the cascade
+    -- closes leaves with `hInv`, peels `insert`s via
+    -- `insert_preserves_invExt`, and splits stuck matches until done.
+    dsimp only
+    repeat' first
+      | exact hInv
+      | exact SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _ hInv
+      | apply SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt
+      | split
+
+/-- WS-SM SM6.E: `removeFromAllEndpointQueues` preserves `objects.invExt` —
+the splice preserves it, and the endpoint sweep is a fold whose every step
+is an `objects.insert`. -/
+theorem removeFromAllEndpointQueues_preserves_objects_invExt
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) :
+    (removeFromAllEndpointQueues st tid).objects.invExt := by
+  unfold removeFromAllEndpointQueues
+  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves
+    (spliceOutMidQueueNode st tid).objects (spliceOutMidQueueNode st tid) _
+    (fun acc => acc.objects.invExt)
+    (spliceOutMidQueueNode_preserves_objects_invExt st tid hInv)
+    (fun acc _ _ hAcc => by
+      split
+      · exact SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _ hAcc
+      · exact hAcc)
+
+/-- WS-SM SM6.E: `removeFromAllNotificationWaitLists` preserves
+`objects.invExt` — the waiter-list sweep is a fold whose every step is an
+`objects.insert`. -/
+theorem removeFromAllNotificationWaitLists_preserves_objects_invExt
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) :
+    (removeFromAllNotificationWaitLists st tid).objects.invExt := by
+  unfold removeFromAllNotificationWaitLists
+  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves st.objects st _
+    (fun acc => acc.objects.invExt) hInv
+    (fun acc _ _ hAcc => by
+      split
+      · exact SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _ hAcc
+      · exact hAcc)
+
+/-- WS-SM SM6.E: `cleanupDonatedSchedContext` preserves `objects.invExt` —
+the identity arms are trivial and the `.donated` arm delegates to
+`returnDonatedSchedContext` (three `storeObject` steps, AI4-A). -/
+theorem cleanupDonatedSchedContext_preserves_objects_invExt
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt)
+    (h : cleanupDonatedSchedContext st tid = .ok st') :
+    st'.objects.invExt := by
+  unfold cleanupDonatedSchedContext at h
+  split at h
+  · -- lookupTcb = none: identity.
+    injection h with h; subst h; exact hInv
+  · split at h
+    · -- `.donated scId originalOwner`: delegate to returnDonatedSchedContext.
+      exact returnDonatedSchedContext_preserves_objects_invExt _ _ _ _ _ hInv h
+    · -- `.bound` / `.unbound`: identity.
+      injection h with h; subst h; exact hInv
 
 /-- After cleanup, the cleaned thread is not in the run queue. -/
 theorem cleanupTcbReferences_removes_from_runnable

@@ -416,6 +416,13 @@ example :
     (lockSet_tcbSuspend ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none
       (some ⟨50⟩) none).size = 4 := by decide
 
+/-! ### WS-SM SM6.E — tcbSuspend of a `.blockedOnReply` target: 4 locks
+(caller TCB + cnode + suspended TCB + consumed Reply object). -/
+
+example :
+    (lockSet_tcbSuspend ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none none none
+      (some ⟨60⟩)).size = 4 := by decide
+
 -- ============================================================================
 -- §5 — LockId.fromObject + LockId.lookup with fixture states
 -- ============================================================================
@@ -526,9 +533,10 @@ example : permittedKinds .schedContextConfigure = [.tcb, .cnode, .schedContext] 
 example : permittedKinds .schedContextBind = [.tcb, .cnode, .schedContext] := by decide
 example : permittedKinds .schedContextUnbind = [.tcb, .cnode, .schedContext] := by decide
 -- Audit-pass-3: `.tcbSuspend` now includes `.schedContext` to cover
--- the donation-cancel extension.
+-- the donation-cancel extension.  WS-SM SM6.E: + `.reply` to cover the
+-- `.blockedOnReply` reply-link teardown (`consumeReplyLink`).
 example : permittedKinds .tcbSuspend =
-    [.tcb, .cnode, .endpoint, .notification, .schedContext] := by decide
+    [.tcb, .cnode, .endpoint, .notification, .schedContext, .reply] := by decide
 example : permittedKinds .tcbResume = [.tcb, .cnode] := by decide
 example : permittedKinds .tcbSetPriority = [.tcb, .cnode, .schedContext] := by decide
 example : permittedKinds .tcbSetMCPriority = [.tcb, .cnode, .schedContext] := by decide
@@ -784,9 +792,10 @@ private def runPermittedKindsChecks : IO Unit := do
   assertBool "permittedKinds .lifecycleRetype"
     (decide (permittedKinds .lifecycleRetype = [.tcb, .cnode, .untyped]))
   -- Audit-pass-3: .tcbSuspend now includes .schedContext (donation-cancel).
+  -- WS-SM SM6.E: + .reply (the `.blockedOnReply` reply-link teardown).
   assertBool "permittedKinds .tcbSuspend"
     (decide (permittedKinds .tcbSuspend =
-      [.tcb, .cnode, .endpoint, .notification, .schedContext]))
+      [.tcb, .cnode, .endpoint, .notification, .schedContext, .reply]))
   assertBool "permittedKinds .schedContextBind"
     (decide (permittedKinds .schedContextBind = [.tcb, .cnode, .schedContext]))
   -- Audit-pass-3: .call, .reply, .replyRecv include .schedContext (donation).

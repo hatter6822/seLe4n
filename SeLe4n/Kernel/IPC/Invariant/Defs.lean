@@ -2399,8 +2399,11 @@ theorem cleanupPreReceiveDonation_frame_helper
 -- are unchanged by storeObject on different-typed ObjIds.
 -- This is proven via storeObject's insert semantics on the RHTable.
 
-/-- AI4-A: returnDonatedSchedContext preserves objects.invExt. -/
-private theorem returnDonatedSchedContext_preserves_objects_invExt
+/-- AI4-A: returnDonatedSchedContext preserves objects.invExt.
+(WS-SM SM6.E: promoted from `private` — the cancellation invariant surface
+consumes it for `cancelDonatedDonation_preserves_objects_invExt`, via
+`cleanupDonatedSchedContext_preserves_objects_invExt`.) -/
+theorem returnDonatedSchedContext_preserves_objects_invExt
     (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
     (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)

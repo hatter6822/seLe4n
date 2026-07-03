@@ -1,3 +1,102 @@
+## v0.32.60 — WS-SM SM6.E: cancellation across cores (lock-set migration, 2PL atomicity, cross-core deschedule + SGI)
+
+Lands the SM6.E phase of the WS-SM cross-core IPC workstream
+(`docs/planning/SMP_CROSS_CORE_IPC_PLAN.md` §3.1, §5 — all six sub-tasks): the suspend
+pipeline's two cancellation sub-operations (`cancelIpcBlocking`, `cancelDonation`) are
+lifted to **cross-core** transitions under the SM3.B per-object lock-set discipline, with
+the plan-named atomicity theorems, the `cancellation_cross_core_correct` flagship, and a
+54-assertion runtime suite.  All axiom-clean; the production/staged partition is unchanged
+(56); the boot trace is byte-identical.
+
+**The cross-core transitions** (`SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean`, NEW,
+production, pulled into `SeLe4n.lean`).  §1: `descheduleThread` — the SM5.C `wakeThread`
+**dual**: removes a thread from its *home* core's run queue / current slot
+(`determineTargetCore` → `removeRunnableOnCore`) and surfaces a `.reschedule` SGI exactly
+when the victim was **actively current on a remote home core** (a merely-queued remote
+victim needs no poke; a victim current on the executing core is rescheduled synchronously
+by the caller; an unresolvable `tid` pokes nothing — the wake ghost-guard mirrored), with
+the full lemma surface (`_state_eq` / `_objects_eq` / `_emits_sgi_if_remote_current` /
+`_no_sgi_if_{local,not_current,ghost}` / `_descheduled_on_home` /
+`_independent_of_other_core`).  §2–§4: `cancelIpcBlockingOnCore` — the suspend pipeline's
+G2+G4+G7 slice across cores (the pure single-core object teardown, then the home-core
+deschedule + remote poke; home core pre-resolved from the pre-state, justified by
+`cancelIpcBlocking_scheduler_eq` and made explicit by
+`cancelIpcBlockingOnCore_eq_descheduleThread` / `_ready_eq_descheduleThread`), plus its
+SGI family and reductions.  `cancelBoundDonationOnCore` fixes a genuine single-core
+hardcode: the SchedContext's pending replenishments are purged from the **victim's home
+core's** replenish queue (SM5.H `replenishQueueAffinityConsistentOnCore` places them
+there) instead of `cancelBoundDonation`'s pinned `bootCoreId`; the single-core arm is
+recovered definitionally (`cancelBoundDonationOnCore_bootCoreId`, the SM5.A bridge
+pattern), and the dispatcher `cancelDonationOnCore` resolves the purge core via
+`determineTargetCore`, returning the pre-state on error (the SM6.A/B/C bracket
+convention).
+
+**Lock-set migration (SM6.E.1/.3) + a closed footprint gap.**  The plan §3.1 cancellation
+rows land as `lockSet_cancelIpcBlocking` (victim TCB W; blocked-on endpoint/notification
+W, pre-resolved from `ipcState` via `cancelBlockedEndpoint?` /
+`cancelBlockedNotification?`; **consumed Reply object W** via `cancelConsumedReply?`) and
+`lockSet_cancelDonation` (victim TCB W; SchedContext W; donated-arm original-owner TCB W,
+via `cancelBindingSc?` / `cancelDonatedOwner?`), each with a state-resolved `…OnCore`
+form, `permittedKinds .tcbSuspend` consistency, `Nodup` correctness, and write-coverage
+membership.  Closing the footprint gap the SM6.D reply-object fold opened
+(`cancelIpcBlocking` severs `reply.caller` on the `.blockedOnReply` arm — a write the
+suspend footprint never declared): `permittedKinds .tcbSuspend` gains `.reply`,
+`lockSet_tcbSuspend` gains an optional `consumedReplyId` (now a 5-extension footprint of
+size 8 = `maxLockSetSize` exactly; `size_le_5` +
+`lockSet_consistent_base_plus_five_opts` added; `Deadlock.lean` size bounds +
+`KernelOperation.ofTcbSuspend` extended; `LockSetSuite` / `DeadlockFreedomSuite` pins
+updated).  Both cancellation footprints are member-by-member covered by the enclosing
+suspend footprint (`lockSet_tcbSuspend_*_write_mem` ×6), powered by the new mode-aware
+membership lemma `mem_insertOrMerge_write_of_mem_write` (a write-mode pair survives any
+`insertOrMerge` — no key-distinctness side-condition) + `mem_write_lockSetExtendOpt`.
+
+**2PL atomicity (SM6.E.2/.4).**  The exact plan-named theorems
+`cancelIpcBlocking_atomic_under_lockSet` and `cancelDonation_atomic_under_lockSet`, plus
+the cross-core companions `cancelIpcBlockingOnCore_atomic_under_lockSet` /
+`cancelDonationOnCore_atomic_under_lockSet` — all via `lockSet_atomic_under_2pl`: no
+partially-torn-down victim (dequeued but IPC fields uncleared, reply link half-severed,
+SC deactivated but binding uncleared) is observable to a lock-insensitive observer.
+
+**The flagship (SM6.E.5).**  `cancellation_cross_core_correct`: cancelling a victim
+actively current on a remote home core (1) surfaces the `.reschedule` SGI to that core,
+(2) fully deschedules the victim there (∉ run queue ∧ ≠ current), (3) leaves every other
+core's run queue and current slot exactly the pre-state's, and (4) has object-level
+effect exactly the single-core `cancelIpcBlocking` teardown's — so every single-core
+teardown theorem transports to the cross-core composite unchanged.
+
+**Invariant surface.**  `objects.invExt` preservation down the whole cancellation
+surface: per-helper lemmas for `spliceOutMidQueueNode` / `removeFromAllEndpointQueues` /
+`removeFromAllNotificationWaitLists` (`CleanupPreservation.lean`, via
+`RHTable.fold_preserves`), `clearReplyObjectCaller` / `clearTcbReplyObject` /
+`consumeReplyLink` / `cancelIpcBlocking` / `cancelBoundDonation` /
+`cancelDonatedDonation` / `cancelDonation` (`SuspendPreservation.lean`),
+`cleanupDonatedSchedContext` (`CleanupPreservation.lean`;
+`returnDonatedSchedContext_preserves_objects_invExt` promoted from `private` to feed it),
+and the OnCore forms (`Cancellation.lean` §10) — plus the per-core donation frames
+(`cancelBoundDonationOnCore_replenishQueue_purged` / `_replenishQueue_ne` /
+`_runQueue_current_eq`, the ∀-core `cancelDonatedDonation_scheduler_eq`, and
+`cancelDonationOnCore_runQueue_current_eq`: donation cancellation never disturbs any
+core's run queue or current slot).
+
+**Tests (SM6.E.6).**  `tests/SmpCancellationSuite.lean` (NEW): 54 runtime assertions in 8
+scenario groups — cancelling endpoint-blocked (driven through the real
+`endpointCallOnCore` block path), notification-blocked (real `notificationWaitOnCore`),
+and reply-blocked victims homed on a remote core; the running-remote SGI vs running-local
+no-SGI duals; the bound-donation home-core replenish purge (boot-core queue untouched);
+the donated return-to-owner arm; dispatcher `.unbound` identity + ghost-victim
+fail-closed; and the `withLockSet` bracket's operational atomicity — plus Tier-3 surface
+anchors and elaboration-time theorem applications.  Wired: `smp_cancellation_suite`
+(lakefile) + Tier-2 (`test_tier2_negative.sh`) + Tier-3 anchors
+(`test_tier3_invariant_surface.sh`).
+
+**Remaining tracked debt** (recorded in the plan's §SM6.E note, not silent): the live
+`.tcbSuspend` cross-core dispatch wiring (`suspendThreadOnCore` + arm flip — the SM6.A
+one-cut-later pattern); cancellation non-interference (needs store-sweep projection
+lemmas); whole-bundle preservation for cancellation (needs per-conjunct sweep lemmas);
+and the closed-form discharge of the pre/post-resolution frame hypotheses.
+
+Refs: docs/planning/SMP_CROSS_CORE_IPC_PLAN.md §5 (SM6.E)
+
 ## v0.32.59 — WS-SM SM6.D completion: cross-core whole-bundle closures, WithCaps trio, lookup-congruence transfer layer
 
 Closes the SM6.D scope note's OnCore proof-depth debt and the WithCaps coverage gap
