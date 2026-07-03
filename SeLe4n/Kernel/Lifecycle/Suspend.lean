@@ -553,6 +553,41 @@ def clearPendingState (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :
 -- D1-G: suspendThread (composite)
 -- ============================================================================
 
+/-- WS-SM SM6.E (PR #831 review 2): snapshot of core `ec`'s current thread and
+its *effective* run-queue priority (`resolveEffectivePrioDeadline`), taken at
+suspend entry.  `none` when the core is idle or its current slot does not
+resolve to a TCB.  The suspend pipeline's PIP revert (G2b) can lower a chain
+member's effective priority; comparing this snapshot against the post-pipeline
+value (`currentDeboostedFrom`) detects a disinheritance of the core's own
+running thread — the one case no `.reschedule` SGI can cover (SGIs poke only
+*remote* cores). -/
+def currentEffectivePrio? (st : SystemState) (ec : CoreId)
+    : Option (SeLe4n.ThreadId × Nat) :=
+  match st.scheduler.currentOnCore ec with
+  | some curTid =>
+    match st.getTcb? curTid with
+    | some curTcb => some (curTid, (resolveEffectivePrioDeadline st curTcb).1.val)
+    | none => none
+  | none => none
+
+/-- WS-SM SM6.E (PR #831 review 2): is the snapshotted thread STILL current on
+core `ec` with a strictly *lower* effective priority than at snapshot time?
+When true, the suspend must run a local scheduling point
+(`handleRescheduleSgiOnCore`): a ready thread whose priority sits between the
+deboosted current's base and its old donation must preempt now, not at the
+next timer tick.  A raise (or an unchanged priority) triggers nothing — the
+running choice can only outrank strictly more than before. -/
+def currentDeboostedFrom (post : SystemState) (ec : CoreId)
+    (snapshot : Option (SeLe4n.ThreadId × Nat)) : Bool :=
+  match snapshot with
+  | some (curTid, prePrio) =>
+    (post.scheduler.currentOnCore ec == some curTid)
+      && (match post.getTcb? curTid with
+          | some curTcb =>
+              decide ((resolveEffectivePrioDeadline post curTcb).1.val < prePrio)
+          | none => false)
+  | none => false
+
 /-- D1-G: Suspend a thread — the complete suspension sequence.
 
 Validates the target thread exists and is not already Inactive, then
@@ -590,6 +625,13 @@ def suspendThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
       -- only the replenish queue, PIP reversion re-buckets run-queue
       -- entries), so the entry-time read is the just-before-G4 value.
       let wasCurrent : Bool := (st.scheduler.currentOnCore bootCoreId) == some tid
+      -- Local-disinheritance precapture (PR #831 review 2): the boot core's
+      -- current thread's entry-time effective priority.  The G2b PIP revert
+      -- can LOWER it (the current thread may be a chain member — e.g. the
+      -- boot core is running the victim's server), and a deboosted-but-
+      -- still-current thread gets no scheduling point from the wasCurrent
+      -- arm, so the drop is re-checked at G7.
+      let bootCurPre := currentEffectivePrio? st bootCoreId
       -- D4-N (WS-SM SM6.E ordering fix): capture the upstream blocking server
       -- BEFORE G2 clears the victim's `ipcState` (the reply-blocking edge is
       -- the only record of the chain), and run the PIP revert AFTER G2.
@@ -673,7 +715,20 @@ def suspendThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
         | .ok ((), st') => .ok st'
         | .error e => .error e
       else
-        .ok st
+        -- Local-disinheritance recheck (PR #831 review 2): the boot core's
+        -- entry-time current thread is STILL current but the G2b revert
+        -- lowered its effective priority — a ready thread whose priority
+        -- sits between the deboosted current's base and its old donation
+        -- must preempt now, not at the next timer tick.  The gated per-core
+        -- handler (`handleRescheduleSgiOnCore`, boot instance) switches only
+        -- when a queue candidate strictly outranks the deboosted current
+        -- (`candidateOutranksCurrentOnCore`), re-enqueueing the old current.
+        if currentDeboostedFrom st bootCoreId bootCurPre then
+          match handleRescheduleSgiOnCore st bootCoreId with
+          | .ok st' => .ok st'
+          | .error e => .error e
+        else
+          .ok st
   | _ => .error .invalidArgument
 
 -- ============================================================================

@@ -1369,6 +1369,13 @@ core's run queue *changed* across `pre → post`.  Two material cases:
   stop executing it and dispatch a successor.  (Without this rule a live
   `.tcbSuspend` of a remote-running victim would leave that core executing the
   suspended thread until its next timer tick.)
+* a **deboosted current** (WS-SM SM6.E, PR #831 review 2) — the thread is still
+  current on its remote home core in both `pre` and `post` but its effective
+  priority *dropped* (a PIP-revert disinheritance): a ready thread on that core
+  may now outrank the running choice, so the home core must re-run its
+  preemption gate.  A raise of a current thread fires nothing (it can only
+  outrank strictly more), and a still-current thread is not in the run queue
+  (dequeue-on-dispatch), so neither of the first two rules covers this case.
 
 Factored out so the dispatch theorems reference it by name (the single object-store
 read site, mirroring `waitersOf`'s raw iteration). -/
@@ -1397,6 +1404,18 @@ def crossCoreSgiBody (pre post : SystemState) (execCore : CoreId) (oid : ObjId)
         -- WS-SM SM6.E (descheduled-current): the victim was running on its remote
         -- home core and a cross-core cancellation removed it (not re-queued, not
         -- current) — poke that core so it stops executing the suspended thread.
+        some (home, SgiKind.reschedule)
+      else if (pre.scheduler.currentOnCore home == some tpost.tid)
+          && (post.scheduler.currentOnCore home == some tpost.tid)
+          && ((SeLe4n.Kernel.resolveEffectivePrioDeadline post tpost).1.val
+                < (SeLe4n.Kernel.resolveEffectivePrioDeadline pre tpre).1.val) then
+        -- WS-SM SM6.E (deboosted-current, PR #831 review 2): the thread is STILL
+        -- current on its remote home core but its effective priority DROPPED — a
+        -- PIP-revert disinheritance (e.g. the suspend of a reply-blocked client
+        -- deboosting its still-running server).  A ready thread on that core may
+        -- now outrank it, so the home core must re-run its preemption gate.  A
+        -- priority RAISE of a current thread needs no poke: the running choice
+        -- can only outrank strictly more than before.
         some (home, SgiKind.reschedule)
       else none
     | none => none
@@ -1427,7 +1446,9 @@ theorem crossCoreSgiBody_reschedule (pre post : SystemState) (ec : CoreId) (oid 
           · simp only [Option.some.injEq] at h; rw [← h]
         · split at h
           · simp only [Option.some.injEq] at h; rw [← h]
-          · simp at h
+          · split at h
+            · simp only [Option.some.injEq] at h; rw [← h]
+            · simp at h
     · simp at h
   · simp at h
 
@@ -1491,6 +1512,36 @@ theorem crossCoreSgiBody_remote_deschedule (pre post : SystemState) (execCore : 
   simp only [hPre]
   rw [if_neg (by simpa using hRemote), if_neg hPostNotRq,
       if_pos (by simp [hPreCur, hPostNotCur])]
+
+/-- WS-SM SM6.E (the deboosted-current rule, positive direction — PR #831
+review 2): a thread that is **still current** on its *remote* home core across
+`pre → post` but whose effective priority *dropped* (a PIP-revert
+disinheritance, e.g. suspending a reply-blocked client deboosts its
+still-running server) makes the dispatch body emit a `.reschedule` SGI to that
+home core — the poke that makes the remote core re-run its preemption gate, so
+a ready thread that now outranks the deboosted current is dispatched instead
+of waiting for the next timer tick.  The still-current companion of
+`crossCoreSgiBody_remote_deschedule`. -/
+theorem crossCoreSgiBody_remote_deboost_current (pre post : SystemState)
+    (execCore : CoreId) (oid : ObjId) (tpost tpre : TCB)
+    (hPost : post.objects[oid]? = some (.tcb tpost))
+    (hPre : pre.getTcb? tpost.tid = some tpre)
+    (hRemote : SeLe4n.Kernel.determineTargetCore post tpost.tid ≠ execCore)
+    (hPostNotRq : tpost.tid ∉
+        post.scheduler.runQueueOnCore (SeLe4n.Kernel.determineTargetCore post tpost.tid))
+    (hPreCur : pre.scheduler.currentOnCore (SeLe4n.Kernel.determineTargetCore post tpost.tid)
+        = some tpost.tid)
+    (hPostCur : post.scheduler.currentOnCore
+        (SeLe4n.Kernel.determineTargetCore post tpost.tid) = some tpost.tid)
+    (hDrop : (SeLe4n.Kernel.resolveEffectivePrioDeadline post tpost).1.val
+        < (SeLe4n.Kernel.resolveEffectivePrioDeadline pre tpre).1.val) :
+    crossCoreSgiBody pre post execCore oid
+      = some (SeLe4n.Kernel.determineTargetCore post tpost.tid, SgiKind.reschedule) := by
+  unfold crossCoreSgiBody
+  rw [hPost]
+  simp only [hPre]
+  rw [if_neg (by simpa using hRemote), if_neg hPostNotRq,
+      if_neg (by simp [hPostCur]), if_pos (by simp [hPreCur, hPostCur, hDrop])]
 
 /-- WS-SM SM5.F.4: every SGI the diff-based dispatch emits is a `.reschedule` — it
 pokes cores only to reschedule, never with a foreign SGI kind. -/

@@ -1,3 +1,39 @@
+## v0.32.63 — WS-SM SM6.E: disinheritance scheduling points (PR #831 review 2)
+
+Remediates the second PR #831 Codex review (two P2s on the v0.32.62 cut):
+a suspend that deboosts a **still-current** server created no scheduling
+point — neither locally (G7 fired only when the *victim* was current) nor
+remotely (`crossCoreSgiBody` fired only for queued threads or a *cleared*
+current slot) — so a ready thread whose priority sits between the server's
+base and its old donation waited until the next timer tick.
+
+* **Local preemption gate (P2 #1).**  Both suspend forms snapshot the
+  executing core's current thread's effective priority at entry
+  (`currentEffectivePrio?`) and, when it is still current with a strictly
+  lower effective priority after the pipeline (`currentDeboostedFrom`), run
+  the gated local scheduling point (`handleRescheduleSgiOnCore` — switches
+  only when a queue candidate strictly outranks the deboosted current,
+  re-enqueueing it).  The per-core G7 dispatch is factored into
+  `suspendRescheduleOnCore` with arm-level SGI-discipline lemmas
+  (`suspendRescheduleOnCore_sgi_shape` / `_local_no_sgi`) that the
+  pipeline-level theorems now ride.
+* **Deboosted-current diff rule (P2 #2).**  `crossCoreSgiBody` gains a
+  fourth rule (`crossCoreSgiBody_remote_deboost_current`): a thread still
+  current on its remote home core across `pre → post` whose effective
+  priority *dropped* fires a `.reschedule` to that core, so its preemption
+  gate re-runs instead of waiting for the tick.  A raise fires nothing (the
+  running choice can only outrank strictly more); single-core inertness
+  preserved (`crossCoreSgiBody_none_single_core` unchanged).
+
+Tests: `SmpCancellationSuite` 84 → 91 assertions / 15 scenario groups — new
+§3.15 (local disinheritance: the deboosted boot current is preempted inline
+by a mid-priority bystander and re-enqueued at base priority, single-core
+mirror; remote still-current: the diff seam pokes the server's core while
+the state leaves its current slot untouched).  Golden trace byte-identical.
+Version bumped 0.32.62 → 0.32.63.
+
+Refs: docs/planning/SMP_CROSS_CORE_IPC_PLAN.md §5 (SM6.E completion note)
+
 ## v0.32.62 — WS-SM SM6.E: suspend PIP-revert ordering fix + diff-fired suspend-entry SGIs (PR #831 review)
 
 Remediates the PR #831 review finding (P2: the `suspend_thread_cross_core`

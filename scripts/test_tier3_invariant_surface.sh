@@ -1082,6 +1082,17 @@ run_check "INVARIANT" rg -n '^@\[export suspend_thread_cross_core\]' SeLe4n/Kern
 run_check "INVARIANT" rg -n '^def suspendThreadOnCore' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem suspendThreadOnCore_sgi_remote_reschedule' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem crossCoreSgiBody_remote_deschedule' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
+# WS-SM SM6.E (PR #831 review 2): disinheritance scheduling points — the
+# suspend's D4-N capture -> clear -> revert-from-server order, the local
+# preemption gate on a deboosted executing-core current, the diff seam's
+# deboosted-current rule (a still-current remote server whose effective
+# priority dropped is poked), and the declared PIP chain-walk obligation.
+run_check "INVARIANT" rg -n '^def currentEffectivePrio\?' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n '^def currentDeboostedFrom' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n '^def suspendRescheduleOnCore' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem suspendRescheduleOnCore_sgi_shape' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreSgiBody_remote_deboost_current' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
+run_check "INVARIANT" rg -n '^@\[inline\] def pipChainStart_tcbSuspend' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 
 # WS-I2/R-05: Lean #check correctness anchors (type-level validation).
 # D5: The Liveness module is proof-only and not imported from Main.lean,

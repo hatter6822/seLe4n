@@ -1863,6 +1863,90 @@ theorem suspendThreadOnCoreSchedLockSet_pairwise_le (home ownerHome : CoreId) :
 
 namespace Lifecycle.Suspend
 
+/-- WS-SM SM6.E: the per-core suspend's **G7 dispatch** — the local/remote
+reschedule seam factored out of `suspendThreadOnCore` so the SGI discipline is
+provable arm-by-arm.  Four arms:
+
+* victim was current on a **local** home (`wasCurrentHome ∧ home = ec`):
+  reschedule inline, surface nothing;
+* victim was current on a **remote** home: surface the home-core
+  `.reschedule` SGI — running the local preemption gate first iff the G2b
+  PIP revert deboosted the executing core's own current thread
+  (`localDeboosted`, PR #831 review 2);
+* victim not current anywhere relevant: surface nothing — but still run the
+  local preemption gate on a local disinheritance. -/
+def suspendRescheduleOnCore (st : SystemState) (home executingCore : CoreId)
+    (wasCurrentHome localDeboosted : Bool)
+    : Except KernelError (SystemState × Option (CoreId × SgiKind)) :=
+  if wasCurrentHome then
+    if home == executingCore then
+      match handleRescheduleSgiOnCore st executingCore with
+      | .ok st' => .ok (st', none)
+      | .error e => .error e
+    else
+      if localDeboosted then
+        match handleRescheduleSgiOnCore st executingCore with
+        | .ok st' => .ok (st', some (home, SgiKind.reschedule))
+        | .error e => .error e
+      else
+        .ok (st, some (home, SgiKind.reschedule))
+  else
+    if localDeboosted then
+      match handleRescheduleSgiOnCore st executingCore with
+      | .ok st' => .ok (st', none)
+      | .error e => .error e
+    else
+      .ok (st, none)
+
+/-- WS-SM SM6.E (SGI discipline, G7-dispatch level): every SGI the dispatch
+surfaces is a `.reschedule` targeting `home`, and only when `home` is remote. -/
+theorem suspendRescheduleOnCore_sgi_shape (st st' : SystemState)
+    (home ec : CoreId) (wc ld : Bool) (c : CoreId) (k : SgiKind)
+    (h : suspendRescheduleOnCore st home ec wc ld = .ok (st', some (c, k))) :
+    c = home ∧ k = SgiKind.reschedule ∧ home ≠ ec := by
+  unfold suspendRescheduleOnCore at h
+  split at h
+  · split at h
+    · split at h
+      · injection h with h; injection h with h1 h2; cases h2
+      · cases h
+    · rename_i hNotLocal
+      have hne : home ≠ ec := fun hEq => hNotLocal (by simp [hEq])
+      split at h
+      · split at h
+        · injection h with h; injection h with h1 h2
+          injection h2 with h2; injection h2 with hc hk
+          exact ⟨hc.symm, hk.symm, hne⟩
+        · cases h
+      · injection h with h; injection h with h1 h2
+        injection h2 with h2; injection h2 with hc hk
+        exact ⟨hc.symm, hk.symm, hne⟩
+  · split at h
+    · split at h
+      · injection h with h; injection h with h1 h2; cases h2
+      · cases h
+    · injection h with h; injection h with h1 h2; cases h2
+
+/-- WS-SM SM6.E (G7-dispatch level): a local home surfaces no SGI. -/
+theorem suspendRescheduleOnCore_local_no_sgi (st st' : SystemState)
+    (home ec : CoreId) (wc ld : Bool) (sgi : Option (CoreId × SgiKind))
+    (hLocal : home = ec)
+    (h : suspendRescheduleOnCore st home ec wc ld = .ok (st', sgi)) :
+    sgi = none := by
+  unfold suspendRescheduleOnCore at h
+  split at h
+  · split at h
+    · split at h
+      · injection h with h; injection h with h1 h2; exact h2.symm
+      · cases h
+    · rename_i hNotLocal
+      exact absurd (by simp [hLocal]) hNotLocal
+  · split at h
+    · split at h
+      · injection h with h; injection h with h1 h2; exact h2.symm
+      · cases h
+    · injection h with h; injection h with h1 h2; exact h2.symm
+
 /-- WS-SM SM6.E (live wiring): the **complete** per-core suspend — the
 cross-core analogue of `suspendThread`, exactly as `resumeThreadOnCore`
 (SM5.F.6) is the cross-core analogue of `resumeThread`.
@@ -1907,6 +1991,17 @@ The single-core G1–G7 pipeline generalised across cores:
     home core must receive so it stops executing the suspended thread — the
     same SGI the diff seam re-derives (`crossCoreSgiBody`'s SM6.E
     descheduled-current rule) on the generic syscall path.
+  * **LOCAL DISINHERITANCE** (PR #831 review 2): independent of the victim's
+    placement, if the G2b PIP revert lowered the **executing core's own
+    current thread's** effective priority (the executing core may be running
+    a chain member — e.g. the victim's server), G7 also runs the local
+    preemption gate (`handleRescheduleSgiOnCore`): a ready local thread whose
+    priority sits between the server's base and its old donation must
+    preempt now, not at the next timer tick.  No SGI can deliver this — the
+    diff seam pokes only remote cores (its still-current companion rule
+    `crossCoreSgiBody_remote_deboost_current` covers the *remote* deboosted
+    server).  A priority raise triggers nothing (the running choice can only
+    outrank strictly more).
 
 Errors mirror `suspendThread`: `invalidArgument` for a non-TCB target,
 `illegalState` for an already-`.Inactive` one, and the G3 donation-arm
@@ -1926,6 +2021,14 @@ def suspendThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThreadId)
       -- moves it — `cancelIpcBlocking_determineTargetCore_eq`)
       let home := determineTargetCore st tid
       let wasCurrentHome : Bool := (st.scheduler.currentOnCore home) == some tid
+      -- Local-disinheritance precapture (PR #831 review 2): the executing
+      -- core's current thread's entry-time effective priority.  G2b's PIP
+      -- revert can LOWER it (the current thread may be a chain member — e.g.
+      -- the executing core is running the victim's server), and a
+      -- deboosted-but-still-current thread receives no SGI (the diff seam
+      -- pokes only *remote* cores), so the drop is re-checked at G7 and a
+      -- LOCAL scheduling point is run.
+      let execCurPre := currentEffectivePrio? st executingCore
       -- G2-precapture (D4-N, SM6.E ordering fix — see `suspendThread`): the
       -- reply-blocking edge is read before G2 clears it.
       let maybeBlockingServer := PriorityInheritance.blockingServer st tid
@@ -1952,15 +2055,13 @@ def suspendThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThreadId)
           { st with objects := st.objects.insert tid.toObjId (.tcb { tcb'' with
               threadState := .Inactive }) }
         | none => st
-      if wasCurrentHome then
-        if home == executingCore then
-          match handleRescheduleSgiOnCore st executingCore with
-          | .ok st' => .ok (st', none)
-          | .error e => .error e
-        else
-          .ok (st, some (home, SgiKind.reschedule))
-      else
-        .ok (st, none)
+      -- Local-disinheritance recheck (PR #831 review 2): the executing core's
+      -- entry-time current thread is STILL current and its effective priority
+      -- dropped across the pipeline (the G2b revert deboosted it) — a ready
+      -- local thread may now outrank the running choice, and no SGI ever
+      -- reaches the executing core, so G7 must run the local preemption gate.
+      suspendRescheduleOnCore st home executingCore wasCurrentHome
+        (currentDeboostedFrom st executingCore execCurPre)
   | none => .error .invalidArgument
 
 /-- WS-SM SM6.E: a target that does not resolve to a TCB is rejected with
@@ -1994,24 +2095,8 @@ theorem suspendThreadOnCore_sgi_remote_reschedule (st st' : SystemState)
     · cases h
     · split at h
       · cases h
-      · split at h
-        · split at h
-          · split at h
-            · injection h with h
-              injection h with h1 h2
-              cases h2
-            · cases h
-          · rename_i hNotLocal
-            injection h with h
-            injection h with h1 h2
-            injection h2 with h2
-            injection h2 with hc hk
-            refine ⟨hc.symm, hk.symm, ?_⟩
-            subst hc
-            exact fun hEq => hNotLocal (by simp [hEq])
-        · injection h with h
-          injection h with h1 h2
-          cases h2
+      · obtain ⟨hc, hk, hne⟩ := suspendRescheduleOnCore_sgi_shape _ _ _ _ _ _ _ _ h
+        exact ⟨hc, hk, hc ▸ hne⟩
   · cases h
 
 /-- WS-SM SM6.E: a victim homed on the executing core surfaces no SGI — the
@@ -2027,18 +2112,7 @@ theorem suspendThreadOnCore_local_no_sgi (st st' : SystemState)
     · cases h
     · split at h
       · cases h
-      · split at h
-        · split at h
-          · split at h
-            · injection h with h
-              injection h with h1 h2
-              exact h2.symm
-            · cases h
-          · rename_i hNotLocal
-            exact absurd (by simp [hLocal]) hNotLocal
-        · injection h with h
-          injection h with h1 h2
-          exact h2.symm
+      · exact suspendRescheduleOnCore_local_no_sgi _ _ _ _ _ _ _ hLocal h
   · cases h
 
 end Lifecycle.Suspend

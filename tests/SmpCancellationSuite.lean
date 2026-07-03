@@ -175,6 +175,15 @@ open SeLe4n.Testing
 #check @Lifecycle.Suspend.suspendThreadOnCore_rejects_inactive
 #check @Lifecycle.Suspend.suspendThreadOnCore_sgi_remote_reschedule
 #check @Lifecycle.Suspend.suspendThreadOnCore_local_no_sgi
+
+-- PR #831 review 2: disinheritance scheduling points (local preemption gate +
+-- the diff seam's deboosted-current rule) + the factored G7 dispatch.
+#check @Lifecycle.Suspend.currentEffectivePrio?
+#check @Lifecycle.Suspend.currentDeboostedFrom
+#check @Lifecycle.Suspend.suspendRescheduleOnCore
+#check @Lifecycle.Suspend.suspendRescheduleOnCore_sgi_shape
+#check @Lifecycle.Suspend.suspendRescheduleOnCore_local_no_sgi
+#check @SeLe4n.Kernel.PriorityInheritance.crossCoreSgiBody_remote_deboost_current
 #check @PriorityInheritance.crossCoreSgiBody_remote_deschedule
 
 -- ============================================================================
@@ -971,6 +980,90 @@ private def runPipDonationDropChecks : IO Unit := do
              | none => false)
       | .error _ => assertBool "single-core PIP suspend succeeds" false
 
+-- ----------------------------------------------------------------------------
+-- Scenario N (PR #831 review 2): disinheritance scheduling points.  Suspending
+-- a reply-blocked client deboosts its STILL-RUNNING server — (a) when the
+-- executing core itself runs the server, a mid-priority ready thread must
+-- preempt inline (no SGI can reach the executing core); (b) the single-core
+-- pipeline mirrors it; (c) when the server runs on a remote core, the diff
+-- seam's deboosted-current rule pokes that core.
+-- ----------------------------------------------------------------------------
+
+/-- The executing (boot) core runs the victim's server (base 50, boost 200);
+a prio-100 bystander waits in the boot queue; the victim (prio 200, home
+core 1, NOT current anywhere) is reply-blocked on the server. -/
+private def stLocalDeboost : SystemState :=
+  let base :=
+    (BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject rId.toObjId (.reply { replyId := rId, caller := some victimTid })
+      |>.withObject victimTid.toObjId (.tcb { mkTcb 710 200 (some core1) with
+          threadState := .Ready,
+          ipcState := .blockedOnReply epId (some serverTid),
+          replyObject := some rId })
+      |>.withObject serverTid.toObjId (.tcb { mkTcb 716 50 none with
+          threadState := .Running,
+          pipBoost := some ⟨200⟩ })
+      |>.withObject bystanderTid.toObjId (.tcb { mkTcb 712 100 none with
+          threadState := .Ready })
+      |>.withRunnable [bystanderTid]
+      |>.build)
+  { base with scheduler := base.scheduler.setCurrentOnCore bootCoreId (some serverTid) }
+
+/-- The server (base 50, boost 200) is RUNNING on core 2 (current, not
+queued); the victim (home core 1, not current) is reply-blocked on it. -/
+private def stRemoteDeboost : SystemState :=
+  let base :=
+    (BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject rId.toObjId (.reply { replyId := rId, caller := some victimTid })
+      |>.withObject victimTid.toObjId (.tcb { mkTcb 710 200 (some core1) with
+          threadState := .Ready,
+          ipcState := .blockedOnReply epId (some serverTid),
+          replyObject := some rId })
+      |>.withObject serverTid.toObjId (.tcb { mkTcb 716 50 (some core2) with
+          threadState := .Running,
+          pipBoost := some ⟨200⟩ })
+      |>.build)
+  { base with scheduler := base.scheduler.setCurrentOnCore core2 (some serverTid) }
+
+private def runDisinheritanceSchedulingChecks : IO Unit := do
+  IO.println "--- §3.15 SM6.E disinheritance scheduling points (PR #831 review 2) ---"
+  match victimTid.toValid? with
+  | none => assertBool "setup: victim ValidThreadId" false
+  | some vtid =>
+      -- (a) LOCAL: the executing core runs the server; the deboosted (50)
+      -- current must be preempted inline by the prio-100 bystander.
+      match suspendThreadOnCore stLocalDeboost vtid bootCoreId with
+      | .ok (st', sgi) =>
+          assertBool "local disinheritance surfaces no SGI (victim was not current)"
+            (decide (sgi = none))
+          assertBool "deboosted server loses the boot current slot to the bystander"
+            (decide (st'.scheduler.currentOnCore bootCoreId = some bystanderTid))
+          assertBool "preempted server is re-enqueued on the boot queue at base priority"
+            (decide (serverTid ∈ st'.scheduler.runQueueOnCore bootCoreId)
+              && decide ((st'.scheduler.runQueueOnCore bootCoreId).threadPriority[serverTid]?
+                  = some ⟨50⟩))
+      | .error _ => assertBool "local-disinheritance suspend succeeds" false
+      -- (b) single-core mirror (`suspendThread`, boot pipeline).
+      match suspendThread stLocalDeboost vtid with
+      | .ok st' =>
+          assertBool "single-core suspend also preempts the deboosted boot current"
+            (decide (st'.scheduler.currentOnCore bootCoreId = some bystanderTid))
+      | .error _ => assertBool "single-core local-disinheritance suspend succeeds" false
+      -- (c) REMOTE still-current: the state does not switch the remote core
+      -- (only its own scheduler may), but the diff seam must poke it.
+      match suspendThreadOnCore stRemoteDeboost vtid bootCoreId with
+      | .ok (st', sgi) =>
+          assertBool "remote still-current deboost surfaces no victim SGI"
+            (decide (sgi = none))
+          assertBool "server remains current on core 2 (only the poke crosses cores)"
+            (decide (st'.scheduler.currentOnCore core2 = some serverTid))
+          assertBool "diff seam pokes core 2 for the still-current deboosted server"
+            ((PriorityInheritance.computeCrossCoreSgis stRemoteDeboost st' bootCoreId).any
+              (fun p => p.1 == core2 && p.2 == SgiKind.reschedule))
+      | .error _ => assertBool "remote-deboost suspend succeeds" false
+
 -- ============================================================================
 -- Aggregate runner
 -- ============================================================================
@@ -991,6 +1084,7 @@ def runSmpCancellationChecks : IO Unit := do
   runPerCoreSuspendChecks
   runSendReceiveCancelChecks
   runPipDonationDropChecks
+  runDisinheritanceSchedulingChecks
   IO.println "SmpCancellationSuite: all checks passed."
 
 end SeLe4n.Testing.SmpCancellation

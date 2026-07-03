@@ -25,7 +25,7 @@ SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
 **Current sub-phase: SM6.E cancellation across cores LANDED (v0.32.60) —
-completed v0.32.61; PR-review cut v0.32.62.**
+completed v0.32.61; PR-review cuts v0.32.62–63.**
 
 **PR-review cut (v0.32.62, PR #831 P2 + its root causes).**  The review
 flagged that the `suspend_thread_cross_core` FFI entry fired only the
@@ -55,8 +55,30 @@ consumer contract amended for a non-static chain start (the walker's
 first CAS-acquisition covers the captured server; deadlock-freedom rests
 on bounded-retry try-acquisition).  Suite §3.14 (PIP-donation drop:
 boost dropped, home-core bucket re-keyed 200 → 50, diff pokes both
-remote cores, single-core mirror) — 84 assertions / 14 groups; golden
-trace byte-identical.
+remote cores, single-core mirror); golden trace byte-identical.
+
+**PR-review cut 2 (v0.32.63, two P2s on the v0.32.62 cut).**  A suspend
+that deboosts a **still-current** server created no scheduling point —
+locally G7 fired only when the *victim* was current, and remotely
+`crossCoreSgiBody` fired only for queued threads or a *cleared* current
+slot — so a ready thread whose priority sits between the server's base
+and its old donation waited until the next timer tick.  Fixed at both
+levels: **(1) the local preemption gate** — both suspend forms snapshot
+the executing core's current thread's effective priority at entry
+(`currentEffectivePrio?`) and, when it is still current with a strictly
+lower effective priority after the pipeline (`currentDeboostedFrom`),
+run the gated local scheduling point (`handleRescheduleSgiOnCore`); the
+per-core G7 dispatch is factored into `suspendRescheduleOnCore` with the
+arm-level SGI-discipline lemmas (`suspendRescheduleOnCore_sgi_shape` /
+`_local_no_sgi`) the pipeline theorems now ride.  **(2) the
+deboosted-current diff rule** — `crossCoreSgiBody` gains a fourth rule
+(`crossCoreSgiBody_remote_deboost_current`): a thread still current on
+its remote home core whose effective priority *dropped* fires a
+`.reschedule` there; a raise fires nothing; single-core inertness
+preserved.  Suite §3.15 (the deboosted boot current preempted inline by
+a mid-priority bystander and re-enqueued at base priority, single-core
+mirror, the remote still-current poke) — 91 assertions / 15 groups;
+golden trace byte-identical.
 
 The v0.32.61 completion cut closed the four
 tracked-debt items of the landing (full record in the plan's §SM6.E
