@@ -1099,6 +1099,11 @@ run_check "INVARIANT" rg -n '^@\[inline\] def pipChainStart_tcbSuspend' SeLe4n/K
 run_check "INVARIANT" rg -n '^def runningCoreOf\?' SeLe4n/Kernel/Lifecycle/Suspend.lean
 run_check "INVARIANT" rg -n '^theorem currentScan_boot_of_single_core' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
 run_check "INVARIANT" rg -n '^def cancelSpliceNeighbors\?' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+# Audit closure (v0.32.66): running-core footprint triple, EDF deadline rules,
+# current-uniqueness invariant slice, donation-side observer capstone.
+run_check "INVARIANT" rg -n '^def sortedSchedCoreTriple' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^def currentThreadUniqueAcrossCores' SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean
+run_check "INVARIANT" rg -n '^theorem cancelDonationOnCore_observer_atomic' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 
 # WS-I2/R-05: Lean #check correctness anchors (type-level validation).
 # D5: The Liveness module is proof-only and not imported from Main.lean,

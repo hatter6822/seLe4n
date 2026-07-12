@@ -1868,6 +1868,32 @@ def boundThreadPriorityConsistent (st : SystemState) : Prop :=
     ∀ scId, tcb.schedContextBinding.scId? = some scId →
       ∀ sc, st.getSchedContext? scId = some sc → sc.priority = tcb.priority
 
+/-- Audit closure (PR #831 review 4 follow-up): **a thread is current on at
+most one core**.  The per-core dispatch discipline maintains this by
+construction (a core's current slot is written only by that core's own
+scheduling decisions, and every dispatch draws from the core-local run queue
+under the single-placement guard), but until this audit it was implicit —
+"(pathologically) current on two cores" was handled defensively in some
+proofs and assumed away in others.  The SM6.E running-core resolutions
+(`runningCoreOf?`, `crossCoreSgiBody`'s pre-current scan) take the FIRST
+matching core; under this invariant that scan is complete (there is no
+second core to miss).  Full-surface preservation is tracked WS-SM debt;
+`removeRunnableOnCore`/`descheduleThread` preservation is proven with the
+SM6.E surface (`IPC/CrossCore/Cancellation.lean` §15). -/
+def currentThreadUniqueAcrossCores (st : SystemState) : Prop :=
+  ∀ (c c' : Concurrency.CoreId) (t : SeLe4n.ThreadId),
+    st.scheduler.currentOnCore c = some t →
+    st.scheduler.currentOnCore c' = some t → c = c'
+
+/-- The boot state satisfies current-uniqueness (every slot is empty). -/
+theorem default_currentThreadUniqueAcrossCores :
+    currentThreadUniqueAcrossCores (default : SystemState) := by
+  intro c c' t hc _
+  have hCur : (default : SystemState).scheduler.currentOnCore c = none :=
+    (default_state_perCoreInitialized c).1
+  rw [hCur] at hc
+  cases hc
+
 /-- `boundThreadPriorityConsistent` depends only on the object store, so it is
 preserved by any transition leaving `objects` unchanged (the pure
 scheduler-field ops: `advanceDomainOnCore`, `decrementDomainTimeOnCore`, the

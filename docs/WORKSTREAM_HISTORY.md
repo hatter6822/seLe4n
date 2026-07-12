@@ -25,7 +25,7 @@ SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
 **Current sub-phase: SM6.E cancellation across cores LANDED (v0.32.60) —
-completed v0.32.61; PR-review cuts v0.32.62–65.**
+completed v0.32.61; PR-review cuts v0.32.62–65; audit-closure cut v0.32.66.**
 
 **PR-review cut (v0.32.62, PR #831 P2 + its root causes).**  The review
 flagged that the `suspend_thread_cross_core` FFI entry fired only the
@@ -116,6 +116,25 @@ footprint members (`cancelSpliceNeighbors?` → two `.tcb` write locks in
 `lockSet_cancelIpcBlockingOnCore`, consistency via
 `lockSet_consistent_extendOpt`).  Suite §3.16 + neighbour-lock assertions
 — 100 assertions / 16 groups; golden trace byte-identical.
+
+**Audit-closure cut (v0.32.66).**  A three-auditor parallel deep audit of
+the full PR surface (plan conformance + vacuity; live-dispatch security;
+diff-seam semantics + coverage) returned: substantively implemented, zero
+sorry/axiom, authority chain sound (capability-gated, target from
+`cap.target`), every error arm fail-closed (no half-suspended commit), no
+CVE-class findings.  Every surviving finding landed: the running-core
+run-queue lock in `suspendThreadOnCoreSchedLockSet` (the review-4 G4b
+write, via `sortedSchedCoreTriple` on the SM3.B canonical-sort machinery),
+the EDF deadline dimension in `crossCoreSgiBody` (queued deadline change +
+weakened-current deadline-later fire; strengthenings silent), the
+`currentThreadUniqueAcrossCores` invariant slice (boot witness +
+`removeRunnableOnCore`/`descheduleThread` preservation; full-surface
+adoption tracked), the AK6-F.18 G3 projection-sketch correction (the
+splice's neighbour queue-link writes survive projection and ride the SM6.B
+dual-queue endpoint-label debt), the donation-side observer capstone
+(`cancelDonationOnCore_observer_atomic`), the doc/authority hardening set,
+and newly registered debt (`schedContextConfigure` boot-pinning).  Suite
+§3.17 — 107 assertions / 17 groups; trace byte-identical.
 
 The v0.32.61 completion cut closed the four
 tracked-debt items of the landing (full record in the plan's §SM6.E

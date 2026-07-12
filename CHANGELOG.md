@@ -1,3 +1,58 @@
+## v0.32.66 — WS-SM SM6.E: audit-closure cut (three-auditor deep audit of PR #831)
+
+A three-way parallel deep audit of the full PR #831 surface (plan
+conformance + vacuity; live-dispatch security; diff-seam semantics + test
+coverage) returned: workstream substantively implemented, zero sorry/axiom,
+authority chain sound, every error arm fail-closed, no CVE-class findings.
+This cut implements every surviving finding:
+
+* **Running-core lock declared (MED, two auditors).**
+  `suspendThreadOnCoreSchedLockSet` gains the victim's RUNNING core — the
+  review-4 G4b deschedule writes a possibly-third core's queue/current slot.
+  New `sortedSchedCoreTriple` (dedup + `List.mergeSort`, the SM3.B canonical
+  -sort machinery) with `_map_fst_mem`/`_pairwise_le`; the TOCTOU paragraph
+  corrected (the `runningCoreOf?` scan is guarded by this lock + the global
+  state-ref serialisation, not the victim's TCB lock).
+* **EDF deadline dimension (MED).**  `crossCoreSgiBody`'s queue rule now
+  fires on an effective-*deadline* change of a remote queued thread
+  (within-bucket selection is EDF; `schedContextConfigure` can rewrite
+  deadlines cross-core), and the weakened-current rule also fires when a
+  still-current remote thread's deadline moves *later*; strengthenings stay
+  silent.
+* **Current-uniqueness invariant slice (MED).**
+  `currentThreadUniqueAcrossCores` (a thread is current on at most one core)
+  is now a named invariant with a boot witness and
+  `removeRunnableOnCore`/`descheduleThread` preservation; the
+  `runningCoreOf?` / diff-seam first-match scans cite it as their
+  completeness premise.  Full-surface preservation is tracked WS-SM debt.
+* **NI honesty (MED).**  The AK6-F.18 G3 discharge sketch falsely claimed
+  `ipcState` is projection-stripped — corrected to the high-victim object
+  gate, with the real open obligation named: the splice's neighbour
+  queue-link writes survive projection and ride the SM6.B dual-queue
+  endpoint-label debt (exactly the `hTeardownProj` hypothesis the staged
+  `CancellationNI` composites consume).
+* **Doc/authority hardening (LOW×5).**  The Cancellation module header now
+  names `suspendThreadOnCore` as the live target and warns the theorem-level
+  composites are home-keyed (wiring them live would reintroduce the
+  review-4 P1); the two suspend SGI docstrings describe the running-core
+  semantics; the definitional atomicity witnesses cross-reference the
+  observational capstones; the `suspend_thread_cross_core` export documents
+  its self-authorization obligation; the queue-branch precedence assumption
+  and the neighbour-lock convention bridge are stated.
+* **Donation-side observer capstone (improvement).**
+  `cancelDonationOnCore_observer_atomic` — the victim-`schedContextBinding`
+  observer sees the 2PL machinery around the donation cancellation as
+  invisible (`updateObjectLockAt_getTcb?_schedContextBinding` +
+  `cancellationVictimBindingObserver`), mirroring the ipcState capstone.
+
+Tests: `SmpCancellationSuite` 101 → 107 assertions / 17 scenario groups —
+§3.17 (queued remote deadline change + priority raise fire the home poke;
+still-current deadline-later fires, deadline-earlier stays silent;
+three-core suspend separation) + the running-core footprint membership.
+Golden trace byte-identical.  Version bumped 0.32.65 → 0.32.66.
+
+Refs: docs/planning/SMP_CROSS_CORE_IPC_PLAN.md §5 (SM6.E completion note)
+
 ## v0.32.65 — WS-SM SM6.E: running-core suspend, re-keyed diff rules, write-set-honest sweeps (PR #831 review 4)
 
 Remediates the fourth PR #831 Codex review (one P1, two P2s on the v0.32.64

@@ -89,12 +89,26 @@ lock.  This is the same rationale under which the enclosing
 `lockSet_tcbSuspend` footprint (SM3.B.3, audit-pass-3) already declared its
 optional single-endpoint/notification locks for the same sweeps.
 
-The runtime wiring — routing the live `.tcbSuspend` dispatch through
-`cancelIpcBlockingOnCore` under a `withLockSet` bracket over the
-state-resolved footprints, with the surfaced SGI fired after the state commit
-(the SM6.A `syscallDispatchCrossCoreEntry` pattern) — is the phase's tracked
-follow-on, exactly as SM6.A landed its theorems one cut before the live
-dispatch flip.  This module proves the SM6.E theorems that wiring consumes.
+**Live wiring status (audit-corrected).**  The live `.tcbSuspend` dispatch
+landed at v0.32.61 through `suspendThreadOnCore` (§13 of this module, behind
+`API.dispatchCapabilityOnly` and the `suspend_thread_cross_core` FFI seam) —
+NOT through `cancelIpcBlockingOnCore`/`descheduleThread`, which remain the
+theorem-level composites.  **Do not wire those live as-is**: they are
+home-keyed and lack §13's `runningCoreOf?` G4b/G7 running-core handling (the
+review-4 P1 fix) — an unbound victim running off-home would survive its own
+suspension.  The remaining tracked follow-on is only the `withLockSet` 2PL
+bracket around the live path (the SM3.C.9/SM5.I deferral); this module
+proves the SM6.E theorems that bracket consumes.
+
+**Neighbour-lock convention bridge (audit note).**  The syscall-level
+`lockSet_tcbSuspend` (size 8 = `maxLockSetSize`, cannot grow) covers the
+splice's neighbour queue-link writes under the *endpoint* write lock (the
+queue-owning-object discipline above); the sub-operation-level
+`lockSet_cancelIpcBlockingOnCore` declares the same writes explicitly as
+neighbour-TCB locks (`cancelSpliceNeighbors?`, PR #831 review 4).  Both are
+sound; the sub-op form is the finer-grained authority the runtime bracket
+should acquire, and the syscall form's endpoint-lock rationale is the
+coarser umbrella it already sits under.
 -/
 
 namespace SeLe4n.Kernel
@@ -199,6 +213,36 @@ theorem descheduleThread_no_sgi_if_ghost
   unfold descheduleThread
   simp only [hGhost]
 
+/-- Audit closure: `removeRunnableOnCore` preserves current-uniqueness — it
+only *clears* current slots (core `k`'s slot becomes `none` or keeps its
+pre value; every other core is untouched), and clearing can never create a
+duplicate. -/
+theorem removeRunnableOnCore_preserves_currentThreadUniqueAcrossCores
+    (st : SystemState) (tid : SeLe4n.ThreadId) (k : CoreId)
+    (h : currentThreadUniqueAcrossCores st) :
+    currentThreadUniqueAcrossCores (removeRunnableOnCore st tid k) := by
+  intro c c' t hc hc'
+  have hred : ∀ d : CoreId,
+      (removeRunnableOnCore st tid k).scheduler.currentOnCore d = some t →
+      st.scheduler.currentOnCore d = some t := by
+    intro d hd
+    by_cases hdk : k = d
+    · subst hdk
+      rw [removeRunnableOnCore_currentOnCore_self] at hd
+      split at hd
+      · cases hd
+      · exact hd
+    · rwa [removeRunnableOnCore_currentOnCore_ne st tid k d hdk] at hd
+  exact h c c' t (hred c hc) (hred c' hc')
+
+/-- Audit closure: the per-core deschedule preserves current-uniqueness. -/
+theorem descheduleThread_preserves_currentThreadUniqueAcrossCores
+    (st : SystemState) (tid : SeLe4n.ThreadId) (executingCore : CoreId)
+    (h : currentThreadUniqueAcrossCores st) :
+    currentThreadUniqueAcrossCores (descheduleThread st tid executingCore).1 := by
+  rw [descheduleThread_state_eq]
+  exact removeRunnableOnCore_preserves_currentThreadUniqueAcrossCores st tid _ h
+
 /-- WS-SM SM6.E: after `descheduleThread`, the thread is fully descheduled on
 its home core — not in the run queue and not the current thread. -/
 theorem descheduleThread_descheduled_on_home
@@ -259,9 +303,15 @@ goes through `setThreadCpuAffinityOp`, whose dispatch is `.write`-gated on
 the same target TCB — the lock conflict serialises the two; and (2) the
 AN9-D FFI bracket (`with_interrupts_disabled` around
 `suspend_thread_cross_core`) excludes same-core ISR interleavings.  The
-same argument covers every pre-resolved read in this module
+same argument covers the TCB-derived pre-resolved reads in this module
 (`cancelDonationOnCore`'s home resolution, `suspendThreadOnCore`'s
-G7-precapture).
+`wasCurrentHome`/`execCurPre` captures).  The `runningCoreOf?` scan is the
+exception: it reads OTHER cores' current slots, which the victim's TCB lock
+does not serialise — its declared guard is the running core's
+`SchedLockId.runQueue` write lock in `suspendThreadOnCoreSchedLockSet`
+(audit closure), and in the current runtime every transition is serialised
+through the single global state ref (`modifyGetKernelState`; the per-object
+runtime acquisition is the SM3.C.9/SM5.I deferral).
 
 Returns the post-state paired with the optional cross-core SGI to emit after
 the state commit.  Total (the single-core teardown is pure), so a
@@ -1855,14 +1905,104 @@ theorem sortedSchedCorePair_pairwise_le (f : CoreId → SchedLockId) (a b : Core
         (fun x hx => by rcases List.mem_singleton.mp hx with rfl; exact hMono _ _ hge)
         (List.Pairwise.cons (fun x hx => by simp at hx) List.Pairwise.nil)
 
+/-- Bool-comparator transitivity for the `CoreId` value order (the
+`List.pairwise_mergeSort` obligation, mirroring `leLockId_bool_trans`). -/
+private theorem leCore_bool_trans : ∀ (x y z : CoreId),
+    (fun x y : CoreId => decide (x.val ≤ y.val)) x y = true →
+    (fun x y : CoreId => decide (x.val ≤ y.val)) y z = true →
+    (fun x y : CoreId => decide (x.val ≤ y.val)) x z = true := by
+  intro x y z hxy hyz
+  exact decide_eq_true (Nat.le_trans (of_decide_eq_true hxy) (of_decide_eq_true hyz))
+
+/-- Bool-comparator totality for the `CoreId` value order. -/
+private theorem leCore_bool_total : ∀ (x y : CoreId),
+    ((fun x y : CoreId => decide (x.val ≤ y.val)) x y
+      || (fun x y : CoreId => decide (x.val ≤ y.val)) y x) = true := by
+  intro x y
+  rcases Nat.le_total x.val y.val with h | h
+  · simp [decide_eq_true h]
+  · simp [decide_eq_true h]
+
+/-- WS-SM SM6.E (audit closure): a `CoreId`-ascending, duplicate-free sorted
+TRIPLE of same-kind scheduler locks — the run-queue segment of the suspend
+footprint over {victim home, executing core, victim RUNNING core}: the
+review-4 G4b deschedule writes the running core's queue/current slot, which
+can be a **third** core distinct from both (an unbound victim running
+off-home).  Built on the SM3.B canonical-sort machinery (`List.mergeSort`
+over the deduped core list), so ascending order and endpoint membership are
+`pairwise_mergeSort` / `mem_mergeSort` corollaries. -/
+def sortedSchedCoreTriple (f : CoreId → SchedLockId) (a b c : CoreId)
+    : List (SchedLockId × Concurrency.AccessMode) :=
+  (((if c = a ∨ c = b then (if a = b then [a] else [a, b])
+     else if a = b then [a, c]
+     else [a, b, c]) : List CoreId).mergeSort
+    (fun x y => decide (x.val ≤ y.val))).map (fun x => (f x, .write))
+
+/-- Every key of a sorted triple is one of the three endpoints. -/
+theorem sortedSchedCoreTriple_map_fst_mem {f : CoreId → SchedLockId}
+    {a b c : CoreId} {x : SchedLockId}
+    (hx : x ∈ (sortedSchedCoreTriple f a b c).map (·.1)) :
+    x = f a ∨ x = f b ∨ x = f c := by
+  unfold sortedSchedCoreTriple at hx
+  rw [List.map_map] at hx
+  rcases List.mem_map.mp hx with ⟨y, hy, rfl⟩
+  have hMem := List.mem_mergeSort.mp hy
+  by_cases h1 : c = a ∨ c = b
+  · rw [if_pos h1] at hMem
+    by_cases h2 : a = b
+    · rw [if_pos h2] at hMem
+      rcases List.mem_singleton.mp hMem with rfl
+      exact Or.inl rfl
+    · rw [if_neg h2] at hMem
+      rcases List.mem_cons.mp hMem with rfl | hMem
+      · exact Or.inl rfl
+      · rcases List.mem_singleton.mp hMem with rfl
+        exact Or.inr (Or.inl rfl)
+  · rw [if_neg h1] at hMem
+    by_cases h2 : a = b
+    · rw [if_pos h2] at hMem
+      rcases List.mem_cons.mp hMem with rfl | hMem
+      · exact Or.inl rfl
+      · rcases List.mem_singleton.mp hMem with rfl
+        exact Or.inr (Or.inr rfl)
+    · rw [if_neg h2] at hMem
+      rcases List.mem_cons.mp hMem with rfl | hMem
+      · exact Or.inl rfl
+      rcases List.mem_cons.mp hMem with rfl | hMem
+      · exact Or.inr (Or.inl rfl)
+      · rcases List.mem_singleton.mp hMem with rfl
+        exact Or.inr (Or.inr rfl)
+
+/-- A sorted triple's keys ascend under any `CoreId`-monotone lock
+constructor. -/
+theorem sortedSchedCoreTriple_pairwise_le (f : CoreId → SchedLockId)
+    (a b c : CoreId)
+    (hMono : ∀ x y : CoreId, x ≤ y → f x ≤ f y) :
+    ((sortedSchedCoreTriple f a b c).map (·.1)).Pairwise (· ≤ ·) := by
+  unfold sortedSchedCoreTriple
+  rw [List.map_map]
+  have hSorted : List.Pairwise (fun x y : CoreId => x.val ≤ y.val)
+      (((if c = a ∨ c = b then (if a = b then [a] else [a, b])
+         else if a = b then [a, c]
+         else [a, b, c]) : List CoreId).mergeSort
+        (fun x y => decide (x.val ≤ y.val))) :=
+    (List.pairwise_mergeSort
+      (le := fun x y : CoreId => decide (x.val ≤ y.val))
+      leCore_bool_trans leCore_bool_total _).imp
+      (fun h => of_decide_eq_true h)
+  exact List.Pairwise.map _ (fun x y h => hMono x y h) hSorted
+
 /-- WS-SM SM6.E: the scheduler-domain footprint of the cross-core suspend
 pipeline (`suspendThreadOnCore`, the G2..G7 composite): the object-store
 table write lock, the **run-queue** write locks of the victim's home core
-(the G4 deschedule + G7 current handling) AND the executing core (the G7
+(the G4 deschedule + G7 current handling), the executing core (the G7
 local-disinheritance preemption gate `handleRescheduleSgiOnCore` may
 switch/re-enqueue under the executing core's queue when the G2b PIP revert
-deboosted its current thread — PR #831 review 3; one entry when
-`home = executingCore`), and the replenish-queue write locks of the donation
+deboosted its current thread — PR #831 review 3) AND the victim's RUNNING
+core (`runningCoreOf?` — the review-4 G4b deschedule writes the queue/current
+slot of the core actually executing an off-home victim, which can be a
+**third** core; the audit-closure fix declaring it; duplicates collapse in
+the sorted triple), and the replenish-queue write locks of the donation
 arms (victim home = purge/migration source, owner home = the migration
 destination), in the plan §4.4 cross-domain ascending order
 `object < runQueue < replenishQueue` with each same-kind segment in
@@ -1880,10 +2020,10 @@ chain step, the member's TCB **write** lock *and* its home-core
 consumer contract in `LockSetTransitions.lean`).  The same declaration
 covers the `.call`/`.reply`/`.replyRecv` walks, which run the identical
 `updatePipBoostOnCore` re-bucketing. -/
-def suspendThreadOnCoreSchedLockSet (home executingCore ownerHome : CoreId) :
+def suspendThreadOnCoreSchedLockSet (home executingCore ownerHome runningCore : CoreId) :
     List (SchedLockId × Concurrency.AccessMode) :=
   (SchedLockId.object schedObjStoreLockId, .write) ::
-  (sortedSchedCorePair (fun c => SchedLockId.runQueue ⟨c⟩) home executingCore
+  (sortedSchedCoreTriple (fun c => SchedLockId.runQueue ⟨c⟩) home executingCore runningCore
     ++ sortedSchedCorePair (fun c => SchedLockId.replenishQueue ⟨c⟩) home ownerHome)
 
 /-- SM6.E: the suspend footprint's keys form a `SchedLockId`-ascending
@@ -1891,8 +2031,8 @@ acquisition sequence — the full three-domain ladder
 `object < runQueue < replenishQueue` with each same-kind segment's endpoints
 in `CoreId`-ascending order. -/
 theorem suspendThreadOnCoreSchedLockSet_pairwise_le
-    (home executingCore ownerHome : CoreId) :
-    ((suspendThreadOnCoreSchedLockSet home executingCore ownerHome).map (·.1)).Pairwise
+    (home executingCore ownerHome runningCore : CoreId) :
+    ((suspendThreadOnCoreSchedLockSet home executingCore ownerHome runningCore).map (·.1)).Pairwise
       (· ≤ ·) := by
   have hObjRQ : ∀ (c : CoreId), SchedLockId.object schedObjStoreLockId
       ≤ SchedLockId.runQueue (⟨c⟩ : RunQueueLockId) :=
@@ -1908,13 +2048,13 @@ theorem suspendThreadOnCoreSchedLockSet_pairwise_le
   refine ⟨?_, ?_⟩
   · intro x hx
     rcases List.mem_append.mp hx with hx | hx
-    · rcases sortedSchedCorePair_map_fst_mem hx with rfl | rfl <;> exact hObjRQ _
+    · rcases sortedSchedCoreTriple_map_fst_mem hx with rfl | rfl | rfl <;> exact hObjRQ _
     · rcases sortedSchedCorePair_map_fst_mem hx with rfl | rfl <;> exact hObjRep _
   · rw [List.pairwise_append]
-    refine ⟨sortedSchedCorePair_pairwise_le _ _ _ (fun c d h => h),
+    refine ⟨sortedSchedCoreTriple_pairwise_le _ _ _ _ (fun c d h => h),
       sortedSchedCorePair_pairwise_le _ _ _ (fun c d h => h), ?_⟩
     intro x hx y hy
-    rcases sortedSchedCorePair_map_fst_mem hx with rfl | rfl <;>
+    rcases sortedSchedCoreTriple_map_fst_mem hx with rfl | rfl | rfl <;>
     rcases sortedSchedCorePair_map_fst_mem hy with rfl | rfl <;> exact hRQRep _ _
 
 -- ============================================================================
@@ -2155,9 +2295,10 @@ theorem suspendThreadOnCore_rejects_inactive (st : SystemState)
   simp only [suspendThreadOnCore, hGet, hInactive, beq_self_eq_true, if_true]
 
 /-- WS-SM SM6.E (SGI discipline): every SGI the per-core suspend surfaces is
-a `.reschedule` targeting the victim's **home** core, emitted only when that
-home is **remote** (home ≠ `executingCore`) — the local case reschedules
-inline and surfaces nothing. -/
+a `.reschedule` targeting the core **actually running** the victim
+(`runningCoreOf?`, falling back to the home when the victim is not current
+anywhere — PR #831 review 4), emitted only when that core is **remote** —
+the local case reschedules inline and surfaces nothing. -/
 theorem suspendThreadOnCore_sgi_remote_reschedule (st st' : SystemState)
     (vtid : SeLe4n.ValidThreadId) (ec : CoreId) (c : CoreId) (k : SgiKind)
     (h : suspendThreadOnCore st vtid ec = .ok (st', some (c, k))) :
@@ -2173,8 +2314,10 @@ theorem suspendThreadOnCore_sgi_remote_reschedule (st st' : SystemState)
         exact ⟨hc, hk, hc ▸ hne⟩
   · cases h
 
-/-- WS-SM SM6.E: a victim homed on the executing core surfaces no SGI — the
-reschedule (when needed) happened inline. -/
+/-- WS-SM SM6.E: a victim whose resolved reschedule target — the core
+actually running it, falling back to its home (PR #831 review 4) — is the
+executing core surfaces no SGI: the reschedule (when needed) happened
+inline. -/
 theorem suspendThreadOnCore_local_no_sgi (st st' : SystemState)
     (vtid : SeLe4n.ValidThreadId) (ec : CoreId) (sgi : Option (CoreId × SgiKind))
     (hLocal : (runningCoreOf? st vtid.val).getD (determineTargetCore st vtid.val) = ec)
@@ -2246,6 +2389,31 @@ theorem updateObjectLockAt_getTcb?_ipcState (s : SystemState) (l : LockId)
     (hExt : s.objects.invExt) :
     ((updateObjectLockAt s l op).getTcb? tid).map TCB.ipcState
       = (s.getTcb? tid).map TCB.ipcState := by
+  unfold updateObjectLockAt
+  split
+  · unfold updateObjectAt
+    cases hg : s.objects.get? l.objId with
+    | none => rfl
+    | some obj =>
+      simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+      by_cases hk : (l.objId == tid.toObjId) = true
+      · have hk' : l.objId = tid.toObjId := eq_of_beq hk
+        rw [← hk',
+            SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self
+              s.objects l.objId _ hExt,
+            hg]
+        cases obj <;> rfl
+      · rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne
+              s.objects l.objId tid.toObjId _ hk hExt]
+  · rfl
+
+/-- Audit closure (F3ii): lock-field-only writes also leave every TCB's
+`schedContextBinding` untouched — the donation-side stability twin. -/
+theorem updateObjectLockAt_getTcb?_schedContextBinding (s : SystemState) (l : LockId)
+    (op : Concurrency.RwLockOp) (tid : SeLe4n.ThreadId)
+    (hExt : s.objects.invExt) :
+    ((updateObjectLockAt s l op).getTcb? tid).map TCB.schedContextBinding
+      = (s.getTcb? tid).map TCB.schedContextBinding := by
   unfold updateObjectLockAt
   split
   · unfold updateObjectAt
@@ -2343,6 +2511,82 @@ theorem cancelIpcBlockingOnCore_observer_atomic
     (fun s' l m h => releaseLockOnObject_preserves_objects_invExt s' executingCore l m h)
     hInv
     (cancelIpcBlockingOnCore_preserves_objects_invExt victim tcb executingCore _ hInvAcq)
+
+/-- Audit closure (F3ii): the cancellation's donation-side decisive
+observable — the victim's `schedContextBinding`. -/
+def cancellationVictimBindingObserver (victim : SeLe4n.ThreadId) :=
+  fun s : SystemState => (s.getTcb? victim).map TCB.schedContextBinding
+
+/-- The binding observer is `invExt`-guardedly acquire-insensitive. -/
+theorem cancellationBindingObserver_acquireInsensitiveOn (core : CoreId)
+    (victim : SeLe4n.ThreadId) :
+    AcquireInsensitiveOn (fun s => s.objects.invExt) core
+      (cancellationVictimBindingObserver victim) := by
+  intro s l m hExt
+  show ((acquireLockOnObject s core l m).getTcb? victim).map TCB.schedContextBinding
+    = (s.getTcb? victim).map TCB.schedContextBinding
+  unfold acquireLockOnObject
+  split
+  all_goals first
+    | rfl
+    | exact updateObjectLockAt_getTcb?_schedContextBinding s l _ victim hExt
+
+/-- The binding observer is `invExt`-guardedly release-insensitive. -/
+theorem cancellationBindingObserver_releaseInsensitiveOn (core : CoreId)
+    (victim : SeLe4n.ThreadId) :
+    ReleaseInsensitiveOn (fun s => s.objects.invExt) core
+      (cancellationVictimBindingObserver victim) := by
+  intro s l m hExt
+  show ((releaseLockOnObject s core l m).getTcb? victim).map TCB.schedContextBinding
+    = (s.getTcb? victim).map TCB.schedContextBinding
+  unfold releaseLockOnObject
+  split
+  all_goals first
+    | rfl
+    | exact updateObjectLockAt_getTcb?_schedContextBinding s l _ victim hExt
+
+/-- Audit closure (F3ii): the **donation-side observer capstone** — the 2PL
+machinery around `cancelDonationOnCore` is invisible to the cancellation's
+donation observable (the victim's `schedContextBinding`): the acquire phase
+changes nothing the observer sees, and the bracketed run shows exactly the
+transition's own effect.  The `schedContextBinding` mirror of
+`cancelIpcBlockingOnCore_observer_atomic`. -/
+theorem cancelDonationOnCore_observer_atomic
+    (victim : SeLe4n.ThreadId) (tcb : TCB) (executingCore : CoreId)
+    (bindingScId : Option SeLe4n.SchedContextId)
+    (donatedOwner : Option SeLe4n.ThreadId)
+    (s : SystemState) (hInv : s.objects.invExt) :
+    cancellationVictimBindingObserver victim
+        (acquireAll executingCore
+          (lockSet_cancelDonation victim bindingScId
+            donatedOwner).lockAcquireSequence s)
+      = cancellationVictimBindingObserver victim s
+    ∧ cancellationVictimBindingObserver victim
+        (withLockSet (lockSet_cancelDonation victim bindingScId donatedOwner)
+          executingCore (cancelDonationOnCore victim tcb) s).1
+      = cancellationVictimBindingObserver victim
+          (cancelDonationOnCore victim tcb
+            (acquireAll executingCore
+              (lockSet_cancelDonation victim bindingScId
+                donatedOwner).lockAcquireSequence s)).1 := by
+  have hAcqStable : ∀ (s' : SystemState) l m, s'.objects.invExt →
+      (acquireLockOnObject s' executingCore l m).objects.invExt :=
+    fun s' l m h => acquireLockOnObject_preserves_objects_invExt s' executingCore l m h
+  have hInvAcq : (acquireAll executingCore
+      (lockSet_cancelDonation victim bindingScId
+        donatedOwner).lockAcquireSequence s).objects.invExt :=
+    (acquireAll_lockInsensitiveOn _ executingCore _
+      (cancellationBindingObserver_acquireInsensitiveOn executingCore victim) hAcqStable
+      _ s hInv).2
+  exact lockSet_observer_atomic_on _ executingCore _ s
+    (fun st => st.objects.invExt)
+    (cancellationVictimBindingObserver victim)
+    (cancellationBindingObserver_acquireInsensitiveOn executingCore victim)
+    (cancellationBindingObserver_releaseInsensitiveOn executingCore victim)
+    hAcqStable
+    (fun s' l m h => releaseLockOnObject_preserves_objects_invExt s' executingCore l m h)
+    hInv
+    (cancelDonationOnCore_preserves_objects_invExt victim tcb _ hInvAcq)
 
 -- ============================================================================
 -- §15  SM6.E — boot-instance bridges + placement/affinity corollaries

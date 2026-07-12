@@ -562,7 +562,10 @@ the NEW affinity forbids the running core, and `cpuAffinity = none` admits
 every core), leaving the thread current on that core while its home reverts
 to `bootCoreId`.  A suspend must deschedule and poke the running core, not
 the home — descheduling only the home would mark the victim `.Inactive`
-while the secondary core keeps executing it. -/
+while the secondary core keeps executing it.  Completeness of the
+first-match scan rests on `currentThreadUniqueAcrossCores`
+(`Scheduler/Invariant/PerCore.lean`, audit closure): a thread is current on
+at most one core. -/
 def runningCoreOf? (st : SystemState) (tid : SeLe4n.ThreadId) : Option CoreId :=
   SeLe4n.Kernel.Concurrency.allCores.find? (fun c =>
     st.scheduler.currentOnCore c == some tid)

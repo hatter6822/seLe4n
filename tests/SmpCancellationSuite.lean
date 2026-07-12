@@ -189,6 +189,16 @@ open SeLe4n.Testing
 #check @Lifecycle.Suspend.runningCoreOf?
 #check @SeLe4n.Kernel.PriorityInheritance.currentScan_boot_of_single_core
 #check @cancelSpliceNeighbors?
+
+-- Audit closure: sorted run-queue triple, current-uniqueness slice,
+-- donation-side observer capstone.
+#check @sortedSchedCoreTriple
+#check @sortedSchedCoreTriple_pairwise_le
+#check @currentThreadUniqueAcrossCores
+#check @default_currentThreadUniqueAcrossCores
+#check @removeRunnableOnCore_preserves_currentThreadUniqueAcrossCores
+#check @descheduleThread_preserves_currentThreadUniqueAcrossCores
+#check @cancelDonationOnCore_observer_atomic
 #check @PriorityInheritance.crossCoreSgiBody_remote_deschedule
 
 -- ============================================================================
@@ -1081,10 +1091,10 @@ private def runDisinheritanceSchedulingChecks : IO Unit := do
       -- the victim's home-core run-queue lock.
       assertBool "suspend sched footprint covers the executing core's run queue"
         (decide ((SchedLockId.runQueue ⟨bootCoreId⟩, Concurrency.AccessMode.write)
-          ∈ suspendThreadOnCoreSchedLockSet core1 bootCoreId core1))
+          ∈ suspendThreadOnCoreSchedLockSet core1 bootCoreId core1 core1))
       assertBool "suspend sched footprint still covers the victim home run queue"
         (decide ((SchedLockId.runQueue ⟨core1⟩, Concurrency.AccessMode.write)
-          ∈ suspendThreadOnCoreSchedLockSet core1 bootCoreId core1))
+          ∈ suspendThreadOnCoreSchedLockSet core1 bootCoreId core1 core1))
 
 -- ----------------------------------------------------------------------------
 -- Scenario O (PR #831 review 4, P1): an UNBOUND victim (home = boot) actually
@@ -1124,7 +1134,86 @@ private def runUnboundRunningSuspendChecks : IO Unit := do
           assertBool "diff seam derives the running-core poke (re-keyed descheduled rule)"
             ((PriorityInheritance.computeCrossCoreSgis stUnboundRunningRemote st'
               bootCoreId).any (fun p => p.1 == core2 && p.2 == SgiKind.reschedule))
+          -- Audit closure: the G4b running-core write is a DECLARED footprint
+          -- member — home = boot, exec = boot, running = core 2 (third-core
+          -- shape), and the running core's run-queue write lock is listed.
+          assertBool "suspend sched footprint covers the RUNNING core's run queue"
+            (decide ((SchedLockId.runQueue ⟨core2⟩, Concurrency.AccessMode.write)
+              ∈ suspendThreadOnCoreSchedLockSet bootCoreId bootCoreId bootCoreId core2))
       | .error _ => assertBool "unbound-running suspend succeeds" false
+
+-- ----------------------------------------------------------------------------
+-- Scenario P (audit closure): the diff seam's EDF deadline dimension and
+-- queued-raise direction, plus full three-core suspend separation.
+-- ----------------------------------------------------------------------------
+
+/-- A core-2-homed thread queued on core 2 (prio 30, deadline 1000). -/
+private def stEdfPre : SystemState :=
+  let base :=
+    (BootstrapBuilder.empty
+      |>.withObject victimTid.toObjId (.tcb { mkTcb 710 30 (some core2) with
+          threadState := .Ready, deadline := ⟨1000⟩ })
+      |>.build)
+  enqueueRunnableOnCore base core2 victimTid
+
+/-- Rewrite one field of the victim's TCB in `stEdfPre`. -/
+private def stEdfWith (f : TCB → TCB) : SystemState :=
+  match stEdfPre.getTcb? victimTid with
+  | some t => { stEdfPre with
+      objects := stEdfPre.objects.insert victimTid.toObjId (.tcb (f t)) }
+  | none => stEdfPre
+
+/-- The victim RUNNING (current, not queued) on core 2, deadline 10. -/
+private def stEdfCurPre : SystemState :=
+  let base :=
+    (BootstrapBuilder.empty
+      |>.withObject victimTid.toObjId (.tcb { mkTcb 710 30 (some core2) with
+          threadState := .Running, deadline := ⟨10⟩ })
+      |>.build)
+  { base with scheduler := base.scheduler.setCurrentOnCore core2 (some victimTid) }
+
+private def stEdfCurWith (f : TCB → TCB) : SystemState :=
+  match stEdfCurPre.getTcb? victimTid with
+  | some t => { stEdfCurPre with
+      objects := stEdfCurPre.objects.insert victimTid.toObjId (.tcb (f t)) }
+  | none => stEdfCurPre
+
+private def runDiffSeamEdfChecks : IO Unit := do
+  IO.println "--- §3.17 audit closure: EDF deadline dimension + queued raise + 3-core suspend ---"
+  -- (a) deadline-only change of a remote QUEUED thread fires the home poke
+  -- (within-bucket selection is EDF; the bucket does not move).
+  assertBool "queued remote deadline change fires the home-core poke"
+    ((PriorityInheritance.computeCrossCoreSgis stEdfPre
+      (stEdfWith (fun t => { t with deadline := ⟨10⟩ })) bootCoreId).any
+      (fun p => p.1 == core2 && p.2 == SgiKind.reschedule))
+  -- (b) priority RAISE of a remote queued thread fires (the wake/re-bucket
+  -- rule is direction-agnostic by design).
+  assertBool "queued remote priority raise fires the home-core poke"
+    ((PriorityInheritance.computeCrossCoreSgis stEdfPre
+      (stEdfWith (fun t => { t with priority := ⟨99⟩ })) bootCoreId).any
+      (fun p => p.1 == core2 && p.2 == SgiKind.reschedule))
+  -- (c) a STILL-CURRENT remote thread whose deadline moved LATER is weakened —
+  -- the running core must re-run its preemption gate.
+  assertBool "still-current remote deadline-later fires the running-core poke"
+    ((PriorityInheritance.computeCrossCoreSgis stEdfCurPre
+      (stEdfCurWith (fun t => { t with deadline := ⟨1000⟩ })) bootCoreId).any
+      (fun p => p.1 == core2 && p.2 == SgiKind.reschedule))
+  -- (d) ... and a STRENGTHENING (deadline pulled earlier) fires nothing.
+  assertBool "still-current remote deadline-earlier fires nothing"
+    (decide (PriorityInheritance.computeCrossCoreSgis stEdfCurPre
+      (stEdfCurWith (fun t => { t with deadline := ⟨1⟩ })) bootCoreId = []))
+  -- (e) three-core separation: victim (home boot, unbound) RUNNING on core 2,
+  -- suspended from core 1 — the SGI and the slot clear both target core 2.
+  match victimTid.toValid? with
+  | none => assertBool "setup: victim ValidThreadId" false
+  | some vtid =>
+      match suspendThreadOnCore stUnboundRunningRemote vtid core1 with
+      | .ok (st', sgi) =>
+          assertBool "three-core suspend pokes the running core"
+            (decide (sgi = some (core2, SgiKind.reschedule)))
+          assertBool "three-core suspend clears the running core's slot"
+            (decide (st'.scheduler.currentOnCore core2 ≠ some victimTid))
+      | .error _ => assertBool "three-core suspend succeeds" false
 
 -- ============================================================================
 -- Aggregate runner
@@ -1148,6 +1237,7 @@ def runSmpCancellationChecks : IO Unit := do
   runPipDonationDropChecks
   runDisinheritanceSchedulingChecks
   runUnboundRunningSuspendChecks
+  runDiffSeamEdfChecks
   IO.println "SmpCancellationSuite: all checks passed."
 
 end SeLe4n.Testing.SmpCancellation

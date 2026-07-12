@@ -147,7 +147,18 @@ chain members' effective run-queue buckets, and each such member's home
 core must re-run its scheduler (PR #831 review: the pre-fix entry fired
 only the surfaced victim SGI, leaving the re-bucketed cores unpoked until
 their next timer tick).  Sentinel `tid`s are rejected at the boundary
+Sentinel `tid`s are rejected at the boundary
 exactly as `suspendThreadInner`.
+
+**Authority obligation (audit note).**  This export performs NO capability
+check — it is the *mechanism* seam below the dispatch layer.  Its only
+sanctioned caller is the Rust AN9-D atomicity bracket
+(`sele4n_suspend_thread`), reached from the capability-gated syscall path;
+the symbol is unreachable from user mode (user code enters via SVC →
+`dispatch_svc` only).  Any future in-kernel caller MUST carry its own
+authority for the target thread (a `.write`-bearing TCB capability or an
+equivalent kernel-internal justification) — calling this raw seam without
+one is a privilege-escalation bug, not a supported use.
 
 **Single-core inertness (trace safety).**  On an all-boot deployment every
 diff-derived SGI list is empty (`computeCrossCoreSgis_nil_single_core`), so

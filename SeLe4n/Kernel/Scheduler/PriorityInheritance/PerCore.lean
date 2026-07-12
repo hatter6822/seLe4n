@@ -1359,23 +1359,42 @@ core's run queue *changed* across `pre → post`.  Two material cases:
   priority unchanged, yet a freshly-runnable remote thread must be scheduled on its
   home core.  (The earlier priority-only gate dropped this SGI — the live wake
   arrived only at the home core's next timer tick.)
-* a **re-bucketing** — the thread was already runnable on its home core but its
-  *effective* run-queue bucket (`resolveEffectivePrioDeadline`) changed: a PIP boost
-  (PR #811 P2-2).  An *immaterial* boost (effective priority unchanged on an
-  already-runnable thread) migrates no bucket and so fires nothing.
+* a **re-bucketing / re-ranking** — the thread was already runnable on its home
+  core but its *effective* priority OR deadline (`resolveEffectivePrioDeadline`,
+  both components — audit closure: within-bucket selection is EDF, so a
+  deadline-only change re-ranks the candidate without moving its bucket)
+  changed: a PIP boost (PR #811 P2-2) or a `schedContextConfigure` deadline
+  rewrite.  An *immaterial* rewrite (both components unchanged on an
+  already-runnable thread) fires nothing.
 * a **deschedule** (WS-SM SM6.E) — the thread was *actively current* on its remote
   home core in `pre` and in `post` is neither current nor queued there: a
   cross-core suspend/cancellation removed it, so the home core must be poked to
   stop executing it and dispatch a successor.  (Without this rule a live
   `.tcbSuspend` of a remote-running victim would leave that core executing the
   suspended thread until its next timer tick.)
-* a **deboosted current** (WS-SM SM6.E, PR #831 review 2) — the thread is still
-  current on its remote home core in both `pre` and `post` but its effective
-  priority *dropped* (a PIP-revert disinheritance): a ready thread on that core
-  may now outrank the running choice, so the home core must re-run its
-  preemption gate.  A raise of a current thread fires nothing (it can only
-  outrank strictly more), and a still-current thread is not in the run queue
-  (dequeue-on-dispatch), so neither of the first two rules covers this case.
+* a **weakened current** (WS-SM SM6.E, PR #831 review 2 + audit closure) — the
+  thread is still current on the same core in both `pre` and `post` but its
+  claim to the CPU weakened: its effective priority *dropped* (a PIP-revert
+  disinheritance) or its effective deadline moved *later* (EDF re-ranking —
+  `schedContextConfigure`): a ready thread on that core may now outrank the
+  running choice, so it must re-run its preemption gate.  A strengthening
+  (priority raise / deadline pulled earlier) fires nothing (the running choice
+  can only outrank strictly more), and a still-current thread is not in the
+  run queue (dequeue-on-dispatch), so the queue rules never cover this case.
+
+**Queue-branch precedence (audit note).**  A tid queued on its post-home
+never reaches the CURRENT rules.  This is sound under today's transitions —
+no single transition both removes a thread from being current on core A and
+re-enqueues it on a different core's queue (suspend never re-enqueues; wakes
+target non-current threads; migrating a *running* thread to a different
+specific core is rejected) — but it is a precedence assumption, not a
+theorem.  If such a transition is ever added, restructure this body to run
+the current scan unconditionally and union the emissions.
+
+**Scan completeness.**  The pre-current scan takes the FIRST core whose slot
+holds the tid; completeness rests on `currentThreadUniqueAcrossCores`
+(`Scheduler/Invariant/PerCore.lean`, audit closure) — a thread is current on
+at most one core, so there is no second core to miss.
 
 Factored out so the dispatch theorems reference it by name (the single object-store
 read site, mirroring `waitersOf`'s raw iteration). -/
@@ -1395,10 +1414,12 @@ def crossCoreSgiBody (pre post : SystemState) (execCore : CoreId) (oid : ObjId)
         if home == execCore then none
         else if (tpost.tid ∈ pre.scheduler.runQueueOnCore home)
             && ((SeLe4n.Kernel.resolveEffectivePrioDeadline pre tpre).1
-                  == (SeLe4n.Kernel.resolveEffectivePrioDeadline post tpost).1) then none
+                  == (SeLe4n.Kernel.resolveEffectivePrioDeadline post tpost).1)
+            && ((SeLe4n.Kernel.resolveEffectivePrioDeadline pre tpre).2.val
+                  == (SeLe4n.Kernel.resolveEffectivePrioDeadline post tpost).2.val) then none
         else some (home, SgiKind.reschedule)
       else
-        -- CURRENT rules (descheduled / deboosted), keyed on the core the
+        -- CURRENT rules (descheduled / weakened), keyed on the core the
         -- thread was ACTUALLY current on in `pre` (PR #831 review 4): an
         -- unbound thread can be current on a NON-home core (unbinding a
         -- running secondary-core thread is admitted, and its home reverts to
@@ -1412,8 +1433,10 @@ def crossCoreSgiBody (pre post : SystemState) (execCore : CoreId) (oid : ObjId)
             -- descheduled-current (WS-SM SM6.E): a cross-core cancellation
             -- removed the running victim — poke the core that was executing it.
             some (preCur, SgiKind.reschedule)
-          else if (SeLe4n.Kernel.resolveEffectivePrioDeadline post tpost).1.val
-                < (SeLe4n.Kernel.resolveEffectivePrioDeadline pre tpre).1.val then
+          else if ((SeLe4n.Kernel.resolveEffectivePrioDeadline post tpost).1.val
+                < (SeLe4n.Kernel.resolveEffectivePrioDeadline pre tpre).1.val)
+              || ((SeLe4n.Kernel.resolveEffectivePrioDeadline pre tpre).2.val
+                < (SeLe4n.Kernel.resolveEffectivePrioDeadline post tpost).2.val) then
             -- deboosted-current (PR #831 review 2): still current, effective
             -- priority dropped — the running core must re-run its preemption
             -- gate.  A raise fires nothing.
