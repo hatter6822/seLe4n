@@ -1,3 +1,43 @@
+## v0.32.65 — WS-SM SM6.E: running-core suspend, re-keyed diff rules, write-set-honest sweeps (PR #831 review 4)
+
+Remediates the fourth PR #831 Codex review (one P1, two P2s on the v0.32.64
+cut):
+
+* **P1 — suspend the core actually running the victim.**  An unbound victim
+  (`cpuAffinity = none`, home = boot) can be CURRENT on a secondary core —
+  unbinding a running secondary-core thread is admitted (the migration
+  reject gate fires only when the new affinity *forbids* the running core),
+  leaving the thread current there while its home reverts to boot.  The
+  pre-fix suspend keyed everything on the home: the victim went `.Inactive`
+  while the secondary core kept executing it, with no SGI.  Both fixed:
+  `runningCoreOf?` resolves the core whose current slot holds the victim;
+  `suspendThreadOnCore` deschedules it (G4b `removeRunnableOnCore` on the
+  running core) and keys G7 on it (inline reschedule when executing, else
+  the `.reschedule` SGI targets the RUNNING core).
+* **P2 — diff rules re-keyed to the pre-state running core.**
+  `crossCoreSgiBody`'s descheduled-current and deboosted-current rules now
+  key on the core the thread was actually current on in `pre` (the same
+  scan), with the local short-circuit no longer swallowing them; the
+  single-core inertness lemmas gain the empty-secondary-current-slot
+  premise (`currentScan_boot_of_single_core`) through every consumer.
+* **P2 — write-set-honest sweeps + neighbour locks.**
+  `removeFromAllEndpointQueues` / `removeFromAllNotificationWaitLists` now
+  insert ONLY the objects the victim's removal actually changes
+  (head/tail-slot hit; waiter membership) — re-inserting every
+  endpoint/notification was a spurious store write outside the declared
+  footprint — and the splice's neighbour-TCB writes are declared:
+  `cancelSpliceNeighbors?` resolves the victim's `queuePrev`/`queueNext`
+  into two `.tcb` write locks in `lockSet_cancelIpcBlockingOnCore` (the
+  state-resolved consistency proof rides `lockSet_consistent_extendOpt`).
+
+Tests: `SmpCancellationSuite` 93 → 100 assertions / 16 scenario groups —
+new §3.16 (unbound victim running on core 2: home = boot, running-core poke,
+current slot cleared, diff re-derivation) + the splice neighbour-lock
+footprint assertions.  Golden trace byte-identical.  Version bumped
+0.32.64 → 0.32.65.
+
+Refs: docs/planning/SMP_CROSS_CORE_IPC_PLAN.md §5 (SM6.E completion note)
+
 ## v0.32.64 — WS-SM SM6.E: suspend scheduler-lock footprint closure (PR #831 review 3)
 
 Remediates the third PR #831 Codex review (three P2s on the v0.32.63 cut):

@@ -138,10 +138,20 @@ def removeFromAllEndpointQueues (st : SystemState) (tid : SeLe4n.ThreadId) : Sys
   stSpliced.objects.fold stSpliced fun acc oid obj =>
     match obj with
     | .endpoint ep =>
-      let ep' : Endpoint := {
-        sendQ := removeThreadFromQueue stSpliced ep.sendQ tid,
-        receiveQ := removeThreadFromQueue stSpliced ep.receiveQ tid }
-      { acc with objects := acc.objects.insert oid (.endpoint ep') }
+      -- PR #831 review 4 (write-set honesty): rewrite ONLY the endpoints the
+      -- victim's removal actually changes — `removeThreadFromQueue` is the
+      -- identity unless a head/tail slot holds the victim, so re-inserting an
+      -- untouched endpoint was a spurious store write outside the declared
+      -- cancellation footprint (the interior links are the separate
+      -- `spliceOutMidQueueNode` step, which writes only the two neighbour
+      -- TCBs).
+      if ep.sendQ.head == some tid || ep.sendQ.tail == some tid
+          || ep.receiveQ.head == some tid || ep.receiveQ.tail == some tid then
+        let ep' : Endpoint := {
+          sendQ := removeThreadFromQueue stSpliced ep.sendQ tid,
+          receiveQ := removeThreadFromQueue stSpliced ep.receiveQ tid }
+        { acc with objects := acc.objects.insert oid (.endpoint ep') }
+      else acc
     | _ => acc
 
 /-- R4-A.2 (M-12): Remove a ThreadId from all notification waiting lists.
@@ -164,13 +174,20 @@ def removeFromAllNotificationWaitLists (st : SystemState) (tid : SeLe4n.ThreadId
   st.objects.fold st fun acc oid obj =>
     match obj with
     | .notification notif =>
-      let wt' := notif.waitingThreads.filter (· != tid)
-      let notif' : Notification := {
-        notif with
-          waitingThreads := wt'
-          state := if notif.state = .waiting ∧ wt'.val.isEmpty then .idle
-                   else notif.state }
-      { acc with objects := acc.objects.insert oid (.notification notif') }
+      -- PR #831 review 4 (write-set honesty): rewrite ONLY the notifications
+      -- the victim actually waits on — the filter (and the sole-waiter state
+      -- correction) is the identity for every other notification, so
+      -- re-inserting it was a spurious store write outside the declared
+      -- cancellation footprint.
+      if notif.waitingThreads.val.contains tid then
+        let wt' := notif.waitingThreads.filter (· != tid)
+        let notif' : Notification := {
+          notif with
+            waitingThreads := wt'
+            state := if notif.state = .waiting ∧ wt'.val.isEmpty then .idle
+                     else notif.state }
+        { acc with objects := acc.objects.insert oid (.notification notif') }
+      else acc
     | _ => acc
 
 /-- Z7-P / AJ1-A (M-14): Return donated SchedContext before destroying a thread.

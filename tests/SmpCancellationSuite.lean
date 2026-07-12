@@ -184,6 +184,11 @@ open SeLe4n.Testing
 #check @Lifecycle.Suspend.suspendRescheduleOnCore_sgi_shape
 #check @Lifecycle.Suspend.suspendRescheduleOnCore_local_no_sgi
 #check @SeLe4n.Kernel.PriorityInheritance.crossCoreSgiBody_remote_deboost_current
+
+-- PR #831 review 4: running-core resolution + write-set-honest sweeps.
+#check @Lifecycle.Suspend.runningCoreOf?
+#check @SeLe4n.Kernel.PriorityInheritance.currentScan_boot_of_single_core
+#check @cancelSpliceNeighbors?
 #check @PriorityInheritance.crossCoreSgiBody_remote_deschedule
 
 -- ============================================================================
@@ -754,6 +759,13 @@ private def runMidQueueSpliceChecks : IO Unit := do
              decide (p.ipcState = .blockedOnCall epId ∧ n.ipcState = .blockedOnCall epId
                ∧ p.cpuAffinity = none ∧ n.cpuAffinity = none)
          | _, _ => false)
+      -- PR #831 review 4: the splice's neighbour-TCB writes are declared
+      -- footprint members (state-resolved from the victim's interior links).
+      let lsSplice := lockSet_cancelIpcBlockingOnCore st victimTid
+      assertBool "splice predecessor's TCB write lock is in the cancel footprint"
+        (decide ((tcbLock prevTid, AccessMode.write) ∈ lsSplice.pairs))
+      assertBool "splice successor's TCB write lock is in the cancel footprint"
+        (decide ((tcbLock nextTid, AccessMode.write) ∈ lsSplice.pairs))
   | none => assertBool "setup: 3-deep call queue fixture available" false
 
 -- ----------------------------------------------------------------------------
@@ -1074,6 +1086,46 @@ private def runDisinheritanceSchedulingChecks : IO Unit := do
         (decide ((SchedLockId.runQueue ⟨core1⟩, Concurrency.AccessMode.write)
           ∈ suspendThreadOnCoreSchedLockSet core1 bootCoreId core1))
 
+-- ----------------------------------------------------------------------------
+-- Scenario O (PR #831 review 4, P1): an UNBOUND victim (home = boot) actually
+-- RUNNING on a secondary core — reachable by unbinding a running
+-- secondary-core thread (the migration reject gate only fires when the new
+-- affinity forbids the running core; `none` admits every core).  The suspend
+-- must deschedule and poke the RUNNING core, not the home.
+-- ----------------------------------------------------------------------------
+
+private def stUnboundRunningRemote : SystemState :=
+  let base :=
+    (BootstrapBuilder.empty
+      |>.withObject victimTid.toObjId (.tcb { mkTcb 710 30 none with
+          threadState := .Running })
+      |>.build)
+  { base with scheduler := base.scheduler.setCurrentOnCore core2 (some victimTid) }
+
+private def runUnboundRunningSuspendChecks : IO Unit := do
+  IO.println "--- §3.16 SM6.E unbound victim running on a secondary core (PR #831 review 4) ---"
+  match victimTid.toValid? with
+  | none => assertBool "setup: victim ValidThreadId" false
+  | some vtid =>
+      assertBool "setup: home = boot but the victim is current on core 2"
+        (decide (determineTargetCore stUnboundRunningRemote victimTid = bootCoreId)
+          && decide (stUnboundRunningRemote.scheduler.currentOnCore core2 = some victimTid)
+          && decide (runningCoreOf? stUnboundRunningRemote victimTid = some core2))
+      match suspendThreadOnCore stUnboundRunningRemote vtid bootCoreId with
+      | .ok (st', sgi) =>
+          assertBool "suspend pokes the RUNNING core (core 2), not the boot home"
+            (decide (sgi = some (core2, SgiKind.reschedule)))
+          assertBool "core 2's current slot no longer holds the victim"
+            (decide (st'.scheduler.currentOnCore core2 ≠ some victimTid))
+          assertBool "victim is .Inactive"
+            (match st'.getTcb? victimTid with
+             | some t => decide (t.threadState = .Inactive)
+             | none => false)
+          assertBool "diff seam derives the running-core poke (re-keyed descheduled rule)"
+            ((PriorityInheritance.computeCrossCoreSgis stUnboundRunningRemote st'
+              bootCoreId).any (fun p => p.1 == core2 && p.2 == SgiKind.reschedule))
+      | .error _ => assertBool "unbound-running suspend succeeds" false
+
 -- ============================================================================
 -- Aggregate runner
 -- ============================================================================
@@ -1095,6 +1147,7 @@ def runSmpCancellationChecks : IO Unit := do
   runSendReceiveCancelChecks
   runPipDonationDropChecks
   runDisinheritanceSchedulingChecks
+  runUnboundRunningSuspendChecks
   IO.println "SmpCancellationSuite: all checks passed."
 
 end SeLe4n.Testing.SmpCancellation

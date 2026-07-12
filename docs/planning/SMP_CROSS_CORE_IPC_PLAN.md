@@ -616,7 +616,7 @@ donationOwnerUnique/endpointQueueTailBlockedConsistent/
 queueNextTargetBlocked`, each `_perCore` — so the aggregate is fully
 per-core, not just the four named rows.)
 
-### SM6.E — Cancellation across cores (3 PRs, 6 sub-tasks) — LANDED (v0.32.60) + completion cut (v0.32.61) + PR-review cuts (v0.32.62–64)
+### SM6.E — Cancellation across cores (3 PRs, 6 sub-tasks) — LANDED (v0.32.60) + completion cut (v0.32.61) + PR-review cuts (v0.32.62–65)
 
 Deliverable module: `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean`
 (**production** — imported by `SeLe4n.lean`), plus the single-core
@@ -666,7 +666,7 @@ formal content of "the cancellation sub-operations run inside the
 | SM6.E.3 | `cancelDonation` (R5.A) under lock-set | `lockSet_cancelDonation` + pre-resolution (`cancelBindingSc?`/`cancelDonatedOwner?`) + state-resolved form + consistency + write coverage + the per-core arms `cancelBoundDonationOnCore` (home-core replenish purge: `_replenishQueue_purged`/`_replenishQueue_ne`/`_runQueue_current_eq`) and dispatcher `cancelDonationOnCore` (error paths return the pre-state) | ✓ |
 | SM6.E.4 | `cancelDonation_atomic_under_lockSet` | landed (exact plan name) + the per-core companion `cancelDonationOnCore_atomic_under_lockSet` | ✓ |
 | SM6.E.5 | Cross-core cancellation (spans cores) | `descheduleThread` (wakeThread dual: `_emits_sgi_if_remote_current`, `_no_sgi_if_local`/`_no_sgi_if_not_current`/`_no_sgi_if_ghost`, `_descheduled_on_home`, `_independent_of_other_core`) + `cancelIpcBlockingOnCore` (reductions `_state_eq`/`_objects_eq`/`_eq_descheduleThread`/`_ready_eq_descheduleThread`, SGI family, `_preserves_objects_invExt`) + the flagship `cancellation_cross_core_correct` (remote poke ∧ full home-core deschedule ∧ per-core locality ∧ object-level fidelity) | ✓ |
-| SM6.E.6 | 6 cancellation scenarios | `tests/SmpCancellationSuite.lean` — 15 scenario groups / 93 assertions (endpoint-/notification-/reply-blocked remote-homed victims; running-remote SGI vs running-local no-SGI; bound-donation home-core purge; donated return-to-owner **with §2b replenishment-migration assertions**; dispatcher identity + ghost + `withLockSet` bracket; **completion cut**: notification sole-waiter state correction + two-waiter retention, 3-deep mid-queue splice link patches, mirror SGI (boot-homed victim cancelled from a remote core), the live `suspendThreadOnCore` (remote SGI + diff-seam recovery + local inline successor dispatch + `.Inactive` rejection + single-core inertness), and send-/receive-blocked teardown arms; **v0.32.62 PR-review cut**: the §3.14 PIP-donation-drop scenario — suspending a reply-blocked client drops the server's donated `pipBoost`, re-keys the server's home-core run-queue bucket, and the diff seam pokes both the server's and the victim's home cores; single-core mirror; **v0.32.63**: the §3.15 disinheritance-scheduling scenarios — the deboosted boot current is preempted inline by a mid-priority bystander (single-core mirror included), and a still-current remote server's core is poked by the diff seam's deboosted-current rule), wired Tier-2 (`smp_cancellation_suite`) + Tier-3 anchors | ✓ |
+| SM6.E.6 | 6 cancellation scenarios | `tests/SmpCancellationSuite.lean` — 16 scenario groups / 100 assertions (endpoint-/notification-/reply-blocked remote-homed victims; running-remote SGI vs running-local no-SGI; bound-donation home-core purge; donated return-to-owner **with §2b replenishment-migration assertions**; dispatcher identity + ghost + `withLockSet` bracket; **completion cut**: notification sole-waiter state correction + two-waiter retention, 3-deep mid-queue splice link patches, mirror SGI (boot-homed victim cancelled from a remote core), the live `suspendThreadOnCore` (remote SGI + diff-seam recovery + local inline successor dispatch + `.Inactive` rejection + single-core inertness), and send-/receive-blocked teardown arms; **v0.32.62 PR-review cut**: the §3.14 PIP-donation-drop scenario — suspending a reply-blocked client drops the server's donated `pipBoost`, re-keys the server's home-core run-queue bucket, and the diff seam pokes both the server's and the victim's home cores; single-core mirror; **v0.32.63**: the §3.15 disinheritance-scheduling scenarios — the deboosted boot current is preempted inline by a mid-priority bystander (single-core mirror included), and a still-current remote server's core is poked by the diff seam's deboosted-current rule), wired Tier-2 (`smp_cancellation_suite`) + Tier-3 anchors | ✓ |
 
 Supporting invariant surface (single-core, production):
 `cancelIpcBlocking_preserves_objects_invExt` (+ per-helper lemmas
@@ -853,6 +853,21 @@ covers the `.call`/`.reply`/`.replyRecv` walks identically); and
 under `boundThreadPriorityConsistent` (the `_of_agree` bridge), with the
 obligation to switch to `resolveEffectivePrioDeadline` if that invariant is
 ever relaxed.  Suite §3.15(d).
+
+**PR-review cut 4 (v0.32.65) — running-core suspend + write-set honesty
+(one P1, two P2s):** an unbound victim (home = boot) can be CURRENT on a
+secondary core (unbinding a running thread is admitted — the migration
+reject gate fires only when the new affinity forbids the running core);
+the home-keyed suspend marked it `.Inactive` while that core kept
+executing it, unpoked.  Fixed: `runningCoreOf?` resolves the actual
+running core; `suspendThreadOnCore` deschedules it (G4b) and keys G7 on
+it; `crossCoreSgiBody`'s descheduled/deboosted rules re-keyed to the
+pre-state running core (single-core inertness re-proven with the
+empty-secondary-current-slot premise).  Write-set honesty: the
+endpoint/notification sweeps insert only changed objects, and the splice's
+neighbour-TCB writes are declared footprint members
+(`cancelSpliceNeighbors?` → two `.tcb` write locks in the state-resolved
+cancel footprint).  Suite §3.16 + neighbour-lock assertions.
 
 ### SM6.F — Tests + fixtures (3 PRs, 6 sub-tasks)
 

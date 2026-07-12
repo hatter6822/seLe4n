@@ -25,7 +25,7 @@ SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
 **Current sub-phase: SM6.E cancellation across cores LANDED (v0.32.60) —
-completed v0.32.61; PR-review cuts v0.32.62–64.**
+completed v0.32.61; PR-review cuts v0.32.62–65.**
 
 **PR-review cut (v0.32.62, PR #831 P2 + its root causes).**  The review
 flagged that the `suspend_thread_cross_core` FFI entry fired only the
@@ -95,6 +95,27 @@ under the maintained `boundThreadPriorityConsistent` invariant (the
 `resolveEffectivePrioDeadline_fst_eq_effectiveRunQueuePriority_of_agree`
 bridge), with the obligation to switch forms if the invariant is relaxed.
 Suite §3.15(d) — 93 assertions / 15 groups; trace byte-identical.
+
+**PR-review cut 4 (v0.32.65, one P1 + two P2s).**  **P1 — the running-core
+suspend**: an unbound victim (`cpuAffinity = none`, home = boot) can be
+CURRENT on a secondary core — unbinding a running secondary-core thread is
+admitted (`setThreadCpuAffinityWithMigration`'s reject gate fires only when
+the new affinity forbids the running core) — and the home-keyed suspend
+marked it `.Inactive` while that core kept executing it, with no SGI.
+Fixed end-to-end: `runningCoreOf?` (`Lifecycle/Suspend.lean`) resolves the
+core whose current slot holds the victim; `suspendThreadOnCore` deschedules
+it (G4b) and keys G7 on it (the surfaced SGI targets the RUNNING core);
+`crossCoreSgiBody`'s descheduled/deboosted rules are re-keyed to the
+pre-state running core (the local short-circuit no longer swallows them),
+with the single-core inertness lemmas gaining the
+empty-secondary-current-slot premise (`currentScan_boot_of_single_core`)
+through every consumer.  **P2 — write-set honesty**: the
+endpoint/notification sweeps insert only the objects the victim's removal
+actually changes, and the splice's neighbour-TCB writes are declared
+footprint members (`cancelSpliceNeighbors?` → two `.tcb` write locks in
+`lockSet_cancelIpcBlockingOnCore`, consistency via
+`lockSet_consistent_extendOpt`).  Suite §3.16 + neighbour-lock assertions
+— 100 assertions / 16 groups; golden trace byte-identical.
 
 The v0.32.61 completion cut closed the four
 tracked-debt items of the landing (full record in the plan's §SM6.E

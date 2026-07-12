@@ -276,11 +276,15 @@ example (st : SystemState) (vtid : SeLe4n.ValidThreadId) (ec : CoreId) (tcb : TC
     ∃ t', st'.getTcb? vtid.val = some t' ∧ t'.threadState = .Ready :=
   resumeThreadOnCore_sets_threadState st vtid ec tcb st' sgi hGet hInactive hInv hNotCur h
 
--- SM5.F.4: the diff-based dispatch is inert on single-core.
+-- SM5.F.4: the diff-based dispatch is inert on single-core (PR #831 review 4
+-- added the empty-secondary-current-slot premise when the descheduled/deboosted
+-- diff rules were re-keyed from the home to the pre-state running core).
 example (pre post : SystemState)
-    (hAllBoot : ∀ t, determineTargetCore post t = bootCoreId) :
+    (hAllBoot : ∀ t, determineTargetCore post t = bootCoreId)
+    (hNoRemoteCur : ∀ c : CoreId, c ≠ bootCoreId →
+      pre.scheduler.currentOnCore c = none) :
     crossCoreWakeDispatch pre post bootCoreId = pure () :=
-  crossCoreWakeDispatch_singleCore pre post hAllBoot
+  crossCoreWakeDispatch_singleCore pre post hAllBoot hNoRemoteCur
 
 -- SM5.F.4: memory-model — the boost publication happens-before the home core observes it.
 example (boostCore homeCore : CoreId) (loc : AtomicLocation) (v : Nat) :

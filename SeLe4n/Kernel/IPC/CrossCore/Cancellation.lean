@@ -714,6 +714,14 @@ def cancelConsumedReply? (tcb : TCB) : Option SeLe4n.ReplyId :=
   | .blockedOnReply _ _ => tcb.replyObject
   | _ => none
 
+/-- WS-SM SM6.E (PR #831 review 4): the queue-neighbour TCBs the splice
+(`spliceOutMidQueueNode`) would relink — the victim's `queuePrev` /
+`queueNext` interior links, pre-resolved from the victim's TCB.  A mid-queue
+cancellation patches the predecessor's `queueNext` and the successor's
+`queuePrev`, so both neighbour TCBs are write-footprint members. -/
+def cancelSpliceNeighbors? (tcb : TCB) : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId :=
+  (tcb.queuePrev, tcb.queueNext)
+
 /-- WS-SM SM6.E.3: the SchedContext a donation cancellation would write —
 the victim's bound or donated SC. -/
 def cancelBindingSc? (tcb : TCB) : Option SeLe4n.SchedContextId :=
@@ -765,8 +773,15 @@ def lockSet_cancelIpcBlockingOnCore (st : SystemState)
     (victimTid : SeLe4n.ThreadId) : LockSet :=
   match st.getTcb? victimTid with
   | some tcb =>
-      lockSet_cancelIpcBlocking victimTid (cancelBlockedEndpoint? tcb)
-        (cancelBlockedNotification? tcb) (cancelConsumedReply? tcb)
+      -- PR #831 review 4: the splice's neighbour-TCB writes (`queuePrev`'s
+      -- `queueNext` patch + `queueNext`'s `queuePrev` patch) are footprint
+      -- members, resolved from the victim's interior links.
+      lockSetExtendOpt
+        (lockSetExtendOpt
+          (lockSet_cancelIpcBlocking victimTid (cancelBlockedEndpoint? tcb)
+            (cancelBlockedNotification? tcb) (cancelConsumedReply? tcb))
+          ((cancelSpliceNeighbors? tcb).1.map (fun p => (tcbLock p, .write))))
+        ((cancelSpliceNeighbors? tcb).2.map (fun n => (tcbLock n, .write)))
   | none => lockSet_cancelIpcBlocking victimTid none none none
 
 /-- WS-SM SM6.E.3: the concrete lock-set a `cancelDonationOnCore` on state
@@ -866,7 +881,29 @@ theorem lockSet_cancelIpcBlockingOnCore_correct (st : SystemState)
   unfold lockSet_cancelIpcBlockingOnCore
   cases st.getTcb? victimTid with
   | some tcb =>
-      exact lockSet_consistent_cancelIpcBlocking victimTid _ _ _
+      -- PR #831 review 4: the two neighbour-TCB extensions are `.tcb`-kind
+      -- writes, already permitted for `.tcbSuspend`.
+      refine lockSet_consistent_extendOpt _ _ _
+        (lockSet_consistent_extendOpt _ _ _
+          (lockSet_consistent_cancelIpcBlocking victimTid _ _ _) ?_) ?_
+      · intro pp hEq
+        cases h1 : (cancelSpliceNeighbors? tcb).1 with
+        | none => rw [h1] at hEq; cases hEq
+        | some n =>
+          rw [h1] at hEq
+          injection hEq with h
+          rw [← h]
+          show (tcbLock n).kind ∈ permittedKinds .tcbSuspend
+          rw [tcbLock_kind]; decide
+      · intro pp hEq
+        cases h2 : (cancelSpliceNeighbors? tcb).2 with
+        | none => rw [h2] at hEq; cases hEq
+        | some n =>
+          rw [h2] at hEq
+          injection hEq with h
+          rw [← h]
+          show (tcbLock n).kind ∈ permittedKinds .tcbSuspend
+          rw [tcbLock_kind]; decide
   | none =>
       exact lockSet_consistent_cancelIpcBlocking victimTid none none none
 
@@ -2043,7 +2080,13 @@ def suspendThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThreadId)
       -- home core of the victim (pre-state resolution; the teardown never
       -- moves it — `cancelIpcBlocking_determineTargetCore_eq`)
       let home := determineTargetCore st tid
-      let wasCurrentHome : Bool := (st.scheduler.currentOnCore home) == some tid
+      -- G7-precapture (PR #831 review 4, P1): the core ACTUALLY running the
+      -- victim (`runningCoreOf?`), not the wake/queue home — an unbound
+      -- victim can be current on a secondary core while its home is boot
+      -- (see `runningCoreOf?`); the deschedule and the poke must target the
+      -- running core.  When the victim is current on its home core the two
+      -- coincide and the behaviour is unchanged.
+      let runningCore? := runningCoreOf? st tid
       -- Local-disinheritance precapture (PR #831 review 2): the executing
       -- core's current thread's entry-time effective priority.  G2b's PIP
       -- revert can LOWER it (the current thread may be a chain member — e.g.
@@ -2072,6 +2115,13 @@ def suspendThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThreadId)
       | .error e => .error e
       | .ok st =>
       let st := removeRunnableOnCore st tid home
+      -- G4b (PR #831 review 4, P1): also clear the RUNNING core when it
+      -- differs from the home — the home removal cleared only the home's
+      -- queue/current slot, leaving a diverged running core still executing
+      -- the victim.
+      let st := match runningCore? with
+        | some c => if c == home then st else removeRunnableOnCore st tid c
+        | none => st
       let st := clearPendingStateValid st vtid
       let st := match st.getTcb? tid with
         | some tcb'' =>
@@ -2083,8 +2133,8 @@ def suspendThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThreadId)
       -- dropped across the pipeline (the G2b revert deboosted it) — a ready
       -- local thread may now outrank the running choice, and no SGI ever
       -- reaches the executing core, so G7 must run the local preemption gate.
-      suspendRescheduleOnCore st home executingCore wasCurrentHome
-        (currentDeboostedFrom st executingCore execCurPre)
+      suspendRescheduleOnCore st (runningCore?.getD home) executingCore
+        runningCore?.isSome (currentDeboostedFrom st executingCore execCurPre)
   | none => .error .invalidArgument
 
 /-- WS-SM SM6.E: a target that does not resolve to a TCB is rejected with
@@ -2111,7 +2161,8 @@ inline and surfaces nothing. -/
 theorem suspendThreadOnCore_sgi_remote_reschedule (st st' : SystemState)
     (vtid : SeLe4n.ValidThreadId) (ec : CoreId) (c : CoreId) (k : SgiKind)
     (h : suspendThreadOnCore st vtid ec = .ok (st', some (c, k))) :
-    c = determineTargetCore st vtid.val ∧ k = SgiKind.reschedule ∧ c ≠ ec := by
+    c = (runningCoreOf? st vtid.val).getD (determineTargetCore st vtid.val)
+      ∧ k = SgiKind.reschedule ∧ c ≠ ec := by
   simp only [suspendThreadOnCore] at h
   split at h
   · split at h
@@ -2126,7 +2177,7 @@ theorem suspendThreadOnCore_sgi_remote_reschedule (st st' : SystemState)
 reschedule (when needed) happened inline. -/
 theorem suspendThreadOnCore_local_no_sgi (st st' : SystemState)
     (vtid : SeLe4n.ValidThreadId) (ec : CoreId) (sgi : Option (CoreId × SgiKind))
-    (hLocal : determineTargetCore st vtid.val = ec)
+    (hLocal : (runningCoreOf? st vtid.val).getD (determineTargetCore st vtid.val) = ec)
     (h : suspendThreadOnCore st vtid ec = .ok (st', sgi)) :
     sgi = none := by
   simp only [suspendThreadOnCore] at h

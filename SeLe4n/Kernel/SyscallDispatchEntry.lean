@@ -123,9 +123,11 @@ at the entry's dispatch granularity. -/
 theorem syscallDispatchCrossCoreEntry_sgis_nil_single_core
     (pre post : SystemState)
     (hAllBoot : ∀ t : SeLe4n.ThreadId,
-      determineTargetCore post t = Concurrency.bootCoreId) :
+      determineTargetCore post t = Concurrency.bootCoreId)
+    (hNoRemoteCur : ∀ c : Concurrency.CoreId, c ≠ Concurrency.bootCoreId →
+      pre.scheduler.currentOnCore c = none) :
     PriorityInheritance.computeCrossCoreSgis pre post Concurrency.bootCoreId = [] :=
-  PriorityInheritance.computeCrossCoreSgis_nil_single_core pre post hAllBoot
+  PriorityInheritance.computeCrossCoreSgis_nil_single_core pre post hAllBoot hNoRemoteCur
 
 /-- **WS-SM SM6.E**: the cross-core-aware suspend entry — the per-core seam the
 Rust `sele4n_suspend_thread` atomicity bracket resolves against (the suspend
