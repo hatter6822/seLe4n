@@ -145,10 +145,11 @@ run_check_with_timeout "TRACE" lake exe per_object_lock_suite
 # declarations, the `lockAcquireSequence` canonical sort and
 # ordered/complete/canonical theorems, `permittedKinds` plus the
 # per-transition `lockSet_consistent_<τ>` theorems, the audit-pass-5
-# `pipChainStart_<τ>` PIP chain-walk start markers, the audit-pass-6
+# `pipChainStart_<τ>` PIP chain-walk start markers (4 as of SM6.E's
+# `pipChainStart_tcbSuspend`), the audit-pass-6
 # `tcbSetPriority`/`tcbSetMCPriority`/`tcbSetIPCBuffer`/`serviceRegister`
 # footprint extensions (SC + VSpaceRoot + endpoint locks), and the
-# 90-theorem inventory aggregator (with the new `chainStart` category).
+# 99-theorem inventory aggregator (with the `chainStart` category).
 run_check_with_timeout "TRACE" lake exe lock_set_suite
 
 # WS-SM SM3.C — withLockSet 2PL discipline regression suite.
@@ -350,5 +351,15 @@ run_check_with_timeout "TRACE" lake exe smp_cross_core_notification_suite
 # rejection, the SM6.C.5 replyRecv combined op, the SM6.C.3 donation-chain
 # lock-set extension, and the SM6.C.9 PIP-reversion chain-length bound.
 run_check_with_timeout "TRACE" lake exe smp_cross_core_reply_suite
+
+# WS-SM SM6.E cross-core cancellation: exercises the cancelIpcBlockingOnCore /
+# cancelDonationOnCore / lockSet_cancelIpcBlocking computations on the SM6.E
+# scenarios — cancelling endpoint- / notification- / reply-blocked victims
+# homed on a remote core, the actively-running remote victim's `.reschedule`
+# SGI (vs the local / not-current no-SGI duals), the per-core bound-donation
+# replenish-queue purge on the victim's home core, the donated
+# return-to-owner arm, the dispatcher `.unbound` identity + ghost-victim
+# fail-closed paths, and the `withLockSet` bracket's operational atomicity.
+run_check_with_timeout "TRACE" lake exe smp_cancellation_suite
 
 finalize_report

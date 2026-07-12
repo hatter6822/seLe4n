@@ -727,6 +727,37 @@ run_check "INVARIANT" rg -n '^theorem ipcUnwrapCaps_passiveServerIdleFrameOnCore
 run_check "INVARIANT" rg -n '^theorem endpointSendDualWithCaps_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
 run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
 run_check "INVARIANT" rg -n '^theorem endpointCallWithCaps_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
+# WS-SM SM6.E cancellation across cores — the per-core deschedule primitive
+# (the wakeThread dual), the cross-core cancellation composite + its SGI
+# family, the per-core donation-cancellation arms + home-core replenish
+# purge, the lockSet_cancelIpcBlocking / lockSet_cancelDonation footprints
+# (+ suspend-footprint coverage incl. the SM6.E consumed-Reply extension),
+# the 2PL atomicity theorems, invExt preservation, and the flagship.
+run_check "INVARIANT" rg -n '^def descheduleThread' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^def cancelIpcBlockingOnCore' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^def cancelBoundDonationOnCore' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^def cancelDonationOnCore' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^def lockSet_cancelIpcBlocking' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^def lockSet_cancelDonation' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem descheduleThread_emits_sgi_if_remote_current' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_emits_sgi_if_remote_current' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_no_sgi_if_not_current' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_consistent_cancelIpcBlocking' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_consistent_cancelDonation' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem mem_insertOrMerge_write_of_mem_write' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_tcbSuspend_consumed_reply_write_mem' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_atomic_under_lockSet' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_atomic_under_lockSet' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelDonation_atomic_under_lockSet' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelDonationOnCore_atomic_under_lockSet' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_preserves_objects_invExt' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelBoundDonationOnCore_replenishQueue_purged' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancellation_cross_core_correct' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_preserves_objects_invExt' SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean
+run_check "INVARIANT" rg -n '^theorem cancelDonation_preserves_objects_invExt' SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean
+run_check "INVARIANT" rg -n '^theorem removeFromAllEndpointQueues_preserves_objects_invExt' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^def runSmpCancellationChecks' tests/SmpCancellationSuite.lean
+run_check "INVARIANT" rg -n '^run_check(_with_timeout)? "TRACE" lake exe smp_cancellation_suite' scripts/test_tier2_negative.sh
 run_check "INVARIANT" rg -n '^theorem intrusiveQueueWellFormed_empty' SeLe4n/Kernel/IPC/Invariant/Structural/
 run_check "INVARIANT" rg -n '^theorem tcbQueueLink_forward_safe' SeLe4n/Kernel/IPC/Invariant/Structural/
 run_check "INVARIANT" rg -n '^theorem tcbQueueLink_reverse_safe' SeLe4n/Kernel/IPC/Invariant/Structural/
@@ -1040,7 +1071,39 @@ run_check "INVARIANT" rg -n '^theorem readReturnValue_zero_when_not_tcb' SeLe4n/
 # it; the boot-pinned `syscall_dispatch_inner` (`@[export]` in `Platform.FFI`,
 # line 966) stays as the single-core entry.
 run_check "INVARIANT" rg -n 'fn lean_syscall_dispatch_cross_core' rust/sele4n-hal/src/svc_dispatch.rs
-run_check "INVARIANT" rg -n 'fn suspend_thread_inner' rust/sele4n-hal/src/ffi.rs
+# WS-SM SM6.E: the suspend atomicity bracket is flipped to the cross-core
+# entry `suspend_thread_cross_core` (`@[export]` in `SyscallDispatchEntry`,
+# backed by the verified per-core `suspendThreadOnCore`: home-core deschedule
+# + remote `.reschedule` SGI after the commit).  The boot-pinned
+# `suspend_thread_inner` (`@[export]` in `Platform.FFI`) stays as the
+# single-core entry.
+run_check "INVARIANT" rg -n 'fn suspend_thread_cross_core' rust/sele4n-hal/src/ffi.rs
+run_check "INVARIANT" rg -n '^@\[export suspend_thread_cross_core\]' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^def suspendThreadOnCore' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem suspendThreadOnCore_sgi_remote_reschedule' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreSgiBody_remote_deschedule' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
+# WS-SM SM6.E (PR #831 review 2): disinheritance scheduling points — the
+# suspend's D4-N capture -> clear -> revert-from-server order, the local
+# preemption gate on a deboosted executing-core current, the diff seam's
+# deboosted-current rule (a still-current remote server whose effective
+# priority dropped is poked), and the declared PIP chain-walk obligation.
+run_check "INVARIANT" rg -n '^def currentEffectivePrio\?' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n '^def currentDeboostedFrom' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n '^def suspendRescheduleOnCore' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem suspendRescheduleOnCore_sgi_shape' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreSgiBody_remote_deboost_current' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
+run_check "INVARIANT" rg -n '^@\[inline\] def pipChainStart_tcbSuspend' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+# PR #831 review 4: the running-core resolution (an unbound victim current on
+# a secondary core is descheduled + poked on THAT core), the re-keyed diff
+# rules, and the write-set-honest sweeps + neighbour-TCB footprint members.
+run_check "INVARIANT" rg -n '^def runningCoreOf\?' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n '^theorem currentScan_boot_of_single_core' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
+run_check "INVARIANT" rg -n '^def cancelSpliceNeighbors\?' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+# Audit closure (v0.32.66): running-core footprint triple, EDF deadline rules,
+# current-uniqueness invariant slice, donation-side observer capstone.
+run_check "INVARIANT" rg -n '^def sortedSchedCoreTriple' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^def currentThreadUniqueAcrossCores' SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean
+run_check "INVARIANT" rg -n '^theorem cancelDonationOnCore_observer_atomic' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 
 # WS-I2/R-05: Lean #check correctness anchors (type-level validation).
 # D5: The Liveness module is proof-only and not imported from Main.lean,
@@ -2114,10 +2177,11 @@ import SeLe4n.Kernel.Concurrency.LockSet
 #check @SeLe4n.Kernel.Concurrency.lockSet_consistent_tcbSetPriority
 #check @SeLe4n.Kernel.Concurrency.lockSet_consistent_tcbSetMCPriority
 #check @SeLe4n.Kernel.Concurrency.lockSet_consistent_tcbSetIPCBuffer
--- SM3.B.3 audit-pass-5 — PIP-chain-walk start markers.
+-- SM3.B.3 audit-pass-5 — PIP-chain-walk start markers (+ SM6.E suspend).
 #check @SeLe4n.Kernel.Concurrency.pipChainStart_endpointCall
 #check @SeLe4n.Kernel.Concurrency.pipChainStart_endpointReply
 #check @SeLe4n.Kernel.Concurrency.pipChainStart_replyRecv
+#check @SeLe4n.Kernel.Concurrency.pipChainStart_tcbSuspend
 -- SM3.B Inventory aggregator.
 #check @SeLe4n.Kernel.Concurrency.LockSetCategory
 #check @SeLe4n.Kernel.Concurrency.LockSetTheorem

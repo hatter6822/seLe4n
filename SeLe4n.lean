@@ -54,3 +54,13 @@ import SeLe4n.Kernel.IPC.Invariant.PerCoreBundlePreservation
 -- `EndpointReplyInvariant` whole-bundle closures; imported here explicitly
 -- so the congruence surface is directly production-anchored.)
 import SeLe4n.Kernel.IPC.Invariant.LookupCongruence
+-- WS-SM SM6.E: cancellation across cores — the `descheduleThread` per-core
+-- deschedule primitive (the SM5.C `wakeThread` dual), the cross-core
+-- cancellation composite `cancelIpcBlockingOnCore`, the per-core donation
+-- cancellation (`cancelBoundDonationOnCore` / `cancelDonationOnCore`), the
+-- `lockSet_cancelIpcBlocking` / `lockSet_cancelDonation` footprints with
+-- suspend-footprint coverage, the 2PL atomicity theorems, and the flagship
+-- `cancellation_cross_core_correct`.  Pulled into the production library so
+-- the SM6.E theorem surface is production-reachable ahead of the live
+-- `.tcbSuspend` cross-core dispatch wiring (the phase's tracked follow-on).
+import SeLe4n.Kernel.IPC.CrossCore.Cancellation

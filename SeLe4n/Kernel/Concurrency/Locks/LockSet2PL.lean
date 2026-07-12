@@ -286,6 +286,98 @@ theorem lockSet_observer_atomic {α β : Type} (S : LockSet) (core : CoreId)
    withLockSet_release_invisible S core action s π hRel⟩
 
 -- ============================================================================
+-- §4c — WS-SM SM6.E: guarded observer atomicity
+-- ============================================================================
+-- The unguarded `AcquireInsensitive` quantifies over ALL states, which only
+-- observers of lock-free *fields* (scheduler, registries) can satisfy.
+-- Observers that read the **object store** (per-object business fields
+-- through `getTcb?` etc.) are insensitive only on states satisfying the
+-- RHTable extension invariant `invExt` — the per-object lock write is an
+-- `updateObjectAt` insert, whose lookup frames need it.  The `On`-family
+-- below is the `P`-guarded generalisation: insensitivity holds on `P`-states
+-- and the guard is threaded through the folds by a stability hypothesis.
+
+/-- WS-SM SM6.E: `P`-guarded acquire-insensitivity — the projection is
+unchanged by any single lock acquire *on states satisfying `P`*. -/
+def AcquireInsensitiveOn {β : Type} (P : SystemState → Prop) (core : CoreId)
+    (π : SystemState → β) : Prop :=
+  ∀ (s : SystemState) (l : LockId) (m : AccessMode),
+    P s → π (acquireLockOnObject s core l m) = π s
+
+/-- WS-SM SM6.E: the release-side counterpart of `AcquireInsensitiveOn`. -/
+def ReleaseInsensitiveOn {β : Type} (P : SystemState → Prop) (core : CoreId)
+    (π : SystemState → β) : Prop :=
+  ∀ (s : SystemState) (l : LockId) (m : AccessMode),
+    P s → π (releaseLockOnObject s core l m) = π s
+
+/-- WS-SM SM6.E: the acquire fold is invisible to a `P`-guardedly
+acquire-insensitive observer, and threads the guard — provided `P` is stable
+under single acquires. -/
+theorem acquireAll_lockInsensitiveOn {β : Type} (P : SystemState → Prop)
+    (core : CoreId) (π : SystemState → β)
+    (hIns : AcquireInsensitiveOn P core π)
+    (hStable : ∀ s l m, P s → P (acquireLockOnObject s core l m)) :
+    ∀ (pairs : List (LockId × AccessMode)) (s : SystemState), P s →
+      π (acquireAll core pairs s) = π s ∧ P (acquireAll core pairs s) := by
+  intro pairs
+  induction pairs with
+  | nil => intro s hP; exact ⟨rfl, hP⟩
+  | cons head tail ih =>
+      intro s hP
+      have hP' := hStable s head.fst head.snd hP
+      have hTail := ih (acquireLockOnObject s core head.fst head.snd) hP'
+      refine ⟨?_, hTail.2⟩
+      show π (acquireAll core tail (acquireLockOnObject s core head.fst head.snd))
+        = π s
+      rw [hTail.1]
+      exact hIns s head.fst head.snd hP
+
+/-- WS-SM SM6.E: the release fold is invisible to a `P`-guardedly
+release-insensitive observer, and threads the guard. -/
+theorem releaseAll_lockInsensitiveOn {β : Type} (P : SystemState → Prop)
+    (core : CoreId) (π : SystemState → β)
+    (hIns : ReleaseInsensitiveOn P core π)
+    (hStable : ∀ s l m, P s → P (releaseLockOnObject s core l m)) :
+    ∀ (pairs : List (LockId × AccessMode)) (s : SystemState), P s →
+      π (releaseAll core pairs s) = π s ∧ P (releaseAll core pairs s) := by
+  intro pairs
+  induction pairs with
+  | nil => intro s hP; exact ⟨rfl, hP⟩
+  | cons head tail ih =>
+      intro s hP
+      have hP' := hStable s head.fst head.snd hP
+      have hTail := ih (releaseLockOnObject s core head.fst head.snd) hP'
+      refine ⟨?_, hTail.2⟩
+      show π (releaseAll core tail (releaseLockOnObject s core head.fst head.snd))
+        = π s
+      rw [hTail.1]
+      exact hIns s head.fst head.snd hP
+
+/-- WS-SM SM6.E (guarded observer-atomicity capstone): the `P`-guarded
+generalisation of `lockSet_observer_atomic` — for an observer insensitive on
+`P`-states, with `P` stable under both lock primitives, holding on the
+pre-state, and re-established by the action (the caller discharges this with
+the action's own `P`-preservation theorem): the entire 2PL lock machinery is
+invisible.  This is what makes object-store observers (per-object business
+fields, guarded by `invExt`) usable in the observer-atomicity contract. -/
+theorem lockSet_observer_atomic_on {α β : Type} (S : LockSet) (core : CoreId)
+    (action : SystemState → SystemState × α) (s : SystemState)
+    (P : SystemState → Prop) (π : SystemState → β)
+    (hAcq : AcquireInsensitiveOn P core π) (hRel : ReleaseInsensitiveOn P core π)
+    (hAcqStable : ∀ s' l m, P s' → P (acquireLockOnObject s' core l m))
+    (hRelStable : ∀ s' l m, P s' → P (releaseLockOnObject s' core l m))
+    (hP : P s)
+    (hActionP : P (action (acquireAll core S.lockAcquireSequence s)).1) :
+    π (acquireAll core S.lockAcquireSequence s) = π s ∧
+    π (withLockSet S core action s).1
+      = π (action (acquireAll core S.lockAcquireSequence s)).1 := by
+  refine ⟨(acquireAll_lockInsensitiveOn P core π hAcq hAcqStable
+    S.lockAcquireSequence s hP).1, ?_⟩
+  rw [withLockSet_fst]
+  exact (releaseAll_lockInsensitiveOn P core π hRel hRelStable
+    S.lockAcquireSequence.reverse _ hActionP).1
+
+-- ============================================================================
 -- §5 — SM3.C.8 — `lockSet_invariant_preserved` (Corollary 2.1.11)
 -- ============================================================================
 

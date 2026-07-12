@@ -17,6 +17,8 @@
 
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
 import SeLe4n.Kernel.Concurrency.Runtime
+-- WS-SM SM6.E: the per-core suspend behind `suspendThreadCrossCoreEntry`.
+import SeLe4n.Kernel.IPC.CrossCore.Cancellation
 import SeLe4n.Platform.FFI
 
 /-!
@@ -121,8 +123,63 @@ at the entry's dispatch granularity. -/
 theorem syscallDispatchCrossCoreEntry_sgis_nil_single_core
     (pre post : SystemState)
     (hAllBoot : ∀ t : SeLe4n.ThreadId,
-      determineTargetCore post t = Concurrency.bootCoreId) :
+      determineTargetCore post t = Concurrency.bootCoreId)
+    (hNoRemoteCur : ∀ c : Concurrency.CoreId, c ≠ Concurrency.bootCoreId →
+      pre.scheduler.currentOnCore c = none) :
     PriorityInheritance.computeCrossCoreSgis pre post Concurrency.bootCoreId = [] :=
-  PriorityInheritance.computeCrossCoreSgis_nil_single_core pre post hAllBoot
+  PriorityInheritance.computeCrossCoreSgis_nil_single_core pre post hAllBoot hNoRemoteCur
+
+/-- **WS-SM SM6.E**: the cross-core-aware suspend entry — the per-core seam the
+Rust `sele4n_suspend_thread` atomicity bracket resolves against (the suspend
+analogue of `syscallDispatchCrossCoreEntry`, superseding the boot-pinned
+`Platform.FFI.suspendThreadInner`).  Reads the executing core from the hardware
+(`currentCoreId`), runs the verified per-core
+`Lifecycle.Suspend.suspendThreadOnCore` atomically against the kernel state ref
+(committing the post-state; the pre-state is kept on every error), then —
+*after* the commit — fires the **diff-recovered** cross-core `.reschedule`
+SGIs (`computeCrossCoreSgis` over the committed pre/post pair), exactly as
+`syscallDispatchCrossCoreEntry`.  The diff subsumes the single SGI
+`suspendThreadOnCore` surfaces (the victim-deschedule poke is re-derived by
+the diff seam's SM6.E descheduled-current rule,
+`crossCoreSgiBody_remote_deschedule`) and additionally recovers the G2b
+PIP-revert pokes — a suspend that severs a donation chain lowers remote
+chain members' effective run-queue buckets, and each such member's home
+core must re-run its scheduler (PR #831 review: the pre-fix entry fired
+only the surfaced victim SGI, leaving the re-bucketed cores unpoked until
+their next timer tick).  Sentinel `tid`s are rejected at the boundary
+Sentinel `tid`s are rejected at the boundary
+exactly as `suspendThreadInner`.
+
+**Authority obligation (audit note).**  This export performs NO capability
+check — it is the *mechanism* seam below the dispatch layer.  Its only
+sanctioned caller is the Rust AN9-D atomicity bracket
+(`sele4n_suspend_thread`), reached from the capability-gated syscall path;
+the symbol is unreachable from user mode (user code enters via SVC →
+`dispatch_svc` only).  Any future in-kernel caller MUST carry its own
+authority for the target thread (a `.write`-bearing TCB capability or an
+equivalent kernel-internal justification) — calling this raw seam without
+one is a privilege-escalation bug, not a supported use.
+
+**Single-core inertness (trace safety).**  On an all-boot deployment every
+diff-derived SGI list is empty (`computeCrossCoreSgis_nil_single_core`), so
+the entry commits the same post-state with no IPI. -/
+@[export suspend_thread_cross_core]
+def suspendThreadCrossCoreEntry (tid : UInt64) : BaseIO UInt32 := do
+  let execCore ← Concurrency.currentCoreId
+  let result ← Platform.FFI.modifyGetKernelState (fun st =>
+    let threadId := SeLe4n.ThreadId.ofNat tid.toNat
+    match threadId.toValid? with
+    | none =>
+        ((Platform.FFI.KernelError.toUInt32 .invalidArgument,
+          ([] : List (CoreId × SgiKind))), st)
+    | some vtid =>
+        match Lifecycle.Suspend.suspendThreadOnCore st vtid execCore with
+        | Except.ok (st', _) =>
+            (((0 : UInt32),
+              PriorityInheritance.computeCrossCoreSgis st st' execCore), st')
+        | Except.error e =>
+            ((Platform.FFI.KernelError.toUInt32 e, ([] : List (CoreId × SgiKind))), st))
+  Concurrency.fireCrossCoreSgis result.2
+  pure result.1
 
 end SeLe4n.Kernel

@@ -553,6 +553,58 @@ def clearPendingState (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :
 -- D1-G: suspendThread (composite)
 -- ============================================================================
 
+/-- WS-SM SM6.E (PR #831 review 4, P1): the core **actually running** `tid` —
+the first core whose current slot holds it (`none` when not current anywhere).
+`determineTargetCore` is the wake/queue *home* (affinity defaulting to boot),
+but the two can diverge: unbinding a thread running on a secondary core is
+admitted (`setThreadCpuAffinityWithMigration`'s reject gate fires only when
+the NEW affinity forbids the running core, and `cpuAffinity = none` admits
+every core), leaving the thread current on that core while its home reverts
+to `bootCoreId`.  A suspend must deschedule and poke the running core, not
+the home — descheduling only the home would mark the victim `.Inactive`
+while the secondary core keeps executing it.  Completeness of the
+first-match scan rests on `currentThreadUniqueAcrossCores`
+(`Scheduler/Invariant/PerCore.lean`, audit closure): a thread is current on
+at most one core. -/
+def runningCoreOf? (st : SystemState) (tid : SeLe4n.ThreadId) : Option CoreId :=
+  SeLe4n.Kernel.Concurrency.allCores.find? (fun c =>
+    st.scheduler.currentOnCore c == some tid)
+
+/-- WS-SM SM6.E (PR #831 review 2): snapshot of core `ec`'s current thread and
+its *effective* run-queue priority (`resolveEffectivePrioDeadline`), taken at
+suspend entry.  `none` when the core is idle or its current slot does not
+resolve to a TCB.  The suspend pipeline's PIP revert (G2b) can lower a chain
+member's effective priority; comparing this snapshot against the post-pipeline
+value (`currentDeboostedFrom`) detects a disinheritance of the core's own
+running thread — the one case no `.reschedule` SGI can cover (SGIs poke only
+*remote* cores). -/
+def currentEffectivePrio? (st : SystemState) (ec : CoreId)
+    : Option (SeLe4n.ThreadId × Nat) :=
+  match st.scheduler.currentOnCore ec with
+  | some curTid =>
+    match st.getTcb? curTid with
+    | some curTcb => some (curTid, (resolveEffectivePrioDeadline st curTcb).1.val)
+    | none => none
+  | none => none
+
+/-- WS-SM SM6.E (PR #831 review 2): is the snapshotted thread STILL current on
+core `ec` with a strictly *lower* effective priority than at snapshot time?
+When true, the suspend must run a local scheduling point
+(`handleRescheduleSgiOnCore`): a ready thread whose priority sits between the
+deboosted current's base and its old donation must preempt now, not at the
+next timer tick.  A raise (or an unchanged priority) triggers nothing — the
+running choice can only outrank strictly more than before. -/
+def currentDeboostedFrom (post : SystemState) (ec : CoreId)
+    (snapshot : Option (SeLe4n.ThreadId × Nat)) : Bool :=
+  match snapshot with
+  | some (curTid, prePrio) =>
+    (post.scheduler.currentOnCore ec == some curTid)
+      && (match post.getTcb? curTid with
+          | some curTcb =>
+              decide ((resolveEffectivePrioDeadline post curTcb).1.val < prePrio)
+          | none => false)
+  | none => false
+
 /-- D1-G: Suspend a thread — the complete suspension sequence.
 
 Validates the target thread exists and is not already Inactive, then
@@ -579,11 +631,48 @@ def suspendThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
   | some (.tcb tcb) =>
     if tcb.threadState == .Inactive then .error .illegalState
     else
-      -- D4-N: Revert PIP before cleanup — if this thread has pipBoost or is
-      -- in a blocking chain, recompute priorities for upstream servers
-      let st := PriorityInheritance.revertPriorityInheritance st tid
+      -- G7-precapture (WS-SM SM6.E fix): whether the victim is the boot
+      -- core's current thread must be read BEFORE G4's `removeRunnableValid`
+      -- runs — `removeRunnable` clears the current slot when it holds the
+      -- victim, so the pre-fix post-G4 read at G7 made the reschedule guard
+      -- unsatisfiable (dead code): suspending the running thread left
+      -- `current = none` without dispatching a successor.  The intermediate
+      -- steps G2..G6 never write the current slot (`cancelIpcBlocking` and
+      -- `clearPendingState` are scheduler-silent, the donation arms touch
+      -- only the replenish queue, PIP reversion re-buckets run-queue
+      -- entries), so the entry-time read is the just-before-G4 value.
+      let wasCurrent : Bool := (st.scheduler.currentOnCore bootCoreId) == some tid
+      -- Local-disinheritance precapture (PR #831 review 2): the boot core's
+      -- current thread's entry-time effective priority.  The G2b PIP revert
+      -- can LOWER it (the current thread may be a chain member — e.g. the
+      -- boot core is running the victim's server), and a deboosted-but-
+      -- still-current thread gets no scheduling point from the wasCurrent
+      -- arm, so the drop is re-checked at G7.
+      let bootCurPre := currentEffectivePrio? st bootCoreId
+      -- D4-N (WS-SM SM6.E ordering fix): capture the upstream blocking server
+      -- BEFORE G2 clears the victim's `ipcState` (the reply-blocking edge is
+      -- the only record of the chain), and run the PIP revert AFTER G2.
+      -- `revertPriorityInheritance` recomputes each chain member's `pipBoost`
+      -- from the *current* `waitersOf`; the pre-fix revert-at-the-victim ran
+      -- before the victim left the server's waiter set, so every link
+      -- recomputed to its old value (a no-op) and the server retained the
+      -- suspended victim's donated boost indefinitely — the reply-replay
+      -- barrier means no later reply-path revert ever runs for the consumed
+      -- reply either.  `timeoutThread` (D4-N) has always used this
+      -- capture → clear → revert-from-server order; the suspend pipeline now
+      -- matches it.  (The victim's own `pipBoost` is deliberately NOT
+      -- recomputed: its waiters stay blocked on it across suspension, so its
+      -- boost is still earned — and the old victim-leg recompute was a
+      -- fixed-point no-op for exactly that reason.)
+      let maybeBlockingServer := PriorityInheritance.blockingServer st tid
       -- G2: Cancel IPC blocking — AN10-residual-1 (commit 3): typed entry-point.
       let st := cancelIpcBlockingValid st vtid tcb
+      -- G2b (D4-N): revert PIP from the captured upstream server — now that
+      -- the victim's `ipcState` is cleared, `waitersOf` no longer includes
+      -- it, so the chain recompute genuinely drops the victim's donation.
+      let st := match maybeBlockingServer with
+        | some serverId => PriorityInheritance.revertPriorityInheritance st serverId
+        | none => st
       -- AI2-D (M-20) / AF5-H (AF-28): Re-lookup is necessary because
       -- `cancelIpcBlocking` modifies the TCB via `clearTcbIpcFields`, which
       -- updates `ipcState`, `queuePrev`, `queueNext`, and `queuePPrev`.
@@ -631,13 +720,32 @@ def suspendThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
           { st with objects := st.objects.insert tid.toObjId (.tcb { tcb'' with
               threadState := .Inactive }) }
         | _ => st
-      -- G7: If suspended thread was current, trigger reschedule
-      if (st.scheduler.currentOnCore bootCoreId) == some tid then
+      -- G7: If suspended thread was current, trigger reschedule.
+      -- WS-SM SM6.E fix: dispatch on the G7-precapture (entry-time) value —
+      -- the post-G4 current slot never holds the victim (see the precapture
+      -- note above), so reading it here made this arm unreachable.
+      -- `schedule` goes idle gracefully (`setCurrentThread none`) when the
+      -- run queue holds no eligible successor, so suspending the last
+      -- runnable thread still succeeds.
+      if wasCurrent then
         match schedule st with
         | .ok ((), st') => .ok st'
         | .error e => .error e
       else
-        .ok st
+        -- Local-disinheritance recheck (PR #831 review 2): the boot core's
+        -- entry-time current thread is STILL current but the G2b revert
+        -- lowered its effective priority — a ready thread whose priority
+        -- sits between the deboosted current's base and its old donation
+        -- must preempt now, not at the next timer tick.  The gated per-core
+        -- handler (`handleRescheduleSgiOnCore`, boot instance) switches only
+        -- when a queue candidate strictly outranks the deboosted current
+        -- (`candidateOutranksCurrentOnCore`), re-enqueueing the old current.
+        if currentDeboostedFrom st bootCoreId bootCurPre then
+          match handleRescheduleSgiOnCore st bootCoreId with
+          | .ok st' => .ok st'
+          | .error e => .error e
+        else
+          .ok st
   | _ => .error .invalidArgument
 
 -- ============================================================================

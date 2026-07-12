@@ -813,6 +813,32 @@ theorem RHTable.fold_preserves (t : RHTable α β) (init : γ) (f : γ → α �
       · exact hAcc
       · rename_i e _; exact hStep acc e.key e.value hAcc)
 
+/-- WS-SM SM6.E: fold property preservation **with the visited entry's lookup
+fact**.  Strengthens `fold_preserves`: under the table invariant, every entry
+the fold body visits satisfies `t.get? k = some v`
+(`slot_entry_implies_get`), so the step hypothesis may consume the lookup —
+the keystone for per-key characterisations of object-store sweeps
+(`removeFromAllEndpointQueues` / `removeFromAllNotificationWaitLists`),
+where the step must know that the visited key's stored value has the kind
+the body dispatched on. -/
+theorem RHTable.fold_preserves_of_lookup [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (init : γ) (f : γ → α → β → γ)
+    (P : γ → Prop) (hExt : t.invExt) (hInit : P init)
+    (hStep : ∀ acc k v, t.get? k = some v → P acc → P (f acc k v)) :
+    P (t.fold init f) := by
+  unfold RHTable.fold
+  exact Array.foldl_induction
+    (motive := fun _ acc => P acc)
+    hInit
+    (fun i acc hAcc => by
+      simp only []
+      split
+      · exact hAcc
+      · rename_i e hSlot
+        have hi : i.val < t.capacity := t.hSlotsLen ▸ i.isLt
+        have hGet := RHTable.slot_entry_implies_get t i.val hi e hSlot hExt
+        exact hStep acc e.key e.value hGet hAcc)
+
 -- Helper: fold induction for filter when every entry with key == k has f = false
 -- (the predicate-based variant of filter_fold_absent)
 private theorem filter_fold_absent_by_pred [BEq α] [Hashable α] [LawfulBEq α]

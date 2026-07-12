@@ -1359,10 +1359,42 @@ core's run queue *changed* across `pre → post`.  Two material cases:
   priority unchanged, yet a freshly-runnable remote thread must be scheduled on its
   home core.  (The earlier priority-only gate dropped this SGI — the live wake
   arrived only at the home core's next timer tick.)
-* a **re-bucketing** — the thread was already runnable on its home core but its
-  *effective* run-queue bucket (`resolveEffectivePrioDeadline`) changed: a PIP boost
-  (PR #811 P2-2).  An *immaterial* boost (effective priority unchanged on an
-  already-runnable thread) migrates no bucket and so fires nothing.
+* a **re-bucketing / re-ranking** — the thread was already runnable on its home
+  core but its *effective* priority OR deadline (`resolveEffectivePrioDeadline`,
+  both components — audit closure: within-bucket selection is EDF, so a
+  deadline-only change re-ranks the candidate without moving its bucket)
+  changed: a PIP boost (PR #811 P2-2) or a `schedContextConfigure` deadline
+  rewrite.  An *immaterial* rewrite (both components unchanged on an
+  already-runnable thread) fires nothing.
+* a **deschedule** (WS-SM SM6.E) — the thread was *actively current* on its remote
+  home core in `pre` and in `post` is neither current nor queued there: a
+  cross-core suspend/cancellation removed it, so the home core must be poked to
+  stop executing it and dispatch a successor.  (Without this rule a live
+  `.tcbSuspend` of a remote-running victim would leave that core executing the
+  suspended thread until its next timer tick.)
+* a **weakened current** (WS-SM SM6.E, PR #831 review 2 + audit closure) — the
+  thread is still current on the same core in both `pre` and `post` but its
+  claim to the CPU weakened: its effective priority *dropped* (a PIP-revert
+  disinheritance) or its effective deadline moved *later* (EDF re-ranking —
+  `schedContextConfigure`): a ready thread on that core may now outrank the
+  running choice, so it must re-run its preemption gate.  A strengthening
+  (priority raise / deadline pulled earlier) fires nothing (the running choice
+  can only outrank strictly more), and a still-current thread is not in the
+  run queue (dequeue-on-dispatch), so the queue rules never cover this case.
+
+**Queue-branch precedence (audit note).**  A tid queued on its post-home
+never reaches the CURRENT rules.  This is sound under today's transitions —
+no single transition both removes a thread from being current on core A and
+re-enqueues it on a different core's queue (suspend never re-enqueues; wakes
+target non-current threads; migrating a *running* thread to a different
+specific core is rejected) — but it is a precedence assumption, not a
+theorem.  If such a transition is ever added, restructure this body to run
+the current scan unconditionally and union the emissions.
+
+**Scan completeness.**  The pre-current scan takes the FIRST core whose slot
+holds the tid; completeness rests on `currentThreadUniqueAcrossCores`
+(`Scheduler/Invariant/PerCore.lean`, audit closure) — a thread is current on
+at most one core, so there is no second core to miss.
 
 Factored out so the dispatch theorems reference it by name (the single object-store
 read site, mirroring `waitersOf`'s raw iteration). -/
@@ -1373,20 +1405,44 @@ def crossCoreSgiBody (pre post : SystemState) (execCore : CoreId) (oid : ObjId)
     match pre.getTcb? tpost.tid with
     | some tpre =>
       let home := SeLe4n.Kernel.determineTargetCore post tpost.tid
-      -- WS-SM SM5.F.4 (PR #811 P2-1, C9 runnability gate): a thread whose home is the
-      -- executing core needs no cross-core poke (single-core inert); a thread not
-      -- runnable on its home core in `post` has no run-queue bucket there to re-evaluate.
-      if home == execCore then none
-      else if tpost.tid ∈ post.scheduler.runQueueOnCore home then
-        -- The home core must re-run its scheduler iff `tpost.tid`'s presence in its
-        -- remote run queue is a *change* it has not yet seen.  Fire UNLESS the thread
-        -- was already runnable on `home` (so not a wake) AND its effective bucket is
-        -- unchanged (so not a re-bucketing) — the immaterial case that pokes nothing.
-        if (tpost.tid ∈ pre.scheduler.runQueueOnCore home)
+      if tpost.tid ∈ post.scheduler.runQueueOnCore home then
+        -- QUEUE rules (wake / re-bucketing), home-keyed: a queued thread lives
+        -- on its home core's run queue (the SM5.H.4 migration maintains this).
+        -- A home on the executing core needs no poke (single-core inert); fire
+        -- UNLESS the thread was already runnable on `home` (not a wake) AND its
+        -- effective bucket is unchanged (not a re-bucketing).
+        if home == execCore then none
+        else if (tpost.tid ∈ pre.scheduler.runQueueOnCore home)
             && ((SeLe4n.Kernel.resolveEffectivePrioDeadline pre tpre).1
-                  == (SeLe4n.Kernel.resolveEffectivePrioDeadline post tpost).1) then none
+                  == (SeLe4n.Kernel.resolveEffectivePrioDeadline post tpost).1)
+            && ((SeLe4n.Kernel.resolveEffectivePrioDeadline pre tpre).2.val
+                  == (SeLe4n.Kernel.resolveEffectivePrioDeadline post tpost).2.val) then none
         else some (home, SgiKind.reschedule)
-      else none
+      else
+        -- CURRENT rules (descheduled / weakened), keyed on the core the
+        -- thread was ACTUALLY current on in `pre` (PR #831 review 4): an
+        -- unbound thread can be current on a NON-home core (unbinding a
+        -- running secondary-core thread is admitted, and its home reverts to
+        -- boot — see `runningCoreOf?`), so keying these rules on `home` made
+        -- a deschedule/deboost of such a thread invisible to the diff.
+        match SeLe4n.Kernel.Concurrency.allCores.find? (fun c =>
+            pre.scheduler.currentOnCore c == some tpost.tid) with
+        | some preCur =>
+          if preCur == execCore then none
+          else if !(post.scheduler.currentOnCore preCur == some tpost.tid) then
+            -- descheduled-current (WS-SM SM6.E): a cross-core cancellation
+            -- removed the running victim — poke the core that was executing it.
+            some (preCur, SgiKind.reschedule)
+          else if ((SeLe4n.Kernel.resolveEffectivePrioDeadline post tpost).1.val
+                < (SeLe4n.Kernel.resolveEffectivePrioDeadline pre tpre).1.val)
+              || ((SeLe4n.Kernel.resolveEffectivePrioDeadline pre tpre).2.val
+                < (SeLe4n.Kernel.resolveEffectivePrioDeadline post tpost).2.val) then
+            -- deboosted-current (PR #831 review 2): still current, effective
+            -- priority dropped — the running core must re-run its preemption
+            -- gate.  A raise fires nothing.
+            some (preCur, SgiKind.reschedule)
+          else none
+        | none => none
     | none => none
   | _ => none
 
@@ -1408,23 +1464,58 @@ theorem crossCoreSgiBody_reschedule (pre post : SystemState) (ec : CoreId) (oid 
   · split at h
     · simp only [] at h
       split at h
-      · simp at h
       · split at h
+        · simp at h
         · split at h
           · simp at h
           · simp only [Option.some.injEq] at h; rw [← h]
+      · split at h
+        · split at h
+          · simp at h
+          · split at h
+            · simp only [Option.some.injEq] at h; rw [← h]
+            · split at h
+              · simp only [Option.some.injEq] at h; rw [← h]
+              · simp at h
         · simp at h
     · simp at h
   · simp at h
 
-/-- WS-SM SM5.F.4: under all-boot homes (single-core) the dispatch body is `none`. -/
+/-- PR #831 review 4: on a single-core deployment the pre-state current scan
+can only resolve to the boot core — every secondary current slot is empty. -/
+theorem currentScan_boot_of_single_core (pre : SystemState) (tid : SeLe4n.ThreadId)
+    (hNoRemoteCur : ∀ c : CoreId, c ≠ bootCoreId →
+      pre.scheduler.currentOnCore c = none)
+    {c : CoreId}
+    (hFind : SeLe4n.Kernel.Concurrency.allCores.find? (fun c =>
+        pre.scheduler.currentOnCore c == some tid) = some c) :
+    c = bootCoreId := by
+  have hp := List.find?_some hFind
+  by_cases hB : c = bootCoreId
+  · exact hB
+  · rw [hNoRemoteCur c hB] at hp
+    simp at hp
+
+/-- WS-SM SM5.F.4: under all-boot homes AND empty secondary current slots
+(single-core deployment — PR #831 review 4 added the current-slot premise when
+the descheduled/deboosted rules were re-keyed from the home to the pre-state
+running core) the dispatch body is `none`. -/
 theorem crossCoreSgiBody_none_single_core (pre post : SystemState) (oid : ObjId)
-    (hAllBoot : ∀ t, SeLe4n.Kernel.determineTargetCore post t = bootCoreId) :
+    (hAllBoot : ∀ t, SeLe4n.Kernel.determineTargetCore post t = bootCoreId)
+    (hNoRemoteCur : ∀ c : CoreId, c ≠ bootCoreId →
+      pre.scheduler.currentOnCore c = none) :
     crossCoreSgiBody pre post bootCoreId oid = none := by
   unfold crossCoreSgiBody
   split
   · split
-    · simp [hAllBoot]
+    · simp only []
+      split
+      · rw [if_pos (by simp [hAllBoot])]
+      · split
+        · rename_i preCur heq
+          rw [if_pos (by
+            simp [currentScan_boot_of_single_core pre _ hNoRemoteCur heq])]
+        · rfl
     · rfl
   · rfl
 
@@ -1450,8 +1541,61 @@ theorem crossCoreSgiBody_remote_wake (pre post : SystemState) (execCore : CoreId
   unfold crossCoreSgiBody
   rw [hPost]
   simp only [hPre]
-  rw [if_neg (by simpa using hRemote), if_pos hPostRq,
+  rw [if_pos hPostRq, if_neg (by simpa using hRemote),
       if_neg (by simp [hPreNotRq])]
+
+/-- WS-SM SM6.E (the deschedule-SGI rule, positive direction): a thread that was
+**actively current** on some *remote* core in `pre` (the pre-state running-core
+scan — PR #831 review 4: keyed on the core actually running it, which for an
+unbound thread may differ from its home) and in `post` is neither current there
+nor queued on its home makes the dispatch body emit a `.reschedule` SGI to that
+running core — the cross-core poke a suspend/cancellation of a running victim
+warrants, so that core stops executing it.  The suspend-side companion of
+`crossCoreSgiBody_remote_wake`. -/
+theorem crossCoreSgiBody_remote_deschedule (pre post : SystemState) (execCore : CoreId)
+    (oid : ObjId) (tpost tpre : TCB) (preCur : CoreId)
+    (hPost : post.objects[oid]? = some (.tcb tpost))
+    (hPre : pre.getTcb? tpost.tid = some tpre)
+    (hPostNotRq : tpost.tid ∉
+        post.scheduler.runQueueOnCore (SeLe4n.Kernel.determineTargetCore post tpost.tid))
+    (hFind : SeLe4n.Kernel.Concurrency.allCores.find? (fun c =>
+        pre.scheduler.currentOnCore c == some tpost.tid) = some preCur)
+    (hRemote : preCur ≠ execCore)
+    (hPostNotCur : post.scheduler.currentOnCore preCur ≠ some tpost.tid) :
+    crossCoreSgiBody pre post execCore oid
+      = some (preCur, SgiKind.reschedule) := by
+  unfold crossCoreSgiBody
+  rw [hPost]
+  simp only [hPre, hFind]
+  rw [if_neg hPostNotRq, if_neg (by simpa using hRemote),
+      if_pos (by simp [hPostNotCur])]
+
+/-- WS-SM SM6.E (the deboosted-current rule, positive direction — PR #831
+review 2, re-keyed by review 4 on the pre-state running core): a thread that is
+**still current** on the same *remote* core across `pre → post` but whose
+effective priority *dropped* (a PIP-revert disinheritance) makes the dispatch
+body emit a `.reschedule` SGI to that core, so a ready thread that now outranks
+the deboosted current is dispatched instead of waiting for the next timer tick.
+The still-current companion of `crossCoreSgiBody_remote_deschedule`. -/
+theorem crossCoreSgiBody_remote_deboost_current (pre post : SystemState)
+    (execCore : CoreId) (oid : ObjId) (tpost tpre : TCB) (preCur : CoreId)
+    (hPost : post.objects[oid]? = some (.tcb tpost))
+    (hPre : pre.getTcb? tpost.tid = some tpre)
+    (hPostNotRq : tpost.tid ∉
+        post.scheduler.runQueueOnCore (SeLe4n.Kernel.determineTargetCore post tpost.tid))
+    (hFind : SeLe4n.Kernel.Concurrency.allCores.find? (fun c =>
+        pre.scheduler.currentOnCore c == some tpost.tid) = some preCur)
+    (hRemote : preCur ≠ execCore)
+    (hPostCur : post.scheduler.currentOnCore preCur = some tpost.tid)
+    (hDrop : (SeLe4n.Kernel.resolveEffectivePrioDeadline post tpost).1.val
+        < (SeLe4n.Kernel.resolveEffectivePrioDeadline pre tpre).1.val) :
+    crossCoreSgiBody pre post execCore oid
+      = some (preCur, SgiKind.reschedule) := by
+  unfold crossCoreSgiBody
+  rw [hPost]
+  simp only [hPre, hFind]
+  rw [if_neg hPostNotRq, if_neg (by simpa using hRemote),
+      if_neg (by simp [hPostCur]), if_pos (by simp [hDrop])]
 
 /-- WS-SM SM5.F.4: every SGI the diff-based dispatch emits is a `.reschedule` — it
 pokes cores only to reschedule, never with a foreign SGI kind. -/
@@ -1469,10 +1613,13 @@ SGI.  No production thread on the current single-core path has a remote home, so
 `computeCrossCoreSgis` is `[]` there — the dispatch is safe to wire (trace-preserving)
 and activates only once per-core affinities exist. -/
 theorem computeCrossCoreSgis_nil_single_core (pre post : SystemState)
-    (hAllBoot : ∀ t, SeLe4n.Kernel.determineTargetCore post t = bootCoreId) :
+    (hAllBoot : ∀ t, SeLe4n.Kernel.determineTargetCore post t = bootCoreId)
+    (hNoRemoteCur : ∀ c : CoreId, c ≠ bootCoreId →
+      pre.scheduler.currentOnCore c = none) :
     computeCrossCoreSgis pre post bootCoreId = [] := by
   unfold computeCrossCoreSgis
-  rw [List.filterMap_eq_nil_iff.mpr (fun oid _ => crossCoreSgiBody_none_single_core pre post oid hAllBoot)]
+  rw [List.filterMap_eq_nil_iff.mpr (fun oid _ =>
+    crossCoreSgiBody_none_single_core pre post oid hAllBoot hNoRemoteCur)]
   rfl
 
 /-- WS-SM SM5.F.4 (SM6 dispatch, generic syscall path): fire the cross-core
@@ -1485,10 +1632,12 @@ def crossCoreWakeDispatch (pre post : SystemState) (execCore : CoreId) : BaseIO 
 
 /-- WS-SM SM5.F.4: the diff-based syscall dispatch is inert (`pure ()`) on single-core. -/
 theorem crossCoreWakeDispatch_singleCore (pre post : SystemState)
-    (hAllBoot : ∀ t, SeLe4n.Kernel.determineTargetCore post t = bootCoreId) :
+    (hAllBoot : ∀ t, SeLe4n.Kernel.determineTargetCore post t = bootCoreId)
+    (hNoRemoteCur : ∀ c : CoreId, c ≠ bootCoreId →
+      pre.scheduler.currentOnCore c = none) :
     crossCoreWakeDispatch pre post bootCoreId = pure () := by
   unfold crossCoreWakeDispatch
-  rw [computeCrossCoreSgis_nil_single_core pre post hAllBoot]
+  rw [computeCrossCoreSgis_nil_single_core pre post hAllBoot hNoRemoteCur]
   rfl
 
 /-- WS-SM SM5.F.4 (SM6 dispatch, chain path): run the pure cross-core PIP boost chain

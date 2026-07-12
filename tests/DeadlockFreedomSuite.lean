@@ -456,10 +456,12 @@ private def runModeAwareChecks : IO Unit := do
 
 private def runSizeBoundChecks : IO Unit := do
   IO.println "--- §9 SM3.D.6b — static lock-set size bounds ---"
-  -- A concrete largest-footprint lock set (tcbSuspend, 4 extensions) fits.
+  -- A concrete largest-footprint lock set (tcbSuspend, 5 extensions —
+  -- WS-SM SM6.E added the reply-link teardown write lock) fits exactly
+  -- at the bound (8 distinct locks = maxLockSetSize).
   let suspendSet := lockSet_tcbSuspend (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
     (ThreadId.ofNat 3) (some (SeLe4n.ObjId.ofNat 4)) (some (SeLe4n.ObjId.ofNat 5))
-    (some ⟨6⟩) (some (ThreadId.ofNat 7))
+    (some ⟨6⟩) (some (ThreadId.ofNat 7)) (some ⟨8⟩)
   assertBool "lockSet_tcbSuspend (all options) size ≤ maxLockSetSize"
     (decide (suspendSet.size ≤ maxLockSetSize))
   -- replyRecv (3 extensions, base 4) — the other deepest footprint.

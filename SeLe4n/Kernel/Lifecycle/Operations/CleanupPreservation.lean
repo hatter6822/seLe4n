@@ -8,6 +8,9 @@
 -/
 
 import SeLe4n.Kernel.Lifecycle.Operations.Cleanup
+-- WS-SM SM6.E: `returnDonatedSchedContext_preserves_objects_invExt` (AI4-A),
+-- consumed by `cleanupDonatedSchedContext_preserves_objects_invExt`.
+import SeLe4n.Kernel.IPC.Invariant.Defs
 
 /-!
 AN4-G.5 (LIF-M05) child module extracted from
@@ -81,7 +84,7 @@ theorem removeFromAllEndpointQueues_preserves
                 acc.lifecycle = st.lifecycle ∧
                 acc.serviceRegistry = st.serviceRegistry)
     hSplice
-    (fun acc _ _ hAcc => by split <;> exact hAcc)
+    (fun acc _ _ hAcc => by split <;> first | exact hAcc | (split <;> exact hAcc))
 
 /-- R4-A.1 + T5-E: removeFromAllEndpointQueues preserves the scheduler. -/
 theorem removeFromAllEndpointQueues_scheduler_eq
@@ -113,7 +116,7 @@ theorem removeFromAllNotificationWaitLists_preserves
     (fun acc => acc.scheduler = st.scheduler ∧ acc.lifecycle = st.lifecycle ∧
                 acc.serviceRegistry = st.serviceRegistry)
     ⟨rfl, rfl, rfl⟩
-    (fun acc _ _ hAcc => by split <;> exact hAcc)
+    (fun acc _ _ hAcc => by split <;> first | exact hAcc | (split <;> exact hAcc))
 
 /-- R4-A.2: removeFromAllNotificationWaitLists preserves the scheduler. -/
 theorem removeFromAllNotificationWaitLists_scheduler_eq
@@ -132,6 +135,676 @@ theorem removeFromAllNotificationWaitLists_serviceRegistry_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (removeFromAllNotificationWaitLists st tid).serviceRegistry = st.serviceRegistry :=
   (removeFromAllNotificationWaitLists_preserves st tid).2.2
+
+-- ============================================================================
+-- WS-SM SM6.E: cleanup primitives preserve `objects.invExt`
+-- ============================================================================
+-- The per-step Robin-Hood external invariant, needed by the SM6.E
+-- cancellation invariant surface (`cancelIpcBlocking_preserves_objects_invExt`
+-- composes these with `restoreToReady_invExt`).  Every mutation below is an
+-- `objects.insert`, so each step is `RHTable.insert_preserves_invExt` and the
+-- store-wide sweeps compose via `RHTable.fold_preserves`.
+
+/-- WS-SM SM6.E: `spliceOutMidQueueNode` preserves `objects.invExt` — the two
+link patches (predecessor `queueNext`, successor `queuePrev`) are each a
+single conditional `objects.insert`. -/
+theorem spliceOutMidQueueNode_preserves_objects_invExt
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) :
+    (spliceOutMidQueueNode st tid).objects.invExt := by
+  unfold spliceOutMidQueueNode
+  split
+  · exact hInv
+  · -- Some-TCB arm: the two link patches are each a conditional insert over
+    -- the previous table.  Every match leaf is either the untouched table
+    -- (`hInv`) or a chain of at most two `insert`s over it; the cascade
+    -- closes leaves with `hInv`, peels `insert`s via
+    -- `insert_preserves_invExt`, and splits stuck matches until done.
+    dsimp only
+    repeat' first
+      | exact hInv
+      | exact SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _ hInv
+      | apply SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt
+      | split
+
+/-- WS-SM SM6.E: `removeFromAllEndpointQueues` preserves `objects.invExt` —
+the splice preserves it, and the endpoint sweep is a fold whose every step
+is an `objects.insert`. -/
+theorem removeFromAllEndpointQueues_preserves_objects_invExt
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) :
+    (removeFromAllEndpointQueues st tid).objects.invExt := by
+  unfold removeFromAllEndpointQueues
+  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves
+    (spliceOutMidQueueNode st tid).objects (spliceOutMidQueueNode st tid) _
+    (fun acc => acc.objects.invExt)
+    (spliceOutMidQueueNode_preserves_objects_invExt st tid hInv)
+    (fun acc _ _ hAcc => by
+      split
+      · split
+        · exact SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _ hAcc
+        · exact hAcc
+      · exact hAcc)
+
+/-- WS-SM SM6.E: `removeFromAllNotificationWaitLists` preserves
+`objects.invExt` — the waiter-list sweep is a fold whose every step is an
+`objects.insert`. -/
+theorem removeFromAllNotificationWaitLists_preserves_objects_invExt
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) :
+    (removeFromAllNotificationWaitLists st tid).objects.invExt := by
+  unfold removeFromAllNotificationWaitLists
+  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves st.objects st _
+    (fun acc => acc.objects.invExt) hInv
+    (fun acc _ _ hAcc => by
+      split
+      · split
+        · exact SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _ hAcc
+        · exact hAcc
+      · exact hAcc)
+
+
+-- ============================================================================
+-- WS-SM SM6.E: per-key lookup characterisation of the cleanup sweeps
+-- ============================================================================
+-- The frame facts the cross-core cancellation composite needs closed-form:
+-- a key holding a TCB before the sweep holds a TCB with the **same
+-- `cpuAffinity`** afterwards (the sweeps rewrite endpoints/notifications and
+-- patch queue-link fields only), and a key holding no TCB never acquires
+-- one.  Built on the SM6.E fold keystone
+-- (`RHTable.fold_preserves_of_lookup`): the fold step learns the visited
+-- key's stored value, so an endpoint-valued visit can never alias a
+-- TCB-holding key.
+
+/-- WS-SM SM6.E: re-inserting an affinity-preserving rewrite `q` of the TCB
+`p` read at key `nid` preserves TCB-kind and `cpuAffinity` at every key that
+held a TCB before the insert — the single-step frame instantiated by both
+`spliceOutMidQueueNode` link patches and by every conditional TCB rewrite in
+the suspend teardown (`restoreToReady`, `clearTcbReplyObject`). -/
+theorem insert_tcb_rewrite_lookup
+    (objs : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject)
+    (nid k : SeLe4n.ObjId) (p q t0 : TCB)
+    (hInv : objs.invExt)
+    (hRead : objs[nid]? = some (.tcb p))
+    (hAff : q.cpuAffinity = p.cpuAffinity)
+    (hPre : objs[k]? = some (.tcb t0)) :
+    ∃ t' : TCB, (objs.insert nid (.tcb q))[k]? = some (.tcb t')
+      ∧ t'.cpuAffinity = t0.cpuAffinity := by
+  by_cases hK : nid = k
+  · -- The patched neighbour *is* `k`: the read value is `t0` (lookup
+    -- determinism), and the rewrite preserves `cpuAffinity` by hypothesis.
+    subst hK
+    have hpt : p = t0 := by
+      rw [hPre] at hRead
+      injection hRead with h
+      injection h with h
+      exact h.symm
+    subst hpt
+    exact ⟨q, SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self _ _ _ hInv, hAff⟩
+  · refine ⟨t0, ?_, rfl⟩
+    show (objs.insert nid (.tcb q)).get? k = some (.tcb t0)
+    rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _
+      (fun hbeq => hK (eq_of_beq hbeq)) hInv]
+    exact hPre
+
+/-- WS-SM SM6.E: `spliceOutMidQueueNode` preserves TCB-kind and `cpuAffinity`
+at every key — the link patches write `.tcb` values that differ from the
+values they read only in intrusive queue-link fields. -/
+theorem spliceOutMidQueueNode_tcb_lookup
+    (st : SystemState) (tid : SeLe4n.ThreadId) (k : SeLe4n.ObjId) (t0 : TCB)
+    (hInv : st.objects.invExt)
+    (hPre : st.objects[k]? = some (.tcb t0)) :
+    ∃ t' : TCB, (spliceOutMidQueueNode st tid).objects[k]? = some (.tcb t')
+      ∧ t'.cpuAffinity = t0.cpuAffinity := by
+  simp only [spliceOutMidQueueNode]
+  cases lookupTcb st tid with
+  | none => exact ⟨t0, hPre, rfl⟩
+  | some tcb =>
+    simp only []
+    cases tcb.queuePrev with
+    | none =>
+      -- No predecessor patch: the successor patch acts on `st.objects`.
+      simp only []
+      cases tcb.queueNext with
+      | none => exact ⟨t0, hPre, rfl⟩
+      | some nextTid =>
+        simp only []
+        cases hL2 : st.objects[nextTid.toObjId]? with
+        | none => exact ⟨t0, hPre, rfl⟩
+        | some obj =>
+          cases obj
+          case tcb nextTcb =>
+            exact insert_tcb_rewrite_lookup st.objects nextTid.toObjId k nextTcb
+              _ t0 hInv hL2 rfl hPre
+          all_goals exact ⟨t0, hPre, rfl⟩
+    | some prevTid =>
+      simp only []
+      cases hL : st.objects[prevTid.toObjId]? with
+      | none =>
+        -- Absent predecessor entry: successor patch over `st.objects`.
+        simp only []
+        cases tcb.queueNext with
+        | none => exact ⟨t0, hPre, rfl⟩
+        | some nextTid =>
+          simp only []
+          cases hL2 : st.objects[nextTid.toObjId]? with
+          | none => exact ⟨t0, hPre, rfl⟩
+          | some obj =>
+            cases obj
+            case tcb nextTcb =>
+              exact insert_tcb_rewrite_lookup st.objects nextTid.toObjId k nextTcb
+                _ t0 hInv hL2 rfl hPre
+            all_goals exact ⟨t0, hPre, rfl⟩
+      | some obj =>
+        cases obj
+        case tcb prevTcb =>
+          -- Predecessor patch applied: stage 2 acts on the patched table.
+          simp only []
+          cases tcb.queueNext with
+          | none =>
+            exact insert_tcb_rewrite_lookup st.objects prevTid.toObjId k prevTcb
+              _ t0 hInv hL rfl hPre
+          | some nextTid =>
+            simp only []
+            have hInv1 : (st.objects.insert prevTid.toObjId
+                (.tcb { prevTcb with queueNext := some nextTid })).invExt :=
+              SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _ hInv
+            obtain ⟨t₁, hL1, hAff1⟩ :=
+              insert_tcb_rewrite_lookup st.objects prevTid.toObjId k prevTcb
+                { prevTcb with queueNext := some nextTid } t0 hInv hL rfl hPre
+            cases hL2 : (st.objects.insert prevTid.toObjId
+                (.tcb { prevTcb with queueNext := some nextTid }))[nextTid.toObjId]? with
+            | none => exact ⟨t₁, hL1, hAff1⟩
+            | some obj2 =>
+              cases obj2
+              case tcb nextTcb =>
+                obtain ⟨t₂, hL2', hAff2⟩ :=
+                  insert_tcb_rewrite_lookup
+                    (st.objects.insert prevTid.toObjId
+                      (.tcb { prevTcb with queueNext := some nextTid }))
+                    nextTid.toObjId k nextTcb
+                    { nextTcb with queuePrev := some prevTid } t₁ hInv1 hL2 rfl hL1
+                exact ⟨t₂, hL2', hAff2.trans hAff1⟩
+              all_goals exact ⟨t₁, hL1, hAff1⟩
+        all_goals
+          -- Non-TCB predecessor entry: successor patch over `st.objects`.
+          (simp only []
+           cases tcb.queueNext with
+           | none => exact ⟨t0, hPre, rfl⟩
+           | some nextTid =>
+             simp only []
+             cases hL2 : st.objects[nextTid.toObjId]? with
+             | none => exact ⟨t0, hPre, rfl⟩
+             | some obj2 =>
+               cases obj2
+               case tcb nextTcb =>
+                 exact insert_tcb_rewrite_lookup st.objects nextTid.toObjId k nextTcb
+                   _ t0 hInv hL2 rfl hPre
+               all_goals exact ⟨t0, hPre, rfl⟩)
+
+/-- WS-SM SM6.E: the endpoint sweep preserves TCB-kind and `cpuAffinity` at
+every key (and `objects.invExt`) — every fold step rewrites an
+`.endpoint`-valued key, which can never alias a TCB-holding key (the fold
+keystone `RHTable.fold_preserves_of_lookup` supplies the visited key's
+stored value, so the kind clash discharges the disequality). -/
+theorem removeFromAllEndpointQueues_tcb_lookup
+    (st : SystemState) (tid : SeLe4n.ThreadId) (k : SeLe4n.ObjId) (t0 : TCB)
+    (hInv : st.objects.invExt)
+    (hPre : st.objects[k]? = some (.tcb t0)) :
+    (removeFromAllEndpointQueues st tid).objects.invExt
+    ∧ ∃ t' : TCB,
+      (removeFromAllEndpointQueues st tid).objects[k]? = some (.tcb t')
+      ∧ t'.cpuAffinity = t0.cpuAffinity := by
+  obtain ⟨t₁, hL1, hAff1⟩ := spliceOutMidQueueNode_tcb_lookup st tid k t0 hInv hPre
+  have hInvS := spliceOutMidQueueNode_preserves_objects_invExt st tid hInv
+  unfold removeFromAllEndpointQueues
+  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves_of_lookup
+    (spliceOutMidQueueNode st tid).objects (spliceOutMidQueueNode st tid) _
+    (fun acc => acc.objects.invExt ∧ ∃ t' : TCB,
+      acc.objects[k]? = some (.tcb t') ∧ t'.cpuAffinity = t0.cpuAffinity)
+    hInvS
+    ⟨hInvS, t₁, hL1, hAff1⟩
+    (fun acc x v hV hAcc => by
+      obtain ⟨hAccInv, t', hL', hAff'⟩ := hAcc
+      split
+      · -- `.endpoint` step: the visited key holds an endpoint, so it cannot
+        -- be `k` (which holds a TCB in the fold source by `hL1`).  The
+        -- write-set-honest sweep only inserts when the victim touches the
+        -- endpoint's head/tail slots (PR #831 review 4); the untouched arm
+        -- is the identity.
+        split
+        · have hNe : ¬(x == k) = true := fun hbeq => by
+            have hxk : x = k := eq_of_beq hbeq
+            subst hxk
+            have hclash := hL1.symm.trans hV
+            injection hclash with h
+            injection h
+          exact ⟨SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _ hAccInv,
+            t',
+            (SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _
+              hNe hAccInv).trans hL',
+            hAff'⟩
+        · exact ⟨hAccInv, t', hL', hAff'⟩
+      · exact ⟨hAccInv, t', hL', hAff'⟩)
+
+/-- WS-SM SM6.E: the notification sweep preserves TCB-kind and `cpuAffinity`
+at every key (and `objects.invExt`) — every fold step rewrites a
+`.notification`-valued key, which can never alias a TCB-holding key. -/
+theorem removeFromAllNotificationWaitLists_tcb_lookup
+    (st : SystemState) (tid : SeLe4n.ThreadId) (k : SeLe4n.ObjId) (t0 : TCB)
+    (hInv : st.objects.invExt)
+    (hPre : st.objects[k]? = some (.tcb t0)) :
+    (removeFromAllNotificationWaitLists st tid).objects.invExt
+    ∧ ∃ t' : TCB,
+      (removeFromAllNotificationWaitLists st tid).objects[k]? = some (.tcb t')
+      ∧ t'.cpuAffinity = t0.cpuAffinity := by
+  unfold removeFromAllNotificationWaitLists
+  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves_of_lookup st.objects st _
+    (fun acc => acc.objects.invExt ∧ ∃ t' : TCB,
+      acc.objects[k]? = some (.tcb t') ∧ t'.cpuAffinity = t0.cpuAffinity)
+    hInv
+    ⟨hInv, t0, hPre, rfl⟩
+    (fun acc x v hV hAcc => by
+      obtain ⟨hAccInv, t', hL', hAff'⟩ := hAcc
+      split
+      · -- write-set-honest sweep (PR #831 review 4): the insert arm is
+        -- guarded by waiter membership; the untouched arm is the identity.
+        split
+        · have hNe : ¬(x == k) = true := fun hbeq => by
+            have hxk : x = k := eq_of_beq hbeq
+            subst hxk
+            have hclash := hPre.symm.trans hV
+            injection hclash with h
+            injection h
+          exact ⟨SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _ hAccInv,
+            t',
+            (SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _
+              hNe hAccInv).trans hL',
+            hAff'⟩
+        · exact ⟨hAccInv, t', hL', hAff'⟩
+      · exact ⟨hAccInv, t', hL', hAff'⟩)
+
+/-- WS-SM SM6.E: a thread id whose key holds no TCB resolves to `none` under
+`lookupTcb` — both the reserved-id guard and the kind-mismatch arm return
+`none`. -/
+theorem lookupTcb_eq_none_of_no_tcb
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hNo : ∀ t : TCB, st.objects[tid.toObjId]? ≠ some (.tcb t)) :
+    lookupTcb st tid = none := by
+  unfold lookupTcb
+  split
+  · rfl
+  · split
+    · rename_i t heq
+      exact absurd heq (hNo t)
+    · rfl
+
+/-- WS-SM SM6.E: the mid-queue splice is the identity when the spliced thread
+resolves to no TCB — the link patches are guarded on the victim's TCB read. -/
+theorem spliceOutMidQueueNode_eq_self_of_lookupTcb_none
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (h : lookupTcb st tid = none) :
+    spliceOutMidQueueNode st tid = st := by
+  unfold spliceOutMidQueueNode
+  rw [h]
+
+/-- WS-SM SM6.E: the endpoint sweep never materialises a TCB at the swept
+thread's key — when the key holds no TCB before the sweep, it holds no TCB
+afterwards (the splice is guarded to the identity and every fold step writes
+an `.endpoint` value). -/
+theorem removeFromAllEndpointQueues_no_tcb
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt)
+    (hNo : ∀ t : TCB, st.objects[tid.toObjId]? ≠ some (.tcb t)) :
+    (removeFromAllEndpointQueues st tid).objects.invExt
+    ∧ ∀ t : TCB,
+      (removeFromAllEndpointQueues st tid).objects[tid.toObjId]? ≠ some (.tcb t) := by
+  have hSplice : spliceOutMidQueueNode st tid = st :=
+    spliceOutMidQueueNode_eq_self_of_lookupTcb_none st tid
+      (lookupTcb_eq_none_of_no_tcb st tid hNo)
+  unfold removeFromAllEndpointQueues
+  rw [hSplice]
+  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves_of_lookup st.objects st _
+    (fun acc => acc.objects.invExt ∧ ∀ t : TCB,
+      acc.objects[tid.toObjId]? ≠ some (.tcb t))
+    hInv
+    ⟨hInv, hNo⟩
+    (fun acc x v _ hAcc => by
+      obtain ⟨hAccInv, hNoT⟩ := hAcc
+      split
+      · -- write-set-honest sweep (PR #831 review 4): the insert arm is
+        -- guarded; the untouched arm is the identity.
+        split
+        · refine ⟨SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _ hAccInv,
+            fun t h => ?_⟩
+          by_cases hx : (x == tid.toObjId) = true
+          · -- The swept key itself is rewritten to an `.endpoint` — not a TCB.
+            have hxk : x = tid.toObjId := eq_of_beq hx
+            subst hxk
+            have hclash := (SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self
+              acc.objects tid.toObjId _ hAccInv).symm.trans h
+            injection hclash with hclash
+            injection hclash
+          · exact hNoT t ((SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne
+              acc.objects x tid.toObjId _ hx hAccInv).symm.trans h)
+        · exact ⟨hAccInv, hNoT⟩
+      · exact ⟨hAccInv, hNoT⟩)
+
+/-- WS-SM SM6.E: the notification sweep never materialises a TCB at the swept
+thread's key — every fold step writes a `.notification` value. -/
+theorem removeFromAllNotificationWaitLists_no_tcb
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt)
+    (hNo : ∀ t : TCB, st.objects[tid.toObjId]? ≠ some (.tcb t)) :
+    (removeFromAllNotificationWaitLists st tid).objects.invExt
+    ∧ ∀ t : TCB,
+      (removeFromAllNotificationWaitLists st tid).objects[tid.toObjId]?
+        ≠ some (.tcb t) := by
+  unfold removeFromAllNotificationWaitLists
+  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves_of_lookup st.objects st _
+    (fun acc => acc.objects.invExt ∧ ∀ t : TCB,
+      acc.objects[tid.toObjId]? ≠ some (.tcb t))
+    hInv
+    ⟨hInv, hNo⟩
+    (fun acc x v _ hAcc => by
+      obtain ⟨hAccInv, hNoT⟩ := hAcc
+      split
+      · -- write-set-honest sweep (PR #831 review 4): the insert arm is
+        -- guarded; the untouched arm is the identity.
+        split
+        · refine ⟨SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _ hAccInv,
+            fun t h => ?_⟩
+          by_cases hx : (x == tid.toObjId) = true
+          · have hxk : x = tid.toObjId := eq_of_beq hx
+            subst hxk
+            have hclash := (SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self
+              acc.objects tid.toObjId _ hAccInv).symm.trans h
+            injection hclash with hclash
+            injection hclash
+          · exact hNoT t ((SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne
+              acc.objects x tid.toObjId _ hx hAccInv).symm.trans h)
+        · exact ⟨hAccInv, hNoT⟩
+      · exact ⟨hAccInv, hNoT⟩)
+
+-- ============================================================================
+-- WS-SM SM6.E: cleanup primitives preserve `ipcInvariant`
+-- ============================================================================
+-- The notification well-formedness invariant (`ipcInvariant`) across the
+-- cancellation sweeps: the splice and the endpoint sweep write only
+-- `.tcb`/`.endpoint` values (which can never be read back as a
+-- notification), and the notification sweep's filter+state-correction
+-- rewrite preserves the three-case well-formedness by construction.
+
+/-- WS-SM SM6.E: a notification read through a non-notification insert was
+already present in the base table — the table-level backward transport every
+non-notification write in the cancellation path instantiates. -/
+theorem notification_lookup_of_insert_no_notification
+    (objs : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject)
+    (nid : SeLe4n.ObjId) (v : KernelObject)
+    (hInv : objs.invExt)
+    (hV : ∀ n : Notification, v ≠ .notification n)
+    (oid : SeLe4n.ObjId) (ntfn : Notification)
+    (hL : (objs.insert nid v)[oid]? = some (.notification ntfn)) :
+    objs[oid]? = some (.notification ntfn) := by
+  by_cases hx : (nid == oid) = true
+  · have hk : nid = oid := eq_of_beq hx
+    subst hk
+    have hclash := (SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self
+      objs nid v hInv).symm.trans hL
+    injection hclash with hclash
+    exact absurd hclash (hV ntfn)
+  · exact (SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne
+      objs nid oid v hx hInv).symm.trans hL
+
+/-- WS-SM SM6.E: inserting a non-notification value preserves `ipcInvariant`
+— a notification read in the post-store either hits the inserted key (kind
+clash, vacuous) or was already present. -/
+theorem ipcInvariant_insert_no_notification
+    (st : SystemState) (nid : SeLe4n.ObjId) (v : KernelObject)
+    (hInv : st.objects.invExt)
+    (hV : ∀ n : Notification, v ≠ .notification n)
+    (hIpc : ipcInvariant st) :
+    ipcInvariant { st with objects := st.objects.insert nid v } := by
+  intro oid ntfn hL
+  exact hIpc oid ntfn
+    (notification_lookup_of_insert_no_notification st.objects nid v hInv hV oid ntfn hL)
+
+/-- WS-SM SM6.E: `.tcb`-insert instance of
+`ipcInvariant_insert_no_notification` (ctor-headed for robust inference). -/
+theorem ipcInvariant_insert_tcb
+    (st : SystemState) (nid : SeLe4n.ObjId) (t : TCB)
+    (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
+    ipcInvariant { st with objects := st.objects.insert nid (.tcb t) } :=
+  ipcInvariant_insert_no_notification st nid (.tcb t) hInv
+    (fun _ h => KernelObject.noConfusion h) hIpc
+
+/-- WS-SM SM6.E: `.endpoint`-insert instance of
+`ipcInvariant_insert_no_notification`. -/
+theorem ipcInvariant_insert_endpoint
+    (st : SystemState) (nid : SeLe4n.ObjId) (e : Endpoint)
+    (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
+    ipcInvariant { st with objects := st.objects.insert nid (.endpoint e) } :=
+  ipcInvariant_insert_no_notification st nid (.endpoint e) hInv
+    (fun _ h => KernelObject.noConfusion h) hIpc
+
+/-- WS-SM SM6.E: `spliceOutMidQueueNode` preserves `ipcInvariant` — both link
+patches write `.tcb` values, never a notification. -/
+theorem spliceOutMidQueueNode_preserves_ipcInvariant
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
+    ipcInvariant (spliceOutMidQueueNode st tid) := by
+  simp only [spliceOutMidQueueNode]
+  cases lookupTcb st tid with
+  | none => exact hIpc
+  | some tcb =>
+    simp only []
+    cases tcb.queuePrev with
+    | none =>
+      simp only []
+      cases tcb.queueNext with
+      | none => exact hIpc
+      | some nextTid =>
+        simp only []
+        cases st.objects[nextTid.toObjId]? with
+        | none => exact hIpc
+        | some obj =>
+          cases obj
+          case tcb nextTcb => exact ipcInvariant_insert_tcb st nextTid.toObjId _ hInv hIpc
+          all_goals exact hIpc
+    | some prevTid =>
+      simp only []
+      cases st.objects[prevTid.toObjId]? with
+      | none =>
+        simp only []
+        cases tcb.queueNext with
+        | none => exact hIpc
+        | some nextTid =>
+          simp only []
+          cases st.objects[nextTid.toObjId]? with
+          | none => exact hIpc
+          | some obj =>
+            cases obj
+            case tcb nextTcb =>
+              exact ipcInvariant_insert_tcb st nextTid.toObjId _ hInv hIpc
+            all_goals exact hIpc
+      | some obj =>
+        cases obj
+        case tcb prevTcb =>
+          simp only []
+          cases tcb.queueNext with
+          | none => exact ipcInvariant_insert_tcb st prevTid.toObjId _ hInv hIpc
+          | some nextTid =>
+            simp only []
+            have hInv1 : (st.objects.insert prevTid.toObjId
+                (.tcb { prevTcb with queueNext := some nextTid })).invExt :=
+              SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _ hInv
+            have hIpc1 : ipcInvariant { st with
+                objects := st.objects.insert prevTid.toObjId
+                  (.tcb { prevTcb with queueNext := some nextTid }) } :=
+              ipcInvariant_insert_tcb st prevTid.toObjId _ hInv hIpc
+            cases (st.objects.insert prevTid.toObjId
+                (.tcb { prevTcb with queueNext := some nextTid }))[nextTid.toObjId]? with
+            | none => exact hIpc1
+            | some obj2 =>
+              cases obj2
+              case tcb nextTcb =>
+                exact ipcInvariant_insert_tcb
+                  { st with
+                      objects := st.objects.insert prevTid.toObjId
+                        (.tcb { prevTcb with queueNext := some nextTid }) }
+                  nextTid.toObjId _ hInv1 hIpc1
+              all_goals exact hIpc1
+        all_goals
+          (simp only []
+           cases tcb.queueNext with
+           | none => exact hIpc
+           | some nextTid =>
+             simp only []
+             cases st.objects[nextTid.toObjId]? with
+             | none => exact hIpc
+             | some obj2 =>
+               cases obj2
+               case tcb nextTcb =>
+                 exact ipcInvariant_insert_tcb st nextTid.toObjId _ hInv hIpc
+               all_goals exact hIpc)
+
+/-- WS-SM SM6.E: the endpoint sweep preserves `ipcInvariant` — the splice
+writes `.tcb` values and every fold step writes an `.endpoint` value. -/
+theorem removeFromAllEndpointQueues_preserves_ipcInvariant
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
+    ipcInvariant (removeFromAllEndpointQueues st tid) := by
+  have hInvS := spliceOutMidQueueNode_preserves_objects_invExt st tid hInv
+  have hIpcS := spliceOutMidQueueNode_preserves_ipcInvariant st tid hInv hIpc
+  unfold removeFromAllEndpointQueues
+  exact (SeLe4n.Kernel.RobinHood.RHTable.fold_preserves
+    (spliceOutMidQueueNode st tid).objects (spliceOutMidQueueNode st tid) _
+    (fun acc => acc.objects.invExt ∧ ipcInvariant acc)
+    ⟨hInvS, hIpcS⟩
+    (fun acc _ _ hAcc => by
+      split
+      · split
+        · exact ⟨SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _ hAcc.1,
+            ipcInvariant_insert_endpoint acc _ _ hAcc.1 hAcc.2⟩
+        · exact hAcc
+      · exact hAcc)).2
+
+/-- WS-SM SM6.E: the sweep's waiter filter with sole-waiter state correction
+preserves notification well-formedness — filtering only shrinks the waiter
+list, and the correction transitions `.waiting` to `.idle` exactly when the
+filtered list is empty (a `.waiting` notification carries no pending badge,
+so the `.idle` shape holds by construction). -/
+theorem notificationQueueWellFormed_filter_correct
+    (notif : Notification) (tid : SeLe4n.ThreadId)
+    (hWF : notificationQueueWellFormed notif) :
+    notificationQueueWellFormed
+      { notif with
+          waitingThreads := notif.waitingThreads.filter (· != tid)
+          state := if notif.state = .waiting
+              ∧ (notif.waitingThreads.filter (· != tid)).val.isEmpty then .idle
+            else notif.state } := by
+  unfold notificationQueueWellFormed at hWF ⊢
+  cases hState : notif.state with
+  | idle =>
+    simp only [hState] at hWF
+    rw [if_neg (fun hC => NotificationState.noConfusion hC.1)]
+    exact ⟨by rw [NoDupList.val_filter, hWF.1]; rfl, hWF.2⟩
+  | waiting =>
+    simp only [hState] at hWF
+    by_cases hE : (notif.waitingThreads.filter (· != tid)).val.isEmpty = true
+    · -- Sole-waiter removal: the correction transitions to `.idle`.
+      rw [if_pos ⟨rfl, hE⟩]
+      exact ⟨List.isEmpty_iff.mp hE, hWF.2⟩
+    · -- Waiters remain: still `.waiting`, with a nonempty filtered list.
+      rw [if_neg (fun hC => hE hC.2)]
+      refine ⟨fun hNil => hE ?_, hWF.2⟩
+      rw [hNil]
+      rfl
+  | active =>
+    simp only [hState] at hWF
+    rw [if_neg (fun hC => NotificationState.noConfusion hC.1)]
+    exact ⟨by rw [NoDupList.val_filter, hWF.1]; rfl, hWF.2⟩
+
+/-- WS-SM SM6.E: the notification sweep preserves `ipcInvariant` — every fold
+step rewrites a notification to its filter-corrected form, which is
+well-formed from the source's invariant
+(`notificationQueueWellFormed_filter_correct`). -/
+theorem removeFromAllNotificationWaitLists_preserves_ipcInvariant
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
+    ipcInvariant (removeFromAllNotificationWaitLists st tid) := by
+  unfold removeFromAllNotificationWaitLists
+  exact (SeLe4n.Kernel.RobinHood.RHTable.fold_preserves_of_lookup st.objects st _
+    (fun acc => acc.objects.invExt ∧ ipcInvariant acc)
+    hInv ⟨hInv, hIpc⟩
+    (fun acc x v hV hAcc => by
+      obtain ⟨hAccInv, hAccIpc⟩ := hAcc
+      split
+      · -- `.notification notif` step: the corrected rewrite is well-formed
+        -- from the SOURCE table's invariant (`hIpc` at the visited key).
+        -- Write-set-honest sweep (PR #831 review 4): the insert arm is
+        -- guarded by waiter membership; the untouched arm is the identity.
+        rename_i notif
+        split
+        · refine ⟨SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _ hAccInv,
+            ?_⟩
+          have hWF : notificationInvariant
+              { notif with
+                  waitingThreads := notif.waitingThreads.filter (· != tid)
+                  state := if notif.state = .waiting
+                      ∧ (notif.waitingThreads.filter (· != tid)).val.isEmpty then .idle
+                    else notif.state } :=
+            notificationQueueWellFormed_filter_correct notif tid (hIpc x notif hV)
+          intro oid ntfn hL
+          by_cases hx : (x == oid) = true
+          · have hk : x = oid := eq_of_beq hx
+            subst hk
+            have hEq := (SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self
+              acc.objects x _ hAccInv).symm.trans hL
+            injection hEq with hEq
+            injection hEq with hEq
+            exact hEq ▸ hWF
+          · exact hAccIpc oid ntfn
+              ((SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne
+                acc.objects x oid _ hx hAccInv).symm.trans hL)
+        · exact ⟨hAccInv, hAccIpc⟩
+      · exact ⟨hAccInv, hAccIpc⟩)).2
+
+/-- WS-SM SM6.E: `cleanupDonatedSchedContext` preserves `objects.invExt` —
+the identity arms are trivial and the `.donated` arm delegates to
+`returnDonatedSchedContext` (three `storeObject` steps, AI4-A). -/
+theorem cleanupDonatedSchedContext_preserves_objects_invExt
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt)
+    (h : cleanupDonatedSchedContext st tid = .ok st') :
+    st'.objects.invExt := by
+  unfold cleanupDonatedSchedContext at h
+  split at h
+  · -- lookupTcb = none: identity.
+    injection h with h; subst h; exact hInv
+  · split at h
+    · -- `.donated scId originalOwner`: delegate to returnDonatedSchedContext.
+      exact returnDonatedSchedContext_preserves_objects_invExt _ _ _ _ _ hInv h
+    · -- `.bound` / `.unbound`: identity.
+      injection h with h; subst h; exact hInv
+
+/-- WS-SM SM6.E: `cleanupDonatedSchedContext` preserves `ipcInvariant` — the
+identity arms are trivial and the `.donated` arm's three `storeObject` steps
+write a SchedContext and two TCBs, never a notification
+(`returnDonatedSchedContext_notification_backward`). -/
+theorem cleanupDonatedSchedContext_preserves_ipcInvariant
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) (hIpc : ipcInvariant st)
+    (h : cleanupDonatedSchedContext st tid = .ok st') :
+    ipcInvariant st' := by
+  unfold cleanupDonatedSchedContext at h
+  split at h
+  · injection h with h; subst h; exact hIpc
+  · split at h
+    · intro oid ntfn hL
+      exact hIpc oid ntfn
+        (returnDonatedSchedContext_notification_backward _ _ _ _ _ hInv h oid ntfn hL)
+    · injection h with h; subst h; exact hIpc
 
 /-- After cleanup, the cleaned thread is not in the run queue. -/
 theorem cleanupTcbReferences_removes_from_runnable

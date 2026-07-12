@@ -4452,8 +4452,18 @@ theorem cancelDonatedDonation_preserves_projection
       chain updating `pipBoost` on each visited TCB. Preserves projection
       under `hChainHigh` (∀ t ∈ blockingChain st tid, t is high). Proven
       by induction on `blockingChain st tid`.
-    - **G3 `cancelIpcBlocking`**: `storeObject` at TCB (stripped fields
-      include `ipcState`, so `projectKernelObject` elides changes).
+    - **G3 `cancelIpcBlocking`**: the victim-TCB writes are covered by the
+      high-victim OBJECT gate (`projectKernelObject` does NOT strip
+      `ipcState` — the audit-corrected sketch: a high victim's whole object
+      is elided, which is what covers its field rewrites).  The open
+      obligation is the **endpoint-queue splice**: `spliceOutMidQueueNode`
+      rewrites the victim's queue-NEIGHBOUR TCBs' `queuePrev`/`queueNext`,
+      and queue-link fields survive projection — so a high victim spliced
+      out from between low-observable neighbours changes the low projection.
+      Discharging this needs the dual-queue endpoint-label invariant already
+      tracked as SM6.B debt (a queue's members share the endpoint's label);
+      the SM6.E cancellation-NI module consumes exactly this obligation as
+      its `hTeardownProj` hypothesis.
     - **G4 re-lookup**: no state change.
     - **G5 `cancelDonation` (WS-RC R5.A split)**: post-R5.A the G5 step
       dispatches explicitly on `schedContextBinding`:

@@ -36,7 +36,8 @@ The inventory has six categories matching the plan §5.2 sub-tasks:
   LockSet.fst_inj_at_pairs, LockSet.union_mem_inv).
 * `.chainStart` — SM3.B.3 audit-pass-5 PIP-chain-walk start
   markers (`pipChainStart_endpointCall`, `pipChainStart_endpointReply`,
-  `pipChainStart_replyRecv`).  Structural signal to SM3.C that a
+  `pipChainStart_replyRecv`, and SM6.E's `pipChainStart_tcbSuspend`).
+  Structural signal to SM3.C that a
   transition invokes a dynamic priority-inheritance chain walk
   whose length is state-discovered.  See SM3.C.11 in
   `SMP_PER_OBJECT_LOCKS_PLAN.md` §5.3 for the chain-walk locking
@@ -301,21 +302,26 @@ def lockSetTheorems : List LockSetTheorem :=
       LockSet.union_mem_inv .algebra,
     lkst! "LockSet.containsKey_iff: key membership iff exists mode"
       LockSet.containsKey_iff .algebra,
-    -- §6 chainStart — PIP-chain-walk start markers (3 entries — SM3.B.3 audit-pass-5)
+    -- §6 chainStart — PIP-chain-walk start markers (4 entries — SM3.B.3
+    -- audit-pass-5; SM6.E added the suspend marker)
     lkst! "pipChainStart for endpointCall (handshake path only when receiverTid = some _)"
       pipChainStart_endpointCall .chainStart,
     lkst! "pipChainStart for endpointReply (always emits revertPIP at caller)"
       pipChainStart_endpointReply .chainStart,
     lkst! "pipChainStart for replyRecv (always emits revertPIP at caller)"
-      pipChainStart_replyRecv .chainStart]
+      pipChainStart_replyRecv .chainStart,
+    lkst! "pipChainStart for tcbSuspend (revert from the captured blocking server when reply-blocked)"
+      pipChainStart_tcbSuspend .chainStart]
 
-/-- WS-SM SM3.B: the inventory has exactly 98 entries (WS-SM SM6.D / PR #822 Phase H
-added the `mintReplyCap` lockSet + consistency pair, on top of SM6.B's
-`tcbBindNotification` / `tcbUnbindNotification` pairs).
+/-- WS-SM SM3.B: the inventory has exactly 99 entries (WS-SM SM6.E's suspend
+PIP-revert ordering fix added the `pipChainStart_tcbSuspend` chain-start
+marker, on top of SM6.D / PR #822 Phase H's `mintReplyCap` lockSet +
+consistency pair and SM6.B's `tcbBindNotification` / `tcbUnbindNotification`
+pairs).
 A regression that adds a new SM3.B theorem without updating the
 inventory fails this count witness at the Tier-3 surface check. -/
 theorem lockSetTheorems_count :
-    lockSetTheorems.length = 98 := by decide
+    lockSetTheorems.length = 99 := by decide
 
 /-- WS-SM SM3.B: 22 entries in the `projection` category
 (lockKind def + 7 per-variant simp lemmas + lockKind_eq_of_objectType
@@ -347,10 +353,11 @@ theorem lockSetTheorems_algebra_count :
     (lockSetTheorems.filter (fun t => t.category == .algebra)).length = 9 := by
   decide
 
-/-- WS-SM SM3.B: 3 entries in the `chainStart` category
-(SM3.B.3 audit-pass-5: pipChainStart for the 3 PIP-invoking transitions). -/
+/-- WS-SM SM3.B: 4 entries in the `chainStart` category
+(SM3.B.3 audit-pass-5: pipChainStart for the 4 PIP-invoking transitions —
+SM6.E added `pipChainStart_tcbSuspend`). -/
 theorem lockSetTheorems_chainStart_count :
-    (lockSetTheorems.filter (fun t => t.category == .chainStart)).length = 3 := by
+    (lockSetTheorems.filter (fun t => t.category == .chainStart)).length = 4 := by
   decide
 
 /-- WS-SM SM3.B: per-category counts sum to the total. -/

@@ -732,6 +732,15 @@ theorem pendingReceiveReplyWellFormed_of_objects_eq {st st' : SystemState}
   unfold pendingReceiveReplyWellFormed SystemState.getTcb? SystemState.getReply? at h ⊢
   rw [hObjs]; exact h
 
+/-- WS-SM SM6.E: `ipcInvariant` reads only the object store, so any
+transition that leaves the object store unchanged frames it (the cross-core
+deschedule, the replenishment migration, per-core scheduler-queue edits). -/
+theorem ipcInvariant_of_objects_eq {st st' : SystemState}
+    (hObjs : st'.objects = st.objects) (h : ipcInvariant st) :
+    ipcInvariant st' := by
+  intro oid ntfn hL
+  exact h oid ntfn (hObjs ▸ hL)
+
 -- ============================================================================
 -- WS-SM SM6.D (#7.1 fold): upstream reply-link / server-first-stash frames.
 --
@@ -2399,8 +2408,11 @@ theorem cleanupPreReceiveDonation_frame_helper
 -- are unchanged by storeObject on different-typed ObjIds.
 -- This is proven via storeObject's insert semantics on the RHTable.
 
-/-- AI4-A: returnDonatedSchedContext preserves objects.invExt. -/
-private theorem returnDonatedSchedContext_preserves_objects_invExt
+/-- AI4-A: returnDonatedSchedContext preserves objects.invExt.
+(WS-SM SM6.E: promoted from `private` — the cancellation invariant surface
+consumes it for `cancelDonatedDonation_preserves_objects_invExt`, via
+`cleanupDonatedSchedContext_preserves_objects_invExt`.) -/
+theorem returnDonatedSchedContext_preserves_objects_invExt
     (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
     (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)

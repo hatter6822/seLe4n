@@ -416,6 +416,13 @@ example :
     (lockSet_tcbSuspend ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none
       (some ⟨50⟩) none).size = 4 := by decide
 
+/-! ### WS-SM SM6.E — tcbSuspend of a `.blockedOnReply` target: 4 locks
+(caller TCB + cnode + suspended TCB + consumed Reply object). -/
+
+example :
+    (lockSet_tcbSuspend ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none none none
+      (some ⟨60⟩)).size = 4 := by decide
+
 -- ============================================================================
 -- §5 — LockId.fromObject + LockId.lookup with fixture states
 -- ============================================================================
@@ -526,9 +533,10 @@ example : permittedKinds .schedContextConfigure = [.tcb, .cnode, .schedContext] 
 example : permittedKinds .schedContextBind = [.tcb, .cnode, .schedContext] := by decide
 example : permittedKinds .schedContextUnbind = [.tcb, .cnode, .schedContext] := by decide
 -- Audit-pass-3: `.tcbSuspend` now includes `.schedContext` to cover
--- the donation-cancel extension.
+-- the donation-cancel extension.  WS-SM SM6.E: + `.reply` to cover the
+-- `.blockedOnReply` reply-link teardown (`consumeReplyLink`).
 example : permittedKinds .tcbSuspend =
-    [.tcb, .cnode, .endpoint, .notification, .schedContext] := by decide
+    [.tcb, .cnode, .endpoint, .notification, .schedContext, .reply] := by decide
 example : permittedKinds .tcbResume = [.tcb, .cnode] := by decide
 example : permittedKinds .tcbSetPriority = [.tcb, .cnode, .schedContext] := by decide
 example : permittedKinds .tcbSetMCPriority = [.tcb, .cnode, .schedContext] := by decide
@@ -682,11 +690,20 @@ example :
     pipChainStart_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩ (ObjId.ofNat 20)
       (some ⟨11⟩) (some ⟨42⟩) (some ⟨7⟩) = some ⟨5⟩ := by decide
 
+/-! ### pipChainStart_tcbSuspend (SM6.E) walks only when the victim was
+reply-blocked — the signal is exactly the G2-precaptured blocking server. -/
+
+example :
+    pipChainStart_tcbSuspend ⟨5⟩ none = none := by decide
+
+example :
+    pipChainStart_tcbSuspend ⟨5⟩ (some ⟨8⟩) = some ⟨8⟩ := by decide
+
 -- ============================================================================
 -- §7 — Inventory examples (decidable)
 -- ============================================================================
 
-example : lockSetTheorems.length = 98 := by decide
+example : lockSetTheorems.length = 99 := by decide
 
 example : (lockSetTheorems.filter (fun t => t.category == .projection)).length = 22 := by
   decide
@@ -703,7 +720,7 @@ example : (lockSetTheorems.filter (fun t => t.category == .acquireSort)).length 
 example : (lockSetTheorems.filter (fun t => t.category == .algebra)).length = 9 := by
   decide
 
-example : (lockSetTheorems.filter (fun t => t.category == .chainStart)).length = 3 := by
+example : (lockSetTheorems.filter (fun t => t.category == .chainStart)).length = 4 := by
   decide
 
 -- ============================================================================
@@ -784,9 +801,10 @@ private def runPermittedKindsChecks : IO Unit := do
   assertBool "permittedKinds .lifecycleRetype"
     (decide (permittedKinds .lifecycleRetype = [.tcb, .cnode, .untyped]))
   -- Audit-pass-3: .tcbSuspend now includes .schedContext (donation-cancel).
+  -- WS-SM SM6.E: + .reply (the `.blockedOnReply` reply-link teardown).
   assertBool "permittedKinds .tcbSuspend"
     (decide (permittedKinds .tcbSuspend =
-      [.tcb, .cnode, .endpoint, .notification, .schedContext]))
+      [.tcb, .cnode, .endpoint, .notification, .schedContext, .reply]))
   assertBool "permittedKinds .schedContextBind"
     (decide (permittedKinds .schedContextBind = [.tcb, .cnode, .schedContext]))
   -- Audit-pass-3: .call, .reply, .replyRecv include .schedContext (donation).
@@ -1217,8 +1235,8 @@ private def runLookupFixtureChecks : IO Unit := do
 
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §8 Inventory aggregator ---"
-  assertBool "lockSetTheorems.length = 98"
-    (decide (lockSetTheorems.length = 98))
+  assertBool "lockSetTheorems.length = 99"
+    (decide (lockSetTheorems.length = 99))
   assertBool "projection category count = 22"
     (decide ((lockSetTheorems.filter (fun t => t.category == .projection)).length = 22))
   assertBool "lockSet category count = 29 (one per SyscallId variant)"
@@ -1229,8 +1247,8 @@ private def runInventoryChecks : IO Unit := do
     (decide ((lockSetTheorems.filter (fun t => t.category == .acquireSort)).length = 6))
   assertBool "algebra category count = 9"
     (decide ((lockSetTheorems.filter (fun t => t.category == .algebra)).length = 9))
-  assertBool "chainStart category count = 3 (audit-pass-5 PIP-chain markers)"
-    (decide ((lockSetTheorems.filter (fun t => t.category == .chainStart)).length = 3))
+  assertBool "chainStart category count = 4 (audit-pass-5 PIP-chain markers + SM6.E suspend)"
+    (decide ((lockSetTheorems.filter (fun t => t.category == .chainStart)).length = 4))
   assertBool "category-partition sum = total"
     (decide
       ((lockSetTheorems.filter (fun t => t.category == .projection)).length +

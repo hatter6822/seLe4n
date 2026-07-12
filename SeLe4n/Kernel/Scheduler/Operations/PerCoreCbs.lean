@@ -55,12 +55,16 @@ open-coded plus the genuinely-new **migration** operation:
   invariant the SM5.I run loop carries across a tick).
 
 All theorems are proved with no dependency beyond Lean's foundational `propext` /
-`Quot.sound` / `Classical.choice`.  The new operations (`replenishOnCore`, the
-migration) are forward-looking infrastructure — the live per-core CBS path is the
-SM5.D `timerTickOnCore`, and the affinity-migration syscall (`tcbSetAffinity`,
-which would call `setThreadCpuAffinityWithMigration`) is SM5.I+ work — so this
-module is staged via `Platform.Staged`; SM5.I's per-core run loop is the first
-runtime exerciser.
+`Quot.sound` / `Classical.choice`.  The live per-core CBS path is the SM5.D
+`timerTickOnCore`, and the affinity-migration syscall **is live**: the
+`.tcbSetAffinity` dispatch arm routes through `setThreadCpuAffinityOp` →
+`setThreadCpuAffinityWithMigration` (this module's SM5.H.4 composite: affinity
+write + replenishment migration + run-queue migration), and WS-SM SM6.E's
+per-core donated cancellation arm consumes `migrateSchedContextReplenishment`
+at the cancellation boundary.  This module stays staged via `Platform.Staged`
+only for its remaining proof-layer surface (the SM5.H.5 affinity invariant and
+its preservation family, whose production consumers are SM7+ work); the
+operations themselves are production (`Scheduler.Operations.Core`).
 
 ## Naming erratum (plan §3.8)
 

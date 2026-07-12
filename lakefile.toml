@@ -5,7 +5,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 
 name = "seLe4n"
-version = "0.32.59"
+version = "0.32.66"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
@@ -523,3 +523,17 @@ root = "tests.SmpCrossCoreNotificationSuite"
 [[lean_exe]]
 name = "smp_cross_core_reply_suite"
 root = "tests.SmpCrossCoreReplySuite"
+
+# WS-SM SM6.E cross-core cancellation scenarios: the SM6.E.1/.3 lock-set
+# footprints (victim TCB / blocked-on endpoint / notification / consumed
+# Reply / SchedContext / donated-owner write locks, state-resolved
+# pre-resolution), the SM6.E.5 cross-core cancellation composite (endpoint- /
+# notification- / reply-blocked victims homed on a remote core; the
+# actively-running remote victim's `.reschedule` SGI vs the local no-SGI
+# dual), the SM6.E.3 per-core donation-cancellation arms (bound unbind with
+# home-core replenish-queue purge; donated return-to-owner), the dispatcher
+# `.unbound` identity + ghost-victim fail-closed paths, and the SM6.E.2/.4
+# `withLockSet` bracket's operational atomicity.  Tier-2 + Tier-3 wired.
+[[lean_exe]]
+name = "smp_cancellation_suite"
+root = "tests.SmpCancellationSuite"
