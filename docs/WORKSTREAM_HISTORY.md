@@ -24,7 +24,51 @@ Plan:
 SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
-**Current sub-phase: SM6.E cancellation across cores LANDED (v0.32.60) —
+**Current sub-phase: SM6.F tests + fixtures LANDED (v0.32.67) — SM6
+(A–F) complete.**
+
+The SM6 closure phase (plan §SM6.F, all six sub-tasks), closing the two
+remaining substantive §8 acceptance-gate items on the live operations.
+**SM6.F.1** `tests/SmpIpcSuite.lean` (`smp_ipc_suite`, 81 assertions / 8
+scenario groups + the golden-trace check): end-to-end pipelines composing
+the SM6.A/SM6.C transitions with the SM5 per-core scheduler
+(`handleRescheduleSgiOnCore` dispatch on the SGI's target core) — the
+**2-thread cross-core call/reply round trip** (call SGI → handler
+dispatch → reply SGI → handler dispatch, payload delivered both ways,
+replay barrier) and the **4-thread SMP rendezvous** (two interleaved
+client/server pairs across all four cores, cross-pair framing + payload
+isolation + terminal placement) — plus the cross-core send/receive
+rendezvous, client-first ordering, the server `endpointReplyRecvOnCore`
+steady-state loop (SGI union), fail-closed error paths (pre-state
+returned), state-resolved 2PL footprints (kinds / NoDup / write-lock
+membership / `maxLockSetSize` / the plan §4.1 WCRT size bound), and
+live-dispatch coherence (`determineExecutingCore` +
+`endpointCallCrossCoreDispatch`).  **SM6.F.2**
+`tests/SmpNotificationSuite.lean` (`smp_notification_suite`, 58
+assertions / 8 groups): the wait → cross-core signal → SGI →
+handler-dispatch round trip, multi-waiter head-first drain (each waiter
+woken to its **own** home core, per-waiter badge isolation), waiterless
+`Badge.bor` accumulation + the non-blocking consume, the **remote
+bound-TCB delivery** round trip (bind → signal-bound → endpoint dequeue
+→ SGI to the bound TCB's home core → handler dispatch), the bind/unbind
+lifecycle, error paths, and independence framing + footprints.
+**SM6.F.3** satisfied by SM6.E.6's `SmpCancellationSuite` (107
+assertions / 17 groups, re-verified green).  **SM6.F.4**
+`tests/fixtures/smp_ipc_4core.expected` (+ `.sha256`): the deterministic
+16-line `[smp-ipc-4core]` golden trace computed from the live transition
+decisions, verified byte-for-byte in-suite and auto-gated by
+`test_tier2_trace.sh`'s companion walk.  **SM6.F.5**
+`scripts/test_qemu_smp_ipc.sh`: the Tier-4 QEMU `-smp 4` cross-core IPC
+handshake exerciser (registered in `test_tier4_smp_bootcheck.sh`; SKIPs
+with the formal-coverage banner until the SM9.E bootable kernel-image
+target exists, the SM5-sibling discipline).  **SM6.F.6** surface
+anchors: in-suite `#check` blocks + Tier-3 grep anchors (runner defs,
+Tier-2 wiring, pipeline/trace emitters, fixture + sha256 presence,
+lakefile registrations, the QEMU registration).  The plan's §8
+acceptance gate is fully checked; SM6 is complete.  Golden trace
+byte-identical.
+
+**Prior sub-phase: SM6.E cancellation across cores LANDED (v0.32.60) —
 completed v0.32.61; PR-review cuts v0.32.62–65; audit-closure cut v0.32.66.**
 
 **PR-review cut (v0.32.62, PR #831 P2 + its root causes).**  The review

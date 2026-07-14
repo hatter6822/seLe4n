@@ -21,10 +21,11 @@
 # are met.
 #
 # Future phases populate additional sub-tests:
-#   * SM5.K — per-core scheduler liveness probe
-#   * SM6.F — cross-core IPC handshake exerciser
 #   * SM7.E — TLB shootdown ACK timing
 #   * SM8.E — information flow non-interference under SMP
+# Populated so far beyond SM1.H: SM3.D.7 (deadlock stress), SM5.C/.D/.F/.G/.H/.K
+# (wake / timer / PIP / domain / CBS / scheduler), SM6.F.5 (cross-core IPC
+# handshake).
 
 set -euo pipefail
 
@@ -37,7 +38,7 @@ cd "${REPO_ROOT}"
 
 log_section "META" "WS-SM tier-4 SMP boot-check (populated at SM1.H)"
 log_section "META" "  Sub-tests handle their own SKIP conditions (qemu/kernel-image)."
-log_section "META" "  Future phases (SM5.K, SM6.F, SM7.E, SM8.E) extend this slot."
+log_section "META" "  Future phases (SM7.E, SM8.E) extend this slot."
 
 # SM1.H.1 — full 4-core bringup.
 run_check "META" "${SCRIPT_DIR}/test_qemu_smp_bringup.sh"
@@ -128,5 +129,21 @@ run_check "META" "${SCRIPT_DIR}/test_qemu_smp_cbs.sh"
 # 4-thread/4-core aggregate, 50+ scenarios + the golden trace fixture) and
 # tests/SmpWcrtSuite.lean; this is a complementary runtime spot-check on real cores.
 run_check "META" "${SCRIPT_DIR}/test_qemu_smp_scheduler.sh"
+
+# WS-SM SM6.F.5 — the cross-core IPC handshake exerciser (plan §SM6.F).  SKIPs at
+# SM6.F if the cross-core IPC driver isn't wired in the kernel image (needs the
+# SM9.E bootable kernel-image [[bin]] target; the live Lean dispatch is already
+# fully cross-core — .call/.reply/.replyRecv/.notificationSignal/.notificationWait
+# route through the SM6 OnCore operations and the SGI-firing seam).  The
+# cross-core IPC correctness — a rendezvous with a remote-homed receiver fires a
+# .reschedule SGI to its home core, the caller blocks on its own core, the reply
+# wakes the caller back on ITS home core with the payload delivered to exactly
+# the recorded caller, and every operation preserves every core's twenty-conjunct
+# invariant-bundle view — is established FORMALLY for all executions in
+# tests/SmpIpcSuite.lean + tests/SmpNotificationSuite.lean (the 4-thread/4-core
+# aggregates + the smp_ipc_4core golden trace fixture) and the per-phase SM6
+# suites; this is a complementary runtime spot-check on real cores with a real
+# GIC delivering the SGIs.
+run_check "META" "${SCRIPT_DIR}/test_qemu_smp_ipc.sh"
 
 finalize_report

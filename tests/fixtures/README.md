@@ -16,6 +16,7 @@ explicit hash refresh in the same commit.
 | `robin_hood_smoke.expected` | `robin_hood_smoke.expected.sha256` | `tests/RobinHoodSuite.lean` |
 | `two_phase_arch_smoke.expected` | `two_phase_arch_smoke.expected.sha256` | `tests/TwoPhaseArchSuite.lean` |
 | `smp_4core_scheduler.expected` | `smp_4core_scheduler.expected.sha256` | `tests/SmpSchedulerSuite.lean` (WS-SM SM5.K.4 — the deterministic 4-thread/4-core per-core scheduler trace + the multi-step cross-core wake→SGI→handler round-trip, verified byte-for-byte against the live `chooseThreadOnCore` / `determineTargetCore` / `wakeThread` / `switchToThreadOnCore` / `handleRescheduleSgiOnCore` decisions) |
+| `smp_ipc_4core.expected` | `smp_ipc_4core.expected.sha256` | `tests/SmpIpcSuite.lean` (WS-SM SM6.F.4 — the deterministic 4-thread/4-core cross-core IPC trace: both client/server call→SGI→handler-dispatch→reply→SGI→handler-dispatch round trips plus the cross-core send/receive rendezvous, verified byte-for-byte against the live `endpointReceiveDualOnCore` / `endpointCallOnCore` / `endpointReplyOnCore` / `endpointSendDual` / `handleRescheduleSgiOnCore` decisions) |
 
 The Tier 2 trace gate (`scripts/test_tier2_trace.sh`) walks every
 `*.expected.sha256` file in this directory and runs `sha256sum -c` on
@@ -50,6 +51,14 @@ fixture fails CI with a uniform remediation message.
      > tests/fixtures/smp_4core_scheduler.expected
    ```
 
+   For the SMP 4-core cross-core IPC trace fixture (WS-SM SM6.F.4), the
+   same escaping rule applies to its `[smp-ipc-4core]` tag:
+
+   ```bash
+   lake exe smp_ipc_suite | grep '^\[smp-ipc-4core\]' \
+     > tests/fixtures/smp_ipc_4core.expected
+   ```
+
 2. Recompute the SHA-256 companion in the format `sha256sum` writes by
    default (`<hash>  <basename>`):
 
@@ -59,6 +68,7 @@ fixture fails CI with a uniform remediation message.
    sha256sum robin_hood_smoke.expected      > robin_hood_smoke.expected.sha256
    sha256sum two_phase_arch_smoke.expected  > two_phase_arch_smoke.expected.sha256
    sha256sum smp_4core_scheduler.expected   > smp_4core_scheduler.expected.sha256
+   sha256sum smp_ipc_4core.expected         > smp_ipc_4core.expected.sha256
    ```
 
 3. Verify both files agree:

@@ -5,7 +5,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 
 name = "seLe4n"
-version = "0.32.66"
+version = "0.32.67"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
@@ -537,3 +537,33 @@ root = "tests.SmpCrossCoreReplySuite"
 [[lean_exe]]
 name = "smp_cancellation_suite"
 root = "tests.SmpCancellationSuite"
+
+# WS-SM SM6.F.1 — Aggregate SMP cross-core IPC suite (the acceptance-gate
+# "2-thread cross-core IPC" + "4-thread SMP rendezvous" deliverables).  70+ runtime
+# assertions composing the SM6.A/SM6.C transitions with the SM5 per-core scheduler
+# (SGI handler dispatch) into end-to-end client/server round trips on a
+# deterministic 4-thread / 4-core fixture: the 2-thread cross-core call/reply round
+# trip, the interleaved 4-thread rendezvous with cross-pair framing + payload
+# isolation, the cross-core send/receive rendezvous, client-first ordering, the
+# server replyRecv steady-state loop, fail-closed error paths, the state-resolved
+# 2PL lock-set footprints (incl. the SM5.J WCRT bound), live-dispatch coherence,
+# and the deterministic 4-core IPC trace verified byte-for-byte against the
+# tests/fixtures/smp_ipc_4core.expected golden fixture (SM6.F.4).  Tier-2 +
+# Tier-3 wired.
+[[lean_exe]]
+name = "smp_ipc_suite"
+root = "tests.SmpIpcSuite"
+
+# WS-SM SM6.F.2 — Aggregate SMP cross-core notification suite.  40+ runtime
+# assertions composing the SM6.B transitions with the SM5 per-core scheduler
+# (SGI handler dispatch) into end-to-end signal/wait flows on a deterministic
+# 4-core fixture: the wait → cross-core signal → SGI → handler-dispatch round
+# trip, multi-waiter head-wake drain (each waiter woken to its own home core),
+# badge accumulation (bor merge) + non-blocking consume, the remote bound-TCB
+# delivery round trip (bind / signal-bound / dequeue / SGI / dispatch), the
+# bind/unbind lifecycle, fail-closed error paths, cross-core independence
+# framing, and the state-resolved 2PL lock-set footprints.  Tier-2 + Tier-3
+# wired.
+[[lean_exe]]
+name = "smp_notification_suite"
+root = "tests.SmpNotificationSuite"

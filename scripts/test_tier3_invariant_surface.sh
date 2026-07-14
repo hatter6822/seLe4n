@@ -758,6 +758,25 @@ run_check "INVARIANT" rg -n '^theorem cancelDonation_preserves_objects_invExt' S
 run_check "INVARIANT" rg -n '^theorem removeFromAllEndpointQueues_preserves_objects_invExt' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
 run_check "INVARIANT" rg -n '^def runSmpCancellationChecks' tests/SmpCancellationSuite.lean
 run_check "INVARIANT" rg -n '^run_check(_with_timeout)? "TRACE" lake exe smp_cancellation_suite' scripts/test_tier2_negative.sh
+
+# WS-SM SM6.F tests + fixtures — the aggregate cross-core IPC / notification
+# suites (the acceptance-gate 2-thread cross-core IPC + 4-thread SMP rendezvous
+# deliverables), their Tier-2 wiring, the smp_ipc_4core golden trace fixture
+# (+ sha256 companion) they verify byte-for-byte, the multi-step round-trip
+# pipeline + trace emitters inside the IPC suite, the lakefile exe
+# registrations, and the Tier-4 QEMU cross-core IPC handshake exerciser.
+run_check "INVARIANT" rg -n '^def runSmpIpcChecks' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n '^run_check(_with_timeout)? "TRACE" lake exe smp_ipc_suite' scripts/test_tier2_negative.sh
+run_check "INVARIANT" rg -n '^def runSmpNotificationChecks' tests/SmpNotificationSuite.lean
+run_check "INVARIANT" rg -n '^run_check(_with_timeout)? "TRACE" lake exe smp_notification_suite' scripts/test_tier2_negative.sh
+run_check "INVARIANT" rg -n '^private def roundTrip\?' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n '^private def ipcFourCoreTraceLines' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n '^private def ntfnRoundTrip\?' tests/SmpNotificationSuite.lean
+run_check "INVARIANT" rg -n '^\[smp-ipc-4core\]' tests/fixtures/smp_ipc_4core.expected
+run_check "INVARIANT" rg -n 'smp_ipc_4core\.expected' tests/fixtures/smp_ipc_4core.expected.sha256
+run_check "INVARIANT" rg -n '^name = "smp_ipc_suite"' lakefile.toml
+run_check "INVARIANT" rg -n '^name = "smp_notification_suite"' lakefile.toml
+run_check "INVARIANT" rg -n 'test_qemu_smp_ipc\.sh' scripts/test_tier4_smp_bootcheck.sh
 run_check "INVARIANT" rg -n '^theorem intrusiveQueueWellFormed_empty' SeLe4n/Kernel/IPC/Invariant/Structural/
 run_check "INVARIANT" rg -n '^theorem tcbQueueLink_forward_safe' SeLe4n/Kernel/IPC/Invariant/Structural/
 run_check "INVARIANT" rg -n '^theorem tcbQueueLink_reverse_safe' SeLe4n/Kernel/IPC/Invariant/Structural/

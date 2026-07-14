@@ -1,0 +1,16 @@
+[smp-ipc-4core] server B recv on core 1 leaves B blockedOnReceive
+[smp-ipc-4core] server D recv on core 3 leaves D blockedOnReceive
+[smp-ipc-4core] client A call on core 0 emits SGI reschedule to core 1
+[smp-ipc-4core] client A awaits reply as blockedOnReply
+[smp-ipc-4core] core 1 handler dispatches current = server B
+[smp-ipc-4core] client C call on core 2 emits SGI reschedule to core 3
+[smp-ipc-4core] core 3 handler dispatches current = server D
+[smp-ipc-4core] server B reply on core 1 emits SGI reschedule to core 0
+[smp-ipc-4core] client A resumes with payload register 42
+[smp-ipc-4core] core 0 handler dispatches current = client A
+[smp-ipc-4core] server D reply on core 3 emits SGI reschedule to core 2
+[smp-ipc-4core] client C resumes with payload register 84
+[smp-ipc-4core] core 2 handler dispatches current = client C
+[smp-ipc-4core] send rendezvous pops sender E and emits SGI reschedule to core 2
+[smp-ipc-4core] woken sender E is ready on its home core
+[smp-ipc-4core] rendezvous complete: A ready, B ready, C ready, D ready

@@ -111,6 +111,11 @@ accidental interference when suites are run independently.
   RadixTreeSuite           N/A         uses CNodeRadix keys, not ObjId
   InformationFlowSuite     1-30        info flow policy checks
   TraceSequenceProbe       1-40        mirrors MainTraceHarness
+  SmpCrossCoreCallSuite    300-420     WS-SM SM6.A cross-core call fixtures
+  SmpCrossCoreNtfnSuite    300-604     WS-SM SM6.B cross-core notification fixtures
+  SmpCrossCoreReplySuite   300-707     WS-SM SM6.C cross-core reply fixtures
+  SmpIpcSuite              800-899     WS-SM SM6.F.1 aggregate cross-core IPC fixtures
+  SmpNotificationSuite     900-999     WS-SM SM6.F.2 aggregate cross-core notification fixtures
 
 Suites with overlapping ranges run independently and do not share state. -/
 

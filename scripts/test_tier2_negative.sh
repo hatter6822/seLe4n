@@ -362,4 +362,28 @@ run_check_with_timeout "TRACE" lake exe smp_cross_core_reply_suite
 # fail-closed paths, and the `withLockSet` bracket's operational atomicity.
 run_check_with_timeout "TRACE" lake exe smp_cancellation_suite
 
+# WS-SM SM6.F.1/.4 — Aggregate cross-core IPC runtime checks (the acceptance-gate
+# 2-thread cross-core IPC + 4-thread SMP rendezvous deliverables).  Composes the
+# SM6.A/SM6.C transitions with the SM5 per-core scheduler (SGI handler dispatch)
+# into end-to-end round trips on a deterministic 4-thread/4-core fixture: the
+# 2-thread call/reply round trip (call SGI → handler dispatch → reply SGI →
+# handler dispatch, payload delivered both ways), the interleaved 4-thread
+# rendezvous (cross-pair framing + payload isolation), the cross-core
+# send/receive rendezvous, client-first ordering, the server replyRecv
+# steady-state loop, fail-closed error paths, the state-resolved 2PL lock-set
+# footprints, live-dispatch coherence, and the deterministic 4-core IPC trace
+# verified byte-for-byte against tests/fixtures/smp_ipc_4core.expected (SM6.F.4).
+run_check_with_timeout "TRACE" lake exe smp_ipc_suite
+
+# WS-SM SM6.F.2 — Aggregate cross-core notification runtime checks.  Composes the
+# SM6.B transitions with the SM5 per-core scheduler (SGI handler dispatch) into
+# end-to-end signal/wait flows on a deterministic 4-core fixture: the wait →
+# cross-core signal → SGI → handler-dispatch round trip, the multi-waiter drain
+# (each waiter woken to its own home core, per-waiter badge isolation), badge
+# accumulation (bor merge) + the non-blocking consume, the remote bound-TCB
+# delivery round trip (bind / signal-bound / endpoint dequeue / SGI / dispatch),
+# the bind/unbind lifecycle, fail-closed error paths, cross-core independence
+# framing, and the state-resolved 2PL lock-set footprints.
+run_check_with_timeout "TRACE" lake exe smp_notification_suite
+
 finalize_report
