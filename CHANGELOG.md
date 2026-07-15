@@ -1,3 +1,84 @@
+## v0.32.68 — WS-SM SM6.F: aggregate-suite depth cut (donation, caps, info-flow, live API, cancellation composition)
+
+A depth-completion cut over the SM6.F aggregate suites, closing every
+coverage gap identified in the SM6.F self-audit — the aggregates now
+exercise the full cross-core IPC surface end-to-end, not just the bare
+transitions.
+
+**`tests/SmpIpcSuite.lean`** grows from 80 → **122 runtime assertions**
+across **14 scenario groups** (§3.1–§3.14) + the §9 golden-trace check
+(byte-identical — the new groups run before the trace and do not perturb
+it).  Six new scenario groups:
+
+* **§3.9 SchedContext donation round trip** — a bound-SC client (prio 60)
+  calls a passive `.unbound` server homed on a remote core: the call
+  donates the SC (`applyCallDonation` → server `.donated`, client
+  `.unbound`, the SC's `boundThread` moves), the server's effective
+  scheduling priority resolves to the donated 60 (via the cross-core PIP
+  boost + the donated SchedContext's priority, `resolveEffectivePrioDeadline`),
+  and the reply returns the SC to the client (`applyReplyDonationOnCore`).
+* **§3.10 capability transfer across cores** — a Call carrying a cap
+  installs it into the receiver's CSpace via `ipcUnwrapCaps` when the
+  endpoint cap holds `.grant` (summary = installed), and denies the
+  transfer without it (summary = grantDenied); plus the
+  `ipcMessageTooManyCaps` boundary (4 > `maxExtraCaps`).
+* **§3.11 info-flow-checked dispatch** — `endpointCall/ReplyCrossCoreDispatchChecked`
+  run the transition when the flow is permitted and fail closed with
+  `.flowDenied` (state unchanged) when it is not, for both the call
+  (caller→endpoint) and reply (replier→target) gates.
+* **§3.12 live API dispatch** — the full public `dispatchSyscall` `.call`
+  path: CSpace capability resolution + the `.write` authority gate +
+  cross-core dispatch (authorized call rendezvouses; no-cap →
+  `.invalidCapability`, read-only-cap → `.illegalAuthority`, wrong-kind
+  cap → `.invalidCapability`), plus the checked `dispatchSyscallChecked`
+  info-flow variant (high→low policy → `.flowDenied`).
+* **§3.13 cancellation × IPC composition** — cancelling a reply-blocked
+  client (the suspend pipeline's teardown slice, `cancelIpcBlockingOnCore`)
+  severs its reply linkage, so the server's later cross-core reply fails
+  closed (`.replyCapInvalid`) — the SM6.C replay barrier composed with
+  SM6.E cancellation.
+* **§3.14 scheduler contention** — a woken server does NOT preempt a
+  strictly higher-priority current thread on its home core (and DOES
+  preempt a lower-priority one — the positive control).
+
+Also: the §3.7 WCRT assertion is no longer the trivially-true
+`|lockSet|·c ≤ max·c` — it now pins the **exact** resolved footprint size
+(5 for the call) and asserts the WCRT (900µs) genuinely **fits the 1 ms
+timer-tick budget** (a 6th lock would blow it); and the four-thread
+round-trip pipeline now reports **step attribution** on failure
+(`Except String`, "stepN: …") instead of a blanket pipeline failure.
+
+**`tests/SmpNotificationSuite.lean`** grows from 58 → **74 assertions**
+across **10 scenario groups** (§3.1–§3.10).  Two new groups: **§3.9**
+three-waiter FIFO drain (successive signals wake the list head first,
+each to a distinct home core 1/2/3, draining to idle) and **§3.10**
+checked cross-core dispatch (the unchecked wait dispatch descheds on the
+caller's own core; the checked bound signal fails closed on a denied
+signaler→notification flow AND on a denied notification→receiver flow —
+the review-#3 badge-leak gate: a high notification's badge never reaches
+a low bound receiver).  Its §3.8 footprint check gains the exact-size pin
++ WCRT-fits-budget property, matching the IPC suite.
+
+**Tier-3 anchors** (`test_tier3_invariant_surface.sh`): the eight new
+scenario-group runners, plus the QEMU exerciser's exact pass-banner
+phrase (anchoring the `cross-core-ipc` contract so guard and pass gate
+cannot drift).  The `SeLe4n/Testing/Helpers.lean` OID-range table gains
+the previously-unlisted `SmpSchedulerSuite`/`SmpCancellationSuite` ranges
+and the tightened SM6.F sub-ranges.
+
+**QEMU run-branch validated.**  `scripts/test_qemu_smp_ipc.sh` was
+exercised end-to-end with a stub `qemu-system-aarch64` + dummy images:
+all four SKIP guards, the wired-image PASS branch, and the
+wired-but-no-banner FAIL branch all behave correctly (previously only
+the no-QEMU SKIP was validated).  The Tier-4 bootcheck + the
+experimental-gated nightly-candidates wrapper were run to confirm the
+new script's wiring.
+
+No production code changed; `test_full.sh` (Tier 0-3) green; golden trace
+byte-identical.  Version bumped 0.32.67 → 0.32.68.
+
+Refs: docs/planning/SMP_CROSS_CORE_IPC_PLAN.md §5 (SM6.F)
+
 ## v0.32.67 — WS-SM SM6.F: tests + fixtures (SM6 closure phase)
 
 Lands the SM6.F test-and-fixture closure of the cross-core IPC phase

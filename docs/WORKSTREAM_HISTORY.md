@@ -24,12 +24,12 @@ Plan:
 SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
-**Current sub-phase: SM6.F tests + fixtures LANDED (v0.32.67) — SM6
-(A–F) complete.**
+**Current sub-phase: SM6.F tests + fixtures LANDED (v0.32.67); depth
+cut (v0.32.68) — SM6 (A–F) complete.**
 
 The SM6 closure phase (plan §SM6.F, all six sub-tasks), closing the two
 remaining substantive §8 acceptance-gate items on the live operations.
-**SM6.F.1** `tests/SmpIpcSuite.lean` (`smp_ipc_suite`, 81 assertions / 8
+**SM6.F.1** `tests/SmpIpcSuite.lean` (`smp_ipc_suite`, 122 assertions / 14
 scenario groups + the golden-trace check): end-to-end pipelines composing
 the SM6.A/SM6.C transitions with the SM5 per-core scheduler
 (`handleRescheduleSgiOnCore` dispatch on the SGI's target core) — the

@@ -42,7 +42,15 @@ through the evolving state:
 * **§3.7** fail-closed error paths (absent/wrong-kind objects, double wait) —
   every error returns the pre-state;
 * **§3.8** cross-core independence framing + the state-resolved 2PL lock-set
-  footprints.
+  footprints (exact resolved size + the SM5.J WCRT-fits-budget property);
+* **§3.9** the three-waiter FIFO drain: successive signals wake the list head
+  first, each to a **distinct** home core (1/2/3), draining to idle;
+* **§3.10** **info-flow-checked** dispatch: the unchecked wait dispatch
+  (`notificationWaitCrossCoreDispatch`) descheds on the caller's own core, and
+  the checked bound signal (`notificationSignalBoundCrossCoreDispatchChecked`)
+  fails closed on a denied signaler→notification flow AND on a denied
+  notification→receiver flow (the review-#3 badge-leak gate — a high
+  notification's badge never reaches a low bound receiver).
 
 `lake exe smp_notification_suite` runs all scenarios; a notification-logic
 regression flips a decidable check.
@@ -92,6 +100,12 @@ open SeLe4n.Testing
 #check @notificationSignalBoundOnCore_fallthrough_eq
 #check @lockSet_notificationSignalOnCore_bound_endpoint_write_mem
 #check @lockSet_notificationSignalOnCore_bound_tcb_write_mem
+-- Info-flow-checked bound dispatch gates (signaler→ntfn, then ntfn→receiver; review #3):
+#check @notificationSignalBoundCrossCoreDispatchChecked_flow_denied
+#check @notificationSignalBoundCrossCoreDispatchChecked_flow_denied_to_receiver
+#check @notificationSignalBoundCrossCoreDispatchChecked_flow_allowed_to_receiver
+#check @notificationWaitCrossCoreDispatchChecked_flow_denied
+#check @securityFlowsTo
 -- Whole-bundle preservation (SM6.D completion, production):
 #check @notificationSignalOnCore_preserves_ipcInvariantFull
 #check @notificationWaitOnCore_preserves_ipcInvariantFull
@@ -513,13 +527,143 @@ private def runIndependenceAndLockChecks : IO Unit := do
       (decide ((tcbLock waiter3, AccessMode.write) ∈ sigLs.pairs))
     assertBool "the notification write lock is in the signal footprint"
       (decide ((notificationLock nId, AccessMode.write) ∈ sigLs.pairs))
+    -- Exact resolved footprint size: signaller (R), sender CNode (R), notification
+    -- (W), woken-waiter TCB (W) — four locks off the bound-delivery path.  Pinning
+    -- the exact size catches a silent lock add/drop a `≤` bound would miss.
+    assertBool "state-resolved signal footprint has exactly 4 locks (signaller/cnode/ntfn/waiter)"
+      (decide (sigLs.pairs.length = 4))
     assertBool "signal lock-set size within maxLockSetSize"
       (decide (sigLs.pairs.length ≤ maxLockSetSize))
+    -- SM5.J (plan §4.1): the 4-lock signal footprint is 4·3·60 = 720µs, which fits
+    -- the 1 ms per-core timer-tick budget (a real timing property, matching the IPC
+    -- suite's §3.7 form — a 6th lock would be 1080µs and blow the budget).
+    assertBool "signal lock-set WCRT (720µs) fits the 1 ms timer-tick budget"
+      (decide (sigLs.pairs.length * (3 * 60) < 1000))
     let waitLs := lockSet_notificationWaitOnCore nId waiter2 cnRoot
     assertBool "wait lock-set kinds all permitted"
       (decide (∀ p ∈ waitLs.pairs, p.fst.kind ∈ permittedKinds .notificationWait))
     assertBool "the waiter's TCB write lock is in the wait footprint"
       (decide ((tcbLock waiter2, AccessMode.write) ∈ waitLs.pairs))
+
+-- ============================================================================
+-- §3.9  Three-waiter FIFO drain (each woken to a distinct home core)
+-- ============================================================================
+
+private def waiterC1 : SeLe4n.ThreadId := ⟨926⟩   -- homed core 1
+
+/-- Notification (idle) + a signaller (core 0) + three waiters homed on cores
+1/2/3, all runnable on the boot core (they block themselves via wait). -/
+private def stThreeWaiterBase : SystemState :=
+  (BootstrapBuilder.empty
+    |>.withObject nId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty })
+    |>.withObject signallerT.toObjId (.tcb (mkTcb 921 40 none))
+    |>.withObject waiterC1.toObjId (.tcb (mkTcb 926 30 (some c1)))
+    |>.withObject waiter2.toObjId (.tcb (mkTcb 922 30 (some c2)))
+    |>.withObject waiter3.toObjId (.tcb (mkTcb 923 30 (some c3)))
+    |>.withRunnable [signallerT]
+    |>.build)
+
+private structure ThreeWaiterDrain where
+  afterWaits : SystemState
+  sgi1 : Option (CoreId × SgiKind)
+  sgi2 : Option (CoreId × SgiKind)
+  sgi3 : Option (CoreId × SgiKind)
+  drained : SystemState
+
+/-- Wait C1 → 2 → 3 (so 3 is the list head), then three signals drain them. -/
+private def threeWaiterDrain? : Option ThreeWaiterDrain := do
+  let (s1, _) ← okPair (notificationWaitOnCore nId waiterC1 c1 stThreeWaiterBase)
+  let (s2, _) ← okPair (notificationWaitOnCore nId waiter2 c2 s1)
+  let (afterWaits, _) ← okPair (notificationWaitOnCore nId waiter3 c3 s2)
+  let (sg1, sgi1) ← okPair (notificationSignalOnCore nId badge1 c0 afterWaits)
+  let (sg2, sgi2) ← okPair (notificationSignalOnCore nId badge2 c0 sg1)
+  let (drained, sgi3) ← okPair (notificationSignalOnCore nId badge1 c0 sg2)
+  pure { afterWaits := afterWaits, sgi1 := sgi1, sgi2 := sgi2, sgi3 := sgi3, drained := drained }
+
+private def runThreeWaiterDrainChecks : IO Unit := do
+  IO.println "--- §3.9 three-waiter FIFO drain (each woken to a distinct home core) ---"
+  match threeWaiterDrain? with
+  | none => assertBool "three-waiter drain pipeline succeeded" false
+  | some d =>
+    -- The three waits build the list head-first (wait prepends): [3, 2, C1].
+    assertBool "the three waits build the waiter list head-first ([waiter3, waiter2, waiterC1])"
+      (waiterList d.afterWaits == [waiter3, waiter2, waiterC1])
+    -- Head-first drain: signal 1 → waiter 3 (core 3), 2 → waiter 2 (core 2), 3 → C1 (core 1).
+    assertBool "signal 1 wakes the head (waiter 3) to core 3"
+      (match d.sgi1 with | some (t, k) => decide (t = c3 ∧ k = SgiKind.reschedule) | none => false)
+    assertBool "signal 2 wakes the next (waiter 2) to core 2"
+      (match d.sgi2 with | some (t, k) => decide (t = c2 ∧ k = SgiKind.reschedule) | none => false)
+    assertBool "signal 3 wakes the last (waiter C1) to core 1"
+      (match d.sgi3 with | some (t, k) => decide (t = c1 ∧ k = SgiKind.reschedule) | none => false)
+    -- The three woken threads land on their own home cores, none crossing.
+    assertBool "each woken waiter is enqueued on its OWN home core (1/2/3)"
+      ((d.drained.scheduler.runQueueOnCore c1).contains waiterC1
+        && (d.drained.scheduler.runQueueOnCore c2).contains waiter2
+        && (d.drained.scheduler.runQueueOnCore c3).contains waiter3)
+    -- The drained notification is idle with an empty waiter list.
+    assertBool "the fully-drained notification is idle with no waiters"
+      (match d.drained.objects[nId]? with
+       | some (.notification n) => decide (n.state = .idle) && n.waitingThreads.val.isEmpty
+       | _ => false)
+
+-- ============================================================================
+-- §3.10  Checked cross-core dispatch (wait dispatch + bound-signal flow gates)
+-- ============================================================================
+
+private def lowLabel : SecurityLabel := { confidentiality := .low, integrity := .untrusted }
+private def highLabel : SecurityLabel := { confidentiality := .high, integrity := .trusted }
+private def allPublicCtx : LabelingContext :=
+  { objectLabelOf := fun _ => lowLabel, threadLabelOf := fun _ => lowLabel,
+    endpointLabelOf := fun _ => lowLabel, serviceLabelOf := fun _ => lowLabel }
+
+private def runCheckedDispatchChecks : IO Unit := do
+  IO.println "--- §3.10 checked cross-core dispatch (wait dispatch + bound-signal flow gates, review #3) ---"
+  -- (a) The unchecked wait dispatch descheds the caller on its OWN (current) core.
+  match okExcept (switchToThreadOnCore stFourCore c2 waiter2) with
+  | none => assertBool "wait-dispatch setup (dispatch waiter 2 on core 2)" false
+  | some stCur =>
+    let (stWaited, _) := notificationWaitCrossCoreDispatch nId waiter2 stCur
+    assertBool "wait dispatch blocks the caller as blockedOnNotification"
+      (ipcStateIs stWaited waiter2 (.blockedOnNotification nId))
+    assertBool "wait dispatch descheds the caller on its own core (core 2 current cleared)"
+      (stWaited.scheduler.currentOnCore c2 != some waiter2)
+  -- (b) The bound-signal checked dispatch: build the bound-delivery target.
+  match okPair (endpointReceiveDualOnCore epId boundT none c1 stFourCore) with
+  | none => assertBool "checked bound-signal setup (bound TCB recv)" false
+  | some (stRecv, _) =>
+    match (okExcept (bindNotification nId boundT stRecv)).map (·.2) with
+    | none => assertBool "checked bound-signal setup (bind)" false
+    | some stBound =>
+      assertBool "precond: the bound-delivery target resolves"
+        (decide (boundDeliveryTarget? stBound nId = some (boundT, epId)))
+      -- ALLOWED (all public): the bound delivery goes through, badge delivered.
+      let (stAllow, resAllow) :=
+        notificationSignalBoundCrossCoreDispatchChecked allPublicCtx nId signallerT badge1 stBound
+      assertBool "an all-public bound signal delivers the badge to the bound TCB"
+        (match resAllow with | .ok _ => deliveredBadgeIs stAllow boundT badge1 | .error _ => false)
+      -- DENIED signaler→notification (high signaller → low notification): fail-closed.
+      let sigDeniedCtx : LabelingContext :=
+        { objectLabelOf := fun _ => lowLabel
+          threadLabelOf := fun t => if t == signallerT then highLabel else lowLabel
+          endpointLabelOf := fun _ => lowLabel, serviceLabelOf := fun _ => lowLabel }
+      let (stD1, resD1) :=
+        notificationSignalBoundCrossCoreDispatchChecked sigDeniedCtx nId signallerT badge1 stBound
+      assertBool "a high signaller → low notification signal is denied (.flowDenied)"
+        (match resD1 with | .error .flowDenied => true | _ => false)
+      assertBool "the denied signaler→notification signal leaves the notification unchanged"
+        (stD1.objects[nId]? == stBound.objects[nId]?)
+      -- DENIED notification→receiver (review #3): signaler→notification permitted, but
+      -- the badge must NOT reach a LOW bound receiver.  Notification HIGH, receiver LOW.
+      let recvDeniedCtx : LabelingContext :=
+        { objectLabelOf := fun o => if o == nId then highLabel else lowLabel
+          threadLabelOf := fun t => if t == boundT then lowLabel else highLabel
+          endpointLabelOf := fun _ => lowLabel, serviceLabelOf := fun _ => lowLabel }
+      let (stD2, resD2) :=
+        notificationSignalBoundCrossCoreDispatchChecked recvDeniedCtx nId signallerT badge1 stBound
+      assertBool "review #3: a bound delivery to a LOW receiver is denied (.flowDenied)"
+        (match resD2 with | .error .flowDenied => true | _ => false)
+      assertBool "review #3: the denied bound delivery does NOT leak the badge to the low receiver"
+        (!deliveredBadgeIs stD2 boundT badge1)
 
 def runSmpNotificationChecks : IO Unit := do
   IO.println "WS-SM SM6.F.2 — Aggregate SMP cross-core notification suite (4 cores)"
@@ -532,6 +676,8 @@ def runSmpNotificationChecks : IO Unit := do
   runBindLifecycleChecks
   runErrorPathChecks
   runIndependenceAndLockChecks
+  runThreeWaiterDrainChecks
+  runCheckedDispatchChecks
   IO.println "===================================="
   IO.println "All SM6.F cross-core notification checks PASS."
 

@@ -11,8 +11,10 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointCall
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReply
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDispatch
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyDispatch
+import SeLe4n.Kernel.IPC.CrossCore.Cancellation
 import SeLe4n.Kernel.IPC.Invariant.PerCoreBundlePreservation
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreWcrt
+import SeLe4n.Kernel.API
 import SeLe4n.Testing.StateBuilder
 
 /-!
@@ -45,14 +47,42 @@ pipelines** threaded through the evolving state:
 * **§3.6** fail-closed error paths (absent/wrong-kind objects, oversized
   payloads, replay, no-stash rendezvous) — every error returns the pre-state;
 * **§3.7** 2PL lock-set discipline on the live pipeline states (state-resolved
-  footprints, hierarchical kinds, SM5.J WCRT bound);
+  footprints, hierarchical kinds, exact resolved footprint sizes, SM5.J WCRT
+  bound);
 * **§3.8** live-dispatch coherence: `determineExecutingCore` + the full
   `endpointCallCrossCoreDispatch` agree with the bare transition;
+* **§3.9** SchedContext **donation** round trip: a bound-SC client calls a
+  passive (unbound-SC) server homed on a remote core — the SC donates to the
+  server (`applyCallDonation`), the server's donated-priority boost migrates
+  its run-queue bucket on its home core (cross-core PIP), and the reply
+  returns the SC to the client (`applyReplyDonationOnCore`);
+* **§3.10** **capability transfer** across cores: a Call carrying a capability
+  installs it into the receiver's CSpace via `ipcUnwrapCaps` (grant-right
+  gated — denied without `.grant`), plus the `ipcMessageTooManyCaps` bound;
+* **§3.11** **info-flow-checked** cross-core dispatch: `…CrossCoreDispatchChecked`
+  runs the transition when the flow is permitted and fails closed with
+  `.flowDenied` (state unchanged) when it is not — for both the call
+  (caller→endpoint) and the reply (replier→target) gates;
+* **§3.12** the **live API dispatch** path (`dispatchSyscall` `.call`): the
+  full CSpace capability resolution + authority gate + cross-core dispatch
+  composition (authorized call succeeds; no-cap / read-only-cap / wrong-kind
+  fail closed), plus the checked (`dispatchSyscallChecked`) info-flow variant;
+* **§3.13** **cancellation × IPC** composition: suspending / cancelling a
+  client blocked awaiting a reply severs its reply linkage, so the server's
+  later cross-core reply fails closed (`.replyCapInvalid`);
+* **§3.14** **scheduler contention** on the handler path: a woken server does
+  NOT preempt a strictly higher-priority current thread on its home core;
 * **§9** the deterministic **4-core IPC golden trace** (SM6.F.4), verified
   byte-for-byte against `tests/fixtures/smp_ipc_4core.expected`.
 
 `lake exe smp_ipc_suite` runs all scenarios; an IPC-logic regression flips a
 decidable check or diverges the golden trace.
+
+**Coverage note.**  There is deliberately no cross-core `.replyRecv` dispatch
+wrapper to exercise: the raw-thread `endpointReplyRecvCrossCoreDispatch{,Checked}`
+were removed (they exposed a reply-without-reply-cap surface); the live
+`.replyRecv` routes through `API.replyRecvBody`, and the below-API building block
+`endpointReplyRecvOnCore` is exercised in §3.5.
 -/
 
 namespace SeLe4n.Testing.SmpIpc
@@ -111,6 +141,26 @@ open SeLe4n.Testing
 #check @endpointReplyRecv_preserves_ipcInvariantFull_perCore
 #check @notificationSignal_preserves_ipcInvariantFull_perCore
 #check @notificationWait_preserves_ipcInvariantFull_perCore
+-- SchedContext donation (SM6.A.5 / SM6.C.3) + cross-core PIP (production):
+#check @applyCallDonation
+#check @applyReplyDonationOnCore
+#check @SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore
+-- Capability transfer across cores (SM6.A.8, production):
+#check @ipcUnwrapCaps
+#check @lookupCspaceRoot
+-- Info-flow-checked cross-core dispatch + its flow theorems (production):
+#check @endpointCallCrossCoreDispatchChecked_flow_denied
+#check @endpointCallCrossCoreDispatchChecked_flow_allowed
+#check @endpointReplyCrossCoreDispatchChecked_flow_denied
+#check @endpointReplyCrossCoreDispatchChecked_flow_allowed
+#check @securityFlowsTo
+#check @LabelingContext.threadLabelOf
+-- Live API dispatch (`.call` through CSpace cap resolution, production):
+#check @dispatchSyscall
+#check @dispatchSyscallChecked
+-- Cancellation × IPC composition (SM6.E, production):
+#check @cancelIpcBlockingOnCore
+#check @Lifecycle.Suspend.suspendThreadOnCore
 
 -- ============================================================================
 -- §2  Elaboration-time witnesses (headline theorems applied to typed inputs)
@@ -148,6 +198,26 @@ example (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hTcb : st.getTcb? tid = some tcb) :
     determineTargetCore st tid = threadHomeCore tcb :=
   determineTargetCore_eq_threadHomeCore hTcb
+
+/-- SM6.A info-flow gate: a disallowed caller→endpoint flow rejects the checked
+cross-core call before any state change (fail-closed). -/
+example (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
+    (msg : IpcMessage) (endpointRights : AccessRightSet) (callerCspaceRoot : SeLe4n.ObjId)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (hDeny : securityFlowsTo (ctx.threadLabelOf caller) (ctx.endpointLabelOf endpointId) = false) :
+    endpointCallCrossCoreDispatchChecked ctx endpointId caller msg endpointRights
+        callerCspaceRoot receiverSlotBase executingCore st = (st, .error .flowDenied) :=
+  endpointCallCrossCoreDispatchChecked_flow_denied ctx endpointId caller msg endpointRights
+    callerCspaceRoot receiverSlotBase executingCore st hDeny
+
+/-- SM6.C info-flow gate: when the replier→target flow is permitted, the checked
+cross-core reply is exactly the unchecked one (the guard is a pure precondition). -/
+example (ctx : LabelingContext) (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
+    (executingCore : CoreId) (st : SystemState)
+    (hAllow : securityFlowsTo (ctx.threadLabelOf replier) (ctx.threadLabelOf target) = true) :
+    endpointReplyCrossCoreDispatchChecked ctx replier target msg executingCore st
+      = endpointReplyCrossCoreDispatch replier target msg executingCore st :=
+  endpointReplyCrossCoreDispatchChecked_flow_allowed ctx replier target msg executingCore st hAllow
 
 -- ============================================================================
 -- §3  Runtime scenarios — the deterministic 4-thread / 4-core IPC fixture
@@ -237,6 +307,20 @@ private def okExcept {α : Type} (r : Except KernelError α) : Option α :=
   | .ok a => some a
   | .error _ => none
 
+-- Labelled plumbing: a failed step names itself, so a pipeline break reports the
+-- exact failing transition instead of a blanket "pipeline succeeded: FAIL".
+private def stepPair {α : Type} (label : String)
+    (r : SystemState × Except KernelError α) : Except String (SystemState × α) :=
+  match r with
+  | (st, .ok a) => .ok (st, a)
+  | (_, .error _) => .error label
+
+private def stepExcept {α : Type} (label : String) (r : Except KernelError α) :
+    Except String α :=
+  match r with
+  | .ok a => .ok a
+  | .error _ => .error label
+
 /-- The full interleaved 4-thread round-trip pipeline (every intermediate state
 + every surfaced SGI).  Both servers block on their endpoints from their own
 cores; both clients call cross-core; each SGI is handled on its target core;
@@ -256,22 +340,34 @@ private structure RoundTrip where
   sgiReplyD   : Option (CoreId × SgiKind)
   afterSgiC   : SystemState
 
-private def roundTrip? : Option RoundTrip := do
-  let (st1, _) ← okPair (endpointReceiveDualOnCore epAB serverB (some replyB) c1 stFourCore)
-  let (afterRecv, _) ← okPair (endpointReceiveDualOnCore epCD serverD (some replyD) c3 st1)
-  let (afterCallA, sgiCallA) ← okPair (endpointCallOnCore epAB clientA callMsgA c0 afterRecv)
-  let afterSgiB ← okExcept (handleRescheduleSgiOnCore afterCallA c1)
-  let (afterCallC, sgiCallC) ← okPair (endpointCallOnCore epCD clientC callMsgC c2 afterSgiB)
-  let afterSgiD ← okExcept (handleRescheduleSgiOnCore afterCallC c3)
-  let (afterReplyB, sgiReplyB) ← okPair (endpointReplyOnCore serverB clientA replyMsgB c1 afterSgiD)
-  let afterSgiA ← okExcept (handleRescheduleSgiOnCore afterReplyB c0)
-  let (afterReplyD, sgiReplyD) ← okPair (endpointReplyOnCore serverD clientC replyMsgD c3 afterSgiA)
-  let afterSgiC ← okExcept (handleRescheduleSgiOnCore afterReplyD c2)
+/-- The full interleaved 4-thread round trip, computed once with **step
+attribution** — each step names itself, so a break reports the exact failing
+transition (`.error "<step>"`) rather than a blanket pipeline failure. -/
+private def roundTripE : Except String RoundTrip := do
+  let (st1, _) ← stepPair "step1: server B recv on core 1"
+    (endpointReceiveDualOnCore epAB serverB (some replyB) c1 stFourCore)
+  let (afterRecv, _) ← stepPair "step2: server D recv on core 3"
+    (endpointReceiveDualOnCore epCD serverD (some replyD) c3 st1)
+  let (afterCallA, sgiCallA) ← stepPair "step3: client A call on core 0"
+    (endpointCallOnCore epAB clientA callMsgA c0 afterRecv)
+  let afterSgiB ← stepExcept "step4: core 1 SGI handler" (handleRescheduleSgiOnCore afterCallA c1)
+  let (afterCallC, sgiCallC) ← stepPair "step5: client C call on core 2"
+    (endpointCallOnCore epCD clientC callMsgC c2 afterSgiB)
+  let afterSgiD ← stepExcept "step6: core 3 SGI handler" (handleRescheduleSgiOnCore afterCallC c3)
+  let (afterReplyB, sgiReplyB) ← stepPair "step7: server B reply on core 1"
+    (endpointReplyOnCore serverB clientA replyMsgB c1 afterSgiD)
+  let afterSgiA ← stepExcept "step8: core 0 SGI handler" (handleRescheduleSgiOnCore afterReplyB c0)
+  let (afterReplyD, sgiReplyD) ← stepPair "step9: server D reply on core 3"
+    (endpointReplyOnCore serverD clientC replyMsgD c3 afterSgiA)
+  let afterSgiC ← stepExcept "step10: core 2 SGI handler" (handleRescheduleSgiOnCore afterReplyD c2)
   pure { afterRecv := afterRecv, afterCallA := afterCallA, sgiCallA := sgiCallA,
          afterSgiB := afterSgiB, afterCallC := afterCallC, sgiCallC := sgiCallC,
          afterSgiD := afterSgiD, afterReplyB := afterReplyB, sgiReplyB := sgiReplyB,
          afterSgiA := afterSgiA, afterReplyD := afterReplyD, sgiReplyD := sgiReplyD,
          afterSgiC := afterSgiC }
+
+/-- The round trip as an `Option` (for the §9 golden-trace emitters). -/
+private def roundTrip? : Option RoundTrip := roundTripE.toOption
 
 /-- The cross-core send/receive rendezvous: blocked sender E (homed core 2) is
 woken by a receive executing on core 1.  Returns (post-state, popped sender,
@@ -302,9 +398,9 @@ private def pendingMessageIs (st : SystemState) (tid : SeLe4n.ThreadId)
 
 private def runTwoThreadRoundTripChecks : IO Unit := do
   IO.println "--- §3.1 two-thread cross-core IPC round trip (client A core 0 ↔ server B core 1) ---"
-  match roundTrip? with
-  | none => assertBool "round-trip pipeline succeeded" false
-  | some rt =>
+  match roundTripE with
+  | .error step => assertBool s!"round-trip pipeline succeeded ({step} failed)" false
+  | .ok rt =>
     -- The server's receive blocks it on ITS OWN core (removed from core 1's queue).
     assertBool "recv blocks server B as blockedOnReceive"
       (ipcStateIs rt.afterRecv serverB (.blockedOnReceive epAB))
@@ -362,9 +458,9 @@ private def runTwoThreadRoundTripChecks : IO Unit := do
 
 private def runFourThreadRendezvousChecks : IO Unit := do
   IO.println "--- §3.2 four-thread SMP rendezvous (pairs 0↔1 and 2↔3, interleaved) ---"
-  match roundTrip? with
-  | none => assertBool "rendezvous pipeline succeeded" false
-  | some rt =>
+  match roundTripE with
+  | .error step => assertBool s!"rendezvous pipeline succeeded ({step} failed)" false
+  | .ok rt =>
     -- Pair C↔D completes exactly like pair A↔B (SGIs to cores 3 and 2).
     assertBool "call from core 2 fires a reschedule SGI to core 3 (remote receiver)"
       (match rt.sgiCallC with
@@ -600,13 +696,23 @@ private def runLockDisciplineChecks : IO Unit := do
       (decide ((tcbLock clientA, AccessMode.write) ∈ callLs.pairs))
     assertBool "the server-first stashed reply write lock is in the call footprint"
       (decide ((replyLock replyB, AccessMode.write) ∈ callLs.pairs))
+    -- Exact resolved footprint size: on this rendezvous state the footprint is
+    -- exactly the five declared locks — caller TCB (W), sender CNode (R),
+    -- endpoint (W), woken-receiver TCB (W), server-first reply (W); no donated
+    -- SC (the client is `.unbound`).  Pinning the exact size catches a regression
+    -- that silently adds or drops a lock, which a `≤` bound would not.
+    assertBool "state-resolved call footprint has exactly 5 locks (caller/cnode/ep/receiver/reply)"
+      (decide (callLs.pairs.length = 5))
     assertBool "call lock-set size within maxLockSetSize"
       (decide (callLs.pairs.length ≤ maxLockSetSize))
-    -- SM5.J: an IPC op's lock WCRT is |lockSet| · 3 · tCs (plan §4.1 — lock-set
-    -- size is the WCRT factor); the state-resolved call footprint is within the
-    -- RPi5 bound maxLockSetSize · 3 · tCs.
-    assertBool "call lock-set WCRT within the RPi5 bound (maxLockSetSize · 3 · tCs)"
-      (decide (callLs.pairs.length * (3 * 60) ≤ maxLockSetSize * (3 * 60)))
+    -- SM5.J (plan §4.1): an IPC op's lock WCRT is |lockSet| · 3 · tCs (tCs = 60µs).
+    -- The 5-lock call footprint is 5·3·60 = 900µs, which genuinely fits the 1 ms
+    -- (1000µs) per-core timer-tick budget — a real timing property (a 6th lock
+    -- would be 1080µs and blow the budget), not the trivially-true `≤ max · c`.
+    assertBool "call lock-set WCRT (900µs) fits the 1 ms timer-tick budget"
+      (decide (callLs.pairs.length * (3 * 60) < 1000))
+    assertBool "call lock-set WCRT equals |footprint| · 3 · tCs exactly (= 900µs)"
+      (decide (callLs.pairs.length * (3 * 60) = 900))
     -- The reply footprint covers the caller-TCB write (the reply-state lifecycle).
     let replyLs := lockSet_endpointReplyOnCore stWait serverB cnRoot clientA
     assertBool "state-resolved reply lock-set kinds all permitted"
@@ -643,6 +749,378 @@ private def runDispatchCoherenceChecks : IO Unit := do
       (ipcStateIs stDisp serverB .ready && pendingMessageIs stDisp serverB (some callMsgA))
     assertBool "cross-core dispatch blocks the caller as blockedOnReply"
       (ipcStateIs stDisp clientA (.blockedOnReply epAB (some serverB)))
+
+-- ============================================================================
+-- §3.9  SchedContext donation round trip (call donates, reply returns)
+-- ============================================================================
+
+private def scClient : SeLe4n.SchedContextId := SchedContextId.ofNat 840
+private def donClient : SeLe4n.ThreadId := ⟨841⟩   -- active, bound-SC, home boot core
+private def donServer : SeLe4n.ThreadId := ⟨842⟩   -- passive (.unbound), home core 1
+private def donEp : SeLe4n.ObjId := ⟨843⟩
+private def donReply : SeLe4n.ReplyId := ⟨844⟩
+
+/-- The client's own SchedContext (priority 60, above the passive server's base). -/
+private def donClientSc : SchedContext :=
+  { scId := scClient, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨60⟩, deadline := ⟨0⟩,
+    domain := ⟨0⟩, budgetRemaining := ⟨50⟩, boundThread := some donClient, isActive := true }
+
+/-- A bound-SC client (prio 60) and a passive `.unbound` server homed on core 1. -/
+private def stDonBase : SystemState :=
+  (BootstrapBuilder.empty
+    |>.withObject donEp (.endpoint {})
+    |>.withObject scClient.toObjId (.schedContext donClientSc)
+    |>.withObject donClient.toObjId
+        (.tcb { mkTcb 841 60 none with schedContextBinding := .bound scClient })
+    |>.withObject donServer.toObjId
+        (.tcb { mkTcb 842 20 (some c1) with schedContextBinding := .unbound })
+    |>.withObject donReply.toObjId (.reply { replyId := donReply })
+    |>.withRunnable [donClient]
+    |>.build)
+
+private def runDonationChecks : IO Unit := do
+  IO.println "--- §3.9 SchedContext donation round trip (call donates SC, reply returns it) ---"
+  -- Pre-state: the client holds its own SC; the server is passive.
+  assertBool "pre: client holds its bound SchedContext"
+    (match stDonBase.getTcb? donClient with
+     | some t => decide (t.schedContextBinding = .bound scClient) | none => false)
+  assertBool "pre: server is passive (.unbound)"
+    (match stDonBase.getTcb? donServer with
+     | some t => decide (t.schedContextBinding = SchedContextBinding.unbound) | none => false)
+  -- The server blocks on the endpoint; then the client calls cross-core (donating).
+  match okPair (endpointReceiveDualOnCore donEp donServer (some donReply) c1 stDonBase) with
+  | none => assertBool "donation setup (server recv) succeeded" false
+  | some (stRecv, _) =>
+    let (stCall, resCall) := endpointCallCrossCoreDispatch donEp donClient IpcMessage.empty
+      AccessRightSet.empty cnRoot (SeLe4n.Slot.ofNat 0) c0 stRecv
+    assertBool "donating call succeeds and fires the remote reschedule SGI to core 1"
+      (match resCall with
+       | .ok (_, some (tgt, kind)) => decide (tgt = c1 ∧ kind = SgiKind.reschedule)
+       | _ => false)
+    -- Donation: the SC rebinds from the client to the passive server.
+    assertBool "call donates the SC to the server (server binding = .donated scClient donClient)"
+      (match stCall.getTcb? donServer with
+       | some t => decide (t.schedContextBinding = .donated scClient donClient) | none => false)
+    assertBool "call leaves the client SC-less (.unbound) after donating"
+      (match stCall.getTcb? donClient with
+       | some t => decide (t.schedContextBinding = SchedContextBinding.unbound) | none => false)
+    assertBool "the donated SchedContext's boundThread moves to the server"
+      (match stCall.getSchedContext? scClient with
+       | some sc => decide (sc.boundThread = some donServer) | none => false)
+    -- Cross-core PIP: the donated priority (60) boosts the server on its home core.
+    assertBool "the server inherits the client's donated priority (pipBoost = 60)"
+      (match stCall.getTcb? donServer with
+       | some t => decide (t.pipBoost = some ⟨60⟩) | none => false)
+    assertBool "the boosted server is enqueued on its home core 1"
+      ((stCall.scheduler.runQueueOnCore c1).contains donServer)
+    -- The scheduler resolves the server's EFFECTIVE priority to the donated 60
+    -- (via the donated SchedContext's priority ⊔ the PIP boost) — the run-queue
+    -- bucket key is the stale enqueue-time base, but selection reads the resolver.
+    assertBool "the server's effective scheduling priority is the donated 60 (was base 20)"
+      (match stCall.getTcb? donServer with
+       | some t => decide ((resolveEffectivePrioDeadline stCall t).1 = ⟨60⟩) | none => false)
+    -- The reply returns the SC to the client and reverts the boost.
+    let (stReply, resReply) := endpointReplyCrossCoreDispatch donServer donClient IpcMessage.empty c1 stCall
+    assertBool "reply succeeds and wakes the client back on the boot core"
+      (match resReply with | .ok _ => true | .error _ => false)
+    assertBool "reply returns the SC: server passive again (.unbound)"
+      (match stReply.getTcb? donServer with
+       | some t => decide (t.schedContextBinding = SchedContextBinding.unbound) | none => false)
+    assertBool "reply returns the SC: client bound to its own SC again (.bound scClient)"
+      (match stReply.getTcb? donClient with
+       | some t => decide (t.schedContextBinding = .bound scClient) | none => false)
+    assertBool "the returned SchedContext's boundThread is the client again"
+      (match stReply.getSchedContext? scClient with
+       | some sc => decide (sc.boundThread = some donClient) | none => false)
+
+-- ============================================================================
+-- §3.10  Capability transfer across cores (ipcUnwrapCaps, grant-gated)
+-- ============================================================================
+
+private def capCn : SeLe4n.ObjId := ⟨850⟩
+private def capEp : SeLe4n.ObjId := ⟨851⟩
+private def capCaller : SeLe4n.ThreadId := ⟨852⟩
+private def capServer : SeLe4n.ThreadId := ⟨853⟩   -- home core 1
+private def capReply : SeLe4n.ReplyId := ⟨854⟩
+/-- The capability the Call transfers — a write cap on the endpoint. -/
+private def transferredCap : Capability :=
+  { target := .object capEp, rights := AccessRightSet.ofList [.write] }
+private def capMsg : IpcMessage := { registers := #[], caps := #[transferredCap], badge := none }
+/-- 4 caps > maxExtraCaps (3): rejected at the send boundary. -/
+private def tooManyCapsMsg : IpcMessage :=
+  { registers := #[], caps := Array.replicate (maxExtraCaps + 1) Capability.null, badge := none }
+
+/-- A shared single-level CNode (`depth=4, radixWidth=4, guard=0`) holding the
+endpoint cap at slot 0; caller + server both root their CSpace at it. -/
+private def stCapBase : SystemState :=
+  (BootstrapBuilder.empty
+    |>.withObject capEp (.endpoint {})
+    |>.withObject capCn (.cnode
+        { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.UniqueSlotMap.ofListWF [(SeLe4n.Slot.ofNat 0, transferredCap)] })
+    |>.withObject capCaller.toObjId (.tcb { mkTcb 852 40 none with cspaceRoot := capCn })
+    |>.withObject capServer.toObjId (.tcb { mkTcb 853 50 (some c1) with cspaceRoot := capCn })
+    |>.withObject capReply.toObjId (.reply { replyId := capReply })
+    |>.withRunnable [capCaller]
+    |>.build)
+
+/-- `true` iff a transfer summary reports at least one installed cap. -/
+private def summaryInstalled (s : CapTransferSummary) : Bool :=
+  s.results.any (fun r => match r with | .installed _ _ => true | _ => false)
+/-- `true` iff every result in a transfer summary is grant-denied. -/
+private def summaryAllGrantDenied (s : CapTransferSummary) : Bool :=
+  !s.results.isEmpty && s.results.all (fun r => match r with | .grantDenied => true | _ => false)
+
+private def runCapTransferChecks : IO Unit := do
+  IO.println "--- §3.10 capability transfer across cores (ipcUnwrapCaps, grant-gated) ---"
+  match okPair (endpointReceiveDualOnCore capEp capServer (some capReply) c1 stCapBase) with
+  | none => assertBool "cap-transfer setup (server recv) succeeded" false
+  | some (stRecv, _) =>
+    -- WITH grant: the carried cap is installed into the receiver's CSpace.
+    let (_, resGrant) := endpointCallWithCapsOnCore capEp capCaller capMsg
+      (AccessRightSet.ofList [.write, .grant]) capCn (SeLe4n.Slot.ofNat 1) c0 stRecv
+    assertBool "a granted cross-core Call installs the transferred cap (summary = installed)"
+      (match resGrant with
+       | .ok (summary, _) => summaryInstalled summary
+       | .error _ => false)
+    -- WITHOUT grant: the transfer is denied (the receiver's CSpace is untouched).
+    let (_, resNoGrant) := endpointCallWithCapsOnCore capEp capCaller capMsg
+      (AccessRightSet.ofList [.write]) capCn (SeLe4n.Slot.ofNat 1) c0 stRecv
+    assertBool "an ungranted cross-core Call denies the transfer (summary = grantDenied)"
+      (match resNoGrant with
+       | .ok (summary, _) => summaryAllGrantDenied summary
+       | .error _ => false)
+    -- The grant gate is exactly the endpoint cap's `.grant` right.
+    assertBool "the grant gate reads the endpoint cap's `.grant` right"
+      ((AccessRightSet.ofList [.write, .grant]).mem .grant
+        && !(AccessRightSet.ofList [.write]).mem .grant)
+  -- Oversized cap payload (4 > maxExtraCaps): rejected at the send boundary.
+  assertBool "a 4-cap message exceeds maxExtraCaps"
+    (decide (tooManyCapsMsg.caps.size > maxExtraCaps))
+  assertBool "an over-capped cross-core call fails with ipcMessageTooManyCaps"
+    (match (endpointCallOnCore capEp capCaller tooManyCapsMsg c0 stCapBase).2 with
+     | .error .ipcMessageTooManyCaps => true | _ => false)
+
+-- ============================================================================
+-- §3.11  Info-flow-checked cross-core dispatch (flow-allowed vs flow-denied)
+-- ============================================================================
+
+private def lowLabel : SecurityLabel := { confidentiality := .low, integrity := .untrusted }
+private def highLabel : SecurityLabel := { confidentiality := .high, integrity := .trusted }
+
+/-- Call gate is `caller → endpoint`; DENY = HIGH caller (client A) → LOW endpoint. -/
+private def callDeniedCtx : LabelingContext :=
+  { objectLabelOf   := fun _ => lowLabel
+    threadLabelOf   := fun t => if t == clientA then highLabel else lowLabel
+    endpointLabelOf := fun _ => lowLabel
+    serviceLabelOf  := fun _ => lowLabel }
+/-- Everything public ⇒ every flow permitted (reflexive `securityFlowsTo`). -/
+private def allPublicCtx : LabelingContext :=
+  { objectLabelOf := fun _ => lowLabel, threadLabelOf := fun _ => lowLabel,
+    endpointLabelOf := fun _ => lowLabel, serviceLabelOf := fun _ => lowLabel }
+/-- Reply gate is `replier → target`; DENY = HIGH replier (server B) → LOW target. -/
+private def replyDeniedCtx : LabelingContext :=
+  { objectLabelOf   := fun _ => lowLabel
+    threadLabelOf   := fun t => if t == serverB then highLabel else lowLabel
+    endpointLabelOf := fun _ => lowLabel
+    serviceLabelOf  := fun _ => lowLabel }
+
+private def runFlowCheckedChecks : IO Unit := do
+  IO.println "--- §3.11 info-flow-checked cross-core dispatch (allowed vs flowDenied) ---"
+  match roundTripE with
+  | .error step => assertBool s!"info-flow fixture ({step} failed)" false
+  | .ok rt =>
+    -- (a) Call gate.  Fixture: rt.afterRecv (server B waiting on epAB).
+    -- DENIED (high client A → low endpoint): fail-closed, state unchanged.
+    let (stDenied, resDenied) := endpointCallCrossCoreDispatchChecked callDeniedCtx epAB clientA
+      callMsgA AccessRightSet.empty cnRoot (SeLe4n.Slot.ofNat 0) c0 rt.afterRecv
+    assertBool "a high→low call is denied with .flowDenied"
+      (match resDenied with | .error .flowDenied => true | _ => false)
+    assertBool "the denied call leaves the state unchanged (endpoint untouched)"
+      (stDenied.objects[epAB]? == rt.afterRecv.objects[epAB]?)
+    assertBool "the denied call does NOT block the client (still ready)"
+      (ipcStateIs stDenied clientA .ready)
+    -- ALLOWED (all public): the checked dispatch equals the unchecked one.
+    let checkedAllowed := endpointCallCrossCoreDispatchChecked allPublicCtx epAB clientA
+      callMsgA AccessRightSet.empty cnRoot (SeLe4n.Slot.ofNat 0) c0 rt.afterRecv
+    let uncheckedCall := endpointCallCrossCoreDispatch epAB clientA callMsgA
+      AccessRightSet.empty cnRoot (SeLe4n.Slot.ofNat 0) c0 rt.afterRecv
+    assertBool "an allowed checked call equals the unchecked cross-core call (SGI + state)"
+      (checkedAllowed.1.objects[serverB.toObjId]? == uncheckedCall.1.objects[serverB.toObjId]?
+        && (match checkedAllowed.2, uncheckedCall.2 with
+            | .ok (_, s1), .ok (_, s2) => s1 == s2 | _, _ => false))
+    -- (b) Reply gate.  Fixture: rt.afterCallA (client A blockedOnReply, server B ready).
+    -- DENIED (high server B → low client A): fail-closed, state unchanged.
+    let (stRDenied, resRDenied) :=
+      endpointReplyCrossCoreDispatchChecked replyDeniedCtx serverB clientA replyMsgB c1 rt.afterCallA
+    assertBool "a high→low reply is denied with .flowDenied"
+      (match resRDenied with | .error .flowDenied => true | _ => false)
+    assertBool "the denied reply leaves the client still blockedOnReply (undelivered)"
+      (ipcStateIs stRDenied clientA (.blockedOnReply epAB (some serverB)))
+    -- ALLOWED (all public): the checked reply equals the unchecked one.
+    let checkedRAllowed := endpointReplyCrossCoreDispatchChecked allPublicCtx serverB clientA replyMsgB c1 rt.afterCallA
+    let uncheckedReply := endpointReplyCrossCoreDispatch serverB clientA replyMsgB c1 rt.afterCallA
+    assertBool "an allowed checked reply equals the unchecked cross-core reply"
+      (checkedRAllowed.1.objects[clientA.toObjId]? == uncheckedReply.1.objects[clientA.toObjId]?)
+
+-- ============================================================================
+-- §3.12  Live API dispatch (`dispatchSyscall` .call through CSpace resolution)
+-- ============================================================================
+
+private def apiCn : SeLe4n.ObjId := ⟨860⟩
+private def apiEp : SeLe4n.ObjId := ⟨861⟩
+private def apiCaller : SeLe4n.ThreadId := ⟨862⟩
+private def apiServer : SeLe4n.ThreadId := ⟨863⟩   -- home core 1
+private def apiReply : SeLe4n.ReplyId := ⟨864⟩
+private def apiEpCap : Capability := { target := .object apiEp, rights := AccessRightSet.ofList [.write] }
+private def apiEpCapRO : Capability := { target := .object apiEp, rights := AccessRightSet.ofList [.read] }
+/-- A cap whose target is a TCB, not an endpoint — resolves, but the `.call` arm
+rejects it (the transition finds a wrong-kinded object). -/
+private def apiWrongKindCap : Capability :=
+  { target := .object apiServer.toObjId, rights := AccessRightSet.ofList [.write] }
+
+/-- A `.call` syscall decode whose primary cap sits at CPtr `capSlot`. -/
+private def apiCallDecoded (capSlot : Nat) : SyscallDecodeResult :=
+  { capAddr := SeLe4n.CPtr.ofNat capSlot,
+    msgInfo := { length := 0, extraCaps := 0, label := 0 },
+    syscallId := .call, msgRegs := #[] }
+
+private def stApi (slots : List (SeLe4n.Slot × Capability)) : SystemState :=
+  (BootstrapBuilder.empty
+    |>.withObject apiEp (.endpoint {})
+    |>.withObject apiCn (.cnode
+        { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.UniqueSlotMap.ofListWF slots })
+    |>.withObject apiCaller.toObjId (.tcb { mkTcb 862 40 none with cspaceRoot := apiCn })
+    |>.withObject apiServer.toObjId (.tcb { mkTcb 863 50 (some c1) with cspaceRoot := apiCn })
+    |>.withObject apiReply.toObjId (.reply { replyId := apiReply })
+    |>.withRunnable [apiCaller]
+    |>.build)
+
+/-- Block the server on the endpoint, then dispatch the caller's `.call` syscall
+through the full public entry (`dispatchSyscall` → CSpace lookup → cross-core). -/
+private def apiDispatch (slots : List (SeLe4n.Slot × Capability)) (capSlot : Nat) :
+    Except KernelError (Unit × SystemState) :=
+  match endpointReceiveDual apiEp apiServer (some apiReply) (stApi slots) with
+  | .error e => .error e
+  | .ok (_, stRecv) => dispatchSyscall (apiCallDecoded capSlot) apiCaller stRecv
+
+private def runLiveApiChecks : IO Unit := do
+  IO.println "--- §3.12 live API dispatch (dispatchSyscall .call: CSpace lookup + authority + cross-core) ---"
+  -- AUTHORIZED: an endpoint cap with `.write` at slot 0 → the call rendezvouses.
+  match apiDispatch [(SeLe4n.Slot.ofNat 0, apiEpCap)] 0 with
+  | .error _ => assertBool "authorized live .call succeeds" false
+  | .ok ((), st') =>
+    assertBool "authorized live .call rendezvouses: server B receives (.ready)"
+      (ipcStateIs st' apiServer .ready)
+    assertBool "authorized live .call blocks the caller as blockedOnReply"
+      (ipcStateIs st' apiCaller (.blockedOnReply apiEp (some apiServer)))
+    assertBool "authorized live .call wakes the server on its home core 1"
+      ((st'.scheduler.runQueueOnCore c1).contains apiServer)
+  -- NO CAP (empty slot 0): the CSpace lookup fails closed.
+  assertBool "live .call with no cap at the CPtr fails with invalidCapability"
+    (match apiDispatch [] 0 with | .error .invalidCapability => true | _ => false)
+  -- READ-ONLY cap (no `.write`): the authority gate rejects (syscallRequiredRight .call = .write).
+  assertBool "live .call with a read-only endpoint cap fails with illegalAuthority"
+    (match apiDispatch [(SeLe4n.Slot.ofNat 0, apiEpCapRO)] 0 with
+     | .error .illegalAuthority => true | _ => false)
+  -- WRONG-KIND cap (targets a TCB): the `.call` transition rejects it.
+  assertBool "live .call resolving a non-endpoint cap fails with invalidCapability"
+    (match apiDispatch [(SeLe4n.Slot.ofNat 0, apiWrongKindCap)] 0 with
+     | .error .invalidCapability => true | _ => false)
+  -- Checked entry (dispatchSyscallChecked): a high→low policy denies the call.
+  match endpointReceiveDual apiEp apiServer (some apiReply) (stApi [(SeLe4n.Slot.ofNat 0, apiEpCap)]) with
+  | .error _ => assertBool "checked-dispatch setup (server recv) succeeded" false
+  | .ok (_, stRecv) =>
+    let apiDeniedCtx : LabelingContext :=
+      { objectLabelOf   := fun _ => lowLabel
+        threadLabelOf   := fun t => if t == apiCaller then highLabel else lowLabel
+        endpointLabelOf := fun _ => lowLabel
+        serviceLabelOf  := fun _ => lowLabel }
+    assertBool "live checked .call under a high→low policy fails with flowDenied"
+      (match dispatchSyscallChecked apiDeniedCtx (apiCallDecoded 0) apiCaller stRecv with
+       | .error .flowDenied => true | _ => false)
+    assertBool "live checked .call under an all-public policy succeeds"
+      (match dispatchSyscallChecked allPublicCtx (apiCallDecoded 0) apiCaller stRecv with
+       | .ok _ => true | _ => false)
+
+-- ============================================================================
+-- §3.13  Cancellation × IPC composition (cancel a reply-blocked client)
+-- ============================================================================
+
+private def runCancellationCompositionChecks : IO Unit := do
+  IO.println "--- §3.13 cancellation × IPC (cancel a reply-blocked client ⇒ server's reply fails closed) ---"
+  match roundTripE with
+  | .error step => assertBool s!"cancellation×IPC fixture ({step} failed)" false
+  | .ok rt =>
+    -- rt.afterCallA: client A is blockedOnReply(server B), linked to reply B.
+    assertBool "pre: client A is blockedOnReply and linked to its reply object"
+      (ipcStateIs rt.afterCallA clientA (.blockedOnReply epAB (some serverB))
+        && (match rt.afterCallA.getReply? replyB with
+            | some r => decide (r.caller = some clientA) | none => false))
+    -- Cancel the client's blocked IPC (the suspend pipeline's teardown slice).
+    match rt.afterCallA.getTcb? clientA with
+    | none => assertBool "client A TCB resolves for cancellation" false
+    | some tcbA =>
+      let (stCancelled, _) := cancelIpcBlockingOnCore clientA tcbA c0 rt.afterCallA
+      assertBool "cancellation makes the client .ready and clears its reply forward link"
+        (ipcStateIs stCancelled clientA .ready
+          && (match stCancelled.getTcb? clientA with
+              | some t => decide (t.replyObject = none) | none => false))
+      assertBool "cancellation severs the reply object's caller back-link"
+        (match stCancelled.getReply? replyB with
+         | some r => decide (r.caller = none) | none => false)
+      -- The composition: the server's later cross-core reply now fails closed
+      -- (the client is `.ready`, not `.blockedOnReply` — the SM6.C replay barrier).
+      assertBool "the server's reply to the cancelled client fails closed with replyCapInvalid"
+        (match (endpointReplyOnCore serverB clientA replyMsgB c1 stCancelled).2 with
+         | .error .replyCapInvalid => true | _ => false)
+
+-- ============================================================================
+-- §3.14  Scheduler contention on the handler path (no wrongful preemption)
+-- ============================================================================
+
+private def highPrioT : SeLe4n.ThreadId := ⟨870⟩
+
+/-- A core-1 current thread of priority `curPrio`, with the endpoint's server
+(priority 50) about to be woken onto core 1 by a cross-core call from the client. -/
+private def stContention (curPrio : Nat) : SystemState :=
+  let base :=
+    (BootstrapBuilder.empty
+      |>.withObject epAB (.endpoint {})
+      |>.withObject serverB.toObjId (.tcb (mkTcb 822 50 (some c1)))
+      |>.withObject highPrioT.toObjId (.tcb (mkTcb 870 curPrio (some c1)))
+      |>.withObject clientA.toObjId (.tcb (mkTcb 821 40 none))
+      |>.withObject replyB.toObjId (.reply { replyId := replyB })
+      |>.withRunnable [clientA]
+      |>.build)
+  { base with scheduler :=
+      (base.scheduler.setRunQueueOnCore c1
+          (RunQueue.ofList [(highPrioT, Priority.ofNat curPrio)])).setCurrentOnCore c1 (some highPrioT) }
+
+/-- Drive: server B receives on core 1, then client A calls cross-core (waking B
+onto core 1), then core 1 handles the reschedule SGI. -/
+private def contentionAfterHandle (curPrio : Nat) : Option SystemState := do
+  let (stRecv, _) ← okPair (endpointReceiveDualOnCore epAB serverB (some replyB) c1 (stContention curPrio))
+  let (stCall, _) ← okPair (endpointCallOnCore epAB clientA IpcMessage.empty c0 stRecv)
+  okExcept (handleRescheduleSgiOnCore stCall c1)
+
+private def runHandlerContentionChecks : IO Unit := do
+  IO.println "--- §3.14 scheduler contention (woken server does not preempt a higher-prio current) ---"
+  -- (a) HIGH current (prio 90 > server 50): the woken server does NOT preempt.
+  match contentionAfterHandle 90 with
+  | none => assertBool "contention pipeline (high current) succeeded" false
+  | some st =>
+    assertBool "the woken server (prio 50) is enqueued on core 1"
+      ((st.scheduler.runQueueOnCore c1).contains serverB)
+    assertBool "core 1's handler keeps the higher-priority current (no wrongful preemption)"
+      (st.scheduler.currentOnCore c1 == some highPrioT)
+  -- (b) LOW current (prio 10 < server 50): the woken server DOES preempt (control).
+  match contentionAfterHandle 10 with
+  | none => assertBool "contention pipeline (low current) succeeded" false
+  | some st =>
+    assertBool "core 1's handler preempts a lower-priority current (server B dispatched)"
+      (st.scheduler.currentOnCore c1 == some serverB)
 
 -- ============================================================================
 -- §9  The deterministic 4-core IPC trace (SM6.F.4 golden fixture)
@@ -756,6 +1234,12 @@ def runSmpIpcChecks : IO Unit := do
   runErrorPathChecks
   runLockDisciplineChecks
   runDispatchCoherenceChecks
+  runDonationChecks
+  runCapTransferChecks
+  runFlowCheckedChecks
+  runLiveApiChecks
+  runCancellationCompositionChecks
+  runHandlerContentionChecks
   runTraceFixtureCheck
   IO.println "===================================="
   IO.println "All SM6.F cross-core IPC checks PASS."
