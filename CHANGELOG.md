@@ -1,3 +1,32 @@
+## v0.32.69 — WS-SM SM6.F: PR #837 review — distinct caller/server CSpaces in the cap-transfer test
+
+Addresses the PR #837 Codex review (P2): the §3.10 capability-transfer
+test in `tests/SmpIpcSuite.lean` rooted the caller and the server at the
+**same** CNode, so it could not distinguish a correct receiver-root
+install from a regression that wrote the transferred cap back into the
+caller/shared root — `summaryInstalled` would still pass either way,
+leaving the receiver-root plumbing in
+`endpointCallWithCapsOnCore`/`ipcUnwrapCaps` uncovered.
+
+Fixed: the caller (`capCallerCn`) and server (`capServerCn`) now root
+their CSpaces at **distinct** CNodes, both empty at the receive slot, and
+the transferred payload is a **distinctive** read cap on a marker object
+(not the endpoint) so it is uniquely identifiable wherever it lands.  The
+group now asserts that a granted Call (a) installs into the **server's**
+CSpace root (`summaryInstalledInto … capServerCn` — `ipcTransferSingleCap`
+returns the receiver root in its `.installed` result), (b) the cap
+actually lands in the server's receive slot, and (c) it does **not** land
+in the caller's CSpace (the leak-back a shared-root regression would
+produce); an ungranted Call leaves the server's slot empty.  §3.10 grows
+6 → 8 assertions, so the IPC suite is 122 → **125 runtime assertions**
+across the same 14 scenario groups.
+
+No production code changed; the golden trace is byte-identical (the
+cap-transfer group runs after the §9 trace).  Version bumped 0.32.68 →
+0.32.69.
+
+Refs: docs/planning/SMP_CROSS_CORE_IPC_PLAN.md §5 (SM6.F); PR #837
+
 ## v0.32.68 — WS-SM SM6.F: aggregate-suite depth cut (donation, caps, info-flow, live API, cancellation composition)
 
 A depth-completion cut over the SM6.F aggregate suites, closing every

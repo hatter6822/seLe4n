@@ -117,8 +117,9 @@ accidental interference when suites are run independently.
   SmpCrossCoreNtfnSuite    300-604     WS-SM SM6.B cross-core notification fixtures
   SmpCrossCoreReplySuite   300-707     WS-SM SM6.C cross-core reply fixtures
   SmpIpcSuite              800-870     WS-SM SM6.F.1 aggregate cross-core IPC fixtures
-                                       (ep/reply/thread 810-844, cap CSpace 850-854,
-                                        live-API CSpace 860-864, contention 870)
+                                       (ep/reply/thread 810-844, cap transfer 850-856
+                                        (distinct caller/server CNodes), live-API
+                                        CSpace 860-864, contention 870)
   SmpNotificationSuite     900-926     WS-SM SM6.F.2 aggregate cross-core notification fixtures
 
 Suites with overlapping ranges run independently and do not share state. -/

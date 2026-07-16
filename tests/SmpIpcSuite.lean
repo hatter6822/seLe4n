@@ -837,59 +837,92 @@ private def runDonationChecks : IO Unit := do
 -- §3.10  Capability transfer across cores (ipcUnwrapCaps, grant-gated)
 -- ============================================================================
 
-private def capCn : SeLe4n.ObjId := ⟨850⟩
+private def capCallerCn : SeLe4n.ObjId := ⟨850⟩   -- the caller's own CSpace root
 private def capEp : SeLe4n.ObjId := ⟨851⟩
 private def capCaller : SeLe4n.ThreadId := ⟨852⟩
 private def capServer : SeLe4n.ThreadId := ⟨853⟩   -- home core 1
 private def capReply : SeLe4n.ReplyId := ⟨854⟩
-/-- The capability the Call transfers — a write cap on the endpoint. -/
-private def transferredCap : Capability :=
-  { target := .object capEp, rights := AccessRightSet.ofList [.write] }
-private def capMsg : IpcMessage := { registers := #[], caps := #[transferredCap], badge := none }
+private def capServerCn : SeLe4n.ObjId := ⟨855⟩   -- the server's DISTINCT CSpace root
+private def capMarkerObj : SeLe4n.ObjId := ⟨856⟩  -- the object the transferred cap targets
+private def recvSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 1
+/-- The capability the Call transfers — a distinctive **read** cap on a marker
+object (not the endpoint), so it is uniquely identifiable in whichever CSpace it
+lands, letting the test prove it reaches the *receiver's* root and only there. -/
+private def payloadCap : Capability :=
+  { target := .object capMarkerObj, rights := AccessRightSet.ofList [.read] }
+private def capMsg : IpcMessage := { registers := #[], caps := #[payloadCap], badge := none }
 /-- 4 caps > maxExtraCaps (3): rejected at the send boundary. -/
 private def tooManyCapsMsg : IpcMessage :=
   { registers := #[], caps := Array.replicate (maxExtraCaps + 1) Capability.null, badge := none }
 
-/-- A shared single-level CNode (`depth=4, radixWidth=4, guard=0`) holding the
-endpoint cap at slot 0; caller + server both root their CSpace at it. -/
+/-- **Distinct** single-level CNodes (`depth=4, radixWidth=4, guard=0`) for the
+caller (`capCallerCn`) and the server (`capServerCn`), both empty at the receive
+slot.  Separate roots are what let the test prove the transferred cap lands in
+the **server's** CSpace — not a shared/caller root — exercising the receiver-root
+plumbing in `endpointCallWithCapsOnCore` / `ipcUnwrapCaps`. -/
 private def stCapBase : SystemState :=
   (BootstrapBuilder.empty
     |>.withObject capEp (.endpoint {})
-    |>.withObject capCn (.cnode
+    |>.withObject capCallerCn (.cnode
         { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.UniqueSlotMap.ofListWF [(SeLe4n.Slot.ofNat 0, transferredCap)] })
-    |>.withObject capCaller.toObjId (.tcb { mkTcb 852 40 none with cspaceRoot := capCn })
-    |>.withObject capServer.toObjId (.tcb { mkTcb 853 50 (some c1) with cspaceRoot := capCn })
+          slots := SeLe4n.UniqueSlotMap.ofListWF [] })
+    |>.withObject capServerCn (.cnode
+        { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.UniqueSlotMap.ofListWF [] })
+    |>.withObject capCaller.toObjId (.tcb { mkTcb 852 40 none with cspaceRoot := capCallerCn })
+    |>.withObject capServer.toObjId (.tcb { mkTcb 853 50 (some c1) with cspaceRoot := capServerCn })
     |>.withObject capReply.toObjId (.reply { replyId := capReply })
     |>.withRunnable [capCaller]
     |>.build)
 
-/-- `true` iff a transfer summary reports at least one installed cap. -/
-private def summaryInstalled (s : CapTransferSummary) : Bool :=
-  s.results.any (fun r => match r with | .installed _ _ => true | _ => false)
+/-- `true` iff a transfer summary reports a cap installed into CNode `cn` — the
+receiver-root check (the `.installed` result carries the *receiver's* CSpace root
+per `ipcTransferSingleCap`). -/
+private def summaryInstalledInto (s : CapTransferSummary) (cn : SeLe4n.ObjId) : Bool :=
+  s.results.any (fun r => match r with | .installed c _ => c == cn | _ => false)
 /-- `true` iff every result in a transfer summary is grant-denied. -/
 private def summaryAllGrantDenied (s : CapTransferSummary) : Bool :=
   !s.results.isEmpty && s.results.all (fun r => match r with | .grantDenied => true | _ => false)
+/-- Read the capability in slot `slot` of CNode `cn` (if it holds one). -/
+private def cnodeSlotCap (st : SystemState) (cn : SeLe4n.ObjId) (slot : SeLe4n.Slot) :
+    Option Capability :=
+  match st.objects[cn]? with
+  | some (.cnode c) => c.slots[slot]?
+  | _ => none
+/-- `true` iff CNode `cn`'s slot `slot` holds the transferred payload cap. -/
+private def slotHoldsPayload (st : SystemState) (cn : SeLe4n.ObjId) (slot : SeLe4n.Slot) : Bool :=
+  match cnodeSlotCap st cn slot with
+  | some c => decide (c.target = CapTarget.object capMarkerObj)
+  | none => false
 
 private def runCapTransferChecks : IO Unit := do
-  IO.println "--- §3.10 capability transfer across cores (ipcUnwrapCaps, grant-gated) ---"
+  IO.println "--- §3.10 capability transfer across cores (ipcUnwrapCaps, receiver-root, grant-gated) ---"
   match okPair (endpointReceiveDualOnCore capEp capServer (some capReply) c1 stCapBase) with
   | none => assertBool "cap-transfer setup (server recv) succeeded" false
   | some (stRecv, _) =>
-    -- WITH grant: the carried cap is installed into the receiver's CSpace.
-    let (_, resGrant) := endpointCallWithCapsOnCore capEp capCaller capMsg
-      (AccessRightSet.ofList [.write, .grant]) capCn (SeLe4n.Slot.ofNat 1) c0 stRecv
-    assertBool "a granted cross-core Call installs the transferred cap (summary = installed)"
+    -- WITH grant: the carried cap is installed into the SERVER's CSpace root.
+    let (stGrant, resGrant) := endpointCallWithCapsOnCore capEp capCaller capMsg
+      (AccessRightSet.ofList [.write, .grant]) capCallerCn recvSlot c0 stRecv
+    assertBool "a granted cross-core Call installs the transferred cap into the SERVER's CSpace root"
       (match resGrant with
-       | .ok (summary, _) => summaryInstalled summary
+       | .ok (summary, _) => summaryInstalledInto summary capServerCn
        | .error _ => false)
-    -- WITHOUT grant: the transfer is denied (the receiver's CSpace is untouched).
-    let (_, resNoGrant) := endpointCallWithCapsOnCore capEp capCaller capMsg
-      (AccessRightSet.ofList [.write]) capCn (SeLe4n.Slot.ofNat 1) c0 stRecv
+    assertBool "the transferred cap actually lands in the server's receive slot"
+      (slotHoldsPayload stGrant capServerCn recvSlot)
+    -- Receiver-root plumbing: the cap does NOT land in the CALLER's CSpace
+    -- (a regression writing back to the caller/shared root would fail here).
+    assertBool "the transferred cap does NOT land in the caller's CSpace (no leak-back)"
+      (!slotHoldsPayload stGrant capCallerCn recvSlot
+        && !slotHoldsPayload stGrant capCallerCn (SeLe4n.Slot.ofNat 0))
+    -- WITHOUT grant: the transfer is denied and the server's CSpace is untouched.
+    let (stNoGrant, resNoGrant) := endpointCallWithCapsOnCore capEp capCaller capMsg
+      (AccessRightSet.ofList [.write]) capCallerCn recvSlot c0 stRecv
     assertBool "an ungranted cross-core Call denies the transfer (summary = grantDenied)"
       (match resNoGrant with
        | .ok (summary, _) => summaryAllGrantDenied summary
        | .error _ => false)
+    assertBool "an ungranted Call leaves the server's receive slot empty (nothing installed)"
+      ((cnodeSlotCap stNoGrant capServerCn recvSlot).isNone)
     -- The grant gate is exactly the endpoint cap's `.grant` right.
     assertBool "the grant gate reads the endpoint cap's `.grant` right"
       ((AccessRightSet.ofList [.write, .grant]).mem .grant
