@@ -24,7 +24,62 @@ Plan:
 SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
-**Current sub-phase: SM6.F tests + fixtures LANDED (v0.32.67); depth
+**Current sub-phase: SM7.A shootdown descriptor + state LANDED
+(v0.32.72) — SM7 (TLB / cache shootdown, SMP-C4 closure) opened.**
+
+The SM7.A state layer (plan §5 of
+[`docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md`](planning/SMP_TLB_SHOOTDOWN_PLAN.md),
+all six sub-tasks), staged for the SM7.B protocol transitions
+(`tlbShootdownLocal` / `tlbShootdownBroadcast` + the `.tlbShootdownReq`
+SGI handler are its first runtime exerciser).  **SM7.A.1**
+`TlbShootdownDescriptor` (`SeLe4n/Kernel/Architecture/TlbShootdown.lean`,
+staged; partition 57 → 58): one pending invalidation request — the typed
+`TlbInvalidation` operand (a single descriptor type covers the SM7.B.9
+page-unmap, SM7.B.10 ASID-retire, and SM7.B.11 full-flush callers) plus
+the initiating `CoreId` (round attribution + the optional
+`.tlbShootdownAck` direct-ack SGI).  **SM7.A.2**
+`pendingShootdowns : Vector (List TlbShootdownDescriptor) numCores` on
+the new `TlbShootdownState`, under the SM4.B path-a discipline
+(`pendingOnCore` / `setPendingOnCore`, the `@[simp]` store/load
+reduction algebra `_self` / `_ne` / cross-field frames, `ext_perCore`);
+the boot state is quiescent (`initial_shootdownQuiescent`).
+**SM7.A.3** `shootdownAck : Vector Bool numCores` + the acknowledgment
+operations: `acknowledgeShootdown` (per-target, monotone),
+`beginShootdownRound` (plan §3.2 step 1 — every flag `false` except the
+born-acknowledged initiator, exactly `beginShootdownRound_ackOnCore_iff`),
+the decidable `allAcked` wait predicate, and the SM7.B.5
+wait-loop-termination anchor
+`allCores_foldl_acknowledgeShootdown_allAcked`.  The Rust realisation
+(`rust/sele4n-hal/src/shootdown.rs`; HAL 724 → 743 tests, clippy-clean):
+`SHOOTDOWN_ACK` — one cache-line-aligned `AtomicBool` per core, booting
+quiescent all-`true` — with `ack_set` (Release, the SM7.B.4 release
+edge) / `ack_is_set` + `all_acked` (Acquire, the initiator poll) /
+`reset_for_round` (Relaxed; publication rides SM1.F.8's
+dsb-before-SGIR, cross-round hazard analysis in the module docs),
+fail-closed out-of-range panics, and `_in_slice` testable inner forms.
+**SM7.A.4** `enqueueShootdown`: FIFO tail-append onto the target's
+queue, fail-closed `none` at capacity (a silently dropped descriptor
+would leave a stale remote TLB entry — the exact SMP-C4 hazard);
+success-iff-below-capacity, append / membership / length equations,
+cross-core + ack frames.  **SM7.A.5** `drainShootdowns`: the
+`.tlbShootdownReq` handler's whole-queue FIFO drain
+(`drainShootdowns_fst` — the completeness half of Theorem 3.3.1's
+remote-core case), exhaustive (`_drain_twice`), and deliberately
+ack-free: the runtime must retire the drained TLBIs (`dsb`) before
+acknowledging, so drain and ack stay separate operations.  **SM7.A.6**
+`maxPendingPerCore = 16` (plan §4.1) with the decidable `pendingBounded`
+invariant established at boot and preserved by every operation
+(`…_preserves_pendingBounded` ×4) plus drain-restores-capacity.  Zero
+sorry/axiom.  Tests: `tests/SmpTlbShootdownSuite.lean`
+(`smp_tlb_shootdown_suite`, the SM7.E.1 seed — 51 assertions / 7 groups:
+descriptor operand round-trips, quiescent boot, FIFO enqueue +
+cross-core framing, the 16-deep fill / 17th-rejection /
+drain-restores-capacity bound walk, exhaustive drains, the ack-round
+lifecycle, and a full 4-core state-level shootdown round trip ending
+quiescent) + `#check` anchors + decidable / theorem-application
+witnesses; Tier-2 + Tier-3 wired.
+
+**Prior sub-phase: SM6.F tests + fixtures LANDED (v0.32.67); depth
 cut (v0.32.68) — SM6 (A–F) complete.**
 
 The SM6 closure phase (plan §SM6.F, all six sub-tasks), closing the two

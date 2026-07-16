@@ -386,4 +386,16 @@ run_check_with_timeout "TRACE" lake exe smp_ipc_suite
 # framing, and the state-resolved 2PL lock-set footprints.
 run_check_with_timeout "TRACE" lake exe smp_notification_suite
 
+# WS-SM SM7.A — TLB shootdown descriptor + state runtime checks (the SM7.E.1
+# SmpTlbShootdownSuite seed).  Exercises the SM7.A state layer on the 4-core
+# topology: TlbShootdownDescriptor operand round-trips (vae1 / vale1 / aside1 /
+# vmalle1 + initiator attribution), the quiescent boot state, FIFO
+# enqueueShootdown + cross-core framing, the fail-closed maxPendingPerCore
+# capacity bound (16-deep fill, 17th rejection, drain-restores-capacity), the
+# exhaustive drainShootdowns, the acknowledgment round lifecycle
+# (beginShootdownRound initiator-only start, per-target acknowledgeShootdown,
+# monotonicity, fold-to-allAcked), and a full 4-core state-level shootdown
+# round trip ending quiescent.
+run_check_with_timeout "TRACE" lake exe smp_tlb_shootdown_suite
+
 finalize_report

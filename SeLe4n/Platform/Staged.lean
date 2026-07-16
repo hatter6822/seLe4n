@@ -49,6 +49,15 @@ import SeLe4n.Kernel.SecondaryEntry
 -- `ffi_tlbi_for_sharing` dispatcher on every push.  Reachability:
 -- staged at SM1.E; SM7 (TLB shootdown) is the first runtime exerciser.
 import SeLe4n.Kernel.Architecture.TlbiForSharing
+-- WS-SM SM7.A: TLB shootdown descriptor + per-core pending/ack state.
+-- Pulled into Staged so CI builds the shootdown state layer
+-- (TlbShootdownDescriptor, TlbShootdownState, enqueueShootdown /
+-- drainShootdowns / acknowledgeShootdown / beginShootdownRound, the
+-- maxPendingPerCore capacity bound + preservation theorems) on every
+-- push.  Reachability: staged at SM7.A; the SM7.B protocol transitions
+-- (tlbShootdownLocal / tlbShootdownBroadcast + the .tlbShootdownReq SGI
+-- handler) are the first runtime exerciser.
+import SeLe4n.Kernel.Architecture.TlbShootdown
 -- WS-SM SM2.A: abstract memory model for verified lock primitives.
 -- Pulled into Staged so CI builds the operational ARMv8.1-A LSE memory
 -- model (MemoryOrder, MemoryEvent, MemoryTrace, synchronizesWith,

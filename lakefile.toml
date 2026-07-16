@@ -5,7 +5,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 
 name = "seLe4n"
-version = "0.32.71"
+version = "0.32.72"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
@@ -567,3 +567,20 @@ root = "tests.SmpIpcSuite"
 [[lean_exe]]
 name = "smp_notification_suite"
 root = "tests.SmpNotificationSuite"
+
+# WS-SM SM7.A — TLB shootdown descriptor + state suite (the SM7.E.1
+# SmpTlbShootdownSuite seed; SM7.B/SM7.C scenario groups land here as those
+# phases arrive).  Surface anchors + decidable examples + theorem-application
+# witnesses + runtime assertions for the SM7.A surface: the
+# TlbShootdownDescriptor operand round-trips (vae1 / vale1 / aside1 / vmalle1
+# + initiator attribution), the quiescent boot state, FIFO enqueueShootdown +
+# cross-core framing, the fail-closed maxPendingPerCore capacity bound
+# (16-deep fill, 17th rejection, drain-restores-capacity), the exhaustive
+# drainShootdowns (whole-queue FIFO return, empty-after, second-drain-empty),
+# the acknowledgment round lifecycle (beginShootdownRound initiator-only,
+# per-target acknowledgeShootdown, monotonicity, fold-to-allAcked), and a
+# full 4-core state-level shootdown round trip ending quiescent.  Tier-2 +
+# Tier-3 wired.
+[[lean_exe]]
+name = "smp_tlb_shootdown_suite"
+root = "tests.SmpTlbShootdownSuite"
