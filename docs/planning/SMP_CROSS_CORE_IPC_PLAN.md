@@ -892,16 +892,26 @@ replenish purge and run-queue re-bucket touch `bootCoreId` only —
 SM-phase follow-on), and full-surface `currentThreadUniqueAcrossCores`
 preservation.
 
-### SM6.F — Tests + fixtures (3 PRs, 6 sub-tasks)
+### SM6.F — Tests + fixtures (3 PRs, 6 sub-tasks) — LANDED (v0.32.67)
 
-| Sub | Description | Files | Est |
-|-----|-------------|-------|-----|
-| SM6.F.1 | `tests/SmpIpcSuite.lean` (30+ scenarios) | XL |
-| SM6.F.2 | `tests/SmpNotificationSuite.lean` (15+ scenarios) | L |
-| SM6.F.3 | `tests/SmpCancellationSuite.lean` (10+ scenarios) | M |
-| SM6.F.4 | `tests/fixtures/smp_ipc_4core.expected` | M |
-| SM6.F.5 | `scripts/test_qemu_smp_ipc.sh` | M |
-| SM6.F.6 | Surface anchors | S |
+**Status: LANDED (v0.32.67).**  The SM6 closure phase: the aggregate
+end-to-end suites, the golden 4-core IPC trace fixture, the Tier-4 QEMU
+handshake exerciser, and the Tier-3 surface anchors.  Where the per-phase
+suites (SM6.A.10 / SM6.B.8 / SM6.C.10 / SM6.E.6) exercise each transition in
+isolation, the SM6.F aggregates drive **multi-step pipelines** composing the
+SM6 transitions with the SM5 per-core scheduler (`handleRescheduleSgiOnCore`
+dispatch on the SGI's target core) into full client/server round trips —
+closing the §8 acceptance-gate items "2-thread cross-core IPC works" and
+"4-thread SMP rendezvous test passes" on the live operations.
+
+| Sub | Description | Landed artefact | Status |
+|-----|-------------|-----------------|--------|
+| SM6.F.1 | `tests/SmpIpcSuite.lean` (30+ scenarios) | `lake exe smp_ipc_suite` — **130 runtime assertions across 14 scenario groups (§3.1–§3.14) + the §9 golden-trace check**: the 2-thread cross-core call/reply round trip (call SGI → target-core handler dispatch → reply SGI → handler dispatch, payload delivered both ways, replay barrier), the interleaved 4-thread rendezvous (cross-pair framing + payload isolation + per-thread terminal placement), the cross-core send/receive rendezvous (`blockedOnSend` sender woken to its home core), client-first ordering (`blockedOnCall` → receive completes the same rendezvous), the server `endpointReplyRecvOnCore` steady-state loop (SGI union, one-object reuse-safe fresh-reply linkage), fail-closed error paths (absent/wrong-kind/oversized/replay/no-stash — pre-state returned), state-resolved 2PL footprints (kinds/NoDup/membership + the **exact resolved footprint size** and the §4.1 WCRT-fits-1 ms-tick property), live-dispatch coherence (`determineExecutingCore` + `endpointCallCrossCoreDispatch`), the **SchedContext donation round trip** (`applyCallDonation` → server `.donated` at the donated effective priority → `applyReplyDonationOnCore` returns it), **capability transfer** (`ipcUnwrapCaps` grant-gated + the `ipcMessageTooManyCaps` bound), **info-flow-checked dispatch** (call + reply `…CrossCoreDispatchChecked` allowed-vs-`.flowDenied`), the **live API dispatch** path (`dispatchSyscall`/`dispatchSyscallChecked` `.call`: CSpace cap resolution + authority gate + cross-core, authorized/no-cap/read-only/wrong-kind/flow-denied), **cancellation × IPC** (cancel a reply-blocked client ⇒ the server's reply fails closed), and **scheduler contention** (a woken server does not preempt a higher-priority current).  The 4-thread pipeline carries **step attribution** on failure.  Tier-2 (`test_tier2_negative.sh`) + Tier-3 anchors | ✓ |
+| SM6.F.2 | `tests/SmpNotificationSuite.lean` (15+ scenarios) | `lake exe smp_notification_suite` — **76 runtime assertions across 10 scenario groups (§3.1–§3.10)**: per-core wait blocking, the wait → cross-core signal → SGI → handler-dispatch round trip, multi-waiter head-first drain (each waiter woken to its **own** home core, per-waiter badge isolation), waiterless badge accumulation (`Badge.bor`) + the non-blocking consume, the **remote bound-TCB delivery** round trip (bind → signal-bound → endpoint dequeue → SGI to the bound TCB's home core → handler dispatch), the bind/unbind lifecycle, fail-closed error paths, independence framing + state-resolved 2PL footprints (exact size + WCRT-fits-budget), the **three-waiter FIFO drain** (successive signals wake the list head first, each to a distinct home core 1/2/3), and **checked cross-core dispatch** (the unchecked wait dispatch descheds on the caller's own core; the checked bound signal fails closed on a denied signaler→notification flow AND on the review-#3 notification→receiver badge-leak gate).  Tier-2 + Tier-3 anchors | ✓ |
+| SM6.F.3 | `tests/SmpCancellationSuite.lean` (10+ scenarios) | landed with SM6.E.6 (v0.32.60–66): 107 runtime assertions across 17 scenario groups — see the SM6.E table | ✓ |
+| SM6.F.4 | `tests/fixtures/smp_ipc_4core.expected` | the deterministic 16-line `[smp-ipc-4core]` golden trace (+ `.sha256` companion, auto-gated by `test_tier2_trace.sh`'s companion walk), computed line-by-line from the live SM6 transition decisions and verified **byte-for-byte** inside `smp_ipc_suite` §9 (regen: `lake exe smp_ipc_suite \| grep '^\[smp-ipc-4core\]'` — see `tests/fixtures/README.md`) | ✓ |
+| SM6.F.5 | `scripts/test_qemu_smp_ipc.sh` | the Tier-4 QEMU `-smp 4` cross-core IPC handshake exerciser, registered in `test_tier4_smp_bootcheck.sh`; SKIPs (with the formal-coverage banner) until the SM9.E bootable kernel-image `[[bin]]` target exists — the sibling discipline of the SM5 QEMU scripts; pass gate: `[smp-test] cross-core-ipc: reply delivered across cores` | ✓ |
+| SM6.F.6 | Surface anchors | in-suite `#check` anchor blocks (§1 of both aggregates: transitions, dispatches, pre-resolution helpers, acceptance-gate theorems, SM6.D.2 six-op preservation) + the Tier-3 grep anchors in `test_tier3_invariant_surface.sh` (runner defs, Tier-2 wiring, pipeline/trace emitters, fixture + sha256 presence, lakefile registrations, the QEMU exerciser registration) | ✓ |
 
 ## 6. Verification strategy
 
@@ -929,13 +939,13 @@ preservation.
 
 ## 8. Acceptance gate
 
-- [ ] All 6 IPC operations under lock-set.
-- [ ] Cross-core wake works for call/signal/reply.
+- [x] All 6 IPC operations under lock-set (SM6.A.2/.8, SM6.B.1, SM6.C.1/.5, SM6.E.1/.3 — declared footprints + state-resolved forms + `…_lockSet_correct` + `…_atomic_under_lockSet` across send/receive/call/reply+replyRecv/signal/wait and the cancellation arms).
+- [x] Cross-core wake works for call/signal/reply (SM6.A.3 Thm 3.2.1, SM6.B.2, SM6.C.2; live diff-seam re-derivation `crossCoreSgiBody_remote_wake`, v0.31.72).
 - [x] `ipcInvariantFull_perCore` preserved by all 6 ops (SM6.D, v0.32.58 — the bundle grew to twenty conjuncts by landing time; the fifteen-conjunct core is `ipcInvariantCore_of_smp`).
 - [x] Cancellation atomic under lock-set (SM6.E, v0.32.60 — `cancelIpcBlocking_atomic_under_lockSet` / `cancelDonation_atomic_under_lockSet` + the OnCore companions; footprints covered member-by-member by the reply-extended `lockSet_tcbSuspend`).
-- [ ] 2-thread cross-core IPC works.
-- [ ] 4-thread SMP rendezvous test passes.
-- [ ] Tier 0..4 green.
+- [x] 2-thread cross-core IPC works (SM6.F.1 §3.1 — the composed call → SGI → handler-dispatch → reply → SGI → handler-dispatch round trip on the live operations, payload delivered both ways).
+- [x] 4-thread SMP rendezvous test passes (SM6.F.1 §3.2 — two interleaved client/server pairs across all four cores, cross-pair framing + payload isolation + per-thread terminal placement).
+- [x] Tier 0..4 green (SM6.F, v0.32.67 — Tiers 0–3 substantive; the Tier-4 QEMU sub-tests SKIP by design until the SM9.E bootable kernel-image target exists, exactly as the SM1–SM5 QEMU siblings).
 
 ## 9. Cross-references
 
@@ -963,8 +973,11 @@ preservation.
 
 ```bash
 source ~/.elan/env
-lake build SeLe4n.Kernel.IPC
-lake build SmpIpcSuite
+lake build SeLe4n.Kernel.IPC.CrossCore.EndpointCall SeLe4n.Kernel.IPC.CrossCore.EndpointReply \
+           SeLe4n.Kernel.IPC.CrossCore.NotificationSignal SeLe4n.Kernel.IPC.CrossCore.Cancellation
+lake exe smp_ipc_suite
+lake exe smp_notification_suite
+lake exe smp_cancellation_suite
 ./scripts/test_qemu_smp_ipc.sh
 ```
 
