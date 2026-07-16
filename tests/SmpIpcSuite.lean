@@ -498,11 +498,14 @@ private def runFourThreadRendezvousChecks : IO Unit := do
     assertBool "terminal states: both clients .ready, both servers .ready"
       (ipcStateIs rt.afterSgiC clientA .ready && ipcStateIs rt.afterSgiC serverB .ready
         && ipcStateIs rt.afterSgiC clientC .ready && ipcStateIs rt.afterSgiC serverD .ready)
-    assertBool "terminal placement: every thread current on its own core"
-      (rt.afterSgiA.scheduler.currentOnCore c0 == some clientA
-        && rt.afterSgiB.scheduler.currentOnCore c1 == some serverB
+    -- Read ALL FOUR currents from the FINAL rendezvous state (`afterSgiC`), not
+    -- from each core's earlier snapshot: a later cross-core step accidentally
+    -- clearing or switching another core's current slot must fail this gate.
+    assertBool "terminal placement: every thread current on its own core (final state afterSgiC)"
+      (rt.afterSgiC.scheduler.currentOnCore c0 == some clientA
+        && rt.afterSgiC.scheduler.currentOnCore c1 == some serverB
         && rt.afterSgiC.scheduler.currentOnCore c2 == some clientC
-        && rt.afterSgiD.scheduler.currentOnCore c3 == some serverD)
+        && rt.afterSgiC.scheduler.currentOnCore c3 == some serverD)
 
 -- ============================================================================
 -- §3.3  Cross-core send/receive rendezvous (sender woken to its home core)
@@ -990,11 +993,21 @@ private def runFlowCheckedChecks : IO Unit := do
       (match resRDenied with | .error .flowDenied => true | _ => false)
     assertBool "the denied reply leaves the client still blockedOnReply (undelivered)"
       (ipcStateIs stRDenied clientA (.blockedOnReply epAB (some serverB)))
-    -- ALLOWED (all public): the checked reply equals the unchecked one.
+    -- ALLOWED (all public): the checked reply equals the unchecked one — compare
+    -- the surfaced SGI (a dropped remote-wake would diverge here), the woken
+    -- caller's object (payload delivery), the consumed reply object, AND the
+    -- caller's home-core run queue (the wake's scheduler effect), not just the
+    -- caller TCB — so the "equals unchecked" claim is actually gated.
     let checkedRAllowed := endpointReplyCrossCoreDispatchChecked allPublicCtx serverB clientA replyMsgB c1 rt.afterCallA
     let uncheckedReply := endpointReplyCrossCoreDispatch serverB clientA replyMsgB c1 rt.afterCallA
-    assertBool "an allowed checked reply equals the unchecked cross-core reply"
-      (checkedRAllowed.1.objects[clientA.toObjId]? == uncheckedReply.1.objects[clientA.toObjId]?)
+    assertBool "an allowed checked reply equals the unchecked cross-core reply (SGI + caller + reply + queue)"
+      ((match checkedRAllowed.2, uncheckedReply.2 with
+        | .ok s1, .ok s2 => s1 == s2
+        | _, _ => false)
+        && checkedRAllowed.1.objects[clientA.toObjId]? == uncheckedReply.1.objects[clientA.toObjId]?
+        && checkedRAllowed.1.objects[replyB.toObjId]? == uncheckedReply.1.objects[replyB.toObjId]?
+        && (checkedRAllowed.1.scheduler.runQueueOnCore c0).toList
+            == (uncheckedReply.1.scheduler.runQueueOnCore c0).toList)
 
 -- ============================================================================
 -- §3.12  Live API dispatch (`dispatchSyscall` .call through CSpace resolution)

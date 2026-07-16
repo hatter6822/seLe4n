@@ -664,6 +664,14 @@ private def runCheckedDispatchChecks : IO Unit := do
         (match resD2 with | .error .flowDenied => true | _ => false)
       assertBool "review #3: the denied bound delivery does NOT leak the badge to the low receiver"
         (!deliveredBadgeIs stD2 boundT badge1)
+      -- Fail-closed like the signaler→notification denial: the WHOLE bound-delivery
+      -- footprint (notification, endpoint, bound TCB) is unchanged — a regression
+      -- that dequeues/readies the bound TCB before erroring must fail here, not just
+      -- the badge-absence check.
+      assertBool "review #3: the denied bound delivery leaves the state unchanged (fail-closed)"
+        (stD2.objects[nId]? == stBound.objects[nId]?
+          && stD2.objects[epId]? == stBound.objects[epId]?
+          && stD2.objects[boundT.toObjId]? == stBound.objects[boundT.toObjId]?)
 
 def runSmpNotificationChecks : IO Unit := do
   IO.println "WS-SM SM6.F.2 — Aggregate SMP cross-core notification suite (4 cores)"

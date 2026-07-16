@@ -1,3 +1,36 @@
+## v0.32.70 — WS-SM SM6.F: PR #837 review round 2 — stronger acceptance/fail-closed assertions
+
+Addresses the three P2 comments from the Codex review of a595da1, all
+test-rigor hardening (no production change):
+
+* **§3.2 terminal placement (`tests/SmpIpcSuite.lean`).**  The 4-thread
+  rendezvous "every thread current on its own core" gate read cores
+  0/1/3 from *earlier* per-core snapshots (`afterSgiA`/`afterSgiB`/
+  `afterSgiD`); a later cross-core step clearing another core's current
+  slot would have slipped through.  All four currents are now read from
+  the **final** rendezvous state `afterSgiC`.
+* **§3.11 checked-reply equality (`tests/SmpIpcSuite.lean`).**  The
+  "allowed checked reply equals the unchecked cross-core reply" check
+  compared only the caller TCB object; it now compares the surfaced
+  **SGI** (a dropped remote-wake diverges here), the caller object, the
+  consumed **reply object**, AND the caller's home-core run queue —
+  matching the `endpointReplyCrossCoreDispatchChecked_flow_allowed`
+  claim.
+* **§3.10 receiver-denied bound signal (`tests/SmpNotificationSuite.lean`).**
+  The review-#3 notification→receiver denial only checked `.flowDenied`
+  + badge-absence; it now also asserts the whole bound-delivery footprint
+  (notification, endpoint, bound TCB) is **unchanged** from the
+  pre-state, so a regression that dequeues/readies the bound TCB before
+  erroring fails closed here — parity with the signaler→notification
+  denial above.
+
+The notification suite grows 74 → **75 assertions** (the new fail-closed
+check); the IPC suite stays at 125 (the two IPC fixes strengthen existing
+assertions).  Both suites + Tier-3 anchors green; golden trace
+byte-identical.  Version bumped 0.32.69 → 0.32.70.
+
+Refs: docs/planning/SMP_CROSS_CORE_IPC_PLAN.md §5 (SM6.F); PR #837
+
 ## v0.32.69 — WS-SM SM6.F: PR #837 review — distinct caller/server CSpaces in the cap-transfer test
 
 Addresses the PR #837 Codex review (P2): the §3.10 capability-transfer
