@@ -5,7 +5,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 
 name = "seLe4n"
-version = "0.32.70"
+version = "0.32.71"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]

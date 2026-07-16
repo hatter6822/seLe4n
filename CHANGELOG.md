@@ -1,3 +1,50 @@
+## v0.32.71 — WS-SM SM6.F: PR #837 review round 3 — six acceptance-rigor hardenings
+
+Addresses the six P2 comments from the Codex review of 2658d0a (all
+test-rigor; no production change).  IPC suite 125 → **130 assertions**,
+notification 75 → **76**.
+
+* **§3.9 dispatch the donated server before replying (`SmpIpcSuite`).**
+  The donation round trip replied straight from the post-call state, so
+  the non-current server's donation-return cleanup core fell back to the
+  boot core (via `determineExecutingCore`) and never descheduled it on
+  core 1.  The suite now runs `handleRescheduleSgiOnCore … c1` first
+  (server becomes current on its home core), then replies, and asserts
+  the now-passive server is **descheduled from core 1** after the SC
+  return.
+* **§3.10 compare the full transferred capability (`SmpIpcSuite`).**
+  `slotHoldsPayload` matched only the cap's target, so a transfer that
+  widened rights would pass; it now compares the whole `payloadCap`
+  (target + rights + badge), proving the distinctive read cap crosses
+  cores **intact**.
+* **§3.11 full state-unchanged on denied checked IPC (`SmpIpcSuite`).**
+  The denied call/reply cases checked only the endpoint object + caller
+  ipcState; they now assert the whole affected footprint (endpoint,
+  server/replier, caller, reply object) **and** cores 0/1 run queues are
+  unchanged from the pre-state — true fail-closed.
+* **§3.11 full checked-call equality (`SmpIpcSuite`).**  The allowed
+  checked call compared only the server + SGI; it now also compares the
+  caller, reply object, endpoint, and run queues (parity with the
+  reply-side check), matching the `_flow_allowed` claim.
+* **§3.14 dequeue the current thread in the contention fixture
+  (`SmpIpcSuite`).**  The high/low current thread was installed as core 1
+  `current` *and* left in core 1's run queue, violating the
+  dequeue-on-dispatch discipline (`queueCurrentConsistentOnCore`); the
+  no-preemption check could pass by reselecting the still-queued current
+  rather than by protecting a dispatched one.  The fixture now makes the
+  thread **current-only** (empty core-1 queue), so the woken server is the
+  sole candidate and the gate passes iff the current genuinely outranks it.
+* **§3.10 assert the wait dispatch succeeds (`SmpNotificationSuite`).**
+  The unchecked wait-dispatch result was discarded; the suite now
+  requires `.ok none` (the block path, no consumed badge) before the
+  per-core deschedule assertions, so an erroring regression can't satisfy
+  the state-only checks.
+
+Both suites + Tier-3 anchors green; golden trace byte-identical.  Version
+bumped 0.32.70 → 0.32.71.
+
+Refs: docs/planning/SMP_CROSS_CORE_IPC_PLAN.md §5 (SM6.F); PR #837
+
 ## v0.32.70 — WS-SM SM6.F: PR #837 review round 2 — stronger acceptance/fail-closed assertions
 
 Addresses the three P2 comments from the Codex review of a595da1, all

@@ -822,19 +822,35 @@ private def runDonationChecks : IO Unit := do
     assertBool "the server's effective scheduling priority is the donated 60 (was base 20)"
       (match stCall.getTcb? donServer with
        | some t => decide ((resolveEffectivePrioDeadline stCall t).1 = ⟨60⟩) | none => false)
-    -- The reply returns the SC to the client and reverts the boost.
-    let (stReply, resReply) := endpointReplyCrossCoreDispatch donServer donClient IpcMessage.empty c1 stCall
-    assertBool "reply succeeds and wakes the client back on the boot core"
-      (match resReply with | .ok _ => true | .error _ => false)
-    assertBool "reply returns the SC: server passive again (.unbound)"
-      (match stReply.getTcb? donServer with
-       | some t => decide (t.schedContextBinding = SchedContextBinding.unbound) | none => false)
-    assertBool "reply returns the SC: client bound to its own SC again (.bound scClient)"
-      (match stReply.getTcb? donClient with
-       | some t => decide (t.schedContextBinding = .bound scClient) | none => false)
-    assertBool "the returned SchedContext's boundThread is the client again"
-      (match stReply.getSchedContext? scClient with
-       | some sc => decide (sc.boundThread = some donClient) | none => false)
+    -- Dispatch the woken donated server on its HOME core (core 1) so it is CURRENT
+    -- there before the reply: `endpointReplyCrossCoreDispatch` derives the
+    -- donation-return cleanup core from `determineExecutingCore st server`, so a
+    -- non-current server would fall back to the boot core and never be descheduled
+    -- on core 1 (leaving the now-passive server runnable there).
+    match okExcept (handleRescheduleSgiOnCore stCall c1) with
+    | none => assertBool "donation: core 1 handles the call wake SGI" false
+    | some stDispatched =>
+      assertBool "core 1's handler dispatches the woken donated server (current = server)"
+        (stDispatched.scheduler.currentOnCore c1 == some donServer)
+      -- The reply returns the SC to the client and descheds the now-passive server.
+      let (stReply, resReply) := endpointReplyCrossCoreDispatch donServer donClient IpcMessage.empty c1 stDispatched
+      assertBool "reply succeeds and wakes the client back on the boot core"
+        (match resReply with | .ok _ => true | .error _ => false)
+      assertBool "reply returns the SC: server passive again (.unbound)"
+        (match stReply.getTcb? donServer with
+         | some t => decide (t.schedContextBinding = SchedContextBinding.unbound) | none => false)
+      assertBool "reply returns the SC: client bound to its own SC again (.bound scClient)"
+        (match stReply.getTcb? donClient with
+         | some t => decide (t.schedContextBinding = .bound scClient) | none => false)
+      assertBool "the returned SchedContext's boundThread is the client again"
+        (match stReply.getSchedContext? scClient with
+         | some sc => decide (sc.boundThread = some donClient) | none => false)
+      -- Donation-return deschedule: the now-passive server is removed from core 1
+      -- (no longer current, not runnable there) via the SC return's home-core
+      -- `removeRunnableOnCore` — the very thing the non-current fixture would miss.
+      assertBool "donation return descheds the now-passive server from core 1"
+        (stReply.scheduler.currentOnCore c1 != some donServer
+          && !(stReply.scheduler.runQueueOnCore c1).contains donServer)
 
 -- ============================================================================
 -- §3.10  Capability transfer across cores (ipcUnwrapCaps, grant-gated)
@@ -892,10 +908,13 @@ private def cnodeSlotCap (st : SystemState) (cn : SeLe4n.ObjId) (slot : SeLe4n.S
   match st.objects[cn]? with
   | some (.cnode c) => c.slots[slot]?
   | _ => none
-/-- `true` iff CNode `cn`'s slot `slot` holds the transferred payload cap. -/
+/-- `true` iff CNode `cn`'s slot `slot` holds the transferred payload cap
+**intact** — full value equality (target AND rights AND badge), so a transfer
+that widened the rights (e.g. added `.write`/`.grant`) or otherwise mutated the
+cap while preserving the target is caught, not just target-equality. -/
 private def slotHoldsPayload (st : SystemState) (cn : SeLe4n.ObjId) (slot : SeLe4n.Slot) : Bool :=
   match cnodeSlotCap st cn slot with
-  | some c => decide (c.target = CapTarget.object capMarkerObj)
+  | some c => decide (c = payloadCap)
   | none => false
 
 private def runCapTransferChecks : IO Unit := do
@@ -967,32 +986,62 @@ private def runFlowCheckedChecks : IO Unit := do
   | .error step => assertBool s!"info-flow fixture ({step} failed)" false
   | .ok rt =>
     -- (a) Call gate.  Fixture: rt.afterRecv (server B waiting on epAB).
-    -- DENIED (high client A → low endpoint): fail-closed, state unchanged.
+    -- DENIED (high client A → low endpoint): fail-closed — the WHOLE affected
+    -- footprint (endpoint, waiting server, caller, reply object) and the two
+    -- involved cores' run queues are unchanged from the pre-state `rt.afterRecv`,
+    -- so a regression that dequeues the server or mutates state before returning
+    -- `.flowDenied` fails here, not just an endpoint-object check.
     let (stDenied, resDenied) := endpointCallCrossCoreDispatchChecked callDeniedCtx epAB clientA
       callMsgA AccessRightSet.empty cnRoot (SeLe4n.Slot.ofNat 0) c0 rt.afterRecv
     assertBool "a high→low call is denied with .flowDenied"
       (match resDenied with | .error .flowDenied => true | _ => false)
-    assertBool "the denied call leaves the state unchanged (endpoint untouched)"
-      (stDenied.objects[epAB]? == rt.afterRecv.objects[epAB]?)
+    assertBool "the denied call leaves the whole footprint unchanged (endpoint/server/caller/reply)"
+      (stDenied.objects[epAB]? == rt.afterRecv.objects[epAB]?
+        && stDenied.objects[serverB.toObjId]? == rt.afterRecv.objects[serverB.toObjId]?
+        && stDenied.objects[clientA.toObjId]? == rt.afterRecv.objects[clientA.toObjId]?
+        && stDenied.objects[replyB.toObjId]? == rt.afterRecv.objects[replyB.toObjId]?)
+    assertBool "the denied call leaves cores 0/1 run queues unchanged"
+      ((stDenied.scheduler.runQueueOnCore c0).toList == (rt.afterRecv.scheduler.runQueueOnCore c0).toList
+        && (stDenied.scheduler.runQueueOnCore c1).toList == (rt.afterRecv.scheduler.runQueueOnCore c1).toList)
     assertBool "the denied call does NOT block the client (still ready)"
       (ipcStateIs stDenied clientA .ready)
-    -- ALLOWED (all public): the checked dispatch equals the unchecked one.
+    -- ALLOWED (all public): the checked dispatch equals the unchecked one — compare
+    -- the SGI, the woken server, the blocked caller, the linked reply object, and the
+    -- two cores' run queues (parity with the reply-side check), not just the server.
     let checkedAllowed := endpointCallCrossCoreDispatchChecked allPublicCtx epAB clientA
       callMsgA AccessRightSet.empty cnRoot (SeLe4n.Slot.ofNat 0) c0 rt.afterRecv
     let uncheckedCall := endpointCallCrossCoreDispatch epAB clientA callMsgA
       AccessRightSet.empty cnRoot (SeLe4n.Slot.ofNat 0) c0 rt.afterRecv
-    assertBool "an allowed checked call equals the unchecked cross-core call (SGI + state)"
-      (checkedAllowed.1.objects[serverB.toObjId]? == uncheckedCall.1.objects[serverB.toObjId]?
-        && (match checkedAllowed.2, uncheckedCall.2 with
-            | .ok (_, s1), .ok (_, s2) => s1 == s2 | _, _ => false))
+    assertBool "an allowed checked call equals the unchecked cross-core call (SGI + server/caller/reply/queues)"
+      ((match checkedAllowed.2, uncheckedCall.2 with
+        | .ok (_, s1), .ok (_, s2) => s1 == s2 | _, _ => false)
+        && checkedAllowed.1.objects[serverB.toObjId]? == uncheckedCall.1.objects[serverB.toObjId]?
+        && checkedAllowed.1.objects[clientA.toObjId]? == uncheckedCall.1.objects[clientA.toObjId]?
+        && checkedAllowed.1.objects[replyB.toObjId]? == uncheckedCall.1.objects[replyB.toObjId]?
+        && checkedAllowed.1.objects[epAB]? == uncheckedCall.1.objects[epAB]?
+        && (checkedAllowed.1.scheduler.runQueueOnCore c0).toList
+            == (uncheckedCall.1.scheduler.runQueueOnCore c0).toList
+        && (checkedAllowed.1.scheduler.runQueueOnCore c1).toList
+            == (uncheckedCall.1.scheduler.runQueueOnCore c1).toList)
     -- (b) Reply gate.  Fixture: rt.afterCallA (client A blockedOnReply, server B ready).
-    -- DENIED (high server B → low client A): fail-closed, state unchanged.
+    -- DENIED (high server B → low client A): fail-closed — the whole affected
+    -- footprint (caller, replier, reply object, endpoint) and cores 0/1 run queues
+    -- are unchanged from `rt.afterCallA`, so a regression that delivers/relinks
+    -- before returning `.flowDenied` fails here, not just the caller-ipcState check.
     let (stRDenied, resRDenied) :=
       endpointReplyCrossCoreDispatchChecked replyDeniedCtx serverB clientA replyMsgB c1 rt.afterCallA
     assertBool "a high→low reply is denied with .flowDenied"
       (match resRDenied with | .error .flowDenied => true | _ => false)
     assertBool "the denied reply leaves the client still blockedOnReply (undelivered)"
       (ipcStateIs stRDenied clientA (.blockedOnReply epAB (some serverB)))
+    assertBool "the denied reply leaves the whole footprint unchanged (caller/replier/reply/endpoint)"
+      (stRDenied.objects[clientA.toObjId]? == rt.afterCallA.objects[clientA.toObjId]?
+        && stRDenied.objects[serverB.toObjId]? == rt.afterCallA.objects[serverB.toObjId]?
+        && stRDenied.objects[replyB.toObjId]? == rt.afterCallA.objects[replyB.toObjId]?
+        && stRDenied.objects[epAB]? == rt.afterCallA.objects[epAB]?)
+    assertBool "the denied reply leaves cores 0/1 run queues unchanged"
+      ((stRDenied.scheduler.runQueueOnCore c0).toList == (rt.afterCallA.scheduler.runQueueOnCore c0).toList
+        && (stRDenied.scheduler.runQueueOnCore c1).toList == (rt.afterCallA.scheduler.runQueueOnCore c1).toList)
     -- ALLOWED (all public): the checked reply equals the unchecked one — compare
     -- the surfaced SGI (a dropped remote-wake would diverge here), the woken
     -- caller's object (payload delivery), the consumed reply object, AND the
@@ -1129,7 +1178,14 @@ private def runCancellationCompositionChecks : IO Unit := do
 private def highPrioT : SeLe4n.ThreadId := ⟨870⟩
 
 /-- A core-1 current thread of priority `curPrio`, with the endpoint's server
-(priority 50) about to be woken onto core 1 by a cross-core call from the client. -/
+(priority 50) about to be woken onto core 1 by a cross-core call from the client.
+`highPrioT` is CURRENT on core 1 and **not** in its run queue — the scheduler's
+dequeue-on-dispatch discipline (`queueCurrentConsistentOnCore`: the current thread
+is not in its own run queue).  This matters: with the current left in the queue,
+the woken server would simply lose the reselection to a still-queued higher-prio
+thread, so the no-preemption gate would pass without actually protecting a
+*dispatched* current.  Here the woken server B is the **only** entry in core 1's
+queue, so the gate passes iff the current genuinely outranks the candidate. -/
 private def stContention (curPrio : Nat) : SystemState :=
   let base :=
     (BootstrapBuilder.empty
@@ -1140,9 +1196,7 @@ private def stContention (curPrio : Nat) : SystemState :=
       |>.withObject replyB.toObjId (.reply { replyId := replyB })
       |>.withRunnable [clientA]
       |>.build)
-  { base with scheduler :=
-      (base.scheduler.setRunQueueOnCore c1
-          (RunQueue.ofList [(highPrioT, Priority.ofNat curPrio)])).setCurrentOnCore c1 (some highPrioT) }
+  { base with scheduler := base.scheduler.setCurrentOnCore c1 (some highPrioT) }
 
 /-- Drive: server B receives on core 1, then client A calls cross-core (waking B
 onto core 1), then core 1 handles the reschedule SGI. -/

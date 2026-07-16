@@ -29,7 +29,7 @@ cut (v0.32.68) — SM6 (A–F) complete.**
 
 The SM6 closure phase (plan §SM6.F, all six sub-tasks), closing the two
 remaining substantive §8 acceptance-gate items on the live operations.
-**SM6.F.1** `tests/SmpIpcSuite.lean` (`smp_ipc_suite`, 125 assertions / 14
+**SM6.F.1** `tests/SmpIpcSuite.lean` (`smp_ipc_suite`, 130 assertions / 14
 scenario groups + the golden-trace check): end-to-end pipelines composing
 the SM6.A/SM6.C transitions with the SM5 per-core scheduler
 (`handleRescheduleSgiOnCore` dispatch on the SGI's target core) — the

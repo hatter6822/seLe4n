@@ -622,7 +622,12 @@ private def runCheckedDispatchChecks : IO Unit := do
   match okExcept (switchToThreadOnCore stFourCore c2 waiter2) with
   | none => assertBool "wait-dispatch setup (dispatch waiter 2 on core 2)" false
   | some stCur =>
-    let (stWaited, _) := notificationWaitCrossCoreDispatch nId waiter2 stCur
+    let (stWaited, resWait) := notificationWaitCrossCoreDispatch nId waiter2 stCur
+    -- The dispatch must SUCCEED with no consumed badge (the block path) — a
+    -- regression returning `.error` while partially blocking would otherwise
+    -- satisfy the state-only checks below.
+    assertBool "wait dispatch succeeds on the block path (.ok none — no pending badge)"
+      (match resWait with | .ok none => true | _ => false)
     assertBool "wait dispatch blocks the caller as blockedOnNotification"
       (ipcStateIs stWaited waiter2 (.blockedOnNotification nId))
     assertBool "wait dispatch descheds the caller on its own core (core 2 current cleared)"
