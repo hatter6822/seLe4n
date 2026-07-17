@@ -159,29 +159,48 @@ visible to all coherent agents. For seLe4n:
 
 ## 5. Detailed sub-task breakdown
 
-### SM7.A — Shootdown descriptor + state (3 PRs, 6 sub-tasks) — LANDED (v0.32.72)
+### SM7.A — Shootdown descriptor + state (3 PRs, 6 sub-tasks) — LANDED (v0.32.72); completion cut (v0.32.73)
 
-**Status: LANDED (v0.32.72).**  The SM7 state layer, staged
-(`Platform/Staged.lean` + allowlist; partition 57 → 58) until the SM7.B
-protocol transitions — its first runtime exerciser — mount it.  Zero
-sorry/axiom.  The pure ops deliberately keep drain and ack **separate**
-(the target's handler must retire its TLBIs before acknowledging, so a
-fused drain-and-ack would let the model claim an acknowledgment the
-runtime had not yet earned — the §3.2 step 4b/4c seam), and the plan's
-"(under PendingShootdown lock)" enqueue discipline is declared at
-SM7.B.7 (`lockSet_tlbShootdown_correct`) where the protocol's full lock
-footprint is stated.  Tests: `tests/SmpTlbShootdownSuite.lean`
-(`smp_tlb_shootdown_suite`, the SM7.E.1 seed — 51 assertions / 7
-groups), Tier-2 + Tier-3 wired.
+**Status: LANDED (v0.32.72); completion cut (v0.32.73).**  The SM7
+state layer.  Landed staged at v0.32.72; the **v0.32.73 completion cut
+promoted it to production**: `Model/State.lean` mounts the state as
+`SystemState.tlbShootdown` (realising this plan's §4.1
+"`ConcurrencyState`" placement in the codebase's actual state
+architecture — `SystemState` is the kernel's runtime state, the
+SM3.A.10 `objStoreLock` precedent), with the pure `TlbInvalidation`
+operand module extracted from the staged `TlbiForSharing` so the mount
+stays FFI-free (partition 58 → 57).  Zero sorry/axiom.
+
+The pure ops deliberately keep drain and ack **separate** (the target's
+handler must retire its TLBIs before acknowledging, so a fused
+drain-and-ack would let the model claim an acknowledgment the runtime
+had not yet earned — the §3.2 step 4b/4c seam); the round-step
+composition `completeShootdownOnCore` exists for round-level reasoning
+only and is `rfl`-pinned to the two-step form.  The completion cut also
+formalised what v0.32.72 had argued in prose: the §4.1 capacity
+sufficiency (`beginRound_foldlM_enqueueShootdown_isSome`), the
+round-restores-quiescence capstone (`shootdownRound_restores_quiescent`
+— the induction that keeps `maxPendingPerCore` sufficient across
+serialised rounds forever), a total overflow escape hatch
+(`enqueueShootdownOrCoalesce` — a full queue collapses to a single
+full-flush descriptor; over-invalidation is always safe), the per-core
+pending-queue lock identifier `ShootdownQueueLockId` (decidable total
+order; ascending-core acquisition guards concurrent different-VSpace
+initiators) as the ready seam for SM7.B.7's
+`lockSet_tlbShootdown_correct`, and the live ack-flag FFI seam
+(`ffi_shootdown_*` + typed `CoreId` wrappers +
+`shootdownAck_ffi_core_in_range`).  Tests:
+`tests/SmpTlbShootdownSuite.lean` (`smp_tlb_shootdown_suite`, the
+SM7.E.1 seed — 73 assertions / 11 groups), Tier-2 + Tier-3 wired.
 
 | Sub | Description | Landed artefact | Status |
 |-----|-------------|-----------------|--------|
 | SM7.A.1 | `TlbShootdownDescriptor` struct | `SeLe4n/Kernel/Architecture/TlbShootdown.lean`: `{ op : TlbInvalidation, initiator : CoreId }` — the typed SM1.E.4 operand (one descriptor type covers the SM7.B.9 `.vae1`/`.vale1` unmaps, the SM7.B.10 `.aside1` ASID retire, and the SM7.B.11 `.vmalle1` full flush) + round attribution for the optional step-4d `.tlbShootdownAck` SGI | ✓ |
-| SM7.A.2 | `pendingShootdowns : Vector (List TlbShootdownDescriptor) coreCount` | `TlbShootdownState.pendingShootdowns : Vector (List TlbShootdownDescriptor) numCores` under the SM4.B path-a discipline: `pendingOnCore` / `setPendingOnCore`, the `@[simp]` store/load algebra (`_self` / `_ne` / cross-field frames), `ext_perCore`; the boot state is quiescent (`initial_shootdownQuiescent`) | ✓ |
+| SM7.A.2 | `pendingShootdowns : Vector (List TlbShootdownDescriptor) coreCount` | `TlbShootdownState.pendingShootdowns : Vector (List TlbShootdownDescriptor) numCores` under the SM4.B path-a discipline: `pendingOnCore` / `setPendingOnCore`, the `@[simp]` store/load algebra (`_self` / `_ne` / cross-field frames), `ext_perCore`; the boot state is quiescent (`initial_shootdownQuiescent`).  **v0.32.73**: mounted in the kernel state as `SystemState.tlbShootdown := .initial` (`default_tlbShootdown_{initial,quiescent,pendingBounded}`) — this plan's "in `ConcurrencyState`" placement | ✓ |
 | SM7.A.3 | `shootdownAck : Vector Bool coreCount` (AtomicBool in Rust) | `TlbShootdownState.shootdownAck` + `acknowledgeShootdown` (monotone) + `beginShootdownRound` (§3.2 step 1 exactly: `beginShootdownRound_ackOnCore_iff`) + decidable `allAcked` + the SM7.B.5 termination anchor `allCores_foldl_acknowledgeShootdown_allAcked`.  Rust: `rust/sele4n-hal/src/shootdown.rs` — `SHOOTDOWN_ACK` per-core cache-line-aligned `AtomicBool` (boots all-`true`), `ack_set` Release / `ack_is_set` + `all_acked` Acquire / `reset_for_round` Relaxed (publication via SM1.F.8 dsb-before-SGIR; cross-round hazard analysis in the module docs), fail-closed bounds panics, `_in_slice` testable forms; HAL 724 → 743 tests | ✓ |
 | SM7.A.4 | `enqueueShootdown` operation | FIFO tail-append, fail-closed `none` at capacity (a dropped descriptor is the SMP-C4 stale-TLB hazard); `enqueueShootdown_isSome_iff` / `_eq_none_iff` / `_pending_target` / `_mem` / `_length` / `_frame_pending` / `_frame_ack` / `_preserves_pendingBounded` | ✓ |
 | SM7.A.5 | `drainShootdowns` (called from SGI handler) | whole-queue FIFO drain returning `(queue, cleared state)` — `drainShootdowns_fst` is the completeness half of Theorem 3.3.1's remote case; exhaustive (`_drain_twice`), framed (`_frame_pending` / `_frame_ack`), ack-free by design (see status note); round-trip `drainShootdowns_after_enqueue` | ✓ |
-| SM7.A.6 | Pending queue capacity bound | `maxPendingPerCore = 16` (§4.1) + `maxPendingPerCore_pos`; decidable `pendingBounded` established at boot and preserved by every SM7.A operation (`enqueueShootdown` / `drainShootdowns` / `acknowledgeShootdown` / `beginShootdownRound` `…_preserves_pendingBounded`); drain restores capacity (`enqueueShootdown_isSome_after_drain`) | ✓ |
+| SM7.A.6 | Pending queue capacity bound | `maxPendingPerCore = 16` (§4.1) + `maxPendingPerCore_pos`; decidable `pendingBounded` established at boot and preserved by every SM7.A operation (`enqueueShootdown` / `drainShootdowns` / `acknowledgeShootdown` / `beginShootdownRound` `…_preserves_pendingBounded`); drain restores capacity (`enqueueShootdown_isSome_after_drain`).  **v0.32.73**: the §4.1 sufficiency argument is formal — `beginRound_foldlM_enqueueShootdown_isSome` (a round's posting fold from quiescence always succeeds) closes an induction with `shootdownRound_restores_quiescent` (a completed round is quiescent again); the total `enqueueShootdownOrCoalesce` full-flush-collapse escape hatch covers any future caller that batches past the bound (`…_request_covered`, unconditional `…_preserves_pendingBounded`) | ✓ |
 
 ### SM7.B — Shootdown protocol (4 PRs, 12 sub-tasks)
 

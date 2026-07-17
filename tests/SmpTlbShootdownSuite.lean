@@ -8,6 +8,8 @@
 -/
 
 import SeLe4n.Kernel.Architecture.TlbShootdown
+import SeLe4n.Kernel.Concurrency.Runtime
+import SeLe4n.Model.State
 
 /-!
 # WS-SM SM7.A — TLB shootdown descriptor + state test suite
@@ -120,6 +122,73 @@ open SeLe4n.Kernel.Concurrency
 #check @beginShootdownRound_frame_pending
 #check @beginShootdownRound_preserves_pendingBounded
 
+-- SM7.A completion cut — pure operand module (extracted from
+-- TlbiForSharing; fully-qualified names unchanged):
+#check @TlbInvalidation
+#check @TlbInvalidation.toOpTag
+#check @TlbInvalidation.toAsid
+#check @TlbInvalidation.toVaddr
+#check @TlbInvalidation.toOpTag_in_range
+#check @TlbInvalidation.toOpTag_distinct_constructors
+
+-- SM7.A completion cut — capacity sufficiency for a serialised round:
+#check @enqueueShootdown_isSome_of_empty
+#check @foldlM_enqueueShootdown_isSome
+#check @foldlM_enqueueShootdown_frame_ack
+#check @foldlM_enqueueShootdown_frame_pending
+
+-- SM7.A completion cut — overflow-coalescing enqueue:
+#check @enqueueShootdownOrCoalesce
+#check @enqueueShootdownOrCoalesce_eq_enqueue
+#check @enqueueShootdownOrCoalesce_of_full
+#check @enqueueShootdownOrCoalesce_request_covered
+#check @enqueueShootdownOrCoalesce_preserves_pendingBounded
+#check @enqueueShootdownOrCoalesce_frame_pending
+#check @enqueueShootdownOrCoalesce_frame_ack
+
+-- SM7.A completion cut — round-level composition + the quiescence
+-- capstone:
+#check @completeShootdownOnCore
+#check @completeShootdownOnCore_eq
+#check @completeShootdownOnCore_pendingOnCore_self
+#check @completeShootdownOnCore_ackOnCore_self
+#check @completeShootdownOnCore_frame_pending
+#check @completeShootdownOnCore_frame_ack
+#check @foldl_completeShootdownOnCore_pendingOnCore
+#check @foldl_completeShootdownOnCore_ackOnCore
+#check @beginRound_foldlM_enqueueShootdown_isSome
+#check @shootdownRound_restores_quiescent
+
+-- SM7.A completion cut — per-core pending-queue lock identifier (the
+-- SM7.B.7 seam):
+#check @ShootdownQueueLockId
+#check @ShootdownQueueLockId.core
+#check @ShootdownQueueLockId.le_refl
+#check @ShootdownQueueLockId.le_trans
+#check @ShootdownQueueLockId.le_antisymm
+#check @ShootdownQueueLockId.le_total
+#check @ShootdownQueueLockId.lt_or_gt_of_ne
+
+-- SM7.A completion cut — SystemState mount (the plan §4.1
+-- "ConcurrencyState" placement) + default-state theorems:
+#check @SeLe4n.Model.SystemState.tlbShootdown
+#check @SeLe4n.Model.default_tlbShootdown_initial
+#check @SeLe4n.Model.default_tlbShootdown_quiescent
+#check @SeLe4n.Model.default_tlbShootdown_pendingBounded
+
+-- SM7.A completion cut — FFI seam (Rust SHOOTDOWN_ACK realisation):
+#check @SeLe4n.Platform.FFI.ffiShootdownAckSet
+#check @SeLe4n.Platform.FFI.ffiShootdownAckIsSet
+#check @SeLe4n.Platform.FFI.ffiShootdownResetForRound
+#check @SeLe4n.Platform.FFI.ffiShootdownAllAcked
+#check @SeLe4n.Kernel.Concurrency.shootdownAckSet
+#check @SeLe4n.Kernel.Concurrency.shootdownAckIsSet
+#check @SeLe4n.Kernel.Concurrency.shootdownResetForRound
+#check @SeLe4n.Kernel.Concurrency.shootdownAllAcked
+#check @SeLe4n.Kernel.Concurrency.shootdownAckSet_eq_ffi
+#check @SeLe4n.Kernel.Concurrency.shootdownResetForRound_eq_ffi
+#check @SeLe4n.Kernel.Concurrency.shootdownAck_ffi_core_in_range
+
 -- ============================================================================
 -- §2  Elaboration-time examples
 -- ============================================================================
@@ -159,6 +228,47 @@ example {st st' : TlbShootdownState} {c : CoreId} {d : TlbShootdownDescriptor}
     (h : enqueueShootdown st c d = some st') :
     (drainShootdowns st' c).1 = st.pendingOnCore c ++ [d] :=
   drainShootdowns_after_enqueue h
+
+-- SM7.A completion cut: a round's posting fold from a quiescent state
+-- always succeeds (the formal plan-§4.1 capacity argument) …
+example {st : TlbShootdownState} (hq : shootdownQuiescent st)
+    (initiator : CoreId) {targets : List CoreId} (hnd : targets.Nodup)
+    (d : TlbShootdownDescriptor) :
+    (targets.foldlM (fun s c => enqueueShootdown s c d)
+      (beginShootdownRound st initiator)).isSome :=
+  beginRound_foldlM_enqueueShootdown_isSome hq initiator hnd d
+
+-- … and a complete round restores quiescence (the SM7.A capstone), so
+-- the *next* round's posting fold succeeds too — the induction that
+-- keeps maxPendingPerCore sufficient forever.
+example {st : TlbShootdownState} (hq : shootdownQuiescent st)
+    (initiator : CoreId) {targets : List CoreId}
+    (hcov : ∀ c : CoreId, c ≠ initiator → c ∈ targets)
+    {d : TlbShootdownDescriptor} {posted : TlbShootdownState}
+    (hpost : targets.foldlM (fun s c => enqueueShootdown s c d)
+      (beginShootdownRound st initiator) = some posted) :
+    shootdownQuiescent (targets.foldl completeShootdownOnCore posted) :=
+  shootdownRound_restores_quiescent hq initiator hcov hpost
+
+-- SM7.A completion cut: the coalescing enqueue keeps the capacity
+-- invariant with no success hypothesis.
+example {st : TlbShootdownState} (hB : pendingBounded st) (target : CoreId)
+    (d : TlbShootdownDescriptor) :
+    pendingBounded (enqueueShootdownOrCoalesce st target d) :=
+  enqueueShootdownOrCoalesce_preserves_pendingBounded hB target d
+
+-- SM7.A completion cut: the default SystemState mounts the quiescent
+-- shootdown state (decidable + theorem forms).
+example : SeLe4n.Model.SystemState.tlbShootdown default =
+    TlbShootdownState.initial := SeLe4n.Model.default_tlbShootdown_initial
+example : shootdownQuiescent (SeLe4n.Model.SystemState.tlbShootdown default) := by
+  decide
+
+-- SM7.A completion cut: the FFI seam's typed wrappers hand the Rust
+-- side only in-range core ids (the fail-closed panic arm is
+-- structurally unreachable).
+example : ∀ c : CoreId, (UInt64.ofNat c.val).toNat < numCores :=
+  SeLe4n.Kernel.Concurrency.shootdownAck_ffi_core_in_range
 
 -- ============================================================================
 -- §3  Runtime assertions
@@ -394,6 +504,120 @@ private def runFullRoundTripChecks : IO Unit := do
       (decide (pendingBounded s3))
 
 -- ----------------------------------------------------------------------------
+-- §3.8  Overflow-coalescing enqueue (SM7.A.6 completion cut)
+-- ----------------------------------------------------------------------------
+
+private def runCoalescingChecks : IO Unit := do
+  IO.println "-- §3.8 overflow-coalescing enqueue"
+  let st0 := TlbShootdownState.initial
+  match enqueueShootdown st0 core1 descUnmapPage with
+  | none => assertBool "baseline enqueue below capacity succeeds" false
+  | some viaEnqueue =>
+    assertBool "below capacity the coalescing enqueue is exactly enqueueShootdown"
+      (enqueueShootdownOrCoalesce st0 core1 descUnmapPage == viaEnqueue)
+  match enqueueMany st0 core2 (List.replicate maxPendingPerCore descUnmapPage) with
+  | none => assertBool "filling a queue to capacity succeeds" false
+  | some full => do
+    let collapsed := enqueueShootdownOrCoalesce full core2 descAsidRetire
+    assertBool "at capacity the queue collapses to a single full flush"
+      (collapsed.pendingOnCore core2 ==
+        [{ op := .vmalle1, initiator := descAsidRetire.initiator }])
+    assertBool "the collapsed descriptor carries the requesting initiator"
+      ((collapsed.pendingOnCore core2).all fun d => d.initiator == core2)
+    assertBool "the collapse frames every other core's queue"
+      ([core0, core1, core3].all fun c =>
+        collapsed.pendingOnCore c == full.pendingOnCore c)
+    assertBool "the collapse touches no ack flag"
+      (allCores.all fun c => collapsed.ackOnCore c == full.ackOnCore c)
+    assertBool "the collapsed state satisfies the capacity invariant"
+      (decide (pendingBounded collapsed))
+    assertBool "after the collapse a normal enqueue succeeds again"
+      ((enqueueShootdown collapsed core2 descUnmapPage).isSome)
+
+-- ----------------------------------------------------------------------------
+-- §3.9  Round-level composition (the generic capstone, exercised)
+-- ----------------------------------------------------------------------------
+
+private def runRoundCompositionChecks : IO Unit := do
+  IO.println "-- §3.9 round-level composition"
+  -- completeShootdownOnCore is the drain+acknowledge composition.
+  match enqueueShootdown (beginShootdownRound TlbShootdownState.initial core0)
+      core2 descUnmapPage with
+  | none => assertBool "round-step setup enqueue succeeds" false
+  | some st => do
+    let done := completeShootdownOnCore st core2
+    assertBool "a completed core's queue is empty"
+      (done.pendingOnCore core2 == [])
+    assertBool "a completed core's flag is acknowledged"
+      (done.ackOnCore core2)
+    assertBool "completing a core equals drain-then-acknowledge"
+      (done == acknowledgeShootdown (drainShootdowns st core2).2 core2)
+    assertBool "completing core 2 frames core 1's flag (still down)"
+      (!(done.ackOnCore core1))
+  -- The full generic pipeline: begin → post (foldlM) → complete (foldl).
+  let opened := beginShootdownRound TlbShootdownState.initial core0
+  let targets := [core1, core2, core3]
+  match targets.foldlM (fun s c => enqueueShootdown s c descUnmapPage) opened with
+  | none => assertBool "the round's posting fold succeeds from quiescence" false
+  | some posted => do
+    let final := targets.foldl completeShootdownOnCore posted
+    assertBool "the folded round ends quiescent (the capstone, computed)"
+      (decide (shootdownQuiescent final))
+    assertBool "the folded round ends exactly at the boot state"
+      (final == TlbShootdownState.initial)
+    assertBool "the closed form: visited cores' queues empty, initiator's untouched"
+      (targets.all (fun c => final.pendingOnCore c == []) &&
+        final.pendingOnCore core0 == opened.pendingOnCore core0)
+  assertBool "a duplicate target is harmless (drained twice, still quiescent)"
+    (match [core1, core1, core2, core3].foldlM
+        (fun s c => enqueueShootdown s c descUnmapPage)
+        (beginShootdownRound TlbShootdownState.initial core0) with
+      | none => false
+      | some posted =>
+        decide (shootdownQuiescent
+          ([core1, core1, core2, core3].foldl completeShootdownOnCore posted)))
+
+-- ----------------------------------------------------------------------------
+-- §3.10  Pending-queue lock identifiers (the SM7.B.7 seam)
+-- ----------------------------------------------------------------------------
+
+private def runLockOrderChecks : IO Unit := do
+  IO.println "-- §3.10 pending-queue lock identifiers"
+  let l0 : ShootdownQueueLockId := ⟨core0⟩
+  let l1 : ShootdownQueueLockId := ⟨core1⟩
+  let l3 : ShootdownQueueLockId := ⟨core3⟩
+  assertBool "queue locks order by core (0 ≤ 1, 1 ≤ 3)"
+    (decide (l0 ≤ l1) && decide (l1 ≤ l3))
+  assertBool "the order is strict across distinct cores"
+    (decide (l0 < l1) && !(decide (l1 < l0)) && !(decide (l1 ≤ l0)))
+  assertBool "every pair of queue locks is comparable (total order)"
+    (allCores.all fun a => allCores.all fun b =>
+      decide ((⟨a⟩ : ShootdownQueueLockId) ≤ ⟨b⟩) ||
+      decide ((⟨b⟩ : ShootdownQueueLockId) ≤ ⟨a⟩))
+  assertBool "distinct queue locks are strictly ordered one way"
+    (allCores.all fun a => allCores.all fun b =>
+      a == b ||
+      (decide ((⟨a⟩ : ShootdownQueueLockId) < ⟨b⟩) ^^
+        decide ((⟨b⟩ : ShootdownQueueLockId) < ⟨a⟩)))
+
+-- ----------------------------------------------------------------------------
+-- §3.11  SystemState mount (the plan §4.1 "ConcurrencyState" placement)
+-- ----------------------------------------------------------------------------
+
+private def runMountChecks : IO Unit := do
+  IO.println "-- §3.11 SystemState mount"
+  let st : SeLe4n.Model.SystemState := default
+  assertBool "the default SystemState mounts the quiescent boot state"
+    (st.tlbShootdown == TlbShootdownState.initial)
+  assertBool "the mounted state is quiescent (decidable instance)"
+    (decide (shootdownQuiescent st.tlbShootdown))
+  assertBool "the mounted state satisfies the capacity invariant"
+    (decide (pendingBounded st.tlbShootdown))
+  assertBool "record updates elsewhere frame the mounted state"
+    (({ st with tlb := SeLe4n.Model.TlbState.empty }).tlbShootdown ==
+      st.tlbShootdown)
+
+-- ----------------------------------------------------------------------------
 -- Runner
 -- ----------------------------------------------------------------------------
 
@@ -407,6 +631,10 @@ def runSmpTlbShootdownChecks : IO Unit := do
   runDrainChecks
   runAckRoundChecks
   runFullRoundTripChecks
+  runCoalescingChecks
+  runRoundCompositionChecks
+  runLockOrderChecks
+  runMountChecks
   IO.println "===================================================="
   IO.println "All SM7.A TLB shootdown descriptor + state checks PASS."
 

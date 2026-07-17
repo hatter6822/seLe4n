@@ -49,14 +49,15 @@ import SeLe4n.Kernel.SecondaryEntry
 -- `ffi_tlbi_for_sharing` dispatcher on every push.  Reachability:
 -- staged at SM1.E; SM7 (TLB shootdown) is the first runtime exerciser.
 import SeLe4n.Kernel.Architecture.TlbiForSharing
--- WS-SM SM7.A: TLB shootdown descriptor + per-core pending/ack state.
--- Pulled into Staged so CI builds the shootdown state layer
+-- WS-SM SM7.A: TLB shootdown descriptor + per-core pending/ack state
 -- (TlbShootdownDescriptor, TlbShootdownState, enqueueShootdown /
 -- drainShootdowns / acknowledgeShootdown / beginShootdownRound, the
--- maxPendingPerCore capacity bound + preservation theorems) on every
--- push.  Reachability: staged at SM7.A; the SM7.B protocol transitions
--- (tlbShootdownLocal / tlbShootdownBroadcast + the .tlbShootdownReq SGI
--- handler) are the first runtime exerciser.
+-- maxPendingPerCore capacity bound + preservation theorems).
+-- PRODUCTION since the SM7.A completion cut: `Model/State.lean` mounts
+-- the state as `SystemState.tlbShootdown`, so the module is in the
+-- `SeLe4n.lean` closure.  The import stays here for graph continuity
+-- (mirroring the promoted `Locks.RwLock` / `MemoryModel` precedent);
+-- the module no longer appears in the staged allowlist.
 import SeLe4n.Kernel.Architecture.TlbShootdown
 -- WS-SM SM2.A: abstract memory model for verified lock primitives.
 -- Pulled into Staged so CI builds the operational ARMv8.1-A LSE memory
@@ -492,38 +493,28 @@ import SeLe4n.Kernel.IPC.CrossCore.CancellationNI
 /-!
 # AN7-D.6 (PLT-M07) — Staged-modules build graph
 
-This meta-module pulls seven platform-binding-adjacent modules into the
-dependency graph so that `lake build SeLe4n.Platform.Staged` (and, via
-`scripts/test_tier1_build.sh`, every CI run) forces each one to compile.
-Without this wiring, the seven modules are orphans — they are not reached
-from `Main.lean` or from any production kernel chain, so a regression that
-breaks them would go undetected until the H3 hardware-binding workstream
-reaches them.
+This meta-module pulls the staged (production-unreachable) modules into
+the dependency graph so that `lake build SeLe4n.Platform.Staged` (and,
+via `scripts/test_tier1_build.sh`, every CI run) forces each one to
+compile.  Without this wiring, the staged modules are orphans — they are
+not reached from `Main.lean` or from any production kernel chain, so a
+regression that breaks them would go undetected until the workstream
+that consumes them arrives.  (The module began at AN7-D.6 with seven
+platform-binding modules and has grown with every staged workstream
+slice since.)
 
-The staged modules are:
-
-1. `SeLe4n.Platform.Sim.Contract`              — Sim platform contract
-2. `SeLe4n.Platform.FFI`                       — Lean @[extern] FFI declarations
-3. `SeLe4n.Platform.RPi5.Contract`             — RPi5 platform contract
-4. `SeLe4n.Platform.RPi5.VSpaceBoot`           — AN7-D.2 RPi5 boot VSpaceRoot
-5. `SeLe4n.Kernel.Architecture.CacheModel`     — Cache coherency model
-6. `SeLe4n.Kernel.Architecture.ExceptionModel` — ARM64 exception model
-7. `SeLe4n.Kernel.Architecture.TimerModel`     — ARM generic timer model
-8. `SeLe4n.Kernel.Architecture.BarrierComposition` — AN9-C BarrierKind algebra
-9. `SeLe4n.Kernel.Architecture.TlbCacheComposition` — AN9-A page-table coherency
-10. `SeLe4n.Kernel.Concurrency.Assumptions`    — AN12-B SMP-latent inventory
-11. `SeLe4n.Kernel.Concurrency.Anchors`        — WS-SM SM0.C inventory build anchor (SMP-H3)
-12. `SeLe4n.Kernel.Concurrency.Types`          — WS-SM SM0.E/SM0.F CoreId + SharingDomain
-13. `SeLe4n.Kernel.Concurrency.Locks`          — WS-SM SM0.I BklState
-14. `SeLe4n.Kernel.Concurrency.Locks.Kind`     — WS-SM SM0.I LockKind + LockId
-15. `SeLe4n.Kernel.Concurrency.Sgi`            — WS-SM SM0.H SgiKind
-16. `SeLe4n.Kernel.Concurrency.Runtime`        — WS-SM SM1.B.5 currentCoreId FFI wrapper
-17. `SeLe4n.Kernel.SecondaryEntry`             — WS-SM SM1.C.6 secondary-core kernel-entry placeholder
-18. `SeLe4n.Kernel.Architecture.TlbiForSharing` — WS-SM SM1.E.4 typed TLBI FFI dispatcher
-19. `SeLe4n.Kernel.Concurrency.MemoryModel`     — WS-SM SM2.A abstract memory model
-20. `SeLe4n.Kernel.Concurrency.Locks.TicketLock` — WS-SM SM2.B abstract TicketLock spec
-21. `SeLe4n.Kernel.Concurrency.Locks.RwLock`    — WS-SM SM2.C abstract RwLock spec
-22. `SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement` — WS-SM SM2.C.20 refinement bridge
+The authoritative inventory of **staged-only** modules (reachable from
+this anchor but not from `SeLe4n.lean`) is
+`scripts/staged_module_allowlist.txt` — one line per module with its
+category and rationale, held exactly equal to the live import graph by
+`scripts/check_production_staging_partition.sh` on every push.  This
+docstring deliberately does **not** duplicate that list: an earlier
+enumerated snapshot here (frozen at the SM2.C cut) drifted further from
+the allowlist with every phase, so the SM7.A completion cut replaced it
+with this pointer.  Note the anchor's import list above is a *superset*
+of the allowlist — modules promoted to production (e.g.
+`Locks.RwLock`, `MemoryModel`, `Architecture.TlbShootdown`) keep their
+imports here for graph continuity but leave the allowlist.
 
 Per the plan (AN9-J will transition most of these from "SMP-latent" to
 "SMP-implemented, runtime-gated by smp_enabled=false at v1.0.0"), the
@@ -540,7 +531,7 @@ guarantees they all continue to compile.
 namespace SeLe4n.Platform.Staged
 
 /-- AN7-D.6 anchor: a dummy definition whose mere presence forces Lean to
-    link the seven imported modules into this compilation unit.  `lake
+    link the imported modules into this compilation unit.  `lake
     build SeLe4n.Platform.Staged` will fail loudly if any of those modules
     acquires a broken proof. -/
 def stagedBuildAnchor : Unit := ()

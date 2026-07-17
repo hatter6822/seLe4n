@@ -825,7 +825,11 @@ run_check "INVARIANT" rg -n '^theorem enqueueShootdown_preserves_pendingBounded'
 run_check "INVARIANT" rg -n '^theorem drainShootdowns_after_enqueue' SeLe4n/Kernel/Architecture/TlbShootdown.lean
 run_check "INVARIANT" rg -n '^theorem allCores_foldl_acknowledgeShootdown_allAcked' SeLe4n/Kernel/Architecture/TlbShootdown.lean
 run_check "INVARIANT" rg -n '^theorem beginShootdownRound_ackOnCore_iff' SeLe4n/Kernel/Architecture/TlbShootdown.lean
-run_check "INVARIANT" rg -n '^SeLe4n\.Kernel\.Architecture\.TlbShootdown' scripts/staged_module_allowlist.txt
+# (v0.32.73: TlbShootdown was PROMOTED to production — Model/State.lean
+# mounts it — so it must NOT reappear in the staged allowlist; the
+# still-staged TlbiForSharing entry is the anchored allowlist line, and
+# the Staged.lean import is retained for graph continuity.)
+run_check "INVARIANT" rg -n '^SeLe4n\.Kernel\.Architecture\.TlbiForSharing' scripts/staged_module_allowlist.txt
 run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Architecture\.TlbShootdown' SeLe4n/Platform/Staged.lean
 run_check "INVARIANT" rg -n '^pub static SHOOTDOWN_ACK' rust/sele4n-hal/src/shootdown.rs
 run_check "INVARIANT" rg -n '^pub fn reset_for_round' rust/sele4n-hal/src/shootdown.rs
@@ -833,6 +837,27 @@ run_check "INVARIANT" rg -n '^pub mod shootdown;' rust/sele4n-hal/src/lib.rs
 run_check "INVARIANT" rg -n '^def runSmpTlbShootdownChecks' tests/SmpTlbShootdownSuite.lean
 run_check "INVARIANT" rg -n '^run_check(_with_timeout)? "TRACE" lake exe smp_tlb_shootdown_suite' scripts/test_tier2_negative.sh
 run_check "INVARIANT" rg -n '^name = "smp_tlb_shootdown_suite"' lakefile.toml
+# SM7.A completion cut — the pure operand module (extracted from the staged
+# TlbiForSharing so Model/State can mount the shootdown state), the
+# SystemState mount + default-state theorems, the capacity-sufficiency +
+# coalescing + round-quiescence surface, the pending-queue lock identifier,
+# and the ack-flag FFI seam (Rust exports + Lean externs + typed wrappers).
+run_check "INVARIANT" rg -n '^inductive TlbInvalidation' SeLe4n/Kernel/Architecture/TlbInvalidation.lean
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Architecture\.TlbShootdown' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^  tlbShootdown : SeLe4n\.Kernel\.Architecture\.TlbShootdownState' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem default_tlbShootdown_initial' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem default_tlbShootdown_quiescent' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem foldlM_enqueueShootdown_isSome' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^def enqueueShootdownOrCoalesce' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^theorem enqueueShootdownOrCoalesce_preserves_pendingBounded' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^def completeShootdownOnCore' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^theorem shootdownRound_restores_quiescent' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^structure ShootdownQueueLockId' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^pub extern "C" fn ffi_shootdown_ack_set' rust/sele4n-hal/src/ffi.rs
+run_check "INVARIANT" rg -n '^pub extern "C" fn ffi_shootdown_all_acked' rust/sele4n-hal/src/ffi.rs
+run_check "INVARIANT" rg -n 'extern "ffi_shootdown_ack_set"' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def shootdownAckSet' SeLe4n/Kernel/Concurrency/Runtime.lean
+run_check "INVARIANT" rg -n '^theorem shootdownAck_ffi_core_in_range' SeLe4n/Kernel/Concurrency/Runtime.lean
 
 # WS-H12d IPC message payload bounds anchors — predicate definitions + enforcement + theorems.
 run_check "INVARIANT" rg -n '^def maxMessageRegisters' SeLe4n/Model/Object/Types.lean

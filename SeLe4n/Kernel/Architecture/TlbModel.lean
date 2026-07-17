@@ -37,6 +37,18 @@ flush) preserves the invariant.
 WS-H11/H-10 forward declaration for H3 hardware bring-up. The abstract kernel
 operates on page tables directly; TLB maintenance becomes relevant when the
 platform binding manages real hardware TLBs.
+
+## SMP companion (WS-SM SM7)
+
+The state here is the boot core's single TLB view.  Under SMP each core
+caches translations independently, so invalidations must reach every
+core: the WS-SM SM7.A shootdown state layer
+(`SeLe4n/Kernel/Architecture/TlbShootdown.lean` — per-core
+pending-invalidation queues + acknowledgment flags, mounted as
+`SystemState.tlbShootdown`) carries the cross-core coordination, the
+SM7.B protocol transitions drive it, and SM7.C generalises this
+module's `TlbState` to a per-core `Vector` with
+`tlbInvalidationConsistent_perCore`.
 -/
 
 namespace SeLe4n.Kernel.Architecture

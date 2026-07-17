@@ -49,7 +49,6 @@ SeLe4n.Kernel.Architecture.ExceptionModel     # marker (STATUS: staged for H3)
 SeLe4n.Kernel.Architecture.InterruptDispatch  # transitively-staged via ExceptionModel
 SeLe4n.Kernel.Architecture.TimerModel         # marker (STATUS: staged for H3)
 SeLe4n.Kernel.Architecture.TlbCacheComposition # transitively-staged via Staged
-SeLe4n.Kernel.Architecture.TlbShootdown       # infra (WS-SM SM7.A shootdown descriptor + per-core pending/ack state; SM7.B protocol transitions are the first runtime exerciser)
 SeLe4n.Kernel.Architecture.TlbiForSharing     # infra (WS-SM SM1.E.4 typed TLBI FFI dispatcher; SM7 first runtime exerciser)
 SeLe4n.Kernel.Concurrency.Assumptions         # infra (SMP-latent assumption inventory)
 SeLe4n.Kernel.Concurrency.Anchors             # infra (WS-SM SM0.C inventory build anchor; SMP-H3 closure)

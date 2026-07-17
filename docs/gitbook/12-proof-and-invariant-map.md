@@ -751,6 +751,39 @@ TLB/cache maintenance model (`TlbModel.lean`, WS-H11/H-10):
 - `vspaceMapPageWithFlush`, `vspaceUnmapPageWithFlush` — composed page-table + targeted per-(ASID,VAddr) TLB-flush operations (AJ4-B)
 - 13 TLB theorems: `tlbConsistent_empty`, `adapterFlushTlb_restores_tlbConsistent`, `adapterFlushTlbByAsid_preserves_tlbConsistent`, `vspaceMapPage_then_flush_preserves_tlbConsistent`, `vspaceUnmapPage_then_flush_preserves_tlbConsistent`, `adapterFlushTlbByAsid_removes_matching`, `adapterFlushTlbByAsid_preserves_other`, `adapterFlushTlbByVAddr_preserves_tlbConsistent`, `adapterFlushTlbByVAddr_removes_matching`, `cross_asid_tlb_isolation`, `vspaceMapPageWithFlush_preserves_tlbConsistent`, `vspaceUnmapPageWithFlush_preserves_tlbConsistent`, `tlbConsistent_of_objects_eq`
 
+TLB shootdown state layer (`TlbShootdown.lean`, WS-SM SM7.A — production,
+mounted as `SystemState.tlbShootdown`; the SM7.B protocol transitions are
+its first mutators):
+- `TlbShootdownDescriptor` — one pending invalidation request: the typed
+  `TlbInvalidation` operand (pure module extracted from `TlbiForSharing`
+  at SM7.A) + the initiating `CoreId`
+- `TlbShootdownState` — per-core `pendingShootdowns` FIFO queues + per-core
+  `shootdownAck` flags (SM4.B path-a accessors, `@[simp]` store/load
+  algebra, `ext_perCore`; quiescent boot state, `default_tlbShootdown_quiescent`)
+- `enqueueShootdown` / `enqueueShootdownOrCoalesce` — FIFO tail-append,
+  fail-closed `none` at `maxPendingPerCore = 16` / total full-flush-collapse
+  fallback (`…_request_covered`, unconditional `…_preserves_pendingBounded`)
+- `drainShootdowns` / `acknowledgeShootdown` / `beginShootdownRound` /
+  `completeShootdownOnCore` — the `.tlbShootdownReq` handler's whole-queue
+  drain (exhaustive), the release-modelled per-target ack (monotone), the
+  §3.2 step-1 round open (`beginShootdownRound_ackOnCore_iff`), and their
+  round-step composition
+- `ShootdownQueueLockId` — per-core pending-queue lock identifier with a
+  decidable total order (ascending-core acquisition; the SM7.B.7 seam)
+- Headline theorems: `shootdownRound_restores_quiescent` (a complete round
+  returns any quiescent state to quiescence — the induction keeping the
+  capacity bound sufficient forever), `beginRound_foldlM_enqueueShootdown_isSome`
+  + `foldlM_enqueueShootdown_isSome` (the formal plan-§4.1 capacity
+  sufficiency), `foldl_completeShootdownOnCore_{pendingOnCore,ackOnCore}`
+  closed forms, `allCores_foldl_acknowledgeShootdown_allAcked` (the SM7.B.5
+  wait-loop-termination anchor), and per-operation `…_preserves_pendingBounded` ×5
+- Runtime realisation: `rust/sele4n-hal/src/shootdown.rs` `SHOOTDOWN_ACK`
+  (per-core cache-line-aligned `AtomicBool`; Release set / Acquire poll /
+  Relaxed round-reset riding SM1.F.8's dsb-before-SGIR) behind the
+  `ffi_shootdown_*` exports and the typed `CoreId` wrappers in
+  `Concurrency/Runtime.lean` (`shootdownAck_ffi_core_in_range` makes the
+  fail-closed Rust panic arm structurally unreachable)
+
 Cache coherency model (`CacheModel.lean`, AG8-B):
 - `CacheLineState` — invalid/clean/dirty abstraction of ARM64 D-cache and I-cache line state
 - `CacheState` — per-address D-cache and I-cache state (function representation)

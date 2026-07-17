@@ -394,8 +394,11 @@ run_check_with_timeout "TRACE" lake exe smp_notification_suite
 # capacity bound (16-deep fill, 17th rejection, drain-restores-capacity), the
 # exhaustive drainShootdowns, the acknowledgment round lifecycle
 # (beginShootdownRound initiator-only start, per-target acknowledgeShootdown,
-# monotonicity, fold-to-allAcked), and a full 4-core state-level shootdown
-# round trip ending quiescent.
+# monotonicity, fold-to-allAcked), a full 4-core state-level shootdown round
+# trip ending quiescent, and — from the v0.32.73 completion cut — the
+# enqueueShootdownOrCoalesce overflow collapse, the generic round-composition
+# capstone computed on live data, the ShootdownQueueLockId total-order walk,
+# and the SystemState.tlbShootdown mount checks.
 run_check_with_timeout "TRACE" lake exe smp_tlb_shootdown_suite
 
 finalize_report

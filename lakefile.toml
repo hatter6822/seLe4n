@@ -5,7 +5,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 
 name = "seLe4n"
-version = "0.32.72"
+version = "0.32.73"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
@@ -578,8 +578,12 @@ root = "tests.SmpNotificationSuite"
 # (16-deep fill, 17th rejection, drain-restores-capacity), the exhaustive
 # drainShootdowns (whole-queue FIFO return, empty-after, second-drain-empty),
 # the acknowledgment round lifecycle (beginShootdownRound initiator-only,
-# per-target acknowledgeShootdown, monotonicity, fold-to-allAcked), and a
-# full 4-core state-level shootdown round trip ending quiescent.  Tier-2 +
+# per-target acknowledgeShootdown, monotonicity, fold-to-allAcked), a full
+# 4-core state-level shootdown round trip ending quiescent, and — from the
+# v0.32.73 completion cut — the enqueueShootdownOrCoalesce overflow collapse,
+# the generic round-composition capstone computed on live data (posting fold →
+# completeShootdownOnCore fold → state equal to boot), the ShootdownQueueLockId
+# total-order walk, and the SystemState.tlbShootdown mount checks.  Tier-2 +
 # Tier-3 wired.
 [[lean_exe]]
 name = "smp_tlb_shootdown_suite"

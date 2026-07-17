@@ -74,6 +74,26 @@
 //! mutate stack-local slices via the `_in_slice` inner forms (the
 //! global [`SHOOTDOWN_ACK`] is only read, so parallel test threads
 //! never race on it).
+//!
+//! ## Lean ↔ Rust conformance pairing
+//!
+//! Each Lean SM7.A ack-flag theorem
+//! (`SeLe4n/Kernel/Architecture/TlbShootdown.lean`) has a Rust unit
+//! test below exercising the same fact on this realisation, so the
+//! two sides are auditable claim-by-claim (the FFI seam itself is
+//! `ffi_shootdown_*` in `ffi.rs`, called through the typed `CoreId`
+//! wrappers in `SeLe4n/Kernel/Concurrency/Runtime.lean`):
+//!
+//! | Lean theorem | Rust test |
+//! |--------------|-----------|
+//! | `initial_ackOnCore` / `initial_allAcked` | `sm7a3_shootdown_ack_boots_quiescent_all_acknowledged` |
+//! | `beginShootdownRound_ackOnCore_iff` | `sm7a3_reset_for_round_marks_only_initiator_acknowledged`, `sm7a3_reset_for_round_works_for_every_initiator` |
+//! | `acknowledgeShootdown_ackOnCore_self` + `_ne` | `sm7a3_ack_set_marks_exactly_the_named_core` |
+//! | `acknowledgeShootdown_monotone` (idempotence) | `sm7a3_ack_set_is_idempotent` |
+//! | `allAcked` (∀-core conjunction, all 2⁴ states) | `sm7a3_all_acked_matches_conjunction_exhaustively` |
+//! | `allCores_foldl_acknowledgeShootdown_allAcked` | `sm7a3_full_round_trip_reaches_all_acked` |
+//! | round reset after `shootdownRound_restores_quiescent` | `sm7a3_back_to_back_rounds_reset_cleanly` |
+//! | fail-closed bounds (`CoreId` typing on the Lean side) | `sm7a3_*_panics_on_out_of_range_*` + the `ffi.rs` panic tests |
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
@@ -496,6 +516,30 @@ mod tests {
             !ack_is_set_in_slice(&slots, 0),
             "previous initiator now a target"
         );
+    }
+
+    #[test]
+    fn sm7a3_all_acked_matches_conjunction_exhaustively() {
+        // Mechanical conformance with the Lean `allAcked` predicate
+        // (∀ c, ackOnCore c = true): for every one of the 2^4 flag
+        // assignments, `all_acked_in_slice` agrees with the full
+        // conjunction.  Exhaustive over the whole 4-core state space,
+        // so no flag combination can diverge from the model.
+        for bits in 0u32..16 {
+            let slots = [
+                ShootdownAckFlag::new(bits & 1 != 0),
+                ShootdownAckFlag::new(bits & 2 != 0),
+                ShootdownAckFlag::new(bits & 4 != 0),
+                ShootdownAckFlag::new(bits & 8 != 0),
+            ];
+            let expected = bits == 0b1111;
+            assert_eq!(
+                all_acked_in_slice(&slots),
+                expected,
+                "flag assignment {:#06b}",
+                bits
+            );
+        }
     }
 
     #[test]

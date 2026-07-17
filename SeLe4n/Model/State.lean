@@ -13,6 +13,7 @@ import SeLe4n.Kernel.Scheduler.RunQueue
 import SeLe4n.Kernel.SchedContext.ReplenishQueue
 import SeLe4n.Kernel.Service.Interface
 import SeLe4n.Kernel.RobinHood.Set
+import SeLe4n.Kernel.Architecture.TlbShootdown
 
 namespace SeLe4n.Model
 
@@ -704,7 +705,11 @@ structure SystemState where
   scThreadIndex : RHTable SeLe4n.SchedContextId (List SeLe4n.ThreadId) := {}
   /-- R7-A.1/M-17: Abstract TLB state, tracking cached address translations.
       Empty by default (no stale entries at boot). Operations that modify page
-      tables must flush the TLB to maintain `tlbConsistent`. -/
+      tables must flush the TLB to maintain `tlbConsistent`.
+
+      Under SMP this is the boot core's view; the cross-core invalidation
+      coordination lives in the `tlbShootdown` field below (WS-SM SM7.A),
+      and SM7.C generalises this field to a per-core `Vector`. -/
   tlb : TlbState := TlbState.empty
   /-- WS-SM SM3.A.10: ObjStore table-level reader-writer lock state.
 
@@ -728,6 +733,39 @@ structure SystemState where
       `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` §5.1 (SM3.A.10). -/
   objStoreLock : SeLe4n.Kernel.Concurrency.RwLockState :=
     SeLe4n.Kernel.Concurrency.RwLockState.unheld
+  /-- WS-SM SM7.A: per-core TLB-shootdown coordination state — the
+      pending-invalidation queues and acknowledgment flags of
+      `SeLe4n/Kernel/Architecture/TlbShootdown.lean`.
+
+      This field realises the SM7 plan's §4.1
+      "`pendingShootdowns : Vector (List TlbShootdownDescriptor)
+      coreCount` in `ConcurrencyState`" placement in the codebase's
+      actual state architecture: `SystemState` is the kernel's runtime
+      state (there is no separate `ConcurrencyState` structure; the
+      SM3.A.10 `objStoreLock` field above landed the same way).
+
+      Defaults to `TlbShootdownState.initial` — the quiescent boot
+      state (all queues empty, all flags acknowledged), matching the
+      Rust `SHOOTDOWN_ACK` boot value; pinned by
+      `default_tlbShootdown_initial` / the SM7.A default-state
+      theorems below.
+
+      **Mutators**: none yet — the SM7.B shootdown protocol
+      transitions (`tlbShootdownBroadcast` + the `.tlbShootdownReq`
+      SGI handler) are the first writers, going exclusively through
+      the SM7.A operations (`enqueueShootdown` / `drainShootdowns` /
+      `acknowledgeShootdown` / `beginShootdownRound`), never the raw
+      setters, so the `pendingBounded` capacity invariant is carried
+      by construction.  Every existing transition frames this field
+      (`{ st with … }` updates never mention it).
+
+      **Information flow**: the field is not yet part of the IF
+      projection surface — no transition reads it, so it cannot yet
+      influence any observable.  SM7.B's protocol NI obligations and
+      the SM8 per-core observable-state migration take it into the
+      projection together with the transitions that consume it. -/
+  tlbShootdown : SeLe4n.Kernel.Architecture.TlbShootdownState :=
+    SeLe4n.Kernel.Architecture.TlbShootdownState.initial
 
 /-- Abstract owner identity for a slot in this model: the containing CNode object id. -/
 abbrev CSpaceOwner := SeLe4n.ObjId
@@ -778,6 +816,14 @@ instance : Inhabited SystemState where
     -- `default_objStoreLock_unheld` and `default_objects_locks_unheld`
     -- theorems (SM3.A.11) can discharge by `rfl`.
     objStoreLock := SeLe4n.Kernel.Concurrency.RwLockState.unheld
+    -- WS-SM SM7.A: TLB-shootdown coordination state starts quiescent
+    -- (all pending queues empty, all ack flags true — nobody waited
+    -- on) at boot, matching the Rust SHOOTDOWN_ACK boot value.
+    -- Explicit listing pins the default-state invariant so the
+    -- `default_tlbShootdown_initial` / `default_tlbShootdown_quiescent`
+    -- theorems (SM7.A) can discharge by `rfl` / the initial-state
+    -- theorems.
+    tlbShootdown := SeLe4n.Kernel.Architecture.TlbShootdownState.initial
   }
 
 /-- X2-B/H-2: Checked domain schedule setter — validates that all entries have
@@ -931,6 +977,38 @@ theorem default_objects_locks_unheld_via_toList :
   intro p hp
   rw [default_objects_toList_empty] at hp
   exact absurd hp (List.not_mem_nil)
+
+-- ============================================================================
+-- WS-SM SM7.A — TLB-shootdown state invariants on the default SystemState
+-- ============================================================================
+
+/-- WS-SM SM7.A: the default SystemState carries the quiescent
+TLB-shootdown boot state.  Pinned by the explicit listing in the
+`Inhabited SystemState` instance, mirroring
+`default_objStoreLock_unheld` (SM3.A.11). -/
+theorem default_tlbShootdown_initial :
+    (default : SystemState).tlbShootdown =
+      SeLe4n.Kernel.Architecture.TlbShootdownState.initial := rfl
+
+/-- WS-SM SM7.A: at boot no shootdown round is in flight — every core's
+pending queue is empty and every acknowledgment flag is `true` ("nobody
+waited on"), matching the Rust `SHOOTDOWN_ACK` boot value.  Direct
+consequence of `default_tlbShootdown_initial` +
+`initial_shootdownQuiescent`. -/
+theorem default_tlbShootdown_quiescent :
+    SeLe4n.Kernel.Architecture.shootdownQuiescent
+      (default : SystemState).tlbShootdown := by
+  rw [default_tlbShootdown_initial]
+  exact SeLe4n.Kernel.Architecture.initial_shootdownQuiescent
+
+/-- WS-SM SM7.A.6: the default SystemState satisfies the shootdown
+capacity invariant (empty queues are trivially within
+`maxPendingPerCore`). -/
+theorem default_tlbShootdown_pendingBounded :
+    SeLe4n.Kernel.Architecture.pendingBounded
+      (default : SystemState).tlbShootdown :=
+  SeLe4n.Kernel.Architecture.pendingBounded_of_shootdownQuiescent
+    default_tlbShootdown_quiescent
 
 -- ============================================================================
 -- WS-SM SM3.A audit-pass-5 — Non-vacuous lock-state invariant + preservation

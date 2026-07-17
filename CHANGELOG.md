@@ -1,3 +1,78 @@
+## v0.32.73 — WS-SM SM7.A completion cut: SystemState mount, round capstone, coalescing bound, lock IDs, FFI seam
+
+Closes every deferral recorded at the v0.32.72 SM7.A landing — the
+state layer is now mounted, its capacity argument and round behaviour
+are theorems rather than prose, and the Lean/Rust ack-flag
+correspondence is a linked seam rather than parallel documentation:
+
+* **SystemState mount (the plan §4.1 "`ConcurrencyState`" placement).**
+  `SystemState.tlbShootdown : TlbShootdownState := .initial`
+  (`Model/State.lean`, the SM3.A.10 `objStoreLock` precedent), with the
+  boot-state theorems `default_tlbShootdown_initial` /
+  `default_tlbShootdown_quiescent` / `default_tlbShootdown_pendingBounded`
+  and IF-projection + invariant-bundle deferral notes in the field
+  docstring.  To keep `Model/State.lean`'s import closure pure, the
+  `TlbInvalidation` inductive + encoders + theorems moved verbatim from
+  the staged `TlbiForSharing` (which imports `Platform.FFI`, above
+  `Kernel.API`) into the new pure production module
+  `Architecture/TlbInvalidation.lean` — all fully-qualified names
+  unchanged, `TlbiForSharing` imports it and keeps the `SharingDomain`
+  half + the `BaseIO` dispatcher.  `TlbShootdown` is **promoted to
+  production** (staged partition 58 → 57; `STATUS: staged` marker
+  dropped, allowlist entry removed, `Staged.lean` import retained per
+  the `Locks.RwLock` precedent).
+* **Round-level capstone.**  `shootdownRound_restores_quiescent`: from
+  any quiescent state, `beginShootdownRound` + the per-target posting
+  fold + per-target `completeShootdownOnCore` (the drain→ack
+  composition, `rfl`-pinned to the handler's two-step form) ends
+  quiescent — generalising the suite's concrete 4-core walk to
+  arbitrary initiators/targets/descriptors, no `Nodup` needed.  Fed by
+  the new `foldl_completeShootdownOnCore_{pendingOnCore,ackOnCore}`
+  closed forms and the `foldlM` posting-fold frame lemmas.
+* **Capacity sufficiency, formal.**  The plan §4.1 "serialised rounds
+  never hit the bound" prose is now
+  `beginRound_foldlM_enqueueShootdown_isSome` +
+  `foldlM_enqueueShootdown_isSome` (+ `enqueueShootdown_isSome_of_empty`);
+  together with the capstone this closes the induction keeping
+  `maxPendingPerCore` sufficient across rounds forever.
+* **Overflow escape hatch.**  `enqueueShootdownOrCoalesce`: total
+  enqueue that collapses a full queue to a single full-flush descriptor
+  (over-invalidation is always safe) — equals `enqueueShootdown` below
+  the bound, never loses a request (`…_request_covered`), preserves
+  `pendingBounded` **unconditionally**, frames other cores + acks.
+* **Pending-queue lock identifier.**  `ShootdownQueueLockId` (per-core,
+  the `RunQueueLockId` pattern) with a decidable total order
+  (`le_refl`/`le_trans`/`le_antisymm`/`le_total`/`lt_or_gt_of_ne`) and
+  the ascending-core acquisition rationale (two concurrent
+  different-VSpace initiators would otherwise deadlock) — the ready
+  seam for SM7.B.7's `lockSet_tlbShootdown_correct`.
+* **FFI seam.**  Rust `ffi_shootdown_{ack_set,ack_is_set,
+  reset_for_round,all_acked}` (u64-space bound check before the `usize`
+  cast via the testable `shootdown_core_id_checked`; fail-closed panic
+  = abort at the C ABI) + Lean `@[extern]` bindings (`Platform/FFI.lean`)
+  + typed `CoreId` wrappers in `Concurrency/Runtime.lean`
+  (`shootdownAckSet`/`shootdownAckIsSet`/`shootdownResetForRound`/
+  `shootdownAllAcked`, `_eq_ffi` rfl theorems, and
+  `shootdownAck_ffi_core_in_range` making the Rust panic arm
+  structurally unreachable).  `shootdown.rs` gains the Lean↔Rust
+  conformance-pairing table and the exhaustive 2⁴-state `all_acked`
+  conjunction test; HAL 743 → **750 tests**, clippy/rustfmt clean.
+* **State ergonomics + docs.**  `TlbShootdownState` derives
+  `DecidableEq`; `TlbModel.lean` + the `SystemState.tlb` docstring
+  cross-reference the shootdown layer; `Staged.lean`'s stale enumerated
+  module list (frozen at SM2.C) replaced by a pointer to the
+  authoritative allowlist; GitBook 12 gains the SM7.A proof-map entry.
+
+Zero sorry/axiom.  `tests/SmpTlbShootdownSuite.lean` grows 51 → **73
+assertions / 11 groups** (§3.8 coalescing, §3.9 round composition —
+including the computed capstone, final-state == boot-state via the new
+`DecidableEq`, and the duplicate-target robustness walk, §3.10 lock
+order, §3.11 SystemState mount) + the completion-cut `#check` anchors
+and generic theorem-application witnesses; Tier-3 anchors extended.
+Version bumped 0.32.72 → 0.32.73.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §5 (SM7.A)
+
 ## v0.32.72 — WS-SM SM7.A: TLB shootdown descriptor + per-core pending/ack state
 
 Opens WS-SM Phase SM7 (TLB / cache shootdown, SMP-C4 closure) with the
