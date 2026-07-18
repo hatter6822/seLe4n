@@ -858,7 +858,12 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
         | .error e => .error e
         | .ok args =>
             let newObj := objectOfKernelType args.newType args.size
-            lifecycleRetypeDirectWithCleanup cap args.targetObj newObj st
+            -- WS-SM SM7.B.11: retyping a live VSpaceRoot frees its whole
+            -- address space — the wrapper posts the `.aside1` shootdown
+            -- round from the caller's core; non-VSpaceRoot retypes are
+            -- unchanged (lifecycleRetypeDirectWithCleanupShootdown_non_vspace).
+            lifecycleRetypeDirectWithCleanupShootdown
+              (determineExecutingCore st tid) cap args.targetObj newObj st
     | _ => fun _ => .error .invalidCapability
   | .vspaceMap =>
     some <| match cap.target with
@@ -878,7 +883,11 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
               | .error e => .error e
               | .ok validatedArgs =>
                   -- X2-E: Use state-aware PA bounds (reads physicalAddressWidth from machine state)
-                  Architecture.vspaceMapPageCheckedWithFlushFromState validatedArgs.asid
+                  -- WS-SM SM7.B.9: a remap that replaces a live translation
+                  -- leaves the old one cached on remote cores — the wrapper
+                  -- adds the cross-core shootdown round to the local flush.
+                  Architecture.vspaceMapPageCheckedWithShootdownFromState
+                    (determineExecutingCore st tid) validatedArgs.asid
                     validatedArgs.vaddr validatedArgs.paddr validatedArgs.perms st
     | _ => fun _ => .error .invalidCapability
   | .vspaceUnmap =>
@@ -888,7 +897,10 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
         fun st => match decodeVSpaceUnmapArgs decoded st.machine.maxASID with
         | .error e => .error e
         | .ok args =>
-            Architecture.vspaceUnmapPageWithFlush args.asid args.vaddr st
+            -- WS-SM SM7.B.9: the SMP-C4 use-after-unmap closure — local
+            -- flush + `.vae1` shootdown round to every other core.
+            Architecture.vspaceUnmapPageWithShootdown
+              (determineExecutingCore st tid) args.asid args.vaddr st
     | _ => fun _ => .error .invalidCapability
   | .serviceRevoke =>
     some <| match cap.target with
@@ -2354,9 +2366,12 @@ theorem dispatchWithCap_cspaceDelete_delegates
 -- WS-K-D: Lifecycle and VSpace dispatch delegation theorems
 -- ============================================================================
 
-/-- U-H04: When lifecycleRetype dispatch succeeds, `lifecycleRetypeDirectWithCleanup`
-is invoked with the resolved cap, decoded target, and constructed object.
-The safe wrapper performs pre-retype cleanup (H-05) and memory scrubbing (S6-C). -/
+/-- U-H04 / WS-SM SM7.B.11: When lifecycleRetype dispatch succeeds,
+`lifecycleRetypeDirectWithCleanupShootdown` is invoked with the caller's
+executing core, the resolved cap, decoded target, and constructed object.
+The safe wrapper performs pre-retype cleanup (H-05), memory scrubbing
+(S6-C), and — when the retyped object was a live VSpaceRoot — the
+`.aside1` TLB shootdown round for the destroyed address space (SM7.B.11). -/
 theorem dispatchWithCap_lifecycleRetype_delegates
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
     (cap : Capability) (objId : SeLe4n.ObjId)
@@ -2365,12 +2380,14 @@ theorem dispatchWithCap_lifecycleRetype_delegates
     (hTarget : cap.target = .object objId)
     (hDecode : decodeLifecycleRetypeArgs decoded = .ok args) :
     dispatchWithCap decoded tid gate cap =
-      lifecycleRetypeDirectWithCleanup cap args.targetObj (objectOfKernelType args.newType args.size) := by
+      fun st => lifecycleRetypeDirectWithCleanupShootdown
+        (determineExecutingCore st tid) cap args.targetObj
+        (objectOfKernelType args.newType args.size) st := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 
-/-- WS-K-D/S6-A/T6-C/X2-E: When vspaceMap dispatch succeeds,
-`vspaceMapPageCheckedWithFlushFromState` is invoked with the decoded ASID,
-vaddr, paddr, and validated permissions.  The state-aware variant reads
+/-- WS-K-D/S6-A/T6-C/X2-E / WS-SM SM7.B.9: When vspaceMap dispatch succeeds,
+`vspaceMapPageCheckedWithShootdownFromState` is invoked with the caller's
+executing core and the decoded ASID, vaddr, paddr, and validated permissions.  The state-aware variant reads
 `physicalAddressWidth` from `SystemState.machine` for platform-specific PA
 bounds enforcement.
 T6-C: Permissions are now typed as `PagePermissions` (validated at decode).
@@ -2391,13 +2408,15 @@ theorem dispatchWithCap_vspaceMap_delegates
       (match validateVSpaceMapPermsForMemoryKind args st.machine.memoryMap with
         | .error e => .error e
         | .ok validatedArgs =>
-            Architecture.vspaceMapPageCheckedWithFlushFromState validatedArgs.asid
+            Architecture.vspaceMapPageCheckedWithShootdownFromState
+              (determineExecutingCore st tid) validatedArgs.asid
               validatedArgs.vaddr validatedArgs.paddr validatedArgs.perms st) := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 
-/-- WS-K-D/S6-A: When vspaceUnmap dispatch succeeds, `vspaceUnmapPageWithFlush` is
-invoked with the decoded ASID and vaddr.
-Production API uses the TLB-flushing variant to prevent use-after-unmap. -/
+/-- WS-K-D/S6-A / WS-SM SM7.B.9: When vspaceUnmap dispatch succeeds,
+`vspaceUnmapPageWithShootdown` is invoked with the caller's executing core
+and the decoded ASID and vaddr.  Production API uses the flushing +
+cross-core-shootdown variant to prevent use-after-unmap on every core. -/
 theorem dispatchWithCap_vspaceUnmap_delegates
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
     (cap : Capability) (objId : SeLe4n.ObjId)
@@ -2408,7 +2427,8 @@ theorem dispatchWithCap_vspaceUnmap_delegates
     -- AH3-C: decode now takes st.machine.maxASID from the platform config
     (hDecode : decodeVSpaceUnmapArgs decoded st.machine.maxASID = .ok args) :
     dispatchWithCap decoded tid gate cap st =
-      Architecture.vspaceUnmapPageWithFlush args.asid args.vaddr st := by
+      Architecture.vspaceUnmapPageWithShootdown (determineExecutingCore st tid)
+        args.asid args.vaddr st := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 
 -- ============================================================================

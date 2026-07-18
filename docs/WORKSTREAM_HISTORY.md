@@ -24,9 +24,74 @@ Plan:
 SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
-**Current sub-phase: SM7.A shootdown descriptor + state LANDED
-(v0.32.72); completion cut (v0.32.73); audit cut (v0.32.74) — SM7
-(TLB / cache shootdown, SMP-C4 closure) opened.**
+**Current sub-phase: SM7.B shootdown protocol LANDED (v0.32.76) —
+the plan-§3.2 protocol complete and LIVE.  Prior: SM7.A shootdown
+descriptor + state LANDED (v0.32.72); completion cut (v0.32.73);
+audit cut (v0.32.74); review P1 (v0.32.75).**
+
+**SM7.B shootdown protocol (v0.32.76) — all twelve sub-tasks.**
+The complete protocol layer over the SM7.A state, live behind the
+`.vspaceUnmap` / `.vspaceMap` / `.lifecycleRetype` dispatch arms.
+**Transitions** (`Architecture/TlbShootdownProtocol.lean`,
+production): invalidation-effect semantics on FFI encodings
+(`tlbEntryMatches` — the hardware's TLBI operand comparison, making
+the caller-side encoders' coverage unconditional and encoding
+collisions over-invalidation-only), `tlbShootdownLocal` (B.1),
+`tlbShootdownBroadcast` (B.2; masked round open + posting fold +
+exact `.tlbShootdownReq` SGI list, with posting-exactness / ack-shape
+/ frame / capacity theorems) + the total coalescing form behind the
+live wrappers, and the `.tlbShootdownReq` handler transitions (B.3;
+the TLB effect lands at the acknowledgment, so a set flag
+constructively means "my view is clean"; drain/ack halves match the
+runtime's two commits; duplicate-SGI idempotent).  **Theorem 3.3.1**
+(B.8): `tlbShootdownBroadcast_invalidatesAllCores` over per-core
+views, non-vacuously bridged to the real handler
+(`handleTlbShootdownReqOnCore_applies_posted_op` +
+`tlbShootdownBroadcast_posts_singleton`), plus the real-pipeline
+corollaries (`shootdownRound_tlb_no_matching_entry` / `_quiescent` /
+`_allAcked`).  **Synchronization** (`TlbShootdownWait.lean`):
+`shootdownAck_release_acquire` (B.4, against the SM2.A memory model,
+with a concrete decide-checked witness trace), the constructive
+`shootdown_wait_loop_terminates` (B.5) and the verdict-exact
+`shootdown_timeout_handling` (B.6; the runtime's fail-closed panic
+fires only on a genuinely hung round; 540 000-tick budget pinned on
+both sides).  **Lock-set** (`TlbShootdownLockSet.lean`, B.7): the
+cross-domain `TlbShootdownLockId` order (object < round < queue; the
+SM7.A audit contract as theorems), `lockSet_tlbShootdown_correct`
+(strictly ascending, duplicate-free) and footprint honesty against
+the live commit's diff-recovered write set — discharging the
+registered SM7.B.7 round-serialisation obligation.  **Wiring**
+(B.9–B.11): the live vspace arms (caller's core via
+`determineExecutingCore`; WS-K-D delegation theorems + the
+enforcement-boundary registry updated), the targeted-flush ops,
+`asidAllocateWithShootdown` (B.10 — the previously-missing
+`requiresFlush` consumer), and
+`lifecycleRetypeDirectWithCleanupShootdown` (B.11 — closing a genuine
+pre-existing gap: retyping a live VSpaceRoot destroyed a whole
+address space with no TLB maintenance at all).  **B.12**:
+`tlbShootdown_outer_correct` (the round is state-identical under
+`.outer`; only the emitted instruction variant changes).  **Live
+seam**: `SyscallDispatchEntry.completeShootdownRounds` — the
+diff-recovered round under THE global round lock (the CAS try-lock
+`SHOOTDOWN_ROUND_LOCK`, acquired cooperatively — a lock-waiter with
+IRQs masked services its own pending shootdown obligation between
+retries via `acquireShootdownRoundLockServicingSelf`, because the
+in-flight round waits on exactly that waiter's ack; a blind blocking
+spin would deadlock into the timeout panic): masked reset,
+online-target SGIs (the SM7.A
+P1 obligation), `tlbiForSharing` broadcast TLBIs, bounded wait with
+fail-closed timeout panic, handler catch-up commit; `TlbiForSharing`
+promoted to production (staged 57 → 56).  **Rust** (HAL 755 → 769,
+clippy-clean): round lock, deadline-exact `wait_all_acked_bounded`,
+the boot-registered `.tlbShootdownReq` handler (local `tlbi vmalle1`
+→ release `ack_set` → `sev`; fail-closed no-ack on a bad core id),
+`online_mask`, and the `gic::dispatch_irq_with_iar` trap refactor —
+closing the SM1.F deferred-SGI-dispatch note with genuine
+`source_cpu` and fixing a pre-existing GICv2 defect (SGI `GICC_EOIR`
+writes must echo the IAR source-CPU field, GIC-400 TRM §4.4.5).
+Golden trace byte-identical; zero sorry/axiom; suite 81 → 150
+assertions / 20 groups (Theorem 3.3.1 computed over per-core views;
+the live map → unmap → shootdown pipeline).  Record: plan §5 SM7.B.
 
 **Audit cut (v0.32.74) — three-lane adversarial audit of PR #838.**
 Independent Lean proof-vacuity and Rust/FFI security auditors plus a

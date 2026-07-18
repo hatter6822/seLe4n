@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.Lifecycle.Operations.ScrubAndUntyped
+import SeLe4n.Kernel.Architecture.TlbShootdownProtocol
 
 /-!
 AN4-G.5 (LIF-M05) child module extracted from
@@ -292,5 +293,106 @@ def lifecycleRetypeDirectWithCleanup
             let stScrubbed := scrubObjectMemory stClean target currentObj.objectType
             lifecycleRetypeDirect authCap target newObj stScrubbed
 
+-- ============================================================================
+-- WS-SM SM7.B.11: retype-with-page-free shootdown
+-- ============================================================================
+
+/-- **WS-SM SM7.B.11**: **production entry point** — pre-resolved-cap
+retype with cleanup, scrub, and TLB shootdown.
+
+`lifecycleRetypeDirectWithCleanup` dequeues, detaches, scrubs, and
+replaces the object — but until SM7.B it performed **no TLB
+maintenance**: retyping a live `.vspaceRoot` freed every page mapping
+the root held while every core (including the executing one) could
+still translate through cached entries for its ASID — a
+use-after-free of the whole address space, the retype instance of the
+SMP-C4 hazard.  This wrapper closes it: when the retyped object was a
+`.vspaceRoot`, the destroyed ASID is flushed locally
+(`adapterFlushTlbByAsid`) and a `.aside1` shootdown round is posted to
+every other core.  Non-VSpaceRoot retypes owe no TLB work and commit
+exactly the base operation's state. -/
+def lifecycleRetypeDirectWithCleanupShootdown (executingCore :
+      SeLe4n.Kernel.Concurrency.CoreId)
+    (authCap : Capability) (target : SeLe4n.ObjId)
+    (newObj : KernelObject) : Kernel Unit :=
+  fun st =>
+    match lifecycleRetypeDirectWithCleanup authCap target newObj st with
+    | .error e => .error e
+    | .ok ((), st') =>
+        -- the ASID a retype owes the TLB: retyping a live `.vspaceRoot`
+        -- destroys an entire address space at once (every mapping the
+        -- root held dies with it), so the whole ASID must be
+        -- invalidated on every core; retyping any other object type
+        -- frees no mapped pages and owes nothing.  Read through the
+        -- AN10-B typed accessor (`getVSpaceRoot?`), never the raw
+        -- store.
+        match (st.getVSpaceRoot? target).map (·.asid) with
+        | none => .ok ((), st')
+        | some asid =>
+            Architecture.tlbFlushByASIDWithShootdown executingCore asid st'
+
+/-- **WS-SM SM7.B.11**: a non-VSpaceRoot retype owes no TLB work — the
+wrapper commits exactly the base operation's result (trace safety for
+every existing retype call). -/
+theorem lifecycleRetypeDirectWithCleanupShootdown_non_vspace
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (authCap : Capability) (target : SeLe4n.ObjId) (newObj : KernelObject)
+    (st : SystemState)
+    (hOld : st.getVSpaceRoot? target = none) :
+    lifecycleRetypeDirectWithCleanupShootdown executingCore authCap target
+        newObj st =
+      lifecycleRetypeDirectWithCleanup authCap target newObj st := by
+  unfold lifecycleRetypeDirectWithCleanupShootdown
+  rw [hOld]
+  cases h : lifecycleRetypeDirectWithCleanup authCap target newObj st with
+  | error e => rfl
+  | ok pair =>
+      obtain ⟨u, st'⟩ := pair
+      cases u
+      rfl
+
+/-- **WS-SM SM7.B.11**: retyping a live `.vspaceRoot` posts the
+`.aside1` shootdown for the destroyed ASID — after the retype commits,
+every other core's queue carries the ASID invalidation (or a
+superseding full flush), so no core can keep translating through the
+dead address space. -/
+theorem lifecycleRetypeDirectWithCleanupShootdown_vspace_posts
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (authCap : Capability) (target : SeLe4n.ObjId) (newObj : KernelObject)
+    {st stPost : SystemState} {root : VSpaceRoot}
+    (hOld : st.getVSpaceRoot? target = some root)
+    (h : lifecycleRetypeDirectWithCleanupShootdown executingCore authCap
+      target newObj st = .ok ((), stPost)) :
+    ∀ c : SeLe4n.Kernel.Concurrency.CoreId, c ≠ executingCore →
+      ({ op := SeLe4n.Kernel.Architecture.encodeAsidInvalidation root.asid,
+         initiator := executingCore } :
+          SeLe4n.Kernel.Architecture.TlbShootdownDescriptor) ∈
+          stPost.tlbShootdown.pendingOnCore c ∨
+        ∃ d' ∈ stPost.tlbShootdown.pendingOnCore c,
+          d'.op = SeLe4n.Kernel.Architecture.TlbInvalidation.vmalle1 := by
+  unfold lifecycleRetypeDirectWithCleanupShootdown at h
+  rw [hOld] at h
+  cases hBase : lifecycleRetypeDirectWithCleanup authCap target newObj st with
+  | error e => rw [hBase] at h; cases h
+  | ok pair =>
+      obtain ⟨u, stBase⟩ := pair
+      cases u
+      rw [hBase] at h
+      have h' : (Except.ok ((),
+          Architecture.tlbShootdownBroadcastCoalescing
+            { stBase with tlb := adapterFlushTlbByAsid stBase.tlb root.asid }
+            executingCore
+            (Architecture.shootdownTargets executingCore)
+            (Architecture.encodeAsidInvalidation root.asid)) :
+          Except KernelError (Unit × SystemState)) = .ok ((), stPost) := h
+      injection h' with h''
+      rw [Prod.mk.injEq] at h''
+      obtain ⟨_, hstate⟩ := h''
+      subst hstate
+      intro c hc
+      exact Architecture.postShootdownRoundCoalescing_covered _ executingCore
+        (Architecture.shootdownTargets_nodup executingCore)
+        (Architecture.encodeAsidInvalidation root.asid) c
+        ((Architecture.mem_shootdownTargets_iff executingCore c).mpr hc)
 
 end SeLe4n.Kernel

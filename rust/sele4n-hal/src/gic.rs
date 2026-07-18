@@ -288,6 +288,35 @@ pub fn acknowledge_irq(base: usize) -> u32 {
     mmio_read32(base + gicc::IAR) & 0x3FF // Extract INTID (bits [9:0])
 }
 
+/// **WS-SM SM7.B.3**: Acknowledge a pending interrupt, preserving the
+/// FULL `GICC_IAR` value.
+///
+/// Unlike [`acknowledge_irq`], the source-CPU field (bits `[12:10]`,
+/// populated for SGIs per GIC-400 TRM §4.4.4) is NOT masked off.  Two
+/// consumers need the full value:
+///
+/// 1. **SGI dispatch** — [`iar_source_cpu`] extracts the originator so
+///    a handler can attribute or ACK back.
+/// 2. **EOI correctness** — GIC-400 TRM §4.4.5: "For SGIs, the CPUID
+///    field of the write to `GICC_EOIR` must match the CPUID field of
+///    the `GICC_IAR` read."  EOI-ing an SGI with the masked INTID only
+///    (the pre-SM7.B [`dispatch_irq`] path) fails to deactivate the
+///    per-source SGI instance, leaving it active and blocking every
+///    subsequent same-INTID SGI from that source — a lost-wakeup /
+///    lost-shootdown-request hazard on any multi-core configuration.
+///    [`dispatch_irq_with_iar`] EOIs with this full value.
+#[inline(always)]
+pub fn acknowledge_irq_raw(base: usize) -> u32 {
+    mmio_read32(base + gicc::IAR)
+}
+
+/// **WS-SM SM7.B.3**: Extract the INTID field (bits `[9:0]`) from a
+/// raw `GICC_IAR` value.
+#[inline(always)]
+pub const fn iar_intid(iar: u32) -> u32 {
+    iar & 0x3FF
+}
+
 /// Signal end-of-interrupt by writing to GICC_EOIR.
 ///
 /// This transitions the interrupt from active → inactive in the GIC,
@@ -818,7 +847,7 @@ static mut SGI_HANDLERS: [Option<SgiHandler>; MAX_SGI_INTID as usize] =
 /// bounds are required because the test caller can pass a shorter
 /// slice.
 #[inline]
-fn register_sgi_handler_in(
+pub(crate) fn register_sgi_handler_in(
     handlers: &mut [Option<SgiHandler>],
     intid: u8,
     handler: SgiHandler,
@@ -853,7 +882,7 @@ fn register_sgi_handler_in(
 /// short to hold the entry.  Production callers use the global
 /// slice; tests use stack-local arrays.
 #[inline]
-fn lookup_sgi_handler_in(
+pub(crate) fn lookup_sgi_handler_in(
     handlers: &[Option<SgiHandler>],
     intid: u8,
 ) -> Option<SgiHandler> {
@@ -876,7 +905,7 @@ fn lookup_sgi_handler_in(
 ///
 /// Out-of-range INTIDs return without dispatch; unregistered slots
 /// log a diagnostic and return.
-fn dispatch_sgi_in(
+pub(crate) fn dispatch_sgi_in(
     handlers: &[Option<SgiHandler>],
     intid: u8,
     source_cpu: u8,
@@ -1105,37 +1134,101 @@ pub fn dispatch_irq<F: FnOnce(u32)>(handler: F) -> bool {
 /// observable ordering for both production and tests in lockstep —
 /// preventing the "test doesn't reflect production" drift.
 #[inline(always)]
-fn dispatch_irq_inner<E, F>(ack: AckResult, mut eoi: E, handler: F) -> bool
+fn dispatch_irq_inner<E, F>(ack: AckResult, eoi: E, handler: F) -> bool
 where
     E: FnMut(u32),
     F: FnOnce(u32),
 {
-    match ack {
+    // WS-SM SM7.B.3: the AckResult-shaped legacy adapter reconstructs a
+    // raw IAR with zero source-CPU bits (exactly what the pre-SM7.B
+    // masked path EOI'd with), so the observable behaviour of every
+    // existing caller and test is unchanged, while the state machine
+    // itself now has a single definition in
+    // [`dispatch_irq_with_iar_inner`].
+    let raw_iar = match ack {
+        AckResult::Handled(intid) | AckResult::OutOfRange(intid) => intid,
+        AckResult::Spurious => SPURIOUS_THRESHOLD,
+    };
+    dispatch_irq_with_iar_inner(raw_iar, eoi, |intid, _source_cpu| {
+        handler(intid)
+    })
+}
+
+/// **WS-SM SM7.B.3**: classify a FULL `GICC_IAR` value (the raw-IAR
+/// analogue of [`acknowledge_irq_classified`]) — classification uses
+/// the INTID field only; the source-CPU bits ride along untouched.
+#[inline(always)]
+pub const fn classify_iar(raw_iar: u32) -> AckResult {
+    let intid = iar_intid(raw_iar);
+    if intid >= SPURIOUS_THRESHOLD {
+        AckResult::Spurious
+    } else if intid >= MAX_SUPPORTED_INTID {
+        AckResult::OutOfRange(intid)
+    } else {
+        AckResult::Handled(intid)
+    }
+}
+
+/// **WS-SM SM7.B.3**: the dispatch state machine, full-IAR form — the
+/// SOLE definition ([`dispatch_irq_inner`] is a thin AckResult adapter
+/// over it).  Differences from the pre-SM7.B masked form:
+///
+/// * **EOI carries the full IAR** (INTID + source-CPU bits) — required
+///   by GIC-400 TRM §4.4.5 to deactivate the correct per-source SGI
+///   instance (see [`acknowledge_irq_raw`]); for non-SGI INTIDs bits
+///   `[12:10]` are RES0 in the IAR, so the write value is identical to
+///   the masked form's.
+/// * **The handler receives `(intid, source_cpu)`** so the trap layer
+///   can route SGIs through [`dispatch_sgi`] with genuine source
+///   attribution (the SM1.F.5 handler-table contract).
+///
+/// Ordering (AN8-C.1, preserved): EOI before `csdb` before handler.
+#[inline(always)]
+fn dispatch_irq_with_iar_inner<E, F>(raw_iar: u32, mut eoi: E, handler: F) -> bool
+where
+    E: FnMut(u32),
+    F: FnOnce(u32, u8),
+{
+    match classify_iar(raw_iar) {
         AckResult::Spurious => false,
         AckResult::Handled(intid) => {
-            // AK3-C.4 / AN8-C.1: EOI fires BEFORE the handler. Any panic
-            // or long-running code path in the handler cannot now leave
-            // the INTID in an active state on the GIC.
-            eoi(intid);
+            // AK3-C.4 / AN8-C.1: EOI fires BEFORE the handler — with the
+            // FULL IAR value (GIC-400 TRM §4.4.5 SGI CPUID matching).
+            eoi(raw_iar);
             // AG9-F: Speculation barrier resolves the classification
             // check before running code that might materialise
             // attacker-influenced data from the INTID.
             crate::barriers::csdb();
-            handler(intid);
+            handler(intid, iar_source_cpu(raw_iar));
             true
         }
-        AckResult::OutOfRange(intid) => {
+        AckResult::OutOfRange(_) => {
             // AK3-C.4: EOI must fire for out-of-range INTIDs to close
             // the interrupt cycle; no handler dispatch because the
             // INTID is unsupported on this platform.
-            //
-            // AN8-C.1: keep the EOI-first ordering symmetric with the
-            // Handled branch.
-            eoi(intid);
+            eoi(raw_iar);
             crate::barriers::csdb();
             true
         }
     }
+}
+
+/// **WS-SM SM7.B.3**: Handle an IRQ from the GIC with full-IAR
+/// preservation: acknowledge (raw) → EOI (raw) → dispatch with
+/// `(intid, source_cpu)`.
+///
+/// This is the production IRQ entry the trap layer routes through
+/// since SM7.B (superseding [`dispatch_irq`], which is retained as the
+/// masked-form adapter for its existing tests): it closes the two
+/// deferred SM1.F items at once — SGI dispatch with genuine
+/// `source_cpu`, and GICv2-correct SGI EOI (see
+/// [`acknowledge_irq_raw`]).
+pub fn dispatch_irq_with_iar<F: FnOnce(u32, u8)>(handler: F) -> bool {
+    dispatch_irq_with_iar_inner(
+        acknowledge_irq_raw(GICC_BASE),
+        |raw| end_of_interrupt(GICC_BASE, raw),
+        handler,
+    )
 }
 
 // ============================================================================
@@ -2173,5 +2266,68 @@ mod tests {
         let addr = GICD_BASE + gicd::SGIR;
         assert_eq!(addr, 0xFF841000 + 0xF00);
         assert_eq!(addr, 0xFF841F00, "GICD_SGIR must be at 0xFF841F00 on BCM2712");
+    }
+
+    // ------------------------------------------------------------------------
+    // WS-SM SM7.B.3 — full-IAR dispatch (classification, EOI, source CPU)
+    // ------------------------------------------------------------------------
+
+    /// SM7.B.3: classification reads the INTID field only — the SGI
+    /// source-CPU bits (IAR[12:10]) never change the verdict.
+    #[test]
+    fn sm7b3_classify_iar_ignores_source_cpu_bits() {
+        assert_eq!(classify_iar(1), AckResult::Handled(1));
+        assert_eq!(classify_iar(1 | (3 << 10)), AckResult::Handled(1));
+        assert_eq!(classify_iar(300), AckResult::OutOfRange(300));
+        assert_eq!(classify_iar(1023), AckResult::Spurious);
+    }
+
+    /// SM7.B.3: the EOI write carries the FULL IAR — the GIC-400
+    /// §4.4.5 SGI CPUID matching rule (EOI-ing with the masked INTID
+    /// only would strand the per-source SGI instance active).
+    #[test]
+    fn sm7b3_dispatch_with_iar_eois_full_iar() {
+        let raw = 1u32 | (2 << 10); // SGI INTID 1 from CPU 2
+        let mut eoi_value = None;
+        let mut handler_args = None;
+        let handled = dispatch_irq_with_iar_inner(
+            raw,
+            |v| eoi_value = Some(v),
+            |intid, src| handler_args = Some((intid, src)),
+        );
+        assert!(handled);
+        assert_eq!(eoi_value, Some(raw), "EOI must echo the full IAR");
+        assert_eq!(handler_args, Some((1, 2)), "masked INTID + source CPU");
+    }
+
+    /// SM7.B.3: spurious IARs receive neither EOI nor dispatch.
+    #[test]
+    fn sm7b3_dispatch_with_iar_spurious_no_eoi() {
+        let mut eoi_fired = false;
+        let mut handler_fired = false;
+        let handled = dispatch_irq_with_iar_inner(
+            1023,
+            |_| eoi_fired = true,
+            |_, _| handler_fired = true,
+        );
+        assert!(!handled);
+        assert!(!eoi_fired);
+        assert!(!handler_fired);
+    }
+
+    /// SM7.B.3: out-of-range INTIDs get the lifecycle-closing EOI but
+    /// no handler dispatch (AK3-C.4, preserved in the full-IAR form).
+    #[test]
+    fn sm7b3_dispatch_with_iar_out_of_range_eoi_only() {
+        let mut eoi_value = None;
+        let mut handler_fired = false;
+        let handled = dispatch_irq_with_iar_inner(
+            300,
+            |v| eoi_value = Some(v),
+            |_, _| handler_fired = true,
+        );
+        assert!(handled);
+        assert_eq!(eoi_value, Some(300));
+        assert!(!handler_fired);
     }
 }

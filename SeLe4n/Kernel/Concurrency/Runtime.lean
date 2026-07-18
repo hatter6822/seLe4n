@@ -523,6 +523,36 @@ def shootdownResetForRound (initiator : CoreId) : BaseIO Unit :=
 def shootdownAllAcked : BaseIO Bool := do
   return (← Platform.FFI.ffiShootdownAllAcked) != 0
 
+/-- **WS-SM SM7.B.7**: try to acquire THE global shootdown-round lock —
+    the runtime realisation of `Architecture.ShootdownRoundLockId` (a
+    Rust CAS try-lock; never blocks).  `false` means a round is in
+    flight; the caller's cooperative loop must service its own pending
+    shootdown obligation before retrying (see
+    `ffiShootdownRoundLockTryAcquire`). -/
+def shootdownRoundLockTryAcquire : BaseIO Bool := do
+  return (← Platform.FFI.ffiShootdownRoundLockTryAcquire) != 0
+
+/-- **WS-SM SM7.B.7**: release the global shootdown-round lock — only
+    after the initiator observed `allAcked` (or immediately before the
+    timeout path's fail-closed panic). -/
+def shootdownRoundLockRelease : BaseIO Unit :=
+  Platform.FFI.ffiShootdownRoundLockRelease
+
+/-- **WS-SM SM7.B.5 + B.6**: bounded acquire-poll for `allAcked` — the
+    runtime wait loop (`Architecture.waitAllAckedBounded`'s realisation);
+    `false` means timeout, the caller's fail-closed panic trigger. -/
+def shootdownWaitAllAcked (timeoutTicks : UInt64) : BaseIO Bool := do
+  return (← Platform.FFI.ffiShootdownWaitAllAcked timeoutTicks) != 0
+
+/-- **WS-SM SM7.B.2**: is core `c` online?  Reads the Rust
+    `smp::CORE_READY` bitmask — the runtime target-set mask of the
+    SM7.A PR #838 P1 obligation (SGIs are fired at online targets
+    only; offline cores are born-acknowledged by the masked reset and
+    online with an empty TLB). -/
+def shootdownCoreOnline (c : CoreId) : BaseIO Bool := do
+  let mask ← Platform.FFI.ffiShootdownOnlineMask
+  return mask &&& ((1 : UInt64) <<< (UInt64.ofNat c.val)) != 0
+
 /-- **WS-SM SM7.A.3**: `shootdownAckSet` is the raw FFI export applied
     to the widened core id — nothing else happens on the Lean side. -/
 theorem shootdownAckSet_eq_ffi (c : CoreId) :

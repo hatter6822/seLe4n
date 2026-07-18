@@ -8,18 +8,24 @@
 -/
 
 import SeLe4n.Kernel.Architecture.TlbShootdown
+import SeLe4n.Kernel.Architecture.TlbShootdownProtocol
+import SeLe4n.Kernel.Architecture.TlbShootdownWait
+import SeLe4n.Kernel.Architecture.TlbShootdownLockSet
+import SeLe4n.Kernel.Lifecycle.Operations.RetypeWrappers
+import SeLe4n.Kernel.SyscallDispatchEntry
 import SeLe4n.Kernel.Concurrency.Runtime
 import SeLe4n.Model.State
+import SeLe4n.Platform.RPi5.Contract
+import SeLe4n.Testing.StateBuilder
 
 /-!
-# WS-SM SM7.A — TLB shootdown descriptor + state test suite
+# WS-SM SM7.A + SM7.B — TLB shootdown descriptor, state + protocol suite
 
 Tier-2 (runtime) + Tier-3 (surface anchor) coverage for the WS-SM Phase
-SM7.A "Shootdown descriptor + state" deliverable
-(`docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` §5, sub-tasks SM7.A.1–A.6).
-The suite is the SM7.E.1 `SmpTlbShootdownSuite` seed; the SM7.B/SM7.C
-scenario groups (protocol round trips, per-core TLB invalidation) land
-here as those phases arrive.
+SM7.A "Shootdown descriptor + state" and SM7.B "Shootdown protocol"
+deliverables (`docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` §5, sub-tasks
+SM7.A.1–A.6 and SM7.B.1–B.12).  The SM7.C per-core-TLB-model scenario
+groups land here as that phase arrives (SM7.E.1).
 
 * **§1 Surface anchors** — every public SM7.A symbol resolves at
   elaboration time (rename/removal fails the build).
@@ -37,6 +43,7 @@ here as those phases arrive.
 
 namespace SeLe4n.Testing.SmpTlbShootdown
 
+open SeLe4n.Model
 open SeLe4n.Kernel.Architecture
 open SeLe4n.Kernel.Concurrency
 
@@ -207,6 +214,145 @@ open SeLe4n.Kernel.Concurrency
 #check @SeLe4n.Kernel.Concurrency.shootdownResetForRound_eq_ffi
 #check @SeLe4n.Kernel.Concurrency.shootdownAck_ffi_core_in_range
 
+-- SM7.B — invalidation-effect semantics + encoders:
+#check @tlbEntryMatches
+#check @applyTlbInvalidation
+#check @mem_applyTlbInvalidation_iff
+#check @applyTlbInvalidation_removes
+#check @applyTlbInvalidation_preserves_other
+#check @applyTlbInvalidation_idempotent
+#check @applyTlbInvalidation_vmalle1
+#check @applyTlbInvalidations
+#check @applyTlbInvalidations_removes
+#check @encodePageInvalidation
+#check @encodeAsidInvalidation
+#check @encodePageInvalidation_matches
+#check @encodeAsidInvalidation_matches
+
+-- SM7.B.1 + B.2 — local invalidation, target set, broadcast:
+#check @tlbShootdownLocal
+#check @tlbShootdownLocal_frame
+#check @tlbShootdownLocal_removes
+#check @shootdownTargets
+#check @mem_shootdownTargets_iff
+#check @initiator_not_mem_shootdownTargets
+#check @shootdownTargets_cover
+#check @shootdownTargets_nodup
+#check @tlbShootdownBroadcast
+#check @tlbShootdownBroadcast_isSome_of_quiescent
+#check @tlbShootdownBroadcast_sgis
+#check @tlbShootdownBroadcast_sgis_kind
+#check @tlbShootdownBroadcast_frame
+#check @tlbShootdownBroadcast_posts_singleton
+#check @tlbShootdownBroadcast_ack_iff
+#check @tlbShootdownBroadcast_preserves_pendingBounded
+
+-- SM7.B.3 — the .tlbShootdownReq handler transitions:
+#check @tlbShootdownDrainOnCore
+#check @tlbShootdownAckOnCore
+#check @handleTlbShootdownReqOnCore
+#check @handleTlbShootdownReqOnCore_tlbShootdown_eq
+#check @handleTlbShootdownReqOnCore_tlb_eq
+#check @handleTlbShootdownReqOnCore_frame
+#check @handleTlbShootdownReqOnCore_applies_posted_op
+#check @handleTlbShootdownReqOnCore_idempotent
+
+-- SM7.B.8 — round composition + Theorem 3.3.1:
+#check @shootdownRound
+#check @shootdownRound_isSome_of_quiescent
+#check @shootdownRound_quiescent
+#check @shootdownRound_allAcked
+#check @shootdownRound_tlb_no_matching_entry
+#check @setTlbViewOnCore
+#check @shootdownRoundViews
+#check @shootdownRoundViews_get
+#check @tlbShootdownBroadcast_invalidatesAllCores
+#check @tlbShootdownBroadcast_invalidates_unmap_target
+
+-- SM7.B.12 — cross-cluster domain invariance:
+#check @tlbShootdownBroadcastIn
+#check @tlbShootdown_outer_correct
+
+-- SM7.B.9 / B.10 — coalescing posting + shootdown-aware operations:
+#check @postShootdownRoundCoalescing
+#check @tlbShootdownBroadcastCoalescing
+#check @tlbShootdownBroadcastCoalescing_eq_strict
+#check @tlbShootdownBroadcastCoalescing_frame
+#check @postShootdownRoundCoalescing_preserves_pendingBounded
+#check @postShootdownRoundCoalescing_ack_iff
+#check @postShootdownRoundCoalescing_covered
+#check @withShootdownRound
+#check @vspaceUnmapPageWithShootdown
+#check @vspaceUnmapPageWithShootdown_error_iff
+#check @vspaceUnmapPageWithShootdown_ok
+#check @vspaceUnmapPageWithShootdown_posts
+#check @vspaceMapPageCheckedWithShootdownFromState
+#check @tlbFlushByASIDWithShootdown
+#check @tlbFlushByPageWithShootdown
+#check @asidAllocateWithShootdown
+#check @asidAllocateWithShootdown_requiresFlush
+#check @asidAllocateWithShootdown_fresh_inert
+
+-- SM7.B.11 — retype-with-page-free shootdown:
+#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdown
+#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdown_non_vspace
+#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdown_vspace_posts
+
+-- SM7.B.4 — release-acquire synchronization (vs the SM2.A model):
+#check @AtomicLocation.shootdownAckOf
+#check @AtomicLocation.shootdownAckOf_injective
+#check @shootdownAck_release_acquire
+#check @shootdownAckReleaseStore
+#check @shootdownAckAcquireLoad
+#check @shootdownAck_release_acquire_witness
+
+-- SM7.B.5 + B.6 — wait-loop termination + timeout:
+#check @ackMonotone
+#check @ackMonotone_stable
+#check @shootdown_wait_loop_terminates
+#check @waitAllAckedFrom
+#check @waitAllAckedBounded
+#check @waitAllAckedFrom_some_spec
+#check @waitAllAckedFrom_none_spec
+#check @shootdown_timeout_handling
+#check @waitAllAckedBounded_isSome
+#check @shootdownWaitTimeoutTicks
+#check @shootdownWaitTimeoutTicks_value
+
+-- SM7.B.7 — the round's cross-domain lock-set:
+#check @TlbShootdownLockId
+#check @TlbShootdownLockId.object_lt_round
+#check @TlbShootdownLockId.round_lt_queue
+#check @TlbShootdownLockId.object_lt_queue
+#check @TlbShootdownLockId.queue_lt_queue_iff
+#check @lockSet_tlbShootdown
+#check @allCores_pairwise_lt
+#check @shootdownTargets_pairwise_lt
+#check @lockSet_tlbShootdown_correct
+#check @lockSet_tlbShootdown_nodup
+#check @lockSet_tlbShootdown_round_mem
+#check @lockSet_tlbShootdown_object_mem
+#check @lockSet_tlbShootdown_queue_mem
+#check @lockSet_tlbShootdown_covers_commit
+#check @lockSet_tlbShootdown_length
+
+-- SM7.B — runtime-seam diff recovery + live entry:
+#check @shootdownChangedTargets
+#check @mem_shootdownChangedTargets_iff
+#check @shootdownChangedTargets_nil_of_eq
+#check @shootdownPostedOps
+#check @SeLe4n.Kernel.shootdownSharingDomain
+#check @SeLe4n.Kernel.acquireShootdownRoundLockServicingSelf
+#check @SeLe4n.Kernel.completeShootdownRounds
+#check @SeLe4n.Kernel.Concurrency.shootdownRoundLockTryAcquire
+#check @SeLe4n.Kernel.Concurrency.shootdownRoundLockRelease
+#check @SeLe4n.Kernel.Concurrency.shootdownWaitAllAcked
+#check @SeLe4n.Kernel.Concurrency.shootdownCoreOnline
+#check @SeLe4n.Platform.FFI.ffiShootdownRoundLockTryAcquire
+#check @SeLe4n.Platform.FFI.ffiShootdownRoundLockRelease
+#check @SeLe4n.Platform.FFI.ffiShootdownWaitAllAcked
+#check @SeLe4n.Platform.FFI.ffiShootdownOnlineMask
+
 -- ============================================================================
 -- §2  Elaboration-time examples
 -- ============================================================================
@@ -313,6 +459,79 @@ example : shootdownQuiescent (SeLe4n.Model.SystemState.tlbShootdown default) := 
 -- structurally unreachable).
 example : ∀ c : CoreId, (UInt64.ofNat c.val).toNat < numCores :=
   SeLe4n.Kernel.Concurrency.shootdownAck_ffi_core_in_range
+
+-- SM7.B.8: Theorem 3.3.1 applied — with full coverage no core's view
+-- retains a covered entry (the plan §3.3 headline, as an application
+-- witness).
+example (views : Vector SeLe4n.Model.TlbState numCores) (initiator : CoreId)
+    (op : TlbInvalidation) (c : CoreId) {e : SeLe4n.Model.TlbEntry}
+    (he : tlbEntryMatches op e = true) :
+    e ∉ ((shootdownRoundViews views initiator (shootdownTargets initiator)
+      op).get c).entries :=
+  tlbShootdownBroadcast_invalidatesAllCores views initiator
+    (shootdownTargets_cover initiator) op c he
+
+-- SM7.B.8: the unmap instantiation — the caller's typed (asid, vaddr)
+-- is gone from every core, unconditionally.
+example (views : Vector SeLe4n.Model.TlbState numCores) (initiator : CoreId)
+    (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (c : CoreId)
+    {e : SeLe4n.Model.TlbEntry} (hA : e.asid = asid) (hV : e.vaddr = vaddr) :
+    e ∉ ((shootdownRoundViews views initiator (shootdownTargets initiator)
+      (encodePageInvalidation asid vaddr)).get c).entries :=
+  tlbShootdownBroadcast_invalidates_unmap_target views initiator asid vaddr
+    c hA hV
+
+-- SM7.B: a completed protocol round restores quiescence and reaches
+-- the wait loop's exit condition.
+example {st final : SeLe4n.Model.SystemState} {initiator : CoreId}
+    {targets : List CoreId} {op : TlbInvalidation}
+    (hq : shootdownQuiescent st.tlbShootdown)
+    (h : shootdownRound st initiator targets op = some final) :
+    allAcked final.tlbShootdown :=
+  shootdownRound_allAcked hq h
+
+-- SM7.B.4: the publication chain — the target's TLBI retirement
+-- happens-before everything the initiator does after observing the ack.
+example (t : MemoryTrace) {e_tlbi e_rel e_acq e_obs : MemoryEvent}
+    (h₁ : sequencedBefore t e_tlbi e_rel)
+    (h₂ : synchronizesWith t e_rel e_acq)
+    (h₃ : sequencedBefore t e_acq e_obs) :
+    happensBefore t e_tlbi e_obs :=
+  shootdownAck_release_acquire t h₁ h₂ h₃
+
+-- SM7.B.6: the bounded wait's verdict is exact in both directions.
+example (fuel : Nat) (states : Nat → TlbShootdownState) :
+    (∀ n : Nat, waitAllAckedBounded fuel states = some n →
+      allAcked (states n) ∧ n < fuel) ∧
+    (waitAllAckedBounded fuel states = none →
+      ∀ j : Nat, j < fuel → ¬ allAcked (states j)) :=
+  shootdown_timeout_handling fuel states
+
+-- SM7.B.12: the cross-cluster round is state-identical to the
+-- single-cluster round — every round theorem carries over verbatim.
+example (st : SeLe4n.Model.SystemState) (initiator : CoreId)
+    (targets : List CoreId) (op : TlbInvalidation) :
+    tlbShootdownBroadcastIn .outer st initiator targets op =
+      tlbShootdownBroadcastIn .inner st initiator targets op :=
+  tlbShootdown_outer_correct st initiator targets op
+
+-- SM7.B.12 (runtime pin): the live entry issues its TLBIs in the
+-- platform's sharing domain — `.inner` on the single-cluster RPi5.
+example : SeLe4n.Kernel.shootdownSharingDomain =
+    SeLe4n.Platform.PlatformBinding.sharingDomain
+      (platform := SeLe4n.Platform.RPi5.RPi5Platform) := rfl
+
+-- SM7.B.7: the round's acquisition sequence is strictly ascending
+-- (deadlock-freedom shape) and duplicate-free (2PL growing phase).
+example (l : SeLe4n.Kernel.Concurrency.LockId) (initiator : CoreId) :
+    List.Pairwise (· < ·) (lockSet_tlbShootdown l initiator) :=
+  lockSet_tlbShootdown_correct l initiator
+
+-- SM7.B.6: the Lean wait budget mirrors the HAL constant (10 ms at
+-- the 54 MHz generic timer; Rust side pinned by
+-- `sm7b_wait_timeout_matches_wfe_default`).
+example : shootdownWaitTimeoutTicks = 540000 :=
+  shootdownWaitTimeoutTicks_value
 
 -- ============================================================================
 -- §3  Runtime assertions
@@ -694,12 +913,326 @@ private def runMaskedRoundChecks : IO Unit := do
     (beginShootdownRoundFor TlbShootdownState.initial core2 allCores ==
       beginShootdownRound TlbShootdownState.initial core2)
 
+-- ============================================================================
+-- §4  SM7.B runtime assertions (protocol layer)
+-- ============================================================================
+
+-- The concrete page operand of the SM7.B scenarios: unmapping
+-- (asid 5, vaddr 0x1000) — matching entry `entryTarget`, non-matching
+-- neighbours `entryOtherVaddr` / `entryOtherAsid`.
+private def asid5 : SeLe4n.ASID := ⟨5⟩
+private def vaddrPage : SeLe4n.VAddr := SeLe4n.VAddr.ofNat 0x1000
+private def opUnmapTarget : TlbInvalidation :=
+  encodePageInvalidation asid5 vaddrPage
+
+private def entryTarget : SeLe4n.Model.TlbEntry :=
+  { asid := asid5, vaddr := vaddrPage,
+    paddr := SeLe4n.PAddr.ofNat 0x2000,
+    perms := SeLe4n.Model.PagePermissions.readOnly }
+private def entryOtherVaddr : SeLe4n.Model.TlbEntry :=
+  { asid := asid5, vaddr := SeLe4n.VAddr.ofNat 0x3000,
+    paddr := SeLe4n.PAddr.ofNat 0x4000,
+    perms := SeLe4n.Model.PagePermissions.readOnly }
+private def entryOtherAsid : SeLe4n.Model.TlbEntry :=
+  { asid := ⟨7⟩, vaddr := vaddrPage,
+    paddr := SeLe4n.PAddr.ofNat 0x5000,
+    perms := SeLe4n.Model.PagePermissions.readOnly }
+
+private def seededTlb : SeLe4n.Model.TlbState :=
+  { entries := [entryTarget, entryOtherVaddr, entryOtherAsid] }
+
+private def tlbHasEntry (tlb : SeLe4n.Model.TlbState)
+    (e : SeLe4n.Model.TlbEntry) : Bool :=
+  tlb.entries.any fun x =>
+    x.asid == e.asid && x.vaddr == e.vaddr && x.paddr == e.paddr
+
+-- ----------------------------------------------------------------------------
+-- §4.1  Invalidation-effect semantics (SM7.B)
+-- ----------------------------------------------------------------------------
+
+private def runInvalidationSemanticsChecks : IO Unit := do
+  IO.println "-- §4.1 invalidation-effect semantics"
+  assertBool "the encoded page operand covers the caller's entry"
+    (tlbEntryMatches opUnmapTarget entryTarget)
+  assertBool "a different vaddr of the same ASID is not covered"
+    (!(tlbEntryMatches opUnmapTarget entryOtherVaddr))
+  assertBool "the same vaddr of a different ASID is not covered"
+    (!(tlbEntryMatches opUnmapTarget entryOtherAsid))
+  assertBool "an ASID operand covers every entry of that ASID only"
+    (tlbEntryMatches (encodeAsidInvalidation asid5) entryTarget &&
+     tlbEntryMatches (encodeAsidInvalidation asid5) entryOtherVaddr &&
+     !(tlbEntryMatches (encodeAsidInvalidation asid5) entryOtherAsid))
+  assertBool "a full flush covers everything"
+    ([entryTarget, entryOtherVaddr, entryOtherAsid].all
+      (tlbEntryMatches .vmalle1 ·))
+  let applied := applyTlbInvalidation seededTlb opUnmapTarget
+  assertBool "applying the page operand removes exactly the covered entry"
+    (!(tlbHasEntry applied entryTarget) &&
+     tlbHasEntry applied entryOtherVaddr &&
+     tlbHasEntry applied entryOtherAsid)
+  assertBool "invalidation is idempotent"
+    ((applyTlbInvalidation applied opUnmapTarget).entries.length ==
+      applied.entries.length)
+  assertBool "a full flush empties the view"
+    ((applyTlbInvalidation seededTlb .vmalle1).entries.isEmpty)
+  assertBool "a drained-queue fold removes every operand's coverage"
+    (let folded := applyTlbInvalidations seededTlb
+      [opUnmapTarget, encodeAsidInvalidation ⟨7⟩]
+     !(tlbHasEntry folded entryTarget) &&
+     tlbHasEntry folded entryOtherVaddr &&
+     !(tlbHasEntry folded entryOtherAsid))
+
+-- ----------------------------------------------------------------------------
+-- §4.2  Broadcast round: open + post + SGI emission (SM7.B.2)
+-- ----------------------------------------------------------------------------
+
+private def runBroadcastChecks : IO Unit := do
+  IO.println "-- §4.2 broadcast round (open + post + SGI emission)"
+  let st : SeLe4n.Model.SystemState :=
+    { (default : SeLe4n.Model.SystemState) with tlb := seededTlb }
+  match tlbShootdownBroadcast st core0 (shootdownTargets core0)
+      opUnmapTarget with
+  | none => assertBool "the broadcast succeeds from quiescence" false
+  | some (posted, sgis) => do
+    assertBool "one .tlbShootdownReq SGI per target, in order"
+      (sgis == [(core1, .tlbShootdownReq), (core2, .tlbShootdownReq),
+                (core3, .tlbShootdownReq)])
+    assertBool "each target's queue holds exactly the round descriptor"
+      ([core1, core2, core3].all fun c =>
+        posted.tlbShootdown.pendingOnCore c ==
+          [{ op := opUnmapTarget, initiator := core0 }])
+    assertBool "the initiator's own queue stays empty"
+      (posted.tlbShootdown.pendingOnCore core0 == [])
+    assertBool "only the initiator is acknowledged after posting"
+      (allCores.all fun c =>
+        posted.tlbShootdown.ackOnCore c == (c == core0))
+    assertBool "the broadcast frames the TLB view and the object store"
+      (tlbHasEntry posted.tlb entryTarget &&
+        posted.objects.size == st.objects.size)
+    assertBool "the posted state satisfies the capacity invariant"
+      (decide (pendingBounded posted.tlbShootdown))
+
+-- ----------------------------------------------------------------------------
+-- §4.3  The .tlbShootdownReq handler transitions (SM7.B.3)
+-- ----------------------------------------------------------------------------
+
+private def runHandlerChecks : IO Unit := do
+  IO.println "-- §4.3 .tlbShootdownReq handler transitions"
+  let st0 : SeLe4n.Model.SystemState :=
+    { (default : SeLe4n.Model.SystemState) with tlb := seededTlb }
+  match tlbShootdownBroadcast st0 core0 (shootdownTargets core0)
+      opUnmapTarget with
+  | none => assertBool "handler-scenario setup broadcast succeeds" false
+  | some (posted, _) => do
+    -- drain half: queue emptied, nothing else
+    let (drainSt, drained) := tlbShootdownDrainOnCore posted core2
+    assertBool "the drain half returns the posted descriptor"
+      (drained == [{ op := opUnmapTarget, initiator := core0 }])
+    assertBool "the drain half does not acknowledge"
+      (!(drainSt.tlbShootdown.ackOnCore core2))
+    assertBool "the drain half does not touch the TLB view"
+      (tlbHasEntry drainSt.tlb entryTarget)
+    -- ack half: TLB effect + flag
+    let ackSt := tlbShootdownAckOnCore drainSt core2 drained
+    assertBool "the ack half retires the drained operand on the view"
+      (!(tlbHasEntry ackSt.tlb entryTarget) &&
+        tlbHasEntry ackSt.tlb entryOtherVaddr)
+    assertBool "the ack half sets exactly the handling core's flag"
+      (ackSt.tlbShootdown.ackOnCore core2 &&
+        !(ackSt.tlbShootdown.ackOnCore core1))
+    -- composed handler = drain + retire + ack
+    let handled := handleTlbShootdownReqOnCore posted core2
+    assertBool "the composed handler equals its two halves"
+      (handled.tlbShootdown == ackSt.tlbShootdown &&
+        handled.tlb.entries.length == ackSt.tlb.entries.length &&
+        !(tlbHasEntry handled.tlb entryTarget) &&
+        tlbHasEntry handled.tlb entryOtherVaddr)
+    assertBool "a duplicate SGI is harmless (handler idempotent)"
+      (let again := handleTlbShootdownReqOnCore handled core2
+       again.tlbShootdown == handled.tlbShootdown &&
+         again.tlb.entries.length == handled.tlb.entries.length)
+
+-- ----------------------------------------------------------------------------
+-- §4.4  The full protocol round + Theorem 3.3.1, computed (SM7.B.8)
+-- ----------------------------------------------------------------------------
+
+private def runProtocolRoundChecks : IO Unit := do
+  IO.println "-- §4.4 full protocol round + Theorem 3.3.1 (computed)"
+  let st0 : SeLe4n.Model.SystemState :=
+    { (default : SeLe4n.Model.SystemState) with tlb := seededTlb }
+  match shootdownRound st0 core1 (shootdownTargets core1)
+      opUnmapTarget with
+  | none => assertBool "the protocol round completes from quiescence" false
+  | some final => do
+    assertBool "the completed round is quiescent (queues + acks)"
+      (decide (shootdownQuiescent final.tlbShootdown))
+    assertBool "the completed round reaches the wait loop's exit"
+      (decide (allAcked final.tlbShootdown))
+    assertBool "no covered entry survives in the mounted TLB view"
+      (!(tlbHasEntry final.tlb entryTarget))
+    assertBool "uncovered entries survive the round (selectivity)"
+      (tlbHasEntry final.tlb entryOtherVaddr &&
+        tlbHasEntry final.tlb entryOtherAsid)
+  -- Theorem 3.3.1, computed over the per-core views: seed every core
+  -- with the covered entry; after the round no core retains it.
+  let views : Vector SeLe4n.Model.TlbState numCores :=
+    Vector.replicate numCores seededTlb
+  let post := shootdownRoundViews views core1 (shootdownTargets core1)
+    opUnmapTarget
+  assertBool "3.3.1: no core's view retains the covered entry"
+    (allCores.all fun c => !(tlbHasEntry (post.get c) entryTarget))
+  assertBool "3.3.1 selectivity: every core keeps uncovered entries"
+    (allCores.all fun c =>
+      tlbHasEntry (post.get c) entryOtherVaddr &&
+      tlbHasEntry (post.get c) entryOtherAsid)
+  assertBool "a non-participating core's view is untouched (masked round)"
+    (let maskedViews := shootdownRoundViews views core0 [core1] opUnmapTarget
+     tlbHasEntry (maskedViews.get core2) entryTarget &&
+     !(tlbHasEntry (maskedViews.get core0) entryTarget) &&
+     !(tlbHasEntry (maskedViews.get core1) entryTarget))
+
+-- ----------------------------------------------------------------------------
+-- §4.5  Coalescing posting + shootdown-aware kernel operations (SM7.B.9/B.10)
+-- ----------------------------------------------------------------------------
+
+private def vspaceScenarioState : SeLe4n.Model.SystemState :=
+  (BootstrapBuilder.empty.withObject ⟨20⟩
+    (.vspaceRoot { asid := asid5, mappings := {} })).build
+
+private def runCallerWrapperChecks : IO Unit := do
+  IO.println "-- §4.5 coalescing posting + shootdown-aware operations"
+  -- the real unmap pipeline: map, then unmap-with-shootdown
+  match vspaceMapPageWithFlush asid5 vaddrPage
+      (SeLe4n.PAddr.ofNat 0x2000) .readOnly vspaceScenarioState with
+  | .error _ => assertBool "scenario map succeeds" false
+  | .ok ((), stMapped) =>
+    match vspaceUnmapPageWithShootdown core0 asid5 vaddrPage
+        stMapped with
+    | .error _ => assertBool "unmap-with-shootdown succeeds" false
+    | .ok ((), stUnmapped) => do
+      assertBool "the unmap posts the page operand to every other core"
+        ([core1, core2, core3].all fun c =>
+          stUnmapped.tlbShootdown.pendingOnCore c ==
+            [{ op := opUnmapTarget, initiator := core0 }])
+      assertBool "the unmap opens a round waited on every target"
+        (allCores.all fun c =>
+          stUnmapped.tlbShootdown.ackOnCore c == (c == core0))
+      assertBool "the page-table mapping is gone"
+        (match vspaceLookup asid5 vaddrPage stUnmapped with
+          | .error _ => true
+          | .ok _ => false)
+  -- error transparency: no shootdown state is touched on failure
+  assertBool "unmap of an unbound ASID fails exactly like the flush op"
+    (match vspaceUnmapPageWithShootdown core0 ⟨9⟩ vaddrPage
+        vspaceScenarioState with
+      | .error e => e == SeLe4n.Model.KernelError.asidNotBound
+      | .ok _ => false)
+  -- ASID allocate (SM7.B.10): fresh allocation is inert; reuse rounds
+  assertBool "a fresh ASID allocation posts no round"
+    (match asidAllocateWithShootdown core0 AsidPool.initial
+        vspaceScenarioState with
+      | .ok (result, st') =>
+          !result.requiresFlush &&
+            allCores.all (fun c => st'.tlbShootdown.pendingOnCore c == [])
+      | .error _ => false)
+  let reusePool : AsidPool :=
+    { AsidPool.initial with freeList := [⟨5⟩], activeCount := 0 }
+  assertBool "a reused ASID allocation posts the .aside1 round"
+    (match asidAllocateWithShootdown core2 reusePool
+        vspaceScenarioState with
+      | .ok (result, st') =>
+          result.requiresFlush &&
+            [core0, core1, core3].all (fun c =>
+              (st'.tlbShootdown.pendingOnCore c).contains
+                { op := encodeAsidInvalidation ⟨5⟩, initiator := core2 })
+      | .error _ => false)
+  -- capacity overflow: 17 rounds without a runtime catch-up coalesce
+  let overflow := (List.range 17).foldl
+    (fun s i => tlbShootdownBroadcastCoalescing s core0
+      (shootdownTargets core0)
+      (encodePageInvalidation ⟨5⟩ (SeLe4n.VAddr.ofNat (4096 * (i + 1)))))
+    vspaceScenarioState
+  assertBool "17 uncaught rounds coalesce to a bounded full flush"
+    (decide (pendingBounded overflow.tlbShootdown) &&
+      [core1, core2, core3].all (fun c =>
+        (overflow.tlbShootdown.pendingOnCore c).any
+          (fun d => d.op == TlbInvalidation.vmalle1)))
+
+-- ----------------------------------------------------------------------------
+-- §4.6  Wait loop + timeout verdicts (SM7.B.5/B.6)
+-- ----------------------------------------------------------------------------
+
+private def runWaitLoopChecks : IO Unit := do
+  IO.println "-- §4.6 wait loop + timeout verdicts"
+  let opened := beginShootdownRound TlbShootdownState.initial core0
+  -- poll trace: one more target acks per poll index
+  let states : Nat → TlbShootdownState := fun n =>
+    (allCores.take n).foldl acknowledgeShootdown opened
+  match waitAllAckedBounded 10 states with
+  | none => assertBool "the wait observes the completing round" false
+  | some n => do
+    assertBool "the wait exits at a genuinely all-acked poll"
+      (decide (allAcked (states n)))
+    assertBool "the wait exits at the first all-acked poll"
+      (n == 4 && !(decide (allAcked (states 3))))
+  assertBool "a never-acked round is a genuine timeout (none)"
+    ((waitAllAckedBounded 6 (fun _ => opened)).isNone)
+  assertBool "an already-quiescent state satisfies the wait at once"
+    (waitAllAckedBounded 3 (fun _ => TlbShootdownState.initial) == some 0)
+
+-- ----------------------------------------------------------------------------
+-- §4.7  The round's cross-domain lock-set (SM7.B.7)
+-- ----------------------------------------------------------------------------
+
+private def runProtocolLockSetChecks : IO Unit := do
+  IO.println "-- §4.7 protocol lock-set"
+  let rootLock : SeLe4n.Kernel.Concurrency.LockId :=
+    { kind := .vspaceRoot, objId := ⟨20⟩ }
+  let seq := lockSet_tlbShootdown rootLock core1
+  assertBool "the acquisition sequence is strictly ascending"
+    (decide (List.Pairwise (· < ·) seq))
+  assertBool "the acquisition sequence is duplicate-free"
+    (decide seq.Nodup)
+  assertBool "object lock first, round lock second, queues after"
+    (seq.head? == some (.object rootLock) &&
+      seq[1]? == some (.round ⟨⟩))
+  assertBool "one queue lock per non-initiator core"
+    (seq.length == 2 + (numCores - 1))
+  assertBool "every changed queue of a live commit is in the footprint"
+    ([core0, core2, core3].all fun c =>
+      seq.contains (.queue ⟨c⟩))
+  assertBool "cross-domain edges: object < round < queue (decidable)"
+    (decide ((TlbShootdownLockId.object rootLock) <
+        (TlbShootdownLockId.round ⟨⟩)) &&
+      decide ((TlbShootdownLockId.round ⟨⟩) <
+        (TlbShootdownLockId.queue ⟨core0⟩)))
+
+-- ----------------------------------------------------------------------------
+-- §4.8  Runtime-seam diff recovery + live-entry constants (SM7.B)
+-- ----------------------------------------------------------------------------
+
+private def runDiffRecoveryChecks : IO Unit := do
+  IO.println "-- §4.8 runtime-seam diff recovery + live-entry constants"
+  let pre : SeLe4n.Model.SystemState := default
+  assertBool "an untouched commit pokes nobody"
+    (shootdownChangedTargets pre pre == [])
+  let post := tlbShootdownBroadcastCoalescing pre core0
+    (shootdownTargets core0) opUnmapTarget
+  assertBool "a posting commit's changed targets are the round targets"
+    (shootdownChangedTargets pre post == [core1, core2, core3])
+  assertBool "the posted operands dedup to the round's operand"
+    (shootdownPostedOps pre post == [opUnmapTarget])
+  assertBool "the live entry issues TLBIs in the platform sharing domain"
+    (SeLe4n.Kernel.shootdownSharingDomain == .inner)
+  assertBool "the wait budget matches the pinned HAL constant"
+    (shootdownWaitTimeoutTicks == 540000)
+
 -- ----------------------------------------------------------------------------
 -- Runner
 -- ----------------------------------------------------------------------------
 
 def runSmpTlbShootdownChecks : IO Unit := do
-  IO.println "WS-SM SM7.A — TLB shootdown descriptor + state suite"
+  IO.println "WS-SM SM7.A + SM7.B — TLB shootdown state + protocol suite"
   IO.println "===================================================="
   runDescriptorChecks
   runInitialStateChecks
@@ -713,8 +1246,16 @@ def runSmpTlbShootdownChecks : IO Unit := do
   runLockOrderChecks
   runMountChecks
   runMaskedRoundChecks
+  runInvalidationSemanticsChecks
+  runBroadcastChecks
+  runHandlerChecks
+  runProtocolRoundChecks
+  runCallerWrapperChecks
+  runWaitLoopChecks
+  runProtocolLockSetChecks
+  runDiffRecoveryChecks
   IO.println "===================================================="
-  IO.println "All SM7.A TLB shootdown descriptor + state checks PASS."
+  IO.println "All SM7.A + SM7.B TLB shootdown checks PASS."
 
 end SeLe4n.Testing.SmpTlbShootdown
 

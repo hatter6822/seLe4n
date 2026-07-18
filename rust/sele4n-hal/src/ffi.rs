@@ -495,6 +495,53 @@ pub extern "C" fn ffi_shootdown_all_acked() -> u64 {
     crate::shootdown::all_acked() as u64
 }
 
+/// **WS-SM SM7.B.7**: Try to acquire THE global shootdown-round lock
+/// (the CAS try-lock behind the Lean `ShootdownRoundLockId`; `1` =
+/// acquired, `0` = held by an in-flight round).  Never blocks — the
+/// Lean caller's cooperative loop interleaves retries with servicing
+/// its own pending shootdown obligation (see
+/// `shootdown.rs::SHOOTDOWN_ROUND_LOCK` for why a blocking acquire
+/// would deadlock into the wait-timeout panic).  The winner must
+/// bracket the entire hardware round — reset, SGI fires, local TLBI,
+/// all-acked wait — and release only after `all_acked`.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownRoundLockTryAcquire`
+#[no_mangle]
+pub extern "C" fn ffi_shootdown_round_lock_try_acquire() -> u64 {
+    crate::shootdown::round_lock_try_acquire() as u64
+}
+
+/// **WS-SM SM7.B.7**: Release the global shootdown-round lock — only
+/// after the initiator observed all-acked (or immediately before the
+/// timeout path's fail-closed panic).
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownRoundLockRelease`
+#[no_mangle]
+pub extern "C" fn ffi_shootdown_round_lock_release() {
+    crate::shootdown::round_lock_release();
+}
+
+/// **WS-SM SM7.B.5 + B.6**: Bounded acquire-poll for all-acknowledged
+/// — spins up to `timeout_ticks` generic-timer ticks.  Returns `1` on
+/// observed all-acked, `0` on a genuine timeout (the Lean caller's
+/// fail-closed panic trigger).
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownWaitAllAcked`
+#[no_mangle]
+pub extern "C" fn ffi_shootdown_wait_all_acked(timeout_ticks: u64) -> u64 {
+    crate::shootdown::wait_all_acked_bounded(timeout_ticks) as u64
+}
+
+/// **WS-SM SM7.B.2**: The online-core bitmask (bit `c` ⇔ core `c`
+/// online; boot core always set) — the Lean entry's SGI target mask
+/// (the SM7.A PR #838 P1 online-targets obligation).
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownOnlineMask`
+#[no_mangle]
+pub extern "C" fn ffi_shootdown_online_mask() -> u64 {
+    crate::shootdown::online_mask()
+}
+
 // ============================================================================
 // WS-SM SM1.B.5 (closes SMP-M4): per-CPU core-id FFI export
 // ============================================================================

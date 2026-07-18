@@ -5,7 +5,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 
 name = "seLe4n"
-version = "0.32.75"
+version = "0.32.76"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
@@ -568,23 +568,18 @@ root = "tests.SmpIpcSuite"
 name = "smp_notification_suite"
 root = "tests.SmpNotificationSuite"
 
-# WS-SM SM7.A — TLB shootdown descriptor + state suite (the SM7.E.1
-# SmpTlbShootdownSuite seed; SM7.B/SM7.C scenario groups land here as those
-# phases arrive).  Surface anchors + decidable examples + theorem-application
-# witnesses + runtime assertions for the SM7.A surface: the
-# TlbShootdownDescriptor operand round-trips (vae1 / vale1 / aside1 / vmalle1
-# + initiator attribution), the quiescent boot state, FIFO enqueueShootdown +
-# cross-core framing, the fail-closed maxPendingPerCore capacity bound
-# (16-deep fill, 17th rejection, drain-restores-capacity), the exhaustive
-# drainShootdowns (whole-queue FIFO return, empty-after, second-drain-empty),
-# the acknowledgment round lifecycle (beginShootdownRound initiator-only,
-# per-target acknowledgeShootdown, monotonicity, fold-to-allAcked), a full
-# 4-core state-level shootdown round trip ending quiescent, and — from the
-# v0.32.73 completion cut — the enqueueShootdownOrCoalesce overflow collapse,
-# the generic round-composition capstone computed on live data (posting fold →
-# completeShootdownOnCore fold → state equal to boot), the ShootdownQueueLockId
-# total-order walk, and the SystemState.tlbShootdown mount checks.  Tier-2 +
-# Tier-3 wired.
+# WS-SM SM7.A + SM7.B (TLB shootdown): descriptor/state layer + the full
+# §3.2 protocol.  §1 surface anchors for every public SM7.A/SM7.B symbol;
+# §2 elaboration-time theorem applications (Theorem 3.3.1, round
+# quiescence, timeout exactness, the release-acquire chain, lock order);
+# §3 SM7.A runtime assertions (descriptor round-trips, FIFO enqueue +
+# framing, fail-closed capacity, exhaustive drain, ack lifecycle, 4-core
+# round trip, coalescing, lock identifiers, SystemState mount, masked
+# partial-online rounds); §4 SM7.B runtime assertions (invalidation-effect
+# semantics, broadcast + handler transitions, the full protocol round with
+# Theorem 3.3.1 computed over per-core views, the live map→unmap→shootdown
+# pipeline, ASID-allocate rounds, 17-round coalescing, wait/timeout
+# verdicts, the cross-domain lock-set, runtime-seam diff recovery).
 [[lean_exe]]
 name = "smp_tlb_shootdown_suite"
 root = "tests.SmpTlbShootdownSuite"

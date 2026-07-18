@@ -322,6 +322,51 @@ opaque ffiShootdownResetForRound : (initiator : UInt64) → BaseIO Unit
 @[extern "ffi_shootdown_all_acked"]
 opaque ffiShootdownAllAcked : BaseIO UInt64
 
+/-- **WS-SM SM7.B.7**: try to acquire THE global shootdown-round lock
+    (a Rust CAS try-lock; `1` = acquired) — the runtime realisation of
+    `Architecture.ShootdownRoundLockId`.  Never blocks: the caller's
+    cooperative loop interleaves retries with servicing its own
+    pending shootdown obligation, because a blind spin (IRQs masked in
+    the SVC path) could never take an in-flight round's
+    `.tlbShootdownReq` SGI while that round waits on THIS core's
+    acknowledgment — a deadlock resolved only by the wait-timeout
+    panic.  The winner must bracket the entire hardware round: flag
+    reset, SGI fire, local TLBI, `allAcked` wait (the SM7.A
+    round-serialisation contract).
+
+    Rust: `ffi_shootdown_round_lock_try_acquire` in
+    `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_shootdown_round_lock_try_acquire"]
+opaque ffiShootdownRoundLockTryAcquire : BaseIO UInt64
+
+/-- **WS-SM SM7.B.7**: release the global shootdown-round lock —
+    only after the initiator observed `allAcked` (or on the timeout
+    path immediately before the fail-closed panic).
+
+    Rust: `ffi_shootdown_round_lock_release` in `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_shootdown_round_lock_release"]
+opaque ffiShootdownRoundLockRelease : BaseIO Unit
+
+/-- **WS-SM SM7.B.5 + B.6**: bounded acquire-poll for `allAcked` —
+    spins up to `timeoutTicks` generic-timer ticks; returns `1` on
+    observed `allAcked`, `0` on timeout (the caller's fail-closed
+    panic trigger; the poll's verdict semantics are
+    `Architecture.shootdown_timeout_handling`).
+
+    Rust: `ffi_shootdown_wait_all_acked` in `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_shootdown_wait_all_acked"]
+opaque ffiShootdownWaitAllAcked : (timeoutTicks : UInt64) → BaseIO UInt64
+
+/-- **WS-SM SM7.B.2 (runtime target masking)**: the online-core bitmask
+    (bit `c` set ⇔ core `c` is online; the boot core is always set) —
+    the SM7.A PR #838 P1 obligation's "target-set computation must
+    enumerate online cores only" at the SGI-fire site.  Reads the Rust
+    `smp::CORE_READY` flags (Acquire).
+
+    Rust: `ffi_shootdown_online_mask` in `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_shootdown_online_mask"]
+opaque ffiShootdownOnlineMask : BaseIO UInt64
+
 -- ============================================================================
 -- AG7-A-iii: MMIO FFI declarations
 -- ============================================================================

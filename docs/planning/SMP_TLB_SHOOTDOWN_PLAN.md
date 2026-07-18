@@ -255,22 +255,90 @@ convention.
 | SM7.A.5 | `drainShootdowns` (called from SGI handler) | whole-queue FIFO drain returning `(queue, cleared state)` — `drainShootdowns_fst` is the completeness half of Theorem 3.3.1's remote case; exhaustive (`_drain_twice`), framed (`_frame_pending` / `_frame_ack`), ack-free by design (see status note); round-trip `drainShootdowns_after_enqueue` | ✓ |
 | SM7.A.6 | Pending queue capacity bound | `maxPendingPerCore = 16` (§4.1) + `maxPendingPerCore_pos`; decidable `pendingBounded` established at boot and preserved by every SM7.A operation (`enqueueShootdown` / `drainShootdowns` / `acknowledgeShootdown` / `beginShootdownRound` `…_preserves_pendingBounded`); drain restores capacity (`enqueueShootdown_isSome_after_drain`).  **v0.32.73**: the §4.1 sufficiency argument is formal — `beginRound_foldlM_enqueueShootdown_isSome` (a round's posting fold from quiescence always succeeds) closes an induction with `shootdownRound_restores_quiescent` (a completed round is quiescent again); the total `enqueueShootdownOrCoalesce` full-flush-collapse escape hatch covers any future caller that batches past the bound (`…_request_covered`, unconditional `…_preserves_pendingBounded`) | ✓ |
 
-### SM7.B — Shootdown protocol (4 PRs, 12 sub-tasks)
+### SM7.B — Shootdown protocol (4 PRs, 12 sub-tasks) — LANDED
 
-| Sub | Description | Theorem | Est |
-|-----|-------------|---------|-----|
-| SM7.B.1 | `tlbShootdownLocal (asid, vaddr)` | (def) | M |
-| SM7.B.2 | `tlbShootdownBroadcast (initiator, targets, asid, vaddr)` | (def) | L |
-| SM7.B.3 | SGI handler for `.tlbShootdownReq` (registered in SM1.F.5) | (def) | L |
-| SM7.B.4 | `shootdownAck` release-acquire synchronization | `shootdownAck_release_acquire` | M |
-| SM7.B.5 | Initiator wait-loop terminates | `shootdown_wait_loop_terminates` | M |
-| SM7.B.6 | Timeout fallback (panic at SM7; relax post-1.0) | `shootdown_timeout_handling` | M |
-| SM7.B.7 | Lock-set for shootdown | `lockSet_tlbShootdown_correct` | M |
-| SM7.B.8 | `tlbShootdownBroadcast_invalidatesAllCores` | Theorem 3.3.1 | XL |
-| SM7.B.9 | Wire all unmap callers (~8 sites) | (refactor) | M |
-| SM7.B.10 | ASID-retire shootdown | (def + theorem) | M |
-| SM7.B.11 | Retype-with-page-free shootdown | (theorem) | M |
-| SM7.B.12 | Cross-cluster path via `.outer` sharing | `tlbShootdown_outer_correct` | M |
+**Status: LANDED.**  The complete §3.2 protocol layer over the SM7.A
+state: the pure transitions (`TlbShootdownProtocol.lean`, production),
+the initiator-side synchronization/termination/timeout theorems
+(`TlbShootdownWait.lean`), the round's cross-domain lock-set
+(`TlbShootdownLockSet.lean`), Theorem 3.3.1, the wired unmap / ASID /
+retype callers, and the live runtime seam
+(`SyscallDispatchEntry.completeShootdownRounds` + the Rust handler /
+round-lock / bounded-wait / trap-dispatch realisation).  Zero
+sorry/axiom; golden trace byte-identical; the SM7.A audit's registered
+round-serialisation obligation is discharged (the round lock brackets
+the entire hardware round).
+
+Design decisions of record:
+
+* **Invalidation-effect semantics on encodings.**  `tlbEntryMatches`
+  compares FFI-encoded operand fields against the encoding of the
+  entry's typed fields — exactly the hardware's TLBI operand
+  comparison (ARM ARM C6.2.311–316).  The caller-side round trip
+  (`encodePageInvalidation_matches`) is therefore unconditional, and
+  encoding collisions only ever over-invalidate (always safe).
+* **Theorem 3.3.1 before SM7.C.**  Stated over an explicit per-core
+  view vector (`shootdownRoundViews`) whose per-target step is proven
+  equal to the real handler transition on the really-posted state
+  (`handleTlbShootdownReqOnCore_applies_posted_op` +
+  `tlbShootdownBroadcast_posts_singleton` — the non-vacuity bridge),
+  plus the end-to-end single-view corollary over the real pipeline
+  (`shootdownRound_tlb_no_matching_entry`).  SM7.C.6 instantiates the
+  vector form per-core mechanically once the views mount.
+* **Total coalescing posting for the syscall wrappers.**  The live
+  wrappers post through `enqueueShootdownOrCoalesce`
+  (`tlbShootdownBroadcastCoalescing`), so queue accumulation between
+  a pure posting commit and the runtime round's exhaustive drain can
+  never fail a syscall — at the bound a queue collapses to a full
+  flush (`postShootdownRoundCoalescing_covered`: no request is ever
+  lost).  The strict fail-closed `tlbShootdownBroadcast` remains the
+  round-per-round protocol form the theorems quantify over
+  (`tlbShootdownBroadcastCoalescing_eq_strict` pins their agreement
+  below capacity).
+* **Conservative Rust handler.**  The target's `.tlbShootdownReq`
+  handler performs a full local `tlbi vmalle1` (+ the primitive's
+  `dsb ish; isb`) then release-sets its ack — over-invalidation
+  refines the per-descriptor Lean ledger ("runtime removes ⊇ model
+  removes") and keeps IRQ context free of Lean-runtime calls; the
+  initiator's post-`allAcked` catch-up commit drains the Lean queues
+  (`handleTlbShootdownReqOnCore` fold), restoring quiescence.
+* **Spin-based bounded wait.**  `wait_all_acked_bounded` spins with a
+  generic-timer deadline instead of the plan sketch's `wfe_bounded`
+  pacing: a bare `wfe` with IRQs masked and no guaranteed pairing
+  event could sleep forever on a hung target, making the timeout
+  panic unreachable — a spin keeps the fail-closed verdict
+  enforceable (the handlers still `sev` after acking).
+* **Trap-layer completion.**  Routing SGIs to the SM1.F.5 table
+  required the deferred `dispatch_irq_with_iar` refactor; it also
+  fixed a pre-existing GICv2 defect — `GICC_EOIR` writes for SGIs
+  must echo the IAR's source-CPU field (GIC-400 TRM §4.4.5); the
+  masked-INTID EOI would have stranded per-source SGI instances
+  active (lost wakeups) on any multi-core configuration.
+
+| Sub | Description | Landed artefact | Status |
+|-----|-------------|-----------------|--------|
+| SM7.B.1 | `tlbShootdownLocal (asid, vaddr)` | `TlbShootdownProtocol.lean`: `tlbShootdownLocal` over the typed operand + `applyTlbInvalidation` effect semantics (`_removes` / `_preserves_other` / `_idempotent` / `_vmalle1`), encoders `encodePageInvalidation` / `encodeAsidInvalidation` with unconditional coverage round-trips | ✓ |
+| SM7.B.2 | `tlbShootdownBroadcast (initiator, targets, asid, vaddr)` | `tlbShootdownBroadcast` (masked round open + posting fold + exact `.tlbShootdownReq` SGI list) — `_isSome_of_quiescent`, `_posts_singleton`, `_ack_iff`, `_sgis`, `_frame`, `_preserves_pendingBounded`; target set `shootdownTargets` (cover/nodup/ascending); total coalescing form `tlbShootdownBroadcastCoalescing` for the live wrappers | ✓ |
+| SM7.B.3 | SGI handler for `.tlbShootdownReq` (registered in SM1.F.5) | Lean model: `tlbShootdownDrainOnCore` / `tlbShootdownAckOnCore` (TLB effect at the ack — a set flag constructively means "view clean") / `handleTlbShootdownReqOnCore` (projects onto SM7.A `completeShootdownOnCore`; idempotent).  Rust: `shootdown.rs::tlb_shootdown_req_handler` (local `tlbi vmalle1` → release `ack_set` → `sev`; fail-closed no-ack on bad core id), registered at boot (`register_tlb_shootdown_handler`, INTID 1); trap layer routes SGIs via the new `gic::dispatch_irq_with_iar` (full-IAR EOI + genuine `source_cpu` — closing the SM1.F "deferred to SM5" note and the GICv2 SGI-EOI defect) | ✓ |
+| SM7.B.4 | `shootdownAck` release-acquire synchronization | `TlbShootdownWait.lean`: `shootdownAck_release_acquire` (target's TLBI retirement happens-before the initiator's post-observation access, via the SM2.A `sequencedBefore`/`synchronizesWith`/`happensBefore` chain) + per-core `AtomicLocation.shootdownAckOf` (injective) + the concrete decide-checked witness trace `shootdownAck_release_acquire_witness` | ✓ |
+| SM7.B.5 | Initiator wait-loop terminates | `shootdown_wait_loop_terminates` — constructive (fold-max deadline witness, no choice): monotone acks + per-core handler deadlines ⇒ a stable `allAcked` poll index; state-level reachability via `shootdownRound_allAcked` (the completed round satisfies the exit) | ✓ |
+| SM7.B.6 | Timeout fallback (panic at SM7; relax post-1.0) | `shootdown_timeout_handling` — the bounded poll's verdict is exact in both directions (`some` ⇒ genuine `allAcked` within budget; `none` ⇒ genuinely never acked), so the runtime panic fires only on a truly hung round; budget `shootdownWaitTimeoutTicks = 540 000` (10 ms @ 54 MHz) pinned to the HAL constant on both sides; Rust `wait_all_acked_bounded` (+ deadline re-check: a completed round is never misreported) | ✓ |
+| SM7.B.7 | Lock-set for shootdown | `TlbShootdownLockSet.lean`: cross-domain sum `TlbShootdownLockId` (object < round < queue; full order suite) with the audit contract as theorems (`object_lt_round`, `round_lt_queue`); `lockSet_tlbShootdown` + `lockSet_tlbShootdown_correct` (strictly ascending — the SM3 lock-ladder deadlock-freedom shape), `_nodup`, membership coverage, and footprint honesty vs the live commit's diff-recovered write set (`lockSet_tlbShootdown_covers_commit`).  Runtime: `SHOOTDOWN_ROUND_LOCK` (CAS try-lock) brackets the entire hardware round, acquired cooperatively (`acquireShootdownRoundLockServicingSelf` — a lock-waiter with IRQs masked services its own pending shootdown obligation between retries, because the in-flight round waits on exactly that waiter's ack; a blind blocking spin would deadlock into the timeout panic, which is also why the round lock is a try-lock rather than the verified TicketLock: taking a ticket commits to a queue and cannot interleave servicing) | ✓ |
+| SM7.B.8 | `tlbShootdownBroadcast_invalidatesAllCores` | **Theorem 3.3.1** — ∀-core absence over `shootdownRoundViews` (closed form + idempotence; non-vacuity bridge to the real handler), the unmap instantiation `tlbShootdownBroadcast_invalidates_unmap_target`, and the real-pipeline single-view corollary `shootdownRound_tlb_no_matching_entry` + quiescence capstone `shootdownRound_quiescent` | ✓ |
+| SM7.B.9 | Wire all unmap callers (~8 sites) | Live API arms `.vspaceUnmap` / `.vspaceMap` route through `vspaceUnmapPageWithShootdown` / `vspaceMapPageCheckedWithShootdownFromState` (caller's core via `determineExecutingCore`; WS-K-D delegation theorems updated); `tlbFlushByPageWithShootdown` / `tlbFlushByASIDWithShootdown` cover the targeted-flush kernel ops; enforcement-boundary registry renamed to the live handlers; error transparency (`_error_iff`) + posting coverage (`_posts`) per wrapper; runtime seam `completeShootdownRounds` in `syscallDispatchCrossCoreEntry` (diff-recovered targets `shootdownChangedTargets` / operands `shootdownPostedOps`, online-masked SGI fire per the SM7.A P1 obligation, `tlbiForSharing` local broadcast, bounded wait, fail-closed panic, catch-up commit) | ✓ |
+| SM7.B.10 | ASID-retire shootdown | `tlbFlushByASIDWithShootdown` (`.aside1` round) + `asidAllocateWithShootdown` — the previously-missing kernel-level consumer of `AsidPool.allocate.requiresFlush` (reuse/rollover allocations run the full round before the ASID is returned; fresh allocations provably inert: `_requiresFlush` / `_fresh_inert`) | ✓ |
+| SM7.B.11 | Retype-with-page-free shootdown | `lifecycleRetypeDirectWithCleanupShootdown` (live behind the `.lifecycleRetype` arm): retyping a live `.vspaceRoot` — the model's page-free event, destroying every mapping the root held — flushes the dead ASID locally and posts the `.aside1` round (`_vspace_posts`); non-VSpaceRoot retypes provably unchanged (`_non_vspace`).  Closes a genuine pre-SM7.B gap: the retype path performed **no TLB maintenance at all** | ✓ |
+| SM7.B.12 | Cross-cluster path via `.outer` sharing | `tlbShootdown_outer_correct`: the domain-tagged round `tlbShootdownBroadcastIn` is state-identical across `.inner`/`.outer` (every round theorem carries over verbatim; only the emitted instruction variant changes — `SharingDomain.toTag`/`tlbi_*os`, range-pinned for both domains); the live entry's `shootdownSharingDomain` is `rfl`-pinned to `PlatformBinding.sharingDomain RPi5Platform` | ✓ |
+
+Tests: `tests/SmpTlbShootdownSuite.lean` §4.1–§4.8 (the SM7.E.1 suite
+grows 81 → 150 assertions / 20 groups): invalidation-effect semantics,
+broadcast/handler transitions, the full protocol round with
+Theorem 3.3.1 computed over per-core views, the live map → unmap →
+shootdown pipeline on a built VSpace state, ASID-allocate rounds,
+17-round coalescing, wait/timeout verdicts, the lock-set, and the
+diff-recovery seam.  Rust HAL 755 → 769 (round lock, bounded wait
+incl. deadline-exactness, handler + registration/dispatch, online
+mask, full-IAR dispatch + EOI conformance).
 
 ### SM7.C — Per-core TLB model (3 PRs, 8 sub-tasks)
 
@@ -329,20 +397,28 @@ convention.
 | Shootdown deadlock (initiator waits forever) | LOW | CRIT | Bounded WFE; timeout panic at SM7 |
 | Stale TLB on remote core post-shootdown | LOW | CRIT | Theorem 3.3.1 + explicit ack |
 | Ack flag missed (race on read/write) | LOW | HIGH | Release-acquire synchronization |
-| Multiple concurrent shootdowns interleave | LOW | HIGH | **Single global shootdown-round lock** (`ShootdownRoundLockId`, SM7.B.7).  The SM7.A audit showed the VSpaceRoot lock alone is insufficient: two different-VSpace initiators would interleave rounds on the round-identity-free ack vector (early `allAcked` exit with a stale TLB live — the SMP-C4 hazard — plus a mutual-hang mode); see the SM7.A completion record |
+| Multiple concurrent shootdowns interleave | LOW | HIGH | **DISCHARGED at SM7.B.7**: the single global shootdown-round lock (`ShootdownRoundLockId`, realised as the CAS try-lock `SHOOTDOWN_ROUND_LOCK`, acquired cooperatively — a lock-waiter services its own pending shootdown obligation between retries, since a blind spin with IRQs masked could never satisfy the in-flight round waiting on it) brackets the entire hardware round in `completeShootdownRounds`; the cross-domain order is `lockSet_tlbShootdown_correct`.  (Background: the SM7.A audit showed the VSpaceRoot lock alone is insufficient — two different-VSpace initiators would interleave rounds on the round-identity-free ack vector.) |
 | Pending queue overflow | LOW | MED | Bounded by maxPendingPerCore=16 |
 | Cross-cluster path under-tested | MED | LOW (no current target) | Mock test in SM7.E.4 |
 
 ## 8. Acceptance gate
 
 - [x] Shootdown descriptor + state defined (SM7.A, v0.32.72).
-- [ ] Protocol implemented per §3.2.
-- [ ] `tlbShootdownBroadcast_invalidatesAllCores` proven.
-- [ ] All unmap callers wired through Broadcast.
-- [ ] Per-core TLB model.
-- [ ] Cache-coherency invariant.
-- [ ] Tier 0..4 green; QEMU shootdown test passes.
-- [ ] **Closes SMP-C4 formally.**
+- [x] Protocol implemented per §3.2 (SM7.B, `TlbShootdownProtocol.lean`
+      + the live `completeShootdownRounds` runtime seam).
+- [x] `tlbShootdownBroadcast_invalidatesAllCores` proven (SM7.B.8 —
+      per-core views + the real-pipeline single-view corollary; the
+      per-core-mounted restatement follows at SM7.C.6).
+- [x] All unmap callers wired through Broadcast (SM7.B.9–B.11: the
+      `.vspaceUnmap`/`.vspaceMap`/`.lifecycleRetype` arms + the
+      targeted-flush ops + the ASID-allocate consumer).
+- [ ] Per-core TLB model (SM7.C).
+- [ ] Cache-coherency invariant (SM7.D).
+- [ ] Tier 0..4 green; QEMU shootdown test passes (Tier 0..3 green at
+      SM7.B; the QEMU exerciser lands with SM7.E.2 and runs once the
+      SM9.E bootable image exists).
+- [ ] **Closes SMP-C4 formally** (at SM7 completion: SM7.C's per-core
+      model + SM7.D's cache invariant remain).
 
 ## 9. Cross-references
 

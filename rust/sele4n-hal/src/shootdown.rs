@@ -377,6 +377,212 @@ pub fn all_acked() -> bool {
 // Tests
 // ============================================================================
 
+// ============================================================================
+// WS-SM SM7.B.7 — THE global shootdown-round lock
+// ============================================================================
+
+/// **WS-SM SM7.B.7**: THE single global shootdown-round lock — the
+/// runtime realisation of the Lean `ShootdownRoundLockId` (fieldless,
+/// provably unique).  `false` = free, `true` = a round is in flight.
+///
+/// **Contract (the SM7.A audit's round-serialisation obligation)**: the
+/// ack flags above carry NO round identity, so at most one shootdown
+/// round may be in flight system-wide.  An initiator MUST hold this
+/// lock across the entire hardware round — [`reset_for_round`], the
+/// `.tlbShootdownReq` SGI fires, its local broadcast TLBI, and the
+/// [`wait_all_acked_bounded`] poll — and release it only after
+/// observing `all_acked` (or immediately before the timeout path's
+/// fail-closed panic).  Interleaved rounds on the shared flag vector
+/// would permit an early `all_acked` exit with a stale TLB entry live
+/// on a target (the SMP-C4 hazard) plus a mutual-hang mode — see the
+/// Lean module header (`TlbShootdown.lean`, "Round serialisation
+/// contract").
+///
+/// **Why a CAS try-lock and not the verified `TicketLock`**: a waiter
+/// spinning for this lock is (with IRQs masked in the SVC path) unable
+/// to take the holder's `.tlbShootdownReq` SGI — yet the holder's
+/// round WAITS on that waiter's acknowledgment.  A blind spin would
+/// therefore deadlock into the wait-timeout panic (holder waits on
+/// waiter's ack; waiter waits on holder's release).  The acquire loop
+/// must interleave lock attempts with **servicing the waiter's own
+/// pending obligation** (its ack flag is down ⇒ some in-flight round
+/// targets it ⇒ invalidate locally, `ack_set`, retry) — which needs
+/// try-acquire semantics a ticket lock cannot provide (taking a ticket
+/// commits to the queue).  The Lean seam's cooperative loop
+/// (`SyscallDispatchEntry.completeShootdownRounds`) is the sole
+/// acquirer.  Fairness is not load-bearing: rounds are rare
+/// (unmap-family syscalls only) and sub-microsecond.
+pub static SHOOTDOWN_ROUND_LOCK: AtomicBool = AtomicBool::new(false);
+
+/// **WS-SM SM7.B.7**: try to acquire the global round lock.  `true` =
+/// acquired (Acquire ordering — the previous round's writes, including
+/// its final flag state, are visible).  Never blocks.
+pub fn round_lock_try_acquire() -> bool {
+    SHOOTDOWN_ROUND_LOCK
+        .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+        .is_ok()
+}
+
+/// **WS-SM SM7.B.7**: release the global round lock (Release ordering —
+/// publishes the completed round's writes to the next acquirer).
+pub fn round_lock_release() {
+    SHOOTDOWN_ROUND_LOCK.store(false, Ordering::Release);
+}
+
+// ============================================================================
+// WS-SM SM7.B.5 + B.6 — Bounded all-acked wait
+// ============================================================================
+
+/// **WS-SM SM7.B.5 (testable inner form)**: bounded poll for
+/// all-acknowledged over an explicit flag slice, with an injected
+/// monotonic clock.
+///
+/// Spins (with [`core::hint::spin_loop`]) re-checking
+/// [`all_acked_in_slice`] until it holds or `timeout_ticks` have
+/// elapsed on `now`.  Returns `true` on observed all-acked, `false`
+/// on timeout — the exact verdict semantics the Lean
+/// `shootdown_timeout_handling` certifies (a `false` can only be a
+/// genuine timeout; a completed round always yields `true`).
+///
+/// **Why a spin rather than `wfe`**: the plan §3.2 sketch paces the
+/// wait with `wfe_bounded`, but a bare `wfe` blocks until an event or
+/// interrupt — with IRQs masked in the SVC path and no architectural
+/// guarantee that a remote `stlr` generates an event, a hung target
+/// would leave the initiator asleep FOREVER, making the timeout (and
+/// its diagnosable fail-closed panic) unreachable.  A counted spin is
+/// strictly more robust: the round completes in < 1 µs on the 4-core
+/// BCM2712 (plan §3.4), so the loop is short-lived, and the 10 ms
+/// budget stays enforceable.  (The targets' handlers still emit `sev`
+/// after their release-store — free, and it keeps any future
+/// event-paced waiter honest.)
+pub fn wait_all_acked_bounded_in<C: FnMut() -> u64>(
+    slots: &[ShootdownAckFlag],
+    timeout_ticks: u64,
+    mut now: C,
+) -> bool {
+    let start = now();
+    loop {
+        if all_acked_in_slice(slots) {
+            return true;
+        }
+        if now().saturating_sub(start) >= timeout_ticks {
+            // One final check: the acks may have landed between the
+            // last poll and the deadline read (verdict exactness —
+            // never report a timeout on a completed round).
+            return all_acked_in_slice(slots);
+        }
+        core::hint::spin_loop();
+    }
+}
+
+/// **WS-SM SM7.B.5 + B.6**: bounded poll for all-acknowledged over the
+/// production flags, clocked by the generic timer (`CNTPCT_EL0`).
+/// `true` = all acked; `false` = timeout (the caller's fail-closed
+/// panic trigger — a silently skipped invalidation would be the
+/// SMP-C4 stale-TLB hazard).
+pub fn wait_all_acked_bounded(timeout_ticks: u64) -> bool {
+    wait_all_acked_bounded_in(&SHOOTDOWN_ACK, timeout_ticks, crate::timer::read_counter)
+}
+
+// ============================================================================
+// WS-SM SM7.B.3 — The .tlbShootdownReq SGI handler
+// ============================================================================
+
+/// **WS-SM SM7.B.3**: the `.tlbShootdownReq` INTID (GIC-400 SGI 1) —
+/// pinned to the Lean `SgiKind.tlbShootdownReq_intid` (= 1) and the
+/// [`crate::gic`] reservation table; conformance-tested below.
+pub const TLB_SHOOTDOWN_REQ_INTID: u8 = 1;
+
+/// **WS-SM SM7.B.3**: the `.tlbShootdownReq` SGI handler — the target
+/// core's side of the shootdown round (plan §3.2 step 4).
+///
+/// Sequence on the interrupted core:
+///
+/// 1. **Invalidate the local TLB — completely** (`tlbi vmalle1`, the
+///    LOCAL variant: the handler's obligation is its own core's TLB;
+///    the primitive's trailing `dsb ish; isb` retires the invalidation
+///    before the next step).  The full flush conservatively covers
+///    every descriptor the initiator posted for this core — the Lean
+///    ledger (`drainShootdowns` + per-descriptor
+///    `applyTlbInvalidation`) records the *precise* obligation, and
+///    over-invalidation is always safe (an absent entry re-walks the
+///    page tables); the refinement direction is
+///    "runtime removes ⊇ model removes", so Theorem 3.3.1's per-core
+///    absence conclusion carries over.  This also keeps the IRQ
+///    handler free of any Lean-runtime call (the pending queues are
+///    Lean state; draining them from a secondary core's IRQ context
+///    would require a reentrant per-core Lean runtime, which does not
+///    exist — the initiator's catch-up commit drains the ledger after
+///    the acks certify hardware retirement).
+/// 2. **Acknowledge** — [`ack_set`] (release-store), the SM7.B.4
+///    release edge: publishes the TLBI retirement to the initiator's
+///    acquire-poll.
+/// 3. **`sev`** — wakes any event-paced waiter (free; the production
+///    poll spins, see [`wait_all_acked_bounded_in`]).
+///
+/// Fail-closed: if the executing core id is somehow out of range the
+/// handler acknowledges NOTHING (the initiator times out and panics —
+/// diagnosable), rather than acknowledging the wrong slot (which
+/// would let the initiator proceed with a target's TLB still stale).
+///
+/// `_source_cpu` (the SGI originator from `GICC_IAR[12:10]`) is
+/// accepted per the [`crate::gic::SgiHandler`] signature; the primary
+/// ack channel is the shared flag vector, so it is used only for the
+/// optional direct-ack extension (plan §3.2 step 4d, not implemented
+/// at v1.0.0).
+#[deny(clippy::panic, clippy::unreachable, clippy::todo)]
+pub fn tlb_shootdown_req_handler(_intid: u8, _source_cpu: u8) {
+    let core_id = crate::per_cpu::current_core_id_from_tpidr() as usize;
+    if core_id >= SHOOTDOWN_ACK.len() {
+        // Fail closed: no ack (see docstring).  Unreachable on
+        // correctly-initialised hardware (TPIDR_EL1 is set to the
+        // core id at boot, always < 4 on BCM2712).
+        return;
+    }
+    // Step 1: full local TLB invalidation, retired by the primitive's
+    // trailing `dsb ish; isb`.
+    crate::tlb::tlbi_vmalle1();
+    // Step 2: the release edge.
+    ack_set(core_id);
+    // Step 3: wake event-paced waiters.
+    crate::cpu::sev();
+}
+
+/// **WS-SM SM7.B.3**: register the `.tlbShootdownReq` handler in the
+/// SM1.F.5 SGI handler table.
+///
+/// # Safety
+///
+/// Must be called during single-core boot with IRQs disabled, before
+/// `bring_up_secondaries` (the [`crate::gic::register_sgi_handler`]
+/// contract — the table is write-once-at-boot, read-only after).
+pub unsafe fn register_tlb_shootdown_handler() {
+    unsafe {
+        crate::gic::register_sgi_handler(TLB_SHOOTDOWN_REQ_INTID, tlb_shootdown_req_handler);
+    }
+}
+
+// ============================================================================
+// WS-SM SM7.B.2 — Online-core mask (the runtime SGI target mask)
+// ============================================================================
+
+/// **WS-SM SM7.B.2**: the online-core bitmask — bit `c` set ⇔ core `c`
+/// is online (the boot core is always online; secondaries per
+/// `smp::CORE_READY`, Acquire).  The SM7.A PR #838 P1 obligation's
+/// "target-set computation must enumerate online cores only" at the
+/// SGI-fire site: the Lean entry masks its `.tlbShootdownReq` fires by
+/// this, matching [`reset_for_round`]'s masked reset — an offline core
+/// is neither reset, nor poked, nor waited on.
+pub fn online_mask() -> u64 {
+    let mut mask: u64 = 0;
+    for (i, ready) in crate::smp::CORE_READY.iter().enumerate() {
+        if ready.load(Ordering::Acquire) {
+            mask |= 1u64 << i;
+        }
+    }
+    mask
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -730,5 +936,140 @@ mod tests {
     fn sm7a3_reset_for_round_panics_on_out_of_range_initiator() {
         let slots = fresh_boot_flags();
         reset_for_round_in_slice(&slots, 4);
+    }
+
+    // ------------------------------------------------------------------------
+    // WS-SM SM7.B — round lock, bounded wait, SGI handler, online mask
+    // ------------------------------------------------------------------------
+
+    /// SM7.B.3: the reserved INTID is pinned to the Lean
+    /// `SgiKind.tlbShootdownReq_intid` (= 1) and the gic.rs SGI
+    /// reservation table.
+    #[test]
+    fn sm7b3_tlb_shootdown_req_intid_matches_lean() {
+        assert_eq!(TLB_SHOOTDOWN_REQ_INTID, 1);
+    }
+
+    /// SM7.B.6: the Lean `shootdownWaitTimeoutTicks` (540 000) mirrors
+    /// the HAL's established bounded-wait budget (10 ms at 54 MHz).
+    #[test]
+    fn sm7b_wait_timeout_matches_wfe_default() {
+        assert_eq!(crate::cpu::WFE_DEFAULT_TIMEOUT_TICKS, 540_000);
+    }
+
+    /// SM7.B.7: the global round lock is exclusive and re-acquirable —
+    /// a second try-acquire fails while held, succeeds after release.
+    /// (Serialised via the lock itself: this test owns the global for
+    /// its scope because it is the only test touching it.)
+    #[test]
+    fn sm7b7_round_lock_try_acquire_exclusive_roundtrip() {
+        assert!(round_lock_try_acquire(), "free lock must be acquirable");
+        assert!(
+            !round_lock_try_acquire(),
+            "a held round lock must reject a second acquirer"
+        );
+        round_lock_release();
+        assert!(round_lock_try_acquire(), "released lock re-acquirable");
+        round_lock_release();
+    }
+
+    /// SM7.B.5: an already-all-acked round satisfies the bounded wait
+    /// immediately — the clock is never consulted past the start read.
+    #[test]
+    fn sm7b5_wait_immediate_when_all_acked() {
+        let slots = fresh_boot_flags(); // boots all-true
+        let mut clock_reads = 0u32;
+        let ok = wait_all_acked_bounded_in(&slots, 10, || {
+            clock_reads += 1;
+            0
+        });
+        assert!(ok);
+        assert_eq!(clock_reads, 1, "only the start-of-wait read happens");
+    }
+
+    /// SM7.B.5: a late acknowledgment is observed, not misreported as
+    /// a timeout — the poll re-checks after every clock read.
+    #[test]
+    fn sm7b5_wait_observes_late_ack() {
+        let slots = fresh_boot_flags();
+        reset_for_round_in_slice(&slots, 0); // cores 1..3 drop
+        ack_set_in_slice(&slots, 1);
+        ack_set_in_slice(&slots, 2);
+        let mut ticks = 0u64;
+        let ok = wait_all_acked_bounded_in(&slots, 1_000, || {
+            ticks += 1;
+            if ticks == 5 {
+                // the last target acks mid-wait
+                ack_set_in_slice(&slots, 3);
+            }
+            ticks
+        });
+        assert!(ok, "the late ack must be observed within the budget");
+    }
+
+    /// SM7.B.6: a round that never completes is a genuine timeout —
+    /// the wait returns false once the budget elapses.
+    #[test]
+    fn sm7b6_wait_times_out_when_never_acked() {
+        let slots = fresh_boot_flags();
+        reset_for_round_in_slice(&slots, 0);
+        let mut ticks = 0u64;
+        let ok = wait_all_acked_bounded_in(&slots, 100, || {
+            ticks += 200; // jump straight past the budget
+            ticks
+        });
+        assert!(!ok, "an unacknowledged round must time out");
+    }
+
+    /// SM7.B.6 (verdict exactness): an ack landing exactly at the
+    /// deadline is still reported as success — the deadline path
+    /// re-checks the flags before returning, so a completed round can
+    /// never be reported as a timeout.
+    #[test]
+    fn sm7b6_wait_final_check_at_deadline() {
+        let slots = fresh_boot_flags();
+        reset_for_round_in_slice(&slots, 0);
+        let mut ticks = 0u64;
+        let ok = wait_all_acked_bounded_in(&slots, 100, || {
+            ticks += 200;
+            if ticks >= 200 {
+                for c in 1..4 {
+                    ack_set_in_slice(&slots, c);
+                }
+            }
+            ticks
+        });
+        assert!(ok, "acks at the deadline must be observed, not dropped");
+    }
+
+    /// SM7.B.3: the handler acknowledges the executing core (host
+    /// TPIDR stub = core 0) after its (host no-op) local flush.
+    #[test]
+    fn sm7b3_handler_acks_executing_core() {
+        tlb_shootdown_req_handler(TLB_SHOOTDOWN_REQ_INTID, 2);
+        assert!(ack_is_set(0), "the handler release-sets its own flag");
+    }
+
+    /// SM7.B.3: the handler registers into the SM1.F.5 table shape and
+    /// dispatches through it (local table — no shared static).
+    #[test]
+    fn sm7b3_handler_registration_and_dispatch() {
+        let mut table: [Option<crate::gic::SgiHandler>; 16] = [None; 16];
+        crate::gic::register_sgi_handler_in(
+            &mut table,
+            TLB_SHOOTDOWN_REQ_INTID,
+            tlb_shootdown_req_handler,
+        );
+        assert!(crate::gic::lookup_sgi_handler_in(&table, TLB_SHOOTDOWN_REQ_INTID).is_some());
+        // dispatch through the table: the handler runs (host: no-op
+        // flush + ack of core 0) without panicking.
+        crate::gic::dispatch_sgi_in(&table, TLB_SHOOTDOWN_REQ_INTID, 3);
+        assert!(ack_is_set(0));
+    }
+
+    /// SM7.B.2: the boot core is always in the online mask.
+    #[test]
+    fn sm7b2_online_mask_boot_core_always_set() {
+        assert_eq!(online_mask() & 1, 1, "bit 0 (boot core) always set");
     }
 }

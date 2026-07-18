@@ -14,7 +14,7 @@
 //! Phase 6: Handoff to Lean kernel (AG7 — FFI bridge)
 
 /// Kernel version string — matches Lean lakefile.toml version.
-const KERNEL_VERSION: &str = "0.32.75";
+const KERNEL_VERSION: &str = "0.32.76";
 
 /// Rust entry point called from assembly `_start` after BSS zeroing and
 /// stack setup. Receives the DTB pointer from U-Boot in x0.
@@ -124,6 +124,19 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
     crate::kprintln!("[boot] Initializing GIC-400...");
     crate::gic::init_gic();
     crate::kprintln!("[boot] GIC-400 initialized (distributor + CPU interface)");
+
+    // WS-SM SM7.B.3: register the `.tlbShootdownReq` (INTID 1) handler in
+    // the SM1.F.5 SGI table.  Single-core, IRQs still masked, before
+    // `bring_up_secondaries` — exactly the `register_sgi_handler`
+    // write-once-at-boot contract; secondaries observe the registration
+    // through the CPU_ON release edge.
+    //
+    // SAFETY: boot phase 3 runs on the primary core alone with PSTATE.I
+    // set; no SGI can be taken and no other core is online yet.
+    unsafe {
+        crate::shootdown::register_tlb_shootdown_handler();
+    }
+    crate::kprintln!("[boot] TLB shootdown SGI handler registered (INTID 1)");
 
     crate::kprintln!("[boot] Initializing timer (1000 Hz)...");
     // AJ5-C/L-14 + AK5-J/AK5-L: init_timer returns Result — on failure,
@@ -481,7 +494,7 @@ mod tests {
         // update this test in lockstep with `lakefile.toml`.
         // `scripts/check_version_sync.sh` (Tier 0) provides the
         // canonical drift check; this test is the local pin.
-        assert_eq!(KERNEL_VERSION, "0.32.75");
+        assert_eq!(KERNEL_VERSION, "0.32.76");
     }
 
     #[test]
