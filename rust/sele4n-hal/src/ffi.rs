@@ -472,7 +472,9 @@ pub extern "C" fn ffi_shootdown_ack_is_set(core_id: u64) -> u64 {
 /// **WS-SM SM7.A.3**: Open a new shootdown round — every flag drops to
 /// `false` except the initiator's own (plan §3.2 step 1; the Lean
 /// `beginShootdownRound`).  Must only be called by the round initiator
-/// while it holds the serialising VSpaceRoot write lock (SM7.B.7).
+/// under the global shootdown-round lock (see the shootdown.rs
+/// round-serialisation contract; SM7.B.7 — the per-VSpace VSpaceRoot
+/// lock alone is NOT sufficient).
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownResetForRound`
 #[no_mangle]

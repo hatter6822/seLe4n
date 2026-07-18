@@ -191,7 +191,43 @@ initiators) as the ready seam for SM7.B.7's
 (`ffi_shootdown_*` + typed `CoreId` wrappers +
 `shootdownAck_ffi_core_in_range`).  Tests:
 `tests/SmpTlbShootdownSuite.lean` (`smp_tlb_shootdown_suite`, the
-SM7.E.1 seed — 73 assertions / 11 groups), Tier-2 + Tier-3 wired.
+SM7.E.1 seed — 75 assertions / 11 groups), Tier-2 + Tier-3 wired.
+
+**Audit record (v0.32.74, three-lane adversarial audit of PR #838).**
+Two confirmed findings, both fixed in the audit cut; everything else
+(theorem vacuity — probe-built concrete instantiations of the capstone
+and coalesce paths, `@[simp]` hygiene, decidable-instance
+transparency, memory-ordering soundness under the serialised regime,
+FFI bound-check placement, struct layout, test-suite race-freedom,
+documented-count truthfulness) verified sound.
+
+1. **Round-serialisation contract (High; the §3.2 precondition is
+   insufficient) — REGISTERED SM7.B.7 OBLIGATION.**  The ack vector
+   carries no round identity, so rounds must be serialised
+   **system-wide**; the §3.2 "VSpaceRoot lock held" precondition does
+   not give that across distinct VSpaces (two initiators, different
+   VSpaceRoot locks: an interleaved reset yields an early `allAcked`
+   exit with a stale TLB entry live on a target — the SMP-C4 hazard —
+   and clears the first initiator's born-`true` flag, a mutual hang).
+   SM7.B.7 MUST acquire the new single global `ShootdownRoundLockId`
+   (fieldless, provably unique; ordered before every per-core
+   `ShootdownQueueLockId`) for the full round and release it only
+   after `allAcked`.  Every serialisation docstring in
+   `TlbShootdown.lean` / `shootdown.rs` / `ffi.rs` / `Runtime.lean`
+   now states this contract; the queue-lock total order is
+   re-documented as 2PL-footprint declaration + defense-in-depth.
+2. **Coalescing coverage strengthened.**  The docstring's
+   "no invalidation is ever lost" now has the full theorem:
+   `enqueueShootdownOrCoalesce_pending_covered` (every *previously
+   queued* descriptor is still pending or superseded by a `.vmalle1`),
+   complementing `…_request_covered` for the new descriptor.
+
+Follow-up (pre-existing, NOT SM7.A-specific, out of this phase's
+scope): a crate-wide conformance audit of the SM1-era
+`@[extern] … BaseIO` ↔ plain `extern "C" fn` calling convention
+(world-token/boxed-return ABI) once a linked runtime path exists to
+exercise it (SM9.E QEMU image); SM7.A merely follows the established
+convention.
 
 | Sub | Description | Landed artefact | Status |
 |-----|-------------|-----------------|--------|
@@ -276,7 +312,7 @@ SM7.E.1 seed — 73 assertions / 11 groups), Tier-2 + Tier-3 wired.
 | Shootdown deadlock (initiator waits forever) | LOW | CRIT | Bounded WFE; timeout panic at SM7 |
 | Stale TLB on remote core post-shootdown | LOW | CRIT | Theorem 3.3.1 + explicit ack |
 | Ack flag missed (race on read/write) | LOW | HIGH | Release-acquire synchronization |
-| Multiple concurrent shootdowns interleave | LOW | HIGH | VSpaceRoot lock serializes initiators |
+| Multiple concurrent shootdowns interleave | LOW | HIGH | **Single global shootdown-round lock** (`ShootdownRoundLockId`, SM7.B.7).  The SM7.A audit showed the VSpaceRoot lock alone is insufficient: two different-VSpace initiators would interleave rounds on the round-identity-free ack vector (early `allAcked` exit with a stale TLB live — the SMP-C4 hazard — plus a mutual-hang mode); see the SM7.A completion record |
 | Pending queue overflow | LOW | MED | Bounded by maxPendingPerCore=16 |
 | Cross-cluster path under-tested | MED | LOW (no current target) | Mock test in SM7.E.4 |
 

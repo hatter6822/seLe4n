@@ -67,11 +67,30 @@ empty and every ack flag `true` — "nobody is being waited on".
 `TlbShootdownState.initial` (the boot state) is quiescent, matching
 the Rust `SHOOTDOWN_ACK` boot value of all-`true`.
 
+## Round serialisation contract (SM7.A audit; SM7.B.7 obligation)
+
+The ack vector carries **no round identity**, so it is a
+single-round resource: at most one shootdown round may be in flight
+system-wide.  The plan §3.2 precondition (the initiator holds the
+VSpaceRoot write lock) is **not** sufficient to guarantee this — two
+initiators shooting down *different* VSpaces hold different VSpaceRoot
+locks and would interleave rounds, with two concrete failures: (a)
+initiator B's `beginShootdownRound` marks B's own flag `true` while A
+still waits on that core's invalidation for A's round, so A's
+`allAcked` poll can exit before A's descriptors are drained — a stale
+TLB entry stays live on the target, the exact SMP-C4 hazard; and (b)
+B's reset clears A's born-`true` flag, which nothing re-sets if A
+polls with IRQs masked — a mutual hang.  SM7.B.7 therefore MUST
+serialise rounds under the single global `ShootdownRoundLockId`
+(below), acquired before any per-core `ShootdownQueueLockId`; every
+serialisation statement in this module and in the Rust realisation
+assumes exactly that contract.
+
 ## Capacity bound (SM7.A.6)
 
 Every pending queue is bounded by `maxPendingPerCore = 16`
 (plan §4.1): a typical kernel never queues more than a few
-descriptors — the VSpaceRoot write lock serialises initiators, so
+descriptors — the global round lock (see above) serialises rounds, so
 at most one round's descriptors are in flight per target — and the
 bound is deliberately conservative.  `enqueueShootdown` is
 fail-closed: at capacity it returns `none` rather than silently
@@ -145,11 +164,12 @@ structure TlbShootdownDescriptor where
 -- ============================================================================
 
 /-- **WS-SM SM7.A.6**: upper bound on each core's pending-shootdown
-queue length (plan §4.1).  The VSpaceRoot write lock serialises
-shootdown initiators, so a target's queue holds at most one round's
-descriptors at a time; `16` is a conservative envelope over every
-SM7.B caller (the worst wired unmap path enqueues one descriptor per
-target per round).  `enqueueShootdown` fails closed at this bound. -/
+queue length (plan §4.1).  The global round lock (`ShootdownRoundLockId`
+— the module-header round-serialisation contract) serialises shootdown
+rounds, so a target's queue holds at most one round's descriptors at a
+time; `16` is a conservative envelope over every SM7.B caller (the
+worst wired unmap path enqueues one descriptor per target per round).
+`enqueueShootdown` fails closed at this bound. -/
 def maxPendingPerCore : Nat := 16
 
 /-- **WS-SM SM7.A.6**: the capacity bound admits at least one pending
@@ -491,9 +511,10 @@ theorem enqueueShootdown_preserves_pendingBounded {st st' : TlbShootdownState}
 /-! ### SM7.A.6 — Capacity sufficiency for a serialised round
 
 The plan §4.1 sizes `maxPendingPerCore` against the protocol's posting
-pattern: the VSpaceRoot write lock serialises rounds, each round posts
-**one** descriptor per target, and each target's queue was drained by
-the end of the previous round.  The theorems below discharge that
+pattern: the global round lock (the module-header round-serialisation
+contract) serialises rounds, each round posts **one** descriptor per
+target, and each target's queue was drained by the end of the previous
+round.  The theorems below discharge that
 argument formally rather than by prose: posting onto an empty queue
 always succeeds, and a whole round's posting fold succeeds whenever the
 targets are distinct and start empty — which
@@ -598,13 +619,18 @@ queue is **collapsed to a single full-flush descriptor**
 This is the standard bounded-batching escape hatch (over-invalidation
 is always safe; under-invalidation never is): a full flush supersedes
 every queued invalidation and the new request alike, so no invalidation
-is ever lost (`enqueueShootdownOrCoalesce_request_covered`) while the
-queue stays within `maxPendingPerCore` **unconditionally**
+is ever lost — the *new* request is pending or superseded
+(`enqueueShootdownOrCoalesce_request_covered`), every *previously
+queued* descriptor is pending or superseded
+(`enqueueShootdownOrCoalesce_pending_covered`), and the queue stays
+within `maxPendingPerCore` **unconditionally**
 (`enqueueShootdownOrCoalesce_preserves_pendingBounded`).  The formal
 "supersedes" statement — draining the collapsed queue invalidates at
 least everything the dropped descriptors would have — lands with the
 SM7.C per-core TLB effect semantics (`tlbInvalidateOnCore`), which is
-where "what an op removes" is first defined. -/
+where "what an op removes" is first defined; until then the two
+coverage theorems pin the syntactic half (a `.vmalle1` descriptor is
+present whenever anything was dropped). -/
 def enqueueShootdownOrCoalesce (st : TlbShootdownState) (target : CoreId)
     (d : TlbShootdownDescriptor) : TlbShootdownState :=
   match enqueueShootdown st target d with
@@ -644,6 +670,30 @@ theorem enqueueShootdownOrCoalesce_request_covered (st : TlbShootdownState)
   next st' heq => exact Or.inl (enqueueShootdown_mem heq)
   next heq =>
     exact Or.inr ⟨{ op := .vmalle1, initiator := d.initiator }, by simp, rfl⟩
+
+/-- **WS-SM SM7.A.6 (audit)**: the coalescing enqueue never loses a
+*previously queued* request either — every descriptor that was pending
+on the target before the call is still pending afterwards, or a
+full-flush descriptor (which supersedes it) is.  Together with
+`enqueueShootdownOrCoalesce_request_covered` (the same claim for the
+*new* descriptor) this pins the syntactic no-invalidation-lost
+property over the entire queue, not just the incoming request. -/
+theorem enqueueShootdownOrCoalesce_pending_covered (st : TlbShootdownState)
+    (target : CoreId) (d : TlbShootdownDescriptor) :
+    ∀ dOld ∈ st.pendingOnCore target,
+      dOld ∈ (enqueueShootdownOrCoalesce st target d).pendingOnCore target ∨
+        ∃ d' ∈ (enqueueShootdownOrCoalesce st target d).pendingOnCore target,
+          d'.op = TlbInvalidation.vmalle1 := by
+  intro dOld hOld
+  unfold enqueueShootdownOrCoalesce
+  split
+  next st' heq =>
+    left
+    rw [enqueueShootdown_pending_target heq]
+    exact List.mem_append_left _ hOld
+  next heq =>
+    right
+    exact ⟨{ op := .vmalle1, initiator := d.initiator }, by simp, rfl⟩
 
 /-- **WS-SM SM7.A.6**: the coalescing enqueue preserves the capacity
 invariant **unconditionally** — no success hypothesis needed (the
@@ -825,7 +875,8 @@ theorem acknowledgeShootdown_preserves_pendingBounded {st : TlbShootdownState}
 `true` stays `true` under further acknowledgments.  Monotonicity is
 what makes the initiator's wait loop's exit condition stable
 (`allAcked` cannot regress mid-round; only `beginShootdownRound`
-resets flags, and the VSpaceRoot lock serialises rounds). -/
+resets flags, and the global round lock — the module-header
+round-serialisation contract — serialises rounds). -/
 theorem acknowledgeShootdown_monotone (st : TlbShootdownState)
     (c c' : CoreId) (h : st.ackOnCore c' = true) :
     (acknowledgeShootdown st c).ackOnCore c' = true := by
@@ -887,10 +938,12 @@ born-`true`: the initiator performs its own invalidation locally
 (plan §3.2 steps 1 + 3) and is never waited on.  The SM7.B
 `tlbShootdownBroadcast` transition calls this exactly once per round,
 *before* enqueueing descriptors and firing `.tlbShootdownReq` SGIs;
-the VSpaceRoot write lock held by the initiator serialises rounds, so
-a reset can never race a straggling acknowledgment from a previous
-round (the previous initiator only released the lock after observing
-`allAcked`, which happens-after every previous ack-set). -/
+the single global round lock (`ShootdownRoundLockId` — the
+module-header round-serialisation contract; the per-VSpace VSpaceRoot
+lock alone is NOT sufficient) serialises rounds, so a reset can never
+race a straggling acknowledgment from a previous round (the previous
+initiator only released the round lock after observing `allAcked`,
+which happens-after every previous ack-set). -/
 def beginShootdownRound (st : TlbShootdownState) (initiator : CoreId) :
     TlbShootdownState :=
   { st with shootdownAck :=
@@ -1096,8 +1149,32 @@ theorem shootdownRound_restores_quiescent
           beginShootdownRound_ackOnCore_initiator]
 
 -- ============================================================================
--- SM7.A — Per-core pending-queue lock identifier (the SM7.B.7 seam)
+-- SM7.A — Round + per-core pending-queue lock identifiers (the SM7.B.7 seam)
 -- ============================================================================
+
+/-- **WS-SM SM7.A audit**: identifier for THE single global
+shootdown-round lock — the serialiser the module-header
+round-serialisation contract requires.
+
+The ack vector carries no round identity, so rounds must not overlap
+system-wide; the per-VSpace VSpaceRoot lock cannot guarantee that
+across distinct VSpaces (see the module header for the concrete
+stale-TLB and mutual-hang interleavings).  SM7.B.7's
+`lockSet_tlbShootdown_correct` acquires this lock first — before the
+VSpaceRoot object lock's TLBI section completes and before any
+per-core `ShootdownQueueLockId` — and releases it only after the
+initiator observes `allAcked`.
+
+The type is deliberately fieldless: there is exactly one round lock
+(`ShootdownRoundLockId.singleton` — every two values are equal), which
+structurally encodes "at most one round in flight". -/
+structure ShootdownRoundLockId where
+  deriving DecidableEq, Repr, Inhabited
+
+/-- **WS-SM SM7.A audit**: the round lock is unique — the type has one
+value, so a lock-set can never name two distinct round locks. -/
+theorem ShootdownRoundLockId.singleton (a b : ShootdownRoundLockId) :
+    a = b := rfl
 
 /-- **WS-SM SM7.A**: identifier for core `c`'s pending-shootdown-queue
 lock — the "PendingShootdown lock" of plan §3.2 step 2, at per-core
@@ -1111,11 +1188,15 @@ protocol's cross-domain lock-set the same way `SchedLockId` wraps the
 run-queue locks.
 
 **Acquisition order**: strictly ascending `core` (the total order
-below).  This matters even though the VSpaceRoot write lock serialises
-same-VSpace rounds: two initiators shooting down *different* VSpaces
-concurrently each post to multiple targets' queues — without a total
-acquisition order, initiator A holding queue 1 wanting queue 2 can
-deadlock against initiator B holding queue 2 wanting queue 1. -/
+below), always after the global `ShootdownRoundLockId`.  Under the
+module-header round-serialisation contract at most one initiator holds
+queue locks at a time, so the total order is defense-in-depth rather
+than load-bearing today: it (a) declares the 2PL write footprint of
+the round's multi-queue posting under the SM3 discipline, and (b)
+future-proofs any post-1.0 relaxation of round serialisation (e.g.
+round-identity-tagged acks), where two concurrent initiators posting
+to each other's cores WOULD deadlock without it (A holding queue 1
+wanting queue 2 against B holding queue 2 wanting queue 1). -/
 structure ShootdownQueueLockId where
   core : CoreId
   deriving DecidableEq, Repr

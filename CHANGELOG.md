@@ -1,3 +1,56 @@
+## v0.32.74 — WS-SM SM7.A audit cut: round-serialisation contract corrected + coalescing coverage completed
+
+Three-lane adversarial audit of PR #838 (independent Lean proof-vacuity
+auditor, independent Rust/FFI security auditor, docs-vs-code lane).
+Two confirmed findings, both fixed here; every other dimension —
+theorem vacuity (probe-built concrete capstone/coalesce
+instantiations), `@[simp]` hygiene, decidable-instance transparency,
+memory-ordering soundness under the serialised regime, FFI bound-check
+placement, struct layout, test race-freedom, documented-count
+truthfulness — verified sound.  Full record: plan §5 SM7.A audit note.
+
+* **Round-serialisation contract corrected (High; registered SM7.B.7
+  obligation).**  The v0.32.72 docstrings claimed "the VSpaceRoot write
+  lock serialises rounds" while the `ShootdownQueueLockId` rationale
+  correctly observed that different-VSpace initiators run concurrently
+  — mutually contradictory, and the first claim is unsound: the ack
+  vector carries **no round identity**, so an interleaved
+  `beginShootdownRound`/`reset_for_round` yields (a) an early
+  `allAcked` exit with a stale TLB entry still live on a target — the
+  SMP-C4 hazard itself — and (b) a cleared born-`true` initiator flag
+  (mutual hang).  Not exploitable today (SM7.B is PENDING; no runtime
+  path reaches the protocol), but a live design defect for SM7.B.
+  Fixed: a **"Round serialisation contract"** section in the
+  `TlbShootdown.lean` header states the single-round-in-flight
+  requirement with both failure interleavings; the new
+  `ShootdownRoundLockId` (fieldless, provably unique —
+  `ShootdownRoundLockId.singleton`; acquired before every per-core
+  queue lock, released only after `allAcked`) is the registered
+  SM7.B.7 serialiser; all ten claim sites across `TlbShootdown.lean` /
+  `shootdown.rs` / `ffi.rs` / `Runtime.lean` restate the corrected
+  contract; the queue-lock total order is re-documented as
+  2PL-footprint declaration + defense-in-depth; the plan §7 risk row
+  and §5 completion record carry the finding and the obligation.
+* **Coalescing coverage completed.**  The escape hatch's "no
+  invalidation is ever lost" docstring cited a theorem that covered
+  only the *new* descriptor; the new
+  `enqueueShootdownOrCoalesce_pending_covered` proves every
+  *previously queued* descriptor is still pending or superseded by a
+  `.vmalle1`, and the docstring now cites both coverage theorems.
+
+Follow-up registered (pre-existing, not SM7.A-specific): a crate-wide
+`@[extern] … BaseIO` ↔ `extern "C"` calling-convention conformance
+audit once a linked runtime path exists (SM9.E) — SM7.A follows the
+established SM1-era convention.
+
+Suite 73 → **75 assertions** (dropped-descriptor supersession on the
+collapse path; round-lock uniqueness) + the audit-cut `#check` anchors
++ two theorem-application witnesses; Tier-3 anchors extended.  Rust
+750 tests / clippy / rustfmt green; golden trace byte-identical.
+Version bumped 0.32.73 → 0.32.74.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §5 (SM7.A audit record)
+
 ## v0.32.73 — WS-SM SM7.A completion cut: SystemState mount, round capstone, coalescing bound, lock IDs, FFI seam
 
 Closes every deferral recorded at the v0.32.72 SM7.A landing — the

@@ -510,8 +510,10 @@ def shootdownAckIsSet (c : CoreId) : BaseIO Bool := do
 
 /-- **WS-SM SM7.A.3**: open a new shootdown round — the runtime effect
     of the pure `Architecture.beginShootdownRound` (plan §3.2 step 1).
-    Must only run under the round-serialising VSpaceRoot write lock
-    (SM7.B.7). -/
+    Must only run under the single global shootdown-round lock
+    (`Architecture.ShootdownRoundLockId`; SM7.B.7 — the per-VSpace
+    VSpaceRoot lock alone is NOT sufficient, see the TlbShootdown
+    module-header round-serialisation contract). -/
 def shootdownResetForRound (initiator : CoreId) : BaseIO Unit :=
   Platform.FFI.ffiShootdownResetForRound (UInt64.ofNat initiator.val)
 

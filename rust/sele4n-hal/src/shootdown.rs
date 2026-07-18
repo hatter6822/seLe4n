@@ -44,12 +44,23 @@
 //! * **The initiator's own poll** observes its prior store by
 //!   same-location program-order coherence.
 //!
-//! Cross-round interference is excluded structurally: the VSpaceRoot
-//! write lock serialises initiators, and a new round's reset
-//! happens-after every previous-round ack-set (the previous initiator
-//! only released the lock after its acquire-poll observed every ack,
-//! which synchronises-with each release-set).  A straggling handler
-//! from round *N* therefore cannot overwrite round *N+1*'s reset.
+//! Cross-round interference is excluded structurally by the **global
+//! shootdown-round lock** (`ShootdownRoundLockId` on the Lean side; an
+//! SM7.B.7 obligation registered by the SM7.A audit): rounds must be
+//! serialised system-wide because [`SHOOTDOWN_ACK`] carries no round
+//! identity.  The per-VSpace VSpaceRoot lock of the plan's §3.2
+//! precondition is NOT sufficient — two initiators shooting down
+//! different VSpaces hold different VSpaceRoot locks, and an
+//! interleaved `reset_for_round` would (a) mark the second initiator's
+//! own flag `true` while the first still waits on that core (early
+//! `all_acked` exit with a stale TLB entry live — the SMP-C4 hazard)
+//! and (b) clear the first initiator's born-`true` flag (a mutual hang
+//! if it polls with IRQs masked).  Under the round lock, a new round's
+//! reset happens-after every previous-round ack-set (the previous
+//! initiator only released the round lock after its acquire-poll
+//! observed every ack, which synchronises-with each release-set), so a
+//! straggling handler from round *N* cannot overwrite round *N+1*'s
+//! reset.
 //!
 //! ## Boot state
 //!
@@ -277,7 +288,9 @@ pub fn ack_is_set(core_id: usize) -> bool {
 /// **WS-SM SM7.A.3**: open a new shootdown round in [`SHOOTDOWN_ACK`]
 /// — the runtime realisation of the Lean `beginShootdownRound`
 /// (plan §3.2 step 1).  Must only be called by the round initiator
-/// while it holds the serialising VSpaceRoot write lock (SM7.B.7);
+/// under the global shootdown-round lock (the module-header round-
+/// serialisation contract; SM7.B.7 — the per-VSpace VSpaceRoot lock
+/// alone is NOT sufficient);
 /// panics on out-of-range `initiator` (fail-closed).
 #[inline]
 pub fn reset_for_round(initiator: usize) {

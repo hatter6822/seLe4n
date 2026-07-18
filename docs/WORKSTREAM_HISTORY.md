@@ -25,8 +25,39 @@ SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
 **Current sub-phase: SM7.A shootdown descriptor + state LANDED
-(v0.32.72); completion cut (v0.32.73) — SM7 (TLB / cache shootdown,
-SMP-C4 closure) opened.**
+(v0.32.72); completion cut (v0.32.73); audit cut (v0.32.74) — SM7
+(TLB / cache shootdown, SMP-C4 closure) opened.**
+
+**Audit cut (v0.32.74) — three-lane adversarial audit of PR #838.**
+Independent Lean proof-vacuity and Rust/FFI security auditors plus a
+docs-vs-code lane; two confirmed findings, both fixed, all other
+dimensions verified sound (record: plan §5 SM7.A audit note).
+**(1) Round-serialisation contract corrected (High; registered SM7.B.7
+obligation).**  The ack vector carries no round identity, so rounds
+must be serialised system-wide; the plan §3.2 VSpaceRoot-lock
+precondition cannot give that across distinct VSpaces — an interleaved
+`beginShootdownRound` yields an early `allAcked` exit with a stale TLB
+entry still live on a target (the SMP-C4 hazard) and clears the first
+initiator's born-`true` flag (mutual hang).  Not exploitable today
+(SM7.B PENDING — no runtime path reaches the protocol).  Fixed: the
+`TlbShootdown.lean` header's new "Round serialisation contract"
+section states the single-round-in-flight requirement with both
+failure interleavings; the new fieldless, provably-unique
+`ShootdownRoundLockId` (`ShootdownRoundLockId.singleton`; acquired
+before every per-core queue lock, released only after `allAcked`) is
+the registered SM7.B.7 serialiser; all ten claim sites across
+`TlbShootdown.lean` / `shootdown.rs` / `ffi.rs` / `Runtime.lean`
+restate the corrected contract; the queue-lock total order is
+re-documented as 2PL-footprint declaration + defense-in-depth; the
+plan §7 risk row is strengthened.  **(2) Coalescing coverage
+completed.**  `enqueueShootdownOrCoalesce_pending_covered` proves
+every *previously queued* descriptor is still pending or superseded by
+a `.vmalle1` after a collapse, closing the docstring's over-cite of
+the new-descriptor-only theorem.  Suite 73 → **75 assertions**;
+Tier-3 anchors extended; Rust 750 / clippy / rustfmt green; golden
+trace byte-identical.  Follow-up registered (pre-existing, not
+SM7.A-specific): crate-wide `@[extern] … BaseIO` ↔ `extern "C"` ABI
+conformance audit once a linked runtime path exists (SM9.E).
 
 **Completion cut (v0.32.73) — every v0.32.72 deferral closed.**
 **(1) SystemState mount**: `SystemState.tlbShootdown : TlbShootdownState

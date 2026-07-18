@@ -142,9 +142,15 @@ open SeLe4n.Kernel.Concurrency
 #check @enqueueShootdownOrCoalesce_eq_enqueue
 #check @enqueueShootdownOrCoalesce_of_full
 #check @enqueueShootdownOrCoalesce_request_covered
+#check @enqueueShootdownOrCoalesce_pending_covered
 #check @enqueueShootdownOrCoalesce_preserves_pendingBounded
 #check @enqueueShootdownOrCoalesce_frame_pending
 #check @enqueueShootdownOrCoalesce_frame_ack
+
+-- SM7.A audit cut — the global round-lock seam (the round-serialisation
+-- contract's serialiser):
+#check @ShootdownRoundLockId
+#check @ShootdownRoundLockId.singleton
 
 -- SM7.A completion cut — round-level composition + the quiescence
 -- capstone:
@@ -256,6 +262,21 @@ example {st : TlbShootdownState} (hB : pendingBounded st) (target : CoreId)
     (d : TlbShootdownDescriptor) :
     pendingBounded (enqueueShootdownOrCoalesce st target d) :=
   enqueueShootdownOrCoalesce_preserves_pendingBounded hB target d
+
+-- SM7.A audit cut: the coalescing enqueue loses neither the new
+-- request nor any previously queued descriptor.
+example (st : TlbShootdownState) (target : CoreId)
+    (d : TlbShootdownDescriptor) :
+    ∀ dOld ∈ st.pendingOnCore target,
+      dOld ∈ (enqueueShootdownOrCoalesce st target d).pendingOnCore target ∨
+        ∃ d' ∈ (enqueueShootdownOrCoalesce st target d).pendingOnCore target,
+          d'.op = TlbInvalidation.vmalle1 :=
+  enqueueShootdownOrCoalesce_pending_covered st target d
+
+-- SM7.A audit cut: the global shootdown-round lock is provably unique —
+-- "at most one round in flight" is structural.
+example (a b : ShootdownRoundLockId) : a = b :=
+  ShootdownRoundLockId.singleton a b
 
 -- SM7.A completion cut: the default SystemState mounts the quiescent
 -- shootdown state (decidable + theorem forms).
@@ -531,6 +552,9 @@ private def runCoalescingChecks : IO Unit := do
       (allCores.all fun c => collapsed.ackOnCore c == full.ackOnCore c)
     assertBool "the collapsed state satisfies the capacity invariant"
       (decide (pendingBounded collapsed))
+    assertBool "dropped descriptors are superseded: a full flush is pending"
+      ((collapsed.pendingOnCore core2).any fun d =>
+        d.op == TlbInvalidation.vmalle1)
     assertBool "after the collapse a normal enqueue succeeds again"
       ((enqueueShootdown collapsed core2 descUnmapPage).isSome)
 
@@ -599,6 +623,9 @@ private def runLockOrderChecks : IO Unit := do
       a == b ||
       (decide ((⟨a⟩ : ShootdownQueueLockId) < ⟨b⟩) ^^
         decide ((⟨b⟩ : ShootdownQueueLockId) < ⟨a⟩)))
+  assertBool "the global round lock has exactly one value"
+    ((⟨⟩ : ShootdownRoundLockId) == default &&
+      default == (⟨⟩ : ShootdownRoundLockId))
 
 -- ----------------------------------------------------------------------------
 -- §3.11  SystemState mount (the plan §4.1 "ConcurrencyState" placement)
