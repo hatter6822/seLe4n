@@ -1,3 +1,48 @@
+## v0.32.75 — WS-SM SM7.A: PR #838 review P1 — offline cores stay acknowledged across a round
+
+Closes the P1 review finding on `reset_for_round`: in a partial-core
+boot (`smp_enabled=false` — the v1.0.0 default — an `smp_max_cores`
+cap, or a PSCI CPU_ON rejection leaving only a prefix of secondaries
+online), the reset cleared every slot of the fixed 4-core
+`SHOOTDOWN_ACK` array, but an offline core can never take the
+`.tlbShootdownReq` SGI and call `ack_set` — `all_acked` became
+permanently unreachable and the initiator's wait loop would hang.
+
+* **Rust**: `reset_for_round` now reads the online set from
+  `smp::CORE_READY` and leaves non-online cores **born-acknowledged**,
+  via the new testable inner form `reset_for_round_in_slice_masked`
+  (mask-length checked, fail-closed).  Safety: an offline core holds
+  no stale translations — every secondary bring-up runs
+  `tlbi vmalle1` + DSB + ISB before enabling its MMU
+  (`mmu.rs::init_mmu_secondary`), so a core coming online after a
+  round it was excluded from starts with an empty TLB; SM7.B's
+  target-set computation must likewise target online cores only, and
+  rounds must not race bring-up (bring-up completes during boot,
+  before any user mapping exists).  Five new tests: offline slots stay
+  acknowledged, the partial-online round trip reaches `all_acked`
+  without offline cores, the `smp_enabled=false` single-core round is
+  immediately complete, all-online masked ≡ unmasked, and the
+  mask-length mismatch panics.  HAL 750 → 755 tests.
+* **Lean**: the target-masked round-open `beginShootdownRoundFor`
+  (targets = the online non-initiator cores; non-targets born-`true`)
+  with `_ackOnCore_iff` / `_frame_pending` /
+  `_preserves_pendingBounded`, the closed forms
+  `foldl_setAckFalse_{ackOnCore,pendingOnCore}`, the bridge
+  `beginShootdownRoundFor_allCores_eq` (fully-online collapses to
+  `beginShootdownRound` — mechanically mirrored by the Rust
+  all-online≡unmasked test), the masked posting-success corollary
+  `beginRoundFor_foldlM_enqueueShootdown_isSome`, and the
+  **hypothesis-free masked capstone**
+  `shootdownRoundFor_restores_quiescent` — no coverage premise, since
+  non-targets are never waited on.  Zero sorry/axiom.
+
+Suite 75 → **81 assertions / 12 groups** (§3.12 partial-online round:
+offline-born-acked flags, the online-only completion, the
+`smp_enabled=false` no-target round, the all-online ≡ unmasked
+bridge); Tier-3 anchors extended.  Version bumped 0.32.74 → 0.32.75.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §5 (SM7.A audit record); PR #838
+
 ## v0.32.74 — WS-SM SM7.A audit cut: round-serialisation contract corrected + coalescing coverage completed
 
 Three-lane adversarial audit of PR #838 (independent Lean proof-vacuity

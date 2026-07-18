@@ -152,6 +152,18 @@ open SeLe4n.Kernel.Concurrency
 #check @ShootdownRoundLockId
 #check @ShootdownRoundLockId.singleton
 
+-- SM7.A PR #838 review P1 — target-masked round open (offline cores
+-- born-acknowledged) + masked capstone:
+#check @beginShootdownRoundFor
+#check @beginShootdownRoundFor_ackOnCore_iff
+#check @beginShootdownRoundFor_frame_pending
+#check @beginShootdownRoundFor_preserves_pendingBounded
+#check @beginShootdownRoundFor_allCores_eq
+#check @foldl_setAckFalse_ackOnCore
+#check @foldl_setAckFalse_pendingOnCore
+#check @beginRoundFor_foldlM_enqueueShootdown_isSome
+#check @shootdownRoundFor_restores_quiescent
+
 -- SM7.A completion cut — round-level composition + the quiescence
 -- capstone:
 #check @completeShootdownOnCore
@@ -277,6 +289,17 @@ example (st : TlbShootdownState) (target : CoreId)
 -- "at most one round in flight" is structural.
 example (a b : ShootdownRoundLockId) : a = b :=
   ShootdownRoundLockId.singleton a b
+
+-- SM7.A PR #838 review P1: a masked round (targets = the online
+-- non-initiator cores) restores quiescence with NO coverage
+-- hypothesis — offline cores are born-acknowledged, never waited on.
+example {st : TlbShootdownState} (hq : shootdownQuiescent st)
+    (initiator : CoreId) {targets : List CoreId}
+    {d : TlbShootdownDescriptor} {posted : TlbShootdownState}
+    (hpost : targets.foldlM (fun s c => enqueueShootdown s c d)
+      (beginShootdownRoundFor st initiator targets) = some posted) :
+    shootdownQuiescent (targets.foldl completeShootdownOnCore posted) :=
+  shootdownRoundFor_restores_quiescent hq initiator hpost
 
 -- SM7.A completion cut: the default SystemState mounts the quiescent
 -- shootdown state (decidable + theorem forms).
@@ -645,6 +668,33 @@ private def runMountChecks : IO Unit := do
       st.tlbShootdown)
 
 -- ----------------------------------------------------------------------------
+-- §3.12  Partial-online (masked) round — PR #838 review P1
+-- ----------------------------------------------------------------------------
+
+private def runMaskedRoundChecks : IO Unit := do
+  IO.println "-- §3.12 partial-online (masked) round"
+  -- smp_max_cores=2 shape: cores 0 (initiator) and 1 online; 2, 3 offline.
+  let opened := beginShootdownRoundFor TlbShootdownState.initial core0 [core1]
+  assertBool "offline cores are born-acknowledged, online target is not"
+    (opened.ackOnCore core0 && !(opened.ackOnCore core1) &&
+      opened.ackOnCore core2 && opened.ackOnCore core3)
+  assertBool "the masked round genuinely waits on the online target"
+    (!(decide (allAcked opened)))
+  match enqueueShootdown opened core1 descUnmapPage with
+  | none => assertBool "posting to the online target succeeds" false
+  | some posted => do
+    let final := [core1].foldl completeShootdownOnCore posted
+    assertBool "the round completes without cores 2/3 ever acknowledging"
+      (decide (allAcked final))
+    assertBool "the completed masked round is quiescent at the boot state"
+      (decide (shootdownQuiescent final) && final == TlbShootdownState.initial)
+  assertBool "smp_enabled=false shape: a no-target round is immediately done"
+    (decide (allAcked (beginShootdownRoundFor TlbShootdownState.initial core0 [])))
+  assertBool "all-online masked round equals the unmasked round"
+    (beginShootdownRoundFor TlbShootdownState.initial core2 allCores ==
+      beginShootdownRound TlbShootdownState.initial core2)
+
+-- ----------------------------------------------------------------------------
 -- Runner
 -- ----------------------------------------------------------------------------
 
@@ -662,6 +712,7 @@ def runSmpTlbShootdownChecks : IO Unit := do
   runRoundCompositionChecks
   runLockOrderChecks
   runMountChecks
+  runMaskedRoundChecks
   IO.println "===================================================="
   IO.println "All SM7.A TLB shootdown descriptor + state checks PASS."
 

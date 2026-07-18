@@ -992,6 +992,141 @@ theorem beginShootdownRound_preserves_pendingBounded
   exact hB c
 
 -- ============================================================================
+-- SM7.A — Target-masked round initialization (PR #838 review P1)
+-- ============================================================================
+
+/-- **WS-SM SM7.A (PR #838 review P1)**: closed form for a fold of
+per-core ack clears — a core's flag is `false` exactly when the fold
+visited it, and untouched otherwise. -/
+theorem foldl_setAckFalse_ackOnCore (l : List CoreId) :
+    ∀ (st : TlbShootdownState) (c : CoreId),
+      (l.foldl (fun (s : TlbShootdownState) x => s.setAckOnCore x false)
+          st).ackOnCore c =
+        if c ∈ l then false else st.ackOnCore c := by
+  induction l with
+  | nil => intro st c; simp
+  | cons x xs ih =>
+    intro st c
+    rw [List.foldl_cons, ih]
+    by_cases hcx : c ∈ xs
+    · simp [hcx, List.mem_cons]
+    · by_cases hce : c = x
+      · subst hce
+        simp [hcx]
+      · rw [if_neg hcx, if_neg (by simp [List.mem_cons, hce, hcx])]
+        exact TlbShootdownState.setAckOnCore_ackOnCore_ne st x c false
+          (fun h => hce h.symm)
+
+/-- **WS-SM SM7.A (PR #838 review P1)**: a fold of ack clears never
+touches any pending queue. -/
+theorem foldl_setAckFalse_pendingOnCore (l : List CoreId) :
+    ∀ (st : TlbShootdownState) (c : CoreId),
+      (l.foldl (fun (s : TlbShootdownState) x => s.setAckOnCore x false)
+          st).pendingOnCore c =
+        st.pendingOnCore c := by
+  induction l with
+  | nil => intro st c; rfl
+  | cons x xs ih =>
+    intro st c
+    rw [List.foldl_cons, ih]
+    simp
+
+/-- **WS-SM SM7.A (PR #838 review P1)**: open a shootdown round against
+an explicit **target set** — only the targets start unacknowledged;
+every non-target (and the initiator) is born-`true`.
+
+This is the model of the runtime's online-masked reset
+(`reset_for_round_in_slice_masked`, `shootdown.rs`): in a partial-core
+boot (`smp_enabled=false` — the v1.0.0 default — an `smp_max_cores`
+cap, or a PSCI CPU_ON rejection), an offline core can never take the
+`.tlbShootdownReq` SGI and acknowledge, so clearing its flag would
+make `allAcked` permanently unreachable and hang the initiator's wait
+loop.  Leaving it born-acknowledged is safe: every secondary bring-up
+runs `tlbi vmalle1` before enabling its MMU
+(`rust/sele4n-hal/src/mmu.rs::init_mmu_secondary`), so a core that was
+offline during a round comes online with an empty TLB.  SM7.B's
+target-set computation must pass exactly the online non-initiator
+cores, and rounds must not race core bring-up (bring-up completes
+during boot, before any user mapping exists to shoot down).
+
+`beginShootdownRoundFor · allCores` is exactly `beginShootdownRound`
+(`beginShootdownRoundFor_allCores_eq`) — the fully-online
+configuration. -/
+def beginShootdownRoundFor (st : TlbShootdownState) (initiator : CoreId)
+    (targets : List CoreId) : TlbShootdownState :=
+  (targets.foldl (fun (s : TlbShootdownState) c => s.setAckOnCore c false)
+      { st with shootdownAck := Vector.replicate numCores true }).setAckOnCore
+    initiator true
+
+/-- **WS-SM SM7.A (PR #838 review P1)**: at a masked round's start, a
+core is acknowledged iff it is the initiator or not a target — the
+non-target ("offline") cores are never waited on. -/
+theorem beginShootdownRoundFor_ackOnCore_iff (st : TlbShootdownState)
+    (initiator : CoreId) (targets : List CoreId) (c : CoreId) :
+    (beginShootdownRoundFor st initiator targets).ackOnCore c = true ↔
+      (c = initiator ∨ c ∉ targets) := by
+  unfold beginShootdownRoundFor
+  by_cases hci : c = initiator
+  · subst hci
+    simp
+  · rw [TlbShootdownState.setAckOnCore_ackOnCore_ne _ initiator c true
+      (fun h => hci h.symm)]
+    rw [foldl_setAckFalse_ackOnCore]
+    by_cases hct : c ∈ targets
+    · simp [hct, hci]
+    · simp [hct, hci, TlbShootdownState.ackOnCore]
+
+/-- **WS-SM SM7.A (PR #838 review P1)**: opening a masked round never
+touches any pending queue. -/
+theorem beginShootdownRoundFor_frame_pending (st : TlbShootdownState)
+    (initiator : CoreId) (targets : List CoreId) (c : CoreId) :
+    (beginShootdownRoundFor st initiator targets).pendingOnCore c =
+      st.pendingOnCore c := by
+  unfold beginShootdownRoundFor
+  rw [TlbShootdownState.setAckOnCore_pendingOnCore,
+      foldl_setAckFalse_pendingOnCore]
+  rfl
+
+/-- **WS-SM SM7.A (PR #838 review P1)**: opening a masked round
+preserves the capacity invariant. -/
+theorem beginShootdownRoundFor_preserves_pendingBounded
+    {st : TlbShootdownState} (hB : pendingBounded st) (initiator : CoreId)
+    (targets : List CoreId) :
+    pendingBounded (beginShootdownRoundFor st initiator targets) := by
+  intro c
+  rw [beginShootdownRoundFor_frame_pending]
+  exact hB c
+
+/-- **WS-SM SM7.A (PR #838 review P1)**: with every core targeted, the
+masked round-open is exactly `beginShootdownRound` — the fully-online
+configuration collapses to the unmasked form (mechanically mirrored by
+the Rust `sm7a3_masked_reset_all_online_equals_unmasked_reset` test). -/
+theorem beginShootdownRoundFor_allCores_eq (st : TlbShootdownState)
+    (initiator : CoreId) :
+    beginShootdownRoundFor st initiator allCores =
+      beginShootdownRound st initiator := by
+  apply TlbShootdownState.ext_perCore
+  · intro c
+    rw [beginShootdownRoundFor_frame_pending, beginShootdownRound_frame_pending]
+  · intro c
+    by_cases hci : c = initiator
+    · subst hci
+      rw [(beginShootdownRoundFor_ackOnCore_iff st c allCores c).mpr
+            (Or.inl rfl),
+          beginShootdownRound_ackOnCore_initiator]
+    · have hmem : c ∈ allCores := by
+        simp [SeLe4n.Kernel.Concurrency.allCores]
+      have h1 : (beginShootdownRoundFor st initiator allCores).ackOnCore c
+          = false := by
+        cases hval : (beginShootdownRoundFor st initiator allCores).ackOnCore c
+        · rfl
+        · exact absurd
+            ((beginShootdownRoundFor_ackOnCore_iff st initiator allCores c).mp
+              hval)
+            (by simp [hci, hmem])
+      rw [h1, beginShootdownRound_ackOnCore_target st hci]
+
+-- ============================================================================
 -- SM7.A — Round-level composition (the SM7.B protocol's state skeleton)
 -- ============================================================================
 
@@ -1147,6 +1282,49 @@ theorem shootdownRound_restores_quiescent
       subst hci
       rw [foldlM_enqueueShootdown_frame_ack hpost c,
           beginShootdownRound_ackOnCore_initiator]
+
+/-- **WS-SM SM7.A (PR #838 review P1)**: a masked round's posting fold
+from a quiescent state always succeeds — the partial-online analogue of
+`beginRound_foldlM_enqueueShootdown_isSome`. -/
+theorem beginRoundFor_foldlM_enqueueShootdown_isSome
+    {st : TlbShootdownState} (hq : shootdownQuiescent st)
+    (initiator : CoreId) {targets : List CoreId} (hnd : targets.Nodup)
+    (d : TlbShootdownDescriptor) :
+    (targets.foldlM (fun s c => enqueueShootdown s c d)
+      (beginShootdownRoundFor st initiator targets)).isSome := by
+  refine foldlM_enqueueShootdown_isSome targets _ hnd (fun c _ => ?_) d
+  rw [beginShootdownRoundFor_frame_pending]
+  exact hq.1 c
+
+/-- **WS-SM SM7.A capstone, masked form (PR #838 review P1)**: a
+complete round against an arbitrary target set restores quiescence —
+no coverage hypothesis needed, because non-targets ("offline" cores)
+are born-acknowledged rather than waited on.  This is the round
+SM7.B actually runs on a partial-core boot: targets = the online
+non-initiator cores; the liveness half of the review-P1 fix, stated
+generally. -/
+theorem shootdownRoundFor_restores_quiescent
+    {st : TlbShootdownState} (hq : shootdownQuiescent st)
+    (initiator : CoreId) {targets : List CoreId}
+    {d : TlbShootdownDescriptor} {posted : TlbShootdownState}
+    (hpost : targets.foldlM (fun s c => enqueueShootdown s c d)
+      (beginShootdownRoundFor st initiator targets) = some posted) :
+    shootdownQuiescent (targets.foldl completeShootdownOnCore posted) := by
+  constructor
+  · intro c
+    rw [foldl_completeShootdownOnCore_pendingOnCore]
+    by_cases hc : c ∈ targets
+    · rw [if_pos hc]
+    · rw [if_neg hc, foldlM_enqueueShootdown_frame_pending hpost hc,
+          beginShootdownRoundFor_frame_pending]
+      exact hq.1 c
+  · intro c
+    rw [foldl_completeShootdownOnCore_ackOnCore]
+    by_cases hc : c ∈ targets
+    · rw [if_pos hc]
+    · rw [if_neg hc, foldlM_enqueueShootdown_frame_ack hpost c]
+      exact (beginShootdownRoundFor_ackOnCore_iff st initiator targets c).mpr
+        (Or.inr hc)
 
 -- ============================================================================
 -- SM7.A — Round + per-core pending-queue lock identifiers (the SM7.B.7 seam)

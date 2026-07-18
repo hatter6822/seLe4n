@@ -859,6 +859,13 @@ run_check "INVARIANT" rg -n '^structure ShootdownRoundLockId' SeLe4n/Kernel/Arch
 run_check "INVARIANT" rg -n '^theorem ShootdownRoundLockId\.singleton' SeLe4n/Kernel/Architecture/TlbShootdown.lean
 run_check "INVARIANT" rg -n '^theorem enqueueShootdownOrCoalesce_pending_covered' SeLe4n/Kernel/Architecture/TlbShootdown.lean
 run_check "INVARIANT" rg -n 'Round serialisation contract' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+# SM7.A PR #838 review P1 — offline-core-aware round open: the Rust masked
+# reset + the Lean target-masked round-open and its hcov-free capstone.
+run_check "INVARIANT" rg -n '^pub fn reset_for_round_in_slice_masked' rust/sele4n-hal/src/shootdown.rs
+run_check "INVARIANT" rg -n '^def beginShootdownRoundFor' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^theorem beginShootdownRoundFor_allCores_eq' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^theorem shootdownRoundFor_restores_quiescent' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^private def runMaskedRoundChecks' tests/SmpTlbShootdownSuite.lean
 run_check "INVARIANT" rg -n '^pub extern "C" fn ffi_shootdown_ack_set' rust/sele4n-hal/src/ffi.rs
 run_check "INVARIANT" rg -n '^pub extern "C" fn ffi_shootdown_all_acked' rust/sele4n-hal/src/ffi.rs
 run_check "INVARIANT" rg -n 'extern "ffi_shootdown_ack_set"' SeLe4n/Platform/FFI.lean

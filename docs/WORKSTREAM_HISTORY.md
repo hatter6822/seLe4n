@@ -59,6 +59,25 @@ trace byte-identical.  Follow-up registered (pre-existing, not
 SM7.A-specific): crate-wide `@[extern] … BaseIO` ↔ `extern "C"` ABI
 conformance audit once a linked runtime path exists (SM9.E).
 
+**PR #838 review P1 (v0.32.75) — offline cores stay acknowledged.**
+The Codex review caught a liveness defect the audit's serialised-regime
+analysis had not: `reset_for_round` cleared every `SHOOTDOWN_ACK` slot,
+yet in a partial-core boot (`smp_enabled=false` — the v1.0.0 default —
+`smp_max_cores` caps, PSCI rejections) an offline core can never take
+the `.tlbShootdownReq` SGI and acknowledge, so `all_acked` became
+permanently unreachable.  Fixed on both sides: the Rust reset reads
+`smp::CORE_READY` and leaves non-online cores **born-acknowledged**
+(new masked inner form `reset_for_round_in_slice_masked`; safety — every
+secondary bring-up runs `tlbi vmalle1` before MMU-enable, so a
+late-onlined core starts with an empty TLB); the Lean model gains the
+target-masked `beginShootdownRoundFor` (+ `_ackOnCore_iff`, frames,
+bounded-preservation, the `_allCores_eq` fully-online bridge, closed
+forms `foldl_setAckFalse_*`) and the **hypothesis-free masked
+capstone** `shootdownRoundFor_restores_quiescent`.  SM7.B obligations
+extended: online-only target sets; no rounds concurrent with core
+bring-up.  Suite 75 → **81 assertions / 12 groups**; HAL 750 → 755;
+zero sorry/axiom.
+
 **Completion cut (v0.32.73) — every v0.32.72 deferral closed.**
 **(1) SystemState mount**: `SystemState.tlbShootdown : TlbShootdownState
 := .initial` (`Model/State.lean`) realises the plan §4.1

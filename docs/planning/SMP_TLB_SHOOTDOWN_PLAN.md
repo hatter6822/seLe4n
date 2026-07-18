@@ -191,7 +191,7 @@ initiators) as the ready seam for SM7.B.7's
 (`ffi_shootdown_*` + typed `CoreId` wrappers +
 `shootdownAck_ffi_core_in_range`).  Tests:
 `tests/SmpTlbShootdownSuite.lean` (`smp_tlb_shootdown_suite`, the
-SM7.E.1 seed — 75 assertions / 11 groups), Tier-2 + Tier-3 wired.
+SM7.E.1 seed — 81 assertions / 12 groups), Tier-2 + Tier-3 wired.
 
 **Audit record (v0.32.74, three-lane adversarial audit of PR #838).**
 Two confirmed findings, both fixed in the audit cut; everything else
@@ -221,6 +221,23 @@ documented-count truthfulness) verified sound.
    `enqueueShootdownOrCoalesce_pending_covered` (every *previously
    queued* descriptor is still pending or superseded by a `.vmalle1`),
    complementing `…_request_covered` for the new descriptor.
+
+3. **PR #838 review P1 (v0.32.75): offline cores stay acknowledged.**
+   `reset_for_round` cleared all four `SHOOTDOWN_ACK` slots, but in a
+   partial-core boot an offline core can never take the SGI and ack —
+   the wait loop would hang.  Fixed: the reset reads `smp::CORE_READY`
+   and leaves non-online cores born-acknowledged
+   (`reset_for_round_in_slice_masked`); safe because every secondary
+   bring-up runs `tlbi vmalle1` before MMU-enable
+   (`init_mmu_secondary`), so late-onlined cores start with empty
+   TLBs.  Lean mirror: `beginShootdownRoundFor` (targets = online
+   non-initiator cores) + the hypothesis-free masked capstone
+   `shootdownRoundFor_restores_quiescent` + the
+   `beginShootdownRoundFor_allCores_eq` fully-online bridge.
+   **SM7.B obligations extended**: the target-set computation must
+   enumerate online cores only, and rounds must not race core
+   bring-up (bring-up completes during boot, before any user mapping
+   exists to shoot down).
 
 Follow-up (pre-existing, NOT SM7.A-specific, out of this phase's
 scope): a crate-wide conformance audit of the SM1-era

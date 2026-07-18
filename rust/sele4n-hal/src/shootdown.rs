@@ -12,9 +12,13 @@
 //!
 //! A shootdown round for `(asid, vaddr)` initiated by core `c₀`:
 //!
-//! 1. `c₀` calls [`reset_for_round`]`(c₀)` — every flag drops to
-//!    `false` except `c₀`'s own (the initiator invalidates locally and
-//!    is never waited on).
+//! 1. `c₀` calls [`reset_for_round`]`(c₀)` — every **online** core's
+//!    flag drops to `false` except `c₀`'s own (the initiator
+//!    invalidates locally and is never waited on).  Offline cores stay
+//!    born-acknowledged — they can never take the SGI, and they come
+//!    online with an empty TLB (`tlbi vmalle1` in
+//!    [`crate::mmu::init_mmu_secondary`]) — see
+//!    [`reset_for_round_in_slice_masked`] (PR #838 review P1).
 //! 2. `c₀` posts one descriptor per target into the Lean-side pending
 //!    queues, then fires a `.tlbShootdownReq` SGI per target.
 //!    [`crate::gic::send_sgi`] emits `dsb ish` **before** the GICD_SGIR
@@ -234,7 +238,9 @@ pub fn ack_is_set_in_slice(slots: &[ShootdownAckFlag], core_id: usize) -> bool {
 /// in an explicit slice — every flag drops to `false` except the
 /// initiator's own, which is born-`true` (the initiator invalidates
 /// locally and is never waited on).  Mirrors the Lean
-/// `beginShootdownRound` exactly (`beginShootdownRound_ackOnCore_iff`).
+/// `beginShootdownRound` exactly (`beginShootdownRound_ackOnCore_iff`)
+/// — the fully-online configuration; partial-core boots go through
+/// [`reset_for_round_in_slice_masked`].
 ///
 /// Stores are `Relaxed`; see the module docs for why the `dsb ish`
 /// inside [`crate::gic::send_sgi`] (SM1.F.8) plus same-location
@@ -250,6 +256,55 @@ pub fn reset_for_round_in_slice(slots: &[ShootdownAckFlag], initiator: usize) {
     );
     for (i, slot) in slots.iter().enumerate() {
         slot.acked.store(i == initiator, Ordering::Relaxed);
+    }
+}
+
+/// **WS-SM SM7.A.3** (testable inner form; PR #838 review P1): open a
+/// new shootdown round with an explicit **online mask** — a flag drops
+/// to `false` only when its core is online and not the initiator;
+/// offline cores stay **born-acknowledged**.
+///
+/// Rationale (liveness): in a partial-core boot (`smp_enabled=false` —
+/// the v1.0.0 default — an `smp_max_cores` cap, or a PSCI CPU_ON
+/// rejection leaving only a prefix of secondaries online), an offline
+/// core can never receive the `.tlbShootdownReq` SGI and call
+/// [`ack_set`]; clearing its flag would make [`all_acked`] permanently
+/// unreachable and hang the initiator's wait loop.
+///
+/// Rationale (safety): an offline core holds no stale translations —
+/// every secondary bring-up path runs `tlbi vmalle1` + DSB + ISB
+/// before enabling its MMU ([`crate::mmu::init_mmu_secondary`]), so a
+/// core that comes online *after* a round it was excluded from starts
+/// with an empty TLB.  SM7.B's target-set computation must likewise
+/// target online cores only, and rounds must not race core bring-up
+/// (bring-up completes during boot, before any user mapping exists to
+/// shoot down).
+///
+/// Mirrors the Lean `beginShootdownRoundFor` (targets = the online
+/// non-initiator cores; `beginShootdownRoundFor_ackOnCore_iff`).
+/// Panics on out-of-range `initiator` or a mask/slot length mismatch
+/// (fail-closed).
+#[inline]
+pub fn reset_for_round_in_slice_masked(
+    slots: &[ShootdownAckFlag],
+    initiator: usize,
+    online: &[bool],
+) {
+    assert!(
+        initiator < slots.len(),
+        "WS-SM SM7.A.3: reset_for_round_in_slice_masked: initiator {} out of range (expected < {})",
+        initiator,
+        slots.len()
+    );
+    assert!(
+        online.len() == slots.len(),
+        "WS-SM SM7.A.3: reset_for_round_in_slice_masked: online mask length {} != slot count {}",
+        online.len(),
+        slots.len()
+    );
+    for (i, slot) in slots.iter().enumerate() {
+        slot.acked
+            .store(i == initiator || !online[i], Ordering::Relaxed);
     }
 }
 
@@ -286,15 +341,28 @@ pub fn ack_is_set(core_id: usize) -> bool {
 }
 
 /// **WS-SM SM7.A.3**: open a new shootdown round in [`SHOOTDOWN_ACK`]
-/// — the runtime realisation of the Lean `beginShootdownRound`
-/// (plan §3.2 step 1).  Must only be called by the round initiator
-/// under the global shootdown-round lock (the module-header round-
-/// serialisation contract; SM7.B.7 — the per-VSpace VSpaceRoot lock
-/// alone is NOT sufficient);
-/// panics on out-of-range `initiator` (fail-closed).
+/// — the runtime realisation of the Lean `beginShootdownRound` /
+/// `beginShootdownRoundFor` (plan §3.2 step 1).  Must only be called
+/// by the round initiator under the global shootdown-round lock (the
+/// module-header round-serialisation contract; SM7.B.7 — the
+/// per-VSpace VSpaceRoot lock alone is NOT sufficient); panics on
+/// out-of-range `initiator` (fail-closed).
+///
+/// **Offline cores stay born-acknowledged** (PR #838 review P1): the
+/// online set is read from [`crate::smp::CORE_READY`], so a
+/// partial-core boot (`smp_enabled=false`, an `smp_max_cores` cap, or
+/// a PSCI rejection) cannot hang the initiator's [`all_acked`] wait on
+/// a core that can never take the SGI.  Safety and the SM7.B target-set
+/// obligation: see [`reset_for_round_in_slice_masked`].
 #[inline]
 pub fn reset_for_round(initiator: usize) {
-    reset_for_round_in_slice(&SHOOTDOWN_ACK, initiator);
+    let online: [bool; MAX_SECONDARY_CORES + 1] = [
+        crate::smp::CORE_READY[0].load(Ordering::Relaxed),
+        crate::smp::CORE_READY[1].load(Ordering::Relaxed),
+        crate::smp::CORE_READY[2].load(Ordering::Relaxed),
+        crate::smp::CORE_READY[3].load(Ordering::Relaxed),
+    ];
+    reset_for_round_in_slice_masked(&SHOOTDOWN_ACK, initiator, &online);
 }
 
 /// **WS-SM SM7.A.3**: acquire-poll every flag in [`SHOOTDOWN_ACK`] —
@@ -529,6 +597,81 @@ mod tests {
             !ack_is_set_in_slice(&slots, 0),
             "previous initiator now a target"
         );
+    }
+
+    #[test]
+    fn sm7a3_masked_reset_keeps_offline_cores_acknowledged() {
+        // PR #838 review P1: a partial-core boot must not let a round
+        // wait on a core that can never take the SGI.  Boot core 0
+        // online, cores 2 and 3 offline (e.g. smp_max_cores=2).
+        let slots = fresh_boot_flags();
+        reset_for_round_in_slice_masked(&slots, 0, &[true, true, false, false]);
+        assert!(
+            ack_is_set_in_slice(&slots, 0),
+            "initiator born-acknowledged"
+        );
+        assert!(
+            !ack_is_set_in_slice(&slots, 1),
+            "online target starts unacked"
+        );
+        assert!(
+            ack_is_set_in_slice(&slots, 2),
+            "offline core stays acknowledged"
+        );
+        assert!(
+            ack_is_set_in_slice(&slots, 3),
+            "offline core stays acknowledged"
+        );
+    }
+
+    #[test]
+    fn sm7a3_masked_round_trip_reaches_all_acked_with_partial_online() {
+        // Only the online target must acknowledge for the round to
+        // complete — the liveness half of the review-P1 fix.
+        let slots = fresh_boot_flags();
+        reset_for_round_in_slice_masked(&slots, 0, &[true, true, false, false]);
+        assert!(!all_acked_in_slice(&slots), "online target outstanding");
+        ack_set_in_slice(&slots, 1);
+        assert!(
+            all_acked_in_slice(&slots),
+            "round completes without offline cores 2/3 ever acking"
+        );
+    }
+
+    #[test]
+    fn sm7a3_masked_reset_single_core_boot_is_immediately_all_acked() {
+        // smp_enabled=false (the v1.0.0 default): only the boot core is
+        // online, so a round has no remote targets and completes at
+        // once — the wait loop must not spin on cores 1..3.
+        let slots = fresh_boot_flags();
+        reset_for_round_in_slice_masked(&slots, 0, &[true, false, false, false]);
+        assert!(all_acked_in_slice(&slots));
+    }
+
+    #[test]
+    fn sm7a3_masked_reset_all_online_equals_unmasked_reset() {
+        // With every core online the masked form is exactly the
+        // fully-online reset (the Lean beginShootdownRoundFor-allCores
+        // = beginShootdownRound bridge, mechanically).
+        let masked = fresh_boot_flags();
+        let unmasked = fresh_boot_flags();
+        reset_for_round_in_slice_masked(&masked, 2, &[true, true, true, true]);
+        reset_for_round_in_slice(&unmasked, 2);
+        for core in 0..4 {
+            assert_eq!(
+                ack_is_set_in_slice(&masked, core),
+                ack_is_set_in_slice(&unmasked, core),
+                "core {} differs between masked(all-online) and unmasked",
+                core
+            );
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "online mask length 3 != slot count 4")]
+    fn sm7a3_masked_reset_panics_on_mask_length_mismatch() {
+        let slots = fresh_boot_flags();
+        reset_for_round_in_slice_masked(&slots, 0, &[true, true, false]);
     }
 
     #[test]
