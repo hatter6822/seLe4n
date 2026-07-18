@@ -131,11 +131,16 @@ pub extern "C" fn ffi_gic_is_spurious(intid: u32) -> bool {
 
 /// Flush all TLB entries at EL1 (TLBI VMALLE1 + DSB ISH + ISB).
 ///
-/// **Local (non-broadcast) variant**.  Reserved for the boot-time
-/// MMU-init path BEFORE secondaries have started; production
-/// kernel code under SMP must use [`ffi_tlbi_for_sharing`] to
-/// route through the IS or OS variant per the platform's
-/// `SharingDomain`.
+/// **Local (non-broadcast) variant**.  Two legitimate callers:
+/// the boot-time MMU-init path BEFORE secondaries have started, and
+/// — WS-SM SM7.B.7 — the shootdown round-lock's cooperative
+/// self-service arm (`Concurrency.tlbiLocalFullFlush`), where a
+/// lock-waiter discharges its OWN pending shootdown obligation by
+/// cleaning exactly its own view before release-acknowledging
+/// (mirroring the `.tlbShootdownReq` handler's local
+/// `tlbi vmalle1`).  All other production kernel code under SMP
+/// must use [`ffi_tlbi_for_sharing`] to route through the IS or OS
+/// variant per the platform's `SharingDomain`.
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiTlbiAll`
 #[no_mangle]

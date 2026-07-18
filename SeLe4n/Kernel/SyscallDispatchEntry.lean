@@ -26,6 +26,11 @@ import SeLe4n.Kernel.IPC.CrossCore.Cancellation
 import SeLe4n.Kernel.Architecture.TlbShootdownProtocol
 import SeLe4n.Kernel.Architecture.TlbShootdownWait
 import SeLe4n.Kernel.Architecture.TlbiForSharing
+-- WS-SM SM7.B.12: the RPi5 platform binding — `shootdownSharingDomain`
+-- reads `PlatformBinding.sharingDomain` directly, so a multi-cluster
+-- port that changes the binding flips the live round's TLBI domain
+-- without touching this module.
+import SeLe4n.Platform.RPi5.Contract
 import SeLe4n.Platform.FFI
 
 /-!
@@ -71,13 +76,31 @@ open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (CoreId SgiKind)
 
 /-- **WS-SM SM7.B.12**: the sharing domain the live shootdown round's
-TLBIs are issued in.  `.inner` on the single-cluster BCM2712
-(`PlatformBinding.sharingDomain RPi5Platform = .inner`; the test suite
-pins the agreement) — a multi-cluster port flips this to `.outer`, and
-only this: the state protocol is domain-invariant
-(`Architecture.tlbShootdown_outer_correct`), so every SM7.B round
-theorem carries over unchanged. -/
-def shootdownSharingDomain : Concurrency.SharingDomain := .inner
+TLBIs are issued in — read **directly from the platform binding**
+(`PlatformBinding.sharingDomain`), so the entry follows the platform:
+`.inner` on the single-cluster BCM2712 (the test suite `rfl`-pins the
+computed value), `.outer` on a multi-cluster port that changes the
+binding — and only this changes: the state protocol is
+domain-invariant (`Architecture.tlbShootdown_outer_correct`), so every
+SM7.B round theorem carries over unchanged. -/
+def shootdownSharingDomain : Concurrency.SharingDomain :=
+  Platform.PlatformBinding.sharingDomain
+    (platform := Platform.RPi5.RPi5Platform)
+
+/-- **WS-SM SM7.B.12**: the RPi5 binding computes `.inner` — the
+single-cluster BCM2712 pin, now derived rather than hardcoded. -/
+theorem shootdownSharingDomain_rpi5 :
+    shootdownSharingDomain = .inner := rfl
+
+/-- **WS-SM SM7.B.7**: the cooperative round-lock acquire's retry
+budget.  Covers > 10⁵ round-lengths of retries (a round completes in
+< 1 µs on the 4-core BCM2712, plan §3.4) — exhaustion means a
+genuinely wedged round holder. -/
+def shootdownRoundLockAcquireFuel : Nat := 1000000
+
+/-- **WS-SM SM7.B.7**: the budget literal, pinned. -/
+theorem shootdownRoundLockAcquireFuel_value :
+    shootdownRoundLockAcquireFuel = 1000000 := rfl
 
 /-- **WS-SM SM7.B.7**: the cooperative round-lock acquire — spin on the
 try-lock, and on every failed attempt **service this core's own
@@ -109,10 +132,14 @@ def acquireShootdownRoundLockServicingSelf
           pure ()
         else
           if !(← Concurrency.shootdownAckIsSet execCore) then
-            Architecture.tlbiForSharing shootdownSharingDomain .vmalle1
+            -- Self-service is a LOCAL obligation: clean exactly this
+            -- core's view (the Rust handler's `tlbi vmalle1`), then
+            -- release-acknowledge.  The in-flight round's initiator
+            -- owns the broadcast step — no IS-broadcast here.
+            Concurrency.tlbiLocalFullFlush
             Concurrency.shootdownAckSet execCore
           go fuel
-  go 1000000
+  go shootdownRoundLockAcquireFuel
 
 /-- **WS-SM SM7.B (the live round runtime)**: complete the shootdown
 round(s) a syscall commit posted — the runtime realisation of plan
@@ -137,7 +164,10 @@ cooperatively, `acquireShootdownRoundLockServicingSelf`):
    (`handleTlbShootdownReqOnCore_idempotent`); poking a subset could
    strand a reset flag and hang the wait.
 3. The initiator's local broadcast TLBIs — one `tlbiForSharing` per
-   posted operand (each ends with the `dsb`+`isb` bracket).
+   posted operand after the `vmalle1`-dominance collapse
+   (`collapseShootdownOps`; effect-exact by
+   `collapseShootdownOps_effect_eq`); each ends with the `dsb`+`isb`
+   bracket.
 4. Bounded `allAcked` wait; timeout is a fail-closed panic
    (`shootdown_timeout_handling`: the verdict is exact, so the panic
    only fires on a genuinely hung round).
@@ -158,10 +188,16 @@ def completeShootdownRounds (changed : List Concurrency.CoreId)
   else do
     acquireShootdownRoundLockServicingSelf execCore
     Concurrency.shootdownResetForRound execCore
+    -- One CORE_READY snapshot per round (bring-up never overlaps a
+    -- round per the SM7.A P1 contract, so the snapshot is stable).
+    let onlineMask ← Concurrency.shootdownOnlineMask
     for c in Architecture.shootdownTargets execCore do
-      if (← Concurrency.shootdownCoreOnline c) then
+      if Concurrency.coreOnlineInMask onlineMask c then
         Concurrency.sendSgiToCore c .tlbShootdownReq
-    for op in ops do
+    -- A posted `vmalle1` supersedes every other operand — issue just
+    -- it (`collapseShootdownOps_effect_eq`: the collapsed list's TLB
+    -- effect is exactly the full list's).
+    for op in Architecture.collapseShootdownOps ops do
       Architecture.tlbiForSharing shootdownSharingDomain op
     let acked ← Concurrency.shootdownWaitAllAcked
       Architecture.shootdownWaitTimeoutTicks
@@ -173,6 +209,17 @@ def completeShootdownRounds (changed : List Concurrency.CoreId)
     Platform.FFI.modifyGetKernelState (fun st =>
       ((), (Architecture.shootdownTargets execCore).foldl
         Architecture.handleTlbShootdownReqOnCore st))
+
+/-- **WS-SM SM7.B** (structural marker): a commit that changed no
+pending-shootdown queue runs no round — no lock traffic, no reset, no
+SGIs, no TLBIs, no wait.  This is the non-shootdown-syscall inertness
+of the runtime bracket at the definition level (the state-diff half is
+`shootdownChangedTargets_nil_of_eq`); the trace fixture's
+byte-identity across the SM7.B landing rests on it. -/
+theorem completeShootdownRounds_nil
+    (ops : List Architecture.TlbInvalidation)
+    (execCore : Concurrency.CoreId) :
+    completeShootdownRounds [] ops execCore = pure () := rfl
 
 /-- **WS-SM SM6.A**: the cross-core-aware syscall dispatch entry — the live
 SGI-dispatch seam.  Reads the deployment labeling context and the executing core

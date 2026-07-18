@@ -838,6 +838,33 @@ production, LIVE behind the `.vspaceUnmap` / `.vspaceMap` /
   the boot-registered `.tlbShootdownReq` handler, `online_mask`) and the
   `gic::dispatch_irq_with_iar` full-IAR trap dispatch (GICv2-correct SGI
   EOI)
+- Completion cut (v0.32.77): `pendingBounded st.tlbShootdown` as the
+  **12th `proofLayerInvariantBundle` conjunct** (boot witness
+  `default_tlbShootdown_pendingBounded`; `bootFromPlatform_tlbShootdown_eq`
+  closes the Boot general bridge; `…_preserves_pendingBounded` across the
+  handler, `withShootdownRound`, all five syscall wrappers, and both
+  retype wrappers, on the `…_tlbShootdown_eq` frame family); handler
+  commutativity (`completeShootdownOnCore_comm` /
+  `handleTlbShootdownReqOnCore_comm` / `foldl_…_swap`); the
+  coalescing-round capstones (`coalescingRound_restores_quiescent` /
+  `_allAcked`) + `shootdownChangedTargets_coalescing_of_quiescent` +
+  `coveredQueueRetire_removes` →
+  `vspaceUnmapPageWithShootdown_remote_retire_removes` (Theorem 3.3.1's
+  total-posting remote case); remap-only map rounds
+  (`vspaceHasTranslation`, `…_fresh_inert`,
+  `vspaceMapPageCheckedWithFlushFromState_ok_fresh`, `…_never_posts`,
+  the defense-in-depth `…_remap_posts`); the least-index wait
+  (`waitAllAckedFrom_first` / `waitAllAckedBounded_least` /
+  `shootdown_wait_loop_terminates_least`); the round-lock CAS model
+  (`roundLockTryAcquire` success-iff-free / mutex / release-liveness)
+  + `shootdownRoundLock_release_acquire` (+ witness) + the 4-core
+  multi-pair B.4 witness; the typed-flush bridge
+  (`mem_adapterFlushTlbBy{VAddr,Asid}_of_mem_applyTlbInvalidation_…`);
+  `collapseShootdownOps_effect_eq`; `completeShootdownRounds_nil`;
+  `shootdownSharingDomain_rpi5` (the domain now derived from
+  `PlatformBinding.sharingDomain`); and the CSpaceAddr retype sibling
+  `lifecycleRetypeWithCleanupShootdown` (+ `_non_vspace` /
+  `_vspace_posts` / `_preserves_pendingBounded`)
 
 Cache coherency model (`CacheModel.lean`, AG8-B):
 - `CacheLineState` — invalid/clean/dirty abstraction of ARM64 D-cache and I-cache line state

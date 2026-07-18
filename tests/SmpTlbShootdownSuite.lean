@@ -14,6 +14,10 @@ import SeLe4n.Kernel.Architecture.TlbShootdownLockSet
 import SeLe4n.Kernel.Lifecycle.Operations.RetypeWrappers
 import SeLe4n.Kernel.SyscallDispatchEntry
 import SeLe4n.Kernel.Concurrency.Runtime
+-- SM7.B completion cut: §4.10 drives the live `.vspaceUnmap` syscall
+-- through the full public dispatch (CSpace resolution + authority gate
+-- + shootdown posting).
+import SeLe4n.Kernel.API
 import SeLe4n.Model.State
 import SeLe4n.Platform.RPi5.Contract
 import SeLe4n.Testing.StateBuilder
@@ -352,6 +356,90 @@ open SeLe4n.Kernel.Concurrency
 #check @SeLe4n.Platform.FFI.ffiShootdownRoundLockRelease
 #check @SeLe4n.Platform.FFI.ffiShootdownWaitAllAcked
 #check @SeLe4n.Platform.FFI.ffiShootdownOnlineMask
+
+-- SM7.B completion cut — invariant-bundle carriage (`pendingBounded`,
+-- the 12th `proofLayerInvariantBundle` conjunct) across every live
+-- shootdown-aware transition:
+#check @proofLayerInvariantBundle
+#check @default_system_state_proofLayerInvariantBundle
+#check @completeShootdownOnCore_preserves_pendingBounded
+#check @tlbShootdownLocal_preserves_pendingBounded
+#check @handleTlbShootdownReqOnCore_preserves_pendingBounded
+#check @withShootdownRound_preserves_pendingBounded
+#check @vspaceUnmapPageWithShootdown_preserves_pendingBounded
+#check @vspaceMapPageCheckedWithShootdownFromState_preserves_pendingBounded
+#check @tlbFlushByASIDWithShootdown_preserves_pendingBounded
+#check @tlbFlushByPageWithShootdown_preserves_pendingBounded
+#check @asidAllocateWithShootdown_preserves_pendingBounded
+#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdown_preserves_pendingBounded
+#check @SeLe4n.Model.storeObject_tlbShootdown_eq
+#check @SeLe4n.Model.default_tlbShootdown_pendingBounded
+#check @vspaceUnmapPageWithFlush_tlbShootdown_eq
+#check @SeLe4n.Kernel.lifecyclePreRetypeCleanup_tlbShootdown_eq
+#check @SeLe4n.Kernel.lifecycleRetypeWithCleanup_tlbShootdown_eq
+
+-- SM7.B completion cut — the CSpaceAddr retype-with-shootdown sibling
+-- (the storeObject-sweep closure):
+#check @SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdown
+#check @SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdown_non_vspace
+#check @SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdown_vspace_posts
+#check @SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdown_preserves_pendingBounded
+
+-- SM7.B completion cut — handler commutativity + coalesced coverage +
+-- diff characterization + coalescing-round capstones:
+#check @applyTlbInvalidation_comm
+#check @applyTlbInvalidations_comm
+#check @completeShootdownOnCore_comm
+#check @handleTlbShootdownReqOnCore_comm
+#check @foldl_handleTlbShootdownReqOnCore_swap
+#check @tlbEntryMatches_vmalle1
+#check @applyTlbInvalidations_of_mem_vmalle1
+#check @coveredQueueRetire_removes
+#check @vspaceUnmapPageWithShootdown_remote_retire_removes
+#check @shootdownChangedTargets_coalescing_of_quiescent
+#check @coalescingRound_restores_quiescent
+#check @coalescingRound_allAcked
+#check @mem_adapterFlushTlbByVAddr_of_mem_applyTlbInvalidation_encodePage
+#check @mem_adapterFlushTlbByAsid_of_mem_applyTlbInvalidation_encodeAsid
+
+-- SM7.B completion cut — least-index wait + round-lock CAS model +
+-- publication witnesses:
+#check @waitAllAckedFrom_first
+#check @waitAllAckedBounded_least
+#check @shootdown_wait_loop_terminates_least
+#check @AtomicLocation.shootdownRoundLockAt
+#check @AtomicLocation.shootdownRoundLockAt_ne_shootdownAckOf
+#check @roundLockTryAcquire
+#check @roundLockRelease
+#check @roundLockTryAcquire_success_iff
+#check @roundLockTryAcquire_post_held
+#check @roundLockTryAcquire_mutex
+#check @roundLockTryAcquire_after_release
+#check @shootdownRoundLockReleaseStore
+#check @shootdownRoundLockAcquireCas
+#check @shootdownRoundLock_release_acquire
+#check @shootdownRoundLock_release_acquire_witness
+#check @shootdownAck_release_acquire_multi_pair_witness
+
+-- SM7.B completion cut — remap-only map rounds + operand collapse +
+-- entry-surface constants:
+#check @vspaceHasTranslation
+#check @vspaceMapPageCheckedWithShootdownFromState_fresh_inert
+#check @vspaceMapPageCheckedWithFlushFromState_ok_fresh
+#check @vspaceMapPageCheckedWithShootdownFromState_never_posts
+#check @vspaceMapPageCheckedWithShootdownFromState_remap_posts
+#check @collapseShootdownOps
+#check @collapseShootdownOps_effect_eq
+#check @collapseShootdownOps_no_vmalle1
+#check @SeLe4n.Kernel.completeShootdownRounds_nil
+#check @SeLe4n.Kernel.shootdownRoundLockAcquireFuel
+#check @SeLe4n.Kernel.shootdownRoundLockAcquireFuel_value
+#check @SeLe4n.Kernel.shootdownSharingDomain_rpi5
+#check @SeLe4n.Kernel.Concurrency.shootdownOnlineMask
+#check @SeLe4n.Kernel.Concurrency.coreOnlineInMask
+#check @SeLe4n.Kernel.Concurrency.shootdownCoreOnline_eq_mask_test
+#check @SeLe4n.Kernel.Concurrency.tlbiLocalFullFlush
+#check @SeLe4n.Platform.FFI.ffiTlbiAll
 
 -- ============================================================================
 -- §2  Elaboration-time examples
@@ -1228,6 +1316,224 @@ private def runDiffRecoveryChecks : IO Unit := do
     (shootdownWaitTimeoutTicks == 540000)
 
 -- ----------------------------------------------------------------------------
+-- §4.9  Completion cut: bundle carriage, commutativity, capstones,
+--        remap detection, operand collapse, round-lock model (SM7.B)
+-- ----------------------------------------------------------------------------
+
+private def runCompletionCutChecks : IO Unit := do
+  IO.println "-- §4.9 completion cut: bundle carriage + commutativity + capstones"
+  let quiescent : SeLe4n.Model.SystemState :=
+    { (default : SeLe4n.Model.SystemState) with tlb := seededTlb }
+  -- (a) the 12th proofLayerInvariantBundle conjunct at boot
+  assertBool "the boot state satisfies the bundle's shootdown capacity conjunct"
+    (decide (pendingBounded (default : SeLe4n.Model.SystemState).tlbShootdown))
+  -- (b) positive diff characterization + coalescing-round capstones, computed
+  let posted := tlbShootdownBroadcastCoalescing quiescent core0
+    (shootdownTargets core0) opUnmapTarget
+  assertBool "the coalescing diff is exactly the round's target set"
+    (shootdownChangedTargets quiescent posted == shootdownTargets core0)
+  let final := (shootdownTargets core0).foldl handleTlbShootdownReqOnCore
+    (tlbShootdownLocal posted opUnmapTarget)
+  assertBool "the live coalescing round restores quiescence"
+    (decide (shootdownQuiescent final.tlbShootdown))
+  assertBool "the live coalescing round reaches allAcked"
+    (decide (allAcked final.tlbShootdown))
+  assertBool "the completed round preserves the capacity conjunct"
+    (decide (pendingBounded final.tlbShootdown))
+  assertBool "the completed round removed the unmapped translation"
+    (!(tlbHasEntry final.tlb entryTarget))
+  -- (c) handler commutativity, computed on the posted state
+  let ab := handleTlbShootdownReqOnCore
+    (handleTlbShootdownReqOnCore posted core1) core2
+  let ba := handleTlbShootdownReqOnCore
+    (handleTlbShootdownReqOnCore posted core2) core1
+  assertBool "distinct-core handler steps commute (shootdown projection)"
+    (decide (ab.tlbShootdown = ba.tlbShootdown))
+  assertBool "distinct-core handler steps commute (TLB view)"
+    (ab.tlb.entries.length == ba.tlb.entries.length &&
+     ab.tlb.entries.all (tlbHasEntry ba.tlb) &&
+     ba.tlb.entries.all (tlbHasEntry ab.tlb))
+  -- (d) the vmalle1-dominance operand collapse
+  assertBool "a vmalle1-free operand list is returned unchanged"
+    (collapseShootdownOps [opUnmapTarget] == [opUnmapTarget])
+  assertBool "a vmalle1-carrying list collapses to the single full flush"
+    (collapseShootdownOps [opUnmapTarget, .vmalle1] == [.vmalle1])
+  assertBool "the collapse is effect-exact on the seeded view"
+    (let collapsed := applyTlbInvalidations seededTlb
+       (collapseShootdownOps [opUnmapTarget, .vmalle1])
+     let full := applyTlbInvalidations seededTlb [opUnmapTarget, .vmalle1]
+     collapsed.entries.length == full.entries.length &&
+       collapsed.entries.isEmpty)
+  -- (e) round-lock CAS model walks
+  assertBool "the CAS acquires a free round lock" (roundLockTryAcquire false).1
+  assertBool "a held round lock rejects the CAS" (!(roundLockTryAcquire true).1)
+  assertBool "two consecutive CAS attempts never both succeed"
+    (!((roundLockTryAcquire false).1 &&
+       (roundLockTryAcquire (roundLockTryAcquire false).2).1))
+  assertBool "a release re-enables acquisition"
+    (roundLockTryAcquire (roundLockRelease true)).1
+  -- (f) the bounded wait returns the least all-acked poll index
+  let states : Nat → TlbShootdownState := fun n =>
+    if n < 2 then beginShootdownRound TlbShootdownState.initial core0
+    else TlbShootdownState.initial
+  assertBool "the bounded wait returns the least all-acked poll index"
+    (waitAllAckedBounded 5 states == some 2)
+  -- (g) typed-flush bridge probe: encoded survivors ⊆ typed survivors
+  assertBool "encoded-operand survivors also survive the typed flush"
+    ((applyTlbInvalidation seededTlb opUnmapTarget).entries.all fun e =>
+      tlbHasEntry (adapterFlushTlbByVAddr seededTlb asid5 vaddrPage) e)
+  -- (h) remap-only map rounds: a fresh map is inert, a remap posts
+  assertBool "a fresh map posts no round (no prior translation)"
+    (!(vspaceHasTranslation vspaceScenarioState asid5 vaddrPage) &&
+     (match vspaceMapPageCheckedWithShootdownFromState core0 asid5 vaddrPage
+        (SeLe4n.PAddr.ofNat 0x2000) .readOnly vspaceScenarioState with
+      | .ok ((), st') => allCores.all fun c =>
+          st'.tlbShootdown.pendingOnCore c == []
+      | .error _ => false))
+  -- The model's remap discipline: a one-step replace is a
+  -- .mappingConflict (`vspaceMapPageCheckedWithFlushFromState_ok_fresh`),
+  -- so the round rides the unmap of the unmap-then-map sequence and the
+  -- re-map is fresh again (`…_never_posts`).
+  assertBool "a one-step replace of a live translation fails with mappingConflict"
+    (match vspaceMapPageWithFlush asid5 vaddrPage (SeLe4n.PAddr.ofNat 0x2000)
+        .readOnly vspaceScenarioState with
+     | .error _ => false
+     | .ok ((), stMapped) =>
+        vspaceHasTranslation stMapped asid5 vaddrPage &&
+        (match vspaceMapPageCheckedWithShootdownFromState core1 asid5 vaddrPage
+            (SeLe4n.PAddr.ofNat 0x6000) .readOnly stMapped with
+         | .error .mappingConflict => true | _ => false))
+  assertBool "unmap-then-map: the round rides the unmap; the re-map posts nothing new"
+    (match vspaceMapPageWithFlush asid5 vaddrPage (SeLe4n.PAddr.ofNat 0x2000)
+        .readOnly vspaceScenarioState with
+     | .error _ => false
+     | .ok ((), stMapped) =>
+        match vspaceUnmapPageWithShootdown core0 asid5 vaddrPage stMapped with
+        | .error _ => false
+        | .ok ((), stUnmapped) =>
+            ([core1, core2, core3].all fun c =>
+              (stUnmapped.tlbShootdown.pendingOnCore c).contains
+                { op := opUnmapTarget, initiator := core0 }) &&
+            (match vspaceMapPageCheckedWithShootdownFromState core0 asid5
+                vaddrPage (SeLe4n.PAddr.ofNat 0x6000) .readOnly stUnmapped with
+             | .ok ((), stRemapped) =>
+                 decide (stRemapped.tlbShootdown = stUnmapped.tlbShootdown) &&
+                 decide (pendingBounded stRemapped.tlbShootdown)
+             | .error _ => false))
+  -- (i) the CSpaceAddr retype-with-shootdown sibling (sweep closure)
+  let rtVsp : SeLe4n.ObjId := ⟨891⟩
+  let rtEp : SeLe4n.ObjId := ⟨892⟩
+  let rtCn : SeLe4n.ObjId := ⟨890⟩
+  let rtCapVsp : Capability :=
+    { target := .object rtVsp, rights := AccessRightSet.ofList [.retype] }
+  let rtCapEp : Capability :=
+    { target := .object rtEp, rights := AccessRightSet.ofList [.retype] }
+  let rtSt := (BootstrapBuilder.empty
+    |>.withObject rtVsp (.vspaceRoot { asid := asid5, mappings := {} })
+    |>.withObject rtEp (.endpoint {})
+    |>.withObject rtCn (.cnode
+        { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.UniqueSlotMap.ofListWF
+            [(SeLe4n.Slot.ofNat 0, rtCapVsp), (SeLe4n.Slot.ofNat 1, rtCapEp)] })
+    -- The retype path's type-lockstep gate reads lifecycle metadata.
+    |>.withLifecycleObjectType rtVsp .vspaceRoot
+    |>.withLifecycleObjectType rtEp .endpoint
+    |>.withLifecycleObjectType rtCn .cnode
+    |>.buildChecked)
+  assertBool "the CSpaceAddr retype of a live vspaceRoot posts the .aside1 round"
+    (match SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdown core0
+        { cnode := rtCn, slot := SeLe4n.Slot.ofNat 0 } rtVsp
+        (.endpoint {}) rtSt with
+     | .ok ((), st') =>
+         [core1, core2, core3].all (fun c =>
+           (st'.tlbShootdown.pendingOnCore c).contains
+             { op := encodeAsidInvalidation asid5, initiator := core0 }) &&
+         decide (pendingBounded st'.tlbShootdown)
+     | .error _ => false)
+  let rtNewNtfn : SeLe4n.Model.KernelObject :=
+    .notification
+      { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+        pendingBadge := none }
+  assertBool "a non-vspaceRoot CSpaceAddr retype posts nothing"
+    (match SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdown core0
+        { cnode := rtCn, slot := SeLe4n.Slot.ofNat 1 } rtEp rtNewNtfn rtSt with
+     | .ok ((), st') => allCores.all fun c =>
+         st'.tlbShootdown.pendingOnCore c == []
+     | .error _ => false)
+
+-- ----------------------------------------------------------------------------
+-- §4.10  Live dispatch: `.vspaceUnmap` through the full public entry
+--         (CSpace resolution + authority gate + shootdown posting)
+-- ----------------------------------------------------------------------------
+
+private def udVsp : SeLe4n.ObjId := ⟨881⟩
+private def udCn : SeLe4n.ObjId := ⟨880⟩
+private def udCaller : SeLe4n.ThreadId := ⟨882⟩
+private def udCap : Capability :=
+  { target := .object udVsp, rights := AccessRightSet.ofList [.write] }
+private def udCapRO : Capability :=
+  { target := .object udVsp, rights := AccessRightSet.ofList [.read] }
+
+/-- A `.vspaceUnmap` decode: primary cap at CPtr 0; msgRegs carry
+(asid 5, vaddr 0x1000) — the suite's scenario operand. -/
+private def udDecoded : SyscallDecodeResult :=
+  { capAddr := SeLe4n.CPtr.ofNat 0,
+    msgInfo := { length := 2, extraCaps := 0, label := 0 },
+    syscallId := .vspaceUnmap,
+    msgRegs := #[SeLe4n.RegValue.ofNat 5, SeLe4n.RegValue.ofNat 0x1000] }
+
+private def udState (slots : List (SeLe4n.Slot × Capability)) :
+    SeLe4n.Model.SystemState :=
+  (BootstrapBuilder.empty
+    |>.withObject udVsp (.vspaceRoot { asid := asid5, mappings := {} })
+    |>.withObject udCn (.cnode
+        { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.UniqueSlotMap.ofListWF slots })
+    |>.withObject udCaller.toObjId (.tcb
+        { tid := udCaller, priority := ⟨40⟩, domain := ⟨0⟩,
+          cspaceRoot := udCn, vspaceRoot := udVsp,
+          ipcBuffer := SeLe4n.VAddr.ofNat 4096, ipcState := .ready })
+    |>.withRunnable [udCaller]
+    |>.build)
+
+/-- Map the scenario page, then dispatch the caller's `.vspaceUnmap`
+through the full public entry. -/
+private def udDispatch (slots : List (SeLe4n.Slot × Capability)) :
+    Except KernelError (Unit × SeLe4n.Model.SystemState) :=
+  match vspaceMapPageWithFlush asid5 vaddrPage (SeLe4n.PAddr.ofNat 0x2000)
+      .readOnly (udState slots) with
+  | .error e => .error e
+  | .ok ((), stMapped) =>
+      SeLe4n.Kernel.dispatchSyscall udDecoded udCaller stMapped
+
+private def runLiveDispatchChecks : IO Unit := do
+  IO.println "-- §4.10 live dispatch (.vspaceUnmap: CSpace lookup + authority + round)"
+  -- AUTHORIZED: a `.write` cap at slot 0 → the unmap runs and posts.
+  match udDispatch [(SeLe4n.Slot.ofNat 0, udCap)] with
+  | .error _ => assertBool "authorized live .vspaceUnmap succeeds" false
+  | .ok ((), st') => do
+    assertBool "the live unmap removes the translation"
+      (match vspaceLookup asid5 vaddrPage st' with
+        | .error _ => true
+        | .ok _ => false)
+    assertBool "the live unmap posts the page operand to every other core"
+      ([core1, core2, core3].all fun c =>
+        (st'.tlbShootdown.pendingOnCore c).contains
+          { op := opUnmapTarget, initiator := core0 })
+    assertBool "the live unmap keeps the initiator's queue empty"
+      (st'.tlbShootdown.pendingOnCore core0 == [])
+    assertBool "the live unmap preserves the capacity conjunct"
+      (decide (pendingBounded st'.tlbShootdown))
+  -- NO CAP: empty slot 0 → the CSpace lookup fails closed.
+  assertBool "a live .vspaceUnmap with no cap fails with invalidCapability"
+    (match udDispatch [] with
+      | .error .invalidCapability => true | _ => false)
+  -- READ-ONLY cap: the authority gate rejects (.vspaceUnmap needs .write).
+  assertBool "a live .vspaceUnmap with a read-only cap fails with illegalAuthority"
+    (match udDispatch [(SeLe4n.Slot.ofNat 0, udCapRO)] with
+      | .error .illegalAuthority => true | _ => false)
+
+-- ----------------------------------------------------------------------------
 -- Runner
 -- ----------------------------------------------------------------------------
 
@@ -1254,6 +1560,8 @@ def runSmpTlbShootdownChecks : IO Unit := do
   runWaitLoopChecks
   runProtocolLockSetChecks
   runDiffRecoveryChecks
+  runCompletionCutChecks
+  runLiveDispatchChecks
   IO.println "===================================================="
   IO.println "All SM7.A + SM7.B TLB shootdown checks PASS."
 

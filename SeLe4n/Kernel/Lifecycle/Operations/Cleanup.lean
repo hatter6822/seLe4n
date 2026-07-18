@@ -219,6 +219,21 @@ theorem cleanupDonatedSchedContext_scheduler_eq
       | (injection h with h; subst h; rfl)
       | exact returnDonatedSchedContext_scheduler_eq st st' tid _ _ h
 
+/-- WS-SM SM7.B: `cleanupDonatedSchedContext` never touches the
+TLB-shootdown state (mirrors `cleanupDonatedSchedContext_scheduler_eq`;
+`pendingBounded` bundle-carriage link through the retype cleanup
+pipeline). -/
+theorem cleanupDonatedSchedContext_tlbShootdown_eq
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (h : cleanupDonatedSchedContext st tid = .ok st') :
+    st'.tlbShootdown = st.tlbShootdown := by
+  simp only [cleanupDonatedSchedContext] at h
+  split at h
+  · injection h with h; subst h; rfl
+  · split at h <;> first
+      | (injection h with h; subst h; rfl)
+      | exact returnDonatedSchedContext_tlbShootdown_eq st st' tid _ _ h
+
 
 /-- WS-H2/H-05, R4-A.3 (M-12): Clean up external references to a TCB being retyped away.
     Removes the ThreadId from:

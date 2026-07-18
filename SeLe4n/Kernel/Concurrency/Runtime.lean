@@ -544,14 +544,47 @@ def shootdownRoundLockRelease : BaseIO Unit :=
 def shootdownWaitAllAcked (timeoutTicks : UInt64) : BaseIO Bool := do
   return (← Platform.FFI.ffiShootdownWaitAllAcked timeoutTicks) != 0
 
-/-- **WS-SM SM7.B.2**: is core `c` online?  Reads the Rust
-    `smp::CORE_READY` bitmask — the runtime target-set mask of the
-    SM7.A PR #838 P1 obligation (SGIs are fired at online targets
-    only; offline cores are born-acknowledged by the masked reset and
-    online with an empty TLB). -/
+/-- **WS-SM SM7.B.2**: one snapshot of the Rust `smp::CORE_READY`
+    bitmask (Acquire) — the runtime target-set mask of the SM7.A
+    PR #838 P1 obligation.  Round-scoped callers
+    (`completeShootdownRounds`) read the mask **once** and test bits
+    with `coreOnlineInMask`, so every target decision within a round
+    sees the same snapshot (one FFI crossing instead of one per
+    target; no rounds run concurrently with core bring-up per the
+    SM7.A P1 contract, so the snapshot cannot go stale mid-round). -/
+def shootdownOnlineMask : BaseIO UInt64 :=
+  Platform.FFI.ffiShootdownOnlineMask
+
+/-- **WS-SM SM7.B.2**: pure bit test against an online-mask snapshot. -/
+def coreOnlineInMask (mask : UInt64) (c : CoreId) : Bool :=
+  mask &&& ((1 : UInt64) <<< (UInt64.ofNat c.val)) != 0
+
+/-- **WS-SM SM7.B.2**: is core `c` online?  Single-core convenience
+    form — one mask read, one bit test.  Round-scoped callers should
+    snapshot `shootdownOnlineMask` once instead. -/
 def shootdownCoreOnline (c : CoreId) : BaseIO Bool := do
-  let mask ← Platform.FFI.ffiShootdownOnlineMask
-  return mask &&& ((1 : UInt64) <<< (UInt64.ofNat c.val)) != 0
+  let mask ← shootdownOnlineMask
+  return coreOnlineInMask mask c
+
+/-- **WS-SM SM7.B.2**: the convenience form is exactly the snapshot
+    form's composition — the entry's one-read refactor changes no
+    per-core decision. -/
+theorem shootdownCoreOnline_eq_mask_test (c : CoreId) :
+    shootdownCoreOnline c = do
+      let mask ← shootdownOnlineMask
+      return coreOnlineInMask mask c := rfl
+
+/-- **WS-SM SM7.B.7**: the executing core's **local** full TLB flush
+    (`TLBI VMALLE1` + `dsb ish` + `isb` — no inter-core broadcast).
+    The cooperative round-lock acquire's self-service arm uses this:
+    a lock-waiter discharging its own pending shootdown obligation
+    cleans exactly its own view (mirroring the Rust
+    `.tlbShootdownReq` handler's local `tlbi vmalle1`), never other
+    cores' — broadcasting there would be semantically harmless
+    over-invalidation but architecturally wrong (the round's
+    initiator owns the broadcast step). -/
+def tlbiLocalFullFlush : BaseIO Unit :=
+  Platform.FFI.ffiTlbiAll
 
 /-- **WS-SM SM7.A.3**: `shootdownAckSet` is the raw FFI export applied
     to the widened core id — nothing else happens on the Lean side. -/

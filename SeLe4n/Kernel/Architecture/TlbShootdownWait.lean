@@ -170,6 +170,84 @@ theorem shootdownAck_release_acquire_witness :
     h_initiator
 
 -- ============================================================================
+-- SM7.B.4 — Full-round multi-pair witness (all three targets of a
+-- 4-core round, one trace)
+-- ============================================================================
+-- The single-pair witness above certifies one target's chain.  A real
+-- BCM2712 round has THREE independent release-acquire pairs (targets
+-- 1, 2, 3 → initiator 0), all on one execution; this witness pins that
+-- every pair's publication chain holds simultaneously on a single
+-- well-formed trace — no pair's ordering interferes with another's
+-- (distinct ack locations, `AtomicLocation.shootdownAckOf_injective`).
+
+private def multiPairTlbi (core : Nat) (h : core < numCores) (seq : Nat) :
+    MemoryEvent :=
+  { core := ⟨core, h⟩, loc := ⟨110 + core⟩, isWrite := true,
+    order := .relaxed, value := 0, seqNum := seq }
+
+private def multiPairRelease (core : Nat) (h : core < numCores) (seq : Nat) :
+    MemoryEvent :=
+  shootdownAckReleaseStore 0 ⟨core, h⟩ seq
+
+private def multiPairAcquire (core : Nat) (h : core < numCores) (seq : Nat) :
+    MemoryEvent :=
+  shootdownAckAcquireLoad 0 ⟨0, by decide⟩ ⟨core, h⟩ seq
+
+private def multiPairObserve : MemoryEvent :=
+  { core := ⟨0, by decide⟩, loc := ⟨120⟩, isWrite := false,
+    order := .relaxed, value := 0, seqNum := 20 }
+
+private def multiPairTrace : MemoryTrace :=
+  { events :=
+      [ multiPairTlbi 1 (by decide) 1, multiPairRelease 1 (by decide) 2,
+        multiPairTlbi 2 (by decide) 3, multiPairRelease 2 (by decide) 4,
+        multiPairTlbi 3 (by decide) 5, multiPairRelease 3 (by decide) 6,
+        multiPairAcquire 1 (by decide) 10, multiPairAcquire 2 (by decide) 11,
+        multiPairAcquire 3 (by decide) 12, multiPairObserve ] }
+
+/-- **WS-SM SM7.B.4** (multi-pair non-vacuity): on one well-formed
+4-core round trace, EVERY target's TLBI retirement happens-before the
+initiator's post-`allAcked` access — the three publication chains hold
+simultaneously, which is exactly what `allAcked` needs to mean "no
+stale translation anywhere". -/
+theorem shootdownAck_release_acquire_multi_pair_witness :
+    multiPairTrace.wellFormed ∧
+      (happensBefore multiPairTrace (multiPairTlbi 1 (by decide) 1)
+        multiPairObserve ∧
+       happensBefore multiPairTrace (multiPairTlbi 2 (by decide) 3)
+        multiPairObserve ∧
+       happensBefore multiPairTrace (multiPairTlbi 3 (by decide) 5)
+        multiPairObserve) := by
+  refine ⟨by decide, ?_, ?_, ?_⟩
+  · exact shootdownAck_release_acquire multiPairTrace
+      (e_tlbi := multiPairTlbi 1 (by decide) 1)
+      (e_rel := multiPairRelease 1 (by decide) 2)
+      (e_acq := multiPairAcquire 1 (by decide) 10)
+      (e_obs := multiPairObserve)
+      ⟨by decide, by decide, by decide, by decide⟩
+      ⟨by decide, by decide, by decide, by decide, by decide, by decide,
+       by decide, by decide, by decide⟩
+      ⟨by decide, by decide, by decide, by decide⟩
+  · exact shootdownAck_release_acquire multiPairTrace
+      (e_tlbi := multiPairTlbi 2 (by decide) 3)
+      (e_rel := multiPairRelease 2 (by decide) 4)
+      (e_acq := multiPairAcquire 2 (by decide) 11)
+      (e_obs := multiPairObserve)
+      ⟨by decide, by decide, by decide, by decide⟩
+      ⟨by decide, by decide, by decide, by decide, by decide, by decide,
+       by decide, by decide, by decide⟩
+      ⟨by decide, by decide, by decide, by decide⟩
+  · exact shootdownAck_release_acquire multiPairTrace
+      (e_tlbi := multiPairTlbi 3 (by decide) 5)
+      (e_rel := multiPairRelease 3 (by decide) 6)
+      (e_acq := multiPairAcquire 3 (by decide) 12)
+      (e_obs := multiPairObserve)
+      ⟨by decide, by decide, by decide, by decide⟩
+      ⟨by decide, by decide, by decide, by decide, by decide, by decide,
+       by decide, by decide, by decide⟩
+      ⟨by decide, by decide, by decide, by decide⟩
+
+-- ============================================================================
 -- SM7.B.5 — Wait-loop termination
 -- ============================================================================
 
@@ -352,6 +430,221 @@ theorem waitAllAckedBounded_isSome {states : Nat → TlbShootdownState}
   | some m => rfl
   | none =>
     exact absurd hn ((shootdown_timeout_handling fuel states).2 h n hfuel)
+
+/-- **WS-SM SM7.B.6** (first-index spec): the bounded wait returns the
+*first* satisfying poll index — no earlier poll in its window observed
+`allAcked`.  Together with `waitAllAckedFrom_some_spec` this pins the
+wait's result completely: it is the least all-acked snapshot. -/
+theorem waitAllAckedFrom_first (states : Nat → TlbShootdownState) :
+    ∀ (fuel i n : Nat), waitAllAckedFrom states i fuel = some n →
+      ∀ j : Nat, i ≤ j → j < n → ¬ allAcked (states j) := by
+  intro fuel
+  induction fuel with
+  | zero => intro i n h; cases h
+  | succ k ih =>
+    intro i n h j hij hjn
+    unfold waitAllAckedFrom at h
+    by_cases hAck : allAcked (states i)
+    · rw [if_pos hAck] at h
+      injection h with h
+      subst h
+      omega
+    · rw [if_neg hAck] at h
+      cases Nat.eq_or_lt_of_le hij with
+      | inl heq => rw [← heq]; exact hAck
+      | inr hlt => exact ih (i + 1) n h j hlt hjn
+
+/-- **WS-SM SM7.B.6**: a `some` verdict is the *least* all-acked poll
+index. -/
+theorem waitAllAckedBounded_least {states : Nat → TlbShootdownState}
+    {fuel n : Nat} (h : waitAllAckedBounded fuel states = some n) :
+    allAcked (states n) ∧ ∀ j : Nat, j < n → ¬ allAcked (states j) :=
+  ⟨(waitAllAckedFrom_some_spec states fuel 0 n h).1,
+   fun j hj => waitAllAckedFrom_first states fuel 0 n h j (Nat.zero_le _) hj⟩
+
+/-- **WS-SM SM7.B.5** (least-witness form): under monotone
+acknowledgments and per-core deadlines there is a *least* poll index
+at which `allAcked` holds, and it holds at every later index.
+Constructive with no choice principle: the least witness is extracted
+by running the bounded wait itself (`waitAllAckedBounded`) with a
+sufficient budget — the wait's first-index spec
+(`waitAllAckedBounded_least`) does the minimisation. -/
+theorem shootdown_wait_loop_terminates_least
+    (states : Nat → TlbShootdownState) (hmono : ackMonotone states)
+    (deadline : CoreId → Nat)
+    (hprog : ∀ c : CoreId, (states (deadline c)).ackOnCore c = true) :
+    ∃ n : Nat, allAcked (states n) ∧
+      (∀ j : Nat, j < n → ¬ allAcked (states j)) ∧
+      ∀ m : Nat, n ≤ m → allAcked (states m) := by
+  obtain ⟨N, hN, _⟩ :=
+    shootdown_wait_loop_terminates states hmono deadline hprog
+  have hsome : (waitAllAckedBounded (N + 1) states).isSome :=
+    waitAllAckedBounded_isSome hN (Nat.lt_succ_self N)
+  obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp hsome
+  obtain ⟨hAck, hleast⟩ := waitAllAckedBounded_least hn
+  refine ⟨n, hAck, hleast, ?_⟩
+  intro m hm c
+  exact ackMonotone_stable hmono hm (hAck c)
+
+-- ============================================================================
+-- SM7.B.7 — The global round lock: CAS model + release-acquire publication
+-- ============================================================================
+-- The SM7.A round-serialisation contract is realised at runtime by
+-- `shootdown.rs::SHOOTDOWN_ROUND_LOCK` — a single `AtomicBool` acquired
+-- with `compare_exchange(false, true, Acquire, Relaxed)` and released
+-- with `store(false, Release)`.  Two obligations are discharged here:
+-- the CAS's *mutual exclusion* (at most one holder between release
+-- points) and the *cross-round publication* edge (the previous holder's
+-- critical-section writes — its masked ack reset, its posted queues —
+-- happen-before everything the next holder does after its successful
+-- CAS), which is exactly what makes the ack vector's lack of round
+-- identity safe under serialisation.
+
+/-- **WS-SM SM7.B.7**: location ID of the global round lock — the
+SM2.A model of `SHOOTDOWN_ROUND_LOCK` (`shootdown.rs`; a single
+`AtomicBool`, not per-core). -/
+def AtomicLocation.shootdownRoundLockAt (base : Nat) : AtomicLocation :=
+  ⟨base⟩
+
+/-- **WS-SM SM7.B.7**: the round lock never aliases any core's ack
+flag — releasing the lock cannot satisfy an ack acquire-poll and vice
+versa, provided the refinement assignment separates the two location
+ranges (the ack flags occupy `[ackBase, ackBase + numCores)`). -/
+theorem AtomicLocation.shootdownRoundLockAt_ne_shootdownAckOf
+    {lockBase ackBase : Nat}
+    (h : lockBase < ackBase ∨ ackBase + numCores ≤ lockBase) (c : CoreId) :
+    AtomicLocation.shootdownRoundLockAt lockBase ≠
+      AtomicLocation.shootdownAckOf ackBase c := by
+  intro hEq
+  have hid : lockBase = ackBase + c.val := congrArg AtomicLocation.id hEq
+  have hc : c.val < numCores := c.isLt
+  omega
+
+/-- **WS-SM SM7.B.7**: the round-lock CAS, as a pure state machine —
+the model of `compare_exchange(false, true)`: succeeds exactly on an
+unheld lock, and the lock is held afterwards in either case (a failed
+CAS leaves the *other* holder's `true` in place). -/
+def roundLockTryAcquire (held : Bool) : Bool × Bool :=
+  if held then (false, true) else (true, true)
+
+/-- **WS-SM SM7.B.7**: the release — an unconditional `store(false)`;
+only the holder calls it (the Lean dispatch seam releases only after
+its own successful cooperative acquire). -/
+def roundLockRelease (_held : Bool) : Bool := false
+
+/-- **WS-SM SM7.B.7**: the CAS succeeds iff the lock was free. -/
+@[simp] theorem roundLockTryAcquire_success_iff (held : Bool) :
+    (roundLockTryAcquire held).1 = true ↔ held = false := by
+  cases held <;> simp [roundLockTryAcquire]
+
+/-- **WS-SM SM7.B.7**: after any CAS attempt the lock is held (by the
+new holder on success, by the existing holder on failure). -/
+@[simp] theorem roundLockTryAcquire_post_held (held : Bool) :
+    (roundLockTryAcquire held).2 = true := by
+  cases held <;> rfl
+
+/-- **WS-SM SM7.B.7** (mutual exclusion): two CAS attempts with no
+intervening release cannot both succeed — the second attempt always
+finds the lock held.  This is the at-most-one-initiator property that
+serialises rounds (the runtime stress witness is the Rust
+`sm7b_round_lock_*` HAL tests). -/
+theorem roundLockTryAcquire_mutex (held : Bool) :
+    ¬((roundLockTryAcquire held).1 = true ∧
+      (roundLockTryAcquire (roundLockTryAcquire held).2).1 = true) := by
+  cases held <;> simp [roundLockTryAcquire]
+
+/-- **WS-SM SM7.B.7** (liveness): a release always re-enables the next
+CAS — the cooperative acquire loop in
+`acquireShootdownRoundLockServicingSelf` cannot starve once the
+current holder's round completes. -/
+theorem roundLockTryAcquire_after_release (held : Bool) :
+    (roundLockTryAcquire (roundLockRelease held)).1 = true := by
+  simp [roundLockRelease, roundLockTryAcquire]
+
+/-- **WS-SM SM7.B.7**: the previous holder's release-store event shape
+— `SHOOTDOWN_ROUND_LOCK.store(false, Release)`. -/
+def shootdownRoundLockReleaseStore (base : Nat) (holder : CoreId)
+    (seq : Nat) : MemoryEvent :=
+  { core := holder
+    loc := AtomicLocation.shootdownRoundLockAt base
+    isWrite := true
+    order := .release
+    value := 0
+    seqNum := seq }
+
+/-- **WS-SM SM7.B.7**: the next holder's successful-CAS load event
+shape — the acquire half of `compare_exchange(false, true, Acquire,
+Relaxed)` observing the released `false` (value `0`). -/
+def shootdownRoundLockAcquireCas (base : Nat) (next : CoreId)
+    (seq : Nat) : MemoryEvent :=
+  { core := next
+    loc := AtomicLocation.shootdownRoundLockAt base
+    isWrite := false
+    order := .acquire
+    value := 0
+    seqNum := seq }
+
+/-- **WS-SM SM7.B.7** (`shootdownRoundLock_release_acquire`): the
+cross-round publication chain.  If the previous holder's last
+critical-section access (`e_crit` — its masked ack reset, its posted
+queues, its catch-up commit) is sequenced before its lock release
+`e_rel`, the release synchronizes-with the next holder's successful
+CAS `e_acq`, and that CAS is sequenced before the next holder's first
+critical-section access `e_next`, then `e_crit` happens-before
+`e_next`.  This is what makes the ack vector safe *without* a round
+identity: under the serialised lock, a new round's
+`reset_for_round` can never race a previous round's ack traffic —
+every prior-round access is ordered before the reset. -/
+theorem shootdownRoundLock_release_acquire (t : MemoryTrace)
+    {e_crit e_rel e_acq e_next : MemoryEvent}
+    (h_holder : sequencedBefore t e_crit e_rel)
+    (h_sync : synchronizesWith t e_rel e_acq)
+    (h_next : sequencedBefore t e_acq e_next) :
+    happensBefore t e_crit e_next :=
+  .trans (.trans (.seq h_holder) (.sync h_sync)) (.seq h_next)
+
+/-- The concrete witness execution for the round-lock publication:
+holder core 0 writes its round state (`e_crit`), release-stores the
+lock free; core 1's CAS acquire-load observes the `false`, then core 1
+resets for its own round (`e_next`).  Concrete (base 50, cores 0/1) so
+every side condition evaluates by `decide`. -/
+private def roundLockWitnessCrit : MemoryEvent :=
+  { core := ⟨0, by decide⟩, loc := ⟨102⟩, isWrite := true,
+    order := .relaxed, value := 0, seqNum := 10 }
+
+private def roundLockWitnessRelease : MemoryEvent :=
+  shootdownRoundLockReleaseStore 50 ⟨0, by decide⟩ 11
+
+private def roundLockWitnessAcquire : MemoryEvent :=
+  shootdownRoundLockAcquireCas 50 ⟨1, by decide⟩ 15
+
+private def roundLockWitnessNext : MemoryEvent :=
+  { core := ⟨1, by decide⟩, loc := ⟨103⟩, isWrite := true,
+    order := .relaxed, value := 0, seqNum := 16 }
+
+private def roundLockWitnessTrace : MemoryTrace :=
+  { events := [roundLockWitnessCrit, roundLockWitnessRelease,
+               roundLockWitnessAcquire, roundLockWitnessNext] }
+
+/-- **WS-SM SM7.B.7** (non-vacuity): the round-lock publication chain
+holds on an actual well-formed trace. -/
+theorem shootdownRoundLock_release_acquire_witness :
+    roundLockWitnessTrace.wellFormed ∧
+      happensBefore roundLockWitnessTrace roundLockWitnessCrit
+        roundLockWitnessNext := by
+  refine ⟨by decide, ?_⟩
+  have h_holder : sequencedBefore roundLockWitnessTrace roundLockWitnessCrit
+      roundLockWitnessRelease :=
+    ⟨by decide, by decide, by decide, by decide⟩
+  have h_sync : synchronizesWith roundLockWitnessTrace
+      roundLockWitnessRelease roundLockWitnessAcquire :=
+    ⟨by decide, by decide, by decide, by decide, by decide, by decide,
+     by decide, by decide, by decide⟩
+  have h_next : sequencedBefore roundLockWitnessTrace
+      roundLockWitnessAcquire roundLockWitnessNext :=
+    ⟨by decide, by decide, by decide, by decide⟩
+  exact shootdownRoundLock_release_acquire roundLockWitnessTrace h_holder
+    h_sync h_next
 
 /-- **WS-SM SM7.B.6**: the initiator's wait budget, in generic-timer
 ticks — 10 ms at the BCM2712 54 MHz generic timer.  Mirrors the Rust

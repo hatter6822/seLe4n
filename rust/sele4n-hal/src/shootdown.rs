@@ -414,19 +414,39 @@ pub fn all_acked() -> bool {
 /// (unmap-family syscalls only) and sub-microsecond.
 pub static SHOOTDOWN_ROUND_LOCK: AtomicBool = AtomicBool::new(false);
 
+/// **WS-SM SM7.B.7** (testable inner form): the round-lock CAS over an
+/// explicit lock cell — `compare_exchange(false, true, Acquire,
+/// Relaxed)`.  The pure state machine is the Lean
+/// `roundLockTryAcquire` (`TlbShootdownWait.lean`: success iff free,
+/// held afterwards either way, two consecutive attempts never both
+/// succeed); the multithreaded exclusivity stress
+/// (`sm7b7_round_lock_mutex_stress`) exercises this form on a local
+/// cell so it can hammer the CAS without perturbing the global lock
+/// other tests observe.
+#[inline]
+pub fn round_lock_try_acquire_in(lock: &AtomicBool) -> bool {
+    lock.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+        .is_ok()
+}
+
+/// **WS-SM SM7.B.7** (testable inner form): the release store over an
+/// explicit lock cell (Release ordering).
+#[inline]
+pub fn round_lock_release_in(lock: &AtomicBool) {
+    lock.store(false, Ordering::Release);
+}
+
 /// **WS-SM SM7.B.7**: try to acquire the global round lock.  `true` =
 /// acquired (Acquire ordering — the previous round's writes, including
 /// its final flag state, are visible).  Never blocks.
 pub fn round_lock_try_acquire() -> bool {
-    SHOOTDOWN_ROUND_LOCK
-        .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-        .is_ok()
+    round_lock_try_acquire_in(&SHOOTDOWN_ROUND_LOCK)
 }
 
 /// **WS-SM SM7.B.7**: release the global round lock (Release ordering —
 /// publishes the completed round's writes to the next acquirer).
 pub fn round_lock_release() {
-    SHOOTDOWN_ROUND_LOCK.store(false, Ordering::Release);
+    round_lock_release_in(&SHOOTDOWN_ROUND_LOCK)
 }
 
 // ============================================================================
@@ -532,8 +552,22 @@ pub const TLB_SHOOTDOWN_REQ_INTID: u8 = 1;
 /// at v1.0.0).
 #[deny(clippy::panic, clippy::unreachable, clippy::todo)]
 pub fn tlb_shootdown_req_handler(_intid: u8, _source_cpu: u8) {
-    let core_id = crate::per_cpu::current_core_id_from_tpidr() as usize;
-    if core_id >= SHOOTDOWN_ACK.len() {
+    tlb_shootdown_req_handler_in(
+        &SHOOTDOWN_ACK,
+        crate::per_cpu::current_core_id_from_tpidr() as usize,
+    );
+}
+
+/// **WS-SM SM7.B.3** (testable inner form): the handler body over an
+/// explicit flag slice and executing-core id.  Tests reset a *local*
+/// slice first and assert the genuine `false → true` ack transition —
+/// the global [`SHOOTDOWN_ACK`] boots all-`true`, so asserting on it
+/// alone cannot distinguish "the handler acked" from "the flag was
+/// never down" (the SM7.B test-hardening cut closed exactly that
+/// vacuity).
+#[deny(clippy::panic, clippy::unreachable, clippy::todo)]
+pub fn tlb_shootdown_req_handler_in(slots: &[ShootdownAckFlag], core_id: usize) {
+    if core_id >= slots.len() {
         // Fail closed: no ack (see docstring).  Unreachable on
         // correctly-initialised hardware (TPIDR_EL1 is set to the
         // core id at boot, always < 4 on BCM2712).
@@ -543,7 +577,7 @@ pub fn tlb_shootdown_req_handler(_intid: u8, _source_cpu: u8) {
     // trailing `dsb ish; isb`.
     crate::tlb::tlbi_vmalle1();
     // Step 2: the release edge.
-    ack_set(core_id);
+    ack_set_in_slice(slots, core_id);
     // Step 3: wake event-paced waiters.
     crate::cpu::sev();
 }
@@ -585,6 +619,10 @@ pub fn online_mask() -> u64 {
 
 #[cfg(test)]
 mod tests {
+    // The crate is `no_std`; tests may use std (threads for the SM7.B.7
+    // mutex stress) — same pattern as the gic.rs / rw_lock.rs test mods.
+    extern crate std;
+
     use super::*;
 
     // ------------------------------------------------------------------------
@@ -1044,10 +1082,106 @@ mod tests {
 
     /// SM7.B.3: the handler acknowledges the executing core (host
     /// TPIDR stub = core 0) after its (host no-op) local flush.
+    /// Global-path smoke only — the genuine `false → true` transition
+    /// is pinned by the `_in`-form tests below (the global vector
+    /// boots all-`true`, so this assertion alone would be vacuous).
     #[test]
     fn sm7b3_handler_acks_executing_core() {
         tlb_shootdown_req_handler(TLB_SHOOTDOWN_REQ_INTID, 2);
         assert!(ack_is_set(0), "the handler release-sets its own flag");
+    }
+
+    /// SM7.B.3 (test-hardening cut): the handler performs a GENUINE
+    /// `false → true` ack transition on its own core and touches no
+    /// other core's flag — asserted on a local slice reset first, so
+    /// the boot-`true` global vector cannot mask a no-op handler.
+    #[test]
+    fn sm7b3_handler_in_genuine_ack_transition_own_flag_only() {
+        let slots: [ShootdownAckFlag; 4] = [
+            ShootdownAckFlag::acked_at_boot(),
+            ShootdownAckFlag::acked_at_boot(),
+            ShootdownAckFlag::acked_at_boot(),
+            ShootdownAckFlag::acked_at_boot(),
+        ];
+        // Round opened by core 3: cores 0..=2 genuinely down.
+        reset_for_round_in_slice(&slots, 3);
+        assert!(!ack_is_set_in_slice(&slots, 0), "precondition: flag down");
+        assert!(!ack_is_set_in_slice(&slots, 1), "precondition: flag down");
+        tlb_shootdown_req_handler_in(&slots, 0);
+        assert!(
+            ack_is_set_in_slice(&slots, 0),
+            "the handler must release-set its own flag (false → true)"
+        );
+        assert!(
+            !ack_is_set_in_slice(&slots, 1) && !ack_is_set_in_slice(&slots, 2),
+            "the handler must not acknowledge on behalf of other targets"
+        );
+        assert!(ack_is_set_in_slice(&slots, 3), "initiator born-acknowledged");
+    }
+
+    /// SM7.B.3 (test-hardening cut): an out-of-range executing-core id
+    /// acknowledges NOTHING — the fail-closed arm leaves every flag
+    /// exactly as the reset put it (the initiator then times out and
+    /// panics diagnosably, rather than proceeding over a stale TLB).
+    #[test]
+    fn sm7b3_handler_in_out_of_range_acks_nothing() {
+        let slots: [ShootdownAckFlag; 4] = [
+            ShootdownAckFlag::acked_at_boot(),
+            ShootdownAckFlag::acked_at_boot(),
+            ShootdownAckFlag::acked_at_boot(),
+            ShootdownAckFlag::acked_at_boot(),
+        ];
+        reset_for_round_in_slice(&slots, 0);
+        tlb_shootdown_req_handler_in(&slots, 7);
+        assert!(
+            !ack_is_set_in_slice(&slots, 1)
+                && !ack_is_set_in_slice(&slots, 2)
+                && !ack_is_set_in_slice(&slots, 3),
+            "an out-of-range core id must not acknowledge any slot"
+        );
+    }
+
+    /// SM7.B.7 (test-hardening cut): multithreaded CAS-lock exclusivity
+    /// stress — 8 threads hammer `round_lock_try_acquire_in` /
+    /// `round_lock_release_in` on a LOCAL lock cell; an atomic
+    /// critical-section occupancy counter proves at-most-one-holder at
+    /// every instant, and the acquisition count proves the lock stays
+    /// live (releases re-enable acquisition, the Lean
+    /// `roundLockTryAcquire_after_release`).
+    #[test]
+    fn sm7b7_round_lock_mutex_stress() {
+        use core::sync::atomic::AtomicU32;
+        use std::sync::atomic::AtomicUsize;
+        let lock = AtomicBool::new(false);
+        let in_crit = AtomicU32::new(0);
+        let max_seen = AtomicU32::new(0);
+        let acquisitions = AtomicUsize::new(0);
+        std::thread::scope(|s| {
+            for _ in 0..8 {
+                s.spawn(|| {
+                    for _ in 0..1000 {
+                        if round_lock_try_acquire_in(&lock) {
+                            let now = in_crit.fetch_add(1, Ordering::SeqCst) + 1;
+                            max_seen.fetch_max(now, Ordering::SeqCst);
+                            in_crit.fetch_sub(1, Ordering::SeqCst);
+                            acquisitions.fetch_add(1, Ordering::SeqCst);
+                            round_lock_release_in(&lock);
+                        } else {
+                            std::thread::yield_now();
+                        }
+                    }
+                });
+            }
+        });
+        assert_eq!(
+            max_seen.load(Ordering::SeqCst),
+            1,
+            "at most one thread may ever hold the round lock"
+        );
+        assert!(
+            acquisitions.load(Ordering::SeqCst) >= 1,
+            "the lock must remain acquirable across releases"
+        );
     }
 
     /// SM7.B.3: the handler registers into the SM1.F.5 table shape and

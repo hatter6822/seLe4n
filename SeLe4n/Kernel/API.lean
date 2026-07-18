@@ -75,7 +75,7 @@ Previously it was just an import barrel (finding L-01); it now defines:
 | `endpointSendDual`, `endpointReceiveDual` | IPC (dual-queue) | Stable |
 | `endpointReply`, `endpointCall`, `endpointReplyRecv` | IPC | Stable |
 | `lifecycleRetypeObject`, `lifecycleRevokeDeleteRetype` | Lifecycle | Internal (proof helpers — use `lifecycleRetypeWithCleanup` for production) |
-| `lifecycleRetypeWithCleanup` | Lifecycle (WS-H2) | Stable (production entry point with cleanup + scrubbing) |
+| `lifecycleRetypeWithCleanup`, `lifecycleRetypeWithCleanupShootdown` | Lifecycle (WS-H2 / WS-SM SM7.B.11) | Stable (production entry point with cleanup + scrubbing; the `Shootdown` form adds the SM7.B.11 TLB round for live `.vspaceRoot` targets — SMP callers use it) |
 | `retypeFromUntyped` | Lifecycle (WS-F2) | Stable |
 | `registerService`, `revokeService`, `lookupServiceByCap` | Service (WS-Q1) | Stable |
 | `adapterAdvanceTimer`, `adapterWriteRegister`, `adapterReadMemory` | Architecture | Stable |

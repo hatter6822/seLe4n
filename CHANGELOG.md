@@ -1,3 +1,134 @@
+## v0.32.77 — WS-SM SM7.B completion cut: bundle carriage + depth closure
+
+Every deferral of the v0.32.76 SM7.B landing closed.  Zero
+sorry/axiom; golden trace byte-identical.
+
+**Invariant-bundle carriage**: `pendingBounded st.tlbShootdown` is the
+**12th conjunct of `proofLayerInvariantBundle`**
+(`Architecture/Invariant.lean`) — boot witness
+`default_tlbShootdown_pendingBounded`; the `advanceTimerState` /
+`writeRegisterState` / `contextSwitchState` preservation proofs
+extended; the Boot general bridge closed via the new
+`bootFromPlatform_tlbShootdown_eq` (+ `applyMachineConfig` /
+`foldObjects` / `foldIrqs` frames; the V4-A8 docstring and
+interaction matrix updated to the honest 12-component list); freeze
+carried wholesale.  The conjunct is proven through every live
+shootdown-aware transition — `…_preserves_pendingBounded` for
+`handleTlbShootdownReqOnCore`, `tlbShootdownLocal`,
+`withShootdownRound`, the five syscall wrappers, and both retype
+wrappers — resting on a new `…_tlbShootdown_eq` frame family across
+the retype-cleanup pipeline and VSpace base ops (`storeObject`,
+`spliceOutMidQueueNode`, both queue sweeps, `detachCNodeSlots`,
+`returnDonatedSchedContext`, `cleanupDonatedSchedContext`,
+`cleanupTcbReferences`, `cleanupEndpointServiceRegistrations`,
+`scrubObjectMemory`, `cspaceLookupSlot`, `lifecyclePreRetypeCleanup`,
+`lifecycleRetypeDirect{,WithCleanup}`, `lifecycleRetypeObject`,
+`lifecycleRetypeWithCleanup`, `vspace{Map,Unmap}Page` +
+flush/checked forms, `tlbFlushBy{ASID,Page}`,
+`detachSlotFromCdt`, `removeRunnable`, `removeDependenciesOf`).
+
+**Handler commutativity**: distinct-core round steps commute at both
+layers (`completeShootdownOnCore_comm`;
+`handleTlbShootdownReqOnCore_comm` via the retire-filter algebra
+`applyTlbInvalidation_comm` / `applyTlbInvalidations_comm`) + the
+fold-swap corollary `foldl_handleTlbShootdownReqOnCore_swap` — the
+catch-up fold's visit order is a convention, not a correctness
+requirement.
+
+**Coalescing-round capstones**: `coalescingRound_restores_quiescent`
+/ `coalescingRound_allAcked` — the round the runtime *actually* runs
+(total coalescing posting + local retire + handler fold) restores
+quiescence and reaches the wait's exit condition; the positive diff
+characterization `shootdownChangedTargets_coalescing_of_quiescent`
+(the seam pokes exactly the round's targets); Theorem 3.3.1's
+total-posting remote case (`tlbEntryMatches_vmalle1` +
+`applyTlbInvalidations_of_mem_vmalle1` + `coveredQueueRetire_removes`
+→ `vspaceUnmapPageWithShootdown_remote_retire_removes`).
+
+**Remap-only map rounds + a model fact**: the `.vspaceMap` wrapper
+posts only when replacing a live translation (`vspaceHasTranslation`
+pre-state detector; `…_fresh_inert`) — and
+`vspaceMapPageCheckedWithFlushFromState_ok_fresh` pins that a
+*successful* map is always fresh (`VSpaceRoot.mapPage` rejects an
+occupied vaddr with `.mappingConflict`), so the map path posts no
+round today (`…_never_posts`); the round rides the unmap of the
+unmap-then-map discipline, and the posting branch stays as a
+defense-in-depth seam (`…_remap_posts`).
+
+**Least-index wait + round-lock model** (`TlbShootdownWait.lean`):
+`waitAllAckedFrom_first` / `waitAllAckedBounded_least` (the bounded
+wait returns the least all-acked snapshot) +
+`shootdown_wait_loop_terminates_least` (constructive least witness,
+no choice); the round-lock CAS state machine (`roundLockTryAcquire`:
+success-iff-free, at-most-one-holder, release-liveness — matching the
+Rust `compare_exchange` exactly); the cross-round publication chain
+`shootdownRoundLock_release_acquire` (+ decide-checked witness) — the
+formal reason the ack vector needs no round identity under
+serialisation; the 4-core multi-pair B.4 witness
+(`shootdownAck_release_acquire_multi_pair_witness`); the lock/ack
+location non-alias (`shootdownRoundLockAt_ne_shootdownAckOf`); the
+typed-flush bridge
+(`mem_adapterFlushTlbBy{VAddr,Asid}_of_mem_applyTlbInvalidation_…`).
+
+**Entry hardening** (`SyscallDispatchEntry.lean`): the acquire fuel
+extracted as pinned `shootdownRoundLockAcquireFuel`;
+`completeShootdownRounds_nil` (the no-round path is `pure ()` by rfl
+— definition-level trace safety); one `CORE_READY` snapshot per round
+(`Concurrency.shootdownOnlineMask` + pure `coreOnlineInMask`, with
+the `shootdownCoreOnline_eq_mask_test` coherence pin); the
+vmalle1-dominance operand collapse (`collapseShootdownOps`,
+effect-exact by `collapseShootdownOps_effect_eq`);
+`shootdownSharingDomain` now **derived** from
+`PlatformBinding.sharingDomain` (the B.12 binding read;
+`shootdownSharingDomain_rpi5` pins `.inner`); the cooperative
+self-service arm flipped to the **local** `tlbi vmalle1`
+(`Concurrency.tlbiLocalFullFlush` over the existing `ffi_tlbi_all`,
+whose usage contract now records the self-service exception — the
+waiter cleans exactly its own view, as the Rust handler does).
+
+**storeObject sweep (SM7.B.11 closure)**: audit of every
+vspaceRoot-destroying path found one further production entry point
+owing TLB work — the CSpaceAddr wrapper `lifecycleRetypeWithCleanup`;
+closed by the shootdown-aware sibling
+`lifecycleRetypeWithCleanupShootdown` (+ `_non_vspace` /
+`_vspace_posts` / `_preserves_pendingBounded`; API surface table
+updated).  All other paths verified clean by construction (internal
+proof-chain compositions, superseded proof helpers, pre-secondaries
+boot, staged experimental).
+
+**Rust (HAL 769 → 772, clippy-clean)**: the handler's testable `_in`
+slice form (`tlb_shootdown_req_handler_in`) with **genuine**
+`false → true` ack-transition tests + the out-of-range
+acks-nothing test (the boot-all-`true` global vector had made the
+prior assertions vacuous); `round_lock_try_acquire_in` /
+`round_lock_release_in` + an 8-thread CAS **mutex stress**
+(at-most-one-holder observed at every instant); the legacy
+`gic::dispatch_irq` deprecated (masked-EOI form; tests annotated).
+
+**Tests**: `tests/SmpTlbShootdownSuite.lean` grows to **22 groups /
+160 runtime assertions** — §4.9 (completion cut: bundle carriage,
+commutativity computed in both orders, capstones, CAS walks,
+least-index wait, typed-flush probe, fresh/remap/conflict map
+semantics, both retype siblings) and §4.10 (the **live `.vspaceUnmap`
+through `dispatchSyscall`**: CSpace resolution + authority gate +
+posting + fail-closed no-cap / read-only-cap); SM7.E.2 seeded —
+`scripts/test_qemu_smp_shootdown.sh` (Tier-4-registered; SKIPs until
+the SM9.E bootable image); ~35 new Tier-3 anchors.
+
+Tracked debt registered in plan §SM7.B completion cut
+(per-descriptor Rust handler TLBIs, handler formal refinement at
+SM9.E, B.10 syscall-level reachability, step-4d direct-ack SGI,
+SM7.C.6 per-core restatement).
+
+AK7 baseline re-anchored (`RAW_LOOKUP_TID` 1309 → 1310): the single
+increment is the additive frame-lemma proof
+`returnDonatedSchedContext_tlbShootdown_eq` casing on the same
+`objects[scId.toObjId]?` scrutinee its subject matches on — a
+raw-store characterisation proof, no new live raw read (the same
+class as the v0.32.61 re-anchor).
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §5 (SM7.B completion cut)
+
 ## v0.32.76 — WS-SM SM7.B: TLB shootdown protocol (SM7.B.1–B.12 complete)
 
 The complete plan-§3.2 shootdown protocol over the SM7.A state layer,

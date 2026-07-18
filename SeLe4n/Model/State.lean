@@ -750,14 +750,19 @@ structure SystemState where
       `default_tlbShootdown_initial` / the SM7.A default-state
       theorems below.
 
-      **Mutators**: none yet — the SM7.B shootdown protocol
-      transitions (`tlbShootdownBroadcast` + the `.tlbShootdownReq`
-      SGI handler) are the first writers, going exclusively through
-      the SM7.A operations (`enqueueShootdown` / `drainShootdowns` /
-      `acknowledgeShootdown` / `beginShootdownRound`), never the raw
-      setters, so the `pendingBounded` capacity invariant is carried
-      by construction.  Every existing transition frames this field
-      (`{ st with … }` updates never mention it).
+      **Mutators**: exclusively the SM7.B shootdown protocol
+      transitions (`tlbShootdownBroadcast{,Coalescing}` + the
+      `.tlbShootdownReq` SGI handler `handleTlbShootdownReqOnCore`,
+      `TlbShootdownProtocol.lean`), going exclusively through the
+      SM7.A operations (`enqueueShootdown{,OrCoalesce}` /
+      `drainShootdowns` / `acknowledgeShootdown` /
+      `beginShootdownRound{,For}`), never the raw setters, so the
+      `pendingBounded` capacity invariant — the 12th
+      `proofLayerInvariantBundle` conjunct since SM7.B — is carried
+      by construction (`…_preserves_pendingBounded` family).  Every
+      other transition frames this field (`{ st with … }` updates
+      never mention it; pinned per-operation by the
+      `…_tlbShootdown_eq` frame families).
 
       **Information flow**: the field is not yet part of the IF
       projection surface — no transition reads it, so it cannot yet
@@ -1969,6 +1974,20 @@ theorem storeObject_objects_eq'
     pair.2.objects[id]? = some obj := by
   unfold storeObject at hStore; cases hStore
   exact RHTable.getElem?_insert_self _ _ _ hObjInv
+
+/-- WS-SM SM7.B: `storeObject` only touches the object store and lifecycle
+metadata — the TLB-shootdown state is framed.  Leaf lemma of the
+`pendingBounded` bundle-carriage chain: every object-mutating kernel
+transition that bottoms out in `storeObject` transports the shootdown
+capacity invariant through this equation. -/
+theorem storeObject_tlbShootdown_eq
+    (st : SystemState)
+    (id : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (pair : Unit × SystemState)
+    (hStore : storeObject id obj st = .ok pair) :
+    pair.2.tlbShootdown = st.tlbShootdown := by
+  unfold storeObject at hStore; cases hStore; rfl
 
 theorem storeObject_objects_eq
     (st st' : SystemState)
@@ -3435,6 +3454,12 @@ def detachSlotFromCdt (st : SystemState) (ref : SlotRef) : SystemState :=
           cdtSlotNode := st.cdtSlotNode.erase ref
           cdtNodeSlot := st.cdtNodeSlot.erase node
       }
+
+/-- WS-SM SM7.B: `detachSlotFromCdt` is CDT-only — the TLB-shootdown
+state is framed (`pendingBounded` bundle-carriage leaf). -/
+theorem detachSlotFromCdt_tlbShootdown_eq (st : SystemState) (ref : SlotRef) :
+    (st.detachSlotFromCdt ref).tlbShootdown = st.tlbShootdown := by
+  unfold detachSlotFromCdt; split <;> rfl
 
 /-- Ensure `ref` has a CDT node; allocate one if absent. -/
 def ensureCdtNodeForSlot (st : SystemState) (ref : SlotRef) : CdtNodeId × SystemState :=

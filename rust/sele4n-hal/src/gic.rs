@@ -1113,6 +1113,17 @@ pub const fn iar_source_cpu(iar: u32) -> u8 {
 /// Returns `true` if a real (non-spurious) interrupt was acknowledged;
 /// this includes both handled and out-of-range cases because both
 /// participate in the interrupt lifecycle (IAR read + EOI).
+/// WS-SM SM7.B: **deprecated in favour of [`dispatch_irq_with_iar`]** —
+/// this legacy form EOIs with the source-CPU bits masked to zero, which
+/// per GIC-400 TRM §4.4.5 strands per-source SGI instances active on
+/// any multi-core build (the defect the SM7.B trap-layer flip fixed).
+/// Correct only in single-core contexts where no SGI ever carries a
+/// non-zero source-CPU field.  No production caller remains; the tests
+/// that pin the legacy adapter's behaviour carry `#[allow(deprecated)]`.
+#[deprecated(
+    note = "EOIs with masked source-CPU bits — strands per-source SGI \
+            instances on multi-core builds; use dispatch_irq_with_iar"
+)]
 pub fn dispatch_irq<F: FnOnce(u32)>(handler: F) -> bool {
     dispatch_irq_inner(
         acknowledge_irq_classified(GICC_BASE),
@@ -1346,6 +1357,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn dispatch_irq_calls_handler() {
         // On non-aarch64, acknowledge_irq returns 0 (INTID 0, not spurious).
         // Handler should be called with INTID 0.
@@ -1514,6 +1526,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn dispatch_irq_real_calls_handler() {
         // Smoke test: the production `dispatch_irq` (which wires
         // `dispatch_irq_inner` to real GIC MMIO) calls the handler on
@@ -1527,6 +1540,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn dispatch_irq_real_handler_observes_intid() {
         let seen = AtomicU32::new(u32::MAX);
         let handled = dispatch_irq(|intid| {
@@ -1541,6 +1555,7 @@ mod tests {
     // a future refactor reintroduces an unwind-observable Drop side
     // channel.
     #[test]
+    #[allow(deprecated)]
     fn dispatch_irq_real_handler_panic_propagates() {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             dispatch_irq(|_intid| {

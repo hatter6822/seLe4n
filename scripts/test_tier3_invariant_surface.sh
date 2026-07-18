@@ -910,6 +910,49 @@ run_check "INVARIANT" rg -n 'Round serialisation contract' SeLe4n/Kernel/Archite
 run_check "INVARIANT" rg -n '^pub fn reset_for_round_in_slice_masked' rust/sele4n-hal/src/shootdown.rs
 run_check "INVARIANT" rg -n '^def beginShootdownRoundFor' SeLe4n/Kernel/Architecture/TlbShootdown.lean
 run_check "INVARIANT" rg -n '^theorem beginShootdownRoundFor_allCores_eq' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+# WS-SM SM7.B completion cut — invariant-bundle carriage (pendingBounded as
+# the 12th proofLayerInvariantBundle conjunct + preservation across every live
+# shootdown-aware transition and the boot bridge), handler commutativity, the
+# coalescing-round capstones, the positive diff characterization, remap-only
+# map rounds (ok-implies-fresh), the vmalle1 operand collapse, the least-index
+# wait, the round-lock CAS model + cross-round publication (with the 4-core
+# multi-pair witness), the CSpaceAddr retype-with-shootdown sibling, and the
+# Rust test-hardening (_in handler form + genuine-transition tests + the
+# multithreaded CAS mutex stress).
+run_check "INVARIANT" rg -n 'pendingBounded st\.tlbShootdown' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem completeShootdownOnCore_preserves_pendingBounded' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^theorem completeShootdownOnCore_comm' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^theorem withShootdownRound_preserves_pendingBounded' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^theorem vspaceUnmapPageWithShootdown_preserves_pendingBounded' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^theorem handleTlbShootdownReqOnCore_comm' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^theorem coalescingRound_restores_quiescent' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^theorem shootdownChangedTargets_coalescing_of_quiescent' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^theorem vspaceUnmapPageWithShootdown_remote_retire_removes' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^def vspaceHasTranslation' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^theorem vspaceMapPageCheckedWithFlushFromState_ok_fresh' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^def collapseShootdownOps' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^theorem collapseShootdownOps_effect_eq' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^theorem waitAllAckedBounded_least' SeLe4n/Kernel/Architecture/TlbShootdownWait.lean
+run_check "INVARIANT" rg -n '^theorem roundLockTryAcquire_mutex' SeLe4n/Kernel/Architecture/TlbShootdownWait.lean
+run_check "INVARIANT" rg -n '^theorem shootdownRoundLock_release_acquire' SeLe4n/Kernel/Architecture/TlbShootdownWait.lean
+run_check "INVARIANT" rg -n '^theorem shootdownAck_release_acquire_multi_pair_witness' SeLe4n/Kernel/Architecture/TlbShootdownWait.lean
+run_check "INVARIANT" rg -n '^theorem storeObject_tlbShootdown_eq' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatform_tlbShootdown_eq' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^def lifecycleRetypeWithCleanupShootdown' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeWithCleanupShootdown_preserves_pendingBounded' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" rg -n '^theorem completeShootdownRounds_nil' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^def shootdownRoundLockAcquireFuel' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^theorem shootdownSharingDomain_rpi5' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^def tlbiLocalFullFlush' SeLe4n/Kernel/Concurrency/Runtime.lean
+run_check "INVARIANT" rg -n '^def coreOnlineInMask' SeLe4n/Kernel/Concurrency/Runtime.lean
+run_check "INVARIANT" rg -n '^pub fn tlb_shootdown_req_handler_in' rust/sele4n-hal/src/shootdown.rs
+run_check "INVARIANT" rg -n '^pub fn round_lock_try_acquire_in' rust/sele4n-hal/src/shootdown.rs
+run_check "INVARIANT" rg -n 'fn sm7b7_round_lock_mutex_stress' rust/sele4n-hal/src/shootdown.rs
+run_check "INVARIANT" rg -n 'fn sm7b3_handler_in_genuine_ack_transition_own_flag_only' rust/sele4n-hal/src/shootdown.rs
+run_check "INVARIANT" rg -n '^private def runCompletionCutChecks' tests/SmpTlbShootdownSuite.lean
+run_check "INVARIANT" rg -n '^private def runLiveDispatchChecks' tests/SmpTlbShootdownSuite.lean
+run_check "INVARIANT" bash -c "test -x scripts/test_qemu_smp_shootdown.sh"
+run_check "INVARIANT" rg -n 'test_qemu_smp_shootdown\.sh' scripts/test_tier4_smp_bootcheck.sh
 run_check "INVARIANT" rg -n '^theorem shootdownRoundFor_restores_quiescent' SeLe4n/Kernel/Architecture/TlbShootdown.lean
 run_check "INVARIANT" rg -n '^private def runMaskedRoundChecks' tests/SmpTlbShootdownSuite.lean
 run_check "INVARIANT" rg -n '^pub extern "C" fn ffi_shootdown_ack_set' rust/sele4n-hal/src/ffi.rs

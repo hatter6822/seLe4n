@@ -202,6 +202,77 @@ theorem mem_of_mem_applyTlbInvalidations {ops : List TlbInvalidation} :
     exact mem_of_mem_applyTlbInvalidation
       (ih (tlb := applyTlbInvalidation tlb op) h)
 
+/-- **WS-SM SM7.B**: a full flush empties the view. -/
+theorem applyTlbInvalidation_vmalle1_entries_nil (t : TlbState) :
+    applyTlbInvalidation t TlbInvalidation.vmalle1 = { entries := [] } := by
+  unfold applyTlbInvalidation
+  congr 1
+  exact List.filter_eq_nil_iff.mpr (fun e _ h => nomatch h)
+
+/-- **WS-SM SM7.B**: retiring anything on an empty view stays empty. -/
+theorem applyTlbInvalidations_entries_nil (ops : List TlbInvalidation) :
+    applyTlbInvalidations { entries := [] } ops = { entries := [] } := by
+  induction ops with
+  | nil => rfl
+  | cons o os ih =>
+    rw [applyTlbInvalidations_cons]
+    exact ih
+
+/-- **WS-SM SM7.B**: an operand list containing a full flush empties
+the view no matter what else it carries. -/
+theorem applyTlbInvalidations_of_mem_vmalle1 {ops : List TlbInvalidation}
+    (h : TlbInvalidation.vmalle1 ∈ ops) :
+    ∀ t : TlbState, applyTlbInvalidations t ops = { entries := [] } := by
+  induction ops with
+  | nil => cases h
+  | cons o os ih =>
+    intro t
+    rcases List.mem_cons.mp h with hEq | hMem
+    · rw [applyTlbInvalidations_cons, ← hEq,
+          applyTlbInvalidation_vmalle1_entries_nil]
+      exact applyTlbInvalidations_entries_nil os
+    · rw [applyTlbInvalidations_cons]
+      exact ih hMem _
+
+/-- **WS-SM SM7.B**: the initiator-side operand collapse — a posted-ops
+list containing a full flush executes as the single full flush (the
+runtime's step-3 TLBI loop need not issue operands a `vmalle1` already
+covers). -/
+def collapseShootdownOps (ops : List TlbInvalidation) : List TlbInvalidation :=
+  if ops.any (fun op => match op with
+      | TlbInvalidation.vmalle1 => true
+      | _ => false) then
+    [TlbInvalidation.vmalle1]
+  else ops
+
+/-- **WS-SM SM7.B**: the collapse is effect-exact — executing the
+collapsed list computes the *same* TLB view as executing the full
+list, for every starting view.  (With a `vmalle1` present both sides
+are the empty view; without one the lists are identical.) -/
+theorem collapseShootdownOps_effect_eq (ops : List TlbInvalidation)
+    (t : TlbState) :
+    applyTlbInvalidations t (collapseShootdownOps ops) =
+      applyTlbInvalidations t ops := by
+  unfold collapseShootdownOps
+  split
+  · next hAny =>
+      obtain ⟨op, hmem, hop⟩ := List.any_eq_true.mp hAny
+      have hvm : TlbInvalidation.vmalle1 ∈ ops := by
+        cases op <;> simp_all
+      rw [applyTlbInvalidations_of_mem_vmalle1 hvm t,
+          applyTlbInvalidations_of_mem_vmalle1 (List.mem_singleton.mpr rfl) t]
+  · rfl
+
+/-- **WS-SM SM7.B**: a collapse-free list is returned unchanged. -/
+theorem collapseShootdownOps_no_vmalle1 {ops : List TlbInvalidation}
+    (h : TlbInvalidation.vmalle1 ∉ ops) :
+    collapseShootdownOps ops = ops := by
+  unfold collapseShootdownOps
+  rw [if_neg]
+  intro hAny
+  obtain ⟨op, hmem, hop⟩ := List.any_eq_true.mp hAny
+  cases op <;> simp_all
+
 /-- **WS-SM SM7.B**: retiring a queue containing `op` removes every
 entry `op` covers — the drained-descriptor completeness half of
 Theorem 3.3.1's remote case (`drainShootdowns_fst` supplies "every
@@ -260,6 +331,48 @@ theorem encodeAsidInvalidation_matches (asid : SeLe4n.ASID) {e : TlbEntry}
     tlbEntryMatches (encodeAsidInvalidation asid) e = true := by
   subst hAsid
   simp [tlbEntryMatches, encodeAsidInvalidation]
+
+/-- **WS-SM SM7.B** (typed-flush bridge, page form): the encoded
+invalidation is at least as strong as the typed local flush — every
+entry surviving `applyTlbInvalidation (encodePageInvalidation a v)`
+also survives `adapterFlushTlbByVAddr t a v`.  Encoding collisions
+only ever *widen* the removal (over-invalidation), never narrow it,
+so composing the wrappers' typed local flush with the remote encoded
+retirement can never leave a remote view strictly staler than the
+local one for the flushed translation. -/
+theorem mem_adapterFlushTlbByVAddr_of_mem_applyTlbInvalidation_encodePage
+    (t : TlbState) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) {e : TlbEntry}
+    (h : e ∈ (applyTlbInvalidation t
+      (encodePageInvalidation asid vaddr)).entries) :
+    e ∈ (adapterFlushTlbByVAddr t asid vaddr).entries := by
+  obtain ⟨hmem, hnomatch⟩ := (mem_applyTlbInvalidation_iff t _ e).mp h
+  unfold adapterFlushTlbByVAddr
+  refine List.mem_filter.mpr ⟨hmem, ?_⟩
+  cases htyped : (e.asid == asid && e.vaddr == vaddr) with
+  | false => rfl
+  | true =>
+      rw [Bool.and_eq_true] at htyped
+      have hA : e.asid = asid := eq_of_beq htyped.1
+      have hV : e.vaddr = vaddr := eq_of_beq htyped.2
+      rw [encodePageInvalidation_matches asid vaddr hA hV] at hnomatch
+      cases hnomatch
+
+/-- **WS-SM SM7.B.10** (typed-flush bridge, ASID form): the encoded
+ASID invalidation is at least as strong as the typed per-ASID flush. -/
+theorem mem_adapterFlushTlbByAsid_of_mem_applyTlbInvalidation_encodeAsid
+    (t : TlbState) (asid : SeLe4n.ASID) {e : TlbEntry}
+    (h : e ∈ (applyTlbInvalidation t
+      (encodeAsidInvalidation asid)).entries) :
+    e ∈ (adapterFlushTlbByAsid t asid).entries := by
+  obtain ⟨hmem, hnomatch⟩ := (mem_applyTlbInvalidation_iff t _ e).mp h
+  unfold adapterFlushTlbByAsid
+  refine List.mem_filter.mpr ⟨hmem, ?_⟩
+  cases htyped : (e.asid == asid) with
+  | false => simp [bne, htyped]
+  | true =>
+      have hA : e.asid = asid := eq_of_beq htyped
+      rw [encodeAsidInvalidation_matches asid hA] at hnomatch
+      cases hnomatch
 
 -- ============================================================================
 -- SM7.B.2 — Target-set computation
@@ -1225,19 +1338,173 @@ def vspaceUnmapPageWithShootdown (executingCore : CoreId)
         withShootdownRound executingCore
           (encodePageInvalidation asid vaddr) st'
 
+/-- **WS-SM SM7.B.9**: does the pre-state hold a live translation for
+`(asid, vaddr)`?  The map wrapper's remap detector: only replacing a
+*live* translation leaves a stale entry cached on remote cores.  A
+fresh map owes no round — ARM64 TLBs cache no negative entries, so a
+virtual address with no current translation cannot be cached anywhere
+(every earlier transition that removed one ran its own round). -/
+def vspaceHasTranslation (st : SystemState) (asid : SeLe4n.ASID)
+    (vaddr : SeLe4n.VAddr) : Bool :=
+  match resolveAsidRoot st asid with
+  | some (_, root) => (root.lookup vaddr).isSome
+  | none => false
+
 /-- **WS-SM SM7.B.9**: **production entry point** — state-aware
-bounds-checked VSpace map with local flush and shootdown round (the
-remap direction: replacing a live translation leaves the *old* one
-cached on remote cores exactly like an unmap does). -/
+bounds-checked VSpace map with local flush and, on the *remap*
+direction only, a shootdown round: replacing a live translation leaves
+the *old* one cached on remote cores exactly like an unmap does, while
+a fresh map (no prior translation, `vspaceHasTranslation` false on the
+pre-state) has nothing stale to invalidate anywhere and commits the
+base operation exactly (`…_fresh_inert`). -/
 def vspaceMapPageCheckedWithShootdownFromState (executingCore : CoreId)
     (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
     (perms : PagePermissions := PagePermissions.readOnly) : Kernel Unit :=
   fun st =>
+    let hadPrior := vspaceHasTranslation st asid vaddr
     match vspaceMapPageCheckedWithFlushFromState asid vaddr paddr perms st with
     | .error e => .error e
     | .ok ((), st') =>
-        withShootdownRound executingCore
-          (encodePageInvalidation asid vaddr) st'
+        if hadPrior then
+          withShootdownRound executingCore
+            (encodePageInvalidation asid vaddr) st'
+        else
+          .ok ((), st')
+
+/-- **WS-SM SM7.B.9**: a fresh map posts no round — the wrapper commits
+exactly the base operation's result (trace safety for every
+first-mapping call, and no spurious cross-core traffic for the common
+fresh-map case). -/
+theorem vspaceMapPageCheckedWithShootdownFromState_fresh_inert
+    (executingCore : CoreId) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr) (perms : PagePermissions) (st : SystemState)
+    (hFresh : vspaceHasTranslation st asid vaddr = false) :
+    vspaceMapPageCheckedWithShootdownFromState executingCore asid vaddr paddr
+        perms st =
+      vspaceMapPageCheckedWithFlushFromState asid vaddr paddr perms st := by
+  unfold vspaceMapPageCheckedWithShootdownFromState
+  simp only [hFresh]
+  cases h : vspaceMapPageCheckedWithFlushFromState asid vaddr paddr perms st with
+  | error e => rfl
+  | ok pair =>
+      obtain ⟨u, st'⟩ := pair
+      cases u
+      simp
+
+/-- **WS-SM SM7.B.9** (model fact): a *successful* checked map is
+always a fresh map — `VSpaceRoot.mapPage` rejects an occupied `vaddr`
+with `.mappingConflict`, so replacing a live translation in one step
+is unreachable; the kernel's remap discipline is unmap-then-map, and
+the shootdown round rides the unmap.  This is why the map wrapper's
+posting branch is dead code *today* (`…_never_posts` below) — it stays
+as a defense-in-depth seam: if `mapPage` ever gains replace semantics,
+the round posts automatically instead of silently going missing. -/
+theorem vspaceMapPage_ok_fresh
+    (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
+    (perms : PagePermissions) {st st' : SystemState}
+    (hOk : vspaceMapPage asid vaddr paddr perms st = .ok ((), st')) :
+    vspaceHasTranslation st asid vaddr = false := by
+  unfold vspaceMapPage at hOk
+  revert hOk
+  cases hRes : resolveAsidRoot st asid with
+  | none => intro hOk; cases hOk
+  | some pair =>
+      simp only []
+      split
+      · intro hOk; cases hOk
+      · cases hMap : pair.2.mapPage vaddr paddr perms with
+        | none => intro hOk; cases hOk
+        | some root' =>
+            intro _
+            show (match resolveAsidRoot st asid with
+              | some (_, root) => (root.lookup vaddr).isSome
+              | none => false) = false
+            rw [hRes]
+            show (pair.2.lookup vaddr).isSome = false
+            unfold VSpaceRoot.mapPage at hMap
+            revert hMap
+            split
+            · intro hMap; cases hMap
+            · cases hLook : pair.2.mappings[vaddr]? with
+              | some _ => intro hMap; cases hMap
+              | none =>
+                  intro _
+                  simp only [VSpaceRoot.lookup, hLook, Option.isSome_none]
+
+/-- **WS-SM SM7.B.9**: the checked map's `ok`-implies-fresh fact lifted
+through the flush and bounds-check layers. -/
+theorem vspaceMapPageCheckedWithFlushFromState_ok_fresh
+    (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
+    (perms : PagePermissions) {st st' : SystemState}
+    (hOk : vspaceMapPageCheckedWithFlushFromState asid vaddr paddr perms st
+      = .ok ((), st')) :
+    vspaceHasTranslation st asid vaddr = false := by
+  unfold vspaceMapPageCheckedWithFlushFromState at hOk
+  revert hOk
+  split
+  · intro hOk; cases hOk
+  · split
+    · intro hOk; cases hOk
+    · unfold vspaceMapPageWithFlush
+      cases hBase : vspaceMapPage asid vaddr paddr perms st with
+      | error e => intro hOk; cases hOk
+      | ok pair =>
+          intro _
+          exact vspaceMapPage_ok_fresh asid vaddr paddr perms
+            (st' := pair.2) (by rw [hBase])
+
+/-- **WS-SM SM7.B.9** (today's-model corollary): the checked map
+wrapper never posts a round — every success path is a fresh map, whose
+shootdown state is exactly the pre-state's. -/
+theorem vspaceMapPageCheckedWithShootdownFromState_never_posts
+    (executingCore : CoreId) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr) (perms : PagePermissions) {st st' : SystemState}
+    (hOk : vspaceMapPageCheckedWithShootdownFromState executingCore asid vaddr
+      paddr perms st = .ok ((), st')) :
+    st'.tlbShootdown = st.tlbShootdown := by
+  cases hPrior : vspaceHasTranslation st asid vaddr with
+  | false =>
+      rw [vspaceMapPageCheckedWithShootdownFromState_fresh_inert executingCore
+        asid vaddr paddr perms st hPrior] at hOk
+      exact vspaceMapPageCheckedWithFlushFromState_tlbShootdown_eq asid vaddr
+        paddr perms st st' hOk
+  | true =>
+      -- Unreachable: the posting branch requires a successful base map,
+      -- which forces freshness.
+      revert hOk
+      unfold vspaceMapPageCheckedWithShootdownFromState
+      simp only [hPrior]
+      cases hBase : vspaceMapPageCheckedWithFlushFromState asid vaddr paddr
+          perms st with
+      | error e => intro hOk; cases hOk
+      | ok pair =>
+          have := vspaceMapPageCheckedWithFlushFromState_ok_fresh asid vaddr
+            paddr perms (st' := pair.2)
+            (by rw [hBase])
+          rw [hPrior] at this
+          cases this
+
+/-- **WS-SM SM7.B.9** (defense-in-depth spec): *were* a prior
+translation replaceable in one step, the wrapper would post the round
+— the conditional's behaviour contract, independent of today's
+`mapPage` conflict semantics (whose `ok`-implies-fresh fact makes the
+hypotheses jointly unsatisfiable at present;
+`vspaceMapPageCheckedWithFlushFromState_ok_fresh`). -/
+theorem vspaceMapPageCheckedWithShootdownFromState_remap_posts
+    (executingCore : CoreId) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr) (perms : PagePermissions)
+    {st stFlush : SystemState}
+    (hPrior : vspaceHasTranslation st asid vaddr = true)
+    (h : vspaceMapPageCheckedWithFlushFromState asid vaddr paddr perms st
+      = .ok ((), stFlush)) :
+    vspaceMapPageCheckedWithShootdownFromState executingCore asid vaddr paddr
+        perms st =
+      .ok ((), tlbShootdownBroadcastCoalescing stFlush executingCore
+        (shootdownTargets executingCore)
+        (encodePageInvalidation asid vaddr)) := by
+  unfold vspaceMapPageCheckedWithShootdownFromState
+  simp only [hPrior, h]
+  rfl
 
 /-- **WS-SM SM7.B.10**: **production entry point** — per-ASID TLB flush
 with shootdown round: the ASID-retire path.  Reusing a retired ASID
@@ -1418,4 +1685,403 @@ broadcast TLBI per distinct operand (plan §3.2 step 3). -/
 def shootdownPostedOps (pre post : SystemState) : List TlbInvalidation :=
   ((shootdownChangedTargets pre post).flatMap (fun c =>
     (post.tlbShootdown.pendingOnCore c).map (·.op))).eraseDups
+
+-- ============================================================================
+-- SM7.B — Invariant-bundle carriage (`pendingBounded`, the 12th
+-- `proofLayerInvariantBundle` conjunct)
+-- ============================================================================
+-- Every live shootdown-aware transition preserves the shootdown capacity
+-- invariant: the posting side is total-by-coalescing
+-- (`tlbShootdownBroadcastCoalescing_preserves_pendingBounded`), the
+-- handler side only drains (`completeShootdownOnCore_preserves_pendingBounded`),
+-- and every base operation frames `SystemState.tlbShootdown`
+-- (`VSpace.lean` / `CleanupPreservation.lean` `…_tlbShootdown_eq` families).
+
+/-- **WS-SM SM7.B**: the local shootdown step preserves the capacity
+invariant — it touches only the TLB view (`tlbShootdownLocal_frame`). -/
+theorem tlbShootdownLocal_preserves_pendingBounded {st : SystemState}
+    (hB : pendingBounded st.tlbShootdown) (op : TlbInvalidation) :
+    pendingBounded (tlbShootdownLocal st op).tlbShootdown :=
+  (tlbShootdownLocal_frame st op).2.2.2 ▸ hB
+
+/-- **WS-SM SM7.B**: the `.tlbShootdownReq` handler preserves the
+capacity invariant — its shootdown projection is exactly the SM7.A
+round step (`handleTlbShootdownReqOnCore_tlbShootdown_eq`). -/
+theorem handleTlbShootdownReqOnCore_preserves_pendingBounded
+    {st : SystemState} (hB : pendingBounded st.tlbShootdown) (c : CoreId) :
+    pendingBounded (handleTlbShootdownReqOnCore st c).tlbShootdown := by
+  rw [handleTlbShootdownReqOnCore_tlbShootdown_eq]
+  exact completeShootdownOnCore_preserves_pendingBounded hB c
+
+/-- **WS-SM SM7.B**: the round-posting combinator preserves the
+capacity invariant (total — no failure path, no occupancy premise). -/
+theorem withShootdownRound_preserves_pendingBounded
+    {st st' : SystemState} {executingCore : CoreId} {op : TlbInvalidation}
+    (hB : pendingBounded st.tlbShootdown)
+    (hOk : withShootdownRound executingCore op st = .ok ((), st')) :
+    pendingBounded st'.tlbShootdown := by
+  unfold withShootdownRound at hOk
+  simp only [Except.ok.injEq, Prod.mk.injEq] at hOk
+  rw [← hOk.2]
+  exact tlbShootdownBroadcastCoalescing_preserves_pendingBounded hB
+    executingCore (shootdownTargets executingCore) op
+
+/-- **WS-SM SM7.B.9**: the live unmap entry point preserves the
+capacity invariant — the flush base op frames the shootdown state and
+the posting step is total-by-coalescing. -/
+theorem vspaceUnmapPageWithShootdown_preserves_pendingBounded
+    {executingCore : CoreId} {asid : SeLe4n.ASID} {vaddr : SeLe4n.VAddr}
+    {st st' : SystemState}
+    (hB : pendingBounded st.tlbShootdown)
+    (hOk : vspaceUnmapPageWithShootdown executingCore asid vaddr st
+      = .ok ((), st')) :
+    pendingBounded st'.tlbShootdown := by
+  unfold vspaceUnmapPageWithShootdown at hOk
+  revert hOk
+  cases hBase : vspaceUnmapPageWithFlush asid vaddr st with
+  | error e => intro hOk; cases hOk
+  | ok pair =>
+      intro hOk
+      have hFrame : pair.2.tlbShootdown = st.tlbShootdown :=
+        vspaceUnmapPageWithFlush_tlbShootdown_eq asid vaddr st pair.2 hBase
+      exact withShootdownRound_preserves_pendingBounded (hFrame ▸ hB) hOk
+
+/-- **WS-SM SM7.B.9**: the live map entry point preserves the capacity
+invariant. -/
+theorem vspaceMapPageCheckedWithShootdownFromState_preserves_pendingBounded
+    {executingCore : CoreId} {asid : SeLe4n.ASID} {vaddr : SeLe4n.VAddr}
+    {paddr : SeLe4n.PAddr} {perms : PagePermissions} {st st' : SystemState}
+    (hB : pendingBounded st.tlbShootdown)
+    (hOk : vspaceMapPageCheckedWithShootdownFromState executingCore asid vaddr
+      paddr perms st = .ok ((), st')) :
+    pendingBounded st'.tlbShootdown := by
+  cases hPrior : vspaceHasTranslation st asid vaddr with
+  | false =>
+      rw [vspaceMapPageCheckedWithShootdownFromState_fresh_inert executingCore
+        asid vaddr paddr perms st hPrior] at hOk
+      rw [vspaceMapPageCheckedWithFlushFromState_tlbShootdown_eq
+        asid vaddr paddr perms st st' hOk]
+      exact hB
+  | true =>
+      revert hOk
+      cases hBase : vspaceMapPageCheckedWithFlushFromState asid vaddr paddr
+          perms st with
+      | error e =>
+          rw [show vspaceMapPageCheckedWithShootdownFromState executingCore
+              asid vaddr paddr perms st = .error e from by
+            unfold vspaceMapPageCheckedWithShootdownFromState
+            simp only [hBase]]
+          intro hOk; cases hOk
+      | ok pair =>
+          obtain ⟨u, stFlush⟩ := pair
+          cases u
+          rw [vspaceMapPageCheckedWithShootdownFromState_remap_posts
+            executingCore asid vaddr paddr perms hPrior hBase]
+          intro hOk
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hOk
+          rw [← hOk.2]
+          exact tlbShootdownBroadcastCoalescing_preserves_pendingBounded
+            ((vspaceMapPageCheckedWithFlushFromState_tlbShootdown_eq asid vaddr
+              paddr perms st stFlush hBase) ▸ hB) executingCore
+            (shootdownTargets executingCore)
+            (encodePageInvalidation asid vaddr)
+
+/-- **WS-SM SM7.B.10**: the ASID-retire flush entry point preserves the
+capacity invariant. -/
+theorem tlbFlushByASIDWithShootdown_preserves_pendingBounded
+    {executingCore : CoreId} {asid : SeLe4n.ASID} {st st' : SystemState}
+    (hB : pendingBounded st.tlbShootdown)
+    (hOk : tlbFlushByASIDWithShootdown executingCore asid st = .ok ((), st')) :
+    pendingBounded st'.tlbShootdown := by
+  unfold tlbFlushByASIDWithShootdown at hOk
+  revert hOk
+  cases hBase : tlbFlushByASID asid st with
+  | error e => intro hOk; cases hOk
+  | ok pair =>
+      intro hOk
+      have hFrame : pair.2.tlbShootdown = st.tlbShootdown :=
+        tlbFlushByASID_tlbShootdown_eq asid st pair.2 hBase
+      exact withShootdownRound_preserves_pendingBounded (hFrame ▸ hB) hOk
+
+/-- **WS-SM SM7.B.9**: the per-page flush entry point preserves the
+capacity invariant. -/
+theorem tlbFlushByPageWithShootdown_preserves_pendingBounded
+    {executingCore : CoreId} {asid : SeLe4n.ASID} {vaddr : SeLe4n.VAddr}
+    {st st' : SystemState}
+    (hB : pendingBounded st.tlbShootdown)
+    (hOk : tlbFlushByPageWithShootdown executingCore asid vaddr st
+      = .ok ((), st')) :
+    pendingBounded st'.tlbShootdown := by
+  unfold tlbFlushByPageWithShootdown at hOk
+  revert hOk
+  cases hBase : tlbFlushByPage asid vaddr st with
+  | error e => intro hOk; cases hOk
+  | ok pair =>
+      intro hOk
+      have hFrame : pair.2.tlbShootdown = st.tlbShootdown :=
+        tlbFlushByPage_tlbShootdown_eq asid vaddr st pair.2 hBase
+      exact withShootdownRound_preserves_pendingBounded (hFrame ▸ hB) hOk
+
+/-- **WS-SM SM7.B.10**: the ASID-allocation entry point preserves the
+capacity invariant — the flush arm delegates to
+`tlbFlushByASIDWithShootdown`; the fresh arm commits the pre-state. -/
+theorem asidAllocateWithShootdown_preserves_pendingBounded
+    {executingCore : CoreId} {pool : AsidPool}
+    {st st' : SystemState} {result : AsidAllocResult}
+    (hB : pendingBounded st.tlbShootdown)
+    (hOk : asidAllocateWithShootdown executingCore pool st
+      = .ok (result, st')) :
+    pendingBounded st'.tlbShootdown := by
+  cases hAlloc : pool.allocate with
+  | none =>
+      rw [show asidAllocateWithShootdown executingCore pool st
+          = .error .resourceExhausted from by
+        unfold asidAllocateWithShootdown; simp only [hAlloc]] at hOk
+      cases hOk
+  | some r =>
+      cases hFlushCase : r.requiresFlush with
+      | true =>
+          rw [asidAllocateWithShootdown_requiresFlush executingCore hAlloc
+            hFlushCase st] at hOk
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hOk
+          rw [← hOk.2]
+          exact tlbShootdownBroadcastCoalescing_preserves_pendingBounded hB
+            executingCore (shootdownTargets executingCore)
+            (encodeAsidInvalidation r.asid)
+      | false =>
+          rw [asidAllocateWithShootdown_fresh_inert executingCore hAlloc
+            hFlushCase st] at hOk
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hOk
+          rw [← hOk.2]
+          exact hB
+
+-- ============================================================================
+-- SM7.B — Handler commutativity (catch-up fold order-independence)
+-- ============================================================================
+-- The runtime's catch-up commit folds the handler over `shootdownTargets`;
+-- the hardware retires each target's TLBIs in whatever order the SGIs land.
+-- Distinct-core handler steps commute, so every visit order computes the
+-- same state — the fold order in `completeShootdownRounds` is a
+-- convention, not a correctness requirement.
+
+/-- **WS-SM SM7.B**: single invalidation applications commute — each is
+an entry filter, and filters intersect commutatively. -/
+theorem applyTlbInvalidation_comm (t : TlbState) (op₁ op₂ : TlbInvalidation) :
+    applyTlbInvalidation (applyTlbInvalidation t op₁) op₂ =
+      applyTlbInvalidation (applyTlbInvalidation t op₂) op₁ := by
+  unfold applyTlbInvalidation
+  congr 1
+  simp only [List.filter_filter]
+  exact List.filter_congr (fun e _ => by rw [Bool.and_comm])
+
+/-- **WS-SM SM7.B** (helper): a single application commutes past a
+retire fold. -/
+theorem applyTlbInvalidations_apply_comm (ops : List TlbInvalidation) :
+    ∀ (t : TlbState) (op : TlbInvalidation),
+      applyTlbInvalidations (applyTlbInvalidation t op) ops =
+        applyTlbInvalidation (applyTlbInvalidations t ops) op := by
+  induction ops with
+  | nil => intro t op; rfl
+  | cons o os ih =>
+    intro t op
+    rw [applyTlbInvalidations_cons, applyTlbInvalidation_comm t op o, ih,
+        applyTlbInvalidations_cons]
+
+/-- **WS-SM SM7.B**: retire folds of two operand lists commute. -/
+theorem applyTlbInvalidations_comm (ops₁ ops₂ : List TlbInvalidation) :
+    ∀ t : TlbState,
+      applyTlbInvalidations (applyTlbInvalidations t ops₁) ops₂ =
+        applyTlbInvalidations (applyTlbInvalidations t ops₂) ops₁ := by
+  induction ops₁ with
+  | nil => intro t; rfl
+  | cons o os ih =>
+    intro t
+    rw [applyTlbInvalidations_cons, ih,
+        applyTlbInvalidations_apply_comm ops₂ t o,
+        applyTlbInvalidations_cons]
+
+/-- **WS-SM SM7.B**: `.tlbShootdownReq` handler steps at *distinct*
+cores commute — each drains only its own queue, acknowledges only its
+own flag, and the TLB retire-filters intersect commutatively.  With
+`foldl_handleTlbShootdownReqOnCore_swap` below this makes the catch-up
+fold's visit order immaterial (any permutation of a `Nodup` target
+list computes the same state, by induction on adjacent
+transpositions). -/
+theorem handleTlbShootdownReqOnCore_comm {c₁ c₂ : CoreId} (h : c₁ ≠ c₂)
+    (st : SystemState) :
+    handleTlbShootdownReqOnCore (handleTlbShootdownReqOnCore st c₁) c₂ =
+      handleTlbShootdownReqOnCore (handleTlbShootdownReqOnCore st c₂) c₁ := by
+  show ({ st with
+      tlb := applyTlbInvalidations
+        (applyTlbInvalidations st.tlb
+          ((st.tlbShootdown.pendingOnCore c₁).map (·.op)))
+        (((completeShootdownOnCore st.tlbShootdown c₁).pendingOnCore c₂).map
+          (·.op)),
+      tlbShootdown :=
+        completeShootdownOnCore
+          (completeShootdownOnCore st.tlbShootdown c₁) c₂ } : SystemState)
+    = { st with
+      tlb := applyTlbInvalidations
+        (applyTlbInvalidations st.tlb
+          ((st.tlbShootdown.pendingOnCore c₂).map (·.op)))
+        (((completeShootdownOnCore st.tlbShootdown c₂).pendingOnCore c₁).map
+          (·.op)),
+      tlbShootdown :=
+        completeShootdownOnCore
+          (completeShootdownOnCore st.tlbShootdown c₂) c₁ }
+  rw [completeShootdownOnCore_frame_pending st.tlbShootdown (Ne.symm h),
+      completeShootdownOnCore_frame_pending st.tlbShootdown h,
+      completeShootdownOnCore_comm h st.tlbShootdown,
+      applyTlbInvalidations_comm]
+
+/-- **WS-SM SM7.B**: adjacent-transposition form — swapping the first
+two (distinct) targets of the handler fold changes nothing. -/
+theorem foldl_handleTlbShootdownReqOnCore_swap {c₁ c₂ : CoreId}
+    (h : c₁ ≠ c₂) (rest : List CoreId) (st : SystemState) :
+    (c₁ :: c₂ :: rest).foldl handleTlbShootdownReqOnCore st =
+      (c₂ :: c₁ :: rest).foldl handleTlbShootdownReqOnCore st := by
+  simp only [List.foldl_cons]
+  rw [handleTlbShootdownReqOnCore_comm h]
+
+-- ============================================================================
+-- SM7.B — Coalesced-round invalidation coverage (Theorem 3.3.1, total form)
+-- ============================================================================
+
+/-- **WS-SM SM7.B**: `.vmalle1` covers every entry — the coalescing
+escape hatch's over-invalidation is total by construction. -/
+@[simp] theorem tlbEntryMatches_vmalle1 (e : TlbEntry) :
+    tlbEntryMatches TlbInvalidation.vmalle1 e = true := rfl
+
+/-- **WS-SM SM7.B**: retiring a queue that *covers* a request (the
+descriptor is pending, or a superseding full flush is) removes every
+entry the request matches — the invalidation-effect reading of the
+coalescing coverage disjunction
+(`enqueueShootdownOrCoalesce_request_covered`): coalescing never loses
+an invalidation, it only widens it. -/
+theorem coveredQueueRetire_removes {queue : List TlbShootdownDescriptor}
+    {d : TlbShootdownDescriptor}
+    (hcov : d ∈ queue ∨ ∃ d' ∈ queue, d'.op = TlbInvalidation.vmalle1)
+    {e : TlbEntry} (he : tlbEntryMatches d.op e = true) (t : TlbState) :
+    e ∉ (applyTlbInvalidations t (queue.map (·.op))).entries := by
+  rcases hcov with hmem | ⟨d', hd'mem, hd'op⟩
+  · exact applyTlbInvalidations_removes (List.mem_map_of_mem hmem) he t
+  · have hops : TlbInvalidation.vmalle1 ∈ queue.map (·.op) :=
+      List.mem_map.mpr ⟨d', hd'mem, hd'op⟩
+    exact applyTlbInvalidations_removes hops (tlbEntryMatches_vmalle1 e) t
+
+/-- **WS-SM SM7.B** (Theorem 3.3.1, coalescing remote case): after a
+live unmap commit, *whatever* the coalescing posting left on a remote
+core's queue — the unmap's own descriptor or a superseding full flush
+— retiring that queue removes the unmapped translation from that
+core's view.  This closes the remote case for the **total** posting
+path the production wrappers actually use (the strict-broadcast form
+is `tlbShootdownBroadcast_invalidatesAllCores`). -/
+theorem vspaceUnmapPageWithShootdown_remote_retire_removes
+    (executingCore : CoreId) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    {st stFlush : SystemState}
+    (h : vspaceUnmapPageWithFlush asid vaddr st = .ok ((), stFlush))
+    {c : CoreId} (hc : c ≠ executingCore)
+    {e : TlbEntry} (hA : e.asid = asid) (hV : e.vaddr = vaddr)
+    (t : TlbState) :
+    e ∉ (applyTlbInvalidations t
+      (((tlbShootdownBroadcastCoalescing stFlush executingCore
+          (shootdownTargets executingCore)
+          (encodePageInvalidation asid vaddr)).tlbShootdown.pendingOnCore
+            c).map (·.op))).entries :=
+  coveredQueueRetire_removes
+    (vspaceUnmapPageWithShootdown_posts executingCore asid vaddr h c hc)
+    (encodePageInvalidation_matches asid vaddr hA hV) t
+
+-- ============================================================================
+-- SM7.B — Positive diff characterization + coalescing-round capstones
+-- ============================================================================
+
+/-- **WS-SM SM7.B**: positive diff characterization — a coalescing
+posting from quiescence changes *exactly* the target queues, so the
+runtime seam's diff recovery fires SGIs at exactly the round's
+targets (the negative direction is
+`shootdownChangedTargets_nil_of_eq`). -/
+theorem shootdownChangedTargets_coalescing_of_quiescent
+    {st : SystemState} (hq : shootdownQuiescent st.tlbShootdown)
+    (initiator : CoreId) (op : TlbInvalidation) :
+    shootdownChangedTargets st
+      (tlbShootdownBroadcastCoalescing st initiator
+        (shootdownTargets initiator) op) = shootdownTargets initiator := by
+  have hpt : ∀ c ∈ allCores,
+      ((tlbShootdownBroadcastCoalescing st initiator
+          (shootdownTargets initiator) op).tlbShootdown.pendingOnCore c
+        != st.tlbShootdown.pendingOnCore c) = (c != initiator) := by
+    intro c _
+    by_cases hc : c = initiator
+    · subst hc
+      have hframe : (tlbShootdownBroadcastCoalescing st c
+          (shootdownTargets c) op).tlbShootdown.pendingOnCore c =
+            st.tlbShootdown.pendingOnCore c := by
+        show (postShootdownRoundCoalescing st.tlbShootdown c
+          (shootdownTargets c) op).pendingOnCore c = _
+        unfold postShootdownRoundCoalescing
+        rw [foldl_enqueueShootdownOrCoalesce_frame_pending _ _ _
+              (initiator_not_mem_shootdownTargets c),
+            beginShootdownRoundFor_frame_pending]
+      simp [hframe]
+    · have hmem : c ∈ shootdownTargets initiator :=
+        (mem_shootdownTargets_iff initiator c).mpr hc
+      have hcov := postShootdownRoundCoalescing_covered st.tlbShootdown
+        initiator (shootdownTargets_nodup initiator) op c hmem
+      have hne : (tlbShootdownBroadcastCoalescing st initiator
+          (shootdownTargets initiator) op).tlbShootdown.pendingOnCore c ≠
+            st.tlbShootdown.pendingOnCore c := by
+        rw [hq.1 c]
+        rcases hcov with hmem' | ⟨d', hd'mem, _⟩
+        · exact List.ne_nil_of_mem hmem'
+        · exact List.ne_nil_of_mem hd'mem
+      have h1 : ((tlbShootdownBroadcastCoalescing st initiator
+          (shootdownTargets initiator) op).tlbShootdown.pendingOnCore c
+            != st.tlbShootdown.pendingOnCore c) = true := by
+        rw [bne_iff_ne]; exact hne
+      have h2 : (c != initiator) = true := by
+        rw [bne_iff_ne]; exact hc
+      rw [h1, h2]
+  exact List.filter_congr hpt
+
+/-- **WS-SM SM7.B** (coalescing-round capstone, quiescence half): the
+complete round the runtime actually executes — total coalescing
+posting, initiator-local retirement, handler catch-up fold over the
+targets — restores quiescence from quiescence.  This is the
+`completeShootdownRounds` catch-up commit's discharge: after the fold,
+every queue is empty and every flag acknowledged, so the *next* round
+posts into empty queues (the §4.1 capacity-sufficiency induction,
+closed for the coalescing path). -/
+theorem coalescingRound_restores_quiescent {st : SystemState}
+    (hq : shootdownQuiescent st.tlbShootdown) (initiator : CoreId)
+    (op : TlbInvalidation) :
+    shootdownQuiescent
+      ((shootdownTargets initiator).foldl handleTlbShootdownReqOnCore
+        (tlbShootdownLocal
+          (tlbShootdownBroadcastCoalescing st initiator
+            (shootdownTargets initiator) op) op)).tlbShootdown := by
+  obtain ⟨⟨posted, sgis⟩, hb⟩ := Option.isSome_iff_exists.mp
+    (tlbShootdownBroadcast_isSome_of_quiescent hq initiator
+      (shootdownTargets_nodup initiator) op)
+  rw [tlbShootdownBroadcastCoalescing_eq_strict hb]
+  exact shootdownRound_quiescent hq
+    (by unfold shootdownRound; rw [hb])
+
+/-- **WS-SM SM7.B** (coalescing-round capstone, exit-condition half):
+the complete coalescing round reaches `allAcked` — the bounded wait's
+exit condition is realised by the round the runtime actually runs. -/
+theorem coalescingRound_allAcked {st : SystemState}
+    (hq : shootdownQuiescent st.tlbShootdown) (initiator : CoreId)
+    (op : TlbInvalidation) :
+    allAcked
+      ((shootdownTargets initiator).foldl handleTlbShootdownReqOnCore
+        (tlbShootdownLocal
+          (tlbShootdownBroadcastCoalescing st initiator
+            (shootdownTargets initiator) op) op)).tlbShootdown := by
+  obtain ⟨⟨posted, sgis⟩, hb⟩ := Option.isSome_iff_exists.mp
+    (tlbShootdownBroadcast_isSome_of_quiescent hq initiator
+      (shootdownTargets_nodup initiator) op)
+  rw [tlbShootdownBroadcastCoalescing_eq_strict hb]
+  exact shootdownRound_allAcked hq
+    (by unfold shootdownRound; rw [hb])
 end SeLe4n.Kernel.Architecture

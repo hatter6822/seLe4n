@@ -340,6 +340,141 @@ diff-recovery seam.  Rust HAL 755 → 769 (round lock, bounded wait
 incl. deadline-exactness, handler + registration/dispatch, online
 mask, full-IAR dispatch + EOI conformance).
 
+#### SM7.B completion cut (v0.32.77)
+
+A follow-on cut closing every depth item the landing deferred:
+
+* **Invariant-bundle carriage (the plan's "join a SystemState-level
+  invariant bundle" deferral, CLOSED)**: `pendingBounded
+  st.tlbShootdown` is the **12th conjunct of
+  `proofLayerInvariantBundle`** (`Architecture/Invariant.lean`) — boot
+  witness via `default_tlbShootdown_pendingBounded`, the three adapter
+  preservation proofs extended, the Boot general bridge
+  (`bootFromPlatform_tlbShootdown_eq` + the 12-component composition),
+  and freeze carried wholesale.  The carriage is proven through every
+  live shootdown-aware transition (`…_preserves_pendingBounded` for
+  the handler, `withShootdownRound`, all five syscall wrappers, and
+  both retype wrappers), resting on a new `…_tlbShootdown_eq` frame
+  family covering the entire retype-cleanup pipeline and the VSpace
+  base ops (`storeObject` / splice / sweeps / `detachCNodeSlots` /
+  `returnDonatedSchedContext` / registry / scrub / `cspaceLookupSlot`).
+* **Handler commutativity**: distinct-core round steps commute at both
+  layers (`completeShootdownOnCore_comm`,
+  `handleTlbShootdownReqOnCore_comm` via the retire-filter algebra
+  `applyTlbInvalidation(s)_comm`) + the fold-swap corollary — the
+  catch-up fold's visit order is a convention, not a correctness
+  requirement.
+* **Coalescing-round capstones**: `coalescingRound_restores_quiescent`
+  / `coalescingRound_allAcked` (the round the runtime *actually* runs,
+  via `tlbShootdownBroadcastCoalescing_eq_strict`), the positive diff
+  characterization `shootdownChangedTargets_coalescing_of_quiescent`
+  (the seam pokes *exactly* the round's targets), and the total-posting
+  remote case of Theorem 3.3.1 (`coveredQueueRetire_removes` →
+  `vspaceUnmapPageWithShootdown_remote_retire_removes`).
+* **Remap-only map rounds + a model fact**: the `.vspaceMap` wrapper
+  now posts only on the remap direction (`vspaceHasTranslation`
+  pre-state detector; `_fresh_inert`) — and the model fact
+  `vspaceMapPageCheckedWithFlushFromState_ok_fresh` pins that a
+  *successful* map is always fresh (`VSpaceRoot.mapPage` rejects an
+  occupied vaddr with `.mappingConflict`), so the map path owes no
+  round today (`…_never_posts`); the posting branch stays as a
+  defense-in-depth seam (`_remap_posts`) should `mapPage` ever gain
+  replace semantics.  The round rides the unmap of the
+  unmap-then-map discipline.
+* **Least-index wait + round-lock model**: `waitAllAckedFrom_first` /
+  `waitAllAckedBounded_least` (the bounded wait returns the least
+  all-acked snapshot; `shootdown_wait_loop_terminates_least` extracts
+  the least witness constructively, no choice), the round-lock CAS
+  state machine (`roundLockTryAcquire` — success-iff-free, mutex,
+  release-liveness) matching the Rust `compare_exchange` exactly, the
+  cross-round publication chain `shootdownRoundLock_release_acquire`
+  (+ decide-checked witness) — the formal reason the ack vector needs
+  no round identity under serialisation — and the 4-core multi-pair
+  B.4 witness (`shootdownAck_release_acquire_multi_pair_witness`).
+* **Entry hardening**: named fuel constant
+  `shootdownRoundLockAcquireFuel` (pinned), `completeShootdownRounds_nil`
+  (the no-op path is `pure ()` by rfl — trace safety at the definition
+  level), one `CORE_READY` snapshot per round (`shootdownOnlineMask` +
+  pure `coreOnlineInMask`), the `vmalle1`-dominance operand collapse
+  (`collapseShootdownOps`, effect-exact), `shootdownSharingDomain` now
+  *derived* from `PlatformBinding.sharingDomain` (B.12 binding read;
+  `shootdownSharingDomain_rpi5` pins `.inner`), and the cooperative
+  self-service arm flipped to the **local** `tlbi vmalle1`
+  (`Concurrency.tlbiLocalFullFlush` — the waiter cleans exactly its own
+  view, as the Rust handler does; `ffi_tlbi_all`'s usage contract
+  updated).
+* **storeObject sweep (SM7.B.11 closure)**: audit of every
+  vspaceRoot-destroying path found one further production entry point
+  owing TLB work — the CSpaceAddr wrapper `lifecycleRetypeWithCleanup`;
+  closed by the shootdown-aware sibling
+  `lifecycleRetypeWithCleanupShootdown` (+ `_non_vspace` /
+  `_vspace_posts` / `_preserves_pendingBounded`).  Remaining paths are
+  clean by construction: `Internal.lifecycleRetypeObject` /
+  `lifecycleRevokeDeleteRetype` are documented proof-chain internals
+  (unreachable from dispatch), the non-shootdown `WithFlush` map/unmap
+  forms are proof-decomposition helpers superseded on the live path,
+  `installBootVSpaceRoot` runs pre-secondaries (TLBs empty by the
+  bring-up contract), and `FrozenOps.frozenStoreObject` is staged
+  experimental.
+* **Typed-flush bridge**: the encoded operands are at least as strong
+  as the typed local flushes
+  (`mem_adapterFlushTlbBy{VAddr,Asid}_of_mem_applyTlbInvalidation_…`) —
+  collisions only ever widen removal.
+* **Test hardening**: Rust handler `_in` slice form with **genuine**
+  `false → true` ack-transition tests (the boot-all-`true` global made
+  the prior assertions vacuous), `round_lock_try_acquire_in` /
+  `_release_in` + an 8-thread CAS **mutex stress** (at-most-one-holder
+  observed at every instant); HAL 769 → 772.  Suite §4.9 (completion
+  cut) + §4.10 (the **live `.vspaceUnmap` through `dispatchSyscall`**:
+  CSpace resolution + authority gate + posting + fail-closed no-cap /
+  read-only-cap) — 22 scenario groups, 160 runtime assertions.
+  SM7.E.2 seeded: `scripts/test_qemu_smp_shootdown.sh` (Tier-4,
+  registered in `test_tier4_smp_bootcheck.sh`; SKIPs until the SM9.E
+  bootable image, as its SM5/SM6 siblings).
+* **Testing note**: `Testing/InvariantChecks.lean` mirrors
+  `crossSubsystemInvariant` only; the new bundle conjunct is
+  runtime-checked by the suite's decidable `pendingBounded` probes, so
+  the executable checker needs no change (golden trace byte-identical
+  by construction).
+
+Tracked debt (registered here; unchanged claims elsewhere):
+
+* **Per-descriptor Rust handler TLBIs** — the conservative full-flush
+  handler over-invalidates; a per-descriptor retire needs a Rust-side
+  descriptor mirror (perf-only; revisit with SM7.C's per-core views or
+  the SM9 performance pass).
+* **Rust-handler formal refinement** — "runtime removes ⊇ model
+  removes" is an argued invariant; the machine-checked refinement
+  needs the SM9.E linked runtime.
+* **B.10 syscall-level reachability** — `asidAllocateWithShootdown` is
+  the kernel-level `requiresFlush` consumer; no ASID-management
+  syscall exists yet to reach it from user space (an ABI extension,
+  tracked for the SM8/SM9 scope decision).
+* **Step-4d direct-ack SGI** (`.tlbShootdownAck`) — optional latency
+  optimisation; the shared-flag ack channel is sufficient at v1.0.0.
+* **`withLockSet` bundle carriage** — the SM6.D scope note's
+  `withLockSet_preserves_ipcInvariantFull_perCore` generalisation now
+  also covers the shootdown footprint's cross-domain
+  `TlbShootdownLockId`; unchanged, tracked with the SM6.D item.
+* **SM7.C.6** — the plan-literal per-core restatement of Theorem 3.3.1
+  lands with the per-core TLB mount (mechanical instantiation of the
+  vector form).
+* **Host-test starvation livelock (pre-existing, SM2-era)** — the
+  SM2.B lock stress tests spin unbounded on FIFO hand-offs
+  (`TicketLock.acquire`'s `while serving != my_ticket`, the queued
+  RW lock's `PARKED_ADMITTED` waits); `wfe_bounded` is aarch64-only,
+  so on the host these are pure busy-waits.  Under an oversubscribed
+  host CPU (e.g. `cargo test --workspace` testing while still
+  compiling sibling crates) the holder thread can be starved by
+  spinning waiters for minutes — observed once at v0.32.76 and once
+  at v0.32.77, both self-limited to the loaded window; the identical
+  binary passes repeatably (8/8) when run without compile contention.
+  Not a target defect (per-core PEs never oversubscribe) and not
+  reachable from the SM7.B tests (the round lock is try-acquire —
+  never blocks).  Mitigation candidates for the SM9 test-infra pass:
+  host-cfg yield in the spin bodies, or serialising compile and test
+  phases in CI.
+
 ### SM7.C — Per-core TLB model (3 PRs, 8 sub-tasks)
 
 | Sub | Description | Theorem | Est |
@@ -366,8 +501,8 @@ mask, full-IAR dispatch + EOI conformance).
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| SM7.E.1 | `tests/SmpTlbShootdownSuite.lean` (15+ scenarios) | XL |
-| SM7.E.2 | QEMU shootdown integration | `scripts/test_qemu_smp_shootdown.sh` | M |
+| SM7.E.1 | `tests/SmpTlbShootdownSuite.lean` (15+ scenarios) — seeded at SM7.A, 22 groups at the SM7.B completion cut | XL |
+| SM7.E.2 | QEMU shootdown integration | `scripts/test_qemu_smp_shootdown.sh` — **seeded** at the SM7.B completion cut (Tier-4 registered; SKIPs until the SM9.E bootable image) | M |
 | SM7.E.3 | Shootdown stress test (4 cores × concurrent unmaps) | M |
 | SM7.E.4 | Cross-cluster mock test | M |
 | SM7.E.5 | Surface anchors | S |
