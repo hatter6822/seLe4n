@@ -1,3 +1,236 @@
+## v0.32.75 — WS-SM SM7.A: PR #838 review P1 — offline cores stay acknowledged across a round
+
+Closes the P1 review finding on `reset_for_round`: in a partial-core
+boot (`smp_enabled=false` — the v1.0.0 default — an `smp_max_cores`
+cap, or a PSCI CPU_ON rejection leaving only a prefix of secondaries
+online), the reset cleared every slot of the fixed 4-core
+`SHOOTDOWN_ACK` array, but an offline core can never take the
+`.tlbShootdownReq` SGI and call `ack_set` — `all_acked` became
+permanently unreachable and the initiator's wait loop would hang.
+
+* **Rust**: `reset_for_round` now reads the online set from
+  `smp::CORE_READY` and leaves non-online cores **born-acknowledged**,
+  via the new testable inner form `reset_for_round_in_slice_masked`
+  (mask-length checked, fail-closed).  Safety: an offline core holds
+  no stale translations — every secondary bring-up runs
+  `tlbi vmalle1` + DSB + ISB before enabling its MMU
+  (`mmu.rs::init_mmu_secondary`), so a core coming online after a
+  round it was excluded from starts with an empty TLB; SM7.B's
+  target-set computation must likewise target online cores only, and
+  rounds must not race bring-up (bring-up completes during boot,
+  before any user mapping exists).  Five new tests: offline slots stay
+  acknowledged, the partial-online round trip reaches `all_acked`
+  without offline cores, the `smp_enabled=false` single-core round is
+  immediately complete, all-online masked ≡ unmasked, and the
+  mask-length mismatch panics.  HAL 750 → 755 tests.
+* **Lean**: the target-masked round-open `beginShootdownRoundFor`
+  (targets = the online non-initiator cores; non-targets born-`true`)
+  with `_ackOnCore_iff` / `_frame_pending` /
+  `_preserves_pendingBounded`, the closed forms
+  `foldl_setAckFalse_{ackOnCore,pendingOnCore}`, the bridge
+  `beginShootdownRoundFor_allCores_eq` (fully-online collapses to
+  `beginShootdownRound` — mechanically mirrored by the Rust
+  all-online≡unmasked test), the masked posting-success corollary
+  `beginRoundFor_foldlM_enqueueShootdown_isSome`, and the
+  **hypothesis-free masked capstone**
+  `shootdownRoundFor_restores_quiescent` — no coverage premise, since
+  non-targets are never waited on.  Zero sorry/axiom.
+
+Suite 75 → **81 assertions / 12 groups** (§3.12 partial-online round:
+offline-born-acked flags, the online-only completion, the
+`smp_enabled=false` no-target round, the all-online ≡ unmasked
+bridge); Tier-3 anchors extended.  Version bumped 0.32.74 → 0.32.75.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §5 (SM7.A audit record); PR #838
+
+## v0.32.74 — WS-SM SM7.A audit cut: round-serialisation contract corrected + coalescing coverage completed
+
+Three-lane adversarial audit of PR #838 (independent Lean proof-vacuity
+auditor, independent Rust/FFI security auditor, docs-vs-code lane).
+Two confirmed findings, both fixed here; every other dimension —
+theorem vacuity (probe-built concrete capstone/coalesce
+instantiations), `@[simp]` hygiene, decidable-instance transparency,
+memory-ordering soundness under the serialised regime, FFI bound-check
+placement, struct layout, test race-freedom, documented-count
+truthfulness — verified sound.  Full record: plan §5 SM7.A audit note.
+
+* **Round-serialisation contract corrected (High; registered SM7.B.7
+  obligation).**  The v0.32.72 docstrings claimed "the VSpaceRoot write
+  lock serialises rounds" while the `ShootdownQueueLockId` rationale
+  correctly observed that different-VSpace initiators run concurrently
+  — mutually contradictory, and the first claim is unsound: the ack
+  vector carries **no round identity**, so an interleaved
+  `beginShootdownRound`/`reset_for_round` yields (a) an early
+  `allAcked` exit with a stale TLB entry still live on a target — the
+  SMP-C4 hazard itself — and (b) a cleared born-`true` initiator flag
+  (mutual hang).  Not exploitable today (SM7.B is PENDING; no runtime
+  path reaches the protocol), but a live design defect for SM7.B.
+  Fixed: a **"Round serialisation contract"** section in the
+  `TlbShootdown.lean` header states the single-round-in-flight
+  requirement with both failure interleavings; the new
+  `ShootdownRoundLockId` (fieldless, provably unique —
+  `ShootdownRoundLockId.singleton`; acquired before every per-core
+  queue lock, released only after `allAcked`) is the registered
+  SM7.B.7 serialiser; all ten claim sites across `TlbShootdown.lean` /
+  `shootdown.rs` / `ffi.rs` / `Runtime.lean` restate the corrected
+  contract; the queue-lock total order is re-documented as
+  2PL-footprint declaration + defense-in-depth; the plan §7 risk row
+  and §5 completion record carry the finding and the obligation.
+* **Coalescing coverage completed.**  The escape hatch's "no
+  invalidation is ever lost" docstring cited a theorem that covered
+  only the *new* descriptor; the new
+  `enqueueShootdownOrCoalesce_pending_covered` proves every
+  *previously queued* descriptor is still pending or superseded by a
+  `.vmalle1`, and the docstring now cites both coverage theorems.
+
+Follow-up registered (pre-existing, not SM7.A-specific): a crate-wide
+`@[extern] … BaseIO` ↔ `extern "C"` calling-convention conformance
+audit once a linked runtime path exists (SM9.E) — SM7.A follows the
+established SM1-era convention.
+
+Suite 73 → **75 assertions** (dropped-descriptor supersession on the
+collapse path; round-lock uniqueness) + the audit-cut `#check` anchors
++ two theorem-application witnesses; Tier-3 anchors extended.  Rust
+750 tests / clippy / rustfmt green; golden trace byte-identical.
+Version bumped 0.32.73 → 0.32.74.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §5 (SM7.A audit record)
+
+## v0.32.73 — WS-SM SM7.A completion cut: SystemState mount, round capstone, coalescing bound, lock IDs, FFI seam
+
+Closes every deferral recorded at the v0.32.72 SM7.A landing — the
+state layer is now mounted, its capacity argument and round behaviour
+are theorems rather than prose, and the Lean/Rust ack-flag
+correspondence is a linked seam rather than parallel documentation:
+
+* **SystemState mount (the plan §4.1 "`ConcurrencyState`" placement).**
+  `SystemState.tlbShootdown : TlbShootdownState := .initial`
+  (`Model/State.lean`, the SM3.A.10 `objStoreLock` precedent), with the
+  boot-state theorems `default_tlbShootdown_initial` /
+  `default_tlbShootdown_quiescent` / `default_tlbShootdown_pendingBounded`
+  and IF-projection + invariant-bundle deferral notes in the field
+  docstring.  To keep `Model/State.lean`'s import closure pure, the
+  `TlbInvalidation` inductive + encoders + theorems moved verbatim from
+  the staged `TlbiForSharing` (which imports `Platform.FFI`, above
+  `Kernel.API`) into the new pure production module
+  `Architecture/TlbInvalidation.lean` — all fully-qualified names
+  unchanged, `TlbiForSharing` imports it and keeps the `SharingDomain`
+  half + the `BaseIO` dispatcher.  `TlbShootdown` is **promoted to
+  production** (staged partition 58 → 57; `STATUS: staged` marker
+  dropped, allowlist entry removed, `Staged.lean` import retained per
+  the `Locks.RwLock` precedent).
+* **Round-level capstone.**  `shootdownRound_restores_quiescent`: from
+  any quiescent state, `beginShootdownRound` + the per-target posting
+  fold + per-target `completeShootdownOnCore` (the drain→ack
+  composition, `rfl`-pinned to the handler's two-step form) ends
+  quiescent — generalising the suite's concrete 4-core walk to
+  arbitrary initiators/targets/descriptors, no `Nodup` needed.  Fed by
+  the new `foldl_completeShootdownOnCore_{pendingOnCore,ackOnCore}`
+  closed forms and the `foldlM` posting-fold frame lemmas.
+* **Capacity sufficiency, formal.**  The plan §4.1 "serialised rounds
+  never hit the bound" prose is now
+  `beginRound_foldlM_enqueueShootdown_isSome` +
+  `foldlM_enqueueShootdown_isSome` (+ `enqueueShootdown_isSome_of_empty`);
+  together with the capstone this closes the induction keeping
+  `maxPendingPerCore` sufficient across rounds forever.
+* **Overflow escape hatch.**  `enqueueShootdownOrCoalesce`: total
+  enqueue that collapses a full queue to a single full-flush descriptor
+  (over-invalidation is always safe) — equals `enqueueShootdown` below
+  the bound, never loses a request (`…_request_covered`), preserves
+  `pendingBounded` **unconditionally**, frames other cores + acks.
+* **Pending-queue lock identifier.**  `ShootdownQueueLockId` (per-core,
+  the `RunQueueLockId` pattern) with a decidable total order
+  (`le_refl`/`le_trans`/`le_antisymm`/`le_total`/`lt_or_gt_of_ne`) and
+  the ascending-core acquisition rationale (two concurrent
+  different-VSpace initiators would otherwise deadlock) — the ready
+  seam for SM7.B.7's `lockSet_tlbShootdown_correct`.
+* **FFI seam.**  Rust `ffi_shootdown_{ack_set,ack_is_set,
+  reset_for_round,all_acked}` (u64-space bound check before the `usize`
+  cast via the testable `shootdown_core_id_checked`; fail-closed panic
+  = abort at the C ABI) + Lean `@[extern]` bindings (`Platform/FFI.lean`)
+  + typed `CoreId` wrappers in `Concurrency/Runtime.lean`
+  (`shootdownAckSet`/`shootdownAckIsSet`/`shootdownResetForRound`/
+  `shootdownAllAcked`, `_eq_ffi` rfl theorems, and
+  `shootdownAck_ffi_core_in_range` making the Rust panic arm
+  structurally unreachable).  `shootdown.rs` gains the Lean↔Rust
+  conformance-pairing table and the exhaustive 2⁴-state `all_acked`
+  conjunction test; HAL 743 → **750 tests**, clippy/rustfmt clean.
+* **State ergonomics + docs.**  `TlbShootdownState` derives
+  `DecidableEq`; `TlbModel.lean` + the `SystemState.tlb` docstring
+  cross-reference the shootdown layer; `Staged.lean`'s stale enumerated
+  module list (frozen at SM2.C) replaced by a pointer to the
+  authoritative allowlist; GitBook 12 gains the SM7.A proof-map entry.
+
+Zero sorry/axiom.  `tests/SmpTlbShootdownSuite.lean` grows 51 → **73
+assertions / 11 groups** (§3.8 coalescing, §3.9 round composition —
+including the computed capstone, final-state == boot-state via the new
+`DecidableEq`, and the duplicate-target robustness walk, §3.10 lock
+order, §3.11 SystemState mount) + the completion-cut `#check` anchors
+and generic theorem-application witnesses; Tier-3 anchors extended.
+Version bumped 0.32.72 → 0.32.73.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §5 (SM7.A)
+
+## v0.32.72 — WS-SM SM7.A: TLB shootdown descriptor + per-core pending/ack state
+
+Opens WS-SM Phase SM7 (TLB / cache shootdown, SMP-C4 closure) with the
+SM7.A state layer — all six sub-tasks (SM7.A.1–A.6,
+`docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` §5), staged for the SM7.B
+protocol transitions:
+
+* **SM7.A.1 `TlbShootdownDescriptor`**
+  (`SeLe4n/Kernel/Architecture/TlbShootdown.lean`, staged): one pending
+  invalidation request — the typed `TlbInvalidation` operand (so a single
+  descriptor drives page unmap / ASID retirement / full flush, covering
+  the SM7.B.9–B.11 callers) + the initiating `CoreId` (round attribution
+  and the optional `.tlbShootdownAck` direct-ack SGI).
+* **SM7.A.2 `pendingShootdowns : Vector (List TlbShootdownDescriptor)
+  numCores`** on the new `TlbShootdownState`, with the SM4.B path-a
+  discipline: `pendingOnCore` / `setPendingOnCore` accessors, the
+  `@[simp]` store/load reduction algebra (`_self` / `_ne` / cross-field
+  frames), and `ext_perCore` extensionality.
+* **SM7.A.3 `shootdownAck : Vector Bool numCores`** + the acknowledgment
+  operations: `acknowledgeShootdown` (per-target set; monotone —
+  `foldl_acknowledgeShootdown_monotone`), `beginShootdownRound` (plan
+  §3.2 step 1: every flag false except the born-acknowledged initiator;
+  `beginShootdownRound_ackOnCore_iff`), the decidable `allAcked` wait
+  predicate, and the SM7.B.5 termination anchor
+  `allCores_foldl_acknowledgeShootdown_allAcked`.  **Rust realisation**:
+  `rust/sele4n-hal/src/shootdown.rs` — `SHOOTDOWN_ACK`, one
+  cache-line-aligned `AtomicBool` per core (boots quiescent all-`true`),
+  `ack_set` (Release) / `ack_is_set` + `all_acked` (Acquire) /
+  `reset_for_round` (Relaxed, publication via SM1.F.8's dsb-before-SGIR;
+  cross-round hazard analysis in the module docs), fail-closed bounds
+  panics, testable `_in_slice` inner forms.
+* **SM7.A.4 `enqueueShootdown`**: FIFO tail-append onto the target's
+  queue, fail-closed `none` at capacity (never drops a descriptor
+  silently — a dropped invalidation is the SMP-C4 stale-TLB hazard);
+  success-iff-below-capacity (`enqueueShootdown_isSome_iff`), append /
+  membership / length / cross-core + ack frames.
+* **SM7.A.5 `drainShootdowns`**: the `.tlbShootdownReq` SGI handler's
+  whole-queue FIFO drain (`drainShootdowns_fst` — the completeness half
+  of Theorem 3.3.1's remote case), exhaustive (`_drain_twice`),
+  deliberately ack-free (the runtime must retire the TLBIs before
+  acknowledging, so drain and ack stay separate operations).
+* **SM7.A.6 capacity bound**: `maxPendingPerCore = 16` (plan §4.1) with
+  the `pendingBounded` invariant (decidable) established at boot and
+  preserved by every operation (`…_preserves_pendingBounded` ×4), plus
+  `shootdownQuiescent` (boot state witnessed quiescent) and
+  drain-restores-capacity (`enqueueShootdown_isSome_after_drain`).
+
+Zero sorry/axiom.  Staged partition 57 → **58** (allowlist +
+`Platform/Staged.lean` registration; partition gate green).  Tests:
+`tests/SmpTlbShootdownSuite.lean` (`smp_tlb_shootdown_suite`, the SM7.E.1
+seed — 51 assertions / 7 groups: descriptor operand round-trips,
+quiescent boot state, FIFO enqueue + cross-core framing, the 16-deep
+fill / 17th-rejection / drain-restores-capacity bound walk, exhaustive
+drains, the ack-round lifecycle, and a full 4-core state-level shootdown
+round trip ending quiescent) + §1 `#check` anchors + §2 decidable /
+theorem-application witnesses; Tier-2 + Tier-3 wired.  Rust HAL 724 →
+**743 tests** (19 new), clippy-clean.  Version bumped 0.32.71 → 0.32.72.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §5 (SM7.A)
+
 ## v0.32.71 — WS-SM SM6.F: PR #837 review round 3 — six acceptance-rigor hardenings
 
 Addresses the six P2 comments from the Codex review of 2658d0a (all

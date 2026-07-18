@@ -484,4 +484,64 @@ theorem dedupCrossCoreSgis_nodup_cores (sgis : List (CoreId × SgiKind)) :
     ((dedupCrossCoreSgis sgis).map (·.1)).Nodup :=
   dedupFold_nodup_cores sgis [] (by simp)
 
+-- ============================================================================
+-- WS-SM SM7.A.3 — Shootdown acknowledgment-flag typed wrappers
+-- ============================================================================
+--
+-- Typed `CoreId` wrappers over the `ffi_shootdown_*` exports
+-- (`rust/sele4n-hal/src/shootdown.rs` via `Platform.FFI`).  The
+-- `Fin numCores` argument typing makes the Rust fail-closed bound
+-- panics structurally unreachable (`shootdownAck_ffi_core_in_range`).
+-- The SM7.B protocol composes these around the pure
+-- `Architecture.TlbShootdownState` transitions: the target handler
+-- release-sets its own flag only after its drained TLBIs retire; the
+-- initiator acquire-polls `shootdownAllAcked` (WFE-paced at SM7.B.5).
+
+/-- **WS-SM SM7.A.3**: release-set core `c`'s shootdown ack flag — the
+    runtime effect of the pure `Architecture.acknowledgeShootdown` at
+    core `c` (plan §3.2 step 4c; the SM7.B.4 release edge). -/
+def shootdownAckSet (c : CoreId) : BaseIO Unit :=
+  Platform.FFI.ffiShootdownAckSet (UInt64.ofNat c.val)
+
+/-- **WS-SM SM7.A.3**: acquire-load core `c`'s shootdown ack flag —
+    the runtime read of the pure `TlbShootdownState.ackOnCore c`. -/
+def shootdownAckIsSet (c : CoreId) : BaseIO Bool := do
+  return (← Platform.FFI.ffiShootdownAckIsSet (UInt64.ofNat c.val)) != 0
+
+/-- **WS-SM SM7.A.3**: open a new shootdown round — the runtime effect
+    of the pure `Architecture.beginShootdownRound` (plan §3.2 step 1).
+    Must only run under the single global shootdown-round lock
+    (`Architecture.ShootdownRoundLockId`; SM7.B.7 — the per-VSpace
+    VSpaceRoot lock alone is NOT sufficient, see the TlbShootdown
+    module-header round-serialisation contract). -/
+def shootdownResetForRound (initiator : CoreId) : BaseIO Unit :=
+  Platform.FFI.ffiShootdownResetForRound (UInt64.ofNat initiator.val)
+
+/-- **WS-SM SM7.A.3**: acquire-poll every shootdown ack flag — the
+    runtime read of the pure `Architecture.allAcked` predicate, the
+    initiator wait-loop's exit condition (plan §3.2 step 5). -/
+def shootdownAllAcked : BaseIO Bool := do
+  return (← Platform.FFI.ffiShootdownAllAcked) != 0
+
+/-- **WS-SM SM7.A.3**: `shootdownAckSet` is the raw FFI export applied
+    to the widened core id — nothing else happens on the Lean side. -/
+theorem shootdownAckSet_eq_ffi (c : CoreId) :
+    shootdownAckSet c =
+      Platform.FFI.ffiShootdownAckSet (UInt64.ofNat c.val) := rfl
+
+/-- **WS-SM SM7.A.3**: `shootdownResetForRound` is the raw FFI export
+    applied to the widened initiator id. -/
+theorem shootdownResetForRound_eq_ffi (initiator : CoreId) :
+    shootdownResetForRound initiator =
+      Platform.FFI.ffiShootdownResetForRound (UInt64.ofNat initiator.val) := rfl
+
+/-- **WS-SM SM7.A.3**: every core id a typed wrapper hands the FFI is
+    within the Rust `SHOOTDOWN_ACK` bounds — `CoreId = Fin numCores`
+    widens to a `UInt64` whose `toNat` is exactly `c.val < numCores`,
+    so the Rust fail-closed panic arm (`shootdown_core_id_checked`) is
+    unreachable from well-typed kernel code.  The SM7.A analogue of
+    `tlbiForSharing_ffi_args_in_range`. -/
+theorem shootdownAck_ffi_core_in_range :
+    ∀ c : CoreId, (UInt64.ofNat c.val).toNat < numCores := by decide
+
 end SeLe4n.Kernel.Concurrency

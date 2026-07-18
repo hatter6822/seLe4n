@@ -276,6 +276,53 @@ opaque ffiSendSgiToSelf : (intid : UInt8) → BaseIO Unit
 opaque ffiSendSgiToAllButSelf : (intid : UInt8) → BaseIO Unit
 
 -- ============================================================================
+-- WS-SM SM7.A.3 — TLB-shootdown acknowledgment-flag FFI bindings
+-- ============================================================================
+--
+-- The link-time bridge to the per-core `SHOOTDOWN_ACK` AtomicBool
+-- array (`rust/sele4n-hal/src/shootdown.rs`) — the runtime realisation
+-- of the Lean `TlbShootdownState.shootdownAck` vector.  Lean callers
+-- use the typed `CoreId` wrappers in
+-- `SeLe4n/Kernel/Concurrency/Runtime.lean` (`shootdownAckSet` /
+-- `shootdownAckIsSet` / `shootdownResetForRound` / `shootdownAllAcked`),
+-- whose `Fin numCores` typing makes the Rust fail-closed panic arms
+-- structurally unreachable (`shootdownAck_ffi_core_in_range`).
+-- Release/acquire ordering rationale: shootdown.rs module docs; the
+-- SM2.A-level formalisation is SM7.B.4 (`shootdownAck_release_acquire`).
+
+/-- **WS-SM SM7.A.3**: release-set the given core's shootdown ack flag
+    (the target handler's plan §3.2 step 4c, AFTER its drained TLBIs
+    retired).  Panics on the Rust side if `coreId ≥ 4`.
+
+    Rust: `ffi_shootdown_ack_set` in `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_shootdown_ack_set"]
+opaque ffiShootdownAckSet : (coreId : UInt64) → BaseIO Unit
+
+/-- **WS-SM SM7.A.3**: acquire-load the given core's shootdown ack
+    flag; `1` = acknowledged.  Panics on the Rust side if `coreId ≥ 4`.
+
+    Rust: `ffi_shootdown_ack_is_set` in `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_shootdown_ack_is_set"]
+opaque ffiShootdownAckIsSet : (coreId : UInt64) → BaseIO UInt64
+
+/-- **WS-SM SM7.A.3**: open a new shootdown round — every flag drops
+    to `false` except the initiator's own (plan §3.2 step 1; the
+    runtime `beginShootdownRound`).  Panics on the Rust side if
+    `initiator ≥ 4`.
+
+    Rust: `ffi_shootdown_reset_for_round` in `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_shootdown_reset_for_round"]
+opaque ffiShootdownResetForRound : (initiator : UInt64) → BaseIO Unit
+
+/-- **WS-SM SM7.A.3**: acquire-poll every shootdown ack flag — the
+    initiator wait-loop's exit condition (plan §3.2 step 5); `1` =
+    every core acknowledged.
+
+    Rust: `ffi_shootdown_all_acked` in `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_shootdown_all_acked"]
+opaque ffiShootdownAllAcked : BaseIO UInt64
+
+-- ============================================================================
 -- AG7-A-iii: MMIO FFI declarations
 -- ============================================================================
 
