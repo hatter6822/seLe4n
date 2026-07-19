@@ -25,10 +25,50 @@ SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
 **Current sub-phase: SM7.B shootdown protocol LANDED (v0.32.76) +
-completion cut (v0.32.77) — the plan-§3.2 protocol complete and LIVE,
-every landing deferral closed.  Prior: SM7.A shootdown descriptor +
-state LANDED (v0.32.72); completion cut (v0.32.73); audit cut
-(v0.32.74); review P1 (v0.32.75).**
+completion cut (v0.32.77) + debt-closure cut (v0.32.78) — the
+plan-§3.2 protocol complete and LIVE, every landing deferral closed
+and every tracked-debt item closed or narrowed to a scoped residual.
+Prior: SM7.A shootdown descriptor + state LANDED (v0.32.72); completion
+cut (v0.32.73); audit cut (v0.32.74); review P1 (v0.32.75).**
+
+**SM7.B debt-closure cut (v0.32.78) — every tracked-debt item closed
+or narrowed.**  **(1) Per-descriptor handler TLBIs (CLOSED)**: the
+`.tlbShootdownReq` handler now retires the round's EXACT operands on
+the local PE — one `tlbi` per descriptor (`tlb::tlbi_local`) instead
+of a blanket `vmalle1`, matching the Lean `handleTlbShootdownReqOnCore`
+per-descriptor `applyTlbInvalidations`.  The initiator publishes the
+collapsed operands into a **seqlock-guarded `ShootdownOpMailbox`**
+under the round lock, BEFORE the SGIs (the `dsb ish` in `send_sgi`
+orders it ahead); the handler retires a stable snapshot and falls back
+to the conservative local `vmalle1` on ANY torn read / empty round /
+over-capacity / undecodable operand — over-invalidation-safe, never
+under-invalidates.  `publishShootdownOps` live seam +
+`ffiShootdownPublish{Begin,Slot,Commit}` FFI + typed wrappers;
+Rust mailbox + `publish_*`/`snapshot_*`/`retire_round_ops_in` +
+`decode_tlb_invalidation` (shared with the FFI dispatcher) + 8 genuine
+unit tests (HAL 772 → 780); trace byte-identical.  **(2) Formal
+refinement (NARROWED)**: the handler refines the Lean TLB effect
+operand-for-operand (op-tag decode pinned identical both sides); the
+residual is only the SM9.E linked-runtime proof.  **(3) B.10
+(deferred, NO safety gap)**: `asidAllocateWithShootdown` is complete
+and proven but user-unreachable — audit confirms no runtime
+ASID-reuse path exists (`lifecycleRetype` creates fresh ASID-0 roots;
+`asidTable` is boot-only), so the gap is completeness not safety;
+closure target SM8 (ASIDControl/ASIDPool object family + assign
+syscall).  **(4) Step-4d direct-ack (CLOSED by design)**: under the
+B.6 spin wait + IRQs-masked SVC path a direct-ack SGI cannot preempt
+the initiator nor add information the acquire-poll already reads.
+**(5) withLockSet carriage (shootdown slice CLOSED)**: the 2PL bracket
+frames `tlbShootdown`, so `withLockSet_preserves_pendingBounded`
+carries the 12th `proofLayerInvariantBundle` conjunct; the
+twenty-conjunct `ipcInvariantFull` generalisation stays with SM6.D.
+**(6) Host-test starvation (CLOSED)**: the host-test yields already
+exist (`cpu::wfe()`'s `#[cfg(test)]` `yield_now`, SM2.E) and the
+authoritative `test_rust.sh` builds before testing, so the
+compile-contention window is absent from the real flow; the round-lock
+mutex-stress test now caps contenders at `available_parallelism()`.
+Suite 160 → 165 assertions; zero sorry/axiom; golden trace
+byte-identical.  Record: plan §5 SM7.B debt-closure cut.
 
 **SM7.B completion cut (v0.32.77) — every landing deferral closed.**
 **(1) Invariant-bundle carriage**: `pendingBounded st.tlbShootdown`

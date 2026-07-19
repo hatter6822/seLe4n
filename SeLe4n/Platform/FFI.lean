@@ -367,6 +367,34 @@ opaque ffiShootdownWaitAllAcked : (timeoutTicks : UInt64) → BaseIO UInt64
 @[extern "ffi_shootdown_online_mask"]
 opaque ffiShootdownOnlineMask : BaseIO UInt64
 
+/-- **WS-SM SM7.B (debt (1))**: begin publishing the round's operand set
+    into the per-descriptor mailbox (bumps the seqlock to
+    writers-in-progress).  The initiator calls this under the global
+    round lock, BEFORE it fires the `.tlbShootdownReq` SGIs.
+
+    Rust: `ffi_shootdown_publish_begin` in `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_shootdown_publish_begin"]
+opaque ffiShootdownPublishBegin : BaseIO Unit
+
+/-- **WS-SM SM7.B (debt (1))**: write one operand at slot `index` into the
+    mailbox.  `opTag` matches `Architecture.TlbInvalidation.toOpTag`
+    (0=vmalle1, 1=vae1, 2=aside1, 3=vale1); the initiator loops over the
+    round's collapsed operands supplying the index.
+
+    Rust: `ffi_shootdown_publish_slot` in `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_shootdown_publish_slot"]
+opaque ffiShootdownPublishSlot :
+    (index : UInt64) → (opTag : UInt32) → (asid : UInt16) → (vaddr : UInt64) → BaseIO Unit
+
+/-- **WS-SM SM7.B (debt (1))**: commit the publish of `len` operands
+    (bumps the seqlock to stable).  `len` above capacity collapses to a
+    single `vmalle1`; `len == 0` leaves the mailbox empty so the handler
+    falls back to the conservative local `vmalle1`.
+
+    Rust: `ffi_shootdown_publish_commit` in `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_shootdown_publish_commit"]
+opaque ffiShootdownPublishCommit : (len : UInt64) → BaseIO Unit
+
 -- ============================================================================
 -- AG7-A-iii: MMIO FFI declarations
 -- ============================================================================

@@ -109,8 +109,11 @@
 //! | `allCores_foldl_acknowledgeShootdown_allAcked` | `sm7a3_full_round_trip_reaches_all_acked` |
 //! | round reset after `shootdownRound_restores_quiescent` | `sm7a3_back_to_back_rounds_reset_cleanly` |
 //! | fail-closed bounds (`CoreId` typing on the Lean side) | `sm7a3_*_panics_on_out_of_range_*` + the `ffi.rs` panic tests |
+//! | `TlbInvalidation.toOpTag` decode (SM7.B debt (1)) | `sm7b_op_tag_decode_conformance` |
+//! | `handleTlbShootdownReqOnCore` per-descriptor effect | `sm7b_retire_per_descriptor_counts_operands`, `sm7b_mailbox_publish_snapshot_roundtrip` |
+//! | coalescing / fail-safe fallback (`collapseShootdownOps`) | `sm7b_mailbox_overflow_collapses_to_vmalle1`, `sm7b_retire_torn_read_falls_back_to_full_flush` |
 
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 
 use crate::smp::MAX_SECONDARY_CORES;
 
@@ -450,6 +453,220 @@ pub fn round_lock_release() {
 }
 
 // ============================================================================
+// WS-SM SM7.B (debt (1)) — Per-descriptor operand mailbox
+// ============================================================================
+//
+// The `.tlbShootdownReq` handler retires the round's EXACT operands
+// locally (one `tlbi` per descriptor) instead of a blanket
+// `tlbi vmalle1`, matching the Lean model's per-descriptor
+// `applyTlbInvalidations` (`handleTlbShootdownReqOnCore`).  The initiator
+// publishes the round's collapsed operands here — under the global round
+// lock, BEFORE it fires the `.tlbShootdownReq` SGIs — and the `dsb ish`
+// inside `gic::send_sgi` (SM1.F.8) orders the publish before any target
+// can take the interrupt, so a target reads a fully-written snapshot.
+//
+// **Fail-safe by construction.**  A seqlock guards against a torn read
+// (a spurious/duplicate SGI arriving while a *later* serialised round is
+// mid-publish): the reader that observes instability — or an operand it
+// cannot decode, or a published length above capacity — falls back to the
+// conservative local `tlbi vmalle1`.  Over-invalidation is always safe
+// (an absent entry re-walks the page tables); the ONLY hazard is
+// UNDER-invalidation, and the fallback can never under-invalidate.  A
+// stale but *consistent* snapshot (a spurious SGI after the round closed)
+// re-flushes already-retired operands — a harmless no-op.
+
+/// **WS-SM SM7.B**: operand-mailbox capacity.  A round posting more than
+/// this many distinct operands collapses to a single `vmalle1` both at
+/// the Lean `collapseShootdownOps` layer and here (defense in depth), so
+/// the mailbox never overflows on a well-formed round.
+pub const SHOOTDOWN_OP_CAPACITY: usize = 8;
+
+/// **WS-SM SM7.B**: one published invalidation operand — the runtime
+/// mirror of a Lean `Architecture.TlbInvalidation`.  `op_tag` matches
+/// `TlbInvalidation.toOpTag` (0=Vmalle1, 1=Vae1, 2=Aside1, 3=Vale1);
+/// unused fields are `0` (as `toAsid`/`toVaddr` return for them).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct ShootdownOp {
+    pub op_tag: u32,
+    pub asid: u16,
+    pub vaddr: u64,
+}
+
+impl ShootdownOp {
+    /// The conservative full-flush operand — the fallback and the
+    /// coalesced-round sentinel.
+    pub const VMALLE1: ShootdownOp = ShootdownOp {
+        op_tag: 0,
+        asid: 0,
+        vaddr: 0,
+    };
+}
+
+/// **WS-SM SM7.B**: the round's operand mailbox — a seqlock-guarded
+/// fixed array.  Single writer (the round initiator, under the round
+/// lock); many readers (the target handlers).
+pub struct ShootdownOpMailbox {
+    /// Seqlock sequence: even = stable, odd = mid-publish.
+    seq: AtomicU32,
+    /// Number of valid operands (`≤ SHOOTDOWN_OP_CAPACITY`).
+    len: AtomicUsize,
+    /// Packed `(op_tag << 32) | asid` per slot.
+    meta: [AtomicU64; SHOOTDOWN_OP_CAPACITY],
+    /// The `vaddr` operand per slot.
+    vaddr: [AtomicU64; SHOOTDOWN_OP_CAPACITY],
+}
+
+impl ShootdownOpMailbox {
+    /// A quiescent (empty) mailbox — boots with `len = 0`, so a read
+    /// before any round yields the empty operand list ⇒ the handler
+    /// falls back to `vmalle1` (safe).
+    pub const fn new() -> Self {
+        ShootdownOpMailbox {
+            seq: AtomicU32::new(0),
+            len: AtomicUsize::new(0),
+            meta: [const { AtomicU64::new(0) }; SHOOTDOWN_OP_CAPACITY],
+            vaddr: [const { AtomicU64::new(0) }; SHOOTDOWN_OP_CAPACITY],
+        }
+    }
+}
+
+impl Default for ShootdownOpMailbox {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// **WS-SM SM7.B**: the global operand mailbox published by the live
+/// `completeShootdownRounds` seam.
+#[no_mangle]
+#[used]
+pub static SHOOTDOWN_OPS: ShootdownOpMailbox = ShootdownOpMailbox::new();
+
+/// **WS-SM SM7.B** (testable inner form): begin a publish — bump the
+/// seqlock to odd (writers-in-progress).  Relaxed here; the closing
+/// `publish_commit_in` Release publishes every interior write.
+pub fn publish_begin_in(mb: &ShootdownOpMailbox) {
+    let s = mb.seq.load(Ordering::Relaxed);
+    mb.seq.store(s.wrapping_add(1), Ordering::Relaxed);
+    core::sync::atomic::fence(Ordering::Release);
+}
+
+/// **WS-SM SM7.B** (testable inner form): write one operand at an
+/// explicit slot index (the initiator loops over the round's collapsed
+/// operands, supplying the index).  Out-of-range indices are dropped —
+/// the matching `publish_commit_in` collapses an over-length round to a
+/// single `vmalle1`, so no operand is ever silently lost.
+pub fn publish_slot_in(mb: &ShootdownOpMailbox, index: usize, op: ShootdownOp) {
+    if index < SHOOTDOWN_OP_CAPACITY {
+        mb.meta[index].store(
+            ((op.op_tag as u64) << 32) | (op.asid as u64),
+            Ordering::Relaxed,
+        );
+        mb.vaddr[index].store(op.vaddr, Ordering::Relaxed);
+    }
+}
+
+/// **WS-SM SM7.B** (testable inner form): commit a publish of `len`
+/// operands — bump the seqlock to even (stable) with Release ordering.
+/// A `len` above capacity collapses to a single `vmalle1` (matching the
+/// Lean `collapseShootdownOps` / `enqueueShootdownOrCoalesce` escape);
+/// `len == 0` leaves the mailbox empty so the handler falls back to
+/// `vmalle1` (safe).
+pub fn publish_commit_in(mb: &ShootdownOpMailbox, len: usize) {
+    if len > SHOOTDOWN_OP_CAPACITY {
+        mb.meta[0].store(0, Ordering::Relaxed); // vmalle1
+        mb.vaddr[0].store(0, Ordering::Relaxed);
+        mb.len.store(1, Ordering::Relaxed);
+    } else {
+        mb.len.store(len, Ordering::Relaxed);
+    }
+    // The begin bumped to odd; +1 restores even (stable), Release so a
+    // reader's Acquire load observes all interior writes.
+    let cur = mb.seq.load(Ordering::Relaxed);
+    mb.seq.store(cur.wrapping_add(1), Ordering::Release);
+}
+
+/// **WS-SM SM7.B** (testable batch helper): publish a whole operand slice
+/// under the seqlock discipline.  A slice longer than capacity collapses
+/// to one `vmalle1`.
+pub fn publish_round_ops_in(mb: &ShootdownOpMailbox, ops: &[ShootdownOp]) {
+    publish_begin_in(mb);
+    let n = ops.len();
+    if n <= SHOOTDOWN_OP_CAPACITY {
+        for (i, op) in ops.iter().enumerate() {
+            publish_slot_in(mb, i, *op);
+        }
+    }
+    publish_commit_in(mb, n);
+}
+
+/// **WS-SM SM7.B**: publish into the global mailbox.
+pub fn publish_round_ops(ops: &[ShootdownOp]) {
+    publish_round_ops_in(&SHOOTDOWN_OPS, ops);
+}
+
+/// **WS-SM SM7.B** (testable inner form): read a stable snapshot of an
+/// explicit mailbox.  Returns `None` on a torn read (the seqlock was odd,
+/// or the sequence advanced mid-read) or a length above capacity — the
+/// caller must then fall back to the conservative `tlbi vmalle1`.
+pub fn snapshot_round_ops_in(mb: &ShootdownOpMailbox) -> Option<([ShootdownOp; SHOOTDOWN_OP_CAPACITY], usize)> {
+    let s1 = mb.seq.load(Ordering::Acquire);
+    if s1 & 1 != 0 {
+        return None; // a publish is in progress
+    }
+    let len = mb.len.load(Ordering::Relaxed);
+    if len > SHOOTDOWN_OP_CAPACITY {
+        return None; // impossible on a well-formed publish → fail safe
+    }
+    let mut out = [ShootdownOp::VMALLE1; SHOOTDOWN_OP_CAPACITY];
+    for (i, slot) in out.iter_mut().enumerate().take(len) {
+        let meta = mb.meta[i].load(Ordering::Relaxed);
+        let vaddr = mb.vaddr[i].load(Ordering::Relaxed);
+        *slot = ShootdownOp {
+            op_tag: (meta >> 32) as u32,
+            asid: (meta & 0xFFFF) as u16,
+            vaddr,
+        };
+    }
+    core::sync::atomic::fence(Ordering::Acquire);
+    let s2 = mb.seq.load(Ordering::Relaxed);
+    if s1 == s2 {
+        Some((out, len))
+    } else {
+        None // the sequence moved under us → torn read
+    }
+}
+
+/// **WS-SM SM7.B**: retire the published round operands on the LOCAL PE
+/// (one `tlbi` per descriptor), from an explicit mailbox.  Returns the
+/// number of per-descriptor invalidations issued, or `None` if it fell
+/// back to a single conservative `tlbi vmalle1` (torn read, empty round,
+/// or an undecodable operand).  Testable inner form of the handler's
+/// TLB-effect step.
+pub fn retire_round_ops_in(mb: &ShootdownOpMailbox) -> Option<usize> {
+    match snapshot_round_ops_in(mb) {
+        Some((ops, len)) if len > 0 => {
+            for op in ops.iter().take(len) {
+                match crate::tlb::decode_tlb_invalidation(op.op_tag, op.asid, op.vaddr) {
+                    Some(decoded) => crate::tlb::tlbi_local(decoded),
+                    None => {
+                        // An operand we cannot decode → fail safe.
+                        crate::tlb::tlbi_vmalle1();
+                        return None;
+                    }
+                }
+            }
+            Some(len)
+        }
+        // Empty round or torn read → conservative local full flush.
+        _ => {
+            crate::tlb::tlbi_vmalle1();
+            None
+        }
+    }
+}
+
+// ============================================================================
 // WS-SM SM7.B.5 + B.6 — Bounded all-acked wait
 // ============================================================================
 
@@ -573,9 +790,14 @@ pub fn tlb_shootdown_req_handler_in(slots: &[ShootdownAckFlag], core_id: usize) 
         // core id at boot, always < 4 on BCM2712).
         return;
     }
-    // Step 1: full local TLB invalidation, retired by the primitive's
-    // trailing `dsb ish; isb`.
-    crate::tlb::tlbi_vmalle1();
+    // Step 1 (WS-SM SM7.B debt (1)): retire the round's EXACT operands
+    // locally (one `tlbi` per descriptor), matching the Lean model's
+    // per-descriptor `applyTlbInvalidations`.  A torn read / empty round
+    // / undecodable operand falls back to the conservative local
+    // `tlbi vmalle1` — over-invalidation is always safe.  Each `tlbi_*`
+    // retires with its own `dsb ish; isb`, so the drained invalidations
+    // are complete before the ack.
+    retire_round_ops_in(&SHOOTDOWN_OPS);
     // Step 2: the release edge.
     ack_set_in_slice(slots, core_id);
     // Step 3: wake event-paced waiters.
@@ -1141,6 +1363,158 @@ mod tests {
         );
     }
 
+    // ------------------------------------------------------------------------
+    // SM7.B debt (1) — per-descriptor operand mailbox
+    // ------------------------------------------------------------------------
+
+    /// SM7.B: a published operand list round-trips through the seqlock —
+    /// the handler reads back EXACTLY what the initiator published.
+    #[test]
+    fn sm7b_mailbox_publish_snapshot_roundtrip() {
+        let mb = ShootdownOpMailbox::new();
+        let ops = [
+            ShootdownOp {
+                op_tag: 1, // Vae1
+                asid: 0x2A,
+                vaddr: 0x1000,
+            },
+            ShootdownOp {
+                op_tag: 2, // Aside1
+                asid: 0x2A,
+                vaddr: 0,
+            },
+        ];
+        publish_round_ops_in(&mb, &ops);
+        let (snap, len) = snapshot_round_ops_in(&mb).expect("stable snapshot");
+        assert_eq!(len, 2);
+        assert_eq!(snap[0], ops[0]);
+        assert_eq!(snap[1], ops[1]);
+    }
+
+    /// SM7.B: an in-progress publish (seqlock odd) is a torn read — the
+    /// snapshot fails, so the handler falls back to the safe full flush.
+    #[test]
+    fn sm7b_mailbox_torn_read_during_publish_is_none() {
+        let mb = ShootdownOpMailbox::new();
+        publish_begin_in(&mb); // seqlock now odd — no matching commit
+        assert!(
+            snapshot_round_ops_in(&mb).is_none(),
+            "a publish-in-progress must read as torn (None)"
+        );
+        // A commit restores a readable snapshot.
+        publish_slot_in(&mb, 0, ShootdownOp::VMALLE1);
+        publish_commit_in(&mb, 1);
+        assert!(snapshot_round_ops_in(&mb).is_some());
+    }
+
+    /// SM7.B: an over-capacity commit collapses to a single `vmalle1`
+    /// (the coalescing escape) rather than overflowing.
+    #[test]
+    fn sm7b_mailbox_overflow_collapses_to_vmalle1() {
+        let mb = ShootdownOpMailbox::new();
+        publish_begin_in(&mb);
+        publish_commit_in(&mb, SHOOTDOWN_OP_CAPACITY + 5);
+        let (snap, len) = snapshot_round_ops_in(&mb).expect("stable");
+        assert_eq!(len, 1);
+        assert_eq!(snap[0], ShootdownOp::VMALLE1);
+    }
+
+    /// SM7.B: retiring a per-descriptor round issues one local TLBI per
+    /// operand (host: the `tlbi_*` are no-ops, so we assert the returned
+    /// count) — the fidelity close vs the former blanket `vmalle1`.
+    #[test]
+    fn sm7b_retire_per_descriptor_counts_operands() {
+        let mb = ShootdownOpMailbox::new();
+        publish_round_ops_in(
+            &mb,
+            &[
+                ShootdownOp {
+                    op_tag: 1,
+                    asid: 5,
+                    vaddr: 0x4000,
+                },
+                ShootdownOp {
+                    op_tag: 3, // Vale1
+                    asid: 5,
+                    vaddr: 0x5000,
+                },
+            ],
+        );
+        assert_eq!(
+            retire_round_ops_in(&mb),
+            Some(2),
+            "two operands ⇒ two per-descriptor local TLBIs"
+        );
+    }
+
+    /// SM7.B: an empty round (nothing published) retires as a
+    /// conservative local full flush (fallback, `None`).
+    #[test]
+    fn sm7b_retire_empty_round_falls_back_to_full_flush() {
+        let mb = ShootdownOpMailbox::new();
+        publish_round_ops_in(&mb, &[]);
+        assert_eq!(
+            retire_round_ops_in(&mb),
+            None,
+            "an empty round ⇒ conservative local vmalle1 fallback"
+        );
+    }
+
+    /// SM7.B: a torn read retires as the conservative full flush — the
+    /// handler can never under-invalidate on a bad mailbox snapshot.
+    #[test]
+    fn sm7b_retire_torn_read_falls_back_to_full_flush() {
+        let mb = ShootdownOpMailbox::new();
+        publish_begin_in(&mb); // odd — torn
+        assert_eq!(
+            retire_round_ops_in(&mb),
+            None,
+            "a torn read ⇒ conservative local vmalle1 fallback"
+        );
+    }
+
+    /// SM7.B: a published `vmalle1` operand retires as a per-descriptor
+    /// step (the coalesced-round case) — one local full flush, counted.
+    #[test]
+    fn sm7b_retire_vmalle1_operand_is_one_step() {
+        let mb = ShootdownOpMailbox::new();
+        publish_round_ops_in(&mb, &[ShootdownOp::VMALLE1]);
+        assert_eq!(retire_round_ops_in(&mb), Some(1));
+    }
+
+    /// SM7.B conformance: the mailbox op-tag encoding matches the Lean
+    /// `Architecture.TlbInvalidation.toOpTag` decode — every valid tag
+    /// decodes to the expected typed operand, and an out-of-range tag
+    /// decodes to `None` (fail-safe in the handler).
+    #[test]
+    fn sm7b_op_tag_decode_conformance() {
+        use crate::tlb::{decode_tlb_invalidation, TlbInvalidation};
+        assert_eq!(
+            decode_tlb_invalidation(0, 7, 0x10),
+            Some(TlbInvalidation::Vmalle1)
+        );
+        assert_eq!(
+            decode_tlb_invalidation(1, 7, 0x10),
+            Some(TlbInvalidation::Vae1 {
+                asid: 7,
+                vaddr: 0x10
+            })
+        );
+        assert_eq!(
+            decode_tlb_invalidation(2, 7, 0x10),
+            Some(TlbInvalidation::Aside1 { asid: 7 })
+        );
+        assert_eq!(
+            decode_tlb_invalidation(3, 7, 0x10),
+            Some(TlbInvalidation::Vale1 {
+                asid: 7,
+                vaddr: 0x10
+            })
+        );
+        assert_eq!(decode_tlb_invalidation(4, 0, 0), None);
+        assert_eq!(decode_tlb_invalidation(u32::MAX, 0, 0), None);
+    }
+
     /// SM7.B.7 (test-hardening cut): multithreaded CAS-lock exclusivity
     /// stress — 8 threads hammer `round_lock_try_acquire_in` /
     /// `round_lock_release_in` on a LOCAL lock cell; an atomic
@@ -1150,14 +1524,21 @@ mod tests {
     /// `roundLockTryAcquire_after_release`).
     #[test]
     fn sm7b7_round_lock_mutex_stress() {
-        use core::sync::atomic::AtomicU32;
-        use std::sync::atomic::AtomicUsize;
+        // Cap contenders at the host's real parallelism (min 2 so the
+        // exclusivity race is genuinely exercised) — a try-lock stress
+        // does not need pathological oversubscription, and capping keeps
+        // the host-test cooperative-yield path from starving under a
+        // small CI core count (WS-SM SM7.B debt (7)).
+        let threads = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4)
+            .clamp(2, 8);
         let lock = AtomicBool::new(false);
         let in_crit = AtomicU32::new(0);
         let max_seen = AtomicU32::new(0);
         let acquisitions = AtomicUsize::new(0);
         std::thread::scope(|s| {
-            for _ in 0..8 {
+            for _ in 0..threads {
                 s.spawn(|| {
                     for _ in 0..1000 {
                         if round_lock_try_acquire_in(&lock) {

@@ -437,43 +437,90 @@ A follow-on cut closing every depth item the landing deferred:
   the executable checker needs no change (golden trace byte-identical
   by construction).
 
-Tracked debt (registered here; unchanged claims elsewhere):
+#### SM7.B debt-closure cut (v0.32.78)
 
-* **Per-descriptor Rust handler TLBIs** — the conservative full-flush
-  handler over-invalidates; a per-descriptor retire needs a Rust-side
-  descriptor mirror (perf-only; revisit with SM7.C's per-core views or
-  the SM9 performance pass).
-* **Rust-handler formal refinement** — "runtime removes ⊇ model
-  removes" is an argued invariant; the machine-checked refinement
-  needs the SM9.E linked runtime.
-* **B.10 syscall-level reachability** — `asidAllocateWithShootdown` is
-  the kernel-level `requiresFlush` consumer; no ASID-management
-  syscall exists yet to reach it from user space (an ABI extension,
-  tracked for the SM8/SM9 scope decision).
-* **Step-4d direct-ack SGI** (`.tlbShootdownAck`) — optional latency
-  optimisation; the shared-flag ack channel is sufficient at v1.0.0.
-* **`withLockSet` bundle carriage** — the SM6.D scope note's
-  `withLockSet_preserves_ipcInvariantFull_perCore` generalisation now
-  also covers the shootdown footprint's cross-domain
-  `TlbShootdownLockId`; unchanged, tracked with the SM6.D item.
+Every debt item either CLOSED or narrowed to a precisely-scoped
+residual with an explicit target.
+
+* **Per-descriptor Rust handler TLBIs — CLOSED.**  The
+  `.tlbShootdownReq` handler now retires the round's EXACT operands on
+  the local PE (one `tlbi` per descriptor via the new
+  `tlb::tlbi_local`) instead of a blanket `tlbi vmalle1`, matching the
+  Lean model's per-descriptor `applyTlbInvalidations`
+  (`handleTlbShootdownReqOnCore`).  The initiator publishes the round's
+  collapsed operands — under the round lock, BEFORE the SGIs, so the
+  `dsb ish` in `send_sgi` orders the publish ahead of any SGI — into a
+  **seqlock-guarded fixed-capacity mailbox** (`ShootdownOpMailbox`);
+  the handler reads a stable snapshot and retires per-descriptor,
+  falling back to the conservative local `tlbi vmalle1` on ANY torn
+  read, empty round, over-capacity length, or undecodable operand.
+  Over-invalidation is always safe; the fallback can never
+  under-invalidate.  Lean: `publishShootdownOps` in the live seam +
+  the `ffiShootdownPublish{Begin,Slot,Commit}` FFI + typed wrappers;
+  Rust: the mailbox + `publish_*`/`snapshot_*`/`retire_round_ops_in`
+  primitives + `decode_tlb_invalidation` (shared with the FFI
+  dispatcher) + 8 genuine unit tests (round-trip, torn-read fallback,
+  overflow collapse, per-descriptor count, op-tag conformance);
+  HAL 772 → 780.  Trace byte-identical.
+* **Rust-handler formal refinement — NARROWED.**  The per-descriptor
+  handler now REFINES the Lean `handleTlbShootdownReqOnCore` TLB effect
+  *operand-for-operand* (was "⊇, full flush"): the op-tag decode is
+  pinned identical on both sides (`sm7b_op_tag_decode_conformance`
+  ↔ `TlbInvalidation.toOpTag`/`toAsid`/`toVaddr`, exercised in suite
+  §4.11), and the retire path is unit-tested to issue exactly the
+  published operands.  Residual: the end-to-end machine-checked
+  refinement of the *linked* Rust↔Lean runtime still needs the SM9.E
+  bootable image (unchanged target — it is the linked-runtime proof,
+  not the effect correspondence, that remains).
+* **B.10 syscall-level reachability — deferred, NO safety gap
+  (sharpened target).**  `asidAllocateWithShootdown` is the correct,
+  complete, proven kernel-level `requiresFlush` consumer, but has **no
+  consumer** and no syscall route.  Audit confirms there is **no
+  runtime ASID-reuse path at all**: `lifecycleRetype` creates a *fresh*
+  ASID-0 empty `vspaceRoot` (`objectOfKernelType .vspaceRoot`), and
+  `asidTable` is populated only at boot from the builder's initial
+  roots — so no live transition reuses an ASID without the round.  The
+  gap is therefore pure *completeness* (user-facing reachability), not
+  a correctness/safety hole.  Closing it requires an
+  ASIDControl/ASIDPool **object family** + an `asidPoolAssign` syscall
+  + mounting the pool as `SystemState` — a coherent VSpace/ASID
+  subsystem PR, **explicit closure target: SM8**.  Building an unwired
+  assign primitive here would violate the wire-it-into-the-consumer
+  rule, so it is deliberately not added.
+* **Step-4d direct-ack SGI (`.tlbShootdownAck`) — CLOSED by design
+  decision (won't implement).**  Under the B.6 spin-based bounded wait
+  (a bare `wfe` was rejected as unsound: it could sleep past a hung
+  target) the initiator polls the shared ack flags directly, and the
+  SVC path runs IRQs-masked — so a direct-ack SGI can neither preempt
+  the initiator nor deliver information the acquire-poll does not
+  already read.  The optional optimisation adds a whole SGI round-trip
+  for zero latency benefit under the chosen wait model; recorded as a
+  closed design decision, not deferred work.
+* **`withLockSet` bundle carriage — shootdown slice CLOSED.**  The 2PL
+  bracket provably frames `tlbShootdown` (`acquire`/`releaseLockOnObject`
+  /`acquireAll`/`releaseAll`/`withLockSet_tlbShootdown_eq`), so
+  `withLockSet_preserves_pendingBounded` carries the 12th
+  `proofLayerInvariantBundle` conjunct through any 2PL-guarded
+  transition that preserves it (`WithLockSet.lean`; suite §4.11
+  witness).  Residual: the full twenty-conjunct
+  `withLockSet_preserves_ipcInvariantFull_perCore` generalisation stays
+  with the SM6.D campaign (unchanged target).
 * **SM7.C.6** — the plan-literal per-core restatement of Theorem 3.3.1
   lands with the per-core TLB mount (mechanical instantiation of the
-  vector form).
-* **Host-test starvation livelock (pre-existing, SM2-era)** — the
-  SM2.B lock stress tests spin unbounded on FIFO hand-offs
-  (`TicketLock.acquire`'s `while serving != my_ticket`, the queued
-  RW lock's `PARKED_ADMITTED` waits); `wfe_bounded` is aarch64-only,
-  so on the host these are pure busy-waits.  Under an oversubscribed
-  host CPU (e.g. `cargo test --workspace` testing while still
-  compiling sibling crates) the holder thread can be starved by
-  spinning waiters for minutes — observed once at v0.32.76 and once
-  at v0.32.77, both self-limited to the loaded window; the identical
-  binary passes repeatably (8/8) when run without compile contention.
-  Not a target defect (per-core PEs never oversubscribe) and not
-  reachable from the SM7.B tests (the round lock is try-acquire —
-  never blocks).  Mitigation candidates for the SM9 test-infra pass:
-  host-cfg yield in the spin bodies, or serialising compile and test
-  phases in CI.
+  vector form; unchanged target).
+* **Host-test starvation livelock (pre-existing, SM2-era) — CLOSED.**
+  Audit shows the yields already exist: every FIFO spin routes through
+  `cpu::wfe()`, which under `#[cfg(test)]` calls `std::thread::yield_now`
+  (the SM2.E host-livelock fix), and the authoritative Rust gate
+  (`scripts/test_rust.sh`) **builds all crates before running any test**,
+  so the compile-contention window that produced the observed hang does
+  not exist in the real test flow — it was an artifact of an ad-hoc
+  combined `cargo test --workspace`.  Hardening: the SM7.B round-lock
+  mutex-stress test now caps its contenders at
+  `std::thread::available_parallelism()` so it cannot pathologically
+  oversubscribe a small-core CI host.  Not a target defect (per-core
+  PEs never oversubscribe) and not reachable from the SM7.B path (the
+  round lock is try-acquire — never blocks).
 
 ### SM7.C — Per-core TLB model (3 PRs, 8 sub-tasks)
 

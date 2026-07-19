@@ -960,6 +960,29 @@ run_check "INVARIANT" rg -n '^pub extern "C" fn ffi_shootdown_all_acked' rust/se
 run_check "INVARIANT" rg -n 'extern "ffi_shootdown_ack_set"' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^def shootdownAckSet' SeLe4n/Kernel/Concurrency/Runtime.lean
 run_check "INVARIANT" rg -n '^theorem shootdownAck_ffi_core_in_range' SeLe4n/Kernel/Concurrency/Runtime.lean
+# WS-SM SM7.B debt-closure cut — per-descriptor handler operand mailbox
+# (debt (1)): the Rust seqlock mailbox + publish/snapshot/retire primitives,
+# the local per-operand TLBI dispatcher + shared op-tag decode, the FFI
+# publish seam + Lean wrappers + the live-entry publish call, and the
+# genuine per-descriptor / torn-read-fallback tests.  Plus the withLockSet
+# pendingBounded carriage (debt (5) slice).
+run_check "INVARIANT" rg -n '^pub struct ShootdownOpMailbox' rust/sele4n-hal/src/shootdown.rs
+run_check "INVARIANT" rg -n '^pub fn retire_round_ops_in' rust/sele4n-hal/src/shootdown.rs
+run_check "INVARIANT" rg -n '^pub fn publish_round_ops_in' rust/sele4n-hal/src/shootdown.rs
+run_check "INVARIANT" rg -n 'retire_round_ops_in\(&SHOOTDOWN_OPS\)' rust/sele4n-hal/src/shootdown.rs
+run_check "INVARIANT" rg -n '^pub fn tlbi_local' rust/sele4n-hal/src/tlb.rs
+run_check "INVARIANT" rg -n '^pub const fn decode_tlb_invalidation' rust/sele4n-hal/src/tlb.rs
+run_check "INVARIANT" rg -n '^pub extern "C" fn ffi_shootdown_publish_slot' rust/sele4n-hal/src/ffi.rs
+run_check "INVARIANT" rg -n 'fn sm7b_retire_per_descriptor_counts_operands' rust/sele4n-hal/src/shootdown.rs
+run_check "INVARIANT" rg -n 'fn sm7b_retire_torn_read_falls_back_to_full_flush' rust/sele4n-hal/src/shootdown.rs
+run_check "INVARIANT" rg -n 'fn sm7b_op_tag_decode_conformance' rust/sele4n-hal/src/shootdown.rs
+run_check "INVARIANT" rg -n '^opaque ffiShootdownPublishSlot' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def shootdownPublishSlot' SeLe4n/Kernel/Concurrency/Runtime.lean
+run_check "INVARIANT" rg -n '^def publishShootdownOps' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n 'publishShootdownOps collapsed' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^theorem withLockSet_preserves_pendingBounded' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
+run_check "INVARIANT" rg -n '^theorem acquireLockOnObject_tlbShootdown_eq' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
+run_check "INVARIANT" rg -n '^private def runDebtClosureChecks' tests/SmpTlbShootdownSuite.lean
 
 # WS-H12d IPC message payload bounds anchors — predicate definitions + enforcement + theorems.
 run_check "INVARIANT" rg -n '^def maxMessageRegisters' SeLe4n/Model/Object/Types.lean

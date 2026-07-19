@@ -586,6 +586,27 @@ theorem shootdownCoreOnline_eq_mask_test (c : CoreId) :
 def tlbiLocalFullFlush : BaseIO Unit :=
   Platform.FFI.ffiTlbiAll
 
+/-- **WS-SM SM7.B (debt (1))**: begin publishing the round's operand set
+    into the Rust per-descriptor mailbox (seqlock → writers-in-progress).
+    The initiator calls this under the round lock, before firing the
+    `.tlbShootdownReq` SGIs. -/
+def shootdownPublishBegin : BaseIO Unit :=
+  Platform.FFI.ffiShootdownPublishBegin
+
+/-- **WS-SM SM7.B (debt (1))**: write one operand into the mailbox at slot
+    `index` (raw `TlbInvalidation` encoding: `opTag` per
+    `TlbInvalidation.toOpTag`, plus ASID / VAddr operands). -/
+def shootdownPublishSlot (index : Nat) (opTag : UInt32) (asid : UInt16)
+    (vaddr : UInt64) : BaseIO Unit :=
+  Platform.FFI.ffiShootdownPublishSlot (UInt64.ofNat index) opTag asid vaddr
+
+/-- **WS-SM SM7.B (debt (1))**: commit the publish of `len` operands
+    (seqlock → stable).  Over-capacity collapses to one `vmalle1`;
+    `len == 0` leaves the mailbox empty (handler falls back to the
+    conservative local `vmalle1`). -/
+def shootdownPublishCommit (len : Nat) : BaseIO Unit :=
+  Platform.FFI.ffiShootdownPublishCommit (UInt64.ofNat len)
+
 /-- **WS-SM SM7.A.3**: `shootdownAckSet` is the raw FFI export applied
     to the widened core id — nothing else happens on the Lean side. -/
 theorem shootdownAckSet_eq_ffi (c : CoreId) :

@@ -243,13 +243,10 @@ const fn decode_tlb_invalidation_tag(
     asid: u16,
     vaddr: u64,
 ) -> Option<crate::tlb::TlbInvalidation> {
-    match op_tag {
-        0 => Some(crate::tlb::TlbInvalidation::Vmalle1),
-        1 => Some(crate::tlb::TlbInvalidation::Vae1 { asid, vaddr }),
-        2 => Some(crate::tlb::TlbInvalidation::Aside1 { asid }),
-        3 => Some(crate::tlb::TlbInvalidation::Vale1 { asid, vaddr }),
-        _ => None,
-    }
+    // WS-SM SM7.B: single source of truth shared with the per-descriptor
+    // handler retire path (`shootdown.rs`), so the FFI dispatcher and the
+    // handler decode operands identically.
+    crate::tlb::decode_tlb_invalidation(op_tag, asid, vaddr)
 }
 
 /// **WS-SM SM1.E.4**: Sharing-domain-routed TLBI dispatcher FFI export.
@@ -545,6 +542,49 @@ pub extern "C" fn ffi_shootdown_wait_all_acked(timeout_ticks: u64) -> u64 {
 #[no_mangle]
 pub extern "C" fn ffi_shootdown_online_mask() -> u64 {
     crate::shootdown::online_mask()
+}
+
+/// **WS-SM SM7.B (debt (1))**: begin publishing the round's operand set
+/// into the per-descriptor mailbox — bumps the seqlock to
+/// writers-in-progress.  The initiator calls this under the global round
+/// lock, BEFORE it fires the `.tlbShootdownReq` SGIs (the `dsb ish` in
+/// `send_sgi` orders the publish before any target can take the SGI).
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownPublishBegin`
+#[no_mangle]
+pub extern "C" fn ffi_shootdown_publish_begin() {
+    crate::shootdown::publish_begin_in(&crate::shootdown::SHOOTDOWN_OPS);
+}
+
+/// **WS-SM SM7.B (debt (1))**: write one operand at slot `index` into the
+/// mailbox (the initiator loops over the round's collapsed operands).
+/// The `op_tag` matches the Lean `TlbInvalidation.toOpTag`; out-of-range
+/// indices are dropped (the commit collapses an over-length round to a
+/// single `vmalle1`).
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownPublishSlot`
+#[no_mangle]
+pub extern "C" fn ffi_shootdown_publish_slot(index: u64, op_tag: u32, asid: u16, vaddr: u64) {
+    crate::shootdown::publish_slot_in(
+        &crate::shootdown::SHOOTDOWN_OPS,
+        index as usize,
+        crate::shootdown::ShootdownOp {
+            op_tag,
+            asid,
+            vaddr,
+        },
+    );
+}
+
+/// **WS-SM SM7.B (debt (1))**: commit the publish of `len` operands —
+/// bumps the seqlock to stable (Release).  `len` above capacity collapses
+/// to one `vmalle1`; `len == 0` leaves the mailbox empty (handler falls
+/// back to `vmalle1`).
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownPublishCommit`
+#[no_mangle]
+pub extern "C" fn ffi_shootdown_publish_commit(len: u64) {
+    crate::shootdown::publish_commit_in(&crate::shootdown::SHOOTDOWN_OPS, len as usize);
 }
 
 // ============================================================================

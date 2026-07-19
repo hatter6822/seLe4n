@@ -141,6 +141,22 @@ def acquireShootdownRoundLockServicingSelf
           go fuel
   go shootdownRoundLockAcquireFuel
 
+/-- **WS-SM SM7.B (debt (1))**: publish a round's collapsed operand list
+into the Rust per-descriptor mailbox under the seqlock discipline —
+`begin`, one `slot` per operand (index-addressed), then `commit len`.
+Each `TlbInvalidation` is transmitted as its raw
+`(toOpTag, toAsid, toVaddr)` encoding, matching the Rust
+`decode_tlb_invalidation` decode (SM7.B op-tag conformance).  Called by
+the initiator under the round lock, before the SGIs fire. -/
+def publishShootdownOps (ops : List Architecture.TlbInvalidation) :
+    BaseIO Unit := do
+  Concurrency.shootdownPublishBegin
+  let mut i : Nat := 0
+  for op in ops do
+    Concurrency.shootdownPublishSlot i op.toOpTag op.toAsid op.toVaddr
+    i := i + 1
+  Concurrency.shootdownPublishCommit ops.length
+
 /-- **WS-SM SM7.B (the live round runtime)**: complete the shootdown
 round(s) a syscall commit posted — the runtime realisation of plan
 §3.2 steps 1–6 around the already-committed pure posting.
@@ -157,6 +173,12 @@ cooperatively, `acquireShootdownRoundLockServicingSelf`):
 
 1. `shootdownResetForRound` — the Rust masked reset: online targets
    drop, offline cores and the initiator are born-acknowledged.
+1b. **Publish the collapsed operands** into the Rust per-descriptor
+   mailbox (`publishShootdownOps`), BEFORE the SGIs — so each target's
+   handler retires just this round's operands locally (matching the
+   Lean `handleTlbShootdownReqOnCore` per-descriptor effect) instead of
+   a blanket `vmalle1`.  The `dsb ish` in `sendSgiToCore` orders the
+   publish before any target can take the SGI (SM7.B debt (1)).
 2. One `.tlbShootdownReq` SGI per **online** non-initiator core (the
    SM7.A PR #838 P1 target-set obligation).  The full non-initiator
    set is poked — not just `changed` — because the reset dropped every
@@ -186,18 +208,27 @@ def completeShootdownRounds (changed : List Concurrency.CoreId)
   if changed.isEmpty then
     pure ()
   else do
+    -- A posted `vmalle1` supersedes every other operand — collapse to
+    -- it once (`collapseShootdownOps_effect_eq`: the collapsed list's
+    -- TLB effect is exactly the full list's) and reuse for both the
+    -- per-descriptor mailbox publish and the initiator's broadcast.
+    let collapsed := Architecture.collapseShootdownOps ops
     acquireShootdownRoundLockServicingSelf execCore
     Concurrency.shootdownResetForRound execCore
+    -- WS-SM SM7.B (debt (1)): publish the round's exact operands into the
+    -- per-descriptor mailbox BEFORE firing the SGIs, so each target's
+    -- handler retires just these operands locally (matching the Lean
+    -- `handleTlbShootdownReqOnCore` per-descriptor effect) rather than a
+    -- blanket `vmalle1`.  The `dsb ish` in `sendSgiToCore` (SM1.F.8)
+    -- orders this publish before any target can take the SGI.
+    publishShootdownOps collapsed
     -- One CORE_READY snapshot per round (bring-up never overlaps a
     -- round per the SM7.A P1 contract, so the snapshot is stable).
     let onlineMask ← Concurrency.shootdownOnlineMask
     for c in Architecture.shootdownTargets execCore do
       if Concurrency.coreOnlineInMask onlineMask c then
         Concurrency.sendSgiToCore c .tlbShootdownReq
-    -- A posted `vmalle1` supersedes every other operand — issue just
-    -- it (`collapseShootdownOps_effect_eq`: the collapsed list's TLB
-    -- effect is exactly the full list's).
-    for op in Architecture.collapseShootdownOps ops do
+    for op in collapsed do
       Architecture.tlbiForSharing shootdownSharingDomain op
     let acked ← Concurrency.shootdownWaitAllAcked
       Architecture.shootdownWaitTimeoutTicks

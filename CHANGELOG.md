@@ -1,3 +1,105 @@
+## v0.32.78 — WS-SM SM7.B debt-closure cut
+
+Every SM7.B tracked-debt item CLOSED or narrowed to a precisely-scoped
+residual with an explicit target.  Zero sorry/axiom; golden trace
+byte-identical.
+
+**Per-descriptor Rust handler TLBIs (CLOSED)** — the marquee item.
+The `.tlbShootdownReq` handler now retires the round's EXACT operands
+on the local PE (one `tlbi` per descriptor via the new
+`tlb::tlbi_local`) instead of a blanket `tlbi vmalle1`, matching the
+Lean model's per-descriptor `applyTlbInvalidations`
+(`handleTlbShootdownReqOnCore`).  The initiator publishes the round's
+collapsed operands — under the global round lock, BEFORE it fires the
+SGIs, so the `dsb ish` in `send_sgi` orders the publish ahead of any
+SGI — into a **seqlock-guarded fixed-capacity mailbox**
+(`ShootdownOpMailbox`, `SHOOTDOWN_OPS`).  Each target's handler reads a
+stable snapshot and retires per-descriptor, falling back to the
+conservative local `tlbi vmalle1` on ANY torn read, empty round,
+over-capacity length, or undecodable operand.  Over-invalidation is
+always safe; the fallback can never under-invalidate.
+
+- Rust (`shootdown.rs`): `ShootdownOpMailbox` + `publish_begin_in` /
+  `publish_slot_in` / `publish_commit_in` / `publish_round_ops_in`
+  (seqlock write, overflow → single `vmalle1`), `snapshot_round_ops_in`
+  (torn/overflow → `None`), `retire_round_ops_in` (per-descriptor
+  `tlbi_local`, else fallback); `tlb::tlbi_local` (local per-operand
+  dispatcher) + `tlb::decode_tlb_invalidation` (the op-tag decode, now
+  shared with the FFI `tlbiForSharing` dispatcher); the handler's
+  step 1 flipped from `tlbi_vmalle1()` to `retire_round_ops_in`.  8
+  genuine unit tests (publish/snapshot round-trip, torn-read → `None`,
+  overflow → `vmalle1`, per-descriptor count, empty/torn/vmalle1
+  retire, op-tag conformance); HAL 772 → 780, clippy-clean.
+- Lean: `Platform.FFI.ffiShootdownPublish{Begin,Slot,Commit}` externs +
+  the `Concurrency.shootdownPublish{Begin,Slot,Commit}` typed wrappers +
+  `SyscallDispatchEntry.publishShootdownOps` (transmits each
+  `TlbInvalidation` as its raw `(toOpTag, toAsid, toVaddr)` triple),
+  called in `completeShootdownRounds` on the collapsed operand list
+  before the SGI loop.  Trace byte-identical (the publish runs only on
+  a real shootdown, never on the fixture trace).
+
+**Formal refinement (NARROWED)** — the per-descriptor handler now
+refines the Lean `handleTlbShootdownReqOnCore` TLB effect
+*operand-for-operand* (was "⊇, full flush"): the op-tag decode is
+pinned identical on both sides (`sm7b_op_tag_decode_conformance` ↔
+`TlbInvalidation.toOpTag`/`toAsid`/`toVaddr`, suite §4.11) and the
+retire path is unit-tested to issue exactly the published operands.
+Residual: the end-to-end machine-checked refinement of the *linked*
+Rust↔Lean runtime still needs the SM9.E bootable image.
+
+**B.10 syscall-level reachability (deferred, NO safety gap)** — audit
+confirms there is no runtime ASID-reuse path at all: `lifecycleRetype`
+creates a *fresh* ASID-0 empty `vspaceRoot` and `asidTable` is
+boot-populated only, so no live transition reuses an ASID without the
+round.  `asidAllocateWithShootdown` is the correct, complete, proven
+kernel-level `requiresFlush` consumer — the gap is pure *completeness*
+(user-facing reachability), not a safety hole.  Explicit closure
+target: **SM8** (an ASIDControl/ASIDPool object family + an
+`asidPoolAssign` syscall + mounting the pool as `SystemState`).  No
+unwired assign primitive is added (wire-it-into-the-consumer rule).
+
+**Step-4d direct-ack SGI (CLOSED by design)** — under the B.6
+spin-based bounded wait (a bare `wfe` was rejected as unsound) the
+initiator polls the shared ack flags directly, and the SVC path runs
+IRQs-masked, so a direct-ack SGI can neither preempt the initiator nor
+deliver information the acquire-poll does not already read.  Recorded
+as a won't-implement design decision, not deferred work.
+
+**`withLockSet` bundle carriage — shootdown slice (CLOSED)** — the 2PL
+bracket provably frames `tlbShootdown`
+(`acquireLockOnObject_tlbShootdown_eq` /
+`releaseLockOnObject_tlbShootdown_eq` /
+`acquireAll`/`releaseAll`/`withLockSet_tlbShootdown_eq`), so
+`withLockSet_preserves_pendingBounded` carries the 12th
+`proofLayerInvariantBundle` conjunct through any 2PL-guarded
+transition that preserves it (`WithLockSet.lean`; suite §4.11
+witness).  The full twenty-conjunct
+`withLockSet_preserves_ipcInvariantFull_perCore` generalisation stays
+with the SM6.D campaign.
+
+**Host-test starvation livelock (CLOSED)** — audit shows the yields
+already exist: every FIFO spin routes through `cpu::wfe()`, which
+under `#[cfg(test)]` calls `std::thread::yield_now` (the SM2.E
+host-livelock fix), and the authoritative Rust gate
+(`scripts/test_rust.sh`) builds all crates before running any test, so
+the compile-contention window that produced the one-off observed hang
+does not exist in the real flow — it was an artifact of an ad-hoc
+combined `cargo test --workspace`.  The SM7.B round-lock mutex-stress
+test now caps its contenders at `std::thread::available_parallelism()`.
+
+**Tests**: `tests/SmpTlbShootdownSuite.lean` §4.11 (operand-encoding
+conformance — the Lean half of the op-tag pairing — + a `withLockSet`
+`pendingBounded` carriage witness); 160 → 165 assertions.  Tier-3
+anchors extended (mailbox / `tlbi_local` / publish FFI + wrappers /
+live-entry publish call / `withLockSet` frames); the `shootdown.rs`
+Lean↔Rust conformance-pairing table extended.
+
+Residual debt: SM7.C.6 (the per-core Theorem-3.3.1 restatement, lands
+with the SM7.C per-core TLB mount) and the SM9.E linked-runtime
+handler refinement.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §5 (SM7.B debt-closure cut)
+
 ## v0.32.77 — WS-SM SM7.B completion cut: bundle carriage + depth closure
 
 Every deferral of the v0.32.76 SM7.B landing closed.  Zero

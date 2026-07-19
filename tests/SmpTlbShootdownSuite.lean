@@ -441,6 +441,20 @@ open SeLe4n.Kernel.Concurrency
 #check @SeLe4n.Kernel.Concurrency.tlbiLocalFullFlush
 #check @SeLe4n.Platform.FFI.ffiTlbiAll
 
+-- SM7.B debt-closure cut — per-descriptor handler operand mailbox (debt (1))
+-- + the withLockSet pendingBounded carriage slice (debt (5)):
+#check @SeLe4n.Kernel.publishShootdownOps
+#check @SeLe4n.Kernel.Concurrency.shootdownPublishBegin
+#check @SeLe4n.Kernel.Concurrency.shootdownPublishSlot
+#check @SeLe4n.Kernel.Concurrency.shootdownPublishCommit
+#check @SeLe4n.Platform.FFI.ffiShootdownPublishBegin
+#check @SeLe4n.Platform.FFI.ffiShootdownPublishSlot
+#check @SeLe4n.Platform.FFI.ffiShootdownPublishCommit
+#check @SeLe4n.Kernel.Concurrency.withLockSet_preserves_pendingBounded
+#check @SeLe4n.Kernel.Concurrency.withLockSet_tlbShootdown_eq
+#check @SeLe4n.Kernel.Concurrency.acquireLockOnObject_tlbShootdown_eq
+#check @SeLe4n.Kernel.Concurrency.releaseLockOnObject_tlbShootdown_eq
+
 -- ============================================================================
 -- §2  Elaboration-time examples
 -- ============================================================================
@@ -1534,6 +1548,43 @@ private def runLiveDispatchChecks : IO Unit := do
       | .error .illegalAuthority => true | _ => false)
 
 -- ----------------------------------------------------------------------------
+-- §4.11  Debt-closure cut: per-descriptor mailbox operand encoding
+--        conformance + withLockSet pendingBounded carriage
+-- ----------------------------------------------------------------------------
+
+private def runDebtClosureChecks : IO Unit := do
+  IO.println "-- §4.11 debt closure: operand-encoding conformance + withLockSet carriage"
+  -- The Lean half of the SM7.B debt-(1) op-tag pairing: each operand
+  -- transmits the (op_tag, asid, vaddr) triple the Rust
+  -- `decode_tlb_invalidation` round-trips.  Pins the encoding the live
+  -- `publishShootdownOps` sends per descriptor.
+  assertBool "vmalle1 encodes to (op_tag 0, asid 0, vaddr 0)"
+    (TlbInvalidation.vmalle1.toOpTag == 0 &&
+     TlbInvalidation.vmalle1.toAsid == 0 &&
+     TlbInvalidation.vmalle1.toVaddr == 0)
+  assertBool "the page unmap operand encodes to (op_tag 1, asid 5, vaddr 0x1000)"
+    (opUnmapTarget.toOpTag == 1 &&
+     opUnmapTarget.toAsid == UInt16.ofNat 5 &&
+     opUnmapTarget.toVaddr == UInt64.ofNat 0x1000)
+  assertBool "the ASID-retire operand encodes to (op_tag 2, asid 5, vaddr 0)"
+    ((encodeAsidInvalidation asid5).toOpTag == 2 &&
+     (encodeAsidInvalidation asid5).toAsid == UInt16.ofNat 5 &&
+     (encodeAsidInvalidation asid5).toVaddr == 0)
+  assertBool "every operand's op_tag is in the Rust decode's [0,4) range"
+    ([TlbInvalidation.vmalle1, opUnmapTarget, encodeAsidInvalidation asid5,
+      TlbInvalidation.vale1 (UInt16.ofNat 5) (UInt64.ofNat 0x1000)].all
+      fun op => op.toOpTag.toNat < 4)
+  -- withLockSet pendingBounded carriage (debt (5) slice): a 2PL bracket
+  -- whose guarded action frames the shootdown state preserves the
+  -- capacity conjunct.  Witness on a built state with the identity action.
+  let lockSt : SeLe4n.Model.SystemState :=
+    { (default : SeLe4n.Model.SystemState) with tlb := seededTlb }
+  assertBool "withLockSet over a shootdown-framing action preserves pendingBounded"
+    (decide (SeLe4n.Kernel.Architecture.pendingBounded
+      ((SeLe4n.Kernel.Concurrency.withLockSet SeLe4n.Kernel.Concurrency.LockSet.empty
+        core0 (fun s => (s, ())) lockSt).1).tlbShootdown))
+
+-- ----------------------------------------------------------------------------
 -- Runner
 -- ----------------------------------------------------------------------------
 
@@ -1561,6 +1612,7 @@ def runSmpTlbShootdownChecks : IO Unit := do
   runProtocolLockSetChecks
   runDiffRecoveryChecks
   runCompletionCutChecks
+  runDebtClosureChecks
   runLiveDispatchChecks
   IO.println "===================================================="
   IO.println "All SM7.A + SM7.B TLB shootdown checks PASS."
