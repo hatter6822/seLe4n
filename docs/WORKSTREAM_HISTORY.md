@@ -24,13 +24,59 @@ Plan:
 SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
-**Current sub-phase: SM7.B shootdown protocol LANDED (v0.32.76) +
-completion cut (v0.32.77) + debt-closure cut (v0.32.78) + PR #839
-review-P1 cut (v0.32.79) — the plan-§3.2 protocol complete and LIVE,
-every landing deferral closed and every tracked-debt item closed or
+**Current sub-phase: SM7.C per-core TLB model LANDED (v0.32.80) — the
+SMP generalisation of the single-core TLB layer, mounted on
+`SystemState.perCoreTlb : Vector TlbState numCores` and wired into the
+SM7.B shootdown protocol.  Prior: SM7.B shootdown protocol LANDED
+(v0.32.76) + completion cut (v0.32.77) + debt-closure cut (v0.32.78) +
+PR #839 review-P1 cut (v0.32.79) — the plan-§3.2 protocol complete and
+LIVE, every landing deferral closed and every tracked-debt item closed or
 narrowed to a scoped residual.  Prior: SM7.A shootdown descriptor +
 state LANDED (v0.32.72); completion cut (v0.32.73); audit cut
 (v0.32.74); review P1 (v0.32.75).**
+
+**SM7.C per-core TLB model (v0.32.80) — all eight sub-tasks (plan §5).**
+New production module `Architecture/PerCoreTlbModel.lean` (imports
+`TlbModel` + `TlbShootdownProtocol`; in `SeLe4n.lean`).  **SM7.C.1**:
+`SystemState.perCoreTlb : Vector TlbState numCores := Vector.replicate
+numCores TlbState.empty` — added **alongside** the scalar boot-core `tlb`
+(not a rewrite: the scalar stays the pre-SMP single-core layer,
+`perCoreTlb` is the SMP model the SM7.B protocol drives; both cohere empty
+at boot).  SM4.B path-a accessors `tlbOnCore`/`setTlbOnCore` + store/load
+algebra + frame lemmas + `default_{perCoreTlb,tlbOnCore}`; carriage
+through freeze (`FrozenSystemState.perCoreTlb` + `freeze_preserves_perCoreTlb
+:= rfl` guard + the `apiInvariantBundle_frozenDirectFull` conjunct),
+congruence (`OffSchedulerAgrees.perCoreTlb` + all six builders), and boot
+frames (`applyMachineConfig`/`foldIrqs`/`foldObjects`/`bootFromPlatform_perCoreTlb_eq`).
+**SM7.C.2** `tlbInsertOnCore` (the HW walker fills one core; leaves others
+empty — the SMP asymmetry).  **SM7.C.3** `tlbInvalidateOnCore` (a local
+invalidation reaches exactly this core; leaves others stale — the precise
+SMP hazard).  **SM7.C.4** `tlbInvalidateOnAllCores` (runs the SM7.B
+`tlbShootdownBroadcast` — posting to `tlbShootdown` — **and** evolves every
+core's view via `shootdownRoundViews`, so `perCoreTlb` is a genuine
+consumer of the shootdown state machine).  **SM7.C.5**
+`tlbInvalidationConsistent_perCore` (∀ core, its view matches the page
+tables) — **the 13th `proofLayerInvariantBundle` conjunct**, generalising
+the 9th (`tlbConsistent st st.tlb`); threaded exactly like SM7.B's 12th
+(`pendingBounded`): boot witness `default_tlbInvalidationConsistent_perCore`,
+definitional transport through the three adapter preservation proofs (which
+touch only machine, and — for the context switch — scheduler.current, none
+of which the conjunct reads), the Boot general bridge, freeze wholesale.
+**SM7.C.6**
+`tlbShootdown_invalidates_perCore` — Theorem 3.3.1
+(`tlbShootdownBroadcast_invalidatesAllCores`) mounted: after a covering
+`tlbInvalidateOnAllCores` no core retains any covered entry (the SMP-C4
+use-after-unmap closure).  **SM7.C.7** `tlbConsistency_cross_subsystem` —
+the memory-subsystem capstone (protocol × TLB-model × page-tables): a
+covering invalidation both removes every stale entry on every core AND
+preserves per-core consistency.  **SM7.C.8**: `tests/SmpTlbShootdownSuite.lean`
+§1 (30 `#check` anchors), §2 (elaboration witnesses), §5.1–§5.2 (14
+runtime assertions).  Information flow: `perCoreTlb` kept out of
+`projectState` (a TLB view is a covert timing channel, like
+`machine.timer`).  Zero sorry/axiom; golden trace byte-identical.
+Round-generation-tagged descriptors (the SM7.B v0.32.79 model-fidelity
+debt) remains a separately-scoped follow-on (orthogonal to the per-core
+view model; no hardware hazard).
 
 **SM7.B PR #839 review-P1 cut (v0.32.79) — two Codex P1 findings.**
 **(1) Shootdown targets keyed on IRQ-readiness, not the release

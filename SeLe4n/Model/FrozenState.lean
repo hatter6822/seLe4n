@@ -58,7 +58,7 @@ runtime execution (frozen phase):
 namespace SeLe4n.Model
 
 open SeLe4n.Kernel.RobinHood
-open SeLe4n.Kernel.Concurrency (bootCoreId)
+open SeLe4n.Kernel.Concurrency (bootCoreId numCores)
 open SeLe4n.Kernel.RadixTree
 
 -- ============================================================================
@@ -416,6 +416,20 @@ structure FrozenSystemState where
       of the underlying RobinHood hash table across the freeze boundary. -/
   objStoreLock      : SeLe4n.Kernel.Concurrency.RwLockState :=
     SeLe4n.Kernel.Concurrency.RwLockState.unheld
+  /-- WS-SM SM7.C.1: per-core TLB views, transferred from
+      `SystemState.perCoreTlb` during freeze.  The SMP generalisation of
+      the frozen `tlb` field above: under SMP each core caches
+      translations independently, so the frozen snapshot carries every
+      core's view (not just the boot core's), for the same M-NEW-1
+      completeness reason the scalar `tlb` is carried — TLB state is no
+      longer dropped during freeze.  Defaults to every core's empty view
+      (mirroring the `objStoreLock` frozen field's default just above);
+      `freeze` sets it explicitly (`perCoreTlb := st.perCoreTlb`) and the
+      **fail-closed guard** against a silent per-core drop is the
+      `freeze_preserves_perCoreTlb := rfl` theorem, which fails to
+      elaborate if `freeze` ever stops forwarding the field. -/
+  perCoreTlb        : _root_.Vector TlbState numCores :=
+    _root_.Vector.replicate numCores TlbState.empty
 
 -- ============================================================================
 -- Q5-C: Freeze Functions
@@ -544,7 +558,10 @@ def freeze (ist : IntermediateState) : FrozenSystemState :=
     scThreadIndex := freezeMap st.scThreadIndex
     tlb := st.tlb
     -- WS-SM SM3.A.10: forward the ObjStore table-level lock unchanged.
-    objStoreLock := st.objStoreLock }
+    objStoreLock := st.objStoreLock
+    -- WS-SM SM7.C.1: forward every core's TLB view unchanged (the SMP
+    -- generalisation of `tlb := st.tlb`; no silent per-core drop).
+    perCoreTlb := st.perCoreTlb }
 
 -- ============================================================================
 -- Q5-C Proofs
@@ -571,6 +588,13 @@ theorem freeze_preserves_machine (ist : IntermediateState) :
     TLB state is no longer dropped during freeze. -/
 theorem freeze_preserves_tlb (ist : IntermediateState) :
     (freeze ist).tlb = ist.state.tlb := rfl
+
+/-- WS-SM SM7.C.1: `freeze` preserves the per-core TLB views — the frozen
+`perCoreTlb` is identical to the pre-freeze `SystemState.perCoreTlb`, the
+SMP generalisation of `freeze_preserves_tlb`.  No per-core view is dropped
+during freeze. -/
+theorem freeze_preserves_perCoreTlb (ist : IntermediateState) :
+    (freeze ist).perCoreTlb = ist.state.perCoreTlb := rfl
 
 /-- Q5-C: `freeze` preserves the scheduler current thread. -/
 theorem freeze_preserves_current (ist : IntermediateState) :

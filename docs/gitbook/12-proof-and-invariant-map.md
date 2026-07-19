@@ -747,9 +747,36 @@ TLB/cache maintenance model (`TlbModel.lean`, WS-H11/H-10):
 - `adapterFlushTlbByAsid` — per-ASID invalidation (ARM64 `TLBI ASIDE1`)
 - `adapterFlushTlbByVAddr` — per-(ASID,VAddr) invalidation (ARM64 `TLBI VAE1`)
 - `tlbConsistent` — invariant: all TLB entries match current page tables
-- R7-A: `TlbState` integrated into `SystemState`; `tlbConsistent` added to `proofLayerInvariantBundle`
+- R7-A: `TlbState` integrated into `SystemState`; `tlbConsistent st st.tlb` added to `proofLayerInvariantBundle` (the 9th conjunct; SM7.C generalises it per-core as the 13th conjunct `tlbInvalidationConsistent_perCore`, below)
 - `vspaceMapPageWithFlush`, `vspaceUnmapPageWithFlush` — composed page-table + targeted per-(ASID,VAddr) TLB-flush operations (AJ4-B)
 - 13 TLB theorems: `tlbConsistent_empty`, `adapterFlushTlb_restores_tlbConsistent`, `adapterFlushTlbByAsid_preserves_tlbConsistent`, `vspaceMapPage_then_flush_preserves_tlbConsistent`, `vspaceUnmapPage_then_flush_preserves_tlbConsistent`, `adapterFlushTlbByAsid_removes_matching`, `adapterFlushTlbByAsid_preserves_other`, `adapterFlushTlbByVAddr_preserves_tlbConsistent`, `adapterFlushTlbByVAddr_removes_matching`, `cross_asid_tlb_isolation`, `vspaceMapPageWithFlush_preserves_tlbConsistent`, `vspaceUnmapPageWithFlush_preserves_tlbConsistent`, `tlbConsistent_of_objects_eq`
+
+Per-core TLB model (`PerCoreTlbModel.lean`, WS-SM SM7.C — production,
+over the new `SystemState.perCoreTlb : Vector TlbState numCores`; the SMP
+generalisation of the scalar boot-core `tlb`, added alongside it):
+- `tlbOnCore` / `setTlbOnCore` — SM4.B path-a per-core view accessors +
+  `@[simp]` store/load algebra + per-field frame lemmas +
+  `default_{perCoreTlb,tlbOnCore}`
+- `tlbInsertOnCore` (SM7.C.2) — the hardware translation walker filling
+  one core's view (leaves other cores empty — the SMP asymmetry)
+- `tlbInvalidateOnCore` (SM7.C.3) — a local (this-core) invalidation
+  (leaves other cores stale — the precise SMP hazard the broadcast closes)
+- `tlbInvalidateOnAllCores` (SM7.C.4) — the cross-core broadcast: runs the
+  SM7.B `tlbShootdownBroadcast` (posting to `tlbShootdown`) **and** evolves
+  every core's view via the protocol's `shootdownRoundViews`, so
+  `perCoreTlb` is a genuine consumer of the shootdown state machine
+- `tlbInvalidationConsistent_perCore` (SM7.C.5) — every core's view matches
+  the page tables; **the 13th `proofLayerInvariantBundle` conjunct**,
+  generalising the 9th (`tlbConsistent st st.tlb`); boot witness
+  `default_tlbInvalidationConsistent_perCore`
+- `tlbShootdown_invalidates_perCore` (SM7.C.6) — Theorem 3.3.1
+  (`tlbShootdownBroadcast_invalidatesAllCores`) mounted on the field: after
+  a covering `tlbInvalidateOnAllCores` no core retains any covered entry
+  (the SMP-C4 use-after-unmap closure)
+- `tlbConsistency_cross_subsystem` (SM7.C.7) — the memory-subsystem
+  capstone (protocol × TLB-model × page-tables): a covering invalidation
+  both removes every stale entry on every core AND preserves per-core
+  consistency
 
 TLB shootdown state layer (`TlbShootdown.lean`, WS-SM SM7.A — production,
 mounted as `SystemState.tlbShootdown`; the SM7.B protocol transitions are

@@ -80,6 +80,10 @@ import SeLe4n.Kernel.IPC.CrossCore.Cancellation
 import SeLe4n.Kernel.Architecture.TlbShootdownProtocol
 import SeLe4n.Kernel.Architecture.TlbShootdownWait
 import SeLe4n.Kernel.Architecture.TlbShootdownLockSet
+-- WS-SM SM7.C: the per-core TLB model (perCoreTlb accessors + ops +
+-- tlbInvalidationConsistent_perCore, the 13th proofLayerInvariantBundle
+-- conjunct) — mounted on `SystemState.perCoreTlb`.
+import SeLe4n.Kernel.Architecture.PerCoreTlbModel
 -- WS-SM SM7.B (SM1.E.4 promotion): the typed `tlbiForSharing` FFI
 -- dispatcher — the shootdown round's runtime TLBI emitter
 -- (`SyscallDispatchEntry.completeShootdownRounds` is the first runtime

@@ -325,6 +325,10 @@ theorem applyMachineConfig_tlb_eq (ist : IntermediateState) (config : MachineCon
 theorem applyMachineConfig_tlbShootdown_eq (ist : IntermediateState) (config : MachineConfig) :
     (applyMachineConfig ist config).state.tlbShootdown = ist.state.tlbShootdown := rfl
 
+/-- WS-SM SM7.C: `applyMachineConfig` preserves the per-core TLB views. -/
+theorem applyMachineConfig_perCoreTlb_eq (ist : IntermediateState) (config : MachineConfig) :
+    (applyMachineConfig ist config).state.perCoreTlb = ist.state.perCoreTlb := rfl
+
 /-- AH2-F: `applyMachineConfig` preserves lifecycle metadata. -/
 theorem applyMachineConfig_lifecycle_eq (ist : IntermediateState) (config : MachineConfig) :
     (applyMachineConfig ist config).state.lifecycle = ist.state.lifecycle := rfl
@@ -1634,6 +1638,12 @@ private theorem foldIrqs_tlbShootdown (irqs : List IrqEntry) (ist : Intermediate
   | nil => rfl
   | cons _ _ ih => simp [foldIrqs, List.foldl] at ih ⊢; exact ih _
 
+private theorem foldIrqs_perCoreTlb (irqs : List IrqEntry) (ist : IntermediateState) :
+    (foldIrqs irqs ist).state.perCoreTlb = ist.state.perCoreTlb := by
+  induction irqs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldIrqs, List.foldl] at ih ⊢; exact ih _
+
 private theorem foldIrqs_machine (irqs : List IrqEntry) (ist : IntermediateState) :
     (foldIrqs irqs ist).state.machine = ist.state.machine := by
   induction irqs generalizing ist with
@@ -1709,6 +1719,12 @@ private theorem foldObjects_tlb (objs : List ObjectEntry) (ist : IntermediateSta
 
 private theorem foldObjects_tlbShootdown (objs : List ObjectEntry) (ist : IntermediateState) :
     (foldObjects objs ist).state.tlbShootdown = ist.state.tlbShootdown := by
+  induction objs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
+
+private theorem foldObjects_perCoreTlb (objs : List ObjectEntry) (ist : IntermediateState) :
+    (foldObjects objs ist).state.perCoreTlb = ist.state.perCoreTlb := by
   induction objs generalizing ist with
   | nil => rfl
   | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
@@ -2308,6 +2324,17 @@ theorem bootFromPlatform_tlbShootdown_eq (config : PlatformConfig) :
     (default : SystemState).tlbShootdown := by
   show _ = _; unfold bootFromPlatform
   rw [applyMachineConfig_tlbShootdown_eq, foldObjects_tlbShootdown, foldIrqs_tlbShootdown,
+      mkEmpty_state_eq_default]
+
+/-- WS-SM SM7.C: after boot, every core's TLB view is the empty default —
+boot never fills a TLB (it operates on page tables directly), so the
+post-boot per-core TLB state is the quiescent `Vector.replicate numCores
+TlbState.empty`.  Mirrors `bootFromPlatform_tlbShootdown_eq`. -/
+theorem bootFromPlatform_perCoreTlb_eq (config : PlatformConfig) :
+    (bootFromPlatform config).state.perCoreTlb =
+    (default : SystemState).perCoreTlb := by
+  show _ = _; unfold bootFromPlatform
+  rw [applyMachineConfig_perCoreTlb_eq, foldObjects_perCoreTlb, foldIrqs_perCoreTlb,
       mkEmpty_state_eq_default]
 
 /-- AH2-F: After boot, machine config-set fields come from `config.machineConfig`.
@@ -3312,10 +3339,20 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
   have hPBBundle : SeLe4n.Kernel.Architecture.pendingBounded
       (bootFromPlatform config).state.tlbShootdown := by
     rw [hShoot]; exact SeLe4n.Model.default_tlbShootdown_pendingBounded
-  -- Compose all 12 components
+  -- 13. tlbInvalidationConsistent_perCore (WS-SM SM7.C): boot never fills a
+  -- TLB, so every core's view is the empty default — vacuously consistent.
+  have hPerCoreTlbBundle : SeLe4n.Kernel.Architecture.tlbInvalidationConsistent_perCore
+      (bootFromPlatform config).state := by
+    intro c
+    have hview : SeLe4n.Kernel.Architecture.tlbOnCore (bootFromPlatform config).state c
+        = SeLe4n.Model.TlbState.empty := by
+      unfold SeLe4n.Kernel.Architecture.tlbOnCore
+      rw [bootFromPlatform_perCoreTlb_eq]; exact SeLe4n.Model.default_perCoreTlb c
+    rw [hview]; exact SeLe4n.Kernel.Architecture.tlbConsistent_empty _
+  -- Compose all 13 components
   exact ⟨h1, hCapBundle, ⟨h1.1, hCapBundle, hIpcFull⟩, hCouplingBundle,
          hLifeBundle, hServiceBundle, hVspaceBundle, hCrossBundle, hTlbBundle, hExtBundle,
-         hNtfnWaiter, hPBBundle⟩
+         hNtfnWaiter, hPBBundle, hPerCoreTlbBundle⟩
 
 -- ============================================================================
 -- V4-A9: End-to-end bridge for general configs

@@ -11,6 +11,8 @@ import SeLe4n.Kernel.Architecture.TlbShootdown
 import SeLe4n.Kernel.Architecture.TlbShootdownProtocol
 import SeLe4n.Kernel.Architecture.TlbShootdownWait
 import SeLe4n.Kernel.Architecture.TlbShootdownLockSet
+-- SM7.C: the per-core TLB model (§5 scenario groups + §1 anchors below).
+import SeLe4n.Kernel.Architecture.PerCoreTlbModel
 import SeLe4n.Kernel.Lifecycle.Operations.RetypeWrappers
 import SeLe4n.Kernel.SyscallDispatchEntry
 import SeLe4n.Kernel.Concurrency.Runtime
@@ -26,10 +28,15 @@ import SeLe4n.Testing.StateBuilder
 # WS-SM SM7.A + SM7.B — TLB shootdown descriptor, state + protocol suite
 
 Tier-2 (runtime) + Tier-3 (surface anchor) coverage for the WS-SM Phase
-SM7.A "Shootdown descriptor + state" and SM7.B "Shootdown protocol"
-deliverables (`docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` §5, sub-tasks
-SM7.A.1–A.6 and SM7.B.1–B.12).  The SM7.C per-core-TLB-model scenario
-groups land here as that phase arrives (SM7.E.1).
+SM7.A "Shootdown descriptor + state", SM7.B "Shootdown protocol", and
+SM7.C "Per-core TLB model" deliverables
+(`docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` §5, sub-tasks SM7.A.1–A.6,
+SM7.B.1–B.12, and SM7.C.1–C.8).  The SM7.C per-core-TLB-model scenario
+groups are §5.1–§5.2 (SM7.E.1): the accessors / local ops
+(`tlbInsertOnCore` / `tlbInvalidateOnCore`) exposing the SMP staleness
+hazard, and the cross-core `tlbInvalidateOnAllCores` broadcast realising
+Theorem 3.3.1 (`tlbShootdown_invalidates_perCore`) + the
+`tlbConsistency_cross_subsystem` capstone on the mounted `perCoreTlb`.
 
 * **§1 Surface anchors** — every public SM7.A symbol resolves at
   elaboration time (rename/removal fails the build).
@@ -455,6 +462,45 @@ open SeLe4n.Kernel.Concurrency
 #check @SeLe4n.Kernel.Concurrency.acquireLockOnObject_tlbShootdown_eq
 #check @SeLe4n.Kernel.Concurrency.releaseLockOnObject_tlbShootdown_eq
 
+-- SM7.C.1 per-core TLB mount + accessors (SM4.B path-a discipline):
+#check @SeLe4n.Model.SystemState.perCoreTlb
+#check @SeLe4n.Model.default_perCoreTlb
+#check @tlbOnCore
+#check @setTlbOnCore
+#check @setTlbOnCore_tlbOnCore_self
+#check @setTlbOnCore_tlbOnCore_ne
+#check @default_tlbOnCore
+-- SM7.C.2 tlbInsertOnCore (hardware translation walker):
+#check @tlbInsertOnCore
+#check @tlbInsertOnCore_mem
+#check @tlbInsertOnCore_tlbOnCore_ne
+-- SM7.C.3 tlbInvalidateOnCore (local, this-core invalidation):
+#check @tlbInvalidateOnCore
+#check @tlbInvalidateOnCore_removes
+#check @tlbInvalidateOnCore_tlbOnCore_ne
+#check @tlbInvalidateOnCore_subset
+-- SM7.C.4 tlbInvalidateOnAllCores (cross-core broadcast via the protocol):
+#check @tlbInvalidateOnAllCores
+#check @tlbInvalidateOnAllCores_spec
+#check @tlbInvalidateOnAllCores_perCoreTlb
+#check @tlbInvalidateOnAllCores_sgis
+#check @tlbInvalidateOnAllCores_objects
+#check @tlbInvalidateOnAllCores_asidTable
+#check @tlbInvalidateOnAllCores_isSome_of_quiescent
+-- SM7.C.5 tlbInvalidationConsistent_perCore (the per-core TLB invariant,
+-- the 13th proofLayerInvariantBundle conjunct):
+#check @tlbInvalidationConsistent_perCore
+#check @default_tlbInvalidationConsistent_perCore
+#check @tlbInvalidationConsistent_perCore_bootCore
+#check @tlbConsistent_of_subset_of_state_frame
+#check @tlbInvalidateOnCore_preserves_tlbInvalidationConsistent_perCore
+-- SM7.C.6 tlbShootdown_invalidates_perCore (Theorem 3.3.1, mounted):
+#check @tlbShootdown_invalidates_perCore
+-- SM7.C.7 tlbConsistency_cross_subsystem (the memory-subsystem capstone):
+#check @tlbConsistency_cross_subsystem
+-- SM7.C: the 13th proofLayerInvariantBundle conjunct is live:
+#check @SeLe4n.Kernel.Architecture.default_system_state_proofLayerInvariantBundle
+
 -- ============================================================================
 -- §2  Elaboration-time examples
 -- ============================================================================
@@ -634,6 +680,35 @@ example (l : SeLe4n.Kernel.Concurrency.LockId) (initiator : CoreId) :
 -- `sm7b_wait_timeout_matches_wfe_default`).
 example : shootdownWaitTimeoutTicks = 540000 :=
   shootdownWaitTimeoutTicks_value
+
+-- SM7.C.5: at boot every core's TLB view is empty, so the per-core TLB
+-- consistency invariant holds — the 13th proofLayerInvariantBundle
+-- conjunct's boot witness.
+example : tlbInvalidationConsistent_perCore (default : SeLe4n.Model.SystemState) :=
+  default_tlbInvalidationConsistent_perCore
+
+-- SM7.C.7 (theorem-application witness): the cross-subsystem capstone —
+-- a covering cross-core invalidation of a per-core-consistent state both
+-- removes every stale entry on every core AND preserves per-core
+-- consistency (VSpace × TLB-model × shootdown coherence).
+example (st : SeLe4n.Model.SystemState) (initiator : CoreId)
+    (targets : List CoreId) (hcov : ∀ c : CoreId, c ≠ initiator → c ∈ targets)
+    (op : TlbInvalidation) (hC : tlbInvalidationConsistent_perCore st)
+    (st' : SeLe4n.Model.SystemState) (sgis : List (CoreId × SgiKind))
+    (h : tlbInvalidateOnAllCores st initiator targets op = some (st', sgis)) :
+    tlbInvalidationConsistent_perCore st' :=
+  (tlbConsistency_cross_subsystem st initiator hcov op hC h).2
+
+-- SM7.C.6 (theorem-application witness): after a covering broadcast no
+-- core retains any entry the operand covers (Theorem 3.3.1, mounted).
+example (st : SeLe4n.Model.SystemState) (initiator : CoreId)
+    (targets : List CoreId) (hcov : ∀ c : CoreId, c ≠ initiator → c ∈ targets)
+    (op : TlbInvalidation) (st' : SeLe4n.Model.SystemState)
+    (sgis : List (CoreId × SgiKind))
+    (h : tlbInvalidateOnAllCores st initiator targets op = some (st', sgis))
+    (c : CoreId) (e : SeLe4n.Model.TlbEntry) (he : tlbEntryMatches op e = true) :
+    e ∉ (tlbOnCore st' c).entries :=
+  tlbShootdown_invalidates_perCore st initiator hcov op h c he
 
 -- ============================================================================
 -- §3  Runtime assertions
@@ -1585,11 +1660,92 @@ private def runDebtClosureChecks : IO Unit := do
         core0 (fun s => (s, ())) lockSt).1).tlbShootdown))
 
 -- ----------------------------------------------------------------------------
+-- §5.1  Per-core TLB model: accessors + local ops (SM7.C.1-C.3)
+-- ----------------------------------------------------------------------------
+
+/-- A 4-core state whose every core caches the seeded translations —
+`Vector.replicate` puts `seededTlb` on all cores, the pre-state for the
+cross-core scenarios. -/
+private def perCoreSeeded : SeLe4n.Model.SystemState :=
+  { (default : SeLe4n.Model.SystemState) with
+      perCoreTlb := _root_.Vector.replicate numCores seededTlb }
+
+private def runPerCoreTlbLocalChecks : IO Unit := do
+  IO.println "-- §5.1 per-core TLB model: accessors + local ops"
+  -- SM7.C.1: every core's boot TLB view is empty.
+  assertBool "every core's boot TLB view is empty"
+    (allCores.all fun c =>
+      (tlbOnCore (default : SeLe4n.Model.SystemState) c).entries.isEmpty)
+  -- SM7.C.1: the store/load algebra writes exactly the target core.
+  let stSet := setTlbOnCore (default : SeLe4n.Model.SystemState) core1 seededTlb
+  assertBool "setTlbOnCore writes exactly the target core's view"
+    (tlbHasEntry (tlbOnCore stSet core1) entryTarget &&
+     (tlbOnCore stSet core2).entries.isEmpty)
+  -- SM7.C.2: the hardware translation walker fills only one core.
+  let stIns := tlbInsertOnCore (default : SeLe4n.Model.SystemState) core0 entryTarget
+  assertBool "tlbInsertOnCore fills only the target core's view"
+    (tlbHasEntry (tlbOnCore stIns core0) entryTarget &&
+     (tlbOnCore stIns core1).entries.isEmpty)
+  -- SM7.C.3: a local invalidation reaches EXACTLY this core — the precise
+  -- SMP hazard the cross-core broadcast (§5.2) closes.
+  let stInv := tlbInvalidateOnCore perCoreSeeded core0 opUnmapTarget
+  assertBool "a local invalidation removes the target from THIS core"
+    (!(tlbHasEntry (tlbOnCore stInv core0) entryTarget))
+  assertBool "a local invalidation leaves the STALE entry on OTHER cores (the SMP hazard)"
+    ([core1, core2, core3].all fun c => tlbHasEntry (tlbOnCore stInv c) entryTarget)
+  assertBool "a local invalidation keeps the non-matching entries on this core"
+    (tlbHasEntry (tlbOnCore stInv core0) entryOtherVaddr &&
+     tlbHasEntry (tlbOnCore stInv core0) entryOtherAsid)
+
+-- ----------------------------------------------------------------------------
+-- §5.2  Per-core TLB model: cross-core broadcast + Theorem 3.3.1 (SM7.C.4-C.7)
+-- ----------------------------------------------------------------------------
+
+private def runPerCoreTlbBroadcastChecks : IO Unit := do
+  IO.println "-- §5.2 per-core TLB model: cross-core invalidation + Theorem 3.3.1"
+  match tlbInvalidateOnAllCores perCoreSeeded core0 (shootdownTargets core0)
+      opUnmapTarget with
+  | none =>
+    assertBool "cross-core invalidation from a quiescent state succeeds" false
+  | some (st', sgis) => do
+    -- SM7.C.6 (Theorem 3.3.1, mounted): no core retains the covered entry.
+    assertBool "after a covering broadcast NO core retains the unmapped translation"
+      (allCores.all fun c => !(tlbHasEntry (tlbOnCore st' c) entryTarget))
+    -- selectivity: the non-matching entries survive on every core.
+    assertBool "the broadcast preserves the non-matching entries on every core"
+      (allCores.all fun c =>
+        tlbHasEntry (tlbOnCore st' c) entryOtherVaddr &&
+        tlbHasEntry (tlbOnCore st' c) entryOtherAsid)
+    -- SM7.C.4: one .tlbShootdownReq SGI per target, in order.
+    assertBool "the broadcast emits one .tlbShootdownReq SGI per target"
+      (sgis == [(core1, .tlbShootdownReq), (core2, .tlbShootdownReq),
+                (core3, .tlbShootdownReq)])
+    -- SM7.C.4: the round posts to the SM7.A shootdown state (the wiring
+    -- that makes perCoreTlb a genuine consumer of tlbShootdown).
+    assertBool "the broadcast posts the operand to every target's shootdown queue"
+      ([core1, core2, core3].all fun c =>
+        (st'.tlbShootdown.pendingOnCore c).contains
+          { op := opUnmapTarget, initiator := core0 })
+    assertBool "the broadcast keeps the initiator's shootdown queue empty"
+      (st'.tlbShootdown.pendingOnCore core0 == [])
+    -- SM7.B/C: the shootdown capacity conjunct (12th) is preserved.
+    assertBool "the broadcast preserves the shootdown capacity conjunct"
+      (decide (pendingBounded st'.tlbShootdown))
+    -- SM7.C.4/C.7: the broadcast frames the page-table subsystem
+    -- (objects unchanged ⇒ resolveAsidRoot preserved).
+    assertBool "the broadcast frames the object store"
+      (st'.objects.size == perCoreSeeded.objects.size)
+  -- SM7.C.4: from the quiescent boot state the broadcast always succeeds.
+  assertBool "cross-core invalidation from the quiescent boot state succeeds"
+    ((tlbInvalidateOnAllCores perCoreSeeded core0 (shootdownTargets core0)
+      opUnmapTarget).isSome)
+
+-- ----------------------------------------------------------------------------
 -- Runner
 -- ----------------------------------------------------------------------------
 
 def runSmpTlbShootdownChecks : IO Unit := do
-  IO.println "WS-SM SM7.A + SM7.B — TLB shootdown state + protocol suite"
+  IO.println "WS-SM SM7.A + SM7.B + SM7.C — TLB shootdown state + protocol + per-core model suite"
   IO.println "===================================================="
   runDescriptorChecks
   runInitialStateChecks
@@ -1614,8 +1770,10 @@ def runSmpTlbShootdownChecks : IO Unit := do
   runCompletionCutChecks
   runDebtClosureChecks
   runLiveDispatchChecks
+  runPerCoreTlbLocalChecks
+  runPerCoreTlbBroadcastChecks
   IO.println "===================================================="
-  IO.println "All SM7.A + SM7.B TLB shootdown checks PASS."
+  IO.println "All SM7.A + SM7.B + SM7.C TLB shootdown + per-core model checks PASS."
 
 end SeLe4n.Testing.SmpTlbShootdown
 

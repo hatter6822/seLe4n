@@ -577,18 +577,78 @@ Two P1 review findings on PR #839.
   reshape the shootdown-state surface); not undertaken in this
   review-response cut to keep it a coherent bug fix.
 
-### SM7.C — Per-core TLB model (3 PRs, 8 sub-tasks)
+### SM7.C — Per-core TLB model (3 PRs, 8 sub-tasks) — LANDED (v0.32.80)
 
-| Sub | Description | Theorem | Est |
-|-----|-------------|---------|-----|
-| SM7.C.1 | Extend `TlbState` to `Vector TlbState coreCount` | (def) | M |
-| SM7.C.2 | `tlbInsertOnCore` (models HW translation walker) | (def) | M |
-| SM7.C.3 | `tlbInvalidateOnCore` | (def) | M |
-| SM7.C.4 | `tlbInvalidateOnAllCores` (uses shootdown protocol) | (def) | M |
-| SM7.C.5 | `tlbInvalidationConsistent_perCore` | Theorem | L |
-| SM7.C.6 | `tlbShootdown_invalidates_perCore` (corollary of 3.3.1) | Corollary | M |
-| SM7.C.7 | `tlbConsistency_cross_subsystem` | Theorem | M |
-| SM7.C.8 | Surface anchors (`#check` 8 theorems) | S |
+**Status: LANDED (v0.32.80).**  The per-core TLB model layer, mounted on
+`SystemState.perCoreTlb : Vector TlbState numCores` and wired into the
+SM7.B shootdown protocol.  New production module
+`SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean` (imports `TlbModel` +
+`TlbShootdownProtocol`; in `SeLe4n.lean`).  Zero sorry/axiom; golden
+trace byte-identical.
+
+Design decisions of record:
+
+* **Additive mount, not a scalar rewrite.**  `perCoreTlb` is added
+  *alongside* the pre-SMP single-core `SystemState.tlb` (the WS-H11/M-17
+  boot-core view), not a rename/migration of it.  The scalar `tlb`
+  remains the legacy single-core layer (its `adapterFlush*` / `.WithFlush`
+  ops unchanged); `perCoreTlb` is the SMP generalisation the SM7.B
+  protocol drives.  Both cohere at boot (empty) — `default_perCoreTlb`,
+  `default_tlbOnCore`.  Rewriting the scalar into the vector would be an
+  SM4-scale migration of the entire freeze/projection/congruence/boot
+  surface, out of SM7.C's scope; the additive mount closes the model gap
+  without destabilising the landed single-core proofs.
+* **`perCoreTlb` is a genuine consumer of `tlbShootdown`.**
+  `tlbInvalidateOnAllCores` (SM7.C.4) runs the SM7.B `tlbShootdownBroadcast`
+  (posting to the SM7.A `tlbShootdown` state, returning the exact
+  `.tlbShootdownReq` SGI list) **and** evolves every core's view via the
+  protocol's `shootdownRoundViews` — so the mounted field is not a
+  free-standing parallel structure but the very view vector Theorem 3.3.1
+  quantifies over, now on a real `SystemState` field.
+* **Per-core consistency is the 13th `proofLayerInvariantBundle`
+  conjunct.**  `tlbInvalidationConsistent_perCore st` (∀ core, that core's
+  view matches the page tables) joins the bundle, generalising the 9th
+  conjunct `tlbConsistent st st.tlb`.  Threaded exactly like the SM7.B
+  12th conjunct `pendingBounded`: boot witness
+  (`default_tlbInvalidationConsistent_perCore`), definitional transport
+  through the three adapter preservation proofs (which touch only machine, and — for the context switch — scheduler.current, none of which the conjunct reads)
+  (`advanceTimerState` / `writeRegisterState` / `contextSwitchState` frame
+  `perCoreTlb`/`objects`/`asidTable`), the Boot general bridge
+  (`bootFromPlatform_perCoreTlb_eq` + the 13-component composition), and
+  freeze carried wholesale.
+* **Information-flow exclusion.**  Like `tlb` and `machine.timer`,
+  `perCoreTlb` is deliberately kept out of `projectState` — projecting a
+  TLB view would open a covert timing channel.  Exclusion is the correct
+  behaviour, so the IF projection surface is unchanged.
+
+| Sub | Description | Landed artefact | Status |
+|-----|-------------|-----------------|--------|
+| SM7.C.1 | Extend `TlbState` to `Vector TlbState coreCount` | `SystemState.perCoreTlb : Vector TlbState numCores := Vector.replicate numCores TlbState.empty` (`Model/State.lean`) + `default_perCoreTlb`; the SM4.B path-a accessors `tlbOnCore` / `setTlbOnCore` with the `@[simp]` store/load algebra (`_self` / `_ne`), the per-field frame simp-lemmas, `perCoreTlb_vector_ext`, and `default_tlbOnCore` (`PerCoreTlbModel.lean`).  Carriage: freeze (`FrozenSystemState.perCoreTlb` no-default + `freeze` + `freeze_preserves_perCoreTlb` + the `apiInvariantBundle_frozenDirectFull` conjunct), congruence (`OffSchedulerAgrees.perCoreTlb` clause + all six builders), boot frames (`applyMachineConfig` / `foldIrqs` / `foldObjects` / `bootFromPlatform_perCoreTlb_eq`) | ✓ |
+| SM7.C.2 | `tlbInsertOnCore` (models HW translation walker) | `tlbInsertOnCore` (prepends a fresh translation to core `c`'s view) + `_mem` / `_tlbOnCore_ne` (a hardware walk is local — the SMP asymmetry) / `_frame` | ✓ |
+| SM7.C.3 | `tlbInvalidateOnCore` | `tlbInvalidateOnCore` (`applyTlbInvalidation` on core `c` only) + `_removes` / `_tlbOnCore_ne` (leaves other cores stale — the precise SMP hazard) / `_subset` / `_frame` | ✓ |
+| SM7.C.4 | `tlbInvalidateOnAllCores` (uses shootdown protocol) | `tlbInvalidateOnAllCores` (broadcast → post to `tlbShootdown` + evolve every view via `shootdownRoundViews`) + the broadcast frames `tlbShootdownBroadcast_perCoreTlb` / `_asidTable`, decomposition `tlbInvalidateOnAllCores_spec`, projections `_perCoreTlb` / `_sgis` / `_objects` / `_asidTable`, and `_isSome_of_quiescent` | ✓ |
+| SM7.C.5 | `tlbInvalidationConsistent_perCore` | `tlbInvalidationConsistent_perCore st := ∀ c, tlbConsistent st (tlbOnCore st c)` + boot witness `default_tlbInvalidationConsistent_perCore` + `_bootCore` projection + the consistency-monotonicity lever `tlbConsistent_of_subset_of_state_frame` + `tlbInvalidateOnCore_preserves_tlbInvalidationConsistent_perCore` (invalidation is always safe).  **The 13th `proofLayerInvariantBundle` conjunct** | ✓ |
+| SM7.C.6 | `tlbShootdown_invalidates_perCore` (corollary of 3.3.1) | `tlbShootdown_invalidates_perCore` — the mechanical instantiation of Theorem 3.3.1 (`tlbShootdownBroadcast_invalidatesAllCores`) on the mounted field: after a covering `tlbInvalidateOnAllCores` no core retains any covered entry (the SMP-C4 use-after-unmap closure) | ✓ |
+| SM7.C.7 | `tlbConsistency_cross_subsystem` | `tlbConsistency_cross_subsystem` — the memory-subsystem capstone (protocol × TLB-model × page-tables): a covering invalidation of a per-core-consistent state both removes every stale entry on every core **and** preserves per-core consistency (the broadcast frames the page tables, and invalidation only removes entries) | ✓ |
+| SM7.C.8 | Surface anchors (`#check` 8 theorems) | `tests/SmpTlbShootdownSuite.lean` §1: 30 `#check` anchors over the SM7.C symbols (accessors, ops, all 8 headline theorems, the live 13th bundle conjunct); §2: elaboration witnesses (boot consistency + the C.6/C.7 theorem applications); §5.1–§5.2: 14 runtime assertions (local-op SMP hazard + the cross-core Theorem-3.3.1 round) | ✓ |
+
+Tests: `tests/SmpTlbShootdownSuite.lean` §5.1 (accessors + local ops:
+`tlbInsertOnCore` fill locality, `tlbInvalidateOnCore` leaving other
+cores stale — the SMP hazard) + §5.2 (the cross-core
+`tlbInvalidateOnAllCores` round: no core retains the unmapped
+translation, selectivity, exact SGI list, `tlbShootdown` posting,
+capacity-conjunct + object-store framing, quiescent success) — the suite
+now covers SM7.A + SM7.B + SM7.C.
+
+**Round-generation-tagged descriptors (the SM7.B v0.32.79 model-fidelity
+debt) remains a separately-scoped follow-on**, not folded into this cut:
+it is a `TlbShootdownState` *descriptor-type* change (rippling the entire
+SM7.A/B `pendingBounded` / `shootdownRound_quiescent` / Theorem 3.3.1 /
+`_preserves_*` surface + the Rust mailbox), orthogonal to the per-core
+TLB *view* model SM7.C delivers, and — as the SM7.B audit recorded — a
+model-fidelity item with **no hardware hazard** (each round's hardware
+maintenance is self-contained; catch-up over-application is idempotent).
+Bundling it here would violate the one-coherent-slice rule.
 
 ### SM7.D — Cache maintenance broadcast (2 PRs, 4 sub-tasks)
 
@@ -649,7 +709,11 @@ Two P1 review findings on PR #839.
 - [x] All unmap callers wired through Broadcast (SM7.B.9–B.11: the
       `.vspaceUnmap`/`.vspaceMap`/`.lifecycleRetype` arms + the
       targeted-flush ops + the ASID-allocate consumer).
-- [ ] Per-core TLB model (SM7.C).
+- [x] Per-core TLB model (SM7.C, v0.32.80): `perCoreTlb` vector mounted,
+      `tlbInsertOnCore` / `tlbInvalidateOnCore` / `tlbInvalidateOnAllCores`,
+      `tlbInvalidationConsistent_perCore` (the 13th
+      `proofLayerInvariantBundle` conjunct), `tlbShootdown_invalidates_perCore`
+      (Theorem 3.3.1 mounted), and `tlbConsistency_cross_subsystem`.
 - [ ] Cache-coherency invariant (SM7.D).
 - [ ] Tier 0..4 green; QEMU shootdown test passes (Tier 0..3 green at
       SM7.B; the QEMU exerciser lands with SM7.E.2 and runs once the

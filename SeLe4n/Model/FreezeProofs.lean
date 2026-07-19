@@ -1460,7 +1460,10 @@ def apiInvariantBundle_frozenDirectFull (fst : FrozenSystemState) : Prop :=
     (sst.scheduler.domainScheduleIndexOnCore bootCoreId) = fst.scheduler.domainScheduleIndex ∧
     sst.scheduler.configDefaultTimeSlice = fst.scheduler.configDefaultTimeSlice ∧
     (sst.scheduler.replenishQueueOnCore bootCoreId).entries = fst.scheduler.replenishQueue.entries ∧
-    (sst.scheduler.replenishQueueOnCore bootCoreId).size = fst.scheduler.replenishQueue.size
+    (sst.scheduler.replenishQueueOnCore bootCoreId).size = fst.scheduler.replenishQueue.size ∧
+    -- WS-SM SM7.C.1: the per-core TLB views are carried through freeze
+    -- bitwise (the SMP generalisation of `sst.tlb = fst.tlb` above).
+    sst.perCoreTlb = fst.perCoreTlb
 
 /-- AK7-B (F-H02): The full variant implies the objects-only variant. -/
 theorem apiInvariantBundle_frozenDirectFull_implies_objectsOnly
@@ -1480,7 +1483,7 @@ theorem freeze_preserves_direct_invariants_full (ist : IntermediateState)
     apiInvariantBundle_frozenDirectFull (freeze ist) := by
   refine ⟨ist.state, hInv,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
-    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   -- Map fields (17)
   · exact fun oid => lookup_freeze_objects ist oid
   · exact fun irq => lookup_freeze_irqHandlers ist irq
@@ -1499,7 +1502,7 @@ theorem freeze_preserves_direct_invariants_full (ist : IntermediateState)
   · exact fun p => lookup_freeze_byPriority ist p
   · exact fun tid => lookup_freeze_threadPriority ist tid
   · exact fun tid => lookup_freeze_membership ist tid
-  -- Non-map fields (13)
+  -- Non-map fields (14)
   · exact (freeze_preserves_machine ist).symm
   · exact (freeze_preserves_objectIndex ist).symm
   · exact (freeze_preserves_tlb ist).symm
@@ -1513,6 +1516,8 @@ theorem freeze_preserves_direct_invariants_full (ist : IntermediateState)
   · exact (freeze_preserves_configDefaultTimeSlice ist).symm
   · rfl
   · rfl
+  -- WS-SM SM7.C.1: perCoreTlb carried bitwise through freeze
+  · exact (freeze_preserves_perCoreTlb ist).symm
 
 /-- R6-A.3: `FrozenMap.set` preserves the direct frozen invariant when the
     mutated object corresponds to a valid `SystemState` mutation.
