@@ -522,6 +522,61 @@ residual with an explicit target.
   PEs never oversubscribe) and not reachable from the SM7.B path (the
   round lock is try-acquire — never blocks).
 
+#### SM7.B PR #839 review-P1 cut (v0.32.79)
+
+Two P1 review findings on PR #839.
+
+* **Comment 1 — shootdown targets keyed on the release handshake, not
+  IRQ-readiness — CLOSED (real bug fix).**  Both the round reset mask
+  (`reset_for_round`) and the SGI target mask (`online_mask`) read
+  `smp::CORE_READY`, which the *primary* sets the instant `CPU_ON`
+  succeeds (`smp.rs` `bring_up_secondaries_inner`) — i.e. **before** the
+  secondary initialises its GIC CPU interface, arms its timer, or
+  unmasks IRQs.  A round issued while a secondary is mid-bring-up (or
+  targeting a core whose timer init *failed* and is parked forever in
+  the fatal WFE halt loop, `CORE_READY` still `true`) resets that core's
+  ack flag and fires it an SGI it cannot service → the initiator's
+  `all_acked` wait deterministically reaches the SM7.B.6 10 ms
+  fail-closed panic.  The permanent variant (timer-dead core) wedges
+  *every subsequent* round, not just one.  **Fix**: a separate
+  per-core `smp::CORE_IRQ_READY` flag the secondary publishes **itself**
+  after `enable_irq` (Release), read (Acquire) by both masks via the
+  shared `irq_ready_online()` snapshot; boot core born `true`.
+  Excluding a not-IRQ-ready core is safe — it holds no invalidatable
+  TLB entry (pre-MMU ⇒ empty after the boot `tlbi vmalle1`; between
+  MMU-enable and `enable_irq`, or halted, ⇒ only fixed boot/halt-loop
+  mappings that are never unmapped).  Lean side is FFI-backed
+  (`ffiShootdownOnlineMask` / `shootdownOnlineMask`), so only docstring
+  prose changed there.  Rust: `online_mask_of` (testable fold) +
+  `irq_ready_online` + 2 new unit tests (`sm7b2_online_mask_of_*`,
+  `sm7b2_reset_and_target_masks_agree_*`); HAL 780 → 782.
+* **Comment 2 — model posting/catch-up not round-lock-serialised —
+  TRACKED DEBT (model-fidelity, NOT a hardware hazard).**  The model
+  *posting* (pending-queue enqueue) rides the syscall's own atomic
+  `modifyGetKernelState` and the model *catch-up* rides a second atomic
+  step; neither is under `SHOOTDOWN_ROUND_LOCK`, which serialises only
+  the **hardware** round.  So under concurrent rounds one core's
+  catch-up fold can drain another core's freshly-posted descriptors,
+  making the model transiently quiescent before that round's hardware
+  SGIs fire.  **Why this is fidelity-only, not a safety bug**: each
+  round's hardware TLB maintenance is driven entirely by *that round's
+  own* `(pre, post)` diff (`shootdownPostedOps` /
+  `shootdownChangedTargets`), fires its own SGIs to the online targets,
+  and blocks on its own `SHOOTDOWN_ACK` channel before the initiating
+  syscall returns — so no round under-invalidates, and cross-round model
+  over-draining is safe over-application (`handleTlbShootdownReqOnCore`
+  is idempotent).  Model quiescence gates only capacity / `pendingBounded`
+  bookkeeping, never a hardware-cleanliness decision.  Documented at the
+  site (`completeShootdownRounds` docstring §"Model-vs-hardware catch-up
+  fidelity").  **Closure target**: round-generation-tagged pending
+  descriptors so catch-up drains only its own round — a verified-model-
+  type change (`TlbShootdownState` + the SM7.A/B proof surface
+  `pendingBounded`/`shootdownRound_quiescent`/Theorem 3.3.1/all
+  `_preserves_*` + the Rust mailbox mirror).  Scoped as a follow-on cut
+  (candidate: SM7.C, alongside the per-core TLB mount that will already
+  reshape the shootdown-state surface); not undertaken in this
+  review-response cut to keep it a coherent bug fix.
+
 ### SM7.C — Per-core TLB model (3 PRs, 8 sub-tasks)
 
 | Sub | Description | Theorem | Est |

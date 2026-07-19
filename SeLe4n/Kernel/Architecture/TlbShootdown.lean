@@ -1048,18 +1048,22 @@ an explicit **target set** — only the targets start unacknowledged;
 every non-target (and the initiator) is born-`true`.
 
 This is the model of the runtime's online-masked reset
-(`reset_for_round_in_slice_masked`, `shootdown.rs`): in a partial-core
-boot (`smp_enabled=false` — the v1.0.0 default — an `smp_max_cores`
-cap, or a PSCI CPU_ON rejection), an offline core can never take the
-`.tlbShootdownReq` SGI and acknowledge, so clearing its flag would
-make `allAcked` permanently unreachable and hang the initiator's wait
-loop.  Leaving it born-acknowledged is safe: every secondary bring-up
-runs `tlbi vmalle1` before enabling its MMU
-(`rust/sele4n-hal/src/mmu.rs::init_mmu_secondary`), so a core that was
-offline during a round comes online with an empty TLB.  SM7.B's
-target-set computation must pass exactly the online non-initiator
-cores, and rounds must not race core bring-up (bring-up completes
-during boot, before any user mapping exists to shoot down).
+(`reset_for_round_in_slice_masked`, `shootdown.rs`, driven by the
+`smp::CORE_IRQ_READY` IRQ-serviceable snapshot — PR #839 review P1):
+a core that is offline (a partial-core boot — `smp_enabled=false`, the
+v1.0.0 default — an `smp_max_cores` cap, or a PSCI CPU_ON rejection),
+still mid-bring-up before `enable_irq`, or wedged in the timer-init-
+failure halt loop can never take the `.tlbShootdownReq` SGI and
+acknowledge, so clearing its flag would make `allAcked` permanently
+unreachable and hang the initiator's wait loop.  Leaving it
+born-acknowledged is safe: such a core holds no invalidatable TLB
+entry — every secondary bring-up runs `tlbi vmalle1` before enabling
+its MMU (`rust/sele4n-hal/src/mmu.rs::init_mmu_secondary`), and a core
+between MMU-enable and `enable_irq` (or a halted one) executes only
+fixed boot / halt-loop mappings that are never unmapped.  SM7.B's
+target-set computation must pass exactly the IRQ-serviceable
+non-initiator cores, and rounds must not race core bring-up (bring-up
+completes during boot, before any user mapping exists to shoot down).
 
 `beginShootdownRoundFor · allCores` is exactly `beginShootdownRound`
 (`beginShootdownRoundFor_allCores_eq`) — the fully-online

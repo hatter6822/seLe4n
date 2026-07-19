@@ -159,6 +159,45 @@ pub static CORE_READY: [AtomicBool; 4] = [
     AtomicBool::new(false),
 ];
 
+/// **WS-SM SM7.B (PR #839 review P1)**: per-core *IRQ-serviceable*
+/// flags — distinct from [`CORE_READY`].  `CORE_READY[c]` is the
+/// primary→secondary *release* handshake, set by the primary the
+/// instant `CPU_ON` succeeds (`bring_up_secondaries_inner`), i.e.
+/// **before** core `c` has initialised its GIC CPU interface, armed its
+/// timer, or unmasked IRQs.  A core that has been released but not yet
+/// reached `enable_irq` — or one whose timer init failed and is parked
+/// forever in the fatal WFE halt loop — cannot take an SGI, so it must
+/// **not** be a TLB-shootdown target: masking-in such a core clears its
+/// ack flag and then hangs the initiator's [`crate::shootdown::all_acked`]
+/// wait until the SM7.B.6 fail-closed timeout panic.
+///
+/// `CORE_IRQ_READY[c]` is therefore set by core `c` **itself**, after
+/// [`crate::interrupts::enable_irq`] in `secondary_init` (Release), and
+/// is the authoritative online set for both the shootdown-round reset
+/// mask and the SGI target mask.  Boot core (index 0) is born `true`
+/// (the primary unmasks IRQs during its own boot, long before it could
+/// initiate a round).
+///
+/// **Safety of excluding a not-IRQ-ready core from a round** (why
+/// dropping it never leaves a live stale TLB entry): such a core is in
+/// exactly one of three states, none of which holds a TLB entry a
+/// concurrent shootdown would invalidate — (a) still pre-MMU, so its
+/// TLB is empty after the mandatory boot `tlbi vmalle1`; (b) between
+/// MMU-enable and `enable_irq`, executing only the fixed boot-code /
+/// shared boot-table mappings that are never unmapped; or (c)
+/// permanently halted in the timer-init-failure WFE loop, executing
+/// only its fixed halt-loop code page.  The SM7.A PR #838 P1 contract
+/// ("no rounds concurrent with core bring-up") already covers the
+/// transient (a)/(b) window; this flag additionally makes the permanent
+/// (c) case safe — a timer-dead core is excluded from *every* future
+/// round instead of wedging each one.
+pub static CORE_IRQ_READY: [AtomicBool; 4] = [
+    AtomicBool::new(true), // boot core is IRQ-ready from primary boot
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+];
+
 /// AN9-J: count of secondary cores actually brought up.  Populated by
 /// `bring_up_secondaries` and read by tests / diagnostics.
 pub static SECONDARY_CORES_ONLINE: AtomicU32 = AtomicU32::new(0);
@@ -633,6 +672,18 @@ pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
     // -----------------------------------------------------------------
     crate::interrupts::enable_irq();
     crate::kprintln!("[smp] core {core_id}: IRQ delivery enabled");
+
+    // WS-SM SM7.B (PR #839 review P1): publish IRQ-serviceable *after*
+    // `enable_irq` — this is the point past which core `core_id` can
+    // actually take a `.tlbShootdownReq` SGI, so only now may it be a
+    // shootdown target (see `CORE_IRQ_READY`).  A core that never
+    // reaches this line (e.g. the timer-init-failure halt loop above)
+    // stays excluded from every round, fail-safe.  Release-paired with
+    // the Acquire reads in `shootdown::{reset_for_round, online_mask}`.
+    if core_idx < CORE_IRQ_READY.len() {
+        CORE_IRQ_READY[core_idx].store(true, Ordering::Release);
+    }
+    crate::kprintln!("[smp] core {core_id}: IRQ-serviceable (shootdown-eligible)");
 
     crate::kprintln!("[smp] core {core_id}: ready, entering kernel");
 

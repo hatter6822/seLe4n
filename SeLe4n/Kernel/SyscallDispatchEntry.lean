@@ -201,7 +201,30 @@ cooperatively, `acquireShootdownRoundLockServicingSelf`):
 
 On the v1.0.0 single-online-core boot this degenerates to: reset
 (everything born-acknowledged), zero SGIs, the local TLBIs, an
-immediately-satisfied wait, and the catch-up commit. -/
+immediately-satisfied wait, and the catch-up commit.
+
+**Model-vs-hardware catch-up fidelity** (PR #839 review P1, tracked
+debt — see `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` §SM7.B review-P1
+cut).  The model *posting* (the pending-queue enqueue) rides the
+syscall's own atomic `modifyGetKernelState` (`syscallDispatchCrossCoreEntry`),
+and this model catch-up rides a *second* atomic step — neither is under
+the `SHOOTDOWN_ROUND_LOCK`, which serialises only the **hardware**
+round (reset/SGI/wait).  So under concurrent rounds one core's catch-up
+fold can drain another core's freshly-posted descriptors, making the
+model transiently quiescent before that other round's hardware SGIs
+fire.  This is a *model-fidelity* divergence, **not** a hardware
+hazard: the hardware TLB maintenance for each round is driven entirely
+by that round's own `(pre, post)` diff (`shootdownPostedOps` /
+`shootdownChangedTargets`), fires its own SGIs to the online targets,
+and blocks on its own `SHOOTDOWN_ACK` channel before the initiating
+syscall returns — so no round ever under-invalidates, and cross-round
+model over-draining is safe over-application (the model's per-core TLB
+effect is idempotent; `handleTlbShootdownReqOnCore_idempotent`).  Model
+quiescence gates only capacity/`pendingBounded` bookkeeping, never a
+hardware-cleanliness decision.  The faithful fix — round-generation-
+tagged descriptors so catch-up drains only its own round — is a
+verified-model-type change (`TlbShootdownState` + the SM7.A/B proof
+surface + the Rust mirror), scoped as a follow-on. -/
 def completeShootdownRounds (changed : List Concurrency.CoreId)
     (ops : List Architecture.TlbInvalidation)
     (execCore : Concurrency.CoreId) : BaseIO Unit := do
@@ -222,8 +245,10 @@ def completeShootdownRounds (changed : List Concurrency.CoreId)
     -- blanket `vmalle1`.  The `dsb ish` in `sendSgiToCore` (SM1.F.8)
     -- orders this publish before any target can take the SGI.
     publishShootdownOps collapsed
-    -- One CORE_READY snapshot per round (bring-up never overlaps a
-    -- round per the SM7.A P1 contract, so the snapshot is stable).
+    -- One CORE_IRQ_READY snapshot per round (the IRQ-serviceable set,
+    -- not the CORE_READY release handshake — PR #839 review P1;
+    -- bring-up never overlaps a round per the SM7.A P1 contract, so the
+    -- snapshot is stable).
     let onlineMask ← Concurrency.shootdownOnlineMask
     for c in Architecture.shootdownTargets execCore do
       if Concurrency.coreOnlineInMask onlineMask c then

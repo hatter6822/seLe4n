@@ -358,10 +358,13 @@ opaque ffiShootdownRoundLockRelease : BaseIO Unit
 opaque ffiShootdownWaitAllAcked : (timeoutTicks : UInt64) → BaseIO UInt64
 
 /-- **WS-SM SM7.B.2 (runtime target masking)**: the online-core bitmask
-    (bit `c` set ⇔ core `c` is online; the boot core is always set) —
-    the SM7.A PR #838 P1 obligation's "target-set computation must
-    enumerate online cores only" at the SGI-fire site.  Reads the Rust
-    `smp::CORE_READY` flags (Acquire).
+    (bit `c` set ⇔ core `c` is IRQ-serviceable; the boot core is always
+    set) — the SM7.A PR #838 P1 obligation's "target-set computation
+    must enumerate online cores only" at the SGI-fire site.  Reads the
+    Rust `smp::CORE_IRQ_READY` flags (Acquire) — the flag a secondary
+    publishes itself after `enable_irq`, not the primary's `CORE_READY`
+    release handshake (PR #839 review P1), so a core that cannot yet
+    take an SGI is never a target.
 
     Rust: `ffi_shootdown_online_mask` in `sele4n-hal/src/ffi.rs` -/
 @[extern "ffi_shootdown_online_mask"]

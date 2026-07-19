@@ -1,3 +1,63 @@
+## v0.32.79 — WS-SM SM7.B PR #839 review-P1 cut
+
+Two P1 findings from Codex review on PR #839.  Zero sorry/axiom; golden
+trace byte-identical; HAL 780 → 782, zero clippy warnings.
+
+**Comment 1 — shootdown targets keyed on the release handshake, not
+IRQ-readiness — CLOSED (real bug fix).**  Both the round reset mask
+(`shootdown::reset_for_round`) and the SGI target mask
+(`shootdown::online_mask`) read `smp::CORE_READY`, which the *primary*
+sets the instant `CPU_ON` succeeds (`smp.rs::bring_up_secondaries_inner`)
+— i.e. **before** the secondary initialises its GIC CPU interface, arms
+its timer, or unmasks IRQs.  A shootdown round issued while a secondary
+is mid-bring-up — or one targeting a core whose timer init *failed* and
+is parked forever in the fatal WFE halt loop, `CORE_READY` still `true`
+— reset that core's ack flag and fired it a `.tlbShootdownReq` SGI it
+could not service, so the initiator's `all_acked` wait deterministically
+reached the SM7.B.6 10 ms fail-closed panic.  The timer-dead variant is
+worse than transient: it wedged **every subsequent** round, not just one.
+
+- **Fix**: a separate per-core `smp::CORE_IRQ_READY` flag the secondary
+  publishes **itself** after `crate::interrupts::enable_irq` (Release),
+  read (Acquire) by both masks via the shared `irq_ready_online()`
+  snapshot; boot core (index 0) born `true`.  Excluding a not-IRQ-ready
+  core is safe — it holds no invalidatable TLB entry (pre-MMU ⇒ empty
+  after the mandatory boot `tlbi vmalle1`; between MMU-enable and
+  `enable_irq`, or halted, ⇒ only fixed boot / halt-loop mappings that
+  are never unmapped).
+- Rust (`shootdown.rs`): `online_mask_of` (testable fold) +
+  `irq_ready_online` helper; `reset_for_round`/`online_mask` re-routed;
+  2 new unit tests (`sm7b2_online_mask_of_excludes_not_irq_ready`,
+  `sm7b2_reset_and_target_masks_agree_on_not_irq_ready`).  `smp.rs`:
+  `CORE_IRQ_READY` static + the post-`enable_irq` publish.  Lean side is
+  FFI-backed (`ffiShootdownOnlineMask` / `shootdownOnlineMask`), so only
+  docstring prose changed (`Runtime.lean`, `FFI.lean`, `ffi.rs`,
+  `TlbShootdown.lean`, `SyscallDispatchEntry.lean`).
+
+**Comment 2 — model posting/catch-up not round-lock-serialised —
+TRACKED DEBT (model-fidelity, NOT a hardware hazard).**  The model
+*posting* (pending-queue enqueue) rides the syscall's own atomic
+`modifyGetKernelState`, and the model *catch-up* rides a second atomic
+step; neither is under `SHOOTDOWN_ROUND_LOCK`, which serialises only the
+**hardware** round.  So under concurrent rounds one core's catch-up fold
+can drain another core's freshly-posted descriptors, making the model
+transiently quiescent before that round's hardware SGIs fire.  This is a
+model-fidelity divergence, not a safety bug: each round's hardware TLB
+maintenance is driven entirely by *that round's own* `(pre, post)` diff
+(`shootdownPostedOps` / `shootdownChangedTargets`), fires its own SGIs to
+the online targets, and blocks on its own `SHOOTDOWN_ACK` channel before
+the initiating syscall returns — so no round under-invalidates, and
+cross-round model over-draining is safe over-application
+(`handleTlbShootdownReqOnCore` is idempotent).  Model quiescence gates
+only capacity / `pendingBounded` bookkeeping, never a hardware-
+cleanliness decision.  Documented at the `completeShootdownRounds`
+site; closure target is round-generation-tagged descriptors (a
+verified-model-type change scoped to the SM7.C per-core TLB mount).
+See `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` §"SM7.B PR #839 review-P1
+cut".
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.B review-P1 cut
+
 ## v0.32.78 — WS-SM SM7.B debt-closure cut
 
 Every SM7.B tracked-debt item CLOSED or narrowed to a precisely-scoped

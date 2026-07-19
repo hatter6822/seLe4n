@@ -544,12 +544,17 @@ def shootdownRoundLockRelease : BaseIO Unit :=
 def shootdownWaitAllAcked (timeoutTicks : UInt64) : BaseIO Bool := do
   return (← Platform.FFI.ffiShootdownWaitAllAcked timeoutTicks) != 0
 
-/-- **WS-SM SM7.B.2**: one snapshot of the Rust `smp::CORE_READY`
+/-- **WS-SM SM7.B.2**: one snapshot of the Rust `smp::CORE_IRQ_READY`
     bitmask (Acquire) — the runtime target-set mask of the SM7.A
-    PR #838 P1 obligation.  Round-scoped callers
-    (`completeShootdownRounds`) read the mask **once** and test bits
-    with `coreOnlineInMask`, so every target decision within a round
-    sees the same snapshot (one FFI crossing instead of one per
+    PR #838 P1 obligation.  The online set is the *IRQ-serviceable*
+    flag each secondary publishes **itself** after `enable_irq`, NOT
+    the primary's `CORE_READY` release handshake (PR #839 review P1):
+    a released-but-not-yet-IRQ-ready core — or one wedged in the
+    timer-init-failure halt loop — is excluded, so it can never hang
+    the initiator's ack wait on an SGI it cannot service.  Round-scoped
+    callers (`completeShootdownRounds`) read the mask **once** and test
+    bits with `coreOnlineInMask`, so every target decision within a
+    round sees the same snapshot (one FFI crossing instead of one per
     target; no rounds run concurrently with core bring-up per the
     SM7.A P1 contract, so the snapshot cannot go stale mid-round). -/
 def shootdownOnlineMask : BaseIO UInt64 :=

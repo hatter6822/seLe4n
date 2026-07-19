@@ -25,11 +25,41 @@ SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
 **Current sub-phase: SM7.B shootdown protocol LANDED (v0.32.76) +
-completion cut (v0.32.77) + debt-closure cut (v0.32.78) — the
-plan-§3.2 protocol complete and LIVE, every landing deferral closed
-and every tracked-debt item closed or narrowed to a scoped residual.
-Prior: SM7.A shootdown descriptor + state LANDED (v0.32.72); completion
-cut (v0.32.73); audit cut (v0.32.74); review P1 (v0.32.75).**
+completion cut (v0.32.77) + debt-closure cut (v0.32.78) + PR #839
+review-P1 cut (v0.32.79) — the plan-§3.2 protocol complete and LIVE,
+every landing deferral closed and every tracked-debt item closed or
+narrowed to a scoped residual.  Prior: SM7.A shootdown descriptor +
+state LANDED (v0.32.72); completion cut (v0.32.73); audit cut
+(v0.32.74); review P1 (v0.32.75).**
+
+**SM7.B PR #839 review-P1 cut (v0.32.79) — two Codex P1 findings.**
+**(1) Shootdown targets keyed on IRQ-readiness, not the release
+handshake — real bug fix (CLOSED).**  `reset_for_round`/`online_mask`
+read `smp::CORE_READY`, which the primary sets the instant `CPU_ON`
+succeeds — before the secondary inits its GIC / arms its timer /
+unmasks IRQs — so a round during bring-up (or targeting a timer-init-
+failed core wedged in the fatal WFE halt loop, `CORE_READY` still true)
+reset that core's ack flag and waited for an SGI it could not service →
+the SM7.B.6 10 ms fail-closed panic (the timer-dead variant wedged
+*every* future round).  Fixed by a separate `smp::CORE_IRQ_READY` flag
+the secondary publishes itself after `enable_irq` (Release), read
+(Acquire) by both masks via the shared `irq_ready_online()` snapshot
+(boot core born true).  Excluding a not-IRQ-ready core is safe — it
+holds no invalidatable TLB entry (pre-MMU empty after the boot
+`tlbi vmalle1`; else only fixed boot / halt-loop mappings).  Lean is
+FFI-backed so only docstring prose changed; HAL 780 → 782 (2 new
+`online_mask_of` tests).  **(2) Model posting/catch-up not
+round-lock-serialised — TRACKED DEBT (model-fidelity, not a hardware
+hazard).**  The model posting + catch-up are not under
+`SHOOTDOWN_ROUND_LOCK` (which serialises only the hardware round), so
+concurrent rounds' catch-up folds can cross-drain the model pending
+queues.  Not a safety bug: each round's hardware TLB maintenance rides
+its own `(pre,post)` diff + SGIs + blocking `SHOOTDOWN_ACK` wait, and
+model quiescence gates only `pendingBounded` bookkeeping (idempotent
+over-application, never under-invalidation).  Documented at the
+`completeShootdownRounds` site; closure target round-generation-tagged
+descriptors (a verified-model-type change scoped to the SM7.C mount).
+Record: plan §5 SM7.B PR #839 review-P1 cut.
 
 **SM7.B debt-closure cut (v0.32.78) — every tracked-debt item closed
 or narrowed.**  **(1) Per-descriptor handler TLBIs (CLOSED)**: the

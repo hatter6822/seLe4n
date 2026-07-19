@@ -351,21 +351,38 @@ pub fn ack_is_set(core_id: usize) -> bool {
 /// per-VSpace VSpaceRoot lock alone is NOT sufficient); panics on
 /// out-of-range `initiator` (fail-closed).
 ///
-/// **Offline cores stay born-acknowledged** (PR #838 review P1): the
-/// online set is read from [`crate::smp::CORE_READY`], so a
-/// partial-core boot (`smp_enabled=false`, an `smp_max_cores` cap, or
-/// a PSCI rejection) cannot hang the initiator's [`all_acked`] wait on
-/// a core that can never take the SGI.  Safety and the SM7.B target-set
-/// obligation: see [`reset_for_round_in_slice_masked`].
+/// **Offline / not-IRQ-ready cores stay born-acknowledged** (PR #838
+/// review P1 + PR #839 review P1): the online set is read from
+/// [`crate::smp::CORE_IRQ_READY`] — the *IRQ-serviceable* flag a
+/// secondary sets **itself** after `enable_irq`, NOT the primary's
+/// [`crate::smp::CORE_READY`] release handshake — so a partial-core
+/// boot (`smp_enabled=false`, an `smp_max_cores` cap, a PSCI rejection),
+/// a secondary still mid-bring-up, or one wedged in the timer-init-
+/// failure halt loop cannot hang the initiator's [`all_acked`] wait on
+/// a core that can never take the SGI.  Safety of excluding such a core
+/// (it holds no invalidatable TLB entry): see
+/// [`crate::smp::CORE_IRQ_READY`].  The SM7.B target-set obligation:
+/// see [`reset_for_round_in_slice_masked`].
 #[inline]
 pub fn reset_for_round(initiator: usize) {
-    let online: [bool; MAX_SECONDARY_CORES + 1] = [
-        crate::smp::CORE_READY[0].load(Ordering::Relaxed),
-        crate::smp::CORE_READY[1].load(Ordering::Relaxed),
-        crate::smp::CORE_READY[2].load(Ordering::Relaxed),
-        crate::smp::CORE_READY[3].load(Ordering::Relaxed),
-    ];
-    reset_for_round_in_slice_masked(&SHOOTDOWN_ACK, initiator, &online);
+    reset_for_round_in_slice_masked(&SHOOTDOWN_ACK, initiator, &irq_ready_online());
+}
+
+/// **WS-SM SM7.B (PR #839 review P1)**: snapshot the per-core
+/// IRQ-serviceable set from [`crate::smp::CORE_IRQ_READY`] (Acquire),
+/// the single source of truth for both the round reset mask
+/// ([`reset_for_round`]) and the SGI target mask ([`online_mask`]).
+/// One read of each slot; the caller takes a stable snapshot per round
+/// (the SM7.A P1 contract forbids a round concurrent with bring-up, so
+/// the set does not move underfoot within a round).
+#[inline]
+fn irq_ready_online() -> [bool; MAX_SECONDARY_CORES + 1] {
+    [
+        crate::smp::CORE_IRQ_READY[0].load(Ordering::Acquire),
+        crate::smp::CORE_IRQ_READY[1].load(Ordering::Acquire),
+        crate::smp::CORE_IRQ_READY[2].load(Ordering::Acquire),
+        crate::smp::CORE_IRQ_READY[3].load(Ordering::Acquire),
+    ]
 }
 
 /// **WS-SM SM7.A.3**: acquire-poll every flag in [`SHOOTDOWN_ACK`] —
@@ -823,16 +840,28 @@ pub unsafe fn register_tlb_shootdown_handler() {
 // ============================================================================
 
 /// **WS-SM SM7.B.2**: the online-core bitmask — bit `c` set ⇔ core `c`
-/// is online (the boot core is always online; secondaries per
-/// `smp::CORE_READY`, Acquire).  The SM7.A PR #838 P1 obligation's
-/// "target-set computation must enumerate online cores only" at the
-/// SGI-fire site: the Lean entry masks its `.tlbShootdownReq` fires by
-/// this, matching [`reset_for_round`]'s masked reset — an offline core
-/// is neither reset, nor poked, nor waited on.
+/// is *IRQ-serviceable* (the boot core is always online; secondaries
+/// per `smp::CORE_IRQ_READY`, Acquire — the flag published after
+/// `enable_irq`, NOT the primary's `CORE_READY` release; PR #839 review
+/// P1).  The SM7.A PR #838 P1 obligation's "target-set computation must
+/// enumerate online cores only" at the SGI-fire site: the Lean entry
+/// masks its `.tlbShootdownReq` fires by this, matching
+/// [`reset_for_round`]'s masked reset (both route through
+/// [`irq_ready_online`]) — a core that cannot yet take the SGI is
+/// neither reset, nor poked, nor waited on.
 pub fn online_mask() -> u64 {
+    online_mask_of(&irq_ready_online())
+}
+
+/// **WS-SM SM7.B.2** (testable core): fold an IRQ-serviceable boolean
+/// snapshot into the online bitmask.  Bit `c` set ⇔ `online[c]`.
+/// Factored out of [`online_mask`] so the masking logic is exercised
+/// without touching the `smp::CORE_IRQ_READY` global.
+#[inline]
+pub fn online_mask_of(online: &[bool]) -> u64 {
     let mut mask: u64 = 0;
-    for (i, ready) in crate::smp::CORE_READY.iter().enumerate() {
-        if ready.load(Ordering::Acquire) {
+    for (i, &ready) in online.iter().enumerate() {
+        if ready {
             mask |= 1u64 << i;
         }
     }
@@ -1586,5 +1615,54 @@ mod tests {
     #[test]
     fn sm7b2_online_mask_boot_core_always_set() {
         assert_eq!(online_mask() & 1, 1, "bit 0 (boot core) always set");
+    }
+
+    /// SM7.B.2 (PR #839 review P1): `online_mask_of` sets exactly the
+    /// bits of the IRQ-serviceable snapshot — a released-but-not-yet-
+    /// IRQ-ready secondary (its `CORE_IRQ_READY` slot still `false`) is
+    /// excluded, so it is never a shootdown target.
+    #[test]
+    fn sm7b2_online_mask_of_excludes_not_irq_ready() {
+        // Boot core + core 2 IRQ-ready; cores 1 and 3 released but not
+        // yet past `enable_irq` (or timer-dead).
+        assert_eq!(
+            online_mask_of(&[true, false, true, false]),
+            0b0101,
+            "only IRQ-serviceable cores appear in the mask"
+        );
+        // All four serviceable.
+        assert_eq!(online_mask_of(&[true, true, true, true]), 0b1111);
+        // Boot core only (single-online-core v1.0.0 default boot).
+        assert_eq!(online_mask_of(&[true, false, false, false]), 0b0001);
+    }
+
+    /// SM7.B.2 (PR #839 review P1): the reset mask and the SGI target
+    /// mask are computed from the *same* IRQ-serviceable snapshot, so a
+    /// not-IRQ-ready core is consistently excluded from BOTH the ack
+    /// reset (stays born-acknowledged) and the SGI poke — it can never
+    /// hold a reset flag it cannot clear, which is the hang the fix
+    /// prevents.  Here we drive the shared masked reset with the same
+    /// snapshot shape `online_mask_of` would fold.
+    #[test]
+    fn sm7b2_reset_and_target_masks_agree_on_not_irq_ready() {
+        let online = [true, true, false, false]; // cores 2,3 not serviceable
+        let mask = online_mask_of(&online);
+        assert_eq!(mask, 0b0011, "cores 2 and 3 excluded from the SGI mask");
+        // The masked reset over the same snapshot leaves the excluded
+        // cores born-acknowledged, so the initiator's wait is not hung
+        // on a core it never poked.
+        let slots = [
+            ShootdownAckFlag::new(false),
+            ShootdownAckFlag::new(false),
+            ShootdownAckFlag::new(false),
+            ShootdownAckFlag::new(false),
+        ];
+        reset_for_round_in_slice_masked(&slots, 0, &online);
+        // Cores 2 and 3 (not serviceable) stay acked; only cores 0,1
+        // await their SGI.
+        assert!(ack_is_set_in_slice(&slots, 0), "initiator born-acked");
+        assert!(!ack_is_set_in_slice(&slots, 1), "core 1 awaits SGI");
+        assert!(ack_is_set_in_slice(&slots, 2), "core 2 not-serviceable ⇒ born-acked");
+        assert!(ack_is_set_in_slice(&slots, 3), "core 3 not-serviceable ⇒ born-acked");
     }
 }

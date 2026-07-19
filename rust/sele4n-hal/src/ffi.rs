@@ -535,8 +535,10 @@ pub extern "C" fn ffi_shootdown_wait_all_acked(timeout_ticks: u64) -> u64 {
 }
 
 /// **WS-SM SM7.B.2**: The online-core bitmask (bit `c` ⇔ core `c`
-/// online; boot core always set) — the Lean entry's SGI target mask
-/// (the SM7.A PR #838 P1 online-targets obligation).
+/// IRQ-serviceable; boot core always set) — the Lean entry's SGI target
+/// mask (the SM7.A PR #838 P1 online-targets obligation).  Backed by
+/// `smp::CORE_IRQ_READY` (published after `enable_irq`), not the
+/// `CORE_READY` release handshake (PR #839 review P1).
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownOnlineMask`
 #[no_mangle]
