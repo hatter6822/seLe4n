@@ -111,6 +111,11 @@ def removeRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
             else (st.scheduler.currentOnCore bootCoreId))
   }
 
+/-- WS-SM SM7.B: `removeRunnable` is scheduler-only — the TLB-shootdown
+state is framed (`pendingBounded` bundle-carriage leaf). -/
+theorem removeRunnable_tlbShootdown_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (removeRunnable st tid).tlbShootdown = st.tlbShootdown := rfl
+
 /-- AN10 residual closure (H7): typed entry-point for `removeRunnable` that
 documents the production-path discipline at the type system. Production
 handlers that have already validated their `ThreadId` (through
@@ -674,6 +679,53 @@ theorem returnDonatedSchedContext_scheduler_eq
                 have h1 := storeObject_scheduler_eq_z7 st _ _ _ hS1
                 have h2 := storeObject_scheduler_eq_z7 p1.2 _ _ _ hS2
                 have h3 := storeObject_scheduler_eq_z7 p2.2 _ _ _ hS3
+                exact h3.trans (h2.trans h1)
+    | _ => simp only []; intro h; cases h
+
+/-- WS-SM SM7.B: `returnDonatedSchedContext` only modifies `objects` and
+`scThreadIndex` — the TLB-shootdown state is framed.  Mirrors the proof
+structure of `returnDonatedSchedContext_scheduler_eq` (Z7-C); a link of
+the `pendingBounded` bundle-carriage chain through the retype cleanup
+pipeline. -/
+theorem returnDonatedSchedContext_tlbShootdown_eq
+    (st st' : SystemState)
+    (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId)
+    (originalOwner : SeLe4n.ThreadId)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner = .ok st') :
+    st'.tlbShootdown = st.tlbShootdown := by
+  unfold returnDonatedSchedContext at h
+  revert h
+  cases hObj : st.objects[scId.toObjId]? with
+  | none => intro h; cases h
+  | some obj =>
+    cases obj with
+    | schedContext sc =>
+      simp only []
+      cases hS1 : storeObject scId.toObjId _ st with
+      | error _ => intro h; cases h
+      | ok p1 =>
+        simp only []
+        cases hL1 : lookupTcb p1.2 originalOwner with
+        | none => intro h; cases h
+        | some _ =>
+          simp only []
+          cases hS2 : storeObject originalOwner.toObjId _ p1.2 with
+          | error _ => intro h; cases h
+          | ok p2 =>
+            simp only []
+            cases hL2 : lookupTcb p2.2 serverTid with
+            | none => intro h; cases h
+            | some _ =>
+              simp only []
+              cases hS3 : storeObject serverTid.toObjId _ p2.2 with
+              | error _ => intro h; cases h
+              | ok p3 =>
+                simp only [Except.ok.injEq]
+                intro hEq; subst hEq
+                have h1 := SeLe4n.Model.storeObject_tlbShootdown_eq st _ _ _ hS1
+                have h2 := SeLe4n.Model.storeObject_tlbShootdown_eq p1.2 _ _ _ hS2
+                have h3 := SeLe4n.Model.storeObject_tlbShootdown_eq p2.2 _ _ _ hS3
                 exact h3.trans (h2.trans h1)
     | _ => simp only []; intro h; cases h
 

@@ -322,6 +322,82 @@ opaque ffiShootdownResetForRound : (initiator : UInt64) → BaseIO Unit
 @[extern "ffi_shootdown_all_acked"]
 opaque ffiShootdownAllAcked : BaseIO UInt64
 
+/-- **WS-SM SM7.B.7**: try to acquire THE global shootdown-round lock
+    (a Rust CAS try-lock; `1` = acquired) — the runtime realisation of
+    `Architecture.ShootdownRoundLockId`.  Never blocks: the caller's
+    cooperative loop interleaves retries with servicing its own
+    pending shootdown obligation, because a blind spin (IRQs masked in
+    the SVC path) could never take an in-flight round's
+    `.tlbShootdownReq` SGI while that round waits on THIS core's
+    acknowledgment — a deadlock resolved only by the wait-timeout
+    panic.  The winner must bracket the entire hardware round: flag
+    reset, SGI fire, local TLBI, `allAcked` wait (the SM7.A
+    round-serialisation contract).
+
+    Rust: `ffi_shootdown_round_lock_try_acquire` in
+    `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_shootdown_round_lock_try_acquire"]
+opaque ffiShootdownRoundLockTryAcquire : BaseIO UInt64
+
+/-- **WS-SM SM7.B.7**: release the global shootdown-round lock —
+    only after the initiator observed `allAcked` (or on the timeout
+    path immediately before the fail-closed panic).
+
+    Rust: `ffi_shootdown_round_lock_release` in `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_shootdown_round_lock_release"]
+opaque ffiShootdownRoundLockRelease : BaseIO Unit
+
+/-- **WS-SM SM7.B.5 + B.6**: bounded acquire-poll for `allAcked` —
+    spins up to `timeoutTicks` generic-timer ticks; returns `1` on
+    observed `allAcked`, `0` on timeout (the caller's fail-closed
+    panic trigger; the poll's verdict semantics are
+    `Architecture.shootdown_timeout_handling`).
+
+    Rust: `ffi_shootdown_wait_all_acked` in `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_shootdown_wait_all_acked"]
+opaque ffiShootdownWaitAllAcked : (timeoutTicks : UInt64) → BaseIO UInt64
+
+/-- **WS-SM SM7.B.2 (runtime target masking)**: the online-core bitmask
+    (bit `c` set ⇔ core `c` is IRQ-serviceable; the boot core is always
+    set) — the SM7.A PR #838 P1 obligation's "target-set computation
+    must enumerate online cores only" at the SGI-fire site.  Reads the
+    Rust `smp::CORE_IRQ_READY` flags (Acquire) — the flag a secondary
+    publishes itself after `enable_irq`, not the primary's `CORE_READY`
+    release handshake (PR #839 review P1), so a core that cannot yet
+    take an SGI is never a target.
+
+    Rust: `ffi_shootdown_online_mask` in `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_shootdown_online_mask"]
+opaque ffiShootdownOnlineMask : BaseIO UInt64
+
+/-- **WS-SM SM7.B (debt (1))**: begin publishing the round's operand set
+    into the per-descriptor mailbox (bumps the seqlock to
+    writers-in-progress).  The initiator calls this under the global
+    round lock, BEFORE it fires the `.tlbShootdownReq` SGIs.
+
+    Rust: `ffi_shootdown_publish_begin` in `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_shootdown_publish_begin"]
+opaque ffiShootdownPublishBegin : BaseIO Unit
+
+/-- **WS-SM SM7.B (debt (1))**: write one operand at slot `index` into the
+    mailbox.  `opTag` matches `Architecture.TlbInvalidation.toOpTag`
+    (0=vmalle1, 1=vae1, 2=aside1, 3=vale1); the initiator loops over the
+    round's collapsed operands supplying the index.
+
+    Rust: `ffi_shootdown_publish_slot` in `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_shootdown_publish_slot"]
+opaque ffiShootdownPublishSlot :
+    (index : UInt64) → (opTag : UInt32) → (asid : UInt16) → (vaddr : UInt64) → BaseIO Unit
+
+/-- **WS-SM SM7.B (debt (1))**: commit the publish of `len` operands
+    (bumps the seqlock to stable).  `len` above capacity collapses to a
+    single `vmalle1`; `len == 0` leaves the mailbox empty so the handler
+    falls back to the conservative local `vmalle1`.
+
+    Rust: `ffi_shootdown_publish_commit` in `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_shootdown_publish_commit"]
+opaque ffiShootdownPublishCommit : (len : UInt64) → BaseIO Unit
+
 -- ============================================================================
 -- AG7-A-iii: MMIO FFI declarations
 -- ============================================================================

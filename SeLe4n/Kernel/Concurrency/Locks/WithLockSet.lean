@@ -449,7 +449,52 @@ theorem releaseLockOnObject_preserves_objStoreLock_of_modeled
   | vspaceRoot | untyped | schedContext | reply =>
     all_goals exact updateObjectLockAt_preserves_objStoreLock s l _
 
-/-- WS-SM SM3.C.8 foundation (substantive): `updateObjectAt` with a
+/-- WS-SM SM7.B: `updateObjectAt` frames the TLB-shootdown state (a
+per-object store write).  Leaf of the SM7.B debt-(5) `withLockSet`
+carriage below. -/
+theorem updateObjectAt_tlbShootdown_eq (s : SystemState)
+    (oid : SeLe4n.ObjId) (f : KernelObject → KernelObject) :
+    (updateObjectAt s oid f).tlbShootdown = s.tlbShootdown := by
+  unfold updateObjectAt
+  cases s.objects.get? oid <;> rfl
+
+/-- WS-SM SM7.B: `updateObjectLockAt` frames the TLB-shootdown state. -/
+theorem updateObjectLockAt_tlbShootdown_eq (s : SystemState)
+    (l : LockId) (op : RwLockOp) :
+    (updateObjectLockAt s l op).tlbShootdown = s.tlbShootdown := by
+  unfold updateObjectLockAt
+  cases LockId.lookup s l with
+  | none => rfl
+  | some _ => exact updateObjectAt_tlbShootdown_eq s l.objId _
+
+/-- WS-SM SM7.B: acquiring any lock frames the TLB-shootdown state —
+`.objStore` writes `objStoreLock`, every per-object kind routes through
+`updateObjectLockAt`; neither touches `tlbShootdown`. -/
+theorem acquireLockOnObject_tlbShootdown_eq (s : SystemState)
+    (core : CoreId) (l : LockId) (m : AccessMode) :
+    (acquireLockOnObject s core l m).tlbShootdown = s.tlbShootdown := by
+  unfold acquireLockOnObject
+  cases l.kind with
+  | objStore => rfl
+  | page => rfl
+  | tcb | endpoint | notification | cnode
+  | vspaceRoot | untyped | schedContext | reply =>
+    all_goals exact updateObjectLockAt_tlbShootdown_eq s l _
+
+/-- WS-SM SM7.B: releasing any lock frames the TLB-shootdown state
+(symmetric to the acquire form). -/
+theorem releaseLockOnObject_tlbShootdown_eq (s : SystemState)
+    (core : CoreId) (l : LockId) (m : AccessMode) :
+    (releaseLockOnObject s core l m).tlbShootdown = s.tlbShootdown := by
+  unfold releaseLockOnObject
+  cases l.kind with
+  | objStore => rfl
+  | page => rfl
+  | tcb | endpoint | notification | cnode
+  | vspaceRoot | untyped | schedContext | reply =>
+    all_goals exact updateObjectLockAt_tlbShootdown_eq s l _
+
+/-- WS-SM SM7.B.8 foundation (substantive): `updateObjectAt` with a
 lock-only transformation `f` that preserves `objectType` preserves
 the kind tag at *every* key.
 
@@ -649,5 +694,61 @@ theorem withLockSet_eq_decomposition {α : Type} (S : LockSet) (core : CoreId)
       (action (acquireAll core S.lockAcquireSequence s)).2 := by
   unfold withLockSet
   rfl
+
+-- ============================================================================
+-- WS-SM SM7.B (debt (5) slice): `withLockSet` carries `pendingBounded`
+-- ============================================================================
+-- The 2PL bracket touches only the object store's per-object lock fields
+-- (`updateObjectLockAt`) and the table-level `objStoreLock` — never
+-- `SystemState.tlbShootdown`.  So the shootdown capacity invariant (the
+-- 12th `proofLayerInvariantBundle` conjunct) rides the bracket whenever
+-- the guarded action preserves it: the acquire and release phases frame
+-- the field, and the action carries it across.  This closes the
+-- shootdown-relevant slice of the SM6.D `withLockSet` bundle-carriage
+-- obligation; the remaining twenty-conjunct `ipcInvariantFull` carriage
+-- stays tracked with the SM6.D item.
+
+/-- WS-SM SM7.B: the acquire fold frames the TLB-shootdown state. -/
+theorem acquireAll_tlbShootdown_eq (core : CoreId)
+    (pairs : List (LockId × AccessMode)) (s : SystemState) :
+    (acquireAll core pairs s).tlbShootdown = s.tlbShootdown := by
+  induction pairs generalizing s with
+  | nil => rfl
+  | cons p rest ih =>
+    rw [acquireAll_cons, ih, acquireLockOnObject_tlbShootdown_eq]
+
+/-- WS-SM SM7.B: the release fold frames the TLB-shootdown state. -/
+theorem releaseAll_tlbShootdown_eq (core : CoreId)
+    (pairs : List (LockId × AccessMode)) (s : SystemState) :
+    (releaseAll core pairs s).tlbShootdown = s.tlbShootdown := by
+  induction pairs generalizing s with
+  | nil => rfl
+  | cons p rest ih =>
+    rw [releaseAll_cons, ih, releaseLockOnObject_tlbShootdown_eq]
+
+/-- WS-SM SM7.B: `withLockSet` frames the TLB-shootdown state exactly
+when its guarded action does — the 2PL bracket itself never touches the
+field. -/
+theorem withLockSet_tlbShootdown_eq {α : Type} (S : LockSet) (core : CoreId)
+    (action : SystemState → SystemState × α) (s : SystemState)
+    (hAction : ∀ s', ((action s').1).tlbShootdown = s'.tlbShootdown) :
+    ((withLockSet S core action s).1).tlbShootdown = s.tlbShootdown := by
+  rw [withLockSet_fst, releaseAll_tlbShootdown_eq, hAction,
+      acquireAll_tlbShootdown_eq]
+
+/-- WS-SM SM7.B (debt (5) slice, the carriage theorem): `withLockSet`
+preserves the shootdown capacity invariant `pendingBounded` whenever
+its guarded action does.  The bracket frames `tlbShootdown`, so the
+12th `proofLayerInvariantBundle` conjunct rides any 2PL-guarded
+transition that preserves it — the shootdown-relevant slice of the
+SM6.D `withLockSet` bundle-carriage obligation. -/
+theorem withLockSet_preserves_pendingBounded {α : Type} (S : LockSet)
+    (core : CoreId) (action : SystemState → SystemState × α) (s : SystemState)
+    (hFrame : ∀ s', ((action s').1).tlbShootdown = s'.tlbShootdown)
+    (hB : SeLe4n.Kernel.Architecture.pendingBounded s.tlbShootdown) :
+    SeLe4n.Kernel.Architecture.pendingBounded
+      ((withLockSet S core action s).1).tlbShootdown := by
+  rw [withLockSet_tlbShootdown_eq S core action s hFrame]
+  exact hB
 
 end SeLe4n.Kernel.Concurrency

@@ -7,8 +7,12 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
--- STATUS: staged for WS-SM SM7 (SM1.E.4 typed FFI wrapper for IS-variant
--- TLBI; consumed by SM7 cross-core TLB shootdown when secondaries online)
+-- WS-SM SM7.B: PRODUCTION (LANDED).  The SM1.E.4 typed `tlbiForSharing`
+-- dispatcher is the shootdown round's runtime TLBI emitter — consumed by
+-- `SeLe4n.Kernel.SyscallDispatchEntry.completeShootdownRounds` (the live
+-- initiator-local broadcast TLBI of plan §3.2 step 3).  (Former "STATUS:
+-- staged" marker replaced with this landing note per the
+-- implement-the-improvement rule.)
 import SeLe4n.Kernel.Concurrency.Types
 import SeLe4n.Kernel.Architecture.TlbInvalidation
 import SeLe4n.Platform.FFI

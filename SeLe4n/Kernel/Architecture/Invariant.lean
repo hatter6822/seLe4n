@@ -72,7 +72,15 @@ WS-H12e: Cross-subsystem invariant reconciliation — uses `schedulerInvariantBu
 and `coreIpcInvariantBundle` now subsumes `ipcInvariantFull` (including
 `dualQueueSystemInvariant` and `allPendingMessagesBounded`). The
 `ipcSchedulerCouplingInvariantBundle` now includes `contextMatchesCurrent` and
-`currentThreadDequeueCoherent`. -/
+`currentThreadDequeueCoherent`.
+
+WS-SM SM7.B: `pendingBounded st.tlbShootdown` added as the 12th component —
+the TLB-shootdown capacity invariant (every core's pending-descriptor queue
+stays within `maxPendingPerCore`).  The shootdown posting paths maintain it
+(`enqueueShootdown` fails closed at capacity; `enqueueShootdownOrCoalesce`
+coalesces to a covered full flush), and every non-shootdown kernel
+transition frames `SystemState.tlbShootdown`, so the component transports
+definitionally through the adapter preservation proofs below. -/
 def proofLayerInvariantBundle (st : SystemState) : Prop :=
   schedulerInvariantBundleFull st ∧
     capabilityInvariantBundle st ∧
@@ -84,7 +92,8 @@ def proofLayerInvariantBundle (st : SystemState) : Prop :=
     crossSubsystemInvariant st ∧
     tlbConsistent st st.tlb ∧
     schedulerInvariantBundleExtended st ∧
-    notificationWaiterConsistent st
+    notificationWaiterConsistent st ∧
+    pendingBounded st.tlbShootdown
 
 /-- Proof-carrying local preservation hooks required to compose adapter paths with invariant bundles. -/
 structure AdapterProofHooks (contract : RuntimeBoundaryContract) where
@@ -528,7 +537,7 @@ private theorem default_schedulerInvariantBundleFull :
 
 theorem default_system_state_proofLayerInvariantBundle :
     proofLayerInvariantBundle (default : SystemState) := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   -- 1. schedulerInvariantBundleFull (WS-H12e: now uses full bundle)
   · exact default_schedulerInvariantBundleFull
   -- 2. capabilityInvariantBundle (6-tuple: unique, sound, bounded, completeness, acyclicity, depth)
@@ -576,6 +585,8 @@ theorem default_system_state_proofLayerInvariantBundle :
            default_boundThreadDomainConsistent⟩
   -- 11. notificationWaiterConsistent (AG7-D: empty objects → vacuous)
   · intro oid _ _ hObj; exact default_objects_absurd hObj
+  -- 12. pendingBounded (WS-SM SM7.B: boot shootdown state is quiescent)
+  · exact default_tlbShootdown_pendingBounded
 
 -- ============================================================================
 -- M-08/WS-E6: Architecture assumption consumption bridge theorems
@@ -839,10 +850,11 @@ theorem advanceTimerState_preserves_proofLayerInvariantBundle
     (ticks : Nat) (st : SystemState)
     (hInv : proofLayerInvariantBundle st) :
     proofLayerInvariantBundle (advanceTimerState ticks st) := by
-  obtain ⟨hSched, hCap, hIpc, hCoupling, hLife, hSvc, hVsp, hCross, hTlb, hExt, hNWC⟩ := hInv
+  obtain ⟨hSched, hCap, hIpc, hCoupling, hLife, hSvc, hVsp, hCross, hTlb, hExt, hNWC, hPB⟩ := hInv
   refine ⟨by exact hSched,
          advanceTimerState_preserves_capabilityInvariantBundle ticks st hCap,
-         ?_, ?_, by exact hLife, ?_, ?_, ?_, by exact hTlb, by exact hExt, by exact hNWC⟩
+         ?_, ?_, by exact hLife, ?_, ?_, ?_, by exact hTlb, by exact hExt, by exact hNWC,
+         by exact hPB⟩
   -- coreIpcInvariantBundle
   · obtain ⟨hS, hC, hI⟩ := hIpc
     exact ⟨by exact hS,
@@ -957,7 +969,7 @@ theorem writeRegisterState_preserves_proofLayerInvariantBundle
     (hInv : proofLayerInvariantBundle st)
     (hCtx : contextMatchesCurrent (writeRegisterState reg value st)) :
     proofLayerInvariantBundle (writeRegisterState reg value st) := by
-  obtain ⟨hSched, hCap, hIpc, hCoupling, hLife, hSvc, hVsp, hCross, hTlb, hExt, hNWC⟩ := hInv
+  obtain ⟨hSched, hCap, hIpc, hCoupling, hLife, hSvc, hVsp, hCross, hTlb, hExt, hNWC, hPB⟩ := hInv
   -- writeRegisterState only changes machine.regs — establish definitional equalities
   have hEq : writeRegisterState reg value st =
       { st with machine := st.machine.setRegsOnCore bootCoreId (SeLe4n.writeReg st.machine.regs reg value) } :=
@@ -966,7 +978,7 @@ theorem writeRegisterState_preserves_proofLayerInvariantBundle
   -- at the struct level; others need the rewrite for Lean to see through the record update
   refine ⟨?_, ?_, ?_, ?_, by exact hLife, ?_,
          writeRegisterState_preserves_vspaceInvariantBundle reg value st hVsp,
-         ?_, by exact hTlb, ?_, by exact hNWC⟩
+         ?_, by exact hTlb, ?_, by exact hNWC, by exact hPB⟩
   -- schedulerInvariantBundleFull: swap contextMatchesCurrent
   · obtain ⟨hBase, hTs, hCts, hEdf, _, hRunn, hPri, hDom, hDomE⟩ := hSched
     exact ⟨hBase, hTs, hCts, hEdf, hCtx, hRunn, hPri, hDom, hDomE⟩
@@ -1128,7 +1140,7 @@ theorem contextSwitchState_preserves_proofLayerInvariantBundle
     (hDeadline : tcb.deadline.toNat = 0)
     (hBudgetPost : currentBudgetPositive (contextSwitchState newTid newRegs st)) :
     proofLayerInvariantBundle (contextSwitchState newTid newRegs st) := by
-  obtain ⟨hSched, hCap, hIpc, hCoupling, hLife, hSvc, hVsp, hCross, hTlb, hExt, hNWC⟩ := hInv
+  obtain ⟨hSched, hCap, hIpc, hCoupling, hLife, hSvc, hVsp, hCross, hTlb, hExt, hNWC, hPB⟩ := hInv
   -- contextSwitchState changes machine.regs and scheduler.current; objects unchanged
   have hObjs : (contextSwitchState newTid newRegs st).objects = st.objects := rfl
   -- Extract currentThreadIpcReady from the coupling bundle (needed for passiveServerIdle)
@@ -1183,10 +1195,11 @@ theorem contextSwitchState_preserves_proofLayerInvariantBundle
       cases obj with
       | tcb _ => intro _ _ _; left; exact hDeadline
       | _ => trivial
-  -- Compose the 11-tuple
+  -- Compose the 12-tuple (WS-SM SM7.B: pendingBounded transports — the
+  -- context switch frames `tlbShootdown` definitionally)
   refine ⟨?_, ?_, ?_, ?_, by exact hLife, ?_,
          contextSwitchState_preserves_vspaceInvariantBundle newTid newRegs st hVsp,
-         ?_, by exact hTlb, ?_, ?_⟩
+         ?_, by exact hTlb, ?_, ?_, by exact hPB⟩
   -- 1. schedulerInvariantBundleFull
   · obtain ⟨⟨_, hUniq, _⟩, hTs, _, _, _, hRunn, hPri, hDom, hDomE⟩ := hSched
     have hQCC : queueCurrentConsistent

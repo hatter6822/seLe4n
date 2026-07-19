@@ -216,6 +216,27 @@ theorem cleanupEndpointServiceRegistrations_lifecycle_eq
   unfold cleanupEndpointServiceRegistrations
   exact foldl_removeDependenciesOf_lifecycle_eq _ _
 
+/-- WS-SM SM7.B helper: folding `removeDependenciesOf` over a list preserves
+the TLB-shootdown state. -/
+private theorem foldl_removeDependenciesOf_tlbShootdown_eq
+    (sids : List ServiceId) (st : SystemState) :
+    (sids.foldl (fun s sid => removeDependenciesOf s sid) st).tlbShootdown = st.tlbShootdown := by
+  induction sids generalizing st with
+  | nil => rfl
+  | cons hd tl ih =>
+    simp only [List.foldl_cons]
+    rw [ih]
+    exact removeDependenciesOf_tlbShootdown_eq st hd
+
+/-- WS-SM SM7.B: cleanupEndpointServiceRegistrations is registry-only — the
+TLB-shootdown state is framed (`pendingBounded` bundle-carriage link
+through the retype cleanup pipeline). -/
+theorem cleanupEndpointServiceRegistrations_tlbShootdown_eq
+    (st : SystemState) (epId : SeLe4n.ObjId) :
+    (cleanupEndpointServiceRegistrations st epId).tlbShootdown = st.tlbShootdown := by
+  unfold cleanupEndpointServiceRegistrations
+  exact foldl_removeDependenciesOf_tlbShootdown_eq _ _
+
 /-- U4-I: removeDependenciesOf preserves interfaceRegistry. -/
 theorem removeDependenciesOf_interfaceRegistry_eq
     (st : SystemState) (sid : ServiceId) :

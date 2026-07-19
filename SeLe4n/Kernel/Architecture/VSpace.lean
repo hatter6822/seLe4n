@@ -291,6 +291,108 @@ theorem tlbFlushByPage_state_frame (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
   cases hStep; exact ⟨rfl, rfl, rfl⟩
 
 -- ============================================================================
+-- WS-SM SM7.B: TLB-shootdown frame lemmas for the VSpace transitions
+-- ============================================================================
+-- The base map/unmap/flush operations modify only `objects` (page-table
+-- store writes) and `tlb` (the local flush model) — never the
+-- `tlbShootdown` posting state.  These frames let the SM7.B wrapper
+-- preservation theorems (`…WithShootdown_preserves_pendingBounded`,
+-- `TlbShootdownProtocol.lean`) carry the shootdown capacity invariant
+-- (the 12th `proofLayerInvariantBundle` conjunct) through the live
+-- dispatch paths.
+
+/-- WS-SM SM7.B: `tlbFlushByASID` frames the TLB-shootdown state. -/
+theorem tlbFlushByASID_tlbShootdown_eq (asid : SeLe4n.ASID)
+    (st st' : SystemState)
+    (hStep : tlbFlushByASID asid st = .ok ((), st')) :
+    st'.tlbShootdown = st.tlbShootdown := by
+  unfold tlbFlushByASID at hStep
+  cases hStep; rfl
+
+/-- WS-SM SM7.B: `tlbFlushByPage` frames the TLB-shootdown state. -/
+theorem tlbFlushByPage_tlbShootdown_eq (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (st st' : SystemState)
+    (hStep : tlbFlushByPage asid vaddr st = .ok ((), st')) :
+    st'.tlbShootdown = st.tlbShootdown := by
+  unfold tlbFlushByPage at hStep
+  cases hStep; rfl
+
+/-- WS-SM SM7.B: `vspaceUnmapPage` frames the TLB-shootdown state — the
+page-table erase bottoms out in `storeObject`. -/
+theorem vspaceUnmapPage_tlbShootdown_eq (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (st st' : SystemState)
+    (hStep : vspaceUnmapPage asid vaddr st = .ok ((), st')) :
+    st'.tlbShootdown = st.tlbShootdown := by
+  unfold vspaceUnmapPage at hStep
+  split at hStep
+  · cases hStep
+  · split at hStep
+    · cases hStep
+    · exact SeLe4n.Model.storeObject_tlbShootdown_eq _ _ _ _ hStep
+
+/-- WS-SM SM7.B: `vspaceMapPage` frames the TLB-shootdown state. -/
+theorem vspaceMapPage_tlbShootdown_eq (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr) (perms : PagePermissions)
+    (st st' : SystemState)
+    (hStep : vspaceMapPage asid vaddr paddr perms st = .ok ((), st')) :
+    st'.tlbShootdown = st.tlbShootdown := by
+  unfold vspaceMapPage at hStep
+  split at hStep
+  · cases hStep
+  · split at hStep
+    · cases hStep
+    · split at hStep
+      · cases hStep
+      · exact SeLe4n.Model.storeObject_tlbShootdown_eq _ _ _ _ hStep
+
+/-- WS-SM SM7.B: `vspaceUnmapPageWithFlush` frames the TLB-shootdown
+state — the flush composition adds only a `tlb` write. -/
+theorem vspaceUnmapPageWithFlush_tlbShootdown_eq (asid : SeLe4n.ASID)
+    (vaddr : SeLe4n.VAddr) (st st' : SystemState)
+    (hStep : vspaceUnmapPageWithFlush asid vaddr st = .ok ((), st')) :
+    st'.tlbShootdown = st.tlbShootdown := by
+  unfold vspaceUnmapPageWithFlush at hStep
+  revert hStep
+  cases hBase : vspaceUnmapPage asid vaddr st with
+  | error e => intro hStep; cases hStep
+  | ok pair =>
+      simp only [Except.ok.injEq, Prod.mk.injEq]
+      intro hStep
+      rw [← hStep.2]
+      exact vspaceUnmapPage_tlbShootdown_eq asid vaddr st pair.2 hBase
+
+/-- WS-SM SM7.B: `vspaceMapPageWithFlush` frames the TLB-shootdown state. -/
+theorem vspaceMapPageWithFlush_tlbShootdown_eq (asid : SeLe4n.ASID)
+    (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr) (perms : PagePermissions)
+    (st st' : SystemState)
+    (hStep : vspaceMapPageWithFlush asid vaddr paddr perms st = .ok ((), st')) :
+    st'.tlbShootdown = st.tlbShootdown := by
+  unfold vspaceMapPageWithFlush at hStep
+  revert hStep
+  cases hBase : vspaceMapPage asid vaddr paddr perms st with
+  | error e => intro hStep; cases hStep
+  | ok pair =>
+      simp only [Except.ok.injEq, Prod.mk.injEq]
+      intro hStep
+      rw [← hStep.2]
+      exact vspaceMapPage_tlbShootdown_eq asid vaddr paddr perms st pair.2 hBase
+
+/-- WS-SM SM7.B: the state-aware bounds-checked map frames the
+TLB-shootdown state. -/
+theorem vspaceMapPageCheckedWithFlushFromState_tlbShootdown_eq
+    (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
+    (perms : PagePermissions) (st st' : SystemState)
+    (hStep : vspaceMapPageCheckedWithFlushFromState asid vaddr paddr perms st
+      = .ok ((), st')) :
+    st'.tlbShootdown = st.tlbShootdown := by
+  unfold vspaceMapPageCheckedWithFlushFromState at hStep
+  split at hStep
+  · cases hStep
+  · split at hStep
+    · cases hStep
+    · exact vspaceMapPageWithFlush_tlbShootdown_eq asid vaddr paddr perms st st' hStep
+
+-- ============================================================================
 -- resolveAsidRoot extraction and characterization lemmas (F-08 / TPI-001)
 -- ============================================================================
 

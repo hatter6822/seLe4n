@@ -82,6 +82,13 @@ theorem removeDependenciesOf_objectIndex_eq
     (removeDependenciesOf st sid).objectIndex = st.objectIndex := by
   unfold removeDependenciesOf; rfl
 
+/-- WS-SM SM7.B: removeDependenciesOf is services-only — the TLB-shootdown
+state is framed (`pendingBounded` bundle-carriage leaf). -/
+theorem removeDependenciesOf_tlbShootdown_eq
+    (st : SystemState) (sid : ServiceId) :
+    (removeDependenciesOf st sid).tlbShootdown = st.tlbShootdown := by
+  unfold removeDependenciesOf; rfl
+
 -- ============================================================================
 -- F-07: Service dependency registration with cycle detection (WS-D4)
 -- ============================================================================

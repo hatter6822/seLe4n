@@ -44,10 +44,12 @@ import SeLe4n.Kernel.Concurrency.Sgi
 -- SM1.C the body is `pure ()`; SM5 replaces it with the per-core
 -- scheduler entry.
 import SeLe4n.Kernel.SecondaryEntry
--- WS-SM SM1.E.4: typed `tlbiForSharing` FFI wrapper.  Pulled into
--- Staged so CI builds the typed wrapper around the Rust
--- `ffi_tlbi_for_sharing` dispatcher on every push.  Reachability:
--- staged at SM1.E; SM7 (TLB shootdown) is the first runtime exerciser.
+-- WS-SM SM1.E.4: typed `tlbiForSharing` FFI wrapper.
+-- PRODUCTION since SM7.B: `SyscallDispatchEntry.completeShootdownRounds`
+-- (the live shootdown round's initiator-local broadcast TLBI) consumes
+-- it, so the module is in the `SeLe4n.lean` closure.  The import stays
+-- here for graph continuity (the promoted `TlbShootdown` precedent
+-- below); the module no longer appears in the staged allowlist.
 import SeLe4n.Kernel.Architecture.TlbiForSharing
 -- WS-SM SM7.A: TLB shootdown descriptor + per-core pending/ack state
 -- (TlbShootdownDescriptor, TlbShootdownState, enqueueShootdown /

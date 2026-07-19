@@ -252,8 +252,8 @@ def enforcementBoundary : List EnforcementClass :=
   -- a local CSpace cap derivation, CDT-tracked like the other mint paths).
   , .capabilityOnly "mintReplyCapWithCdt"
   -- AC4-D: VSpace operations (capability-only; internally delegate to storeObject)
-  , .capabilityOnly "vspaceMapPageCheckedWithFlushFromState"
-  , .capabilityOnly "vspaceUnmapPageWithFlush"
+  , .capabilityOnly "vspaceMapPageCheckedWithShootdownFromState"
+  , .capabilityOnly "vspaceUnmapPageWithShootdown"
   -- AC4-D: Service revocation (capability-only; operates on serviceRegistry)
   , .capabilityOnly "revokeService"
   ]
@@ -276,8 +276,8 @@ def syscallIdToEnforcementName : SyscallId → String
   | .cspaceMove            => "cspaceMoveChecked"
   | .cspaceDelete          => "cspaceDeleteSlot"
   | .lifecycleRetype       => "lifecycleRetypeObject"
-  | .vspaceMap             => "vspaceMapPageCheckedWithFlushFromState"
-  | .vspaceUnmap           => "vspaceUnmapPageWithFlush"
+  | .vspaceMap             => "vspaceMapPageCheckedWithShootdownFromState"
+  | .vspaceUnmap           => "vspaceUnmapPageWithShootdown"
   | .serviceRegister       => "registerServiceChecked"
   | .serviceRevoke         => "revokeService"
   | .serviceQuery          => "lookupService"

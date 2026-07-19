@@ -24,9 +24,215 @@ Plan:
 SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
-**Current sub-phase: SM7.A shootdown descriptor + state LANDED
-(v0.32.72); completion cut (v0.32.73); audit cut (v0.32.74) — SM7
-(TLB / cache shootdown, SMP-C4 closure) opened.**
+**Current sub-phase: SM7.B shootdown protocol LANDED (v0.32.76) +
+completion cut (v0.32.77) + debt-closure cut (v0.32.78) + PR #839
+review-P1 cut (v0.32.79) — the plan-§3.2 protocol complete and LIVE,
+every landing deferral closed and every tracked-debt item closed or
+narrowed to a scoped residual.  Prior: SM7.A shootdown descriptor +
+state LANDED (v0.32.72); completion cut (v0.32.73); audit cut
+(v0.32.74); review P1 (v0.32.75).**
+
+**SM7.B PR #839 review-P1 cut (v0.32.79) — two Codex P1 findings.**
+**(1) Shootdown targets keyed on IRQ-readiness, not the release
+handshake — real bug fix (CLOSED).**  `reset_for_round`/`online_mask`
+read `smp::CORE_READY`, which the primary sets the instant `CPU_ON`
+succeeds — before the secondary inits its GIC / arms its timer /
+unmasks IRQs — so a round during bring-up (or targeting a timer-init-
+failed core wedged in the fatal WFE halt loop, `CORE_READY` still true)
+reset that core's ack flag and waited for an SGI it could not service →
+the SM7.B.6 10 ms fail-closed panic (the timer-dead variant wedged
+*every* future round).  Fixed by a separate `smp::CORE_IRQ_READY` flag
+the secondary publishes itself after `enable_irq` (Release), read
+(Acquire) by both masks via the shared `irq_ready_online()` snapshot
+(boot core born true).  Excluding a not-IRQ-ready core is safe — it
+holds no invalidatable TLB entry (pre-MMU empty after the boot
+`tlbi vmalle1`; else only fixed boot / halt-loop mappings).  Lean is
+FFI-backed so only docstring prose changed; HAL 780 → 782 (2 new
+`online_mask_of` tests).  **(2) Model posting/catch-up not
+round-lock-serialised — TRACKED DEBT (model-fidelity, not a hardware
+hazard).**  The model posting + catch-up are not under
+`SHOOTDOWN_ROUND_LOCK` (which serialises only the hardware round), so
+concurrent rounds' catch-up folds can cross-drain the model pending
+queues.  Not a safety bug: each round's hardware TLB maintenance rides
+its own `(pre,post)` diff + SGIs + blocking `SHOOTDOWN_ACK` wait, and
+model quiescence gates only `pendingBounded` bookkeeping (idempotent
+over-application, never under-invalidation).  Documented at the
+`completeShootdownRounds` site; closure target round-generation-tagged
+descriptors (a verified-model-type change scoped to the SM7.C mount).
+Record: plan §5 SM7.B PR #839 review-P1 cut.
+
+**SM7.B debt-closure cut (v0.32.78) — every tracked-debt item closed
+or narrowed.**  **(1) Per-descriptor handler TLBIs (CLOSED)**: the
+`.tlbShootdownReq` handler now retires the round's EXACT operands on
+the local PE — one `tlbi` per descriptor (`tlb::tlbi_local`) instead
+of a blanket `vmalle1`, matching the Lean `handleTlbShootdownReqOnCore`
+per-descriptor `applyTlbInvalidations`.  The initiator publishes the
+collapsed operands into a **seqlock-guarded `ShootdownOpMailbox`**
+under the round lock, BEFORE the SGIs (the `dsb ish` in `send_sgi`
+orders it ahead); the handler retires a stable snapshot and falls back
+to the conservative local `vmalle1` on ANY torn read / empty round /
+over-capacity / undecodable operand — over-invalidation-safe, never
+under-invalidates.  `publishShootdownOps` live seam +
+`ffiShootdownPublish{Begin,Slot,Commit}` FFI + typed wrappers;
+Rust mailbox + `publish_*`/`snapshot_*`/`retire_round_ops_in` +
+`decode_tlb_invalidation` (shared with the FFI dispatcher) + 8 genuine
+unit tests (HAL 772 → 780); trace byte-identical.  **(2) Formal
+refinement (NARROWED)**: the handler refines the Lean TLB effect
+operand-for-operand (op-tag decode pinned identical both sides); the
+residual is only the SM9.E linked-runtime proof.  **(3) B.10
+(deferred, NO safety gap)**: `asidAllocateWithShootdown` is complete
+and proven but user-unreachable — audit confirms no runtime
+ASID-reuse path exists (`lifecycleRetype` creates fresh ASID-0 roots;
+`asidTable` is boot-only), so the gap is completeness not safety;
+closure target SM8 (ASIDControl/ASIDPool object family + assign
+syscall).  **(4) Step-4d direct-ack (CLOSED by design)**: under the
+B.6 spin wait + IRQs-masked SVC path a direct-ack SGI cannot preempt
+the initiator nor add information the acquire-poll already reads.
+**(5) withLockSet carriage (shootdown slice CLOSED)**: the 2PL bracket
+frames `tlbShootdown`, so `withLockSet_preserves_pendingBounded`
+carries the 12th `proofLayerInvariantBundle` conjunct; the
+twenty-conjunct `ipcInvariantFull` generalisation stays with SM6.D.
+**(6) Host-test starvation (CLOSED)**: the host-test yields already
+exist (`cpu::wfe()`'s `#[cfg(test)]` `yield_now`, SM2.E) and the
+authoritative `test_rust.sh` builds before testing, so the
+compile-contention window is absent from the real flow; the round-lock
+mutex-stress test now caps contenders at `available_parallelism()`.
+Suite 160 → 165 assertions; zero sorry/axiom; golden trace
+byte-identical.  Record: plan §5 SM7.B debt-closure cut.
+
+**SM7.B completion cut (v0.32.77) — every landing deferral closed.**
+**(1) Invariant-bundle carriage**: `pendingBounded st.tlbShootdown`
+is the **12th `proofLayerInvariantBundle` conjunct** — boot witness
+`default_tlbShootdown_pendingBounded`, the three adapter preservation
+proofs extended, the Boot general bridge closed via the new
+`bootFromPlatform_tlbShootdown_eq` (+ `applyMachineConfig` / fold
+frames), freeze carried wholesale; proven through every live
+shootdown-aware transition (`…_preserves_pendingBounded` for the
+handler, `withShootdownRound`, the five syscall wrappers, and both
+retype wrappers), resting on a new `…_tlbShootdown_eq` frame family
+across the retype-cleanup pipeline and VSpace base ops (`storeObject`,
+splice, endpoint/notification sweeps, `detachCNodeSlots`,
+`returnDonatedSchedContext`, service registry, scrub,
+`cspaceLookupSlot`, `lifecycleRetypeDirect{,WithCleanup}`,
+`lifecycleRetypeObject`, `lifecycleRetypeWithCleanup`).
+**(2) Handler commutativity**: `completeShootdownOnCore_comm` +
+`handleTlbShootdownReqOnCore_comm` (retire-filter algebra
+`applyTlbInvalidation(s)_comm`) + the fold-swap corollary — the
+catch-up fold's visit order is a convention, not a correctness
+requirement.  **(3) Coalescing capstones**:
+`coalescingRound_restores_quiescent` / `_allAcked` (the round the
+runtime actually runs), the positive diff characterization
+`shootdownChangedTargets_coalescing_of_quiescent` (the seam pokes
+exactly the round's targets), and Theorem 3.3.1's total-posting
+remote case (`coveredQueueRetire_removes` →
+`vspaceUnmapPageWithShootdown_remote_retire_removes`).
+**(4) Remap-only map rounds + a model fact**: the `.vspaceMap`
+wrapper posts only on remap (`vspaceHasTranslation`; `_fresh_inert`),
+and `vspaceMapPageCheckedWithFlushFromState_ok_fresh` pins that a
+successful map is always fresh (`mapPage` rejects occupied vaddrs)
+⇒ `…_never_posts` today — the round rides the unmap of the
+unmap-then-map discipline; the posting branch stays as a
+defense-in-depth seam.  **(5) Least-index wait + round-lock model**:
+`waitAllAckedBounded_least` (+ the constructive
+`shootdown_wait_loop_terminates_least`, no choice), the round-lock
+CAS state machine (`roundLockTryAcquire`: success-iff-free, mutex,
+release-liveness — matching the Rust `compare_exchange` exactly), the
+cross-round publication chain `shootdownRoundLock_release_acquire`
+(+ decide-checked witness; the formal reason the ack vector needs no
+round identity under serialisation), and the 4-core multi-pair B.4
+witness.  **(6) Entry hardening**: named
+`shootdownRoundLockAcquireFuel`, `completeShootdownRounds_nil` (rfl
+— definition-level trace safety), one `CORE_READY` snapshot per round
+(`shootdownOnlineMask` / pure `coreOnlineInMask`), the
+vmalle1-dominance `collapseShootdownOps` (effect-exact),
+`shootdownSharingDomain` now **derived** from
+`PlatformBinding.sharingDomain` (the B.12 binding read;
+`shootdownSharingDomain_rpi5` pins `.inner`), and the cooperative
+self-service arm flipped to the **local** `tlbi vmalle1`
+(`Concurrency.tlbiLocalFullFlush`; `ffi_tlbi_all` contract updated).
+**(7) storeObject sweep**: one further production retype entry owed
+the SM7.B.11 TLB work — closed by the CSpaceAddr sibling
+`lifecycleRetypeWithCleanupShootdown` (+ `_non_vspace` /
+`_vspace_posts` / `_preserves_pendingBounded`); all other
+vspaceRoot-destroying paths verified clean by construction.
+**(8) Typed-flush bridge**: the encoded operands are at least as
+strong as the typed local flushes.  **(9) Test hardening**: Rust
+handler `_in` slice form with genuine `false → true` ack-transition
+tests (the boot-all-`true` global vector had made the prior
+assertions vacuous), `round_lock_try_acquire_in`/`_release_in` + an
+8-thread CAS mutex stress (HAL 769 → 772, clippy-clean); suite §4.9
+(completion cut) + §4.10 (the live `.vspaceUnmap` through
+`dispatchSyscall`: CSpace resolution + authority gate + posting +
+fail-closed no-cap / read-only-cap) — 22 groups / 160 runtime
+assertions; SM7.E.2 seeded (`scripts/test_qemu_smp_shootdown.sh`,
+Tier-4-registered, SKIPs until the SM9.E image); the legacy Rust
+`dispatch_irq` deprecated (masked-EOI form, tests annotated).
+Golden trace byte-identical; zero sorry/axiom.  Tracked debt
+registered in plan §SM7.B completion cut.  Record: plan §5 SM7.B.
+
+**SM7.B shootdown protocol (v0.32.76) — all twelve sub-tasks.**
+The complete protocol layer over the SM7.A state, live behind the
+`.vspaceUnmap` / `.vspaceMap` / `.lifecycleRetype` dispatch arms.
+**Transitions** (`Architecture/TlbShootdownProtocol.lean`,
+production): invalidation-effect semantics on FFI encodings
+(`tlbEntryMatches` — the hardware's TLBI operand comparison, making
+the caller-side encoders' coverage unconditional and encoding
+collisions over-invalidation-only), `tlbShootdownLocal` (B.1),
+`tlbShootdownBroadcast` (B.2; masked round open + posting fold +
+exact `.tlbShootdownReq` SGI list, with posting-exactness / ack-shape
+/ frame / capacity theorems) + the total coalescing form behind the
+live wrappers, and the `.tlbShootdownReq` handler transitions (B.3;
+the TLB effect lands at the acknowledgment, so a set flag
+constructively means "my view is clean"; drain/ack halves match the
+runtime's two commits; duplicate-SGI idempotent).  **Theorem 3.3.1**
+(B.8): `tlbShootdownBroadcast_invalidatesAllCores` over per-core
+views, non-vacuously bridged to the real handler
+(`handleTlbShootdownReqOnCore_applies_posted_op` +
+`tlbShootdownBroadcast_posts_singleton`), plus the real-pipeline
+corollaries (`shootdownRound_tlb_no_matching_entry` / `_quiescent` /
+`_allAcked`).  **Synchronization** (`TlbShootdownWait.lean`):
+`shootdownAck_release_acquire` (B.4, against the SM2.A memory model,
+with a concrete decide-checked witness trace), the constructive
+`shootdown_wait_loop_terminates` (B.5) and the verdict-exact
+`shootdown_timeout_handling` (B.6; the runtime's fail-closed panic
+fires only on a genuinely hung round; 540 000-tick budget pinned on
+both sides).  **Lock-set** (`TlbShootdownLockSet.lean`, B.7): the
+cross-domain `TlbShootdownLockId` order (object < round < queue; the
+SM7.A audit contract as theorems), `lockSet_tlbShootdown_correct`
+(strictly ascending, duplicate-free) and footprint honesty against
+the live commit's diff-recovered write set — discharging the
+registered SM7.B.7 round-serialisation obligation.  **Wiring**
+(B.9–B.11): the live vspace arms (caller's core via
+`determineExecutingCore`; WS-K-D delegation theorems + the
+enforcement-boundary registry updated), the targeted-flush ops,
+`asidAllocateWithShootdown` (B.10 — the previously-missing
+`requiresFlush` consumer), and
+`lifecycleRetypeDirectWithCleanupShootdown` (B.11 — closing a genuine
+pre-existing gap: retyping a live VSpaceRoot destroyed a whole
+address space with no TLB maintenance at all).  **B.12**:
+`tlbShootdown_outer_correct` (the round is state-identical under
+`.outer`; only the emitted instruction variant changes).  **Live
+seam**: `SyscallDispatchEntry.completeShootdownRounds` — the
+diff-recovered round under THE global round lock (the CAS try-lock
+`SHOOTDOWN_ROUND_LOCK`, acquired cooperatively — a lock-waiter with
+IRQs masked services its own pending shootdown obligation between
+retries via `acquireShootdownRoundLockServicingSelf`, because the
+in-flight round waits on exactly that waiter's ack; a blind blocking
+spin would deadlock into the timeout panic): masked reset,
+online-target SGIs (the SM7.A
+P1 obligation), `tlbiForSharing` broadcast TLBIs, bounded wait with
+fail-closed timeout panic, handler catch-up commit; `TlbiForSharing`
+promoted to production (staged 57 → 56).  **Rust** (HAL 755 → 769,
+clippy-clean): round lock, deadline-exact `wait_all_acked_bounded`,
+the boot-registered `.tlbShootdownReq` handler (local `tlbi vmalle1`
+→ release `ack_set` → `sev`; fail-closed no-ack on a bad core id),
+`online_mask`, and the `gic::dispatch_irq_with_iar` trap refactor —
+closing the SM1.F deferred-SGI-dispatch note with genuine
+`source_cpu` and fixing a pre-existing GICv2 defect (SGI `GICC_EOIR`
+writes must echo the IAR source-CPU field, GIC-400 TRM §4.4.5).
+Golden trace byte-identical; zero sorry/axiom; suite 81 → 150
+assertions / 20 groups (Theorem 3.3.1 computed over per-core views;
+the live map → unmap → shootdown pipeline).  Record: plan §5 SM7.B.
 
 **Audit cut (v0.32.74) — three-lane adversarial audit of PR #838.**
 Independent Lean proof-vacuity and Rust/FFI security auditors plus a

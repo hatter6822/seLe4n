@@ -321,6 +321,10 @@ theorem applyMachineConfig_asidTable_eq (ist : IntermediateState) (config : Mach
 theorem applyMachineConfig_tlb_eq (ist : IntermediateState) (config : MachineConfig) :
     (applyMachineConfig ist config).state.tlb = ist.state.tlb := rfl
 
+/-- WS-SM SM7.B: `applyMachineConfig` preserves TLB-shootdown state. -/
+theorem applyMachineConfig_tlbShootdown_eq (ist : IntermediateState) (config : MachineConfig) :
+    (applyMachineConfig ist config).state.tlbShootdown = ist.state.tlbShootdown := rfl
+
 /-- AH2-F: `applyMachineConfig` preserves lifecycle metadata. -/
 theorem applyMachineConfig_lifecycle_eq (ist : IntermediateState) (config : MachineConfig) :
     (applyMachineConfig ist config).state.lifecycle = ist.state.lifecycle := rfl
@@ -1332,9 +1336,9 @@ transformation. Three intermediate composition lemmas:
 
 The end-to-end bridge for the empty config is fully proved. For general
 configs, the gap is that builder operations (`registerIrq`, `createObject`)
-only preserve 4 structural invariants, not the full 10-component
+only preserve 4 structural invariants, not the full 12-component
 `proofLayerInvariantBundle`. Extending to general configs requires proving
-that each builder operation preserves all 9 components — recorded as a
+that each builder operation preserves all 12 components — recorded as a
 post-1.0 hardening candidate; no currently-active plan file tracks it.
 -/
 
@@ -1368,7 +1372,7 @@ theorem emptyBoot_freeze_preserves :
     3. `freeze_preserves_invariants` (freeze transfers the bundle)
 
     For general configs, the bridge requires extending builder operations
-    to preserve all 9 components of `proofLayerInvariantBundle` (not just
+    to preserve all 12 components of `proofLayerInvariantBundle` (not just
     the 4 structural invariants). V4-A extends this to general configs. -/
 theorem bootToRuntime_invariantBridge_empty :
     let ist := bootFromPlatform { irqTable := [], initialObjects := [] }
@@ -1378,14 +1382,14 @@ theorem bootToRuntime_invariantBridge_empty :
 
 /- Boot-to-Runtime Invariant Bridge — Known Limitation (AE5-D/U-21/PLT-01)
 
-   `bootToRuntime_invariantBridge_empty` proves the full 10-component
+   `bootToRuntime_invariantBridge_empty` proves the full 12-component
    `proofLayerInvariantBundle` holds after booting with an empty
    PlatformConfig. For non-empty configs (real hardware with IRQ tables,
    pre-allocated objects), the full bundle is NOT proven to hold.
 
    The checked boot path `bootFromPlatformChecked` validates per-object
    well-formedness and uniqueness, but does not prove the resulting state
-   satisfies all 10 runtime invariants simultaneously.
+   satisfies all 12 runtime invariants simultaneously.
 
    Remediation closed by AN9 (hardware binding, DEF-A-M04 / DEF-A-M06 /
    DEF-A-M08 / DEF-A-M09) per docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md
@@ -1393,7 +1397,7 @@ theorem bootToRuntime_invariantBridge_empty :
    (a) Prove `bootToRuntime_invariantBridge` for arbitrary well-formed
        PlatformConfig, or
    (b) Add a post-boot runtime invariant validation pass that asserts all
-       10 invariants hold before enabling syscall dispatch.
+       12 invariants hold before enabling syscall dispatch.
 
    AI6-B (M-07): Proven for empty PlatformConfig only. General config
    bridge requires a `bootSafe` predicate ensuring per-object well-formedness
@@ -1425,6 +1429,8 @@ invariant components of `proofLayerInvariantBundle`. Each cell is either
 | 8. crossSubsystemInvariant  | vacuous     | vacuous†     |
 | 9. tlbConsistent            | vacuous     | vacuous      |
 | 10. schedInvariantExtended  | vacuous     | vacuous†     |
+| 11. notificationWaiterCons. | vacuous     | vacuous†     |
+| 12. pendingBounded (SM7.B)  | vacuous     | vacuous      |
 
 † The component reads `objects`, which `createObject` modifies. However, the
   component's predicates are quantified over OTHER state fields (scheduler
@@ -1437,9 +1443,10 @@ invariant components of `proofLayerInvariantBundle`. Each cell is either
 
 **Key insight**: `registerIrq` modifies only `irqHandlers`, which no invariant
 component reads. `createObject` modifies `objects`, `objectIndex`,
-`objectIndexSet`, and `lifecycle.objectTypes`. All 9 components are preserved
+`objectIndexSet`, and `lifecycle.objectTypes`. All 12 components are preserved
 because either they don't read the modified fields, or they quantify over
-state structures (queues, CDT, registries) that are unmodified.
+state structures (queues, CDT, registries, shootdown queues) that are
+unmodified.
 
 Note: `lifecycleInvariantBundle` component 5 is "substantive" because it
 directly relates `objects` to `lifecycle.objectTypes`, both of which are
@@ -1452,15 +1459,17 @@ modified. The proof shows that the new entry is consistent.
 
 /-! ### V4-A2: registerIrq Frame Lemma
 
-`registerIrq` only modifies `st.irqHandlers`. All 9 components of
+`registerIrq` only modifies `st.irqHandlers`. All 12 components of
 `proofLayerInvariantBundle` are independent of `irqHandlers`:
 
 - Components 1–8 read scheduler, objects, CDT, services, serviceRegistry,
   interfaceRegistry, asidTable, lifecycle, and TLB — none of which include
   `irqHandlers`.
 - Component 9 (`tlbConsistent`) reads TLB entries and objects/asidTable.
+- Components 10–11 read scheduler/objects; component 12 (`pendingBounded`,
+  WS-SM SM7.B) reads only `tlbShootdown`.
 
-Therefore all 9 components are trivially preserved. -/
+Therefore all 12 components are trivially preserved. -/
 
 /-- V4-A2: The state produced by `registerIrq` has identical fields to the
     input state, except for `irqHandlers`. This is the core frame lemma. -/
@@ -1619,6 +1628,12 @@ private theorem foldIrqs_tlb (irqs : List IrqEntry) (ist : IntermediateState) :
   | nil => rfl
   | cons _ _ ih => simp [foldIrqs, List.foldl] at ih ⊢; exact ih _
 
+private theorem foldIrqs_tlbShootdown (irqs : List IrqEntry) (ist : IntermediateState) :
+    (foldIrqs irqs ist).state.tlbShootdown = ist.state.tlbShootdown := by
+  induction irqs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldIrqs, List.foldl] at ih ⊢; exact ih _
+
 private theorem foldIrqs_machine (irqs : List IrqEntry) (ist : IntermediateState) :
     (foldIrqs irqs ist).state.machine = ist.state.machine := by
   induction irqs generalizing ist with
@@ -1688,6 +1703,12 @@ private theorem foldObjects_asidTable (objs : List ObjectEntry) (ist : Intermedi
 
 private theorem foldObjects_tlb (objs : List ObjectEntry) (ist : IntermediateState) :
     (foldObjects objs ist).state.tlb = ist.state.tlb := by
+  induction objs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
+
+private theorem foldObjects_tlbShootdown (objs : List ObjectEntry) (ist : IntermediateState) :
+    (foldObjects objs ist).state.tlbShootdown = ist.state.tlbShootdown := by
   induction objs generalizing ist with
   | nil => rfl
   | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
@@ -2279,6 +2300,16 @@ theorem bootFromPlatform_tlb_eq (config : PlatformConfig) :
   show _ = _; unfold bootFromPlatform
   rw [applyMachineConfig_tlb_eq, foldObjects_tlb, foldIrqs_tlb, mkEmpty_state_eq_default]
 
+/-- WS-SM SM7.B: The post-boot state preserves TLB-shootdown state from
+    default — boot never posts a shootdown descriptor, so the post-boot
+    shootdown state is the quiescent `TlbShootdownState.initial`. -/
+theorem bootFromPlatform_tlbShootdown_eq (config : PlatformConfig) :
+    (bootFromPlatform config).state.tlbShootdown =
+    (default : SystemState).tlbShootdown := by
+  show _ = _; unfold bootFromPlatform
+  rw [applyMachineConfig_tlbShootdown_eq, foldObjects_tlbShootdown, foldIrqs_tlbShootdown,
+      mkEmpty_state_eq_default]
+
 /-- AH2-F: After boot, machine config-set fields come from `config.machineConfig`.
     This replaces the pre-AH2 `bootFromPlatform_machine_eq` which stated the
     machine state was always default — that is no longer true since `bootFromPlatform`
@@ -2756,7 +2787,7 @@ component to the already-proved `default_*` case.
 /-- V4-A8: The post-boot state from any config satisfies
     `proofLayerInvariantBundle`. This is the general boot invariant bridge.
 
-    All 9 components are proved by showing the post-boot state is equivalent
+    All 12 components are proved by showing the post-boot state is equivalent
     to the default state on the fields each component reads:
 
     1. schedulerInvariantBundleFull — scheduler is default
@@ -2768,6 +2799,9 @@ component to the already-proved `default_*` case.
     7. vspaceInvariantBundle — asidTable empty, no ASID mappings
     8. crossSubsystemInvariant — registries empty, no stale refs
     9. tlbConsistent — TLB is default (empty)
+    10. schedulerInvariantBundleExtended — SchedContexts boot-safe (Z9-G)
+    11. notificationWaiterConsistent — boot notifications have no waiters
+    12. pendingBounded — shootdown state is quiescent (WS-SM SM7.B)
 -/
 theorem bootFromPlatform_proofLayerInvariantBundle_general
     (config : PlatformConfig) (hSafe : config.bootSafe)
@@ -2791,7 +2825,7 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
         entry.obj ≠ KernelObject.vspaceRoot vs) :
     Architecture.proofLayerInvariantBundle
       (bootFromPlatform config).state := by
-  -- The post-boot state equals default on all fields that the 9 invariant
+  -- The post-boot state equals default on all fields that the 12 invariant
   -- components read, so we can transport the default proof.
   -- Since bootFromPlatform_empty_state shows the empty config case is rfl,
   -- and the non-empty config only adds objects/irqHandlers (neither of which
@@ -2806,6 +2840,7 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
   have hIfR := bootFromPlatform_interfaceRegistry_eq config
   have hAsid := bootFromPlatform_asidTable_eq config
   have hTlb := bootFromPlatform_tlb_eq config
+  have hShoot := bootFromPlatform_tlbShootdown_eq config
   -- Builder structural invariants
   have hSlots := (bootFromPlatform config).hPerObjectSlots
   have hAllTables := (bootFromPlatform config).hAllTables
@@ -3272,10 +3307,15 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
     -- WS-RC R4.C: hMem : tid ∈ ntfn.waitingThreads via Membership instance.
     have hMemVal : tid ∈ ntfn.waitingThreads.val := hMem
     rw [hNtfn.2.1] at hMemVal; simp at hMemVal
-  -- Compose all 11 components
+  -- 12. pendingBounded (WS-SM SM7.B): boot never posts a shootdown descriptor,
+  -- so the post-boot shootdown state is the quiescent default.
+  have hPBBundle : SeLe4n.Kernel.Architecture.pendingBounded
+      (bootFromPlatform config).state.tlbShootdown := by
+    rw [hShoot]; exact SeLe4n.Model.default_tlbShootdown_pendingBounded
+  -- Compose all 12 components
   exact ⟨h1, hCapBundle, ⟨h1.1, hCapBundle, hIpcFull⟩, hCouplingBundle,
          hLifeBundle, hServiceBundle, hVspaceBundle, hCrossBundle, hTlbBundle, hExtBundle,
-         hNtfnWaiter⟩
+         hNtfnWaiter, hPBBundle⟩
 
 -- ============================================================================
 -- V4-A9: End-to-end bridge for general configs

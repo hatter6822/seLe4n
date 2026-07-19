@@ -146,4 +146,16 @@ run_check "META" "${SCRIPT_DIR}/test_qemu_smp_scheduler.sh"
 # GIC delivering the SGIs.
 run_check "META" "${SCRIPT_DIR}/test_qemu_smp_ipc.sh"
 
+# WS-SM SM7.B (plan Appendix A Tier-4): TLB shootdown round-trip — a core-0
+# unmap invalidating a translation core 1 has cached, through the live
+# completeShootdownRounds bracket (masked reset → .tlbShootdownReq SGIs at
+# online targets → local broadcast TLBIs → bounded allAcked wait → catch-up).
+# SKIPs until the SM9.E bootable kernel image + in-image shootdown driver
+# exist.  The shootdown correctness — Theorem 3.3.1 over per-core views, the
+# coalescing remote case, the B.4 release-acquire publication (single- and
+# multi-pair witnesses), and the exact B.6 timeout verdict — is established
+# FORMALLY for all executions in tests/SmpTlbShootdownSuite.lean; this is a
+# complementary runtime spot-check with a real GIC delivering the SGIs.
+run_check "META" "${SCRIPT_DIR}/test_qemu_smp_shootdown.sh"
+
 finalize_report

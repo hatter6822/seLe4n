@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.Lifecycle.Operations.ScrubAndUntyped
+import SeLe4n.Kernel.Architecture.TlbShootdownProtocol
 
 /-!
 AN4-G.5 (LIF-M05) child module extracted from
@@ -292,5 +293,345 @@ def lifecycleRetypeDirectWithCleanup
             let stScrubbed := scrubObjectMemory stClean target currentObj.objectType
             lifecycleRetypeDirect authCap target newObj stScrubbed
 
+-- ============================================================================
+-- WS-SM SM7.B.11: retype-with-page-free shootdown
+-- ============================================================================
+
+/-- **WS-SM SM7.B.11**: **production entry point** — pre-resolved-cap
+retype with cleanup, scrub, and TLB shootdown.
+
+`lifecycleRetypeDirectWithCleanup` dequeues, detaches, scrubs, and
+replaces the object — but until SM7.B it performed **no TLB
+maintenance**: retyping a live `.vspaceRoot` freed every page mapping
+the root held while every core (including the executing one) could
+still translate through cached entries for its ASID — a
+use-after-free of the whole address space, the retype instance of the
+SMP-C4 hazard.  This wrapper closes it: when the retyped object was a
+`.vspaceRoot`, the destroyed ASID is flushed locally
+(`adapterFlushTlbByAsid`) and a `.aside1` shootdown round is posted to
+every other core.  Non-VSpaceRoot retypes owe no TLB work and commit
+exactly the base operation's state. -/
+def lifecycleRetypeDirectWithCleanupShootdown (executingCore :
+      SeLe4n.Kernel.Concurrency.CoreId)
+    (authCap : Capability) (target : SeLe4n.ObjId)
+    (newObj : KernelObject) : Kernel Unit :=
+  fun st =>
+    match lifecycleRetypeDirectWithCleanup authCap target newObj st with
+    | .error e => .error e
+    | .ok ((), st') =>
+        -- the ASID a retype owes the TLB: retyping a live `.vspaceRoot`
+        -- destroys an entire address space at once (every mapping the
+        -- root held dies with it), so the whole ASID must be
+        -- invalidated on every core; retyping any other object type
+        -- frees no mapped pages and owes nothing.  Read through the
+        -- AN10-B typed accessor (`getVSpaceRoot?`), never the raw
+        -- store.
+        match (st.getVSpaceRoot? target).map (·.asid) with
+        | none => .ok ((), st')
+        | some asid =>
+            Architecture.tlbFlushByASIDWithShootdown executingCore asid st'
+
+/-- **WS-SM SM7.B.11**: a non-VSpaceRoot retype owes no TLB work — the
+wrapper commits exactly the base operation's result (trace safety for
+every existing retype call). -/
+theorem lifecycleRetypeDirectWithCleanupShootdown_non_vspace
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (authCap : Capability) (target : SeLe4n.ObjId) (newObj : KernelObject)
+    (st : SystemState)
+    (hOld : st.getVSpaceRoot? target = none) :
+    lifecycleRetypeDirectWithCleanupShootdown executingCore authCap target
+        newObj st =
+      lifecycleRetypeDirectWithCleanup authCap target newObj st := by
+  unfold lifecycleRetypeDirectWithCleanupShootdown
+  rw [hOld]
+  cases h : lifecycleRetypeDirectWithCleanup authCap target newObj st with
+  | error e => rfl
+  | ok pair =>
+      obtain ⟨u, st'⟩ := pair
+      cases u
+      rfl
+
+/-- **WS-SM SM7.B.11**: retyping a live `.vspaceRoot` posts the
+`.aside1` shootdown for the destroyed ASID — after the retype commits,
+every other core's queue carries the ASID invalidation (or a
+superseding full flush), so no core can keep translating through the
+dead address space. -/
+theorem lifecycleRetypeDirectWithCleanupShootdown_vspace_posts
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (authCap : Capability) (target : SeLe4n.ObjId) (newObj : KernelObject)
+    {st stPost : SystemState} {root : VSpaceRoot}
+    (hOld : st.getVSpaceRoot? target = some root)
+    (h : lifecycleRetypeDirectWithCleanupShootdown executingCore authCap
+      target newObj st = .ok ((), stPost)) :
+    ∀ c : SeLe4n.Kernel.Concurrency.CoreId, c ≠ executingCore →
+      ({ op := SeLe4n.Kernel.Architecture.encodeAsidInvalidation root.asid,
+         initiator := executingCore } :
+          SeLe4n.Kernel.Architecture.TlbShootdownDescriptor) ∈
+          stPost.tlbShootdown.pendingOnCore c ∨
+        ∃ d' ∈ stPost.tlbShootdown.pendingOnCore c,
+          d'.op = SeLe4n.Kernel.Architecture.TlbInvalidation.vmalle1 := by
+  unfold lifecycleRetypeDirectWithCleanupShootdown at h
+  rw [hOld] at h
+  cases hBase : lifecycleRetypeDirectWithCleanup authCap target newObj st with
+  | error e => rw [hBase] at h; cases h
+  | ok pair =>
+      obtain ⟨u, stBase⟩ := pair
+      cases u
+      rw [hBase] at h
+      have h' : (Except.ok ((),
+          Architecture.tlbShootdownBroadcastCoalescing
+            { stBase with tlb := adapterFlushTlbByAsid stBase.tlb root.asid }
+            executingCore
+            (Architecture.shootdownTargets executingCore)
+            (Architecture.encodeAsidInvalidation root.asid)) :
+          Except KernelError (Unit × SystemState)) = .ok ((), stPost) := h
+      injection h' with h''
+      rw [Prod.mk.injEq] at h''
+      obtain ⟨_, hstate⟩ := h''
+      subst hstate
+      intro c hc
+      exact Architecture.postShootdownRoundCoalescing_covered _ executingCore
+        (Architecture.shootdownTargets_nodup executingCore)
+        (Architecture.encodeAsidInvalidation root.asid) c
+        ((Architecture.mem_shootdownTargets_iff executingCore c).mpr hc)
+
+/-- WS-SM SM7.B: `lifecycleRetypeDirect` frames the TLB-shootdown state
+— the replace bottoms out in `storeObject` (`pendingBounded`
+bundle-carriage link). -/
+theorem lifecycleRetypeDirect_tlbShootdown_eq
+    (authCap : Capability) (target : SeLe4n.ObjId) (newObj : KernelObject)
+    (st st' : SystemState)
+    (h : lifecycleRetypeDirect authCap target newObj st = .ok ((), st')) :
+    st'.tlbShootdown = st.tlbShootdown := by
+  unfold lifecycleRetypeDirect at h
+  revert h
+  cases hObj : st.objects[target]? with
+  | none => intro h; cases h
+  | some currentObj =>
+      simp only []
+      split
+      · split
+        · intro h
+          exact SeLe4n.Model.storeObject_tlbShootdown_eq st target newObj _ h
+        · intro h; cases h
+      · intro h; cases h
+
+/-- WS-SM SM7.B: the cleanup-composed retype frames the TLB-shootdown
+state — the cleanup pipeline
+(`lifecyclePreRetypeCleanup_tlbShootdown_eq`), the scrub, and the
+replace all leave it untouched. -/
+theorem lifecycleRetypeDirectWithCleanup_tlbShootdown_eq
+    (authCap : Capability) (target : SeLe4n.ObjId) (newObj : KernelObject)
+    (st st' : SystemState)
+    (h : lifecycleRetypeDirectWithCleanup authCap target newObj st
+      = .ok ((), st')) :
+    st'.tlbShootdown = st.tlbShootdown := by
+  unfold lifecycleRetypeDirectWithCleanup at h
+  revert h
+  split
+  · intro h; cases h
+  · cases hObj : st.objects[target]? with
+    | none =>
+        intro h
+        exact lifecycleRetypeDirect_tlbShootdown_eq authCap target newObj st st' h
+    | some currentObj =>
+        simp only []
+        cases hClean : lifecyclePreRetypeCleanup st target currentObj newObj with
+        | error e => intro h; cases h
+        | ok stClean =>
+            simp only []
+            intro h
+            have hRetype := lifecycleRetypeDirect_tlbShootdown_eq authCap target
+              newObj (scrubObjectMemory stClean target currentObj.objectType) st' h
+            rw [hRetype,
+                scrubObjectMemory_tlbShootdown_eq stClean target currentObj.objectType]
+            exact lifecyclePreRetypeCleanup_tlbShootdown_eq st stClean target
+              currentObj newObj hClean
+
+/-- WS-SM SM7.B: the CSpaceAddr retype wrapper frames the TLB-shootdown
+state — cleanup, scrub, and the authority-resolving replace all leave
+it untouched. -/
+theorem lifecycleRetypeWithCleanup_tlbShootdown_eq
+    (authority : CSpaceAddr) (target : SeLe4n.ObjId) (newObj : KernelObject)
+    (st st' : SystemState)
+    (h : lifecycleRetypeWithCleanup authority target newObj st
+      = .ok ((), st')) :
+    st'.tlbShootdown = st.tlbShootdown := by
+  unfold lifecycleRetypeWithCleanup at h
+  revert h
+  split
+  · intro h; cases h
+  · cases hObj : st.objects[target]? with
+    | none =>
+        intro h
+        exact lifecycleRetypeObject_tlbShootdown_eq authority target newObj
+          st st' h
+    | some currentObj =>
+        simp only []
+        cases hClean : lifecyclePreRetypeCleanup st target currentObj newObj with
+        | error e => intro h; cases h
+        | ok stClean =>
+            simp only []
+            intro h
+            have hRetype := lifecycleRetypeObject_tlbShootdown_eq authority
+              target newObj
+              (scrubObjectMemory stClean target currentObj.objectType) st' h
+            rw [hRetype,
+                scrubObjectMemory_tlbShootdown_eq stClean target
+                  currentObj.objectType]
+            exact lifecyclePreRetypeCleanup_tlbShootdown_eq st stClean target
+              currentObj newObj hClean
+
+/-- **WS-SM SM7.B.11**: **production entry point** — CSpaceAddr-authority
+retype with cleanup, scrub, and TLB shootdown; the
+`lifecycleRetypeWithCleanup` sibling of
+`lifecycleRetypeDirectWithCleanupShootdown`.  The SM7.B storeObject
+sweep found this production wrapper still owed the SM7.B.11 TLB work:
+retyping a live `.vspaceRoot` through the CSpaceAddr path freed every
+page mapping the root held with no TLB maintenance anywhere.  Same
+discipline as the Direct form: a live `.vspaceRoot` target's ASID is
+flushed locally and a `.aside1` round posted; non-VSpaceRoot retypes
+commit exactly the base operation's state. -/
+def lifecycleRetypeWithCleanupShootdown (executingCore :
+      SeLe4n.Kernel.Concurrency.CoreId)
+    (authority : CSpaceAddr) (target : SeLe4n.ObjId)
+    (newObj : KernelObject) : Kernel Unit :=
+  fun st =>
+    match lifecycleRetypeWithCleanup authority target newObj st with
+    | .error e => .error e
+    | .ok ((), st') =>
+        match (st.getVSpaceRoot? target).map (·.asid) with
+        | none => .ok ((), st')
+        | some asid =>
+            Architecture.tlbFlushByASIDWithShootdown executingCore asid st'
+
+/-- **WS-SM SM7.B.11**: a non-VSpaceRoot retype through the CSpaceAddr
+shootdown wrapper commits exactly the base operation's result. -/
+theorem lifecycleRetypeWithCleanupShootdown_non_vspace
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (authority : CSpaceAddr) (target : SeLe4n.ObjId) (newObj : KernelObject)
+    (st : SystemState)
+    (hOld : st.getVSpaceRoot? target = none) :
+    lifecycleRetypeWithCleanupShootdown executingCore authority target
+        newObj st =
+      lifecycleRetypeWithCleanup authority target newObj st := by
+  unfold lifecycleRetypeWithCleanupShootdown
+  rw [hOld]
+  cases h : lifecycleRetypeWithCleanup authority target newObj st with
+  | error e => rfl
+  | ok pair =>
+      obtain ⟨u, st'⟩ := pair
+      cases u
+      rfl
+
+/-- **WS-SM SM7.B.11**: retyping a live `.vspaceRoot` through the
+CSpaceAddr shootdown wrapper posts the `.aside1` round for the
+destroyed ASID on every other core (or a superseding full flush). -/
+theorem lifecycleRetypeWithCleanupShootdown_vspace_posts
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (authority : CSpaceAddr) (target : SeLe4n.ObjId) (newObj : KernelObject)
+    {st stPost : SystemState} {root : VSpaceRoot}
+    (hOld : st.getVSpaceRoot? target = some root)
+    (h : lifecycleRetypeWithCleanupShootdown executingCore authority target
+      newObj st = .ok ((), stPost)) :
+    ∀ c : SeLe4n.Kernel.Concurrency.CoreId, c ≠ executingCore →
+      ({ op := SeLe4n.Kernel.Architecture.encodeAsidInvalidation root.asid,
+         initiator := executingCore } :
+          SeLe4n.Kernel.Architecture.TlbShootdownDescriptor) ∈
+          stPost.tlbShootdown.pendingOnCore c ∨
+        ∃ d' ∈ stPost.tlbShootdown.pendingOnCore c,
+          d'.op = SeLe4n.Kernel.Architecture.TlbInvalidation.vmalle1 := by
+  unfold lifecycleRetypeWithCleanupShootdown at h
+  rw [hOld] at h
+  cases hBase : lifecycleRetypeWithCleanup authority target newObj st with
+  | error e => rw [hBase] at h; cases h
+  | ok pair =>
+      obtain ⟨u, stBase⟩ := pair
+      cases u
+      rw [hBase] at h
+      have h' : (Except.ok ((),
+          Architecture.tlbShootdownBroadcastCoalescing
+            { stBase with tlb := adapterFlushTlbByAsid stBase.tlb root.asid }
+            executingCore
+            (Architecture.shootdownTargets executingCore)
+            (Architecture.encodeAsidInvalidation root.asid)) :
+          Except KernelError (Unit × SystemState)) = .ok ((), stPost) := h
+      injection h' with h''
+      rw [Prod.mk.injEq] at h''
+      obtain ⟨_, hstate⟩ := h''
+      subst hstate
+      intro c hc
+      exact Architecture.postShootdownRoundCoalescing_covered _ executingCore
+        (Architecture.shootdownTargets_nodup executingCore)
+        (Architecture.encodeAsidInvalidation root.asid) c
+        ((Architecture.mem_shootdownTargets_iff executingCore c).mpr hc)
+
+/-- WS-SM SM7.B.11: the CSpaceAddr retype-with-shootdown entry point
+preserves the shootdown capacity invariant. -/
+theorem lifecycleRetypeWithCleanupShootdown_preserves_pendingBounded
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (authority : CSpaceAddr) (target : SeLe4n.ObjId) (newObj : KernelObject)
+    {st st' : SystemState}
+    (hB : Architecture.pendingBounded st.tlbShootdown)
+    (hOk : lifecycleRetypeWithCleanupShootdown executingCore authority
+      target newObj st = .ok ((), st')) :
+    Architecture.pendingBounded st'.tlbShootdown := by
+  unfold lifecycleRetypeWithCleanupShootdown at hOk
+  revert hOk
+  cases hBase : lifecycleRetypeWithCleanup authority target newObj st with
+  | error e => intro hOk; cases hOk
+  | ok pair =>
+      obtain ⟨u, stBase⟩ := pair
+      cases u
+      have hFrame : stBase.tlbShootdown = st.tlbShootdown :=
+        lifecycleRetypeWithCleanup_tlbShootdown_eq authority target newObj
+          st stBase hBase
+      simp only []
+      cases hAsid : (st.getVSpaceRoot? target).map (·.asid) with
+      | none =>
+          simp only [Except.ok.injEq, Prod.mk.injEq]
+          intro hOk
+          rw [← hOk.2, hFrame]
+          exact hB
+      | some asid =>
+          simp only []
+          intro hOk
+          exact Architecture.tlbFlushByASIDWithShootdown_preserves_pendingBounded
+            (hFrame ▸ hB) hOk
+
+/-- WS-SM SM7.B.11: the retype-with-shootdown entry point preserves the
+shootdown capacity invariant (the 12th `proofLayerInvariantBundle`
+conjunct) — the base retype frames the shootdown state; a live
+`.vspaceRoot` retype then posts through the total coalescing round. -/
+theorem lifecycleRetypeDirectWithCleanupShootdown_preserves_pendingBounded
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (authCap : Capability) (target : SeLe4n.ObjId) (newObj : KernelObject)
+    {st st' : SystemState}
+    (hB : Architecture.pendingBounded st.tlbShootdown)
+    (hOk : lifecycleRetypeDirectWithCleanupShootdown executingCore authCap
+      target newObj st = .ok ((), st')) :
+    Architecture.pendingBounded st'.tlbShootdown := by
+  unfold lifecycleRetypeDirectWithCleanupShootdown at hOk
+  revert hOk
+  cases hBase : lifecycleRetypeDirectWithCleanup authCap target newObj st with
+  | error e => intro hOk; cases hOk
+  | ok pair =>
+      obtain ⟨u, stBase⟩ := pair
+      cases u
+      have hFrame : stBase.tlbShootdown = st.tlbShootdown :=
+        lifecycleRetypeDirectWithCleanup_tlbShootdown_eq authCap target newObj
+          st stBase hBase
+      simp only []
+      cases hAsid : (st.getVSpaceRoot? target).map (·.asid) with
+      | none =>
+          simp only [Except.ok.injEq, Prod.mk.injEq]
+          intro hOk
+          rw [← hOk.2, hFrame]
+          exact hB
+      | some asid =>
+          simp only []
+          intro hOk
+          exact Architecture.tlbFlushByASIDWithShootdown_preserves_pendingBounded
+            (hFrame ▸ hB) hOk
 
 end SeLe4n.Kernel

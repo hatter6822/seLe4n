@@ -131,11 +131,16 @@ pub extern "C" fn ffi_gic_is_spurious(intid: u32) -> bool {
 
 /// Flush all TLB entries at EL1 (TLBI VMALLE1 + DSB ISH + ISB).
 ///
-/// **Local (non-broadcast) variant**.  Reserved for the boot-time
-/// MMU-init path BEFORE secondaries have started; production
-/// kernel code under SMP must use [`ffi_tlbi_for_sharing`] to
-/// route through the IS or OS variant per the platform's
-/// `SharingDomain`.
+/// **Local (non-broadcast) variant**.  Two legitimate callers:
+/// the boot-time MMU-init path BEFORE secondaries have started, and
+/// — WS-SM SM7.B.7 — the shootdown round-lock's cooperative
+/// self-service arm (`Concurrency.tlbiLocalFullFlush`), where a
+/// lock-waiter discharges its OWN pending shootdown obligation by
+/// cleaning exactly its own view before release-acknowledging
+/// (mirroring the `.tlbShootdownReq` handler's local
+/// `tlbi vmalle1`).  All other production kernel code under SMP
+/// must use [`ffi_tlbi_for_sharing`] to route through the IS or OS
+/// variant per the platform's `SharingDomain`.
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiTlbiAll`
 #[no_mangle]
@@ -238,13 +243,10 @@ const fn decode_tlb_invalidation_tag(
     asid: u16,
     vaddr: u64,
 ) -> Option<crate::tlb::TlbInvalidation> {
-    match op_tag {
-        0 => Some(crate::tlb::TlbInvalidation::Vmalle1),
-        1 => Some(crate::tlb::TlbInvalidation::Vae1 { asid, vaddr }),
-        2 => Some(crate::tlb::TlbInvalidation::Aside1 { asid }),
-        3 => Some(crate::tlb::TlbInvalidation::Vale1 { asid, vaddr }),
-        _ => None,
-    }
+    // WS-SM SM7.B: single source of truth shared with the per-descriptor
+    // handler retire path (`shootdown.rs`), so the FFI dispatcher and the
+    // handler decode operands identically.
+    crate::tlb::decode_tlb_invalidation(op_tag, asid, vaddr)
 }
 
 /// **WS-SM SM1.E.4**: Sharing-domain-routed TLBI dispatcher FFI export.
@@ -493,6 +495,98 @@ pub extern "C" fn ffi_shootdown_reset_for_round(initiator: u64) {
 #[no_mangle]
 pub extern "C" fn ffi_shootdown_all_acked() -> u64 {
     crate::shootdown::all_acked() as u64
+}
+
+/// **WS-SM SM7.B.7**: Try to acquire THE global shootdown-round lock
+/// (the CAS try-lock behind the Lean `ShootdownRoundLockId`; `1` =
+/// acquired, `0` = held by an in-flight round).  Never blocks — the
+/// Lean caller's cooperative loop interleaves retries with servicing
+/// its own pending shootdown obligation (see
+/// `shootdown.rs::SHOOTDOWN_ROUND_LOCK` for why a blocking acquire
+/// would deadlock into the wait-timeout panic).  The winner must
+/// bracket the entire hardware round — reset, SGI fires, local TLBI,
+/// all-acked wait — and release only after `all_acked`.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownRoundLockTryAcquire`
+#[no_mangle]
+pub extern "C" fn ffi_shootdown_round_lock_try_acquire() -> u64 {
+    crate::shootdown::round_lock_try_acquire() as u64
+}
+
+/// **WS-SM SM7.B.7**: Release the global shootdown-round lock — only
+/// after the initiator observed all-acked (or immediately before the
+/// timeout path's fail-closed panic).
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownRoundLockRelease`
+#[no_mangle]
+pub extern "C" fn ffi_shootdown_round_lock_release() {
+    crate::shootdown::round_lock_release();
+}
+
+/// **WS-SM SM7.B.5 + B.6**: Bounded acquire-poll for all-acknowledged
+/// — spins up to `timeout_ticks` generic-timer ticks.  Returns `1` on
+/// observed all-acked, `0` on a genuine timeout (the Lean caller's
+/// fail-closed panic trigger).
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownWaitAllAcked`
+#[no_mangle]
+pub extern "C" fn ffi_shootdown_wait_all_acked(timeout_ticks: u64) -> u64 {
+    crate::shootdown::wait_all_acked_bounded(timeout_ticks) as u64
+}
+
+/// **WS-SM SM7.B.2**: The online-core bitmask (bit `c` ⇔ core `c`
+/// IRQ-serviceable; boot core always set) — the Lean entry's SGI target
+/// mask (the SM7.A PR #838 P1 online-targets obligation).  Backed by
+/// `smp::CORE_IRQ_READY` (published after `enable_irq`), not the
+/// `CORE_READY` release handshake (PR #839 review P1).
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownOnlineMask`
+#[no_mangle]
+pub extern "C" fn ffi_shootdown_online_mask() -> u64 {
+    crate::shootdown::online_mask()
+}
+
+/// **WS-SM SM7.B (debt (1))**: begin publishing the round's operand set
+/// into the per-descriptor mailbox — bumps the seqlock to
+/// writers-in-progress.  The initiator calls this under the global round
+/// lock, BEFORE it fires the `.tlbShootdownReq` SGIs (the `dsb ish` in
+/// `send_sgi` orders the publish before any target can take the SGI).
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownPublishBegin`
+#[no_mangle]
+pub extern "C" fn ffi_shootdown_publish_begin() {
+    crate::shootdown::publish_begin_in(&crate::shootdown::SHOOTDOWN_OPS);
+}
+
+/// **WS-SM SM7.B (debt (1))**: write one operand at slot `index` into the
+/// mailbox (the initiator loops over the round's collapsed operands).
+/// The `op_tag` matches the Lean `TlbInvalidation.toOpTag`; out-of-range
+/// indices are dropped (the commit collapses an over-length round to a
+/// single `vmalle1`).
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownPublishSlot`
+#[no_mangle]
+pub extern "C" fn ffi_shootdown_publish_slot(index: u64, op_tag: u32, asid: u16, vaddr: u64) {
+    crate::shootdown::publish_slot_in(
+        &crate::shootdown::SHOOTDOWN_OPS,
+        index as usize,
+        crate::shootdown::ShootdownOp {
+            op_tag,
+            asid,
+            vaddr,
+        },
+    );
+}
+
+/// **WS-SM SM7.B (debt (1))**: commit the publish of `len` operands —
+/// bumps the seqlock to stable (Release).  `len` above capacity collapses
+/// to one `vmalle1`; `len == 0` leaves the mailbox empty (handler falls
+/// back to `vmalle1`).
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownPublishCommit`
+#[no_mangle]
+pub extern "C" fn ffi_shootdown_publish_commit(len: u64) {
+    crate::shootdown::publish_commit_in(&crate::shootdown::SHOOTDOWN_OPS, len as usize);
 }
 
 // ============================================================================

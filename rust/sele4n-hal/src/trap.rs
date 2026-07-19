@@ -273,7 +273,7 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
 #[no_mangle]
 #[deny(clippy::panic, clippy::unreachable, clippy::todo)]
 pub extern "C" fn handle_irq(_frame: &mut TrapFrame) {
-    crate::gic::dispatch_irq(|intid| {
+    crate::gic::dispatch_irq_with_iar(|intid, source_cpu| {
         if intid == crate::gic::TIMER_PPI_ID {
             // Timer interrupt: re-arm the hardware comparator only.
             // Tick accounting is performed by the Lean kernel via
@@ -287,23 +287,20 @@ pub extern "C" fn handle_irq(_frame: &mut TrapFrame) {
             // interface running-priority mask also holds the INTID off
             // until PSTATE.I clears on exception return.
             crate::timer::reprogram_timer();
+        } else if intid < u32::from(crate::gic::MAX_SGI_INTID) {
+            // WS-SM SM7.B.3: SGIs (INTIDs 0..15) route through the
+            // SM1.F.5 handler table with genuine source-CPU
+            // attribution — `dispatch_irq_with_iar` preserved the full
+            // IAR (and EOI'd with it, per the GIC-400 §4.4.5 SGI CPUID
+            // rule).  Unregistered INTIDs dispatch to the table's
+            // no-op log arm, preserving the pre-SM7.B observable
+            // behaviour for every SGI kind without a handler (e.g.
+            // `.reschedule` until its Lean-side per-core entry wires
+            // up).
+            #[allow(clippy::cast_possible_truncation)]
+            crate::gic::dispatch_sgi(intid as u8, source_cpu);
         } else {
-            // Non-timer interrupt: log for debugging.
-            //
-            // WS-SM SM1.F note: SGIs (INTIDs 0..15) currently land
-            // in this "unhandled" branch.  The SM1.F primitive
-            // surface (send_sgi, dispatch_sgi, register_sgi_handler)
-            // is fully implemented in gic.rs, but `dispatch_irq` /
-            // `acknowledge_irq_classified` only return the INTID,
-            // not the source_cpu (bits [12:10] of GICC_IAR).
-            // Wiring SGIs into the trap handler requires:
-            //   1. A `dispatch_irq` variant that preserves the full
-            //      IAR (or extracts source_cpu via `iar_source_cpu`).
-            //   2. The kernel-side Lean handler registration logic
-            //      (per the SM5+ per-core scheduler state).
-            // Both are SM5+ follow-on work.  At SM1.F the SGI HAL
-            // primitives are unit-tested and ready; the trap-handler
-            // wiring is the next layer up.
+            // Non-timer, non-SGI interrupt: log for debugging.
             //
             // AG7 will additionally wire device interrupts (SPIs)
             // to notification signals via FFI.
@@ -383,7 +380,7 @@ pub extern "C" fn handle_irq_per_core(_frame: &mut TrapFrame) {
     // `build.rs::scan_trap_rs_handle_irq_per_core_intact`.)
     let core_id = crate::per_cpu::current_core_id_from_tpidr();
 
-    crate::gic::dispatch_irq(|intid| {
+    crate::gic::dispatch_irq_with_iar(|intid, source_cpu| {
         // WS-SM SM1.I.4 audit-pass-1: record the IRQ dispatch only
         // on the non-spurious / non-out-of-range path (inside the
         // dispatcher's `Handled` closure).  This matches the
@@ -413,30 +410,21 @@ pub extern "C" fn handle_irq_per_core(_frame: &mut TrapFrame) {
             // until PSTATE.I clears on exception return.
             crate::timer::per_core_timer_tick_isr(core_id);
         } else if intid < u32::from(crate::gic::MAX_SGI_INTID) {
-            // SGI dispatch range (INTIDs 0..15).  WS-SM SM1.I.1: at
-            // this phase we increment the per-core SGI counter so
-            // test infrastructure (SM1.H.5 round-trip; SM5+ scheduler
-            // observability) can confirm SGIs arrived on the expected
-            // core.  Dispatching to the registered handler is
-            // deferred to SM5: `dispatch_irq` does not preserve the
-            // full IAR (only the INTID bits), so calling
-            // `dispatch_sgi(intid, source_cpu)` here would have to
-            // pass `source_cpu = 0` — meaningless for handlers that
-            // need to ACK back to the originator.  SM5 will refactor
-            // `dispatch_irq` into `dispatch_irq_with_iar` and route
-            // SGIs through this branch with the correct source_cpu.
+            // SGI dispatch range (INTIDs 0..15).  WS-SM SM1.I.1: the
+            // per-core SGI counter advances so test infrastructure
+            // (SM1.H.5 round-trip; SM5+ scheduler observability) can
+            // confirm SGIs arrived on the expected core.
+            //
+            // WS-SM SM7.B.3: the deferred handler dispatch is live —
+            // `dispatch_irq_with_iar` preserves the full IAR, so the
+            // SM1.F.5 table receives the genuine source CPU (bits
+            // [12:10]) and the EOI carried the GIC-400 §4.4.5 SGI
+            // CPUID field.  Unregistered INTIDs dispatch to the
+            // table's no-op log arm (the pre-SM7.B observable
+            // behaviour for SGI kinds without a handler).
             let _ = crate::per_cpu_stats::record_sgi_dispatch();
-            // Audit-pass-4: `kprintln_core!` is per-line atomic
-            // (holds the UART lock for the entire `[core N] <body>\n`
-            // sequence per SM1.G.4 audit-pass-1).  The pre-audit-pass-4
-            // form used `kprintln!` with a manual `[core {core_id}]`
-            // prefix, which expanded to TWO `kprint!` calls — a
-            // concurrent writer between the prefix and the body would
-            // tear the log line.
-            crate::kprintln_core!(
-                "SGI INTID {} (handler dispatch deferred to SM5)",
-                intid
-            );
+            #[allow(clippy::cast_possible_truncation)]
+            crate::gic::dispatch_sgi(intid as u8, source_cpu);
         } else {
             // Non-timer, non-SGI INTID: log with per-core attribution.
             //

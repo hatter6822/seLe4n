@@ -103,6 +103,12 @@ theorem scrubObjectMemory_objects_eq (st : SystemState) (objectId : SeLe4n.ObjId
     (objType : KernelObjectType) :
     (scrubObjectMemory st objectId objType).objects = st.objects := rfl
 
+/-- WS-SM SM7.B: `scrubObjectMemory` is machine-memory-only — the
+TLB-shootdown state is framed (`pendingBounded` bundle-carriage leaf). -/
+theorem scrubObjectMemory_tlbShootdown_eq (st : SystemState) (objectId : SeLe4n.ObjId)
+    (objType : KernelObjectType) :
+    (scrubObjectMemory st objectId objType).tlbShootdown = st.tlbShootdown := rfl
+
 /-- S6-C: `scrubObjectMemory` preserves the scheduler state. -/
 theorem scrubObjectMemory_scheduler_eq (st : SystemState) (objectId : SeLe4n.ObjId)
     (objType : KernelObjectType) :

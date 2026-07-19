@@ -577,6 +577,45 @@ pub fn tlbi_for_sharing(domain: SharingDomain, op: TlbInvalidation) {
     }
 }
 
+/// **WS-SM SM7.B (per-descriptor handler retire)**: execute a single
+/// invalidation operand on the **local** PE only (no inter-core
+/// broadcast).  The local counterpart of [`tlbi_for_sharing`]: each
+/// call ends with the primitive's own `dsb ish; isb` bracket.
+///
+/// Used by the `.tlbShootdownReq` handler to retire the round's exact
+/// operands on the interrupted core — replacing the former blanket
+/// `tlbi vmalle1`, so the runtime handler's TLB effect matches the Lean
+/// model's per-descriptor `applyTlbInvalidations` exactly (the SM7.B
+/// debt-(1) fidelity close).  A `Vmalle1` operand still means "flush
+/// everything locally" (the conservative fallback / coalesced round).
+#[inline]
+pub fn tlbi_local(op: TlbInvalidation) {
+    match op {
+        TlbInvalidation::Vmalle1 => tlbi_vmalle1(),
+        TlbInvalidation::Vae1 { asid, vaddr } => tlbi_vae1(asid, vaddr),
+        TlbInvalidation::Aside1 { asid } => tlbi_aside1(asid),
+        TlbInvalidation::Vale1 { asid, vaddr } => tlbi_vale1(asid, vaddr),
+    }
+}
+
+/// **WS-SM SM7.B**: decode an `(op_tag, asid, vaddr)` triple into a
+/// typed [`TlbInvalidation`], returning `None` on an out-of-range
+/// `op_tag`.  The op-tag encoding mirrors the Lean
+/// `Architecture.TlbInvalidation.toOpTag` (0=Vmalle1, 1=Vae1, 2=Aside1,
+/// 3=Vale1) — pinned by the SM7.B conformance tests.  Shared by the
+/// FFI `tlbiForSharing` dispatcher and the per-descriptor handler
+/// retire path so both decode operands identically.
+#[inline]
+pub const fn decode_tlb_invalidation(op_tag: u32, asid: u16, vaddr: u64) -> Option<TlbInvalidation> {
+    match op_tag {
+        0 => Some(TlbInvalidation::Vmalle1),
+        1 => Some(TlbInvalidation::Vae1 { asid, vaddr }),
+        2 => Some(TlbInvalidation::Aside1 { asid }),
+        3 => Some(TlbInvalidation::Vale1 { asid, vaddr }),
+        _ => None,
+    }
+}
+
 // ============================================================================
 // Tests
 // ============================================================================

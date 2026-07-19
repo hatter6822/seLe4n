@@ -61,6 +61,13 @@ theorem spliceOutMidQueueNode_serviceRegistry_eq
     (spliceOutMidQueueNode st tid).serviceRegistry = st.serviceRegistry :=
   (spliceOutMidQueueNode_preserves st tid).2.2
 
+/-- WS-SM SM7.B: spliceOutMidQueueNode only modifies `objects` — the
+TLB-shootdown state is framed (`pendingBounded` bundle-carriage leaf). -/
+theorem spliceOutMidQueueNode_tlbShootdown_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (spliceOutMidQueueNode st tid).tlbShootdown = st.tlbShootdown := by
+  unfold spliceOutMidQueueNode; split <;> rfl
+
 /-- W6-B: removeFromAllEndpointQueues only modifies `objects`, preserving
     scheduler, lifecycle, and serviceRegistry simultaneously. Reduces
     redundancy from 3 near-identical proofs to a single bundled theorem. -/
@@ -104,6 +111,20 @@ theorem removeFromAllEndpointQueues_serviceRegistry_eq
     (removeFromAllEndpointQueues st tid).serviceRegistry = st.serviceRegistry :=
   (removeFromAllEndpointQueues_preserves st tid).2.2
 
+/-- WS-SM SM7.B: removeFromAllEndpointQueues only modifies `objects` — the
+TLB-shootdown state is framed.  Same fold-preservation argument as
+`removeFromAllEndpointQueues_preserves`, seeded from the splice frame. -/
+theorem removeFromAllEndpointQueues_tlbShootdown_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (removeFromAllEndpointQueues st tid).tlbShootdown = st.tlbShootdown := by
+  have hSplice := spliceOutMidQueueNode_tlbShootdown_eq st tid
+  unfold removeFromAllEndpointQueues
+  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves
+    (spliceOutMidQueueNode st tid).objects (spliceOutMidQueueNode st tid) _
+    (fun acc => acc.tlbShootdown = st.tlbShootdown)
+    hSplice
+    (fun acc _ _ hAcc => by split <;> first | exact hAcc | (split <;> exact hAcc))
+
 /-- W6-B: removeFromAllNotificationWaitLists only modifies `objects`, preserving
     scheduler, lifecycle, and serviceRegistry simultaneously. -/
 theorem removeFromAllNotificationWaitLists_preserves
@@ -135,6 +156,27 @@ theorem removeFromAllNotificationWaitLists_serviceRegistry_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (removeFromAllNotificationWaitLists st tid).serviceRegistry = st.serviceRegistry :=
   (removeFromAllNotificationWaitLists_preserves st tid).2.2
+
+/-- WS-SM SM7.B: removeFromAllNotificationWaitLists only modifies `objects`
+— the TLB-shootdown state is framed. -/
+theorem removeFromAllNotificationWaitLists_tlbShootdown_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (removeFromAllNotificationWaitLists st tid).tlbShootdown = st.tlbShootdown := by
+  unfold removeFromAllNotificationWaitLists
+  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves st.objects st _
+    (fun acc => acc.tlbShootdown = st.tlbShootdown)
+    rfl
+    (fun acc _ _ hAcc => by split <;> first | exact hAcc | (split <;> exact hAcc))
+
+/-- WS-SM SM7.B: the composed TCB reference scrub only modifies scheduler
+and `objects` — the TLB-shootdown state is framed. -/
+theorem cleanupTcbReferences_tlbShootdown_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (cleanupTcbReferences st tid).tlbShootdown = st.tlbShootdown := by
+  unfold cleanupTcbReferences
+  rw [removeFromAllNotificationWaitLists_tlbShootdown_eq,
+      removeFromAllEndpointQueues_tlbShootdown_eq]
+  exact removeRunnable_tlbShootdown_eq st tid
 
 -- ============================================================================
 -- WS-SM SM6.E: cleanup primitives preserve `objects.invExt`
@@ -993,6 +1035,18 @@ theorem detachCNodeSlots_scheduler_eq
           = acc.scheduler := by unfold SystemState.detachSlotFromCdt; split <;> rfl
       exact this.trans hAcc)
 
+/-- WS-SM SM7.B: CDT cleanup is CDT-only — the TLB-shootdown state is
+framed. -/
+theorem detachCNodeSlots_tlbShootdown_eq
+    (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) :
+    (detachCNodeSlots st cnodeId cn).tlbShootdown = st.tlbShootdown := by
+  simp only [detachCNodeSlots]
+  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots.table st _
+    (fun acc => acc.tlbShootdown = st.tlbShootdown)
+    rfl (fun acc slot _cap hAcc =>
+      (SystemState.detachSlotFromCdt_tlbShootdown_eq acc
+        { cnode := cnodeId, slot := slot }).trans hAcc)
+
 /-- Cleanup preserves the scheduler state. -/
 theorem cleanupTcbReferences_scheduler_eq_removeRunnable
     (st : SystemState) (tid : SeLe4n.ThreadId) :
@@ -1066,6 +1120,60 @@ theorem lifecyclePreRetypeCleanup_flat_subset
     · cases hOk
     · injection hOk with hOk; subst hOk; exact h
 
+/-- WS-SM SM7.B: the pre-retype cleanup pipeline never touches the
+TLB-shootdown state — every step (donated-SC return, scThreadIndex
+trim, TCB reference scrub, endpoint service detachment, CDT slot
+detachment, reply/TCB in-use rejects) is an objects/scheduler/CDT/
+services-level mutation.  The `pendingBounded` bundle-carriage link for
+the SM7.B.11 retype-with-shootdown wrapper; mirrors the case structure
+of `lifecyclePreRetypeCleanup_flat_subset`. -/
+theorem lifecyclePreRetypeCleanup_tlbShootdown_eq
+    (st stClean : SystemState) (target : SeLe4n.ObjId)
+    (currentObj newObj : KernelObject)
+    (hOk : lifecyclePreRetypeCleanup st target currentObj newObj = .ok stClean) :
+    stClean.tlbShootdown = st.tlbShootdown := by
+  cases currentObj with
+  | tcb tcb =>
+    simp only [lifecyclePreRetypeCleanup] at hOk
+    cases hDon : cleanupDonatedSchedContext st tcb.tid with
+    | error e => rw [hDon] at hOk; contradiction
+    | ok stDon =>
+      rw [hDon] at hOk
+      have hDonShoot : stDon.tlbShootdown = st.tlbShootdown :=
+        cleanupDonatedSchedContext_tlbShootdown_eq st stDon tcb.tid hDon
+      simp only [] at hOk
+      have hRO : tcb.replyObject.isSome = false := by
+        cases hr : tcb.replyObject.isSome with
+        | false => rfl
+        | true => rw [if_pos hr] at hOk; exact absurd hOk (by simp)
+      rw [if_neg (by simp [hRO])] at hOk
+      injection hOk with hOk; subst hOk
+      have hScIdxShoot : (match tcb.schedContextBinding with
+        | .bound scId => { stDon with scThreadIndex :=
+            (scThreadIndexRemove stDon.scThreadIndex scId tcb.tid) }
+        | _ => stDon).tlbShootdown = stDon.tlbShootdown := by
+        cases tcb.schedContextBinding <;> rfl
+      rw [cleanupTcbReferences_tlbShootdown_eq, hScIdxShoot]
+      exact hDonShoot
+  | cnode cn =>
+    simp only [lifecyclePreRetypeCleanup] at hOk
+    cases newObj <;> (simp only [] at hOk; first
+      | (injection hOk with hOk; subst hOk; rfl)
+      | (injection hOk with hOk; subst hOk;
+         exact detachCNodeSlots_tlbShootdown_eq st target cn))
+  | endpoint _ =>
+    simp only [lifecyclePreRetypeCleanup] at hOk
+    injection hOk with hOk; subst hOk
+    exact cleanupEndpointServiceRegistrations_tlbShootdown_eq st target
+  | notification _ | vspaceRoot _ | untyped _ | schedContext _ =>
+    simp only [lifecyclePreRetypeCleanup] at hOk
+    injection hOk with hOk; subst hOk; rfl
+  | reply r =>
+    simp only [lifecyclePreRetypeCleanup] at hOk
+    split at hOk
+    · cases hOk
+    · injection hOk with hOk; subst hOk; rfl
+
 namespace Internal
 
 /-- **Internal building block — callers should use `lifecycleRetypeWithCleanup` instead.**
@@ -1127,6 +1235,46 @@ end Internal
 -- `lifecycleRetypeObject` by bare name so the wrappers below and the associated
 -- preservation theorems can compose without noisy `Internal.` prefixes.
 open Internal
+
+/-- WS-SM SM7.B helper: a successful slot lookup returns the input
+state unchanged (pair form). -/
+private theorem cspaceLookupSlot_pair_state_eq
+    (st : SystemState) (addr : CSpaceAddr)
+    (pair : Capability × SystemState)
+    (h : cspaceLookupSlot addr st = .ok pair) : pair.2 = st := by
+  unfold cspaceLookupSlot at h
+  split at h
+  · simp only [Except.ok.injEq] at h
+    rw [← h]
+  · split at h <;> cases h
+
+/-- WS-SM SM7.B: the raw retype primitive frames the TLB-shootdown
+state — authority lookup is state-preserving and the replace bottoms
+out in `storeObject` (`pendingBounded` bundle-carriage link for the
+CSpaceAddr retype path). -/
+theorem lifecycleRetypeObject_tlbShootdown_eq
+    (authority : CSpaceAddr) (target : SeLe4n.ObjId) (newObj : KernelObject)
+    (st st' : SystemState)
+    (h : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
+    st'.tlbShootdown = st.tlbShootdown := by
+  unfold lifecycleRetypeObject at h
+  revert h
+  cases hObj : st.objects[target]? with
+  | none => intro h; cases h
+  | some currentObj =>
+      simp only []
+      split
+      · cases hLook : cspaceLookupSlot authority st with
+        | error e => intro h; cases h
+        | ok pair =>
+            simp only []
+            split
+            · intro h
+              rw [SeLe4n.Model.storeObject_tlbShootdown_eq pair.2 target
+                    newObj _ h,
+                  cspaceLookupSlot_pair_state_eq st authority pair hLook]
+            · intro h; cases h
+      · intro h; cases h
 
 /-- Compose local revoke/delete cleanup with lifecycle retype.
 

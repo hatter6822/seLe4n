@@ -40,8 +40,10 @@ A TLB shootdown for an `(asid, vaddr)` operand initiated by core
      then `acknowledgeShootdown c` (a release-store in the Rust
      runtime; see below).
 
-Steps 2–4 are SM7.B transitions; this module supplies the state
-layer they are built from, factored so the handler's TLBI
+Steps 2–4 are the SM7.B transitions (`TlbShootdownProtocol.lean`:
+`tlbShootdownBroadcast` / `handleTlbShootdownReqOnCore`, LIVE behind
+the `completeShootdownRounds` dispatch seam); this module supplies
+the state layer they are built from, factored so the handler's TLBI
 executions sit *between* the drain and the acknowledgment — the
 pure ops deliberately do not fuse drain-and-ack, because the Rust
 runtime must not publish the ack before the drained invalidations
@@ -105,13 +107,15 @@ state as `SystemState.tlbShootdown`, realising the plan §4.1
 codebase's actual state architecture (`SystemState` *is* the kernel's
 runtime state; the SM3.A `objStoreLock` field landed the same way).
 The module therefore imports only pure layers (`Concurrency.Types` +
-the SM7.A-extracted `TlbInvalidation`), NOT the staged
+the SM7.A-extracted `TlbInvalidation`), NOT the (now production)
 `TlbiForSharing` FFI dispatcher — `Platform.FFI` sits above
 `Kernel.API` in the import graph and would cycle through
-`Model/State.lean`.  The SM7.B protocol transitions are the first
-mutators of the mounted field; until they land, every existing
-transition frames it (no current transition mentions the field, so
-`{ st with … }` updates preserve it definitionally).
+`Model/State.lean`.  The SM7.B protocol transitions
+(`TlbShootdownProtocol.lean`) are the sole mutators of the mounted
+field; every other kernel transition frames it (no such transition
+mentions the field, so `{ st with … }` updates preserve it
+definitionally — the `…_tlbShootdown_eq` frame families in
+`VSpace.lean` / `CleanupPreservation.lean` pin this per operation).
 
 ## Deliberately deferred (recorded design decisions)
 
@@ -123,12 +127,20 @@ transition frames it (no current transition mentions the field, so
   per-core TLB effect semantics or SM7.B.10's ASID-retire path need
   generation-selective invalidation, the field is added there,
   alongside the effect semantics that would consume it.
-* **Global invariant-bundle integration**: `pendingBounded` /
-  `shootdownQuiescent` join a SystemState-level invariant bundle
-  (e.g. `crossSubsystemInvariant`) at SM7.B, together with the first
-  transitions that mutate the field — adding the conjunct before any
-  mutator exists would re-prove every existing bundle-preservation
-  theorem for a field no transition touches.
+* **Global invariant-bundle integration — LANDED at SM7.B**:
+  `pendingBounded st.tlbShootdown` is the 12th conjunct of
+  `proofLayerInvariantBundle` (`Architecture/Invariant.lean`).  The
+  boot witness is `default_tlbShootdown_pendingBounded`; the adapter
+  preservation proofs transport it definitionally (non-shootdown
+  transitions frame the field); the live shootdown paths carry it via
+  the `…_preserves_pendingBounded` family
+  (`TlbShootdownProtocol.lean` §bundle-carriage +
+  `completeShootdownOnCore_preserves_pendingBounded` below).
+  `shootdownQuiescent` deliberately stays out of the bundle: it is a
+  *between-rounds* property, false mid-round by design (the round
+  capstones `shootdownRound_restores_quiescent` /
+  `shootdownRoundFor_restores_quiescent` prove its restoration
+  instead).
 -/
 
 namespace SeLe4n.Kernel.Architecture
@@ -1036,18 +1048,22 @@ an explicit **target set** — only the targets start unacknowledged;
 every non-target (and the initiator) is born-`true`.
 
 This is the model of the runtime's online-masked reset
-(`reset_for_round_in_slice_masked`, `shootdown.rs`): in a partial-core
-boot (`smp_enabled=false` — the v1.0.0 default — an `smp_max_cores`
-cap, or a PSCI CPU_ON rejection), an offline core can never take the
-`.tlbShootdownReq` SGI and acknowledge, so clearing its flag would
-make `allAcked` permanently unreachable and hang the initiator's wait
-loop.  Leaving it born-acknowledged is safe: every secondary bring-up
-runs `tlbi vmalle1` before enabling its MMU
-(`rust/sele4n-hal/src/mmu.rs::init_mmu_secondary`), so a core that was
-offline during a round comes online with an empty TLB.  SM7.B's
-target-set computation must pass exactly the online non-initiator
-cores, and rounds must not race core bring-up (bring-up completes
-during boot, before any user mapping exists to shoot down).
+(`reset_for_round_in_slice_masked`, `shootdown.rs`, driven by the
+`smp::CORE_IRQ_READY` IRQ-serviceable snapshot — PR #839 review P1):
+a core that is offline (a partial-core boot — `smp_enabled=false`, the
+v1.0.0 default — an `smp_max_cores` cap, or a PSCI CPU_ON rejection),
+still mid-bring-up before `enable_irq`, or wedged in the timer-init-
+failure halt loop can never take the `.tlbShootdownReq` SGI and
+acknowledge, so clearing its flag would make `allAcked` permanently
+unreachable and hang the initiator's wait loop.  Leaving it
+born-acknowledged is safe: such a core holds no invalidatable TLB
+entry — every secondary bring-up runs `tlbi vmalle1` before enabling
+its MMU (`rust/sele4n-hal/src/mmu.rs::init_mmu_secondary`), and a core
+between MMU-enable and `enable_irq` (or a halted one) executes only
+fixed boot / halt-loop mappings that are never unmapped.  SM7.B's
+target-set computation must pass exactly the IRQ-serviceable
+non-initiator cores, and rounds must not race core bring-up (bring-up
+completes during boot, before any user mapping exists to shoot down).
 
 `beginShootdownRoundFor · allCores` is exactly `beginShootdownRound`
 (`beginShootdownRoundFor_allCores_eq`) — the fully-online
@@ -1153,6 +1169,17 @@ theorem completeShootdownOnCore_eq (st : TlbShootdownState) (c : CoreId) :
     completeShootdownOnCore st c =
       acknowledgeShootdown (drainShootdowns st c).2 c := rfl
 
+/-- **WS-SM SM7.B**: the handler's round step preserves the capacity
+invariant — draining empties the handled core's queue and the
+acknowledgment touches no queue at all.  Composes the drain and ack
+preservation theorems for the `.tlbShootdownReq` handler's
+`pendingBounded` bundle carriage. -/
+theorem completeShootdownOnCore_preserves_pendingBounded
+    {st : TlbShootdownState} (hB : pendingBounded st) (c : CoreId) :
+    pendingBounded (completeShootdownOnCore st c) :=
+  acknowledgeShootdown_preserves_pendingBounded
+    (drainShootdowns_preserves_pendingBounded hB c) c
+
 /-- **WS-SM SM7.A**: a completed core's queue is empty. -/
 @[simp] theorem completeShootdownOnCore_pendingOnCore_self
     (st : TlbShootdownState) (c : CoreId) :
@@ -1183,6 +1210,47 @@ theorem completeShootdownOnCore_frame_ack (st : TlbShootdownState)
     (completeShootdownOnCore st c).ackOnCore c' = st.ackOnCore c' := by
   unfold completeShootdownOnCore
   rw [acknowledgeShootdown_ackOnCore_ne _ h, drainShootdowns_frame_ack]
+
+/-- **WS-SM SM7.B**: round steps at *distinct* cores commute — each
+step writes only its own core's queue and flag.  This is the
+shootdown-state half of the handler-fold order-independence
+(`handleTlbShootdownReqOnCore_comm` in `TlbShootdownProtocol.lean`):
+the runtime's catch-up fold may visit targets in any order. -/
+theorem completeShootdownOnCore_comm {c₁ c₂ : CoreId} (h : c₁ ≠ c₂)
+    (st : TlbShootdownState) :
+    completeShootdownOnCore (completeShootdownOnCore st c₁) c₂ =
+      completeShootdownOnCore (completeShootdownOnCore st c₂) c₁ := by
+  apply TlbShootdownState.ext_perCore
+  · intro c
+    by_cases h1 : c = c₁
+    · subst h1
+      rw [completeShootdownOnCore_frame_pending _ h,
+          completeShootdownOnCore_pendingOnCore_self,
+          completeShootdownOnCore_pendingOnCore_self]
+    · by_cases h2 : c = c₂
+      · subst h2
+        rw [completeShootdownOnCore_pendingOnCore_self,
+            completeShootdownOnCore_frame_pending _ (Ne.symm h),
+            completeShootdownOnCore_pendingOnCore_self]
+      · rw [completeShootdownOnCore_frame_pending _ h2,
+            completeShootdownOnCore_frame_pending _ h1,
+            completeShootdownOnCore_frame_pending _ h1,
+            completeShootdownOnCore_frame_pending _ h2]
+  · intro c
+    by_cases h1 : c = c₁
+    · subst h1
+      rw [completeShootdownOnCore_frame_ack _ h,
+          completeShootdownOnCore_ackOnCore_self,
+          completeShootdownOnCore_ackOnCore_self]
+    · by_cases h2 : c = c₂
+      · subst h2
+        rw [completeShootdownOnCore_ackOnCore_self,
+            completeShootdownOnCore_frame_ack _ (Ne.symm h),
+            completeShootdownOnCore_ackOnCore_self]
+      · rw [completeShootdownOnCore_frame_ack _ h2,
+            completeShootdownOnCore_frame_ack _ h1,
+            completeShootdownOnCore_frame_ack _ h1,
+            completeShootdownOnCore_frame_ack _ h2]
 
 /-- **WS-SM SM7.A**: closed form for a fold of round steps — a core's
 queue is empty exactly when the fold visited it, and untouched

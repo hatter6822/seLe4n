@@ -64,3 +64,24 @@ import SeLe4n.Kernel.IPC.Invariant.LookupCongruence
 -- the SM6.E theorem surface is production-reachable ahead of the live
 -- `.tcbSuspend` cross-core dispatch wiring (the phase's tracked follow-on).
 import SeLe4n.Kernel.IPC.CrossCore.Cancellation
+-- WS-SM SM7.B: the TLB shootdown protocol — `tlbShootdownLocal` /
+-- `tlbShootdownBroadcast` / `handleTlbShootdownReqOnCore`, the round
+-- composition with its quiescence capstone, Theorem 3.3.1
+-- (`tlbShootdownBroadcast_invalidatesAllCores`), the caller-facing
+-- shootdown-aware kernel operations (unmap / remap / ASID flush /
+-- ASID allocate), the initiator-side synchronization + termination +
+-- timeout theorems (`shootdownAck_release_acquire`,
+-- `shootdown_wait_loop_terminates`, `shootdown_timeout_handling`), and
+-- the round's cross-domain lock-set (`TlbShootdownLockId`,
+-- `lockSet_tlbShootdown_correct`).  Protocol + Wait reach production
+-- through `Kernel.API` (the SM7.B.9 dispatch arms) already; the
+-- explicit imports anchor the Wait + LockSet theorem surfaces the way
+-- the SM6.D/SM6.E entries above do.
+import SeLe4n.Kernel.Architecture.TlbShootdownProtocol
+import SeLe4n.Kernel.Architecture.TlbShootdownWait
+import SeLe4n.Kernel.Architecture.TlbShootdownLockSet
+-- WS-SM SM7.B (SM1.E.4 promotion): the typed `tlbiForSharing` FFI
+-- dispatcher — the shootdown round's runtime TLBI emitter
+-- (`SyscallDispatchEntry.completeShootdownRounds` is the first runtime
+-- exerciser, closing the SM1.E "staged until SM7" note).
+import SeLe4n.Kernel.Architecture.TlbiForSharing
