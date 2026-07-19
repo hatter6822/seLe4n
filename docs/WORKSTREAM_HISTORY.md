@@ -24,10 +24,12 @@ Plan:
 SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
-**Current sub-phase: SM7.C per-core TLB model LANDED (v0.32.80) — the
-SMP generalisation of the single-core TLB layer, mounted on
-`SystemState.perCoreTlb : Vector TlbState numCores` and wired into the
-SM7.B shootdown protocol.  Prior: SM7.B shootdown protocol LANDED
+**Current sub-phase: SM7.C per-core TLB model LANDED (v0.32.80); operative
+cut (v0.32.81) — the SMP generalisation of the single-core TLB layer,
+mounted on `SystemState.perCoreTlb : Vector TlbState numCores`, wired into
+the SM7.B shootdown protocol, and (v0.32.81) made **operative on the live
+shootdown path** — the field evolves by the round's real per-descriptor
+drain, not a parallel spec.  Prior: SM7.B shootdown protocol LANDED
 (v0.32.76) + completion cut (v0.32.77) + debt-closure cut (v0.32.78) +
 PR #839 review-P1 cut (v0.32.79) — the plan-§3.2 protocol complete and
 LIVE, every landing deferral closed and every tracked-debt item closed or
@@ -77,6 +79,56 @@ runtime assertions).  Information flow: `perCoreTlb` kept out of
 Round-generation-tagged descriptors (the SM7.B v0.32.79 model-fidelity
 debt) remains a separately-scoped follow-on (orthogonal to the per-core
 view model; no hardware hazard).
+
+**SM7.C completion cut (v0.32.81) — the model made operative on the live
+path.**  v0.32.80 landed `perCoreTlb` as a parallel spec model: the view
+function `shootdownRoundViews` took its arguments free-standing, so the
+mounted field was never actually written by the live shootdown seam.  This
+cut makes it operative.  New operational handler
+`handleTlbShootdownReqOnCorePerCore` (`PerCoreTlbModel.lean`): runs the
+SM7.B single-view `.tlbShootdownReq` handler (`handleTlbShootdownReqOnCore`
+— drain core `c`'s posted queue, retire the operands on `st.tlb`,
+acknowledge `c`) **and** retires the *same* drained operands on core `c`'s
+own `perCoreTlb` view — the real per-descriptor drain (`_tlb_eq` /
+`_tlbShootdown_eq` = trace-safety anchors; `_applies_posted_op` = the
+non-vacuity bridge tying the real drain to the abstract
+`applyTlbInvalidation (view c) op` step; `_subset` / `_frame` /
+`_preserves_tlbInvalidationConsistent_perCore`).  **Live seam wired**:
+`SyscallDispatchEntry.completeShootdownRounds`'s catch-up commit folds
+`handleTlbShootdownReqOnCorePerCore` (was `handleTlbShootdownReqOnCore`)
+over the round's targets — **trace byte-identical**, because the per-core
+handler's `tlb`/`tlbShootdown` effects are *definitionally* the single-view
+handler's and the two folds agree on those fields
+(`foldl_handleTlbShootdownReqOnCorePerCore_agrees`); only the
+projection-invisible `perCoreTlb` additionally evolves (verified: `lake exe
+sele4n` diff against the golden fixture is byte-for-byte empty).
+**Operative Theorem 3.3.1**: `shootdownRoundPerCore` (the round the live
+seam runs) + `shootdownRoundPerCore_perCoreTlb` (its real-drain
+`perCoreTlb` **equals** the abstract `shootdownRoundViews` vector) +
+`shootdownRoundPerCore_tlb_eq` (the A4 bridge: the per-core round's
+`tlb`/`tlbShootdown` = the SM7.B single-view `shootdownRound`'s for **every**
+round, so the two TLB models agree on the boot-visible view always, not
+just at boot — the scalar `tlb` stays the all-cores-conflated model,
+`perCoreTlb` its per-core refinement, deliberately not pointwise-equal) +
+`shootdownRoundPerCore_invalidates_perCore` (Theorem 3.3.1 realised on the
+mounted field by the real drain) + `_frame` /
+`_preserves_tlbInvalidationConsistent_perCore`.  **Completeness**:
+`tlbInsertOnCore_preserves_tlbInvalidationConsistent_perCore` (the insert
+side of the 13th bundle conjunct), `tlbInvalidateOnAllCoresCoalescing` (the
+overflow-safe broadcast form), and the computable decision procedures
+`tlbConsistentCheck` / `tlbInvalidationConsistentCheck_perCore` + `_iff` +
+`Decidable` instances (the invariant is not `Fintype`-decidable —
+`ObjId`/`VSpaceRoot` are infinite).  **Hardening**:
+`FrozenSystemState.perCoreTlb` is now **required** (no default — a silent
+per-core drop at the freeze site is a compile error; the six frozen-state
+test literals updated), `perCoreTlb_write_preserves_projection` (the
+explicit NI witness that a per-core TLB write is invisible to
+`projectState`), and the unused `perCoreTlb_vector_ext` removed.
+`tests/SmpTlbShootdownSuite.lean` §1 anchors + Tier-3 anchors extended over
+the operational + NI + decidable-checker symbols; §5.3 (a new runtime
+group: the operational per-core round, the `tlb`/`tlbShootdown` bridge, the
+coalescing broadcast, the decidable checker).  Zero sorry/axiom; golden
+trace byte-identical.
 
 **SM7.B PR #839 review-P1 cut (v0.32.79) — two Codex P1 findings.**
 **(1) Shootdown targets keyed on IRQ-readiness, not the release

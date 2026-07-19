@@ -500,6 +500,30 @@ open SeLe4n.Kernel.Concurrency
 #check @tlbConsistency_cross_subsystem
 -- SM7.C: the 13th proofLayerInvariantBundle conjunct is live:
 #check @SeLe4n.Kernel.Architecture.default_system_state_proofLayerInvariantBundle
+-- SM7.C completeness: insert-preservation (the walker half of the safety
+-- story), the total coalescing form, and the runtime-decidable checker:
+#check @tlbInsertOnCore_preserves_tlbInvalidationConsistent_perCore
+#check @tlbInvalidateOnAllCoresCoalescing
+#check @tlbInvalidateOnAllCoresCoalescing_eq_strict
+#check @tlbConsistentCheck
+#check @tlbConsistentCheck_iff
+#check @tlbInvalidationConsistentCheck_perCore
+#check @tlbInvalidationConsistentCheck_perCore_iff
+-- SM7.C operational layer (the per-core drain the live seam runs):
+#check @handleTlbShootdownReqOnCorePerCore
+#check @handleTlbShootdownReqOnCorePerCore_tlb_eq
+#check @handleTlbShootdownReqOnCorePerCore_tlbShootdown_eq
+#check @handleTlbShootdownReqOnCorePerCore_applies_posted_op
+#check @tlbShootdownLocalPerCore
+#check @foldl_handleTlbShootdownReqOnCorePerCore_perCoreTlb
+#check @foldl_handleTlbShootdownReqOnCorePerCore_agrees
+#check @shootdownRoundPerCore
+#check @shootdownRoundPerCore_perCoreTlb
+#check @shootdownRoundPerCore_tlb_eq
+#check @shootdownRoundPerCore_invalidates_perCore
+#check @shootdownRoundPerCore_preserves_tlbInvalidationConsistent_perCore
+-- SM7.C NI: a per-core TLB write is projection-invisible (no covert channel):
+#check @SeLe4n.Kernel.perCoreTlb_write_preserves_projection
 
 -- ============================================================================
 -- §2  Elaboration-time examples
@@ -1741,6 +1765,62 @@ private def runPerCoreTlbBroadcastChecks : IO Unit := do
       opUnmapTarget).isSome)
 
 -- ----------------------------------------------------------------------------
+-- §5.3  Per-core TLB: the operational round (the live drain), the total
+--        coalescing form, and the runtime-decidable consistency checker
+-- ----------------------------------------------------------------------------
+
+private def runPerCoreTlbOperationalChecks : IO Unit := do
+  IO.println "-- §5.3 per-core TLB: operational round + coalescing + decidable checker"
+  -- SM7.C operational Theorem 3.3.1: the REAL per-core drain — the round the
+  -- live `completeShootdownRounds` seam runs (`handleTlbShootdownReqOnCorePerCore`
+  -- per target + the initiator local step) — removes the covered entry from
+  -- every core's view, and the non-matching entries survive.
+  match shootdownRoundPerCore perCoreSeeded core0 (shootdownTargets core0)
+      opUnmapTarget with
+  | none => assertBool "the operational per-core round succeeds from quiescence" false
+  | some final => do
+    assertBool "the operational per-core drain removes the covered entry from EVERY core"
+      (allCores.all fun c => !(tlbHasEntry (tlbOnCore final c) entryTarget))
+    assertBool "the operational drain preserves the non-matching entries on every core"
+      (allCores.all fun c =>
+        tlbHasEntry (tlbOnCore final c) entryOtherVaddr &&
+        tlbHasEntry (tlbOnCore final c) entryOtherAsid)
+    -- The bridge (A4): the per-core round's `tlb` / `tlbShootdown` effect
+    -- equals the SM7.B single-view `shootdownRound`'s — trace-safety.
+    match shootdownRound perCoreSeeded core0 (shootdownTargets core0)
+        opUnmapTarget with
+    | some singleFinal => do
+      assertBool "the per-core round's tlb effect equals the single-view round's (bridge)"
+        (final.tlb.entries.length == singleFinal.tlb.entries.length &&
+         final.tlb.entries.all (tlbHasEntry singleFinal.tlb) &&
+         singleFinal.tlb.entries.all (tlbHasEntry final.tlb))
+      assertBool "the per-core round's shootdown state equals the single-view round's"
+        (decide (final.tlbShootdown = singleFinal.tlbShootdown))
+    | none => assertBool "the single-view round also succeeds" false
+  -- SM7.C.4 total form: never fails, agrees with the strict form, and drains
+  -- every core's view.
+  let coRound := tlbInvalidateOnAllCoresCoalescing perCoreSeeded core0
+    (shootdownTargets core0) opUnmapTarget
+  assertBool "the coalescing form removes the covered entry from every core"
+    (allCores.all fun c => !(tlbHasEntry (tlbOnCore coRound.1 c) entryTarget))
+  assertBool "the coalescing form emits one .tlbShootdownReq per target"
+    (coRound.2 == [(core1, .tlbShootdownReq), (core2, .tlbShootdownReq),
+                   (core3, .tlbShootdownReq)])
+  -- SM7.C.5 runtime-decidable checker (the 13th bundle conjunct made
+  -- executable, as the 12th `pendingBounded` is).
+  assertBool "the runtime checker confirms per-core consistency at boot"
+    (tlbInvalidationConsistentCheck_perCore (default : SeLe4n.Model.SystemState))
+  assertBool "the decidable per-core invariant instance agrees at boot"
+    (decide (tlbInvalidationConsistent_perCore (default : SeLe4n.Model.SystemState)))
+  -- SM7.C.5 (insert-preservation, the walker half): a fresh translation
+  -- consistent with the (empty) boot page tables keeps the invariant — the
+  -- boot state has no VSpaceRoots, so any entry resolves to no root and is
+  -- vacuously consistent, so the check still passes after a walker fill.
+  assertBool "a hardware-walker fill on the boot state keeps the checker green"
+    (tlbInvalidationConsistentCheck_perCore
+      (tlbInsertOnCore (default : SeLe4n.Model.SystemState) core1 entryTarget))
+
+-- ----------------------------------------------------------------------------
 -- Runner
 -- ----------------------------------------------------------------------------
 
@@ -1772,6 +1852,7 @@ def runSmpTlbShootdownChecks : IO Unit := do
   runLiveDispatchChecks
   runPerCoreTlbLocalChecks
   runPerCoreTlbBroadcastChecks
+  runPerCoreTlbOperationalChecks
   IO.println "===================================================="
   IO.println "All SM7.A + SM7.B + SM7.C TLB shootdown + per-core model checks PASS."
 

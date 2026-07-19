@@ -789,11 +789,23 @@ structure SystemState where
       **Semantics**: the SM7.C model operations drive it —
       `tlbInsertOnCore` (the hardware page-table walker filling one core's
       TLB), `tlbInvalidateOnCore` (a local, this-core invalidation), and
-      `tlbInvalidateOnAllCores` (the cross-core broadcast, which posts to
-      `tlbShootdown` above **and** evolves every core's view exactly as
-      Theorem 3.3.1's `shootdownRoundViews` prescribes — so this field is
-      a genuine consumer of the shootdown state machine, not a free-standing
-      parallel structure).  The per-core consistency invariant
+      `tlbInvalidateOnAllCores` (the cross-core broadcast).  It is
+      **operative on the live shootdown path**, not a parallel spec: the
+      live `SyscallDispatchEntry.completeShootdownRounds` catch-up commit
+      folds `handleTlbShootdownReqOnCorePerCore` over the round's targets,
+      draining each target's posted queue onto *its own* view — the real
+      per-descriptor drain, proven equal to Theorem 3.3.1's abstract
+      `shootdownRoundViews` vector
+      (`shootdownRoundPerCore_perCoreTlb` / `_invalidates_perCore`).  The
+      swap is trace-safe: the per-core handler's `tlb` / `tlbShootdown`
+      effects are definitionally the SM7.B single-view handler's, so only
+      this projection-invisible field additionally evolves.  The scalar
+      `tlb` above stays the pre-SMP single-view (all-targets-conflated)
+      model; `perCoreTlb` is the per-core **refinement** (the two agree on
+      the boot-visible view via `shootdownRoundPerCore_tlb_eq`, and coincide
+      empty at boot — they are deliberately *not* forced pointwise-equal,
+      since the single view conflates all cores whereas `perCoreTlb` keeps
+      them distinct).  The per-core consistency invariant
       `tlbInvalidationConsistent_perCore` (every core's view matches the
       page tables) is the 13th `proofLayerInvariantBundle` conjunct,
       generalising the 9th (`tlbConsistent st st.tlb`).

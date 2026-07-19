@@ -24,6 +24,10 @@ import SeLe4n.Kernel.IPC.CrossCore.Cancellation
 -- `handleTlbShootdownReqOnCore`), the wait budget, and the typed
 -- broadcast-TLBI dispatcher behind `completeShootdownRounds`.
 import SeLe4n.Kernel.Architecture.TlbShootdownProtocol
+-- WS-SM SM7.C: the catch-up commit drains each target's queue onto its own
+-- per-core `perCoreTlb` view (`handleTlbShootdownReqOnCorePerCore`), making
+-- the mounted per-core TLB model operative on the live shootdown path.
+import SeLe4n.Kernel.Architecture.PerCoreTlbModel
 import SeLe4n.Kernel.Architecture.TlbShootdownWait
 import SeLe4n.Kernel.Architecture.TlbiForSharing
 -- WS-SM SM7.B.12: the RPi5 platform binding — `shootdownSharingDomain`
@@ -262,9 +266,23 @@ def completeShootdownRounds (changed : List Concurrency.CoreId)
       panic! "WS-SM SM7.B.6: TLB shootdown round timed out — a target \
         core is hung or deaf; halting fail-closed (a silently skipped \
         invalidation would be the SMP-C4 stale-TLB hazard)"
+    -- WS-SM SM7.C: the model catch-up drains each target's queue onto its
+    -- own per-core `perCoreTlb` view (`handleTlbShootdownReqOnCorePerCore`),
+    -- so the mounted per-core TLB model reflects the live round's real
+    -- per-descriptor drain — the operative form of Theorem 3.3.1
+    -- (`Architecture.shootdownRoundPerCore_invalidates_perCore`).  This is
+    -- **trace-safe**: the per-core handler's `tlb` and `tlbShootdown` effects
+    -- are definitionally the SM7.B single-view handler's
+    -- (`handleTlbShootdownReqOnCorePerCore_tlb_eq` / `_tlbShootdown_eq`), and
+    -- the two folds agree on those fields
+    -- (`foldl_handleTlbShootdownReqOnCorePerCore_agrees`); only the
+    -- projection-invisible `perCoreTlb` field additionally evolves, so the
+    -- golden trace stays byte-identical.  The scalar `st.tlb` remains the
+    -- pre-SMP single-view (all-targets-conflated) model; `perCoreTlb` is the
+    -- per-core refinement.
     Platform.FFI.modifyGetKernelState (fun st =>
       ((), (Architecture.shootdownTargets execCore).foldl
-        Architecture.handleTlbShootdownReqOnCore st))
+        Architecture.handleTlbShootdownReqOnCorePerCore st))
 
 /-- **WS-SM SM7.B** (structural marker): a commit that changed no
 pending-shootdown queue runs no round — no lock traffic, no reset, no

@@ -422,14 +422,13 @@ structure FrozenSystemState where
       translations independently, so the frozen snapshot carries every
       core's view (not just the boot core's), for the same M-NEW-1
       completeness reason the scalar `tlb` is carried — TLB state is no
-      longer dropped during freeze.  Defaults to every core's empty view
-      (mirroring the `objStoreLock` frozen field's default just above);
-      `freeze` sets it explicitly (`perCoreTlb := st.perCoreTlb`) and the
-      **fail-closed guard** against a silent per-core drop is the
-      `freeze_preserves_perCoreTlb := rfl` theorem, which fails to
-      elaborate if `freeze` ever stops forwarding the field. -/
-  perCoreTlb        : _root_.Vector TlbState numCores :=
-    _root_.Vector.replicate numCores TlbState.empty
+      longer dropped during freeze.  **Required** (no default), exactly
+      like the scalar `tlb` it generalises: `freeze` is forced to forward
+      it (`perCoreTlb := st.perCoreTlb`), so a silent per-core drop is a
+      compile error at the freeze site — the maximally-robust drop
+      protection, complemented by the `freeze_preserves_perCoreTlb := rfl`
+      *value*-level guard. -/
+  perCoreTlb        : _root_.Vector TlbState numCores
 
 -- ============================================================================
 -- Q5-C: Freeze Functions

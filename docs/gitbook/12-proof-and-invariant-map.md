@@ -778,6 +778,37 @@ generalisation of the scalar boot-core `tlb`, added alongside it):
   both removes every stale entry on every core AND preserves per-core
   consistency
 
+Per-core TLB model — v0.32.81 operative cut (the model made operative on
+the live shootdown path; v0.32.80 landed it as a parallel spec):
+- `handleTlbShootdownReqOnCorePerCore` — the operational `.tlbShootdownReq`
+  handler: runs the SM7.B single-view handler `handleTlbShootdownReqOnCore`
+  **and** retires the *same* drained operands on core `c`'s own view (the
+  real per-descriptor drain); `_tlb_eq` / `_tlbShootdown_eq` are the
+  trace-safety anchors, `_applies_posted_op` the non-vacuity bridge to the
+  abstract step, `_subset` / `_frame` /
+  `_preserves_tlbInvalidationConsistent_perCore`
+- `foldl_handleTlbShootdownReqOnCorePerCore_agrees` — the per-core handler
+  fold and the single-view fold produce the same `tlb`/`tlbShootdown`, so
+  the live `SyscallDispatchEntry.completeShootdownRounds` catch-up fold
+  swap to `handleTlbShootdownReqOnCorePerCore` is **trace byte-identical**
+- `shootdownRoundPerCore` — the per-core round the live seam runs;
+  `_perCoreTlb` proves its real-drain `perCoreTlb` **equals**
+  `shootdownRoundViews` (so Theorem 3.3.1's view vector is the field's live
+  evolution), `_tlb_eq` is the every-round two-model bridge (per-core round
+  `tlb` = single-view `shootdownRound` `tlb`), `_invalidates_perCore`
+  realises Theorem 3.3.1 on the mounted field by the real drain,
+  `_frame` / `_preserves_tlbInvalidationConsistent_perCore`
+- `tlbInsertOnCore_preserves_tlbInvalidationConsistent_perCore` — the
+  insert side of the 13th conjunct; `tlbInvalidateOnAllCoresCoalescing` —
+  the overflow-safe broadcast; `tlbConsistentCheck` /
+  `tlbInvalidationConsistentCheck_perCore` (+ `_iff` + `Decidable`) — the
+  computable consistency decision procedures
+- `perCoreTlb_write_preserves_projection` — the explicit non-interference
+  witness that a per-core TLB write is invisible to `projectState`
+  (`perCoreTlb`, like `tlb`/`machine.timer`, is out of `ObservableState`);
+  `FrozenSystemState.perCoreTlb` is required (no default — a silent
+  freeze-drop is a compile error)
+
 TLB shootdown state layer (`TlbShootdown.lean`, WS-SM SM7.A — production,
 mounted as `SystemState.tlbShootdown`; the SM7.B protocol transitions are
 its first mutators):

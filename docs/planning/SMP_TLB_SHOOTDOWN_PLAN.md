@@ -22,11 +22,18 @@ that broadcast invalidation reaches every core.
 2. **Shootdown protocol** (SM7.B): initiator sends SGI to all
    targets, executes local TLBI, waits for ack flags; each
    target SGI handler invalidates locally and sets its ack.
-3. **Cache maintenance broadcast** (SM7.C): I-cache via
+3. **Per-core TLB model** (SM7.C): generalises `TlbState` to a
+   per-core `Vector TlbState coreCount` (mounted as
+   `SystemState.perCoreTlb`), driven operationally by the shootdown
+   protocol.
+4. **Cache maintenance broadcast** (SM7.D): I-cache via
    `ic_ialluis`; D-cache by VA already at PoC.
-4. **Per-core TLB model** (SM7.D): extends `TlbState` to a
-   `Vector TlbState coreCount`.
 5. **Tests** (SM7.E).
+
+> **Note** — the §5 sub-task breakdown is authoritative for the
+> SM7.C/SM7.D lettering (SM7.C = per-core TLB model, SM7.D = cache
+> maintenance).  An earlier draft of this list had the two swapped;
+> corrected here in the SM7.C completion cut so §1 and §5 agree.
 
 ## 2. Dependencies
 
@@ -649,6 +656,65 @@ TLB *view* model SM7.C delivers, and — as the SM7.B audit recorded — a
 model-fidelity item with **no hardware hazard** (each round's hardware
 maintenance is self-contained; catch-up over-application is idempotent).
 Bundling it here would violate the one-coherent-slice rule.
+
+#### SM7.C completion cut (v0.32.81) — the model made operative + completeness
+
+A follow-on cut turning the SM7.C model from a faithful-but-parallel
+spec into the **operative** one the live shootdown path runs, and closing
+every completeness gap the landing left.  Zero sorry/axiom; golden trace
+**byte-identical** (verified); Tier 0–3 green.
+
+* **The per-core model is now LIVE on the shootdown path (A1/A5).**  New
+  operational per-core handler `handleTlbShootdownReqOnCorePerCore` drains
+  *each core's own* posted queue onto *its own* `perCoreTlb` view (the real
+  per-descriptor drain), with the initiator's `tlbShootdownLocalPerCore`
+  local step; `shootdownRoundPerCore` composes them.  The live
+  `SyscallDispatchEntry.completeShootdownRounds` catch-up commit now folds
+  `handleTlbShootdownReqOnCorePerCore` (was the single-view
+  `handleTlbShootdownReqOnCore`), so a live shootdown's model post-state
+  carries the correct per-core views.  **Trace-safe by proof**: the
+  per-core handler's `tlb` / `tlbShootdown` effects are *definitionally* the
+  SM7.B single-view handler's (`…_tlb_eq` / `…_tlbShootdown_eq`), and the
+  two folds agree on those fields
+  (`foldl_handleTlbShootdownReqOnCorePerCore_agrees`); only the
+  projection-invisible `perCoreTlb` additionally evolves.
+* **Operative Theorem 3.3.1 via the real drain (A5).**
+  `foldl_handleTlbShootdownReqOnCorePerCore_perCoreTlb` proves the real
+  per-core drain **equals** the abstract `shootdownRoundViews` vector
+  step-for-step (not by shared arguments), bridged by
+  `handleTlbShootdownReqOnCorePerCore_applies_posted_op` +
+  `tlbShootdownBroadcast_posts_singleton`; `shootdownRoundPerCore_perCoreTlb`
+  and `shootdownRoundPerCore_invalidates_perCore` then give Theorem 3.3.1
+  on the *live* round: after a covering per-core round no core retains a
+  covered entry.
+* **The two-model bridge (A4).**  `shootdownRoundPerCore_tlb_eq`: the
+  per-core round's `tlb` / `tlbShootdown` effect equals the SM7.B
+  single-view `shootdownRound`'s — the scalar `tlb` stays the (imprecise,
+  all-cores-conflated) single view, `perCoreTlb` is the per-core
+  refinement; they are related for every round, not just at boot, and are
+  deliberately *not* forced pointwise-equal (the single view conflates
+  what the per-core model keeps distinct).
+* **Model completeness (B1/B2/B3).**  `tlbInsertOnCore_preserves_…` (the
+  walker half of the safety story: a page-table-matching fill preserves
+  per-core consistency); `tlbInvalidateOnAllCoresCoalescing` (the total,
+  never-fails form mirroring SM7.B's, `…_eq_strict`); and the
+  runtime-decidable checker `tlbConsistentCheck` /
+  `tlbInvalidationConsistentCheck_perCore` (`…_iff` + `Decidable`
+  instances) making the 13th `proofLayerInvariantBundle` conjunct
+  executable, exactly as the 12th (`pendingBounded`) is.
+* **Robustness + hygiene (D1–D4).**  `FrozenSystemState.perCoreTlb` is now
+  **required** (no default), symmetric with the scalar `tlb` it
+  generalises — a silent per-core drop is a compile error at the freeze
+  site (six frozen test fixtures updated).  Explicit non-interference
+  witness `perCoreTlb_write_preserves_projection` (a per-core TLB write is
+  projection-invisible — no covert channel).  Dead `perCoreTlb_vector_ext`
+  helper removed.  Plan §1 SM7.C/SM7.D lettering corrected to agree with
+  §5.
+* **Tests + anchors.**  `tests/SmpTlbShootdownSuite.lean` §5.3 (the
+  operational round, the bridge to the single-view round computed, the
+  coalescing form, the runtime checker, the walker fill) + the §1 `#check`
+  anchors over the operational/completeness/NI symbols; Tier-3 anchors for
+  the operational theorems and the live-seam per-core wiring.
 
 ### SM7.D — Cache maintenance broadcast (2 PRs, 4 sub-tasks)
 
