@@ -374,14 +374,22 @@ def tlbEntryOk (st : SystemState) (c : CoreId) (e : TlbEntry) : Prop :=
 TLB consistency invariant.  On *every* core, *every* cached entry is either
 consistent with the current page tables or covered by a pending shootdown
 descriptor for that core.  This is the invariant genuinely preserved once the
-model holds real fills (SM7.F): `vspaceUnmapPageWithShootdown` makes an entry
-stale **and** posts the covering descriptor in the same step (the pending
-disjunct), and the `.tlbShootdownReq` handler drains a core's whole queue, so
-survivors must be consistent (the consistent disjunct).  It weakens the
-v0.32.80 unconditional `∀ c, tlbConsistent st (tlbOnCore st c)` — which was
-only vacuously true (empty views) and false for a populated pending-round
-state — to the form that holds across every reachable kernel state.  The 13th
-`proofLayerInvariantBundle` conjunct (`Invariant.lean`). -/
+model holds real fills (SM7.F): the initiator-atomic unmap
+`vspaceUnmapPageWithShootdownPerCore` makes an entry stale **and** covers it
+atomically — retiring the operand on the *initiator's own* view
+(`drainInitiatorPerCoreView`, the *consistent* disjunct there) while posting a
+covering descriptor to each *remote* target (`shootdownTargets`, the *pending*
+disjunct there) — and the `.tlbShootdownReq` handler drains a remote core's
+whole queue, so its survivors must be consistent (the consistent disjunct).
+Note the plain `vspaceUnmapPageWithShootdown` posts covering descriptors to the
+remote targets *only* (`shootdownTargets` excludes the initiator); it is the
+`PerCore` wrapper that additionally retires the initiator's own view, so the
+initiator is never left stale-and-uncovered in the committed intermediate state
+(PR #844 review-2 P2 — `…PerCore_preserves_tlbInvalidationConsistent_perCore`).
+It weakens the v0.32.80 unconditional `∀ c, tlbConsistent st (tlbOnCore st c)`
+— which was only vacuously true (empty views) and false for a populated
+pending-round state — to the form that holds across every reachable kernel
+state.  The 13th `proofLayerInvariantBundle` conjunct (`Invariant.lean`). -/
 def tlbInvalidationConsistent_perCore (st : SystemState) : Prop :=
   ∀ c : CoreId, ∀ e ∈ (tlbOnCore st c).entries, tlbEntryOk st c e
 
@@ -1488,5 +1496,209 @@ theorem tlbFillOnCore_preserves_tlbInvalidationConsistent_perCore
   | some entry =>
     exact tlbInsertOnCore_preserves_tlbInvalidationConsistent_perCore st c entry h
       (tlbWalkEntry_matches st asid vaddr hw)
+
+-- ============================================================================
+-- SM7.F (initiator-atomic seam) — the shootdown-aware unmap that retires the
+-- initiator's own per-core view *atomically* with the round posting
+-- (PR #844 review-2 P2 closure).
+-- ============================================================================
+
+/-- **WS-SM SM7.F**: the entry-level page-table frame for a page
+`vspaceUnmapPageWithFlush`.  An entry whose `(asid, vaddr)` is **not** the
+unmapped pair stays consistent across the unmap — the unmap changes exactly the
+erased mapping, and the scalar flush touches no page table.  The per-core lift
+of the scalar `vspaceUnmapPageWithFlush_preserves_tlbConsistent` (via the raw
+`vspaceUnmapPage_entry_consistent_frame`). -/
+theorem vspaceUnmapPageWithFlush_tlbEntryConsistent_frame
+    {st stF : SystemState} (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (hObjK : st.objects.invExtK) (hAsidK : st.asidTable.invExtK)
+    (hMappingsWF : ∀ (oid : SeLe4n.ObjId) (root : VSpaceRoot),
+      st.objects[oid]? = some (.vspaceRoot root) → root.mappings.invExt)
+    (hMappingsSize : ∀ (oid : SeLe4n.ObjId) (root : VSpaceRoot),
+      st.objects[oid]? = some (.vspaceRoot root) →
+        root.mappings.size < root.mappings.capacity)
+    (hStep : vspaceUnmapPageWithFlush asid vaddr st = .ok ((), stF))
+    {e : TlbEntry} (hNotMatch : ¬(e.asid = asid ∧ e.vaddr = vaddr))
+    (hCon : tlbEntryConsistent st e) :
+    tlbEntryConsistent stF e := by
+  unfold vspaceUnmapPageWithFlush at hStep
+  revert hStep
+  cases hBase : vspaceUnmapPage asid vaddr st with
+  | error e' => intro hStep; cases hStep
+  | ok pair =>
+      simp only [Except.ok.injEq, Prod.mk.injEq]
+      intro hStep
+      have hObj : stF.objects = pair.2.objects := by rw [← hStep.2]
+      have hAsid : stF.asidTable = pair.2.asidTable := by rw [← hStep.2]
+      have hConMid : tlbEntryConsistent pair.2 e :=
+        vspaceUnmapPage_entry_consistent_frame st pair.2 asid vaddr hBase
+          hObjK hAsidK hMappingsWF hMappingsSize e hNotMatch hCon
+      exact tlbEntryConsistent_of_frame hObj hAsid hConMid
+
+/-- **WS-SM SM7.F** (the initiator-atomic seam — PR #844 review-2 P2 closure):
+the shootdown-aware page unmap that retires the *initiator's own* per-core view
+**atomically** with the round posting.  `vspaceUnmapPageWithShootdown` erases
+the page-table entry, flushes the initiator's scalar TLB, and posts covering
+descriptors to the **remote** targets (`shootdownTargets executingCore`, which
+*excludes* the initiator).  This wrapper additionally retires the operand on the
+initiator's own `perCoreTlb` view (`drainInitiatorPerCoreView`), modelling the
+initiator's local `tlbi` — which real hardware executes synchronously as part of
+the round.  Without this atomic step the initiator's own view would be stale
+**and** uncovered (its queue holds no descriptor for the operand) until the
+deferred catch-up commit, so the pending-aware invariant
+(`tlbInvalidationConsistent_perCore`) would be false in the committed
+intermediate state.  Trace-safe: `perCoreTlb` is not in `projectState`. -/
+def vspaceUnmapPageWithShootdownPerCore (executingCore : CoreId)
+    (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) : Kernel Unit :=
+  fun st =>
+    match vspaceUnmapPageWithShootdown executingCore asid vaddr st with
+    | .error e => .error e
+    | .ok ((), st') =>
+        .ok ((), drainInitiatorPerCoreView st' executingCore
+          [encodePageInvalidation asid vaddr])
+
+/-- **WS-SM SM7.F** (the per-core reasoning behind the theorem below): from a
+quiescent, per-core-consistent pre-state, the committed post-state of the
+initiator-atomic unmap — initiator view retired (`drainInitiatorPerCoreView`)
+over the round posting (`tlbShootdownBroadcastCoalescing`) over the unmap-flush
+`stF` — satisfies the pending-aware per-core invariant. -/
+theorem vspaceUnmapPageWithShootdownPerCore_preserves_of_flush
+    {executingCore : CoreId} {asid : SeLe4n.ASID} {vaddr : SeLe4n.VAddr}
+    {st stF : SystemState}
+    (hq : shootdownQuiescent st.tlbShootdown)
+    (hConsist : tlbInvalidationConsistent_perCore st)
+    (hObjK : st.objects.invExtK) (hAsidK : st.asidTable.invExtK)
+    (hMappingsWF : ∀ (oid : SeLe4n.ObjId) (root : VSpaceRoot),
+      st.objects[oid]? = some (.vspaceRoot root) → root.mappings.invExt)
+    (hMappingsSize : ∀ (oid : SeLe4n.ObjId) (root : VSpaceRoot),
+      st.objects[oid]? = some (.vspaceRoot root) →
+        root.mappings.size < root.mappings.capacity)
+    (hUF' : vspaceUnmapPageWithFlush asid vaddr st = .ok ((), stF)) :
+    tlbInvalidationConsistent_perCore
+      (drainInitiatorPerCoreView
+        (tlbShootdownBroadcastCoalescing stF executingCore
+          (shootdownTargets executingCore) (encodePageInvalidation asid vaddr))
+        executingCore [encodePageInvalidation asid vaddr]) := by
+  -- every per-core view frames across the unmap-flush + broadcast
+  have hview : ∀ d,
+      tlbOnCore (tlbShootdownBroadcastCoalescing stF executingCore
+        (shootdownTargets executingCore) (encodePageInvalidation asid vaddr)) d =
+        tlbOnCore st d := by
+    intro d
+    show stF.perCoreTlb.get d = st.perCoreTlb.get d
+    rw [vspaceUnmapPageWithFlush_perCoreTlb_eq asid vaddr st stF hUF']
+  -- from quiescence every pre-state admissible entry is in fact consistent
+  have hAllCon : ∀ d, ∀ e' ∈ (tlbOnCore st d).entries, tlbEntryConsistent st e' :=
+    fun d e' hmem => tlbEntryConsistent_of_ok_of_quiescent hq (hConsist d e' hmem)
+  -- the committed post-state frames the page tables (structure-update defeq)
+  have hObjPost : (drainInitiatorPerCoreView
+      (tlbShootdownBroadcastCoalescing stF executingCore
+        (shootdownTargets executingCore) (encodePageInvalidation asid vaddr))
+      executingCore [encodePageInvalidation asid vaddr]).objects = stF.objects := rfl
+  have hAsidPost : (drainInitiatorPerCoreView
+      (tlbShootdownBroadcastCoalescing stF executingCore
+        (shootdownTargets executingCore) (encodePageInvalidation asid vaddr))
+      executingCore [encodePageInvalidation asid vaddr]).asidTable = stF.asidTable := rfl
+  intro c e he
+  by_cases hc : c = executingCore
+  · -- initiator core: the wrapper retired the operand on this view
+    subst c
+    rw [drainInitiatorPerCoreView_tlbOnCore_self] at he
+    have hmemB := mem_of_mem_applyTlbInvalidations he
+    rw [hview executingCore] at hmemB
+    have hnm : tlbEntryMatches (encodePageInvalidation asid vaddr) e = false :=
+      applyTlbInvalidations_survivor_not_matched
+        [encodePageInvalidation asid vaddr] _ e he
+        (encodePageInvalidation asid vaddr) (by simp)
+    have hNotMatch : ¬(e.asid = asid ∧ e.vaddr = vaddr) := by
+      rintro ⟨hA, hV⟩
+      rw [encodePageInvalidation_matches asid vaddr hA hV] at hnm
+      cases hnm
+    have hConF : tlbEntryConsistent stF e :=
+      vspaceUnmapPageWithFlush_tlbEntryConsistent_frame asid vaddr hObjK hAsidK
+        hMappingsWF hMappingsSize hUF' hNotMatch (hAllCon executingCore e hmemB)
+    exact Or.inl (tlbEntryConsistent_of_frame hObjPost hAsidPost hConF)
+  · -- remote core: view unchanged, but the round posted a covering descriptor
+    rw [drainInitiatorPerCoreView_tlbOnCore_ne _
+      [encodePageInvalidation asid vaddr] (Ne.symm hc)] at he
+    rw [hview c] at he
+    by_cases hb : tlbEntryMatches (encodePageInvalidation asid vaddr) e = true
+    · -- matched ⇒ now stale ⇒ rides the posted descriptor (pending disjunct)
+      right
+      have hpendEq : (drainInitiatorPerCoreView
+          (tlbShootdownBroadcastCoalescing stF executingCore
+            (shootdownTargets executingCore) (encodePageInvalidation asid vaddr))
+          executingCore [encodePageInvalidation asid vaddr]).tlbShootdown.pendingOnCore c =
+          (postShootdownRoundCoalescing stF.tlbShootdown executingCore
+            (shootdownTargets executingCore)
+            (encodePageInvalidation asid vaddr)).pendingOnCore c := rfl
+      have hcov := postShootdownRoundCoalescing_covered stF.tlbShootdown
+        executingCore (shootdownTargets_nodup executingCore)
+        (encodePageInvalidation asid vaddr) c
+        ((mem_shootdownTargets_iff executingCore c).mpr hc)
+      rcases hcov with hdirect | ⟨d', hd'mem, hd'op⟩
+      · refine ⟨(⟨encodePageInvalidation asid vaddr, executingCore⟩ :
+          TlbShootdownDescriptor), ?_, hb⟩
+        rw [hpendEq]; exact hdirect
+      · refine ⟨d', ?_, ?_⟩
+        · rw [hpendEq]; exact hd'mem
+        · rw [hd'op]; exact tlbEntryMatches_vmalle1 e
+    · -- not matched ⇒ still consistent (consistent disjunct)
+      have hNotMatch : ¬(e.asid = asid ∧ e.vaddr = vaddr) := by
+        rintro ⟨hA, hV⟩
+        exact hb (encodePageInvalidation_matches asid vaddr hA hV)
+      have hConF : tlbEntryConsistent stF e :=
+        vspaceUnmapPageWithFlush_tlbEntryConsistent_frame asid vaddr hObjK hAsidK
+          hMappingsWF hMappingsSize hUF' hNotMatch (hAllCon c e he)
+      exact Or.inl (tlbEntryConsistent_of_frame hObjPost hAsidPost hConF)
+
+/-- **WS-SM SM7.F**: the initiator-atomic unmap **preserves the pending-aware
+per-core TLB invariant** from a quiescent shootdown state — the precondition the
+live seam always satisfies (each round is drained + acknowledged in its catch-up
+before the next syscall, so `st.tlbShootdown` is quiescent at every dispatch).
+
+Per core:
+* the **initiator** (`executingCore`) has the operand retired on its own view by
+  the wrapper's `drainInitiatorPerCoreView`, so every survivor is a non-matching
+  entry whose consistency rides the unmap page-table frame
+  (`vspaceUnmapPageWithFlush_tlbEntryConsistent_frame`) — the *consistent*
+  disjunct;
+* a **remote** core keeps its view unchanged (its own SGI handler retires it in
+  the catch-up), but the round posts a covering descriptor to it
+  (`postShootdownRoundCoalescing_covered`), so a now-stale matching entry rides
+  the *pending* disjunct while a non-matching entry rides the *consistent* one.
+
+This is the theorem the SM7.F.2 invariant docstring's preservation story names:
+the operation makes an entry stale **and** covers it (locally by invalidation,
+remotely by a posted descriptor) atomically with the transition — so the 13th
+`proofLayerInvariantBundle` conjunct is *never* false in the committed
+intermediate state (PR #844 review-2 P2). -/
+theorem vspaceUnmapPageWithShootdownPerCore_preserves_tlbInvalidationConsistent_perCore
+    {executingCore : CoreId} {asid : SeLe4n.ASID} {vaddr : SeLe4n.VAddr}
+    {st st' : SystemState}
+    (hq : shootdownQuiescent st.tlbShootdown)
+    (hConsist : tlbInvalidationConsistent_perCore st)
+    (hObjK : st.objects.invExtK) (hAsidK : st.asidTable.invExtK)
+    (hMappingsWF : ∀ (oid : SeLe4n.ObjId) (root : VSpaceRoot),
+      st.objects[oid]? = some (.vspaceRoot root) → root.mappings.invExt)
+    (hMappingsSize : ∀ (oid : SeLe4n.ObjId) (root : VSpaceRoot),
+      st.objects[oid]? = some (.vspaceRoot root) →
+        root.mappings.size < root.mappings.capacity)
+    (hStep : vspaceUnmapPageWithShootdownPerCore executingCore asid vaddr st =
+      .ok ((), st')) :
+    tlbInvalidationConsistent_perCore st' := by
+  unfold vspaceUnmapPageWithShootdownPerCore at hStep
+  cases hUF : vspaceUnmapPageWithFlush asid vaddr st with
+  | error e =>
+      rw [(vspaceUnmapPageWithShootdown_error_iff executingCore asid vaddr st e).mpr hUF]
+        at hStep
+      simp at hStep
+  | ok pair =>
+      have hUF' : vspaceUnmapPageWithFlush asid vaddr st = .ok ((), pair.2) := hUF
+      rw [vspaceUnmapPageWithShootdown_ok executingCore asid vaddr hUF'] at hStep
+      simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+      subst hStep
+      exact vspaceUnmapPageWithShootdownPerCore_preserves_of_flush hq hConsist hObjK
+        hAsidK hMappingsWF hMappingsSize hUF'
 
 end SeLe4n.Kernel.Architecture

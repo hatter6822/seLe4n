@@ -361,6 +361,38 @@ theorem vspaceUnmapPageWithFlush_tlbShootdown_eq (asid : SeLe4n.ASID)
       rw [← hStep.2]
       exact vspaceUnmapPage_tlbShootdown_eq asid vaddr st pair.2 hBase
 
+/-- WS-SM SM7.F: `vspaceUnmapPage` frames the per-core TLB views — a page
+unmap bottoms out in `storeObject`, which never touches `perCoreTlb`. -/
+theorem vspaceUnmapPage_perCoreTlb_eq (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (st st' : SystemState)
+    (hStep : vspaceUnmapPage asid vaddr st = .ok ((), st')) :
+    st'.perCoreTlb = st.perCoreTlb := by
+  unfold vspaceUnmapPage at hStep
+  split at hStep
+  · cases hStep
+  · split at hStep
+    · cases hStep
+    · exact SeLe4n.Model.storeObject_perCoreTlb_eq _ _ _ _ hStep
+
+/-- WS-SM SM7.F: `vspaceUnmapPageWithFlush` frames the per-core TLB views —
+the flush composition adds only a scalar `tlb` write, leaving every core's
+`perCoreTlb` view untouched.  This is what makes the initiator's own view
+change in `vspaceUnmapPageWithShootdownPerCore` come *exclusively* from the
+wrapper's explicit `drainInitiatorPerCoreView` step. -/
+theorem vspaceUnmapPageWithFlush_perCoreTlb_eq (asid : SeLe4n.ASID)
+    (vaddr : SeLe4n.VAddr) (st st' : SystemState)
+    (hStep : vspaceUnmapPageWithFlush asid vaddr st = .ok ((), st')) :
+    st'.perCoreTlb = st.perCoreTlb := by
+  unfold vspaceUnmapPageWithFlush at hStep
+  revert hStep
+  cases hBase : vspaceUnmapPage asid vaddr st with
+  | error e => intro hStep; cases hStep
+  | ok pair =>
+      simp only [Except.ok.injEq, Prod.mk.injEq]
+      intro hStep
+      rw [← hStep.2]
+      exact vspaceUnmapPage_perCoreTlb_eq asid vaddr st pair.2 hBase
+
 /-- WS-SM SM7.B: `vspaceMapPageWithFlush` frames the TLB-shootdown state. -/
 theorem vspaceMapPageWithFlush_tlbShootdown_eq (asid : SeLe4n.ASID)
     (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr) (perms : PagePermissions)

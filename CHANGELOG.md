@@ -1,3 +1,51 @@
+## v0.32.86 — WS-SM SM7.F: the initiator-atomic per-core unmap seam (PR #844 review-2 P2)
+
+Closes the PR #844 review-2 P2 finding — a **model-fidelity gap** (not a live
+bug: `perCoreTlb` is empty on the live path today since fills are unwired, and
+no theorem claimed otherwise).  The v0.32.85 prose described the pending-aware
+invariant as "genuinely preserved" by `vspaceUnmapPageWithShootdown` posting the
+covering descriptor "in the same step".  That over-claims for the **initiator's
+own core**: `vspaceUnmapPageWithShootdown executingCore` posts covering
+descriptors only to `shootdownTargets executingCore`, which **excludes** the
+initiator — so, once fills are wired, the initiator's own cached entry would be
+stale **and** uncovered (its queue holds no descriptor) in the committed state
+between the unmap transition and the deferred catch-up drain
+(`drainInitiatorPerCoreView`), making the 13th `proofLayerInvariantBundle`
+conjunct false in that window.
+
+**The fix (implement-the-improvement, not a doc weakening).**  A new verified
+production seam `vspaceUnmapPageWithShootdownPerCore` (in
+`Architecture/PerCoreTlbModel.lean`) that retires the operand on the
+*initiator's own* `perCoreTlb` view **atomically** with the round posting
+(reusing `drainInitiatorPerCoreView` — modelling the initiator's local `tlbi`,
+which hardware executes synchronously as part of the round), on top of the
+existing `vspaceUnmapPageWithShootdown` (page-table erase + scalar flush + round
+posting to the remote targets).  With it, the pending-aware invariant is
+**genuinely preserved atomically** by the transition:
+`vspaceUnmapPageWithShootdownPerCore_preserves_tlbInvalidationConsistent_perCore`
+(quiescent pre-state — the precondition every live dispatch satisfies, matching
+the existing round capstones) proves, per core: the **initiator's** survivors
+are non-matching entries whose consistency rides the unmap page-table frame
+(`vspaceUnmapPageWithFlush_tlbEntryConsistent_frame`, the per-core lift of the
+scalar `vspaceUnmapPageWithFlush_preserves_tlbConsistent`); a **remote** core's
+now-stale matching entry rides the freshly-posted descriptor
+(`postShootdownRoundCoalescing_covered`), a non-matching entry stays consistent.
+
+Supporting leaf frames: `storeObject_perCoreTlb_eq` (`Model/State.lean`) +
+`vspaceUnmapPage{,WithFlush}_perCoreTlb_eq` (`Architecture/VSpace.lean`) — a page
+unmap bottoms out in `storeObject`, which never touches `perCoreTlb`, so the
+only per-core view change in the wrapper is its explicit initiator invalidation.
+
+Prose corrected to match: the SM7.F.2 invariant docstring and the v0.32.85
+CHANGELOG entry no longer say the plain `vspaceUnmapPageWithShootdown` covers the
+initiator "in the same step".  Trace byte-identical (`perCoreTlb` ∉
+`projectState`).  Remaining SM7.F.4 obligation (tracked in
+`docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` §SM7.F): wire the live `.vspaceUnmap`
+dispatch through `vspaceUnmapPageWithShootdownPerCore` (and its map-remap sibling)
+once translation-walk fills are live, so the atomic seam runs on the real path.
+Tests: `SmpTlbShootdownSuite` §5.6 (initiator-atomic unmap over a real
+page-table-backed state: initiator view retired locally, remote target covered).
+
 ## v0.32.85 — WS-SM SM7.F.2: the pending-aware (honest) per-core TLB invariant
 
 Lands SM7.F.2 — the honest form of the per-core TLB consistency invariant,
@@ -17,10 +65,14 @@ tlbEntryMatches desc.op e` — every cached entry is either consistent with the
 current page tables **or covered by a pending shootdown descriptor for its
 core**.  A stale entry is admissible exactly when a shootdown is already
 scheduled to retire it.  This is the form genuinely preserved by the real
-operations: `vspaceUnmapPageWithShootdown` makes an entry stale AND posts the
-covering descriptor in the same step (the pending disjunct), and the
-`.tlbShootdownReq` handler drains a core's whole queue so survivors must be
-consistent (the consistent disjunct).
+operations: the initiator-atomic unmap makes an entry stale AND covers it
+atomically (locally by invalidating the initiator's own view, remotely by the
+posted descriptor — the pending disjunct), and the `.tlbShootdownReq` handler
+drains a remote core's whole queue so its survivors must be consistent (the
+consistent disjunct).  (Note: the plain `vspaceUnmapPageWithShootdown` posts
+covering descriptors to the *remote* targets only — `shootdownTargets` excludes
+the initiator — so covering the initiator's own view atomically is the job of
+the `PerCore` wrapper landed in v0.32.86; see that entry.)
 
 **Compositional preservation.**  Two transport levers — `tlbEntryOk_of_frame`
 (page-table frame + pending-superset) and `tlbEntryConsistent_of_frame` — plus

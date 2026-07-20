@@ -2053,6 +2053,21 @@ theorem storeObject_tlbShootdown_eq
     pair.2.tlbShootdown = st.tlbShootdown := by
   unfold storeObject at hStore; cases hStore; rfl
 
+/-- WS-SM SM7.F: `storeObject` only touches the object store and lifecycle
+metadata — the per-core TLB views are framed.  Leaf lemma of the
+`vspaceUnmapPageWithShootdownPerCore` initiator-atomic preservation chain:
+an object-mutating page-table transition never touches `perCoreTlb`, so the
+only per-core view change in a shootdown-aware operation is the explicit
+initiator invalidation the wrapper applies. -/
+theorem storeObject_perCoreTlb_eq
+    (st : SystemState)
+    (id : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (pair : Unit × SystemState)
+    (hStore : storeObject id obj st = .ok pair) :
+    pair.2.perCoreTlb = st.perCoreTlb := by
+  unfold storeObject at hStore; cases hStore; rfl
+
 theorem storeObject_objects_eq
     (st st' : SystemState)
     (id : SeLe4n.ObjId)

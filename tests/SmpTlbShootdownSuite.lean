@@ -554,6 +554,12 @@ open SeLe4n.Kernel.Concurrency
 #check @tlbEntryConsistentCheck
 #check @tlbEntryOkCheck
 #check @tlbEntryOkCheck_iff
+-- SM7.F.2a: the initiator-atomic unmap seam + its preservation (PR #844 P2):
+#check @vspaceUnmapPageWithShootdownPerCore
+#check @vspaceUnmapPageWithShootdownPerCore_preserves_tlbInvalidationConsistent_perCore
+#check @vspaceUnmapPageWithFlush_tlbEntryConsistent_frame
+#check @SeLe4n.Kernel.Architecture.vspaceUnmapPageWithFlush_perCoreTlb_eq
+#check @SeLe4n.Model.storeObject_perCoreTlb_eq
 -- SM7.C NI: a per-core TLB write is projection-invisible (no covert channel):
 #check @SeLe4n.Kernel.perCoreTlb_write_preserves_projection
 
@@ -1947,6 +1953,52 @@ private def runPerCoreTlbPendingAwareChecks : IO Unit := do
           (tlbInvalidationConsistentCheck_perCore stPending)
 
 -- ----------------------------------------------------------------------------
+-- §5.6  SM7.F.2a — the initiator-atomic unmap: the initiator's own view is
+--        retired atomically with the round posting (PR #844 review-2 P2).
+-- ----------------------------------------------------------------------------
+
+private def runPerCoreTlbInitiatorAtomicChecks : IO Unit := do
+  IO.println "-- §5.6 per-core TLB: initiator-atomic unmap (SM7.F.2a, PR #844 P2)"
+  match vspaceMapPageWithFlush asid5 vaddrPage (SeLe4n.PAddr.ofNat 0x2000)
+      .readOnly (udState []) with
+  | .error _ => assertBool "the scenario maps the page" false
+  | .ok ((), stMapped) => do
+    -- Fill the initiator (core0) AND a remote (core1) with the translation.
+    let stFilled := tlbFillOnCore (tlbFillOnCore stMapped core0 asid5 vaddrPage)
+      core1 asid5 vaddrPage
+    assertBool "both the initiator and a remote core cache the translation pre-unmap"
+      ((tlbOnCore stFilled core0).entries.any (fun e => e.asid == asid5 && e.vaddr == vaddrPage) &&
+       (tlbOnCore stFilled core1).entries.any (fun e => e.asid == asid5 && e.vaddr == vaddrPage))
+    -- The initiator-atomic unmap: erase the page, post to remote targets, AND
+    -- retire the initiator's own view — all in one committed transition.
+    match vspaceUnmapPageWithShootdownPerCore core0 asid5 vaddrPage stFilled with
+    | .error _ => assertBool "the initiator-atomic unmap succeeds" false
+    | .ok ((), stAtomic) => do
+      -- The initiator's own stale entry is GONE (retired atomically).
+      assertBool "the initiator's own view no longer holds the unmapped translation (retired atomically)"
+        (!((tlbOnCore stAtomic core0).entries.any (fun e => e.asid == asid5 && e.vaddr == vaddrPage)))
+      -- A remote keeps the (now-stale) entry, but the round posted a covering descriptor to it.
+      assertBool "a remote core keeps its cached entry but is covered by the posted descriptor"
+        ((tlbOnCore stAtomic core1).entries.any (fun e => e.asid == asid5 && e.vaddr == vaddrPage) &&
+         (stAtomic.tlbShootdown.pendingOnCore core1).contains descUnmapPage)
+      -- The whole committed state satisfies the pending-aware per-core invariant:
+      -- initiator consistent (retired), remotes stale-but-covered.
+      assertBool "the committed initiator-atomic state keeps the per-core checker GREEN (F.2a)"
+        (tlbInvalidationConsistentCheck_perCore stAtomic)
+    -- Contrast: the plain unmap-with-shootdown leaves the initiator stale-and-uncovered
+    -- (shootdownTargets EXCLUDES the initiator), so the checker is RED — the exact
+    -- gap the PerCore wrapper closes.
+    match vspaceUnmapPageWithShootdown core0 asid5 vaddrPage stFilled with
+    | .error _ => assertBool "the plain unmap-with-shootdown succeeds" false
+    | .ok ((), stPlain) => do
+      assertBool "the plain unmap leaves the initiator's own view stale (no local retirement)"
+        ((tlbOnCore stPlain core0).entries.any (fun e => e.asid == asid5 && e.vaddr == vaddrPage))
+      assertBool "the plain unmap posts NO covering descriptor to the initiator's own queue"
+        ((stPlain.tlbShootdown.pendingOnCore core0).isEmpty)
+      assertBool "so the plain unmap leaves the per-core checker RED — the gap the PerCore wrapper closes"
+        (!(tlbInvalidationConsistentCheck_perCore stPlain))
+
+-- ----------------------------------------------------------------------------
 -- Runner
 -- ----------------------------------------------------------------------------
 
@@ -1981,6 +2033,7 @@ def runSmpTlbShootdownChecks : IO Unit := do
   runPerCoreTlbOperationalChecks
   runPerCoreTlbFillChecks
   runPerCoreTlbPendingAwareChecks
+  runPerCoreTlbInitiatorAtomicChecks
   IO.println "===================================================="
   IO.println "All SM7.A + SM7.B + SM7.C TLB shootdown + per-core model checks PASS."
 
