@@ -72,15 +72,34 @@ use-after-unmap closure).  **SM7.C.7** `tlbConsistency_cross_subsystem` —
 the memory-subsystem capstone (protocol × TLB-model × page-tables): a
 covering invalidation both removes every stale entry on every core AND
 preserves per-core consistency.  **SM7.C.8**: `tests/SmpTlbShootdownSuite.lean`
-§1 (49 `#check` anchors — the 30 at the v0.32.80 landing plus the
-operative-cut/completeness/NI symbols the completion cut added), §2
-(elaboration witnesses), §5.1–§5.2 (15 runtime assertions) + §5.3 (11).
+§1 (60 `#check` anchors — the v0.32.80 landing + the operative-cut/
+completeness/NI symbols + the PR #844 initiator-drain/capstone symbols),
+§2 (elaboration witnesses), §5.1–§5.2 (15 runtime assertions) + §5.3 (16,
+incl. the PR #844 live-catch-up initiator drain).
 Information flow: `perCoreTlb` kept out of
 `projectState` (a TLB view is a covert timing channel, like
 `machine.timer`).  Zero sorry/axiom; golden trace byte-identical.
 Round-generation-tagged descriptors (the SM7.B v0.32.79 model-fidelity
 debt) remains a separately-scoped follow-on (orthogonal to the per-core
 view model; no hardware hazard).
+
+**SM7.C PR #844 review cut (v0.32.83) — initiator drain + view-outcome
+demotion.**  Two Codex review findings, both verified valid against the
+code and fixed faithfully (neither a live safety bug — `perCoreTlb` is
+empty on the live path).  **P1**: the live `completeShootdownRounds`
+catch-up folded the per-core handler only over `shootdownTargets execCore`
+(which excludes the initiator), leaving the initiator's own `perCoreTlb`
+view stale even though its inner-shareable `tlbiForSharing` broadcast
+reaches the issuing PE.  New `drainInitiatorPerCoreView` (perCoreTlb-only,
+so trace-safe) + `shootdownCatchUpPerCore` (target fold **and** initiator
+drain); the seam now runs `shootdownCatchUpPerCore st execCore collapsed`,
+proven trace-byte-identical (`shootdownCatchUpPerCore_agrees_singleView`)
+and faithful (`shootdownCatchUpPerCore_initiator_view`).  **P2**:
+`tlbInvalidateOnAllCores` is documented as the eager view-outcome
+abstraction (not a completed round — views run ahead of the ack protocol),
+pointing at the operative drains-at-ack `shootdownRoundPerCore`; the new
+`shootdownRoundPerCore_cross_subsystem` gives the C.7 capstone on the
+faithful round.  Golden trace byte-identical; zero sorry/axiom.
 
 **SM7.C completion cut (v0.32.81) — the model made operative on the live
 path.**  v0.32.80 landed `perCoreTlb` as a parallel spec model: the view

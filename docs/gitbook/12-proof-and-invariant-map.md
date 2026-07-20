@@ -809,6 +809,21 @@ the live shootdown path; v0.32.80 landed it as a parallel spec):
   `FrozenSystemState.perCoreTlb` is required (no default — a silent
   freeze-drop is a compile error)
 
+Per-core TLB model — v0.32.83 PR #844 review cut (initiator drain +
+view-outcome demotion):
+- `drainInitiatorPerCoreView` / `shootdownCatchUpPerCore` — the live
+  catch-up now retires the round's operands on the **initiator's** own
+  per-core view too (the inner-shareable `tlbiForSharing` reaches the
+  issuing PE; `shootdownTargets` excludes it), perCoreTlb-only so
+  trace-safe (`shootdownCatchUpPerCore_agrees_singleView` = the SM7.B
+  single-view target fold's `tlb`/`tlbShootdown` effect;
+  `shootdownCatchUpPerCore_initiator_view` = faithfulness); the live
+  `completeShootdownRounds` seam runs `shootdownCatchUpPerCore`
+- `shootdownRoundPerCore_cross_subsystem` — the C.7 capstone on the
+  **operative** drains-at-ack round; `tlbInvalidateOnAllCores` is
+  documented as the eager view-outcome abstraction (views ahead of the
+  ack protocol), not a completed round
+
 TLB shootdown state layer (`TlbShootdown.lean`, WS-SM SM7.A — production,
 mounted as `SystemState.tlbShootdown`; the SM7.B protocol transitions are
 its first mutators):

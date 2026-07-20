@@ -1,3 +1,50 @@
+## v0.32.83 — WS-SM SM7.C PR #844 review cut: initiator per-core drain + view-outcome demotion
+
+Two model-fidelity findings from the Codex review on PR #844, both
+verified valid against the code and fixed faithfully.  Zero sorry/axiom;
+golden trace **byte-identical** (verified); full build clean (398 jobs,
+zero warnings); suite green.  Neither was a live safety bug — `perCoreTlb`
+is always empty on the live path (fills happen in hardware) — but both
+were genuine per-core-model fidelity gaps.
+
+**P1 — apply the local invalidation to the initiator (live seam).**  The
+live `completeShootdownRounds` catch-up folded the per-core handler only
+over `shootdownTargets execCore`, which **excludes** the initiator; yet the
+initiator's `tlbiForSharing` loop is an inner-shareable broadcast that
+reaches the issuing PE, so the initiator's own `perCoreTlb` view must
+retire the operands too.  New `drainInitiatorPerCoreView` (perCoreTlb-only
+— the scalar `st.tlb` boot-core view was already retired in the dispatch)
++ `shootdownCatchUpPerCore` (the complete live catch-up: the non-initiator
+target fold **and** the initiator drain).  The live seam now runs
+`shootdownCatchUpPerCore st execCore collapsed`.  Trace-safe by proof:
+`shootdownCatchUpPerCore_agrees_singleView` shows the catch-up's `tlb` /
+`tlbShootdown` effect is exactly the SM7.B single-view target fold's (the
+initiator drain touches only the projection-invisible `perCoreTlb`).
+Faithfulness: `shootdownCatchUpPerCore_initiator_view` (the initiator's own
+view now retires the operands) + `_preserves_tlbInvalidationConsistent_perCore`.
+Supporting: `drainInitiatorPerCoreView_{tlb,tlbShootdown,frame,tlbOnCore_self,
+tlbOnCore_ne,subset,preserves_…}`, `foldl_handleTlbShootdownReqOnCorePerCore_
+{tlbOnCore_notMem,preserves_consistent}`.
+
+**P2 — do not read the eager `tlbInvalidateOnAllCores` as a completed
+round.**  `tlbInvalidateOnAllCores` posts the broadcast (targets pending,
+acks down) while *eagerly* evolving the views, so its post-state has the
+views ahead of the ack protocol — an intentional **view-outcome
+abstraction** for the SM7.C.6/C.7 view theorems, not a real intermediate
+protocol state.  Its docstring is corrected to say so explicitly and to
+point at the operative, drains-at-ack round `shootdownRoundPerCore` (which
+the live seam realises).  New `shootdownRoundPerCore_cross_subsystem` — the
+completed-round analogue of `tlbConsistency_cross_subsystem` (removes every
+covered entry on every core AND preserves per-core consistency), so the
+C.7 capstone now exists on the faithful round too.
+
+Tests: `tests/SmpTlbShootdownSuite.lean` §5.3 gains the live-catch-up
+round (initiator-view drain — seeded so the drain is non-vacuous — plus
+remote-target drains, the computed trace-safety check, and the operative
+capstone); §1 gains 11 `#check` anchors over the new symbols.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.C
+
 ## v0.32.82 — WS-SM SM7.C deep-audit closure: documentation accuracy corrections
 
 A deep, code-first audit of the SM7.C per-core TLB model (both the

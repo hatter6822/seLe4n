@@ -716,6 +716,34 @@ every completeness gap the landing left.  Zero sorry/axiom; golden trace
   anchors over the operational/completeness/NI symbols; Tier-3 anchors for
   the operational theorems and the live-seam per-core wiring.
 
+#### SM7.C PR #844 review cut (v0.32.83) — initiator drain + view-outcome demotion
+
+Two Codex review findings on PR #844, both verified valid against the code
+and fixed faithfully (neither was a live safety bug — `perCoreTlb` is always
+empty on the live path — but both were genuine per-core-model fidelity gaps).
+Zero sorry/axiom; golden trace **byte-identical** (verified).
+
+* **P1 — apply the local invalidation to the initiator (live seam).**  The
+  live `completeShootdownRounds` catch-up folded the per-core handler only
+  over `shootdownTargets execCore` (which *excludes* the initiator), so the
+  initiator's own `perCoreTlb` view was left stale even though its
+  inner-shareable `tlbiForSharing` broadcast reaches the issuing PE.  New
+  `drainInitiatorPerCoreView` (perCoreTlb-only — the scalar `st.tlb` was
+  already retired in the dispatch, so it is trace-safe) + `shootdownCatchUpPerCore`
+  (the complete live catch-up: the non-initiator target fold **and** the
+  initiator drain); the seam now runs `shootdownCatchUpPerCore st execCore
+  collapsed`.  Trace-safety proven by `shootdownCatchUpPerCore_agrees_singleView`
+  (the `tlb`/`tlbShootdown` effect is exactly the SM7.B single-view target
+  fold's); faithfulness by `shootdownCatchUpPerCore_initiator_view`
+  (+ `_preserves_tlbInvalidationConsistent_perCore`).
+* **P2 — the eager `tlbInvalidateOnAllCores` is a view-outcome abstraction,
+  not a completed round.**  It posts the broadcast (targets pending, acks
+  down) while eagerly evolving the views; its docstring is corrected to say
+  so explicitly and to point at the operative drains-at-ack round
+  `shootdownRoundPerCore` (which the live seam realises), and the new
+  `shootdownRoundPerCore_cross_subsystem` gives the C.7 capstone on the
+  faithful completed round.
+
 ### SM7.D — Cache maintenance broadcast (2 PRs, 4 sub-tasks)
 
 | Sub | Description | Files | Est |

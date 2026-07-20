@@ -522,6 +522,19 @@ open SeLe4n.Kernel.Concurrency
 #check @shootdownRoundPerCore_tlb_eq
 #check @shootdownRoundPerCore_invalidates_perCore
 #check @shootdownRoundPerCore_preserves_tlbInvalidationConsistent_perCore
+-- SM7.C live catch-up incl. the initiator's own drain (PR #844 P1) + the
+-- operative cross-subsystem capstone (PR #844 P2):
+#check @drainInitiatorPerCoreView
+#check @drainInitiatorPerCoreView_tlbOnCore_self
+#check @drainInitiatorPerCoreView_tlbOnCore_ne
+#check @drainInitiatorPerCoreView_preserves_tlbInvalidationConsistent_perCore
+#check @foldl_handleTlbShootdownReqOnCorePerCore_tlbOnCore_notMem
+#check @foldl_handleTlbShootdownReqOnCorePerCore_preserves_consistent
+#check @shootdownCatchUpPerCore
+#check @shootdownCatchUpPerCore_agrees_singleView
+#check @shootdownCatchUpPerCore_initiator_view
+#check @shootdownCatchUpPerCore_preserves_tlbInvalidationConsistent_perCore
+#check @shootdownRoundPerCore_cross_subsystem
 -- SM7.C NI: a per-core TLB write is projection-invisible (no covert channel):
 #check @SeLe4n.Kernel.perCoreTlb_write_preserves_projection
 
@@ -1819,6 +1832,36 @@ private def runPerCoreTlbOperationalChecks : IO Unit := do
   assertBool "a hardware-walker fill on the boot state keeps the checker green"
     (tlbInvalidationConsistentCheck_perCore
       (tlbInsertOnCore (default : SeLe4n.Model.SystemState) core1 entryTarget))
+  -- PR #844 P1: the live catch-up (`shootdownCatchUpPerCore`, what
+  -- `completeShootdownRounds` runs) drains the INITIATOR's own view too — the
+  -- `tlbiForSharing` broadcast reaches the issuing PE, and `shootdownTargets`
+  -- excludes it.  Seed a posted round, then run the catch-up.
+  match tlbShootdownBroadcast perCoreSeeded core0 (shootdownTargets core0)
+      opUnmapTarget with
+  | none => assertBool "the round posts from the quiescent seed" false
+  | some (posted, _) => do
+    -- Sanity: the initiator's pre-catch-up view still HOLDS the target entry
+    -- (the broadcast only posts to `tlbShootdown`; it does not touch views),
+    -- so the drain below is non-vacuous.
+    assertBool "the initiator still holds the stale entry before the catch-up"
+      (tlbHasEntry (tlbOnCore posted core0) entryTarget)
+    let caught := shootdownCatchUpPerCore posted core0 [opUnmapTarget]
+    assertBool "the live catch-up retires the operand on the INITIATOR's own view (PR #844 P1)"
+      (!(tlbHasEntry (tlbOnCore caught core0) entryTarget))
+    assertBool "the live catch-up also drains every remote target's view"
+      ([core1, core2, core3].all fun c => !(tlbHasEntry (tlbOnCore caught c) entryTarget))
+    -- Trace-safety (computed): the catch-up's `tlbShootdown` effect equals the
+    -- SM7.B single-view target fold's — the initiator drain is perCoreTlb-only.
+    assertBool "the catch-up is trace-safe (shootdown state = single-view target fold)"
+      (decide (caught.tlbShootdown =
+        ((shootdownTargets core0).foldl handleTlbShootdownReqOnCore posted).tlbShootdown))
+    -- PR #844 P2: the operative cross-subsystem capstone on the real round.
+    match shootdownRoundPerCore perCoreSeeded core0 (shootdownTargets core0)
+        opUnmapTarget with
+    | none => assertBool "the operative round succeeds" false
+    | some final =>
+      assertBool "the operative round removes the covered entry from every core (capstone)"
+        (allCores.all fun c => !(tlbHasEntry (tlbOnCore final c) entryTarget))
 
 -- ----------------------------------------------------------------------------
 -- Runner

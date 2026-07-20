@@ -245,7 +245,21 @@ This is what wires the mounted `perCoreTlb` field into the shootdown
 state machine: the same round both posts to `tlbShootdown` and retires
 the operand on every reached core's view.  Fail-closed (`none`) exactly
 when the broadcast's posting fold overflows — unreachable from a
-quiescent state (`tlbInvalidateOnAllCores_isSome_of_quiescent`). -/
+quiescent state (`tlbInvalidateOnAllCores_isSome_of_quiescent`).
+
+**This is the eager _view-outcome abstraction_, NOT a completed round**
+(PR #844 P2): it posts the round (leaving the targets' descriptors
+pending and their acks down) while *eagerly* showing the resulting views,
+so the post-state deliberately has the views ahead of the ack protocol —
+it exists to state the SM7.C.6/C.7 *view* theorems (`tlbShootdown_invalidates_perCore`
+/ `tlbConsistency_cross_subsystem`: "after a covering invalidation no core
+retains a covered entry").  The **operative, drains-at-ack** round — the one
+the live `completeShootdownRounds` seam realises, which evolves each target's
+view *at* its handler acknowledgment and leaves the round quiescent — is
+`shootdownRoundPerCore` (with `shootdownRoundPerCore_invalidates_perCore`
+/ `_preserves_tlbInvalidationConsistent_perCore` / `shootdownRoundPerCore_cross_subsystem`
+the faithful completed-round counterparts).  Do not read a `tlbInvalidateOnAllCores`
+post-state as a real intermediate protocol state. -/
 def tlbInvalidateOnAllCores (st : SystemState) (initiator : CoreId)
     (targets : List CoreId) (op : TlbInvalidation) :
     Option (SystemState × List (CoreId × SgiKind)) :=
@@ -995,5 +1009,203 @@ theorem shootdownRoundPerCore_preserves_tlbInvalidationConsistent_perCore
   split at he
   · exact mem_of_mem_applyTlbInvalidation he
   · exact he
+
+-- ============================================================================
+-- SM7.C live catch-up — the initiator's own per-core drain (PR #844 P1)
+--
+-- The live `completeShootdownRounds` fold drains every *non-initiator*
+-- target's posted queue (`shootdownTargets execCore` excludes the initiator).
+-- But the initiator's `tlbiForSharing` loop runs an inner-shareable broadcast,
+-- which reaches the issuing PE too — so the initiator's own per-core view must
+-- also retire the operands.  The scalar boot-core `st.tlb` was already retired
+-- in the dispatch, so the initiator's per-core drain is `perCoreTlb`-only and
+-- therefore trace-safe.  This closes the SM7.C.1 asymmetry the SM7.B single-view
+-- model could not express (one `st.tlb` conflated all cores).
+-- ============================================================================
+
+/-- **WS-SM SM7.C** (initiator local drain, `perCoreTlb`-only): retire `ops` on
+core `c`'s own per-core view.  The inner-shareable `tlbiForSharing` broadcast
+reaches the issuing PE, so the initiator retires the operands on its own view;
+the scalar `st.tlb` boot-core view was already retired in the dispatch, so this
+touches `perCoreTlb` **only** (`st.tlb` / `st.tlbShootdown` frame — trace-safe). -/
+def drainInitiatorPerCoreView (st : SystemState) (c : CoreId)
+    (ops : List TlbInvalidation) : SystemState :=
+  setTlbOnCore st c (applyTlbInvalidations (tlbOnCore st c) ops)
+
+/-- **WS-SM SM7.C**: the initiator drain is `perCoreTlb`-only — `st.tlb` frames. -/
+@[simp] theorem drainInitiatorPerCoreView_tlb (st : SystemState) (c : CoreId)
+    (ops : List TlbInvalidation) :
+    (drainInitiatorPerCoreView st c ops).tlb = st.tlb := rfl
+
+/-- **WS-SM SM7.C**: the initiator drain frames the shootdown state. -/
+@[simp] theorem drainInitiatorPerCoreView_tlbShootdown (st : SystemState)
+    (c : CoreId) (ops : List TlbInvalidation) :
+    (drainInitiatorPerCoreView st c ops).tlbShootdown = st.tlbShootdown := rfl
+
+/-- **WS-SM SM7.C**: the initiator drain frames the page-table subsystem. -/
+theorem drainInitiatorPerCoreView_frame (st : SystemState) (c : CoreId)
+    (ops : List TlbInvalidation) :
+    (drainInitiatorPerCoreView st c ops).objects = st.objects ∧
+    (drainInitiatorPerCoreView st c ops).asidTable = st.asidTable := ⟨rfl, rfl⟩
+
+/-- **WS-SM SM7.C**: after the initiator drain, the initiator's own view has
+retired the operands. -/
+theorem drainInitiatorPerCoreView_tlbOnCore_self (st : SystemState) (c : CoreId)
+    (ops : List TlbInvalidation) :
+    tlbOnCore (drainInitiatorPerCoreView st c ops) c =
+      applyTlbInvalidations (tlbOnCore st c) ops := by
+  simp [drainInitiatorPerCoreView]
+
+/-- **WS-SM SM7.C**: the initiator drain leaves every other core's view
+untouched. -/
+theorem drainInitiatorPerCoreView_tlbOnCore_ne (st : SystemState)
+    {c c' : CoreId} (ops : List TlbInvalidation) (h : c ≠ c') :
+    tlbOnCore (drainInitiatorPerCoreView st c ops) c' = tlbOnCore st c' :=
+  setTlbOnCore_tlbOnCore_ne st _ h
+
+/-- **WS-SM SM7.C**: the initiator drain never adds an entry to any view. -/
+theorem drainInitiatorPerCoreView_subset (st : SystemState) (c c' : CoreId)
+    (ops : List TlbInvalidation) {e : TlbEntry}
+    (h : e ∈ (tlbOnCore (drainInitiatorPerCoreView st c ops) c').entries) :
+    e ∈ (tlbOnCore st c').entries := by
+  by_cases hcc : c = c'
+  · subst hcc
+    rw [drainInitiatorPerCoreView_tlbOnCore_self] at h
+    exact mem_of_mem_applyTlbInvalidations h
+  · rw [drainInitiatorPerCoreView_tlbOnCore_ne st ops hcc] at h
+    exact h
+
+/-- **WS-SM SM7.C**: the initiator drain preserves the per-core invariant —
+invalidation only removes entries and frames the page tables. -/
+theorem drainInitiatorPerCoreView_preserves_tlbInvalidationConsistent_perCore
+    (st : SystemState) (c : CoreId) (ops : List TlbInvalidation)
+    (h : tlbInvalidationConsistent_perCore st) :
+    tlbInvalidationConsistent_perCore (drainInitiatorPerCoreView st c ops) := by
+  intro c'
+  refine tlbConsistent_of_subset_of_state_frame
+    (drainInitiatorPerCoreView_frame st c ops).1
+    (drainInitiatorPerCoreView_frame st c ops).2 ?_ (h c')
+  intro e he
+  exact drainInitiatorPerCoreView_subset st c c' ops he
+
+/-- **WS-SM SM7.C**: folding the per-core handler over a target list leaves the
+view of any core NOT in that list unchanged — a handler is a this-core event.
+The initiator (excluded from `shootdownTargets`) is such a core. -/
+theorem foldl_handleTlbShootdownReqOnCorePerCore_tlbOnCore_notMem :
+    ∀ (cs : List CoreId) (st : SystemState) (c : CoreId), c ∉ cs →
+      tlbOnCore (cs.foldl handleTlbShootdownReqOnCorePerCore st) c = tlbOnCore st c := by
+  intro cs
+  induction cs with
+  | nil => intro st c _; rfl
+  | cons t ts ih =>
+    intro st c hnotin
+    rw [List.mem_cons, not_or] at hnotin
+    obtain ⟨hne, hnotin'⟩ := hnotin
+    rw [List.foldl_cons, ih (handleTlbShootdownReqOnCorePerCore st t) c hnotin']
+    exact handleTlbShootdownReqOnCorePerCore_tlbOnCore_ne st (Ne.symm hne)
+
+/-- **WS-SM SM7.C**: folding the per-core handler over any target list preserves
+the per-core invariant (every step does — `_preserves_…`). -/
+theorem foldl_handleTlbShootdownReqOnCorePerCore_preserves_consistent :
+    ∀ (cs : List CoreId) (st : SystemState),
+      tlbInvalidationConsistent_perCore st →
+      tlbInvalidationConsistent_perCore (cs.foldl handleTlbShootdownReqOnCorePerCore st) := by
+  intro cs
+  induction cs with
+  | nil => intro st h; exact h
+  | cons t ts ih =>
+    intro st h
+    rw [List.foldl_cons]
+    exact ih _ (handleTlbShootdownReqOnCorePerCore_preserves_tlbInvalidationConsistent_perCore st t h)
+
+/-- **WS-SM SM7.C** (the live per-core catch-up — PR #844 P1): the complete
+per-core model effect of a live shootdown round's catch-up.  Drains every
+non-initiator target's posted queue onto its own view
+(`handleTlbShootdownReqOnCorePerCore`) **and** retires the round's operands on
+the *initiator's* own view (`drainInitiatorPerCoreView` — the inner-shareable
+broadcast reaches the issuing PE).  This is exactly what
+`SyscallDispatchEntry.completeShootdownRounds` runs.  Its `tlb` / `tlbShootdown`
+effect is definitionally the SM7.B single-view target-fold's (the initiator
+drain is `perCoreTlb`-only), so wiring it into the live seam is trace-safe;
+adding the initiator drain closes the SM7.C.1 asymmetry the single-view model
+could not express. -/
+def shootdownCatchUpPerCore (st : SystemState) (execCore : CoreId)
+    (ops : List TlbInvalidation) : SystemState :=
+  drainInitiatorPerCoreView
+    ((shootdownTargets execCore).foldl handleTlbShootdownReqOnCorePerCore st)
+    execCore ops
+
+/-- **WS-SM SM7.C**: the live catch-up's `tlb` effect is the target fold's. -/
+@[simp] theorem shootdownCatchUpPerCore_tlb (st : SystemState)
+    (execCore : CoreId) (ops : List TlbInvalidation) :
+    (shootdownCatchUpPerCore st execCore ops).tlb =
+      ((shootdownTargets execCore).foldl handleTlbShootdownReqOnCorePerCore st).tlb := rfl
+
+/-- **WS-SM SM7.C**: the live catch-up's shootdown-state effect is the target
+fold's. -/
+@[simp] theorem shootdownCatchUpPerCore_tlbShootdown (st : SystemState)
+    (execCore : CoreId) (ops : List TlbInvalidation) :
+    (shootdownCatchUpPerCore st execCore ops).tlbShootdown =
+      ((shootdownTargets execCore).foldl handleTlbShootdownReqOnCorePerCore st).tlbShootdown := rfl
+
+/-- **WS-SM SM7.C** (trace-safety — PR #844 P1): the live catch-up's `tlb` /
+`tlbShootdown` effect equals the SM7.B **single-view** target fold's — the
+initiator per-core drain adds nothing observable.  This is what keeps the
+golden trace byte-identical after wiring the initiator drain into the live
+seam: the field that additionally evolves (`perCoreTlb`) is projection-invisible
+(`perCoreTlb_write_preserves_projection`). -/
+theorem shootdownCatchUpPerCore_agrees_singleView (st : SystemState)
+    (execCore : CoreId) (ops : List TlbInvalidation) :
+    (shootdownCatchUpPerCore st execCore ops).tlb =
+      ((shootdownTargets execCore).foldl handleTlbShootdownReqOnCore st).tlb ∧
+    (shootdownCatchUpPerCore st execCore ops).tlbShootdown =
+      ((shootdownTargets execCore).foldl handleTlbShootdownReqOnCore st).tlbShootdown := by
+  rw [shootdownCatchUpPerCore_tlb, shootdownCatchUpPerCore_tlbShootdown]
+  exact foldl_handleTlbShootdownReqOnCorePerCore_agrees (shootdownTargets execCore) st st rfl rfl
+
+/-- **WS-SM SM7.C** (faithfulness — PR #844 P1): after the live catch-up the
+*initiator's* own per-core view has retired the round's operands — the fix the
+review asked for.  The target fold excludes the initiator
+(`shootdownTargets` filters it out), so the drain reads the initiator's
+pre-round view. -/
+theorem shootdownCatchUpPerCore_initiator_view (st : SystemState)
+    (execCore : CoreId) (ops : List TlbInvalidation) :
+    tlbOnCore (shootdownCatchUpPerCore st execCore ops) execCore =
+      applyTlbInvalidations (tlbOnCore st execCore) ops := by
+  unfold shootdownCatchUpPerCore
+  rw [drainInitiatorPerCoreView_tlbOnCore_self]
+  have hnotin : execCore ∉ shootdownTargets execCore := by
+    rw [mem_shootdownTargets_iff]; exact fun h => h rfl
+  rw [foldl_handleTlbShootdownReqOnCorePerCore_tlbOnCore_notMem
+    (shootdownTargets execCore) st execCore hnotin]
+
+/-- **WS-SM SM7.C**: the live catch-up preserves the per-core invariant — both
+the target fold and the initiator drain do. -/
+theorem shootdownCatchUpPerCore_preserves_tlbInvalidationConsistent_perCore
+    (st : SystemState) (execCore : CoreId) (ops : List TlbInvalidation)
+    (h : tlbInvalidationConsistent_perCore st) :
+    tlbInvalidationConsistent_perCore (shootdownCatchUpPerCore st execCore ops) := by
+  unfold shootdownCatchUpPerCore
+  exact drainInitiatorPerCoreView_preserves_tlbInvalidationConsistent_perCore _ _ _
+    (foldl_handleTlbShootdownReqOnCorePerCore_preserves_consistent _ st h)
+
+/-- **WS-SM SM7.C.7** (operative cross-subsystem capstone — PR #844 P2): the
+memory-subsystem capstone on the **operative** round `shootdownRoundPerCore` —
+the one the live seam realises, which drains each target's queue at its handler
+acknowledgment (not the eager `tlbInvalidateOnAllCores` *view-outcome
+abstraction*).  A covering round on a per-core-consistent state both removes
+every covered entry on every core AND preserves per-core consistency — the
+completed-round analogue of `tlbConsistency_cross_subsystem`. -/
+theorem shootdownRoundPerCore_cross_subsystem {st final : SystemState}
+    {initiator : CoreId} {targets : List CoreId} {op : TlbInvalidation}
+    (hq : shootdownQuiescent st.tlbShootdown) (hnd : targets.Nodup)
+    (hcov : ∀ c : CoreId, c ≠ initiator → c ∈ targets)
+    (hConsist : tlbInvalidationConsistent_perCore st)
+    (h : shootdownRoundPerCore st initiator targets op = some final) :
+    (∀ (c : CoreId) {e : TlbEntry}, tlbEntryMatches op e = true →
+        e ∉ (tlbOnCore final c).entries) ∧
+    tlbInvalidationConsistent_perCore final :=
+  ⟨shootdownRoundPerCore_invalidates_perCore hq hnd hcov h,
+   shootdownRoundPerCore_preserves_tlbInvalidationConsistent_perCore hq hnd hConsist h⟩
 
 end SeLe4n.Kernel.Architecture
