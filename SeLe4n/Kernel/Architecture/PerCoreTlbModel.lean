@@ -1208,4 +1208,112 @@ theorem shootdownRoundPerCore_cross_subsystem {st final : SystemState}
   ⟨shootdownRoundPerCore_invalidates_perCore hq hnd hcov h,
    shootdownRoundPerCore_preserves_tlbInvalidationConsistent_perCore hq hnd hConsist h⟩
 
+-- ============================================================================
+-- SM7.F.1 — Translation-walk fill seam (PR #844 review-2 P2, Comment 2)
+--
+-- The hardware TLB *fill*: on a memory access whose translation misses the
+-- TLB, the page-table walker resolves the address and caches the translation.
+-- The v0.32.80–83 model only ever *drained* `perCoreTlb` on the live path
+-- (invalidations/shootdowns), never filled it, so a real cached translation
+-- could not be represented.  `tlbFillOnCore` is the fill: it resolves
+-- `(asid, vaddr)` through the CURRENT page tables and caches the
+-- *consistent-by-construction* translation, so a walk can never install a
+-- stale entry.  This is the operative primitive the live wiring (SM7.F.4) will
+-- use; the honest pending-aware invariant it needs is SM7.F.2, and round-
+-- generation-tagged catch-up is SM7.F.3 (see the plan §SM7.F).
+-- ============================================================================
+
+/-- **WS-SM SM7.F.1**: the translation a page-table walk resolves for
+`(asid, vaddr)` against the current page tables — `some entry` iff the address
+is mapped (`resolveAsidRoot` → `VSpaceRoot.lookup` both succeed), and the
+resulting entry's `(paddr, perms)` are exactly the walked mapping (so it is
+consistent by construction). -/
+def tlbWalkEntry (st : SystemState) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) :
+    Option TlbEntry :=
+  match resolveAsidRoot st asid with
+  | none => none
+  | some p =>
+    match p.2.lookup vaddr with
+    | none => none
+    | some q => some { asid := asid, vaddr := vaddr, paddr := q.1, perms := q.2 }
+
+/-- **WS-SM SM7.F.1**: a walked entry satisfies the `tlbInsertOnCore` walker
+contract — for its own `(asid, vaddr)`, the current page tables resolve to
+exactly its `(paddr, perms)`.  This is what makes a fill consistency-safe. -/
+theorem tlbWalkEntry_matches (st : SystemState) (asid : SeLe4n.ASID)
+    (vaddr : SeLe4n.VAddr) {entry : TlbEntry}
+    (h : tlbWalkEntry st asid vaddr = some entry) :
+    ∀ rootId root, resolveAsidRoot st entry.asid = some (rootId, root) →
+      VSpaceRoot.lookup root entry.vaddr = some (entry.paddr, entry.perms) := by
+  unfold tlbWalkEntry at h
+  cases hres : resolveAsidRoot st asid with
+  | none => simp [hres] at h
+  | some p =>
+    cases hlk : p.2.lookup vaddr with
+    | none => simp [hres, hlk] at h
+    | some q =>
+      simp only [hres, hlk, Option.some.injEq] at h
+      subst h
+      intro rootId root hres2
+      have hres2' : resolveAsidRoot st asid = some (rootId, root) := hres2
+      rw [hres] at hres2'
+      simp only [Option.some.injEq] at hres2'
+      subst hres2'
+      exact hlk
+
+/-- **WS-SM SM7.F.1** (the fill): the hardware page-table walker fills core
+`c`'s TLB with the translation it resolved for `(asid, vaddr)`.  On a mapped
+address it caches the consistent-by-construction entry (`tlbWalkEntry`); on an
+unmapped address it caches nothing.  Unlike the raw `tlbInsertOnCore` (which
+accepts an arbitrary entry), a `tlbFillOnCore` result is always page-table
+consistent, so it is the fill the live translation path can use soundly. -/
+def tlbFillOnCore (st : SystemState) (c : CoreId) (asid : SeLe4n.ASID)
+    (vaddr : SeLe4n.VAddr) : SystemState :=
+  match tlbWalkEntry st asid vaddr with
+  | none => st
+  | some entry => tlbInsertOnCore st c entry
+
+/-- **WS-SM SM7.F.1**: a fill frames the page-table subsystem + the shootdown
+state — it only touches `perCoreTlb`. -/
+theorem tlbFillOnCore_frame (st : SystemState) (c : CoreId) (asid : SeLe4n.ASID)
+    (vaddr : SeLe4n.VAddr) :
+    (tlbFillOnCore st c asid vaddr).objects = st.objects ∧
+    (tlbFillOnCore st c asid vaddr).asidTable = st.asidTable ∧
+    (tlbFillOnCore st c asid vaddr).tlbShootdown = st.tlbShootdown := by
+  unfold tlbFillOnCore
+  cases tlbWalkEntry st asid vaddr with
+  | none => exact ⟨rfl, rfl, rfl⟩
+  | some entry =>
+    exact ⟨(tlbInsertOnCore_frame st c entry).1,
+           (tlbInsertOnCore_frame st c entry).2.1,
+           (tlbInsertOnCore_frame st c entry).2.2.2.2⟩
+
+/-- **WS-SM SM7.F.1**: a fill on core `c` leaves every other core's view
+unchanged — a hardware walk is a local event (the SMP asymmetry). -/
+theorem tlbFillOnCore_tlbOnCore_ne (st : SystemState) {c c' : CoreId}
+    (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (h : c ≠ c') :
+    tlbOnCore (tlbFillOnCore st c asid vaddr) c' = tlbOnCore st c' := by
+  unfold tlbFillOnCore
+  cases tlbWalkEntry st asid vaddr with
+  | none => rfl
+  | some entry => exact tlbInsertOnCore_tlbOnCore_ne st entry h
+
+/-- **WS-SM SM7.F.1** (the fill is consistency-safe): a translation-walk fill
+preserves the per-core invariant — it caches only a mapping it resolved from
+the current page tables, so the fresh entry is consistent by construction
+(`tlbWalkEntry_matches` discharges the `tlbInsertOnCore_preserves_…` walker
+contract).  Because the fill never installs a stale entry, wiring it into the
+live path (SM7.F.4) will preserve consistency in the quiescent state — the
+honest pending-aware form is SM7.F.2. -/
+theorem tlbFillOnCore_preserves_tlbInvalidationConsistent_perCore
+    (st : SystemState) (c : CoreId) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (h : tlbInvalidationConsistent_perCore st) :
+    tlbInvalidationConsistent_perCore (tlbFillOnCore st c asid vaddr) := by
+  unfold tlbFillOnCore
+  cases hw : tlbWalkEntry st asid vaddr with
+  | none => exact h
+  | some entry =>
+    exact tlbInsertOnCore_preserves_tlbInvalidationConsistent_perCore st c entry h
+      (tlbWalkEntry_matches st asid vaddr hw)
+
 end SeLe4n.Kernel.Architecture

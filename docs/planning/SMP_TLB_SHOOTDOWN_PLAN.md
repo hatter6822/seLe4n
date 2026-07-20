@@ -744,6 +744,50 @@ Zero sorry/axiom; golden trace **byte-identical** (verified).
   `shootdownRoundPerCore_cross_subsystem` gives the C.7 capstone on the
   faithful completed round.
 
+### SM7.F — Operative per-core TLB fills (IN FLIGHT; 4 sub-tasks / ~3 PRs)
+
+**Motivation (PR #844 review round 2).**  The v0.32.80–83 per-core TLB
+model is *empty on the live path*: the only live writes to `perCoreTlb`
+are drains (shootdown catch-up), and the translation-walker fill
+(`tlbInsertOnCore`) has no production caller — exactly like the
+pre-existing scalar `SystemState.tlb`.  So the per-core consistency
+invariant (13th `proofLayerInvariantBundle` conjunct) and Theorem 3.3.1
+are *vacuously* satisfied for real execution (empty views are trivially
+consistent), and the unconditional invariant would be false in a
+pending-round state *if* the views held real entries.  None of this is a
+live safety bug or a false theorem (the invariant is proven for every
+live-reachable state), but it is a genuine fidelity limitation.  SM7.F is
+the maximal-fidelity resolution: make the per-core TLB model genuinely
+operative by wiring real fills, with the honest invariant and race-free
+catch-up that fills then require.
+
+**Design decision — the pending-aware invariant.**  Once fills exist, the
+faithful invariant is *not* the unconditional form, nor merely a
+quiescent-restricted one, but the **pending-allowance** form: every cached
+entry is either (a) consistent with the current page tables, or (b)
+covered by a pending shootdown descriptor targeting that core.  This is
+the invariant that is genuinely preserved by the real operations —
+including `vspaceUnmapPageWithShootdown` (which makes a cached entry stale
+*and* posts the covering descriptor in the same step, so clause (b) holds)
+and the `.tlbShootdownReq` handler (which drains a core's whole queue, so
+after it that core has no pending descriptors and clause (a) must hold for
+survivors).  A plain quiescent restriction is weaker and its handler
+preservation is awkward (the handler mutates the very shootdown state the
+premise reads).
+
+| Sub | Description | Status |
+|-----|-------------|--------|
+| SM7.F.1 | Translation-walk fill seam: `tlbWalkEntry` (resolve `(asid,vaddr)` through the current page tables) + `tlbFillOnCore` (cache the *consistent-by-construction* entry; a walk can never install a stale entry) + `tlbWalkEntry_matches` (the walker contract) + `_frame` / `_tlbOnCore_ne` (local) / `_preserves_tlbInvalidationConsistent_perCore`.  `SmpTlbShootdownSuite` §5.4 (a real page-table-backed state: map `(asid5,vaddrPage)`, walk-fill core0, confirm the entry is cached + local + checker-green + unmapped-walk-is-no-op). | **LANDED (v0.32.84)** |
+| SM7.F.2 | Pending-aware (honest) invariant: redefine `tlbInvalidationConsistent_perCore` to the pending-allowance form; re-prove every downstream `_preserves_` / boot witness / bundle-adapter / freeze / boot-bridge (~46-usage ripple).  Decide scalar-`tlb` encompassment (the 9th conjunct has the same unconditional-but-vacuous status; ideally the same treatment). | PENDING |
+| SM7.F.3 | Round-generation-tagged descriptors (the SM7.B v0.32.79 model-fidelity debt): `TlbShootdownDescriptor` carries a round generation; the catch-up drains only its own generation, closing the concurrent-round cross-draining race (Comment 3).  A `TlbShootdownState` type change rippling SM7.A/B + the Rust mailbox mirror. | PENDING |
+| SM7.F.4 | Live fill wiring: invoke `tlbFillOnCore` at a genuine live translation point (e.g. the IPC-buffer / mapped-access seam) so `perCoreTlb` holds real entries on the syscall path.  Trace-safe (`perCoreTlb` ∉ `projectState`).  Requires F.2 (else the invariant is false in the pending window) and rides F.3 for race-free catch-up. | PENDING |
+
+**Acceptance.**  A live map → access (fill) → cross-core unmap (shootdown)
+→ catch-up sequence in which a real remote cached entry is created and then
+provably removed, under the pending-aware invariant, with no cross-round
+draining.  Zero sorry/axiom; golden trace byte-identical (`perCoreTlb` is
+projection-invisible).
+
 ### SM7.D — Cache maintenance broadcast (2 PRs, 4 sub-tasks)
 
 | Sub | Description | Files | Est |

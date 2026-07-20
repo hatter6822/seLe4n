@@ -83,6 +83,24 @@ Round-generation-tagged descriptors (the SM7.B v0.32.79 model-fidelity
 debt) remains a separately-scoped follow-on (orthogonal to the per-core
 view model; no hardware hazard).
 
+**SM7.F IN FLIGHT (v0.32.84) — operative per-core TLB fills.**  Opens the
+maximal-fidelity resolution of the PR #844 review-round-2 findings: the
+per-core TLB model was *empty on the live path* (only drains; the fill had
+no production caller — like the pre-existing scalar `tlb`), so its
+consistency invariant + Theorem 3.3.1 were vacuously satisfied for real
+execution (verified — no live safety bug or false theorem, but a genuine
+fidelity gap).  **SM7.F.1 LANDED (v0.32.84)**: the translation-walk fill
+seam — `tlbWalkEntry` (resolve `(asid,vaddr)` through the current page
+tables) + `tlbFillOnCore` (cache the consistent-by-construction entry;
+never installs a stale entry) + `tlbWalkEntry_matches` / `_frame` /
+`_tlbOnCore_ne` / `_preserves_tlbInvalidationConsistent_perCore`; `Smp
+TlbShootdownSuite` §5.4 fills a real page-table-backed state and confirms
+`perCoreTlb` genuinely holds the cached translation.  Additive; the SM7.C
+invariant unchanged (a consistent fill is always safe); trace byte-identical.
+PENDING: F.2 pending-aware honest invariant, F.3 round-generation-tagged
+descriptors (the SM7.B v0.32.79 debt), F.4 live fill wiring.  Plan:
+`docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` §SM7.F.
+
 **SM7.C PR #844 review cut (v0.32.83) — initiator drain + view-outcome
 demotion.**  Two Codex review findings, both verified valid against the
 code and fixed faithfully (neither a live safety bug — `perCoreTlb` is

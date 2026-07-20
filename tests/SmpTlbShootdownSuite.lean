@@ -535,6 +535,13 @@ open SeLe4n.Kernel.Concurrency
 #check @shootdownCatchUpPerCore_initiator_view
 #check @shootdownCatchUpPerCore_preserves_tlbInvalidationConsistent_perCore
 #check @shootdownRoundPerCore_cross_subsystem
+-- SM7.F.1: the translation-walk fill seam (perCoreTlb made fillable):
+#check @tlbWalkEntry
+#check @tlbWalkEntry_matches
+#check @tlbFillOnCore
+#check @tlbFillOnCore_frame
+#check @tlbFillOnCore_tlbOnCore_ne
+#check @tlbFillOnCore_preserves_tlbInvalidationConsistent_perCore
 -- SM7.C NI: a per-core TLB write is projection-invisible (no covert channel):
 #check @SeLe4n.Kernel.perCoreTlb_write_preserves_projection
 
@@ -1864,6 +1871,37 @@ private def runPerCoreTlbOperationalChecks : IO Unit := do
         (allCores.all fun c => !(tlbHasEntry (tlbOnCore final c) entryTarget))
 
 -- ----------------------------------------------------------------------------
+-- §5.4  SM7.F.1 — the translation-walk fill seam (perCoreTlb made fillable)
+-- ----------------------------------------------------------------------------
+
+private def runPerCoreTlbFillChecks : IO Unit := do
+  IO.println "-- §5.4 per-core TLB: translation-walk fill (SM7.F.1)"
+  -- Map (asid5, vaddrPage) into a real page-table-backed state, then walk-fill it.
+  match vspaceMapPageWithFlush asid5 vaddrPage (SeLe4n.PAddr.ofNat 0x2000)
+      .readOnly (udState []) with
+  | .error _ => assertBool "the fill scenario maps the page" false
+  | .ok ((), stMapped) => do
+    -- Before the walk, core0's view is empty (the live model only drained until SM7.F.1).
+    assertBool "core0's view is empty before the translation-walk fill"
+      ((tlbOnCore stMapped core0).entries.isEmpty)
+    let stFilled := tlbFillOnCore stMapped core0 asid5 vaddrPage
+    -- The walk resolved the live mapping and cached it — perCoreTlb is now genuinely
+    -- NON-empty on a real page-table-backed state (the SM7.F Comment-2 ask).
+    assertBool "the translation-walk fill caches the mapped translation on core0 (SM7.F.1)"
+      ((tlbOnCore stFilled core0).entries.any (fun e => e.asid == asid5 && e.vaddr == vaddrPage))
+    -- Locality: a walk is a this-core event (the SMP asymmetry).
+    assertBool "the fill is local — other cores' views stay empty"
+      ([core1, core2, core3].all fun c => (tlbOnCore stFilled c).entries.isEmpty)
+    -- Consistency-safety: the cached entry matches the page tables by construction.
+    assertBool "the fill keeps the per-core consistency checker green (consistent by construction)"
+      (tlbInvalidationConsistentCheck_perCore stFilled)
+    -- An unmapped address caches nothing (the walk misses → no-op): core0's
+    -- view stays empty, whereas the mapped walk above populated it.
+    assertBool "a walk of an unmapped address caches nothing (no-op)"
+      ((tlbOnCore (tlbFillOnCore stMapped core0 asid5 (SeLe4n.VAddr.ofNat 0xDEAD000))
+        core0).entries.isEmpty)
+
+-- ----------------------------------------------------------------------------
 -- Runner
 -- ----------------------------------------------------------------------------
 
@@ -1896,6 +1934,7 @@ def runSmpTlbShootdownChecks : IO Unit := do
   runPerCoreTlbLocalChecks
   runPerCoreTlbBroadcastChecks
   runPerCoreTlbOperationalChecks
+  runPerCoreTlbFillChecks
   IO.println "===================================================="
   IO.println "All SM7.A + SM7.B + SM7.C TLB shootdown + per-core model checks PASS."
 

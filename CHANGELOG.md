@@ -1,3 +1,50 @@
+## v0.32.84 — WS-SM SM7.F.1: translation-walk fill seam (opens the operative-TLB-fills workstream)
+
+Opens SM7.F, the maximal-fidelity resolution of the PR #844 review-round-2
+findings.  Those findings (verified valid, none a live safety bug or false
+theorem) observed that the per-core TLB model is *empty on the live path* —
+the only live writes to `perCoreTlb` are drains, and the fill has no
+production caller, exactly like the pre-existing scalar `SystemState.tlb` —
+so the per-core consistency invariant and Theorem 3.3.1 are vacuously
+satisfied for real execution.  SM7.F makes the model genuinely operative.
+Full plan: `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` §SM7.F (4 sub-tasks).
+
+**SM7.F.1 — translation-walk fill seam (this cut).**  New `tlbWalkEntry`
+(`PerCoreTlbModel.lean`): resolves `(asid, vaddr)` through the CURRENT page
+tables (`resolveAsidRoot` → `VSpaceRoot.lookup`), yielding `some entry`
+whose `(paddr, perms)` are exactly the walked mapping — so the entry is
+consistent by construction.  `tlbFillOnCore` caches it on core `c`'s view
+(an unmapped walk caches nothing).  Unlike the raw `tlbInsertOnCore` (which
+takes an arbitrary entry), a `tlbFillOnCore` result can never install a
+stale entry, so it is the fill the live translation path (SM7.F.4) can use
+soundly.  Theorems: `tlbWalkEntry_matches` (the walked entry satisfies the
+`tlbInsertOnCore` walker contract), `tlbFillOnCore_frame` (page tables +
+shootdown state framed), `tlbFillOnCore_tlbOnCore_ne` (a walk is a
+this-core event), and `tlbFillOnCore_preserves_tlbInvalidationConsistent_perCore`
+(the fill is consistency-safe — it discharges the walker contract from
+`tlbWalkEntry_matches`).
+
+Tests: `SmpTlbShootdownSuite` §5.4 — on a real page-table-backed state
+(`vspaceMapPageWithFlush` maps `(asid5, vaddrPage)`), the walk-fill
+genuinely caches the mapped translation on core0 (perCoreTlb now
+**non-empty on a real state** — the review's core ask), is local to core0,
+keeps the consistency checker green (consistent by construction), and an
+unmapped-address walk is a no-op.  §1 gains 6 `#check` anchors.
+
+**Deferred (planned SM7.F.2–F.4, see the plan).**  F.2: the pending-aware
+(honest) invariant — every cached entry is consistent OR covered by a
+pending descriptor targeting its core (the form genuinely preserved by
+`vspaceUnmapPageWithShootdown` and the handler; ~46-usage ripple).  F.3:
+round-generation-tagged descriptors (the SM7.B v0.32.79 debt — closes the
+concurrent-round cross-draining race).  F.4: live fill wiring at a
+translation seam (trace-safe; `perCoreTlb` ∉ `projectState`).
+
+Additive and sound: zero sorry/axiom; full build clean (398 jobs, zero
+warnings); golden trace byte-identical; the existing SM7.C invariant
+unchanged (the fill preserves it — a consistent fill is always safe).
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F
+
 ## v0.32.83 — WS-SM SM7.C PR #844 review cut: initiator per-core drain + view-outcome demotion
 
 Two model-fidelity findings from the Codex review on PR #844, both
