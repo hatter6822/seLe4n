@@ -1,3 +1,59 @@
+## v0.32.82 — WS-SM SM7.C deep-audit closure: documentation accuracy corrections
+
+A deep, code-first audit of the SM7.C per-core TLB model (both the
+v0.32.80 landing and the v0.32.81 operative cut) against the actual Lean
+proofs — not the prose.  **The code is optimal**: mathematically sound,
+non-vacuous, no security shortcuts, zero sorry/axiom, full build clean
+(398 jobs, zero warnings), suite green.  The audit closed the small set
+of **documentation** inaccuracies it surfaced; no code changed.
+
+Audit confirmations (verified against code, not docs):
+
+- `tlbInvalidationConsistent_perCore := ∀ c : CoreId, tlbConsistent st
+  (tlbOnCore st c)` matches the plan definition; **not vacuous** —
+  `numCores_pos : numCores > 0` (`= 4` on RPi5) means the ∀ ranges over
+  four real cores.
+- The **13th `proofLayerInvariantBundle` conjunct** is genuine (13
+  conjuncts; `tlbConsistent st st.tlb` 9th, `tlbInvalidationConsistent_perCore`
+  13th) and discharged by every bundle-preserving transition: the three
+  adapter ok-proofs via definitional transport (`by exact hPCT`, since
+  `advanceTimerState`/`writeRegisterState`/`contextSwitchState` frame
+  `perCoreTlb`/`objects`/`asidTable`), the error arms via pre-state
+  carriage, and the boot witness `default_tlbInvalidationConsistent_perCore`.
+- The **live seam is real, not decorative**: `syscallDispatchCrossCoreEntry`
+  (`@[export lean_syscall_dispatch_cross_core]`) → `completeShootdownRounds`
+  folds `handleTlbShootdownReqOnCorePerCore`, so `perCoreTlb` genuinely
+  evolves on the live shootdown path; the swap's fail-closed timeout
+  behaviour is unchanged.
+- The runtime assertions are **non-vacuous**: `perCoreSeeded` replicates
+  a three-entry `seededTlb` (containing the target) to every core, so
+  "removes the covered entry from every core" and "leaves the stale entry
+  on other cores" are genuine facts, not empty-view trivialities.
+- The decidable checkers `tlbConsistentCheck` /
+  `tlbInvalidationConsistentCheck_perCore` are sound **and** complete
+  (`_iff` proven both directions).
+- Like the pre-existing scalar `tlb`, `perCoreTlb` is drained on the live
+  path but filled only in hardware (`tlbInsertOnCore` is a model op) — the
+  established TLB-modelling convention the plan explicitly scopes; the
+  substantive guarantees (Theorem 3.3.1 on the field, cross-subsystem
+  consistency) are universally quantified and exercised on seeded views.
+
+Documentation corrections:
+
+- The plan's SM7.C.1 landed-artefact row listed `perCoreTlb_vector_ext`,
+  which the v0.32.81 completion cut **removed** (D4); the dangling
+  reference is dropped (every other mention already reads "removed").
+- The `#check`-anchor count drifted: the SM7.C §1 anchor block is **49**
+  (the completion cut extended the v0.32.80 set of 30 with the
+  operative/completeness/NI symbols), and §5.1–§5.2 hold **15** runtime
+  assertions (was mis-stated as 14) with §5.3 adding 11.  Corrected in
+  `CLAUDE.md` / `AGENTS.md` (phase row), `docs/spec/SELE4N_SPEC.md`,
+  `docs/WORKSTREAM_HISTORY.md`, and `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md`
+  (SM7.C.1 + SM7.C.8 rows).  The CHANGELOG v0.32.80 entry keeps its
+  point-in-time counts (historical record).
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.C
+
 ## v0.32.81 — WS-SM SM7.C completion cut: the per-core TLB model made operative
 
 The SM7.C follow-through: the mounted `perCoreTlb` field, which v0.32.80

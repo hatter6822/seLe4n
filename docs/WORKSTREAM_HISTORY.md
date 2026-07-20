@@ -72,8 +72,10 @@ use-after-unmap closure).  **SM7.C.7** `tlbConsistency_cross_subsystem` —
 the memory-subsystem capstone (protocol × TLB-model × page-tables): a
 covering invalidation both removes every stale entry on every core AND
 preserves per-core consistency.  **SM7.C.8**: `tests/SmpTlbShootdownSuite.lean`
-§1 (30 `#check` anchors), §2 (elaboration witnesses), §5.1–§5.2 (14
-runtime assertions).  Information flow: `perCoreTlb` kept out of
+§1 (49 `#check` anchors — the 30 at the v0.32.80 landing plus the
+operative-cut/completeness/NI symbols the completion cut added), §2
+(elaboration witnesses), §5.1–§5.2 (15 runtime assertions) + §5.3 (11).
+Information flow: `perCoreTlb` kept out of
 `projectState` (a TLB view is a covert timing channel, like
 `machine.timer`).  Zero sorry/axiom; golden trace byte-identical.
 Round-generation-tagged descriptors (the SM7.B v0.32.79 model-fidelity
