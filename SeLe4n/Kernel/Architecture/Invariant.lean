@@ -83,17 +83,24 @@ coalesces to a covered full flush), and every non-shootdown kernel
 transition frames `SystemState.tlbShootdown`, so the component transports
 definitionally through the adapter preservation proofs below.
 
-WS-SM SM7.C: `tlbInvalidationConsistent_perCore st` added as the 13th
-component — the per-core TLB consistency invariant (every core's cached TLB
-view matches the current page tables).  This is the SMP generalisation of
-the 9th conjunct `tlbConsistent st st.tlb` (the single-core boot-core view),
-quantifying the *same* `tlbConsistent` relation over every core's mounted
-`perCoreTlb` view.  `tlbInvalidationConsistent_perCore` reads exactly three
-fields — `perCoreTlb` (via `tlbOnCore`) and `objects` + `asidTable` (via
-`tlbConsistent`'s `resolveAsidRoot`) — and none of `machine` / `scheduler`.
-The three adapter transitions touch only `machine` (and, for
-`contextSwitchState`, `scheduler.current`), so they frame all three fields
-the conjunct reads, and the component transports *definitionally*
+WS-SM SM7.C / SM7.F.2: `tlbInvalidationConsistent_perCore st` added as the
+13th component — the per-core TLB consistency invariant.  SM7.F.2 states it
+in its **honest, pending-aware** form: on every core, every cached entry is
+either consistent with the current page tables **or** covered by a pending
+shootdown descriptor for that core (a stale entry is admissible exactly when
+a shootdown is already scheduled to retire it).  This is the form genuinely
+preserved once the model holds real fills (`vspaceUnmapPageWithShootdown`
+makes an entry stale *and* posts the covering descriptor in the same step);
+it weakens — and is implied by — the v0.32.80 unconditional
+`∀ c, tlbConsistent st (tlbOnCore st c)`, which was only vacuously true
+(empty views) and false for a populated pending-round state.  It generalises
+the 9th conjunct `tlbConsistent st st.tlb` (the single-core boot-core view).
+`tlbInvalidationConsistent_perCore` reads exactly four fields — `perCoreTlb`
+(via `tlbOnCore`), `objects` + `asidTable` (via `resolveAsidRoot` in the
+consistent disjunct), and `tlbShootdown` (the pending disjunct) — and none of
+`machine` / `scheduler`.  The three adapter transitions touch only `machine`
+(and, for `contextSwitchState`, `scheduler.current`), so they frame all four
+fields the conjunct reads, and the component transports *definitionally*
 (`by exact hPerCoreTlb`) exactly as the 9th conjunct does. -/
 def proofLayerInvariantBundle (st : SystemState) : Prop :=
   schedulerInvariantBundleFull st ∧

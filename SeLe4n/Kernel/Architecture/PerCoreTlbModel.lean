@@ -354,31 +354,138 @@ theorem tlbInvalidateOnAllCores_isSome_of_quiescent {st : SystemState}
 -- SM7.C.5 — tlbInvalidationConsistent_perCore (the per-core TLB invariant)
 -- ============================================================================
 
-/-- **WS-SM SM7.C.5**: the per-core TLB consistency invariant — *every*
-core's cached TLB view matches the current page tables.  The SMP
-generalisation of the single-core `tlbConsistent st st.tlb` (the 9th
-`proofLayerInvariantBundle` conjunct); this predicate is the 13th
-conjunct (`Invariant.lean`), quantifying the *same* `tlbConsistent`
-relation over every core's mounted view. -/
-def tlbInvalidationConsistent_perCore (st : SystemState) : Prop :=
-  ∀ c : CoreId, tlbConsistent st (tlbOnCore st c)
+/-- **WS-SM SM7.C.5**: a single cached entry is consistent with the current
+page tables — if its ASID resolves to a root, the cached mapping matches the
+root's lookup.  The per-entry kernel of `tlbConsistent`. -/
+def tlbEntryConsistent (st : SystemState) (e : TlbEntry) : Prop :=
+  ∀ rootId root, resolveAsidRoot st e.asid = some (rootId, root) →
+    VSpaceRoot.lookup root e.vaddr = some (e.paddr, e.perms)
 
-/-- **WS-SM SM7.C.5**: at boot the per-core TLB invariant holds
-vacuously — every core's view is empty (`default_tlbOnCore`), and an
-empty TLB is trivially consistent (`tlbConsistent_empty`).  The bundle
-boot witness. -/
+/-- **WS-SM SM7.C.5**: a single cached entry is *allowed* on core `c` — it is
+either consistent with the current page tables, or **covered by a pending
+shootdown descriptor targeting `c`** (a stale entry is admissible exactly when
+a shootdown is already scheduled to retire it).  This is the per-entry kernel
+of the SM7.F.2 pending-aware invariant. -/
+def tlbEntryOk (st : SystemState) (c : CoreId) (e : TlbEntry) : Prop :=
+  tlbEntryConsistent st e ∨
+    ∃ desc ∈ st.tlbShootdown.pendingOnCore c, tlbEntryMatches desc.op e = true
+
+/-- **WS-SM SM7.C.5** (SM7.F.2 — the honest, pending-aware form): the per-core
+TLB consistency invariant.  On *every* core, *every* cached entry is either
+consistent with the current page tables or covered by a pending shootdown
+descriptor for that core.  This is the invariant genuinely preserved once the
+model holds real fills (SM7.F): `vspaceUnmapPageWithShootdown` makes an entry
+stale **and** posts the covering descriptor in the same step (the pending
+disjunct), and the `.tlbShootdownReq` handler drains a core's whole queue, so
+survivors must be consistent (the consistent disjunct).  It weakens the
+v0.32.80 unconditional `∀ c, tlbConsistent st (tlbOnCore st c)` — which was
+only vacuously true (empty views) and false for a populated pending-round
+state — to the form that holds across every reachable kernel state.  The 13th
+`proofLayerInvariantBundle` conjunct (`Invariant.lean`). -/
+def tlbInvalidationConsistent_perCore (st : SystemState) : Prop :=
+  ∀ c : CoreId, ∀ e ∈ (tlbOnCore st c).entries, tlbEntryOk st c e
+
+/-- **WS-SM SM7.C.5**: a fully page-table-consistent view satisfies the
+pending-aware per-core predicate (every entry rides the *consistent* disjunct)
+— the bridge from the old unconditional form to the honest one. -/
+theorem tlbEntryOk_of_tlbConsistent {st : SystemState} {c : CoreId}
+    {t : TlbState} (h : tlbConsistent st t) :
+    ∀ e ∈ t.entries, tlbEntryOk st c e := by
+  intro e he
+  exact Or.inl (h e he)
+
+/-- **WS-SM SM7.C.5** (the transport lever): `tlbEntryOk` carries across a
+frame that preserves the page tables (`objects` + `asidTable` ⇒ the same
+`resolveAsidRoot`) and does not *drop* any pending descriptor for `c`
+(pending-superset).  Every preservation proof rides this: an invalidation
+removes entries (survivors keep their witness) and never shrinks the page
+tables or the pending set below what covers a stale survivor. -/
+theorem tlbEntryOk_of_frame {st st' : SystemState} {c : CoreId} {e : TlbEntry}
+    (hObjects : st'.objects = st.objects)
+    (hAsidTable : st'.asidTable = st.asidTable)
+    (hPend : ∀ d ∈ st.tlbShootdown.pendingOnCore c,
+      d ∈ st'.tlbShootdown.pendingOnCore c)
+    (h : tlbEntryOk st c e) : tlbEntryOk st' c e := by
+  rcases h with hCon | ⟨desc, hmem, hmatch⟩
+  · refine Or.inl ?_
+    intro rootId root hResolve
+    have hResolve' : resolveAsidRoot st e.asid = some (rootId, root) := by
+      unfold resolveAsidRoot at hResolve ⊢
+      rw [hAsidTable, hObjects] at hResolve; exact hResolve
+    exact hCon rootId root hResolve'
+  · exact Or.inr ⟨desc, hPend desc hmem, hmatch⟩
+
+/-- **WS-SM SM7.C.5**: the common case of `tlbEntryOk_of_frame` — an op that
+frames the page tables **and** the shootdown state entirely (equality) carries
+`tlbEntryOk` unchanged. -/
+theorem tlbEntryOk_of_frame_eq {st st' : SystemState} {c : CoreId} {e : TlbEntry}
+    (hObjects : st'.objects = st.objects) (hAsidTable : st'.asidTable = st.asidTable)
+    (hShoot : st'.tlbShootdown = st.tlbShootdown)
+    (h : tlbEntryOk st c e) : tlbEntryOk st' c e :=
+  tlbEntryOk_of_frame hObjects hAsidTable (fun d hd => by rw [hShoot]; exact hd) h
+
+/-- **WS-SM SM7.C.5**: per-entry consistency carries across a page-table frame
+(`objects` + `asidTable` ⇒ the same `resolveAsidRoot`). -/
+theorem tlbEntryConsistent_of_frame {st st' : SystemState} {e : TlbEntry}
+    (hObjects : st'.objects = st.objects) (hAsidTable : st'.asidTable = st.asidTable)
+    (h : tlbEntryConsistent st e) : tlbEntryConsistent st' e := by
+  intro rootId root hResolve
+  have hResolve' : resolveAsidRoot st e.asid = some (rootId, root) := by
+    unfold resolveAsidRoot at hResolve ⊢
+    rw [hAsidTable, hObjects] at hResolve; exact hResolve
+  exact h rootId root hResolve'
+
+/-- **WS-SM SM7.F.2**: on a **quiescent** shootdown state (no pending
+descriptors), the pending disjunct of `tlbEntryOk` is unavailable, so every
+admissible entry is in fact consistent.  The bridge the round-level capstones
+use: a covering invalidation from a quiescent consistent state keeps every
+survivor consistent. -/
+theorem tlbEntryConsistent_of_ok_of_quiescent {st : SystemState} {c : CoreId}
+    {e : TlbEntry} (hq : shootdownQuiescent st.tlbShootdown) (h : tlbEntryOk st c e) :
+    tlbEntryConsistent st e := by
+  rcases h with hc | ⟨desc, hmem, _⟩
+  · exact hc
+  · rw [hq.1 c] at hmem; simp at hmem
+
+/-- **WS-SM SM7.F.2** (the drain-survivor lever): an entry that *survives*
+`applyTlbInvalidations t ops` is matched by **none** of the applied operands —
+invalidation only removes, so a survivor was present after every operand's
+application, hence never removed by any.  This is what proves the
+`.tlbShootdownReq` handler's survivors consistent: a survivor cannot have been
+covered by a (drained) pending descriptor, so it must ride the consistent
+disjunct. -/
+theorem applyTlbInvalidations_survivor_not_matched :
+    ∀ (ops : List TlbInvalidation) (t : TlbState) (e : TlbEntry),
+      e ∈ (applyTlbInvalidations t ops).entries →
+      ∀ op ∈ ops, tlbEntryMatches op e = false := by
+  intro ops
+  induction ops with
+  | nil => intro _ _ _ op hop; simp at hop
+  | cons op' ops' ih =>
+    intro t e he op hop
+    rw [applyTlbInvalidations_cons] at he
+    rcases List.mem_cons.mp hop with heq | hmem
+    · subst heq
+      have he1 : e ∈ (applyTlbInvalidation t op).entries := mem_of_mem_applyTlbInvalidations he
+      cases hb : tlbEntryMatches op e with
+      | false => rfl
+      | true => exact absurd he1 (applyTlbInvalidation_removes hb t)
+    · exact ih (applyTlbInvalidation t op') e he op hmem
+
+/-- **WS-SM SM7.C.5**: at boot the per-core TLB invariant holds vacuously —
+every core's view is empty (`default_tlbOnCore`), so there is no entry to
+witness.  The bundle boot witness. -/
 theorem default_tlbInvalidationConsistent_perCore :
     tlbInvalidationConsistent_perCore (default : SystemState) := by
-  intro c
-  rw [default_tlbOnCore]
-  exact tlbConsistent_empty _
+  intro c e he
+  rw [default_tlbOnCore] at he
+  simp [TlbState.empty] at he
 
-/-- **WS-SM SM7.C.5**: the per-core invariant projects to the boot core —
-the bridge back to the single-core `tlbConsistent st st.tlb` conjunct's
-subject at the boot-core slot. -/
+/-- **WS-SM SM7.C.5**: the per-core invariant projects to the boot core — each
+of the boot core's cached entries is admissible (consistent or pending-covered). -/
 theorem tlbInvalidationConsistent_perCore_bootCore {st : SystemState}
     (h : tlbInvalidationConsistent_perCore st) :
-    tlbConsistent st (tlbOnCore st bootCoreId) :=
+    ∀ e ∈ (tlbOnCore st bootCoreId).entries, tlbEntryOk st bootCoreId e :=
   h bootCoreId
 
 /-- **WS-SM SM7.C.5** (consistency monotonicity + page-table frame): a TLB
@@ -409,16 +516,16 @@ theorem tlbInvalidateOnCore_preserves_tlbInvalidationConsistent_perCore
     (st : SystemState) (c : CoreId) (op : TlbInvalidation)
     (h : tlbInvalidationConsistent_perCore st) :
     tlbInvalidationConsistent_perCore (tlbInvalidateOnCore st c op) := by
-  intro c'
-  refine tlbConsistent_of_subset_of_state_frame
+  intro c' e he
+  have hpre : e ∈ (tlbOnCore st c').entries := by
+    by_cases hcc : c = c'
+    · subst hcc; exact tlbInvalidateOnCore_subset st c op he
+    · rw [tlbInvalidateOnCore_tlbOnCore_ne st op hcc] at he; exact he
+  exact tlbEntryOk_of_frame_eq
     (tlbInvalidateOnCore_frame st c op).1
-    (tlbInvalidateOnCore_frame st c op).2.1 ?_ (h c')
-  intro e he
-  by_cases hcc : c = c'
-  · subst hcc
-    exact tlbInvalidateOnCore_subset st c op he
-  · rw [tlbInvalidateOnCore_tlbOnCore_ne st op hcc] at he
-    exact he
+    (tlbInvalidateOnCore_frame st c op).2.1
+    (tlbInvalidateOnCore_frame st c op).2.2.2.2
+    (h c' e hpre)
 
 /-- **WS-SM SM7.C.5** (the insert half of the model's safety story): the
 hardware translation walker preserves the per-core invariant **provided it
@@ -434,27 +541,28 @@ theorem tlbInsertOnCore_preserves_tlbInvalidationConsistent_perCore
     (hEntry : ∀ rootId root, resolveAsidRoot st entry.asid = some (rootId, root) →
       VSpaceRoot.lookup root entry.vaddr = some (entry.paddr, entry.perms)) :
     tlbInvalidationConsistent_perCore (tlbInsertOnCore st c entry) := by
-  -- The walker frames the page tables, so resolveAsidRoot is unchanged.
-  have hObjects : (tlbInsertOnCore st c entry).objects = st.objects := rfl
-  have hAsid : (tlbInsertOnCore st c entry).asidTable = st.asidTable := rfl
-  intro c'
+  have hObj : (tlbInsertOnCore st c entry).objects = st.objects :=
+    (tlbInsertOnCore_frame st c entry).1
+  have hAsid : (tlbInsertOnCore st c entry).asidTable = st.asidTable :=
+    (tlbInsertOnCore_frame st c entry).2.1
+  have hShoot : (tlbInsertOnCore st c entry).tlbShootdown = st.tlbShootdown :=
+    (tlbInsertOnCore_frame st c entry).2.2.2.2
+  intro c' e he
   by_cases hcc : c = c'
-  · -- On the filled core the new view is `entry :: old`; the old entries
-    -- ride `hConsist`, the fresh one rides the walker contract `hEntry`.
-    subst hcc
-    intro e hMem rootId root hResolve
-    have hResolve' : resolveAsidRoot st e.asid = some (rootId, root) := by
-      unfold resolveAsidRoot at hResolve ⊢; rw [hAsid, hObjects] at hResolve; exact hResolve
-    simp only [tlbInsertOnCore, setTlbOnCore_tlbOnCore_self] at hMem
-    rcases List.mem_cons.mp hMem with heq | hmemOld
-    · subst heq; exact hEntry rootId root hResolve'
-    · exact hConsist c e hmemOld rootId root hResolve'
-  · -- Every other core's view is untouched (`tlbInsertOnCore_tlbOnCore_ne`);
-    -- consistency transports across the page-table frame.
-    refine tlbConsistent_of_subset_of_state_frame hObjects hAsid ?_ (hConsist c')
-    intro e he
-    rw [tlbInsertOnCore_tlbOnCore_ne st entry hcc] at he
-    exact he
+  · subst hcc
+    simp only [tlbInsertOnCore, setTlbOnCore_tlbOnCore_self] at he
+    rcases List.mem_cons.mp he with heq | hmemOld
+    · -- the fresh entry: consistent by construction (hEntry + page-table frame).
+      subst heq
+      refine Or.inl ?_
+      intro rootId root hResolve
+      have hResolve' : resolveAsidRoot st e.asid = some (rootId, root) := by
+        unfold resolveAsidRoot at hResolve ⊢; rw [hAsid, hObj] at hResolve; exact hResolve
+      exact hEntry rootId root hResolve'
+    · exact tlbEntryOk_of_frame_eq hObj hAsid hShoot (hConsist c e hmemOld)
+  · have hpre : e ∈ (tlbOnCore st c').entries := by
+      rw [tlbInsertOnCore_tlbOnCore_ne st entry hcc] at he; exact he
+    exact tlbEntryOk_of_frame_eq hObj hAsid hShoot (hConsist c' e hpre)
 
 -- ============================================================================
 -- SM7.C.6 — tlbShootdown_invalidates_perCore (Theorem 3.3.1, mounted)
@@ -502,6 +610,7 @@ with the VSpace subsystem across cores.  This is the memory-subsystem
 `crossSubsystemInvariant` bridges. -/
 theorem tlbConsistency_cross_subsystem
     (st : SystemState) (initiator : CoreId) {targets : List CoreId}
+    (hq : shootdownQuiescent st.tlbShootdown)
     (hcov : ∀ c : CoreId, c ≠ initiator → c ∈ targets)
     (op : TlbInvalidation)
     (hConsist : tlbInvalidationConsistent_perCore st)
@@ -511,16 +620,18 @@ theorem tlbConsistency_cross_subsystem
         e ∉ (tlbOnCore st' c).entries) ∧
     tlbInvalidationConsistent_perCore st' := by
   refine ⟨tlbShootdown_invalidates_perCore st initiator hcov op h, ?_⟩
-  intro c
-  refine tlbConsistent_of_subset_of_state_frame
-    (tlbInvalidateOnAllCores_objects h)
-    (tlbInvalidateOnAllCores_asidTable h) ?_ (hConsist c)
-  intro e he
-  simp only [tlbOnCore] at he ⊢
-  rw [tlbInvalidateOnAllCores_perCoreTlb h, shootdownRoundViews_get] at he
-  split at he
-  · exact mem_of_mem_applyTlbInvalidation he
-  · exact he
+  intro c e he
+  -- The op only removes; the broadcast frames the page tables.  From a
+  -- quiescent state every pre-entry is consistent, so every survivor is too.
+  have hpre : e ∈ (tlbOnCore st c).entries := by
+    simp only [tlbOnCore] at he ⊢
+    rw [tlbInvalidateOnAllCores_perCoreTlb h, shootdownRoundViews_get] at he
+    split at he
+    · exact mem_of_mem_applyTlbInvalidation he
+    · exact he
+  refine Or.inl (tlbEntryConsistent_of_frame
+    (tlbInvalidateOnAllCores_objects h) (tlbInvalidateOnAllCores_asidTable h) ?_)
+  exact tlbEntryConsistent_of_ok_of_quiescent hq (hConsist c e hpre)
 
 -- ============================================================================
 -- SM7.C.4 (total form) — tlbInvalidateOnAllCoresCoalescing
@@ -613,29 +724,69 @@ theorem tlbConsistentCheck_iff (st : SystemState) (tlb : TlbState) :
 instance (st : SystemState) (tlb : TlbState) : Decidable (tlbConsistent st tlb) :=
   decidable_of_iff _ (tlbConsistentCheck_iff st tlb)
 
-/-- **WS-SM SM7.C.5**: an executable Boolean check of the per-core
-invariant — every core's view passes `tlbConsistentCheck`.  This is what
+/-- **WS-SM SM7.C.5**: an executable Boolean check of single-entry
+consistency (the per-entry kernel of `tlbConsistentCheck`). -/
+def tlbEntryConsistentCheck (st : SystemState) (e : TlbEntry) : Bool :=
+  match resolveAsidRoot st e.asid with
+  | some (_, root) => VSpaceRoot.lookup root e.vaddr == some (e.paddr, e.perms)
+  | none => true
+
+/-- **WS-SM SM7.C.5**: the per-entry consistency check decides `tlbEntryConsistent`. -/
+theorem tlbEntryConsistentCheck_iff (st : SystemState) (e : TlbEntry) :
+    tlbEntryConsistentCheck st e = true ↔ tlbEntryConsistent st e := by
+  unfold tlbEntryConsistentCheck tlbEntryConsistent
+  constructor
+  · intro h rootId root hResolve
+    rw [hResolve] at h; simpa using h
+  · intro h
+    cases hR : resolveAsidRoot st e.asid with
+    | none => rfl
+    | some pair =>
+        obtain ⟨rootId, root⟩ := pair
+        simp only [beq_iff_eq]
+        exact h rootId root hR
+
+/-- **WS-SM SM7.C.5** (SM7.F.2): an executable Boolean check of the per-entry
+*admissibility* predicate `tlbEntryOk` — consistent, or covered by a pending
+descriptor for `c`. -/
+def tlbEntryOkCheck (st : SystemState) (c : CoreId) (e : TlbEntry) : Bool :=
+  tlbEntryConsistentCheck st e ||
+    (st.tlbShootdown.pendingOnCore c).any (fun desc => tlbEntryMatches desc.op e)
+
+/-- **WS-SM SM7.C.5**: the per-entry admissibility check decides `tlbEntryOk`. -/
+theorem tlbEntryOkCheck_iff (st : SystemState) (c : CoreId) (e : TlbEntry) :
+    tlbEntryOkCheck st c e = true ↔ tlbEntryOk st c e := by
+  unfold tlbEntryOkCheck tlbEntryOk
+  rw [Bool.or_eq_true, tlbEntryConsistentCheck_iff, List.any_eq_true]
+
+/-- **WS-SM SM7.C.5** (SM7.F.2): an executable Boolean check of the pending-aware
+per-core invariant — every core's every entry is admissible.  This is what
 makes the **13th `proofLayerInvariantBundle` conjunct** runtime-verifiable,
-exactly as the 12th (`pendingBounded`) is (`SmpTlbShootdownSuite` §5
-probes it on concrete states). -/
+exactly as the 12th (`pendingBounded`) is (`SmpTlbShootdownSuite` §5 probes it
+on concrete states). -/
 def tlbInvalidationConsistentCheck_perCore (st : SystemState) : Bool :=
-  allCores.all (fun c => tlbConsistentCheck st (tlbOnCore st c))
+  allCores.all (fun c => (tlbOnCore st c).entries.all (fun e => tlbEntryOkCheck st c e))
 
 /-- **WS-SM SM7.C.5**: the per-core check decides the per-core invariant. -/
 theorem tlbInvalidationConsistentCheck_perCore_iff (st : SystemState) :
     tlbInvalidationConsistentCheck_perCore st = true ↔
       tlbInvalidationConsistent_perCore st := by
   unfold tlbInvalidationConsistentCheck_perCore tlbInvalidationConsistent_perCore
-  rw [List.all_eq_true]
-  have hmem : ∀ c : CoreId, c ∈ allCores := by
-    intro c; simp [allCores]
+  have hmem : ∀ c : CoreId, c ∈ allCores := by intro c; simp [allCores]
   constructor
-  · intro h c
-    rw [← tlbConsistentCheck_iff]
-    exact h c (hmem c)
-  · intro h c _
-    rw [tlbConsistentCheck_iff]
-    exact h c
+  · intro h c e he
+    rw [← tlbEntryOkCheck_iff]
+    rw [List.all_eq_true] at h
+    have hc := h c (hmem c)
+    rw [List.all_eq_true] at hc
+    exact hc e he
+  · intro h
+    rw [List.all_eq_true]
+    intro c _
+    rw [List.all_eq_true]
+    intro e he
+    rw [tlbEntryOkCheck_iff]
+    exact h c e he
 
 instance (st : SystemState) : Decidable (tlbInvalidationConsistent_perCore st) :=
   decidable_of_iff _ (tlbInvalidationConsistentCheck_perCore_iff st)
@@ -760,12 +911,32 @@ theorem handleTlbShootdownReqOnCorePerCore_preserves_tlbInvalidationConsistent_p
     (st : SystemState) (c : CoreId)
     (h : tlbInvalidationConsistent_perCore st) :
     tlbInvalidationConsistent_perCore (handleTlbShootdownReqOnCorePerCore st c) := by
-  intro c'
-  refine tlbConsistent_of_subset_of_state_frame
-    (handleTlbShootdownReqOnCorePerCore_frame st c).1
-    (handleTlbShootdownReqOnCorePerCore_frame st c).2 ?_ (h c')
-  intro e he
-  exact handleTlbShootdownReqOnCorePerCore_subset st c c' he
+  have hObj := (handleTlbShootdownReqOnCorePerCore_frame st c).1
+  have hAsid := (handleTlbShootdownReqOnCorePerCore_frame st c).2
+  intro c' e he
+  have hpre : e ∈ (tlbOnCore st c').entries :=
+    handleTlbShootdownReqOnCorePerCore_subset st c c' he
+  by_cases hcc : c = c'
+  · -- Core `c`'s queue is drained to empty, so the pending disjunct is gone:
+    -- a survivor of the drain must be *consistent* (it was not covered by any
+    -- drained pending descriptor, or it would have been removed).
+    subst hcc
+    rw [handleTlbShootdownReqOnCorePerCore_tlbOnCore_self] at he
+    rcases h c e hpre with hCon | ⟨desc, hmemDesc, hmatch⟩
+    · exact Or.inl (tlbEntryConsistent_of_frame hObj hAsid hCon)
+    · exfalso
+      have hopmem : desc.op ∈ (drainShootdowns st.tlbShootdown c).1.map (·.op) := by
+        rw [drainShootdowns_fst]; exact List.mem_map_of_mem hmemDesc
+      have hnot := applyTlbInvalidations_survivor_not_matched _ _ _ he desc.op hopmem
+      rw [hnot] at hmatch
+      exact absurd hmatch (by decide)
+  · -- Every other core's view and its pending queue are untouched.
+    refine tlbEntryOk_of_frame hObj hAsid ?_ (h c' e hpre)
+    intro d hd
+    rw [handleTlbShootdownReqOnCorePerCore_tlbShootdown_eq,
+        handleTlbShootdownReqOnCore_tlbShootdown_eq,
+        completeShootdownOnCore_frame_pending _ (Ne.symm hcc)]
+    exact hd
 
 /-- **WS-SM SM7.C** (the initiator's local step, per-core): the SM7.B
 initiator local invalidation (step 3) lifted to also retire the operand on
@@ -999,16 +1170,17 @@ theorem shootdownRoundPerCore_preserves_tlbInvalidationConsistent_perCore
     (hConsist : tlbInvalidationConsistent_perCore st)
     (h : shootdownRoundPerCore st initiator targets op = some final) :
     tlbInvalidationConsistent_perCore final := by
-  intro c
-  refine tlbConsistent_of_subset_of_state_frame
-    (shootdownRoundPerCore_frame h).1 (shootdownRoundPerCore_frame h).2 ?_ (hConsist c)
-  intro e he
+  intro c e he
   -- final.perCoreTlb.get c = shootdownRoundViews (st.perCoreTlb) …, which only removes.
-  simp only [tlbOnCore, shootdownRoundPerCore_perCoreTlb hq hnd h,
-    shootdownRoundViews_get] at he
-  split at he
-  · exact mem_of_mem_applyTlbInvalidation he
-  · exact he
+  have hpre : e ∈ (tlbOnCore st c).entries := by
+    simp only [tlbOnCore, shootdownRoundPerCore_perCoreTlb hq hnd h,
+      shootdownRoundViews_get] at he
+    split at he
+    · exact mem_of_mem_applyTlbInvalidation he
+    · exact he
+  refine Or.inl (tlbEntryConsistent_of_frame
+    (shootdownRoundPerCore_frame h).1 (shootdownRoundPerCore_frame h).2 ?_)
+  exact tlbEntryConsistent_of_ok_of_quiescent hq (hConsist c e hpre)
 
 -- ============================================================================
 -- SM7.C live catch-up — the initiator's own per-core drain (PR #844 P1)
@@ -1081,12 +1253,13 @@ theorem drainInitiatorPerCoreView_preserves_tlbInvalidationConsistent_perCore
     (st : SystemState) (c : CoreId) (ops : List TlbInvalidation)
     (h : tlbInvalidationConsistent_perCore st) :
     tlbInvalidationConsistent_perCore (drainInitiatorPerCoreView st c ops) := by
-  intro c'
-  refine tlbConsistent_of_subset_of_state_frame
+  intro c' e he
+  have hpre : e ∈ (tlbOnCore st c').entries :=
+    drainInitiatorPerCoreView_subset st c c' ops he
+  have hShoot : (drainInitiatorPerCoreView st c ops).tlbShootdown = st.tlbShootdown := rfl
+  exact tlbEntryOk_of_frame_eq
     (drainInitiatorPerCoreView_frame st c ops).1
-    (drainInitiatorPerCoreView_frame st c ops).2 ?_ (h c')
-  intro e he
-  exact drainInitiatorPerCoreView_subset st c c' ops he
+    (drainInitiatorPerCoreView_frame st c ops).2 hShoot (h c' e hpre)
 
 /-- **WS-SM SM7.C**: folding the per-core handler over a target list leaves the
 view of any core NOT in that list unchanged — a handler is a this-core event.

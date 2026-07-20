@@ -1,3 +1,61 @@
+## v0.32.85 — WS-SM SM7.F.2: the pending-aware (honest) per-core TLB invariant
+
+Lands SM7.F.2 — the honest form of the per-core TLB consistency invariant,
+the resolution of Codex PR #844 review-2 P1 ("restrict per-core consistency
+to quiescent rounds").  The v0.32.80 unconditional
+`∀ c, tlbConsistent st (tlbOnCore st c)` was only vacuously true (empty views)
+and would be false for a populated pending-round state once fills are wired.
+It is replaced by the **pending-allowance** form and every downstream proof
+re-established.  Zero sorry/axiom; full build clean (398 jobs, zero warnings);
+golden trace byte-identical (the invariant is proof-only — `perCoreTlb ∉
+projectState`); Tier 0–3 green.
+
+**The invariant.**  `tlbInvalidationConsistent_perCore st := ∀ c, ∀ e ∈
+(tlbOnCore st c).entries, tlbEntryOk st c e`, where `tlbEntryOk st c e :=
+tlbEntryConsistent st e ∨ ∃ desc ∈ st.tlbShootdown.pendingOnCore c,
+tlbEntryMatches desc.op e` — every cached entry is either consistent with the
+current page tables **or covered by a pending shootdown descriptor for its
+core**.  A stale entry is admissible exactly when a shootdown is already
+scheduled to retire it.  This is the form genuinely preserved by the real
+operations: `vspaceUnmapPageWithShootdown` makes an entry stale AND posts the
+covering descriptor in the same step (the pending disjunct), and the
+`.tlbShootdownReq` handler drains a core's whole queue so survivors must be
+consistent (the consistent disjunct).
+
+**Compositional preservation.**  Two transport levers — `tlbEntryOk_of_frame`
+(page-table frame + pending-superset) and `tlbEntryConsistent_of_frame` — plus
+the drain-survivor lemma `applyTlbInvalidations_survivor_not_matched` (a
+survivor of the applied operands is matched by none of them, so a
+pending-covered entry cannot survive the handler's drain — it must therefore
+be consistent) let every step preserve the invariant by local reasoning:
+`tlbInvalidateOnCore` / `tlbInsertOnCore` / `tlbFillOnCore` /
+`drainInitiatorPerCoreView` / `handleTlbShootdownReqOnCorePerCore` (and the
+folds `shootdownCatchUpPerCore` / `foldl…`).  The round-level capstones
+`tlbConsistency_cross_subsystem` and `shootdownRoundPerCore_preserves` carry a
+`shootdownQuiescent` premise (`tlbEntryConsistent_of_ok_of_quiescent`:
+quiescent ⇒ no pending ⇒ every pre-entry consistent ⇒ every survivor
+consistent).
+
+**Bundle / decidability.**  The 13th `proofLayerInvariantBundle` conjunct is
+now the pending-aware form; it transports *definitionally* through the three
+adapter preservation proofs (it reads `perCoreTlb`/`objects`/`asidTable`/
+`tlbShootdown`, all of which the adapters frame — no proof change needed).
+Boot witness updated (empty views).  Runtime-decidable: `tlbEntryConsistentCheck`
+/ `tlbEntryOkCheck` (+ `_iff`) and the per-core `tlbInvalidationConsistentCheck_perCore`
+now decide the disjunctive form.
+
+Tests: `SmpTlbShootdownSuite` §5.5 — a real page is mapped, filled, then
+unmapped so the cached entry is genuinely stale; the honest check **rejects**
+it with no shootdown pending and **accepts** the identical entry once a
+covering descriptor is posted (the exact behaviour the honest form adds over
+the unconditional one).  §1 gains 10 `#check` anchors.
+
+Scalar `tlb` (the 9th conjunct) is left unconditional — it has the same
+empty-live status, and re-stating it is out of SM7.F scope.  Follow-on:
+SM7.F.3 (round-generation-tagged descriptors), SM7.F.4 (live fill wiring).
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F
+
 ## v0.32.84 — WS-SM SM7.F.1: translation-walk fill seam (opens the operative-TLB-fills workstream)
 
 Opens SM7.F, the maximal-fidelity resolution of the PR #844 review-round-2

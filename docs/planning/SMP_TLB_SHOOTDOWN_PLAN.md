@@ -744,7 +744,7 @@ Zero sorry/axiom; golden trace **byte-identical** (verified).
   `shootdownRoundPerCore_cross_subsystem` gives the C.7 capstone on the
   faithful completed round.
 
-### SM7.F — Operative per-core TLB fills (IN FLIGHT; 4 sub-tasks / ~3 PRs)
+### SM7.F — Operative per-core TLB fills (IN FLIGHT; 4 sub-tasks / ~3 PRs; F.1+F.2 LANDED)
 
 **Motivation (PR #844 review round 2).**  The v0.32.80–83 per-core TLB
 model is *empty on the live path*: the only live writes to `perCoreTlb`
@@ -778,7 +778,7 @@ premise reads).
 | Sub | Description | Status |
 |-----|-------------|--------|
 | SM7.F.1 | Translation-walk fill seam: `tlbWalkEntry` (resolve `(asid,vaddr)` through the current page tables) + `tlbFillOnCore` (cache the *consistent-by-construction* entry; a walk can never install a stale entry) + `tlbWalkEntry_matches` (the walker contract) + `_frame` / `_tlbOnCore_ne` (local) / `_preserves_tlbInvalidationConsistent_perCore`.  `SmpTlbShootdownSuite` §5.4 (a real page-table-backed state: map `(asid5,vaddrPage)`, walk-fill core0, confirm the entry is cached + local + checker-green + unmapped-walk-is-no-op). | **LANDED (v0.32.84)** |
-| SM7.F.2 | Pending-aware (honest) invariant: redefine `tlbInvalidationConsistent_perCore` to the pending-allowance form; re-prove every downstream `_preserves_` / boot witness / bundle-adapter / freeze / boot-bridge (~46-usage ripple).  Decide scalar-`tlb` encompassment (the 9th conjunct has the same unconditional-but-vacuous status; ideally the same treatment). | PENDING |
+| SM7.F.2 | Pending-aware (honest) invariant: `tlbInvalidationConsistent_perCore` redefined to the pending-allowance form (`∀ c, ∀ e ∈ view c, tlbEntryConsistent st e ∨ ∃ desc ∈ pendingOnCore c, tlbEntryMatches desc.op e`); every downstream `_preserves_` re-proven compositionally via the transport levers `tlbEntryOk_of_frame{,_eq}` / `tlbEntryConsistent_of_frame` and the drain-survivor lemma `applyTlbInvalidations_survivor_not_matched` (the handler's survivors are consistent because a pending-covered entry would have been drained); checker `tlbEntryOkCheck`/`_iff` + decidable; the round-level capstones (`tlbConsistency_cross_subsystem`, `shootdownRoundPerCore_preserves`) carry a `shootdownQuiescent` premise (quiescent ⇒ every pre-entry consistent).  The 13th `proofLayerInvariantBundle` conjunct transports definitionally through the adapters (it reads `perCoreTlb`/`objects`/`asidTable`/`tlbShootdown`, all framed).  `SmpTlbShootdownSuite` §5.5: the SAME stale entry is inadmissible with no pending shootdown, admissible once one is posted (the exact behaviour the honest form adds).  Scalar-`tlb` (9th conjunct) left unconditional — same status, out of SM7.F scope. | **LANDED (v0.32.85)** |
 | SM7.F.3 | Round-generation-tagged descriptors (the SM7.B v0.32.79 model-fidelity debt): `TlbShootdownDescriptor` carries a round generation; the catch-up drains only its own generation, closing the concurrent-round cross-draining race (Comment 3).  A `TlbShootdownState` type change rippling SM7.A/B + the Rust mailbox mirror. | PENDING |
 | SM7.F.4 | Live fill wiring: invoke `tlbFillOnCore` at a genuine live translation point (e.g. the IPC-buffer / mapped-access seam) so `perCoreTlb` holds real entries on the syscall path.  Trace-safe (`perCoreTlb` ∉ `projectState`).  Requires F.2 (else the invariant is false in the pending window) and rides F.3 for race-free catch-up. | PENDING |
 

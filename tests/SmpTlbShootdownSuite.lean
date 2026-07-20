@@ -542,6 +542,18 @@ open SeLe4n.Kernel.Concurrency
 #check @tlbFillOnCore_frame
 #check @tlbFillOnCore_tlbOnCore_ne
 #check @tlbFillOnCore_preserves_tlbInvalidationConsistent_perCore
+-- SM7.F.2: the pending-aware (honest) invariant — every cached entry consistent
+-- OR covered by a pending shootdown descriptor for its core:
+#check @tlbEntryConsistent
+#check @tlbEntryOk
+#check @tlbEntryOk_of_frame
+#check @tlbEntryOk_of_frame_eq
+#check @tlbEntryConsistent_of_frame
+#check @tlbEntryConsistent_of_ok_of_quiescent
+#check @applyTlbInvalidations_survivor_not_matched
+#check @tlbEntryConsistentCheck
+#check @tlbEntryOkCheck
+#check @tlbEntryOkCheck_iff
 -- SM7.C NI: a per-core TLB write is projection-invisible (no covert channel):
 #check @SeLe4n.Kernel.perCoreTlb_write_preserves_projection
 
@@ -736,12 +748,13 @@ example : tlbInvalidationConsistent_perCore (default : SeLe4n.Model.SystemState)
 -- removes every stale entry on every core AND preserves per-core
 -- consistency (VSpace × TLB-model × shootdown coherence).
 example (st : SeLe4n.Model.SystemState) (initiator : CoreId)
-    (targets : List CoreId) (hcov : ∀ c : CoreId, c ≠ initiator → c ∈ targets)
+    (targets : List CoreId) (hq : shootdownQuiescent st.tlbShootdown)
+    (hcov : ∀ c : CoreId, c ≠ initiator → c ∈ targets)
     (op : TlbInvalidation) (hC : tlbInvalidationConsistent_perCore st)
     (st' : SeLe4n.Model.SystemState) (sgis : List (CoreId × SgiKind))
     (h : tlbInvalidateOnAllCores st initiator targets op = some (st', sgis)) :
     tlbInvalidationConsistent_perCore st' :=
-  (tlbConsistency_cross_subsystem st initiator hcov op hC h).2
+  (tlbConsistency_cross_subsystem st initiator hq hcov op hC h).2
 
 -- SM7.C.6 (theorem-application witness): after a covering broadcast no
 -- core retains any entry the operand covers (Theorem 3.3.1, mounted).
@@ -1902,6 +1915,38 @@ private def runPerCoreTlbFillChecks : IO Unit := do
         core0).entries.isEmpty)
 
 -- ----------------------------------------------------------------------------
+-- §5.5  SM7.F.2 — the pending-aware (honest) invariant: a stale cached entry
+--        is admissible iff a shootdown is already pending to retire it.
+-- ----------------------------------------------------------------------------
+
+private def runPerCoreTlbPendingAwareChecks : IO Unit := do
+  IO.println "-- §5.5 per-core TLB: pending-aware invariant (SM7.F.2)"
+  match vspaceMapPageWithFlush asid5 vaddrPage (SeLe4n.PAddr.ofNat 0x2000)
+      .readOnly (udState []) with
+  | .error _ => assertBool "the scenario maps the page" false
+  | .ok ((), stMapped) => do
+    -- Fill core0 with the (consistent) translation, then UNMAP the page from
+    -- the page tables — core0's cached entry is now genuinely STALE.
+    let stFilled := tlbFillOnCore stMapped core0 asid5 vaddrPage
+    match vspaceUnmapPageWithFlush asid5 vaddrPage stFilled with
+    | .error _ => assertBool "the scenario unmaps the page" false
+    | .ok ((), stStale) => do
+      -- No shootdown pending ⇒ the stale entry is INADMISSIBLE (the honest
+      -- invariant rejects it; the old unconditional form would have too, but
+      -- only because it never allowed a real stale entry at all).
+      assertBool "a stale cached entry with NO pending shootdown FAILS the check (F.2)"
+        (!(tlbInvalidationConsistentCheck_perCore stStale))
+      -- Post a shootdown descriptor covering the page on core0 ⇒ the SAME
+      -- stale entry becomes ADMISSIBLE (the pending disjunct) — the exact
+      -- behaviour the honest invariant adds over the unconditional one.
+      match enqueueShootdown stStale.tlbShootdown core0 descUnmapPage with
+      | none => assertBool "the covering descriptor enqueues" false
+      | some sd =>
+        let stPending := { stStale with tlbShootdown := sd }
+        assertBool "the same stale entry becomes admissible once a covering shootdown is pending (F.2)"
+          (tlbInvalidationConsistentCheck_perCore stPending)
+
+-- ----------------------------------------------------------------------------
 -- Runner
 -- ----------------------------------------------------------------------------
 
@@ -1935,6 +1980,7 @@ def runSmpTlbShootdownChecks : IO Unit := do
   runPerCoreTlbBroadcastChecks
   runPerCoreTlbOperationalChecks
   runPerCoreTlbFillChecks
+  runPerCoreTlbPendingAwareChecks
   IO.println "===================================================="
   IO.println "All SM7.A + SM7.B + SM7.C TLB shootdown + per-core model checks PASS."
 

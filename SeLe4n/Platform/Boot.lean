@@ -3343,12 +3343,12 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
   -- TLB, so every core's view is the empty default — vacuously consistent.
   have hPerCoreTlbBundle : SeLe4n.Kernel.Architecture.tlbInvalidationConsistent_perCore
       (bootFromPlatform config).state := by
-    intro c
+    intro c e he
     have hview : SeLe4n.Kernel.Architecture.tlbOnCore (bootFromPlatform config).state c
         = SeLe4n.Model.TlbState.empty := by
       unfold SeLe4n.Kernel.Architecture.tlbOnCore
       rw [bootFromPlatform_perCoreTlb_eq]; exact SeLe4n.Model.default_perCoreTlb c
-    rw [hview]; exact SeLe4n.Kernel.Architecture.tlbConsistent_empty _
+    rw [hview] at he; simp [SeLe4n.Model.TlbState.empty] at he
   -- Compose all 13 components
   exact ⟨h1, hCapBundle, ⟨h1.1, hCapBundle, hIpcFull⟩, hCouplingBundle,
          hLifeBundle, hServiceBundle, hVspaceBundle, hCrossBundle, hTlbBundle, hExtBundle,
