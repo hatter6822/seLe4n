@@ -3653,6 +3653,20 @@ theorem vspaceUnmapPageWithFlush_preserves_projection
     rw [← hProj]
     rfl
 
+/-- WS-SM SM7.C (non-interference): a write to *any* core's per-core TLB
+view is invisible to the information-flow projection — `perCoreTlb`, like
+the scalar `tlb` and `machine.timer`, is deliberately excluded from
+`ObservableState` (a TLB view is a covert timing-channel source), so no
+observable can depend on it.  This is the explicit NI witness for the SM7.C
+mount: every `perCoreTlb`-evolving transition (the per-core shootdown
+handler, `tlbInvalidateOnAllCores`, the live catch-up commit) trivially
+preserves `projectState` and hence `lowEquivalent`. -/
+theorem perCoreTlb_write_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (v : _root_.Vector SeLe4n.Model.TlbState SeLe4n.Kernel.Concurrency.numCores) :
+    projectState ctx observer { st with perCoreTlb := v } =
+      projectState ctx observer st := rfl
+
 -- ============================================================================
 -- AK6-F Step 1: RunQueue modification frame lemmas (at high thread)
 -- ============================================================================

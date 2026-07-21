@@ -99,6 +99,7 @@ private def emptyFrozenState : FrozenSystemState := {
   objectIndexSet := freezeMap (RHTable.empty 16)
   scThreadIndex := freezeMap (RHTable.empty 16)
   tlb := TlbState.empty
+  perCoreTlb := _root_.Vector.replicate SeLe4n.Kernel.Concurrency.numCores TlbState.empty
 }
 
 /-- Helper: make a FrozenSystemState with given objects. -/

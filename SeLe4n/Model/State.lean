@@ -771,6 +771,55 @@ structure SystemState where
       projection together with the transitions that consume it. -/
   tlbShootdown : SeLe4n.Kernel.Architecture.TlbShootdownState :=
     SeLe4n.Kernel.Architecture.TlbShootdownState.initial
+  /-- WS-SM SM7.C.1: per-core TLB model — every core's independently
+      cached address-translation view.
+
+      The scalar `tlb` field above is the pre-SMP single-core (boot-core)
+      abstract TLB (WS-H11/M-17): its flush operations (`adapterFlushTlb*`,
+      the `.WithFlush` VSpace ops) manage one view.  Under SMP each PE
+      caches translations in its own TLB, so an invalidation issued on one
+      core does not reach another core's TLB without the SM7.B shootdown
+      protocol.  This field is that generalisation: a
+      `Vector TlbState numCores` under the SM4.B path-a discipline
+      (`tlbOnCore` / `setTlbOnCore` accessors, store/load algebra, and
+      `ext_perCore` in `SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean`),
+      with the boot-core slot cohering with the legacy `tlb` view (both
+      empty at boot; `default_perCoreTlb`).
+
+      **Semantics**: the SM7.C model operations drive it —
+      `tlbInsertOnCore` (the hardware page-table walker filling one core's
+      TLB), `tlbInvalidateOnCore` (a local, this-core invalidation), and
+      `tlbInvalidateOnAllCores` (the cross-core broadcast).  It is
+      **operative on the live shootdown path**, not a parallel spec: the
+      live `SyscallDispatchEntry.completeShootdownRounds` catch-up commit
+      folds `handleTlbShootdownReqOnCorePerCore` over the round's targets,
+      draining each target's posted queue onto *its own* view — the real
+      per-descriptor drain, proven equal to Theorem 3.3.1's abstract
+      `shootdownRoundViews` vector
+      (`shootdownRoundPerCore_perCoreTlb` / `_invalidates_perCore`).  The
+      swap is trace-safe: the per-core handler's `tlb` / `tlbShootdown`
+      effects are definitionally the SM7.B single-view handler's, so only
+      this projection-invisible field additionally evolves.  The scalar
+      `tlb` above stays the pre-SMP single-view (all-targets-conflated)
+      model; `perCoreTlb` is the per-core **refinement** (the two agree on
+      the boot-visible view via `shootdownRoundPerCore_tlb_eq`, and coincide
+      empty at boot — they are deliberately *not* forced pointwise-equal,
+      since the single view conflates all cores whereas `perCoreTlb` keeps
+      them distinct).  The per-core consistency invariant
+      `tlbInvalidationConsistent_perCore` (every core's view matches the
+      page tables) is the 13th `proofLayerInvariantBundle` conjunct,
+      generalising the 9th (`tlbConsistent st st.tlb`).
+
+      Defaults to every core's empty view (`Vector.replicate numCores
+      TlbState.empty`) — no stale entries at boot; pinned by
+      `default_perCoreTlb`.
+
+      **Information flow**: like `tlb` and `machine.timer`, this field is
+      deliberately **not** part of the IF projection surface — projecting a
+      TLB view would open a covert timing channel.  Its exclusion from
+      `projectState` is the correct behaviour. -/
+  perCoreTlb : Vector TlbState numCores :=
+    Vector.replicate numCores TlbState.empty
 
 /-- Abstract owner identity for a slot in this model: the containing CNode object id. -/
 abbrev CSpaceOwner := SeLe4n.ObjId
@@ -829,6 +878,11 @@ instance : Inhabited SystemState where
     -- theorems (SM7.A) can discharge by `rfl` / the initial-state
     -- theorems.
     tlbShootdown := SeLe4n.Kernel.Architecture.TlbShootdownState.initial
+    -- WS-SM SM7.C.1: every core's TLB view starts empty (no stale
+    -- translations at boot).  Explicit listing pins the default-state
+    -- invariant so `default_perCoreTlb` discharges via
+    -- `PerCoreVector.replicate_get`.
+    perCoreTlb := Vector.replicate numCores TlbState.empty
   }
 
 /-- X2-B/H-2: Checked domain schedule setter — validates that all entries have
@@ -1014,6 +1068,16 @@ theorem default_tlbShootdown_pendingBounded :
       (default : SystemState).tlbShootdown :=
   SeLe4n.Kernel.Architecture.pendingBounded_of_shootdownQuiescent
     default_tlbShootdown_quiescent
+
+/-- WS-SM SM7.C.1: at boot every core's TLB view is empty — the per-core
+generalisation of `tlb := TlbState.empty`.  Discharged by
+`PerCoreVector.replicate_get` (every slot of a `Vector.replicate` holds
+the replicated value), so `default_perCoreTlb` is available to the SM7.C
+per-core-consistency boot witness and to the Boot general bridge
+`bootFromPlatform_perCoreTlb_eq`. -/
+theorem default_perCoreTlb (c : CoreId) :
+    (default : SystemState).perCoreTlb.get c = TlbState.empty :=
+  PerCoreVector.replicate_get _ _ c
 
 -- ============================================================================
 -- WS-SM SM3.A audit-pass-5 — Non-vacuous lock-state invariant + preservation
@@ -1987,6 +2051,21 @@ theorem storeObject_tlbShootdown_eq
     (pair : Unit × SystemState)
     (hStore : storeObject id obj st = .ok pair) :
     pair.2.tlbShootdown = st.tlbShootdown := by
+  unfold storeObject at hStore; cases hStore; rfl
+
+/-- WS-SM SM7.F: `storeObject` only touches the object store and lifecycle
+metadata — the per-core TLB views are framed.  Leaf lemma of the
+`vspaceUnmapPageWithShootdownPerCore` initiator-atomic preservation chain:
+an object-mutating page-table transition never touches `perCoreTlb`, so the
+only per-core view change in a shootdown-aware operation is the explicit
+initiator invalidation the wrapper applies. -/
+theorem storeObject_perCoreTlb_eq
+    (st : SystemState)
+    (id : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (pair : Unit × SystemState)
+    (hStore : storeObject id obj st = .ok pair) :
+    pair.2.perCoreTlb = st.perCoreTlb := by
   unfold storeObject at hStore; cases hStore; rfl
 
 theorem storeObject_objects_eq

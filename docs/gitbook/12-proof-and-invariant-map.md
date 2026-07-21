@@ -747,9 +747,82 @@ TLB/cache maintenance model (`TlbModel.lean`, WS-H11/H-10):
 - `adapterFlushTlbByAsid` — per-ASID invalidation (ARM64 `TLBI ASIDE1`)
 - `adapterFlushTlbByVAddr` — per-(ASID,VAddr) invalidation (ARM64 `TLBI VAE1`)
 - `tlbConsistent` — invariant: all TLB entries match current page tables
-- R7-A: `TlbState` integrated into `SystemState`; `tlbConsistent` added to `proofLayerInvariantBundle`
+- R7-A: `TlbState` integrated into `SystemState`; `tlbConsistent st st.tlb` added to `proofLayerInvariantBundle` (the 9th conjunct; SM7.C generalises it per-core as the 13th conjunct `tlbInvalidationConsistent_perCore`, below)
 - `vspaceMapPageWithFlush`, `vspaceUnmapPageWithFlush` — composed page-table + targeted per-(ASID,VAddr) TLB-flush operations (AJ4-B)
 - 13 TLB theorems: `tlbConsistent_empty`, `adapterFlushTlb_restores_tlbConsistent`, `adapterFlushTlbByAsid_preserves_tlbConsistent`, `vspaceMapPage_then_flush_preserves_tlbConsistent`, `vspaceUnmapPage_then_flush_preserves_tlbConsistent`, `adapterFlushTlbByAsid_removes_matching`, `adapterFlushTlbByAsid_preserves_other`, `adapterFlushTlbByVAddr_preserves_tlbConsistent`, `adapterFlushTlbByVAddr_removes_matching`, `cross_asid_tlb_isolation`, `vspaceMapPageWithFlush_preserves_tlbConsistent`, `vspaceUnmapPageWithFlush_preserves_tlbConsistent`, `tlbConsistent_of_objects_eq`
+
+Per-core TLB model (`PerCoreTlbModel.lean`, WS-SM SM7.C — production,
+over the new `SystemState.perCoreTlb : Vector TlbState numCores`; the SMP
+generalisation of the scalar boot-core `tlb`, added alongside it):
+- `tlbOnCore` / `setTlbOnCore` — SM4.B path-a per-core view accessors +
+  `@[simp]` store/load algebra + per-field frame lemmas +
+  `default_{perCoreTlb,tlbOnCore}`
+- `tlbInsertOnCore` (SM7.C.2) — the hardware translation walker filling
+  one core's view (leaves other cores empty — the SMP asymmetry)
+- `tlbInvalidateOnCore` (SM7.C.3) — a local (this-core) invalidation
+  (leaves other cores stale — the precise SMP hazard the broadcast closes)
+- `tlbInvalidateOnAllCores` (SM7.C.4) — the cross-core broadcast: runs the
+  SM7.B `tlbShootdownBroadcast` (posting to `tlbShootdown`) **and** evolves
+  every core's view via the protocol's `shootdownRoundViews`, so
+  `perCoreTlb` is a genuine consumer of the shootdown state machine
+- `tlbInvalidationConsistent_perCore` (SM7.C.5) — every core's view matches
+  the page tables; **the 13th `proofLayerInvariantBundle` conjunct**,
+  generalising the 9th (`tlbConsistent st st.tlb`); boot witness
+  `default_tlbInvalidationConsistent_perCore`
+- `tlbShootdown_invalidates_perCore` (SM7.C.6) — Theorem 3.3.1
+  (`tlbShootdownBroadcast_invalidatesAllCores`) mounted on the field: after
+  a covering `tlbInvalidateOnAllCores` no core retains any covered entry
+  (the SMP-C4 use-after-unmap closure)
+- `tlbConsistency_cross_subsystem` (SM7.C.7) — the memory-subsystem
+  capstone (protocol × TLB-model × page-tables): a covering invalidation
+  both removes every stale entry on every core AND preserves per-core
+  consistency
+
+Per-core TLB model — v0.32.81 operative cut (the model made operative on
+the live shootdown path; v0.32.80 landed it as a parallel spec):
+- `handleTlbShootdownReqOnCorePerCore` — the operational `.tlbShootdownReq`
+  handler: runs the SM7.B single-view handler `handleTlbShootdownReqOnCore`
+  **and** retires the *same* drained operands on core `c`'s own view (the
+  real per-descriptor drain); `_tlb_eq` / `_tlbShootdown_eq` are the
+  trace-safety anchors, `_applies_posted_op` the non-vacuity bridge to the
+  abstract step, `_subset` / `_frame` /
+  `_preserves_tlbInvalidationConsistent_perCore`
+- `foldl_handleTlbShootdownReqOnCorePerCore_agrees` — the per-core handler
+  fold and the single-view fold produce the same `tlb`/`tlbShootdown`, so
+  the live `SyscallDispatchEntry.completeShootdownRounds` catch-up fold
+  swap to `handleTlbShootdownReqOnCorePerCore` is **trace byte-identical**
+- `shootdownRoundPerCore` — the per-core round the live seam runs;
+  `_perCoreTlb` proves its real-drain `perCoreTlb` **equals**
+  `shootdownRoundViews` (so Theorem 3.3.1's view vector is the field's live
+  evolution), `_tlb_eq` is the every-round two-model bridge (per-core round
+  `tlb` = single-view `shootdownRound` `tlb`), `_invalidates_perCore`
+  realises Theorem 3.3.1 on the mounted field by the real drain,
+  `_frame` / `_preserves_tlbInvalidationConsistent_perCore`
+- `tlbInsertOnCore_preserves_tlbInvalidationConsistent_perCore` — the
+  insert side of the 13th conjunct; `tlbInvalidateOnAllCoresCoalescing` —
+  the overflow-safe broadcast; `tlbConsistentCheck` /
+  `tlbInvalidationConsistentCheck_perCore` (+ `_iff` + `Decidable`) — the
+  computable consistency decision procedures
+- `perCoreTlb_write_preserves_projection` — the explicit non-interference
+  witness that a per-core TLB write is invisible to `projectState`
+  (`perCoreTlb`, like `tlb`/`machine.timer`, is out of `ObservableState`);
+  `FrozenSystemState.perCoreTlb` is required (no default — a silent
+  freeze-drop is a compile error)
+
+Per-core TLB model — v0.32.83 PR #844 review cut (initiator drain +
+view-outcome demotion):
+- `drainInitiatorPerCoreView` / `shootdownCatchUpPerCore` — the live
+  catch-up now retires the round's operands on the **initiator's** own
+  per-core view too (the inner-shareable `tlbiForSharing` reaches the
+  issuing PE; `shootdownTargets` excludes it), perCoreTlb-only so
+  trace-safe (`shootdownCatchUpPerCore_agrees_singleView` = the SM7.B
+  single-view target fold's `tlb`/`tlbShootdown` effect;
+  `shootdownCatchUpPerCore_initiator_view` = faithfulness); the live
+  `completeShootdownRounds` seam runs `shootdownCatchUpPerCore`
+- `shootdownRoundPerCore_cross_subsystem` — the C.7 capstone on the
+  **operative** drains-at-ack round; `tlbInvalidateOnAllCores` is
+  documented as the eager view-outcome abstraction (views ahead of the
+  ack protocol), not a completed round
 
 TLB shootdown state layer (`TlbShootdown.lean`, WS-SM SM7.A — production,
 mounted as `SystemState.tlbShootdown`; the SM7.B protocol transitions are

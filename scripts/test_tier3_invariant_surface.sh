@@ -984,6 +984,39 @@ run_check "INVARIANT" rg -n '^theorem withLockSet_preserves_pendingBounded' SeLe
 run_check "INVARIANT" rg -n '^theorem acquireLockOnObject_tlbShootdown_eq' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
 run_check "INVARIANT" rg -n '^private def runDebtClosureChecks' tests/SmpTlbShootdownSuite.lean
 
+# WS-SM SM7.C per-core TLB model — the mounted per-core view, its ops, the
+# 13th proofLayerInvariantBundle conjunct, the operational round the live
+# seam runs (with its bridge to the SM7.B single-view round + operative
+# Theorem 3.3.1), and the live-seam per-core-drain wiring.
+run_check "INVARIANT" rg -n '^def tlbInvalidationConsistent_perCore' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
+run_check "INVARIANT" rg -n '^theorem tlbShootdown_invalidates_perCore' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
+run_check "INVARIANT" rg -n '^theorem tlbConsistency_cross_subsystem' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
+run_check "INVARIANT" rg -n '^def handleTlbShootdownReqOnCorePerCore' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
+run_check "INVARIANT" rg -n '^theorem shootdownRoundPerCore_invalidates_perCore' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
+run_check "INVARIANT" rg -n '^theorem shootdownRoundPerCore_tlb_eq' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
+run_check "INVARIANT" rg -n '^theorem tlbInvalidationConsistentCheck_perCore_iff' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
+run_check "INVARIANT" rg -n 'tlbInvalidationConsistent_perCore st' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n 'handleTlbShootdownReqOnCorePerCore' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^private def runPerCoreTlbOperationalChecks' tests/SmpTlbShootdownSuite.lean
+# WS-SM SM7.F.4: live fill + initiator-atomic VSpace seams (the live `.vspaceMap`
+# / `.vspaceUnmap` dispatch routes through the per-core wrappers).
+run_check "INVARIANT" rg -n '^def vspaceMapPageCheckedWithShootdownFromStatePerCore' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
+run_check "INVARIANT" rg -n '^theorem vspaceMapPageCheckedWithShootdownFromStatePerCore_preserves_tlbInvalidationConsistent_perCore' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
+run_check "INVARIANT" rg -n 'vspaceUnmapPageWithShootdownPerCore' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n 'vspaceMapPageCheckedWithShootdownFromStatePerCore' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^private def runPerCoreTlbLiveLifecycleChecks' tests/SmpTlbShootdownSuite.lean
+# WS-SM SM7.F.4(b)(iii): the retype seam drains the initiator's per-core view.
+run_check "INVARIANT" rg -n '^def lifecycleRetypeDirectWithCleanupShootdownPerCore' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectWithCleanupShootdownPerCore_initiator_drained' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" rg -n 'lifecycleRetypeDirectWithCleanupShootdownPerCore' SeLe4n/Kernel/API.lean
+# WS-SM SM7.F.4(b)(iii): shared initiator drain + the CSpaceAddr retype sibling.
+run_check "INVARIANT" rg -n '^def retypeInitiatorDrain' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" rg -n '^def lifecycleRetypeWithCleanupShootdownPerCore' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" rg -n '^theorem retypeInitiatorDrain_drained' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+# WS-SM SM7.F.4(b)(iii) residual CLOSED: whole-invariant retype preservation.
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectWithCleanupShootdownPerCore_preserves_tlbInvalidationConsistent_perCore' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeWithCleanupShootdownPerCore_preserves_tlbInvalidationConsistent_perCore' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+
 # WS-H12d IPC message payload bounds anchors — predicate definitions + enforcement + theorems.
 run_check "INVARIANT" rg -n '^def maxMessageRegisters' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^def maxExtraCaps' SeLe4n/Model/Object/Types.lean

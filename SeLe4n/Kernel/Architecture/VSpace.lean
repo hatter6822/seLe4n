@@ -361,6 +361,38 @@ theorem vspaceUnmapPageWithFlush_tlbShootdown_eq (asid : SeLe4n.ASID)
       rw [← hStep.2]
       exact vspaceUnmapPage_tlbShootdown_eq asid vaddr st pair.2 hBase
 
+/-- WS-SM SM7.F: `vspaceUnmapPage` frames the per-core TLB views — a page
+unmap bottoms out in `storeObject`, which never touches `perCoreTlb`. -/
+theorem vspaceUnmapPage_perCoreTlb_eq (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (st st' : SystemState)
+    (hStep : vspaceUnmapPage asid vaddr st = .ok ((), st')) :
+    st'.perCoreTlb = st.perCoreTlb := by
+  unfold vspaceUnmapPage at hStep
+  split at hStep
+  · cases hStep
+  · split at hStep
+    · cases hStep
+    · exact SeLe4n.Model.storeObject_perCoreTlb_eq _ _ _ _ hStep
+
+/-- WS-SM SM7.F: `vspaceUnmapPageWithFlush` frames the per-core TLB views —
+the flush composition adds only a scalar `tlb` write, leaving every core's
+`perCoreTlb` view untouched.  This is what makes the initiator's own view
+change in `vspaceUnmapPageWithShootdownPerCore` come *exclusively* from the
+wrapper's explicit `drainInitiatorPerCoreView` step. -/
+theorem vspaceUnmapPageWithFlush_perCoreTlb_eq (asid : SeLe4n.ASID)
+    (vaddr : SeLe4n.VAddr) (st st' : SystemState)
+    (hStep : vspaceUnmapPageWithFlush asid vaddr st = .ok ((), st')) :
+    st'.perCoreTlb = st.perCoreTlb := by
+  unfold vspaceUnmapPageWithFlush at hStep
+  revert hStep
+  cases hBase : vspaceUnmapPage asid vaddr st with
+  | error e => intro hStep; cases hStep
+  | ok pair =>
+      simp only [Except.ok.injEq, Prod.mk.injEq]
+      intro hStep
+      rw [← hStep.2]
+      exact vspaceUnmapPage_perCoreTlb_eq asid vaddr st pair.2 hBase
+
 /-- WS-SM SM7.B: `vspaceMapPageWithFlush` frames the TLB-shootdown state. -/
 theorem vspaceMapPageWithFlush_tlbShootdown_eq (asid : SeLe4n.ASID)
     (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr) (perms : PagePermissions)
@@ -391,6 +423,57 @@ theorem vspaceMapPageCheckedWithFlushFromState_tlbShootdown_eq
   · split at hStep
     · cases hStep
     · exact vspaceMapPageWithFlush_tlbShootdown_eq asid vaddr paddr perms st st' hStep
+
+/-- WS-SM SM7.F: `vspaceMapPage` frames the per-core TLB views — a page
+map bottoms out in `storeObject`, which never touches `perCoreTlb`. -/
+theorem vspaceMapPage_perCoreTlb_eq (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr) (perms : PagePermissions) (st st' : SystemState)
+    (hStep : vspaceMapPage asid vaddr paddr perms st = .ok ((), st')) :
+    st'.perCoreTlb = st.perCoreTlb := by
+  unfold vspaceMapPage at hStep
+  split at hStep
+  · cases hStep
+  · split at hStep
+    · cases hStep
+    · split at hStep
+      · cases hStep
+      · exact SeLe4n.Model.storeObject_perCoreTlb_eq _ _ _ _ hStep
+
+/-- WS-SM SM7.F: `vspaceMapPageWithFlush` frames the per-core TLB views —
+the flush composition adds only a scalar `tlb` write, leaving every core's
+`perCoreTlb` view untouched. -/
+theorem vspaceMapPageWithFlush_perCoreTlb_eq (asid : SeLe4n.ASID)
+    (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr) (perms : PagePermissions)
+    (st st' : SystemState)
+    (hStep : vspaceMapPageWithFlush asid vaddr paddr perms st = .ok ((), st')) :
+    st'.perCoreTlb = st.perCoreTlb := by
+  unfold vspaceMapPageWithFlush at hStep
+  revert hStep
+  cases hBase : vspaceMapPage asid vaddr paddr perms st with
+  | error e => intro hStep; cases hStep
+  | ok pair =>
+      simp only [Except.ok.injEq, Prod.mk.injEq]
+      intro hStep
+      rw [← hStep.2]
+      exact vspaceMapPage_perCoreTlb_eq asid vaddr paddr perms st pair.2 hBase
+
+/-- WS-SM SM7.F: the state-aware bounds-checked map frames the per-core TLB
+views — the initiator's own view change in
+`vspaceMapPageCheckedWithShootdownFromStatePerCore` comes *exclusively* from
+that wrapper's explicit drain + fill (a page map bottoms out in `storeObject`,
+which never touches `perCoreTlb`). -/
+theorem vspaceMapPageCheckedWithFlushFromState_perCoreTlb_eq
+    (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
+    (perms : PagePermissions) (st st' : SystemState)
+    (hStep : vspaceMapPageCheckedWithFlushFromState asid vaddr paddr perms st
+      = .ok ((), st')) :
+    st'.perCoreTlb = st.perCoreTlb := by
+  unfold vspaceMapPageCheckedWithFlushFromState at hStep
+  split at hStep
+  · cases hStep
+  · split at hStep
+    · cases hStep
+    · exact vspaceMapPageWithFlush_perCoreTlb_eq asid vaddr paddr perms st st' hStep
 
 -- ============================================================================
 -- resolveAsidRoot extraction and characterization lemmas (F-08 / TPI-001)
@@ -734,5 +817,148 @@ theorem vspaceUnmapPage_entry_consistent_frame
                 (KernelObject.vspaceRoot root') hOidEq hObjK.1 hStep]
         rw [hResolveEq] at hResolveMid
         exact hConsistPre rid r hResolveMid
+
+/-- WS-SM SM7.F (PR #844 review-3): `vspaceUnmapPage` never *unbinds* an ASID —
+it erases a page mapping within a root but leaves every ASID→root binding
+resolvable.  So an entry whose ASID resolved before the unmap still resolves
+after.  The resolution half of the per-core `tlbEntryConsistent` (SM7.F): an
+unresolvable ASID is a *stale* (use-after-retype) entry, and this lemma proves
+the *unmap* is not what makes an ASID unresolvable — that is `lifecycleRetype`. -/
+theorem vspaceUnmapPage_resolveAsidRoot_isSome
+    {st stMid : SystemState} (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (hStep : vspaceUnmapPage asid vaddr st = .ok ((), stMid))
+    (hObjK : st.objects.invExtK) (hAsidK : st.asidTable.invExtK)
+    {a : SeLe4n.ASID} (h : (resolveAsidRoot st a).isSome) :
+    (resolveAsidRoot stMid a).isSome := by
+  unfold vspaceUnmapPage at hStep
+  cases hRes : resolveAsidRoot st asid with
+  | none => rw [hRes] at hStep; simp at hStep
+  | some val =>
+    obtain ⟨rootId₀, root₀⟩ := val
+    have ⟨hAsidTbl, hObjRoot, hRootAsidEq⟩ := resolveAsidRoot_some_facts st asid rootId₀ root₀ hRes
+    rw [hRes] at hStep; simp at hStep
+    cases hUnmapPage : root₀.unmapPage vaddr with
+    | none => rw [hUnmapPage] at hStep; simp at hStep
+    | some root' =>
+      rw [hUnmapPage] at hStep; simp at hStep
+      have hRoot'Asid : root'.asid = asid := by
+        unfold VSpaceRoot.unmapPage at hUnmapPage
+        split at hUnmapPage <;> simp at hUnmapPage
+        subst hUnmapPage; exact hRootAsidEq
+      have hStoreObjSelf := storeObject_objects_eq st stMid rootId₀
+        (KernelObject.vspaceRoot root') hObjK.1 hStep
+      have hAsidInv : (match st.objects[rootId₀]? with
+          | some (.vspaceRoot oldRoot) => st.asidTable.erase oldRoot.asid
+          | _ => st.asidTable).invExt := by
+        rw [hObjRoot]; exact st.asidTable.erase_preserves_invExt root₀.asid
+          hAsidK.1 hAsidK.2.1
+      by_cases hAsidEq : a = asid
+      · subst hAsidEq
+        have hResolvePost : resolveAsidRoot stMid a = some (rootId₀, root') := by
+          apply resolveAsidRoot_of_asidTable_entry
+          · rw [← hRoot'Asid]
+            exact storeObject_asidTable_vspaceRoot st stMid rootId₀ root' hAsidInv hStep
+          · exact hStoreObjSelf
+          · exact hRoot'Asid
+        rw [hResolvePost]; rfl
+      · have hNeAsid : a ≠ root'.asid := fun hh => hAsidEq (hh.trans hRoot'Asid)
+        have hAsidPreserved : stMid.asidTable[a]? = st.asidTable[a]? := by
+          have hMid := storeObject_asidTable_vspaceRoot_ne st stMid rootId₀
+            root' a hNeAsid hAsidInv hStep
+          simp [hObjRoot] at hMid
+          rw [hMid, hRootAsidEq]
+          exact st.asidTable.getElem?_erase_ne_K asid a
+            (by intro hh; exact hAsidEq (eq_of_beq hh).symm) hAsidK
+        have hResolveEq : resolveAsidRoot stMid a = resolveAsidRoot st a := by
+          simp only [resolveAsidRoot]; rw [hAsidPreserved]
+          cases hEntryLookup : st.asidTable[a]? with
+          | none => rfl
+          | some oid =>
+            simp only
+            by_cases hOidEq : oid = rootId₀
+            · subst hOidEq
+              rw [hStoreObjSelf, hObjRoot]
+              simp only
+              have h1 : ¬(root'.asid = a) := by rw [hRoot'Asid]; exact fun hh => hAsidEq hh.symm
+              have h2 : ¬(root₀.asid = a) := by rw [hRootAsidEq]; exact fun hh => hAsidEq hh.symm
+              simp [h1, h2]
+            · rw [storeObject_objects_ne st stMid rootId₀ oid
+                (KernelObject.vspaceRoot root') hOidEq hObjK.1 hStep]
+        rw [hResolveEq]; exact h
+
+/-- WS-SM SM7.F: a page **map** never unbinds an ASID — if `a` resolved to a
+root before the map, it still resolves afterwards (either it is the mapped
+ASID, whose binding `storeObject` keeps while replacing only the root object,
+or it is a different ASID whose table entry and root object are untouched).
+The map analogue of `vspaceUnmapPage_resolveAsidRoot_isSome`; lets the SM7.F.4
+map wrapper's frame carry the *conjunction*-form `tlbEntryConsistent` (which,
+post-Finding-1, requires the ASID to still resolve). -/
+theorem vspaceMapPage_resolveAsidRoot_isSome
+    {st stMid : SystemState} (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr) (perms : PagePermissions)
+    (hStep : vspaceMapPage asid vaddr paddr perms st = .ok ((), stMid))
+    (hObjK : st.objects.invExtK) (hAsidK : st.asidTable.invExtK)
+    {a : SeLe4n.ASID} (h : (resolveAsidRoot st a).isSome) :
+    (resolveAsidRoot stMid a).isSome := by
+  unfold vspaceMapPage at hStep
+  cases hRes : resolveAsidRoot st asid with
+  | none => rw [hRes] at hStep; simp at hStep
+  | some val =>
+    obtain ⟨rootId₀, root₀⟩ := val
+    have ⟨hAsidTbl, hObjRoot, hRootAsidEq⟩ := resolveAsidRoot_some_facts st asid rootId₀ root₀ hRes
+    rw [hRes] at hStep; simp at hStep
+    split at hStep
+    · simp at hStep
+    · cases hMapPage : root₀.mapPage vaddr paddr perms with
+      | none => rw [hMapPage] at hStep; simp at hStep
+      | some root' =>
+        rw [hMapPage] at hStep; simp at hStep
+        have hRoot'Asid : root'.asid = asid := by
+          unfold VSpaceRoot.mapPage at hMapPage
+          split at hMapPage
+          · simp at hMapPage
+          · split at hMapPage
+            · simp at hMapPage
+            · simp at hMapPage; subst hMapPage; exact hRootAsidEq
+        have hStoreObjSelf := storeObject_objects_eq st stMid rootId₀
+          (KernelObject.vspaceRoot root') hObjK.1 hStep
+        have hAsidInv : (match st.objects[rootId₀]? with
+            | some (.vspaceRoot oldRoot) => st.asidTable.erase oldRoot.asid
+            | _ => st.asidTable).invExt := by
+          rw [hObjRoot]; exact st.asidTable.erase_preserves_invExt root₀.asid
+            hAsidK.1 hAsidK.2.1
+        by_cases hAsidEq : a = asid
+        · subst hAsidEq
+          have hResolvePost : resolveAsidRoot stMid a = some (rootId₀, root') := by
+            apply resolveAsidRoot_of_asidTable_entry
+            · rw [← hRoot'Asid]
+              exact storeObject_asidTable_vspaceRoot st stMid rootId₀ root' hAsidInv hStep
+            · exact hStoreObjSelf
+            · exact hRoot'Asid
+          rw [hResolvePost]; rfl
+        · have hNeAsid : a ≠ root'.asid := fun hh => hAsidEq (hh.trans hRoot'Asid)
+          have hAsidPreserved : stMid.asidTable[a]? = st.asidTable[a]? := by
+            have hMid := storeObject_asidTable_vspaceRoot_ne st stMid rootId₀
+              root' a hNeAsid hAsidInv hStep
+            simp [hObjRoot] at hMid
+            rw [hMid, hRootAsidEq]
+            exact st.asidTable.getElem?_erase_ne_K asid a
+              (by intro hh; exact hAsidEq (eq_of_beq hh).symm) hAsidK
+          have hResolveEq : resolveAsidRoot stMid a = resolveAsidRoot st a := by
+            simp only [resolveAsidRoot]; rw [hAsidPreserved]
+            cases hEntryLookup : st.asidTable[a]? with
+            | none => rfl
+            | some oid =>
+              simp only
+              by_cases hOidEq : oid = rootId₀
+              · subst hOidEq
+                rw [hStoreObjSelf, hObjRoot]
+                simp only
+                have h1 : ¬(root'.asid = a) := by rw [hRoot'Asid]; exact fun hh => hAsidEq hh.symm
+                have h2 : ¬(root₀.asid = a) := by rw [hRootAsidEq]; exact fun hh => hAsidEq hh.symm
+                simp [h1, h2]
+              · rw [storeObject_objects_ne st stMid rootId₀ oid
+                  (KernelObject.vspaceRoot root') hOidEq hObjK.1 hStep]
+          rw [hResolveEq]; exact h
 
 end SeLe4n.Kernel.Architecture

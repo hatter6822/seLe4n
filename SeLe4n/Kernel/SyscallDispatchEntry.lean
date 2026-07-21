@@ -24,6 +24,10 @@ import SeLe4n.Kernel.IPC.CrossCore.Cancellation
 -- `handleTlbShootdownReqOnCore`), the wait budget, and the typed
 -- broadcast-TLBI dispatcher behind `completeShootdownRounds`.
 import SeLe4n.Kernel.Architecture.TlbShootdownProtocol
+-- WS-SM SM7.C: the catch-up commit drains each target's queue onto its own
+-- per-core `perCoreTlb` view (`handleTlbShootdownReqOnCorePerCore`), making
+-- the mounted per-core TLB model operative on the live shootdown path.
+import SeLe4n.Kernel.Architecture.PerCoreTlbModel
 import SeLe4n.Kernel.Architecture.TlbShootdownWait
 import SeLe4n.Kernel.Architecture.TlbiForSharing
 -- WS-SM SM7.B.12: the RPi5 platform binding — `shootdownSharingDomain`
@@ -262,9 +266,28 @@ def completeShootdownRounds (changed : List Concurrency.CoreId)
       panic! "WS-SM SM7.B.6: TLB shootdown round timed out — a target \
         core is hung or deaf; halting fail-closed (a silently skipped \
         invalidation would be the SMP-C4 stale-TLB hazard)"
+    -- WS-SM SM7.C: the model catch-up drains each *non-initiator* target's
+    -- queue onto its own per-core `perCoreTlb` view
+    -- (`handleTlbShootdownReqOnCorePerCore`) AND retires the round's collapsed
+    -- operands on the *initiator's* own view (`drainInitiatorPerCoreView`, via
+    -- `shootdownCatchUpPerCore`).  The initiator drain is the PR #844 P1 fix:
+    -- the `tlbiForSharing` loop above is an inner-shareable broadcast that
+    -- reaches the issuing PE too, so the initiator's own per-core view must
+    -- retire the operands (`shootdownTargets execCore` explicitly excludes the
+    -- initiator).  This makes the mounted per-core TLB model reflect the live
+    -- round's real per-descriptor drain on **every** reached core, initiator
+    -- included — the operative form of Theorem 3.3.1
+    -- (`Architecture.shootdownRoundPerCore_invalidates_perCore`).  It stays
+    -- **trace-safe**: the initiator drain is `perCoreTlb`-only (the scalar
+    -- `st.tlb` boot-core view was already retired in the dispatch), so the
+    -- catch-up's `tlb` / `tlbShootdown` effect is definitionally the SM7.B
+    -- single-view target fold's (`shootdownCatchUpPerCore_agrees_singleView`);
+    -- only the projection-invisible `perCoreTlb` additionally evolves, so the
+    -- golden trace stays byte-identical.  The scalar `st.tlb` remains the
+    -- pre-SMP single-view (all-cores-conflated) model; `perCoreTlb` is the
+    -- per-core refinement.
     Platform.FFI.modifyGetKernelState (fun st =>
-      ((), (Architecture.shootdownTargets execCore).foldl
-        Architecture.handleTlbShootdownReqOnCore st))
+      ((), Architecture.shootdownCatchUpPerCore st execCore collapsed))
 
 /-- **WS-SM SM7.B** (structural marker): a commit that changed no
 pending-shootdown queue runs no round — no lock traffic, no reset, no

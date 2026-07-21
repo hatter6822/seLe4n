@@ -191,7 +191,8 @@ private def emptyFrozenState : FrozenSystemState :=
     objectIndex := []
     objectIndexSet := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
     scThreadIndex := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
-    tlb := TlbState.empty }
+    tlb := TlbState.empty
+    perCoreTlb := _root_.Vector.replicate SeLe4n.Kernel.Concurrency.numCores TlbState.empty }
 
 /-- Helper: build a minimal FrozenSystemState containing the given objects.
 `FrozenMap.set` REQUIRES the key to already exist (frozen maps have a
