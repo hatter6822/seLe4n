@@ -581,6 +581,12 @@ open SeLe4n.Kernel.Concurrency
 -- per-core wrappers (the delegation theorems pin the exact call targets):
 #check @SeLe4n.Kernel.dispatchWithCap_vspaceUnmap_delegates
 #check @SeLe4n.Kernel.dispatchWithCap_vspaceMap_delegates
+-- SM7.F.4(b)(iii): the retype seam — the per-core wrapper drains the
+-- initiator's view for the destroyed ASID (proven `_initiator_drained`), and
+-- the live `.lifecycleRetype` dispatch routes through it:
+#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdownPerCore
+#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdownPerCore_initiator_drained
+#check @SeLe4n.Kernel.dispatchWithCap_lifecycleRetype_delegates
 
 -- ============================================================================
 -- §2  Elaboration-time examples

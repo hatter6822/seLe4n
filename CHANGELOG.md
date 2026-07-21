@@ -1,3 +1,48 @@
+## v0.32.90 — WS-SM SM7.F.4(b)(iii): initiator-atomic retype seam (PR #844 review)
+
+Closes the review finding that the v0.32.89 live fill made the retype gap
+**reachable**: after production `.vspaceMap` caches a translation on the
+executing core, production `.lifecycleRetype` of that VSpace root
+(`lifecycleRetypeDirectWithCleanupShootdown` → `tlbFlushByASIDWithShootdown`)
+made the ASID unresolvable and posted the `.aside1` descriptor to **remote**
+targets only — leaving the initiator's own cached entry stale **and** uncovered
+in the committed post-retype state, so the pending-aware per-core invariant was
+false in a reachable committed state.  (Not a CVE — the hardware TLB is correctly
+flushed by the local `TLBI ASIDE1` + `.aside1` broadcast, and `perCoreTlb ∉
+projectState`, so no covert channel and no real stale-TLB hazard — but a mounted
+invariant must never be false in a reachable state.)
+
+**Fix (implement-the-improvement).** New
+`lifecycleRetypeDirectWithCleanupShootdownPerCore` — the initiator-atomic retype
+seam: on a live-VSpaceRoot retype it retires the operand on the **initiator's
+own** `perCoreTlb` view (`drainInitiatorPerCoreView` with
+`encodeAsidInvalidation asid`, the initiator's local `TLBI ASIDE1`, atomic with
+the round), reading the destroyed ASID from the **pre-state**
+(`st.getVSpaceRoot? target`) exactly like the base wrapper.  The live
+`.lifecycleRetype` arm + `dispatchWithCap_lifecycleRetype_delegates` route
+through it.  Machine-checked: `_non_vspace` (a non-VSpaceRoot retype commits the
+base result unchanged) and `_initiator_drained` (after the wrapper the
+initiator's view holds **no** entry for the destroyed ASID — the exact
+"drains the initiator atomically" property, via the drain-survivor lemma +
+`encodeAsidInvalidation_matches`), so the reachable stale-and-uncovered entry
+the finding identified no longer exists.
+
+Trace byte-identical (`perCoreTlb ∉ projectState`; the drain touches no field the
+SGI/round diff-recovery reads); full build + Tier 0-3 green; zero sorry/axiom;
+AK7 unchanged (`RAW_MATCH_VSPACEROOT` 14, `GETVSPACEROOT_ADOPTION` 31 → 35 — the
+wrapper reads through the typed `getVSpaceRoot?` accessor, never the raw store).
+
+**Tracked follow-on:** the full whole-invariant preservation theorem
+`…_preserves_tlbInvalidationConsistent_perCore` (that the retype **also** keeps
+every *other* ASID's cached entries consistent on every core) needs a
+retype-pipeline `resolveAsidRoot`-preservation frame.  It is now tractable — for
+a VSpaceRoot target `lifecyclePreRetypeCleanup` is the identity (its arms are
+TCB/CNode/endpoint/reply-specific), `scrubObjectMemory_objects_eq` is `rfl`, and
+the `storeObject` ASID frames exist — but is a substantial standalone proof;
+tracked as the SM7.F.4(b)(iii) proof-completeness residual.  The `_initiator_
+drained` proof already discharges the specific reachable violation the finding
+raised.
+
 ## v0.32.89 — WS-SM SM7.F.4: live fill + initiator-atomic VSpace seams (PR #844)
 
 Makes the per-core TLB model **operative on the live syscall path** — closing

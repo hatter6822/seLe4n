@@ -866,7 +866,14 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
             -- address space — the wrapper posts the `.aside1` shootdown
             -- round from the caller's core; non-VSpaceRoot retypes are
             -- unchanged (lifecycleRetypeDirectWithCleanupShootdown_non_vspace).
-            lifecycleRetypeDirectWithCleanupShootdown
+            -- WS-SM SM7.F.4(b)(iii): route through the per-core wrapper, which
+            -- additionally retires the initiator's own `perCoreTlb` view for
+            -- the destroyed ASID atomically (the initiator's local TLBI
+            -- ASIDE1) — once the live `.vspaceMap` fill is operative, the
+            -- retyped ASID may be cached on the caller's own view, and the
+            -- `.aside1` round posts only to remote cores.  Trace-safe
+            -- (`perCoreTlb ∉ projectState`).
+            lifecycleRetypeDirectWithCleanupShootdownPerCore
               (determineExecutingCore st tid) cap args.targetObj newObj st
     | _ => fun _ => .error .invalidCapability
   | .vspaceMap =>
@@ -2384,12 +2391,15 @@ theorem dispatchWithCap_cspaceDelete_delegates
 -- WS-K-D: Lifecycle and VSpace dispatch delegation theorems
 -- ============================================================================
 
-/-- U-H04 / WS-SM SM7.B.11: When lifecycleRetype dispatch succeeds,
-`lifecycleRetypeDirectWithCleanupShootdown` is invoked with the caller's
-executing core, the resolved cap, decoded target, and constructed object.
-The safe wrapper performs pre-retype cleanup (H-05), memory scrubbing
-(S6-C), and — when the retyped object was a live VSpaceRoot — the
-`.aside1` TLB shootdown round for the destroyed address space (SM7.B.11). -/
+/-- U-H04 / WS-SM SM7.B.11 / WS-SM SM7.F.4(b)(iii): When lifecycleRetype
+dispatch succeeds, `lifecycleRetypeDirectWithCleanupShootdownPerCore` is invoked
+with the caller's executing core, the resolved cap, decoded target, and
+constructed object.  The safe wrapper performs pre-retype cleanup (H-05), memory
+scrubbing (S6-C), and — when the retyped object was a live VSpaceRoot — the
+`.aside1` TLB shootdown round for the destroyed address space (SM7.B.11); the
+`…PerCore` wrapper additionally retires the initiator's own `perCoreTlb` view for
+the destroyed ASID atomically (SM7.F.4(b)(iii); projection-invisible, so the
+delegation is trace-equivalent to the plain shootdown wrapper). -/
 theorem dispatchWithCap_lifecycleRetype_delegates
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
     (cap : Capability) (objId : SeLe4n.ObjId)
@@ -2398,7 +2408,7 @@ theorem dispatchWithCap_lifecycleRetype_delegates
     (hTarget : cap.target = .object objId)
     (hDecode : decodeLifecycleRetypeArgs decoded = .ok args) :
     dispatchWithCap decoded tid gate cap =
-      fun st => lifecycleRetypeDirectWithCleanupShootdown
+      fun st => lifecycleRetypeDirectWithCleanupShootdownPerCore
         (determineExecutingCore st tid) cap args.targetObj
         (objectOfKernelType args.newType args.size) st := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]

@@ -9,6 +9,10 @@
 
 import SeLe4n.Kernel.Lifecycle.Operations.ScrubAndUntyped
 import SeLe4n.Kernel.Architecture.TlbShootdownProtocol
+-- WS-SM SM7.F.4(b)(iii): the per-core TLB model — the retype-with-shootdown
+-- wrapper additionally retires the initiator's own `perCoreTlb` view for the
+-- destroyed ASID (the initiator's local `TLBI ASIDE1`, atomic with the round).
+import SeLe4n.Kernel.Architecture.PerCoreTlbModel
 
 /-!
 AN4-G.5 (LIF-M05) child module extracted from
@@ -633,5 +637,101 @@ theorem lifecycleRetypeDirectWithCleanupShootdown_preserves_pendingBounded
           intro hOk
           exact Architecture.tlbFlushByASIDWithShootdown_preserves_pendingBounded
             (hFrame ▸ hB) hOk
+
+/-- **WS-SM SM7.F.4(b)(iii)** (the initiator-atomic retype seam — PR #844
+review closure): the retype-with-shootdown that additionally retires the
+*initiator's own* per-core TLB view for the destroyed ASID **atomically** with
+the round posting.  `lifecycleRetypeDirectWithCleanupShootdown` retypes the
+object, and — when the retyped object was a live `.vspaceRoot` — flushes the
+initiator's scalar TLB and posts a covering `.aside1` descriptor to the
+**remote** targets (`shootdownTargets executingCore`, which *excludes* the
+initiator).  Once the live `.vspaceMap` fill (SM7.F.4(a)) is operative, the
+retyped ASID's translation may be cached on the initiator's own `perCoreTlb`
+view; the retype makes that ASID unresolvable, so — without this step — the
+initiator's cached entry would be stale **and** uncovered (its queue holds no
+descriptor) until the deferred catch-up, making the pending-aware invariant
+(`tlbInvalidationConsistent_perCore`) false in the committed intermediate state.
+This wrapper closes that gap: it retires the operand on the initiator's own view
+(`drainInitiatorPerCoreView` with `encodeAsidInvalidation asid` — the
+initiator's local `TLBI ASIDE1`, which real hardware executes synchronously).
+The destroyed ASID is read from the **pre-state** (`st.getVSpaceRoot? target`,
+before the retype makes it unresolvable), mirroring the base wrapper.
+Trace-safe: `perCoreTlb ∉ projectState`, and the drain touches no field the
+SGI/round diff-recovery reads. -/
+def lifecycleRetypeDirectWithCleanupShootdownPerCore
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (authCap : Capability) (target : SeLe4n.ObjId)
+    (newObj : KernelObject) : Kernel Unit :=
+  fun st =>
+    match lifecycleRetypeDirectWithCleanupShootdown executingCore authCap target
+        newObj st with
+    | .error e => .error e
+    | .ok ((), st') =>
+        match (st.getVSpaceRoot? target).map (·.asid) with
+        | none => .ok ((), st')
+        | some asid =>
+            .ok ((), Architecture.drainInitiatorPerCoreView st' executingCore
+              [Architecture.encodeAsidInvalidation asid])
+
+/-- **WS-SM SM7.F.4(b)(iii)**: a non-VSpaceRoot retype owes no per-core TLB
+work — the per-core wrapper commits exactly the base shootdown wrapper's result
+(trace safety + no spurious `perCoreTlb` change for every non-address-space
+retype). -/
+theorem lifecycleRetypeDirectWithCleanupShootdownPerCore_non_vspace
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (authCap : Capability) (target : SeLe4n.ObjId) (newObj : KernelObject)
+    (st : SystemState)
+    (hOld : st.getVSpaceRoot? target = none) :
+    lifecycleRetypeDirectWithCleanupShootdownPerCore executingCore authCap target
+        newObj st =
+      lifecycleRetypeDirectWithCleanupShootdown executingCore authCap target
+        newObj st := by
+  unfold lifecycleRetypeDirectWithCleanupShootdownPerCore
+  rw [hOld]
+  cases lifecycleRetypeDirectWithCleanupShootdown executingCore authCap target
+      newObj st with
+  | error e => rfl
+  | ok pair =>
+      obtain ⟨u, st'⟩ := pair
+      cases u
+      rfl
+
+/-- **WS-SM SM7.F.4(b)(iii)** (the fix's core property, machine-checked): after
+the per-core retype wrapper commits, the **initiator's own** per-core TLB view
+holds **no** entry for the destroyed ASID — the drain retired them all (the
+initiator's local `TLBI ASIDE1`).  This is exactly the "drains the initiator
+atomically" property the finding asked for: once the retype makes `root.asid`
+unresolvable, the initiator can no longer be caching a stale, uncovered
+translation for it, so the committed post-retype state carries no
+stale-and-uncovered entry on the initiator (the reachable pending-aware
+invariant violation the plain shootdown wrapper left open). -/
+theorem lifecycleRetypeDirectWithCleanupShootdownPerCore_initiator_drained
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (authCap : Capability) (target : SeLe4n.ObjId) (newObj : KernelObject)
+    {st st' : SystemState} {root : VSpaceRoot}
+    (hRoot : st.getVSpaceRoot? target = some root)
+    (hStep : lifecycleRetypeDirectWithCleanupShootdownPerCore executingCore
+      authCap target newObj st = .ok ((), st')) :
+    ∀ e ∈ (Architecture.tlbOnCore st' executingCore).entries, e.asid ≠ root.asid := by
+  unfold lifecycleRetypeDirectWithCleanupShootdownPerCore at hStep
+  revert hStep
+  cases hBase : lifecycleRetypeDirectWithCleanupShootdown executingCore authCap
+      target newObj st with
+  | error e => intro hStep; cases hStep
+  | ok pair =>
+      obtain ⟨u, stBase⟩ := pair; cases u
+      rw [hRoot]
+      simp only [Option.map_some, Except.ok.injEq, Prod.mk.injEq, true_and]
+      intro hStep
+      subst hStep
+      intro e he hEq
+      rw [Architecture.drainInitiatorPerCoreView_tlbOnCore_self] at he
+      have hnm : Architecture.tlbEntryMatches
+          (Architecture.encodeAsidInvalidation root.asid) e = false :=
+        Architecture.applyTlbInvalidations_survivor_not_matched
+          [Architecture.encodeAsidInvalidation root.asid] _ e he
+          (Architecture.encodeAsidInvalidation root.asid) (by simp)
+      rw [Architecture.encodeAsidInvalidation_matches root.asid hEq] at hnm
+      cases hnm
 
 end SeLe4n.Kernel
