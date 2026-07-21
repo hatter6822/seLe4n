@@ -1,3 +1,44 @@
+## v0.32.93 — WS-SM SM7.F.4(b)(iii): retype flushes the rebound ASID (reachable violation closed; hNoRebind dropped)
+
+Closes the **reachable** `tlbInvalidationConsistent_perCore` violation flagged at
+v0.32.92.  `Model.storeObject` of a `.vspaceRoot newRoot` runs
+`asidTable.insert newRoot.asid target` — it **rebinds** the installed root's
+ASID — but the retype-with-shootdown wrappers posted a round only for the
+**destroyed** root's ASID, never the freshly-**installed** one.  Since the live
+retype always installs a fresh **asid-0** root (`objectOfKernelType`), an ordinary
+caller could strand a cached entry with no privilege: create VSpaceRoot A
+(asid 0) → map + cache a page in asid 0 → create VSpaceRoot B (asid 0) from
+Untyped, which rebinds asid 0 to B (empty) with **no shootdown at all** (the old
+object was Untyped, not a VSpaceRoot), leaving A's cached asid-0 entry
+stale-and-uncovered.  On real hardware this is ASID reuse without a flush — a
+TLB-isolation hazard.  (It only became invariant-visible once the SM7.F.4(a) live
+fill made `perCoreTlb` non-empty; `storeObject`'s rebind is pre-existing.)
+
+**Fix.** Both production retype-with-shootdown wrappers
+(`lifecycleRetype{Direct,}WithCleanupShootdown`) now post one `.aside1` round per
+ASID in `retypeShootdownAsidList` = the deduplicated `{destroyed, installed}`
+flush set (`retypeDestroyedAsid` via the typed `getVSpaceRoot?` + `retypeInstalled
+Asid` from `newObj`), folded by the total, fail-closed `retypeShootdownAsids`.  So
+installing a fresh VSpaceRoot flushes its (rebound) ASID on every core, closing
+the strand.  Public wrapper signatures are unchanged, so the live `.lifecycleRetype`
+dispatch + `API.lean` pick the fix up with no edit.
+
+**`hNoRebind` dropped.** With the installed ASID now covered, both
+`lifecycleRetype{Direct,}WithCleanupShootdownPerCore_preserves_tlbInvalidation
+Consistent_perCore` hold **unconditionally** for the VSpaceRoot-target case
+(beyond quiescence) — a rebound installed-ASID entry rides the freshly-posted
+`.aside1` for `nr.asid` (initiator drains it via the generalised `retypeInitiator
+Drain`/`retypeInitiatorDrain_drained` over the whole flush set; remotes carry its
+round via the new coverage-survival lemmas `covers_survives_roundFold` /
+`roundFoldSd_covers`), other-ASID entries ride the retype page-table frame, and
+destroyed-ASID entries ride the destroyed round.  `#print axioms` on both = the
+three standard; zero sorry/axiom.
+
+Trace **byte-identical** (the extra rounds only touch `tlbShootdown`, ∉
+`projectState`); full build + Tier 0-3 green; AK7 unchanged (`RAW_MATCH_VSPACEROOT`
+15, `GETVSPACEROOT_ADOPTION` 43 — restored via the `retypeDestroyedAsid`
+factoring, no re-anchor).  `SmpTlbShootdownSuite` 227 assertions green.
+
 ## v0.32.92 — WS-SM SM7.F.4(b)(iii): whole-invariant retype preservation theorem (residual closed)
 
 Closes the tracked SM7.F.4(b)(iii) proof-completeness residual: **both** per-core

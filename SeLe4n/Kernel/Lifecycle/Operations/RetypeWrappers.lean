@@ -298,6 +298,401 @@ def lifecycleRetypeDirectWithCleanup
             lifecycleRetypeDirect authCap target newObj stScrubbed
 
 -- ============================================================================
+-- WS-SM SM7.B.11 / SM7.F.4(b)(iii): the ASID set a retype owes the TLB
+--
+-- `Model.storeObject` of a `.vspaceRoot newRoot` runs
+-- `asidTable.insert newRoot.asid target` — it **rebinds** `newRoot.asid`.
+-- So a retype must flush TWO ASIDs, not one:
+--   * the **destroyed** ASID (the old `.vspaceRoot` at `target`) — its whole
+--     address space dies with the retype; and
+--   * the **installed** ASID (`newRoot.asid`, when the new object is a
+--     `.vspaceRoot`) — the `asidTable.insert` rebinds it to `target`, so any
+--     core caching an entry for it (pointing at the *prior* binding) is now
+--     stale.  (Reachable: root A asid 0, map+cache asid 0, retype root B asid 0
+--     from Untyped ⇒ rebinds asid 0, leaving A's cached asid-0 entries
+--     stale-and-uncovered.)
+-- Both wrappers post a `.aside1` shootdown round for **each** ASID in this set
+-- (deduplicated: when the destroyed and installed ASIDs coincide the set holds
+-- one).  Non-VSpaceRoot retypes into non-VSpaceRoot objects owe nothing (the
+-- set is empty).
+-- ============================================================================
+
+/-- **WS-SM SM7.F.4(b)(iii)**: the ASID the newly-installed object rebinds — a
+`.vspaceRoot`'s ASID (which `storeObject` inserts into `asidTable`), else none. -/
+def retypeInstalledAsid : KernelObject → Option SeLe4n.ASID
+  | .vspaceRoot nr => some nr.asid
+  | _ => none
+
+/-- **WS-SM SM7.F.4(b)(iii)**: the ASID whose address space a retype of `target`
+destroys — the old `.vspaceRoot` at `target`'s, read from the pre-state through
+the AN10-B typed accessor (`getVSpaceRoot?`), never the raw store.  The
+destroyed-side companion of `retypeInstalledAsid`. -/
+def retypeDestroyedAsid (st : SystemState) (target : SeLe4n.ObjId) : Option SeLe4n.ASID :=
+  (st.getVSpaceRoot? target).map (·.asid)
+
+/-- **WS-SM SM7.F.4(b)(iii)**: the ASID set a retype of `target` into `newObj`
+owes the TLB — the destroyed ASID (`retypeDestroyedAsid`, the old `.vspaceRoot`
+at `target`) together with the installed ASID (`retypeInstalledAsid`, `newObj`'s
+when a `.vspaceRoot`), manually deduplicated so an in-place ASID reuse flushes
+once. -/
+def retypeShootdownAsidList (st : SystemState) (target : SeLe4n.ObjId)
+    (newObj : KernelObject) : List SeLe4n.ASID :=
+  match retypeDestroyedAsid st target, retypeInstalledAsid newObj with
+  | none, none => []
+  | some a, none => [a]
+  | none, some b => [b]
+  | some a, some b => if a = b then [a] else [a, b]
+
+/-- **WS-SM SM7.F.4(b)(iii)**: post one `.aside1` shootdown round per ASID in the
+retype's flush set, threading state left-to-right.  Total and fail-closed: each
+`tlbFlushByASIDWithShootdown` is itself total (`.ok`), and any `.error` would
+propagate.  Shared by both production retype-with-shootdown wrappers. -/
+def retypeShootdownAsids (executingCore : SeLe4n.Kernel.Concurrency.CoreId) :
+    List SeLe4n.ASID → Kernel Unit
+  | [], st => .ok ((), st)
+  | a :: rest, st =>
+      match Architecture.tlbFlushByASIDWithShootdown executingCore a st with
+      | .error e => .error e
+      | .ok ((), st') => retypeShootdownAsids executingCore rest st'
+
+/-- **WS-SM SM7.F.4(b)(iii)** (the pure per-ASID step behind `retypeShootdownAsids`):
+one `tlbFlushByASIDWithShootdown` — local scalar `TLBI ASIDE1` then the coalescing
+`.aside1` round to the remote targets. -/
+def retypeAsidRoundStep (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (a : SeLe4n.ASID) (s : SystemState) : SystemState :=
+  Architecture.tlbShootdownBroadcastCoalescing
+    { s with tlb := adapterFlushTlbByAsid s.tlb a }
+    executingCore (Architecture.shootdownTargets executingCore)
+    (Architecture.encodeAsidInvalidation a)
+
+/-- **WS-SM SM7.F.4(b)(iii)** (the pure state `retypeShootdownAsids` commits): the
+left-fold of `retypeAsidRoundStep` over the flush set. -/
+def retypeAsidRoundFold (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (asids : List SeLe4n.ASID) (s : SystemState) : SystemState :=
+  asids.foldl (fun st a => retypeAsidRoundStep executingCore a st) s
+
+/-- **WS-SM SM7.F.4(b)(iii)** (the shootdown-state projection of the round fold):
+the fold of coalescing round postings, one per flushed ASID. -/
+def roundFoldSd (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (asids : List SeLe4n.ASID)
+    (sd : Architecture.TlbShootdownState) :
+    Architecture.TlbShootdownState :=
+  asids.foldl (fun s a => Architecture.postShootdownRoundCoalescing s executingCore
+    (Architecture.shootdownTargets executingCore)
+    (Architecture.encodeAsidInvalidation a)) sd
+
+-- ----------------------------------------------------------------------------
+-- WS-SM SM7.F.4(b)(iii): pure closed forms + framing for the round fold
+-- ----------------------------------------------------------------------------
+
+/-- **WS-SM SM7.F.4(b)(iii)**: `tlbFlushByASIDWithShootdown` commits exactly the
+pure `retypeAsidRoundStep`. -/
+theorem tlbFlushByASIDWithShootdown_eq_step
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (a : SeLe4n.ASID)
+    (s : SystemState) :
+    Architecture.tlbFlushByASIDWithShootdown executingCore a s
+      = .ok ((), retypeAsidRoundStep executingCore a s) := by
+  unfold Architecture.tlbFlushByASIDWithShootdown Architecture.tlbFlushByASID
+  simp only []
+  rw [Architecture.withShootdownRound_total]
+  rfl
+
+/-- **WS-SM SM7.F.4(b)(iii)**: `retypeShootdownAsids` commits exactly the pure
+`retypeAsidRoundFold`. -/
+theorem retypeShootdownAsids_eq
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (asids : List SeLe4n.ASID)
+    (s : SystemState) :
+    retypeShootdownAsids executingCore asids s
+      = .ok ((), retypeAsidRoundFold executingCore asids s) := by
+  induction asids generalizing s with
+  | nil => rfl
+  | cons a rest ih =>
+      have hstep : retypeAsidRoundFold executingCore (a :: rest) s
+        = retypeAsidRoundFold executingCore rest (retypeAsidRoundStep executingCore a s) := rfl
+      simp only [retypeShootdownAsids, tlbFlushByASIDWithShootdown_eq_step]
+      rw [ih, hstep]
+
+/-- **WS-SM SM7.F.4(b)(iii)**: the round step frames the object store. -/
+theorem retypeAsidRoundStep_objects
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (a : SeLe4n.ASID) (s : SystemState) :
+    (retypeAsidRoundStep executingCore a s).objects = s.objects := by
+  unfold retypeAsidRoundStep
+  rw [(Architecture.tlbShootdownBroadcastCoalescing_frame _ _ _ _).1]
+
+/-- **WS-SM SM7.F.4(b)(iii)**: the round step frames the ASID table. -/
+theorem retypeAsidRoundStep_asidTable
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (a : SeLe4n.ASID) (s : SystemState) :
+    (retypeAsidRoundStep executingCore a s).asidTable = s.asidTable := rfl
+
+/-- **WS-SM SM7.F.4(b)(iii)**: the round step frames the per-core TLB. -/
+theorem retypeAsidRoundStep_perCoreTlb
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (a : SeLe4n.ASID) (s : SystemState) :
+    (retypeAsidRoundStep executingCore a s).perCoreTlb = s.perCoreTlb := rfl
+
+/-- **WS-SM SM7.F.4(b)(iii)**: the round step's shootdown effect is the coalescing
+round posting. -/
+theorem retypeAsidRoundStep_tlbShootdown
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (a : SeLe4n.ASID) (s : SystemState) :
+    (retypeAsidRoundStep executingCore a s).tlbShootdown =
+      Architecture.postShootdownRoundCoalescing s.tlbShootdown executingCore
+        (Architecture.shootdownTargets executingCore)
+        (Architecture.encodeAsidInvalidation a) := rfl
+
+/-- **WS-SM SM7.F.4(b)(iii)**: the round fold frames the object store. -/
+theorem retypeAsidRoundFold_objects
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (asids : List SeLe4n.ASID) (s : SystemState) :
+    (retypeAsidRoundFold executingCore asids s).objects = s.objects := by
+  induction asids generalizing s with
+  | nil => rfl
+  | cons a rest ih =>
+      have h1 : retypeAsidRoundFold executingCore (a :: rest) s
+        = retypeAsidRoundFold executingCore rest (retypeAsidRoundStep executingCore a s) := rfl
+      rw [h1, ih, retypeAsidRoundStep_objects]
+
+/-- **WS-SM SM7.F.4(b)(iii)**: the round fold frames the ASID table. -/
+theorem retypeAsidRoundFold_asidTable
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (asids : List SeLe4n.ASID) (s : SystemState) :
+    (retypeAsidRoundFold executingCore asids s).asidTable = s.asidTable := by
+  induction asids generalizing s with
+  | nil => rfl
+  | cons a rest ih =>
+      have h1 : retypeAsidRoundFold executingCore (a :: rest) s
+        = retypeAsidRoundFold executingCore rest (retypeAsidRoundStep executingCore a s) := rfl
+      rw [h1, ih, retypeAsidRoundStep_asidTable]
+
+/-- **WS-SM SM7.F.4(b)(iii)**: the round fold frames the per-core TLB. -/
+theorem retypeAsidRoundFold_perCoreTlb
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (asids : List SeLe4n.ASID) (s : SystemState) :
+    (retypeAsidRoundFold executingCore asids s).perCoreTlb = s.perCoreTlb := by
+  induction asids generalizing s with
+  | nil => rfl
+  | cons a rest ih =>
+      have h1 : retypeAsidRoundFold executingCore (a :: rest) s
+        = retypeAsidRoundFold executingCore rest (retypeAsidRoundStep executingCore a s) := rfl
+      rw [h1, ih, retypeAsidRoundStep_perCoreTlb]
+
+/-- **WS-SM SM7.F.4(b)(iii)**: the round fold's shootdown effect is the coalescing
+round-posting fold. -/
+theorem retypeAsidRoundFold_tlbShootdown
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (asids : List SeLe4n.ASID) (s : SystemState) :
+    (retypeAsidRoundFold executingCore asids s).tlbShootdown =
+      roundFoldSd executingCore asids s.tlbShootdown := by
+  induction asids generalizing s with
+  | nil => rfl
+  | cons a rest ih =>
+      have h1 : retypeAsidRoundFold executingCore (a :: rest) s
+        = retypeAsidRoundFold executingCore rest (retypeAsidRoundStep executingCore a s) := rfl
+      have h2 : roundFoldSd executingCore (a :: rest) s.tlbShootdown
+        = roundFoldSd executingCore rest
+            (Architecture.postShootdownRoundCoalescing s.tlbShootdown executingCore
+              (Architecture.shootdownTargets executingCore)
+              (Architecture.encodeAsidInvalidation a)) := rfl
+      rw [h1, ih, retypeAsidRoundStep_tlbShootdown, h2]
+
+/-- **WS-SM SM7.F.4(b)(iii)**: the round-posting fold preserves the capacity
+invariant. -/
+theorem roundFoldSd_preserves_pendingBounded
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (asids : List SeLe4n.ASID)
+    {sd : Architecture.TlbShootdownState}
+    (hB : Architecture.pendingBounded sd) :
+    Architecture.pendingBounded (roundFoldSd executingCore asids sd) := by
+  induction asids generalizing sd with
+  | nil => exact hB
+  | cons a rest ih =>
+      have h1 : roundFoldSd executingCore (a :: rest) sd
+        = roundFoldSd executingCore rest
+            (Architecture.postShootdownRoundCoalescing sd executingCore
+              (Architecture.shootdownTargets executingCore)
+              (Architecture.encodeAsidInvalidation a)) := rfl
+      rw [h1]
+      exact ih (Architecture.postShootdownRoundCoalescing_preserves_pendingBounded hB _ _ _)
+
+-- ----------------------------------------------------------------------------
+-- WS-SM SM7.F.4(b)(iii): multi-round coverage survival
+--
+-- A retype posts one round per flushed ASID.  For a remote core `c`, a stale
+-- entry `e` whose ASID is flushed rides a *pending* descriptor — but the round
+-- that posts it is followed by the remaining rounds, so its coverage must
+-- *survive* those.  Posting is additive (`enqueueShootdownOrCoalesce` appends,
+-- or coalesces to a superseding `.vmalle1`) and `beginShootdownRoundFor` never
+-- drops a pending descriptor, so coverage is monotone under further round
+-- postings.
+-- ----------------------------------------------------------------------------
+
+/-- **WS-SM SM7.F.4(b)(iii)**: a descriptor pending before the coalescing posting
+fold is still pending after it, or a superseding `.vmalle1` is (target set
+`Nodup`). -/
+private theorem foldl_coalesce_pending_covered :
+    ∀ (targets : List SeLe4n.Kernel.Concurrency.CoreId)
+      (dNew : Architecture.TlbShootdownDescriptor), targets.Nodup →
+    ∀ (sd : Architecture.TlbShootdownState) (c : SeLe4n.Kernel.Concurrency.CoreId)
+      (dOld : Architecture.TlbShootdownDescriptor),
+      dOld ∈ sd.pendingOnCore c →
+      dOld ∈ (targets.foldl (fun s c' => Architecture.enqueueShootdownOrCoalesce s c' dNew)
+          sd).pendingOnCore c ∨
+      ∃ d' ∈ (targets.foldl (fun s c' => Architecture.enqueueShootdownOrCoalesce s c' dNew)
+          sd).pendingOnCore c, d'.op = Architecture.TlbInvalidation.vmalle1 := by
+  intro targets
+  induction targets with
+  | nil => intro dNew _ sd c dOld h; exact Or.inl h
+  | cons t ts ih =>
+    intro dNew hnd sd c dOld h
+    rw [List.foldl_cons]
+    by_cases hct : c = t
+    · subst hct
+      rw [Architecture.foldl_enqueueShootdownOrCoalesce_frame_pending ts _ _
+          (List.nodup_cons.mp hnd).1]
+      exact Architecture.enqueueShootdownOrCoalesce_pending_covered sd c dNew dOld h
+    · have h' : dOld ∈ (Architecture.enqueueShootdownOrCoalesce sd t dNew).pendingOnCore c := by
+        rw [Architecture.enqueueShootdownOrCoalesce_frame_pending sd hct dNew]; exact h
+      exact ih dNew (List.nodup_cons.mp hnd).2 _ c dOld h'
+
+/-- **WS-SM SM7.F.4(b)(iii)**: entry coverage on a core survives one further
+round posting. -/
+private theorem covers_survives_one_round
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (op : Architecture.TlbInvalidation)
+    (sd : Architecture.TlbShootdownState) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (dsc : Architecture.TlbShootdownDescriptor)
+    (h : dsc ∈ sd.pendingOnCore c ∨
+      ∃ d' ∈ sd.pendingOnCore c, d'.op = Architecture.TlbInvalidation.vmalle1) :
+    dsc ∈ (Architecture.postShootdownRoundCoalescing sd executingCore
+        (Architecture.shootdownTargets executingCore) op).pendingOnCore c ∨
+    ∃ d' ∈ (Architecture.postShootdownRoundCoalescing sd executingCore
+        (Architecture.shootdownTargets executingCore) op).pendingOnCore c,
+      d'.op = Architecture.TlbInvalidation.vmalle1 := by
+  unfold Architecture.postShootdownRoundCoalescing
+  rcases h with hin | ⟨d', hd'in, hd'op⟩
+  · have hbegin : dsc ∈
+        (Architecture.beginShootdownRoundFor sd executingCore
+          (Architecture.shootdownTargets executingCore)).pendingOnCore c := by
+      rw [Architecture.beginShootdownRoundFor_frame_pending]; exact hin
+    exact foldl_coalesce_pending_covered _ _ (Architecture.shootdownTargets_nodup executingCore)
+      _ c dsc hbegin
+  · have hbegin : d' ∈
+        (Architecture.beginShootdownRoundFor sd executingCore
+          (Architecture.shootdownTargets executingCore)).pendingOnCore c := by
+      rw [Architecture.beginShootdownRoundFor_frame_pending]; exact hd'in
+    rcases foldl_coalesce_pending_covered _ _ (Architecture.shootdownTargets_nodup executingCore)
+        _ c d' hbegin with hsurv | ⟨d'', hd''in, hd''op⟩
+    · exact Or.inr ⟨d', hsurv, hd'op⟩
+    · exact Or.inr ⟨d'', hd''in, hd''op⟩
+
+/-- **WS-SM SM7.F.4(b)(iii)**: entry coverage survives the whole round-posting
+fold. -/
+private theorem covers_survives_roundFold
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (asids : List SeLe4n.ASID) :
+    ∀ (sd : Architecture.TlbShootdownState) (c : SeLe4n.Kernel.Concurrency.CoreId)
+      (dsc : Architecture.TlbShootdownDescriptor),
+      (dsc ∈ sd.pendingOnCore c ∨
+        ∃ d' ∈ sd.pendingOnCore c, d'.op = Architecture.TlbInvalidation.vmalle1) →
+      dsc ∈ (roundFoldSd executingCore asids sd).pendingOnCore c ∨
+      ∃ d' ∈ (roundFoldSd executingCore asids sd).pendingOnCore c,
+        d'.op = Architecture.TlbInvalidation.vmalle1 := by
+  induction asids with
+  | nil => intro sd c dsc h; exact h
+  | cons a rest ih =>
+    intro sd c dsc h
+    have hstep : roundFoldSd executingCore (a :: rest) sd
+      = roundFoldSd executingCore rest
+          (Architecture.postShootdownRoundCoalescing sd executingCore
+            (Architecture.shootdownTargets executingCore)
+            (Architecture.encodeAsidInvalidation a)) := rfl
+    rw [hstep]
+    exact ih _ c dsc (covers_survives_one_round executingCore
+      (Architecture.encodeAsidInvalidation a) sd c dsc h)
+
+/-- **WS-SM SM7.F.4(b)(iii)**: after the round fold, every remote target's queue
+covers each flushed ASID — the round that posts `encode a` runs, and its
+coverage survives the remaining rounds. -/
+private theorem roundFoldSd_covers
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    {c : SeLe4n.Kernel.Concurrency.CoreId}
+    (hc : c ∈ Architecture.shootdownTargets executingCore) :
+    ∀ (asids : List SeLe4n.ASID) (a : SeLe4n.ASID), a ∈ asids →
+    ∀ (sd : Architecture.TlbShootdownState),
+      ({ op := Architecture.encodeAsidInvalidation a, initiator := executingCore } :
+          Architecture.TlbShootdownDescriptor) ∈
+        (roundFoldSd executingCore asids sd).pendingOnCore c ∨
+      ∃ d' ∈ (roundFoldSd executingCore asids sd).pendingOnCore c,
+        d'.op = Architecture.TlbInvalidation.vmalle1 := by
+  intro asids
+  induction asids with
+  | nil => intro a ha; simp at ha
+  | cons x rest ih =>
+    intro a ha sd
+    rcases List.mem_cons.mp ha with hax | hax
+    · cases hax
+      have hstep : roundFoldSd executingCore (x :: rest) sd
+        = roundFoldSd executingCore rest
+            (Architecture.postShootdownRoundCoalescing sd executingCore
+              (Architecture.shootdownTargets executingCore)
+              (Architecture.encodeAsidInvalidation x)) := rfl
+      rw [hstep]
+      exact covers_survives_roundFold executingCore rest _ c _
+        (Architecture.postShootdownRoundCoalescing_covered sd executingCore
+          (Architecture.shootdownTargets_nodup executingCore)
+          (Architecture.encodeAsidInvalidation x) c hc)
+    · have hstep : roundFoldSd executingCore (x :: rest) sd
+        = roundFoldSd executingCore rest
+            (Architecture.postShootdownRoundCoalescing sd executingCore
+              (Architecture.shootdownTargets executingCore)
+              (Architecture.encodeAsidInvalidation x)) := rfl
+      rw [hstep]
+      exact ih a hax _
+
+-- ----------------------------------------------------------------------------
+-- WS-SM SM7.F.4(b)(iii): the flush-set membership lemmas
+-- ----------------------------------------------------------------------------
+
+/-- **WS-SM SM7.F.4(b)(iii)**: the destroyed-ASID accessor resolves to the live
+root's ASID (the typed-accessor characterization of `retypeDestroyedAsid`). -/
+theorem retypeDestroyedAsid_of_root
+    {st : SystemState} {target : SeLe4n.ObjId} {root : VSpaceRoot}
+    (hGV : st.getVSpaceRoot? target = some root) :
+    retypeDestroyedAsid st target = some root.asid := by
+  simp only [retypeDestroyedAsid, hGV, Option.map_some]
+
+/-- **WS-SM SM7.F.4(b)(iii)**: the destroyed ASID is in the flush set. -/
+theorem retypeShootdownAsidList_mem_destroyed
+    {st : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject} {root : VSpaceRoot}
+    (hGV : st.getVSpaceRoot? target = some root) :
+    root.asid ∈ retypeShootdownAsidList st target newObj := by
+  unfold retypeShootdownAsidList
+  rw [retypeDestroyedAsid_of_root hGV]
+  cases retypeInstalledAsid newObj with
+  | none => simp
+  | some b =>
+      by_cases hb : root.asid = b
+      · simp [hb]
+      · simp [hb]
+
+/-- **WS-SM SM7.F.4(b)(iii)**: the installed ASID (a fresh `.vspaceRoot`'s) is in
+the flush set. -/
+theorem retypeShootdownAsidList_mem_installed
+    {st : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject} {nr : VSpaceRoot}
+    (hNew : newObj = KernelObject.vspaceRoot nr) :
+    nr.asid ∈ retypeShootdownAsidList st target newObj := by
+  subst hNew
+  unfold retypeShootdownAsidList retypeDestroyedAsid
+  simp only [retypeInstalledAsid]
+  cases (st.getVSpaceRoot? target).map (·.asid) with
+  | none => simp
+  | some a =>
+      by_cases hb : a = nr.asid
+      · simp [hb]
+      · simp [hb]
+
+/-- **WS-SM SM7.F.4(b)(iii)**: neither ASID present ⇒ empty flush set (the
+non-VSpaceRoot-into-non-VSpaceRoot case owes no TLB work). -/
+theorem retypeShootdownAsidList_nil
+    {st : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
+    (hOld : st.getVSpaceRoot? target = none)
+    (hNew : retypeInstalledAsid newObj = none) :
+    retypeShootdownAsidList st target newObj = [] := by
+  simp only [retypeShootdownAsidList, retypeDestroyedAsid, hOld, Option.map_none, hNew]
+
+-- ============================================================================
 -- WS-SM SM7.B.11: retype-with-page-free shootdown
 -- ============================================================================
 
@@ -313,8 +708,14 @@ use-after-free of the whole address space, the retype instance of the
 SMP-C4 hazard.  This wrapper closes it: when the retyped object was a
 `.vspaceRoot`, the destroyed ASID is flushed locally
 (`adapterFlushTlbByAsid`) and a `.aside1` shootdown round is posted to
-every other core.  Non-VSpaceRoot retypes owe no TLB work and commit
-exactly the base operation's state. -/
+every other core.  **The installed ASID is flushed too** (SM7.F.4(b)(iii)):
+`Model.storeObject` of a `.vspaceRoot newRoot` runs
+`asidTable.insert newRoot.asid target`, **rebinding** `newRoot.asid`; any core
+caching an entry for it (pointing at the prior binding) is now stale, so the
+wrapper posts a round for each ASID in `retypeShootdownAsidList` — the destroyed
+ASID *and* the installed one (deduplicated).  Non-VSpaceRoot retypes into
+non-VSpaceRoot objects owe no TLB work and commit exactly the base operation's
+state. -/
 def lifecycleRetypeDirectWithCleanupShootdown (executingCore :
       SeLe4n.Kernel.Concurrency.CoreId)
     (authCap : Capability) (target : SeLe4n.ObjId)
@@ -323,36 +724,37 @@ def lifecycleRetypeDirectWithCleanupShootdown (executingCore :
     match lifecycleRetypeDirectWithCleanup authCap target newObj st with
     | .error e => .error e
     | .ok ((), st') =>
-        -- the ASID a retype owes the TLB: retyping a live `.vspaceRoot`
-        -- destroys an entire address space at once (every mapping the
-        -- root held dies with it), so the whole ASID must be
-        -- invalidated on every core; retyping any other object type
-        -- frees no mapped pages and owes nothing.  Read through the
-        -- AN10-B typed accessor (`getVSpaceRoot?`), never the raw
-        -- store.
-        match (st.getVSpaceRoot? target).map (·.asid) with
-        | none => .ok ((), st')
-        | some asid =>
-            Architecture.tlbFlushByASIDWithShootdown executingCore asid st'
+        -- the ASIDs a retype owes the TLB (read the destroyed one from the
+        -- pre-state through the AN10-B typed accessor `getVSpaceRoot?`, never
+        -- the raw store): retyping a live `.vspaceRoot` destroys an entire
+        -- address space at once (every mapping the root held dies with it) AND
+        -- installing a fresh `.vspaceRoot` rebinds its ASID.  Both are flushed
+        -- on every core (post one `.aside1` round per ASID); a non-VSpaceRoot
+        -- retype into a non-VSpaceRoot object frees no mapped pages, rebinds no
+        -- ASID, and owes nothing (the flush set is empty).
+        retypeShootdownAsids executingCore (retypeShootdownAsidList st target newObj) st'
 
-/-- **WS-SM SM7.B.11**: a non-VSpaceRoot retype owes no TLB work — the
-wrapper commits exactly the base operation's result (trace safety for
-every existing retype call). -/
+/-- **WS-SM SM7.B.11 / SM7.F.4(b)(iii)**: a non-VSpaceRoot retype into a
+non-VSpaceRoot object owes no TLB work — the flush set is empty, so the wrapper
+commits exactly the base operation's result (trace safety for every such retype
+call).  `hNew` rules out installing a fresh `.vspaceRoot` (which would rebind —
+and hence owe a flush for — its ASID). -/
 theorem lifecycleRetypeDirectWithCleanupShootdown_non_vspace
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (authCap : Capability) (target : SeLe4n.ObjId) (newObj : KernelObject)
     (st : SystemState)
-    (hOld : st.getVSpaceRoot? target = none) :
+    (hOld : st.getVSpaceRoot? target = none)
+    (hNew : retypeInstalledAsid newObj = none) :
     lifecycleRetypeDirectWithCleanupShootdown executingCore authCap target
         newObj st =
       lifecycleRetypeDirectWithCleanup authCap target newObj st := by
   unfold lifecycleRetypeDirectWithCleanupShootdown
-  rw [hOld]
   cases h : lifecycleRetypeDirectWithCleanup authCap target newObj st with
   | error e => rfl
   | ok pair =>
       obtain ⟨u, st'⟩ := pair
       cases u
+      rw [retypeShootdownAsidList_nil hOld hNew]
       rfl
 
 /-- **WS-SM SM7.B.11**: retyping a live `.vspaceRoot` posts the
@@ -375,29 +777,20 @@ theorem lifecycleRetypeDirectWithCleanupShootdown_vspace_posts
         ∃ d' ∈ stPost.tlbShootdown.pendingOnCore c,
           d'.op = SeLe4n.Kernel.Architecture.TlbInvalidation.vmalle1 := by
   unfold lifecycleRetypeDirectWithCleanupShootdown at h
-  rw [hOld] at h
   cases hBase : lifecycleRetypeDirectWithCleanup authCap target newObj st with
-  | error e => rw [hBase] at h; cases h
+  | error e => simp only [hBase] at h; cases h
   | ok pair =>
       obtain ⟨u, stBase⟩ := pair
       cases u
-      rw [hBase] at h
-      have h' : (Except.ok ((),
-          Architecture.tlbShootdownBroadcastCoalescing
-            { stBase with tlb := adapterFlushTlbByAsid stBase.tlb root.asid }
-            executingCore
-            (Architecture.shootdownTargets executingCore)
-            (Architecture.encodeAsidInvalidation root.asid)) :
-          Except KernelError (Unit × SystemState)) = .ok ((), stPost) := h
-      injection h' with h''
-      rw [Prod.mk.injEq] at h''
-      obtain ⟨_, hstate⟩ := h''
-      subst hstate
+      simp only [hBase, retypeShootdownAsids_eq, Except.ok.injEq, Prod.mk.injEq,
+        true_and] at h
+      subst h
       intro c hc
-      exact Architecture.postShootdownRoundCoalescing_covered _ executingCore
-        (Architecture.shootdownTargets_nodup executingCore)
-        (Architecture.encodeAsidInvalidation root.asid) c
+      rw [retypeAsidRoundFold_tlbShootdown]
+      exact roundFoldSd_covers executingCore
         ((Architecture.mem_shootdownTargets_iff executingCore c).mpr hc)
+        (retypeShootdownAsidList st target newObj) root.asid
+        (retypeShootdownAsidList_mem_destroyed hOld) stBase.tlbShootdown
 
 /-- WS-SM SM7.B: `lifecycleRetypeDirect` frames the TLB-shootdown state
 — the replace bottoms out in `storeObject` (`pendingBounded`
@@ -493,9 +886,10 @@ retype with cleanup, scrub, and TLB shootdown; the
 sweep found this production wrapper still owed the SM7.B.11 TLB work:
 retyping a live `.vspaceRoot` through the CSpaceAddr path freed every
 page mapping the root held with no TLB maintenance anywhere.  Same
-discipline as the Direct form: a live `.vspaceRoot` target's ASID is
-flushed locally and a `.aside1` round posted; non-VSpaceRoot retypes
-commit exactly the base operation's state. -/
+discipline as the Direct form: a live `.vspaceRoot` target's destroyed ASID and
+the installed `.vspaceRoot`'s (rebound) ASID are flushed and a `.aside1` round
+posted per ASID (`retypeShootdownAsidList`); non-VSpaceRoot retypes into
+non-VSpaceRoot objects commit exactly the base operation's state. -/
 def lifecycleRetypeWithCleanupShootdown (executingCore :
       SeLe4n.Kernel.Concurrency.CoreId)
     (authority : CSpaceAddr) (target : SeLe4n.ObjId)
@@ -504,28 +898,27 @@ def lifecycleRetypeWithCleanupShootdown (executingCore :
     match lifecycleRetypeWithCleanup authority target newObj st with
     | .error e => .error e
     | .ok ((), st') =>
-        match (st.getVSpaceRoot? target).map (·.asid) with
-        | none => .ok ((), st')
-        | some asid =>
-            Architecture.tlbFlushByASIDWithShootdown executingCore asid st'
+        retypeShootdownAsids executingCore (retypeShootdownAsidList st target newObj) st'
 
-/-- **WS-SM SM7.B.11**: a non-VSpaceRoot retype through the CSpaceAddr
-shootdown wrapper commits exactly the base operation's result. -/
+/-- **WS-SM SM7.B.11 / SM7.F.4(b)(iii)**: a non-VSpaceRoot retype into a
+non-VSpaceRoot object through the CSpaceAddr shootdown wrapper commits exactly
+the base operation's result (empty flush set). -/
 theorem lifecycleRetypeWithCleanupShootdown_non_vspace
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (authority : CSpaceAddr) (target : SeLe4n.ObjId) (newObj : KernelObject)
     (st : SystemState)
-    (hOld : st.getVSpaceRoot? target = none) :
+    (hOld : st.getVSpaceRoot? target = none)
+    (hNew : retypeInstalledAsid newObj = none) :
     lifecycleRetypeWithCleanupShootdown executingCore authority target
         newObj st =
       lifecycleRetypeWithCleanup authority target newObj st := by
   unfold lifecycleRetypeWithCleanupShootdown
-  rw [hOld]
   cases h : lifecycleRetypeWithCleanup authority target newObj st with
   | error e => rfl
   | ok pair =>
       obtain ⟨u, st'⟩ := pair
       cases u
+      rw [retypeShootdownAsidList_nil hOld hNew]
       rfl
 
 /-- **WS-SM SM7.B.11**: retyping a live `.vspaceRoot` through the
@@ -546,29 +939,20 @@ theorem lifecycleRetypeWithCleanupShootdown_vspace_posts
         ∃ d' ∈ stPost.tlbShootdown.pendingOnCore c,
           d'.op = SeLe4n.Kernel.Architecture.TlbInvalidation.vmalle1 := by
   unfold lifecycleRetypeWithCleanupShootdown at h
-  rw [hOld] at h
   cases hBase : lifecycleRetypeWithCleanup authority target newObj st with
-  | error e => rw [hBase] at h; cases h
+  | error e => simp only [hBase] at h; cases h
   | ok pair =>
       obtain ⟨u, stBase⟩ := pair
       cases u
-      rw [hBase] at h
-      have h' : (Except.ok ((),
-          Architecture.tlbShootdownBroadcastCoalescing
-            { stBase with tlb := adapterFlushTlbByAsid stBase.tlb root.asid }
-            executingCore
-            (Architecture.shootdownTargets executingCore)
-            (Architecture.encodeAsidInvalidation root.asid)) :
-          Except KernelError (Unit × SystemState)) = .ok ((), stPost) := h
-      injection h' with h''
-      rw [Prod.mk.injEq] at h''
-      obtain ⟨_, hstate⟩ := h''
-      subst hstate
+      simp only [hBase, retypeShootdownAsids_eq, Except.ok.injEq, Prod.mk.injEq,
+        true_and] at h
+      subst h
       intro c hc
-      exact Architecture.postShootdownRoundCoalescing_covered _ executingCore
-        (Architecture.shootdownTargets_nodup executingCore)
-        (Architecture.encodeAsidInvalidation root.asid) c
+      rw [retypeAsidRoundFold_tlbShootdown]
+      exact roundFoldSd_covers executingCore
         ((Architecture.mem_shootdownTargets_iff executingCore c).mpr hc)
+        (retypeShootdownAsidList st target newObj) root.asid
+        (retypeShootdownAsidList_mem_destroyed hOld) stBase.tlbShootdown
 
 /-- WS-SM SM7.B.11: the CSpaceAddr retype-with-shootdown entry point
 preserves the shootdown capacity invariant. -/
@@ -581,32 +965,25 @@ theorem lifecycleRetypeWithCleanupShootdown_preserves_pendingBounded
       target newObj st = .ok ((), st')) :
     Architecture.pendingBounded st'.tlbShootdown := by
   unfold lifecycleRetypeWithCleanupShootdown at hOk
-  revert hOk
   cases hBase : lifecycleRetypeWithCleanup authority target newObj st with
-  | error e => intro hOk; cases hOk
+  | error e => simp only [hBase] at hOk; cases hOk
   | ok pair =>
       obtain ⟨u, stBase⟩ := pair
       cases u
       have hFrame : stBase.tlbShootdown = st.tlbShootdown :=
         lifecycleRetypeWithCleanup_tlbShootdown_eq authority target newObj
           st stBase hBase
-      simp only []
-      cases hAsid : (st.getVSpaceRoot? target).map (·.asid) with
-      | none =>
-          simp only [Except.ok.injEq, Prod.mk.injEq]
-          intro hOk
-          rw [← hOk.2, hFrame]
-          exact hB
-      | some asid =>
-          simp only []
-          intro hOk
-          exact Architecture.tlbFlushByASIDWithShootdown_preserves_pendingBounded
-            (hFrame ▸ hB) hOk
+      simp only [hBase, retypeShootdownAsids_eq, Except.ok.injEq, Prod.mk.injEq,
+        true_and] at hOk
+      subst hOk
+      rw [retypeAsidRoundFold_tlbShootdown]
+      exact roundFoldSd_preserves_pendingBounded executingCore _ (hFrame ▸ hB)
 
-/-- WS-SM SM7.B.11: the retype-with-shootdown entry point preserves the
-shootdown capacity invariant (the 12th `proofLayerInvariantBundle`
-conjunct) — the base retype frames the shootdown state; a live
-`.vspaceRoot` retype then posts through the total coalescing round. -/
+/-- WS-SM SM7.B.11 / SM7.F.4(b)(iii): the retype-with-shootdown entry point
+preserves the shootdown capacity invariant (the 12th `proofLayerInvariantBundle`
+conjunct) — the base retype frames the shootdown state; a live `.vspaceRoot`
+retype then posts one total coalescing round per flushed ASID (the round-posting
+fold preserves the bound). -/
 theorem lifecycleRetypeDirectWithCleanupShootdown_preserves_pendingBounded
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (authCap : Capability) (target : SeLe4n.ObjId) (newObj : KernelObject)
@@ -616,27 +993,19 @@ theorem lifecycleRetypeDirectWithCleanupShootdown_preserves_pendingBounded
       target newObj st = .ok ((), st')) :
     Architecture.pendingBounded st'.tlbShootdown := by
   unfold lifecycleRetypeDirectWithCleanupShootdown at hOk
-  revert hOk
   cases hBase : lifecycleRetypeDirectWithCleanup authCap target newObj st with
-  | error e => intro hOk; cases hOk
+  | error e => simp only [hBase] at hOk; cases hOk
   | ok pair =>
       obtain ⟨u, stBase⟩ := pair
       cases u
       have hFrame : stBase.tlbShootdown = st.tlbShootdown :=
         lifecycleRetypeDirectWithCleanup_tlbShootdown_eq authCap target newObj
           st stBase hBase
-      simp only []
-      cases hAsid : (st.getVSpaceRoot? target).map (·.asid) with
-      | none =>
-          simp only [Except.ok.injEq, Prod.mk.injEq]
-          intro hOk
-          rw [← hOk.2, hFrame]
-          exact hB
-      | some asid =>
-          simp only []
-          intro hOk
-          exact Architecture.tlbFlushByASIDWithShootdown_preserves_pendingBounded
-            (hFrame ▸ hB) hOk
+      simp only [hBase, retypeShootdownAsids_eq, Except.ok.injEq, Prod.mk.injEq,
+        true_and] at hOk
+      subst hOk
+      rw [retypeAsidRoundFold_tlbShootdown]
+      exact roundFoldSd_preserves_pendingBounded executingCore _ (hFrame ▸ hB)
 
 /-- **WS-SM SM7.F.4(b)(iii)** (the shared initiator drain): retire the destroyed
 ASID's translations on the **initiator's own** per-core TLB view, atomically with
@@ -647,37 +1016,56 @@ only; this drains the operand on the initiator's own view
 (`drainInitiatorPerCoreView` + `encodeAsidInvalidation`, the initiator's local
 `TLBI ASIDE1`).  A non-VSpaceRoot retype is a no-op.  Shared by **both**
 production retype-with-shootdown wrappers (the Direct-cap and CSpaceAddr forms)
-so neither can drift; `perCoreTlb`-only, so trace-safe. -/
+so neither can drift; `perCoreTlb`-only, so trace-safe.
+
+SM7.F.4(b)(iii) extension: the initiator retires **every** ASID in the retype's
+flush set (`retypeShootdownAsidList` — the destroyed ASID *and* the installed
+`.vspaceRoot`'s rebound ASID), so no core — the initiator included — is left
+caching a stale, uncovered translation for a flushed ASID. -/
 def retypeInitiatorDrain (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
-    (target : SeLe4n.ObjId) (stPre st' : SystemState) : SystemState :=
-  match (stPre.getVSpaceRoot? target).map (·.asid) with
-  | none => st'
-  | some asid =>
+    (asids : List SeLe4n.ASID) (st' : SystemState) : SystemState :=
+  match asids with
+  | [] => st'
+  | _ :: _ =>
       Architecture.drainInitiatorPerCoreView st' executingCore
-        [Architecture.encodeAsidInvalidation asid]
+        (asids.map Architecture.encodeAsidInvalidation)
+
+/-- **WS-SM SM7.F.4(b)(iii)**: for a non-empty flush set the initiator drain is
+the per-core view retirement of every operand. -/
+theorem retypeInitiatorDrain_of_mem
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    {asids : List SeLe4n.ASID} {a : SeLe4n.ASID} (ha : a ∈ asids)
+    (st' : SystemState) :
+    retypeInitiatorDrain executingCore asids st' =
+      Architecture.drainInitiatorPerCoreView st' executingCore
+        (asids.map Architecture.encodeAsidInvalidation) := by
+  cases asids with
+  | nil => simp at ha
+  | cons x xs => rfl
 
 /-- **WS-SM SM7.F.4(b)(iii)** (the shared drain's core property): after the
-initiator drain for a live-VSpaceRoot retype, the initiator's own view holds
-**no** entry for the destroyed ASID — the "drains the initiator atomically"
-property both wrappers inherit. -/
+initiator drain, the initiator's own view holds **no** entry for any flushed
+ASID — the "drains the initiator atomically" property both wrappers inherit.
+Instantiated at the destroyed ASID by the `_initiator_drained` theorems. -/
 theorem retypeInitiatorDrain_drained
-    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (target : SeLe4n.ObjId)
-    {stPre st' : SystemState} {root : VSpaceRoot}
-    (hRoot : stPre.getVSpaceRoot? target = some root) :
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    {asids : List SeLe4n.ASID} {a : SeLe4n.ASID} (ha : a ∈ asids)
+    (st' : SystemState) :
     ∀ e ∈ (Architecture.tlbOnCore
-        (retypeInitiatorDrain executingCore target stPre st') executingCore).entries,
-      e.asid ≠ root.asid := by
-  unfold retypeInitiatorDrain
-  rw [hRoot]
-  simp only [Option.map_some]
+        (retypeInitiatorDrain executingCore asids st') executingCore).entries,
+      e.asid ≠ a := by
+  rw [retypeInitiatorDrain_of_mem executingCore ha]
   intro e he hEq
   rw [Architecture.drainInitiatorPerCoreView_tlbOnCore_self] at he
+  have hmem : Architecture.encodeAsidInvalidation a ∈
+      asids.map Architecture.encodeAsidInvalidation :=
+    List.mem_map.mpr ⟨a, ha, rfl⟩
   have hnm : Architecture.tlbEntryMatches
-      (Architecture.encodeAsidInvalidation root.asid) e = false :=
+      (Architecture.encodeAsidInvalidation a) e = false :=
     Architecture.applyTlbInvalidations_survivor_not_matched
-      [Architecture.encodeAsidInvalidation root.asid] _ e he
-      (Architecture.encodeAsidInvalidation root.asid) (by simp)
-  rw [Architecture.encodeAsidInvalidation_matches root.asid hEq] at hnm
+      (asids.map Architecture.encodeAsidInvalidation) _ e he
+      (Architecture.encodeAsidInvalidation a) hmem
+  rw [Architecture.encodeAsidInvalidation_matches a hEq] at hnm
   cases hnm
 
 /-- **WS-SM SM7.F.4(b)(iii)** (the initiator-atomic retype seam — PR #844
@@ -709,29 +1097,31 @@ def lifecycleRetypeDirectWithCleanupShootdownPerCore
         newObj st with
     | .error e => .error e
     | .ok ((), st') =>
-        .ok ((), retypeInitiatorDrain executingCore target st st')
+        .ok ((), retypeInitiatorDrain executingCore
+          (retypeShootdownAsidList st target newObj) st')
 
-/-- **WS-SM SM7.F.4(b)(iii)**: a non-VSpaceRoot retype owes no per-core TLB
-work — the per-core wrapper commits exactly the base shootdown wrapper's result
-(trace safety + no spurious `perCoreTlb` change for every non-address-space
-retype). -/
+/-- **WS-SM SM7.F.4(b)(iii)**: a non-VSpaceRoot retype into a non-VSpaceRoot
+object owes no per-core TLB work — the per-core wrapper commits exactly the base
+shootdown wrapper's result (empty flush set ⇒ the initiator drain is the
+identity; no spurious `perCoreTlb` change). -/
 theorem lifecycleRetypeDirectWithCleanupShootdownPerCore_non_vspace
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (authCap : Capability) (target : SeLe4n.ObjId) (newObj : KernelObject)
     (st : SystemState)
-    (hOld : st.getVSpaceRoot? target = none) :
+    (hOld : st.getVSpaceRoot? target = none)
+    (hNew : retypeInstalledAsid newObj = none) :
     lifecycleRetypeDirectWithCleanupShootdownPerCore executingCore authCap target
         newObj st =
       lifecycleRetypeDirectWithCleanupShootdown executingCore authCap target
         newObj st := by
-  unfold lifecycleRetypeDirectWithCleanupShootdownPerCore retypeInitiatorDrain
-  rw [hOld]
+  unfold lifecycleRetypeDirectWithCleanupShootdownPerCore
   cases lifecycleRetypeDirectWithCleanupShootdown executingCore authCap target
       newObj st with
   | error e => rfl
   | ok pair =>
       obtain ⟨u, st'⟩ := pair
       cases u
+      rw [retypeShootdownAsidList_nil hOld hNew]
       rfl
 
 /-- **WS-SM SM7.F.4(b)(iii)** (the fix's core property, machine-checked): after
@@ -761,7 +1151,8 @@ theorem lifecycleRetypeDirectWithCleanupShootdownPerCore_initiator_drained
       simp only [Except.ok.injEq, Prod.mk.injEq, true_and]
       intro hStep
       subst hStep
-      exact retypeInitiatorDrain_drained executingCore target hRoot
+      exact retypeInitiatorDrain_drained executingCore
+        (retypeShootdownAsidList_mem_destroyed hRoot) stBase
 
 /-- **WS-SM SM7.F.4(b)(iii)** (the CSpaceAddr sibling — PR #844 review closure):
 the initiator-atomic form of the **CSpaceAddr-authority** production retype
@@ -780,27 +1171,30 @@ def lifecycleRetypeWithCleanupShootdownPerCore
         newObj st with
     | .error e => .error e
     | .ok ((), st') =>
-        .ok ((), retypeInitiatorDrain executingCore target st st')
+        .ok ((), retypeInitiatorDrain executingCore
+          (retypeShootdownAsidList st target newObj) st')
 
-/-- **WS-SM SM7.F.4(b)(iii)**: a non-VSpaceRoot retype through the CSpaceAddr
-per-core wrapper commits exactly the base shootdown wrapper's result. -/
+/-- **WS-SM SM7.F.4(b)(iii)**: a non-VSpaceRoot retype into a non-VSpaceRoot
+object through the CSpaceAddr per-core wrapper commits exactly the base shootdown
+wrapper's result. -/
 theorem lifecycleRetypeWithCleanupShootdownPerCore_non_vspace
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (authority : CSpaceAddr) (target : SeLe4n.ObjId) (newObj : KernelObject)
     (st : SystemState)
-    (hOld : st.getVSpaceRoot? target = none) :
+    (hOld : st.getVSpaceRoot? target = none)
+    (hNew : retypeInstalledAsid newObj = none) :
     lifecycleRetypeWithCleanupShootdownPerCore executingCore authority target
         newObj st =
       lifecycleRetypeWithCleanupShootdown executingCore authority target
         newObj st := by
-  unfold lifecycleRetypeWithCleanupShootdownPerCore retypeInitiatorDrain
-  rw [hOld]
+  unfold lifecycleRetypeWithCleanupShootdownPerCore
   cases lifecycleRetypeWithCleanupShootdown executingCore authority target
       newObj st with
   | error e => rfl
   | ok pair =>
       obtain ⟨u, st'⟩ := pair
       cases u
+      rw [retypeShootdownAsidList_nil hOld hNew]
       rfl
 
 /-- **WS-SM SM7.F.4(b)(iii)** (the CSpaceAddr sibling's core property): after the
@@ -825,7 +1219,8 @@ theorem lifecycleRetypeWithCleanupShootdownPerCore_initiator_drained
       simp only [Except.ok.injEq, Prod.mk.injEq, true_and]
       intro hStep
       subst hStep
-      exact retypeInitiatorDrain_drained executingCore target hRoot
+      exact retypeInitiatorDrain_drained executingCore
+        (retypeShootdownAsidList_mem_destroyed hRoot) stBase
 
 -- ============================================================================
 -- WS-SM SM7.F.4(b)(iii): whole-invariant retype preservation
@@ -934,20 +1329,24 @@ consistent entry `e` resolves `e.asid` to some *other* root `rootId ≠ target`
 (the resolution's `root.asid = asid` check forces `rootId ≠ target` since
 `e.asid ≠ root.asid`), and that root object is untouched (`storeObject_objects_ne`)
 while `e.asid`'s ASID-table binding survives the old-root erase (`e.asid ≠
-root.asid`).  `hNoRebind` rules out the one unsound case: retyping into a fresh
-`.vspaceRoot` whose ASID collides with another *live* ASID would silently rebind
-it (the `asidTable.insert`), leaving `e` stale-and-uncovered — real hardware
-retype installs an unbound ASID (0), so the live path always satisfies it. -/
+root.asid`).  `hInstNe` rules out the one unsound case: if the retype installs a
+fresh `.vspaceRoot` whose ASID is `e.asid`, `storeObject`'s `asidTable.insert`
+would rebind `e.asid` (to `target`), breaking `e`'s resolution — so we require
+`e.asid` to differ from the installed ASID.  (In the whole-invariant proof this
+holds because `e`'s ASID is flushed-and-drained exactly when it equals a flushed
+ASID, and the installed ASID is itself in the flush set, so a surviving `e` has
+`e.asid ∉` flush set ⊇ `{installed}`.  This replaces the earlier `hNoRebind`
+side condition: the installed ASID is now flushed rather than assumed
+fresh.) -/
 private theorem retypeStoreObject_tlbEntryConsistent_frame
     {st stScr stB : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
     {root : VSpaceRoot}
     (hScrObj : stScr.objects = st.objects) (hScrAsid : stScr.asidTable = st.asidTable)
     (hVsp : st.objects[target]? = some (.vspaceRoot root))
     (hObjK : st.objects.invExtK) (hAsidK : st.asidTable.invExtK)
-    (hNoRebind : ∀ nr : VSpaceRoot, newObj = KernelObject.vspaceRoot nr →
-       nr.asid = root.asid ∨ st.asidTable[nr.asid]? = none)
     (hStore : storeObject target newObj stScr = .ok ((), stB))
     {e : TlbEntry} (hNe : e.asid ≠ root.asid)
+    (hInstNe : ∀ nr : VSpaceRoot, newObj = KernelObject.vspaceRoot nr → e.asid ≠ nr.asid)
     (hCon : Architecture.tlbEntryConsistent st e) :
     Architecture.tlbEntryConsistent stB e := by
   obtain ⟨rootId, r, hres, hlk⟩ := hCon
@@ -976,11 +1375,7 @@ private theorem retypeStoreObject_tlbEntryConsistent_frame
   · -- stB.asidTable[e.asid]? = some rootId
     cases newObj with
     | vspaceRoot newRoot =>
-        have hNeNew : e.asid ≠ newRoot.asid := by
-          intro hEq
-          rcases hNoRebind newRoot rfl with hEqA | hNone
-          · exact hNe (hEq.trans hEqA)
-          · rw [← hEq, hTbl] at hNone; cases hNone
+        have hNeNew : e.asid ≠ newRoot.asid := hInstNe newRoot rfl
         have hMid := storeObject_asidTable_vspaceRoot_ne stScr stB target newRoot
           e.asid hNeNew hAsidInv hStore
         simp only [hObjTargetScr] at hMid
@@ -1000,116 +1395,108 @@ private theorem retypeStoreObject_tlbEntryConsistent_frame
 
 /-- WS-SM SM7.F.4(b)(iii) (the per-core reasoning behind the whole-invariant
 theorem): from a quiescent, per-core-consistent pre-state, the committed
-post-state of the initiator-atomic VSpaceRoot retype — initiator view retired
-(`drainInitiatorPerCoreView`) over the round posting
-(`tlbShootdownBroadcastCoalescing`) over the retype-`storeObject`-then-scalar-flush
-`{ stB with tlb := adapterFlushTlbByAsid … }` — satisfies the pending-aware
-per-core invariant.  Per core: the **initiator** has `root.asid` retired on its
-own view, so every survivor is non-matching and rides the retype's page-table
-frame (`retypeStoreObject_tlbEntryConsistent_frame`, the *consistent* disjunct);
-a **remote** core keeps its view but the round posted a covering `.aside1`
-descriptor (`postShootdownRoundCoalescing_covered`), so a now-stale matching
-entry rides the *pending* disjunct while a non-matching entry rides the
-*consistent* one. -/
+post-state of the initiator-atomic VSpaceRoot retype — the initiator's own view
+retired (`drainInitiatorPerCoreView` over the whole flush set) over the
+round-posting fold (`retypeAsidRoundFold`, one `.aside1` round per flushed ASID)
+over the retype's `storeObject` — satisfies the pending-aware per-core invariant,
+provided the flush set covers both the destroyed and the installed ASIDs.  Per
+core: the **initiator** has every flushed ASID retired on its own view, so a
+survivor's ASID is outside the flush set (hence ≠ both the destroyed and the
+installed ASID) and rides the retype's page-table frame
+(`retypeStoreObject_tlbEntryConsistent_frame`, the *consistent* disjunct); a
+**remote** core keeps its view, but a survivor whose ASID *is* flushed rides a
+posted covering descriptor that survives the remaining rounds
+(`roundFoldSd_covers`, the *pending* disjunct), while a non-flushed survivor
+rides the *consistent* one.  No `hNoRebind`: the installed ASID being in the
+flush set is exactly what closes the rebind gap. -/
 private theorem retype_tlbInvariant_of_storeObject
     {executingCore : SeLe4n.Kernel.Concurrency.CoreId}
     {target : SeLe4n.ObjId} {newObj : KernelObject}
     {st stScr stB : SystemState} {root : VSpaceRoot}
+    (asids : List SeLe4n.ASID)
     (hq : Architecture.shootdownQuiescent st.tlbShootdown)
     (hConsist : Architecture.tlbInvalidationConsistent_perCore st)
     (hVsp : st.objects[target]? = some (.vspaceRoot root))
     (hObjK : st.objects.invExtK) (hAsidK : st.asidTable.invExtK)
-    (hNoRebind : ∀ nr : VSpaceRoot, newObj = KernelObject.vspaceRoot nr →
-       nr.asid = root.asid ∨ st.asidTable[nr.asid]? = none)
+    (hDestroyed : root.asid ∈ asids)
+    (hInstalled : ∀ nr : VSpaceRoot, newObj = KernelObject.vspaceRoot nr → nr.asid ∈ asids)
     (hScrObj : stScr.objects = st.objects)
     (hScrAsid : stScr.asidTable = st.asidTable)
     (hScrPct : stScr.perCoreTlb = st.perCoreTlb)
     (hStore : storeObject target newObj stScr = .ok ((), stB)) :
     Architecture.tlbInvalidationConsistent_perCore
       (Architecture.drainInitiatorPerCoreView
-        (Architecture.tlbShootdownBroadcastCoalescing
-          { stB with tlb := adapterFlushTlbByAsid stB.tlb root.asid }
-          executingCore (Architecture.shootdownTargets executingCore)
-          (Architecture.encodeAsidInvalidation root.asid))
-        executingCore [Architecture.encodeAsidInvalidation root.asid]) := by
+        (retypeAsidRoundFold executingCore asids stB)
+        executingCore (asids.map Architecture.encodeAsidInvalidation)) := by
   have hpct : stB.perCoreTlb = st.perCoreTlb :=
     (storeObject_perCoreTlb_eq stScr target newObj ((), stB) hStore).trans hScrPct
+  have hRfPct : (retypeAsidRoundFold executingCore asids stB).perCoreTlb = st.perCoreTlb :=
+    (retypeAsidRoundFold_perCoreTlb executingCore asids stB).trans hpct
   have hview : ∀ d, Architecture.tlbOnCore
-      (Architecture.tlbShootdownBroadcastCoalescing
-        { stB with tlb := adapterFlushTlbByAsid stB.tlb root.asid }
-        executingCore (Architecture.shootdownTargets executingCore)
-        (Architecture.encodeAsidInvalidation root.asid)) d =
-        Architecture.tlbOnCore st d := by
+      (retypeAsidRoundFold executingCore asids stB) d = Architecture.tlbOnCore st d := by
     intro d
-    show stB.perCoreTlb.get d = st.perCoreTlb.get d
-    rw [hpct]
+    show (retypeAsidRoundFold executingCore asids stB).perCoreTlb.get d = st.perCoreTlb.get d
+    rw [hRfPct]
   have hAllCon : ∀ d, ∀ e ∈ (Architecture.tlbOnCore st d).entries,
       Architecture.tlbEntryConsistent st e :=
     fun d e hmem => Architecture.tlbEntryConsistent_of_ok_of_quiescent hq (hConsist d e hmem)
-  have hObjPost : (Architecture.drainInitiatorPerCoreView
-      (Architecture.tlbShootdownBroadcastCoalescing
-        { stB with tlb := adapterFlushTlbByAsid stB.tlb root.asid }
-        executingCore (Architecture.shootdownTargets executingCore)
-        (Architecture.encodeAsidInvalidation root.asid))
-      executingCore [Architecture.encodeAsidInvalidation root.asid]).objects = stB.objects := rfl
-  have hAsidPost : (Architecture.drainInitiatorPerCoreView
-      (Architecture.tlbShootdownBroadcastCoalescing
-        { stB with tlb := adapterFlushTlbByAsid stB.tlb root.asid }
-        executingCore (Architecture.shootdownTargets executingCore)
-        (Architecture.encodeAsidInvalidation root.asid))
-      executingCore [Architecture.encodeAsidInvalidation root.asid]).asidTable = stB.asidTable := rfl
+  have hPObj : (Architecture.drainInitiatorPerCoreView
+      (retypeAsidRoundFold executingCore asids stB) executingCore
+        (asids.map Architecture.encodeAsidInvalidation)).objects = stB.objects :=
+    ((Architecture.drainInitiatorPerCoreView_frame _ _ _).1).trans
+      (retypeAsidRoundFold_objects executingCore asids stB)
+  have hPAsid : (Architecture.drainInitiatorPerCoreView
+      (retypeAsidRoundFold executingCore asids stB) executingCore
+        (asids.map Architecture.encodeAsidInvalidation)).asidTable = stB.asidTable :=
+    ((Architecture.drainInitiatorPerCoreView_frame _ _ _).2).trans
+      (retypeAsidRoundFold_asidTable executingCore asids stB)
+  have hPSd : (Architecture.drainInitiatorPerCoreView
+      (retypeAsidRoundFold executingCore asids stB) executingCore
+        (asids.map Architecture.encodeAsidInvalidation)).tlbShootdown =
+      roundFoldSd executingCore asids stB.tlbShootdown :=
+    (Architecture.drainInitiatorPerCoreView_tlbShootdown _ _ _).trans
+      (retypeAsidRoundFold_tlbShootdown executingCore asids stB)
+  -- a surviving entry whose ASID is outside the flush set rides the retype frame
+  have frameConsistent : ∀ e : TlbEntry, e.asid ∉ asids →
+      Architecture.tlbEntryConsistent st e → Architecture.tlbEntryConsistent stB e := by
+    intro e hin hCon
+    refine retypeStoreObject_tlbEntryConsistent_frame hScrObj hScrAsid hVsp hObjK hAsidK
+      hStore ?_ ?_ hCon
+    · intro hEq; exact hin (by rw [hEq]; exact hDestroyed)
+    · intro nr hnr hEq; exact hin (by rw [hEq]; exact hInstalled nr hnr)
   intro c e he
   by_cases hc : c = executingCore
   · subst c
     rw [Architecture.drainInitiatorPerCoreView_tlbOnCore_self] at he
-    have hmemB := Architecture.mem_of_mem_applyTlbInvalidations he
-    rw [hview executingCore] at hmemB
-    have hnm : Architecture.tlbEntryMatches
-        (Architecture.encodeAsidInvalidation root.asid) e = false :=
-      Architecture.applyTlbInvalidations_survivor_not_matched
-        [Architecture.encodeAsidInvalidation root.asid] _ e he
-        (Architecture.encodeAsidInvalidation root.asid) (by simp)
-    have hNe : e.asid ≠ root.asid := by
-      intro hEq
-      rw [Architecture.encodeAsidInvalidation_matches root.asid hEq] at hnm
-      cases hnm
-    have hConF : Architecture.tlbEntryConsistent stB e :=
-      retypeStoreObject_tlbEntryConsistent_frame hScrObj hScrAsid hVsp hObjK hAsidK
-        hNoRebind hStore hNe (hAllCon executingCore e hmemB)
-    exact Or.inl (Architecture.tlbEntryConsistent_of_frame hObjPost hAsidPost hConF)
+    have hmemRf := Architecture.mem_of_mem_applyTlbInvalidations he
+    rw [hview executingCore] at hmemRf
+    have hsurv := Architecture.applyTlbInvalidations_survivor_not_matched
+      (asids.map Architecture.encodeAsidInvalidation) _ e he
+    have hNotIn : e.asid ∉ asids := by
+      intro hin
+      have hmem : Architecture.encodeAsidInvalidation e.asid ∈
+          asids.map Architecture.encodeAsidInvalidation := List.mem_map.mpr ⟨e.asid, hin, rfl⟩
+      have := hsurv (Architecture.encodeAsidInvalidation e.asid) hmem
+      rw [Architecture.encodeAsidInvalidation_matches e.asid rfl] at this
+      cases this
+    exact Or.inl (Architecture.tlbEntryConsistent_of_frame hPObj hPAsid
+      (frameConsistent e hNotIn (hAllCon executingCore e hmemRf)))
   · rw [Architecture.drainInitiatorPerCoreView_tlbOnCore_ne _
-      [Architecture.encodeAsidInvalidation root.asid] (Ne.symm hc)] at he
+      (asids.map Architecture.encodeAsidInvalidation) (Ne.symm hc)] at he
     rw [hview c] at he
-    by_cases hb : Architecture.tlbEntryMatches
-        (Architecture.encodeAsidInvalidation root.asid) e = true
+    by_cases hin : e.asid ∈ asids
     · right
-      have hpendEq : (Architecture.drainInitiatorPerCoreView
-          (Architecture.tlbShootdownBroadcastCoalescing
-            { stB with tlb := adapterFlushTlbByAsid stB.tlb root.asid }
-            executingCore (Architecture.shootdownTargets executingCore)
-            (Architecture.encodeAsidInvalidation root.asid))
-          executingCore [Architecture.encodeAsidInvalidation root.asid]).tlbShootdown.pendingOnCore c =
-          (Architecture.postShootdownRoundCoalescing stB.tlbShootdown
-            executingCore (Architecture.shootdownTargets executingCore)
-            (Architecture.encodeAsidInvalidation root.asid)).pendingOnCore c := rfl
-      have hcov := Architecture.postShootdownRoundCoalescing_covered stB.tlbShootdown
-        executingCore (Architecture.shootdownTargets_nodup executingCore)
-        (Architecture.encodeAsidInvalidation root.asid) c
+      have hcov := roundFoldSd_covers executingCore
         ((Architecture.mem_shootdownTargets_iff executingCore c).mpr hc)
+        asids e.asid hin stB.tlbShootdown
+      rw [hPSd]
       rcases hcov with hdirect | ⟨d', hd'mem, hd'op⟩
-      · refine ⟨(⟨Architecture.encodeAsidInvalidation root.asid, executingCore⟩ :
-          Architecture.TlbShootdownDescriptor), ?_, hb⟩
-        rw [hpendEq]; exact hdirect
-      · refine ⟨d', ?_, ?_⟩
-        · rw [hpendEq]; exact hd'mem
-        · rw [hd'op]; exact Architecture.tlbEntryMatches_vmalle1 e
-    · have hNe : e.asid ≠ root.asid := by
-        intro hEq
-        exact hb (Architecture.encodeAsidInvalidation_matches root.asid hEq)
-      have hConF : Architecture.tlbEntryConsistent stB e :=
-        retypeStoreObject_tlbEntryConsistent_frame hScrObj hScrAsid hVsp hObjK hAsidK
-          hNoRebind hStore hNe (hAllCon c e he)
-      exact Or.inl (Architecture.tlbEntryConsistent_of_frame hObjPost hAsidPost hConF)
+      · exact ⟨(⟨Architecture.encodeAsidInvalidation e.asid, executingCore⟩ :
+          Architecture.TlbShootdownDescriptor), hdirect,
+          Architecture.encodeAsidInvalidation_matches e.asid rfl⟩
+      · exact ⟨d', hd'mem, by rw [hd'op]; exact Architecture.tlbEntryMatches_vmalle1 e⟩
+    · exact Or.inl (Architecture.tlbEntryConsistent_of_frame hPObj hPAsid
+        (frameConsistent e hin (hAllCon c e he)))
 
 /-- **WS-SM SM7.F.4(b)(iii)** (the whole-invariant retype theorem — Direct-cap
 form): the per-core Direct-cap retype-with-shootdown wrapper **preserves the
@@ -1125,15 +1512,14 @@ core, so the committed post-state carries no stale-and-uncovered entry on any
 core — mirroring
 `PerCoreTlbModel.vspaceUnmapPageWithShootdownPerCore_preserves_tlbInvalidationConsistent_perCore`.
 
-`hNoRebind` is the one precondition beyond the plain wrapper's: it forbids the
-retype from installing a fresh `.vspaceRoot` whose ASID collides with a
-**different live** ASID (which `storeObject`'s `asidTable.insert` would silently
-rebind, leaving that ASID's cached entries stale-and-uncovered — the round only
-retires `root.asid`).  Real hardware retype installs an unbound ASID (`0`), and
-the freeing case (retype into a non-`.vspaceRoot`) satisfies it vacuously, so
-every live retype path meets it; without it the theorem is genuinely false
-(`KernelObject.wellFormed` places no ASID-freshness constraint on a new
-`.vspaceRoot`). -/
+**No `hNoRebind`** (the key SM7.F.4(b)(iii) improvement over the plain wrapper):
+a fresh `.vspaceRoot`'s ASID is now itself in the flush set, so the
+`asidTable.insert` rebind is covered — the initiator drains it and the remote
+targets carry its round.  Any surviving stale entry rides a pending descriptor;
+a surviving consistent entry has an ASID outside the flush set (≠ both the
+destroyed and the installed ASID), so it rides the retype's page-table frame.
+The theorem now holds for the VSpaceRoot-target case unconditionally (beyond the
+quiescence precondition the live seam always satisfies). -/
 theorem lifecycleRetypeDirectWithCleanupShootdownPerCore_preserves_tlbInvalidationConsistent_perCore
     {executingCore : SeLe4n.Kernel.Concurrency.CoreId}
     {authCap : Capability} {target : SeLe4n.ObjId} {newObj : KernelObject}
@@ -1142,8 +1528,6 @@ theorem lifecycleRetypeDirectWithCleanupShootdownPerCore_preserves_tlbInvalidati
     (hConsist : Architecture.tlbInvalidationConsistent_perCore st)
     (hVsp : st.objects[target]? = some (.vspaceRoot root))
     (hObjK : st.objects.invExtK) (hAsidK : st.asidTable.invExtK)
-    (hNoRebind : ∀ nr : VSpaceRoot, newObj = KernelObject.vspaceRoot nr →
-       nr.asid = root.asid ∨ st.asidTable[nr.asid]? = none)
     (hStep : lifecycleRetypeDirectWithCleanupShootdownPerCore executingCore authCap target
       newObj st = .ok ((), st')) :
     Architecture.tlbInvalidationConsistent_perCore st' := by
@@ -1154,39 +1538,36 @@ theorem lifecycleRetypeDirectWithCleanupShootdownPerCore_preserves_tlbInvalidati
   | error e =>
       have hSh : lifecycleRetypeDirectWithCleanupShootdown executingCore authCap target
           newObj st = .error e := by
-        unfold lifecycleRetypeDirectWithCleanupShootdown; rw [hBase]
+        simp only [lifecycleRetypeDirectWithCleanupShootdown, hBase]
       rw [hSh] at hStep; cases hStep
   | ok pairB =>
       obtain ⟨uB, stB⟩ := pairB; cases uB
-      have hShoot : lifecycleRetypeDirectWithCleanupShootdown executingCore authCap target
+      have hSh : lifecycleRetypeDirectWithCleanupShootdown executingCore authCap target
           newObj st = .ok ((),
-            Architecture.tlbShootdownBroadcastCoalescing
-              { stB with tlb := adapterFlushTlbByAsid stB.tlb root.asid }
-              executingCore (Architecture.shootdownTargets executingCore)
-              (Architecture.encodeAsidInvalidation root.asid)) := by
-        unfold lifecycleRetypeDirectWithCleanupShootdown
-        rw [hBase]
-        simp only [hGV, Option.map_some]
-        unfold Architecture.tlbFlushByASIDWithShootdown Architecture.tlbFlushByASID
-        simp only []
-        rw [Architecture.withShootdownRound_total]
-      rw [hShoot] at hStep
-      simp only [retypeInitiatorDrain, hGV, Option.map_some, Except.ok.injEq,
-        Prod.mk.injEq, true_and] at hStep
+            retypeAsidRoundFold executingCore
+              (retypeShootdownAsidList st target newObj) stB) := by
+        simp only [lifecycleRetypeDirectWithCleanupShootdown, hBase, retypeShootdownAsids_eq]
+      simp only [hSh, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
       subst hStep
+      rw [retypeInitiatorDrain_of_mem executingCore
+        (retypeShootdownAsidList_mem_destroyed hGV)]
       exact retype_tlbInvariant_of_storeObject
+        (retypeShootdownAsidList st target newObj)
         (stScr := scrubObjectMemory st target (KernelObject.vspaceRoot root).objectType)
-        hq hConsist hVsp hObjK hAsidK hNoRebind rfl rfl rfl
+        hq hConsist hVsp hObjK hAsidK
+        (retypeShootdownAsidList_mem_destroyed hGV)
+        (fun nr hnr => retypeShootdownAsidList_mem_installed hnr)
+        rfl rfl rfl
         (lifecycleRetypeDirectWithCleanup_vspaceRoot_storeObject hVsp hBase)
 
 /-- **WS-SM SM7.F.4(b)(iii)** (the whole-invariant retype theorem — CSpaceAddr
 sibling): the per-core CSpaceAddr-authority retype-with-shootdown wrapper
 `lifecycleRetypeWithCleanupShootdownPerCore` (`API.lean` entry-point table)
 **preserves** `tlbInvalidationConsistent_perCore` for the VSpaceRoot-target case,
-under the same quiescence + `hNoRebind` preconditions as the Direct-cap form and
-via the same shared reasoning (`retype_tlbInvariant_of_storeObject`) — so the
-CSpaceAddr production path is whole-invariant-preserving too, not just the
-Direct-cap one. -/
+under the same quiescence precondition as the Direct-cap form (and, like it, with
+**no `hNoRebind`** — the installed ASID is flushed) via the same shared reasoning
+(`retype_tlbInvariant_of_storeObject`) — so the CSpaceAddr production path is
+whole-invariant-preserving too, not just the Direct-cap one. -/
 theorem lifecycleRetypeWithCleanupShootdownPerCore_preserves_tlbInvalidationConsistent_perCore
     {executingCore : SeLe4n.Kernel.Concurrency.CoreId}
     {authority : CSpaceAddr} {target : SeLe4n.ObjId} {newObj : KernelObject}
@@ -1195,8 +1576,6 @@ theorem lifecycleRetypeWithCleanupShootdownPerCore_preserves_tlbInvalidationCons
     (hConsist : Architecture.tlbInvalidationConsistent_perCore st)
     (hVsp : st.objects[target]? = some (.vspaceRoot root))
     (hObjK : st.objects.invExtK) (hAsidK : st.asidTable.invExtK)
-    (hNoRebind : ∀ nr : VSpaceRoot, newObj = KernelObject.vspaceRoot nr →
-       nr.asid = root.asid ∨ st.asidTable[nr.asid]? = none)
     (hStep : lifecycleRetypeWithCleanupShootdownPerCore executingCore authority target
       newObj st = .ok ((), st')) :
     Architecture.tlbInvalidationConsistent_perCore st' := by
@@ -1207,29 +1586,26 @@ theorem lifecycleRetypeWithCleanupShootdownPerCore_preserves_tlbInvalidationCons
   | error e =>
       have hSh : lifecycleRetypeWithCleanupShootdown executingCore authority target
           newObj st = .error e := by
-        unfold lifecycleRetypeWithCleanupShootdown; rw [hBase]
+        simp only [lifecycleRetypeWithCleanupShootdown, hBase]
       rw [hSh] at hStep; cases hStep
   | ok pairB =>
       obtain ⟨uB, stB⟩ := pairB; cases uB
-      have hShoot : lifecycleRetypeWithCleanupShootdown executingCore authority target
+      have hSh : lifecycleRetypeWithCleanupShootdown executingCore authority target
           newObj st = .ok ((),
-            Architecture.tlbShootdownBroadcastCoalescing
-              { stB with tlb := adapterFlushTlbByAsid stB.tlb root.asid }
-              executingCore (Architecture.shootdownTargets executingCore)
-              (Architecture.encodeAsidInvalidation root.asid)) := by
-        unfold lifecycleRetypeWithCleanupShootdown
-        rw [hBase]
-        simp only [hGV, Option.map_some]
-        unfold Architecture.tlbFlushByASIDWithShootdown Architecture.tlbFlushByASID
-        simp only []
-        rw [Architecture.withShootdownRound_total]
-      rw [hShoot] at hStep
-      simp only [retypeInitiatorDrain, hGV, Option.map_some, Except.ok.injEq,
-        Prod.mk.injEq, true_and] at hStep
+            retypeAsidRoundFold executingCore
+              (retypeShootdownAsidList st target newObj) stB) := by
+        simp only [lifecycleRetypeWithCleanupShootdown, hBase, retypeShootdownAsids_eq]
+      simp only [hSh, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
       subst hStep
+      rw [retypeInitiatorDrain_of_mem executingCore
+        (retypeShootdownAsidList_mem_destroyed hGV)]
       exact retype_tlbInvariant_of_storeObject
+        (retypeShootdownAsidList st target newObj)
         (stScr := scrubObjectMemory st target (KernelObject.vspaceRoot root).objectType)
-        hq hConsist hVsp hObjK hAsidK hNoRebind rfl rfl rfl
+        hq hConsist hVsp hObjK hAsidK
+        (retypeShootdownAsidList_mem_destroyed hGV)
+        (fun nr hnr => retypeShootdownAsidList_mem_installed hnr)
+        rfl rfl rfl
         (lifecycleRetypeWithCleanup_vspaceRoot_storeObject hVsp hBase)
 
 end SeLe4n.Kernel
