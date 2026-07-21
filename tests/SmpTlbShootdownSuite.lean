@@ -2075,6 +2075,28 @@ private def runPerCoreTlbCoalescingOverflowChecks : IO Unit := do
     assertBool "the plain op-only view would have kept the op-unrelated entry (the gap Finding 2 closes)"
       (tlbHasEntry ((shootdownRoundViews stSeed.perCoreTlb core0
         (shootdownTargets core0) opUnmapTarget).get core1) entryOtherVaddr)
+  -- PR #844 review-3 Finding 4: a DUPLICATE target that only reaches capacity on
+  -- its SECOND visit must still be full-flushed — the threaded coalescing fold
+  -- consults the EVOLVING queue, not the fixed pre-round state.  Seed core1 one
+  -- below capacity and one op-unrelated entry, then post to [core1, core1].
+  match enqueueMany TlbShootdownState.initial core1
+      (List.replicate (maxPendingPerCore - 1) descUnmapPage) with
+  | none => assertBool "the near-capacity fill succeeds" false
+  | some sdNearFull => do
+    let viewsSeeded := setTlbViewOnCore (default : SeLe4n.Model.SystemState).perCoreTlb
+      core1 { entries := [entryOtherVaddr] }
+    -- First visit: queue is (max-1) < max ⇒ op (keeps the op-unrelated entry).
+    -- Second visit: the fold's evolved queue is now = max ⇒ coalesce ⇒ full flush.
+    let dupView := shootdownRoundViewsCoalescing viewsSeeded sdNearFull core0
+      [core1, core1] opUnmapTarget
+    assertBool "a duplicate target that overflows on its second visit is full-flushed (Finding 4)"
+      ((dupView.get core1).entries.isEmpty)
+    -- With a single visit (no overflow) the same seed keeps the op-unrelated entry —
+    -- confirming the full flush above is genuinely the second-visit coalesce.
+    let singleView := shootdownRoundViewsCoalescing viewsSeeded sdNearFull core0
+      [core1] opUnmapTarget
+    assertBool "a single (non-overflowing) visit keeps the op-unrelated entry"
+      (tlbHasEntry (singleView.get core1) entryOtherVaddr)
 
 -- ----------------------------------------------------------------------------
 -- Runner

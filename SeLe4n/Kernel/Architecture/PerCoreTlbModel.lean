@@ -643,54 +643,85 @@ actually posts to it: `op` when the enqueue fits, but a **full flush**
 (`.vmalle1`) when that target's queue was already at capacity so the posting
 coalesced to a `.vmalle1` (matching `enqueueShootdownOrCoalesce`, whose
 overflow branch replaces the whole queue with one `.vmalle1`).  The initiator
-retires `op` locally.  Because `beginShootdownRoundFor` frames every pending
-queue, the overflow decision is exactly `maxPendingPerCore ≤ (pre-queue length)`
-per target.  On any non-overflowing state (in particular every state from
-which the strict form succeeds) this collapses to `shootdownRoundViews`
-(`shootdownRoundViewsCoalescing_eq_shootdownRoundViews`). -/
+retires `op` locally.
+
+The overflow decision **threads the evolving shootdown state** `sd` alongside
+the views — exactly mirroring `postShootdownRoundCoalescing` — so a *duplicate*
+target that reaches capacity only on its second visit is correctly full-flushed
+(the fix for PR #844 review-3: consulting the fixed pre-round state would apply
+`op` twice and leave an op-unrelated entry the handler would drain).  Pass the
+round's actual posting base (`beginShootdownRoundFor sd`) so the threaded state
+tracks the real per-target queues.  On any non-overflowing base (in particular
+every base from which the strict form's posting fold succeeds) this collapses to
+`shootdownRoundViews` (`shootdownRoundViewsCoalescing_eq_shootdownRoundViews`). -/
 def shootdownRoundViewsCoalescing (views : Vector TlbState numCores)
     (sd : TlbShootdownState) (initiator : CoreId) (targets : List CoreId)
     (op : TlbInvalidation) : Vector TlbState numCores :=
-  targets.foldl
-    (fun vs c => setTlbViewOnCore vs c (applyTlbInvalidation (vs.get c)
-      (if maxPendingPerCore ≤ (sd.pendingOnCore c).length
-       then TlbInvalidation.vmalle1 else op)))
+  (targets.foldl
+    (fun (p : Vector TlbState numCores × TlbShootdownState) c =>
+      (setTlbViewOnCore p.1 c (applyTlbInvalidation (p.1.get c)
+        (if maxPendingPerCore ≤ (p.2.pendingOnCore c).length
+         then TlbInvalidation.vmalle1 else op)),
+       enqueueShootdownOrCoalesce p.2 c { op := op, initiator := initiator }))
     (setTlbViewOnCore views initiator
-      (applyTlbInvalidation (views.get initiator) op))
+      (applyTlbInvalidation (views.get initiator) op), sd)).1
 
-/-- **WS-SM SM7.F** (fold lemma): under no overflow every target's effective
-operand is `op`, so the coalescing view fold equals the plain `op` fold. -/
-theorem foldl_shootdownRoundViewsCoalescing_eq (sd : TlbShootdownState)
+/-- **WS-SM SM7.F** (fold lemma): whenever the posting fold succeeds (every
+enqueue in it fit — no coalescing), every target's effective operand is `op` at
+its visit, so the threaded coalescing view fold's view part equals the plain
+`op` fold.  Threading `sd` handles duplicates: a duplicate that would overflow
+on a later visit makes the *posting fold* fail, so it is excluded here. -/
+theorem foldl_shootdownRoundViewsCoalescing_eq (initiator : CoreId)
     (op : TlbInvalidation) :
-    ∀ (targets : List CoreId),
-      (∀ c ∈ targets, (sd.pendingOnCore c).length < maxPendingPerCore) →
-      ∀ (base : Vector TlbState numCores),
-        targets.foldl (fun vs c => setTlbViewOnCore vs c (applyTlbInvalidation (vs.get c)
-          (if maxPendingPerCore ≤ (sd.pendingOnCore c).length
-           then TlbInvalidation.vmalle1 else op))) base =
-        targets.foldl (fun vs c =>
-          setTlbViewOnCore vs c (applyTlbInvalidation (vs.get c) op)) base := by
+    ∀ (targets : List CoreId) (base : Vector TlbState numCores)
+      (sd : TlbShootdownState),
+      (targets.foldlM (fun s c => enqueueShootdown s c
+        { op := op, initiator := initiator }) sd).isSome →
+      (targets.foldl
+        (fun (p : Vector TlbState numCores × TlbShootdownState) c =>
+          (setTlbViewOnCore p.1 c (applyTlbInvalidation (p.1.get c)
+            (if maxPendingPerCore ≤ (p.2.pendingOnCore c).length
+             then TlbInvalidation.vmalle1 else op)),
+           enqueueShootdownOrCoalesce p.2 c { op := op, initiator := initiator }))
+        (base, sd)).1 =
+      targets.foldl (fun vs c =>
+        setTlbViewOnCore vs c (applyTlbInvalidation (vs.get c) op)) base := by
   intro targets
   induction targets with
-  | nil => intro _ base; rfl
+  | nil => intro base _ _; rfl
   | cons t ts ih =>
-    intro hno base
-    rw [List.foldl_cons, List.foldl_cons]
-    rw [if_neg (by have h := hno t (List.mem_cons_self ..); omega)]
-    exact ih (fun c hc => hno c (List.mem_cons_of_mem t hc)) _
+    intro base sd hsucc
+    rw [List.foldlM_cons] at hsucc
+    cases henq : enqueueShootdown sd t { op := op, initiator := initiator } with
+    | none => rw [henq] at hsucc; simp at hsucc
+    | some sd1 =>
+      have ht : (sd.pendingOnCore t).length < maxPendingPerCore := by
+        unfold enqueueShootdown at henq
+        split at henq
+        · assumption
+        · simp at henq
+      rw [henq] at hsucc
+      rw [List.foldl_cons, List.foldl_cons]
+      rw [if_neg (show ¬ maxPendingPerCore ≤ (sd.pendingOnCore t).length by omega)]
+      have hcoal : enqueueShootdownOrCoalesce sd t
+          { op := op, initiator := initiator } = sd1 := by
+        unfold enqueueShootdownOrCoalesce; rw [henq]
+      rw [hcoal]
+      exact ih _ sd1 hsucc
 
-/-- **WS-SM SM7.F**: on a non-overflowing pre-state the faithful coalescing
-view equals the plain `shootdownRoundViews` — the two forms agree exactly where
-the strict `tlbInvalidateOnAllCores` succeeds (the divergence is *only* the
-overflow full-flush the finding asked for). -/
+/-- **WS-SM SM7.F**: on a base whose posting fold succeeds (no overflow) the
+faithful coalescing view equals the plain `shootdownRoundViews` — the two forms
+agree exactly where the strict `tlbInvalidateOnAllCores` succeeds (the
+divergence is *only* the overflow full-flush the finding asked for). -/
 theorem shootdownRoundViewsCoalescing_eq_shootdownRoundViews
     (views : Vector TlbState numCores) (sd : TlbShootdownState)
     (initiator : CoreId) (targets : List CoreId) (op : TlbInvalidation)
-    (hno : ∀ c ∈ targets, (sd.pendingOnCore c).length < maxPendingPerCore) :
+    (hsucc : (targets.foldlM (fun s c => enqueueShootdown s c
+      { op := op, initiator := initiator }) sd).isSome) :
     shootdownRoundViewsCoalescing views sd initiator targets op =
       shootdownRoundViews views initiator targets op := by
   unfold shootdownRoundViewsCoalescing shootdownRoundViews
-  exact foldl_shootdownRoundViewsCoalescing_eq sd op targets hno _
+  exact foldl_shootdownRoundViewsCoalescing_eq initiator op targets _ sd hsucc
 
 /-- **WS-SM SM7.F**: a successful `enqueueShootdown` posting fold means every
 target's pre-fold queue was below capacity — a target at capacity would make
@@ -740,16 +771,19 @@ def tlbInvalidateOnAllCoresCoalescing (st : SystemState) (initiator : CoreId)
     (targets : List CoreId) (op : TlbInvalidation) :
     SystemState × List (CoreId × SgiKind) :=
   ({ tlbShootdownBroadcastCoalescing st initiator targets op with
-      perCoreTlb := shootdownRoundViewsCoalescing st.perCoreTlb st.tlbShootdown
+      perCoreTlb := shootdownRoundViewsCoalescing st.perCoreTlb
+        (beginShootdownRoundFor st.tlbShootdown initiator targets)
         initiator targets op },
     targets.map (fun c => (c, SgiKind.tlbShootdownReq)))
 
 /-- **WS-SM SM7.C.4**: the coalescing form's per-core views are the faithful
-`shootdownRoundViewsCoalescing` vector (full flush on overflow). -/
+`shootdownRoundViewsCoalescing` vector (full flush on overflow), threaded from
+the round's real posting base (`beginShootdownRoundFor`). -/
 theorem tlbInvalidateOnAllCoresCoalescing_perCoreTlb (st : SystemState)
     (initiator : CoreId) (targets : List CoreId) (op : TlbInvalidation) :
     (tlbInvalidateOnAllCoresCoalescing st initiator targets op).1.perCoreTlb =
-      shootdownRoundViewsCoalescing st.perCoreTlb st.tlbShootdown
+      shootdownRoundViewsCoalescing st.perCoreTlb
+        (beginShootdownRoundFor st.tlbShootdown initiator targets)
         initiator targets op := rfl
 
 /-- **WS-SM SM7.C.4**: the coalescing form frames the page-table
@@ -774,24 +808,21 @@ theorem tlbInvalidateOnAllCoresCoalescing_eq_strict {st st' : SystemState}
     tlbInvalidateOnAllCoresCoalescing st initiator targets op = (st', sgis) := by
   obtain ⟨posted, hb, hst⟩ := tlbInvalidateOnAllCores_spec h
   have hsgi := tlbInvalidateOnAllCores_sgis h
-  -- strict success ⇒ no target overflowed ⇒ the faithful view collapses to op
-  have hno : ∀ c ∈ targets,
-      (st.tlbShootdown.pendingOnCore c).length < maxPendingPerCore := by
-    have hfold : (targets.foldlM
+  -- strict success ⇒ the round's posting fold succeeds (no coalescing) ⇒ the
+  -- faithful threaded view collapses to the plain op fold.
+  have hfold : (targets.foldlM
+      (fun s c => enqueueShootdown s c { op := op, initiator := initiator })
+      (beginShootdownRoundFor st.tlbShootdown initiator targets)).isSome := by
+    unfold tlbShootdownBroadcast at hb
+    cases hf : targets.foldlM
         (fun s c => enqueueShootdown s c { op := op, initiator := initiator })
-        (beginShootdownRoundFor st.tlbShootdown initiator targets)).isSome := by
-      unfold tlbShootdownBroadcast at hb
-      cases hf : targets.foldlM
-          (fun s c => enqueueShootdown s c { op := op, initiator := initiator })
-          (beginShootdownRoundFor st.tlbShootdown initiator targets) with
-      | none => rw [hf] at hb; simp at hb
-      | some _ => rfl
-    intro c hc
-    have := foldlM_enqueueShootdown_pre_lt hfold c hc
-    rwa [beginShootdownRoundFor_frame_pending] at this
+        (beginShootdownRoundFor st.tlbShootdown initiator targets) with
+    | none => rw [hf] at hb; simp at hb
+    | some _ => rfl
   unfold tlbInvalidateOnAllCoresCoalescing
   rw [shootdownRoundViewsCoalescing_eq_shootdownRoundViews st.perCoreTlb
-        st.tlbShootdown initiator targets op hno,
+        (beginShootdownRoundFor st.tlbShootdown initiator targets)
+        initiator targets op hfold,
       tlbShootdownBroadcastCoalescing_eq_strict hb, hst, hsgi]
 
 -- ============================================================================

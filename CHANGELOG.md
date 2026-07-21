@@ -1,3 +1,41 @@
+## v0.32.88 — WS-SM SM7.F: faithful coalescing view for duplicate targets (PR #844 review-3 follow-up)
+
+Closes PR #844 review-3 Finding 4 (line 657): `shootdownRoundViewsCoalescing`
+consulted the **fixed pre-round** shootdown state on every target visit, so a
+*duplicate* target list where a core reaches `maxPendingPerCore` only on its
+**second** visit was under-invalidated — the fold applied `op` twice instead of
+the coalesced full flush, leaving an op-unrelated entry the real handler (which
+drains the coalesced `.vmalle1`) would remove.  (A fidelity gap in a non-live
+abstraction — the real caller `shootdownTargets` is always `Nodup` — not a live
+bug.)
+
+**Fix (implement-the-improvement, the "fold an evolving state" option).**
+`shootdownRoundViewsCoalescing` now threads the **evolving** shootdown state
+alongside the views, computing each target's effective operand from the current
+(post-prior-visits) queue and evolving it via `enqueueShootdownOrCoalesce` —
+exactly mirroring `postShootdownRoundCoalescing`.  A duplicate that overflows on
+its second visit is now correctly full-flushed.  `tlbInvalidateOnAllCoresCoalescing`
+threads from the round's real posting base (`beginShootdownRoundFor st.tlbShootdown`),
+so the view evolution matches the descriptor evolution operand-for-operand.
+`tlbInvalidateOnAllCoresCoalescing_eq_strict` re-proven via the foldlM-success
+form of the agreement lemma (`shootdownRoundViewsCoalescing_eq_shootdownRoundViews`):
+where the strict form's posting fold succeeds, no visit coalesces, so the
+threaded view collapses to the plain `op` `shootdownRoundViews`.
+
+Test: `SmpTlbShootdownSuite` §5.9 — post to `[core1, core1]` with `core1` seeded
+one below capacity: the second visit's evolved queue is at capacity ⇒ the view is
+full-flushed (an op-unrelated seeded entry is gone); a single-visit post keeps it.
+
+Also replied to review-3 Finding 3 (line 1669): the live `.vspaceUnmap` dispatch
+(`API.lean` → `vspaceUnmapPageWithShootdown`) is not yet routed through the
+`PerCore` wrapper — the tracked **SM7.F.4** obligation (the catch-up already
+drains the initiator on the live path, so there is no correctness hole today,
+only the transient window the atomic wrapper closes; the wiring belongs with
+F.4's fills + map-remap sibling for a coherent, trace-verified slice).
+
+Zero sorry/axiom; trace byte-identical (`perCoreTlb ∉ projectState`); full build
+clean; AK7 unchanged.
+
 ## v0.32.87 — WS-SM SM7.F: per-core TLB soundness — no ASID vacuity, faithful coalescing view (PR #844 review-3)
 
 Closes the two PR #844 review-3 P2 findings on the per-core TLB invariant.
