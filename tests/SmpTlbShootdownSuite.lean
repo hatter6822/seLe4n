@@ -569,6 +569,18 @@ open SeLe4n.Kernel.Concurrency
 #check @SeLe4n.Kernel.Architecture.vspaceUnmapPage_resolveAsidRoot_isSome
 -- SM7.C NI: a per-core TLB write is projection-invisible (no covert channel):
 #check @SeLe4n.Kernel.perCoreTlb_write_preserves_projection
+-- SM7.F.4(a)+(b)(ii): the initiator-atomic map seam + live fill + its
+-- preservation, plus the map-side frames (perCoreTlb frame, ASID-resolution
+-- preservation, conjunction-form entry-consistency frame):
+#check @SeLe4n.Kernel.Architecture.vspaceMapPageCheckedWithShootdownFromStatePerCore
+#check @SeLe4n.Kernel.Architecture.vspaceMapPageCheckedWithShootdownFromStatePerCore_preserves_tlbInvalidationConsistent_perCore
+#check @SeLe4n.Kernel.Architecture.vspaceMapPageCheckedWithFlushFromState_tlbEntryConsistent_frame
+#check @SeLe4n.Kernel.Architecture.vspaceMapPageCheckedWithFlushFromState_perCoreTlb_eq
+#check @SeLe4n.Kernel.Architecture.vspaceMapPage_resolveAsidRoot_isSome
+-- SM7.F.4(b)(i)/(a): the live dispatch routes both VSpace arms through the
+-- per-core wrappers (the delegation theorems pin the exact call targets):
+#check @SeLe4n.Kernel.dispatchWithCap_vspaceUnmap_delegates
+#check @SeLe4n.Kernel.dispatchWithCap_vspaceMap_delegates
 
 -- ============================================================================
 -- §2  Elaboration-time examples
@@ -2099,6 +2111,66 @@ private def runPerCoreTlbCoalescingOverflowChecks : IO Unit := do
       (tlbHasEntry (singleView.get core1) entryOtherVaddr)
 
 -- ----------------------------------------------------------------------------
+-- §5.10  SM7.F.4 — the operative live lifecycle: a live map FILLS a real
+--         per-core entry, a live cross-core unmap POSTS a covering round, and
+--         the deferred catch-up REMOVES the (now-stale) remote entry — under
+--         the pending-aware invariant, with a single serialized round.  The
+--         two wrappers exercised here are exactly what the live `.vspaceMap` /
+--         `.vspaceUnmap` dispatch routes through (per the `dispatchWithCap_*
+--         _delegates` theorems), so this is the end-to-end acceptance scenario.
+-- ----------------------------------------------------------------------------
+
+private def runPerCoreTlbLiveLifecycleChecks : IO Unit := do
+  IO.println "-- §5.10 per-core TLB: live map→fill→cross-core unmap→catch-up (SM7.F.4)"
+  -- core1 performs the LIVE map wrapper: it maps (asid5, vaddrPage) into the
+  -- page tables AND caches the freshly-established, consistent-by-construction
+  -- translation on its OWN perCoreTlb view (the live fill — SM7.F.4(a)).
+  match vspaceMapPageCheckedWithShootdownFromStatePerCore core1 asid5 vaddrPage
+      (SeLe4n.PAddr.ofNat 0x2000) .readOnly (udState []) with
+  | .error _ => assertBool "the live per-core map succeeds" false
+  | .ok ((), stMapB) => do
+    -- (1) the fill is OPERATIVE: perCoreTlb now holds a REAL entry on the live
+    -- syscall path (the whole point of F.4 — the model is no longer vacuous),
+    -- and the fill is a this-core event.
+    assertBool "the live map caches the translation on the mapping core's own view (F.4(a) fill)"
+      ((tlbOnCore stMapB core1).entries.any (fun e => e.asid == asid5 && e.vaddr == vaddrPage))
+    assertBool "the fill is core-local — no other core cached it"
+      ([core0, core2, core3].all fun c => (tlbOnCore stMapB c).entries.isEmpty)
+    assertBool "the map+fill keeps the per-core checker green + shootdown quiescent"
+      (tlbInvalidationConsistentCheck_perCore stMapB
+        && decide (shootdownQuiescent stMapB.tlbShootdown))
+    -- core0 performs the LIVE cross-core unmap wrapper: erases the mapping,
+    -- posts a covering `.vae1` descriptor to every remote core (incl. core1),
+    -- and retires its OWN view atomically (SM7.F.4(b)(i)).
+    match vspaceUnmapPageWithShootdownPerCore core0 asid5 vaddrPage stMapB with
+    | .error _ => assertBool "the live cross-core unmap succeeds" false
+    | .ok ((), stUnmapA) => do
+      -- (2) core1's cached entry is now STALE (its page-table mapping is gone),
+      -- still present — but COVERED by the descriptor the round posted, so the
+      -- pending-aware checker stays GREEN (the honest invariant's whole point).
+      assertBool "the remote mapping core still holds the (now-stale) entry before catch-up"
+        ((tlbOnCore stUnmapA core1).entries.any (fun e => e.asid == asid5 && e.vaddr == vaddrPage))
+      assertBool "the unmap posts a covering descriptor to the remote mapping core"
+        ((stUnmapA.tlbShootdown.pendingOnCore core1).contains
+          { op := opUnmapTarget, initiator := core0 })
+      assertBool "the initiator's own view was retired atomically with the unmap (F.4(b)(i))"
+        (!((tlbOnCore stUnmapA core0).entries.any (fun e => e.asid == asid5 && e.vaddr == vaddrPage)))
+      assertBool "the committed post-unmap state keeps the per-core checker GREEN (pending disjunct)"
+        (tlbInvalidationConsistentCheck_perCore stUnmapA)
+      -- (3) the deferred catch-up (exactly what `completeShootdownRounds` runs)
+      -- drains every remote target's queue onto its own view — core1's stale
+      -- entry is now PROVABLY REMOVED (the SMP-C4 use-after-unmap closure made
+      -- operative on a real cached entry).  A single serialized round: no
+      -- cross-round draining.
+      let stFinal := shootdownCatchUpPerCore stUnmapA core0 [opUnmapTarget]
+      assertBool "the catch-up removes the stale entry from the remote mapping core (F.4 acceptance)"
+        (!((tlbOnCore stFinal core1).entries.any (fun e => e.asid == asid5 && e.vaddr == vaddrPage)))
+      assertBool "the catch-up drains the remote target's shootdown queue"
+        ((stFinal.tlbShootdown.pendingOnCore core1).isEmpty)
+      assertBool "after the catch-up the per-core checker is GREEN"
+        (tlbInvalidationConsistentCheck_perCore stFinal)
+
+-- ----------------------------------------------------------------------------
 -- Runner
 -- ----------------------------------------------------------------------------
 
@@ -2136,6 +2208,7 @@ def runSmpTlbShootdownChecks : IO Unit := do
   runPerCoreTlbInitiatorAtomicChecks
   runPerCoreTlbUseAfterRetypeChecks
   runPerCoreTlbCoalescingOverflowChecks
+  runPerCoreTlbLiveLifecycleChecks
   IO.println "===================================================="
   IO.println "All SM7.A + SM7.B + SM7.C TLB shootdown + per-core model checks PASS."
 

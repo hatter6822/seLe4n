@@ -83,6 +83,33 @@ Round-generation-tagged descriptors (the SM7.B v0.32.79 model-fidelity
 debt) remains a separately-scoped follow-on (orthogonal to the per-core
 view model; no hardware hazard).
 
+**SM7.F.4 core LANDED (v0.32.89) — live fill + initiator-atomic VSpace
+seams.**  Makes the per-core TLB model *operative on the live syscall path*,
+closing PR #844 review-3 Findings 3 & 5 and the review-2 empty-live gap.
+**(b)(i)**: the live `.vspaceUnmap` dispatch arm routes through
+`vspaceUnmapPageWithShootdownPerCore` (`dispatchWithCap_vspaceUnmap_delegates`
+updated), retiring the caller's own `perCoreTlb` view atomically with the
+transition rather than only in the deferred catch-up.  **(a)+(b)(ii)**: new
+`vspaceMapPageCheckedWithShootdownFromStatePerCore` — on a successful map it
+caches the freshly-established, consistent-by-construction translation on the
+executing core (**the live fill** — `perCoreTlb` finally holds a real entry on
+the syscall path, the model non-vacuous) and retires any stale initiator entry,
+atomically; `…_preserves_tlbInvalidationConsistent_perCore` rides
+`vspaceMapPageCheckedWithFlushFromState_ok_fresh` (a successful checked map is
+always fresh) + a new fresh-map entry-consistency frame + `tlbFillOnCore_preserves`;
+the `.vspaceMap` arm + `dispatchWithCap_vspaceMap_delegates` route through it.
+New frames: `vspaceMapPage{,WithFlush,CheckedWithFlushFromState}_perCoreTlb_eq`,
+`vspaceMapPage_resolveAsidRoot_isSome` (a map never unbinds an ASID),
+`vspaceMapPageCheckedWithFlushFromState_tlbEntryConsistent_frame`.  Acceptance
+`SmpTlbShootdownSuite` §5.10: live map→fill→cross-core unmap→post→catch-up→remove,
+green under the pending-aware invariant, single serialized round.  Trace
+byte-identical (`perCoreTlb ∉ projectState`); AK7 `RAW_MATCH_VSPACEROOT` 13→14
+(additive characterisation lemma, baseline re-anchored).  Residual (catch-up-
+covered, no permanent hole): F.4(b)(iii) retype/ASID-flush (needs a retype
+entry-consistency frame), F.4(b)(iv) user-unreachable ASID-allocate (B.10), F.3
+round-generation-tagged descriptors.  Plan:
+`docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` §SM7.F.4.
+
 **SM7.F IN FLIGHT (v0.32.84) — operative per-core TLB fills.**  Opens the
 maximal-fidelity resolution of the PR #844 review-round-2 findings: the
 per-core TLB model was *empty on the live path* (only drains; the fill had

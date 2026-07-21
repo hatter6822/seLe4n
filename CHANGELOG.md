@@ -1,3 +1,67 @@
+## v0.32.89 — WS-SM SM7.F.4: live fill + initiator-atomic VSpace seams (PR #844)
+
+Makes the per-core TLB model **operative on the live syscall path** — closing
+review-3 Finding 3 (live `.vspaceUnmap` not routed through the per-core wrapper)
+and the same-class Finding 5 (the `.vspaceMap` path), and resolving the review-2
+"empty-live" gap (`perCoreTlb` held no real entries, so the 13th
+`proofLayerInvariantBundle` conjunct + Theorem 3.3.1 were vacuous for real
+execution).
+
+**F.4(b)(i) — live `.vspaceUnmap` routing.** The dispatch arm
+(`API.lean`) now calls `vspaceUnmapPageWithShootdownPerCore` (the F.2a wrapper,
+already proven), so the caller's own `perCoreTlb` view retires the unmapped
+operand **atomically with the transition** rather than only in the deferred
+`completeShootdownRounds` catch-up — closing the transient committed-state window
+where the initiator's view would be stale-and-uncovered.
+`dispatchWithCap_vspaceUnmap_delegates` RHS updated.
+
+**F.4(a)+(b)(ii) — the live fill + `.vspaceMap` routing.** New
+`vspaceMapPageCheckedWithShootdownFromStatePerCore` — on a successful map it (a)
+caches the freshly-established, *consistent-by-construction* translation on the
+executing core's `perCoreTlb` view (**the live fill** — `perCoreTlb` finally
+holds a real entry on the syscall path, making the model non-vacuous) and (b)
+retires any stale initiator entry atomically.  Its preservation theorem
+`…_preserves_tlbInvalidationConsistent_perCore` rides
+`vspaceMapPageCheckedWithFlushFromState_ok_fresh` (a *successful* checked map is
+always fresh — `mapPage` rejects an occupied vaddr — so no shootdown posts and
+the initiator has no stale entry) + a new fresh-map entry-consistency frame +
+`tlbFillOnCore_preserves` (the fill installs only a page-table-resolved,
+consistent entry).  `.vspaceMap` arm + `dispatchWithCap_vspaceMap_delegates`
+updated.
+
+**New frame lemmas** (`VSpace.lean`): `vspaceMapPage{,WithFlush,
+CheckedWithFlushFromState}_perCoreTlb_eq` and `vspaceMapPage_resolveAsidRoot_isSome`
+(a map never unbinds an ASID — carries the post-Finding-1 conjunction-form
+`tlbEntryConsistent` frame).  New conjunction-form helper
+(`PerCoreTlbModel.lean`): `vspaceMapPageCheckedWithFlushFromState_tlbEntryConsistent_frame`.
+
+**Acceptance test** (`SmpTlbShootdownSuite` §5.10): the end-to-end live lifecycle
+— core1's live map *fills* a real entry; core0's live cross-core unmap *posts* a
+covering round and retires its own view atomically; the deferred catch-up
+*removes* the now-stale remote entry — every committed step green under the
+pending-aware invariant, a single serialized round (no cross-round draining).
+
+Trace-safe throughout: every added effect is `perCoreTlb`-only and `perCoreTlb ∉
+projectState`, so the SGI/round diff-recovery (`shootdownChangedTargets` /
+`shootdownPostedOps`, over `tlbShootdown`) is unaffected; golden trace
+byte-identical.  Zero sorry/axiom; full build clean.
+
+AK7: `RAW_MATCH_VSPACEROOT` 13 → 14 (`RAW_MATCH_TOTAL` 134 → 135) — the single
+increment is the additive raw-store *characterisation* proof
+`vspaceMapPage_resolveAsidRoot_isSome`, which cases on the same `objects[rootId]?`
+scrutinee `vspaceMapPage_entry_consistent_frame` already matches (a
+characterisation lemma, not a new live raw read — the live map reads through
+`resolveAsidRoot`/`getVSpaceRoot?`); baseline re-anchored.
+
+**Remaining SM7.F residual** (tracked, no permanent hole — the catch-up seam
+`shootdownCatchUpPerCore → drainInitiatorPerCoreView` drains the initiator for
+*every* posted round, so only the transient commit→catch-up window is uncovered,
+and it is vacuous until fills reach those paths): F.4(b)(iii) retype-of-live-
+VSpaceRoot / ASID-flush (`tlbFlushByASIDWithShootdown` /
+`lifecycleRetypeDirectWithCleanupShootdown` — needs a retype entry-consistency
+frame), F.4(b)(iv) the user-unreachable ASID-allocate (B.10 debt), and F.3
+round-generation-tagged descriptors (the concurrent-round cross-draining race).
+
 ## v0.32.88 — WS-SM SM7.F: faithful coalescing view for duplicate targets (PR #844 review-3 follow-up)
 
 Closes PR #844 review-3 Finding 4 (line 657): `shootdownRoundViewsCoalescing`

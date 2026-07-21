@@ -998,6 +998,13 @@ run_check "INVARIANT" rg -n '^theorem tlbInvalidationConsistentCheck_perCore_iff
 run_check "INVARIANT" rg -n 'tlbInvalidationConsistent_perCore st' SeLe4n/Kernel/Architecture/Invariant.lean
 run_check "INVARIANT" rg -n 'handleTlbShootdownReqOnCorePerCore' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^private def runPerCoreTlbOperationalChecks' tests/SmpTlbShootdownSuite.lean
+# WS-SM SM7.F.4: live fill + initiator-atomic VSpace seams (the live `.vspaceMap`
+# / `.vspaceUnmap` dispatch routes through the per-core wrappers).
+run_check "INVARIANT" rg -n '^def vspaceMapPageCheckedWithShootdownFromStatePerCore' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
+run_check "INVARIANT" rg -n '^theorem vspaceMapPageCheckedWithShootdownFromStatePerCore_preserves_tlbInvalidationConsistent_perCore' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
+run_check "INVARIANT" rg -n 'vspaceUnmapPageWithShootdownPerCore' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n 'vspaceMapPageCheckedWithShootdownFromStatePerCore' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^private def runPerCoreTlbLiveLifecycleChecks' tests/SmpTlbShootdownSuite.lean
 
 # WS-H12d IPC message payload bounds anchors — predicate definitions + enforcement + theorems.
 run_check "INVARIANT" rg -n '^def maxMessageRegisters' SeLe4n/Model/Object/Types.lean
