@@ -783,6 +783,25 @@ premise reads).
 | SM7.F.3 | Round-generation-tagged descriptors (the SM7.B v0.32.79 model-fidelity debt): `TlbShootdownDescriptor` carries a round generation; the catch-up drains only its own generation, closing the concurrent-round cross-draining race (Comment 3).  A `TlbShootdownState` type change rippling SM7.A/B + the Rust mailbox mirror. | PENDING |
 | SM7.F.4 | Live fill + atomic-seam wiring: (a) invoke `tlbFillOnCore` at a genuine live translation point (e.g. the IPC-buffer / mapped-access seam) so `perCoreTlb` holds real entries on the syscall path; (b) route the live `.vspaceUnmap` dispatch through `vspaceUnmapPageWithShootdownPerCore` (F.2a) — and add + wire the analogous map-remap initiator-atomic sibling — so the initiator's own view is retired atomically with the transition rather than in the deferred catch-up.  Trace-safe (`perCoreTlb` ∉ `projectState`).  Requires F.2/F.2a (else the invariant is false in the pending window on the initiator) and rides F.3 for race-free catch-up. | PENDING |
 
+**Review-3 hardening (v0.32.87, PR #844 review-3).**  Two P2 soundness/fidelity
+findings on the per-core invariant closed (both per-core scoped; the scalar
+`tlbConsistent` shares the vacuity but stays out of SM7.F scope):
+- **Finding 1 — no ASID vacuity.**  `tlbEntryConsistent` was an implication,
+  vacuously true when the ASID no longer resolves, so a use-after-retype entry
+  (`lifecycleRetype` replaced the VSpace root ⇒ `resolveAsidRoot = none`) was
+  accepted as consistent.  Redefined to the existential conjunction (resolve
+  **and** match); an unresolvable ASID now fails the consistent branch and must
+  ride a pending descriptor.  New VSpace lemma
+  `vspaceUnmapPage_resolveAsidRoot_isSome` (an unmap never unbinds an ASID) lets
+  the F.2a frame carry the conjunction; every consumer re-proven; the unused
+  bridge `tlbEntryOk_of_tlbConsistent` dropped.  §5.3/§5.7.
+- **Finding 2 — faithful coalescing view.**  `tlbInvalidateOnAllCoresCoalescing`
+  now drives its views with `shootdownRoundViewsCoalescing`: an overflowed
+  target (queue at `maxPendingPerCore`, posting coalesced to `.vmalle1`) is
+  **full-flushed**, matching the coalesced descriptor rather than merely
+  `op`-invalidated.  `_eq_strict` preserved (agrees on non-overflowing states).
+  §5.8.
+
 **Acceptance.**  A live map → access (fill) → cross-core unmap (shootdown)
 → catch-up sequence in which a real remote cached entry is created and then
 provably removed, under the pending-aware invariant, with no cross-round

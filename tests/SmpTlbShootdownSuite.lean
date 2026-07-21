@@ -505,6 +505,10 @@ open SeLe4n.Kernel.Concurrency
 #check @tlbInsertOnCore_preserves_tlbInvalidationConsistent_perCore
 #check @tlbInvalidateOnAllCoresCoalescing
 #check @tlbInvalidateOnAllCoresCoalescing_eq_strict
+-- SM7.F (PR #844 review-3): the faithful coalescing view (full flush on overflow):
+#check @shootdownRoundViewsCoalescing
+#check @shootdownRoundViewsCoalescing_eq_shootdownRoundViews
+#check @foldlM_enqueueShootdown_pre_lt
 #check @tlbConsistentCheck
 #check @tlbConsistentCheck_iff
 #check @tlbInvalidationConsistentCheck_perCore
@@ -560,6 +564,9 @@ open SeLe4n.Kernel.Concurrency
 #check @vspaceUnmapPageWithFlush_tlbEntryConsistent_frame
 #check @SeLe4n.Kernel.Architecture.vspaceUnmapPageWithFlush_perCoreTlb_eq
 #check @SeLe4n.Model.storeObject_perCoreTlb_eq
+-- SM7.F (PR #844 review-3): the unmap never unbinds an ASID (resolution half
+-- of the conjunction-form `tlbEntryConsistent`):
+#check @SeLe4n.Kernel.Architecture.vspaceUnmapPage_resolveAsidRoot_isSome
 -- SM7.C NI: a per-core TLB write is projection-invisible (no covert channel):
 #check @SeLe4n.Kernel.perCoreTlb_write_preserves_projection
 
@@ -1851,13 +1858,16 @@ private def runPerCoreTlbOperationalChecks : IO Unit := do
     (tlbInvalidationConsistentCheck_perCore (default : SeLe4n.Model.SystemState))
   assertBool "the decidable per-core invariant instance agrees at boot"
     (decide (tlbInvalidationConsistent_perCore (default : SeLe4n.Model.SystemState)))
-  -- SM7.C.5 (insert-preservation, the walker half): a fresh translation
-  -- consistent with the (empty) boot page tables keeps the invariant — the
-  -- boot state has no VSpaceRoots, so any entry resolves to no root and is
-  -- vacuously consistent, so the check still passes after a walker fill.
-  assertBool "a hardware-walker fill on the boot state keeps the checker green"
-    (tlbInvalidationConsistentCheck_perCore
-      (tlbInsertOnCore (default : SeLe4n.Model.SystemState) core1 entryTarget))
+  -- SM7.C.5 (SM7.F, PR #844 review-3): the conjunction form of
+  -- `tlbEntryConsistent` rejects an unresolvable-ASID entry.  A RAW insert of an
+  -- entry whose ASID does not resolve on the (VSpaceRoot-free) boot state is a
+  -- stale / use-after-retype entry, so the checker now flags it RED — the old
+  -- implication form accepted it *vacuously*.  (A genuine walker fill,
+  -- `tlbFillOnCore` in §5.4, never installs such an entry: the walk only caches
+  -- a translation it actually resolved through the page tables.)
+  assertBool "a raw insert of an unresolvable-ASID entry FAILS the checker (SM7.F: no vacuity)"
+    (!(tlbInvalidationConsistentCheck_perCore
+      (tlbInsertOnCore (default : SeLe4n.Model.SystemState) core1 entryTarget)))
   -- PR #844 P1: the live catch-up (`shootdownCatchUpPerCore`, what
   -- `completeShootdownRounds` runs) drains the INITIATOR's own view too — the
   -- `tlbiForSharing` broadcast reaches the issuing PE, and `shootdownTargets`
@@ -1999,6 +2009,74 @@ private def runPerCoreTlbInitiatorAtomicChecks : IO Unit := do
         (!(tlbInvalidationConsistentCheck_perCore stPlain))
 
 -- ----------------------------------------------------------------------------
+-- §5.7  SM7.F (PR #844 review-3) — a cached entry whose ASID no longer resolves
+--        (use-after-retype) is STALE, not vacuously consistent.
+-- ----------------------------------------------------------------------------
+
+private def runPerCoreTlbUseAfterRetypeChecks : IO Unit := do
+  IO.println "-- §5.7 per-core TLB: use-after-retype (unresolvable ASID) rejected (SM7.F)"
+  match vspaceMapPageWithFlush asid5 vaddrPage (SeLe4n.PAddr.ofNat 0x2000)
+      .readOnly (udState []) with
+  | .error _ => assertBool "the scenario maps the page" false
+  | .ok ((), stMapped) => do
+    let stFilled := tlbFillOnCore stMapped core0 asid5 vaddrPage
+    -- While asid5 resolves, the cached entry is genuinely consistent (checker GREEN).
+    assertBool "a walk-filled entry with a resolvable ASID passes the checker"
+      (tlbInvalidationConsistentCheck_perCore stFilled)
+    -- Model a retype: asid5 no longer resolves (the VSpaceRoot is gone / rebound),
+    -- but the old translation is still cached on core0.  Carry the filled view onto
+    -- the VSpaceRoot-free base state.
+    let stRetyped : SeLe4n.Model.SystemState :=
+      { (udState []) with perCoreTlb := stFilled.perCoreTlb }
+    -- The OLD implication form accepted this VACUOUSLY (unresolvable ASID ⇒ premise
+    -- unsatisfiable ⇒ trivially consistent).  The conjunction form (SM7.F) flags it
+    -- as the stale use-after-retype entry it is — checker RED, no pending cover.
+    assertBool "a cached entry whose ASID no longer resolves FAILS the checker (use-after-retype)"
+      (!(tlbInvalidationConsistentCheck_perCore stRetyped))
+    -- ...unless a covering shootdown is already pending for its core (the pending
+    -- disjunct): then the stale entry is admissible (scheduled for retirement).
+    match enqueueShootdown stRetyped.tlbShootdown core0 descUnmapPage with
+    | none => assertBool "the covering descriptor enqueues" false
+    | some sd =>
+      let stRetypedPending := { stRetyped with tlbShootdown := sd }
+      assertBool "the same use-after-retype entry becomes admissible once a covering shootdown is pending"
+        (tlbInvalidationConsistentCheck_perCore stRetypedPending)
+
+-- ----------------------------------------------------------------------------
+-- §5.8  SM7.F (PR #844 review-3) — the coalescing eager view FULL-FLUSHES an
+--        overflowed target, matching the coalesced `.vmalle1` it posts.
+-- ----------------------------------------------------------------------------
+
+private def runPerCoreTlbCoalescingOverflowChecks : IO Unit := do
+  IO.println "-- §5.8 per-core TLB: coalescing view full-flushes an overflowed target (SM7.F)"
+  -- Fill core1's pending queue to capacity, so THIS round's post coalesces to `.vmalle1`.
+  match enqueueMany TlbShootdownState.initial core1
+      (List.replicate maxPendingPerCore descUnmapPage) with
+  | none => assertBool "the capacity fill succeeds" false
+  | some sdFull => do
+    -- Seed core1's view with an entry the round's op does NOT cover (a different vaddr).
+    let stSeed : SeLe4n.Model.SystemState :=
+      { (default : SeLe4n.Model.SystemState) with
+          tlbShootdown := sdFull
+          perCoreTlb := setTlbViewOnCore (default : SeLe4n.Model.SystemState).perCoreTlb
+            core1 { entries := [entryOtherVaddr] } }
+    assertBool "core1's queue is at capacity (so the round coalesces to a full flush)"
+      ((stSeed.tlbShootdown.pendingOnCore core1).length == maxPendingPerCore)
+    assertBool "the round's op does NOT cover the seeded entry (a different vaddr)"
+      (!(tlbEntryMatches opUnmapTarget entryOtherVaddr))
+    let coRound := tlbInvalidateOnAllCoresCoalescing stSeed core0
+      (shootdownTargets core0) opUnmapTarget
+    -- The overflowed target is FULL-FLUSHED — even the op-UNRELATED entry is gone,
+    -- matching the coalesced `.vmalle1` the round posted (the SM7.F fix).
+    assertBool "the coalescing view full-flushes the overflowed target (removes even op-unrelated entries)"
+      ((tlbOnCore coRound.1 core1).entries.isEmpty)
+    -- Contrast: the plain op-only `shootdownRoundViews` would have KEPT the entry
+    -- (op doesn't cover it) — the exact under-invalidation Finding 2 closes.
+    assertBool "the plain op-only view would have kept the op-unrelated entry (the gap Finding 2 closes)"
+      (tlbHasEntry ((shootdownRoundViews stSeed.perCoreTlb core0
+        (shootdownTargets core0) opUnmapTarget).get core1) entryOtherVaddr)
+
+-- ----------------------------------------------------------------------------
 -- Runner
 -- ----------------------------------------------------------------------------
 
@@ -2034,6 +2112,8 @@ def runSmpTlbShootdownChecks : IO Unit := do
   runPerCoreTlbFillChecks
   runPerCoreTlbPendingAwareChecks
   runPerCoreTlbInitiatorAtomicChecks
+  runPerCoreTlbUseAfterRetypeChecks
+  runPerCoreTlbCoalescingOverflowChecks
   IO.println "===================================================="
   IO.println "All SM7.A + SM7.B + SM7.C TLB shootdown + per-core model checks PASS."
 

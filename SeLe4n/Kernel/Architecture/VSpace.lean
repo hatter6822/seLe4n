@@ -767,4 +767,72 @@ theorem vspaceUnmapPage_entry_consistent_frame
         rw [hResolveEq] at hResolveMid
         exact hConsistPre rid r hResolveMid
 
+/-- WS-SM SM7.F (PR #844 review-3): `vspaceUnmapPage` never *unbinds* an ASID —
+it erases a page mapping within a root but leaves every ASID→root binding
+resolvable.  So an entry whose ASID resolved before the unmap still resolves
+after.  The resolution half of the per-core `tlbEntryConsistent` (SM7.F): an
+unresolvable ASID is a *stale* (use-after-retype) entry, and this lemma proves
+the *unmap* is not what makes an ASID unresolvable — that is `lifecycleRetype`. -/
+theorem vspaceUnmapPage_resolveAsidRoot_isSome
+    {st stMid : SystemState} (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (hStep : vspaceUnmapPage asid vaddr st = .ok ((), stMid))
+    (hObjK : st.objects.invExtK) (hAsidK : st.asidTable.invExtK)
+    {a : SeLe4n.ASID} (h : (resolveAsidRoot st a).isSome) :
+    (resolveAsidRoot stMid a).isSome := by
+  unfold vspaceUnmapPage at hStep
+  cases hRes : resolveAsidRoot st asid with
+  | none => rw [hRes] at hStep; simp at hStep
+  | some val =>
+    obtain ⟨rootId₀, root₀⟩ := val
+    have ⟨hAsidTbl, hObjRoot, hRootAsidEq⟩ := resolveAsidRoot_some_facts st asid rootId₀ root₀ hRes
+    rw [hRes] at hStep; simp at hStep
+    cases hUnmapPage : root₀.unmapPage vaddr with
+    | none => rw [hUnmapPage] at hStep; simp at hStep
+    | some root' =>
+      rw [hUnmapPage] at hStep; simp at hStep
+      have hRoot'Asid : root'.asid = asid := by
+        unfold VSpaceRoot.unmapPage at hUnmapPage
+        split at hUnmapPage <;> simp at hUnmapPage
+        subst hUnmapPage; exact hRootAsidEq
+      have hStoreObjSelf := storeObject_objects_eq st stMid rootId₀
+        (KernelObject.vspaceRoot root') hObjK.1 hStep
+      have hAsidInv : (match st.objects[rootId₀]? with
+          | some (.vspaceRoot oldRoot) => st.asidTable.erase oldRoot.asid
+          | _ => st.asidTable).invExt := by
+        rw [hObjRoot]; exact st.asidTable.erase_preserves_invExt root₀.asid
+          hAsidK.1 hAsidK.2.1
+      by_cases hAsidEq : a = asid
+      · subst hAsidEq
+        have hResolvePost : resolveAsidRoot stMid a = some (rootId₀, root') := by
+          apply resolveAsidRoot_of_asidTable_entry
+          · rw [← hRoot'Asid]
+            exact storeObject_asidTable_vspaceRoot st stMid rootId₀ root' hAsidInv hStep
+          · exact hStoreObjSelf
+          · exact hRoot'Asid
+        rw [hResolvePost]; rfl
+      · have hNeAsid : a ≠ root'.asid := fun hh => hAsidEq (hh.trans hRoot'Asid)
+        have hAsidPreserved : stMid.asidTable[a]? = st.asidTable[a]? := by
+          have hMid := storeObject_asidTable_vspaceRoot_ne st stMid rootId₀
+            root' a hNeAsid hAsidInv hStep
+          simp [hObjRoot] at hMid
+          rw [hMid, hRootAsidEq]
+          exact st.asidTable.getElem?_erase_ne_K asid a
+            (by intro hh; exact hAsidEq (eq_of_beq hh).symm) hAsidK
+        have hResolveEq : resolveAsidRoot stMid a = resolveAsidRoot st a := by
+          simp only [resolveAsidRoot]; rw [hAsidPreserved]
+          cases hEntryLookup : st.asidTable[a]? with
+          | none => rfl
+          | some oid =>
+            simp only
+            by_cases hOidEq : oid = rootId₀
+            · subst hOidEq
+              rw [hStoreObjSelf, hObjRoot]
+              simp only
+              have h1 : ¬(root'.asid = a) := by rw [hRoot'Asid]; exact fun hh => hAsidEq hh.symm
+              have h2 : ¬(root₀.asid = a) := by rw [hRootAsidEq]; exact fun hh => hAsidEq hh.symm
+              simp [h1, h2]
+            · rw [storeObject_objects_ne st stMid rootId₀ oid
+                (KernelObject.vspaceRoot root') hOidEq hObjK.1 hStep]
+        rw [hResolveEq]; exact h
+
 end SeLe4n.Kernel.Architecture

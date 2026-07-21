@@ -1,3 +1,57 @@
+## v0.32.87 — WS-SM SM7.F: per-core TLB soundness — no ASID vacuity, faithful coalescing view (PR #844 review-3)
+
+Closes the two PR #844 review-3 P2 findings on the per-core TLB invariant.
+Both are model-fidelity / soundness gaps in the invariant this workstream
+hardens; neither is a live bug (`perCoreTlb` is empty on the live path).
+Per-core scoped; the scalar `tlbConsistent` (`TlbModel.lean`, the 9th bundle
+conjunct) shares the vacuity but stays pre-existing tracked debt, out of SM7.F
+scope.
+
+**Finding 1 — unresolved ASIDs are STALE, not vacuously consistent.**
+`tlbEntryConsistent` was an *implication* (`if the ASID resolves, the lookup
+matches`), which is **vacuously true** when the ASID no longer resolves — so a
+use-after-retype entry (a cached translation whose VSpace root was replaced by
+`lifecycleRetype`, leaving `resolveAsidRoot = none`) was classified consistent
+rather than stale-and-pending.  Redefined to the existential **conjunction**
+(`∃ root, resolveAsidRoot = some root ∧ lookup root = mapping`): an unresolvable
+ASID now *fails* the consistent branch and must ride the pending disjunct to be
+admissible.  Every consumer re-proven: `tlbEntryConsistent_of_frame`,
+`tlbEntryOk_of_frame`, `tlbEntryConsistentCheck` (`none` → `false`) + `_iff`,
+`tlbWalkEntry_matches` (a walk resolves ⇒ conjunction by construction),
+`tlbInsertOnCore_preserves` (walker contract now the conjunction), and the F.2a
+frame `vspaceUnmapPageWithFlush_tlbEntryConsistent_frame` — the last via a new
+VSpace lemma `vspaceUnmapPage_resolveAsidRoot_isSome` (an unmap erases a page
+mapping but never *unbinds* an ASID, so a resolvable entry stays resolvable).
+The unused, now-false bridge `tlbEntryOk_of_tlbConsistent` was removed.  Tests:
+`SmpTlbShootdownSuite` §5.3 (repurposed: a raw insert of an unresolvable-ASID
+entry now checks RED — the old vacuity closed) + §5.7 (a walk-filled entry
+passes GREEN while asid resolves; once the ASID no longer resolves the SAME
+entry checks RED — and GREEN again once a covering shootdown is pending).
+
+**Finding 2 — the coalescing eager view now reflects the coalesced full flush.**
+`tlbInvalidateOnAllCoresCoalescing` (a non-live view-outcome abstraction) drove
+its per-core views with `shootdownRoundViews` (apply `op`), but when a target's
+queue is already at `maxPendingPerCore` the posting coalesces to a single
+`.vmalle1` (full flush) — so the eager view *under-invalidated* the overflowed
+target (kept op-unrelated entries the handler would drain).  New faithful view
+`shootdownRoundViewsCoalescing`: per target, apply `op` normally but a **full
+flush** where the pre-state queue was at capacity (the overflow decision is
+exactly `maxPendingPerCore ≤ length`, since `beginShootdownRoundFor` frames
+pending).  `shootdownRoundViewsCoalescing_eq_shootdownRoundViews` proves the two
+agree on any non-overflowing state (in particular wherever the strict form
+succeeds), so `tlbInvalidateOnAllCoresCoalescing_eq_strict` still holds — via
+the new `foldlM_enqueueShootdown_pre_lt` (a successful posting fold means every
+target's pre-fold queue was below capacity).  Test: §5.8 (a capacity-filled
+target is full-flushed by the coalescing view — even an op-unrelated entry is
+gone — vs the plain op-only view which keeps it).
+
+Zero sorry/axiom; trace byte-identical (`perCoreTlb ∉ projectState`);
+`test_full.sh` green.  AK7 `RAW_MATCH_VSPACEROOT` re-anchored 12 → 13 (the
+single increment is the additive `vspaceUnmapPage_resolveAsidRoot_isSome`
+resolution proof, which mirrors `vspaceUnmapPage_entry_consistent_frame`'s
+`storeObject` asidTable-shape match — a characterisation proof, no new live raw
+read).
+
 ## v0.32.86 — WS-SM SM7.F: the initiator-atomic per-core unmap seam (PR #844 review-2 P2)
 
 Closes the PR #844 review-2 P2 finding — a **model-fidelity gap** (not a live

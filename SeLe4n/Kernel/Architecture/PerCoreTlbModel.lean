@@ -354,11 +354,20 @@ theorem tlbInvalidateOnAllCores_isSome_of_quiescent {st : SystemState}
 -- SM7.C.5 — tlbInvalidationConsistent_perCore (the per-core TLB invariant)
 -- ============================================================================
 
-/-- **WS-SM SM7.C.5**: a single cached entry is consistent with the current
-page tables — if its ASID resolves to a root, the cached mapping matches the
-root's lookup.  The per-entry kernel of `tlbConsistent`. -/
+/-- **WS-SM SM7.C.5** (SM7.F, PR #844 review-3): a single cached entry is
+consistent with the current page tables — its ASID **must resolve** to a root
+*and* the root's lookup must match the cached mapping.  This is an existential
+conjunction, **not** an implication: an entry whose ASID no longer resolves (a
+use-after-retype entry — `lifecycleRetype` replaced the VSpace root, so
+`resolveAsidRoot` returns `none`) is **stale**, not vacuously consistent.  The
+implication form accepted such an entry (the premise being unsatisfiable), so
+the per-core invariant would have failed to flag a real use-after-retype
+state; requiring resolution closes that.  The per-entry kernel of the SM7.F
+per-core invariant (the scalar `tlbConsistent` in `TlbModel.lean` keeps the
+weaker implication form — same pre-existing vacuity, tracked out of SM7.F
+scope). -/
 def tlbEntryConsistent (st : SystemState) (e : TlbEntry) : Prop :=
-  ∀ rootId root, resolveAsidRoot st e.asid = some (rootId, root) →
+  ∃ rootId root, resolveAsidRoot st e.asid = some (rootId, root) ∧
     VSpaceRoot.lookup root e.vaddr = some (e.paddr, e.perms)
 
 /-- **WS-SM SM7.C.5**: a single cached entry is *allowed* on core `c` — it is
@@ -393,15 +402,6 @@ state.  The 13th `proofLayerInvariantBundle` conjunct (`Invariant.lean`). -/
 def tlbInvalidationConsistent_perCore (st : SystemState) : Prop :=
   ∀ c : CoreId, ∀ e ∈ (tlbOnCore st c).entries, tlbEntryOk st c e
 
-/-- **WS-SM SM7.C.5**: a fully page-table-consistent view satisfies the
-pending-aware per-core predicate (every entry rides the *consistent* disjunct)
-— the bridge from the old unconditional form to the honest one. -/
-theorem tlbEntryOk_of_tlbConsistent {st : SystemState} {c : CoreId}
-    {t : TlbState} (h : tlbConsistent st t) :
-    ∀ e ∈ t.entries, tlbEntryOk st c e := by
-  intro e he
-  exact Or.inl (h e he)
-
 /-- **WS-SM SM7.C.5** (the transport lever): `tlbEntryOk` carries across a
 frame that preserves the page tables (`objects` + `asidTable` ⇒ the same
 `resolveAsidRoot`) and does not *drop* any pending descriptor for `c`
@@ -415,12 +415,10 @@ theorem tlbEntryOk_of_frame {st st' : SystemState} {c : CoreId} {e : TlbEntry}
       d ∈ st'.tlbShootdown.pendingOnCore c)
     (h : tlbEntryOk st c e) : tlbEntryOk st' c e := by
   rcases h with hCon | ⟨desc, hmem, hmatch⟩
-  · refine Or.inl ?_
-    intro rootId root hResolve
-    have hResolve' : resolveAsidRoot st e.asid = some (rootId, root) := by
-      unfold resolveAsidRoot at hResolve ⊢
-      rw [hAsidTable, hObjects] at hResolve; exact hResolve
-    exact hCon rootId root hResolve'
+  · obtain ⟨rootId, root, hResolve, hLookup⟩ := hCon
+    refine Or.inl ⟨rootId, root, ?_, hLookup⟩
+    unfold resolveAsidRoot at hResolve ⊢
+    rw [hObjects, hAsidTable]; exact hResolve
   · exact Or.inr ⟨desc, hPend desc hmem, hmatch⟩
 
 /-- **WS-SM SM7.C.5**: the common case of `tlbEntryOk_of_frame` — an op that
@@ -437,11 +435,10 @@ theorem tlbEntryOk_of_frame_eq {st st' : SystemState} {c : CoreId} {e : TlbEntry
 theorem tlbEntryConsistent_of_frame {st st' : SystemState} {e : TlbEntry}
     (hObjects : st'.objects = st.objects) (hAsidTable : st'.asidTable = st.asidTable)
     (h : tlbEntryConsistent st e) : tlbEntryConsistent st' e := by
-  intro rootId root hResolve
-  have hResolve' : resolveAsidRoot st e.asid = some (rootId, root) := by
-    unfold resolveAsidRoot at hResolve ⊢
-    rw [hAsidTable, hObjects] at hResolve; exact hResolve
-  exact h rootId root hResolve'
+  obtain ⟨rootId, root, hResolve, hLookup⟩ := h
+  refine ⟨rootId, root, ?_, hLookup⟩
+  unfold resolveAsidRoot at hResolve ⊢
+  rw [hObjects, hAsidTable]; exact hResolve
 
 /-- **WS-SM SM7.F.2**: on a **quiescent** shootdown state (no pending
 descriptors), the pending disjunct of `tlbEntryOk` is unavailable, so every
@@ -546,8 +543,7 @@ resolved `(entry.asid, entry.vaddr)` to `(entry.paddr, entry.perms)`). -/
 theorem tlbInsertOnCore_preserves_tlbInvalidationConsistent_perCore
     (st : SystemState) (c : CoreId) (entry : TlbEntry)
     (hConsist : tlbInvalidationConsistent_perCore st)
-    (hEntry : ∀ rootId root, resolveAsidRoot st entry.asid = some (rootId, root) →
-      VSpaceRoot.lookup root entry.vaddr = some (entry.paddr, entry.perms)) :
+    (hEntry : tlbEntryConsistent st entry) :
     tlbInvalidationConsistent_perCore (tlbInsertOnCore st c entry) := by
   have hObj : (tlbInsertOnCore st c entry).objects = st.objects :=
     (tlbInsertOnCore_frame st c entry).1
@@ -562,11 +558,7 @@ theorem tlbInsertOnCore_preserves_tlbInvalidationConsistent_perCore
     rcases List.mem_cons.mp he with heq | hmemOld
     · -- the fresh entry: consistent by construction (hEntry + page-table frame).
       subst heq
-      refine Or.inl ?_
-      intro rootId root hResolve
-      have hResolve' : resolveAsidRoot st e.asid = some (rootId, root) := by
-        unfold resolveAsidRoot at hResolve ⊢; rw [hAsid, hObj] at hResolve; exact hResolve
-      exact hEntry rootId root hResolve'
+      exact Or.inl (tlbEntryConsistent_of_frame hObj hAsid hEntry)
     · exact tlbEntryOk_of_frame_eq hObj hAsid hShoot (hConsist c e hmemOld)
   · have hpre : e ∈ (tlbOnCore st c').entries := by
       rw [tlbInsertOnCore_tlbOnCore_ne st entry hcc] at he; exact he
@@ -645,28 +637,120 @@ theorem tlbConsistency_cross_subsystem
 -- SM7.C.4 (total form) — tlbInvalidateOnAllCoresCoalescing
 -- ============================================================================
 
+/-- **WS-SM SM7.C.4** (SM7.F, PR #844 review-3): the *faithful* per-core view
+step of the coalescing round.  Each target retires the operand the round
+actually posts to it: `op` when the enqueue fits, but a **full flush**
+(`.vmalle1`) when that target's queue was already at capacity so the posting
+coalesced to a `.vmalle1` (matching `enqueueShootdownOrCoalesce`, whose
+overflow branch replaces the whole queue with one `.vmalle1`).  The initiator
+retires `op` locally.  Because `beginShootdownRoundFor` frames every pending
+queue, the overflow decision is exactly `maxPendingPerCore ≤ (pre-queue length)`
+per target.  On any non-overflowing state (in particular every state from
+which the strict form succeeds) this collapses to `shootdownRoundViews`
+(`shootdownRoundViewsCoalescing_eq_shootdownRoundViews`). -/
+def shootdownRoundViewsCoalescing (views : Vector TlbState numCores)
+    (sd : TlbShootdownState) (initiator : CoreId) (targets : List CoreId)
+    (op : TlbInvalidation) : Vector TlbState numCores :=
+  targets.foldl
+    (fun vs c => setTlbViewOnCore vs c (applyTlbInvalidation (vs.get c)
+      (if maxPendingPerCore ≤ (sd.pendingOnCore c).length
+       then TlbInvalidation.vmalle1 else op)))
+    (setTlbViewOnCore views initiator
+      (applyTlbInvalidation (views.get initiator) op))
+
+/-- **WS-SM SM7.F** (fold lemma): under no overflow every target's effective
+operand is `op`, so the coalescing view fold equals the plain `op` fold. -/
+theorem foldl_shootdownRoundViewsCoalescing_eq (sd : TlbShootdownState)
+    (op : TlbInvalidation) :
+    ∀ (targets : List CoreId),
+      (∀ c ∈ targets, (sd.pendingOnCore c).length < maxPendingPerCore) →
+      ∀ (base : Vector TlbState numCores),
+        targets.foldl (fun vs c => setTlbViewOnCore vs c (applyTlbInvalidation (vs.get c)
+          (if maxPendingPerCore ≤ (sd.pendingOnCore c).length
+           then TlbInvalidation.vmalle1 else op))) base =
+        targets.foldl (fun vs c =>
+          setTlbViewOnCore vs c (applyTlbInvalidation (vs.get c) op)) base := by
+  intro targets
+  induction targets with
+  | nil => intro _ base; rfl
+  | cons t ts ih =>
+    intro hno base
+    rw [List.foldl_cons, List.foldl_cons]
+    rw [if_neg (by have h := hno t (List.mem_cons_self ..); omega)]
+    exact ih (fun c hc => hno c (List.mem_cons_of_mem t hc)) _
+
+/-- **WS-SM SM7.F**: on a non-overflowing pre-state the faithful coalescing
+view equals the plain `shootdownRoundViews` — the two forms agree exactly where
+the strict `tlbInvalidateOnAllCores` succeeds (the divergence is *only* the
+overflow full-flush the finding asked for). -/
+theorem shootdownRoundViewsCoalescing_eq_shootdownRoundViews
+    (views : Vector TlbState numCores) (sd : TlbShootdownState)
+    (initiator : CoreId) (targets : List CoreId) (op : TlbInvalidation)
+    (hno : ∀ c ∈ targets, (sd.pendingOnCore c).length < maxPendingPerCore) :
+    shootdownRoundViewsCoalescing views sd initiator targets op =
+      shootdownRoundViews views initiator targets op := by
+  unfold shootdownRoundViewsCoalescing shootdownRoundViews
+  exact foldl_shootdownRoundViewsCoalescing_eq sd op targets hno _
+
+/-- **WS-SM SM7.F**: a successful `enqueueShootdown` posting fold means every
+target's pre-fold queue was below capacity — a target at capacity would make
+its own enqueue fail closed (`none`), short-circuiting the fold.  (Duplicate
+targets are covered: a duplicate's *first* visit sees the pre-fold queue, so
+its success bounds the pre-fold length.) -/
+theorem foldlM_enqueueShootdown_pre_lt {d : TlbShootdownDescriptor} :
+    ∀ {targets : List CoreId} {st : TlbShootdownState},
+      (targets.foldlM (fun s c => enqueueShootdown s c d) st).isSome →
+      ∀ c ∈ targets, (st.pendingOnCore c).length < maxPendingPerCore := by
+  intro targets
+  induction targets with
+  | nil => intro _ _ c hc; simp at hc
+  | cons t ts ih =>
+    intro st hsome c hc
+    rw [List.foldlM_cons] at hsome
+    cases henq : enqueueShootdown st t d with
+    | none => rw [henq] at hsome; simp at hsome
+    | some st1 =>
+      have ht : (st.pendingOnCore t).length < maxPendingPerCore := by
+        unfold enqueueShootdown at henq
+        split at henq
+        · assumption
+        · simp at henq
+      rw [henq] at hsome
+      -- `some st1 >>= k` reduces to `k st1` definitionally in `Option`,
+      -- so `hsome` is the tail fold's `isSome`.
+      rcases List.mem_cons.mp hc with rfl | hmem
+      · exact ht
+      · have hIH := ih hsome c hmem
+        by_cases hct : c = t
+        · subst hct; exact ht
+        · rwa [enqueueShootdown_frame_pending henq hct] at hIH
+
 /-- **WS-SM SM7.C.4** (total form): the coalescing cross-core invalidation
 — the analogue of the SM7.B `tlbShootdownBroadcastCoalescing` for the
 per-core model.  Unlike the strict `tlbInvalidateOnAllCores` (fail-closed
 `none` on a full queue), this **never fails**: at capacity the posting
 collapses to a covered full flush (`postShootdownRoundCoalescing`), so a
 live caller that batches past `maxPendingPerCore` can never fail a syscall.
-The per-core view evolution is identical (`shootdownRoundViews`), and the
-two forms agree wherever the strict form succeeds
-(`tlbInvalidateOnAllCoresCoalescing_eq_strict`). -/
+The per-core view evolution is the *faithful* `shootdownRoundViewsCoalescing`
+(SM7.F, PR #844 review-3): where a target overflowed, its view is full-flushed
+to match the coalesced `.vmalle1`, not merely `op`-invalidated.  The two forms
+agree wherever the strict form succeeds (no overflow —
+`tlbInvalidateOnAllCoresCoalescing_eq_strict`). -/
 def tlbInvalidateOnAllCoresCoalescing (st : SystemState) (initiator : CoreId)
     (targets : List CoreId) (op : TlbInvalidation) :
     SystemState × List (CoreId × SgiKind) :=
   ({ tlbShootdownBroadcastCoalescing st initiator targets op with
-      perCoreTlb := shootdownRoundViews st.perCoreTlb initiator targets op },
+      perCoreTlb := shootdownRoundViewsCoalescing st.perCoreTlb st.tlbShootdown
+        initiator targets op },
     targets.map (fun c => (c, SgiKind.tlbShootdownReq)))
 
-/-- **WS-SM SM7.C.4**: the coalescing form's per-core views are the same
-`shootdownRoundViews` vector as the strict form's. -/
+/-- **WS-SM SM7.C.4**: the coalescing form's per-core views are the faithful
+`shootdownRoundViewsCoalescing` vector (full flush on overflow). -/
 theorem tlbInvalidateOnAllCoresCoalescing_perCoreTlb (st : SystemState)
     (initiator : CoreId) (targets : List CoreId) (op : TlbInvalidation) :
     (tlbInvalidateOnAllCoresCoalescing st initiator targets op).1.perCoreTlb =
-      shootdownRoundViews st.perCoreTlb initiator targets op := rfl
+      shootdownRoundViewsCoalescing st.perCoreTlb st.tlbShootdown
+        initiator targets op := rfl
 
 /-- **WS-SM SM7.C.4**: the coalescing form frames the page-table
 subsystem — objects and the ASID table are unchanged (the coalescing
@@ -690,8 +774,25 @@ theorem tlbInvalidateOnAllCoresCoalescing_eq_strict {st st' : SystemState}
     tlbInvalidateOnAllCoresCoalescing st initiator targets op = (st', sgis) := by
   obtain ⟨posted, hb, hst⟩ := tlbInvalidateOnAllCores_spec h
   have hsgi := tlbInvalidateOnAllCores_sgis h
+  -- strict success ⇒ no target overflowed ⇒ the faithful view collapses to op
+  have hno : ∀ c ∈ targets,
+      (st.tlbShootdown.pendingOnCore c).length < maxPendingPerCore := by
+    have hfold : (targets.foldlM
+        (fun s c => enqueueShootdown s c { op := op, initiator := initiator })
+        (beginShootdownRoundFor st.tlbShootdown initiator targets)).isSome := by
+      unfold tlbShootdownBroadcast at hb
+      cases hf : targets.foldlM
+          (fun s c => enqueueShootdown s c { op := op, initiator := initiator })
+          (beginShootdownRoundFor st.tlbShootdown initiator targets) with
+      | none => rw [hf] at hb; simp at hb
+      | some _ => rfl
+    intro c hc
+    have := foldlM_enqueueShootdown_pre_lt hfold c hc
+    rwa [beginShootdownRoundFor_frame_pending] at this
   unfold tlbInvalidateOnAllCoresCoalescing
-  rw [tlbShootdownBroadcastCoalescing_eq_strict hb, hst, hsgi]
+  rw [shootdownRoundViewsCoalescing_eq_shootdownRoundViews st.perCoreTlb
+        st.tlbShootdown initiator targets op hno,
+      tlbShootdownBroadcastCoalescing_eq_strict hb, hst, hsgi]
 
 -- ============================================================================
 -- SM7.C.5 (runtime checkability) — decidable per-core consistency
@@ -737,22 +838,23 @@ consistency (the per-entry kernel of `tlbConsistentCheck`). -/
 def tlbEntryConsistentCheck (st : SystemState) (e : TlbEntry) : Bool :=
   match resolveAsidRoot st e.asid with
   | some (_, root) => VSpaceRoot.lookup root e.vaddr == some (e.paddr, e.perms)
-  | none => true
+  | none => false
 
-/-- **WS-SM SM7.C.5**: the per-entry consistency check decides `tlbEntryConsistent`. -/
+/-- **WS-SM SM7.C.5**: the per-entry consistency check decides `tlbEntryConsistent`
+(SM7.F: an unresolvable ASID checks `false` — a stale use-after-retype entry). -/
 theorem tlbEntryConsistentCheck_iff (st : SystemState) (e : TlbEntry) :
     tlbEntryConsistentCheck st e = true ↔ tlbEntryConsistent st e := by
   unfold tlbEntryConsistentCheck tlbEntryConsistent
-  constructor
-  · intro h rootId root hResolve
-    rw [hResolve] at h; simpa using h
-  · intro h
-    cases hR : resolveAsidRoot st e.asid with
-    | none => rfl
-    | some pair =>
-        obtain ⟨rootId, root⟩ := pair
-        simp only [beq_iff_eq]
-        exact h rootId root hR
+  cases hR : resolveAsidRoot st e.asid with
+  | none => simp
+  | some pair =>
+      obtain ⟨rId, rt⟩ := pair
+      simp only [beq_iff_eq]
+      constructor
+      · intro h; exact ⟨rId, rt, rfl, h⟩
+      · rintro ⟨rid, r, hres, hlk⟩
+        simp only [Option.some.injEq, Prod.mk.injEq] at hres
+        obtain ⟨rfl, rfl⟩ := hres; exact hlk
 
 /-- **WS-SM SM7.C.5** (SM7.F.2): an executable Boolean check of the per-entry
 *admissibility* predicate `tlbEntryOk` — consistent, or covered by a pending
@@ -1424,8 +1526,7 @@ exactly its `(paddr, perms)`.  This is what makes a fill consistency-safe. -/
 theorem tlbWalkEntry_matches (st : SystemState) (asid : SeLe4n.ASID)
     (vaddr : SeLe4n.VAddr) {entry : TlbEntry}
     (h : tlbWalkEntry st asid vaddr = some entry) :
-    ∀ rootId root, resolveAsidRoot st entry.asid = some (rootId, root) →
-      VSpaceRoot.lookup root entry.vaddr = some (entry.paddr, entry.perms) := by
+    tlbEntryConsistent st entry := by
   unfold tlbWalkEntry at h
   cases hres : resolveAsidRoot st asid with
   | none => simp [hres] at h
@@ -1435,12 +1536,7 @@ theorem tlbWalkEntry_matches (st : SystemState) (asid : SeLe4n.ASID)
     | some q =>
       simp only [hres, hlk, Option.some.injEq] at h
       subst h
-      intro rootId root hres2
-      have hres2' : resolveAsidRoot st asid = some (rootId, root) := hres2
-      rw [hres] at hres2'
-      simp only [Option.some.injEq] at hres2'
-      subst hres2'
-      exact hlk
+      exact ⟨p.1, p.2, hres, hlk⟩
 
 /-- **WS-SM SM7.F.1** (the fill): the hardware page-table walker fills core
 `c`'s TLB with the translation it resolved for `(asid, vaddr)`.  On a mapped
@@ -1530,10 +1626,25 @@ theorem vspaceUnmapPageWithFlush_tlbEntryConsistent_frame
       intro hStep
       have hObj : stF.objects = pair.2.objects := by rw [← hStep.2]
       have hAsid : stF.asidTable = pair.2.asidTable := by rw [← hStep.2]
-      have hConMid : tlbEntryConsistent pair.2 e :=
+      -- the pre-state conjunction gives the resolution witness AND the implication
+      -- form the (implication-shaped) VSpace frame lemma consumes
+      obtain ⟨rid, r, hres_st, hlk_st⟩ := hCon
+      have hImplPre : ∀ rootId root, resolveAsidRoot st e.asid = some (rootId, root) →
+          VSpaceRoot.lookup root e.vaddr = some (e.paddr, e.perms) := by
+        intro rootId root hR
+        rw [hres_st, Option.some.injEq, Prod.mk.injEq] at hR
+        obtain ⟨rfl, rfl⟩ := hR; exact hlk_st
+      have hImplMid : ∀ rootId root, resolveAsidRoot pair.2 e.asid = some (rootId, root) →
+          VSpaceRoot.lookup root e.vaddr = some (e.paddr, e.perms) :=
         vspaceUnmapPage_entry_consistent_frame st pair.2 asid vaddr hBase
-          hObjK hAsidK hMappingsWF hMappingsSize e hNotMatch hCon
-      exact tlbEntryConsistent_of_frame hObj hAsid hConMid
+          hObjK hAsidK hMappingsWF hMappingsSize e hNotMatch hImplPre
+      -- the unmap never unbinds an ASID: `e.asid` still resolves post-unmap
+      have hIsSomeMid : (resolveAsidRoot pair.2 e.asid).isSome :=
+        vspaceUnmapPage_resolveAsidRoot_isSome asid vaddr hBase hObjK hAsidK
+          (Option.isSome_iff_exists.mpr ⟨(rid, r), hres_st⟩)
+      obtain ⟨⟨rid', r'⟩, hres_mid⟩ := Option.isSome_iff_exists.mp hIsSomeMid
+      exact tlbEntryConsistent_of_frame hObj hAsid
+        ⟨rid', r', hres_mid, hImplMid rid' r' hres_mid⟩
 
 /-- **WS-SM SM7.F** (the initiator-atomic seam — PR #844 review-2 P2 closure):
 the shootdown-aware page unmap that retires the *initiator's own* per-core view
