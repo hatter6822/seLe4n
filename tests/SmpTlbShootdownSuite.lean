@@ -587,6 +587,12 @@ open SeLe4n.Kernel.Concurrency
 #check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdownPerCore
 #check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdownPerCore_initiator_drained
 #check @SeLe4n.Kernel.dispatchWithCap_lifecycleRetype_delegates
+-- SM7.F.4(b)(iii): the shared initiator drain + the CSpaceAddr retype sibling
+-- (both production retype-with-shootdown entry points are initiator-atomic):
+#check @SeLe4n.Kernel.retypeInitiatorDrain
+#check @SeLe4n.Kernel.retypeInitiatorDrain_drained
+#check @SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdownPerCore
+#check @SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdownPerCore_initiator_drained
 
 -- ============================================================================
 -- §2  Elaboration-time examples

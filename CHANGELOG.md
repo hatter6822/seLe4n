@@ -1,3 +1,33 @@
+## v0.32.91 — WS-SM SM7.F.4(b)(iii): CSpaceAddr retype sibling + shared initiator drain (PR #844 review)
+
+Closes the follow-on review finding that v0.32.90 fixed only the **Direct-cap**
+retype wrapper: the sibling **CSpaceAddr-authority** production entry point
+`lifecycleRetypeWithCleanupShootdown` (`API.lean` entry-point table; used
+directly by SMP callers and the suite) still called the plain
+`tlbFlushByASIDWithShootdown` and posted `.aside1` to remote targets only, so a
+VSpace-root retype through it left the initiator's cached entry stale-and-uncovered
+— the same pending-aware per-core invariant violation, on the second retype seam.
+
+**Fix (Codex's "shared implementation" option).** Extracted the initiator drain
+into a shared `retypeInitiatorDrain` (retire the destroyed ASID on the
+initiator's own `perCoreTlb` view via `drainInitiatorPerCoreView` +
+`encodeAsidInvalidation`, reading the ASID from the pre-state `getVSpaceRoot?
+target`; a non-VSpaceRoot retype is a no-op).  **Both** production
+retype-with-shootdown wrappers now compose it: the Direct-cap
+`lifecycleRetypeDirectWithCleanupShootdownPerCore` (refactored to use it) and the
+new CSpaceAddr `lifecycleRetypeWithCleanupShootdownPerCore` — so neither can
+drift and both production paths are initiator-atomic.  The core property is
+proven once, `retypeInitiatorDrain_drained` (after the drain the initiator holds
+**no** entry for the destroyed ASID), and both wrappers' `_initiator_drained`
+follow from it; `_non_vspace` for each.  The `API.lean` entry-point table names
+the `…PerCore` form as the initiator-atomic production entry point.
+
+Trace byte-identical (`perCoreTlb ∉ projectState`); full build + Tier 0-3 green;
+zero sorry/axiom; AK7 unchanged (`RAW_MATCH_VSPACEROOT` 14; `GETVSPACEROOT_
+ADOPTION` 35 → 39 — the new wrapper reads the typed accessor).  The whole-invariant
+retype preservation theorem remains the tracked SM7.F.4(b)(iii) proof-completeness
+residual (now covers both wrappers via the shared drain).
+
 ## v0.32.90 — WS-SM SM7.F.4(b)(iii): initiator-atomic retype seam (PR #844 review)
 
 Closes the review finding that the v0.32.89 live fill made the retype gap

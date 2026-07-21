@@ -638,6 +638,48 @@ theorem lifecycleRetypeDirectWithCleanupShootdown_preserves_pendingBounded
           exact Architecture.tlbFlushByASIDWithShootdown_preserves_pendingBounded
             (hFrame ▸ hB) hOk
 
+/-- **WS-SM SM7.F.4(b)(iii)** (the shared initiator drain): retire the destroyed
+ASID's translations on the **initiator's own** per-core TLB view, atomically with
+a live-VSpaceRoot retype's shootdown round.  A retype whose target was a live
+`.vspaceRoot` (`getVSpaceRoot? target = some root` on the *pre-state* `stPre`)
+makes `root.asid` unresolvable and posts `.aside1` to the **remote** targets
+only; this drains the operand on the initiator's own view
+(`drainInitiatorPerCoreView` + `encodeAsidInvalidation`, the initiator's local
+`TLBI ASIDE1`).  A non-VSpaceRoot retype is a no-op.  Shared by **both**
+production retype-with-shootdown wrappers (the Direct-cap and CSpaceAddr forms)
+so neither can drift; `perCoreTlb`-only, so trace-safe. -/
+def retypeInitiatorDrain (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (target : SeLe4n.ObjId) (stPre st' : SystemState) : SystemState :=
+  match (stPre.getVSpaceRoot? target).map (·.asid) with
+  | none => st'
+  | some asid =>
+      Architecture.drainInitiatorPerCoreView st' executingCore
+        [Architecture.encodeAsidInvalidation asid]
+
+/-- **WS-SM SM7.F.4(b)(iii)** (the shared drain's core property): after the
+initiator drain for a live-VSpaceRoot retype, the initiator's own view holds
+**no** entry for the destroyed ASID — the "drains the initiator atomically"
+property both wrappers inherit. -/
+theorem retypeInitiatorDrain_drained
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (target : SeLe4n.ObjId)
+    {stPre st' : SystemState} {root : VSpaceRoot}
+    (hRoot : stPre.getVSpaceRoot? target = some root) :
+    ∀ e ∈ (Architecture.tlbOnCore
+        (retypeInitiatorDrain executingCore target stPre st') executingCore).entries,
+      e.asid ≠ root.asid := by
+  unfold retypeInitiatorDrain
+  rw [hRoot]
+  simp only [Option.map_some]
+  intro e he hEq
+  rw [Architecture.drainInitiatorPerCoreView_tlbOnCore_self] at he
+  have hnm : Architecture.tlbEntryMatches
+      (Architecture.encodeAsidInvalidation root.asid) e = false :=
+    Architecture.applyTlbInvalidations_survivor_not_matched
+      [Architecture.encodeAsidInvalidation root.asid] _ e he
+      (Architecture.encodeAsidInvalidation root.asid) (by simp)
+  rw [Architecture.encodeAsidInvalidation_matches root.asid hEq] at hnm
+  cases hnm
+
 /-- **WS-SM SM7.F.4(b)(iii)** (the initiator-atomic retype seam — PR #844
 review closure): the retype-with-shootdown that additionally retires the
 *initiator's own* per-core TLB view for the destroyed ASID **atomically** with
@@ -667,11 +709,7 @@ def lifecycleRetypeDirectWithCleanupShootdownPerCore
         newObj st with
     | .error e => .error e
     | .ok ((), st') =>
-        match (st.getVSpaceRoot? target).map (·.asid) with
-        | none => .ok ((), st')
-        | some asid =>
-            .ok ((), Architecture.drainInitiatorPerCoreView st' executingCore
-              [Architecture.encodeAsidInvalidation asid])
+        .ok ((), retypeInitiatorDrain executingCore target st st')
 
 /-- **WS-SM SM7.F.4(b)(iii)**: a non-VSpaceRoot retype owes no per-core TLB
 work — the per-core wrapper commits exactly the base shootdown wrapper's result
@@ -686,7 +724,7 @@ theorem lifecycleRetypeDirectWithCleanupShootdownPerCore_non_vspace
         newObj st =
       lifecycleRetypeDirectWithCleanupShootdown executingCore authCap target
         newObj st := by
-  unfold lifecycleRetypeDirectWithCleanupShootdownPerCore
+  unfold lifecycleRetypeDirectWithCleanupShootdownPerCore retypeInitiatorDrain
   rw [hOld]
   cases lifecycleRetypeDirectWithCleanupShootdown executingCore authCap target
       newObj st with
@@ -720,18 +758,73 @@ theorem lifecycleRetypeDirectWithCleanupShootdownPerCore_initiator_drained
   | error e => intro hStep; cases hStep
   | ok pair =>
       obtain ⟨u, stBase⟩ := pair; cases u
-      rw [hRoot]
-      simp only [Option.map_some, Except.ok.injEq, Prod.mk.injEq, true_and]
+      simp only [Except.ok.injEq, Prod.mk.injEq, true_and]
       intro hStep
       subst hStep
-      intro e he hEq
-      rw [Architecture.drainInitiatorPerCoreView_tlbOnCore_self] at he
-      have hnm : Architecture.tlbEntryMatches
-          (Architecture.encodeAsidInvalidation root.asid) e = false :=
-        Architecture.applyTlbInvalidations_survivor_not_matched
-          [Architecture.encodeAsidInvalidation root.asid] _ e he
-          (Architecture.encodeAsidInvalidation root.asid) (by simp)
-      rw [Architecture.encodeAsidInvalidation_matches root.asid hEq] at hnm
-      cases hnm
+      exact retypeInitiatorDrain_drained executingCore target hRoot
+
+/-- **WS-SM SM7.F.4(b)(iii)** (the CSpaceAddr sibling — PR #844 review closure):
+the initiator-atomic form of the **CSpaceAddr-authority** production retype
+entry point `lifecycleRetypeWithCleanupShootdown` (`API.lean` entry-point table).
+Like the Direct-cap wrapper, it retires the destroyed ASID on the initiator's own
+`perCoreTlb` view (`retypeInitiatorDrain`) atomically with the `.aside1` round the
+base wrapper posts to the remote targets — so the CSpaceAddr production path is
+initiator-atomic too, not just the Direct-cap one.  Trace-safe (`perCoreTlb ∉
+projectState`). -/
+def lifecycleRetypeWithCleanupShootdownPerCore
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (authority : CSpaceAddr) (target : SeLe4n.ObjId)
+    (newObj : KernelObject) : Kernel Unit :=
+  fun st =>
+    match lifecycleRetypeWithCleanupShootdown executingCore authority target
+        newObj st with
+    | .error e => .error e
+    | .ok ((), st') =>
+        .ok ((), retypeInitiatorDrain executingCore target st st')
+
+/-- **WS-SM SM7.F.4(b)(iii)**: a non-VSpaceRoot retype through the CSpaceAddr
+per-core wrapper commits exactly the base shootdown wrapper's result. -/
+theorem lifecycleRetypeWithCleanupShootdownPerCore_non_vspace
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (authority : CSpaceAddr) (target : SeLe4n.ObjId) (newObj : KernelObject)
+    (st : SystemState)
+    (hOld : st.getVSpaceRoot? target = none) :
+    lifecycleRetypeWithCleanupShootdownPerCore executingCore authority target
+        newObj st =
+      lifecycleRetypeWithCleanupShootdown executingCore authority target
+        newObj st := by
+  unfold lifecycleRetypeWithCleanupShootdownPerCore retypeInitiatorDrain
+  rw [hOld]
+  cases lifecycleRetypeWithCleanupShootdown executingCore authority target
+      newObj st with
+  | error e => rfl
+  | ok pair =>
+      obtain ⟨u, st'⟩ := pair
+      cases u
+      rfl
+
+/-- **WS-SM SM7.F.4(b)(iii)** (the CSpaceAddr sibling's core property): after the
+CSpaceAddr per-core wrapper commits, the initiator's own view holds **no** entry
+for the destroyed ASID — identical guarantee to the Direct-cap form, via the
+shared `retypeInitiatorDrain_drained`. -/
+theorem lifecycleRetypeWithCleanupShootdownPerCore_initiator_drained
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (authority : CSpaceAddr) (target : SeLe4n.ObjId) (newObj : KernelObject)
+    {st st' : SystemState} {root : VSpaceRoot}
+    (hRoot : st.getVSpaceRoot? target = some root)
+    (hStep : lifecycleRetypeWithCleanupShootdownPerCore executingCore
+      authority target newObj st = .ok ((), st')) :
+    ∀ e ∈ (Architecture.tlbOnCore st' executingCore).entries, e.asid ≠ root.asid := by
+  unfold lifecycleRetypeWithCleanupShootdownPerCore at hStep
+  revert hStep
+  cases hBase : lifecycleRetypeWithCleanupShootdown executingCore authority
+      target newObj st with
+  | error e => intro hStep; cases hStep
+  | ok pair =>
+      obtain ⟨u, stBase⟩ := pair; cases u
+      simp only [Except.ok.injEq, Prod.mk.injEq, true_and]
+      intro hStep
+      subst hStep
+      exact retypeInitiatorDrain_drained executingCore target hRoot
 
 end SeLe4n.Kernel

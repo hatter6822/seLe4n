@@ -79,7 +79,7 @@ Previously it was just an import barrel (finding L-01); it now defines:
 | `endpointSendDual`, `endpointReceiveDual` | IPC (dual-queue) | Stable |
 | `endpointReply`, `endpointCall`, `endpointReplyRecv` | IPC | Stable |
 | `lifecycleRetypeObject`, `lifecycleRevokeDeleteRetype` | Lifecycle | Internal (proof helpers — use `lifecycleRetypeWithCleanup` for production) |
-| `lifecycleRetypeWithCleanup`, `lifecycleRetypeWithCleanupShootdown` | Lifecycle (WS-H2 / WS-SM SM7.B.11) | Stable (production entry point with cleanup + scrubbing; the `Shootdown` form adds the SM7.B.11 TLB round for live `.vspaceRoot` targets — SMP callers use it) |
+| `lifecycleRetypeWithCleanup`, `lifecycleRetypeWithCleanupShootdown`, `lifecycleRetypeWithCleanupShootdownPerCore` | Lifecycle (WS-H2 / WS-SM SM7.B.11 / SM7.F.4(b)(iii)) | Stable (production entry point with cleanup + scrubbing; the `Shootdown` form adds the SM7.B.11 TLB round for live `.vspaceRoot` targets — SMP callers use it; the **`…PerCore`** form is the initiator-atomic variant that additionally retires the destroyed ASID on the initiator's own `perCoreTlb` view via the shared `retypeInitiatorDrain`, symmetric with the Direct-cap `lifecycleRetypeDirectWithCleanupShootdownPerCore` the live `.lifecycleRetype` dispatch routes through) |
 | `retypeFromUntyped` | Lifecycle (WS-F2) | Stable |
 | `registerService`, `revokeService`, `lookupServiceByCap` | Service (WS-Q1) | Stable |
 | `adapterAdvanceTimer`, `adapterWriteRegister`, `adapterReadMemory` | Architecture | Stable |
