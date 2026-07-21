@@ -44,6 +44,10 @@ import SeLe4n.Kernel.Architecture.Invariant
 import SeLe4n.Kernel.Architecture.VSpace
 import SeLe4n.Kernel.Architecture.VSpaceInvariant
 import SeLe4n.Kernel.Architecture.IpcBufferValidation
+-- WS-SM SM7.F.4: the per-core-TLB-aware VSpace shootdown wrappers the live
+-- `.vspaceMap` / `.vspaceUnmap` arms dispatch through (initiator-atomic
+-- `perCoreTlb` retirement + translation-walk fill; projection-invisible).
+import SeLe4n.Kernel.Architecture.PerCoreTlbModel
 
 /-!
 # L-01/WS-E6: Unified Public Kernel API
@@ -886,7 +890,13 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
                   -- WS-SM SM7.B.9: a remap that replaces a live translation
                   -- leaves the old one cached on remote cores — the wrapper
                   -- adds the cross-core shootdown round to the local flush.
-                  Architecture.vspaceMapPageCheckedWithShootdownFromState
+                  -- WS-SM SM7.F.4(a)+(b)(ii): route through the per-core wrapper,
+                  -- which additionally (a) caches the freshly-established
+                  -- translation on the executing core's `perCoreTlb` view — the
+                  -- live *fill* that finally holds a real entry on the syscall
+                  -- path — and (b) retires any stale initiator entry atomically.
+                  -- Trace-safe: both are `perCoreTlb`-only, ∉ `projectState`.
+                  Architecture.vspaceMapPageCheckedWithShootdownFromStatePerCore
                     (determineExecutingCore st tid) validatedArgs.asid
                     validatedArgs.vaddr validatedArgs.paddr validatedArgs.perms st
     | _ => fun _ => .error .invalidCapability
@@ -898,8 +908,16 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
         | .error e => .error e
         | .ok args =>
             -- WS-SM SM7.B.9: the SMP-C4 use-after-unmap closure — local
-            -- flush + `.vae1` shootdown round to every other core.
-            Architecture.vspaceUnmapPageWithShootdown
+            -- flush + `.vae1` shootdown round to every other core.  WS-SM
+            -- SM7.F.4(b)(i): route through the initiator-atomic per-core
+            -- wrapper so the caller's own `perCoreTlb` view retires the
+            -- unmapped operand *atomically* with the transition (rather than
+            -- only in the deferred `completeShootdownRounds` catch-up),
+            -- closing the transient committed-state window where the
+            -- initiator's view would be stale-and-uncovered.  Trace-safe:
+            -- `perCoreTlb` ∉ `projectState`, and the extra drain touches no
+            -- field the SGI/round diff-recovery reads (`tlbShootdown`).
+            Architecture.vspaceUnmapPageWithShootdownPerCore
               (determineExecutingCore st tid) args.asid args.vaddr st
     | _ => fun _ => .error .invalidCapability
   | .serviceRevoke =>
@@ -2385,11 +2403,16 @@ theorem dispatchWithCap_lifecycleRetype_delegates
         (objectOfKernelType args.newType args.size) st := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 
-/-- WS-K-D/S6-A/T6-C/X2-E / WS-SM SM7.B.9: When vspaceMap dispatch succeeds,
-`vspaceMapPageCheckedWithShootdownFromState` is invoked with the caller's
-executing core and the decoded ASID, vaddr, paddr, and validated permissions.  The state-aware variant reads
-`physicalAddressWidth` from `SystemState.machine` for platform-specific PA
-bounds enforcement.
+/-- WS-K-D/S6-A/T6-C/X2-E / WS-SM SM7.B.9 / WS-SM SM7.F.4(a)+(b)(ii): When
+vspaceMap dispatch succeeds, `vspaceMapPageCheckedWithShootdownFromStatePerCore`
+is invoked with the caller's executing core and the decoded ASID, vaddr, paddr,
+and validated permissions.  The state-aware variant reads `physicalAddressWidth`
+from `SystemState.machine` for platform-specific PA bounds enforcement; the
+`…PerCore` wrapper additionally caches the freshly-established translation on the
+executing core's `perCoreTlb` view (the live fill, SM7.F.4(a)) and retires any
+stale initiator entry (SM7.F.4(b)(ii)).  This is projection-invisible —
+`perCoreTlb ∉ projectState` — so the delegation is trace-equivalent to the plain
+`vspaceMapPageCheckedWithShootdownFromState` on every observable field.
 T6-C: Permissions are now typed as `PagePermissions` (validated at decode).
 AK3-E (A-M01 / MEDIUM): dispatch now uses `decodeVSpaceMapArgsChecked` which
 additionally validates PA bounds at decode time; the hypothesis requires
@@ -2408,15 +2431,20 @@ theorem dispatchWithCap_vspaceMap_delegates
       (match validateVSpaceMapPermsForMemoryKind args st.machine.memoryMap with
         | .error e => .error e
         | .ok validatedArgs =>
-            Architecture.vspaceMapPageCheckedWithShootdownFromState
+            Architecture.vspaceMapPageCheckedWithShootdownFromStatePerCore
               (determineExecutingCore st tid) validatedArgs.asid
               validatedArgs.vaddr validatedArgs.paddr validatedArgs.perms st) := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 
-/-- WS-K-D/S6-A / WS-SM SM7.B.9: When vspaceUnmap dispatch succeeds,
-`vspaceUnmapPageWithShootdown` is invoked with the caller's executing core
-and the decoded ASID and vaddr.  Production API uses the flushing +
-cross-core-shootdown variant to prevent use-after-unmap on every core. -/
+/-- WS-K-D/S6-A / WS-SM SM7.B.9 / WS-SM SM7.F.4(b)(i): When vspaceUnmap dispatch
+succeeds, `vspaceUnmapPageWithShootdownPerCore` is invoked with the caller's
+executing core and the decoded ASID and vaddr.  Production API uses the
+flushing + cross-core-shootdown variant to prevent use-after-unmap on every
+core; the `…PerCore` wrapper additionally retires the operand on the initiator's
+own `perCoreTlb` view atomically with the transition (SM7.F.4(b)(i)).  This is
+projection-invisible — `perCoreTlb ∉ projectState` — so the delegation is
+trace-equivalent to the plain `vspaceUnmapPageWithShootdown` on every observable
+field (`tlbShootdown` posting, page-table erasure, scalar flush all unchanged). -/
 theorem dispatchWithCap_vspaceUnmap_delegates
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
     (cap : Capability) (objId : SeLe4n.ObjId)
@@ -2427,7 +2455,7 @@ theorem dispatchWithCap_vspaceUnmap_delegates
     -- AH3-C: decode now takes st.machine.maxASID from the platform config
     (hDecode : decodeVSpaceUnmapArgs decoded st.machine.maxASID = .ok args) :
     dispatchWithCap decoded tid gate cap st =
-      Architecture.vspaceUnmapPageWithShootdown (determineExecutingCore st tid)
+      Architecture.vspaceUnmapPageWithShootdownPerCore (determineExecutingCore st tid)
         args.asid args.vaddr st := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 

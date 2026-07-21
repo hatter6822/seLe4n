@@ -1843,4 +1843,169 @@ theorem vspaceUnmapPageWithShootdownPerCore_preserves_tlbInvalidationConsistent_
       exact vspaceUnmapPageWithShootdownPerCore_preserves_of_flush hq hConsist hObjK
         hAsidK hMappingsWF hMappingsSize hUF'
 
+-- ============================================================================
+-- SM7.F.4(a)+(b)(ii) (initiator-atomic map seam + live fill) — the shootdown-
+-- aware map that retires any stale initiator entry *and* caches the freshly-
+-- established translation on the executing core's own per-core view.
+-- ============================================================================
+
+/-- **WS-SM SM7.F**: the entry-level page-table frame for a checked page
+`vspaceMapPageCheckedWithFlushFromState`.  An entry whose `(asid, vaddr)` is
+**not** the mapped pair stays consistent across the map — the map changes exactly
+the newly-mapped entry, the bounds guards touch no page table, and the scalar
+flush touches no page table.  The per-core lift of the raw
+`vspaceMapPage_entry_consistent_frame`, carrying the *conjunction*-form
+`tlbEntryConsistent` (post-Finding-1) via `vspaceMapPage_resolveAsidRoot_isSome`
+(a map never unbinds an ASID). -/
+theorem vspaceMapPageCheckedWithFlushFromState_tlbEntryConsistent_frame
+    {st stF : SystemState} (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr) (perms : PagePermissions)
+    (hObjK : st.objects.invExtK) (hAsidK : st.asidTable.invExtK)
+    (hMappingsWF : ∀ (oid : SeLe4n.ObjId) (root : VSpaceRoot),
+      st.objects[oid]? = some (.vspaceRoot root) → root.mappings.invExt)
+    (hStep : vspaceMapPageCheckedWithFlushFromState asid vaddr paddr perms st
+      = .ok ((), stF))
+    {e : TlbEntry} (hNotMatch : ¬(e.asid = asid ∧ e.vaddr = vaddr))
+    (hCon : tlbEntryConsistent st e) :
+    tlbEntryConsistent stF e := by
+  unfold vspaceMapPageCheckedWithFlushFromState at hStep
+  split at hStep
+  · cases hStep
+  · split at hStep
+    · cases hStep
+    · -- hStep : vspaceMapPageWithFlush asid vaddr paddr perms st = .ok ((), stF)
+      unfold vspaceMapPageWithFlush at hStep
+      revert hStep
+      cases hBase : vspaceMapPage asid vaddr paddr perms st with
+      | error e' => intro hStep; cases hStep
+      | ok pair =>
+          simp only [Except.ok.injEq, Prod.mk.injEq]
+          intro hStep
+          have hObj : stF.objects = pair.2.objects := by rw [← hStep.2]
+          have hAsid : stF.asidTable = pair.2.asidTable := by rw [← hStep.2]
+          obtain ⟨rid, r, hres_st, hlk_st⟩ := hCon
+          have hImplPre : ∀ rootId root, resolveAsidRoot st e.asid = some (rootId, root) →
+              VSpaceRoot.lookup root e.vaddr = some (e.paddr, e.perms) := by
+            intro rootId root hR
+            rw [hres_st, Option.some.injEq, Prod.mk.injEq] at hR
+            obtain ⟨rfl, rfl⟩ := hR; exact hlk_st
+          have hImplMid : ∀ rootId root, resolveAsidRoot pair.2 e.asid = some (rootId, root) →
+              VSpaceRoot.lookup root e.vaddr = some (e.paddr, e.perms) :=
+            vspaceMapPage_entry_consistent_frame st pair.2 asid vaddr paddr perms hBase
+              hObjK hAsidK hMappingsWF e hNotMatch hImplPre
+          have hIsSomeMid : (resolveAsidRoot pair.2 e.asid).isSome :=
+            vspaceMapPage_resolveAsidRoot_isSome asid vaddr paddr perms hBase hObjK hAsidK
+              (Option.isSome_iff_exists.mpr ⟨(rid, r), hres_st⟩)
+          obtain ⟨⟨rid', r'⟩, hres_mid⟩ := Option.isSome_iff_exists.mp hIsSomeMid
+          exact tlbEntryConsistent_of_frame hObj hAsid
+            ⟨rid', r', hres_mid, hImplMid rid' r' hres_mid⟩
+
+/-- **WS-SM SM7.F.4(a)+(b)(ii)** (the initiator-atomic map seam + live fill): the
+shootdown-aware page map that (1) retires any prior `(asid, vaddr)` translation
+on the *initiator's own* per-core view and (2) caches the freshly-established
+translation on the executing core.  `vspaceMapPageCheckedWithShootdownFromState`
+installs the page-table entry, flushes the initiator's scalar TLB, and — on the
+remap direction only — posts covering descriptors to the **remote** targets
+(`shootdownTargets executingCore`, which *excludes* the initiator).  This wrapper
+adds two `perCoreTlb`-only steps on the executing core: a
+`drainInitiatorPerCoreView` (retiring any stale `(asid, vaddr)` entry the
+initiator cached — a no-op today, since a *successful* checked map is always
+fresh, `vspaceMapPageCheckedWithFlushFromState_ok_fresh`; kept as the
+defense-in-depth mirror of the base wrapper's dead remap branch) followed by a
+`tlbFillOnCore` (**SM7.F.4(a)**: the live fill — the executing core caches the
+translation it just established, so `perCoreTlb` finally holds a *real* entry on
+the live syscall path, making the per-core model operative instead of vacuous).
+The fill is *consistent by construction* (`tlbWalkEntry` resolves the current
+page tables).  Trace-safe: both steps touch only `perCoreTlb`, which is not in
+`projectState`. -/
+def vspaceMapPageCheckedWithShootdownFromStatePerCore (executingCore : CoreId)
+    (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
+    (perms : PagePermissions := PagePermissions.readOnly) : Kernel Unit :=
+  fun st =>
+    match vspaceMapPageCheckedWithShootdownFromState executingCore asid vaddr paddr
+        perms st with
+    | .error e => .error e
+    | .ok ((), stM) =>
+        .ok ((), tlbFillOnCore
+          (drainInitiatorPerCoreView stM executingCore
+            [encodePageInvalidation asid vaddr])
+          executingCore asid vaddr)
+
+/-- **WS-SM SM7.F.4**: the initiator-atomic map **preserves the pending-aware
+per-core TLB invariant** from a quiescent shootdown state — the precondition the
+live seam always satisfies (each round is drained + acknowledged in its catch-up
+before the next syscall).  A *successful* checked map is always **fresh**
+(`vspaceMapPageCheckedWithFlushFromState_ok_fresh`: `mapPage` rejects an occupied
+vaddr), so:
+
+* no shootdown is posted (the base wrapper commits exactly the flush-map,
+  `vspaceMapPageCheckedWithShootdownFromState_fresh_inert`), leaving the shootdown
+  state quiescent;
+* every pre-existing cached entry (on any core) is *non-matching* for the freshly-
+  mapped `(asid, vaddr)` — a matching entry would be consistent (quiescence), hence
+  its address already translated, contradicting freshness — so it rides the map's
+  entry-consistency frame (`…_tlbEntryConsistent_frame`) into the post-state;
+* the executing core's `tlbFillOnCore` caches only the freshly-resolved,
+  consistent-by-construction translation.
+
+So every entry in the committed post-state is page-table consistent (the
+*consistent* disjunct); the 13th `proofLayerInvariantBundle` conjunct holds
+atomically with the transition. -/
+theorem vspaceMapPageCheckedWithShootdownFromStatePerCore_preserves_tlbInvalidationConsistent_perCore
+    {executingCore : CoreId} {asid : SeLe4n.ASID} {vaddr : SeLe4n.VAddr}
+    {paddr : SeLe4n.PAddr} {perms : PagePermissions} {st st' : SystemState}
+    (hq : shootdownQuiescent st.tlbShootdown)
+    (hConsist : tlbInvalidationConsistent_perCore st)
+    (hObjK : st.objects.invExtK) (hAsidK : st.asidTable.invExtK)
+    (hMappingsWF : ∀ (oid : SeLe4n.ObjId) (root : VSpaceRoot),
+      st.objects[oid]? = some (.vspaceRoot root) → root.mappings.invExt)
+    (hStep : vspaceMapPageCheckedWithShootdownFromStatePerCore executingCore asid
+      vaddr paddr perms st = .ok ((), st')) :
+    tlbInvalidationConsistent_perCore st' := by
+  unfold vspaceMapPageCheckedWithShootdownFromStatePerCore at hStep
+  -- a successful checked map is always fresh, so the shootdown wrapper commits
+  -- exactly the base flush-map — extract that flush-map witness `stFlush`
+  cases hFlush : vspaceMapPageCheckedWithFlushFromState asid vaddr paddr perms st with
+  | error e =>
+      rw [show vspaceMapPageCheckedWithShootdownFromState executingCore asid vaddr
+            paddr perms st = .error e by
+          unfold vspaceMapPageCheckedWithShootdownFromState; rw [hFlush]] at hStep
+      simp at hStep
+  | ok pairF =>
+      obtain ⟨u, stFlush⟩ := pairF; cases u
+      have hFresh : vspaceHasTranslation st asid vaddr = false :=
+        vspaceMapPageCheckedWithFlushFromState_ok_fresh asid vaddr paddr perms hFlush
+      have hWrap : vspaceMapPageCheckedWithShootdownFromState executingCore asid
+          vaddr paddr perms st = .ok ((), stFlush) := by
+        rw [vspaceMapPageCheckedWithShootdownFromState_fresh_inert executingCore asid
+          vaddr paddr perms st hFresh, hFlush]
+      rw [hWrap] at hStep
+      simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+      subst hStep
+      -- (1) the flush-map output is per-core consistent: every cached entry frames
+      have hFlushConsist : tlbInvalidationConsistent_perCore stFlush := by
+        intro c e he
+        -- the map is a `perCoreTlb` frame, so `e` was in `st`'s view
+        have hview : tlbOnCore stFlush c = tlbOnCore st c := by
+          show stFlush.perCoreTlb.get c = st.perCoreTlb.get c
+          rw [vspaceMapPageCheckedWithFlushFromState_perCoreTlb_eq asid vaddr paddr
+            perms st stFlush hFlush]
+        rw [hview] at he
+        -- quiescence ⇒ the pre-state entry is genuinely consistent
+        have hConSt : tlbEntryConsistent st e :=
+          tlbEntryConsistent_of_ok_of_quiescent hq (hConsist c e he)
+        -- fresh ⇒ `e` is not the mapped `(asid, vaddr)` pair
+        have hNotMatch : ¬(e.asid = asid ∧ e.vaddr = vaddr) := by
+          rintro ⟨hA, hV⟩
+          obtain ⟨rid, r, hres, hlk⟩ := hConSt
+          rw [hA] at hres; rw [hV] at hlk
+          simp [vspaceHasTranslation, hres, hlk] at hFresh
+        exact Or.inl (vspaceMapPageCheckedWithFlushFromState_tlbEntryConsistent_frame
+          asid vaddr paddr perms hObjK hAsidK hMappingsWF hFlush hNotMatch hConSt)
+      -- (2) the drain preserves it, and (3) the fill adds a consistent-by-
+      -- construction entry, so the committed post-state is per-core consistent
+      exact tlbFillOnCore_preserves_tlbInvalidationConsistent_perCore _ _ _ _
+        (drainInitiatorPerCoreView_preserves_tlbInvalidationConsistent_perCore _ _ _
+          hFlushConsist)
+
 end SeLe4n.Kernel.Architecture
