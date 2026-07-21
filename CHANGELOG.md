@@ -1,3 +1,44 @@
+## v0.32.92 — WS-SM SM7.F.4(b)(iii): whole-invariant retype preservation theorem (residual closed)
+
+Closes the tracked SM7.F.4(b)(iii) proof-completeness residual: **both** per-core
+retype-with-shootdown wrappers now have a machine-checked **whole-invariant**
+preservation theorem (not just the `_initiator_drained` core property) —
+`lifecycleRetype{Direct,}WithCleanupShootdownPerCore_preserves_tlbInvalidation
+Consistent_perCore`, for the invariant-threatening VSpaceRoot-target case, from a
+quiescent shootdown state.  Every entry in the committed post-retype state is
+consistent-or-covered: the initiator's own view is drained of the destroyed
+ASID, remote stale entries ride the posted `.aside1` descriptor, and every
+other-ASID entry rides the retype's page-table frame.
+
+Supporting lemmas: `lifecyclePreRetypeCleanup_vspaceRoot_id` (cleanup is the
+identity for a VSpaceRoot target), `lifecycleRetype{Direct,}WithCleanup_vspaceRoot
+_storeObject` (the base reduces to `storeObject` on the scrubbed state),
+`retypeStoreObject_tlbEntryConsistent_frame` (the retype page-table frame — a
+non-destroyed-ASID entry stays consistent across the retype's `storeObject`), and
+`retype_tlbInvariant_of_storeObject` (the shared per-core case-split, mirroring
+`vspaceUnmapPageWithShootdownPerCore_preserves_of_flush`).  Zero sorry/axiom
+(`#print axioms` = the three standard); trace byte-identical; full build +
+Tier 0-3 green; AK7 `RAW_MATCH_VSPACEROOT` 14 → 15 (the preservation theorems
+match `.vspaceRoot` in their VSpaceRoot-target hypothesis — an additive
+characterisation proof, not a new live raw read; baseline re-anchored).
+
+**Discovered precondition `hNoRebind` (necessary — the un-strengthened statement
+is false).** The theorem forbids the retype from installing a fresh `.vspaceRoot`
+whose ASID collides with a **different live** ASID: `storeObject`'s
+`asidTable.insert newRoot.asid target` silently *rebinds* that ASID, and the
+round retires only the destroyed `root.asid`, so a cached entry for the rebound
+ASID would be left stale-**and**-uncovered.  `KernelObject.wellFormed` places no
+ASID-freshness constraint on a new `.vspaceRoot`, so the collision is not
+excluded by the plain hypotheses.  On the live path the retype always installs a
+fresh asid-0 root (`objectOfKernelType`); retyping a user root (asid 0) satisfies
+`hNoRebind` via the `nr.asid = root.asid` branch, and the freeing case (retype
+into a non-`.vspaceRoot`, e.g. Untyped) satisfies it vacuously.  The one residual
+reachability question — retyping a **non-asid-0 (boot-bound) root** into a fresh
+asid-0 root while asid 0 is already bound, which would strand a cached asid-0
+entry — is flagged as a tracked concern (see plan §SM7.F.4(b)(iii) note); it
+requires authority over a non-asid-0 root and is separate from this residual's
+closure.
+
 ## v0.32.91 — WS-SM SM7.F.4(b)(iii): CSpaceAddr retype sibling + shared initiator drain (PR #844 review)
 
 Closes the follow-on review finding that v0.32.90 fixed only the **Direct-cap**

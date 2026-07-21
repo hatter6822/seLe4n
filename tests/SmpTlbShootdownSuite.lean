@@ -593,6 +593,11 @@ open SeLe4n.Kernel.Concurrency
 #check @SeLe4n.Kernel.retypeInitiatorDrain_drained
 #check @SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdownPerCore
 #check @SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdownPerCore_initiator_drained
+-- SM7.F.4(b)(iii) residual CLOSED: the WHOLE-invariant retype preservation
+-- (both wrappers preserve `tlbInvalidationConsistent_perCore` for a VSpaceRoot
+-- target, under `hNoRebind` — the necessary no-ASID-collision precondition):
+#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdownPerCore_preserves_tlbInvalidationConsistent_perCore
+#check @SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdownPerCore_preserves_tlbInvalidationConsistent_perCore
 
 -- ============================================================================
 -- §2  Elaboration-time examples
