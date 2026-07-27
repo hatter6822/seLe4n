@@ -455,7 +455,7 @@ fn message_info_exhaustive_bounds() {
 
 /// Verify SyscallId roundtrip for all variants (D6: +D1/D2/D3 TCB ops;
 /// WS-SM SM5.H.4: +TcbSetAffinity; SM6.B: +Tcb{Bind,Unbind}Notification;
-/// PR #822 Phase H: +MintReplyCap; WS-SM SM7.D: +VspaceUnifyInstruction).
+/// PR #822 Phase H: +MintReplyCap; WS-SM SM7.D: +VSpaceUnifyInstruction).
 #[test]
 fn syscall_id_exhaustive_roundtrip() {
     for i in 0..(SyscallId::COUNT as u64) {
@@ -982,7 +982,7 @@ fn kernel_error_variant_count() {
 
 /// W1-H / AA1 / D6: SyscallId variant count matches Lean (30 variants, 0-29;
 /// WS-SM SM6.B added Tcb{Bind,Unbind}Notification at 26/27; PR #822 Phase H added
-/// MintReplyCap at 28; WS-SM SM7.D added VspaceUnifyInstruction at 29).
+/// MintReplyCap at 28; WS-SM SM7.D added VSpaceUnifyInstruction at 29).
 #[test]
 fn syscall_id_variant_count() {
     const SYSCALL_COUNT: u64 = 30;
@@ -1124,7 +1124,7 @@ fn sched_context_boundary() {
     assert_eq!(SyscallId::from_u64(20).unwrap(), SyscallId::TcbSuspend);
 }
 
-/// AA1-B-5: COUNT is updated to 30 (WS-SM SM7.D added VspaceUnifyInstruction, on
+/// AA1-B-5: COUNT is updated to 30 (WS-SM SM7.D added VSpaceUnifyInstruction, on
 /// top of PR #822 Phase H's MintReplyCap and WS-SM SM6.B's
 /// Tcb{Bind,Unbind}Notification).
 #[test]
@@ -1387,7 +1387,7 @@ fn mint_reply_cap_roundtrip() {
     assert_eq!(sid.required_right(), AccessRight::Grant);
 }
 
-/// WS-SM SM7.D: VspaceUnifyInstruction roundtrip (discriminant 29).
+/// WS-SM SM7.D: VSpaceUnifyInstruction roundtrip (discriminant 29).
 ///
 /// seLe4n's `Page_Unify_Instruction`: publishes freshly written code by cleaning
 /// the page's stores to the Point of Unification and dropping the corresponding
@@ -1397,8 +1397,8 @@ fn mint_reply_cap_roundtrip() {
 /// `syscallRequiredRight .vspaceUnifyInstruction = .write`).
 #[test]
 fn vspace_unify_instruction_roundtrip() {
-    let sid = SyscallId::from_u64(29).expect("VspaceUnifyInstruction must exist");
-    assert_eq!(sid, SyscallId::VspaceUnifyInstruction);
+    let sid = SyscallId::from_u64(29).expect("VSpaceUnifyInstruction must exist");
+    assert_eq!(sid, SyscallId::VSpaceUnifyInstruction);
     assert_eq!(sid.to_u64(), 29);
     assert_eq!(sid.required_right(), AccessRight::Write);
 }

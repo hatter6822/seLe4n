@@ -147,7 +147,7 @@ pub enum SyscallId {
     // retyped Reply object.
     MintReplyCap = 28,
     /// WS-SM SM7.D: instruction/data unification of one mapped page.
-    VspaceUnifyInstruction = 29,
+    VSpaceUnifyInstruction = 29,
 }
 
 impl SyscallId {
@@ -187,7 +187,7 @@ impl SyscallId {
             26 => Some(Self::TcbBindNotification),
             27 => Some(Self::TcbUnbindNotification),
             28 => Some(Self::MintReplyCap),
-            29 => Some(Self::VspaceUnifyInstruction),
+            29 => Some(Self::VSpaceUnifyInstruction),
             _ => None,
         }
     }
@@ -248,7 +248,7 @@ impl SyscallId {
             Self::MintReplyCap => 2,
             // WS-SM SM7.D: unify takes the same two registers as unmap
             // (asid in x2, vaddr in x3) — it names an address space and a page.
-            Self::VspaceUnifyInstruction => 2,
+            Self::VSpaceUnifyInstruction => 2,
         }
     }
 }

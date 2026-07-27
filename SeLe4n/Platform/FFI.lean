@@ -1188,81 +1188,6 @@ def suspendThreadInner (tid : UInt64) : BaseIO UInt32 := do
 -- AN9-F (DEF-R-HAL-L14): SVC dispatch entry — Rust → Lean direction
 -- ============================================================================
 
-/-- AN9-F: Lean-side SVC dispatch routine called BY Rust through the
-    `syscall_dispatch_inner` `extern "C"` symbol.  This is the
-    Rust-→-Lean direction (opposite of every other declaration in
-    this module): `@[export]` instructs the Lean compiler to emit a
-    C-callable wrapper named `syscall_dispatch_inner` that resolves
-    the Rust-side `extern "C" { fn syscall_dispatch_inner(...) }`
-    declaration in `rust/sele4n-hal/src/svc_dispatch.rs`.
-
-    Encoding of the return value (matching
-    `rust/sele4n-hal/src/svc_dispatch.rs::dispatch_svc`):
-    - bit 63 = 1  → low 32 bits = `KernelError` discriminant
-    - bit 63 = 0  → low 63 bits = success return value (typically the
-      callee-saved `x0` of the post-syscall TCB)
-
-    **WS-RC R2.B (substantive)**: this body is now a thin BaseIO
-    wrapper around the pure `syscallDispatchFromAbi` function.  It:
-
-    1. Reads the live `SystemState` and `LabelingContext` from the
-       kernel-state IO.Refs.
-    2. Calls `syscallDispatchFromAbi` with the FFI register values.
-    3. Writes the post-state back to `kernelStateRef`.
-    4. Returns the encoded `UInt64` result.
-
-    The "encoded as `UInt64`" contract makes the function total: the
-    Lean side never raises an exception across the FFI boundary;
-    every kernel rejection becomes an error-flagged `UInt64` value
-    that the Rust caller decodes back into a `Result`. -/
-@[export syscall_dispatch_inner]
-def syscallDispatchInner
-    (syscallId : UInt32) (msgInfo : UInt64)
-    (x0 x1 x2 x3 x4 x5 : UInt64)
-    (ipcBufferAddr : UInt64) : BaseIO UInt64 := do
-  let st  ← getKernelState
-  let ctx ← getKernelLabelingContext
-  -- WS-SM SM6.A: the boot-pinned single-core entry resolves the caller on the
-  -- boot core (`bootCoreId`).  The cross-core entry `syscallDispatchCrossCoreEntry`
-  -- threads the hardware `currentCoreId` instead, identifying a secondary-core
-  -- caller on its own core.
-  match syscallDispatchFromAbi ctx bootCoreId syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st with
-  | Except.ok (encoded, st') =>
-      initialiseKernelState st'
-      pure encoded
-  | Except.error e =>
-      -- syscallDispatchFromAbi never returns `.error` — every kernel
-      -- rejection is encoded into the success path with bit 63 set.
-      -- This branch is therefore vacuous, but we discharge it
-      -- defensively rather than relying on a `match`-exhaustiveness
-      -- claim that future refactors might invalidate.
-      pure (encodeError e)
-
--- ============================================================================
--- AN9-A (DEF-A-M04): TLB+Cache composition witnesses
--- ============================================================================
-
-/-- AN9-A.1: TLB+Cache composition witness — clean a page-table page
-    range followed by `dsb ish` so the writeback completes before any
-    subsequent operation observes the page-table state.
-
-    Rust: `cache::clean_pagetable_range` in `sele4n-hal/src/cache.rs`. -/
-@[extern "cache_clean_pagetable_range"]
-opaque ffiCacheCleanPagetableRange : UInt64 → UInt64 → BaseIO Unit
-
-/-- AN9-A.1: I-cache invalidation witness — drop every I-cache line so
-    subsequent instruction fetches re-read from coherent memory.
-
-    **Local (non-broadcast) variant** — it reaches only the executing PE.
-    WS-SM SM7.D.1: production kernel code under SMP must use
-    `icMaintenanceBroadcast` below, which routes to the Inner Shareable
-    broadcast variants; this binding is kept for the single-PE boot path,
-    symmetric with `ffiTlbiAll`.
-
-    Rust: `cache::ic_iallu` in `sele4n-hal/src/cache.rs`. -/
-@[extern "cache_ic_iallu"]
-opaque ffiIcIallu : BaseIO Unit
-
 -- ============================================================================
 -- WS-SM SM7.D.1 — Instruction-cache maintenance broadcast
 -- ============================================================================
@@ -1346,6 +1271,108 @@ theorem icMaintenanceBroadcast_ivauPage_encoding (p : SeLe4n.PAddr) :
     (SeLe4n.Kernel.Architecture.ICacheInvalidation.ivauPage p).toPaddr =
       UInt64.ofNat p.toNat :=
   ⟨rfl, rfl⟩
+
+
+/-- AN9-F: Lean-side SVC dispatch routine called BY Rust through the
+    `syscall_dispatch_inner` `extern "C"` symbol.  This is the
+    Rust-→-Lean direction (opposite of every other declaration in
+    this module): `@[export]` instructs the Lean compiler to emit a
+    C-callable wrapper named `syscall_dispatch_inner` that resolves
+    the Rust-side `extern "C" { fn syscall_dispatch_inner(...) }`
+    declaration in `rust/sele4n-hal/src/svc_dispatch.rs`.
+
+    Encoding of the return value (matching
+    `rust/sele4n-hal/src/svc_dispatch.rs::dispatch_svc`):
+    - bit 63 = 1  → low 32 bits = `KernelError` discriminant
+    - bit 63 = 0  → low 63 bits = success return value (typically the
+      callee-saved `x0` of the post-syscall TCB)
+
+    **WS-RC R2.B (substantive)**: this body is now a thin BaseIO
+    wrapper around the pure `syscallDispatchFromAbi` function.  It:
+
+    1. Reads the live `SystemState` and `LabelingContext` from the
+       kernel-state IO.Refs.
+    2. Calls `syscallDispatchFromAbi` with the FFI register values.
+    3. Writes the post-state back to `kernelStateRef`.
+    4. Returns the encoded `UInt64` result.
+
+    The "encoded as `UInt64`" contract makes the function total: the
+    Lean side never raises an exception across the FFI boundary;
+    every kernel rejection becomes an error-flagged `UInt64` value
+    that the Rust caller decodes back into a `Result`. -/
+@[export syscall_dispatch_inner]
+def syscallDispatchInner
+    (syscallId : UInt32) (msgInfo : UInt64)
+    (x0 x1 x2 x3 x4 x5 : UInt64)
+    (ipcBufferAddr : UInt64) : BaseIO UInt64 := do
+  let st  ← getKernelState
+  let ctx ← getKernelLabelingContext
+  -- WS-SM SM6.A: the boot-pinned single-core entry resolves the caller on the
+  -- boot core (`bootCoreId`).  The cross-core entry `syscallDispatchCrossCoreEntry`
+  -- threads the hardware `currentCoreId` instead, identifying a secondary-core
+  -- caller on its own core.
+  match syscallDispatchFromAbi ctx bootCoreId syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st with
+  | Except.ok (encoded, st') =>
+      -- PR #845 review (P2): this entry does **not** drain the SM7.D
+      -- instruction-cache emission ledger, and deliberately cannot.
+      --
+      -- Draining would mean calling `icMaintenanceBroadcast`, whose
+      -- `@[extern "cache_ic_maintenance"]` symbol is provided by the Rust HAL.
+      -- Per the link-time gating policy documented at the head of this module,
+      -- simulation builds do **not** link the HAL, and any path that reaches an
+      -- `@[extern]` symbol is required to fail at link time rather than be
+      -- papered over with a stub.  `syscallDispatchInner` is called directly by
+      -- `tests/SyscallDispatchSuite.lean`, so putting the emission here breaks
+      -- every host test binary that exercises the bridge — and the only ways to
+      -- "fix" that are a silent stub (forbidden) or linking the HAL into the
+      -- test binaries (defeats the gating).
+      --
+      -- This is safe rather than merely tolerated, for two reasons.  The entry
+      -- is **vestigial**: the Rust `svc_dispatch` extern was flipped to
+      -- `lean_syscall_dispatch_cross_core` at v0.31.67 (SM6.A), so no shipping
+      -- configuration reaches it.  And since v0.32.96 replaced the operand
+      -- *join* with an append-only list, an operand committed here is
+      -- **deferred, never lost** — it stays in `pendingIcacheMaintenance` and is
+      -- drained wholesale by the next syscall through the cross-core entry
+      -- (`recordIcacheMaintenanceList_mem_of_mem` is the no-loss property).
+      --
+      -- Closure is removal, not draining: SM9.E should delete this export and
+      -- repoint `SyscallDispatchSuite` at the cross-core entry.  Registered in
+      -- `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` §"SM7.D deferred items".
+      initialiseKernelState st'
+      pure encoded
+  | Except.error e =>
+      -- syscallDispatchFromAbi never returns `.error` — every kernel
+      -- rejection is encoded into the success path with bit 63 set.
+      -- This branch is therefore vacuous, but we discharge it
+      -- defensively rather than relying on a `match`-exhaustiveness
+      -- claim that future refactors might invalidate.
+      pure (encodeError e)
+
+-- ============================================================================
+-- AN9-A (DEF-A-M04): TLB+Cache composition witnesses
+-- ============================================================================
+
+/-- AN9-A.1: TLB+Cache composition witness — clean a page-table page
+    range followed by `dsb ish` so the writeback completes before any
+    subsequent operation observes the page-table state.
+
+    Rust: `cache::clean_pagetable_range` in `sele4n-hal/src/cache.rs`. -/
+@[extern "cache_clean_pagetable_range"]
+opaque ffiCacheCleanPagetableRange : UInt64 → UInt64 → BaseIO Unit
+
+/-- AN9-A.1: I-cache invalidation witness — drop every I-cache line so
+    subsequent instruction fetches re-read from coherent memory.
+
+    **Local (non-broadcast) variant** — it reaches only the executing PE.
+    WS-SM SM7.D.1: production kernel code under SMP must use
+    `icMaintenanceBroadcast` below, which routes to the Inner Shareable
+    broadcast variants; this binding is kept for the single-PE boot path,
+    symmetric with `ffiTlbiAll`.
+
+    Rust: `cache::ic_iallu` in `sele4n-hal/src/cache.rs`. -/
+@[extern "cache_ic_iallu"]
+opaque ffiIcIallu : BaseIO Unit
 
 -- ============================================================================
 -- WS-RC R2.B.5 — Correctness theorems for the syscall-dispatch bridge

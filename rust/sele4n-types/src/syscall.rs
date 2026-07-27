@@ -59,7 +59,7 @@ pub enum SyscallId {
     // equivalent of seL4's `Page_Unify_Instruction`.  Publishes freshly written
     // code — an instruction fetch reads at the Point of Unification, so stores
     // that are still only in the data cache must be cleaned there first.
-    VspaceUnifyInstruction = 29,
+    VSpaceUnifyInstruction = 29,
 }
 
 impl SyscallId {
@@ -99,7 +99,7 @@ impl SyscallId {
             26 => Some(Self::TcbBindNotification),
             27 => Some(Self::TcbUnbindNotification),
             28 => Some(Self::MintReplyCap),
-            29 => Some(Self::VspaceUnifyInstruction),
+            29 => Some(Self::VSpaceUnifyInstruction),
             _ => None,
         }
     }
@@ -136,7 +136,7 @@ impl SyscallId {
             // WS-SM SM7.D: least-privilege reading of seL4's frame-cap authority —
             // the operation publishes the caller's own stores, so the subject
             // that needs it could by construction write the page.
-            Self::VspaceUnifyInstruction => AccessRight::Write,
+            Self::VSpaceUnifyInstruction => AccessRight::Write,
         }
     }
 }

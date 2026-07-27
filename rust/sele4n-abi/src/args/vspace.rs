@@ -66,6 +66,17 @@ impl VSpaceUnmapArgs {
     }
 }
 
+/// **WS-SM SM7.D**: arguments for `vspaceUnifyInstruction` (syscall 29) — an
+/// address space and a virtual page, exactly the operand shape `vspaceUnmap`
+/// takes.
+///
+/// Aliased rather than duplicated so the two share one encoder/decoder and one
+/// set of round-trip tests; the distinct name keeps the *semantics* legible at
+/// the call site.  This mirrors the Lean side, where
+/// `VSpaceUnifyInstructionArgs` is an `abbrev` for `VSpaceUnmapArgs`
+/// (`SyscallArgDecode.lean`).
+pub type VSpaceUnifyInstructionArgs = VSpaceUnmapArgs;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -83,6 +94,15 @@ mod tests {
     fn unmap_roundtrip() {
         let args = VSpaceUnmapArgs { asid: Asid::from(1u64), vaddr: VAddr::from(0x3000u64) };
         assert_eq!(VSpaceUnmapArgs::decode(&args.encode()).unwrap(), args);
+    }
+
+    #[test]
+    fn unify_instruction_roundtrip() {
+        // WS-SM SM7.D: the unify operand shape is the unmap operand shape.
+        let args = VSpaceUnifyInstructionArgs {
+            asid: Asid::from(2u64), vaddr: VAddr::from(0x4000u64),
+        };
+        assert_eq!(VSpaceUnifyInstructionArgs::decode(&args.encode()).unwrap(), args);
     }
 
     #[test]

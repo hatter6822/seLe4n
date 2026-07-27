@@ -3604,25 +3604,27 @@ theorem vspaceMapPageCheckedWithFlushFromState_preserves_projection
   · simp at hStep
   · split at hStep
     · simp at hStep
-    · -- vspaceMapPageWithFlush call
-      unfold Architecture.vspaceMapPageWithFlush at hStep
-      cases hInner : Architecture.vspaceMapPage asid vaddr paddr perms st with
-      | error e => rw [hInner] at hStep; simp at hStep
-      | ok pair =>
-        rw [hInner] at hStep
-        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-        obtain ⟨_, hStEq⟩ := hStep
-        subst hStEq
-        subst hDefault
-        -- Existing theorem: vspaceMapPage preserves projection
-        have hProj : projectState ctx observer pair.2 = projectState ctx observer st := by
-          obtain ⟨_, stInner⟩ := pair
-          exact vspaceMapPage_preserves_projection ctx observer asid vaddr paddr st stInner
-            hRootHigh hObjInv hInner
-        -- Adding TLB flush doesn't affect projection (TLB is not in projectState)
-        show projectState ctx observer { pair.2 with tlb := _ } = projectState ctx observer st
-        rw [← hProj]
-        rfl
+    · split at hStep
+      · simp at hStep
+      · -- vspaceMapPageWithFlush call
+        unfold Architecture.vspaceMapPageWithFlush at hStep
+        cases hInner : Architecture.vspaceMapPage asid vaddr paddr perms st with
+        | error e => rw [hInner] at hStep; simp at hStep
+        | ok pair =>
+          rw [hInner] at hStep
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨_, hStEq⟩ := hStep
+          subst hStEq
+          subst hDefault
+          -- Existing theorem: vspaceMapPage preserves projection
+          have hProj : projectState ctx observer pair.2 = projectState ctx observer st := by
+            obtain ⟨_, stInner⟩ := pair
+            exact vspaceMapPage_preserves_projection ctx observer asid vaddr paddr st stInner
+              hRootHigh hObjInv hInner
+          -- Adding TLB flush doesn't affect projection (TLB is not in projectState)
+          show projectState ctx observer { pair.2 with tlb := _ } = projectState ctx observer st
+          rw [← hProj]
+          rfl
 
 /-- AK6-F.2i: `vspaceUnmapPageWithFlush` preserves projection when the
     resolved VSpace root is non-observable. Delegates to the existing

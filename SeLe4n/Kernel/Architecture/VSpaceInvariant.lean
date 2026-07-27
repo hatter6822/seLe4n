@@ -790,22 +790,28 @@ theorem vspaceMapPageChecked_success_preserves_vspaceInvariantBundle
     (hMappingsWF : ∀ (oid : SeLe4n.ObjId) (root : VSpaceRoot), st.objects[oid]? = some (.vspaceRoot root) → root.mappings.invExt)
     (hStep : vspaceMapPageChecked asid vaddr paddr perms st = .ok ((), st')) :
     vspaceInvariantBundle st' := by
-  -- U2-A: vspaceMapPageChecked now has two guards: VAddr canonical then PAddr bounds
+  -- U2-A: vspaceMapPageChecked guards on VAddr canonicality, then the PAddr
+  -- bound, then (PR #845 review) PAddr page-alignment.
   simp only [vspaceMapPageChecked] at hStep
   split at hStep
   · simp at hStep  -- VAddr not canonical → contradiction
   · split at hStep
     · simp at hStep  -- PAddr out of bounds → contradiction
-    · -- Both guards passed — extract VA canonical and PA bound from the negated guards
-      have hCanonical : vaddr.isCanonical := by
-        simp only [Bool.not_eq_true', Bool.not_eq_false] at *
-        assumption
-      have hBound : paddr.toNat < 2^52 := by
-        simp only [Bool.not_eq_true', Bool.not_eq_false, physicalAddressBound,
-                    decide_eq_true_eq] at *
-        assumption
-      exact vspaceMapPage_success_preserves_vspaceInvariantBundle
-        st st' asid vaddr paddr perms hInv hBound hCanonical hObjInv hAsidInv hAsidK hMappingsWF hStep
+    · split at hStep
+      · simp at hStep  -- PAddr not page-aligned → contradiction
+      · -- All guards passed — extract VA canonical and PA bound from the
+        -- negated guards.  Alignment is not needed by the invariant bundle
+        -- (it constrains the *operand*, not the page-table structure), so it
+        -- is discharged and dropped here.
+        have hCanonical : vaddr.isCanonical := by
+          simp only [Bool.not_eq_true', Bool.not_eq_false] at *
+          assumption
+        have hBound : paddr.toNat < 2^52 := by
+          simp only [Bool.not_eq_true', Bool.not_eq_false, physicalAddressBound,
+                      decide_eq_true_eq] at *
+          assumption
+        exact vspaceMapPage_success_preserves_vspaceInvariantBundle
+          st st' asid vaddr paddr perms hInv hBound hCanonical hObjInv hAsidInv hAsidK hMappingsWF hStep
 
 /-- WS-H11/A-05: `vspaceMapPageChecked` error on out-of-bounds preserves invariant trivially. -/
 theorem vspaceMapPageChecked_error_preserves_vspaceInvariantBundle

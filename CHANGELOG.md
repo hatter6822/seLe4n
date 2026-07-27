@@ -1,3 +1,73 @@
+## v0.32.98 — PR #845 review closure: PA page alignment, safe-API wrapper, ABI naming
+
+Closes the remaining review findings on PR #845. Two are genuine defects; one is
+an omission in the v0.32.96 syscall; the fourth is a deferral whose reasoning is
+now recorded rather than asserted.
+
+**(1) Physical addresses in page mappings must be page-aligned.** `vspaceMapPageChecked`
+and the production `vspaceMapPageCheckedWithFlushFromState` validated VA
+canonicality and the PA bound but **not** alignment, so a mapping could carry an
+unaligned PA. ARMv8 page descriptors carry only the aligned base
+(`PageTable.descriptorToUInt64` masks the low bits) and both HAL cache-maintenance
+loops round their operand down to the containing page — so the model would
+compare and record the *raw* `PAddr` while the MMU and HAL acted on
+`paddr &&& ~0xFFF`. The SM7.D reach theorems would then be proving something
+about an address hardware never touches. Both entry points now reject with
+`.alignmentError`. Rejecting structurally is the honest fix rather than
+normalizing: an unaligned page mapping is meaningless on ARMv8, so there is
+nothing to preserve by accepting it.
+
+This surfaced two places where the *tests themselves* were relying on the gap.
+`MainTraceHarness` (CAT-025) and `NegativeStateSuite` both mapped `2^n - 1` — the
+largest in-bounds PA, which is all-ones and therefore never page-aligned — to
+exercise the upper edge of the PA bound. Both now use the largest *page-aligned*
+in-bounds PA, preserving the intent while naming an address a page mapping can
+actually have. The golden trace is byte-identical. `NegativeStateSuite` gains a
+matching negative case, and `VSpaceCapabilityBindingSuite` a §5b group (5
+assertions): unaligned rejected with no mapping installed, cache-line-aligned but
+not page-aligned also rejected, the aligned base of the same page accepted, and
+authority checked before alignment.
+
+**(2) `.vspaceUnifyInstruction` was unreachable from the safe Rust API.** v0.32.96
+added a syscall described as *the* user-facing mechanism for code publication and
+then left `rust/sele4n-sys/src/vspace.rs` exposing only `vspace_map` and
+`vspace_unmap` — a JIT or loader would have had to hand-encode registers through
+`sele4n_abi::invoke_syscall`. Adds `vspace_unify_instruction` alongside the other
+VSpace operations, plus `VSpaceUnifyInstructionArgs` in `sele4n-abi` (a type alias
+for `VSpaceUnmapArgs`, mirroring the Lean `abbrev`) with a round-trip test.
+
+**(3) ABI enum naming drift.** v0.32.96 spelled the variant `VspaceUnifyInstruction`
+while its siblings are `VSpaceMap` / `VSpaceUnmap`. Normalized to
+`VSpaceUnifyInstruction` across `sele4n-types`, `sele4n-hal` and the conformance
+suite, with a Tier-3 anchor asserting the old spelling is gone.
+
+**(4) The legacy `syscallDispatchInner` entry still does not drain the emission
+ledger — attempted, reverted, and now explained.** Draining requires calling
+`icMaintenanceBroadcast`, whose `@[extern "cache_ic_maintenance"]` symbol comes
+from the Rust HAL. Simulation builds deliberately do not link the HAL, and this
+module's link-gating policy requires any path reaching an `@[extern]` symbol to
+fail loudly rather than be stubbed. `tests/SyscallDispatchSuite.lean` calls this
+entry directly, so the emission broke every host test binary exercising the
+bridge, and the only "fixes" are a silent stub (forbidden) or linking the HAL into
+test binaries (defeats the gating). It is safe as-is: the entry is vestigial (Rust
+was flipped to `lean_syscall_dispatch_cross_core` at v0.31.67) and, since v0.32.96
+replaced the operand join with an append-only list, an operand committed there is
+**deferred, never lost**. The intended closure is removing the export and
+repointing the suite at the cross-core entry, recorded against SM9.E with this
+reasoning so it is not re-attempted the same way.
+
+Proof repairs: the new alignment guard added a third branch to
+`vspaceMapPageCheckedWithFlushFromState`, so seven downstream proofs gained a
+`split` — three VSpace frame lemmas, `vspaceMapPageChecked_success_preserves_vspaceInvariantBundle`,
+`vspaceMapPageCheckedWithFlushFromState_ok_fresh`, the per-core TLB entry-consistency
+frame, and the information-flow projection lemma.
+
+Golden trace byte-identical; zero sorry/axiom; Tier 0–5 green; Rust 795 HAL tests,
+100 conformance, clippy-clean.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.D deferred items
+Refs: #845
+
 ## v0.32.97 — SECURITY: bind VSpace syscall capabilities to their operand address space
 
 **Severity: High. Confused deputy in the VSpace syscall gate — a thread holding

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/sm7d-cache-maintenance-msh1o0",
-      "commit_sha": "788df54c4e396244405ada1278a96940a39056d2",
-      "tree_sha": "8d7e9303a60a53794657140783f6266feac09548",
-      "committed_at_utc": "2026-07-27T03:52:50+00:00"
+      "commit_sha": "98dea211686b0460186ab0a575f4c5e0e6b18727",
+      "tree_sha": "134f4720247c3ea62a16622b5c8114fcd797bb53",
+      "committed_at_utc": "2026-07-27T07:02:28+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "f90a7260369d9dea44a4f704ab00983c6a59d54322b093ccd92ed6ea4d065fc5"
+    "source_digest": "109e85dda520cac05190a92389a4652c36604a8e7c4b061aafa4c3985958c343"
   },
   "summary": {
     "module_count": 331,
-    "declaration_count": 13782
+    "declaration_count": 13783
   },
   "readme_sync": {
-    "version": "0.32.97",
+    "version": "0.32.98",
     "lean_toolchain": "v4.28.0",
     "production_files": 264,
-    "production_loc": 234891,
+    "production_loc": 234965,
     "test_files": 67,
-    "test_loc": 47072,
+    "test_loc": 47133,
     "proved_theorem_lemma_decls": 7643,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -9709,7 +9709,7 @@
         {
           "kind": "def",
           "name": "vspaceMapPageCheckedWithShootdownFromStatePerCore",
-          "line": 1921,
+          "line": 1923,
           "called": [
             "ASID",
             "CoreId",
@@ -9728,7 +9728,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPageCheckedWithShootdownFromStatePerCore_preserves_tlbInvalidationConsistent_perCore",
-          "line": 1954,
+          "line": 1956,
           "called": [
             "ASID",
             "CoreId",
@@ -16100,7 +16100,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPageCheckedWithShootdownFromState_never_posts",
-          "line": 1459,
+          "line": 1461,
           "called": [
             "ASID",
             "CoreId",
@@ -16120,7 +16120,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPageCheckedWithShootdownFromState_remap_posts",
-          "line": 1493,
+          "line": 1495,
           "called": [
             "ASID",
             "CoreId",
@@ -16140,7 +16140,7 @@
         {
           "kind": "def",
           "name": "tlbFlushByASIDWithShootdown",
-          "line": 1515,
+          "line": 1517,
           "called": [
             "ASID",
             "CoreId",
@@ -16154,7 +16154,7 @@
         {
           "kind": "def",
           "name": "tlbFlushByPageWithShootdown",
-          "line": 1525,
+          "line": 1527,
           "called": [
             "ASID",
             "CoreId",
@@ -16169,7 +16169,7 @@
         {
           "kind": "def",
           "name": "asidAllocateWithShootdown",
-          "line": 1545,
+          "line": 1547,
           "called": [
             "AsidAllocResult",
             "AsidPool",
@@ -16184,7 +16184,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPageWithShootdown_error_iff",
-          "line": 1561,
+          "line": 1563,
           "called": [
             "ASID",
             "CoreId",
@@ -16202,7 +16202,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPageWithShootdown_ok",
-          "line": 1583,
+          "line": 1585,
           "called": [
             "ASID",
             "CoreId",
@@ -16219,7 +16219,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPageWithShootdown_posts",
-          "line": 1598,
+          "line": 1600,
           "called": [
             "ASID",
             "CoreId",
@@ -16240,7 +16240,7 @@
         {
           "kind": "theorem",
           "name": "asidAllocateWithShootdown_requiresFlush",
-          "line": 1622,
+          "line": 1624,
           "called": [
             "AsidAllocResult",
             "AsidPool",
@@ -16258,7 +16258,7 @@
         {
           "kind": "theorem",
           "name": "asidAllocateWithShootdown_fresh_inert",
-          "line": 1638,
+          "line": 1640,
           "called": [
             "AsidAllocResult",
             "AsidPool",
@@ -16272,7 +16272,7 @@
         {
           "kind": "def",
           "name": "shootdownChangedTargets",
-          "line": 1657,
+          "line": 1659,
           "called": [
             "CoreId",
             "SystemState",
@@ -16283,7 +16283,7 @@
         {
           "kind": "theorem",
           "name": "mem_shootdownChangedTargets_iff",
-          "line": 1663,
+          "line": 1665,
           "called": [
             "CoreId",
             "SystemState",
@@ -16295,7 +16295,7 @@
         {
           "kind": "theorem",
           "name": "shootdownChangedTargets_nil_of_eq",
-          "line": 1673,
+          "line": 1675,
           "called": [
             "SystemState",
             "shootdownChangedTargets"
@@ -16304,7 +16304,7 @@
         {
           "kind": "def",
           "name": "shootdownPostedOps",
-          "line": 1685,
+          "line": 1687,
           "called": [
             "SystemState",
             "TlbInvalidation",
@@ -16315,7 +16315,7 @@
         {
           "kind": "theorem",
           "name": "tlbShootdownLocal_preserves_pendingBounded",
-          "line": 1702,
+          "line": 1704,
           "called": [
             "SystemState",
             "TlbInvalidation",
@@ -16328,7 +16328,7 @@
         {
           "kind": "theorem",
           "name": "handleTlbShootdownReqOnCore_preserves_pendingBounded",
-          "line": 1710,
+          "line": 1712,
           "called": [
             "CoreId",
             "SystemState",
@@ -16342,7 +16342,7 @@
         {
           "kind": "theorem",
           "name": "withShootdownRound_preserves_pendingBounded",
-          "line": 1718,
+          "line": 1720,
           "called": [
             "CoreId",
             "SystemState",
@@ -16357,7 +16357,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPageWithShootdown_preserves_pendingBounded",
-          "line": 1732,
+          "line": 1734,
           "called": [
             "ASID",
             "CoreId",
@@ -16374,7 +16374,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPageCheckedWithShootdownFromState_preserves_pendingBounded",
-          "line": 1751,
+          "line": 1753,
           "called": [
             "ASID",
             "CoreId",
@@ -16398,7 +16398,7 @@
         {
           "kind": "theorem",
           "name": "tlbFlushByASIDWithShootdown_preserves_pendingBounded",
-          "line": 1791,
+          "line": 1793,
           "called": [
             "ASID",
             "CoreId",
@@ -16414,7 +16414,7 @@
         {
           "kind": "theorem",
           "name": "tlbFlushByPageWithShootdown_preserves_pendingBounded",
-          "line": 1808,
+          "line": 1810,
           "called": [
             "ASID",
             "CoreId",
@@ -16431,7 +16431,7 @@
         {
           "kind": "theorem",
           "name": "asidAllocateWithShootdown_preserves_pendingBounded",
-          "line": 1828,
+          "line": 1830,
           "called": [
             "AsidAllocResult",
             "AsidPool",
@@ -16452,7 +16452,7 @@
         {
           "kind": "theorem",
           "name": "applyTlbInvalidation_comm",
-          "line": 1869,
+          "line": 1871,
           "called": [
             "TlbInvalidation",
             "TlbState",
@@ -16462,7 +16462,7 @@
         {
           "kind": "theorem",
           "name": "applyTlbInvalidations_apply_comm",
-          "line": 1879,
+          "line": 1881,
           "called": [
             "TlbInvalidation",
             "TlbState",
@@ -16476,7 +16476,7 @@
         {
           "kind": "theorem",
           "name": "applyTlbInvalidations_comm",
-          "line": 1891,
+          "line": 1893,
           "called": [
             "TlbInvalidation",
             "TlbState",
@@ -16489,7 +16489,7 @@
         {
           "kind": "theorem",
           "name": "handleTlbShootdownReqOnCore_comm",
-          "line": 1910,
+          "line": 1912,
           "called": [
             "CoreId",
             "SystemState",
@@ -16507,7 +16507,7 @@
         {
           "kind": "theorem",
           "name": "foldl_handleTlbShootdownReqOnCore_swap",
-          "line": 1939,
+          "line": 1941,
           "called": [
             "CoreId",
             "SystemState",
@@ -16519,7 +16519,7 @@
         {
           "kind": "theorem",
           "name": "tlbEntryMatches_vmalle1",
-          "line": 1952,
+          "line": 1954,
           "called": [
             "TlbEntry",
             "tlbEntryMatches"
@@ -16528,7 +16528,7 @@
         {
           "kind": "theorem",
           "name": "coveredQueueRetire_removes",
-          "line": 1961,
+          "line": 1963,
           "called": [
             "TlbEntry",
             "TlbShootdownDescriptor",
@@ -16542,7 +16542,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPageWithShootdown_remote_retire_removes",
-          "line": 1979,
+          "line": 1981,
           "called": [
             "ASID",
             "CoreId",
@@ -16565,7 +16565,7 @@
         {
           "kind": "theorem",
           "name": "shootdownChangedTargets_coalescing_of_quiescent",
-          "line": 2004,
+          "line": 2006,
           "called": [
             "CoreId",
             "SystemState",
@@ -16589,7 +16589,7 @@
         {
           "kind": "theorem",
           "name": "coalescingRound_restores_quiescent",
-          "line": 2055,
+          "line": 2057,
           "called": [
             "CoreId",
             "SystemState",
@@ -16610,7 +16610,7 @@
         {
           "kind": "theorem",
           "name": "coalescingRound_allAcked",
-          "line": 2073,
+          "line": 2075,
           "called": [
             "CoreId",
             "SystemState",
@@ -17354,6 +17354,7 @@
             "PagePermissions.readOnly",
             "VAddr",
             "isCanonical",
+            "pageBytes",
             "physicalAddressBound",
             "st",
             "toNat",
@@ -17363,7 +17364,7 @@
         {
           "kind": "def",
           "name": "vspaceUnmapPage",
-          "line": 130,
+          "line": 142,
           "called": [
             "ASID",
             "Kernel",
@@ -17378,7 +17379,7 @@
         {
           "kind": "def",
           "name": "vspaceLookupFull",
-          "line": 141,
+          "line": 153,
           "called": [
             "ASID",
             "Kernel",
@@ -17394,7 +17395,7 @@
         {
           "kind": "def",
           "name": "vspaceLookup",
-          "line": 153,
+          "line": 165,
           "called": [
             "ASID",
             "Kernel",
@@ -17409,7 +17410,7 @@
         {
           "kind": "def",
           "name": "vspaceMapPageWithFlush",
-          "line": 183,
+          "line": 195,
           "called": [
             "ASID",
             "Kernel",
@@ -17425,7 +17426,7 @@
         {
           "kind": "def",
           "name": "vspaceUnmapPageWithFlush",
-          "line": 202,
+          "line": 214,
           "called": [
             "ASID",
             "Kernel",
@@ -17438,7 +17439,7 @@
         {
           "kind": "def",
           "name": "vspaceMapPageCheckedWithFlush",
-          "line": 211,
+          "line": 223,
           "called": [
             "ASID",
             "Kernel",
@@ -17456,7 +17457,7 @@
         {
           "kind": "def",
           "name": "vspaceMapPageCheckedWithFlushPlatform",
-          "line": 223,
+          "line": 235,
           "called": [
             "ASID",
             "Kernel",
@@ -17476,7 +17477,7 @@
         {
           "kind": "def",
           "name": "vspaceMapPageCheckedWithFlushFromState",
-          "line": 235,
+          "line": 247,
           "called": [
             "ASID",
             "Kernel",
@@ -17485,6 +17486,7 @@
             "PagePermissions.readOnly",
             "VAddr",
             "isCanonical",
+            "pageBytes",
             "st",
             "toNat",
             "vspaceMapPageWithFlush"
@@ -17493,7 +17495,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPageCheckedWithFlush_default_is_readOnly",
-          "line": 255,
+          "line": 276,
           "called": [
             "PagePermissions.readOnly",
             "wxCompliant"
@@ -17502,7 +17504,7 @@
         {
           "kind": "def",
           "name": "tlbFlushByASID",
-          "line": 266,
+          "line": 287,
           "called": [
             "ASID",
             "Kernel",
@@ -17513,7 +17515,7 @@
         {
           "kind": "def",
           "name": "tlbFlushByPage",
-          "line": 273,
+          "line": 294,
           "called": [
             "ASID",
             "Kernel",
@@ -17525,7 +17527,7 @@
         {
           "kind": "theorem",
           "name": "tlbFlushByASID_state_frame",
-          "line": 277,
+          "line": 298,
           "called": [
             "ASID",
             "SystemState",
@@ -17536,7 +17538,7 @@
         {
           "kind": "theorem",
           "name": "tlbFlushByPage_state_frame",
-          "line": 285,
+          "line": 306,
           "called": [
             "ASID",
             "SystemState",
@@ -17548,7 +17550,7 @@
         {
           "kind": "theorem",
           "name": "tlbFlushByASID_tlbShootdown_eq",
-          "line": 305,
+          "line": 326,
           "called": [
             "ASID",
             "SystemState",
@@ -17559,7 +17561,7 @@
         {
           "kind": "theorem",
           "name": "tlbFlushByPage_tlbShootdown_eq",
-          "line": 313,
+          "line": 334,
           "called": [
             "ASID",
             "SystemState",
@@ -17571,7 +17573,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPage_tlbShootdown_eq",
-          "line": 322,
+          "line": 343,
           "called": [
             "ASID",
             "SystemState",
@@ -17584,7 +17586,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPage_tlbShootdown_eq",
-          "line": 334,
+          "line": 355,
           "called": [
             "ASID",
             "PAddr",
@@ -17599,7 +17601,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPageWithFlush_tlbShootdown_eq",
-          "line": 350,
+          "line": 371,
           "called": [
             "ASID",
             "SystemState",
@@ -17613,7 +17615,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPage_perCoreTlb_eq",
-          "line": 366,
+          "line": 387,
           "called": [
             "ASID",
             "SystemState",
@@ -17626,7 +17628,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPageWithFlush_perCoreTlb_eq",
-          "line": 382,
+          "line": 403,
           "called": [
             "ASID",
             "SystemState",
@@ -17640,7 +17642,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPage_perCoreICache_eq",
-          "line": 401,
+          "line": 422,
           "called": [
             "ASID",
             "SystemState",
@@ -17653,7 +17655,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPageWithFlush_perCoreICache_eq",
-          "line": 414,
+          "line": 435,
           "called": [
             "ASID",
             "SystemState",
@@ -17667,7 +17669,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPageWithFlush_tlbShootdown_eq",
-          "line": 429,
+          "line": 450,
           "called": [
             "ASID",
             "PAddr",
@@ -17683,7 +17685,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPageCheckedWithFlushFromState_tlbShootdown_eq",
-          "line": 446,
+          "line": 467,
           "called": [
             "ASID",
             "PAddr",
@@ -17698,7 +17700,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPage_perCoreTlb_eq",
-          "line": 461,
+          "line": 484,
           "called": [
             "ASID",
             "PAddr",
@@ -17713,7 +17715,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPageWithFlush_perCoreTlb_eq",
-          "line": 477,
+          "line": 500,
           "called": [
             "ASID",
             "PAddr",
@@ -17729,7 +17731,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPage_perCoreICache_eq",
-          "line": 494,
+          "line": 517,
           "called": [
             "ASID",
             "PAddr",
@@ -17744,7 +17746,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPageWithFlush_perCoreICache_eq",
-          "line": 509,
+          "line": 532,
           "called": [
             "ASID",
             "PAddr",
@@ -17760,7 +17762,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPageCheckedWithFlushFromState_perCoreICache_eq",
-          "line": 526,
+          "line": 549,
           "called": [
             "ASID",
             "PAddr",
@@ -17775,7 +17777,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPageCheckedWithFlushFromState_perCoreTlb_eq",
-          "line": 544,
+          "line": 569,
           "called": [
             "ASID",
             "PAddr",
@@ -17790,7 +17792,7 @@
         {
           "kind": "def",
           "name": "vspaceAsidRootsUnique",
-          "line": 562,
+          "line": 589,
           "called": [
             "ObjId",
             "SystemState",
@@ -17801,7 +17803,7 @@
         {
           "kind": "theorem",
           "name": "resolveAsidRoot_some_implies_obj",
-          "line": 571,
+          "line": 598,
           "called": [
             "ASID",
             "ObjId",
@@ -17815,7 +17817,7 @@
         {
           "kind": "theorem",
           "name": "resolveAsidRoot_of_asidTable_entry",
-          "line": 610,
+          "line": 637,
           "called": [
             "ASID",
             "ObjId",
@@ -17828,7 +17830,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPage_tlb_eq",
-          "line": 631,
+          "line": 658,
           "called": [
             "ASID",
             "PAddr",
@@ -17846,7 +17848,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPage_tlb_eq",
-          "line": 652,
+          "line": 679,
           "called": [
             "ASID",
             "SystemState",
@@ -17862,7 +17864,7 @@
         {
           "kind": "theorem",
           "name": "resolveAsidRoot_some_facts",
-          "line": 670,
+          "line": 697,
           "called": [
             "ASID",
             "ObjId",
@@ -17876,7 +17878,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPage_entry_consistent_frame",
-          "line": 698,
+          "line": 725,
           "called": [
             "ASID",
             "ObjId",
@@ -17912,7 +17914,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPage_entry_consistent_frame",
-          "line": 805,
+          "line": 832,
           "called": [
             "ASID",
             "ObjId",
@@ -17948,7 +17950,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPage_resolveAsidRoot_isSome",
-          "line": 906,
+          "line": 933,
           "called": [
             "ASID",
             "SystemState",
@@ -17976,7 +17978,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPage_resolveAsidRoot_isSome",
-          "line": 975,
+          "line": 1002,
           "called": [
             "ASID",
             "PAddr",
@@ -18820,7 +18822,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPageChecked_error_preserves_vspaceInvariantBundle",
-          "line": 811,
+          "line": 817,
           "called": [
             "ASID",
             "PAddr",
@@ -18835,7 +18837,7 @@
         {
           "kind": "theorem",
           "name": "vspaceLookupFull_after_map",
-          "line": 826,
+          "line": 832,
           "called": [
             "ASID",
             "ObjId",
@@ -18868,7 +18870,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPage_resolveAsidRoot_agreement",
-          "line": 880,
+          "line": 886,
           "called": [
             "ASID",
             "ObjId",
@@ -18896,7 +18898,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPage_resolveAsidRoot_agreement",
-          "line": 921,
+          "line": 927,
           "called": [
             "ASID",
             "ObjId",
@@ -18921,7 +18923,7 @@
         {
           "kind": "theorem",
           "name": "VSpaceRoot_mapPage_wxCompliant",
-          "line": 960,
+          "line": 966,
           "called": [
             "PAddr",
             "PagePermissions",
@@ -18934,7 +18936,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPage_wxCompliant_of_ok",
-          "line": 977,
+          "line": 983,
           "called": [
             "ASID",
             "PAddr",
@@ -18951,7 +18953,7 @@
         {
           "kind": "theorem",
           "name": "wxInvariant_fourLayer_defense",
-          "line": 1010,
+          "line": 1016,
           "called": [
             "ASID",
             "ObjId",
@@ -88445,7 +88447,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPageWithFlush_preserves_projection",
-          "line": 3631,
+          "line": 3633,
           "called": [
             "ASID",
             "IfObserver",
@@ -88465,7 +88467,7 @@
         {
           "kind": "theorem",
           "name": "perCoreTlb_write_preserves_projection",
-          "line": 3664,
+          "line": 3666,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -88479,7 +88481,7 @@
         {
           "kind": "theorem",
           "name": "perCoreICache_write_preserves_projection",
-          "line": 3679,
+          "line": 3681,
           "called": [
             "ICacheState",
             "IfObserver",
@@ -88493,7 +88495,7 @@
         {
           "kind": "theorem",
           "name": "pendingIcacheMaintenance_write_preserves_projection",
-          "line": 3693,
+          "line": 3695,
           "called": [
             "ICacheInvalidation",
             "IfObserver",
@@ -88506,7 +88508,7 @@
         {
           "kind": "theorem",
           "name": "runQueue_remove_preserves_projection_at_high",
-          "line": 3709,
+          "line": 3711,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -88537,7 +88539,7 @@
         {
           "kind": "theorem",
           "name": "runQueue_insert_preserves_projection_at_high",
-          "line": 3729,
+          "line": 3731,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -88569,7 +88571,7 @@
         {
           "kind": "theorem",
           "name": "runQueue_remove_insert_preserves_projection_at_high",
-          "line": 3748,
+          "line": 3750,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -88603,7 +88605,7 @@
         {
           "kind": "theorem",
           "name": "migrateRunQueueBucket_preserves_projection",
-          "line": 3776,
+          "line": 3778,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -88620,7 +88622,7 @@
         {
           "kind": "theorem",
           "name": "migrateSchedContextReplenishment_preserves_projection",
-          "line": 3803,
+          "line": 3805,
           "called": [
             "CoreId",
             "IfObserver",
@@ -88649,7 +88651,7 @@
         {
           "kind": "theorem",
           "name": "migrateRunQueueOnAffinityChange_preserves_projection",
-          "line": 3830,
+          "line": 3832,
           "called": [
             "CoreId",
             "IfObserver",
@@ -88683,7 +88685,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinity_preserves_projection",
-          "line": 3872,
+          "line": 3874,
           "called": [
             "CoreId",
             "IfObserver",
@@ -88702,7 +88704,7 @@
         {
           "kind": "theorem",
           "name": "projectKernelObject_tcb_cpuAffinity_irrelevant",
-          "line": 3891,
+          "line": 3893,
           "called": [
             "CoreId",
             "IfObserver",
@@ -88714,7 +88716,7 @@
         {
           "kind": "theorem",
           "name": "objects_insert_preserves_projection_of_proj_eq",
-          "line": 3904,
+          "line": 3906,
           "called": [
             "IfObserver",
             "KernelObject",
@@ -88736,7 +88738,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinity_preserves_projection_unconditional",
-          "line": 3941,
+          "line": 3943,
           "called": [
             "CoreId",
             "IfObserver",
@@ -88756,7 +88758,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinityWithMigration_preserves_projection",
-          "line": 3968,
+          "line": 3970,
           "called": [
             "CoreId",
             "IfObserver",
@@ -88779,7 +88781,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinityOp_preserves_projection",
-          "line": 4002,
+          "line": 4004,
           "called": [
             "CoreId",
             "IfObserver",
@@ -88801,7 +88803,7 @@
         {
           "kind": "theorem",
           "name": "setPriorityOp_preserves_projection",
-          "line": 4034,
+          "line": 4036,
           "called": [
             "IfObserver",
             "KernelObject",
@@ -88831,7 +88833,7 @@
         {
           "kind": "theorem",
           "name": "setMCPriorityOp_preserves_projection",
-          "line": 4112,
+          "line": 4114,
           "called": [
             "IfObserver",
             "KernelObject",
@@ -88862,7 +88864,7 @@
         {
           "kind": "theorem",
           "name": "lookupServiceByCap_preserves_state",
-          "line": 4203,
+          "line": 4205,
           "called": [
             "ObjId",
             "ServiceRegistration",
@@ -88878,7 +88880,7 @@
         {
           "kind": "theorem",
           "name": "lookupServiceByCap_preserves_projection",
-          "line": 4221,
+          "line": 4223,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -88895,7 +88897,7 @@
         {
           "kind": "theorem",
           "name": "revokeService_preserves_projection",
-          "line": 4250,
+          "line": 4252,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -88924,7 +88926,7 @@
         {
           "kind": "theorem",
           "name": "schedContextConfigure_preserves_projection",
-          "line": 4304,
+          "line": 4306,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -88938,7 +88940,7 @@
         {
           "kind": "theorem",
           "name": "schedContextBind_frame_runQueue_rebucket",
-          "line": 4325,
+          "line": 4327,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -88959,7 +88961,7 @@
         {
           "kind": "theorem",
           "name": "schedContextBind_preserves_projection",
-          "line": 4342,
+          "line": 4344,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -88974,7 +88976,7 @@
         {
           "kind": "theorem",
           "name": "schedContextUnbind_preserves_projection",
-          "line": 4368,
+          "line": 4370,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -88988,7 +88990,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirectWithCleanup_preserves_projection",
-          "line": 4398,
+          "line": 4400,
           "called": [
             "Capability",
             "IfObserver",
@@ -89004,7 +89006,7 @@
         {
           "kind": "theorem",
           "name": "cancelDonation_preserves_projection",
-          "line": 4426,
+          "line": 4428,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -89019,7 +89021,7 @@
         {
           "kind": "theorem",
           "name": "cancelBoundDonation_preserves_projection",
-          "line": 4451,
+          "line": 4453,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -89034,7 +89036,7 @@
         {
           "kind": "theorem",
           "name": "cancelDonatedDonation_preserves_projection",
-          "line": 4473,
+          "line": 4475,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -89049,7 +89051,7 @@
         {
           "kind": "theorem",
           "name": "suspendThread_preserves_projection",
-          "line": 4526,
+          "line": 4528,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -89063,7 +89065,7 @@
         {
           "kind": "theorem",
           "name": "resumeThread_frame_insert",
-          "line": 4545,
+          "line": 4547,
           "called": [
             "IfObserver",
             "KernelObject",
@@ -89082,7 +89084,7 @@
         {
           "kind": "theorem",
           "name": "resumeThread_frame_ensureRunnable",
-          "line": 4559,
+          "line": 4561,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -89098,7 +89100,7 @@
         {
           "kind": "theorem",
           "name": "resumeThread_preserves_projection",
-          "line": 4584,
+          "line": 4586,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -154306,9 +154308,53 @@
           ]
         },
         {
+          "kind": "opaque",
+          "name": "ffiIcIalluIs",
+          "line": 1205,
+          "called": []
+        },
+        {
+          "kind": "opaque",
+          "name": "ffiIcMaintenance",
+          "line": 1232,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "icMaintenanceBroadcast",
+          "line": 1257,
+          "called": [
+            "ICacheInvalidation",
+            "ffiIcMaintenance",
+            "toOpTag",
+            "toPaddr"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "icMaintenanceBroadcast_iallu_encoding",
+          "line": 1262,
+          "called": [
+            "toOpTag",
+            "toPaddr"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "icMaintenanceBroadcast_ivauPage_encoding",
+          "line": 1269,
+          "called": [
+            "PAddr",
+            "ofNat",
+            "toNat",
+            "toOpTag",
+            "toPaddr"
+          ]
+        },
+        {
           "kind": "def",
           "name": "syscallDispatchInner",
-          "line": 1219,
+          "line": 1304,
           "called": [
             "bootCoreId",
             "encodeError",
@@ -154323,63 +154369,19 @@
         {
           "kind": "opaque",
           "name": "ffiCacheCleanPagetableRange",
-          "line": 1251,
+          "line": 1362,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiIcIallu",
-          "line": 1264,
+          "line": 1375,
           "called": []
-        },
-        {
-          "kind": "opaque",
-          "name": "ffiIcIalluIs",
-          "line": 1280,
-          "called": []
-        },
-        {
-          "kind": "opaque",
-          "name": "ffiIcMaintenance",
-          "line": 1307,
-          "called": []
-        },
-        {
-          "kind": "def",
-          "name": "icMaintenanceBroadcast",
-          "line": 1332,
-          "called": [
-            "ICacheInvalidation",
-            "ffiIcMaintenance",
-            "toOpTag",
-            "toPaddr"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "icMaintenanceBroadcast_iallu_encoding",
-          "line": 1337,
-          "called": [
-            "toOpTag",
-            "toPaddr"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "icMaintenanceBroadcast_ivauPage_encoding",
-          "line": 1344,
-          "called": [
-            "PAddr",
-            "ofNat",
-            "toNat",
-            "toOpTag",
-            "toPaddr"
-          ]
         },
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_total",
-          "line": 1364,
+          "line": 1391,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -154399,7 +154401,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok",
-          "line": 1408,
+          "line": 1435,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -154418,7 +154420,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_error_of_syscallEntryChecked_error",
-          "line": 1430,
+          "line": 1457,
           "called": [
             "CoreId",
             "KernelError",
@@ -154437,7 +154439,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_illegalState_when_no_current",
-          "line": 1454,
+          "line": 1481,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -154452,7 +154454,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_abiMismatch_rejected",
-          "line": 1477,
+          "line": 1504,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -154465,7 +154467,7 @@
         {
           "kind": "theorem",
           "name": "writeFfiRegistersToTcb_id_when_not_tcb",
-          "line": 1499,
+          "line": 1526,
           "called": [
             "SystemState",
             "TCB",
@@ -154479,7 +154481,7 @@
         {
           "kind": "theorem",
           "name": "readReturnValue_zero_when_not_tcb",
-          "line": 1524,
+          "line": 1551,
           "called": [
             "SystemState",
             "TCB",
@@ -161427,7 +161429,7 @@
         {
           "kind": "def",
           "name": "runServiceAndStressTrace",
-          "line": 249,
+          "line": 257,
           "called": [
             "CNode",
             "Capability",
@@ -161490,7 +161492,7 @@
         {
           "kind": "def",
           "name": "runLifecycleAndEndpointTrace",
-          "line": 534,
+          "line": 542,
           "called": [
             "ObjId",
             "SystemState",
@@ -161531,7 +161533,7 @@
         {
           "kind": "def",
           "name": "runCapabilityIpcTrace",
-          "line": 653,
+          "line": 661,
           "called": [
             "CSpaceAddr",
             "Capability",
@@ -161566,7 +161568,7 @@
         {
           "kind": "def",
           "name": "runSchedulerTimingDomainTrace",
-          "line": 713,
+          "line": 721,
           "called": [
             "DomainScheduleEntry",
             "KernelObject",
@@ -161600,7 +161602,7 @@
         {
           "kind": "def",
           "name": "runIpcMessageTransferTrace",
-          "line": 789,
+          "line": 797,
           "called": [
             "IpcMessage",
             "KernelObject",
@@ -161630,7 +161632,7 @@
         {
           "kind": "def",
           "name": "runIpcMessageBoundsTrace",
-          "line": 973,
+          "line": 981,
           "called": [
             "IpcMessage",
             "KernelObject",
@@ -161653,7 +161655,7 @@
         {
           "kind": "def",
           "name": "runUntypedMemoryTrace",
-          "line": 1047,
+          "line": 1055,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -161682,7 +161684,7 @@
         {
           "kind": "def",
           "name": "runDequeueOnDispatchTrace",
-          "line": 1151,
+          "line": 1159,
           "called": [
             "KernelObject",
             "Priority",
@@ -161707,7 +161709,7 @@
         {
           "kind": "def",
           "name": "runInlineContextSwitchTrace",
-          "line": 1207,
+          "line": 1215,
           "called": [
             "KernelObject",
             "ObjId",
@@ -161730,7 +161732,7 @@
         {
           "kind": "def",
           "name": "runPerCoreIdleDispatchTrace",
-          "line": 1255,
+          "line": 1263,
           "called": [
             "SystemState",
             "any",
@@ -161754,7 +161756,7 @@
         {
           "kind": "def",
           "name": "runBoundedMessageExtendedTrace",
-          "line": 1281,
+          "line": 1289,
           "called": [
             "IpcMessage",
             "KernelObject",
@@ -161776,7 +161778,7 @@
         {
           "kind": "def",
           "name": "runSyscallGateTrace",
-          "line": 1330,
+          "line": 1338,
           "called": [
             "CNode",
             "CSpaceAddr",
@@ -161807,7 +161809,7 @@
         {
           "kind": "def",
           "name": "runRuntimeContractFixtureTrace",
-          "line": 1410,
+          "line": 1418,
           "called": [
             "SystemState",
             "adapterAdvanceTimer",
@@ -161822,7 +161824,7 @@
         {
           "kind": "def",
           "name": "runRegisterDecodeTrace",
-          "line": 1453,
+          "line": 1461,
           "called": [
             "Capability",
             "ObjId",
@@ -161852,7 +161854,7 @@
         {
           "kind": "def",
           "name": "runSyscallDispatchTrace",
-          "line": 1589,
+          "line": 1597,
           "called": [
             "ASID",
             "Badge",
@@ -161907,7 +161909,7 @@
         {
           "kind": "def",
           "name": "runCheckedPipelineTrace",
-          "line": 1779,
+          "line": 1787,
           "called": [
             "Capability",
             "ObjId",
@@ -161945,7 +161947,7 @@
         {
           "kind": "def",
           "name": "runCspaceMoveTrace",
-          "line": 1880,
+          "line": 1888,
           "called": [
             "CSpaceAddr",
             "Capability",
@@ -161974,7 +161976,7 @@
         {
           "kind": "def",
           "name": "runReplyRecvRoundtripTrace",
-          "line": 1935,
+          "line": 1943,
           "called": [
             "IpcMessage",
             "KernelObject",
@@ -162002,7 +162004,7 @@
         {
           "kind": "def",
           "name": "runEndpointLifecycleTrace",
-          "line": 2027,
+          "line": 2035,
           "called": [
             "CSpaceAddr",
             "Capability",
@@ -162032,7 +162034,7 @@
         {
           "kind": "def",
           "name": "runMultiEndpointInterleavingTrace",
-          "line": 2125,
+          "line": 2133,
           "called": [
             "IpcMessage",
             "KernelObject",
@@ -162055,7 +162057,7 @@
         {
           "kind": "def",
           "name": "runSchedContextOpsTrace",
-          "line": 2209,
+          "line": 2217,
           "called": [
             "KernelObject",
             "ObjId",
@@ -162093,7 +162095,7 @@
         {
           "kind": "def",
           "name": "runTimeoutEndpointTrace",
-          "line": 2507,
+          "line": 2515,
           "called": [
             "Endpoint",
             "ObjId",
@@ -162126,7 +162128,7 @@
         {
           "kind": "def",
           "name": "runDonationTrace",
-          "line": 2793,
+          "line": 2801,
           "called": [
             "KernelObject",
             "SchedContext",
@@ -162155,7 +162157,7 @@
         {
           "kind": "def",
           "name": "runBudgetLifecycleTrace",
-          "line": 2926,
+          "line": 2934,
           "called": [
             "KernelObject",
             "ObjId",
@@ -162181,7 +162183,7 @@
         {
           "kind": "def",
           "name": "runMainTraceFrom",
-          "line": 2983,
+          "line": 2991,
           "called": [
             "SystemState",
             "assertStateInvariantsFor",
@@ -162226,7 +162228,7 @@
         {
           "kind": "def",
           "name": "buildParameterizedTopology",
-          "line": 3033,
+          "line": 3041,
           "called": [
             "Capability",
             "KernelObject",
@@ -162253,7 +162255,7 @@
         {
           "kind": "def",
           "name": "runParameterizedTopologyCheck",
-          "line": 3084,
+          "line": 3092,
           "called": [
             "ServiceId",
             "buildParameterizedTopology",
@@ -162269,7 +162271,7 @@
         {
           "kind": "def",
           "name": "runParameterizedTopologies",
-          "line": 3099,
+          "line": 3107,
           "called": [
             "runParameterizedTopologyCheck"
           ]
@@ -162277,7 +162279,7 @@
         {
           "kind": "def",
           "name": "runRustXvalVectors",
-          "line": 3110,
+          "line": 3118,
           "called": [
             "CSpaceMintArgs",
             "MessageInfo",
@@ -162305,7 +162307,7 @@
         {
           "kind": "def",
           "name": "runMainTrace",
-          "line": 3174,
+          "line": 3182,
           "called": [
             "assertCrossSubsystemInvariants",
             "assertStateInvariantsFor",
@@ -175497,7 +175499,7 @@
         {
           "kind": "def",
           "name": "runWSH13Checks",
-          "line": 1614,
+          "line": 1628,
           "called": [
             "ServiceId",
             "SystemState",
@@ -175513,7 +175515,7 @@
         {
           "kind": "def",
           "name": "runWSH15Checks",
-          "line": 1656,
+          "line": 1670,
           "called": [
             "CNode",
             "Capability",
@@ -175545,7 +175547,7 @@
         {
           "kind": "def",
           "name": "runWSH15PlatformChecks",
-          "line": 1740,
+          "line": 1754,
           "called": [
             "CapTarget",
             "Irq",
@@ -175563,7 +175565,7 @@
         {
           "kind": "def",
           "name": "runWSH16LifecycleChecks",
-          "line": 1796,
+          "line": 1810,
           "called": [
             "CSpaceAddr",
             "ObjId",
@@ -175588,7 +175590,7 @@
         {
           "kind": "def",
           "name": "runAN4A5LifecycleVisibilityChecks",
-          "line": 1994,
+          "line": 2008,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -175618,7 +175620,7 @@
         {
           "kind": "def",
           "name": "runWSJ1DecodeChecks",
-          "line": 2049,
+          "line": 2063,
           "called": [
             "RegValue",
             "RegisterFile",
@@ -175642,7 +175644,7 @@
         {
           "kind": "def",
           "name": "runWSKGCSpaceChecks",
-          "line": 2184,
+          "line": 2198,
           "called": [
             "CSpaceAddr",
             "SyscallDecodeResult",
@@ -175666,7 +175668,7 @@
         {
           "kind": "def",
           "name": "runWSKGLifecycleVSpaceChecks",
-          "line": 2252,
+          "line": 2266,
           "called": [
             "ASID",
             "Capability",
@@ -175695,7 +175697,7 @@
         {
           "kind": "def",
           "name": "runWSKGServiceIpcChecks",
-          "line": 2329,
+          "line": 2343,
           "called": [
             "ObjId",
             "ServiceId",
@@ -175720,7 +175722,7 @@
         {
           "kind": "def",
           "name": "runWSKGDeterminismChecks",
-          "line": 2381,
+          "line": 2395,
           "called": [
             "MessageInfo",
             "RegValue",
@@ -175747,7 +175749,7 @@
         {
           "kind": "def",
           "name": "runWSKGChecks",
-          "line": 2453,
+          "line": 2467,
           "called": [
             "runWSKGCSpaceChecks",
             "runWSKGDeterminismChecks",
@@ -175758,7 +175760,7 @@
         {
           "kind": "def",
           "name": "runWSL4BlockedThreadChecks",
-          "line": 2468,
+          "line": 2482,
           "called": [
             "ObjId",
             "SystemState",
@@ -175782,7 +175784,7 @@
         {
           "kind": "def",
           "name": "runWSM3CapTransferNegativeChecks",
-          "line": 2542,
+          "line": 2556,
           "called": [
             "CNode",
             "CSpaceAddr",
@@ -175803,7 +175805,7 @@
         {
           "kind": "def",
           "name": "runL13CapTransferShortCircuitChecks",
-          "line": 2608,
+          "line": 2622,
           "called": [
             "CNode",
             "Capability",
@@ -175826,7 +175828,7 @@
         {
           "kind": "def",
           "name": "runWSM4GuardOnlyChecks",
-          "line": 2703,
+          "line": 2717,
           "called": [
             "ObjId",
             "badge",
@@ -175844,7 +175846,7 @@
         {
           "kind": "def",
           "name": "runWSM4SmallBitsChecks",
-          "line": 2746,
+          "line": 2760,
           "called": [
             "ObjId",
             "badge",
@@ -175863,7 +175865,7 @@
         {
           "kind": "def",
           "name": "runWSM4GuardMismatchChecks",
-          "line": 2810,
+          "line": 2824,
           "called": [
             "ObjId",
             "badge",
@@ -175881,7 +175883,7 @@
         {
           "kind": "def",
           "name": "runWSM4MaxDepthLoopChecks",
-          "line": 2891,
+          "line": 2905,
           "called": [
             "CPtr",
             "ObjId",
@@ -175902,7 +175904,7 @@
         {
           "kind": "def",
           "name": "runWSM4SlotEdgeChecks",
-          "line": 2956,
+          "line": 2970,
           "called": [
             "ObjId",
             "badge",
@@ -175920,7 +175922,7 @@
         {
           "kind": "def",
           "name": "runWSM4WrapperIntegrationChecks",
-          "line": 3033,
+          "line": 3047,
           "called": [
             "ObjId",
             "badge",
@@ -175938,7 +175940,7 @@
         {
           "kind": "def",
           "name": "runWSM4ResolveEdgeCaseChecks",
-          "line": 3082,
+          "line": 3096,
           "called": [
             "runWSM4GuardMismatchChecks",
             "runWSM4GuardOnlyChecks",
@@ -175951,7 +175953,7 @@
         {
           "kind": "def",
           "name": "runWSR2RevocationChecks",
-          "line": 3102,
+          "line": 3116,
           "called": [
             "CSpaceAddr",
             "CdtNodeId",
@@ -175976,7 +175978,7 @@
         {
           "kind": "def",
           "name": "runWSR4CoherenceChecks",
-          "line": 3203,
+          "line": 3217,
           "called": [
             "Capability",
             "InterfaceId",
@@ -176006,7 +176008,7 @@
         {
           "kind": "def",
           "name": "runS2GCapabilityErrorTests",
-          "line": 3339,
+          "line": 3353,
           "called": [
             "CSpaceAddr",
             "CdtNodeId",
@@ -176036,7 +176038,7 @@
         {
           "kind": "def",
           "name": "runS2HLifecycleErrorTests",
-          "line": 3466,
+          "line": 3480,
           "called": [
             "CSpaceAddr",
             "ObjId",
@@ -176068,7 +176070,7 @@
         {
           "kind": "def",
           "name": "runX2RuntimeInvariantTests",
-          "line": 3543,
+          "line": 3557,
           "called": [
             "ASID",
             "DomainScheduleEntry",
@@ -176102,7 +176104,7 @@
         {
           "kind": "def",
           "name": "runZ8SchedContextNegativeChecks",
-          "line": 3649,
+          "line": 3666,
           "called": [
             "ObjId",
             "SchedContextId",
@@ -176125,7 +176127,7 @@
         {
           "kind": "def",
           "name": "runAC1BudgetFailClosedChecks",
-          "line": 3717,
+          "line": 3734,
           "called": [
             "ObjId",
             "SystemState",
@@ -176143,7 +176145,7 @@
         {
           "kind": "def",
           "name": "runAC1CdtTrackingChecks",
-          "line": 3773,
+          "line": 3790,
           "called": [
             "CNode",
             "CSpaceAddr",
@@ -176167,7 +176169,7 @@
         {
           "kind": "def",
           "name": "r1EpId",
-          "line": 3831,
+          "line": 3848,
           "called": [
             "ObjId"
           ]
@@ -176175,7 +176177,7 @@
         {
           "kind": "def",
           "name": "r1CallerTid",
-          "line": 3832,
+          "line": 3849,
           "called": [
             "ThreadId"
           ]
@@ -176183,7 +176185,7 @@
         {
           "kind": "def",
           "name": "r1ReceiverTid",
-          "line": 3833,
+          "line": 3850,
           "called": [
             "ThreadId"
           ]
@@ -176191,7 +176193,7 @@
         {
           "kind": "def",
           "name": "r1CallerCNode",
-          "line": 3834,
+          "line": 3851,
           "called": [
             "ObjId"
           ]
@@ -176199,7 +176201,7 @@
         {
           "kind": "def",
           "name": "r1ReceiverCNode",
-          "line": 3835,
+          "line": 3852,
           "called": [
             "ObjId"
           ]
@@ -176207,7 +176209,7 @@
         {
           "kind": "def",
           "name": "r1TargetObj",
-          "line": 3836,
+          "line": 3853,
           "called": [
             "ObjId"
           ]
@@ -176215,7 +176217,7 @@
         {
           "kind": "def",
           "name": "r1ReplyId",
-          "line": 3839,
+          "line": 3856,
           "called": [
             "ReplyId"
           ]
@@ -176223,7 +176225,7 @@
         {
           "kind": "def",
           "name": "r1Cap",
-          "line": 3841,
+          "line": 3858,
           "called": [
             "Capability",
             "badge",
@@ -176235,7 +176237,7 @@
         {
           "kind": "def",
           "name": "r1MsgWithCaps",
-          "line": 3846,
+          "line": 3863,
           "called": [
             "IpcMessage",
             "badge",
@@ -176246,7 +176248,7 @@
         {
           "kind": "def",
           "name": "r1EndpointRights",
-          "line": 3849,
+          "line": 3866,
           "called": [
             "AccessRightSet",
             "ofList"
@@ -176255,7 +176257,7 @@
         {
           "kind": "def",
           "name": "r1BaseState",
-          "line": 3852,
+          "line": 3869,
           "called": [
             "SystemState",
             "buildChecked",
@@ -176280,7 +176282,7 @@
         {
           "kind": "def",
           "name": "r1QueuedState",
-          "line": 3874,
+          "line": 3891,
           "called": [
             "KernelError",
             "SystemState",
@@ -176295,7 +176297,7 @@
         {
           "kind": "def",
           "name": "r1FaultyState",
-          "line": 3879,
+          "line": 3896,
           "called": [
             "SystemState",
             "erase",
@@ -176306,7 +176308,7 @@
         {
           "kind": "def",
           "name": "r1CheckHealthyState",
-          "line": 3882,
+          "line": 3899,
           "called": [
             "SystemState",
             "endpointCallWithCaps",
@@ -176322,7 +176324,7 @@
         {
           "kind": "def",
           "name": "r1CheckFaultyState",
-          "line": 3892,
+          "line": 3909,
           "called": [
             "SystemState",
             "endpointCallWithCaps",
@@ -176338,7 +176340,7 @@
         {
           "kind": "def",
           "name": "r1CheckLookupCspaceRoot",
-          "line": 3903,
+          "line": 3920,
           "called": [
             "SystemState",
             "lookupCspaceRoot",
@@ -176350,7 +176352,7 @@
         {
           "kind": "def",
           "name": "runR1IpcCallPathSymmetryChecks",
-          "line": 3933,
+          "line": 3950,
           "called": [
             "r1CheckFaultyState",
             "r1CheckHealthyState",
@@ -176363,7 +176365,7 @@
         {
           "kind": "def",
           "name": "r5eOrphanedScId",
-          "line": 3958,
+          "line": 3975,
           "called": [
             "SchedContextId"
           ]
@@ -176371,7 +176373,7 @@
         {
           "kind": "def",
           "name": "r5eOrphanedTid",
-          "line": 3960,
+          "line": 3977,
           "called": [
             "ThreadId"
           ]
@@ -176379,7 +176381,7 @@
         {
           "kind": "def",
           "name": "r5eOrphanedBoundState",
-          "line": 3962,
+          "line": 3979,
           "called": [
             "SystemState",
             "buildChecked",
@@ -176395,7 +176397,7 @@
         {
           "kind": "def",
           "name": "r5eOrphanedTcb",
-          "line": 3981,
+          "line": 3998,
           "called": [
             "TCB",
             "ofNat",
@@ -176406,7 +176408,7 @@
         {
           "kind": "def",
           "name": "runR5EOrphanedSchedContextChecks",
-          "line": 3991,
+          "line": 4008,
           "called": [
             "r5eOrphanedBoundState",
             "r5eOrphanedTcb",
@@ -176418,7 +176420,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 4014,
+          "line": 4031,
           "called": [
             "runAC1BudgetFailClosedChecks",
             "runAC1CdtTrackingChecks",
@@ -201934,7 +201936,7 @@
     {
       "module": "tests.VSpaceCapabilityBindingSuite",
       "path": "tests/VSpaceCapabilityBindingSuite.lean",
-      "declaration_count": 28,
+      "declaration_count": 29,
       "declarations": [
         {
           "kind": "namespace",
@@ -202238,8 +202240,27 @@
         },
         {
           "kind": "def",
+          "name": "runAlignmentChecks",
+          "line": 301,
+          "called": [
+            "assertBool",
+            "attacker",
+            "decodeMap",
+            "dispatchSyscall",
+            "freshVaddr",
+            "none",
+            "scenario",
+            "st",
+            "stillMapped",
+            "unrelatedCap",
+            "victimAsid",
+            "victimRootCap"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runAuthorizedChecks",
-          "line": 290,
+          "line": 333,
           "called": [
             "assertBool",
             "attacker",
@@ -202262,8 +202283,9 @@
         {
           "kind": "def",
           "name": "runVSpaceCapabilityBindingChecks",
-          "line": 326,
+          "line": 369,
           "called": [
+            "runAlignmentChecks",
             "runAuthorizedChecks",
             "runMapBindingChecks",
             "runPredicateChecks",
@@ -202274,7 +202296,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 340,
+          "line": 384,
           "called": [
             "runVSpaceCapabilityBindingChecks"
           ]

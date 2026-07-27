@@ -287,6 +287,49 @@ private def runMapBindingChecks : IO Unit := do
 -- §6  The authorized paths still work — the gate is not a blanket denial
 -- ============================================================================
 
+-- ============================================================================
+-- §5b  Physical-address page alignment (PR #845 review, P2)
+-- ============================================================================
+
+/-- **PR #845 review (P2)**: a page mapping's physical address must be page
+aligned.  ARMv8 page descriptors carry only the aligned base
+(`PageTable.descriptorToUInt64` masks the low bits) and both HAL cache
+maintenance loops round their operand down to the containing page — so
+accepting an unaligned PA and silently rounding would make the model's recorded
+`.ivauPage` / `.unifyPage` operand name a different address than the one
+hardware acts on.  `vspaceMapPageChecked` now rejects it structurally. -/
+private def runAlignmentChecks : IO Unit := do
+  IO.println "-- §5b physical-address page alignment"
+  match scenario victimRootCap with
+  | none => assertBool "the alignment scenario builds" false
+  | some st => do
+    -- One byte past a page boundary: rejected, and nothing is installed.
+    let r := dispatchSyscall (decodeMap 7 0x50000 0xA0001) attacker st
+    assertBool "an unaligned PA is refused (alignmentError)"
+      (match r with | .error .alignmentError => true | _ => false)
+    assertBool "and no mapping is installed for it"
+      (match r with
+        | .error _ => !(stillMapped st victimAsid freshVaddr)
+        | .ok ((), st') => !(stillMapped st' victimAsid freshVaddr))
+    -- Sub-page-aligned but not page-aligned (64-byte cache-line aligned).
+    assertBool "a cache-line-aligned but not page-aligned PA is also refused"
+      (match dispatchSyscall (decodeMap 7 0x50000 0xA0040) attacker st with
+        | .error .alignmentError => true | _ => false)
+    -- The aligned neighbour of the same page succeeds, so the guard rejects
+    -- exactly misalignment rather than the address range.
+    assertBool "the page-aligned base of the same page is accepted"
+      (match dispatchSyscall (decodeMap 7 0x50000 0xA0000) attacker st with
+        | .ok ((), st') => stillMapped st' victimAsid freshVaddr
+        | .error _ => false)
+    -- The guard is authority-independent: an unauthorized caller is still
+    -- refused for *authority*, not alignment (the binding runs first).
+    match scenario unrelatedCap with
+    | none => assertBool "the unauthorized-alignment scenario builds" false
+    | some stU =>
+      assertBool "authority is checked before alignment (illegalAuthority wins)"
+        (match dispatchSyscall (decodeMap 7 0x50000 0xA0001) attacker stU with
+          | .error .illegalAuthority => true | _ => false)
+
 private def runAuthorizedChecks : IO Unit := do
   IO.println "-- §6 authorized callers still succeed"
   -- `.vspaceUnmap` with genuine authority over the victim's address space.
@@ -331,6 +374,7 @@ def runVSpaceCapabilityBindingChecks : IO Unit := do
   runUnmapBindingChecks
   runUnifyBindingChecks
   runMapBindingChecks
+  runAlignmentChecks
   runAuthorizedChecks
   IO.println "===================================================="
   IO.println "All VSpace capability-binding checks PASS."

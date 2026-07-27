@@ -225,8 +225,16 @@ private def runCapabilityAndArchitectureTrace (counter : IO.Ref Nat) (st1 : Syst
   match (SeLe4n.Kernel.Architecture.vspaceMapPageChecked ⟨1⟩ (SeLe4n.VAddr.ofNat 4096) (SeLe4n.PAddr.ofNat (2^52))) st1 with
   | .error err => IO.println s!"[CAT-022] vspace mapChecked address out of bounds: {reprStr err}"
   | .ok _ => IO.println "[CAT-023] unexpected vspace mapChecked accepted out-of-bounds address"
-  -- WS-H11/A-05: Valid address (2^52 - 1) accepted through checked path
-  match (SeLe4n.Kernel.Architecture.vspaceMapPageChecked ⟨1⟩ (SeLe4n.VAddr.ofNat 4096) (SeLe4n.PAddr.ofNat (2^52 - 1))) st1 with
+  -- WS-H11/A-05: Valid address accepted through checked path.
+  -- PR #845 review (P2): this was `2^52 - 1`, the largest in-bounds PA — which
+  -- is all-ones and therefore never page-aligned.  `vspaceMapPageChecked` now
+  -- rejects unaligned physical addresses (the descriptor and both HAL cache
+  -- maintenance loops use the aligned base, so accepting one would let the
+  -- model record an operand naming an address hardware never acts on), so the
+  -- scenario uses the largest page-aligned in-bounds PA instead.  That
+  -- preserves the intent — exercising the upper edge of the PA bound — while
+  -- being a physical address a page mapping can actually name.
+  match (SeLe4n.Kernel.Architecture.vspaceMapPageChecked ⟨1⟩ (SeLe4n.VAddr.ofNat 4096) (SeLe4n.PAddr.ofNat (2^52 - 4096))) st1 with
   | .error err => IO.println s!"[CAT-024] unexpected vspace mapChecked rejected valid address: {reprStr err}"
   | .ok _ => IO.println "[CAT-025] vspace mapChecked valid address accepted"
   -- WS-H11/M-14: TLB full flush produces empty TLB

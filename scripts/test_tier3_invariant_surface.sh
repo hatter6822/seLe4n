@@ -1117,8 +1117,8 @@ run_check "INVARIANT" rg -n '^def lockSet_vspaceUnifyInstruction' SeLe4n/Kernel/
 run_check "INVARIANT" rg -n '^theorem lockSet_consistent_vspaceUnifyInstruction' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n 'vspaceUnifyInstructionPage' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCap_vspaceUnifyInstruction_delegates' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '    VspaceUnifyInstruction = 29,' rust/sele4n-types/src/syscall.rs
-run_check "INVARIANT" rg -n '    VspaceUnifyInstruction = 29,' rust/sele4n-hal/src/svc_dispatch.rs
+run_check "INVARIANT" rg -n '    VSpaceUnifyInstruction = 29,' rust/sele4n-types/src/syscall.rs
+run_check "INVARIANT" rg -n '    VSpaceUnifyInstruction = 29,' rust/sele4n-hal/src/svc_dispatch.rs
 run_check "INVARIANT" rg -n 'fn vspace_unify_instruction_roundtrip' rust/sele4n-abi/tests/conformance.rs
 run_check "INVARIANT" rg -n '^pub fn unify_instruction_page_inner_shareable' rust/sele4n-hal/src/cache.rs
 run_check "INVARIANT" rg -n '^pub fn dc_cvau' rust/sele4n-hal/src/cache.rs
@@ -1150,6 +1150,19 @@ run_check "INVARIANT" rg -n '^theorem dispatchWithCap_vspaceUnifyInstruction_una
 run_check "INVARIANT" rg -n '^def runVSpaceCapabilityBindingChecks' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n '^run_check_with_timeout "TRACE" lake exe vspace_capability_binding_suite' scripts/test_tier2_negative.sh
 run_check "INVARIANT" rg -n '^name = "vspace_capability_binding_suite"' lakefile.toml
+# PR #845 review (P2) — physical-address page alignment.  Both the production
+# entry point and the proof-decomposition helper must reject an unaligned PA:
+# the descriptor and both HAL cache loops use the aligned base, so accepting one
+# would let the model record an operand naming an address hardware never touches.
+run_check "INVARIANT" rg -n 'paddr.toNat % pageBytes' SeLe4n/Kernel/Architecture/VSpace.lean
+run_check "INVARIANT" rg -n 'alignmentError' SeLe4n/Kernel/Architecture/VSpace.lean
+# PR #845 review (P2) — the legacy syscall entry documents WHY it cannot drain
+# the ledger (the @[extern] link-gating policy) rather than silently skipping it.
+run_check "INVARIANT" rg -n 'deferred, never lost' SeLe4n/Platform/FFI.lean
+# PR #845 review (P2) — the syscall is reachable from the safe Rust API.
+run_check "INVARIANT" rg -n '^pub fn vspace_unify_instruction' rust/sele4n-sys/src/vspace.rs
+run_check "INVARIANT" rg -n '^pub type VSpaceUnifyInstructionArgs' rust/sele4n-abi/src/args/vspace.rs
+run_check "INVARIANT" bash -c "! rg -q 'VspaceUnifyInstruction' rust/sele4n-types/src/syscall.rs rust/sele4n-hal/src/svc_dispatch.rs"
 
 # WS-SM SM7.F.4(b)(iii): shared initiator drain + the CSpaceAddr retype sibling.
 run_check "INVARIANT" rg -n '^def retypeInitiatorDrain' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean

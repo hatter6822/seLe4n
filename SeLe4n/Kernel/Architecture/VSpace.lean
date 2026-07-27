@@ -118,6 +118,18 @@ def vspaceMapPageChecked (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : Se
   fun st =>
     if !vaddr.isCanonical then .error .addressOutOfBounds
     else if !(paddr.toNat < physicalAddressBound) then .error .addressOutOfBounds
+    -- PR #845 review (P2): a page mapping's physical address must be
+    -- **page-aligned**.  ARMv8 block/page descriptors carry only the aligned
+    -- base — `PageTable.descriptorToUInt64` masks the low bits — and both HAL
+    -- cache-maintenance loops (`ic_invalidate_page_inner_shareable`,
+    -- `unify_instruction_page_inner_shareable`) round their operand down to the
+    -- containing page.  Accepting an unaligned PA and then silently rounding it
+    -- makes the model's recorded operand name a different address than the one
+    -- hardware acts on, so the SM7.D reach theorems would be proving something
+    -- about `paddr` while the machine maintained `paddr &&& ~0xFFF`.  Rejecting
+    -- structurally is the honest fix: an unaligned page mapping is meaningless
+    -- on ARMv8, so there is nothing to preserve by accepting it.
+    else if paddr.toNat % pageBytes != 0 then .error .alignmentError
     else vspaceMapPage asid vaddr paddr perms st
 
 /-- S6-B/V4-E: Core VSpace unmap transition — page table only, no TLB flush.
@@ -237,6 +249,15 @@ def vspaceMapPageCheckedWithFlushFromState (asid : SeLe4n.ASID) (vaddr : SeLe4n.
   fun st =>
     if !vaddr.isCanonical then .error .addressOutOfBounds
     else if !(paddr.toNat < 2^st.machine.physicalAddressWidth) then .error .addressOutOfBounds
+    -- PR #845 review (P2): reject a non-page-aligned physical address.  This is
+    -- the **production** entry point (`vspaceMapPageChecked` is the internal
+    -- proof-decomposition helper and carries the same guard), so the check has
+    -- to live here to reach the live `.vspaceMap` dispatch arm.  See
+    -- `vspaceMapPageChecked` for why silently rounding would be unsound: the
+    -- descriptor and both HAL cache-maintenance loops use the aligned base, so
+    -- the model would record an operand naming an address hardware never acts
+    -- on.
+    else if paddr.toNat % pageBytes != 0 then .error .alignmentError
     else vspaceMapPageWithFlush asid vaddr paddr perms st
 
 -- ============================================================================
@@ -454,7 +475,9 @@ theorem vspaceMapPageCheckedWithFlushFromState_tlbShootdown_eq
   · cases hStep
   · split at hStep
     · cases hStep
-    · exact vspaceMapPageWithFlush_tlbShootdown_eq asid vaddr paddr perms st st' hStep
+    · split at hStep
+      · cases hStep
+      · exact vspaceMapPageWithFlush_tlbShootdown_eq asid vaddr paddr perms st st' hStep
 
 /-- WS-SM SM7.F: `vspaceMapPage` frames the per-core TLB views — a page
 map bottoms out in `storeObject`, which never touches `perCoreTlb`. -/
@@ -534,7 +557,9 @@ theorem vspaceMapPageCheckedWithFlushFromState_perCoreICache_eq
   · cases hStep
   · split at hStep
     · cases hStep
-    · exact vspaceMapPageWithFlush_perCoreICache_eq asid vaddr paddr perms st st' hStep
+    · split at hStep
+      · cases hStep
+      · exact vspaceMapPageWithFlush_perCoreICache_eq asid vaddr paddr perms st st' hStep
 
 /-- WS-SM SM7.F: the state-aware bounds-checked map frames the per-core TLB
 views — the initiator's own view change in
@@ -552,7 +577,9 @@ theorem vspaceMapPageCheckedWithFlushFromState_perCoreTlb_eq
   · cases hStep
   · split at hStep
     · cases hStep
-    · exact vspaceMapPageWithFlush_perCoreTlb_eq asid vaddr paddr perms st st' hStep
+    · split at hStep
+      · cases hStep
+      · exact vspaceMapPageWithFlush_perCoreTlb_eq asid vaddr paddr perms st st' hStep
 
 -- ============================================================================
 -- resolveAsidRoot extraction and characterization lemmas (F-08 / TPI-001)

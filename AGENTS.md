@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.32.97.
+Lean 4.28.0 toolchain, Lake build system, version 0.32.98.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -182,17 +182,17 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~32990 lines)
+- `CHANGELOG.md` (~33060 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~20449 lines)
 - `docs/WORKSTREAM_HISTORY.md` (~9858 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~6631 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4764 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~4595 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~4597 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~4351 lines)
 - `SeLe4n/Model/State.lean` (~4216 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
-- `tests/NegativeStateSuite.lean` (~4040 lines)
+- `tests/NegativeStateSuite.lean` (~4057 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3911 lines)
 - `docs/spec/SELE4N_SPEC.md` (~3824 lines)
 - `SeLe4n/Platform/Boot.lean` (~3470 lines)
@@ -200,7 +200,7 @@ To find files that need pagination today, run:
 - `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
 - `docs/gitbook/12-proof-and-invariant-map.md` (~3387 lines)
 - `SeLe4n/Kernel/API.lean` (~3242 lines)
-- `SeLe4n/Testing/MainTraceHarness.lean` (~3196 lines)
+- `SeLe4n/Testing/MainTraceHarness.lean` (~3204 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~3140 lines)
 - `docs/dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md` (~3134 lines)
 - `SeLe4n/Model/Object/Structures.lean` (~3044 lines)
@@ -224,14 +224,14 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~2187 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean` (~2182 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean` (~2096 lines)
-- `SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean` (~2087 lines)
+- `SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean` (~2089 lines)
 - `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` (~2083 lines)
 - `SeLe4n/Prelude.lean` (~2071 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~2070 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2067 lines)
 - `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~2022 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2019 lines)
-- `SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean` (~2011 lines)
+- `SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean` (~2013 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~1990 lines)
 - `SeLe4n/Kernel/Capability/Operations.lean` (~1989 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
@@ -259,7 +259,7 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_FOUNDATIONS_PLAN.md` (~1665 lines)
 - `SeLe4n/Kernel/Architecture/Invariant.lean` (~1643 lines)
 - `tests/InformationFlowSuite.lean` (~1639 lines)
-- `SeLe4n/Platform/FFI.lean` (~1543 lines)
+- `SeLe4n/Platform/FFI.lean` (~1570 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdown.lean` (~1498 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~1464 lines)
@@ -279,10 +279,10 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~1328 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1316 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreDomain.lean` (~1267 lines)
+- `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` (~1254 lines)
 - `docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md` (~1252 lines)
 - `tests/SmpCancellationSuite.lean` (~1246 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean` (~1244 lines)
-- `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` (~1241 lines)
 - `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` (~1237 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1233 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1216 lines)
@@ -301,12 +301,12 @@ To find files that need pagination today, run:
 - `SeLe4n/Machine.lean` (~1105 lines)
 - `tests/PerObjectLockSuite.lean` (~1097 lines)
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
+- `SeLe4n/Kernel/Architecture/VSpace.lean` (~1070 lines)
 - `SeLe4n/Kernel/Scheduler/RunQueue.lean` (~1050 lines)
 - `tests/SyscallDispatchSuite.lean` (~1047 lines)
-- `SeLe4n/Kernel/Architecture/VSpace.lean` (~1043 lines)
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
+- `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1038 lines)
 - `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1037 lines)
-- `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1032 lines)
 - `SeLe4n/Kernel/InformationFlow/Policy.lean` (~1023 lines)
 - `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~1007 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~1002 lines)
@@ -729,7 +729,9 @@ documentation lives under `docs/` and `docs/gitbook/`.
 
   **v0.32.97 SECURITY (PR #845 review, P1) — VSpace capability binding**: a confused deputy in the syscall gate, pre-existing and wider than the review reported.  `syscallLookupCap` verified only that the caller held *a* capability carrying the required right, never that the capability's **target** matched the operand; the `.vspaceMap` / `.vspaceUnmap` / `.vspaceUnifyInstruction` arms matched `| .object _ =>` (discarding the object id) and acted on a caller-supplied ASID resolved through the global `asidTable`, so authority flowed from a name the caller chose.  Confirmed exploitable against the live dispatch path: a thread holding only a writable capability to *its own TCB* unmapped an executable page in a different address space.  Closed by `vspaceCapAuthorizesAsid` — the capability must name the root `resolveAsidRoot` yields for the operand ASID (checked against the resolved root, **not** the capability object's own `asid` field, which would be unsound under the SM7.F.4 ASID-rebind hazard), fail-closed on an unbound ASID.  The three `…_delegates` theorems gain an authorization premise (without it they are now false) plus fail-closed duals `…_unauthorized`; the `checkedDispatch_*_eq_unchecked` equivalences are unchanged.  No passing test changed behaviour and the golden trace is byte-identical.  New `tests/VSpaceCapabilityBindingSuite.lean` (26 assertions / 5 groups); `OperationChainSuite` chain28 — the only `syscallEntry`-level VSpace coverage — repaired from a silently vacuous state (duplicate ASID ⇒ builder panic ⇒ `default` state ⇒ `illegalState`, swallowed as "dispatch reached") and extended with the cross-address-space refusal.
 
-  **Rust HAL at v0.32.97**: 795 tests, zero clippy warnings,
+ **v0.32.98 PR #845 review closure**: (1) **PA page alignment** — `vspaceMapPageChecked` and the production `vspaceMapPageCheckedWithFlushFromState` validated VA canonicality and the PA bound but not alignment, so a mapping could carry an unaligned PA while the ARMv8 descriptor and both HAL cache loops use the aligned base; the model would then record an operand naming an address hardware never touches.  Both now reject with `.alignmentError` (rejecting structurally rather than normalizing — an unaligned page mapping is meaningless on ARMv8).  Two tests were themselves relying on the gap (`MainTraceHarness` CAT-025 and `NegativeStateSuite` mapped `2^n - 1`, all-ones and never page-aligned, to probe the PA bound); both now use the largest page-aligned in-bounds PA, trace byte-identical.  Seven downstream proofs gained a `split` for the new branch.  (2) **safe-API reachability** — `rust/sele4n-sys` gains `vspace_unify_instruction` (v0.32.96 shipped the syscall but left it hand-encode-only), plus `VSpaceUnifyInstructionArgs` in `sele4n-abi`.  (3) **ABI naming** — `VspaceUnifyInstruction` → `VSpaceUnifyInstruction`, matching its `VSpaceMap`/`VSpaceUnmap` siblings, with a Tier-3 anchor against the old spelling.  (4) the legacy `syscallDispatchInner` ledger drain was **attempted and reverted** — `icMaintenanceBroadcast` carries an `@[extern]` symbol simulation builds deliberately do not link, and the module's link-gating policy forbids stubbing it; the entry is vestigial and the append-only ledger defers rather than loses, so closure is removing the export (SM9.E), recorded with the reasoning.
+
+  **Rust HAL at v0.32.98**: 795 tests, zero clippy warnings,
   zero `#[ignore]`'d.
 
   **Staged modules**: 54 staged-only (via `Platform/Staged.lean` +
