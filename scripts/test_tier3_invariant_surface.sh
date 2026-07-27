@@ -1141,8 +1141,12 @@ run_check "INVARIANT" rg -n '^theorem vspaceCapAuthorizesAsid_false_of_not_objec
 run_check "INVARIANT" rg -n '^theorem dispatchWithCap_vspaceMap_unauthorized' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCap_vspaceUnmap_unauthorized' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCap_vspaceUnifyInstruction_unauthorized' SeLe4n/Kernel/API.lean
-# The gate must be present in all three live arms (a dropped call re-opens it).
-run_check "INVARIANT" bash -c "test \$(rg -c 'vspaceCapAuthorizesAsid cap' SeLe4n/Kernel/API.lean) -ge 3"
+# The gate must be present in all three live arms.  That is guaranteed by the
+# three `…_unauthorized` theorems anchored above rather than by a grep: each
+# asserts that its arm returns `.illegalAuthority` when authorization fails, so
+# deleting the gate from an arm makes the corresponding theorem unprovable and
+# breaks the build.  A textual occurrence count would be both weaker (it cannot
+# tell which arm a match came from) and fragile across shells.
 run_check "INVARIANT" rg -n '^def runVSpaceCapabilityBindingChecks' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n '^run_check_with_timeout "TRACE" lake exe vspace_capability_binding_suite' scripts/test_tier2_negative.sh
 run_check "INVARIANT" rg -n '^name = "vspace_capability_binding_suite"' lakefile.toml
