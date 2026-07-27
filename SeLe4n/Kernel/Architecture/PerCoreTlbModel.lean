@@ -105,6 +105,39 @@ theorem setTlbOnCore_tlbOnCore_ne (st : SystemState) {c c' : CoreId}
 @[simp] theorem setTlbOnCore_tlbShootdown (st : SystemState) (c : CoreId) (t : TlbState) :
     (setTlbOnCore st c t).tlbShootdown = st.tlbShootdown := rfl
 
+/-- **WS-SM SM7.C.1**: per-core view writes at *distinct* cores commute —
+each touches only its own slot, so the order two cores' views are updated
+in is immaterial.  This is the vector-level independence the live
+catch-up fold's order-independence rides
+(`handleTlbShootdownReqOnCorePerCore_comm`): on real hardware the targets'
+handlers run concurrently, in whatever order their SGIs land. -/
+theorem setTlbOnCore_comm {c₁ c₂ : CoreId} (h : c₁ ≠ c₂) (st : SystemState)
+    (t₁ t₂ : TlbState) :
+    setTlbOnCore (setTlbOnCore st c₁ t₁) c₂ t₂ =
+      setTlbOnCore (setTlbOnCore st c₂ t₂) c₁ t₁ := by
+  have hv : (st.perCoreTlb.set c₁.val t₁ c₁.isLt).set c₂.val t₂ c₂.isLt =
+      (st.perCoreTlb.set c₂.val t₂ c₂.isLt).set c₁.val t₁ c₁.isLt := by
+    refine SeLe4n.PerCoreVector.ext ?_
+    intro i
+    by_cases hi₁ : i = c₁
+    · subst hi₁
+      rw [SeLe4n.PerCoreVector.get_set_ne _ c₂ i t₂ (Ne.symm h),
+          SeLe4n.PerCoreVector.get_set_eq, SeLe4n.PerCoreVector.get_set_eq]
+    · by_cases hi₂ : i = c₂
+      · subst hi₂
+        rw [SeLe4n.PerCoreVector.get_set_eq,
+            SeLe4n.PerCoreVector.get_set_ne _ c₁ i t₁ (fun he => hi₁ he.symm),
+            SeLe4n.PerCoreVector.get_set_eq]
+      · rw [SeLe4n.PerCoreVector.get_set_ne _ c₂ i t₂ (fun he => hi₂ he.symm),
+            SeLe4n.PerCoreVector.get_set_ne _ c₁ i t₁ (fun he => hi₁ he.symm),
+            SeLe4n.PerCoreVector.get_set_ne _ c₁ i t₁ (fun he => hi₁ he.symm),
+            SeLe4n.PerCoreVector.get_set_ne _ c₂ i t₂ (fun he => hi₂ he.symm)]
+  show ({ st with perCoreTlb :=
+      (st.perCoreTlb.set c₁.val t₁ c₁.isLt).set c₂.val t₂ c₂.isLt } : SystemState) =
+    { st with perCoreTlb :=
+      (st.perCoreTlb.set c₂.val t₂ c₂.isLt).set c₁.val t₁ c₁.isLt }
+  rw [hv]
+
 /-- **WS-SM SM7.C.1**: at boot every core's TLB view is empty. -/
 @[simp] theorem default_tlbOnCore (c : CoreId) :
     tlbOnCore (default : SystemState) c = TlbState.empty :=
@@ -1193,6 +1226,83 @@ theorem foldl_handleTlbShootdownReqOnCorePerCore_frame :
     obtain ⟨ho, ha⟩ := ih (handleTlbShootdownReqOnCorePerCore st t)
     exact ⟨ho.trans (handleTlbShootdownReqOnCorePerCore_frame st t).1,
            ha.trans (handleTlbShootdownReqOnCorePerCore_frame st t).2⟩
+
+-- ============================================================================
+-- SM7.C — Per-core handler commutativity (live catch-up order-independence)
+-- ============================================================================
+-- SM7.B proved the *single-view* handler commutes
+-- (`handleTlbShootdownReqOnCore_comm`) so the catch-up fold's visit order is
+-- a convention.  Since v0.32.81 the live `completeShootdownRounds` seam folds
+-- the **per-core** handler, so the claim must hold for that handler: on real
+-- hardware the targets take their `.tlbShootdownReq` SGIs concurrently and
+-- retire in whatever order the GIC delivers them, while the model commits one
+-- deterministic fold order.  These two theorems are what make the model's
+-- order a faithful representative of every hardware interleaving.
+
+/-- **WS-SM SM7.C**: the SM7.B single-view handler and a per-core view write
+commute *definitionally* — the handler writes `tlb` / `tlbShootdown`, the
+setter writes `perCoreTlb`, and the handler reads neither of the setter's
+fields.  The field-disjointness lever of the commutativity proof below. -/
+theorem handleTlbShootdownReqOnCore_setTlbOnCore_comm (st : SystemState)
+    (a b : CoreId) (t : TlbState) :
+    handleTlbShootdownReqOnCore (setTlbOnCore st a t) b =
+      setTlbOnCore (handleTlbShootdownReqOnCore st b) a t := rfl
+
+/-- **WS-SM SM7.C**: per-core `.tlbShootdownReq` handler steps at *distinct*
+cores commute.  Each drains only its own queue, acknowledges only its own
+flag, retires only its own per-core view, and the shared `tlb` retire-filters
+intersect commutatively — so the live catch-up fold computes the same state
+for every visit order, which is what lets one deterministic model fold stand
+for every concurrent hardware interleaving.  The per-core analogue of
+`handleTlbShootdownReqOnCore_comm` (SM7.B), for the handler the live seam
+actually runs. -/
+theorem handleTlbShootdownReqOnCorePerCore_comm {c₁ c₂ : CoreId} (h : c₁ ≠ c₂)
+    (st : SystemState) :
+    handleTlbShootdownReqOnCorePerCore (handleTlbShootdownReqOnCorePerCore st c₁) c₂ =
+      handleTlbShootdownReqOnCorePerCore (handleTlbShootdownReqOnCorePerCore st c₂) c₁ := by
+  -- Each side's *second* step reads the other core's pre-state view and queue
+  -- (both framed by the first step), so the two per-core view writes are the
+  -- same on both sides.
+  have hview₂ : tlbOnCore (handleTlbShootdownReqOnCorePerCore st c₁) c₂ =
+      tlbOnCore st c₂ := handleTlbShootdownReqOnCorePerCore_tlbOnCore_ne st h
+  have hview₁ : tlbOnCore (handleTlbShootdownReqOnCorePerCore st c₂) c₁ =
+      tlbOnCore st c₁ := handleTlbShootdownReqOnCorePerCore_tlbOnCore_ne st (Ne.symm h)
+  have hq₂ : (drainShootdowns
+      (handleTlbShootdownReqOnCorePerCore st c₁).tlbShootdown c₂).1 =
+      (drainShootdowns st.tlbShootdown c₂).1 := by
+    rw [drainShootdowns_fst, drainShootdowns_fst,
+        handleTlbShootdownReqOnCorePerCore_tlbShootdown_eq,
+        handleTlbShootdownReqOnCore_tlbShootdown_eq,
+        completeShootdownOnCore_frame_pending st.tlbShootdown (Ne.symm h)]
+  have hq₁ : (drainShootdowns
+      (handleTlbShootdownReqOnCorePerCore st c₂).tlbShootdown c₁).1 =
+      (drainShootdowns st.tlbShootdown c₁).1 := by
+    rw [drainShootdowns_fst, drainShootdowns_fst,
+        handleTlbShootdownReqOnCorePerCore_tlbShootdown_eq,
+        handleTlbShootdownReqOnCore_tlbShootdown_eq,
+        completeShootdownOnCore_frame_pending st.tlbShootdown h]
+  show setTlbOnCore (handleTlbShootdownReqOnCore
+      (setTlbOnCore (handleTlbShootdownReqOnCore st c₁) c₁ _) c₂) c₂ _ = _
+  rw [handleTlbShootdownReqOnCore_setTlbOnCore_comm, hview₂, hq₂]
+  show setTlbOnCore (setTlbOnCore (handleTlbShootdownReqOnCore
+      (handleTlbShootdownReqOnCore st c₁) c₂) c₁ _) c₂ _ =
+    setTlbOnCore (handleTlbShootdownReqOnCore
+      (setTlbOnCore (handleTlbShootdownReqOnCore st c₂) c₂ _) c₁) c₁ _
+  rw [handleTlbShootdownReqOnCore_setTlbOnCore_comm, hview₁, hq₁,
+      setTlbOnCore_comm h, handleTlbShootdownReqOnCore_comm h]
+
+/-- **WS-SM SM7.C**: adjacent-transposition form — swapping the first two
+(distinct) targets of the per-core catch-up fold changes nothing.  With
+`handleTlbShootdownReqOnCorePerCore_comm` this makes every visit order of a
+`Nodup` target list compute the same state (by induction on adjacent
+transpositions), the per-core analogue of
+`foldl_handleTlbShootdownReqOnCore_swap`. -/
+theorem foldl_handleTlbShootdownReqOnCorePerCore_swap {c₁ c₂ : CoreId}
+    (h : c₁ ≠ c₂) (rest : List CoreId) (st : SystemState) :
+    (c₁ :: c₂ :: rest).foldl handleTlbShootdownReqOnCorePerCore st =
+      (c₂ :: c₁ :: rest).foldl handleTlbShootdownReqOnCorePerCore st := by
+  simp only [List.foldl_cons]
+  rw [handleTlbShootdownReqOnCorePerCore_comm h]
 
 /-- **WS-SM SM7.C**: one complete shootdown round on the per-core model —
 the SM7.B `shootdownRound` (broadcast → initiator local → target handlers)

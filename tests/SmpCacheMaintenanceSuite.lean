@@ -1078,6 +1078,66 @@ private def runRetypeCleanToPoUChecks : IO Unit := do
       assertBool "the post-state satisfies the 14th conjunct"
         (icacheCoherentCheck_perCore stPost)
 
+-- ----------------------------------------------------------------------------
+-- §3.15  Cross-cluster mock — the instruction-cache half of the portability
+--         seam.  `IC IALLUIS` / `IC IVAU` broadcast within the *Inner
+--         Shareable* domain only, so on a multi-cluster SoC the reach stops at
+--         the cluster boundary and the out-of-domain cores need the SGI-based
+--         protocol (the SM7.B shootdown shape) — exactly the narrowing the
+--         module docs call for.  `icBroadcastReach` is already a parameter, so
+--         a narrowed mock reach is the executable statement of the hazard:
+--         with it, `icInvalidateBroadcast_reaches_all_cores`'s coverage
+--         hypothesis fails and the remote cluster keeps its lines.
+-- ----------------------------------------------------------------------------
+
+/-- Mock cluster A of the two-cluster topology — the issuing PE's cluster, the
+only one a single Inner Shareable broadcast reaches on such a SoC. -/
+private def mockClusterA : List CoreId := [core0, core1]
+
+/-- Mock cluster B — the cores an Inner Shareable broadcast would miss. -/
+private def mockClusterB : List CoreId := [core2, core3]
+
+private def runCrossClusterReachChecks : IO Unit := do
+  IO.println "-- §3.15 cross-cluster mock: the I-cache broadcast reach seam"
+  -- The mock is a MOCK: on BCM2712 the reach is genuinely every PE.
+  assertBool "on this platform the broadcast reach is the whole topology"
+    (allCores.all fun c => icBroadcastReach.contains c)
+  assertBool "the mock clusters partition the platform's PEs"
+    (mockClusterA.length + mockClusterB.length == numCores &&
+      allCores.all fun c => mockClusterA.contains c != mockClusterB.contains c)
+  -- Every core has fetched the same executable page.
+  let stAll : SystemState :=
+    allCores.foldl (fun st c => icFetchOnCore st c lineExec) (default : SystemState)
+  -- (a) THE HAZARD: a broadcast whose reach stops at the cluster boundary.
+  let stNarrow := icInvalidateBroadcast stAll mockClusterA .iallu
+  assertBool "a cluster-narrowed broadcast cleans the issuing PE's cluster"
+    (mockClusterA.all fun c => (icacheOnCore stNarrow c).lines.isEmpty)
+  assertBool "a cluster-narrowed broadcast leaves the REMOTE cluster stale"
+    (mockClusterB.all fun c => (icacheOnCore stNarrow c).lines.contains lineExec)
+  -- (b) the targeted (by-VA) operand narrows identically — the hazard is the
+  -- reach, not the operand kind.
+  let stNarrowIvau := icInvalidateBroadcast stAll mockClusterA (.ivauPage paddrPage)
+  assertBool "the by-VA operand is bounded by the same reach"
+    (mockClusterA.all (fun c => !((icacheOnCore stNarrowIvau c).lines.contains lineExec)) &&
+      mockClusterB.all (fun c => (icacheOnCore stNarrowIvau c).lines.contains lineExec))
+  -- (c) the code-publication operand too: a writer on cluster A cannot publish
+  -- instructions to cluster B without the out-of-domain protocol.
+  let stNarrowUnify := icInvalidateBroadcast stAll mockClusterA (.unifyPage paddrPage)
+  assertBool "the clean-then-invalidate operand is bounded by the same reach"
+    (mockClusterB.all fun c => (icacheOnCore stNarrowUnify c).lines.contains lineExec)
+  -- (d) the closure: composing the per-cluster broadcasts (what an SGI-based
+  -- out-of-domain protocol would realise) reaches every PE again — the same
+  -- shape SM7.B's explicit-ack round gives the TLB.
+  let stBoth := icInvalidateBroadcast stNarrow mockClusterB .iallu
+  assertBool "per-cluster broadcasts composed reach every PE of both clusters"
+    (allCores.all fun c => (icacheOnCore stBoth c).lines.isEmpty)
+  assertBool "the composed result equals the single full-reach broadcast"
+    (allCores.all fun c =>
+      (icacheOnCore stBoth c).lines ==
+        (icacheOnCore (icInvalidateBroadcast stAll icBroadcastReach .iallu) c).lines)
+  assertBool "the composed cross-cluster maintenance keeps the 14th conjunct green"
+    (icacheCoherentCheck_perCore stBoth)
+
 def runSmpCacheMaintenanceChecks : IO Unit := do
   IO.println "===================================================="
   IO.println "WS-SM SM7.D — cache maintenance broadcast suite"
@@ -1096,6 +1156,7 @@ def runSmpCacheMaintenanceChecks : IO Unit := do
   runUnifyInstructionChecks
   runRetypeCleanToPoUChecks
   runMappingAlignmentChecks
+  runCrossClusterReachChecks
   IO.println "===================================================="
   IO.println "All SM7.D cache maintenance broadcast checks PASS."
 

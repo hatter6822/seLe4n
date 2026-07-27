@@ -1009,6 +1009,31 @@ run_check "INVARIANT" rg -n '^private def runPerCoreTlbLiveLifecycleChecks' test
 run_check "INVARIANT" rg -n '^def lifecycleRetypeDirectWithCleanupShootdownPerCore' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
 run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectWithCleanupShootdownPerCore_initiator_drained' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
 run_check "INVARIANT" rg -n 'lifecycleRetypeDirectWithCleanupShootdownPerCore' SeLe4n/Kernel/API.lean
+# WS-SM SM7.E — tests + fixtures.  The concurrent-unmap stress (§6) and the
+# cross-cluster mock (§7) scenario groups, the per-core handler commutativity
+# they rest on (the live catch-up fold's order-independence — SM7.B proved it
+# only for the single-view handler, but the live seam folds the per-core one),
+# the `.outer` portability seam, the deterministic golden trace fixture (+ its
+# sha256 companion), and the Tier-4 concurrent-unmap stress exerciser.
+run_check "INVARIANT" rg -n '^theorem setTlbOnCore_comm' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
+run_check "INVARIANT" rg -n '^theorem handleTlbShootdownReqOnCorePerCore_comm' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
+run_check "INVARIANT" rg -n '^theorem foldl_handleTlbShootdownReqOnCorePerCore_swap' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
+run_check "INVARIANT" rg -n '^theorem tlbShootdown_outer_correct' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^private def runConcurrentUnmapStressChecks' tests/SmpTlbShootdownSuite.lean
+run_check "INVARIANT" rg -n '^private def runConcurrentUnmapDrainChecks' tests/SmpTlbShootdownSuite.lean
+run_check "INVARIANT" rg -n '^private def runShootdownBackpressureChecks' tests/SmpTlbShootdownSuite.lean
+run_check "INVARIANT" rg -n '^private def runCrossClusterMockChecks' tests/SmpTlbShootdownSuite.lean
+run_check "INVARIANT" rg -n '^private def runCrossClusterHazardChecks' tests/SmpTlbShootdownSuite.lean
+run_check "INVARIANT" rg -n '^private def runCrossClusterReachChecks' tests/SmpCacheMaintenanceSuite.lean
+run_check "INVARIANT" rg -n '^private def shootdownTraceLines' tests/SmpTlbShootdownSuite.lean
+run_check "INVARIANT" rg -n '^private def runTraceFixtureCheck' tests/SmpTlbShootdownSuite.lean
+run_check "INVARIANT" rg -n '^\[smp-tlb-shootdown\]' tests/fixtures/smp_tlb_shootdown.expected
+run_check "INVARIANT" rg -n 'smp_tlb_shootdown\.expected' tests/fixtures/smp_tlb_shootdown.expected.sha256
+run_check "INVARIANT" rg -n 'test_qemu_smp_shootdown_stress\.sh' scripts/test_tier4_smp_bootcheck.sh
+# The Tier-4 stress exerciser's driver-detection guard and its pass gate must
+# agree on the `tlb-shootdown-stress` banner tag (the contract the future SM9.E
+# in-image driver emits); anchoring the exact pass phrase catches silent drift.
+run_check "INVARIANT" rg -n 'tlb-shootdown-stress: all cores completed' scripts/test_qemu_smp_shootdown_stress.sh
 # ============================================================================
 # WS-SM SM7.D — cache maintenance broadcast
 #

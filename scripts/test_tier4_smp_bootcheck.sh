@@ -158,4 +158,19 @@ run_check "META" "${SCRIPT_DIR}/test_qemu_smp_ipc.sh"
 # complementary runtime spot-check with a real GIC delivering the SGIs.
 run_check "META" "${SCRIPT_DIR}/test_qemu_smp_shootdown.sh"
 
+# WS-SM SM7.E.3 (plan §5 SM7.E / §7 risk inventory): the concurrent-unmap
+# stress — four cores issuing shootdown rounds inside one another's windows,
+# the hardware-tier companion of the model-level storm in
+# tests/SmpTlbShootdownSuite.lean §6.  It hunts the two contention-only failure
+# modes: a round-serialisation break (an initiator observing someone else's
+# allAcked and returning with a stale TLB live — SMP-C4) and a round-lock
+# deadlock (the SM7.B.6 fail-closed timeout, or a hang).  SKIPs until the SM9.E
+# bootable kernel image + in-image stress driver exist.  Interleaving-
+# independence itself is established FORMALLY for all executions by
+# handleTlbShootdownReqOnCorePerCore_comm (distinct cores' handler steps
+# commute, so the model's one catch-up order stands for every hardware
+# interleaving); this is a complementary runtime spot-check under real
+# contention.
+run_check "META" "${SCRIPT_DIR}/test_qemu_smp_shootdown_stress.sh"
+
 finalize_report

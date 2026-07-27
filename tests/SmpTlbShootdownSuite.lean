@@ -13,6 +13,9 @@ import SeLe4n.Kernel.Architecture.TlbShootdownWait
 import SeLe4n.Kernel.Architecture.TlbShootdownLockSet
 -- SM7.C: the per-core TLB model (§5 scenario groups + §1 anchors below).
 import SeLe4n.Kernel.Architecture.PerCoreTlbModel
+-- SM7.E.4: the sharing-domain dispatcher (`SharingDomain.toTag`) the
+-- cross-cluster mock (§7) pins as the ONLY thing a multi-cluster port changes.
+import SeLe4n.Kernel.Architecture.TlbiForSharing
 import SeLe4n.Kernel.Lifecycle.Operations.RetypeWrappers
 import SeLe4n.Kernel.SyscallDispatchEntry
 import SeLe4n.Kernel.Concurrency.Runtime
@@ -598,6 +601,23 @@ open SeLe4n.Kernel.Concurrency
 -- target, under `hNoRebind` — the necessary no-ASID-collision precondition):
 #check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdownPerCore_preserves_tlbInvalidationConsistent_perCore
 #check @SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdownPerCore_preserves_tlbInvalidationConsistent_perCore
+-- The live catch-up fold's ORDER-INDEPENDENCE (the §6 stress group's
+-- concurrency claim): SM7.B proved commutativity for the single-view handler,
+-- but the live `completeShootdownRounds` seam folds the PER-CORE handler, so
+-- the claim must hold for that one — otherwise the model's one deterministic
+-- visit order would not represent every hardware interleaving.
+#check @SeLe4n.Kernel.Architecture.setTlbOnCore_comm
+#check @SeLe4n.Kernel.Architecture.handleTlbShootdownReqOnCore_setTlbOnCore_comm
+#check @SeLe4n.Kernel.Architecture.handleTlbShootdownReqOnCorePerCore_comm
+#check @SeLe4n.Kernel.Architecture.foldl_handleTlbShootdownReqOnCorePerCore_swap
+-- The cross-cluster portability seam the §7 mock exercises: the domain-tagged
+-- round, its state-identity, the FFI domain tag, and the barrier selector.
+#check @SeLe4n.Kernel.Architecture.tlbShootdownBroadcastIn
+#check @SeLe4n.Kernel.Architecture.tlbShootdown_outer_correct
+#check @SeLe4n.Kernel.Concurrency.SharingDomain.toTag
+#check @SeLe4n.Kernel.Concurrency.SharingDomain.toTag_injective
+#check @SeLe4n.Kernel.Concurrency.dsbForSharing
+#check @SeLe4n.Kernel.shootdownSharingDomain
 
 -- ============================================================================
 -- §2  Elaboration-time examples
@@ -808,6 +828,24 @@ example (st : SeLe4n.Model.SystemState) (initiator : CoreId)
     (c : CoreId) (e : SeLe4n.Model.TlbEntry) (he : tlbEntryMatches op e = true) :
     e ∉ (tlbOnCore st' c).entries :=
   tlbShootdown_invalidates_perCore st initiator hcov op h c he
+
+-- §6 (theorem-application witness): the live catch-up fold's visit order is a
+-- convention — distinct cores' per-core handler steps commute, so the model's
+-- single fold order represents every concurrent hardware interleaving.
+example (st : SeLe4n.Model.SystemState) {c₁ c₂ : CoreId} (h : c₁ ≠ c₂) :
+    handleTlbShootdownReqOnCorePerCore (handleTlbShootdownReqOnCorePerCore st c₁) c₂ =
+      handleTlbShootdownReqOnCorePerCore (handleTlbShootdownReqOnCorePerCore st c₂) c₁ :=
+  handleTlbShootdownReqOnCorePerCore_comm h st
+
+-- §7 (theorem-application witness): the outer-shareable (cross-cluster) round
+-- is state-identical to the inner one, so every SM7.B round theorem — posting
+-- exactness, quiescence restoration, Theorem 3.3.1 — transports verbatim to a
+-- multi-cluster port; only the emitted instruction variant changes.
+example (st : SeLe4n.Model.SystemState) (initiator : CoreId)
+    (targets : List CoreId) (op : TlbInvalidation) :
+    tlbShootdownBroadcastIn .outer st initiator targets op =
+      tlbShootdownBroadcastIn .inner st initiator targets op :=
+  tlbShootdown_outer_correct st initiator targets op
 
 -- ============================================================================
 -- §3  Runtime assertions
@@ -2188,6 +2226,472 @@ private def runPerCoreTlbLiveLifecycleChecks : IO Unit := do
         (tlbInvalidationConsistentCheck_perCore stFinal)
 
 -- ----------------------------------------------------------------------------
+-- §6  Concurrent-unmap stress: four cores, four rounds in flight
+--
+--     The model is deterministic and sequential, so genuine concurrency shows
+--     up in exactly two places: (a) rounds *posted* before any catch-up drains
+--     — the state the runtime reaches when four cores issue unmaps inside one
+--     another's round window — and (b) the *order* the targets' handlers run
+--     in.  This group drives both on a REAL page-table-backed state with REAL
+--     cached translations (the SM7.F walk fills), and pins that neither the
+--     pending-aware invariant nor the drained end state depends on either.
+-- ----------------------------------------------------------------------------
+
+/-- The storm's four pages — core `i` unmaps page `i`, all in `asid5`, with VA
+and PA page-aligned (the v0.32.102 mapping-boundary guard). -/
+private def stressAssignments : List (CoreId × SeLe4n.VAddr × SeLe4n.PAddr) :=
+  [(core0, SeLe4n.VAddr.ofNat 0x1000, SeLe4n.PAddr.ofNat 0x10000),
+   (core1, SeLe4n.VAddr.ofNat 0x2000, SeLe4n.PAddr.ofNat 0x11000),
+   (core2, SeLe4n.VAddr.ofNat 0x3000, SeLe4n.PAddr.ofNat 0x12000),
+   (core3, SeLe4n.VAddr.ofNat 0x4000, SeLe4n.PAddr.ofNat 0x13000)]
+
+/-- The page operand core `c` posts in the storm (its assigned page).  Every
+core of the 4-core topology is assigned, so the fallback is unreachable — and
+it is deliberately an operand that covers **nothing** in this scenario (ASID 0,
+address 0) rather than the full flush: a `.vmalle1` fallback would retire every
+entry and so let a lost assignment pass the drain assertions instead of failing
+them. -/
+private def stressOpOf (c : CoreId) : TlbInvalidation :=
+  match stressAssignments.find? (fun a => a.1 == c) with
+  | some (_, va, _) => encodePageInvalidation asid5 va
+  | none => encodePageInvalidation ⟨0⟩ (SeLe4n.VAddr.ofNat 0)
+
+/-- All four storm pages mapped into a real VSpace — `none` if any map is
+rejected, which keeps the scenario honest rather than silently vacuous. -/
+private def stressMapped? : Option SeLe4n.Model.SystemState :=
+  stressAssignments.foldlM
+    (fun st a =>
+      match vspaceMapPageWithFlush asid5 a.2.1 a.2.2 .readOnly st with
+      | .error _ => none
+      | .ok ((), st') => some st')
+    (udState [])
+
+/-- Every core walk-fills every storm page — the pre-state of a real storm, in
+which each PE has translated through all four mappings. -/
+private def stressFilled? : Option SeLe4n.Model.SystemState :=
+  stressMapped?.map fun st =>
+    allCores.foldl
+      (fun s c =>
+        stressAssignments.foldl (fun s' a => tlbFillOnCore s' c asid5 a.2.1) s)
+      st
+
+/-- The storm itself: each core runs the LIVE initiator-atomic unmap wrapper
+(what `.vspaceUnmap` dispatches to) for its own page, with **no** catch-up in
+between — four rounds in flight at once. -/
+private def stressStormed? : Option SeLe4n.Model.SystemState :=
+  match stressFilled? with
+  | none => none
+  | some st =>
+    stressAssignments.foldlM
+      (fun s a =>
+        match vspaceUnmapPageWithShootdownPerCore a.1 asid5 a.2.1 s with
+        | .error _ => none
+        | .ok ((), s') => some s')
+      st
+
+/-- Does core `c`'s view still cache a translation for `vaddr` in `asid5`? -/
+private def viewCaches (st : SeLe4n.Model.SystemState) (c : CoreId)
+    (vaddr : SeLe4n.VAddr) : Bool :=
+  (tlbOnCore st c).entries.any fun e => e.asid == asid5 && e.vaddr == vaddr
+
+/-- Two states agree on every core's TLB view — mutual containment plus length,
+the set comparison the §5.3 bridge check uses (entry order is an artefact of
+the fill order, not an observable). -/
+private def sameViews (a b : SeLe4n.Model.SystemState) : Bool :=
+  allCores.all fun c =>
+    (tlbOnCore a c).entries.length == (tlbOnCore b c).entries.length &&
+    (tlbOnCore a c).entries.all (fun e => (tlbOnCore b c).entries.contains e) &&
+    (tlbOnCore b c).entries.all (fun e => (tlbOnCore a c).entries.contains e)
+
+/-- §6, part 3 of 3: rounds posted faster than the catch-up drains them
+(backpressure to the capacity bound and past it), and a storm mixing operand
+kinds — the drain must retire exactly what each core queued, neither less
+(under-invalidation, unsafe) nor more (a blanket flush would mask a defect).
+
+The three parts are defined in reverse call order (part 3, then 2, then the
+`runConcurrentUnmapStressChecks` entry point) because Lean requires a
+definition before its use; they are split at all per the thin-dispatcher
+convention, since one deep `do`-chain blows clang's bracket-nesting limit. -/
+private def runShootdownBackpressureChecks
+    (stFilled : SeLe4n.Model.SystemState) : IO Unit := do
+  -- (5) BACKPRESSURE.  The caller-facing (total, coalescing) posting the live
+  -- wrappers use never fails and never breaches the bound: at capacity a
+  -- target's queue collapses to one full flush that supersedes every dropped
+  -- descriptor (over-invalidation is safe; under-invalidation never is).
+  let stormN := fun (n : Nat) =>
+    (List.range n).foldl
+      (fun s _ =>
+        tlbShootdownBroadcastCoalescing s core0 (shootdownTargets core0)
+          (stressOpOf core0))
+      stFilled
+  let at16 := stormN maxPendingPerCore
+  assertBool "sixteen un-drained rounds fill each remote queue exactly to capacity"
+    ([core1, core2, core3].all fun c =>
+      (at16.tlbShootdown.pendingOnCore c).length == maxPendingPerCore)
+  assertBool "the strict posting fails closed at capacity (never silently drops)"
+    ((tlbShootdownBroadcast at16 core0 (shootdownTargets core0)
+      (stressOpOf core0)).isNone)
+  let at17 :=
+    tlbShootdownBroadcastCoalescing at16 core0 (shootdownTargets core0)
+      (stressOpOf core0)
+  assertBool "the seventeenth round collapses each full queue to one full flush"
+    ([core1, core2, core3].all fun c =>
+      at17.tlbShootdown.pendingOnCore c == [{ op := .vmalle1, initiator := core0 }])
+  assertBool "backpressure never breaches the capacity conjunct"
+    (decide (pendingBounded at16.tlbShootdown) &&
+      decide (pendingBounded at17.tlbShootdown))
+  assertBool "draining the collapsed queue empties every remote view"
+    (let drained :=
+      (shootdownTargets core0).foldl handleTlbShootdownReqOnCorePerCore at17
+     [core1, core2, core3].all fun c => (tlbOnCore drained c).entries.isEmpty)
+  -- (6) MIXED operands in flight: core 0 posts a page unmap, core 1 an ASID
+  -- retirement.  Each core's drain retires exactly ITS queue — core 1 never
+  -- saw the `.aside1` (it initiated it), so its three remaining translations
+  -- survive.  A blanket-flush regression in the handler fails right here.
+  let mixed :=
+    tlbShootdownBroadcastCoalescing
+      (tlbShootdownBroadcastCoalescing stFilled core0 (shootdownTargets core0)
+        (stressOpOf core0))
+      core1 (shootdownTargets core1) (encodeAsidInvalidation asid5)
+  assertBool "a mixed storm queues the page operand and the ASID operand in order"
+    ((mixed.tlbShootdown.pendingOnCore core2).map (·.op) ==
+      [stressOpOf core0, encodeAsidInvalidation asid5])
+  let mixedDrained := allCores.foldl handleTlbShootdownReqOnCorePerCore mixed
+  assertBool "the ASID operand empties every core that queued it"
+    ([core0, core2, core3].all fun c =>
+      (tlbOnCore mixedDrained c).entries.isEmpty)
+  assertBool "the ASID initiator's own view retires only the page it queued"
+    ((tlbOnCore mixedDrained core1).entries.length == 3 &&
+      !(viewCaches mixedDrained core1 (SeLe4n.VAddr.ofNat 0x1000)))
+  assertBool "the mixed storm ends quiescent and bounded"
+    (decide (shootdownQuiescent mixedDrained.tlbShootdown) &&
+      decide (pendingBounded mixedDrained.tlbShootdown))
+
+/-- §6, part 2 of 3: the deferred catch-ups, and the visit-order independence
+that makes one deterministic model fold stand for every hardware interleaving;
+chains on to part 3 (`runShootdownBackpressureChecks`). -/
+private def runConcurrentUnmapDrainChecks
+    (stFilled stStorm : SeLe4n.Model.SystemState) : IO Unit := do
+  -- (3) the deferred catch-ups — exactly what `completeShootdownRounds` runs,
+  -- one per round.  Round 0's catch-up drains every OTHER core's queue
+  -- completely (each had already retired its own operand), while the
+  -- initiator's own queue waits for the NEXT round's catch-up to drain it.
+  let stAfter0 := shootdownCatchUpPerCore stStorm core0 [stressOpOf core0]
+  assertBool "round 0's catch-up leaves every remote core's view clean"
+    ([core1, core2, core3].all fun c => (tlbOnCore stAfter0 c).entries.isEmpty)
+  assertBool "round 0's catch-up leaves the initiator's own queue pending (covered)"
+    ((stAfter0.tlbShootdown.pendingOnCore core0).length == 3 &&
+      tlbInvalidationConsistentCheck_perCore stAfter0)
+  let stAfter1 := shootdownCatchUpPerCore stAfter0 core1 [stressOpOf core1]
+  assertBool "round 1's catch-up drains the last queue: every view is clean"
+    (allCores.all fun c => (tlbOnCore stAfter1 c).entries.isEmpty)
+  assertBool "after the storm drains the state is quiescent again"
+    (decide (shootdownQuiescent stAfter1.tlbShootdown))
+  assertBool "the drained state is consistent with no pending cover left"
+    (tlbInvalidationConsistentCheck_perCore stAfter1)
+  let stAfter3 :=
+    shootdownCatchUpPerCore
+      (shootdownCatchUpPerCore stAfter1 core2 [stressOpOf core2]) core3
+      [stressOpOf core3]
+  assertBool "the remaining rounds' catch-ups are inert (handler idempotence)"
+    (sameViews stAfter1 stAfter3 &&
+      decide (stAfter1.tlbShootdown = stAfter3.tlbShootdown))
+  -- (4) ORDER INDEPENDENCE — the concurrency claim.  On hardware the four
+  -- targets take their `.tlbShootdownReq` SGIs and retire in whatever order the
+  -- GIC delivers them; the model commits ONE fold order.  Folding the live
+  -- per-core handler over three different visit orders computes the identical
+  -- state (`handleTlbShootdownReqOnCorePerCore_comm`), so the model's order is
+  -- a faithful representative of every hardware interleaving.
+  let drainIn := fun (order : List CoreId) =>
+    order.foldl handleTlbShootdownReqOnCorePerCore stStorm
+  let ascending := drainIn [core0, core1, core2, core3]
+  let descending := drainIn [core3, core2, core1, core0]
+  let interleaved := drainIn [core2, core0, core3, core1]
+  assertBool "every visit order drains every core's view identically"
+    (sameViews ascending descending && sameViews ascending interleaved)
+  assertBool "every visit order commits the identical shootdown state"
+    (decide (ascending.tlbShootdown = descending.tlbShootdown) &&
+      decide (ascending.tlbShootdown = interleaved.tlbShootdown))
+  assertBool "every visit order commits the identical single-view TLB"
+    (ascending.tlb.entries == descending.tlb.entries &&
+      ascending.tlb.entries == interleaved.tlb.entries)
+  assertBool "a full 4-core drain ends quiescent with every view clean"
+    (decide (shootdownQuiescent ascending.tlbShootdown) &&
+      (allCores.all fun c => (tlbOnCore ascending c).entries.isEmpty))
+  runShootdownBackpressureChecks stFilled
+
+private def runConcurrentUnmapStressChecks : IO Unit := do
+  IO.println "-- §6 concurrent-unmap stress: 4 cores, 4 rounds in flight"
+  match stressFilled? with
+  | none =>
+    assertBool "the storm scenario builds (4 maps + 16 walk fills)" false
+  | some stFilled => do
+    -- (0) the pre-state is real: four page-table-backed mappings, cached on
+    -- every core, quiescent and per-core consistent.
+    assertBool "every core caches all four translations before the storm"
+      (allCores.all fun c =>
+        stressAssignments.all fun a => viewCaches stFilled c a.2.1)
+    assertBool "the pre-state is quiescent and per-core consistent"
+      (decide (shootdownQuiescent stFilled.tlbShootdown) &&
+        tlbInvalidationConsistentCheck_perCore stFilled)
+    match stressStormed? with
+    | none =>
+      assertBool "all four concurrent unmaps commit" false
+    | some stStorm => do
+      -- (1) posting exactness: each core's queue holds exactly the three
+      -- descriptors the OTHER three initiators posted, in initiation order.
+      assertBool "each core queues exactly the three remote initiators' descriptors"
+        (allCores.all fun c =>
+          stStorm.tlbShootdown.pendingOnCore c ==
+            (stressAssignments.filter (fun a => a.1 != c)).map
+              (fun a => { op := encodePageInvalidation asid5 a.2.1, initiator := a.1 }))
+      assertBool "no core queues its own round (the initiator is never a target)"
+        (allCores.all fun c =>
+          !((stStorm.tlbShootdown.pendingOnCore c).any fun d => d.initiator == c))
+      assertBool "four rounds in flight never breach the capacity conjunct"
+        (decide (pendingBounded stStorm.tlbShootdown))
+      -- (2) initiator-atomicity: each core retired its OWN operand with its own
+      -- unmap; the other three pages are stale on it — but covered by pending
+      -- descriptors, so the honest invariant stays GREEN mid-storm.
+      assertBool "each initiator retired its own page atomically with its unmap"
+        (stressAssignments.all fun a => !(viewCaches stStorm a.1 a.2.1))
+      assertBool "each core still holds the other three (now stale) translations"
+        (stressAssignments.all fun a =>
+          (stressAssignments.filter (fun b => b.1 != a.1)).all fun b =>
+            viewCaches stStorm a.1 b.2.1)
+      assertBool "the page tables no longer resolve any of the four pages"
+        (stressAssignments.all fun a =>
+          match vspaceLookup asid5 a.2.1 stStorm with
+          | .error _ => true
+          | .ok _ => false)
+      assertBool "mid-storm the pending-aware per-core invariant is GREEN"
+        (tlbInvalidationConsistentCheck_perCore stStorm)
+      runConcurrentUnmapDrainChecks stFilled stStorm
+
+-- ----------------------------------------------------------------------------
+-- §7  Cross-cluster mock: the `.outer` portability seam, exercised
+--
+--     BCM2712 is a single Cortex-A76 cluster, so `TLBI VAE1IS` alone already
+--     reaches every PE and the explicit-ack protocol is (on this target)
+--     redundant.  It exists so a MULTI-cluster port stays correct: there the
+--     Inner Shareable domain stops covering every core (plan §3.4).  This group
+--     mocks that topology over the same four PEs — cluster A = {0,1}, cluster
+--     B = {2,3} — and pins three things: the domain tag is the ONLY thing a
+--     port changes (`tlbShootdown_outer_correct`); a bare IS broadcast leaves
+--     the other cluster stale (the hazard); and the SGI + per-core-ack round
+--     retires the entry on every PE regardless of the cluster boundary.
+-- ----------------------------------------------------------------------------
+
+/-- Mock cluster A of the two-cluster topology — the initiator's cluster. -/
+private def mockClusterA : List CoreId := [core0, core1]
+
+/-- Mock cluster B — the cores a single Inner Shareable broadcast would miss on
+a multi-cluster SoC. -/
+private def mockClusterB : List CoreId := [core2, core3]
+
+/-- §7, part 2 of 2 (defined first — Lean requires a definition before its
+use): the hazard a bare Inner Shareable broadcast leaves on a multi-cluster
+SoC, the explicit-ack round that closes it across the boundary, and the hybrid
+(IS-locally + SGI-remotely) protocol such a port would run — which the masked
+round-open already supports without a protocol change. -/
+private def runCrossClusterHazardChecks : IO Unit := do
+  -- (3) THE HAZARD.  Model a bare IS broadcast on a two-cluster SoC as the
+  -- per-core invalidation applied to the initiator's cluster alone: the remote
+  -- cluster keeps the stale translation — the SMP-C4 use-after-unmap window
+  -- that would reopen if the port dropped the explicit-ack round.
+  let isOnly :=
+    mockClusterA.foldl (fun s c => tlbInvalidateOnCore s c opUnmapTarget)
+      perCoreSeeded
+  assertBool "a cluster-local IS broadcast cleans the initiator's own cluster"
+    (mockClusterA.all fun c => !(tlbHasEntry (tlbOnCore isOnly c) entryTarget))
+  assertBool "a cluster-local IS broadcast leaves the REMOTE cluster stale"
+    (mockClusterB.all fun c => tlbHasEntry (tlbOnCore isOnly c) entryTarget)
+  -- (4) the explicit-ack round closes it: SGI + per-core handler + ack retires
+  -- the entry on every PE, cluster boundary notwithstanding.
+  match shootdownRoundPerCore perCoreSeeded core0 (shootdownTargets core0)
+      opUnmapTarget with
+  | none => assertBool "the cross-cluster round opens from quiescence" false
+  | some final => do
+    assertBool "the explicit-ack round retires the entry in BOTH mock clusters"
+      (allCores.all fun c => !(tlbHasEntry (tlbOnCore final c) entryTarget))
+    assertBool "the cross-cluster round ends quiescent and bounded"
+      (decide (shootdownQuiescent final.tlbShootdown) &&
+        decide (pendingBounded final.tlbShootdown))
+  -- (5) THE HYBRID a real multi-cluster port would run: keep the IS broadcast
+  -- for the initiator's own cluster and use the SGI round for the remote
+  -- cluster only.  The masked round-open already supports the narrowed target
+  -- set, so the port is a target-set + domain-tag change, not a protocol one.
+  match tlbShootdownBroadcast perCoreSeeded core0 mockClusterB opUnmapTarget with
+  | none => assertBool "the narrowed (remote-cluster-only) round opens" false
+  | some (posted, sgis) => do
+    assertBool "the narrowed round fires SGIs only at the remote cluster"
+      (sgis == mockClusterB.map (fun c => (c, SgiKind.tlbShootdownReq)))
+    assertBool "the narrowed round waits only on the remote cluster's acks"
+      (posted.tlbShootdown.ackOnCore core0 && posted.tlbShootdown.ackOnCore core1 &&
+        !(posted.tlbShootdown.ackOnCore core2) &&
+        !(posted.tlbShootdown.ackOnCore core3))
+  match shootdownRoundPerCore perCoreSeeded core0 mockClusterB opUnmapTarget with
+  | none => assertBool "the narrowed round completes" false
+  | some remoteOnly => do
+    assertBool "the narrowed round retires the entry across the boundary"
+      (mockClusterB.all fun c => !(tlbHasEntry (tlbOnCore remoteOnly c) entryTarget))
+    assertBool "the narrowed round leaves the cluster-mate to the IS broadcast"
+      (tlbHasEntry (tlbOnCore remoteOnly core1) entryTarget)
+    assertBool "IS-locally + SGI-remotely cleans every PE of both clusters"
+      (let hybrid := tlbInvalidateOnCore remoteOnly core1 opUnmapTarget
+       allCores.all fun c => !(tlbHasEntry (tlbOnCore hybrid c) entryTarget))
+  -- (6) symmetry: a round initiated inside the remote cluster reaches back.
+  match shootdownRoundPerCore perCoreSeeded core2 (shootdownTargets core2)
+      opUnmapTarget with
+  | none => assertBool "a round initiated in cluster B opens" false
+  | some fromB =>
+    assertBool "a cluster-B round retires the entry in cluster A too"
+      (allCores.all fun c => !(tlbHasEntry (tlbOnCore fromB c) entryTarget))
+
+private def runCrossClusterMockChecks : IO Unit := do
+  IO.println "-- §7 cross-cluster mock: the .outer portability seam"
+  -- (0) the mock is a MOCK: today's binding is single-cluster and the real
+  -- target set already spans both mock clusters.
+  assertBool "the live platform binding issues inner-shareable maintenance"
+    (decide (SeLe4n.Kernel.shootdownSharingDomain = .inner))
+  assertBool "the real target set crosses the mock cluster boundary"
+    (shootdownTargets core0 == [core1, core2, core3])
+  -- (1) the sharing domain changes the emitted instruction variant and the
+  -- barrier — and nothing else.
+  assertBool "the domain tags are distinct and inside the Rust decoder's range"
+    (SeLe4n.Kernel.Concurrency.SharingDomain.inner.toTag == 0 &&
+      SeLe4n.Kernel.Concurrency.SharingDomain.outer.toTag == 1)
+  assertBool "the domain selects ISH vs OSH for the completing barrier"
+    (decide (SeLe4n.Kernel.Concurrency.dsbForSharing .inner = .dsbIsh) &&
+      decide (SeLe4n.Kernel.Concurrency.dsbForSharing .outer = .dsbOsh))
+  -- (2) `tlbShootdown_outer_correct`, computed: the outer-shareable round is
+  -- state-identical to the inner one — every SM7.B round theorem transports.
+  match tlbShootdownBroadcastIn .inner perCoreSeeded core0
+      (shootdownTargets core0) opUnmapTarget,
+    tlbShootdownBroadcastIn .outer perCoreSeeded core0
+      (shootdownTargets core0) opUnmapTarget with
+  | some (innerSt, innerSgis), some (outerSt, outerSgis) => do
+    assertBool "the outer round posts the identical shootdown state"
+      (decide (innerSt.tlbShootdown = outerSt.tlbShootdown))
+    assertBool "the outer round emits the identical SGI list"
+      (innerSgis == outerSgis &&
+        innerSgis == (shootdownTargets core0).map
+          (fun c => (c, SgiKind.tlbShootdownReq)))
+    assertBool "the outer round evolves the identical per-core views"
+      (sameViews innerSt outerSt)
+  | _, _ =>
+    assertBool "both sharing domains open a round from quiescence" false
+  runCrossClusterHazardChecks
+
+-- ----------------------------------------------------------------------------
+-- §8  Deterministic 4-core shootdown trace + golden fixture
+--
+--     Every line is COMPUTED from the live `vspaceMapPageCheckedWithShootdown
+--     FromStatePerCore` / `vspaceUnmapPageWithShootdownPerCore` /
+--     `shootdownCatchUpPerCore` decisions on a real page-table-backed state, so
+--     a shootdown-logic regression diverges the fixture byte-for-byte.  The
+--     `[smp-tlb-shootdown]` prefix is the fixture extraction key.
+-- ----------------------------------------------------------------------------
+
+/-- The trace's live pipeline: core 1 maps + caches the page, core 0 unmaps it
+across cores, and the deferred catch-up drains every target.  `none` if any
+live transition rejects — which the trace surfaces rather than hides. -/
+private def tracePipeline? :
+    Option (SeLe4n.Model.SystemState × SeLe4n.Model.SystemState ×
+      SeLe4n.Model.SystemState) :=
+  match vspaceMapPageCheckedWithShootdownFromStatePerCore core1 asid5 vaddrPage
+      (SeLe4n.PAddr.ofNat 0x2000) .readOnly (udState []) with
+  | .error _ => none
+  | .ok ((), stMap) =>
+    match vspaceUnmapPageWithShootdownPerCore core0 asid5 vaddrPage stMap with
+    | .error _ => none
+    | .ok ((), stUnmap) =>
+      some (stMap, stUnmap, shootdownCatchUpPerCore stUnmap core0 [opUnmapTarget])
+
+/-- Per-core view size + queue length + ack flag — the observable triple the
+trace reports for each core at each stage. -/
+private def coreLine (tag : String) (st : SeLe4n.Model.SystemState)
+    (c : CoreId) : String :=
+  s!"[smp-tlb-shootdown] {tag} core {c.val}: {(tlbOnCore st c).entries.length} \
+entries, {(st.tlbShootdown.pendingOnCore c).length} pending, ack \
+{st.tlbShootdown.ackOnCore c}"
+
+/-- The green/red verdict of the pending-aware per-core invariant. -/
+private def checkerVerdict (st : SeLe4n.Model.SystemState) : String :=
+  if tlbInvalidationConsistentCheck_perCore st then "GREEN" else "RED"
+
+private def shootdownTraceLines : List String :=
+  match tracePipeline?, stressStormed? with
+  | some (stMap, stUnmap, stFinal), some stStorm =>
+    let storm := allCores.foldl handleTlbShootdownReqOnCorePerCore stStorm
+    [ s!"[smp-tlb-shootdown] live map on core 1 caches \
+{(tlbOnCore stMap core1).entries.length} entry; the map posts no round \
+(quiescent {decide (shootdownQuiescent stMap.tlbShootdown)})" ]
+    ++ allCores.map (coreLine "after map" stMap)
+    ++ [ s!"[smp-tlb-shootdown] core 0 unmap: page tables resolve (asid 5, va \
+0x1000) = {match vspaceLookup asid5 vaddrPage stUnmap with
+  | .error _ => "unmapped" | .ok _ => "STILL MAPPED"}"
+       , s!"[smp-tlb-shootdown] posted operand (raw FFI encoding): op_tag \
+{opUnmapTarget.toOpTag} asid {opUnmapTarget.toAsid} vaddr {opUnmapTarget.toVaddr}"
+       , s!"[smp-tlb-shootdown] round SGIs: {(shootdownTargets core0).length} × \
+tlbShootdownReq" ]
+    ++ allCores.map (coreLine "after unmap" stUnmap)
+    ++ [ s!"[smp-tlb-shootdown] pending-aware invariant after unmap: \
+{checkerVerdict stUnmap}" ]
+    ++ allCores.map (coreLine "after catch-up" stFinal)
+    ++ [ s!"[smp-tlb-shootdown] round complete: quiescent \
+{decide (shootdownQuiescent stFinal.tlbShootdown)}, allAcked \
+{decide (allAcked stFinal.tlbShootdown)}, bounded \
+{decide (pendingBounded stFinal.tlbShootdown)}, invariant \
+{checkerVerdict stFinal}"
+       , s!"[smp-tlb-shootdown] storm: 4 concurrent rounds leave pending \
+{allCores.map (fun c => (stStorm.tlbShootdown.pendingOnCore c).length)} and \
+cached {allCores.map (fun c => (tlbOnCore stStorm c).entries.length)}, bounded \
+{decide (pendingBounded stStorm.tlbShootdown)}, invariant \
+{checkerVerdict stStorm}"
+       , s!"[smp-tlb-shootdown] storm drained: quiescent \
+{decide (shootdownQuiescent storm.tlbShootdown)}, cached entries left \
+{(allCores.map (fun c => (tlbOnCore storm c).entries.length)).sum}"
+       , s!"[smp-tlb-shootdown] cross-cluster: outer tag \
+{SeLe4n.Kernel.Concurrency.SharingDomain.outer.toTag} vs inner tag \
+{SeLe4n.Kernel.Concurrency.SharingDomain.inner.toTag}, round state-identical \
+{decide ((tlbShootdownBroadcastIn .outer perCoreSeeded core0
+    (shootdownTargets core0) opUnmapTarget).map (fun r => r.1.tlbShootdown) =
+  (tlbShootdownBroadcastIn .inner perCoreSeeded core0
+    (shootdownTargets core0) opUnmapTarget).map (fun r => r.1.tlbShootdown))}" ]
+  | _, _ => ["[smp-tlb-shootdown] PIPELINE ERROR: a live shootdown transition failed"]
+
+private def traceFixturePath : String := "tests/fixtures/smp_tlb_shootdown.expected"
+
+/-- §8: print the deterministic 4-core shootdown trace and verify it
+byte-for-byte against the golden fixture.  The lines print before the (strict)
+verification, so the fixture is regenerable via
+`lake exe smp_tlb_shootdown_suite | grep '^\[smp-tlb-shootdown\]'` (the
+brackets MUST be escaped — unescaped they form a regex character class that
+also matches the suite's `--` section headers, corrupting the fixture). -/
+private def runTraceFixtureCheck : IO Unit := do
+  IO.println "-- §8 deterministic 4-core shootdown trace (golden fixture)"
+  for l in shootdownTraceLines do
+    IO.println l
+  let expectedContent := String.intercalate "\n" shootdownTraceLines ++ "\n"
+  let fixtureExists ← System.FilePath.pathExists traceFixturePath
+  if !fixtureExists then
+    IO.println s!"  FAIL: golden fixture {traceFixturePath} not found"
+    IO.println s!"        regenerate: lake exe smp_tlb_shootdown_suite | \
+grep '^\\[smp-tlb-shootdown\\]' > {traceFixturePath}"
+    throw (IO.userError s!"missing fixture {traceFixturePath}")
+  let actual ← IO.FS.readFile traceFixturePath
+  if actual == expectedContent then
+    IO.println s!"  PASS: shootdown trace matches golden fixture {traceFixturePath}"
+  else
+    IO.println s!"  FAIL: shootdown trace differs from golden fixture {traceFixturePath}"
+    IO.println "        the live trace is printed above; regenerate with:"
+    IO.println s!"          lake exe smp_tlb_shootdown_suite | \
+grep '^\\[smp-tlb-shootdown\\]' > {traceFixturePath}"
+    IO.println s!"          (then refresh {traceFixturePath}.sha256 — see tests/fixtures/README.md)"
+    throw (IO.userError "shootdown trace fixture mismatch")
+
+-- ----------------------------------------------------------------------------
 -- Runner
 -- ----------------------------------------------------------------------------
 
@@ -2226,6 +2730,9 @@ def runSmpTlbShootdownChecks : IO Unit := do
   runPerCoreTlbUseAfterRetypeChecks
   runPerCoreTlbCoalescingOverflowChecks
   runPerCoreTlbLiveLifecycleChecks
+  runConcurrentUnmapStressChecks
+  runCrossClusterMockChecks
+  runTraceFixtureCheck
   IO.println "===================================================="
   IO.println "All SM7.A + SM7.B + SM7.C TLB shootdown + per-core model checks PASS."
 

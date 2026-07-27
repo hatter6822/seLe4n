@@ -967,6 +967,31 @@ view-outcome demotion):
   documented as the eager view-outcome abstraction (views ahead of the
   ack protocol), not a completed round
 
+Per-core TLB model — v0.32.103 SM7.E cut (the live catch-up fold's
+order-independence).  On hardware the targets take their
+`.tlbShootdownReq` SGIs and retire in whatever order the GIC delivers
+them, while the model commits one deterministic fold order; these are
+what make the model's order a faithful representative of every hardware
+interleaving.  SM7.B proved the claim for the **single-view** handler
+(`handleTlbShootdownReqOnCore_comm`), but v0.32.81 swapped the live
+`completeShootdownRounds` fold to the per-core handler, so it is proven
+here for the handler the seam actually runs:
+- `handleTlbShootdownReqOnCorePerCore_comm` — distinct cores' per-core
+  handler steps commute: each drains only its own queue, acknowledges
+  only its own flag, writes only its own `perCoreTlb` slot, and the
+  shared single-view retire-filters intersect commutatively
+- `setTlbOnCore_comm` — per-core view writes at distinct cores commute
+  (the vector-level independence, via `PerCoreVector.ext`);
+  `handleTlbShootdownReqOnCore_setTlbOnCore_comm` — the single-view
+  handler and a per-core view write commute *definitionally* (disjoint
+  fields), the lever the commutativity proof rides
+- `foldl_handleTlbShootdownReqOnCorePerCore_swap` — the
+  adjacent-transposition form, from which every permutation of a `Nodup`
+  target list follows by induction.  Runtime witness:
+  `tests/SmpTlbShootdownSuite.lean` §6 computes three visit orders of the
+  four-core storm and pins them to identical per-core views, shootdown
+  state and single-view TLB
+
 TLB shootdown state layer (`TlbShootdown.lean`, WS-SM SM7.A — production,
 mounted as `SystemState.tlbShootdown`; the SM7.B protocol transitions are
 its first mutators):

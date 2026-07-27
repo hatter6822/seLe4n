@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/sm7d-cache-maintenance-msh1o0",
-      "commit_sha": "91519dbf66e0e96b9c3650ffc0a58c2ff3a195d2",
-      "tree_sha": "229544145ba939d614b229c2ccd388ffc7927caa",
-      "committed_at_utc": "2026-07-27T12:49:52+00:00"
+      "branch": "claude/sm7e-tests-workstream-3ggj5h",
+      "commit_sha": "f4527a1b56e89889d4776e30e102575dd4287e18",
+      "tree_sha": "d7628f01f79af93b52ced142a7eb96ce6ea2fa11",
+      "committed_at_utc": "2026-07-27T16:16:20-04:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "b8ce265818f6f1858957048aca8ab5f69fe56530f87d67249249127905100f6b"
+    "source_digest": "ed6aeb863cfbfcfa9dca25b5443561769e5a9d1462fc976a475b6abc63b5c49d"
   },
   "summary": {
     "module_count": 331,
-    "declaration_count": 13827
+    "declaration_count": 13856
   },
   "readme_sync": {
-    "version": "0.32.102",
+    "version": "0.32.103",
     "lean_toolchain": "v4.28.0",
     "production_files": 264,
-    "production_loc": 235715,
+    "production_loc": 235825,
     "test_files": 67,
-    "test_loc": 47347,
-    "proved_theorem_lemma_decls": 7670,
+    "test_loc": 47915,
+    "proved_theorem_lemma_decls": 7674,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -8203,7 +8203,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.PerCoreTlbModel",
       "path": "SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean",
-      "declaration_count": 118,
+      "declaration_count": 122,
       "declarations": [
         {
           "kind": "namespace",
@@ -8336,8 +8336,25 @@
         },
         {
           "kind": "theorem",
+          "name": "setTlbOnCore_comm",
+          "line": 114,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "TlbState",
+            "ext",
+            "get_set_eq",
+            "get_set_ne",
+            "set",
+            "setTlbOnCore",
+            "st",
+            "symm"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "default_tlbOnCore",
-          "line": 109,
+          "line": 142,
           "called": [
             "CoreId",
             "SystemState",
@@ -8350,7 +8367,7 @@
         {
           "kind": "def",
           "name": "tlbInsertOnCore",
-          "line": 121,
+          "line": 154,
           "called": [
             "CoreId",
             "SystemState",
@@ -8363,7 +8380,7 @@
         {
           "kind": "theorem",
           "name": "tlbInsertOnCore_mem",
-          "line": 127,
+          "line": 160,
           "called": [
             "CoreId",
             "SystemState",
@@ -8376,7 +8393,7 @@
         {
           "kind": "theorem",
           "name": "tlbInsertOnCore_tlbOnCore_ne",
-          "line": 134,
+          "line": 167,
           "called": [
             "CoreId",
             "SystemState",
@@ -8390,7 +8407,7 @@
         {
           "kind": "theorem",
           "name": "tlbInsertOnCore_frame",
-          "line": 141,
+          "line": 174,
           "called": [
             "CoreId",
             "SystemState",
@@ -8402,7 +8419,7 @@
         {
           "kind": "def",
           "name": "tlbInvalidateOnCore",
-          "line": 157,
+          "line": 190,
           "called": [
             "CoreId",
             "SystemState",
@@ -8416,7 +8433,7 @@
         {
           "kind": "theorem",
           "name": "tlbInvalidateOnCore_removes",
-          "line": 163,
+          "line": 196,
           "called": [
             "CoreId",
             "SystemState",
@@ -8433,7 +8450,7 @@
         {
           "kind": "theorem",
           "name": "tlbInvalidateOnCore_tlbOnCore_ne",
-          "line": 172,
+          "line": 205,
           "called": [
             "CoreId",
             "SystemState",
@@ -8447,7 +8464,7 @@
         {
           "kind": "theorem",
           "name": "tlbInvalidateOnCore_subset",
-          "line": 180,
+          "line": 213,
           "called": [
             "CoreId",
             "SystemState",
@@ -8463,7 +8480,7 @@
         {
           "kind": "theorem",
           "name": "tlbInvalidateOnCore_frame",
-          "line": 189,
+          "line": 222,
           "called": [
             "CoreId",
             "SystemState",
@@ -8475,7 +8492,7 @@
         {
           "kind": "theorem",
           "name": "tlbShootdownBroadcast_perCoreTlb",
-          "line": 206,
+          "line": 239,
           "called": [
             "CoreId",
             "SgiKind",
@@ -8491,7 +8508,7 @@
         {
           "kind": "theorem",
           "name": "tlbShootdownBroadcast_asidTable",
-          "line": 223,
+          "line": 256,
           "called": [
             "CoreId",
             "SgiKind",
@@ -8507,7 +8524,7 @@
         {
           "kind": "def",
           "name": "tlbInvalidateOnAllCores",
-          "line": 263,
+          "line": 296,
           "called": [
             "CoreId",
             "SgiKind",
@@ -8522,7 +8539,7 @@
         {
           "kind": "theorem",
           "name": "tlbInvalidateOnAllCores_spec",
-          "line": 276,
+          "line": 309,
           "called": [
             "CoreId",
             "SgiKind",
@@ -8539,7 +8556,7 @@
         {
           "kind": "theorem",
           "name": "tlbInvalidateOnAllCores_perCoreTlb",
-          "line": 297,
+          "line": 330,
           "called": [
             "CoreId",
             "SgiKind",
@@ -8554,7 +8571,7 @@
         {
           "kind": "theorem",
           "name": "tlbInvalidateOnAllCores_sgis",
-          "line": 307,
+          "line": 340,
           "called": [
             "CoreId",
             "SgiKind",
@@ -8569,7 +8586,7 @@
         {
           "kind": "theorem",
           "name": "tlbInvalidateOnAllCores_objects",
-          "line": 318,
+          "line": 351,
           "called": [
             "CoreId",
             "SgiKind",
@@ -8584,7 +8601,7 @@
         {
           "kind": "theorem",
           "name": "tlbInvalidateOnAllCores_asidTable",
-          "line": 328,
+          "line": 361,
           "called": [
             "CoreId",
             "SgiKind",
@@ -8599,7 +8616,7 @@
         {
           "kind": "theorem",
           "name": "tlbInvalidateOnAllCores_isSome_of_quiescent",
-          "line": 342,
+          "line": 375,
           "called": [
             "CoreId",
             "SystemState",
@@ -8613,7 +8630,7 @@
         {
           "kind": "def",
           "name": "tlbEntryConsistent",
-          "line": 369,
+          "line": 402,
           "called": [
             "SystemState",
             "TlbEntry",
@@ -8625,7 +8642,7 @@
         {
           "kind": "def",
           "name": "tlbEntryOk",
-          "line": 378,
+          "line": 411,
           "called": [
             "CoreId",
             "SystemState",
@@ -8639,7 +8656,7 @@
         {
           "kind": "def",
           "name": "tlbInvalidationConsistent_perCore",
-          "line": 402,
+          "line": 435,
           "called": [
             "CoreId",
             "SystemState",
@@ -8651,7 +8668,7 @@
         {
           "kind": "theorem",
           "name": "tlbEntryOk_of_frame",
-          "line": 411,
+          "line": 444,
           "called": [
             "CoreId",
             "SystemState",
@@ -8665,7 +8682,7 @@
         {
           "kind": "theorem",
           "name": "tlbEntryOk_of_frame_eq",
-          "line": 427,
+          "line": 460,
           "called": [
             "CoreId",
             "SystemState",
@@ -8678,7 +8695,7 @@
         {
           "kind": "theorem",
           "name": "tlbEntryConsistent_of_frame",
-          "line": 435,
+          "line": 468,
           "called": [
             "SystemState",
             "TlbEntry",
@@ -8690,7 +8707,7 @@
         {
           "kind": "theorem",
           "name": "tlbEntryConsistent_of_ok_of_quiescent",
-          "line": 448,
+          "line": 481,
           "called": [
             "CoreId",
             "SystemState",
@@ -8704,7 +8721,7 @@
         {
           "kind": "theorem",
           "name": "applyTlbInvalidations_survivor_not_matched",
-          "line": 462,
+          "line": 495,
           "called": [
             "TlbEntry",
             "TlbInvalidation",
@@ -8721,7 +8738,7 @@
         {
           "kind": "theorem",
           "name": "default_tlbInvalidationConsistent_perCore",
-          "line": 483,
+          "line": 516,
           "called": [
             "SystemState",
             "TlbState.empty",
@@ -8733,7 +8750,7 @@
         {
           "kind": "theorem",
           "name": "tlbInvalidationConsistent_perCore_bootCore",
-          "line": 491,
+          "line": 524,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -8746,7 +8763,7 @@
         {
           "kind": "theorem",
           "name": "tlbConsistent_of_subset_of_state_frame",
-          "line": 502,
+          "line": 535,
           "called": [
             "SystemState",
             "TlbState",
@@ -8758,7 +8775,7 @@
         {
           "kind": "theorem",
           "name": "tlbInvalidateOnCore_preserves_tlbInvalidationConsistent_perCore",
-          "line": 520,
+          "line": 553,
           "called": [
             "CoreId",
             "SystemState",
@@ -8776,7 +8793,7 @@
         {
           "kind": "theorem",
           "name": "tlbInsertOnCore_preserves_tlbInvalidationConsistent_perCore",
-          "line": 543,
+          "line": 576,
           "called": [
             "CoreId",
             "SystemState",
@@ -8796,7 +8813,7 @@
         {
           "kind": "theorem",
           "name": "tlbShootdown_invalidates_perCore",
-          "line": 579,
+          "line": 612,
           "called": [
             "CoreId",
             "SgiKind",
@@ -8814,7 +8831,7 @@
         {
           "kind": "theorem",
           "name": "tlbConsistency_cross_subsystem",
-          "line": 611,
+          "line": 644,
           "called": [
             "CoreId",
             "SgiKind",
@@ -8840,7 +8857,7 @@
         {
           "kind": "def",
           "name": "shootdownRoundViewsCoalescing",
-          "line": 657,
+          "line": 690,
           "called": [
             "CoreId",
             "TlbInvalidation",
@@ -8859,7 +8876,7 @@
         {
           "kind": "theorem",
           "name": "foldl_shootdownRoundViewsCoalescing_eq",
-          "line": 674,
+          "line": 707,
           "called": [
             "CoreId",
             "TlbInvalidation",
@@ -8881,7 +8898,7 @@
         {
           "kind": "theorem",
           "name": "shootdownRoundViewsCoalescing_eq_shootdownRoundViews",
-          "line": 716,
+          "line": 749,
           "called": [
             "CoreId",
             "TlbInvalidation",
@@ -8897,7 +8914,7 @@
         {
           "kind": "theorem",
           "name": "foldlM_enqueueShootdown_pre_lt",
-          "line": 731,
+          "line": 764,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -8915,7 +8932,7 @@
         {
           "kind": "def",
           "name": "tlbInvalidateOnAllCoresCoalescing",
-          "line": 770,
+          "line": 803,
           "called": [
             "CoreId",
             "SgiKind",
@@ -8930,7 +8947,7 @@
         {
           "kind": "theorem",
           "name": "tlbInvalidateOnAllCoresCoalescing_perCoreTlb",
-          "line": 782,
+          "line": 815,
           "called": [
             "CoreId",
             "SystemState",
@@ -8944,7 +8961,7 @@
         {
           "kind": "theorem",
           "name": "tlbInvalidateOnAllCoresCoalescing_frame",
-          "line": 793,
+          "line": 826,
           "called": [
             "CoreId",
             "SystemState",
@@ -8956,7 +8973,7 @@
         {
           "kind": "theorem",
           "name": "tlbInvalidateOnAllCoresCoalescing_eq_strict",
-          "line": 804,
+          "line": 837,
           "called": [
             "CoreId",
             "SgiKind",
@@ -8978,7 +8995,7 @@
         {
           "kind": "def",
           "name": "tlbConsistentCheck",
-          "line": 839,
+          "line": 872,
           "called": [
             "SystemState",
             "TlbState",
@@ -8992,7 +9009,7 @@
         {
           "kind": "theorem",
           "name": "tlbConsistentCheck_iff",
-          "line": 847,
+          "line": 880,
           "called": [
             "SystemState",
             "TlbState",
@@ -9005,8 +9022,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:864>",
-          "line": 864,
+          "name": "<anonymous:instance:897>",
+          "line": 897,
           "called": [
             "SystemState",
             "TlbState",
@@ -9018,7 +9035,7 @@
         {
           "kind": "def",
           "name": "tlbEntryConsistentCheck",
-          "line": 869,
+          "line": 902,
           "called": [
             "SystemState",
             "TlbEntry",
@@ -9031,7 +9048,7 @@
         {
           "kind": "theorem",
           "name": "tlbEntryConsistentCheck_iff",
-          "line": 876,
+          "line": 909,
           "called": [
             "SystemState",
             "TlbEntry",
@@ -9046,7 +9063,7 @@
         {
           "kind": "def",
           "name": "tlbEntryOkCheck",
-          "line": 893,
+          "line": 926,
           "called": [
             "CoreId",
             "SystemState",
@@ -9061,7 +9078,7 @@
         {
           "kind": "theorem",
           "name": "tlbEntryOkCheck_iff",
-          "line": 898,
+          "line": 931,
           "called": [
             "CoreId",
             "SystemState",
@@ -9075,7 +9092,7 @@
         {
           "kind": "def",
           "name": "tlbInvalidationConsistentCheck_perCore",
-          "line": 908,
+          "line": 941,
           "called": [
             "SystemState",
             "all",
@@ -9087,7 +9104,7 @@
         {
           "kind": "theorem",
           "name": "tlbInvalidationConsistentCheck_perCore_iff",
-          "line": 912,
+          "line": 945,
           "called": [
             "CoreId",
             "SystemState",
@@ -9100,8 +9117,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:932>",
-          "line": 932,
+          "name": "<anonymous:instance:965>",
+          "line": 965,
           "called": [
             "SystemState",
             "st",
@@ -9112,7 +9129,7 @@
         {
           "kind": "theorem",
           "name": "handleTlbShootdownReqOnCore_perCoreTlb_eq",
-          "line": 950,
+          "line": 983,
           "called": [
             "CoreId",
             "SystemState",
@@ -9123,7 +9140,7 @@
         {
           "kind": "def",
           "name": "handleTlbShootdownReqOnCorePerCore",
-          "line": 961,
+          "line": 994,
           "called": [
             "CoreId",
             "SystemState",
@@ -9138,7 +9155,7 @@
         {
           "kind": "theorem",
           "name": "handleTlbShootdownReqOnCorePerCore_tlb_eq",
-          "line": 969,
+          "line": 1002,
           "called": [
             "CoreId",
             "SystemState",
@@ -9150,7 +9167,7 @@
         {
           "kind": "theorem",
           "name": "handleTlbShootdownReqOnCorePerCore_tlbShootdown_eq",
-          "line": 976,
+          "line": 1009,
           "called": [
             "CoreId",
             "SystemState",
@@ -9162,7 +9179,7 @@
         {
           "kind": "theorem",
           "name": "handleTlbShootdownReqOnCorePerCore_tlbOnCore_self",
-          "line": 983,
+          "line": 1016,
           "called": [
             "CoreId",
             "SystemState",
@@ -9176,7 +9193,7 @@
         {
           "kind": "theorem",
           "name": "handleTlbShootdownReqOnCorePerCore_tlbOnCore_ne",
-          "line": 992,
+          "line": 1025,
           "called": [
             "CoreId",
             "SystemState",
@@ -9190,7 +9207,7 @@
         {
           "kind": "theorem",
           "name": "handleTlbShootdownReqOnCorePerCore_perCoreTlb",
-          "line": 1000,
+          "line": 1033,
           "called": [
             "CoreId",
             "SystemState",
@@ -9207,7 +9224,7 @@
         {
           "kind": "theorem",
           "name": "handleTlbShootdownReqOnCorePerCore_applies_posted_op",
-          "line": 1016,
+          "line": 1049,
           "called": [
             "CoreId",
             "SystemState",
@@ -9224,7 +9241,7 @@
         {
           "kind": "theorem",
           "name": "handleTlbShootdownReqOnCorePerCore_subset",
-          "line": 1029,
+          "line": 1062,
           "called": [
             "CoreId",
             "SystemState",
@@ -9240,7 +9257,7 @@
         {
           "kind": "theorem",
           "name": "handleTlbShootdownReqOnCorePerCore_frame",
-          "line": 1043,
+          "line": 1076,
           "called": [
             "CoreId",
             "SystemState",
@@ -9251,7 +9268,7 @@
         {
           "kind": "theorem",
           "name": "handleTlbShootdownReqOnCorePerCore_preserves_tlbInvalidationConsistent_perCore",
-          "line": 1051,
+          "line": 1084,
           "called": [
             "CoreId",
             "SystemState",
@@ -9276,7 +9293,7 @@
         {
           "kind": "def",
           "name": "tlbShootdownLocalPerCore",
-          "line": 1085,
+          "line": 1118,
           "called": [
             "CoreId",
             "SystemState",
@@ -9291,7 +9308,7 @@
         {
           "kind": "theorem",
           "name": "tlbShootdownLocalPerCore_tlb_eq",
-          "line": 1092,
+          "line": 1125,
           "called": [
             "CoreId",
             "SystemState",
@@ -9304,7 +9321,7 @@
         {
           "kind": "theorem",
           "name": "tlbShootdownLocalPerCore_tlbShootdown_eq",
-          "line": 1098,
+          "line": 1131,
           "called": [
             "CoreId",
             "SystemState",
@@ -9316,7 +9333,7 @@
         {
           "kind": "theorem",
           "name": "tlbShootdownLocalPerCore_perCoreTlb",
-          "line": 1105,
+          "line": 1138,
           "called": [
             "CoreId",
             "SystemState",
@@ -9332,7 +9349,7 @@
         {
           "kind": "theorem",
           "name": "foldl_handleTlbShootdownReqOnCorePerCore_perCoreTlb",
-          "line": 1119,
+          "line": 1152,
           "called": [
             "CoreId",
             "SystemState",
@@ -9354,7 +9371,7 @@
         {
           "kind": "theorem",
           "name": "foldl_handleTlbShootdownReqOnCorePerCore_agrees",
-          "line": 1160,
+          "line": 1193,
           "called": [
             "CoreId",
             "SystemState",
@@ -9370,7 +9387,7 @@
         {
           "kind": "theorem",
           "name": "foldl_handleTlbShootdownReqOnCorePerCore_frame",
-          "line": 1183,
+          "line": 1216,
           "called": [
             "CoreId",
             "SystemState",
@@ -9382,9 +9399,58 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "handleTlbShootdownReqOnCore_setTlbOnCore_comm",
+          "line": 1246,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "TlbState",
+            "handleTlbShootdownReqOnCore",
+            "setTlbOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "handleTlbShootdownReqOnCorePerCore_comm",
+          "line": 1259,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "completeShootdownOnCore_frame_pending",
+            "drainShootdowns",
+            "drainShootdowns_fst",
+            "handleTlbShootdownReqOnCore",
+            "handleTlbShootdownReqOnCorePerCore",
+            "handleTlbShootdownReqOnCorePerCore_tlbOnCore_ne",
+            "handleTlbShootdownReqOnCorePerCore_tlbShootdown_eq",
+            "handleTlbShootdownReqOnCore_comm",
+            "handleTlbShootdownReqOnCore_setTlbOnCore_comm",
+            "handleTlbShootdownReqOnCore_tlbShootdown_eq",
+            "setTlbOnCore",
+            "setTlbOnCore_comm",
+            "st",
+            "symm",
+            "tlbOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "foldl_handleTlbShootdownReqOnCorePerCore_swap",
+          "line": 1300,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "handleTlbShootdownReqOnCorePerCore",
+            "handleTlbShootdownReqOnCorePerCore_comm",
+            "st"
+          ]
+        },
+        {
           "kind": "def",
           "name": "shootdownRoundPerCore",
-          "line": 1203,
+          "line": 1313,
           "called": [
             "CoreId",
             "SystemState",
@@ -9399,7 +9465,7 @@
         {
           "kind": "theorem",
           "name": "shootdownRoundPerCore_spec",
-          "line": 1214,
+          "line": 1324,
           "called": [
             "CoreId",
             "SystemState",
@@ -9416,7 +9482,7 @@
         {
           "kind": "theorem",
           "name": "shootdownRoundPerCore_perCoreTlb",
-          "line": 1234,
+          "line": 1344,
           "called": [
             "CoreId",
             "SystemState",
@@ -9439,7 +9505,7 @@
         {
           "kind": "theorem",
           "name": "shootdownRoundPerCore_tlb_eq",
-          "line": 1257,
+          "line": 1367,
           "called": [
             "CoreId",
             "SystemState",
@@ -9458,7 +9524,7 @@
         {
           "kind": "theorem",
           "name": "shootdownRoundPerCore_invalidates_perCore",
-          "line": 1281,
+          "line": 1391,
           "called": [
             "CoreId",
             "SystemState",
@@ -9476,7 +9542,7 @@
         {
           "kind": "theorem",
           "name": "shootdownRoundPerCore_frame",
-          "line": 1293,
+          "line": 1403,
           "called": [
             "CoreId",
             "SystemState",
@@ -9494,7 +9560,7 @@
         {
           "kind": "theorem",
           "name": "shootdownRoundPerCore_preserves_tlbInvalidationConsistent_perCore",
-          "line": 1307,
+          "line": 1417,
           "called": [
             "CoreId",
             "SystemState",
@@ -9515,7 +9581,7 @@
         {
           "kind": "def",
           "name": "drainInitiatorPerCoreView",
-          "line": 1344,
+          "line": 1454,
           "called": [
             "CoreId",
             "SystemState",
@@ -9529,7 +9595,7 @@
         {
           "kind": "theorem",
           "name": "drainInitiatorPerCoreView_tlb",
-          "line": 1349,
+          "line": 1459,
           "called": [
             "CoreId",
             "SystemState",
@@ -9541,7 +9607,7 @@
         {
           "kind": "theorem",
           "name": "drainInitiatorPerCoreView_tlbShootdown",
-          "line": 1354,
+          "line": 1464,
           "called": [
             "CoreId",
             "SystemState",
@@ -9553,7 +9619,7 @@
         {
           "kind": "theorem",
           "name": "drainInitiatorPerCoreView_frame",
-          "line": 1359,
+          "line": 1469,
           "called": [
             "CoreId",
             "SystemState",
@@ -9565,7 +9631,7 @@
         {
           "kind": "theorem",
           "name": "drainInitiatorPerCoreView_tlbOnCore_self",
-          "line": 1366,
+          "line": 1476,
           "called": [
             "CoreId",
             "SystemState",
@@ -9579,7 +9645,7 @@
         {
           "kind": "theorem",
           "name": "drainInitiatorPerCoreView_tlbOnCore_ne",
-          "line": 1374,
+          "line": 1484,
           "called": [
             "CoreId",
             "SystemState",
@@ -9593,7 +9659,7 @@
         {
           "kind": "theorem",
           "name": "drainInitiatorPerCoreView_subset",
-          "line": 1380,
+          "line": 1490,
           "called": [
             "CoreId",
             "SystemState",
@@ -9610,7 +9676,7 @@
         {
           "kind": "theorem",
           "name": "drainInitiatorPerCoreView_preserves_tlbInvalidationConsistent_perCore",
-          "line": 1393,
+          "line": 1503,
           "called": [
             "CoreId",
             "SystemState",
@@ -9627,7 +9693,7 @@
         {
           "kind": "theorem",
           "name": "foldl_handleTlbShootdownReqOnCorePerCore_tlbOnCore_notMem",
-          "line": 1408,
+          "line": 1518,
           "called": [
             "CoreId",
             "SystemState",
@@ -9642,7 +9708,7 @@
         {
           "kind": "theorem",
           "name": "foldl_handleTlbShootdownReqOnCorePerCore_preserves_consistent",
-          "line": 1423,
+          "line": 1533,
           "called": [
             "CoreId",
             "SystemState",
@@ -9656,7 +9722,7 @@
         {
           "kind": "def",
           "name": "shootdownCatchUpPerCore",
-          "line": 1446,
+          "line": 1556,
           "called": [
             "CoreId",
             "SystemState",
@@ -9670,7 +9736,7 @@
         {
           "kind": "theorem",
           "name": "shootdownCatchUpPerCore_tlb",
-          "line": 1453,
+          "line": 1563,
           "called": [
             "CoreId",
             "SystemState",
@@ -9684,7 +9750,7 @@
         {
           "kind": "theorem",
           "name": "shootdownCatchUpPerCore_tlbShootdown",
-          "line": 1460,
+          "line": 1570,
           "called": [
             "CoreId",
             "SystemState",
@@ -9698,7 +9764,7 @@
         {
           "kind": "theorem",
           "name": "shootdownCatchUpPerCore_agrees_singleView",
-          "line": 1471,
+          "line": 1581,
           "called": [
             "CoreId",
             "SystemState",
@@ -9715,7 +9781,7 @@
         {
           "kind": "theorem",
           "name": "shootdownCatchUpPerCore_initiator_view",
-          "line": 1485,
+          "line": 1595,
           "called": [
             "CoreId",
             "SystemState",
@@ -9733,7 +9799,7 @@
         {
           "kind": "theorem",
           "name": "shootdownCatchUpPerCore_preserves_tlbInvalidationConsistent_perCore",
-          "line": 1498,
+          "line": 1608,
           "called": [
             "CoreId",
             "SystemState",
@@ -9748,7 +9814,7 @@
         {
           "kind": "theorem",
           "name": "shootdownRoundPerCore_cross_subsystem",
-          "line": 1513,
+          "line": 1623,
           "called": [
             "CoreId",
             "SystemState",
@@ -9767,7 +9833,7 @@
         {
           "kind": "def",
           "name": "tlbWalkEntry",
-          "line": 1545,
+          "line": 1655,
           "called": [
             "ASID",
             "SystemState",
@@ -9782,7 +9848,7 @@
         {
           "kind": "theorem",
           "name": "tlbWalkEntry_matches",
-          "line": 1557,
+          "line": 1667,
           "called": [
             "ASID",
             "SystemState",
@@ -9799,7 +9865,7 @@
         {
           "kind": "def",
           "name": "tlbFillOnCore",
-          "line": 1578,
+          "line": 1688,
           "called": [
             "ASID",
             "CoreId",
@@ -9814,7 +9880,7 @@
         {
           "kind": "theorem",
           "name": "tlbFillOnCore_frame",
-          "line": 1586,
+          "line": 1696,
           "called": [
             "ASID",
             "CoreId",
@@ -9830,7 +9896,7 @@
         {
           "kind": "theorem",
           "name": "tlbFillOnCore_tlbOnCore_ne",
-          "line": 1601,
+          "line": 1711,
           "called": [
             "ASID",
             "CoreId",
@@ -9847,7 +9913,7 @@
         {
           "kind": "theorem",
           "name": "tlbFillOnCore_preserves_tlbInvalidationConsistent_perCore",
-          "line": 1616,
+          "line": 1726,
           "called": [
             "ASID",
             "CoreId",
@@ -9865,7 +9931,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPageWithFlush_tlbEntryConsistent_frame",
-          "line": 1639,
+          "line": 1749,
           "called": [
             "ASID",
             "ObjId",
@@ -9891,7 +9957,7 @@
         {
           "kind": "def",
           "name": "vspaceUnmapPageWithShootdownPerCore",
-          "line": 1693,
+          "line": 1803,
           "called": [
             "ASID",
             "CoreId",
@@ -9906,7 +9972,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPageWithShootdownPerCore_preserves_of_flush",
-          "line": 1707,
+          "line": 1817,
           "called": [
             "ASID",
             "CoreId",
@@ -9952,7 +10018,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPageWithShootdownPerCore_preserves_tlbInvalidationConsistent_perCore",
-          "line": 1818,
+          "line": 1928,
           "called": [
             "ASID",
             "CoreId",
@@ -9977,7 +10043,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPageCheckedWithFlushFromState_tlbEntryConsistent_frame",
-          "line": 1860,
+          "line": 1970,
           "called": [
             "ASID",
             "ObjId",
@@ -10004,7 +10070,7 @@
         {
           "kind": "def",
           "name": "vspaceMapPageCheckedWithShootdownFromStatePerCore",
-          "line": 1923,
+          "line": 2033,
           "called": [
             "ASID",
             "CoreId",
@@ -10023,7 +10089,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPageCheckedWithShootdownFromStatePerCore_preserves_tlbInvalidationConsistent_perCore",
-          "line": 1956,
+          "line": 2066,
           "called": [
             "ASID",
             "CoreId",
@@ -184259,7 +184325,7 @@
     {
       "module": "tests.SmpCacheMaintenanceSuite",
       "path": "tests/SmpCacheMaintenanceSuite.lean",
-      "declaration_count": 45,
+      "declaration_count": 48,
       "declarations": [
         {
           "kind": "namespace",
@@ -185147,12 +185213,58 @@
         },
         {
           "kind": "def",
+          "name": "mockClusterA",
+          "line": 1095,
+          "called": [
+            "CoreId",
+            "core0",
+            "core1"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "mockClusterB",
+          "line": 1098,
+          "called": [
+            "CoreId",
+            "core2",
+            "core3"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runCrossClusterReachChecks",
+          "line": 1100,
+          "called": [
+            "SystemState",
+            "all",
+            "assertBool",
+            "contains",
+            "default",
+            "icBroadcastReach",
+            "icFetchOnCore",
+            "icInvalidateBroadcast",
+            "icacheCoherentCheck_perCore",
+            "icacheOnCore",
+            "isEmpty",
+            "length",
+            "lineExec",
+            "mockClusterA",
+            "mockClusterB",
+            "numCores",
+            "paddrPage",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runSmpCacheMaintenanceChecks",
-          "line": 1081,
+          "line": 1141,
           "called": [
             "runAccessorChecks",
             "runBroadcastReachChecks",
             "runCodeWriteObligationChecks",
+            "runCrossClusterReachChecks",
             "runDCachePoCChecks",
             "runDmaScopeChecks",
             "runInvariantChecks",
@@ -185169,7 +185281,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1104,
+          "line": 1165,
           "called": [
             "runSmpCacheMaintenanceChecks"
           ]
@@ -196804,17 +196916,19 @@
     {
       "module": "tests.SmpTlbShootdownSuite",
       "path": "tests/SmpTlbShootdownSuite.lean",
-      "declaration_count": 93,
+      "declaration_count": 115,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing.SmpTlbShootdown",
-          "line": 55,
+          "line": 58,
           "called": [
             "AtomicLocation.shootdownAckOf",
             "AtomicLocation.shootdownAckOf_injective",
             "AtomicLocation.shootdownRoundLockAt",
             "AtomicLocation.shootdownRoundLockAt_ne_shootdownAckOf",
+            "SeLe4n.Kernel.Concurrency.SharingDomain.toTag",
+            "SeLe4n.Kernel.Concurrency.SharingDomain.toTag_injective",
             "ShootdownQueueLockId",
             "ShootdownRoundLockId",
             "ShootdownRoundLockId.singleton",
@@ -196908,6 +197022,7 @@
             "drainShootdowns_fst",
             "drainShootdowns_pending_self",
             "drainShootdowns_preserves_pendingBounded",
+            "dsbForSharing",
             "encodeAsidInvalidation",
             "encodeAsidInvalidation_matches",
             "encodePageInvalidation",
@@ -196956,6 +197071,7 @@
             "foldl_handleTlbShootdownReqOnCorePerCore_agrees",
             "foldl_handleTlbShootdownReqOnCorePerCore_perCoreTlb",
             "foldl_handleTlbShootdownReqOnCorePerCore_preserves_consistent",
+            "foldl_handleTlbShootdownReqOnCorePerCore_swap",
             "foldl_handleTlbShootdownReqOnCorePerCore_tlbOnCore_notMem",
             "foldl_handleTlbShootdownReqOnCore_swap",
             "foldl_setAckFalse_ackOnCore",
@@ -196963,6 +197079,7 @@
             "handleTlbShootdownReqOnCore",
             "handleTlbShootdownReqOnCorePerCore",
             "handleTlbShootdownReqOnCorePerCore_applies_posted_op",
+            "handleTlbShootdownReqOnCorePerCore_comm",
             "handleTlbShootdownReqOnCorePerCore_tlbShootdown_eq",
             "handleTlbShootdownReqOnCorePerCore_tlb_eq",
             "handleTlbShootdownReqOnCore_applies_posted_op",
@@ -196970,6 +197087,7 @@
             "handleTlbShootdownReqOnCore_frame",
             "handleTlbShootdownReqOnCore_idempotent",
             "handleTlbShootdownReqOnCore_preserves_pendingBounded",
+            "handleTlbShootdownReqOnCore_setTlbOnCore_comm",
             "handleTlbShootdownReqOnCore_tlbShootdown_eq",
             "handleTlbShootdownReqOnCore_tlb_eq",
             "initial",
@@ -197048,6 +197166,7 @@
             "setPendingOnCore_pendingOnCore_ne",
             "setPendingOnCore_pendingOnCore_self",
             "setTlbOnCore",
+            "setTlbOnCore_comm",
             "setTlbOnCore_tlbOnCore_ne",
             "setTlbOnCore_tlbOnCore_self",
             "setTlbViewOnCore",
@@ -197228,16 +197347,16 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:607>",
-          "line": 607,
+          "name": "<anonymous:example:627>",
+          "line": 627,
           "called": [
             "maxPendingPerCore"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:611>",
-          "line": 611,
+          "name": "<anonymous:example:631>",
+          "line": 631,
           "called": [
             "initial",
             "shootdownQuiescent"
@@ -197245,8 +197364,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:612>",
-          "line": 612,
+          "name": "<anonymous:example:632>",
+          "line": 632,
           "called": [
             "allAcked",
             "initial"
@@ -197254,8 +197373,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:613>",
-          "line": 613,
+          "name": "<anonymous:example:633>",
+          "line": 633,
           "called": [
             "initial",
             "pendingBounded"
@@ -197263,8 +197382,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:617>",
-          "line": 617,
+          "name": "<anonymous:example:637>",
+          "line": 637,
           "called": [
             "initial",
             "initial_shootdownQuiescent",
@@ -197273,8 +197392,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:619>",
-          "line": 619,
+          "name": "<anonymous:example:639>",
+          "line": 639,
           "called": [
             "initial",
             "initial_shootdownQuiescent",
@@ -197284,8 +197403,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:625>",
-          "line": 625,
+          "name": "<anonymous:example:645>",
+          "line": 645,
           "called": [
             "acknowledgeShootdown",
             "allAcked",
@@ -197297,8 +197416,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:631>",
-          "line": 631,
+          "name": "<anonymous:example:651>",
+          "line": 651,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -197313,8 +197432,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:637>",
-          "line": 637,
+          "name": "<anonymous:example:657>",
+          "line": 657,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -197328,8 +197447,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:644>",
-          "line": 644,
+          "name": "<anonymous:example:664>",
+          "line": 664,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -197343,8 +197462,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:654>",
-          "line": 654,
+          "name": "<anonymous:example:674>",
+          "line": 674,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -197359,8 +197478,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:665>",
-          "line": 665,
+          "name": "<anonymous:example:685>",
+          "line": 685,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -197373,8 +197492,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:672>",
-          "line": 672,
+          "name": "<anonymous:example:692>",
+          "line": 692,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -197387,8 +197506,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:682>",
-          "line": 682,
+          "name": "<anonymous:example:702>",
+          "line": 702,
           "called": [
             "ShootdownRoundLockId",
             "ShootdownRoundLockId.singleton"
@@ -197396,8 +197515,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:688>",
-          "line": 688,
+          "name": "<anonymous:example:708>",
+          "line": 708,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -197412,8 +197531,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:698>",
-          "line": 698,
+          "name": "<anonymous:example:718>",
+          "line": 718,
           "called": [
             "default",
             "default_tlbShootdown_initial",
@@ -197422,8 +197541,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:700>",
-          "line": 700,
+          "name": "<anonymous:example:720>",
+          "line": 720,
           "called": [
             "default",
             "shootdownQuiescent"
@@ -197431,8 +197550,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:706>",
-          "line": 706,
+          "name": "<anonymous:example:726>",
+          "line": 726,
           "called": [
             "CoreId",
             "numCores",
@@ -197443,8 +197562,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:712>",
-          "line": 712,
+          "name": "<anonymous:example:732>",
+          "line": 732,
           "called": [
             "CoreId",
             "TlbEntry",
@@ -197461,8 +197580,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:722>",
-          "line": 722,
+          "name": "<anonymous:example:742>",
+          "line": 742,
           "called": [
             "ASID",
             "CoreId",
@@ -197479,8 +197598,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:732>",
-          "line": 732,
+          "name": "<anonymous:example:752>",
+          "line": 752,
           "called": [
             "CoreId",
             "SystemState",
@@ -197494,8 +197613,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:741>",
-          "line": 741,
+          "name": "<anonymous:example:761>",
+          "line": 761,
           "called": [
             "MemoryEvent",
             "MemoryTrace",
@@ -197507,8 +197626,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:749>",
-          "line": 749,
+          "name": "<anonymous:example:769>",
+          "line": 769,
           "called": [
             "TlbShootdownState",
             "allAcked",
@@ -197519,8 +197638,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:758>",
-          "line": 758,
+          "name": "<anonymous:example:778>",
+          "line": 778,
           "called": [
             "CoreId",
             "SystemState",
@@ -197532,8 +197651,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:766>",
-          "line": 766,
+          "name": "<anonymous:example:786>",
+          "line": 786,
           "called": [
             "RPi5Platform",
             "shootdownSharingDomain"
@@ -197541,8 +197660,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:772>",
-          "line": 772,
+          "name": "<anonymous:example:792>",
+          "line": 792,
           "called": [
             "CoreId",
             "LockId",
@@ -197552,8 +197671,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:779>",
-          "line": 779,
+          "name": "<anonymous:example:799>",
+          "line": 799,
           "called": [
             "shootdownWaitTimeoutTicks",
             "shootdownWaitTimeoutTicks_value"
@@ -197561,8 +197680,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:785>",
-          "line": 785,
+          "name": "<anonymous:example:805>",
+          "line": 805,
           "called": [
             "SystemState",
             "default",
@@ -197572,8 +197691,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:792>",
-          "line": 792,
+          "name": "<anonymous:example:812>",
+          "line": 812,
           "called": [
             "CoreId",
             "SgiKind",
@@ -197588,8 +197707,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:803>",
-          "line": 803,
+          "name": "<anonymous:example:823>",
+          "line": 823,
           "called": [
             "CoreId",
             "SgiKind",
@@ -197604,9 +197723,34 @@
           ]
         },
         {
+          "kind": "example",
+          "name": "<anonymous:example:835>",
+          "line": 835,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "handleTlbShootdownReqOnCorePerCore",
+            "handleTlbShootdownReqOnCorePerCore_comm",
+            "st"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:844>",
+          "line": 844,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "TlbInvalidation",
+            "st",
+            "tlbShootdownBroadcastIn",
+            "tlbShootdown_outer_correct"
+          ]
+        },
+        {
           "kind": "def",
           "name": "assertBool",
-          "line": 816,
+          "line": 854,
           "called": [
             "throw"
           ]
@@ -197614,7 +197758,7 @@
         {
           "kind": "def",
           "name": "core0",
-          "line": 823,
+          "line": 861,
           "called": [
             "CoreId"
           ]
@@ -197622,7 +197766,7 @@
         {
           "kind": "def",
           "name": "core1",
-          "line": 824,
+          "line": 862,
           "called": [
             "CoreId"
           ]
@@ -197630,7 +197774,7 @@
         {
           "kind": "def",
           "name": "core2",
-          "line": 825,
+          "line": 863,
           "called": [
             "CoreId"
           ]
@@ -197638,7 +197782,7 @@
         {
           "kind": "def",
           "name": "core3",
-          "line": 826,
+          "line": 864,
           "called": [
             "CoreId"
           ]
@@ -197646,7 +197790,7 @@
         {
           "kind": "def",
           "name": "descUnmapPage",
-          "line": 831,
+          "line": 869,
           "called": [
             "TlbShootdownDescriptor",
             "core0"
@@ -197655,7 +197799,7 @@
         {
           "kind": "def",
           "name": "descLastLevel",
-          "line": 833,
+          "line": 871,
           "called": [
             "TlbShootdownDescriptor",
             "core0"
@@ -197664,7 +197808,7 @@
         {
           "kind": "def",
           "name": "descAsidRetire",
-          "line": 835,
+          "line": 873,
           "called": [
             "TlbShootdownDescriptor",
             "core2"
@@ -197673,7 +197817,7 @@
         {
           "kind": "def",
           "name": "descFullFlush",
-          "line": 837,
+          "line": 875,
           "called": [
             "TlbShootdownDescriptor",
             "core1"
@@ -197682,7 +197826,7 @@
         {
           "kind": "def",
           "name": "enqueueMany",
-          "line": 843,
+          "line": 881,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -197694,7 +197838,7 @@
         {
           "kind": "def",
           "name": "runDescriptorChecks",
-          "line": 851,
+          "line": 889,
           "called": [
             "assertBool",
             "core0",
@@ -197709,7 +197853,7 @@
         {
           "kind": "def",
           "name": "runInitialStateChecks",
-          "line": 874,
+          "line": 912,
           "called": [
             "ackOnCore",
             "all",
@@ -197725,7 +197869,7 @@
         {
           "kind": "def",
           "name": "runEnqueueChecks",
-          "line": 892,
+          "line": 930,
           "called": [
             "ackOnCore",
             "all",
@@ -197747,7 +197891,7 @@
         {
           "kind": "def",
           "name": "runCapacityChecks",
-          "line": 923,
+          "line": 961,
           "called": [
             "assertBool",
             "core0",
@@ -197768,7 +197912,7 @@
         {
           "kind": "def",
           "name": "runDrainChecks",
-          "line": 950,
+          "line": 988,
           "called": [
             "ackOnCore",
             "all",
@@ -197792,7 +197936,7 @@
         {
           "kind": "def",
           "name": "runAckRoundChecks",
-          "line": 977,
+          "line": 1015,
           "called": [
             "ackOnCore",
             "acknowledgeShootdown",
@@ -197811,7 +197955,7 @@
         {
           "kind": "def",
           "name": "runFullRoundTripChecks",
-          "line": 1008,
+          "line": 1046,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -197840,7 +197984,7 @@
         {
           "kind": "def",
           "name": "runCoalescingChecks",
-          "line": 1049,
+          "line": 1087,
           "called": [
             "ackOnCore",
             "all",
@@ -197865,7 +198009,7 @@
         {
           "kind": "def",
           "name": "runRoundCompositionChecks",
-          "line": 1083,
+          "line": 1121,
           "called": [
             "ackOnCore",
             "acknowledgeShootdown",
@@ -197890,7 +198034,7 @@
         {
           "kind": "def",
           "name": "runLockOrderChecks",
-          "line": 1126,
+          "line": 1164,
           "called": [
             "ShootdownQueueLockId",
             "ShootdownRoundLockId",
@@ -197905,7 +198049,7 @@
         {
           "kind": "def",
           "name": "runMountChecks",
-          "line": 1152,
+          "line": 1190,
           "called": [
             "SystemState",
             "TlbState.empty",
@@ -197920,7 +198064,7 @@
         {
           "kind": "def",
           "name": "runMaskedRoundChecks",
-          "line": 1169,
+          "line": 1207,
           "called": [
             "ackOnCore",
             "allAcked",
@@ -197943,7 +198087,7 @@
         {
           "kind": "def",
           "name": "asid5",
-          "line": 1199,
+          "line": 1237,
           "called": [
             "ASID"
           ]
@@ -197951,7 +198095,7 @@
         {
           "kind": "def",
           "name": "vaddrPage",
-          "line": 1200,
+          "line": 1238,
           "called": [
             "VAddr",
             "ofNat"
@@ -197960,7 +198104,7 @@
         {
           "kind": "def",
           "name": "opUnmapTarget",
-          "line": 1201,
+          "line": 1239,
           "called": [
             "TlbInvalidation",
             "asid5",
@@ -197971,7 +198115,7 @@
         {
           "kind": "def",
           "name": "entryTarget",
-          "line": 1204,
+          "line": 1242,
           "called": [
             "PagePermissions.readOnly",
             "TlbEntry",
@@ -197983,7 +198127,7 @@
         {
           "kind": "def",
           "name": "entryOtherVaddr",
-          "line": 1208,
+          "line": 1246,
           "called": [
             "PagePermissions.readOnly",
             "TlbEntry",
@@ -197994,7 +198138,7 @@
         {
           "kind": "def",
           "name": "entryOtherAsid",
-          "line": 1212,
+          "line": 1250,
           "called": [
             "PagePermissions.readOnly",
             "TlbEntry",
@@ -198005,7 +198149,7 @@
         {
           "kind": "def",
           "name": "seededTlb",
-          "line": 1217,
+          "line": 1255,
           "called": [
             "TlbState",
             "entryOtherAsid",
@@ -198016,7 +198160,7 @@
         {
           "kind": "def",
           "name": "tlbHasEntry",
-          "line": 1220,
+          "line": 1258,
           "called": [
             "TlbEntry",
             "TlbState",
@@ -198026,7 +198170,7 @@
         {
           "kind": "def",
           "name": "runInvalidationSemanticsChecks",
-          "line": 1229,
+          "line": 1267,
           "called": [
             "all",
             "applyTlbInvalidation",
@@ -198048,7 +198192,7 @@
         {
           "kind": "def",
           "name": "runBroadcastChecks",
-          "line": 1265,
+          "line": 1303,
           "called": [
             "SystemState",
             "ackOnCore",
@@ -198075,7 +198219,7 @@
         {
           "kind": "def",
           "name": "runHandlerChecks",
-          "line": 1295,
+          "line": 1333,
           "called": [
             "SystemState",
             "ackOnCore",
@@ -198101,7 +198245,7 @@
         {
           "kind": "def",
           "name": "runProtocolRoundChecks",
-          "line": 1335,
+          "line": 1373,
           "called": [
             "SystemState",
             "TlbState",
@@ -198130,7 +198274,7 @@
         {
           "kind": "def",
           "name": "vspaceScenarioState",
-          "line": 1374,
+          "line": 1412,
           "called": [
             "SystemState",
             "asid5",
@@ -198141,7 +198285,7 @@
         {
           "kind": "def",
           "name": "runCallerWrapperChecks",
-          "line": 1378,
+          "line": 1416,
           "called": [
             "AsidPool",
             "AsidPool.initial",
@@ -198175,7 +198319,7 @@
         {
           "kind": "def",
           "name": "runWaitLoopChecks",
-          "line": 1441,
+          "line": 1479,
           "called": [
             "TlbShootdownState",
             "acknowledgeShootdown",
@@ -198191,7 +198335,7 @@
         {
           "kind": "def",
           "name": "runProtocolLockSetChecks",
-          "line": 1463,
+          "line": 1501,
           "called": [
             "LockId",
             "all",
@@ -198210,7 +198354,7 @@
         {
           "kind": "def",
           "name": "runDiffRecoveryChecks",
-          "line": 1490,
+          "line": 1528,
           "called": [
             "SystemState",
             "assertBool",
@@ -198231,7 +198375,7 @@
         {
           "kind": "def",
           "name": "runCompletionCutChecks",
-          "line": 1511,
+          "line": 1549,
           "called": [
             "Capability",
             "KernelObject",
@@ -198293,7 +198437,7 @@
         {
           "kind": "def",
           "name": "udVsp",
-          "line": 1657,
+          "line": 1695,
           "called": [
             "ObjId"
           ]
@@ -198301,7 +198445,7 @@
         {
           "kind": "def",
           "name": "udCn",
-          "line": 1658,
+          "line": 1696,
           "called": [
             "ObjId"
           ]
@@ -198309,7 +198453,7 @@
         {
           "kind": "def",
           "name": "udCaller",
-          "line": 1659,
+          "line": 1697,
           "called": [
             "ThreadId"
           ]
@@ -198317,7 +198461,7 @@
         {
           "kind": "def",
           "name": "udCap",
-          "line": 1660,
+          "line": 1698,
           "called": [
             "Capability",
             "ofList",
@@ -198327,7 +198471,7 @@
         {
           "kind": "def",
           "name": "udCapRO",
-          "line": 1662,
+          "line": 1700,
           "called": [
             "Capability",
             "ofList",
@@ -198337,7 +198481,7 @@
         {
           "kind": "def",
           "name": "udDecoded",
-          "line": 1667,
+          "line": 1705,
           "called": [
             "SyscallDecodeResult",
             "length",
@@ -198347,7 +198491,7 @@
         {
           "kind": "def",
           "name": "udState",
-          "line": 1673,
+          "line": 1711,
           "called": [
             "Capability",
             "Slot",
@@ -198368,7 +198512,7 @@
         {
           "kind": "def",
           "name": "udDispatch",
-          "line": 1689,
+          "line": 1727,
           "called": [
             "Capability",
             "KernelError",
@@ -198388,7 +198532,7 @@
         {
           "kind": "def",
           "name": "runLiveDispatchChecks",
-          "line": 1697,
+          "line": 1735,
           "called": [
             "all",
             "asid5",
@@ -198412,7 +198556,7 @@
         {
           "kind": "def",
           "name": "runDebtClosureChecks",
-          "line": 1729,
+          "line": 1767,
           "called": [
             "SystemState",
             "all",
@@ -198436,7 +198580,7 @@
         {
           "kind": "def",
           "name": "perCoreSeeded",
-          "line": 1768,
+          "line": 1806,
           "called": [
             "SystemState",
             "default",
@@ -198447,7 +198591,7 @@
         {
           "kind": "def",
           "name": "runPerCoreTlbLocalChecks",
-          "line": 1772,
+          "line": 1810,
           "called": [
             "SystemState",
             "all",
@@ -198474,7 +198618,7 @@
         {
           "kind": "def",
           "name": "runPerCoreTlbBroadcastChecks",
-          "line": 1803,
+          "line": 1841,
           "called": [
             "all",
             "assertBool",
@@ -198501,7 +198645,7 @@
         {
           "kind": "def",
           "name": "runPerCoreTlbOperationalChecks",
-          "line": 1847,
+          "line": 1885,
           "called": [
             "SystemState",
             "all",
@@ -198535,7 +198679,7 @@
         {
           "kind": "def",
           "name": "runPerCoreTlbFillChecks",
-          "line": 1935,
+          "line": 1973,
           "called": [
             "all",
             "any",
@@ -198559,7 +198703,7 @@
         {
           "kind": "def",
           "name": "runPerCoreTlbPendingAwareChecks",
-          "line": 1967,
+          "line": 2005,
           "called": [
             "asid5",
             "assertBool",
@@ -198580,7 +198724,7 @@
         {
           "kind": "def",
           "name": "runPerCoreTlbInitiatorAtomicChecks",
-          "line": 1999,
+          "line": 2037,
           "called": [
             "any",
             "asid5",
@@ -198606,7 +198750,7 @@
         {
           "kind": "def",
           "name": "runPerCoreTlbUseAfterRetypeChecks",
-          "line": 2045,
+          "line": 2083,
           "called": [
             "SystemState",
             "asid5",
@@ -198627,7 +198771,7 @@
         {
           "kind": "def",
           "name": "runPerCoreTlbCoalescingOverflowChecks",
-          "line": 2079,
+          "line": 2117,
           "called": [
             "SystemState",
             "assertBool",
@@ -198658,7 +198802,7 @@
         {
           "kind": "def",
           "name": "runPerCoreTlbLiveLifecycleChecks",
-          "line": 2140,
+          "line": 2178,
           "called": [
             "all",
             "any",
@@ -198686,8 +198830,343 @@
         },
         {
           "kind": "def",
+          "name": "stressAssignments",
+          "line": 2242,
+          "called": [
+            "CoreId",
+            "PAddr",
+            "VAddr",
+            "core0",
+            "core1",
+            "core2",
+            "core3",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "stressOpOf",
+          "line": 2254,
+          "called": [
+            "CoreId",
+            "TlbInvalidation",
+            "asid5",
+            "encodePageInvalidation",
+            "none",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "stressMapped",
+          "line": 2261,
+          "called": [
+            "SystemState",
+            "asid5",
+            "none",
+            "readOnly",
+            "st",
+            "udState",
+            "vspaceMapPageWithFlush"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "stressFilled",
+          "line": 2271,
+          "called": [
+            "SystemState",
+            "asid5",
+            "st",
+            "stressMapped",
+            "tlbFillOnCore"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "stressStormed",
+          "line": 2281,
+          "called": [
+            "SystemState",
+            "asid5",
+            "none",
+            "st",
+            "stressFilled",
+            "vspaceUnmapPageWithShootdownPerCore"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "viewCaches",
+          "line": 2293,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "VAddr",
+            "any",
+            "asid5",
+            "st",
+            "tlbOnCore"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sameViews",
+          "line": 2300,
+          "called": [
+            "SystemState",
+            "all",
+            "contains",
+            "length",
+            "tlbOnCore"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runShootdownBackpressureChecks",
+          "line": 2315,
+          "called": [
+            "SystemState",
+            "all",
+            "asid5",
+            "assertBool",
+            "core0",
+            "core1",
+            "core2",
+            "core3",
+            "encodeAsidInvalidation",
+            "handleTlbShootdownReqOnCorePerCore",
+            "isEmpty",
+            "length",
+            "maxPendingPerCore",
+            "ofNat",
+            "pendingBounded",
+            "pendingOnCore",
+            "shootdownQuiescent",
+            "shootdownTargets",
+            "stressOpOf",
+            "tlbOnCore",
+            "tlbShootdownBroadcast",
+            "tlbShootdownBroadcastCoalescing",
+            "viewCaches"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runConcurrentUnmapDrainChecks",
+          "line": 2373,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "all",
+            "assertBool",
+            "core0",
+            "core1",
+            "core2",
+            "core3",
+            "handleTlbShootdownReqOnCorePerCore",
+            "isEmpty",
+            "length",
+            "pendingOnCore",
+            "runShootdownBackpressureChecks",
+            "sameViews",
+            "shootdownCatchUpPerCore",
+            "shootdownQuiescent",
+            "stressOpOf",
+            "tlbInvalidationConsistentCheck_perCore",
+            "tlbOnCore"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runConcurrentUnmapStressChecks",
+          "line": 2423,
+          "called": [
+            "all",
+            "any",
+            "asid5",
+            "assertBool",
+            "encodePageInvalidation",
+            "filter",
+            "none",
+            "pendingBounded",
+            "pendingOnCore",
+            "runConcurrentUnmapDrainChecks",
+            "shootdownQuiescent",
+            "stressFilled",
+            "stressStormed",
+            "tlbInvalidationConsistentCheck_perCore",
+            "viewCaches",
+            "vspaceLookup"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "mockClusterA",
+          "line": 2486,
+          "called": [
+            "CoreId",
+            "core0",
+            "core1"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "mockClusterB",
+          "line": 2490,
+          "called": [
+            "CoreId",
+            "core2",
+            "core3"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runCrossClusterHazardChecks",
+          "line": 2497,
+          "called": [
+            "ackOnCore",
+            "all",
+            "assertBool",
+            "core0",
+            "core1",
+            "core2",
+            "core3",
+            "entryTarget",
+            "mockClusterB",
+            "none",
+            "opUnmapTarget",
+            "pendingBounded",
+            "perCoreSeeded",
+            "shootdownQuiescent",
+            "shootdownRoundPerCore",
+            "shootdownTargets",
+            "tlbHasEntry",
+            "tlbInvalidateOnCore",
+            "tlbOnCore",
+            "tlbShootdownBroadcast"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runCrossClusterMockChecks",
+          "line": 2551,
+          "called": [
+            "assertBool",
+            "core0",
+            "core1",
+            "core2",
+            "core3",
+            "dsbForSharing",
+            "opUnmapTarget",
+            "perCoreSeeded",
+            "runCrossClusterHazardChecks",
+            "sameViews",
+            "shootdownSharingDomain",
+            "shootdownTargets",
+            "tlbShootdownBroadcastIn",
+            "toTag"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "tracePipeline",
+          "line": 2599,
+          "called": [
+            "SystemState",
+            "asid5",
+            "core0",
+            "core1",
+            "none",
+            "ofNat",
+            "opUnmapTarget",
+            "readOnly",
+            "shootdownCatchUpPerCore",
+            "udState",
+            "vaddrPage",
+            "vspaceMapPageCheckedWithShootdownFromStatePerCore",
+            "vspaceUnmapPageWithShootdownPerCore"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "coreLine",
+          "line": 2613,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ackOnCore",
+            "length",
+            "pendingOnCore",
+            "st",
+            "tag",
+            "tlbOnCore"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "checkerVerdict",
+          "line": 2620,
+          "called": [
+            "SystemState",
+            "st",
+            "tlbInvalidationConsistentCheck_perCore"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "shootdownTraceLines",
+          "line": 2623,
+          "called": [
+            "allAcked",
+            "asid5",
+            "bounded",
+            "checkerVerdict",
+            "core0",
+            "core1",
+            "coreLine",
+            "handleTlbShootdownReqOnCorePerCore",
+            "invariant",
+            "length",
+            "opUnmapTarget",
+            "pendingBounded",
+            "pendingOnCore",
+            "perCoreSeeded",
+            "shootdownQuiescent",
+            "shootdownTargets",
+            "stressStormed",
+            "tag",
+            "tlbOnCore",
+            "tlbShootdownBroadcastIn",
+            "toAsid",
+            "toOpTag",
+            "toTag",
+            "toVaddr",
+            "tracePipeline",
+            "vaddrPage",
+            "vspaceLookup"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "traceFixturePath",
+          "line": 2664,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "runTraceFixtureCheck",
+          "line": 2672,
+          "called": [
+            "shootdownTraceLines",
+            "throw",
+            "traceFixturePath"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runSmpTlbShootdownChecks",
-          "line": 2194,
+          "line": 2698,
           "called": [
             "runAckRoundChecks",
             "runBroadcastChecks",
@@ -198695,6 +199174,8 @@
             "runCapacityChecks",
             "runCoalescingChecks",
             "runCompletionCutChecks",
+            "runConcurrentUnmapStressChecks",
+            "runCrossClusterMockChecks",
             "runDebtClosureChecks",
             "runDescriptorChecks",
             "runDiffRecoveryChecks",
@@ -198720,13 +199201,14 @@
             "runProtocolLockSetChecks",
             "runProtocolRoundChecks",
             "runRoundCompositionChecks",
+            "runTraceFixtureCheck",
             "runWaitLoopChecks"
           ]
         },
         {
           "kind": "def",
           "name": "main",
-          "line": 2234,
+          "line": 2741,
           "called": [
             "runSmpTlbShootdownChecks"
           ]
