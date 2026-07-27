@@ -432,16 +432,46 @@ preservation theorems, and `tlbBarrierComplete` composition.
 
 Models D-cache and I-cache line states (Invalid/Clean/Dirty for D-cache,
 Invalid/Valid for I-cache). Five maintenance operations (DC CIVAC, DC CVAC,
-DC IVAC, IC IALLU, IC IALLUIS) with 17 preservation theorems. Sequential
-model — cache coherency is trivially satisfied under single-core operation.
+DC IVAC, IC IALLU, IC IALLUIS) with 17 preservation theorems. This is the
+**single-view** model: one `CacheState` for the machine.
+
+**WS-SM SM7.D — SMP cache maintenance** (`PerCoreCacheModel.lean`) replaces
+the former "sequential model — cache coherency is trivially satisfied under
+single-core operation" position with proved per-structure statements:
+
+- **D-cache**: assumed system-wide at the Point of Coherency (ARM ARM B2.7 /
+  D7.4 — a `DC` operation by VA to the PoC affects every agent that can access
+  the location, and the Cortex-A76 cluster's data caches are hardware-coherent
+  through the interconnect).  The model encodes this by giving
+  `dcMaintenanceAllCores` **no target set**, and proves
+  `dcMaintenanceByVA_reaches_all_cores` from it.
+- **I-cache**: *not* assumed coherent — instruction caches are coherent
+  neither with the data side nor across PEs.  `IC IALLU` reaches only the
+  executing PE; the kernel must issue `IC IALLUIS` / `IC IVAU`, whose reach is
+  proved (`icInvalidateBroadcast_reaches_all_cores`) rather than assumed, and
+  whose omission is the hazard `icInvalidateOnCore_icacheOnCore_ne` exhibits.
+  The per-core state is mounted as `SystemState.perCoreICache` and its
+  coherency invariant `icacheCoherent_perCore` is the 14th
+  `proofLayerInvariantBundle` conjunct.
+- **DMA**: assumed absent for v1.0.0 (no DMA driver ⇒ no non-coherent bus
+  master).  This is the one genuinely *assumed* part of the cache story, and it
+  is tripwired rather than trusted: `modeledCoherentAgents_no_dma_master`
+  breaks if a DMA agent is introduced without the buffer-ownership protocol.
+- **Broadcast domain**: `IC IALLUIS` broadcasts within the *Inner Shareable*
+  domain only.  On BCM2712 all four PEs share one IS domain
+  (`icBroadcastReach_cover`); a multi-cluster port must narrow the reach and
+  add an SGI-based instruction-cache protocol, exactly as SM7.B §3.4 documents
+  for the TLB.
 
 ### ARM64-Specific Constraints
 
 The following hardware constraints are assumed for the Raspberry Pi 5 target:
 
 - **Single-core operation**: H3 uses core 0 only. Other cores are held in WFE
-  loop. Per-core assumptions (run queues, TLB, cache) are simplified to
-  single-core semantics. SMP bring-up (DEF-R-HAL-L20) is in flight in WS-SM
+  loop. Per-core assumptions (run queues, TLB, cache) were simplified to
+  single-core semantics at H3; WS-SM has since replaced that simplification
+  with genuine per-core models for the run queues (SM4/SM5), the TLB (SM7.C)
+  and the instruction cache (SM7.D). SMP bring-up (DEF-R-HAL-L20) is in flight in WS-SM
   (`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`); AN9-J shipped the
   Rust HAL scaffolding (PSCI bring-up, per-core stacks, MPIDR gate)
   while WS-SM activates and verifies the cross-core kernel transitions.

@@ -1002,13 +1002,79 @@ run_check "INVARIANT" rg -n '^private def runPerCoreTlbOperationalChecks' tests/
 # / `.vspaceUnmap` dispatch routes through the per-core wrappers).
 run_check "INVARIANT" rg -n '^def vspaceMapPageCheckedWithShootdownFromStatePerCore' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
 run_check "INVARIANT" rg -n '^theorem vspaceMapPageCheckedWithShootdownFromStatePerCore_preserves_tlbInvalidationConsistent_perCore' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
-run_check "INVARIANT" rg -n 'vspaceUnmapPageWithShootdownPerCore' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n 'vspaceUnmapPageWithShootdownPerCore' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
 run_check "INVARIANT" rg -n 'vspaceMapPageCheckedWithShootdownFromStatePerCore' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^private def runPerCoreTlbLiveLifecycleChecks' tests/SmpTlbShootdownSuite.lean
 # WS-SM SM7.F.4(b)(iii): the retype seam drains the initiator's per-core view.
 run_check "INVARIANT" rg -n '^def lifecycleRetypeDirectWithCleanupShootdownPerCore' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
 run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectWithCleanupShootdownPerCore_initiator_drained' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
 run_check "INVARIANT" rg -n 'lifecycleRetypeDirectWithCleanupShootdownPerCore' SeLe4n/Kernel/API.lean
+# ============================================================================
+# WS-SM SM7.D — cache maintenance broadcast
+#
+# The instruction-cache broadcast layer (`IC IALLUIS` / `IC IVAU`) and its
+# PE-local counterpart (the hazard), the data-cache-at-PoC reach theorems,
+# the DMA scope tripwire, the 14th `proofLayerInvariantBundle` conjunct, the
+# live `.vspaceUnmap` / `.lifecycleRetype` seams, the FFI + Rust HAL
+# realisation, and the suite that exercises all of it.
+# ============================================================================
+# SM7.D module registration + `CacheModel` promotion to production.
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Architecture\.PerCoreCacheModel' SeLe4n.lean
+run_check "INVARIANT" bash -c "! rg -q '^SeLe4n\.Kernel\.Architecture\.CacheModel' scripts/staged_module_allowlist.txt"
+run_check "INVARIANT" bash -c "! rg -q 'STATUS: staged' SeLe4n/Kernel/Architecture/CacheModel.lean"
+# SM7.D.1 typed operand + effect algebra + per-core model ops.
+run_check "INVARIANT" rg -n '^inductive ICacheInvalidation' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^def applyICacheInvalidation' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^def icFetchOnCore' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^def icInvalidateOnCore' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem icInvalidateOnCore_icacheOnCore_ne' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^def icInvalidateBroadcast' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem icInvalidateBroadcast_reaches_all_cores' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem icBroadcastReach_cover' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+# SM7.D.1 mounted per-core state + its carriage.
+run_check "INVARIANT" rg -n '  perCoreICache : Vector ICacheState numCores' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem default_perCoreICache' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '  perCoreICache     : _root_\.Vector ICacheState numCores' SeLe4n/Model/FrozenState.lean
+run_check "INVARIANT" rg -n '^theorem freeze_preserves_perCoreICache' SeLe4n/Model/FrozenState.lean
+run_check "INVARIANT" rg -n '  perCoreICache : s2\.perCoreICache = s1\.perCoreICache' SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatform_perCoreICache_eq' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem perCoreICache_write_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+# SM7.D.2 data-cache at the Point of Coherency (system-wide, no target set).
+run_check "INVARIANT" rg -n '^def dcMaintenanceAllCores' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem dcMaintenanceByVA_reaches_all_cores' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem icInvalidateOnCore_vs_dcMaintenance_reach' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+# SM7.D.3 the DMA scope tripwire.
+run_check "INVARIANT" rg -n '^def modeledCoherentAgents' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem modeledCoherentAgents_no_dma_master' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+# SM7.D.4 the 14th proofLayerInvariantBundle conjunct + capstone + checker.
+run_check "INVARIANT" rg -n '^def icacheCoherent_perCore' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n 'icacheCoherent_perCore st' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem default_icacheCoherent_perCore' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem cacheCoherency_cross_subsystem' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem icacheCoherentCheck_perCore_iff' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+# SM7.D.1 live wiring: the two production destroy paths + the runtime seam.
+run_check "INVARIANT" rg -n '^def vspaceUnmapPageWithShootdownAndIcacheBroadcast' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_preserves_icacheCoherent_perCore' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^def lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" rg -n '^def lifecycleRetypeWithCleanupShootdownPerCoreIcache' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" rg -n 'vspaceUnmapPageWithShootdownAndIcacheBroadcast' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n 'lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def completeIcacheMaintenance' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n 'completeIcacheMaintenance result' SeLe4n/Kernel/SyscallDispatchEntry.lean
+# SM7.D FFI + Rust HAL realisation (broadcast primitives + fail-closed decode).
+run_check "INVARIANT" rg -n '^opaque ffiIcIalluIs' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^opaque ffiIcMaintenance' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def icMaintenanceBroadcast' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^pub fn ic_ivau' rust/sele4n-hal/src/cache.rs
+run_check "INVARIANT" rg -n '^pub fn ic_invalidate_all_inner_shareable' rust/sele4n-hal/src/cache.rs
+run_check "INVARIANT" rg -n '^pub const fn decode_icache_invalidation' rust/sele4n-hal/src/cache.rs
+run_check "INVARIANT" rg -n '^pub extern "C" fn cache_ic_ialluis' rust/sele4n-hal/src/ffi.rs
+run_check "INVARIANT" rg -n '^pub extern "C" fn cache_ic_maintenance' rust/sele4n-hal/src/ffi.rs
+# SM7.D suite registration (Tier-2 runner + lakefile executable).
+run_check "INVARIANT" rg -n '^def runSmpCacheMaintenanceChecks' tests/SmpCacheMaintenanceSuite.lean
+run_check "INVARIANT" rg -n '^run_check(_with_timeout)? "TRACE" lake exe smp_cache_maintenance_suite' scripts/test_tier2_negative.sh
+run_check "INVARIANT" rg -n '^name = "smp_cache_maintenance_suite"' lakefile.toml
+
 # WS-SM SM7.F.4(b)(iii): shared initiator drain + the CSpaceAddr retype sibling.
 run_check "INVARIANT" rg -n '^def retypeInitiatorDrain' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
 run_check "INVARIANT" rg -n '^def lifecycleRetypeWithCleanupShootdownPerCore' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean

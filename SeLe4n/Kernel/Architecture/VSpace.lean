@@ -393,6 +393,38 @@ theorem vspaceUnmapPageWithFlush_perCoreTlb_eq (asid : SeLe4n.ASID)
       rw [← hStep.2]
       exact vspaceUnmapPage_perCoreTlb_eq asid vaddr st pair.2 hBase
 
+/-- WS-SM SM7.D: `vspaceUnmapPage` frames the per-core instruction caches — a
+page unmap bottoms out in `storeObject`, which never touches `perCoreICache`.
+The instruction-side twin of `vspaceUnmapPage_perCoreTlb_eq`: it is what makes
+the I-cache change in `vspaceUnmapPageWithShootdownAndIcacheBroadcast` come
+*exclusively* from that wrapper's explicit `icInvalidateBroadcast` step. -/
+theorem vspaceUnmapPage_perCoreICache_eq (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (st st' : SystemState)
+    (hStep : vspaceUnmapPage asid vaddr st = .ok ((), st')) :
+    st'.perCoreICache = st.perCoreICache := by
+  unfold vspaceUnmapPage at hStep
+  split at hStep
+  · cases hStep
+  · split at hStep
+    · cases hStep
+    · exact SeLe4n.Model.storeObject_perCoreICache_eq _ _ _ _ hStep
+
+/-- WS-SM SM7.D: `vspaceUnmapPageWithFlush` frames the per-core instruction
+caches — the flush composition adds only a scalar `tlb` write. -/
+theorem vspaceUnmapPageWithFlush_perCoreICache_eq (asid : SeLe4n.ASID)
+    (vaddr : SeLe4n.VAddr) (st st' : SystemState)
+    (hStep : vspaceUnmapPageWithFlush asid vaddr st = .ok ((), st')) :
+    st'.perCoreICache = st.perCoreICache := by
+  unfold vspaceUnmapPageWithFlush at hStep
+  revert hStep
+  cases hBase : vspaceUnmapPage asid vaddr st with
+  | error e => intro hStep; cases hStep
+  | ok pair =>
+      simp only [Except.ok.injEq, Prod.mk.injEq]
+      intro hStep
+      rw [← hStep.2]
+      exact vspaceUnmapPage_perCoreICache_eq asid vaddr st pair.2 hBase
+
 /-- WS-SM SM7.B: `vspaceMapPageWithFlush` frames the TLB-shootdown state. -/
 theorem vspaceMapPageWithFlush_tlbShootdown_eq (asid : SeLe4n.ASID)
     (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr) (perms : PagePermissions)
@@ -456,6 +488,53 @@ theorem vspaceMapPageWithFlush_perCoreTlb_eq (asid : SeLe4n.ASID)
       intro hStep
       rw [← hStep.2]
       exact vspaceMapPage_perCoreTlb_eq asid vaddr paddr perms st pair.2 hBase
+
+/-- WS-SM SM7.D: `vspaceMapPage` frames the per-core instruction caches — a
+page map bottoms out in `storeObject`, which never touches `perCoreICache`. -/
+theorem vspaceMapPage_perCoreICache_eq (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr) (perms : PagePermissions) (st st' : SystemState)
+    (hStep : vspaceMapPage asid vaddr paddr perms st = .ok ((), st')) :
+    st'.perCoreICache = st.perCoreICache := by
+  unfold vspaceMapPage at hStep
+  split at hStep
+  · cases hStep
+  · split at hStep
+    · cases hStep
+    · split at hStep
+      · cases hStep
+      · exact SeLe4n.Model.storeObject_perCoreICache_eq _ _ _ _ hStep
+
+/-- WS-SM SM7.D: `vspaceMapPageWithFlush` frames the per-core instruction
+caches. -/
+theorem vspaceMapPageWithFlush_perCoreICache_eq (asid : SeLe4n.ASID)
+    (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr) (perms : PagePermissions)
+    (st st' : SystemState)
+    (hStep : vspaceMapPageWithFlush asid vaddr paddr perms st = .ok ((), st')) :
+    st'.perCoreICache = st.perCoreICache := by
+  unfold vspaceMapPageWithFlush at hStep
+  revert hStep
+  cases hBase : vspaceMapPage asid vaddr paddr perms st with
+  | error e => intro hStep; cases hStep
+  | ok pair =>
+      simp only [Except.ok.injEq, Prod.mk.injEq]
+      intro hStep
+      rw [← hStep.2]
+      exact vspaceMapPage_perCoreICache_eq asid vaddr paddr perms st pair.2 hBase
+
+/-- WS-SM SM7.D: the state-aware bounds-checked map frames the per-core
+instruction caches. -/
+theorem vspaceMapPageCheckedWithFlushFromState_perCoreICache_eq
+    (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
+    (perms : PagePermissions) (st st' : SystemState)
+    (hStep : vspaceMapPageCheckedWithFlushFromState asid vaddr paddr perms st
+      = .ok ((), st')) :
+    st'.perCoreICache = st.perCoreICache := by
+  unfold vspaceMapPageCheckedWithFlushFromState at hStep
+  split at hStep
+  · cases hStep
+  · split at hStep
+    · cases hStep
+    · exact vspaceMapPageWithFlush_perCoreICache_eq asid vaddr paddr perms st st' hStep
 
 /-- WS-SM SM7.F: the state-aware bounds-checked map frames the per-core TLB
 views — the initiator's own view change in

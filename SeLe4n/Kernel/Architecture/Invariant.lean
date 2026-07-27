@@ -12,6 +12,9 @@ import SeLe4n.Kernel.Architecture.VSpaceInvariant
 import SeLe4n.Kernel.Architecture.RegisterDecode
 import SeLe4n.Kernel.Architecture.TlbModel
 import SeLe4n.Kernel.Architecture.PerCoreTlbModel
+-- WS-SM SM7.D.4: the per-core instruction-cache coherency invariant — the
+-- 14th `proofLayerInvariantBundle` conjunct.
+import SeLe4n.Kernel.Architecture.PerCoreCacheModel
 import SeLe4n.Kernel.Service.Invariant
 import SeLe4n.Kernel.CrossSubsystem
 -- AK8-A audit remediation: retype preservation needs `retypeFromUntyped`
@@ -101,7 +104,21 @@ consistent disjunct), and `tlbShootdown` (the pending disjunct) — and none of
 `machine` / `scheduler`.  The three adapter transitions touch only `machine`
 (and, for `contextSwitchState`, `scheduler.current`), so they frame all four
 fields the conjunct reads, and the component transports *definitionally*
-(`by exact hPerCoreTlb`) exactly as the 9th conjunct does. -/
+(`by exact hPerCoreTlb`) exactly as the 9th conjunct does.
+
+WS-SM SM7.D: `icacheCoherent_perCore st` added as the 14th component — the
+per-core **instruction-cache** coherency invariant, the cache-side companion of
+the 13th.  On every core, every cached instruction line still has a live
+**executable** mapping.  Unlike the TLB conjunct it needs no pending-allowance
+disjunct: instruction-cache maintenance is a synchronous broadcast instruction
+(`IC IALLUIS` / `IC IVAU`), not a queued request/acknowledge round, so no
+committed state has a line that is stale-but-scheduled-for-retirement — the
+live `.vspaceUnmap` and `.lifecycleRetype` seams broadcast atomically with the
+transition that would falsify a line's witness.  It reads exactly three fields
+— `perCoreICache` (via `icacheOnCore`) plus `objects` + `asidTable` (via
+`resolveAsidRoot`) — and none of `machine` / `scheduler` / `tlbShootdown`, so
+it transports through the adapter transitions *definitionally*, for the same
+reason the 9th and 13th do. -/
 def proofLayerInvariantBundle (st : SystemState) : Prop :=
   schedulerInvariantBundleFull st ∧
     capabilityInvariantBundle st ∧
@@ -115,7 +132,8 @@ def proofLayerInvariantBundle (st : SystemState) : Prop :=
     schedulerInvariantBundleExtended st ∧
     notificationWaiterConsistent st ∧
     pendingBounded st.tlbShootdown ∧
-    tlbInvalidationConsistent_perCore st
+    tlbInvalidationConsistent_perCore st ∧
+    icacheCoherent_perCore st
 
 /-- Proof-carrying local preservation hooks required to compose adapter paths with invariant bundles. -/
 structure AdapterProofHooks (contract : RuntimeBoundaryContract) where
@@ -559,7 +577,7 @@ private theorem default_schedulerInvariantBundleFull :
 
 theorem default_system_state_proofLayerInvariantBundle :
     proofLayerInvariantBundle (default : SystemState) := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   -- 1. schedulerInvariantBundleFull (WS-H12e: now uses full bundle)
   · exact default_schedulerInvariantBundleFull
   -- 2. capabilityInvariantBundle (6-tuple: unique, sound, bounded, completeness, acyclicity, depth)
@@ -612,6 +630,9 @@ theorem default_system_state_proofLayerInvariantBundle :
   -- 13. tlbInvalidationConsistent_perCore (WS-SM SM7.C: every core's boot
   --     TLB view is empty, hence trivially consistent)
   · exact default_tlbInvalidationConsistent_perCore
+  -- 14. icacheCoherent_perCore (WS-SM SM7.D: every core's boot instruction
+  --     cache is cold, hence trivially coherent)
+  · exact default_icacheCoherent_perCore
 
 -- ============================================================================
 -- M-08/WS-E6: Architecture assumption consumption bridge theorems

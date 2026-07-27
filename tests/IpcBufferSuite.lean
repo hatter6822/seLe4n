@@ -249,6 +249,9 @@ private def emptyFrozenState : FrozenSystemState := {
   scThreadIndex := freezeMap (RHTable.empty 16)
   tlb := TlbState.empty
   perCoreTlb := _root_.Vector.replicate SeLe4n.Kernel.Concurrency.numCores TlbState.empty
+  -- WS-SM SM7.D.1: required frozen field (no default).
+  perCoreICache :=
+    _root_.Vector.replicate SeLe4n.Kernel.Concurrency.numCores ICacheState.empty
 }
 
 /-- Helper: build a minimal FrozenSystemState with given objects. -/

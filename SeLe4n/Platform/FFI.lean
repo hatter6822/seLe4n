@@ -1253,9 +1253,81 @@ opaque ffiCacheCleanPagetableRange : UInt64 → UInt64 → BaseIO Unit
 /-- AN9-A.1: I-cache invalidation witness — drop every I-cache line so
     subsequent instruction fetches re-read from coherent memory.
 
+    **Local (non-broadcast) variant** — it reaches only the executing PE.
+    WS-SM SM7.D.1: production kernel code under SMP must use
+    `icMaintenanceBroadcast` below, which routes to the Inner Shareable
+    broadcast variants; this binding is kept for the single-PE boot path,
+    symmetric with `ffiTlbiAll`.
+
     Rust: `cache::ic_iallu` in `sele4n-hal/src/cache.rs`. -/
 @[extern "cache_ic_iallu"]
 opaque ffiIcIallu : BaseIO Unit
+
+-- ============================================================================
+-- WS-SM SM7.D.1 — Instruction-cache maintenance broadcast
+-- ============================================================================
+
+/-- **WS-SM SM7.D.1**: broadcast I-cache invalidate-all witness —
+    `IC IALLUIS` + `DSB ISH` + `ISB`, dropping every instruction-cache line on
+    **every** PE of the Inner Shareable domain.
+
+    The broadcast counterpart of `ffiIcIallu`.  The Lean model's
+    `icInvalidateBroadcast … .iallu` is what this emits.
+
+    Rust: `cache::ic_invalidate_all_inner_shareable` in
+    `sele4n-hal/src/cache.rs`. -/
+@[extern "cache_ic_ialluis"]
+opaque ffiIcIalluIs : BaseIO Unit
+
+/-- **WS-SM SM7.D.1**: typed instruction-cache maintenance dispatcher.
+
+    Takes the `(opTag, addr)` encoding of an
+    `Architecture.ICacheInvalidation` and emits the corresponding broadcast
+    maintenance instruction plus its completing barriers:
+
+      opTag : 0 = Iallu (`IC IALLUIS`), 1 = Ivau (`IC IVAU`)
+      addr  : virtual address operand (RES0 for Iallu)
+
+    The encoding is pinned to the Lean side by
+    `ICacheInvalidation.toOpTag` / `.toPaddr` and to the Rust side by
+    `cache::decode_icache_invalidation`; the dispatcher **panics** on an
+    out-of-range tag (fail closed — a silently skipped invalidation is a
+    correctness violation the caller cannot detect), which
+    `ICacheInvalidation.toOpTag_in_range` proves unreachable from any
+    well-formed Lean caller.
+
+    Rust: `ffi::cache_ic_maintenance` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "cache_ic_maintenance"]
+opaque ffiIcMaintenance : UInt32 → UInt64 → BaseIO Unit
+
+/-- **WS-SM SM7.D.1**: typed wrapper over `ffiIcMaintenance` — emit the
+    inner-shareable broadcast maintenance for a typed operand.
+
+    The bridge between the SM7.D model (`icInvalidateBroadcast`, which evolves
+    every core's `perCoreICache` view) and the hardware: the model says which
+    lines disappear on which cores, this call makes it so.
+
+    For `.ivau p` the operand passed to the instruction is the **virtual**
+    address (the instruction takes a VA and the PE translates it); the boot
+    tables identity-map RAM, so a RAM frame's kernel VA equals its PA and
+    `ICacheInvalidation.toPaddr` is the correct operand. -/
+def icMaintenanceBroadcast
+    (op : SeLe4n.Kernel.Architecture.ICacheInvalidation) : BaseIO Unit :=
+  ffiIcMaintenance op.toOpTag op.toPaddr
+
+/-- **WS-SM SM7.D.1**: the invalidate-all operand routes to op tag 0. -/
+theorem icMaintenanceBroadcast_iallu_encoding :
+    (SeLe4n.Kernel.Architecture.ICacheInvalidation.iallu).toOpTag = 0 ∧
+    (SeLe4n.Kernel.Architecture.ICacheInvalidation.iallu).toPaddr = 0 :=
+  ⟨rfl, rfl⟩
+
+/-- **WS-SM SM7.D.1**: the by-VA operand routes to op tag 1 carrying the
+    address. -/
+theorem icMaintenanceBroadcast_ivau_encoding (p : SeLe4n.PAddr) :
+    (SeLe4n.Kernel.Architecture.ICacheInvalidation.ivau p).toOpTag = 1 ∧
+    (SeLe4n.Kernel.Architecture.ICacheInvalidation.ivau p).toPaddr =
+      UInt64.ofNat p.toNat :=
+  ⟨rfl, rfl⟩
 
 -- ============================================================================
 -- WS-RC R2.B.5 — Correctness theorems for the syscall-dispatch bridge

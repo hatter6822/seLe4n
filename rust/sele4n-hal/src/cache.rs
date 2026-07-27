@@ -139,6 +139,107 @@ pub fn ic_ialluis() {
     }
 }
 
+/// **WS-SM SM7.D.1**: Invalidate instruction cache by VA to Point of
+/// Unification (IC IVAU).
+///
+/// Invalidates the instruction-cache line holding `addr` on **every PE in the
+/// Inner Shareable domain** — `IC IVAU` is architecturally broadcast within
+/// the shareability domain of the address (ARM ARM C6.2.88), unlike the
+/// PE-local `ic_iallu`.  This is the targeted maintenance the kernel issues
+/// when it retires a single *executable* mapping: instruction caches are
+/// physically tagged from software's point of view (ARM ARM D7.2), so the
+/// lines to drop are exactly those of the page's physical address.
+///
+/// `addr` is a **virtual** address: the instruction takes a VA and the PE
+/// translates it.  Callers pass the kernel's address for the page — the boot
+/// tables identity-map RAM (`mmu::build_identity_tables`), so the kernel VA of
+/// a RAM frame equals its PA.
+///
+/// The trailing `DSB ISH` + `ISB` complete the maintenance and re-synchronise
+/// the fetch stream, which the architecture requires before the invalidation
+/// is guaranteed visible to subsequent instruction fetches.
+///
+/// ARM ARM C6.2.88: IC IVAU, Xt
+#[inline(always)]
+pub fn ic_ivau(addr: u64) {
+    #[cfg(target_arch = "aarch64")]
+    {
+        // SAFETY: IC IVAU invalidates instruction-cache lines. The I-cache is
+        // read-only, so no data can be lost for any address value.
+        // (ARM ARM C6.2.88)
+        unsafe {
+            core::arch::asm!("ic ivau, {0}", in(reg) addr, options(nostack, preserves_flags));
+        }
+    }
+    barriers::dsb_ish();
+    barriers::isb();
+    let _ = addr;
+}
+
+/// **WS-SM SM7.D.1**: Invalidate all instruction caches across the Inner
+/// Shareable domain, with the completing barriers (IC IALLUIS + DSB ISH + ISB).
+///
+/// The broadcast maintenance the kernel issues when memory changes identity
+/// (object re-type) and the affected physical lines cannot be enumerated.
+/// Prefer [`ic_ivau`] when a single page is known.
+///
+/// Distinct from the bare [`ic_ialluis`], which emits only the instruction:
+/// this form is the one production kernel code must use, because the
+/// invalidation is not guaranteed complete (nor visible to the fetch stream)
+/// until the `DSB` + `ISB` retire.
+#[inline(always)]
+pub fn ic_invalidate_all_inner_shareable() {
+    ic_ialluis();
+    barriers::dsb_ish();
+    barriers::isb();
+}
+
+/// **WS-SM SM7.D.1**: FFI op-tag discriminants for the typed instruction-cache
+/// maintenance operand.
+///
+/// Kept in lockstep with the Lean `Architecture.ICacheInvalidation.toOpTag`
+/// (`SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean`):
+///
+///   op_tag : 0 = Iallu (invalidate all), 1 = Ivau (invalidate by VA)
+///   addr   : the virtual address operand (RES0 for Iallu)
+///
+/// A future encoding change requires updating the Lean encoders, this enum,
+/// and the conformance tests in the same PR.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ICacheInvalidation {
+    /// `IC IALLUIS` — invalidate every instruction-cache line in the domain.
+    Iallu,
+    /// `IC IVAU` — invalidate the line holding the given virtual address.
+    Ivau(u64),
+}
+
+/// **WS-SM SM7.D.1**: decode an FFI `(op_tag, addr)` pair into a typed
+/// [`ICacheInvalidation`], returning `None` on an out-of-range tag.
+///
+/// Testable inner form of the FFI dispatcher, mirroring
+/// `tlb::decode_tlb_invalidation`: the FFI wrapper panics on `None` (fail
+/// closed — a silently skipped invalidation is a correctness violation the
+/// caller cannot detect), while this function lets tests exercise the
+/// rejection path without crossing an `extern "C"` boundary.
+#[inline]
+pub const fn decode_icache_invalidation(op_tag: u32, addr: u64) -> Option<ICacheInvalidation> {
+    match op_tag {
+        0 => Some(ICacheInvalidation::Iallu),
+        1 => Some(ICacheInvalidation::Ivau(addr)),
+        _ => None,
+    }
+}
+
+/// **WS-SM SM7.D.1**: retire one typed instruction-cache maintenance operand,
+/// broadcast across the Inner Shareable domain.
+#[inline]
+pub fn apply_icache_invalidation(op: ICacheInvalidation) {
+    match op {
+        ICacheInvalidation::Iallu => ic_invalidate_all_inner_shareable(),
+        ICacheInvalidation::Ivau(addr) => ic_ivau(addr),
+    }
+}
+
 /// AN8-D (RUST-M07): Pure memory-ordering fence (no cache-line side effect).
 ///
 /// Issues a DSB ISH so that all preceding memory operations from the
@@ -343,6 +444,64 @@ mod tests {
     #[test]
     fn test_clean_range() {
         clean_range(0x1000, 0x2000);
+    }
+
+    // WS-SM SM7.D.1: instruction-cache maintenance primitives.
+    #[test]
+    fn test_ic_ivau_compiles() {
+        ic_ivau(0x1000);
+    }
+
+    #[test]
+    fn test_ic_invalidate_all_inner_shareable_compiles() {
+        ic_invalidate_all_inner_shareable();
+    }
+
+    #[test]
+    fn test_decode_icache_invalidation_iallu() {
+        assert_eq!(
+            decode_icache_invalidation(0, 0),
+            Some(ICacheInvalidation::Iallu)
+        );
+        // The address operand is RES0 for Iallu — a non-zero value is ignored.
+        assert_eq!(
+            decode_icache_invalidation(0, 0xDEAD_BEEF),
+            Some(ICacheInvalidation::Iallu)
+        );
+    }
+
+    #[test]
+    fn test_decode_icache_invalidation_ivau() {
+        assert_eq!(
+            decode_icache_invalidation(1, 0x4000),
+            Some(ICacheInvalidation::Ivau(0x4000))
+        );
+    }
+
+    #[test]
+    fn test_decode_icache_invalidation_rejects_unknown_tag() {
+        // Fail-closed: an out-of-range tag decodes to None, and the FFI
+        // wrapper panics rather than silently skipping the maintenance.
+        assert_eq!(decode_icache_invalidation(2, 0), None);
+        assert_eq!(decode_icache_invalidation(u32::MAX, 0), None);
+    }
+
+    #[test]
+    fn test_decode_icache_invalidation_tag_range_is_exhaustive() {
+        // Conformance with the Lean `ICacheInvalidation.toOpTag_in_range`
+        // theorem: exactly the tags in [0, 2) decode.
+        for tag in 0u32..2 {
+            assert!(decode_icache_invalidation(tag, 0x1000).is_some());
+        }
+        for tag in 2u32..16 {
+            assert!(decode_icache_invalidation(tag, 0x1000).is_none());
+        }
+    }
+
+    #[test]
+    fn test_apply_icache_invalidation_both_arms() {
+        apply_icache_invalidation(ICacheInvalidation::Iallu);
+        apply_icache_invalidation(ICacheInvalidation::Ivau(0x2000));
     }
 
     // AN8-D (RUST-M07): memory_fence is a pure DSB ISH — verify it does

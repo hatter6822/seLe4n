@@ -3667,6 +3667,21 @@ theorem perCoreTlb_write_preserves_projection
     projectState ctx observer { st with perCoreTlb := v } =
       projectState ctx observer st := rfl
 
+/-- WS-SM SM7.D (non-interference): a write to *any* core's per-core
+instruction-cache view is invisible to the information-flow projection —
+`perCoreICache`, like `perCoreTlb`, the scalar `tlb`, and `machine.timer`, is
+deliberately excluded from `ObservableState` (a cache view is a covert
+timing-channel source), so no observable can depend on it.  This is the
+explicit NI witness for the SM7.D mount: every `perCoreICache`-evolving
+transition (`icFetchOnCore`, `icInvalidateOnCore`, `icInvalidateBroadcast`, and
+the live `.vspaceUnmap` / `.lifecycleRetype` maintenance seams built on them)
+trivially preserves `projectState` and hence `lowEquivalent`. -/
+theorem perCoreICache_write_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (v : _root_.Vector SeLe4n.Model.ICacheState SeLe4n.Kernel.Concurrency.numCores) :
+    projectState ctx observer { st with perCoreICache := v } =
+      projectState ctx observer st := rfl
+
 -- ============================================================================
 -- AK6-F Step 1: RunQueue modification frame lemmas (at high thread)
 -- ============================================================================

@@ -747,7 +747,7 @@ TLB/cache maintenance model (`TlbModel.lean`, WS-H11/H-10):
 - `adapterFlushTlbByAsid` — per-ASID invalidation (ARM64 `TLBI ASIDE1`)
 - `adapterFlushTlbByVAddr` — per-(ASID,VAddr) invalidation (ARM64 `TLBI VAE1`)
 - `tlbConsistent` — invariant: all TLB entries match current page tables
-- R7-A: `TlbState` integrated into `SystemState`; `tlbConsistent st st.tlb` added to `proofLayerInvariantBundle` (the 9th conjunct; SM7.C generalises it per-core as the 13th conjunct `tlbInvalidationConsistent_perCore`, below)
+- R7-A: `TlbState` integrated into `SystemState`; `tlbConsistent st st.tlb` added to `proofLayerInvariantBundle` (the 9th conjunct; SM7.C generalises it per-core as the 13th conjunct `tlbInvalidationConsistent_perCore`, and SM7.D adds the instruction-cache companion `icacheCoherent_perCore` as the 14th, both below)
 - `vspaceMapPageWithFlush`, `vspaceUnmapPageWithFlush` — composed page-table + targeted per-(ASID,VAddr) TLB-flush operations (AJ4-B)
 - 13 TLB theorems: `tlbConsistent_empty`, `adapterFlushTlb_restores_tlbConsistent`, `adapterFlushTlbByAsid_preserves_tlbConsistent`, `vspaceMapPage_then_flush_preserves_tlbConsistent`, `vspaceUnmapPage_then_flush_preserves_tlbConsistent`, `adapterFlushTlbByAsid_removes_matching`, `adapterFlushTlbByAsid_preserves_other`, `adapterFlushTlbByVAddr_preserves_tlbConsistent`, `adapterFlushTlbByVAddr_removes_matching`, `cross_asid_tlb_isolation`, `vspaceMapPageWithFlush_preserves_tlbConsistent`, `vspaceUnmapPageWithFlush_preserves_tlbConsistent`, `tlbConsistent_of_objects_eq`
 
@@ -777,6 +777,55 @@ generalisation of the scalar boot-core `tlb`, added alongside it):
   capstone (protocol × TLB-model × page-tables): a covering invalidation
   both removes every stale entry on every core AND preserves per-core
   consistency
+
+Per-core **instruction-cache** model (`PerCoreCacheModel.lean`, WS-SM SM7.D —
+production, over the new `SystemState.perCoreICache : Vector ICacheState
+numCores`).  The cache-side companion of SM7.C, and the two hierarchies are
+asymmetric in the way that decides the design: the **data** caches of the PEs in
+a shareability domain are hardware-coherent and `DC` by VA to the Point of
+Coherency is architecturally visible to every agent (ARM ARM B2.7 / D7.4), while
+the **instruction** caches are coherent with nothing — `IC IALLU` reaches only
+the executing PE, so the kernel must issue the broadcast variant:
+- `icacheOnCore` / `setIcacheOnCore` — SM4.B path-a per-core view accessors +
+  `@[simp]` store/load algebra + per-field frame lemmas +
+  `default_{perCoreICache,icacheOnCore}`
+- `ICacheInvalidation` (`iallu` / `ivau paddr`) + `applyICacheInvalidation`
+  (SM7.D.1) — the typed operand and its effect algebra (removal, selectivity,
+  monotonicity, idempotence, `iallu`-empties, survivor lemmas), with the FFI tag
+  encoding pinned to the Rust `cache::decode_icache_invalidation`
+- `icFetchOnCore` (SM7.D.1) — the hardware instruction fetch filling one core's
+  view; an *environment* step, not a kernel transition
+- `icInvalidateOnCore` (SM7.D.1) — `IC IALLU`, whose
+  `icInvalidateOnCore_icacheOnCore_ne` **states the SMP hazard**: every other
+  core keeps its lines (non-vacuity: `icInvalidateOnCore_remote_line_survives`)
+- `icInvalidateBroadcast` (SM7.D.1) — `IC IALLUIS` / `IC IVAU`, the
+  domain-wide maintenance, with the headline
+  `icInvalidateBroadcast_reaches_all_cores` (the instruction-side analogue of
+  Theorem 3.3.1) over the platform reach `icBroadcastReach` (`_cover` /
+  `_nodup`)
+- `dcMaintenanceAllCores` (SM7.D.2) — data-cache maintenance by VA at the PoC,
+  deliberately with **no target set**: the absence of a reach parameter is the
+  formal content of "already system-wide".
+  `dcMaintenanceByVA_reaches_all_cores`,
+  `dcMaintenanceAllCores_preserves_dcacheCoherentAcrossCores`, and the
+  asymmetry theorem `icInvalidateOnCore_vs_dcMaintenance_reach`
+- `modeledCoherentAgents_no_dma_master` (SM7.D.3) — the DMA scope boundary as a
+  **tripwire**: the model contains no non-coherent bus master, and adding one
+  breaks this theorem
+- `icacheCoherent_perCore` (SM7.D.4) — on every core, every cached line still
+  has a live **executable** mapping; **the 14th `proofLayerInvariantBundle`
+  conjunct**, boot witness `default_icacheCoherent_perCore`, decidable checker
+  `icacheCoherentCheck_perCore` (+ `_iff`).  No pending-allowance disjunct is
+  needed (unlike the 13th): instruction-cache maintenance is a synchronous
+  broadcast instruction, not a queued request/acknowledge round
+- `cacheCoherency_cross_subsystem` (SM7.D.4) — the cache-side capstone
+  (broadcast × cache-model × page-tables), mirroring SM7.C.7, plus the joint
+  `icInvalidateBroadcast_preserves_perCore_memory_invariants`
+- Live seams: `vspaceUnmapPageWithShootdownAndIcacheBroadcast` (targeted
+  `IC IVAU` for an executable unmap, provably inert otherwise) and
+  `lifecycleRetype{Direct,}WithCleanupShootdownPerCoreIcache` (unconditional
+  `IC IALLUIS`), each with `…_preserves_icacheCoherent_perCore` **and**
+  `…_preserves_tlbInvalidationConsistent_perCore`
 
 Per-core TLB model — v0.32.81 operative cut (the model made operative on
 the live shootdown path; v0.32.80 landed it as a parallel spec):

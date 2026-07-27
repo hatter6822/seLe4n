@@ -289,6 +289,64 @@ def completeShootdownRounds (changed : List Concurrency.CoreId)
     Platform.FFI.modifyGetKernelState (fun st =>
       ((), Architecture.shootdownCatchUpPerCore st execCore collapsed))
 
+/-- **WS-SM SM7.D.1** (the live instruction-cache maintenance seam): emit the
+inner-shareable instruction-cache invalidation a just-committed shootdown round
+owes.
+
+**Why it is keyed on the shootdown diff.**  A commit that posted a shootdown
+round is, by construction, a commit that *retired address translations across
+cores* — a page unmap (`.vae1`), an address-space teardown (`.aside1`), or a
+full flush (`.vmalle1`).  Those are exactly the events after which a PE may
+still hold instruction-cache lines fetched through a mapping that no longer
+exists; because instruction caches are physically tagged (ARM ARM D7.2), such a
+line stays hittable through any later executable mapping of the same frame, in
+any address space.  The TLB round does not close that: it retires
+*translations*, not cache lines.
+
+**Why `IC IALLUIS` rather than the targeted `IC IVAU` the model computes.**  The
+runtime recovers its work from the `(pre, post)` state diff, and the diff
+carries the round's *TLB* operands, not the physical address the model's
+`unmapIcacheOperand` resolved from the pre-state page tables.  Reconstructing
+that address from the encoded `.vae1` operand would be a lossy round-trip whose
+failure mode is **under**-invalidation — the one direction that is unsafe — so
+the seam takes the strongest operand instead.  Over-invalidation costs
+re-fetches and nothing else, and it lands on a path that already runs a
+cross-core SGI round with a blocking acknowledgment wait, so the marginal cost
+is in the noise.  The targeted operand remains the model's and the HAL's
+(`ICacheInvalidation.ivau` / `cache::ic_ivau`); emitting it at runtime needs the
+round's operands carried in a form the diff preserves — the same
+descriptor-ledger work tracked as SM7.F.3.
+
+**Residual (documented, not silent).**  A retype whose target is *not* a live
+`.vspaceRoot` posts no shootdown round, so this seam does not fire for it, even
+though the model's `retypeIcacheOperand` broadcasts unconditionally.  That is
+covered in depth rather than by accident: a frame must be unmapped before it can
+be re-typed, and the unmap posts its own round — which fires this seam.  The
+model keeps the stronger unconditional form so the invariant is discharged
+without relying on that discipline.
+
+Inert for every syscall that posted no round (`completeIcacheMaintenance_nil`),
+so the golden trace and the non-VSpace syscall paths are untouched. -/
+def completeIcacheMaintenance (changed : List Concurrency.CoreId) : BaseIO Unit :=
+  if changed.isEmpty then
+    pure ()
+  else
+    Platform.FFI.icMaintenanceBroadcast .iallu
+
+/-- **WS-SM SM7.D.1** (structural marker): a commit that posted no shootdown
+round emits no instruction-cache maintenance — no `IC IALLUIS`, no barriers.
+The definition-level inertness of the SM7.D runtime bracket, mirroring
+`completeShootdownRounds_nil`. -/
+theorem completeIcacheMaintenance_nil :
+    completeIcacheMaintenance [] = pure () := rfl
+
+/-- **WS-SM SM7.D.1**: when a round *was* posted the seam emits the domain-wide
+invalidate — pinned so a refactor that drops the emission breaks here. -/
+theorem completeIcacheMaintenance_cons (c : Concurrency.CoreId)
+    (cs : List Concurrency.CoreId) :
+    completeIcacheMaintenance (c :: cs) =
+      Platform.FFI.icMaintenanceBroadcast .iallu := rfl
+
 /-- **WS-SM SM7.B** (structural marker): a commit that changed no
 pending-shootdown queue runs no round — no lock traffic, no reset, no
 SGIs, no TLBIs, no wait.  This is the non-shootdown-syscall inertness
@@ -334,6 +392,11 @@ def syscallDispatchCrossCoreEntry
   -- WS-SM SM7.B: run the shootdown round(s) this commit posted (inert
   -- when the syscall touched no pending-shootdown queue).
   completeShootdownRounds result.2.2.1 result.2.2.2 execCore
+  -- WS-SM SM7.D.1: emit the instruction-cache maintenance the same commit
+  -- owes.  Ordered *after* the shootdown round so the translations are already
+  -- retired everywhere when the instruction caches are dropped; inert when no
+  -- round was posted.
+  completeIcacheMaintenance result.2.2.1
   pure result.1
 
 /-- **WS-SM SM6.A** structural marker: `syscallDispatchCrossCoreEntry` unfolds to
@@ -363,6 +426,7 @@ theorem syscallDispatchCrossCoreEntry_def
                 ([] : List Architecture.TlbInvalidation)), st))
         Concurrency.fireCrossCoreSgis result.2.1
         completeShootdownRounds result.2.2.1 result.2.2.2 execCore
+        completeIcacheMaintenance result.2.2.1
         pure result.1) := rfl
 
 /-- **WS-SM SM6.A** trace-safety witness: on the boot core, when every thread's

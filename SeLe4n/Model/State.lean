@@ -599,6 +599,64 @@ instance : Inhabited TlbState where
 /-- An empty TLB with no cached entries. -/
 def TlbState.empty : TlbState := { entries := [] }
 
+/-- **WS-SM SM7.D.1**: a cached instruction-cache line, identified by the
+    **executable translation the instruction fetch resolved through**.
+
+    ARMv8-A instruction caches are physically tagged from software's point of
+    view (ARM ARM D7.2 — a VIPT I-cache must behave as PIPT to software), so a
+    line's *identity* is its physical address `paddr`.  The `(asid, vaddr,
+    perms)` triple records the mapping that produced the fetch: that is what
+    makes a line **stale**, because the kernel controls mappings, not the
+    content a running thread writes.  Keeping the same field shape as
+    `TlbEntry` is deliberate — an I-cache line's provenance *is* a translation
+    plus the requirement that it was executable, so the whole page-table frame
+    algebra proven for `TlbEntry` (`tlbEntryConsistent` and its
+    `…_of_frame` / `…_entry_consistent_frame` family) carries over unchanged
+    (`ICacheLine.toTranslation` in
+    `SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean`).
+
+    Unlike the TLB, the I-cache is **not** hardware-coherent with the data side
+    or with other PEs' instruction caches, so cross-core maintenance is a
+    software obligation — the SM7.D subject. -/
+structure ICacheLine where
+  /-- The address space the fetch ran in. -/
+  asid : SeLe4n.ASID
+  /-- The virtual address fetched. -/
+  vaddr : SeLe4n.VAddr
+  /-- The physical address the line was filled from — the hardware tag. -/
+  paddr : SeLe4n.PAddr
+  /-- The permissions the resolving translation carried.  A fetch only happens
+      through an *executable* mapping, so `perms.execute = true` for every
+      admissible line (`icacheLineConsistent`). -/
+  perms : PagePermissions
+  deriving Repr, DecidableEq, BEq
+
+/-- **WS-SM SM7.D.1**: abstract per-core instruction-cache state — the lines a
+    single PE currently holds.  List-represented for exactly the reason
+    `TlbState` is: invariant reasoning needs membership, not associative
+    lookup. -/
+structure ICacheState where
+  lines : List ICacheLine
+  deriving Repr, DecidableEq
+
+/-- **WS-SM SM7.D.4**: the translation an instruction-cache line was filled
+    through, as a `TlbEntry`.
+
+    The bridge that lets the whole page-table frame algebra proven for
+    `tlbEntryConsistent` (SM7.C.5 / SM7.F) carry over to the instruction side
+    unchanged: an I-cache line's provenance *is* a translation, plus the
+    requirement that it was executable.  Defined here (rather than in the
+    SM7.D model module) because both types live in `SeLe4n.Model`, so
+    dot-notation `l.toTranslation` resolves in every consumer. -/
+def ICacheLine.toTranslation (l : ICacheLine) : TlbEntry :=
+  { asid := l.asid, vaddr := l.vaddr, paddr := l.paddr, perms := l.perms }
+
+/-- **WS-SM SM7.D.1**: a cold instruction cache — no lines held. -/
+def ICacheState.empty : ICacheState := { lines := [] }
+
+instance : Inhabited ICacheState where
+  default := ICacheState.empty
+
 /-- R7-A.3: Full TLB flush — invalidates all cached entries.
     On ARM64 this corresponds to `TLBI ALLE1` or `TLBI VMALLE1IS`.
 
@@ -820,6 +878,58 @@ structure SystemState where
       `projectState` is the correct behaviour. -/
   perCoreTlb : Vector TlbState numCores :=
     Vector.replicate numCores TlbState.empty
+  /-- WS-SM SM7.D.1: per-core instruction-cache model — every core's
+      independently cached instruction lines.
+
+      The SMP companion of `perCoreTlb` above, for the *other* per-PE cached
+      structure a mapping change can invalidate.  The two differ in exactly one
+      architecturally decisive way, and that difference is what SM7.D is about:
+
+      * The **data** caches of the PEs in a shareability domain are
+        hardware-coherent, and `DC` maintenance *by VA to the Point of
+        Coherency* is architecturally visible to every agent in that domain
+        (ARM ARM B2.7 / D7.4) — so there is nothing per-core for the kernel to
+        track, and no software broadcast to perform.  The D-cache is modelled
+        as the single shared view `CacheState.dcache`
+        (`Architecture/CacheModel.lean`), and the per-core *reach* of DC
+        maintenance is proven, not assumed
+        (`dcMaintenanceByVA_reaches_all_cores`).
+      * The **instruction** caches are *not* coherent — neither with the data
+        side nor across PEs.  `IC IALLU` invalidates only the executing PE;
+        reaching the others requires the inner-shareable broadcast variant
+        `IC IALLUIS` (or `IC IVAU`, which is broadcast to the Point of
+        Unification within the domain).  A stale line on a remote core is the
+        instruction-side twin of the SMP-C4 stale-TLB hazard, so it needs a
+        per-core model and a kernel-issued broadcast.
+
+      **Semantics**: driven by the SM7.D model operations in
+      `SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean` — `icFetchOnCore`
+      (the hardware instruction fetch filling one PE's cache),
+      `icInvalidateOnCore` (`IC IALLU` / a PE-local `IC IVAU`, which leaves
+      every other core stale — the precise SMP hazard), and
+      `icInvalidateBroadcast` (`IC IALLUIS` / `IC IVAU`, which reaches every
+      core in the sharing domain).  It is **operative on the live path**: the
+      `.vspaceUnmap` arm broadcasts an `IC IVAU` for a retired *executable*
+      translation, and the `.lifecycleRetype` arm broadcasts `IC IALLUIS`
+      because a retype re-purposes the target's backing memory (it is scrubbed
+      in the same transition), so any line cached from it is stale by
+      construction.
+
+      The per-core coherency invariant `icacheCoherent_perCore` (every cached
+      line still has a live *executable* mapping) is the 14th
+      `proofLayerInvariantBundle` conjunct.
+
+      Defaults to every core's cold cache (`Vector.replicate numCores
+      ICacheState.empty`) — no lines held at boot; pinned by
+      `default_perCoreICache`.
+
+      **Information flow**: like `perCoreTlb`, `tlb`, and `machine.timer`, this
+      field is deliberately **not** part of the IF projection surface —
+      projecting a cache view would open a covert timing channel.  Its
+      exclusion from `projectState` is the correct behaviour
+      (`perCoreICache_write_preserves_projection`). -/
+  perCoreICache : Vector ICacheState numCores :=
+    Vector.replicate numCores ICacheState.empty
 
 /-- Abstract owner identity for a slot in this model: the containing CNode object id. -/
 abbrev CSpaceOwner := SeLe4n.ObjId
@@ -883,6 +993,10 @@ instance : Inhabited SystemState where
     -- invariant so `default_perCoreTlb` discharges via
     -- `PerCoreVector.replicate_get`.
     perCoreTlb := Vector.replicate numCores TlbState.empty
+    -- WS-SM SM7.D.1: every core's instruction cache starts cold (no lines
+    -- held at boot).  Explicit listing pins the default-state invariant so
+    -- `default_perCoreICache` discharges via `PerCoreVector.replicate_get`.
+    perCoreICache := Vector.replicate numCores ICacheState.empty
   }
 
 /-- X2-B/H-2: Checked domain schedule setter — validates that all entries have
@@ -1077,6 +1191,15 @@ per-core-consistency boot witness and to the Boot general bridge
 `bootFromPlatform_perCoreTlb_eq`. -/
 theorem default_perCoreTlb (c : CoreId) :
     (default : SystemState).perCoreTlb.get c = TlbState.empty :=
+  PerCoreVector.replicate_get _ _ c
+
+/-- WS-SM SM7.D.1: at boot every core's instruction cache is cold — the
+instruction-side twin of `default_perCoreTlb`.  Discharged the same way
+(`PerCoreVector.replicate_get`), and consumed by the SM7.D.4 per-core
+coherency boot witness `default_icacheCoherent_perCore` and by the Boot
+general bridge `bootFromPlatform_perCoreICache_eq`. -/
+theorem default_perCoreICache (c : CoreId) :
+    (default : SystemState).perCoreICache.get c = ICacheState.empty :=
   PerCoreVector.replicate_get _ _ c
 
 -- ============================================================================
@@ -2066,6 +2189,20 @@ theorem storeObject_perCoreTlb_eq
     (pair : Unit × SystemState)
     (hStore : storeObject id obj st = .ok pair) :
     pair.2.perCoreTlb = st.perCoreTlb := by
+  unfold storeObject at hStore; cases hStore; rfl
+
+/-- WS-SM SM7.D.1: `storeObject` frames the per-core instruction caches — the
+instruction-side twin of `storeObject_perCoreTlb_eq`.  An object-mutating
+page-table transition changes what a cached line's *witness* resolves to, but
+never the cache contents themselves; the SM7.D live wrappers add the explicit
+`IC` broadcast on top.  Leaf lemma of the SM7.D.4 preservation chain. -/
+theorem storeObject_perCoreICache_eq
+    (st : SystemState)
+    (id : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (pair : Unit × SystemState)
+    (hStore : storeObject id obj st = .ok pair) :
+    pair.2.perCoreICache = st.perCoreICache := by
   unfold storeObject at hStore; cases hStore; rfl
 
 theorem storeObject_objects_eq

@@ -873,7 +873,16 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
             -- retyped ASID may be cached on the caller's own view, and the
             -- `.aside1` round posts only to remote cores.  Trace-safe
             -- (`perCoreTlb ∉ projectState`).
-            lifecycleRetypeDirectWithCleanupShootdownPerCore
+            -- WS-SM SM7.D.1: and through the instruction-cache seam on top,
+            -- which broadcasts `IC IALLUIS` across the shareability domain.
+            -- A retype scrubs and re-purposes the target's backing memory, so
+            -- any instruction line a PE cached from it is stale — and, because
+            -- instruction caches are physically tagged, such a line stays
+            -- hittable through any later executable mapping of the same frame,
+            -- in any address space.  The TLB round cannot close this: it
+            -- retires translations, not cache lines.  Trace-safe
+            -- (`perCoreICache ∉ projectState`).
+            lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache
               (determineExecutingCore st tid) cap args.targetObj newObj st
     | _ => fun _ => .error .invalidCapability
   | .vspaceMap =>
@@ -924,7 +933,16 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
             -- initiator's view would be stale-and-uncovered.  Trace-safe:
             -- `perCoreTlb` ∉ `projectState`, and the extra drain touches no
             -- field the SGI/round diff-recovery reads (`tlbShootdown`).
-            Architecture.vspaceUnmapPageWithShootdownPerCore
+            -- WS-SM SM7.D.1: and through the instruction-cache seam on top,
+            -- which broadcasts a targeted `IC IVAU` over the shareability
+            -- domain when the *retired mapping was executable* — otherwise a
+            -- core could keep fetching the previous owner's instructions from
+            -- its own instruction cache after the frame is re-purposed (the
+            -- instruction-side twin of the SMP-C4 stale-TLB hazard; the TLB
+            -- round does not close it, because instruction caches are tagged
+            -- by physical address, not by translation).  A non-executable
+            -- unmap owes nothing and is provably inert.
+            Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast
               (determineExecutingCore st tid) args.asid args.vaddr st
     | _ => fun _ => .error .invalidCapability
   | .serviceRevoke =>
@@ -2391,15 +2409,20 @@ theorem dispatchWithCap_cspaceDelete_delegates
 -- WS-K-D: Lifecycle and VSpace dispatch delegation theorems
 -- ============================================================================
 
-/-- U-H04 / WS-SM SM7.B.11 / WS-SM SM7.F.4(b)(iii): When lifecycleRetype
-dispatch succeeds, `lifecycleRetypeDirectWithCleanupShootdownPerCore` is invoked
-with the caller's executing core, the resolved cap, decoded target, and
+/-- U-H04 / WS-SM SM7.B.11 / SM7.F.4(b)(iii) / SM7.D.1: When lifecycleRetype
+dispatch succeeds, `lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache` is
+invoked with the caller's executing core, the resolved cap, decoded target, and
 constructed object.  The safe wrapper performs pre-retype cleanup (H-05), memory
 scrubbing (S6-C), and — when the retyped object was a live VSpaceRoot — the
 `.aside1` TLB shootdown round for the destroyed address space (SM7.B.11); the
-`…PerCore` wrapper additionally retires the initiator's own `perCoreTlb` view for
-the destroyed ASID atomically (SM7.F.4(b)(iii); projection-invisible, so the
-delegation is trace-equivalent to the plain shootdown wrapper). -/
+`…PerCore` layer additionally retires the initiator's own `perCoreTlb` view for
+the destroyed ASID atomically (SM7.F.4(b)(iii)); and the SM7.D.1 layer
+broadcasts `IC IALLUIS` across the shareability domain, because the retype
+re-purposes the target's backing memory (it is scrubbed in the same transition)
+and instruction caches are tagged by physical address, so any line cached from
+that memory stays hittable through a later executable mapping of the same frame.
+All added layers are projection-invisible, so the delegation is
+trace-equivalent to the plain shootdown wrapper. -/
 theorem dispatchWithCap_lifecycleRetype_delegates
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
     (cap : Capability) (objId : SeLe4n.ObjId)
@@ -2408,7 +2431,7 @@ theorem dispatchWithCap_lifecycleRetype_delegates
     (hTarget : cap.target = .object objId)
     (hDecode : decodeLifecycleRetypeArgs decoded = .ok args) :
     dispatchWithCap decoded tid gate cap =
-      fun st => lifecycleRetypeDirectWithCleanupShootdownPerCore
+      fun st => lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache
         (determineExecutingCore st tid) cap args.targetObj
         (objectOfKernelType args.newType args.size) st := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
@@ -2446,15 +2469,23 @@ theorem dispatchWithCap_vspaceMap_delegates
               validatedArgs.vaddr validatedArgs.paddr validatedArgs.perms st) := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 
-/-- WS-K-D/S6-A / WS-SM SM7.B.9 / WS-SM SM7.F.4(b)(i): When vspaceUnmap dispatch
-succeeds, `vspaceUnmapPageWithShootdownPerCore` is invoked with the caller's
-executing core and the decoded ASID and vaddr.  Production API uses the
-flushing + cross-core-shootdown variant to prevent use-after-unmap on every
-core; the `…PerCore` wrapper additionally retires the operand on the initiator's
-own `perCoreTlb` view atomically with the transition (SM7.F.4(b)(i)).  This is
-projection-invisible — `perCoreTlb ∉ projectState` — so the delegation is
-trace-equivalent to the plain `vspaceUnmapPageWithShootdown` on every observable
-field (`tlbShootdown` posting, page-table erasure, scalar flush all unchanged). -/
+/-- WS-K-D/S6-A / WS-SM SM7.B.9 / SM7.F.4(b)(i) / SM7.D.1: When vspaceUnmap
+dispatch succeeds, `vspaceUnmapPageWithShootdownAndIcacheBroadcast` is invoked
+with the caller's executing core and the decoded ASID and vaddr.  The layers, in
+order: the flushing + cross-core-shootdown variant prevents use-after-unmap on
+every core (SM7.B.9); the `…PerCore` layer additionally retires the operand on
+the initiator's own `perCoreTlb` view atomically with the transition
+(SM7.F.4(b)(i)); and the SM7.D.1 layer broadcasts a targeted `IC IVAU` across
+the shareability domain when the *retired mapping was executable*, so no core
+keeps an instruction line fetched through it (the instruction-side twin of the
+stale-TLB hazard — the shootdown retires translations, while instruction caches
+are tagged by physical address).  A non-executable unmap owes nothing and is
+provably inert
+(`vspaceUnmapPageWithShootdownAndIcacheBroadcast_non_executable_inert`).  Both
+added layers are projection-invisible — `perCoreTlb`, `perCoreICache ∉
+projectState` — so the delegation stays trace-equivalent to the plain
+`vspaceUnmapPageWithShootdown` on every observable field (`tlbShootdown`
+posting, page-table erasure, scalar flush all unchanged). -/
 theorem dispatchWithCap_vspaceUnmap_delegates
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
     (cap : Capability) (objId : SeLe4n.ObjId)
@@ -2465,8 +2496,8 @@ theorem dispatchWithCap_vspaceUnmap_delegates
     -- AH3-C: decode now takes st.machine.maxASID from the platform config
     (hDecode : decodeVSpaceUnmapArgs decoded st.machine.maxASID = .ok args) :
     dispatchWithCap decoded tid gate cap st =
-      Architecture.vspaceUnmapPageWithShootdownPerCore (determineExecutingCore st tid)
-        args.asid args.vaddr st := by
+      Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast
+        (determineExecutingCore st tid) args.asid args.vaddr st := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 
 -- ============================================================================

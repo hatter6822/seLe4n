@@ -429,6 +429,17 @@ structure FrozenSystemState where
       protection, complemented by the `freeze_preserves_perCoreTlb := rfl`
       *value*-level guard. -/
   perCoreTlb        : _root_.Vector TlbState numCores
+  /-- WS-SM SM7.D.1: per-core instruction-cache views, transferred from
+      `SystemState.perCoreICache` during freeze.  The instruction-side twin of
+      `perCoreTlb` above, carried for the same completeness reason: an
+      instruction cache is per-PE cached state a mapping change can render
+      stale, so dropping it at the freeze boundary would silently lose the
+      SM7.D.4 coherency witness.  **Required** (no default), exactly like
+      `perCoreTlb`: `freeze` is forced to forward it
+      (`perCoreICache := st.perCoreICache`), so a silent per-core drop is a
+      compile error at the freeze site, complemented by the
+      `freeze_preserves_perCoreICache := rfl` *value*-level guard. -/
+  perCoreICache     : _root_.Vector ICacheState numCores
 
 -- ============================================================================
 -- Q5-C: Freeze Functions
@@ -560,7 +571,10 @@ def freeze (ist : IntermediateState) : FrozenSystemState :=
     objStoreLock := st.objStoreLock
     -- WS-SM SM7.C.1: forward every core's TLB view unchanged (the SMP
     -- generalisation of `tlb := st.tlb`; no silent per-core drop).
-    perCoreTlb := st.perCoreTlb }
+    perCoreTlb := st.perCoreTlb
+    -- WS-SM SM7.D.1: forward every core's instruction-cache view unchanged
+    -- (the instruction-side twin; no silent per-core drop).
+    perCoreICache := st.perCoreICache }
 
 -- ============================================================================
 -- Q5-C Proofs
@@ -594,6 +608,13 @@ SMP generalisation of `freeze_preserves_tlb`.  No per-core view is dropped
 during freeze. -/
 theorem freeze_preserves_perCoreTlb (ist : IntermediateState) :
     (freeze ist).perCoreTlb = ist.state.perCoreTlb := rfl
+
+/-- WS-SM SM7.D.1: `freeze` preserves the per-core instruction-cache views —
+the frozen `perCoreICache` is identical to the pre-freeze
+`SystemState.perCoreICache`, the instruction-side twin of
+`freeze_preserves_perCoreTlb`.  No per-core view is dropped during freeze. -/
+theorem freeze_preserves_perCoreICache (ist : IntermediateState) :
+    (freeze ist).perCoreICache = ist.state.perCoreICache := rfl
 
 /-- Q5-C: `freeze` preserves the scheduler current thread. -/
 theorem freeze_preserves_current (ist : IntermediateState) :

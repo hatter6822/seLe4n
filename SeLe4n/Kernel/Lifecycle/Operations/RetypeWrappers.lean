@@ -13,6 +13,11 @@ import SeLe4n.Kernel.Architecture.TlbShootdownProtocol
 -- wrapper additionally retires the initiator's own `perCoreTlb` view for the
 -- destroyed ASID (the initiator's local `TLBI ASIDE1`, atomic with the round).
 import SeLe4n.Kernel.Architecture.PerCoreTlbModel
+-- WS-SM SM7.D.1: the per-core instruction-cache model — a retype re-purposes
+-- the target's backing memory (it is scrubbed in the same transition), so the
+-- production retype wrappers additionally broadcast `IC IALLUIS` across the
+-- shareability domain.
+import SeLe4n.Kernel.Architecture.PerCoreCacheModel
 
 /-!
 AN4-G.5 (LIF-M05) child module extracted from
@@ -1607,5 +1612,258 @@ theorem lifecycleRetypeWithCleanupShootdownPerCore_preserves_tlbInvalidationCons
         (fun nr hnr => retypeShootdownAsidList_mem_installed hnr)
         rfl rfl rfl
         (lifecycleRetypeWithCleanup_vspaceRoot_storeObject hVsp hBase)
+
+-- ============================================================================
+-- WS-SM SM7.D.1 — Live wiring (b): the `.lifecycleRetype` instruction-cache
+-- broadcast.
+--
+-- A retype re-purposes the target object's backing memory: the transition
+-- scrubs it (`scrubObjectMemory`) and installs a different object over it.  Any
+-- instruction-cache line a PE holds from that memory therefore describes
+-- content that no longer exists — and, because instruction caches are tagged by
+-- physical address, such a line stays hittable through *any* later executable
+-- mapping of the same frame, in *any* address space.  That is the classic
+-- "free, re-allocate, execute the previous owner's code" hazard, and under SMP
+-- it must be closed on every core, not just the caller's.
+--
+-- The maintenance is therefore an unconditional domain-wide `IC IALLUIS`, not a
+-- targeted `IC IVAU`: the model cannot enumerate which physical lines the
+-- retyped object covered (an object's frame footprint is not part of the
+-- abstract state), so the sound choice is the full invalidate.  Over-
+-- invalidation is always safe — it can only cost re-fetches — whereas under-
+-- invalidation is exactly the hazard.  Retype is a rare, already-heavyweight
+-- object-lifecycle operation, so the cost lands where it is affordable.
+-- ============================================================================
+
+/-- **WS-SM SM7.D.1**: the instruction-cache maintenance every retype owes — a
+domain-wide `IC IALLUIS`.  Unconditional (see the section note): the retype
+scrubs and re-purposes the target's backing memory, and the abstract state does
+not record which physical lines that memory covered. -/
+def retypeIcacheOperand (_st : SystemState) :
+    Option Architecture.ICacheInvalidation :=
+  some .iallu
+
+/-- **WS-SM SM7.D.1**: the retype's maintenance is always owed. -/
+theorem retypeIcacheOperand_eq (st : SystemState) :
+    retypeIcacheOperand st = some .iallu := rfl
+
+/-- **WS-SM SM7.D.1** (**the live `.lifecycleRetype` seam**, Direct-cap
+authority): the production retype, complete across both per-core cached
+structures.  Layered on SM7.F.4(b)(iii)'s
+`lifecycleRetypeDirectWithCleanupShootdownPerCore` (retype + `.aside1`
+shootdown round for the destroyed/rebound ASIDs + the initiator's own per-core
+TLB drain), it adds the domain-wide `IC IALLUIS` so no core keeps an
+instruction line fetched from the re-purposed memory.
+
+Trace-safe: `perCoreICache ∉ projectState`, and the broadcast frames every
+field the syscall's round diff-recovery reads. -/
+def lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (authCap : Capability) (target : SeLe4n.ObjId)
+    (newObj : KernelObject) : Kernel Unit :=
+  Architecture.withIcacheBroadcast retypeIcacheOperand
+    (lifecycleRetypeDirectWithCleanupShootdownPerCore executingCore authCap
+      target newObj)
+
+/-- **WS-SM SM7.D.1** (**the live `.lifecycleRetype` seam**, CSpaceAddr
+authority): the CSpaceAddr sibling, symmetric with the Direct-cap form so the
+two production retype entry points cannot drift. -/
+def lifecycleRetypeWithCleanupShootdownPerCoreIcache
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (authority : CSpaceAddr) (target : SeLe4n.ObjId)
+    (newObj : KernelObject) : Kernel Unit :=
+  Architecture.withIcacheBroadcast retypeIcacheOperand
+    (lifecycleRetypeWithCleanupShootdownPerCore executingCore authority target
+      newObj)
+
+/-- **WS-SM SM7.D.1**: the Direct-cap seam is error-transparent. -/
+theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_error_iff
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (authCap : Capability) (target : SeLe4n.ObjId) (newObj : KernelObject)
+    (st : SystemState) (e : KernelError) :
+    lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache executingCore authCap
+        target newObj st = .error e ↔
+      lifecycleRetypeDirectWithCleanupShootdownPerCore executingCore authCap
+        target newObj st = .error e :=
+  Architecture.withIcacheBroadcast_error_iff _ _ st e
+
+/-- **WS-SM SM7.D.1**: the CSpaceAddr seam is error-transparent. -/
+theorem lifecycleRetypeWithCleanupShootdownPerCoreIcache_error_iff
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (authority : CSpaceAddr) (target : SeLe4n.ObjId) (newObj : KernelObject)
+    (st : SystemState) (e : KernelError) :
+    lifecycleRetypeWithCleanupShootdownPerCoreIcache executingCore authority
+        target newObj st = .error e ↔
+      lifecycleRetypeWithCleanupShootdownPerCore executingCore authority target
+        newObj st = .error e :=
+  Architecture.withIcacheBroadcast_error_iff _ _ st e
+
+/-- **WS-SM SM7.D.1**: on success the Direct-cap seam commits the base
+wrapper's state with the domain-wide instruction-cache invalidate applied. -/
+theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_ok
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (authCap : Capability) (target : SeLe4n.ObjId) (newObj : KernelObject)
+    {st stB : SystemState}
+    (hBase : lifecycleRetypeDirectWithCleanupShootdownPerCore executingCore
+      authCap target newObj st = .ok ((), stB)) :
+    lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache executingCore authCap
+        target newObj st =
+      .ok ((), Architecture.icInvalidateBroadcast stB
+        Architecture.icBroadcastReach .iallu) :=
+  Architecture.withIcacheBroadcast_some_ok (retypeIcacheOperand_eq st) hBase
+
+/-- **WS-SM SM7.D.1**: on success the CSpaceAddr seam commits the base
+wrapper's state with the domain-wide instruction-cache invalidate applied. -/
+theorem lifecycleRetypeWithCleanupShootdownPerCoreIcache_ok
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (authority : CSpaceAddr) (target : SeLe4n.ObjId) (newObj : KernelObject)
+    {st stB : SystemState}
+    (hBase : lifecycleRetypeWithCleanupShootdownPerCore executingCore authority
+      target newObj st = .ok ((), stB)) :
+    lifecycleRetypeWithCleanupShootdownPerCoreIcache executingCore authority
+        target newObj st =
+      .ok ((), Architecture.icInvalidateBroadcast stB
+        Architecture.icBroadcastReach .iallu) :=
+  Architecture.withIcacheBroadcast_some_ok (retypeIcacheOperand_eq st) hBase
+
+/-- **WS-SM SM7.D.4** (the retype seam's coherency theorem, Direct-cap): after
+the production retype every core's instruction cache is **cold**, so the SMP
+coherency invariant holds unconditionally — no hypothesis on the pre-state, and
+in particular no page-table regularity side conditions.
+
+That is the practical benefit of the unconditional domain-wide invalidate: the
+hardest transition in the kernel for cache reasoning (it destroys address
+spaces, re-binds ASIDs, and re-purposes memory) becomes the easiest to
+discharge, because the post-state has nothing left to be incoherent. -/
+theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_preserves_icacheCoherent_perCore
+    {executingCore : SeLe4n.Kernel.Concurrency.CoreId}
+    {authCap : Capability} {target : SeLe4n.ObjId} {newObj : KernelObject}
+    {st st' : SystemState}
+    (hStep : lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache executingCore
+      authCap target newObj st = .ok ((), st')) :
+    Architecture.icacheCoherent_perCore st' := by
+  unfold lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache at hStep
+  cases hBase : lifecycleRetypeDirectWithCleanupShootdownPerCore executingCore
+      authCap target newObj st with
+  | error e =>
+      rw [(Architecture.withIcacheBroadcast_error_iff _ _ st e).mpr hBase] at hStep
+      cases hStep
+  | ok pair =>
+      obtain ⟨u, stB⟩ := pair; cases u
+      rw [Architecture.withIcacheBroadcast_some_ok (retypeIcacheOperand_eq st) hBase]
+        at hStep
+      simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+      subst hStep
+      intro c l hl
+      rw [Architecture.icInvalidateBroadcast_iallu_empties stB
+        Architecture.icBroadcastReach_cover c] at hl
+      cases hl
+
+/-- **WS-SM SM7.D.4** (the retype seam's coherency theorem, CSpaceAddr): the
+CSpaceAddr production entry point carries the same unconditional guarantee. -/
+theorem lifecycleRetypeWithCleanupShootdownPerCoreIcache_preserves_icacheCoherent_perCore
+    {executingCore : SeLe4n.Kernel.Concurrency.CoreId}
+    {authority : CSpaceAddr} {target : SeLe4n.ObjId} {newObj : KernelObject}
+    {st st' : SystemState}
+    (hStep : lifecycleRetypeWithCleanupShootdownPerCoreIcache executingCore
+      authority target newObj st = .ok ((), st')) :
+    Architecture.icacheCoherent_perCore st' := by
+  unfold lifecycleRetypeWithCleanupShootdownPerCoreIcache at hStep
+  cases hBase : lifecycleRetypeWithCleanupShootdownPerCore executingCore
+      authority target newObj st with
+  | error e =>
+      rw [(Architecture.withIcacheBroadcast_error_iff _ _ st e).mpr hBase] at hStep
+      cases hStep
+  | ok pair =>
+      obtain ⟨u, stB⟩ := pair; cases u
+      rw [Architecture.withIcacheBroadcast_some_ok (retypeIcacheOperand_eq st) hBase]
+        at hStep
+      simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+      subst hStep
+      intro c l hl
+      rw [Architecture.icInvalidateBroadcast_iallu_empties stB
+        Architecture.icBroadcastReach_cover c] at hl
+      cases hl
+
+/-- **WS-SM SM7.D.4** (Direct-cap): the instruction-cache seam also preserves
+the **13th** conjunct — the SM7.F per-core TLB invariant — because the
+broadcast frames every field that conjunct reads. -/
+theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_preserves_tlbInvalidationConsistent_perCore
+    {executingCore : SeLe4n.Kernel.Concurrency.CoreId}
+    {authCap : Capability} {target : SeLe4n.ObjId} {newObj : KernelObject}
+    {st st' : SystemState} {root : VSpaceRoot}
+    (hq : Architecture.shootdownQuiescent st.tlbShootdown)
+    (hConsist : Architecture.tlbInvalidationConsistent_perCore st)
+    (hVsp : st.objects[target]? = some (.vspaceRoot root))
+    (hObjK : st.objects.invExtK) (hAsidK : st.asidTable.invExtK)
+    (hStep : lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache executingCore
+      authCap target newObj st = .ok ((), st')) :
+    Architecture.tlbInvalidationConsistent_perCore st' := by
+  unfold lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache at hStep
+  cases hBase : lifecycleRetypeDirectWithCleanupShootdownPerCore executingCore
+      authCap target newObj st with
+  | error e =>
+      rw [(Architecture.withIcacheBroadcast_error_iff _ _ st e).mpr hBase] at hStep
+      cases hStep
+  | ok pair =>
+      obtain ⟨u, stB⟩ := pair; cases u
+      rw [Architecture.withIcacheBroadcast_some_ok (retypeIcacheOperand_eq st) hBase]
+        at hStep
+      simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+      subst hStep
+      exact Architecture.icInvalidateBroadcast_preserves_tlbInvalidationConsistent_perCore
+        stB Architecture.icBroadcastReach .iallu
+        (lifecycleRetypeDirectWithCleanupShootdownPerCore_preserves_tlbInvalidationConsistent_perCore
+          hq hConsist hVsp hObjK hAsidK hBase)
+
+/-- **WS-SM SM7.D.4** (CSpaceAddr): the same 13th-conjunct carriage for the
+CSpaceAddr production entry point. -/
+theorem lifecycleRetypeWithCleanupShootdownPerCoreIcache_preserves_tlbInvalidationConsistent_perCore
+    {executingCore : SeLe4n.Kernel.Concurrency.CoreId}
+    {authority : CSpaceAddr} {target : SeLe4n.ObjId} {newObj : KernelObject}
+    {st st' : SystemState} {root : VSpaceRoot}
+    (hq : Architecture.shootdownQuiescent st.tlbShootdown)
+    (hConsist : Architecture.tlbInvalidationConsistent_perCore st)
+    (hVsp : st.objects[target]? = some (.vspaceRoot root))
+    (hObjK : st.objects.invExtK) (hAsidK : st.asidTable.invExtK)
+    (hStep : lifecycleRetypeWithCleanupShootdownPerCoreIcache executingCore
+      authority target newObj st = .ok ((), st')) :
+    Architecture.tlbInvalidationConsistent_perCore st' := by
+  unfold lifecycleRetypeWithCleanupShootdownPerCoreIcache at hStep
+  cases hBase : lifecycleRetypeWithCleanupShootdownPerCore executingCore
+      authority target newObj st with
+  | error e =>
+      rw [(Architecture.withIcacheBroadcast_error_iff _ _ st e).mpr hBase] at hStep
+      cases hStep
+  | ok pair =>
+      obtain ⟨u, stB⟩ := pair; cases u
+      rw [Architecture.withIcacheBroadcast_some_ok (retypeIcacheOperand_eq st) hBase]
+        at hStep
+      simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+      subst hStep
+      exact Architecture.icInvalidateBroadcast_preserves_tlbInvalidationConsistent_perCore
+        stB Architecture.icBroadcastReach .iallu
+        (lifecycleRetypeWithCleanupShootdownPerCore_preserves_tlbInvalidationConsistent_perCore
+          hq hConsist hVsp hObjK hAsidK hBase)
+
+/-- **WS-SM SM7.D.4** (the production retype capstone, Direct-cap): the live
+`.lifecycleRetype` path keeps **both** SMP per-core memory invariants — the
+13th (per-core TLB) and the 14th (per-core instruction cache). -/
+theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_preserves_perCore_memory_invariants
+    {executingCore : SeLe4n.Kernel.Concurrency.CoreId}
+    {authCap : Capability} {target : SeLe4n.ObjId} {newObj : KernelObject}
+    {st st' : SystemState} {root : VSpaceRoot}
+    (hq : Architecture.shootdownQuiescent st.tlbShootdown)
+    (hConsist : Architecture.tlbInvalidationConsistent_perCore st)
+    (hVsp : st.objects[target]? = some (.vspaceRoot root))
+    (hObjK : st.objects.invExtK) (hAsidK : st.asidTable.invExtK)
+    (hStep : lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache executingCore
+      authCap target newObj st = .ok ((), st')) :
+    Architecture.tlbInvalidationConsistent_perCore st' ∧
+    Architecture.icacheCoherent_perCore st' :=
+  ⟨lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_preserves_tlbInvalidationConsistent_perCore
+      hq hConsist hVsp hObjK hAsidK hStep,
+   lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_preserves_icacheCoherent_perCore
+      hStep⟩
 
 end SeLe4n.Kernel

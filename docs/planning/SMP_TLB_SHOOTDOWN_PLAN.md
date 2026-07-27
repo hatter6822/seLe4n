@@ -27,7 +27,10 @@ that broadcast invalidation reaches every core.
    `SystemState.perCoreTlb`), driven operationally by the shootdown
    protocol.
 4. **Cache maintenance broadcast** (SM7.D): I-cache via
-   `ic_ialluis`; D-cache by VA already at PoC.
+   `ic_ialluis` / `ic_ivau` over a mounted per-core model
+   (`SystemState.perCoreICache`), with `icacheCoherent_perCore` as the
+   14th `proofLayerInvariantBundle` conjunct; D-cache by VA already at
+   PoC (proved reach, no target set).
 5. **Tests** (SM7.E).
 
 > **Note** — the §5 sub-task breakdown is authoritative for the
@@ -154,15 +157,26 @@ release-acquire synchronization point that anchors Theorem 3.3.1.
 
 ### 4.3 Cache maintenance
 
-ARM ARM B2.7.5: DC operations at PoC (Point of Coherency) are
+ARM ARM B2.7 / D7.4: DC operations at PoC (Point of Coherency) are
 visible to all coherent agents. For seLe4n:
 
 - D-cache by VA (`dc_civac`, `dc_cvac`, `dc_ivac`): no broadcast
-  needed; DC ops at PoC already system-wide.
-- I-cache invalidation on code modification: use `ic_ialluis`
-  (inner-shareable broadcast variant; already in HAL).
+  needed; DC ops at PoC already system-wide.  Realised as
+  `dcMaintenanceAllCores`, which deliberately takes **no** target set —
+  the absence of a reach parameter is the formal statement of this
+  paragraph (SM7.D.2).
+- I-cache invalidation: `IC IALLU` reaches **only the executing PE**, so
+  the kernel must use `ic_ialluis` (inner-shareable broadcast) or
+  `ic_ivau` (by VA to PoU, likewise broadcast within the domain).  The
+  hazard the local variant leaves is stated as
+  `icInvalidateOnCore_icacheOnCore_ne` and closed by
+  `icInvalidateBroadcast_reaches_all_cores` (SM7.D.1).  Note `IC IALLUIS`
+  broadcasts within the *Inner Shareable* domain only: a multi-cluster
+  port must narrow `icBroadcastReach` and add an SGI-based
+  instruction-cache protocol, exactly as §3.4 records for the TLB.
 - Cross-core DC for DMA buffers: out of scope for v1.0.0 (no
-  DMA driver).
+  DMA driver) — machine-checked as a tripwire by
+  `modeledCoherentAgents_no_dma_master` (SM7.D.3), not left as prose.
 
 ## 5. Detailed sub-task breakdown
 
@@ -819,14 +833,110 @@ provably removed, under the pending-aware invariant, with no cross-round
 draining.  Zero sorry/axiom; golden trace byte-identical (`perCoreTlb` is
 projection-invisible).
 
-### SM7.D — Cache maintenance broadcast (2 PRs, 4 sub-tasks)
+### SM7.D — Cache maintenance broadcast (2 PRs, 4 sub-tasks) — LANDED (v0.32.94)
 
-| Sub | Description | Files | Est |
-|-----|-------------|-------|-----|
-| SM7.D.1 | I-cache invalidation: `ic_ialluis` (exists from HAL) | `Architecture/CacheModel.lean` doc | S |
-| SM7.D.2 | D-cache by VA at PoC documented system-wide | docstring | T |
-| SM7.D.3 | Cross-core DC for DMA out-of-scope documentation | docstring | T |
-| SM7.D.4 | Cache-coherency invariant under SMP | Theorem | M |
+**Status: LANDED.**  The cache-side companion of SM7.C.  SM7.C closed the
+*translation* half of SMP-C4 (a stale TLB entry on a remote core); SM7.D closes
+the *cache* half.  The two hierarchies are architecturally asymmetric, and that
+asymmetry decides the whole design:
+
+| structure | coherent across PEs? | kernel obligation |
+|-----------|----------------------|-------------------|
+| D-cache   | **yes** (hardware)   | none — `DC` by VA to PoC is architecturally visible to every agent in the domain (ARM ARM B2.7 / D7.4) |
+| I-cache   | **no**               | issue the *broadcast* maintenance variant (`IC IALLUIS` / `IC IVAU`), or remote cores keep stale lines |
+| TLB       | no                   | the SM7.B explicit-ack shootdown protocol |
+
+**The gap this closed** (why the phase was not a documentation cut, despite the
+original S/T/T/M estimates).  Before SM7.D the kernel performed **no
+instruction-cache maintenance on any live path**: `ic_iallu` had an FFI seam with
+no caller, and the SMP-correct broadcast variant `ic_ialluis` had no seam at all.
+Instruction caches are physically tagged from software's point of view (ARM ARM
+D7.2), so a line cached from a page whose executable mapping is later torn down
+stays hittable through *any* later executable mapping of the same frame, in *any*
+address space — the instruction-side twin of the SMP-C4 stale-TLB hazard, and one
+the TLB shootdown cannot close (it retires translations, not cache lines).  It is
+latent rather than exploitable today (no bootable image until SM9.E), but it was
+a genuine gap in both the model and the HAL surface, so the plan's
+"documentation" framing for D.1–D.3 was superseded per the project's
+implement-the-improvement rule.
+
+New production module `Architecture/PerCoreCacheModel.lean`; `CacheModel.lean`
+promoted staged → production (SM7.D is its first production consumer — the
+D-cache state and operations are what D.2's reach theorems quantify over), staged
+count 56 → 55.  Zero sorry/axiom; golden trace byte-identical
+(`perCoreICache ∉ projectState`).
+
+| Sub | Description | Status |
+|-----|-------------|--------|
+| SM7.D.1 | **I-cache invalidation broadcast, mounted and live.**  Typed operand `ICacheInvalidation` (`iallu` / `ivau paddr`) with the FFI tag encoding + range/distinctness theorems mirroring `TlbInvalidation`; the effect algebra `applyICacheInvalidation` (removal / selectivity / monotonicity / idempotence / `iallu`-empties / survivor lemmas); the mounted per-core state `SystemState.perCoreICache : Vector ICacheState numCores` under the SM4.B path-a discipline (`icacheOnCore` / `setIcacheOnCore` + store/load algebra + `default_icacheOnCore`); and the three model operations — `icFetchOnCore` (the hardware instruction fetch, an *environment* step), `icInvalidateOnCore` (`IC IALLU`, whose `…_icacheOnCore_ne` **states the SMP hazard**: every other core keeps its lines, with `icInvalidateOnCore_remote_line_survives` as the non-vacuity witness), and `icInvalidateBroadcast` (`IC IALLUIS` / `IC IVAU`).  Headline: `icInvalidateBroadcast_reaches_all_cores` — the instruction-side analogue of Theorem 3.3.1 — plus the platform instantiation over `icBroadcastReach` (`_cover` / `_nodup`).  `reach` is a parameter for the §3.4 reason `targets` is: a multi-cluster port leaves the Inner Shareable domain and needs an SGI protocol.  **Rust HAL**: `cache::ic_ivau` (`IC IVAU` + `DSB ISH` + `ISB`), `cache::ic_invalidate_all_inner_shareable`, typed `ICacheInvalidation` + fail-closed `decode_icache_invalidation`, exports `cache_ic_ialluis` / `cache_ic_maintenance`; Lean bindings `ffiIcIalluIs` / `ffiIcMaintenance` + the typed wrapper `icMaintenanceBroadcast` with encoding-conformance theorems (HAL 782 → 789 tests, clippy-clean). | ✓ |
+| SM7.D.2 | **D-cache by VA at PoC is system-wide — modelled, not merely documented.**  `DCacheMaintenance` (`cleanByVA` / `invalidateByVA` / `cleanInvalidateByVA`) over the AG8-B operations, and `dcMaintenanceAllCores`, which takes **no target set at all** — the absence of a reach parameter *is* the formal content of "at PoC, already system-wide".  `dcMaintenanceByVA_reaches_all_cores` (no core retains the line), `dcacheCoherentAcrossCores` + its cold-boot witness + `dcMaintenanceAllCores_preserves_dcacheCoherentAcrossCores`, and the asymmetry against the instruction side as a theorem (`icInvalidateOnCore_vs_dcMaintenance_reach`). | ✓ |
+| SM7.D.3 | **Cross-core DC for DMA out of scope — as a tripwire, not prose.**  The model enumerates its coherent agents (`CoherentAgent` / `modeledCoherentAgents` = exactly the PEs), proves the maintenance covers all of them (`dcMaintenance_covers_all_modeled_agents`), and proves the enumeration contains **no** non-coherent bus master (`modeledCoherentAgents_no_dma_master`).  Introducing a DMA agent breaks that theorem, so the buffer-ownership protocol (`DC CIVAC` before a device read, `DC IVAC` after a device write, plus non-cacheable or coherent-interconnect mappings) cannot be forgotten.  `Architecture/Assumptions.lean`'s AG8-B entry is rewritten from "sequential model — cache coherency is trivially satisfied under single-core operation" to the per-structure proved/assumed split. | ✓ |
+| SM7.D.4 | **Cache-coherency invariant under SMP — the 14th `proofLayerInvariantBundle` conjunct.**  `icacheCoherent_perCore`: on every core, every cached line still has a live **executable** mapping.  An `ICacheLine` records the executable translation the fetch resolved through (`ICacheLine.toTranslation`), so the entire page-table frame algebra proven for `tlbEntryConsistent` (SM7.C.5 / SM7.F) carries over unchanged.  Unlike the 13th conjunct it needs **no** pending-allowance disjunct: instruction-cache maintenance is a *synchronous* broadcast instruction, not a queued request/acknowledge round, so no committed state holds a line that is stale-but-scheduled-for-retirement.  Boot witness `default_icacheCoherent_perCore`; op-level preservation for fetch (with the walker/fetch-authorisation contract), local invalidate, and broadcast; decidable checker `icacheCoherentCheck_perCore` (+ `_iff` + `Decidable` instance) making the conjunct runtime-verifiable exactly as the 12th and 13th are; the capstone `cacheCoherency_cross_subsystem` (mirroring SM7.C.7) and the joint `icInvalidateBroadcast_preserves_perCore_memory_invariants`.  Carried through freeze (`FrozenSystemState.perCoreICache`, **required** — a silent drop is a compile error, symmetric with `perCoreTlb`), congruence (`OffSchedulerAgrees.perCoreICache`), boot (`bootFromPlatform_perCoreICache_eq`), and information flow (`perCoreICache_write_preserves_projection` — a cache view is a covert timing channel, so it stays out of `projectState`). | ✓ |
+
+#### SM7.D live wiring
+
+The two production paths that can falsify a cached line's witness now perform
+the maintenance **atomically with the transition**, and both carry
+machine-checked preservation of *both* per-core memory invariants (the 13th and
+the 14th):
+
+* **`.vspaceUnmap`** → `vspaceUnmapPageWithShootdownAndIcacheBroadcast`
+  (layered on SM7.F's `vspaceUnmapPageWithShootdownPerCore`).  Broadcasts a
+  **targeted** `IC IVAU` at the retired page's physical address when — and only
+  when — the mapping was executable (`unmapExecutablePaddr`, read from the
+  *pre*-state, before the descriptor is erased).  A data-page unmap owes nothing
+  and is provably inert (`…_non_executable_inert`).  The key step is
+  `unmapSurvivor_not_target`: a line that survives the maintenance cannot be a
+  line for the unmapped pair, in *both* the `none` branch (a line for it would
+  have carried `perms.execute = true`, contradicting `VSpaceRoot.lookup`'s
+  functionality) and the `ivau` branch (a survivor has a different physical
+  address).
+* **`.lifecycleRetype`** → `lifecycleRetype{Direct,}WithCleanupShootdownPerCoreIcache`
+  (both authority forms, so they cannot drift).  Broadcasts `IC IALLUIS`
+  **unconditionally**: a retype scrubs and re-purposes the target's backing
+  memory, and the abstract state cannot enumerate which physical lines that
+  memory covered, so the sound choice is the full invalidate — over-invalidation
+  costs re-fetches, under-invalidation is the hazard.  The payoff is that the
+  hardest transition in the kernel for cache reasoning becomes the easiest to
+  discharge: the post-state has every core's cache **cold**, so
+  `…_preserves_icacheCoherent_perCore` holds with *no* page-table side
+  conditions.
+* **Runtime seam** — `SyscallDispatchEntry.completeIcacheMaintenance`, keyed on
+  the same `(pre, post)` shootdown diff the TLB round uses and ordered *after*
+  it (translations retired everywhere before the caches are dropped), inert when
+  no round was posted (`completeIcacheMaintenance_nil`).  It emits
+  `IC IALLUIS` rather than the model's targeted `IC IVAU` because the runtime
+  recovers its work from the state diff, which carries the round's *TLB*
+  operands, not the physical address the model resolved from the pre-state page
+  tables; reconstructing that address from the encoded `.vae1` operand would be
+  a lossy round-trip whose failure mode is **under**-invalidation.  Emitting the
+  targeted operand at runtime needs the round's operands carried in a form the
+  diff preserves — the same descriptor-ledger work tracked as SM7.F.3.
+
+Tests: new `tests/SmpCacheMaintenanceSuite.lean` (`smp_cache_maintenance_suite`,
+Tier-2 registered, Tier-3 anchored) — 100+ `#check` surface anchors, 8
+elaboration witnesses, and **56 runtime assertions across 9 groups**: operand
+encoding + effect algebra, per-core accessors + cold boot cache, the broadcast
+reach vs the PE-local hazard (all four cores), the D-cache-at-PoC reach, the DMA
+tripwire, the invariant on a real page-table-backed state — including the
+**non-vacuity witness** that a cached line whose mapping was removed *fails* the
+checker while the domain broadcast restores it and a PE-local invalidate on
+another core does *not* — and the two live seams end to end.
+
+**Residual (tracked, scoped).**  (1) The runtime seam emits the domain-wide
+operand rather than the model's targeted `IC IVAU`; closure rides SM7.F.3's
+descriptor ledger.  (2) A retype whose target is *not* a live `.vspaceRoot`
+posts no shootdown round, so the runtime seam does not fire for it even though
+the model broadcasts unconditionally; that case is covered in depth (a frame
+must be unmapped before it can be re-typed, and the unmap posts its own round —
+which fires the seam), and the model keeps the stronger unconditional form so
+the invariant is discharged without relying on that discipline.  (3) Content
+coherency in the *other* direction — a thread writing new instructions through
+the data side (self-modifying code, JIT) — is user software's obligation on
+ARMv8-A (`DC CVAU` → `DSB` → `IC IVAU` → `DSB` → `ISB`, modelled by
+`armv8DCacheToICacheSequence`); seL4 exposes it as an explicit
+`Page_Unify_Instruction` operation rather than performing it implicitly, and
+SM7.D discharges the kernel-side mapping-lifetime obligation only.
 
 ### SM7.E — Tests (3 PRs, 6 sub-tasks)
 
@@ -848,11 +958,23 @@ projection-invisible).
 - `shootdownAck_release_acquire`
 - `shootdown_wait_loop_terminates`
 - `tlbInvalidationConsistent_perCore`
+- `icInvalidateBroadcast_reaches_all_cores` (the SM7.D headline — the
+  instruction-side analogue of Theorem 3.3.1)
+- `icacheCoherent_perCore` (the 14th `proofLayerInvariantBundle` conjunct)
+- `dcMaintenanceByVA_reaches_all_cores` (SM7.D.2)
+- `cacheCoherency_cross_subsystem` (SM7.D.4 capstone)
 
 ### 6.2 What SM7 assumes
 
 - ARM ARM C6.2.311-316 (TLBI semantics).
 - ARM ARM B2.7.5 (DSB ISH inner-shareable semantics).
+- ARM ARM B2.7 / D7.4 (cache maintenance scope; DC by VA to PoC affects
+  every agent that can access the location) — SM7.D.2.
+- ARM ARM C6.2.88 (`IC IALLU` PE-local vs `IC IALLUIS` / `IC IVAU`
+  inner-shareable broadcast) and D7.2 (instruction caches behave as PIPT
+  to software) — SM7.D.1.
+- No non-coherent bus master exists at v1.0.0 (no DMA driver) — SM7.D.3,
+  tripwired by `modeledCoherentAgents_no_dma_master`.
 - SM2.A memory-model synchronizesWith.
 - SM1.E IS-variant TLB primitives.
 
@@ -883,12 +1005,21 @@ projection-invisible).
       `tlbInvalidationConsistent_perCore` (the 13th
       `proofLayerInvariantBundle` conjunct), `tlbShootdown_invalidates_perCore`
       (Theorem 3.3.1 mounted), and `tlbConsistency_cross_subsystem`.
-- [ ] Cache-coherency invariant (SM7.D).
+- [x] Cache-coherency invariant (SM7.D, v0.32.94): `icacheCoherent_perCore`
+      (the 14th `proofLayerInvariantBundle` conjunct) + the broadcast reach
+      theorem `icInvalidateBroadcast_reaches_all_cores`, the D-cache-at-PoC
+      system-wide reach `dcMaintenanceByVA_reaches_all_cores`, the DMA scope
+      tripwire `modeledCoherentAgents_no_dma_master`, and the capstone
+      `cacheCoherency_cross_subsystem` — live behind the `.vspaceUnmap` and
+      `.lifecycleRetype` dispatch arms.
 - [ ] Tier 0..4 green; QEMU shootdown test passes (Tier 0..3 green at
-      SM7.B; the QEMU exerciser lands with SM7.E.2 and runs once the
-      SM9.E bootable image exists).
-- [ ] **Closes SMP-C4 formally** (at SM7 completion: SM7.C's per-core
-      model + SM7.D's cache invariant remain).
+      SM7.B and at the SM7.D landing; the QEMU exerciser lands with SM7.E.2
+      and runs once the SM9.E bootable image exists).
+- [x] **Closes SMP-C4 formally**: SM7.C's per-core TLB model and SM7.D's
+      per-core cache invariant have both landed, so every per-PE cached view
+      of a mapping the kernel destroys — translation *and* instruction line —
+      is provably retired on every core.  The remaining SM7 work (SM7.E.2–E.6)
+      is test/fixture coverage, not a correctness obligation.
 
 ## 9. Cross-references
 
@@ -905,7 +1036,9 @@ projection-invisible).
 ```bash
 source ~/.elan/env
 lake build SeLe4n.Kernel.Architecture.TlbShootdown
-lake build SmpTlbShootdownSuite
+lake build SeLe4n.Kernel.Architecture.PerCoreCacheModel
+lake exe smp_tlb_shootdown_suite
+lake exe smp_cache_maintenance_suite
 ./scripts/test_qemu_smp_shootdown.sh
 ```
 

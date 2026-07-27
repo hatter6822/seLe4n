@@ -44,11 +44,10 @@
 # proofs) may consume the refinement bridge and promote it; until
 # then it stays staged-only.
 
-SeLe4n.Kernel.Architecture.CacheModel         # marker (STATUS: staged for H3)
 SeLe4n.Kernel.Architecture.ExceptionModel     # marker (STATUS: staged for H3)
 SeLe4n.Kernel.Architecture.InterruptDispatch  # transitively-staged via ExceptionModel
 SeLe4n.Kernel.Architecture.TimerModel         # marker (STATUS: staged for H3)
-SeLe4n.Kernel.Architecture.TlbCacheComposition # transitively-staged via Staged
+SeLe4n.Kernel.Architecture.TlbCacheComposition # transitively-staged via Staged (its own AN9-A joint TLB+cache composition layer; `CacheModel` below it was promoted at WS-SM SM7.D)
 SeLe4n.Kernel.Concurrency.Assumptions         # infra (SMP-latent assumption inventory)
 SeLe4n.Kernel.Concurrency.Anchors             # infra (WS-SM SM0.C inventory build anchor; SMP-H3 closure)
 SeLe4n.Kernel.Concurrency.Locks               # infra (WS-SM SM0.I BklState)

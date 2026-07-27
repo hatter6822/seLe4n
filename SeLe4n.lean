@@ -84,6 +84,15 @@ import SeLe4n.Kernel.Architecture.TlbShootdownLockSet
 -- tlbInvalidationConsistent_perCore, the 13th proofLayerInvariantBundle
 -- conjunct) — mounted on `SystemState.perCoreTlb`.
 import SeLe4n.Kernel.Architecture.PerCoreTlbModel
+-- WS-SM SM7.D: the per-core **instruction-cache** model — the cache-side
+-- companion of `PerCoreTlbModel`.  `IC IALLU` reaches only the executing PE,
+-- so the kernel must issue the inner-shareable broadcast variant
+-- (`icInvalidateBroadcast`) whenever it retires an executable mapping or
+-- re-purposes memory; `icacheCoherent_perCore` (every cached line still has a
+-- live executable mapping) is the 14th `proofLayerInvariantBundle` conjunct.
+-- Also carries the SM7.D.2 data-cache-at-PoC reach theorems and the SM7.D.3
+-- DMA scope tripwire.
+import SeLe4n.Kernel.Architecture.PerCoreCacheModel
 -- WS-SM SM7.B (SM1.E.4 promotion): the typed `tlbiForSharing` FFI
 -- dispatcher — the shootdown round's runtime TLBI emitter
 -- (`SyscallDispatchEntry.completeShootdownRounds` is the first runtime

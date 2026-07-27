@@ -5,7 +5,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 
 name = "seLe4n"
-version = "0.32.93"
+version = "0.32.94"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
@@ -583,3 +583,12 @@ root = "tests.SmpNotificationSuite"
 [[lean_exe]]
 name = "smp_tlb_shootdown_suite"
 root = "tests.SmpTlbShootdownSuite"
+
+# WS-SM SM7.D: cache maintenance broadcast suite — the instruction-cache
+# broadcast (`IC IALLUIS` / `IC IVAU`) vs the PE-local `IC IALLU` hazard,
+# the data-cache-at-PoC system-wide reach, the DMA scope tripwire, and
+# `icacheCoherent_perCore` (the 14th `proofLayerInvariantBundle` conjunct)
+# across the live `.vspaceUnmap` / `.lifecycleRetype` seams.
+[[lean_exe]]
+name = "smp_cache_maintenance_suite"
+root = "tests.SmpCacheMaintenanceSuite"
