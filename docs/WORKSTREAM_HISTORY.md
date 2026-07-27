@@ -215,6 +215,47 @@ weaken a unify into a bare invalidate.  Theorems:
 core retains a line for the page), `_records_unify`, and preservation of both
 per-core memory conjuncts.
 
+### SECURITY (v0.32.97) — VSpace capability binding (PR #845 review, P1)
+
+A confused deputy in the syscall gate, found while addressing a review comment
+on `.vspaceUnifyInstruction` and confirmed **pre-existing and wider**:
+`.vspaceMap` and `.vspaceUnmap` had carried it since long before that syscall.
+
+`syscallLookupCap` verifies only that the caller holds *a* capability carrying
+the syscall's required right; it never tied that capability's **target** to the
+operand.  The three VSpace arms matched `| .object _ =>`, discarding the object
+id, then acted on an **ASID the caller supplied in a message register**,
+resolved through the global `asidTable` — so authority flowed from a name the
+caller chose rather than from the capability it held.
+
+Confirmed exploitable against the live dispatch path: an attacker thread holding
+only a writable capability to *its own TCB*, with no VSpace capability at all,
+unmapped an executable page belonging to a different address space.  Full
+VSpace-isolation breach and a denial-of-service primitive against any address
+space.  Severity **High**.
+
+Closed by `SeLe4n.Kernel.vspaceCapAuthorizesAsid`: the capability must name the
+VSpace root `resolveAsidRoot` yields for the operand ASID, checked in each arm
+before the transition runs.  Two properties are load-bearing — it is stated
+against the **resolved root** rather than the capability object's own `asid`
+field (the two diverge under the SM7.F.4 ASID-rebind hazard, and only the former
+is sound), and it **fails closed** on an unbound ASID, which also removes an
+ASID-existence oracle.  The three `dispatchWithCap_vspace*_delegates` theorems
+gain an authorization premise — without it they are now false — plus fail-closed
+duals `…_unauthorized` that state the rejection itself, since a regression
+dropping the gate would still satisfy the delegations.
+
+Coverage: `tests/VSpaceCapabilityBindingSuite.lean` (26 assertions / 5 groups,
+Tier-2 + Tier-3 wired), every scenario through the live `dispatchSyscall` path.
+`OperationChainSuite` chain28 — the project's only `syscallEntry`-level VSpace
+coverage — was additionally found **silently vacuous** (it added a second
+VSpaceRoot at an ASID the builder already used, so the uniqueness check panicked
+to `default : SystemState` and dispatch failed with `illegalState` before
+reaching the VSpace arms, an error both branches printed as "dispatch reached");
+it is repaired, now throws on error, and gains the cross-address-space refusal.
+
+No passing test changed behaviour; the golden trace is byte-identical.
+
 **Ledger soundness correction.**  Adding `.unifyPage` exposed a defect in
 v0.32.95's single-operand *join*: `iallu` was the lattice top, but `IC IALLUIS`
 invalidates instruction caches and issues **no** `DC CVAU`, so

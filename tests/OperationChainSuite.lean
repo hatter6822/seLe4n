@@ -1793,29 +1793,50 @@ private def chain27SyscallCSpaceOps : IO Unit := do
     | _ => throw <| IO.userError "chain27: CNode not found after move"
   | .error err => throw <| IO.userError s!"chain27: cspaceMove syscall failed: {toString err}"
 
-/-- T7-C: VSpace syscall dispatch — vspaceMap, vspaceUnmap via syscallEntry. -/
+/-- T7-C: VSpace syscall dispatch — vspaceMap, vspaceUnmap via syscallEntry.
+
+**Repaired (PR #845 review).**  This was the project's only `syscallEntry`-level
+VSpace coverage, and it had been silently vacuous: `buildSyscallState` always
+installs its own `.vspaceRoot` at `⟨502⟩` with `asid := ⟨1⟩`, while this chain
+added a second root at `⟨700⟩` *also* carrying `asid := ⟨1⟩`.  The builder's
+VSpaceRoot-ASID-uniqueness check rejected that, `buildChecked` panicked to
+`default : SystemState`, and dispatch failed with `illegalState` ("no current
+thread") — never reaching the VSpace arms at all.  Both branches then swallowed
+the error as "dispatch reached", so the rot was invisible.
+
+The chain's root now uses a **distinct** ASID (`⟨2⟩`), which both satisfies the
+uniqueness check and makes the scenario exercise the real path.  The error arms
+now `throw` instead of printing success: this test is the end-to-end witness
+that the register-decode → CSpace-resolution → rights-gate → capability-binding
+→ transition pipeline works, and it must fail loudly if any stage regresses.
+
+Note the capability `buildSyscallState` installs targets `⟨700⟩` — the root
+bound to ASID 2 — so the PR #845 capability binding
+(`vspaceCapAuthorizesAsid`) is satisfied.  Naming any other ASID here would now
+be rejected with `.illegalAuthority`, which is the point. -/
 private def chain28SyscallVSpaceOps : IO Unit := do
   let vsId : SeLe4n.ObjId := ⟨700⟩
-  let vsRoot : SeLe4n.Model.VSpaceRoot := { asid := ⟨1⟩, mappings := {} }
-  -- === vspaceMap (syscallId=9): x2=asid(1), x3=vaddr(0x2000), x4=paddr(0x3000), x5=perms(1=readOnly) ===
+  -- Distinct from the `⟨502⟩` root `buildSyscallState` always installs at ASID 1.
+  let chainAsid : SeLe4n.ASID := ⟨2⟩
+  let vsRoot : SeLe4n.Model.VSpaceRoot := { asid := chainAsid, mappings := {} }
+  -- === vspaceMap (syscallId=9): x2=asid(2), x3=vaddr(0x2000), x4=paddr(0x3000), x5=perms(1=readOnly) ===
   let stMap := buildSyscallState 9 0 vsId
     (AccessRightSet.ofList [.read, .write])
     [(vsId, .vspaceRoot vsRoot)]
-    [(2, 1), (3, 0x2000), (4, 0x3000), (5, 1)]
+    [(2, 2), (3, 0x2000), (4, 0x3000), (5, 1)]
     [(vsId, .vspaceRoot)]
   match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stMap with
   | .ok (_, stAfter) =>
     -- Verify the mapping was created
-    match SeLe4n.Kernel.Architecture.vspaceLookup ⟨1⟩ (SeLe4n.VAddr.ofNat 0x2000) stAfter with
+    match SeLe4n.Kernel.Architecture.vspaceLookup chainAsid (SeLe4n.VAddr.ofNat 0x2000) stAfter with
     | .ok (paddr, _) => expect "chain28: vspaceMap dispatch mapped" (paddr == (SeLe4n.PAddr.ofNat 0x3000))
     | .error _ => throw <| IO.userError "chain28: lookup after vspaceMap failed"
   | .error err =>
-    -- vspaceMap may fail if state setup incomplete — dispatch path still exercised
-    IO.println s!"operation-chain check passed [chain28: vspaceMap dispatch reached ({toString err})]"
-  -- === vspaceUnmap (syscallId=10): x2=asid(1), x3=vaddr(0x2000) ===
+    throw <| IO.userError s!"chain28: vspaceMap dispatch failed ({toString err})"
+  -- === vspaceUnmap (syscallId=10): x2=asid(2), x3=vaddr(0x4000) ===
   -- Build state WITH existing mapping to unmap
   let vsWithMapping : SeLe4n.Model.VSpaceRoot := {
-    asid := ⟨1⟩
+    asid := chainAsid
     mappings := SeLe4n.Kernel.RobinHood.RHTable.ofList [
       ((SeLe4n.VAddr.ofNat 0x4000), ((SeLe4n.PAddr.ofNat 0x5000), SeLe4n.Model.PagePermissions.readOnly))
     ]
@@ -1823,15 +1844,31 @@ private def chain28SyscallVSpaceOps : IO Unit := do
   let stUnmap := buildSyscallState 10 0 vsId
     (AccessRightSet.ofList [.read, .write])
     [(vsId, .vspaceRoot vsWithMapping)]
-    [(2, 1), (3, 0x4000)]
+    [(2, 2), (3, 0x4000)]
     [(vsId, .vspaceRoot)]
   match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stUnmap with
   | .ok (_, stAfter) =>
-    match SeLe4n.Kernel.Architecture.vspaceLookup ⟨1⟩ (SeLe4n.VAddr.ofNat 0x4000) stAfter with
+    match SeLe4n.Kernel.Architecture.vspaceLookup chainAsid (SeLe4n.VAddr.ofNat 0x4000) stAfter with
     | .error _ => IO.println "operation-chain check passed [chain28: vspaceUnmap dispatch unmapped]"
     | .ok _ => throw <| IO.userError "chain28: mapping still exists after unmap"
   | .error err =>
-    IO.println s!"operation-chain check passed [chain28: vspaceUnmap dispatch reached ({toString err})]"
+    throw <| IO.userError s!"chain28: vspaceUnmap dispatch failed ({toString err})"
+  -- === The PR #845 binding, end-to-end through `syscallEntry`. ===
+  -- Same scenario, but naming the ASID of the *builder's own* root (`⟨1⟩` at
+  -- `⟨502⟩`) while holding a capability to `⟨700⟩`.  Before the binding this
+  -- unmapped a page in an address space the caller had no capability for.
+  let stConfused := buildSyscallState 10 0 vsId
+    (AccessRightSet.ofList [.read, .write])
+    [(vsId, .vspaceRoot vsWithMapping)]
+    [(2, 1), (3, 0x4000)]
+    [(vsId, .vspaceRoot)]
+  match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stConfused with
+  | .error .illegalAuthority =>
+    IO.println "operation-chain check passed [chain28: cross-address-space unmap refused]"
+  | .error err =>
+    throw <| IO.userError s!"chain28: expected illegalAuthority, got {toString err}"
+  | .ok _ =>
+    throw <| IO.userError "chain28: cross-address-space unmap was ALLOWED (capability binding regressed)"
 
 /-- T7-C: Lifecycle retype via syscallEntry (syscallId=8). -/
 private def chain29SyscallLifecycleRetype : IO Unit := do

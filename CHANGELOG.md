@@ -1,3 +1,94 @@
+## v0.32.97 — SECURITY: bind VSpace syscall capabilities to their operand address space
+
+**Severity: High. Confused deputy in the VSpace syscall gate — a thread holding
+a writable capability to *any* object could act on *any* address space.**
+
+Found while addressing a PR #845 review comment, which flagged the pattern on
+the newly added `.vspaceUnifyInstruction`. Investigation confirmed the finding
+and showed the defect was **pre-existing and wider**: `.vspaceMap` and
+`.vspaceUnmap` had carried it since long before that syscall existed.
+
+**The defect.** `syscallLookupCap` resolves a CPtr through the caller's CSpace
+and verifies that the resolved capability carries the syscall's required right.
+It never tied that capability's **target** to the operand the syscall acts on.
+The three VSpace arms in `dispatchCapabilityOnly` matched `| .object _ =>`,
+discarding the object id, and then operated on an **ASID the caller supplied in
+a message register**, resolved through the global `asidTable`. Authority
+therefore flowed from a name the caller chose rather than from the capability it
+held — precisely what a capability system exists to prevent.
+
+**Confirmed exploitable**, against the real dispatch path. An attacker thread
+whose CSpace held only a writable capability to *its own TCB*, and no VSpace
+capability at all, successfully unmapped an executable page belonging to a
+different address space (victim ASID 7, attacker ASID 5) and ran cache
+maintenance against it. Full VSpace-isolation breach; also a denial-of-service
+primitive against any address space in the system.
+
+**The fix.** `SeLe4n.Kernel.vspaceCapAuthorizesAsid` requires the capability to
+name the VSpace root that `resolveAsidRoot` yields for the operand ASID, checked
+in each of the three arms before the transition runs; `.illegalAuthority`
+otherwise. Two properties of the check are load-bearing:
+
+* It is stated against **`resolveAsidRoot`** — the root the transition will
+  actually act on — not against the `asid` field of the capability's own object.
+  The two differ when distinct roots carry the same ASID (`storeObject` rebinds
+  `asidTable` on a colliding install, the hazard SM7.F.4 closed on the TLB side),
+  and only the former is sound: checking the capability's own field would let a
+  holder of the *shadowed* root authorize an operation landing on the *bound*
+  one.
+* It **fails closed** on an unbound ASID — no capability authorizes an ASID that
+  resolves to no root — which also removes an ASID-existence oracle from the
+  unauthorized path.
+
+The gate sits immediately after argument decode and before any further work, so
+decode errors keep their existing identity and an unauthorized caller learns
+nothing about the target.
+
+**Proof surface.** `vspaceCapAuthorizesAsid_iff` characterises the predicate;
+`_false_of_ne`, `_false_of_unbound` and `_false_of_not_object` are the
+fail-closed statements. The three `dispatchWithCap_vspace{Map,Unmap,
+UnifyInstruction}_delegates` theorems gain an authorization premise — without it
+they are now *false* — and gain fail-closed duals
+`dispatchWithCap_vspace{Map,Unmap,UnifyInstruction}_unauthorized`, which state
+the rejection itself. The duals exist because a regression that dropped the gate
+would still satisfy the delegations (they carry `hAuth` as a hypothesis) while
+breaking the duals. The three `checkedDispatch_*_eq_unchecked` equivalences are
+unchanged: both dispatchers delegate to the same `dispatchCapabilityOnly`, so
+the arms change identically on both sides.
+
+**Blast radius: none.** Every existing dispatch-level caller already presented a
+correctly-bound capability, so no passing test changed behaviour, and the golden
+trace is byte-identical (the trace harness reaches VSpace operations through the
+transitions directly, never through dispatch).
+
+**New coverage.** `tests/VSpaceCapabilityBindingSuite.lean`
+(`vspace_capability_binding_suite`, 26 assertions / 5 groups, Tier-2 + Tier-3
+wired): the predicate's truth table on a real page-table-backed state, then for
+each of the three syscalls the unrelated-capability exploit (refused, with the
+victim's mapping proven still present / no maintenance emitted / no mapping
+installed), the wrong-VSpace-root case, the unbound-ASID case, and the
+authorized positive path with its effect observed. Every scenario drives the
+live `dispatchSyscall` path, because the defect lived in dispatch and only
+dispatch can witness it.
+
+**Also repaired: `OperationChainSuite` chain28 was silently vacuous.** It was the
+project's only `syscallEntry`-level VSpace coverage, and it had never run:
+`buildSyscallState` always installs a `.vspaceRoot` at `⟨502⟩` with `asid := ⟨1⟩`,
+while the chain added a second root *also* at ASID 1 — the builder's
+VSpaceRoot-ASID-uniqueness check rejected that, `buildChecked` panicked to
+`default : SystemState`, and dispatch failed with `illegalState` before reaching
+the VSpace arms. Both branches swallowed the error as "dispatch reached", so the
+rot was invisible. The chain now uses a distinct ASID, `throw`s instead of
+printing success on error, genuinely exercises map and unmap end-to-end, and
+gains a third case: the same capability naming a *different* address space's
+ASID must be refused with `.illegalAuthority` — the binding, proven through the
+full register-decode → CSpace-resolution → rights-gate → binding → transition
+pipeline.
+
+Zero sorry/axiom; Tier 0–5 green; Rust untouched (795 HAL tests, clippy-clean).
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.D; #845
+
 ## v0.32.96 — WS-SM SM7.D: `.vspaceUnifyInstruction` — the code-publication syscall (last residual closed)
 
 Closes the final SM7.D residual and, with it, SM7.D itself: a subject that

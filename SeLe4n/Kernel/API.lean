@@ -825,6 +825,83 @@ going through `SchedContextId.toObjId`). Rejects `ObjId.sentinel`. -/
   | none => .error .invalidArgument
   | some v => .ok v
 
+/-- **Capability binding for the VSpace syscalls** (PR #845 review, P1).
+
+`syscallLookupCap` verifies only that the caller holds *a* capability carrying
+the syscall's required right; it does not tie that capability to the operand the
+syscall acts on.  For `.vspaceMap` / `.vspaceUnmap` / `.vspaceUnifyInstruction`
+the operand is an **ASID the caller supplies in a message register**, so without
+this binding a caller holding any writable object capability — its own TCB, say
+— could name an arbitrary address space and have the kernel act on it.  That is
+a confused deputy in the strict sense: authority would flow from a name the
+caller chose rather than from the capability it holds, which is precisely what a
+capability system exists to prevent.
+
+The predicate is stated against **`resolveAsidRoot`** — the root the transition
+itself will act on — rather than against the `asid` field of the capability's
+own object.  The two differ when distinct roots carry the same ASID
+(`storeObject` rebinds `asidTable` on a colliding install; that is the hazard
+SM7.F.4 closed on the TLB side), and only the former is sound: checking the
+capability's own field would let a holder of the *shadowed* root authorize an
+operation that lands on the *bound* one.
+
+Fails closed: an ASID that resolves to no root is authorized by no capability,
+so an unbound ASID is rejected here rather than deeper in the transition.  That
+also removes an ASID-existence oracle from the unauthorized path. -/
+def vspaceCapAuthorizesAsid (cap : Capability) (asid : SeLe4n.ASID)
+    (st : SystemState) : Bool :=
+  match cap.target, Architecture.resolveAsidRoot st asid with
+  | .object rid, some (rootId, _) => rid == rootId
+  | _, _ => false
+
+/-- The binding holds exactly when the capability names the VSpace root that
+`resolveAsidRoot` yields for the operand ASID. -/
+theorem vspaceCapAuthorizesAsid_iff (cap : Capability) (asid : SeLe4n.ASID)
+    (st : SystemState) :
+    vspaceCapAuthorizesAsid cap asid st = true ↔
+      ∃ rid root, cap.target = .object rid ∧
+        Architecture.resolveAsidRoot st asid = some (rid, root) := by
+  unfold vspaceCapAuthorizesAsid
+  cases hcap : cap.target <;>
+    cases hres : Architecture.resolveAsidRoot st asid <;>
+    simp_all
+  rename_i rid pair
+  obtain ⟨rootId, root⟩ := pair
+  constructor
+  · rintro rfl; exact ⟨root, rfl⟩
+  · rintro ⟨_, h⟩; exact (Prod.mk.injEq .. ▸ h).1.symm
+
+/-- **Fail-closed**: a capability naming a *different* object than the operand
+ASID's root authorizes nothing.  This is the regression statement for the
+confused-deputy defect — before the binding, a writable capability to any
+object at all (an attacker's own TCB) passed the gate. -/
+theorem vspaceCapAuthorizesAsid_false_of_ne {cap : Capability}
+    {asid : SeLe4n.ASID} {st : SystemState} {rid rootId : SeLe4n.ObjId} {root : VSpaceRoot}
+    (hcap : cap.target = .object rid)
+    (hres : Architecture.resolveAsidRoot st asid = some (rootId, root))
+    (hne : rid ≠ rootId) :
+    vspaceCapAuthorizesAsid cap asid st = false := by
+  simp [vspaceCapAuthorizesAsid, hcap, hres, hne]
+
+/-- **Fail-closed**: an unbound ASID is authorized by no capability. -/
+theorem vspaceCapAuthorizesAsid_false_of_unbound {cap : Capability}
+    {asid : SeLe4n.ASID} {st : SystemState}
+    (hres : Architecture.resolveAsidRoot st asid = none) :
+    vspaceCapAuthorizesAsid cap asid st = false := by
+  unfold vspaceCapAuthorizesAsid
+  rw [hres]
+  cases cap.target <;> rfl
+
+/-- A non-object capability authorizes no address space, whatever the ASID. -/
+theorem vspaceCapAuthorizesAsid_false_of_not_object {cap : Capability}
+    {asid : SeLe4n.ASID} {st : SystemState}
+    (hcap : ∀ rid, cap.target ≠ .object rid) :
+    vspaceCapAuthorizesAsid cap asid st = false := by
+  unfold vspaceCapAuthorizesAsid
+  cases hc : cap.target
+  case object rid => exact absurd hc (hcap rid)
+  all_goals cases Architecture.resolveAsidRoot st asid <;> rfl
+
 /-- V8-H/Z5-J/D1/AE1-A/AE1-B: Shared dispatch for capability-only syscalls — these 14 arms
 derive authority entirely from capability possession and require no
 information-flow checks. Both `dispatchWithCap` and `dispatchWithCapChecked`
@@ -904,6 +981,16 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
                   (2^st.machine.physicalAddressWidth) with
           | .error e => .error e
           | .ok args =>
+            -- PR #845 review (P1): bind the capability to the operand address
+            -- space.  `syscallLookupCap` proved only that the caller holds
+            -- *some* capability carrying `.write`; the ASID arrives in a
+            -- message register, so without this a holder of any writable object
+            -- capability could map into an arbitrary address space.  Checked
+            -- before the permission validation so an unauthorized caller does
+            -- no further work and learns nothing about the target.
+            if !vspaceCapAuthorizesAsid cap args.asid st then
+              .error .illegalAuthority
+            else
               -- AH1-D (M-01 fix): Validate permissions against memory kind before mapping.
               -- Device regions must not receive execute permission (undefined on ARM64).
               match validateVSpaceMapPermsForMemoryKind args st.machine.memoryMap with
@@ -930,6 +1017,14 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
         fun st => match decodeVSpaceUnmapArgs decoded st.machine.maxASID with
         | .error e => .error e
         | .ok args =>
+          -- PR #845 review (P1): bind the capability to the operand address
+          -- space.  Without this a holder of any writable object capability —
+          -- its own TCB, say — could tear down mappings in an arbitrary address
+          -- space, since the ASID is caller-supplied and the rights gate above
+          -- never looks at what the capability names.
+          if !vspaceCapAuthorizesAsid cap args.asid st then
+            .error .illegalAuthority
+          else
             -- WS-SM SM7.B.9: the SMP-C4 use-after-unmap closure — local
             -- flush + `.vae1` shootdown round to every other core.  WS-SM
             -- SM7.F.4(b)(i): route through the initiator-atomic per-core
@@ -969,6 +1064,13 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
         fun st => match decodeVSpaceUnifyInstructionArgs decoded st.machine.maxASID with
         | .error e => .error e
         | .ok args =>
+          -- PR #845 review (P1): bind the capability to the operand address
+          -- space.  Without this a holder of any writable object capability
+          -- could run cache maintenance against — and so probe the mapping
+          -- structure of — an arbitrary address space.
+          if !vspaceCapAuthorizesAsid cap args.asid st then
+            .error .illegalAuthority
+          else
             Architecture.vspaceUnifyInstructionPage args.asid args.vaddr st
     | _ => fun _ => .error .invalidCapability
   | .serviceRevoke =>
@@ -2487,7 +2589,12 @@ theorem dispatchWithCap_vspaceMap_delegates
     (hTarget : cap.target = .object objId)
     -- AK3-E: decode now uses `decodeVSpaceMapArgsChecked`
     (hDecode : decodeVSpaceMapArgsChecked decoded st.machine.maxASID
-                 (2^st.machine.physicalAddressWidth) = .ok args) :
+                 (2^st.machine.physicalAddressWidth) = .ok args)
+    -- PR #845 review (P1): the capability must name the operand ASID's VSpace
+    -- root.  Without this premise the delegation is *false*, because an
+    -- unauthorized caller is now rejected with `.illegalAuthority` before the
+    -- transition runs.
+    (hAuth : vspaceCapAuthorizesAsid cap args.asid st = true) :
     dispatchWithCap decoded tid gate cap st =
       (match validateVSpaceMapPermsForMemoryKind args st.machine.memoryMap with
         | .error e => .error e
@@ -2495,7 +2602,7 @@ theorem dispatchWithCap_vspaceMap_delegates
             Architecture.vspaceMapPageCheckedWithShootdownFromStatePerCore
               (determineExecutingCore st tid) validatedArgs.asid
               validatedArgs.vaddr validatedArgs.paddr validatedArgs.perms st) := by
-  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
+  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode, hAuth]
 
 /-- WS-SM SM7.D: When `.vspaceUnifyInstruction` dispatch succeeds,
 `vspaceUnifyInstructionPage` is invoked with the decoded ASID and vaddr.
@@ -2516,10 +2623,13 @@ theorem dispatchWithCap_vspaceUnifyInstruction_delegates
     (st : SystemState)
     (hSyscall : decoded.syscallId = .vspaceUnifyInstruction)
     (hTarget : cap.target = .object objId)
-    (hDecode : decodeVSpaceUnifyInstructionArgs decoded st.machine.maxASID = .ok args) :
+    (hDecode : decodeVSpaceUnifyInstructionArgs decoded st.machine.maxASID = .ok args)
+    -- PR #845 review (P1): the capability must name the operand ASID's VSpace
+    -- root; an unauthorized caller is rejected with `.illegalAuthority`.
+    (hAuth : vspaceCapAuthorizesAsid cap args.asid st = true) :
     dispatchWithCap decoded tid gate cap st =
       Architecture.vspaceUnifyInstructionPage args.asid args.vaddr st := by
-  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
+  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode, hAuth]
 
 /-- WS-K-D/S6-A / WS-SM SM7.B.9 / SM7.F.4(b)(i) / SM7.D.1: When vspaceUnmap
 dispatch succeeds, `vspaceUnmapPageWithShootdownAndIcacheBroadcast` is invoked
@@ -2546,11 +2656,72 @@ theorem dispatchWithCap_vspaceUnmap_delegates
     (hSyscall : decoded.syscallId = .vspaceUnmap)
     (hTarget : cap.target = .object objId)
     -- AH3-C: decode now takes st.machine.maxASID from the platform config
-    (hDecode : decodeVSpaceUnmapArgs decoded st.machine.maxASID = .ok args) :
+    (hDecode : decodeVSpaceUnmapArgs decoded st.machine.maxASID = .ok args)
+    -- PR #845 review (P1): the capability must name the operand ASID's VSpace
+    -- root; an unauthorized caller is rejected with `.illegalAuthority`.
+    (hAuth : vspaceCapAuthorizesAsid cap args.asid st = true) :
     dispatchWithCap decoded tid gate cap st =
       Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast
         (determineExecutingCore st tid) args.asid args.vaddr st := by
-  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
+  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode, hAuth]
+
+-- ============================================================================
+-- PR #845 review (P1) — the fail-closed duals of the three VSpace delegations
+--
+-- The `…_delegates` theorems above say what an *authorized* caller gets.  These
+-- say what an unauthorized one gets: rejection, with the address space
+-- untouched.  Stated as separate theorems rather than left implicit because the
+-- rejection is the security property — a regression that dropped the gate would
+-- still satisfy the delegations (they carry `hAuth` as a hypothesis) but would
+-- break these.
+-- ============================================================================
+
+/-- **Fail-closed**: `.vspaceMap` dispatch rejects a capability that does not
+name the operand ASID's VSpace root, without running the transition. -/
+theorem dispatchWithCap_vspaceMap_unauthorized
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
+    (cap : Capability) (objId : SeLe4n.ObjId)
+    (args : Architecture.SyscallArgDecode.VSpaceMapArgs)
+    (st : SystemState)
+    (hSyscall : decoded.syscallId = .vspaceMap)
+    (hTarget : cap.target = .object objId)
+    (hDecode : decodeVSpaceMapArgsChecked decoded st.machine.maxASID
+                 (2^st.machine.physicalAddressWidth) = .ok args)
+    (hAuth : vspaceCapAuthorizesAsid cap args.asid st = false) :
+    dispatchWithCap decoded tid gate cap st = .error .illegalAuthority := by
+  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode, hAuth]
+
+/-- **Fail-closed**: `.vspaceUnmap` dispatch rejects a capability that does not
+name the operand ASID's VSpace root, leaving the address space intact.  This is
+the theorem that would have failed before the binding landed: a caller holding a
+writable capability to *any* object could unmap pages in an address space it had
+no capability for. -/
+theorem dispatchWithCap_vspaceUnmap_unauthorized
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
+    (cap : Capability) (objId : SeLe4n.ObjId)
+    (args : Architecture.SyscallArgDecode.VSpaceUnmapArgs)
+    (st : SystemState)
+    (hSyscall : decoded.syscallId = .vspaceUnmap)
+    (hTarget : cap.target = .object objId)
+    (hDecode : decodeVSpaceUnmapArgs decoded st.machine.maxASID = .ok args)
+    (hAuth : vspaceCapAuthorizesAsid cap args.asid st = false) :
+    dispatchWithCap decoded tid gate cap st = .error .illegalAuthority := by
+  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode, hAuth]
+
+/-- **Fail-closed**: `.vspaceUnifyInstruction` dispatch rejects a capability that
+does not name the operand ASID's VSpace root, so the cache-maintenance path
+cannot be used to probe another address space's mappings. -/
+theorem dispatchWithCap_vspaceUnifyInstruction_unauthorized
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
+    (cap : Capability) (objId : SeLe4n.ObjId)
+    (args : Architecture.SyscallArgDecode.VSpaceUnifyInstructionArgs)
+    (st : SystemState)
+    (hSyscall : decoded.syscallId = .vspaceUnifyInstruction)
+    (hTarget : cap.target = .object objId)
+    (hDecode : decodeVSpaceUnifyInstructionArgs decoded st.machine.maxASID = .ok args)
+    (hAuth : vspaceCapAuthorizesAsid cap args.asid st = false) :
+    dispatchWithCap decoded tid gate cap st = .error .illegalAuthority := by
+  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode, hAuth]
 
 -- ============================================================================
 -- WS-K-E: Service policy and IPC message population delegation theorems

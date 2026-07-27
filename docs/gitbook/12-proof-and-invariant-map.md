@@ -778,6 +778,30 @@ generalisation of the scalar boot-core `tlb`, added alongside it):
   both removes every stale entry on every core AND preserves per-core
   consistency
 
+VSpace syscall **capability binding** (`API.lean`, v0.32.97 — the PR #845
+review closure).  `syscallLookupCap` proves only that the caller holds *a*
+capability carrying the syscall's required right; it does not tie that
+capability to the operand.  For the VSpace syscalls the operand is an ASID the
+caller supplies in a message register, so the binding is what keeps authority
+flowing from the capability rather than from a name the caller chose:
+- `vspaceCapAuthorizesAsid` — the capability must name the VSpace root that
+  `resolveAsidRoot` yields for the operand ASID.  Stated against the *resolved*
+  root, not the capability object's own `asid` field: the two diverge when
+  distinct roots carry the same ASID (the SM7.F.4 rebind hazard), and only the
+  former is sound.  Fails closed on an unbound ASID, which also denies an
+  ASID-existence oracle to an unauthorized caller
+- `vspaceCapAuthorizesAsid_iff` — the characterisation; `_false_of_ne`,
+  `_false_of_unbound`, `_false_of_not_object` — the fail-closed statements
+- `dispatchWithCap_vspace{Map,Unmap,UnifyInstruction}_delegates` — each now
+  carries an authorization premise; **without it the delegation is false**
+- `dispatchWithCap_vspace{Map,Unmap,UnifyInstruction}_unauthorized` — the
+  fail-closed duals, stating the rejection itself.  These exist because a
+  regression that dropped the gate would still satisfy the delegations (which
+  carry authorization as a hypothesis) while breaking these
+- The `checkedDispatch_*_eq_unchecked` equivalences are unchanged: both
+  dispatchers delegate to the same `dispatchCapabilityOnly`, so the arms change
+  identically on both sides
+
 Per-core **instruction-cache** model (`PerCoreCacheModel.lean`, WS-SM SM7.D —
 production, over the new `SystemState.perCoreICache : Vector ICacheState
 numCores`).  The cache-side companion of SM7.C, and the two hierarchies are

@@ -1123,6 +1123,30 @@ run_check "INVARIANT" rg -n 'fn vspace_unify_instruction_roundtrip' rust/sele4n-
 run_check "INVARIANT" rg -n '^pub fn unify_instruction_page_inner_shareable' rust/sele4n-hal/src/cache.rs
 run_check "INVARIANT" rg -n '^pub fn dc_cvau' rust/sele4n-hal/src/cache.rs
 
+# ============================================================================
+# PR #845 review (P1) — VSpace capability binding (confused-deputy closure)
+#
+# `syscallLookupCap` proves only that the caller holds *a* capability carrying
+# the required right.  The three VSpace arms operate on a caller-supplied ASID,
+# so without binding the capability to that address space a holder of any
+# writable object capability could act on an arbitrary one.  These anchors pin
+# the predicate, its fail-closed theorems, the three rejection duals, and the
+# regression suite.
+# ============================================================================
+run_check "INVARIANT" rg -n '^def vspaceCapAuthorizesAsid' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem vspaceCapAuthorizesAsid_iff' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem vspaceCapAuthorizesAsid_false_of_ne' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem vspaceCapAuthorizesAsid_false_of_unbound' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem vspaceCapAuthorizesAsid_false_of_not_object' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_vspaceMap_unauthorized' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_vspaceUnmap_unauthorized' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_vspaceUnifyInstruction_unauthorized' SeLe4n/Kernel/API.lean
+# The gate must be present in all three live arms (a dropped call re-opens it).
+run_check "INVARIANT" bash -c "test \$(rg -c 'vspaceCapAuthorizesAsid cap' SeLe4n/Kernel/API.lean) -ge 3"
+run_check "INVARIANT" rg -n '^def runVSpaceCapabilityBindingChecks' tests/VSpaceCapabilityBindingSuite.lean
+run_check "INVARIANT" rg -n '^run_check_with_timeout "TRACE" lake exe vspace_capability_binding_suite' scripts/test_tier2_negative.sh
+run_check "INVARIANT" rg -n '^name = "vspace_capability_binding_suite"' lakefile.toml
+
 # WS-SM SM7.F.4(b)(iii): shared initiator drain + the CSpaceAddr retype sibling.
 run_check "INVARIANT" rg -n '^def retypeInitiatorDrain' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
 run_check "INVARIANT" rg -n '^def lifecycleRetypeWithCleanupShootdownPerCore' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean

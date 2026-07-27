@@ -413,4 +413,13 @@ run_check_with_timeout "TRACE" lake exe smp_tlb_shootdown_suite
 # inertness on a non-executable one, domain-wide IALLUIS on retype).
 run_check_with_timeout "TRACE" lake exe smp_cache_maintenance_suite
 
+# PR #845 review (P1) — VSpace capability binding.  Regression coverage for the
+# confused-deputy defect: `syscallLookupCap` checked only that the caller held
+# *a* capability carrying the required right, never that the capability named
+# the address space being operated on, so a thread holding a writable capability
+# to any object (its own TCB) could unmap pages in an arbitrary address space.
+# Every scenario drives the live `dispatchSyscall` path, since the defect lived
+# in dispatch and only dispatch can witness it.
+run_check_with_timeout "TRACE" lake exe vspace_capability_binding_suite
+
 finalize_report
