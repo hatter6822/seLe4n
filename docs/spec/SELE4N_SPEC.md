@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.32.100` (`lakefile.toml`) |
+| **Package version** | `0.32.101` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 235,511 across 264 Lean files |
 | **Test LoC** | 47,279 across 67 Lean test suites |
@@ -2644,12 +2644,21 @@ memory is retyped for a different purpose.
   non-observable targets — scrubbing memory outside an observer's domain does
   not affect their projected state.
 
-**AN4-G.3 (LIF-M03) — Lifecycle: model-vs-hardware scrub bridge.** The
-model-layer `scrubObjectMemory` computes its target PAddr as
-`objectId.toNat × objectTypeAllocSize` — a purely abstract convention. Real
-hardware (the RPi5 AArch64 target) must route the same scrub through the
-VSpace bridge so it hits the physical frame that actually backs the object's
-allocation extent:
+**AN4-G.3 (LIF-M03) — Lifecycle: model-vs-hardware scrub bridge.**
+
+> **Severity: High once bootable (SM9.E); not exploitable today.** This is a
+> *data*-disclosure gap, not merely a stale-cache one. If the scrub does not
+> reach the memory the allocator actually handed out, a re-typed object is
+> handed to its new owner still holding the previous owner's bytes — which is
+> the exact leak `scrubObjectMemory` exists to prevent. Closure target: SM9.E,
+> with the hardware bridge below. No bootable image exists before then, so
+> there is no reachable exploit at present.
+
+The model-layer scrub range is `scrubExtent objectId objType` =
+`(objectId.toNat × objectTypeAllocSize, objectTypeAllocSize)` — a purely
+abstract convention. Real hardware (the RPi5 AArch64 target) must route the
+same scrub through the VSpace bridge so it hits the physical frame that
+actually backs the object's allocation extent:
 
 1. The untyped allocator in `retypeFromUntyped` records each child's
    allocation region as `(regionBase + offset, allocSize)` within the parent
@@ -2661,6 +2670,16 @@ allocation extent:
 3. The VSpace bridge is deferred to AN9 (hardware workstream); until then,
    the model-level scrub stands in as the abstract witness, and the
    `memoryZeroed` postcondition covers the model's view of the region.
+   The convention has exactly **one** definition, `scrubExtent`, so the
+   bridge changes that single function: `scrubObjectMemory` (which zeroes
+   the range) and SM7.D's `retypeIcacheOp` (which cleans it to the Point of
+   Unification before `IC IALLUIS`) both read it rather than recomputing the
+   arithmetic, and `retypeIcacheOp_cleans_scrub_extent` pins that they agree.
+   Consequently the SM7.D cache operand inherits this same abstraction gap —
+   it cleans whatever the scrub zeroes, correct relative to the scrub and
+   wrong relative to hardware until item 2 lands. Correcting the cache
+   operand alone would be strictly worse, since it would then clean an
+   extent the scrub does not write.
 4. AN12-B's SMP inventory tracks the additional obligation that the
    scrub must happen within the same critical section as the retype to
    prevent another core from observing the pre-scrub contents of the

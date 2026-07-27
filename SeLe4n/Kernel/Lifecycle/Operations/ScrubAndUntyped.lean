@@ -66,12 +66,37 @@ def allocationBasePageAligned (ut : UntypedObject) : Bool :=
 -- S6-C: Memory scrubbing on object deletion/retype
 -- ============================================================================
 
+/-- S6-C: the byte range a re-type scrubs, as **one** function.
+
+    Every consumer that must cover the scrub — the scrub itself, and the
+    SM7.D cache-maintenance operand that cleans those stores to the Point of
+    Unification — reads this single definition, so the two cannot drift.  A
+    second copy of the arithmetic would let the clean silently name a
+    different extent than the zeroing writes; that is precisely the failure
+    mode this exists to make impossible.
+
+    **Abstract model note:** the base address is `objectId.toNat ×
+    objectTypeAllocSize` — an abstract convention for the formal model, *not*
+    the address the hardware allocator would use.
+
+    **AN4-G.3 (LIF-M03) — H3 hardware-binding cross-reference**: on real
+    hardware (RPi5 AArch64) the real extent is the untyped allocator's
+    `regionBase + offset` (recorded in state as `UntypedChild.offset` /
+    `.size`), and the scrub must route through the VSpace bridge to hit the
+    physical frame backing it — see `SELE4N_SPEC.md` §5 "Lifecycle:
+    model-vs-hardware scrub bridge" and the AN9 hardware workstream.  That
+    bridge changes this function, and both consumers follow. -/
+def scrubExtent (objectId : SeLe4n.ObjId) (objType : KernelObjectType) :
+    SeLe4n.PAddr × Nat :=
+  let size := objectTypeAllocSize objType
+  (SeLe4n.PAddr.ofNat (objectId.toNat * size), size)
+
 /-- S6-C: Scrub backing memory for a deleted/retyped kernel object.
 
     Zeros the memory region that backed the old object, preventing information
     leakage when the memory is reallocated to a different security domain.
-    The scrub region is determined by the object type's allocation size
-    and a base address derived from the object ID.
+    The scrubbed region is `scrubExtent` — see there for the model-vs-hardware
+    address convention (AN4-G.3 / LIF-M03).
 
     **Security rationale:** Without scrubbing, `retypeFromUntyped` could
     allocate a new object in memory that still contains data from a
@@ -79,24 +104,23 @@ def allocationBasePageAligned (ut : UntypedObject) : Bool :=
     non-interference even though the Lean-level object store is correctly
     updated, because the underlying machine memory retains the old data.
 
-    **Abstract model note:** The base address is computed as
-    `objectId.toNat × objectTypeAllocSize` — this is an abstract convention
-    for the formal model. The hardware binding (WS-T) will use the actual
-    physical addresses from the untyped allocator.
-
-    **AN4-G.3 (LIF-M03) — H3 hardware-binding cross-reference**:
-    `scrubObjectMemory` operates at the abstract `MachineState` layer and
-    computes its PAddr from the model-level convention above. On real
-    hardware (RPi5 AArch64) the same scrub must route through the VSpace
-    bridge to hit the physical frame backing the object's allocation
-    extent — see `SELE4N_SPEC.md` §5 "Lifecycle: model-vs-hardware scrub
-    bridge" for the mapping obligation and the AN9 hardware workstream for
-    the VSpace-bridge wire-in. -/
+    **Cache note (SM7.D):** zeroing stores land in the *data* cache, so the
+    re-type additionally owes a clean of this same extent to the Point of
+    Unification before any instruction invalidate — emitted by
+    `retypeIcacheOp`, which reads `scrubExtent` rather than recomputing it. -/
 def scrubObjectMemory (st : SystemState) (objectId : SeLe4n.ObjId)
     (objType : KernelObjectType) : SystemState :=
-  let size := objectTypeAllocSize objType
-  let base : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat (objectId.toNat * size))
-  { st with machine := SeLe4n.zeroMemoryRange st.machine base size }
+  let extent := scrubExtent objectId objType
+  { st with machine := SeLe4n.zeroMemoryRange st.machine extent.fst extent.snd }
+
+/-- S6-C: `scrubObjectMemory` zeroes exactly `scrubExtent` — the bridge that
+lets a consumer reason about the scrub's byte range without unfolding the
+transition.  Definitional, so it stays true by construction. -/
+theorem scrubObjectMemory_zeroes_scrubExtent (st : SystemState)
+    (objectId : SeLe4n.ObjId) (objType : KernelObjectType) :
+    (scrubObjectMemory st objectId objType).machine =
+      SeLe4n.zeroMemoryRange st.machine
+        (scrubExtent objectId objType).fst (scrubExtent objectId objType).snd := rfl
 
 /-- S6-C: `scrubObjectMemory` preserves the object store. -/
 theorem scrubObjectMemory_objects_eq (st : SystemState) (objectId : SeLe4n.ObjId)
@@ -124,10 +148,9 @@ theorem scrubObjectMemory_lifecycle_eq (st : SystemState) (objectId : SeLe4n.Obj
 theorem scrubObjectMemory_establishes_memoryZeroed
     (st : SystemState) (objectId : SeLe4n.ObjId)
     (objType : KernelObjectType) :
-    let size := objectTypeAllocSize objType
-    let base : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat (objectId.toNat * size))
-    SeLe4n.memoryZeroed (scrubObjectMemory st objectId objType).machine base size := by
-  simp [scrubObjectMemory]
+    SeLe4n.memoryZeroed (scrubObjectMemory st objectId objType).machine
+      (scrubExtent objectId objType).fst (scrubExtent objectId objType).snd := by
+  simp only [scrubObjectMemory]
   exact SeLe4n.zeroMemoryRange_establishes_memoryZeroed st.machine _ _
 
 /-- WS-F2: Retype a new typed object from an untyped memory region.

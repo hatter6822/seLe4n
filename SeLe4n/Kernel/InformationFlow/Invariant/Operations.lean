@@ -3135,7 +3135,7 @@ theorem scrubObjectMemory_preserves_projection
   -- memory projection: for each address, if observable and in range → contradiction;
   -- if observable and not in range → value unchanged; if not observable → both none
   funext addr
-  simp only [projectMemory, scrubObjectMemory, SeLe4n.zeroMemoryRange]
+  simp only [projectMemory, scrubObjectMemory, scrubExtent, SeLe4n.zeroMemoryRange]
   split
   · -- Address observable
     split

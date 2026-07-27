@@ -285,6 +285,68 @@ does *not* discharge the obligation.  Rust HAL 795 → 798:
 and checks it covers every line of `[base, base+size)` for each allocation size
 and for a line-straddling base.  Trace byte-identical; zero sorry/axiom.
 
+### SM7.D (v0.32.101) — the clean and the scrub read one extent (PR #845 review, Codex P1)
+
+A follow-up review on `cb1481f` observed that the `.cleanRangeIallu` operand
+targets `ObjId × objectTypeAllocSize`, which `ScrubAndUntyped.lean` and
+`SELE4N_SPEC.md` both identify as an abstract model convention.  The real child
+extent is the untyped allocator's `regionBase + offset`, so on hardware the
+`DC CVAU` would sweep memory the allocation does not occupy.
+
+**Valid, and both narrower and wider than it reads.**
+
+*Narrower*: this is not a defect the cache operand introduced.  The operand
+deliberately mirrors the scrub, and the scrub's own hardware gap is
+pre-existing, registered as **AN4-G.3 / LIF-M03**, and owned by AN9/SM9.E.
+Retargeting the operand on its own would be strictly worse — the clean would
+then name an extent `scrubObjectMemory` does not zero.  They have to move
+together.
+
+*Wider*: if the scrub does not reach real memory, the re-typed object is handed
+to its new owner still holding the previous owner's **data**, not merely stale
+instruction lines.  That is the more serious half; it lives in the scrub bridge
+rather than the cache seam, and AN4-G.3 is re-labelled High-severity-once-
+bootable with an explicit SM9.E closure target.
+
+**The genuine weakness in what v0.32.100 shipped.**
+`retypeIcacheOp_cleans_scrub_extent` was described as "an equality between the
+two computations".  It was not: its right-hand side restated `retypeIcacheOp`'s
+own definition and never mentioned `scrubObjectMemory`, so it held for any
+extent whatsoever and pinned nothing — had the scrub's range changed, the
+theorem would still have gone through while the operand silently diverged.  The
+section comment claimed the two "diverge together, because both sides read the
+same convention"; in fact they read two *identical copies* of it, which is not
+the same property.
+
+**The fix — one extent, two consumers.**  `scrubExtent objectId objType` now
+carries the convention.  `scrubObjectMemory` zeroes it
+(`scrubObjectMemory_zeroes_scrubExtent`, definitional) and `retypeIcacheOp`
+cleans it; neither recomputes the arithmetic, so drift is impossible by
+construction and the AN9 bridge rewrites that single function.
+`retypeIcacheOp_cleans_scrub_extent` is restated against `scrubExtent` — it now
+relates two *different* functions and so fails if either moves independently —
+and `scrubObjectMemory_cleaned_by_retype` closes the loop from the scrub's side
+by naming the pair handed to `zeroMemoryRange`.
+
+The new body is definitionally the old one (the bridge theorem is `rfl`), so
+the other 80 `scrubObjectMemory` references are untouched; the single structural
+unfold in `InformationFlow/Invariant/Operations.lean` gains `scrubExtent` in its
+`simp only` set.
+
+The v0.32.100 notes also implied more hardware fidelity than the change had.
+The section comment now says plainly that the extent is the model's convention,
+that hardware fidelity rides AN4-G.3, and why the operand follows the scrub
+rather than leading it.
+
+Coverage: `SmpCacheMaintenanceSuite` §3.13 gains the correspondence *exercised*
+rather than asserted — dirty all of memory, run the real scrub, confirm the
+zeroed bytes lie inside the cleaned range, and check the byte just past the
+extent is untouched so the bound is exact (114 → 118).  Tier-3 anchors pin
+`scrubExtent`, both bridge theorems, and — negatively — that neither
+`retypeIcacheOp` nor `scrubObjectMemory` mentions `objectTypeAllocSize` in its
+own body, which is what would reintroduce the second copy.  Lean-only; Rust HAL
+untouched at 798.  Trace byte-identical; zero sorry/axiom.
+
 ### SECURITY (v0.32.97) — VSpace capability binding (PR #845 review, P1)
 
 A confused deputy in the syscall gate, found while addressing a review comment

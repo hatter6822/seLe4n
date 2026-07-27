@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/sm7d-cache-maintenance-msh1o0",
-      "commit_sha": "cc3da937b518222dc9877738afdc0908d5e1af5f",
-      "tree_sha": "69d0f67e427b0e2b7fb946803aab823cca883b03",
-      "committed_at_utc": "2026-07-27T08:33:27+00:00"
+      "commit_sha": "cb1481f809193ade530d39ed357c136203fb2564",
+      "tree_sha": "bbcb14dddd47b46601082ec2008e50246da882ab",
+      "committed_at_utc": "2026-07-27T09:53:17+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "628de3173163fad3a31febf7900c95e8efaea4481f0978f5190e7b2f626fe69e"
+    "source_digest": "b8841450980714ebdce52620ef6b391ba56a0da220bc68aaa7a810bcc686c8eb"
   },
   "summary": {
     "module_count": 331,
-    "declaration_count": 13821
+    "declaration_count": 13824
   },
   "readme_sync": {
-    "version": "0.32.100",
+    "version": "0.32.101",
     "lean_toolchain": "v4.28.0",
     "production_files": 264,
-    "production_loc": 235511,
+    "production_loc": 235572,
     "test_files": 67,
-    "test_loc": 47279,
-    "proved_theorem_lemma_decls": 7667,
+    "test_loc": 47297,
+    "proved_theorem_lemma_decls": 7669,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -88526,6 +88526,7 @@
             "objectTypeAllocSize",
             "projectMemory",
             "projectState",
+            "scrubExtent",
             "scrubObjectMemory",
             "st",
             "toNat",
@@ -94172,7 +94173,7 @@
     {
       "module": "SeLe4n.Kernel.Lifecycle.Operations.RetypeWrappers",
       "path": "SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean",
-      "declaration_count": 78,
+      "declaration_count": 79,
       "declarations": [
         {
           "kind": "namespace",
@@ -95240,24 +95241,21 @@
         {
           "kind": "def",
           "name": "retypeIcacheOp",
-          "line": 1665,
+          "line": 1677,
           "called": [
             "ICacheInvalidation",
             "ObjId",
             "SystemState",
             "getObjectType",
             "none",
-            "objectTypeAllocSize",
-            "ofNat",
-            "size",
-            "st",
-            "toNat"
+            "scrubExtent",
+            "st"
           ]
         },
         {
           "kind": "def",
           "name": "retypeIcacheOperand",
-          "line": 1674,
+          "line": 1686,
           "called": [
             "ICacheInvalidation",
             "ObjId",
@@ -95269,7 +95267,7 @@
         {
           "kind": "theorem",
           "name": "retypeIcacheOperand_eq",
-          "line": 1679,
+          "line": 1691,
           "called": [
             "ObjId",
             "SystemState",
@@ -95281,7 +95279,7 @@
         {
           "kind": "theorem",
           "name": "retypeIcacheOp_isDomainWide",
-          "line": 1685,
+          "line": 1697,
           "called": [
             "ObjId",
             "SystemState",
@@ -95293,24 +95291,40 @@
         {
           "kind": "theorem",
           "name": "retypeIcacheOp_cleans_scrub_extent",
-          "line": 1699,
+          "line": 1715,
           "called": [
             "KernelObject",
             "ObjId",
             "SystemState",
             "getObjectType",
             "objectType",
-            "objectTypeAllocSize",
-            "ofNat",
             "retypeIcacheOp",
+            "scrubExtent",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "scrubObjectMemory_cleaned_by_retype",
+          "line": 1733,
+          "called": [
+            "KernelObject",
+            "ObjId",
+            "SystemState",
+            "objectType",
+            "retypeIcacheOp",
+            "retypeIcacheOp_cleans_scrub_extent",
+            "scrubExtent",
+            "scrubObjectMemory",
+            "scrubObjectMemory_zeroes_scrubExtent",
             "st",
-            "toNat"
+            "zeroMemoryRange"
           ]
         },
         {
           "kind": "theorem",
           "name": "retypeIcacheOp_discharges_scrub_obligation",
-          "line": 1718,
+          "line": 1756,
           "called": [
             "ICacheInvalidation.covers",
             "KernelObject",
@@ -95318,18 +95332,16 @@
             "SystemState",
             "dischargesPoUClean",
             "objectType",
-            "objectTypeAllocSize",
-            "ofNat",
             "retypeIcacheOp",
             "retypeIcacheOp_cleans_scrub_extent",
-            "st",
-            "toNat"
+            "scrubExtent",
+            "st"
           ]
         },
         {
           "kind": "def",
           "name": "lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache",
-          "line": 1737,
+          "line": 1775,
           "called": [
             "Capability",
             "CoreId",
@@ -95344,7 +95356,7 @@
         {
           "kind": "def",
           "name": "lifecycleRetypeWithCleanupShootdownPerCoreIcache",
-          "line": 1748,
+          "line": 1786,
           "called": [
             "CSpaceAddr",
             "CoreId",
@@ -95359,7 +95371,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_error_iff",
-          "line": 1757,
+          "line": 1795,
           "called": [
             "Capability",
             "CoreId",
@@ -95376,7 +95388,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeWithCleanupShootdownPerCoreIcache_error_iff",
-          "line": 1768,
+          "line": 1806,
           "called": [
             "CSpaceAddr",
             "CoreId",
@@ -95393,7 +95405,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_ok",
-          "line": 1780,
+          "line": 1818,
           "called": [
             "Capability",
             "CoreId",
@@ -95414,7 +95426,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeWithCleanupShootdownPerCoreIcache_ok",
-          "line": 1796,
+          "line": 1834,
           "called": [
             "CSpaceAddr",
             "CoreId",
@@ -95435,7 +95447,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_preserves_icacheCoherent_perCore",
-          "line": 1819,
+          "line": 1857,
           "called": [
             "Capability",
             "CoreId",
@@ -95462,7 +95474,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeWithCleanupShootdownPerCoreIcache_preserves_icacheCoherent_perCore",
-          "line": 1854,
+          "line": 1892,
           "called": [
             "CSpaceAddr",
             "CoreId",
@@ -95489,7 +95501,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_preserves_tlbInvalidationConsistent_perCore",
-          "line": 1890,
+          "line": 1928,
           "called": [
             "Capability",
             "CoreId",
@@ -95516,7 +95528,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeWithCleanupShootdownPerCoreIcache_preserves_tlbInvalidationConsistent_perCore",
-          "line": 1922,
+          "line": 1960,
           "called": [
             "CSpaceAddr",
             "CoreId",
@@ -95543,7 +95555,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_preserves_perCore_memory_invariants",
-          "line": 1955,
+          "line": 1993,
           "called": [
             "Capability",
             "CoreId",
@@ -95567,7 +95579,7 @@
     {
       "module": "SeLe4n.Kernel.Lifecycle.Operations.ScrubAndUntyped",
       "path": "SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean",
-      "declaration_count": 32,
+      "declaration_count": 34,
       "declarations": [
         {
           "kind": "namespace",
@@ -95602,25 +95614,49 @@
         },
         {
           "kind": "def",
-          "name": "scrubObjectMemory",
-          "line": 95,
+          "name": "scrubExtent",
+          "line": 89,
           "called": [
             "KernelObjectType",
             "ObjId",
             "PAddr",
-            "SystemState",
             "objectTypeAllocSize",
             "ofNat",
             "size",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "scrubObjectMemory",
+          "line": 111,
+          "called": [
+            "KernelObjectType",
+            "ObjId",
+            "SystemState",
+            "scrubExtent",
             "st",
-            "toNat",
+            "zeroMemoryRange"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "scrubObjectMemory_zeroes_scrubExtent",
+          "line": 119,
+          "called": [
+            "KernelObjectType",
+            "ObjId",
+            "SystemState",
+            "scrubExtent",
+            "scrubObjectMemory",
+            "st",
             "zeroMemoryRange"
           ]
         },
         {
           "kind": "theorem",
           "name": "scrubObjectMemory_objects_eq",
-          "line": 102,
+          "line": 126,
           "called": [
             "KernelObjectType",
             "ObjId",
@@ -95632,7 +95668,7 @@
         {
           "kind": "theorem",
           "name": "scrubObjectMemory_tlbShootdown_eq",
-          "line": 108,
+          "line": 132,
           "called": [
             "KernelObjectType",
             "ObjId",
@@ -95644,7 +95680,7 @@
         {
           "kind": "theorem",
           "name": "scrubObjectMemory_scheduler_eq",
-          "line": 113,
+          "line": 137,
           "called": [
             "KernelObjectType",
             "ObjId",
@@ -95656,7 +95692,7 @@
         {
           "kind": "theorem",
           "name": "scrubObjectMemory_lifecycle_eq",
-          "line": 118,
+          "line": 142,
           "called": [
             "KernelObjectType",
             "ObjId",
@@ -95668,26 +95704,22 @@
         {
           "kind": "theorem",
           "name": "scrubObjectMemory_establishes_memoryZeroed",
-          "line": 124,
+          "line": 148,
           "called": [
             "KernelObjectType",
             "ObjId",
-            "PAddr",
             "SystemState",
             "memoryZeroed",
-            "objectTypeAllocSize",
-            "ofNat",
+            "scrubExtent",
             "scrubObjectMemory",
-            "size",
             "st",
-            "toNat",
             "zeroMemoryRange_establishes_memoryZeroed"
           ]
         },
         {
           "kind": "def",
           "name": "retypeFromUntyped",
-          "line": 155,
+          "line": 178,
           "called": [
             "CSpaceAddr",
             "Kernel",
@@ -95711,7 +95743,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_capacity_gated",
-          "line": 234,
+          "line": 257,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -95727,7 +95759,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_childId_fresh",
-          "line": 266,
+          "line": 289,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -95741,7 +95773,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_ok_decompose",
-          "line": 297,
+          "line": 320,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -95764,7 +95796,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_atomicity_under_sequential_semantics",
-          "line": 438,
+          "line": 461,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -95779,7 +95811,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_error_typeMismatch",
-          "line": 460,
+          "line": 483,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -95792,7 +95824,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_error_allocSizeTooSmall",
-          "line": 480,
+          "line": 503,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -95811,7 +95843,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_error_regionExhausted",
-          "line": 506,
+          "line": 529,
           "called": [
             "CSpaceAddr",
             "Capability",
@@ -95837,7 +95869,7 @@
         {
           "kind": "theorem",
           "name": "lifecycle_storeObject_objects_eq",
-          "line": 543,
+          "line": 566,
           "called": [
             "KernelObject",
             "ObjId",
@@ -95851,7 +95883,7 @@
         {
           "kind": "theorem",
           "name": "lifecycle_storeObject_objects_ne",
-          "line": 552,
+          "line": 575,
           "called": [
             "KernelObject",
             "ObjId",
@@ -95865,7 +95897,7 @@
         {
           "kind": "theorem",
           "name": "lifecycle_storeObject_scheduler_eq",
-          "line": 562,
+          "line": 585,
           "called": [
             "KernelObject",
             "ObjId",
@@ -95878,7 +95910,7 @@
         {
           "kind": "theorem",
           "name": "cspaceLookupSlot_ok_state_eq",
-          "line": 570,
+          "line": 593,
           "called": [
             "CSpaceAddr",
             "Capability",
@@ -95894,7 +95926,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_ok_as_storeObject",
-          "line": 589,
+          "line": 612,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -95913,7 +95945,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_ok_lookup_preserved_ne",
-          "line": 620,
+          "line": 643,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -95929,7 +95961,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_ok_runnable_membership",
-          "line": 633,
+          "line": 656,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -95946,7 +95978,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_ok_not_runnable_membership",
-          "line": 648,
+          "line": 671,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -95963,7 +95995,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_error_illegalState",
-          "line": 663,
+          "line": 686,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -95977,7 +96009,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_error_illegalAuthority",
-          "line": 674,
+          "line": 697,
           "called": [
             "CSpaceAddr",
             "Capability",
@@ -95994,7 +96026,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_success_updates_object",
-          "line": 689,
+          "line": 712,
           "called": [
             "CSpaceAddr",
             "Capability",
@@ -96016,7 +96048,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRevokeDeleteRetype_error_authority_cleanup_alias",
-          "line": 719,
+          "line": 742,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -96029,7 +96061,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRevokeDeleteRetype_ok_implies_authority_ne_cleanup",
-          "line": 729,
+          "line": 752,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -96043,7 +96075,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRevokeDeleteRetype_ok_implies_staged_steps",
-          "line": 742,
+          "line": 765,
           "called": [
             "CSpaceAddr",
             "Kernel",
@@ -185015,6 +185047,7 @@
             "all",
             "asid5",
             "assertBool",
+            "byteRangeContains",
             "cacheState",
             "core0",
             "covers",
@@ -185032,6 +185065,8 @@
             "paddrPage",
             "permsExec",
             "retypeIcacheOp",
+            "scrubExtent",
+            "scrubObjectMemory",
             "size",
             "st",
             "toNat",
@@ -185047,7 +185082,7 @@
         {
           "kind": "def",
           "name": "runSmpCacheMaintenanceChecks",
-          "line": 1014,
+          "line": 1032,
           "called": [
             "runAccessorChecks",
             "runBroadcastReachChecks",
@@ -185067,7 +185102,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1036,
+          "line": 1054,
           "called": [
             "runSmpCacheMaintenanceChecks"
           ]

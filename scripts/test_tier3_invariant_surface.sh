@@ -1067,6 +1067,16 @@ run_check "INVARIANT" rg -n 'CleanRangeIallu\(u64, u64\)' rust/sele4n-hal/src/ca
 run_check "INVARIANT" rg -n 'fn test_clean_range_pou_line_coverage' rust/sele4n-hal/src/cache.rs
 # The re-type operand must NOT regress to the bare domain-wide invalidate.
 run_check "INVARIANT" bash -c "! rg -q '^  some \\.iallu' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean"
+# The scrubbed extent has exactly ONE definition, and both the scrub and the
+# cache-maintenance operand read it.  A second copy of the arithmetic would let
+# the clean silently name a range the scrub does not zero (PR #845 review 4).
+run_check "INVARIANT" rg -n '^def scrubExtent' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem scrubObjectMemory_zeroes_scrubExtent' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem scrubObjectMemory_cleaned_by_retype' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" rg -n 'scrubExtent target objType' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+# Neither consumer may re-derive the extent from `objectTypeAllocSize` itself.
+run_check "INVARIANT" bash -c "! rg -q 'objectTypeAllocSize' <(sed -n '/^def retypeIcacheOp /,/^\$/p' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean)"
+run_check "INVARIANT" bash -c "! rg -q 'objectTypeAllocSize' <(sed -n '/^def scrubObjectMemory /,/^\$/p' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean)"
 run_check "INVARIANT" rg -n 'clearIcacheMaintenance st' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^theorem pendingIcacheMaintenance_write_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 # SM7.D.2 the data-side clean-to-PoU obligation + its tripwire.

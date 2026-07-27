@@ -1643,13 +1643,25 @@ theorem lifecycleRetypeWithCleanupShootdownPerCore_preserves_tlbInvalidationCons
 -- extent to the PoU, `DSB ISH`, then `IC IALLUIS`.  seL4's `clearMemory` is
 -- `memzero` followed by `cleanCacheRange_PoU` for the same reason.
 --
--- The extent is nameable: `scrubObjectMemory` derives `(base, size)` from the
--- pre-state object's `(ObjId, KernelObjectType)` by the model's allocation
--- convention, and `retypeIcacheOp` recomputes exactly that pair, so the clean
--- covers precisely the bytes the scrub writes
--- (`retypeIcacheOp_cleans_scrub_extent`).  Where the model's convention and the
--- hardware allocator diverge (SELE4N_SPEC.md §5, the SM9.E scrub bridge) they
--- diverge *together*, because both sides read the same convention.
+-- The extent is nameable, and there is exactly **one** name for it:
+-- `scrubExtent` derives `(base, size)` from the pre-state object's `(ObjId,
+-- KernelObjectType)`, `scrubObjectMemory` zeroes that range, and
+-- `retypeIcacheOp` cleans that same range — both *read* the function rather
+-- than recomputing the arithmetic, so the clean cannot come to name a
+-- different extent than the zeroing writes
+-- (`retypeIcacheOp_cleans_scrub_extent`).
+--
+-- **Model-level, not hardware-faithful** (PR #845 review round 4).  That
+-- extent is the model's abstract allocation convention, *not* the address the
+-- untyped allocator would use on hardware: the real child extent is
+-- `regionBase + offset` (recorded in state as `UntypedChild.offset` /
+-- `.size`).  So on real hardware neither the scrub's stores nor this clean
+-- lands on the object's actual backing memory.  That gap is **AN4-G.3 /
+-- LIF-M03**, it is the scrub's, not the cache seam's, and it is the reason
+-- the clean rides `scrubExtent` instead of a private copy: when the AN9
+-- bridge makes the scrub allocator-backed it changes that one function, and
+-- this operand follows for free.  Correcting the operand alone would be
+-- strictly worse — it would clean an extent the scrub does not zero.
 -- ============================================================================
 
 /-- **WS-SM SM7.D**: the instruction-cache maintenance a retype of `target`
@@ -1666,8 +1678,8 @@ def retypeIcacheOp (target : SeLe4n.ObjId) (st : SystemState) :
     Architecture.ICacheInvalidation :=
   match st.getObjectType? target with
   | some objType =>
-      let size := objectTypeAllocSize objType
-      .cleanRangeIallu (SeLe4n.PAddr.ofNat (target.toNat * size)) size
+      let extent := scrubExtent target objType
+      .cleanRangeIallu extent.fst extent.snd
   | none => .iallu
 
 /-- **WS-SM SM7.D.1**: the retype always owes instruction-cache maintenance. -/
@@ -1691,20 +1703,46 @@ theorem retypeIcacheOp_isDomainWide (target : SeLe4n.ObjId) (st : SystemState) :
 i.e. the target slot holds an object — the emitted operand cleans **exactly**
 the byte range `scrubObjectMemory` is about to zero.
 
-`scrubObjectMemory` writes `[target × allocSize, + allocSize)`; this pins that
-the clean names the same base and the same length, computed from the same pair
-`(target, currentObj.objectType)` by the same convention.  A future change to
-either side that broke the correspondence would leave this theorem's right-hand
-side no longer matching what the operand computes, and it would fail here. -/
+The right-hand side is stated against `scrubExtent` — **the scrub's own
+definition of its range**, not a restatement of this operand's arithmetic.
+That is what makes the theorem load-bearing: it relates two *different*
+functions, so it fails if either moves independently.  (Before PR #845 review
+round 4 the two sides each open-coded the same convention, and the equation
+held for any extent whatsoever — it pinned nothing.)
+
+`scrubObjectMemory_cleaned_by_retype` closes the loop by naming the pair the
+scrub actually hands to `zeroMemoryRange`. -/
 theorem retypeIcacheOp_cleans_scrub_extent {target : SeLe4n.ObjId}
     {st : SystemState} {currentObj : KernelObject}
     (h : st.objects[target]? = some currentObj) :
     retypeIcacheOp target st =
       .cleanRangeIallu
-        (SeLe4n.PAddr.ofNat (target.toNat * objectTypeAllocSize currentObj.objectType))
-        (objectTypeAllocSize currentObj.objectType) := by
+        (scrubExtent target currentObj.objectType).fst
+        (scrubExtent target currentObj.objectType).snd := by
   unfold retypeIcacheOp
   rw [SystemState.getObjectType?_eq_some_of_getElem h]
+
+/-- **WS-SM SM7.D** (the correspondence, from the scrub's side): the memory
+`scrubObjectMemory` zeroes is exactly the memory the retype's operand cleans
+to the Point of Unification.
+
+Stated over `zeroMemoryRange`'s own arguments, so it reads as "every byte the
+scrub writes is cleaned" without either side quoting the allocation
+convention.  Note this is a statement about the *model's* extent; see the
+section header for the AN4-G.3 hardware gap that both sides share. -/
+theorem scrubObjectMemory_cleaned_by_retype {target : SeLe4n.ObjId}
+    {st : SystemState} {currentObj : KernelObject}
+    (h : st.objects[target]? = some currentObj) :
+    (scrubObjectMemory st target currentObj.objectType).machine =
+      SeLe4n.zeroMemoryRange st.machine
+        (scrubExtent target currentObj.objectType).fst
+        (scrubExtent target currentObj.objectType).snd ∧
+    retypeIcacheOp target st =
+      .cleanRangeIallu
+        (scrubExtent target currentObj.objectType).fst
+        (scrubExtent target currentObj.objectType).snd :=
+  ⟨scrubObjectMemory_zeroes_scrubExtent st target currentObj.objectType,
+   retypeIcacheOp_cleans_scrub_extent h⟩
 
 /-- **WS-SM SM7.D** (the obligation discharged): the emitted operand discharges
 the `.retypeScrub` clean-to-PoU obligation over the scrubbed extent —
@@ -1719,8 +1757,8 @@ theorem retypeIcacheOp_discharges_scrub_obligation {target : SeLe4n.ObjId}
     {st : SystemState} {currentObj : KernelObject}
     (h : st.objects[target]? = some currentObj) :
     Architecture.dischargesPoUClean (retypeIcacheOp target st)
-      (SeLe4n.PAddr.ofNat (target.toNat * objectTypeAllocSize currentObj.objectType))
-      (objectTypeAllocSize currentObj.objectType) = true := by
+      (scrubExtent target currentObj.objectType).fst
+      (scrubExtent target currentObj.objectType).snd = true := by
   rw [retypeIcacheOp_cleans_scrub_extent h]
   simp [Architecture.dischargesPoUClean, Architecture.ICacheInvalidation.covers]
 

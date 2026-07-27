@@ -835,10 +835,18 @@ projection-invisible).
 
 ### SM7.D — Cache maintenance broadcast (2 PRs, 4 sub-tasks) — CLOSED (v0.32.94; closure cuts v0.32.95, v0.32.96)
 
-**Status: CLOSED — no residuals remain.**  Landed at v0.32.94; the exact-operand
+**Status: CLOSED at the model level.**  Landed at v0.32.94; the exact-operand
 emission ledger and the page-granular `IC IVAU` expansion closed at v0.32.95;
-the `.vspaceUnifyInstruction` code-publication syscall — the last residual —
-closed at v0.32.96.  The cache-side companion of SM7.C.  SM7.C closed the
+the `.vspaceUnifyInstruction` code-publication syscall closed at v0.32.96; the
+re-type's clean to the Point of Unification closed at v0.32.100 and was tied to
+the scrub's own extent at v0.32.101.  Every operand SM7.D emits is correct
+*relative to the model*.  What remains is not an SM7.D residual but the
+inherited abstraction gap the whole lifecycle layer shares: the physical
+addresses are the model's allocation convention rather than the untyped
+allocator's, so on hardware the emitted maintenance names the wrong extent
+until the AN4-G.3 / LIF-M03 scrub bridge lands (deferred item 5; owner SM9.E).
+That gap is the *scrub's*, and the cache operand follows it by construction —
+see the v0.32.101 section.  The cache-side companion of SM7.C.  SM7.C closed the
 *translation* half of SMP-C4 (a stale TLB entry on a remote core); SM7.D closes
 the *cache* half.  The two hierarchies are architecturally asymmetric, and that
 asymmetry decides the whole design:
@@ -1089,7 +1097,40 @@ previously have lost work).  The golden
 trace's `[XVAL-002]` line moves 29 → 30 variants (it enumerates the syscall
 surface); everything else byte-identical.  Zero sorry/axiom; Tier 0–3 green.
 
-**SM7.D is CLOSED — no residuals remain.**
+**SM7.D is CLOSED at the model level** — every operand it emits is correct
+relative to the model.  The one thing still outstanding is the lifecycle
+layer's shared abstraction gap (deferred item 5 / AN4-G.3): the addresses are
+the model's allocation convention, not the allocator's.
+
+### SM7.D (v0.32.101) — the clean and the scrub read one extent (PR #845 review, Codex P1)
+
+A follow-up review on `cb1481f` observed that v0.32.100's `.cleanRangeIallu`
+targets `ObjId × objectTypeAllocSize`, an abstract model convention, while the
+real child extent is `regionBase + offset` — so on hardware the `DC CVAU`
+sweeps memory the allocation does not occupy.
+
+**Valid, and narrower and wider than it reads.**  *Narrower*: the operand
+deliberately mirrors the scrub, and the scrub's own hardware gap is
+pre-existing and registered (AN4-G.3).  Retargeting the operand alone would be
+strictly worse — the clean would name an extent `scrubObjectMemory` does not
+zero.  *Wider*: a scrub that misses real memory leaks the previous owner's
+**data**, not just stale instruction lines; that is the more serious half, it
+lives in the scrub bridge, and AN4-G.3 is re-labelled accordingly.
+
+**The genuine weakness in v0.32.100.**  `retypeIcacheOp_cleans_scrub_extent`
+was described as an equality between two computations.  It was not: the
+right-hand side restated `retypeIcacheOp`'s own definition and never mentioned
+`scrubObjectMemory`, so it held for any extent and pinned nothing.  The section
+comment claimed both sides "read the same convention"; they read two identical
+*copies* of it.
+
+**The fix.**  One `scrubExtent`, two consumers — `scrubObjectMemory` zeroes it,
+`retypeIcacheOp` cleans it, neither recomputes the arithmetic.  The theorem is
+restated against `scrubExtent`, so it now relates two different functions and
+fails if either moves; `scrubObjectMemory_cleaned_by_retype` closes the loop
+from the scrub's side.  The new body is definitionally the old one, so the
+other 80 references are untouched.  Tier-3 anchors pin the single source
+negatively: neither body may mention `objectTypeAllocSize`.
 
 ### SECURITY (v0.32.97) — VSpace capability binding (PR #845 review, P1)
 
@@ -1224,6 +1265,7 @@ still reports as owing an emission.)
 | 1 | **`op.toPaddr` is used directly as the VA operand for `DC CVAU` / `IC IVAU`.**  `mmu.rs` populates only L1 entries 0..3 — `0x0000_0000–0xBFFF_FFFF` Normal WB cacheable, `0xC000_0000–0xFFFF_FFFF` Device-nGnRnE, nothing above 4 GiB — while `rpi5MachineConfig.physicalAddressWidth = 44`.  The model therefore admits frames the boot tables do not cacheably map, and maintenance against such a VA faults at EL1 or operates through a Device alias. | Pre-existing since v0.32.94 (`.ivauPage` carries the same convention; `.unifyPage` inherits it).  Not reachable today — no bootable image until SM9.E and no allocator path hands out frames above 3 GiB — but live the moment the image boots on a 4 GB or 8 GB Pi 5.  The fix is a PA→kernel-VA translation with a fail-closed reject for frames outside the cacheable window, which belongs with the runtime mapping work.  **Must cover the whole operand family, not just `.unifyPage`.** | SM9.E |
 | 2 | **The post-state is published before the maintenance is emitted.**  `modifyGetKernelState` installs the committed state and clears the ledger atomically; `completeIcacheMaintenance` runs outside that step, so another core can observe a retyped frame, map it and execute from it while stale instruction lines are still resident. | Structural to the whole SM7 runtime bracket, not to the cache seam: `completeShootdownRounds` sits in the same position and has since v0.32.76.  The TLB side is saved by the blocking `SHOOTDOWN_ACK` handshake; `IC IALLUIS` is fire-and-forget, so there is nothing to wait on.  "Emit before publishing" is unavailable to a pure-transition kernel (the operand is only known *after* the transition computes it — the reason the ledger exists), leaving "hold serialization across the barrier sequence", which changes the syscall bracket's locking discipline and interacts with the SM3 hierarchy and the SM7.B round lock.  Wants designing once for both the TLB and cache sides.  Mitigation today: the model applies the invalidation to `perCoreICache` atomically *inside* the transition, so the committed state is coherent — the gap is exactly the model-vs-hardware refinement gap SM9.E closes. | SM9.E |
 | 4 | **The `.bootImageLoad` clean-to-PoU is declared but not emitted.**  The boot pipeline materialises the initial task's objects — including its code — before the first instruction fetch, and owes the same `DC CVAU` → `DSB ISH` → invalidate sequence the re-type now emits.  `kernelCodeWriteEmitted .bootImageLoad = false` records this, and `kernelCodeWriteSites_emission_pending` pins that it is the **only** remaining site. | Unlike `.retypeScrub`, this site genuinely cannot name its extent today: boot materialises objects through the builder, with no transition to hang an operand on and no physical backing until the image runs.  Closure means emitting the range clean as part of boot's object materialisation, which is the SM9.E bring-up work.  Flipping the `kernelCodeWriteEmitted` arm breaks the `decide`, so the closure cannot land silently. | SM9.E |
+| 5 | **The cleaned extent is the model's abstract convention, not the allocator's.**  `scrubExtent` — which `scrubObjectMemory` zeroes and `retypeIcacheOp` cleans — is `(ObjId × objectTypeAllocSize, objectTypeAllocSize)`.  The real child extent is the untyped allocator's `regionBase + offset` (recorded in state as `UntypedChild.offset` / `.size`), so on hardware neither the zeroing stores nor the `DC CVAU` lands on the object's actual backing memory. | **This is AN4-G.3 / LIF-M03, not a new finding** — the pre-existing scrub bridge, re-labelled at v0.32.101 as a High-severity-once-bootable *data*-disclosure gap (a scrub that misses real memory hands the previous owner's bytes to the new one, not merely stale instruction lines).  Deferred because the fix belongs to the **scrub**, not the cache seam: it needs a reverse child→untyped resolver that does not exist, a fallback for objects with no parent record (boot-built objects, in-place re-types), and a change to `scrubObjectMemory` itself, whose projection lemmas quantify over the abstract range.  Correcting the cache operand alone would be strictly worse — it would clean an extent the scrub does not zero.  v0.32.101 made this a **one-line** change when AN9 lands: both consumers read `scrubExtent`, so the bridge rewrites that single function and the operand follows (`retypeIcacheOp_cleans_scrub_extent` fails if they ever drift). | SM9.E (AN4-G.3) |
 | 3 | **The legacy `syscallDispatchInner` entry does not drain the ledger.** | Vestigial: the Rust `svc_dispatch` extern was flipped to `lean_syscall_dispatch_cross_core` at v0.31.67 (SM6.A), so nothing calls `syscall_dispatch_inner` on the production path.  Since v0.32.96 replaced the operand *join* with an append-only list, an operand committed through the legacy entry is **deferred** (drained by the next cross-core-entry syscall), never silently dropped — `recordIcacheMaintenanceList_mem_of_mem` is the no-loss property.  **Draining there was attempted and reverted**: `icMaintenanceBroadcast` carries an `@[extern]` symbol supplied by the Rust HAL, which simulation builds do not link, and `tests/SyscallDispatchSuite.lean` calls this entry directly — so the emission breaks every host test binary that exercises the bridge.  The module's link-gating policy requires that to fail loudly rather than be stubbed, so the only sound closures are (a) linking the HAL into test binaries, which defeats the gating, or (b) **removing the export** and repointing `SyscallDispatchSuite` at the cross-core entry.  (b) is the intended closure. | SM9.E |
 
 ### SM7.E — Tests (3 PRs, 6 sub-tasks)

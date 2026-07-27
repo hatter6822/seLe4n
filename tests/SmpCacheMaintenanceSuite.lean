@@ -936,16 +936,34 @@ private def runRetypeCleanToPoUChecks : IO Unit := do
   match vspaceMapPageWithFlush asid5 vaddrPage paddrPage permsExec (cacheState []) with
   | .error _ => assertBool "the scenario maps the executable page" false
   | .ok ((), stMapped) => do
-    -- The live seam's operand names the target's own extent.
+    -- The live seam's operand names the target's own extent — read from
+    -- `scrubExtent`, the scrub's *own* definition of the range, rather than
+    -- recomputed here.  That single source is what makes the clean and the
+    -- zeroing incapable of drifting apart.
+    let extent := SeLe4n.Kernel.scrubExtent udVsp KernelObjectType.vspaceRoot
     assertBool "the re-type operand cleans exactly the scrubbed extent"
       (SeLe4n.Kernel.retypeIcacheOp udVsp stMapped ==
-        ICacheInvalidation.cleanRangeIallu
-          (SeLe4n.PAddr.ofNat (udVsp.toNat * objectTypeAllocSize .vspaceRoot))
-          (objectTypeAllocSize .vspaceRoot))
+        ICacheInvalidation.cleanRangeIallu extent.fst extent.snd)
+    -- The correspondence, exercised rather than asserted: dirty all of memory,
+    -- run the real scrub, and confirm the bytes it zeroed are inside the range
+    -- the operand cleans.  This is the check that fails if the two ever drift.
+    let stDirty : SystemState :=
+      { stMapped with machine := { stMapped.machine with memory := fun _ => 7 } }
+    let stScrubbed :=
+      SeLe4n.Kernel.scrubObjectMemory stDirty udVsp KernelObjectType.vspaceRoot
+    let probes : List Nat :=
+      [extent.fst.toNat, extent.fst.toNat + 1, extent.fst.toNat + extent.snd - 1]
+    assertBool "every byte the scrub zeroes lies inside the cleaned range"
+      (probes.all fun a =>
+        stScrubbed.machine.memory (SeLe4n.PAddr.ofNat a) == 0 &&
+        byteRangeContains extent.fst extent.snd (SeLe4n.PAddr.ofNat a) 1)
+    assertBool "the byte just past the scrubbed extent is untouched (bound exact)"
+      (stScrubbed.machine.memory
+        (SeLe4n.PAddr.ofNat (extent.fst.toNat + extent.snd)) == 7)
     -- ... and it discharges the `.retypeScrub` clean-to-PoU obligation over
     -- that very range, which `.iallu` provably would not.
-    let base := SeLe4n.PAddr.ofNat (udVsp.toNat * objectTypeAllocSize .vspaceRoot)
-    let size := objectTypeAllocSize (KernelObjectType.vspaceRoot)
+    let base := extent.fst
+    let size := extent.snd
     assertBool "the emitted operand discharges the scrub's clean-to-PoU obligation"
       (dischargesPoUClean (SeLe4n.Kernel.retypeIcacheOp udVsp stMapped) base size)
     assertBool "the PRE-FIX operand `iallu` does NOT discharge it (the defect)"
