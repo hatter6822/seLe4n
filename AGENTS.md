@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.32.98.
+Lean 4.28.0 toolchain, Lake build system, version 0.32.99.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -199,7 +199,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/CrossSubsystem.lean` (~3394 lines)
 - `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
 - `docs/gitbook/12-proof-and-invariant-map.md` (~3387 lines)
-- `SeLe4n/Kernel/API.lean` (~3242 lines)
+- `SeLe4n/Kernel/API.lean` (~3269 lines)
 - `SeLe4n/Testing/MainTraceHarness.lean` (~3204 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~3140 lines)
 - `docs/dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md` (~3134 lines)
@@ -242,8 +242,8 @@ To find files that need pagination today, run:
 - `docs/dev_history/planning/V3E_IPC_UNWRAP_CAPS_LOOP_COMPOSITION_PLAN.md` (~1891 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md` (~1889 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~1887 lines)
+- `SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean` (~1883 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1854 lines)
-- `SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean` (~1806 lines)
 - `SeLe4n/Model/FreezeProofs.lean` (~1806 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.6_WORKSTREAM_PLAN.md` (~1801 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.21_WORKSTREAM_PLAN.md` (~1800 lines)
@@ -286,7 +286,7 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` (~1237 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1233 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1216 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~1203 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~1213 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean` (~1200 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean` (~1186 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1184 lines)
@@ -297,11 +297,11 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md` (~1151 lines)
 - `tests/KernelErrorMatrixSuite.lean` (~1139 lines)
 - `SeLe4n/Kernel/RobinHood/Bridge.lean` (~1137 lines)
+- `SeLe4n/Kernel/Architecture/VSpace.lean` (~1118 lines)
 - `docs/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md` (~1111 lines)
 - `SeLe4n/Machine.lean` (~1105 lines)
 - `tests/PerObjectLockSuite.lean` (~1097 lines)
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
-- `SeLe4n/Kernel/Architecture/VSpace.lean` (~1070 lines)
 - `SeLe4n/Kernel/Scheduler/RunQueue.lean` (~1050 lines)
 - `tests/SyscallDispatchSuite.lean` (~1047 lines)
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
@@ -731,7 +731,9 @@ documentation lives under `docs/` and `docs/gitbook/`.
 
  **v0.32.98 PR #845 review closure**: (1) **PA page alignment** — `vspaceMapPageChecked` and the production `vspaceMapPageCheckedWithFlushFromState` validated VA canonicality and the PA bound but not alignment, so a mapping could carry an unaligned PA while the ARMv8 descriptor and both HAL cache loops use the aligned base; the model would then record an operand naming an address hardware never touches.  Both now reject with `.alignmentError` (rejecting structurally rather than normalizing — an unaligned page mapping is meaningless on ARMv8).  Two tests were themselves relying on the gap (`MainTraceHarness` CAT-025 and `NegativeStateSuite` mapped `2^n - 1`, all-ones and never page-aligned, to probe the PA bound); both now use the largest page-aligned in-bounds PA, trace byte-identical.  Seven downstream proofs gained a `split` for the new branch.  (2) **safe-API reachability** — `rust/sele4n-sys` gains `vspace_unify_instruction` (v0.32.96 shipped the syscall but left it hand-encode-only), plus `VSpaceUnifyInstructionArgs` in `sele4n-abi`.  (3) **ABI naming** — `VspaceUnifyInstruction` → `VSpaceUnifyInstruction`, matching its `VSpaceMap`/`VSpaceUnmap` siblings, with a Tier-3 anchor against the old spelling.  (4) the legacy `syscallDispatchInner` ledger drain was **attempted and reverted** — `icMaintenanceBroadcast` carries an `@[extern]` symbol simulation builds deliberately do not link, and the module's link-gating policy forbids stubbing it; the entry is vestigial and the append-only ledger defers rather than loses, so closure is removing the export (SM9.E), recorded with the reasoning.
 
-  **Rust HAL at v0.32.98**: 795 tests, zero clippy warnings,
+ **v0.32.99 PR #845 review round 3**: five findings, all consequences of this PR's own changes — (1) the page-alignment guard reached only two of the four checked map wrappers; both remaining ones guarded and `checkedMapWrappers_reject_unaligned` now pins all four to the same rejection (the duplication across wrappers is what let two drift).  (2) `checkedDispatch_capabilityOnly_eq_unchecked` was advertised as complete but enumerated 14 of 16 arms, omitting `.vspaceUnifyInstruction` and `.mintReplyCap`; both added plus their per-arm theorems.  (3) `.vspaceUnifyInstruction` was outside `lockSetTransitions_within_bound`, which supplies the size premise for bounded-wait/WCRT reasoning; `lockSet_vspaceUnifyInstruction_size_le` added.  (4) **the clean-to-PoU obligation was vacuous** — `kernelCodeWriteOwesPoUClean` ignored its site argument and asserted only barrier-list membership, mentioning neither `DC CVAU` nor any instruction invalidate, so it stayed provable with every clean absent; it is now a `PoUCleanObligation` naming the concrete per-site operations (`DCacheMaintenance.isClean` rejects invalidate-only, which would discard the bytes just written), with `kernelCodeWriteSites_emission_pending` recording as a decidable fact that the obligation is declared rather than discharged.  (5) the `sele4n-sys` wrapper documented `AsidNotBound` for an unbound ASID, but the capability binding returns `IllegalAuthority` first (deliberately — no ASID-existence oracle); contract corrected.
+
+  **Rust HAL at v0.32.99**: 795 tests, zero clippy warnings,
   zero `#[ignore]`'d.
 
   **Staged modules**: 54 staged-only (via `Platform/Staged.lean` +

@@ -225,6 +225,10 @@ def vspaceMapPageCheckedWithFlush (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
   fun st =>
     if !vaddr.isCanonical then .error .addressOutOfBounds
     else if !(paddr.toNat < physicalAddressBound) then .error .addressOutOfBounds
+    -- PR #845 review (P2): page-alignment guard, same as the three sibling
+    -- checked wrappers.  See `vspaceMapPageChecked` for the rationale; all four
+    -- are pinned to agree by `checkedMapWrappers_reject_unaligned`.
+    else if paddr.toNat % pageBytes != 0 then .error .alignmentError
     else vspaceMapPageWithFlush asid vaddr paddr perms st
 
 /-- U2-D/U-H07: **Platform-aware production entry point** — bounds-checked map with TLB flush
@@ -238,6 +242,9 @@ def vspaceMapPageCheckedWithFlushPlatform (config : MachineConfig)
   fun st =>
     if !vaddr.isCanonical then .error .addressOutOfBounds
     else if !(paddr.toNat < physicalAddressBoundForConfig config) then .error .addressOutOfBounds
+    -- PR #845 review (P2): page-alignment guard, same as the three sibling
+    -- checked wrappers (`checkedMapWrappers_reject_unaligned` pins agreement).
+    else if paddr.toNat % pageBytes != 0 then .error .alignmentError
     else vspaceMapPageWithFlush asid vaddr paddr perms st
 
 /-- X2-E: **State-aware production entry point** — bounds-checked map with TLB flush
@@ -259,6 +266,47 @@ def vspaceMapPageCheckedWithFlushFromState (asid : SeLe4n.ASID) (vaddr : SeLe4n.
     -- on.
     else if paddr.toNat % pageBytes != 0 then .error .alignmentError
     else vspaceMapPageWithFlush asid vaddr paddr perms st
+
+/-- **PR #845 review (P2)**: every checked map wrapper rejects an unaligned
+physical address.
+
+The four wrappers each open-code their precondition chain, differing only in
+which PA bound they apply (`physicalAddressBound`, a `MachineConfig`, or the
+live `SystemState.machine`).  That duplication is exactly how the page-alignment
+guard came to be present in two of them and missing from the other two: the
+first fix touched `vspaceMapPageChecked` and
+`vspaceMapPageCheckedWithFlushFromState`, leaving `…WithFlush` and
+`…WithFlushPlatform` able to install an unaligned mapping and recreate the
+model/descriptor/cache-operand mismatch.
+
+This theorem is the tripwire against that recurrence: it pins all four to the
+same rejection on the same input, so adding a fifth wrapper — or dropping the
+guard from any existing one — fails here rather than silently reopening the
+hole.  It uses a concrete unaligned PA well inside every bound, so no wrapper
+can pass by rejecting on bounds instead. -/
+theorem checkedMapWrappers_reject_unaligned
+    (config : MachineConfig) (st : SystemState)
+    (hCfgBound : 0x2001 < physicalAddressBoundForConfig config)
+    (hStBound : 0x2001 < 2^st.machine.physicalAddressWidth)
+    (asid : SeLe4n.ASID) (perms : PagePermissions) :
+    vspaceMapPageChecked asid (SeLe4n.VAddr.ofNat 4096)
+        (SeLe4n.PAddr.ofNat 0x2001) perms st = .error .alignmentError ∧
+    vspaceMapPageCheckedWithFlush asid (SeLe4n.VAddr.ofNat 4096)
+        (SeLe4n.PAddr.ofNat 0x2001) perms st = .error .alignmentError ∧
+    vspaceMapPageCheckedWithFlushPlatform config asid (SeLe4n.VAddr.ofNat 4096)
+        (SeLe4n.PAddr.ofNat 0x2001) perms st = .error .alignmentError ∧
+    vspaceMapPageCheckedWithFlushFromState asid (SeLe4n.VAddr.ofNat 4096)
+        (SeLe4n.PAddr.ofNat 0x2001) perms st = .error .alignmentError := by
+  have hAlign : (SeLe4n.PAddr.ofNat 0x2001).toNat % pageBytes ≠ 0 := by decide
+  have hCanon : (SeLe4n.VAddr.ofNat 4096).isCanonical = true := by decide
+  have hDefBound : (SeLe4n.PAddr.ofNat 0x2001).toNat < physicalAddressBound := by decide
+  have hCfg : (SeLe4n.PAddr.ofNat 0x2001).toNat < physicalAddressBoundForConfig config := hCfgBound
+  have hSt : (SeLe4n.PAddr.ofNat 0x2001).toNat < 2^st.machine.physicalAddressWidth := hStBound
+  refine ⟨?_, ?_, ?_, ?_⟩ <;>
+    simp only [vspaceMapPageChecked, vspaceMapPageCheckedWithFlush,
+               vspaceMapPageCheckedWithFlushPlatform,
+               vspaceMapPageCheckedWithFlushFromState] <;>
+    simp [hCanon, hAlign, hDefBound, hCfg, hSt]
 
 -- ============================================================================
 -- V4-J/M-DEF-8: Default permissions documentation

@@ -2072,13 +2072,38 @@ theorem checkedDispatch_tcbSetIPCBuffer_eq_unchecked
     dispatchWithCap decoded tid gate cap := by
   simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall]
 
+/-- **WS-SM SM7.D** (PR #845 review, P2): Structural equivalence for
+`.vspaceUnifyInstruction`.  Its arm lives in the shared `dispatchCapabilityOnly`
+helper like its siblings, so the checked and unchecked paths are identical. -/
+theorem checkedDispatch_vspaceUnifyInstruction_eq_unchecked
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (cap : Capability)
+    (hSyscall : decoded.syscallId = .vspaceUnifyInstruction) :
+    dispatchWithCapChecked ctx decoded tid gate cap =
+    dispatchWithCap decoded tid gate cap := by
+  simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall]
+
+/-- **PR #822 Phase H** (PR #845 review, P2): Structural equivalence for
+`.mintReplyCap` — the other arm that was handled by `dispatchCapabilityOnly`
+without a per-arm equivalence theorem. -/
+theorem checkedDispatch_mintReplyCap_eq_unchecked
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (cap : Capability)
+    (hSyscall : decoded.syscallId = .mintReplyCap) :
+    dispatchWithCapChecked ctx decoded tid gate cap =
+    dispatchWithCap decoded tid gate cap := by
+  simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall]
+
 /-- U5-D/U-L20/V8-H/Z5-J/D1/AE1-A/AE1-B: Complete dispatch equivalence — for ALL
 capability-only syscalls, the checked and unchecked dispatch paths produce identical
 results.
 
 Both `dispatchWithCap` and `dispatchWithCapChecked` delegate to the shared
-`dispatchCapabilityOnly` helper for these 14 arms, making structural identity
-trivial.
+`dispatchCapabilityOnly` helper for these 16 arms, making structural identity
+trivial.  PR #845 review (P2): `.vspaceUnifyInstruction` (WS-SM SM7.D) and
+`.mintReplyCap` (PR #822 Phase H) were handled by the shared helper but had been
+omitted from this enumeration, so a theorem advertised as *complete* did not in
+fact cover them.
 
 **Production recommendation**: Use `syscallEntryChecked` for user-space entry.
 The unchecked `syscallEntry` is retained for backward compatibility with
@@ -2099,10 +2124,12 @@ theorem checkedDispatch_capabilityOnly_eq_unchecked
                 decoded.syscallId = .tcbResume ∨
                 decoded.syscallId = .tcbSetPriority ∨
                 decoded.syscallId = .tcbSetMCPriority ∨
-                decoded.syscallId = .tcbSetIPCBuffer) :
+                decoded.syscallId = .tcbSetIPCBuffer ∨
+                decoded.syscallId = .mintReplyCap ∨
+                decoded.syscallId = .vspaceUnifyInstruction) :
     dispatchWithCapChecked ctx decoded tid gate cap =
     dispatchWithCap decoded tid gate cap := by
-  rcases hCapOnly with h | h | h | h | h | h | h | h | h | h | h | h | h | h <;>
+  rcases hCapOnly with h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h <;>
     simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, h]
 
 -- ============================================================================

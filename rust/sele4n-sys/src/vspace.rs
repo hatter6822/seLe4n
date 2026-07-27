@@ -80,9 +80,16 @@ pub fn vspace_unmap(
 /// the *data* mapping, so requiring execute permission would make the operation
 /// useless in exactly the case it exists for.
 ///
-/// Fails closed with `AsidNotBound` if `asid` is unbound and `TranslationFault`
-/// if `vaddr` is not mapped in that address space, so it can only maintain
-/// memory the caller already has a translation for.
+/// Fails closed with `TranslationFault` if `vaddr` is not mapped in that address
+/// space, so it can only maintain memory the caller already has a translation
+/// for.
+///
+/// **An unbound `asid` returns `IllegalAuthority`, not `AsidNotBound`.** The
+/// capability binding runs first and treats an ASID that resolves to no VSpace
+/// root as authorized by no capability — deliberately, so the unauthorized path
+/// cannot be used as an ASID-existence oracle. Callers matching on the error
+/// should expect `IllegalAuthority` for both "wrong address space" and
+/// "no such address space".
 #[inline]
 pub fn vspace_unify_instruction(
     vspace_cap: CPtr,

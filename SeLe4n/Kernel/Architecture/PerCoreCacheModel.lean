@@ -717,20 +717,97 @@ scoped to SM9.E hardware bring-up, which is also the first point at which the
 memory is physically backed and the omission could bite.  Until then this
 theorem is the registered obligation, `kernelCodeWriteSites_complete` is its
 tripwire, and the instruction-side half — which *is* expressible today, because
-mappings carry page addresses — is live (SM7.D.1). -/
-def kernelCodeWriteOwesPoUClean (_site : KernelCodeWriteSite) : Prop :=
-  armv8DCacheToICacheSequence.covers CacheBarrierKind.dsb_ish ∧
-  armv8DCacheToICacheSequence.covers CacheBarrierKind.isb
+mappings carry page addresses — is live (SM7.D.1).
 
-/-- **WS-SM SM7.D.2**: every kernel code-write site owes the full
-data-to-instruction barrier sequence.  Discharged from the AN9-A.2 coverage
-theorem — the point is not the proof but the *statement*: the obligation is now
-a named object every site is quantified over. -/
+**PR #845 review (P2)** replaced the previous obligation form, which took
+`_site` (ignoring it) and asserted only that `armv8DCacheToICacheSequence`
+contained `DSB ISH` and `ISB`.  That was vacuous in the way that matters: it
+mentioned neither `DC CVAU` nor the instruction-side invalidate, so it stayed
+provable even if every clean-to-PoU operation were absent — precisely the
+omission it was advertised as detecting.  The obligation below names the
+**operations**, per site, so discharging it requires exhibiting a clean and an
+invalidate rather than a barrier list. -/
+structure PoUCleanObligation where
+  /-- The data-side push to the Point of Unification.  Must be a *clean*
+      (`DC CVAU`-shaped): an invalidate-only would discard the very bytes the
+      site just wrote. -/
+  cleanToPoU : DCacheMaintenance
+  /-- The instruction-side drop of any stale lines for the written region. -/
+  invalidate : ICacheInvalidation
+  /-- The sequence ordering the two — the clean must complete before the
+      invalidate is observed, or a PE can re-fill from pre-clean content. -/
+  barriers : CacheBarrierSequence
+
+/-- Is this operation a *clean* (as opposed to invalidate-only)?  A code-write
+site needs its bytes pushed out, so an `invalidateByVA` does not discharge the
+obligation — it would drop them. -/
+def DCacheMaintenance.isClean : DCacheMaintenance → Bool
+  | .cleanByVA _          => true
+  | .cleanInvalidateByVA _ => true
+  | .invalidateByVA _     => false
+
+/-- Does this operand actually drop instruction lines?  Every constructor does —
+stated as a function so the obligation names the property rather than assuming
+it, and so a future non-invalidating operand cannot silently satisfy it. -/
+def ICacheInvalidation.invalidatesInstruction : ICacheInvalidation → Bool
+  | .iallu       => true
+  | .ivauPage _  => true
+  | .unifyPage _ => true
+
+/-- **WS-SM SM7.D.2**: the obligation each enumerated site carries.
+
+Both sites write memory whose physical extent the abstract state cannot yet
+enumerate (only `UntypedObject` carries `regionBase`/`regionSize`), so the
+operand addresses are the placeholder `0` and the *emission* is scoped to SM9.E.
+What is pinned here is the shape: a clean to PoU, an instruction invalidate, and
+the ARMv8 sequence ordering them. -/
+def kernelCodeWriteObligation : KernelCodeWriteSite → PoUCleanObligation
+  | .retypeScrub =>
+      { cleanToPoU := .cleanByVA (SeLe4n.PAddr.ofNat 0)
+        invalidate := .iallu
+        barriers   := armv8DCacheToICacheSequence }
+  | .bootImageLoad =>
+      { cleanToPoU := .cleanByVA (SeLe4n.PAddr.ofNat 0)
+        invalidate := .iallu
+        barriers   := armv8DCacheToICacheSequence }
+
+/-- **WS-SM SM7.D.2**: what it means for a site's obligation to be well-formed —
+it must clean (not merely invalidate) the data side, must drop the instruction
+side, and must carry the barriers that order the two. -/
+def kernelCodeWriteOwesPoUClean (site : KernelCodeWriteSite) : Prop :=
+  (kernelCodeWriteObligation site).cleanToPoU.isClean = true ∧
+  (kernelCodeWriteObligation site).invalidate.invalidatesInstruction = true ∧
+  (kernelCodeWriteObligation site).barriers.covers CacheBarrierKind.dsb_ish ∧
+  (kernelCodeWriteObligation site).barriers.covers CacheBarrierKind.isb
+
+/-- **WS-SM SM7.D.2**: every kernel code-write site owes a clean-to-PoU, an
+instruction-side invalidate, and the barriers ordering them.
+
+Unlike the v0.32.95 form this is *site-dependent* and names the operations, so
+weakening any site's obligation to an invalidate-only data op, or to a no-op
+instruction operand, breaks it here. -/
 theorem kernelCodeWriteSites_owe_pou_clean :
     ∀ s ∈ kernelCodeWriteSites, kernelCodeWriteOwesPoUClean s := by
   intro s _
-  exact ⟨armv8DCacheToICacheSequence_covers_required.2.1,
-         armv8DCacheToICacheSequence_covers_required.2.2⟩
+  cases s <;>
+    exact ⟨rfl, rfl,
+           armv8DCacheToICacheSequence_covers_required.2.1,
+           armv8DCacheToICacheSequence_covers_required.2.2⟩
+
+/-- **WS-SM SM7.D.2** (the honesty marker): the obligation above is *declared*,
+not *discharged by emission*.  No live transition issues these operations today,
+because neither site can name the physical extent it wrote — only
+`UntypedObject` carries `regionBase`/`regionSize`.
+
+This is stated as a decidable fact about the model rather than left to prose, so
+that when SM9.E gives objects physical extents and wires the emission, this
+theorem is what must be deleted — making the transition from "declared" to
+"discharged" a visible, reviewable edit rather than a silent one. -/
+theorem kernelCodeWriteSites_emission_pending :
+    kernelCodeWriteSites.all
+      (fun s => (kernelCodeWriteObligation s).cleanToPoU
+                  == .cleanByVA (SeLe4n.PAddr.ofNat 0)) = true := by
+  decide
 
 -- ============================================================================
 -- SM7.D.3 — Modelled coherent agents (the DMA scope boundary, as a tripwire)

@@ -783,6 +783,14 @@ theorem lockSet_vspaceUnmap_size_le (a : ThreadId) (b c : ObjId) :
   unfold lockSet_vspaceUnmap maxLockSetSize
   exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
 
+/-- **PR #845 review (P2)**: `.vspaceUnifyInstruction` (WS-SM SM7.D) is within
+the deadlock bound.  Same three-lock footprint as its VSpace siblings, differing
+only in taking the VSpaceRoot in read mode. -/
+theorem lockSet_vspaceUnifyInstruction_size_le (a : ThreadId) (b c : ObjId) :
+    (lockSet_vspaceUnifyInstruction a b c).size ≤ maxLockSetSize := by
+  unfold lockSet_vspaceUnifyInstruction maxLockSetSize
+  exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
+
 theorem lockSet_serviceRegister_size_le (a : ThreadId) (b c : ObjId) :
     (lockSet_serviceRegister a b c).size ≤ maxLockSetSize := by
   unfold lockSet_serviceRegister maxLockSetSize
@@ -866,6 +874,7 @@ theorem lockSetTransitions_within_bound :
     (∀ a b c d, (lockSet_lifecycleRetype a b c d).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_vspaceMap a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_vspaceUnmap a b c).size ≤ maxLockSetSize) ∧
+    (∀ a b c, (lockSet_vspaceUnifyInstruction a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_serviceRegister a b c).size ≤ maxLockSetSize) ∧
     (∀ a b, (lockSet_serviceRevoke a b).size ≤ maxLockSetSize) ∧
     (∀ a b, (lockSet_serviceQuery a b).size ≤ maxLockSetSize) ∧
@@ -884,6 +893,7 @@ theorem lockSetTransitions_within_bound :
    lockSet_cspaceCopy_size_le, lockSet_cspaceMove_size_le,
    lockSet_cspaceDelete_size_le, lockSet_lifecycleRetype_size_le,
    lockSet_vspaceMap_size_le, lockSet_vspaceUnmap_size_le,
+   lockSet_vspaceUnifyInstruction_size_le,
    lockSet_serviceRegister_size_le, lockSet_serviceRevoke_size_le,
    lockSet_serviceQuery_size_le, lockSet_schedContextConfigure_size_le,
    lockSet_schedContextBind_size_le, lockSet_schedContextUnbind_size_le,

@@ -1,3 +1,55 @@
+## v0.32.99 — PR #845 review round 3: five findings, all consequences of this PR's own changes
+
+**(1) The page-alignment guard reached only two of four checked map wrappers.**
+v0.32.98 added it to `vspaceMapPageChecked` and the state-aware production entry,
+leaving `vspaceMapPageCheckedWithFlush` and `vspaceMapPageCheckedWithFlushPlatform`
+able to install an unaligned PA and recreate the operand mismatch. The four
+wrappers each open-code the same precondition chain, and that duplication is what
+let two drift — so beyond guarding both, `checkedMapWrappers_reject_unaligned`
+now pins all four to the same rejection on the same input. Adding a fifth wrapper
+or dropping the guard from an existing one fails there rather than silently
+reopening the hole.
+
+**(2) `checkedDispatch_capabilityOnly_eq_unchecked` was advertised as complete but
+enumerated only 14 of 16 arms.** `.vspaceUnifyInstruction` (added by this PR) and
+`.mintReplyCap` (pre-existing, PR #822) are both handled by the shared
+`dispatchCapabilityOnly` helper but were absent from the disjunction, so a theorem
+whose whole value is completeness did not cover them. Both added, plus the two
+missing per-arm theorems `checkedDispatch_vspaceUnifyInstruction_eq_unchecked` and
+`checkedDispatch_mintReplyCap_eq_unchecked`.
+
+**(3) `.vspaceUnifyInstruction` was outside the advertised deadlock-bound coverage.**
+`lockSet_vspaceUnifyInstruction` had no `_size_le` theorem and was missing from
+`lockSetTransitions_within_bound`, whose docstring claims every real transition —
+and which supplies the size premise for bounded-wait/WCRT reasoning. Both added.
+
+**(4) The clean-to-PoU obligation was vacuous.** `kernelCodeWriteOwesPoUClean` took
+`_site` and *ignored it*, asserting only that a pre-existing barrier sequence
+contained `DSB ISH` and `ISB`. It mentioned neither `DC CVAU` nor any
+instruction-side invalidate, so it stayed provable even if every clean-to-PoU
+operation were absent — exactly the omission it was advertised as detecting. The
+obligation is now a `PoUCleanObligation` naming the concrete operations per site,
+with `DCacheMaintenance.isClean` (an invalidate-only does *not* discharge it — it
+would discard the bytes the site just wrote) and
+`ICacheInvalidation.invalidatesInstruction`. Weakening any site's obligation now
+breaks the theorem. Added alongside it, `kernelCodeWriteSites_emission_pending`
+records as a decidable fact that the obligation is *declared* rather than
+discharged by emission — so when SM9.E wires the emission, that theorem is what
+must be deleted, making the transition a visible edit rather than a silent one.
+
+**(5) The `sele4n-sys` wrapper documented the wrong error for an unbound ASID.**
+It promised `AsidNotBound`, but the v0.32.97 capability binding deliberately
+returns `false` when `resolveAsidRoot` yields `none`, so dispatch rejects with
+`IllegalAuthority` before the transition runs — and the regression suite asserts
+exactly that no-oracle behaviour. Rust callers matching the documented error would
+have mishandled it. Contract corrected, fail-closed implementation retained.
+
+Zero warnings; golden trace byte-identical; zero sorry/axiom; Tier 0–5 green;
+Rust 795 HAL tests, 100 conformance, clippy-clean.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.D
+Refs: #845
+
 ## v0.32.98 — PR #845 review closure: PA page alignment, safe-API wrapper, ABI naming
 
 Closes the remaining review findings on PR #845. Two are genuine defects; one is
