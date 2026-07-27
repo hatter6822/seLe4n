@@ -1520,6 +1520,7 @@ inductive SyscallId where
   | tcbBindNotification    -- WS-SM SM6.B: bind a notification to a TCB (seL4 NotificationBind)
   | tcbUnbindNotification  -- WS-SM SM6.B: unbind a TCB's bound notification
   | mintReplyCap           -- WS-SM SM6.D / PR #822 Phase H: derive a `.replyCap` from an `.object` cap to a retyped Reply
+  | vspaceUnifyInstruction -- WS-SM SM7.D: publish freshly-written code (seL4 Page_Unify_Instruction)
   deriving Repr, DecidableEq, Inhabited
 
 namespace SyscallId
@@ -1556,9 +1557,10 @@ namespace SyscallId
   | .tcbBindNotification   => 26
   | .tcbUnbindNotification => 27
   | .mintReplyCap          => 28
+  | .vspaceUnifyInstruction => 29
 
 /-- Total number of modeled syscalls. -/
-def count : Nat := 29
+def count : Nat := 30
 
 /-- Decode a natural number to a syscall identifier.
     Returns `none` for values outside the modeled set. -/
@@ -1592,6 +1594,7 @@ def count : Nat := 29
   | 26 => some .tcbBindNotification
   | 27 => some .tcbUnbindNotification
   | 28 => some .mintReplyCap
+  | 29 => some .vspaceUnifyInstruction
   | _  => none
 
 instance : ToString SyscallId where
@@ -1625,6 +1628,7 @@ instance : ToString SyscallId where
     | .tcbBindNotification   => "tcbBindNotification"
     | .tcbUnbindNotification => "tcbUnbindNotification"
     | .mintReplyCap          => "mintReplyCap"
+    | .vspaceUnifyInstruction => "vspaceUnifyInstruction"
 
 /-- AC4-D/IF-01: Exhaustive list of all SyscallId variants. Used by the enforcement
     boundary completeness witness to ensure every syscall is classified. The
@@ -1640,7 +1644,7 @@ def all : List SyscallId :=
   , .tcbSuspend, .tcbResume, .tcbSetPriority, .tcbSetMCPriority
   , .tcbSetIPCBuffer, .tcbSetAffinity
   , .tcbBindNotification, .tcbUnbindNotification
-  , .mintReplyCap ]
+  , .mintReplyCap, .vspaceUnifyInstruction ]
 
 /-- AC4-D: Compile-time check — `all` has exactly `count` elements.
     Fails at compile time if a variant is added to the inductive but not to `all`. -/
@@ -1657,7 +1661,7 @@ theorem ofNat_toNat (s : SyscallId) : SyscallId.ofNat? s.toNat = some s := by
 /-- Round-trip: decoding then encoding preserves the numeric value.
 
 S4-I: This proof uses a uniform `match`/`simp`/`subst` pattern for each of
-the 26 syscall variants plus a wildcard case. The `cases s <;> rfl` approach
+the modeled syscall variants plus a wildcard case. The `cases s <;> rfl` approach
 used for `ofNat_toNat` is not applicable here because the hypothesis is on `n`
 (a `Nat`) rather than on a finite inductive type. A `decide`-based approach
 would require `BEq`/`DecidableEq` on the `Option SyscallId × Nat` pair and
@@ -1671,9 +1675,9 @@ theorem toNat_ofNat {n : Nat} {s : SyscallId} (h : SyscallId.ofNat? n = some s) 
   | 7  | 8  | 9  | 10 | 11 | 12 | 13
   | 14 | 15 | 16 | 17 | 18 | 19
   | 20 | 21 | 22 | 23 | 24 | 25
-  | 26 | 27 | 28 =>
+  | 26 | 27 | 28 | 29 =>
     intro s h; simp [ofNat?] at h; subst h; rfl
-  | n + 29 => intro s h; simp [ofNat?] at h
+  | n + 30 => intro s h; simp [ofNat?] at h
 
 /-- Injectivity: the toNat encoding is injective. -/
 theorem toNat_injective {a b : SyscallId} (h : a.toNat = b.toNat) : a = b := by

@@ -322,13 +322,18 @@ theorem enforcementSoundness_registerServiceChecked
     WS-SM SM6.B expanded from 34 to 36 entries with the notification-binding
     capability-only operations (bindNotification / unbindNotification).
     WS-SM SM6.D / PR #822 Phase H expanded from 36 to 37 entries with the
-    reply-cap mint (mintReplyCapWithCdt). -/
+    reply-cap mint (mintReplyCapWithCdt).
+    WS-SM SM7.D expanded from 37 to 38 entries with the instruction/data
+    unification of one mapped page (vspaceUnifyInstructionPage — seL4's
+    Page_Unify_Instruction; capability-only, gated by the `.write` right on the
+    page's capability, with no information-flow policy to consult because no
+    data crosses a label boundary). -/
 abbrev enforcementBoundaryExtended : List EnforcementClass := enforcementBoundary
 
 /-- V6-L/Z8-M/D2/D3/AC4-D (L-IF-3): Completeness assertion — `enforcementBoundaryExtended`
-    has exactly 37 entries, matching the canonical `enforcementBoundary`. -/
+    has exactly 38 entries, matching the canonical `enforcementBoundary`. -/
 theorem enforcementBoundaryExtended_count :
-    enforcementBoundaryExtended.length = 37 := by rfl
+    enforcementBoundaryExtended.length = 38 := by rfl
 
 /-- W2-G (M-3): Element-wise correspondence — `enforcementBoundaryExtended` and
     `enforcementBoundary` are definitionally equal. This closes the M-3 finding

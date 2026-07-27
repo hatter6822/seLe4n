@@ -310,30 +310,46 @@ the precise operand from the round's encoded `.vae1` instead would need an
 direction that is unsafe.  The ledger avoids both: the runtime emits the
 model's operand, no reconstruction and no over-approximation.
 
+**Why a list.**  The ledger holds the operands *in record order* rather than a
+single joined operand, because the operands do not form a join-semilattice:
+`iallu` (`IC IALLUIS`) invalidates instruction caches but issues no `DC CVAU`,
+so it does not discharge a `unifyPage`'s clean to the Point of Unification, and
+collapsing into it would silently drop that clean.  The seam therefore emits
+every entry.  On the live path the list holds at most one operand (one
+maintenance-bearing transition per syscall, drained here), so this is a `forM`
+over a singleton or the empty list.
+
 **Ordering.**  Called *after* `completeShootdownRounds`, so the translations a
 transition retired are gone from every core's TLB before the instruction lines
 fetched through them are dropped.  Inert when the transition owed nothing
-(`completeIcacheMaintenance_none`), which is every syscall that touched no
+(`completeIcacheMaintenance_nil`), which is every syscall that touched no
 executable mapping and re-purposed no memory. -/
 def completeIcacheMaintenance
-    (owed : Option Architecture.ICacheInvalidation) : BaseIO Unit :=
-  match owed with
-  | none => pure ()
-  | some op => Platform.FFI.icMaintenanceBroadcast op
+    (owed : List Architecture.ICacheInvalidation) : BaseIO Unit :=
+  owed.forM Platform.FFI.icMaintenanceBroadcast
 
 /-- **WS-SM SM7.D.1** (structural marker): a commit that owed no
 instruction-cache maintenance emits none — no maintenance instruction, no
 barriers.  The definition-level inertness of the SM7.D runtime bracket,
 mirroring `completeShootdownRounds_nil`. -/
-theorem completeIcacheMaintenance_none :
-    completeIcacheMaintenance none = pure () := rfl
+theorem completeIcacheMaintenance_nil :
+    completeIcacheMaintenance [] = pure () := rfl
 
 /-- **WS-SM SM7.D.1**: when maintenance *was* owed the seam emits exactly the
 recorded operand — pinned so a refactor that widened it back to the domain-wide
 invalidate, or dropped the emission, breaks here. -/
-theorem completeIcacheMaintenance_some (op : Architecture.ICacheInvalidation) :
-    completeIcacheMaintenance (some op) =
+theorem completeIcacheMaintenance_singleton (op : Architecture.ICacheInvalidation) :
+    completeIcacheMaintenance [op] =
       Platform.FFI.icMaintenanceBroadcast op := rfl
+
+/-- **WS-SM SM7.D**: the seam emits **every** recorded operand, in record order.
+Pinned so a refactor that collapses the ledger to one operand — the unsound
+direction, since `iallu` does not discharge a `unifyPage`'s clean-to-PoU — fails
+here rather than silently under-maintaining. -/
+theorem completeIcacheMaintenance_cons (op : Architecture.ICacheInvalidation)
+    (rest : List Architecture.ICacheInvalidation) :
+    completeIcacheMaintenance (op :: rest) =
+      (do Platform.FFI.icMaintenanceBroadcast op; completeIcacheMaintenance rest) := rfl
 
 /-- **WS-SM SM7.B** (structural marker): a commit that changed no
 pending-shootdown queue runs no round — no lock traffic, no reset, no
@@ -378,7 +394,7 @@ def syscallDispatchCrossCoreEntry
         ((Platform.FFI.encodeError e, ([] : List (CoreId × SgiKind)),
           ([] : List CoreId),
           ([] : List Architecture.TlbInvalidation),
-          (none : Option Architecture.ICacheInvalidation)), st))
+          ([] : List Architecture.ICacheInvalidation)), st))
   Concurrency.fireCrossCoreSgis result.2.1
   -- WS-SM SM7.B: run the shootdown round(s) this commit posted (inert
   -- when the syscall touched no pending-shootdown queue).
@@ -419,7 +435,7 @@ theorem syscallDispatchCrossCoreEntry_def
               ((Platform.FFI.encodeError e, ([] : List (CoreId × SgiKind)),
                 ([] : List CoreId),
                 ([] : List Architecture.TlbInvalidation),
-                (none : Option Architecture.ICacheInvalidation)), st))
+                ([] : List Architecture.ICacheInvalidation)), st))
         Concurrency.fireCrossCoreSgis result.2.1
         completeShootdownRounds result.2.2.1 result.2.2.2.1 execCore
         completeIcacheMaintenance result.2.2.2.2

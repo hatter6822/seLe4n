@@ -63,20 +63,27 @@ open SeLe4n.Kernel.Concurrency
 #check @icacheLinesPerPage_eq
 
 -- SM7.D.1 the emission ledger (exact runtime operand recovery):
-#check @ICacheInvalidation.join
-#check @ICacheInvalidation.join_self
-#check @ICacheInvalidation.join_comm
-#check @ICacheInvalidation.iallu_join
-#check @ICacheInvalidation.join_iallu
-#check @joinIcacheMaintenance
-#check @joinIcacheMaintenance_none
-#check @joinIcacheMaintenance_isSome
+#check @ICacheInvalidation.covers
+#check @ICacheInvalidation.covers_refl
+#check @ICacheInvalidation.covers_trans
+#check @ICacheInvalidation.iallu_covers_ivauPage
+#check @ICacheInvalidation.iallu_not_covers_unifyPage
+#check @ICacheInvalidation.ivauPage_not_covers_of_ne
+#check @recordIcacheMaintenanceList
+#check @recordIcacheMaintenanceList_nil
+#check @recordIcacheMaintenanceList_ne_nil
+#check @recordIcacheMaintenanceList_covered
+#check @recordIcacheMaintenanceList_mem_of_mem
+#check @recordIcacheMaintenanceList_length_le
+#check @icacheLineMatches_of_covers
+#check @applyICacheInvalidation_subset_of_covers
 #check @SeLe4n.Model.SystemState.pendingIcacheMaintenance
 #check @SeLe4n.Model.default_pendingIcacheMaintenance
 #check @SeLe4n.Model.storeObject_pendingIcacheMaintenance_eq
 #check @recordIcacheMaintenance
-#check @recordIcacheMaintenance_isSome
-#check @recordIcacheMaintenance_of_none
+#check @recordIcacheMaintenance_ne_nil
+#check @recordIcacheMaintenance_covered
+#check @recordIcacheMaintenance_of_nil
 #check @clearIcacheMaintenance
 #check @clearIcacheMaintenance_pending
 #check @clearIcacheMaintenance_frame
@@ -86,6 +93,28 @@ open SeLe4n.Kernel.Concurrency
 #check @SeLe4n.Kernel.OffSchedulerAgrees.pendingIcacheMaintenance
 #check @SeLe4n.Platform.Boot.bootFromPlatform_pendingIcacheMaintenance_eq
 #check @SeLe4n.Kernel.pendingIcacheMaintenance_write_preserves_projection
+
+-- SM7.D the user-facing code-publication path (`.vspaceUnifyInstruction`):
+#check @unifyTargetPaddr
+#check @unifyTargetPaddr_of_mapped
+#check @vspaceUnifyInstructionPage
+#check @vspaceUnifyInstructionPage_asid_unbound
+#check @vspaceUnifyInstructionPage_unmapped
+#check @vspaceUnifyInstructionPage_ok
+#check @vspaceUnifyInstructionPage_frame
+#check @vspaceUnifyInstructionPage_records_unify
+#check @vspaceUnifyInstructionPage_invalidates_all_cores
+#check @vspaceUnifyInstructionPage_preserves_icacheCoherent_perCore
+#check @vspaceUnifyInstructionPage_preserves_tlbInvalidationConsistent_perCore
+#check @ICacheInvalidation.unifyPage_opTag
+#check @ICacheInvalidation.unifyPage_toPaddr
+#check @ICacheInvalidation.unifyPage_covers_ivauPage
+#check @icacheLineMatches_unifyPage
+#check @SeLe4n.Kernel.dispatchWithCap_vspaceUnifyInstruction_delegates
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnifyInstructionArgs
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnifyInstructionArgs_eq
+#check @SeLe4n.Kernel.Concurrency.lockSet_vspaceUnifyInstruction
+#check @SeLe4n.Kernel.Concurrency.lockSet_consistent_vspaceUnifyInstruction
 
 -- SM7.D.2 the data-side dual: the clean-to-PoU obligation + its tripwire:
 #check @KernelCodeWriteSite
@@ -244,8 +273,9 @@ open SeLe4n.Kernel.Concurrency
 #check @SeLe4n.Platform.FFI.icMaintenanceBroadcast_iallu_encoding
 #check @SeLe4n.Platform.FFI.icMaintenanceBroadcast_ivauPage_encoding
 #check @SeLe4n.Kernel.completeIcacheMaintenance
-#check @SeLe4n.Kernel.completeIcacheMaintenance_none
-#check @SeLe4n.Kernel.completeIcacheMaintenance_some
+#check @SeLe4n.Kernel.completeIcacheMaintenance_nil
+#check @SeLe4n.Kernel.completeIcacheMaintenance_singleton
+#check @SeLe4n.Kernel.completeIcacheMaintenance_cons
 
 -- The 14th `proofLayerInvariantBundle` conjunct is live (the bundle's
 -- boot witness elaborates only if the conjunct is present and provable).
@@ -633,28 +663,51 @@ private def runLedgerChecks : IO Unit := do
     (icacheLinesPerPage * cacheLineBytes == pageBytes)
   assertBool "one page operand expands to 64 IC IVAU instructions"
     (icacheLinesPerPage == 64)
-  -- Join algebra: idempotent, iallu-absorbing, commutative.
-  assertBool "the join is idempotent"
-    ((ICacheInvalidation.ivauPage paddrPage).join (.ivauPage paddrPage) ==
-      .ivauPage paddrPage)
-  assertBool "two different page operands join to the full invalidate (sound direction)"
-    ((ICacheInvalidation.ivauPage paddrPage).join (.ivauPage paddrOther) == .iallu)
-  assertBool "iallu absorbs on both sides"
-    ((ICacheInvalidation.iallu.join (.ivauPage paddrPage) == .iallu) &&
-     ((ICacheInvalidation.ivauPage paddrPage).join .iallu == .iallu))
-  assertBool "the join is commutative"
-    ([ICacheInvalidation.iallu, .ivauPage paddrPage, .ivauPage paddrOther].all
-      fun a => [ICacheInvalidation.iallu, .ivauPage paddrPage,
-                .ivauPage paddrOther].all fun b => a.join b == b.join a)
+  -- Coverage preorder: reflexive, `iallu` subsumes page invalidates, `unifyPage`
+  -- subsumes the bare invalidate of its page — and, critically, `iallu` does
+  -- NOT subsume a `unifyPage` (it issues no `DC CVAU`).
+  assertBool "coverage is reflexive on every operand"
+    ([ICacheInvalidation.iallu, .ivauPage paddrPage, .unifyPage paddrPage].all
+      fun a => a.covers a)
+  assertBool "iallu covers any page INVALIDATE"
+    (ICacheInvalidation.iallu.covers (.ivauPage paddrPage))
+  assertBool "iallu does NOT cover a unify (IC IALLUIS issues no DC CVAU)"
+    (!(ICacheInvalidation.iallu.covers (.unifyPage paddrPage)))
+  assertBool "unify covers the bare invalidate of the same page"
+    ((ICacheInvalidation.unifyPage paddrPage).covers (.ivauPage paddrPage))
+  assertBool "coverage is semantically grounded: a covering operand retires the covered one's lines"
+    ([ICacheInvalidation.iallu, .ivauPage paddrPage, .unifyPage paddrPage].all fun a =>
+      [ICacheInvalidation.iallu, .ivauPage paddrPage, .unifyPage paddrPage].all fun b =>
+        !(a.covers b) ||
+          [lineExec, lineOther].all fun l =>
+            !(icacheLineMatches b l) || icacheLineMatches a l)
+  assertBool "distinct pages are incomparable (neither discharges the other)"
+    (!((ICacheInvalidation.ivauPage paddrPage).covers (.ivauPage paddrOther)) &&
+     !((ICacheInvalidation.ivauPage paddrOther).covers (.ivauPage paddrPage)))
   -- Ledger lifecycle on a real state.
   let st0 : SystemState := default
   assertBool "the boot state owes no maintenance"
-    (st0.pendingIcacheMaintenance == none)
+    (st0.pendingIcacheMaintenance == [])
   let stRec := recordIcacheMaintenance st0 (.ivauPage paddrPage)
   assertBool "recording into an empty ledger stores the operand VERBATIM"
-    (stRec.pendingIcacheMaintenance == some (.ivauPage paddrPage))
+    (stRec.pendingIcacheMaintenance == [ICacheInvalidation.ivauPage paddrPage])
+  assertBool "re-recording a COVERED operand adds nothing (sound dedup)"
+    ((recordIcacheMaintenance stRec (.ivauPage paddrPage)).pendingIcacheMaintenance ==
+      [ICacheInvalidation.ivauPage paddrPage])
+  assertBool "recording an INCOMPARABLE operand keeps BOTH (nothing is lost)"
+    ((recordIcacheMaintenance stRec (.ivauPage paddrOther)).pendingIcacheMaintenance ==
+      [ICacheInvalidation.ivauPage paddrPage, .ivauPage paddrOther])
+  -- The defect this design rules out: a pending unify must survive a later
+  -- domain-wide invalidate, because `IC IALLUIS` performs no clean to PoU.
+  let stUnify := recordIcacheMaintenance st0 (.unifyPage paddrPage)
+  assertBool "a pending UNIFY survives a later iallu (the clean is NOT dropped)"
+    ((recordIcacheMaintenance stUnify .iallu).pendingIcacheMaintenance ==
+      [ICacheInvalidation.unifyPage paddrPage, .iallu])
+  assertBool "a bare invalidate of the unified page IS absorbed by the pending unify"
+    ((recordIcacheMaintenance stUnify (.ivauPage paddrPage)).pendingIcacheMaintenance ==
+      [ICacheInvalidation.unifyPage paddrPage])
   assertBool "the drain empties the ledger"
-    ((clearIcacheMaintenance stRec).pendingIcacheMaintenance == none)
+    ((clearIcacheMaintenance stRec).pendingIcacheMaintenance == [])
   assertBool "recording frames the per-core instruction caches"
     (allCores.all fun c => (icacheOnCore stRec c).lines.isEmpty)
   -- The live seams: the ledger carries the model's operand to the runtime.
@@ -666,7 +719,7 @@ private def runLedgerChecks : IO Unit := do
     | .error _ => assertBool "the executable unmap commits" false
     | .ok ((), stPost) =>
       assertBool "an EXECUTABLE unmap records the TARGETED page operand (not a full flush)"
-        (stPost.pendingIcacheMaintenance == some (.ivauPage paddrPage))
+        (stPost.pendingIcacheMaintenance == [ICacheInvalidation.ivauPage paddrPage])
     -- The non-executable unmap: the whole point of the ledger — the runtime
     -- learns there is nothing to do, where the shootdown-diff key would have
     -- fired a domain-wide invalidate.
@@ -678,7 +731,7 @@ private def runLedgerChecks : IO Unit := do
       | .error _ => assertBool "the read-only unmap commits" false
       | .ok ((), stROPost) => do
         assertBool "a NON-executable unmap records NOTHING (no spurious full flush)"
-          (stROPost.pendingIcacheMaintenance == none)
+          (stROPost.pendingIcacheMaintenance == [])
         assertBool "the non-executable unmap still posts its TLB shootdown round"
           (!(shootdownQuiescent stROPost.tlbShootdown))
     -- Retype records the domain-wide operand even though its own shootdown
@@ -695,7 +748,7 @@ private def runLedgerChecks : IO Unit := do
     | .error _ => assertBool "the retype seam commits" false
     | .ok ((), stPost) =>
       assertBool "a retype records the domain-wide operand"
-        (stPost.pendingIcacheMaintenance == some .iallu)
+        (stPost.pendingIcacheMaintenance == [ICacheInvalidation.iallu])
 
 -- ----------------------------------------------------------------------------
 -- §3.11  SM7.D.2 — the data-side dual: the clean-to-PoU obligation tripwire.
@@ -712,6 +765,107 @@ private def runCodeWriteObligationChecks : IO Unit := do
     (armv8DCacheToICacheSequence.covers CacheBarrierKind.dsb_ish &&
      armv8DCacheToICacheSequence.covers CacheBarrierKind.isb)
 
+-- ----------------------------------------------------------------------------
+-- §3.12  SM7.D — the user-facing code-publication path
+--         (`.vspaceUnifyInstruction`, seLe4n's Page_Unify_Instruction).
+-- ----------------------------------------------------------------------------
+
+private def unifyDecoded : SyscallDecodeResult :=
+  { capAddr := SeLe4n.CPtr.ofNat 0,
+    msgInfo := { length := 2, extraCaps := 0, label := 0 },
+    syscallId := .vspaceUnifyInstruction,
+    msgRegs := #[SeLe4n.RegValue.ofNat 5, SeLe4n.RegValue.ofNat 0x1000] }
+
+private def runUnifyInstructionChecks : IO Unit := do
+  IO.println "-- §3.12 SM7.D `.vspaceUnifyInstruction` (code publication)"
+  -- ABI: the syscall is in the modeled set at discriminant 29, with the
+  -- write-right authority the dispatch gate enforces.
+  assertBool "the syscall encodes to 29 and round-trips"
+    (SyscallId.vspaceUnifyInstruction.toNat == 29 &&
+      SyscallId.ofNat? 29 == some .vspaceUnifyInstruction)
+  assertBool "the modeled syscall count is 30"
+    (SyscallId.count == 30)
+  assertBool "unify requires the write right"
+    (syscallRequiredRight .vspaceUnifyInstruction == .write)
+  -- The operand encodes to FFI tag 2 (the full D→I sequence), distinct from a
+  -- bare page invalidate: dropping to `ivauPage` would silently lose the clean.
+  assertBool "the unify operand encodes to op tag 2 carrying the page base"
+    ((ICacheInvalidation.unifyPage paddrPage).toOpTag == 2 &&
+     (ICacheInvalidation.unifyPage paddrPage).toPaddr == 0x2000)
+  assertBool "unify dominates a bare invalidate on the same page in the coverage order"
+    ((ICacheInvalidation.unifyPage paddrPage).covers (.ivauPage paddrPage))
+  assertBool "and iallu does NOT dominate it (the clean-to-PoU is irreplaceable)"
+    (!(ICacheInvalidation.iallu.covers (.unifyPage paddrPage)))
+  -- Fail-closed paths: an unbound ASID and an unmapped address are rejected,
+  -- so the operation cannot be used to maintain memory the caller has no
+  -- mapping for.
+  let st0 := cacheState []
+  assertBool "an unbound ASID is rejected (asidNotBound)"
+    (match vspaceUnifyInstructionPage (SeLe4n.ASID.ofNat 99) vaddrPage st0 with
+      | .error .asidNotBound => true | _ => false)
+  assertBool "an unmapped address is rejected (translationFault)"
+    (match vspaceUnifyInstructionPage asid5 vaddrPage st0 with
+      | .error .translationFault => true | _ => false)
+  -- The success path.  Note the mapping is deliberately **not** executable —
+  -- the operation exists for the writer publishing code through a data
+  -- mapping, so gating it on execute would make it useless.
+  match vspaceMapPageWithFlush asid5 vaddrPage paddrPage
+      { read := true, write := true, execute := false, user := true,
+        cacheable := true } st0 with
+  | .error _ => assertBool "the scenario maps a writable (non-executable) page" false
+  | .ok ((), stMapped) => do
+    -- Every core holds a stale line from a previous incarnation of the frame.
+    let staleLine : ICacheLine :=
+      { asid := asid5, vaddr := vaddrPage, paddr := paddrPage, perms := permsExec }
+    let stAll : SystemState :=
+      allCores.foldl (fun st c => icFetchOnCore st c staleLine) stMapped
+    assertBool "the pre-state holds a stale line on all four cores"
+      (allCores.all fun c => (icacheOnCore stAll c).lines.contains staleLine)
+    match vspaceUnifyInstructionPage asid5 vaddrPage stAll with
+    | .error _ => assertBool "unify commits on a writable mapping" false
+    | .ok ((), stPost) => do
+      assertBool "after unify NO core retains a line for the page"
+        (allCores.all fun c => !((icacheOnCore stPost c).lines.contains staleLine))
+      assertBool "unify records the UNIFY operand (not a bare invalidate)"
+        (stPost.pendingIcacheMaintenance == [ICacheInvalidation.unifyPage paddrPage])
+      assertBool "unify modifies no page table (pure cache operation)"
+        (stPost.objectIndex == stAll.objectIndex &&
+         stPost.tlbShootdown == stAll.tlbShootdown)
+      assertBool "the post-state satisfies the 14th conjunct"
+        (icacheCoherentCheck_perCore stPost)
+      assertBool "the post-state satisfies the 13th conjunct"
+        (tlbInvalidationConsistentCheck_perCore stPost)
+    -- The live dispatch: CSpace cap resolution + authority gate.
+    let vspCap : Capability :=
+      { target := .object udVsp,
+        rights := AccessRightSet.ofList [.read, .write] }
+    let roCap : Capability :=
+      { target := .object udVsp, rights := AccessRightSet.ofList [.read] }
+    match vspaceMapPageWithFlush asid5 vaddrPage paddrPage
+        { read := true, write := true, execute := false, user := true,
+          cacheable := true } (cacheState [(SeLe4n.Slot.ofNat 0, vspCap)]) with
+    | .error _ => assertBool "the live scenario maps the page" false
+    | .ok ((), stLive) =>
+      assertBool "the live `.vspaceUnifyInstruction` dispatch succeeds with a write cap"
+        (match SeLe4n.Kernel.dispatchSyscall unifyDecoded udCaller stLive with
+          | .ok _ => true | .error _ => false)
+    match vspaceMapPageWithFlush asid5 vaddrPage paddrPage
+        { read := true, write := true, execute := false, user := true,
+          cacheable := true } (cacheState [(SeLe4n.Slot.ofNat 0, roCap)]) with
+    | .error _ => assertBool "the read-only scenario maps the page" false
+    | .ok ((), stRO) =>
+      assertBool "a read-only capability is refused (illegalAuthority)"
+        (match SeLe4n.Kernel.dispatchSyscall unifyDecoded udCaller stRO with
+          | .error .illegalAuthority => true | _ => false)
+    match vspaceMapPageWithFlush asid5 vaddrPage paddrPage
+        { read := true, write := true, execute := false, user := true,
+          cacheable := true } (cacheState []) with
+    | .error _ => assertBool "the no-cap scenario maps the page" false
+    | .ok ((), stNoCap) =>
+      assertBool "no capability at the slot is refused (invalidCapability)"
+        (match SeLe4n.Kernel.dispatchSyscall unifyDecoded udCaller stNoCap with
+          | .error .invalidCapability => true | _ => false)
+
 def runSmpCacheMaintenanceChecks : IO Unit := do
   IO.println "===================================================="
   IO.println "WS-SM SM7.D — cache maintenance broadcast suite"
@@ -727,6 +881,7 @@ def runSmpCacheMaintenanceChecks : IO Unit := do
   runSeamConformanceChecks
   runLedgerChecks
   runCodeWriteObligationChecks
+  runUnifyInstructionChecks
   IO.println "===================================================="
   IO.println "All SM7.D cache maintenance broadcast checks PASS."
 

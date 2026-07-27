@@ -3692,7 +3692,7 @@ live maintenance seams and the runtime drain trivially preserve `projectState`
 and hence `lowEquivalent`. -/
 theorem pendingIcacheMaintenance_write_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
-    (m : Option SeLe4n.Kernel.Architecture.ICacheInvalidation) :
+    (m : List SeLe4n.Kernel.Architecture.ICacheInvalidation) :
     projectState ctx observer { st with pendingIcacheMaintenance := m } =
       projectState ctx observer st := rfl
 

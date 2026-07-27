@@ -24,9 +24,13 @@ Plan:
 SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
-**Current sub-phase: SM7.D cache maintenance broadcast LANDED (v0.32.94);
-closure cut (v0.32.95) — the cache-side companion of SM7.C, closing the
-*instruction*-cache half of SMP-C4.  Prior: SM7.C per-core TLB model LANDED (v0.32.80); operative
+**Current sub-phase: SM7.D cache maintenance broadcast CLOSED — LANDED
+(v0.32.94), closure cut (v0.32.95), residual closure (v0.32.96) — the
+cache-side companion of SM7.C, closing the *instruction*-cache half of
+SMP-C4 in both directions: the destroy side (`.vspaceUnmap` /
+`.lifecycleRetype` broadcast maintenance) and, at v0.32.96, the write side
+(the `.vspaceUnifyInstruction` code-publication syscall).  No residuals
+remain.  Prior: SM7.C per-core TLB model LANDED (v0.32.80); operative
 cut (v0.32.81) — the SMP generalisation of the single-core TLB layer,
 mounted on `SystemState.perCoreTlb : Vector TlbState numCores`, wired into
 the SM7.B shootdown protocol, and (v0.32.81) made **operative on the live
@@ -180,6 +184,71 @@ is the obligation as a checked object — `KernelCodeWriteSite` +
 consumer (staged-only 55 → 54); `ICacheInvalidation` extracted to the new pure
 `Architecture/CacheInvalidation.lean`.  Rust HAL 789 → 792; suite 56 → 72
 assertions / 11 groups; trace byte-identical.
+
+**SM7.D residual closure (v0.32.96) — `.vspaceUnifyInstruction`.  SM7.D is
+CLOSED.**  The v0.32.95 cut left exactly one residual: maintenance was wired to
+the paths that *destroy* an executable mapping, but nothing served the dual — a
+subject that **writes** instructions.  On ARMv8-A those stores land in the
+D-cache while the instruction fetch reads at the Point of Unification, so
+without a kernel operation a JIT, loader, or dynamic linker had **no way** to
+make its own writes fetchable.  seL4 exposes exactly this as
+`seL4_ARM_Page_Unify_Instruction`; seLe4n now does too.
+
+`Architecture.vspaceUnifyInstructionPage asid vaddr` is a **pure cache**
+transition — `_frame` proves the object store, page tables, TLB and shootdown
+state are all unchanged — and is fail-closed on both authority legs
+(`.asidNotBound` when the ASID is unbound, `.translationFault` when the address
+is unmapped in that address space), so a caller can only maintain memory it
+already holds a translation for.  It is deliberately **not** gated on the
+mapping being executable: the writer holds the *data* mapping, so an execute
+gate would make the operation useless for its only purpose.  Authority is the
+`.write` right, so a read-only VSpace capability is refused with
+`.illegalAuthority`.
+
+The operand is a *third* `ICacheInvalidation` constructor, `.unifyPage`, not a
+reuse of `.ivauPage`: the data side must be cleaned to PoU **before** the
+instruction side is invalidated, and folding the two would silently drop the
+clean.  `join` gives `.unifyPage` dominance over `.ivauPage` on the same page —
+upgrading is sound, downgrading is not — so an accumulated round can never
+weaken a unify into a bare invalidate.  Theorems:
+`vspaceUnifyInstructionPage_invalidates_all_cores` (after the transition no
+core retains a line for the page), `_records_unify`, and preservation of both
+per-core memory conjuncts.
+
+**Ledger soundness correction.**  Adding `.unifyPage` exposed a defect in
+v0.32.95's single-operand *join*: `iallu` was the lattice top, but `IC IALLUIS`
+invalidates instruction caches and issues **no** `DC CVAU`, so
+`join (.unifyPage p) .iallu = .iallu` would have dropped that operand's clean
+to the Point of Unification — under-maintenance, the unsafe direction.  Nor
+does any single operand cover two distinct `unifyPage`s.  Not reachable at
+v0.32.95 (one maintenance-bearing transition per syscall, drained atomically
+with the commit, so every record started from an empty ledger and the binary
+join arms were dead code) but a latent trap.  The join is replaced by a
+**coverage preorder over a list**: `pendingIcacheMaintenance` becomes
+`List ICacheInvalidation`, appended in record order and drained wholesale, and
+reduces only where one entry provably **covers** another —
+`ICacheInvalidation.covers`, grounded in the model's own effect by
+`icacheLineMatches_of_covers` and `applyICacheInvalidation_subset_of_covers`,
+with `iallu_not_covers_unifyPage` stating the exclusion as a theorem.
+`recordIcacheMaintenanceList_covered` / `_mem_of_mem` are the no-loss
+properties; `_length_le` bounds each record at one entry, so the live ledger is
+a singleton and still needs no capacity invariant and no bundle conjunct.
+
+Live through `API.dispatchWithCap`
+(`dispatchWithCap_vspaceUnifyInstruction_delegates`), so the operand rides the
+v0.32.95 emission ledger into the syscall-entry drain and out through
+`cache_ic_maintenance`; the HAL realises it as
+`cache::unify_instruction_page_inner_shareable` — a 64-line `DC CVAU` loop →
+`DSB ISH` → a 64-line `IC IVAU` loop → `DSB ISH` → `ISB`, the same canonical
+sequence `kernelCodeWriteSites_owe_pou_clean` names for the kernel's own code
+writes.  ABI: `SyscallId.vspaceUnifyInstruction = 29`, count 29 → 30, threaded
+through the Lean encodings, both Rust mirrors, ABI conformance, the frozen-ops
+classifier, the argument decoder, the information-flow enforcement registry
+(37 → 38, capability-only 22 → 23), and the lock-set inventory —
+`lockSet_vspaceUnifyInstruction` takes the VSpaceRoot in **read** mode, since it
+modifies no page table (inventory 99 → 101, categories 29 → 30).  Rust HAL
+792 → 795; suite 72 → 93 assertions / 12 groups; the golden trace's
+`[XVAL-002]` line moves 29 → 30 variants, everything else byte-identical.
 
 **SM7.C per-core TLB model (v0.32.80) — all eight sub-tasks (plan §5).**
 New production module `Architecture/PerCoreTlbModel.lean` (imports

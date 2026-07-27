@@ -1285,8 +1285,9 @@ opaque ffiIcIalluIs : BaseIO Unit
     `Architecture.ICacheInvalidation` and emits the corresponding broadcast
     maintenance instruction plus its completing barriers:
 
-      opTag : 0 = Iallu (`IC IALLUIS`), 1 = Ivau (`IC IVAU`)
-      addr  : virtual address operand (RES0 for Iallu)
+      opTag : 0 = Iallu (`IC IALLUIS`), 1 = IvauPage (per-page `IC IVAU` loop),
+              2 = UnifyPage (`DC CVAU` loop → `DSB` → `IC IVAU` loop → `DSB` → `ISB`)
+      addr  : page base virtual address operand (RES0 for Iallu)
 
     The encoding is pinned to the Lean side by
     `ICacheInvalidation.toOpTag` / `.toPaddr` and to the Rust side by
@@ -1295,6 +1296,11 @@ opaque ffiIcIalluIs : BaseIO Unit
     correctness violation the caller cannot detect), which
     `ICacheInvalidation.toOpTag_in_range` proves unreachable from any
     well-formed Lean caller.
+
+    Tag 2 (`unifyPage`) is the `.vspaceUnifyInstruction` syscall's operand — the
+    full ARMv8-A data-to-instruction sequence, whose *inter-loop* `DSB ISH`
+    matters: the invalidations must not be observed before the cleans complete,
+    or a PE could re-fill an instruction line from the pre-clean PoU content.
 
     Rust: `ffi::cache_ic_maintenance` in `sele4n-hal/src/ffi.rs`. -/
 @[extern "cache_ic_maintenance"]
@@ -1314,7 +1320,15 @@ opaque ffiIcMaintenance : UInt32 → UInt64 → BaseIO Unit
     Note the granularity expansion — `IC IVAU` invalidates one 64-byte cache
     line, so the HAL issues `icacheLinesPerPage` of them for one page operand
     (`cache::ic_invalidate_page_inner_shareable`), exactly as seL4's
-    `invalidateCacheRange_I` does. -/
+    `invalidateCacheRange_I` does.
+
+    `.unifyPage p` uses the same operand under the same identity-map argument,
+    and routes to `cache::unify_instruction_page_inner_shareable`: a `DC CVAU`
+    loop over the page, `DSB ISH`, the `IC IVAU` loop, `DSB ISH`, `ISB`.  It is
+    a *distinct* op tag rather than a stronger `.ivauPage` because the clean to
+    the Point of Unification has no counterpart in the invalidation dimension —
+    which is also why the emission ledger keeps it under a coverage preorder
+    instead of a join (`ICacheInvalidation.iallu_not_covers_unifyPage`). -/
 def icMaintenanceBroadcast
     (op : SeLe4n.Kernel.Architecture.ICacheInvalidation) : BaseIO Unit :=
   ffiIcMaintenance op.toOpTag op.toPaddr

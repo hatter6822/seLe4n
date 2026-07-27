@@ -789,7 +789,8 @@ the executing PE, so the kernel must issue the broadcast variant:
 - `icacheOnCore` / `setIcacheOnCore` — SM4.B path-a per-core view accessors +
   `@[simp]` store/load algebra + per-field frame lemmas +
   `default_{perCoreICache,icacheOnCore}`
-- `ICacheInvalidation` (`iallu` / `ivauPage paddr`, `CacheInvalidation.lean`) +
+- `ICacheInvalidation` (`iallu` / `ivauPage paddr` / `unifyPage paddr`,
+  `CacheInvalidation.lean`) +
   `applyICacheInvalidation` (SM7.D.1) — the typed operand and its effect algebra
   (removal, selectivity, monotonicity, idempotence, `iallu`-empties, survivor
   lemmas), with the FFI tag encoding pinned to the Rust
@@ -801,10 +802,23 @@ the executing PE, so the kernel must issue the broadcast variant:
   `clearIcacheMaintenance` (SM7.D.1) — the **emission ledger**: kernel
   transitions are pure, so the operand the model applied is carried to the
   runtime seam, which reads and clears it in the same atomic step that commits
-  the transition.  Accumulation is the total join `ICacheInvalidation.join`
-  (`iallu` as top), so no capacity bound is threaded;
-  `recordIcacheMaintenance_of_none` is the exactness property that makes the
-  runtime emit the model's precise operand
+  the transition.  `recordIcacheMaintenance_of_nil` is the exactness property
+  that makes the runtime emit the model's precise operand
+- `ICacheInvalidation.covers` + `recordIcacheMaintenanceList` (SM7.D, v0.32.96)
+  — the ledger's algebra is a **coverage preorder over a list**, not a join
+  over a single operand.  `iallu` is *not* a top element:
+  `ICacheInvalidation.iallu_not_covers_unifyPage` states why — `IC IALLUIS`
+  invalidates instruction caches but issues no `DC CVAU`, so it does not
+  discharge a `unifyPage`'s clean to the Point of Unification, and collapsing
+  into it would leave a freshly written instruction fetchable in its old form.
+  Nor does any single operand cover two distinct `unifyPage`s.  The ledger
+  therefore appends and only ever drops an entry a held one provably covers
+  (`recordIcacheMaintenanceList_covered`, `_mem_of_mem`), with `covers` itself
+  grounded in the model's effect by `icacheLineMatches_of_covers` /
+  `applyICacheInvalidation_subset_of_covers` rather than asserted as a table.
+  Each record appends at most one entry (`_length_le`) and a syscall runs one
+  maintenance-bearing transition, so the live ledger is a singleton — no
+  capacity invariant, no bundle conjunct
 - `kernelCodeWriteSites_owe_pou_clean` + `kernelCodeWriteSites_complete`
   (SM7.D.2) — the data-side dual, as a checked obligation: every kernel site
   that writes memory a subject may execute owes the
@@ -838,6 +852,22 @@ the executing PE, so the kernel must issue the broadcast variant:
 - `cacheCoherency_cross_subsystem` (SM7.D.4) — the cache-side capstone
   (broadcast × cache-model × page-tables), mirroring SM7.C.7, plus the joint
   `icInvalidateBroadcast_preserves_perCore_memory_invariants`
+- `vspaceUnifyInstructionPage` (SM7.D, v0.32.96) — the **code-publication**
+  transition behind the `.vspaceUnifyInstruction` syscall (`SyscallId` 29),
+  seLe4n's equivalent of seL4's `seL4_ARM_Page_Unify_Instruction`.  It is
+  the dual of the destroy-side seams: those close the hazard when an
+  executable mapping goes away, this one lets a subject that *writes*
+  instructions make them fetchable.  A **pure cache** operation —
+  `vspaceUnifyInstructionPage_frame` proves the object store, page tables,
+  TLB and shootdown state are all unchanged — fail-closed on both authority
+  legs (`_asid_unbound`, `_unmapped`), deliberately not gated on the mapping
+  being executable (the writer holds the *data* mapping), and requiring the
+  `.write` right.  `_invalidates_all_cores` is its reach property;
+  `_records_unify` pins the emitted operand;
+  `_preserves_icacheCoherent_perCore` and
+  `_preserves_tlbInvalidationConsistent_perCore` carry both per-core memory
+  conjuncts.  Lock set: `lockSet_vspaceUnifyInstruction` takes the VSpaceRoot
+  in **read** mode, since it modifies no page table
 - Live seams: `vspaceUnmapPageWithShootdownAndIcacheBroadcast` (targeted
   `IC IVAU` for an executable unmap, provably inert otherwise) and
   `lifecycleRetype{Direct,}WithCleanupShootdownPerCoreIcache` (unconditional

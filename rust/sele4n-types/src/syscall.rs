@@ -55,11 +55,16 @@ pub enum SyscallId {
     // Reply-cap mint (WS-SM, SM6.D / PR #822 Phase H): derive a `.replyCap` from an
     // `.object` cap to a retyped Reply object.
     MintReplyCap = 28,
+    // Instruction/data unification of one mapped page (WS-SM, SM7.D): seLe4n's
+    // equivalent of seL4's `Page_Unify_Instruction`.  Publishes freshly written
+    // code — an instruction fetch reads at the Point of Unification, so stores
+    // that are still only in the data cache must be cleaned there first.
+    VspaceUnifyInstruction = 29,
 }
 
 impl SyscallId {
     /// Total number of modeled syscalls.
-    pub const COUNT: usize = 29;
+    pub const COUNT: usize = 30;
 
     /// Convert from a raw `u64` value. Returns `None` for out-of-range.
     /// Lean: `SyscallId.ofNat?`
@@ -94,6 +99,7 @@ impl SyscallId {
             26 => Some(Self::TcbBindNotification),
             27 => Some(Self::TcbUnbindNotification),
             28 => Some(Self::MintReplyCap),
+            29 => Some(Self::VspaceUnifyInstruction),
             _ => None,
         }
     }
@@ -127,6 +133,10 @@ impl SyscallId {
             // PR #822 Phase H: deriving a reply cap requires grant authority on the
             // source object cap (matches the cspaceMint/Copy/Move family).
             Self::MintReplyCap => AccessRight::Grant,
+            // WS-SM SM7.D: least-privilege reading of seL4's frame-cap authority —
+            // the operation publishes the caller's own stores, so the subject
+            // that needs it could by construction write the page.
+            Self::VspaceUnifyInstruction => AccessRight::Write,
         }
     }
 }

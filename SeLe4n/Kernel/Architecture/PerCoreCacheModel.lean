@@ -108,8 +108,12 @@ hardware's comparison: `iallu` covers everything; `ivauPage p` covers exactly th
 lines tagged with the physical address `p` (PIPT identity). -/
 def icacheLineMatches (op : ICacheInvalidation) (l : ICacheLine) : Bool :=
   match op with
-  | .iallu  => true
-  | .ivauPage p => p == l.paddr
+  | .iallu       => true
+  | .ivauPage p  => p == l.paddr
+  -- `unifyPage` removes the same lines as `ivauPage`; the difference is the
+  -- emitted sequence (it additionally cleans the page's stores to the Point of
+  -- Unification first).  Cf. `TlbInvalidation`'s `vae1` / `vale1`.
+  | .unifyPage p => p == l.paddr
 
 /-- **WS-SM SM7.D.1**: the effect of retiring one maintenance operand on one
 core's instruction-cache view — every covered line is removed, nothing is
@@ -174,6 +178,12 @@ theorem icacheLineMatches_ivauPage {p : SeLe4n.PAddr} {l : ICacheLine}
 theorem icacheLineMatches_iallu (l : ICacheLine) :
     icacheLineMatches .iallu l = true := rfl
 
+/-- **WS-SM SM7.D**: `unifyPage p` covers exactly the lines tagged `p` — the
+same removal semantics as `ivauPage p`. -/
+theorem icacheLineMatches_unifyPage {p : SeLe4n.PAddr} {l : ICacheLine}
+    (h : l.paddr = p) : icacheLineMatches (.unifyPage p) l = true := by
+  simp [icacheLineMatches, h]
+
 /-- **WS-SM SM7.D.1**: a surviving line is *not* tagged with the `ivauPage`
 operand — the contrapositive form the preservation proofs consume. -/
 theorem applyICacheInvalidation_survivor_paddr_ne {p : SeLe4n.PAddr}
@@ -181,6 +191,36 @@ theorem applyICacheInvalidation_survivor_paddr_ne {p : SeLe4n.PAddr}
     (h : l ∈ (applyICacheInvalidation ic (.ivauPage p)).lines) : l.paddr ≠ p := by
   intro hEq
   exact absurd h (applyICacheInvalidation_removes (icacheLineMatches_ivauPage hEq) ic)
+
+/-- **WS-SM SM7.D** (the semantic grounding of `ICacheInvalidation.covers`):
+when `a` covers `b`, every line `b` would retire is also retired by `a`.
+
+`covers` is defined as a table on constructors, which by itself proves nothing.
+This theorem ties it to the model's own effect, so "drop the covered entry"
+in `recordIcacheMaintenanceList` is a *justified* reduction rather than a
+convention.  Note it is stated only for the invalidation dimension, which is
+all the abstract state models — the `unifyPage`'s clean to the Point of
+Unification has no counterpart in `ICacheState` (there is no modelled D-cache
+content), and it is exactly that unmodelled dimension which makes `iallu`
+*not* cover `unifyPage` (`ICacheInvalidation.iallu_not_covers_unifyPage`). -/
+theorem icacheLineMatches_of_covers {a b : ICacheInvalidation} {l : ICacheLine}
+    (hcov : a.covers b = true) (hb : icacheLineMatches b l = true) :
+    icacheLineMatches a l = true := by
+  cases a <;> cases b <;>
+    simp_all [ICacheInvalidation.covers, icacheLineMatches]
+
+/-- **WS-SM SM7.D**: the state-level form — applying the covering operand
+retires at least the lines the covered one would, so the ledger's dedup never
+leaves a line the dropped entry would have removed. -/
+theorem applyICacheInvalidation_subset_of_covers {a b : ICacheInvalidation}
+    (hcov : a.covers b = true) (ic : ICacheState) {l : ICacheLine}
+    (h : l ∈ (applyICacheInvalidation ic a).lines) :
+    l ∈ (applyICacheInvalidation ic b).lines := by
+  rw [mem_applyICacheInvalidation_iff] at h ⊢
+  refine ⟨h.1, ?_⟩
+  cases hb : icacheLineMatches b l with
+  | false => rfl
+  | true => exact absurd (icacheLineMatches_of_covers hcov hb) (by simp [h.2])
 
 -- ============================================================================
 -- SM7.D.1 — Per-core instruction-cache view accessors (SM4.B path-a)
@@ -1007,14 +1047,18 @@ been committed.  This ledger is the bridge: it carries the exact operand the
 model used across that gap, so the seam emits precisely it rather than the
 strongest operand it could justify from the shootdown diff.
 
-Accumulation is the total join (`joinIcacheMaintenance`), so a transition that
-somehow owed two different operands would collapse to the full invalidate — the
-sound direction — with no capacity bound to thread.  Every live seam owes at
-most one, so in practice the ledger holds the model's exact operand. -/
+Accumulation appends (`recordIcacheMaintenanceList`), dropping only an operand
+already **covered** by an entry the ledger holds, so a transition that owed two
+incomparable operands keeps both rather than collapsing them.  Collapsing would
+be unsound here: `iallu` is not a top element, since `IC IALLUIS` performs no
+`DC CVAU` and therefore does not discharge a `unifyPage`'s clean to the Point of
+Unification.  Every live seam owes at most one operand against a ledger the
+runtime cleared on the previous syscall, so in practice the ledger is the
+singleton holding the model's exact operand. -/
 def recordIcacheMaintenance (st : SystemState) (op : ICacheInvalidation) :
     SystemState :=
   { st with pendingIcacheMaintenance :=
-      joinIcacheMaintenance st.pendingIcacheMaintenance op }
+      recordIcacheMaintenanceList st.pendingIcacheMaintenance op }
 
 /-- **WS-SM SM7.D.1**: recording touches only the ledger — every other
 `SystemState` field frames (all `rfl`, the record-update shape), so it composes
@@ -1047,10 +1091,20 @@ onto any transition without disturbing a single other subsystem's invariant. -/
 /-- **WS-SM SM7.D.1**: recording an operand leaves the ledger non-empty — the
 runtime seam is guaranteed to find work when the model performed a
 broadcast. -/
-theorem recordIcacheMaintenance_isSome (st : SystemState)
+theorem recordIcacheMaintenance_ne_nil (st : SystemState)
     (op : ICacheInvalidation) :
-    (recordIcacheMaintenance st op).pendingIcacheMaintenance.isSome :=
-  joinIcacheMaintenance_isSome _ op
+    (recordIcacheMaintenance st op).pendingIcacheMaintenance ≠ [] :=
+  recordIcacheMaintenanceList_ne_nil _ op
+
+/-- **WS-SM SM7.D**: after recording, the ledger holds an entry that **covers**
+the recorded operand — so draining the ledger discharges every obligation the
+transition incurred, with no appeal to a (non-existent) ordering under which
+`iallu` would dominate a clean-to-PoU. -/
+theorem recordIcacheMaintenance_covered (st : SystemState)
+    (op : ICacheInvalidation) :
+    ∃ a ∈ (recordIcacheMaintenance st op).pendingIcacheMaintenance,
+      a.covers op = true :=
+  recordIcacheMaintenanceList_covered _ op
 
 /-- **WS-SM SM7.D.1** (the exactness property the closure rests on): recording
 into an **empty** ledger stores the operand verbatim.  Every live seam runs at
@@ -1058,20 +1112,20 @@ most one broadcast per transition against a ledger the runtime cleared on the
 previous syscall, so the runtime emits the model's *precise* operand — a
 targeted page invalidate for an executable unmap, and nothing at all for a
 non-executable one. -/
-@[simp] theorem recordIcacheMaintenance_of_none {st : SystemState}
-    (h : st.pendingIcacheMaintenance = none) (op : ICacheInvalidation) :
-    (recordIcacheMaintenance st op).pendingIcacheMaintenance = some op := by
+@[simp] theorem recordIcacheMaintenance_of_nil {st : SystemState}
+    (h : st.pendingIcacheMaintenance = []) (op : ICacheInvalidation) :
+    (recordIcacheMaintenance st op).pendingIcacheMaintenance = [op] := by
   simp [recordIcacheMaintenance, h]
 
 /-- **WS-SM SM7.D.1**: drain the emission ledger — the runtime seam's clear,
 performed in the *same* atomic step that commits the transition, so every state
 observed at a syscall boundary owes nothing. -/
 def clearIcacheMaintenance (st : SystemState) : SystemState :=
-  { st with pendingIcacheMaintenance := none }
+  { st with pendingIcacheMaintenance := [] }
 
 /-- **WS-SM SM7.D.1**: the drain leaves the ledger empty. -/
 @[simp] theorem clearIcacheMaintenance_pending (st : SystemState) :
-    (clearIcacheMaintenance st).pendingIcacheMaintenance = none := rfl
+    (clearIcacheMaintenance st).pendingIcacheMaintenance = [] := rfl
 
 /-- **WS-SM SM7.D.1**: the drain touches only the ledger — in particular it
 leaves `perCoreICache` (and hence the SM7.D.4 invariant) and every trace-visible
@@ -1548,5 +1602,205 @@ theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_preserves_perCore_memory_
       hq hConsist hObjK hAsidK hMappingsWF hMappingsSize hStep,
    vspaceUnmapPageWithShootdownAndIcacheBroadcast_preserves_icacheCoherent_perCore
       hCoherent hObjK hAsidK hMappingsWF hMappingsSize hStep⟩
+
+-- ============================================================================
+-- SM7.D — The user-facing code-publication path (`.vspaceUnifyInstruction`)
+-- ============================================================================
+
+/-- **WS-SM SM7.D**: the physical page a unify request names, if the caller's
+address space currently maps it.
+
+Deliberately **not** gated on execute permission.  The subject that must run
+the sequence is the one whose *stores* need publishing — a loader or JIT writes
+the code through a **writable** mapping and unifies it there, after which some
+(possibly other) subject maps the frame executable and runs it.  Requiring the
+mapping to already be executable would make the operation useless in exactly
+the case it exists for.  Authority is enforced at the syscall boundary instead
+(`.vspaceUnifyInstruction` requires the `.write` right — you may publish code
+you were able to write). -/
+def unifyTargetPaddr (st : SystemState) (asid : SeLe4n.ASID)
+    (vaddr : SeLe4n.VAddr) : Option SeLe4n.PAddr :=
+  (resolveAsidRoot st asid).bind fun rr =>
+    (VSpaceRoot.lookup rr.2 vaddr).map (fun lk => lk.1)
+
+/-- **WS-SM SM7.D**: a live mapping yields its physical page. -/
+theorem unifyTargetPaddr_of_mapped {st : SystemState} {asid : SeLe4n.ASID}
+    {vaddr : SeLe4n.VAddr} {rid : SeLe4n.ObjId} {root : VSpaceRoot}
+    {p : SeLe4n.PAddr} {perms : PagePermissions}
+    (hres : resolveAsidRoot st asid = some (rid, root))
+    (hlk : VSpaceRoot.lookup root vaddr = some (p, perms)) :
+    unifyTargetPaddr st asid vaddr = some p := by
+  simp [unifyTargetPaddr, hres, hlk]
+
+/-- **WS-SM SM7.D** (**the user-facing code-publication transition**): unify the
+instruction and data views of one mapped page.
+
+seLe4n's equivalent of seL4's `Page_Unify_Instruction`, and the mechanism by
+which user software discharges the obligation ARMv8-A places on it: after
+writing instructions through a data mapping (a program loader, a JIT), the
+stores sit in the data cache, while an instruction fetch reads at the Point of
+Unification — so without an explicit `DC CVAU` → `DSB` → `IC IVAU` → `DSB` →
+`ISB` over the region, the fetch may observe the *old* content, even on the very
+PE that performed the stores.
+
+The kernel cannot do this implicitly: it has no way to know when a writer has
+finished emitting code, and a JIT patching an already-mapped page never
+re-enters a mapping operation at all.  Hence an explicit operation, exactly as
+seL4 concluded.
+
+The maintenance is issued as a **domain-wide** operand
+(`icInvalidateBroadcast … icBroadcastReach`), because a remote PE may hold
+lines from a previous incarnation of the same physical page; and it is recorded
+in the emission ledger so the runtime emits the full unify sequence rather than
+a bare invalidate.  The page tables are not modified — this is a pure cache
+operation. -/
+def vspaceUnifyInstructionPage (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) :
+    Kernel Unit :=
+  fun st =>
+    match resolveAsidRoot st asid with
+    | none => .error .asidNotBound
+    | some (_, root) =>
+        match VSpaceRoot.lookup root vaddr with
+        | none => .error .translationFault
+        | some (paddr, _) =>
+            .ok ((), recordIcacheMaintenance
+              (icInvalidateBroadcast st icBroadcastReach (.unifyPage paddr))
+              (.unifyPage paddr))
+
+/-- **WS-SM SM7.D**: an unbound ASID is rejected — fail-closed, no maintenance
+emitted for an address space the caller does not have. -/
+theorem vspaceUnifyInstructionPage_asid_unbound (st : SystemState)
+    {asid : SeLe4n.ASID} (vaddr : SeLe4n.VAddr)
+    (h : resolveAsidRoot st asid = none) :
+    vspaceUnifyInstructionPage asid vaddr st = .error .asidNotBound := by
+  unfold vspaceUnifyInstructionPage; rw [h]
+
+/-- **WS-SM SM7.D**: an unmapped address is rejected — a subject cannot use the
+operation to probe or maintain memory it has no mapping for. -/
+theorem vspaceUnifyInstructionPage_unmapped {st : SystemState}
+    {asid : SeLe4n.ASID} {vaddr : SeLe4n.VAddr} {rid : SeLe4n.ObjId}
+    {root : VSpaceRoot}
+    (hres : resolveAsidRoot st asid = some (rid, root))
+    (hlk : VSpaceRoot.lookup root vaddr = none) :
+    vspaceUnifyInstructionPage asid vaddr st = .error .translationFault := by
+  unfold vspaceUnifyInstructionPage; simp only [hres, hlk]
+
+/-- **WS-SM SM7.D**: a successful unify commits the domain-wide maintenance for
+the mapped page and records it for the runtime. -/
+theorem vspaceUnifyInstructionPage_ok {st : SystemState} {asid : SeLe4n.ASID}
+    {vaddr : SeLe4n.VAddr} {rid : SeLe4n.ObjId} {root : VSpaceRoot}
+    {p : SeLe4n.PAddr} {perms : PagePermissions}
+    (hres : resolveAsidRoot st asid = some (rid, root))
+    (hlk : VSpaceRoot.lookup root vaddr = some (p, perms)) :
+    vspaceUnifyInstructionPage asid vaddr st =
+      .ok ((), recordIcacheMaintenance
+        (icInvalidateBroadcast st icBroadcastReach (.unifyPage p))
+        (.unifyPage p)) := by
+  unfold vspaceUnifyInstructionPage; simp only [hres, hlk]
+
+/-- **WS-SM SM7.D**: the transition modifies **no page table** — it is a pure
+cache operation, so it cannot be used to alter a mapping, and every VSpace
+invariant transports unchanged. -/
+theorem vspaceUnifyInstructionPage_frame {st st' : SystemState}
+    {asid : SeLe4n.ASID} {vaddr : SeLe4n.VAddr}
+    (h : vspaceUnifyInstructionPage asid vaddr st = .ok ((), st')) :
+    st'.objects = st.objects ∧ st'.asidTable = st.asidTable ∧
+    st'.scheduler = st.scheduler ∧ st'.machine = st.machine ∧
+    st'.tlb = st.tlb ∧ st'.tlbShootdown = st.tlbShootdown ∧
+    st'.perCoreTlb = st.perCoreTlb := by
+  cases hres : resolveAsidRoot st asid with
+  | none => rw [vspaceUnifyInstructionPage_asid_unbound st vaddr hres] at h; cases h
+  | some rr =>
+      obtain ⟨rid, root⟩ := rr
+      cases hlk : VSpaceRoot.lookup root vaddr with
+      | none => rw [vspaceUnifyInstructionPage_unmapped hres hlk] at h; cases h
+      | some lk =>
+          obtain ⟨p, pm⟩ := lk
+          rw [vspaceUnifyInstructionPage_ok hres hlk] at h
+          simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
+          subst h
+          exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+/-- **WS-SM SM7.D**: the unify records the *unify* operand — the runtime emits
+the full data-to-instruction sequence, not a bare invalidate, so the caller's
+stores are pushed to the Point of Unification before the instruction lines are
+dropped.  Recording a mere `ivauPage` here would silently lose the clean, which
+is the whole reason the operation exists. -/
+theorem vspaceUnifyInstructionPage_records_unify {st st' : SystemState}
+    {asid : SeLe4n.ASID} {vaddr : SeLe4n.VAddr} {rid : SeLe4n.ObjId}
+    {root : VSpaceRoot} {p : SeLe4n.PAddr} {perms : PagePermissions}
+    (hLedger : st.pendingIcacheMaintenance = [])
+    (hres : resolveAsidRoot st asid = some (rid, root))
+    (hlk : VSpaceRoot.lookup root vaddr = some (p, perms))
+    (h : vspaceUnifyInstructionPage asid vaddr st = .ok ((), st')) :
+    st'.pendingIcacheMaintenance = [ICacheInvalidation.unifyPage p] := by
+  rw [vspaceUnifyInstructionPage_ok hres hlk] at h
+  simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
+  subst h
+  exact recordIcacheMaintenance_of_nil hLedger _
+
+/-- **WS-SM SM7.D**: after the unify **no core** retains a line for the page —
+the domain-wide reach, on the user-facing path.  This is what makes freshly
+written code safe to execute on any PE, not just the writer's. -/
+theorem vspaceUnifyInstructionPage_invalidates_all_cores {st st' : SystemState}
+    {asid : SeLe4n.ASID} {vaddr : SeLe4n.VAddr} {rid : SeLe4n.ObjId}
+    {root : VSpaceRoot} {p : SeLe4n.PAddr} {perms : PagePermissions}
+    (hres : resolveAsidRoot st asid = some (rid, root))
+    (hlk : VSpaceRoot.lookup root vaddr = some (p, perms))
+    (h : vspaceUnifyInstructionPage asid vaddr st = .ok ((), st')) :
+    ∀ (c : CoreId) (l : ICacheLine), l.paddr = p →
+      l ∉ (icacheOnCore st' c).lines := by
+  rw [vspaceUnifyInstructionPage_ok hres hlk] at h
+  simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
+  subst h
+  intro c l hp hmem
+  exact icInvalidateBroadcast_reaches_all_cores st icBroadcastReach_cover
+    (.unifyPage p) c (icacheLineMatches_unifyPage hp) hmem
+
+/-- **WS-SM SM7.D**: the unify preserves the 14th `proofLayerInvariantBundle`
+conjunct — it only removes lines and touches no page table. -/
+theorem vspaceUnifyInstructionPage_preserves_icacheCoherent_perCore
+    {st st' : SystemState} {asid : SeLe4n.ASID} {vaddr : SeLe4n.VAddr}
+    (hCoherent : icacheCoherent_perCore st)
+    (h : vspaceUnifyInstructionPage asid vaddr st = .ok ((), st')) :
+    icacheCoherent_perCore st' := by
+  cases hres : resolveAsidRoot st asid with
+  | none => rw [vspaceUnifyInstructionPage_asid_unbound st vaddr hres] at h; cases h
+  | some rr =>
+      obtain ⟨rid, root⟩ := rr
+      cases hlk : VSpaceRoot.lookup root vaddr with
+      | none => rw [vspaceUnifyInstructionPage_unmapped hres hlk] at h; cases h
+      | some lk =>
+          obtain ⟨p, pm⟩ := lk
+          rw [vspaceUnifyInstructionPage_ok hres hlk] at h
+          simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
+          subst h
+          intro c l hl
+          exact icacheLineConsistent_of_frame rfl rfl
+            (icInvalidateBroadcast_preserves_icacheCoherent_perCore st
+              icBroadcastReach (.unifyPage p) hCoherent c l hl)
+
+/-- **WS-SM SM7.D**: the unify preserves the 13th conjunct too — it frames
+`perCoreTlb`, the page tables and the shootdown state. -/
+theorem vspaceUnifyInstructionPage_preserves_tlbInvalidationConsistent_perCore
+    {st st' : SystemState} {asid : SeLe4n.ASID} {vaddr : SeLe4n.VAddr}
+    (hConsist : tlbInvalidationConsistent_perCore st)
+    (h : vspaceUnifyInstructionPage asid vaddr st = .ok ((), st')) :
+    tlbInvalidationConsistent_perCore st' := by
+  cases hres : resolveAsidRoot st asid with
+  | none => rw [vspaceUnifyInstructionPage_asid_unbound st vaddr hres] at h; cases h
+  | some rr =>
+      obtain ⟨rid, root⟩ := rr
+      cases hlk : VSpaceRoot.lookup root vaddr with
+      | none => rw [vspaceUnifyInstructionPage_unmapped hres hlk] at h; cases h
+      | some lk =>
+          obtain ⟨p, pm⟩ := lk
+          rw [vspaceUnifyInstructionPage_ok hres hlk] at h
+          simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
+          subst h
+          exact fun c e he =>
+            tlbEntryOk_of_frame_eq rfl rfl rfl
+              (icInvalidateBroadcast_preserves_tlbInvalidationConsistent_perCore
+                st icBroadcastReach (.unifyPage p) hConsist c e he)
 
 end SeLe4n.Kernel.Architecture

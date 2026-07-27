@@ -1033,7 +1033,17 @@ run_check "INVARIANT" rg -n 'fn test_ic_invalidate_page_line_count' rust/sele4n-
 run_check "INVARIANT" rg -n '  pendingIcacheMaintenance :' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^def recordIcacheMaintenance' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
 run_check "INVARIANT" rg -n '^def clearIcacheMaintenance' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
-run_check "INVARIANT" rg -n 'theorem recordIcacheMaintenance_of_none' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n 'theorem recordIcacheMaintenance_of_nil' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n 'theorem recordIcacheMaintenance_covered' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+# SM7.D ledger soundness: `iallu` is NOT a top element (it issues no DC CVAU),
+# so the ledger is a list under a coverage preorder, never a lossy join.
+run_check "INVARIANT" rg -n '^def ICacheInvalidation.covers' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
+run_check "INVARIANT" rg -n '^theorem ICacheInvalidation.iallu_not_covers_unifyPage' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
+run_check "INVARIANT" rg -n '^theorem ICacheInvalidation.covers_trans' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
+run_check "INVARIANT" rg -n '^def recordIcacheMaintenanceList' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
+run_check "INVARIANT" rg -n '^theorem recordIcacheMaintenanceList_covered' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
+run_check "INVARIANT" rg -n '^theorem recordIcacheMaintenanceList_mem_of_mem' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
+run_check "INVARIANT" bash -c "! rg -q 'ICacheInvalidation.join' SeLe4n/Kernel/Architecture/CacheInvalidation.lean"
 run_check "INVARIANT" rg -n 'clearIcacheMaintenance st' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^theorem pendingIcacheMaintenance_write_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 # SM7.D.2 the data-side clean-to-PoU obligation + its tripwire.
@@ -1091,6 +1101,27 @@ run_check "INVARIANT" rg -n '^pub extern "C" fn cache_ic_maintenance' rust/sele4
 run_check "INVARIANT" rg -n '^def runSmpCacheMaintenanceChecks' tests/SmpCacheMaintenanceSuite.lean
 run_check "INVARIANT" rg -n '^run_check(_with_timeout)? "TRACE" lake exe smp_cache_maintenance_suite' scripts/test_tier2_negative.sh
 run_check "INVARIANT" rg -n '^name = "smp_cache_maintenance_suite"' lakefile.toml
+# SM7.D code-publication syscall `.vspaceUnifyInstruction` (unify point-of-unification):
+# the transition, its fail-closed arms, the reach theorem, the ABI mirrors, the
+# lock set, the information-flow enforcement entry, and the live dispatch arm.
+run_check "INVARIANT" rg -n '^def unifyTargetPaddr' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^def vspaceUnifyInstructionPage' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem vspaceUnifyInstructionPage_asid_unbound' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem vspaceUnifyInstructionPage_unmapped' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem vspaceUnifyInstructionPage_frame' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem vspaceUnifyInstructionPage_records_unify' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem vspaceUnifyInstructionPage_invalidates_all_cores' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem vspaceUnifyInstructionPage_preserves_icacheCoherent_perCore' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^  \| vspaceUnifyInstruction' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^def lockSet_vspaceUnifyInstruction' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_consistent_vspaceUnifyInstruction' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n 'vspaceUnifyInstructionPage' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_vspaceUnifyInstruction_delegates' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '    VspaceUnifyInstruction = 29,' rust/sele4n-types/src/syscall.rs
+run_check "INVARIANT" rg -n '    VspaceUnifyInstruction = 29,' rust/sele4n-hal/src/svc_dispatch.rs
+run_check "INVARIANT" rg -n 'fn vspace_unify_instruction_roundtrip' rust/sele4n-abi/tests/conformance.rs
+run_check "INVARIANT" rg -n '^pub fn unify_instruction_page_inner_shareable' rust/sele4n-hal/src/cache.rs
+run_check "INVARIANT" rg -n '^pub fn dc_cvau' rust/sele4n-hal/src/cache.rs
 
 # WS-SM SM7.F.4(b)(iii): shared initiator drain + the CSpaceAddr retype sibling.
 run_check "INVARIANT" rg -n '^def retypeInitiatorDrain' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean

@@ -2063,10 +2063,14 @@ def runWSJ1DecodeChecks : IO Unit := do
     (SeLe4n.Kernel.Architecture.RegisterDecode.validateRegBound ⟨31⟩ 32)
 
   -- J1-NEG-04: decodeSyscallId with value beyond modeled set → invalidSyscallNumber
-  -- WS-SM SM6.D / PR #822 Phase H: SyscallId now covers 0..28 (count=29, +mintReplyCap);
-  -- value 29 is the first invalid number.
-  expectErr "J1 decodeSyscallId invalid (29)"
+  -- WS-SM SM7.D: SyscallId now covers 0..29 (count=30, +vspaceUnifyInstruction,
+  -- on top of PR #822 Phase H's +mintReplyCap); value 30 is the first invalid
+  -- number.  29 is checked as the last VALID one, so the boundary is pinned
+  -- from both sides and a future off-by-one in `ofNat?` cannot pass silently.
+  let _ ← expectOkVal "J1 decodeSyscallId valid boundary (29 = vspaceUnifyInstruction)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨29⟩)
+  expectErr "J1 decodeSyscallId invalid (30)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨30⟩)
     .invalidSyscallNumber
 
   -- J1-NEG-05: decodeSyscallId with large invalid number → invalidSyscallNumber

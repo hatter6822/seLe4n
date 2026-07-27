@@ -188,7 +188,7 @@ private def emptyFrozenState : FrozenSystemState := {
     _root_.Vector.replicate SeLe4n.Kernel.Concurrency.numCores ICacheState.empty
   -- WS-SM SM7.D.1: the emission ledger is likewise required; it is always
   -- `none` at a syscall boundary.
-  pendingIcacheMaintenance := none
+  pendingIcacheMaintenance := []
 }
 
 private def mkFrozenState (objs : List (ObjId × FrozenKernelObject)) : FrozenSystemState :=

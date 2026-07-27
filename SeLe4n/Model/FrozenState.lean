@@ -448,7 +448,7 @@ structure FrozenSystemState where
       every state observed at a syscall boundary (and therefore every frozen
       snapshot) owes no maintenance. -/
   pendingIcacheMaintenance :
-      Option SeLe4n.Kernel.Architecture.ICacheInvalidation
+      List SeLe4n.Kernel.Architecture.ICacheInvalidation
 
 -- ============================================================================
 -- Q5-C: Freeze Functions

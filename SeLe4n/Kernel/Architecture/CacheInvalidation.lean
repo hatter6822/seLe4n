@@ -36,7 +36,8 @@ The op-tag/operand encoding **MUST** stay in lockstep with
 `rust/sele4n-hal/src/ffi.rs::cache_ic_maintenance` and
 `rust/sele4n-hal/src/cache.rs::decode_icache_invalidation`:
 
-  opTag : 0 = Iallu (invalidate all), 1 = IvauPage (invalidate one page)
+  opTag : 0 = Iallu (invalidate all), 1 = IvauPage (invalidate one page),
+          2 = UnifyPage (clean D-cache to PoU, then invalidate one page)
   paddr : page-aligned physical address (RES0 for Iallu)
 
 A future encoding change requires updating the Rust `match` arms, the encoders
@@ -108,33 +109,57 @@ inductive ICacheInvalidation where
   /-- Invalidate every instruction-cache line of the page based at `paddr`
       (expanded by the HAL into `icacheLinesPerPage` `IC IVAU` instructions). -/
   | ivauPage (paddr : SeLe4n.PAddr)
+  /-- **WS-SM SM7.D**: unify the instruction and data views of the page based at
+      `paddr` — the full ARMv8-A data-to-instruction sequence `DC CVAU` →
+      `DSB ISH` → `IC IVAU` → `DSB ISH` → `ISB`, over the whole page.
+
+      The *removal* semantics are `ivauPage`'s: the same lines disappear.  What
+      differs is the emitted sequence, which additionally pushes the page's
+      **stores** to the Point of Unification first — necessary when the memory
+      was just written (freshly loaded or JIT-generated code), because an
+      instruction fetch reads at PoU and would otherwise observe the old
+      content, even on the PE that performed the store.  (`TlbInvalidation`
+      likewise distinguishes `vae1` from `vale1`, which agree on which entries
+      they retire and differ only in the instruction emitted.)
+
+      This is the operand of the `.vspaceUnifyInstruction` syscall — seLe4n's
+      equivalent of seL4's `Page_Unify_Instruction`, and the mechanism by which
+      user software discharges the code-modification obligation ARMv8-A places
+      on it. -/
+  | unifyPage (paddr : SeLe4n.PAddr)
   deriving DecidableEq, Repr, Inhabited
 
 /-- **WS-SM SM7.D.1**: encode an `ICacheInvalidation` to its FFI op tag.
 `0 = Iallu`, `1 = IvauPage`; the operand is carried by
 `ICacheInvalidation.toPaddr` (`0` for the operand-free variant). -/
 @[inline] def ICacheInvalidation.toOpTag : ICacheInvalidation → UInt32
-  | .iallu      => 0
-  | .ivauPage _ => 1
+  | .iallu       => 0
+  | .ivauPage _  => 1
+  | .unifyPage _ => 2
 
 /-- **WS-SM SM7.D.1**: extract the physical-address operand, returning `0` for
 the operand-free `iallu`. -/
 @[inline] def ICacheInvalidation.toPaddr : ICacheInvalidation → UInt64
   | .iallu        => 0
   | .ivauPage p   => UInt64.ofNat p.toNat
+  | .unifyPage p  => UInt64.ofNat p.toNat
 
-/-- **WS-SM SM7.D.1**: `toOpTag` produces every value in `[0, 2)` — the
-bound the Rust dispatcher's two-arm match relies on. -/
+/-- **WS-SM SM7.D.1**: `toOpTag` produces every value in `[0, 3)` — the
+bound the Rust dispatcher's three-arm match relies on. -/
 theorem ICacheInvalidation.toOpTag_in_range (op : ICacheInvalidation) :
-    op.toOpTag.toNat < 2 := by
+    op.toOpTag.toNat < 3 := by
   cases op <;> simp [ICacheInvalidation.toOpTag]
 
 /-- **WS-SM SM7.D.1**: distinct constructors map to distinct op tags — the
 structural witness that the Rust match arms cover the enum without overlap. -/
 theorem ICacheInvalidation.toOpTag_distinct_constructors :
-    ICacheInvalidation.iallu.toOpTag ≠
-      (ICacheInvalidation.ivauPage (SeLe4n.PAddr.ofNat 0)).toOpTag := by
-  decide
+    (ICacheInvalidation.iallu.toOpTag ≠
+      (ICacheInvalidation.ivauPage (SeLe4n.PAddr.ofNat 0)).toOpTag) ∧
+    (ICacheInvalidation.iallu.toOpTag ≠
+      (ICacheInvalidation.unifyPage (SeLe4n.PAddr.ofNat 0)).toOpTag) ∧
+    ((ICacheInvalidation.ivauPage (SeLe4n.PAddr.ofNat 0)).toOpTag ≠
+      (ICacheInvalidation.unifyPage (SeLe4n.PAddr.ofNat 0)).toOpTag) := by
+  refine ⟨?_, ?_, ?_⟩ <;> decide
 
 /-- **WS-SM SM7.D.1**: `iallu` encodes to op tag 0. -/
 theorem ICacheInvalidation.iallu_opTag : ICacheInvalidation.iallu.toOpTag = 0 := rfl
@@ -148,68 +173,154 @@ theorem ICacheInvalidation.iallu_zero_operand :
 operand. -/
 theorem ICacheInvalidation.ivauPage_toPaddr (p : SeLe4n.PAddr) :
     (ICacheInvalidation.ivauPage p).toPaddr = UInt64.ofNat p.toNat := rfl
+/-- **WS-SM SM7.D**: `unifyPage` encodes to op tag 2. -/
+theorem ICacheInvalidation.unifyPage_opTag (p : SeLe4n.PAddr) :
+    (ICacheInvalidation.unifyPage p).toOpTag = 2 := rfl
+/-- **WS-SM SM7.D**: `unifyPage p` carries `p` as its physical-address
+operand. -/
+theorem ICacheInvalidation.unifyPage_toPaddr (p : SeLe4n.PAddr) :
+    (ICacheInvalidation.unifyPage p).toPaddr = UInt64.ofNat p.toNat := rfl
 
 -- ============================================================================
--- SM7.D.1 — The operand join (the pending-maintenance ledger's algebra)
+-- SM7.D.1 — The ledger's algebra: a *coverage* preorder, not a join
 -- ============================================================================
 
-/-- **WS-SM SM7.D.1**: the join of two maintenance operands — the weakest
-operand that is at least as strong as both.
+/-- **WS-SM SM7.D**: `a.covers b` — performing `a` discharges everything `b`
+would have discharged.
 
-`iallu` is the top element; two page operands join to themselves when equal and
-to `iallu` otherwise (the model has no multi-page operand, and collapsing to the
-full invalidate is the *sound* direction — over-invalidation costs re-fetches,
-under-invalidation is the hazard).  This is the same
-collapse-to-the-strongest-operand discipline as SM7.A's
-`enqueueShootdownOrCoalesce`, and it is what makes
-`SystemState.pendingIcacheMaintenance` a single `Option` with no capacity
-bound to thread. -/
-def ICacheInvalidation.join : ICacheInvalidation → ICacheInvalidation →
-    ICacheInvalidation
-  | .iallu, _ => .iallu
-  | _, .iallu => .iallu
-  | .ivauPage p, .ivauPage q => if p = q then .ivauPage p else .iallu
+This replaces the earlier single-operand *join*.  A join needs a top element,
+and the obvious candidate — `iallu` (`IC IALLUIS`, invalidate every instruction
+cache in the domain) — is **not** one: it invalidates instruction caches but
+performs no `DC CVAU`, so it does not discharge a `unifyPage`'s clean to the
+Point of Unification.  Collapsing `unifyPage p` into `iallu` would drop that
+clean and leave a freshly written instruction fetchable in its *old* form —
+an under-maintenance, the one direction that is unsafe.  Since there is also
+no single operand covering two distinct `unifyPage`s, the maintenance owed by a
+state is fundamentally a *list*, and this relation is only what lets the ledger
+drop an entry that a later one already subsumes.
 
-/-- **WS-SM SM7.D.1**: the join is idempotent. -/
-@[simp] theorem ICacheInvalidation.join_self (op : ICacheInvalidation) :
-    op.join op = op := by
-  cases op <;> simp [ICacheInvalidation.join]
+The relation is deliberately conservative: it holds only where the emitted
+instruction sequence provably does at least as much.
+- `iallu` covers `iallu` and any `ivauPage` (a domain-wide invalidate subsumes
+  a page invalidate) but **not** `unifyPage` (no clean).
+- `ivauPage p` covers only `ivauPage p`.
+- `unifyPage p` covers `unifyPage p` and `ivauPage p` (same lines invalidated,
+  plus the clean) but not `iallu` (narrower invalidation scope). -/
+def ICacheInvalidation.covers : ICacheInvalidation → ICacheInvalidation → Bool
+  | .iallu,       .iallu       => true
+  | .iallu,       .ivauPage _  => true
+  | .iallu,       .unifyPage _ => false
+  | .ivauPage p,  .ivauPage q  => p == q
+  | .ivauPage _,  .iallu       => false
+  | .ivauPage _,  .unifyPage _ => false
+  | .unifyPage p, .unifyPage q => p == q
+  | .unifyPage p, .ivauPage q  => p == q
+  | .unifyPage _, .iallu       => false
 
-/-- **WS-SM SM7.D.1**: `iallu` absorbs on the left. -/
-@[simp] theorem ICacheInvalidation.iallu_join (op : ICacheInvalidation) :
-    ICacheInvalidation.iallu.join op = .iallu := rfl
+/-- **WS-SM SM7.D**: coverage is reflexive — re-recording the same operand
+records nothing new. -/
+@[simp] theorem ICacheInvalidation.covers_refl (op : ICacheInvalidation) :
+    op.covers op = true := by
+  cases op <;> simp [ICacheInvalidation.covers]
 
-/-- **WS-SM SM7.D.1**: `iallu` absorbs on the right. -/
-@[simp] theorem ICacheInvalidation.join_iallu (op : ICacheInvalidation) :
-    op.join .iallu = .iallu := by
-  cases op <;> rfl
+/-- **WS-SM SM7.D**: `iallu` covers every *invalidation* operand. -/
+@[simp] theorem ICacheInvalidation.iallu_covers_ivauPage (p : SeLe4n.PAddr) :
+    ICacheInvalidation.iallu.covers (.ivauPage p) = true := rfl
 
-/-- **WS-SM SM7.D.1**: the join is commutative — the ledger's accumulation
-order is a convention, not a semantic choice. -/
-theorem ICacheInvalidation.join_comm (a b : ICacheInvalidation) :
-    a.join b = b.join a := by
-  cases a <;> cases b <;> simp only [ICacheInvalidation.join] <;>
-    split <;> rename_i h <;> simp_all [eq_comm]
+/-- **WS-SM SM7.D**: `unifyPage` covers the bare invalidate of the same page —
+the clean-then-invalidate sequence does strictly more. -/
+@[simp] theorem ICacheInvalidation.unifyPage_covers_ivauPage (p : SeLe4n.PAddr) :
+    (ICacheInvalidation.unifyPage p).covers (.ivauPage p) = true := by
+  simp [ICacheInvalidation.covers]
 
-/-- **WS-SM SM7.D.1**: accumulate one operand into the pending-maintenance
-ledger.  `none` (nothing owed yet) absorbs the operand; an existing entry joins
-with it. -/
-def joinIcacheMaintenance : Option ICacheInvalidation → ICacheInvalidation →
-    Option ICacheInvalidation
-  | none,   op => some op
-  | some a, op => some (a.join op)
+/-- **WS-SM SM7.D**: the defect this design exists to rule out — `iallu` does
+**not** cover a `unifyPage`.  `IC IALLUIS` invalidates instruction caches; it
+issues no `DC CVAU`, so a store still sitting in a data cache is not pushed to
+the Point of Unification and a later fetch reads the stale content.  Stated as
+a theorem so a future "simplification" that makes `iallu` a top element fails
+here rather than silently under-maintaining. -/
+theorem ICacheInvalidation.iallu_not_covers_unifyPage (p : SeLe4n.PAddr) :
+    ICacheInvalidation.iallu.covers (.unifyPage p) = false := rfl
 
-/-- **WS-SM SM7.D.1**: accumulating into an empty ledger records the operand
-exactly — the case every live seam hits (one broadcast per syscall), so the
-runtime emits the model's *precise* operand, not a collapsed one. -/
-@[simp] theorem joinIcacheMaintenance_none (op : ICacheInvalidation) :
-    joinIcacheMaintenance none op = some op := rfl
+/-- **WS-SM SM7.D**: distinct pages are incomparable — neither operand
+discharges the other, so the ledger must keep both. -/
+theorem ICacheInvalidation.ivauPage_not_covers_of_ne
+    {p q : SeLe4n.PAddr} (h : p ≠ q) :
+    (ICacheInvalidation.ivauPage p).covers (.ivauPage q) = false := by
+  simp [ICacheInvalidation.covers, h]
 
-/-- **WS-SM SM7.D.1**: the ledger is never emptied by accumulation — once a
-transition owes maintenance, the ledger holds an operand until the runtime
-drains it. -/
-theorem joinIcacheMaintenance_isSome (l : Option ICacheInvalidation)
-    (op : ICacheInvalidation) : (joinIcacheMaintenance l op).isSome := by
-  cases l <;> rfl
+/-- **WS-SM SM7.D**: coverage is transitive, so dropping a covered entry can
+never lose an obligation transitively. -/
+theorem ICacheInvalidation.covers_trans {a b c : ICacheInvalidation}
+    (hab : a.covers b = true) (hbc : b.covers c = true) : a.covers c = true := by
+  cases a <;> cases b <;> cases c <;>
+    simp_all [ICacheInvalidation.covers]
+
+/-- **WS-SM SM7.D**: accumulate one operand into the pending-maintenance
+ledger.
+
+The ledger is a **list**, appended in the order the transitions recorded, and
+drained wholesale by the runtime.  Nothing is ever collapsed away except an
+operand already *covered* by an entry the ledger holds — the only reduction
+that provably discharges the dropped obligation.  A transition that records
+maintenance therefore always leaves the ledger owing at least that operand
+(`recordIcacheMaintenanceList_covered`), whatever it already held. -/
+def recordIcacheMaintenanceList (ops : List ICacheInvalidation)
+    (op : ICacheInvalidation) : List ICacheInvalidation :=
+  if ops.any (fun a => a.covers op) then ops else ops ++ [op]
+
+/-- **WS-SM SM7.D**: recording into an empty ledger records the operand
+verbatim — the case every live seam hits (one maintenance-bearing transition
+per syscall, drained at the syscall boundary), so the runtime emits the model's
+*precise* operand. -/
+@[simp] theorem recordIcacheMaintenanceList_nil (op : ICacheInvalidation) :
+    recordIcacheMaintenanceList [] op = [op] := rfl
+
+/-- **WS-SM SM7.D**: the ledger is never emptied by accumulation. -/
+theorem recordIcacheMaintenanceList_ne_nil (ops : List ICacheInvalidation)
+    (op : ICacheInvalidation) : recordIcacheMaintenanceList ops op ≠ [] := by
+  unfold recordIcacheMaintenanceList
+  split
+  · rename_i h
+    intro hnil
+    simp [hnil] at h
+  · simp
+
+/-- **WS-SM SM7.D**: the exactness property the closure rests on — after
+recording `op`, the ledger holds an entry that covers `op`.  Draining the
+ledger therefore discharges every obligation any transition recorded, with no
+appeal to an ordering on operands. -/
+theorem recordIcacheMaintenanceList_covered (ops : List ICacheInvalidation)
+    (op : ICacheInvalidation) :
+    ∃ a ∈ recordIcacheMaintenanceList ops op, a.covers op = true := by
+  unfold recordIcacheMaintenanceList
+  split
+  · rename_i h
+    obtain ⟨a, ha, hcov⟩ := List.any_eq_true.mp h
+    exact ⟨a, ha, hcov⟩
+  · exact ⟨op, by simp, by simp⟩
+
+/-- **WS-SM SM7.D**: recording preserves every entry already owed — an earlier
+obligation is never dropped by a later record. -/
+theorem recordIcacheMaintenanceList_mem_of_mem {ops : List ICacheInvalidation}
+    {a : ICacheInvalidation} (op : ICacheInvalidation) (h : a ∈ ops) :
+    a ∈ recordIcacheMaintenanceList ops op := by
+  unfold recordIcacheMaintenanceList
+  split
+  · exact h
+  · exact List.mem_append_left _ h
+
+/-- **WS-SM SM7.D**: recording appends at most one entry.  Together with the
+per-syscall drain (`clearIcacheMaintenance`, applied in the same atomic step
+that commits the transition), this bounds the ledger at the number of
+maintenance-bearing transitions in one syscall — one — so no capacity
+invariant is needed. -/
+theorem recordIcacheMaintenanceList_length_le (ops : List ICacheInvalidation)
+    (op : ICacheInvalidation) :
+    (recordIcacheMaintenanceList ops op).length ≤ ops.length + 1 := by
+  unfold recordIcacheMaintenanceList
+  split
+  · omega
+  · simp
 
 end SeLe4n.Kernel.Architecture

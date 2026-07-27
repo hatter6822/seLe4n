@@ -952,28 +952,36 @@ structure SystemState where
       unsafe.  This field records exactly what the model broadcast, so the
       runtime emits exactly that.
 
-      **Algebra**: a join-semilattice with `iallu` as top
-      (`ICacheInvalidation.join`) — accumulating a second, different operand
-      collapses to the full invalidate, which is the sound direction.  Because
-      the join is total there is no capacity bound to thread, unlike
-      `tlbShootdown`'s queues (`pendingBounded`, the 12th conjunct); a single
-      `Option` suffices.
+      **Algebra**: a **list**, appended in record order and drained wholesale.
+      It is deliberately *not* a single operand under a join: a join needs a
+      top, and `iallu` (`IC IALLUIS`) is not one — it invalidates instruction
+      caches but issues no `DC CVAU`, so collapsing a `unifyPage` into it would
+      drop that operand's clean to the Point of Unification and leave a
+      freshly written instruction fetchable in its *old* form.  Nor is there a
+      single operand covering two distinct `unifyPage`s.  The only reduction
+      applied is dropping an operand already **covered** by an entry the ledger
+      holds (`ICacheInvalidation.covers`, a conservative preorder), so nothing
+      is ever lost (`recordIcacheMaintenanceList_covered`).
 
       **Lifecycle**: written only by `Architecture.withIcacheBroadcast` (the
-      combinator both live maintenance seams are built from) and cleared by the
-      runtime entry in the *same* atomic `modifyGetKernelState` step that
-      commits the transition — so every state observed at a syscall boundary
-      carries `none` (`syscallDispatchCrossCoreEntry` drains it, and
-      `default_pendingIcacheMaintenance` is the boot witness).  That is why it
-      needs no `proofLayerInvariantBundle` conjunct: it is a transient
-      emission record, not a durable kernel-state component.
+      combinator both live maintenance seams are built from) and by
+      `Architecture.vspaceUnifyInstructionPage`, and cleared by the runtime
+      entry in the *same* atomic `modifyGetKernelState` step that commits the
+      transition — so every state observed at a syscall boundary carries `[]`
+      (`syscallDispatchCrossCoreEntry` drains it, and
+      `default_pendingIcacheMaintenance` is the boot witness).  Each record
+      appends at most one entry (`recordIcacheMaintenanceList_length_le`) and a
+      syscall runs at most one maintenance-bearing transition, so the list is
+      bounded at one on the live path: it needs no capacity invariant and no
+      `proofLayerInvariantBundle` conjunct — it is a transient emission record,
+      not a durable kernel-state component.
 
       **Information flow**: like `perCoreICache` and `perCoreTlb`, deliberately
       **not** part of the IF projection surface — it names a cache operation, so
       projecting it would leak the same timing information the cache view does
       (`pendingIcacheMaintenance_write_preserves_projection`). -/
   pendingIcacheMaintenance :
-      Option SeLe4n.Kernel.Architecture.ICacheInvalidation := none
+      List SeLe4n.Kernel.Architecture.ICacheInvalidation := []
 
 /-- Abstract owner identity for a slot in this model: the containing CNode object id. -/
 abbrev CSpaceOwner := SeLe4n.ObjId
@@ -1043,7 +1051,7 @@ instance : Inhabited SystemState where
     perCoreICache := Vector.replicate numCores ICacheState.empty
     -- WS-SM SM7.D.1: nothing is owed to the instruction caches at boot.
     -- Explicit listing pins `default_pendingIcacheMaintenance`.
-    pendingIcacheMaintenance := none
+    pendingIcacheMaintenance := []
   }
 
 /-- X2-B/H-2: Checked domain schedule setter — validates that all entries have
@@ -1253,7 +1261,7 @@ theorem default_perCoreICache (c : CoreId) :
 maintenance is owed before the first transition runs.  The `none`-at-every-
 syscall-boundary property the runtime seam maintains starts here. -/
 @[simp] theorem default_pendingIcacheMaintenance :
-    (default : SystemState).pendingIcacheMaintenance = none := rfl
+    (default : SystemState).pendingIcacheMaintenance = [] := rfl
 
 -- ============================================================================
 -- WS-SM SM3.A audit-pass-5 — Non-vacuous lock-state invariant + preservation

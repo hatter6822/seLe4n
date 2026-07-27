@@ -638,6 +638,13 @@ def syscallRequiredRight : SyscallId → AccessRight
   | .lifecycleRetype => .retype
   | .vspaceMap       => .write
   | .vspaceUnmap     => .write
+  -- WS-SM SM7.D: publishing freshly-written code requires the **write** right
+  -- on the page's capability.  seL4's `Page_Unify_Instruction` needs only the
+  -- frame cap; requiring write is the least-privilege reading of the same
+  -- authority — the operation exists to push *the caller's own stores* to the
+  -- Point of Unification, so the subject that needs it is by construction one
+  -- that could write the page.  A read-only holder gains nothing by unifying.
+  | .vspaceUnifyInstruction => .write
   | .serviceRegister    => .write
   | .serviceRevoke      => .write
   | .serviceQuery       => .read
@@ -944,6 +951,25 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
             -- unmap owes nothing and is provably inert.
             Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast
               (determineExecutingCore st tid) args.asid args.vaddr st
+    | _ => fun _ => .error .invalidCapability
+  | .vspaceUnifyInstruction =>
+    some <| match cap.target with
+    | .object _ =>
+        -- WS-SM SM7.D: publish freshly-written code — seLe4n's equivalent of
+        -- seL4's `Page_Unify_Instruction`.  After a loader or JIT writes
+        -- instructions through a *data* mapping, the stores sit in the data
+        -- cache while an instruction fetch reads at the Point of Unification,
+        -- so without an explicit `DC CVAU` → `DSB` → `IC IVAU` → `DSB` → `ISB`
+        -- the fetch may observe the old content — even on the PE that wrote it.
+        -- The kernel cannot do this implicitly: it cannot know when a writer
+        -- has finished emitting code, and a JIT patching an already-mapped page
+        -- never re-enters a mapping operation at all.  The operand is recorded
+        -- domain-wide, because a remote PE may hold lines from a previous
+        -- incarnation of the same physical page.
+        fun st => match decodeVSpaceUnifyInstructionArgs decoded st.machine.maxASID with
+        | .error e => .error e
+        | .ok args =>
+            Architecture.vspaceUnifyInstructionPage args.asid args.vaddr st
     | _ => fun _ => .error .invalidCapability
   | .serviceRevoke =>
     some <| match cap.target with
@@ -2134,7 +2160,8 @@ theorem dispatchWithCap_wildcard_unreachable (sid : SyscallId) :
             .schedContextUnbind, .tcbSuspend, .tcbResume,
             .tcbSetPriority, .tcbSetMCPriority,
             .tcbSetIPCBuffer, .tcbSetAffinity,
-            .tcbBindNotification, .tcbUnbindNotification, .mintReplyCap] : List SyscallId) := by
+            .tcbBindNotification, .tcbUnbindNotification, .mintReplyCap,
+            .vspaceUnifyInstruction] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- AE1-D: Every `SyscallId` variant is handled by either `dispatchCapabilityOnly`
@@ -2153,7 +2180,8 @@ theorem dispatchWithCapChecked_wildcard_unreachable (sid : SyscallId) :
             .schedContextUnbind, .tcbSuspend, .tcbResume,
             .tcbSetPriority, .tcbSetMCPriority,
             .tcbSetIPCBuffer, .tcbSetAffinity,
-            .tcbBindNotification, .tcbUnbindNotification, .mintReplyCap] : List SyscallId) := by
+            .tcbBindNotification, .tcbUnbindNotification, .mintReplyCap,
+            .vspaceUnifyInstruction] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- WS-J1-C: Route decoded syscall arguments to the appropriate capability-gated
@@ -2467,6 +2495,30 @@ theorem dispatchWithCap_vspaceMap_delegates
             Architecture.vspaceMapPageCheckedWithShootdownFromStatePerCore
               (determineExecutingCore st tid) validatedArgs.asid
               validatedArgs.vaddr validatedArgs.paddr validatedArgs.perms st) := by
+  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
+
+/-- WS-SM SM7.D: When `.vspaceUnifyInstruction` dispatch succeeds,
+`vspaceUnifyInstructionPage` is invoked with the decoded ASID and vaddr.
+
+This is seLe4n's `Page_Unify_Instruction`: the mechanism by which user software
+discharges the code-modification obligation ARMv8-A places on it (an
+instruction fetch reads at the Point of Unification, so freshly written
+instructions must be cleaned there before they can be fetched).  It takes no
+executing core because it modifies no per-core scheduler or TLB state — the
+maintenance is issued domain-wide, since a remote PE may hold lines from a
+previous incarnation of the same physical page.  It modifies no page table
+(`vspaceUnifyInstructionPage_frame`), so its lock set takes the VSpaceRoot in
+**read** mode (`lockSet_vspaceUnifyInstruction`). -/
+theorem dispatchWithCap_vspaceUnifyInstruction_delegates
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
+    (cap : Capability) (objId : SeLe4n.ObjId)
+    (args : Architecture.SyscallArgDecode.VSpaceUnifyInstructionArgs)
+    (st : SystemState)
+    (hSyscall : decoded.syscallId = .vspaceUnifyInstruction)
+    (hTarget : cap.target = .object objId)
+    (hDecode : decodeVSpaceUnifyInstructionArgs decoded st.machine.maxASID = .ok args) :
+    dispatchWithCap decoded tid gate cap st =
+      Architecture.vspaceUnifyInstructionPage args.asid args.vaddr st := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 
 /-- WS-K-D/S6-A / WS-SM SM7.B.9 / SM7.F.4(b)(i) / SM7.D.1: When vspaceUnmap

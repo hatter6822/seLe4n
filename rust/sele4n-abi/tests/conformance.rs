@@ -455,7 +455,7 @@ fn message_info_exhaustive_bounds() {
 
 /// Verify SyscallId roundtrip for all variants (D6: +D1/D2/D3 TCB ops;
 /// WS-SM SM5.H.4: +TcbSetAffinity; SM6.B: +Tcb{Bind,Unbind}Notification;
-/// PR #822 Phase H: +MintReplyCap).
+/// PR #822 Phase H: +MintReplyCap; WS-SM SM7.D: +VspaceUnifyInstruction).
 #[test]
 fn syscall_id_exhaustive_roundtrip() {
     for i in 0..(SyscallId::COUNT as u64) {
@@ -980,12 +980,12 @@ fn kernel_error_variant_count() {
     );
 }
 
-/// W1-H / AA1 / D6: SyscallId variant count matches Lean (29 variants, 0-28;
+/// W1-H / AA1 / D6: SyscallId variant count matches Lean (30 variants, 0-29;
 /// WS-SM SM6.B added Tcb{Bind,Unbind}Notification at 26/27; PR #822 Phase H added
-/// MintReplyCap at 28).
+/// MintReplyCap at 28; WS-SM SM7.D added VspaceUnifyInstruction at 29).
 #[test]
 fn syscall_id_variant_count() {
-    const SYSCALL_COUNT: u64 = 29;
+    const SYSCALL_COUNT: u64 = 30;
     assert_eq!(SyscallId::COUNT, SYSCALL_COUNT as usize);
     for i in 0..SYSCALL_COUNT {
         assert!(
@@ -1124,11 +1124,12 @@ fn sched_context_boundary() {
     assert_eq!(SyscallId::from_u64(20).unwrap(), SyscallId::TcbSuspend);
 }
 
-/// AA1-B-5: COUNT is updated to 29 (PR #822 Phase H added MintReplyCap, on top of
-/// WS-SM SM6.B's Tcb{Bind,Unbind}Notification).
+/// AA1-B-5: COUNT is updated to 30 (WS-SM SM7.D added VspaceUnifyInstruction, on
+/// top of PR #822 Phase H's MintReplyCap and WS-SM SM6.B's
+/// Tcb{Bind,Unbind}Notification).
 #[test]
 fn syscall_count_updated() {
-    assert_eq!(SyscallId::COUNT, 29);
+    assert_eq!(SyscallId::COUNT, 30);
 }
 
 /// AA1-B-6: SchedContext syscalls require Write access (API.lean:381-383).
@@ -1386,13 +1387,29 @@ fn mint_reply_cap_roundtrip() {
     assert_eq!(sid.required_right(), AccessRight::Grant);
 }
 
-/// D6-D5: Boundary — discriminant 29 is out of range for SyscallId
-/// (PR #822 Phase H added mintReplyCap, moving the boundary from 27 to 28).
+/// WS-SM SM7.D: VspaceUnifyInstruction roundtrip (discriminant 29).
+///
+/// seLe4n's `Page_Unify_Instruction`: publishes freshly written code by cleaning
+/// the page's stores to the Point of Unification and dropping the corresponding
+/// instruction lines across the shareability domain.  Requires the **write**
+/// right — the least-privilege reading of seL4's frame-cap authority, since the
+/// operation exists to publish the caller's *own* stores (matches API.lean
+/// `syscallRequiredRight .vspaceUnifyInstruction = .write`).
+#[test]
+fn vspace_unify_instruction_roundtrip() {
+    let sid = SyscallId::from_u64(29).expect("VspaceUnifyInstruction must exist");
+    assert_eq!(sid, SyscallId::VspaceUnifyInstruction);
+    assert_eq!(sid.to_u64(), 29);
+    assert_eq!(sid.required_right(), AccessRight::Write);
+}
+
+/// D6-D5: Boundary — discriminant 30 is out of range for SyscallId
+/// (WS-SM SM7.D added vspaceUnifyInstruction, moving the boundary from 28 to 29).
 #[test]
 fn syscall_boundary() {
-    assert!(SyscallId::from_u64(28).is_some()); // Last valid
-    assert!(SyscallId::from_u64(29).is_none()); // First invalid
-    assert_eq!(SyscallId::COUNT, 29);
+    assert!(SyscallId::from_u64(29).is_some()); // Last valid
+    assert!(SyscallId::from_u64(30).is_none()); // First invalid
+    assert_eq!(SyscallId::COUNT, 30);
 }
 
 /// D6-D6: All TCB operations require Write access (API.lean:387-392).

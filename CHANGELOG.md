@@ -1,3 +1,103 @@
+## v0.32.96 — WS-SM SM7.D: `.vspaceUnifyInstruction` — the code-publication syscall (last residual closed)
+
+Closes the final SM7.D residual and, with it, SM7.D itself: a subject that
+**writes** instructions can now publish them.
+
+**The gap.**  v0.32.94/95 wired instruction-cache maintenance to the two paths
+that *destroy* an executable mapping (`.vspaceUnmap`, `.lifecycleRetype`) —
+they close the stale-line-survives-teardown hazard.  Nothing covered the dual:
+a userspace runtime (a JIT, a loader, a dynamic linker) writes code bytes
+through a **writable data** mapping and then executes them through an
+executable one.  Those stores land in the D-cache; the instruction fetch reads
+at the Point of Unification; and the I-cache may still hold whatever the frame
+held before.  With no syscall to bridge the two, such a subject had **no way**
+to make its own writes fetchable — it could only spin and hope, or provoke an
+unrelated unmap.  seL4 exposes exactly this operation as
+`seL4_ARM_Page_Unify_Instruction`; seLe4n had no equivalent.
+
+**What lands.**  `Architecture.vspaceUnifyInstructionPage asid vaddr` — a
+*pure cache* transition that changes no page table:
+
+- **Fail-closed authority.**  The ASID must be bound (`.asidNotBound`) and the
+  address must be mapped in that address space (`.translationFault`), so the
+  operation can only maintain memory the caller already has a translation for.
+  It is deliberately **not** gated on the mapping being executable: the whole
+  point is that the writer holds the *data* mapping.  The syscall requires the
+  `.write` right (`requiredRight .vspaceUnifyInstruction => .write`) — a
+  read-only VSpace capability is refused with `.illegalAuthority`.
+- **The right operand.**  It records `.unifyPage paddr`, a third
+  `ICacheInvalidation` constructor distinct from `.ivauPage`: the runtime must
+  clean the data side to PoU *before* invalidating the instruction side, and
+  collapsing the two would silently drop the clean.  `join` gives `.unifyPage`
+  dominance over `.ivauPage` on the same page (upgrading is sound;
+  downgrading is not), so an accumulated round never weakens a unify into a
+  bare invalidate.
+- **Machine-checked reach.**  `vspaceUnifyInstructionPage_invalidates_all_cores`
+  — after the transition no core retains a line for the page — plus
+  `_frame` (page tables, TLB, shootdown state and object store all untouched),
+  `_records_unify`, and preservation of both per-core memory conjuncts
+  (`icacheCoherent_perCore`, `tlbInvalidationConsistent_perCore`).
+
+**Live.**  `API.dispatchWithCap` gains the `.vspaceUnifyInstruction` arm
+(`dispatchWithCap_vspaceUnifyInstruction_delegates`), so the operand reaches
+`syscallDispatchCrossCoreEntry`'s ledger drain and the Rust
+`cache_ic_maintenance` seam like any other.  The HAL realises it as
+`unify_instruction_page_inner_shareable`: a 64-line `DC CVAU` loop → `DSB ISH`
+→ a 64-line `IC IVAU` loop → `DSB ISH` → `ISB` — the canonical ARMv8-A
+publication sequence, and the same one `kernelCodeWriteSites_owe_pou_clean`
+(v0.32.95) names as the obligation for the kernel's own code writes.
+
+**Ledger soundness correction (found while reviewing this cut).**  Adding
+`.unifyPage` exposed a defect in v0.32.95's single-operand *join*: `iallu` was
+treated as the lattice top, but `IC IALLUIS` invalidates instruction caches and
+issues **no** `DC CVAU`, so it does not discharge a `unifyPage`'s clean to the
+Point of Unification — `join (.unifyPage p) .iallu = .iallu` would have dropped
+that clean and left a freshly written instruction fetchable in its *old* form
+(under-maintenance, the unsafe direction).  Nor does any single operand cover
+two distinct `unifyPage`s, so no join over one operand can be sound once the
+constructor exists.  Not reachable at v0.32.95 (only one maintenance-bearing
+transition runs per syscall and `syscallDispatchCrossCoreEntry` drains the
+ledger in the same atomic step that commits, so every record started from an
+empty ledger and the binary join arms were dead), but a latent trap.
+
+Fixed by replacing the join with a **coverage preorder over a list**:
+`SystemState.pendingIcacheMaintenance : List ICacheInvalidation`, appended in
+record order and drained wholesale by `completeIcacheMaintenance`
+(`completeIcacheMaintenance_cons` pins that every entry is emitted).  The only
+reduction applied is dropping an operand a held entry provably **covers**
+(`ICacheInvalidation.covers`) — and `covers` is not an asserted table:
+`icacheLineMatches_of_covers` and `applyICacheInvalidation_subset_of_covers`
+ground it in the model's own effect, while
+`ICacheInvalidation.iallu_not_covers_unifyPage` states the exclusion as a
+theorem so a future "simplification" that restores `iallu` as a top fails at
+that line instead of silently under-maintaining.
+`recordIcacheMaintenanceList_covered` / `_mem_of_mem` are the no-loss
+properties, `_length_le` bounds each record at one entry — so with one
+maintenance-bearing transition per syscall the live ledger is a singleton and
+still needs no capacity invariant and no bundle conjunct.
+
+**ABI.**  `SyscallId.vspaceUnifyInstruction = 29`, count 29 → 30, threaded
+through the Lean encodings/`ofNat?`/`all`/`ToString`, the `sele4n-types` and
+`sele4n-hal` Rust mirrors (min inline args 2), ABI conformance (boundary 29
+valid / 30 invalid + a round-trip), the frozen-ops classifier, the argument
+decoder, the information-flow enforcement registry (`enforcementBoundaryExtended`
+37 → 38, capability-only 22 → 23), and the lock-set inventory: the new
+`lockSet_vspaceUnifyInstruction` takes the VSpaceRoot in **read** mode — it
+modifies no page table — with `lockSet_consistent_vspaceUnifyInstruction`
+(inventory 99 → 101, lockSet/consistency categories 29 → 30).
+
+Rust HAL 792 → 795 tests, clippy-clean.  `SmpCacheMaintenanceSuite` 72 → 93
+runtime assertions / 12 groups — §3.12 covers the encoding, the operand tag and
+coverage dominance, both fail-closed arms, the four-core success path on a real
+page-table-backed state, and live `dispatchSyscall` authority (write cap
+succeeds, read-only cap `.illegalAuthority`, no cap `.invalidCapability`);
+§3.10 gains the coverage preorder, its semantic grounding, and the two ledger
+cases that would previously have lost work (a pending unify survives a later
+`iallu`; two incomparable operands are both kept).
+The golden trace's `[XVAL-002]` line moves 29 → 30 variants (the fixture
+enumerates the syscall surface); everything else byte-identical.  Zero
+sorry/axiom; Tier 0–3 green.
+
 ## v0.32.95 — WS-SM SM7.D closure cut: exact runtime operand, page-granular emission, D→I obligation
 
 Closes both mechanical residuals the SM7.D landing recorded, and fixes a

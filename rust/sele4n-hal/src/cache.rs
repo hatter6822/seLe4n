@@ -241,13 +241,89 @@ pub fn ic_invalidate_all_inner_shareable() {
     barriers::isb();
 }
 
+/// **WS-SM SM7.D**: Clean by VA to Point of Unification (DC CVAU).
+///
+/// Writes the cache line containing `addr` back as far as the **Point of
+/// Unification** — the point at which the instruction and data views of memory
+/// converge.  This is the *data*-side half of publishing freshly written code:
+/// an instruction fetch reads at the PoU, so stores that are still only in the
+/// data cache are invisible to it, even on the PE that performed them.
+///
+/// Distinct from [`dc_cvac`], which cleans to the Point of *Coherency* (further
+/// out, for agents outside the PE's caches such as DMA masters).  Code
+/// publication needs PoU, not PoC.
+///
+/// **No barriers**: this is the loop body of
+/// [`unify_instruction_page_inner_shareable`], which issues the completing
+/// barriers once after the whole range.
+///
+/// ARM ARM C6.2.61: DC CVAU, Xt
+#[inline(always)]
+pub fn dc_cvau(addr: u64) {
+    #[cfg(target_arch = "aarch64")]
+    {
+        // SAFETY: DC CVAU writes dirty data back to the PoU without
+        // invalidating.  Safe for any valid address. (ARM ARM C6.2.61)
+        unsafe {
+            core::arch::asm!("dc cvau, {0}", in(reg) addr, options(nostack, preserves_flags));
+        }
+    }
+    let _ = addr;
+}
+
+/// **WS-SM SM7.D**: Unify the instruction and data views of one page, across the
+/// Inner Shareable domain.
+///
+/// The canonical ARMv8-A data-to-instruction pipeline, over a whole page:
+///
+/// ```text
+///   DC CVAU  (x ICACHE_LINES_PER_PAGE)   push the stores to the PoU
+///   DSB ISH                              ... and wait for them
+///   IC IVAU  (x ICACHE_LINES_PER_PAGE)   drop the stale instruction lines
+///   DSB ISH                              ... and wait for those
+///   ISB                                  re-synchronise the fetch stream
+/// ```
+///
+/// The barrier **between** the two loops is load-bearing and is why this is not
+/// simply `clean` followed by `ic_invalidate_page_inner_shareable`: the
+/// invalidations must not be observed before the cleans complete, or a PE could
+/// re-fill an instruction line from the pre-clean PoU content.  Modelled by
+/// `armv8DCacheToICacheSequence` (`TlbCacheComposition.lean`) and emitted for
+/// the `.vspaceUnifyInstruction` syscall — seLe4n's `Page_Unify_Instruction`.
+///
+/// `base` need not be page-aligned; the loops start at the containing page
+/// boundary.
+#[inline]
+pub fn unify_instruction_page_inner_shareable(base: u64) {
+    let aligned = base & !(PAGE_SIZE - 1);
+    let end = aligned.saturating_add(PAGE_SIZE);
+    // 1. Push the page's stores out to the Point of Unification.
+    let mut addr = aligned;
+    while addr < end {
+        dc_cvau(addr);
+        addr = addr.saturating_add(CACHE_LINE_SIZE);
+    }
+    // 2. Wait for them: the invalidations below must not be observed first.
+    barriers::dsb_ish();
+    // 3. Drop the stale instruction lines across the domain.
+    let mut addr = aligned;
+    while addr < end {
+        ic_ivau(addr);
+        addr = addr.saturating_add(CACHE_LINE_SIZE);
+    }
+    // 4. Complete the maintenance and re-synchronise the fetch stream.
+    barriers::dsb_ish();
+    barriers::isb();
+}
+
 /// **WS-SM SM7.D.1**: FFI op-tag discriminants for the typed instruction-cache
 /// maintenance operand.
 ///
 /// Kept in lockstep with the Lean `Architecture.ICacheInvalidation.toOpTag`
 /// (`SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean`):
 ///
-///   op_tag : 0 = Iallu (invalidate all), 1 = IvauPage (invalidate one page)
+///   op_tag : 0 = Iallu (invalidate all), 1 = IvauPage (invalidate one page),
+///            2 = UnifyPage (clean to PoU, then invalidate one page)
 ///   addr   : the page's virtual address operand (RES0 for Iallu)
 ///
 /// A future encoding change requires updating the Lean encoders, this enum,
@@ -260,6 +336,10 @@ pub enum ICacheInvalidation {
     /// virtual address (expanded into `ICACHE_LINES_PER_PAGE` `IC IVAU`
     /// instructions by `ic_invalidate_page_inner_shareable`).
     IvauPage(u64),
+    /// **WS-SM SM7.D**: unify the instruction and data views of the page holding
+    /// the given virtual address — the full `DC CVAU` → `DSB` → `IC IVAU` →
+    /// `DSB` → `ISB` sequence, for publishing freshly written code.
+    UnifyPage(u64),
 }
 
 /// **WS-SM SM7.D.1**: decode an FFI `(op_tag, addr)` pair into a typed
@@ -275,6 +355,7 @@ pub const fn decode_icache_invalidation(op_tag: u32, addr: u64) -> Option<ICache
     match op_tag {
         0 => Some(ICacheInvalidation::Iallu),
         1 => Some(ICacheInvalidation::IvauPage(addr)),
+        2 => Some(ICacheInvalidation::UnifyPage(addr)),
         _ => None,
     }
 }
@@ -286,6 +367,7 @@ pub fn apply_icache_invalidation(op: ICacheInvalidation) {
     match op {
         ICacheInvalidation::Iallu => ic_invalidate_all_inner_shareable(),
         ICacheInvalidation::IvauPage(addr) => ic_invalidate_page_inner_shareable(addr),
+        ICacheInvalidation::UnifyPage(addr) => unify_instruction_page_inner_shareable(addr),
     }
 }
 
@@ -582,21 +664,40 @@ mod tests {
     }
 
     #[test]
+    fn test_decode_icache_invalidation_unify_page() {
+        assert_eq!(
+            decode_icache_invalidation(2, 0x8000),
+            Some(ICacheInvalidation::UnifyPage(0x8000))
+        );
+    }
+
+    #[test]
     fn test_decode_icache_invalidation_rejects_unknown_tag() {
         // Fail-closed: an out-of-range tag decodes to None, and the FFI
         // wrapper panics rather than silently skipping the maintenance.
-        assert_eq!(decode_icache_invalidation(2, 0), None);
+        assert_eq!(decode_icache_invalidation(3, 0), None);
         assert_eq!(decode_icache_invalidation(u32::MAX, 0), None);
+    }
+
+    #[test]
+    fn test_dc_cvau_compiles() {
+        dc_cvau(0x1000);
+    }
+
+    #[test]
+    fn test_unify_instruction_page_compiles() {
+        unify_instruction_page_inner_shareable(0x1000);
+        unify_instruction_page_inner_shareable(0x1ABC);
     }
 
     #[test]
     fn test_decode_icache_invalidation_tag_range_is_exhaustive() {
         // Conformance with the Lean `ICacheInvalidation.toOpTag_in_range`
         // theorem: exactly the tags in [0, 2) decode.
-        for tag in 0u32..2 {
+        for tag in 0u32..3 {
             assert!(decode_icache_invalidation(tag, 0x1000).is_some());
         }
-        for tag in 2u32..16 {
+        for tag in 3u32..16 {
             assert!(decode_icache_invalidation(tag, 0x1000).is_none());
         }
     }
@@ -605,6 +706,7 @@ mod tests {
     fn test_apply_icache_invalidation_both_arms() {
         apply_icache_invalidation(ICacheInvalidation::Iallu);
         apply_icache_invalidation(ICacheInvalidation::IvauPage(0x2000));
+        apply_icache_invalidation(ICacheInvalidation::UnifyPage(0x3000));
     }
 
     // AN8-D (RUST-M07): memory_fence is a pure DSB ISH — verify it does
