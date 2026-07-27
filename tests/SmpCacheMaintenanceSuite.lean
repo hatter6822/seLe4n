@@ -924,6 +924,55 @@ private def runUnifyInstructionChecks : IO Unit := do
 --   distinction load-bearing rather than decorative.
 -- ----------------------------------------------------------------------------
 
+-- ----------------------------------------------------------------------------
+-- §3.14  PR #845 review (P2) — page alignment enforced at the mapping boundary.
+--
+--   The SM7.D operands name a *page*, and both HAL loops round their operand
+--   down to the containing page (`base & !(PAGE_SIZE - 1)`).  A mapping that
+--   carried an unaligned physical address would therefore make the model
+--   record maintenance against an address the machine never acts on.  The
+--   four checked wrappers rejected such a mapping, but `VSpaceRoot.mapPage`
+--   and the builder inserted straight into the mapping table and so bypassed
+--   them.  This group pins that the guard is now structural — at the
+--   constructor itself, where nothing can get around it.
+-- ----------------------------------------------------------------------------
+
+private def runMappingAlignmentChecks : IO Unit := do
+  IO.println "-- §3.14 PR #845 (P2) page alignment at the mapping boundary"
+  let emptyRoot : VSpaceRoot := { asid := asid5, mappings := default }
+  let alignedPa := SeLe4n.PAddr.ofNat 0x2000
+  let unalignedPa := SeLe4n.PAddr.ofNat 0x2001
+  -- The structural guard: the constructor itself refuses the unaligned PA.
+  assertBool "the constructor accepts a page-aligned physical address"
+    (emptyRoot.mapPage vaddrPage alignedPa permsExec |>.isSome)
+  assertBool "the constructor REFUSES an unaligned physical address"
+    (emptyRoot.mapPage vaddrPage unalignedPa permsExec |>.isNone)
+  -- Every offset inside a page is refused, not just the odd byte.
+  assertBool "every non-zero offset within a page is refused"
+    ([1, 63, 64, 0x800, 0xFFF].all fun off =>
+      (emptyRoot.mapPage vaddrPage (SeLe4n.PAddr.ofNat (0x2000 + off)) permsExec).isNone)
+  -- The transition surfaces the honest error code rather than the
+  -- `mappingConflict` the constructor's `none` would otherwise produce.
+  match vspaceMapPage asid5 vaddrPage unalignedPa permsExec (cacheState []) with
+  | .error e =>
+      assertBool "the transition reports `alignmentError`, not `mappingConflict`"
+        (e == SeLe4n.Model.KernelError.alignmentError)
+  | .ok _ => assertBool "an unaligned map must not succeed" false
+  -- ... and the aligned map still goes through, so the guard is not vacuous.
+  match vspaceMapPage asid5 vaddrPage alignedPa permsExec (cacheState []) with
+  | .error _ => assertBool "the aligned map still succeeds (guard not vacuous)" false
+  | .ok ((), stOk) =>
+      assertBool "the aligned map installs the translation"
+        (vspaceHasTranslation stOk asid5 vaddrPage)
+  -- The consequence that motivated the guard: any mapping the model holds now
+  -- yields a maintenance operand whose address the HAL will not round away.
+  match vspaceMapPageWithFlush asid5 vaddrPage alignedPa permsExec (cacheState []) with
+  | .error _ => assertBool "the scenario maps the page" false
+  | .ok ((), stMapped) =>
+      assertBool "the resulting operand names a page-aligned address"
+        ((Architecture.ICacheInvalidation.unifyPage alignedPa).toPaddr % 4096 == 0 &&
+         stMapped.perCoreICache.size == numCores)
+
 private def runRetypeCleanToPoUChecks : IO Unit := do
   IO.println "-- §3.13 SM7.D re-type clean-to-PoU (scrubbed-extent coverage)"
   -- The operand is derived from the pre-state object, so it matches the extent
@@ -1046,6 +1095,7 @@ def runSmpCacheMaintenanceChecks : IO Unit := do
   runCodeWriteObligationChecks
   runUnifyInstructionChecks
   runRetypeCleanToPoUChecks
+  runMappingAlignmentChecks
   IO.println "===================================================="
   IO.println "All SM7.D cache maintenance broadcast checks PASS."
 

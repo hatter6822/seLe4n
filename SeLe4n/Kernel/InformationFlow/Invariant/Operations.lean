@@ -867,9 +867,17 @@ theorem vspaceMapPage_preserves_projection
     simp only [hResolve] at hStep
     simp only [PagePermissions.default_wxCompliant, Bool.not_true] at hStep
     cases hMap : root.mapPage vaddr paddr default with
-    | none => simp [hMap] at hStep
+    | none =>
+      rw [hMap] at hStep
+      split at hStep
+      · simp at hStep
+      · split at hStep <;> simp at hStep
     | some root' =>
-      simp only [hMap] at hStep
+      -- PR #845 review (P2): a successful `mapPage` witnesses page alignment,
+      -- which discharges the guard the transition checks before delegating.
+      have hAligned : paddr.toNat % Architecture.pageBytes = 0 :=
+        SeLe4n.Model.VSpaceRoot.mapPage_pageAligned hMap
+      simp only [hMap, hAligned] at hStep
       have hHigh := hRootHigh rootId root hResolve
       exact storeObject_preserves_projection ctx observer st st' rootId _ hHigh hObjInv hStep
 

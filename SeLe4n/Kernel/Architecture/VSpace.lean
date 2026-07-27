@@ -100,6 +100,12 @@ def vspaceMapPage (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PA
     | none => .error .asidNotBound
     | some (rootId, root) =>
         if !perms.wxCompliant then .error .policyDenied
+        -- PR #845 review (P2): reject an unaligned physical address *here* so
+        -- the caller sees `.alignmentError` rather than the `.mappingConflict`
+        -- that `VSpaceRoot.mapPage`'s structural guard would otherwise surface.
+        -- The guard below it is the defense-in-depth layer, exactly as with
+        -- `wxCompliant`; this arm exists to keep the error code honest.
+        else if paddr.toNat % pageBytes != 0 then .error .alignmentError
         else
           match root.mapPage vaddr paddr perms with
           | none => .error .mappingConflict
@@ -412,7 +418,9 @@ theorem vspaceMapPage_tlbShootdown_eq (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr
     · cases hStep
     · split at hStep
       · cases hStep
-      · exact SeLe4n.Model.storeObject_tlbShootdown_eq _ _ _ _ hStep
+      · split at hStep
+        · cases hStep
+        · exact SeLe4n.Model.storeObject_tlbShootdown_eq _ _ _ _ hStep
 
 /-- WS-SM SM7.B: `vspaceUnmapPageWithFlush` frames the TLB-shootdown
 state — the flush composition adds only a `tlb` write. -/
@@ -540,7 +548,9 @@ theorem vspaceMapPage_perCoreTlb_eq (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
     · cases hStep
     · split at hStep
       · cases hStep
-      · exact SeLe4n.Model.storeObject_perCoreTlb_eq _ _ _ _ hStep
+      · split at hStep
+        · cases hStep
+        · exact SeLe4n.Model.storeObject_perCoreTlb_eq _ _ _ _ hStep
 
 /-- WS-SM SM7.F: `vspaceMapPageWithFlush` frames the per-core TLB views —
 the flush composition adds only a scalar `tlb` write, leaving every core's
@@ -573,7 +583,9 @@ theorem vspaceMapPage_perCoreICache_eq (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAdd
     · cases hStep
     · split at hStep
       · cases hStep
-      · exact SeLe4n.Model.storeObject_perCoreICache_eq _ _ _ _ hStep
+      · split at hStep
+        · cases hStep
+        · exact SeLe4n.Model.storeObject_perCoreICache_eq _ _ _ _ hStep
 
 /-- WS-SM SM7.D: `vspaceMapPageWithFlush` frames the per-core instruction
 caches. -/
@@ -716,12 +728,14 @@ theorem vspaceMapPage_tlb_eq
     rw [hRes] at hStep; simp at hStep
     split at hStep
     · simp at hStep
-    · cases hMap : root.mapPage vaddr paddr perms with
-      | none => rw [hMap] at hStep; simp at hStep
-      | some root' =>
-        rw [hMap] at hStep; simp at hStep
-        unfold storeObject at hStep; cases hStep
-        rfl
+    · split at hStep
+      · cases hMap : root.mapPage vaddr paddr perms with
+        | none => rw [hMap] at hStep; simp at hStep
+        | some root' =>
+          rw [hMap] at hStep; simp at hStep
+          unfold storeObject at hStep; cases hStep
+          rfl
+      · simp at hStep
 
 /-- AJ4-B: `vspaceUnmapPage` does not modify the TLB. -/
 theorem vspaceUnmapPage_tlb_eq
@@ -796,6 +810,8 @@ theorem vspaceMapPage_entry_consistent_frame
     split at hStep
     · simp at hStep
     · rename_i hWx
+      split at hStep
+      case isFalse hUnaligned => simp at hStep
       cases hMapPage : root₀.mapPage vaddr paddr perms with
       | none => rw [hMapPage] at hStep; simp at hStep
       | some root' =>
@@ -806,8 +822,10 @@ theorem vspaceMapPage_entry_consistent_frame
           split at hMapPage
           · simp at hMapPage  -- AK3-B: !perms.wxCompliant case
           · split at hMapPage
-            · simp at hMapPage  -- already-mapped case
-            · simp at hMapPage; subst hMapPage; exact hRootAsidEq
+            · simp at hMapPage  -- PR #845 review (P2): unaligned-paddr case
+            · split at hMapPage
+              · simp at hMapPage  -- already-mapped case
+              · simp at hMapPage; subst hMapPage; exact hRootAsidEq
         have hStoreObjSelf := storeObject_objects_eq st stMid rootId₀
           (KernelObject.vspaceRoot root') hObjK.1 hStep
         have hAsidInv : (match st.objects[rootId₀]? with
@@ -834,12 +852,14 @@ theorem vspaceMapPage_entry_consistent_frame
             split at hMapPage
             · simp at hMapPage  -- AK3-B: !perms.wxCompliant case
             · split at hMapPage
-              · simp at hMapPage
-              · simp at hMapPage; subst hMapPage
-                simp only [RHTable_getElem?_eq_get?]
-                exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _
-                  (by intro h; exact hVaddrNe (eq_of_beq h).symm)
-                  (hMappingsWF rootId₀ root₀ hObjRoot)
+              · simp at hMapPage  -- PR #845 review (P2): unaligned-paddr case
+              · split at hMapPage
+                · simp at hMapPage
+                · simp at hMapPage; subst hMapPage
+                  simp only [RHTable_getElem?_eq_get?]
+                  exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _
+                    (by intro h; exact hVaddrNe (eq_of_beq h).symm)
+                    (hMappingsWF rootId₀ root₀ hObjRoot)
           rw [hLookupFrame]
           exact hConsistPre rootId₀ root₀ hRes
         · -- Different ASID: prove resolveAsidRoot stMid = resolveAsidRoot st
@@ -1063,7 +1083,9 @@ theorem vspaceMapPage_resolveAsidRoot_isSome
     rw [hRes] at hStep; simp at hStep
     split at hStep
     · simp at hStep
-    · cases hMapPage : root₀.mapPage vaddr paddr perms with
+    · split at hStep
+      case isFalse hUnaligned => simp at hStep
+      cases hMapPage : root₀.mapPage vaddr paddr perms with
       | none => rw [hMapPage] at hStep; simp at hStep
       | some root' =>
         rw [hMapPage] at hStep; simp at hStep
@@ -1072,8 +1094,10 @@ theorem vspaceMapPage_resolveAsidRoot_isSome
           split at hMapPage
           · simp at hMapPage
           · split at hMapPage
-            · simp at hMapPage
-            · simp at hMapPage; subst hMapPage; exact hRootAsidEq
+            · simp at hMapPage  -- PR #845 review (P2): unaligned-paddr case
+            · split at hMapPage
+              · simp at hMapPage
+              · simp at hMapPage; subst hMapPage; exact hRootAsidEq
         have hStoreObjSelf := storeObject_objects_eq st stMid rootId₀
           (KernelObject.vspaceRoot root') hObjK.1 hStep
         have hAsidInv : (match st.objects[rootId₀]? with

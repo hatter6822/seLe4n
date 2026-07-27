@@ -249,9 +249,11 @@ private theorem VSpaceRoot.mapPage_mappings_insert
   unfold VSpaceRoot.mapPage at hMap
   split at hMap
   · simp at hMap  -- AK3-B: !perms.wxCompliant case
-  · cases hOld : root.mappings[vaddr]? with
-    | some _ => simp [hOld] at hMap
-    | none => simp [hOld] at hMap; cases hMap; rfl
+  · split at hMap
+    · simp at hMap  -- PR #845 review (P2): unaligned-paddr case
+    · cases hOld : root.mappings[vaddr]? with
+      | some _ => simp [hOld] at hMap
+      | none => simp [hOld] at hMap; cases hMap; rfl
 
 /-- After a successful `unmapPage`, the new root's mappings equal
     the old root's mappings with the target entry erased. -/
@@ -317,10 +319,19 @@ theorem vspaceMapPage_success_preserves_vspaceInvariantBundle
       by_cases hWx : perms.wxCompliant = true
       · simp only [hWx, Bool.not_true] at hStep
         cases hMapRoot : root.mapPage vaddr paddr perms with
-        | none => simp [hMapRoot] at hStep
+        | none =>
+            rw [hMapRoot] at hStep
+            split at hStep
+            · simp at hStep
+            · split at hStep <;> simp at hStep
         | some root' =>
+            -- PR #845 review (P2): a successful `mapPage` witnesses that the
+            -- physical address is page-aligned, which discharges the guard the
+            -- transition now checks before delegating.
+            have hAligned : paddr.toNat % pageBytes = 0 :=
+              VSpaceRoot.mapPage_pageAligned hMapRoot
             have hStore : storeObject rootId (.vspaceRoot root') st = .ok ((), st') := by
-              simpa [hMapRoot] using hStep
+              simpa [hMapRoot, hAligned] using hStep
             rcases resolveAsidRoot_some_implies_obj st asid rootId root hResolve with ⟨_, hObjRoot, hAsidRoot⟩
             have hObjEq : st'.objects[rootId]? = some (.vspaceRoot root') :=
               storeObject_objects_eq st st' rootId (.vspaceRoot root') hObjInv hStore
@@ -602,10 +613,19 @@ theorem vspaceLookup_after_map
       by_cases hWx : perms.wxCompliant = true
       · simp only [hWx, Bool.not_true] at hStep
         cases hMapRoot : root.mapPage vaddr paddr perms with
-        | none => simp [hMapRoot] at hStep
+        | none =>
+            rw [hMapRoot] at hStep
+            split at hStep
+            · simp at hStep
+            · split at hStep <;> simp at hStep
         | some root' =>
+            -- PR #845 review (P2): a successful `mapPage` witnesses that the
+            -- physical address is page-aligned, which discharges the guard the
+            -- transition now checks before delegating.
+            have hAligned : paddr.toNat % pageBytes = 0 :=
+              VSpaceRoot.mapPage_pageAligned hMapRoot
             have hStore : storeObject rootId (.vspaceRoot root') st = .ok ((), st') := by
-              simpa [hMapRoot] using hStep
+              simpa [hMapRoot, hAligned] using hStep
             rcases resolveAsidRoot_some_implies_obj st asid rootId root hResolve with ⟨_, hObjRoot, hAsidRoot⟩
             have hAsidPreserved : root'.asid = root.asid :=
               VSpaceRoot.mapPage_asid_eq root root' vaddr paddr perms hMapRoot
@@ -652,10 +672,19 @@ theorem vspaceLookup_map_other
       by_cases hWx : perms.wxCompliant = true
       · simp only [hWx, Bool.not_true] at hStep
         cases hMapRoot : root.mapPage vaddr paddr perms with
-        | none => simp [hMapRoot] at hStep
+        | none =>
+            rw [hMapRoot] at hStep
+            split at hStep
+            · simp at hStep
+            · split at hStep <;> simp at hStep
         | some root' =>
+            -- PR #845 review (P2): a successful `mapPage` witnesses that the
+            -- physical address is page-aligned, which discharges the guard the
+            -- transition now checks before delegating.
+            have hAligned : paddr.toNat % pageBytes = 0 :=
+              VSpaceRoot.mapPage_pageAligned hMapRoot
             have hStore : storeObject rootId (.vspaceRoot root') st = .ok ((), st') := by
-              simpa [hMapRoot] using hStep
+              simpa [hMapRoot, hAligned] using hStep
             rcases resolveAsidRoot_some_implies_obj st asid rootId root hResolve with ⟨_, hObjRoot, hAsidRoot⟩
             have hAsidPreserved : root'.asid = root.asid :=
               VSpaceRoot.mapPage_asid_eq root root' vaddr paddr perms hMapRoot
@@ -849,10 +878,19 @@ theorem vspaceLookupFull_after_map
       by_cases hWx : perms.wxCompliant = true
       · simp only [hWx, Bool.not_true] at hStep
         cases hMapRoot : root.mapPage vaddr paddr perms with
-        | none => simp [hMapRoot] at hStep
+        | none =>
+            rw [hMapRoot] at hStep
+            split at hStep
+            · simp at hStep
+            · split at hStep <;> simp at hStep
         | some root' =>
+            -- PR #845 review (P2): a successful `mapPage` witnesses that the
+            -- physical address is page-aligned, which discharges the guard the
+            -- transition now checks before delegating.
+            have hAligned : paddr.toNat % pageBytes = 0 :=
+              VSpaceRoot.mapPage_pageAligned hMapRoot
             have hStore : storeObject rootId (.vspaceRoot root') st = .ok ((), st') := by
-              simpa [hMapRoot] using hStep
+              simpa [hMapRoot, hAligned] using hStep
             rcases resolveAsidRoot_some_implies_obj st asid rootId root hResolve with ⟨_, hObjRoot, hAsidRoot⟩
             have hAsidPreserved : root'.asid = root.asid :=
               VSpaceRoot.mapPage_asid_eq root root' vaddr paddr perms hMapRoot
@@ -902,10 +940,19 @@ theorem vspaceMapPage_resolveAsidRoot_agreement
       by_cases hWx : perms.wxCompliant = true
       · simp only [hWx, Bool.not_true] at hStep
         cases hMapRoot : root.mapPage vaddr paddr perms with
-        | none => simp [hMapRoot] at hStep
+        | none =>
+            rw [hMapRoot] at hStep
+            split at hStep
+            · simp at hStep
+            · split at hStep <;> simp at hStep
         | some root' =>
+            -- PR #845 review (P2): a successful `mapPage` witnesses that the
+            -- physical address is page-aligned, which discharges the guard the
+            -- transition now checks before delegating.
+            have hAligned : paddr.toNat % pageBytes = 0 :=
+              VSpaceRoot.mapPage_pageAligned hMapRoot
             have hStore : storeObject rootId (.vspaceRoot root') st = .ok ((), st') := by
-              simpa [hMapRoot] using hStep
+              simpa [hMapRoot, hAligned] using hStep
             rcases resolveAsidRoot_some_implies_obj st asid rootId root hResolve with ⟨_, _, hAsidRoot⟩
             have hAsidPreserved : root'.asid = root.asid :=
               VSpaceRoot.mapPage_asid_eq root root' vaddr paddr perms hMapRoot

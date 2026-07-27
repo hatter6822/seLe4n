@@ -206,9 +206,27 @@ executable page into the VSpace root. -/
 def mapPage (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
     (perms : PagePermissions := PagePermissions.readOnly) : Option VSpaceRoot :=
   if !perms.wxCompliant then none
+  else if paddr.toNat % SeLe4n.pageBytes != 0 then none
   else match root.mappings[vaddr]? with
   | some _ => none
   | none => some { root with mappings := root.mappings.insert vaddr (paddr, perms) }
+
+/-- **PR #845 review (P2)**: every physical address installed by `mapPage` is
+page-aligned.  The structural counterpart to `mapPage_wxCompliant` — stated
+about the *stored* mapping, so it is the property downstream consumers (the
+SM7.D cache-maintenance operands, which the HAL rounds down to the containing
+page) actually need. -/
+theorem mapPage_pageAligned {root root' : VSpaceRoot} {vaddr : SeLe4n.VAddr}
+    {paddr : SeLe4n.PAddr} {perms : PagePermissions}
+    (hMap : root.mapPage vaddr paddr perms = some root') :
+    paddr.toNat % SeLe4n.pageBytes = 0 := by
+  unfold mapPage at hMap
+  split at hMap
+  · exact absurd hMap (by simp)
+  · split at hMap
+    · exact absurd hMap (by simp)
+    · rename_i hAligned
+      simpa using hAligned
 
 /-- WS-G6/F-P05: O(1) amortized page unmapping via `HashMap.erase`.
 Returns `none` if no mapping exists for `vaddr`. -/
@@ -303,14 +321,17 @@ theorem lookup_mapPage_eq
   split at hMap
   · -- AK3-B: !perms.wxCompliant case — none, contradiction
     simp at hMap
-  · cases hLookup : root.mappings[vaddr]? with
-    | some p => simp [hLookup] at hMap
-    | none =>
-        simp [hLookup] at hMap
-        cases hMap
-        simp only [lookup]
-        exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self
-          root.mappings vaddr (paddr, perms) hExt
+  · split at hMap
+    · -- PR #845 review (P2): unaligned paddr case — none, contradiction
+      simp at hMap
+    · cases hLookup : root.mappings[vaddr]? with
+      | some p => simp [hLookup] at hMap
+      | none =>
+          simp [hLookup] at hMap
+          cases hMap
+          simp only [lookup]
+          exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self
+            root.mappings vaddr (paddr, perms) hExt
 
 /-- WS-H11: After mapping vaddr→paddr with default perms, lookupAddr returns paddr.
 Requires `invExt` for RHTable correctness. -/
@@ -335,10 +356,12 @@ theorem mapPage_asid_eq
   unfold mapPage at hMap
   split at hMap
   · simp at hMap
-  · cases hLookup : root.mappings[vaddr]? with
-    | some _ => simp [hLookup] at hMap
-    | none =>
-        simp [hLookup] at hMap; cases hMap; rfl
+  · split at hMap
+    · simp at hMap
+    · cases hLookup : root.mappings[vaddr]? with
+      | some _ => simp [hLookup] at hMap
+      | none =>
+          simp [hLookup] at hMap; cases hMap; rfl
 
 /-- F-08 helper: `unmapPage` preserves the VSpace root ASID. -/
 theorem unmapPage_asid_eq
@@ -423,13 +446,15 @@ theorem lookup_mapPage_ne
   unfold mapPage at hMap
   split at hMap
   · simp at hMap
-  · cases hLookup : root.mappings[vaddr]? with
-    | some _ => simp [hLookup] at hMap
-    | none =>
-        simp [hLookup] at hMap; cases hMap
-        simp only [lookup]
-        exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne root.mappings vaddr vaddr'
-          (paddr, perms) (fun h => hNe (eq_of_beq h)) hExt
+  · split at hMap
+    · simp at hMap
+    · cases hLookup : root.mappings[vaddr]? with
+      | some _ => simp [hLookup] at hMap
+      | none =>
+          simp [hLookup] at hMap; cases hMap
+          simp only [lookup]
+          exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne root.mappings vaddr vaddr'
+            (paddr, perms) (fun h => hNe (eq_of_beq h)) hExt
 
 /-- TPI-001 helper: unmapPage at vaddr does not affect lookup of a different vaddr'.
 Maps to `RHTable.getElem?_erase_ne_K` with the inequality hypothesis.

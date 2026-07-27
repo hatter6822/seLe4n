@@ -66,8 +66,14 @@ namespace SeLe4n.Kernel.Architecture
 
 /-- **WS-SM SM7.D.1**: ARMv8-A 4 KiB translation granule, in bytes.  The unit
 the kernel's mappings — and hence the SM7.D maintenance operands — are
-expressed in. -/
-def pageBytes : Nat := 4096
+expressed in.
+
+Defined as `SeLe4n.pageBytes` rather than a second literal: the mapping
+constructors enforce page alignment against that constant (PR #845 review, P2),
+and the maintenance operands must be expressed in the *same* granule or the
+alignment they guarantee would not be the alignment this module assumes.
+Definitional, so every existing proof about `pageBytes` is unaffected. -/
+def pageBytes : Nat := SeLe4n.pageBytes
 
 /-- **WS-SM SM7.D.1**: Cortex-A76 instruction/data cache line size, in bytes
 (from `CTR_EL0`).  Pinned against `rust/sele4n-hal/src/cache.rs`'s

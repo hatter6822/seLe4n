@@ -919,6 +919,25 @@ end VAddr
     safely read/write message registers without crossing page boundaries. -/
 def ipcBufferAlignment : Nat := 512
 
+/-- ARMv8-A 4 KiB translation granule, in bytes — the unit every page mapping
+    is expressed in.
+
+    Lives here, below both `Model` and `Kernel.Architecture`, so the two layers
+    that must agree on it share one definition rather than a copy each:
+    `VSpaceRoot.mapPage` (which refuses to install a mapping whose physical
+    address is not a multiple of this) and `Kernel.Architecture.pageBytes`
+    (which the SM7.D cache-maintenance operands are expressed in) both read it.
+
+    **Why alignment is enforced structurally** (PR #845 review, P2): ARMv8
+    block/page descriptors carry only the aligned base, and both HAL cache
+    loops (`ic_invalidate_page_inner_shareable`,
+    `unify_instruction_page_inner_shareable`) round their operand *down* to the
+    containing page.  A mapping carrying an unaligned physical address would
+    therefore make the model record maintenance against an address the machine
+    never acts on.  An unaligned page mapping is meaningless on ARMv8, so the
+    constructors reject it rather than normalising it. -/
+def pageBytes : Nat := 4096
+
 /-- Physical-memory address in the abstract model.
 
     AN2-B.4 / H-13 (Theme 4.3): The `mk` constructor is `private`. External

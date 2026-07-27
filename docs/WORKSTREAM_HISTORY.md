@@ -285,6 +285,58 @@ does *not* discharge the obligation.  Rust HAL 795 → 798:
 and checks it covers every line of `[base, base+size)` for each allocation size
 and for a line-straddling base.  Trace byte-identical; zero sorry/axiom.
 
+### SM7.D (v0.32.102) — page alignment enforced at the mapping boundary (PR #845 review, Codex P2)
+
+The SM7.D operands name a *page*, and both HAL loops round their operand down
+to the containing page (`base & !(PAGE_SIZE - 1)`).  v0.32.98/99 added a
+page-alignment guard to the four *checked* map wrappers — but
+`VSpaceRoot.mapPage` and `Builder.mapPage` insert into the mapping table
+directly and so bypassed all four, and no VSpace invariant carried a
+physical-alignment clause.  A state assembled through either constructor could
+therefore hold an unaligned physical address, reach `.vspaceUnifyInstruction`
+or `.vspaceUnmap`, and make the model record maintenance against an address
+the machine never acts on.
+
+**Verified, and it is the project's own "enforce it structurally" case.**
+Neither constructor examined `paddr`, and both HAL routines round down.  The
+divergence is model-vs-hardware *fidelity* rather than under-maintenance —
+hardware invalidates a superset of what the model claims, so nothing is left
+stale — but "the physical address in a page mapping is page-aligned" was an
+implicit invariant maintained only by convention at the checked wrappers,
+which is precisely what the implement-the-improvement rule says to make
+structural rather than document.
+
+**The fix — one granule, three enforcement points.**  `SeLe4n.pageBytes`
+(`Prelude.lean`) is the single definition of the 4 KiB granule, placed below
+both layers that must agree on it; `Kernel.Architecture.pageBytes` now reads it
+rather than repeating the literal (definitional, so every existing proof is
+unaffected), with a Tier-3 anchor forbidding the literal's return.
+`VSpaceRoot.mapPage` rejects an unaligned physical address, mirroring the W^X
+defense-in-depth layer already present, and `mapPage_pageAligned` states the
+stored-mapping property downstream consumers need.  `Builder.mapPage` takes an
+`_hAligned` proof obligation exactly as it already takes `_hWxSafe`.
+`vspaceMapPage` rejects with `.alignmentError` before delegating, so the caller
+sees the honest error rather than the `mappingConflict` the constructor's
+`none` would surface.
+
+Rejecting rather than normalising is deliberate: an unaligned page mapping is
+meaningless on ARMv8, so there is nothing to preserve by accepting it.
+
+**Proof fan-out.**  The guard adds a branch to every proof that unfolds
+`VSpaceRoot.mapPage` or `vspaceMapPage` — 20 sites across `Structures.lean`,
+`VSpace.lean`, `VSpaceInvariant.lean`, `TlbShootdownProtocol.lean`, and
+`InformationFlow/Invariant/Operations.lean`.  Where a proof already had a
+successful `mapPage` in hand, `mapPage_pageAligned` discharges the guard
+directly rather than re-deriving it.
+
+Coverage: `SmpCacheMaintenanceSuite` §3.14 (6 assertions, 118 → 124 / 14
+groups) — the constructor accepts the aligned address and refuses the unaligned
+one, every non-zero offset within a page is refused, the transition reports
+`alignmentError` rather than `mappingConflict`, the aligned map still succeeds
+so the guard is not vacuous, and the resulting operand names an address the HAL
+will not round away.  Lean-only; Rust HAL untouched at 798.  Trace
+byte-identical; zero sorry/axiom.
+
 ### SM7.D (v0.32.101) — the clean and the scrub read one extent (PR #845 review, Codex P1)
 
 A follow-up review on `cb1481f` observed that the `.cleanRangeIallu` operand

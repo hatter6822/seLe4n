@@ -1102,6 +1102,24 @@ relative to the model.  The one thing still outstanding is the lifecycle
 layer's shared abstraction gap (deferred item 5 / AN4-G.3): the addresses are
 the model's allocation convention, not the allocator's.
 
+### SM7.D (v0.32.102) — page alignment at the mapping boundary (PR #845 review, Codex P2)
+
+v0.32.98/99 guarded the four *checked* map wrappers against an unaligned
+physical address, but `VSpaceRoot.mapPage` and `Builder.mapPage` insert into
+the mapping table directly and bypassed all four, and no VSpace invariant
+carried an alignment clause.  Since the SM7.D operands name a *page* and both
+HAL loops round down to the containing page, such a mapping would make the
+model record maintenance against an address the machine never acts on.
+
+Fidelity rather than under-maintenance (hardware invalidates a superset), but
+an implicit invariant held only by convention — so it is enforced structurally:
+one granule (`SeLe4n.pageBytes`, below both layers, with
+`Kernel.Architecture.pageBytes` reading it), a constructor-level rejection in
+`VSpaceRoot.mapPage` mirroring the existing W^X layer (+
+`mapPage_pageAligned`), an `_hAligned` proof obligation on `Builder.mapPage`
+mirroring `_hWxSafe`, and an `.alignmentError` arm in `vspaceMapPage` so the
+error code stays honest.  20 downstream proof sites gained the branch.
+
 ### SM7.D (v0.32.101) — the clean and the scrub read one extent (PR #845 review, Codex P1)
 
 A follow-up review on `cb1481f` observed that v0.32.100's `.cleanRangeIallu`
