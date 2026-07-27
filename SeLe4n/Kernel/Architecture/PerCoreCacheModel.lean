@@ -8,6 +8,10 @@
 -/
 
 import SeLe4n.Kernel.Architecture.CacheModel
+-- WS-SM SM7.D.2: the AN9-A.2 data-to-instruction barrier sequence, which the
+-- kernel code-write sites' clean-to-PoU obligation is stated against.
+import SeLe4n.Kernel.Architecture.TlbCacheComposition
+import SeLe4n.Kernel.Architecture.CacheInvalidation
 import SeLe4n.Kernel.Architecture.PerCoreTlbModel
 
 /-!
@@ -96,81 +100,16 @@ open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency
 
 -- ============================================================================
--- SM7.D.1 — The typed I-cache maintenance operand
--- ============================================================================
-
-/-- **WS-SM SM7.D.1**: typed instruction-cache maintenance selector, mirroring
-`TlbInvalidation`'s design (SM1.E.4) for the instruction side.
-
-* `iallu`      — `IC IALLU{IS}`: invalidate the entire instruction cache to
-  the Point of Unification.  No operand.
-* `ivau paddr` — `IC IVAU`: invalidate the line containing the address, to
-  the Point of Unification.  ARMv8-A instruction caches behave as PIPT to
-  software (ARM ARM D7.2), so the operand that decides *which* line is hit is
-  the **physical** address; the instruction itself takes a VA, and the
-  hardware translates it.
-
-The *reach* of an operation — this PE only, or every PE in the shareability
-domain — is **not** part of the operand: it is the difference between
-`icInvalidateOnCore` and `icInvalidateBroadcast`, exactly as SM1.E separates
-`TlbInvalidation` from the `SharingDomain`-tagged dispatcher. -/
-inductive ICacheInvalidation where
-  /-- `IC IALLU{IS}` — invalidate every instruction-cache line. -/
-  | iallu
-  /-- `IC IVAU` — invalidate the line holding the given physical address. -/
-  | ivau (paddr : SeLe4n.PAddr)
-  deriving DecidableEq, Repr, Inhabited
-
-/-- **WS-SM SM7.D.1**: encode an `ICacheInvalidation` to its FFI op tag.
-`0 = IALLU`, `1 = IVAU`; the operand is carried by
-`ICacheInvalidation.toPaddr` (`0` for the operand-free variant).  Kept in
-lockstep with `rust/sele4n-hal/src/ffi.rs::ffi_ic_maintenance`. -/
-@[inline] def ICacheInvalidation.toOpTag : ICacheInvalidation → UInt32
-  | .iallu  => 0
-  | .ivau _ => 1
-
-/-- **WS-SM SM7.D.1**: extract the physical-address operand, returning `0` for
-the operand-free `iallu`. -/
-@[inline] def ICacheInvalidation.toPaddr : ICacheInvalidation → UInt64
-  | .iallu    => 0
-  | .ivau p   => UInt64.ofNat p.toNat
-
-/-- **WS-SM SM7.D.1**: `toOpTag` produces every value in `[0, 2)` — the
-bound the Rust dispatcher's two-arm match relies on. -/
-theorem ICacheInvalidation.toOpTag_in_range (op : ICacheInvalidation) :
-    op.toOpTag.toNat < 2 := by
-  cases op <;> simp [ICacheInvalidation.toOpTag]
-
-/-- **WS-SM SM7.D.1**: distinct constructors map to distinct op tags — the
-structural witness that the Rust match arms cover the enum without overlap. -/
-theorem ICacheInvalidation.toOpTag_distinct_constructors :
-    ICacheInvalidation.iallu.toOpTag ≠
-      (ICacheInvalidation.ivau (SeLe4n.PAddr.ofNat 0)).toOpTag := by
-  decide
-
-/-- **WS-SM SM7.D.1**: `iallu` encodes to op tag 0. -/
-theorem ICacheInvalidation.iallu_opTag : ICacheInvalidation.iallu.toOpTag = 0 := rfl
-/-- **WS-SM SM7.D.1**: `ivau` encodes to op tag 1. -/
-theorem ICacheInvalidation.ivau_opTag (p : SeLe4n.PAddr) :
-    (ICacheInvalidation.ivau p).toOpTag = 1 := rfl
-/-- **WS-SM SM7.D.1**: `iallu` carries a zero operand. -/
-theorem ICacheInvalidation.iallu_zero_operand :
-    ICacheInvalidation.iallu.toPaddr = 0 := rfl
-/-- **WS-SM SM7.D.1**: `ivau p` carries `p` as its physical-address operand. -/
-theorem ICacheInvalidation.ivau_toPaddr (p : SeLe4n.PAddr) :
-    (ICacheInvalidation.ivau p).toPaddr = UInt64.ofNat p.toNat := rfl
-
--- ============================================================================
 -- SM7.D.1 — The invalidation effect on one core's view
 -- ============================================================================
 
 /-- **WS-SM SM7.D.1**: does the operand cover this cached line?  The
-hardware's comparison: `iallu` covers everything; `ivau p` covers exactly the
+hardware's comparison: `iallu` covers everything; `ivauPage p` covers exactly the
 lines tagged with the physical address `p` (PIPT identity). -/
 def icacheLineMatches (op : ICacheInvalidation) (l : ICacheLine) : Bool :=
   match op with
   | .iallu  => true
-  | .ivau p => p == l.paddr
+  | .ivauPage p => p == l.paddr
 
 /-- **WS-SM SM7.D.1**: the effect of retiring one maintenance operand on one
 core's instruction-cache view — every covered line is removed, nothing is
@@ -226,22 +165,22 @@ theorem applyICacheInvalidation_iallu (ic : ICacheState) :
     (applyICacheInvalidation ic .iallu).lines = [] := by
   simp [applyICacheInvalidation, icacheLineMatches]
 
-/-- **WS-SM SM7.D.1**: `ivau p` covers exactly the lines tagged `p`. -/
-theorem icacheLineMatches_ivau {p : SeLe4n.PAddr} {l : ICacheLine}
-    (h : l.paddr = p) : icacheLineMatches (.ivau p) l = true := by
+/-- **WS-SM SM7.D.1**: `ivauPage p` covers exactly the lines tagged `p`. -/
+theorem icacheLineMatches_ivauPage {p : SeLe4n.PAddr} {l : ICacheLine}
+    (h : l.paddr = p) : icacheLineMatches (.ivauPage p) l = true := by
   simp [icacheLineMatches, h]
 
 /-- **WS-SM SM7.D.1**: `iallu` covers every line. -/
 theorem icacheLineMatches_iallu (l : ICacheLine) :
     icacheLineMatches .iallu l = true := rfl
 
-/-- **WS-SM SM7.D.1**: a surviving line is *not* tagged with the `ivau`
+/-- **WS-SM SM7.D.1**: a surviving line is *not* tagged with the `ivauPage`
 operand — the contrapositive form the preservation proofs consume. -/
 theorem applyICacheInvalidation_survivor_paddr_ne {p : SeLe4n.PAddr}
     {ic : ICacheState} {l : ICacheLine}
-    (h : l ∈ (applyICacheInvalidation ic (.ivau p)).lines) : l.paddr ≠ p := by
+    (h : l ∈ (applyICacheInvalidation ic (.ivauPage p)).lines) : l.paddr ≠ p := by
   intro hEq
-  exact absurd h (applyICacheInvalidation_removes (icacheLineMatches_ivau hEq) ic)
+  exact absurd h (applyICacheInvalidation_removes (icacheLineMatches_ivauPage hEq) ic)
 
 -- ============================================================================
 -- SM7.D.1 — Per-core instruction-cache view accessors (SM4.B path-a)
@@ -446,7 +385,7 @@ theorem icBroadcastViews_get (op : ICacheInvalidation) (reach : List CoreId) :
             setIcacheViewOnCore_get_ne _ hct]
 
 /-- **WS-SM SM7.D.1**: the broadcast maintenance step on the kernel state —
-`IC IALLUIS` (for `iallu`) or `IC IVAU` (for `ivau`), retiring the operand on
+`IC IALLUIS` (for `iallu`) or `IC IVAU` (for `ivauPage`), retiring the operand on
 every core in `reach`.  Touches only `perCoreICache`. -/
 def icInvalidateBroadcast (st : SystemState) (reach : List CoreId)
     (op : ICacheInvalidation) : SystemState :=
@@ -678,6 +617,80 @@ theorem icInvalidateOnCore_remote_line_survives (st : SystemState)
     (hmem : l ∈ (icacheOnCore st c').lines) (op : ICacheInvalidation) :
     l ∈ (icacheOnCore (icInvalidateOnCore st c op) c').lines := by
   rw [icInvalidateOnCore_icacheOnCore_ne st op h]; exact hmem
+
+-- ============================================================================
+-- SM7.D.2 — The data-side dual: kernel-written memory that may be executed
+-- ============================================================================
+
+/-- **WS-SM SM7.D.2**: the kernel operations that *write* memory a subject may
+later execute, and therefore owe a clean to the **Point of Unification** before
+that memory can be fetched as instructions.
+
+Instruction fetches read at the PoU; a store lands in the data cache.  Until a
+`DC CVAU` pushes the store to the PoU, an instruction fetch of the same address
+may observe the *old* content — even on the very PE that performed the store,
+and regardless of any I-cache invalidation.  Two kernel paths write such
+memory:
+
+* `retypeScrub` — `scrubObjectMemory` zeroes the target's backing memory as
+  part of a re-type, so a subject that later maps the frame executable must not
+  fetch the previous owner's instructions from a stale PoU copy.  (seL4's
+  `clearMemory` does exactly this: `memzero` followed by
+  `cleanCacheRange_PoU`.)
+* `bootImageLoad` — the boot pipeline materialises the initial task's objects,
+  including its code, before the first fetch.
+
+This enumeration exists so the obligation is a *checked* object rather than a
+comment: `kernelCodeWriteSites_owe_pou_clean` states it, and
+`kernelCodeWriteSites_complete` is the tripwire that fails if a site is added
+without an entry. -/
+inductive KernelCodeWriteSite where
+  /-- `scrubObjectMemory` during a re-type. -/
+  | retypeScrub
+  /-- Object/code materialisation during boot. -/
+  | bootImageLoad
+  deriving DecidableEq, Repr, Inhabited
+
+/-- **WS-SM SM7.D.2**: the enumeration of kernel code-write sites. -/
+def kernelCodeWriteSites : List KernelCodeWriteSite :=
+  [.retypeScrub, .bootImageLoad]
+
+/-- **WS-SM SM7.D.2** (the tripwire): every constructor is listed.  Adding a
+site to `KernelCodeWriteSite` without listing it breaks this `decide`, which is
+the reminder that the new path owes the clean-to-PoU step below. -/
+theorem kernelCodeWriteSites_complete (s : KernelCodeWriteSite) :
+    s ∈ kernelCodeWriteSites := by
+  cases s <;> decide
+
+/-- **WS-SM SM7.D.2**: the barrier sequence a kernel code-write site owes
+before the written memory may be fetched as instructions — the canonical
+ARMv8-A data-to-instruction pipeline `DC CVAU → DSB ISH → IC IVAU → DSB ISH →
+ISB`, already modelled as `armv8DCacheToICacheSequence`
+(`TlbCacheComposition.lean`, AN9-A.2).
+
+SM7.D lands the **ordering obligation**, not the range emission.  The emission
+needs each written object's *physical extent*, and the model does not yet carry
+one: only `UntypedObject` has `regionBase` / `regionSize`, while a re-typed
+object is identified by `ObjId` alone.  Giving kernel objects PA extents (from
+the owning untyped's region plus the re-type offset) is an object-model change
+scoped to SM9.E hardware bring-up, which is also the first point at which the
+memory is physically backed and the omission could bite.  Until then this
+theorem is the registered obligation, `kernelCodeWriteSites_complete` is its
+tripwire, and the instruction-side half — which *is* expressible today, because
+mappings carry page addresses — is live (SM7.D.1). -/
+def kernelCodeWriteOwesPoUClean (_site : KernelCodeWriteSite) : Prop :=
+  armv8DCacheToICacheSequence.covers CacheBarrierKind.dsb_ish ∧
+  armv8DCacheToICacheSequence.covers CacheBarrierKind.isb
+
+/-- **WS-SM SM7.D.2**: every kernel code-write site owes the full
+data-to-instruction barrier sequence.  Discharged from the AN9-A.2 coverage
+theorem — the point is not the proof but the *statement*: the obligation is now
+a named object every site is quantified over. -/
+theorem kernelCodeWriteSites_owe_pou_clean :
+    ∀ s ∈ kernelCodeWriteSites, kernelCodeWriteOwesPoUClean s := by
+  intro s _
+  exact ⟨armv8DCacheToICacheSequence_covers_required.2.1,
+         armv8DCacheToICacheSequence_covers_required.2.2⟩
 
 -- ============================================================================
 -- SM7.D.3 — Modelled coherent agents (the DMA scope boundary, as a tripwire)
@@ -984,6 +997,109 @@ theorem icInvalidateBroadcast_preserves_perCore_memory_invariants
 -- SM7.D.1 — Live wiring: the instruction-cache broadcast combinator
 -- ============================================================================
 
+/-- **WS-SM SM7.D.1**: record one owed maintenance operand in the emission
+ledger (`SystemState.pendingIcacheMaintenance`).
+
+The model applies the operand to `perCoreICache` immediately — that is what
+makes the SM7.D.4 invariant hold in the committed state — while the *hardware*
+emission necessarily happens later, at the runtime seam, once the transition has
+been committed.  This ledger is the bridge: it carries the exact operand the
+model used across that gap, so the seam emits precisely it rather than the
+strongest operand it could justify from the shootdown diff.
+
+Accumulation is the total join (`joinIcacheMaintenance`), so a transition that
+somehow owed two different operands would collapse to the full invalidate — the
+sound direction — with no capacity bound to thread.  Every live seam owes at
+most one, so in practice the ledger holds the model's exact operand. -/
+def recordIcacheMaintenance (st : SystemState) (op : ICacheInvalidation) :
+    SystemState :=
+  { st with pendingIcacheMaintenance :=
+      joinIcacheMaintenance st.pendingIcacheMaintenance op }
+
+/-- **WS-SM SM7.D.1**: recording touches only the ledger — every other
+`SystemState` field frames (all `rfl`, the record-update shape), so it composes
+onto any transition without disturbing a single other subsystem's invariant. -/
+@[simp] theorem recordIcacheMaintenance_objects (st : SystemState)
+    (op : ICacheInvalidation) :
+    (recordIcacheMaintenance st op).objects = st.objects := rfl
+@[simp] theorem recordIcacheMaintenance_asidTable (st : SystemState)
+    (op : ICacheInvalidation) :
+    (recordIcacheMaintenance st op).asidTable = st.asidTable := rfl
+@[simp] theorem recordIcacheMaintenance_scheduler (st : SystemState)
+    (op : ICacheInvalidation) :
+    (recordIcacheMaintenance st op).scheduler = st.scheduler := rfl
+@[simp] theorem recordIcacheMaintenance_machine (st : SystemState)
+    (op : ICacheInvalidation) :
+    (recordIcacheMaintenance st op).machine = st.machine := rfl
+@[simp] theorem recordIcacheMaintenance_tlb (st : SystemState)
+    (op : ICacheInvalidation) :
+    (recordIcacheMaintenance st op).tlb = st.tlb := rfl
+@[simp] theorem recordIcacheMaintenance_tlbShootdown (st : SystemState)
+    (op : ICacheInvalidation) :
+    (recordIcacheMaintenance st op).tlbShootdown = st.tlbShootdown := rfl
+@[simp] theorem recordIcacheMaintenance_perCoreTlb (st : SystemState)
+    (op : ICacheInvalidation) :
+    (recordIcacheMaintenance st op).perCoreTlb = st.perCoreTlb := rfl
+@[simp] theorem recordIcacheMaintenance_perCoreICache (st : SystemState)
+    (op : ICacheInvalidation) :
+    (recordIcacheMaintenance st op).perCoreICache = st.perCoreICache := rfl
+
+/-- **WS-SM SM7.D.1**: recording an operand leaves the ledger non-empty — the
+runtime seam is guaranteed to find work when the model performed a
+broadcast. -/
+theorem recordIcacheMaintenance_isSome (st : SystemState)
+    (op : ICacheInvalidation) :
+    (recordIcacheMaintenance st op).pendingIcacheMaintenance.isSome :=
+  joinIcacheMaintenance_isSome _ op
+
+/-- **WS-SM SM7.D.1** (the exactness property the closure rests on): recording
+into an **empty** ledger stores the operand verbatim.  Every live seam runs at
+most one broadcast per transition against a ledger the runtime cleared on the
+previous syscall, so the runtime emits the model's *precise* operand — a
+targeted page invalidate for an executable unmap, and nothing at all for a
+non-executable one. -/
+@[simp] theorem recordIcacheMaintenance_of_none {st : SystemState}
+    (h : st.pendingIcacheMaintenance = none) (op : ICacheInvalidation) :
+    (recordIcacheMaintenance st op).pendingIcacheMaintenance = some op := by
+  simp [recordIcacheMaintenance, h]
+
+/-- **WS-SM SM7.D.1**: drain the emission ledger — the runtime seam's clear,
+performed in the *same* atomic step that commits the transition, so every state
+observed at a syscall boundary owes nothing. -/
+def clearIcacheMaintenance (st : SystemState) : SystemState :=
+  { st with pendingIcacheMaintenance := none }
+
+/-- **WS-SM SM7.D.1**: the drain leaves the ledger empty. -/
+@[simp] theorem clearIcacheMaintenance_pending (st : SystemState) :
+    (clearIcacheMaintenance st).pendingIcacheMaintenance = none := rfl
+
+/-- **WS-SM SM7.D.1**: the drain touches only the ledger — in particular it
+leaves `perCoreICache` (and hence the SM7.D.4 invariant) and every trace-visible
+field untouched, which is what makes the runtime clear trace-safe. -/
+theorem clearIcacheMaintenance_frame (st : SystemState) :
+    (clearIcacheMaintenance st).objects = st.objects ∧
+    (clearIcacheMaintenance st).asidTable = st.asidTable ∧
+    (clearIcacheMaintenance st).scheduler = st.scheduler ∧
+    (clearIcacheMaintenance st).machine = st.machine ∧
+    (clearIcacheMaintenance st).tlb = st.tlb ∧
+    (clearIcacheMaintenance st).tlbShootdown = st.tlbShootdown ∧
+    (clearIcacheMaintenance st).perCoreTlb = st.perCoreTlb ∧
+    (clearIcacheMaintenance st).perCoreICache = st.perCoreICache :=
+  ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+/-- **WS-SM SM7.D.1**: the drain preserves the 14th conjunct — it removes no
+line and changes no page table. -/
+theorem clearIcacheMaintenance_preserves_icacheCoherent_perCore
+    (st : SystemState) (h : icacheCoherent_perCore st) :
+    icacheCoherent_perCore (clearIcacheMaintenance st) :=
+  fun c l hl => icacheLineConsistent_of_frame rfl rfl (h c l hl)
+
+/-- **WS-SM SM7.D.1**: the drain preserves the 13th conjunct too. -/
+theorem clearIcacheMaintenance_preserves_tlbInvalidationConsistent_perCore
+    (st : SystemState) (h : tlbInvalidationConsistent_perCore st) :
+    tlbInvalidationConsistent_perCore (clearIcacheMaintenance st) :=
+  fun c e he => tlbEntryOk_of_frame_eq rfl rfl rfl (h c e he)
+
 /-- **WS-SM SM7.D.1**: run a kernel transition and, on success, broadcast the
 instruction-cache maintenance the transition owes.
 
@@ -1007,7 +1123,9 @@ def withIcacheBroadcast (mkOp : SystemState → Option ICacheInvalidation)
     | .ok ((), st') =>
         match op? with
         | none => .ok ((), st')
-        | some op => .ok ((), icInvalidateBroadcast st' icBroadcastReach op)
+        | some op =>
+            .ok ((), recordIcacheMaintenance
+              (icInvalidateBroadcast st' icBroadcastReach op) op)
 
 /-- **WS-SM SM7.D.1**: the wrapper is error-transparent — it fails exactly
 when the wrapped transition fails, with the same error. -/
@@ -1039,7 +1157,8 @@ theorem withIcacheBroadcast_some_ok
     {st st' : SystemState} {op : ICacheInvalidation}
     (hOp : mkOp st = some op) (hk : k st = .ok ((), st')) :
     withIcacheBroadcast mkOp k st =
-      .ok ((), icInvalidateBroadcast st' icBroadcastReach op) := by
+      .ok ((), recordIcacheMaintenance
+        (icInvalidateBroadcast st' icBroadcastReach op) op) := by
   unfold withIcacheBroadcast
   rw [hOp, hk]
 
@@ -1096,7 +1215,7 @@ physical address, and flushing the whole domain's instruction caches on every
 unmap would be a large, avoidable cost. -/
 def unmapIcacheOperand (st : SystemState) (asid : SeLe4n.ASID)
     (vaddr : SeLe4n.VAddr) : Option ICacheInvalidation :=
-  (unmapExecutablePaddr st asid vaddr).map ICacheInvalidation.ivau
+  (unmapExecutablePaddr st asid vaddr).map ICacheInvalidation.ivauPage
 
 /-- **WS-SM SM7.D.1**: an executable pre-state mapping *does* produce an
 operand — the completeness direction (the kernel never silently skips the
@@ -1126,11 +1245,11 @@ theorem unmapExecutablePaddr_eq_some {st : SystemState} {asid : SeLe4n.ASID}
     exact ⟨rr.1, rr.2, lk.2, by simpa using hres, by simpa using hlk, hx⟩
   · rw [if_neg hx] at hif; cases hif
 
-/-- **WS-SM SM7.D.1**: `unmapIcacheOperand` produces `some (.ivau p)` exactly
+/-- **WS-SM SM7.D.1**: `unmapIcacheOperand` produces `some (.ivauPage p)` exactly
 when `unmapExecutablePaddr` produces `some p`. -/
 theorem unmapIcacheOperand_eq_some_iff (st : SystemState) (asid : SeLe4n.ASID)
     (vaddr : SeLe4n.VAddr) (p : SeLe4n.PAddr) :
-    unmapIcacheOperand st asid vaddr = some (.ivau p) ↔
+    unmapIcacheOperand st asid vaddr = some (.ivauPage p) ↔
       unmapExecutablePaddr st asid vaddr = some p := by
   unfold unmapIcacheOperand
   cases unmapExecutablePaddr st asid vaddr <;> simp
@@ -1332,7 +1451,7 @@ theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_preserves_icacheCoherent_
               simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
               subst hStep
               -- The operand is always a targeted `IC IVAU`.
-              obtain ⟨p, hp⟩ : ∃ p, op = .ivau p := by
+              obtain ⟨p, hp⟩ : ∃ p, op = .ivauPage p := by
                 unfold unmapIcacheOperand at hOp
                 cases hE : unmapExecutablePaddr st asid vaddr with
                 | none => rw [hE] at hOp; cases hOp
@@ -1341,6 +1460,13 @@ theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_preserves_icacheCoherent_
               have hpEq : unmapExecutablePaddr st asid vaddr = some p :=
                 (unmapIcacheOperand_eq_some_iff st asid vaddr p).mp hOp
               intro c l hl
+              -- The ledger record frames every core's view, so a surviving line
+              -- is one the broadcast itself left standing.
+              rw [show icacheOnCore (recordIcacheMaintenance
+                  (icInvalidateBroadcast stP icBroadcastReach (.ivauPage p))
+                  (.ivauPage p)) c
+                = icacheOnCore (icInvalidateBroadcast stP icBroadcastReach
+                    (.ivauPage p)) c from rfl] at hl
               have hlP : l ∈ (icacheOnCore stP c).lines :=
                 icInvalidateBroadcast_subset stP icBroadcastReach _ hl
               have hNe : l.paddr ≠ p := by

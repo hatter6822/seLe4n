@@ -14,6 +14,11 @@ import SeLe4n.Kernel.SchedContext.ReplenishQueue
 import SeLe4n.Kernel.Service.Interface
 import SeLe4n.Kernel.RobinHood.Set
 import SeLe4n.Kernel.Architecture.TlbShootdown
+-- WS-SM SM7.D.1: the pure instruction-cache maintenance operand — the payload
+-- of the `pendingIcacheMaintenance` emission ledger mounted below.  Extracted
+-- for exactly the reason `TlbInvalidation` was (SM7.A): a state-layer field
+-- must not pull the architecture layer's import closure.
+import SeLe4n.Kernel.Architecture.CacheInvalidation
 
 namespace SeLe4n.Model
 
@@ -930,6 +935,45 @@ structure SystemState where
       (`perCoreICache_write_preserves_projection`). -/
   perCoreICache : Vector ICacheState numCores :=
     Vector.replicate numCores ICacheState.empty
+  /-- WS-SM SM7.D.1: the instruction-cache maintenance the in-flight transition
+      owes the hardware but has not yet emitted — the **emission ledger**.
+
+      **Why it exists.**  Kernel transitions are pure state functions; every
+      hardware effect is emitted at the runtime seam
+      (`SyscallDispatchEntry.syscallDispatchCrossCoreEntry`), which recovers its
+      work from the `(pre, post)` state diff.  The TLB round is recoverable that
+      way because it *posts descriptors* into `tlbShootdown`; the
+      instruction-cache maintenance had no such record, so the seam previously
+      had to key on the shootdown diff and emit the strongest operand
+      (`IC IALLUIS`) for **every** unmap — including the common non-executable
+      one, which owes nothing.  Reconstructing the precise operand from the
+      round's encoded `.vae1` instead would need an `ASID`/`VAddr` round-trip
+      whose failure mode is **under**-invalidation, the one direction that is
+      unsafe.  This field records exactly what the model broadcast, so the
+      runtime emits exactly that.
+
+      **Algebra**: a join-semilattice with `iallu` as top
+      (`ICacheInvalidation.join`) — accumulating a second, different operand
+      collapses to the full invalidate, which is the sound direction.  Because
+      the join is total there is no capacity bound to thread, unlike
+      `tlbShootdown`'s queues (`pendingBounded`, the 12th conjunct); a single
+      `Option` suffices.
+
+      **Lifecycle**: written only by `Architecture.withIcacheBroadcast` (the
+      combinator both live maintenance seams are built from) and cleared by the
+      runtime entry in the *same* atomic `modifyGetKernelState` step that
+      commits the transition — so every state observed at a syscall boundary
+      carries `none` (`syscallDispatchCrossCoreEntry` drains it, and
+      `default_pendingIcacheMaintenance` is the boot witness).  That is why it
+      needs no `proofLayerInvariantBundle` conjunct: it is a transient
+      emission record, not a durable kernel-state component.
+
+      **Information flow**: like `perCoreICache` and `perCoreTlb`, deliberately
+      **not** part of the IF projection surface — it names a cache operation, so
+      projecting it would leak the same timing information the cache view does
+      (`pendingIcacheMaintenance_write_preserves_projection`). -/
+  pendingIcacheMaintenance :
+      Option SeLe4n.Kernel.Architecture.ICacheInvalidation := none
 
 /-- Abstract owner identity for a slot in this model: the containing CNode object id. -/
 abbrev CSpaceOwner := SeLe4n.ObjId
@@ -997,6 +1041,9 @@ instance : Inhabited SystemState where
     -- held at boot).  Explicit listing pins the default-state invariant so
     -- `default_perCoreICache` discharges via `PerCoreVector.replicate_get`.
     perCoreICache := Vector.replicate numCores ICacheState.empty
+    -- WS-SM SM7.D.1: nothing is owed to the instruction caches at boot.
+    -- Explicit listing pins `default_pendingIcacheMaintenance`.
+    pendingIcacheMaintenance := none
   }
 
 /-- X2-B/H-2: Checked domain schedule setter — validates that all entries have
@@ -1201,6 +1248,12 @@ general bridge `bootFromPlatform_perCoreICache_eq`. -/
 theorem default_perCoreICache (c : CoreId) :
     (default : SystemState).perCoreICache.get c = ICacheState.empty :=
   PerCoreVector.replicate_get _ _ c
+
+/-- WS-SM SM7.D.1: at boot the instruction-cache emission ledger is empty — no
+maintenance is owed before the first transition runs.  The `none`-at-every-
+syscall-boundary property the runtime seam maintains starts here. -/
+@[simp] theorem default_pendingIcacheMaintenance :
+    (default : SystemState).pendingIcacheMaintenance = none := rfl
 
 -- ============================================================================
 -- WS-SM SM3.A audit-pass-5 — Non-vacuous lock-state invariant + preservation
@@ -2203,6 +2256,18 @@ theorem storeObject_perCoreICache_eq
     (pair : Unit × SystemState)
     (hStore : storeObject id obj st = .ok pair) :
     pair.2.perCoreICache = st.perCoreICache := by
+  unfold storeObject at hStore; cases hStore; rfl
+
+/-- WS-SM SM7.D.1: `storeObject` frames the instruction-cache emission ledger —
+only `Architecture.withIcacheBroadcast` writes it, so a page-table or object
+store never silently owes (or silently discharges) maintenance. -/
+theorem storeObject_pendingIcacheMaintenance_eq
+    (st : SystemState)
+    (id : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (pair : Unit × SystemState)
+    (hStore : storeObject id obj st = .ok pair) :
+    pair.2.pendingIcacheMaintenance = st.pendingIcacheMaintenance := by
   unfold storeObject at hStore; cases hStore; rfl
 
 theorem storeObject_objects_eq

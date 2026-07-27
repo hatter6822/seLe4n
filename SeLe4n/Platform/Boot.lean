@@ -335,6 +335,13 @@ theorem applyMachineConfig_perCoreICache_eq (ist : IntermediateState)
     (config : MachineConfig) :
     (applyMachineConfig ist config).state.perCoreICache = ist.state.perCoreICache := rfl
 
+/-- WS-SM SM7.D.1: `applyMachineConfig` preserves the instruction-cache
+emission ledger. -/
+theorem applyMachineConfig_pendingIcacheMaintenance_eq (ist : IntermediateState)
+    (config : MachineConfig) :
+    (applyMachineConfig ist config).state.pendingIcacheMaintenance =
+      ist.state.pendingIcacheMaintenance := rfl
+
 /-- AH2-F: `applyMachineConfig` preserves lifecycle metadata. -/
 theorem applyMachineConfig_lifecycle_eq (ist : IntermediateState) (config : MachineConfig) :
     (applyMachineConfig ist config).state.lifecycle = ist.state.lifecycle := rfl
@@ -1656,6 +1663,14 @@ private theorem foldIrqs_perCoreICache (irqs : List IrqEntry) (ist : Intermediat
   | nil => rfl
   | cons _ _ ih => simp [foldIrqs, List.foldl] at ih ⊢; exact ih _
 
+private theorem foldIrqs_pendingIcacheMaintenance (irqs : List IrqEntry)
+    (ist : IntermediateState) :
+    (foldIrqs irqs ist).state.pendingIcacheMaintenance =
+      ist.state.pendingIcacheMaintenance := by
+  induction irqs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldIrqs, List.foldl] at ih ⊢; exact ih _
+
 private theorem foldIrqs_machine (irqs : List IrqEntry) (ist : IntermediateState) :
     (foldIrqs irqs ist).state.machine = ist.state.machine := by
   induction irqs generalizing ist with
@@ -1743,6 +1758,14 @@ private theorem foldObjects_perCoreTlb (objs : List ObjectEntry) (ist : Intermed
 
 private theorem foldObjects_perCoreICache (objs : List ObjectEntry) (ist : IntermediateState) :
     (foldObjects objs ist).state.perCoreICache = ist.state.perCoreICache := by
+  induction objs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
+
+private theorem foldObjects_pendingIcacheMaintenance (objs : List ObjectEntry)
+    (ist : IntermediateState) :
+    (foldObjects objs ist).state.pendingIcacheMaintenance =
+      ist.state.pendingIcacheMaintenance := by
   induction objs generalizing ist with
   | nil => rfl
   | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
@@ -2365,6 +2388,19 @@ theorem bootFromPlatform_perCoreICache_eq (config : PlatformConfig) :
   show _ = _; unfold bootFromPlatform
   rw [applyMachineConfig_perCoreICache_eq, foldObjects_perCoreICache,
       foldIrqs_perCoreICache, mkEmpty_state_eq_default]
+
+/-- WS-SM SM7.D.1: boot owes no instruction-cache maintenance — it fills no
+cache and destroys no mapping, so the emission ledger is the empty default.
+(When the boot image itself becomes real memory, the *data*-side clean to the
+Point of Unification lands with SM9.E — see the SM7.D obligation registered in
+`Architecture/CacheModel.lean`.) -/
+theorem bootFromPlatform_pendingIcacheMaintenance_eq (config : PlatformConfig) :
+    (bootFromPlatform config).state.pendingIcacheMaintenance =
+    (default : SystemState).pendingIcacheMaintenance := by
+  show _ = _; unfold bootFromPlatform
+  rw [applyMachineConfig_pendingIcacheMaintenance_eq,
+      foldObjects_pendingIcacheMaintenance, foldIrqs_pendingIcacheMaintenance,
+      mkEmpty_state_eq_default]
 
 /-- AH2-F: After boot, machine config-set fields come from `config.machineConfig`.
     This replaces the pre-AH2 `bootFromPlatform_machine_eq` which stated the

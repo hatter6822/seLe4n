@@ -1708,8 +1708,9 @@ theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_ok
       authCap target newObj st = .ok ((), stB)) :
     lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache executingCore authCap
         target newObj st =
-      .ok ((), Architecture.icInvalidateBroadcast stB
-        Architecture.icBroadcastReach .iallu) :=
+      .ok ((), Architecture.recordIcacheMaintenance
+        (Architecture.icInvalidateBroadcast stB
+          Architecture.icBroadcastReach .iallu) .iallu) :=
   Architecture.withIcacheBroadcast_some_ok (retypeIcacheOperand_eq st) hBase
 
 /-- **WS-SM SM7.D.1**: on success the CSpaceAddr seam commits the base
@@ -1722,8 +1723,9 @@ theorem lifecycleRetypeWithCleanupShootdownPerCoreIcache_ok
       target newObj st = .ok ((), stB)) :
     lifecycleRetypeWithCleanupShootdownPerCoreIcache executingCore authority
         target newObj st =
-      .ok ((), Architecture.icInvalidateBroadcast stB
-        Architecture.icBroadcastReach .iallu) :=
+      .ok ((), Architecture.recordIcacheMaintenance
+        (Architecture.icInvalidateBroadcast stB
+          Architecture.icBroadcastReach .iallu) .iallu) :=
   Architecture.withIcacheBroadcast_some_ok (retypeIcacheOperand_eq st) hBase
 
 /-- **WS-SM SM7.D.4** (the retype seam's coherency theorem, Direct-cap): after
@@ -1755,6 +1757,12 @@ theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_preserves_icacheC
       simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
       subst hStep
       intro c l hl
+      -- The ledger record frames every core's view; the broadcast emptied them.
+      rw [show Architecture.icacheOnCore (Architecture.recordIcacheMaintenance
+            (Architecture.icInvalidateBroadcast stB
+              Architecture.icBroadcastReach .iallu) .iallu) c
+          = Architecture.icacheOnCore (Architecture.icInvalidateBroadcast stB
+              Architecture.icBroadcastReach .iallu) c from rfl] at hl
       rw [Architecture.icInvalidateBroadcast_iallu_empties stB
         Architecture.icBroadcastReach_cover c] at hl
       cases hl
@@ -1781,6 +1789,12 @@ theorem lifecycleRetypeWithCleanupShootdownPerCoreIcache_preserves_icacheCoheren
       simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
       subst hStep
       intro c l hl
+      -- The ledger record frames every core's view; the broadcast emptied them.
+      rw [show Architecture.icacheOnCore (Architecture.recordIcacheMaintenance
+            (Architecture.icInvalidateBroadcast stB
+              Architecture.icBroadcastReach .iallu) .iallu) c
+          = Architecture.icacheOnCore (Architecture.icInvalidateBroadcast stB
+              Architecture.icBroadcastReach .iallu) c from rfl] at hl
       rw [Architecture.icInvalidateBroadcast_iallu_empties stB
         Architecture.icBroadcastReach_cover c] at hl
       cases hl
@@ -1811,10 +1825,12 @@ theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_preserves_tlbInva
         at hStep
       simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
       subst hStep
-      exact Architecture.icInvalidateBroadcast_preserves_tlbInvalidationConsistent_perCore
-        stB Architecture.icBroadcastReach .iallu
-        (lifecycleRetypeDirectWithCleanupShootdownPerCore_preserves_tlbInvalidationConsistent_perCore
-          hq hConsist hVsp hObjK hAsidK hBase)
+      exact fun c e he =>
+        Architecture.tlbEntryOk_of_frame_eq rfl rfl rfl
+          (Architecture.icInvalidateBroadcast_preserves_tlbInvalidationConsistent_perCore
+            stB Architecture.icBroadcastReach .iallu
+            (lifecycleRetypeDirectWithCleanupShootdownPerCore_preserves_tlbInvalidationConsistent_perCore
+              hq hConsist hVsp hObjK hAsidK hBase) c e he)
 
 /-- **WS-SM SM7.D.4** (CSpaceAddr): the same 13th-conjunct carriage for the
 CSpaceAddr production entry point. -/
@@ -1841,10 +1857,12 @@ theorem lifecycleRetypeWithCleanupShootdownPerCoreIcache_preserves_tlbInvalidati
         at hStep
       simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
       subst hStep
-      exact Architecture.icInvalidateBroadcast_preserves_tlbInvalidationConsistent_perCore
-        stB Architecture.icBroadcastReach .iallu
-        (lifecycleRetypeWithCleanupShootdownPerCore_preserves_tlbInvalidationConsistent_perCore
-          hq hConsist hVsp hObjK hAsidK hBase)
+      exact fun c e he =>
+        Architecture.tlbEntryOk_of_frame_eq rfl rfl rfl
+          (Architecture.icInvalidateBroadcast_preserves_tlbInvalidationConsistent_perCore
+            stB Architecture.icBroadcastReach .iallu
+            (lifecycleRetypeWithCleanupShootdownPerCore_preserves_tlbInvalidationConsistent_perCore
+              hq hConsist hVsp hObjK hAsidK hBase) c e he)
 
 /-- **WS-SM SM7.D.4** (the production retype capstone, Direct-cap): the live
 `.lifecycleRetype` path keeps **both** SMP per-core memory invariants — the

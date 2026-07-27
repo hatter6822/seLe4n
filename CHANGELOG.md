@@ -1,3 +1,72 @@
+## v0.32.95 — WS-SM SM7.D closure cut: exact runtime operand, page-granular emission, D→I obligation
+
+Closes both mechanical residuals the SM7.D landing recorded, and fixes a
+granularity defect found while analysing them.
+
+**(1) `IC IVAU` is line-granular, not page-granular — the emission was wrong.**
+`IC IVAU` invalidates one 64-byte cache line (ARM ARM C6.2.88), while the
+model's operand is a *page* (a `VSpaceRoot.lookup` yields a page base, and
+mappings live and die per page).  Emitting one instruction per page operand
+would have left 63 of a page's 64 lines valid — a silent **under**-invalidation,
+the one direction that is unsafe.  The Lean constructor is renamed
+`ivau` → `ivauPage` so a reader cannot infer single-line semantics from the
+model, `cache::ic_ivau` becomes the bare single-line primitive (no barriers),
+and the new `cache::ic_invalidate_page_inner_shareable` issues
+`ICACHE_LINES_PER_PAGE` (= 64) of them followed by one `DSB ISH` + `ISB` —
+exactly seL4's `invalidateCacheRange_I` shape.  The expansion factor is pinned
+on both sides (`icacheLinesPerPage_covers_page` in Lean,
+`test_ic_invalidate_page_line_count` in Rust).  Not live-wrong at v0.32.94 (the
+seam emitted `IC IALLUIS`), but the HAL primitive was.
+
+**(2) Residual 1 + 3: the runtime now emits the model's exact operand.**  The
+v0.32.94 seam keyed on the shootdown diff, so it fired the *strongest* operand
+for **every** unmap — including the common non-executable one, which owes
+nothing — and missed a retype that posted no round.  Recovering the precise
+operand from the round's encoded `.vae1` instead would need an `ASID`/`VAddr`
+round-trip whose failure mode is under-invalidation.  Both are closed by a
+proper emission ledger, mirroring how `tlbShootdown` makes the TLB round
+recoverable: new `SystemState.pendingIcacheMaintenance : Option
+ICacheInvalidation`, written by `Architecture.recordIcacheMaintenance` (inside
+the shared `withIcacheBroadcast` combinator, so both live seams get it) and read
+**and cleared** by `syscallDispatchCrossCoreEntry` in the *same* atomic
+`modifyGetKernelState` step that commits the transition — so an operand is
+emitted exactly once and never stranded into the next syscall, and every state
+at a syscall boundary owes nothing.  Accumulation is the total join
+(`ICacheInvalidation.join`, `iallu` as top), so there is no capacity bound to
+thread and no new bundle conjunct; `recordIcacheMaintenance_of_none` is the
+exactness property the closure rests on.  Result: an executable unmap emits a
+targeted 64-line `IC IVAU` page loop, a **data-page unmap emits nothing at all**,
+and a retype emits `IC IALLUIS` whether or not it posted a shootdown round.
+
+**(3) Residual — the data-side dual, as a registered obligation.**  Nothing
+cleans the D-cache to the Point of Unification after the kernel writes memory a
+subject may later execute (`scrubObjectMemory` during a re-type, the boot image
+load); an instruction fetch reads at PoU, so a store that has not been pushed
+there can be fetched stale even on the storing PE.  The *emission* needs each
+object's physical extent, which the model does not carry (only `UntypedObject`
+has `regionBase`/`regionSize`), so it is scoped to SM9.E — which is also the
+first point at which memory is physically backed and the omission could bite.
+What lands now is the obligation as a checked object: `KernelCodeWriteSite`
+enumerates the two sites, `kernelCodeWriteSites_owe_pou_clean` states that each
+owes the canonical ARMv8-A `DC CVAU → DSB → IC → DSB → ISB` sequence
+(`armv8DCacheToICacheSequence`), and `kernelCodeWriteSites_complete` is the
+tripwire that fails if a third site is added without an entry.
+
+**Structure.**  `ICacheInvalidation` moves to the new pure
+`Architecture/CacheInvalidation.lean` — the same extraction, for the same
+reason, as SM7.A's `TlbInvalidation.lean`: `Model/State.lean` mounts the ledger
+and must not pull the architecture layer's import closure.  The ledger is
+carried through freeze (required, no default), congruence, and boot, and stays
+out of the IF projection (`pendingIcacheMaintenance_write_preserves_projection`
+— the operand names a physical page, so projecting it leaks what the cache view
+would).  `Architecture.TlbCacheComposition` promoted staged → production (SM7.D.2
+is its first production consumer); staged-only 55 → 54.
+
+Rust HAL 789 → 792 tests, clippy-clean.  `SmpCacheMaintenanceSuite` 56 → 72
+runtime assertions / 11 groups (the join algebra, the ledger lifecycle, and the
+three live-seam operand outcomes — targeted, nothing, domain-wide).  Golden
+trace byte-identical; zero sorry/axiom; Tier 0–3 green.
+
 ## v0.32.94 — WS-SM SM7.D: cache maintenance broadcast (per-core I-cache model, 14th bundle conjunct, live seams)
 
 Lands **SM7.D — Cache maintenance broadcast** (`docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md`

@@ -440,6 +440,15 @@ structure FrozenSystemState where
       compile error at the freeze site, complemented by the
       `freeze_preserves_perCoreICache := rfl` *value*-level guard. -/
   perCoreICache     : _root_.Vector ICacheState numCores
+  /-- WS-SM SM7.D.1: the instruction-cache emission ledger, transferred from
+      `SystemState.pendingIcacheMaintenance` during freeze.  **Required** (no
+      default), like the two per-core cache/TLB vectors, so a silent drop is a
+      compile error.  In practice it is always `none` here: the runtime seam
+      clears the ledger in the same atomic step that commits a transition, so
+      every state observed at a syscall boundary (and therefore every frozen
+      snapshot) owes no maintenance. -/
+  pendingIcacheMaintenance :
+      Option SeLe4n.Kernel.Architecture.ICacheInvalidation
 
 -- ============================================================================
 -- Q5-C: Freeze Functions
@@ -574,7 +583,9 @@ def freeze (ist : IntermediateState) : FrozenSystemState :=
     perCoreTlb := st.perCoreTlb
     -- WS-SM SM7.D.1: forward every core's instruction-cache view unchanged
     -- (the instruction-side twin; no silent per-core drop).
-    perCoreICache := st.perCoreICache }
+    perCoreICache := st.perCoreICache
+    -- WS-SM SM7.D.1: forward the instruction-cache emission ledger unchanged.
+    pendingIcacheMaintenance := st.pendingIcacheMaintenance }
 
 -- ============================================================================
 -- Q5-C Proofs
@@ -615,6 +626,10 @@ the frozen `perCoreICache` is identical to the pre-freeze
 `freeze_preserves_perCoreTlb`.  No per-core view is dropped during freeze. -/
 theorem freeze_preserves_perCoreICache (ist : IntermediateState) :
     (freeze ist).perCoreICache = ist.state.perCoreICache := rfl
+
+/-- WS-SM SM7.D.1: `freeze` preserves the instruction-cache emission ledger. -/
+theorem freeze_preserves_pendingIcacheMaintenance (ist : IntermediateState) :
+    (freeze ist).pendingIcacheMaintenance = ist.state.pendingIcacheMaintenance := rfl
 
 /-- Q5-C: `freeze` preserves the scheduler current thread. -/
 theorem freeze_preserves_current (ist : IntermediateState) :

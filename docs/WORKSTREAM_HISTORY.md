@@ -24,9 +24,9 @@ Plan:
 SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
-**Current sub-phase: SM7.D cache maintenance broadcast LANDED (v0.32.94)
-— the cache-side companion of SM7.C, closing the *instruction*-cache half
-of SMP-C4.  Prior: SM7.C per-core TLB model LANDED (v0.32.80); operative
+**Current sub-phase: SM7.D cache maintenance broadcast LANDED (v0.32.94);
+closure cut (v0.32.95) — the cache-side companion of SM7.C, closing the
+*instruction*-cache half of SMP-C4.  Prior: SM7.C per-core TLB model LANDED (v0.32.80); operative
 cut (v0.32.81) — the SMP generalisation of the single-core TLB layer,
 mounted on `SystemState.perCoreTlb : Vector TlbState numCores`, wired into
 the SM7.B shootdown protocol, and (v0.32.81) made **operative on the live
@@ -140,6 +140,46 @@ plus 100+ surface anchors, including the non-vacuity witness that a cached
 line whose mapping was removed *fails* the coherency checker while the domain
 broadcast restores it and a PE-local invalidate on another core does *not*.
 Trace byte-identical; zero sorry/axiom; Tier 0–3 green.
+
+**SM7.D closure cut (v0.32.95).**  Closes both mechanical residuals the
+landing recorded, plus a granularity defect found while analysing them.
+
+*Granularity.*  `IC IVAU` invalidates one 64-byte cache line (ARM ARM
+C6.2.88), while the model's operand is a *page* — so one instruction per page
+operand would have left 63 of a page's 64 lines valid, a silent
+**under**-invalidation.  The constructor is renamed `ivau` → `ivauPage`,
+`cache::ic_ivau` becomes the bare single-line primitive, and
+`cache::ic_invalidate_page_inner_shareable` issues `ICACHE_LINES_PER_PAGE`
+(= 64) of them followed by one `DSB ISH` + `ISB`, the shape of seL4's
+`invalidateCacheRange_I`; the expansion factor is pinned on both sides.
+
+*Exact runtime operand.*  The landing's seam keyed on the shootdown diff, so
+it fired the strongest operand for **every** unmap — including the common
+non-executable one, which owes nothing — and missed a retype that posted no
+round.  Both close with an emission ledger, mirroring how `tlbShootdown` makes
+the TLB round recoverable: `SystemState.pendingIcacheMaintenance`, written by
+`recordIcacheMaintenance` inside the shared `withIcacheBroadcast` combinator
+and read **and cleared** by `syscallDispatchCrossCoreEntry` in the *same*
+atomic step that commits the transition — emitted exactly once, never
+stranded, and every state at a syscall boundary owes nothing.  Accumulation is
+the total join (`iallu` as top), so there is no capacity bound and no new
+bundle conjunct.  Outcome: an executable unmap emits a targeted 64-line page
+loop, a data-page unmap emits nothing at all, and a retype emits `IC IALLUIS`
+whether or not it posted a round.  The alternative — reconstructing the
+operand from the round's encoded `.vae1` — was rejected: the `ASID`/`VAddr`
+round-trip is faithful only under a reachability argument about every caller,
+and its failure mode is under-invalidation.
+
+*Data-side dual.*  Nothing cleans the D-cache to the Point of Unification
+after the kernel writes memory a subject may later execute (`scrubObjectMemory`
+during a re-type, the boot image load).  The emission needs object physical
+extents, which the model does not carry, so it is scoped to SM9.E; what lands
+is the obligation as a checked object — `KernelCodeWriteSite` +
+`kernelCodeWriteSites_owe_pou_clean` + the `…_complete` tripwire.
+`Architecture.TlbCacheComposition` promoted staged → production as its
+consumer (staged-only 55 → 54); `ICacheInvalidation` extracted to the new pure
+`Architecture/CacheInvalidation.lean`.  Rust HAL 789 → 792; suite 56 → 72
+assertions / 11 groups; trace byte-identical.
 
 **SM7.C per-core TLB model (v0.32.80) — all eight sub-tasks (plan §5).**
 New production module `Architecture/PerCoreTlbModel.lean` (imports

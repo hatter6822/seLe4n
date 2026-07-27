@@ -923,20 +923,76 @@ tripwire, the invariant on a real page-table-backed state — including the
 checker while the domain broadcast restores it and a PE-local invalidate on
 another core does *not* — and the two live seams end to end.
 
-**Residual (tracked, scoped).**  (1) The runtime seam emits the domain-wide
-operand rather than the model's targeted `IC IVAU`; closure rides SM7.F.3's
-descriptor ledger.  (2) A retype whose target is *not* a live `.vspaceRoot`
-posts no shootdown round, so the runtime seam does not fire for it even though
-the model broadcasts unconditionally; that case is covered in depth (a frame
-must be unmapped before it can be re-typed, and the unmap posts its own round —
-which fires the seam), and the model keeps the stronger unconditional form so
-the invariant is discharged without relying on that discipline.  (3) Content
-coherency in the *other* direction — a thread writing new instructions through
-the data side (self-modifying code, JIT) — is user software's obligation on
-ARMv8-A (`DC CVAU` → `DSB` → `IC IVAU` → `DSB` → `ISB`, modelled by
-`armv8DCacheToICacheSequence`); seL4 exposes it as an explicit
-`Page_Unify_Instruction` operation rather than performing it implicitly, and
-SM7.D discharges the kernel-side mapping-lifetime obligation only.
+#### SM7.D closure cut (v0.32.95) — exact runtime operand, page-granular emission
+
+The v0.32.94 landing recorded two mechanical residuals; both are closed here,
+along with a granularity defect found while analysing them.
+
+* **`IC IVAU` is line-granular, not page-granular — the emission was wrong.**
+  `IC IVAU` invalidates one 64-byte cache line (ARM ARM C6.2.88), while the
+  model's operand is a *page* (a `VSpaceRoot.lookup` yields a page base, and
+  mappings are created and destroyed per page).  One instruction per page
+  operand would leave 63 of a page's 64 lines valid — a silent
+  **under**-invalidation, the one direction that is unsafe.  The Lean
+  constructor is renamed `ivau` → `ivauPage` so a reader cannot infer
+  single-line semantics from the model; `cache::ic_ivau` becomes the bare
+  single-line primitive (no barriers); and `cache::ic_invalidate_page_inner_shareable`
+  issues `ICACHE_LINES_PER_PAGE` (= 64) of them followed by one `DSB ISH` +
+  `ISB` — seL4's `invalidateCacheRange_I` shape.  The expansion factor is pinned
+  on both sides (`icacheLinesPerPage_covers_page`,
+  `test_ic_invalidate_page_line_count`).  Not live-wrong at v0.32.94 (the seam
+  emitted `IC IALLUIS`), but the HAL primitive was.
+* **Residuals 1 and 3 — the runtime now emits the model's exact operand.**  The
+  landing's seam keyed on the shootdown diff, so it fired the strongest operand
+  for **every** unmap (including the common non-executable one, which owes
+  nothing) and missed a retype that posted no round.  Both close with a proper
+  emission ledger, mirroring how `tlbShootdown` makes the TLB round
+  recoverable: `SystemState.pendingIcacheMaintenance : Option ICacheInvalidation`,
+  written by `recordIcacheMaintenance` inside the shared `withIcacheBroadcast`
+  combinator (so both live seams get it) and read **and cleared** by
+  `syscallDispatchCrossCoreEntry` in the *same* atomic step that commits the
+  transition — emitted exactly once, never stranded, and every state at a
+  syscall boundary owes nothing.  Accumulation is the total join
+  (`ICacheInvalidation.join`, `iallu` as top), so there is no capacity bound to
+  thread and no new bundle conjunct; `recordIcacheMaintenance_of_none` is the
+  exactness property.  Outcome: an executable unmap emits a targeted 64-line
+  page loop, a **data-page unmap emits nothing at all**, and a retype emits
+  `IC IALLUIS` whether or not it posted a round.  The alternative — recovering
+  the operand from the round's encoded `.vae1` — was rejected: the
+  `ASID`/`VAddr` round-trip is faithful only under a reachability argument
+  about every caller, and its failure mode is under-invalidation.
+* **The data-side dual, registered as a checked obligation.**  Nothing cleans
+  the D-cache to the Point of Unification after the kernel writes memory a
+  subject may later execute (`scrubObjectMemory` during a re-type, the boot
+  image load); an instruction fetch reads at PoU, so a store not yet pushed
+  there can be fetched stale even on the storing PE.  The *emission* needs each
+  object's physical extent, which the model does not carry (only
+  `UntypedObject` has `regionBase`/`regionSize`), so it is scoped to SM9.E —
+  also the first point at which memory is physically backed and the omission
+  could bite.  What lands now is the obligation as an object:
+  `KernelCodeWriteSite` enumerates the two sites,
+  `kernelCodeWriteSites_owe_pou_clean` states that each owes
+  `armv8DCacheToICacheSequence`, and `kernelCodeWriteSites_complete` is the
+  tripwire that fails if a third site appears without an entry.
+  `Architecture.TlbCacheComposition` is promoted staged → production as SM7.D.2's
+  consumer (staged-only 55 → 54).
+
+Structure: `ICacheInvalidation` moves to the new pure
+`Architecture/CacheInvalidation.lean` — the same extraction, for the same
+reason, as SM7.A's `TlbInvalidation.lean` (`Model/State.lean` mounts the ledger
+and must not pull the architecture layer's import closure).  The ledger is
+carried through freeze (required), congruence and boot, and stays out of the IF
+projection (`pendingIcacheMaintenance_write_preserves_projection` — the operand
+names a physical page).  Rust HAL 789 → 792; suite 56 → 72 runtime assertions /
+11 groups.  Trace byte-identical; zero sorry/axiom; Tier 0–3 green.
+
+**Remaining residual.**  Content coherency in the *other* direction — a thread
+writing new instructions through the data side (self-modifying code, JIT) — is
+user software's obligation on ARMv8-A (`DC CVAU` → `DSB` → `IC IVAU` → `DSB` →
+`ISB`).  seL4 exposes it as an explicit `Page_Unify_Instruction` operation
+rather than performing it implicitly; seLe4n has no equivalent syscall yet, so
+the obligation is currently unfulfillable by user code.  Closed by the
+`vspaceUnifyInstruction` syscall (see below).
 
 ### SM7.E — Tests (3 PRs, 6 sub-tasks)
 

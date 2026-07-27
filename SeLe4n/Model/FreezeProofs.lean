@@ -1466,7 +1466,9 @@ def apiInvariantBundle_frozenDirectFull (fst : FrozenSystemState) : Prop :=
     sst.perCoreTlb = fst.perCoreTlb ∧
     -- WS-SM SM7.D.1: the per-core instruction-cache views are carried through
     -- freeze bitwise (the instruction-side twin of `perCoreTlb`).
-    sst.perCoreICache = fst.perCoreICache
+    sst.perCoreICache = fst.perCoreICache ∧
+    -- WS-SM SM7.D.1: the instruction-cache emission ledger is carried bitwise.
+    sst.pendingIcacheMaintenance = fst.pendingIcacheMaintenance
 
 /-- AK7-B (F-H02): The full variant implies the objects-only variant. -/
 theorem apiInvariantBundle_frozenDirectFull_implies_objectsOnly
@@ -1486,7 +1488,7 @@ theorem freeze_preserves_direct_invariants_full (ist : IntermediateState)
     apiInvariantBundle_frozenDirectFull (freeze ist) := by
   refine ⟨ist.state, hInv,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
-    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   -- Map fields (17)
   · exact fun oid => lookup_freeze_objects ist oid
   · exact fun irq => lookup_freeze_irqHandlers ist irq
@@ -1505,7 +1507,7 @@ theorem freeze_preserves_direct_invariants_full (ist : IntermediateState)
   · exact fun p => lookup_freeze_byPriority ist p
   · exact fun tid => lookup_freeze_threadPriority ist tid
   · exact fun tid => lookup_freeze_membership ist tid
-  -- Non-map fields (15)
+  -- Non-map fields (16)
   · exact (freeze_preserves_machine ist).symm
   · exact (freeze_preserves_objectIndex ist).symm
   · exact (freeze_preserves_tlb ist).symm
@@ -1523,6 +1525,8 @@ theorem freeze_preserves_direct_invariants_full (ist : IntermediateState)
   · exact (freeze_preserves_perCoreTlb ist).symm
   -- WS-SM SM7.D.1: perCoreICache carried bitwise through freeze
   · exact (freeze_preserves_perCoreICache ist).symm
+  -- WS-SM SM7.D.1: the emission ledger carried bitwise through freeze
+  · exact (freeze_preserves_pendingIcacheMaintenance ist).symm
 
 /-- R6-A.3: `FrozenMap.set` preserves the direct frozen invariant when the
     mutated object corresponds to a valid `SystemState` mutation.

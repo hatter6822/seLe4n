@@ -139,25 +139,40 @@ pub fn ic_ialluis() {
     }
 }
 
-/// **WS-SM SM7.D.1**: Invalidate instruction cache by VA to Point of
-/// Unification (IC IVAU).
+/// ARMv8-A 4 KiB translation granule, in bytes.
 ///
-/// Invalidates the instruction-cache line holding `addr` on **every PE in the
-/// Inner Shareable domain** — `IC IVAU` is architecturally broadcast within
-/// the shareability domain of the address (ARM ARM C6.2.88), unlike the
-/// PE-local `ic_iallu`.  This is the targeted maintenance the kernel issues
-/// when it retires a single *executable* mapping: instruction caches are
-/// physically tagged from software's point of view (ARM ARM D7.2), so the
-/// lines to drop are exactly those of the page's physical address.
+/// **WS-SM SM7.D.1**: the granularity at which the kernel creates and destroys
+/// mappings, and therefore the granularity of the model's instruction-cache
+/// maintenance operand (`ICacheInvalidation::IvauPage`).  Pinned against the
+/// Lean `Architecture.pageBytes`.
+pub const PAGE_SIZE: u64 = 4096;
+
+/// **WS-SM SM7.D.1**: how many `IC IVAU` instructions cover one page.
+///
+/// The expansion factor between the model's page-granular operand and the
+/// architecture's line-granular instruction.  Pinned against the Lean
+/// `Architecture.icacheLinesPerPage` (and its `…_covers_page` theorem).
+pub const ICACHE_LINES_PER_PAGE: u64 = PAGE_SIZE / CACHE_LINE_SIZE;
+
+/// **WS-SM SM7.D.1**: Invalidate one instruction-cache line by VA to Point of
+/// Unification (IC IVAU) — the bare instruction, no barriers.
+///
+/// Invalidates the instruction-cache **line** (64 bytes on Cortex-A76, not a
+/// page) holding `addr`, on **every PE in the Inner Shareable domain** —
+/// `IC IVAU` is architecturally broadcast within the shareability domain of the
+/// address (ARM ARM C6.2.88), unlike the PE-local `ic_iallu`.
 ///
 /// `addr` is a **virtual** address: the instruction takes a VA and the PE
-/// translates it.  Callers pass the kernel's address for the page — the boot
+/// translates it.  Callers pass the kernel's address for the line — the boot
 /// tables identity-map RAM (`mmu::build_identity_tables`), so the kernel VA of
 /// a RAM frame equals its PA.
 ///
-/// The trailing `DSB ISH` + `ISB` complete the maintenance and re-synchronise
-/// the fetch stream, which the architecture requires before the invalidation
-/// is guaranteed visible to subsequent instruction fetches.
+/// **No barriers**: this is the loop body of
+/// [`ic_invalidate_page_inner_shareable`], which issues the completing
+/// `DSB ISH` + `ISB` once after the whole range rather than once per line.
+/// A caller invalidating a single line directly must issue them itself; the
+/// invalidation is not architecturally guaranteed visible to subsequent
+/// instruction fetches until it does.
 ///
 /// ARM ARM C6.2.88: IC IVAU, Xt
 #[inline(always)]
@@ -171,9 +186,41 @@ pub fn ic_ivau(addr: u64) {
             core::arch::asm!("ic ivau, {0}", in(reg) addr, options(nostack, preserves_flags));
         }
     }
+    let _ = addr;
+}
+
+/// **WS-SM SM7.D.1**: Invalidate every instruction-cache line of one page,
+/// across the Inner Shareable domain.
+///
+/// This is the HAL's realisation of the model's page-granular operand
+/// `ICacheInvalidation::IvauPage`, and the granularity expansion matters for
+/// correctness: `IC IVAU` invalidates **one cache line**, so covering a 4 KiB
+/// page takes [`ICACHE_LINES_PER_PAGE`] (= 64) instructions.  Issuing a single
+/// `IC IVAU` for a page operand would leave 63 of its 64 lines valid — a silent
+/// under-invalidation, the one direction that is unsafe.  seL4's
+/// `invalidateCacheRange_I` loops for exactly this reason.
+///
+/// The completing `DSB ISH` + `ISB` are issued **once**, after the loop: the
+/// architecture requires them before the invalidation is guaranteed visible to
+/// subsequent instruction fetches, but not between individual maintenance
+/// instructions.
+///
+/// `base` is the page's (identity-mapped) virtual address; it need not be
+/// page-aligned — the loop starts at the containing page boundary, so a
+/// mid-page address still covers the whole page.
+#[inline]
+pub fn ic_invalidate_page_inner_shareable(base: u64) {
+    let aligned = base & !(PAGE_SIZE - 1);
+    let mut addr = aligned;
+    let end = aligned.saturating_add(PAGE_SIZE);
+    while addr < end {
+        ic_ivau(addr);
+        // saturating_add keeps the loop terminating near u64::MAX; the
+        // saturated value is >= end for any representable page.
+        addr = addr.saturating_add(CACHE_LINE_SIZE);
+    }
     barriers::dsb_ish();
     barriers::isb();
-    let _ = addr;
 }
 
 /// **WS-SM SM7.D.1**: Invalidate all instruction caches across the Inner
@@ -200,8 +247,8 @@ pub fn ic_invalidate_all_inner_shareable() {
 /// Kept in lockstep with the Lean `Architecture.ICacheInvalidation.toOpTag`
 /// (`SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean`):
 ///
-///   op_tag : 0 = Iallu (invalidate all), 1 = Ivau (invalidate by VA)
-///   addr   : the virtual address operand (RES0 for Iallu)
+///   op_tag : 0 = Iallu (invalidate all), 1 = IvauPage (invalidate one page)
+///   addr   : the page's virtual address operand (RES0 for Iallu)
 ///
 /// A future encoding change requires updating the Lean encoders, this enum,
 /// and the conformance tests in the same PR.
@@ -209,8 +256,10 @@ pub fn ic_invalidate_all_inner_shareable() {
 pub enum ICacheInvalidation {
     /// `IC IALLUIS` — invalidate every instruction-cache line in the domain.
     Iallu,
-    /// `IC IVAU` — invalidate the line holding the given virtual address.
-    Ivau(u64),
+    /// Invalidate every instruction-cache line of the page holding the given
+    /// virtual address (expanded into `ICACHE_LINES_PER_PAGE` `IC IVAU`
+    /// instructions by `ic_invalidate_page_inner_shareable`).
+    IvauPage(u64),
 }
 
 /// **WS-SM SM7.D.1**: decode an FFI `(op_tag, addr)` pair into a typed
@@ -225,7 +274,7 @@ pub enum ICacheInvalidation {
 pub const fn decode_icache_invalidation(op_tag: u32, addr: u64) -> Option<ICacheInvalidation> {
     match op_tag {
         0 => Some(ICacheInvalidation::Iallu),
-        1 => Some(ICacheInvalidation::Ivau(addr)),
+        1 => Some(ICacheInvalidation::IvauPage(addr)),
         _ => None,
     }
 }
@@ -236,7 +285,7 @@ pub const fn decode_icache_invalidation(op_tag: u32, addr: u64) -> Option<ICache
 pub fn apply_icache_invalidation(op: ICacheInvalidation) {
     match op {
         ICacheInvalidation::Iallu => ic_invalidate_all_inner_shareable(),
-        ICacheInvalidation::Ivau(addr) => ic_ivau(addr),
+        ICacheInvalidation::IvauPage(addr) => ic_invalidate_page_inner_shareable(addr),
     }
 }
 
@@ -453,6 +502,60 @@ mod tests {
     }
 
     #[test]
+    fn test_ic_invalidate_page_compiles() {
+        ic_invalidate_page_inner_shareable(0x1000);
+        // Mid-page addresses still cover the containing page.
+        ic_invalidate_page_inner_shareable(0x1ABC);
+    }
+
+    // WS-SM SM7.D.1 granularity contract: one page operand expands to exactly
+    // ICACHE_LINES_PER_PAGE line invalidations covering [base, base+PAGE_SIZE).
+    // IC IVAU is line-granular, so a single instruction per page would leave 63
+    // of 64 lines valid — silent under-invalidation.  This test computes the
+    // loop the HAL runs and checks its extent.
+    #[test]
+    fn test_ic_invalidate_page_line_count() {
+        // `no_std`: collect into a fixed-size array sized by the constant the
+        // loop is supposed to honour, so an off-by-one in either direction
+        // fails the count assertion below.
+        fn lines_for_page(base: u64, out: &mut [u64; 64]) -> usize {
+            let aligned = base & !(PAGE_SIZE - 1);
+            let mut addr = aligned;
+            let end = aligned.saturating_add(PAGE_SIZE);
+            let mut n = 0usize;
+            while addr < end {
+                assert!(n < out.len(), "page loop exceeded ICACHE_LINES_PER_PAGE");
+                out[n] = addr;
+                n += 1;
+                addr = addr.saturating_add(CACHE_LINE_SIZE);
+            }
+            n
+        }
+        let mut lines = [0u64; 64];
+        let n = lines_for_page(0x4000, &mut lines);
+        assert_eq!(n as u64, ICACHE_LINES_PER_PAGE);
+        assert_eq!(ICACHE_LINES_PER_PAGE, 64);
+        assert_eq!(lines[0], 0x4000);
+        assert_eq!(lines[n - 1], 0x4000 + PAGE_SIZE - CACHE_LINE_SIZE);
+        // No gaps: consecutive entries are exactly one cache line apart.
+        for i in 1..n {
+            assert_eq!(lines[i] - lines[i - 1], CACHE_LINE_SIZE);
+        }
+        // A mid-page base rounds down to the same page.
+        let mut mid = [0u64; 64];
+        let m = lines_for_page(0x4ABC, &mut mid);
+        assert_eq!(m, n);
+        assert_eq!(mid, lines);
+    }
+
+    #[test]
+    fn test_page_and_line_constants_agree() {
+        // Pinned against the Lean `Architecture.icacheLinesPerPage_covers_page`.
+        assert_eq!(ICACHE_LINES_PER_PAGE * CACHE_LINE_SIZE, PAGE_SIZE);
+        assert_eq!(PAGE_SIZE, 4096);
+    }
+
+    #[test]
     fn test_ic_invalidate_all_inner_shareable_compiles() {
         ic_invalidate_all_inner_shareable();
     }
@@ -471,10 +574,10 @@ mod tests {
     }
 
     #[test]
-    fn test_decode_icache_invalidation_ivau() {
+    fn test_decode_icache_invalidation_ivau_page() {
         assert_eq!(
             decode_icache_invalidation(1, 0x4000),
-            Some(ICacheInvalidation::Ivau(0x4000))
+            Some(ICacheInvalidation::IvauPage(0x4000))
         );
     }
 
@@ -501,7 +604,7 @@ mod tests {
     #[test]
     fn test_apply_icache_invalidation_both_arms() {
         apply_icache_invalidation(ICacheInvalidation::Iallu);
-        apply_icache_invalidation(ICacheInvalidation::Ivau(0x2000));
+        apply_icache_invalidation(ICacheInvalidation::IvauPage(0x2000));
     }
 
     // AN8-D (RUST-M07): memory_fence is a pure DSB ISH — verify it does

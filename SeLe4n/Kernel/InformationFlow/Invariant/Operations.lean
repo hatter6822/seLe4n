@@ -3682,6 +3682,20 @@ theorem perCoreICache_write_preserves_projection
     projectState ctx observer { st with perCoreICache := v } =
       projectState ctx observer st := rfl
 
+/-- WS-SM SM7.D.1 (non-interference): a write to the instruction-cache emission
+ledger is invisible to the information-flow projection.  The ledger names a
+cache maintenance operation — including, for a targeted operand, the physical
+address of a page — so projecting it would leak exactly the information the
+cache view itself would; like `perCoreICache`, it stays out of
+`ObservableState`.  This is the NI witness for the SM7.D.1 ledger mount: both
+live maintenance seams and the runtime drain trivially preserve `projectState`
+and hence `lowEquivalent`. -/
+theorem pendingIcacheMaintenance_write_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (m : Option SeLe4n.Kernel.Architecture.ICacheInvalidation) :
+    projectState ctx observer { st with pendingIcacheMaintenance := m } =
+      projectState ctx observer st := rfl
+
 -- ============================================================================
 -- AK6-F Step 1: RunQueue modification frame lemmas (at high thread)
 -- ============================================================================

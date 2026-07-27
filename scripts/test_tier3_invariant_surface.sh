@@ -1018,12 +1018,29 @@ run_check "INVARIANT" rg -n 'lifecycleRetypeDirectWithCleanupShootdownPerCore' S
 # live `.vspaceUnmap` / `.lifecycleRetype` seams, the FFI + Rust HAL
 # realisation, and the suite that exercises all of it.
 # ============================================================================
-# SM7.D module registration + `CacheModel` promotion to production.
+# SM7.D module registration + `CacheModel` / `TlbCacheComposition` promotion.
 run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Architecture\.PerCoreCacheModel' SeLe4n.lean
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Architecture\.CacheInvalidation' SeLe4n/Model/State.lean
 run_check "INVARIANT" bash -c "! rg -q '^SeLe4n\.Kernel\.Architecture\.CacheModel' scripts/staged_module_allowlist.txt"
+run_check "INVARIANT" bash -c "! rg -q '^SeLe4n\.Kernel\.Architecture\.TlbCacheComposition' scripts/staged_module_allowlist.txt"
 run_check "INVARIANT" bash -c "! rg -q 'STATUS: staged' SeLe4n/Kernel/Architecture/CacheModel.lean"
+# SM7.D.1 granularity contract: the page operand vs the line-granular IC IVAU.
+run_check "INVARIANT" rg -n '^theorem icacheLinesPerPage_covers_page' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
+run_check "INVARIANT" rg -n '^pub fn ic_invalidate_page_inner_shareable' rust/sele4n-hal/src/cache.rs
+run_check "INVARIANT" rg -n '^pub const ICACHE_LINES_PER_PAGE' rust/sele4n-hal/src/cache.rs
+run_check "INVARIANT" rg -n 'fn test_ic_invalidate_page_line_count' rust/sele4n-hal/src/cache.rs
+# SM7.D.1 emission ledger: the runtime gets the model's exact operand.
+run_check "INVARIANT" rg -n '  pendingIcacheMaintenance :' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^def recordIcacheMaintenance' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^def clearIcacheMaintenance' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n 'theorem recordIcacheMaintenance_of_none' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n 'clearIcacheMaintenance st' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^theorem pendingIcacheMaintenance_write_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+# SM7.D.2 the data-side clean-to-PoU obligation + its tripwire.
+run_check "INVARIANT" rg -n '^theorem kernelCodeWriteSites_complete' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem kernelCodeWriteSites_owe_pou_clean' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
 # SM7.D.1 typed operand + effect algebra + per-core model ops.
-run_check "INVARIANT" rg -n '^inductive ICacheInvalidation' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^inductive ICacheInvalidation' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
 run_check "INVARIANT" rg -n '^def applyICacheInvalidation' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
 run_check "INVARIANT" rg -n '^def icFetchOnCore' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
 run_check "INVARIANT" rg -n '^def icInvalidateOnCore' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean

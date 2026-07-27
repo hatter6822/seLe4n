@@ -14,6 +14,15 @@ import SeLe4n.Kernel.Architecture.BarrierComposition
 /-!
 # AN9-A: TLB + Cache Composition (DEF-A-M04 — RESOLVED)
 
+> **STATUS: production** since WS-SM SM7.D (v0.32.95).  This module was
+> transitively staged (pulled in only by `Platform.Staged`) until SM7.D.2 made
+> its `armv8DCacheToICacheSequence` the object the kernel's clean-to-Point-of-
+> Unification obligation is stated against: every kernel site that *writes*
+> memory a subject may later execute (`scrubObjectMemory` during a re-type, the
+> boot image load) owes that barrier sequence before the memory can be fetched
+> as instructions.  See `PerCoreCacheModel.lean`'s
+> `kernelCodeWriteSites_owe_pou_clean`.
+
 > Closes the long-standing AK3-G partial-remediation gap.  Pre-AN9-A,
 > the proof layer documented the *required* sequence — DC CIVAC on a
 > page-table page, then TLBI on the affected VA, then IC IALLU on the

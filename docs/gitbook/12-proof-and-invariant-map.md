@@ -789,10 +789,27 @@ the executing PE, so the kernel must issue the broadcast variant:
 - `icacheOnCore` / `setIcacheOnCore` — SM4.B path-a per-core view accessors +
   `@[simp]` store/load algebra + per-field frame lemmas +
   `default_{perCoreICache,icacheOnCore}`
-- `ICacheInvalidation` (`iallu` / `ivau paddr`) + `applyICacheInvalidation`
-  (SM7.D.1) — the typed operand and its effect algebra (removal, selectivity,
-  monotonicity, idempotence, `iallu`-empties, survivor lemmas), with the FFI tag
-  encoding pinned to the Rust `cache::decode_icache_invalidation`
+- `ICacheInvalidation` (`iallu` / `ivauPage paddr`, `CacheInvalidation.lean`) +
+  `applyICacheInvalidation` (SM7.D.1) — the typed operand and its effect algebra
+  (removal, selectivity, monotonicity, idempotence, `iallu`-empties, survivor
+  lemmas), with the FFI tag encoding pinned to the Rust
+  `cache::decode_icache_invalidation`.  The operand is **page**-granular while
+  `IC IVAU` is line-granular, so the HAL expands one operand into
+  `icacheLinesPerPage` (= 64) instructions —
+  `icacheLinesPerPage_covers_page` pins the arithmetic
+- `SystemState.pendingIcacheMaintenance` + `recordIcacheMaintenance` /
+  `clearIcacheMaintenance` (SM7.D.1) — the **emission ledger**: kernel
+  transitions are pure, so the operand the model applied is carried to the
+  runtime seam, which reads and clears it in the same atomic step that commits
+  the transition.  Accumulation is the total join `ICacheInvalidation.join`
+  (`iallu` as top), so no capacity bound is threaded;
+  `recordIcacheMaintenance_of_none` is the exactness property that makes the
+  runtime emit the model's precise operand
+- `kernelCodeWriteSites_owe_pou_clean` + `kernelCodeWriteSites_complete`
+  (SM7.D.2) — the data-side dual, as a checked obligation: every kernel site
+  that writes memory a subject may execute owes the
+  `armv8DCacheToICacheSequence` clean to the Point of Unification (emission
+  scoped to SM9.E, when objects gain physical extents)
 - `icFetchOnCore` (SM7.D.1) — the hardware instruction fetch filling one core's
   view; an *environment* step, not a kernel transition
 - `icInvalidateOnCore` (SM7.D.1) — `IC IALLU`, whose

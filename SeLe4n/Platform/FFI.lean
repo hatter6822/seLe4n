@@ -1307,10 +1307,14 @@ opaque ffiIcMaintenance : UInt32 → UInt64 → BaseIO Unit
     every core's `perCoreICache` view) and the hardware: the model says which
     lines disappear on which cores, this call makes it so.
 
-    For `.ivau p` the operand passed to the instruction is the **virtual**
-    address (the instruction takes a VA and the PE translates it); the boot
-    tables identity-map RAM, so a RAM frame's kernel VA equals its PA and
-    `ICacheInvalidation.toPaddr` is the correct operand. -/
+    For `.ivauPage p` the operand passed to the HAL is the page's **base
+    address**: the `IC IVAU` instruction takes a *virtual* address and the PE
+    translates it, and the boot tables identity-map RAM, so a RAM frame's kernel
+    VA equals its PA and `ICacheInvalidation.toPaddr` is the correct operand.
+    Note the granularity expansion — `IC IVAU` invalidates one 64-byte cache
+    line, so the HAL issues `icacheLinesPerPage` of them for one page operand
+    (`cache::ic_invalidate_page_inner_shareable`), exactly as seL4's
+    `invalidateCacheRange_I` does. -/
 def icMaintenanceBroadcast
     (op : SeLe4n.Kernel.Architecture.ICacheInvalidation) : BaseIO Unit :=
   ffiIcMaintenance op.toOpTag op.toPaddr
@@ -1321,11 +1325,11 @@ theorem icMaintenanceBroadcast_iallu_encoding :
     (SeLe4n.Kernel.Architecture.ICacheInvalidation.iallu).toPaddr = 0 :=
   ⟨rfl, rfl⟩
 
-/-- **WS-SM SM7.D.1**: the by-VA operand routes to op tag 1 carrying the
-    address. -/
-theorem icMaintenanceBroadcast_ivau_encoding (p : SeLe4n.PAddr) :
-    (SeLe4n.Kernel.Architecture.ICacheInvalidation.ivau p).toOpTag = 1 ∧
-    (SeLe4n.Kernel.Architecture.ICacheInvalidation.ivau p).toPaddr =
+/-- **WS-SM SM7.D.1**: the per-page operand routes to op tag 1 carrying the
+    page base address. -/
+theorem icMaintenanceBroadcast_ivauPage_encoding (p : SeLe4n.PAddr) :
+    (SeLe4n.Kernel.Architecture.ICacheInvalidation.ivauPage p).toOpTag = 1 ∧
+    (SeLe4n.Kernel.Architecture.ICacheInvalidation.ivauPage p).toPaddr =
       UInt64.ofNat p.toNat :=
   ⟨rfl, rfl⟩
 

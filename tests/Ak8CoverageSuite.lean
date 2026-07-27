@@ -196,7 +196,10 @@ private def emptyFrozenState : FrozenSystemState :=
     -- WS-SM SM7.D.1: the per-core instruction caches are a required frozen
     -- field (no default), so a silent drop is a compile error here.
     perCoreICache :=
-      _root_.Vector.replicate SeLe4n.Kernel.Concurrency.numCores ICacheState.empty }
+      _root_.Vector.replicate SeLe4n.Kernel.Concurrency.numCores ICacheState.empty
+    -- WS-SM SM7.D.1: the instruction-cache emission ledger is likewise a
+    -- required frozen field; it is always `none` at a syscall boundary.
+    pendingIcacheMaintenance := none }
 
 /-- Helper: build a minimal FrozenSystemState containing the given objects.
 `FrozenMap.set` REQUIRES the key to already exist (frozen maps have a
