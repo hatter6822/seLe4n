@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/sm7d-cache-maintenance-msh1o0",
-      "commit_sha": "62fac3dbf94196a2c40baff1ac905472199e3189",
-      "tree_sha": "2936a4813a109f84786b9db40ec80e8cfb0e0bfc",
-      "committed_at_utc": "2026-07-27T07:49:57+00:00"
+      "commit_sha": "cc3da937b518222dc9877738afdc0908d5e1af5f",
+      "tree_sha": "69d0f67e427b0e2b7fb946803aab823cca883b03",
+      "committed_at_utc": "2026-07-27T08:33:27+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "f14f74965db01cf3ce26ec2e208c8e11d35f4a9792626c40f38cc80433769f52"
+    "source_digest": "628de3173163fad3a31febf7900c95e8efaea4481f0978f5190e7b2f626fe69e"
   },
   "summary": {
     "module_count": 331,
-    "declaration_count": 13792
+    "declaration_count": 13821
   },
   "readme_sync": {
-    "version": "0.32.99",
+    "version": "0.32.100",
     "lean_toolchain": "v4.28.0",
     "production_files": 264,
-    "production_loc": 235127,
+    "production_loc": 235511,
     "test_files": 67,
-    "test_loc": 47133,
-    "proved_theorem_lemma_decls": 7648,
+    "test_loc": 47279,
+    "proved_theorem_lemma_decls": 7667,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -2685,30 +2685,30 @@
     {
       "module": "SeLe4n.Kernel.Architecture.CacheInvalidation",
       "path": "SeLe4n/Kernel/Architecture/CacheInvalidation.lean",
-      "declaration_count": 30,
+      "declaration_count": 44,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel.Architecture",
-          "line": 62,
+          "line": 65,
           "called": []
         },
         {
           "kind": "def",
           "name": "pageBytes",
-          "line": 67,
+          "line": 70,
           "called": []
         },
         {
           "kind": "def",
           "name": "cacheLineBytes",
-          "line": 72,
+          "line": 75,
           "called": []
         },
         {
           "kind": "def",
           "name": "icacheLinesPerPage",
-          "line": 77,
+          "line": 80,
           "called": [
             "cacheLineBytes",
             "pageBytes"
@@ -2717,7 +2717,7 @@
         {
           "kind": "theorem",
           "name": "icacheLinesPerPage_covers_page",
-          "line": 83,
+          "line": 86,
           "called": [
             "cacheLineBytes",
             "icacheLinesPerPage",
@@ -2727,7 +2727,7 @@
         {
           "kind": "theorem",
           "name": "icacheLinesPerPage_eq",
-          "line": 87,
+          "line": 90,
           "called": [
             "icacheLinesPerPage"
           ]
@@ -2735,15 +2735,16 @@
         {
           "kind": "inductive",
           "name": "ICacheInvalidation",
-          "line": 106,
+          "line": 109,
           "called": [
-            "PAddr"
+            "PAddr",
+            "size"
           ]
         },
         {
           "kind": "def",
           "name": "ICacheInvalidation.toOpTag",
-          "line": 135,
+          "line": 167,
           "called": [
             "ICacheInvalidation"
           ]
@@ -2751,7 +2752,7 @@
         {
           "kind": "def",
           "name": "ICacheInvalidation.toPaddr",
-          "line": 142,
+          "line": 175,
           "called": [
             "ICacheInvalidation",
             "ofNat",
@@ -2759,9 +2760,18 @@
           ]
         },
         {
+          "kind": "def",
+          "name": "ICacheInvalidation.toSize",
+          "line": 185,
+          "called": [
+            "ICacheInvalidation",
+            "ofNat"
+          ]
+        },
+        {
           "kind": "theorem",
           "name": "ICacheInvalidation.toOpTag_in_range",
-          "line": 149,
+          "line": 193,
           "called": [
             "ICacheInvalidation",
             "ICacheInvalidation.toOpTag",
@@ -2771,7 +2781,7 @@
         {
           "kind": "theorem",
           "name": "ICacheInvalidation.toOpTag_distinct_constructors",
-          "line": 155,
+          "line": 203,
           "called": [
             "ofNat",
             "toOpTag"
@@ -2780,7 +2790,7 @@
         {
           "kind": "theorem",
           "name": "ICacheInvalidation.iallu_opTag",
-          "line": 165,
+          "line": 211,
           "called": [
             "toOpTag"
           ]
@@ -2788,7 +2798,7 @@
         {
           "kind": "theorem",
           "name": "ICacheInvalidation.ivauPage_opTag",
-          "line": 167,
+          "line": 213,
           "called": [
             "PAddr",
             "toOpTag"
@@ -2797,7 +2807,7 @@
         {
           "kind": "theorem",
           "name": "ICacheInvalidation.iallu_zero_operand",
-          "line": 170,
+          "line": 216,
           "called": [
             "toPaddr"
           ]
@@ -2805,7 +2815,7 @@
         {
           "kind": "theorem",
           "name": "ICacheInvalidation.ivauPage_toPaddr",
-          "line": 174,
+          "line": 220,
           "called": [
             "PAddr",
             "ofNat",
@@ -2815,8 +2825,38 @@
         },
         {
           "kind": "theorem",
+          "name": "ICacheInvalidation.cleanRangeIallu_opTag",
+          "line": 223,
+          "called": [
+            "PAddr",
+            "toOpTag"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ICacheInvalidation.cleanRangeIallu_operands",
+          "line": 227,
+          "called": [
+            "PAddr",
+            "ofNat",
+            "toNat",
+            "toPaddr",
+            "toSize"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ICacheInvalidation.toSize_zero_of_not_range",
+          "line": 234,
+          "called": [
+            "PAddr",
+            "toSize"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "ICacheInvalidation.unifyPage_opTag",
-          "line": 177,
+          "line": 241,
           "called": [
             "PAddr",
             "toOpTag"
@@ -2825,7 +2865,7 @@
         {
           "kind": "theorem",
           "name": "ICacheInvalidation.unifyPage_toPaddr",
-          "line": 181,
+          "line": 245,
           "called": [
             "PAddr",
             "ofNat",
@@ -2835,16 +2875,67 @@
         },
         {
           "kind": "def",
-          "name": "ICacheInvalidation.covers",
-          "line": 209,
+          "name": "ICacheInvalidation.isDomainWide",
+          "line": 257,
           "called": [
             "ICacheInvalidation"
           ]
         },
         {
+          "kind": "def",
+          "name": "byteRangeContains",
+          "line": 272,
+          "called": [
+            "PAddr",
+            "size",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "byteRangeContains_iff",
+          "line": 277,
+          "called": [
+            "PAddr",
+            "byteRangeContains",
+            "size",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "byteRangeContains_refl",
+          "line": 283,
+          "called": [
+            "PAddr",
+            "byteRangeContains",
+            "size"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "byteRangeContains_trans",
+          "line": 289,
+          "called": [
+            "PAddr",
+            "byteRangeContains",
+            "byteRangeContains_iff"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ICacheInvalidation.covers",
+          "line": 320,
+          "called": [
+            "ICacheInvalidation",
+            "byteRangeContains",
+            "pageBytes"
+          ]
+        },
+        {
           "kind": "theorem",
           "name": "ICacheInvalidation.covers_refl",
-          "line": 222,
+          "line": 340,
           "called": [
             "ICacheInvalidation",
             "ICacheInvalidation.covers",
@@ -2854,7 +2945,7 @@
         {
           "kind": "theorem",
           "name": "ICacheInvalidation.iallu_covers_ivauPage",
-          "line": 227,
+          "line": 345,
           "called": [
             "PAddr",
             "covers"
@@ -2863,7 +2954,7 @@
         {
           "kind": "theorem",
           "name": "ICacheInvalidation.unifyPage_covers_ivauPage",
-          "line": 232,
+          "line": 350,
           "called": [
             "ICacheInvalidation.covers",
             "PAddr",
@@ -2873,7 +2964,54 @@
         {
           "kind": "theorem",
           "name": "ICacheInvalidation.iallu_not_covers_unifyPage",
-          "line": 242,
+          "line": 360,
+          "called": [
+            "PAddr",
+            "covers"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ICacheInvalidation.cleanRangeIallu_covers_iallu",
+          "line": 365,
+          "called": [
+            "PAddr",
+            "covers"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ICacheInvalidation.cleanRangeIallu_covers_ivauPage",
+          "line": 370,
+          "called": [
+            "PAddr",
+            "covers"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ICacheInvalidation.cleanRangeIallu_covers_unifyPage",
+          "line": 377,
+          "called": [
+            "PAddr",
+            "byteRangeContains",
+            "covers",
+            "pageBytes"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ICacheInvalidation.iallu_not_covers_cleanRangeIallu",
+          "line": 389,
+          "called": [
+            "PAddr",
+            "covers"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ICacheInvalidation.unifyPage_not_covers_cleanRangeIallu",
+          "line": 396,
           "called": [
             "PAddr",
             "covers"
@@ -2882,7 +3020,7 @@
         {
           "kind": "theorem",
           "name": "ICacheInvalidation.ivauPage_not_covers_of_ne",
-          "line": 247,
+          "line": 402,
           "called": [
             "ICacheInvalidation.covers",
             "PAddr",
@@ -2892,17 +3030,18 @@
         {
           "kind": "theorem",
           "name": "ICacheInvalidation.covers_trans",
-          "line": 254,
+          "line": 409,
           "called": [
             "ICacheInvalidation",
             "ICacheInvalidation.covers",
+            "byteRangeContains_trans",
             "covers"
           ]
         },
         {
           "kind": "def",
           "name": "recordIcacheMaintenanceList",
-          "line": 268,
+          "line": 424,
           "called": [
             "ICacheInvalidation",
             "any",
@@ -2912,7 +3051,7 @@
         {
           "kind": "theorem",
           "name": "recordIcacheMaintenanceList_nil",
-          "line": 276,
+          "line": 432,
           "called": [
             "ICacheInvalidation",
             "recordIcacheMaintenanceList"
@@ -2921,7 +3060,7 @@
         {
           "kind": "theorem",
           "name": "recordIcacheMaintenanceList_ne_nil",
-          "line": 280,
+          "line": 436,
           "called": [
             "ICacheInvalidation",
             "recordIcacheMaintenanceList"
@@ -2930,7 +3069,7 @@
         {
           "kind": "theorem",
           "name": "recordIcacheMaintenanceList_covered",
-          "line": 293,
+          "line": 449,
           "called": [
             "ICacheInvalidation",
             "covers",
@@ -2940,7 +3079,7 @@
         {
           "kind": "theorem",
           "name": "recordIcacheMaintenanceList_mem_of_mem",
-          "line": 305,
+          "line": 461,
           "called": [
             "ICacheInvalidation",
             "recordIcacheMaintenanceList"
@@ -2949,7 +3088,7 @@
         {
           "kind": "theorem",
           "name": "recordIcacheMaintenanceList_length_le",
-          "line": 318,
+          "line": 474,
           "called": [
             "ICacheInvalidation",
             "length",
@@ -6077,7 +6216,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.PerCoreCacheModel",
       "path": "SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean",
-      "declaration_count": 141,
+      "declaration_count": 147,
       "declarations": [
         {
           "kind": "namespace",
@@ -6097,7 +6236,7 @@
         {
           "kind": "def",
           "name": "applyICacheInvalidation",
-          "line": 121,
+          "line": 126,
           "called": [
             "ICacheInvalidation",
             "ICacheState",
@@ -6108,7 +6247,7 @@
         {
           "kind": "theorem",
           "name": "mem_applyICacheInvalidation_iff",
-          "line": 127,
+          "line": 132,
           "called": [
             "ICacheInvalidation",
             "ICacheLine",
@@ -6120,7 +6259,7 @@
         {
           "kind": "theorem",
           "name": "applyICacheInvalidation_removes",
-          "line": 135,
+          "line": 140,
           "called": [
             "ICacheInvalidation",
             "ICacheLine",
@@ -6133,7 +6272,7 @@
         {
           "kind": "theorem",
           "name": "applyICacheInvalidation_preserves_other",
-          "line": 145,
+          "line": 150,
           "called": [
             "ICacheInvalidation",
             "ICacheLine",
@@ -6146,7 +6285,7 @@
         {
           "kind": "theorem",
           "name": "mem_of_mem_applyICacheInvalidation",
-          "line": 153,
+          "line": 158,
           "called": [
             "ICacheInvalidation",
             "ICacheLine",
@@ -6158,7 +6297,7 @@
         {
           "kind": "theorem",
           "name": "applyICacheInvalidation_idempotent",
-          "line": 160,
+          "line": 165,
           "called": [
             "ICacheInvalidation",
             "ICacheState",
@@ -6168,7 +6307,7 @@
         {
           "kind": "theorem",
           "name": "applyICacheInvalidation_iallu",
-          "line": 168,
+          "line": 173,
           "called": [
             "ICacheState",
             "applyICacheInvalidation",
@@ -6177,8 +6316,34 @@
         },
         {
           "kind": "theorem",
+          "name": "applyICacheInvalidation_domainWide",
+          "line": 180,
+          "called": [
+            "ICacheInvalidation",
+            "ICacheInvalidation.isDomainWide",
+            "ICacheState",
+            "applyICacheInvalidation",
+            "applyICacheInvalidation_iallu",
+            "icacheLineMatches",
+            "isDomainWide"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "icacheLineMatches_domainWide",
+          "line": 190,
+          "called": [
+            "ICacheInvalidation",
+            "ICacheInvalidation.isDomainWide",
+            "ICacheLine",
+            "icacheLineMatches",
+            "isDomainWide"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "icacheLineMatches_ivauPage",
-          "line": 173,
+          "line": 200,
           "called": [
             "ICacheLine",
             "PAddr",
@@ -6188,7 +6353,7 @@
         {
           "kind": "theorem",
           "name": "icacheLineMatches_iallu",
-          "line": 178,
+          "line": 205,
           "called": [
             "ICacheLine",
             "icacheLineMatches"
@@ -6197,7 +6362,7 @@
         {
           "kind": "theorem",
           "name": "icacheLineMatches_unifyPage",
-          "line": 183,
+          "line": 210,
           "called": [
             "ICacheLine",
             "PAddr",
@@ -6207,7 +6372,7 @@
         {
           "kind": "theorem",
           "name": "applyICacheInvalidation_survivor_paddr_ne",
-          "line": 189,
+          "line": 216,
           "called": [
             "ICacheLine",
             "ICacheState",
@@ -6220,7 +6385,7 @@
         {
           "kind": "theorem",
           "name": "icacheLineMatches_of_covers",
-          "line": 206,
+          "line": 233,
           "called": [
             "ICacheInvalidation",
             "ICacheInvalidation.covers",
@@ -6232,7 +6397,7 @@
         {
           "kind": "theorem",
           "name": "applyICacheInvalidation_subset_of_covers",
-          "line": 215,
+          "line": 242,
           "called": [
             "ICacheInvalidation",
             "ICacheLine",
@@ -6247,7 +6412,7 @@
         {
           "kind": "def",
           "name": "icacheOnCore",
-          "line": 232,
+          "line": 259,
           "called": [
             "CoreId",
             "ICacheState",
@@ -6259,7 +6424,7 @@
         {
           "kind": "def",
           "name": "setIcacheOnCore",
-          "line": 237,
+          "line": 264,
           "called": [
             "CoreId",
             "ICacheState",
@@ -6271,7 +6436,7 @@
         {
           "kind": "theorem",
           "name": "setIcacheOnCore_icacheOnCore_self",
-          "line": 243,
+          "line": 270,
           "called": [
             "CoreId",
             "ICacheState",
@@ -6284,7 +6449,7 @@
         {
           "kind": "theorem",
           "name": "setIcacheOnCore_icacheOnCore_ne",
-          "line": 250,
+          "line": 277,
           "called": [
             "CoreId",
             "ICacheState",
@@ -6298,7 +6463,7 @@
         {
           "kind": "theorem",
           "name": "setIcacheOnCore_objects",
-          "line": 258,
+          "line": 285,
           "called": [
             "CoreId",
             "ICacheState",
@@ -6310,7 +6475,7 @@
         {
           "kind": "theorem",
           "name": "setIcacheOnCore_asidTable",
-          "line": 260,
+          "line": 287,
           "called": [
             "CoreId",
             "ICacheState",
@@ -6322,7 +6487,7 @@
         {
           "kind": "theorem",
           "name": "setIcacheOnCore_scheduler",
-          "line": 262,
+          "line": 289,
           "called": [
             "CoreId",
             "ICacheState",
@@ -6334,7 +6499,7 @@
         {
           "kind": "theorem",
           "name": "setIcacheOnCore_machine",
-          "line": 264,
+          "line": 291,
           "called": [
             "CoreId",
             "ICacheState",
@@ -6346,7 +6511,7 @@
         {
           "kind": "theorem",
           "name": "setIcacheOnCore_tlb",
-          "line": 266,
+          "line": 293,
           "called": [
             "CoreId",
             "ICacheState",
@@ -6358,7 +6523,7 @@
         {
           "kind": "theorem",
           "name": "setIcacheOnCore_tlbShootdown",
-          "line": 268,
+          "line": 295,
           "called": [
             "CoreId",
             "ICacheState",
@@ -6370,7 +6535,7 @@
         {
           "kind": "theorem",
           "name": "setIcacheOnCore_perCoreTlb",
-          "line": 271,
+          "line": 298,
           "called": [
             "CoreId",
             "ICacheState",
@@ -6382,7 +6547,7 @@
         {
           "kind": "theorem",
           "name": "default_icacheOnCore",
-          "line": 276,
+          "line": 303,
           "called": [
             "CoreId",
             "ICacheState.empty",
@@ -6395,7 +6560,7 @@
         {
           "kind": "def",
           "name": "icFetchOnCore",
-          "line": 293,
+          "line": 320,
           "called": [
             "CoreId",
             "ICacheLine",
@@ -6408,7 +6573,7 @@
         {
           "kind": "theorem",
           "name": "icFetchOnCore_mem",
-          "line": 298,
+          "line": 325,
           "called": [
             "CoreId",
             "ICacheLine",
@@ -6421,7 +6586,7 @@
         {
           "kind": "theorem",
           "name": "icFetchOnCore_icacheOnCore_ne",
-          "line": 304,
+          "line": 331,
           "called": [
             "CoreId",
             "ICacheLine",
@@ -6435,7 +6600,7 @@
         {
           "kind": "theorem",
           "name": "icFetchOnCore_frame",
-          "line": 310,
+          "line": 337,
           "called": [
             "CoreId",
             "ICacheLine",
@@ -6447,7 +6612,7 @@
         {
           "kind": "def",
           "name": "icInvalidateOnCore",
-          "line": 322,
+          "line": 349,
           "called": [
             "CoreId",
             "ICacheInvalidation",
@@ -6461,7 +6626,7 @@
         {
           "kind": "theorem",
           "name": "icInvalidateOnCore_removes",
-          "line": 328,
+          "line": 355,
           "called": [
             "CoreId",
             "ICacheInvalidation",
@@ -6478,7 +6643,7 @@
         {
           "kind": "theorem",
           "name": "icInvalidateOnCore_icacheOnCore_ne",
-          "line": 339,
+          "line": 366,
           "called": [
             "CoreId",
             "ICacheInvalidation",
@@ -6492,7 +6657,7 @@
         {
           "kind": "theorem",
           "name": "icInvalidateOnCore_subset",
-          "line": 346,
+          "line": 373,
           "called": [
             "CoreId",
             "ICacheInvalidation",
@@ -6508,7 +6673,7 @@
         {
           "kind": "theorem",
           "name": "icInvalidateOnCore_frame",
-          "line": 355,
+          "line": 382,
           "called": [
             "CoreId",
             "ICacheInvalidation",
@@ -6520,7 +6685,7 @@
         {
           "kind": "def",
           "name": "setIcacheViewOnCore",
-          "line": 371,
+          "line": 398,
           "called": [
             "CoreId",
             "ICacheState",
@@ -6531,7 +6696,7 @@
         {
           "kind": "theorem",
           "name": "setIcacheViewOnCore_get_self",
-          "line": 375,
+          "line": 402,
           "called": [
             "CoreId",
             "ICacheState",
@@ -6543,7 +6708,7 @@
         {
           "kind": "theorem",
           "name": "setIcacheViewOnCore_get_ne",
-          "line": 380,
+          "line": 407,
           "called": [
             "CoreId",
             "ICacheState",
@@ -6557,7 +6722,7 @@
         {
           "kind": "def",
           "name": "icBroadcastViews",
-          "line": 395,
+          "line": 422,
           "called": [
             "CoreId",
             "ICacheInvalidation",
@@ -6571,7 +6736,7 @@
         {
           "kind": "theorem",
           "name": "icBroadcastViews_get",
-          "line": 404,
+          "line": 431,
           "called": [
             "CoreId",
             "ICacheInvalidation",
@@ -6589,7 +6754,7 @@
         {
           "kind": "def",
           "name": "icInvalidateBroadcast",
-          "line": 430,
+          "line": 457,
           "called": [
             "CoreId",
             "ICacheInvalidation",
@@ -6601,7 +6766,7 @@
         {
           "kind": "theorem",
           "name": "icInvalidateBroadcast_icacheOnCore",
-          "line": 435,
+          "line": 462,
           "called": [
             "CoreId",
             "ICacheInvalidation",
@@ -6616,7 +6781,7 @@
         {
           "kind": "theorem",
           "name": "icInvalidateBroadcast_subset",
-          "line": 443,
+          "line": 470,
           "called": [
             "CoreId",
             "ICacheInvalidation",
@@ -6632,7 +6797,7 @@
         {
           "kind": "theorem",
           "name": "icInvalidateBroadcast_frame",
-          "line": 457,
+          "line": 484,
           "called": [
             "CoreId",
             "ICacheInvalidation",
@@ -6644,7 +6809,7 @@
         {
           "kind": "def",
           "name": "icBroadcastReach",
-          "line": 478,
+          "line": 505,
           "called": [
             "CoreId",
             "allCores"
@@ -6653,7 +6818,7 @@
         {
           "kind": "theorem",
           "name": "icBroadcastReach_cover",
-          "line": 481,
+          "line": 508,
           "called": [
             "CoreId",
             "allCores",
@@ -6663,7 +6828,7 @@
         {
           "kind": "theorem",
           "name": "icBroadcastReach_nodup",
-          "line": 486,
+          "line": 513,
           "called": [
             "allCores_nodup"
           ]
@@ -6671,7 +6836,7 @@
         {
           "kind": "theorem",
           "name": "icInvalidateBroadcast_reaches_all_cores",
-          "line": 496,
+          "line": 523,
           "called": [
             "CoreId",
             "ICacheInvalidation",
@@ -6688,7 +6853,7 @@
         {
           "kind": "theorem",
           "name": "icInvalidateBroadcast_platform_reaches_all_cores",
-          "line": 507,
+          "line": 534,
           "called": [
             "CoreId",
             "ICacheInvalidation",
@@ -6706,7 +6871,7 @@
         {
           "kind": "theorem",
           "name": "icInvalidateBroadcast_iallu_empties",
-          "line": 515,
+          "line": 542,
           "called": [
             "CoreId",
             "SystemState",
@@ -6718,9 +6883,25 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "icInvalidateBroadcast_domainWide_empties",
+          "line": 551,
+          "called": [
+            "CoreId",
+            "ICacheInvalidation",
+            "SystemState",
+            "applyICacheInvalidation_domainWide",
+            "icInvalidateBroadcast",
+            "icInvalidateBroadcast_icacheOnCore",
+            "icacheOnCore",
+            "isDomainWide",
+            "st"
+          ]
+        },
+        {
           "kind": "inductive",
           "name": "DCacheMaintenance",
-          "line": 538,
+          "line": 575,
           "called": [
             "PAddr"
           ]
@@ -6728,7 +6909,7 @@
         {
           "kind": "def",
           "name": "applyDCacheMaintenance",
-          "line": 549,
+          "line": 586,
           "called": [
             "CacheState",
             "DCacheMaintenance",
@@ -6740,7 +6921,7 @@
         {
           "kind": "abbrev",
           "name": "DCacheViews",
-          "line": 559,
+          "line": 596,
           "called": [
             "CacheState",
             "numCores"
@@ -6749,7 +6930,7 @@
         {
           "kind": "def",
           "name": "dcMaintenanceAllCores",
-          "line": 572,
+          "line": 609,
           "called": [
             "DCacheMaintenance",
             "DCacheViews",
@@ -6759,7 +6940,7 @@
         {
           "kind": "theorem",
           "name": "dcMaintenanceAllCores_get",
-          "line": 579,
+          "line": 616,
           "called": [
             "CoreId",
             "DCacheMaintenance",
@@ -6773,7 +6954,7 @@
         {
           "kind": "theorem",
           "name": "dcMaintenanceByVA_reaches_all_cores",
-          "line": 590,
+          "line": 627,
           "called": [
             "CoreId",
             "DCacheViews",
@@ -6789,7 +6970,7 @@
         {
           "kind": "def",
           "name": "dcacheCoherentAcrossCores",
-          "line": 607,
+          "line": 644,
           "called": [
             "CoreId",
             "DCacheViews",
@@ -6800,7 +6981,7 @@
         {
           "kind": "theorem",
           "name": "dcacheCoherentAcrossCores_cold",
-          "line": 612,
+          "line": 649,
           "called": [
             "CacheState.empty",
             "dcacheCoherentAcrossCores",
@@ -6811,7 +6992,7 @@
         {
           "kind": "theorem",
           "name": "dcMaintenanceAllCores_preserves_dcacheCoherentAcrossCores",
-          "line": 623,
+          "line": 660,
           "called": [
             "DCacheMaintenance",
             "DCacheViews",
@@ -6826,7 +7007,7 @@
         {
           "kind": "theorem",
           "name": "icInvalidateOnCore_vs_dcMaintenance_reach",
-          "line": 641,
+          "line": 678,
           "called": [
             "CoreId",
             "DCacheMaintenance",
@@ -6846,7 +7027,7 @@
         {
           "kind": "theorem",
           "name": "icInvalidateOnCore_remote_line_survives",
-          "line": 655,
+          "line": 692,
           "called": [
             "CoreId",
             "ICacheInvalidation",
@@ -6861,13 +7042,13 @@
         {
           "kind": "inductive",
           "name": "KernelCodeWriteSite",
-          "line": 687,
+          "line": 724,
           "called": []
         },
         {
           "kind": "def",
           "name": "kernelCodeWriteSites",
-          "line": 695,
+          "line": 732,
           "called": [
             "KernelCodeWriteSite"
           ]
@@ -6875,7 +7056,7 @@
         {
           "kind": "theorem",
           "name": "kernelCodeWriteSites_complete",
-          "line": 701,
+          "line": 738,
           "called": [
             "KernelCodeWriteSite",
             "kernelCodeWriteSites"
@@ -6884,7 +7065,7 @@
         {
           "kind": "structure",
           "name": "PoUCleanObligation",
-          "line": 730,
+          "line": 772,
           "called": [
             "CacheBarrierSequence",
             "DCacheMaintenance",
@@ -6894,7 +7075,7 @@
         {
           "kind": "def",
           "name": "DCacheMaintenance.isClean",
-          "line": 744,
+          "line": 786,
           "called": [
             "DCacheMaintenance"
           ]
@@ -6902,7 +7083,7 @@
         {
           "kind": "def",
           "name": "ICacheInvalidation.invalidatesInstruction",
-          "line": 752,
+          "line": 794,
           "called": [
             "ICacheInvalidation"
           ]
@@ -6910,7 +7091,7 @@
         {
           "kind": "def",
           "name": "kernelCodeWriteObligation",
-          "line": 764,
+          "line": 808,
           "called": [
             "KernelCodeWriteSite",
             "PoUCleanObligation",
@@ -6921,7 +7102,7 @@
         {
           "kind": "def",
           "name": "kernelCodeWriteOwesPoUClean",
-          "line": 777,
+          "line": 821,
           "called": [
             "KernelCodeWriteSite",
             "covers",
@@ -6933,26 +7114,58 @@
         {
           "kind": "theorem",
           "name": "kernelCodeWriteSites_owe_pou_clean",
-          "line": 789,
+          "line": 833,
           "called": [
             "kernelCodeWriteOwesPoUClean",
             "kernelCodeWriteSites"
           ]
         },
         {
+          "kind": "def",
+          "name": "dischargesPoUClean",
+          "line": 851,
+          "called": [
+            "ICacheInvalidation",
+            "PAddr",
+            "covers",
+            "size"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "dischargesPoUClean_isDomainWide",
+          "line": 859,
+          "called": [
+            "ICacheInvalidation",
+            "ICacheInvalidation.covers",
+            "ICacheInvalidation.isDomainWide",
+            "PAddr",
+            "dischargesPoUClean",
+            "isDomainWide",
+            "size"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "kernelCodeWriteEmitted",
+          "line": 879,
+          "called": [
+            "KernelCodeWriteSite"
+          ]
+        },
+        {
           "kind": "theorem",
           "name": "kernelCodeWriteSites_emission_pending",
-          "line": 806,
+          "line": 891,
           "called": [
-            "all",
-            "kernelCodeWriteObligation",
-            "ofNat"
+            "filter",
+            "kernelCodeWriteEmitted"
           ]
         },
         {
           "kind": "inductive",
           "name": "CoherentAgent",
-          "line": 830,
+          "line": 914,
           "called": [
             "CoreId"
           ]
@@ -6960,7 +7173,7 @@
         {
           "kind": "def",
           "name": "modeledCoherentAgents",
-          "line": 837,
+          "line": 921,
           "called": [
             "CoherentAgent"
           ]
@@ -6968,7 +7181,7 @@
         {
           "kind": "theorem",
           "name": "mem_modeledCoherentAgents",
-          "line": 840,
+          "line": 924,
           "called": [
             "CoreId",
             "allCores",
@@ -6978,7 +7191,7 @@
         {
           "kind": "theorem",
           "name": "modeledCoherentAgents_no_dma_master",
-          "line": 849,
+          "line": 933,
           "called": [
             "CoreId",
             "modeledCoherentAgents",
@@ -6988,7 +7201,7 @@
         {
           "kind": "theorem",
           "name": "dcMaintenance_covers_all_modeled_agents",
-          "line": 859,
+          "line": 943,
           "called": [
             "CoreId",
             "DCacheMaintenance",
@@ -7003,7 +7216,7 @@
         {
           "kind": "def",
           "name": "icacheLineConsistent",
-          "line": 888,
+          "line": 972,
           "called": [
             "ICacheLine",
             "SystemState",
@@ -7015,7 +7228,7 @@
         {
           "kind": "def",
           "name": "icacheCoherent_perCore",
-          "line": 903,
+          "line": 987,
           "called": [
             "CoreId",
             "SystemState",
@@ -7027,7 +7240,7 @@
         {
           "kind": "theorem",
           "name": "icacheLineConsistent_of_frame",
-          "line": 911,
+          "line": 995,
           "called": [
             "ICacheLine",
             "SystemState",
@@ -7039,7 +7252,7 @@
         {
           "kind": "theorem",
           "name": "default_icacheCoherent_perCore",
-          "line": 919,
+          "line": 1003,
           "called": [
             "ICacheState.empty",
             "SystemState",
@@ -7051,7 +7264,7 @@
         {
           "kind": "theorem",
           "name": "icacheCoherent_perCore_bootCore",
-          "line": 926,
+          "line": 1010,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -7064,7 +7277,7 @@
         {
           "kind": "theorem",
           "name": "icInvalidateOnCore_preserves_icacheCoherent_perCore",
-          "line": 936,
+          "line": 1020,
           "called": [
             "CoreId",
             "ICacheInvalidation",
@@ -7082,7 +7295,7 @@
         {
           "kind": "theorem",
           "name": "icInvalidateBroadcast_preserves_icacheCoherent_perCore",
-          "line": 952,
+          "line": 1036,
           "called": [
             "CoreId",
             "ICacheInvalidation",
@@ -7098,7 +7311,7 @@
         {
           "kind": "theorem",
           "name": "icFetchOnCore_preserves_icacheCoherent_perCore",
-          "line": 971,
+          "line": 1055,
           "called": [
             "CoreId",
             "ICacheLine",
@@ -7117,7 +7330,7 @@
         {
           "kind": "theorem",
           "name": "icFetchOnCore_line_was_authorised",
-          "line": 997,
+          "line": 1081,
           "called": [
             "CoreId",
             "ICacheLine",
@@ -7133,7 +7346,7 @@
         {
           "kind": "def",
           "name": "icacheLineConsistentCheck",
-          "line": 1012,
+          "line": 1096,
           "called": [
             "ICacheLine",
             "SystemState",
@@ -7145,7 +7358,7 @@
         {
           "kind": "theorem",
           "name": "icacheLineConsistentCheck_iff",
-          "line": 1016,
+          "line": 1100,
           "called": [
             "ICacheLine",
             "SystemState",
@@ -7158,7 +7371,7 @@
         {
           "kind": "def",
           "name": "icacheCoherentCheck_perCore",
-          "line": 1025,
+          "line": 1109,
           "called": [
             "SystemState",
             "all",
@@ -7170,7 +7383,7 @@
         {
           "kind": "theorem",
           "name": "icacheCoherentCheck_perCore_iff",
-          "line": 1030,
+          "line": 1114,
           "called": [
             "CoreId",
             "SystemState",
@@ -7183,8 +7396,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:1049>",
-          "line": 1049,
+          "name": "<anonymous:instance:1133>",
+          "line": 1133,
           "called": [
             "SystemState",
             "icacheCoherentCheck_perCore_iff",
@@ -7195,7 +7408,7 @@
         {
           "kind": "theorem",
           "name": "cacheCoherency_cross_subsystem",
-          "line": 1070,
+          "line": 1154,
           "called": [
             "CoreId",
             "ICacheInvalidation",
@@ -7213,7 +7426,7 @@
         {
           "kind": "theorem",
           "name": "icInvalidateBroadcast_preserves_tlbInvalidationConsistent_perCore",
-          "line": 1084,
+          "line": 1168,
           "called": [
             "CoreId",
             "ICacheInvalidation",
@@ -7229,7 +7442,7 @@
         {
           "kind": "theorem",
           "name": "icInvalidateBroadcast_preserves_perCore_memory_invariants",
-          "line": 1104,
+          "line": 1188,
           "called": [
             "CoreId",
             "ICacheInvalidation",
@@ -7245,7 +7458,7 @@
         {
           "kind": "def",
           "name": "recordIcacheMaintenance",
-          "line": 1135,
+          "line": 1219,
           "called": [
             "ICacheInvalidation",
             "SystemState",
@@ -7256,7 +7469,7 @@
         {
           "kind": "theorem",
           "name": "recordIcacheMaintenance_objects",
-          "line": 1143,
+          "line": 1227,
           "called": [
             "ICacheInvalidation",
             "SystemState",
@@ -7267,7 +7480,7 @@
         {
           "kind": "theorem",
           "name": "recordIcacheMaintenance_asidTable",
-          "line": 1146,
+          "line": 1230,
           "called": [
             "ICacheInvalidation",
             "SystemState",
@@ -7278,7 +7491,7 @@
         {
           "kind": "theorem",
           "name": "recordIcacheMaintenance_scheduler",
-          "line": 1149,
+          "line": 1233,
           "called": [
             "ICacheInvalidation",
             "SystemState",
@@ -7289,7 +7502,7 @@
         {
           "kind": "theorem",
           "name": "recordIcacheMaintenance_machine",
-          "line": 1152,
+          "line": 1236,
           "called": [
             "ICacheInvalidation",
             "SystemState",
@@ -7300,7 +7513,7 @@
         {
           "kind": "theorem",
           "name": "recordIcacheMaintenance_tlb",
-          "line": 1155,
+          "line": 1239,
           "called": [
             "ICacheInvalidation",
             "SystemState",
@@ -7311,7 +7524,7 @@
         {
           "kind": "theorem",
           "name": "recordIcacheMaintenance_tlbShootdown",
-          "line": 1158,
+          "line": 1242,
           "called": [
             "ICacheInvalidation",
             "SystemState",
@@ -7322,7 +7535,7 @@
         {
           "kind": "theorem",
           "name": "recordIcacheMaintenance_perCoreTlb",
-          "line": 1161,
+          "line": 1245,
           "called": [
             "ICacheInvalidation",
             "SystemState",
@@ -7333,7 +7546,7 @@
         {
           "kind": "theorem",
           "name": "recordIcacheMaintenance_perCoreICache",
-          "line": 1164,
+          "line": 1248,
           "called": [
             "ICacheInvalidation",
             "SystemState",
@@ -7344,7 +7557,7 @@
         {
           "kind": "theorem",
           "name": "recordIcacheMaintenance_ne_nil",
-          "line": 1171,
+          "line": 1255,
           "called": [
             "ICacheInvalidation",
             "SystemState",
@@ -7356,7 +7569,7 @@
         {
           "kind": "theorem",
           "name": "recordIcacheMaintenance_covered",
-          "line": 1180,
+          "line": 1264,
           "called": [
             "ICacheInvalidation",
             "SystemState",
@@ -7369,7 +7582,7 @@
         {
           "kind": "theorem",
           "name": "recordIcacheMaintenance_of_nil",
-          "line": 1192,
+          "line": 1276,
           "called": [
             "ICacheInvalidation",
             "SystemState",
@@ -7380,7 +7593,7 @@
         {
           "kind": "def",
           "name": "clearIcacheMaintenance",
-          "line": 1200,
+          "line": 1284,
           "called": [
             "SystemState",
             "st"
@@ -7389,7 +7602,7 @@
         {
           "kind": "theorem",
           "name": "clearIcacheMaintenance_pending",
-          "line": 1204,
+          "line": 1288,
           "called": [
             "SystemState",
             "clearIcacheMaintenance",
@@ -7399,7 +7612,7 @@
         {
           "kind": "theorem",
           "name": "clearIcacheMaintenance_frame",
-          "line": 1210,
+          "line": 1294,
           "called": [
             "SystemState",
             "clearIcacheMaintenance",
@@ -7409,7 +7622,7 @@
         {
           "kind": "theorem",
           "name": "clearIcacheMaintenance_preserves_icacheCoherent_perCore",
-          "line": 1223,
+          "line": 1307,
           "called": [
             "SystemState",
             "clearIcacheMaintenance",
@@ -7421,7 +7634,7 @@
         {
           "kind": "theorem",
           "name": "clearIcacheMaintenance_preserves_tlbInvalidationConsistent_perCore",
-          "line": 1229,
+          "line": 1313,
           "called": [
             "SystemState",
             "clearIcacheMaintenance",
@@ -7433,7 +7646,7 @@
         {
           "kind": "def",
           "name": "withIcacheBroadcast",
-          "line": 1248,
+          "line": 1332,
           "called": [
             "ICacheInvalidation",
             "Kernel",
@@ -7448,7 +7661,7 @@
         {
           "kind": "theorem",
           "name": "withIcacheBroadcast_error_iff",
-          "line": 1263,
+          "line": 1347,
           "called": [
             "ICacheInvalidation",
             "Kernel",
@@ -7461,7 +7674,7 @@
         {
           "kind": "theorem",
           "name": "withIcacheBroadcast_none_inert",
-          "line": 1274,
+          "line": 1358,
           "called": [
             "ICacheInvalidation",
             "Kernel",
@@ -7474,7 +7687,7 @@
         {
           "kind": "theorem",
           "name": "withIcacheBroadcast_some_ok",
-          "line": 1286,
+          "line": 1370,
           "called": [
             "ICacheInvalidation",
             "Kernel",
@@ -7489,7 +7702,7 @@
         {
           "kind": "theorem",
           "name": "withIcacheBroadcast_frame",
-          "line": 1301,
+          "line": 1385,
           "called": [
             "ICacheInvalidation",
             "Kernel",
@@ -7502,7 +7715,7 @@
         {
           "kind": "def",
           "name": "unmapExecutablePaddr",
-          "line": 1333,
+          "line": 1417,
           "called": [
             "ASID",
             "PAddr",
@@ -7518,7 +7731,7 @@
         {
           "kind": "def",
           "name": "unmapIcacheOperand",
-          "line": 1347,
+          "line": 1431,
           "called": [
             "ASID",
             "ICacheInvalidation",
@@ -7531,7 +7744,7 @@
         {
           "kind": "theorem",
           "name": "unmapExecutablePaddr_of_executable",
-          "line": 1354,
+          "line": 1438,
           "called": [
             "ASID",
             "ObjId",
@@ -7549,7 +7762,7 @@
         {
           "kind": "theorem",
           "name": "unmapExecutablePaddr_eq_some",
-          "line": 1366,
+          "line": 1450,
           "called": [
             "ASID",
             "PAddr",
@@ -7564,7 +7777,7 @@
         {
           "kind": "theorem",
           "name": "unmapIcacheOperand_eq_some_iff",
-          "line": 1381,
+          "line": 1465,
           "called": [
             "ASID",
             "PAddr",
@@ -7578,7 +7791,7 @@
         {
           "kind": "theorem",
           "name": "unmapIcacheOperand_eq_none_iff",
-          "line": 1389,
+          "line": 1473,
           "called": [
             "ASID",
             "SystemState",
@@ -7592,7 +7805,7 @@
         {
           "kind": "def",
           "name": "vspaceUnmapPageWithShootdownAndIcacheBroadcast",
-          "line": 1414,
+          "line": 1498,
           "called": [
             "ASID",
             "CoreId",
@@ -7607,7 +7820,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPageWithShootdownAndIcacheBroadcast_error_iff",
-          "line": 1421,
+          "line": 1505,
           "called": [
             "ASID",
             "CoreId",
@@ -7623,7 +7836,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPageWithShootdownAndIcacheBroadcast_non_executable_inert",
-          "line": 1432,
+          "line": 1516,
           "called": [
             "ASID",
             "CoreId",
@@ -7641,7 +7854,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPageWithShootdownPerCore_perCoreICache_eq",
-          "line": 1446,
+          "line": 1530,
           "called": [
             "ASID",
             "CoreId",
@@ -7658,7 +7871,7 @@
         {
           "kind": "theorem",
           "name": "unmapSurvivor_not_target",
-          "line": 1480,
+          "line": 1564,
           "called": [
             "ASID",
             "ICacheLine",
@@ -7673,7 +7886,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPageWithShootdownAndIcacheBroadcast_preserves_icacheCoherent_perCore",
-          "line": 1506,
+          "line": 1590,
           "called": [
             "ASID",
             "CoreId",
@@ -7725,7 +7938,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPageWithShootdownAndIcacheBroadcast_preserves_tlbInvalidationConsistent_perCore",
-          "line": 1617,
+          "line": 1701,
           "called": [
             "ASID",
             "CoreId",
@@ -7755,7 +7968,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPageWithShootdownAndIcacheBroadcast_preserves_perCore_memory_invariants",
-          "line": 1663,
+          "line": 1747,
           "called": [
             "ASID",
             "CoreId",
@@ -7779,7 +7992,7 @@
         {
           "kind": "def",
           "name": "unifyTargetPaddr",
-          "line": 1698,
+          "line": 1782,
           "called": [
             "ASID",
             "PAddr",
@@ -7794,7 +8007,7 @@
         {
           "kind": "theorem",
           "name": "unifyTargetPaddr_of_mapped",
-          "line": 1704,
+          "line": 1788,
           "called": [
             "ASID",
             "ObjId",
@@ -7812,7 +8025,7 @@
         {
           "kind": "def",
           "name": "vspaceUnifyInstructionPage",
-          "line": 1734,
+          "line": 1818,
           "called": [
             "ASID",
             "Kernel",
@@ -7829,7 +8042,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnifyInstructionPage_asid_unbound",
-          "line": 1749,
+          "line": 1833,
           "called": [
             "ASID",
             "SystemState",
@@ -7843,7 +8056,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnifyInstructionPage_unmapped",
-          "line": 1757,
+          "line": 1841,
           "called": [
             "ASID",
             "ObjId",
@@ -7860,7 +8073,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnifyInstructionPage_ok",
-          "line": 1767,
+          "line": 1851,
           "called": [
             "ASID",
             "ObjId",
@@ -7881,7 +8094,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnifyInstructionPage_frame",
-          "line": 1781,
+          "line": 1865,
           "called": [
             "ASID",
             "SystemState",
@@ -7899,7 +8112,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnifyInstructionPage_records_unify",
-          "line": 1806,
+          "line": 1890,
           "called": [
             "ASID",
             "ObjId",
@@ -7919,7 +8132,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnifyInstructionPage_invalidates_all_cores",
-          "line": 1822,
+          "line": 1906,
           "called": [
             "ASID",
             "CoreId",
@@ -7944,7 +8157,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnifyInstructionPage_preserves_icacheCoherent_perCore",
-          "line": 1839,
+          "line": 1923,
           "called": [
             "ASID",
             "SystemState",
@@ -7966,7 +8179,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnifyInstructionPage_preserves_tlbInvalidationConsistent_perCore",
-          "line": 1862,
+          "line": 1946,
           "called": [
             "ASID",
             "SystemState",
@@ -93959,7 +94172,7 @@
     {
       "module": "SeLe4n.Kernel.Lifecycle.Operations.RetypeWrappers",
       "path": "SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean",
-      "declaration_count": 74,
+      "declaration_count": 78,
       "declarations": [
         {
           "kind": "namespace",
@@ -95026,27 +95239,97 @@
         },
         {
           "kind": "def",
-          "name": "retypeIcacheOperand",
-          "line": 1642,
+          "name": "retypeIcacheOp",
+          "line": 1665,
           "called": [
             "ICacheInvalidation",
-            "SystemState"
+            "ObjId",
+            "SystemState",
+            "getObjectType",
+            "none",
+            "objectTypeAllocSize",
+            "ofNat",
+            "size",
+            "st",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "retypeIcacheOperand",
+          "line": 1674,
+          "called": [
+            "ICacheInvalidation",
+            "ObjId",
+            "SystemState",
+            "retypeIcacheOp",
+            "st"
           ]
         },
         {
           "kind": "theorem",
           "name": "retypeIcacheOperand_eq",
-          "line": 1647,
+          "line": 1679,
           "called": [
+            "ObjId",
             "SystemState",
+            "retypeIcacheOp",
             "retypeIcacheOperand",
             "st"
           ]
         },
         {
+          "kind": "theorem",
+          "name": "retypeIcacheOp_isDomainWide",
+          "line": 1685,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "isDomainWide",
+            "retypeIcacheOp",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "retypeIcacheOp_cleans_scrub_extent",
+          "line": 1699,
+          "called": [
+            "KernelObject",
+            "ObjId",
+            "SystemState",
+            "getObjectType",
+            "objectType",
+            "objectTypeAllocSize",
+            "ofNat",
+            "retypeIcacheOp",
+            "st",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "retypeIcacheOp_discharges_scrub_obligation",
+          "line": 1718,
+          "called": [
+            "ICacheInvalidation.covers",
+            "KernelObject",
+            "ObjId",
+            "SystemState",
+            "dischargesPoUClean",
+            "objectType",
+            "objectTypeAllocSize",
+            "ofNat",
+            "retypeIcacheOp",
+            "retypeIcacheOp_cleans_scrub_extent",
+            "st",
+            "toNat"
+          ]
+        },
+        {
           "kind": "def",
           "name": "lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache",
-          "line": 1660,
+          "line": 1737,
           "called": [
             "Capability",
             "CoreId",
@@ -95061,7 +95344,7 @@
         {
           "kind": "def",
           "name": "lifecycleRetypeWithCleanupShootdownPerCoreIcache",
-          "line": 1671,
+          "line": 1748,
           "called": [
             "CSpaceAddr",
             "CoreId",
@@ -95076,7 +95359,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_error_iff",
-          "line": 1680,
+          "line": 1757,
           "called": [
             "Capability",
             "CoreId",
@@ -95093,7 +95376,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeWithCleanupShootdownPerCoreIcache_error_iff",
-          "line": 1691,
+          "line": 1768,
           "called": [
             "CSpaceAddr",
             "CoreId",
@@ -95110,7 +95393,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_ok",
-          "line": 1703,
+          "line": 1780,
           "called": [
             "Capability",
             "CoreId",
@@ -95122,6 +95405,7 @@
             "lifecycleRetypeDirectWithCleanupShootdownPerCore",
             "lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache",
             "recordIcacheMaintenance",
+            "retypeIcacheOp",
             "retypeIcacheOperand_eq",
             "st",
             "withIcacheBroadcast_some_ok"
@@ -95130,7 +95414,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeWithCleanupShootdownPerCoreIcache_ok",
-          "line": 1718,
+          "line": 1796,
           "called": [
             "CSpaceAddr",
             "CoreId",
@@ -95142,6 +95426,7 @@
             "lifecycleRetypeWithCleanupShootdownPerCore",
             "lifecycleRetypeWithCleanupShootdownPerCoreIcache",
             "recordIcacheMaintenance",
+            "retypeIcacheOp",
             "retypeIcacheOperand_eq",
             "st",
             "withIcacheBroadcast_some_ok"
@@ -95150,7 +95435,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_preserves_icacheCoherent_perCore",
-          "line": 1740,
+          "line": 1819,
           "called": [
             "Capability",
             "CoreId",
@@ -95160,12 +95445,14 @@
             "icBroadcastReach",
             "icBroadcastReach_cover",
             "icInvalidateBroadcast",
-            "icInvalidateBroadcast_iallu_empties",
+            "icInvalidateBroadcast_domainWide_empties",
             "icacheCoherent_perCore",
             "icacheOnCore",
             "lifecycleRetypeDirectWithCleanupShootdownPerCore",
             "lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache",
             "recordIcacheMaintenance",
+            "retypeIcacheOp",
+            "retypeIcacheOp_isDomainWide",
             "retypeIcacheOperand_eq",
             "st",
             "withIcacheBroadcast_error_iff",
@@ -95175,7 +95462,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeWithCleanupShootdownPerCoreIcache_preserves_icacheCoherent_perCore",
-          "line": 1772,
+          "line": 1854,
           "called": [
             "CSpaceAddr",
             "CoreId",
@@ -95185,12 +95472,14 @@
             "icBroadcastReach",
             "icBroadcastReach_cover",
             "icInvalidateBroadcast",
-            "icInvalidateBroadcast_iallu_empties",
+            "icInvalidateBroadcast_domainWide_empties",
             "icacheCoherent_perCore",
             "icacheOnCore",
             "lifecycleRetypeWithCleanupShootdownPerCore",
             "lifecycleRetypeWithCleanupShootdownPerCoreIcache",
             "recordIcacheMaintenance",
+            "retypeIcacheOp",
+            "retypeIcacheOp_isDomainWide",
             "retypeIcacheOperand_eq",
             "st",
             "withIcacheBroadcast_error_iff",
@@ -95200,7 +95489,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_preserves_tlbInvalidationConsistent_perCore",
-          "line": 1805,
+          "line": 1890,
           "called": [
             "Capability",
             "CoreId",
@@ -95214,6 +95503,7 @@
             "lifecycleRetypeDirectWithCleanupShootdownPerCore",
             "lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache",
             "lifecycleRetypeDirectWithCleanupShootdownPerCore_preserves_tlbInvalidationConsistent_perCore",
+            "retypeIcacheOp",
             "retypeIcacheOperand_eq",
             "shootdownQuiescent",
             "st",
@@ -95226,7 +95516,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeWithCleanupShootdownPerCoreIcache_preserves_tlbInvalidationConsistent_perCore",
-          "line": 1837,
+          "line": 1922,
           "called": [
             "CSpaceAddr",
             "CoreId",
@@ -95240,6 +95530,7 @@
             "lifecycleRetypeWithCleanupShootdownPerCore",
             "lifecycleRetypeWithCleanupShootdownPerCoreIcache",
             "lifecycleRetypeWithCleanupShootdownPerCore_preserves_tlbInvalidationConsistent_perCore",
+            "retypeIcacheOp",
             "retypeIcacheOperand_eq",
             "shootdownQuiescent",
             "st",
@@ -95252,7 +95543,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_preserves_perCore_memory_invariants",
-          "line": 1870,
+          "line": 1955,
           "called": [
             "Capability",
             "CoreId",
@@ -146243,7 +146534,7 @@
     {
       "module": "SeLe4n.Model.State",
       "path": "SeLe4n/Model/State.lean",
-      "declaration_count": 315,
+      "declaration_count": 318,
       "declarations": [
         {
           "kind": "namespace",
@@ -148989,9 +149280,44 @@
           ]
         },
         {
+          "kind": "def",
+          "name": "getObjectType",
+          "line": 2591,
+          "called": [
+            "KernelObjectType",
+            "ObjId",
+            "SystemState",
+            "objectType",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "getObjectType",
+          "line": 2596,
+          "called": [
+            "KernelObject",
+            "ObjId",
+            "SystemState",
+            "objectType",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "getObjectType",
+          "line": 2602,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "none",
+            "st"
+          ]
+        },
+        {
           "kind": "theorem",
           "name": "getTcb",
-          "line": 2592,
+          "line": 2620,
           "called": [
             "SchedContext",
             "SystemState",
@@ -149004,7 +149330,7 @@
         {
           "kind": "theorem",
           "name": "getTcb",
-          "line": 2600,
+          "line": 2628,
           "called": [
             "Endpoint",
             "SystemState",
@@ -149017,7 +149343,7 @@
         {
           "kind": "theorem",
           "name": "getTcb",
-          "line": 2608,
+          "line": 2636,
           "called": [
             "Notification",
             "SystemState",
@@ -149030,7 +149356,7 @@
         {
           "kind": "theorem",
           "name": "getTcb",
-          "line": 2615,
+          "line": 2643,
           "called": [
             "CNode",
             "SystemState",
@@ -149043,7 +149369,7 @@
         {
           "kind": "theorem",
           "name": "getTcb",
-          "line": 2622,
+          "line": 2650,
           "called": [
             "SystemState",
             "ThreadId",
@@ -149056,7 +149382,7 @@
         {
           "kind": "theorem",
           "name": "getTcb",
-          "line": 2629,
+          "line": 2657,
           "called": [
             "SystemState",
             "ThreadId",
@@ -149069,7 +149395,7 @@
         {
           "kind": "theorem",
           "name": "getTcb",
-          "line": 2636,
+          "line": 2664,
           "called": [
             "SystemState",
             "ThreadId",
@@ -149081,7 +149407,7 @@
         {
           "kind": "theorem",
           "name": "getSchedContext",
-          "line": 2643,
+          "line": 2671,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -149095,7 +149421,7 @@
         {
           "kind": "theorem",
           "name": "getEndpoint",
-          "line": 2651,
+          "line": 2679,
           "called": [
             "ObjId",
             "SystemState",
@@ -149107,7 +149433,7 @@
         {
           "kind": "theorem",
           "name": "getNotification",
-          "line": 2658,
+          "line": 2686,
           "called": [
             "ObjId",
             "SystemState",
@@ -149119,7 +149445,7 @@
         {
           "kind": "theorem",
           "name": "getUntyped",
-          "line": 2665,
+          "line": 2693,
           "called": [
             "ObjId",
             "SystemState",
@@ -149131,7 +149457,7 @@
         {
           "kind": "theorem",
           "name": "getTcb",
-          "line": 2672,
+          "line": 2700,
           "called": [
             "SystemState",
             "TCB",
@@ -149143,7 +149469,7 @@
         {
           "kind": "theorem",
           "name": "getSchedContext",
-          "line": 2686,
+          "line": 2714,
           "called": [
             "SchedContext",
             "SchedContextId",
@@ -149156,7 +149482,7 @@
         {
           "kind": "theorem",
           "name": "getReply",
-          "line": 2701,
+          "line": 2729,
           "called": [
             "Reply",
             "ReplyId",
@@ -149169,7 +149495,7 @@
         {
           "kind": "def",
           "name": "linkReply",
-          "line": 2719,
+          "line": 2747,
           "called": [
             "Kernel",
             "ReplyId",
@@ -149184,7 +149510,7 @@
         {
           "kind": "def",
           "name": "consumeReply",
-          "line": 2731,
+          "line": 2759,
           "called": [
             "Kernel",
             "ReplyId",
@@ -149198,7 +149524,7 @@
         {
           "kind": "theorem",
           "name": "consumeReply_getReply",
-          "line": 2738,
+          "line": 2766,
           "called": [
             "RHTable_getElem",
             "Reply",
@@ -149216,7 +149542,7 @@
         {
           "kind": "theorem",
           "name": "linkReply_getReply",
-          "line": 2752,
+          "line": 2780,
           "called": [
             "RHTable_getElem",
             "Reply",
@@ -149235,7 +149561,7 @@
         {
           "kind": "theorem",
           "name": "linkReply_inUse_error",
-          "line": 2768,
+          "line": 2796,
           "called": [
             "Reply",
             "ReplyId",
@@ -149250,7 +149576,7 @@
         {
           "kind": "def",
           "name": "linkCallerReply",
-          "line": 2787,
+          "line": 2815,
           "called": [
             "Kernel",
             "ReplyId",
@@ -149266,7 +149592,7 @@
         {
           "kind": "def",
           "name": "consumeCallerReply",
-          "line": 2811,
+          "line": 2839,
           "called": [
             "Kernel",
             "ReplyId",
@@ -149282,7 +149608,7 @@
         {
           "kind": "def",
           "name": "linkServerStashedReply",
-          "line": 2831,
+          "line": 2859,
           "called": [
             "Kernel",
             "ThreadId",
@@ -149298,7 +149624,7 @@
         {
           "kind": "def",
           "name": "replyIsStashed",
-          "line": 2863,
+          "line": 2891,
           "called": [
             "ReplyId",
             "SystemState",
@@ -149309,7 +149635,7 @@
         {
           "kind": "def",
           "name": "replyStashValid",
-          "line": 2883,
+          "line": 2911,
           "called": [
             "ReplyId",
             "SystemState",
@@ -149323,7 +149649,7 @@
         {
           "kind": "theorem",
           "name": "linkCallerReply_inUse_error",
-          "line": 2896,
+          "line": 2924,
           "called": [
             "Reply",
             "ReplyId",
@@ -149339,7 +149665,7 @@
         {
           "kind": "theorem",
           "name": "linkReply_preserves_objects_invExt",
-          "line": 2905,
+          "line": 2933,
           "called": [
             "ReplyId",
             "SystemState",
@@ -149356,7 +149682,7 @@
         {
           "kind": "theorem",
           "name": "consumeReply_preserves_objects_invExt",
-          "line": 2924,
+          "line": 2952,
           "called": [
             "ReplyId",
             "SystemState",
@@ -149372,7 +149698,7 @@
         {
           "kind": "theorem",
           "name": "getTcb",
-          "line": 2939,
+          "line": 2967,
           "called": [
             "Reply",
             "ReplyId",
@@ -149387,7 +149713,7 @@
         {
           "kind": "theorem",
           "name": "linkCallerReply_replyObject_some",
-          "line": 2952,
+          "line": 2980,
           "called": [
             "RHTable_getElem",
             "ReplyId",
@@ -149407,7 +149733,7 @@
         {
           "kind": "theorem",
           "name": "linkCallerReply_caller_ipcState_preserved",
-          "line": 2979,
+          "line": 3007,
           "called": [
             "RHTable_getElem",
             "ReplyId",
@@ -149430,7 +149756,7 @@
         {
           "kind": "theorem",
           "name": "consumeCallerReply_replyObject_none",
-          "line": 3024,
+          "line": 3052,
           "called": [
             "RHTable_getElem",
             "ReplyId",
@@ -149450,7 +149776,7 @@
         {
           "kind": "theorem",
           "name": "linkCallerReply_getReply",
-          "line": 3056,
+          "line": 3084,
           "called": [
             "Reply",
             "ReplyId",
@@ -149473,7 +149799,7 @@
         {
           "kind": "theorem",
           "name": "consumeCallerReply_getReply",
-          "line": 3090,
+          "line": 3118,
           "called": [
             "Reply",
             "ReplyId",
@@ -149496,7 +149822,7 @@
         {
           "kind": "theorem",
           "name": "consumeReply_isOk",
-          "line": 3122,
+          "line": 3150,
           "called": [
             "ReplyId",
             "SystemState",
@@ -149509,7 +149835,7 @@
         {
           "kind": "theorem",
           "name": "consumeCallerReply_isOk",
-          "line": 3133,
+          "line": 3161,
           "called": [
             "ReplyId",
             "SystemState",
@@ -149524,7 +149850,7 @@
         {
           "kind": "theorem",
           "name": "consumeReply_scheduler_eq",
-          "line": 3145,
+          "line": 3173,
           "called": [
             "ReplyId",
             "SystemState",
@@ -149539,7 +149865,7 @@
         {
           "kind": "theorem",
           "name": "consumeCallerReply_scheduler_eq",
-          "line": 3159,
+          "line": 3187,
           "called": [
             "ReplyId",
             "SystemState",
@@ -149557,7 +149883,7 @@
         {
           "kind": "theorem",
           "name": "consumeCallerReply_machine_eq",
-          "line": 3180,
+          "line": 3208,
           "called": [
             "ReplyId",
             "SystemState",
@@ -149575,7 +149901,7 @@
         {
           "kind": "theorem",
           "name": "consumeCallerReply_preserves_objects_invExt",
-          "line": 3207,
+          "line": 3235,
           "called": [
             "ReplyId",
             "SystemState",
@@ -149594,7 +149920,7 @@
         {
           "kind": "theorem",
           "name": "consumeCallerReply_nonTcbNonReply_agree",
-          "line": 3233,
+          "line": 3261,
           "called": [
             "KernelObject",
             "ObjId",
@@ -149617,7 +149943,7 @@
         {
           "kind": "theorem",
           "name": "consumeCallerReply_tcb_forward",
-          "line": 3290,
+          "line": 3318,
           "called": [
             "ObjId",
             "ReplyId",
@@ -149640,7 +149966,7 @@
         {
           "kind": "theorem",
           "name": "consumeCallerReply_tcb_backward",
-          "line": 3350,
+          "line": 3378,
           "called": [
             "ObjId",
             "ReplyId",
@@ -149664,7 +149990,7 @@
         {
           "kind": "theorem",
           "name": "consumeCallerReply_cdt_eq",
-          "line": 3405,
+          "line": 3433,
           "called": [
             "ReplyId",
             "SystemState",
@@ -149682,7 +150008,7 @@
         {
           "kind": "theorem",
           "name": "consumeCallerReply_cdtNodeSlot_eq",
-          "line": 3429,
+          "line": 3457,
           "called": [
             "ReplyId",
             "SystemState",
@@ -149700,7 +150026,7 @@
         {
           "kind": "theorem",
           "name": "consumeCallerReply_objects_isSome",
-          "line": 3454,
+          "line": 3482,
           "called": [
             "ObjId",
             "ReplyId",
@@ -149722,7 +150048,7 @@
         {
           "kind": "theorem",
           "name": "consumeCallerReply_getReply",
-          "line": 3496,
+          "line": 3524,
           "called": [
             "Reply",
             "ReplyId",
@@ -149745,7 +150071,7 @@
         {
           "kind": "theorem",
           "name": "getEndpoint",
-          "line": 3542,
+          "line": 3570,
           "called": [
             "Endpoint",
             "ObjId",
@@ -149756,7 +150082,7 @@
         {
           "kind": "theorem",
           "name": "getNotification",
-          "line": 3556,
+          "line": 3584,
           "called": [
             "Notification",
             "ObjId",
@@ -149767,7 +150093,7 @@
         {
           "kind": "theorem",
           "name": "getUntyped",
-          "line": 3570,
+          "line": 3598,
           "called": [
             "ObjId",
             "SystemState",
@@ -149778,7 +150104,7 @@
         {
           "kind": "theorem",
           "name": "getCNode",
-          "line": 3583,
+          "line": 3611,
           "called": [
             "CNode",
             "ObjId",
@@ -149789,7 +150115,7 @@
         {
           "kind": "theorem",
           "name": "lookupCNode_eq_some_iff",
-          "line": 3599,
+          "line": 3627,
           "called": [
             "CNode",
             "ObjId",
@@ -149801,7 +150127,7 @@
         {
           "kind": "theorem",
           "name": "getVSpaceRoot",
-          "line": 3612,
+          "line": 3640,
           "called": [
             "ObjId",
             "SystemState",
@@ -149812,7 +150138,7 @@
         {
           "kind": "theorem",
           "name": "getTcb",
-          "line": 3628,
+          "line": 3656,
           "called": [
             "SystemState",
             "ThreadId",
@@ -149824,7 +150150,7 @@
         {
           "kind": "def",
           "name": "lookupSlotCap",
-          "line": 3660,
+          "line": 3688,
           "called": [
             "Capability",
             "SlotRef",
@@ -149838,7 +150164,7 @@
         {
           "kind": "def",
           "name": "ownerOfSlot",
-          "line": 3666,
+          "line": 3694,
           "called": [
             "CSpaceOwner",
             "SlotRef"
@@ -149847,7 +150173,7 @@
         {
           "kind": "def",
           "name": "ownsSlot",
-          "line": 3670,
+          "line": 3698,
           "called": [
             "CSpaceOwner",
             "SlotRef",
@@ -149860,7 +150186,7 @@
         {
           "kind": "def",
           "name": "ownedSlots",
-          "line": 3675,
+          "line": 3703,
           "called": [
             "CSpaceOwner",
             "Capability",
@@ -149875,7 +150201,7 @@
         {
           "kind": "def",
           "name": "lookupObjectTypeMeta",
-          "line": 3681,
+          "line": 3709,
           "called": [
             "KernelObjectType",
             "ObjId",
@@ -149886,7 +150212,7 @@
         {
           "kind": "def",
           "name": "lookupCapabilityRefMeta",
-          "line": 3685,
+          "line": 3713,
           "called": [
             "CapTarget",
             "SlotRef",
@@ -149898,7 +150224,7 @@
         {
           "kind": "def",
           "name": "lookupCdtNodeOfSlot",
-          "line": 3690,
+          "line": 3718,
           "called": [
             "CdtNodeId",
             "SlotRef",
@@ -149909,7 +150235,7 @@
         {
           "kind": "def",
           "name": "lookupCdtSlotOfNode",
-          "line": 3694,
+          "line": 3722,
           "called": [
             "CdtNodeId",
             "SlotRef",
@@ -149920,7 +150246,7 @@
         {
           "kind": "def",
           "name": "attachSlotToCdtNode",
-          "line": 3719,
+          "line": 3747,
           "called": [
             "CdtNodeId",
             "SlotRef",
@@ -149934,7 +150260,7 @@
         {
           "kind": "def",
           "name": "detachSlotFromCdt",
-          "line": 3737,
+          "line": 3765,
           "called": [
             "SlotRef",
             "SystemState",
@@ -149946,7 +150272,7 @@
         {
           "kind": "theorem",
           "name": "detachSlotFromCdt_tlbShootdown_eq",
-          "line": 3749,
+          "line": 3777,
           "called": [
             "SlotRef",
             "SystemState",
@@ -149957,7 +150283,7 @@
         {
           "kind": "def",
           "name": "ensureCdtNodeForSlot",
-          "line": 3754,
+          "line": 3782,
           "called": [
             "CdtNodeId",
             "SlotRef",
@@ -149970,7 +150296,7 @@
         {
           "kind": "def",
           "name": "ensureCdtNodeForSlotChecked",
-          "line": 3782,
+          "line": 3810,
           "called": [
             "CdtNodeId",
             "SlotRef",
@@ -149984,7 +150310,7 @@
         {
           "kind": "theorem",
           "name": "attachSlotToCdtNode_objects_eq",
-          "line": 3801,
+          "line": 3829,
           "called": [
             "CdtNodeId",
             "SlotRef",
@@ -149996,7 +150322,7 @@
         {
           "kind": "theorem",
           "name": "detachSlotFromCdt_objects_eq",
-          "line": 3805,
+          "line": 3833,
           "called": [
             "SlotRef",
             "SystemState",
@@ -150007,7 +150333,7 @@
         {
           "kind": "theorem",
           "name": "ensureCdtNodeForSlot_objects_eq",
-          "line": 3810,
+          "line": 3838,
           "called": [
             "SlotRef",
             "SystemState",
@@ -150018,7 +150344,7 @@
         {
           "kind": "theorem",
           "name": "ensureCdtNodeForSlotChecked_preserves_bounded",
-          "line": 3822,
+          "line": 3850,
           "called": [
             "CdtNodeId",
             "SlotRef",
@@ -150031,7 +150357,7 @@
         {
           "kind": "theorem",
           "name": "ensureCdtNodeForSlotChecked_objects_eq",
-          "line": 3840,
+          "line": 3868,
           "called": [
             "CdtNodeId",
             "SlotRef",
@@ -150043,7 +150369,7 @@
         {
           "kind": "theorem",
           "name": "ensureCdtNodeForSlotChecked_eq_unchecked_of_allocated",
-          "line": 3854,
+          "line": 3882,
           "called": [
             "CdtNodeId",
             "SlotRef",
@@ -150055,7 +150381,7 @@
         {
           "kind": "theorem",
           "name": "lookupSlotCap_eq_of_objects_eq",
-          "line": 3862,
+          "line": 3890,
           "called": [
             "SlotRef",
             "SystemState",
@@ -150067,7 +150393,7 @@
         {
           "kind": "def",
           "name": "objectTypeMetadataConsistent",
-          "line": 3870,
+          "line": 3898,
           "called": [
             "SystemState",
             "lookupObjectTypeMeta",
@@ -150078,7 +150404,7 @@
         {
           "kind": "def",
           "name": "capabilityRefMetadataConsistent",
-          "line": 3874,
+          "line": 3902,
           "called": [
             "SystemState",
             "lookupCapabilityRefMeta",
@@ -150089,7 +150415,7 @@
         {
           "kind": "def",
           "name": "lifecycleMetadataConsistent",
-          "line": 3878,
+          "line": 3906,
           "called": [
             "SystemState",
             "capabilityRefMetadataConsistent",
@@ -150100,7 +150426,7 @@
         {
           "kind": "theorem",
           "name": "lookupSlotCap_eq_none_of_lookupCNode_eq_none",
-          "line": 3881,
+          "line": 3909,
           "called": [
             "SlotRef",
             "SystemState",
@@ -150113,7 +150439,7 @@
         {
           "kind": "theorem",
           "name": "ownsSlot_iff",
-          "line": 3888,
+          "line": 3916,
           "called": [
             "CSpaceOwner",
             "SlotRef",
@@ -150127,7 +150453,7 @@
         {
           "kind": "theorem",
           "name": "ownedSlots_eq_nil_of_lookupCNode_eq_none",
-          "line": 3896,
+          "line": 3924,
           "called": [
             "CSpaceOwner",
             "SystemState",
@@ -150140,7 +150466,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_preserves_objectTypeMetadataConsistent",
-          "line": 3905,
+          "line": 3933,
           "called": [
             "KernelObject",
             "ObjId",
@@ -150158,7 +150484,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_preserves_capabilityRefMetadataConsistent",
-          "line": 3928,
+          "line": 3956,
           "called": [
             "KernelObject",
             "ObjId",
@@ -150172,7 +150498,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_preserves_lifecycleMetadataConsistent",
-          "line": 3938,
+          "line": 3966,
           "called": [
             "KernelObject",
             "ObjId",
@@ -150188,7 +150514,7 @@
         {
           "kind": "theorem",
           "name": "capabilityRefs_filter_preserves_invExt",
-          "line": 3958,
+          "line": 3986,
           "called": [
             "CapTarget",
             "ObjId",
@@ -150202,7 +150528,7 @@
         {
           "kind": "theorem",
           "name": "capabilityRefs_fold_preserves_invExt",
-          "line": 3973,
+          "line": 4001,
           "called": [
             "CNode",
             "CapTarget",
@@ -150219,7 +150545,7 @@
         {
           "kind": "theorem",
           "name": "capabilityRefs_fold_preserves_invExtK",
-          "line": 3984,
+          "line": 4012,
           "called": [
             "CNode",
             "CapTarget",
@@ -150236,7 +150562,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_preserves_allTablesInvExtK",
-          "line": 4009,
+          "line": 4037,
           "called": [
             "KernelObject",
             "ObjId",
@@ -150261,7 +150587,7 @@
         {
           "kind": "theorem",
           "name": "default_systemState_lifecycleConsistent",
-          "line": 4082,
+          "line": 4110,
           "called": [
             "RHTable.getElem",
             "SystemState",
@@ -150277,7 +150603,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_metadata_sync_type_change",
-          "line": 4104,
+          "line": 4132,
           "called": [
             "KernelObject",
             "ObjId",
@@ -150292,7 +150618,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_metadata_sync_capref_at_stored",
-          "line": 4122,
+          "line": 4150,
           "called": [
             "KernelObject",
             "ObjId",
@@ -150313,7 +150639,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_objectIndex_monotone",
-          "line": 4145,
+          "line": 4173,
           "called": [
             "KernelObject",
             "ObjId",
@@ -150326,7 +150652,7 @@
         {
           "kind": "def",
           "name": "objectIndexLive",
-          "line": 4170,
+          "line": 4198,
           "called": [
             "ObjId",
             "SystemState",
@@ -150337,7 +150663,7 @@
         {
           "kind": "theorem",
           "name": "objectIndexLive_default",
-          "line": 4174,
+          "line": 4202,
           "called": [
             "default",
             "objectIndexLive"
@@ -150346,7 +150672,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_preserves_objectIndexLive",
-          "line": 4183,
+          "line": 4211,
           "called": [
             "KernelObject",
             "ObjId",
@@ -153873,7 +154199,7 @@
     {
       "module": "SeLe4n.Platform.FFI",
       "path": "SeLe4n/Platform/FFI.lean",
-      "declaration_count": 93,
+      "declaration_count": 94,
       "declarations": [
         {
           "kind": "namespace",
@@ -154439,24 +154765,25 @@
         {
           "kind": "opaque",
           "name": "ffiIcMaintenance",
-          "line": 1232,
+          "line": 1241,
           "called": []
         },
         {
           "kind": "def",
           "name": "icMaintenanceBroadcast",
-          "line": 1257,
+          "line": 1276,
           "called": [
             "ICacheInvalidation",
             "ffiIcMaintenance",
             "toOpTag",
-            "toPaddr"
+            "toPaddr",
+            "toSize"
           ]
         },
         {
           "kind": "theorem",
           "name": "icMaintenanceBroadcast_iallu_encoding",
-          "line": 1262,
+          "line": 1281,
           "called": [
             "toOpTag",
             "toPaddr"
@@ -154465,7 +154792,7 @@
         {
           "kind": "theorem",
           "name": "icMaintenanceBroadcast_ivauPage_encoding",
-          "line": 1269,
+          "line": 1288,
           "called": [
             "PAddr",
             "ofNat",
@@ -154475,9 +154802,22 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "icMaintenanceBroadcast_cleanRangeIallu_encoding",
+          "line": 1297,
+          "called": [
+            "PAddr",
+            "ofNat",
+            "toNat",
+            "toOpTag",
+            "toPaddr",
+            "toSize"
+          ]
+        },
+        {
           "kind": "def",
           "name": "syscallDispatchInner",
-          "line": 1304,
+          "line": 1335,
           "called": [
             "bootCoreId",
             "encodeError",
@@ -154492,19 +154832,19 @@
         {
           "kind": "opaque",
           "name": "ffiCacheCleanPagetableRange",
-          "line": 1362,
+          "line": 1393,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiIcIallu",
-          "line": 1375,
+          "line": 1406,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_total",
-          "line": 1391,
+          "line": 1422,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -154524,7 +154864,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok",
-          "line": 1435,
+          "line": 1466,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -154543,7 +154883,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_error_of_syscallEntryChecked_error",
-          "line": 1457,
+          "line": 1488,
           "called": [
             "CoreId",
             "KernelError",
@@ -154562,7 +154902,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_illegalState_when_no_current",
-          "line": 1481,
+          "line": 1512,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -154577,7 +154917,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_abiMismatch_rejected",
-          "line": 1504,
+          "line": 1535,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -154590,7 +154930,7 @@
         {
           "kind": "theorem",
           "name": "writeFfiRegistersToTcb_id_when_not_tcb",
-          "line": 1526,
+          "line": 1557,
           "called": [
             "SystemState",
             "TCB",
@@ -154604,7 +154944,7 @@
         {
           "kind": "theorem",
           "name": "readReturnValue_zero_when_not_tcb",
-          "line": 1551,
+          "line": 1582,
           "called": [
             "SystemState",
             "TCB",
@@ -183844,24 +184184,31 @@
     {
       "module": "tests.SmpCacheMaintenanceSuite",
       "path": "tests/SmpCacheMaintenanceSuite.lean",
-      "declaration_count": 43,
+      "declaration_count": 44,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing.SmpCacheMaintenance",
-          "line": 47,
+          "line": 49,
           "called": [
             "CoherentAgent",
             "DCacheMaintenance",
             "DCacheViews",
             "ICacheInvalidation",
+            "ICacheInvalidation.cleanRangeIallu_covers_iallu",
+            "ICacheInvalidation.cleanRangeIallu_covers_ivauPage",
+            "ICacheInvalidation.cleanRangeIallu_covers_unifyPage",
+            "ICacheInvalidation.cleanRangeIallu_opTag",
+            "ICacheInvalidation.cleanRangeIallu_operands",
             "ICacheInvalidation.covers",
             "ICacheInvalidation.covers_refl",
             "ICacheInvalidation.covers_trans",
             "ICacheInvalidation.iallu_covers_ivauPage",
+            "ICacheInvalidation.iallu_not_covers_cleanRangeIallu",
             "ICacheInvalidation.iallu_not_covers_unifyPage",
             "ICacheInvalidation.iallu_opTag",
             "ICacheInvalidation.iallu_zero_operand",
+            "ICacheInvalidation.isDomainWide",
             "ICacheInvalidation.ivauPage_not_covers_of_ne",
             "ICacheInvalidation.ivauPage_opTag",
             "ICacheInvalidation.ivauPage_toPaddr",
@@ -183869,7 +184216,10 @@
             "ICacheInvalidation.toOpTag_distinct_constructors",
             "ICacheInvalidation.toOpTag_in_range",
             "ICacheInvalidation.toPaddr",
+            "ICacheInvalidation.toSize",
+            "ICacheInvalidation.toSize_zero_of_not_range",
             "ICacheInvalidation.unifyPage_covers_ivauPage",
+            "ICacheInvalidation.unifyPage_not_covers_cleanRangeIallu",
             "ICacheInvalidation.unifyPage_opTag",
             "ICacheInvalidation.unifyPage_toPaddr",
             "ICacheLine",
@@ -183879,6 +184229,7 @@
             "KernelCodeWriteSite",
             "applyDCacheMaintenance",
             "applyICacheInvalidation",
+            "applyICacheInvalidation_domainWide",
             "applyICacheInvalidation_iallu",
             "applyICacheInvalidation_idempotent",
             "applyICacheInvalidation_preserves_other",
@@ -183887,6 +184238,10 @@
             "applyICacheInvalidation_survivor_paddr_ne",
             "bootFromPlatform_pendingIcacheMaintenance_eq",
             "bootFromPlatform_perCoreICache_eq",
+            "byteRangeContains",
+            "byteRangeContains_iff",
+            "byteRangeContains_refl",
+            "byteRangeContains_trans",
             "cacheCoherency_cross_subsystem",
             "cacheLineBytes",
             "clearIcacheMaintenance",
@@ -183912,11 +184267,14 @@
             "default_pendingIcacheMaintenance",
             "default_perCoreICache",
             "default_system_state_proofLayerInvariantBundle",
+            "dischargesPoUClean",
+            "dischargesPoUClean_isDomainWide",
             "dispatchWithCap_vspaceUnifyInstruction_delegates",
             "ffiIcIalluIs",
             "ffiIcMaintenance",
             "freeze_preserves_pendingIcacheMaintenance",
             "freeze_preserves_perCoreICache",
+            "getObjectType",
             "icBroadcastReach",
             "icBroadcastReach_cover",
             "icBroadcastReach_nodup",
@@ -183947,6 +184305,7 @@
             "icInvalidateOnCore_subset",
             "icInvalidateOnCore_vs_dcMaintenance_reach",
             "icMaintenanceBroadcast",
+            "icMaintenanceBroadcast_cleanRangeIallu_encoding",
             "icMaintenanceBroadcast_iallu_encoding",
             "icMaintenanceBroadcast_ivauPage_encoding",
             "icacheCoherentCheck_perCore",
@@ -183958,6 +184317,7 @@
             "icacheLineConsistentCheck_iff",
             "icacheLineConsistent_of_frame",
             "icacheLineMatches",
+            "icacheLineMatches_domainWide",
             "icacheLineMatches_iallu",
             "icacheLineMatches_ivauPage",
             "icacheLineMatches_of_covers",
@@ -183966,9 +184326,11 @@
             "icacheLinesPerPage_covers_page",
             "icacheLinesPerPage_eq",
             "icacheOnCore",
+            "kernelCodeWriteEmitted",
             "kernelCodeWriteOwesPoUClean",
             "kernelCodeWriteSites",
             "kernelCodeWriteSites_complete",
+            "kernelCodeWriteSites_emission_pending",
             "kernelCodeWriteSites_owe_pou_clean",
             "lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache",
             "lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_error_iff",
@@ -183999,6 +184361,10 @@
             "recordIcacheMaintenance_covered",
             "recordIcacheMaintenance_ne_nil",
             "recordIcacheMaintenance_of_nil",
+            "retypeIcacheOp",
+            "retypeIcacheOp_cleans_scrub_extent",
+            "retypeIcacheOp_discharges_scrub_obligation",
+            "retypeIcacheOp_isDomainWide",
             "retypeIcacheOperand",
             "retypeIcacheOperand_eq",
             "setIcacheOnCore",
@@ -184042,16 +184408,16 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:291>",
-          "line": 291,
+          "name": "<anonymous:example:321>",
+          "line": 321,
           "called": [
             "toOpTag"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:292>",
-          "line": 292,
+          "name": "<anonymous:example:322>",
+          "line": 322,
           "called": [
             "ofNat",
             "toOpTag"
@@ -184059,16 +184425,16 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:293>",
-          "line": 293,
+          "name": "<anonymous:example:323>",
+          "line": 323,
           "called": [
             "toPaddr"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:297>",
-          "line": 297,
+          "name": "<anonymous:example:327>",
+          "line": 327,
           "called": [
             "ICacheLine",
             "icacheLineMatches"
@@ -184076,8 +184442,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:300>",
-          "line": 300,
+          "name": "<anonymous:example:330>",
+          "line": 330,
           "called": [
             "SystemState",
             "default",
@@ -184087,8 +184453,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:305>",
-          "line": 305,
+          "name": "<anonymous:example:335>",
+          "line": 335,
           "called": [
             "CoreId",
             "ICacheInvalidation",
@@ -184104,8 +184470,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:312>",
-          "line": 312,
+          "name": "<anonymous:example:342>",
+          "line": 342,
           "called": [
             "CoreId",
             "DCacheViews",
@@ -184117,8 +184483,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:317>",
-          "line": 317,
+          "name": "<anonymous:example:347>",
+          "line": 347,
           "called": [
             "CoreId",
             "modeledCoherentAgents",
@@ -184127,8 +184493,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:321>",
-          "line": 321,
+          "name": "<anonymous:example:351>",
+          "line": 351,
           "called": [
             "CoreId",
             "ICacheInvalidation",
@@ -184147,7 +184513,7 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 332,
+          "line": 362,
           "called": [
             "throw"
           ]
@@ -184155,7 +184521,7 @@
         {
           "kind": "def",
           "name": "core0",
-          "line": 339,
+          "line": 369,
           "called": [
             "CoreId"
           ]
@@ -184163,7 +184529,7 @@
         {
           "kind": "def",
           "name": "core1",
-          "line": 340,
+          "line": 370,
           "called": [
             "CoreId"
           ]
@@ -184171,7 +184537,7 @@
         {
           "kind": "def",
           "name": "core2",
-          "line": 341,
+          "line": 371,
           "called": [
             "CoreId"
           ]
@@ -184179,7 +184545,7 @@
         {
           "kind": "def",
           "name": "core3",
-          "line": 342,
+          "line": 372,
           "called": [
             "CoreId"
           ]
@@ -184187,7 +184553,7 @@
         {
           "kind": "def",
           "name": "asid5",
-          "line": 344,
+          "line": 374,
           "called": [
             "ASID"
           ]
@@ -184195,7 +184561,7 @@
         {
           "kind": "def",
           "name": "vaddrPage",
-          "line": 345,
+          "line": 375,
           "called": [
             "VAddr",
             "ofNat"
@@ -184204,7 +184570,7 @@
         {
           "kind": "def",
           "name": "vaddrOther",
-          "line": 346,
+          "line": 376,
           "called": [
             "VAddr",
             "ofNat"
@@ -184213,7 +184579,7 @@
         {
           "kind": "def",
           "name": "paddrPage",
-          "line": 347,
+          "line": 377,
           "called": [
             "PAddr",
             "ofNat"
@@ -184222,7 +184588,7 @@
         {
           "kind": "def",
           "name": "paddrOther",
-          "line": 348,
+          "line": 378,
           "called": [
             "PAddr",
             "ofNat"
@@ -184231,7 +184597,7 @@
         {
           "kind": "def",
           "name": "permsExec",
-          "line": 351,
+          "line": 381,
           "called": [
             "PagePermissions"
           ]
@@ -184239,7 +184605,7 @@
         {
           "kind": "def",
           "name": "lineExec",
-          "line": 355,
+          "line": 385,
           "called": [
             "ICacheLine",
             "asid5",
@@ -184251,7 +184617,7 @@
         {
           "kind": "def",
           "name": "lineOther",
-          "line": 359,
+          "line": 389,
           "called": [
             "ICacheLine",
             "asid5",
@@ -184263,7 +184629,7 @@
         {
           "kind": "def",
           "name": "runOperandChecks",
-          "line": 366,
+          "line": 396,
           "called": [
             "ICacheState",
             "all",
@@ -184283,7 +184649,7 @@
         {
           "kind": "def",
           "name": "runAccessorChecks",
-          "line": 395,
+          "line": 425,
           "called": [
             "SystemState",
             "all",
@@ -184303,7 +184669,7 @@
         {
           "kind": "def",
           "name": "runBroadcastReachChecks",
-          "line": 412,
+          "line": 442,
           "called": [
             "SystemState",
             "all",
@@ -184331,7 +184697,7 @@
         {
           "kind": "def",
           "name": "dcViews",
-          "line": 447,
+          "line": 477,
           "called": [
             "CacheState.empty",
             "CoreId",
@@ -184345,7 +184711,7 @@
         {
           "kind": "def",
           "name": "runDCachePoCChecks",
-          "line": 451,
+          "line": 481,
           "called": [
             "SystemState",
             "all",
@@ -184371,7 +184737,7 @@
         {
           "kind": "def",
           "name": "runDmaScopeChecks",
-          "line": 484,
+          "line": 514,
           "called": [
             "all",
             "assertBool",
@@ -184383,7 +184749,7 @@
         {
           "kind": "def",
           "name": "udVsp",
-          "line": 497,
+          "line": 527,
           "called": [
             "ObjId"
           ]
@@ -184391,7 +184757,7 @@
         {
           "kind": "def",
           "name": "udCn",
-          "line": 498,
+          "line": 528,
           "called": [
             "ObjId"
           ]
@@ -184399,7 +184765,7 @@
         {
           "kind": "def",
           "name": "udCaller",
-          "line": 499,
+          "line": 529,
           "called": [
             "ThreadId"
           ]
@@ -184407,7 +184773,7 @@
         {
           "kind": "def",
           "name": "cacheState",
-          "line": 501,
+          "line": 531,
           "called": [
             "Capability",
             "Slot",
@@ -184428,7 +184794,7 @@
         {
           "kind": "def",
           "name": "runInvariantChecks",
-          "line": 514,
+          "line": 544,
           "called": [
             "ICacheLine",
             "all",
@@ -184460,7 +184826,7 @@
         {
           "kind": "def",
           "name": "runLiveUnmapChecks",
-          "line": 554,
+          "line": 584,
           "called": [
             "SystemState",
             "all",
@@ -184492,7 +184858,7 @@
         {
           "kind": "def",
           "name": "runLiveRetypeChecks",
-          "line": 605,
+          "line": 635,
           "called": [
             "Capability",
             "SystemState",
@@ -184521,7 +184887,7 @@
         {
           "kind": "def",
           "name": "runSeamConformanceChecks",
-          "line": 635,
+          "line": 665,
           "called": [
             "SystemState",
             "assertBool",
@@ -184537,7 +184903,7 @@
         {
           "kind": "def",
           "name": "runLedgerChecks",
-          "line": 659,
+          "line": 689,
           "called": [
             "Capability",
             "SystemState",
@@ -184568,6 +184934,7 @@
             "recordIcacheMaintenance",
             "shootdownQuiescent",
             "st",
+            "toNat",
             "udVsp",
             "vaddrOther",
             "vaddrPage",
@@ -184578,12 +184945,14 @@
         {
           "kind": "def",
           "name": "runCodeWriteObligationChecks",
-          "line": 757,
+          "line": 793,
           "called": [
             "all",
             "assertBool",
             "contains",
             "covers",
+            "filter",
+            "kernelCodeWriteEmitted",
             "length",
             "st"
           ]
@@ -184591,7 +184960,7 @@
         {
           "kind": "def",
           "name": "unifyDecoded",
-          "line": 773,
+          "line": 817,
           "called": [
             "SyscallDecodeResult",
             "length",
@@ -184601,7 +184970,7 @@
         {
           "kind": "def",
           "name": "runUnifyInstructionChecks",
-          "line": 779,
+          "line": 823,
           "called": [
             "Capability",
             "ICacheLine",
@@ -184637,8 +185006,48 @@
         },
         {
           "kind": "def",
+          "name": "runRetypeCleanToPoUChecks",
+          "line": 927,
+          "called": [
+            "Capability",
+            "KernelObjectType",
+            "SystemState",
+            "all",
+            "asid5",
+            "assertBool",
+            "cacheState",
+            "core0",
+            "covers",
+            "dischargesPoUClean",
+            "icFetchOnCore",
+            "icacheCoherentCheck_perCore",
+            "icacheOnCore",
+            "isDomainWide",
+            "isEmpty",
+            "lifecycleRetypeWithCleanupShootdownPerCoreIcache",
+            "lineExec",
+            "objectTypeAllocSize",
+            "ofList",
+            "ofNat",
+            "paddrPage",
+            "permsExec",
+            "retypeIcacheOp",
+            "size",
+            "st",
+            "toNat",
+            "toOpTag",
+            "toPaddr",
+            "toSize",
+            "udCn",
+            "udVsp",
+            "vaddrPage",
+            "vspaceMapPageWithFlush"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runSmpCacheMaintenanceChecks",
-          "line": 869,
+          "line": 1014,
           "called": [
             "runAccessorChecks",
             "runBroadcastReachChecks",
@@ -184650,6 +185059,7 @@
             "runLiveRetypeChecks",
             "runLiveUnmapChecks",
             "runOperandChecks",
+            "runRetypeCleanToPoUChecks",
             "runSeamConformanceChecks",
             "runUnifyInstructionChecks"
           ]
@@ -184657,7 +185067,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 890,
+          "line": 1036,
           "called": [
             "runSmpCacheMaintenanceChecks"
           ]

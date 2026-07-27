@@ -37,8 +37,11 @@ The op-tag/operand encoding **MUST** stay in lockstep with
 `rust/sele4n-hal/src/cache.rs::decode_icache_invalidation`:
 
   opTag : 0 = Iallu (invalidate all), 1 = IvauPage (invalidate one page),
-          2 = UnifyPage (clean D-cache to PoU, then invalidate one page)
-  paddr : page-aligned physical address (RES0 for Iallu)
+          2 = UnifyPage (clean D-cache to PoU, then invalidate one page),
+          3 = CleanRangeIallu (clean a byte range to PoU, then invalidate all)
+  paddr : physical address — page-aligned for tags 1 and 2, the range base for
+          tag 3, RES0 for Iallu
+  size  : byte length of the range (tag 3 only; RES0 otherwise)
 
 A future encoding change requires updating the Rust `match` arms, the encoders
 here, and the `tests/SmpCacheMaintenanceSuite.lean` runtime checks in the same
@@ -127,39 +130,82 @@ inductive ICacheInvalidation where
       user software discharges the code-modification obligation ARMv8-A places
       on it. -/
   | unifyPage (paddr : SeLe4n.PAddr)
+  /-- **WS-SM SM7.D**: clean the byte range `[base, base + size)` to the Point
+      of Unification, then invalidate **every** instruction cache in the domain
+      — `DC CVAU` over the range → `DSB ISH` → `IC IALLUIS` → `DSB ISH` → `ISB`.
+
+      The re-type operand.  A re-type *scrubs* the target's backing memory
+      (`scrubObjectMemory` zeroes `[objId × allocSize, + allocSize)`) and then
+      installs a different object over it.  Those zeroing stores land in the
+      data cache; until a `DC CVAU` pushes them to the Point of Unification an
+      instruction fetch of the same physical memory still reads the **previous
+      owner's** content, because fetches read at the PoU.  `IC IALLUIS` alone
+      does not close that: it drops instruction lines but performs no clean, so
+      the very next fetch re-fills from the stale PoU copy.  seL4's
+      `clearMemory` is `memzero` followed by `cleanCacheRange_PoU` for exactly
+      this reason.
+
+      The two halves are one operand rather than two ledger entries precisely
+      so the ordering cannot be lost: the clean **must** complete before the
+      invalidate is observed, and bundling them makes that the HAL routine's
+      internal `DSB ISH` rather than a property of accumulation order.  This is
+      the same reasoning that makes `unifyPage` distinct from `ivauPage`.
+
+      The invalidation half is domain-wide rather than by-VA because the
+      abstract state cannot enumerate which *mappings* alias the re-purposed
+      frame, and instruction caches are physically tagged (ARM ARM D7.2) — so a
+      line stays hittable through any later executable mapping of the frame, in
+      any address space.  Over-invalidation costs re-fetches; under-invalidation
+      is the hazard. -/
+  | cleanRangeIallu (base : SeLe4n.PAddr) (size : Nat)
   deriving DecidableEq, Repr, Inhabited
 
 /-- **WS-SM SM7.D.1**: encode an `ICacheInvalidation` to its FFI op tag.
-`0 = Iallu`, `1 = IvauPage`; the operand is carried by
-`ICacheInvalidation.toPaddr` (`0` for the operand-free variant). -/
+`0 = Iallu`, `1 = IvauPage`, `2 = UnifyPage`, `3 = CleanRangeIallu`; the
+operands are carried by `ICacheInvalidation.toPaddr` / `.toSize` (`0` for the
+variants that do not use them). -/
 @[inline] def ICacheInvalidation.toOpTag : ICacheInvalidation → UInt32
-  | .iallu       => 0
-  | .ivauPage _  => 1
-  | .unifyPage _ => 2
+  | .iallu              => 0
+  | .ivauPage _         => 1
+  | .unifyPage _        => 2
+  | .cleanRangeIallu .. => 3
 
 /-- **WS-SM SM7.D.1**: extract the physical-address operand, returning `0` for
 the operand-free `iallu`. -/
 @[inline] def ICacheInvalidation.toPaddr : ICacheInvalidation → UInt64
-  | .iallu        => 0
-  | .ivauPage p   => UInt64.ofNat p.toNat
-  | .unifyPage p  => UInt64.ofNat p.toNat
+  | .iallu                 => 0
+  | .ivauPage p            => UInt64.ofNat p.toNat
+  | .unifyPage p           => UInt64.ofNat p.toNat
+  | .cleanRangeIallu b _   => UInt64.ofNat b.toNat
 
-/-- **WS-SM SM7.D.1**: `toOpTag` produces every value in `[0, 3)` — the
-bound the Rust dispatcher's three-arm match relies on. -/
+/-- **WS-SM SM7.D**: extract the byte-length operand.  Only `cleanRangeIallu`
+carries one — the page-granular operands take their length from the
+architecture's translation granule (`pageBytes`), and `iallu` has no extent at
+all — so every other constructor encodes `0`, which the HAL treats as RES0. -/
+@[inline] def ICacheInvalidation.toSize : ICacheInvalidation → UInt64
+  | .iallu                => 0
+  | .ivauPage _           => 0
+  | .unifyPage _          => 0
+  | .cleanRangeIallu _ s  => UInt64.ofNat s
+
+/-- **WS-SM SM7.D.1**: `toOpTag` produces every value in `[0, 4)` — the
+bound the Rust dispatcher's four-arm match relies on. -/
 theorem ICacheInvalidation.toOpTag_in_range (op : ICacheInvalidation) :
-    op.toOpTag.toNat < 3 := by
+    op.toOpTag.toNat < 4 := by
   cases op <;> simp [ICacheInvalidation.toOpTag]
 
 /-- **WS-SM SM7.D.1**: distinct constructors map to distinct op tags — the
-structural witness that the Rust match arms cover the enum without overlap. -/
+structural witness that the Rust match arms cover the enum without overlap.
+
+Stated over the enumeration rather than as pairwise disequalities so that
+adding a constructor extends the list by one entry instead of the quadratic
+blow-up of pairs. -/
 theorem ICacheInvalidation.toOpTag_distinct_constructors :
-    (ICacheInvalidation.iallu.toOpTag ≠
-      (ICacheInvalidation.ivauPage (SeLe4n.PAddr.ofNat 0)).toOpTag) ∧
-    (ICacheInvalidation.iallu.toOpTag ≠
-      (ICacheInvalidation.unifyPage (SeLe4n.PAddr.ofNat 0)).toOpTag) ∧
-    ((ICacheInvalidation.ivauPage (SeLe4n.PAddr.ofNat 0)).toOpTag ≠
-      (ICacheInvalidation.unifyPage (SeLe4n.PAddr.ofNat 0)).toOpTag) := by
-  refine ⟨?_, ?_, ?_⟩ <;> decide
+    [ICacheInvalidation.iallu.toOpTag,
+     (ICacheInvalidation.ivauPage (SeLe4n.PAddr.ofNat 0)).toOpTag,
+     (ICacheInvalidation.unifyPage (SeLe4n.PAddr.ofNat 0)).toOpTag,
+     (ICacheInvalidation.cleanRangeIallu (SeLe4n.PAddr.ofNat 0) 0).toOpTag].Nodup := by
+  decide
 
 /-- **WS-SM SM7.D.1**: `iallu` encodes to op tag 0. -/
 theorem ICacheInvalidation.iallu_opTag : ICacheInvalidation.iallu.toOpTag = 0 := rfl
@@ -173,6 +219,24 @@ theorem ICacheInvalidation.iallu_zero_operand :
 operand. -/
 theorem ICacheInvalidation.ivauPage_toPaddr (p : SeLe4n.PAddr) :
     (ICacheInvalidation.ivauPage p).toPaddr = UInt64.ofNat p.toNat := rfl
+/-- **WS-SM SM7.D**: `cleanRangeIallu` encodes to op tag 3. -/
+theorem ICacheInvalidation.cleanRangeIallu_opTag (b : SeLe4n.PAddr) (s : Nat) :
+    (ICacheInvalidation.cleanRangeIallu b s).toOpTag = 3 := rfl
+/-- **WS-SM SM7.D**: `cleanRangeIallu b s` carries `b` as its address operand
+and `s` as its length — the only constructor for which `toSize` is live. -/
+theorem ICacheInvalidation.cleanRangeIallu_operands (b : SeLe4n.PAddr) (s : Nat) :
+    (ICacheInvalidation.cleanRangeIallu b s).toPaddr = UInt64.ofNat b.toNat ∧
+    (ICacheInvalidation.cleanRangeIallu b s).toSize = UInt64.ofNat s :=
+  ⟨rfl, rfl⟩
+/-- **WS-SM SM7.D**: every page-granular or extent-free operand encodes a zero
+length — the HAL reads `size` only for tag 3, and this pins that the others
+never smuggle one in. -/
+theorem ICacheInvalidation.toSize_zero_of_not_range :
+    ICacheInvalidation.iallu.toSize = 0 ∧
+    (∀ p : SeLe4n.PAddr, (ICacheInvalidation.ivauPage p).toSize = 0) ∧
+    (∀ p : SeLe4n.PAddr, (ICacheInvalidation.unifyPage p).toSize = 0) :=
+  ⟨rfl, fun _ => rfl, fun _ => rfl⟩
+
 /-- **WS-SM SM7.D**: `unifyPage` encodes to op tag 2. -/
 theorem ICacheInvalidation.unifyPage_opTag (p : SeLe4n.PAddr) :
     (ICacheInvalidation.unifyPage p).toOpTag = 2 := rfl
@@ -181,9 +245,53 @@ operand. -/
 theorem ICacheInvalidation.unifyPage_toPaddr (p : SeLe4n.PAddr) :
     (ICacheInvalidation.unifyPage p).toPaddr = UInt64.ofNat p.toNat := rfl
 
+/-- **WS-SM SM7.D**: does this operand invalidate the *whole* instruction cache
+of every PE it reaches, rather than a named page?
+
+The two operands that emit `IC IALLUIS` — the bare `iallu` and the re-type's
+`cleanRangeIallu` — answer `true`.  Stated as a predicate so the theorems that
+depend only on "the post-state instruction caches are cold"
+(`applyICacheInvalidation_domainWide`, and through it the re-type seams' 14th-
+conjunct proofs) hold for both without case-splitting, and so a future operand
+that is *not* domain-wide cannot silently inherit those conclusions. -/
+@[inline] def ICacheInvalidation.isDomainWide : ICacheInvalidation → Bool
+  | .iallu              => true
+  | .ivauPage _         => false
+  | .unifyPage _        => false
+  | .cleanRangeIallu .. => true
+
 -- ============================================================================
 -- SM7.D.1 — The ledger's algebra: a *coverage* preorder, not a join
 -- ============================================================================
+
+/-- **WS-SM SM7.D**: does the byte range `[base, base + size)` contain
+`[b, b + s)`?  The containment test the range operand's coverage rests on:
+cleaning a superset of a range discharges the smaller clean, because `DC CVAU`
+is per-line and cleaning extra lines is always safe (it writes back data that
+was going to be written back anyway) — never the reverse. -/
+def byteRangeContains (base : SeLe4n.PAddr) (size : Nat)
+    (b : SeLe4n.PAddr) (s : Nat) : Bool :=
+  decide (base.toNat ≤ b.toNat ∧ b.toNat + s ≤ base.toNat + size)
+
+/-- **WS-SM SM7.D**: range containment, unfolded to arithmetic. -/
+theorem byteRangeContains_iff {base b : SeLe4n.PAddr} {size s : Nat} :
+    byteRangeContains base size b s = true ↔
+      base.toNat ≤ b.toNat ∧ b.toNat + s ≤ base.toNat + size := by
+  simp [byteRangeContains]
+
+/-- **WS-SM SM7.D**: every range contains itself. -/
+@[simp] theorem byteRangeContains_refl (base : SeLe4n.PAddr) (size : Nat) :
+    byteRangeContains base size base size = true := by
+  simp [byteRangeContains]
+
+/-- **WS-SM SM7.D**: range containment is transitive — the arithmetic behind
+`ICacheInvalidation.covers_trans` on the range arms. -/
+theorem byteRangeContains_trans {a b c : SeLe4n.PAddr} {sa sb sc : Nat}
+    (hab : byteRangeContains a sa b sb = true)
+    (hbc : byteRangeContains b sb c sc = true) :
+    byteRangeContains a sa c sc = true := by
+  rw [byteRangeContains_iff] at hab hbc ⊢
+  omega
 
 /-- **WS-SM SM7.D**: `a.covers b` — performing `a` discharges everything `b`
 would have discharged.
@@ -202,20 +310,30 @@ drop an entry that a later one already subsumes.
 The relation is deliberately conservative: it holds only where the emitted
 instruction sequence provably does at least as much.
 - `iallu` covers `iallu` and any `ivauPage` (a domain-wide invalidate subsumes
-  a page invalidate) but **not** `unifyPage` (no clean).
+  a page invalidate) but **not** `unifyPage` or `cleanRangeIallu` (no clean).
 - `ivauPage p` covers only `ivauPage p`.
 - `unifyPage p` covers `unifyPage p` and `ivauPage p` (same lines invalidated,
-  plus the clean) but not `iallu` (narrower invalidation scope). -/
+  plus the clean) but not `iallu` (narrower invalidation scope).
+- `cleanRangeIallu b s` invalidates domain-wide *and* cleans `[b, b+s)`, so it
+  covers `iallu`, any `ivauPage`, a `unifyPage` whose page lies inside the
+  cleaned range, and a `cleanRangeIallu` whose range it contains. -/
 def ICacheInvalidation.covers : ICacheInvalidation → ICacheInvalidation → Bool
-  | .iallu,       .iallu       => true
-  | .iallu,       .ivauPage _  => true
-  | .iallu,       .unifyPage _ => false
-  | .ivauPage p,  .ivauPage q  => p == q
-  | .ivauPage _,  .iallu       => false
-  | .ivauPage _,  .unifyPage _ => false
-  | .unifyPage p, .unifyPage q => p == q
-  | .unifyPage p, .ivauPage q  => p == q
-  | .unifyPage _, .iallu       => false
+  | .iallu,              .iallu              => true
+  | .iallu,              .ivauPage _         => true
+  | .iallu,              .unifyPage _        => false
+  | .iallu,              .cleanRangeIallu .. => false
+  | .ivauPage p,         .ivauPage q         => p == q
+  | .ivauPage _,         .iallu              => false
+  | .ivauPage _,         .unifyPage _        => false
+  | .ivauPage _,         .cleanRangeIallu .. => false
+  | .unifyPage p,        .unifyPage q        => p == q
+  | .unifyPage p,        .ivauPage q         => p == q
+  | .unifyPage _,        .iallu              => false
+  | .unifyPage _,        .cleanRangeIallu .. => false
+  | .cleanRangeIallu .., .iallu              => true
+  | .cleanRangeIallu .., .ivauPage _         => true
+  | .cleanRangeIallu b s, .unifyPage q       => byteRangeContains b s q pageBytes
+  | .cleanRangeIallu b s, .cleanRangeIallu b' s' => byteRangeContains b s b' s'
 
 /-- **WS-SM SM7.D**: coverage is reflexive — re-recording the same operand
 records nothing new. -/
@@ -242,6 +360,43 @@ here rather than silently under-maintaining. -/
 theorem ICacheInvalidation.iallu_not_covers_unifyPage (p : SeLe4n.PAddr) :
     ICacheInvalidation.iallu.covers (.unifyPage p) = false := rfl
 
+/-- **WS-SM SM7.D**: the range operand covers the bare domain-wide
+invalidate — it issues `IC IALLUIS` too, plus the clean. -/
+@[simp] theorem ICacheInvalidation.cleanRangeIallu_covers_iallu
+    (b : SeLe4n.PAddr) (s : Nat) :
+    (ICacheInvalidation.cleanRangeIallu b s).covers .iallu = true := rfl
+
+/-- **WS-SM SM7.D**: and every page invalidate, for the same reason. -/
+@[simp] theorem ICacheInvalidation.cleanRangeIallu_covers_ivauPage
+    (b : SeLe4n.PAddr) (s : Nat) (p : SeLe4n.PAddr) :
+    (ICacheInvalidation.cleanRangeIallu b s).covers (.ivauPage p) = true := rfl
+
+/-- **WS-SM SM7.D**: the range operand covers a `unifyPage` exactly when the
+cleaned extent contains that page — both halves then dominate (the clean by
+containment, the invalidate because `IC IALLUIS` subsumes `IC IVAU`). -/
+theorem ICacheInvalidation.cleanRangeIallu_covers_unifyPage
+    {b : SeLe4n.PAddr} {s : Nat} {p : SeLe4n.PAddr}
+    (h : byteRangeContains b s p pageBytes = true) :
+    (ICacheInvalidation.cleanRangeIallu b s).covers (.unifyPage p) = true := h
+
+/-- **WS-SM SM7.D** (the exclusion this constructor exists for, as a theorem):
+`iallu` does **not** cover a `cleanRangeIallu`.  `IC IALLUIS` drops instruction
+lines but issues no `DC CVAU`, so the scrubbed bytes stay in the data cache and
+the next fetch re-fills from the pre-scrub Point-of-Unification content — the
+"execute the previous owner's code after a re-type" hazard.  Stated so that a
+future collapse of the range operand into `iallu` fails here rather than
+silently dropping the clean. -/
+theorem ICacheInvalidation.iallu_not_covers_cleanRangeIallu
+    (b : SeLe4n.PAddr) (s : Nat) :
+    ICacheInvalidation.iallu.covers (.cleanRangeIallu b s) = false := rfl
+
+/-- **WS-SM SM7.D**: a page-granular clean does not cover a range operand
+either — `unifyPage` invalidates one page, not the domain, so it cannot stand
+in for the re-type's broadcast even when it cleans enough bytes. -/
+theorem ICacheInvalidation.unifyPage_not_covers_cleanRangeIallu
+    (p b : SeLe4n.PAddr) (s : Nat) :
+    (ICacheInvalidation.unifyPage p).covers (.cleanRangeIallu b s) = false := rfl
+
 /-- **WS-SM SM7.D**: distinct pages are incomparable — neither operand
 discharges the other, so the ledger must keep both. -/
 theorem ICacheInvalidation.ivauPage_not_covers_of_ne
@@ -254,7 +409,8 @@ never lose an obligation transitively. -/
 theorem ICacheInvalidation.covers_trans {a b c : ICacheInvalidation}
     (hab : a.covers b = true) (hbc : b.covers c = true) : a.covers c = true := by
   cases a <;> cases b <;> cases c <;>
-    simp_all [ICacheInvalidation.covers]
+    simp_all [ICacheInvalidation.covers] <;>
+    exact byteRangeContains_trans hab hbc
 
 /-- **WS-SM SM7.D**: accumulate one operand into the pending-maintenance
 ledger.

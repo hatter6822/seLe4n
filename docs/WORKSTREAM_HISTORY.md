@@ -215,6 +215,76 @@ weaken a unify into a bare invalidate.  Theorems:
 core retains a line for the page), `_records_unify`, and preservation of both
 per-core memory conjuncts.
 
+### SECURITY (v0.32.100) — the re-type's clean to the Point of Unification (PR #845 review, P1)
+
+The SM7.D wiring gave the re-type an unconditional `IC IALLUIS` and nothing
+else, which closes only half of the hazard it exists for.
+
+`scrubObjectMemory` zeroes the target's backing memory before the new object is
+installed.  Those stores land in the **data** cache, and instruction fetches
+read at the **Point of Unification**, so until a `DC CVAU` pushes them out the
+PoU still holds the previous owner's content.  `IC IALLUIS` does not merely fail
+to help here: by dropping every cached instruction line it *guarantees* the next
+fetch goes back to the stale PoU copy.  Instruction caches are physically tagged
+(ARM ARM D7.2), so that fetch is reachable through any later executable mapping
+of the frame, in any address space.  seL4's `clearMemory` is `memzero` followed
+by `cleanCacheRange_PoU` for exactly this reason.
+
+Severity **High** once the kernel boots on hardware; not exploitable at
+v0.32.99, since there is no bootable image until SM9.E.  No Lean theorem was
+false — `ICacheState` models no data-cache content, so the model could not see
+the omission.  What was incomplete was the emitted hardware sequence.
+
+**The deferral premise was itself wrong.**  v0.32.94 and v0.32.99 both justified
+deferring the data-side emission on the grounds that "the model does not carry
+each written object's physical extent."  For this site that is untrue and always
+was: `scrubObjectMemory` derives `(base, size)` from `(ObjId,
+KernelObjectType)`.  The claim was inherited from the `.bootImageLoad` site,
+where it does hold, and never re-checked for `.retypeScrub`.
+
+**The fix.**  A fourth operand, `ICacheInvalidation.cleanRangeIallu base size`:
+clean `[base, base + size)` to the PoU, `DSB ISH`, then `IC IALLUIS`, `DSB ISH`,
+`ISB`.  Both production re-type seams emit it, keyed on the pre-state object's
+type so the cleaned extent is *exactly* the scrubbed one.
+`retypeIcacheOp_cleans_scrub_extent` states that as an equality between the two
+computations; `retypeIcacheOp_discharges_scrub_obligation` links the operand to
+the `.retypeScrub` clean-to-PoU obligation over that range.  An empty target
+slot has nothing to scrub and keeps the bare `.iallu`.
+
+The clean and the invalidate are **one** operand rather than two ledger entries,
+so the ordering cannot be lost to accumulation order: bundling makes it the HAL
+routine's internal `DSB ISH`.  Same reasoning that already keeps `unifyPage`
+distinct from `ivauPage`.
+
+`covers` gains the range arms over interval containment (`byteRangeContains`,
+whose `_trans` carries `covers_trans`).  Both exclusions are stated as theorems
+so a future "simplification" fails there rather than silently dropping a clean:
+`iallu_not_covers_cleanRangeIallu` (no `DC CVAU`) and
+`unifyPage_not_covers_cleanRangeIallu` (one page, not the domain).
+`isDomainWide` factors out "ends in `IC IALLUIS`" so the seams' 14th-conjunct
+proofs carry for both operands without case-splitting.
+
+`kernelCodeWriteSites_emission_pending` previously asserted that *every*
+code-write site's obligation was a placeholder.  That is no longer true, so it
+became the **partition**: `kernelCodeWriteEmitted` marks `.retypeScrub` emitted
+and `.bootImageLoad` still pending, with the theorem pinning that exactly one
+site remains.  Wiring the boot emission breaks the `decide`, so that closure
+cannot land silently.  `dischargesPoUClean` is the predicate the link is stated
+through, expressed via `covers` so "did the site actually clean?" is answered by
+the ledger's own preorder rather than a second, parallel notion.
+
+`Model/State.lean` gains `getObjectType?`, the kind-agnostic member of the
+AL2-A / AN10-B typed-accessor family, so the operand reads the store through an
+accessor rather than open-coding a raw match (AK7 `RAW_MATCH_TOTAL` unchanged).
+
+Coverage: `SmpCacheMaintenanceSuite` §3.13 (18 assertions, plus three in §3.11 for the
+emission partition; 93 → 114 / 13
+groups), including the load-bearing negative that the pre-fix `.iallu` provably
+does *not* discharge the obligation.  Rust HAL 795 → 798:
+`test_clean_range_pou_line_coverage` computes the `DC CVAU` loop the HAL runs
+and checks it covers every line of `[base, base+size)` for each allocation size
+and for a line-straddling base.  Trace byte-identical; zero sorry/axiom.
+
 ### SECURITY (v0.32.97) — VSpace capability binding (PR #845 review, P1)
 
 A confused deputy in the syscall gate, found while addressing a review comment

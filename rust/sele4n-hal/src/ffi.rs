@@ -1112,7 +1112,8 @@ pub extern "C" fn cache_ic_iallu() {
 /// The broadcast counterpart of [`cache_ic_iallu`].  Every PE of the
 /// shareability domain drops its instruction-cache lines, which is what the
 /// kernel needs after re-purposing memory (object re-type) — the physical
-/// lines affected are not enumerable from the abstract state, so the sound
+/// mappings that alias the affected frame are not enumerable from the abstract
+/// state, so the sound
 /// choice is the full invalidate.
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiIcIalluIs`
@@ -1125,36 +1126,42 @@ pub extern "C" fn cache_ic_ialluis() {
 // WS-SM SM7.D.1: typed instruction-cache maintenance dispatcher
 //
 // Discriminant encoding — MUST stay in lockstep with the Lean
-// `Architecture.ICacheInvalidation.toOpTag` / `.toPaddr`
-// (`SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean`):
+// `Architecture.ICacheInvalidation.toOpTag` / `.toPaddr` / `.toSize`
+// (`SeLe4n/Kernel/Architecture/CacheInvalidation.lean`):
 //
-//   op_tag : 0 = Iallu (invalidate all, IS-broadcast)
-//            1 = Ivau  (invalidate by VA to PoU, IS-broadcast)
-//   addr   : virtual address operand (RES0 for Iallu)
+//   op_tag : 0 = Iallu           (invalidate all, IS-broadcast)
+//            1 = IvauPage        (invalidate one page by VA to PoU, broadcast)
+//            2 = UnifyPage       (clean one page to PoU, then invalidate it)
+//            3 = CleanRangeIallu (clean [addr, addr+size) to PoU, then
+//                                 invalidate all — the re-type's operand)
+//   addr   : virtual address operand, or the range base for tag 3
+//            (RES0 for Iallu)
+//   size   : range length in bytes (tag 3 only; RES0 otherwise)
 //
 // **Fail-closed contract**: an unknown tag PANICs rather than silently
 // skipping the maintenance, for the same reason `ffi_tlbi_for_sharing`
 // does — a caller that believes a cache was invalidated when it was not
 // has a silent correctness violation it cannot detect.  A well-formed
 // Lean caller cannot reach the panic arm: `ICacheInvalidation.toOpTag_in_range`
-// proves every emitted tag is in [0, 2).
+// proves every emitted tag is in [0, 4).
 // ===========================================================================
 
 /// **WS-SM SM7.D.1**: typed instruction-cache maintenance dispatcher FFI
 /// export.
 ///
-/// Routes the Lean-side broadcast operand to `IC IALLUIS` or `IC IVAU`, each
+/// Routes the Lean-side broadcast operand to `IC IALLUIS` or `IC IVAU`,
+/// optionally preceded by a `DC CVAU` clean of the page or range, each sequence
 /// followed by the completing `DSB ISH` + `ISB`.
 ///
 /// # Panics
 ///
-/// Panics on an `op_tag` outside `[0, 2)` — fail-closed (see the module
+/// Panics on an `op_tag` outside `[0, 4)` — fail-closed (see the module
 /// comment above).
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiIcMaintenance`
 #[no_mangle]
-pub extern "C" fn cache_ic_maintenance(op_tag: u32, addr: u64) {
-    match crate::cache::decode_icache_invalidation(op_tag, addr) {
+pub extern "C" fn cache_ic_maintenance(op_tag: u32, addr: u64, size: u64) {
+    match crate::cache::decode_icache_invalidation(op_tag, addr, size) {
         Some(op) => crate::cache::apply_icache_invalidation(op),
         None => panic!("cache_ic_maintenance: invalid op_tag {op_tag}"),
     }

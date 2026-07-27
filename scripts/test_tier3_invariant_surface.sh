@@ -1044,6 +1044,29 @@ run_check "INVARIANT" rg -n '^def recordIcacheMaintenanceList' SeLe4n/Kernel/Arc
 run_check "INVARIANT" rg -n '^theorem recordIcacheMaintenanceList_covered' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
 run_check "INVARIANT" rg -n '^theorem recordIcacheMaintenanceList_mem_of_mem' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
 run_check "INVARIANT" bash -c "! rg -q 'ICacheInvalidation.join' SeLe4n/Kernel/Architecture/CacheInvalidation.lean"
+# SM7.D re-type clean-to-PoU: the scrub's zeroing stores must reach the Point of
+# Unification BEFORE the instruction caches are invalidated, or the next fetch
+# re-fills from the previous owner's content.  `iallu` cannot discharge that.
+run_check "INVARIANT" rg -n '  \| cleanRangeIallu \(base : SeLe4n\.PAddr\) \(size : Nat\)' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
+run_check "INVARIANT" rg -n '^def byteRangeContains' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
+run_check "INVARIANT" rg -n '^theorem byteRangeContains_trans' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
+run_check "INVARIANT" rg -n '^theorem ICacheInvalidation.iallu_not_covers_cleanRangeIallu' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
+run_check "INVARIANT" rg -n '^theorem ICacheInvalidation.unifyPage_not_covers_cleanRangeIallu' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
+run_check "INVARIANT" rg -n '^@\[inline\] def ICacheInvalidation.isDomainWide' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
+run_check "INVARIANT" rg -n '^@\[inline\] def ICacheInvalidation.toSize' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
+run_check "INVARIANT" rg -n '^def getObjectType\?' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^def retypeIcacheOp' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" rg -n '^theorem retypeIcacheOp_cleans_scrub_extent' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" rg -n '^theorem retypeIcacheOp_discharges_scrub_obligation' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" rg -n '^def dischargesPoUClean' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem dischargesPoUClean_isDomainWide' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^def kernelCodeWriteEmitted' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem kernelCodeWriteSites_emission_pending' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^pub fn clean_range_pou_then_invalidate_all_inner_shareable' rust/sele4n-hal/src/cache.rs
+run_check "INVARIANT" rg -n 'CleanRangeIallu\(u64, u64\)' rust/sele4n-hal/src/cache.rs
+run_check "INVARIANT" rg -n 'fn test_clean_range_pou_line_coverage' rust/sele4n-hal/src/cache.rs
+# The re-type operand must NOT regress to the bare domain-wide invalidate.
+run_check "INVARIANT" bash -c "! rg -q '^  some \\.iallu' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean"
 run_check "INVARIANT" rg -n 'clearIcacheMaintenance st' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^theorem pendingIcacheMaintenance_write_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 # SM7.D.2 the data-side clean-to-PoU obligation + its tripwire.
@@ -1096,7 +1119,8 @@ run_check "INVARIANT" rg -n '^pub fn ic_ivau' rust/sele4n-hal/src/cache.rs
 run_check "INVARIANT" rg -n '^pub fn ic_invalidate_all_inner_shareable' rust/sele4n-hal/src/cache.rs
 run_check "INVARIANT" rg -n '^pub const fn decode_icache_invalidation' rust/sele4n-hal/src/cache.rs
 run_check "INVARIANT" rg -n '^pub extern "C" fn cache_ic_ialluis' rust/sele4n-hal/src/ffi.rs
-run_check "INVARIANT" rg -n '^pub extern "C" fn cache_ic_maintenance' rust/sele4n-hal/src/ffi.rs
+run_check "INVARIANT" rg -n '^pub extern "C" fn cache_ic_maintenance\(op_tag: u32, addr: u64, size: u64\)' rust/sele4n-hal/src/ffi.rs
+run_check "INVARIANT" rg -n '^opaque ffiIcMaintenance : UInt32 → UInt64 → UInt64 → BaseIO Unit' SeLe4n/Platform/FFI.lean
 # SM7.D suite registration (Tier-2 runner + lakefile executable).
 run_check "INVARIANT" rg -n '^def runSmpCacheMaintenanceChecks' tests/SmpCacheMaintenanceSuite.lean
 run_check "INVARIANT" rg -n '^run_check(_with_timeout)? "TRACE" lake exe smp_cache_maintenance_suite' scripts/test_tier2_negative.sh

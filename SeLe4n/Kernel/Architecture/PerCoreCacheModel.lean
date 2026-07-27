@@ -114,6 +114,11 @@ def icacheLineMatches (op : ICacheInvalidation) (l : ICacheLine) : Bool :=
   -- emitted sequence (it additionally cleans the page's stores to the Point of
   -- Unification first).  Cf. `TlbInvalidation`'s `vae1` / `vale1`.
   | .unifyPage p => p == l.paddr
+  -- `cleanRangeIallu` ends in `IC IALLUIS`, so every line goes.  The range is
+  -- the *clean* extent, which `ICacheState` does not model (there is no
+  -- modelled data-cache content) — it is exactly that unmodelled dimension
+  -- which keeps `iallu` from covering this operand.
+  | .cleanRangeIallu _ _ => true
 
 /-- **WS-SM SM7.D.1**: the effect of retiring one maintenance operand on one
 core's instruction-cache view — every covered line is removed, nothing is
@@ -168,6 +173,28 @@ none a targeted operand would have missed, survives a full invalidate. -/
 theorem applyICacheInvalidation_iallu (ic : ICacheState) :
     (applyICacheInvalidation ic .iallu).lines = [] := by
   simp [applyICacheInvalidation, icacheLineMatches]
+
+/-- **WS-SM SM7.D**: a domain-wide operand empties the view — the shared
+generalisation of `applyICacheInvalidation_iallu` across `iallu` and the
+re-type's `cleanRangeIallu`, both of which emit `IC IALLUIS`. -/
+theorem applyICacheInvalidation_domainWide {op : ICacheInvalidation}
+    (h : op.isDomainWide = true) (ic : ICacheState) :
+    (applyICacheInvalidation ic op).lines = [] := by
+  cases op with
+  | iallu => exact applyICacheInvalidation_iallu ic
+  | cleanRangeIallu b s => simp [applyICacheInvalidation, icacheLineMatches]
+  | ivauPage p => exact absurd h (by simp [ICacheInvalidation.isDomainWide])
+  | unifyPage p => exact absurd h (by simp [ICacheInvalidation.isDomainWide])
+
+/-- **WS-SM SM7.D**: a domain-wide operand covers every line. -/
+theorem icacheLineMatches_domainWide {op : ICacheInvalidation}
+    (h : op.isDomainWide = true) (l : ICacheLine) :
+    icacheLineMatches op l = true := by
+  cases op with
+  | iallu => rfl
+  | cleanRangeIallu b s => rfl
+  | ivauPage p => exact absurd h (by simp [ICacheInvalidation.isDomainWide])
+  | unifyPage p => exact absurd h (by simp [ICacheInvalidation.isDomainWide])
 
 /-- **WS-SM SM7.D.1**: `ivauPage p` covers exactly the lines tagged `p`. -/
 theorem icacheLineMatches_ivauPage {p : SeLe4n.PAddr} {l : ICacheLine}
@@ -518,6 +545,16 @@ theorem icInvalidateBroadcast_iallu_empties (st : SystemState)
   rw [icInvalidateBroadcast_icacheOnCore, if_pos (hcov c)]
   exact applyICacheInvalidation_iallu _
 
+/-- **WS-SM SM7.D**: the same for any domain-wide operand — the form the
+re-type seams consume, since their operand is `cleanRangeIallu` (which emits
+`IC IALLUIS` after the clean) rather than the bare `iallu`. -/
+theorem icInvalidateBroadcast_domainWide_empties (st : SystemState)
+    {reach : List CoreId} (hcov : ∀ c : CoreId, c ∈ reach)
+    {op : ICacheInvalidation} (hop : op.isDomainWide = true) (c : CoreId) :
+    (icacheOnCore (icInvalidateBroadcast st reach op) c).lines = [] := by
+  rw [icInvalidateBroadcast_icacheOnCore, if_pos (hcov c)]
+  exact applyICacheInvalidation_domainWide hop _
+
 -- ============================================================================
 -- SM7.D.2 — D-cache maintenance by VA at the Point of Coherency is system-wide
 -- ============================================================================
@@ -708,16 +745,21 @@ ARMv8-A data-to-instruction pipeline `DC CVAU → DSB ISH → IC IVAU → DSB IS
 ISB`, already modelled as `armv8DCacheToICacheSequence`
 (`TlbCacheComposition.lean`, AN9-A.2).
 
-SM7.D lands the **ordering obligation**, not the range emission.  The emission
-needs each written object's *physical extent*, and the model does not yet carry
-one: only `UntypedObject` has `regionBase` / `regionSize`, while a re-typed
-object is identified by `ObjId` alone.  Giving kernel objects PA extents (from
-the owning untyped's region plus the re-type offset) is an object-model change
-scoped to SM9.E hardware bring-up, which is also the first point at which the
-memory is physically backed and the omission could bite.  Until then this
-theorem is the registered obligation, `kernelCodeWriteSites_complete` is its
-tripwire, and the instruction-side half — which *is* expressible today, because
-mappings carry page addresses — is live (SM7.D.1).
+This structure records the obligation's **shape**, per site, independently of
+whether a transition emits it: the operand addresses below are placeholders,
+because a site's extent is a property of each individual write, not of the site.
+Which sites actually emit is `kernelCodeWriteEmitted`.
+
+At v0.32.100 `.retypeScrub` **does** emit (`retypeIcacheOp`, live behind
+`.lifecycleRetype`, cleaning exactly the range `scrubObjectMemory` zeroes).  The
+v0.32.94 claim that no site could name its extent — "only `UntypedObject` has
+`regionBase` / `regionSize`" — was inherited from `.bootImageLoad`, where it
+holds, and was simply false for the re-type: `scrubObjectMemory` computes
+`(base, size)` from `(ObjId, KernelObjectType)` at the point of the write.
+`.bootImageLoad` remains genuinely un-emittable today (boot materialises objects
+through the builder, with no transition to hang an operand on) and is scoped to
+SM9.E hardware bring-up, which is also the first point at which the memory is
+physically backed and the omission could bite.
 
 **PR #845 review (P2)** replaced the previous obligation form, which took
 `_site` (ignoring it) and asserted only that `armv8DCacheToICacheSequence`
@@ -750,17 +792,19 @@ def DCacheMaintenance.isClean : DCacheMaintenance → Bool
 stated as a function so the obligation names the property rather than assuming
 it, and so a future non-invalidating operand cannot silently satisfy it. -/
 def ICacheInvalidation.invalidatesInstruction : ICacheInvalidation → Bool
-  | .iallu       => true
-  | .ivauPage _  => true
-  | .unifyPage _ => true
+  | .iallu              => true
+  | .ivauPage _         => true
+  | .unifyPage _        => true
+  | .cleanRangeIallu .. => true
 
 /-- **WS-SM SM7.D.2**: the obligation each enumerated site carries.
 
-Both sites write memory whose physical extent the abstract state cannot yet
-enumerate (only `UntypedObject` carries `regionBase`/`regionSize`), so the
-operand addresses are the placeholder `0` and the *emission* is scoped to SM9.E.
-What is pinned here is the shape: a clean to PoU, an instruction invalidate, and
-the ARMv8 sequence ordering them. -/
+What is pinned here is the **shape** — a clean to PoU, an instruction
+invalidate, and the ARMv8 sequence ordering them — so the operand addresses are
+the placeholder `0`: an extent belongs to an individual write, not to the site.
+The concrete extent appears where the write does; for `.retypeScrub` that is
+`retypeIcacheOp`, whose emitted operand is tied back to this obligation by
+`retypeIcacheOp_discharges_scrub_obligation` through `dischargesPoUClean`. -/
 def kernelCodeWriteObligation : KernelCodeWriteSite → PoUCleanObligation
   | .retypeScrub =>
       { cleanToPoU := .cleanByVA (SeLe4n.PAddr.ofNat 0)
@@ -794,19 +838,59 @@ theorem kernelCodeWriteSites_owe_pou_clean :
            armv8DCacheToICacheSequence_covers_required.2.1,
            armv8DCacheToICacheSequence_covers_required.2.2⟩
 
-/-- **WS-SM SM7.D.2** (the honesty marker): the obligation above is *declared*,
-not *discharged by emission*.  No live transition issues these operations today,
-because neither site can name the physical extent it wrote — only
-`UntypedObject` carries `regionBase`/`regionSize`.
+/-- **WS-SM SM7.D**: does this single operand discharge a code-write site's
+clean-to-PoU obligation over the byte range `[base, base + size)`?
 
-This is stated as a decidable fact about the model rather than left to prose, so
-that when SM9.E gives objects physical extents and wires the emission, this
-theorem is what must be deleted — making the transition from "declared" to
-"discharged" a visible, reviewable edit rather than a silent one. -/
+Phrased through `covers` rather than by pattern-matching, so the answer is
+grounded in the ledger's own preorder: an operand discharges the obligation
+exactly when it does at least what `cleanRangeIallu base size` does — clean
+every line of the written extent to the Point of Unification *and* drop the
+stale instruction lines, in that order.  By construction `iallu` does **not**
+qualify (`ICacheInvalidation.iallu_not_covers_cleanRangeIallu`), which is
+precisely the defect this predicate exists to detect. -/
+def dischargesPoUClean (op : ICacheInvalidation) (base : SeLe4n.PAddr)
+    (size : Nat) : Bool :=
+  op.covers (.cleanRangeIallu base size)
+
+/-- **WS-SM SM7.D**: an operand that discharges a code-write obligation is
+necessarily domain-wide — only `cleanRangeIallu` covers a `cleanRangeIallu`,
+and it ends in `IC IALLUIS`.  So discharging the data side cannot be traded
+against a narrower instruction-side scope. -/
+theorem dischargesPoUClean_isDomainWide {op : ICacheInvalidation}
+    {base : SeLe4n.PAddr} {size : Nat} (h : dischargesPoUClean op base size = true) :
+    op.isDomainWide = true := by
+  cases op <;> simp_all [dischargesPoUClean, ICacheInvalidation.covers,
+    ICacheInvalidation.isDomainWide]
+
+/-- **WS-SM SM7.D.2**: does a **live** transition emit this site's obligation
+today?
+
+* `.retypeScrub` — **yes** (since v0.32.100).  `retypeIcacheOp` reads the
+  target object's type from the pre-state, computes the same
+  `(base, size)` that `scrubObjectMemory` will zero, and emits
+  `cleanRangeIallu base size`; `retypeIcacheOp_discharges_scrub_obligation`
+  is the machine-checked link.  The extent turned out to be nameable after
+  all: `scrubObjectMemory` derives it from `(ObjId, KernelObjectType)`, not
+  from an untyped region.
+* `.bootImageLoad` — not yet.  Boot materialises objects before any extent
+  bookkeeping exists, and there is no transition to hang an operand on; scoped
+  to SM9.E hardware bring-up, which is also the first point at which the memory
+  is physically backed and the omission could bite. -/
+def kernelCodeWriteEmitted : KernelCodeWriteSite → Bool
+  | .retypeScrub   => true
+  | .bootImageLoad => false
+
+/-- **WS-SM SM7.D.2** (the honesty marker): exactly which sites still owe an
+emission.
+
+The v0.32.95 form asserted that *every* site's obligation was a placeholder.
+That is no longer true — the re-type's clean is live — so the marker is now the
+**partition**: wiring the boot-side emission means flipping
+`kernelCodeWriteEmitted .bootImageLoad`, which breaks this `decide` and forces
+the edit to be visible and reviewed rather than silent. -/
 theorem kernelCodeWriteSites_emission_pending :
-    kernelCodeWriteSites.all
-      (fun s => (kernelCodeWriteObligation s).cleanToPoU
-                  == .cleanByVA (SeLe4n.PAddr.ofNat 0)) = true := by
+    kernelCodeWriteSites.filter (fun s => !kernelCodeWriteEmitted s)
+      = [.bootImageLoad] := by
   decide
 
 -- ============================================================================

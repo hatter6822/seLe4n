@@ -1626,26 +1626,103 @@ theorem lifecycleRetypeWithCleanupShootdownPerCore_preserves_tlbInvalidationCons
 -- "free, re-allocate, execute the previous owner's code" hazard, and under SMP
 -- it must be closed on every core, not just the caller's.
 --
--- The maintenance is therefore an unconditional domain-wide `IC IALLUIS`, not a
--- targeted `IC IVAU`: the model cannot enumerate which physical lines the
--- retyped object covered (an object's frame footprint is not part of the
--- abstract state), so the sound choice is the full invalidate.  Over-
--- invalidation is always safe — it can only cost re-fetches — whereas under-
--- invalidation is exactly the hazard.  Retype is a rare, already-heavyweight
--- object-lifecycle operation, so the cost lands where it is affordable.
+-- The *invalidation* is therefore an unconditional domain-wide `IC IALLUIS`,
+-- not a targeted `IC IVAU`: the model cannot enumerate which *mappings* alias
+-- the retyped object's frame, so the sound choice is the full invalidate.
+-- Over-invalidation is always safe — it can only cost re-fetches — whereas
+-- under-invalidation is exactly the hazard.  Retype is a rare, already-
+-- heavyweight object-lifecycle operation, so the cost lands where it is
+-- affordable.
+--
+-- **The invalidation alone is not enough** (PR #845 review, v0.32.100).  The
+-- scrub's zeroing stores land in the *data* cache, and instruction fetches read
+-- at the Point of Unification, so until a `DC CVAU` pushes them out the PoU
+-- still holds the previous owner's instructions — and `IC IALLUIS`, which
+-- issues no clean, merely guarantees that the next fetch goes and re-reads that
+-- stale copy.  The operand is therefore `cleanRangeIallu`: clean the scrubbed
+-- extent to the PoU, `DSB ISH`, then `IC IALLUIS`.  seL4's `clearMemory` is
+-- `memzero` followed by `cleanCacheRange_PoU` for the same reason.
+--
+-- The extent is nameable: `scrubObjectMemory` derives `(base, size)` from the
+-- pre-state object's `(ObjId, KernelObjectType)` by the model's allocation
+-- convention, and `retypeIcacheOp` recomputes exactly that pair, so the clean
+-- covers precisely the bytes the scrub writes
+-- (`retypeIcacheOp_cleans_scrub_extent`).  Where the model's convention and the
+-- hardware allocator diverge (SELE4N_SPEC.md §5, the SM9.E scrub bridge) they
+-- diverge *together*, because both sides read the same convention.
 -- ============================================================================
 
-/-- **WS-SM SM7.D.1**: the instruction-cache maintenance every retype owes — a
-domain-wide `IC IALLUIS`.  Unconditional (see the section note): the retype
-scrubs and re-purposes the target's backing memory, and the abstract state does
-not record which physical lines that memory covered. -/
-def retypeIcacheOperand (_st : SystemState) :
+/-- **WS-SM SM7.D**: the instruction-cache maintenance a retype of `target`
+owes — clean the extent the retype is about to scrub to the Point of
+Unification, then invalidate every instruction cache in the domain.
+
+Read from the **pre**-state, because the operand describes what the transition
+is about to destroy: after the fact the old object's type — and with it the
+scrub extent — is gone.  When the slot is empty there is nothing to scrub (the
+retype installs into a fresh slot), so no clean is owed and the bare domain-wide
+invalidate remains, which is conservative rather than clever: the slot's backing
+memory may still be cached from an earlier tenant. -/
+def retypeIcacheOp (target : SeLe4n.ObjId) (st : SystemState) :
+    Architecture.ICacheInvalidation :=
+  match st.getObjectType? target with
+  | some objType =>
+      let size := objectTypeAllocSize objType
+      .cleanRangeIallu (SeLe4n.PAddr.ofNat (target.toNat * size)) size
+  | none => .iallu
+
+/-- **WS-SM SM7.D.1**: the retype always owes instruction-cache maintenance. -/
+def retypeIcacheOperand (target : SeLe4n.ObjId) (st : SystemState) :
     Option Architecture.ICacheInvalidation :=
-  some .iallu
+  some (retypeIcacheOp target st)
 
 /-- **WS-SM SM7.D.1**: the retype's maintenance is always owed. -/
-theorem retypeIcacheOperand_eq (st : SystemState) :
-    retypeIcacheOperand st = some .iallu := rfl
+theorem retypeIcacheOperand_eq (target : SeLe4n.ObjId) (st : SystemState) :
+    retypeIcacheOperand target st = some (retypeIcacheOp target st) := rfl
+
+/-- **WS-SM SM7.D**: whichever branch it takes, the retype's operand ends in
+`IC IALLUIS` — so every core's instruction cache is cold afterwards, which is
+what the seams' 14th-conjunct proofs consume. -/
+theorem retypeIcacheOp_isDomainWide (target : SeLe4n.ObjId) (st : SystemState) :
+    (retypeIcacheOp target st).isDomainWide = true := by
+  unfold retypeIcacheOp
+  split <;> rfl
+
+/-- **WS-SM SM7.D** (**the finding's closure**): when the retype will scrub —
+i.e. the target slot holds an object — the emitted operand cleans **exactly**
+the byte range `scrubObjectMemory` is about to zero.
+
+`scrubObjectMemory` writes `[target × allocSize, + allocSize)`; this pins that
+the clean names the same base and the same length, computed from the same pair
+`(target, currentObj.objectType)` by the same convention.  A future change to
+either side that broke the correspondence would leave this theorem's right-hand
+side no longer matching what the operand computes, and it would fail here. -/
+theorem retypeIcacheOp_cleans_scrub_extent {target : SeLe4n.ObjId}
+    {st : SystemState} {currentObj : KernelObject}
+    (h : st.objects[target]? = some currentObj) :
+    retypeIcacheOp target st =
+      .cleanRangeIallu
+        (SeLe4n.PAddr.ofNat (target.toNat * objectTypeAllocSize currentObj.objectType))
+        (objectTypeAllocSize currentObj.objectType) := by
+  unfold retypeIcacheOp
+  rw [SystemState.getObjectType?_eq_some_of_getElem h]
+
+/-- **WS-SM SM7.D** (the obligation discharged): the emitted operand discharges
+the `.retypeScrub` clean-to-PoU obligation over the scrubbed extent —
+`Architecture.dischargesPoUClean` holds for the very `(base, size)` the scrub
+writes.
+
+This is what `Architecture.kernelCodeWriteEmitted .retypeScrub = true` asserts,
+proven rather than declared.  Note it would be **false** for the pre-v0.32.100
+operand `.iallu`, by
+`Architecture.ICacheInvalidation.iallu_not_covers_cleanRangeIallu`. -/
+theorem retypeIcacheOp_discharges_scrub_obligation {target : SeLe4n.ObjId}
+    {st : SystemState} {currentObj : KernelObject}
+    (h : st.objects[target]? = some currentObj) :
+    Architecture.dischargesPoUClean (retypeIcacheOp target st)
+      (SeLe4n.PAddr.ofNat (target.toNat * objectTypeAllocSize currentObj.objectType))
+      (objectTypeAllocSize currentObj.objectType) = true := by
+  rw [retypeIcacheOp_cleans_scrub_extent h]
+  simp [Architecture.dischargesPoUClean, Architecture.ICacheInvalidation.covers]
 
 /-- **WS-SM SM7.D.1** (**the live `.lifecycleRetype` seam**, Direct-cap
 authority): the production retype, complete across both per-core cached
@@ -1661,7 +1738,7 @@ def lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (authCap : Capability) (target : SeLe4n.ObjId)
     (newObj : KernelObject) : Kernel Unit :=
-  Architecture.withIcacheBroadcast retypeIcacheOperand
+  Architecture.withIcacheBroadcast (retypeIcacheOperand target)
     (lifecycleRetypeDirectWithCleanupShootdownPerCore executingCore authCap
       target newObj)
 
@@ -1672,7 +1749,7 @@ def lifecycleRetypeWithCleanupShootdownPerCoreIcache
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (authority : CSpaceAddr) (target : SeLe4n.ObjId)
     (newObj : KernelObject) : Kernel Unit :=
-  Architecture.withIcacheBroadcast retypeIcacheOperand
+  Architecture.withIcacheBroadcast (retypeIcacheOperand target)
     (lifecycleRetypeWithCleanupShootdownPerCore executingCore authority target
       newObj)
 
@@ -1710,8 +1787,9 @@ theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_ok
         target newObj st =
       .ok ((), Architecture.recordIcacheMaintenance
         (Architecture.icInvalidateBroadcast stB
-          Architecture.icBroadcastReach .iallu) .iallu) :=
-  Architecture.withIcacheBroadcast_some_ok (retypeIcacheOperand_eq st) hBase
+          Architecture.icBroadcastReach (retypeIcacheOp target st))
+        (retypeIcacheOp target st)) :=
+  Architecture.withIcacheBroadcast_some_ok (retypeIcacheOperand_eq target st) hBase
 
 /-- **WS-SM SM7.D.1**: on success the CSpaceAddr seam commits the base
 wrapper's state with the domain-wide instruction-cache invalidate applied. -/
@@ -1725,8 +1803,9 @@ theorem lifecycleRetypeWithCleanupShootdownPerCoreIcache_ok
         target newObj st =
       .ok ((), Architecture.recordIcacheMaintenance
         (Architecture.icInvalidateBroadcast stB
-          Architecture.icBroadcastReach .iallu) .iallu) :=
-  Architecture.withIcacheBroadcast_some_ok (retypeIcacheOperand_eq st) hBase
+          Architecture.icBroadcastReach (retypeIcacheOp target st))
+        (retypeIcacheOp target st)) :=
+  Architecture.withIcacheBroadcast_some_ok (retypeIcacheOperand_eq target st) hBase
 
 /-- **WS-SM SM7.D.4** (the retype seam's coherency theorem, Direct-cap): after
 the production retype every core's instruction cache is **cold**, so the SMP
@@ -1752,7 +1831,7 @@ theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_preserves_icacheC
       cases hStep
   | ok pair =>
       obtain ⟨u, stB⟩ := pair; cases u
-      rw [Architecture.withIcacheBroadcast_some_ok (retypeIcacheOperand_eq st) hBase]
+      rw [Architecture.withIcacheBroadcast_some_ok (retypeIcacheOperand_eq target st) hBase]
         at hStep
       simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
       subst hStep
@@ -1760,11 +1839,14 @@ theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_preserves_icacheC
       -- The ledger record frames every core's view; the broadcast emptied them.
       rw [show Architecture.icacheOnCore (Architecture.recordIcacheMaintenance
             (Architecture.icInvalidateBroadcast stB
-              Architecture.icBroadcastReach .iallu) .iallu) c
+              Architecture.icBroadcastReach (retypeIcacheOp target st))
+            (retypeIcacheOp target st)) c
           = Architecture.icacheOnCore (Architecture.icInvalidateBroadcast stB
-              Architecture.icBroadcastReach .iallu) c from rfl] at hl
-      rw [Architecture.icInvalidateBroadcast_iallu_empties stB
-        Architecture.icBroadcastReach_cover c] at hl
+              Architecture.icBroadcastReach (retypeIcacheOp target st)) c
+          from rfl] at hl
+      rw [Architecture.icInvalidateBroadcast_domainWide_empties stB
+        Architecture.icBroadcastReach_cover
+        (retypeIcacheOp_isDomainWide target st) c] at hl
       cases hl
 
 /-- **WS-SM SM7.D.4** (the retype seam's coherency theorem, CSpaceAddr): the
@@ -1784,7 +1866,7 @@ theorem lifecycleRetypeWithCleanupShootdownPerCoreIcache_preserves_icacheCoheren
       cases hStep
   | ok pair =>
       obtain ⟨u, stB⟩ := pair; cases u
-      rw [Architecture.withIcacheBroadcast_some_ok (retypeIcacheOperand_eq st) hBase]
+      rw [Architecture.withIcacheBroadcast_some_ok (retypeIcacheOperand_eq target st) hBase]
         at hStep
       simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
       subst hStep
@@ -1792,11 +1874,14 @@ theorem lifecycleRetypeWithCleanupShootdownPerCoreIcache_preserves_icacheCoheren
       -- The ledger record frames every core's view; the broadcast emptied them.
       rw [show Architecture.icacheOnCore (Architecture.recordIcacheMaintenance
             (Architecture.icInvalidateBroadcast stB
-              Architecture.icBroadcastReach .iallu) .iallu) c
+              Architecture.icBroadcastReach (retypeIcacheOp target st))
+            (retypeIcacheOp target st)) c
           = Architecture.icacheOnCore (Architecture.icInvalidateBroadcast stB
-              Architecture.icBroadcastReach .iallu) c from rfl] at hl
-      rw [Architecture.icInvalidateBroadcast_iallu_empties stB
-        Architecture.icBroadcastReach_cover c] at hl
+              Architecture.icBroadcastReach (retypeIcacheOp target st)) c
+          from rfl] at hl
+      rw [Architecture.icInvalidateBroadcast_domainWide_empties stB
+        Architecture.icBroadcastReach_cover
+        (retypeIcacheOp_isDomainWide target st) c] at hl
       cases hl
 
 /-- **WS-SM SM7.D.4** (Direct-cap): the instruction-cache seam also preserves
@@ -1821,14 +1906,14 @@ theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_preserves_tlbInva
       cases hStep
   | ok pair =>
       obtain ⟨u, stB⟩ := pair; cases u
-      rw [Architecture.withIcacheBroadcast_some_ok (retypeIcacheOperand_eq st) hBase]
+      rw [Architecture.withIcacheBroadcast_some_ok (retypeIcacheOperand_eq target st) hBase]
         at hStep
       simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
       subst hStep
       exact fun c e he =>
         Architecture.tlbEntryOk_of_frame_eq rfl rfl rfl
           (Architecture.icInvalidateBroadcast_preserves_tlbInvalidationConsistent_perCore
-            stB Architecture.icBroadcastReach .iallu
+            stB Architecture.icBroadcastReach (retypeIcacheOp target st)
             (lifecycleRetypeDirectWithCleanupShootdownPerCore_preserves_tlbInvalidationConsistent_perCore
               hq hConsist hVsp hObjK hAsidK hBase) c e he)
 
@@ -1853,14 +1938,14 @@ theorem lifecycleRetypeWithCleanupShootdownPerCoreIcache_preserves_tlbInvalidati
       cases hStep
   | ok pair =>
       obtain ⟨u, stB⟩ := pair; cases u
-      rw [Architecture.withIcacheBroadcast_some_ok (retypeIcacheOperand_eq st) hBase]
+      rw [Architecture.withIcacheBroadcast_some_ok (retypeIcacheOperand_eq target st) hBase]
         at hStep
       simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
       subst hStep
       exact fun c e he =>
         Architecture.tlbEntryOk_of_frame_eq rfl rfl rfl
           (Architecture.icInvalidateBroadcast_preserves_tlbInvalidationConsistent_perCore
-            stB Architecture.icBroadcastReach .iallu
+            stB Architecture.icBroadcastReach (retypeIcacheOp target st)
             (lifecycleRetypeWithCleanupShootdownPerCore_preserves_tlbInvalidationConsistent_perCore
               hq hConsist hVsp hObjK hAsidK hBase) c e he)
 

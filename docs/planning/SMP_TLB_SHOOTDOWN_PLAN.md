@@ -872,7 +872,7 @@ count 56 → 55.  Zero sorry/axiom; golden trace byte-identical
 | Sub | Description | Status |
 |-----|-------------|--------|
 | SM7.D.1 | **I-cache invalidation broadcast, mounted and live.**  Typed operand `ICacheInvalidation` (`iallu` / `ivau paddr`) with the FFI tag encoding + range/distinctness theorems mirroring `TlbInvalidation`; the effect algebra `applyICacheInvalidation` (removal / selectivity / monotonicity / idempotence / `iallu`-empties / survivor lemmas); the mounted per-core state `SystemState.perCoreICache : Vector ICacheState numCores` under the SM4.B path-a discipline (`icacheOnCore` / `setIcacheOnCore` + store/load algebra + `default_icacheOnCore`); and the three model operations — `icFetchOnCore` (the hardware instruction fetch, an *environment* step), `icInvalidateOnCore` (`IC IALLU`, whose `…_icacheOnCore_ne` **states the SMP hazard**: every other core keeps its lines, with `icInvalidateOnCore_remote_line_survives` as the non-vacuity witness), and `icInvalidateBroadcast` (`IC IALLUIS` / `IC IVAU`).  Headline: `icInvalidateBroadcast_reaches_all_cores` — the instruction-side analogue of Theorem 3.3.1 — plus the platform instantiation over `icBroadcastReach` (`_cover` / `_nodup`).  `reach` is a parameter for the §3.4 reason `targets` is: a multi-cluster port leaves the Inner Shareable domain and needs an SGI protocol.  **Rust HAL**: `cache::ic_ivau` (`IC IVAU` + `DSB ISH` + `ISB`), `cache::ic_invalidate_all_inner_shareable`, typed `ICacheInvalidation` + fail-closed `decode_icache_invalidation`, exports `cache_ic_ialluis` / `cache_ic_maintenance`; Lean bindings `ffiIcIalluIs` / `ffiIcMaintenance` + the typed wrapper `icMaintenanceBroadcast` with encoding-conformance theorems (HAL 782 → 789 tests, clippy-clean). | ✓ |
-| SM7.D.2 | **D-cache by VA at PoC is system-wide — modelled, not merely documented.**  `DCacheMaintenance` (`cleanByVA` / `invalidateByVA` / `cleanInvalidateByVA`) over the AG8-B operations, and `dcMaintenanceAllCores`, which takes **no target set at all** — the absence of a reach parameter *is* the formal content of "at PoC, already system-wide".  `dcMaintenanceByVA_reaches_all_cores` (no core retains the line), `dcacheCoherentAcrossCores` + its cold-boot witness + `dcMaintenanceAllCores_preserves_dcacheCoherentAcrossCores`, and the asymmetry against the instruction side as a theorem (`icInvalidateOnCore_vs_dcMaintenance_reach`). | ✓ |
+| SM7.D.2 | **D-cache by VA at PoC is system-wide — modelled, not merely documented.**  `DCacheMaintenance` (`cleanByVA` / `invalidateByVA` / `cleanInvalidateByVA`) over the AG8-B operations, and `dcMaintenanceAllCores`, which takes **no target set at all** — the absence of a reach parameter *is* the formal content of "at PoC, already system-wide".  `dcMaintenanceByVA_reaches_all_cores` (no core retains the line), `dcacheCoherentAcrossCores` + its cold-boot witness + `dcMaintenanceAllCores_preserves_dcacheCoherentAcrossCores`, and the asymmetry against the instruction side as a theorem (`icInvalidateOnCore_vs_dcMaintenance_reach`).  The data-side **clean-to-PoU obligation** for kernel-written code memory (`KernelCodeWriteSite` / `kernelCodeWriteOwesPoUClean`) is enumerated and checked here; v0.32.100 makes the `.retypeScrub` half *emitted* (`kernelCodeWriteEmitted`), leaving `.bootImageLoad` as the single declared-but-unemitted site (deferred item 4). | ✓ |
 | SM7.D.3 | **Cross-core DC for DMA out of scope — as a tripwire, not prose.**  The model enumerates its coherent agents (`CoherentAgent` / `modeledCoherentAgents` = exactly the PEs), proves the maintenance covers all of them (`dcMaintenance_covers_all_modeled_agents`), and proves the enumeration contains **no** non-coherent bus master (`modeledCoherentAgents_no_dma_master`).  Introducing a DMA agent breaks that theorem, so the buffer-ownership protocol (`DC CIVAC` before a device read, `DC IVAC` after a device write, plus non-cacheable or coherent-interconnect mappings) cannot be forgotten.  `Architecture/Assumptions.lean`'s AG8-B entry is rewritten from "sequential model — cache coherency is trivially satisfied under single-core operation" to the per-structure proved/assumed split. | ✓ |
 | SM7.D.4 | **Cache-coherency invariant under SMP — the 14th `proofLayerInvariantBundle` conjunct.**  `icacheCoherent_perCore`: on every core, every cached line still has a live **executable** mapping.  An `ICacheLine` records the executable translation the fetch resolved through (`ICacheLine.toTranslation`), so the entire page-table frame algebra proven for `tlbEntryConsistent` (SM7.C.5 / SM7.F) carries over unchanged.  Unlike the 13th conjunct it needs **no** pending-allowance disjunct: instruction-cache maintenance is a *synchronous* broadcast instruction, not a queued request/acknowledge round, so no committed state holds a line that is stale-but-scheduled-for-retirement.  Boot witness `default_icacheCoherent_perCore`; op-level preservation for fetch (with the walker/fetch-authorisation contract), local invalidate, and broadcast; decidable checker `icacheCoherentCheck_perCore` (+ `_iff` + `Decidable` instance) making the conjunct runtime-verifiable exactly as the 12th and 13th are; the capstone `cacheCoherency_cross_subsystem` (mirroring SM7.C.7) and the joint `icInvalidateBroadcast_preserves_perCore_memory_invariants`.  Carried through freeze (`FrozenSystemState.perCoreICache`, **required** — a silent drop is a compile error, symmetric with `perCoreTlb`), congruence (`OffSchedulerAgrees.perCoreICache`), boot (`bootFromPlatform_perCoreICache_eq`), and information flow (`perCoreICache_write_preserves_projection` — a cache view is a covert timing channel, so it stays out of `projectState`). | ✓ |
 
@@ -897,9 +897,13 @@ the 14th):
 * **`.lifecycleRetype`** → `lifecycleRetype{Direct,}WithCleanupShootdownPerCoreIcache`
   (both authority forms, so they cannot drift).  Broadcasts `IC IALLUIS`
   **unconditionally**: a retype scrubs and re-purposes the target's backing
-  memory, and the abstract state cannot enumerate which physical lines that
-  memory covered, so the sound choice is the full invalidate — over-invalidation
-  costs re-fetches, under-invalidation is the hazard.  The payoff is that the
+  memory, and the abstract state cannot enumerate which *mappings* alias that
+  frame, so the sound choice is the full invalidate — over-invalidation costs
+  re-fetches, under-invalidation is the hazard.  (**v0.32.100 amends this**:
+  the invalidate alone is not enough.  The scrub's stores must first be cleaned
+  to the Point of Unification, so the operand is `cleanRangeIallu` over exactly
+  the scrubbed extent — see the v0.32.100 section below.  Everything the rest of
+  this bullet says about the *invalidation* half still holds.)  The payoff is that the
   hardest transition in the kernel for cache reasoning becomes the easiest to
   discharge: the post-state has every core's cache **cold**, so
   `…_preserves_icacheCoherent_perCore` holds with *no* page-table side
@@ -1129,17 +1133,97 @@ it is repaired, now throws on error, and gains the cross-address-space refusal.
 No passing test changed behaviour; the golden trace is byte-identical.
 
 
+### SECURITY (v0.32.100) — the re-type's clean to the Point of Unification (PR #845 review, P1)
+
+The SM7.D wiring gave the re-type an unconditional `IC IALLUIS` and nothing else.
+That closes only half of the hazard it was written to close.
+
+`scrubObjectMemory` zeroes the target's backing memory before the new object is
+installed.  Those stores land in the **data** cache.  Instruction fetches read at
+the **Point of Unification**, so until a `DC CVAU` pushes the stores out, the PoU
+still holds the previous owner's content — and `IC IALLUIS`, which issues no
+clean, does not merely fail to help: by dropping every cached instruction line it
+*guarantees* the next fetch goes back to the stale PoU copy.  Instruction caches
+are physically tagged (ARM ARM D7.2), so that fetch is reachable through any
+later executable mapping of the frame, in any address space.  seL4's
+`clearMemory` is `memzero` followed by `cleanCacheRange_PoU` for exactly this
+reason.
+
+Severity **High** once the kernel boots on hardware; not exploitable at v0.32.99
+(no bootable image — SM9.E).  No Lean theorem was false: `ICacheState` models no
+data-cache content, so the model could not see the omission.  What was wrong was
+the emitted hardware sequence.
+
+**The deferral premise was false.**  v0.32.94 and v0.32.99 both justified
+deferring the data-side emission on the grounds that "the model does not carry
+each written object's physical extent."  For this site that is simply untrue and
+always was: `scrubObjectMemory` derives `(base, size)` from
+`(ObjId, KernelObjectType)` by the model's own allocation convention.  The claim
+was inherited from the `.bootImageLoad` site, where it does hold, and never
+re-checked for `.retypeScrub`.
+
+**The fix.**  A fourth operand, `ICacheInvalidation.cleanRangeIallu base size` —
+clean `[base, base+size)` to the PoU, `DSB ISH`, then `IC IALLUIS`, `DSB ISH`,
+`ISB`.  Both production re-type seams emit it, keyed on the pre-state object's
+type so the cleaned extent is *exactly* the scrubbed one
+(`retypeIcacheOp_cleans_scrub_extent`, an equality between the two computations;
+`retypeIcacheOp_discharges_scrub_obligation` for the obligation link).  An empty
+target slot has nothing to scrub and keeps the bare `.iallu`.
+
+The clean and the invalidate are **one** operand, not two ledger entries, so the
+ordering cannot be lost to accumulation order: bundling makes it the HAL
+routine's internal `DSB ISH`.  Same reasoning that keeps `unifyPage` distinct
+from `ivauPage`.
+
+`covers` gains the range arms over interval containment (`byteRangeContains`,
+whose `_trans` carries `covers_trans`).  The two exclusions are stated as
+theorems so a future "simplification" fails there rather than silently dropping
+a clean: `iallu_not_covers_cleanRangeIallu` (no `DC CVAU`) and
+`unifyPage_not_covers_cleanRangeIallu` (one page, not the domain).
+`isDomainWide` factors out "ends in `IC IALLUIS`" so the seams' 14th-conjunct
+proofs carry for both operands without case-splitting.
+
+`kernelCodeWriteSites_emission_pending` previously asserted that *every*
+code-write site's obligation was a placeholder.  That is no longer true, so it
+became the **partition**: `kernelCodeWriteEmitted` marks `.retypeScrub` emitted
+and `.bootImageLoad` still pending, and the theorem pins that exactly one site
+remains.  Wiring the boot emission breaks the `decide`.
+
+`Model/State.lean` gains `getObjectType?`, the kind-agnostic member of the
+AL2-A / AN10-B typed-accessor family, so the operand reads the store through an
+accessor rather than open-coding a raw match (AK7 `RAW_MATCH_TOTAL` unchanged
+at 136).
+
+FFI: `ffiIcMaintenance` / `cache_ic_maintenance` take a third word (`size`, RES0
+for tags 0–2), tag 3 routing to
+`cache::clean_range_pou_then_invalidate_all_inner_shareable`.  The stale ffi.rs
+header comment (two tags, `[0, 2)`) is corrected to four.
+
+Coverage: `SmpCacheMaintenanceSuite` §3.13 (18 assertions, plus three in §3.11 for the
+emission partition; 93 → 114 / 13 groups),
+including the load-bearing negative that the pre-fix `.iallu` provably does *not*
+discharge the obligation.  Rust HAL 795 → 798: `test_clean_range_pou_line_coverage`
+computes the `DC CVAU` loop the HAL runs and checks it covers every line of
+`[base, base+size)` for each allocation size and for a line-straddling base.
+Trace byte-identical; zero sorry/axiom; Tier 0–3 green.
+
 ### SM7.D deferred items — registered against SM9.E
 
-Three findings from the PR #845 review were verified as real but deliberately
+Findings from the PR #845 review that were verified as real but deliberately
 **not** fixed in that PR.  Each is recorded here as tracked debt with an owning
 phase, per the project's rule that deferred items are lifted into the register
 rather than left in source comments.
+
+(A fourth review finding — the missing clean-to-PoU on the re-type path — was
+*not* deferred: see the v0.32.100 section above.  Its `.bootImageLoad` sibling
+is item 4 below, and is the last site `kernelCodeWriteSites_emission_pending`
+still reports as owing an emission.)
 
 | # | Finding | Why deferred | Owner |
 |---|---------|--------------|-------|
 | 1 | **`op.toPaddr` is used directly as the VA operand for `DC CVAU` / `IC IVAU`.**  `mmu.rs` populates only L1 entries 0..3 — `0x0000_0000–0xBFFF_FFFF` Normal WB cacheable, `0xC000_0000–0xFFFF_FFFF` Device-nGnRnE, nothing above 4 GiB — while `rpi5MachineConfig.physicalAddressWidth = 44`.  The model therefore admits frames the boot tables do not cacheably map, and maintenance against such a VA faults at EL1 or operates through a Device alias. | Pre-existing since v0.32.94 (`.ivauPage` carries the same convention; `.unifyPage` inherits it).  Not reachable today — no bootable image until SM9.E and no allocator path hands out frames above 3 GiB — but live the moment the image boots on a 4 GB or 8 GB Pi 5.  The fix is a PA→kernel-VA translation with a fail-closed reject for frames outside the cacheable window, which belongs with the runtime mapping work.  **Must cover the whole operand family, not just `.unifyPage`.** | SM9.E |
 | 2 | **The post-state is published before the maintenance is emitted.**  `modifyGetKernelState` installs the committed state and clears the ledger atomically; `completeIcacheMaintenance` runs outside that step, so another core can observe a retyped frame, map it and execute from it while stale instruction lines are still resident. | Structural to the whole SM7 runtime bracket, not to the cache seam: `completeShootdownRounds` sits in the same position and has since v0.32.76.  The TLB side is saved by the blocking `SHOOTDOWN_ACK` handshake; `IC IALLUIS` is fire-and-forget, so there is nothing to wait on.  "Emit before publishing" is unavailable to a pure-transition kernel (the operand is only known *after* the transition computes it — the reason the ledger exists), leaving "hold serialization across the barrier sequence", which changes the syscall bracket's locking discipline and interacts with the SM3 hierarchy and the SM7.B round lock.  Wants designing once for both the TLB and cache sides.  Mitigation today: the model applies the invalidation to `perCoreICache` atomically *inside* the transition, so the committed state is coherent — the gap is exactly the model-vs-hardware refinement gap SM9.E closes. | SM9.E |
+| 4 | **The `.bootImageLoad` clean-to-PoU is declared but not emitted.**  The boot pipeline materialises the initial task's objects — including its code — before the first instruction fetch, and owes the same `DC CVAU` → `DSB ISH` → invalidate sequence the re-type now emits.  `kernelCodeWriteEmitted .bootImageLoad = false` records this, and `kernelCodeWriteSites_emission_pending` pins that it is the **only** remaining site. | Unlike `.retypeScrub`, this site genuinely cannot name its extent today: boot materialises objects through the builder, with no transition to hang an operand on and no physical backing until the image runs.  Closure means emitting the range clean as part of boot's object materialisation, which is the SM9.E bring-up work.  Flipping the `kernelCodeWriteEmitted` arm breaks the `decide`, so the closure cannot land silently. | SM9.E |
 | 3 | **The legacy `syscallDispatchInner` entry does not drain the ledger.** | Vestigial: the Rust `svc_dispatch` extern was flipped to `lean_syscall_dispatch_cross_core` at v0.31.67 (SM6.A), so nothing calls `syscall_dispatch_inner` on the production path.  Since v0.32.96 replaced the operand *join* with an append-only list, an operand committed through the legacy entry is **deferred** (drained by the next cross-core-entry syscall), never silently dropped — `recordIcacheMaintenanceList_mem_of_mem` is the no-loss property.  **Draining there was attempted and reverted**: `icMaintenanceBroadcast` carries an `@[extern]` symbol supplied by the Rust HAL, which simulation builds do not link, and `tests/SyscallDispatchSuite.lean` calls this entry directly — so the emission breaks every host test binary that exercises the bridge.  The module's link-gating policy requires that to fail loudly rather than be stubbed, so the only sound closures are (a) linking the HAL into test binaries, which defeats the gating, or (b) **removing the export** and repointing `SyscallDispatchSuite` at the cross-core entry.  (b) is the intended closure. | SM9.E |
 
 ### SM7.E — Tests (3 PRs, 6 sub-tasks)

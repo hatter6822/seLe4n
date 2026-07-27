@@ -843,11 +843,34 @@ the executing PE, so the kernel must issue the broadcast variant:
   Each record appends at most one entry (`_length_le`) and a syscall runs one
   maintenance-bearing transition, so the live ledger is a singleton — no
   capacity invariant, no bundle conjunct
+- `ICacheInvalidation.cleanRangeIallu` + `byteRangeContains` (SM7.D, v0.32.100)
+  — the **re-type's** operand: clean `[base, base+size)` to the Point of
+  Unification, then invalidate every instruction cache in the domain.  A re-type
+  scrubs the target's backing memory, and those zeroing stores sit in the data
+  cache; because fetches read at the PoU, an `IC IALLUIS` alone drops the cached
+  instruction lines and thereby *guarantees* the next fetch re-reads the previous
+  owner's content.  The clean and the invalidate are one operand so the ordering
+  is the HAL routine's internal `DSB ISH` rather than a property of the ledger's
+  accumulation order.  Coverage over the range arms is interval containment
+  (`byteRangeContains_trans` carries `covers_trans`); the two exclusions are
+  theorems, `iallu_not_covers_cleanRangeIallu` (no `DC CVAU`) and
+  `unifyPage_not_covers_cleanRangeIallu` (one page, not the domain).
+  `ICacheInvalidation.isDomainWide` factors out "ends in `IC IALLUIS`" so
+  `applyICacheInvalidation_domainWide` carries the re-type seams' 14th-conjunct
+  proofs for both operands
 - `kernelCodeWriteSites_owe_pou_clean` + `kernelCodeWriteSites_complete`
   (SM7.D.2) — the data-side dual, as a checked obligation: every kernel site
-  that writes memory a subject may execute owes the
-  `armv8DCacheToICacheSequence` clean to the Point of Unification (emission
-  scoped to SM9.E, when objects gain physical extents)
+  that writes memory a subject may execute owes a clean to the Point of
+  Unification, an instruction-side invalidate, and the barriers ordering them
+- `kernelCodeWriteEmitted` + `kernelCodeWriteSites_emission_pending`
+  (SM7.D.2, v0.32.100) — which sites *emit* that obligation today, as a
+  partition rather than a blanket deferral.  `.retypeScrub` is emitted
+  (`retypeIcacheOp_discharges_scrub_obligation` links the live operand to the
+  obligation over the extent `scrubObjectMemory` zeroes, via
+  `dischargesPoUClean`, which is expressed through `covers` so the question is
+  answered by the ledger's own preorder); `.bootImageLoad` is not, and the
+  theorem pins it as the only remaining site — flipping it breaks the `decide`,
+  so the SM9.E closure cannot land silently
 - `icFetchOnCore` (SM7.D.1) — the hardware instruction fetch filling one core's
   view; an *environment* step, not a kernel transition
 - `icInvalidateOnCore` (SM7.D.1) — `IC IALLU`, whose

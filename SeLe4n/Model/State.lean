@@ -2576,6 +2576,34 @@ def getVSpaceRoot? (st : SystemState) (id : SeLe4n.ObjId) : Option VSpaceRoot :=
   | some (.vspaceRoot root) => some root
   | _                       => none
 
+/-- **WS-SM SM7.D**: read a stored object's *type* from the global object store,
+without discriminating its variant.
+
+The kind-agnostic member of the AL2-A / AN10-B typed-accessor family, for
+callers that need only what the object's identity implies — its allocation
+footprint — rather than its contents.  The re-type's cache-maintenance operand
+is the motivating consumer: it must name the extent `scrubObjectMemory` will
+zero, which is a function of `(ObjId, KernelObjectType)` alone.
+
+Distinct from `lookupObjectTypeMeta`, which reads the *lifecycle metadata*
+view: this one reads the store, so it agrees by construction with any transition
+that derives behaviour from the stored object (`scrubObjectMemory` does). -/
+def getObjectType? (st : SystemState) (id : SeLe4n.ObjId) : Option KernelObjectType :=
+  (st.objects[id]?).map KernelObject.objectType
+
+/-- **WS-SM SM7.D**: `getObjectType?` reports exactly the stored object's type —
+the characterisation every consumer reasons through. -/
+@[simp] theorem getObjectType?_eq_some_of_getElem {st : SystemState}
+    {id : SeLe4n.ObjId} {obj : KernelObject} (h : st.objects[id]? = some obj) :
+    st.getObjectType? id = some obj.objectType := by
+  simp [getObjectType?, h]
+
+/-- **WS-SM SM7.D**: an absent object has no type. -/
+@[simp] theorem getObjectType?_eq_none_of_getElem {st : SystemState}
+    {id : SeLe4n.ObjId} (h : st.objects[id]? = none) :
+    st.getObjectType? id = none := by
+  simp [getObjectType?, h]
+
 -- ============================================================================
 -- AL2-B (WS-AL / AK7-F.cascade): kind-discrimination sanity lemmas.
 --

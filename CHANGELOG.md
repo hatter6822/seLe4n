@@ -1,3 +1,97 @@
+## v0.32.100 — SECURITY (SM7.D): the re-type's scrub is now cleaned to the Point of Unification
+
+**The finding.** A PR #845 review flagged that `retypeIcacheOperand` returned an
+unconditional `.iallu`. Verified and correct — and the review's reasoning was
+sound where my own justification for deferring the emission was not.
+
+A re-type scrubs the target object's backing memory (`scrubObjectMemory` zeroes
+`[objId × allocSize, + allocSize)`) and installs a different object over it. Those
+zeroing stores land in the **data** cache. Instruction fetches read at the **Point
+of Unification**, so until a `DC CVAU` pushes the stores out, the PoU still holds
+the *previous owner's* content. `IC IALLUIS` does not close that: it drops the
+cached instruction lines and thereby guarantees the very next fetch goes back to
+the stale PoU copy. Because instruction caches are physically tagged (ARM ARM
+D7.2), that fetch is reachable through **any** later executable mapping of the
+frame, in **any** address space — the "free, re-allocate, execute the previous
+owner's code" hazard the SM7.D broadcast was supposed to close. seL4's
+`clearMemory` is `memzero` followed by `cleanCacheRange_PoU` for exactly this
+reason.
+
+Severity **High** once the kernel boots on hardware; not exploitable today (no
+bootable image — SM9.E), and the abstract model has no data-cache content, so no
+Lean theorem was false. It was the *emitted hardware sequence* that was
+incomplete.
+
+**My own error, recorded.** v0.32.94 and v0.32.99 both justified deferring the
+data-side emission to SM9.E on the grounds that "the model does not carry each
+written object's physical extent." That is false for this site and always was:
+`scrubObjectMemory` computes its own `(base, size)` from `(ObjId,
+KernelObjectType)`. The obligation was deferrable only because nobody checked the
+premise.
+
+**The fix.** A fourth operand, `ICacheInvalidation.cleanRangeIallu base size`:
+clean `[base, base + size)` to the PoU, `DSB ISH`, then `IC IALLUIS`, `DSB ISH`,
+`ISB`. Both production re-type seams
+(`lifecycleRetype{Direct,}WithCleanupShootdownPerCoreIcache`, live behind
+`.lifecycleRetype`) now emit it, keyed on the pre-state object's type so the
+cleaned extent is *exactly* the scrubbed one —
+`retypeIcacheOp_cleans_scrub_extent` pins that as an equality between the two
+computations, and `retypeIcacheOp_discharges_scrub_obligation` pins that the
+operand discharges the `.retypeScrub` clean-to-PoU obligation over that range.
+An empty target slot has nothing to scrub, so it keeps the bare `.iallu`.
+
+The clean and the invalidate are **one** operand rather than two ledger entries
+so that the ordering cannot be lost: the clean must complete before the
+invalidate is observed, and bundling makes that the HAL routine's internal
+`DSB ISH` rather than a property of the ledger's accumulation order. This is the
+same reasoning that already keeps `unifyPage` distinct from `ivauPage`.
+
+**Coverage algebra.** `covers` gains the range arms, grounded in interval
+containment (`byteRangeContains`, with `_trans` carrying `covers_trans`): a
+containing range covers a contained one and covers a `unifyPage` whose page it
+contains; `iallu` covers **neither** (`iallu_not_covers_cleanRangeIallu`, the
+exclusion stated as a theorem so a future collapse to a top element fails there
+rather than silently dropping the clean); a `unifyPage` does not cover a range
+operand either (`unifyPage_not_covers_cleanRangeIallu` — it invalidates one page,
+not the domain). `ICacheInvalidation.isDomainWide` factors out "ends in
+`IC IALLUIS`", so `applyICacheInvalidation_domainWide` /
+`icInvalidateBroadcast_domainWide_empties` carry the seams' 14th-conjunct proofs
+for both operands without case-splitting.
+
+**The obligation marker, corrected.** `kernelCodeWriteSites_emission_pending`
+asserted that *every* code-write site's obligation was a placeholder. That is no
+longer true, so it is now the **partition**: `kernelCodeWriteEmitted` records
+`.retypeScrub` as emitted and `.bootImageLoad` as still pending (boot has no
+transition to hang an operand on; SM9.E), and the theorem pins that exactly one
+site remains. Wiring the boot emission breaks the `decide` and forces a visible
+edit. `dischargesPoUClean` is the predicate the link is stated through —
+expressed via `covers`, so "did the site actually clean?" is answered by the
+ledger's own preorder rather than by a second, parallel notion.
+
+**FFI.** `ffiIcMaintenance` / `cache_ic_maintenance` take a third word (`size`,
+RES0 for tags 0–2, pinned by `ICacheInvalidation.toSize_zero_of_not_range`), and
+tag 3 routes to the new
+`cache::clean_range_pou_then_invalidate_all_inner_shareable`. The stale ffi.rs
+header comment (still documenting two tags and `[0, 2)` after v0.32.96 added a
+third) is corrected to four.
+
+**Tests.** `SmpCacheMaintenanceSuite` §3.13 (18 assertions) plus three in §3.11
+for the emission partition: the operand cleans
+the scrubbed extent for every `objectTypeAllocSize`, discharges the obligation,
+and — the load-bearing negative — the pre-fix `.iallu` provably does **not**;
+plus the containment algebra, the `(3, base, size)` encoding, and the live
+CSpaceAddr seam end to end. Suite 93 → 114 assertions / 13 groups. Rust HAL
+795 → 798: `test_clean_range_pou_line_coverage` computes the `DC CVAU` loop the
+HAL runs and checks it covers every line of `[base, base+size)` for each
+allocation size and for a line-straddling base — a missed line is the defect, not
+a rounding detail.
+
+Trace byte-identical (`pendingIcacheMaintenance` ∉ `projectState`); zero
+`sorry`/`axiom`.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.D
+Refs: #845
+
 ## v0.32.99 — PR #845 review round 3: five findings, all consequences of this PR's own changes
 
 **(1) The page-alignment guard reached only two of four checked map wrappers.**

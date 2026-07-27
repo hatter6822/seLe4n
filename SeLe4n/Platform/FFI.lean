@@ -1206,16 +1206,20 @@ opaque ffiIcIalluIs : BaseIO Unit
 
 /-- **WS-SM SM7.D.1**: typed instruction-cache maintenance dispatcher.
 
-    Takes the `(opTag, addr)` encoding of an
+    Takes the `(opTag, addr, size)` encoding of an
     `Architecture.ICacheInvalidation` and emits the corresponding broadcast
     maintenance instruction plus its completing barriers:
 
       opTag : 0 = Iallu (`IC IALLUIS`), 1 = IvauPage (per-page `IC IVAU` loop),
-              2 = UnifyPage (`DC CVAU` loop → `DSB` → `IC IVAU` loop → `DSB` → `ISB`)
-      addr  : page base virtual address operand (RES0 for Iallu)
+              2 = UnifyPage (`DC CVAU` loop → `DSB` → `IC IVAU` loop → `DSB` → `ISB`),
+              3 = CleanRangeIallu (`DC CVAU` loop over `[addr, addr+size)` →
+                  `DSB` → `IC IALLUIS` → `DSB` → `ISB`)
+      addr  : page base virtual address operand, or the range base for tag 3
+              (RES0 for Iallu)
+      size  : range length in bytes (tag 3 only; RES0 otherwise)
 
     The encoding is pinned to the Lean side by
-    `ICacheInvalidation.toOpTag` / `.toPaddr` and to the Rust side by
+    `ICacheInvalidation.toOpTag` / `.toPaddr` / `.toSize` and to the Rust side by
     `cache::decode_icache_invalidation`; the dispatcher **panics** on an
     out-of-range tag (fail closed — a silently skipped invalidation is a
     correctness violation the caller cannot detect), which
@@ -1227,9 +1231,14 @@ opaque ffiIcIalluIs : BaseIO Unit
     matters: the invalidations must not be observed before the cleans complete,
     or a PE could re-fill an instruction line from the pre-clean PoU content.
 
+    Tag 3 (`cleanRangeIallu`) is the `.lifecycleRetype` operand, and carries the
+    same inter-loop ordering for the same reason — with a caller-supplied extent
+    (the scrubbed region) and a domain-wide invalidate, because a re-type cannot
+    name the mappings that alias the frame it re-purposes.
+
     Rust: `ffi::cache_ic_maintenance` in `sele4n-hal/src/ffi.rs`. -/
 @[extern "cache_ic_maintenance"]
-opaque ffiIcMaintenance : UInt32 → UInt64 → BaseIO Unit
+opaque ffiIcMaintenance : UInt32 → UInt64 → UInt64 → BaseIO Unit
 
 /-- **WS-SM SM7.D.1**: typed wrapper over `ffiIcMaintenance` — emit the
     inner-shareable broadcast maintenance for a typed operand.
@@ -1253,10 +1262,20 @@ opaque ffiIcMaintenance : UInt32 → UInt64 → BaseIO Unit
     a *distinct* op tag rather than a stronger `.ivauPage` because the clean to
     the Point of Unification has no counterpart in the invalidation dimension —
     which is also why the emission ledger keeps it under a coverage preorder
-    instead of a join (`ICacheInvalidation.iallu_not_covers_unifyPage`). -/
+    instead of a join (`ICacheInvalidation.iallu_not_covers_unifyPage`).
+
+    `.cleanRangeIallu b s` passes `b` as the address and `s` as the length, and
+    routes to `cache::clean_range_pou_then_invalidate_all_inner_shareable`.  It
+    is the re-type's operand: `IC IALLUIS` alone would drop the stale
+    instruction lines but leave the scrub's zeroing stores in the data cache, so
+    the very next fetch would re-fill from the pre-scrub Point-of-Unification
+    content — the previous owner's code.  The `DC CVAU` loop is what closes
+    that, and bundling it into one operand is what keeps the ordering out of the
+    ledger's accumulation order
+    (`ICacheInvalidation.iallu_not_covers_cleanRangeIallu`). -/
 def icMaintenanceBroadcast
     (op : SeLe4n.Kernel.Architecture.ICacheInvalidation) : BaseIO Unit :=
-  ffiIcMaintenance op.toOpTag op.toPaddr
+  ffiIcMaintenance op.toOpTag op.toPaddr op.toSize
 
 /-- **WS-SM SM7.D.1**: the invalidate-all operand routes to op tag 0. -/
 theorem icMaintenanceBroadcast_iallu_encoding :
@@ -1271,6 +1290,18 @@ theorem icMaintenanceBroadcast_ivauPage_encoding (p : SeLe4n.PAddr) :
     (SeLe4n.Kernel.Architecture.ICacheInvalidation.ivauPage p).toPaddr =
       UInt64.ofNat p.toNat :=
   ⟨rfl, rfl⟩
+
+/-- **WS-SM SM7.D**: the re-type's range operand routes to op tag 3 carrying
+    the scrubbed extent's base **and length** — the only operand for which the
+    HAL reads the third word. -/
+theorem icMaintenanceBroadcast_cleanRangeIallu_encoding
+    (b : SeLe4n.PAddr) (s : Nat) :
+    (SeLe4n.Kernel.Architecture.ICacheInvalidation.cleanRangeIallu b s).toOpTag = 3 ∧
+    (SeLe4n.Kernel.Architecture.ICacheInvalidation.cleanRangeIallu b s).toPaddr =
+      UInt64.ofNat b.toNat ∧
+    (SeLe4n.Kernel.Architecture.ICacheInvalidation.cleanRangeIallu b s).toSize =
+      UInt64.ofNat s :=
+  ⟨rfl, rfl, rfl⟩
 
 
 /-- AN9-F: Lean-side SVC dispatch routine called BY Rust through the

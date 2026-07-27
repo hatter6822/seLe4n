@@ -27,7 +27,9 @@ sub-tasks SM7.D.1–SM7.D.4):
   the executing PE (the SMP hazard); `IC IALLUIS` / `IC IVAU` reach every
   core of the shareability domain.
 * **SM7.D.2** — data-cache maintenance by VA to the Point of Coherency is
-  system-wide, with no target set to get wrong.
+  system-wide, with no target set to get wrong; and the *clean-to-PoU*
+  obligation kernel code-write sites carry, which the re-type discharges
+  by emission (§3.13) and boot still owes (SM9.E).
 * **SM7.D.3** — the DMA scope boundary, machine-checked as a tripwire.
 * **SM7.D.4** — `icacheCoherent_perCore`, the 14th
   `proofLayerInvariantBundle` conjunct, and its live-path preservation.
@@ -69,6 +71,16 @@ open SeLe4n.Kernel.Concurrency
 #check @ICacheInvalidation.iallu_covers_ivauPage
 #check @ICacheInvalidation.iallu_not_covers_unifyPage
 #check @ICacheInvalidation.ivauPage_not_covers_of_ne
+#check @byteRangeContains
+#check @byteRangeContains_iff
+#check @byteRangeContains_refl
+#check @byteRangeContains_trans
+#check @ICacheInvalidation.isDomainWide
+#check @ICacheInvalidation.cleanRangeIallu_covers_iallu
+#check @ICacheInvalidation.cleanRangeIallu_covers_ivauPage
+#check @ICacheInvalidation.cleanRangeIallu_covers_unifyPage
+#check @ICacheInvalidation.iallu_not_covers_cleanRangeIallu
+#check @ICacheInvalidation.unifyPage_not_covers_cleanRangeIallu
 #check @recordIcacheMaintenanceList
 #check @recordIcacheMaintenanceList_nil
 #check @recordIcacheMaintenanceList_ne_nil
@@ -122,6 +134,10 @@ open SeLe4n.Kernel.Concurrency
 #check @kernelCodeWriteSites_complete
 #check @kernelCodeWriteOwesPoUClean
 #check @kernelCodeWriteSites_owe_pou_clean
+#check @dischargesPoUClean
+#check @dischargesPoUClean_isDomainWide
+#check @kernelCodeWriteEmitted
+#check @kernelCodeWriteSites_emission_pending
 
 -- SM7.D.1 typed operand + FFI encoding:
 #check @ICacheInvalidation
@@ -133,6 +149,10 @@ open SeLe4n.Kernel.Concurrency
 #check @ICacheInvalidation.ivauPage_opTag
 #check @ICacheInvalidation.iallu_zero_operand
 #check @ICacheInvalidation.ivauPage_toPaddr
+#check @ICacheInvalidation.toSize
+#check @ICacheInvalidation.toSize_zero_of_not_range
+#check @ICacheInvalidation.cleanRangeIallu_opTag
+#check @ICacheInvalidation.cleanRangeIallu_operands
 
 -- SM7.D.1 line/state model (mounted in SystemState):
 #check @ICacheLine
@@ -151,6 +171,8 @@ open SeLe4n.Kernel.Concurrency
 #check @mem_of_mem_applyICacheInvalidation
 #check @applyICacheInvalidation_idempotent
 #check @applyICacheInvalidation_iallu
+#check @applyICacheInvalidation_domainWide
+#check @icacheLineMatches_domainWide
 #check @icacheLineMatches_ivauPage
 #check @icacheLineMatches_iallu
 #check @applyICacheInvalidation_survivor_paddr_ne
@@ -248,8 +270,15 @@ open SeLe4n.Kernel.Concurrency
 #check @vspaceUnmapPageWithShootdownAndIcacheBroadcast_preserves_perCore_memory_invariants
 
 -- SM7.D.1 live wiring (the `.lifecycleRetype` seam, both authority forms):
+#check @SeLe4n.Model.SystemState.getObjectType?
+#check @SeLe4n.Model.SystemState.getObjectType?_eq_some_of_getElem
+#check @SeLe4n.Model.SystemState.getObjectType?_eq_none_of_getElem
+#check @SeLe4n.Kernel.retypeIcacheOp
 #check @SeLe4n.Kernel.retypeIcacheOperand
 #check @SeLe4n.Kernel.retypeIcacheOperand_eq
+#check @SeLe4n.Kernel.retypeIcacheOp_isDomainWide
+#check @SeLe4n.Kernel.retypeIcacheOp_cleans_scrub_extent
+#check @SeLe4n.Kernel.retypeIcacheOp_discharges_scrub_obligation
 #check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache
 #check @SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdownPerCoreIcache
 #check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_error_iff
@@ -272,6 +301,7 @@ open SeLe4n.Kernel.Concurrency
 #check @SeLe4n.Platform.FFI.icMaintenanceBroadcast
 #check @SeLe4n.Platform.FFI.icMaintenanceBroadcast_iallu_encoding
 #check @SeLe4n.Platform.FFI.icMaintenanceBroadcast_ivauPage_encoding
+#check @SeLe4n.Platform.FFI.icMaintenanceBroadcast_cleanRangeIallu_encoding
 #check @SeLe4n.Kernel.completeIcacheMaintenance
 #check @SeLe4n.Kernel.completeIcacheMaintenance_nil
 #check @SeLe4n.Kernel.completeIcacheMaintenance_singleton
@@ -734,8 +764,9 @@ private def runLedgerChecks : IO Unit := do
           (stROPost.pendingIcacheMaintenance == [])
         assertBool "the non-executable unmap still posts its TLB shootdown round"
           (!(shootdownQuiescent stROPost.tlbShootdown))
-    -- Retype records the domain-wide operand even though its own shootdown
-    -- round may be absent — the residual the shootdown-diff key could not see.
+    -- Retype records its clean-then-invalidate operand even though its own
+    -- shootdown round may be absent — the residual the shootdown-diff key
+    -- could not see.
     let stAll : SystemState :=
       allCores.foldl (fun st c => icFetchOnCore st c lineExec) stMapped
     let authCap : Capability :=
@@ -747,8 +778,13 @@ private def runLedgerChecks : IO Unit := do
         stAll with
     | .error _ => assertBool "the retype seam commits" false
     | .ok ((), stPost) =>
-      assertBool "a retype records the domain-wide operand"
-        (stPost.pendingIcacheMaintenance == [ICacheInvalidation.iallu])
+      -- The target is a `.vspaceRoot`, whose `objectTypeAllocSize` is 4096, so
+      -- the scrub zeroes [udVsp × 4096, +4096) and the operand cleans exactly
+      -- that before the domain-wide invalidate.
+      assertBool "a retype records the clean-then-invalidate range operand"
+        (stPost.pendingIcacheMaintenance ==
+          [ICacheInvalidation.cleanRangeIallu
+            (SeLe4n.PAddr.ofNat (udVsp.toNat * 4096)) 4096])
 
 -- ----------------------------------------------------------------------------
 -- §3.11  SM7.D.2 — the data-side dual: the clean-to-PoU obligation tripwire.
@@ -764,6 +800,14 @@ private def runCodeWriteObligationChecks : IO Unit := do
   assertBool "the canonical D→I sequence covers the barriers the obligation names"
     (armv8DCacheToICacheSequence.covers CacheBarrierKind.dsb_ish &&
      armv8DCacheToICacheSequence.covers CacheBarrierKind.isb)
+  -- The emission partition: the re-type's clean is live, boot's is not.
+  assertBool "the re-type site's clean-to-PoU is EMITTED by a live transition"
+    (kernelCodeWriteEmitted .retypeScrub)
+  assertBool "the boot-image site's emission is still pending (SM9.E)"
+    (!(kernelCodeWriteEmitted .bootImageLoad))
+  assertBool "exactly one site still owes an emission"
+    (kernelCodeWriteSites.filter (fun s => !kernelCodeWriteEmitted s) ==
+      [KernelCodeWriteSite.bootImageLoad])
 
 -- ----------------------------------------------------------------------------
 -- §3.12  SM7.D — the user-facing code-publication path
@@ -866,6 +910,107 @@ private def runUnifyInstructionChecks : IO Unit := do
         (match SeLe4n.Kernel.dispatchSyscall unifyDecoded udCaller stNoCap with
           | .error .invalidCapability => true | _ => false)
 
+-- ----------------------------------------------------------------------------
+-- §3.13  SM7.D — the re-type's clean to the Point of Unification.
+--
+--   A re-type scrubs the target's backing memory.  Those zeroing stores land in
+--   the data cache; instruction fetches read at the Point of Unification, so
+--   `IC IALLUIS` on its own would drop the cached instruction lines and then let
+--   the very next fetch re-fill from the *pre-scrub* PoU content — the previous
+--   owner's code, reachable through any later executable mapping of the frame,
+--   in any address space.  The operand must therefore clean the scrubbed extent
+--   first.  This group pins that it does, for every allocation size, and pins
+--   the exclusion (`iallu` does NOT discharge the clean) that makes the
+--   distinction load-bearing rather than decorative.
+-- ----------------------------------------------------------------------------
+
+private def runRetypeCleanToPoUChecks : IO Unit := do
+  IO.println "-- §3.13 SM7.D re-type clean-to-PoU (scrubbed-extent coverage)"
+  -- The operand is derived from the pre-state object, so it matches the extent
+  -- `scrubObjectMemory` will zero — for every object type the model allocates.
+  let sizes : List (KernelObjectType × Nat) :=
+    [(.tcb, 1024), (.endpoint, 64), (.notification, 64), (.cnode, 4096),
+     (.vspaceRoot, 4096), (.untyped, 4096), (.schedContext, 256), (.reply, 64)]
+  assertBool "the allocation sizes the scrub uses are the ones under test"
+    (sizes.all fun (t, n) => objectTypeAllocSize t == n)
+  match vspaceMapPageWithFlush asid5 vaddrPage paddrPage permsExec (cacheState []) with
+  | .error _ => assertBool "the scenario maps the executable page" false
+  | .ok ((), stMapped) => do
+    -- The live seam's operand names the target's own extent.
+    assertBool "the re-type operand cleans exactly the scrubbed extent"
+      (SeLe4n.Kernel.retypeIcacheOp udVsp stMapped ==
+        ICacheInvalidation.cleanRangeIallu
+          (SeLe4n.PAddr.ofNat (udVsp.toNat * objectTypeAllocSize .vspaceRoot))
+          (objectTypeAllocSize .vspaceRoot))
+    -- ... and it discharges the `.retypeScrub` clean-to-PoU obligation over
+    -- that very range, which `.iallu` provably would not.
+    let base := SeLe4n.PAddr.ofNat (udVsp.toNat * objectTypeAllocSize .vspaceRoot)
+    let size := objectTypeAllocSize (KernelObjectType.vspaceRoot)
+    assertBool "the emitted operand discharges the scrub's clean-to-PoU obligation"
+      (dischargesPoUClean (SeLe4n.Kernel.retypeIcacheOp udVsp stMapped) base size)
+    assertBool "the PRE-FIX operand `iallu` does NOT discharge it (the defect)"
+      (!(dischargesPoUClean ICacheInvalidation.iallu base size))
+    assertBool "discharging the obligation forces a domain-wide invalidate"
+      ((SeLe4n.Kernel.retypeIcacheOp udVsp stMapped).isDomainWide)
+    -- An empty slot has nothing to scrub, so no clean is owed; the bare
+    -- domain-wide invalidate remains.
+    assertBool "an absent target owes no clean (bare domain-wide invalidate)"
+      (SeLe4n.Kernel.retypeIcacheOp ⟨9999⟩ stMapped == ICacheInvalidation.iallu)
+    -- Coverage algebra, on the concrete operands: a wider clean subsumes a
+    -- narrower one, `iallu` subsumes neither, and page-granular cleans cannot
+    -- stand in for the domain-wide invalidate.
+    let wide := ICacheInvalidation.cleanRangeIallu (SeLe4n.PAddr.ofNat 0x1000) 4096
+    let narrow := ICacheInvalidation.cleanRangeIallu (SeLe4n.PAddr.ofNat 0x1040) 64
+    let outside := ICacheInvalidation.cleanRangeIallu (SeLe4n.PAddr.ofNat 0x9000) 64
+    assertBool "a containing range covers a contained one"
+      (wide.covers narrow)
+    assertBool "a contained range does NOT cover its container"
+      (!(narrow.covers wide))
+    assertBool "disjoint ranges are incomparable (the ledger must keep both)"
+      (!(wide.covers outside) && !(outside.covers wide))
+    assertBool "the range operand covers `iallu` and any page invalidate"
+      (wide.covers .iallu && wide.covers (.ivauPage paddrPage))
+    assertBool "`iallu` covers NEITHER a unifyPage NOR a cleanRangeIallu"
+      (!(ICacheInvalidation.iallu.covers (.unifyPage paddrPage)) &&
+       !(ICacheInvalidation.iallu.covers narrow))
+    assertBool "a page-granular clean does not stand in for the range operand"
+      (!((ICacheInvalidation.unifyPage (SeLe4n.PAddr.ofNat 0x1000)).covers wide))
+    -- A range clean that contains a page discharges that page's unify.
+    assertBool "a range containing a page covers that page's unify"
+      (wide.covers (.unifyPage (SeLe4n.PAddr.ofNat 0x1000)))
+    -- FFI encoding: tag 3 carries BOTH words.  Dropping `size` would silently
+    -- turn the clean into a zero-length no-op.
+    assertBool "the range operand encodes to (3, base, size)"
+      (wide.toOpTag == 3 && wide.toPaddr == 0x1000 && wide.toSize == 4096)
+    assertBool "every non-range operand encodes a zero length"
+      ([ICacheInvalidation.iallu, .ivauPage paddrPage, .unifyPage paddrPage].all
+        fun op => op.toSize == 0)
+    -- Live, end to end: the retype leaves every core's I-cache cold AND the
+    -- ledger owing the clean.
+    let authCap : Capability :=
+      { target := .object udVsp,
+        rights := AccessRightSet.ofList [.read, .write, .grant, .retype] }
+    match vspaceMapPageWithFlush asid5 vaddrPage paddrPage permsExec
+        (cacheState [(SeLe4n.Slot.ofNat 0, authCap)]) with
+    | .error _ => assertBool "the CSpaceAddr scenario maps the page" false
+    | .ok ((), stWithCap) => do
+    let stAll : SystemState :=
+      allCores.foldl (fun st c => icFetchOnCore st c lineExec) stWithCap
+    match SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdownPerCoreIcache
+        core0 { cnode := udCn, slot := SeLe4n.Slot.ofNat 0 } udVsp
+        (.untyped { regionBase := SeLe4n.PAddr.ofNat 0, regionSize := 4096 })
+        stAll with
+    | .error _ => assertBool "the CSpaceAddr retype seam commits" false
+    | .ok ((), stPost) => do
+      assertBool "the CSpaceAddr seam records the same range operand"
+        (stPost.pendingIcacheMaintenance ==
+          [ICacheInvalidation.cleanRangeIallu
+            (SeLe4n.PAddr.ofNat (udVsp.toNat * 4096)) 4096])
+      assertBool "and still leaves every core's instruction cache cold"
+        (allCores.all fun c => (icacheOnCore stPost c).lines.isEmpty)
+      assertBool "the post-state satisfies the 14th conjunct"
+        (icacheCoherentCheck_perCore stPost)
+
 def runSmpCacheMaintenanceChecks : IO Unit := do
   IO.println "===================================================="
   IO.println "WS-SM SM7.D — cache maintenance broadcast suite"
@@ -882,6 +1027,7 @@ def runSmpCacheMaintenanceChecks : IO Unit := do
   runLedgerChecks
   runCodeWriteObligationChecks
   runUnifyInstructionChecks
+  runRetypeCleanToPoUChecks
   IO.println "===================================================="
   IO.println "All SM7.D cache maintenance broadcast checks PASS."
 
