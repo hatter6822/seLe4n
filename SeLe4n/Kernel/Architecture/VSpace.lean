@@ -100,6 +100,12 @@ def vspaceMapPage (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PA
     | none => .error .asidNotBound
     | some (rootId, root) =>
         if !perms.wxCompliant then .error .policyDenied
+        -- PR #845 review (P2): reject an unaligned physical address *here* so
+        -- the caller sees `.alignmentError` rather than the `.mappingConflict`
+        -- that `VSpaceRoot.mapPage`'s structural guard would otherwise surface.
+        -- The guard below it is the defense-in-depth layer, exactly as with
+        -- `wxCompliant`; this arm exists to keep the error code honest.
+        else if paddr.toNat % pageBytes != 0 then .error .alignmentError
         else
           match root.mapPage vaddr paddr perms with
           | none => .error .mappingConflict
@@ -118,6 +124,18 @@ def vspaceMapPageChecked (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : Se
   fun st =>
     if !vaddr.isCanonical then .error .addressOutOfBounds
     else if !(paddr.toNat < physicalAddressBound) then .error .addressOutOfBounds
+    -- PR #845 review (P2): a page mapping's physical address must be
+    -- **page-aligned**.  ARMv8 block/page descriptors carry only the aligned
+    -- base — `PageTable.descriptorToUInt64` masks the low bits — and both HAL
+    -- cache-maintenance loops (`ic_invalidate_page_inner_shareable`,
+    -- `unify_instruction_page_inner_shareable`) round their operand down to the
+    -- containing page.  Accepting an unaligned PA and then silently rounding it
+    -- makes the model's recorded operand name a different address than the one
+    -- hardware acts on, so the SM7.D reach theorems would be proving something
+    -- about `paddr` while the machine maintained `paddr &&& ~0xFFF`.  Rejecting
+    -- structurally is the honest fix: an unaligned page mapping is meaningless
+    -- on ARMv8, so there is nothing to preserve by accepting it.
+    else if paddr.toNat % pageBytes != 0 then .error .alignmentError
     else vspaceMapPage asid vaddr paddr perms st
 
 /-- S6-B/V4-E: Core VSpace unmap transition — page table only, no TLB flush.
@@ -213,6 +231,10 @@ def vspaceMapPageCheckedWithFlush (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
   fun st =>
     if !vaddr.isCanonical then .error .addressOutOfBounds
     else if !(paddr.toNat < physicalAddressBound) then .error .addressOutOfBounds
+    -- PR #845 review (P2): page-alignment guard, same as the three sibling
+    -- checked wrappers.  See `vspaceMapPageChecked` for the rationale; all four
+    -- are pinned to agree by `checkedMapWrappers_reject_unaligned`.
+    else if paddr.toNat % pageBytes != 0 then .error .alignmentError
     else vspaceMapPageWithFlush asid vaddr paddr perms st
 
 /-- U2-D/U-H07: **Platform-aware production entry point** — bounds-checked map with TLB flush
@@ -226,6 +248,9 @@ def vspaceMapPageCheckedWithFlushPlatform (config : MachineConfig)
   fun st =>
     if !vaddr.isCanonical then .error .addressOutOfBounds
     else if !(paddr.toNat < physicalAddressBoundForConfig config) then .error .addressOutOfBounds
+    -- PR #845 review (P2): page-alignment guard, same as the three sibling
+    -- checked wrappers (`checkedMapWrappers_reject_unaligned` pins agreement).
+    else if paddr.toNat % pageBytes != 0 then .error .alignmentError
     else vspaceMapPageWithFlush asid vaddr paddr perms st
 
 /-- X2-E: **State-aware production entry point** — bounds-checked map with TLB flush
@@ -237,7 +262,57 @@ def vspaceMapPageCheckedWithFlushFromState (asid : SeLe4n.ASID) (vaddr : SeLe4n.
   fun st =>
     if !vaddr.isCanonical then .error .addressOutOfBounds
     else if !(paddr.toNat < 2^st.machine.physicalAddressWidth) then .error .addressOutOfBounds
+    -- PR #845 review (P2): reject a non-page-aligned physical address.  This is
+    -- the **production** entry point (`vspaceMapPageChecked` is the internal
+    -- proof-decomposition helper and carries the same guard), so the check has
+    -- to live here to reach the live `.vspaceMap` dispatch arm.  See
+    -- `vspaceMapPageChecked` for why silently rounding would be unsound: the
+    -- descriptor and both HAL cache-maintenance loops use the aligned base, so
+    -- the model would record an operand naming an address hardware never acts
+    -- on.
+    else if paddr.toNat % pageBytes != 0 then .error .alignmentError
     else vspaceMapPageWithFlush asid vaddr paddr perms st
+
+/-- **PR #845 review (P2)**: every checked map wrapper rejects an unaligned
+physical address.
+
+The four wrappers each open-code their precondition chain, differing only in
+which PA bound they apply (`physicalAddressBound`, a `MachineConfig`, or the
+live `SystemState.machine`).  That duplication is exactly how the page-alignment
+guard came to be present in two of them and missing from the other two: the
+first fix touched `vspaceMapPageChecked` and
+`vspaceMapPageCheckedWithFlushFromState`, leaving `…WithFlush` and
+`…WithFlushPlatform` able to install an unaligned mapping and recreate the
+model/descriptor/cache-operand mismatch.
+
+This theorem is the tripwire against that recurrence: it pins all four to the
+same rejection on the same input, so adding a fifth wrapper — or dropping the
+guard from any existing one — fails here rather than silently reopening the
+hole.  It uses a concrete unaligned PA well inside every bound, so no wrapper
+can pass by rejecting on bounds instead. -/
+theorem checkedMapWrappers_reject_unaligned
+    (config : MachineConfig) (st : SystemState)
+    (hCfgBound : 0x2001 < physicalAddressBoundForConfig config)
+    (hStBound : 0x2001 < 2^st.machine.physicalAddressWidth)
+    (asid : SeLe4n.ASID) (perms : PagePermissions) :
+    vspaceMapPageChecked asid (SeLe4n.VAddr.ofNat 4096)
+        (SeLe4n.PAddr.ofNat 0x2001) perms st = .error .alignmentError ∧
+    vspaceMapPageCheckedWithFlush asid (SeLe4n.VAddr.ofNat 4096)
+        (SeLe4n.PAddr.ofNat 0x2001) perms st = .error .alignmentError ∧
+    vspaceMapPageCheckedWithFlushPlatform config asid (SeLe4n.VAddr.ofNat 4096)
+        (SeLe4n.PAddr.ofNat 0x2001) perms st = .error .alignmentError ∧
+    vspaceMapPageCheckedWithFlushFromState asid (SeLe4n.VAddr.ofNat 4096)
+        (SeLe4n.PAddr.ofNat 0x2001) perms st = .error .alignmentError := by
+  have hAlign : (SeLe4n.PAddr.ofNat 0x2001).toNat % pageBytes ≠ 0 := by decide
+  have hCanon : (SeLe4n.VAddr.ofNat 4096).isCanonical = true := by decide
+  have hDefBound : (SeLe4n.PAddr.ofNat 0x2001).toNat < physicalAddressBound := by decide
+  have hCfg : (SeLe4n.PAddr.ofNat 0x2001).toNat < physicalAddressBoundForConfig config := hCfgBound
+  have hSt : (SeLe4n.PAddr.ofNat 0x2001).toNat < 2^st.machine.physicalAddressWidth := hStBound
+  refine ⟨?_, ?_, ?_, ?_⟩ <;>
+    simp only [vspaceMapPageChecked, vspaceMapPageCheckedWithFlush,
+               vspaceMapPageCheckedWithFlushPlatform,
+               vspaceMapPageCheckedWithFlushFromState] <;>
+    simp [hCanon, hAlign, hDefBound, hCfg, hSt]
 
 -- ============================================================================
 -- V4-J/M-DEF-8: Default permissions documentation
@@ -343,7 +418,9 @@ theorem vspaceMapPage_tlbShootdown_eq (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr
     · cases hStep
     · split at hStep
       · cases hStep
-      · exact SeLe4n.Model.storeObject_tlbShootdown_eq _ _ _ _ hStep
+      · split at hStep
+        · cases hStep
+        · exact SeLe4n.Model.storeObject_tlbShootdown_eq _ _ _ _ hStep
 
 /-- WS-SM SM7.B: `vspaceUnmapPageWithFlush` frames the TLB-shootdown
 state — the flush composition adds only a `tlb` write. -/
@@ -393,6 +470,38 @@ theorem vspaceUnmapPageWithFlush_perCoreTlb_eq (asid : SeLe4n.ASID)
       rw [← hStep.2]
       exact vspaceUnmapPage_perCoreTlb_eq asid vaddr st pair.2 hBase
 
+/-- WS-SM SM7.D: `vspaceUnmapPage` frames the per-core instruction caches — a
+page unmap bottoms out in `storeObject`, which never touches `perCoreICache`.
+The instruction-side twin of `vspaceUnmapPage_perCoreTlb_eq`: it is what makes
+the I-cache change in `vspaceUnmapPageWithShootdownAndIcacheBroadcast` come
+*exclusively* from that wrapper's explicit `icInvalidateBroadcast` step. -/
+theorem vspaceUnmapPage_perCoreICache_eq (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (st st' : SystemState)
+    (hStep : vspaceUnmapPage asid vaddr st = .ok ((), st')) :
+    st'.perCoreICache = st.perCoreICache := by
+  unfold vspaceUnmapPage at hStep
+  split at hStep
+  · cases hStep
+  · split at hStep
+    · cases hStep
+    · exact SeLe4n.Model.storeObject_perCoreICache_eq _ _ _ _ hStep
+
+/-- WS-SM SM7.D: `vspaceUnmapPageWithFlush` frames the per-core instruction
+caches — the flush composition adds only a scalar `tlb` write. -/
+theorem vspaceUnmapPageWithFlush_perCoreICache_eq (asid : SeLe4n.ASID)
+    (vaddr : SeLe4n.VAddr) (st st' : SystemState)
+    (hStep : vspaceUnmapPageWithFlush asid vaddr st = .ok ((), st')) :
+    st'.perCoreICache = st.perCoreICache := by
+  unfold vspaceUnmapPageWithFlush at hStep
+  revert hStep
+  cases hBase : vspaceUnmapPage asid vaddr st with
+  | error e => intro hStep; cases hStep
+  | ok pair =>
+      simp only [Except.ok.injEq, Prod.mk.injEq]
+      intro hStep
+      rw [← hStep.2]
+      exact vspaceUnmapPage_perCoreICache_eq asid vaddr st pair.2 hBase
+
 /-- WS-SM SM7.B: `vspaceMapPageWithFlush` frames the TLB-shootdown state. -/
 theorem vspaceMapPageWithFlush_tlbShootdown_eq (asid : SeLe4n.ASID)
     (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr) (perms : PagePermissions)
@@ -422,7 +531,9 @@ theorem vspaceMapPageCheckedWithFlushFromState_tlbShootdown_eq
   · cases hStep
   · split at hStep
     · cases hStep
-    · exact vspaceMapPageWithFlush_tlbShootdown_eq asid vaddr paddr perms st st' hStep
+    · split at hStep
+      · cases hStep
+      · exact vspaceMapPageWithFlush_tlbShootdown_eq asid vaddr paddr perms st st' hStep
 
 /-- WS-SM SM7.F: `vspaceMapPage` frames the per-core TLB views — a page
 map bottoms out in `storeObject`, which never touches `perCoreTlb`. -/
@@ -437,7 +548,9 @@ theorem vspaceMapPage_perCoreTlb_eq (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
     · cases hStep
     · split at hStep
       · cases hStep
-      · exact SeLe4n.Model.storeObject_perCoreTlb_eq _ _ _ _ hStep
+      · split at hStep
+        · cases hStep
+        · exact SeLe4n.Model.storeObject_perCoreTlb_eq _ _ _ _ hStep
 
 /-- WS-SM SM7.F: `vspaceMapPageWithFlush` frames the per-core TLB views —
 the flush composition adds only a scalar `tlb` write, leaving every core's
@@ -457,6 +570,57 @@ theorem vspaceMapPageWithFlush_perCoreTlb_eq (asid : SeLe4n.ASID)
       rw [← hStep.2]
       exact vspaceMapPage_perCoreTlb_eq asid vaddr paddr perms st pair.2 hBase
 
+/-- WS-SM SM7.D: `vspaceMapPage` frames the per-core instruction caches — a
+page map bottoms out in `storeObject`, which never touches `perCoreICache`. -/
+theorem vspaceMapPage_perCoreICache_eq (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr) (perms : PagePermissions) (st st' : SystemState)
+    (hStep : vspaceMapPage asid vaddr paddr perms st = .ok ((), st')) :
+    st'.perCoreICache = st.perCoreICache := by
+  unfold vspaceMapPage at hStep
+  split at hStep
+  · cases hStep
+  · split at hStep
+    · cases hStep
+    · split at hStep
+      · cases hStep
+      · split at hStep
+        · cases hStep
+        · exact SeLe4n.Model.storeObject_perCoreICache_eq _ _ _ _ hStep
+
+/-- WS-SM SM7.D: `vspaceMapPageWithFlush` frames the per-core instruction
+caches. -/
+theorem vspaceMapPageWithFlush_perCoreICache_eq (asid : SeLe4n.ASID)
+    (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr) (perms : PagePermissions)
+    (st st' : SystemState)
+    (hStep : vspaceMapPageWithFlush asid vaddr paddr perms st = .ok ((), st')) :
+    st'.perCoreICache = st.perCoreICache := by
+  unfold vspaceMapPageWithFlush at hStep
+  revert hStep
+  cases hBase : vspaceMapPage asid vaddr paddr perms st with
+  | error e => intro hStep; cases hStep
+  | ok pair =>
+      simp only [Except.ok.injEq, Prod.mk.injEq]
+      intro hStep
+      rw [← hStep.2]
+      exact vspaceMapPage_perCoreICache_eq asid vaddr paddr perms st pair.2 hBase
+
+/-- WS-SM SM7.D: the state-aware bounds-checked map frames the per-core
+instruction caches. -/
+theorem vspaceMapPageCheckedWithFlushFromState_perCoreICache_eq
+    (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
+    (perms : PagePermissions) (st st' : SystemState)
+    (hStep : vspaceMapPageCheckedWithFlushFromState asid vaddr paddr perms st
+      = .ok ((), st')) :
+    st'.perCoreICache = st.perCoreICache := by
+  unfold vspaceMapPageCheckedWithFlushFromState at hStep
+  split at hStep
+  · cases hStep
+  · split at hStep
+    · cases hStep
+    · split at hStep
+      · cases hStep
+      · exact vspaceMapPageWithFlush_perCoreICache_eq asid vaddr paddr perms st st' hStep
+
 /-- WS-SM SM7.F: the state-aware bounds-checked map frames the per-core TLB
 views — the initiator's own view change in
 `vspaceMapPageCheckedWithShootdownFromStatePerCore` comes *exclusively* from
@@ -473,7 +637,9 @@ theorem vspaceMapPageCheckedWithFlushFromState_perCoreTlb_eq
   · cases hStep
   · split at hStep
     · cases hStep
-    · exact vspaceMapPageWithFlush_perCoreTlb_eq asid vaddr paddr perms st st' hStep
+    · split at hStep
+      · cases hStep
+      · exact vspaceMapPageWithFlush_perCoreTlb_eq asid vaddr paddr perms st st' hStep
 
 -- ============================================================================
 -- resolveAsidRoot extraction and characterization lemmas (F-08 / TPI-001)
@@ -562,12 +728,14 @@ theorem vspaceMapPage_tlb_eq
     rw [hRes] at hStep; simp at hStep
     split at hStep
     · simp at hStep
-    · cases hMap : root.mapPage vaddr paddr perms with
-      | none => rw [hMap] at hStep; simp at hStep
-      | some root' =>
-        rw [hMap] at hStep; simp at hStep
-        unfold storeObject at hStep; cases hStep
-        rfl
+    · split at hStep
+      · cases hMap : root.mapPage vaddr paddr perms with
+        | none => rw [hMap] at hStep; simp at hStep
+        | some root' =>
+          rw [hMap] at hStep; simp at hStep
+          unfold storeObject at hStep; cases hStep
+          rfl
+      · simp at hStep
 
 /-- AJ4-B: `vspaceUnmapPage` does not modify the TLB. -/
 theorem vspaceUnmapPage_tlb_eq
@@ -642,6 +810,8 @@ theorem vspaceMapPage_entry_consistent_frame
     split at hStep
     · simp at hStep
     · rename_i hWx
+      split at hStep
+      case isFalse hUnaligned => simp at hStep
       cases hMapPage : root₀.mapPage vaddr paddr perms with
       | none => rw [hMapPage] at hStep; simp at hStep
       | some root' =>
@@ -652,8 +822,10 @@ theorem vspaceMapPage_entry_consistent_frame
           split at hMapPage
           · simp at hMapPage  -- AK3-B: !perms.wxCompliant case
           · split at hMapPage
-            · simp at hMapPage  -- already-mapped case
-            · simp at hMapPage; subst hMapPage; exact hRootAsidEq
+            · simp at hMapPage  -- PR #845 review (P2): unaligned-paddr case
+            · split at hMapPage
+              · simp at hMapPage  -- already-mapped case
+              · simp at hMapPage; subst hMapPage; exact hRootAsidEq
         have hStoreObjSelf := storeObject_objects_eq st stMid rootId₀
           (KernelObject.vspaceRoot root') hObjK.1 hStep
         have hAsidInv : (match st.objects[rootId₀]? with
@@ -680,12 +852,14 @@ theorem vspaceMapPage_entry_consistent_frame
             split at hMapPage
             · simp at hMapPage  -- AK3-B: !perms.wxCompliant case
             · split at hMapPage
-              · simp at hMapPage
-              · simp at hMapPage; subst hMapPage
-                simp only [RHTable_getElem?_eq_get?]
-                exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _
-                  (by intro h; exact hVaddrNe (eq_of_beq h).symm)
-                  (hMappingsWF rootId₀ root₀ hObjRoot)
+              · simp at hMapPage  -- PR #845 review (P2): unaligned-paddr case
+              · split at hMapPage
+                · simp at hMapPage
+                · simp at hMapPage; subst hMapPage
+                  simp only [RHTable_getElem?_eq_get?]
+                  exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _
+                    (by intro h; exact hVaddrNe (eq_of_beq h).symm)
+                    (hMappingsWF rootId₀ root₀ hObjRoot)
           rw [hLookupFrame]
           exact hConsistPre rootId₀ root₀ hRes
         · -- Different ASID: prove resolveAsidRoot stMid = resolveAsidRoot st
@@ -909,7 +1083,9 @@ theorem vspaceMapPage_resolveAsidRoot_isSome
     rw [hRes] at hStep; simp at hStep
     split at hStep
     · simp at hStep
-    · cases hMapPage : root₀.mapPage vaddr paddr perms with
+    · split at hStep
+      case isFalse hUnaligned => simp at hStep
+      cases hMapPage : root₀.mapPage vaddr paddr perms with
       | none => rw [hMapPage] at hStep; simp at hStep
       | some root' =>
         rw [hMapPage] at hStep; simp at hStep
@@ -918,8 +1094,10 @@ theorem vspaceMapPage_resolveAsidRoot_isSome
           split at hMapPage
           · simp at hMapPage
           · split at hMapPage
-            · simp at hMapPage
-            · simp at hMapPage; subst hMapPage; exact hRootAsidEq
+            · simp at hMapPage  -- PR #845 review (P2): unaligned-paddr case
+            · split at hMapPage
+              · simp at hMapPage
+              · simp at hMapPage; subst hMapPage; exact hRootAsidEq
         have hStoreObjSelf := storeObject_objects_eq st stMid rootId₀
           (KernelObject.vspaceRoot root') hObjK.1 hStep
         have hAsidInv : (match st.objects[rootId₀]? with

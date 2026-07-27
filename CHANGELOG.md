@@ -1,3 +1,728 @@
+## v0.32.102 — SM7.D: page alignment enforced at the mapping boundary
+
+**The finding (PR #845 review, Codex P2).** The SM7.D maintenance operands name
+a *page*, and both HAL loops round their operand down to the containing page
+(`base & !(PAGE_SIZE - 1)`). v0.32.98/99 added a page-alignment guard to the
+four *checked* map wrappers — but `VSpaceRoot.mapPage` and `Builder.mapPage`
+insert into the mapping table directly and so bypassed all four, and no VSpace
+invariant carried a physical-alignment clause. A state assembled through either
+constructor could therefore hold an unaligned physical address, reach
+`.vspaceUnifyInstruction` or `.vspaceUnmap`, and make the model record
+maintenance against an address the machine never acts on.
+
+**Verified, and it is the project's own "enforce it structurally" case.** The
+mechanism checks out: neither constructor examined `paddr`, and both HAL
+routines round down. The divergence is model-vs-hardware fidelity rather than
+under-maintenance — hardware invalidates a superset of what the model claims,
+so nothing is left stale — but "the physical address in a page mapping is
+page-aligned" was an implicit invariant maintained only by convention at the
+checked wrappers, which is exactly what CLAUDE.md says to make structural
+rather than document.
+
+**The fix — one granule, three enforcement points.**
+
+- `SeLe4n.pageBytes` (`Prelude.lean`) is the single definition of the 4 KiB
+  granule, placed below both layers that must agree on it;
+  `Kernel.Architecture.pageBytes` now reads it rather than repeating the
+  literal (definitional, so every existing proof is unaffected). A Tier-3
+  anchor forbids the literal coming back.
+- `VSpaceRoot.mapPage` rejects an unaligned physical address, mirroring the
+  W^X defense-in-depth layer already there, with `mapPage_pageAligned` as the
+  stored-mapping property downstream consumers need.
+- `Builder.mapPage` takes an `_hAligned` proof obligation, exactly as it
+  already takes `_hWxSafe` — the builder inserts directly and would otherwise
+  keep its bypass.
+- `vspaceMapPage` rejects with `.alignmentError` before delegating, so the
+  caller sees the honest error rather than the `mappingConflict` the
+  constructor's `none` would surface.
+
+Rejecting rather than normalising is deliberate: an unaligned page mapping is
+meaningless on ARMv8, so there is nothing to preserve by accepting it.
+
+**Proof fan-out.** The new guard adds a branch to every proof that unfolds
+`VSpaceRoot.mapPage` or `vspaceMapPage` — 20 sites across `Structures.lean`,
+`VSpace.lean`, `VSpaceInvariant.lean`, `TlbShootdownProtocol.lean`, and
+`InformationFlow/Invariant/Operations.lean`. Where a proof had a successful
+`mapPage` in hand, the new `mapPage_pageAligned` discharges the guard directly
+rather than re-deriving it.
+
+**Coverage.** `SmpCacheMaintenanceSuite` §3.14 (6 assertions, 118 → 124 / 14
+groups): the constructor accepts the aligned address and refuses the unaligned
+one, every non-zero offset within a page is refused, the transition reports
+`alignmentError` rather than `mappingConflict`, the aligned map still succeeds
+(so the guard is not vacuous), and the resulting operand names an address the
+HAL will not round away.
+
+Lean-only; Rust HAL untouched at 798. Trace byte-identical; zero sorry/axiom.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.D
+
+## v0.32.101 — SM7.D: the re-type's clean and its scrub read one extent
+
+**The finding (PR #845 review, Codex P1).** The `.cleanRangeIallu` operand
+v0.32.100 added targets `ObjId × objectTypeAllocSize`, which
+`ScrubAndUntyped.lean` and `SELE4N_SPEC.md` both identify as an abstract model
+convention rather than a hardware address. On real hardware the child's extent
+is the untyped allocator's `regionBase + offset`, so — the review's point — the
+`DC CVAU` would sweep an address the allocation does not occupy.
+
+**Valid, and it is both narrower and wider than it reads.**
+
+*Narrower*: this is not a defect the cache operand introduced. The operand
+deliberately mirrors the scrub, and the scrub's own hardware gap is
+pre-existing, registered as **AN4-G.3 / LIF-M03**, and owned by AN9/SM9.E.
+Retargeting the operand alone would make things worse — the clean would then
+name an extent `scrubObjectMemory` does not zero. The two must move together.
+
+*Wider*: if the scrub does not reach real memory on hardware, the re-typed
+object is handed to its new owner still holding the previous owner's **data**,
+not just stale instruction lines. That is the more serious half, it lives in
+the scrub bridge rather than the cache seam, and the debt register now says so
+(AN4-G.3 re-labelled High-severity-once-bootable with an SM9.E closure target).
+
+**The real weakness in what shipped.** `retypeIcacheOp_cleans_scrub_extent` was
+described as "an equality between the two computations". It was not: its
+right-hand side restated `retypeIcacheOp`'s own definition and never mentioned
+`scrubObjectMemory`, so it held for any extent whatsoever and pinned nothing. If
+the scrub's range changed, the theorem would still have gone through while the
+operand silently diverged. The section comment claimed the two "diverge
+together, because both sides read the same convention"; they read two
+*identical copies* of it, which is not the same property.
+
+**The fix — one extent, two consumers.** New `scrubExtent objectId objType`
+carries the convention. `scrubObjectMemory` zeroes it
+(`scrubObjectMemory_zeroes_scrubExtent`, definitional) and `retypeIcacheOp`
+cleans it; neither recomputes the arithmetic, so drift is impossible by
+construction and the AN9 bridge changes one function.
+`retypeIcacheOp_cleans_scrub_extent` is restated against `scrubExtent` — two
+*different* functions, so it now fails if either moves independently — and
+`scrubObjectMemory_cleaned_by_retype` closes the loop from the scrub's side by
+naming the pair handed to `zeroMemoryRange`.
+
+The new body is definitionally the old one (the bridge theorem is `rfl`), so
+the other 80 `scrubObjectMemory` references are untouched; the one structural
+unfold (`InformationFlow/Invariant/Operations.lean`) gains `scrubExtent` in its
+`simp only` set.
+
+**Scope correction.** The v0.32.100 notes implied more hardware fidelity than
+the change had. The section comment now states plainly that the extent is the
+model's convention, that hardware fidelity rides AN4-G.3, and why the operand
+follows the scrub instead of leading it.
+
+**Coverage.** `SmpCacheMaintenanceSuite` §3.13 gains the correspondence
+*exercised* rather than asserted: dirty all of memory, run the real scrub, and
+confirm the zeroed bytes lie inside the cleaned range, with the byte just past
+the extent left untouched so the bound is exact (114 → 118 assertions). Tier-3
+anchors pin `scrubExtent`, both bridge theorems, and — negatively — that
+neither `retypeIcacheOp` nor `scrubObjectMemory` mentions `objectTypeAllocSize`
+in its own body, which is what would reintroduce the second copy.
+
+Lean-only; Rust HAL untouched at 798. Trace byte-identical; zero sorry/axiom.
+
+Refs: docs/spec/SELE4N_SPEC.md AN4-G.3 (LIF-M03)
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.D
+
+## v0.32.100 — SECURITY (SM7.D): the re-type's scrub is now cleaned to the Point of Unification
+
+**The finding.** A PR #845 review flagged that `retypeIcacheOperand` returned an
+unconditional `.iallu`. Verified and correct — and the review's reasoning was
+sound where my own justification for deferring the emission was not.
+
+A re-type scrubs the target object's backing memory (`scrubObjectMemory` zeroes
+`[objId × allocSize, + allocSize)`) and installs a different object over it. Those
+zeroing stores land in the **data** cache. Instruction fetches read at the **Point
+of Unification**, so until a `DC CVAU` pushes the stores out, the PoU still holds
+the *previous owner's* content. `IC IALLUIS` does not close that: it drops the
+cached instruction lines and thereby guarantees the very next fetch goes back to
+the stale PoU copy. Because instruction caches are physically tagged (ARM ARM
+D7.2), that fetch is reachable through **any** later executable mapping of the
+frame, in **any** address space — the "free, re-allocate, execute the previous
+owner's code" hazard the SM7.D broadcast was supposed to close. seL4's
+`clearMemory` is `memzero` followed by `cleanCacheRange_PoU` for exactly this
+reason.
+
+Severity **High** once the kernel boots on hardware; not exploitable today (no
+bootable image — SM9.E), and the abstract model has no data-cache content, so no
+Lean theorem was false. It was the *emitted hardware sequence* that was
+incomplete.
+
+**My own error, recorded.** v0.32.94 and v0.32.99 both justified deferring the
+data-side emission to SM9.E on the grounds that "the model does not carry each
+written object's physical extent." That is false for this site and always was:
+`scrubObjectMemory` computes its own `(base, size)` from `(ObjId,
+KernelObjectType)`. The obligation was deferrable only because nobody checked the
+premise.
+
+**The fix.** A fourth operand, `ICacheInvalidation.cleanRangeIallu base size`:
+clean `[base, base + size)` to the PoU, `DSB ISH`, then `IC IALLUIS`, `DSB ISH`,
+`ISB`. Both production re-type seams
+(`lifecycleRetype{Direct,}WithCleanupShootdownPerCoreIcache`, live behind
+`.lifecycleRetype`) now emit it, keyed on the pre-state object's type so the
+cleaned extent is *exactly* the scrubbed one —
+`retypeIcacheOp_cleans_scrub_extent` pins that as an equality between the two
+computations, and `retypeIcacheOp_discharges_scrub_obligation` pins that the
+operand discharges the `.retypeScrub` clean-to-PoU obligation over that range.
+An empty target slot has nothing to scrub, so it keeps the bare `.iallu`.
+
+The clean and the invalidate are **one** operand rather than two ledger entries
+so that the ordering cannot be lost: the clean must complete before the
+invalidate is observed, and bundling makes that the HAL routine's internal
+`DSB ISH` rather than a property of the ledger's accumulation order. This is the
+same reasoning that already keeps `unifyPage` distinct from `ivauPage`.
+
+**Coverage algebra.** `covers` gains the range arms, grounded in interval
+containment (`byteRangeContains`, with `_trans` carrying `covers_trans`): a
+containing range covers a contained one and covers a `unifyPage` whose page it
+contains; `iallu` covers **neither** (`iallu_not_covers_cleanRangeIallu`, the
+exclusion stated as a theorem so a future collapse to a top element fails there
+rather than silently dropping the clean); a `unifyPage` does not cover a range
+operand either (`unifyPage_not_covers_cleanRangeIallu` — it invalidates one page,
+not the domain). `ICacheInvalidation.isDomainWide` factors out "ends in
+`IC IALLUIS`", so `applyICacheInvalidation_domainWide` /
+`icInvalidateBroadcast_domainWide_empties` carry the seams' 14th-conjunct proofs
+for both operands without case-splitting.
+
+**The obligation marker, corrected.** `kernelCodeWriteSites_emission_pending`
+asserted that *every* code-write site's obligation was a placeholder. That is no
+longer true, so it is now the **partition**: `kernelCodeWriteEmitted` records
+`.retypeScrub` as emitted and `.bootImageLoad` as still pending (boot has no
+transition to hang an operand on; SM9.E), and the theorem pins that exactly one
+site remains. Wiring the boot emission breaks the `decide` and forces a visible
+edit. `dischargesPoUClean` is the predicate the link is stated through —
+expressed via `covers`, so "did the site actually clean?" is answered by the
+ledger's own preorder rather than by a second, parallel notion.
+
+**FFI.** `ffiIcMaintenance` / `cache_ic_maintenance` take a third word (`size`,
+RES0 for tags 0–2, pinned by `ICacheInvalidation.toSize_zero_of_not_range`), and
+tag 3 routes to the new
+`cache::clean_range_pou_then_invalidate_all_inner_shareable`. The stale ffi.rs
+header comment (still documenting two tags and `[0, 2)` after v0.32.96 added a
+third) is corrected to four.
+
+**Tests.** `SmpCacheMaintenanceSuite` §3.13 (18 assertions) plus three in §3.11
+for the emission partition: the operand cleans
+the scrubbed extent for every `objectTypeAllocSize`, discharges the obligation,
+and — the load-bearing negative — the pre-fix `.iallu` provably does **not**;
+plus the containment algebra, the `(3, base, size)` encoding, and the live
+CSpaceAddr seam end to end. Suite 93 → 114 assertions / 13 groups. Rust HAL
+795 → 798: `test_clean_range_pou_line_coverage` computes the `DC CVAU` loop the
+HAL runs and checks it covers every line of `[base, base+size)` for each
+allocation size and for a line-straddling base — a missed line is the defect, not
+a rounding detail.
+
+Trace byte-identical (`pendingIcacheMaintenance` ∉ `projectState`); zero
+`sorry`/`axiom`.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.D
+Refs: #845
+
+## v0.32.99 — PR #845 review round 3: five findings, all consequences of this PR's own changes
+
+**(1) The page-alignment guard reached only two of four checked map wrappers.**
+v0.32.98 added it to `vspaceMapPageChecked` and the state-aware production entry,
+leaving `vspaceMapPageCheckedWithFlush` and `vspaceMapPageCheckedWithFlushPlatform`
+able to install an unaligned PA and recreate the operand mismatch. The four
+wrappers each open-code the same precondition chain, and that duplication is what
+let two drift — so beyond guarding both, `checkedMapWrappers_reject_unaligned`
+now pins all four to the same rejection on the same input. Adding a fifth wrapper
+or dropping the guard from an existing one fails there rather than silently
+reopening the hole.
+
+**(2) `checkedDispatch_capabilityOnly_eq_unchecked` was advertised as complete but
+enumerated only 14 of 16 arms.** `.vspaceUnifyInstruction` (added by this PR) and
+`.mintReplyCap` (pre-existing, PR #822) are both handled by the shared
+`dispatchCapabilityOnly` helper but were absent from the disjunction, so a theorem
+whose whole value is completeness did not cover them. Both added, plus the two
+missing per-arm theorems `checkedDispatch_vspaceUnifyInstruction_eq_unchecked` and
+`checkedDispatch_mintReplyCap_eq_unchecked`.
+
+**(3) `.vspaceUnifyInstruction` was outside the advertised deadlock-bound coverage.**
+`lockSet_vspaceUnifyInstruction` had no `_size_le` theorem and was missing from
+`lockSetTransitions_within_bound`, whose docstring claims every real transition —
+and which supplies the size premise for bounded-wait/WCRT reasoning. Both added.
+
+**(4) The clean-to-PoU obligation was vacuous.** `kernelCodeWriteOwesPoUClean` took
+`_site` and *ignored it*, asserting only that a pre-existing barrier sequence
+contained `DSB ISH` and `ISB`. It mentioned neither `DC CVAU` nor any
+instruction-side invalidate, so it stayed provable even if every clean-to-PoU
+operation were absent — exactly the omission it was advertised as detecting. The
+obligation is now a `PoUCleanObligation` naming the concrete operations per site,
+with `DCacheMaintenance.isClean` (an invalidate-only does *not* discharge it — it
+would discard the bytes the site just wrote) and
+`ICacheInvalidation.invalidatesInstruction`. Weakening any site's obligation now
+breaks the theorem. Added alongside it, `kernelCodeWriteSites_emission_pending`
+records as a decidable fact that the obligation is *declared* rather than
+discharged by emission — so when SM9.E wires the emission, that theorem is what
+must be deleted, making the transition a visible edit rather than a silent one.
+
+**(5) The `sele4n-sys` wrapper documented the wrong error for an unbound ASID.**
+It promised `AsidNotBound`, but the v0.32.97 capability binding deliberately
+returns `false` when `resolveAsidRoot` yields `none`, so dispatch rejects with
+`IllegalAuthority` before the transition runs — and the regression suite asserts
+exactly that no-oracle behaviour. Rust callers matching the documented error would
+have mishandled it. Contract corrected, fail-closed implementation retained.
+
+Zero warnings; golden trace byte-identical; zero sorry/axiom; Tier 0–5 green;
+Rust 795 HAL tests, 100 conformance, clippy-clean.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.D
+Refs: #845
+
+## v0.32.98 — PR #845 review closure: PA page alignment, safe-API wrapper, ABI naming
+
+Closes the remaining review findings on PR #845. Two are genuine defects; one is
+an omission in the v0.32.96 syscall; the fourth is a deferral whose reasoning is
+now recorded rather than asserted.
+
+**(1) Physical addresses in page mappings must be page-aligned.** `vspaceMapPageChecked`
+and the production `vspaceMapPageCheckedWithFlushFromState` validated VA
+canonicality and the PA bound but **not** alignment, so a mapping could carry an
+unaligned PA. ARMv8 page descriptors carry only the aligned base
+(`PageTable.descriptorToUInt64` masks the low bits) and both HAL cache-maintenance
+loops round their operand down to the containing page — so the model would
+compare and record the *raw* `PAddr` while the MMU and HAL acted on
+`paddr &&& ~0xFFF`. The SM7.D reach theorems would then be proving something
+about an address hardware never touches. Both entry points now reject with
+`.alignmentError`. Rejecting structurally is the honest fix rather than
+normalizing: an unaligned page mapping is meaningless on ARMv8, so there is
+nothing to preserve by accepting it.
+
+This surfaced two places where the *tests themselves* were relying on the gap.
+`MainTraceHarness` (CAT-025) and `NegativeStateSuite` both mapped `2^n - 1` — the
+largest in-bounds PA, which is all-ones and therefore never page-aligned — to
+exercise the upper edge of the PA bound. Both now use the largest *page-aligned*
+in-bounds PA, preserving the intent while naming an address a page mapping can
+actually have. The golden trace is byte-identical. `NegativeStateSuite` gains a
+matching negative case, and `VSpaceCapabilityBindingSuite` a §5b group (5
+assertions): unaligned rejected with no mapping installed, cache-line-aligned but
+not page-aligned also rejected, the aligned base of the same page accepted, and
+authority checked before alignment.
+
+**(2) `.vspaceUnifyInstruction` was unreachable from the safe Rust API.** v0.32.96
+added a syscall described as *the* user-facing mechanism for code publication and
+then left `rust/sele4n-sys/src/vspace.rs` exposing only `vspace_map` and
+`vspace_unmap` — a JIT or loader would have had to hand-encode registers through
+`sele4n_abi::invoke_syscall`. Adds `vspace_unify_instruction` alongside the other
+VSpace operations, plus `VSpaceUnifyInstructionArgs` in `sele4n-abi` (a type alias
+for `VSpaceUnmapArgs`, mirroring the Lean `abbrev`) with a round-trip test.
+
+**(3) ABI enum naming drift.** v0.32.96 spelled the variant `VspaceUnifyInstruction`
+while its siblings are `VSpaceMap` / `VSpaceUnmap`. Normalized to
+`VSpaceUnifyInstruction` across `sele4n-types`, `sele4n-hal` and the conformance
+suite, with a Tier-3 anchor asserting the old spelling is gone.
+
+**(4) The legacy `syscallDispatchInner` entry still does not drain the emission
+ledger — attempted, reverted, and now explained.** Draining requires calling
+`icMaintenanceBroadcast`, whose `@[extern "cache_ic_maintenance"]` symbol comes
+from the Rust HAL. Simulation builds deliberately do not link the HAL, and this
+module's link-gating policy requires any path reaching an `@[extern]` symbol to
+fail loudly rather than be stubbed. `tests/SyscallDispatchSuite.lean` calls this
+entry directly, so the emission broke every host test binary exercising the
+bridge, and the only "fixes" are a silent stub (forbidden) or linking the HAL into
+test binaries (defeats the gating). It is safe as-is: the entry is vestigial (Rust
+was flipped to `lean_syscall_dispatch_cross_core` at v0.31.67) and, since v0.32.96
+replaced the operand join with an append-only list, an operand committed there is
+**deferred, never lost**. The intended closure is removing the export and
+repointing the suite at the cross-core entry, recorded against SM9.E with this
+reasoning so it is not re-attempted the same way.
+
+Proof repairs: the new alignment guard added a third branch to
+`vspaceMapPageCheckedWithFlushFromState`, so seven downstream proofs gained a
+`split` — three VSpace frame lemmas, `vspaceMapPageChecked_success_preserves_vspaceInvariantBundle`,
+`vspaceMapPageCheckedWithFlushFromState_ok_fresh`, the per-core TLB entry-consistency
+frame, and the information-flow projection lemma.
+
+Golden trace byte-identical; zero sorry/axiom; Tier 0–5 green; Rust 795 HAL tests,
+100 conformance, clippy-clean.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.D deferred items
+Refs: #845
+
+## v0.32.97 — SECURITY: bind VSpace syscall capabilities to their operand address space
+
+**Severity: High. Confused deputy in the VSpace syscall gate — a thread holding
+a writable capability to *any* object could act on *any* address space.**
+
+Found while addressing a PR #845 review comment, which flagged the pattern on
+the newly added `.vspaceUnifyInstruction`. Investigation confirmed the finding
+and showed the defect was **pre-existing and wider**: `.vspaceMap` and
+`.vspaceUnmap` had carried it since long before that syscall existed.
+
+**The defect.** `syscallLookupCap` resolves a CPtr through the caller's CSpace
+and verifies that the resolved capability carries the syscall's required right.
+It never tied that capability's **target** to the operand the syscall acts on.
+The three VSpace arms in `dispatchCapabilityOnly` matched `| .object _ =>`,
+discarding the object id, and then operated on an **ASID the caller supplied in
+a message register**, resolved through the global `asidTable`. Authority
+therefore flowed from a name the caller chose rather than from the capability it
+held — precisely what a capability system exists to prevent.
+
+**Confirmed exploitable**, against the real dispatch path. An attacker thread
+whose CSpace held only a writable capability to *its own TCB*, and no VSpace
+capability at all, successfully unmapped an executable page belonging to a
+different address space (victim ASID 7, attacker ASID 5) and ran cache
+maintenance against it. Full VSpace-isolation breach; also a denial-of-service
+primitive against any address space in the system.
+
+**The fix.** `SeLe4n.Kernel.vspaceCapAuthorizesAsid` requires the capability to
+name the VSpace root that `resolveAsidRoot` yields for the operand ASID, checked
+in each of the three arms before the transition runs; `.illegalAuthority`
+otherwise. Two properties of the check are load-bearing:
+
+* It is stated against **`resolveAsidRoot`** — the root the transition will
+  actually act on — not against the `asid` field of the capability's own object.
+  The two differ when distinct roots carry the same ASID (`storeObject` rebinds
+  `asidTable` on a colliding install, the hazard SM7.F.4 closed on the TLB side),
+  and only the former is sound: checking the capability's own field would let a
+  holder of the *shadowed* root authorize an operation landing on the *bound*
+  one.
+* It **fails closed** on an unbound ASID — no capability authorizes an ASID that
+  resolves to no root — which also removes an ASID-existence oracle from the
+  unauthorized path.
+
+The gate sits immediately after argument decode and before any further work, so
+decode errors keep their existing identity and an unauthorized caller learns
+nothing about the target.
+
+**Proof surface.** `vspaceCapAuthorizesAsid_iff` characterises the predicate;
+`_false_of_ne`, `_false_of_unbound` and `_false_of_not_object` are the
+fail-closed statements. The three `dispatchWithCap_vspace{Map,Unmap,
+UnifyInstruction}_delegates` theorems gain an authorization premise — without it
+they are now *false* — and gain fail-closed duals
+`dispatchWithCap_vspace{Map,Unmap,UnifyInstruction}_unauthorized`, which state
+the rejection itself. The duals exist because a regression that dropped the gate
+would still satisfy the delegations (they carry `hAuth` as a hypothesis) while
+breaking the duals. The three `checkedDispatch_*_eq_unchecked` equivalences are
+unchanged: both dispatchers delegate to the same `dispatchCapabilityOnly`, so
+the arms change identically on both sides.
+
+**Blast radius: none.** Every existing dispatch-level caller already presented a
+correctly-bound capability, so no passing test changed behaviour, and the golden
+trace is byte-identical (the trace harness reaches VSpace operations through the
+transitions directly, never through dispatch).
+
+**New coverage.** `tests/VSpaceCapabilityBindingSuite.lean`
+(`vspace_capability_binding_suite`, 26 assertions / 5 groups, Tier-2 + Tier-3
+wired): the predicate's truth table on a real page-table-backed state, then for
+each of the three syscalls the unrelated-capability exploit (refused, with the
+victim's mapping proven still present / no maintenance emitted / no mapping
+installed), the wrong-VSpace-root case, the unbound-ASID case, and the
+authorized positive path with its effect observed. Every scenario drives the
+live `dispatchSyscall` path, because the defect lived in dispatch and only
+dispatch can witness it.
+
+**Also repaired: `OperationChainSuite` chain28 was silently vacuous.** It was the
+project's only `syscallEntry`-level VSpace coverage, and it had never run:
+`buildSyscallState` always installs a `.vspaceRoot` at `⟨502⟩` with `asid := ⟨1⟩`,
+while the chain added a second root *also* at ASID 1 — the builder's
+VSpaceRoot-ASID-uniqueness check rejected that, `buildChecked` panicked to
+`default : SystemState`, and dispatch failed with `illegalState` before reaching
+the VSpace arms. Both branches swallowed the error as "dispatch reached", so the
+rot was invisible. The chain now uses a distinct ASID, `throw`s instead of
+printing success on error, genuinely exercises map and unmap end-to-end, and
+gains a third case: the same capability naming a *different* address space's
+ASID must be refused with `.illegalAuthority` — the binding, proven through the
+full register-decode → CSpace-resolution → rights-gate → binding → transition
+pipeline.
+
+Zero sorry/axiom; Tier 0–5 green; Rust untouched (795 HAL tests, clippy-clean).
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.D; #845
+
+## v0.32.96 — WS-SM SM7.D: `.vspaceUnifyInstruction` — the code-publication syscall (last residual closed)
+
+Closes the final SM7.D residual and, with it, SM7.D itself: a subject that
+**writes** instructions can now publish them.
+
+**The gap.**  v0.32.94/95 wired instruction-cache maintenance to the two paths
+that *destroy* an executable mapping (`.vspaceUnmap`, `.lifecycleRetype`) —
+they close the stale-line-survives-teardown hazard.  Nothing covered the dual:
+a userspace runtime (a JIT, a loader, a dynamic linker) writes code bytes
+through a **writable data** mapping and then executes them through an
+executable one.  Those stores land in the D-cache; the instruction fetch reads
+at the Point of Unification; and the I-cache may still hold whatever the frame
+held before.  With no syscall to bridge the two, such a subject had **no way**
+to make its own writes fetchable — it could only spin and hope, or provoke an
+unrelated unmap.  seL4 exposes exactly this operation as
+`seL4_ARM_Page_Unify_Instruction`; seLe4n had no equivalent.
+
+**What lands.**  `Architecture.vspaceUnifyInstructionPage asid vaddr` — a
+*pure cache* transition that changes no page table:
+
+- **Fail-closed authority.**  The ASID must be bound (`.asidNotBound`) and the
+  address must be mapped in that address space (`.translationFault`), so the
+  operation can only maintain memory the caller already has a translation for.
+  It is deliberately **not** gated on the mapping being executable: the whole
+  point is that the writer holds the *data* mapping.  The syscall requires the
+  `.write` right (`requiredRight .vspaceUnifyInstruction => .write`) — a
+  read-only VSpace capability is refused with `.illegalAuthority`.
+- **The right operand.**  It records `.unifyPage paddr`, a third
+  `ICacheInvalidation` constructor distinct from `.ivauPage`: the runtime must
+  clean the data side to PoU *before* invalidating the instruction side, and
+  collapsing the two would silently drop the clean.  `join` gives `.unifyPage`
+  dominance over `.ivauPage` on the same page (upgrading is sound;
+  downgrading is not), so an accumulated round never weakens a unify into a
+  bare invalidate.
+- **Machine-checked reach.**  `vspaceUnifyInstructionPage_invalidates_all_cores`
+  — after the transition no core retains a line for the page — plus
+  `_frame` (page tables, TLB, shootdown state and object store all untouched),
+  `_records_unify`, and preservation of both per-core memory conjuncts
+  (`icacheCoherent_perCore`, `tlbInvalidationConsistent_perCore`).
+
+**Live.**  `API.dispatchWithCap` gains the `.vspaceUnifyInstruction` arm
+(`dispatchWithCap_vspaceUnifyInstruction_delegates`), so the operand reaches
+`syscallDispatchCrossCoreEntry`'s ledger drain and the Rust
+`cache_ic_maintenance` seam like any other.  The HAL realises it as
+`unify_instruction_page_inner_shareable`: a 64-line `DC CVAU` loop → `DSB ISH`
+→ a 64-line `IC IVAU` loop → `DSB ISH` → `ISB` — the canonical ARMv8-A
+publication sequence, and the same one `kernelCodeWriteSites_owe_pou_clean`
+(v0.32.95) names as the obligation for the kernel's own code writes.
+
+**Ledger soundness correction (found while reviewing this cut).**  Adding
+`.unifyPage` exposed a defect in v0.32.95's single-operand *join*: `iallu` was
+treated as the lattice top, but `IC IALLUIS` invalidates instruction caches and
+issues **no** `DC CVAU`, so it does not discharge a `unifyPage`'s clean to the
+Point of Unification — `join (.unifyPage p) .iallu = .iallu` would have dropped
+that clean and left a freshly written instruction fetchable in its *old* form
+(under-maintenance, the unsafe direction).  Nor does any single operand cover
+two distinct `unifyPage`s, so no join over one operand can be sound once the
+constructor exists.  Not reachable at v0.32.95 (only one maintenance-bearing
+transition runs per syscall and `syscallDispatchCrossCoreEntry` drains the
+ledger in the same atomic step that commits, so every record started from an
+empty ledger and the binary join arms were dead), but a latent trap.
+
+Fixed by replacing the join with a **coverage preorder over a list**:
+`SystemState.pendingIcacheMaintenance : List ICacheInvalidation`, appended in
+record order and drained wholesale by `completeIcacheMaintenance`
+(`completeIcacheMaintenance_cons` pins that every entry is emitted).  The only
+reduction applied is dropping an operand a held entry provably **covers**
+(`ICacheInvalidation.covers`) — and `covers` is not an asserted table:
+`icacheLineMatches_of_covers` and `applyICacheInvalidation_subset_of_covers`
+ground it in the model's own effect, while
+`ICacheInvalidation.iallu_not_covers_unifyPage` states the exclusion as a
+theorem so a future "simplification" that restores `iallu` as a top fails at
+that line instead of silently under-maintaining.
+`recordIcacheMaintenanceList_covered` / `_mem_of_mem` are the no-loss
+properties, `_length_le` bounds each record at one entry — so with one
+maintenance-bearing transition per syscall the live ledger is a singleton and
+still needs no capacity invariant and no bundle conjunct.
+
+**ABI.**  `SyscallId.vspaceUnifyInstruction = 29`, count 29 → 30, threaded
+through the Lean encodings/`ofNat?`/`all`/`ToString`, the `sele4n-types` and
+`sele4n-hal` Rust mirrors (min inline args 2), ABI conformance (boundary 29
+valid / 30 invalid + a round-trip), the frozen-ops classifier, the argument
+decoder, the information-flow enforcement registry (`enforcementBoundaryExtended`
+37 → 38, capability-only 22 → 23), and the lock-set inventory: the new
+`lockSet_vspaceUnifyInstruction` takes the VSpaceRoot in **read** mode — it
+modifies no page table — with `lockSet_consistent_vspaceUnifyInstruction`
+(inventory 99 → 101, lockSet/consistency categories 29 → 30).
+
+Rust HAL 792 → 795 tests, clippy-clean.  `SmpCacheMaintenanceSuite` 72 → 93
+runtime assertions / 12 groups — §3.12 covers the encoding, the operand tag and
+coverage dominance, both fail-closed arms, the four-core success path on a real
+page-table-backed state, and live `dispatchSyscall` authority (write cap
+succeeds, read-only cap `.illegalAuthority`, no cap `.invalidCapability`);
+§3.10 gains the coverage preorder, its semantic grounding, and the two ledger
+cases that would previously have lost work (a pending unify survives a later
+`iallu`; two incomparable operands are both kept).
+The golden trace's `[XVAL-002]` line moves 29 → 30 variants (the fixture
+enumerates the syscall surface); everything else byte-identical.  Zero
+sorry/axiom; Tier 0–3 green.
+
+## v0.32.95 — WS-SM SM7.D closure cut: exact runtime operand, page-granular emission, D→I obligation
+
+Closes both mechanical residuals the SM7.D landing recorded, and fixes a
+granularity defect found while analysing them.
+
+**(1) `IC IVAU` is line-granular, not page-granular — the emission was wrong.**
+`IC IVAU` invalidates one 64-byte cache line (ARM ARM C6.2.88), while the
+model's operand is a *page* (a `VSpaceRoot.lookup` yields a page base, and
+mappings live and die per page).  Emitting one instruction per page operand
+would have left 63 of a page's 64 lines valid — a silent **under**-invalidation,
+the one direction that is unsafe.  The Lean constructor is renamed
+`ivau` → `ivauPage` so a reader cannot infer single-line semantics from the
+model, `cache::ic_ivau` becomes the bare single-line primitive (no barriers),
+and the new `cache::ic_invalidate_page_inner_shareable` issues
+`ICACHE_LINES_PER_PAGE` (= 64) of them followed by one `DSB ISH` + `ISB` —
+exactly seL4's `invalidateCacheRange_I` shape.  The expansion factor is pinned
+on both sides (`icacheLinesPerPage_covers_page` in Lean,
+`test_ic_invalidate_page_line_count` in Rust).  Not live-wrong at v0.32.94 (the
+seam emitted `IC IALLUIS`), but the HAL primitive was.
+
+**(2) Residual 1 + 3: the runtime now emits the model's exact operand.**  The
+v0.32.94 seam keyed on the shootdown diff, so it fired the *strongest* operand
+for **every** unmap — including the common non-executable one, which owes
+nothing — and missed a retype that posted no round.  Recovering the precise
+operand from the round's encoded `.vae1` instead would need an `ASID`/`VAddr`
+round-trip whose failure mode is under-invalidation.  Both are closed by a
+proper emission ledger, mirroring how `tlbShootdown` makes the TLB round
+recoverable: new `SystemState.pendingIcacheMaintenance : Option
+ICacheInvalidation`, written by `Architecture.recordIcacheMaintenance` (inside
+the shared `withIcacheBroadcast` combinator, so both live seams get it) and read
+**and cleared** by `syscallDispatchCrossCoreEntry` in the *same* atomic
+`modifyGetKernelState` step that commits the transition — so an operand is
+emitted exactly once and never stranded into the next syscall, and every state
+at a syscall boundary owes nothing.  Accumulation is the total join
+(`ICacheInvalidation.join`, `iallu` as top), so there is no capacity bound to
+thread and no new bundle conjunct; `recordIcacheMaintenance_of_none` is the
+exactness property the closure rests on.  Result: an executable unmap emits a
+targeted 64-line `IC IVAU` page loop, a **data-page unmap emits nothing at all**,
+and a retype emits `IC IALLUIS` whether or not it posted a shootdown round.
+
+**(3) Residual — the data-side dual, as a registered obligation.**  Nothing
+cleans the D-cache to the Point of Unification after the kernel writes memory a
+subject may later execute (`scrubObjectMemory` during a re-type, the boot image
+load); an instruction fetch reads at PoU, so a store that has not been pushed
+there can be fetched stale even on the storing PE.  The *emission* needs each
+object's physical extent, which the model does not carry (only `UntypedObject`
+has `regionBase`/`regionSize`), so it is scoped to SM9.E — which is also the
+first point at which memory is physically backed and the omission could bite.
+What lands now is the obligation as a checked object: `KernelCodeWriteSite`
+enumerates the two sites, `kernelCodeWriteSites_owe_pou_clean` states that each
+owes the canonical ARMv8-A `DC CVAU → DSB → IC → DSB → ISB` sequence
+(`armv8DCacheToICacheSequence`), and `kernelCodeWriteSites_complete` is the
+tripwire that fails if a third site is added without an entry.
+
+**Structure.**  `ICacheInvalidation` moves to the new pure
+`Architecture/CacheInvalidation.lean` — the same extraction, for the same
+reason, as SM7.A's `TlbInvalidation.lean`: `Model/State.lean` mounts the ledger
+and must not pull the architecture layer's import closure.  The ledger is
+carried through freeze (required, no default), congruence, and boot, and stays
+out of the IF projection (`pendingIcacheMaintenance_write_preserves_projection`
+— the operand names a physical page, so projecting it leaks what the cache view
+would).  `Architecture.TlbCacheComposition` promoted staged → production (SM7.D.2
+is its first production consumer); staged-only 55 → 54.
+
+Rust HAL 789 → 792 tests, clippy-clean.  `SmpCacheMaintenanceSuite` 56 → 72
+runtime assertions / 11 groups (the join algebra, the ledger lifecycle, and the
+three live-seam operand outcomes — targeted, nothing, domain-wide).  Golden
+trace byte-identical; zero sorry/axiom; Tier 0–3 green.
+
+## v0.32.94 — WS-SM SM7.D: cache maintenance broadcast (per-core I-cache model, 14th bundle conjunct, live seams)
+
+Lands **SM7.D — Cache maintenance broadcast** (`docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md`
+§5, sub-tasks SM7.D.1–D.4), the cache-side companion of SM7.C's per-core TLB
+model.  SM7.C closed the *translation* half of SMP-C4 (a stale TLB entry on a
+remote core); SM7.D closes the *cache* half, and the two hierarchies are
+architecturally asymmetric in a way that decides the whole design:
+
+| structure | coherent across PEs? | kernel obligation |
+|-----------|----------------------|-------------------|
+| D-cache   | **yes** (hardware)   | none — `DC` by VA to PoC is architecturally visible to every agent in the domain |
+| I-cache   | **no**               | issue the *broadcast* maintenance variant, or remote cores keep stale lines |
+| TLB       | no                   | the SM7.B explicit-ack shootdown protocol |
+
+**Gap closed (the reason this is not a documentation cut).**  Before SM7.D the
+kernel performed **no instruction-cache maintenance on any live path**: `ic_iallu`
+had an FFI seam with no caller, and the SMP-correct broadcast variant `ic_ialluis`
+had no seam at all.  Since instruction caches are physically tagged from
+software's point of view (ARM ARM D7.2), a line cached from a page whose
+executable mapping is later torn down stays hittable through *any* later
+executable mapping of the same frame, in *any* address space — the
+instruction-side twin of the SMP-C4 stale-TLB hazard, which the TLB shootdown
+cannot close (it retires translations, not cache lines).  Latent rather than
+exploitable today (no bootable image until SM9.E), but a real gap in the model
+and in the HAL surface.
+
+**SM7.D.1 — the I-cache broadcast, mounted and live.**  New production module
+`Architecture/PerCoreCacheModel.lean`: the typed operand `ICacheInvalidation`
+(`iallu` / `ivau paddr`, with the FFI tag encoding + range/distinctness
+theorems mirroring `TlbInvalidation`), its effect algebra
+(`applyICacheInvalidation` + removal / selectivity / monotonicity /
+idempotence / survivor lemmas), the mounted per-core state
+`SystemState.perCoreICache : Vector ICacheState numCores` with the SM4.B path-a
+accessors, and the three model operations: `icFetchOnCore` (the hardware
+instruction fetch — an *environment* step), `icInvalidateOnCore` (`IC IALLU`,
+whose `…_icacheOnCore_ne` **states the SMP hazard**: every other core keeps its
+lines), and `icInvalidateBroadcast` (`IC IALLUIS` / `IC IVAU`).  The headline
+`icInvalidateBroadcast_reaches_all_cores` is the instruction-side analogue of
+SM7.B's Theorem 3.3.1: after a covering broadcast **no core** retains a covered
+line.  `reach` is a parameter for the SM7.B §3.4 reason `targets` is — a
+multi-cluster port leaves the Inner Shareable domain and needs the SGI protocol;
+`icBroadcastReach_cover` pins that BCM2712's four PEs share one domain.
+
+**SM7.D.2 — D-cache at the Point of Coherency is system-wide.**  Modelled, not
+assumed: `dcMaintenanceAllCores` takes **no target set at all** — the absence of
+a reach parameter *is* the formal content of "at PoC, already system-wide" — and
+`dcMaintenanceByVA_reaches_all_cores` /
+`dcMaintenanceAllCores_preserves_dcacheCoherentAcrossCores` follow.  The
+asymmetry against the instruction side is itself a theorem
+(`icInvalidateOnCore_vs_dcMaintenance_reach`), with
+`icInvalidateOnCore_remote_line_survives` as its non-vacuity witness.
+
+**SM7.D.3 — DMA out of scope, as a tripwire rather than prose.**  The model
+enumerates its coherent agents (`modeledCoherentAgents`), proves the maintenance
+covers all of them, and proves the enumeration contains **no** non-coherent bus
+master (`modeledCoherentAgents_no_dma_master`).  Adding a DMA agent breaks that
+theorem — so the buffer-ownership obligation cannot be forgotten.
+
+**SM7.D.4 — the SMP cache-coherency invariant: the 14th
+`proofLayerInvariantBundle` conjunct.**  `icacheCoherent_perCore` — on every
+core, every cached line still has a live **executable** mapping.  An
+`ICacheLine` records the executable translation the fetch resolved through
+(`ICacheLine.toTranslation`), so the entire page-table frame algebra proven for
+`tlbEntryConsistent` carries over unchanged.  Unlike the 13th conjunct it needs
+no pending-allowance disjunct: instruction-cache maintenance is a *synchronous*
+broadcast instruction, not a queued request/acknowledge round, so no committed
+state holds a line that is stale-but-scheduled-for-retirement.  Boot witness
+`default_icacheCoherent_perCore`, decidable checker
+`icacheCoherentCheck_perCore` (+ `_iff` + `Decidable`, making the conjunct
+runtime-verifiable exactly as the 12th and 13th are), the capstone
+`cacheCoherency_cross_subsystem`, and the joint
+`icInvalidateBroadcast_preserves_perCore_memory_invariants` (both per-core
+cached structures at once).  Carried through freeze (`FrozenSystemState.
+perCoreICache`, **required** — a silent drop is a compile error, symmetric with
+`perCoreTlb`), congruence (`OffSchedulerAgrees.perCoreICache`), boot
+(`bootFromPlatform_perCoreICache_eq`), and information flow
+(`perCoreICache_write_preserves_projection` — a cache view is a covert timing
+channel, so it stays out of `projectState`).
+
+**Live wiring.**  `API.dispatchCapabilityOnly`'s `.vspaceUnmap` arm routes
+through `vspaceUnmapPageWithShootdownAndIcacheBroadcast`, which broadcasts a
+**targeted** `IC IVAU` at the retired page's physical address when — and only
+when — the mapping was executable (`unmapExecutablePaddr`, read from the
+pre-state); a data-page unmap owes nothing and is provably inert.  The
+`.lifecycleRetype` arm routes through
+`lifecycleRetype{Direct,}WithCleanupShootdownPerCoreIcache`, which broadcasts
+`IC IALLUIS` unconditionally: a retype scrubs and re-purposes the target's
+backing memory, and the abstract state cannot enumerate which physical lines it
+covered, so the sound choice is the full invalidate (over-invalidation costs
+re-fetches; under-invalidation is the hazard).  Both seams carry machine-checked
+`…_preserves_icacheCoherent_perCore` **and**
+`…_preserves_tlbInvalidationConsistent_perCore`, plus the joint
+`…_preserves_perCore_memory_invariants` capstones.  Runtime seam:
+`SyscallDispatchEntry.completeIcacheMaintenance`, keyed on the same shootdown
+diff the TLB round uses and ordered after it, inert when no round was posted
+(`completeIcacheMaintenance_nil`).
+
+**FFI + Rust HAL** (782 → 789 tests, clippy-clean): `cache::ic_ivau` (`IC IVAU`
++ `DSB ISH` + `ISB`), `cache::ic_invalidate_all_inner_shareable`, the typed
+`ICacheInvalidation` + `decode_icache_invalidation` (fail-closed on an
+out-of-range tag, mirroring `decode_tlb_invalidation`), and the exports
+`cache_ic_ialluis` / `cache_ic_maintenance`; Lean bindings `ffiIcIalluIs` /
+`ffiIcMaintenance` + the typed wrapper `icMaintenanceBroadcast` with its
+encoding-conformance theorems.  The pre-existing `cache_ic_iallu` export is now
+documented as the single-PE boot-path variant, symmetric with `ffi_tlbi_all`.
+
+**Promotion**: `Architecture.CacheModel` moves staged → production (SM7.D is its
+first production consumer — the D-cache state and operations are what SM7.D.2's
+reach theorems quantify over); staged-only count 56 → 55.
+`Architecture/Assumptions.lean`'s AG8-B entry is rewritten from "sequential
+model — cache coherency is trivially satisfied under single-core operation" to
+the per-structure proved/assumed split.
+
+**Tests**: new `tests/SmpCacheMaintenanceSuite.lean` (`smp_cache_maintenance_suite`,
+Tier-2 registered) — 100+ `#check` surface anchors, 8 elaboration witnesses, and
+**56 runtime assertions across 9 groups**, including the non-vacuity witness that
+a cached line whose mapping was removed **fails** the coherency checker while the
+domain broadcast restores it and a PE-local invalidate on another core does
+**not**; plus the live `.vspaceUnmap` (targeted, and inert for a read-only page)
+and `.lifecycleRetype` (all four cores cold) seams on real page-table-backed
+states.  Tier-3 anchors for the whole SM7.D surface.
+
+Trace **byte-identical** (`perCoreICache ∉ projectState`); zero sorry/axiom;
+Tier 0–3 green; production/staged partition consistent.
+
 ## v0.32.93 — WS-SM SM7.F.4(b)(iii): retype flushes the rebound ASID (reachable violation closed; hNoRebind dropped)
 
 Closes the **reachable** `tlbInvalidationConsistent_perCore` violation flagged at

@@ -12,10 +12,11 @@ import SeLe4n.Model.State
 /-!
 # AG8-B: Cache Coherency Model (H3-ARCH-07)
 
-> **STATUS: staged for H3 hardware binding** (AN7-D.6 / PLT-M07).  This
-> module is wired into `SeLe4n.Platform.Staged` so every CI run verifies
-> it compiles.  See `docs/spec/SELE4N_SPEC.md` §8.15 for the activation
-> roadmap.
+> **STATUS: production** since WS-SM SM7.D (v0.32.94).  The module was staged
+> for H3 hardware binding (AN7-D.6 / PLT-M07) until SM7.D's SMP cache
+> maintenance layer (`Architecture/PerCoreCacheModel.lean`) became its first
+> production consumer: the D-cache state and operations defined here are what
+> SM7.D.2's per-core reach theorems quantify over.
 
 Abstract model of ARM64 data cache and instruction cache state. This module
 provides the formal vocabulary for reasoning about cache coherency in the
@@ -23,33 +24,60 @@ context of page table modifications, self-modifying code, and DMA.
 
 ## Scope
 
-This is a **specification-level** model. The Rust HAL layer (`cache.rs`)
-provides the actual DC CIVAC / DC CVAC / DC IVAC / DC ZVA / IC IALLU
-instructions. This Lean model captures:
+This is the **single-view, specification-level** model — one `CacheState` for
+the machine.  The Rust HAL layer (`cache.rs`) provides the actual DC CIVAC /
+DC CVAC / DC IVAC / DC ZVA / IC IALLU / IC IALLUIS / IC IVAU instructions. This
+Lean model captures:
 
 1. Cache line state (invalid, clean, dirty)
 2. D-cache and I-cache coherency predicates
 3. Cache maintenance operation semantics
 4. Preservation theorems for kernel operations
 
-## Hardware Reference
+## SMP companion (WS-SM SM7.D)
 
-Cortex-A76 (RPi5):
-- L1 D-cache: 64 KB, 4-way, 64-byte lines
-- L1 I-cache: 64 KB, 4-way, 64-byte lines
-- L2 unified: 512 KB, 8-way, 64-byte lines
+Under SMP the two cache hierarchies stop behaving alike, and the split is what
+`Architecture/PerCoreCacheModel.lean` formalises:
+
+* **D-cache (SM7.D.2)** — the data caches of the PEs in a shareability domain
+  are hardware-coherent, and `DC` maintenance *by VA to the Point of Coherency*
+  is architecturally visible to every agent in that domain (ARM ARM B2.7 /
+  D7.4).  So this module's single `CacheState.dcache` view stays adequate: SM7.D
+  lifts the operations here to `dcMaintenanceAllCores`, which takes **no target
+  set at all** — the absence of a reach parameter is the formal content of "at
+  PoC, already system-wide" — and proves
+  `dcMaintenanceByVA_reaches_all_cores`.
+* **I-cache (SM7.D.1)** — instruction caches are *not* coherent, neither with
+  the data side nor across PEs.  `icInvalidateAll` below models `IC IALLU`,
+  which reaches **only the executing PE**; under SMP the kernel must issue the
+  Inner Shareable broadcast variant (`IC IALLUIS`) or the by-VA form
+  (`IC IVAU`, likewise broadcast within the domain).  A stale line on a remote
+  core is the instruction-side twin of the SMP-C4 stale-TLB hazard, so SM7.D
+  mounts a genuine per-core model (`SystemState.perCoreICache`) with
+  `icacheCoherent_perCore` as the 14th `proofLayerInvariantBundle` conjunct.
+* **DMA (SM7.D.3)** — cross-core data-cache maintenance for DMA buffers is out
+  of scope for v1.0.0: the kernel has no DMA driver, so no non-coherent bus
+  master exists.  That boundary is machine-checked rather than asserted —
+  `modeledCoherentAgents_no_dma_master` fails the moment a DMA agent is added
+  to the model without the accompanying buffer-ownership protocol.
 
 Cache maintenance is required:
 - After page table modifications (DC CIVAC on PT pages, then TLBI + DSB + ISB)
 - Before DMA reads (DC CIVAC to flush dirty lines)
 - After DMA writes (DC IVAC to discard stale lines)
-- For self-modifying code (DC CVAC + IC IALLU + ISB)
+- For self-modifying code (DC CVAC + IC IALLU + ISB) — on ARMv8-A this is
+  *user* software's obligation (seL4 exposes it as an explicit
+  `Page_Unify_Instruction` operation); the kernel-side obligation SM7.D
+  discharges is the mapping-lifetime one.
 
 ## Non-modeled aspects
 
 - Cache associativity and replacement policy (abstracted away)
 - Cache partitioning (MPAM — deferred to WS-W)
 - Speculative prefetch effects
+- Instruction *content*: an `ICacheLine` (SM7.D) records the executable
+  translation a fetch resolved through, not the bytes fetched.  That is the
+  hazard the kernel controls — it owns mappings, not the data a thread writes.
 -/
 
 namespace SeLe4n.Kernel.Architecture
@@ -132,7 +160,16 @@ def dcCleanInvalidate (cs : CacheState) (addr : SeLe4n.PAddr) : CacheState :=
 
 /-- IC IALLU: Invalidate all I-cache to Point of Unification.
 Discards all I-cache lines, forcing re-fetch from memory on next
-instruction fetch. Required after modifying executable code. -/
+instruction fetch. Required after modifying executable code.
+
+**WS-SM SM7.D.1 — reach**: `IC IALLU` invalidates only the **executing PE's**
+instruction cache.  Under SMP the kernel must use the Inner Shareable broadcast
+variant `IC IALLUIS` (or the by-VA `IC IVAU`, likewise broadcast within the
+domain) — see `Architecture/PerCoreCacheModel.lean`'s `icInvalidateBroadcast`,
+whose `…_reaches_all_cores` theorem is the instruction-side analogue of the
+SM7.B TLB shootdown's Theorem 3.3.1.  This single-view model conflates all PEs,
+so it cannot express the difference; the per-core model can, and
+`icInvalidateOnCore_icacheOnCore_ne` states the hazard explicitly. -/
 def icInvalidateAll (cs : CacheState) : CacheState :=
   { cs with icache := fun _ => .invalid }
 

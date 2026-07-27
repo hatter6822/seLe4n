@@ -70,22 +70,27 @@ private def rd001_decodeSyscallIdValid : IO Unit := do
   -- WS-SM SM5.H.4: tcbSetAffinity=25
   let r25 := decodeSyscallId ⟨25⟩
   expect "tcbSetAffinity=25" (isOkEq r25 .tcbSetAffinity)
+  -- WS-SM SM7.D: vspaceUnifyInstruction=29 (the code-publication path)
+  let r29 := decodeSyscallId ⟨29⟩
+  expect "vspaceUnifyInstruction=29" (isOkEq r29 .vspaceUnifyInstruction)
 
 /-- RD-002: decodeSyscallId — invalid values. -/
 private def rd002_decodeSyscallIdInvalid : IO Unit := do
-  -- First invalid: 29 (WS-SM SM6.D / PR #822 Phase H added mintReplyCap at 28)
-  let r29 := decodeSyscallId ⟨29⟩
-  expect "invalid=29" (isErrEq r29 .invalidSyscallNumber)
+  -- First invalid: 30 (WS-SM SM7.D added vspaceUnifyInstruction at 29, on top of
+  -- PR #822 Phase H's mintReplyCap at 28)
+  let r30 := decodeSyscallId ⟨30⟩
+  expect "invalid=30" (isErrEq r30 .invalidSyscallNumber)
   -- Large value
   let rLarge := decodeSyscallId ⟨999999⟩
   expect "invalid=999999" (isErrEq rLarge .invalidSyscallNumber)
 
-/-- RD-003: decodeSyscallId — boundary edge 28/29 (mintReplyCap=28 is the last valid). -/
+/-- RD-003: decodeSyscallId — boundary edge 29/30 (WS-SM SM7.D:
+vspaceUnifyInstruction=29 is the last valid). -/
 private def rd003_decodeSyscallIdBoundary : IO Unit := do
-  let r28 := decodeSyscallId ⟨28⟩
   let r29 := decodeSyscallId ⟨29⟩
-  expect "boundary=28 ok (mintReplyCap)" (isOkEq r28 .mintReplyCap)
-  expect "boundary=29 err" (!r29.isOk)
+  let r30 := decodeSyscallId ⟨30⟩
+  expect "boundary=29 ok (vspaceUnifyInstruction)" (isOkEq r29 .vspaceUnifyInstruction)
+  expect "boundary=30 err" (!r30.isOk)
 
 /-- RD-004: decodeMsgInfo — valid round-trip. -/
 private def rd004_decodeMsgInfoValid : IO Unit := do

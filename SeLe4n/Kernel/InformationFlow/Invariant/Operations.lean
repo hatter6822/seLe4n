@@ -867,9 +867,17 @@ theorem vspaceMapPage_preserves_projection
     simp only [hResolve] at hStep
     simp only [PagePermissions.default_wxCompliant, Bool.not_true] at hStep
     cases hMap : root.mapPage vaddr paddr default with
-    | none => simp [hMap] at hStep
+    | none =>
+      rw [hMap] at hStep
+      split at hStep
+      · simp at hStep
+      · split at hStep <;> simp at hStep
     | some root' =>
-      simp only [hMap] at hStep
+      -- PR #845 review (P2): a successful `mapPage` witnesses page alignment,
+      -- which discharges the guard the transition checks before delegating.
+      have hAligned : paddr.toNat % Architecture.pageBytes = 0 :=
+        SeLe4n.Model.VSpaceRoot.mapPage_pageAligned hMap
+      simp only [hMap, hAligned] at hStep
       have hHigh := hRootHigh rootId root hResolve
       exact storeObject_preserves_projection ctx observer st st' rootId _ hHigh hObjInv hStep
 
@@ -3135,7 +3143,7 @@ theorem scrubObjectMemory_preserves_projection
   -- memory projection: for each address, if observable and in range → contradiction;
   -- if observable and not in range → value unchanged; if not observable → both none
   funext addr
-  simp only [projectMemory, scrubObjectMemory, SeLe4n.zeroMemoryRange]
+  simp only [projectMemory, scrubObjectMemory, scrubExtent, SeLe4n.zeroMemoryRange]
   split
   · -- Address observable
     split
@@ -3604,25 +3612,27 @@ theorem vspaceMapPageCheckedWithFlushFromState_preserves_projection
   · simp at hStep
   · split at hStep
     · simp at hStep
-    · -- vspaceMapPageWithFlush call
-      unfold Architecture.vspaceMapPageWithFlush at hStep
-      cases hInner : Architecture.vspaceMapPage asid vaddr paddr perms st with
-      | error e => rw [hInner] at hStep; simp at hStep
-      | ok pair =>
-        rw [hInner] at hStep
-        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-        obtain ⟨_, hStEq⟩ := hStep
-        subst hStEq
-        subst hDefault
-        -- Existing theorem: vspaceMapPage preserves projection
-        have hProj : projectState ctx observer pair.2 = projectState ctx observer st := by
-          obtain ⟨_, stInner⟩ := pair
-          exact vspaceMapPage_preserves_projection ctx observer asid vaddr paddr st stInner
-            hRootHigh hObjInv hInner
-        -- Adding TLB flush doesn't affect projection (TLB is not in projectState)
-        show projectState ctx observer { pair.2 with tlb := _ } = projectState ctx observer st
-        rw [← hProj]
-        rfl
+    · split at hStep
+      · simp at hStep
+      · -- vspaceMapPageWithFlush call
+        unfold Architecture.vspaceMapPageWithFlush at hStep
+        cases hInner : Architecture.vspaceMapPage asid vaddr paddr perms st with
+        | error e => rw [hInner] at hStep; simp at hStep
+        | ok pair =>
+          rw [hInner] at hStep
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨_, hStEq⟩ := hStep
+          subst hStEq
+          subst hDefault
+          -- Existing theorem: vspaceMapPage preserves projection
+          have hProj : projectState ctx observer pair.2 = projectState ctx observer st := by
+            obtain ⟨_, stInner⟩ := pair
+            exact vspaceMapPage_preserves_projection ctx observer asid vaddr paddr st stInner
+              hRootHigh hObjInv hInner
+          -- Adding TLB flush doesn't affect projection (TLB is not in projectState)
+          show projectState ctx observer { pair.2 with tlb := _ } = projectState ctx observer st
+          rw [← hProj]
+          rfl
 
 /-- AK6-F.2i: `vspaceUnmapPageWithFlush` preserves projection when the
     resolved VSpace root is non-observable. Delegates to the existing
@@ -3665,6 +3675,35 @@ theorem perCoreTlb_write_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
     (v : _root_.Vector SeLe4n.Model.TlbState SeLe4n.Kernel.Concurrency.numCores) :
     projectState ctx observer { st with perCoreTlb := v } =
+      projectState ctx observer st := rfl
+
+/-- WS-SM SM7.D (non-interference): a write to *any* core's per-core
+instruction-cache view is invisible to the information-flow projection —
+`perCoreICache`, like `perCoreTlb`, the scalar `tlb`, and `machine.timer`, is
+deliberately excluded from `ObservableState` (a cache view is a covert
+timing-channel source), so no observable can depend on it.  This is the
+explicit NI witness for the SM7.D mount: every `perCoreICache`-evolving
+transition (`icFetchOnCore`, `icInvalidateOnCore`, `icInvalidateBroadcast`, and
+the live `.vspaceUnmap` / `.lifecycleRetype` maintenance seams built on them)
+trivially preserves `projectState` and hence `lowEquivalent`. -/
+theorem perCoreICache_write_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (v : _root_.Vector SeLe4n.Model.ICacheState SeLe4n.Kernel.Concurrency.numCores) :
+    projectState ctx observer { st with perCoreICache := v } =
+      projectState ctx observer st := rfl
+
+/-- WS-SM SM7.D.1 (non-interference): a write to the instruction-cache emission
+ledger is invisible to the information-flow projection.  The ledger names a
+cache maintenance operation — including, for a targeted operand, the physical
+address of a page — so projecting it would leak exactly the information the
+cache view itself would; like `perCoreICache`, it stays out of
+`ObservableState`.  This is the NI witness for the SM7.D.1 ledger mount: both
+live maintenance seams and the runtime drain trivially preserve `projectState`
+and hence `lowEquivalent`. -/
+theorem pendingIcacheMaintenance_write_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (m : List SeLe4n.Kernel.Architecture.ICacheInvalidation) :
+    projectState ctx observer { st with pendingIcacheMaintenance := m } =
       projectState ctx observer st := rfl
 
 -- ============================================================================

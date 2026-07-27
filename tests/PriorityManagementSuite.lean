@@ -326,6 +326,12 @@ private def emptyFrozenState : FrozenSystemState := {
   scThreadIndex := freezeMap (RHTable.empty 16)
   tlb := TlbState.empty
   perCoreTlb := _root_.Vector.replicate SeLe4n.Kernel.Concurrency.numCores TlbState.empty
+  -- WS-SM SM7.D.1: required frozen field (no default).
+  perCoreICache :=
+    _root_.Vector.replicate SeLe4n.Kernel.Concurrency.numCores ICacheState.empty
+  -- WS-SM SM7.D.1: the emission ledger is likewise required; it is always
+  -- `none` at a syscall boundary.
+  pendingIcacheMaintenance := []
 }
 
 private def mkFrozenState (objs : List (ObjId × FrozenKernelObject)) : FrozenSystemState :=

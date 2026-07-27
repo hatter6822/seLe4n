@@ -1188,6 +1188,122 @@ def suspendThreadInner (tid : UInt64) : BaseIO UInt32 := do
 -- AN9-F (DEF-R-HAL-L14): SVC dispatch entry — Rust → Lean direction
 -- ============================================================================
 
+-- ============================================================================
+-- WS-SM SM7.D.1 — Instruction-cache maintenance broadcast
+-- ============================================================================
+
+/-- **WS-SM SM7.D.1**: broadcast I-cache invalidate-all witness —
+    `IC IALLUIS` + `DSB ISH` + `ISB`, dropping every instruction-cache line on
+    **every** PE of the Inner Shareable domain.
+
+    The broadcast counterpart of `ffiIcIallu`.  The Lean model's
+    `icInvalidateBroadcast … .iallu` is what this emits.
+
+    Rust: `cache::ic_invalidate_all_inner_shareable` in
+    `sele4n-hal/src/cache.rs`. -/
+@[extern "cache_ic_ialluis"]
+opaque ffiIcIalluIs : BaseIO Unit
+
+/-- **WS-SM SM7.D.1**: typed instruction-cache maintenance dispatcher.
+
+    Takes the `(opTag, addr, size)` encoding of an
+    `Architecture.ICacheInvalidation` and emits the corresponding broadcast
+    maintenance instruction plus its completing barriers:
+
+      opTag : 0 = Iallu (`IC IALLUIS`), 1 = IvauPage (per-page `IC IVAU` loop),
+              2 = UnifyPage (`DC CVAU` loop → `DSB` → `IC IVAU` loop → `DSB` → `ISB`),
+              3 = CleanRangeIallu (`DC CVAU` loop over `[addr, addr+size)` →
+                  `DSB` → `IC IALLUIS` → `DSB` → `ISB`)
+      addr  : page base virtual address operand, or the range base for tag 3
+              (RES0 for Iallu)
+      size  : range length in bytes (tag 3 only; RES0 otherwise)
+
+    The encoding is pinned to the Lean side by
+    `ICacheInvalidation.toOpTag` / `.toPaddr` / `.toSize` and to the Rust side by
+    `cache::decode_icache_invalidation`; the dispatcher **panics** on an
+    out-of-range tag (fail closed — a silently skipped invalidation is a
+    correctness violation the caller cannot detect), which
+    `ICacheInvalidation.toOpTag_in_range` proves unreachable from any
+    well-formed Lean caller.
+
+    Tag 2 (`unifyPage`) is the `.vspaceUnifyInstruction` syscall's operand — the
+    full ARMv8-A data-to-instruction sequence, whose *inter-loop* `DSB ISH`
+    matters: the invalidations must not be observed before the cleans complete,
+    or a PE could re-fill an instruction line from the pre-clean PoU content.
+
+    Tag 3 (`cleanRangeIallu`) is the `.lifecycleRetype` operand, and carries the
+    same inter-loop ordering for the same reason — with a caller-supplied extent
+    (the scrubbed region) and a domain-wide invalidate, because a re-type cannot
+    name the mappings that alias the frame it re-purposes.
+
+    Rust: `ffi::cache_ic_maintenance` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "cache_ic_maintenance"]
+opaque ffiIcMaintenance : UInt32 → UInt64 → UInt64 → BaseIO Unit
+
+/-- **WS-SM SM7.D.1**: typed wrapper over `ffiIcMaintenance` — emit the
+    inner-shareable broadcast maintenance for a typed operand.
+
+    The bridge between the SM7.D model (`icInvalidateBroadcast`, which evolves
+    every core's `perCoreICache` view) and the hardware: the model says which
+    lines disappear on which cores, this call makes it so.
+
+    For `.ivauPage p` the operand passed to the HAL is the page's **base
+    address**: the `IC IVAU` instruction takes a *virtual* address and the PE
+    translates it, and the boot tables identity-map RAM, so a RAM frame's kernel
+    VA equals its PA and `ICacheInvalidation.toPaddr` is the correct operand.
+    Note the granularity expansion — `IC IVAU` invalidates one 64-byte cache
+    line, so the HAL issues `icacheLinesPerPage` of them for one page operand
+    (`cache::ic_invalidate_page_inner_shareable`), exactly as seL4's
+    `invalidateCacheRange_I` does.
+
+    `.unifyPage p` uses the same operand under the same identity-map argument,
+    and routes to `cache::unify_instruction_page_inner_shareable`: a `DC CVAU`
+    loop over the page, `DSB ISH`, the `IC IVAU` loop, `DSB ISH`, `ISB`.  It is
+    a *distinct* op tag rather than a stronger `.ivauPage` because the clean to
+    the Point of Unification has no counterpart in the invalidation dimension —
+    which is also why the emission ledger keeps it under a coverage preorder
+    instead of a join (`ICacheInvalidation.iallu_not_covers_unifyPage`).
+
+    `.cleanRangeIallu b s` passes `b` as the address and `s` as the length, and
+    routes to `cache::clean_range_pou_then_invalidate_all_inner_shareable`.  It
+    is the re-type's operand: `IC IALLUIS` alone would drop the stale
+    instruction lines but leave the scrub's zeroing stores in the data cache, so
+    the very next fetch would re-fill from the pre-scrub Point-of-Unification
+    content — the previous owner's code.  The `DC CVAU` loop is what closes
+    that, and bundling it into one operand is what keeps the ordering out of the
+    ledger's accumulation order
+    (`ICacheInvalidation.iallu_not_covers_cleanRangeIallu`). -/
+def icMaintenanceBroadcast
+    (op : SeLe4n.Kernel.Architecture.ICacheInvalidation) : BaseIO Unit :=
+  ffiIcMaintenance op.toOpTag op.toPaddr op.toSize
+
+/-- **WS-SM SM7.D.1**: the invalidate-all operand routes to op tag 0. -/
+theorem icMaintenanceBroadcast_iallu_encoding :
+    (SeLe4n.Kernel.Architecture.ICacheInvalidation.iallu).toOpTag = 0 ∧
+    (SeLe4n.Kernel.Architecture.ICacheInvalidation.iallu).toPaddr = 0 :=
+  ⟨rfl, rfl⟩
+
+/-- **WS-SM SM7.D.1**: the per-page operand routes to op tag 1 carrying the
+    page base address. -/
+theorem icMaintenanceBroadcast_ivauPage_encoding (p : SeLe4n.PAddr) :
+    (SeLe4n.Kernel.Architecture.ICacheInvalidation.ivauPage p).toOpTag = 1 ∧
+    (SeLe4n.Kernel.Architecture.ICacheInvalidation.ivauPage p).toPaddr =
+      UInt64.ofNat p.toNat :=
+  ⟨rfl, rfl⟩
+
+/-- **WS-SM SM7.D**: the re-type's range operand routes to op tag 3 carrying
+    the scrubbed extent's base **and length** — the only operand for which the
+    HAL reads the third word. -/
+theorem icMaintenanceBroadcast_cleanRangeIallu_encoding
+    (b : SeLe4n.PAddr) (s : Nat) :
+    (SeLe4n.Kernel.Architecture.ICacheInvalidation.cleanRangeIallu b s).toOpTag = 3 ∧
+    (SeLe4n.Kernel.Architecture.ICacheInvalidation.cleanRangeIallu b s).toPaddr =
+      UInt64.ofNat b.toNat ∧
+    (SeLe4n.Kernel.Architecture.ICacheInvalidation.cleanRangeIallu b s).toSize =
+      UInt64.ofNat s :=
+  ⟨rfl, rfl, rfl⟩
+
+
 /-- AN9-F: Lean-side SVC dispatch routine called BY Rust through the
     `syscall_dispatch_inner` `extern "C"` symbol.  This is the
     Rust-→-Lean direction (opposite of every other declaration in
@@ -1228,6 +1344,32 @@ def syscallDispatchInner
   -- caller on its own core.
   match syscallDispatchFromAbi ctx bootCoreId syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st with
   | Except.ok (encoded, st') =>
+      -- PR #845 review (P2): this entry does **not** drain the SM7.D
+      -- instruction-cache emission ledger, and deliberately cannot.
+      --
+      -- Draining would mean calling `icMaintenanceBroadcast`, whose
+      -- `@[extern "cache_ic_maintenance"]` symbol is provided by the Rust HAL.
+      -- Per the link-time gating policy documented at the head of this module,
+      -- simulation builds do **not** link the HAL, and any path that reaches an
+      -- `@[extern]` symbol is required to fail at link time rather than be
+      -- papered over with a stub.  `syscallDispatchInner` is called directly by
+      -- `tests/SyscallDispatchSuite.lean`, so putting the emission here breaks
+      -- every host test binary that exercises the bridge — and the only ways to
+      -- "fix" that are a silent stub (forbidden) or linking the HAL into the
+      -- test binaries (defeats the gating).
+      --
+      -- This is safe rather than merely tolerated, for two reasons.  The entry
+      -- is **vestigial**: the Rust `svc_dispatch` extern was flipped to
+      -- `lean_syscall_dispatch_cross_core` at v0.31.67 (SM6.A), so no shipping
+      -- configuration reaches it.  And since v0.32.96 replaced the operand
+      -- *join* with an append-only list, an operand committed here is
+      -- **deferred, never lost** — it stays in `pendingIcacheMaintenance` and is
+      -- drained wholesale by the next syscall through the cross-core entry
+      -- (`recordIcacheMaintenanceList_mem_of_mem` is the no-loss property).
+      --
+      -- Closure is removal, not draining: SM9.E should delete this export and
+      -- repoint `SyscallDispatchSuite` at the cross-core entry.  Registered in
+      -- `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` §"SM7.D deferred items".
       initialiseKernelState st'
       pure encoded
   | Except.error e =>
@@ -1252,6 +1394,12 @@ opaque ffiCacheCleanPagetableRange : UInt64 → UInt64 → BaseIO Unit
 
 /-- AN9-A.1: I-cache invalidation witness — drop every I-cache line so
     subsequent instruction fetches re-read from coherent memory.
+
+    **Local (non-broadcast) variant** — it reaches only the executing PE.
+    WS-SM SM7.D.1: production kernel code under SMP must use
+    `icMaintenanceBroadcast` below, which routes to the Inner Shareable
+    broadcast variants; this binding is kept for the single-PE boot path,
+    symmetric with `ffiTlbiAll`.
 
     Rust: `cache::ic_iallu` in `sele4n-hal/src/cache.rs`. -/
 @[extern "cache_ic_iallu"]

@@ -254,6 +254,14 @@ def enforcementBoundary : List EnforcementClass :=
   -- AC4-D: VSpace operations (capability-only; internally delegate to storeObject)
   , .capabilityOnly "vspaceMapPageCheckedWithShootdownFromState"
   , .capabilityOnly "vspaceUnmapPageWithShootdown"
+  -- WS-SM SM7.D: instruction/data unification of one mapped page (seL4
+  -- Page_Unify_Instruction).  Capability-only: it modifies no page table and
+  -- carries no message payload — it publishes the caller's *own* stores to the
+  -- Point of Unification and drops the corresponding instruction lines.  The
+  -- authority is the `.write` right on the page's capability (you may publish
+  -- code you were able to write); there is no information-flow policy to
+  -- consult, because no data crosses a label boundary.
+  , .capabilityOnly "vspaceUnifyInstructionPage"
   -- AC4-D: Service revocation (capability-only; operates on serviceRegistry)
   , .capabilityOnly "revokeService"
   ]
@@ -296,6 +304,7 @@ def syscallIdToEnforcementName : SyscallId → String
   | .tcbBindNotification   => "bindNotification"
   | .tcbUnbindNotification => "unbindNotification"
   | .mintReplyCap          => "mintReplyCapWithCdt"
+  | .vspaceUnifyInstruction => "vspaceUnifyInstructionPage"
 
 /-- AC4-D: Check whether every SyscallId maps to an operation name present in
     the enforcement boundary list. Returns `true` iff every syscall is covered. -/

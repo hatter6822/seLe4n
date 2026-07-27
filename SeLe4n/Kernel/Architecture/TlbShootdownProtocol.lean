@@ -1412,24 +1412,30 @@ theorem vspaceMapPage_ok_fresh
       simp only []
       split
       · intro hOk; cases hOk
-      · cases hMap : pair.2.mapPage vaddr paddr perms with
-        | none => intro hOk; cases hOk
-        | some root' =>
-            intro _
-            show (match resolveAsidRoot st asid with
-              | some (_, root) => (root.lookup vaddr).isSome
-              | none => false) = false
-            rw [hRes]
-            show (pair.2.lookup vaddr).isSome = false
-            unfold VSpaceRoot.mapPage at hMap
-            revert hMap
-            split
-            · intro hMap; cases hMap
-            · cases hLook : pair.2.mappings[vaddr]? with
-              | some _ => intro hMap; cases hMap
-              | none =>
-                  intro _
-                  simp only [VSpaceRoot.lookup, hLook, Option.isSome_none]
+      -- PR #845 review (P2): the page-alignment guard now sits between the W^X
+      -- check and the lookup, on both the transition and the constructor.
+      · split
+        · intro hOk; cases hOk
+        · cases hMap : pair.2.mapPage vaddr paddr perms with
+          | none => intro hOk; cases hOk
+          | some root' =>
+              intro _
+              show (match resolveAsidRoot st asid with
+                | some (_, root) => (root.lookup vaddr).isSome
+                | none => false) = false
+              rw [hRes]
+              show (pair.2.lookup vaddr).isSome = false
+              unfold VSpaceRoot.mapPage at hMap
+              revert hMap
+              split
+              · intro hMap; cases hMap
+              · split
+                · intro hMap; cases hMap
+                · cases hLook : pair.2.mappings[vaddr]? with
+                  | some _ => intro hMap; cases hMap
+                  | none =>
+                      intro _
+                      simp only [VSpaceRoot.lookup, hLook, Option.isSome_none]
 
 /-- **WS-SM SM7.B.9**: the checked map's `ok`-implies-fresh fact lifted
 through the flush and bounds-check layers. -/
@@ -1445,13 +1451,15 @@ theorem vspaceMapPageCheckedWithFlushFromState_ok_fresh
   · intro hOk; cases hOk
   · split
     · intro hOk; cases hOk
-    · unfold vspaceMapPageWithFlush
-      cases hBase : vspaceMapPage asid vaddr paddr perms st with
-      | error e => intro hOk; cases hOk
-      | ok pair =>
-          intro _
-          exact vspaceMapPage_ok_fresh asid vaddr paddr perms
-            (st' := pair.2) (by rw [hBase])
+    · split
+      · intro hOk; cases hOk
+      · unfold vspaceMapPageWithFlush
+        cases hBase : vspaceMapPage asid vaddr paddr perms st with
+        | error e => intro hOk; cases hOk
+        | ok pair =>
+            intro _
+            exact vspaceMapPage_ok_fresh asid vaddr paddr perms
+              (st' := pair.2) (by rw [hBase])
 
 /-- **WS-SM SM7.B.9** (today's-model corollary): the checked map
 wrapper never posts a round — every success path is a fresh map, whose

@@ -715,10 +715,12 @@ def runInformationFlowChecks : IO Unit := do
     ((SeLe4n.Kernel.enforcementBoundary.filter (fun c =>
       match c with | .readOnly _ => true | _ => false)).length > 0)
 
-  -- 37 classified ops: 36 prior + mintReplyCapWithCdt (WS-SM SM6.D / PR #822 Phase H,
+  -- 38 classified ops: 37 prior + vspaceUnifyInstructionPage (WS-SM SM7.D — the
+  -- user-facing code-publication path, capability-only), on top of
+  -- mintReplyCapWithCdt (WS-SM SM6.D / PR #822 Phase H,
   -- capability-only — derives a reply cap from an object cap to a retyped Reply).
-  expect "enforcement boundary: total 37 classified operations"
-    (SeLe4n.Kernel.enforcementBoundary.length == 37)
+  expect "enforcement boundary: total 38 classified operations"
+    (SeLe4n.Kernel.enforcementBoundary.length == 38)
 
   -- Verify enforcement boundary: denied flows produce errors
   let deniedSendResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx ⟨10⟩ ⟨1⟩ testMsg default default default publicEndpointState
@@ -1222,12 +1224,12 @@ def runInformationFlowChecks : IO Unit := do
   let roCount := boundary.filter (fun c => match c with | .readOnly _ => true | _ => false) |>.length
   expect "enforcement boundary has 11 policy-gated"
     (pgCount = 11)
-  expect "enforcement boundary has 22 capability-only"
-    (coCount = 22)
+  expect "enforcement boundary has 23 capability-only"
+    (coCount = 23)
   expect "enforcement boundary has 4 read-only"
     (roCount = 4)
-  expect "enforcement boundary total is 37"
-    (boundary.length = 37)
+  expect "enforcement boundary total is 38"
+    (boundary.length = 38)
 
   IO.println "enforcement boundary completeness verified"
 
@@ -1287,8 +1289,8 @@ def runInformationFlowChecks : IO Unit := do
   IO.println "default labeling context insecurity verified"
 
   -- V6-L: Extended boundary matches canonical
-  expect "enforcementBoundaryExtended has 37 entries"
-    (SeLe4n.Kernel.enforcementBoundaryExtended.length = 37)
+  expect "enforcementBoundaryExtended has 38 entries"
+    (SeLe4n.Kernel.enforcementBoundaryExtended.length = 38)
   expect "extended boundary matches canonical length"
     (SeLe4n.Kernel.enforcementBoundaryExtended.length = SeLe4n.Kernel.enforcementBoundary.length)
 

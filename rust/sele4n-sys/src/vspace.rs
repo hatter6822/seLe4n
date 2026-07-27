@@ -7,7 +7,7 @@ use sele4n_types::{CPtr, Asid, VAddr, PAddr, KernelResult, SyscallId};
 #[cfg(test)]
 use sele4n_types::KernelError;
 use sele4n_abi::{MessageInfo, SyscallRequest, SyscallResponse, invoke_syscall};
-use sele4n_abi::args::{VSpaceMapArgs, VSpaceUnmapArgs, PagePerms};
+use sele4n_abi::args::{VSpaceMapArgs, VSpaceUnmapArgs, VSpaceUnifyInstructionArgs, PagePerms};
 
 /// Map a physical page into a virtual address space.
 ///
@@ -52,6 +52,57 @@ pub fn vspace_unmap(
         msg_info: MessageInfo::new_const(2, 0, 0),
         msg_regs: [encoded[0], encoded[1], 0, 0],
         syscall_id: SyscallId::VSpaceUnmap,
+    })
+}
+
+/// **WS-SM SM7.D**: publish freshly written instructions — unify the data and
+/// instruction views of one mapped page.
+///
+/// Lean: `Architecture.vspaceUnifyInstructionPage` (PerCoreCacheModel.lean),
+/// live through `API.dispatchWithCap`.  seLe4n's equivalent of seL4's
+/// `seL4_ARM_Page_Unify_Instruction`.
+///
+/// **When you need this.**  After writing code through a *writable* mapping — a
+/// JIT emitting instructions, a loader or dynamic linker placing a segment —
+/// the stores sit in the data cache, while an instruction fetch reads at the
+/// Point of Unification.  Without this call the fetch may observe the *old*
+/// contents of the page, even on the very core that performed the stores.  The
+/// kernel cannot do it implicitly: it has no way to know when a writer has
+/// finished emitting, and a JIT patching an already-mapped page never re-enters
+/// a mapping operation at all.
+///
+/// **Authority.**  Requires the `.write` right on `vspace_cap`, and the
+/// capability must name the VSpace root bound to `asid` — publishing code is
+/// gated on being able to write it.  A capability for a different address space
+/// is refused with `IllegalAuthority`.
+///
+/// Deliberately **not** gated on the mapping being executable: the writer holds
+/// the *data* mapping, so requiring execute permission would make the operation
+/// useless in exactly the case it exists for.
+///
+/// Fails closed with `TranslationFault` if `vaddr` is not mapped in that address
+/// space, so it can only maintain memory the caller already has a translation
+/// for.
+///
+/// **An unbound `asid` returns `IllegalAuthority`, not `AsidNotBound`.** The
+/// capability binding runs first and treats an ASID that resolves to no VSpace
+/// root as authorized by no capability — deliberately, so the unauthorized path
+/// cannot be used as an ASID-existence oracle. Callers matching on the error
+/// should expect `IllegalAuthority` for both "wrong address space" and
+/// "no such address space".
+#[inline]
+pub fn vspace_unify_instruction(
+    vspace_cap: CPtr,
+    asid: Asid,
+    vaddr: VAddr,
+) -> KernelResult<SyscallResponse> {
+    let args = VSpaceUnifyInstructionArgs { asid, vaddr };
+    let encoded = args.encode();
+    invoke_syscall(SyscallRequest {
+        cap_addr: vspace_cap,
+        msg_info: MessageInfo::new_const(2, 0, 0),
+        msg_regs: [encoded[0], encoded[1], 0, 0],
+        syscall_id: SyscallId::VSpaceUnifyInstruction,
     })
 }
 

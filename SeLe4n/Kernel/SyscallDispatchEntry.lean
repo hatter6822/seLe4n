@@ -289,6 +289,68 @@ def completeShootdownRounds (changed : List Concurrency.CoreId)
     Platform.FFI.modifyGetKernelState (fun st =>
       ((), Architecture.shootdownCatchUpPerCore st execCore collapsed))
 
+/-- **WS-SM SM7.D.1** (the live instruction-cache maintenance seam): emit the
+instruction-cache maintenance the just-committed transition recorded.
+
+**How the work is recovered.**  Kernel transitions are pure state functions, so
+every hardware effect is emitted here, after the commit.  The TLB round is
+recoverable from the `(pre, post)` diff because it *posts descriptors* into
+`tlbShootdown`; the instruction-cache maintenance has no such queue, so the
+model records the operand it applied in `SystemState.pendingIcacheMaintenance`
+(`Architecture.recordIcacheMaintenance`) and this seam emits exactly that.  The
+ledger is cleared in the same atomic step that reads it, so no operand can be
+emitted twice and none can be stranded into the next syscall.
+
+**Why not key on the shootdown diff.**  That was the SM7.D landing's
+approximation, and it was doubly imprecise: it fired the *strongest* operand
+(`IC IALLUIS`) for every unmap — including the common non-executable one, which
+owes nothing at all — and it missed a retype that posted no round.  Recovering
+the precise operand from the round's encoded `.vae1` instead would need an
+`ASID`/`VAddr` round-trip whose failure mode is **under**-invalidation, the one
+direction that is unsafe.  The ledger avoids both: the runtime emits the
+model's operand, no reconstruction and no over-approximation.
+
+**Why a list.**  The ledger holds the operands *in record order* rather than a
+single joined operand, because the operands do not form a join-semilattice:
+`iallu` (`IC IALLUIS`) invalidates instruction caches but issues no `DC CVAU`,
+so it does not discharge a `unifyPage`'s clean to the Point of Unification, and
+collapsing into it would silently drop that clean.  The seam therefore emits
+every entry.  On the live path the list holds at most one operand (one
+maintenance-bearing transition per syscall, drained here), so this is a `forM`
+over a singleton or the empty list.
+
+**Ordering.**  Called *after* `completeShootdownRounds`, so the translations a
+transition retired are gone from every core's TLB before the instruction lines
+fetched through them are dropped.  Inert when the transition owed nothing
+(`completeIcacheMaintenance_nil`), which is every syscall that touched no
+executable mapping and re-purposed no memory. -/
+def completeIcacheMaintenance
+    (owed : List Architecture.ICacheInvalidation) : BaseIO Unit :=
+  owed.forM Platform.FFI.icMaintenanceBroadcast
+
+/-- **WS-SM SM7.D.1** (structural marker): a commit that owed no
+instruction-cache maintenance emits none — no maintenance instruction, no
+barriers.  The definition-level inertness of the SM7.D runtime bracket,
+mirroring `completeShootdownRounds_nil`. -/
+theorem completeIcacheMaintenance_nil :
+    completeIcacheMaintenance [] = pure () := rfl
+
+/-- **WS-SM SM7.D.1**: when maintenance *was* owed the seam emits exactly the
+recorded operand — pinned so a refactor that widened it back to the domain-wide
+invalidate, or dropped the emission, breaks here. -/
+theorem completeIcacheMaintenance_singleton (op : Architecture.ICacheInvalidation) :
+    completeIcacheMaintenance [op] =
+      Platform.FFI.icMaintenanceBroadcast op := rfl
+
+/-- **WS-SM SM7.D**: the seam emits **every** recorded operand, in record order.
+Pinned so a refactor that collapses the ledger to one operand — the unsound
+direction, since `iallu` does not discharge a `unifyPage`'s clean-to-PoU — fails
+here rather than silently under-maintaining. -/
+theorem completeIcacheMaintenance_cons (op : Architecture.ICacheInvalidation)
+    (rest : List Architecture.ICacheInvalidation) :
+    completeIcacheMaintenance (op :: rest) =
+      (do Platform.FFI.icMaintenanceBroadcast op; completeIcacheMaintenance rest) := rfl
+
 /-- **WS-SM SM7.B** (structural marker): a commit that changed no
 pending-shootdown queue runs no round — no lock traffic, no reset, no
 SGIs, no TLBIs, no wait.  This is the non-shootdown-syscall inertness
@@ -325,15 +387,25 @@ def syscallDispatchCrossCoreEntry
     | Except.ok (encoded, st') =>
         ((encoded, PriorityInheritance.computeCrossCoreSgis st st' execCore,
           Architecture.shootdownChangedTargets st st',
-          Architecture.shootdownPostedOps st st'), st')
+          Architecture.shootdownPostedOps st st',
+          st'.pendingIcacheMaintenance),
+         Architecture.clearIcacheMaintenance st')
     | Except.error e =>
         ((Platform.FFI.encodeError e, ([] : List (CoreId × SgiKind)),
           ([] : List CoreId),
-          ([] : List Architecture.TlbInvalidation)), st))
+          ([] : List Architecture.TlbInvalidation),
+          ([] : List Architecture.ICacheInvalidation)), st))
   Concurrency.fireCrossCoreSgis result.2.1
   -- WS-SM SM7.B: run the shootdown round(s) this commit posted (inert
   -- when the syscall touched no pending-shootdown queue).
-  completeShootdownRounds result.2.2.1 result.2.2.2 execCore
+  completeShootdownRounds result.2.2.1 result.2.2.2.1 execCore
+  -- WS-SM SM7.D.1: emit the instruction-cache maintenance this commit
+  -- recorded.  Ordered *after* the shootdown round so the translations are
+  -- already retired everywhere when the instruction lines fetched through them
+  -- are dropped.  The operand is the model's own — the ledger was read and
+  -- cleared in the atomic step above, so it is emitted exactly once and never
+  -- stranded into the next syscall.  Inert when nothing was owed.
+  completeIcacheMaintenance result.2.2.2.2
   pure result.1
 
 /-- **WS-SM SM6.A** structural marker: `syscallDispatchCrossCoreEntry` unfolds to
@@ -356,13 +428,17 @@ theorem syscallDispatchCrossCoreEntry_def
           | Except.ok (encoded, st') =>
               ((encoded, PriorityInheritance.computeCrossCoreSgis st st' execCore,
                 Architecture.shootdownChangedTargets st st',
-                Architecture.shootdownPostedOps st st'), st')
+                Architecture.shootdownPostedOps st st',
+                st'.pendingIcacheMaintenance),
+               Architecture.clearIcacheMaintenance st')
           | Except.error e =>
               ((Platform.FFI.encodeError e, ([] : List (CoreId × SgiKind)),
                 ([] : List CoreId),
-                ([] : List Architecture.TlbInvalidation)), st))
+                ([] : List Architecture.TlbInvalidation),
+                ([] : List Architecture.ICacheInvalidation)), st))
         Concurrency.fireCrossCoreSgis result.2.1
-        completeShootdownRounds result.2.2.1 result.2.2.2 execCore
+        completeShootdownRounds result.2.2.1 result.2.2.2.1 execCore
+        completeIcacheMaintenance result.2.2.2.2
         pure result.1) := rfl
 
 /-- **WS-SM SM6.A** trace-safety witness: on the boot core, when every thread's

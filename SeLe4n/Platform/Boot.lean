@@ -329,6 +329,19 @@ theorem applyMachineConfig_tlbShootdown_eq (ist : IntermediateState) (config : M
 theorem applyMachineConfig_perCoreTlb_eq (ist : IntermediateState) (config : MachineConfig) :
     (applyMachineConfig ist config).state.perCoreTlb = ist.state.perCoreTlb := rfl
 
+/-- WS-SM SM7.D: `applyMachineConfig` preserves the per-core instruction
+caches. -/
+theorem applyMachineConfig_perCoreICache_eq (ist : IntermediateState)
+    (config : MachineConfig) :
+    (applyMachineConfig ist config).state.perCoreICache = ist.state.perCoreICache := rfl
+
+/-- WS-SM SM7.D.1: `applyMachineConfig` preserves the instruction-cache
+emission ledger. -/
+theorem applyMachineConfig_pendingIcacheMaintenance_eq (ist : IntermediateState)
+    (config : MachineConfig) :
+    (applyMachineConfig ist config).state.pendingIcacheMaintenance =
+      ist.state.pendingIcacheMaintenance := rfl
+
 /-- AH2-F: `applyMachineConfig` preserves lifecycle metadata. -/
 theorem applyMachineConfig_lifecycle_eq (ist : IntermediateState) (config : MachineConfig) :
     (applyMachineConfig ist config).state.lifecycle = ist.state.lifecycle := rfl
@@ -1644,6 +1657,20 @@ private theorem foldIrqs_perCoreTlb (irqs : List IrqEntry) (ist : IntermediateSt
   | nil => rfl
   | cons _ _ ih => simp [foldIrqs, List.foldl] at ih ⊢; exact ih _
 
+private theorem foldIrqs_perCoreICache (irqs : List IrqEntry) (ist : IntermediateState) :
+    (foldIrqs irqs ist).state.perCoreICache = ist.state.perCoreICache := by
+  induction irqs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldIrqs, List.foldl] at ih ⊢; exact ih _
+
+private theorem foldIrqs_pendingIcacheMaintenance (irqs : List IrqEntry)
+    (ist : IntermediateState) :
+    (foldIrqs irqs ist).state.pendingIcacheMaintenance =
+      ist.state.pendingIcacheMaintenance := by
+  induction irqs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldIrqs, List.foldl] at ih ⊢; exact ih _
+
 private theorem foldIrqs_machine (irqs : List IrqEntry) (ist : IntermediateState) :
     (foldIrqs irqs ist).state.machine = ist.state.machine := by
   induction irqs generalizing ist with
@@ -1725,6 +1752,20 @@ private theorem foldObjects_tlbShootdown (objs : List ObjectEntry) (ist : Interm
 
 private theorem foldObjects_perCoreTlb (objs : List ObjectEntry) (ist : IntermediateState) :
     (foldObjects objs ist).state.perCoreTlb = ist.state.perCoreTlb := by
+  induction objs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
+
+private theorem foldObjects_perCoreICache (objs : List ObjectEntry) (ist : IntermediateState) :
+    (foldObjects objs ist).state.perCoreICache = ist.state.perCoreICache := by
+  induction objs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
+
+private theorem foldObjects_pendingIcacheMaintenance (objs : List ObjectEntry)
+    (ist : IntermediateState) :
+    (foldObjects objs ist).state.pendingIcacheMaintenance =
+      ist.state.pendingIcacheMaintenance := by
   induction objs generalizing ist with
   | nil => rfl
   | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
@@ -2335,6 +2376,30 @@ theorem bootFromPlatform_perCoreTlb_eq (config : PlatformConfig) :
     (default : SystemState).perCoreTlb := by
   show _ = _; unfold bootFromPlatform
   rw [applyMachineConfig_perCoreTlb_eq, foldObjects_perCoreTlb, foldIrqs_perCoreTlb,
+      mkEmpty_state_eq_default]
+
+/-- WS-SM SM7.D: after boot, every core's instruction cache is the cold default
+— boot loads objects and page tables but executes no user instructions through
+them, so no line is filled.  The instruction-side twin of
+`bootFromPlatform_perCoreTlb_eq`. -/
+theorem bootFromPlatform_perCoreICache_eq (config : PlatformConfig) :
+    (bootFromPlatform config).state.perCoreICache =
+    (default : SystemState).perCoreICache := by
+  show _ = _; unfold bootFromPlatform
+  rw [applyMachineConfig_perCoreICache_eq, foldObjects_perCoreICache,
+      foldIrqs_perCoreICache, mkEmpty_state_eq_default]
+
+/-- WS-SM SM7.D.1: boot owes no instruction-cache maintenance — it fills no
+cache and destroys no mapping, so the emission ledger is the empty default.
+(When the boot image itself becomes real memory, the *data*-side clean to the
+Point of Unification lands with SM9.E — see the SM7.D obligation registered in
+`Architecture/CacheModel.lean`.) -/
+theorem bootFromPlatform_pendingIcacheMaintenance_eq (config : PlatformConfig) :
+    (bootFromPlatform config).state.pendingIcacheMaintenance =
+    (default : SystemState).pendingIcacheMaintenance := by
+  show _ = _; unfold bootFromPlatform
+  rw [applyMachineConfig_pendingIcacheMaintenance_eq,
+      foldObjects_pendingIcacheMaintenance, foldIrqs_pendingIcacheMaintenance,
       mkEmpty_state_eq_default]
 
 /-- AH2-F: After boot, machine config-set fields come from `config.machineConfig`.
@@ -3349,10 +3414,21 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
       unfold SeLe4n.Kernel.Architecture.tlbOnCore
       rw [bootFromPlatform_perCoreTlb_eq]; exact SeLe4n.Model.default_perCoreTlb c
     rw [hview] at he; simp [SeLe4n.Model.TlbState.empty] at he
-  -- Compose all 13 components
+  -- 14. icacheCoherent_perCore (WS-SM SM7.D): boot fills no instruction cache
+  -- (it loads objects and page tables, it does not execute through them), so
+  -- every core's view is the cold default — vacuously coherent.
+  have hPerCoreICacheBundle : SeLe4n.Kernel.Architecture.icacheCoherent_perCore
+      (bootFromPlatform config).state := by
+    intro c l hl
+    have hview : SeLe4n.Kernel.Architecture.icacheOnCore (bootFromPlatform config).state c
+        = SeLe4n.Model.ICacheState.empty := by
+      unfold SeLe4n.Kernel.Architecture.icacheOnCore
+      rw [bootFromPlatform_perCoreICache_eq]; exact SeLe4n.Model.default_perCoreICache c
+    rw [hview] at hl; simp [SeLe4n.Model.ICacheState.empty] at hl
+  -- Compose all 14 components
   exact ⟨h1, hCapBundle, ⟨h1.1, hCapBundle, hIpcFull⟩, hCouplingBundle,
          hLifeBundle, hServiceBundle, hVspaceBundle, hCrossBundle, hTlbBundle, hExtBundle,
-         hNtfnWaiter, hPBBundle, hPerCoreTlbBundle⟩
+         hNtfnWaiter, hPBBundle, hPerCoreTlbBundle, hPerCoreICacheBundle⟩
 
 -- ============================================================================
 -- V4-A9: End-to-end bridge for general configs

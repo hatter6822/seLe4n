@@ -1873,32 +1873,34 @@ theorem vspaceMapPageCheckedWithFlushFromState_tlbEntryConsistent_frame
   · cases hStep
   · split at hStep
     · cases hStep
-    · -- hStep : vspaceMapPageWithFlush asid vaddr paddr perms st = .ok ((), stF)
-      unfold vspaceMapPageWithFlush at hStep
-      revert hStep
-      cases hBase : vspaceMapPage asid vaddr paddr perms st with
-      | error e' => intro hStep; cases hStep
-      | ok pair =>
-          simp only [Except.ok.injEq, Prod.mk.injEq]
-          intro hStep
-          have hObj : stF.objects = pair.2.objects := by rw [← hStep.2]
-          have hAsid : stF.asidTable = pair.2.asidTable := by rw [← hStep.2]
-          obtain ⟨rid, r, hres_st, hlk_st⟩ := hCon
-          have hImplPre : ∀ rootId root, resolveAsidRoot st e.asid = some (rootId, root) →
-              VSpaceRoot.lookup root e.vaddr = some (e.paddr, e.perms) := by
-            intro rootId root hR
-            rw [hres_st, Option.some.injEq, Prod.mk.injEq] at hR
-            obtain ⟨rfl, rfl⟩ := hR; exact hlk_st
-          have hImplMid : ∀ rootId root, resolveAsidRoot pair.2 e.asid = some (rootId, root) →
-              VSpaceRoot.lookup root e.vaddr = some (e.paddr, e.perms) :=
-            vspaceMapPage_entry_consistent_frame st pair.2 asid vaddr paddr perms hBase
-              hObjK hAsidK hMappingsWF e hNotMatch hImplPre
-          have hIsSomeMid : (resolveAsidRoot pair.2 e.asid).isSome :=
-            vspaceMapPage_resolveAsidRoot_isSome asid vaddr paddr perms hBase hObjK hAsidK
-              (Option.isSome_iff_exists.mpr ⟨(rid, r), hres_st⟩)
-          obtain ⟨⟨rid', r'⟩, hres_mid⟩ := Option.isSome_iff_exists.mp hIsSomeMid
-          exact tlbEntryConsistent_of_frame hObj hAsid
-            ⟨rid', r', hres_mid, hImplMid rid' r' hres_mid⟩
+    · split at hStep
+      · cases hStep
+      · -- hStep : vspaceMapPageWithFlush asid vaddr paddr perms st = .ok ((), stF)
+        unfold vspaceMapPageWithFlush at hStep
+        revert hStep
+        cases hBase : vspaceMapPage asid vaddr paddr perms st with
+        | error e' => intro hStep; cases hStep
+        | ok pair =>
+            simp only [Except.ok.injEq, Prod.mk.injEq]
+            intro hStep
+            have hObj : stF.objects = pair.2.objects := by rw [← hStep.2]
+            have hAsid : stF.asidTable = pair.2.asidTable := by rw [← hStep.2]
+            obtain ⟨rid, r, hres_st, hlk_st⟩ := hCon
+            have hImplPre : ∀ rootId root, resolveAsidRoot st e.asid = some (rootId, root) →
+                VSpaceRoot.lookup root e.vaddr = some (e.paddr, e.perms) := by
+              intro rootId root hR
+              rw [hres_st, Option.some.injEq, Prod.mk.injEq] at hR
+              obtain ⟨rfl, rfl⟩ := hR; exact hlk_st
+            have hImplMid : ∀ rootId root, resolveAsidRoot pair.2 e.asid = some (rootId, root) →
+                VSpaceRoot.lookup root e.vaddr = some (e.paddr, e.perms) :=
+              vspaceMapPage_entry_consistent_frame st pair.2 asid vaddr paddr perms hBase
+                hObjK hAsidK hMappingsWF e hNotMatch hImplPre
+            have hIsSomeMid : (resolveAsidRoot pair.2 e.asid).isSome :=
+              vspaceMapPage_resolveAsidRoot_isSome asid vaddr paddr perms hBase hObjK hAsidK
+                (Option.isSome_iff_exists.mpr ⟨(rid, r), hres_st⟩)
+            obtain ⟨⟨rid', r'⟩, hres_mid⟩ := Option.isSome_iff_exists.mp hIsSomeMid
+            exact tlbEntryConsistent_of_frame hObj hAsid
+              ⟨rid', r', hres_mid, hImplMid rid' r' hres_mid⟩
 
 /-- **WS-SM SM7.F.4(a)+(b)(ii)** (the initiator-atomic map seam + live fill): the
 shootdown-aware page map that (1) retires any prior `(asid, vaddr)` translation

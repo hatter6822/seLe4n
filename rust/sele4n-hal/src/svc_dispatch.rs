@@ -68,7 +68,7 @@ use crate::trap::TrapFrame;
 /// the way to user-mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DispatchError {
-    /// Caller passed a syscall id outside the valid 0..=25 range.
+    /// Caller passed a syscall id outside the valid `0..SyscallId::COUNT` range.
     /// `to_u32` returns 7 (legacy AN9-F discriminant; collides with
     /// `KernelError::EndpointStateMismatch` on the wire).
     InvalidSyscallId,
@@ -146,14 +146,16 @@ pub enum SyscallId {
     // WS-SM SM6.D / PR #822 Phase H: derive a `.replyCap` from an `.object` cap to a
     // retyped Reply object.
     MintReplyCap = 28,
+    /// WS-SM SM7.D: instruction/data unification of one mapped page.
+    VSpaceUnifyInstruction = 29,
 }
 
 impl SyscallId {
     /// Total number of modelled syscalls (must match `sele4n-types`).
-    pub const COUNT: u32 = 29;
+    pub const COUNT: u32 = 30;
 
     /// AN9-F.1.b: decode a raw `u32` syscall id, rejecting values
-    /// outside the valid 0..=28 range with `None`.
+    /// outside the valid 0..=29 range with `None`.
     pub const fn from_u32(v: u32) -> Option<Self> {
         match v {
             0 => Some(Self::Send),
@@ -185,6 +187,7 @@ impl SyscallId {
             26 => Some(Self::TcbBindNotification),
             27 => Some(Self::TcbUnbindNotification),
             28 => Some(Self::MintReplyCap),
+            29 => Some(Self::VSpaceUnifyInstruction),
             _ => None,
         }
     }
@@ -243,6 +246,9 @@ impl SyscallId {
             // PR #822 Phase H: mintReplyCap reuses the cspaceCopy decode (srcSlot in
             // x2, dstSlot in x3) — two inline registers.
             Self::MintReplyCap => 2,
+            // WS-SM SM7.D: unify takes the same two registers as unmap
+            // (asid in x2, vaddr in x3) — it names an address space and a page.
+            Self::VSpaceUnifyInstruction => 2,
         }
     }
 }

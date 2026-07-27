@@ -310,6 +310,14 @@ def mapPage (ist : IntermediateState)
     (hLookup : ist.state.objects[vsId]? = some (KernelObject.vspaceRoot vs))
     (_hEmpty : vs.mappings[vaddr]? = none)
     (_hWxSafe : perms.wxCompliant = true)  -- AF2-C1: W^X proof obligation
+    -- PR #845 review (P2): page-alignment proof obligation.  This builder
+    -- inserts into `vs.mappings` directly rather than through
+    -- `VSpaceRoot.mapPage`, so it would otherwise bypass that constructor's
+    -- structural guard and admit an unaligned physical address into a
+    -- boot-assembled state — where it would reach the SM7.D cache-maintenance
+    -- operands, which the HAL rounds down to the containing page.  Discharged
+    -- statically at the call site, exactly as `_hWxSafe` is.
+    (_hAligned : paddr.toNat % SeLe4n.pageBytes = 0)
     : IntermediateState :=
   let vs' : VSpaceRoot := { vs with mappings := vs.mappings.insert vaddr (paddr, perms) }
   createObject ist vsId (KernelObject.vspaceRoot vs')

@@ -401,4 +401,25 @@ run_check_with_timeout "TRACE" lake exe smp_notification_suite
 # and the SystemState.tlbShootdown mount checks.
 run_check_with_timeout "TRACE" lake exe smp_tlb_shootdown_suite
 
+# WS-SM SM7.D: cache maintenance broadcast suite — the instruction-cache
+# broadcast (`IC IALLUIS` / `IC IVAU`) vs the PE-local `IC IALLU` reach
+# hazard, the operand encoding + effect algebra, the per-core accessors and
+# cold boot cache, the data-cache-at-PoC system-wide reach (no target set),
+# the DMA scope tripwire, `icacheCoherent_perCore` (the 14th
+# `proofLayerInvariantBundle` conjunct) computed on a real page-table-backed
+# state — including the non-vacuity witness that a cached line whose mapping
+# was removed FAILS the checker — and the live `.vspaceUnmap` /
+# `.lifecycleRetype` seams (targeted IVAU on an executable unmap, provable
+# inertness on a non-executable one, domain-wide IALLUIS on retype).
+run_check_with_timeout "TRACE" lake exe smp_cache_maintenance_suite
+
+# PR #845 review (P1) — VSpace capability binding.  Regression coverage for the
+# confused-deputy defect: `syscallLookupCap` checked only that the caller held
+# *a* capability carrying the required right, never that the capability named
+# the address space being operated on, so a thread holding a writable capability
+# to any object (its own TCB) could unmap pages in an arbitrary address space.
+# Every scenario drives the live `dispatchSyscall` path, since the defect lived
+# in dispatch and only dispatch can witness it.
+run_check_with_timeout "TRACE" lake exe vspace_capability_binding_suite
+
 finalize_report

@@ -132,6 +132,13 @@ structure VSpaceUnmapArgs where
   vaddr : VAddr
   deriving Repr, DecidableEq
 
+/-- **WS-SM SM7.D**: arguments of `.vspaceUnifyInstruction` — an address space
+and a virtual page, exactly the operand shape `.vspaceUnmap` takes.  Aliased
+rather than duplicated so the two share one decoder and one set of decode
+theorems; the distinct name keeps the *semantics* legible at the dispatch
+site. -/
+abbrev VSpaceUnifyInstructionArgs := VSpaceUnmapArgs
+
 -- ============================================================================
 -- CSpace decode functions
 -- ============================================================================
@@ -297,6 +304,23 @@ def decodeVSpaceUnmapArgs (decoded : SyscallDecodeResult) (maxASID : Nat)
   else
   pure { asid  := asid
          vaddr := vaddr }
+
+/-- **WS-SM SM7.D**: decode `.vspaceUnifyInstruction` arguments.
+
+Shares `decodeVSpaceUnmapArgs`'s parse and validation — the operand shape is
+identical (an ASID validated against the platform's `maxASID`, plus a canonical
+virtual address) — so it inherits every decode theorem rather than duplicating
+them.  The alias exists so the dispatch arm and its delegation theorem name the
+operation they are actually performing. -/
+@[inline] def decodeVSpaceUnifyInstructionArgs (decoded : SyscallDecodeResult)
+    (maxASID : Nat) : Except KernelError VSpaceUnifyInstructionArgs :=
+  decodeVSpaceUnmapArgs decoded maxASID
+
+/-- **WS-SM SM7.D**: the unify decoder is definitionally the unmap decoder. -/
+theorem decodeVSpaceUnifyInstructionArgs_eq (decoded : SyscallDecodeResult)
+    (maxASID : Nat) :
+    decodeVSpaceUnifyInstructionArgs decoded maxASID =
+      decodeVSpaceUnmapArgs decoded maxASID := rfl
 
 -- ============================================================================
 -- V4-F/M-HW-5: MemoryKind cross-check for VSpace permissions

@@ -582,6 +582,22 @@ def lockSet_vspaceUnmap (callerTid : ThreadId)
      (cnodeLock cnodeRootObjId, .read),
      (vspaceRootLock vspaceRootObjId, .write)]
 
+/-- WS-SM SM7.D: `lockSet` for `vspaceUnifyInstruction`.
+
+The VSpaceRoot lock is taken in **read** mode, not write: the unify is a pure
+cache operation (`vspaceUnifyInstructionPage_frame` — it modifies no page
+table).  It reads the root to resolve the page's physical address, and its only
+state effect is on `perCoreICache` and the emission ledger, neither of which is
+a per-object lock subject.  This is the one VSpace syscall whose footprint is
+read-only on the address space, which is also why it can safely run
+concurrently with another subject's unify of a different page. -/
+def lockSet_vspaceUnifyInstruction (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) (vspaceRootObjId : ObjId) : LockSet :=
+  lockSetOfList
+    [(tcbLock callerTid, .read),
+     (cnodeLock cnodeRootObjId, .read),
+     (vspaceRootLock vspaceRootObjId, .read)]
+
 /-! ## Service syscalls (3 transitions)
 
 Services are tracked at the SystemState level (not as per-object
@@ -1074,7 +1090,9 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   | .lifecycleRetype =>
       [.tcb, .cnode, .untyped]
   -- VSpace syscalls
-  | .vspaceMap | .vspaceUnmap =>
+  -- `.vspaceUnifyInstruction` (SM7.D) shares the footprint but takes the
+  -- VSpaceRoot in read mode: it modifies no page table, only cache state.
+  | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction =>
       [.tcb, .cnode, .vspaceRoot]
   -- Service syscalls.  `.serviceRegister` reads `st.objects[epId]?`
   -- (audit-pass-6 extension); the other two only touch `serviceRegistry`.
@@ -1653,6 +1671,21 @@ theorem lockSet_consistent_vspaceMap (callerTid : ThreadId)
     (cnRoot vId : ObjId) :
     ∀ p ∈ (lockSet_vspaceMap callerTid cnRoot vId).pairs,
       p.fst.kind ∈ permittedKinds .vspaceMap :=
+  lockSet_consistent_of_extended_base _ _
+    (by intro p hMem
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        exact absurd hMem (by intro h; cases h))
+
+/-- WS-SM SM7.D for `.vspaceUnifyInstruction`. -/
+theorem lockSet_consistent_vspaceUnifyInstruction (callerTid : ThreadId)
+    (cnRoot vId : ObjId) :
+    ∀ p ∈ (lockSet_vspaceUnifyInstruction callerTid cnRoot vId).pairs,
+      p.fst.kind ∈ permittedKinds .vspaceUnifyInstruction :=
   lockSet_consistent_of_extended_base _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem

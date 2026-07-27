@@ -1090,13 +1090,81 @@ pub extern "C" fn cache_clean_pagetable_range(addr: u64, len: u64) {
 
 /// AN9-A.1: Invalidate all I-cache to PoU.
 ///
-/// Wraps `cache::ic_iallu`.  Required after self-modifying code or
-/// page-table updates that affect executable mappings.
+/// Wraps `cache::ic_iallu`.
+///
+/// **Local (non-broadcast) variant** — it invalidates only the executing PE's
+/// instruction cache.  WS-SM SM7.D.1: production kernel code under SMP must
+/// use [`cache_ic_maintenance`] (which routes to the Inner Shareable broadcast
+/// variants `IC IALLUIS` / `IC IVAU`); leaving a remote core's instruction
+/// cache un-invalidated after retiring an executable mapping is the
+/// instruction-side twin of the SMP-C4 stale-TLB hazard.  This export is kept
+/// for the single-PE boot path, symmetric with [`ffi_tlbi_all`].
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiIcIallu`
 #[no_mangle]
 pub extern "C" fn cache_ic_iallu() {
     crate::cache::ic_iallu();
+}
+
+/// **WS-SM SM7.D.1**: Invalidate all instruction caches across the Inner
+/// Shareable domain (IC IALLUIS + DSB ISH + ISB).
+///
+/// The broadcast counterpart of [`cache_ic_iallu`].  Every PE of the
+/// shareability domain drops its instruction-cache lines, which is what the
+/// kernel needs after re-purposing memory (object re-type) — the physical
+/// mappings that alias the affected frame are not enumerable from the abstract
+/// state, so the sound
+/// choice is the full invalidate.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiIcIalluIs`
+#[no_mangle]
+pub extern "C" fn cache_ic_ialluis() {
+    crate::cache::ic_invalidate_all_inner_shareable();
+}
+
+// ===========================================================================
+// WS-SM SM7.D.1: typed instruction-cache maintenance dispatcher
+//
+// Discriminant encoding — MUST stay in lockstep with the Lean
+// `Architecture.ICacheInvalidation.toOpTag` / `.toPaddr` / `.toSize`
+// (`SeLe4n/Kernel/Architecture/CacheInvalidation.lean`):
+//
+//   op_tag : 0 = Iallu           (invalidate all, IS-broadcast)
+//            1 = IvauPage        (invalidate one page by VA to PoU, broadcast)
+//            2 = UnifyPage       (clean one page to PoU, then invalidate it)
+//            3 = CleanRangeIallu (clean [addr, addr+size) to PoU, then
+//                                 invalidate all — the re-type's operand)
+//   addr   : virtual address operand, or the range base for tag 3
+//            (RES0 for Iallu)
+//   size   : range length in bytes (tag 3 only; RES0 otherwise)
+//
+// **Fail-closed contract**: an unknown tag PANICs rather than silently
+// skipping the maintenance, for the same reason `ffi_tlbi_for_sharing`
+// does — a caller that believes a cache was invalidated when it was not
+// has a silent correctness violation it cannot detect.  A well-formed
+// Lean caller cannot reach the panic arm: `ICacheInvalidation.toOpTag_in_range`
+// proves every emitted tag is in [0, 4).
+// ===========================================================================
+
+/// **WS-SM SM7.D.1**: typed instruction-cache maintenance dispatcher FFI
+/// export.
+///
+/// Routes the Lean-side broadcast operand to `IC IALLUIS` or `IC IVAU`,
+/// optionally preceded by a `DC CVAU` clean of the page or range, each sequence
+/// followed by the completing `DSB ISH` + `ISB`.
+///
+/// # Panics
+///
+/// Panics on an `op_tag` outside `[0, 4)` — fail-closed (see the module
+/// comment above).
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiIcMaintenance`
+#[no_mangle]
+pub extern "C" fn cache_ic_maintenance(op_tag: u32, addr: u64, size: u64) {
+    match crate::cache::decode_icache_invalidation(op_tag, addr, size) {
+        Some(op) => crate::cache::apply_icache_invalidation(op),
+        None => panic!("cache_ic_maintenance: invalid op_tag {op_tag}"),
+    }
 }
 
 // AN9-D inner (WS-SM SM6.E: per-core form) — Lean-emitted

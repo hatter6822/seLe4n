@@ -747,7 +747,7 @@ TLB/cache maintenance model (`TlbModel.lean`, WS-H11/H-10):
 - `adapterFlushTlbByAsid` — per-ASID invalidation (ARM64 `TLBI ASIDE1`)
 - `adapterFlushTlbByVAddr` — per-(ASID,VAddr) invalidation (ARM64 `TLBI VAE1`)
 - `tlbConsistent` — invariant: all TLB entries match current page tables
-- R7-A: `TlbState` integrated into `SystemState`; `tlbConsistent st st.tlb` added to `proofLayerInvariantBundle` (the 9th conjunct; SM7.C generalises it per-core as the 13th conjunct `tlbInvalidationConsistent_perCore`, below)
+- R7-A: `TlbState` integrated into `SystemState`; `tlbConsistent st st.tlb` added to `proofLayerInvariantBundle` (the 9th conjunct; SM7.C generalises it per-core as the 13th conjunct `tlbInvalidationConsistent_perCore`, and SM7.D adds the instruction-cache companion `icacheCoherent_perCore` as the 14th, both below)
 - `vspaceMapPageWithFlush`, `vspaceUnmapPageWithFlush` — composed page-table + targeted per-(ASID,VAddr) TLB-flush operations (AJ4-B)
 - 13 TLB theorems: `tlbConsistent_empty`, `adapterFlushTlb_restores_tlbConsistent`, `adapterFlushTlbByAsid_preserves_tlbConsistent`, `vspaceMapPage_then_flush_preserves_tlbConsistent`, `vspaceUnmapPage_then_flush_preserves_tlbConsistent`, `adapterFlushTlbByAsid_removes_matching`, `adapterFlushTlbByAsid_preserves_other`, `adapterFlushTlbByVAddr_preserves_tlbConsistent`, `adapterFlushTlbByVAddr_removes_matching`, `cross_asid_tlb_isolation`, `vspaceMapPageWithFlush_preserves_tlbConsistent`, `vspaceUnmapPageWithFlush_preserves_tlbConsistent`, `tlbConsistent_of_objects_eq`
 
@@ -777,6 +777,149 @@ generalisation of the scalar boot-core `tlb`, added alongside it):
   capstone (protocol × TLB-model × page-tables): a covering invalidation
   both removes every stale entry on every core AND preserves per-core
   consistency
+
+VSpace syscall **capability binding** (`API.lean`, v0.32.97 — the PR #845
+review closure).  `syscallLookupCap` proves only that the caller holds *a*
+capability carrying the syscall's required right; it does not tie that
+capability to the operand.  For the VSpace syscalls the operand is an ASID the
+caller supplies in a message register, so the binding is what keeps authority
+flowing from the capability rather than from a name the caller chose:
+- `vspaceCapAuthorizesAsid` — the capability must name the VSpace root that
+  `resolveAsidRoot` yields for the operand ASID.  Stated against the *resolved*
+  root, not the capability object's own `asid` field: the two diverge when
+  distinct roots carry the same ASID (the SM7.F.4 rebind hazard), and only the
+  former is sound.  Fails closed on an unbound ASID, which also denies an
+  ASID-existence oracle to an unauthorized caller
+- `vspaceCapAuthorizesAsid_iff` — the characterisation; `_false_of_ne`,
+  `_false_of_unbound`, `_false_of_not_object` — the fail-closed statements
+- `dispatchWithCap_vspace{Map,Unmap,UnifyInstruction}_delegates` — each now
+  carries an authorization premise; **without it the delegation is false**
+- `dispatchWithCap_vspace{Map,Unmap,UnifyInstruction}_unauthorized` — the
+  fail-closed duals, stating the rejection itself.  These exist because a
+  regression that dropped the gate would still satisfy the delegations (which
+  carry authorization as a hypothesis) while breaking these
+- The `checkedDispatch_*_eq_unchecked` equivalences are unchanged: both
+  dispatchers delegate to the same `dispatchCapabilityOnly`, so the arms change
+  identically on both sides
+
+Per-core **instruction-cache** model (`PerCoreCacheModel.lean`, WS-SM SM7.D —
+production, over the new `SystemState.perCoreICache : Vector ICacheState
+numCores`).  The cache-side companion of SM7.C, and the two hierarchies are
+asymmetric in the way that decides the design: the **data** caches of the PEs in
+a shareability domain are hardware-coherent and `DC` by VA to the Point of
+Coherency is architecturally visible to every agent (ARM ARM B2.7 / D7.4), while
+the **instruction** caches are coherent with nothing — `IC IALLU` reaches only
+the executing PE, so the kernel must issue the broadcast variant:
+- `icacheOnCore` / `setIcacheOnCore` — SM4.B path-a per-core view accessors +
+  `@[simp]` store/load algebra + per-field frame lemmas +
+  `default_{perCoreICache,icacheOnCore}`
+- `ICacheInvalidation` (`iallu` / `ivauPage paddr` / `unifyPage paddr`,
+  `CacheInvalidation.lean`) +
+  `applyICacheInvalidation` (SM7.D.1) — the typed operand and its effect algebra
+  (removal, selectivity, monotonicity, idempotence, `iallu`-empties, survivor
+  lemmas), with the FFI tag encoding pinned to the Rust
+  `cache::decode_icache_invalidation`.  The operand is **page**-granular while
+  `IC IVAU` is line-granular, so the HAL expands one operand into
+  `icacheLinesPerPage` (= 64) instructions —
+  `icacheLinesPerPage_covers_page` pins the arithmetic
+- `SystemState.pendingIcacheMaintenance` + `recordIcacheMaintenance` /
+  `clearIcacheMaintenance` (SM7.D.1) — the **emission ledger**: kernel
+  transitions are pure, so the operand the model applied is carried to the
+  runtime seam, which reads and clears it in the same atomic step that commits
+  the transition.  `recordIcacheMaintenance_of_nil` is the exactness property
+  that makes the runtime emit the model's precise operand
+- `ICacheInvalidation.covers` + `recordIcacheMaintenanceList` (SM7.D, v0.32.96)
+  — the ledger's algebra is a **coverage preorder over a list**, not a join
+  over a single operand.  `iallu` is *not* a top element:
+  `ICacheInvalidation.iallu_not_covers_unifyPage` states why — `IC IALLUIS`
+  invalidates instruction caches but issues no `DC CVAU`, so it does not
+  discharge a `unifyPage`'s clean to the Point of Unification, and collapsing
+  into it would leave a freshly written instruction fetchable in its old form.
+  Nor does any single operand cover two distinct `unifyPage`s.  The ledger
+  therefore appends and only ever drops an entry a held one provably covers
+  (`recordIcacheMaintenanceList_covered`, `_mem_of_mem`), with `covers` itself
+  grounded in the model's effect by `icacheLineMatches_of_covers` /
+  `applyICacheInvalidation_subset_of_covers` rather than asserted as a table.
+  Each record appends at most one entry (`_length_le`) and a syscall runs one
+  maintenance-bearing transition, so the live ledger is a singleton — no
+  capacity invariant, no bundle conjunct
+- `ICacheInvalidation.cleanRangeIallu` + `byteRangeContains` (SM7.D, v0.32.100)
+  — the **re-type's** operand: clean `[base, base+size)` to the Point of
+  Unification, then invalidate every instruction cache in the domain.  A re-type
+  scrubs the target's backing memory, and those zeroing stores sit in the data
+  cache; because fetches read at the PoU, an `IC IALLUIS` alone drops the cached
+  instruction lines and thereby *guarantees* the next fetch re-reads the previous
+  owner's content.  The clean and the invalidate are one operand so the ordering
+  is the HAL routine's internal `DSB ISH` rather than a property of the ledger's
+  accumulation order.  Coverage over the range arms is interval containment
+  (`byteRangeContains_trans` carries `covers_trans`); the two exclusions are
+  theorems, `iallu_not_covers_cleanRangeIallu` (no `DC CVAU`) and
+  `unifyPage_not_covers_cleanRangeIallu` (one page, not the domain).
+  `ICacheInvalidation.isDomainWide` factors out "ends in `IC IALLUIS`" so
+  `applyICacheInvalidation_domainWide` carries the re-type seams' 14th-conjunct
+  proofs for both operands
+- `kernelCodeWriteSites_owe_pou_clean` + `kernelCodeWriteSites_complete`
+  (SM7.D.2) — the data-side dual, as a checked obligation: every kernel site
+  that writes memory a subject may execute owes a clean to the Point of
+  Unification, an instruction-side invalidate, and the barriers ordering them
+- `kernelCodeWriteEmitted` + `kernelCodeWriteSites_emission_pending`
+  (SM7.D.2, v0.32.100) — which sites *emit* that obligation today, as a
+  partition rather than a blanket deferral.  `.retypeScrub` is emitted
+  (`retypeIcacheOp_discharges_scrub_obligation` links the live operand to the
+  obligation over the extent `scrubObjectMemory` zeroes, via
+  `dischargesPoUClean`, which is expressed through `covers` so the question is
+  answered by the ledger's own preorder); `.bootImageLoad` is not, and the
+  theorem pins it as the only remaining site — flipping it breaks the `decide`,
+  so the SM9.E closure cannot land silently
+- `icFetchOnCore` (SM7.D.1) — the hardware instruction fetch filling one core's
+  view; an *environment* step, not a kernel transition
+- `icInvalidateOnCore` (SM7.D.1) — `IC IALLU`, whose
+  `icInvalidateOnCore_icacheOnCore_ne` **states the SMP hazard**: every other
+  core keeps its lines (non-vacuity: `icInvalidateOnCore_remote_line_survives`)
+- `icInvalidateBroadcast` (SM7.D.1) — `IC IALLUIS` / `IC IVAU`, the
+  domain-wide maintenance, with the headline
+  `icInvalidateBroadcast_reaches_all_cores` (the instruction-side analogue of
+  Theorem 3.3.1) over the platform reach `icBroadcastReach` (`_cover` /
+  `_nodup`)
+- `dcMaintenanceAllCores` (SM7.D.2) — data-cache maintenance by VA at the PoC,
+  deliberately with **no target set**: the absence of a reach parameter is the
+  formal content of "already system-wide".
+  `dcMaintenanceByVA_reaches_all_cores`,
+  `dcMaintenanceAllCores_preserves_dcacheCoherentAcrossCores`, and the
+  asymmetry theorem `icInvalidateOnCore_vs_dcMaintenance_reach`
+- `modeledCoherentAgents_no_dma_master` (SM7.D.3) — the DMA scope boundary as a
+  **tripwire**: the model contains no non-coherent bus master, and adding one
+  breaks this theorem
+- `icacheCoherent_perCore` (SM7.D.4) — on every core, every cached line still
+  has a live **executable** mapping; **the 14th `proofLayerInvariantBundle`
+  conjunct**, boot witness `default_icacheCoherent_perCore`, decidable checker
+  `icacheCoherentCheck_perCore` (+ `_iff`).  No pending-allowance disjunct is
+  needed (unlike the 13th): instruction-cache maintenance is a synchronous
+  broadcast instruction, not a queued request/acknowledge round
+- `cacheCoherency_cross_subsystem` (SM7.D.4) — the cache-side capstone
+  (broadcast × cache-model × page-tables), mirroring SM7.C.7, plus the joint
+  `icInvalidateBroadcast_preserves_perCore_memory_invariants`
+- `vspaceUnifyInstructionPage` (SM7.D, v0.32.96) — the **code-publication**
+  transition behind the `.vspaceUnifyInstruction` syscall (`SyscallId` 29),
+  seLe4n's equivalent of seL4's `seL4_ARM_Page_Unify_Instruction`.  It is
+  the dual of the destroy-side seams: those close the hazard when an
+  executable mapping goes away, this one lets a subject that *writes*
+  instructions make them fetchable.  A **pure cache** operation —
+  `vspaceUnifyInstructionPage_frame` proves the object store, page tables,
+  TLB and shootdown state are all unchanged — fail-closed on both authority
+  legs (`_asid_unbound`, `_unmapped`), deliberately not gated on the mapping
+  being executable (the writer holds the *data* mapping), and requiring the
+  `.write` right.  `_invalidates_all_cores` is its reach property;
+  `_records_unify` pins the emitted operand;
+  `_preserves_icacheCoherent_perCore` and
+  `_preserves_tlbInvalidationConsistent_perCore` carry both per-core memory
+  conjuncts.  Lock set: `lockSet_vspaceUnifyInstruction` takes the VSpaceRoot
+  in **read** mode, since it modifies no page table
+- Live seams: `vspaceUnmapPageWithShootdownAndIcacheBroadcast` (targeted
+  `IC IVAU` for an executable unmap, provably inert otherwise) and
+  `lifecycleRetype{Direct,}WithCleanupShootdownPerCoreIcache` (unconditional
+  `IC IALLUIS`), each with `…_preserves_icacheCoherent_perCore` **and**
+  `…_preserves_tlbInvalidationConsistent_perCore`
 
 Per-core TLB model — v0.32.81 operative cut (the model made operative on
 the live shootdown path; v0.32.80 landed it as a parallel spec):

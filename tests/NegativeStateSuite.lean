@@ -1455,11 +1455,25 @@ def runWSH11Checks : IO Unit := do
     .addressOutOfBounds
   IO.println "negative check passed [WS-H11 address at boundary correctly rejected]"
 
-  -- A-05: Address just below bound should succeed via checked path
-  let validAddr : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat (2^52 - 1))
+  -- A-05: Address just below bound should succeed via checked path.
+  -- PR #845 review (P2): was `2^52 - 1`, the largest in-bounds PA — all-ones,
+  -- and therefore never page-aligned.  `vspaceMapPageChecked` now rejects
+  -- unaligned physical addresses, so this uses the largest page-aligned
+  -- in-bounds PA, preserving the "just below the bound" intent.
+  let validAddr : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat (2^52 - 4096))
   match (SeLe4n.Kernel.Architecture.vspaceMapPageChecked asid (SeLe4n.VAddr.ofNat 4096) validAddr) st with
   | .ok _ => IO.println "positive check passed [WS-H11 valid address accepted by checked map]"
   | .error err => throw <| IO.userError s!"valid address rejected: {toString err}"
+
+  -- PR #845 review (P2): an in-bounds but non-page-aligned PA is rejected.
+  -- The ARMv8 descriptor carries only the aligned base and both HAL cache
+  -- maintenance loops round their operand down, so accepting an unaligned PA
+  -- would let the model record an operand naming an address hardware never
+  -- acts on.
+  expectErr "unaligned paddr rejected by checked map"
+    ((SeLe4n.Kernel.Architecture.vspaceMapPageChecked asid (SeLe4n.VAddr.ofNat 4096)
+        (SeLe4n.PAddr.ofNat 0x2001)) st) .alignmentError
+  IO.println "negative check passed [PR #845 unaligned paddr correctly rejected]"
 
   -- Mapping conflict: duplicate vaddr should fail
   let (_, stMapped) ← expectOkSt "map initial"
@@ -2063,10 +2077,14 @@ def runWSJ1DecodeChecks : IO Unit := do
     (SeLe4n.Kernel.Architecture.RegisterDecode.validateRegBound ⟨31⟩ 32)
 
   -- J1-NEG-04: decodeSyscallId with value beyond modeled set → invalidSyscallNumber
-  -- WS-SM SM6.D / PR #822 Phase H: SyscallId now covers 0..28 (count=29, +mintReplyCap);
-  -- value 29 is the first invalid number.
-  expectErr "J1 decodeSyscallId invalid (29)"
+  -- WS-SM SM7.D: SyscallId now covers 0..29 (count=30, +vspaceUnifyInstruction,
+  -- on top of PR #822 Phase H's +mintReplyCap); value 30 is the first invalid
+  -- number.  29 is checked as the last VALID one, so the boundary is pinned
+  -- from both sides and a future off-by-one in `ofNat?` cannot pass silently.
+  let _ ← expectOkVal "J1 decodeSyscallId valid boundary (29 = vspaceUnifyInstruction)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨29⟩)
+  expectErr "J1 decodeSyscallId invalid (30)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨30⟩)
     .invalidSyscallNumber
 
   -- J1-NEG-05: decodeSyscallId with large invalid number → invalidSyscallNumber
@@ -3604,13 +3622,16 @@ private def runX2RuntimeInvariantTests : IO Unit := do
   | .ok _ =>
     throw <| IO.userError "state-aware map should reject PA at 2^44 on 44-bit platform"
 
-  -- AC4-A/A-04: address just below the 44-bit boundary should be accepted
-  let paddrJustBelow : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat (2^44 - 1))
+  -- AC4-A/A-04: address just below the 44-bit boundary should be accepted.
+  -- PR #845 review (P2): was `2^44 - 1`, which is all-ones and therefore never
+  -- page-aligned; the state-aware map now rejects unaligned physical addresses,
+  -- so this uses the largest page-aligned PA below the 44-bit bound.
+  let paddrJustBelow : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat (2^44 - 4096))
   let resultAccept := SeLe4n.Kernel.Architecture.vspaceMapPageCheckedWithFlushFromState
     asidAC4 vaddrAC4 paddrJustBelow default stRpi5
   match resultAccept with
   | .ok _ =>
-    IO.println "positive check passed [AC4-A-02]: state-aware map accepts PA at 2^44-1 on RPi5"
+    IO.println "positive check passed [AC4-A-02]: state-aware map accepts the largest page-aligned PA below 2^44 on RPi5"
   | .error e =>
     throw <| IO.userError s!"expected ok for PA just below 44-bit bound, got {repr e}"
 
