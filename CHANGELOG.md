@@ -1,3 +1,71 @@
+## v0.32.104 — Tier 3: the surface gate no longer depends on Tier 1 having run
+
+**The failure.** Running `scripts/test_tier3_invariant_surface.sh` on its own —
+which the script's own header invites, and which is the natural way to check a
+surface anchor without paying for the whole chain — failed with
+
+```
+/tmp/sm5e_surface.lean:1:0: error: object file '.../PerCoreIdleInventory.olean'
+of module SeLe4n.Kernel.Scheduler.Operations.PerCoreIdleInventory does not exist
+```
+
+on a **normally built** tree. Not a genuine anchor regression, and not a
+missing build step on the developer's part: `lake build` had run.
+
+**The mechanism.** Most Tier 3 checks are `rg` name searches that need no build
+at all. A minority elaborate a small probe file through `lake env lean`, whose
+`#check`s resolve the anchored symbols — and `lake env lean` only *reads*
+`.olean`s, it never builds them. Five of those probes import a staged theorem-
+inventory module (`PerCoreIdleInventory`, `PerCoreInventory`,
+`PerCoreDomainInventory`, `PerCoreCbsInventory`,
+`PerCoreInvariantSuiteInventory`). Staged modules are outside the default
+build target (`defaultTargets = ["sele4n"]`, root `Main`) and are materialised
+only by the separate `SeLe4n.Platform.Staged` anchor, which Tier 1 builds. So
+in the full `test_full.sh` chain the probes happened to find their imports;
+standalone they could not.
+
+**Compounding it, the build was in the wrong place.** Each of the five sites
+had the shape
+
+```
+lake build <ProductionModule>
+<probe importing ProductionModule *and* its Inventory>
+lake build <InventoryModule>          # ← after the probe that needs it
+```
+
+so even a reader auditing the block would see a build for the inventory and
+reasonably assume it was the prerequisite. It was not.
+
+**Scope, measured rather than assumed.** A static, order-aware audit of all 34
+probe blocks against the real module closures flagged nine imports across six
+blocks. Reproducing the fault — removing the 54 staged-only modules' build
+artifacts and running the gate in `--continue` mode, since `run_check` is
+fail-fast by default and had been hiding the rest behind the first failure —
+confirmed **five** genuine failures, all five inventory probes. The other
+block's imports turned out to be built incidentally by an earlier check's
+closure; that is fragile rather than broken, and the fix below covers it too.
+
+**The fix, in two parts.**
+
+- Each of the five inventory builds moves *above* the probe that imports it,
+  with a comment stating why the order matters. Same two checks, same
+  semantics, correct sequence.
+- The gate now builds `SeLe4n.Platform.Staged` in its preamble, so it is
+  self-sufficient and order-independent rather than silently coupled to Tier 1.
+  It is a fast no-op replay whenever Tier 1 has already run, and it covers any
+  staged import a future probe adds.  `ensure_lake_available` precedes it (as
+  Tier 2 already does): the gate has always needed a toolchain for its `#check`
+  probes, and resolving that up front names a missing `lake` once instead of
+  surfacing it as an opaque command-not-found several hundred checks in.
+
+**Verified by reproduction, not by inspection.** With all 54 staged-only
+modules' artifacts removed — the exact state that produced five failures — the
+gate now passes in both `--continue` and default fail-fast modes.
+
+The sibling gates were checked for the same defect class and are clean: the
+three suites Tier 2 runs through `lake env lean --run` import nothing outside
+the default build closure, so a normally built tree always satisfies them.
+
 ## v0.32.103 — SM7.E: tests, fixtures, and the theorem the storm rests on
 
 Closes the WS-SM **SM7.E** sub-phase (`docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md`

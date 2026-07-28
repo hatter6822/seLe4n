@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.32.103` (`lakefile.toml`) |
+| **Package version** | `0.32.104` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 235,825 across 264 Lean files |
 | **Test LoC** | 47,915 across 67 Lean test suites |

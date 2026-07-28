@@ -40,7 +40,14 @@ Prior stage: **WS-AK Phase AK10 COMPLETE — PORTFOLIO CLOSED (v0.30.6). Testing
   - V8-G: `ThreadState` consistency check (`threadStateConsistentChecks`) validates TCB `threadState` field matches inferred state from queue membership and IPC blocking state.
 - **Tier 3 (invariant surface anchors + type-correctness #check gate)**
   - validates critical theorem/bundle/trace anchors expected for active milestone slices,
-  - includes executable-trace anchor checks for milestone-critical lifecycle fragments.
+  - includes executable-trace anchor checks for milestone-critical lifecycle fragments,
+  - is **self-sufficient** (v0.32.104): most checks are `rg` name searches needing
+    no build, but a minority elaborate probe files through `lake env lean`, which
+    only *reads* `.olean`s and never builds them.  Some of those probes import
+    staged modules, which sit outside the default `lake build` target and are
+    materialised only by the `SeLe4n.Platform.Staged` anchor, so the gate builds
+    that anchor in its preamble rather than relying on Tier 1 having run first
+    (a fast no-op replay in the full chain).
 - **Tier 4 (nightly staged extension candidates)**
   - `./scripts/test_tier4_nightly_candidates.sh` stages repeat-run determinism + seeded sequence-diversity candidates,
   - `./scripts/test_nightly.sh` uses mode-aware status messaging (default extension-point guidance vs explicit executed signal when `NIGHTLY_ENABLE_EXPERIMENTAL=1`),
@@ -142,5 +149,5 @@ stories remain visible and intentional, especially for milestone claims tied to 
 - **Tier 0 fails:** remove placeholder markers or fix script-level lint/hygiene issues.
 - **Tier 1 fails:** resolve first Lean compile/proof failure before chasing downstream errors.
 - **Tier 2 fails:** if `test_tier2_trace.sh` fails, inspect missing fixture lines; if `test_tier2_negative.sh` fails, inspect malformed-state or IF-M1 runtime assertions (`negative_state_suite` / `information_flow_suite`) and expected branch behavior.
-- **Tier 3 fails (`./scripts/test_tier3_invariant_surface.sh`):** verify theorem/bundle/trace anchor names are still present after refactor, then repair the exact missing anchor in the referenced file.
+- **Tier 3 fails (`./scripts/test_tier3_invariant_surface.sh`):** verify theorem/bundle/trace anchor names are still present after refactor, then repair the exact missing anchor in the referenced file.  Note that `run_check` is fail-fast by default, so the first failure hides any that follow — re-run with `--continue` to see the full set before diagnosing.  An `object file '...olean' ... does not exist` error is **not** an anchor regression: it means a probe elaborated a module the tree has not built, which the v0.32.104 preamble build of `SeLe4n.Platform.Staged` is there to prevent; if one reappears, the probe imports something outside both that closure and the default `lake build` target, and needs its own build line placed *above* the probe.
 - **Tier 4 fails (`./scripts/test_nightly.sh` / `./scripts/test_tier4_nightly_candidates.sh`):** inspect `tests/artifacts/nightly/` traces + determinism diff and decide whether the drift is semantic regression or an intentional behavior change that needs fixture updates.

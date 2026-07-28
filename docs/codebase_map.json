@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/sm7e-tests-workstream-3ggj5h",
-      "commit_sha": "f4527a1b56e89889d4776e30e102575dd4287e18",
-      "tree_sha": "d7628f01f79af93b52ced142a7eb96ce6ea2fa11",
-      "committed_at_utc": "2026-07-27T16:16:20-04:00"
+      "commit_sha": "c9089f63c62984ac8c995b1e80824fe226f9b62b",
+      "tree_sha": "8d9967f02841b8c938caf02c5522700df5247153",
+      "committed_at_utc": "2026-07-27T21:04:01+00:00"
     }
   },
   "source_sync": {
@@ -24,7 +24,7 @@
     "declaration_count": 13856
   },
   "readme_sync": {
-    "version": "0.32.103",
+    "version": "0.32.104",
     "lean_toolchain": "v4.28.0",
     "production_files": 264,
     "production_loc": 235825,
