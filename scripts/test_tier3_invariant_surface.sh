@@ -79,6 +79,32 @@ RGSHIM
   fi
 fi
 
+# --------------------------------------------------------------------------
+# Build prerequisite: the staged-module closure.
+#
+# Most Tier 3 checks are `rg` name searches over the source tree, which need
+# no build.  A minority elaborate a small probe file (`lake env lean`) whose
+# `#check`s resolve the anchored symbols — and `lake env lean` only *reads*
+# `.olean`s, it never builds them.  Those probes import staged modules
+# (`scripts/staged_module_allowlist.txt`), which sit outside the default
+# `lake build` target (`defaultTargets = ["sele4n"]`, root `Main`) and are
+# materialised only by the separate `SeLe4n.Platform.Staged` anchor target.
+#
+# Tier 1 builds both, so the full `test_full.sh` chain happened to satisfy
+# this — but a *standalone* Tier 3 run (which the script header invites) had
+# no such guarantee, and failed with "object file ... does not exist" rather
+# than a genuine anchor regression.  Building the anchor here makes the gate
+# self-sufficient and order-independent; it is a fast no-op replay whenever
+# Tier 1 has already run.
+#
+# `ensure_lake_available` first (as Tier 2 does): the gate has always needed a
+# toolchain for its `#check` probes, and resolving that here reports a missing
+# `lake` once, by name, instead of as an opaque command-not-found several
+# hundred checks later.
+# --------------------------------------------------------------------------
+ensure_lake_available
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Platform.Staged'
+
 # WS-B1 closure anchors: VSpace transitions, invariants, and ADR publication.
 run_check "INVARIANT" rg -n '^structure VSpaceRoot' SeLe4n/Model/Object/Structures.lean
 run_check "INVARIANT" rg -n '^def resolveAsidRoot' SeLe4n/Kernel/Architecture/VSpace.lean
@@ -1009,6 +1035,31 @@ run_check "INVARIANT" rg -n '^private def runPerCoreTlbLiveLifecycleChecks' test
 run_check "INVARIANT" rg -n '^def lifecycleRetypeDirectWithCleanupShootdownPerCore' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
 run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectWithCleanupShootdownPerCore_initiator_drained' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
 run_check "INVARIANT" rg -n 'lifecycleRetypeDirectWithCleanupShootdownPerCore' SeLe4n/Kernel/API.lean
+# WS-SM SM7.E — tests + fixtures.  The concurrent-unmap stress (§6) and the
+# cross-cluster mock (§7) scenario groups, the per-core handler commutativity
+# they rest on (the live catch-up fold's order-independence — SM7.B proved it
+# only for the single-view handler, but the live seam folds the per-core one),
+# the `.outer` portability seam, the deterministic golden trace fixture (+ its
+# sha256 companion), and the Tier-4 concurrent-unmap stress exerciser.
+run_check "INVARIANT" rg -n '^theorem setTlbOnCore_comm' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
+run_check "INVARIANT" rg -n '^theorem handleTlbShootdownReqOnCorePerCore_comm' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
+run_check "INVARIANT" rg -n '^theorem foldl_handleTlbShootdownReqOnCorePerCore_swap' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
+run_check "INVARIANT" rg -n '^theorem tlbShootdown_outer_correct' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^private def runConcurrentUnmapStressChecks' tests/SmpTlbShootdownSuite.lean
+run_check "INVARIANT" rg -n '^private def runConcurrentUnmapDrainChecks' tests/SmpTlbShootdownSuite.lean
+run_check "INVARIANT" rg -n '^private def runShootdownBackpressureChecks' tests/SmpTlbShootdownSuite.lean
+run_check "INVARIANT" rg -n '^private def runCrossClusterMockChecks' tests/SmpTlbShootdownSuite.lean
+run_check "INVARIANT" rg -n '^private def runCrossClusterHazardChecks' tests/SmpTlbShootdownSuite.lean
+run_check "INVARIANT" rg -n '^private def runCrossClusterReachChecks' tests/SmpCacheMaintenanceSuite.lean
+run_check "INVARIANT" rg -n '^private def shootdownTraceLines' tests/SmpTlbShootdownSuite.lean
+run_check "INVARIANT" rg -n '^private def runTraceFixtureCheck' tests/SmpTlbShootdownSuite.lean
+run_check "INVARIANT" rg -n '^\[smp-tlb-shootdown\]' tests/fixtures/smp_tlb_shootdown.expected
+run_check "INVARIANT" rg -n 'smp_tlb_shootdown\.expected' tests/fixtures/smp_tlb_shootdown.expected.sha256
+run_check "INVARIANT" rg -n 'test_qemu_smp_shootdown_stress\.sh' scripts/test_tier4_smp_bootcheck.sh
+# The Tier-4 stress exerciser's driver-detection guard and its pass gate must
+# agree on the `tlb-shootdown-stress` banner tag (the contract the future SM9.E
+# in-image driver emits); anchoring the exact pass phrase catches silent drift.
+run_check "INVARIANT" rg -n 'tlb-shootdown-stress: all cores completed' scripts/test_qemu_smp_shootdown_stress.sh
 # ============================================================================
 # WS-SM SM7.D — cache maintenance broadcast
 #
@@ -4010,6 +4061,13 @@ run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.S
 # symbol fails here at elaboration time before the test suite.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreIdle'
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreDispatch'
+# WS-SM SM5.E: build the SM5.E theorem inventory so a renamed / removed
+# SM5.E theorem fails at the inventory's elaboration.  This must precede the
+# surface probe below, which *imports* the inventory: `lake env lean` only
+# reads `.olean`s, it never builds them, and the inventory is staged-only (it
+# is outside the default `lake build` target), so probing first would fail on
+# a tree where the staged closure has not been built.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreIdleInventory'
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && cat > /tmp/sm5e_surface.lean <<EOF
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreIdle
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreIdleInventory
@@ -4090,9 +4148,6 @@ open SeLe4n.Platform.Boot (createIdleThread)
 #check @perCoreIdleTheorems_identifiers_nodup
 EOF
 lake env lean /tmp/sm5e_surface.lean'
-# WS-SM SM5.E: build the SM5.E theorem inventory so a renamed / removed
-# SM5.E theorem fails at the inventory's elaboration.
-run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreIdleInventory'
 
 # WS-SM SM5.F — per-core PIP surface anchors.  Covers the SM5.F.1
 # computeMaxWaiterPriorityOnCore per-core slice + per-core <= global decomposition,
@@ -4104,6 +4159,13 @@ run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.S
 # The per-core PIP transition defs are production-reached.  A rename / removal of
 # any SM5.F symbol fails here at elaboration time before the test suite.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore'
+# WS-SM SM5.F: build the SM5.F theorem inventory so a renamed / removed
+# SM5.F theorem fails at the inventory's elaboration.  This must precede the
+# surface probe below, which *imports* the inventory: `lake env lean` only
+# reads `.olean`s, it never builds them, and the inventory is staged-only (it
+# is outside the default `lake build` target), so probing first would fail on
+# a tree where the staged closure has not been built.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCoreInventory'
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && cat > /tmp/sm5f_surface.lean <<EOF
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCoreInventory
@@ -4226,9 +4288,6 @@ open SeLe4n.Kernel.Lifecycle.Suspend (restoreToReadyOnCore restoreToReadyWithWak
 #check @perCorePipTheorems_dispatch_count
 EOF
 lake env lean /tmp/sm5f_surface.lean'
-# WS-SM SM5.F: build the SM5.F theorem inventory so a renamed / removed
-# SM5.F theorem fails at the inventory's elaboration.
-run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCoreInventory'
 
 # WS-SM SM5.G: per-core domain scheduling.  SM5.G.2 advanceDomainOnCore (pure
 # rotation) + frames + single-step + the advanceDomainOnCoreN iteration & cyclic
@@ -4238,6 +4297,13 @@ run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.S
 # SM5.G.5 cross-core domain independence + the advanceDomainOnCoreLockSet footprint.
 # A rename / removal of any SM5.G symbol fails here at elaboration time.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreDomain'
+# WS-SM SM5.G: build the SM5.G theorem inventory so a renamed / removed
+# SM5.G theorem fails at the inventory's elaboration.  This must precede the
+# surface probe below, which *imports* the inventory: `lake env lean` only
+# reads `.olean`s, it never builds them, and the inventory is staged-only (it
+# is outside the default `lake build` target), so probing first would fail on
+# a tree where the staged closure has not been built.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreDomainInventory'
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && cat > /tmp/sm5g_surface.lean <<EOF
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreDomain
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreDomainInventory
@@ -4323,9 +4389,6 @@ open SeLe4n.Kernel
 #check @perCoreDomainTheorems_livePreservation_count
 EOF
 lake env lean /tmp/sm5g_surface.lean'
-# WS-SM SM5.G: build the SM5.G theorem inventory so a renamed / removed SM5.G
-# theorem fails at the inventory's elaboration.
-run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreDomainInventory'
 
 # WS-SM SM5.H: per-core CBS.  SM5.H.2 replenishOnCore (per-core CBS replenishment-
 # scheduling primitive) + frames, SM5.H.3/.6/.5 validity/pipeline-order/affinity
@@ -4336,6 +4399,13 @@ run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.S
 # perCoreCbsInvariant + CBS budget-bound accounting.  A rename / removal of any SM5.H
 # symbol fails here at elaboration time.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreCbs'
+# WS-SM SM5.H: build the SM5.H theorem inventory so a renamed / removed
+# SM5.H theorem fails at the inventory's elaboration.  This must precede the
+# surface probe below, which *imports* the inventory: `lake env lean` only
+# reads `.olean`s, it never builds them, and the inventory is staged-only (it
+# is outside the default `lake build` target), so probing first would fail on
+# a tree where the staged closure has not been built.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreCbsInventory'
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && cat > /tmp/sm5h_surface.lean <<EOF
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreCbs
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreCbsInventory
@@ -4463,9 +4533,6 @@ open SeLe4n.Kernel
 #check @perCoreCbsTheorems_memoryModel_count
 EOF
 lake env lean /tmp/sm5h_surface.lean'
-# WS-SM SM5.H: build the SM5.H theorem inventory so a renamed / removed SM5.H
-# theorem fails at the inventory's elaboration.
-run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreCbsInventory'
 
 # WS-SM SM5.I: the live per-core timer tick preserves perCoreCbsInvariant.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsPreservation'
@@ -4523,6 +4590,13 @@ lake env lean /tmp/sm5i_tick_affinity.lean'
 # suite index.  A rename / removal of any SM5.I symbol fails here at elaboration
 # time before the test suite.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Invariant.PerCoreInvariantSuite'
+# WS-SM SM5.I: build the SM5.I theorem inventory so a renamed / removed
+# SM5.I theorem fails at the inventory's elaboration.  This must precede the
+# surface probe below, which *imports* the inventory: `lake env lean` only
+# reads `.olean`s, it never builds them, and the inventory is staged-only (it
+# is outside the default `lake build` target), so probing first would fail on
+# a tree where the staged closure has not been built.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Invariant.PerCoreInvariantSuiteInventory'
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && cat > /tmp/sm5i_suite.lean <<EOF
 import SeLe4n.Kernel.Scheduler.Invariant.PerCoreInvariantSuite
 import SeLe4n.Kernel.Scheduler.Invariant.PerCoreInvariantSuiteInventory
@@ -4643,8 +4717,5 @@ open SeLe4n.Kernel
 #check @resolveEffectivePrioDeadline_fst_eq_effectiveRunQueuePriority_of_agree
 EOF
 lake env lean /tmp/sm5i_suite.lean'
-# WS-SM SM5.I: build the SM5.I theorem inventory so a renamed / removed SM5.I
-# theorem fails at the inventory's elaboration.
-run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Invariant.PerCoreInvariantSuiteInventory'
 
 finalize_report

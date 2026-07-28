@@ -1,3 +1,176 @@
+## v0.32.104 — Tier 3: the surface gate no longer depends on Tier 1 having run
+
+**The failure.** Running `scripts/test_tier3_invariant_surface.sh` on its own —
+which the script's own header invites, and which is the natural way to check a
+surface anchor without paying for the whole chain — failed with
+
+```
+/tmp/sm5e_surface.lean:1:0: error: object file '.../PerCoreIdleInventory.olean'
+of module SeLe4n.Kernel.Scheduler.Operations.PerCoreIdleInventory does not exist
+```
+
+on a **normally built** tree. Not a genuine anchor regression, and not a
+missing build step on the developer's part: `lake build` had run.
+
+**The mechanism.** Most Tier 3 checks are `rg` name searches that need no build
+at all. A minority elaborate a small probe file through `lake env lean`, whose
+`#check`s resolve the anchored symbols — and `lake env lean` only *reads*
+`.olean`s, it never builds them. Five of those probes import a staged theorem-
+inventory module (`PerCoreIdleInventory`, `PerCoreInventory`,
+`PerCoreDomainInventory`, `PerCoreCbsInventory`,
+`PerCoreInvariantSuiteInventory`). Staged modules are outside the default
+build target (`defaultTargets = ["sele4n"]`, root `Main`) and are materialised
+only by the separate `SeLe4n.Platform.Staged` anchor, which Tier 1 builds. So
+in the full `test_full.sh` chain the probes happened to find their imports;
+standalone they could not.
+
+**Compounding it, the build was in the wrong place.** Each of the five sites
+had the shape
+
+```
+lake build <ProductionModule>
+<probe importing ProductionModule *and* its Inventory>
+lake build <InventoryModule>          # ← after the probe that needs it
+```
+
+so even a reader auditing the block would see a build for the inventory and
+reasonably assume it was the prerequisite. It was not.
+
+**Scope, measured rather than assumed.** A static, order-aware audit of all 34
+probe blocks against the real module closures flagged nine imports across six
+blocks. Reproducing the fault — removing the 54 staged-only modules' build
+artifacts and running the gate in `--continue` mode, since `run_check` is
+fail-fast by default and had been hiding the rest behind the first failure —
+confirmed **five** genuine failures, all five inventory probes. The other
+block's imports turned out to be built incidentally by an earlier check's
+closure; that is fragile rather than broken, and the fix below covers it too.
+
+**The fix, in two parts.**
+
+- Each of the five inventory builds moves *above* the probe that imports it,
+  with a comment stating why the order matters. Same two checks, same
+  semantics, correct sequence.
+- The gate now builds `SeLe4n.Platform.Staged` in its preamble, so it is
+  self-sufficient and order-independent rather than silently coupled to Tier 1.
+  It is a fast no-op replay whenever Tier 1 has already run, and it covers any
+  staged import a future probe adds.  `ensure_lake_available` precedes it (as
+  Tier 2 already does): the gate has always needed a toolchain for its `#check`
+  probes, and resolving that up front names a missing `lake` once instead of
+  surfacing it as an opaque command-not-found several hundred checks in.
+
+**Verified by reproduction, not by inspection.** With all 54 staged-only
+modules' artifacts removed — the exact state that produced five failures — the
+gate now passes in both `--continue` and default fail-fast modes.
+
+The sibling gates were checked for the same defect class and are clean: the
+three suites Tier 2 runs through `lake env lean --run` import nothing outside
+the default build closure, so a normally built tree always satisfies them.
+
+## v0.32.103 — SM7.E: tests, fixtures, and the theorem the storm rests on
+
+Closes the WS-SM **SM7.E** sub-phase (`docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md`
+§5 SM7.E): the four-core concurrent-unmap stress, the cross-cluster mock, the
+golden trace fixture, the surface anchors, and the Tier-4 stress exerciser.
+SM7.E.1 and SM7.E.2 had already landed alongside SM7.A/SM7.B; this cut lands
+E.3–E.6 and, with them, one genuine model gap the test work surfaced.
+
+**The gap: the live catch-up fold lost its commutativity theorem.** SM7.B
+proved `handleTlbShootdownReqOnCore_comm` under a section header stating that
+"the fold order in `completeShootdownRounds` is a convention, not a correctness
+requirement" — the claim that lets one deterministic model fold order stand for
+every order the GIC might deliver the `.tlbShootdownReq` SGIs in. v0.32.81 then
+swapped that live fold to the *per-core* handler
+(`handleTlbShootdownReqOnCorePerCore`) and did not carry the theorem forward, so
+the documented claim no longer covered the handler the seam actually runs. Not
+a false theorem and not a live defect — but a documented property the code no
+longer established, which the project's rules say to close by implementing, not
+by weakening the prose.
+
+`PerCoreTlbModel.lean` gains `handleTlbShootdownReqOnCorePerCore_comm`: distinct
+cores' handler steps commute, because each drains only its own queue,
+acknowledges only its own flag, writes only its own per-core view, and the
+shared single-view retire-filters intersect commutatively. Supporting it,
+`setTlbOnCore_comm` (per-core view writes at distinct cores commute — the
+vector-level independence) and the definitional field-disjointness lever
+`handleTlbShootdownReqOnCore_setTlbOnCore_comm`, plus the
+adjacent-transposition form `foldl_handleTlbShootdownReqOnCorePerCore_swap`
+from which every permutation of a `Nodup` target list follows. Axiom-clean:
+`propext` and `Quot.sound` only.
+
+**SM7.E.3 — the concurrent-unmap storm** (`SmpTlbShootdownSuite` §6, 28
+runtime assertions). The model is deterministic and sequential, so genuine concurrency
+surfaces in exactly two places, and the group drives both on a real
+page-table-backed state with real cached translations — four pages mapped,
+sixteen translation-walk fills, then four live
+`vspaceUnmapPageWithShootdownPerCore` rounds with no catch-up in between:
+
+- **Four rounds in flight.** Each core's queue holds exactly the three
+  descriptors the *other* initiators posted; no core queues its own round; the
+  capacity conjunct holds; each initiator retired its own operand atomically
+  with its unmap while the three pages it did not initiate are stale on it —
+  but covered, so the pending-aware invariant is GREEN *mid-storm*. The
+  deferred catch-ups then drain the way the runtime actually runs them: round
+  0's leaves every remote core clean while the initiator's own queue waits for
+  round 1's, after which the state is quiescent, every view clean, and the
+  remaining catch-ups provably inert.
+- **Visit-order independence**, computed over three different orders and pinned
+  to identical per-core views, shootdown state and single-view TLB — the
+  runtime witness for the new commutativity theorem.
+- **Backpressure**: sixteen un-drained rounds fill each remote queue exactly to
+  `maxPendingPerCore`; the strict posting then fails closed rather than
+  dropping; the seventeenth coalescing round collapses each queue to one
+  `.vmalle1`; the bound never breaks; draining the collapsed queue empties
+  every remote view.
+- **Mixed operands**: a page unmap and an ASID retirement in flight together.
+  Each core's drain retires exactly *its* queue, so the ASID round's initiator
+  keeps the three translations it never queued — a blanket-flush regression in
+  the handler fails right there.
+
+**SM7.E.4 — the cross-cluster mock** (suite §7, 17 runtime assertions;
+`SmpCacheMaintenanceSuite` §3.15, 9). The plan §3.4 portability
+argument made executable over a mock two-cluster topology on the same four PEs.
+The sharing domain changes the instruction variant and the completing barrier
+(`.inner` ↦ tag 0 / `DSB ISH`, `.outer` ↦ tag 1 / `DSB OSH`) and nothing else —
+the `.outer` round posts the identical shootdown state, emits the identical SGI
+list, and evolves the identical per-core views. A bare Inner Shareable
+broadcast, modelled as the per-core invalidation over the initiator's cluster
+alone, leaves the remote cluster holding the stale translation; the
+explicit-ack round retires it on every PE of both clusters from either side;
+and the hybrid a real port would run — IS locally, SGIs remotely — already
+works without a protocol change, because the masked round-open takes the
+narrowed target set and leaves the initiator's cluster-mate born-acknowledged.
+On the instruction-cache side, `icBroadcastReach` narrowed to one cluster
+leaves the other's lines resident for every operand kind (`iallu`, `ivauPage`,
+`unifyPage`) — the executable form of the module docs' "a multi-cluster port
+must narrow this list and add an SGI-based protocol" — while composed
+per-cluster broadcasts equal the single full-reach one. Both groups pin that
+the mock is a mock: the live binding is `.inner`, the reach is the whole
+topology, and the real target set spans both mock clusters.
+
+**SM7.E.6 — the golden trace.** `tests/fixtures/smp_tlb_shootdown.expected`
+(21 lines + `.sha256`), every line computed from the live map / fill /
+cross-core unmap / catch-up decisions, reporting per-core observables — cached
+entries, pending descriptors, ack flags — at each stage, plus the
+pending-aware invariant verdict, the raw FFI operand encoding, the storm's
+per-core profile and the cross-cluster identity. Auto-gated by the Tier-2 trace
+walk, which discovers every `*.expected.sha256` in `tests/fixtures/`.
+
+**SM7.E.3, hardware tier.** `scripts/test_qemu_smp_shootdown_stress.sh`
+(Tier-4-registered, SKIPs until the SM9.E bootable image) drives the one thing
+the pure model cannot: the real interleaving of the global round lock, the SGI
+delivery order and the `SHOOTDOWN_ACK` handshake under contention. It hunts the
+two plan §7 risks by name — a round-serialisation break (an initiator observing
+someone else's `allAcked` and returning with a stale TLB live) and a round-lock
+deadlock (the SM7.B.6 fail-closed timeout, or a hang) — with a distinct
+diagnostic for each.
+
+**SM7.E.5 — anchors.** `#check` blocks for every new symbol plus Tier-3 `rg`
+anchors for the runners, the fixture and its hash companion, the Tier-4
+registration, and the stress script's banner contract (so the driver-detection
+guard and the pass gate cannot drift apart).
+
+Trace byte-identical; the plan's §7 cross-cluster risk row moves to DISCHARGED.
+
 ## v0.32.102 — SM7.D: page alignment enforced at the mapping boundary
 
 **The finding (PR #845 review, Codex P2).** The SM7.D maintenance operands name

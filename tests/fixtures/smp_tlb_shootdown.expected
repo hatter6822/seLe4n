@@ -1,0 +1,21 @@
+[smp-tlb-shootdown] live map on core 1 caches 1 entry; the map posts no round (quiescent true)
+[smp-tlb-shootdown] after map core 0: 0 entries, 0 pending, ack true
+[smp-tlb-shootdown] after map core 1: 1 entries, 0 pending, ack true
+[smp-tlb-shootdown] after map core 2: 0 entries, 0 pending, ack true
+[smp-tlb-shootdown] after map core 3: 0 entries, 0 pending, ack true
+[smp-tlb-shootdown] core 0 unmap: page tables resolve (asid 5, va 0x1000) = unmapped
+[smp-tlb-shootdown] posted operand (raw FFI encoding): op_tag 1 asid 5 vaddr 4096
+[smp-tlb-shootdown] round SGIs: 3 × tlbShootdownReq
+[smp-tlb-shootdown] after unmap core 0: 0 entries, 0 pending, ack true
+[smp-tlb-shootdown] after unmap core 1: 1 entries, 1 pending, ack false
+[smp-tlb-shootdown] after unmap core 2: 0 entries, 1 pending, ack false
+[smp-tlb-shootdown] after unmap core 3: 0 entries, 1 pending, ack false
+[smp-tlb-shootdown] pending-aware invariant after unmap: GREEN
+[smp-tlb-shootdown] after catch-up core 0: 0 entries, 0 pending, ack true
+[smp-tlb-shootdown] after catch-up core 1: 0 entries, 0 pending, ack true
+[smp-tlb-shootdown] after catch-up core 2: 0 entries, 0 pending, ack true
+[smp-tlb-shootdown] after catch-up core 3: 0 entries, 0 pending, ack true
+[smp-tlb-shootdown] round complete: quiescent true, allAcked true, bounded true, invariant GREEN
+[smp-tlb-shootdown] storm: 4 concurrent rounds leave pending [3, 3, 3, 3] and cached [3, 3, 3, 3], bounded true, invariant GREEN
+[smp-tlb-shootdown] storm drained: quiescent true, cached entries left 0
+[smp-tlb-shootdown] cross-cluster: outer tag 1 vs inner tag 0, round state-identical true

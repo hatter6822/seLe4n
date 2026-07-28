@@ -24,8 +24,15 @@ Plan:
 SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
-**Current sub-phase: SM7.D cache maintenance broadcast CLOSED — LANDED
-(v0.32.94), closure cut (v0.32.95), residual closure (v0.32.96) — the
+**Current sub-phase: SM7.E tests + fixtures LANDED (v0.32.103)** — the SM7
+closure phase: the four-core concurrent-unmap storm (with the per-core
+handler commutativity theorem the model gap surfaced), the cross-cluster
+mock on both the TLB and instruction-cache sides, the `smp_tlb_shootdown`
+golden trace fixture, the surface anchors, and the Tier-4 stress exerciser.
+Prior: SM7.F operative per-core TLB fills IN FLIGHT (v0.32.84 → v0.32.93);
+SM7.D cache maintenance broadcast CLOSED — LANDED
+(v0.32.94), closure cut (v0.32.95), residual closure (v0.32.96), SECURITY
+cuts (v0.32.97, v0.32.100) and review cuts (v0.32.101, v0.32.102) — the
 cache-side companion of SM7.C, closing the *instruction*-cache half of
 SMP-C4 in both directions: the destroy side (`.vspaceUnmap` /
 `.lifecycleRetype` broadcast maintenance) and, at v0.32.96, the write side
@@ -42,6 +49,102 @@ LIVE, every landing deferral closed and every tracked-debt item closed or
 narrowed to a scoped residual.  Prior: SM7.A shootdown descriptor +
 state LANDED (v0.32.72); completion cut (v0.32.73); audit cut
 (v0.32.74); review P1 (v0.32.75).**
+
+**SM7.E tests + fixtures (v0.32.103) — the SM7 closure phase (plan §5
+SM7.E).**  SM7.E.1 and SM7.E.2 had already landed alongside SM7.A/SM7.B
+(the aggregate `tests/SmpTlbShootdownSuite.lean`; the Tier-4-registered
+`scripts/test_qemu_smp_shootdown.sh`, which SKIPs until the SM9.E bootable
+image).  This cut lands E.3–E.6.
+
+**The model gap the test work surfaced — and closed rather than
+documented.**  SM7.B proved `handleTlbShootdownReqOnCore_comm` under a
+section header stating that "the fold order in `completeShootdownRounds` is
+a convention, not a correctness requirement" — the claim that lets one
+deterministic model fold order stand for every order the GIC might deliver
+the `.tlbShootdownReq` SGIs in.  v0.32.81 then swapped that live fold to the
+*per-core* handler (`handleTlbShootdownReqOnCorePerCore`) and did not carry
+the theorem forward, so the documented claim no longer covered the handler
+the seam actually runs.  Neither a false theorem nor a live defect, but a
+documented property the code no longer established.
+`PerCoreTlbModel.lean` gains `handleTlbShootdownReqOnCorePerCore_comm`
+(distinct cores' handler steps commute — each drains only its own queue,
+acknowledges only its own flag, writes only its own per-core view, and the
+shared single-view retire-filters intersect commutatively), with
+`setTlbOnCore_comm`, the definitional field-disjointness lever
+`handleTlbShootdownReqOnCore_setTlbOnCore_comm`, and the
+adjacent-transposition `foldl_handleTlbShootdownReqOnCorePerCore_swap` from
+which every permutation of a `Nodup` target list follows.  Axiom-clean
+(`propext`, `Quot.sound`).
+
+**SM7.E.3 — the concurrent-unmap storm** (suite §6, 28 runtime assertions).  The
+model is deterministic and sequential, so genuine concurrency surfaces in
+exactly two places, and the group drives both on a *real page-table-backed
+state with real cached translations* — four pages mapped, sixteen SM7.F
+translation-walk fills, then four live `vspaceUnmapPageWithShootdownPerCore`
+rounds with no catch-up in between.  Four rounds in flight: each core's queue
+holds exactly the three descriptors the *other* initiators posted (never its
+own), the capacity conjunct holds, each initiator retired its own operand
+atomically with its unmap, and the three pages it did not initiate are stale
+on it — but covered, so the pending-aware invariant is GREEN **mid-storm**.
+The deferred catch-ups then drain the way the runtime runs them: round 0's
+leaves every *remote* core clean while the initiator's own queue waits for
+round 1's, after which the state is quiescent, every view clean, and the
+remaining catch-ups provably inert.  Visit-order independence is computed
+over three orders and pinned to identical per-core views, shootdown state and
+single-view TLB.  Backpressure: sixteen un-drained rounds fill each remote
+queue exactly to `maxPendingPerCore`, the strict posting then fails closed
+rather than dropping, the seventeenth coalescing round collapses each queue
+to one `.vmalle1`, the bound never breaks, and draining the collapsed queue
+empties every remote view.  Mixed operands: a page unmap and an ASID
+retirement in flight together — each core's drain retires exactly *its*
+queue, so the ASID round's initiator keeps the three translations it never
+queued (a blanket-flush regression in the handler fails right there).
+Hardware tier: `scripts/test_qemu_smp_shootdown_stress.sh`
+(Tier-4-registered, SKIPs until SM9.E) drives what the pure model cannot —
+the real interleaving of the global round lock, the SGI delivery order and
+the `SHOOTDOWN_ACK` handshake under contention — hunting the two plan §7
+risks by name (a round-serialisation break; a round-lock deadlock) with a
+distinct diagnostic for each.
+
+**SM7.E.4 — the cross-cluster mock** (suite §7, 17 runtime assertions;
+`SmpCacheMaintenanceSuite` §3.15, 9).  Plan §3.4's portability
+argument made executable over a mock two-cluster topology on the same four
+PEs (A = {0,1}, B = {2,3}).  The sharing domain changes the emitted
+instruction variant and the completing barrier (`.inner` ↦ tag 0 / `DSB
+ISH`, `.outer` ↦ tag 1 / `DSB OSH`) and **nothing else** —
+`tlbShootdown_outer_correct` computed: identical posted state, identical SGI
+list, identical per-core views.  A bare Inner Shareable broadcast, modelled
+as the per-core invalidation over the initiator's cluster alone, leaves the
+*remote* cluster holding the stale translation — the SMP-C4 window that
+would reopen if a multi-cluster port dropped the explicit-ack round; the
+round does not, retiring the entry on every PE of both clusters from either
+side.  The hybrid a real port would run — IS locally, SGIs remotely —
+already works without a protocol change, because the masked round-open takes
+the narrowed target set, fires SGIs only at the remote cluster, and leaves
+the initiator's cluster-mate born-acknowledged for the local broadcast.  On
+the instruction-cache side, `icBroadcastReach` narrowed to one cluster
+leaves the other's lines resident for *every* operand kind (`iallu`,
+`ivauPage`, `unifyPage`) — the executable form of the module docs'
+"a multi-cluster port must narrow this list and add an SGI-based protocol" —
+while composed per-cluster broadcasts equal the single full-reach one.  Both
+groups pin that the mock *is* a mock: the live binding is
+`shootdownSharingDomain = .inner`, `icBroadcastReach` is the whole topology,
+and the real target set spans both mock clusters.  Plan §7's "cross-cluster
+path under-tested" risk row moves to DISCHARGED.
+
+**SM7.E.5 / SM7.E.6 — anchors and the golden trace.**
+`tests/fixtures/smp_tlb_shootdown.expected` (21 lines + `.sha256`,
+auto-gated by the Tier-2 trace walk, which discovers every
+`*.expected.sha256` in `tests/fixtures/`): every line computed from the live
+map / walk-fill / cross-core unmap / catch-up decisions, reporting per-core
+observables — cached entries, pending descriptors, ack flags — at each
+stage, plus the pending-aware invariant verdict, the raw FFI operand
+encoding, the storm's per-core profile and the cross-cluster identity.
+Anchors: §1 `#check` blocks for every new symbol, and Tier-3 `rg` anchors
+for the runners, the fixture and its hash companion, the Tier-4
+registration, and the stress script's banner contract (so its
+driver-detection guard and its pass gate cannot drift apart).  Trace
+byte-identical.
 
 **SM7.D cache maintenance broadcast (v0.32.94) — all four sub-tasks
 (plan §5).**  The cache-side companion of SM7.C.  SM7.C closed the

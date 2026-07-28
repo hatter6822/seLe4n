@@ -398,7 +398,15 @@ run_check_with_timeout "TRACE" lake exe smp_notification_suite
 # trip ending quiescent, and — from the v0.32.73 completion cut — the
 # enqueueShootdownOrCoalesce overflow collapse, the generic round-composition
 # capstone computed on live data, the ShootdownQueueLockId total-order walk,
-# and the SystemState.tlbShootdown mount checks.
+# and the SystemState.tlbShootdown mount checks.  From SM7.E: the four-core
+# concurrent-unmap storm (four rounds in flight on a real page-table-backed
+# state, visit-order independence of the live catch-up fold, backpressure to
+# the 16-deep bound and past it into the coalescing collapse, and a mixed-
+# operand storm), the cross-cluster mock (the `.outer` round is state-identical
+# to `.inner`; a cluster-local IS broadcast leaves the remote cluster stale
+# while the explicit-ack round does not), and the deterministic 4-core
+# shootdown trace verified byte-for-byte against
+# tests/fixtures/smp_tlb_shootdown.expected (SM7.E.6).
 run_check_with_timeout "TRACE" lake exe smp_tlb_shootdown_suite
 
 # WS-SM SM7.D: cache maintenance broadcast suite — the instruction-cache
@@ -410,7 +418,11 @@ run_check_with_timeout "TRACE" lake exe smp_tlb_shootdown_suite
 # state — including the non-vacuity witness that a cached line whose mapping
 # was removed FAILS the checker — and the live `.vspaceUnmap` /
 # `.lifecycleRetype` seams (targeted IVAU on an executable unmap, provable
-# inertness on a non-executable one, domain-wide IALLUIS on retype).
+# inertness on a non-executable one, domain-wide IALLUIS on retype), plus —
+# from SM7.E — the cross-cluster reach mock: `icBroadcastReach` narrowed to one
+# mock cluster leaves the other cluster's lines resident (the hazard a
+# multi-cluster port must close with an SGI-based protocol), while the
+# composed per-cluster broadcasts equal the single full-reach one.
 run_check_with_timeout "TRACE" lake exe smp_cache_maintenance_suite
 
 # PR #845 review (P1) — VSpace capability binding.  Regression coverage for the
