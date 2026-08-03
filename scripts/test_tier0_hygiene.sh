@@ -114,10 +114,12 @@ run_check "HYGIENE" "${SCRIPT_DIR}/check_website_links.sh"
 run_check "HYGIENE" "${SCRIPT_DIR}/check_version_sync.sh"
 
 # Internal-first naming: no workstream IDs, audit IDs, or phase codes in
-# declared identifiers (CLAUDE.md).  Rust is held at zero; Lean ratchets
-# against its grandfathered baseline.  Prose is exempt — cite workstreams
-# in docstrings, not in names.
-run_check "HYGIENE" "${SCRIPT_DIR}/check_identifier_naming.sh"
+# identifiers (CLAUDE.md).  Scans every identifier token — any visibility,
+# fields, params, locals — rather than enumerating declaration forms, so
+# there is no declaration syntax it can fail to think of.  Rust is held at
+# zero; Lean ratchets against its grandfathered baseline.  Prose is exempt
+# — cite workstreams in docstrings, not in names.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_identifier_naming.py"
 
 # AN10-D: AK7 cascade monotonicity gate. Reads docs/dev_history/audits/AL0_baseline.txt
 # and rejects regressions on any AK7 cascade metric (raw-match site count,

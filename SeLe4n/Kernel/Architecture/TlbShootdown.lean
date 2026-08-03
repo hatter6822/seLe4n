@@ -58,50 +58,79 @@ on the Rust side of the FFI seam:
   kernel maintains under the pending-shootdown lock discipline
   (SM7.B.7 declares the lock-set).
 * `shootdownAck` models `rust/sele4n-hal/src/shootdown.rs`'s
-  `SHOOTDOWN_ACK` — one cache-line-aligned `AtomicBool` per core.
-  The Bool vector here captures the *values*; the release-store /
+  `SHOOTDOWN_ACK` — one cache-line-aligned slot per core, holding the
+  highest round generation that core has discharged.  Since v0.32.113
+  this is a `Vector Nat`, not a `Vector Bool`: an acknowledgment names
+  the round it discharged, mirroring the Rust `acked_gen : AtomicU64`
+  advanced by a release `fetch_max`.  `ackOnCore` is the derived
+  predicate `roundGeneration ≤ ackedGenOnCore c`.  The release-store /
   acquire-load pairing that makes cross-core propagation sound is
   realised by the Rust atomics and proven against the SM2.A memory
   model at SM7.B.4 (`shootdownAck_release_acquire`).
 
 The quiescent state (no shootdown round in flight) has every queue
-empty and every ack flag `true` — "nobody is being waited on".
-`TlbShootdownState.initial` (the boot state) is quiescent, matching
-the Rust `SHOOTDOWN_ACK` boot value of all-`true`.
+empty and every core's acknowledged generation at or above the open
+round — "nobody is being waited on".  `TlbShootdownState.initial` (the
+boot state) is quiescent at generation 0, matching the Rust boot value:
+nothing is cleared to open a round, so a core that has never
+acknowledged anything already satisfies the round-0 test.
 
 ## Round serialisation contract (SM7.A audit; SM7.B.7 obligation)
 
-The ack vector here carries **no round identity**, so *as modelled* it
-is a single-round resource: at most one shootdown round may be in
-flight system-wide.  The plan §3.2 precondition (the initiator holds
-the VSpaceRoot write lock) is **not** sufficient to guarantee this —
-two initiators shooting down *different* VSpaces hold different
-VSpaceRoot locks and would interleave rounds, with two concrete
-failures: (a) initiator B's `beginShootdownRound` marks B's own flag
-`true` while A still waits on that core's invalidation for A's round,
-so A's `allAcked` poll can exit before A's descriptors are drained — a
-stale TLB entry stays live on the target, the exact SMP-C4 hazard; and
-(b) B's reset clears A's born-`true` flag, which nothing re-sets if A
-polls with IRQs masked — a mutual hang.  SM7.B.7 therefore serialises
-rounds under the single global `ShootdownRoundLockId` (below), acquired
-before any per-core `ShootdownQueueLockId`.
+Rounds are serialised system-wide under the single global
+`ShootdownRoundLockId` (below), acquired before any per-core
+`ShootdownQueueLockId`.  The plan §3.2 precondition (the initiator
+holds the VSpaceRoot write lock) is **not** sufficient — two initiators
+shooting down *different* VSpaces hold different VSpaceRoot locks and
+would interleave.
 
-**What the runtime refines (SM7.F.3).**  The Rust acknowledgment
-channel is *not* a Boolean reset — each slot holds a monotone
-`acked_gen` advanced by a release `fetch_max`, the initiator waits for
-`acked_gen[c] ≥ gen`, and there is no reset at all
-(`rust/sele4n-hal/src/shootdown.rs`).  The extra strength is needed
-because the runtime has a delivery mechanism this model does not
-represent: a `.tlbShootdownReq` SGI can stay *pending* across the
-cooperative round-lock acquire (which self-services without consuming
-the interrupt) and be taken inside a later round, where a Boolean
-handler would acknowledge work it never did.  Here a handler
-application is an explicit function call, so that shape is
-unrepresentable and the Boolean stays a faithful abstraction under the
-serialisation contract above.  Round identity *is* modelled where it
-is observable — on the descriptors (`TlbShootdownDescriptor.generation`
-and the `roundGeneration` counter below), which is what makes the
-window drain (`drainShootdownsInWindow`) exact.
+**Why, now that acknowledgments carry round identity.**  The SM7.A
+audit justified this contract by two failure modes of a *Boolean* ack
+vector: (a) initiator B's round marking B's flag while A still waited
+on that core, letting A's poll exit early — the SMP-C4 hazard; and (b)
+B's reset clearing A's born-`true` flag, a mutual hang.  Both are now
+closed by the representation itself and neither is the live reason:
+`ackOnCore` tests `roundGeneration ≤ ackedGenOnCore c`, so a later
+round only ever *raises* the bar rather than satisfying an older wait,
+and nothing is cleared to open a round, so there is no flag to lose.
+
+What still requires serialisation is the runtime's single shared
+operand mailbox and the SGI/wait pairing around it: the initiator
+publishes one round's operands, fires the SGIs, and blocks until its
+targets acknowledge *that* round.  Two rounds interleaved there would
+have the second overwrite the first's operands mid-flight, which no
+generation on the acknowledgment side can repair.  That is what
+`SHOOTDOWN_ROUND_LOCK` brackets.
+
+**Two generations, and which is which (SM7.F.3).**  The word
+"generation" names two distinct counters, and conflating them was the
+v0.32.112 security defect, so they are kept apart deliberately:
+
+* The **model** generation — `roundGeneration` here, advanced by
+  `beginShootdownRound{,For}` and stamped onto each posted descriptor
+  (`TlbShootdownDescriptor.generation`).  It is allocated at *commit
+  time*, inside the atomic state transition, and its job is to answer
+  "which descriptors belong to this commit?" — which is what makes the
+  window drain (`drainShootdownsInWindow`) exact.
+* The **runtime** generation — `SHOOTDOWN_ROUND_SEQ` in
+  `rust/sele4n-hal/src/shootdown.rs`, allocated by `fetch_add` *while
+  holding the round lock*, so allocation order is hardware execution
+  order by construction.  It answers "which hardware round is this,
+  relative to the rounds whose acknowledgments could satisfy its
+  wait?", and it is the one the Rust `acked_gen` comparison uses.
+
+They cannot be the same counter: the model's is ordered by commit and
+the hardware round is bracketed by a lock taken *afterwards*, so a
+round committed earlier can execute later.  Keying the acknowledgment
+wait on the model counter let an older round be certified by a newer
+round's acknowledgments with its operands still resident in every
+remote TLB — the SMP-C4 hazard, fixed at v0.32.112.
+
+The model's own acknowledgment channel mirrors the runtime's shape
+(monotone, generation-valued, never reset) rather than abstracting it
+to a Boolean, so the property that matters — an acknowledgment names
+the round it discharged — is stated here and not merely promised by the
+FFI.
 
 ## Capacity bound (SM7.A.6)
 
@@ -239,11 +268,13 @@ theorem maxPendingPerCore_pos : 0 < maxPendingPerCore := by decide
   Writers append under the pending-shootdown lock discipline
   (SM7.B.7); core `c`'s `.tlbShootdownReq` SGI handler drains the
   whole queue (`drainShootdowns`).
-* `shootdownAck` (SM7.A.3) — core `c`'s slot is `true` once `c` has
-  completed (and locally retired) every invalidation of the current
-  round; the initiator's wait loop polls for `allAcked`.  Models the
-  Rust `SHOOTDOWN_ACK` per-core `AtomicBool` array (release-store on
-  set, acquire-load on poll; formalised at SM7.B.4).
+* `shootdownAck` (SM7.A.3; generation-valued since v0.32.113) — core
+  `c`'s slot holds the highest round generation `c` has completed (and
+  locally retired every invalidation of); `ackOnCore` reads it as
+  "has `c` discharged the open round?" and the initiator's wait loop
+  polls for `allAcked`.  Models the Rust `SHOOTDOWN_ACK` per-core
+  `acked_gen : AtomicU64` array (release `fetch_max` on acknowledge,
+  acquire-load on poll; formalised at SM7.B.4).
 
 * `roundGeneration` (SM7.F.3) — the number of shootdown rounds opened
   so far; `beginShootdownRound{,For}` increments it and stamps the

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/sm7f-tlb-fills-6r7c3l",
-      "commit_sha": "69ff82253f89bb548ccecee271dba972bd35509a",
-      "tree_sha": "3cde26a92f5db152500d40ce3a3d75f77251d6a7",
-      "committed_at_utc": "2026-08-03T21:34:03+00:00"
+      "commit_sha": "a318ec9cf34ba919dac606d9a94ddccfeb5b719c",
+      "tree_sha": "b7901697d2fa3b7af85accfbbbb15fe00382d206",
+      "committed_at_utc": "2026-08-03T21:51:49+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "ad1e4f47fff15373a0c8d6a6dd7ff2f9c8fc0124da301452a3b477c557eadc35"
+    "source_digest": "0466c77eaafbeafa2f28f2f9cabc8fdf2d68066c0247437d06c866a6e4836973"
   },
   "summary": {
     "module_count": 331,
     "declaration_count": 14015
   },
   "readme_sync": {
-    "version": "0.32.121",
+    "version": "0.32.122",
     "lean_toolchain": "v4.28.0",
     "production_files": 264,
-    "production_loc": 238171,
+    "production_loc": 238202,
     "test_files": 67,
     "test_loc": 48449,
     "proved_theorem_lemma_decls": 7798,
@@ -13972,13 +13972,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel.Architecture",
-          "line": 168,
+          "line": 197,
           "called": []
         },
         {
           "kind": "structure",
           "name": "TlbShootdownDescriptor",
-          "line": 204,
+          "line": 233,
           "called": [
             "CoreId",
             "TlbInvalidation"
@@ -13987,13 +13987,13 @@
         {
           "kind": "def",
           "name": "maxPendingPerCore",
-          "line": 223,
+          "line": 252,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "maxPendingPerCore_pos",
-          "line": 229,
+          "line": 258,
           "called": [
             "maxPendingPerCore"
           ]
@@ -14001,7 +14001,7 @@
         {
           "kind": "structure",
           "name": "TlbShootdownState",
-          "line": 284,
+          "line": 315,
           "called": [
             "TlbShootdownDescriptor",
             "numCores"
@@ -14010,21 +14010,21 @@
         {
           "kind": "namespace",
           "name": "TlbShootdownState",
-          "line": 304,
+          "line": 335,
           "called": []
         },
         {
           "kind": "def",
           "name": "initial",
-          "line": 309,
+          "line": 340,
           "called": [
             "TlbShootdownState"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:311>",
-          "line": 311,
+          "name": "<anonymous:instance:342>",
+          "line": 342,
           "called": [
             "TlbShootdownState",
             "initial"
@@ -14033,7 +14033,7 @@
         {
           "kind": "def",
           "name": "pendingOnCore",
-          "line": 323,
+          "line": 354,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -14045,7 +14045,7 @@
         {
           "kind": "def",
           "name": "ackedGenOnCore",
-          "line": 330,
+          "line": 361,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -14056,7 +14056,7 @@
         {
           "kind": "def",
           "name": "ackOnCore",
-          "line": 349,
+          "line": 380,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -14067,7 +14067,7 @@
         {
           "kind": "def",
           "name": "setPendingOnCore",
-          "line": 353,
+          "line": 384,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -14079,7 +14079,7 @@
         {
           "kind": "def",
           "name": "setAckedGenOnCore",
-          "line": 358,
+          "line": 389,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -14090,7 +14090,7 @@
         {
           "kind": "theorem",
           "name": "setPendingOnCore_pendingOnCore_self",
-          "line": 370,
+          "line": 401,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -14103,7 +14103,7 @@
         {
           "kind": "theorem",
           "name": "setPendingOnCore_pendingOnCore_ne",
-          "line": 375,
+          "line": 406,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -14117,7 +14117,7 @@
         {
           "kind": "theorem",
           "name": "setPendingOnCore_ackOnCore",
-          "line": 381,
+          "line": 412,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -14131,7 +14131,7 @@
         {
           "kind": "theorem",
           "name": "setAckedGenOnCore_ackedGenOnCore_self",
-          "line": 386,
+          "line": 417,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -14143,7 +14143,7 @@
         {
           "kind": "theorem",
           "name": "setAckedGenOnCore_ackedGenOnCore_ne",
-          "line": 391,
+          "line": 422,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -14156,7 +14156,7 @@
         {
           "kind": "theorem",
           "name": "setAckedGenOnCore_ackOnCore_ne",
-          "line": 399,
+          "line": 430,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -14169,7 +14169,7 @@
         {
           "kind": "theorem",
           "name": "setAckedGenOnCore_pendingOnCore",
-          "line": 405,
+          "line": 436,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -14181,7 +14181,7 @@
         {
           "kind": "theorem",
           "name": "setPendingOnCore_roundGeneration",
-          "line": 412,
+          "line": 443,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -14193,7 +14193,7 @@
         {
           "kind": "theorem",
           "name": "setAckedGenOnCore_roundGeneration",
-          "line": 417,
+          "line": 448,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -14204,7 +14204,7 @@
         {
           "kind": "theorem",
           "name": "setAckedGenOnCore_ackOnCore_self",
-          "line": 423,
+          "line": 454,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -14216,7 +14216,7 @@
         {
           "kind": "theorem",
           "name": "ext_perCore",
-          "line": 434,
+          "line": 465,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -14228,7 +14228,7 @@
         {
           "kind": "theorem",
           "name": "initial_pendingOnCore",
-          "line": 449,
+          "line": 480,
           "called": [
             "CoreId",
             "initial",
@@ -14238,7 +14238,7 @@
         {
           "kind": "theorem",
           "name": "initial_ackOnCore",
-          "line": 455,
+          "line": 486,
           "called": [
             "CoreId",
             "ackOnCore",
@@ -14248,7 +14248,7 @@
         {
           "kind": "theorem",
           "name": "initial_roundGeneration",
-          "line": 462,
+          "line": 493,
           "called": [
             "TlbShootdownState"
           ]
@@ -14256,7 +14256,7 @@
         {
           "kind": "def",
           "name": "roundDescriptor",
-          "line": 480,
+          "line": 511,
           "called": [
             "CoreId",
             "TlbInvalidation",
@@ -14267,7 +14267,7 @@
         {
           "kind": "theorem",
           "name": "roundDescriptor_op",
-          "line": 485,
+          "line": 516,
           "called": [
             "CoreId",
             "TlbInvalidation",
@@ -14278,7 +14278,7 @@
         {
           "kind": "theorem",
           "name": "roundDescriptor_initiator",
-          "line": 491,
+          "line": 522,
           "called": [
             "CoreId",
             "TlbInvalidation",
@@ -14289,7 +14289,7 @@
         {
           "kind": "theorem",
           "name": "roundDescriptor_generation",
-          "line": 497,
+          "line": 528,
           "called": [
             "CoreId",
             "TlbInvalidation",
@@ -14300,7 +14300,7 @@
         {
           "kind": "def",
           "name": "pendingBounded",
-          "line": 515,
+          "line": 546,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -14312,8 +14312,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:518>",
-          "line": 518,
+          "name": "<anonymous:instance:549>",
+          "line": 549,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -14327,7 +14327,7 @@
         {
           "kind": "def",
           "name": "ackBounded",
-          "line": 535,
+          "line": 566,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -14337,8 +14337,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:538>",
-          "line": 538,
+          "name": "<anonymous:instance:569>",
+          "line": 569,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -14350,7 +14350,7 @@
         {
           "kind": "def",
           "name": "allAcked",
-          "line": 577,
+          "line": 608,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -14360,8 +14360,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:580>",
-          "line": 580,
+          "name": "<anonymous:instance:611>",
+          "line": 611,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -14373,7 +14373,7 @@
         {
           "kind": "def",
           "name": "shootdownQuiescent",
-          "line": 586,
+          "line": 617,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -14384,8 +14384,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:589>",
-          "line": 589,
+          "name": "<anonymous:instance:620>",
+          "line": 620,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -14398,7 +14398,7 @@
         {
           "kind": "theorem",
           "name": "allAcked_not_serviced_prefix",
-          "line": 629,
+          "line": 660,
           "called": [
             "TlbShootdownDescriptor",
             "TlbShootdownState",
@@ -14414,7 +14414,7 @@
         {
           "kind": "theorem",
           "name": "shootdownQuiescent_pending_nil",
-          "line": 641,
+          "line": 672,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -14426,7 +14426,7 @@
         {
           "kind": "theorem",
           "name": "initial_pendingBounded",
-          "line": 647,
+          "line": 678,
           "called": [
             "initial",
             "initial_pendingOnCore",
@@ -14436,7 +14436,7 @@
         {
           "kind": "theorem",
           "name": "initial_ackBounded",
-          "line": 656,
+          "line": 687,
           "called": [
             "ackBounded",
             "ackedGenOnCore",
@@ -14447,7 +14447,7 @@
         {
           "kind": "theorem",
           "name": "initial_allAcked",
-          "line": 662,
+          "line": 693,
           "called": [
             "allAcked",
             "initial",
@@ -14457,7 +14457,7 @@
         {
           "kind": "theorem",
           "name": "initial_shootdownQuiescent",
-          "line": 666,
+          "line": 697,
           "called": [
             "initial",
             "initial_allAcked",
@@ -14468,7 +14468,7 @@
         {
           "kind": "theorem",
           "name": "pendingBounded_of_shootdownQuiescent",
-          "line": 672,
+          "line": 703,
           "called": [
             "TlbShootdownState",
             "pendingBounded",
@@ -14479,7 +14479,7 @@
         {
           "kind": "def",
           "name": "enqueueShootdown",
-          "line": 698,
+          "line": 729,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -14495,7 +14495,7 @@
         {
           "kind": "theorem",
           "name": "enqueueShootdown_isSome_iff",
-          "line": 707,
+          "line": 738,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -14510,7 +14510,7 @@
         {
           "kind": "theorem",
           "name": "enqueueShootdown_eq_none_iff",
-          "line": 717,
+          "line": 748,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -14526,7 +14526,7 @@
         {
           "kind": "theorem",
           "name": "enqueueShootdown_eq_none_of_full",
-          "line": 725,
+          "line": 756,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -14543,7 +14543,7 @@
         {
           "kind": "theorem",
           "name": "enqueueShootdown_pending_target",
-          "line": 734,
+          "line": 765,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -14556,7 +14556,7 @@
         {
           "kind": "theorem",
           "name": "enqueueShootdown_mem",
-          "line": 747,
+          "line": 778,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -14570,7 +14570,7 @@
         {
           "kind": "theorem",
           "name": "enqueueShootdown_length",
-          "line": 756,
+          "line": 787,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -14585,7 +14585,7 @@
         {
           "kind": "theorem",
           "name": "enqueueShootdown_frame_pending",
-          "line": 767,
+          "line": 798,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -14600,7 +14600,7 @@
         {
           "kind": "theorem",
           "name": "enqueueShootdown_frame_ack",
-          "line": 782,
+          "line": 813,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -14613,7 +14613,7 @@
         {
           "kind": "theorem",
           "name": "enqueueShootdown_frame_ackedGen",
-          "line": 795,
+          "line": 826,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -14627,7 +14627,7 @@
         {
           "kind": "theorem",
           "name": "enqueueShootdown_frame_roundGeneration",
-          "line": 809,
+          "line": 840,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -14639,7 +14639,7 @@
         {
           "kind": "theorem",
           "name": "enqueueShootdown_preserves_pendingBounded",
-          "line": 824,
+          "line": 855,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -14658,7 +14658,7 @@
         {
           "kind": "theorem",
           "name": "enqueueShootdown_isSome_of_empty",
-          "line": 853,
+          "line": 884,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -14673,7 +14673,7 @@
         {
           "kind": "theorem",
           "name": "foldlM_enqueueShootdown_isSome",
-          "line": 865,
+          "line": 896,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -14689,7 +14689,7 @@
         {
           "kind": "theorem",
           "name": "foldlM_enqueueShootdown_frame_ack",
-          "line": 887,
+          "line": 918,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -14705,7 +14705,7 @@
         {
           "kind": "theorem",
           "name": "foldlM_enqueueShootdown_frame_pending",
-          "line": 910,
+          "line": 941,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -14721,7 +14721,7 @@
         {
           "kind": "def",
           "name": "enqueueShootdownOrCoalesce",
-          "line": 972,
+          "line": 1003,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -14735,7 +14735,7 @@
         {
           "kind": "theorem",
           "name": "enqueueShootdownOrCoalesce_eq_enqueue",
-          "line": 981,
+          "line": 1012,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -14748,7 +14748,7 @@
         {
           "kind": "theorem",
           "name": "enqueueShootdownOrCoalesce_of_full",
-          "line": 990,
+          "line": 1021,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -14764,7 +14764,7 @@
         {
           "kind": "theorem",
           "name": "enqueueShootdownOrCoalesce_request_covered",
-          "line": 1001,
+          "line": 1032,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -14778,7 +14778,7 @@
         {
           "kind": "theorem",
           "name": "enqueueShootdownOrCoalesce_pending_covered",
-          "line": 1019,
+          "line": 1050,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -14792,7 +14792,7 @@
         {
           "kind": "theorem",
           "name": "enqueueShootdownOrCoalesce_preserves_pendingBounded",
-          "line": 1039,
+          "line": 1070,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -14810,7 +14810,7 @@
         {
           "kind": "theorem",
           "name": "enqueueShootdownOrCoalesce_frame_pending",
-          "line": 1058,
+          "line": 1089,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -14826,7 +14826,7 @@
         {
           "kind": "theorem",
           "name": "enqueueShootdownOrCoalesce_frame_ack",
-          "line": 1071,
+          "line": 1102,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -14840,7 +14840,7 @@
         {
           "kind": "theorem",
           "name": "enqueueShootdownOrCoalesce_preserves_ackBounded",
-          "line": 1081,
+          "line": 1112,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -14857,7 +14857,7 @@
         {
           "kind": "def",
           "name": "drainShootdowns",
-          "line": 1114,
+          "line": 1145,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -14870,7 +14870,7 @@
         {
           "kind": "theorem",
           "name": "drainShootdowns_fst",
-          "line": 1121,
+          "line": 1152,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -14882,7 +14882,7 @@
         {
           "kind": "theorem",
           "name": "mem_drainShootdowns_fst_iff",
-          "line": 1126,
+          "line": 1157,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -14895,7 +14895,7 @@
         {
           "kind": "theorem",
           "name": "drainShootdowns_pending_self",
-          "line": 1131,
+          "line": 1162,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -14907,7 +14907,7 @@
         {
           "kind": "theorem",
           "name": "drainShootdowns_frame_pending",
-          "line": 1138,
+          "line": 1169,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -14921,7 +14921,7 @@
         {
           "kind": "theorem",
           "name": "drainShootdowns_frame_ack",
-          "line": 1146,
+          "line": 1177,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -14935,7 +14935,7 @@
         {
           "kind": "theorem",
           "name": "drainShootdowns_frame_ackedGen",
-          "line": 1152,
+          "line": 1183,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -14948,7 +14948,7 @@
         {
           "kind": "theorem",
           "name": "drainShootdowns_preserves_ackBounded",
-          "line": 1160,
+          "line": 1191,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -14961,7 +14961,7 @@
         {
           "kind": "theorem",
           "name": "drainShootdowns_preserves_pendingBounded",
-          "line": 1170,
+          "line": 1201,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -14974,7 +14974,7 @@
         {
           "kind": "theorem",
           "name": "drainShootdowns_drain_twice",
-          "line": 1183,
+          "line": 1214,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -14986,7 +14986,7 @@
         {
           "kind": "theorem",
           "name": "enqueueShootdown_isSome_after_drain",
-          "line": 1190,
+          "line": 1221,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -15002,7 +15002,7 @@
         {
           "kind": "theorem",
           "name": "drainShootdowns_frame_roundGeneration",
-          "line": 1197,
+          "line": 1228,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15013,7 +15013,7 @@
         {
           "kind": "theorem",
           "name": "drainShootdowns_after_enqueue",
-          "line": 1204,
+          "line": 1235,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -15029,13 +15029,13 @@
         {
           "kind": "def",
           "name": "inRoundWindow",
-          "line": 1238,
+          "line": 1269,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "inRoundWindow_iff",
-          "line": 1241,
+          "line": 1272,
           "called": [
             "inRoundWindow"
           ]
@@ -15043,7 +15043,7 @@
         {
           "kind": "theorem",
           "name": "inRoundWindow_empty",
-          "line": 1248,
+          "line": 1279,
           "called": [
             "inRoundWindow"
           ]
@@ -15051,7 +15051,7 @@
         {
           "kind": "theorem",
           "name": "inRoundWindow_succ_self",
-          "line": 1256,
+          "line": 1287,
           "called": [
             "inRoundWindow",
             "inRoundWindow_iff"
@@ -15060,7 +15060,7 @@
         {
           "kind": "def",
           "name": "drainShootdownsInWindow",
-          "line": 1273,
+          "line": 1304,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -15075,7 +15075,7 @@
         {
           "kind": "theorem",
           "name": "drainShootdownsInWindow_fst",
-          "line": 1282,
+          "line": 1313,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15089,7 +15089,7 @@
         {
           "kind": "theorem",
           "name": "mem_drainShootdownsInWindow_fst_iff",
-          "line": 1290,
+          "line": 1321,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -15104,7 +15104,7 @@
         {
           "kind": "theorem",
           "name": "mem_pending_of_mem_drainShootdownsInWindow_fst",
-          "line": 1298,
+          "line": 1329,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -15118,7 +15118,7 @@
         {
           "kind": "theorem",
           "name": "drainShootdownsInWindow_pending_self",
-          "line": 1306,
+          "line": 1337,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15132,7 +15132,7 @@
         {
           "kind": "theorem",
           "name": "drainShootdownsInWindow_preserves_foreign",
-          "line": 1320,
+          "line": 1351,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -15147,7 +15147,7 @@
         {
           "kind": "theorem",
           "name": "drainShootdownsInWindow_drains_own",
-          "line": 1331,
+          "line": 1362,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -15162,7 +15162,7 @@
         {
           "kind": "theorem",
           "name": "drainShootdownsInWindow_frame_pending",
-          "line": 1339,
+          "line": 1370,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15176,7 +15176,7 @@
         {
           "kind": "theorem",
           "name": "drainShootdownsInWindow_frame_ack",
-          "line": 1348,
+          "line": 1379,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15190,7 +15190,7 @@
         {
           "kind": "theorem",
           "name": "drainShootdownsInWindow_frame_ackedGen",
-          "line": 1355,
+          "line": 1386,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15203,7 +15203,7 @@
         {
           "kind": "theorem",
           "name": "drainShootdownsInWindow_frame_roundGeneration",
-          "line": 1363,
+          "line": 1394,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15214,7 +15214,7 @@
         {
           "kind": "theorem",
           "name": "drainShootdownsInWindow_preserves_ackBounded",
-          "line": 1370,
+          "line": 1401,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15227,7 +15227,7 @@
         {
           "kind": "theorem",
           "name": "drainShootdownsInWindow_preserves_pendingBounded",
-          "line": 1380,
+          "line": 1411,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15242,7 +15242,7 @@
         {
           "kind": "theorem",
           "name": "drainShootdownsInWindow_eq_drainShootdowns",
-          "line": 1399,
+          "line": 1430,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15257,7 +15257,7 @@
         {
           "kind": "theorem",
           "name": "drainShootdownsInWindow_eq_drainShootdowns_of_all",
-          "line": 1415,
+          "line": 1446,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15272,7 +15272,7 @@
         {
           "kind": "def",
           "name": "acknowledgeShootdown",
-          "line": 1443,
+          "line": 1474,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15284,7 +15284,7 @@
         {
           "kind": "theorem",
           "name": "acknowledgeShootdown_roundGeneration",
-          "line": 1448,
+          "line": 1479,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15295,7 +15295,7 @@
         {
           "kind": "theorem",
           "name": "acknowledgeShootdown_ackedGenOnCore_self",
-          "line": 1454,
+          "line": 1485,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15307,7 +15307,7 @@
         {
           "kind": "theorem",
           "name": "acknowledgeShootdown_ackOnCore_self",
-          "line": 1462,
+          "line": 1493,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15322,7 +15322,7 @@
         {
           "kind": "theorem",
           "name": "acknowledgeShootdown_ackOnCore_ne",
-          "line": 1471,
+          "line": 1502,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15336,7 +15336,7 @@
         {
           "kind": "theorem",
           "name": "acknowledgeShootdown_ackedGenOnCore_ne",
-          "line": 1478,
+          "line": 1509,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15350,7 +15350,7 @@
         {
           "kind": "theorem",
           "name": "acknowledgeShootdown_frame_pending",
-          "line": 1485,
+          "line": 1516,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15362,7 +15362,7 @@
         {
           "kind": "theorem",
           "name": "acknowledgeShootdown_preserves_pendingBounded",
-          "line": 1491,
+          "line": 1522,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15375,7 +15375,7 @@
         {
           "kind": "theorem",
           "name": "acknowledgeShootdown_preserves_ackBounded",
-          "line": 1500,
+          "line": 1531,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15390,7 +15390,7 @@
         {
           "kind": "theorem",
           "name": "acknowledgeShootdown_monotone",
-          "line": 1518,
+          "line": 1549,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15406,7 +15406,7 @@
         {
           "kind": "theorem",
           "name": "foldl_acknowledgeShootdown_monotone",
-          "line": 1533,
+          "line": 1564,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15420,7 +15420,7 @@
         {
           "kind": "theorem",
           "name": "foldl_acknowledgeShootdown_sets",
-          "line": 1544,
+          "line": 1575,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15435,7 +15435,7 @@
         {
           "kind": "theorem",
           "name": "allCores_foldl_acknowledgeShootdown_allAcked",
-          "line": 1565,
+          "line": 1596,
           "called": [
             "TlbShootdownState",
             "acknowledgeShootdown",
@@ -15448,7 +15448,7 @@
         {
           "kind": "def",
           "name": "beginShootdownRound",
-          "line": 1597,
+          "line": 1628,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15459,7 +15459,7 @@
         {
           "kind": "theorem",
           "name": "beginShootdownRound_ackOnCore_initiator",
-          "line": 1604,
+          "line": 1635,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15473,7 +15473,7 @@
         {
           "kind": "theorem",
           "name": "beginShootdownRound_ackOnCore_target",
-          "line": 1616,
+          "line": 1647,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15490,7 +15490,7 @@
         {
           "kind": "theorem",
           "name": "beginShootdownRound_ackOnCore_iff",
-          "line": 1631,
+          "line": 1662,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15504,7 +15504,7 @@
         {
           "kind": "theorem",
           "name": "beginShootdownRound_preserves_ackBounded",
-          "line": 1642,
+          "line": 1673,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15520,7 +15520,7 @@
         {
           "kind": "theorem",
           "name": "beginShootdownRound_frame_pending",
-          "line": 1659,
+          "line": 1690,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15533,7 +15533,7 @@
         {
           "kind": "theorem",
           "name": "beginShootdownRound_preserves_pendingBounded",
-          "line": 1668,
+          "line": 1699,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15546,7 +15546,7 @@
         {
           "kind": "theorem",
           "name": "beginShootdownRound_roundGeneration",
-          "line": 1676,
+          "line": 1707,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15557,7 +15557,7 @@
         {
           "kind": "theorem",
           "name": "foldl_setAckedGen_ackedGenOnCore",
-          "line": 1695,
+          "line": 1726,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15572,7 +15572,7 @@
         {
           "kind": "theorem",
           "name": "foldl_setAckedGen_pendingOnCore",
-          "line": 1716,
+          "line": 1747,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15585,7 +15585,7 @@
         {
           "kind": "theorem",
           "name": "foldl_setAckedGen_roundGeneration",
-          "line": 1730,
+          "line": 1761,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15597,7 +15597,7 @@
         {
           "kind": "def",
           "name": "bornAcknowledged",
-          "line": 1743,
+          "line": 1774,
           "called": [
             "CoreId",
             "filter"
@@ -15606,7 +15606,7 @@
         {
           "kind": "theorem",
           "name": "mem_bornAcknowledged",
-          "line": 1749,
+          "line": 1780,
           "called": [
             "CoreId",
             "allCores",
@@ -15616,7 +15616,7 @@
         {
           "kind": "def",
           "name": "beginShootdownRoundFor",
-          "line": 1779,
+          "line": 1810,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15628,7 +15628,7 @@
         {
           "kind": "theorem",
           "name": "beginShootdownRoundFor_ackedGenOnCore",
-          "line": 1794,
+          "line": 1825,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15644,7 +15644,7 @@
         {
           "kind": "theorem",
           "name": "beginShootdownRoundFor_gen",
-          "line": 1812,
+          "line": 1843,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15657,7 +15657,7 @@
         {
           "kind": "theorem",
           "name": "beginShootdownRoundFor_ackOnCore_of_born",
-          "line": 1827,
+          "line": 1858,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15672,7 +15672,7 @@
         {
           "kind": "theorem",
           "name": "beginShootdownRoundFor_ackOnCore_iff",
-          "line": 1843,
+          "line": 1874,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15688,7 +15688,7 @@
         {
           "kind": "theorem",
           "name": "beginShootdownRoundFor_frame_pending",
-          "line": 1858,
+          "line": 1889,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15702,7 +15702,7 @@
         {
           "kind": "theorem",
           "name": "beginShootdownRoundFor_preserves_ackBounded",
-          "line": 1869,
+          "line": 1900,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15717,7 +15717,7 @@
         {
           "kind": "theorem",
           "name": "beginShootdownRoundFor_preserves_pendingBounded",
-          "line": 1883,
+          "line": 1914,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15730,7 +15730,7 @@
         {
           "kind": "theorem",
           "name": "beginShootdownRoundFor_roundGeneration",
-          "line": 1894,
+          "line": 1925,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15743,7 +15743,7 @@
         {
           "kind": "theorem",
           "name": "beginShootdownRoundFor_roundGeneration_gt",
-          "line": 1906,
+          "line": 1937,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15755,7 +15755,7 @@
         {
           "kind": "theorem",
           "name": "roundDescriptor_generation_eq_opened",
-          "line": 1919,
+          "line": 1950,
           "called": [
             "CoreId",
             "TlbInvalidation",
@@ -15769,7 +15769,7 @@
         {
           "kind": "theorem",
           "name": "roundDescriptor_inRoundWindow",
-          "line": 1930,
+          "line": 1961,
           "called": [
             "CoreId",
             "TlbInvalidation",
@@ -15785,7 +15785,7 @@
         {
           "kind": "theorem",
           "name": "beginShootdownRoundFor_allCores_eq",
-          "line": 1944,
+          "line": 1975,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15807,7 +15807,7 @@
         {
           "kind": "def",
           "name": "completeShootdownOnCore",
-          "line": 1987,
+          "line": 2018,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15819,7 +15819,7 @@
         {
           "kind": "theorem",
           "name": "completeShootdownOnCore_eq",
-          "line": 1998,
+          "line": 2029,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15832,7 +15832,7 @@
         {
           "kind": "theorem",
           "name": "completeShootdownOnCore_preserves_pendingBounded",
-          "line": 2007,
+          "line": 2038,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15846,7 +15846,7 @@
         {
           "kind": "theorem",
           "name": "completeShootdownOnCore_preserves_ackBounded",
-          "line": 2016,
+          "line": 2047,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15863,7 +15863,7 @@
         {
           "kind": "theorem",
           "name": "completeShootdownOnCore_pendingOnCore_self",
-          "line": 2025,
+          "line": 2056,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15876,7 +15876,7 @@
         {
           "kind": "theorem",
           "name": "completeShootdownOnCore_ackOnCore_self",
-          "line": 2033,
+          "line": 2064,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15891,7 +15891,7 @@
         {
           "kind": "theorem",
           "name": "completeShootdownOnCore_frame_pending",
-          "line": 2042,
+          "line": 2073,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15905,7 +15905,7 @@
         {
           "kind": "theorem",
           "name": "completeShootdownOnCore_roundGeneration",
-          "line": 2050,
+          "line": 2081,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15916,7 +15916,7 @@
         {
           "kind": "theorem",
           "name": "completeShootdownOnCore_ackedGenOnCore_self",
-          "line": 2056,
+          "line": 2087,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15931,7 +15931,7 @@
         {
           "kind": "theorem",
           "name": "completeShootdownOnCore_frame_ackedGen",
-          "line": 2065,
+          "line": 2096,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15946,7 +15946,7 @@
         {
           "kind": "theorem",
           "name": "completeShootdownOnCore_frame_ack",
-          "line": 2073,
+          "line": 2104,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15960,7 +15960,7 @@
         {
           "kind": "def",
           "name": "completeShootdownOnCoreInWindow",
-          "line": 2094,
+          "line": 2125,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15972,7 +15972,7 @@
         {
           "kind": "theorem",
           "name": "completeShootdownOnCoreInWindow_eq",
-          "line": 2100,
+          "line": 2131,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -15985,7 +15985,7 @@
         {
           "kind": "theorem",
           "name": "completeShootdownOnCoreInWindow_preserves_foreign",
-          "line": 2108,
+          "line": 2139,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -16002,7 +16002,7 @@
         {
           "kind": "theorem",
           "name": "completeShootdownOnCoreInWindow_ackOnCore_self",
-          "line": 2123,
+          "line": 2154,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -16018,7 +16018,7 @@
         {
           "kind": "theorem",
           "name": "completeShootdownOnCoreInWindow_ackedGenOnCore_self",
-          "line": 2135,
+          "line": 2166,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -16033,7 +16033,7 @@
         {
           "kind": "theorem",
           "name": "completeShootdownOnCoreInWindow_not_acks_foreign",
-          "line": 2152,
+          "line": 2183,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -16046,7 +16046,7 @@
         {
           "kind": "theorem",
           "name": "completeShootdownOnCoreInWindow_preserves_ackBounded",
-          "line": 2167,
+          "line": 2198,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -16064,7 +16064,7 @@
         {
           "kind": "theorem",
           "name": "completeShootdownOnCoreInWindow_frame_pending",
-          "line": 2179,
+          "line": 2210,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -16079,7 +16079,7 @@
         {
           "kind": "theorem",
           "name": "completeShootdownOnCoreInWindow_frame_ack",
-          "line": 2188,
+          "line": 2219,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -16094,7 +16094,7 @@
         {
           "kind": "theorem",
           "name": "completeShootdownOnCoreInWindow_frame_roundGeneration",
-          "line": 2196,
+          "line": 2227,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -16105,7 +16105,7 @@
         {
           "kind": "theorem",
           "name": "completeShootdownOnCoreInWindow_preserves_pendingBounded",
-          "line": 2203,
+          "line": 2234,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -16119,7 +16119,7 @@
         {
           "kind": "theorem",
           "name": "completeShootdownOnCoreInWindow_eq_complete",
-          "line": 2222,
+          "line": 2253,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -16136,7 +16136,7 @@
         {
           "kind": "theorem",
           "name": "completeShootdownOnCore_comm",
-          "line": 2235,
+          "line": 2266,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -16152,7 +16152,7 @@
         {
           "kind": "theorem",
           "name": "foldl_completeShootdownOnCore_pendingOnCore",
-          "line": 2268,
+          "line": 2299,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -16166,7 +16166,7 @@
         {
           "kind": "theorem",
           "name": "foldl_completeShootdownOnCore_ackOnCore",
-          "line": 2288,
+          "line": 2319,
           "called": [
             "CoreId",
             "TlbShootdownState",
@@ -16180,7 +16180,7 @@
         {
           "kind": "theorem",
           "name": "beginRound_foldlM_enqueueShootdown_isSome",
-          "line": 2309,
+          "line": 2340,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -16196,7 +16196,7 @@
         {
           "kind": "theorem",
           "name": "shootdownRound_restores_quiescent",
-          "line": 2337,
+          "line": 2368,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -16217,7 +16217,7 @@
         {
           "kind": "theorem",
           "name": "beginRoundFor_foldlM_enqueueShootdown_isSome",
-          "line": 2367,
+          "line": 2398,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -16233,7 +16233,7 @@
         {
           "kind": "theorem",
           "name": "shootdownRoundFor_restores_quiescent",
-          "line": 2384,
+          "line": 2415,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -16254,13 +16254,13 @@
         {
           "kind": "structure",
           "name": "ShootdownRoundLockId",
-          "line": 2431,
+          "line": 2462,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "ShootdownRoundLockId.singleton",
-          "line": 2436,
+          "line": 2467,
           "called": [
             "ShootdownRoundLockId"
           ]
@@ -16268,7 +16268,7 @@
         {
           "kind": "structure",
           "name": "ShootdownQueueLockId",
-          "line": 2460,
+          "line": 2491,
           "called": [
             "CoreId"
           ]
@@ -16276,37 +16276,37 @@
         {
           "kind": "namespace",
           "name": "ShootdownQueueLockId",
-          "line": 2464,
+          "line": 2495,
           "called": []
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:2466>",
-          "line": 2466,
+          "name": "<anonymous:instance:2497>",
+          "line": 2497,
           "called": [
             "ShootdownQueueLockId"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:2467>",
-          "line": 2467,
+          "name": "<anonymous:instance:2498>",
+          "line": 2498,
           "called": [
             "ShootdownQueueLockId"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:2469>",
-          "line": 2469,
+          "name": "<anonymous:instance:2500>",
+          "line": 2500,
           "called": [
             "ShootdownQueueLockId"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:2471>",
-          "line": 2471,
+          "name": "<anonymous:instance:2502>",
+          "line": 2502,
           "called": [
             "ShootdownQueueLockId"
           ]
@@ -16314,7 +16314,7 @@
         {
           "kind": "theorem",
           "name": "le_refl",
-          "line": 2475,
+          "line": 2506,
           "called": [
             "ShootdownQueueLockId"
           ]
@@ -16322,7 +16322,7 @@
         {
           "kind": "theorem",
           "name": "le_trans",
-          "line": 2478,
+          "line": 2509,
           "called": [
             "ShootdownQueueLockId"
           ]
@@ -16330,7 +16330,7 @@
         {
           "kind": "theorem",
           "name": "le_antisymm",
-          "line": 2484,
+          "line": 2515,
           "called": [
             "ShootdownQueueLockId",
             "ext"
@@ -16339,7 +16339,7 @@
         {
           "kind": "theorem",
           "name": "le_total",
-          "line": 2494,
+          "line": 2525,
           "called": [
             "ShootdownQueueLockId"
           ]
@@ -16347,7 +16347,7 @@
         {
           "kind": "theorem",
           "name": "lt_or_gt_of_ne",
-          "line": 2500,
+          "line": 2531,
           "called": [
             "ShootdownQueueLockId",
             "le_antisymm",

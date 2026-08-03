@@ -1,3 +1,64 @@
+## v0.32.122 — The naming gate had the defect it was built to catch
+
+PR #854 review, eleventh round: two P2s. The first is against the gate
+v0.32.121 added, and it is the same defect one level up.
+
+**The gate under-matched exactly the way the sweeps did.** It keyed on
+declaration syntax and matched the literal text `pub `, so
+`pub(crate) fn phase5_helper` walked straight through, `pub(super)`
+likewise, and struct fields were never scanned at all. Confirmed by
+probe: a file carrying four forbidden identifiers passed with
+"PASS: Rust declared identifiers carry no workstream/phase codes". A gate
+that reports a hard zero while accepting violations is worse than no gate,
+because the zero gets believed.
+
+The fix is to stop enumerating declaration forms. `check_identifier_naming.py`
+(replacing the `.sh`) strips comments and string literals — handling nested
+block comments and raw strings — and then treats **every remaining
+identifier token** as in scope: any visibility, fields, parameters, locals,
+enum variants, uses. There is no declaration syntax left to fail to think
+of, which is the only property that makes "zero" mean zero. Code-class
+patterns are anchored to a name boundary so ordinary words are not caught
+(unanchored `ak[0-9]` matches "break0").
+
+Both directions verified rather than assumed: the four bypasses Codex
+found are now reported with file:line, and a file citing `AK7`/`phase5` in
+a doc comment, a line comment and a string literal still passes — prose
+stays exempt, which is what the rule actually says. The Lean ratchet
+re-baselines 127 → **150** because token scanning sees more than
+declaration scanning did; spot-checked as genuine (`Ak8Coverage`,
+`ak4a01_shortPathNoOverflow`, `test_AK8_G_…`, `Sm5iAffinityAnchors`), no
+false positives.
+
+**The second P2: a safety rationale describing a model that no longer
+exists.** `TlbShootdown.lean`'s serialisation contract still said the ack
+vector "carries no round identity" and called a Boolean abstraction
+faithful — true when written, but v0.32.113 changed the field to
+`Vector Nat` with `ackOnCore = roundGeneration ≤ ackedGenOnCore c`. Stale
+prose on a central safety argument misdirects exactly the future work most
+likely to depend on it.
+
+Rewritten, and the two failure modes the contract originally cited are now
+recorded as closed by the representation rather than by the lock: a later
+round only *raises* the acknowledgment bar, so it cannot satisfy an older
+wait, and nothing is cleared to open a round, so there is no born-`true`
+flag to lose. Both checked against the code — `beginShootdownRound`
+increments the counter and marks only the initiator, clearing nothing. What
+still needs serialisation is the single shared operand mailbox, which no
+acknowledgment-side generation can repair.
+
+The section now also separates the **two** generations by name, since
+conflating them was the v0.32.112 defect: the *model* generation
+(commit-time, keys the window drain) and the *runtime* generation
+(allocated under the round lock, so allocation order is hardware execution
+order).
+
+Rust 1107, HAL 812; Lean docstring-only, module builds clean; trace
+byte-identical.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F.3
+Refs: #854
+
 ## v0.32.121 — Internal-first naming: clear the residue, then gate it
 
 PR #854 review, tenth round: one P1, and the fourth pass at the same
