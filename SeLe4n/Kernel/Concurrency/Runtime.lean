@@ -549,6 +549,32 @@ def shootdownSelfServiceRound (c : CoreId) : BaseIO Bool := do
 def shootdownRoundLockTryAcquire : BaseIO Bool := do
   return (← Platform.FFI.ffiShootdownRoundLockTryAcquire) != 0
 
+/-- **WS-SM SM7.F.3** (PR #854 review P1): allocate the runtime round
+    generation — the identity the hardware round runs under.
+
+    Distinct from the model's `TlbShootdownState.roundGeneration` on
+    purpose.  The model generation is allocated by the pure transition,
+    inside the atomic state commit, and keys the *window drain* (which
+    descriptors belong to this commit).  This one keys the *acknowledgment
+    channel*, whose test is monotone (`acked_gen >= gen`), so it must
+    order the round against the rounds whose acks could satisfy its wait
+    — i.e. against hardware execution order.  Commit order is not that
+    order: a core can commit generation N and stall before the round
+    lock while another commits N+1 and runs its round to completion, at
+    which point every target's `acked_gen` is N+1 and the N round's wait
+    would pass with no target having serviced it (an under-invalidation
+    — the SMP-C4 stale-TLB hazard).
+
+    Allocated by a `fetch_add` performed **while holding the round lock**,
+    so allocation order is execution order by construction.  Returns a
+    value read from a `UInt64` counter, so the `UInt64.ofNat` narrowing
+    on the publish/wait path round-trips exactly and the `Nat` round
+    identity cannot alias at the FFI boundary; the Rust side additionally
+    fails closed if the counter ever wraps.  The first generation is 1,
+    never the vacuously-satisfied 0. -/
+def shootdownAllocateRoundGeneration : BaseIO Nat := do
+  return (← Platform.FFI.ffiShootdownAllocateRoundGeneration).toNat
+
 /-- **WS-SM SM7.B.7**: release the global shootdown-round lock — only
     after the initiator observed `allAcked` (or immediately before the
     timeout path's fail-closed panic). -/

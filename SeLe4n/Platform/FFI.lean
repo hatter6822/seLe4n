@@ -340,6 +340,18 @@ opaque ffiShootdownSelfServiceRound : (coreId : UInt64) → BaseIO UInt64
 @[extern "ffi_shootdown_round_lock_try_acquire"]
 opaque ffiShootdownRoundLockTryAcquire : BaseIO UInt64
 
+/-- **WS-SM SM7.F.3** (PR #854 review P1): allocate the next runtime
+    shootdown round generation (a `fetch_add` on the Rust counter; fails
+    closed on wrap).
+
+    The caller must already hold the round lock — that is what makes the
+    allocation order the hardware execution order, which the monotone
+    `acked_gen >= gen` wait depends on.
+
+    Rust: `ffi_shootdown_allocate_round_generation` in `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_shootdown_allocate_round_generation"]
+opaque ffiShootdownAllocateRoundGeneration : BaseIO UInt64
+
 /-- **WS-SM SM7.B.7**: release the global shootdown-round lock —
     only after the initiator observed `allAcked` (or on the timeout
     path immediately before the fail-closed panic).

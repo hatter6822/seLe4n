@@ -524,6 +524,22 @@ pub extern "C" fn ffi_shootdown_round_lock_try_acquire() -> u64 {
     crate::shootdown::round_lock_try_acquire() as u64
 }
 
+/// **WS-SM SM7.F.3** (PR #854 review P1): allocate the next runtime
+/// shootdown round generation.
+///
+/// Called by the Lean seam immediately **after** it acquires the round
+/// lock, so the allocation order is the hardware execution order — which
+/// is what the monotone `acked_gen >= gen` wait requires.  Using the
+/// model's commit-time generation here instead would let a round that
+/// committed earlier but executed later be certified by the acks of a
+/// round that committed later and executed first.  Fails closed on wrap.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownAllocateRoundGeneration`
+#[no_mangle]
+pub extern "C" fn ffi_shootdown_allocate_round_generation() -> u64 {
+    crate::shootdown::allocate_round_generation()
+}
+
 /// **WS-SM SM7.B.7**: Release the global shootdown-round lock — only
 /// after the initiator observed all-acked (or immediately before the
 /// timeout path's fail-closed panic).

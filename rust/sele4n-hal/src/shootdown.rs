@@ -444,6 +444,85 @@ pub fn round_lock_release() {
 }
 
 // ============================================================================
+// WS-SM SM7.F.3 (PR #854 review P1) — Runtime round-generation allocator
+// ============================================================================
+//
+// The acknowledgment test is monotone (`acked_gen >= gen`, [`fetch_max`]),
+// so a round's generation must order it against the rounds that can
+// satisfy its wait — that is, against **hardware execution order**.
+//
+// The Lean model's `TlbShootdownState.roundGeneration` does NOT: it is
+// advanced by the pure transition, inside the atomic state commit, while
+// the hardware round is bracketed by [`SHOOTDOWN_ROUND_LOCK`] which the
+// initiator acquires *afterwards*.  Nothing ties the two orders together,
+// so with two cores committing shootdown-bearing syscalls concurrently:
+//
+//   - core A commits generation N, then stalls before the lock;
+//   - core B commits N+1, wins the lock, runs its round to completion,
+//     and every target's `acked_gen` reaches N+1;
+//   - A finally takes the lock, publishes N, and waits for `>= N` —
+//     which B's acknowledgments *already* satisfy.
+//
+// A would then return from a round no target ever serviced, with its
+// operands still resident in every remote TLB: an under-invalidation,
+// the SMP-C4 stale-TLB hazard, and precisely the failure SM7.F.3's
+// generation tagging exists to prevent (it closed the same hazard for a
+// *stale* acknowledgment; this is the *premature* one).
+//
+// The fix separates the two identities, because they answer different
+// questions.  The model generation answers "which descriptors belong to
+// this commit?" and must be allocated at commit time to key the window
+// drain.  The runtime generation answers "which hardware round is this,
+// relative to the rounds whose acknowledgments could satisfy it?" and is
+// therefore allocated HERE — by a `fetch_add` performed while holding the
+// round lock, so allocation order **is** execution order by construction,
+// and an older round can no longer be certified by a newer round's acks.
+//
+// Being lock-held, the counter needs no ordering strength of its own; it
+// is atomic so the FFI boundary stays sound if a future caller allocates
+// outside the lock, and `AcqRel` keeps that hypothetical honest.
+
+/// **WS-SM SM7.F.3** (PR #854 review P1): the monotone runtime
+/// round-generation counter.  Starts at 0, so the first allocated
+/// generation is 1 — never the vacuously-satisfied 0 (a slot's initial
+/// `acked_gen` is 0, and `0 >= 0` would pass the wait with nothing
+/// serviced).
+pub static SHOOTDOWN_ROUND_SEQ: AtomicU64 = AtomicU64::new(0);
+
+/// **WS-SM SM7.F.3** (testable inner form): allocate the next runtime
+/// round generation from an explicit counter cell.
+///
+/// Must be called with the round lock held — that is what makes the
+/// returned order the hardware execution order.
+///
+/// Fails closed on wrap: at `u64::MAX` allocations the counter would
+/// return 0 and every subsequent wait would be satisfied vacuously by
+/// the targets' retained high `acked_gen` values.  Unreachable in
+/// practice (~584,000 years at one round per microsecond), but the
+/// aliasing is exactly the class the generation tagging exists to
+/// exclude, so it is rejected structurally rather than argued away.
+#[inline]
+pub fn allocate_round_generation_in(seq: &AtomicU64) -> u64 {
+    let generation = seq.fetch_add(1, Ordering::AcqRel).wrapping_add(1);
+    assert!(
+        generation != 0,
+        "WS-SM SM7.F.3: shootdown round generation counter wrapped; \
+         halting fail-closed (a wrapped generation would let stale \
+         acknowledgments satisfy every later round — the SMP-C4 \
+         stale-TLB hazard)"
+    );
+    generation
+}
+
+/// **WS-SM SM7.F.3** (PR #854 review P1): allocate the next runtime round
+/// generation.  The Lean seam calls this immediately after acquiring the
+/// round lock and uses the result for both the mailbox publish and the
+/// acknowledgment wait.
+pub fn allocate_round_generation() -> u64 {
+    allocate_round_generation_in(&SHOOTDOWN_ROUND_SEQ)
+}
+
+// ============================================================================
 // WS-SM SM7.B (debt (1)) — Per-descriptor operand mailbox
 // ============================================================================
 //
@@ -1408,6 +1487,111 @@ mod tests {
         round_lock_release();
         assert!(round_lock_try_acquire(), "released lock re-acquirable");
         round_lock_release();
+    }
+
+    /// SM7.F.3 (PR #854 review P1): the runtime generation allocator is
+    /// strictly increasing and starts at 1 — never the vacuously-
+    /// satisfied 0, which a slot's initial `acked_gen` would already
+    /// satisfy.
+    #[test]
+    fn sm7f3_round_generation_allocator_is_strictly_increasing_from_one() {
+        let seq = AtomicU64::new(0);
+        let mut previous = 0u64;
+        for expected in 1..=64u64 {
+            let generation = allocate_round_generation_in(&seq);
+            assert_eq!(
+                generation, expected,
+                "allocation {expected} must be dense and 1-based"
+            );
+            assert!(
+                generation > previous,
+                "allocations must be strictly increasing"
+            );
+            previous = generation;
+        }
+    }
+
+    /// SM7.F.3 (PR #854 review P1) — the regression witness for the
+    /// **premature**-acknowledgment hazard, the dual of the stale one
+    /// pinned by `sm7f3_stale_acknowledgment_cannot_satisfy_a_later_round`.
+    ///
+    /// Two cores commit shootdown-bearing syscalls concurrently.  Core A
+    /// commits first (model generation N) but stalls before the round
+    /// lock; core B commits second (N+1), wins the lock, and runs its
+    /// round to completion, so every target's `acked_gen` reaches B's
+    /// generation.  Core A then takes the lock and waits.
+    ///
+    /// Keying A's wait on the *commit-time* model generation is what the
+    /// review found: B's acks satisfy it instantly, so A returns from a
+    /// round no target serviced — the operands still live in every
+    /// remote TLB.  Allocating under the lock instead orders A after B,
+    /// so A's wait correctly does NOT pass until A's own round is
+    /// acknowledged.
+    #[test]
+    fn sm7f3_newer_round_acks_cannot_satisfy_an_older_unexecuted_round() {
+        // Cores: A = 0 (the victim), B = 1, C = 2.  Three rounds are
+        // needed, not two: a round's initiator never acknowledges its
+        // own slot, so B's round alone always leaves B's slot behind and
+        // A would block on it regardless.  It takes a THIRD round — one
+        // whose targets include B — to lift every one of A's targets to
+        // a generation at or above A's.  That is the steady state on a
+        // busy system, where unmap-family syscalls are frequent.
+        let (core_a, core_b, core_c) = (0usize, 1usize, 2usize);
+
+        // --- The defect: keying the round on its commit-time generation.
+        //
+        // Commit order A(1) → B(2) → C(3); execution order B → C → A.
+        let old_scheme = fresh_boot_slots();
+        for target in [0usize, 2, 3] {
+            ack_round_in_slice(&old_scheme, target, 2); // B's round
+        }
+        for target in [0usize, 1, 3] {
+            ack_round_in_slice(&old_scheme, target, 3); // C's round
+        }
+        // A now runs its round, keyed on the generation it committed
+        // with (1).  Every target has acknowledged some LATER round, so
+        // the monotone test passes instantly — A returns believing its
+        // operands are retired everywhere, while no core has so much as
+        // read A's mailbox.
+        assert!(
+            all_acked_for_round_in_slice(&old_scheme, 1, core_a, &ALL_ONLINE),
+            "regression witness: commit-time keying lets other rounds' acks \
+             certify A's unexecuted round (the SMP-C4 under-invalidation)"
+        );
+
+        // --- The fix: allocate under the round lock, so allocation order
+        // is execution order.  B and C ran first, so they hold 1 and 2
+        // and A necessarily draws 3.
+        let fixed = fresh_boot_slots();
+        let seq = AtomicU64::new(0);
+        let generation_b = allocate_round_generation_in(&seq);
+        for target in [0usize, 2, 3] {
+            ack_round_in_slice(&fixed, target, generation_b);
+        }
+        let generation_c = allocate_round_generation_in(&seq);
+        for target in [0usize, 1, 3] {
+            ack_round_in_slice(&fixed, target, generation_c);
+        }
+        let generation_a = allocate_round_generation_in(&seq);
+        assert!(
+            generation_a > generation_c && generation_c > generation_b,
+            "lock-held allocation orders A after the rounds that ran first, \
+             regardless of the commit order"
+        );
+        assert!(
+            !all_acked_for_round_in_slice(&fixed, generation_a, core_a, &ALL_ONLINE),
+            "SM7.F.3: no combination of earlier rounds' acks may certify a \
+             round that no target has serviced"
+        );
+
+        // ...and it passes once A's own targets genuinely service it.
+        for target in [core_b, core_c, 3] {
+            ack_round_in_slice(&fixed, target, generation_a);
+        }
+        assert!(
+            all_acked_for_round_in_slice(&fixed, generation_a, core_a, &ALL_ONLINE),
+            "A's round completes once its own targets acknowledge it"
+        );
     }
 
     /// SM7.B.5: an already-satisfied round satisfies the bounded wait

@@ -837,6 +837,62 @@ projection-invisible).  **Met at v0.32.105** — `SmpTlbShootdownSuite` §5.10
 (the live single-round lifecycle) and §8 (the four-round concurrent case, in
 which each commit's catch-up drains only its own rounds).
 
+#### SM7.F.3 (v0.32.112) — generations allocated in hardware execution order
+
+**SECURITY, the premature-acknowledgment dual.**  PR #854 review (Codex P1,
+valid).  v0.32.105 closed the *stale*-acknowledgment hazard — an old SGI
+satisfying a later round.  Its dual survived: a *newer* round's
+acknowledgments satisfying an earlier round that no target had serviced,
+leaving that initiator's operands live in every remote TLB while it returned
+believing them retired.  The SMP-C4 under-invalidation again, from the
+opposite direction.
+
+The acknowledgment test is monotone (`acked_gen >= gen`, `fetch_max` slots),
+so a round's generation has to order it against the rounds whose
+acknowledgments could satisfy its wait — hardware execution order.  It did
+not: `completeShootdownRounds` keyed on `window.2`, the model generation the
+pure transition advances inside the atomic commit, while the hardware round
+is bracketed by `SHOOTDOWN_ROUND_LOCK` acquired afterwards.  The two orders
+are unrelated, so a core could commit generation N, stall before the lock,
+and acquire it to find every target already acknowledging a later
+generation — its wait passing before any target read its mailbox.
+
+Two concurrent rounds cannot reach it: a round's initiator never
+acknowledges its own slot, so the second round always leaves its own
+initiator behind and the stalled core still blocks there.  It takes a third
+round, one whose targets include the second's initiator, to lift every
+target at or above the stalled generation — the steady state on a busy
+system, the shootdown-bearing syscalls being the whole unmap family.
+
+**Fix.** Separate the two identities.  The model generation keys the window
+drain (which descriptors belong to this commit) and is unchanged.  The
+runtime generation keys the acknowledgment channel and is allocated by
+`shootdown::allocate_round_generation` — a `fetch_add` on
+`SHOOTDOWN_ROUND_SEQ` performed **under the round lock**, so allocation
+order is execution order by construction.  0-based, returning
+pre-increment + 1, so no round carries the vacuously-satisfied generation 0.
+Regression witness `sm7f3_newer_round_acks_cannot_satisfy_an_older_unexecuted_round`
+runs the three-round interleaving under both schemes and asserts the old one
+passes with nothing serviced.
+
+**Generation overflow** (Codex P2, valid, closed in the same cut): the
+runtime generation is now read *from* a `u64`, so the `UInt64.ofNat`
+narrowing round-trips exactly and the `Nat` identity cannot alias at the FFI
+boundary; the allocator additionally fails closed on wrap.
+
+**TRACKED DEBT — generation-aware model acknowledgment** (Codex P2, valid,
+deferred).  `completeShootdownOnCoreInWindow` acknowledges unconditionally:
+a catch-up that drains only its own window still writes the target's flag
+`true`, so with concurrent rounds the model's `allAcked` can read true while
+a foreign round's descriptors are pending.  **Model-fidelity only** — the
+runtime consults the Rust `acked_gen`, never the model's `Bool` vector, so
+no hardware hazard follows, and no landed theorem is false (the round
+capstones are stated per-round).  Closure means converting
+`TlbShootdownState.shootdownAck` from `Vector Bool` to a generation vector
+mirroring the Rust side and re-proving the SM7.A/B acknowledgment surface —
+a cut comparable in size to SM7.F.3 itself.  **Closure target: the SM8
+mount.**
+
 #### SM7.F.3 (v0.32.105) — round-generation-tagged descriptors
 
 **The model-fidelity gap.**  A syscall's shootdown work spans *two* atomic

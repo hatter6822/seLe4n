@@ -266,23 +266,41 @@ def completeShootdownRounds (changed : List Concurrency.CoreId)
     -- TLB effect is exactly the full list's) and reuse for both the
     -- per-descriptor mailbox publish and the initiator's broadcast.
     let collapsed := Architecture.collapseShootdownOps ops
-    -- WS-SM SM7.F.3: the round identity the hardware side runs on is the
-    -- HIGHEST generation this commit opened.  A commit that opened two
-    -- rounds (the retype's destroyed + installed ASID) publishes both
-    -- rounds' operands together and waits once, so the acknowledgment it
-    -- requires must be the later of the two; a target that acknowledges
-    -- `window.2` has necessarily retired everything published here.
-    --
-    -- On this branch `window.2 > window.1`, so `roundGen ≥ 1` and no
-    -- round ever carries the vacuously-satisfied generation `0`: a
-    -- non-empty `changed` means some target's pending queue moved, and
-    -- the only transitions that write a pending queue are the posting
-    -- folds inside `tlbShootdownBroadcast{,Coalescing}`, each of which
-    -- opens a round (`beginShootdownRoundFor`) first.  A hypothetical
-    -- `roundGen = 0` would be inert rather than unsafe — the wait would
-    -- succeed immediately on a round that posted nothing.
-    let roundGen := window.2
     acquireShootdownRoundLockServicingSelf execCore
+    -- WS-SM SM7.F.3 (PR #854 review P1): the round identity the HARDWARE
+    -- side runs under is allocated HERE — under the round lock — and is
+    -- deliberately NOT the model's commit-time `window.2`.
+    --
+    -- The acknowledgment test is monotone (`acked_gen >= gen`), so this
+    -- generation has to order the round against the rounds whose acks
+    -- could satisfy its wait: hardware execution order.  The model's
+    -- generation is allocated by the pure transition inside the atomic
+    -- commit above, which is a *different* order — nothing ties a
+    -- commit's position to its position in the round-lock queue.  With
+    -- two cores posting concurrently, core A could commit generation N,
+    -- stall, watch core B commit N+1 and run B's round to completion
+    -- (every target's `acked_gen` now N+1), then acquire the lock and
+    -- have its own wait for `>= N` satisfied instantly — returning from
+    -- a round no target ever serviced, operands still live in every
+    -- remote TLB.  That is an under-invalidation: the SMP-C4 hazard,
+    -- and the same failure SM7.F.3 closed for *stale* acknowledgments,
+    -- arriving here as the *premature* one.
+    --
+    -- Allocating under the lock makes allocation order execution order
+    -- by construction, so no older round can be certified by a newer
+    -- round's acks.  The counter starts at 0 and returns pre-increment
+    -- +1, so `roundGen ≥ 1` always: a round never carries the
+    -- vacuously-satisfied generation 0 (slots initialise to 0, and
+    -- `0 >= 0` would pass with nothing serviced).  The Rust side fails
+    -- closed if the counter wraps.
+    --
+    -- The model window (`window`) keeps its own generations and still
+    -- keys the catch-up drain below — the two identities answer
+    -- different questions and are intentionally independent.  A commit
+    -- that opened two model rounds (the retype's destroyed + installed
+    -- ASID) still publishes both rounds' operands together and waits
+    -- once, now under this single hardware generation.
+    let roundGen ← Concurrency.shootdownAllocateRoundGeneration
     -- WS-SM SM7.B (debt (1)) + SM7.F.3: publish the round's exact operands
     -- AND its generation into the per-descriptor mailbox BEFORE firing the
     -- SGIs, so each target's handler latches the generation, retires just

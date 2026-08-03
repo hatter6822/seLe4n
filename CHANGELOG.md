@@ -1,3 +1,94 @@
+## v0.32.112 — SECURITY: shootdown round generations allocated in hardware execution order
+
+PR #854 review (Codex P1, valid). The SM7.F.3 acknowledgment channel could
+certify a round that no target core had serviced, leaving the initiator's
+operands resident in every remote TLB while the initiator returned to
+userspace believing them retired — an under-invalidation, the SMP-C4
+stale-TLB hazard. It is the dual of the hazard SM7.F.3 landed to close at
+v0.32.105: that one was a *stale* acknowledgment satisfying a later round,
+this one is a *newer* acknowledgment satisfying an earlier round.
+
+**Mechanism.** The acknowledgment test is monotone — `acked_gen >= gen`
+over slots advanced by `fetch_max` — so a round's generation must order it
+against the rounds whose acknowledgments could satisfy its wait, i.e.
+against hardware execution order. It did not: `completeShootdownRounds`
+keyed the round on `window.2`, the model's `TlbShootdownState.roundGeneration`,
+which the pure transition advances *inside the atomic state commit*, while
+the hardware round is bracketed by `SHOOTDOWN_ROUND_LOCK` acquired
+afterwards. Nothing relates the two orders. A core could commit generation
+N, stall before the lock, and by the time it acquired the lock find every
+one of its targets already acknowledging a *later* generation — its wait
+then passing instantly, before any target had read its mailbox or taken its
+SGI.
+
+Two concurrent rounds are not enough to reach it, because a round's
+initiator never acknowledges its own slot: it takes a third round, one
+whose targets include the second round's initiator, to lift every one of
+the stalled core's targets to or above its generation. That is the steady
+state on a busy system — the shootdown-bearing syscalls are the whole
+unmap family.
+
+Not reachable in a shipped artifact: there is no bootable image until
+SM9.E and SMP is off by default until v1.0.0. High severity once bootable,
+the same rating as the v0.32.100 and v0.32.105 hazards, and it needs two
+or more cores committing shootdown-bearing syscalls concurrently.
+
+**Fix.** Separate the two round identities, which answer different
+questions. The *model* generation answers "which descriptors belong to this
+commit?" and must be allocated at commit time to key the SM7.F.3 window
+drain — unchanged. The *runtime* generation answers "which hardware round
+is this, relative to the rounds whose acknowledgments could satisfy it?"
+and is now allocated by `shootdown::allocate_round_generation` — a
+`fetch_add` on the new `SHOOTDOWN_ROUND_SEQ`, performed **while holding the
+round lock**, so allocation order is execution order by construction and no
+older round can be certified by a newer round's acknowledgments. The seam
+moved the allocation to immediately after
+`acquireShootdownRoundLockServicingSelf` and uses it for both the mailbox
+publish and the wait. The catch-up drain still keys on the model window,
+which is why the two counters can diverge freely.
+
+The counter is 0-based and returns pre-increment + 1, so a round never
+carries generation 0 — a slot's initial `acked_gen` is 0 and `0 >= 0` would
+pass a wait with nothing serviced. This preserves the property the old
+`window.2 > window.1` argument supplied.
+
+**Generation overflow (Codex P2, valid).** `UInt64.ofNat gen` wrapped at
+2^64 while the Rust slots retain their high `acked_gen` values through
+`fetch_max`, so a wrapped generation would be satisfied vacuously — and so
+would every low generation after it. Unreachable in practice (~584,000
+years at one round per microsecond) but exactly the aliasing the generation
+tagging exists to exclude, so it is rejected structurally rather than
+argued away: the runtime generation is now *read from* a `u64` counter, so
+the `UInt64.ofNat` narrowing on the publish/wait path round-trips exactly,
+and `allocate_round_generation_in` additionally fails closed if the counter
+ever wraps.
+
+**Tests.** `sm7f3_newer_round_acks_cannot_satisfy_an_older_unexecuted_round`
+is the regression witness, and it carries the defect as a live assertion:
+it runs the three-round interleaving under commit-time keying and asserts
+the wait *does* pass with nothing serviced, then runs the same interleaving
+under lock-held allocation and asserts it does not.
+`sm7f3_round_generation_allocator_is_strictly_increasing_from_one` pins the
+allocator's density and 1-based start. Rust 1095 → 1097 tests, HAL 800 →
+802. Trace byte-identical.
+
+**Tracked debt (Codex P2, valid, deferred).** The *model's*
+`completeShootdownOnCoreInWindow` acknowledges unconditionally, so a
+catch-up that drains only its own window still writes the target's flag to
+`true` — with concurrent rounds the model's `allAcked` can therefore read
+true while a foreign round's descriptors are still pending. Model-fidelity
+only: the runtime consults the Rust `acked_gen`, never the model's `Bool`
+vector, so no hardware hazard follows and no landed theorem is false (the
+round capstones are stated per-round). Closing it means converting
+`TlbShootdownState.shootdownAck` from `Vector Bool` to a generation vector
+mirroring the Rust side and re-proving the SM7.A/B acknowledgment surface —
+a cut comparable in size to SM7.F.3 itself. Registered in
+`docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` §SM7.F.3; closure target is the
+SM8 mount.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F.3
+Refs: #854
+
 ## v0.32.111 — CI review: the Rust gate now actually runs on CI, and three gates widened
 
 PR #854 review. The v0.32.110 audit fixed gates that reported more coverage
