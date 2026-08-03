@@ -48,6 +48,12 @@ cd "$RUST_DIR"
 # for a run of over a thousand.  Aggregate the per-binary `test result:` lines
 # so the reported count is the run's real coverage; a step with no such lines
 # (build, fmt, clippy) keeps the plain tail.
+# Set by `summarise_cargo_test_log`, read by `run_cargo_step`: the number of
+# tests the step skipped.  A skipped test is not a passing test, and the project
+# claims zero of them, so a non-zero count fails the gate rather than merely
+# annotating it.
+ignored_total=0
+
 summarise_cargo_test_log() {
     local log="$1"
     local passed failed ignored binaries
@@ -61,15 +67,15 @@ summarise_cargo_test_log() {
     passed="$(awk '/^test result:/ {s += $4} END {print s + 0}' "$log")"
     failed="$(awk '/^test result:/ {s += $6} END {print s + 0}' "$log")"
     ignored="$(awk '/^test result:/ {s += $8} END {print s + 0}' "$log")"
+    ignored_total="${ignored}"
     echo "      ${passed} passed, ${failed} failed, ${ignored} ignored" \
          "across ${binaries} test binaries"
     # An ignored test is a test that does not run — whether skipped by an
     # `#[ignore]` attribute or by an ```ignore doc-comment fence, which is not
-    # even compiled and so rots silently.  The project's standing claim is that
-    # it has none of either, so surface any rather than letting them hide
-    # inside an otherwise-green summary.
+    # even compiled and so rots silently.  Report which ones, so the failure
+    # below names the offenders rather than just counting them.
     if [ "${ignored}" -ne 0 ]; then
-        echo "::warning::${ignored} Rust test(s) were skipped (#[ignore] attribute or \`\`\`ignore doctest fence)"
+        grep -E '\.\.\. ignored$' "$log" | sed 's/^/        /' || true
     fi
     return 0
 }
@@ -80,7 +86,21 @@ run_cargo_step() {
     local log
     log="$(mktemp)"
     if "$@" > "$log" 2>&1; then
+        ignored_total=0
         summarise_cargo_test_log "$log" || tail -5 "$log"
+        # Cargo exits 0 with tests skipped, so the gate has to reject them
+        # itself or the repository's zero-ignored-tests invariant is a claim
+        # nothing enforces.
+        if [ "${ignored_total}" -ne 0 ]; then
+            echo "::error::${ignored_total} Rust test(s) were skipped; this repository requires zero"
+            echo ""
+            echo "      ✗ FAILED — ${ignored_total} skipped test(s); this repository requires zero."
+            echo "        Remove the \`#[ignore]\` attribute, or make the"
+            echo "        \`\`\`ignore doctest fence compile (\`no_run\` still"
+            echo "        type-checks it; a bare \`\`\`ignore never compiles)."
+            rm -f "$log"
+            return 1
+        fi
         echo "      ✓ ${step_label}"
         rm -f "$log"
         return 0
@@ -120,15 +140,20 @@ echo ""
 # `--all-targets` covers tests and benches, not just the lib targets: a lint
 # that fires only in test code is still a lint.  `-D warnings` makes clippy
 # exit non-zero, since it reports findings as warnings by default and would
-# otherwise pass this gate while printing them.
+# otherwise pass this gate while printing them.  `--all-features` matches what
+# the test steps above compile: every crate declares `default = []`, so without
+# it the `#[cfg(feature = "std")]` code the tests exercise — `KernelError`'s
+# `Display` impl among it — is never linted at all, and the zero-warning claim
+# would exclude the configuration under test.  (`--features std` cannot be used
+# workspace-wide: `sele4n-hal` has no such feature and cargo rejects it.)
 # ----------------------------------------------------------------------------
 
 echo "[4/5] Checking formatting (cargo fmt --check)..."
 run_cargo_step "Formatting is clean" cargo fmt --all --check
 echo ""
 
-echo "[5/5] Linting (cargo clippy --all-targets -D warnings)..."
-run_cargo_step "Clippy is clean" cargo clippy --all-targets -- -D warnings
+echo "[5/5] Linting (cargo clippy --all-targets --all-features -D warnings)..."
+run_cargo_step "Clippy is clean" cargo clippy --all-targets --all-features -- -D warnings
 echo ""
 
 echo "=== All Rust tests passed ==="

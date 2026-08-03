@@ -256,11 +256,11 @@ withdrawn-as-finding; per §1.5 the structural fix lands in **R12.B**.
 | DEEP-IPC-03 | H | R1 | `Kernel/IPC/DualQueue/WithCaps.lean` (**CLOSED at R1 landing**) |
 | DEEP-IPC-04 | I | R6 | `Kernel/IPC/Operations/Endpoint.lean`; theorem `cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull` in `Invariant/Defs.lean` |
 | DEEP-IPC-05 | I | R4 | `Model/Object/Types.lean` `Notification.waitingThreads` |
-| DEEP-DOC-01 | M | R11 | `README.md:92, :213` |
+| DEEP-DOC-01 | M | R11 | `README.md` |
 | DEEP-DOC-02 | M | R11 | `AGENTS.md` (entire file) |
 | DEEP-DOC-03 | M | R11 | `CLAUDE.md` source-layout section |
 | DEEP-DOC-04 | L | R11 | `README.md` audit-history table |
-| DEEP-DOC-06 | L | R11 | `README.md:38, :193` |
+| DEEP-DOC-06 | L | R11 | `README.md` |
 | DEEP-MODEL-01 | L | R4 | `Model/Object/Structures.lean` CNode `slots` field |
 | DEEP-MODEL-02 | L | R14 | `Model/State.lean`; `Model/Builder.lean` |
 | DEEP-MODEL-03 | I | R10 | `Model/State.lean` (replenishQueue field doc) |
@@ -285,14 +285,14 @@ withdrawn-as-finding; per §1.5 the structural fix lands in **R12.B**.
 | DEEP-IF-01 | I | R6 | `InformationFlow/Soundness.lean` (`DeclassificationPolicy` import) |
 | DEEP-IF-02 | I | R6 | `InformationFlow/Policy.lean` (SecurityDomain lattice) |
 | DEEP-RUST-03 | I | R10 | `rust/sele4n-abi/src/trap.rs` |
-| DEEP-RUST-04 | L | R10 | `THIRD_PARTY_LICENSES.md:41` |
+| DEEP-RUST-04 | L | R10 | `THIRD_PARTY_LICENSES.md` |
 | DEEP-RUST-05 | I | R10 | `rust/sele4n-abi/src/lib.rs`, `rust/sele4n-sys/src/lib.rs` |
 | DEEP-RUST-06 | L | R8 | `rust/sele4n-abi/tests/conformance.rs` |
 | DEEP-TEST-01 | M | R8 | `tests/Ak8CoverageSuite.lean` |
 | DEEP-TEST-02 | L | R8 | `tests/{An9HardwareBindingSuite, Ak9PlatformSuite, An10CascadeSuite}.lean` |
 | DEEP-TEST-03 | M | R2 | new `tests/SyscallDispatchSuite.lean` |
 | DEEP-BOOT-01 | M | R3 | `Platform/Boot.lean`; `Platform/RPi5/VSpaceBoot.lean` |
-| DEEP-SCRIPT-01 | I | R10 | `scripts/website_link_manifest.txt:18` |
+| DEEP-SCRIPT-01 | I | R10 | `scripts/website_link_manifest.txt` |
 | DEEP-CI-01 | L | R12 | `.github/workflows/{platform_security_baseline,lean_toolchain_update_proposal,nightly_determinism,codebase_map_sync}.yml` |
 | DEEP-ARCH-01 | – | R12.B | **WITHDRAWN as finding (§2.2); structural fix in R12.B** — `scripts/check_production_staging_partition.sh` Tier-0 gate. |
 
@@ -2097,7 +2097,7 @@ edits across many files, no semantic changes, easily reviewable.
 | R10.13 | `rust/sele4n-abi/src/trap.rs` | Correct the module-level comment ("the **single** `unsafe` block in the entire library" — actually `unsafe` on the function, not a block). |
 | R10.14 | `rust/sele4n-abi/src/lib.rs` | Add a module-level doc comment matching the style of `rust/sele4n-hal/src/lib.rs`. |
 | R10.15 | `rust/sele4n-sys/src/lib.rs` | Same. |
-| R10.16 | `THIRD_PARTY_LICENSES.md:41` | Clarify cc semver: replace "cc 1.2.59" with "cc semver range 1.2.x; current resolved version 1.2.59". |
+| R10.16 | `THIRD_PARTY_LICENSES.md` | Clarify cc semver: replace "cc 1.2.59" with "cc semver range 1.2.x; current resolved version 1.2.59". |
 
 #### FDT error distinguisher (DEEP-FDT-01)
 | # | File | Action |
@@ -2107,7 +2107,7 @@ edits across many files, no semantic changes, easily reviewable.
 #### Manifest timestamp (DEEP-SCRIPT-01)
 | # | File | Action |
 |---|---|---|
-| R10.18 | `scripts/website_link_manifest.txt:18` | Either remove the `Last synchronized:` line or update it to the current date in the same commit; if removing, update CLAUDE.md if any reference depends on the timestamp shape. |
+| R10.18 | `scripts/website_link_manifest.txt` | Either remove the `Last synchronized:` line or update it to the current date in the same commit; if removing, update CLAUDE.md if any reference depends on the timestamp shape. |
 
 #### AK10 rename (DEBT-IPC-02)
 | # | File | Action |
@@ -2149,8 +2149,8 @@ computed against the post-implementation tree.
 |---|---|
 | R11.A.1 | Run `./scripts/report_current_state.py` to recompute live metrics. |
 | R11.A.2 | Run `./scripts/sync_readme_from_codebase_map.sh` to push the recomputed metrics into README. |
-| R11.A.3 | Manually reconcile the two inconsistent declaration counts (`README.md:92` "3,186" vs `:213` "2,725"). The recommended fix per deep audit §10.3 PR 11 is to drop both inline numbers and replace with a single CI-synchronised reference to `codebase_map.json`'s `proved_theorem_lemma_decls` field. |
-| R11.A.4 | Update test-suite count: `README.md:38` says "25 test suites" and `:193` says "24 test suites"; live count is 28 (`find tests -name "*.lean" \| wc -l`). Both lines must be updated; if the source-layout table at line 193 lists individual suites, update the count and add the missing entries. |
+| R11.A.3 | Manually reconcile the two inconsistent declaration counts (`README.md` "3,186" vs `:213` "2,725"). The recommended fix per deep audit §10.3 PR 11 is to drop both inline numbers and replace with a single CI-synchronised reference to `codebase_map.json`'s `proved_theorem_lemma_decls` field. |
+| R11.A.4 | Update test-suite count: `README.md` says "25 test suites" and `:193` says "24 test suites"; live count is 28 (`find tests -name "*.lean" \| wc -l`). Both lines must be updated; if the source-layout table at line 193 lists individual suites, update the count and add the missing entries. |
 | R11.A.5 | Update `production_files`/`production_loc` to match the live `find` and `wc -l` results: 167 / 109,787 (or whatever the post-R1..R10 tree reports — the metric refresh must be the last thing computed). |
 | R11.A.6 | Verify `scripts/check_version_sync.sh` and `scripts/sync_documentation_metrics.sh` both pass. |
 
@@ -3144,12 +3144,12 @@ v0.31.0 release boundary.
 | DEEP-IPC-03 | Deep §5.2, §11.3 | `IPC/DualQueue/WithCaps.lean` | R1 | **CLOSED** | **CLOSED** |
 | DEEP-IPC-04 | Deep §5.2 | `IPC/Operations/Endpoint.lean` | R6 | – | YES |
 | DEEP-IPC-05 | Deep §5.2, §12 | `Model/Object/Types.lean Notification.waitingThreads` | R4 | – | YES |
-| DEEP-DOC-01 | Deep §8.4, §11.4 | `README.md:92, :213` | R11 | YES | YES |
-| DEEP-DOC-02 | Deep §8.4, §11.5 | `AGENTS.md:7` | R11 | YES | YES |
+| DEEP-DOC-01 | Deep §8.4, §11.4 | `README.md` | R11 | YES | YES |
+| DEEP-DOC-02 | Deep §8.4, §11.5 | `AGENTS.md` | R11 | YES | YES |
 | DEEP-DOC-03 | Deep §8.4 | `CLAUDE.md` source-layout omits 3 files | R11 | YES | YES |
 | DEEP-DOC-04 | Deep §8.4 | README audit-history table | R11 | YES | YES |
 | DEEP-DOC-05 | Deep §8.4, §12 | NO-ACTION (covered by DEEP-FFI-01) | – | – | – |
-| DEEP-DOC-06 | Deep §8.4 | `README.md:38, :193` | R11 | YES | YES |
+| DEEP-DOC-06 | Deep §8.4 | `README.md` | R11 | YES | YES |
 | DEEP-MODEL-01 | Deep §4, §12 | `Model/Object/Structures.lean` CNode `slots` | R4 | – | YES |
 | DEEP-MODEL-02 | Deep §4, §11.5 | `Model/State.lean`; `Builder.lean` | R14 | – | – |
 | DEEP-MODEL-03 | Deep §4 | `Model/State.lean` | R10 | YES | YES |
@@ -3176,7 +3176,7 @@ v0.31.0 release boundary.
 | DEEP-IF-01 | Deep §5.7, §12 | `InformationFlow/Soundness.lean` | R6 | – | YES |
 | DEEP-IF-02 | Deep §5.7, §12 | `InformationFlow/Policy.lean` | R6 | – | YES |
 | DEEP-RUST-03 | Deep §7.2 | `sele4n-abi/src/trap.rs` | R10 | YES | YES |
-| DEEP-RUST-04 | Deep §7.2 | `THIRD_PARTY_LICENSES.md:41` | R10 | YES | YES |
+| DEEP-RUST-04 | Deep §7.2 | `THIRD_PARTY_LICENSES.md` | R10 | YES | YES |
 | DEEP-RUST-05 | Deep §7.2 | `sele4n-abi/src/lib.rs`, `sele4n-sys/src/lib.rs` | R10 | YES | YES |
 | DEEP-RUST-06 | Deep §7.2 | `sele4n-abi/tests/conformance.rs` (6 missing) | R8 | optional | YES |
 | DEEP-TEST-01 | Deep §8.1 | `tests/Ak8CoverageSuite.lean` | R8 | YES | YES |
@@ -3184,7 +3184,7 @@ v0.31.0 release boundary.
 | DEEP-TEST-03 | Deep §8.1 | sparse `syscallEntryChecked` test coverage | R2 | – | YES |
 | DEEP-TEST-04 | Deep §8.1 | NO-ACTION (verified non-empty) | – | – | – |
 | DEEP-BOOT-01 | Deep §6.2, §12 | `Platform/Boot.lean`; `RPi5/VSpaceBoot.lean` | R3 | – | YES |
-| DEEP-SCRIPT-01 | Deep §8.2 | `scripts/website_link_manifest.txt:18` | R10 | YES | YES |
+| DEEP-SCRIPT-01 | Deep §8.2 | `scripts/website_link_manifest.txt` | R10 | YES | YES |
 | DEEP-SCRIPT-02 | Deep §8.2 | NO-ACTION (verified clean) | – | – | – |
 | DEEP-CI-01 | Deep §8.3 | 4 non-Lean workflows | R12.A | optional | optional |
 

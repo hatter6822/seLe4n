@@ -1,3 +1,66 @@
+## v0.32.111 — CI review: the Rust gate now actually runs on CI, and three gates widened
+
+PR #854 review. The v0.32.110 audit fixed gates that reported more coverage
+than they had; CI and the reviewer found four more of exactly that shape,
+including two in gates this branch had just written.
+
+**CI was red, and my local run could not have caught it.** Tier 0 hygiene runs
+`shellcheck`, which is absent from the sandbox this branch was developed in —
+`test_tier0_hygiene.sh` prints "shellcheck unavailable; optional shell lint not
+executed" and carries on, so a locally green `test_full.sh` said nothing about
+it. Three findings in `find_large_lean_files.sh` were mine: SC2001 on the two
+`sed 's/^/  /'` indent calls added at v0.32.110, and SC2016 on the bullet
+parser added at v0.32.108. The `sed` calls are now an `indent_lines` read loop
+(space-safe *and* lint-clean, where the `sed` was only the former); the parser
+carries a `disable=SC2016` with the reason, since its single quotes are
+required — double quotes would let the shell eat the backslashes before `sed`
+saw them. shellcheck is now installed locally, so this class is verifiable here
+rather than only on CI.
+
+**The Rust gate was never invoked by CI.** v0.32.107 wired `cargo fmt --check`
+and `cargo clippy -D warnings` into `test_rust.sh` because nothing ran them —
+but the `test-rust` CI job runs a bare `cargo test --workspace` and never calls
+that script, so on a pull request they still did not run, and neither did the
+conformance suite or `--features std`. The gate was fixed and left unreachable:
+the same defect one level up. The job now runs `./scripts/test_rust.sh`, with
+`rustfmt` and `clippy` added to the toolchain components so the steps fail on a
+finding rather than a missing binary.
+
+**A warning is not a gate.** The v0.32.110 skipped-test summary emitted a
+GitHub warning and returned 0, after which the script printed "All Rust tests
+passed" — so the zero-ignored-tests invariant remained a claim nothing
+enforced, which is the exact criticism that cut was written to answer. A
+non-zero ignored count now fails the step and names each skipped test.
+Verified by injecting a ```ignore fence: the gate exits 1 and reports the
+offender.
+
+**Clippy skipped the configuration under test.** Every crate declares
+`default = []` and the test steps pass `--features std`, but the lint step
+passed neither that nor `--all-features` — so `#[cfg(feature = "std")]` code,
+`KernelError`'s `Display` impl among it, was never linted, and the
+zero-warning claim excluded the code the tests actually compile.
+`--all-features` (not `--features std`, which cargo rejects workspace-wide
+because `sele4n-hal` has no such feature) closes it; still clean.
+
+**The citation gate's extension list was too narrow.** It matched
+`rs|lean|sh|py|toml|S`, omitting `.yml`, `.yaml`, `.ld` and `.json` — formats
+the repository contains — so `lean_action_ci.yml:213` passed unchecked. A
+hard-coded list has to be remembered whenever a format is introduced; the set
+is now derived from `git ls-files`, filtered to extensions beginning with a
+letter (a `foo.1` man page would otherwise put `1` in the set and make
+`v0.32.1:5` read as a citation), with a `REQUIRED_EXTENSIONS` floor so a broken
+derivation fails loudly instead of quietly narrowing the gate's own scope.
+
+Widening it found **26 further stale citations** in four active documents —
+`README.md:92`, `AGENTS.md:7`, `docs/spec/SELE4N_SPEC.md:509`,
+`scripts/website_link_manifest.txt:18` — the same defect as the 511 removed at
+v0.32.109, hidden only by the extension list. All stripped by the same rule:
+the path stays, the fragile numeric suffix goes, across every suffix shape
+(plain, hyphen/en-dash ranges, comma lists).
+
+Tier 0 now passes with shellcheck genuinely executing; Rust 1095 passing, 0
+ignored, fmt and clippy clean under `--all-features`.
+
 ## v0.32.110 — SM7.F.3 audit: the 12th conjunct carried, four false docstrings corrected, two dead doctests revived
 
 A deep audit of the v0.32.105–109 cut, run against the code rather than against

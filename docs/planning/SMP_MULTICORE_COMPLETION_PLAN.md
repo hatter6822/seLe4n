@@ -58,7 +58,7 @@ The current SMP scaffolding cannot be activated: four CRITICAL
 gaps make `SMP_ENABLED = true` either dead code (no caller) or a
 correctness hazard. The AN9-J disposition
 ("activation cost is just flipping the runtime flag",
-`AUDIT_v0.29.0_DEFERRED.md:296`) is materially inaccurate.
+`AUDIT_v0.29.0_DEFERRED.md`) is materially inaccurate.
 Shipping v1.0.0 under that disposition would ship a non-functional
 SMP binary on a 4-core SoC.
 

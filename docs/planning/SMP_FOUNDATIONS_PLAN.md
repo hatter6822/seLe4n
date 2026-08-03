@@ -465,10 +465,10 @@ COMPLETE (was the pre-release audit-remediation workstream from
 v0.21.7..v0.22.10) and never owned SMP. The claims are stale.
 
 **Files**:
-- `docs/spec/SELE4N_SPEC.md:509-519` (§6.4 Hardware Limitations)
-- `docs/DEVELOPMENT.md:68`
-- `docs/gitbook/01-project-overview.md:94`
-- `docs/hardware_validation/speculation_barriers.md:85-87`
+- `docs/spec/SELE4N_SPEC.md` (§6.4 Hardware Limitations)
+- `docs/DEVELOPMENT.md`
+- `docs/gitbook/01-project-overview.md`
+- `docs/hardware_validation/speculation_barriers.md`
 
 **Edit pattern**: Replace "Symmetric multiprocessing support is
 deferred to WS-V" → "Symmetric multiprocessing is implemented in
@@ -488,12 +488,12 @@ etc.) — each gets repointed to its WS-SM phase plan.
 #### SM0.L — Rewrite DEFERRED.md::DEF-R-HAL-L20 disposition
 
 **Goal**: SMP-M2 root cause. The dispositioning row
-`AUDIT_v0.29.0_DEFERRED.md:296-316` claims DEF-R-HAL-L20 is
+`AUDIT_v0.29.0_DEFERRED.md` claims DEF-R-HAL-L20 is
 "RESOLVED at v0.30.10". This is materially inaccurate: only the
 scaffolding is in place, not the activation. The row needs to
 honestly reflect the partial state.
 
-**File**: `docs/dev_history/audits/AUDIT_v0.29.0_DEFERRED.md:290-340`.
+**File**: `docs/dev_history/audits/AUDIT_v0.29.0_DEFERRED.md`.
 
 **Edit pattern**:
 

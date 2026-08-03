@@ -187,6 +187,9 @@ fi
 # and report only material drift (see the header).  Bullet shape is
 # "- `path` (~N lines)".
 parse_bullets() {
+  # shellcheck disable=SC2016  # `\1`/`\2` are sed backreferences, not shell
+  # expansions — single quotes are required here, and double quotes would let
+  # the shell eat the backslashes before sed ever sees them.
   sed -nE 's/^- `([^`]+)` \(~([0-9]+) lines\)$/\1\t\2/p'
 }
 
@@ -209,16 +212,24 @@ drift=0
 # (a) Set membership — a file entering or leaving the list is always material.
 only_expected="$(comm -23 <(cut -f1 <<<"${exp_pairs}") <(cut -f1 <<<"${act_pairs}"))"
 only_actual="$(comm -13 <(cut -f1 <<<"${exp_pairs}") <(cut -f1 <<<"${act_pairs}"))"
+# Indent each path on its own line.  Deliberately not an unquoted `printf`
+# expansion (word-splits, so a path containing a space becomes two entries) and
+# not `sed 's/^/  /'` (SC2001); a read loop is both space-safe and lint-clean.
+indent_lines() {
+  local line
+  while IFS= read -r line; do
+    printf '  %s\n' "${line}"
+  done
+}
+
 if [[ -n "${only_expected}" ]]; then
   echo "FAIL: listed in CLAUDE.md but no longer at/above the ${THRESHOLD}-line threshold:" >&2
-  # Indent each line.  `sed`, not an unquoted `printf` expansion: the latter
-  # word-splits, so a path containing a space would be reported as two files.
-  sed 's/^/  /' <<<"${only_expected}" >&2
+  indent_lines <<<"${only_expected}" >&2
   drift=1
 fi
 if [[ -n "${only_actual}" ]]; then
   echo "FAIL: at/above the ${THRESHOLD}-line threshold but missing from CLAUDE.md:" >&2
-  sed 's/^/  /' <<<"${only_actual}" >&2
+  indent_lines <<<"${only_actual}" >&2
   drift=1
 fi
 

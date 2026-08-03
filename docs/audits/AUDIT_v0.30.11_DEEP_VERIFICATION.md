@@ -1260,7 +1260,7 @@ Four crates: `sele4n-types` (~555 LoC), `sele4n-abi` (~1.4K),
   comment claims "the **single** `unsafe` block in the entire
   library." Technically inaccurate: only `raw_syscall` is unsafe,
   while the `unsafe` is on the function (not a block). Cosmetic.
-- **DEEP-RUST-04 (L)**: `THIRD_PARTY_LICENSES.md:41` lists
+- **DEEP-RUST-04 (L)**: `THIRD_PARTY_LICENSES.md` lists
   `cc 1.2.59` while `sele4n-hal/Cargo.toml` pins `cc = "1.2"`
   (semver range). The license file should clarify "cc semver range
   1.2.x; current resolved version 1.2.59" or similar.
@@ -1350,7 +1350,7 @@ New findings:
 
 - **DEEP-PRECOM-01 (M)**: documented above in §3. The `sorry`-detection
   regex is fragile against block-comment `/- ... sorry ... -/` spans.
-- **DEEP-SCRIPT-01 (I)**: `scripts/website_link_manifest.txt:18` says
+- **DEEP-SCRIPT-01 (I)**: `scripts/website_link_manifest.txt` says
   "Last synchronized: 2026-03-02" — 56 days stale. The manifest is
   enforced by Tier-0 hygiene (`scripts/check_website_links.sh`) so
   staleness in the comment doesn't affect correctness, but the
@@ -1400,7 +1400,7 @@ New findings:
   former matches `codebase_map.json`'s prior-cycle snapshot; the
   latter is older. Both numbers appear on the same rendered page.
   The reader cannot tell which is current.
-- **DEEP-DOC-02 (M)** confirmed: `AGENTS.md:7` says
+- **DEEP-DOC-02 (M)** confirmed: `AGENTS.md` says
   "version 0.12.4". Actual is 0.30.11. AGENTS.md is the canonical
   guidance file for external contributors and Claude Code agents;
   stale version metadata misleads them.
@@ -1584,7 +1584,7 @@ only real candidates this audit found.
 | DEEP-FFI-01 | H | Platform/FFI + Rust HAL | **Implement the dispatch routing.** Wire `syscall_dispatch_inner` (`Platform/FFI.lean`) into `syscallEntryChecked` (`Kernel/API.lean`) and `suspend_thread_inner` (line 186) into `suspendThread` (`Kernel/Lifecycle/Suspend.lean`). Threading `SystemState` through the FFI is the v1.x work item the docstring already names; per CLAUDE.md's implement-the-improvement rule, this work is what unblocks v1.0 — release-note disclosure is not a substitute. (Original recommendation "disclose the gap in release notes" struck per §12.) |
 | DEEP-FFI-02 | M | rust/sele4n-hal/src/svc_dispatch.rs | **Implement `syscallDispatchFromAbi`** as the typed-ABI Lean entry point that the comment describes. Once DEEP-FFI-01 lands, this function is the body of `syscallDispatchInner` (FFI.lean) — it decodes the eight `UInt64` register slots via `RegisterDecode`/`SyscallArgDecode`, calls `syscallEntryChecked`, and re-encodes the result. Then the Rust comment is true as written. (Original recommendation "replace the reference with the existing exported symbol name" struck per §12 — the comment was describing the better state, and the better state is what we should implement.) |
 | DEEP-FFI-03 | I | SeLe4n/Platform/FFI.lean | **Implement uniform compile-time gating.** The docstring asserts `@[extern]` is gated by `-DhwTarget=true`, but `@[export]` symbols are always compiled. Wrap the two `@[export]` declarations (lines 185–190 and 216–223) in the same `hwTarget`-conditional `section`/`end` so both directions of the FFI bridge share a single gating mechanism. Then the docstring is accurate end-to-end. (Original recommendation "clarify the docstring asymmetry" struck per §12.) |
-| DEEP-DOC-01 | M | README.md:92 vs :213 | (DOWNGRADED H→M §11.4) Reconcile "3,186" and "2,725" theorem-count numbers. Best fix: drop both, link to `codebase_map.json`, add CI sync check (§10.3 PR 11 post-§12). Pure documentation drift (the docs are inferior to the code; legitimate-exception clause of the implement-the-improvement rule). |
+| DEEP-DOC-01 | M | README.md vs :213 | (DOWNGRADED H→M §11.4) Reconcile "3,186" and "2,725" theorem-count numbers. Best fix: drop both, link to `codebase_map.json`, add CI sync check (§10.3 PR 11 post-§12). Pure documentation drift (the docs are inferior to the code; legitimate-exception clause of the implement-the-improvement rule). |
 | DEEP-DOC-02 | M | AGENTS.md (entire file) | (REFINED §11.5) Entire file is from ~v0.12.x — version bump alone is insufficient. Best fix: replace with a 10-line redirect stub pointing to CLAUDE.md, OR full rewrite mirroring CLAUDE.md with CI-enforced sync check. |
 | DEEP-DOC-03 | M | CLAUDE.md source-layout section | Add entries for `SeLe4n/Platform/FFI.lean`, `SeLe4n/Platform/Staged.lean`, `SeLe4n/Platform/RPi5/VSpaceBoot.lean`. |
 | DEEP-DOC-04 | L | README.md audit-history table | Annotate `AUDIT_v0.29.0_*` and `AUDIT_v0.30.6_*` links as "archived". |
@@ -1627,7 +1627,7 @@ only real candidates this audit found.
 | ~~DEEP-RUST-01~~ | ~~L~~ | ~~rust/sele4n-hal/src/mmio.rs~~ | **WITHDRAWN (§11.1)** — every MMIO unsafe block already cites `(ARM ARM B2.1)`. False positive. |
 | ~~DEEP-RUST-02~~ | ~~L~~ | ~~rust/sele4n-hal/src/registers.rs~~ | **WITHDRAWN (§11.1)** — `mrs`/`msr` `asm!` blocks already cite `(ARM ARM C5.2)`, the correct section for system register access mnemonics. False positive. |
 | DEEP-RUST-03 | I | sele4n-abi/src/trap.rs | Correct module-level comment about "single unsafe block." |
-| DEEP-RUST-04 | L | THIRD_PARTY_LICENSES.md:41 | Clarify cc semver range vs resolved version. |
+| DEEP-RUST-04 | L | THIRD_PARTY_LICENSES.md | Clarify cc semver range vs resolved version. |
 | DEEP-RUST-05 | I | sele4n-abi/src/lib.rs, sele4n-sys/src/lib.rs | Add module-level doc comments. |
 | DEEP-RUST-06 | L | sele4n-abi/tests/conformance.rs | Extend conformance to 6 missing syscalls (ServiceRegister/Revoke/Query, NotificationSignal/Wait, ReplyRecv). |
 | DEEP-TEST-01 | M | tests/Ak8CoverageSuite.lean | Rename file + 25+ test functions to remove `AK8` workstream-ID prefix. |
@@ -1635,7 +1635,7 @@ only real candidates this audit found.
 | DEEP-TEST-03 | M | tests/ | Add a dedicated `SyscallDispatchSuite.lean` exercising `syscallEntryChecked` per syscall. |
 | DEEP-TEST-04 | L | tests/fixtures/main_trace_smoke.expected | Verified non-empty; no action. |
 | DEEP-PRECOM-01 | M | scripts/pre-commit-lean-build.sh | (INVERTED §11.2) The regex is OVER-zealous (false-positive on `/-…-/` block-comment `sorry` mentions), not under-zealous. No real `sorry`s slip through; the failure mode is rejecting legitimate doc references. Best fix: replace with a Lean-tokeniser-based check via `lean --run` on a small parser script. |
-| DEEP-SCRIPT-01 | I | scripts/website_link_manifest.txt:18 | Auto-update or remove the "Last synchronized" timestamp. |
+| DEEP-SCRIPT-01 | I | scripts/website_link_manifest.txt | Auto-update or remove the "Last synchronized" timestamp. |
 | DEEP-SCRIPT-02 | I | scripts/*.py | All clean. No action. |
 | DEEP-CI-01 | L | .github/workflows/*.yml | Add `concurrency:` block to non-Lean workflows. |
 

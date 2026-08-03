@@ -211,6 +211,10 @@ jobs:
         uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
         with:
           toolchain: 1.94.1
+          # `test_rust.sh` runs `cargo fmt --check` and `cargo clippy`, so the
+          # components have to be present or those steps fail on a missing
+          # binary rather than on a real finding.
+          components: rustfmt, clippy
 
       - name: Cache Cargo registry and build artifacts
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -223,6 +227,13 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Run Rust tests
-        working-directory: rust
-        run: cargo test --workspace
+      # Invoke the gate script rather than a bare `cargo test`, so CI runs
+      # exactly what `test_smoke.sh` runs locally.  Previously this step was
+      # `cargo test --workspace`, which meant the format and lint gates wired
+      # into `test_rust.sh` at v0.32.107 never executed on a pull request — a
+      # misformatted or Clippy-warning patch could stay green against the
+      # published zero-warning claim.  It also skipped `--features std`, so the
+      # std-gated code the tests compile went untested here, and the
+      # conformance suite.
+      - name: Run Rust tests, conformance, format and lint gates
+        run: ./scripts/test_rust.sh

@@ -40,9 +40,49 @@ import re
 import subprocess
 import sys
 
-CITATION = re.compile(
-    r'(?:[A-Za-z0-9_][A-Za-z0-9_./-]*)\.(?:rs|lean|sh|py|toml|S):\d+'
+# Extensions a citation may carry are DERIVED from the tree, not hard-coded.
+# The original list (`rs|lean|sh|py|toml|S`) silently omitted formats the
+# repository actually contains — `.yml`, `.yaml`, `.ld`, `.json` — so a
+# citation like `.github/workflows/lean_action_ci.yml:213` sailed past the gate
+# and went stale exactly like the ones it was written to catch. A hard-coded
+# list has to be remembered every time a format is introduced; derivation
+# cannot fall behind.
+#
+# The filter keeps extensions that start with a letter and are at most eight
+# characters, which excludes numeric suffixes (a `foo.1` man page would put
+# `1` in the set, and `v0.32.1:5` would then read as a citation).
+EXTENSION_RE = re.compile(r'\.([A-Za-z][A-Za-z0-9]{0,7})$')
+
+# Extensions that must always be covered regardless of what the tree happens to
+# hold today. If derivation breaks or a format disappears, the gate fails loudly
+# instead of quietly narrowing its own scope — the failure mode this check
+# exists to prevent, applied to the check itself.
+REQUIRED_EXTENSIONS = frozenset(
+    {'rs', 'lean', 'sh', 'py', 'toml', 'S', 'yml', 'yaml', 'ld', 'json'}
 )
+
+
+def cited_extensions() -> set[str]:
+    tracked = subprocess.run(
+        ['git', 'ls-files'], capture_output=True, text=True, check=True
+    ).stdout.split()
+    found = set()
+    for path in tracked:
+        match = EXTENSION_RE.search(path)
+        if match:
+            found.add(match.group(1))
+    return found
+
+
+def build_citation_re(extensions: set[str]) -> re.Pattern[str]:
+    # Longest-first so the alternation cannot match a proper prefix of a longer
+    # extension (`.sh` inside `.sha256`).
+    alternation = '|'.join(
+        re.escape(e) for e in sorted(extensions, key=lambda e: (-len(e), e))
+    )
+    return re.compile(
+        r'(?:[A-Za-z0-9_][A-Za-z0-9_./-]*)\.(?:' + alternation + r'):\d+'
+    )
 
 
 def target_files() -> list[str]:
@@ -61,6 +101,17 @@ def main() -> int:
               file=sys.stderr)
         return 1
 
+    extensions = cited_extensions()
+    missing = REQUIRED_EXTENSIONS - extensions
+    if missing:
+        print('FAIL: extension derivation lost formats this gate must cover: '
+              + ', '.join(sorted(missing)), file=sys.stderr)
+        print('      Either the repository no longer contains them (drop them '
+              'from REQUIRED_EXTENSIONS) or the derivation is broken.',
+              file=sys.stderr)
+        return 1
+    citation_re = build_citation_re(extensions)
+
     findings = []
     for path in files:
         in_fence = False
@@ -71,7 +122,7 @@ def main() -> int:
                     continue
                 if in_fence:
                     continue
-                match = CITATION.search(line)
+                match = citation_re.search(line)
                 if match:
                     findings.append((path, lineno, match.group(0), line.strip()))
 
