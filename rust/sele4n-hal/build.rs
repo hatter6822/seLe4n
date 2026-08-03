@@ -69,7 +69,7 @@ fn main() {
     // because `smp::SMP_ENABLED` stays `false` at module load — the
     // production-vs-stub behaviour would diverge without any compile
     // error.  Pinning the call sites at build time forces the contract.
-    scan_boot_rs_phase5_uses_cmdline();
+    scan_boot_rs_calls_cmdline_smp_startup();
 
     // WS-SM SM1.F.8 (closes the SGI ordering contract): verify that
     // every send_sgi* function in `gic.rs` emits `dsb_ish` BEFORE the
@@ -586,7 +586,7 @@ fn scan_boot_s_for_secondary_entry_context_id_validation() {
 ///
 /// Both failures are user-invisible without the cmdline scanner;
 /// pinning them at build time forces the contract.
-fn scan_boot_rs_phase5_uses_cmdline() {
+fn scan_boot_rs_calls_cmdline_smp_startup() {
     let path = "src/boot.rs";
     // Re-run hook already emitted by an earlier scanner; not duplicating.
     let contents = match std::fs::read_to_string(path) {

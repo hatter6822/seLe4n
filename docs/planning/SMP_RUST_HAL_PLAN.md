@@ -1722,7 +1722,7 @@ plan's stub-form sketch:
   at module load so a halted kernel never accidentally spawns
   secondaries.
 - A new build.rs scanner
-  (`scan_boot_rs_phase5_uses_cmdline`) pins the Phase 5 call
+  (`scan_boot_rs_calls_cmdline_smp_startup`) pins the Phase 5 call
   sites at build time so a refactor cannot silently disable the
   cmdline parse.
 

@@ -14,7 +14,7 @@
 //! Phase 6: Handoff to Lean kernel (AG7 — FFI bridge)
 
 /// Kernel version string — matches Lean lakefile.toml version.
-const KERNEL_VERSION: &str = "0.32.120";
+const KERNEL_VERSION: &str = "0.32.121";
 
 /// Rust entry point called from assembly `_start` after BSS zeroing and
 /// stack setup. Receives the DTB pointer from U-Boot in x0.
@@ -496,7 +496,7 @@ mod tests {
     //
     // The textual presence of the Phase 5 call sites inside
     // `rust_boot_main` is enforced at build time by
-    // `scan_boot_rs_phase5_uses_cmdline` in `build.rs`.
+    // `scan_boot_rs_calls_cmdline_smp_startup` in `build.rs`.
     // =====================================================================
 
     #[test]
@@ -506,7 +506,7 @@ mod tests {
         // update this test in lockstep with `lakefile.toml`.
         // `scripts/check_version_sync.sh` (Tier 0) provides the
         // canonical drift check; this test is the local pin.
-        assert_eq!(KERNEL_VERSION, "0.32.120");
+        assert_eq!(KERNEL_VERSION, "0.32.121");
     }
 
     #[test]
@@ -528,7 +528,7 @@ mod tests {
     }
 
     #[test]
-    fn phase5_defaults_smp_enabled_to_true() {
+    fn default_config_enables_smp() {
         // SM1.D.3: per maintainer decision #7, defaults are SMP-on.
         // The Phase-5 path constructs a `CmdlineConfig` via
         // `parse_cmdline_from_dtb(0)` (NULL pointer → defaults).
@@ -540,7 +540,7 @@ mod tests {
     }
 
     #[test]
-    fn phase5_defaults_smp_max_cores_to_platform_max() {
+    fn default_config_sets_smp_max_cores_to_platform_max() {
         // SM1.D.6: the default `smp_max_cores` saturates to
         // `MAX_SECONDARY_CORES + 1 = 4` on RPi5.
         let cfg = crate::cmdline::parse_cmdline_from_dtb(0);

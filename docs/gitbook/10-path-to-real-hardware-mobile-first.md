@@ -103,7 +103,7 @@ WS-AN Phase AN9 closes every hardware-binding deferred item from
   fixtures, MAX_BOOTARGS_LEN buffer handling) + 7 new tests
   for `smp::bring_up_secondaries_with_limit` saturation
   behaviour + 5 new tests pinning Phase 5 cmdline-helper
-  resolution.  New `scan_boot_rs_phase5_uses_cmdline` build.rs
+  resolution.  New `scan_boot_rs_calls_cmdline_smp_startup` build.rs
   scanner pins the Phase-5 call sites textually.  SM1.D.5
   also moved `check_per_cpu_invariants()` from Phase 4 to
   Phase 1 so const-init regressions surface at boot start.

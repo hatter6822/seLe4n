@@ -1,3 +1,57 @@
+## v0.32.121 — Internal-first naming: clear the residue, then gate it
+
+PR #854 review, tenth round: one P1, and the fourth pass at the same
+finding class. The recurrence is the more interesting half.
+
+**The residue.** v0.32.119 reported zero workstream codes left in Rust
+identifiers. It matched prefixes, so `sm1d_phase5_defaults_smp_enabled_to_true`
+was de-prefixed to `phase5_defaults_smp_enabled_to_true` and counted as
+clean — the phase code was in the middle of the name, not the front.
+Renamed by subject, along with three the reviewer did not flag:
+
+- `phase5_defaults_smp_enabled_to_true` → `default_config_enables_smp`
+- `phase5_defaults_smp_max_cores_to_platform_max` →
+  `default_config_sets_smp_max_cores_to_platform_max`
+- `scan_boot_rs_phase5_uses_cmdline` → `scan_boot_rs_calls_cmdline_smp_startup`
+- `syscall_id_min_inline_args_matches_ak4_abi` (an audit ID) →
+  `syscall_id_min_inline_args_match_abi_contract`
+
+The third is a build-time contract scanner: `build.rs` declares and calls
+it, `boot.rs` cites it in a comment, and **four documentation files name
+it**. Renaming the declaration alone would have reproduced v0.32.119's own
+dangling-reference defect, so all ten sites moved together. `CHANGELOG.md`
+is deliberately untouched — its entries are historical statements, true of
+the version they describe.
+
+**The gate, which is the actual fix.** Four rounds of this finding is
+evidence about process, not about vigilance: every sweep was a hand-written
+grep, and every pattern was narrower than the rule. Prefix-only missed an
+embedded phase code; `fn`-only missed statics and consts. So
+`scripts/check_identifier_naming.sh` now runs in Tier 0 over *declared
+identifiers* of every kind:
+
+- **Rust — hard zero.** Cleaned here; any new violation fails the build.
+- **Lean — ratchet at 127.** CLAUDE.md grandfathers historical identifiers
+  ("stay as-is until touched"), so the count may fall but never rise.
+  Failing on the existing 127 would be a gate nobody could pass.
+
+Prose stays exempt: docstrings, comments, commit messages, and CHANGELOG
+entries are the *correct* places to cite a workstream.
+
+Both mechanisms were verified by neutering rather than assumption. The gate
+was fed a `fn` carrying a prefix-plus-phase-code and a `const` carrying an
+audit ID — the exact class v0.32.119's sweep missed — and rejected both.
+The renamed build scanner was checked to be genuinely live by breaking the
+contract it enforces and confirming `build.rs` panics. The repo's own
+shellcheck gate then rejected the new script's first draft (SC2001), which
+is a fair advertisement for gates over sweeps.
+
+Rust 1107, HAL 812, zero ignored; pure rename (10 insertions, 10
+deletions); trace byte-identical.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F.3
+Refs: #854
+
 ## v0.32.120 — Route the generation-wrap barrier through the system-wide halt
 
 PR #854 review, ninth round: one P2, and a consistency gap left by

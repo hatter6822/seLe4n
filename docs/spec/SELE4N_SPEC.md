@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.32.120` (`lakefile.toml`) |
+| **Package version** | `0.32.121` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 238,171 across 264 Lean files |
 | **Test LoC** | 48,449 across 67 Lean test suites |
@@ -588,7 +588,7 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    dispatches `bring_up_secondaries_with_limit` (SM1.D.6 limit-aware
    variant).  Default at v0.31.6+ is `smp_enabled=true
    smp_max_cores=4` per maintainer decision #7 — operators opt out
-   via the kernel command line.  A new `scan_boot_rs_phase5_uses_cmdline`
+   via the kernel command line.  A new `scan_boot_rs_calls_cmdline_smp_startup`
    build-script scanner pins the Phase-5 call sites textually so a
    refactor cannot silently disable the cmdline parse.
 

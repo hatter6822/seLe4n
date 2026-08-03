@@ -113,6 +113,12 @@ run_check "HYGIENE" "${SCRIPT_DIR}/check_website_links.sh"
 # AH4-F: Version sync — validate all version-bearing files match lakefile.toml.
 run_check "HYGIENE" "${SCRIPT_DIR}/check_version_sync.sh"
 
+# Internal-first naming: no workstream IDs, audit IDs, or phase codes in
+# declared identifiers (CLAUDE.md).  Rust is held at zero; Lean ratchets
+# against its grandfathered baseline.  Prose is exempt — cite workstreams
+# in docstrings, not in names.
+run_check "HYGIENE" "${SCRIPT_DIR}/check_identifier_naming.sh"
+
 # AN10-D: AK7 cascade monotonicity gate. Reads docs/dev_history/audits/AL0_baseline.txt
 # and rejects regressions on any AK7 cascade metric (raw-match site count,
 # typed-helper adoption, storeObjectKindChecked adoption, sentinel guard

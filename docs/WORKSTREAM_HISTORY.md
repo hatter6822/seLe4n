@@ -2326,7 +2326,7 @@ boot.rs sm1d_* (5 tests).  Zero clippy warnings; Tier 0+1+2+3
 all green.
 
 **Build-script regression scanner**:
-`scan_boot_rs_phase5_uses_cmdline` in `rust/sele4n-hal/build.rs`
+`scan_boot_rs_calls_cmdline_smp_startup` in `rust/sele4n-hal/build.rs`
 pins the textual presence of `cmdline::parse_cmdline_from_dtb(`
 and `cmdline::apply_cmdline_and_start_smp(` inside `boot.rs`,
 so a refactor that drops the Phase-5 call sites fails the build

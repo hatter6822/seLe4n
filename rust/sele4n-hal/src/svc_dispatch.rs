@@ -617,7 +617,7 @@ mod tests {
     }
 
     #[test]
-    fn syscall_id_min_inline_args_matches_ak4_abi() {
+    fn syscall_id_min_inline_args_match_abi_contract() {
         // Spot-check the canonical ABI values against AK4 documentation.
         assert_eq!(SyscallId::CSpaceMint.min_inline_args(), 5);
         assert_eq!(SyscallId::ServiceRegister.min_inline_args(), 4);
