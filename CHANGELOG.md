@@ -1,3 +1,69 @@
+## v0.32.123 — Naming gate: remove the categories of mistake, not the instances
+
+PR #854 review, twelfth round: four P2s, all against the gate, all valid.
+This is the third consecutive round on it, and the pattern is the finding:
+each time the checker's *scope* was hand-specified, and each time the scope
+was narrower than the rule.
+
+The four gaps, each verified before fixing:
+
+1. **Paths were never scanned.** The rule covers file and directory names,
+   but the checker only read `path.read_text()`, so
+   `src/ws_sm_helpers.rs` with well-named contents passed.
+2. **Multi-component codes bypassed the grammar.** `ws_[a-z]_` accepted
+   only a single letter, so `ws_sm_helper` and `ws_rc_state` walked
+   through, and the documented `I-H01` subtask shape had no alternative at
+   all.
+3. **The ratchet compared net counts.** A patch deleting one grandfathered
+   Lean name and adding a different forbidden one left the count at 150 and
+   passed; because the scan deduplicates by identifier, *copying* an
+   existing offender into new code was invisible too.
+4. **Integration tests were outside the globs.** `rust/*/tests/**` was
+   never matched, so `rust/sele4n-abi/tests/conformance.rs` could carry
+   anything.
+
+Rather than patch four instances, each fix removes the category:
+
+- **File discovery is `git ls-files`**, not hand-written globs. Every
+  tracked source is in scope by construction, not because someone
+  remembered to add it. (Closes 4.)
+- **Path components are tokenized** alongside contents. (Closes 1.)
+- **One normalized component grammar**: tokens split at `_` and camelCase
+  boundaries, lowercased, matched against the documented shapes — so
+  `Sm5iAffinityAnchors`, `sm5i_affinity_anchors` and `SM5I_ANCHORS` are one
+  case rather than three regexes. (Closes 2.)
+- **The baseline is a set of (identifier, file) pairs** in
+  `scripts/identifier_naming_baseline.json`. A name may disappear from it;
+  it may never appear somewhere new. (Closes 3.)
+
+Verified in both directions, including the exact case the review named. All
+four bypasses now fail with the offending name and file. For the duplicate
+case, a first attempt used a *derived* name (`Ak8Coverage_probe`) — which
+only exercises the new-identifier path — so it was re-run with the
+identical token `Ak8Coverage` copied into `Prelude.lean`: identifier count
+unchanged, rejected on the new pair. Nine legitimate names (`break0`,
+`x86_64`, `stream1`, `ask4`, `smoke`, `answer`, `make4`, `washer`,
+`transform`) still pass, which the widened grammar genuinely put at risk.
+
+One self-inflicted regression caught mid-rewrite: the first component
+pattern `^sm\d+[a-z]*$` cannot match `sm7f3` (digits and letters
+alternate), so `sm7f3_probe` — which the *previous* gate caught — began
+passing. Corrected to `^sm\d[a-z\d]*$` before commit.
+
+Rust holds at zero under the widened scope. The Lean baseline records 185
+identifiers / 199 pairs, up from a count of 150, because path scanning and
+the wider grammar legitimately see more. Gate runtime 3.6 s → 8.7 s.
+
+Documented scope caveat: `git ls-files` sees tracked files, so a new file
+not yet `git add`ed is not scanned locally. Correct for CI and for the
+pre-commit hook, which run against committed content and the index
+respectively.
+
+Rust 1107, HAL 812; trace byte-identical.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F.3
+Refs: #854
+
 ## v0.32.122 — The naming gate had the defect it was built to catch
 
 PR #854 review, eleventh round: two P2s. The first is against the gate
