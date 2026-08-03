@@ -2095,7 +2095,7 @@ mod tests {
     }
 
     #[test]
-    fn sm7f3_ffi_shootdown_boot_state_reads_quiescent() {
+    fn ffi_shootdown_boot_state_reads_quiescent() {
         // Read-only on the global (no ffi test mutates SHOOTDOWN_ACK,
         // so the boot values are stable under parallel execution).
         assert_eq!(

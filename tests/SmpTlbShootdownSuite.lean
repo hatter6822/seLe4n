@@ -2851,7 +2851,7 @@ round as acknowledged: the queues were generation-selective but the
 acknowledgment was not, and `allAcked` could read true with a foreign
 round's descriptors still pending.  These checks are the model-side
 counterpart of the Rust
-`sm7f3_newer_round_acks_cannot_satisfy_an_older_unexecuted_round`. -/
+`newer_round_acks_cannot_satisfy_an_older_unexecuted_round`. -/
 private def runGenerationAwareAckChecks : IO Unit := do
   IO.println "-- §8.4 SM7.F.3 generation-aware model acknowledgment"
   -- Round A (generation 1, initiator core0) posts to the other three.
@@ -2917,6 +2917,73 @@ private def runGenerationAwareAckChecks : IO Unit := do
   assertBool "a late older-round acknowledgment cannot retract a newer one"
     ((acknowledgeShootdown afterB core2 1).ackedGenOnCore core2 == 2)
 
+/-- §8.5 (PR #854 review): the model's acknowledgment high-water mark is
+**not** a serviced-prefix claim, and `allAcked` alone is therefore not a
+completion predicate.
+
+§8.4 exercises catch-ups in commit order (A then B), where acknowledging
+`hi` leaves a later round correctly outstanding.  This group runs the
+*reverse* order, which the v0.32.112 separation of commit generations from
+runtime generations explicitly permits: round A commits generation 1 and
+stalls before the hardware round lock while round B commits generation 2 and
+executes first.
+
+B's catch-up drains only generation-2 descriptors but records `hi = 2`, and
+because `ackOnCore` tests `roundGeneration ≤ ackedGenOnCore` every core then
+reads as acknowledged — while A's generation-1 descriptors are still queued
+and A's hardware round has never run.  So `allAcked` can be true with work
+outstanding.
+
+What remains sound is `shootdownQuiescent`, which conjoins the pending
+queues: it is false here, correctly.  These assertions pin that split so it
+cannot regress silently — the model's source of truth for outstanding work is
+the queues, not the ack vector, whose role is to mirror the Rust `acked_gen`
+(where the prefix reading *is* valid, because runtime generations are
+allocated under the round lock and so are execution-ordered). -/
+private def runReverseOrderAckChecks : IO Unit := do
+  IO.println "-- §8.5 SM7.F.3 acknowledgment is not a serviced prefix"
+  let opened := beginShootdownRound TlbShootdownState.initial core0
+  let descA : TlbShootdownDescriptor :=
+    { op := .vae1 5 0x1000, initiator := core0, generation := 1 }
+  let postedA := ((([core1, core2, core3]).foldlM
+    (fun s c => enqueueShootdown s c descA) opened).getD opened)
+  -- Round B commits second and executes FIRST — the ordering the commit /
+  -- runtime generation split permits.
+  let openedB := beginShootdownRound postedA core1
+  let descB : TlbShootdownDescriptor :=
+    { op := .vae1 9 0x2000, initiator := core1, generation := 2 }
+  let postedB := ((([core0, core2, core3]).foldlM
+    (fun s c => enqueueShootdown s c descB) openedB).getD openedB)
+  let afterB :=
+    completeShootdownOnCoreInWindow
+      (completeShootdownOnCoreInWindow
+        (completeShootdownOnCoreInWindow postedB core0 1 2) core2 1 2) core3 1 2
+  assertBool "B's catch-up drained exactly its own generation"
+    (allCores.all fun c =>
+      (afterB.pendingOnCore c).all fun d => d.generation == 1)
+  assertBool "A's round is still genuinely outstanding on its targets"
+    (([core1, core2, core3]).all fun c =>
+      ((afterB.pendingOnCore c).filter fun d => d.generation == 1).length == 1)
+  -- THE point: the high-water mark reads as acknowledged anyway.
+  assertBool "every core's acknowledged generation reached B's round"
+    (allCores.all fun c => afterB.ackedGenOnCore c == 2)
+  assertBool "so allAcked is TRUE even though A was never serviced"
+    (decide (allAcked afterB))
+  -- ...and the predicate that conjoins the queues is correctly false.
+  assertBool "shootdownQuiescent is FALSE — the queues are the source of truth"
+    (!(decide (shootdownQuiescent afterB)))
+  assertBool "well-formedness holds throughout the reverse order"
+    (decide (ackBounded postedB) && decide (ackBounded afterB))
+  -- A's own catch-up is what actually clears its descriptors.
+  let afterA :=
+    completeShootdownOnCoreInWindow
+      (completeShootdownOnCoreInWindow
+        (completeShootdownOnCoreInWindow afterB core1 0 1) core2 0 1) core3 0 1
+  assertBool "A's catch-up clears the remaining descriptors"
+    (allCores.all fun c => (afterA.pendingOnCore c).isEmpty)
+  assertBool "and only then is the state quiescent"
+    (decide (shootdownQuiescent afterA))
+
 /-- §8 dispatcher (the CLAUDE.md thin-dispatcher pattern): C-scope nesting
 depth resets at each function boundary in the Lean codegen, so the four
 parts each stay well inside clang's `-fbracket-depth` limit. -/
@@ -2926,6 +2993,7 @@ private def runRoundGenerationChecks : IO Unit := do
   runRoundWindowBoundChecks
   runRoundWindowWidthChecks
   runGenerationAwareAckChecks
+  runReverseOrderAckChecks
 
 -- ----------------------------------------------------------------------------
 -- §7  Cross-cluster mock: the `.outer` portability seam, exercised

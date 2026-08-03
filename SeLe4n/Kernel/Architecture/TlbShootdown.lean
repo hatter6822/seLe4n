@@ -531,9 +531,42 @@ def ackBounded (st : TlbShootdownState) : Prop :=
 instance (st : TlbShootdownState) : Decidable (ackBounded st) :=
   inferInstanceAs (Decidable (∀ c : CoreId, st.ackedGenOnCore c ≤ _))
 
-/-- **WS-SM SM7.A.3**: every core has acknowledged — the initiator
-wait-loop's exit condition (plan §3.2 step 5).  Decidable so the
-SM7.B wait loop and the test suite can evaluate it directly. -/
+/-- **WS-SM SM7.A.3**: every core has acknowledged at or beyond the round
+currently open — the initiator wait-loop's exit condition (plan §3.2
+step 5).  Decidable so the SM7.B wait loop and the test suite can
+evaluate it directly.
+
+**Not a completion predicate on its own** (PR #854 review).  It is a
+high-water mark, so reading it as "every round up to `roundGeneration`
+has been serviced" is a *prefix* claim, and since v0.32.112 that claim
+does not hold of the model: commit generations are allocated by the pure
+transition and hardware rounds execute in round-lock order, and the two
+orders are deliberately independent.  Concretely — round A commits
+generation 1 and stalls before the lock while round B commits generation
+2 and runs first; B's catch-up records `hi = 2` on every target, so
+every core reads acknowledged, while A's generation-1 descriptors are
+still queued and A's round has never run.  `SmpTlbShootdownSuite` §8.5
+computes exactly that state, so this limitation is machine-checked
+rather than asserted.
+
+The model's source of truth for outstanding work is the **pending
+queues**, so the sound completion predicate is `shootdownQuiescent`,
+which conjoins them and is correctly false in that scenario.  Every
+round capstone concludes `shootdownQuiescent`, and
+`shootdownRound_allAcked` derives this from a *quiescent* pre-state —
+where no earlier round is outstanding and the prefix reading is
+therefore recovered — so no landed theorem depends on the unsound
+reading.
+
+The ack vector's role here is to mirror the Rust `acked_gen`, where the
+prefix reading **is** valid: runtime generations are allocated under the
+round lock, so allocation order is execution order and a target
+acknowledging generation `g` has necessarily serviced every round it was
+sent up to `g`.  Representing the model's discharged generations as a
+**set** rather than a high-water mark — which would make the model
+independently sound rather than sound-relative-to-quiescence — is
+registered as tracked debt in `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md`
+§SM7.F.3. -/
 def allAcked (st : TlbShootdownState) : Prop :=
   ∀ c : CoreId, st.ackOnCore c = true
 

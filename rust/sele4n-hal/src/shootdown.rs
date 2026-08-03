@@ -115,14 +115,14 @@
 //!
 //! | Lean theorem | Rust test |
 //! |--------------|-----------|
-//! | `initial_ackOnCore` / `initial_allAcked` / `initial_roundGeneration` | `sm7f3_shootdown_ack_boots_quiescent_generation_zero` |
-//! | `beginShootdownRoundFor_ackOnCore_iff` | `sm7f3_round_open_needs_no_reset_and_starts_outstanding`, `sm7f3_round_completes_for_every_initiator`, `sm7f3_initiator_is_never_waited_on` |
-//! | `acknowledgeShootdown_ackOnCore_self` + `_ne` | `sm7f3_ack_round_marks_exactly_the_named_core` |
-//! | `acknowledgeShootdown_monotone` (idempotence) | `sm7f3_ack_round_is_idempotent_and_monotone` |
-//! | `allAcked` (∀-target conjunction, all 2⁴ × 4 states) | `sm7f3_wait_matches_conjunction_exhaustively` |
-//! | `allCores_foldl_acknowledgeShootdown_allAcked` | `sm7f3_round_completes_for_every_initiator` |
-//! | round identity after `shootdownRound_restores_quiescent` | `sm7f3_back_to_back_rounds_need_fresh_acknowledgments` |
-//! | SM7.F.3 stale-SGI closure (no Lean counterpart — a runtime-only hazard) | `sm7f3_stale_acknowledgment_cannot_satisfy_a_later_round`, `sm7f3_wait_times_out_on_stale_acknowledgments_only` |
+//! | `initial_ackOnCore` / `initial_allAcked` / `initial_roundGeneration` | `shootdown_ack_boots_quiescent_generation_zero` |
+//! | `beginShootdownRoundFor_ackOnCore_iff` | `round_open_needs_no_reset_and_starts_outstanding`, `round_completes_for_every_initiator`, `initiator_is_never_waited_on` |
+//! | `acknowledgeShootdown_ackOnCore_self` + `_ne` | `ack_round_marks_exactly_the_named_core` |
+//! | `acknowledgeShootdown_monotone` (idempotence) | `ack_round_is_idempotent_and_monotone` |
+//! | `allAcked` (∀-target conjunction, all 2⁴ × 4 states) | `wait_matches_conjunction_exhaustively` |
+//! | `allCores_foldl_acknowledgeShootdown_allAcked` | `round_completes_for_every_initiator` |
+//! | round identity after `shootdownRound_restores_quiescent` | `back_to_back_rounds_need_fresh_acknowledgments` |
+//! | SM7.F.3 stale-SGI closure (no Lean counterpart — a runtime-only hazard) | `stale_acknowledgment_cannot_satisfy_a_later_round`, `wait_times_out_on_stale_acknowledgments_only` |
 //! | fail-closed bounds (`CoreId` typing on the Lean side) | `sm7a3_*_panics_on_out_of_range_*` + the `ffi.rs` panic tests |
 //! | `TlbInvalidation.toOpTag` decode (SM7.B debt (1)) | `sm7b_op_tag_decode_conformance` |
 //! | `handleTlbShootdownReqOnCore` per-descriptor effect | `sm7b_retire_per_descriptor_counts_operands`, `sm7b_mailbox_publish_snapshot_roundtrip` |
@@ -1112,7 +1112,7 @@ mod tests {
     }
 
     #[test]
-    fn sm7f3_new_constructor_sets_requested_initial_generation() {
+    fn new_constructor_sets_requested_initial_generation() {
         let zero = ShootdownAckSlot::new(0);
         let seven = ShootdownAckSlot::new(7);
         assert_eq!(zero.acked_gen.load(Ordering::Acquire), 0);
@@ -1120,7 +1120,7 @@ mod tests {
     }
 
     #[test]
-    fn sm7f3_boot_constructor_is_generation_zero() {
+    fn boot_constructor_is_generation_zero() {
         // Quiescent boot: generation 0, and no round ever carries
         // generation 0 (the Lean `beginShootdownRound{,For}` allocates
         // `roundGeneration + 1` from a counter that boots at 0), so no
@@ -1141,7 +1141,7 @@ mod tests {
     }
 
     #[test]
-    fn sm7f3_shootdown_ack_boots_quiescent_generation_zero() {
+    fn shootdown_ack_boots_quiescent_generation_zero() {
         // No test in this binary mutates the global array (all
         // behaviour tests use stack-local slices), so the boot values
         // are stable under parallel test execution.
@@ -1220,7 +1220,7 @@ mod tests {
     const ALL_ONLINE: [bool; 4] = [true, true, true, true];
 
     #[test]
-    fn sm7f3_round_open_needs_no_reset_and_starts_outstanding() {
+    fn round_open_needs_no_reset_and_starts_outstanding() {
         // Mirrors Lean `beginShootdownRoundFor_ackOnCore_iff`: at round
         // open the initiator is satisfied and every online target is
         // outstanding.  There is NO reset step — the round is simply a
@@ -1237,7 +1237,7 @@ mod tests {
     }
 
     #[test]
-    fn sm7f3_round_completes_for_every_initiator() {
+    fn round_completes_for_every_initiator() {
         for initiator in 0..4usize {
             let slots = fresh_boot_slots();
             assert!(
@@ -1264,7 +1264,7 @@ mod tests {
     }
 
     #[test]
-    fn sm7f3_ack_round_marks_exactly_the_named_core() {
+    fn ack_round_marks_exactly_the_named_core() {
         let slots = fresh_boot_slots();
         ack_round_in_slice(&slots, 2, 1);
         assert_eq!(acked_gen_in_slice(&slots, 0), 0, "core 0 untouched");
@@ -1274,7 +1274,7 @@ mod tests {
     }
 
     #[test]
-    fn sm7f3_ack_round_is_idempotent_and_monotone() {
+    fn ack_round_is_idempotent_and_monotone() {
         // A spurious duplicate .tlbShootdownReq SGI re-acknowledges
         // harmlessly, and an OLDER generation can never lower the
         // recorded one (`fetch_max`) — the property that makes a stale
@@ -1294,7 +1294,7 @@ mod tests {
     }
 
     #[test]
-    fn sm7f3_wait_false_while_any_target_outstanding() {
+    fn wait_false_while_any_target_outstanding() {
         let slots = fresh_boot_slots();
         assert!(!all_acked_for_round_in_slice(&slots, 1, 0, &ALL_ONLINE));
         ack_round_in_slice(&slots, 1, 1);
@@ -1306,7 +1306,7 @@ mod tests {
     }
 
     #[test]
-    fn sm7f3_back_to_back_rounds_need_fresh_acknowledgments() {
+    fn back_to_back_rounds_need_fresh_acknowledgments() {
         // Round N completes; round N+1 (a different initiator) must not
         // inherit it — the "no acknowledgment leaks across rounds"
         // property, now structural rather than reset-enforced.
@@ -1326,7 +1326,7 @@ mod tests {
     }
 
     #[test]
-    fn sm7f3_stale_acknowledgment_cannot_satisfy_a_later_round() {
+    fn stale_acknowledgment_cannot_satisfy_a_later_round() {
         // THE regression test for the SM7.F.3 security fix.  Under the
         // SM7.A Boolean scheme a `.tlbShootdownReq` SGI left pending by
         // round 1 (self-serviced by the cooperative round-lock acquire)
@@ -1357,7 +1357,7 @@ mod tests {
     }
 
     #[test]
-    fn sm7f3_wait_mask_keeps_offline_cores_out_of_the_round() {
+    fn wait_mask_keeps_offline_cores_out_of_the_round() {
         // PR #838 review P1, restated as a wait mask: a partial-core
         // boot must not let a round wait on a core that can never take
         // the SGI.  Boot core 0 online, cores 2 and 3 offline
@@ -1373,7 +1373,7 @@ mod tests {
     }
 
     #[test]
-    fn sm7f3_single_core_boot_round_is_immediately_satisfied() {
+    fn single_core_boot_round_is_immediately_satisfied() {
         // smp_enabled=false (the v1.0.0 default): only the boot core is
         // online, so a round has no remote targets and completes at
         // once — the wait loop must not spin on cores 1..3.
@@ -1387,7 +1387,7 @@ mod tests {
     }
 
     #[test]
-    fn sm7f3_initiator_is_never_waited_on() {
+    fn initiator_is_never_waited_on() {
         // The initiator retires locally (the `tlbiForSharing` broadcast
         // reaches the issuing PE) and is never a target of its own
         // round — the Lean `beginShootdownRoundFor_ackOnCore_iff`
@@ -1405,13 +1405,13 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "online mask length 3 != slot count 4")]
-    fn sm7f3_wait_panics_on_mask_length_mismatch() {
+    fn wait_panics_on_mask_length_mismatch() {
         let slots = fresh_boot_slots();
         let _ = all_acked_for_round_in_slice(&slots, 1, 0, &[true, true, false]);
     }
 
     #[test]
-    fn sm7f3_wait_matches_conjunction_exhaustively() {
+    fn wait_matches_conjunction_exhaustively() {
         // Mechanical conformance with the Lean `allAcked` predicate
         // restricted to the round's target set: for every one of the 2^4
         // acknowledged/outstanding assignments, the wait predicate agrees
@@ -1438,7 +1438,7 @@ mod tests {
     }
 
     #[test]
-    fn sm7f3_empty_slice_is_vacuously_satisfied() {
+    fn wait_on_empty_slice_is_vacuously_satisfied() {
         // Degenerate input: `all` over an empty iterator is true.  The
         // production array is never empty (4 slots), but the inner form
         // must be total.
@@ -1452,14 +1452,14 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "ack_round_in_slice: core_id 4 out of range")]
-    fn sm7f3_ack_round_panics_on_out_of_range_core() {
+    fn ack_round_panics_on_out_of_range_core() {
         let slots = fresh_boot_slots();
         ack_round_in_slice(&slots, 4, 1);
     }
 
     #[test]
     #[should_panic(expected = "acked_gen_in_slice: core_id 7 out of range")]
-    fn sm7f3_acked_gen_panics_on_out_of_range_core() {
+    fn acked_gen_panics_on_out_of_range_core() {
         let slots = fresh_boot_slots();
         let _ = acked_gen_in_slice(&slots, 7);
     }
@@ -1504,7 +1504,7 @@ mod tests {
     /// satisfied 0, which a slot's initial `acked_gen` would already
     /// satisfy.
     #[test]
-    fn sm7f3_round_generation_allocator_is_strictly_increasing_from_one() {
+    fn round_generation_allocator_is_strictly_increasing_from_one() {
         let seq = AtomicU64::new(0);
         let mut previous = 0u64;
         for expected in 1..=64u64 {
@@ -1523,7 +1523,7 @@ mod tests {
 
     /// SM7.F.3 (PR #854 review P1) — the regression witness for the
     /// **premature**-acknowledgment hazard, the dual of the stale one
-    /// pinned by `sm7f3_stale_acknowledgment_cannot_satisfy_a_later_round`.
+    /// pinned by `stale_acknowledgment_cannot_satisfy_a_later_round`.
     ///
     /// Two cores commit shootdown-bearing syscalls concurrently.  Core A
     /// commits first (model generation N) but stalls before the round
@@ -1538,7 +1538,7 @@ mod tests {
     /// so A's wait correctly does NOT pass until A's own round is
     /// acknowledged.
     #[test]
-    fn sm7f3_newer_round_acks_cannot_satisfy_an_older_unexecuted_round() {
+    fn newer_round_acks_cannot_satisfy_an_older_unexecuted_round() {
         // Cores: A = 0 (the victim), B = 1, C = 2.  Three rounds are
         // needed, not two: a round's initiator never acknowledges its
         // own slot, so B's round alone always leaves B's slot behind and
@@ -1673,11 +1673,11 @@ mod tests {
 
     /// SM7.B.6 (fail-closed): a *stale* acknowledgment does not rescue a
     /// round from timing out.  The regression companion of
-    /// `sm7f3_stale_acknowledgment_cannot_satisfy_a_later_round`, at the
+    /// `stale_acknowledgment_cannot_satisfy_a_later_round`, at the
     /// wait-loop level: the pre-fix Boolean scheme would have exited
     /// successfully here with the target's TLB still stale.
     #[test]
-    fn sm7f3_wait_times_out_on_stale_acknowledgments_only() {
+    fn wait_times_out_on_stale_acknowledgments_only() {
         let slots = fresh_boot_slots();
         for c in 1..4usize {
             ack_round_in_slice(&slots, c, 1); // an EARLIER round
@@ -1741,7 +1741,7 @@ mod tests {
     /// not an unrelated one — a handler running while the mailbox still
     /// holds an older round can only re-affirm that older round.
     #[test]
-    fn sm7f3_handler_acknowledges_only_the_published_generation() {
+    fn handler_acknowledges_only_the_published_generation() {
         let mb = ShootdownOpMailbox::new();
         publish_round_ops_in(&mb, &[ShootdownOp::VMALLE1], 3);
         let slots = fresh_boot_slots();
@@ -1775,7 +1775,7 @@ mod tests {
     /// SM7.B.7 + SM7.F.3: the cooperative self-service arm discharges
     /// exactly this core's outstanding obligation, once.
     #[test]
-    fn sm7f3_self_service_round_discharges_once() {
+    fn self_service_round_discharges_once() {
         let mb = ShootdownOpMailbox::new();
         publish_round_ops_in(&mb, &[ShootdownOp::VMALLE1], 6);
         let slots = fresh_boot_slots();
@@ -1793,7 +1793,7 @@ mod tests {
 
     /// SM7.F.3: self-service is fail-closed on an out-of-range core id.
     #[test]
-    fn sm7f3_self_service_round_out_of_range_is_inert() {
+    fn self_service_round_out_of_range_is_inert() {
         let mb = ShootdownOpMailbox::new();
         publish_round_ops_in(&mb, &[ShootdownOp::VMALLE1], 6);
         let slots = fresh_boot_slots();

@@ -1,3 +1,74 @@
+## v0.32.115 — Workstream codes out of test identifiers; the ack mark is not a serviced prefix
+
+PR #854 review, fourth round. Two findings, both valid.
+
+**Workstream codes in test identifiers (Codex P1).** Twenty-five tests added
+by this PR carried the `sm7f3_` phase-code prefix. The project forbids
+workstream, audit and phase codes in *every* identifier — tests included —
+because the labels age out and hide what the test is about, and new code must
+comply from day one. All twenty-five renamed to their semantic subject
+(`stale_acknowledgment_cannot_satisfy_a_later_round`,
+`round_generation_allocator_is_strictly_increasing_from_one`, and so on).
+
+Two references would otherwise have been left dangling and are fixed with
+them: the Tier-3 anchor in `test_tier3_invariant_surface.sh` pinning
+`fn sm7f3_stale_acknowledgment_cannot_satisfy_a_later_round`, and a suite
+docstring cross-reference. Both gates re-verified green after the rename
+rather than assumed.
+
+**The acknowledgment mark is not a serviced prefix (Codex P2, partially
+closed).** `ackOnCore` tests `roundGeneration ≤ ackedGenOnCore`, which reads
+as "every round up to the current one has been serviced". Since v0.32.112
+that reading is false of the model: commit generations are allocated by the
+pure transition while hardware rounds execute in round-lock order, and the
+two orders are deliberately independent. Round A commits generation 1 and
+stalls before the lock while round B commits 2 and runs first; B's catch-up
+records `hi = 2` on every target, so every core reads acknowledged while A's
+generation-1 descriptors are still queued and A's round has never run.
+
+Verified by computation rather than argued:
+
+```
+roundGeneration     = 2
+ackedGen per core   = [2, 2, 2, 2]
+gen-1 still pending = [0, 1, 1, 1]
+allAcked            = true
+shootdownQuiescent  = false
+```
+
+Scope, stated precisely. No hardware hazard: the runtime consults the Rust
+`acked_gen`, where the prefix reading *is* valid, because runtime generations
+are allocated under the round lock and so are execution-ordered. No false
+landed theorem either: every round capstone concludes `shootdownQuiescent`,
+which conjoins the pending queues and is correctly false above, and
+`shootdownRound_allAcked` derives `allAcked` from a *quiescent* pre-state,
+which recovers the prefix. The unsound reading is `allAcked` taken alone.
+
+Closed in this cut: `SmpTlbShootdownSuite` §8.5 computes the reverse-order
+state, so the limitation is a machine-checked fact rather than prose — it
+pins that `allAcked` is true there, that `shootdownQuiescent` is false, and
+that only A's own catch-up clears the descriptors. The `allAcked` contract is
+corrected to state what it does and does not guarantee, and to name the
+queues as the model's source of truth for outstanding work.
+
+Not closed in this cut: the representation itself. Replacing the per-core
+high-water mark with the *set* of generations that core discharged would make
+the model independently sound rather than sound-relative-to-quiescence.
+Attempted here and reverted: unlike the v0.32.113 `Vector Bool → Vector Nat`
+change, which preserved a scalar comparison and rewrote mechanically, a set
+changes `ackBounded` from a scalar `≤` to a quantified membership and so
+restructures every proof that touches it — 69 errors in `TlbShootdown.lean`
+alone before the dependent modules, against an estimate of "comparable to
+v0.32.113". Registered as tracked debt in
+`docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` §SM7.F.3 with the SM8 mount as
+closure target, rather than carried as a fifth in-flight rewrite of the same
+field.
+
+`test_smoke.sh` green, Rust 1097 (HAL 802), trace byte-identical.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F.3
+Refs: #854
+
 ## v0.32.114 — ackBounded becomes the 15th invariant conjunct; Lean generation contract corrected
 
 PR #854 review, third round on the SM7.F.3 work. Two findings, both valid,

@@ -1081,7 +1081,7 @@ run_check "INVARIANT" rg -n 'pub fn ack_round_in_slice' rust/sele4n-hal/src/shoo
 run_check "INVARIANT" rg -n 'pub fn all_acked_for_round_in_slice' rust/sele4n-hal/src/shootdown.rs
 run_check "INVARIANT" rg -n 'pub fn tlb_shootdown_req_service_in' rust/sele4n-hal/src/shootdown.rs
 run_check "INVARIANT" rg -n 'pub fn self_service_round_in' rust/sele4n-hal/src/shootdown.rs
-run_check "INVARIANT" rg -n 'fn sm7f3_stale_acknowledgment_cannot_satisfy_a_later_round' rust/sele4n-hal/src/shootdown.rs
+run_check "INVARIANT" rg -n 'fn stale_acknowledgment_cannot_satisfy_a_later_round' rust/sele4n-hal/src/shootdown.rs
 run_check "INVARIANT" bash -c "! rg -q 'fn reset_for_round' rust/sele4n-hal/src/shootdown.rs"
 run_check "INVARIANT" bash -c "! rg -q 'shootdownResetForRound' SeLe4n/Kernel/SyscallDispatchEntry.lean"
 

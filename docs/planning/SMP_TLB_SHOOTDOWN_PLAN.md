@@ -880,6 +880,33 @@ runtime generation is now read *from* a `u64`, so the `UInt64.ofNat`
 narrowing round-trips exactly and the `Nat` identity cannot alias at the FFI
 boundary; the allocator additionally fails closed on wrap.
 
+**TRACKED DEBT — model acknowledgments as a discharged-generation set**
+(PR #854 review P2, v0.32.115).  The model's per-core acknowledgment is a
+high-water mark, so reading it as "every round up to `roundGeneration` has
+been serviced" is a prefix claim — and since v0.32.112 that does not hold of
+the model, because commit generations and hardware execution order are
+deliberately independent.  Round A commits generation 1 and stalls before the
+round lock while round B commits 2 and runs first; B's catch-up records
+`hi = 2` on every target, so `allAcked` reads true with A's descriptors still
+queued.  `SmpTlbShootdownSuite` §8.5 computes that state, so the limitation is
+machine-checked rather than asserted.
+
+**No hardware hazard and no false theorem.**  The runtime consults the Rust
+`acked_gen`, where the prefix reading *is* valid — runtime generations are
+allocated under the round lock, so allocation order is execution order.  The
+model's sound completion predicate is `shootdownQuiescent`, which conjoins the
+pending queues and is correctly false in the scenario above; every round
+capstone concludes it, and `shootdownRound_allAcked` derives `allAcked` from a
+*quiescent* pre-state, which recovers the prefix reading.
+
+**Closure**: represent the discharged generations per core as a set rather
+than a high-water mark, making the model independently sound instead of
+sound-relative-to-quiescence.  That is a third change to this field's
+representation (`Vector Bool` → `Vector Nat` → set) plus another pass over the
+SM7.A/B acknowledgment surface, so it is scoped out of this PR rather than
+taken as a fourth in-flight rewrite.  **Closure target: the SM8 mount**,
+alongside the other SM7.F.3 model-fidelity items.
+
 **`ackBounded` carried in the global invariant — CLOSED at v0.32.114**
 (Codex P2).  v0.32.113 introduced the predicate and left it an optional
 hypothesis, so reasoning from `proofLayerInvariantBundle` could admit
