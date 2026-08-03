@@ -1,3 +1,96 @@
+## v0.32.105 — SM7.F.3: a shootdown round's catch-up drains only its own round
+
+**Closes SM7.F** (the last open sub-task of "Operative per-core TLB fills") and,
+in the Rust mirror the sub-task calls for, closes a **security** hazard in the
+acknowledgment channel.
+
+**The model-fidelity gap (the SM7.B v0.32.79 debt).** A syscall's shootdown
+work spans two atomic commits: the pure transition posts the descriptors, and
+`completeShootdownRounds` commits the catch-up afterwards. Only the *hardware*
+round runs under `SHOOTDOWN_ROUND_LOCK`, so a concurrently committed round can
+post between them. The catch-up drained each target's **whole** queue, so it
+swallowed that round's freshly-queued descriptors and declared the model
+quiescent before its `.tlbShootdownReq` SGIs had fired — the model claiming a
+core clean of an invalidation the hardware had not yet performed.
+
+**The model change.** `TlbShootdownDescriptor` gains `generation : Nat`;
+`TlbShootdownState` gains a monotone `roundGeneration : Nat` that
+`beginShootdownRound{,For}` advances, and `roundDescriptor` stamps every posted
+descriptor with the opened round's value
+(`roundDescriptor_generation_eq_opened`). A commit's own rounds are exactly the
+generations in `shootdownRoundWindow pre post = (pre.gen, post.gen]` — a
+*window* rather than a single generation, because the retype wrappers open one
+round per flushed ASID. The selective forms the live seam now runs are
+`drainShootdownsInWindow` → `completeShootdownOnCoreInWindow` →
+`handleTlbShootdownReqOnCore{,PerCore}InWindow` →
+`shootdownCatchUpPerCoreInWindow`, with
+`shootdownCatchUpPerCoreInWindow_preserves_foreign` (a concurrently posted
+round's descriptors survive) as the headline and `…_drains_own` as its dual.
+
+Every landed SM7.A/B round theorem carries over unchanged through the exactness
+bridges — `drainShootdownsInWindow_eq_drainShootdowns`,
+`handleTlbShootdownReqOnCore{,PerCore}InWindow_eq_handle`,
+`shootdownCatchUpPerCoreInWindow_eq_catchUp` — because under round
+serialisation a core's queue holds only this commit's work, so the window drain
+*is* the whole-queue drain. `shootdownPostedOps` is likewise window-restricted,
+so the runtime broadcasts and publishes exactly its own round's operands;
+`mem_shootdownPostedOps_iff` pins both directions, including that the operand
+deduplication never drops an entry (the unsafe direction) — Lean core ships
+`List.eraseDups` without membership lemmas, so both are proven here
+(`mem_eraseDups_of_mem` / `mem_of_mem_eraseDups`).
+
+**SECURITY — the Rust mirror.** Under the SM7.A Boolean `SHOOTDOWN_ACK` vector
+a round opened by *clearing* every online target's flag, and the handler set
+its flag unconditionally after retiring whatever the mailbox held. A
+`.tlbShootdownReq` SGI left pending by an **earlier** round — the cooperative
+round-lock acquire self-acknowledges without consuming the interrupt, and IRQs
+are masked on the SVC path — could be delivered inside a later round's
+`reset → publish` window. Its handler then retired the *previous* round's
+operands and acknowledged, satisfying the new round's `all_acked` wait with
+that target's TLB still holding the translation the round was supposed to
+retire: an under-invalidation, the SMP-C4 stale-TLB hazard. High severity once
+bootable (SM9.E); latent today, since there is no bootable image.
+
+The fix makes an acknowledgment *name the round it discharged*.
+`ShootdownAckSlot` holds a monotone `acked_gen : AtomicU64` advanced by
+`fetch_max`; the mailbox publishes the round's generation; and the handler
+(`tlb_shootdown_req_service_in`) latches that generation **before** any TLB
+work and acknowledges exactly it — so every branch it can take, the precise
+per-descriptor retire or the conservative `tlbi vmalle1` fallback, provably
+discharges the generation acknowledged. The initiator waits for
+`acked_gen[c] >= gen` across the IRQ-serviceable non-initiator cores. With the
+round identified by its generation there is nothing to clear before it opens,
+so `reset_for_round*` is **gone** — the window the hazard lived in no longer
+exists, and Tier-3 anchors negatively pin its absence (a reset would erase the
+monotonicity the mechanism rests on). The PR #838-P1 online mask moves from the
+reset to the wait, where it belongs. The cooperative self-service arm becomes
+one Rust call (`self_service_round`) so the generation read, the local flush
+and the acknowledgment cannot be split by a newer round's publish.
+
+**Tests.** `SmpTlbShootdownSuite` §8 (`runRoundGenerationChecks`, 29 runtime
+assertions) drives the closure on the same real page-table-backed four-round
+storm §6 builds: generation allocation and stamping, the window predicate and
+its diff recovery, core 0's catch-up draining only generation 1 while cores 2–3
+keep the concurrent rounds' work, the explicit contrast that the whole-queue
+catch-up *would* have swallowed them, every commit's own catch-up run in turn
+ending quiescent with no page left cached, the single-round bridge, diff-recovery
+precision, and empty-window inertness. Rust: the
+`sm7f3_stale_acknowledgment_cannot_satisfy_a_later_round` regression test is the
+security fix's direct witness, with
+`sm7f3_wait_times_out_on_stale_acknowledgments_only` its wait-loop companion;
+plus the exhaustive 2⁴ × 4-initiator wait-predicate conformance, the
+handler/self-service generation tests, and the mailbox generation round-trip and
+its mismatch fallback. HAL 798 → 800; zero clippy warnings under the pinned
+1.82.0 toolchain; golden trace byte-identical (`perCoreTlb` and `tlbShootdown`
+are projection-invisible).
+
+**Residual.** SM7.F.4(b)(iv) — the `requiresFlush` ASID-allocate
+(`asidAllocateWithShootdown`) — stays gated on SM8: the wrapper is complete and
+proven but user-unreachable, because no ASID object family or assign syscall
+exists yet. A completeness gap, not a safety hole.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F.3
+
 ## v0.32.104 — Tier 3: the surface gate no longer depends on Tier 1 having run
 
 **The failure.** Running `scripts/test_tier3_invariant_surface.sh` on its own —

@@ -413,14 +413,17 @@ pub extern "C" fn ffi_send_sgi_to_all_but_self(intid: u8) {
 // ============================================================================
 //
 // The Lean ↔ Rust seam for the per-core [`crate::shootdown::SHOOTDOWN_ACK`]
-// flags — the runtime realisation of the Lean model's
-// `TlbShootdownState.shootdownAck` vector.  The SM7.B protocol calls
-// these through the typed `CoreId` wrappers in
-// `SeLe4n/Kernel/Concurrency/Runtime.lean` (`shootdownAckSet` /
-// `shootdownAckIsSet` / `shootdownResetForRound` / `shootdownAllAcked`),
-// whose `Fin numCores` argument typing makes the panic arms below
-// structurally unreachable from well-typed kernel code
-// (`shootdownAck_ffi_core_in_range` on the Lean side).
+// slots — the runtime realisation of the Lean model's
+// `TlbShootdownState.shootdownAck` vector, refined by SM7.F.3 into a
+// monotone *acknowledged round generation* per core (the Lean Boolean
+// `ackOnCore c` corresponds to `acked_gen[c] >= the round's
+// TlbShootdownState.roundGeneration`).  The SM7.B protocol calls these
+// through the typed `CoreId` wrappers in
+// `SeLe4n/Kernel/Concurrency/Runtime.lean` (`shootdownAckRound` /
+// `shootdownAckedGeneration` / `shootdownAllAckedForRound` /
+// `shootdownSelfServiceRound`), whose `Fin numCores` argument typing
+// makes the panic arms below structurally unreachable from well-typed
+// kernel code (`shootdownAck_ffi_core_in_range` on the Lean side).
 //
 // Bound checks run in `u64` space BEFORE the `usize` cast (the same
 // defense as `ffi_per_core_irq_count`: a hypothetical 32-bit port must
@@ -449,52 +452,60 @@ fn shootdown_core_id_checked(core_id: u64, caller: &str) -> usize {
     core_id as usize
 }
 
-/// **WS-SM SM7.A.3**: Release-set the given core's shootdown ack flag
-/// (plan §3.2 step 4c — the target's SGI handler calls this only after
-/// its drained TLBIs have retired).
+/// **WS-SM SM7.F.3**: Acknowledge round generation `gen` for the given
+/// core (plan §3.2 step 4c — the target's SGI handler calls this only
+/// after the round's TLBIs have retired locally).  Monotone
+/// (`fetch_max`), so a stale handler can never lower a core's recorded
+/// generation.
 ///
-/// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownAckSet`
+/// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownAckRound`
 #[no_mangle]
-pub extern "C" fn ffi_shootdown_ack_set(core_id: u64) {
-    crate::shootdown::ack_set(shootdown_core_id_checked(core_id, "ffi_shootdown_ack_set"));
+pub extern "C" fn ffi_shootdown_ack_round(core_id: u64, gen: u64) {
+    crate::shootdown::ack_round(
+        shootdown_core_id_checked(core_id, "ffi_shootdown_ack_round"),
+        gen,
+    );
 }
 
-/// **WS-SM SM7.A.3**: Acquire-load the given core's shootdown ack flag.
-/// Returns `1` if acknowledged, `0` otherwise.
+/// **WS-SM SM7.F.3**: Acquire-load the highest round generation the
+/// given core has acknowledged.
 ///
-/// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownAckIsSet`
+/// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownAckedGeneration`
 #[no_mangle]
-pub extern "C" fn ffi_shootdown_ack_is_set(core_id: u64) -> u64 {
-    crate::shootdown::ack_is_set(shootdown_core_id_checked(
+pub extern "C" fn ffi_shootdown_acked_generation(core_id: u64) -> u64 {
+    crate::shootdown::acked_gen(shootdown_core_id_checked(
         core_id,
-        "ffi_shootdown_ack_is_set",
+        "ffi_shootdown_acked_generation",
+    ))
+}
+
+/// **WS-SM SM7.F.3**: Acquire-poll the acknowledgment slots for round
+/// generation `gen` — the initiator wait-loop's exit condition
+/// (plan §3.2 step 5).  Returns `1` when every IRQ-serviceable
+/// non-initiator core has acknowledged `gen`, `0` otherwise.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownAllAckedForRound`
+#[no_mangle]
+pub extern "C" fn ffi_shootdown_all_acked_for_round(gen: u64, initiator: u64) -> u64 {
+    crate::shootdown::all_acked_for_round(
+        gen,
+        shootdown_core_id_checked(initiator, "ffi_shootdown_all_acked_for_round"),
+    ) as u64
+}
+
+/// **WS-SM SM7.B.7 + SM7.F.3**: The cooperative round-lock acquire's
+/// self-service arm — if this core has not yet acknowledged the
+/// currently published round, flush its own TLB and acknowledge that
+/// round.  Returns `1` when it serviced a round, `0` when nothing was
+/// outstanding.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownSelfServiceRound`
+#[no_mangle]
+pub extern "C" fn ffi_shootdown_self_service_round(core_id: u64) -> u64 {
+    crate::shootdown::self_service_round(shootdown_core_id_checked(
+        core_id,
+        "ffi_shootdown_self_service_round",
     )) as u64
-}
-
-/// **WS-SM SM7.A.3**: Open a new shootdown round — every flag drops to
-/// `false` except the initiator's own (plan §3.2 step 1; the Lean
-/// `beginShootdownRound`).  Must only be called by the round initiator
-/// under the global shootdown-round lock (see the shootdown.rs
-/// round-serialisation contract; SM7.B.7 — the per-VSpace VSpaceRoot
-/// lock alone is NOT sufficient).
-///
-/// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownResetForRound`
-#[no_mangle]
-pub extern "C" fn ffi_shootdown_reset_for_round(initiator: u64) {
-    crate::shootdown::reset_for_round(shootdown_core_id_checked(
-        initiator,
-        "ffi_shootdown_reset_for_round",
-    ));
-}
-
-/// **WS-SM SM7.A.3**: Acquire-poll every shootdown ack flag — the
-/// initiator wait-loop's exit condition (plan §3.2 step 5).  Returns
-/// `1` when every core has acknowledged, `0` otherwise.
-///
-/// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownAllAcked`
-#[no_mangle]
-pub extern "C" fn ffi_shootdown_all_acked() -> u64 {
-    crate::shootdown::all_acked() as u64
 }
 
 /// **WS-SM SM7.B.7**: Try to acquire THE global shootdown-round lock
@@ -523,15 +534,24 @@ pub extern "C" fn ffi_shootdown_round_lock_release() {
     crate::shootdown::round_lock_release();
 }
 
-/// **WS-SM SM7.B.5 + B.6**: Bounded acquire-poll for all-acknowledged
-/// — spins up to `timeout_ticks` generic-timer ticks.  Returns `1` on
-/// observed all-acked, `0` on a genuine timeout (the Lean caller's
-/// fail-closed panic trigger).
+/// **WS-SM SM7.B.5 + B.6 + SM7.F.3**: Bounded acquire-poll for round
+/// generation `gen` acknowledged — spins up to `timeout_ticks`
+/// generic-timer ticks.  Returns `1` on observed all-acked-for-`gen`,
+/// `0` on a genuine timeout (the Lean caller's fail-closed panic
+/// trigger).
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownWaitAllAcked`
 #[no_mangle]
-pub extern "C" fn ffi_shootdown_wait_all_acked(timeout_ticks: u64) -> u64 {
-    crate::shootdown::wait_all_acked_bounded(timeout_ticks) as u64
+pub extern "C" fn ffi_shootdown_wait_all_acked(
+    gen: u64,
+    initiator: u64,
+    timeout_ticks: u64,
+) -> u64 {
+    crate::shootdown::wait_all_acked_bounded(
+        gen,
+        shootdown_core_id_checked(initiator, "ffi_shootdown_wait_all_acked"),
+        timeout_ticks,
+    ) as u64
 }
 
 /// **WS-SM SM7.B.2**: The online-core bitmask (bit `c` ⇔ core `c`
@@ -578,15 +598,16 @@ pub extern "C" fn ffi_shootdown_publish_slot(index: u64, op_tag: u32, asid: u16,
     );
 }
 
-/// **WS-SM SM7.B (debt (1))**: commit the publish of `len` operands —
-/// bumps the seqlock to stable (Release).  `len` above capacity collapses
-/// to one `vmalle1`; `len == 0` leaves the mailbox empty (handler falls
-/// back to `vmalle1`).
+/// **WS-SM SM7.B (debt (1)) + SM7.F.3**: commit the publish of `len`
+/// operands belonging to round generation `gen` — bumps the seqlock to
+/// stable (Release), then publishes the generation.  `len` above capacity
+/// collapses to one `vmalle1`; `len == 0` leaves the mailbox empty
+/// (handler falls back to `vmalle1`).
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownPublishCommit`
 #[no_mangle]
-pub extern "C" fn ffi_shootdown_publish_commit(len: u64) {
-    crate::shootdown::publish_commit_in(&crate::shootdown::SHOOTDOWN_OPS, len as usize);
+pub extern "C" fn ffi_shootdown_publish_commit(len: u64, gen: u64) {
+    crate::shootdown::publish_commit_in(&crate::shootdown::SHOOTDOWN_OPS, len as usize, gen);
 }
 
 // ============================================================================
@@ -2012,7 +2033,7 @@ mod tests {
         ffi_rw_lock_release_read(h);
     }
     // ----------------------------------------------------------------
-    // WS-SM SM7.A.3 — shootdown ack-flag FFI exports.
+    // WS-SM SM7.A.3 / SM7.F.3 — shootdown acknowledgment FFI exports.
     //
     // Mutating valid-input coverage lives in shootdown.rs on
     // stack-local slices; the tests here pin the FFI contract only —
@@ -2024,25 +2045,25 @@ mod tests {
     // ----------------------------------------------------------------
 
     #[test]
-    #[should_panic(expected = "ffi_shootdown_ack_set: core_id 4 out of range")]
+    #[should_panic(expected = "ffi_shootdown_ack_round: core_id 4 out of range")]
     fn sm7a3_shootdown_core_id_checked_panics_out_of_range() {
-        let _ = shootdown_core_id_checked(4, "ffi_shootdown_ack_set");
+        let _ = shootdown_core_id_checked(4, "ffi_shootdown_ack_round");
     }
 
     #[test]
     #[should_panic(
-        expected = "ffi_shootdown_ack_is_set: core_id 18446744073709551615 out of range"
+        expected = "ffi_shootdown_acked_generation: core_id 18446744073709551615 out of range"
     )]
     fn sm7a3_shootdown_core_id_checked_panics_at_u64_max() {
-        let _ = shootdown_core_id_checked(u64::MAX, "ffi_shootdown_ack_is_set");
+        let _ = shootdown_core_id_checked(u64::MAX, "ffi_shootdown_acked_generation");
     }
 
     #[test]
-    #[should_panic(expected = "ffi_shootdown_reset_for_round: core_id 4294967297 out of range")]
+    #[should_panic(expected = "ffi_shootdown_wait_all_acked: core_id 4294967297 out of range")]
     fn sm7a3_shootdown_core_id_checked_rejects_u64_with_high_bits_aliasing_slot() {
         // 0x1_0000_0001 would truncate to slot 1 on a 32-bit usize;
         // the u64-space bound check must reject it BEFORE the cast.
-        let _ = shootdown_core_id_checked(0x1_0000_0001, "ffi_shootdown_reset_for_round");
+        let _ = shootdown_core_id_checked(0x1_0000_0001, "ffi_shootdown_wait_all_acked");
     }
 
     #[test]
@@ -2058,19 +2079,19 @@ mod tests {
     }
 
     #[test]
-    fn sm7a3_ffi_shootdown_boot_state_reads_quiescent() {
+    fn sm7f3_ffi_shootdown_boot_state_reads_quiescent() {
         // Read-only on the global (no ffi test mutates SHOOTDOWN_ACK,
         // so the boot values are stable under parallel execution).
         assert_eq!(
-            ffi_shootdown_all_acked(),
+            ffi_shootdown_all_acked_for_round(0, 0),
             1,
-            "boot state is all-acknowledged"
+            "generation 0 is vacuously satisfied at boot"
         );
         for core in 0..4u64 {
             assert_eq!(
-                ffi_shootdown_ack_is_set(core),
-                1,
-                "core {} boots acknowledged",
+                ffi_shootdown_acked_generation(core),
+                0,
+                "core {} boots at generation 0",
                 core
             );
         }
@@ -2080,9 +2101,11 @@ mod tests {
     fn sm7a3_ffi_shootdown_signatures_pinned() {
         // Pin every shootdown FFI export signature; an ABI change
         // that broke the Lean @[extern] bindings would surface here.
-        let _: extern "C" fn(u64) = ffi_shootdown_ack_set;
-        let _: extern "C" fn(u64) -> u64 = ffi_shootdown_ack_is_set;
-        let _: extern "C" fn(u64) = ffi_shootdown_reset_for_round;
-        let _: extern "C" fn() -> u64 = ffi_shootdown_all_acked;
+        let _: extern "C" fn(u64, u64) = ffi_shootdown_ack_round;
+        let _: extern "C" fn(u64) -> u64 = ffi_shootdown_acked_generation;
+        let _: extern "C" fn(u64, u64) -> u64 = ffi_shootdown_all_acked_for_round;
+        let _: extern "C" fn(u64) -> u64 = ffi_shootdown_self_service_round;
+        let _: extern "C" fn(u64, u64, u64) -> u64 = ffi_shootdown_wait_all_acked;
+        let _: extern "C" fn(u64, u64) = ffi_shootdown_publish_commit;
     }
 }

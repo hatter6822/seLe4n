@@ -212,7 +212,7 @@ pub mod per_cpu_stats;
 // WS-SM SM7.A.3: per-core TLB-shootdown acknowledgment flags.  Provides
 // `ShootdownAckFlag` (one cache-line-aligned AtomicBool per core), the
 // global `SHOOTDOWN_ACK` array (boots quiescent all-`true`), and the
-// `ack_set` (release) / `ack_is_set` / `all_acked` (acquire) /
+// `ack_round` (release fetch_max) / `acked_gen` / `all_acked_for_round` (acquire) /
 // `reset_for_round` accessors the SM7.B shootdown protocol composes:
 // each target's `.tlbShootdownReq` SGI handler release-sets its own
 // flag after its local TLBIs retire; the initiator acquire-polls until

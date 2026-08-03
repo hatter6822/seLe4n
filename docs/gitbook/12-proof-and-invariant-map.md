@@ -960,8 +960,39 @@ view-outcome demotion):
   issuing PE; `shootdownTargets` excludes it), perCoreTlb-only so
   trace-safe (`shootdownCatchUpPerCore_agrees_singleView` = the SM7.B
   single-view target fold's `tlb`/`tlbShootdown` effect;
-  `shootdownCatchUpPerCore_initiator_view` = faithfulness); the live
-  `completeShootdownRounds` seam runs `shootdownCatchUpPerCore`
+  `shootdownCatchUpPerCore_initiator_view` = faithfulness); since
+  SM7.F.3 the live `completeShootdownRounds` seam runs the
+  generation-selective `shootdownCatchUpPerCoreInWindow`
+
+Per-core TLB model — v0.32.105 SM7.F.3 cut (round-generation-tagged
+descriptors).  A syscall's shootdown work spans two atomic commits and
+only the *hardware* round is under `SHOOTDOWN_ROUND_LOCK`, so a
+concurrently-committed round can post between them; a whole-queue
+catch-up swallowed its descriptors and claimed quiescence before that
+round's SGIs had fired:
+- `TlbShootdownDescriptor.generation` / `TlbShootdownState.roundGeneration`
+  / `roundDescriptor` — the round identity, minted by
+  `beginShootdownRound{,For}` and stamped on every posted descriptor
+  (`roundDescriptor_generation_eq_opened`)
+- `inRoundWindow` / `shootdownRoundWindow` — a commit's own rounds are
+  the generations in `(pre.roundGeneration, post.roundGeneration]`, a
+  *window* because the retype wrappers open one round per flushed ASID;
+  recovered from the same `(pre, post)` diff as the target set
+- `drainShootdownsInWindow_preserves_foreign` /
+  `handleTlbShootdownReqOnCore{,PerCore}InWindow_preserves_foreign` /
+  `shootdownCatchUpPerCoreInWindow_preserves_foreign` — the headline
+  race-freedom chain: a concurrently-posted round's descriptors survive
+  another round's catch-up.  Duals: `…_drains_own`
+- `drainShootdownsInWindow_eq_drainShootdowns` /
+  `…InWindow_eq_handle` / `shootdownCatchUpPerCoreInWindow_eq_catchUp`
+  — the exactness bridges: under round serialisation a core's queue
+  holds only this commit's work, so the window drain **is** the
+  whole-queue drain and every landed SM7.A/B round theorem carries over
+- `mem_shootdownPostedOps_iff` — the runtime broadcasts and publishes
+  exactly its own window's operands, in both directions (including that
+  the deduplication never drops one — the unsafe direction; the two
+  `List.eraseDups` membership lemmas Lean core does not ship are proven
+  locally as `mem_eraseDups_of_mem` / `mem_of_mem_eraseDups`)
 - `shootdownRoundPerCore_cross_subsystem` — the C.7 capstone on the
   **operative** drains-at-ack round; `tlbInvalidateOnAllCores` is
   documented as the eager view-outcome abstraction (views ahead of the

@@ -861,7 +861,7 @@ run_check "INVARIANT" bash -c "! rg -q '^SeLe4n\.Kernel\.Architecture\.TlbiForSh
 run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Architecture\.TlbiForSharing' SeLe4n.lean
 run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Architecture\.TlbShootdown' SeLe4n/Platform/Staged.lean
 run_check "INVARIANT" rg -n '^pub static SHOOTDOWN_ACK' rust/sele4n-hal/src/shootdown.rs
-run_check "INVARIANT" rg -n '^pub fn reset_for_round' rust/sele4n-hal/src/shootdown.rs
+run_check "INVARIANT" rg -n '^pub fn ack_round' rust/sele4n-hal/src/shootdown.rs
 run_check "INVARIANT" rg -n '^pub mod shootdown;' rust/sele4n-hal/src/lib.rs
 run_check "INVARIANT" rg -n '^def runSmpTlbShootdownChecks' tests/SmpTlbShootdownSuite.lean
 run_check "INVARIANT" rg -n '^run_check(_with_timeout)? "TRACE" lake exe smp_tlb_shootdown_suite' scripts/test_tier2_negative.sh
@@ -931,9 +931,11 @@ run_check "INVARIANT" rg -n '^structure ShootdownRoundLockId' SeLe4n/Kernel/Arch
 run_check "INVARIANT" rg -n '^theorem ShootdownRoundLockId\.singleton' SeLe4n/Kernel/Architecture/TlbShootdown.lean
 run_check "INVARIANT" rg -n '^theorem enqueueShootdownOrCoalesce_pending_covered' SeLe4n/Kernel/Architecture/TlbShootdown.lean
 run_check "INVARIANT" rg -n 'Round serialisation contract' SeLe4n/Kernel/Architecture/TlbShootdown.lean
-# SM7.A PR #838 review P1 — offline-core-aware round open: the Rust masked
-# reset + the Lean target-masked round-open and its hcov-free capstone.
-run_check "INVARIANT" rg -n '^pub fn reset_for_round_in_slice_masked' rust/sele4n-hal/src/shootdown.rs
+# SM7.A PR #838 review P1 — offline-core-aware round open: the Rust
+# online-masked WAIT (SM7.F.3 turned the masked reset into a masked wait, which
+# is where the mask belongs once acknowledgments carry the round generation)
+# + the Lean target-masked round-open and its hcov-free capstone.
+run_check "INVARIANT" rg -n '^pub fn all_acked_for_round_in_slice' rust/sele4n-hal/src/shootdown.rs
 run_check "INVARIANT" rg -n '^def beginShootdownRoundFor' SeLe4n/Kernel/Architecture/TlbShootdown.lean
 run_check "INVARIANT" rg -n '^theorem beginShootdownRoundFor_allCores_eq' SeLe4n/Kernel/Architecture/TlbShootdown.lean
 # WS-SM SM7.B completion cut — invariant-bundle carriage (pendingBounded as
@@ -974,17 +976,18 @@ run_check "INVARIANT" rg -n '^def coreOnlineInMask' SeLe4n/Kernel/Concurrency/Ru
 run_check "INVARIANT" rg -n '^pub fn tlb_shootdown_req_handler_in' rust/sele4n-hal/src/shootdown.rs
 run_check "INVARIANT" rg -n '^pub fn round_lock_try_acquire_in' rust/sele4n-hal/src/shootdown.rs
 run_check "INVARIANT" rg -n 'fn sm7b7_round_lock_mutex_stress' rust/sele4n-hal/src/shootdown.rs
-run_check "INVARIANT" rg -n 'fn sm7b3_handler_in_genuine_ack_transition_own_flag_only' rust/sele4n-hal/src/shootdown.rs
+run_check "INVARIANT" rg -n 'fn sm7b3_handler_in_genuine_ack_transition_own_slot_only' rust/sele4n-hal/src/shootdown.rs
 run_check "INVARIANT" rg -n '^private def runCompletionCutChecks' tests/SmpTlbShootdownSuite.lean
 run_check "INVARIANT" rg -n '^private def runLiveDispatchChecks' tests/SmpTlbShootdownSuite.lean
 run_check "INVARIANT" bash -c "test -x scripts/test_qemu_smp_shootdown.sh"
 run_check "INVARIANT" rg -n 'test_qemu_smp_shootdown\.sh' scripts/test_tier4_smp_bootcheck.sh
 run_check "INVARIANT" rg -n '^theorem shootdownRoundFor_restores_quiescent' SeLe4n/Kernel/Architecture/TlbShootdown.lean
 run_check "INVARIANT" rg -n '^private def runMaskedRoundChecks' tests/SmpTlbShootdownSuite.lean
-run_check "INVARIANT" rg -n '^pub extern "C" fn ffi_shootdown_ack_set' rust/sele4n-hal/src/ffi.rs
-run_check "INVARIANT" rg -n '^pub extern "C" fn ffi_shootdown_all_acked' rust/sele4n-hal/src/ffi.rs
-run_check "INVARIANT" rg -n 'extern "ffi_shootdown_ack_set"' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^def shootdownAckSet' SeLe4n/Kernel/Concurrency/Runtime.lean
+run_check "INVARIANT" rg -n '^pub extern "C" fn ffi_shootdown_ack_round' rust/sele4n-hal/src/ffi.rs
+run_check "INVARIANT" rg -n '^pub extern "C" fn ffi_shootdown_all_acked_for_round' rust/sele4n-hal/src/ffi.rs
+run_check "INVARIANT" rg -n '^pub extern "C" fn ffi_shootdown_self_service_round' rust/sele4n-hal/src/ffi.rs
+run_check "INVARIANT" rg -n 'extern "ffi_shootdown_ack_round"' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def shootdownAckRound' SeLe4n/Kernel/Concurrency/Runtime.lean
 run_check "INVARIANT" rg -n '^theorem shootdownAck_ffi_core_in_range' SeLe4n/Kernel/Concurrency/Runtime.lean
 # WS-SM SM7.B debt-closure cut — per-descriptor handler operand mailbox
 # (debt (1)): the Rust seqlock mailbox + publish/snapshot/retire primitives,
@@ -995,7 +998,7 @@ run_check "INVARIANT" rg -n '^theorem shootdownAck_ffi_core_in_range' SeLe4n/Ker
 run_check "INVARIANT" rg -n '^pub struct ShootdownOpMailbox' rust/sele4n-hal/src/shootdown.rs
 run_check "INVARIANT" rg -n '^pub fn retire_round_ops_in' rust/sele4n-hal/src/shootdown.rs
 run_check "INVARIANT" rg -n '^pub fn publish_round_ops_in' rust/sele4n-hal/src/shootdown.rs
-run_check "INVARIANT" rg -n 'retire_round_ops_in\(&SHOOTDOWN_OPS\)' rust/sele4n-hal/src/shootdown.rs
+run_check "INVARIANT" rg -n 'tlb_shootdown_req_service_in\(&SHOOTDOWN_OPS' rust/sele4n-hal/src/shootdown.rs
 run_check "INVARIANT" rg -n '^pub fn tlbi_local' rust/sele4n-hal/src/tlb.rs
 run_check "INVARIANT" rg -n '^pub const fn decode_tlb_invalidation' rust/sele4n-hal/src/tlb.rs
 run_check "INVARIANT" rg -n '^pub extern "C" fn ffi_shootdown_publish_slot' rust/sele4n-hal/src/ffi.rs
@@ -1035,6 +1038,46 @@ run_check "INVARIANT" rg -n '^private def runPerCoreTlbLiveLifecycleChecks' test
 run_check "INVARIANT" rg -n '^def lifecycleRetypeDirectWithCleanupShootdownPerCore' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
 run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectWithCleanupShootdownPerCore_initiator_drained' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
 run_check "INVARIANT" rg -n 'lifecycleRetypeDirectWithCleanupShootdownPerCore' SeLe4n/Kernel/API.lean
+# WS-SM SM7.F.3 — round-generation-tagged descriptors: a commit's catch-up
+# drains ONLY the rounds its own commit opened, so a concurrently-committed
+# round's freshly-posted work survives for its own catch-up (the SM7.B
+# v0.32.79 model-fidelity debt, closed).  The descriptor field, the monotone
+# counter, the window predicate + its diff recovery, the selective drain and
+# its race-freedom lemma, the per-core catch-up the live seam runs, and the
+# generation-carrying Rust acknowledgment channel that replaced the round
+# reset (an acknowledgment now names the round it discharged, so a stale
+# `.tlbShootdownReq` SGI cannot satisfy a later round's wait).
+run_check "INVARIANT" rg -n '^  generation : Nat' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^  roundGeneration : Nat' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^def roundDescriptor' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^def inRoundWindow' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^def drainShootdownsInWindow' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^theorem drainShootdownsInWindow_preserves_foreign' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^theorem drainShootdownsInWindow_eq_drainShootdowns' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^def completeShootdownOnCoreInWindow' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^def shootdownRoundWindow' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^def handleTlbShootdownReqOnCoreInWindow' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^theorem handleTlbShootdownReqOnCoreInWindow_eq_handle' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^theorem mem_shootdownPostedOps_iff' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^def shootdownCatchUpPerCoreInWindow' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
+run_check "INVARIANT" rg -n '^theorem shootdownCatchUpPerCoreInWindow_preserves_foreign' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
+run_check "INVARIANT" rg -n '^theorem shootdownCatchUpPerCoreInWindow_eq_catchUp' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
+run_check "INVARIANT" rg -n 'shootdownCatchUpPerCoreInWindow st execCore collapsed' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n 'Architecture.shootdownRoundWindow st st' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^private def runRoundGenerationChecks' tests/SmpTlbShootdownSuite.lean
+# The generation-carrying acknowledgment channel (Rust mirror).  The reset is
+# GONE by design — a negative anchor keeps it from coming back, since a reset
+# would erase the monotonicity the whole mechanism rests on.
+run_check "INVARIANT" rg -n 'pub struct ShootdownAckSlot' rust/sele4n-hal/src/shootdown.rs
+run_check "INVARIANT" rg -n 'pub acked_gen: AtomicU64' rust/sele4n-hal/src/shootdown.rs
+run_check "INVARIANT" rg -n 'pub fn ack_round_in_slice' rust/sele4n-hal/src/shootdown.rs
+run_check "INVARIANT" rg -n 'pub fn all_acked_for_round_in_slice' rust/sele4n-hal/src/shootdown.rs
+run_check "INVARIANT" rg -n 'pub fn tlb_shootdown_req_service_in' rust/sele4n-hal/src/shootdown.rs
+run_check "INVARIANT" rg -n 'pub fn self_service_round_in' rust/sele4n-hal/src/shootdown.rs
+run_check "INVARIANT" rg -n 'fn sm7f3_stale_acknowledgment_cannot_satisfy_a_later_round' rust/sele4n-hal/src/shootdown.rs
+run_check "INVARIANT" bash -c "! rg -q 'fn reset_for_round' rust/sele4n-hal/src/shootdown.rs"
+run_check "INVARIANT" bash -c "! rg -q 'shootdownResetForRound' SeLe4n/Kernel/SyscallDispatchEntry.lean"
+
 # WS-SM SM7.E — tests + fixtures.  The concurrent-unmap stress (§6) and the
 # cross-cluster mock (§7) scenario groups, the per-core handler commutativity
 # they rest on (the live catch-up fold's order-independence — SM7.B proved it

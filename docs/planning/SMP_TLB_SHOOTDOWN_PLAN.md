@@ -593,14 +593,13 @@ Two P1 review findings on PR #839.
   is idempotent).  Model quiescence gates only capacity / `pendingBounded`
   bookkeeping, never a hardware-cleanliness decision.  Documented at the
   site (`completeShootdownRounds` docstring §"Model-vs-hardware catch-up
-  fidelity").  **Closure target**: round-generation-tagged pending
-  descriptors so catch-up drains only its own round — a verified-model-
-  type change (`TlbShootdownState` + the SM7.A/B proof surface
-  `pendingBounded`/`shootdownRound_quiescent`/Theorem 3.3.1/all
-  `_preserves_*` + the Rust mailbox mirror).  Scoped as a follow-on cut
-  (candidate: SM7.C, alongside the per-core TLB mount that will already
-  reshape the shootdown-state surface); not undertaken in this
-  review-response cut to keep it a coherent bug fix.
+  fidelity").  **CLOSED at v0.32.105 (SM7.F.3)**: pending descriptors
+  now carry the generation of the round that posted them, and a
+  commit's catch-up drains only the generations its own commit opened
+  (`shootdownCatchUpPerCoreInWindow_preserves_foreign`).  The Rust
+  mirror of that change also closed a genuine **security** hazard the
+  Boolean acknowledgment vector carried — a stale `.tlbShootdownReq`
+  SGI acknowledging into a later round — see the §SM7.F.3 section.
 
 ### SM7.C — Per-core TLB model (3 PRs, 8 sub-tasks) — LANDED (v0.32.80)
 
@@ -666,14 +665,13 @@ capacity-conjunct + object-store framing, quiescent success) — the suite
 now covers SM7.A + SM7.B + SM7.C.
 
 **Round-generation-tagged descriptors (the SM7.B v0.32.79 model-fidelity
-debt) remains a separately-scoped follow-on**, not folded into this cut:
-it is a `TlbShootdownState` *descriptor-type* change (rippling the entire
-SM7.A/B `pendingBounded` / `shootdownRound_quiescent` / Theorem 3.3.1 /
-`_preserves_*` surface + the Rust mailbox), orthogonal to the per-core
-TLB *view* model SM7.C delivers, and — as the SM7.B audit recorded — a
-model-fidelity item with **no hardware hazard** (each round's hardware
-maintenance is self-contained; catch-up over-application is idempotent).
-Bundling it here would violate the one-coherent-slice rule.
+debt) was a separately-scoped follow-on**, deliberately not folded into
+this cut: it is a `TlbShootdownState` *descriptor-type* change (rippling
+the entire SM7.A/B `pendingBounded` / `shootdownRound_quiescent` /
+Theorem 3.3.1 / `_preserves_*` surface + the Rust mailbox), orthogonal to
+the per-core TLB *view* model SM7.C delivers.  It **landed at v0.32.105
+as SM7.F.3** — see that section, which also records the security hazard
+the Rust half of the change closed.
 
 #### SM7.C completion cut (v0.32.81) — the model made operative + completeness
 
@@ -762,7 +760,7 @@ Zero sorry/axiom; golden trace **byte-identical** (verified).
   `shootdownRoundPerCore_cross_subsystem` gives the C.7 capstone on the
   faithful completed round.
 
-### SM7.F — Operative per-core TLB fills (IN FLIGHT; 5 sub-tasks / ~3 PRs; F.1+F.2+F.2a LANDED)
+### SM7.F — Operative per-core TLB fills (CLOSED at v0.32.105; 5 sub-tasks / 4 PRs)
 
 **Motivation (PR #844 review round 2).**  The v0.32.80–83 per-core TLB
 model is *empty on the live path*: the only live writes to `perCoreTlb`
@@ -798,9 +796,9 @@ premise reads).
 | SM7.F.1 | Translation-walk fill seam: `tlbWalkEntry` (resolve `(asid,vaddr)` through the current page tables) + `tlbFillOnCore` (cache the *consistent-by-construction* entry; a walk can never install a stale entry) + `tlbWalkEntry_matches` (the walker contract) + `_frame` / `_tlbOnCore_ne` (local) / `_preserves_tlbInvalidationConsistent_perCore`.  `SmpTlbShootdownSuite` §5.4 (a real page-table-backed state: map `(asid5,vaddrPage)`, walk-fill core0, confirm the entry is cached + local + checker-green + unmapped-walk-is-no-op). | **LANDED (v0.32.84)** |
 | SM7.F.2 | Pending-aware (honest) invariant: `tlbInvalidationConsistent_perCore` redefined to the pending-allowance form (`∀ c, ∀ e ∈ view c, tlbEntryConsistent st e ∨ ∃ desc ∈ pendingOnCore c, tlbEntryMatches desc.op e`); every downstream `_preserves_` re-proven compositionally via the transport levers `tlbEntryOk_of_frame{,_eq}` / `tlbEntryConsistent_of_frame` and the drain-survivor lemma `applyTlbInvalidations_survivor_not_matched` (the handler's survivors are consistent because a pending-covered entry would have been drained); checker `tlbEntryOkCheck`/`_iff` + decidable; the round-level capstones (`tlbConsistency_cross_subsystem`, `shootdownRoundPerCore_preserves`) carry a `shootdownQuiescent` premise (quiescent ⇒ every pre-entry consistent).  The 13th `proofLayerInvariantBundle` conjunct transports definitionally through the adapters (it reads `perCoreTlb`/`objects`/`asidTable`/`tlbShootdown`, all framed).  `SmpTlbShootdownSuite` §5.5: the SAME stale entry is inadmissible with no pending shootdown, admissible once one is posted (the exact behaviour the honest form adds).  Scalar-`tlb` (9th conjunct) left unconditional — same status, out of SM7.F scope. | **LANDED (v0.32.85)** |
 | SM7.F.2a | Initiator-atomic unmap seam (PR #844 review-2 P2): `vspaceUnmapPageWithShootdownPerCore` retires the operand on the *initiator's own* `perCoreTlb` view atomically (via `drainInitiatorPerCoreView` — the initiator's local `tlbi`) on top of `vspaceUnmapPageWithShootdown` (which posts covering descriptors to the *remote* targets only; `shootdownTargets` excludes the initiator).  `…_preserves_tlbInvalidationConsistent_perCore` (quiescent pre-state): initiator survivors ride the unmap page-table frame (`vspaceUnmapPageWithFlush_tlbEntryConsistent_frame`), remote stale entries ride the freshly-posted descriptor (`postShootdownRoundCoalescing_covered`).  Closes the fidelity gap where the initiator's own view would be stale-and-uncovered between the unmap transition and the deferred catch-up drain.  Leaf frames: `storeObject_perCoreTlb_eq`, `vspaceUnmapPage{,WithFlush}_perCoreTlb_eq`.  `SmpTlbShootdownSuite` §5.6.  Model-level only (fills unwired ⇒ no live bug today); live-wiring is F.4. | **LANDED (v0.32.86)** |
-| SM7.F.3 | Round-generation-tagged descriptors (the SM7.B v0.32.79 model-fidelity debt): `TlbShootdownDescriptor` carries a round generation; the catch-up drains only its own generation, closing the concurrent-round cross-draining race (Comment 3).  A `TlbShootdownState` type change rippling SM7.A/B + the Rust mailbox mirror. | PENDING |
-| SM7.F.4 | Live fill + atomic-seam wiring: (a) invoke `tlbFillOnCore` at a genuine live translation point so `perCoreTlb` holds real entries on the syscall path; (b) add an initiator-atomic per-core wrapper for **every** shootdown-posting seam (each posts to `shootdownTargets`, which excludes the initiator) and route its live dispatch through it, so the initiator's own view is retired atomically with the transition rather than only in the deferred catch-up: (i) `.vspaceUnmap` → `vspaceUnmapPageWithShootdownPerCore` (F.2a wrapper); (ii) `.vspaceMap` → an analogous `vspaceMapPageCheckedWithShootdownFromStatePerCore` sibling (which also carries the (a) fill); (iii) `.lifecycleRetype` of a live VSpace root → a per-core sibling of `tlbFlushByASIDWithShootdown` / `lifecycleRetypeDirectWithCleanupShootdown` (PR #844 review-3 Finding 5: the retype makes the ASID unresolvable, so the initiator's cached entry is stale-and-uncovered until catch-up); (iv) the `requiresFlush` ASID-allocate (`asidAllocateWithShootdown`, once B.10 is user-reachable).  Trace-safe (`perCoreTlb` ∉ `projectState`).  Requires F.2/F.2a (else the invariant is false in the pending window on the initiator).  **Note:** until every (b) seam lands, the live paths are covered by the catch-up seam (`shootdownCatchUpPerCore` → `drainInitiatorPerCoreView` drains the initiator for every posted round), so there is no permanent hole — only the transient commit→catch-up window, and it is vacuous where fills are unwired. | **(a)+(b)(i)+(b)(ii) LANDED (v0.32.89); (b)(iii)/(iv) residual** |
-| SM7.F.4 core (v0.32.89) | **The live fill made operative + the two primary VSpace initiator-atomic seams.**  **(b)(i)**: the live `.vspaceUnmap` arm (`API.lean` `dispatchCapabilityOnly`) now routes through `vspaceUnmapPageWithShootdownPerCore` (`dispatchWithCap_vspaceUnmap_delegates` RHS updated), retiring the caller's own `perCoreTlb` view atomically with the transition (Finding 3 closure).  **(a)+(b)(ii)**: new `vspaceMapPageCheckedWithShootdownFromStatePerCore` — on a successful map it caches the freshly-established, consistent-by-construction translation on the executing core (**the live fill** — `perCoreTlb` now holds a real entry on the syscall path, the model non-vacuous) **and** retires any stale initiator entry, atomically; `…_preserves_tlbInvalidationConsistent_perCore` rides `vspaceMapPageCheckedWithFlushFromState_ok_fresh` (a successful checked map is always fresh ⇒ no shootdown posts, no stale initiator entry) + the new fresh-map entry-consistency frame + `tlbFillOnCore_preserves`; the `.vspaceMap` arm + `dispatchWithCap_vspaceMap_delegates` route through it.  New frames (`VSpace.lean`): `vspaceMapPage{,WithFlush,CheckedWithFlushFromState}_perCoreTlb_eq` + `vspaceMapPage_resolveAsidRoot_isSome` (a map never unbinds an ASID) + (`PerCoreTlbModel.lean`) `vspaceMapPageCheckedWithFlushFromState_tlbEntryConsistent_frame`.  Acceptance (`SmpTlbShootdownSuite` §5.10): live map→fill→cross-core unmap→post→catch-up→remove, every step green under the pending-aware invariant, single serialized round.  Trace byte-identical (`perCoreTlb` ∉ `projectState`); AK7 `RAW_MATCH_VSPACEROOT` 13 → 14 (additive characterisation lemma, baseline re-anchored).  Residual (see the v0.32.90 row below for (b)(iii)): **(b)(iv)** the user-unreachable ASID-allocate (B.10), and **F.3** round-generation-tagged descriptors — covered by the catch-up seam today, so no correctness hole. | **LANDED (v0.32.89)** |
+| SM7.F.3 | Round-generation-tagged descriptors (the SM7.B v0.32.79 model-fidelity debt): `TlbShootdownDescriptor` carries a round generation; the catch-up drains only its own generation, closing the concurrent-round cross-draining race (Comment 3).  A `TlbShootdownState` type change rippling SM7.A/B + the Rust mailbox mirror. | **LANDED (v0.32.105)** — see the SM7.F.3 section below |
+| SM7.F.4 | Live fill + atomic-seam wiring: (a) invoke `tlbFillOnCore` at a genuine live translation point so `perCoreTlb` holds real entries on the syscall path; (b) add an initiator-atomic per-core wrapper for **every** shootdown-posting seam (each posts to `shootdownTargets`, which excludes the initiator) and route its live dispatch through it, so the initiator's own view is retired atomically with the transition rather than only in the deferred catch-up: (i) `.vspaceUnmap` → `vspaceUnmapPageWithShootdownPerCore` (F.2a wrapper); (ii) `.vspaceMap` → an analogous `vspaceMapPageCheckedWithShootdownFromStatePerCore` sibling (which also carries the (a) fill); (iii) `.lifecycleRetype` of a live VSpace root → a per-core sibling of `tlbFlushByASIDWithShootdown` / `lifecycleRetypeDirectWithCleanupShootdown` (PR #844 review-3 Finding 5: the retype makes the ASID unresolvable, so the initiator's cached entry is stale-and-uncovered until catch-up); (iv) the `requiresFlush` ASID-allocate (`asidAllocateWithShootdown`, once B.10 is user-reachable).  Trace-safe (`perCoreTlb` ∉ `projectState`).  Requires F.2/F.2a (else the invariant is false in the pending window on the initiator).  **Note:** until every (b) seam lands, the live paths are covered by the catch-up seam (`shootdownCatchUpPerCore` → `drainInitiatorPerCoreView` drains the initiator for every posted round), so there is no permanent hole — only the transient commit→catch-up window, and it is vacuous where fills are unwired. | **(a)+(b)(i)+(b)(ii)+(b)(iii) LANDED (v0.32.89–93); (b)(iv) gated on SM8** |
+| SM7.F.4 core (v0.32.89) | **The live fill made operative + the two primary VSpace initiator-atomic seams.**  **(b)(i)**: the live `.vspaceUnmap` arm (`API.lean` `dispatchCapabilityOnly`) now routes through `vspaceUnmapPageWithShootdownPerCore` (`dispatchWithCap_vspaceUnmap_delegates` RHS updated), retiring the caller's own `perCoreTlb` view atomically with the transition (Finding 3 closure).  **(a)+(b)(ii)**: new `vspaceMapPageCheckedWithShootdownFromStatePerCore` — on a successful map it caches the freshly-established, consistent-by-construction translation on the executing core (**the live fill** — `perCoreTlb` now holds a real entry on the syscall path, the model non-vacuous) **and** retires any stale initiator entry, atomically; `…_preserves_tlbInvalidationConsistent_perCore` rides `vspaceMapPageCheckedWithFlushFromState_ok_fresh` (a successful checked map is always fresh ⇒ no shootdown posts, no stale initiator entry) + the new fresh-map entry-consistency frame + `tlbFillOnCore_preserves`; the `.vspaceMap` arm + `dispatchWithCap_vspaceMap_delegates` route through it.  New frames (`VSpace.lean`): `vspaceMapPage{,WithFlush,CheckedWithFlushFromState}_perCoreTlb_eq` + `vspaceMapPage_resolveAsidRoot_isSome` (a map never unbinds an ASID) + (`PerCoreTlbModel.lean`) `vspaceMapPageCheckedWithFlushFromState_tlbEntryConsistent_frame`.  Acceptance (`SmpTlbShootdownSuite` §5.10): live map→fill→cross-core unmap→post→catch-up→remove, every step green under the pending-aware invariant, single serialized round.  Trace byte-identical (`perCoreTlb` ∉ `projectState`); AK7 `RAW_MATCH_VSPACEROOT` 13 → 14 (additive characterisation lemma, baseline re-anchored).  Residual (see the v0.32.90 row below for (b)(iii)): **(b)(iv)** the user-unreachable ASID-allocate (B.10) — still gated on SM8 — and **F.3** round-generation-tagged descriptors, which landed at v0.32.105. | **LANDED (v0.32.89)** |
 | SM7.F.4 (b)(iii) (v0.32.90) | **The initiator-atomic retype seam — PR #844 review closure.**  The v0.32.89 live fill made the retype gap *reachable*: after a live `.vspaceMap` caches an entry on the executing core, a live `.lifecycleRetype` of that VSpace root (`lifecycleRetypeDirectWithCleanupShootdown` → `tlbFlushByASIDWithShootdown`) made the ASID unresolvable and posted `.aside1` to **remote** targets only, leaving the initiator's own cached entry stale-**and**-uncovered in the committed post-retype state — the pending-aware invariant false in a reachable committed state (not a CVE: hardware TLB correctly flushed, `perCoreTlb ∉ projectState`; but a mounted invariant must never be reachably false).  New `lifecycleRetypeDirectWithCleanupShootdownPerCore` retires the operand on the **initiator's own** view (`drainInitiatorPerCoreView` with `encodeAsidInvalidation asid`, the initiator's local `TLBI ASIDE1`, atomic with the round; ASID read from the pre-state `getVSpaceRoot? target`); the live `.lifecycleRetype` arm + `dispatchWithCap_lifecycleRetype_delegates` route through it.  Machine-checked: `_non_vspace` + `_initiator_drained` (after the wrapper the initiator's view holds **no** entry for the destroyed ASID — the drain-survivor lemma + `encodeAsidInvalidation_matches`), so the reachable stale-and-uncovered entry the finding raised no longer exists.  Trace byte-identical; AK7 unchanged (`GETVSPACEROOT_ADOPTION` 31 → 35 — typed accessor).  **Tracked follow-on:** the whole-invariant preservation theorem `…_preserves_tlbInvalidationConsistent_perCore` (that the retype *also* keeps every other ASID's cached entries consistent on every core) needs a retype-pipeline `resolveAsidRoot`-preservation frame — now tractable (for a VSpaceRoot target `lifecyclePreRetypeCleanup` is the identity, `scrubObjectMemory_objects_eq` is `rfl`, the `storeObject` ASID frames exist) but a substantial standalone proof; the `_initiator_drained` proof already discharges the specific reachable violation.  **v0.32.91**: the review follow-on — the sibling **CSpaceAddr** production entry point `lifecycleRetypeWithCleanupShootdown` had the same remote-only gap; the initiator drain is now the shared `retypeInitiatorDrain` composed by **both** wrappers (Direct-cap + new `lifecycleRetypeWithCleanupShootdownPerCore`), so neither drifts and both production retype paths are initiator-atomic (`retypeInitiatorDrain_drained` proven once; both `_initiator_drained` follow).  **v0.32.92 — whole-invariant preservation CLOSED**: both wrappers carry a machine-checked `…_preserves_tlbInvalidationConsistent_perCore` (VSpaceRoot-target, quiescent) via `lifecyclePreRetypeCleanup_vspaceRoot_id` (cleanup = identity for a VSpaceRoot) + `retypeStoreObject_tlbEntryConsistent_frame` (retype page-table frame) + `retype_tlbInvariant_of_storeObject` (shared per-core case-split); zero sorry/axiom.  **Discovered `hNoRebind` (necessary — statement false without it)**: `storeObject` inserts the new root's ASID, silently rebinding a colliding live ASID that the round (retiring only `root.asid`) leaves uncovered; live retypes install fresh asid-0 roots so a user-root retype (asid 0) and the freeing case satisfy it.  **v0.32.93 — the reachable violation CLOSED (`hNoRebind` dropped)**: further analysis found it was reachable *without* privilege — create root A (asid 0) → map+cache asid 0 → create root B (asid 0) from **Untyped**, which rebinds asid 0 with **no** shootdown (old object Untyped, not a VSpaceRoot), stranding A's cached entry (a real ASID-reuse-without-flush hazard, made invariant-visible by the F.4(a) live fill).  Fix: both base wrappers now flush the deduplicated `{destroyed, installed}` ASID set (`retypeShootdownAsidList` folded by `retypeShootdownAsids`), so installing a fresh VSpaceRoot flushes its rebound ASID on every core; public signatures unchanged (live `.lifecycleRetype` picks it up).  Both `…_preserves_tlbInvalidationConsistent_perCore` now hold **unconditionally** (VSpaceRoot-target, quiescent) — the rebound entry rides the freshly-posted `.aside1` (initiator drains it via the generalised `retypeInitiatorDrain`; remotes via the coverage-survival lemmas `covers_survives_roundFold` / `roundFoldSd_covers`).  Zero sorry/axiom; trace byte-identical (extra rounds ∈ `tlbShootdown` ∉ `projectState`); AK7 unchanged. | **LANDED (v0.32.90–93)** |
 
 **Review-3 hardening (v0.32.87–88, PR #844 review-3).**  Three P2
@@ -835,7 +833,100 @@ the scalar `tlbConsistent` shares the vacuity but stays out of SM7.F scope):
 → catch-up sequence in which a real remote cached entry is created and then
 provably removed, under the pending-aware invariant, with no cross-round
 draining.  Zero sorry/axiom; golden trace byte-identical (`perCoreTlb` is
-projection-invisible).
+projection-invisible).  **Met at v0.32.105** — `SmpTlbShootdownSuite` §5.10
+(the live single-round lifecycle) and §8 (the four-round concurrent case, in
+which each commit's catch-up drains only its own rounds).
+
+#### SM7.F.3 (v0.32.105) — round-generation-tagged descriptors
+
+**The model-fidelity gap.**  A syscall's shootdown work spans *two* atomic
+commits: the pure transition posts the descriptors, and
+`completeShootdownRounds` commits the catch-up afterwards.  Only the
+**hardware** round runs under `SHOOTDOWN_ROUND_LOCK`, so a concurrently
+committed round can post between them.  The catch-up drained each target's
+*whole* queue, so it swallowed that round's freshly-queued descriptors and
+declared the model quiescent before its `.tlbShootdownReq` SGIs had fired —
+the model claiming a core clean of an invalidation the hardware had not yet
+performed.  Recorded at v0.32.79 as fidelity-only (each round's hardware
+maintenance is self-contained and over-application is idempotent), and closed
+here.
+
+**The model change.**  `TlbShootdownDescriptor` gains `generation : Nat` and
+`TlbShootdownState` a monotone `roundGeneration : Nat` counter that
+`beginShootdownRound{,For}` advances; `roundDescriptor` stamps every posted
+descriptor with the opened round's value
+(`roundDescriptor_generation_eq_opened`).  A commit's own rounds are exactly
+the generations in `shootdownRoundWindow pre post = (pre.gen, post.gen]` — a
+*window* rather than a single generation because the retype wrappers open one
+round per flushed ASID.  `drainShootdownsInWindow` /
+`completeShootdownOnCoreInWindow` /
+`handleTlbShootdownReqOnCore{,PerCore}InWindow` /
+`shootdownCatchUpPerCoreInWindow` are the selective forms the live seam runs;
+the headline property is
+`shootdownCatchUpPerCoreInWindow_preserves_foreign` (a concurrently posted
+round's descriptors survive) and its dual `…_drains_own`.  Every landed SM7.A/B
+round theorem carries across unchanged through the exactness bridges
+(`drainShootdownsInWindow_eq_drainShootdowns`,
+`handleTlbShootdownReqOnCore{,PerCore}InWindow_eq_handle`,
+`shootdownCatchUpPerCoreInWindow_eq_catchUp`): under round serialisation a
+core's queue holds only this commit's work, so the window drain **is** the
+whole-queue drain.  `shootdownPostedOps` is likewise window-restricted, so the
+runtime broadcasts and publishes exactly its own round's operands — with
+`mem_shootdownPostedOps_iff` pinning both directions, including that the
+deduplication never drops an operand (the unsafe direction).
+
+**SECURITY — the Rust mirror closed a genuine hazard.**  Mirroring the
+generation onto the acknowledgment channel was not cosmetic.  Under the SM7.A
+Boolean `SHOOTDOWN_ACK` vector a round opened by *clearing* every online
+target's flag, and the handler set its flag unconditionally after retiring
+whatever the mailbox held.  A `.tlbShootdownReq` SGI left pending by an
+**earlier** round — the cooperative round-lock acquire self-acknowledges
+without consuming the interrupt, and IRQs are masked on the SVC path — could
+be delivered inside a later round's `reset → publish` window.  Its handler
+then retired the *previous* round's operands and acknowledged, satisfying the
+new round's `all_acked` wait with that target's TLB still holding the
+translation the round was supposed to retire: an under-invalidation, the
+SMP-C4 stale-TLB hazard.  High severity once bootable (SM9.E); latent today.
+
+The fix makes an acknowledgment *name the round it discharged*:
+`ShootdownAckSlot` holds a monotone `acked_gen : AtomicU64` advanced by
+`fetch_max`, the mailbox publishes the round's generation, and the handler
+(`tlb_shootdown_req_service_in`) latches that generation **before** any TLB
+work and acknowledges exactly it — so every branch it can take, precise
+per-descriptor retire or conservative `tlbi vmalle1` fallback, provably
+discharges the generation acknowledged.  The initiator waits for
+`acked_gen[c] >= gen` over the IRQ-serviceable non-initiator cores.  With the
+round identified by its generation there is nothing to clear before it opens,
+so `reset_for_round*` is **gone** — the window the hazard lived in no longer
+exists (Tier-3 anchors negatively pin its absence, since a reset would erase
+the monotonicity the mechanism rests on).  The PR #838-P1 online mask moves
+from the reset to the wait, which is where it belongs.  The cooperative
+self-service arm becomes one Rust call (`self_service_round`) so the
+generation read, the local flush and the acknowledgment cannot be split by a
+newer round's publish.
+
+**Tests.**  `SmpTlbShootdownSuite` §8 (`runRoundGenerationChecks`, 29
+assertions) drives the closure on the same real page-table-backed four-round
+storm §6 builds: generation allocation and stamping, the window predicate and
+its diff recovery, core 0's catch-up draining only generation 1 while cores
+2–3 keep the concurrent rounds' work, the explicit contrast that the
+whole-queue catch-up *would* have swallowed them, every commit's own catch-up
+run in turn ending quiescent with no page left cached, the
+single-round bridge (window catch-up = whole-queue catch-up), diff-recovery
+precision, and empty-window inertness.  Rust: `sm7f3_*` (the
+`sm7f3_stale_acknowledgment_cannot_satisfy_a_later_round` regression test is
+the security fix's direct witness, with
+`sm7f3_wait_times_out_on_stale_acknowledgments_only` its wait-loop
+companion), the exhaustive 2⁴ × 4-initiator wait-predicate conformance, the
+handler/self-service generation tests, and the mailbox generation round-trip
+plus its mismatch fallback.  HAL 798 → 800; golden trace byte-identical.
+
+**Residual.**  SM7.F.4(b)(iv) — the `requiresFlush` ASID-allocate
+(`asidAllocateWithShootdown`) — stays gated on SM8: the wrapper is complete
+and proven but user-unreachable, because no ASID object family or assign
+syscall exists yet (`lifecycleRetype` makes fresh ASID-0 roots and `asidTable`
+is boot-only).  It is a completeness gap, not a safety hole; closure target
+SM8.
 
 ### SM7.D — Cache maintenance broadcast (2 PRs, 4 sub-tasks) — CLOSED (v0.32.94; closure cuts v0.32.95, v0.32.96)
 

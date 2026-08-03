@@ -108,9 +108,10 @@ theorem shootdownRoundLockAcquireFuel_value :
 
 /-- **WS-SM SM7.B.7**: the cooperative round-lock acquire — spin on the
 try-lock, and on every failed attempt **service this core's own
-pending shootdown obligation** (its Rust ack flag down ⇒ an in-flight
-round is waiting on this core: invalidate the local TLB and
-release-acknowledge, exactly the `.tlbShootdownReq` handler's effect).
+pending shootdown obligation** (its acknowledged generation is below
+the round currently published ⇒ an in-flight round is waiting on this
+core: invalidate the local TLB and acknowledge that round, exactly the
+`.tlbShootdownReq` handler's effect).
 
 Without the servicing arm this loop would deadlock into the holder's
 wait-timeout panic: the holder's round waits on THIS core's ack, and
@@ -135,13 +136,15 @@ def acquireShootdownRoundLockServicingSelf
         if (← Concurrency.shootdownRoundLockTryAcquire) then
           pure ()
         else
-          if !(← Concurrency.shootdownAckIsSet execCore) then
-            -- Self-service is a LOCAL obligation: clean exactly this
-            -- core's view (the Rust handler's `tlbi vmalle1`), then
-            -- release-acknowledge.  The in-flight round's initiator
-            -- owns the broadcast step — no IS-broadcast here.
-            Concurrency.tlbiLocalFullFlush
-            Concurrency.shootdownAckSet execCore
+          -- Self-service is a LOCAL obligation: clean exactly this
+          -- core's view (the Rust handler's `tlbi vmalle1`), then
+          -- acknowledge the round that flush discharged.  The in-flight
+          -- round's initiator owns the broadcast step — no IS-broadcast
+          -- here.  The generation read, the flush and the
+          -- acknowledgment are ONE Rust call so a newer round cannot
+          -- publish between them and make the acknowledgment name a
+          -- round this core never serviced (WS-SM SM7.F.3).
+          let _ ← Concurrency.shootdownSelfServiceRound execCore
           go fuel
   go shootdownRoundLockAcquireFuel
 
@@ -151,86 +154,101 @@ into the Rust per-descriptor mailbox under the seqlock discipline —
 Each `TlbInvalidation` is transmitted as its raw
 `(toOpTag, toAsid, toVaddr)` encoding, matching the Rust
 `decode_tlb_invalidation` decode (SM7.B op-tag conformance).  Called by
-the initiator under the round lock, before the SGIs fire. -/
-def publishShootdownOps (ops : List Architecture.TlbInvalidation) :
-    BaseIO Unit := do
+the initiator under the round lock, before the SGIs fire.
+
+**WS-SM SM7.F.3**: the publish also carries the round's *generation*
+(`gen`), which each target's handler latches before any TLB work and
+acknowledges afterwards.  That is what makes an acknowledgment name the
+round it discharged, so a `.tlbShootdownReq` SGI left pending by an
+earlier round can never satisfy this one's wait. -/
+def publishShootdownOps (ops : List Architecture.TlbInvalidation)
+    (gen : Nat) : BaseIO Unit := do
   Concurrency.shootdownPublishBegin
   let mut i : Nat := 0
   for op in ops do
     Concurrency.shootdownPublishSlot i op.toOpTag op.toAsid op.toVaddr
     i := i + 1
-  Concurrency.shootdownPublishCommit ops.length
+  Concurrency.shootdownPublishCommit ops.length gen
 
 /-- **WS-SM SM7.B (the live round runtime)**: complete the shootdown
 round(s) a syscall commit posted — the runtime realisation of plan
 §3.2 steps 1–6 around the already-committed pure posting.
 
 `changed` is the diff-recovered posted-target set
-(`Architecture.shootdownChangedTargets pre post`) and `ops` the
-deduplicated posted operands (`Architecture.shootdownPostedOps`); when
-no round was posted this is `pure ()` (single-syscall inertness — no
-existing syscall's runtime behaviour changes).
+(`Architecture.shootdownChangedTargets pre post`), `ops` the
+deduplicated posted operands (`Architecture.shootdownPostedOps`), and
+`(lo, hi)` the diff-recovered **round-generation window** this commit
+opened (`Architecture.shootdownRoundWindow pre post`); when no round was
+posted this is `pure ()` (single-syscall inertness — no existing
+syscall's runtime behaviour changes).
 
-Sequence, under THE global round lock (the SM7.A round-serialisation
-contract — the ack vector carries no round identity; acquired
-cooperatively, `acquireShootdownRoundLockServicingSelf`):
+Sequence, under THE global round lock (the SM7.B.7 hardware-round
+serialiser; acquired cooperatively,
+`acquireShootdownRoundLockServicingSelf`):
 
-1. `shootdownResetForRound` — the Rust masked reset: online targets
-   drop, offline cores and the initiator are born-acknowledged.
-1b. **Publish the collapsed operands** into the Rust per-descriptor
-   mailbox (`publishShootdownOps`), BEFORE the SGIs — so each target's
-   handler retires just this round's operands locally (matching the
-   Lean `handleTlbShootdownReqOnCore` per-descriptor effect) instead of
-   a blanket `vmalle1`.  The `dsb ish` in `sendSgiToCore` orders the
-   publish before any target can take the SGI (SM7.B debt (1)).
+1. **Publish the collapsed operands together with the round's
+   generation** (`publishShootdownOps`), BEFORE the SGIs — so each
+   target's handler latches the generation, retires just this round's
+   operands locally (matching the Lean `handleTlbShootdownReqOnCore`
+   per-descriptor effect) instead of a blanket `vmalle1`, and then
+   acknowledges exactly that generation.  The `dsb ish` in
+   `sendSgiToCore` orders the publish before any target can take the SGI
+   (SM7.B debt (1)).
+
+   There is deliberately **no ack reset** (WS-SM SM7.F.3, closing a
+   stale-SGI hazard).  Under the SM7.A Boolean flag vector a round
+   opened by clearing every online target's flag, and a
+   `.tlbShootdownReq` SGI left pending by an *earlier* round — the
+   cooperative acquire above self-acknowledges without consuming the
+   interrupt — could be delivered in the window between that clear and
+   this publish.  Its handler would then retire the *previous* round's
+   operands and unconditionally set the flag, satisfying this round's
+   wait with the target's TLB still holding the translation the round
+   was supposed to retire.  Acknowledgments now carry the generation
+   they discharged, so a stale delivery can only re-affirm an older
+   round and nothing has to be cleared before a round opens.
 2. One `.tlbShootdownReq` SGI per **online** non-initiator core (the
    SM7.A PR #838 P1 target-set obligation).  The full non-initiator
-   set is poked — not just `changed` — because the reset dropped every
-   online target's flag, and the handler is idempotent
+   set is poked — not just `changed` — because every online target owes
+   this generation, and the handler is idempotent
    (`handleTlbShootdownReqOnCore_idempotent`); poking a subset could
-   strand a reset flag and hang the wait.
+   strand a target and hang the wait.
 3. The initiator's local broadcast TLBIs — one `tlbiForSharing` per
    posted operand after the `vmalle1`-dominance collapse
    (`collapseShootdownOps`; effect-exact by
    `collapseShootdownOps_effect_eq`); each ends with the `dsb`+`isb`
    bracket.
-4. Bounded `allAcked` wait; timeout is a fail-closed panic
-   (`shootdown_timeout_handling`: the verdict is exact, so the panic
-   only fires on a genuinely hung round).
-5. Model catch-up: fold `handleTlbShootdownReqOnCore` over the
-   targets — every queue drained, every model flag re-set, restoring
-   quiescence (`shootdownRound_quiescent`) so the next round's posting
-   succeeds.  Committed after the hardware acks certified that every
-   target's TLBIs retired (`shootdownAck_release_acquire`).
+4. Bounded wait for **this generation** acknowledged; timeout is a
+   fail-closed panic (`shootdown_timeout_handling`: the verdict is
+   exact, so the panic only fires on a genuinely hung round).
+5. Model catch-up: fold `handleTlbShootdownReqOnCorePerCoreInWindow`
+   over the targets — this commit's **own** descriptors drained on each
+   target and on the initiator's own view, every model flag re-set,
+   restoring quiescence (`shootdownRound_quiescent`) so the next round's
+   posting succeeds.  Committed after the hardware acknowledgments
+   certified that every target's TLBIs retired
+   (`shootdownAck_release_acquire`).
 
-On the v1.0.0 single-online-core boot this degenerates to: reset
-(everything born-acknowledged), zero SGIs, the local TLBIs, an
-immediately-satisfied wait, and the catch-up commit.
+On the v1.0.0 single-online-core boot this degenerates to: the publish,
+zero SGIs, the local TLBIs, an immediately-satisfied wait, and the
+catch-up commit.
 
-**Model-vs-hardware catch-up fidelity** (PR #839 review P1, tracked
-debt — see `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` §SM7.B review-P1
-cut).  The model *posting* (the pending-queue enqueue) rides the
-syscall's own atomic `modifyGetKernelState` (`syscallDispatchCrossCoreEntry`),
-and this model catch-up rides a *second* atomic step — neither is under
-the `SHOOTDOWN_ROUND_LOCK`, which serialises only the **hardware**
-round (reset/SGI/wait).  So under concurrent rounds one core's catch-up
-fold can drain another core's freshly-posted descriptors, making the
-model transiently quiescent before that other round's hardware SGIs
-fire.  This is a *model-fidelity* divergence, **not** a hardware
-hazard: the hardware TLB maintenance for each round is driven entirely
-by that round's own `(pre, post)` diff (`shootdownPostedOps` /
-`shootdownChangedTargets`), fires its own SGIs to the online targets,
-and blocks on its own `SHOOTDOWN_ACK` channel before the initiating
-syscall returns — so no round ever under-invalidates, and cross-round
-model over-draining is safe over-application (the model's per-core TLB
-effect is idempotent; `handleTlbShootdownReqOnCore_idempotent`).  Model
-quiescence gates only capacity/`pendingBounded` bookkeeping, never a
-hardware-cleanliness decision.  The faithful fix — round-generation-
-tagged descriptors so catch-up drains only its own round — is a
-verified-model-type change (`TlbShootdownState` + the SM7.A/B proof
-surface + the Rust mirror), scoped as a follow-on. -/
+**Model-vs-hardware catch-up fidelity — CLOSED at SM7.F.3.**  The model
+*posting* (the pending-queue enqueue) rides the syscall's own atomic
+`modifyGetKernelState` (`syscallDispatchCrossCoreEntry`), and this model
+catch-up rides a *second* atomic step; neither is under the
+`SHOOTDOWN_ROUND_LOCK`, which serialises only the hardware round.  A
+concurrently-committed round can therefore have posted descriptors
+between the two steps.  The catch-up is keyed on this commit's own
+round-generation window, so it drains exactly the descriptors its own
+rounds posted and leaves the other round's queued work for that round's
+own catch-up
+(`Architecture.shootdownCatchUpPerCoreInWindow_preserves_foreign`).  The
+model can no longer report a core clean of an invalidation whose SGI has
+not yet fired. -/
 def completeShootdownRounds (changed : List Concurrency.CoreId)
     (ops : List Architecture.TlbInvalidation)
+    (window : Nat × Nat)
     (execCore : Concurrency.CoreId) : BaseIO Unit := do
   if changed.isEmpty then
     pure ()
@@ -240,15 +258,33 @@ def completeShootdownRounds (changed : List Concurrency.CoreId)
     -- TLB effect is exactly the full list's) and reuse for both the
     -- per-descriptor mailbox publish and the initiator's broadcast.
     let collapsed := Architecture.collapseShootdownOps ops
+    -- WS-SM SM7.F.3: the round identity the hardware side runs on is the
+    -- HIGHEST generation this commit opened.  A commit that opened two
+    -- rounds (the retype's destroyed + installed ASID) publishes both
+    -- rounds' operands together and waits once, so the acknowledgment it
+    -- requires must be the later of the two; a target that acknowledges
+    -- `window.2` has necessarily retired everything published here.
+    --
+    -- On this branch `window.2 > window.1`, so `roundGen ≥ 1` and no
+    -- round ever carries the vacuously-satisfied generation `0`: a
+    -- non-empty `changed` means some target's pending queue moved, and
+    -- the only transitions that write a pending queue are the posting
+    -- folds inside `tlbShootdownBroadcast{,Coalescing}`, each of which
+    -- opens a round (`beginShootdownRoundFor`) first.  A hypothetical
+    -- `roundGen = 0` would be inert rather than unsafe — the wait would
+    -- succeed immediately on a round that posted nothing.
+    let roundGen := window.2
     acquireShootdownRoundLockServicingSelf execCore
-    Concurrency.shootdownResetForRound execCore
-    -- WS-SM SM7.B (debt (1)): publish the round's exact operands into the
-    -- per-descriptor mailbox BEFORE firing the SGIs, so each target's
-    -- handler retires just these operands locally (matching the Lean
+    -- WS-SM SM7.B (debt (1)) + SM7.F.3: publish the round's exact operands
+    -- AND its generation into the per-descriptor mailbox BEFORE firing the
+    -- SGIs, so each target's handler latches the generation, retires just
+    -- these operands locally (matching the Lean
     -- `handleTlbShootdownReqOnCore` per-descriptor effect) rather than a
-    -- blanket `vmalle1`.  The `dsb ish` in `sendSgiToCore` (SM1.F.8)
-    -- orders this publish before any target can take the SGI.
-    publishShootdownOps collapsed
+    -- blanket `vmalle1`, and acknowledges exactly that generation.  The
+    -- `dsb ish` in `sendSgiToCore` (SM1.F.8) orders this publish before any
+    -- target can take the SGI.  There is no ack reset to race — see the
+    -- header.
+    publishShootdownOps collapsed roundGen
     -- One CORE_IRQ_READY snapshot per round (the IRQ-serviceable set,
     -- not the CORE_READY release handshake — PR #839 review P1;
     -- bring-up never overlaps a round per the SM7.A P1 contract, so the
@@ -259,18 +295,27 @@ def completeShootdownRounds (changed : List Concurrency.CoreId)
         Concurrency.sendSgiToCore c .tlbShootdownReq
     for op in collapsed do
       Architecture.tlbiForSharing shootdownSharingDomain op
-    let acked ← Concurrency.shootdownWaitAllAcked
+    let acked ← Concurrency.shootdownWaitAllAcked roundGen execCore
       Architecture.shootdownWaitTimeoutTicks
     Concurrency.shootdownRoundLockRelease
     if !acked then
       panic! "WS-SM SM7.B.6: TLB shootdown round timed out — a target \
         core is hung or deaf; halting fail-closed (a silently skipped \
         invalidation would be the SMP-C4 stale-TLB hazard)"
-    -- WS-SM SM7.C: the model catch-up drains each *non-initiator* target's
-    -- queue onto its own per-core `perCoreTlb` view
-    -- (`handleTlbShootdownReqOnCorePerCore`) AND retires the round's collapsed
-    -- operands on the *initiator's* own view (`drainInitiatorPerCoreView`, via
-    -- `shootdownCatchUpPerCore`).  The initiator drain is the PR #844 P1 fix:
+    -- WS-SM SM7.C + SM7.F.3: the model catch-up drains each *non-initiator*
+    -- target's **own** posted descriptors — those in this commit's round-
+    -- generation window — onto that core's per-core `perCoreTlb` view
+    -- (`handleTlbShootdownReqOnCorePerCoreInWindow`) AND retires the round's
+    -- collapsed operands on the *initiator's* own view
+    -- (`drainInitiatorPerCoreView`, via `shootdownCatchUpPerCoreInWindow`).
+    -- Keying on the window is the SM7.B v0.32.79 model-fidelity closure: a
+    -- concurrently-committed round's freshly-posted descriptors survive for
+    -- its own catch-up
+    -- (`shootdownCatchUpPerCoreInWindow_preserves_foreign`), so the model
+    -- never claims a core clean of an invalidation whose SGI has not fired.
+    -- Under round serialisation the window drain IS the whole-queue drain
+    -- (`shootdownCatchUpPerCoreInWindow_eq_catchUp`), so nothing about a
+    -- single-round commit changes.  The initiator drain is the PR #844 P1 fix:
     -- the `tlbiForSharing` loop above is an inner-shareable broadcast that
     -- reaches the issuing PE too, so the initiator's own per-core view must
     -- retire the operands (`shootdownTargets execCore` explicitly excludes the
@@ -287,7 +332,8 @@ def completeShootdownRounds (changed : List Concurrency.CoreId)
     -- pre-SMP single-view (all-cores-conflated) model; `perCoreTlb` is the
     -- per-core refinement.
     Platform.FFI.modifyGetKernelState (fun st =>
-      ((), Architecture.shootdownCatchUpPerCore st execCore collapsed))
+      ((), Architecture.shootdownCatchUpPerCoreInWindow st execCore collapsed
+        window.1 window.2))
 
 /-- **WS-SM SM7.D.1** (the live instruction-cache maintenance seam): emit the
 instruction-cache maintenance the just-committed transition recorded.
@@ -358,9 +404,9 @@ of the runtime bracket at the definition level (the state-diff half is
 `shootdownChangedTargets_nil_of_eq`); the trace fixture's
 byte-identity across the SM7.B landing rests on it. -/
 theorem completeShootdownRounds_nil
-    (ops : List Architecture.TlbInvalidation)
+    (ops : List Architecture.TlbInvalidation) (window : Nat × Nat)
     (execCore : Concurrency.CoreId) :
-    completeShootdownRounds [] ops execCore = pure () := rfl
+    completeShootdownRounds [] ops window execCore = pure () := rfl
 
 /-- **WS-SM SM6.A**: the cross-core-aware syscall dispatch entry — the live
 SGI-dispatch seam.  Reads the deployment labeling context and the executing core
@@ -388,24 +434,26 @@ def syscallDispatchCrossCoreEntry
         ((encoded, PriorityInheritance.computeCrossCoreSgis st st' execCore,
           Architecture.shootdownChangedTargets st st',
           Architecture.shootdownPostedOps st st',
+          Architecture.shootdownRoundWindow st st',
           st'.pendingIcacheMaintenance),
          Architecture.clearIcacheMaintenance st')
     | Except.error e =>
         ((Platform.FFI.encodeError e, ([] : List (CoreId × SgiKind)),
           ([] : List CoreId),
           ([] : List Architecture.TlbInvalidation),
+          ((0, 0) : Nat × Nat),
           ([] : List Architecture.ICacheInvalidation)), st))
   Concurrency.fireCrossCoreSgis result.2.1
   -- WS-SM SM7.B: run the shootdown round(s) this commit posted (inert
   -- when the syscall touched no pending-shootdown queue).
-  completeShootdownRounds result.2.2.1 result.2.2.2.1 execCore
+  completeShootdownRounds result.2.2.1 result.2.2.2.1 result.2.2.2.2.1 execCore
   -- WS-SM SM7.D.1: emit the instruction-cache maintenance this commit
   -- recorded.  Ordered *after* the shootdown round so the translations are
   -- already retired everywhere when the instruction lines fetched through them
   -- are dropped.  The operand is the model's own — the ledger was read and
   -- cleared in the atomic step above, so it is emitted exactly once and never
   -- stranded into the next syscall.  Inert when nothing was owed.
-  completeIcacheMaintenance result.2.2.2.2
+  completeIcacheMaintenance result.2.2.2.2.2
   pure result.1
 
 /-- **WS-SM SM6.A** structural marker: `syscallDispatchCrossCoreEntry` unfolds to
@@ -429,16 +477,18 @@ theorem syscallDispatchCrossCoreEntry_def
               ((encoded, PriorityInheritance.computeCrossCoreSgis st st' execCore,
                 Architecture.shootdownChangedTargets st st',
                 Architecture.shootdownPostedOps st st',
+                Architecture.shootdownRoundWindow st st',
                 st'.pendingIcacheMaintenance),
                Architecture.clearIcacheMaintenance st')
           | Except.error e =>
               ((Platform.FFI.encodeError e, ([] : List (CoreId × SgiKind)),
                 ([] : List CoreId),
                 ([] : List Architecture.TlbInvalidation),
+                ((0, 0) : Nat × Nat),
                 ([] : List Architecture.ICacheInvalidation)), st))
         Concurrency.fireCrossCoreSgis result.2.1
-        completeShootdownRounds result.2.2.1 result.2.2.2.1 execCore
-        completeIcacheMaintenance result.2.2.2.2
+        completeShootdownRounds result.2.2.1 result.2.2.2.1 result.2.2.2.2.1 execCore
+        completeIcacheMaintenance result.2.2.2.2.2
         pure result.1) := rfl
 
 /-- **WS-SM SM6.A** trace-safety witness: on the boot core, when every thread's

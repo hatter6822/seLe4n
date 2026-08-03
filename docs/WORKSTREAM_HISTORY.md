@@ -24,7 +24,29 @@ Plan:
 SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
-**Current sub-phase: SM7.E tests + fixtures LANDED (v0.32.103)** — the SM7
+**Current sub-phase: SM7.F.3 round-generation-tagged descriptors LANDED
+(v0.32.105) — SM7.F CLOSED.**  A shootdown round's deferred catch-up drains
+only the rounds its *own* commit opened, so a concurrently-committed round's
+freshly-posted descriptors survive for its own catch-up instead of being
+swallowed (the SM7.B v0.32.79 model-fidelity debt).  `TlbShootdownDescriptor`
+carries `generation : Nat`, `TlbShootdownState` a monotone `roundGeneration`,
+and the live seam recovers its window (`shootdownRoundWindow`) from the same
+`(pre, post)` diff it already uses for the target set and the operands; every
+landed SM7.A/B round theorem carries over through the exactness bridges, since
+under round serialisation the window drain **is** the whole-queue drain.  The
+Rust mirror closed a **High**-severity (once bootable) hazard the Boolean
+acknowledgment vector carried: a `.tlbShootdownReq` SGI left pending by an
+earlier round — the cooperative round-lock acquire self-acknowledges without
+consuming the interrupt, and IRQs are masked on the SVC path — could be
+delivered inside a later round's `reset → publish` window, retire the
+*previous* round's operands and satisfy the new round's wait with that target's
+TLB still holding the translation the round was meant to retire.
+Acknowledgments now carry the generation they discharged (`acked_gen`, advanced
+by `fetch_max`), the handler latches it before any TLB work, and the reset is
+gone entirely along with the window it lived in.  Residual: SM7.F.4(b)(iv), the
+user-unreachable ASID-allocate, stays gated on SM8.
+
+**Prior sub-phase: SM7.E tests + fixtures LANDED (v0.32.103)** — the SM7
 closure phase: the four-core concurrent-unmap storm (with the per-core
 handler commutativity theorem the model gap surfaced), the cross-cluster
 mock on both the TLB and instruction-cache sides, the `smp_tlb_shootdown`

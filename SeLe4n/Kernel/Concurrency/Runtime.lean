@@ -494,34 +494,51 @@ theorem dedupCrossCoreSgis_nodup_cores (sgis : List (CoreId × SgiKind)) :
 -- panics structurally unreachable (`shootdownAck_ffi_core_in_range`).
 -- The SM7.B protocol composes these around the pure
 -- `Architecture.TlbShootdownState` transitions: the target handler
--- release-sets its own flag only after its drained TLBIs retire; the
--- initiator acquire-polls `shootdownAllAcked` (WFE-paced at SM7.B.5).
+-- acknowledges the round generation it serviced only after its drained
+-- TLBIs retire; the initiator acquire-polls `shootdownAllAckedForRound`
+-- (SM7.B.5's bounded wait).
 
-/-- **WS-SM SM7.A.3**: release-set core `c`'s shootdown ack flag — the
-    runtime effect of the pure `Architecture.acknowledgeShootdown` at
-    core `c` (plan §3.2 step 4c; the SM7.B.4 release edge). -/
-def shootdownAckSet (c : CoreId) : BaseIO Unit :=
-  Platform.FFI.ffiShootdownAckSet (UInt64.ofNat c.val)
+/-- **WS-SM SM7.F.3**: acknowledge round generation `gen` for core `c` —
+    the runtime effect of the pure `Architecture.acknowledgeShootdown` at
+    core `c` (plan §3.2 step 4c; the SM7.B.4 release edge).  Monotone on
+    the Rust side, so an acknowledgment names the round it discharged. -/
+def shootdownAckRound (c : CoreId) (gen : Nat) : BaseIO Unit :=
+  Platform.FFI.ffiShootdownAckRound (UInt64.ofNat c.val) (UInt64.ofNat gen)
 
-/-- **WS-SM SM7.A.3**: acquire-load core `c`'s shootdown ack flag —
-    the runtime read of the pure `TlbShootdownState.ackOnCore c`. -/
-def shootdownAckIsSet (c : CoreId) : BaseIO Bool := do
-  return (← Platform.FFI.ffiShootdownAckIsSet (UInt64.ofNat c.val)) != 0
+/-- **WS-SM SM7.F.3**: acquire-load the highest round generation core
+    `c` has acknowledged — the runtime read behind the pure
+    `TlbShootdownState.ackOnCore c` (which holds for a round of
+    generation `g` exactly when this value is `≥ g`). -/
+def shootdownAckedGeneration (c : CoreId) : BaseIO Nat := do
+  return (← Platform.FFI.ffiShootdownAckedGeneration (UInt64.ofNat c.val)).toNat
 
-/-- **WS-SM SM7.A.3**: open a new shootdown round — the runtime effect
-    of the pure `Architecture.beginShootdownRound` (plan §3.2 step 1).
-    Must only run under the single global shootdown-round lock
-    (`Architecture.ShootdownRoundLockId`; SM7.B.7 — the per-VSpace
-    VSpaceRoot lock alone is NOT sufficient, see the TlbShootdown
-    module-header round-serialisation contract). -/
-def shootdownResetForRound (initiator : CoreId) : BaseIO Unit :=
-  Platform.FFI.ffiShootdownResetForRound (UInt64.ofNat initiator.val)
+/-- **WS-SM SM7.F.3**: acquire-poll the acknowledgment slots for round
+    generation `gen` — the runtime read of the pure
+    `Architecture.allAcked` predicate restricted to the round's target
+    set, the initiator wait-loop's exit condition (plan §3.2 step 5).
 
-/-- **WS-SM SM7.A.3**: acquire-poll every shootdown ack flag — the
-    runtime read of the pure `Architecture.allAcked` predicate, the
-    initiator wait-loop's exit condition (plan §3.2 step 5). -/
-def shootdownAllAcked : BaseIO Bool := do
-  return (← Platform.FFI.ffiShootdownAllAcked) != 0
+    There is deliberately **no** round *reset*: a round is identified by
+    its generation rather than by a cleared flag vector, so nothing has
+    to be cleared before it opens.  That is what removes the window in
+    which a `.tlbShootdownReq` SGI left pending by an earlier round
+    could acknowledge into this one. -/
+def shootdownAllAckedForRound (gen : Nat) (initiator : CoreId) : BaseIO Bool := do
+  return (← Platform.FFI.ffiShootdownAllAckedForRound (UInt64.ofNat gen)
+    (UInt64.ofNat initiator.val)) != 0
+
+/-- **WS-SM SM7.B.7 + SM7.F.3**: the cooperative round-lock acquire's
+    self-service arm — if core `c` has not yet acknowledged the
+    currently published round, flush its own TLB (the LOCAL
+    `TLBI VMALLE1`, mirroring the Rust `.tlbShootdownReq` handler; the
+    in-flight round's initiator owns the broadcast step) and acknowledge
+    that round.  `true` = it serviced a round.
+
+    A lock waiter must do this: with IRQs masked in the SVC path it
+    cannot take the holder's `.tlbShootdownReq` SGI, yet the holder's
+    round waits on this core's acknowledgment — a blind spin would
+    deadlock into the wait-timeout panic. -/
+def shootdownSelfServiceRound (c : CoreId) : BaseIO Bool := do
+  return (← Platform.FFI.ffiShootdownSelfServiceRound (UInt64.ofNat c.val)) != 0
 
 /-- **WS-SM SM7.B.7**: try to acquire THE global shootdown-round lock —
     the runtime realisation of `Architecture.ShootdownRoundLockId` (a
@@ -538,11 +555,14 @@ def shootdownRoundLockTryAcquire : BaseIO Bool := do
 def shootdownRoundLockRelease : BaseIO Unit :=
   Platform.FFI.ffiShootdownRoundLockRelease
 
-/-- **WS-SM SM7.B.5 + B.6**: bounded acquire-poll for `allAcked` — the
-    runtime wait loop (`Architecture.waitAllAckedBounded`'s realisation);
-    `false` means timeout, the caller's fail-closed panic trigger. -/
-def shootdownWaitAllAcked (timeoutTicks : UInt64) : BaseIO Bool := do
-  return (← Platform.FFI.ffiShootdownWaitAllAcked timeoutTicks) != 0
+/-- **WS-SM SM7.B.5 + B.6 + SM7.F.3**: bounded acquire-poll for round
+    generation `gen` acknowledged — the runtime wait loop
+    (`Architecture.waitAllAckedBounded`'s realisation); `false` means
+    timeout, the caller's fail-closed panic trigger. -/
+def shootdownWaitAllAcked (gen : Nat) (initiator : CoreId)
+    (timeoutTicks : UInt64) : BaseIO Bool := do
+  return (← Platform.FFI.ffiShootdownWaitAllAcked (UInt64.ofNat gen)
+    (UInt64.ofNat initiator.val) timeoutTicks) != 0
 
 /-- **WS-SM SM7.B.2**: one snapshot of the Rust `smp::CORE_IRQ_READY`
     bitmask (Acquire) — the runtime target-set mask of the SM7.A
@@ -580,14 +600,24 @@ theorem shootdownCoreOnline_eq_mask_test (c : CoreId) :
       return coreOnlineInMask mask c := rfl
 
 /-- **WS-SM SM7.B.7**: the executing core's **local** full TLB flush
-    (`TLBI VMALLE1` + `dsb ish` + `isb` — no inter-core broadcast).
-    The cooperative round-lock acquire's self-service arm uses this:
-    a lock-waiter discharging its own pending shootdown obligation
-    cleans exactly its own view (mirroring the Rust
-    `.tlbShootdownReq` handler's local `tlbi vmalle1`), never other
-    cores' — broadcasting there would be semantically harmless
-    over-invalidation but architecturally wrong (the round's
-    initiator owns the broadcast step). -/
+    (`TLBI VMALLE1` + `dsb ish` + `isb` — no inter-core broadcast) —
+    the declared Lean-side mirror of the HAL primitive.
+
+    A lock-waiter discharging its own pending shootdown obligation
+    cleans exactly its own view (mirroring the Rust `.tlbShootdownReq`
+    handler's local `tlbi vmalle1`), never other cores' — broadcasting
+    there would be semantically harmless over-invalidation but
+    architecturally wrong (the round's initiator owns the broadcast
+    step).
+
+    **WS-SM SM7.F.3**: the live self-service arm no longer issues this
+    flush through the Lean seam.  An acknowledgment must name the round
+    it discharged, so the generation read, the flush and the
+    acknowledgment have to be indivisible with respect to a newer
+    round's publish; splitting them across three FFI crossings would let
+    a round publish in between and make the acknowledgment claim work
+    this core had not done.  They are therefore one Rust call,
+    `shootdownSelfServiceRound`, which issues exactly this flush. -/
 def tlbiLocalFullFlush : BaseIO Unit :=
   Platform.FFI.ffiTlbiAll
 
@@ -605,24 +635,28 @@ def shootdownPublishSlot (index : Nat) (opTag : UInt32) (asid : UInt16)
     (vaddr : UInt64) : BaseIO Unit :=
   Platform.FFI.ffiShootdownPublishSlot (UInt64.ofNat index) opTag asid vaddr
 
-/-- **WS-SM SM7.B (debt (1))**: commit the publish of `len` operands
-    (seqlock → stable).  Over-capacity collapses to one `vmalle1`;
+/-- **WS-SM SM7.B (debt (1)) + SM7.F.3**: commit the publish of `len`
+    operands belonging to round generation `gen` (seqlock → stable, then
+    the generation).  Over-capacity collapses to one `vmalle1`;
     `len == 0` leaves the mailbox empty (handler falls back to the
     conservative local `vmalle1`). -/
-def shootdownPublishCommit (len : Nat) : BaseIO Unit :=
-  Platform.FFI.ffiShootdownPublishCommit (UInt64.ofNat len)
+def shootdownPublishCommit (len : Nat) (gen : Nat) : BaseIO Unit :=
+  Platform.FFI.ffiShootdownPublishCommit (UInt64.ofNat len) (UInt64.ofNat gen)
 
-/-- **WS-SM SM7.A.3**: `shootdownAckSet` is the raw FFI export applied
-    to the widened core id — nothing else happens on the Lean side. -/
-theorem shootdownAckSet_eq_ffi (c : CoreId) :
-    shootdownAckSet c =
-      Platform.FFI.ffiShootdownAckSet (UInt64.ofNat c.val) := rfl
+/-- **WS-SM SM7.F.3**: `shootdownAckRound` is the raw FFI export applied
+    to the widened core id and generation — nothing else happens on the
+    Lean side. -/
+theorem shootdownAckRound_eq_ffi (c : CoreId) (gen : Nat) :
+    shootdownAckRound c gen =
+      Platform.FFI.ffiShootdownAckRound (UInt64.ofNat c.val)
+        (UInt64.ofNat gen) := rfl
 
-/-- **WS-SM SM7.A.3**: `shootdownResetForRound` is the raw FFI export
-    applied to the widened initiator id. -/
-theorem shootdownResetForRound_eq_ffi (initiator : CoreId) :
-    shootdownResetForRound initiator =
-      Platform.FFI.ffiShootdownResetForRound (UInt64.ofNat initiator.val) := rfl
+/-- **WS-SM SM7.F.3**: `shootdownSelfServiceRound` is the raw FFI export
+    applied to the widened core id, tested against zero. -/
+theorem shootdownSelfServiceRound_eq_ffi (c : CoreId) :
+    shootdownSelfServiceRound c = do
+      return (← Platform.FFI.ffiShootdownSelfServiceRound
+        (UInt64.ofNat c.val)) != 0 := rfl
 
 /-- **WS-SM SM7.A.3**: every core id a typed wrapper hands the FFI is
     within the Rust `SHOOTDOWN_ACK` bounds — `CoreId = Fin numCores`

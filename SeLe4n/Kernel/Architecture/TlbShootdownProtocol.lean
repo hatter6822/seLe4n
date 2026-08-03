@@ -471,7 +471,7 @@ def tlbShootdownBroadcast (st : SystemState) (initiator : CoreId)
     (targets : List CoreId) (op : TlbInvalidation) :
     Option (SystemState × List (CoreId × SgiKind)) :=
   match targets.foldlM
-      (fun s c => enqueueShootdown s c { op := op, initiator := initiator })
+      (fun s c => enqueueShootdown s c (roundDescriptor st.tlbShootdown initiator op))
       (beginShootdownRoundFor st.tlbShootdown initiator targets) with
   | none => none
   | some posted =>
@@ -487,7 +487,7 @@ theorem tlbShootdownBroadcast_isSome_of_quiescent {st : SystemState}
     (tlbShootdownBroadcast st initiator targets op).isSome := by
   unfold tlbShootdownBroadcast
   have h := beginRoundFor_foldlM_enqueueShootdown_isSome hq initiator hnd
-    { op := op, initiator := initiator }
+    (roundDescriptor st.tlbShootdown initiator op)
   obtain ⟨posted, hposted⟩ := Option.isSome_iff_exists.mp h
   simp only [hposted]
   rfl
@@ -502,7 +502,7 @@ theorem tlbShootdownBroadcast_sgis {st st' : SystemState}
     sgis = targets.map (fun c => (c, SgiKind.tlbShootdownReq)) := by
   unfold tlbShootdownBroadcast at h
   cases hfold : targets.foldlM
-      (fun s c => enqueueShootdown s c { op := op, initiator := initiator })
+      (fun s c => enqueueShootdown s c (roundDescriptor st.tlbShootdown initiator op))
       (beginShootdownRoundFor st.tlbShootdown initiator targets) with
   | none => rw [hfold] at h; cases h
   | some posted =>
@@ -536,7 +536,7 @@ theorem tlbShootdownBroadcast_frame {st st' : SystemState}
     st'.machine = st.machine ∧ st'.tlb = st.tlb := by
   unfold tlbShootdownBroadcast at h
   cases hfold : targets.foldlM
-      (fun s c => enqueueShootdown s c { op := op, initiator := initiator })
+      (fun s c => enqueueShootdown s c (roundDescriptor st.tlbShootdown initiator op))
       (beginShootdownRoundFor st.tlbShootdown initiator targets) with
   | none => rw [hfold] at h; cases h
   | some posted =>
@@ -583,10 +583,10 @@ theorem tlbShootdownBroadcast_posts_singleton {st st' : SystemState}
     (hq : shootdownQuiescent st.tlbShootdown) (hnd : targets.Nodup)
     (h : tlbShootdownBroadcast st initiator targets op = some (st', sgis)) :
     ∀ c ∈ targets, st'.tlbShootdown.pendingOnCore c =
-      [{ op := op, initiator := initiator }] := by
+      [(roundDescriptor st.tlbShootdown initiator op)] := by
   unfold tlbShootdownBroadcast at h
   cases hfold : targets.foldlM
-      (fun s c => enqueueShootdown s c { op := op, initiator := initiator })
+      (fun s c => enqueueShootdown s c (roundDescriptor st.tlbShootdown initiator op))
       (beginShootdownRoundFor st.tlbShootdown initiator targets) with
   | none => rw [hfold] at h; cases h
   | some posted =>
@@ -616,7 +616,7 @@ theorem tlbShootdownBroadcast_ack_iff {st st' : SystemState}
     st'.tlbShootdown.ackOnCore c = true ↔ (c = initiator ∨ c ∉ targets) := by
   unfold tlbShootdownBroadcast at h
   cases hfold : targets.foldlM
-      (fun s c => enqueueShootdown s c { op := op, initiator := initiator })
+      (fun s c => enqueueShootdown s c (roundDescriptor st.tlbShootdown initiator op))
       (beginShootdownRoundFor st.tlbShootdown initiator targets) with
   | none => rw [hfold] at h; cases h
   | some posted =>
@@ -662,7 +662,7 @@ theorem tlbShootdownBroadcast_preserves_pendingBounded {st st' : SystemState}
     pendingBounded st'.tlbShootdown := by
   unfold tlbShootdownBroadcast at h
   cases hfold : targets.foldlM
-      (fun s c => enqueueShootdown s c { op := op, initiator := initiator })
+      (fun s c => enqueueShootdown s c (roundDescriptor st.tlbShootdown initiator op))
       (beginShootdownRoundFor st.tlbShootdown initiator targets) with
   | none => rw [hfold] at h; cases h
   | some posted =>
@@ -744,9 +744,8 @@ handler's TLB effect is exactly one application of the round's
 operand.  This equation is what ties the per-core view vector's step
 function (`shootdownRoundViews`) to the real handler transition. -/
 theorem handleTlbShootdownReqOnCore_applies_posted_op {st : SystemState}
-    {c : CoreId} {op : TlbInvalidation} {initiator : CoreId}
-    (hpend : st.tlbShootdown.pendingOnCore c =
-      [{ op := op, initiator := initiator }]) :
+    {c : CoreId} {op : TlbInvalidation}
+    (hpend : (st.tlbShootdown.pendingOnCore c).map (·.op) = [op]) :
     (handleTlbShootdownReqOnCore st c).tlb =
       applyTlbInvalidation st.tlb op := by
   rw [handleTlbShootdownReqOnCore_tlb_eq, drainShootdowns_fst, hpend]
@@ -772,7 +771,7 @@ theorem handleTlbShootdownReqOnCore_idempotent (st : SystemState)
       exact hpend
     have hsd : acknowledgeShootdown (drainShootdowns st₁.tlbShootdown c).2 c =
         st₁.tlbShootdown := by
-      apply TlbShootdownState.ext_perCore
+      refine TlbShootdownState.ext_perCore ?_ ?_ rfl
       · intro c'
         rw [acknowledgeShootdown_frame_pending]
         by_cases hc : c' = c
@@ -801,6 +800,114 @@ theorem handleTlbShootdownReqOnCore_idempotent (st : SystemState)
   · rw [handleTlbShootdownReqOnCore_tlbShootdown_eq]
     simp
 
+
+-- ============================================================================
+-- SM7.F.3 — The generation-selective handler (the deferred catch-up's step)
+-- ============================================================================
+--
+-- `handleTlbShootdownReqOnCore` drains a target's whole queue.  That is the
+-- faithful model of the *target's own* handler under round serialisation,
+-- and every SM7.A/B round theorem is stated against it.  The live seam,
+-- however, runs the initiator's **deferred catch-up**: a second atomic
+-- commit, taken after the hardware round released the round lock, that
+-- stands in for every target's handler.  A wholesale drain there would
+-- swallow a concurrently-posted round's descriptors (the SM7.B v0.32.79
+-- model-fidelity debt).  The window form below drains exactly the rounds
+-- this commit opened, and `…_eq_handle` shows the two coincide whenever a
+-- core's queue holds only this commit's work — which is what carries the
+-- whole round theorem surface across.
+
+/-- **WS-SM SM7.F.3**: the drain half of the catch-up's per-target step,
+keyed on this commit's round window `(lo, hi]`. -/
+def tlbShootdownDrainOnCoreInWindow (st : SystemState) (c : CoreId)
+    (lo hi : Nat) : SystemState × List TlbShootdownDescriptor :=
+  let (drained, sd') := drainShootdownsInWindow st.tlbShootdown c lo hi
+  ({ st with tlbShootdown := sd' }, drained)
+
+/-- **WS-SM SM7.F.3**: the generation-selective `.tlbShootdownReq` handler
+step — drain this commit's own descriptors, retire them on the TLB view,
+acknowledge.  Identical in shape to `handleTlbShootdownReqOnCore`; the
+only difference is which descriptors the drain claims. -/
+def handleTlbShootdownReqOnCoreInWindow (st : SystemState) (c : CoreId)
+    (lo hi : Nat) : SystemState :=
+  let (st', drained) := tlbShootdownDrainOnCoreInWindow st c lo hi
+  tlbShootdownAckOnCore st' c drained
+
+/-- **WS-SM SM7.F.3**: the window handler's shootdown-state projection is
+the SM7.F.3 round step. -/
+theorem handleTlbShootdownReqOnCoreInWindow_tlbShootdown_eq (st : SystemState)
+    (c : CoreId) (lo hi : Nat) :
+    (handleTlbShootdownReqOnCoreInWindow st c lo hi).tlbShootdown =
+      completeShootdownOnCoreInWindow st.tlbShootdown c lo hi := rfl
+
+/-- **WS-SM SM7.F.3**: the window handler's TLB effect is the retire fold
+over the descriptors it drained. -/
+theorem handleTlbShootdownReqOnCoreInWindow_tlb_eq (st : SystemState)
+    (c : CoreId) (lo hi : Nat) :
+    (handleTlbShootdownReqOnCoreInWindow st c lo hi).tlb =
+      applyTlbInvalidations st.tlb
+        ((drainShootdownsInWindow st.tlbShootdown c lo hi).1.map (·.op)) := rfl
+
+/-- **WS-SM SM7.F.3**: the window handler touches only the TLB view and
+the shootdown state. -/
+theorem handleTlbShootdownReqOnCoreInWindow_frame (st : SystemState)
+    (c : CoreId) (lo hi : Nat) :
+    (handleTlbShootdownReqOnCoreInWindow st c lo hi).objects = st.objects ∧
+    (handleTlbShootdownReqOnCoreInWindow st c lo hi).scheduler = st.scheduler ∧
+    (handleTlbShootdownReqOnCoreInWindow st c lo hi).machine = st.machine :=
+  ⟨rfl, rfl, rfl⟩
+
+/-- **WS-SM SM7.F.3 (the bridge)**: on a core whose queue holds only this
+commit's own descriptors — the round-serialisation regime — the window
+handler **is** the SM7.B whole-queue handler.  Every round theorem stated
+against `handleTlbShootdownReqOnCore` transports to the live seam
+through this equation. -/
+theorem handleTlbShootdownReqOnCoreInWindow_eq_handle {st : SystemState}
+    {c : CoreId} {lo hi : Nat}
+    (hall : ∀ d ∈ st.tlbShootdown.pendingOnCore c,
+      inRoundWindow lo hi d.generation = true) :
+    handleTlbShootdownReqOnCoreInWindow st c lo hi =
+      handleTlbShootdownReqOnCore st c := by
+  show tlbShootdownAckOnCore
+      { st with tlbShootdown := (drainShootdownsInWindow st.tlbShootdown c lo hi).2 }
+      c (drainShootdownsInWindow st.tlbShootdown c lo hi).1 = _
+  rw [drainShootdownsInWindow_eq_drainShootdowns hall]
+  rfl
+
+/-- **WS-SM SM7.F.3 (race freedom, handler form)**: a descriptor posted by
+a round outside this commit's window is still pending after the window
+handler — a concurrent round's queued work is never stolen. -/
+theorem handleTlbShootdownReqOnCoreInWindow_preserves_foreign
+    {st : SystemState} {c : CoreId} {lo hi : Nat} {d : TlbShootdownDescriptor}
+    (hmem : d ∈ st.tlbShootdown.pendingOnCore c)
+    (hout : inRoundWindow lo hi d.generation = false) :
+    d ∈ (handleTlbShootdownReqOnCoreInWindow st c lo hi).tlbShootdown.pendingOnCore c := by
+  rw [handleTlbShootdownReqOnCoreInWindow_tlbShootdown_eq]
+  exact completeShootdownOnCoreInWindow_preserves_foreign hmem hout
+
+/-- **WS-SM SM7.F.3**: an *empty* window (a commit that opened no round)
+drains nothing — the window handler's TLB view is untouched.  This is the
+inertness that keeps a non-shootdown syscall's catch-up a no-op on the
+TLB even if it were run. -/
+theorem handleTlbShootdownReqOnCoreInWindow_empty_window_tlb (st : SystemState)
+    (c : CoreId) (lo : Nat) :
+    (handleTlbShootdownReqOnCoreInWindow st c lo lo).tlb = st.tlb := by
+  rw [handleTlbShootdownReqOnCoreInWindow_tlb_eq, drainShootdownsInWindow_fst]
+  have : (st.tlbShootdown.pendingOnCore c).filter
+      (fun d => inRoundWindow lo lo d.generation) = [] := by
+    refine List.filter_eq_nil_iff.mpr fun d _ => ?_
+    simp [inRoundWindow_empty]
+  rw [this]
+  rfl
+
+/-- **WS-SM SM7.F.3**: the window handler preserves the capacity
+invariant. -/
+theorem handleTlbShootdownReqOnCoreInWindow_preserves_pendingBounded
+    {st : SystemState} (hB : pendingBounded st.tlbShootdown) (c : CoreId)
+    (lo hi : Nat) :
+    pendingBounded (handleTlbShootdownReqOnCoreInWindow st c lo hi).tlbShootdown := by
+  rw [handleTlbShootdownReqOnCoreInWindow_tlbShootdown_eq]
+  exact completeShootdownOnCoreInWindow_preserves_pendingBounded hB c lo hi
 
 -- ============================================================================
 -- SM7.B — Round composition (the pipeline Theorem 3.3.1 quantifies over)
@@ -877,7 +984,7 @@ theorem shootdownRound_quiescent {st final : SystemState}
     shootdownQuiescent final.tlbShootdown := by
   unfold shootdownRound tlbShootdownBroadcast at h
   cases hfold : targets.foldlM
-      (fun s c => enqueueShootdown s c { op := op, initiator := initiator })
+      (fun s c => enqueueShootdown s c (roundDescriptor st.tlbShootdown initiator op))
       (beginShootdownRoundFor st.tlbShootdown initiator targets) with
   | none => rw [hfold] at h; cases h
   | some posted =>
@@ -1127,7 +1234,7 @@ def postShootdownRoundCoalescing (sd : TlbShootdownState)
     TlbShootdownState :=
   targets.foldl
     (fun s c => enqueueShootdownOrCoalesce s c
-      { op := op, initiator := initiator })
+      (roundDescriptor sd initiator op))
     (beginShootdownRoundFor sd initiator targets)
 
 /-- **WS-SM SM7.B.9**: the total caller-facing broadcast — what the
@@ -1149,7 +1256,7 @@ theorem tlbShootdownBroadcastCoalescing_eq_strict {st st' : SystemState}
     tlbShootdownBroadcastCoalescing st initiator targets op = st' := by
   unfold tlbShootdownBroadcast at h
   cases hfold : targets.foldlM
-      (fun s c => enqueueShootdown s c { op := op, initiator := initiator })
+      (fun s c => enqueueShootdown s c (roundDescriptor st.tlbShootdown initiator op))
       (beginShootdownRoundFor st.tlbShootdown initiator targets) with
   | none => rw [hfold] at h; cases h
   | some posted =>
@@ -1284,7 +1391,7 @@ theorem postShootdownRoundCoalescing_covered (sd : TlbShootdownState)
     (initiator : CoreId) {targets : List CoreId} (hnd : targets.Nodup)
     (op : TlbInvalidation) :
     ∀ c ∈ targets,
-      ({ op := op, initiator := initiator } : TlbShootdownDescriptor) ∈
+      roundDescriptor sd initiator op ∈
           (postShootdownRoundCoalescing sd initiator targets
             op).pendingOnCore c ∨
         ∃ d' ∈ (postShootdownRoundCoalescing sd initiator targets
@@ -1607,8 +1714,8 @@ theorem vspaceUnmapPageWithShootdown_posts (executingCore : CoreId)
     (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) {st stFlush : SystemState}
     (_h : vspaceUnmapPageWithFlush asid vaddr st = .ok ((), stFlush)) :
     ∀ c : CoreId, c ≠ executingCore →
-      ({ op := encodePageInvalidation asid vaddr,
-         initiator := executingCore } : TlbShootdownDescriptor) ∈
+      roundDescriptor stFlush.tlbShootdown executingCore
+          (encodePageInvalidation asid vaddr) ∈
           (tlbShootdownBroadcastCoalescing stFlush executingCore
             (shootdownTargets executingCore)
             (encodePageInvalidation asid vaddr)).tlbShootdown.pendingOnCore
@@ -1687,12 +1794,157 @@ theorem shootdownChangedTargets_nil_of_eq {pre post : SystemState}
   rw [h]
   simp
 
+/-- **WS-SM SM7.F.3**: the round-generation window a commit opened —
+`(pre.roundGeneration, post.roundGeneration]`.
+
+The generation counter is advanced only by a round open
+(`beginShootdownRound{,For}`), so the rounds *this* commit opened are
+exactly the generations strictly above the pre-state's counter and at
+most the post-state's.  A commit that opened no round has
+`fst = snd` and an empty window (`inRoundWindow_empty`).  The live seam
+recovers this pair from the same `(pre, post)` diff it already uses for
+`shootdownChangedTargets` / `shootdownPostedOps`, so the dispatch
+signature is unchanged. -/
+def shootdownRoundWindow (pre post : SystemState) : Nat × Nat :=
+  (pre.tlbShootdown.roundGeneration, post.tlbShootdown.roundGeneration)
+
+/-- **WS-SM SM7.F.3**: the window's lower bound is the pre-state's
+generation counter. -/
+@[simp] theorem shootdownRoundWindow_fst (pre post : SystemState) :
+    (shootdownRoundWindow pre post).1 = pre.tlbShootdown.roundGeneration := rfl
+
+/-- **WS-SM SM7.F.3**: the window's upper bound is the post-state's
+generation counter. -/
+@[simp] theorem shootdownRoundWindow_snd (pre post : SystemState) :
+    (shootdownRoundWindow pre post).2 = post.tlbShootdown.roundGeneration := rfl
+
+/-- **WS-SM SM7.F.3**: a commit that left the shootdown state alone has
+an empty window — no generation is in it, so its catch-up drains
+nothing.  The generation-side companion of
+`shootdownChangedTargets_nil_of_eq`. -/
+theorem shootdownRoundWindow_empty_of_eq {pre post : SystemState}
+    (h : post.tlbShootdown = pre.tlbShootdown) (g : Nat) :
+    inRoundWindow (shootdownRoundWindow pre post).1
+      (shootdownRoundWindow pre post).2 g = false := by
+  rw [shootdownRoundWindow_fst, shootdownRoundWindow_snd, h]
+  exact inRoundWindow_empty _ g
+
 /-- **WS-SM SM7.B**: the newly-posted invalidation operands of a
 commit, deduplicated — the runtime seam executes one initiator-local
-broadcast TLBI per distinct operand (plan §3.2 step 3). -/
+broadcast TLBI per distinct operand (plan §3.2 step 3), and publishes
+the same list into the per-descriptor mailbox.
+
+**WS-SM SM7.F.3**: restricted to the commit's *own* round window.  A
+target's queue can also hold descriptors from a concurrently-posted
+round whose initiator has not yet run its catch-up; those are that
+round's obligation — its own seam broadcasts them and waits on its own
+acknowledgments — so re-broadcasting them here would be a (safe but
+imprecise) over-approximation that no longer matches what the model's
+catch-up retires.  Under round serialisation the filter is the
+identity, so nothing about a single-round commit changes. -/
 def shootdownPostedOps (pre post : SystemState) : List TlbInvalidation :=
   ((shootdownChangedTargets pre post).flatMap (fun c =>
-    (post.tlbShootdown.pendingOnCore c).map (·.op))).eraseDups
+    ((post.tlbShootdown.pendingOnCore c).filter (fun d =>
+        inRoundWindow (shootdownRoundWindow pre post).1
+          (shootdownRoundWindow pre post).2 d.generation)).map (·.op))).eraseDups
+
+/-! ### `List.eraseDups` membership (the seam's dedup loses nothing)
+
+The runtime executes one broadcast TLBI per *distinct* operand, so
+`shootdownPostedOps` deduplicates.  The safety-critical direction is that
+deduplication never **drops** an operand (that would be an
+under-invalidation); the precision direction is that it never invents
+one.  Lean core ships `List.eraseDups` without membership lemmas, so both
+directions are proven here over its `eraseDupsBy.loop` accumulator. -/
+
+/-- Membership survives the `eraseDups` accumulator loop — the engine of
+`mem_eraseDups_of_mem` (the no-operand-dropped direction). -/
+private theorem eraseDupsBy_loop_mem_of {α : Type _} [BEq α] [LawfulBEq α]
+    (a : α) : ∀ (as bs : List α), (a ∈ as ∨ a ∈ bs) →
+      a ∈ List.eraseDupsBy.loop (· == ·) as bs := by
+  intro as
+  induction as with
+  | nil =>
+    intro bs h
+    rcases h with h | h
+    · cases h
+    · simpa [List.eraseDupsBy.loop] using h
+  | cons x xs ih =>
+    intro bs h
+    rw [List.eraseDupsBy.loop]
+    split
+    · next hany =>
+      have hx : x ∈ bs := by
+        obtain ⟨b, hb, hxb⟩ := List.any_eq_true.mp hany
+        exact (eq_of_beq hxb) ▸ hb
+      refine ih bs ?_
+      rcases h with h | h
+      · rcases List.mem_cons.mp h with he | h'
+        · exact Or.inr (he ▸ hx)
+        · exact Or.inl h'
+      · exact Or.inr h
+    · refine ih (x :: bs) ?_
+      rcases h with h | h
+      · rcases List.mem_cons.mp h with he | h'
+        · exact Or.inr (he ▸ List.mem_cons_self ..)
+        · exact Or.inl h'
+      · exact Or.inr (List.mem_cons_of_mem _ h)
+
+/-- Only pre-existing elements survive the accumulator loop — the engine
+of `mem_of_mem_eraseDups` (the no-operand-invented direction). -/
+private theorem eraseDupsBy_loop_mem {α : Type _} (r : α → α → Bool) (a : α) :
+    ∀ (as bs : List α), a ∈ List.eraseDupsBy.loop r as bs → (a ∈ as ∨ a ∈ bs) := by
+  intro as
+  induction as with
+  | nil => intro bs h; right; simpa [List.eraseDupsBy.loop] using h
+  | cons x xs ih =>
+    intro bs h
+    rw [List.eraseDupsBy.loop] at h
+    split at h
+    · rcases ih bs h with h1 | h2
+      · exact Or.inl (List.mem_cons_of_mem _ h1)
+      · exact Or.inr h2
+    · rcases ih (x :: bs) h with h1 | h2
+      · exact Or.inl (List.mem_cons_of_mem _ h1)
+      · rcases List.mem_cons.mp h2 with he | h3
+        · exact Or.inl (he ▸ List.mem_cons_self ..)
+        · exact Or.inr h3
+
+/-- **WS-SM SM7.F.3**: deduplication never drops an element — the
+direction that keeps `shootdownPostedOps` from under-invalidating. -/
+theorem mem_eraseDups_of_mem {α : Type _} [BEq α] [LawfulBEq α] {a : α}
+    {l : List α} (h : a ∈ l) : a ∈ l.eraseDups :=
+  eraseDupsBy_loop_mem_of a l [] (Or.inl h)
+
+/-- **WS-SM SM7.F.3**: deduplication never invents an element. -/
+theorem mem_of_mem_eraseDups {α : Type _} [BEq α] {a : α} {l : List α}
+    (h : a ∈ l.eraseDups) : a ∈ l := by
+  rcases eraseDupsBy_loop_mem (· == ·) a l [] h with h1 | h2
+  · exact h1
+  · cases h2
+
+/-- **WS-SM SM7.F.3**: the seam broadcasts exactly the operands of the
+descriptors this commit's own rounds left pending on the cores it
+posted to — nothing foreign is re-broadcast (precision) and nothing the
+commit owes is dropped by the deduplication (safety). -/
+theorem mem_shootdownPostedOps_iff (pre post : SystemState)
+    (op : TlbInvalidation) :
+    op ∈ shootdownPostedOps pre post ↔
+      ∃ c ∈ shootdownChangedTargets pre post,
+        ∃ d ∈ post.tlbShootdown.pendingOnCore c,
+          inRoundWindow (shootdownRoundWindow pre post).1
+              (shootdownRoundWindow pre post).2 d.generation = true ∧
+            d.op = op := by
+  constructor
+  · intro h
+    have h' := mem_of_mem_eraseDups h
+    simp only [List.mem_flatMap, List.mem_map, List.mem_filter] at h'
+    obtain ⟨c, hc, d, ⟨hd, hw⟩, hop⟩ := h'
+    exact ⟨c, hc, d, hd, hw, hop⟩
+  · rintro ⟨c, hc, d, hd, hw, hop⟩
+    refine mem_eraseDups_of_mem ?_
+    simp only [List.mem_flatMap, List.mem_map, List.mem_filter]
+    exact ⟨c, hc, d, ⟨hd, hw⟩, hop⟩
 
 -- ============================================================================
 -- SM7.B — Invariant-bundle carriage (`pendingBounded`, the 12th

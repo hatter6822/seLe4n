@@ -609,18 +609,23 @@ private theorem covers_survives_roundFold
 
 /-- **WS-SM SM7.F.4(b)(iii)**: after the round fold, every remote target's queue
 covers each flushed ASID — the round that posts `encode a` runs, and its
-coverage survives the remaining rounds. -/
+coverage survives the remaining rounds.
+
+Stated as "*some* pending descriptor carries the ASID's operand or a full
+flush" rather than naming a concrete descriptor: since SM7.F.3 a descriptor
+also carries its round's generation, and in a multi-ASID fold each round
+mints its own, so the covering descriptor's identity is fold-position
+dependent while its *operand* — the only thing coverage depends on — is
+not. -/
 private theorem roundFoldSd_covers
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     {c : SeLe4n.Kernel.Concurrency.CoreId}
     (hc : c ∈ Architecture.shootdownTargets executingCore) :
     ∀ (asids : List SeLe4n.ASID) (a : SeLe4n.ASID), a ∈ asids →
     ∀ (sd : Architecture.TlbShootdownState),
-      ({ op := Architecture.encodeAsidInvalidation a, initiator := executingCore } :
-          Architecture.TlbShootdownDescriptor) ∈
-        (roundFoldSd executingCore asids sd).pendingOnCore c ∨
-      ∃ d' ∈ (roundFoldSd executingCore asids sd).pendingOnCore c,
-        d'.op = Architecture.TlbInvalidation.vmalle1 := by
+      ∃ d ∈ (roundFoldSd executingCore asids sd).pendingOnCore c,
+        d.op = Architecture.encodeAsidInvalidation a ∨
+          d.op = Architecture.TlbInvalidation.vmalle1 := by
   intro asids
   induction asids with
   | nil => intro a ha; simp at ha
@@ -634,10 +639,12 @@ private theorem roundFoldSd_covers
               (Architecture.shootdownTargets executingCore)
               (Architecture.encodeAsidInvalidation x)) := rfl
       rw [hstep]
-      exact covers_survives_roundFold executingCore rest _ c _
-        (Architecture.postShootdownRoundCoalescing_covered sd executingCore
-          (Architecture.shootdownTargets_nodup executingCore)
-          (Architecture.encodeAsidInvalidation x) c hc)
+      rcases covers_survives_roundFold executingCore rest _ c _
+          (Architecture.postShootdownRoundCoalescing_covered sd executingCore
+            (Architecture.shootdownTargets_nodup executingCore)
+            (Architecture.encodeAsidInvalidation x) c hc) with hdirect | ⟨d', hd', hop'⟩
+      · exact ⟨_, hdirect, Or.inl rfl⟩
+      · exact ⟨d', hd', Or.inr hop'⟩
     · have hstep : roundFoldSd executingCore (x :: rest) sd
         = roundFoldSd executingCore rest
             (Architecture.postShootdownRoundCoalescing sd executingCore
@@ -775,12 +782,9 @@ theorem lifecycleRetypeDirectWithCleanupShootdown_vspace_posts
     (h : lifecycleRetypeDirectWithCleanupShootdown executingCore authCap
       target newObj st = .ok ((), stPost)) :
     ∀ c : SeLe4n.Kernel.Concurrency.CoreId, c ≠ executingCore →
-      ({ op := SeLe4n.Kernel.Architecture.encodeAsidInvalidation root.asid,
-         initiator := executingCore } :
-          SeLe4n.Kernel.Architecture.TlbShootdownDescriptor) ∈
-          stPost.tlbShootdown.pendingOnCore c ∨
-        ∃ d' ∈ stPost.tlbShootdown.pendingOnCore c,
-          d'.op = SeLe4n.Kernel.Architecture.TlbInvalidation.vmalle1 := by
+      ∃ d ∈ stPost.tlbShootdown.pendingOnCore c,
+        d.op = SeLe4n.Kernel.Architecture.encodeAsidInvalidation root.asid ∨
+          d.op = SeLe4n.Kernel.Architecture.TlbInvalidation.vmalle1 := by
   unfold lifecycleRetypeDirectWithCleanupShootdown at h
   cases hBase : lifecycleRetypeDirectWithCleanup authCap target newObj st with
   | error e => simp only [hBase] at h; cases h
@@ -937,12 +941,9 @@ theorem lifecycleRetypeWithCleanupShootdown_vspace_posts
     (h : lifecycleRetypeWithCleanupShootdown executingCore authority target
       newObj st = .ok ((), stPost)) :
     ∀ c : SeLe4n.Kernel.Concurrency.CoreId, c ≠ executingCore →
-      ({ op := SeLe4n.Kernel.Architecture.encodeAsidInvalidation root.asid,
-         initiator := executingCore } :
-          SeLe4n.Kernel.Architecture.TlbShootdownDescriptor) ∈
-          stPost.tlbShootdown.pendingOnCore c ∨
-        ∃ d' ∈ stPost.tlbShootdown.pendingOnCore c,
-          d'.op = SeLe4n.Kernel.Architecture.TlbInvalidation.vmalle1 := by
+      ∃ d ∈ stPost.tlbShootdown.pendingOnCore c,
+        d.op = SeLe4n.Kernel.Architecture.encodeAsidInvalidation root.asid ∨
+          d.op = SeLe4n.Kernel.Architecture.TlbInvalidation.vmalle1 := by
   unfold lifecycleRetypeWithCleanupShootdown at h
   cases hBase : lifecycleRetypeWithCleanup authority target newObj st with
   | error e => simp only [hBase] at h; cases h
@@ -1495,11 +1496,11 @@ private theorem retype_tlbInvariant_of_storeObject
         ((Architecture.mem_shootdownTargets_iff executingCore c).mpr hc)
         asids e.asid hin stB.tlbShootdown
       rw [hPSd]
-      rcases hcov with hdirect | ⟨d', hd'mem, hd'op⟩
-      · exact ⟨(⟨Architecture.encodeAsidInvalidation e.asid, executingCore⟩ :
-          Architecture.TlbShootdownDescriptor), hdirect,
-          Architecture.encodeAsidInvalidation_matches e.asid rfl⟩
-      · exact ⟨d', hd'mem, by rw [hd'op]; exact Architecture.tlbEntryMatches_vmalle1 e⟩
+      obtain ⟨dCov, hdCovMem, hdCovOp⟩ := hcov
+      exact ⟨dCov, hdCovMem,
+        by rcases hdCovOp with hop | hop
+           · rw [hop]; exact Architecture.encodeAsidInvalidation_matches e.asid rfl
+           · rw [hop]; exact Architecture.tlbEntryMatches_vmalle1 e⟩
     · exact Or.inl (Architecture.tlbEntryConsistent_of_frame hPObj hPAsid
         (frameConsistent e hin (hAllCon c e he)))
 

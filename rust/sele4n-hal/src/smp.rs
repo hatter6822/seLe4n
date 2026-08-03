@@ -168,7 +168,8 @@ pub static CORE_READY: [AtomicBool; 4] = [
 /// reached `enable_irq` — or one whose timer init failed and is parked
 /// forever in the fatal WFE halt loop — cannot take an SGI, so it must
 /// **not** be a TLB-shootdown target: masking-in such a core clears its
-/// ack flag and then hangs the initiator's [`crate::shootdown::all_acked`]
+/// acknowledgment and then hangs the initiator's
+/// [`crate::shootdown::all_acked_for_round`]
 /// wait until the SM7.B.6 fail-closed timeout panic.
 ///
 /// `CORE_IRQ_READY[c]` is therefore set by core `c` **itself**, after

@@ -243,7 +243,7 @@ theorem tlbShootdownBroadcast_perCoreTlb {st st' : SystemState}
     st'.perCoreTlb = st.perCoreTlb := by
   unfold tlbShootdownBroadcast at h
   cases hfold : targets.foldlM
-      (fun s c => enqueueShootdown s c { op := op, initiator := initiator })
+      (fun s c => enqueueShootdown s c (roundDescriptor st.tlbShootdown initiator op))
       (beginShootdownRoundFor st.tlbShootdown initiator targets) with
   | none => rw [hfold] at h; cases h
   | some posted =>
@@ -260,7 +260,7 @@ theorem tlbShootdownBroadcast_asidTable {st st' : SystemState}
     st'.asidTable = st.asidTable := by
   unfold tlbShootdownBroadcast at h
   cases hfold : targets.foldlM
-      (fun s c => enqueueShootdown s c { op := op, initiator := initiator })
+      (fun s c => enqueueShootdown s c (roundDescriptor st.tlbShootdown initiator op))
       (beginShootdownRoundFor st.tlbShootdown initiator targets) with
   | none => rw [hfold] at h; cases h
   | some posted =>
@@ -686,16 +686,25 @@ target that reaches capacity only on its second visit is correctly full-flushed
 round's actual posting base (`beginShootdownRoundFor sd`) so the threaded state
 tracks the real per-target queues.  On any non-overflowing base (in particular
 every base from which the strict form's posting fold succeeds) this collapses to
-`shootdownRoundViews` (`shootdownRoundViewsCoalescing_eq_shootdownRoundViews`). -/
+`shootdownRoundViews` (`shootdownRoundViewsCoalescing_eq_shootdownRoundViews`).
+
+**WS-SM SM7.F.3**: the posted descriptor is an explicit parameter rather
+than rebuilt from `sd`, because `sd` here is the round's *opened* base
+(`beginShootdownRoundFor …`) while the descriptor's generation belongs to
+the state the round was opened *from*.  The view outcome does not depend
+on the descriptor's contents at all — only the queue *lengths* the
+threading tracks — but naming it keeps this fold operand-for-operand
+identical to `postShootdownRoundCoalescing`, which is the property the
+`_eq_strict` bridge rests on. -/
 def shootdownRoundViewsCoalescing (views : Vector TlbState numCores)
-    (sd : TlbShootdownState) (initiator : CoreId) (targets : List CoreId)
-    (op : TlbInvalidation) : Vector TlbState numCores :=
+    (sd : TlbShootdownState) (d : TlbShootdownDescriptor) (initiator : CoreId)
+    (targets : List CoreId) (op : TlbInvalidation) : Vector TlbState numCores :=
   (targets.foldl
     (fun (p : Vector TlbState numCores × TlbShootdownState) c =>
       (setTlbViewOnCore p.1 c (applyTlbInvalidation (p.1.get c)
         (if maxPendingPerCore ≤ (p.2.pendingOnCore c).length
          then TlbInvalidation.vmalle1 else op)),
-       enqueueShootdownOrCoalesce p.2 c { op := op, initiator := initiator }))
+       enqueueShootdownOrCoalesce p.2 c d))
     (setTlbViewOnCore views initiator
       (applyTlbInvalidation (views.get initiator) op), sd)).1
 
@@ -704,18 +713,17 @@ enqueue in it fit — no coalescing), every target's effective operand is `op` a
 its visit, so the threaded coalescing view fold's view part equals the plain
 `op` fold.  Threading `sd` handles duplicates: a duplicate that would overflow
 on a later visit makes the *posting fold* fail, so it is excluded here. -/
-theorem foldl_shootdownRoundViewsCoalescing_eq (initiator : CoreId)
+theorem foldl_shootdownRoundViewsCoalescing_eq (d : TlbShootdownDescriptor)
     (op : TlbInvalidation) :
     ∀ (targets : List CoreId) (base : Vector TlbState numCores)
       (sd : TlbShootdownState),
-      (targets.foldlM (fun s c => enqueueShootdown s c
-        { op := op, initiator := initiator }) sd).isSome →
+      (targets.foldlM (fun s c => enqueueShootdown s c d) sd).isSome →
       (targets.foldl
         (fun (p : Vector TlbState numCores × TlbShootdownState) c =>
           (setTlbViewOnCore p.1 c (applyTlbInvalidation (p.1.get c)
             (if maxPendingPerCore ≤ (p.2.pendingOnCore c).length
              then TlbInvalidation.vmalle1 else op)),
-           enqueueShootdownOrCoalesce p.2 c { op := op, initiator := initiator }))
+           enqueueShootdownOrCoalesce p.2 c d))
         (base, sd)).1 =
       targets.foldl (fun vs c =>
         setTlbViewOnCore vs c (applyTlbInvalidation (vs.get c) op)) base := by
@@ -725,7 +733,7 @@ theorem foldl_shootdownRoundViewsCoalescing_eq (initiator : CoreId)
   | cons t ts ih =>
     intro base sd hsucc
     rw [List.foldlM_cons] at hsucc
-    cases henq : enqueueShootdown sd t { op := op, initiator := initiator } with
+    cases henq : enqueueShootdown sd t d with
     | none => rw [henq] at hsucc; simp at hsucc
     | some sd1 =>
       have ht : (sd.pendingOnCore t).length < maxPendingPerCore := by
@@ -736,8 +744,7 @@ theorem foldl_shootdownRoundViewsCoalescing_eq (initiator : CoreId)
       rw [henq] at hsucc
       rw [List.foldl_cons, List.foldl_cons]
       rw [if_neg (show ¬ maxPendingPerCore ≤ (sd.pendingOnCore t).length by omega)]
-      have hcoal : enqueueShootdownOrCoalesce sd t
-          { op := op, initiator := initiator } = sd1 := by
+      have hcoal : enqueueShootdownOrCoalesce sd t d = sd1 := by
         unfold enqueueShootdownOrCoalesce; rw [henq]
       rw [hcoal]
       exact ih _ sd1 hsucc
@@ -748,13 +755,13 @@ agree exactly where the strict `tlbInvalidateOnAllCores` succeeds (the
 divergence is *only* the overflow full-flush the finding asked for). -/
 theorem shootdownRoundViewsCoalescing_eq_shootdownRoundViews
     (views : Vector TlbState numCores) (sd : TlbShootdownState)
-    (initiator : CoreId) (targets : List CoreId) (op : TlbInvalidation)
-    (hsucc : (targets.foldlM (fun s c => enqueueShootdown s c
-      { op := op, initiator := initiator }) sd).isSome) :
-    shootdownRoundViewsCoalescing views sd initiator targets op =
+    (d : TlbShootdownDescriptor) (initiator : CoreId) (targets : List CoreId)
+    (op : TlbInvalidation)
+    (hsucc : (targets.foldlM (fun s c => enqueueShootdown s c d) sd).isSome) :
+    shootdownRoundViewsCoalescing views sd d initiator targets op =
       shootdownRoundViews views initiator targets op := by
   unfold shootdownRoundViewsCoalescing shootdownRoundViews
-  exact foldl_shootdownRoundViewsCoalescing_eq initiator op targets _ sd hsucc
+  exact foldl_shootdownRoundViewsCoalescing_eq d op targets _ sd hsucc
 
 /-- **WS-SM SM7.F**: a successful `enqueueShootdown` posting fold means every
 target's pre-fold queue was below capacity — a target at capacity would make
@@ -806,6 +813,7 @@ def tlbInvalidateOnAllCoresCoalescing (st : SystemState) (initiator : CoreId)
   ({ tlbShootdownBroadcastCoalescing st initiator targets op with
       perCoreTlb := shootdownRoundViewsCoalescing st.perCoreTlb
         (beginShootdownRoundFor st.tlbShootdown initiator targets)
+        (roundDescriptor st.tlbShootdown initiator op)
         initiator targets op },
     targets.map (fun c => (c, SgiKind.tlbShootdownReq)))
 
@@ -817,6 +825,7 @@ theorem tlbInvalidateOnAllCoresCoalescing_perCoreTlb (st : SystemState)
     (tlbInvalidateOnAllCoresCoalescing st initiator targets op).1.perCoreTlb =
       shootdownRoundViewsCoalescing st.perCoreTlb
         (beginShootdownRoundFor st.tlbShootdown initiator targets)
+        (roundDescriptor st.tlbShootdown initiator op)
         initiator targets op := rfl
 
 /-- **WS-SM SM7.C.4**: the coalescing form frames the page-table
@@ -844,17 +853,18 @@ theorem tlbInvalidateOnAllCoresCoalescing_eq_strict {st st' : SystemState}
   -- strict success ⇒ the round's posting fold succeeds (no coalescing) ⇒ the
   -- faithful threaded view collapses to the plain op fold.
   have hfold : (targets.foldlM
-      (fun s c => enqueueShootdown s c { op := op, initiator := initiator })
+      (fun s c => enqueueShootdown s c (roundDescriptor st.tlbShootdown initiator op))
       (beginShootdownRoundFor st.tlbShootdown initiator targets)).isSome := by
     unfold tlbShootdownBroadcast at hb
     cases hf : targets.foldlM
-        (fun s c => enqueueShootdown s c { op := op, initiator := initiator })
+        (fun s c => enqueueShootdown s c (roundDescriptor st.tlbShootdown initiator op))
         (beginShootdownRoundFor st.tlbShootdown initiator targets) with
     | none => rw [hf] at hb; simp at hb
     | some _ => rfl
   unfold tlbInvalidateOnAllCoresCoalescing
   rw [shootdownRoundViewsCoalescing_eq_shootdownRoundViews st.perCoreTlb
         (beginShootdownRoundFor st.tlbShootdown initiator targets)
+        (roundDescriptor st.tlbShootdown initiator op)
         initiator targets op hfold,
       tlbShootdownBroadcastCoalescing_eq_strict hb, hst, hsgi]
 
@@ -1047,9 +1057,8 @@ view.  This ties the REAL per-core drain to the abstract `shootdownRoundViews`
 step (`applyTlbInvalidation (view c) op`); it is *not* an axiomatised
 re-computation. -/
 theorem handleTlbShootdownReqOnCorePerCore_applies_posted_op {st : SystemState}
-    {c : CoreId} {op : TlbInvalidation} {initiator : CoreId}
-    (hpend : st.tlbShootdown.pendingOnCore c =
-      [{ op := op, initiator := initiator }]) :
+    {c : CoreId} {op : TlbInvalidation}
+    (hpend : (st.tlbShootdown.pendingOnCore c).map (·.op) = [op]) :
     tlbOnCore (handleTlbShootdownReqOnCorePerCore st c) c =
       applyTlbInvalidation (tlbOnCore st c) op := by
   rw [handleTlbShootdownReqOnCorePerCore_tlbOnCore_self, drainShootdowns_fst,
@@ -1633,6 +1642,337 @@ theorem shootdownRoundPerCore_cross_subsystem {st final : SystemState}
    shootdownRoundPerCore_preserves_tlbInvalidationConsistent_perCore hq hnd hConsist h⟩
 
 -- ============================================================================
+-- SM7.F.3 — The generation-selective per-core catch-up (the live seam)
+--
+-- `shootdownCatchUpPerCore` drains each target's *whole* queue.  Under the
+-- round-serialisation contract that is exactly this commit's own work, but
+-- the catch-up is a second atomic commit taken after the round lock was
+-- released, so a concurrently-committed round can have posted into those
+-- queues in between.  The window forms below drain exactly the generations
+-- this commit's own rounds minted, leaving a concurrent round's descriptors
+-- pending for its own catch-up.  `…_eq_…` shows the two coincide whenever
+-- every queued descriptor belongs to this commit, which is what carries the
+-- whole SM7.C theorem surface (Theorem 3.3.1 included) to the live seam.
+-- ============================================================================
+
+/-- **WS-SM SM7.F.3**: the per-core `.tlbShootdownReq` handler restricted to
+this commit's own round window — the SM7.B window handler
+(`handleTlbShootdownReqOnCoreInWindow`) plus the retire of the *same*
+drained operands on core `c`'s own `perCoreTlb` view. -/
+def handleTlbShootdownReqOnCorePerCoreInWindow (st : SystemState) (c : CoreId)
+    (lo hi : Nat) : SystemState :=
+  setTlbOnCore (handleTlbShootdownReqOnCoreInWindow st c lo hi) c
+    (applyTlbInvalidations (tlbOnCore st c)
+      ((drainShootdownsInWindow st.tlbShootdown c lo hi).1.map (·.op)))
+
+/-- **WS-SM SM7.F.3**: the window per-core handler's `tlb` effect is exactly
+the single-view window handler's — the trace-safety anchor. -/
+@[simp] theorem handleTlbShootdownReqOnCorePerCoreInWindow_tlb_eq
+    (st : SystemState) (c : CoreId) (lo hi : Nat) :
+    (handleTlbShootdownReqOnCorePerCoreInWindow st c lo hi).tlb =
+      (handleTlbShootdownReqOnCoreInWindow st c lo hi).tlb := rfl
+
+/-- **WS-SM SM7.F.3**: the window per-core handler's shootdown-state effect
+is exactly the single-view window handler's. -/
+@[simp] theorem handleTlbShootdownReqOnCorePerCoreInWindow_tlbShootdown_eq
+    (st : SystemState) (c : CoreId) (lo hi : Nat) :
+    (handleTlbShootdownReqOnCorePerCoreInWindow st c lo hi).tlbShootdown =
+      (handleTlbShootdownReqOnCoreInWindow st c lo hi).tlbShootdown := rfl
+
+/-- **WS-SM SM7.F.3**: the window per-core handler retires `c`'s drained
+operands on `c`'s own view. -/
+theorem handleTlbShootdownReqOnCorePerCoreInWindow_tlbOnCore_self
+    (st : SystemState) (c : CoreId) (lo hi : Nat) :
+    tlbOnCore (handleTlbShootdownReqOnCorePerCoreInWindow st c lo hi) c =
+      applyTlbInvalidations (tlbOnCore st c)
+        ((drainShootdownsInWindow st.tlbShootdown c lo hi).1.map (·.op)) := by
+  simp [handleTlbShootdownReqOnCorePerCoreInWindow]
+
+/-- **WS-SM SM7.F.3**: the window per-core handler is a this-core event. -/
+theorem handleTlbShootdownReqOnCorePerCoreInWindow_tlbOnCore_ne
+    (st : SystemState) {c c' : CoreId} (lo hi : Nat) (h : c ≠ c') :
+    tlbOnCore (handleTlbShootdownReqOnCorePerCoreInWindow st c lo hi) c' =
+      tlbOnCore st c' := by
+  rw [handleTlbShootdownReqOnCorePerCoreInWindow, setTlbOnCore_tlbOnCore_ne _ _ h]
+  rfl
+
+/-- **WS-SM SM7.F.3**: the window per-core handler frames the page tables. -/
+theorem handleTlbShootdownReqOnCorePerCoreInWindow_frame (st : SystemState)
+    (c : CoreId) (lo hi : Nat) :
+    (handleTlbShootdownReqOnCorePerCoreInWindow st c lo hi).objects = st.objects ∧
+    (handleTlbShootdownReqOnCorePerCoreInWindow st c lo hi).asidTable =
+      st.asidTable := ⟨rfl, rfl⟩
+
+/-- **WS-SM SM7.F.3 (the bridge)**: on a core whose queue holds only this
+commit's own descriptors, the window per-core handler **is** the SM7.C
+whole-queue per-core handler. -/
+theorem handleTlbShootdownReqOnCorePerCoreInWindow_eq_handle {st : SystemState}
+    {c : CoreId} {lo hi : Nat}
+    (hall : ∀ d ∈ st.tlbShootdown.pendingOnCore c,
+      inRoundWindow lo hi d.generation = true) :
+    handleTlbShootdownReqOnCorePerCoreInWindow st c lo hi =
+      handleTlbShootdownReqOnCorePerCore st c := by
+  rw [handleTlbShootdownReqOnCorePerCoreInWindow,
+      handleTlbShootdownReqOnCorePerCore,
+      handleTlbShootdownReqOnCoreInWindow_eq_handle hall,
+      drainShootdownsInWindow_eq_drainShootdowns hall]
+
+/-- **WS-SM SM7.F.3**: the window per-core handler never adds an entry to any
+view — invalidation only removes. -/
+theorem handleTlbShootdownReqOnCorePerCoreInWindow_subset (st : SystemState)
+    (c c' : CoreId) (lo hi : Nat) {e : TlbEntry}
+    (h : e ∈ (tlbOnCore (handleTlbShootdownReqOnCorePerCoreInWindow st c lo hi)
+      c').entries) : e ∈ (tlbOnCore st c').entries := by
+  by_cases hcc : c = c'
+  · subst hcc
+    rw [handleTlbShootdownReqOnCorePerCoreInWindow_tlbOnCore_self] at h
+    exact mem_of_mem_applyTlbInvalidations h
+  · rw [handleTlbShootdownReqOnCorePerCoreInWindow_tlbOnCore_ne st lo hi hcc] at h
+    exact h
+
+/-- **WS-SM SM7.F.3 (race freedom, per-core form)**: a descriptor posted by a
+round outside this commit's window is still pending after the window per-core
+handler.  The property that makes the model's quiescence claim honest under
+concurrent rounds. -/
+theorem handleTlbShootdownReqOnCorePerCoreInWindow_preserves_foreign
+    {st : SystemState} {c : CoreId} {lo hi : Nat} {d : TlbShootdownDescriptor}
+    (hmem : d ∈ st.tlbShootdown.pendingOnCore c)
+    (hout : inRoundWindow lo hi d.generation = false) :
+    d ∈ (handleTlbShootdownReqOnCorePerCoreInWindow st c lo
+      hi).tlbShootdown.pendingOnCore c :=
+  handleTlbShootdownReqOnCoreInWindow_preserves_foreign hmem hout
+
+/-- **WS-SM SM7.F.3**: the window per-core handler preserves the pending-aware
+per-core TLB invariant (the 13th `proofLayerInvariantBundle` conjunct).
+
+A survivor of the drain is admissible for the same reason the whole-queue
+handler's survivors are: it was admissible before, and if its witness was a
+*pending* descriptor that this drain retired, the retire removed the entry —
+so a survivor's witness is either untouched (still pending, outside the
+window) or its consistent disjunct. -/
+theorem handleTlbShootdownReqOnCorePerCoreInWindow_preserves_tlbInvalidationConsistent_perCore
+    (st : SystemState) (c : CoreId) (lo hi : Nat)
+    (h : tlbInvalidationConsistent_perCore st) :
+    tlbInvalidationConsistent_perCore
+      (handleTlbShootdownReqOnCorePerCoreInWindow st c lo hi) := by
+  intro c' e he
+  have hpre : e ∈ (tlbOnCore st c').entries :=
+    handleTlbShootdownReqOnCorePerCoreInWindow_subset st c c' lo hi he
+  have hframe := handleTlbShootdownReqOnCorePerCoreInWindow_frame st c lo hi
+  rcases h c' e hpre with hcon | ⟨d, hd, hmatch⟩
+  · exact Or.inl (tlbEntryConsistent_of_frame hframe.1 hframe.2 hcon)
+  · -- The witness descriptor is either outside the window (still pending) or
+    -- inside it (then the drain retired its operand on `c`'s own view, so `e`
+    -- could not have survived there; on any other core the queue is framed).
+    by_cases hw : inRoundWindow lo hi d.generation = true
+    · by_cases hcc : c' = c
+      · subst hcc
+        exfalso
+        rw [handleTlbShootdownReqOnCorePerCoreInWindow_tlbOnCore_self] at he
+        have hopMem : d.op ∈ (drainShootdownsInWindow st.tlbShootdown c' lo hi).1.map (·.op) :=
+          List.mem_map.mpr ⟨d, (mem_drainShootdownsInWindow_fst_iff st.tlbShootdown
+            c' lo hi d).mpr ⟨hd, hw⟩, rfl⟩
+        exact applyTlbInvalidations_removes hopMem hmatch _ he
+      · refine Or.inr ⟨d, ?_, hmatch⟩
+        rw [handleTlbShootdownReqOnCorePerCoreInWindow_tlbShootdown_eq,
+            handleTlbShootdownReqOnCoreInWindow_tlbShootdown_eq,
+            completeShootdownOnCoreInWindow_frame_pending _ hcc]
+        exact hd
+    · refine Or.inr ⟨d, ?_, hmatch⟩
+      by_cases hcc : c' = c
+      · subst hcc
+        exact handleTlbShootdownReqOnCorePerCoreInWindow_preserves_foreign hd
+          (by simpa using hw)
+      · rw [handleTlbShootdownReqOnCorePerCoreInWindow_tlbShootdown_eq,
+            handleTlbShootdownReqOnCoreInWindow_tlbShootdown_eq,
+            completeShootdownOnCoreInWindow_frame_pending _ hcc]
+        exact hd
+
+/-- **WS-SM SM7.F.3**: folding the window per-core handler over any target
+list preserves the pending-aware per-core invariant. -/
+theorem foldl_handleTlbShootdownReqOnCorePerCoreInWindow_preserves_consistent
+    (lo hi : Nat) :
+    ∀ (cs : List CoreId) (st : SystemState),
+      tlbInvalidationConsistent_perCore st →
+      tlbInvalidationConsistent_perCore
+        (cs.foldl (fun s c => handleTlbShootdownReqOnCorePerCoreInWindow s c lo hi) st) := by
+  intro cs
+  induction cs with
+  | nil => intro st h; exact h
+  | cons t ts ih =>
+    intro st h
+    rw [List.foldl_cons]
+    exact ih _ (handleTlbShootdownReqOnCorePerCoreInWindow_preserves_tlbInvalidationConsistent_perCore
+      st t lo hi h)
+
+/-- **WS-SM SM7.F.3**: folding the window per-core handler leaves the view of
+any core NOT in the target list unchanged — the initiator is such a core. -/
+theorem foldl_handleTlbShootdownReqOnCorePerCoreInWindow_tlbOnCore_notMem
+    (lo hi : Nat) :
+    ∀ (cs : List CoreId) (st : SystemState) (c : CoreId), c ∉ cs →
+      tlbOnCore (cs.foldl
+        (fun s c' => handleTlbShootdownReqOnCorePerCoreInWindow s c' lo hi) st) c =
+        tlbOnCore st c := by
+  intro cs
+  induction cs with
+  | nil => intro st c _; rfl
+  | cons t ts ih =>
+    intro st c hnotin
+    rw [List.mem_cons, not_or] at hnotin
+    obtain ⟨hne, hnotin'⟩ := hnotin
+    rw [List.foldl_cons, ih (handleTlbShootdownReqOnCorePerCoreInWindow st t lo hi)
+      c hnotin']
+    exact handleTlbShootdownReqOnCorePerCoreInWindow_tlbOnCore_ne st lo hi (Ne.symm hne)
+
+/-- **WS-SM SM7.F.3**: a descriptor outside this commit's window survives the
+*whole* target fold, not just one step — the fold-level race-freedom lemma. -/
+theorem foldl_handleTlbShootdownReqOnCorePerCoreInWindow_preserves_foreign
+    (lo hi : Nat) {d : TlbShootdownDescriptor}
+    (hout : inRoundWindow lo hi d.generation = false) :
+    ∀ (cs : List CoreId) (st : SystemState) (c : CoreId),
+      d ∈ st.tlbShootdown.pendingOnCore c →
+      d ∈ (cs.foldl
+        (fun s c' => handleTlbShootdownReqOnCorePerCoreInWindow s c' lo hi)
+        st).tlbShootdown.pendingOnCore c := by
+  intro cs
+  induction cs with
+  | nil => intro st c h; exact h
+  | cons t ts ih =>
+    intro st c h
+    rw [List.foldl_cons]
+    refine ih _ c ?_
+    by_cases hct : c = t
+    · subst hct
+      exact handleTlbShootdownReqOnCorePerCoreInWindow_preserves_foreign h hout
+    · rw [handleTlbShootdownReqOnCorePerCoreInWindow_tlbShootdown_eq,
+          handleTlbShootdownReqOnCoreInWindow_tlbShootdown_eq,
+          completeShootdownOnCoreInWindow_frame_pending _ hct]
+      exact h
+
+/-- **WS-SM SM7.F.3 (the live per-core catch-up)**: the complete per-core model
+effect of a live shootdown round's catch-up, restricted to the round window the
+commit itself opened.
+
+This is exactly what `SyscallDispatchEntry.completeShootdownRounds` runs.  It
+drains every non-initiator target's *own* posted descriptors onto that core's
+view (`handleTlbShootdownReqOnCorePerCoreInWindow`) and retires the round's
+operands on the *initiator's* own view (`drainInitiatorPerCoreView` — the
+inner-shareable broadcast reaches the issuing PE).  Its `tlb` / `tlbShootdown`
+effect is definitionally the single-view window fold's (the initiator drain is
+`perCoreTlb`-only), so wiring it into the live seam is trace-safe. -/
+def shootdownCatchUpPerCoreInWindow (st : SystemState) (execCore : CoreId)
+    (ops : List TlbInvalidation) (lo hi : Nat) : SystemState :=
+  drainInitiatorPerCoreView
+    ((shootdownTargets execCore).foldl
+      (fun s c => handleTlbShootdownReqOnCorePerCoreInWindow s c lo hi) st)
+    execCore ops
+
+/-- **WS-SM SM7.F.3 (the bridge)**: whenever every descriptor queued on every
+core belongs to this commit's own window — the round-serialisation regime the
+SM7.A/B contract establishes — the window catch-up **is** the SM7.C whole-queue
+catch-up.  Every landed catch-up theorem therefore applies unchanged to the
+live seam; the window form only differs when a concurrently-committed round has
+descriptors in flight, which is precisely the case the SM7.B v0.32.79 debt was
+about. -/
+theorem shootdownCatchUpPerCoreInWindow_eq_catchUp {st : SystemState}
+    {execCore : CoreId} {ops : List TlbInvalidation} {lo hi : Nat}
+    (hall : ∀ (c : CoreId), ∀ d ∈ st.tlbShootdown.pendingOnCore c,
+      inRoundWindow lo hi d.generation = true) :
+    shootdownCatchUpPerCoreInWindow st execCore ops lo hi =
+      shootdownCatchUpPerCore st execCore ops := by
+  unfold shootdownCatchUpPerCoreInWindow shootdownCatchUpPerCore
+  -- The two folds agree step by step: at each visited core the queue still
+  -- holds only in-window descriptors (the drain only removes, and the frames
+  -- carry the property to the other cores).
+  suffices h : ∀ (cs : List CoreId) (s : SystemState),
+      (∀ (c : CoreId), ∀ d ∈ s.tlbShootdown.pendingOnCore c,
+        inRoundWindow lo hi d.generation = true) →
+      cs.foldl (fun s c => handleTlbShootdownReqOnCorePerCoreInWindow s c lo hi) s =
+        cs.foldl handleTlbShootdownReqOnCorePerCore s by
+    rw [h (shootdownTargets execCore) st hall]
+  intro cs
+  induction cs with
+  | nil => intro s _; rfl
+  | cons t ts ih =>
+    intro s hs
+    rw [List.foldl_cons, List.foldl_cons,
+        handleTlbShootdownReqOnCorePerCoreInWindow_eq_handle (hs t)]
+    refine ih _ fun c d hd => ?_
+    -- After the whole-queue handler at `t`, `t`'s queue is empty and every
+    -- other core's is framed.
+    by_cases hct : c = t
+    · subst hct
+      rw [handleTlbShootdownReqOnCorePerCore_tlbShootdown_eq,
+          handleTlbShootdownReqOnCore_tlbShootdown_eq,
+          completeShootdownOnCore_pendingOnCore_self] at hd
+      cases hd
+    · rw [handleTlbShootdownReqOnCorePerCore_tlbShootdown_eq,
+          handleTlbShootdownReqOnCore_tlbShootdown_eq,
+          completeShootdownOnCore_frame_pending _ hct] at hd
+      exact hs c d hd
+
+/-- **WS-SM SM7.F.3**: the window catch-up's `tlb` effect is the window target
+fold's — the initiator drain is `perCoreTlb`-only. -/
+@[simp] theorem shootdownCatchUpPerCoreInWindow_tlb (st : SystemState)
+    (execCore : CoreId) (ops : List TlbInvalidation) (lo hi : Nat) :
+    (shootdownCatchUpPerCoreInWindow st execCore ops lo hi).tlb =
+      ((shootdownTargets execCore).foldl
+        (fun s c => handleTlbShootdownReqOnCorePerCoreInWindow s c lo hi) st).tlb := rfl
+
+/-- **WS-SM SM7.F.3**: the window catch-up's shootdown-state effect is the
+window target fold's. -/
+@[simp] theorem shootdownCatchUpPerCoreInWindow_tlbShootdown (st : SystemState)
+    (execCore : CoreId) (ops : List TlbInvalidation) (lo hi : Nat) :
+    (shootdownCatchUpPerCoreInWindow st execCore ops lo hi).tlbShootdown =
+      ((shootdownTargets execCore).foldl
+        (fun s c => handleTlbShootdownReqOnCorePerCoreInWindow s c lo hi) st).tlbShootdown :=
+  rfl
+
+/-- **WS-SM SM7.F.3 (faithfulness)**: after the window catch-up the
+*initiator's* own per-core view has retired the round's operands — the target
+fold excludes the initiator, so the drain reads the initiator's pre-round
+view. -/
+theorem shootdownCatchUpPerCoreInWindow_initiator_view (st : SystemState)
+    (execCore : CoreId) (ops : List TlbInvalidation) (lo hi : Nat) :
+    tlbOnCore (shootdownCatchUpPerCoreInWindow st execCore ops lo hi) execCore =
+      applyTlbInvalidations (tlbOnCore st execCore) ops := by
+  unfold shootdownCatchUpPerCoreInWindow
+  rw [drainInitiatorPerCoreView_tlbOnCore_self]
+  have hnotin : execCore ∉ shootdownTargets execCore := by
+    rw [mem_shootdownTargets_iff]; exact fun h => h rfl
+  rw [foldl_handleTlbShootdownReqOnCorePerCoreInWindow_tlbOnCore_notMem lo hi
+    (shootdownTargets execCore) st execCore hnotin]
+
+/-- **WS-SM SM7.F.3 (the headline race-freedom theorem — the SM7.B v0.32.79
+model-fidelity debt closed)**: a descriptor posted by a **concurrently
+committed round** — one whose generation lies outside this commit's window — is
+still pending after this commit's catch-up.
+
+The model can therefore never report a core clean of an invalidation whose
+`.tlbShootdownReq` SGI has not yet fired: the other round's own catch-up, and
+only it, retires that descriptor. -/
+theorem shootdownCatchUpPerCoreInWindow_preserves_foreign {st : SystemState}
+    {execCore : CoreId} {ops : List TlbInvalidation} {lo hi : Nat}
+    {c : CoreId} {d : TlbShootdownDescriptor}
+    (hmem : d ∈ st.tlbShootdown.pendingOnCore c)
+    (hout : inRoundWindow lo hi d.generation = false) :
+    d ∈ (shootdownCatchUpPerCoreInWindow st execCore ops lo
+      hi).tlbShootdown.pendingOnCore c :=
+  foldl_handleTlbShootdownReqOnCorePerCoreInWindow_preserves_foreign lo hi hout
+    (shootdownTargets execCore) st c hmem
+
+/-- **WS-SM SM7.F.3**: the window catch-up preserves the pending-aware per-core
+invariant — both the target fold and the initiator drain do. -/
+theorem shootdownCatchUpPerCoreInWindow_preserves_tlbInvalidationConsistent_perCore
+    (st : SystemState) (execCore : CoreId) (ops : List TlbInvalidation)
+    (lo hi : Nat) (h : tlbInvalidationConsistent_perCore st) :
+    tlbInvalidationConsistent_perCore
+      (shootdownCatchUpPerCoreInWindow st execCore ops lo hi) := by
+  unfold shootdownCatchUpPerCoreInWindow
+  exact drainInitiatorPerCoreView_preserves_tlbInvalidationConsistent_perCore _ _ _
+    (foldl_handleTlbShootdownReqOnCorePerCoreInWindow_preserves_consistent lo hi _ st h)
+
+-- ============================================================================
 -- SM7.F.1 — Translation-walk fill seam (PR #844 review-2 P2, Comment 2)
 --
 -- The hardware TLB *fill*: on a memory access whose translation misses the
@@ -1889,8 +2229,8 @@ theorem vspaceUnmapPageWithShootdownPerCore_preserves_of_flush
         (encodePageInvalidation asid vaddr) c
         ((mem_shootdownTargets_iff executingCore c).mpr hc)
       rcases hcov with hdirect | ⟨d', hd'mem, hd'op⟩
-      · refine ⟨(⟨encodePageInvalidation asid vaddr, executingCore⟩ :
-          TlbShootdownDescriptor), ?_, hb⟩
+      · refine ⟨roundDescriptor stF.tlbShootdown executingCore
+          (encodePageInvalidation asid vaddr), ?_, hb⟩
         rw [hpendEq]; exact hdirect
       · refine ⟨d', ?_, ?_⟩
         · rw [hpendEq]; exact hd'mem
