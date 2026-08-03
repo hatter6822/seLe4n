@@ -1,3 +1,57 @@
+## v0.32.108 — three documentation claims that nothing enforced
+
+Continues the v0.32.107 sweep. Same defect class, three more instances: a
+claim the project publishes, a check that could have caught drift, and no
+wiring between them.
+
+**1. README + SELE4N_SPEC headline metrics were wrong — and it was this
+session's own doing.** `test_docs_sync.sh` verifies `docs/codebase_map.json`
+matches the tree, but nothing verified that anything *downstream* of the map
+had been re-synced **from** it. Regenerating the map and forgetting
+`sync_readme_from_codebase_map.sh` therefore published stale numbers with a
+green gate. Confirmed by computing the metrics at `origin/main`, where they
+matched the published figures exactly — so the drift (Production LoC
+235,825 → 236,974; Test LoC 47,915 → 48,143; proved declarations
+7,674 → 7,744) was introduced by the SM7.F.3 work and the gate let it through.
+
+**2. The "Known large files" drift detector had never run.**
+`find_large_lean_files.sh --check` exists and works; CLAUDE.md documents it.
+But its only caller is `sync_documentation_metrics.sh`, which is in **no test
+tier and no workflow** — so the warning it emits had never been seen, and the
+list was already stale at `origin/main`.
+
+The check was also *unfixably* noisy: an exact string comparison of a block
+whose counts are explicitly approximations (`~N lines`), so any patch touching
+any 800-line file failed it. That forces the choice between noisy and
+invisible, and it had chosen invisible. `--check` is now **tolerant**: the set
+of listed files must match exactly (a file crossing the threshold changes the
+reading guidance), and each count must be within `--tolerance` percent
+(default 10) of actual. `--tolerance 0` restores exact comparison. Verified to
+discriminate: 3.4% drift passes, 15% fails, membership change fails.
+
+**3. CLAUDE.md ↔ AGENTS.md byte-identity was documented but ungated.** Both
+files state the rule in their own headers; only the *version line* was
+checked, via `version_locations.sh`. Any other divergence — a policy edited in
+one file and not the other, exactly what the rule exists to prevent — was
+invisible to CI.
+
+**The fix is the wiring.** All three now run in `test_docs_sync.sh`, which
+Tier 1 and above already execute. Each was verified to genuinely fail and
+recover: a mutated README metric, a count past tolerance, a file removed from
+the list, and a heading changed in one mirror only. The mirror check carries an
+explicit vacuity guard that fails loudly if its anchor heading is missing —
+which caught a real bug in the anchor on first run.
+
+**Also corrected.** CLAUDE.md and AGENTS.md described PR #820 review #4 (the
+vestigial 2-arg `lean_endpoint_call_cross_core` export) as "the remaining
+cleanup item". It was done: the export is gone and only two historical comments
+recording its removal still name it. The prose now says so.
+`sync_documentation_metrics.sh`'s header, which justified warn-only treatment
+by the list being approximate, now points at the tolerance that makes the same
+list gateable.
+
+Refs: scripts/test_docs_sync.sh (documentation-claim drift gates)
+
 ## v0.32.107 — the Rust format/lint gates that were provisioned but never wired
 
 **The drift.** `cargo fmt --check` reported a 6 187-line diff across 448 hunks

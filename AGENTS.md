@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.32.107.
+Lean 4.28.0 toolchain, Lake build system, version 0.32.108.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -182,9 +182,9 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~33500 lines)
+- `CHANGELOG.md` (~33704 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~20449 lines)
-- `docs/WORKSTREAM_HISTORY.md` (~10145 lines)
+- `docs/WORKSTREAM_HISTORY.md` (~10167 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~6631 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4764 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
@@ -196,7 +196,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3911 lines)
 - `docs/spec/SELE4N_SPEC.md` (~3843 lines)
 - `SeLe4n/Platform/Boot.lean` (~3470 lines)
-- `docs/gitbook/12-proof-and-invariant-map.md` (~3435 lines)
+- `docs/gitbook/12-proof-and-invariant-map.md` (~3466 lines)
 - `SeLe4n/Kernel/CrossSubsystem.lean` (~3394 lines)
 - `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
 - `SeLe4n/Kernel/API.lean` (~3269 lines)
@@ -205,16 +205,18 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md` (~3134 lines)
 - `SeLe4n/Model/Object/Structures.lean` (~3069 lines)
 - `docs/planning/SMP_RUST_HAL_PLAN.md` (~3014 lines)
+- `tests/SmpTlbShootdownSuite.lean` (~2970 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~2809 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean` (~2805 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean` (~2772 lines)
-- `tests/SmpTlbShootdownSuite.lean` (~2742 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~2733 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~2627 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` (~2505 lines)
 - `tests/ModelIntegritySuite.lean` (~2477 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md` (~2476 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md` (~2472 lines)
+- `SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean` (~2463 lines)
+- `SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean` (~2347 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_WORKSTREAM_PLAN.md` (~2340 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md` (~2339 lines)
 - `docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md` (~2326 lines)
@@ -223,19 +225,18 @@ To find files that need pagination today, run:
 - `tests/OperationChainSuite.lean` (~2246 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~2187 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean` (~2182 lines)
-- `SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean` (~2123 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean` (~2096 lines)
-- `SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean` (~2095 lines)
 - `SeLe4n/Prelude.lean` (~2090 lines)
 - `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` (~2083 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~2070 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2067 lines)
 - `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~2022 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2019 lines)
-- `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~2010 lines)
+- `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~2011 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~1990 lines)
 - `SeLe4n/Kernel/Capability/Operations.lean` (~1989 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean` (~1967 lines)
+- `SeLe4n/Kernel/Architecture/TlbShootdown.lean` (~1966 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
 - `SeLe4n/Model/Object/Types.lean` (~1963 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.1_WORKSTREAM_PLAN.md` (~1917 lines)
@@ -259,9 +260,8 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_FOUNDATIONS_PLAN.md` (~1665 lines)
 - `SeLe4n/Kernel/Architecture/Invariant.lean` (~1643 lines)
 - `tests/InformationFlowSuite.lean` (~1639 lines)
-- `SeLe4n/Platform/FFI.lean` (~1601 lines)
-- `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` (~1524 lines)
-- `SeLe4n/Kernel/Architecture/TlbShootdown.lean` (~1498 lines)
+- `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` (~1615 lines)
+- `SeLe4n/Platform/FFI.lean` (~1605 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~1464 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
@@ -792,9 +792,11 @@ documentation lives under `docs/` and `docs/gitbook/`.
   `syscallDispatchInner` passes `bootCoreId` (boot-pinned, unchanged); the five
   `syscallDispatchFromAbi_*` bridges are generalised to an arbitrary core.
   Validated: trace byte-identical, all `.call` + SMP suites pass, partition (54) +
-  AK7 + Rust HAL (724) green.  PR #820 review comments #1/#2/#3/#5 all closed (#4
-  — the vestigial 2-arg `lean_endpoint_call_cross_core` export — is the remaining
-  cleanup item, superseded by the full-context `syscallDispatchCrossCoreEntry`).
+  AK7 + Rust HAL (724) green.  PR #820 review comments #1/#2/#3/#5 all closed;
+  #4 — the vestigial 2-arg `lean_endpoint_call_cross_core` export, superseded by
+  the full-context `syscallDispatchCrossCoreEntry` — is **also closed**: the
+  export is gone, and only the two historical comments that record its removal
+  (`Staged.lean`, `EndpointCallEntry.lean`, both saying "former") still name it.
 
   **SM4.C.11 tracked debt**: per-core Liveness forms
   (`Scheduler/Liveness/*.lean`) remain bootCoreId-pinned; migration

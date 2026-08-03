@@ -15,9 +15,15 @@
 #   2. `sync_readme_from_codebase_map.sh` — push the freshly-computed
 #      metrics into README.md and docs/spec/SELE4N_SPEC.md.
 #   3. `find_large_lean_files.sh --check` — warn (not fail) when the
-#      CLAUDE.md "Known large files" list has drifted. We only warn
-#      here because the list is manually curated with `(~N lines)`
-#      approximations that do not need to update on every patch.
+#      CLAUDE.md "Known large files" list has drifted. Warning is right
+#      *here* because this script is the write-through helper, not a
+#      gate; the hard enforcement lives in `test_docs_sync.sh`, which
+#      runs the same check and is wired into Tier 1 and above.
+#      That check is tolerant (default 10%) precisely because the list
+#      is curated with `(~N lines)` approximations that need not update
+#      on every patch — it fails only when a file enters or leaves the
+#      list, or when a count has moved enough to change the reading
+#      guidance.
 #   4. `test_docs_sync.sh` — run the existing docs-sync CI gate to
 #      confirm no downstream regression (GitBook nav, markdown links,
 #      codebase-map --check).

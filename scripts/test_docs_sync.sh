@@ -25,6 +25,55 @@ python3 "${SCRIPT_DIR}/check_markdown_links.py"
 python3 "${SCRIPT_DIR}/generate_codebase_map.py" --pretty --check
 
 # ──────────────────────────────────────────────────────────────────────
+# Documentation-claim drift gates.
+#
+# `generate_codebase_map.py --check` above proves the map matches the tree.
+# It does NOT prove anything downstream of the map was re-synced FROM it,
+# and the three checks below close that gap.  Each guards a claim the
+# project publishes but nothing previously enforced, and each had actually
+# drifted when they were added:
+#
+#   1. README.md + SELE4N_SPEC.md headline metrics (production/test LoC,
+#      proved-declaration count).  A stale map is caught; a fresh map that
+#      nobody propagated was not — so regenerating the map and forgetting
+#      the propagation silently published wrong numbers.
+#   2. The CLAUDE.md "Known large files" list.  Its detector existed but
+#      lived only in `sync_documentation_metrics.sh`, which is in no tier
+#      and no workflow, so the "warning" it emits had never been seen.
+#      Tolerant by design (see that script's header) so it is quiet about
+#      the per-patch churn the `~N lines` approximation already signals.
+#   3. CLAUDE.md ↔ AGENTS.md byte-identity.  Both files state the rule in
+#      their own headers ("the two files must stay byte-identical apart
+#      from this header"), and only the *version line* was checked, so any
+#      other divergence was invisible to CI.
+# ──────────────────────────────────────────────────────────────────────
+
+"${SCRIPT_DIR}/sync_readme_from_codebase_map.sh" --check
+
+"${SCRIPT_DIR}/find_large_lean_files.sh" --check
+
+# CLAUDE.md and AGENTS.md differ only in their leading header block: each
+# names itself in an H1 and points at the other in a blockquote.  The
+# shared body begins at the first `##` section, `## What this project is`,
+# and must be byte-identical from there on.
+mirror_anchor='## What this project is'
+claude_body="$(awk -v a="${mirror_anchor}" 'index($0,a)==1{f=1} f' CLAUDE.md)"
+agents_body="$(awk -v a="${mirror_anchor}" 'index($0,a)==1{f=1} f' AGENTS.md)"
+if [[ -z "${claude_body}" || -z "${agents_body}" ]]; then
+  echo "FAIL: could not locate the shared '${mirror_anchor}' heading in both \
+CLAUDE.md and AGENTS.md; the mirror check would be vacuous." >&2
+  exit 1
+fi
+if [[ "${claude_body}" != "${agents_body}" ]]; then
+  echo "FAIL: CLAUDE.md and AGENTS.md have diverged below their header blocks." >&2
+  echo "      Both files require byte-identical bodies (see their own headers)." >&2
+  diff <(printf '%s\n' "${claude_body}") <(printf '%s\n' "${agents_body}") \
+    | head -40 >&2
+  exit 1
+fi
+echo "PASS: CLAUDE.md and AGENTS.md bodies are byte-identical."
+
+# ──────────────────────────────────────────────────────────────────────
 # AC5-B / X-08: GitBook content-hash drift check
 # Compare H1/H2 structural headings between canonical docs/ files and
 # their GitBook chapter mirrors. Emits warnings (not hard failures) for
