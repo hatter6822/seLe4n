@@ -1,3 +1,46 @@
+## v0.32.120 — Route the generation-wrap barrier through the system-wide halt
+
+PR #854 review, ninth round: one P2, and a consistency gap left by
+v0.32.118's own fix.
+
+That cut established that a shootdown barrier failure must stop **every**
+PE — the initiator's page-table transition is already committed, so parking
+one core leaves the others running against translations nothing will
+invalidate. It routed the round-lock and acknowledgment barriers through
+`gic::halt_all`, and missed the third: `allocate_round_generation_in`'s
+wrap guard was a bare `assert!`, which takes the ordinary panic/abort path.
+
+**The gap is wider than "different halt path".** The repository defines
+**no `#[panic_handler]` anywhere** — the HAL is `#![no_std]`, and the
+handler belongs to a final binary crate that does not exist until SM9.E.
+So the wrap branch's halt behaviour was not merely inconsistent, it was
+undefined, and would be decided later by a crate nobody has written.
+`gic::halt_all` is defined today.
+
+At the wrap point the caller holds the round lock and has published neither
+operands nor SGIs, so the remote TLBs are stale with no pending
+invalidation — precisely the state the broadcast exists for. Now:
+best-effort `kprintln!` diagnostic, then `gic::halt_all()`, the same split
+between *reporting* and *stopping* that `haltFailClosed` uses on the Lean
+side.
+
+Reachability is unchanged and remains theoretical: `u64::MAX` allocations
+is ~584,000 years at one round per microsecond. This is defense-in-depth on
+a branch that should never execute, which is why it is a P2 — but a barrier
+whose behaviour is undefined is not a barrier.
+
+Two tests, and the negative was checked by neutering rather than assumed:
+`round_generation_wrap_reaches_the_system_wide_halt` seeds the counter one
+below wrap and expects `fatal_halt`'s message, so reverting to the local
+`assert!` fails it (confirmed by doing exactly that); the companion
+`round_generation_near_wrap_still_allocates` pins that the guard does not
+fire on ordinary allocations, so the first cannot pass vacuously.
+
+Rust 1105 → 1107 (HAL 810 → 812), zero ignored; trace byte-identical.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F.3
+Refs: #854
+
 ## v0.32.119 — Finish the workstream-code sweep, including the kinds two passes missed
 
 PR #854 review, eighth round: one P1 (convention), and it lands on my own

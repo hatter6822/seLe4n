@@ -504,16 +504,32 @@ pub static SHOOTDOWN_ROUND_SEQ: AtomicU64 = AtomicU64::new(0);
 /// practice (~584,000 years at one round per microsecond), but the
 /// aliasing is exactly the class the generation tagging exists to
 /// exclude, so it is rejected structurally rather than argued away.
+///
+/// **The halt is system-wide** (PR #854 review).  This branch used a
+/// bare `assert!`, which takes the ordinary panic/abort path — and the
+/// repository defines no `#[panic_handler]` at all, so what that path
+/// does is decided by a final binary crate that does not exist until
+/// SM9.E.  Meanwhile the caller has already committed its page-table
+/// transition and holds the round lock, and has published neither
+/// operands nor SGIs, so the other PEs hold stale translations that
+/// nothing will ever invalidate.  Stopping this PE alone does not
+/// address that; [`crate::gic::halt_all`] does, and it is defined
+/// today.  Every other shootdown barrier reaches the same halt.
 #[inline]
 pub fn allocate_round_generation_in(seq: &AtomicU64) -> u64 {
     let generation = seq.fetch_add(1, Ordering::AcqRel).wrapping_add(1);
-    assert!(
-        generation != 0,
-        "WS-SM SM7.F.3: shootdown round generation counter wrapped; \
-         halting fail-closed (a wrapped generation would let stale \
-         acknowledgments satisfy every later round — the SMP-C4 \
-         stale-TLB hazard)"
-    );
+    if generation == 0 {
+        // Diagnostic first, best-effort, then the halt -- the same split
+        // the Lean `haltFailClosed` uses: the message is worth emitting,
+        // but it is not what stops anything.
+        crate::kprintln!(
+            "WS-SM SM7.F.3: shootdown round generation counter wrapped; \
+             halting fail-closed system-wide (a wrapped generation would \
+             let stale acknowledgments satisfy every later round -- the \
+             SMP-C4 stale-TLB hazard)"
+        );
+        crate::gic::halt_all()
+    }
     generation
 }
 
@@ -1537,6 +1553,33 @@ mod tests {
     /// strictly increasing and starts at 1 — never the vacuously-
     /// satisfied 0, which a slot's initial `acked_gen` would already
     /// satisfy.
+    /// **PR #854 review**: the wrap branch reaches the *system-wide*
+    /// fail-closed halt, not a bare panic.
+    ///
+    /// Seeded one below wrap, so the next allocation returns 0. The halt
+    /// is non-returning on both targets: on AArch64 `gic::halt_all`
+    /// broadcasts `haltAll` and parks; on host `cpu::fatal_halt` panics
+    /// (MMIO is a no-op off-target), which is what `should_panic`
+    /// observes. The expected text is `fatal_halt`'s, so this fails if
+    /// the branch ever reverts to the local `assert!` -- that carried a
+    /// different message and, with no `#[panic_handler]` in the tree,
+    /// no defined halt behaviour.
+    #[test]
+    #[should_panic(expected = "fail-closed halt reached")]
+    fn round_generation_wrap_reaches_the_system_wide_halt() {
+        let seq = AtomicU64::new(u64::MAX);
+        let _ = allocate_round_generation_in(&seq);
+    }
+
+    /// The wrap guard does not fire on ordinary allocations -- the
+    /// companion positive, so the test above cannot pass vacuously.
+    #[test]
+    fn round_generation_near_wrap_still_allocates() {
+        let seq = AtomicU64::new(u64::MAX - 2);
+        assert_eq!(allocate_round_generation_in(&seq), u64::MAX - 1);
+        assert_eq!(allocate_round_generation_in(&seq), u64::MAX);
+    }
+
     #[test]
     fn round_generation_allocator_is_strictly_increasing_from_one() {
         let seq = AtomicU64::new(0);

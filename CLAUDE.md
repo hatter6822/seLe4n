@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.32.119.
+Lean 4.28.0 toolchain, Lake build system, version 0.32.120.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -735,7 +735,7 @@ documentation lives under `docs/` and `docs/gitbook/`.
 
  **v0.32.99 PR #845 review round 3**: five findings, all consequences of this PR's own changes — (1) the page-alignment guard reached only two of the four checked map wrappers; both remaining ones guarded and `checkedMapWrappers_reject_unaligned` now pins all four to the same rejection (the duplication across wrappers is what let two drift).  (2) `checkedDispatch_capabilityOnly_eq_unchecked` was advertised as complete but enumerated 14 of 16 arms, omitting `.vspaceUnifyInstruction` and `.mintReplyCap`; both added plus their per-arm theorems.  (3) `.vspaceUnifyInstruction` was outside `lockSetTransitions_within_bound`, which supplies the size premise for bounded-wait/WCRT reasoning; `lockSet_vspaceUnifyInstruction_size_le` added.  (4) **the clean-to-PoU obligation was vacuous** — `kernelCodeWriteOwesPoUClean` ignored its site argument and asserted only barrier-list membership, mentioning neither `DC CVAU` nor any instruction invalidate, so it stayed provable with every clean absent; it is now a `PoUCleanObligation` naming the concrete per-site operations (`DCacheMaintenance.isClean` rejects invalidate-only, which would discard the bytes just written), with `kernelCodeWriteSites_emission_pending` recording as a decidable fact that the obligation is declared rather than discharged.  (5) the `sele4n-sys` wrapper documented `AsidNotBound` for an unbound ASID, but the capability binding returns `IllegalAuthority` first (deliberately — no ASID-existence oracle); contract corrected.
 
-  **Rust HAL at v0.32.118**: 810 tests, zero clippy warnings,
+  **Rust HAL at v0.32.120**: 812 tests, zero clippy warnings,
   zero `#[ignore]`'d.
 
   **Staged modules**: 54 staged-only (via `Platform/Staged.lean` +
