@@ -75,6 +75,43 @@ mirror_tmp="$(mktemp -d)"
 trap 'rm -rf "${mirror_tmp}"' EXIT
 awk -v a="${mirror_anchor}" 'index($0,a)==1{f=1} f' CLAUDE.md > "${mirror_tmp}/claude"
 awk -v a="${mirror_anchor}" 'index($0,a)==1{f=1} f' AGENTS.md > "${mirror_tmp}/agents"
+
+# The body comparison above starts AT the anchor, so everything above it
+# was previously unchecked (PR #854 review): a divergent paragraph of
+# instructions added to one mirror's header region passed the gate, even
+# though the files were then not "byte-identical apart from this header".
+# Both headers are fixed text that names the file and points at its
+# mirror, so pin them verbatim.
+awk -v a="${mirror_anchor}" 'index($0,a)==1{exit} {print}' CLAUDE.md > "${mirror_tmp}/claude_hdr"
+awk -v a="${mirror_anchor}" 'index($0,a)==1{exit} {print}' AGENTS.md > "${mirror_tmp}/agents_hdr"
+cat > "${mirror_tmp}/claude_hdr_want" <<'CLAUDE_HDR_EOF'
+# CLAUDE.md — seLe4n project guidance
+
+> A mirror of this file lives at `AGENTS.md` so that non-Claude coding
+> agents (and any tool that follows the AGENTS.md convention) get the
+> same project rules. If you edit one, edit the other in the same PR —
+> the two files must stay byte-identical apart from this header.
+
+CLAUDE_HDR_EOF
+cat > "${mirror_tmp}/agents_hdr_want" <<'AGENTS_HDR_EOF'
+# AGENTS.md — seLe4n project guidance
+
+> This file mirrors `CLAUDE.md` so that non-Claude coding agents (and any
+> tool that follows the AGENTS.md convention) get the same project rules.
+> If you edit one, edit the other in the same PR — the two files must
+> stay byte-identical apart from this header.
+
+AGENTS_HDR_EOF
+for m in claude agents; do
+  if ! cmp -s "${mirror_tmp}/${m}_hdr" "${mirror_tmp}/${m}_hdr_want"; then
+    echo "FAIL: the header block of ${m^^}.md is not the pinned text." >&2
+    echo "      Only the header may differ between the mirrors, and its" >&2
+    echo "      exact shape is fixed. Update the pin in this script if the" >&2
+    echo "      header is intentionally reworded." >&2
+    diff "${mirror_tmp}/${m}_hdr_want" "${mirror_tmp}/${m}_hdr" | head -20 >&2
+    exit 1
+  fi
+done
 if [[ ! -s "${mirror_tmp}/claude" || ! -s "${mirror_tmp}/agents" ]]; then
   echo "FAIL: could not locate the shared '${mirror_anchor}' heading in both \
 CLAUDE.md and AGENTS.md; the mirror check would be vacuous." >&2

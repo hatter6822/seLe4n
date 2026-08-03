@@ -83,6 +83,34 @@ def is_coded(token: str) -> bool:
     return any(rx.match(c) for c in components(token) for rx in COMPONENT_CODES)
 
 
+def blank_literal(span: str) -> str:
+    """Blank a string literal but KEEP interpolation expressions.
+
+    `s!"{phase5_helper}"` (Lean) and `println!("{phase5_helper}")` (Rust
+    inline format args) both reference real identifiers from inside what
+    lexically looks like a string.  Blanking the whole literal as prose
+    hides them; Codex found the Lean case on PR #854 and the Rust case is
+    the same shape, so both are handled here.  `{{`/`}}` are escapes, not
+    interpolation.  Newlines are preserved so multi-line literals do not
+    disturb anything downstream that counts lines.
+    """
+    out, k, n, depth = [], 0, len(span), 0
+    while k < n:
+        if depth == 0 and (span.startswith("{{", k) or span.startswith("}}", k)):
+            out.append("  "); k += 2; continue
+        ch = span[k]
+        if ch == "{":
+            depth += 1; out.append(" ")
+        elif ch == "}" and depth:
+            depth -= 1; out.append(" ")
+        elif ch == "\n":
+            out.append("\n")
+        else:
+            out.append(ch if depth else " ")
+        k += 1
+    return "".join(out)
+
+
 def strip_pairs(text: str, line_comment: str, block: tuple[str, str]) -> str:
     """Blank comments and string literals, preserving offsets."""
     open_b, close_b = block
@@ -106,7 +134,7 @@ def strip_pairs(text: str, line_comment: str, block: tuple[str, str]) -> str:
             close = '"' + m.group(1)
             j = text.find(close, i + m.end() - 1)
             j = n if j < 0 else j + len(close)
-            out.append(" " * (j - i)); i = j
+            out.append(blank_literal(text[i:j])); i = j
         elif text[i] == '"':
             j = i + 1
             while j < n:
@@ -115,7 +143,7 @@ def strip_pairs(text: str, line_comment: str, block: tuple[str, str]) -> str:
                 if text[j] == '"':
                     j += 1; break
                 j += 1
-            out.append(" " * (j - i)); i = j
+            out.append(blank_literal(text[i:j])); i = j
         else:
             out.append(text[i]); i += 1
     return "".join(out)

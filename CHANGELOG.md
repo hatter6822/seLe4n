@@ -1,3 +1,44 @@
+## v0.32.124 — Interpolated strings are code; the mirror header is checked
+
+PR #854 review, thirteenth round: two P2s, both gates, both mine.
+
+**Interpolation expressions were being blanked as prose.** The naming
+scanner strips string literals before tokenising, which is right for
+`"AK7 rationale"` and wrong for `s!"{phase5_helper}"` — Lean interpolation
+holds real code inside what lexically looks like a string, so a forbidden
+identifier referenced there was invisible to the gate.
+
+Codex reported the Lean case. **Rust has the identical gap** through inline
+format args (`println!("{phase5_helper}")`, and the same in raw strings),
+which is exactly the "fixed it only where it was reported" move that
+produced the previous four rounds — so both are fixed. String blanking is
+now interpolation-aware: `{...}` spans are preserved as code, `{{`/`}}`
+stay escapes, and everything else in the literal is still blanked. Six
+cases pinned in both directions, including that ordinary prose inside a
+string remains exempt in both languages.
+
+**The mirror gate's body comparison had an unchecked prefix.** v0.32.111
+fixed this gate once (it compared shell variables, so trailing-byte
+differences slipped through). The remaining hole was upstream of that: both
+sides were extracted starting at `## What this project is`, so anything
+above the anchor was discarded from the comparison — a divergent paragraph
+of instructions added to one mirror's header region passed a gate whose
+entire claim is "byte-identical apart from this header".
+
+Both headers are fixed text that names the file and points at its mirror,
+so they are now pinned verbatim and compared byte-for-byte before the body
+check runs. The pinned text is spliced from the files themselves rather
+than retyped, so it cannot drift at authoring time.
+
+Verified by neutering, both gates and both directions: an extra
+instruction in CLAUDE.md's header now fails on the pin, body divergence
+still fails on the body check, and the clean tree passes. Rust holds at
+zero under the interpolation-aware scan; the Lean baseline is unchanged at
+199 pairs, which is itself evidence the change added no false positives.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F.3
+Refs: #854
+
 ## v0.32.123 — Naming gate: remove the categories of mistake, not the instances
 
 PR #854 review, twelfth round: four P2s, all against the gate, all valid.
