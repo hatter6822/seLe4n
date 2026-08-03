@@ -126,10 +126,10 @@
 //! | `allCores_foldl_acknowledgeShootdown_allAcked` | `round_completes_for_every_initiator` |
 //! | round identity after `shootdownRound_restores_quiescent` | `back_to_back_rounds_need_fresh_acknowledgments` |
 //! | SM7.F.3 stale-SGI closure (no Lean counterpart — a runtime-only hazard) | `stale_acknowledgment_cannot_satisfy_a_later_round`, `wait_times_out_on_stale_acknowledgments_only` |
-//! | fail-closed bounds (`CoreId` typing on the Lean side) | `sm7a3_*_panics_on_out_of_range_*` + the `ffi.rs` panic tests |
-//! | `TlbInvalidation.toOpTag` decode (SM7.B debt (1)) | `sm7b_op_tag_decode_conformance` |
-//! | `handleTlbShootdownReqOnCore` per-descriptor effect | `sm7b_retire_per_descriptor_counts_operands`, `sm7b_mailbox_publish_snapshot_roundtrip` |
-//! | coalescing / fail-safe fallback (`collapseShootdownOps`) | `sm7b_mailbox_overflow_collapses_to_vmalle1`, `sm7b_retire_torn_read_falls_back_to_full_flush` |
+//! | fail-closed bounds (`CoreId` typing on the Lean side) | `*_panics_on_out_of_range_*` + the `ffi.rs` `shootdown_core_id_checked_*` panic tests |
+//! | `TlbInvalidation.toOpTag` decode (SM7.B debt (1)) | `op_tag_decode_conformance` |
+//! | `handleTlbShootdownReqOnCore` per-descriptor effect | `retire_per_descriptor_counts_operands`, `mailbox_publish_snapshot_roundtrip` |
+//! | coalescing / fail-safe fallback (`collapseShootdownOps`) | `mailbox_overflow_collapses_to_vmalle1`, `retire_torn_read_falls_back_to_full_flush` |
 
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 
@@ -417,7 +417,7 @@ pub static SHOOTDOWN_ROUND_LOCK: AtomicBool = AtomicBool::new(false);
 /// `roundLockTryAcquire` (`TlbShootdownWait.lean`: success iff free,
 /// held afterwards either way, two consecutive attempts never both
 /// succeed); the multithreaded exclusivity stress
-/// (`sm7b7_round_lock_mutex_stress`) exercises this form on a local
+/// (`round_lock_mutex_stress`) exercises this form on a local
 /// cell so it can hammer the CAS without perturbing the global lock
 /// other tests observe.
 #[inline]
@@ -1103,14 +1103,14 @@ mod tests {
     // ------------------------------------------------------------------------
 
     #[test]
-    fn sm7a3_shootdown_ack_slot_is_one_cache_line() {
+    fn shootdown_ack_slot_is_one_cache_line() {
         // The module-scope assertion is compile-time; this confirms the
         // runtime observation matches.
         assert_eq!(core::mem::size_of::<ShootdownAckSlot>(), 64);
     }
 
     #[test]
-    fn sm7a3_shootdown_ack_slot_is_64_byte_aligned() {
+    fn shootdown_ack_slot_is_64_byte_aligned() {
         assert_eq!(core::mem::align_of::<ShootdownAckSlot>(), 64);
     }
 
@@ -1138,7 +1138,7 @@ mod tests {
     // ------------------------------------------------------------------------
 
     #[test]
-    fn sm7a3_shootdown_ack_array_has_one_slot_per_core() {
+    fn shootdown_ack_array_has_one_slot_per_core() {
         assert_eq!(SHOOTDOWN_ACK.len(), MAX_SECONDARY_CORES + 1);
         assert_eq!(SHOOTDOWN_ACK.len(), 4);
     }
@@ -1162,7 +1162,7 @@ mod tests {
     }
 
     #[test]
-    fn sm7a3_shootdown_ack_array_slots_are_distinct_cache_lines() {
+    fn shootdown_ack_array_slots_are_distinct_cache_lines() {
         let addrs: [usize; 4] = [
             &SHOOTDOWN_ACK[0] as *const ShootdownAckSlot as usize,
             &SHOOTDOWN_ACK[1] as *const ShootdownAckSlot as usize,
@@ -1188,7 +1188,7 @@ mod tests {
     }
 
     #[test]
-    fn sm7a3_shootdown_ack_array_stride_matches_struct_size() {
+    fn shootdown_ack_array_stride_matches_struct_size() {
         let addrs: [usize; 4] = [
             &SHOOTDOWN_ACK[0] as *const ShootdownAckSlot as usize,
             &SHOOTDOWN_ACK[1] as *const ShootdownAckSlot as usize,
@@ -1475,14 +1475,14 @@ mod tests {
     /// `SgiKind.tlbShootdownReq_intid` (= 1) and the gic.rs SGI
     /// reservation table.
     #[test]
-    fn sm7b3_tlb_shootdown_req_intid_matches_lean() {
+    fn tlb_shootdown_req_intid_matches_lean() {
         assert_eq!(TLB_SHOOTDOWN_REQ_INTID, 1);
     }
 
     /// SM7.B.6: the Lean `shootdownWaitTimeoutTicks` (540 000) mirrors
     /// the HAL's established bounded-wait budget (10 ms at 54 MHz).
     #[test]
-    fn sm7b_wait_timeout_matches_wfe_default() {
+    fn wait_timeout_matches_wfe_default() {
         assert_eq!(crate::cpu::WFE_DEFAULT_TIMEOUT_TICKS, 540_000);
     }
 
@@ -1491,7 +1491,7 @@ mod tests {
     /// (Serialised via the lock itself: this test owns the global for
     /// its scope because it is the only test touching it.)
     #[test]
-    fn sm7b7_round_lock_try_acquire_exclusive_roundtrip() {
+    fn round_lock_try_acquire_exclusive_roundtrip() {
         assert!(round_lock_try_acquire(), "free lock must be acquirable");
         assert!(
             !round_lock_try_acquire(),
@@ -1610,7 +1610,7 @@ mod tests {
     /// SM7.B.5: an already-satisfied round satisfies the bounded wait
     /// immediately — the clock is never consulted past the start read.
     #[test]
-    fn sm7b5_wait_immediate_when_all_acked() {
+    fn wait_immediate_when_all_acked() {
         let slots = fresh_boot_slots();
         let mut clock_reads = 0u32;
         // Generation 0 is vacuously satisfied at boot.
@@ -1625,7 +1625,7 @@ mod tests {
     /// SM7.B.5: a late acknowledgment is observed, not misreported as
     /// a timeout — the poll re-checks after every clock read.
     #[test]
-    fn sm7b5_wait_observes_late_ack() {
+    fn wait_observes_late_ack() {
         let slots = fresh_boot_slots();
         ack_round_in_slice(&slots, 1, 1);
         ack_round_in_slice(&slots, 2, 1);
@@ -1644,7 +1644,7 @@ mod tests {
     /// SM7.B.6: a round that never completes is a genuine timeout —
     /// the wait returns false once the budget elapses.
     #[test]
-    fn sm7b6_wait_times_out_when_never_acked() {
+    fn wait_times_out_when_never_acked() {
         let slots = fresh_boot_slots();
         let mut ticks = 0u64;
         let ok = wait_all_acked_bounded_in(&slots, 1, 0, &ALL_ONLINE, 100, || {
@@ -1659,7 +1659,7 @@ mod tests {
     /// re-checks the slots before returning, so a completed round can
     /// never be reported as a timeout.
     #[test]
-    fn sm7b6_wait_final_check_at_deadline() {
+    fn wait_final_check_at_deadline() {
         let slots = fresh_boot_slots();
         let mut ticks = 0u64;
         let ok = wait_all_acked_bounded_in(&slots, 1, 0, &ALL_ONLINE, 100, || {
@@ -1701,7 +1701,7 @@ mod tests {
     /// Global-path smoke only — the genuine outstanding → acknowledged
     /// transition is pinned by the `_in`-form tests below.
     #[test]
-    fn sm7b3_handler_acks_executing_core() {
+    fn handler_acks_executing_core() {
         tlb_shootdown_req_handler(TLB_SHOOTDOWN_REQ_INTID, 2);
         assert!(
             acked_gen(0) >= current_generation(),
@@ -1714,7 +1714,7 @@ mod tests {
     /// touches no other core's slot — asserted on local state so a
     /// no-op handler cannot pass.
     #[test]
-    fn sm7b3_handler_in_genuine_ack_transition_own_slot_only() {
+    fn handler_in_genuine_ack_transition_own_slot_only() {
         let mb = ShootdownOpMailbox::new();
         publish_round_ops_in(&mb, &[ShootdownOp::VMALLE1], 9);
         let slots = fresh_boot_slots();
@@ -1761,7 +1761,7 @@ mod tests {
     /// untouched (the initiator then times out and panics diagnosably,
     /// rather than proceeding over a stale TLB).
     #[test]
-    fn sm7b3_handler_in_out_of_range_acks_nothing() {
+    fn handler_in_out_of_range_acks_nothing() {
         let mb = ShootdownOpMailbox::new();
         publish_round_ops_in(&mb, &[ShootdownOp::VMALLE1], 5);
         let slots = fresh_boot_slots();
@@ -1813,7 +1813,7 @@ mod tests {
     /// SM7.B: a published operand list round-trips through the seqlock —
     /// the handler reads back EXACTLY what the initiator published.
     #[test]
-    fn sm7b_mailbox_publish_snapshot_roundtrip() {
+    fn mailbox_publish_snapshot_roundtrip() {
         let mb = ShootdownOpMailbox::new();
         let ops = [
             ShootdownOp {
@@ -1838,7 +1838,7 @@ mod tests {
     /// SM7.B: an in-progress publish (seqlock odd) is a torn read — the
     /// snapshot fails, so the handler falls back to the safe full flush.
     #[test]
-    fn sm7b_mailbox_torn_read_during_publish_is_none() {
+    fn mailbox_torn_read_during_publish_is_none() {
         let mb = ShootdownOpMailbox::new();
         publish_begin_in(&mb); // seqlock now odd — no matching commit
         assert!(
@@ -1854,7 +1854,7 @@ mod tests {
     /// SM7.B: an over-capacity commit collapses to a single `vmalle1`
     /// (the coalescing escape) rather than overflowing.
     #[test]
-    fn sm7b_mailbox_overflow_collapses_to_vmalle1() {
+    fn mailbox_overflow_collapses_to_vmalle1() {
         let mb = ShootdownOpMailbox::new();
         publish_begin_in(&mb);
         publish_commit_in(&mb, SHOOTDOWN_OP_CAPACITY + 5, 1);
@@ -1867,7 +1867,7 @@ mod tests {
     /// operand (host: the `tlbi_*` are no-ops, so we assert the returned
     /// count) — the fidelity close vs the former blanket `vmalle1`.
     #[test]
-    fn sm7b_retire_per_descriptor_counts_operands() {
+    fn retire_per_descriptor_counts_operands() {
         let mb = ShootdownOpMailbox::new();
         publish_round_ops_in(
             &mb,
@@ -1895,7 +1895,7 @@ mod tests {
     /// SM7.B: an empty round (nothing published) retires as a
     /// conservative local full flush (fallback, `None`).
     #[test]
-    fn sm7b_retire_empty_round_falls_back_to_full_flush() {
+    fn retire_empty_round_falls_back_to_full_flush() {
         let mb = ShootdownOpMailbox::new();
         publish_round_ops_in(&mb, &[], 1);
         assert_eq!(
@@ -1908,7 +1908,7 @@ mod tests {
     /// SM7.B: a torn read retires as the conservative full flush — the
     /// handler can never under-invalidate on a bad mailbox snapshot.
     #[test]
-    fn sm7b_retire_torn_read_falls_back_to_full_flush() {
+    fn retire_torn_read_falls_back_to_full_flush() {
         let mb = ShootdownOpMailbox::new();
         publish_begin_in(&mb); // odd — torn
         assert_eq!(
@@ -1921,7 +1921,7 @@ mod tests {
     /// SM7.B: a published `vmalle1` operand retires as a per-descriptor
     /// step (the coalesced-round case) — one local full flush, counted.
     #[test]
-    fn sm7b_retire_vmalle1_operand_is_one_step() {
+    fn retire_vmalle1_operand_is_one_step() {
         let mb = ShootdownOpMailbox::new();
         publish_round_ops_in(&mb, &[ShootdownOp::VMALLE1], 1);
         assert_eq!(retire_round_ops_in(&mb, 1), Some(1));
@@ -1941,7 +1941,7 @@ mod tests {
     /// decodes to the expected typed operand, and an out-of-range tag
     /// decodes to `None` (fail-safe in the handler).
     #[test]
-    fn sm7b_op_tag_decode_conformance() {
+    fn op_tag_decode_conformance() {
         use crate::tlb::{decode_tlb_invalidation, TlbInvalidation};
         assert_eq!(
             decode_tlb_invalidation(0, 7, 0x10),
@@ -1977,7 +1977,7 @@ mod tests {
     /// live (releases re-enable acquisition, the Lean
     /// `roundLockTryAcquire_after_release`).
     #[test]
-    fn sm7b7_round_lock_mutex_stress() {
+    fn round_lock_mutex_stress() {
         // Cap contenders at the host's real parallelism (min 2 so the
         // exclusivity race is genuinely exercised) — a try-lock stress
         // does not need pathological oversubscription, and capping keeps
@@ -2022,7 +2022,7 @@ mod tests {
     /// SM7.B.3: the handler registers into the SM1.F.5 table shape and
     /// dispatches through it (local table — no shared static).
     #[test]
-    fn sm7b3_handler_registration_and_dispatch() {
+    fn handler_registration_and_dispatch() {
         let mut table: [Option<crate::gic::SgiHandler>; 16] = [None; 16];
         crate::gic::register_sgi_handler_in(
             &mut table,
@@ -2038,7 +2038,7 @@ mod tests {
 
     /// SM7.B.2: the boot core is always in the online mask.
     #[test]
-    fn sm7b2_online_mask_boot_core_always_set() {
+    fn online_mask_boot_core_always_set() {
         assert_eq!(online_mask() & 1, 1, "bit 0 (boot core) always set");
     }
 
@@ -2047,7 +2047,7 @@ mod tests {
     /// IRQ-ready secondary (its `CORE_IRQ_READY` slot still `false`) is
     /// excluded, so it is never a shootdown target.
     #[test]
-    fn sm7b2_online_mask_of_excludes_not_irq_ready() {
+    fn online_mask_of_excludes_not_irq_ready() {
         // Boot core + core 2 IRQ-ready; cores 1 and 3 released but not
         // yet past `enable_irq` (or timer-dead).
         assert_eq!(
@@ -2068,7 +2068,7 @@ mod tests {
     /// hang the fix prevents.  Here we drive the shared wait predicate
     /// with the same snapshot shape `online_mask_of` would fold.
     #[test]
-    fn sm7b2_wait_and_target_masks_agree_on_not_irq_ready() {
+    fn wait_and_target_masks_agree_on_not_irq_ready() {
         let online = [true, true, false, false]; // cores 2,3 not serviceable
         let mask = online_mask_of(&online);
         assert_eq!(mask, 0b0011, "cores 2 and 3 excluded from the SGI mask");

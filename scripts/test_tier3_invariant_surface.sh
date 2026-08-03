@@ -975,8 +975,8 @@ run_check "INVARIANT" rg -n '^def tlbiLocalFullFlush' SeLe4n/Kernel/Concurrency/
 run_check "INVARIANT" rg -n '^def coreOnlineInMask' SeLe4n/Kernel/Concurrency/Runtime.lean
 run_check "INVARIANT" rg -n '^pub fn tlb_shootdown_req_handler_in' rust/sele4n-hal/src/shootdown.rs
 run_check "INVARIANT" rg -n '^pub fn round_lock_try_acquire_in' rust/sele4n-hal/src/shootdown.rs
-run_check "INVARIANT" rg -n 'fn sm7b7_round_lock_mutex_stress' rust/sele4n-hal/src/shootdown.rs
-run_check "INVARIANT" rg -n 'fn sm7b3_handler_in_genuine_ack_transition_own_slot_only' rust/sele4n-hal/src/shootdown.rs
+run_check "INVARIANT" rg -n 'fn round_lock_mutex_stress' rust/sele4n-hal/src/shootdown.rs
+run_check "INVARIANT" rg -n 'fn handler_in_genuine_ack_transition_own_slot_only' rust/sele4n-hal/src/shootdown.rs
 run_check "INVARIANT" rg -n '^private def runCompletionCutChecks' tests/SmpTlbShootdownSuite.lean
 run_check "INVARIANT" rg -n '^private def runLiveDispatchChecks' tests/SmpTlbShootdownSuite.lean
 run_check "INVARIANT" bash -c "test -x scripts/test_qemu_smp_shootdown.sh"
@@ -1002,9 +1002,9 @@ run_check "INVARIANT" rg -n 'tlb_shootdown_req_service_in\(&SHOOTDOWN_OPS' rust/
 run_check "INVARIANT" rg -n '^pub fn tlbi_local' rust/sele4n-hal/src/tlb.rs
 run_check "INVARIANT" rg -n '^pub const fn decode_tlb_invalidation' rust/sele4n-hal/src/tlb.rs
 run_check "INVARIANT" rg -n '^pub extern "C" fn ffi_shootdown_publish_slot' rust/sele4n-hal/src/ffi.rs
-run_check "INVARIANT" rg -n 'fn sm7b_retire_per_descriptor_counts_operands' rust/sele4n-hal/src/shootdown.rs
-run_check "INVARIANT" rg -n 'fn sm7b_retire_torn_read_falls_back_to_full_flush' rust/sele4n-hal/src/shootdown.rs
-run_check "INVARIANT" rg -n 'fn sm7b_op_tag_decode_conformance' rust/sele4n-hal/src/shootdown.rs
+run_check "INVARIANT" rg -n 'fn retire_per_descriptor_counts_operands' rust/sele4n-hal/src/shootdown.rs
+run_check "INVARIANT" rg -n 'fn retire_torn_read_falls_back_to_full_flush' rust/sele4n-hal/src/shootdown.rs
+run_check "INVARIANT" rg -n 'fn op_tag_decode_conformance' rust/sele4n-hal/src/shootdown.rs
 run_check "INVARIANT" rg -n '^opaque ffiShootdownPublishSlot' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^def shootdownPublishSlot' SeLe4n/Kernel/Concurrency/Runtime.lean
 run_check "INVARIANT" rg -n '^def publishShootdownOps' SeLe4n/Kernel/SyscallDispatchEntry.lean

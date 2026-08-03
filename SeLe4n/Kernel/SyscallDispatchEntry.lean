@@ -96,6 +96,29 @@ single-cluster BCM2712 pin, now derived rather than hardcoded. -/
 theorem shootdownSharingDomain_rpi5 :
     shootdownSharingDomain = .inner := rfl
 
+/-- **WS-SM SM7.B.6 + SM7.B.7**: report a fail-closed barrier violation
+and then genuinely stop.  **Never returns.**
+
+Lean's `panic!` is a diagnostic, not a barrier.  It requires
+`[Inhabited α]` precisely because the runtime prints the message and
+then returns the default value — in `BaseIO Unit`, `()` — so a bare
+`panic!` reports the violation and lets the caller carry on into the
+commit it was meant to prevent (PR #854 review; the process even exits
+`0`).  Both shootdown barriers were written that way and were therefore
+fail-*open*: the round-lock acquire returned as though it held the lock,
+and the acknowledgment timeout fell through to the catch-up commit.
+
+So the two roles are split.  `panic!` still emits the message, because
+it is the only thing here that produces one.  `Concurrency.fatalHalt`
+(Rust `ffi_fatal_halt`, `-> !`) is the stop.  The trailing recursion is
+unreachable — it exists so that this function is non-returning in
+*Lean's* semantics rather than only by the FFI's promise, which is the
+distinction the barriers got wrong in the first place. -/
+partial def haltFailClosed (msg : String) : BaseIO Unit := do
+  panic! msg
+  Concurrency.fatalHalt
+  haltFailClosed msg
+
 /-- **WS-SM SM7.B.7**: the cooperative round-lock acquire's retry
 budget.  Covers > 10⁵ round-lengths of retries (a round completes in
 < 1 µs on the 4-core BCM2712, plan §3.4) — exhaustion means a
@@ -129,9 +152,9 @@ round would be the SMP-C4 hazard). -/
 def acquireShootdownRoundLockServicingSelf
     (execCore : Concurrency.CoreId) : BaseIO Unit := do
   let rec go : Nat → BaseIO Unit
-    | 0 => panic! "WS-SM SM7.B.7: shootdown round-lock acquire exhausted \
-        its fuel — the in-flight round's holder is wedged; halting \
-        fail-closed"
+    | 0 => haltFailClosed "WS-SM SM7.B.7: shootdown round-lock acquire \
+        exhausted its fuel — the in-flight round's holder is wedged; \
+        halting fail-closed"
     | fuel + 1 => do
         if (← Concurrency.shootdownRoundLockTryAcquire) then
           pure ()
@@ -325,9 +348,9 @@ def completeShootdownRounds (changed : List Concurrency.CoreId)
       Architecture.shootdownWaitTimeoutTicks
     Concurrency.shootdownRoundLockRelease
     if !acked then
-      panic! "WS-SM SM7.B.6: TLB shootdown round timed out — a target \
-        core is hung or deaf; halting fail-closed (a silently skipped \
-        invalidation would be the SMP-C4 stale-TLB hazard)"
+      haltFailClosed "WS-SM SM7.B.6: TLB shootdown round timed out — a \
+        target core is hung or deaf; halting fail-closed (a silently \
+        skipped invalidation would be the SMP-C4 stale-TLB hazard)"
     -- WS-SM SM7.C + SM7.F.3: the model catch-up drains each *non-initiator*
     -- target's **own** posted descriptors — those in this commit's round-
     -- generation window — onto that core's per-core `perCoreTlb` view

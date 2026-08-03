@@ -589,6 +589,59 @@ def shootdownQuiescent (st : TlbShootdownState) : Prop :=
 instance (st : TlbShootdownState) : Decidable (shootdownQuiescent st) :=
   inferInstanceAs (Decidable ((∀ c : CoreId, st.pendingOnCore c = []) ∧
     allAcked st))
+/-! ### The acknowledgment mark is not a serviced prefix
+
+**WS-SM SM7.F.3 (PR #854 review).**  `ackedGenOnCore` is a monotone
+high-water mark and `ackOnCore` compares it with `≤`, which reads as
+"every round up to the open one was serviced".  On the **runtime** side
+that reading is sound: `SHOOTDOWN_ROUND_SEQ` is allocated under the
+round lock, so allocation order *is* execution order and a core that
+acknowledged `g` necessarily serviced every round it was a target of.
+
+The **model** generation orders *commits*, and since v0.32.112 commit
+order is deliberately not execution order — that separation is what
+fixed the P1.  So under a reverse interleaving (A commits generation 1
+and stalls; B commits 2 and runs its catch-up first) every core's mark
+reaches 2 while A's generation-1 descriptors are still queued.
+
+The two theorems below pin the resulting division of labour, so it is
+enforced by proof rather than by remembering it:
+
+* `allAcked` is the *wait predicate* — "every core acknowledged the open
+  round".  It does **not** imply that every posted descriptor was
+  drained, and `allAcked_not_serviced_prefix` exhibits a well-formed
+  state where it holds and work is outstanding.
+* `shootdownQuiescent` is the *completion predicate*.  Its queue half is
+  generation-exact, so it means what `allAcked` alone does not; every
+  round capstone (`shootdownRound_allAcked`, `coalescingRound_allAcked`)
+  accordingly derives from a **quiescent** pre-state rather than from an
+  acknowledgment mark. -/
+
+/-- **WS-SM SM7.F.3 (PR #854 review)** — the load-bearing negative:
+`allAcked` is not a serviced-prefix claim.
+
+A well-formed state (`ackBounded`) can satisfy `allAcked` while an
+earlier round's descriptors are still pending, so no future refactor may
+strengthen `allAcked` into "every round completed" without this
+existence proof failing.  Reachability through the real transitions —
+A posts, B commits, B's catch-up runs first — is exercised by
+`SmpTlbShootdownSuite` §8.5. -/
+theorem allAcked_not_serviced_prefix :
+    ∃ st : TlbShootdownState,
+      ackBounded st ∧ allAcked st ∧ ¬ shootdownQuiescent st := by
+  refine ⟨{ pendingShootdowns :=
+              (Vector.replicate numCores ([] : List TlbShootdownDescriptor)).set 0
+                [{ op := .vmalle1, initiator := bootCoreId, generation := 1 }],
+            shootdownAck := Vector.replicate numCores 2,
+            roundGeneration := 2 }, ?_, ?_, ?_⟩ <;> decide
+
+/-- **WS-SM SM7.F.3 (PR #854 review)**: the queues are the source of
+truth — quiescence genuinely means every posted descriptor was drained,
+which is the property `allAcked` alone does not carry. -/
+theorem shootdownQuiescent_pending_nil {st : TlbShootdownState}
+    (h : shootdownQuiescent st) (c : CoreId) :
+    st.pendingOnCore c = [] := h.1 c
+
 
 /-- **WS-SM SM7.A.6**: the boot state satisfies the capacity bound. -/
 theorem initial_pendingBounded : pendingBounded TlbShootdownState.initial := by
@@ -1886,7 +1939,7 @@ theorem roundDescriptor_inRoundWindow (sd : TlbShootdownState)
 /-- **WS-SM SM7.A (PR #838 review P1)**: with every core targeted, the
 masked round-open is exactly `beginShootdownRound` — the fully-online
 configuration collapses to the unmasked form (mechanically mirrored on
-the Rust side by `sm7f3_wait_matches_conjunction_exhaustively`, whose
+the Rust side by `wait_matches_conjunction_exhaustively`, whose
 all-online rows are the unmasked wait). -/
 theorem beginShootdownRoundFor_allCores_eq (st : TlbShootdownState)
     (initiator : CoreId) :

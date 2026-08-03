@@ -360,6 +360,23 @@ opaque ffiShootdownAllocateRoundGeneration : BaseIO UInt64
 @[extern "ffi_shootdown_round_lock_release"]
 opaque ffiShootdownRoundLockRelease : BaseIO Unit
 
+/-- **WS-SM SM7.B.6 + SM7.B.7**: park this PE permanently — the
+    fail-closed barrier's actual stop.  **Never returns.**
+
+    Lean's `panic!` cannot serve as a fail-closed barrier: it requires
+    `[Inhabited α]` precisely because the runtime prints the message and
+    then returns the default value, so in `BaseIO Unit` it reports the
+    violation and execution continues (PR #854 review).  The seam
+    therefore calls `panic!` for the diagnostic and this for the halt.
+
+    The `BaseIO Unit` type is the FFI convention, not a claim that this
+    returns — `ffi_fatal_halt` is `-> !` on the Rust side.  Callers must
+    still not rely on that alone; see `haltFailClosed`.
+
+    Rust: `ffi_fatal_halt` in `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_fatal_halt"]
+opaque ffiFatalHalt : BaseIO Unit
+
 /-- **WS-SM SM7.B.5 + B.6 + SM7.F.3**: bounded acquire-poll for round
     generation `gen` acknowledged — spins up to `timeoutTicks`
     generic-timer ticks; returns `1` on observed all-acked-for-`gen`,

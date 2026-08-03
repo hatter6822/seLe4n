@@ -53,6 +53,14 @@ import sys
 # `1` in the set, and `v0.32.1:5` would then read as a citation).
 EXTENSION_RE = re.compile(r'\.([A-Za-z][A-Za-z0-9]{0,7})$')
 
+# A Markdown fenced-code delimiter: three or more backticks or tildes, with
+# whatever info string follows. Leading whitespace is accepted at any depth
+# rather than CommonMark's 0-3 columns, because fences nested in list items are
+# indented past that in this repo's docs and treating them as prose would be a
+# regression; the delimiter *character* and *run length* are matched strictly,
+# which is what the exemption actually turns on.
+FENCE_RE = re.compile(r'^\s*(?P<delim>`{3,}|~{3,})(?P<info>.*?)\s*$')
+
 # Extensions that must always be covered regardless of what the tree happens to
 # hold today. If derivation breaks or a format disappears, the gate fails loudly
 # instead of quietly narrowing its own scope — the failure mode this check
@@ -114,13 +122,32 @@ def main() -> int:
 
     findings = []
     for path in files:
-        in_fence = False
+        # The open fence as (delimiter char, run length), or None outside a
+        # fenced block.  Tracking both is what makes the exemption match
+        # CommonMark rather than approximate it: a `~~~` block is a valid
+        # fence, and a closing fence must use the *same* character and be at
+        # least as long as the opener — so a ``` run inside a ```` block is
+        # content, not a close.  A bare toggle on '```' got both wrong,
+        # silently subjecting real transcripts to the prose rule.
+        fence = None
         with open(path, encoding='utf-8', errors='replace') as handle:
             for lineno, line in enumerate(handle, 1):
-                if line.lstrip().startswith('```'):
-                    in_fence = not in_fence
-                    continue
-                if in_fence:
+                marker = FENCE_RE.match(line)
+                if marker:
+                    delim = marker.group('delim')
+                    char, length, info = delim[0], len(delim), marker.group('info')
+                    if fence is None:
+                        # A backtick opener may not carry a backtick in its
+                        # info string (CommonMark 4.5); a tilde opener may.
+                        if not (char == '`' and '`' in info):
+                            fence = (char, length)
+                            continue
+                    elif char == fence[0] and length >= fence[1] and not info.strip():
+                        fence = None
+                        continue
+                    # Not a valid open or close: fall through and treat the
+                    # line as ordinary content.
+                if fence is not None:
                     continue
                 match = citation_re.search(line)
                 if match:

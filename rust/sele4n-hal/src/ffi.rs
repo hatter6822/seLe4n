@@ -559,6 +559,23 @@ pub extern "C" fn ffi_shootdown_round_lock_release() {
     crate::shootdown::round_lock_release();
 }
 
+/// **WS-SM SM7.B.6 + SM7.B.7**: park this PE permanently — the
+/// fail-closed barrier's actual stop.  **Never returns.**
+///
+/// Called by the Lean seam after its `panic!` has reported the
+/// violation.  The two are separate because Lean's `panic!` prints and
+/// then returns the `Inhabited` default (PR #854 review): it is the
+/// diagnostic, this is the halt.  Crossing either shootdown barrier —
+/// an unacknowledged round or a wedged round holder — means committing
+/// state whose soundness depends on an invalidation that never
+/// happened, which is the SMP-C4 stale-TLB hazard.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiFatalHalt`
+#[no_mangle]
+pub extern "C" fn ffi_fatal_halt() -> ! {
+    crate::cpu::fatal_halt()
+}
+
 /// **WS-SM SM7.B.5 + B.6 + SM7.F.3**: Bounded acquire-poll for round
 /// generation `gen` acknowledged — spins up to `timeout_ticks`
 /// generic-timer ticks.  Returns `1` on observed all-acked-for-`gen`,
@@ -2071,7 +2088,7 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "ffi_shootdown_ack_round: core_id 4 out of range")]
-    fn sm7a3_shootdown_core_id_checked_panics_out_of_range() {
+    fn shootdown_core_id_checked_panics_out_of_range() {
         let _ = shootdown_core_id_checked(4, "ffi_shootdown_ack_round");
     }
 
@@ -2079,20 +2096,20 @@ mod tests {
     #[should_panic(
         expected = "ffi_shootdown_acked_generation: core_id 18446744073709551615 out of range"
     )]
-    fn sm7a3_shootdown_core_id_checked_panics_at_u64_max() {
+    fn shootdown_core_id_checked_panics_at_u64_max() {
         let _ = shootdown_core_id_checked(u64::MAX, "ffi_shootdown_acked_generation");
     }
 
     #[test]
     #[should_panic(expected = "ffi_shootdown_wait_all_acked: core_id 4294967297 out of range")]
-    fn sm7a3_shootdown_core_id_checked_rejects_u64_with_high_bits_aliasing_slot() {
+    fn shootdown_core_id_checked_rejects_u64_with_high_bits_aliasing_slot() {
         // 0x1_0000_0001 would truncate to slot 1 on a 32-bit usize;
         // the u64-space bound check must reject it BEFORE the cast.
         let _ = shootdown_core_id_checked(0x1_0000_0001, "ffi_shootdown_wait_all_acked");
     }
 
     #[test]
-    fn sm7a3_shootdown_core_id_checked_passes_every_valid_core() {
+    fn shootdown_core_id_checked_passes_every_valid_core() {
         for core in 0..4u64 {
             assert_eq!(
                 shootdown_core_id_checked(core, "test"),
@@ -2123,7 +2140,7 @@ mod tests {
     }
 
     #[test]
-    fn sm7a3_ffi_shootdown_signatures_pinned() {
+    fn ffi_shootdown_signatures_pinned() {
         // Pin every shootdown FFI export signature; an ABI change
         // that broke the Lean @[extern] bindings would surface here.
         let _: extern "C" fn(u64, u64) = ffi_shootdown_ack_round;

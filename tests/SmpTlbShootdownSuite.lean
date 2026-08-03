@@ -849,7 +849,7 @@ example (l : SeLe4n.Kernel.Concurrency.LockId) (initiator : CoreId) :
 
 -- SM7.B.6: the Lean wait budget mirrors the HAL constant (10 ms at
 -- the 54 MHz generic timer; Rust side pinned by
--- `sm7b_wait_timeout_matches_wfe_default`).
+-- `wait_timeout_matches_wfe_default`).
 example : shootdownWaitTimeoutTicks = 540000 :=
   shootdownWaitTimeoutTicks_value
 

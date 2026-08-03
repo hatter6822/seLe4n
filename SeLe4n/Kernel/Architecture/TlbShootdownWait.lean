@@ -547,7 +547,7 @@ new holder on success, by the existing holder on failure). -/
 intervening release cannot both succeed — the second attempt always
 finds the lock held.  This is the at-most-one-initiator property that
 serialises rounds (the runtime stress witness is the Rust
-`sm7b_round_lock_*` HAL tests). -/
+`round_lock_*` HAL tests). -/
 theorem roundLockTryAcquire_mutex (held : Bool) :
     ¬((roundLockTryAcquire held).1 = true ∧
       (roundLockTryAcquire (roundLockTryAcquire held).2).1 = true) := by
@@ -654,7 +654,7 @@ ticks — 10 ms at the BCM2712 54 MHz generic timer.  Mirrors the Rust
 `cpu::WFE_DEFAULT_TIMEOUT_TICKS` (the established bounded-wait budget
 of the SM1/SM2 spin primitives); the conformance is pinned by
 `shootdownWaitTimeoutTicks_value` here and the
-`sm7b_wait_timeout_matches_wfe_default` HAL test on the Rust side.  A
+`wait_timeout_matches_wfe_default` HAL test on the Rust side.  A
 round completes in < 1 µs on the 4-core BCM2712 (plan §3.4), so the
 budget carries four orders of magnitude of slack — a timeout means a
 genuinely hung or deaf target core, which v1.0.0 treats as fatal

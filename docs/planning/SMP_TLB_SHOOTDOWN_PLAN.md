@@ -490,7 +490,7 @@ residual with an explicit target.
 * **Rust-handler formal refinement — NARROWED.**  The per-descriptor
   handler now REFINES the Lean `handleTlbShootdownReqOnCore` TLB effect
   *operand-for-operand* (was "⊇, full flush"): the op-tag decode is
-  pinned identical on both sides (`sm7b_op_tag_decode_conformance`
+  pinned identical on both sides (`op_tag_decode_conformance`
   ↔ `TlbInvalidation.toOpTag`/`toAsid`/`toVaddr`, exercised in suite
   §4.11), and the retire path is unit-tested to issue exactly the
   published operands.  Residual: the end-to-end machine-checked
@@ -573,7 +573,7 @@ Two P1 review findings on PR #839.
   mappings that are never unmapped).  Lean side is FFI-backed
   (`ffiShootdownOnlineMask` / `shootdownOnlineMask`), so only docstring
   prose changed there.  Rust: `online_mask_of` (testable fold) +
-  `irq_ready_online` + 2 new unit tests (`sm7b2_online_mask_of_*`,
+  `irq_ready_online` + 2 new unit tests (`online_mask_of_*`,
   `sm7b2_reset_and_target_masks_agree_*`); HAL 780 → 782.
 * **Comment 2 — model posting/catch-up not round-lock-serialised —
   TRACKED DEBT (model-fidelity, NOT a hardware hazard).**  The model
@@ -871,7 +871,7 @@ runtime generation keys the acknowledgment channel and is allocated by
 `SHOOTDOWN_ROUND_SEQ` performed **under the round lock**, so allocation
 order is execution order by construction.  0-based, returning
 pre-increment + 1, so no round carries the vacuously-satisfied generation 0.
-Regression witness `sm7f3_newer_round_acks_cannot_satisfy_an_older_unexecuted_round`
+Regression witness `newer_round_acks_cannot_satisfy_an_older_unexecuted_round`
 runs the three-round interleaving under both schemes and asserts the old one
 passes with nothing serviced.
 
@@ -1030,10 +1030,11 @@ its diff recovery, core 0's catch-up draining only generation 1 while cores
 whole-queue catch-up *would* have swallowed them, every commit's own catch-up
 run in turn ending quiescent with no page left cached, the
 single-round bridge (window catch-up = whole-queue catch-up), diff-recovery
-precision, and empty-window inertness.  Rust: `sm7f3_*` (the
-`sm7f3_stale_acknowledgment_cannot_satisfy_a_later_round` regression test is
+precision, and empty-window inertness.  Rust: the generation-tagging
+group in `shootdown.rs` (the
+`stale_acknowledgment_cannot_satisfy_a_later_round` regression test is
 the security fix's direct witness, with
-`sm7f3_wait_times_out_on_stale_acknowledgments_only` its wait-loop
+`wait_times_out_on_stale_acknowledgments_only` its wait-loop
 companion), the exhaustive 2⁴ × 4-initiator wait-predicate conformance, the
 handler/self-service generation tests, and the mailbox generation round-trip
 plus its mismatch fallback.  HAL 798 → 800; golden trace byte-identical.

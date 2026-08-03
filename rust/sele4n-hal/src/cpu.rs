@@ -388,6 +388,54 @@ pub fn nop() {
     }
 }
 
+/// **WS-SM SM7.B.6 + SM7.B.7 — the fail-closed barrier's actual stop.**
+///
+/// Park this PE permanently.  Never returns.
+///
+/// The kernel has two fail-closed barriers that must not be crossed: the
+/// shootdown acknowledgment timeout (a target never certified its TLB
+/// invalidation) and the round-lock acquire's fuel exhaustion (the
+/// in-flight round's holder is wedged).  Both exist because *proceeding*
+/// is the SMP-C4 stale-TLB hazard — the caller's next act is to commit
+/// state whose soundness depends on the round having completed.
+///
+/// Lean's `panic!` cannot be that barrier.  It requires `[Inhabited α]`
+/// precisely because the runtime prints the message and then **returns
+/// the default value**; in `BaseIO Unit` that is `()`, so a `panic!`
+/// reports the violation and lets execution continue (PR #854 review).
+/// `panic!` is therefore the diagnostic and this is the halt — the two
+/// are called in sequence, and only this one is load-bearing.
+///
+/// Interrupts are masked before parking so a pending SGI cannot resume a
+/// core that has already declared its view untrustworthy, and the PE is
+/// left in WFE rather than powered off so a debugger can still read the
+/// state that produced the fault.
+pub fn fatal_halt() -> ! {
+    #[cfg(target_arch = "aarch64")]
+    {
+        // SAFETY: DAIFSet masks D/A/I/F at EL1 — always permitted, and
+        // required here: this PE must not service another round's SGI
+        // after declaring itself unable to complete one.
+        unsafe { core::arch::asm!("msr daifset, #0xf", options(nomem, nostack)) };
+        loop {
+            // SAFETY: WFE is a hint instruction. (ARM ARM C6.2.353)
+            unsafe { core::arch::asm!("wfe", options(nomem, nostack, preserves_flags)) }
+        }
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        // Host builds: a Rust `panic!` genuinely diverges (it aborts
+        // under `panic = "abort"`, and fails the test under `cargo
+        // test`), unlike the Lean `panic!` this function exists to
+        // replace.  A test that reaches a fail-closed barrier must fail
+        // loudly rather than park a thread forever.
+        panic!(
+            "WS-SM SM7.B: fail-closed halt reached — a shootdown round could \
+             not be completed; continuing would be the SMP-C4 stale-TLB hazard"
+        );
+    }
+}
+
 /// Exception Return — returns from EL1 to the exception level recorded in
 /// SPSR_EL1, restoring PC from ELR_EL1.
 ///
@@ -708,5 +756,39 @@ mod tests {
         sev();
         sev();
         wfe();
+    }
+}
+
+#[cfg(test)]
+mod fail_closed_halt_tests {
+    use super::*;
+
+    /// **WS-SM SM7.B.6 + SM7.B.7 (PR #854 review P1)** — the fail-closed
+    /// halt genuinely does not return.
+    ///
+    /// This is the property the Lean `panic!` did *not* have, which is
+    /// the whole reason this primitive exists: Lean's `panic!` requires
+    /// `[Inhabited α]` because it prints and then returns the default,
+    /// so both shootdown barriers reported their violation and let the
+    /// caller proceed into the commit they were meant to prevent.
+    ///
+    /// On a host build `fatal_halt` diverges by Rust `panic!` (which
+    /// aborts under `panic = "abort"`); on AArch64 it masks interrupts
+    /// and parks the PE in a WFE loop.  Either way control never
+    /// reaches the caller — `#[should_panic]` is the host-observable
+    /// form of that.
+    #[test]
+    #[should_panic(expected = "fail-closed halt reached")]
+    fn fatal_halt_does_not_return() {
+        fatal_halt();
+    }
+
+    /// The signature itself carries the guarantee: `fn() -> !` cannot be
+    /// coerced from a returning function, so this fails to compile if
+    /// anyone ever "fixes" `fatal_halt` into something that falls
+    /// through.  Same structural check `psci::system_off` uses.
+    #[test]
+    fn fatal_halt_signature_is_never_returning() {
+        let _f: fn() -> ! = fatal_halt;
     }
 }

@@ -2294,7 +2294,7 @@ mod tests {
     /// SM7.B.3: classification reads the INTID field only — the SGI
     /// source-CPU bits (IAR[12:10]) never change the verdict.
     #[test]
-    fn sm7b3_classify_iar_ignores_source_cpu_bits() {
+    fn classify_iar_ignores_source_cpu_bits() {
         assert_eq!(classify_iar(1), AckResult::Handled(1));
         assert_eq!(classify_iar(1 | (3 << 10)), AckResult::Handled(1));
         assert_eq!(classify_iar(300), AckResult::OutOfRange(300));
@@ -2305,7 +2305,7 @@ mod tests {
     /// §4.4.5 SGI CPUID matching rule (EOI-ing with the masked INTID
     /// only would strand the per-source SGI instance active).
     #[test]
-    fn sm7b3_dispatch_with_iar_eois_full_iar() {
+    fn dispatch_with_iar_eois_full_iar() {
         let raw = 1u32 | (2 << 10); // SGI INTID 1 from CPU 2
         let mut eoi_value = None;
         let mut handler_args = None;
@@ -2321,7 +2321,7 @@ mod tests {
 
     /// SM7.B.3: spurious IARs receive neither EOI nor dispatch.
     #[test]
-    fn sm7b3_dispatch_with_iar_spurious_no_eoi() {
+    fn dispatch_with_iar_spurious_no_eoi() {
         let mut eoi_fired = false;
         let mut handler_fired = false;
         let handled =
@@ -2334,7 +2334,7 @@ mod tests {
     /// SM7.B.3: out-of-range INTIDs get the lifecycle-closing EOI but
     /// no handler dispatch (AK3-C.4, preserved in the full-IAR form).
     #[test]
-    fn sm7b3_dispatch_with_iar_out_of_range_eoi_only() {
+    fn dispatch_with_iar_out_of_range_eoi_only() {
         let mut eoi_value = None;
         let mut handler_fired = false;
         let handled =

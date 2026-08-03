@@ -1,3 +1,74 @@
+## v0.32.117 — Make the fail-closed shootdown barriers actually halt
+
+PR #854 review, sixth round. Two P1s, two P2s, and a sweep of every
+review thread on the PR — several of which had never been answered.
+
+**SECURITY — both shootdown fail-closed barriers were fail-open.**
+`SyscallDispatchEntry`'s round-lock fuel exhaustion and acknowledgment
+timeout both reported the violation with Lean's `panic!` and then carried
+on. `panic!` requires `[Inhabited α]` precisely because the runtime prints
+the message and returns the default value; in `BaseIO Unit` that is `()`.
+Confirmed by running it rather than reasoning about it — the message
+printed, execution continued, and the process exited `0`.
+
+The consequences are the SMP-C4 stale-TLB hazard in both cases. The
+acquire returned as though it held the round lock, so the caller went on
+to allocate a generation and overwrite the shared mailbox while the real
+holder was still running. The timeout fell through into
+`shootdownCatchUpPerCoreInWindow`, marking the model caught up when a
+target had never certified its invalidation. High severity once bootable
+(SM9.E); not reachable today.
+
+Fixed by splitting the two roles. `panic!` keeps the diagnostic, since it
+is the only thing there that produces a message; `cpu::fatal_halt` — a
+Rust `-> !` that masks interrupts and parks the PE in a WFE loop, reached
+through the new `ffi_fatal_halt` seam — is the halt. Interrupts are masked
+first so a core that has declared its view untrustworthy cannot then
+service another round's SGI. `haltFailClosed` also recurses after the
+call, which is unreachable, so the function is non-returning in *Lean's*
+semantics and not only by the FFI's promise — the distinction the
+barriers got wrong to begin with. Witnessed by `fatal_halt_does_not_return`
+(`#[should_panic]` on host) and a `fn() -> !` signature check that fails to
+compile if anyone makes it fall through.
+
+**Workstream codes out of 37 test identifiers.** The review flagged the
+`sm7f3_*` prefixes; those were renamed a commit earlier, but the same
+sweep found `sm7a3_`, `sm7b2_`, `sm7b3_`, `sm7b5_`, `sm7b6_`, `sm7b7_` and
+`sm7b_` still in place across `shootdown.rs`, `ffi.rs` and `gic.rs` — all
+three heavily modified by this PR, which is the condition the naming rule
+attaches to renaming historical identifiers. Every prefix was stripped
+(the remainder was already semantic), checked for collisions against the
+whole crate first. Five Tier-3 anchors and six doc references pointed at
+the old names and would have failed; each now names a test that exists.
+Two references naming tests SM7.F.3 *deleted* with `reset_for_round` are
+left as historical record, since renaming them would invent a symbol.
+
+**The acknowledgment mark is not a serviced prefix, now by proof.**
+`ackOnCore` compares a monotone high-water mark with `≤`, which reads as
+"every round up to the open one was serviced". That reading is sound for
+the runtime generation (allocated under the round lock, so allocation
+order is execution order) and *not* for the model's, which orders commits
+— the separation that fixed the P1. An audit of all three `allAcked`
+consumers found none actually treats it as a prefix: every capstone
+derives from a quiescent pre-state. But that was discipline, not
+structure, so it is now pinned — `allAcked_not_serviced_prefix` exhibits a
+well-formed state where `allAcked` holds with work outstanding, and
+`shootdownQuiescent_pending_nil` records that the queues are the source of
+truth. Both axiom-clean. A future refactor cannot strengthen `allAcked`
+into "every round completed" without the existence proof failing.
+
+**Markdown fences.** `check_source_line_citations.py` recognised only
+backticks and toggled unconditionally, so a `~~~` transcript was treated
+as prose and a ``` run inside a ```` block closed it early — the exemption
+the script advertises did not cover valid fences. It now tracks the
+delimiter character and run length per CommonMark.
+
+Rust 1097 → 1099 (HAL 802 → 804), zero ignored; `test_full.sh` green;
+trace byte-identical.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F.3
+Refs: #854
+
 ## v0.32.116 — Sweep the commit/runtime generation conflation out of every contract
 
 PR #854 review, fifth round. One finding, and it is the third separate site

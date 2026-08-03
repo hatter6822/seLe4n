@@ -581,6 +581,11 @@ def shootdownAllocateRoundGeneration : BaseIO Nat := do
 def shootdownRoundLockRelease : BaseIO Unit :=
   Platform.FFI.ffiShootdownRoundLockRelease
 
+/-- **WS-SM SM7.B.6 + SM7.B.7**: park this PE permanently.  **Never
+    returns** — see `Platform.FFI.ffiFatalHalt`. -/
+def fatalHalt : BaseIO Unit :=
+  Platform.FFI.ffiFatalHalt
+
 /-- **WS-SM SM7.B.5 + B.6 + SM7.F.3**: bounded acquire-poll for round
     generation `gen` acknowledged — the runtime wait loop
     (`Architecture.waitAllAckedBounded`'s realisation); `false` means
