@@ -384,11 +384,12 @@ initiator (plan §3.2 step 2, `allCores \ {c₀}`).
 This is the *model-complete* target set: the pure round discharges the
 invalidation obligation of every non-initiator core, so Theorem 3.3.1
 quantifies over all of `allCores`.  The *runtime* seam masks delivery
-to online cores only (the SM7.A PR #838 P1 obligation): the Rust
-`reset_for_round` leaves offline cores born-acknowledged and the entry
-fires SGIs only at online targets — safe because every secondary
-bring-up runs `tlbi vmalle1` before enabling its MMU, so a core that
-was offline during a round onlines with an empty TLB. -/
+to online cores only (the SM7.A PR #838 P1 obligation): the entry fires
+SGIs only at online targets and the Rust wait
+(`all_acked_for_round_in_slice`) is taken over that same online mask,
+so an offline core is simply never waited on — safe because every
+secondary bring-up runs `tlbi vmalle1` before enabling its MMU, so a
+core that was offline during a round onlines with an empty TLB. -/
 def shootdownTargets (initiator : CoreId) : List CoreId :=
   allCores.filter (fun c => c != initiator)
 

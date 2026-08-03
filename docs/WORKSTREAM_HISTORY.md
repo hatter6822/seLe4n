@@ -46,6 +46,32 @@ by `fetch_max`), the handler latches it before any TLB work, and the reset is
 gone entirely along with the window it lived in.  Residual: SM7.F.4(b)(iv), the
 user-unreachable ASID-allocate, stays gated on SM8.
 
+**Audit cut (v0.32.110).**  A deep audit of the v0.32.105–109 cut, checked
+against the code rather than the documentation describing it.  No live safety
+defect, but three real gaps.  (1) The **12th `proofLayerInvariantBundle`
+conjunct was not carried across the live catch-up**: SM7.B proved
+`pendingBounded` for the *single-view* handler, v0.32.81 swapped the live fold
+to the per-core handler and v0.32.105 restricted it to the round window, and
+neither cut carried it forward — so the transition `completeShootdownRounds`
+actually runs had no bound proof.  Five theorems close it; the gap mattered
+because a window drain *deliberately* leaves foreign descriptors queued, so
+unlike a whole-queue drain the bound does not fall out.  (2) The
+**capacity-bound justification was false** — it argued the round lock means
+"at most one round's descriptors in flight per target", which is precisely
+what SM7.F.3 refutes, and the counterexample needs no concurrency (the retype
+wrappers open one round per flushed ASID).  The constant is sound; the bound is
+maintained by construction rather than by that counting argument, so the prose
+was corrected, along with five references to SM7.F.3-removed Rust symbols.
+(3) **Gate honesty** — `test_rust.sh` printed only the cargo log tail,
+summarising a 1093-test run as "1 passed"; it now aggregates per-binary results
+and flags skipped tests, which surfaced two ```` ```ignore ```` doctests against
+the standing zero-`#[ignore]` claim.  Converting them found that all four print
+macros were `#[macro_export]`ed while expanding to the `pub(crate)`
+`with_boot_uart`, so none of them compiled for any consumer of the crate.  Suite
+§8 29 → 44 assertions, including the first **width-2 round window** (a live
+different-ASID retype opens two rounds; the load-bearing negative is that a
+width-1 window strands the first round on every remote core).
+
 **Prior sub-phase: SM7.E tests + fixtures LANDED (v0.32.103)** — the SM7
 closure phase: the four-core concurrent-unmap storm (with the per-core
 handler commutativity theorem the model gap surfaced), the cross-cluster

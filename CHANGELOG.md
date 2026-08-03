@@ -1,3 +1,99 @@
+## v0.32.110 — SM7.F.3 audit: the 12th conjunct carried, four false docstrings corrected, two dead doctests revived
+
+A deep audit of the v0.32.105–109 cut, run against the code rather than against
+the documentation describing it. Nothing in it was a live safety defect; every
+finding was a claim that had stopped being true, a proof obligation the live
+seam did not carry, or a gate that reported more coverage than it had.
+
+**The invariant gap (the substantive one).** SM7.B carried `pendingBounded` —
+the 12th `proofLayerInvariantBundle` conjunct — through the *single-view*
+handler. v0.32.81 then swapped the live catch-up fold to the **per-core**
+handler and v0.32.105 restricted it to the commit's round window, and neither
+cut carried the conjunct forward, so the transition
+`SyscallDispatchEntry.completeShootdownRounds` actually runs had no bound
+proof at all. It does now, through five new theorems in `PerCoreTlbModel.lean`:
+`handleTlbShootdownReqOnCorePerCore{,InWindow}_preserves_pendingBounded`, the
+fold, `shootdownCatchUpPerCore{,InWindow}_preserves_pendingBounded`. Each step
+is definitional on `tlbShootdown` — the per-core handlers write only
+`perCoreTlb` on top of their single-view counterparts, and
+`drainInitiatorPerCoreView` writes only the initiator's view — so the bound
+rides the SM7.B lemmas rather than being re-derived. The gap mattered because a
+window drain *deliberately* leaves foreign descriptors queued: unlike a
+whole-queue drain it does not empty the queues, so the bound does not fall out.
+
+**Four docstrings that were false.** The capacity-bound justification in
+`TlbShootdown.lean` (module header and `maxPendingPerCore`) argued that the
+global round lock serialises rounds, so "at most one round's descriptors are in
+flight per target". SM7.F.3 exists precisely because that is wrong, and the
+counterexample needs no concurrency: the retype wrappers open one round per
+flushed ASID, so a single two-ASID commit queues generations 1 and 2 on every
+remote core before any drain. The bound is fine — it is maintained by
+construction (`enqueueShootdown` fails closed, `enqueueShootdownOrCoalesce`
+collapses to a covering `.vmalle1`), not by that counting argument — so the
+prose was corrected rather than the constant. The module header's
+round-serialisation section now also states what the runtime refines and why:
+the Rust ack channel carries a generation because a `.tlbShootdownReq` SGI can
+stay pending across the cooperative round-lock acquire and be taken inside a
+later round, a delivery shape the model — where a handler application is an
+explicit function call — cannot represent.
+
+**Five references to symbols that no longer exist.** SM7.F.3 removed the ack
+reset; `reset_for_round_in_slice_masked`,
+`sm7a3_masked_reset_all_online_equals_unmasked_reset` and three prose mentions
+of `reset_for_round` survived it in `TlbShootdown.lean`,
+`TlbShootdownProtocol.lean`, `TlbShootdownWait.lean`, `smp.rs` and `lib.rs`.
+Each now names the live symbol, and where the reset carried an argument — the
+PR #838 online mask, the PR #839 `CORE_IRQ_READY` snapshot — the replacement
+says where that argument moved (onto the wait). The dead global
+`publish_round_ops` wrapper is gone; the live path drives the three `_in` entry
+points across the FFI boundary because it never holds a Rust slice, and the
+retained batch helper now says so.
+
+**Tests.** §8 gains 15 assertions (29 → 44). Nine cover the new conjunct at the
+point the drain is weakest — mid-storm, with three concurrent rounds' work still
+pending, checked to be genuinely non-empty so the assertion cannot pass
+vacuously. Six cover a round window **wider than one generation**: every prior
+group exercised a single-round commit, where `roundGen := window.2` and a
+width-1 window would be indistinguishable from a correct one. A live
+`lifecycleRetypeWithCleanupShootdownPerCore` into a different-ASID `.vspaceRoot`
+opens two rounds, the recovered window is `(0, 2]`, and the commit's own
+catch-up drains both — with the load-bearing negative that a width-1 window
+strands the first round's descriptors on every remote core. Suite 303 → 318
+runtime assertions; six `#check` anchors and three Tier-3 anchors added.
+
+**Gates that over-reported.** `test_rust.sh` printed the tail of the cargo log,
+so a 1093-test workspace run was summarised as "1 passed" — whichever binary ran
+last happened to be a single-doctest crate. It now aggregates the per-binary
+`test result:` lines, and flags skipped tests rather than letting them hide in a
+green summary. That immediately surfaced **two ignored doctests** against the
+project's standing "zero `#[ignore]`'d" claim: both were ```` ```ignore ````
+fences, which are not compiled at all and so rot silently.
+
+Converting them found a real defect. All four print macros — `kprint!`,
+`kprintln!`, `kprint_core!`, `kprintln_core!` — are `#[macro_export]`ed but
+expand to `$crate::uart::with_boot_uart`, which was `pub(crate)`: exported in
+name only, unusable by any consumer of the crate. The seam is now
+`#[doc(hidden)] pub` (a macro-expansion seam, not API to reach for directly),
+which makes the export true; the `kprintln_core!` doctest compiles as an
+external crate and is the regression gate on it. Rust 1093 → 1095 passing, **0
+ignored**, HAL still 800, clippy and rustfmt clean.
+
+`find_large_lean_files.sh` reported drifted paths through an unquoted `printf`
+expansion, which word-splits — a path containing a space would have been
+reported as two files; it now indents with `sed`.
+
+§8 is now three helpers behind a thin dispatcher: the additions pushed
+`runRoundGenerationChecks` to 209 lines, past the ~150-line threshold the
+project keeps for deep `do`-chains (they compile to nested C `if`-trees that can
+exceed clang's `-fbracket-depth`). C-scope depth resets at each function
+boundary, so the parts each stay well inside it.
+
+Every claim above was checked against the code: the conformance-pairing table in
+`shootdown.rs` cites 16 tests and all 16 exist, `--tolerance` was probed at
+0/1/5/100 and on invalid input (exit 2), the five new theorems are axiom-clean
+(`propext`, `Quot.sound`), the five changed Lean modules build with zero linter
+warnings, and the golden trace fixture is byte-identical.
+
 ## v0.32.109 — stale source citations removed, and the habit gated
 
 The v0.32.108 entry recorded 58 stale `file.rs:NNN` citations as reported-but-

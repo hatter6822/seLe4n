@@ -1065,6 +1065,13 @@ run_check "INVARIANT" rg -n '^theorem shootdownCatchUpPerCoreInWindow_eq_catchUp
 run_check "INVARIANT" rg -n 'shootdownCatchUpPerCoreInWindow st execCore collapsed' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n 'Architecture.shootdownRoundWindow st st' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^private def runRoundGenerationChecks' tests/SmpTlbShootdownSuite.lean
+# The 12th `proofLayerInvariantBundle` conjunct (`pendingBounded`) carried across
+# the transition the live catch-up seam runs.  A window drain deliberately leaves
+# foreign descriptors queued, so — unlike a whole-queue drain — it does not empty
+# the queues and the bound has to be carried rather than fall out.
+run_check "INVARIANT" rg -n '^theorem handleTlbShootdownReqOnCorePerCoreInWindow_preserves_pendingBounded' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
+run_check "INVARIANT" rg -n '^theorem foldl_handleTlbShootdownReqOnCorePerCoreInWindow_preserves_pendingBounded' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
+run_check "INVARIANT" rg -n '^theorem shootdownCatchUpPerCoreInWindow_preserves_pendingBounded' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
 # The generation-carrying acknowledgment channel (Rust mirror).  The reset is
 # GONE by design — a negative anchor keeps it from coming back, since a reset
 # would erase the monotonicity the whole mechanism rests on.

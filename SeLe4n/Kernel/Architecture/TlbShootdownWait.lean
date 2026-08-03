@@ -586,15 +586,18 @@ def shootdownRoundLockAcquireCas (base : Nat) (next : CoreId)
 
 /-- **WS-SM SM7.B.7** (`shootdownRoundLock_release_acquire`): the
 cross-round publication chain.  If the previous holder's last
-critical-section access (`e_crit` — its masked ack reset, its posted
-queues, its catch-up commit) is sequenced before its lock release
-`e_rel`, the release synchronizes-with the next holder's successful
-CAS `e_acq`, and that CAS is sequenced before the next holder's first
-critical-section access `e_next`, then `e_crit` happens-before
-`e_next`.  This is what makes the ack vector safe *without* a round
-identity: under the serialised lock, a new round's
-`reset_for_round` can never race a previous round's ack traffic —
-every prior-round access is ordered before the reset. -/
+critical-section access (`e_crit` — its operand publication, its
+posted queues, its catch-up commit) is sequenced before its lock
+release `e_rel`, the release synchronizes-with the next holder's
+successful CAS `e_acq`, and that CAS is sequenced before the next
+holder's first critical-section access `e_next`, then `e_crit`
+happens-before `e_next`.  This is what makes the single-round
+`SHOOTDOWN_OPS` mailbox safe to reuse: under the serialised lock a new
+round's publication can never race the previous round's, so every
+prior-round access is ordered before it.  (Robustness of the
+*acknowledgment* channel against a stale SGI delivered inside a later
+round is a separate, stronger property, supplied by SM7.F.3's
+generation tagging rather than by this edge.) -/
 theorem shootdownRoundLock_release_acquire (t : MemoryTrace)
     {e_crit e_rel e_acq e_next : MemoryEvent}
     (h_holder : sequencedBefore t e_crit e_rel)

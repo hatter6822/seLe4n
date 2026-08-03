@@ -1973,6 +1973,93 @@ theorem shootdownCatchUpPerCoreInWindow_preserves_tlbInvalidationConsistent_perC
     (foldl_handleTlbShootdownReqOnCorePerCoreInWindow_preserves_consistent lo hi _ st h)
 
 -- ============================================================================
+-- SM7.C/SM7.F.3 — Invariant-bundle carriage (`pendingBounded`, the 12th
+-- `proofLayerInvariantBundle` conjunct) across the per-core catch-up
+--
+-- SM7.B carried the 12th conjunct through the *single-view* handler
+-- (`handleTlbShootdownReqOnCore{,InWindow}_preserves_pendingBounded`), but
+-- v0.32.81 swapped the live catch-up fold to the **per-core** handler and
+-- v0.32.105 restricted it to the commit's round window, so the conjunct now
+-- has to be carried on the transition the seam actually runs.
+--
+-- Every step here is definitional on the `tlbShootdown` field: the per-core
+-- handlers write only `perCoreTlb` on top of their single-view counterparts
+-- (`…_tlbShootdown_eq` is `rfl`) and `drainInitiatorPerCoreView` writes only
+-- the initiator's view (`drainInitiatorPerCoreView_tlbShootdown` is `rfl`), so
+-- the bound rides the SM7.B lemmas unchanged rather than being re-derived.
+-- ============================================================================
+
+/-- **WS-SM SM7.C**: the operational per-core handler preserves the pending
+bound — its shootdown-state effect is the single-view handler's, which only
+drains. -/
+theorem handleTlbShootdownReqOnCorePerCore_preserves_pendingBounded
+    {st : SystemState} (hB : pendingBounded st.tlbShootdown) (c : CoreId) :
+    pendingBounded (handleTlbShootdownReqOnCorePerCore st c).tlbShootdown := by
+  rw [handleTlbShootdownReqOnCorePerCore_tlbShootdown_eq]
+  exact handleTlbShootdownReqOnCore_preserves_pendingBounded hB c
+
+/-- **WS-SM SM7.F.3**: the window-restricted per-core handler preserves the
+pending bound.  A window drain removes a *sub*list of the whole-queue drain, so
+the bound survives the descriptors it deliberately leaves behind. -/
+theorem handleTlbShootdownReqOnCorePerCoreInWindow_preserves_pendingBounded
+    {st : SystemState} (hB : pendingBounded st.tlbShootdown) (c : CoreId)
+    (lo hi : Nat) :
+    pendingBounded
+      (handleTlbShootdownReqOnCorePerCoreInWindow st c lo hi).tlbShootdown := by
+  rw [handleTlbShootdownReqOnCorePerCoreInWindow_tlbShootdown_eq]
+  exact handleTlbShootdownReqOnCoreInWindow_preserves_pendingBounded hB c lo hi
+
+/-- **WS-SM SM7.F.3**: the catch-up fold over the round's targets preserves the
+pending bound. -/
+theorem foldl_handleTlbShootdownReqOnCorePerCoreInWindow_preserves_pendingBounded
+    (lo hi : Nat) (cs : List CoreId) {st : SystemState}
+    (hB : pendingBounded st.tlbShootdown) :
+    pendingBounded
+      (cs.foldl (fun s c => handleTlbShootdownReqOnCorePerCoreInWindow s c lo hi)
+        st).tlbShootdown := by
+  induction cs generalizing st with
+  | nil => simpa using hB
+  | cons t rest ih =>
+    rw [List.foldl_cons]
+    exact ih (handleTlbShootdownReqOnCorePerCoreInWindow_preserves_pendingBounded hB t lo hi)
+
+/-- **WS-SM SM7.F.3**: the live catch-up
+(`SyscallDispatchEntry.completeShootdownRounds`) carries the **12th
+`proofLayerInvariantBundle` conjunct**.  The initiator drain touches only
+`perCoreTlb`, so the bound is exactly the target fold's. -/
+theorem shootdownCatchUpPerCoreInWindow_preserves_pendingBounded
+    {st : SystemState} (hB : pendingBounded st.tlbShootdown) (execCore : CoreId)
+    (ops : List TlbInvalidation) (lo hi : Nat) :
+    pendingBounded
+      (shootdownCatchUpPerCoreInWindow st execCore ops lo hi).tlbShootdown := by
+  unfold shootdownCatchUpPerCoreInWindow
+  rw [drainInitiatorPerCoreView_tlbShootdown]
+  exact foldl_handleTlbShootdownReqOnCorePerCoreInWindow_preserves_pendingBounded
+    lo hi (shootdownTargets execCore) hB
+
+/-- **WS-SM SM7.C**: the whole-queue per-core catch-up (the v0.32.81 live form,
+superseded by the window form above) preserves the pending bound too, so the
+conjunct does not depend on which drain the seam runs. -/
+theorem shootdownCatchUpPerCore_preserves_pendingBounded
+    {st : SystemState} (hB : pendingBounded st.tlbShootdown) (execCore : CoreId)
+    (ops : List TlbInvalidation) :
+    pendingBounded (shootdownCatchUpPerCore st execCore ops).tlbShootdown := by
+  unfold shootdownCatchUpPerCore
+  rw [drainInitiatorPerCoreView_tlbShootdown]
+  suffices h : ∀ (cs : List CoreId) (s : SystemState),
+      pendingBounded s.tlbShootdown →
+      pendingBounded
+        (cs.foldl handleTlbShootdownReqOnCorePerCore s).tlbShootdown from
+    h (shootdownTargets execCore) st hB
+  intro cs
+  induction cs with
+  | nil => intro s hs; simpa using hs
+  | cons t rest ih =>
+    intro s hs
+    rw [List.foldl_cons]
+    exact ih _ (handleTlbShootdownReqOnCorePerCore_preserves_pendingBounded hs t)
+
+-- ============================================================================
 -- SM7.F.1 — Translation-walk fill seam (PR #844 review-2 P2, Comment 2)
 --
 -- The hardware TLB *fill*: on a memory access whose translation misses the

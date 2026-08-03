@@ -581,6 +581,14 @@ open SeLe4n.Kernel.Concurrency
 #check @shootdownCatchUpPerCoreInWindow_initiator_view
 #check @shootdownCatchUpPerCoreInWindow_preserves_foreign
 #check @shootdownCatchUpPerCoreInWindow_preserves_tlbInvalidationConsistent_perCore
+-- The 12th `proofLayerInvariantBundle` conjunct (`pendingBounded`) carried
+-- across the transition the live catch-up seam actually runs:
+#check @handleTlbShootdownReqOnCoreInWindow_preserves_pendingBounded
+#check @handleTlbShootdownReqOnCorePerCore_preserves_pendingBounded
+#check @handleTlbShootdownReqOnCorePerCoreInWindow_preserves_pendingBounded
+#check @foldl_handleTlbShootdownReqOnCorePerCoreInWindow_preserves_pendingBounded
+#check @shootdownCatchUpPerCore_preserves_pendingBounded
+#check @shootdownCatchUpPerCoreInWindow_preserves_pendingBounded
 #check @shootdownRoundWindow
 #check @shootdownRoundWindow_empty_of_eq
 #check @mem_shootdownPostedOps_iff
@@ -1623,6 +1631,37 @@ private def runDiffRecoveryChecks : IO Unit := do
 --        remap detection, operand collapse, round-lock model (SM7.B)
 -- ----------------------------------------------------------------------------
 
+/-- The live `.vspaceRoot` a retype destroys — carrying `asid5`. -/
+private def rtVsp : SeLe4n.ObjId := ⟨891⟩
+
+/-- The non-VSpace retype target (the negative control: posts nothing). -/
+private def rtEp : SeLe4n.ObjId := ⟨892⟩
+
+/-- The CNode holding the two retype capabilities. -/
+private def rtCn : SeLe4n.ObjId := ⟨890⟩
+
+/-- The retype-capable state driven by §4.9's CSpaceAddr sweep-closure check and
+by §8's multi-round-window group, so both exercise the same objects through the
+same production entry point (`lifecycleRetypeWithCleanupShootdown{,PerCore}`).
+The retype path's type-lockstep gate reads lifecycle metadata, hence the
+`withLifecycleObjectType` rows. -/
+private def rtMultiState : SeLe4n.Model.SystemState :=
+  let capVsp : Capability :=
+    { target := .object rtVsp, rights := AccessRightSet.ofList [.retype] }
+  let capEp : Capability :=
+    { target := .object rtEp, rights := AccessRightSet.ofList [.retype] }
+  (BootstrapBuilder.empty
+    |>.withObject rtVsp (.vspaceRoot { asid := asid5, mappings := {} })
+    |>.withObject rtEp (.endpoint {})
+    |>.withObject rtCn (.cnode
+        { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.UniqueSlotMap.ofListWF
+            [(SeLe4n.Slot.ofNat 0, capVsp), (SeLe4n.Slot.ofNat 1, capEp)] })
+    |>.withLifecycleObjectType rtVsp .vspaceRoot
+    |>.withLifecycleObjectType rtEp .endpoint
+    |>.withLifecycleObjectType rtCn .cnode
+    |>.buildChecked)
+
 private def runCompletionCutChecks : IO Unit := do
   IO.println "-- §4.9 completion cut: bundle carriage + commutativity + capstones"
   let quiescent : SeLe4n.Model.SystemState :=
@@ -1723,26 +1762,10 @@ private def runCompletionCutChecks : IO Unit := do
                  decide (stRemapped.tlbShootdown = stUnmapped.tlbShootdown) &&
                  decide (pendingBounded stRemapped.tlbShootdown)
              | .error _ => false))
-  -- (i) the CSpaceAddr retype-with-shootdown sibling (sweep closure)
-  let rtVsp : SeLe4n.ObjId := ⟨891⟩
-  let rtEp : SeLe4n.ObjId := ⟨892⟩
-  let rtCn : SeLe4n.ObjId := ⟨890⟩
-  let rtCapVsp : Capability :=
-    { target := .object rtVsp, rights := AccessRightSet.ofList [.retype] }
-  let rtCapEp : Capability :=
-    { target := .object rtEp, rights := AccessRightSet.ofList [.retype] }
-  let rtSt := (BootstrapBuilder.empty
-    |>.withObject rtVsp (.vspaceRoot { asid := asid5, mappings := {} })
-    |>.withObject rtEp (.endpoint {})
-    |>.withObject rtCn (.cnode
-        { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.UniqueSlotMap.ofListWF
-            [(SeLe4n.Slot.ofNat 0, rtCapVsp), (SeLe4n.Slot.ofNat 1, rtCapEp)] })
-    -- The retype path's type-lockstep gate reads lifecycle metadata.
-    |>.withLifecycleObjectType rtVsp .vspaceRoot
-    |>.withLifecycleObjectType rtEp .endpoint
-    |>.withLifecycleObjectType rtCn .cnode
-    |>.buildChecked)
+  -- (i) the CSpaceAddr retype-with-shootdown sibling (sweep closure).  The
+  -- state is `rtMultiState` (top level, §8) so this group and §8's
+  -- multi-round-window group drive the same objects through the same entry.
+  let rtSt := rtMultiState
   assertBool "the CSpaceAddr retype of a live vspaceRoot posts the .aside1 round"
     (match SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdown core0
         { cnode := rtCn, slot := SeLe4n.Slot.ofNat 0 } rtVsp
@@ -2567,8 +2590,22 @@ to `shootdownCatchUpPerCoreInWindow`. -/
 private def windowOf (pre post : SeLe4n.Model.SystemState) : Nat × Nat :=
   shootdownRoundWindow pre post
 
-private def runRoundGenerationChecks : IO Unit := do
-  IO.println "-- §8 SM7.F.3 round-generation-tagged catch-up"
+/-- §8 part (10): the second ASID of a **multi-round** retype.  Retyping a live
+`.vspaceRoot` into a *different* `.vspaceRoot` puts two distinct ASIDs in the
+flush set (`retypeShootdownAsidList`), and the wrapper opens one round per ASID
+— the only production path whose single commit opens more than one round, and
+therefore the only one whose recovered window is wider than a single
+generation. -/
+private def rtAsidNew : SeLe4n.ASID := ⟨9⟩
+
+/-- §8 part (10): the object a multi-round retype installs — a fresh
+`.vspaceRoot` under `rtAsidNew`, so the destroyed (`asid5`) and installed
+(`rtAsidNew`) ASIDs differ and neither is deduplicated away. -/
+private def rtNewVsp : SeLe4n.Model.KernelObject :=
+  .vspaceRoot { asid := rtAsidNew, mappings := {} }
+
+
+private def runRoundWindowChecks : IO Unit := do
   -- (1) Generation allocation: the counter boots at 0, a round open advances
   -- it by exactly one, and the round's descriptors carry that value.
   assertBool "the boot shootdown state is at generation 0"
@@ -2694,6 +2731,105 @@ private def runRoundGenerationChecks : IO Unit := do
     assertBool "an empty-window catch-up retires nothing from any view"
       (allCores.all fun c =>
         (tlbOnCore inert c).entries.length == (tlbOnCore stFilled c).entries.length)
+
+/-- §8, part 2 of 3: the 12th `proofLayerInvariantBundle` conjunct
+(`pendingBounded`) across the window catch-up.  Split out per the CLAUDE.md
+thin-dispatcher guidance — a single `do`-block holding all three parts runs
+past the ~150-line bracket-depth threshold. -/
+private def runRoundWindowBoundChecks : IO Unit := do
+  -- (9) Invariant-bundle carriage: the 12th `proofLayerInvariantBundle`
+  -- conjunct (`pendingBounded`) survives the window catch-up — the transition
+  -- the live seam actually runs.  A window drain deliberately leaves foreign
+  -- descriptors queued, so unlike a whole-queue drain it does NOT trivially
+  -- empty the queues; the bound has to be carried, and
+  -- `shootdownCatchUpPerCoreInWindow_preserves_pendingBounded` is what carries
+  -- it.  Checked at the exact point the drain is weakest: mid-storm, with three
+  -- concurrent rounds' work still pending.
+  match stressStormed? with
+  | none => assertBool "all four concurrent unmaps commit" false
+  | some stStorm => do
+    assertBool "the mid-storm state satisfies the shootdown capacity conjunct"
+      (decide (pendingBounded stStorm.tlbShootdown))
+    let caught0 := shootdownCatchUpPerCoreInWindow stStorm core0
+      [stressOpOf core0] 0 1
+    assertBool "the window catch-up preserves the shootdown capacity conjunct"
+      (decide (pendingBounded caught0.tlbShootdown))
+    assertBool "and it did so with foreign descriptors genuinely left queued"
+      ([core2, core3].all fun c =>
+        !(caught0.tlbShootdown.pendingOnCore c).isEmpty)
+    assertBool "the whole-queue catch-up preserves it too"
+      (decide (pendingBounded
+        (shootdownCatchUpPerCore stStorm core0 [stressOpOf core0]).tlbShootdown))
+    assertBool "every commit's own catch-up, run in turn, keeps the bound"
+      (decide (pendingBounded
+        ((List.range 4).foldl
+          (fun st i =>
+            let c := (stressAssignments[i]?).map (·.1) |>.getD core0
+            shootdownCatchUpPerCoreInWindow st c [stressOpOf c] i (i + 1))
+          stStorm).tlbShootdown))
+
+/-- §8, part 3 of 3: a round window WIDER than one generation — the live
+two-ASID retype.  Split out per the CLAUDE.md thin-dispatcher guidance. -/
+private def runRoundWindowWidthChecks : IO Unit := do
+  -- (10) A window WIDER than one generation.  Every other group here exercises
+  -- a one-round commit, where `roundGen := window.2` and a width-1 window would
+  -- be indistinguishable from a correct one.  Retyping a live `.vspaceRoot` into
+  -- a *different* `.vspaceRoot` is the production path that breaks that tie: its
+  -- flush set holds two distinct ASIDs, so ONE commit opens TWO rounds and the
+  -- recovered window must admit both.  A width-1 window would strand the first
+  -- round's descriptors on every remote core — the model reporting quiescence
+  -- with an ASID's translations still cached.
+  let stPre := rtMultiState
+  assertBool "a two-ASID retype's flush set holds both the destroyed and installed ASID"
+    (SeLe4n.Kernel.retypeShootdownAsidList stPre rtVsp rtNewVsp == [asid5, rtAsidNew])
+  match SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdownPerCore core0
+      { cnode := rtCn, slot := SeLe4n.Slot.ofNat 0 } rtVsp rtNewVsp stPre with
+  | .error _ => assertBool "the two-ASID retype commits" false
+  | .ok ((), stPost) => do
+    let w := windowOf stPre stPost
+    assertBool "one commit opened two rounds, so its window is two generations wide"
+      (w.1 == 0 && w.2 == 2)
+    assertBool "both rounds' descriptors are queued on every remote core"
+      ([core1, core2, core3].all fun c =>
+        queueHasOp (stPost.tlbShootdown.pendingOnCore c)
+          (encodeAsidInvalidation asid5) core0 &&
+        queueHasOp (stPost.tlbShootdown.pendingOnCore c)
+          (encodeAsidInvalidation rtAsidNew) core0)
+    assertBool "the two queued descriptors carry generations 1 and 2"
+      ([core1, core2, core3].all fun c =>
+        ((stPost.tlbShootdown.pendingOnCore c).map (·.generation)) == [1, 2])
+    assertBool "a two-round commit still respects the capacity bound"
+      (decide (pendingBounded stPost.tlbShootdown))
+    -- The commit's own catch-up drains BOTH of its rounds.
+    let caught := shootdownCatchUpPerCoreInWindow stPost core0
+      (shootdownPostedOps stPre stPost) w.1 w.2
+    assertBool "the commit's own catch-up drains both of its rounds"
+      (allCores.all fun c => (caught.tlbShootdown.pendingOnCore c).isEmpty)
+    assertBool "and the fully-drained state satisfies the capacity conjunct"
+      (decide (pendingBounded caught.tlbShootdown))
+    -- The tie-breaker: a width-1 window (the bug a single-round test cannot
+    -- see) strands the FIRST round's descriptors on every remote core.
+    let narrow := shootdownCatchUpPerCoreInWindow stPost core0
+      (shootdownPostedOps stPre stPost) 1 2
+    assertBool "a width-1 window would strand the first round on every remote core"
+      ([core1, core2, core3].all fun c =>
+        (narrow.tlbShootdown.pendingOnCore c).map (·.generation) == [1])
+    -- Diff recovery is window-restricted too: the runtime broadcasts and
+    -- publishes BOTH operands, deduplicated, and nothing else.
+    assertBool "the diff-recovered operand list is both rounds' operands"
+      (shootdownPostedOps stPre stPost ==
+        [encodeAsidInvalidation asid5, encodeAsidInvalidation rtAsidNew])
+    assertBool "the diff-recovered changed-target set is every remote core"
+      (shootdownChangedTargets stPre stPost == shootdownTargets core0)
+
+/-- §8 dispatcher (the CLAUDE.md thin-dispatcher pattern): C-scope nesting
+depth resets at each function boundary in the Lean codegen, so the three
+parts each stay well inside clang's `-fbracket-depth` limit. -/
+private def runRoundGenerationChecks : IO Unit := do
+  IO.println "-- §8 SM7.F.3 round-generation-tagged catch-up"
+  runRoundWindowChecks
+  runRoundWindowBoundChecks
+  runRoundWindowWidthChecks
 
 -- ----------------------------------------------------------------------------
 -- §7  Cross-cluster mock: the `.outer` portability seam, exercised

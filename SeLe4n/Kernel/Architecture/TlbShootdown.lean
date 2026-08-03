@@ -71,33 +71,55 @@ the Rust `SHOOTDOWN_ACK` boot value of all-`true`.
 
 ## Round serialisation contract (SM7.A audit; SM7.B.7 obligation)
 
-The ack vector carries **no round identity**, so it is a
-single-round resource: at most one shootdown round may be in flight
-system-wide.  The plan §3.2 precondition (the initiator holds the
-VSpaceRoot write lock) is **not** sufficient to guarantee this — two
-initiators shooting down *different* VSpaces hold different VSpaceRoot
-locks and would interleave rounds, with two concrete failures: (a)
-initiator B's `beginShootdownRound` marks B's own flag `true` while A
-still waits on that core's invalidation for A's round, so A's
-`allAcked` poll can exit before A's descriptors are drained — a stale
-TLB entry stays live on the target, the exact SMP-C4 hazard; and (b)
-B's reset clears A's born-`true` flag, which nothing re-sets if A
-polls with IRQs masked — a mutual hang.  SM7.B.7 therefore MUST
-serialise rounds under the single global `ShootdownRoundLockId`
-(below), acquired before any per-core `ShootdownQueueLockId`; every
-serialisation statement in this module and in the Rust realisation
-assumes exactly that contract.
+The ack vector here carries **no round identity**, so *as modelled* it
+is a single-round resource: at most one shootdown round may be in
+flight system-wide.  The plan §3.2 precondition (the initiator holds
+the VSpaceRoot write lock) is **not** sufficient to guarantee this —
+two initiators shooting down *different* VSpaces hold different
+VSpaceRoot locks and would interleave rounds, with two concrete
+failures: (a) initiator B's `beginShootdownRound` marks B's own flag
+`true` while A still waits on that core's invalidation for A's round,
+so A's `allAcked` poll can exit before A's descriptors are drained — a
+stale TLB entry stays live on the target, the exact SMP-C4 hazard; and
+(b) B's reset clears A's born-`true` flag, which nothing re-sets if A
+polls with IRQs masked — a mutual hang.  SM7.B.7 therefore serialises
+rounds under the single global `ShootdownRoundLockId` (below), acquired
+before any per-core `ShootdownQueueLockId`.
+
+**What the runtime refines (SM7.F.3).**  The Rust acknowledgment
+channel is *not* a Boolean reset — each slot holds a monotone
+`acked_gen` advanced by a release `fetch_max`, the initiator waits for
+`acked_gen[c] ≥ gen`, and there is no reset at all
+(`rust/sele4n-hal/src/shootdown.rs`).  The extra strength is needed
+because the runtime has a delivery mechanism this model does not
+represent: a `.tlbShootdownReq` SGI can stay *pending* across the
+cooperative round-lock acquire (which self-services without consuming
+the interrupt) and be taken inside a later round, where a Boolean
+handler would acknowledge work it never did.  Here a handler
+application is an explicit function call, so that shape is
+unrepresentable and the Boolean stays a faithful abstraction under the
+serialisation contract above.  Round identity *is* modelled where it
+is observable — on the descriptors (`TlbShootdownDescriptor.generation`
+and the `roundGeneration` counter below), which is what makes the
+window drain (`drainShootdownsInWindow`) exact.
 
 ## Capacity bound (SM7.A.6)
 
-Every pending queue is bounded by `maxPendingPerCore = 16`
-(plan §4.1): a typical kernel never queues more than a few
-descriptors — the global round lock (see above) serialises rounds, so
-at most one round's descriptors are in flight per target — and the
-bound is deliberately conservative.  `enqueueShootdown` is
-fail-closed: at capacity it returns `none` rather than silently
-dropping or unboundedly growing, and `pendingBounded` is preserved
-by every operation in this module.
+Every pending queue is bounded by `maxPendingPerCore = 16` (plan §4.1)
+and the bound is deliberately conservative — it is an envelope over
+what a target can accumulate *between drains*, which is one descriptor
+per round posted against it.  That is **not** one round: a single
+commit can open several rounds (the retype wrappers open one per
+flushed ASID — `retypeShootdownAsids`), and posting happens in the
+pure transition while the catch-up drain happens in the dispatch
+entry, so a concurrently committed round can post into the same queue
+in between.  The bound is therefore maintained by construction rather
+than by a counting argument: `enqueueShootdown` is fail-closed — at
+capacity it returns `none` rather than silently dropping or unboundedly
+growing — its coalescing sibling `enqueueShootdownOrCoalesce` collapses
+a full queue to a single covering `.vmalle1` (a superset, never an
+under-invalidation), and `pendingBounded` is preserved by every
+operation in this module.
 
 ## Production reachability
 
@@ -190,12 +212,14 @@ structure TlbShootdownDescriptor where
 -- ============================================================================
 
 /-- **WS-SM SM7.A.6**: upper bound on each core's pending-shootdown
-queue length (plan §4.1).  The global round lock (`ShootdownRoundLockId`
-— the module-header round-serialisation contract) serialises shootdown
-rounds, so a target's queue holds at most one round's descriptors at a
-time; `16` is a conservative envelope over every SM7.B caller (the
-worst wired unmap path enqueues one descriptor per target per round).
-`enqueueShootdown` fails closed at this bound. -/
+queue length (plan §4.1).  Every SM7.B caller enqueues one descriptor
+per target per round, so this is a conservative envelope over the
+rounds a target can accumulate between drains — several per commit for
+the multi-ASID retype wrappers, plus any concurrently committed round
+that posts before this commit's catch-up (see the module header's
+capacity-bound section).  `enqueueShootdown` fails closed at this
+bound; `enqueueShootdownOrCoalesce` collapses to a covering
+`.vmalle1`. -/
 def maxPendingPerCore : Nat := 16
 
 /-- **WS-SM SM7.A.6**: the capacity bound admits at least one pending
@@ -1379,8 +1403,9 @@ theorem foldl_setAckFalse_roundGeneration (l : List CoreId) :
 an explicit **target set** — only the targets start unacknowledged;
 every non-target (and the initiator) is born-`true`.
 
-This is the model of the runtime's online-masked reset
-(`reset_for_round_in_slice_masked`, `shootdown.rs`, driven by the
+This is the model of the runtime's online-masked round (SM7.F.3
+removed the ack reset, so the mask now lives on the *wait* —
+`all_acked_for_round_in_slice`, `shootdown.rs`, driven by the
 `smp::CORE_IRQ_READY` IRQ-serviceable snapshot — PR #839 review P1):
 a core that is offline (a partial-core boot — `smp_enabled=false`, the
 v1.0.0 default — an `smp_max_cores` cap, or a PSCI CPU_ON rejection),
@@ -1497,8 +1522,9 @@ theorem roundDescriptor_inRoundWindow (sd : TlbShootdownState)
 
 /-- **WS-SM SM7.A (PR #838 review P1)**: with every core targeted, the
 masked round-open is exactly `beginShootdownRound` — the fully-online
-configuration collapses to the unmasked form (mechanically mirrored by
-the Rust `sm7a3_masked_reset_all_online_equals_unmasked_reset` test). -/
+configuration collapses to the unmasked form (mechanically mirrored on
+the Rust side by `sm7f3_wait_matches_conjunction_exhaustively`, whose
+all-online rows are the unmasked wait). -/
 theorem beginShootdownRoundFor_allCores_eq (st : TlbShootdownState)
     (initiator : CoreId) :
     beginShootdownRoundFor st initiator allCores =
@@ -1881,7 +1907,11 @@ initiator observes `allAcked`.
 
 The type is deliberately fieldless: there is exactly one round lock
 (`ShootdownRoundLockId.singleton` — every two values are equal), which
-structurally encodes "at most one round in flight". -/
+structurally encodes "at most one round *holding the lock*".  Note
+that this bounds the hardware round (publish → SGI → wait), not the
+model's pending queues: posting precedes the lock and the catch-up
+drain follows it, so a queue can hold several rounds' descriptors —
+which is why the drain is window-restricted (SM7.F.3). -/
 structure ShootdownRoundLockId where
   deriving DecidableEq, Repr, Inhabited
 

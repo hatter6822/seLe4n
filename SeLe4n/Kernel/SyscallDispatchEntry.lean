@@ -245,7 +245,15 @@ rounds posted and leaves the other round's queued work for that round's
 own catch-up
 (`Architecture.shootdownCatchUpPerCoreInWindow_preserves_foreign`).  The
 model can no longer report a core clean of an invalidation whose SGI has
-not yet fired. -/
+not yet fired.
+
+**Invariant carriage.**  Because a window drain deliberately leaves
+foreign descriptors queued, it does *not* empty the pending queues the
+way a whole-queue drain does, so the 12th `proofLayerInvariantBundle`
+conjunct has to be carried rather than fall out:
+`Architecture.shootdownCatchUpPerCoreInWindow_preserves_pendingBounded`
+is the statement for this transition, resting on the per-core window
+handler and its fold. -/
 def completeShootdownRounds (changed : List Concurrency.CoreId)
     (ops : List Architecture.TlbInvalidation)
     (window : Nat × Nat)

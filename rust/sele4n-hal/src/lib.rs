@@ -209,16 +209,19 @@ pub mod cmdline;
 // See the module docstring in `per_cpu_stats.rs` for the counter
 // inventory.
 pub mod per_cpu_stats;
-// WS-SM SM7.A.3: per-core TLB-shootdown acknowledgment flags.  Provides
-// `ShootdownAckFlag` (one cache-line-aligned AtomicBool per core), the
-// global `SHOOTDOWN_ACK` array (boots quiescent all-`true`), and the
-// `ack_round` (release fetch_max) / `acked_gen` / `all_acked_for_round` (acquire) /
-// `reset_for_round` accessors the SM7.B shootdown protocol composes:
-// each target's `.tlbShootdownReq` SGI handler release-sets its own
-// flag after its local TLBIs retire; the initiator acquire-polls until
-// every flag is set.  The runtime realisation of the Lean
-// `TlbShootdownState.shootdownAck` vector; see the module docstring in
-// `shootdown.rs` for the protocol role and ordering rationale.
+// WS-SM SM7.A.3 / SM7.F.3: per-core TLB-shootdown acknowledgment slots.
+// Provides `ShootdownAckSlot` (one cache-line-aligned AtomicU64
+// generation per core), the global `SHOOTDOWN_ACK` array (boots
+// quiescent at generation `0`, which no round ever carries), and the
+// `ack_round` (release fetch_max) / `acked_gen` / `all_acked_for_round`
+// (acquire) accessors the SM7.B shootdown protocol composes: each
+// target's `.tlbShootdownReq` SGI handler advances its own generation
+// after that round's local TLBIs retire; the initiator acquire-polls
+// until every online target has reached the round's generation.  The
+// runtime realisation of the Lean `TlbShootdownState.shootdownAck`
+// vector, refined with round identity so a stale SGI cannot forge an
+// acknowledgment; see the module docstring in `shootdown.rs` for the
+// protocol role and ordering rationale.
 pub mod shootdown;
 // WS-SM SM2.B.16: Rust TicketLock implementation refining the Lean
 // operational spec at SeLe4n/Kernel/Concurrency/Locks/TicketLock.lean.

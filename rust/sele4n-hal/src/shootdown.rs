@@ -13,7 +13,8 @@
 //! A shootdown round for `(asid, vaddr)` initiated by core `c₀`:
 //!
 //! 1. `c₀` publishes the round's operands **and its generation** into
-//!    [`SHOOTDOWN_OPS`] ([`publish_round_ops`]) under the global round
+//!    [`SHOOTDOWN_OPS`] ([`publish_begin_in`] → [`publish_slot_in`] →
+//!    [`publish_commit_in`], generation last) under the global round
 //!    lock.  There is deliberately **no ack reset** — see
 //!    "Round identity" below.
 //! 2. `c₀` posts one descriptor per target into the Lean-side pending
@@ -67,11 +68,16 @@
 //! where it belongs: a core that cannot take the SGI is simply not
 //! waited on.
 //!
-//! Rounds are still serialised system-wide by [`SHOOTDOWN_ROUND_LOCK`]
-//! (the mailbox is a single-round resource, and the Lean model's
-//! capacity argument assumes one round's descriptors per target at a
-//! time); the generation makes the *acknowledgment channel* robust
-//! rather than replacing that serialisation.
+//! Rounds are still serialised system-wide by [`SHOOTDOWN_ROUND_LOCK`],
+//! because [`SHOOTDOWN_OPS`] is a single-round resource: one mailbox
+//! holds one round's operands, so a second publication would overwrite
+//! operands a target has not yet retired.  The generation makes the
+//! *acknowledgment channel* robust rather than replacing that
+//! serialisation.  It does **not** bound the Lean-side pending queues
+//! to one round per target — posting happens in the pure transition,
+//! before the lock, and the catch-up drain after it, so those queues
+//! can hold several rounds' descriptors and the drain is
+//! window-restricted accordingly (`drainShootdownsInWindow`).
 //!
 //! ## Boot state
 //!
@@ -601,6 +607,15 @@ pub fn publish_commit_in(mb: &ShootdownOpMailbox, len: usize, gen: u64) {
 /// operand slice for round generation `gen` under the seqlock
 /// discipline.  A slice longer than capacity collapses to one
 /// `vmalle1`.
+///
+/// This is the batch form the unit tests exercise; it exists only to
+/// compose [`publish_begin_in`] / [`publish_slot_in`] /
+/// [`publish_commit_in`] in one call.  The live path deliberately has
+/// **no** global batch wrapper — the Lean seam
+/// (`Architecture.publishShootdownOps`) walks its operand list across
+/// the FFI boundary and drives those three entry points directly
+/// (`ffi_shootdown_publish_{begin,slot,commit}`), since it never holds
+/// a Rust slice to hand over.
 pub fn publish_round_ops_in(mb: &ShootdownOpMailbox, ops: &[ShootdownOp], gen: u64) {
     publish_begin_in(mb);
     let n = ops.len();
@@ -610,11 +625,6 @@ pub fn publish_round_ops_in(mb: &ShootdownOpMailbox, ops: &[ShootdownOp], gen: u
         }
     }
     publish_commit_in(mb, n, gen);
-}
-
-/// **WS-SM SM7.B**: publish into the global mailbox.
-pub fn publish_round_ops(ops: &[ShootdownOp], gen: u64) {
-    publish_round_ops_in(&SHOOTDOWN_OPS, ops, gen);
 }
 
 /// **WS-SM SM7.F.3** (testable inner form): acquire-load the round

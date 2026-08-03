@@ -309,7 +309,9 @@ impl TicketLock {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```
+    /// use sele4n_hal::ticket_lock::TicketLock;
+    ///
     /// static LOCK: TicketLock = TicketLock::new();
     /// LOCK.with_lock(|| {
     ///     // Critical section.

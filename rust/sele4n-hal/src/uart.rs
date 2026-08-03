@@ -456,8 +456,21 @@ static UART_LOCK: UartLock = UartLock::new();
 /// `&mut Uart` that is implicitly bound to the guard's lifetime; when
 /// `f` returns, the borrow is released before the guard is dropped, so
 /// the NLL borrow-checker accepts the pattern statically.
+///
+/// # Visibility
+///
+/// `#[doc(hidden)] pub`, not `pub(crate)`: all four print macros
+/// ([`kprint!`], [`kprintln!`], [`kprint_core!`], [`kprintln_core!`]) are
+/// `#[macro_export]`ed and expand to `$crate::uart::with_boot_uart`, so while
+/// this was crate-private every one of them failed to compile for any consumer
+/// of the crate — exported in name only.  It is hidden from the rendered docs
+/// because it is a macro-expansion seam rather than API a caller should reach
+/// for directly; the supported entry points are the macros themselves and the
+/// [`boot_puts`] / [`init_boot_uart`] wrappers.  The `kprintln_core!` doctest
+/// compiles as an external crate, so it is the regression gate on this.
+#[doc(hidden)]
 #[inline(always)]
-pub(crate) fn with_boot_uart<R, F: FnOnce(&mut Uart) -> R>(f: F) -> R {
+pub fn with_boot_uart<R, F: FnOnce(&mut Uart) -> R>(f: F) -> R {
     let guard = UART_LOCK.with_guard();
     // Reborrow `guard.inner` (itself a `&'a mut Uart`) so `f` receives a
     // shorter-lived `&mut Uart` that ends before the guard's `Drop` runs
@@ -549,7 +562,7 @@ macro_rules! kprintln {
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```
 /// use sele4n_hal::kprintln_core;
 /// kprintln_core!("ready, entering kernel");
 /// // Output (on core 1): [core 1] ready, entering kernel

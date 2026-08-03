@@ -42,13 +42,45 @@ cd "$RUST_DIR"
 # R8-C (I-M03): Capture cargo output to temp file so we can show tail on success
 # and full output on failure. Exit codes are checked directly, not through pipe.
 
+# On success only the tail of the log is shown, so for a `cargo test` step the
+# visible summary is whichever test binary happened to run last — for the
+# workspace run that is a single-doctest crate, which reads as "1 test passed"
+# for a run of over a thousand.  Aggregate the per-binary `test result:` lines
+# so the reported count is the run's real coverage; a step with no such lines
+# (build, fmt, clippy) keeps the plain tail.
+summarise_cargo_test_log() {
+    local log="$1"
+    local passed failed ignored binaries
+    binaries="$(grep -c '^test result:' "$log" || true)"
+    # Spelled as an `if` rather than `[ … ] && return 1`: under `set -e` the
+    # latter's exit status depends on which branch was taken, which is exactly
+    # the kind of thing that works until it doesn't.
+    if [ "${binaries}" -eq 0 ]; then
+        return 1
+    fi
+    passed="$(awk '/^test result:/ {s += $4} END {print s + 0}' "$log")"
+    failed="$(awk '/^test result:/ {s += $6} END {print s + 0}' "$log")"
+    ignored="$(awk '/^test result:/ {s += $8} END {print s + 0}' "$log")"
+    echo "      ${passed} passed, ${failed} failed, ${ignored} ignored" \
+         "across ${binaries} test binaries"
+    # An ignored test is a test that does not run — whether skipped by an
+    # `#[ignore]` attribute or by an ```ignore doc-comment fence, which is not
+    # even compiled and so rots silently.  The project's standing claim is that
+    # it has none of either, so surface any rather than letting them hide
+    # inside an otherwise-green summary.
+    if [ "${ignored}" -ne 0 ]; then
+        echo "::warning::${ignored} Rust test(s) were skipped (#[ignore] attribute or \`\`\`ignore doctest fence)"
+    fi
+    return 0
+}
+
 run_cargo_step() {
     local step_label="$1"
     shift
     local log
     log="$(mktemp)"
     if "$@" > "$log" 2>&1; then
-        tail -5 "$log"
+        summarise_cargo_test_log "$log" || tail -5 "$log"
         echo "      ✓ ${step_label}"
         rm -f "$log"
         return 0

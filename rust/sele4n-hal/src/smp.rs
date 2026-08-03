@@ -680,7 +680,7 @@ pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
     // shootdown target (see `CORE_IRQ_READY`).  A core that never
     // reaches this line (e.g. the timer-init-failure halt loop above)
     // stays excluded from every round, fail-safe.  Release-paired with
-    // the Acquire reads in `shootdown::{reset_for_round, online_mask}`.
+    // the Acquire reads in `shootdown::{online_mask, irq_ready_online}`.
     if core_idx < CORE_IRQ_READY.len() {
         CORE_IRQ_READY[core_idx].store(true, Ordering::Release);
     }

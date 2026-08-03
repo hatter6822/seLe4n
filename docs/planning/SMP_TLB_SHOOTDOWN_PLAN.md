@@ -928,6 +928,74 @@ syscall exists yet (`lifecycleRetype` makes fresh ASID-0 roots and `asidTable`
 is boot-only).  It is a completeness gap, not a safety hole; closure target
 SM8.
 
+##### v0.32.110 audit cut — the 12th conjunct carried across the live catch-up
+
+A deep audit of the v0.32.105–109 cut, verified against the code rather than
+the documentation describing it.  No live safety defect; every finding was a
+claim that had stopped being true, a proof obligation the live seam did not
+carry, or a gate reporting more coverage than it had.
+
+**The invariant gap.**  SM7.B carried `pendingBounded` — the 12th
+`proofLayerInvariantBundle` conjunct — through the *single-view* handler.
+v0.32.81 swapped the live catch-up fold to the **per-core** handler and
+v0.32.105 restricted it to the round window, and neither cut carried the
+conjunct forward, so the transition `completeShootdownRounds` actually runs
+had no bound proof.  Closed by five theorems in `PerCoreTlbModel.lean`:
+`handleTlbShootdownReqOnCorePerCore{,InWindow}_preserves_pendingBounded`, the
+fold, and `shootdownCatchUpPerCore{,InWindow}_preserves_pendingBounded`.  Each
+is definitional on `tlbShootdown` — the per-core handlers write only
+`perCoreTlb` on top of their single-view counterparts, and
+`drainInitiatorPerCoreView` only the initiator's view — so the bound rides the
+SM7.B lemmas rather than being re-derived.  It mattered because a window drain
+*deliberately* leaves foreign descriptors queued: unlike a whole-queue drain it
+does not empty the queues, so the bound does not fall out.
+
+**The capacity-bound justification was false.**  Both `TlbShootdown.lean` sites
+(module header, `maxPendingPerCore`) argued that the global round lock
+serialises rounds, so "at most one round's descriptors are in flight per
+target".  SM7.F.3 exists because that is wrong, and the counterexample needs no
+concurrency: the retype wrappers open one round per flushed ASID, so a single
+two-ASID commit queues generations 1 and 2 on every remote core before any
+drain.  The constant is fine — the bound is maintained by construction
+(`enqueueShootdown` fails closed, `enqueueShootdownOrCoalesce` collapses to a
+covering `.vmalle1`), not by that counting argument — so the prose was
+corrected, not the constant.  The round-serialisation section now also states
+what the runtime refines and why the model does not need it: a
+`.tlbShootdownReq` SGI can stay pending across the cooperative round-lock
+acquire and be taken inside a later round, a delivery shape the model — where a
+handler application is an explicit function call — cannot represent.
+
+**Five dangling symbol references.**  SM7.F.3 removed the ack reset;
+`reset_for_round_in_slice_masked`,
+`sm7a3_masked_reset_all_online_equals_unmasked_reset` and three prose mentions
+of `reset_for_round` survived it across `TlbShootdown.lean`,
+`TlbShootdownProtocol.lean`, `TlbShootdownWait.lean`, `smp.rs` and `lib.rs`.
+Each now names the live symbol, and where the reset carried an argument (the
+PR #838 online mask, the PR #839 `CORE_IRQ_READY` snapshot) the replacement
+records that it moved onto the wait.  The dead global `publish_round_ops`
+wrapper is removed.
+
+**Tests.**  §8 gains 15 assertions (29 → 44; suite 303 → 318).  Nine check the
+conjunct where the drain is weakest — mid-storm, with three concurrent rounds'
+work pending, asserted non-empty so the check cannot pass vacuously.  Six cover
+a window **wider than one generation**, which no prior group did: a live
+`lifecycleRetypeWithCleanupShootdownPerCore` into a different-ASID
+`.vspaceRoot` opens two rounds, the recovered window is `(0, 2]`, and the
+commit's own catch-up drains both — with the load-bearing negative that a
+width-1 window strands the first round on every remote core.  Six `#check`
+anchors, three Tier-3 anchors.
+
+**Gate honesty.**  `test_rust.sh` printed the cargo log tail, summarising a
+1093-test run as "1 passed"; it now aggregates the per-binary `test result:`
+lines and flags skipped tests.  That surfaced two ```` ```ignore ```` doctests
+against the standing "zero `#[ignore]`'d" claim — fences that are never
+compiled and so rot silently.  Converting them found a real defect: all four
+print macros are `#[macro_export]`ed but expanded to the `pub(crate)`
+`with_boot_uart`, so every one failed to compile for any consumer of the crate.
+The seam is now `#[doc(hidden)] pub`, and the `kprintln_core!` doctest — which
+compiles as an external crate — is the regression gate.  Rust 1093 → 1095
+passing, 0 ignored, HAL still 800.
+
 ### SM7.D — Cache maintenance broadcast (2 PRs, 4 sub-tasks) — CLOSED (v0.32.94; closure cuts v0.32.95, v0.32.96)
 
 **Status: CLOSED at the model level.**  Landed at v0.32.94; the exact-operand
