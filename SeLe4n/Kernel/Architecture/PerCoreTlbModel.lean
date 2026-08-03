@@ -2044,6 +2044,88 @@ theorem shootdownCatchUpPerCoreInWindow_preserves_pendingBounded
   exact foldl_handleTlbShootdownReqOnCorePerCoreInWindow_preserves_pendingBounded
     lo hi (shootdownTargets execCore) hB
 
+/-- **WS-SM SM7.F.3 (PR #854 review)**: the per-core handler preserves the
+**15th `proofLayerInvariantBundle` conjunct**. -/
+theorem handleTlbShootdownReqOnCorePerCore_preserves_ackBounded
+    {st : SystemState} (hW : ackBounded st.tlbShootdown) (c : CoreId) :
+    ackBounded (handleTlbShootdownReqOnCorePerCore st c).tlbShootdown := by
+  rw [handleTlbShootdownReqOnCorePerCore_tlbShootdown_eq]
+  exact handleTlbShootdownReqOnCore_preserves_ackBounded hW c
+
+/-- **WS-SM SM7.F.3 (PR #854 review)**: the window per-core handler frames the
+round counter — it acknowledges, it never opens. -/
+theorem handleTlbShootdownReqOnCorePerCoreInWindow_roundGeneration
+    (st : SystemState) (c : CoreId) (lo hi : Nat) :
+    (handleTlbShootdownReqOnCorePerCoreInWindow st c lo hi).tlbShootdown.roundGeneration
+      = st.tlbShootdown.roundGeneration := by
+  rw [handleTlbShootdownReqOnCorePerCoreInWindow_tlbShootdown_eq]
+  exact completeShootdownOnCoreInWindow_frame_roundGeneration _ _ _ _
+
+/-- **WS-SM SM7.F.3 (PR #854 review)**: the window per-core handler preserves
+well-formedness, for a window that does not reach past the round counter. -/
+theorem handleTlbShootdownReqOnCorePerCoreInWindow_preserves_ackBounded
+    {st : SystemState} (hW : ackBounded st.tlbShootdown) (c : CoreId)
+    {lo hi : Nat} (hhi : hi ≤ st.tlbShootdown.roundGeneration) :
+    ackBounded
+      (handleTlbShootdownReqOnCorePerCoreInWindow st c lo hi).tlbShootdown := by
+  rw [handleTlbShootdownReqOnCorePerCoreInWindow_tlbShootdown_eq]
+  exact completeShootdownOnCoreInWindow_preserves_ackBounded hW c hhi
+
+/-- **WS-SM SM7.F.3 (PR #854 review)**: the catch-up fold preserves
+well-formedness.  The window bound stays below the counter along the whole
+fold because every step frames it. -/
+theorem foldl_handleTlbShootdownReqOnCorePerCoreInWindow_preserves_ackBounded
+    (lo hi : Nat) (cs : List CoreId) {st : SystemState}
+    (hW : ackBounded st.tlbShootdown)
+    (hhi : hi ≤ st.tlbShootdown.roundGeneration) :
+    ackBounded
+      (cs.foldl (fun s c => handleTlbShootdownReqOnCorePerCoreInWindow s c lo hi)
+        st).tlbShootdown := by
+  induction cs generalizing st with
+  | nil => simpa using hW
+  | cons t rest ih =>
+    rw [List.foldl_cons]
+    refine ih (handleTlbShootdownReqOnCorePerCoreInWindow_preserves_ackBounded hW t hhi) ?_
+    rw [handleTlbShootdownReqOnCorePerCoreInWindow_roundGeneration]
+    exact hhi
+
+/-- **WS-SM SM7.F.3 (PR #854 review)**: the live catch-up
+(`SyscallDispatchEntry.completeShootdownRounds`) carries the **15th
+`proofLayerInvariantBundle` conjunct**.  The initiator drain touches only
+`perCoreTlb`, so the property is exactly the target fold's. -/
+theorem shootdownCatchUpPerCoreInWindow_preserves_ackBounded
+    {st : SystemState} (hW : ackBounded st.tlbShootdown) (execCore : CoreId)
+    (ops : List TlbInvalidation) {lo hi : Nat}
+    (hhi : hi ≤ st.tlbShootdown.roundGeneration) :
+    ackBounded
+      (shootdownCatchUpPerCoreInWindow st execCore ops lo hi).tlbShootdown := by
+  unfold shootdownCatchUpPerCoreInWindow
+  rw [drainInitiatorPerCoreView_tlbShootdown]
+  exact foldl_handleTlbShootdownReqOnCorePerCoreInWindow_preserves_ackBounded
+    lo hi (shootdownTargets execCore) hW hhi
+
+/-- **WS-SM SM7.F.3 (PR #854 review)**: the whole-queue per-core catch-up
+preserves well-formedness too, so the conjunct does not depend on which drain
+the seam runs. -/
+theorem shootdownCatchUpPerCore_preserves_ackBounded
+    {st : SystemState} (hW : ackBounded st.tlbShootdown) (execCore : CoreId)
+    (ops : List TlbInvalidation) :
+    ackBounded (shootdownCatchUpPerCore st execCore ops).tlbShootdown := by
+  unfold shootdownCatchUpPerCore
+  rw [drainInitiatorPerCoreView_tlbShootdown]
+  suffices h : ∀ (cs : List CoreId) (s : SystemState),
+      ackBounded s.tlbShootdown →
+      ackBounded
+        (cs.foldl handleTlbShootdownReqOnCorePerCore s).tlbShootdown from
+    h (shootdownTargets execCore) st hW
+  intro cs
+  induction cs with
+  | nil => intro s h; exact h
+  | cons t rest ih =>
+    intro s h
+    rw [List.foldl_cons]
+    exact ih _ (handleTlbShootdownReqOnCorePerCore_preserves_ackBounded h t)
+
 /-- **WS-SM SM7.C**: the whole-queue per-core catch-up (the v0.32.81 live form,
 superseded by the window form above) preserves the pending bound too, so the
 conjunct does not depend on which drain the seam runs. -/

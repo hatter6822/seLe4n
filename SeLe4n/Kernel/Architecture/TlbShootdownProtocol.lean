@@ -653,6 +653,53 @@ theorem foldlM_enqueueShootdown_preserves_pendingBounded
       rw [henq] at hfold
       exact ih (enqueueShootdown_preserves_pendingBounded hB henq) hfold
 
+/-- **WS-SM SM7.F.3 (PR #854 review)**: the posting fold preserves
+well-formedness — posting frames both the ack vector and the counter. -/
+theorem foldlM_enqueueShootdown_preserves_ackBounded
+    {targets : List CoreId} :
+    ∀ {sd posted : TlbShootdownState} {d : TlbShootdownDescriptor},
+      ackBounded sd →
+      targets.foldlM (fun s c => enqueueShootdown s c d) sd = some posted →
+      ackBounded posted := by
+  induction targets with
+  | nil =>
+    intro sd posted d hW hfold
+    injection hfold with hfold
+    exact hfold ▸ hW
+  | cons t ts ih =>
+    intro sd posted d hW hfold
+    rw [List.foldlM_cons] at hfold
+    cases henq : enqueueShootdown sd t d with
+    | none => rw [henq] at hfold; simp at hfold
+    | some sd' =>
+      rw [henq] at hfold
+      refine ih (fun c => ?_) hfold
+      rw [enqueueShootdown_frame_ackedGen henq,
+        enqueueShootdown_frame_roundGeneration henq]
+      exact hW c
+
+/-- **WS-SM SM7.F.3 (PR #854 review)**: a successful broadcast preserves
+well-formedness. -/
+theorem tlbShootdownBroadcast_preserves_ackBounded {st st' : SystemState}
+    {initiator : CoreId} {targets : List CoreId} {op : TlbInvalidation}
+    {sgis : List (CoreId × SgiKind)}
+    (hW : ackBounded st.tlbShootdown)
+    (h : tlbShootdownBroadcast st initiator targets op = some (st', sgis)) :
+    ackBounded st'.tlbShootdown := by
+  unfold tlbShootdownBroadcast at h
+  cases hfold : targets.foldlM
+      (fun s c => enqueueShootdown s c (roundDescriptor st.tlbShootdown initiator op))
+      (beginShootdownRoundFor st.tlbShootdown initiator targets) with
+  | none => rw [hfold] at h; cases h
+  | some posted =>
+      rw [hfold] at h
+      injection h with h
+      rw [Prod.mk.injEq] at h
+      obtain ⟨hst, hsgi⟩ := h
+      subst hst
+      exact foldlM_enqueueShootdown_preserves_ackBounded
+        (beginShootdownRoundFor_preserves_ackBounded hW initiator targets) hfold
+
 /-- **WS-SM SM7.B.2**: a successful broadcast preserves the capacity
 invariant. -/
 theorem tlbShootdownBroadcast_preserves_pendingBounded {st st' : SystemState}
@@ -881,6 +928,15 @@ theorem handleTlbShootdownReqOnCoreInWindow_eq_handle {st : SystemState}
       c (drainShootdownsInWindow st.tlbShootdown c lo hi).1 hi = _
   rw [drainShootdownsInWindow_eq_drainShootdowns hall, hhi]
   rfl
+
+/-- **WS-SM SM7.F.3 (PR #854 review)**: the window handler preserves
+well-formedness, for a window that does not reach past the counter. -/
+theorem handleTlbShootdownReqOnCoreInWindow_preserves_ackBounded
+    {st : SystemState} (hW : ackBounded st.tlbShootdown) (c : CoreId)
+    {lo hi : Nat} (hhi : hi ≤ st.tlbShootdown.roundGeneration) :
+    ackBounded (handleTlbShootdownReqOnCoreInWindow st c lo hi).tlbShootdown := by
+  rw [handleTlbShootdownReqOnCoreInWindow_tlbShootdown_eq]
+  exact completeShootdownOnCoreInWindow_preserves_ackBounded hW c hhi
 
 /-- **WS-SM SM7.F.3 (race freedom, handler form)**: a descriptor posted by
 a round outside this commit's window is still pending after the window
@@ -1314,6 +1370,31 @@ theorem postShootdownRoundCoalescing_preserves_pendingBounded
   exact foldl_enqueueShootdownOrCoalesce_preserves_pendingBounded
     (beginShootdownRoundFor_preserves_pendingBounded hB initiator targets)
 
+/-- **WS-SM SM7.F.3 (PR #854 review)**: the coalescing posting fold
+preserves well-formedness unconditionally. -/
+theorem foldl_enqueueShootdownOrCoalesce_preserves_ackBounded
+    {targets : List CoreId} :
+    ∀ {sd : TlbShootdownState} {d : TlbShootdownDescriptor},
+      ackBounded sd →
+      ackBounded (targets.foldl
+        (fun s c => enqueueShootdownOrCoalesce s c d) sd) := by
+  induction targets with
+  | nil => intro sd d hW; exact hW
+  | cons t ts ih =>
+    intro sd d hW
+    rw [List.foldl_cons]
+    exact ih (enqueueShootdownOrCoalesce_preserves_ackBounded hW t d)
+
+/-- **WS-SM SM7.F.3 (PR #854 review)**: the total round posting preserves
+well-formedness — no hypothesis on queue occupancy. -/
+theorem postShootdownRoundCoalescing_preserves_ackBounded
+    {sd : TlbShootdownState} (hW : ackBounded sd) (initiator : CoreId)
+    (targets : List CoreId) (op : TlbInvalidation) :
+    ackBounded (postShootdownRoundCoalescing sd initiator targets op) := by
+  unfold postShootdownRoundCoalescing
+  exact foldl_enqueueShootdownOrCoalesce_preserves_ackBounded
+    (beginShootdownRoundFor_preserves_ackBounded hW initiator targets)
+
 /-- **WS-SM SM7.B.9**: the coalescing broadcast preserves the capacity
 invariant. -/
 theorem tlbShootdownBroadcastCoalescing_preserves_pendingBounded
@@ -1324,6 +1405,16 @@ theorem tlbShootdownBroadcastCoalescing_preserves_pendingBounded
         op).tlbShootdown :=
   postShootdownRoundCoalescing_preserves_pendingBounded hB initiator
     targets op
+
+/-- **WS-SM SM7.F.3 (PR #854 review)**: the coalescing broadcast
+preserves well-formedness. -/
+theorem tlbShootdownBroadcastCoalescing_preserves_ackBounded
+    {st : SystemState} (hW : ackBounded st.tlbShootdown)
+    (initiator : CoreId) (targets : List CoreId) (op : TlbInvalidation) :
+    ackBounded
+      (tlbShootdownBroadcastCoalescing st initiator targets
+        op).tlbShootdown :=
+  postShootdownRoundCoalescing_preserves_ackBounded hW initiator targets op
 
 /-- **WS-SM SM7.B.9** (fold lemma): the coalescing posting fold frames
 every unvisited core's queue. -/
@@ -1981,6 +2072,21 @@ theorem handleTlbShootdownReqOnCore_preserves_pendingBounded
   rw [handleTlbShootdownReqOnCore_tlbShootdown_eq]
   exact completeShootdownOnCore_preserves_pendingBounded hB c
 
+/-- **WS-SM SM7.F.3 (PR #854 review)**: the `.tlbShootdownReq` handler
+preserves well-formedness. -/
+theorem handleTlbShootdownReqOnCore_preserves_ackBounded
+    {st : SystemState} (hW : ackBounded st.tlbShootdown) (c : CoreId) :
+    ackBounded (handleTlbShootdownReqOnCore st c).tlbShootdown := by
+  rw [handleTlbShootdownReqOnCore_tlbShootdown_eq]
+  exact completeShootdownOnCore_preserves_ackBounded hW c
+
+/-- **WS-SM SM7.F.3 (PR #854 review)**: the local shootdown step
+preserves well-formedness — it touches only the TLB view. -/
+theorem tlbShootdownLocal_preserves_ackBounded {st : SystemState}
+    (hW : ackBounded st.tlbShootdown) (op : TlbInvalidation) :
+    ackBounded (tlbShootdownLocal st op).tlbShootdown :=
+  (tlbShootdownLocal_frame st op).2.2.2 ▸ hW
+
 /-- **WS-SM SM7.B**: the round-posting combinator preserves the
 capacity invariant (total — no failure path, no occupancy premise). -/
 theorem withShootdownRound_preserves_pendingBounded
@@ -2131,6 +2237,147 @@ theorem asidAllocateWithShootdown_preserves_pendingBounded
 -- Distinct-core handler steps commute, so every visit order computes the
 -- same state — the fold order in `completeShootdownRounds` is a
 -- convention, not a correctness requirement.
+
+/-- **WS-SM SM7.F.3 (PR #854 review)**: the round-posting combinator preserves the
+capacity invariant (total — no failure path, no occupancy premise). -/
+theorem withShootdownRound_preserves_ackBounded
+    {st st' : SystemState} {executingCore : CoreId} {op : TlbInvalidation}
+    (hW : ackBounded st.tlbShootdown)
+    (hOk : withShootdownRound executingCore op st = .ok ((), st')) :
+    ackBounded st'.tlbShootdown := by
+  unfold withShootdownRound at hOk
+  simp only [Except.ok.injEq, Prod.mk.injEq] at hOk
+  rw [← hOk.2]
+  exact tlbShootdownBroadcastCoalescing_preserves_ackBounded hW
+    executingCore (shootdownTargets executingCore) op
+
+/-- **WS-SM SM7.F.3 (PR #854 review)**: the live unmap entry point preserves the
+capacity invariant — the flush base op frames the shootdown state and
+the posting step is total-by-coalescing. -/
+theorem vspaceUnmapPageWithShootdown_preserves_ackBounded
+    {executingCore : CoreId} {asid : SeLe4n.ASID} {vaddr : SeLe4n.VAddr}
+    {st st' : SystemState}
+    (hW : ackBounded st.tlbShootdown)
+    (hOk : vspaceUnmapPageWithShootdown executingCore asid vaddr st
+      = .ok ((), st')) :
+    ackBounded st'.tlbShootdown := by
+  unfold vspaceUnmapPageWithShootdown at hOk
+  revert hOk
+  cases hWase : vspaceUnmapPageWithFlush asid vaddr st with
+  | error e => intro hOk; cases hOk
+  | ok pair =>
+      intro hOk
+      have hFrame : pair.2.tlbShootdown = st.tlbShootdown :=
+        vspaceUnmapPageWithFlush_tlbShootdown_eq asid vaddr st pair.2 hWase
+      exact withShootdownRound_preserves_ackBounded (hFrame ▸ hW) hOk
+
+/-- **WS-SM SM7.F.3 (PR #854 review)**: the live map entry point preserves well-formedness. -/
+theorem vspaceMapPageCheckedWithShootdownFromState_preserves_ackBounded
+    {executingCore : CoreId} {asid : SeLe4n.ASID} {vaddr : SeLe4n.VAddr}
+    {paddr : SeLe4n.PAddr} {perms : PagePermissions} {st st' : SystemState}
+    (hW : ackBounded st.tlbShootdown)
+    (hOk : vspaceMapPageCheckedWithShootdownFromState executingCore asid vaddr
+      paddr perms st = .ok ((), st')) :
+    ackBounded st'.tlbShootdown := by
+  cases hPrior : vspaceHasTranslation st asid vaddr with
+  | false =>
+      rw [vspaceMapPageCheckedWithShootdownFromState_fresh_inert executingCore
+        asid vaddr paddr perms st hPrior] at hOk
+      rw [vspaceMapPageCheckedWithFlushFromState_tlbShootdown_eq
+        asid vaddr paddr perms st st' hOk]
+      exact hW
+  | true =>
+      revert hOk
+      cases hWase : vspaceMapPageCheckedWithFlushFromState asid vaddr paddr
+          perms st with
+      | error e =>
+          rw [show vspaceMapPageCheckedWithShootdownFromState executingCore
+              asid vaddr paddr perms st = .error e from by
+            unfold vspaceMapPageCheckedWithShootdownFromState
+            simp only [hWase]]
+          intro hOk; cases hOk
+      | ok pair =>
+          obtain ⟨u, stFlush⟩ := pair
+          cases u
+          rw [vspaceMapPageCheckedWithShootdownFromState_remap_posts
+            executingCore asid vaddr paddr perms hPrior hWase]
+          intro hOk
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hOk
+          rw [← hOk.2]
+          exact tlbShootdownBroadcastCoalescing_preserves_ackBounded
+            ((vspaceMapPageCheckedWithFlushFromState_tlbShootdown_eq asid vaddr
+              paddr perms st stFlush hWase) ▸ hW) executingCore
+            (shootdownTargets executingCore)
+            (encodePageInvalidation asid vaddr)
+
+/-- **WS-SM SM7.F.3 (PR #854 review)**: the ASID-retire flush entry point preserves the
+capacity invariant. -/
+theorem tlbFlushByASIDWithShootdown_preserves_ackBounded
+    {executingCore : CoreId} {asid : SeLe4n.ASID} {st st' : SystemState}
+    (hW : ackBounded st.tlbShootdown)
+    (hOk : tlbFlushByASIDWithShootdown executingCore asid st = .ok ((), st')) :
+    ackBounded st'.tlbShootdown := by
+  unfold tlbFlushByASIDWithShootdown at hOk
+  revert hOk
+  cases hWase : tlbFlushByASID asid st with
+  | error e => intro hOk; cases hOk
+  | ok pair =>
+      intro hOk
+      have hFrame : pair.2.tlbShootdown = st.tlbShootdown :=
+        tlbFlushByASID_tlbShootdown_eq asid st pair.2 hWase
+      exact withShootdownRound_preserves_ackBounded (hFrame ▸ hW) hOk
+
+/-- **WS-SM SM7.F.3 (PR #854 review)**: the per-page flush entry point preserves the
+capacity invariant. -/
+theorem tlbFlushByPageWithShootdown_preserves_ackBounded
+    {executingCore : CoreId} {asid : SeLe4n.ASID} {vaddr : SeLe4n.VAddr}
+    {st st' : SystemState}
+    (hW : ackBounded st.tlbShootdown)
+    (hOk : tlbFlushByPageWithShootdown executingCore asid vaddr st
+      = .ok ((), st')) :
+    ackBounded st'.tlbShootdown := by
+  unfold tlbFlushByPageWithShootdown at hOk
+  revert hOk
+  cases hWase : tlbFlushByPage asid vaddr st with
+  | error e => intro hOk; cases hOk
+  | ok pair =>
+      intro hOk
+      have hFrame : pair.2.tlbShootdown = st.tlbShootdown :=
+        tlbFlushByPage_tlbShootdown_eq asid vaddr st pair.2 hWase
+      exact withShootdownRound_preserves_ackBounded (hFrame ▸ hW) hOk
+
+/-- **WS-SM SM7.F.3 (PR #854 review)**: the ASID-allocation entry point preserves the
+capacity invariant — the flush arm delegates to
+`tlbFlushByASIDWithShootdown`; the fresh arm commits the pre-state. -/
+theorem asidAllocateWithShootdown_preserves_ackBounded
+    {executingCore : CoreId} {pool : AsidPool}
+    {st st' : SystemState} {result : AsidAllocResult}
+    (hW : ackBounded st.tlbShootdown)
+    (hOk : asidAllocateWithShootdown executingCore pool st
+      = .ok (result, st')) :
+    ackBounded st'.tlbShootdown := by
+  cases hAlloc : pool.allocate with
+  | none =>
+      rw [show asidAllocateWithShootdown executingCore pool st
+          = .error .resourceExhausted from by
+        unfold asidAllocateWithShootdown; simp only [hAlloc]] at hOk
+      cases hOk
+  | some r =>
+      cases hFlushCase : r.requiresFlush with
+      | true =>
+          rw [asidAllocateWithShootdown_requiresFlush executingCore hAlloc
+            hFlushCase st] at hOk
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hOk
+          rw [← hOk.2]
+          exact tlbShootdownBroadcastCoalescing_preserves_ackBounded hW
+            executingCore (shootdownTargets executingCore)
+            (encodeAsidInvalidation r.asid)
+      | false =>
+          rw [asidAllocateWithShootdown_fresh_inert executingCore hAlloc
+            hFlushCase st] at hOk
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hOk
+          rw [← hOk.2]
+          exact hW
 
 /-- **WS-SM SM7.B**: single invalidation applications commute — each is
 an entry filter, and filters intersect commutatively. -/

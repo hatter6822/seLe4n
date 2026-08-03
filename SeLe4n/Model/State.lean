@@ -1238,6 +1238,15 @@ theorem default_tlbShootdown_pendingBounded :
   SeLe4n.Kernel.Architecture.pendingBounded_of_shootdownQuiescent
     default_tlbShootdown_quiescent
 
+/-- **WS-SM SM7.F.3 (PR #854 review)**: the default SystemState is
+ack-bounded — no core has acknowledged a round that has not been opened
+(every slot and the round counter are `0` at boot).  The base case of the
+15th `proofLayerInvariantBundle` conjunct. -/
+theorem default_tlbShootdown_ackBounded :
+    SeLe4n.Kernel.Architecture.ackBounded
+      (default : SystemState).tlbShootdown :=
+  SeLe4n.Kernel.Architecture.initial_ackBounded
+
 /-- WS-SM SM7.C.1: at boot every core's TLB view is empty — the per-core
 generalisation of `tlb := TlbState.empty`.  Discharged by
 `PerCoreVector.replicate_get` (every slot of a `Vector.replicate` holds

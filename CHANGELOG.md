@@ -1,3 +1,65 @@
+## v0.32.114 — ackBounded becomes the 15th invariant conjunct; Lean generation contract corrected
+
+PR #854 review, third round on the SM7.F.3 work. Two findings, both valid,
+both consequences of the two preceding cuts.
+
+**ackBounded carried in the global invariant (Codex P2).** v0.32.113
+introduced `ackBounded` — no core has acknowledged a shootdown round that has
+not been opened — and left it as an optional hypothesis on the
+acknowledgment-shape lemmas that needed it. Nothing carried it. Reasoning
+from `proofLayerInvariantBundle` could therefore admit a state with
+`ackedGenOnCore c > roundGeneration`, and opening the next round there leaves
+that target already acknowledged, defeating
+`beginShootdownRoundFor_ackOnCore_iff` even though the bundle holds.
+
+No production transition can actually reach such a state — the preservation
+proofs below say so — but that was exactly the problem: the fact lived in the
+proofs rather than in the invariant, so a consumer reasoning from the
+standard bundle could not discharge the premise. This project's own rule is
+that an invariant maintained only by convention gets enforced structurally,
+and the predicate this workstream had just introduced was the violation.
+
+`ackBounded st.tlbShootdown` is now the **15th `proofLayerInvariantBundle`
+conjunct**, threaded exactly as SM7.B threaded the 12th (`pendingBounded`):
+boot witness (`initial_ackBounded` → `default_tlbShootdown_ackBounded`),
+definitional transport through the three adapter preservation proofs (they
+touch machine and scheduler, neither of which the conjunct reads), the Boot
+general bridge via `bootFromPlatform_tlbShootdown_eq`, and freeze wholesale.
+
+Carried through the production surface by twenty-odd new preservation
+theorems mirroring the `pendingBounded` chain: the drains and both enqueue
+forms (which frame the ack vector and the counter alike), the round steps,
+the posting folds, both broadcasts, the `.tlbShootdownReq` handler in its
+whole-queue and window forms, the per-core handler and catch-up fold the live
+seam actually runs, and the six live wrappers (`withShootdownRound`, the
+unmap/map entries, both typed flushes, ASID-allocate).
+
+The window forms carry `hi ≤ roundGeneration` as a hypothesis rather than
+proving it unconditionally, because unconditionally it is false: a window
+claiming to discharge a round that has not been opened is precisely the state
+the invariant excludes. The live seam supplies it — the catch-up's window
+upper bound is the post-commit generation and the catch-up runs on that
+post-state.
+
+**Lean generation contract named the wrong counter (Codex P2).** The
+v0.32.112 fix split the model's commit-time `roundGeneration` from the
+runtime's `SHOOTDOWN_ROUND_SEQ`. The Rust-side mailbox comment was corrected
+then; the Lean-side field contract still said `roundGeneration`'s runtime
+mirror is `ShootdownOpMailbox::generation`, which is the conflation the P1 fix
+exists to prevent — and a maintainer reading it could restore the very
+identity that let newer acknowledgments certify an older unexecuted round.
+Rewritten to state what each counter orders (commits vs hardware rounds),
+what each keys (the window drain vs the acknowledgment channel), and why
+publishing this one into the mailbox is the bug. The stale boot-state
+sentence describing "all-acknowledged flags (`true` = …)" is corrected to the
+generation form the same cut introduced.
+
+`test_full.sh` green, Rust unchanged at 1097 (HAL 802), trace byte-identical,
+new theorems axiom-clean.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F.3
+Refs: #854
+
 ## v0.32.113 — Generation-aware model acknowledgment; two gate fixes
 
 PR #854 review. Closes the last of the three findings from the previous

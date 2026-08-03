@@ -880,6 +880,23 @@ runtime generation is now read *from* a `u64`, so the `UInt64.ofNat`
 narrowing round-trips exactly and the `Nat` identity cannot alias at the FFI
 boundary; the allocator additionally fails closed on wrap.
 
+**`ackBounded` carried in the global invariant — CLOSED at v0.32.114**
+(Codex P2).  v0.32.113 introduced the predicate and left it an optional
+hypothesis, so reasoning from `proofLayerInvariantBundle` could admit
+`ackedGenOnCore c > roundGeneration` and defeat the acknowledgment-shape
+lemmas even though the bundle held.  No production transition reaches such a
+state, but the fact lived in the proofs rather than the invariant — the
+project's "enforce it structurally" rule, applied to a predicate this
+workstream had just introduced.  Now the **15th `proofLayerInvariantBundle`
+conjunct**, threaded exactly as SM7.B threaded the 12th (`pendingBounded`):
+boot witness, definitional adapter transport, Boot general bridge, freeze,
+and a preservation chain across the drains, both enqueue forms, the round
+steps, the posting folds, both broadcasts, the handler in both forms, the
+per-core catch-up the live seam runs, and the six live wrappers.  The window
+forms take `hi ≤ roundGeneration` as a hypothesis because unconditionally it
+is false — a window claiming to discharge an unopened round is the state the
+invariant excludes — and the live seam supplies it.
+
 **Generation-aware model acknowledgment — CLOSED at v0.32.113** (Codex P2).
 Registered as tracked debt when the P1 landed, then taken in the following
 cut.  `completeShootdownOnCoreInWindow` acknowledged unconditionally, so a

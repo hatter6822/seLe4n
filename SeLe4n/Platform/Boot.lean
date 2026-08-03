@@ -3425,10 +3425,16 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
       unfold SeLe4n.Kernel.Architecture.icacheOnCore
       rw [bootFromPlatform_perCoreICache_eq]; exact SeLe4n.Model.default_perCoreICache c
     rw [hview] at hl; simp [SeLe4n.Model.ICacheState.empty] at hl
-  -- Compose all 14 components
+  -- 15. ackBounded (WS-SM SM7.F.3, PR #854 review): boot opens no round, so
+  -- the post-boot shootdown state is the quiescent default — every slot and
+  -- the round counter `0`.
+  have hAckBounded : SeLe4n.Kernel.Architecture.ackBounded
+      (bootFromPlatform config).state.tlbShootdown := by
+    rw [hShoot]; exact SeLe4n.Model.default_tlbShootdown_ackBounded
+  -- Compose all 15 components
   exact ⟨h1, hCapBundle, ⟨h1.1, hCapBundle, hIpcFull⟩, hCouplingBundle,
          hLifeBundle, hServiceBundle, hVspaceBundle, hCrossBundle, hTlbBundle, hExtBundle,
-         hNtfnWaiter, hPBBundle, hPerCoreTlbBundle, hPerCoreICacheBundle⟩
+         hNtfnWaiter, hPBBundle, hPerCoreTlbBundle, hPerCoreICacheBundle, hAckBounded⟩
 
 -- ============================================================================
 -- V4-A9: End-to-end bridge for general configs

@@ -86,6 +86,21 @@ coalesces to a covered full flush), and every non-shootdown kernel
 transition frames `SystemState.tlbShootdown`, so the component transports
 definitionally through the adapter preservation proofs below.
 
+WS-SM SM7.F.3 (PR #854 review): `ackBounded st.tlbShootdown` added as the
+15th component — no core has acknowledged a shootdown round that has not
+been opened.  Introduced with the v0.32.113 generation-carrying
+acknowledgment vector, where it is what makes "a target starts a round
+unacknowledged" true: with generations there is no ack reset, so a target
+is unacknowledged precisely because its slot still names an earlier round.
+Left as an optional hypothesis on the acknowledgment-shape lemmas it landed
+with, which meant reasoning from the standard bundle could admit a state
+with `ackedGenOnCore c > roundGeneration` and defeat them — the project's
+"enforce it structurally" case, applied to a predicate this workstream had
+itself just introduced.  Carried here alongside its sibling
+`pendingBounded`: both read only `SystemState.tlbShootdown`, which every
+non-shootdown transition frames, so it transports definitionally through
+the adapter preservation proofs below.
+
 WS-SM SM7.C / SM7.F.2: `tlbInvalidationConsistent_perCore st` added as the
 13th component — the per-core TLB consistency invariant.  SM7.F.2 states it
 in its **honest, pending-aware** form: on every core, every cached entry is
@@ -133,7 +148,8 @@ def proofLayerInvariantBundle (st : SystemState) : Prop :=
     notificationWaiterConsistent st ∧
     pendingBounded st.tlbShootdown ∧
     tlbInvalidationConsistent_perCore st ∧
-    icacheCoherent_perCore st
+    icacheCoherent_perCore st ∧
+    ackBounded st.tlbShootdown
 
 /-- Proof-carrying local preservation hooks required to compose adapter paths with invariant bundles. -/
 structure AdapterProofHooks (contract : RuntimeBoundaryContract) where
@@ -577,7 +593,7 @@ private theorem default_schedulerInvariantBundleFull :
 
 theorem default_system_state_proofLayerInvariantBundle :
     proofLayerInvariantBundle (default : SystemState) := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   -- 1. schedulerInvariantBundleFull (WS-H12e: now uses full bundle)
   · exact default_schedulerInvariantBundleFull
   -- 2. capabilityInvariantBundle (6-tuple: unique, sound, bounded, completeness, acyclicity, depth)
@@ -633,6 +649,9 @@ theorem default_system_state_proofLayerInvariantBundle :
   -- 14. icacheCoherent_perCore (WS-SM SM7.D: every core's boot instruction
   --     cache is cold, hence trivially coherent)
   · exact default_icacheCoherent_perCore
+  -- 15. ackBounded (WS-SM SM7.F.3 PR #854 review: boot slots and the round
+  --     counter are all `0`)
+  · exact default_tlbShootdown_ackBounded
 
 -- ============================================================================
 -- M-08/WS-E6: Architecture assumption consumption bridge theorems
