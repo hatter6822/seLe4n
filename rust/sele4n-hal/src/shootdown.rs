@@ -2,11 +2,21 @@
 //! **WS-SM SM7.A.3**: per-core TLB-shootdown acknowledgment flags.
 //!
 //! The runtime realisation of the Lean model's
-//! `TlbShootdownState.shootdownAck : Vector Bool numCores`
+//! `TlbShootdownState.shootdownAck : Vector Nat numCores`
 //! (`SeLe4n/Kernel/Architecture/TlbShootdown.lean`).  One
-//! cache-line-aligned [`AtomicBool`] per core, polled by the shootdown
-//! initiator and set by each target's `.tlbShootdownReq` SGI handler
-//! (INTID 1; see the SGI reservation table in [`crate::gic`]).
+//! cache-line-aligned generation slot per core ([`ShootdownAckSlot`],
+//! an [`AtomicU64`]) holding the highest round generation that core has
+//! discharged: advanced by a release `fetch_max` in each target's
+//! `.tlbShootdownReq` SGI handler (INTID 1; see the SGI reservation
+//! table in [`crate::gic`]) and polled by the initiator, which waits
+//! for `acked_gen[c] >= gen` rather than for a flag.
+//!
+//! Slots boot at 0 and are never cleared.  Both properties are load
+//! bearing (SM7.F.3): an acknowledgment names the round it discharged,
+//! so a `.tlbShootdownReq` SGI left pending by an earlier round cannot
+//! satisfy a later round's wait, and with nothing to reset there is no
+//! window between opening a round and publishing its operands.  The
+//! Boolean flag vector this replaced had both hazards.
 //!
 //! ## Protocol role (SMP_TLB_SHOOTDOWN_PLAN.md §3.2, §4.2)
 //!
@@ -957,12 +967,13 @@ pub fn tlb_shootdown_req_handler(_intid: u8, _source_cpu: u8) {
 }
 
 /// **WS-SM SM7.B.3** (testable inner form): the handler body over an
-/// explicit flag slice and executing-core id.  Tests reset a *local*
-/// slice first and assert the genuine `false → true` ack transition —
-/// the global [`SHOOTDOWN_ACK`] boots all-`true`, so asserting on it
-/// alone cannot distinguish "the handler acked" from "the flag was
-/// never down" (the SM7.B test-hardening cut closed exactly that
-/// vacuity).
+/// explicit slot slice and executing-core id.  Tests drive a *local*
+/// slice so they can assert the genuine generation advance — the global
+/// [`SHOOTDOWN_ACK`] boots at 0 and only ever moves forward, so
+/// asserting on it alone cannot distinguish "the handler acked this
+/// round" from "some earlier round already left the slot high" (the
+/// SM7.B test-hardening cut closed exactly that vacuity, and SM7.F.3
+/// re-based it from flags onto generations).
 #[deny(clippy::panic, clippy::unreachable, clippy::todo)]
 pub fn tlb_shootdown_req_handler_in(slots: &[ShootdownAckSlot], core_id: usize) {
     if core_id >= slots.len() {

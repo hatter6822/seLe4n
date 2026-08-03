@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.32.124.
+Lean 4.28.0 toolchain, Lake build system, version 0.32.125.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -520,13 +520,16 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   touched by a workstream that can rename them in the same commit;
   new code must comply from day one.  Enforced by
   `scripts/check_identifier_naming.py` (Tier 0), which scans every
-  identifier token — and every path component — over all tracked
-  sources rather than enumerating declaration forms or globs:
-  Rust is held at zero, Lean is pinned by a baseline of
+  identifier token — and every path component — over every tracked
+  non-documentation file rather than enumerating declaration forms,
+  globs, or suffixes: Rust is held at zero, and every other code
+  surface (Lean, Python, shell) is pinned by a baseline of
   (identifier, file) pairs in
   `scripts/identifier_naming_baseline.json` so a grandfathered
   name may disappear but never appear somewhere new.  Prose is
-  exempt.
+  exempt, as are documentation paths — an audit report or workstream
+  plan is *named after* the workstream it records, and CLAUDE.md and
+  the website link manifest both cite those paths.
 
 ## Implement-the-improvement rule
 

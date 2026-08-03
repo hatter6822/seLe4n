@@ -15,9 +15,13 @@ rule.  Each mechanism below exists to remove a category of that
 mistake rather than to patch one instance:
 
 1. **File discovery is `git ls-files`, not globs.**  Hand-written globs
-   missed `rust/*/tests/**` integration suites entirely.  Every tracked
-   source is in scope by construction; nothing is in scope because
-   someone remembered to add it.
+   missed `rust/*/tests/**` integration suites entirely, and a later
+   round found the suffix list itself was the same mistake: scanning
+   only `.rs` and `.lean` let `scripts/phase5_helper.py` through.  Every
+   tracked non-documentation file is now in scope by construction --
+   paths always, contents wherever `CONTENT_STRIPPERS` knows the
+   language.  Nothing is in scope because someone remembered to add it.
+   (Documentation is deliberately exempt; see `DOC_PREFIXES`.)
 2. **Path components are scanned, not just contents.**  The rule covers
    file names, so `src/ws_sm_helpers.rs` with well-named contents is a
    violation the content scan alone cannot see.
@@ -149,6 +153,39 @@ def strip_pairs(text: str, line_comment: str, block: tuple[str, str]) -> str:
     return "".join(out)
 
 
+def strip_hash(text: str) -> str:
+    """Blank `#` comments and string literals for Python/shell sources.
+
+    Python triple-quoted docstrings must be blanked, not scanned:
+    this file's own docstring cites `phase5_helper`, `ak9ce_01` and
+    `I-H01` as examples, and a scanner that read its own prose as
+    code would fail on itself.  Prose is exempt -- that is the rule,
+    not a loophole.
+    """
+    triple = (chr(34) * 3, chr(39) * 3)
+    out, i, n = [], 0, len(text)
+    while i < n:
+        if text[i] == "#":
+            j = text.find(chr(10), i)
+            j = n if j < 0 else j
+            out.append(" " * (j - i)); i = j
+        elif any(text.startswith(q, i) for q in triple):
+            q = text[i:i + 3]
+            j = text.find(q, i + 3)
+            j = n if j < 0 else j + 3
+            out.append("".join(c if c == chr(10) else " " for c in text[i:j]))
+            i = j
+        elif text[i] in (chr(34), chr(39)):
+            q, j = text[i], i + 1
+            while j < n and text[j] not in (q, chr(10)):
+                j += 2 if text[j] == chr(92) else 1
+            j = min(j + 1, n)
+            out.append(blank_literal(text[i:j])); i = j
+        else:
+            out.append(text[i]); i += 1
+    return "".join(out)
+
+
 def strip_rust(t: str) -> str:
     return strip_pairs(t, "//", ("/*", "*/"))
 
@@ -157,34 +194,75 @@ def strip_lean(t: str) -> str:
     return strip_pairs(t, "--", ("/-", "-/"))
 
 
-def tracked(suffix: str) -> list[Path]:
-    out = subprocess.run(["git", "ls-files", f"*{suffix}"], cwd=REPO_ROOT,
+# Which suffixes carry code (identifiers), and how to strip their prose.
+# A file whose suffix is absent has its PATH scanned but not its contents.
+CONTENT_STRIPPERS = {
+    ".rs": strip_rust,
+    ".lean": strip_lean,
+    ".py": strip_hash,
+    ".sh": strip_hash,
+    ".bash": strip_hash,
+}
+
+# Documentation is out of scope entirely -- contents AND path.  Audit
+# reports, workstream plans and closeout records are *named after* the
+# workstream they record: `docs/audits/WS_RC_R4_CLOSEOUT_PLAN.md` is
+# correct, not a violation.  CLAUDE.md cites those paths directly and
+# `scripts/website_link_manifest.txt` protects them, so "enforcing" the
+# rule there would break live citations and the published site to rename
+# files whose names are doing their job.  The rule targets code; prose,
+# and the documents that exist to carry it, get the same exemption
+# docstrings do.
+DOC_PREFIXES = ("docs/",)
+DOC_SUFFIXES = (".md", ".txt", ".json", ".expected", ".sha256")
+
+# Rust is held at a hard zero; every other code surface ratchets against
+# the grandfathered baseline (CLAUDE.md keeps historical identifiers
+# until a workstream can rename them in the same commit).
+STRICT_PREFIX = "rust/"
+
+
+def tracked_all() -> list[str]:
+    out = subprocess.run(["git", "ls-files"], cwd=REPO_ROOT,
                          capture_output=True, text=True, check=True).stdout
-    return [REPO_ROOT / p for p in out.split()]
+    return out.split()
 
 
-def scan(suffix: str, stripper, roots: tuple[str, ...]) -> dict[str, set[str]]:
-    """Return {offending token: {files}} over contents AND path names."""
-    found: dict[str, set[str]] = {}
+def is_doc(rel: str) -> bool:
+    return rel.startswith(DOC_PREFIXES) or rel.endswith(DOC_SUFFIXES)
 
-    def record(token: str, rel: str) -> None:
-        if is_coded(token):
-            found.setdefault(token, set()).add(rel)
 
-    for path in tracked(suffix):
-        rel = str(path.relative_to(REPO_ROOT))
-        if roots and not rel.startswith(roots):
+def scan() -> tuple[dict[str, set[str]], dict[str, set[str]]]:
+    """Scan every tracked non-doc file: path components, then contents.
+
+    Returns (strict, ratcheted) -- Rust and everything else.
+    """
+    strict: dict[str, set[str]] = {}
+    ratcheted: dict[str, set[str]] = {}
+
+    for rel in tracked_all():
+        if is_doc(rel):
             continue
-        for part in Path(rel).parts:          # path components (finding 1)
+        found = strict if rel.startswith(STRICT_PREFIX) else ratcheted
+
+        def record(token: str, _f=found, _r=rel) -> None:
+            if is_coded(token):
+                _f.setdefault(token, set()).add(_r)
+
+        for part in Path(rel).parts:
             for token in IDENTIFIER.findall(part):
-                record(token, rel)
+                record(token)
+
+        stripper = CONTENT_STRIPPERS.get(Path(rel).suffix)
+        if stripper is None:
+            continue
         try:
-            text = stripper(path.read_text(encoding="utf-8"))
+            text = stripper((REPO_ROOT / rel).read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError):
             continue
         for token in IDENTIFIER.findall(text):
-            record(token, rel)
-    return found
+            record(token)
+    return strict, ratcheted
 
 
 def as_pairs(found: dict[str, set[str]]) -> set[tuple[str, str]]:
@@ -195,44 +273,47 @@ def main() -> int:
     status = 0
     regenerate = "--regenerate-baseline" in sys.argv
 
-    rust = scan(".rs", strip_rust, ("rust/",))
-    if rust:
-        print("FAIL: workstream/phase codes in Rust identifiers or paths:", file=sys.stderr)
-        for name, files in sorted(rust.items()):
+    strict, ratcheted = scan()
+
+    if strict:
+        print("FAIL: workstream/phase codes in Rust identifiers or paths:",
+              file=sys.stderr)
+        for name, files in sorted(strict.items()):
             print(f"  {name}  ({sorted(files)[0]})", file=sys.stderr)
-        print("\nRename by subject (what it does), not by workstream.", file=sys.stderr)
-        print("Cite the workstream in a docstring instead -- prose is exempt.", file=sys.stderr)
+        print("\nRename by subject (what it does), not by workstream.",
+              file=sys.stderr)
+        print("Cite the workstream in a docstring instead -- prose is exempt.",
+              file=sys.stderr)
         status = 1
     else:
         print("PASS: no workstream/phase codes in Rust identifiers or paths.")
 
-    lean = scan(".lean", strip_lean, ("SeLe4n/", "tests/", "Main.lean"))
     if regenerate:
         BASELINE_PATH.write_text(json.dumps(
-            {k: sorted(v) for k, v in sorted(lean.items())}, indent=1) + "\n")
-        print(f"Wrote baseline: {len(lean)} identifiers, "
-              f"{len(as_pairs(lean))} (identifier, file) pairs.")
+            {k: sorted(v) for k, v in sorted(ratcheted.items())}, indent=1) + "\n")
+        print(f"Wrote baseline: {len(ratcheted)} identifiers, "
+              f"{len(as_pairs(ratcheted))} (identifier, file) pairs.")
         return status
 
     baseline_raw = json.loads(BASELINE_PATH.read_text())
     baseline = {(n, f) for n, fs in baseline_raw.items() for f in fs}
-    current = as_pairs(lean)
-    new = sorted(current - baseline)
-    if new:
-        print(f"FAIL: {len(new)} newly introduced Lean naming violation(s):",
-              file=sys.stderr)
-        for name, f in new[:20]:
+    current = as_pairs(ratcheted)
+    new_pairs = sorted(current - baseline)
+    if new_pairs:
+        print(f"FAIL: {len(new_pairs)} newly introduced naming violation(s) "
+              f"outside Rust:", file=sys.stderr)
+        for name, f in new_pairs[:20]:
             print(f"  {name}  ({f})", file=sys.stderr)
-        print("\nHistorical Lean identifiers are grandfathered, but new code "
-              "must comply from day one.", file=sys.stderr)
+        print("\nHistorical identifiers are grandfathered, but new code must "
+              "comply from day one.", file=sys.stderr)
         print("A name may disappear from the baseline; it may never appear "
               "somewhere new.", file=sys.stderr)
         status = 1
     else:
         retired = len(baseline) - len(current)
         note = f"; {retired} retired -- regenerate to lock in" if retired > 0 else ""
-        print(f"PASS: no new Lean violations ({len(current)} grandfathered "
-              f"pairs{note}).")
+        print(f"PASS: no new violations outside Rust ({len(current)} "
+              f"grandfathered pairs{note}).")
 
     return status
 

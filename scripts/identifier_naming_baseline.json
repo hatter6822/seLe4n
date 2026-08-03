@@ -1,4 +1,10 @@
 {
+ "AK2": [
+  "scripts/test_tier3_invariant_surface.sh"
+ ],
+ "AN12": [
+  "scripts/test_tier3_invariant_surface.sh"
+ ],
  "Ak8Coverage": [
   "tests/Ak8CoverageSuite.lean"
  ],
@@ -12,13 +18,44 @@
   "tests/An10CascadeSuite.lean"
  ],
  "An10CascadeSuite": [
+  "scripts/ak7_cascade_baseline.sh",
   "tests/An10CascadeSuite.lean"
  ],
  "An9HardwareBindingSuite": [
   "tests/An9HardwareBindingSuite.lean"
  ],
+ "SM0": [
+  "scripts/test_tier3_invariant_surface.sh"
+ ],
+ "SM1": [
+  "scripts/test_tier3_invariant_surface.sh"
+ ],
+ "SM2": [
+  "scripts/test_tier3_invariant_surface.sh"
+ ],
+ "SM3": [
+  "scripts/test_tier3_invariant_surface.sh"
+ ],
+ "SM4": [
+  "scripts/test_tier3_invariant_surface.sh"
+ ],
+ "SM5": [
+  "scripts/test_tier3_invariant_surface.sh"
+ ],
+ "SM6": [
+  "scripts/test_tier3_invariant_surface.sh"
+ ],
+ "SM7": [
+  "scripts/test_tier3_invariant_surface.sh"
+ ],
  "Sm5iAffinityAnchors": [
   "tests/SmpCbsSuite.lean"
+ ],
+ "TEST_COUNT_AK7": [
+  "scripts/ak7_cascade_baseline.sh"
+ ],
+ "WS": [
+  "scripts/test_tier3_invariant_surface.sh"
  ],
  "ak4a01_shortPathNoOverflow": [
   "tests/DecodingSuite.lean"
@@ -44,8 +81,18 @@
  "ak6Tests": [
   "tests/InformationFlowSuite.lean"
  ],
+ "ak7_cascade_baseline": [
+  "scripts/ak7_cascade_baseline.sh",
+  "scripts/ak7_cascade_check_monotonic.sh"
+ ],
+ "ak7_cascade_check_monotonic": [
+  "scripts/ak7_cascade_check_monotonic.sh"
+ ],
  "ak8Tests": [
   "tests/Ak8CoverageSuite.lean"
+ ],
+ "ak8_coverage_suite": [
+  "scripts/test_tier2_negative.sh"
  ],
  "ak8a_01_default_satisfies_untypedRegionsDisjoint": [
   "tests/ModelIntegritySuite.lean"
@@ -67,6 +114,9 @@
  ],
  "ak8a_07_empty_config_disjoint": [
   "tests/ModelIntegritySuite.lean"
+ ],
+ "ak9_platform_suite": [
+  "scripts/test_tier2_negative.sh"
  ],
  "ak9a_01_mmioRead32_rejects_unaligned": [
   "tests/Ak9PlatformSuite.lean"
@@ -233,6 +283,9 @@
  "an10_c_storeObjectKindChecked_rejects_cross_variant": [
   "tests/An10CascadeSuite.lean"
  ],
+ "an10_cascade_suite": [
+  "scripts/test_tier2_negative.sh"
+ ],
  "an10_d_clearPendingState_populated": [
   "tests/An10CascadeSuite.lean"
  ],
@@ -361,6 +414,9 @@
  ],
  "an7d5_04_extractPeripherals_excludes_reserved_names": [
   "tests/Ak9PlatformSuite.lean"
+ ],
+ "an9_hardware_binding_suite": [
+  "scripts/test_tier2_negative.sh"
  ],
  "h05": [
   "SeLe4n/Kernel/Architecture/TlbModel.lean"
@@ -526,6 +582,33 @@
  "runSm5iTickCbsChecks": [
   "tests/SmpCbsSuite.lean"
  ],
+ "sm0t_sub_args": [
+  "scripts/test_tier4_nightly_candidates.sh"
+ ],
+ "sm5d_surface": [
+  "scripts/test_tier3_invariant_surface.sh"
+ ],
+ "sm5e_surface": [
+  "scripts/test_tier3_invariant_surface.sh"
+ ],
+ "sm5f_surface": [
+  "scripts/test_tier3_invariant_surface.sh"
+ ],
+ "sm5g_surface": [
+  "scripts/test_tier3_invariant_surface.sh"
+ ],
+ "sm5h_surface": [
+  "scripts/test_tier3_invariant_surface.sh"
+ ],
+ "sm5i_suite": [
+  "scripts/test_tier3_invariant_surface.sh"
+ ],
+ "sm5i_tick_affinity": [
+  "scripts/test_tier3_invariant_surface.sh"
+ ],
+ "sm5i_tick_cbs": [
+  "scripts/test_tier3_invariant_surface.sh"
+ ],
  "test_AK8_E_bound_missing_sc_is_objectNotFound": [
   "tests/Ak8CoverageSuite.lean"
  ],
@@ -564,6 +647,9 @@
  ],
  "test_AK8_I_well_keyed_freeze_succeeds": [
   "tests/Ak8CoverageSuite.lean"
+ ],
+ "test_count_ak7": [
+  "scripts/ak7_cascade_baseline.sh"
  ],
  "ws": [
   "SeLe4n/Kernel/Scheduler/PriorityInheritance/Compute.lean"

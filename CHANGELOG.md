@@ -1,3 +1,58 @@
+## v0.32.125 — The scan covers scripts too; the Rust ack contract catches up
+
+PR #854 review, fourteenth round: two P2s.
+
+**The naming gate's suffix list was the same mistake one level down.**
+v0.32.123 replaced hand-written globs with `git ls-files` so file discovery
+could not under-reach — and then filtered the result to `.rs` and `.lean`,
+which is a hand-written scope by another name. `scripts/phase5_helper.py`
+passed cleanly, as would a coded identifier in any script.
+
+Now every tracked non-documentation file is in scope: paths always,
+contents wherever a stripper knows the language (Rust, Lean, Python,
+shell). Rust stays at a hard zero; every other code surface ratchets
+against the grandfathered baseline, which is why it grew 199 → 229 pairs —
+the broadened scan found real pre-existing violations
+(`scripts/ak7_cascade_check_monotonic.sh`, `ak8_coverage_suite` and
+friends), grandfathered per the rule rather than renamed here.
+
+**Documentation is deliberately exempt, and the docstring now says so
+instead of over-claiming.** The previous text promised "every tracked
+source", which is what made this finding land. But `docs/audits/`
+and `docs/planning/` files are *named after* the workstream they record —
+`WS_RC_R4_CLOSEOUT_PLAN.md` is correct, not a violation — and CLAUDE.md
+cites those paths while `website_link_manifest.txt` protects them.
+"Enforcing" the rule there would break live citations and the published
+site to rename files whose names are doing their job. Prose and the
+documents carrying it get the same exemption docstrings already have.
+
+The Python stripper blanks triple-quoted docstrings, which is load-bearing
+rather than incidental: this scanner's own docstring cites `phase5_helper`,
+`ak9ce_01` and `I-H01` as examples, so a version that read its own prose as
+code would fail on itself.
+
+**The Rust shootdown header still described the pre-SM7.F.3 protocol.**
+v0.32.122 corrected the Lean side's stale Boolean contract and did not
+sweep the Rust mirror: `shootdown.rs` still declared the model field as
+`Vector Bool` backed by one `AtomicBool` per core, and the handler
+docstring still said the global slots boot `true`. Both describe the
+removed reset-era design and contradict the `AtomicU64` generation slots
+the file actually implements.
+
+Rewritten to describe generation slots booting at 0, with the two
+properties that matter stated as such: an acknowledgment names the round
+it discharged, so a `.tlbShootdownReq` SGI left pending by an earlier round
+cannot satisfy a later round's wait; and because nothing is cleared to open
+a round, there is no window between opening one and publishing its
+operands. The Boolean vector had both hazards.
+
+Verified by neutering: `scripts/phase5_helper.py` (the reported example)
+and `sm9e_probe` added to a shell script are both rejected; the clean tree
+passes; Rust holds at zero.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F.3
+Refs: #854
+
 ## v0.32.124 — Interpolated strings are code; the mirror header is checked
 
 PR #854 review, thirteenth round: two P2s, both gates, both mine.
