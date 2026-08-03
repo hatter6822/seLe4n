@@ -377,6 +377,22 @@ opaque ffiShootdownRoundLockRelease : BaseIO Unit
 @[extern "ffi_fatal_halt"]
 opaque ffiFatalHalt : BaseIO Unit
 
+/-- **WS-SM SM0.H + SM7.B.6/B.7 (PR #854 review)**: broadcast the
+    `haltAll` SGI (INTID 4) to every other PE, then park this one.
+    **Never returns.**
+
+    This is the form the fail-closed barriers use.  `ffiFatalHalt` parks
+    only the calling PE, which is not a barrier: the other cores keep
+    running against a TLB this core has just declared it could not
+    clean, and the target that never acknowledged can resume with the
+    stale translation.  `SgiKind.haltAll` had been reserved since SM0.H
+    and documented as "halt all cores" with no handler behind it; the
+    Rust side now registers one at boot.
+
+    Rust: `ffi_fatal_halt_all` in `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_fatal_halt_all"]
+opaque ffiFatalHaltAll : BaseIO Unit
+
 /-- **WS-SM SM7.B.5 + B.6 + SM7.F.3**: bounded acquire-poll for round
     generation `gen` acknowledged — spins up to `timeoutTicks`
     generic-timer ticks; returns `1` on observed all-acked-for-`gen`,
@@ -387,7 +403,8 @@ opaque ffiFatalHalt : BaseIO Unit
     Rust: `ffi_shootdown_wait_all_acked` in `sele4n-hal/src/ffi.rs` -/
 @[extern "ffi_shootdown_wait_all_acked"]
 opaque ffiShootdownWaitAllAcked :
-    (gen : UInt64) → (initiator : UInt64) → (timeoutTicks : UInt64) → BaseIO UInt64
+    (gen : UInt64) → (initiator : UInt64) → (onlineMask : UInt64) →
+      (timeoutTicks : UInt64) → BaseIO UInt64
 
 /-- **WS-SM SM7.B.2 (runtime target masking)**: the online-core bitmask
     (bit `c` set ⇔ core `c` is IRQ-serviceable; the boot core is always

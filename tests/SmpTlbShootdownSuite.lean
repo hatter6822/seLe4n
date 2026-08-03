@@ -361,6 +361,12 @@ open SeLe4n.Kernel.Concurrency
 #check @SeLe4n.Kernel.Concurrency.shootdownRoundLockTryAcquire
 #check @SeLe4n.Kernel.Concurrency.shootdownRoundLockRelease
 #check @SeLe4n.Kernel.Concurrency.shootdownWaitAllAcked
+-- PR #854 review: the fail-closed barriers' actual stop.  `fatalHaltAll`
+-- broadcasts the SM0.H `haltAll` SGI before parking, so the halt is
+-- system-wide rather than a park of the core that detected the fault.
+#check @SeLe4n.Kernel.Concurrency.fatalHalt
+#check @SeLe4n.Kernel.Concurrency.fatalHaltAll
+#check @SeLe4n.Kernel.haltFailClosed
 #check @SeLe4n.Kernel.Concurrency.shootdownCoreOnline
 #check @SeLe4n.Platform.FFI.ffiShootdownRoundLockTryAcquire
 #check @SeLe4n.Platform.FFI.ffiShootdownRoundLockRelease

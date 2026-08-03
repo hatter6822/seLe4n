@@ -611,7 +611,7 @@ mod tests {
     // =====================================================================
 
     #[test]
-    fn sm1c4_init_timer_secondary_returns_ok_on_host_with_default_tick_hz() {
+    fn init_timer_secondary_returns_ok_on_host_with_default_tick_hz() {
         // SM1.C.4: on host (CNTFRQ_EL0 read returns 0 because of the
         // host-stub `read_sysreg!`), `init_timer_secondary` falls back
         // to `COUNTER_FREQ_HZ` and returns Ok.
@@ -620,7 +620,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1c4_init_timer_secondary_rejects_zero_tick_hz() {
+    fn init_timer_secondary_rejects_zero_tick_hz() {
         // SM1.C.4: shape parity with `init_timer` — a zero tick rate
         // would cause division by zero in the interval computation, so
         // we reject it explicitly with `TimerError::ZeroTickHz`.
@@ -628,7 +628,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1c4_init_timer_secondary_does_not_reset_tick_count() {
+    fn init_timer_secondary_does_not_reset_tick_count() {
         // SM1.C.4 contract: `TICK_COUNT` is owned by the primary core;
         // a secondary's bring-up must NOT reset it.  Pre-seed the
         // counter with a sentinel value, run `init_timer_secondary`,
@@ -650,7 +650,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1c4_init_timer_secondary_does_not_perturb_timer_interval() {
+    fn init_timer_secondary_does_not_perturb_timer_interval() {
         // SM1.C.4 contract: the global `TIMER_INTERVAL` is populated
         // by the primary's `init_timer`; the secondary's locally-
         // computed interval matches that value, but we must NOT write
@@ -677,7 +677,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1c4_init_timer_secondary_signature_returns_result() {
+    fn init_timer_secondary_signature_returns_result() {
         // SM1.C.4: return type matches `init_timer` exactly so call
         // sites in `rust_secondary_main` can use the same `match`
         // pattern.
@@ -685,7 +685,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1c4_init_timer_secondary_accepts_full_tick_hz_range() {
+    fn init_timer_secondary_accepts_full_tick_hz_range() {
         // SM1.C.4: shape parity with `init_timer` — a 100 Hz tick
         // rate (10ms ticks) must also work.  Verifies the function
         // doesn't accidentally hard-code DEFAULT_TICK_HZ.
@@ -702,7 +702,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1c4_init_timer_signature_unchanged() {
+    fn init_timer_signature_unchanged() {
         // SM1.C.4 / regression: the primary's `init_timer` signature
         // must not drift — `rust_boot_main`'s call site depends on it.
         let _: fn(u32) -> Result<(), TimerError> = init_timer;
@@ -756,7 +756,7 @@ mod tests {
     /// SM5.D.1: the per-core timer ISR is callable on the host (the
     /// `hw_target`-gated Lean call is omitted) and does not panic.
     #[test]
-    fn sm5d1_per_core_timer_tick_isr_callable_on_host() {
+    fn per_core_timer_tick_isr_callable_on_host() {
         let _guard = TIMER_GLOBAL_STATE_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
@@ -770,7 +770,7 @@ mod tests {
     /// (the SMP-localised diagnostic), via `record_timer_tick`.  On the host the
     /// calling core is the boot core (TPIDR_EL1 stub returns 0).
     #[test]
-    fn sm5d1_per_core_timer_tick_isr_records_tick() {
+    fn per_core_timer_tick_isr_records_tick() {
         let _guard = TIMER_GLOBAL_STATE_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
@@ -789,7 +789,7 @@ mod tests {
     /// but never advances the global monotonic counter, mirroring the Lean model
     /// where `timerTickOnCore` never advances `machine.timer`).
     #[test]
-    fn sm5d1_per_core_timer_tick_isr_does_not_advance_global_tick_count() {
+    fn per_core_timer_tick_isr_does_not_advance_global_tick_count() {
         let _guard = TIMER_GLOBAL_STATE_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
@@ -804,7 +804,7 @@ mod tests {
 
     /// SM5.D.1: signature pin — `per_core_timer_tick_isr` is `fn(u64)`.
     #[test]
-    fn sm5d1_per_core_timer_tick_isr_signature() {
+    fn per_core_timer_tick_isr_signature() {
         let f: fn(u64) = per_core_timer_tick_isr;
         let _ = f;
     }

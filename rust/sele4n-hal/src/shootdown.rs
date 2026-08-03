@@ -869,12 +869,21 @@ pub fn wait_all_acked_bounded_in<C: FnMut() -> u64>(
 /// non-initiator core has acknowledged `gen`; `false` = timeout (the
 /// caller's fail-closed panic trigger — a silently skipped invalidation
 /// would be the SMP-C4 stale-TLB hazard).
-pub fn wait_all_acked_bounded(gen: u64, initiator: usize, timeout_ticks: u64) -> bool {
+pub fn wait_all_acked_bounded(
+    gen: u64,
+    initiator: usize,
+    online_mask: u64,
+    timeout_ticks: u64,
+) -> bool {
+    // PR #854 review: the mask is the round's OWN snapshot, taken once by
+    // the Lean seam and used for both the SGI loop and this wait.  Re-reading
+    // `CORE_IRQ_READY` here would let a secondary that became serviceable
+    // between the two reads be waited on without ever having been poked.
     wait_all_acked_bounded_in(
         &SHOOTDOWN_ACK,
         gen,
         initiator,
-        &irq_ready_online(),
+        &online_from_mask(online_mask),
         timeout_ticks,
         crate::timer::read_counter,
     )
@@ -1073,6 +1082,28 @@ pub unsafe fn register_tlb_shootdown_handler() {
 /// neither poked nor waited on.
 pub fn online_mask() -> u64 {
     online_mask_of(&irq_ready_online())
+}
+
+/// **WS-SM SM7.B.2 (PR #854 review)**: the inverse of [`online_mask_of`]
+/// — expand a round's captured online bitmask back into the per-core
+/// boolean form the wait predicate consumes.
+///
+/// This exists so the acknowledgment wait can be driven by the **same
+/// snapshot** the SGI loop targeted, rather than re-reading
+/// `CORE_IRQ_READY`.  A secondary that publishes IRQ-readiness between
+/// the two reads would otherwise be absent from the SGI loop (so it is
+/// never poked) yet present in the wait (so it is required to
+/// acknowledge) — a round that can only time out, and since v0.32.117
+/// a timeout genuinely halts the core.  `bring_up_secondaries_inner`
+/// returns after its `CPU_ON` calls without waiting for secondaries to
+/// publish, so the window is reachable during ordinary boot.
+#[inline]
+pub fn online_from_mask(mask: u64) -> [bool; MAX_SECONDARY_CORES + 1] {
+    let mut online = [false; MAX_SECONDARY_CORES + 1];
+    for (i, slot) in online.iter_mut().enumerate() {
+        *slot = mask & (1u64 << i) != 0;
+    }
+    online
 }
 
 /// **WS-SM SM7.B.2** (testable core): fold an IRQ-serviceable boolean
@@ -1620,6 +1651,63 @@ mod tests {
         });
         assert!(ok);
         assert_eq!(clock_reads, 1, "only the start-of-wait read happens");
+    }
+
+    /// **PR #854 review**: the round's captured online mask expands back
+    /// to the snapshot it was folded from, so carrying it across the
+    /// FFI loses nothing.
+    #[test]
+    fn online_mask_roundtrips_through_expansion() {
+        for bits in 0u64..16 {
+            let online = online_from_mask(bits);
+            assert_eq!(
+                online_mask_of(&online),
+                bits,
+                "mask {bits:#06b} must survive fold-then-expand"
+            );
+        }
+    }
+
+    /// **PR #854 review (regression witness)**: a core that becomes
+    /// IRQ-serviceable *after* the round captured its target mask must
+    /// not be waited on.
+    ///
+    /// The round poked exactly the cores in its own snapshot; a core
+    /// absent from it received no SGI and so will never acknowledge.
+    /// Before the fix the wait re-read `CORE_IRQ_READY`, picked that
+    /// core up, and could only time out — and since v0.32.117 a timeout
+    /// halts the machine. `bring_up_secondaries_inner` returns without
+    /// waiting for secondaries to publish, so this is ordinary boot, not
+    /// a contrived interleaving.
+    #[test]
+    fn a_core_outside_the_rounds_mask_is_not_waited_on() {
+        let slots = fresh_boot_slots();
+        // The round saw cores 0..2 online and poked 1 and 2; core 3 came
+        // up afterwards and never got an SGI.
+        let round_mask = online_mask_of(&[true, true, true, false]);
+        ack_round_in_slice(&slots, 1, 7);
+        ack_round_in_slice(&slots, 2, 7);
+
+        let mut ticks = 0u64;
+        assert!(
+            wait_all_acked_bounded_in(&slots, 7, 0, &online_from_mask(round_mask), 1_000, || {
+                ticks += 1;
+                ticks
+            }),
+            "the round must complete on the targets it actually poked"
+        );
+
+        // The load-bearing negative: the pre-fix behaviour, i.e. waiting
+        // against a fresh snapshot that now includes core 3.
+        let mut ticks2 = 0u64;
+        assert!(
+            !wait_all_acked_bounded_in(&slots, 7, 0, &[true, true, true, true], 1_000, || {
+                ticks2 += 1;
+                ticks2
+            }),
+            "re-snapshotting picks up a core that was never poked, so the \
+             round can only time out — the halt-on-boot regression"
+        );
     }
 
     /// SM7.B.5: a late acknowledgment is observed, not misreported as

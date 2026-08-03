@@ -597,7 +597,17 @@ round's publication can never race the previous round's, so every
 prior-round access is ordered before it.  (Robustness of the
 *acknowledgment* channel against a stale SGI delivered inside a later
 round is a separate, stronger property, supplied by SM7.F.3's
-generation tagging rather than by this edge.) -/
+generation tagging rather than by this edge.)
+
+**The live bracket covers every `e_crit` named here** (PR #854 review).
+`completeShootdownRounds` released the lock immediately after the
+acknowledgment wait and ran its catch-up commit *outside* it, so this
+contract named an access the bracket did not cover and could not be
+instantiated at the catch-up.  The release now follows the commit, so
+the enumeration above is true of the runtime rather than aspirational.
+On the failure path the lock is deliberately never released: a target
+that could not certify its invalidation must block every other core's
+round rather than let it proceed. -/
 theorem shootdownRoundLock_release_acquire (t : MemoryTrace)
     {e_crit e_rel e_acq e_next : MemoryEvent}
     (h_holder : sequencedBefore t e_crit e_rel)

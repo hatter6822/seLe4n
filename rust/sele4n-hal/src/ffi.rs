@@ -576,6 +576,20 @@ pub extern "C" fn ffi_fatal_halt() -> ! {
     crate::cpu::fatal_halt()
 }
 
+/// **WS-SM SM0.H + SM7.B.6/B.7 (PR #854 review)**: broadcast `haltAll`
+/// to every other PE, then park this one. **Never returns.**
+///
+/// This is what the shootdown barriers call. Parking only the detecting
+/// core leaves the rest of the machine running against a TLB that core
+/// has just declared it could not clean — the hazard the barrier exists
+/// to stop — so the halt has to be system-wide to be a barrier at all.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiFatalHaltAll`
+#[no_mangle]
+pub extern "C" fn ffi_fatal_halt_all() -> ! {
+    crate::gic::halt_all()
+}
+
 /// **WS-SM SM7.B.5 + B.6 + SM7.F.3**: Bounded acquire-poll for round
 /// generation `gen` acknowledged — spins up to `timeout_ticks`
 /// generic-timer ticks.  Returns `1` on observed all-acked-for-`gen`,
@@ -587,11 +601,13 @@ pub extern "C" fn ffi_fatal_halt() -> ! {
 pub extern "C" fn ffi_shootdown_wait_all_acked(
     gen: u64,
     initiator: u64,
+    online_mask: u64,
     timeout_ticks: u64,
 ) -> u64 {
     crate::shootdown::wait_all_acked_bounded(
         gen,
         shootdown_core_id_checked(initiator, "ffi_shootdown_wait_all_acked"),
+        online_mask,
         timeout_ticks,
     ) as u64
 }
@@ -1418,44 +1434,44 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn sm1e4_ffi_tlbi_for_sharing_inner_vmalle1_no_panic() {
+    fn ffi_tlbi_for_sharing_inner_vmalle1_no_panic() {
         // (Inner, Vmalle1) → tlbi_vmalle1is via the dispatcher.
         ffi_tlbi_for_sharing(0, 0, 0, 0);
     }
 
     #[test]
-    fn sm1e4_ffi_tlbi_for_sharing_outer_vmalle1_no_panic() {
+    fn ffi_tlbi_for_sharing_outer_vmalle1_no_panic() {
         // (Outer, Vmalle1) → tlbi_vmalle1os via the dispatcher.
         ffi_tlbi_for_sharing(1, 0, 0, 0);
     }
 
     #[test]
-    fn sm1e4_ffi_tlbi_for_sharing_inner_vae1_no_panic() {
+    fn ffi_tlbi_for_sharing_inner_vae1_no_panic() {
         ffi_tlbi_for_sharing(0, 1, 42, 0x1000);
     }
 
     #[test]
-    fn sm1e4_ffi_tlbi_for_sharing_outer_vae1_no_panic() {
+    fn ffi_tlbi_for_sharing_outer_vae1_no_panic() {
         ffi_tlbi_for_sharing(1, 1, 42, 0x1000);
     }
 
     #[test]
-    fn sm1e4_ffi_tlbi_for_sharing_inner_aside1_no_panic() {
+    fn ffi_tlbi_for_sharing_inner_aside1_no_panic() {
         ffi_tlbi_for_sharing(0, 2, 7, 0);
     }
 
     #[test]
-    fn sm1e4_ffi_tlbi_for_sharing_outer_aside1_no_panic() {
+    fn ffi_tlbi_for_sharing_outer_aside1_no_panic() {
         ffi_tlbi_for_sharing(1, 2, 7, 0);
     }
 
     #[test]
-    fn sm1e4_ffi_tlbi_for_sharing_inner_vale1_no_panic() {
+    fn ffi_tlbi_for_sharing_inner_vale1_no_panic() {
         ffi_tlbi_for_sharing(0, 3, 3, 0x4000);
     }
 
     #[test]
-    fn sm1e4_ffi_tlbi_for_sharing_outer_vale1_no_panic() {
+    fn ffi_tlbi_for_sharing_outer_vale1_no_panic() {
         ffi_tlbi_for_sharing(1, 3, 3, 0x4000);
     }
 
@@ -1483,7 +1499,7 @@ mod tests {
     // coverage.
 
     #[test]
-    fn sm1e4_decode_sharing_domain_tag_accepts_0_and_1() {
+    fn decode_sharing_domain_tag_accepts_0_and_1() {
         // Audit-pass-1: the only valid tags are 0 (Inner) and 1 (Outer).
         assert_eq!(
             decode_sharing_domain_tag(0),
@@ -1496,7 +1512,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1e4_decode_sharing_domain_tag_rejects_out_of_range() {
+    fn decode_sharing_domain_tag_rejects_out_of_range() {
         // Audit-pass-1: every other value rejects via None.  The FFI
         // wrapper translates None into a panic that aborts the kernel.
         assert_eq!(decode_sharing_domain_tag(2), None);
@@ -1506,7 +1522,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1e4_decode_sharing_domain_tag_const_callable() {
+    fn decode_sharing_domain_tag_const_callable() {
         // Audit-pass-1: decoder is `const fn` so call sites with
         // literal arguments evaluate at compile time.
         const D0: Option<crate::tlb::SharingDomain> = decode_sharing_domain_tag(0);
@@ -1516,7 +1532,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1e4_decode_tlb_invalidation_tag_accepts_0_to_3() {
+    fn decode_tlb_invalidation_tag_accepts_0_to_3() {
         // Audit-pass-1: the four valid op_tags map to typed variants.
         assert_eq!(
             decode_tlb_invalidation_tag(0, 0, 0),
@@ -1543,7 +1559,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1e4_decode_tlb_invalidation_tag_rejects_out_of_range() {
+    fn decode_tlb_invalidation_tag_rejects_out_of_range() {
         // Audit-pass-1: any tag >= 4 returns None.  The FFI wrapper
         // translates None into a panic.
         assert_eq!(decode_tlb_invalidation_tag(4, 0, 0), None);
@@ -1553,7 +1569,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1e4_decode_tlb_invalidation_tag_const_callable() {
+    fn decode_tlb_invalidation_tag_const_callable() {
         // Audit-pass-1: decoder is `const fn`.
         const OP_VMALLE1: Option<crate::tlb::TlbInvalidation> =
             decode_tlb_invalidation_tag(0, 0, 0);
@@ -1563,7 +1579,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1e4_decode_tlb_invalidation_tag_vmalle1_discards_operands() {
+    fn decode_tlb_invalidation_tag_vmalle1_discards_operands() {
         // Audit-pass-1: Vmalle1 (op_tag=0) ignores asid and vaddr.
         // Verify the variant is identical regardless of operand inputs.
         let with_zeros = decode_tlb_invalidation_tag(0, 0, 0);
@@ -1574,7 +1590,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1e4_decode_tlb_invalidation_tag_aside1_discards_vaddr() {
+    fn decode_tlb_invalidation_tag_aside1_discards_vaddr() {
         // Audit-pass-1: Aside1 (op_tag=2) carries asid but ignores vaddr.
         let with_zero = decode_tlb_invalidation_tag(2, 5, 0);
         let with_data = decode_tlb_invalidation_tag(2, 5, 0xDEAD_BEEF);
@@ -1590,7 +1606,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1e4_decode_signature_pins() {
+    fn decode_signature_pins() {
         // Audit-pass-1: pin decoder signatures so a future refactor
         // (e.g., changing Option to Result) breaks compilation here.
         let _: fn(u32) -> Option<crate::tlb::SharingDomain> = decode_sharing_domain_tag;
@@ -1599,7 +1615,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1e4_ffi_tlbi_for_sharing_signature_pin() {
+    fn ffi_tlbi_for_sharing_signature_pin() {
         // Pin the FFI signature.  A future ABI change would break
         // every Lean caller — pinning here surfaces the regression
         // at compile time.
@@ -1607,7 +1623,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1e4_ffi_tlbi_for_sharing_combinatorial_coverage() {
+    fn ffi_tlbi_for_sharing_combinatorial_coverage() {
         // SM1.E.4: cover every valid (domain, op) combination in one
         // tight loop.  This is the structural witness that the
         // dispatcher's match expression is exhaustive over the
@@ -1624,7 +1640,7 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn sm1f6_ffi_send_sgi_no_panic_on_host() {
+    fn ffi_send_sgi_no_panic_on_host() {
         // Host stub: GICD_SGIR write is a no-op via mmio_write32;
         // verify the FFI boundary doesn't panic.
         ffi_send_sgi(0x0F, 0); // INTID 0 (reschedule) to all cores
@@ -1632,12 +1648,12 @@ mod tests {
     }
 
     #[test]
-    fn sm1f6_ffi_send_sgi_to_self_no_panic_on_host() {
+    fn ffi_send_sgi_to_self_no_panic_on_host() {
         ffi_send_sgi_to_self(1); // INTID 1 (tlbShootdownReq)
     }
 
     #[test]
-    fn sm1f6_ffi_send_sgi_to_all_but_self_no_panic_on_host() {
+    fn ffi_send_sgi_to_all_but_self_no_panic_on_host() {
         ffi_send_sgi_to_all_but_self(2); // INTID 2 (tlbShootdownAck)
     }
 
@@ -1658,7 +1674,7 @@ mod tests {
     // and rely on the underlying gic test suite for the bound proof.
 
     #[test]
-    fn sm1f6_ffi_send_sgi_signature_pin() {
+    fn ffi_send_sgi_signature_pin() {
         // Pin every FFI export's signature.
         let _: extern "C" fn(u8, u8) = ffi_send_sgi;
         let _: extern "C" fn(u8) = ffi_send_sgi_to_self;
@@ -1666,7 +1682,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1f6_ffi_send_sgi_covers_every_kernel_reserved_intid() {
+    fn ffi_send_sgi_covers_every_kernel_reserved_intid() {
         // SM0.H reserves SGI INTIDs 0..4 for kernel coordination.
         // Verify every reserved INTID is callable through the FFI.
         for intid in 0..5u8 {
@@ -1681,14 +1697,14 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn sm1i3_ffi_idle_wait_no_panic_on_host() {
+    fn ffi_idle_wait_no_panic_on_host() {
         // Host stub: cpu::idle_wait → cpu::wfe → spin_loop.  Returns
         // immediately; no inter-test state corruption.
         ffi_idle_wait();
     }
 
     #[test]
-    fn sm1i3_ffi_idle_wait_bounded_returns_zero_on_host() {
+    fn ffi_idle_wait_bounded_returns_zero_on_host() {
         // Host stub: cpu::idle_wait_bounded → cpu::wfe_bounded which
         // returns 0 elapsed ticks deterministically on host.
         assert_eq!(
@@ -1698,7 +1714,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1i3_ffi_idle_wait_bounded_accepts_zero_budget() {
+    fn ffi_idle_wait_bounded_accepts_zero_budget() {
         // Edge case: max_ticks = 0 must not panic.  Caller's
         // "did we time out" check (`elapsed >= max_ticks`) trivially
         // succeeds on this input.  Host stub returns 0; verify
@@ -1709,7 +1725,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1i3_ffi_idle_wait_signatures_pinned() {
+    fn ffi_idle_wait_signatures_pinned() {
         // Pin the FFI export signatures.
         let _: extern "C" fn() = ffi_idle_wait;
         let _: extern "C" fn(u64) -> u64 = ffi_idle_wait_bounded;
@@ -1730,7 +1746,7 @@ mod tests {
     // `handle_synchronous_exception`, not the FFI surface.
 
     #[test]
-    fn sm1i4_ffi_per_core_irq_count_in_range_returns_snapshot() {
+    fn ffi_per_core_irq_count_in_range_returns_snapshot() {
         // The counter may have been advanced by other tests running
         // in parallel; we just verify the call returns a u64 without
         // panicking.
@@ -1740,32 +1756,32 @@ mod tests {
     }
 
     #[test]
-    fn sm1i4_ffi_per_core_irq_count_out_of_range_returns_zero() {
+    fn ffi_per_core_irq_count_out_of_range_returns_zero() {
         assert_eq!(ffi_per_core_irq_count(4), 0);
         assert_eq!(ffi_per_core_irq_count(100), 0);
         assert_eq!(ffi_per_core_irq_count(u64::MAX), 0);
     }
 
     #[test]
-    fn sm1i4_ffi_per_core_timer_tick_count_out_of_range_returns_zero() {
+    fn ffi_per_core_timer_tick_count_out_of_range_returns_zero() {
         assert_eq!(ffi_per_core_timer_tick_count(4), 0);
         assert_eq!(ffi_per_core_timer_tick_count(u64::MAX), 0);
     }
 
     #[test]
-    fn sm1i4_ffi_per_core_sgi_count_out_of_range_returns_zero() {
+    fn ffi_per_core_sgi_count_out_of_range_returns_zero() {
         assert_eq!(ffi_per_core_sgi_count(4), 0);
         assert_eq!(ffi_per_core_sgi_count(u64::MAX), 0);
     }
 
     #[test]
-    fn sm1i4_ffi_per_core_syscall_count_out_of_range_returns_zero() {
+    fn ffi_per_core_syscall_count_out_of_range_returns_zero() {
         assert_eq!(ffi_per_core_syscall_count(4), 0);
         assert_eq!(ffi_per_core_syscall_count(u64::MAX), 0);
     }
 
     #[test]
-    fn sm1i4_ffi_per_core_stats_signatures_pinned() {
+    fn ffi_per_core_stats_signatures_pinned() {
         // Pin every per-core stats FFI export signature.  A future
         // ABI change that broke the Lean caller would surface here.
         let _: extern "C" fn(u64) -> u64 = ffi_per_core_irq_count;
@@ -1787,7 +1803,7 @@ mod tests {
     // ----------------------------------------------------------------
 
     #[test]
-    fn sm1i4_ffi_per_core_irq_count_rejects_u64_with_high_bits_aliasing_slot() {
+    fn ffi_per_core_irq_count_rejects_u64_with_high_bits_aliasing_slot() {
         // 0x1_0000_0001 on a 32-bit target would truncate to 1 (in-
         // range).  On aarch64 the value is far out of range so the
         // bound check returns 0.
@@ -1797,19 +1813,19 @@ mod tests {
     }
 
     #[test]
-    fn sm1i4_ffi_per_core_timer_tick_count_rejects_u64_with_high_bits_aliasing_slot() {
+    fn ffi_per_core_timer_tick_count_rejects_u64_with_high_bits_aliasing_slot() {
         assert_eq!(ffi_per_core_timer_tick_count(0x1_0000_0001), 0);
         assert_eq!(ffi_per_core_timer_tick_count(0xFFFF_FFFF_0000_0000), 0);
     }
 
     #[test]
-    fn sm1i4_ffi_per_core_sgi_count_rejects_u64_with_high_bits_aliasing_slot() {
+    fn ffi_per_core_sgi_count_rejects_u64_with_high_bits_aliasing_slot() {
         assert_eq!(ffi_per_core_sgi_count(0x1_0000_0001), 0);
         assert_eq!(ffi_per_core_sgi_count(0xFFFF_FFFF_0000_0000), 0);
     }
 
     #[test]
-    fn sm1i4_ffi_per_core_syscall_count_rejects_u64_with_high_bits_aliasing_slot() {
+    fn ffi_per_core_syscall_count_rejects_u64_with_high_bits_aliasing_slot() {
         assert_eq!(ffi_per_core_syscall_count(0x1_0000_0001), 0);
         assert_eq!(ffi_per_core_syscall_count(0xFFFF_FFFF_0000_0000), 0);
     }
@@ -1826,7 +1842,7 @@ mod tests {
     static SM5B7_SWITCH_TARGET_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
-    fn sm5b7_ffi_switch_to_thread_records_and_reads_back_per_core() {
+    fn ffi_switch_to_thread_records_and_reads_back_per_core() {
         let _guard = SM5B7_SWITCH_TARGET_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
@@ -1850,7 +1866,7 @@ mod tests {
     }
 
     #[test]
-    fn sm5b7_ffi_switch_to_thread_out_of_range_returns_error_status() {
+    fn ffi_switch_to_thread_out_of_range_returns_error_status() {
         // Out-of-range core_id returns the non-zero (1) status and records nothing.
         assert_eq!(ffi_switch_to_thread(7, 4), 1);
         assert_eq!(ffi_switch_to_thread(7, 100), 1);
@@ -1858,7 +1874,7 @@ mod tests {
     }
 
     #[test]
-    fn sm5b7_ffi_switch_to_thread_out_of_range_records_nothing() {
+    fn ffi_switch_to_thread_out_of_range_records_nothing() {
         let _guard = SM5B7_SWITCH_TARGET_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
@@ -1870,14 +1886,14 @@ mod tests {
     }
 
     #[test]
-    fn sm5b7_ffi_per_core_current_thread_out_of_range_returns_sentinel() {
+    fn ffi_per_core_current_thread_out_of_range_returns_sentinel() {
         assert_eq!(ffi_per_core_current_thread(4), NO_CURRENT_THREAD);
         assert_eq!(ffi_per_core_current_thread(100), NO_CURRENT_THREAD);
         assert_eq!(ffi_per_core_current_thread(u64::MAX), NO_CURRENT_THREAD);
     }
 
     #[test]
-    fn sm5b7_ffi_switch_to_thread_rejects_u64_high_bits_aliasing_slot() {
+    fn ffi_switch_to_thread_rejects_u64_high_bits_aliasing_slot() {
         // Same u64-before-cast defense as the per-core stats FFI: a high-bit
         // core_id (which a 32-bit `as usize` would truncate to an in-range slot)
         // is rejected in u64 space — switch returns 1 and records nothing; read
@@ -1895,7 +1911,7 @@ mod tests {
     }
 
     #[test]
-    fn sm5b7_ffi_switch_signatures_pinned() {
+    fn ffi_switch_signatures_pinned() {
         // Pin the SM5.B.7 FFI export signatures; an ABI change breaking the
         // Lean `@[extern]` callers would surface here.
         let _: extern "C" fn(u64, u64) -> u64 = ffi_switch_to_thread;
@@ -1938,7 +1954,7 @@ mod tests {
     /// that accidentally dropped the `extern "C"` qualifier would
     /// fail to bind here.
     #[test]
-    fn sm2d_ffi_signatures_pinned() {
+    fn ffi_signatures_pinned() {
         let _t_handle: extern "C" fn(u64) -> u64 = ffi_ticket_lock_static_handle;
         let _t_acq: extern "C" fn(u64) -> u64 = ffi_ticket_lock_acquire;
         let _t_rel: extern "C" fn(u64) = ffi_ticket_lock_release;
@@ -1967,7 +1983,7 @@ mod tests {
     /// abort when it crosses the `extern "C"` FFI boundary (which
     /// Rust edition 2021 converts to a process abort via SIGABRT).
     #[test]
-    fn sm2d1_ffi_ticket_lock_static_handle_returns_index() {
+    fn ffi_ticket_lock_static_handle_returns_index() {
         for idx in 0..crate::lock_bridge::STATIC_TICKET_LOCK_POOL_SIZE as u64 {
             assert_eq!(ffi_ticket_lock_static_handle(idx), idx);
         }
@@ -1976,7 +1992,7 @@ mod tests {
     /// **SM2.D.1 test**: `ffi_ticket_lock_acquire` followed by
     /// `ffi_ticket_lock_release` increments both counters by 1.
     #[test]
-    fn sm2d1_ffi_ticket_lock_acquire_release_increments_counters() {
+    fn ffi_ticket_lock_acquire_release_increments_counters() {
         let _guard = SM2D_TRACE_TEST_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
@@ -1992,7 +2008,7 @@ mod tests {
     /// **SM2.D.1 test**: `ffi_ticket_lock_peek_holder` packs
     /// `next_ticket` and `serving` into the same u64.
     #[test]
-    fn sm2d1_ffi_ticket_lock_peek_holder_packs_state() {
+    fn ffi_ticket_lock_peek_holder_packs_state() {
         let _guard = SM2D_TRACE_TEST_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
@@ -2013,9 +2029,9 @@ mod tests {
     /// the pool index unchanged.
     ///
     /// Out-of-range coverage is in `lock_bridge::tests::sm2d_rw_lock_static_handle_out_of_range_panics`
-    /// for the same reason as `sm2d1_ffi_ticket_lock_static_handle_returns_index`.
+    /// for the same reason as `ffi_ticket_lock_static_handle_returns_index`.
     #[test]
-    fn sm2d2_ffi_rw_lock_static_handle_returns_index() {
+    fn ffi_rw_lock_static_handle_returns_index() {
         for idx in 0..crate::lock_bridge::STATIC_RW_LOCK_POOL_SIZE as u64 {
             assert_eq!(ffi_rw_lock_static_handle(idx), idx);
         }
@@ -2024,7 +2040,7 @@ mod tests {
     /// **SM2.D.2 test**: read-acquire/release cycle increments both
     /// counters.
     #[test]
-    fn sm2d2_ffi_rw_lock_read_cycle_increments_counters() {
+    fn ffi_rw_lock_read_cycle_increments_counters() {
         let _guard = SM2D_TRACE_TEST_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
@@ -2040,7 +2056,7 @@ mod tests {
     /// **SM2.D.2 test**: write-acquire/release cycle increments both
     /// counters.
     #[test]
-    fn sm2d2_ffi_rw_lock_write_cycle_increments_counters() {
+    fn ffi_rw_lock_write_cycle_increments_counters() {
         let _guard = SM2D_TRACE_TEST_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
@@ -2058,7 +2074,7 @@ mod tests {
     /// snapshot during a read-hold has bit 63 clear and at least
     /// one reader bit set.
     #[test]
-    fn sm2d2_ffi_rw_lock_snapshot_distinguishes_held() {
+    fn ffi_rw_lock_snapshot_distinguishes_held() {
         let _guard = SM2D_TRACE_TEST_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
@@ -2147,7 +2163,20 @@ mod tests {
         let _: extern "C" fn(u64) -> u64 = ffi_shootdown_acked_generation;
         let _: extern "C" fn(u64, u64) -> u64 = ffi_shootdown_all_acked_for_round;
         let _: extern "C" fn(u64) -> u64 = ffi_shootdown_self_service_round;
-        let _: extern "C" fn(u64, u64, u64) -> u64 = ffi_shootdown_wait_all_acked;
+        // PR #854 review: the wait carries the round's own online mask
+        // (gen, initiator, online_mask, timeout_ticks) rather than
+        // re-reading CORE_IRQ_READY on the Rust side.
+        let _: extern "C" fn(u64, u64, u64, u64) -> u64 = ffi_shootdown_wait_all_acked;
         let _: extern "C" fn(u64, u64) = ffi_shootdown_publish_commit;
+    }
+
+    /// **PR #854 review**: the fail-closed halt seams are non-returning
+    /// at the ABI, not merely by convention — `-> !` cannot be satisfied
+    /// by a function that falls through, so this fails to compile if
+    /// either is ever softened.
+    #[test]
+    fn ffi_fatal_halt_signatures_are_never_returning() {
+        let _: extern "C" fn() -> ! = ffi_fatal_halt;
+        let _: extern "C" fn() -> ! = ffi_fatal_halt_all;
     }
 }

@@ -109,14 +109,24 @@ fail-*open*: the round-lock acquire returned as though it held the lock,
 and the acknowledgment timeout fell through to the catch-up commit.
 
 So the two roles are split.  `panic!` still emits the message, because
-it is the only thing here that produces one.  `Concurrency.fatalHalt`
-(Rust `ffi_fatal_halt`, `-> !`) is the stop.  The trailing recursion is
-unreachable — it exists so that this function is non-returning in
+it is the only thing here that produces one.  `Concurrency.fatalHaltAll`
+(Rust `ffi_fatal_halt_all`, `-> !`) is the stop.  The trailing recursion
+is unreachable — it exists so that this function is non-returning in
 *Lean's* semantics rather than only by the FFI's promise, which is the
-distinction the barriers got wrong in the first place. -/
+distinction the barriers got wrong in the first place.
+
+**The halt is system-wide, not per-PE** (PR #854 review).  Parking only
+the core that detected the fault is not a barrier: the mapping change
+is already committed, so every other core carries on against a TLB this
+one has just declared it could not clean, and the target that never
+acknowledged can resume with the stale translation — the very hazard
+the barrier exists to stop.  `fatalHaltAll` broadcasts the SM0.H
+`haltAll` SGI (INTID 4) before parking; that INTID had been reserved
+and documented since SM0.H with **no handler registered**, so this is
+also where that declaration finally becomes functional. -/
 partial def haltFailClosed (msg : String) : BaseIO Unit := do
   panic! msg
-  Concurrency.fatalHalt
+  Concurrency.fatalHaltAll
   haltFailClosed msg
 
 /-- **WS-SM SM7.B.7**: the cooperative round-lock acquire's retry
@@ -344,10 +354,28 @@ def completeShootdownRounds (changed : List Concurrency.CoreId)
         Concurrency.sendSgiToCore c .tlbShootdownReq
     for op in collapsed do
       Architecture.tlbiForSharing shootdownSharingDomain op
-    let acked ← Concurrency.shootdownWaitAllAcked roundGen execCore
+    -- PR #854 review: the wait is driven by **this round's** `onlineMask`,
+    -- the same snapshot the SGI loop targeted, not by a fresh
+    -- `CORE_IRQ_READY` read on the Rust side.  A secondary that publishes
+    -- IRQ-readiness between the two reads would otherwise be absent from the
+    -- SGI loop (never poked) yet present in the wait (required to
+    -- acknowledge), so the round could only time out — and
+    -- `bring_up_secondaries_inner` returns after its `CPU_ON` calls without
+    -- waiting for secondaries to publish, so that window is reachable during
+    -- ordinary boot.  Harmless while the timeout was fail-open; since
+    -- v0.32.117 it halts the core, which is what makes carrying the snapshot
+    -- load-bearing rather than tidy.
+    let acked ← Concurrency.shootdownWaitAllAcked roundGen execCore onlineMask
       Architecture.shootdownWaitTimeoutTicks
-    Concurrency.shootdownRoundLockRelease
     if !acked then
+      -- The round lock is deliberately **not** released here.  A target
+      -- never certified its invalidation, so every other core's round must
+      -- block rather than proceed against a TLB this one could not clean:
+      -- holding the lock quarantines the subsystem, and `haltFailClosed`
+      -- broadcasts `haltAll` before parking so the cores that would have
+      -- waited on it stop too.  Releasing first — as this did until the PR
+      -- #854 review — let the rest of the machine run on with the stale
+      -- translation the barrier exists to prevent.
       haltFailClosed "WS-SM SM7.B.6: TLB shootdown round timed out — a \
         target core is hung or deaf; halting fail-closed (a silently \
         skipped invalidation would be the SMP-C4 stale-TLB hazard)"
@@ -383,6 +411,16 @@ def completeShootdownRounds (changed : List Concurrency.CoreId)
     Platform.FFI.modifyGetKernelState (fun st =>
       ((), Architecture.shootdownCatchUpPerCoreInWindow st execCore collapsed
         window.1 window.2))
+    -- PR #854 review: the release is **after** the catch-up commit, so the
+    -- lock brackets every access `shootdownRoundLock_release_acquire` names
+    -- as `e_crit` — the operand publication, the posted queues, and the
+    -- catch-up commit.  It previously released before the commit, which left
+    -- that contract naming an access the bracket did not cover and the
+    -- theorem un-instantiable at the catch-up.  Extending costs a bounded
+    -- queue drain inside the critical section (`modifyGetKernelState` is a
+    -- plain `IO.Ref` update, so there is no lock to invert against), well
+    -- within `shootdownRoundLockAcquireFuel`.
+    Concurrency.shootdownRoundLockRelease
 
 /-- **WS-SM SM7.D.1** (the live instruction-cache maintenance seam): emit the
 instruction-cache maintenance the just-committed transition recorded.

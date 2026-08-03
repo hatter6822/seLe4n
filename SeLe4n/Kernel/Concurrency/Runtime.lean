@@ -582,18 +582,27 @@ def shootdownRoundLockRelease : BaseIO Unit :=
   Platform.FFI.ffiShootdownRoundLockRelease
 
 /-- **WS-SM SM7.B.6 + SM7.B.7**: park this PE permanently.  **Never
-    returns** — see `Platform.FFI.ffiFatalHalt`. -/
+    returns** — see `Platform.FFI.ffiFatalHalt`.
+
+    Prefer `fatalHaltAll` for a fail-closed barrier: parking one PE
+    leaves the rest of the machine running. -/
 def fatalHalt : BaseIO Unit :=
   Platform.FFI.ffiFatalHalt
+
+/-- **WS-SM SM0.H + SM7.B.6/B.7**: broadcast `haltAll` to every other
+    PE, then park this one.  **Never returns** — see
+    `Platform.FFI.ffiFatalHaltAll`. -/
+def fatalHaltAll : BaseIO Unit :=
+  Platform.FFI.ffiFatalHaltAll
 
 /-- **WS-SM SM7.B.5 + B.6 + SM7.F.3**: bounded acquire-poll for round
     generation `gen` acknowledged — the runtime wait loop
     (`Architecture.waitAllAckedBounded`'s realisation); `false` means
     timeout, the caller's fail-closed panic trigger. -/
 def shootdownWaitAllAcked (gen : Nat) (initiator : CoreId)
-    (timeoutTicks : UInt64) : BaseIO Bool := do
+    (onlineMask : UInt64) (timeoutTicks : UInt64) : BaseIO Bool := do
   return (← Platform.FFI.ffiShootdownWaitAllAcked (UInt64.ofNat gen)
-    (UInt64.ofNat initiator.val) timeoutTicks) != 0
+    (UInt64.ofNat initiator.val) onlineMask timeoutTicks) != 0
 
 /-- **WS-SM SM7.B.2**: one snapshot of the Rust `smp::CORE_IRQ_READY`
     bitmask (Acquire) — the runtime target-set mask of the SM7.A

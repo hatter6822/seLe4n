@@ -1,3 +1,66 @@
+## v0.32.118 — Make the fail-closed halt system-wide, and stop it firing on boot
+
+PR #854 review, seventh round: three findings on the v0.32.117 cut, all
+valid, two of them consequences of that cut rather than pre-existing.
+
+**SECURITY — the fail-closed halt stopped only the core that detected the
+fault.** v0.32.117 gave the shootdown barriers a genuine halt, but
+`cpu::fatal_halt` parks the calling PE and nothing else, and the path had
+already released `SHOOTDOWN_ROUND_LOCK`. The mapping change is committed by
+then, so every other core carried on against a TLB the initiator had just
+declared it could not clean, and the target that never acknowledged could
+resume with the stale translation. A per-PE park is not a barrier.
+
+`SgiKind.haltAll` (INTID 4) has been reserved since SM0.H and documented as
+"halt all cores (panic / shutdown)" — with **no handler registered**, so a
+broadcast would have been acknowledged and dropped. That declaration is now
+functional: `gic::halt_all_handler` parks the receiving PE, boot registers
+it beside the shootdown handler, and `gic::halt_all` broadcasts to all but
+self before parking. `haltFailClosed` routes through it.
+
+Paired with that, the timeout path no longer releases the round lock.
+Holding it quarantines the subsystem: a core reaching the round before it
+services the halt SGI blocks rather than proceeding. Best-effort by nature
+— a core with interrupts masked takes the SGI when it unmasks — but
+strictly better than the park it replaces.
+
+**A boot-time liveness regression the same cut created.** The SGI loop
+targets the round's `onlineMask`, captured once in Lean; `wait_all_acked_
+bounded` then re-read `CORE_IRQ_READY` on the Rust side. A secondary
+publishing IRQ-readiness between the two reads is therefore absent from the
+loop (never poked) and present in the wait (required to acknowledge), so
+the round can only time out — and since v0.32.117 that halts the machine.
+`bring_up_secondaries_inner` returns after its `CPU_ON` calls without
+waiting for secondaries to publish, so this is ordinary boot rather than a
+contrived interleaving. The header's claim that "bring-up never overlaps a
+round" was an obligation nothing enforced.
+
+The wait now takes the round's own mask across the FFI (`online_from_mask`
+is the inverse of the existing fold, roundtrip-tested). The regression
+witness asserts both directions: the round completes against the targets it
+poked, and the pre-fix fresh-snapshot form does not.
+
+**The round lock now brackets the catch-up commit.**
+`shootdownRoundLock_release_acquire` names "its catch-up commit" among the
+accesses ordered before the release, but the live path released first, so
+the contract named an access the bracket did not cover and the theorem was
+un-instantiable there. The release moved after the commit — cheap, since
+`modifyGetKernelState` is a plain `IO.Ref` update with no lock to invert
+against, and the drain is bounded well inside the acquire fuel.
+
+**Workstream codes: the sweep finished.** v0.32.117 claimed a sweep but
+matched only the `sm7[a-f]` family, leaving `gic.rs` and `ffi.rs` half
+renamed — worse than either extreme. All **370** coded identifiers across
+15 files are now stripped, collision-checked per file, with the seven
+documents referencing them updated where the name still resolves. Globs in
+historical plan prose that name deleted tests stay as record.
+
+Rust 1099 → 1105 (HAL 804 → 810), zero ignored; `test_full.sh` green;
+trace byte-identical.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F.3
+Refs: #854
+
 ## v0.32.117 — Make the fail-closed shootdown barriers actually halt
 
 PR #854 review, sixth round. Two P1s, two P2s, and a sweep of every

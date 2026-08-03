@@ -492,7 +492,7 @@ mod tests {
     // writes to the same counter, `after > before` still holds.
     //
     // But ONE test
-    // (`sm1i4_per_core_counters_track_distinct_exception_branches`)
+    // (`per_core_counters_track_distinct_exception_branches`)
     // asserts `vm_after == vm_before` (the SVC branch does NOT touch
     // `vmfault_count`).  Under cargo's parallel test execution, a
     // concurrent test that calls `handle_synchronous_exception` with
@@ -717,7 +717,7 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn sm1i1_handle_irq_per_core_has_correct_abi_signature() {
+    fn handle_irq_per_core_has_correct_abi_signature() {
         // Function-pointer coercion: extern "C" fn(&mut TrapFrame) is
         // the assembly's expected entry signature.  A future regression
         // that changes the signature (e.g., to `fn(u64, &mut TrapFrame)`
@@ -727,7 +727,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1i1_handle_irq_per_core_no_mangle_attribute_preserved() {
+    fn handle_irq_per_core_no_mangle_attribute_preserved() {
         // The symbol must have a stable linker-visible address so
         // `trap.S`'s IRQ entry can resolve it.  Take the address-of
         // and assert non-null.  Inlining or dead-code elimination
@@ -740,7 +740,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1i1_handle_irq_per_core_legacy_handle_irq_signature_unchanged() {
+    fn handle_irq_per_core_legacy_handle_irq_signature_unchanged() {
         // The original `handle_irq` is retained at SM1.I.1 (SM5
         // swaps the assembly entry).  Verify its signature matches
         // the per-core variant so SM5 only swaps a function pointer.
@@ -749,7 +749,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1i1_handle_irq_per_core_runtime_call_does_not_panic() {
+    fn handle_irq_per_core_runtime_call_does_not_panic() {
         // SM1.I.1 audit-pass-1: actually invoke `handle_irq_per_core`
         // on host and verify it returns without panicking.  The host
         // GIC stub returns INTID 0 from `acknowledge_irq` (mmio_read32
@@ -766,7 +766,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1i1_handle_irq_per_core_advances_per_core_irq_count() {
+    fn handle_irq_per_core_advances_per_core_irq_count() {
         // SM1.I.1: a successful invocation must advance the per-core
         // IRQ counter.  We compare before/after snapshots; the delta
         // includes any concurrent IRQs from parallel tests, but the
@@ -806,7 +806,7 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn sm1i4_handle_sync_svc_increments_per_core_syscall_count() {
+    fn handle_sync_svc_increments_per_core_syscall_count() {
         // Audit-pass-3: serialise via SM1I4_OBSERVATION_MUTEX so concurrent
         // trap-handler tests don't race on PER_CPU_STATS[0].syscall_count.
         let _guard = SM1I4_OBSERVATION_MUTEX
@@ -826,7 +826,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1i4_handle_sync_dabt_increments_per_core_vm_fault_count() {
+    fn handle_sync_dabt_increments_per_core_vm_fault_count() {
         // Audit-pass-3: see SM1I4_OBSERVATION_MUTEX docstring.
         let _guard = SM1I4_OBSERVATION_MUTEX
             .lock()
@@ -845,7 +845,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1i4_handle_sync_iabt_increments_per_core_vm_fault_count() {
+    fn handle_sync_iabt_increments_per_core_vm_fault_count() {
         let _guard = SM1I4_OBSERVATION_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
@@ -863,7 +863,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1i4_handle_sync_alignment_increments_per_core_user_exception_count() {
+    fn handle_sync_alignment_increments_per_core_user_exception_count() {
         let _guard = SM1I4_OBSERVATION_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
@@ -881,7 +881,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1i4_handle_sync_sp_alignment_increments_per_core_user_exception_count() {
+    fn handle_sync_sp_alignment_increments_per_core_user_exception_count() {
         let _guard = SM1I4_OBSERVATION_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
@@ -899,7 +899,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1i4_handle_sync_unknown_ec_increments_per_core_user_exception_count() {
+    fn handle_sync_unknown_ec_increments_per_core_user_exception_count() {
         let _guard = SM1I4_OBSERVATION_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
@@ -918,7 +918,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1i4_per_core_counters_track_distinct_exception_branches() {
+    fn per_core_counters_track_distinct_exception_branches() {
         // Cross-check: each EC branch must advance ONLY its own counter
         // (not other counters in the same call).
         //

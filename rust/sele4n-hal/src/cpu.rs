@@ -687,13 +687,13 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn sm1i3_idle_wait_no_panic_on_host() {
+    fn idle_wait_no_panic_on_host() {
         // Host stub: single spin_loop iteration, returns.
         idle_wait();
     }
 
     #[test]
-    fn sm1i3_idle_wait_bounded_no_panic_on_host() {
+    fn idle_wait_bounded_no_panic_on_host() {
         // Same range of tick budgets as wfe_bounded's tests.
         let _ = idle_wait_bounded(0);
         let _ = idle_wait_bounded(1);
@@ -701,7 +701,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1i3_idle_wait_bounded_returns_zero_on_host() {
+    fn idle_wait_bounded_returns_zero_on_host() {
         // Host stub returns 0 elapsed ticks deterministically.  This is
         // the same contract as `wfe_bounded`, so a caller using
         // `elapsed >= max_ticks` to detect a missed wake sees a
@@ -710,7 +710,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1i3_idle_wait_signatures_pinned() {
+    fn idle_wait_signatures_pinned() {
         // ABI pin: a future regression that changed the signatures
         // (e.g., to `fn idle_wait() -> bool`) would fail to coerce here.
         let _: fn() = idle_wait;
@@ -729,24 +729,24 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn sm1i5_sev_no_panic_on_host() {
+    fn sev_no_panic_on_host() {
         sev();
     }
 
     #[test]
-    fn sm1i5_sevl_no_panic_on_host() {
+    fn sevl_no_panic_on_host() {
         sevl();
     }
 
     #[test]
-    fn sm1i5_sev_signatures_pinned() {
+    fn sev_signatures_pinned() {
         // ABI pin: changes to the signatures break this coercion.
         let _: fn() = sev;
         let _: fn() = sevl;
     }
 
     #[test]
-    fn sm1i5_sev_and_wfe_compose_on_host() {
+    fn sev_and_wfe_compose_on_host() {
         // Composition: after a `sev`, the next `wfe` should fall
         // through (on hardware).  On host both are no-ops so the test
         // verifies the wrappers can be sequenced without inter-call

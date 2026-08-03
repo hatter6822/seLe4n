@@ -1203,10 +1203,10 @@ NONE.
   and other secondaries continue running unaffected.
 
   Test coverage: 13 new HAL tests across two test groups:
-  - `smp::tests::sm1c5_validate_context_id_*` (7 tests): cover
+  - `smp::tests::validate_context_id_*` (7 tests): cover
     every Rust-layer rejection / acceptance case including
     const-context evaluation.
-  - `smp::tests::sm1c5_max_core_count_sym_*` (6 tests): cover
+  - `smp::tests::max_core_count_sym_*` (6 tests): cover
     the `.rodata` symbol value (= 4 on RPi5), address
     observability, cross-layer bound consistency (asm and Rust
     bounds agree), and that every asm-rejected context_id is
@@ -1254,7 +1254,7 @@ NONE.
   Reformulated to do the bounds check in `u64` space FIRST,
   then narrow to `usize` on the accepted path.  Mathematically
   equivalent on 64-bit; strictly more correct on 32-bit.
-  New test `sm1c5_validate_context_id_rejects_u64_with_high_bits_aliasing_secondary`
+  New test `validate_context_id_rejects_u64_with_high_bits_aliasing_secondary`
   exercises five boundary cases (`0x1_0000_0001`,
   `0x1_0000_0002`, `0x1_0000_0003`, `0x1_0000_0000`,
   `0xFFFF_FFFF_0000_0000`) — all must reject.
@@ -2758,24 +2758,24 @@ Plus testability:
 8 new cross-core test scenarios in `smp::tests::sm1i6_*` exercising
 the SM1.I infrastructure:
 
-- `sm1i6_per_core_stats_no_cross_slot_aliasing` — every core's
+- `per_core_stats_no_cross_slot_aliasing` — every core's
   `record_*_in_slice` writes its own slot without contention.
-- `sm1i6_validate_context_id_per_core_dispatch_no_aliasing` —
+- `validate_context_id_per_core_dispatch_no_aliasing` —
   PSCI context_id validator's per-core dispatch is bijective.
-- `sm1i6_cross_core_init_helper_idempotent` — `init_cpu_interface_secondary`
+- `cross_core_init_helper_idempotent` — `init_cpu_interface_secondary`
   composition (MMU + VBAR + GIC + timer + IRQ) is idempotent under
   repeated cross-core invocation.
-- `sm1i6_core_ready_flag_monotonic_across_repeated_bringup` —
+- `core_ready_flag_monotonic_across_repeated_bringup` —
   CORE_READY flags advance monotonically (no false reverts).
-- `sm1i6_per_core_stats_total_equals_sum` — cumulative across
+- `per_core_stats_total_equals_sum` — cumulative across
   slots equals sum of inner-form record calls.
-- `sm1i6_per_core_sgi_dispatch_kernel_reserved_intids` — every
+- `per_core_sgi_dispatch_kernel_reserved_intids` — every
   kernel-reserved SGI (SM0.H, INTIDs 0..4) per-core dispatch
   recorded.
-- `sm1i6_cross_core_bring_up_with_limit_boundary_progression` —
+- `cross_core_bring_up_with_limit_boundary_progression` —
   `bring_up_secondaries_with_limit_inner` honours the limit
   boundary for every `i in 0..MAX_SECONDARY_CORES+1`.
-- `sm1i6_full_cross_core_composition` — end-to-end: bring-up +
+- `full_cross_core_composition` — end-to-end: bring-up +
   validator dispatch + per-core stats accumulation compose
   without inter-test contamination.
 

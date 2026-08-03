@@ -675,7 +675,7 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn sm1e1_tlbi_vmalle1is_compiles_and_runs_on_host() {
+    fn tlbi_vmalle1is_compiles_and_runs_on_host() {
         // Host stub: no-op + `dsb ish` (also no-op) + `isb` (no-op).
         // A regression that broke the asm encoding would fail to compile
         // on aarch64; on host this just verifies the function is callable.
@@ -683,23 +683,23 @@ mod tests {
     }
 
     #[test]
-    fn sm1e1_tlbi_vae1is_compiles_and_runs_on_host() {
+    fn tlbi_vae1is_compiles_and_runs_on_host() {
         // Exercise the IS variant with a representative ASID + VA.
         tlbi_vae1is(42, 0x1000);
     }
 
     #[test]
-    fn sm1e1_tlbi_aside1is_compiles_and_runs_on_host() {
+    fn tlbi_aside1is_compiles_and_runs_on_host() {
         tlbi_aside1is(42);
     }
 
     #[test]
-    fn sm1e1_tlbi_vale1is_compiles_and_runs_on_host() {
+    fn tlbi_vale1is_compiles_and_runs_on_host() {
         tlbi_vale1is(42, 0x1000);
     }
 
     #[test]
-    fn sm1e1_tlbi_is_variants_accept_zero_asid() {
+    fn tlbi_is_variants_accept_zero_asid() {
         // ASID 0 is a valid value (the kernel reserves it for shared
         // mappings on some configurations).  Exercise every IS variant
         // with ASID=0 to verify the operand encoding handles it.
@@ -709,7 +709,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1e1_tlbi_is_variants_accept_max_asid() {
+    fn tlbi_is_variants_accept_max_asid() {
         // 16-bit ASID maxes at 0xFFFF.  Exercise the upper boundary so
         // the encoding's bit-shift cannot silently truncate.
         tlbi_vae1is(0xFFFF, 0x1000);
@@ -718,7 +718,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1e1_tlbi_is_variants_accept_max_vaddr() {
+    fn tlbi_is_variants_accept_max_vaddr() {
         // 48-bit VA space (TCR_EL1.IPS = 0b101).  The encoder masks
         // `vaddr >> 12` to the 44-bit VA[55:12] field per ARM ARM
         // C6.2.311.  For a 48-bit VA, vaddr >> 12 fits in 36 bits,
@@ -733,7 +733,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1e1_tlbi_is_variants_signature_pin() {
+    fn tlbi_is_variants_signature_pin() {
         // Pin every IS-variant function pointer signature.  A future
         // refactor that changes the argument types or return type would
         // fail to compile here.
@@ -748,27 +748,27 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn sm1e2_tlbi_vmalle1os_compiles_and_runs_on_host() {
+    fn tlbi_vmalle1os_compiles_and_runs_on_host() {
         tlbi_vmalle1os();
     }
 
     #[test]
-    fn sm1e2_tlbi_vae1os_compiles_and_runs_on_host() {
+    fn tlbi_vae1os_compiles_and_runs_on_host() {
         tlbi_vae1os(42, 0x1000);
     }
 
     #[test]
-    fn sm1e2_tlbi_aside1os_compiles_and_runs_on_host() {
+    fn tlbi_aside1os_compiles_and_runs_on_host() {
         tlbi_aside1os(42);
     }
 
     #[test]
-    fn sm1e2_tlbi_vale1os_compiles_and_runs_on_host() {
+    fn tlbi_vale1os_compiles_and_runs_on_host() {
         tlbi_vale1os(42, 0x1000);
     }
 
     #[test]
-    fn sm1e2_tlbi_os_variants_signature_pin() {
+    fn tlbi_os_variants_signature_pin() {
         // Pin every OS-variant function pointer signature for refactor
         // safety.  Symmetric with the IS-variant pin above.
         let _: fn() = tlbi_vmalle1os;
@@ -782,17 +782,17 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn sm1e3_tlbi_for_sharing_inner_vmalle1_callable() {
+    fn tlbi_for_sharing_inner_vmalle1_callable() {
         tlbi_for_sharing(SharingDomain::Inner, TlbInvalidation::Vmalle1);
     }
 
     #[test]
-    fn sm1e3_tlbi_for_sharing_outer_vmalle1_callable() {
+    fn tlbi_for_sharing_outer_vmalle1_callable() {
         tlbi_for_sharing(SharingDomain::Outer, TlbInvalidation::Vmalle1);
     }
 
     #[test]
-    fn sm1e3_tlbi_for_sharing_inner_vae1_callable() {
+    fn tlbi_for_sharing_inner_vae1_callable() {
         tlbi_for_sharing(
             SharingDomain::Inner,
             TlbInvalidation::Vae1 {
@@ -803,7 +803,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1e3_tlbi_for_sharing_outer_vae1_callable() {
+    fn tlbi_for_sharing_outer_vae1_callable() {
         tlbi_for_sharing(
             SharingDomain::Outer,
             TlbInvalidation::Vae1 {
@@ -814,17 +814,17 @@ mod tests {
     }
 
     #[test]
-    fn sm1e3_tlbi_for_sharing_inner_aside1_callable() {
+    fn tlbi_for_sharing_inner_aside1_callable() {
         tlbi_for_sharing(SharingDomain::Inner, TlbInvalidation::Aside1 { asid: 7 });
     }
 
     #[test]
-    fn sm1e3_tlbi_for_sharing_outer_aside1_callable() {
+    fn tlbi_for_sharing_outer_aside1_callable() {
         tlbi_for_sharing(SharingDomain::Outer, TlbInvalidation::Aside1 { asid: 7 });
     }
 
     #[test]
-    fn sm1e3_tlbi_for_sharing_inner_vale1_callable() {
+    fn tlbi_for_sharing_inner_vale1_callable() {
         tlbi_for_sharing(
             SharingDomain::Inner,
             TlbInvalidation::Vale1 {
@@ -835,7 +835,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1e3_tlbi_for_sharing_outer_vale1_callable() {
+    fn tlbi_for_sharing_outer_vale1_callable() {
         tlbi_for_sharing(
             SharingDomain::Outer,
             TlbInvalidation::Vale1 {
@@ -846,7 +846,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1e3_tlbi_for_sharing_dispatcher_signature_pin() {
+    fn tlbi_for_sharing_dispatcher_signature_pin() {
         // The dispatcher must take (SharingDomain, TlbInvalidation) and
         // return ().  A refactor that changed either argument or added a
         // return value would fail this signature pin.
@@ -854,7 +854,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1e3_sharing_domain_eq_distinguishes_variants() {
+    fn sharing_domain_eq_distinguishes_variants() {
         // The two SharingDomain variants must be Eq-distinguishable so
         // the dispatcher's match is exhaustive at compile time.
         assert_ne!(SharingDomain::Inner, SharingDomain::Outer);
@@ -863,7 +863,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1e3_tlb_invalidation_eq_distinguishes_variants() {
+    fn tlb_invalidation_eq_distinguishes_variants() {
         // The four TlbInvalidation variants must each compare unequal
         // to the other three.  This is a smoke check that the derive
         // macros produced the correct Eq instance.
@@ -880,7 +880,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1e3_tlb_invalidation_vae1_distinguishes_operands() {
+    fn tlb_invalidation_vae1_distinguishes_operands() {
         // Two `Vae1` values with different operands must compare unequal.
         // This catches a regression where the derived Eq accidentally
         // ignored the carried fields.
@@ -910,7 +910,7 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn sm1e_local_is_os_triplet_each_present() {
+    fn local_is_os_triplet_each_present() {
         // Every TLBI op has three forms: local, IS, and OS.  Pin them
         // pairwise via fn-pointer coercion.  This is the structural
         // witness that the SM1.E.1 + SM1.E.2 surface is complete.
@@ -929,7 +929,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1e_encode_va_asid_operand_is_const_correct() {
+    fn encode_va_asid_operand_is_const_correct() {
         // SM1.E.1: operand encoding evaluates in const contexts, so
         // call sites with literal arguments compute the operand at
         // compile time.  This catches a regression that introduces
@@ -942,13 +942,13 @@ mod tests {
     }
 
     #[test]
-    fn sm1e_encode_asid_only_operand_is_const_correct() {
+    fn encode_asid_only_operand_is_const_correct() {
         const OPERAND: u64 = encode_asid_only_operand(0xBEEF);
         assert_eq!(OPERAND, 0xBEEF_0000_0000_0000);
     }
 
     #[test]
-    fn sm1e_encode_va_asid_operand_masks_high_va_bits_to_44() {
+    fn encode_va_asid_operand_masks_high_va_bits_to_44() {
         // SM1.E.1 audit fix: the encoder takes the low 44 bits of
         // `vaddr >> 12` (bits [43:0] of the operand), per ARM ARM
         // C6.2.311.  Bits [47:44] are RES0 (or TTL on FEAT_TTL
@@ -987,7 +987,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1e_encode_va_asid_operand_preserves_full_44bit_va() {
+    fn encode_va_asid_operand_preserves_full_44bit_va() {
         // SM1.E.1 audit: with a vaddr at exactly the 44-bit VA field
         // boundary (vaddr = (2^44 - 1) << 12 ≈ 2^56 - 2^12), the
         // VA[55:12] field should be all-1s (44 bits set) and the
@@ -1007,7 +1007,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1e_encode_va_asid_operand_well_formed_vaddrs_unchanged() {
+    fn encode_va_asid_operand_well_formed_vaddrs_unchanged() {
         // SM1.E.1 audit: confirm the 44-bit mask is observationally
         // identical to the (incorrect) 48-bit mask for ALL well-formed
         // VAs in the 48-bit IPA space the kernel actually uses.  This

@@ -434,7 +434,7 @@ mod tests {
 
     /// **SM2.B.16 test**: new TicketLock has both counters at zero.
     #[test]
-    fn sm2b16_new_initial_state() {
+    fn new_initial_state() {
         let lock = TicketLock::new();
         assert_eq!(lock.next_ticket.load(Ordering::Acquire), 0);
         assert_eq!(lock.serving.load(Ordering::Acquire), 0);
@@ -442,7 +442,7 @@ mod tests {
 
     /// **SM2.B.16 test**: first acquire returns ticket 0.
     #[test]
-    fn sm2b16_first_acquire_returns_zero() {
+    fn first_acquire_returns_zero() {
         let lock = TicketLock::new();
         let ticket = lock.acquire();
         assert_eq!(ticket, 0);
@@ -450,7 +450,7 @@ mod tests {
 
     /// **SM2.B.16 test**: first acquire increments next_ticket to 1.
     #[test]
-    fn sm2b16_acquire_increments_next_ticket() {
+    fn acquire_increments_next_ticket() {
         let lock = TicketLock::new();
         let _ = lock.acquire();
         assert_eq!(lock.next_ticket.load(Ordering::Acquire), 1);
@@ -458,7 +458,7 @@ mod tests {
 
     /// **SM2.B.16 test**: release increments serving by 1.
     #[test]
-    fn sm2b16_release_increments_serving() {
+    fn release_increments_serving() {
         let lock = TicketLock::new();
         let _ = lock.acquire();
         lock.release();
@@ -470,7 +470,7 @@ mod tests {
     /// After acquire + release, both counters are 1 and a new acquire
     /// captures ticket 1 (not 0 — the previous ticket was consumed).
     #[test]
-    fn sm2b16_acquire_release_acquire() {
+    fn acquire_release_acquire() {
         let lock = TicketLock::new();
         let t1 = lock.acquire();
         lock.release();
@@ -481,7 +481,7 @@ mod tests {
 
     /// **SM2.B.16 test**: with_lock executes the closure.
     #[test]
-    fn sm2b16_with_lock_executes_closure() {
+    fn with_lock_executes_closure() {
         let lock = TicketLock::new();
         let result = lock.with_lock(|| 42);
         assert_eq!(result, 42);
@@ -489,7 +489,7 @@ mod tests {
 
     /// **SM2.B.16 test**: with_lock releases the lock on normal return.
     #[test]
-    fn sm2b16_with_lock_releases_on_return() {
+    fn with_lock_releases_on_return() {
         let lock = TicketLock::new();
         lock.with_lock(|| {});
         // serving incremented to 1 after release.
@@ -502,7 +502,7 @@ mod tests {
     /// a different lock (no deadlock potential since each lock is
     /// independent).
     #[test]
-    fn sm2b16_with_lock_nested_distinct_locks() {
+    fn with_lock_nested_distinct_locks() {
         let lock_a = TicketLock::new();
         let lock_b = TicketLock::new();
         let result = lock_a.with_lock(|| lock_b.with_lock(|| 7));
@@ -514,7 +514,7 @@ mod tests {
 
     /// **SM2.B.16 test**: TicketLockGuard exposes the captured ticket.
     #[test]
-    fn sm2b16_guard_exposes_ticket() {
+    fn guard_exposes_ticket() {
         let lock = TicketLock::new();
         // First acquire captures ticket 0.
         {
@@ -534,7 +534,7 @@ mod tests {
     /// occupies a single 64-byte cache line.  This eliminates false
     /// sharing with adjacent data.
     #[test]
-    fn sm2b16_cache_line_aligned() {
+    fn cache_line_aligned() {
         assert_eq!(align_of::<TicketLock>(), 64);
         // Size is at least 16 bytes (two u64 fields) and at most 64
         // (the alignment).  The exact size depends on Rust's layout
@@ -548,7 +548,7 @@ mod tests {
     /// This is a compile-time check: if `TicketLock::new()` weren't
     /// `const fn`, the `static` declaration would fail to compile.
     #[test]
-    fn sm2b16_const_constructor_in_static() {
+    fn const_constructor_in_static() {
         static GLOBAL_LOCK: TicketLock = TicketLock::new();
         // Verify the static is usable.
         assert_eq!(GLOBAL_LOCK.next_ticket.load(Ordering::Acquire), 0);
@@ -559,7 +559,7 @@ mod tests {
     /// `next_ticket` counter.  Verifies the accessor introduced for
     /// the SM2.D FFI bridge.
     #[test]
-    fn sm2d1_peek_next_ticket_matches_internal_counter() {
+    fn peek_next_ticket_matches_internal_counter() {
         let lock = TicketLock::new();
         assert_eq!(lock.peek_next_ticket(), 0);
         let _t = lock.acquire();
@@ -580,7 +580,7 @@ mod tests {
     /// **SM2.D.1 test**: `peek_serving` returns the current
     /// `serving` counter.
     #[test]
-    fn sm2d1_peek_serving_matches_internal_counter() {
+    fn peek_serving_matches_internal_counter() {
         let lock = TicketLock::new();
         assert_eq!(lock.peek_serving(), 0);
         let _t = lock.acquire();
@@ -598,7 +598,7 @@ mod tests {
     /// Mirrors the abstract Lean spec's INV-T1
     /// (`s.serving <= s.nextTicket`) at the concrete observation level.
     #[test]
-    fn sm2d1_peek_invariant_serving_le_next_ticket() {
+    fn peek_invariant_serving_le_next_ticket() {
         let lock = TicketLock::new();
         // Initially both 0; INV-T1 holds trivially.
         assert!(lock.peek_serving() <= lock.peek_next_ticket());
@@ -615,7 +615,7 @@ mod tests {
 
     /// **SM2.B.16 test**: Default implementation matches new().
     #[test]
-    fn sm2b16_default_matches_new() {
+    fn default_matches_new() {
         let lock_default = TicketLock::default();
         let lock_new = TicketLock::new();
         assert_eq!(
@@ -640,7 +640,7 @@ mod tests {
     /// as a const binding at proving `new()` is `const fn`: a
     /// non-const constructor would fail to compile in either context.
     #[test]
-    fn sm2b16_new_is_const_fn() {
+    fn new_is_const_fn() {
         static _LOCK_AS_STATIC: TicketLock = TicketLock::new();
     }
 
@@ -652,7 +652,7 @@ mod tests {
     /// the local-thread analog of the Lean spec's `ticketLock_fifo`
     /// theorem.
     #[test]
-    fn sm2b16_sequential_acquires_have_fifo_tickets() {
+    fn sequential_acquires_have_fifo_tickets() {
         let lock = TicketLock::new();
         let t1 = lock.acquire();
         lock.release();
@@ -673,7 +673,7 @@ mod tests {
     ///
     /// Verifies the lock can be re-used after release.
     #[test]
-    fn sm2b16_sequential_with_lock() {
+    fn sequential_with_lock() {
         let lock = TicketLock::new();
         let a = lock.with_lock(|| 1);
         let b = lock.with_lock(|| 2);
@@ -695,9 +695,9 @@ mod tests {
     /// The `TicketLockGuard` methods are not pinned here because
     /// their lifetime parameters resist `fn` pointer coercion in
     /// stable Rust; they are exercised at runtime by
-    /// `sm2b16_guard_exposes_ticket` and `sm2b16_with_lock_*`.
+    /// `guard_exposes_ticket` and `sm2b16_with_lock_*`.
     #[test]
-    fn sm2b16_public_api_signature_pin() {
+    fn public_api_signature_pin() {
         let _new: fn() -> TicketLock = TicketLock::new;
         let _acquire: fn(&TicketLock) -> u64 = TicketLock::acquire;
         let _release: fn(&TicketLock) = TicketLock::release;
@@ -708,7 +708,7 @@ mod tests {
     ///
     /// 100 cycles of acquire-release should leave both counters at 100.
     #[test]
-    fn sm2b16_many_cycles_monotone() {
+    fn many_cycles_monotone() {
         let lock = TicketLock::new();
         for i in 0..100u64 {
             let t = lock.acquire();
@@ -735,7 +735,7 @@ mod tests {
     /// the question of "lock release on panic" is moot.  Test is
     /// `#[cfg(feature = "std")]`-gated to compile only in test builds.
     #[test]
-    fn sm2b16_with_lock_releases_on_panic() {
+    fn with_lock_releases_on_panic() {
         use std::panic;
         let lock = TicketLock::new();
         let lock_ref = &lock;
@@ -776,7 +776,7 @@ mod tests {
     /// and exercises the cross-thread correctness guarantee that the
     /// Lean spec's `mutex` + `FIFO` theorems certify abstractly.
     #[test]
-    fn sm2b16_cross_thread_mutex_stress() {
+    fn cross_thread_mutex_stress() {
         use std::cell::UnsafeCell;
         use std::sync::Arc;
         // Wrap the counter and lock in an Arc'd UnsafeCell so threads
@@ -842,7 +842,7 @@ mod tests {
     /// `ticketLock_fifo` theorem: distinct cores capture distinct
     /// tickets in monotone order.
     #[test]
-    fn sm2b16_cross_thread_fifo_observation() {
+    fn cross_thread_fifo_observation() {
         use std::sync::{Arc, Mutex};
         let lock = Arc::new(TicketLock::new());
         let captured: Arc<Mutex<std::vec::Vec<u64>>> = Arc::new(Mutex::new(std::vec::Vec::new()));
@@ -896,7 +896,7 @@ mod tests {
     #[cfg(debug_assertions)]
     #[test]
     #[should_panic(expected = "release called without a matching acquire")]
-    fn sm2b16_release_without_acquire_panics_in_debug() {
+    fn release_without_acquire_panics_in_debug() {
         let lock = TicketLock::new();
         lock.release();
     }
@@ -908,7 +908,7 @@ mod tests {
     /// u64::MAX-1 to both counters); it just records the fact via
     /// constant evaluation.
     #[test]
-    fn sm2b16_u64_wrap_documentation() {
+    fn u64_wrap_documentation() {
         // After u64::MAX increments, the next fetch_add returns u64::MAX
         // and wraps to 0.  AtomicU64::fetch_add uses wrapping semantics
         // (the same as `u64::wrapping_add`).

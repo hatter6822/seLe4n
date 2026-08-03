@@ -2211,7 +2211,7 @@ scheduler state lands.
   → `Some(1)`).  Reformulated to do the bounds check in `u64`
   space first, then narrow to `usize` only on the accepted
   path.  New test
-  `sm1c5_validate_context_id_rejects_u64_with_high_bits_aliasing_secondary`
+  `validate_context_id_rejects_u64_with_high_bits_aliasing_secondary`
   exercises the boundary cases.
 - Tier-3 invariant-surface anchors for SecondaryEntry:
   `scripts/test_tier3_invariant_surface.sh` gained `#check`
@@ -3501,7 +3501,7 @@ substantive P2 reviewer comments from `chatgpt-codex-connector` per the
   (`SM1G4_OBSERVATION_MUTEX` guard on
   `uart_guard_global_lock_released_after_with_boot_uart`) only
   serialized against sibling SM1.G.4/SM1.I.4 observation tests; the
-  sibling macro-emitting tests (`sm1g4_kprintln_core_*` etc.) still
+  sibling macro-emitting tests (`kprintln_core_*` etc.) still
   acquired `UART_LOCK` without the mutex, so the flake could resurface.
   Closed by converting the test from observation-style to the
   **re-acquire pattern** — after the first `with_boot_uart`, immediately

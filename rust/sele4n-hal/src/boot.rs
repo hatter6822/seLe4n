@@ -14,7 +14,7 @@
 //! Phase 6: Handoff to Lean kernel (AG7 — FFI bridge)
 
 /// Kernel version string — matches Lean lakefile.toml version.
-const KERNEL_VERSION: &str = "0.32.117";
+const KERNEL_VERSION: &str = "0.32.118";
 
 /// Rust entry point called from assembly `_start` after BSS zeroing and
 /// stack setup. Receives the DTB pointer from U-Boot in x0.
@@ -137,6 +137,18 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
         crate::shootdown::register_tlb_shootdown_handler();
     }
     crate::kprintln!("[boot] TLB shootdown SGI handler registered (INTID 1)");
+
+    // WS-SM SM0.H (PR #854 review): register the `haltAll` (INTID 4)
+    // handler. Reserved since SM0.H and declared on the Lean side, it had
+    // no implementation, so the fail-closed halt could stop only the core
+    // that detected the fault.
+    //
+    // SAFETY: same boot-phase-3 conditions as the registration above --
+    // primary core alone, PSTATE.I set, no secondary online yet.
+    unsafe {
+        crate::gic::register_halt_all_handler();
+    }
+    crate::kprintln!("[boot] halt-all SGI handler registered (INTID 4)");
 
     crate::kprintln!("[boot] Initializing timer (1000 Hz)...");
     // AJ5-C/L-14 + AK5-J/AK5-L: init_timer returns Result — on failure,
@@ -427,7 +439,7 @@ mod tests {
     // =====================================================================
 
     #[test]
-    fn sm1c2_install_exception_vectors_callable_on_host() {
+    fn install_exception_vectors_callable_on_host() {
         // SM1.C.2: the helper resolves and runs cleanly on host.  The
         // `__exception_vectors` linker symbol is not available in
         // `cargo test` (no `vectors.S` linked), so the aarch64 branch
@@ -438,7 +450,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1c2_install_exception_vectors_signature_is_no_arg_fn() {
+    fn install_exception_vectors_signature_is_no_arg_fn() {
         // SM1.C.2: the helper takes no arguments — VBAR_EL1 is banked
         // per-core, and the `__exception_vectors` table is a single
         // shared symbol.  A future refactor that adds a parameter
@@ -449,7 +461,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1c2_install_exception_vectors_idempotent_on_host() {
+    fn install_exception_vectors_idempotent_on_host() {
         // SM1.C.2: repeated invocation must be safe — the secondary
         // bring-up path can in principle re-call this after a TLB
         // shootdown (SM7) or post-resume.  Host-side `write_vbar_el1`
@@ -461,7 +473,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1c2_primary_boot_path_uses_install_exception_vectors() {
+    fn primary_boot_path_uses_install_exception_vectors() {
         // SM1.C.2 / regression: a future refactor of `rust_boot_main`
         // that reintroduces an inline VBAR write (bypassing the shared
         // helper) would create a primary/secondary asymmetry.  We pin
@@ -488,17 +500,17 @@ mod tests {
     // =====================================================================
 
     #[test]
-    fn sm1d_kernel_version_string_matches_lakefile() {
+    fn kernel_version_string_matches_lakefile() {
         // SM1.D: Phase 5 banner uses `KERNEL_VERSION`; pin it at the
         // current SM2.A landing version (v0.31.9).  A future bump must
         // update this test in lockstep with `lakefile.toml`.
         // `scripts/check_version_sync.sh` (Tier 0) provides the
         // canonical drift check; this test is the local pin.
-        assert_eq!(KERNEL_VERSION, "0.32.117");
+        assert_eq!(KERNEL_VERSION, "0.32.118");
     }
 
     #[test]
-    fn sm1d_parse_cmdline_from_dtb_resolves_via_crate_cmdline() {
+    fn parse_cmdline_from_dtb_resolves_via_crate_cmdline() {
         // SM1.D: the Phase-5 entry point used by `rust_boot_main` is
         // `crate::cmdline::parse_cmdline_from_dtb`.  Pin the symbol
         // via fn-pointer coercion so a rename or signature drift
@@ -507,7 +519,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1d_apply_cmdline_resolves_via_crate_cmdline() {
+    fn apply_cmdline_resolves_via_crate_cmdline() {
         // SM1.D: the Phase-5 SMP-start helper resolves through
         // `crate::cmdline::apply_cmdline_and_start_smp` and accepts
         // a `&CmdlineConfig`.
@@ -516,7 +528,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1d_phase5_defaults_smp_enabled_to_true() {
+    fn phase5_defaults_smp_enabled_to_true() {
         // SM1.D.3: per maintainer decision #7, defaults are SMP-on.
         // The Phase-5 path constructs a `CmdlineConfig` via
         // `parse_cmdline_from_dtb(0)` (NULL pointer → defaults).
@@ -528,7 +540,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1d_phase5_defaults_smp_max_cores_to_platform_max() {
+    fn phase5_defaults_smp_max_cores_to_platform_max() {
         // SM1.D.6: the default `smp_max_cores` saturates to
         // `MAX_SECONDARY_CORES + 1 = 4` on RPi5.
         let cfg = crate::cmdline::parse_cmdline_from_dtb(0);

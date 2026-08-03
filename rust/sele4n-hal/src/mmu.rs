@@ -767,7 +767,7 @@ mod tests {
     // =====================================================================
 
     #[test]
-    fn sm1c1_init_mmu_per_core_callable_on_host() {
+    fn init_mmu_per_core_callable_on_host() {
         // SM1.C.1: host stub of `init_mmu_per_core` is a no-op chain
         // through the MMIO/register write helpers (each of which is a
         // no-op on non-aarch64).  This test exercises the call graph
@@ -777,7 +777,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1c1_init_mmu_per_core_accepts_secondary_core_ids() {
+    fn init_mmu_per_core_accepts_secondary_core_ids() {
         // SM1.C.1: every plausible secondary core_id (1..=3 on RPi5)
         // must be callable.  This catches a regression where someone
         // adds a precondition `core_id < MAX_SECONDARY_CORES` to the
@@ -789,7 +789,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1c1_init_mmu_secondary_callable_with_secondary_core_id() {
+    fn init_mmu_secondary_callable_with_secondary_core_id() {
         // SM1.C.1: `init_mmu_secondary` is the production entry point
         // for secondary-core MMU enable.  Verify host invocation
         // succeeds for every secondary core_id.
@@ -801,7 +801,7 @@ mod tests {
     #[test]
     #[cfg(debug_assertions)]
     #[should_panic(expected = "init_mmu_secondary called with core_id 0")]
-    fn sm1c1_init_mmu_secondary_panics_on_boot_core_id() {
+    fn init_mmu_secondary_panics_on_boot_core_id() {
         // SM1.C.1: passing `core_id = 0` to `init_mmu_secondary` is a
         // misuse (the boot core should call `init_mmu`).  The debug
         // assertion catches this regression.  Release builds skip the
@@ -810,7 +810,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1c1_init_mmu_signature_is_no_arg_fn() {
+    fn init_mmu_signature_is_no_arg_fn() {
         // SM1.C.1: the primary `init_mmu` keeps its no-argument
         // signature post-refactor so existing callers in
         // `boot.rs::rust_boot_main` still resolve.
@@ -818,7 +818,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1c1_init_mmu_per_core_signature_takes_u64() {
+    fn init_mmu_per_core_signature_takes_u64() {
         // SM1.C.1: the helper takes a u64 core_id (PSCI context_id
         // convention).  A future refactor to `usize` would break the
         // asm-side caller (`x0` from PSCI is u64), so we pin the
@@ -827,7 +827,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1c1_init_mmu_secondary_signature_takes_u64() {
+    fn init_mmu_secondary_signature_takes_u64() {
         // SM1.C.1: same as above for the secondary entry point.
         let _: fn(u64) = init_mmu_secondary;
     }

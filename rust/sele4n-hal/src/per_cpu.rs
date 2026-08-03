@@ -250,7 +250,7 @@ const _: () = assert!(
 // Transitively: the SM0.O assertion in `smp.rs:82-87`
 // (`MAX_SECONDARY_CORES + 1 == 4`) plus this type-level enforcement
 // pins `PER_CPU_DATA.len() == PlatformBinding.coreCount` structurally.
-// Runtime cross-checks in `tests/per_cpu::tests::sm1b_per_cpu_data_array_has_4_slots`
+// Runtime cross-checks in `tests/per_cpu::tests::per_cpu_data_array_has_4_slots`
 // and `..._max_secondary_cores_plus_one_equals_array_len` provide
 // belt-and-suspenders coverage.
 
@@ -436,7 +436,7 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn sm1b_per_cpu_data_struct_is_64_byte_aligned() {
+    fn per_cpu_data_struct_is_64_byte_aligned() {
         // SM1.B.1: each PerCpuData is one cache line wide via
         // `repr(C, align(64))`.  Future maintainers adding fields
         // must keep the alignment attribute.
@@ -449,7 +449,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1b_per_cpu_data_size_equals_slot_size() {
+    fn per_cpu_data_size_equals_slot_size() {
         // SM1.B.2: the asm-visible stride symbol pins this equality.
         // A future field addition that grows the struct past one
         // cache line must bump `PER_CPU_DATA_SLOT_SIZE` in lockstep.
@@ -459,7 +459,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1b_per_cpu_data_size_is_multiple_of_align() {
+    fn per_cpu_data_size_is_multiple_of_align() {
         // SM1.B.1: a struct's size is always a multiple of its
         // alignment in Rust, but this would not hold if a future
         // maintainer accidentally shrank the struct below the
@@ -484,14 +484,14 @@ mod tests {
     }
 
     #[test]
-    fn sm1b_per_cpu_data_new_sets_core_id() {
+    fn per_cpu_data_new_sets_core_id() {
         // SM1.B.1: the const constructor stamps the `core_id` field.
         let pcd = PerCpuData::new(7);
         assert_eq!(pcd.core_id, 7);
     }
 
     #[test]
-    fn sm1b_per_cpu_data_new_zeros_reserved_tail() {
+    fn per_cpu_data_new_zeros_reserved_tail() {
         // SM1.B.1: the reserved tail starts zero so no stale RAM
         // contents leak through.  Inspect via byte view (the field
         // is private so direct read is rejected).
@@ -514,7 +514,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1b_per_cpu_data_new_preserves_core_id_under_round_trip() {
+    fn per_cpu_data_new_preserves_core_id_under_round_trip() {
         // SM1.B.1: every plausible `core_id` survives the const
         // constructor.  Spot-check the boundaries plus the four
         // production values.
@@ -525,7 +525,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1b_per_cpu_data_zero_constructor_yields_zero_bytes() {
+    fn per_cpu_data_zero_constructor_yields_zero_bytes() {
         // SM0.N back-compat: `PerCpuData::zero()` must produce all
         // zero bytes (same as `PerCpuData::new(0)`).
         let pcd = PerCpuData::zero();
@@ -545,7 +545,7 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn sm1b_per_cpu_data_array_has_4_slots() {
+    fn per_cpu_data_array_has_4_slots() {
         // SM1.B.2: per-CPU data array carries one slot per core
         // (boot core + 3 secondaries on RPi5).  Loosely coupled to
         // `MAX_SECONDARY_CORES + 1 = 4`.
@@ -554,7 +554,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1b_per_cpu_data_core_ids_match_indices() {
+    fn per_cpu_data_core_ids_match_indices() {
         // SM1.B.2 / SM1.B.6 (compile-time form): every slot's
         // `core_id` field matches its array index.  This is the
         // structural invariant `check_per_cpu_invariants` re-asserts
@@ -569,7 +569,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1b_per_cpu_slot_addr_in_bounds_returns_valid_address() {
+    fn per_cpu_slot_addr_in_bounds_returns_valid_address() {
         // SM1.B.2: `per_cpu_slot_addr(i)` returns the address of
         // `PER_CPU_DATA[i]` for any in-range index.  The address
         // must be 64-byte aligned (the cache-line alignment of
@@ -588,7 +588,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1b_per_cpu_slot_addr_distinct_per_core() {
+    fn per_cpu_slot_addr_distinct_per_core() {
         // SM1.B.2: distinct context_ids map to distinct slot
         // addresses.  This is the property boot.S TPIDR_EL1 setup
         // relies on — each core's `TPIDR_EL1` must be unique so
@@ -611,7 +611,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1b_per_cpu_slot_addr_stride_matches_struct_size() {
+    fn per_cpu_slot_addr_stride_matches_struct_size() {
         // SM1.B.2: consecutive slot addresses differ by exactly
         // `size_of::<PerCpuData>() = 64`.  The asm computes the
         // slot address as `PER_CPU_DATA + context_id * 64`, so any
@@ -635,7 +635,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1b_per_cpu_data_slot_size_matches_asm_literal() {
+    fn per_cpu_data_slot_size_matches_asm_literal() {
         // SM1.B.2: the `PER_CPU_DATA_SLOT_SIZE` Rust constant is the
         // single source of truth for the slot stride the
         // `secondary_entry` asm uses.  Belt-and-suspenders against
@@ -646,7 +646,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1b_per_cpu_data_slot_size_sym_observable() {
+    fn per_cpu_data_slot_size_sym_observable() {
         // SM1.B.2: the `PER_CPU_DATA_SLOT_SIZE_SYM` linkable symbol
         // used by `boot.S::secondary_entry` for the `madd` stride
         // must be observable from Rust at the value
@@ -663,7 +663,7 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "context_id out of range")]
-    fn sm1b_per_cpu_slot_addr_out_of_bounds_panics() {
+    fn per_cpu_slot_addr_out_of_bounds_panics() {
         // SM1.B.2: an out-of-range `context_id` panics rather than
         // returning a stray address.  Defends against a malformed
         // PSCI call passing `context_id ≥ MAX_SECONDARY_CORES + 1`.
@@ -675,7 +675,7 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn sm1b_current_per_cpu_returns_boot_slot_on_host() {
+    fn current_per_cpu_returns_boot_slot_on_host() {
         // SM1.B.3: on host (non-aarch64) the function returns the
         // boot core's slot, matching `cpu::current_core_id()`'s
         // host stub (returns 0).
@@ -684,7 +684,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1b_current_per_cpu_address_in_static_array() {
+    fn current_per_cpu_address_in_static_array() {
         // SM1.B.3: the returned reference must point inside
         // `PER_CPU_DATA` (any valid slot).  On host this is always
         // slot 0; on aarch64 with TPIDR_EL1 set correctly it is
@@ -703,7 +703,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1b_current_per_cpu_address_is_cache_line_aligned() {
+    fn current_per_cpu_address_is_cache_line_aligned() {
         // SM1.B.3: the returned reference must point at a 64-byte
         // boundary (cache-line aligned slot).
         let addr = current_per_cpu() as *const PerCpuData as usize;
@@ -720,14 +720,14 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn sm1b_current_core_id_from_tpidr_returns_zero_on_host() {
+    fn current_core_id_from_tpidr_returns_zero_on_host() {
         // SM1.B.4: on host this defers to
         // `current_per_cpu().core_id` = `PER_CPU_DATA[0].core_id` = 0.
         assert_eq!(current_core_id_from_tpidr(), 0);
     }
 
     #[test]
-    fn sm1b_current_core_id_from_tpidr_in_range() {
+    fn current_core_id_from_tpidr_in_range() {
         // SM1.B.4: the returned core_id must satisfy
         // `core_id < coreCount`.  Both the host stub (returns 0)
         // and the aarch64 path (returns `current_per_cpu().core_id`
@@ -747,7 +747,7 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn sm1b_check_per_cpu_invariants_passes_on_static_array() {
+    fn check_per_cpu_invariants_passes_on_static_array() {
         // SM1.B.6: the runtime gate must pass for the production
         // initialiser — this is the property `rust_boot_main` Phase
         // 4 asserts at boot.
@@ -755,7 +755,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1b_check_per_cpu_invariants_in_passes_on_well_formed_slice() {
+    fn check_per_cpu_invariants_in_passes_on_well_formed_slice() {
         // SM1.B.6 (inner form): a locally-allocated well-formed slice
         // also passes the gate.  Verifies the inner function is a
         // pure structural check, not coupled to the `PER_CPU_DATA`
@@ -770,7 +770,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1b_check_per_cpu_invariants_in_passes_on_empty_slice() {
+    fn check_per_cpu_invariants_in_passes_on_empty_slice() {
         // SM1.B.6: an empty slice trivially passes the gate (the
         // loop does not execute).  Edge case for forward-compat
         // with single-core platforms that might use `coreCount = 1`
@@ -785,7 +785,7 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "per-CPU array is mis-populated")]
-    fn sm1b_check_per_cpu_invariants_in_panics_on_wrong_core_id() {
+    fn check_per_cpu_invariants_in_panics_on_wrong_core_id() {
         // SM1.B.6: the runtime gate panics if any slot's `core_id`
         // disagrees with its array index.  This is the regression
         // path that the production `PER_CPU_DATA` initialiser would
@@ -804,7 +804,7 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "per-CPU array is mis-populated")]
-    fn sm1b_check_per_cpu_invariants_in_panics_on_first_slot_wrong() {
+    fn check_per_cpu_invariants_in_panics_on_first_slot_wrong() {
         // SM1.B.6: the gate also catches a regression on the boot
         // slot.  Reorder-detection: if the slots are accidentally
         // populated in reverse, the very first iteration catches it.
@@ -819,7 +819,7 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "per-CPU array is mis-populated")]
-    fn sm1b_check_per_cpu_invariants_in_panics_on_zero_default_regression() {
+    fn check_per_cpu_invariants_in_panics_on_zero_default_regression() {
         // SM1.B.6: the gate catches the "every slot is zero" regression
         // — the case where someone reverts SM1.B.2's per-slot
         // initialiser back to the SM0.N `PerCpuData::zero()` pattern.
@@ -839,7 +839,7 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn sm1b_max_secondary_cores_plus_one_equals_array_len() {
+    fn max_secondary_cores_plus_one_equals_array_len() {
         // SM1.B.2: the array size must equal
         // `MAX_SECONDARY_CORES + 1` (boot core + N-1 secondaries).
         // Cross-check the assertion at the module-level
@@ -848,7 +848,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1b_core_id_pairwise_distinct() {
+    fn core_id_pairwise_distinct() {
         // SM1.B.6: every slot's `core_id` is distinct.  This is the
         // property `current_core_id_from_tpidr` relies on for its
         // O(1) core-id lookup: distinct slots produce distinct
@@ -871,7 +871,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1b_core_id_in_canonical_range() {
+    fn core_id_in_canonical_range() {
         // SM1.B.6: every slot's `core_id` is in [0, coreCount).
         // Pairs with `current_core_id_from_tpidr_in_range`; that
         // test checks the live FFI value, this one checks the
@@ -888,7 +888,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1b_current_per_cpu_and_slot_addr_agree_for_boot_core() {
+    fn current_per_cpu_and_slot_addr_agree_for_boot_core() {
         // SM1.B.3/SM1.B.4 cross-check: on host, `current_per_cpu()`
         // returns slot 0, which is also what `per_cpu_slot_addr(0)`
         // resolves.

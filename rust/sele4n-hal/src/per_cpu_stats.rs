@@ -458,19 +458,19 @@ mod tests {
     // ------------------------------------------------------------------------
 
     #[test]
-    fn sm1i4_per_cpu_stats_is_one_cache_line() {
+    fn per_cpu_stats_is_one_cache_line() {
         // The size assertion at module scope is compile-time; this
         // test confirms the runtime observation matches.
         assert_eq!(core::mem::size_of::<PerCpuStats>(), 64);
     }
 
     #[test]
-    fn sm1i4_per_cpu_stats_is_64_byte_aligned() {
+    fn per_cpu_stats_is_64_byte_aligned() {
         assert_eq!(core::mem::align_of::<PerCpuStats>(), 64);
     }
 
     #[test]
-    fn sm1i4_per_cpu_stats_zero_constructor_initialises_every_counter() {
+    fn per_cpu_stats_zero_constructor_initialises_every_counter() {
         let s = PerCpuStats::zero();
         assert_eq!(s.irq_count.load(Ordering::Relaxed), 0);
         assert_eq!(s.timer_tick_count.load(Ordering::Relaxed), 0);
@@ -485,14 +485,14 @@ mod tests {
     // ------------------------------------------------------------------------
 
     #[test]
-    fn sm1i4_per_cpu_stats_array_has_one_slot_per_core() {
+    fn per_cpu_stats_array_has_one_slot_per_core() {
         // Loosely-coupled to MAX_SECONDARY_CORES + 1 = 4 on RPi5.
         assert_eq!(PER_CPU_STATS.len(), MAX_SECONDARY_CORES + 1);
         assert_eq!(PER_CPU_STATS.len(), 4);
     }
 
     #[test]
-    fn sm1i4_per_cpu_stats_array_slots_are_distinct_addresses() {
+    fn per_cpu_stats_array_slots_are_distinct_addresses() {
         // Each core's slot must occupy a distinct cache line; without
         // this, cross-core writes would contend for the same line.
         let addrs: [usize; 4] = [
@@ -513,7 +513,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1i4_per_cpu_stats_array_slots_are_64_byte_aligned() {
+    fn per_cpu_stats_array_slots_are_64_byte_aligned() {
         for (i, slot) in PER_CPU_STATS.iter().enumerate() {
             let addr = slot as *const PerCpuStats as usize;
             assert_eq!(
@@ -527,7 +527,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1i4_per_cpu_stats_array_stride_matches_struct_size() {
+    fn per_cpu_stats_array_stride_matches_struct_size() {
         // PER_CPU_STATS has MAX_SECONDARY_CORES + 1 = 4 slots on RPi5.
         // Use a fixed-size array (no_std-friendly; no `Vec` allocation).
         let addrs: [usize; 4] = [
@@ -552,7 +552,7 @@ mod tests {
     // ------------------------------------------------------------------------
 
     #[test]
-    fn sm1i4_current_per_cpu_stats_on_host_returns_slot_zero() {
+    fn current_per_cpu_stats_on_host_returns_slot_zero() {
         // Host stub: `current_core_id_from_tpidr` returns 0, so we
         // get slot 0.  Address comparison is the strict identity
         // check.
@@ -576,7 +576,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1i4_record_irq_dispatch_in_slice_increments_only_named_slot() {
+    fn record_irq_dispatch_in_slice_increments_only_named_slot() {
         let slots = fresh_stats_array();
         let v = record_irq_dispatch_in_slice(&slots, 2);
         assert_eq!(v, 1);
@@ -587,7 +587,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1i4_record_irq_dispatch_in_slice_returns_post_increment_value() {
+    fn record_irq_dispatch_in_slice_returns_post_increment_value() {
         let slots = fresh_stats_array();
         assert_eq!(record_irq_dispatch_in_slice(&slots, 1), 1);
         assert_eq!(record_irq_dispatch_in_slice(&slots, 1), 2);
@@ -595,7 +595,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1i4_record_timer_tick_in_slice_independent_of_irq_count() {
+    fn record_timer_tick_in_slice_independent_of_irq_count() {
         // Per-counter independence: incrementing `timer_tick_count`
         // does not increment `irq_count` in the inner form (the
         // production handler increments both separately).
@@ -606,7 +606,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1i4_record_sgi_dispatch_in_slice_independent_of_other_counters() {
+    fn record_sgi_dispatch_in_slice_independent_of_other_counters() {
         let slots = fresh_stats_array();
         let _ = record_sgi_dispatch_in_slice(&slots, 3);
         assert_eq!(slots[3].sgi_count.load(Ordering::Relaxed), 1);
@@ -615,7 +615,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1i4_recorders_in_slice_accumulate_across_all_slots() {
+    fn recorders_in_slice_accumulate_across_all_slots() {
         let slots = fresh_stats_array();
         // Simulate: every core takes one timer tick.
         for i in 0..slots.len() {
@@ -639,14 +639,14 @@ mod tests {
     // ------------------------------------------------------------------------
 
     #[test]
-    fn sm1i4_irq_count_for_out_of_range_returns_zero() {
+    fn irq_count_for_out_of_range_returns_zero() {
         // Defensive: an out-of-range probe must not panic.
         assert_eq!(irq_count_for(PER_CPU_STATS.len()), 0);
         assert_eq!(irq_count_for(usize::MAX), 0);
     }
 
     #[test]
-    fn sm1i4_all_per_core_reads_return_zero_for_out_of_range() {
+    fn all_per_core_reads_return_zero_for_out_of_range() {
         let bad = PER_CPU_STATS.len() + 100;
         assert_eq!(irq_count_for(bad), 0);
         assert_eq!(timer_tick_count_for(bad), 0);
@@ -662,7 +662,7 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "core_id 4 out of range")]
-    fn sm1i4_record_irq_dispatch_in_slice_panics_on_out_of_range() {
+    fn record_irq_dispatch_in_slice_panics_on_out_of_range() {
         let slots = fresh_stats_array();
         let _ = record_irq_dispatch_in_slice(&slots, 4);
     }
@@ -684,7 +684,7 @@ mod tests {
     // ------------------------------------------------------------------------
 
     #[test]
-    fn sm1i4_record_irq_dispatch_in_slice_wraps_at_u64_max() {
+    fn record_irq_dispatch_in_slice_wraps_at_u64_max() {
         // Pre-seed the counter to u64::MAX - 1 and verify two
         // increments produce u64::MAX then 0 (wrapping).
         let slots = fresh_stats_array();
@@ -698,7 +698,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1i4_record_timer_tick_in_slice_wraps_at_u64_max() {
+    fn record_timer_tick_in_slice_wraps_at_u64_max() {
         let slots = fresh_stats_array();
         slots[1].timer_tick_count.store(u64::MAX, Ordering::Relaxed);
         let v = record_timer_tick_in_slice(&slots, 1);
@@ -706,7 +706,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1i4_record_sgi_dispatch_in_slice_wraps_at_u64_max() {
+    fn record_sgi_dispatch_in_slice_wraps_at_u64_max() {
         let slots = fresh_stats_array();
         slots[2].sgi_count.store(u64::MAX, Ordering::Relaxed);
         let v = record_sgi_dispatch_in_slice(&slots, 2);

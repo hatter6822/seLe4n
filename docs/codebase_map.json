@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/sm7f-tlb-fills-6r7c3l",
-      "commit_sha": "d6e793f0ea7e3716693016681f9a86a7a31a4421",
-      "tree_sha": "2df3b221c1ca85688b5ce404c880a70b1ee0175d",
-      "committed_at_utc": "2026-08-03T19:06:30+00:00"
+      "commit_sha": "a8a4688fa241638b792d17639728341f18f491f9",
+      "tree_sha": "a9475a53110cd719e49a822ce8e2acc88138849d",
+      "committed_at_utc": "2026-08-03T19:48:13+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "0dea4e0416abd111fe4cdd91121472e10b4fe89a8583e9520d3651f3e410a4d3"
+    "source_digest": "15c07f85409646063ac8a82807b744be22f58e7388dcf9dea60fc82e88bd1060"
   },
   "summary": {
     "module_count": 331,
-    "declaration_count": 14013
+    "declaration_count": 14015
   },
   "readme_sync": {
-    "version": "0.32.117",
+    "version": "0.32.118",
     "lean_toolchain": "v4.28.0",
     "production_files": 264,
-    "production_loc": 238097,
+    "production_loc": 238171,
     "test_files": 67,
-    "test_loc": 48443,
+    "test_loc": 48449,
     "proved_theorem_lemma_decls": 7798,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -19355,7 +19355,7 @@
         {
           "kind": "theorem",
           "name": "shootdownRoundLock_release_acquire",
-          "line": 601,
+          "line": 611,
           "called": [
             "MemoryEvent",
             "MemoryTrace",
@@ -19368,7 +19368,7 @@
         {
           "kind": "def",
           "name": "roundLockWitnessCrit",
-          "line": 614,
+          "line": 624,
           "called": [
             "MemoryEvent"
           ]
@@ -19376,7 +19376,7 @@
         {
           "kind": "def",
           "name": "roundLockWitnessRelease",
-          "line": 618,
+          "line": 628,
           "called": [
             "MemoryEvent",
             "shootdownRoundLockReleaseStore"
@@ -19385,7 +19385,7 @@
         {
           "kind": "def",
           "name": "roundLockWitnessAcquire",
-          "line": 621,
+          "line": 631,
           "called": [
             "MemoryEvent",
             "shootdownRoundLockAcquireCas"
@@ -19394,7 +19394,7 @@
         {
           "kind": "def",
           "name": "roundLockWitnessNext",
-          "line": 624,
+          "line": 634,
           "called": [
             "MemoryEvent"
           ]
@@ -19402,7 +19402,7 @@
         {
           "kind": "def",
           "name": "roundLockWitnessTrace",
-          "line": 628,
+          "line": 638,
           "called": [
             "MemoryTrace",
             "roundLockWitnessAcquire",
@@ -19414,7 +19414,7 @@
         {
           "kind": "theorem",
           "name": "shootdownRoundLock_release_acquire_witness",
-          "line": 634,
+          "line": 644,
           "called": [
             "happensBefore",
             "roundLockWitnessAcquire",
@@ -19431,13 +19431,13 @@
         {
           "kind": "def",
           "name": "shootdownWaitTimeoutTicks",
-          "line": 662,
+          "line": 672,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "shootdownWaitTimeoutTicks_value",
-          "line": 666,
+          "line": 676,
           "called": [
             "shootdownWaitTimeoutTicks"
           ]
@@ -41534,7 +41534,7 @@
     {
       "module": "SeLe4n.Kernel.Concurrency.Runtime",
       "path": "SeLe4n/Kernel/Concurrency/Runtime.lean",
-      "declaration_count": 61,
+      "declaration_count": 62,
       "declarations": [
         {
           "kind": "namespace",
@@ -42028,15 +42028,23 @@
         {
           "kind": "def",
           "name": "fatalHalt",
-          "line": 586,
+          "line": 589,
           "called": [
             "ffiFatalHalt"
           ]
         },
         {
           "kind": "def",
+          "name": "fatalHaltAll",
+          "line": 595,
+          "called": [
+            "ffiFatalHaltAll"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "shootdownWaitAllAcked",
-          "line": 593,
+          "line": 602,
           "called": [
             "CoreId",
             "ffiShootdownWaitAllAcked",
@@ -42046,7 +42054,7 @@
         {
           "kind": "def",
           "name": "shootdownOnlineMask",
-          "line": 611,
+          "line": 620,
           "called": [
             "ffiShootdownOnlineMask"
           ]
@@ -42054,7 +42062,7 @@
         {
           "kind": "def",
           "name": "coreOnlineInMask",
-          "line": 615,
+          "line": 624,
           "called": [
             "CoreId",
             "ofNat"
@@ -42063,7 +42071,7 @@
         {
           "kind": "def",
           "name": "shootdownCoreOnline",
-          "line": 621,
+          "line": 630,
           "called": [
             "CoreId",
             "coreOnlineInMask",
@@ -42073,7 +42081,7 @@
         {
           "kind": "theorem",
           "name": "shootdownCoreOnline_eq_mask_test",
-          "line": 628,
+          "line": 637,
           "called": [
             "CoreId",
             "coreOnlineInMask",
@@ -42084,7 +42092,7 @@
         {
           "kind": "def",
           "name": "tlbiLocalFullFlush",
-          "line": 652,
+          "line": 661,
           "called": [
             "ffiTlbiAll"
           ]
@@ -42092,7 +42100,7 @@
         {
           "kind": "def",
           "name": "shootdownPublishBegin",
-          "line": 659,
+          "line": 668,
           "called": [
             "ffiShootdownPublishBegin"
           ]
@@ -42100,7 +42108,7 @@
         {
           "kind": "def",
           "name": "shootdownPublishSlot",
-          "line": 665,
+          "line": 674,
           "called": [
             "ffiShootdownPublishSlot",
             "ofNat"
@@ -42109,7 +42117,7 @@
         {
           "kind": "def",
           "name": "shootdownPublishCommit",
-          "line": 674,
+          "line": 683,
           "called": [
             "ffiShootdownPublishCommit",
             "ofNat"
@@ -42118,7 +42126,7 @@
         {
           "kind": "theorem",
           "name": "shootdownAckRound_eq_ffi",
-          "line": 680,
+          "line": 689,
           "called": [
             "CoreId",
             "ffiShootdownAckRound",
@@ -42129,7 +42137,7 @@
         {
           "kind": "theorem",
           "name": "shootdownSelfServiceRound_eq_ffi",
-          "line": 687,
+          "line": 696,
           "called": [
             "CoreId",
             "ffiShootdownSelfServiceRound",
@@ -42140,7 +42148,7 @@
         {
           "kind": "theorem",
           "name": "shootdownAck_ffi_core_in_range",
-          "line": 698,
+          "line": 707,
           "called": [
             "CoreId",
             "numCores",
@@ -140108,21 +140116,21 @@
         {
           "kind": "def",
           "name": "haltFailClosed",
-          "line": 117,
+          "line": 127,
           "called": [
-            "fatalHalt"
+            "fatalHaltAll"
           ]
         },
         {
           "kind": "def",
           "name": "shootdownRoundLockAcquireFuel",
-          "line": 126,
+          "line": 136,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "shootdownRoundLockAcquireFuel_value",
-          "line": 129,
+          "line": 139,
           "called": [
             "shootdownRoundLockAcquireFuel"
           ]
@@ -140130,7 +140138,7 @@
         {
           "kind": "def",
           "name": "acquireShootdownRoundLockServicingSelf",
-          "line": 152,
+          "line": 162,
           "called": [
             "CoreId",
             "haltFailClosed",
@@ -140143,7 +140151,7 @@
         {
           "kind": "def",
           "name": "publishShootdownOps",
-          "line": 187,
+          "line": 197,
           "called": [
             "TlbInvalidation",
             "length",
@@ -140158,7 +140166,7 @@
         {
           "kind": "def",
           "name": "completeShootdownRounds",
-          "line": 280,
+          "line": 290,
           "called": [
             "CoreId",
             "TlbInvalidation",
@@ -140186,7 +140194,7 @@
         {
           "kind": "def",
           "name": "completeIcacheMaintenance",
-          "line": 422,
+          "line": 460,
           "called": [
             "ICacheInvalidation",
             "icMaintenanceBroadcast"
@@ -140195,7 +140203,7 @@
         {
           "kind": "theorem",
           "name": "completeIcacheMaintenance_nil",
-          "line": 430,
+          "line": 468,
           "called": [
             "completeIcacheMaintenance",
             "pure"
@@ -140204,7 +140212,7 @@
         {
           "kind": "theorem",
           "name": "completeIcacheMaintenance_singleton",
-          "line": 436,
+          "line": 474,
           "called": [
             "ICacheInvalidation",
             "completeIcacheMaintenance",
@@ -140214,7 +140222,7 @@
         {
           "kind": "theorem",
           "name": "completeIcacheMaintenance_cons",
-          "line": 444,
+          "line": 482,
           "called": [
             "ICacheInvalidation",
             "completeIcacheMaintenance",
@@ -140224,7 +140232,7 @@
         {
           "kind": "theorem",
           "name": "completeShootdownRounds_nil",
-          "line": 455,
+          "line": 493,
           "called": [
             "CoreId",
             "TlbInvalidation",
@@ -140235,7 +140243,7 @@
         {
           "kind": "def",
           "name": "syscallDispatchCrossCoreEntry",
-          "line": 473,
+          "line": 511,
           "called": [
             "CoreId",
             "ICacheInvalidation",
@@ -140261,7 +140269,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchCrossCoreEntry_def",
-          "line": 515,
+          "line": 553,
           "called": [
             "CoreId",
             "ICacheInvalidation",
@@ -140288,7 +140296,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchCrossCoreEntry_sgis_nil_single_core",
-          "line": 550,
+          "line": 588,
           "called": [
             "CoreId",
             "SystemState",
@@ -140304,7 +140312,7 @@
         {
           "kind": "def",
           "name": "suspendThreadCrossCoreEntry",
-          "line": 594,
+          "line": 632,
           "called": [
             "CoreId",
             "Kernel",
@@ -156292,7 +156300,7 @@
     {
       "module": "SeLe4n.Platform.FFI",
       "path": "SeLe4n/Platform/FFI.lean",
-      "declaration_count": 96,
+      "declaration_count": 97,
       "declarations": [
         {
           "kind": "namespace",
@@ -156437,236 +156445,242 @@
         },
         {
           "kind": "opaque",
+          "name": "ffiFatalHaltAll",
+          "line": 394,
+          "called": []
+        },
+        {
+          "kind": "opaque",
           "name": "ffiShootdownWaitAllAcked",
-          "line": 389,
+          "line": 405,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiShootdownOnlineMask",
-          "line": 403,
+          "line": 420,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiShootdownPublishBegin",
-          "line": 412,
+          "line": 429,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiShootdownPublishSlot",
-          "line": 421,
+          "line": 438,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiShootdownPublishCommit",
-          "line": 432,
+          "line": 449,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiMmioRead32",
-          "line": 441,
+          "line": 458,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiMmioWrite32",
-          "line": 446,
+          "line": 463,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiMmioRead64",
-          "line": 451,
+          "line": 468,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiMmioWrite64",
-          "line": 456,
+          "line": 473,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiUartPutc",
-          "line": 465,
+          "line": 482,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiDisableInterrupts",
-          "line": 474,
+          "line": 491,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiRestoreInterrupts",
-          "line": 479,
+          "line": 496,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiEnableInterrupts",
-          "line": 484,
+          "line": 501,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiCurrentCoreId",
-          "line": 506,
+          "line": 523,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiIdleWait",
-          "line": 527,
+          "line": 544,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiIdleWaitBounded",
-          "line": 541,
+          "line": 558,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiPerCoreIrqCount",
-          "line": 560,
+          "line": 577,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiPerCoreTimerTickCount",
-          "line": 568,
+          "line": 585,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiPerCoreSgiCount",
-          "line": 576,
+          "line": 593,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiPerCoreSyscallCount",
-          "line": 582,
+          "line": 599,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiSwitchToThread",
-          "line": 600,
+          "line": 617,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiPerCoreCurrentThread",
-          "line": 610,
+          "line": 627,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiTicketLockStaticHandle",
-          "line": 641,
+          "line": 658,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiTicketLockAcquire",
-          "line": 653,
+          "line": 670,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiTicketLockRelease",
-          "line": 664,
+          "line": 681,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiTicketLockPeekHolder",
-          "line": 682,
-          "called": []
-        },
-        {
-          "kind": "opaque",
-          "name": "ffiTicketLockAcquireCount",
-          "line": 693,
-          "called": []
-        },
-        {
-          "kind": "opaque",
-          "name": "ffiTicketLockReleaseCount",
           "line": 699,
           "called": []
         },
         {
           "kind": "opaque",
+          "name": "ffiTicketLockAcquireCount",
+          "line": 710,
+          "called": []
+        },
+        {
+          "kind": "opaque",
+          "name": "ffiTicketLockReleaseCount",
+          "line": 716,
+          "called": []
+        },
+        {
+          "kind": "opaque",
           "name": "ffiRwLockStaticHandle",
-          "line": 706,
+          "line": 723,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiRwLockAcquireRead",
-          "line": 713,
+          "line": 730,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiRwLockReleaseRead",
-          "line": 720,
+          "line": 737,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiRwLockAcquireWrite",
-          "line": 727,
+          "line": 744,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiRwLockReleaseWrite",
-          "line": 734,
+          "line": 751,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiRwLockSnapshot",
-          "line": 749,
+          "line": 766,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiRwLockAcquireReadCount",
-          "line": 755,
+          "line": 772,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiRwLockReleaseReadCount",
-          "line": 761,
+          "line": 778,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiRwLockAcquireWriteCount",
-          "line": 767,
+          "line": 784,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiRwLockReleaseWriteCount",
-          "line": 773,
+          "line": 790,
           "called": []
         },
         {
           "kind": "def",
           "name": "KernelError.toUInt32",
-          "line": 803,
+          "line": 820,
           "called": [
             "KernelError"
           ]
@@ -156674,7 +156688,7 @@
         {
           "kind": "def",
           "name": "encodeError",
-          "line": 865,
+          "line": 882,
           "called": [
             "KernelError",
             "KernelError.toUInt32"
@@ -156683,13 +156697,13 @@
         {
           "kind": "def",
           "name": "encodeOk",
-          "line": 875,
+          "line": 892,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "encodeError_high_bit_set",
-          "line": 890,
+          "line": 907,
           "called": [
             "KernelError",
             "KernelError.toUInt32",
@@ -156699,7 +156713,7 @@
         {
           "kind": "theorem",
           "name": "encodeOk_high_bit_clear",
-          "line": 906,
+          "line": 923,
           "called": [
             "encodeOk"
           ]
@@ -156707,7 +156721,7 @@
         {
           "kind": "initialize",
           "name": "kernelStateRef",
-          "line": 930,
+          "line": 947,
           "called": [
             "SystemState",
             "default"
@@ -156716,7 +156730,7 @@
         {
           "kind": "initialize",
           "name": "kernelLabelingContextRef",
-          "line": 940,
+          "line": 957,
           "called": [
             "LabelingContext",
             "testLabelingContext"
@@ -156725,7 +156739,7 @@
         {
           "kind": "def",
           "name": "initialiseKernelState",
-          "line": 949,
+          "line": 966,
           "called": [
             "SystemState",
             "set",
@@ -156735,7 +156749,7 @@
         {
           "kind": "def",
           "name": "getKernelState",
-          "line": 956,
+          "line": 973,
           "called": [
             "SystemState",
             "get"
@@ -156744,7 +156758,7 @@
         {
           "kind": "def",
           "name": "updateKernelState",
-          "line": 961,
+          "line": 978,
           "called": [
             "SystemState",
             "modify"
@@ -156753,7 +156767,7 @@
         {
           "kind": "def",
           "name": "modifyGetKernelState",
-          "line": 970,
+          "line": 987,
           "called": [
             "SystemState"
           ]
@@ -156761,7 +156775,7 @@
         {
           "kind": "def",
           "name": "initialiseKernelLabelingContext",
-          "line": 977,
+          "line": 994,
           "called": [
             "LabelingContext",
             "set"
@@ -156770,7 +156784,7 @@
         {
           "kind": "def",
           "name": "getKernelLabelingContext",
-          "line": 981,
+          "line": 998,
           "called": [
             "LabelingContext",
             "get"
@@ -156779,7 +156793,7 @@
         {
           "kind": "def",
           "name": "bootAndInitialiseFromPlatform",
-          "line": 1000,
+          "line": 1017,
           "called": [
             "LabelingContext",
             "PlatformConfig",
@@ -156796,7 +156810,7 @@
         {
           "kind": "def",
           "name": "writeFfiRegistersToTcb",
-          "line": 1037,
+          "line": 1054,
           "called": [
             "SystemState",
             "ThreadId",
@@ -156811,7 +156825,7 @@
         {
           "kind": "def",
           "name": "readReturnValue",
-          "line": 1084,
+          "line": 1101,
           "called": [
             "SystemState",
             "ThreadId",
@@ -156822,7 +156836,7 @@
         {
           "kind": "def",
           "name": "syscallDispatchFromAbi",
-          "line": 1123,
+          "line": 1140,
           "called": [
             "CoreId",
             "Kernel",
@@ -156841,13 +156855,13 @@
         {
           "kind": "opaque",
           "name": "ffiSuspendThread",
-          "line": 1166,
+          "line": 1183,
           "called": []
         },
         {
           "kind": "def",
           "name": "suspendThreadInner",
-          "line": 1203,
+          "line": 1220,
           "called": [
             "KernelError.toUInt32",
             "getKernelState",
@@ -156864,19 +156878,19 @@
         {
           "kind": "opaque",
           "name": "ffiIcIalluIs",
-          "line": 1238,
+          "line": 1255,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiIcMaintenance",
-          "line": 1274,
+          "line": 1291,
           "called": []
         },
         {
           "kind": "def",
           "name": "icMaintenanceBroadcast",
-          "line": 1309,
+          "line": 1326,
           "called": [
             "ICacheInvalidation",
             "ffiIcMaintenance",
@@ -156888,7 +156902,7 @@
         {
           "kind": "theorem",
           "name": "icMaintenanceBroadcast_iallu_encoding",
-          "line": 1314,
+          "line": 1331,
           "called": [
             "toOpTag",
             "toPaddr"
@@ -156897,7 +156911,7 @@
         {
           "kind": "theorem",
           "name": "icMaintenanceBroadcast_ivauPage_encoding",
-          "line": 1321,
+          "line": 1338,
           "called": [
             "PAddr",
             "ofNat",
@@ -156909,7 +156923,7 @@
         {
           "kind": "theorem",
           "name": "icMaintenanceBroadcast_cleanRangeIallu_encoding",
-          "line": 1330,
+          "line": 1347,
           "called": [
             "PAddr",
             "ofNat",
@@ -156922,7 +156936,7 @@
         {
           "kind": "def",
           "name": "syscallDispatchInner",
-          "line": 1368,
+          "line": 1385,
           "called": [
             "bootCoreId",
             "encodeError",
@@ -156937,19 +156951,19 @@
         {
           "kind": "opaque",
           "name": "ffiCacheCleanPagetableRange",
-          "line": 1426,
+          "line": 1443,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiIcIallu",
-          "line": 1439,
+          "line": 1456,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_total",
-          "line": 1455,
+          "line": 1472,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -156969,7 +156983,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok",
-          "line": 1499,
+          "line": 1516,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -156988,7 +157002,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_error_of_syscallEntryChecked_error",
-          "line": 1521,
+          "line": 1538,
           "called": [
             "CoreId",
             "KernelError",
@@ -157007,7 +157021,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_illegalState_when_no_current",
-          "line": 1545,
+          "line": 1562,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -157022,7 +157036,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_abiMismatch_rejected",
-          "line": 1568,
+          "line": 1585,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -157035,7 +157049,7 @@
         {
           "kind": "theorem",
           "name": "writeFfiRegistersToTcb_id_when_not_tcb",
-          "line": 1590,
+          "line": 1607,
           "called": [
             "SystemState",
             "TCB",
@@ -157049,7 +157063,7 @@
         {
           "kind": "theorem",
           "name": "readReturnValue_zero_when_not_tcb",
-          "line": 1615,
+          "line": 1632,
           "called": [
             "SystemState",
             "TCB",
@@ -199029,6 +199043,8 @@
             "enqueueShootdown_pending_target",
             "enqueueShootdown_preserves_pendingBounded",
             "ext_perCore",
+            "fatalHalt",
+            "fatalHaltAll",
             "ffiShootdownAckRound",
             "ffiShootdownAckedGeneration",
             "ffiShootdownAllAckedForRound",
@@ -199059,6 +199075,7 @@
             "foldl_handleTlbShootdownReqOnCore_swap",
             "foldl_setAckedGen_ackedGenOnCore",
             "foldl_setAckedGen_pendingOnCore",
+            "haltFailClosed",
             "handleTlbShootdownReqOnCore",
             "handleTlbShootdownReqOnCoreInWindow",
             "handleTlbShootdownReqOnCoreInWindow_empty_window_tlb",
@@ -199364,37 +199381,10 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:679>",
-          "line": 679,
-          "called": [
-            "maxPendingPerCore"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:683>",
-          "line": 683,
-          "called": [
-            "initial",
-            "shootdownQuiescent"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:684>",
-          "line": 684,
-          "called": [
-            "allAcked",
-            "initial"
-          ]
-        },
-        {
-          "kind": "example",
           "name": "<anonymous:example:685>",
           "line": 685,
           "called": [
-            "initial",
-            "pendingBounded"
+            "maxPendingPerCore"
           ]
         },
         {
@@ -199403,14 +199393,41 @@
           "line": 689,
           "called": [
             "initial",
-            "initial_shootdownQuiescent",
             "shootdownQuiescent"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:690>",
+          "line": 690,
+          "called": [
+            "allAcked",
+            "initial"
           ]
         },
         {
           "kind": "example",
           "name": "<anonymous:example:691>",
           "line": 691,
+          "called": [
+            "initial",
+            "pendingBounded"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:695>",
+          "line": 695,
+          "called": [
+            "initial",
+            "initial_shootdownQuiescent",
+            "shootdownQuiescent"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:697>",
+          "line": 697,
           "called": [
             "initial",
             "initial_shootdownQuiescent",
@@ -199420,8 +199437,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:697>",
-          "line": 697,
+          "name": "<anonymous:example:703>",
+          "line": 703,
           "called": [
             "acknowledgeShootdown",
             "allAcked",
@@ -199434,8 +199451,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:705>",
-          "line": 705,
+          "name": "<anonymous:example:711>",
+          "line": 711,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -199450,8 +199467,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:711>",
-          "line": 711,
+          "name": "<anonymous:example:717>",
+          "line": 717,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -199465,8 +199482,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:718>",
-          "line": 718,
+          "name": "<anonymous:example:724>",
+          "line": 724,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -199480,8 +199497,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:728>",
-          "line": 728,
+          "name": "<anonymous:example:734>",
+          "line": 734,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -199496,8 +199513,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:739>",
-          "line": 739,
+          "name": "<anonymous:example:745>",
+          "line": 745,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -199510,8 +199527,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:746>",
-          "line": 746,
+          "name": "<anonymous:example:752>",
+          "line": 752,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -199524,8 +199541,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:756>",
-          "line": 756,
+          "name": "<anonymous:example:762>",
+          "line": 762,
           "called": [
             "ShootdownRoundLockId",
             "ShootdownRoundLockId.singleton"
@@ -199533,8 +199550,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:762>",
-          "line": 762,
+          "name": "<anonymous:example:768>",
+          "line": 768,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -199549,8 +199566,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:772>",
-          "line": 772,
+          "name": "<anonymous:example:778>",
+          "line": 778,
           "called": [
             "default",
             "default_tlbShootdown_initial",
@@ -199559,8 +199576,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:774>",
-          "line": 774,
+          "name": "<anonymous:example:780>",
+          "line": 780,
           "called": [
             "default",
             "shootdownQuiescent"
@@ -199568,8 +199585,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:780>",
-          "line": 780,
+          "name": "<anonymous:example:786>",
+          "line": 786,
           "called": [
             "CoreId",
             "numCores",
@@ -199580,8 +199597,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:786>",
-          "line": 786,
+          "name": "<anonymous:example:792>",
+          "line": 792,
           "called": [
             "CoreId",
             "TlbEntry",
@@ -199598,8 +199615,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:796>",
-          "line": 796,
+          "name": "<anonymous:example:802>",
+          "line": 802,
           "called": [
             "ASID",
             "CoreId",
@@ -199616,8 +199633,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:806>",
-          "line": 806,
+          "name": "<anonymous:example:812>",
+          "line": 812,
           "called": [
             "CoreId",
             "SystemState",
@@ -199631,8 +199648,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:815>",
-          "line": 815,
+          "name": "<anonymous:example:821>",
+          "line": 821,
           "called": [
             "MemoryEvent",
             "MemoryTrace",
@@ -199644,8 +199661,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:823>",
-          "line": 823,
+          "name": "<anonymous:example:829>",
+          "line": 829,
           "called": [
             "TlbShootdownState",
             "allAcked",
@@ -199656,8 +199673,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:832>",
-          "line": 832,
+          "name": "<anonymous:example:838>",
+          "line": 838,
           "called": [
             "CoreId",
             "SystemState",
@@ -199669,8 +199686,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:840>",
-          "line": 840,
+          "name": "<anonymous:example:846>",
+          "line": 846,
           "called": [
             "RPi5Platform",
             "shootdownSharingDomain"
@@ -199678,8 +199695,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:846>",
-          "line": 846,
+          "name": "<anonymous:example:852>",
+          "line": 852,
           "called": [
             "CoreId",
             "LockId",
@@ -199689,8 +199706,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:853>",
-          "line": 853,
+          "name": "<anonymous:example:859>",
+          "line": 859,
           "called": [
             "shootdownWaitTimeoutTicks",
             "shootdownWaitTimeoutTicks_value"
@@ -199698,8 +199715,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:859>",
-          "line": 859,
+          "name": "<anonymous:example:865>",
+          "line": 865,
           "called": [
             "SystemState",
             "default",
@@ -199709,8 +199726,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:866>",
-          "line": 866,
+          "name": "<anonymous:example:872>",
+          "line": 872,
           "called": [
             "CoreId",
             "SgiKind",
@@ -199725,8 +199742,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:877>",
-          "line": 877,
+          "name": "<anonymous:example:883>",
+          "line": 883,
           "called": [
             "CoreId",
             "SgiKind",
@@ -199742,8 +199759,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:889>",
-          "line": 889,
+          "name": "<anonymous:example:895>",
+          "line": 895,
           "called": [
             "CoreId",
             "SystemState",
@@ -199754,8 +199771,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:898>",
-          "line": 898,
+          "name": "<anonymous:example:904>",
+          "line": 904,
           "called": [
             "CoreId",
             "SystemState",
@@ -199768,7 +199785,7 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 908,
+          "line": 914,
           "called": [
             "throw"
           ]
@@ -199776,7 +199793,7 @@
         {
           "kind": "def",
           "name": "core0",
-          "line": 915,
+          "line": 921,
           "called": [
             "CoreId"
           ]
@@ -199784,7 +199801,7 @@
         {
           "kind": "def",
           "name": "core1",
-          "line": 916,
+          "line": 922,
           "called": [
             "CoreId"
           ]
@@ -199792,7 +199809,7 @@
         {
           "kind": "def",
           "name": "core2",
-          "line": 917,
+          "line": 923,
           "called": [
             "CoreId"
           ]
@@ -199800,7 +199817,7 @@
         {
           "kind": "def",
           "name": "core3",
-          "line": 918,
+          "line": 924,
           "called": [
             "CoreId"
           ]
@@ -199808,7 +199825,7 @@
         {
           "kind": "def",
           "name": "descUnmapPage",
-          "line": 923,
+          "line": 929,
           "called": [
             "TlbShootdownDescriptor",
             "core0"
@@ -199817,7 +199834,7 @@
         {
           "kind": "def",
           "name": "descLastLevel",
-          "line": 925,
+          "line": 931,
           "called": [
             "TlbShootdownDescriptor",
             "core0"
@@ -199826,7 +199843,7 @@
         {
           "kind": "def",
           "name": "descAsidRetire",
-          "line": 927,
+          "line": 933,
           "called": [
             "TlbShootdownDescriptor",
             "core2"
@@ -199835,7 +199852,7 @@
         {
           "kind": "def",
           "name": "descFullFlush",
-          "line": 929,
+          "line": 935,
           "called": [
             "TlbShootdownDescriptor",
             "core1"
@@ -199844,7 +199861,7 @@
         {
           "kind": "def",
           "name": "enqueueMany",
-          "line": 935,
+          "line": 941,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -199856,7 +199873,7 @@
         {
           "kind": "def",
           "name": "queueHasOp",
-          "line": 947,
+          "line": 953,
           "called": [
             "CoreId",
             "TlbInvalidation",
@@ -199867,7 +199884,7 @@
         {
           "kind": "def",
           "name": "queueIsExactly",
-          "line": 953,
+          "line": 959,
           "called": [
             "CoreId",
             "TlbInvalidation",
@@ -199877,7 +199894,7 @@
         {
           "kind": "def",
           "name": "runDescriptorChecks",
-          "line": 961,
+          "line": 967,
           "called": [
             "assertBool",
             "core0",
@@ -199892,7 +199909,7 @@
         {
           "kind": "def",
           "name": "runInitialStateChecks",
-          "line": 984,
+          "line": 990,
           "called": [
             "ackOnCore",
             "all",
@@ -199908,7 +199925,7 @@
         {
           "kind": "def",
           "name": "runEnqueueChecks",
-          "line": 1002,
+          "line": 1008,
           "called": [
             "ackOnCore",
             "all",
@@ -199930,7 +199947,7 @@
         {
           "kind": "def",
           "name": "runCapacityChecks",
-          "line": 1033,
+          "line": 1039,
           "called": [
             "assertBool",
             "core0",
@@ -199951,7 +199968,7 @@
         {
           "kind": "def",
           "name": "runDrainChecks",
-          "line": 1060,
+          "line": 1066,
           "called": [
             "ackOnCore",
             "all",
@@ -199975,7 +199992,7 @@
         {
           "kind": "def",
           "name": "runAckRoundChecks",
-          "line": 1087,
+          "line": 1093,
           "called": [
             "ackOnCore",
             "acknowledgeShootdown",
@@ -199994,7 +200011,7 @@
         {
           "kind": "def",
           "name": "runFullRoundTripChecks",
-          "line": 1121,
+          "line": 1127,
           "called": [
             "CoreId",
             "TlbShootdownDescriptor",
@@ -200023,7 +200040,7 @@
         {
           "kind": "def",
           "name": "runCoalescingChecks",
-          "line": 1163,
+          "line": 1169,
           "called": [
             "ackOnCore",
             "all",
@@ -200049,7 +200066,7 @@
         {
           "kind": "def",
           "name": "runRoundCompositionChecks",
-          "line": 1197,
+          "line": 1203,
           "called": [
             "ackOnCore",
             "ackedGenOnCore",
@@ -200075,7 +200092,7 @@
         {
           "kind": "def",
           "name": "runLockOrderChecks",
-          "line": 1255,
+          "line": 1261,
           "called": [
             "ShootdownQueueLockId",
             "ShootdownRoundLockId",
@@ -200090,7 +200107,7 @@
         {
           "kind": "def",
           "name": "runMountChecks",
-          "line": 1281,
+          "line": 1287,
           "called": [
             "SystemState",
             "TlbState.empty",
@@ -200105,7 +200122,7 @@
         {
           "kind": "def",
           "name": "runMaskedRoundChecks",
-          "line": 1298,
+          "line": 1304,
           "called": [
             "ackOnCore",
             "ackedGenOnCore",
@@ -200130,7 +200147,7 @@
         {
           "kind": "def",
           "name": "asid5",
-          "line": 1340,
+          "line": 1346,
           "called": [
             "ASID"
           ]
@@ -200138,7 +200155,7 @@
         {
           "kind": "def",
           "name": "vaddrPage",
-          "line": 1341,
+          "line": 1347,
           "called": [
             "VAddr",
             "ofNat"
@@ -200147,7 +200164,7 @@
         {
           "kind": "def",
           "name": "opUnmapTarget",
-          "line": 1342,
+          "line": 1348,
           "called": [
             "TlbInvalidation",
             "asid5",
@@ -200158,7 +200175,7 @@
         {
           "kind": "def",
           "name": "entryTarget",
-          "line": 1345,
+          "line": 1351,
           "called": [
             "PagePermissions.readOnly",
             "TlbEntry",
@@ -200170,7 +200187,7 @@
         {
           "kind": "def",
           "name": "entryOtherVaddr",
-          "line": 1349,
+          "line": 1355,
           "called": [
             "PagePermissions.readOnly",
             "TlbEntry",
@@ -200181,7 +200198,7 @@
         {
           "kind": "def",
           "name": "entryOtherAsid",
-          "line": 1353,
+          "line": 1359,
           "called": [
             "PagePermissions.readOnly",
             "TlbEntry",
@@ -200192,7 +200209,7 @@
         {
           "kind": "def",
           "name": "seededTlb",
-          "line": 1358,
+          "line": 1364,
           "called": [
             "TlbState",
             "entryOtherAsid",
@@ -200203,7 +200220,7 @@
         {
           "kind": "def",
           "name": "tlbHasEntry",
-          "line": 1361,
+          "line": 1367,
           "called": [
             "TlbEntry",
             "TlbState",
@@ -200213,7 +200230,7 @@
         {
           "kind": "def",
           "name": "runInvalidationSemanticsChecks",
-          "line": 1370,
+          "line": 1376,
           "called": [
             "all",
             "applyTlbInvalidation",
@@ -200235,7 +200252,7 @@
         {
           "kind": "def",
           "name": "runBroadcastChecks",
-          "line": 1406,
+          "line": 1412,
           "called": [
             "SystemState",
             "ackOnCore",
@@ -200263,7 +200280,7 @@
         {
           "kind": "def",
           "name": "runHandlerChecks",
-          "line": 1435,
+          "line": 1441,
           "called": [
             "SystemState",
             "ackOnCore",
@@ -200290,7 +200307,7 @@
         {
           "kind": "def",
           "name": "runProtocolRoundChecks",
-          "line": 1476,
+          "line": 1482,
           "called": [
             "SystemState",
             "TlbState",
@@ -200319,7 +200336,7 @@
         {
           "kind": "def",
           "name": "vspaceScenarioState",
-          "line": 1515,
+          "line": 1521,
           "called": [
             "SystemState",
             "asid5",
@@ -200330,7 +200347,7 @@
         {
           "kind": "def",
           "name": "runCallerWrapperChecks",
-          "line": 1519,
+          "line": 1525,
           "called": [
             "AsidPool",
             "AsidPool.initial",
@@ -200365,7 +200382,7 @@
         {
           "kind": "def",
           "name": "runWaitLoopChecks",
-          "line": 1582,
+          "line": 1588,
           "called": [
             "TlbShootdownState",
             "acknowledgeShootdown",
@@ -200381,7 +200398,7 @@
         {
           "kind": "def",
           "name": "runProtocolLockSetChecks",
-          "line": 1605,
+          "line": 1611,
           "called": [
             "LockId",
             "all",
@@ -200400,7 +200417,7 @@
         {
           "kind": "def",
           "name": "runDiffRecoveryChecks",
-          "line": 1632,
+          "line": 1638,
           "called": [
             "SystemState",
             "assertBool",
@@ -200421,22 +200438,6 @@
         {
           "kind": "def",
           "name": "rtVsp",
-          "line": 1654,
-          "called": [
-            "ObjId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "rtEp",
-          "line": 1657,
-          "called": [
-            "ObjId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "rtCn",
           "line": 1660,
           "called": [
             "ObjId"
@@ -200444,8 +200445,24 @@
         },
         {
           "kind": "def",
+          "name": "rtEp",
+          "line": 1663,
+          "called": [
+            "ObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rtCn",
+          "line": 1666,
+          "called": [
+            "ObjId"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "rtMultiState",
-          "line": 1667,
+          "line": 1673,
           "called": [
             "Capability",
             "SystemState",
@@ -200466,7 +200483,7 @@
         {
           "kind": "def",
           "name": "runCompletionCutChecks",
-          "line": 1684,
+          "line": 1690,
           "called": [
             "KernelObject",
             "SystemState",
@@ -200525,7 +200542,7 @@
         {
           "kind": "def",
           "name": "udVsp",
-          "line": 1814,
+          "line": 1820,
           "called": [
             "ObjId"
           ]
@@ -200533,7 +200550,7 @@
         {
           "kind": "def",
           "name": "udCn",
-          "line": 1815,
+          "line": 1821,
           "called": [
             "ObjId"
           ]
@@ -200541,7 +200558,7 @@
         {
           "kind": "def",
           "name": "udCaller",
-          "line": 1816,
+          "line": 1822,
           "called": [
             "ThreadId"
           ]
@@ -200549,7 +200566,7 @@
         {
           "kind": "def",
           "name": "udCap",
-          "line": 1817,
+          "line": 1823,
           "called": [
             "Capability",
             "ofList",
@@ -200559,7 +200576,7 @@
         {
           "kind": "def",
           "name": "udCapRO",
-          "line": 1819,
+          "line": 1825,
           "called": [
             "Capability",
             "ofList",
@@ -200569,7 +200586,7 @@
         {
           "kind": "def",
           "name": "udDecoded",
-          "line": 1824,
+          "line": 1830,
           "called": [
             "SyscallDecodeResult",
             "length",
@@ -200579,7 +200596,7 @@
         {
           "kind": "def",
           "name": "udState",
-          "line": 1830,
+          "line": 1836,
           "called": [
             "Capability",
             "Slot",
@@ -200600,7 +200617,7 @@
         {
           "kind": "def",
           "name": "udDispatch",
-          "line": 1846,
+          "line": 1852,
           "called": [
             "Capability",
             "KernelError",
@@ -200620,7 +200637,7 @@
         {
           "kind": "def",
           "name": "runLiveDispatchChecks",
-          "line": 1854,
+          "line": 1860,
           "called": [
             "all",
             "asid5",
@@ -200644,7 +200661,7 @@
         {
           "kind": "def",
           "name": "runDebtClosureChecks",
-          "line": 1885,
+          "line": 1891,
           "called": [
             "SystemState",
             "all",
@@ -200668,7 +200685,7 @@
         {
           "kind": "def",
           "name": "perCoreSeeded",
-          "line": 1924,
+          "line": 1930,
           "called": [
             "SystemState",
             "default",
@@ -200679,7 +200696,7 @@
         {
           "kind": "def",
           "name": "runPerCoreTlbLocalChecks",
-          "line": 1928,
+          "line": 1934,
           "called": [
             "SystemState",
             "all",
@@ -200706,7 +200723,7 @@
         {
           "kind": "def",
           "name": "runPerCoreTlbBroadcastChecks",
-          "line": 1959,
+          "line": 1965,
           "called": [
             "all",
             "assertBool",
@@ -200733,7 +200750,7 @@
         {
           "kind": "def",
           "name": "runPerCoreTlbOperationalChecks",
-          "line": 2002,
+          "line": 2008,
           "called": [
             "SystemState",
             "all",
@@ -200767,7 +200784,7 @@
         {
           "kind": "def",
           "name": "runPerCoreTlbFillChecks",
-          "line": 2090,
+          "line": 2096,
           "called": [
             "all",
             "any",
@@ -200791,7 +200808,7 @@
         {
           "kind": "def",
           "name": "runPerCoreTlbPendingAwareChecks",
-          "line": 2122,
+          "line": 2128,
           "called": [
             "asid5",
             "assertBool",
@@ -200812,7 +200829,7 @@
         {
           "kind": "def",
           "name": "runPerCoreTlbInitiatorAtomicChecks",
-          "line": 2154,
+          "line": 2160,
           "called": [
             "any",
             "asid5",
@@ -200838,7 +200855,7 @@
         {
           "kind": "def",
           "name": "runPerCoreTlbUseAfterRetypeChecks",
-          "line": 2200,
+          "line": 2206,
           "called": [
             "SystemState",
             "asid5",
@@ -200859,7 +200876,7 @@
         {
           "kind": "def",
           "name": "runPerCoreTlbCoalescingOverflowChecks",
-          "line": 2234,
+          "line": 2240,
           "called": [
             "SystemState",
             "assertBool",
@@ -200891,7 +200908,7 @@
         {
           "kind": "def",
           "name": "runPerCoreTlbLiveLifecycleChecks",
-          "line": 2297,
+          "line": 2303,
           "called": [
             "all",
             "any",
@@ -200919,7 +200936,7 @@
         {
           "kind": "def",
           "name": "stressAssignments",
-          "line": 2361,
+          "line": 2367,
           "called": [
             "CoreId",
             "PAddr",
@@ -200934,7 +200951,7 @@
         {
           "kind": "def",
           "name": "stressOpOf",
-          "line": 2373,
+          "line": 2379,
           "called": [
             "CoreId",
             "TlbInvalidation",
@@ -200947,7 +200964,7 @@
         {
           "kind": "def",
           "name": "stressMapped",
-          "line": 2380,
+          "line": 2386,
           "called": [
             "SystemState",
             "asid5",
@@ -200961,7 +200978,7 @@
         {
           "kind": "def",
           "name": "stressFilled",
-          "line": 2390,
+          "line": 2396,
           "called": [
             "SystemState",
             "asid5",
@@ -200973,7 +200990,7 @@
         {
           "kind": "def",
           "name": "stressStormed",
-          "line": 2400,
+          "line": 2406,
           "called": [
             "SystemState",
             "asid5",
@@ -200986,7 +201003,7 @@
         {
           "kind": "def",
           "name": "viewCaches",
-          "line": 2412,
+          "line": 2418,
           "called": [
             "CoreId",
             "SystemState",
@@ -201000,7 +201017,7 @@
         {
           "kind": "def",
           "name": "sameViews",
-          "line": 2419,
+          "line": 2425,
           "called": [
             "SystemState",
             "all",
@@ -201012,7 +201029,7 @@
         {
           "kind": "def",
           "name": "runShootdownBackpressureChecks",
-          "line": 2434,
+          "line": 2440,
           "called": [
             "SystemState",
             "all",
@@ -201042,7 +201059,7 @@
         {
           "kind": "def",
           "name": "runConcurrentUnmapDrainChecks",
-          "line": 2493,
+          "line": 2499,
           "called": [
             "CoreId",
             "SystemState",
@@ -201068,7 +201085,7 @@
         {
           "kind": "def",
           "name": "runConcurrentUnmapStressChecks",
-          "line": 2543,
+          "line": 2549,
           "called": [
             "all",
             "any",
@@ -201091,7 +201108,7 @@
         {
           "kind": "def",
           "name": "windowOf",
-          "line": 2609,
+          "line": 2615,
           "called": [
             "SystemState",
             "shootdownRoundWindow"
@@ -201100,7 +201117,7 @@
         {
           "kind": "def",
           "name": "rtAsidNew",
-          "line": 2618,
+          "line": 2624,
           "called": [
             "ASID"
           ]
@@ -201108,7 +201125,7 @@
         {
           "kind": "def",
           "name": "rtNewVsp",
-          "line": 2623,
+          "line": 2629,
           "called": [
             "KernelObject",
             "rtAsidNew"
@@ -201117,7 +201134,7 @@
         {
           "kind": "def",
           "name": "runRoundWindowChecks",
-          "line": 2627,
+          "line": 2633,
           "called": [
             "all",
             "any",
@@ -201158,7 +201175,7 @@
         {
           "kind": "def",
           "name": "runRoundWindowBoundChecks",
-          "line": 2758,
+          "line": 2764,
           "called": [
             "all",
             "assertBool",
@@ -201180,7 +201197,7 @@
         {
           "kind": "def",
           "name": "runRoundWindowWidthChecks",
-          "line": 2792,
+          "line": 2798,
           "called": [
             "all",
             "asid5",
@@ -201212,7 +201229,7 @@
         {
           "kind": "def",
           "name": "runGenerationAwareAckChecks",
-          "line": 2855,
+          "line": 2861,
           "called": [
             "TlbShootdownDescriptor",
             "ackBounded",
@@ -201239,7 +201256,7 @@
         {
           "kind": "def",
           "name": "runReverseOrderAckChecks",
-          "line": 2943,
+          "line": 2949,
           "called": [
             "TlbShootdownDescriptor",
             "ackBounded",
@@ -201265,7 +201282,7 @@
         {
           "kind": "def",
           "name": "runRoundGenerationChecks",
-          "line": 2990,
+          "line": 2996,
           "called": [
             "runGenerationAwareAckChecks",
             "runReverseOrderAckChecks",
@@ -201277,7 +201294,7 @@
         {
           "kind": "def",
           "name": "mockClusterA",
-          "line": 3013,
+          "line": 3019,
           "called": [
             "CoreId",
             "core0",
@@ -201287,7 +201304,7 @@
         {
           "kind": "def",
           "name": "mockClusterB",
-          "line": 3017,
+          "line": 3023,
           "called": [
             "CoreId",
             "core2",
@@ -201297,7 +201314,7 @@
         {
           "kind": "def",
           "name": "runCrossClusterHazardChecks",
-          "line": 3024,
+          "line": 3030,
           "called": [
             "ackOnCore",
             "all",
@@ -201324,7 +201341,7 @@
         {
           "kind": "def",
           "name": "runCrossClusterMockChecks",
-          "line": 3078,
+          "line": 3084,
           "called": [
             "assertBool",
             "core0",
@@ -201345,7 +201362,7 @@
         {
           "kind": "def",
           "name": "tracePipeline",
-          "line": 3126,
+          "line": 3132,
           "called": [
             "SystemState",
             "asid5",
@@ -201365,7 +201382,7 @@
         {
           "kind": "def",
           "name": "coreLine",
-          "line": 3140,
+          "line": 3146,
           "called": [
             "CoreId",
             "SystemState",
@@ -201380,7 +201397,7 @@
         {
           "kind": "def",
           "name": "checkerVerdict",
-          "line": 3147,
+          "line": 3153,
           "called": [
             "SystemState",
             "st",
@@ -201390,7 +201407,7 @@
         {
           "kind": "def",
           "name": "shootdownTraceLines",
-          "line": 3150,
+          "line": 3156,
           "called": [
             "allAcked",
             "asid5",
@@ -201424,13 +201441,13 @@
         {
           "kind": "def",
           "name": "traceFixturePath",
-          "line": 3191,
+          "line": 3197,
           "called": []
         },
         {
           "kind": "def",
           "name": "runTraceFixtureCheck",
-          "line": 3199,
+          "line": 3205,
           "called": [
             "shootdownTraceLines",
             "throw",
@@ -201440,7 +201457,7 @@
         {
           "kind": "def",
           "name": "runSmpTlbShootdownChecks",
-          "line": 3225,
+          "line": 3231,
           "called": [
             "runAckRoundChecks",
             "runBroadcastChecks",
@@ -201483,7 +201500,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 3269,
+          "line": 3275,
           "called": [
             "runSmpTlbShootdownChecks"
           ]

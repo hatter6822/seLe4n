@@ -747,14 +747,14 @@ mod tests {
         // `SM1G4_OBSERVATION_MUTEX` — but that mutex only serialises
         // tests that also take it (the sibling `sm1g4_*` and `sm1i4_*`
         // observation tests).  Other UART-touching tests in the module —
-        // notably `sm1g4_kprintln_core_macro_expands_and_runs_on_host`,
-        // `sm1g4_kprintln_core_no_arg_form_runs_on_host`, and
-        // `sm1g4_kprint_core_macro_expands_and_runs_on_host` — call the
+        // notably `kprintln_core_macro_expands_and_runs_on_host`,
+        // `kprintln_core_no_arg_form_runs_on_host`, and
+        // `kprint_core_macro_expands_and_runs_on_host` — call the
         // UART macros without the mutex, so they can still acquire
         // `UART_LOCK` between the `before`/`after` snapshots and
         // resurface the flake.  v0.31.25 replaces the observation
         // pattern with the same re-acquire pattern used by
-        // `sm1g4_kprintln_core_balances_lock_state`: invoke
+        // `kprintln_core_balances_lock_state`: invoke
         // `with_boot_uart` under test, then immediately re-enter
         // `with_boot_uart` — if the first call had failed to release
         // the lock this second acquisition would spin forever and
@@ -849,7 +849,7 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn sm1g4_kprintln_core_macro_expands_and_runs_on_host() {
+    fn kprintln_core_macro_expands_and_runs_on_host() {
         // The macro reads core_id from TPIDR_EL1 (host stub: 0) and
         // prints `[core 0] <msg>` to the boot UART.  On host the UART
         // write is a no-op via the MMIO host stub.  Verify no panic.
@@ -859,7 +859,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1g4_kprintln_core_no_arg_form_runs_on_host() {
+    fn kprintln_core_no_arg_form_runs_on_host() {
         // The no-argument form `kprintln_core!()` prints just the
         // `[core N]` prefix on its own line.  Useful for a blank
         // line in boot diagnostics.
@@ -867,7 +867,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1g4_kprint_core_macro_expands_and_runs_on_host() {
+    fn kprint_core_macro_expands_and_runs_on_host() {
         // Companion partial-line macro — exercises the same code path
         // but without the trailing newline.
         crate::kprint_core!("SM1.G.4 partial line");
@@ -875,7 +875,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1g4_kprintln_core_balances_lock_state() {
+    fn kprintln_core_balances_lock_state() {
         // A `kprintln_core!` invocation acquires + releases the UART
         // lock.  After the macro returns, the lock must be releasable
         // again — proven by re-acquiring via `with_boot_uart`.
@@ -900,7 +900,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1g4_kprintln_core_repeated_invocations_balance() {
+    fn kprintln_core_repeated_invocations_balance() {
         // Multiple sequential invocations must each balance the lock.
         // Catches a regression where one expansion arm forgets to
         // release.
@@ -923,7 +923,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1g4_kprintln_core_acquires_lock_exactly_once_per_call() {
+    fn kprintln_core_acquires_lock_exactly_once_per_call() {
         // SM1.G.4 audit-pass-1: per-line atomicity property.
         //
         // The audit-pass-1 fix replaced the pre-audit `kprintln!`-based
@@ -937,7 +937,7 @@ mod tests {
         // lock must be releasable (proven by `with_boot_uart`).  The
         // STRUCTURAL property (exactly one `with_boot_uart` call in
         // the macro body) is verified by the deterministic
-        // source-scan test `sm1g4_macro_expansion_text_uses_with_boot_uart_once`.
+        // source-scan test `macro_expansion_text_uses_with_boot_uart_once`.
         //
         // SM1.I audit-pass-1: re-acquire pattern.
         let _guard = SM1G4_OBSERVATION_MUTEX
@@ -948,7 +948,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1g4_kprint_core_acquires_lock_exactly_once_per_call() {
+    fn kprint_core_acquires_lock_exactly_once_per_call() {
         // SM1.G.4 audit-pass-1: partial-line variant has the same
         // single-lock contract.
         //
@@ -964,7 +964,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1g4_macro_expansion_text_uses_with_boot_uart_once() {
+    fn macro_expansion_text_uses_with_boot_uart_once() {
         // SM1.G.4 audit-pass-1: defense-in-depth structural check.
         //
         // The audit-pass-1 atomicity fix relies on the macro
@@ -1062,7 +1062,7 @@ mod tests {
     /// host-meaningful stress that exercises `UART_LOCK` under
     /// `std::thread` contention).
     #[test]
-    fn sm1g3_cross_thread_kprintln_stress_no_lock_leak() {
+    fn cross_thread_kprintln_stress_no_lock_leak() {
         use std::sync::atomic::{AtomicUsize, Ordering as StdOrdering};
         use std::sync::Arc;
         use std::thread;

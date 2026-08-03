@@ -746,6 +746,61 @@ pub fn send_sgi_to_all_but_self(intid: u8) {
 }
 
 // ============================================================================
+// WS-SM SM0.H INTID 4 (`haltAll`) — the system-wide fail-closed halt
+//
+// `SgiKind.haltAll` has been reserved since SM0.H and documented on the
+// Lean side as "halt all cores (panic / shutdown)", but nothing
+// implemented it: no handler was registered for INTID 4, so a broadcast
+// would have been acknowledged and dropped.  PR #854's review made that
+// gap load-bearing — v0.32.117 gave the shootdown barriers a genuine
+// halt, but `cpu::fatal_halt` parks only the *calling* PE, so the other
+// cores carried on against a TLB the initiator had just declared it
+// could not clean, and the unacknowledged target could resume with the
+// stale translation. A per-PE park is not a system-wide barrier.
+// ============================================================================
+
+/// **WS-SM SM0.H**: the `haltAll` SGI INTID, matching
+/// `SeLe4n.Kernel.Concurrency.SgiKind.haltAll.toIntid` (pinned by
+/// `SgiKind.haltAll_intid` on the Lean side).
+pub const HALT_ALL_INTID: u8 = 4;
+
+/// **WS-SM SM0.H**: the `haltAll` handler — park this PE permanently.
+///
+/// Runs in IRQ context on a core that another core has declared the
+/// system unsafe for. It does not return; [`crate::cpu::fatal_halt`]
+/// masks interrupts and parks in a WFE loop.
+fn halt_all_handler(_intid: u8, _source_cpu: u8) {
+    crate::cpu::fatal_halt()
+}
+
+/// **WS-SM SM0.H**: register the `haltAll` handler.
+///
+/// # Safety
+///
+/// Must be called during single-core boot with IRQs disabled, before
+/// `bring_up_secondaries` — the [`register_sgi_handler`] write-once
+/// contract, same as the shootdown handler.
+pub unsafe fn register_halt_all_handler() {
+    unsafe {
+        register_sgi_handler(HALT_ALL_INTID, halt_all_handler);
+    }
+}
+
+/// **WS-SM SM0.H**: broadcast `haltAll` to every other PE, then park
+/// this one. **Never returns.**
+///
+/// Best-effort by nature: a core with interrupts masked (one inside its
+/// own SVC path, say) takes the SGI when it unmasks rather than
+/// immediately. That is still strictly better than the per-PE park it
+/// replaces, and the shootdown caller pairs it with *not* releasing the
+/// round lock, so a core that reaches the round before servicing the SGI
+/// blocks instead of proceeding.
+pub fn halt_all() -> ! {
+    send_sgi_to_all_but_self(HALT_ALL_INTID);
+    crate::cpu::fatal_halt()
+}
+
+// ============================================================================
 // WS-SM SM1.F.5 — SGI handler dispatch
 //
 // The handler table lives as a `static` array of `Option<SgiHandler>`
@@ -1617,7 +1672,7 @@ mod tests {
     // =====================================================================
 
     #[test]
-    fn sm1c3_init_cpu_interface_secondary_callable_on_host() {
+    fn init_cpu_interface_secondary_callable_on_host() {
         // SM1.C.3: host stub of `init_cpu_interface_secondary` runs
         // cleanly — the underlying `init_cpu_interface` calls
         // `mmio_write32` which is a no-op on non-aarch64.  Catches a
@@ -1627,7 +1682,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1c3_init_cpu_interface_secondary_accepts_every_secondary_core_id() {
+    fn init_cpu_interface_secondary_accepts_every_secondary_core_id() {
         // SM1.C.3: every plausible secondary core_id (1..=3 on RPi5)
         // must be callable.  A regression introducing an out-of-range
         // bound (e.g., asserting core_id < 3) would fail one of these
@@ -1638,7 +1693,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1c3_init_cpu_interface_secondary_signature_takes_u64() {
+    fn init_cpu_interface_secondary_signature_takes_u64() {
         // SM1.C.3: the helper takes a u64 core_id (PSCI context_id
         // convention).  Pinning the signature here catches refactors
         // to `usize` or `u32` that would break the FFI call from
@@ -1647,7 +1702,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1c3_init_cpu_interface_signature_is_pub() {
+    fn init_cpu_interface_signature_is_pub() {
         // SM1.C.3: the underlying `init_cpu_interface(base)` helper is
         // shared with the primary's `init_gic()`.  Ensure the symbol
         // remains accessible from the secondary's call path.
@@ -1655,7 +1710,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1c3_isenabler0_offset_is_first_bank() {
+    fn isenabler0_offset_is_first_bank() {
         // SM1.F audit-pass-1: the per-core ISENABLER0 enable in
         // `init_cpu_interface_secondary` writes to
         // `GICD_BASE + gicd::ISENABLER_BASE`, which is the first
@@ -1695,7 +1750,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1c3_ipriorityr_per_core_covers_intids_0_to_31() {
+    fn ipriorityr_per_core_covers_intids_0_to_31() {
         // SM1.F audit-pass-2: `init_cpu_interface_secondary` writes
         // GICD_IPRIORITYR0..7 = 0xA0A0_A0A0 to set every per-core
         // INTID (0..31) priority to 0xA0.  Each register holds 4
@@ -1732,7 +1787,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1c3_igroupr0_per_core_covers_first_32_intids() {
+    fn igroupr0_per_core_covers_first_32_intids() {
         // SM1.F audit-pass-2: `init_cpu_interface_secondary` writes
         // GICD_IGROUPR0 = 0 to set every per-core INTID (0..31) to
         // Group 0 (= IRQ delivery, not FIQ).  Bank 0 covers INTIDs
@@ -1749,7 +1804,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1c3_icpendr0_clear_pending_offset_and_mask() {
+    fn icpendr0_clear_pending_offset_and_mask() {
         // SM1.F audit-pass-3: `init_cpu_interface_secondary` writes
         // GICD_ICPENDR0 = 0xFFFF_FFFF to clear any pending SGIs/PPIs
         // from previous state (defense-in-depth against PSCI / soft-
@@ -1778,7 +1833,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1c3_canonical_init_order_matches_gic_trm() {
+    fn canonical_init_order_matches_gic_trm() {
         // SM1.F audit-pass-3: GIC-400 TRM §3.1.1 Table 3-1 specifies
         // the init order: GROUP → PRIORITY → ICFGR → CLEAR_PENDING →
         // ENABLE → (CPU interface).  `init_cpu_interface_secondary`
@@ -1813,19 +1868,19 @@ mod tests {
     // ---------------------------------------------------------------------
 
     #[test]
-    fn sm1f1_gicd_sgir_offset_matches_gic_400_trm() {
+    fn gicd_sgir_offset_matches_gic_400_trm() {
         // GIC-400 TRM §4.3.13: GICD_SGIR is at distributor-base + 0xF00.
         assert_eq!(gicd::SGIR, 0xF00);
     }
 
     #[test]
-    fn sm1f1_max_sgi_intid_matches_gic_spec() {
+    fn max_sgi_intid_matches_gic_spec() {
         // GIC-400 §3.2.2 / Table 3-1: SGIs occupy INTIDs 0..15 (16 slots).
         assert_eq!(MAX_SGI_INTID, 16);
     }
 
     #[test]
-    fn sm1f1_sgi_target_list_filter_constants_match_gic_trm() {
+    fn sgi_target_list_filter_constants_match_gic_trm() {
         // GIC-400 TRM §4.3.13: TargetListFilter encodes
         //   00 = use CPUTargetList
         //   01 = all-but-self
@@ -1841,7 +1896,7 @@ mod tests {
     // ---------------------------------------------------------------------
 
     #[test]
-    fn sm1f1_encode_sgir_cputargetlist_path() {
+    fn encode_sgir_cputargetlist_path() {
         // SM1.F.2 acceptance: send_sgi(0b1110, 1) → 0x000E_0001.
         // (TargetListFilter=00, CPUTargetList=0b1110, INTID=1)
         let enc = encode_sgir(SGI_TLF_CPU_TARGET_LIST, 0b1110, 1);
@@ -1849,7 +1904,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1f1_encode_sgir_self_only_path() {
+    fn encode_sgir_self_only_path() {
         // SM1.F.3 acceptance: send_sgi_to_self(3) → 0x0200_0003.
         // (TargetListFilter=10, CPUTargetList=0, INTID=3)
         let enc = encode_sgir(SGI_TLF_SELF_ONLY, 0, 3);
@@ -1857,7 +1912,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1f1_encode_sgir_all_but_self_path() {
+    fn encode_sgir_all_but_self_path() {
         // SM1.F.4 acceptance: send_sgi_to_all_but_self(0) → 0x0100_0000.
         // (TargetListFilter=01, CPUTargetList=0, INTID=0)
         let enc = encode_sgir(SGI_TLF_ALL_BUT_SELF, 0, 0);
@@ -1865,7 +1920,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1f1_encode_sgir_isolates_intid_field() {
+    fn encode_sgir_isolates_intid_field() {
         // The INTID field is bits [3:0]; bits [4:15] are RES0 in our
         // encoding.  Verify every INTID 0..15 produces a value whose
         // high bits are clean.
@@ -1883,7 +1938,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1f1_encode_sgir_isolates_target_mask_field() {
+    fn encode_sgir_isolates_target_mask_field() {
         // CPUTargetList is bits [23:16]; verify every 8-bit mask
         // populates that field cleanly.
         for mask in [0u8, 0x01, 0x03, 0x07, 0x0F, 0xF0, 0xFF, 0xAA, 0x55] {
@@ -1898,7 +1953,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1f1_encode_sgir_isolates_target_list_filter() {
+    fn encode_sgir_isolates_target_list_filter() {
         // TargetListFilter is bits [25:24]; verify every TLF value
         // populates that field cleanly.
         for tlf in [
@@ -1917,7 +1972,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1f1_encode_sgir_const_callable() {
+    fn encode_sgir_const_callable() {
         // The encoder is `const fn` — verify it evaluates at
         // compile time so call sites with literal arguments are
         // free at runtime.
@@ -1930,7 +1985,7 @@ mod tests {
     // ---------------------------------------------------------------------
 
     #[test]
-    fn sm1f2_send_sgi_callable_for_every_valid_combo() {
+    fn send_sgi_callable_for_every_valid_combo() {
         // Exercise representative (mask, intid) combinations.  On
         // host the MMIO write is a no-op; the test verifies no
         // panic.
@@ -1944,7 +1999,7 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "SGI INTID must be 0..15")]
-    fn sm1f2_send_sgi_panics_on_intid_16() {
+    fn send_sgi_panics_on_intid_16() {
         // Bound enforcement: INTID 16 is the first PPI slot, not an
         // SGI; passing it would silently fire a PPI on the target.
         send_sgi(0x01, 16);
@@ -1952,12 +2007,12 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "SGI INTID must be 0..15")]
-    fn sm1f2_send_sgi_panics_on_intid_max() {
+    fn send_sgi_panics_on_intid_max() {
         send_sgi(0x01, u8::MAX);
     }
 
     #[test]
-    fn sm1f3_send_sgi_to_self_callable_for_every_valid_intid() {
+    fn send_sgi_to_self_callable_for_every_valid_intid() {
         for intid in 0..MAX_SGI_INTID {
             send_sgi_to_self(intid);
         }
@@ -1965,12 +2020,12 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "SGI INTID must be 0..15")]
-    fn sm1f3_send_sgi_to_self_panics_on_intid_16() {
+    fn send_sgi_to_self_panics_on_intid_16() {
         send_sgi_to_self(16);
     }
 
     #[test]
-    fn sm1f4_send_sgi_to_all_but_self_callable_for_every_valid_intid() {
+    fn send_sgi_to_all_but_self_callable_for_every_valid_intid() {
         for intid in 0..MAX_SGI_INTID {
             send_sgi_to_all_but_self(intid);
         }
@@ -1978,12 +2033,12 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "SGI INTID must be 0..15")]
-    fn sm1f4_send_sgi_to_all_but_self_panics_on_intid_16() {
+    fn send_sgi_to_all_but_self_panics_on_intid_16() {
         send_sgi_to_all_but_self(16);
     }
 
     #[test]
-    fn sm1f234_send_sgi_signatures_pinned() {
+    fn send_sgi_signatures_pinned() {
         // Pin every public send_sgi signature.  A future refactor
         // that changed the argument types or return type would
         // fail to compile here.
@@ -2006,7 +2061,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1f5_lookup_returns_none_for_out_of_range_intid() {
+    fn lookup_returns_none_for_out_of_range_intid() {
         // SM1.F.5: out-of-range INTID returns None defensively.
         // Tests the GLOBAL wrapper; no state mutation needed.
         assert!(lookup_sgi_handler(16).is_none());
@@ -2017,8 +2072,8 @@ mod tests {
     // SGI_HANDLERS table would be race-prone under cargo test (any
     // other test that registers a handler would observe a Some).
     // Audit-pass-1 replaced such tests with stack-local-slice
-    // exercises via `sm1f5_inner_register_then_lookup_returns_handler`
-    // and `sm1f5_inner_lookup_returns_none_for_out_of_range_intid`.
+    // exercises via `inner_register_then_lookup_returns_handler`
+    // and `inner_lookup_returns_none_for_out_of_range_intid`.
 
     // SM1.F.5 audit-pass-1: per-test handler state-recording.
     //
@@ -2037,7 +2092,7 @@ mod tests {
     // can verify the dispatcher passed both arguments correctly.
 
     static SM1F5_INNER_LOOKUP_FIRED: AtomicU32 = AtomicU32::new(0);
-    fn sm1f5_inner_lookup_handler(intid: u8, source_cpu: u8) {
+    fn inner_lookup_handler(intid: u8, source_cpu: u8) {
         SM1F5_INNER_LOOKUP_FIRED.store(
             ((intid as u32) << 8) | (source_cpu as u32),
             Ordering::SeqCst,
@@ -2045,7 +2100,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1f5_inner_register_then_lookup_returns_handler() {
+    fn inner_register_then_lookup_returns_handler() {
         // SM1.F.5 audit-pass-1: use the `_in`-form helpers with a
         // stack-local handler table so this test cannot race with
         // any other test on the global `SGI_HANDLERS`.
@@ -2059,7 +2114,7 @@ mod tests {
                 i
             );
         }
-        register_sgi_handler_in(&mut handlers, 14, sm1f5_inner_lookup_handler);
+        register_sgi_handler_in(&mut handlers, 14, inner_lookup_handler);
         assert!(
             lookup_sgi_handler_in(&handlers, 14).is_some(),
             "handler at INTID 14 must be retrievable after registration"
@@ -2078,7 +2133,7 @@ mod tests {
     }
 
     static SM1F5_INNER_DISPATCH_FIRED: AtomicU32 = AtomicU32::new(0);
-    fn sm1f5_inner_dispatch_handler(intid: u8, source_cpu: u8) {
+    fn inner_dispatch_handler(intid: u8, source_cpu: u8) {
         SM1F5_INNER_DISPATCH_FIRED.store(
             ((intid as u32) << 8) | (source_cpu as u32),
             Ordering::SeqCst,
@@ -2086,14 +2141,14 @@ mod tests {
     }
 
     #[test]
-    fn sm1f5_inner_dispatch_invokes_registered_handler() {
+    fn inner_dispatch_invokes_registered_handler() {
         // SM1.F.5 audit-pass-1: stack-local handler table again.
         // Uses a per-test counter so concurrent tests do not
         // observe each other's writes.
         SM1F5_INNER_DISPATCH_FIRED.store(0, Ordering::SeqCst);
         let mut handlers: [Option<SgiHandler>; MAX_SGI_INTID as usize] =
             [None; MAX_SGI_INTID as usize];
-        register_sgi_handler_in(&mut handlers, 12, sm1f5_inner_dispatch_handler);
+        register_sgi_handler_in(&mut handlers, 12, inner_dispatch_handler);
         dispatch_sgi_in(&handlers, 12, 7);
         let recorded = SM1F5_INNER_DISPATCH_FIRED.load(Ordering::SeqCst);
         assert_eq!(
@@ -2104,7 +2159,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1f5_inner_dispatch_silent_for_unregistered_intid() {
+    fn inner_dispatch_silent_for_unregistered_intid() {
         // SM1.F.5 audit-pass-1: dispatching to an unregistered slot
         // logs but does not panic.  Stack-local table so we know
         // INTID 13 is genuinely unregistered (independent of other
@@ -2114,7 +2169,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1f5_inner_dispatch_silent_for_out_of_range_intid() {
+    fn inner_dispatch_silent_for_out_of_range_intid() {
         // SM1.F.5 audit-pass-1: out-of-range INTIDs early-return.
         let handlers: [Option<SgiHandler>; MAX_SGI_INTID as usize] = [None; MAX_SGI_INTID as usize];
         dispatch_sgi_in(&handlers, 16, 0);
@@ -2123,7 +2178,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1f5_inner_lookup_returns_none_for_out_of_range_intid() {
+    fn inner_lookup_returns_none_for_out_of_range_intid() {
         let handlers: [Option<SgiHandler>; MAX_SGI_INTID as usize] = [None; MAX_SGI_INTID as usize];
         assert!(lookup_sgi_handler_in(&handlers, 16).is_none());
         assert!(lookup_sgi_handler_in(&handlers, 100).is_none());
@@ -2131,7 +2186,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1f5_inner_lookup_returns_none_for_short_slice() {
+    fn inner_lookup_returns_none_for_short_slice() {
         // SM1.F.5 audit-pass-1: a too-short slice (less than the
         // INTID we're looking up) returns None defensively.
         let handlers: [Option<SgiHandler>; 4] = [None; 4];
@@ -2142,7 +2197,7 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "WS-SM SM1.F.5")]
-    fn sm1f5_inner_register_panics_on_short_slice() {
+    fn inner_register_panics_on_short_slice() {
         // SM1.F.5 audit-pass-1: registering at INTID 5 with a slice
         // of length 4 panics defensively (caller bug).
         let mut handlers: [Option<SgiHandler>; 4] = [None; 4];
@@ -2150,7 +2205,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1f5_inner_signature_pins() {
+    fn inner_signature_pins() {
         // SM1.F.5 audit-pass-1: pin the inner-form helper signatures.
         let _: fn(&mut [Option<SgiHandler>], u8, SgiHandler) = register_sgi_handler_in;
         let _: fn(&[Option<SgiHandler>], u8) -> Option<SgiHandler> = lookup_sgi_handler_in;
@@ -2158,7 +2213,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1f5_global_wrapper_routes_through_inner_form() {
+    fn global_wrapper_routes_through_inner_form() {
         // SM1.F.5 audit-pass-1: the global `dispatch_sgi` /
         // `lookup_sgi_handler` wrappers must route through the
         // `_in`-form helpers so production and test exercise the
@@ -2176,7 +2231,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1f5_handler_signature_pinned() {
+    fn handler_signature_pinned() {
         // SM1.F.5: SgiHandler is `fn(u8, u8)`.  A signature change
         // would break every registered handler at compile time.
         let _: SgiHandler = _sgi_test_handler_unused;
@@ -2184,27 +2239,27 @@ mod tests {
     }
 
     #[test]
-    fn sm1f5_dispatch_function_signature_pinned() {
+    fn dispatch_function_signature_pinned() {
         // SM1.F.5: pin the public dispatch_sgi signature.
         let _: fn(u8, u8) = dispatch_sgi;
     }
 
     #[test]
-    fn sm1f5_register_signature_pinned() {
+    fn register_signature_pinned() {
         // SM1.F.5: pin the public registration ABI.  `unsafe fn`
         // pointer types pin the unsafe contract too.
         let _: unsafe fn(u8, SgiHandler) = register_sgi_handler;
     }
 
     #[test]
-    fn sm1f5_lookup_signature_pinned() {
+    fn lookup_signature_pinned() {
         // SM1.F.5: pin the public lookup ABI.
         let _: fn(u8) -> Option<SgiHandler> = lookup_sgi_handler;
     }
 
     #[test]
     #[should_panic(expected = "SGI INTID must be 0..15")]
-    fn sm1f5_register_panics_on_out_of_range_intid() {
+    fn register_panics_on_out_of_range_intid() {
         // SM1.F.5: registering a handler for INTID 16 panics — the
         // table only has 16 slots and an out-of-range write would
         // trash unrelated data.
@@ -2218,7 +2273,7 @@ mod tests {
     // ---------------------------------------------------------------------
 
     #[test]
-    fn sm1f5_iar_source_cpu_extracts_bits_12_to_10() {
+    fn iar_source_cpu_extracts_bits_12_to_10() {
         // GIC-400 TRM §4.4.4: bits [12:10] carry the source CPU
         // interface for SGI INTIDs.  Verify the extractor masks
         // correctly against the full IAR bit pattern.
@@ -2231,7 +2286,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1f5_iar_source_cpu_masks_higher_bits() {
+    fn iar_source_cpu_masks_higher_bits() {
         // The extractor masks to 3 bits — higher bits of the IAR
         // (e.g., bits [13:31]) must not bleed into the result.
         // Construct an IAR with bits 13..31 all set; the extractor
@@ -2242,7 +2297,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1f5_iar_source_cpu_const_callable() {
+    fn iar_source_cpu_const_callable() {
         // The extractor is `const fn`.  Verify it evaluates at
         // compile time when given a literal IAR.
         const SOURCE: u8 = iar_source_cpu((3u32 << 10) | 5u32);
@@ -2267,7 +2322,7 @@ mod tests {
     // ---------------------------------------------------------------------
 
     #[test]
-    fn sm1f8_send_sgi_family_runs_on_host_without_panic() {
+    fn send_sgi_family_runs_on_host_without_panic() {
         // Regression check: a future cfg gate that forgot to no-op
         // on host would cause this test to abort.
         send_sgi(0x0F, 0);
@@ -2276,7 +2331,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1f_sgi_address_arithmetic_correct() {
+    fn sgi_address_arithmetic_correct() {
         // Sanity: GICD_BASE + gicd::SGIR resolves to the BCM2712
         // GICD_SGIR MMIO address.
         let addr = GICD_BASE + gicd::SGIR;
@@ -2342,5 +2397,50 @@ mod tests {
         assert!(handled);
         assert_eq!(eoi_value, Some(300));
         assert!(!handler_fired);
+    }
+}
+
+#[cfg(test)]
+mod halt_all_tests {
+    use super::*;
+
+    /// **WS-SM SM0.H (PR #854 review)**: the INTID matches the Lean
+    /// reservation, which `SgiKind.haltAll_intid` pins at 4. A drift
+    /// here would broadcast on an INTID nothing handles — the exact
+    /// state this mechanism was in before the review.
+    #[test]
+    fn halt_all_intid_matches_the_lean_reservation() {
+        assert_eq!(HALT_ALL_INTID, 4);
+    }
+
+    /// The handler registers at its own INTID and nowhere else.
+    /// Uses a stack-local table so it cannot race the global one.
+    #[test]
+    fn halt_all_handler_registers_at_its_own_intid() {
+        let mut handlers: [Option<SgiHandler>; MAX_SGI_INTID as usize] =
+            [None; MAX_SGI_INTID as usize];
+        register_sgi_handler_in(&mut handlers, HALT_ALL_INTID, halt_all_handler);
+        assert!(
+            lookup_sgi_handler_in(&handlers, HALT_ALL_INTID).is_some(),
+            "haltAll must be dispatchable: an unregistered INTID is \
+             acknowledged and dropped, which is why the pre-review \
+             broadcast would have been a no-op"
+        );
+        for i in 0..MAX_SGI_INTID {
+            if i != HALT_ALL_INTID {
+                assert!(
+                    lookup_sgi_handler_in(&handlers, i).is_none(),
+                    "haltAll registration must not touch INTID {}",
+                    i
+                );
+            }
+        }
+    }
+
+    /// `halt_all` is non-returning at the type level, so it cannot be
+    /// softened into something that falls through.
+    #[test]
+    fn halt_all_signature_is_never_returning() {
+        let _f: fn() -> ! = halt_all;
     }
 }
