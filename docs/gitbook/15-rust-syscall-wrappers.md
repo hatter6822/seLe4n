@@ -111,7 +111,7 @@ parameter.
 - **93 conformance tests** (RUST-XVAL-001..019 + property tests + W1 ABI tests + AA1 SchedContext/IpcTimeout tests + D6 TCB/AlignmentError tests + AG2-A domain boundary tests + AG2-B wrapper export tests)
 - **4 Lean cross-validation vectors** (XVAL-001..004 in MainTraceHarness)
 - CI: `scripts/test_rust.sh` integrated into `test_smoke.sh` (Tier 2).
-  AA2: Rust toolchain SHA-pinned via `dtolnay/rust-toolchain` (v1, 1.82.0)
+  AA2: Rust toolchain SHA-pinned via `dtolnay/rust-toolchain` (v1, 1.94.1)
 - AA1 ABI drift detection: variant count assertions for KernelError (49) and
   SyscallId (25), TypeTag (7), compile-time constant checks for MAX_LABEL,
   MAX_MSG_LENGTH, MAX_EXTRA_CAPS

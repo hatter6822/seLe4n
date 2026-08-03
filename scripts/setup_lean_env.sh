@@ -51,9 +51,15 @@ ELAN_INSTALLER_SHA256="4bacca9502cb89736fe63d2685abc2947cfbf34dc87673504f1bb4c43
 #   - `.github/workflows/lean_action_ci.yml` (`toolchain:` field)
 # When bumping MSRV, update all four sites in the same PR.  PR #777
 # (audit-pass-4) added the rustup integration after a CI failure showed
-# that local 1.94 was accepting `feature(const_refs_to_statics)` while
-# CI's 1.82 rejected it.
-RUST_TOOLCHAIN_VERSION="1.82.0"
+# that a newer local toolchain was accepting
+# `feature(const_refs_to_statics)` while the pinned CI toolchain rejected
+# it.
+#
+# Keep this pin current with stable rather than letting it drift.  A
+# stale pin freezes `clippy` as well as `rustc`, so lints added upstream
+# since the pin never run against this codebase — and a developer whose
+# default toolchain is newer then sees warnings the gate does not.
+RUST_TOOLCHAIN_VERSION="1.94.1"
 
 # R8-A (I-M01): Pin elan binary release version for direct download path.
 # Replaces /releases/latest/ with a specific tag to prevent silent upgrades.
@@ -116,16 +122,16 @@ fast_path_ready() {
 # Rust MSRV pin — ensure local cargo invocations use the same toolchain as CI.
 #
 # The CI workflow `lean_action_ci.yml::Rust ABI Tests` installs Rust
-# `${RUST_TOOLCHAIN_VERSION}` (currently 1.82.0) via the
+# `${RUST_TOOLCHAIN_VERSION}` (currently 1.94.1) via the
 # `dtolnay/rust-toolchain` action.  Local development must match this MSRV
-# so code that uses a feature stabilised in a newer Rust release (e.g.,
-# `feature(const_refs_to_statics)` stabilised in 1.83) fails locally
-# before pushing rather than failing in CI.  PR #777 hit exactly this
-# failure mode — local 1.94 accepted the unstable feature, CI's 1.82
-# rejected it — motivating this audit-pass-4 hardening.
+# so code that uses a feature stabilised in a newer Rust release fails
+# locally before pushing rather than failing in CI.  PR #777 hit exactly
+# this failure mode — a newer local toolchain accepted
+# `feature(const_refs_to_statics)` (stabilised in 1.83) while the pinned
+# CI toolchain rejected it — motivating this audit-pass-4 hardening.
 #
 # `rust/rust-toolchain.toml` pins the toolchain channel so `cargo` running
-# from the `rust/` directory automatically uses 1.82.0 (rustup reads the
+# from the `rust/` directory automatically uses 1.94.1 (rustup reads the
 # file).  This function ensures the toolchain is *installed* so the first
 # `cargo build` doesn't wait on a network download mid-workflow.
 #
@@ -168,14 +174,14 @@ ensure_rust_msrv_toolchain() {
       log_elapsed "Rust ${RUST_TOOLCHAIN_VERSION} toolchain installed"
     else
       log "[setup] WARNING: failed to install Rust ${RUST_TOOLCHAIN_VERSION}; \
-local cargo runs may diverge from CI's MSRV (CI will still enforce 1.82.0). \
+local cargo runs may diverge from CI's MSRV (CI will still enforce ${RUST_TOOLCHAIN_VERSION}). \
 Manual recovery: rustup toolchain install ${RUST_TOOLCHAIN_VERSION} --component clippy --component rustfmt"
       return 0  # non-fatal — Lean setup completed
     fi
   fi
 
   # Cross-check: confirm the rust/ directory's rust-toolchain.toml is
-  # read.  The file pins `channel = "1.82.0"`; rustup will use it when
+  # read.  The file pins `channel = "1.94.1"`; rustup will use it when
   # cargo runs from any descendant of `rust/`.  Log the active version
   # so a session-start glance at the log confirms the right toolchain
   # is wired.

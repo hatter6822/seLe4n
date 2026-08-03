@@ -482,10 +482,10 @@ fn validate_fdt_header(hdr: &FdtHeader) -> bool {
         return false;
     }
     // Block offsets must be 4-byte aligned (FDT tokens are 4-byte).
-    if hdr.off_dt_struct % 4 != 0 {
+    if !hdr.off_dt_struct.is_multiple_of(4) {
         return false;
     }
-    if hdr.off_dt_strings % 4 != 0 {
+    if !hdr.off_dt_strings.is_multiple_of(4) {
         return false;
     }
     // Audit-pass-2: block offsets must be at or beyond the 40-byte
@@ -1556,7 +1556,7 @@ mod tests {
         s.extend_from_slice(value);
         s.push(0); // null terminator
                    // pad to 4-byte boundary
-        while s.len() % 4 != 0 {
+        while !s.len().is_multiple_of(4) {
             s.push(0);
         }
         // END_NODE (chosen)
@@ -1637,7 +1637,7 @@ mod tests {
         s.extend_from_slice(&other_nameoff.to_be_bytes());
         s.extend_from_slice(value);
         // pad to 4
-        while s.len() % 4 != 0 {
+        while !s.len().is_multiple_of(4) {
             s.push(0);
         }
         s.extend_from_slice(&FDT_END_NODE.to_be_bytes()); // chosen end
@@ -1944,7 +1944,7 @@ mod tests {
             let name = format!("n{}\0", i);
             s.extend_from_slice(name.as_bytes());
             // Pad to 4-byte boundary.
-            while s.len() % 4 != 0 {
+            while !s.len().is_multiple_of(4) {
                 s.push(0);
             }
         }
@@ -2258,7 +2258,7 @@ mod tests {
         s.extend_from_slice(&bootargs_nameoff.to_be_bytes());
         s.extend_from_slice(value);
         s.push(0); // null
-        while s.len() % 4 != 0 {
+        while !s.len().is_multiple_of(4) {
             s.push(0);
         }
         // END_NODE (sub)
@@ -2318,7 +2318,7 @@ mod tests {
         s.extend_from_slice(&bootargs_nameoff.to_be_bytes());
         s.extend_from_slice(direct_value);
         s.push(0); // null
-        while s.len() % 4 != 0 {
+        while !s.len().is_multiple_of(4) {
             s.push(0);
         }
 
@@ -2332,7 +2332,7 @@ mod tests {
         s.extend_from_slice(&bootargs_nameoff.to_be_bytes());
         s.extend_from_slice(nested_value);
         s.push(0); // null
-        while s.len() % 4 != 0 {
+        while !s.len().is_multiple_of(4) {
             s.push(0);
         }
         // END_NODE (sub)

@@ -1,3 +1,48 @@
+## v0.32.106 — Rust toolchain pin bumped 1.82.0 → 1.94.1
+
+**Why.** The pin cuts both ways, and the second direction had been
+overlooked: freezing the toolchain also freezes `clippy`, so every lint added
+upstream since the pin silently stopped running against this codebase. The
+project claims "zero clippy warnings", and under the 1.82.0 pin that was true —
+but only because a three-year-old clippy had nothing more to say. A developer
+whose *default* toolchain is current sees warnings the gate does not, and
+"fixing" them can break the pinned build outright: `clippy::manual_is_multiple_of`
+suggests `u64::is_multiple_of`, stabilised in 1.87, which 1.82 rejects as an
+unstable feature. That is exactly the failure mode PR #777's pin was introduced
+to prevent, arriving from the opposite direction.
+
+**What changed.** All four pin sites move in lockstep, as
+`rust/rust-toolchain.toml` documents:
+
+1. `rust/rust-toolchain.toml` — `channel = "1.94.1"`
+2. `rust/Cargo.toml` — `[workspace.package].rust-version = "1.94"`
+3. `.github/workflows/lean_action_ci.yml` — the `dtolnay/rust-toolchain`
+   step's `toolchain: 1.94.1`
+4. `scripts/setup_lean_env.sh` — `RUST_TOOLCHAIN_VERSION="1.94.1"`
+
+Both the toolchain file's and the setup script's header comments now state the
+clippy-drift direction explicitly, so the next reader has the whole rationale
+rather than half of it.
+
+**The lint surface it exposed.** Exactly one lint, eight sites, all in the FDT
+parser: `manual_is_multiple_of` on the 4-byte alignment and padding checks
+(`cmdline.rs` — two DTB header offset validations and six struct-block padding
+loops). Rewritten as `!x.is_multiple_of(4)`, which is what the check means.
+
+**Verified under the new pin.** Workspace builds clean; 1 087 tests pass across
+all crates (800 HAL, 102 + 100 conformance, and the rest); `cargo clippy
+--all-targets` reports zero warnings; `scripts/test_rust.sh` green.
+
+**Deliberately not changed.** `cargo fmt --check` reports a 6 187-line diff —
+identical on 1.82.0 and 1.94.1, so it is pre-existing drift rather than
+anything the bump introduced, and `rustfmt` is not part of any gate. The
+bare-metal `aarch64-unknown-none` build fails identically on both toolchains in
+a container without a cross-assembler (the `cc` crate falls back to the host
+`as` for `boot.S`); that path is Tier-4/hardware and is unaffected by the pin.
+Both are left for their own slices rather than folded in here.
+
+Refs: docs/gitbook/15-rust-syscall-wrappers.md (AA2 toolchain pin)
+
 ## v0.32.105 — SM7.F.3: a shootdown round's catch-up drains only its own round
 
 **Closes SM7.F** (the last open sub-task of "Operative per-core TLB fills") and,
