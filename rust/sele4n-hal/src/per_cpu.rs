@@ -404,7 +404,7 @@ pub fn check_per_cpu_invariants() {
 /// passes `&PER_CPU_DATA`; this inner form lets tests construct a
 /// locally-allocated slice with intentionally-broken `core_id`
 /// values to exercise the panic path (e.g.,
-/// [`tests::sm1b_check_per_cpu_invariants_panics_on_mismatch`]).
+/// [`tests::check_per_cpu_invariants_panics_on_mismatch`]).
 ///
 /// Separating the inner form is the same pattern AN9-J's
 /// `bring_up_secondaries_inner` uses to make global-state-touching

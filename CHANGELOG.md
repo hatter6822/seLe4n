@@ -1,3 +1,53 @@
+## v0.32.119 — Finish the workstream-code sweep, including the kinds two passes missed
+
+PR #854 review, eighth round: one P1 (convention), and it lands on my own
+claim rather than on pre-existing code. v0.32.118 said the sweep was
+complete; it was not, in two ways neither of the previous passes could see.
+
+**What the earlier passes actually matched.** v0.32.117 matched `sm7[a-f]`
+only. v0.32.118 widened that to `fn sm[0-9]…` — every *function
+definition*, crate-wide, 370 of them — and reported zero remaining. Both
+numbers were true of what they measured and neither was the rule:
+
+1. **Only `fn` declarations.** Statics and consts were never matched, so
+   ten items survived: `SM2D_TRACE_TEST_MUTEX` (the one flagged),
+   `SM2_THEOREM_COUNT`, `SM2D_BUILD_ANCHOR`, `SM5B7_SWITCH_TARGET_MUTEX`,
+   `SM1I4_OBSERVATION_MUTEX`, `SM2D8_TICKET_SLOT3_MUTEX`,
+   `SM2D8_RW_SLOT3_MUTEX`, `SM1G4_OBSERVATION_MUTEX`, and the two
+   `SM1F5_INNER_*_FIRED` counters.
+
+2. **Per-file mappings, so cross-file references were invisible.** The
+   v0.32.118 pass built its rename map from each file's own definitions,
+   so a doc-comment in `ffi.rs` naming a test defined in `lock_bridge.rs`
+   was left pointing at a symbol that no longer existed. Three such
+   references survived, in `ffi.rs` (×2) and `per_cpu.rs`.
+
+The sweep is now over identifiers of **every kind**, matched
+case-insensitively, with one crate-wide mapping applied to every reference
+site rather than per file. Zero remain.
+
+**Two were cross-language contracts**, which is why this is worth more than
+a mechanical rename. `SM2_THEOREM_COUNT` (→ `LOCK_THEOREM_COUNT`) is read
+by `scripts/check_lock_ffi_symmetry.sh` through a literal `grep -oP 'pub
+const SM2_THEOREM_COUNT…'`, pinned as a string in `build.rs`, and cited
+three times in `LockPrimitives.lean` plus twice in the spec.
+`SM2D_BUILD_ANCHOR` (→ `LOCK_BRIDGE_BUILD_ANCHOR`) is likewise a `build.rs`
+string literal. Renaming either without its readers would have broken the
+Lean↔Rust symmetry gate silently — the grep would match nothing and the
+count would compare against `0`. All readers moved in the same commit; the
+gate passes and still verifies 16 symbols.
+
+The `SM2D_BUILD_ANCHOR` **value** — `"WS-SM SM2.D lock-bridge module
+present"` — is unchanged, along with the test asserting it contains
+`"WS-SM SM2.D"`. Workstream IDs in strings and docstrings are explicitly
+allowed; it is identifiers that must describe their semantics.
+
+Rust 1105 (HAL 810), zero ignored; `test_full.sh` green; trace
+byte-identical.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F.3
+Refs: #854
+
 ## v0.32.118 — Make the fail-closed halt system-wide, and stop it firing on boot
 
 PR #854 review, seventh round: three findings on the v0.32.117 cut, all

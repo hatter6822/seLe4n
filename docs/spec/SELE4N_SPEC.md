@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.32.118` (`lakefile.toml`) |
+| **Package version** | `0.32.119` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 238,171 across 264 Lean files |
 | **Test LoC** | 48,449 across 67 Lean test suites |
@@ -1033,7 +1033,7 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    theorems (4 memory-model + 6 TicketLock + 10 RwLock + 2
    refinement) with size + per-category count + NoDup witnesses.
    Cross-language symmetry: the Rust-side
-   `SM2_THEOREM_COUNT = 22` constant in `lock_bridge.rs` is
+   `LOCK_THEOREM_COUNT = 22` constant in `lock_bridge.rs` is
    enforced equal via `scripts/check_lock_ffi_symmetry.sh`
    (wired into Tier 0 hygiene).
 
@@ -1046,7 +1046,7 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    3. Every expected FFI symbol has a corresponding helper in
       `lock_bridge.rs`.
    4. The Lean `lockPrimitives_count` value matches the Rust
-      `SM2_THEOREM_COUNT` constant.
+      `LOCK_THEOREM_COUNT` constant.
    5/6. Bidirectional orphan detection (no Rust export without
       a matching Lean declaration; no Lean declaration without
       a matching Rust export).
@@ -1071,7 +1071,7 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    - **MEDIUM (32-bit truncation defense)**: bound checks in
      `u64` space before `as usize` cast.
    - **MEDIUM (test concurrency)**: unified
-     `SM2D_TRACE_TEST_MUTEX` across `lock_bridge::runtime_tests`
+     `LOCK_TRACE_TEST_MUTEX` across `lock_bridge::runtime_tests`
      and `crate::ffi::tests` (was: distinct mutex instances
      racing on shared pool slots).
    - **HIGH (refinement-theorem aliasing)**: implemented

@@ -514,7 +514,7 @@ mod tests {
     // bypasses poisoning so subsequent tests run normally and surface
     // their own diagnostics (the original failure is already reported
     // by cargo's test harness).
-    static SM1I4_OBSERVATION_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    static PER_CORE_STATS_OBSERVATION_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
     fn trap_frame_size_is_288_bytes() {
@@ -807,9 +807,9 @@ mod tests {
 
     #[test]
     fn handle_sync_svc_increments_per_core_syscall_count() {
-        // Audit-pass-3: serialise via SM1I4_OBSERVATION_MUTEX so concurrent
+        // Audit-pass-3: serialise via PER_CORE_STATS_OBSERVATION_MUTEX so concurrent
         // trap-handler tests don't race on PER_CPU_STATS[0].syscall_count.
-        let _guard = SM1I4_OBSERVATION_MUTEX
+        let _guard = PER_CORE_STATS_OBSERVATION_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let before = crate::per_cpu_stats::syscall_count_for(0);
@@ -827,8 +827,8 @@ mod tests {
 
     #[test]
     fn handle_sync_dabt_increments_per_core_vm_fault_count() {
-        // Audit-pass-3: see SM1I4_OBSERVATION_MUTEX docstring.
-        let _guard = SM1I4_OBSERVATION_MUTEX
+        // Audit-pass-3: see PER_CORE_STATS_OBSERVATION_MUTEX docstring.
+        let _guard = PER_CORE_STATS_OBSERVATION_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let before = crate::per_cpu_stats::vm_fault_count_for(0);
@@ -846,7 +846,7 @@ mod tests {
 
     #[test]
     fn handle_sync_iabt_increments_per_core_vm_fault_count() {
-        let _guard = SM1I4_OBSERVATION_MUTEX
+        let _guard = PER_CORE_STATS_OBSERVATION_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let before = crate::per_cpu_stats::vm_fault_count_for(0);
@@ -864,7 +864,7 @@ mod tests {
 
     #[test]
     fn handle_sync_alignment_increments_per_core_user_exception_count() {
-        let _guard = SM1I4_OBSERVATION_MUTEX
+        let _guard = PER_CORE_STATS_OBSERVATION_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let before = crate::per_cpu_stats::user_exception_count_for(0);
@@ -882,7 +882,7 @@ mod tests {
 
     #[test]
     fn handle_sync_sp_alignment_increments_per_core_user_exception_count() {
-        let _guard = SM1I4_OBSERVATION_MUTEX
+        let _guard = PER_CORE_STATS_OBSERVATION_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let before = crate::per_cpu_stats::user_exception_count_for(0);
@@ -900,7 +900,7 @@ mod tests {
 
     #[test]
     fn handle_sync_unknown_ec_increments_per_core_user_exception_count() {
-        let _guard = SM1I4_OBSERVATION_MUTEX
+        let _guard = PER_CORE_STATS_OBSERVATION_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let before = crate::per_cpu_stats::user_exception_count_for(0);
@@ -929,7 +929,7 @@ mod tests {
         // test races against `sm1i4_handle_sync_dabt_increments_...`
         // and friends, producing a ~2% transient failure rate.
         // The mutex ensures the `assert_eq!` snapshot pair is atomic.
-        let _guard = SM1I4_OBSERVATION_MUTEX
+        let _guard = PER_CORE_STATS_OBSERVATION_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let vm_before = crate::per_cpu_stats::vm_fault_count_for(0);

@@ -1835,15 +1835,15 @@ mod tests {
     //
     // `ffi_switch_to_thread` records a per-core current-thread id; tests that
     // mutate + observe `PER_CPU_CURRENT_THREAD` are serialised through
-    // `SM5B7_SWITCH_TARGET_MUTEX` so cargo's parallel runner cannot race two
+    // `SWITCH_TARGET_TEST_MUTEX` so cargo's parallel runner cannot race two
     // writers/readers on the same core slot.
     // ========================================================================
 
-    static SM5B7_SWITCH_TARGET_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    static SWITCH_TARGET_TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
     fn ffi_switch_to_thread_records_and_reads_back_per_core() {
-        let _guard = SM5B7_SWITCH_TARGET_MUTEX
+        let _guard = SWITCH_TARGET_TEST_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         // Distinct tids to distinct cores; each core reads back exactly its own
@@ -1875,7 +1875,7 @@ mod tests {
 
     #[test]
     fn ffi_switch_to_thread_out_of_range_records_nothing() {
-        let _guard = SM5B7_SWITCH_TARGET_MUTEX
+        let _guard = SWITCH_TARGET_TEST_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         // Record a known value on core 0, then attempt an out-of-range switch:
@@ -1935,14 +1935,14 @@ mod tests {
 
     // **WS-SM SM2.D audit-pass**: the shared serialisation mutex
     // for SM2.D counter-observation tests lives in
-    // `crate::lock_bridge::SM2D_TRACE_TEST_MUTEX`.  This re-export
-    // makes `SM2D_TRACE_TEST_MUTEX` resolve from the test bodies
+    // `crate::lock_bridge::LOCK_TRACE_TEST_MUTEX`.  This re-export
+    // makes `LOCK_TRACE_TEST_MUTEX` resolve from the test bodies
     // below WITHOUT a fully-qualified path, and — critically —
     // ties FFI-side observations to the SAME mutex instance that
     // `lock_bridge::runtime_tests` uses.  Without the shared
     // instance the two test modules would race on the same pool
     // slots (0..2) and break counter-delta assertions.
-    use crate::lock_bridge::SM2D_TRACE_TEST_MUTEX;
+    use crate::lock_bridge::LOCK_TRACE_TEST_MUTEX;
 
     /// **SM2.D.5 test**: every SM2.D FFI export's signature is pinned.
     ///
@@ -1977,7 +1977,7 @@ mod tests {
     /// **SM2.D.1 test**: `ffi_ticket_lock_static_handle(0..3)` returns
     /// the pool index unchanged.
     ///
-    /// Out-of-range coverage is in `lock_bridge::tests::sm2d_ticket_lock_static_handle_out_of_range_panics`,
+    /// Out-of-range coverage is in `lock_bridge::tests::ticket_lock_static_handle_out_of_range_panics`,
     /// which targets the inner helper directly so the panic is caught
     /// by `#[should_panic]` rather than becoming a non-unwinding
     /// abort when it crosses the `extern "C"` FFI boundary (which
@@ -1993,7 +1993,7 @@ mod tests {
     /// `ffi_ticket_lock_release` increments both counters by 1.
     #[test]
     fn ffi_ticket_lock_acquire_release_increments_counters() {
-        let _guard = SM2D_TRACE_TEST_MUTEX
+        let _guard = LOCK_TRACE_TEST_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let h = ffi_ticket_lock_static_handle(0);
@@ -2009,7 +2009,7 @@ mod tests {
     /// `next_ticket` and `serving` into the same u64.
     #[test]
     fn ffi_ticket_lock_peek_holder_packs_state() {
-        let _guard = SM2D_TRACE_TEST_MUTEX
+        let _guard = LOCK_TRACE_TEST_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let h = ffi_ticket_lock_static_handle(1);
@@ -2028,7 +2028,7 @@ mod tests {
     /// **SM2.D.2 test**: `ffi_rw_lock_static_handle(0..3)` returns
     /// the pool index unchanged.
     ///
-    /// Out-of-range coverage is in `lock_bridge::tests::sm2d_rw_lock_static_handle_out_of_range_panics`
+    /// Out-of-range coverage is in `lock_bridge::tests::rw_lock_static_handle_out_of_range_panics`
     /// for the same reason as `ffi_ticket_lock_static_handle_returns_index`.
     #[test]
     fn ffi_rw_lock_static_handle_returns_index() {
@@ -2041,7 +2041,7 @@ mod tests {
     /// counters.
     #[test]
     fn ffi_rw_lock_read_cycle_increments_counters() {
-        let _guard = SM2D_TRACE_TEST_MUTEX
+        let _guard = LOCK_TRACE_TEST_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let h = ffi_rw_lock_static_handle(0);
@@ -2057,7 +2057,7 @@ mod tests {
     /// counters.
     #[test]
     fn ffi_rw_lock_write_cycle_increments_counters() {
-        let _guard = SM2D_TRACE_TEST_MUTEX
+        let _guard = LOCK_TRACE_TEST_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let h = ffi_rw_lock_static_handle(1);
@@ -2075,7 +2075,7 @@ mod tests {
     /// one reader bit set.
     #[test]
     fn ffi_rw_lock_snapshot_distinguishes_held() {
-        let _guard = SM2D_TRACE_TEST_MUTEX
+        let _guard = LOCK_TRACE_TEST_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let h = ffi_rw_lock_static_handle(2);

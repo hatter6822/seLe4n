@@ -940,8 +940,8 @@ fn scan_lock_bridge_rs_intact() {
         "pub fn rw_lock_acquire_write_count(",
         "pub fn rw_lock_release_write_count(",
         // SM2.D.7 theorem-count constant + build anchor.
-        "pub const SM2_THEOREM_COUNT: usize = 22",
-        "pub const SM2D_BUILD_ANCHOR:",
+        "pub const LOCK_THEOREM_COUNT: usize = 22",
+        "pub const LOCK_BRIDGE_BUILD_ANCHOR:",
     ];
     for needle in required {
         if !stripped.contains(needle) {

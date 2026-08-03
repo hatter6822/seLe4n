@@ -255,7 +255,7 @@ pub mod queued_rw_lock;
 // `STATIC_TICKET_LOCK_POOL` / `STATIC_RW_LOCK_POOL` static arrays,
 // handle-based addressing, always-on Relaxed atomic trace counters
 // (used by the SM2.D.8 cross-core serialisation test), and the
-// SM2_THEOREM_COUNT constant pinning the SM2 theorem inventory.  See
+// LOCK_THEOREM_COUNT constant pinning the SM2 theorem inventory.  See
 // the module docstring in `lock_bridge.rs` for the handle encoding,
 // trace-counter rationale, and ARM ARM citations.
 pub mod lock_bridge;

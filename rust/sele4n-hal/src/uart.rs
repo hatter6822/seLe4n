@@ -744,7 +744,7 @@ mod tests {
         //
         // **Re-acquire pattern (structurally race-free)**.  The v0.31.24
         // initial fix used an observation pattern guarded by
-        // `SM1G4_OBSERVATION_MUTEX` — but that mutex only serialises
+        // `UART_OBSERVATION_MUTEX` — but that mutex only serialises
         // tests that also take it (the sibling `sm1g4_*` and `sm1i4_*`
         // observation tests).  Other UART-touching tests in the module —
         // notably `kprintln_core_macro_expands_and_runs_on_host`,
@@ -815,7 +815,7 @@ mod tests {
     // Successful re-acquisition is the structural proof that the macro
     // released the lock; the property is now race-free.
     //
-    // We also retain the global `SM1G4_OBSERVATION_MUTEX` so that the
+    // We also retain the global `UART_OBSERVATION_MUTEX` so that the
     // small subset of tests still using observation patterns (the
     // SM1.G.4 lock-balance test) do not race against each other.  Other
     // UART-touching tests still race; that's tolerated because the
@@ -826,7 +826,7 @@ mod tests {
     // mutex uses `.lock().unwrap_or_else(|e| e.into_inner())` so a
     // failed assert inside a holder does not cascade-fail every
     // subsequent SM1.G.4 test with `PoisonError`.
-    static SM1G4_OBSERVATION_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    static UART_OBSERVATION_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     // ========================================================================
     // WS-SM SM1.G.4 — Per-core kprintln macro tests
@@ -886,8 +886,8 @@ mod tests {
         // re-acquire pattern is race-free: if the macro left the
         // lock held, this acquisition would spin forever and cargo's
         // test timeout would surface the regression.  See the
-        // SM1G4_OBSERVATION_MUTEX docstring for the full rationale.
-        let _guard = SM1G4_OBSERVATION_MUTEX
+        // UART_OBSERVATION_MUTEX docstring for the full rationale.
+        let _guard = UART_OBSERVATION_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         crate::kprintln_core!("SM1.G.4 lock-balance smoke");
@@ -908,7 +908,7 @@ mod tests {
         // SM1.I audit-pass-1: re-acquire pattern after every
         // iteration — same correctness argument as the single-call
         // test above.
-        let _guard = SM1G4_OBSERVATION_MUTEX
+        let _guard = UART_OBSERVATION_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         for i in 0..16 {
@@ -940,7 +940,7 @@ mod tests {
         // source-scan test `macro_expansion_text_uses_with_boot_uart_once`.
         //
         // SM1.I audit-pass-1: re-acquire pattern.
-        let _guard = SM1G4_OBSERVATION_MUTEX
+        let _guard = UART_OBSERVATION_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         crate::kprintln_core!("SM1.G.4 per-line atomicity smoke");
@@ -953,7 +953,7 @@ mod tests {
         // single-lock contract.
         //
         // SM1.I audit-pass-1: re-acquire pattern.
-        let _guard = SM1G4_OBSERVATION_MUTEX
+        let _guard = UART_OBSERVATION_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         crate::kprint_core!("SM1.G.4 partial-line atomicity smoke");
@@ -1044,7 +1044,7 @@ mod tests {
     /// (`!UART_LOCK.is_held()`) would be racy under cargo's parallel
     /// test execution if a concurrent test happened to hold
     /// UART_LOCK at the moment of our check.  We acquire
-    /// `SM1G4_OBSERVATION_MUTEX` (the existing UART-observation
+    /// `UART_OBSERVATION_MUTEX` (the existing UART-observation
     /// coordinator) for the duration of the test to serialise
     /// against the SM1.G.4 observation tests.  The contention
     /// between our own worker threads is preserved (the mutex
@@ -1073,7 +1073,7 @@ mod tests {
         // docstring for the rationale.  Use `unwrap_or_else(|e|
         // e.into_inner())` for poison defense per the audit-pass-4
         // convention.
-        let _guard = SM1G4_OBSERVATION_MUTEX
+        let _guard = UART_OBSERVATION_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
 
@@ -1132,7 +1132,7 @@ mod tests {
         // UART_LOCK must be released after all threads complete.  (If a worker
         // panicked or a lock release was missed, this catches it.)  Our own workers
         // have all joined, so any *residual* hold is necessarily another test's:
-        // `cargo` runs tests in parallel and `SM1G4_OBSERVATION_MUTEX` serialises
+        // `cargo` runs tests in parallel and `UART_OBSERVATION_MUTEX` serialises
         // only the *observation* tests, not every `UART_LOCK` user (e.g. `uart_puts`,
         // the per-line macro tests).  Such a cross-test hold is transient — the other
         // test releases within its own tiny (host-mmio no-op) critical section — so

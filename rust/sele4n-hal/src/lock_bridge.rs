@@ -108,7 +108,7 @@ use crate::ticket_lock::TicketLock;
 /// Test-only; `#[cfg(test)]`-gated.  See the audit-pass commentary
 /// above for the rationale.
 #[cfg(test)]
-pub(crate) static SM2D_TRACE_TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+pub(crate) static LOCK_TRACE_TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 // ============================================================================
 // SM2.D pool dimensions
@@ -629,7 +629,7 @@ pub fn rw_lock_release_write_count(handle: u64) -> u64 {
 ///   FIFO admission, bounded-wait × 2, RA-pairing × 2, wf-invariant,
 ///   reader batching, no-writer-starvation)
 /// * 2 refinement theorems (TicketLock refinement, RwLock refinement)
-pub const SM2_THEOREM_COUNT: usize = 22;
+pub const LOCK_THEOREM_COUNT: usize = 22;
 
 // ============================================================================
 // SM2.D.5 — Static linker-time check (build.rs scanner anchor)
@@ -645,7 +645,7 @@ pub const SM2_THEOREM_COUNT: usize = 22;
 /// script can verify this module's presence.  The string is checked
 /// textually in `build.rs` to confirm `lock_bridge.rs` participates in
 /// the SM2.D FFI surface.
-pub const SM2D_BUILD_ANCHOR: &str = "WS-SM SM2.D lock-bridge module present";
+pub const LOCK_BRIDGE_BUILD_ANCHOR: &str = "WS-SM SM2.D lock-bridge module present";
 
 // ============================================================================
 // Tests
@@ -810,15 +810,15 @@ mod tests {
     }
 
     // --------------------------------------------------------------------
-    // SM2_THEOREM_COUNT pinning
+    // LOCK_THEOREM_COUNT pinning
     // --------------------------------------------------------------------
 
     #[test]
     fn theorem_count_is_22() {
-        assert_eq!(SM2_THEOREM_COUNT, 22);
+        assert_eq!(LOCK_THEOREM_COUNT, 22);
         // Cross-check the breakdown:
         //   4 memory-model + 6 TicketLock + 10 RwLock + 2 refinement = 22.
-        assert_eq!(4 + 6 + 10 + 2, SM2_THEOREM_COUNT);
+        assert_eq!(4 + 6 + 10 + 2, LOCK_THEOREM_COUNT);
     }
 
     // --------------------------------------------------------------------
@@ -827,8 +827,8 @@ mod tests {
 
     #[test]
     fn build_anchor_string_intact() {
-        assert!(SM2D_BUILD_ANCHOR.contains("WS-SM SM2.D"));
-        assert!(SM2D_BUILD_ANCHOR.contains("lock-bridge"));
+        assert!(LOCK_BRIDGE_BUILD_ANCHOR.contains("WS-SM SM2.D"));
+        assert!(LOCK_BRIDGE_BUILD_ANCHOR.contains("lock-bridge"));
     }
 }
 
@@ -855,7 +855,7 @@ mod runtime_tests {
     // --------------------------------------------------------------------
 
     // The shared serialisation mutex is defined at the module level
-    // below the test module (see `SM2D_TRACE_TEST_MUTEX` outside this
+    // below the test module (see `LOCK_TRACE_TEST_MUTEX` outside this
     // `mod runtime_tests`) so it is reachable from
     // `crate::ffi::tests` via `pub(crate)`.
 
@@ -865,7 +865,7 @@ mod runtime_tests {
         // the lock is re-usable across tests (since acquire+release
         // is monotonic).  We just verify acquire returns a u64 and
         // release doesn't panic.
-        let _guard = SM2D_TRACE_TEST_MUTEX
+        let _guard = LOCK_TRACE_TEST_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let h = ticket_lock_static_handle(0);
@@ -895,7 +895,7 @@ mod runtime_tests {
 
     #[test]
     fn peek_holder_packs_next_and_serving() {
-        let _guard = SM2D_TRACE_TEST_MUTEX
+        let _guard = LOCK_TRACE_TEST_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let h = ticket_lock_static_handle(1);
@@ -928,7 +928,7 @@ mod runtime_tests {
 
     #[test]
     fn acquire_increments_trace_counter() {
-        let _guard = SM2D_TRACE_TEST_MUTEX
+        let _guard = LOCK_TRACE_TEST_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let h = ticket_lock_static_handle(2);
@@ -953,7 +953,7 @@ mod runtime_tests {
 
     #[test]
     fn read_acquire_release_increments_counters() {
-        let _guard = SM2D_TRACE_TEST_MUTEX
+        let _guard = LOCK_TRACE_TEST_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let h = rw_lock_static_handle(0);
@@ -969,7 +969,7 @@ mod runtime_tests {
 
     #[test]
     fn write_acquire_release_increments_counters() {
-        let _guard = SM2D_TRACE_TEST_MUTEX
+        let _guard = LOCK_TRACE_TEST_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let h = rw_lock_static_handle(1);
@@ -985,7 +985,7 @@ mod runtime_tests {
 
     #[test]
     fn snapshot_returns_state() {
-        let _guard = SM2D_TRACE_TEST_MUTEX
+        let _guard = LOCK_TRACE_TEST_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let h = rw_lock_static_handle(2);
@@ -1040,14 +1040,14 @@ mod runtime_tests {
     // preserved (the single mutex over-serialised but didn't break
     // anything), but the split makes the lock-discipline intent
     // explicit and removes the spurious serialisation.
-    static SM2D8_TICKET_SLOT3_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    static SM2D8_RW_SLOT3_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    static TICKET_SLOT3_TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    static RW_SLOT3_TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
     fn ticket_lock_cross_thread_serializes_increments() {
         use std::cell::UnsafeCell;
         use std::sync::Arc;
-        let _guard = SM2D8_TICKET_SLOT3_MUTEX
+        let _guard = TICKET_SLOT3_TEST_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
 
@@ -1116,7 +1116,7 @@ mod runtime_tests {
         // count is at least 1 (and at most NUM_THREADS) during their
         // critical section.
         use std::sync::Arc;
-        let _guard = SM2D8_RW_SLOT3_MUTEX
+        let _guard = RW_SLOT3_TEST_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
 
@@ -1187,7 +1187,7 @@ mod runtime_tests {
         // that during any moment, the snapshot is either (writer-held,
         // 0 readers) or (no writer, k readers).
         use std::sync::Arc;
-        let _guard = SM2D8_RW_SLOT3_MUTEX
+        let _guard = RW_SLOT3_TEST_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
 

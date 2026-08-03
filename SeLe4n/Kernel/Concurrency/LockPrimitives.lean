@@ -34,7 +34,7 @@ The inventory serves three purposes:
    regression that renames or removes a theorem fails the surface
    check.
 3. **Cross-language symmetry** (`scripts/check_lock_ffi_symmetry.sh`):
-   the Rust-side `SM2_THEOREM_COUNT = 22` constant in
+   the Rust-side `LOCK_THEOREM_COUNT = 22` constant in
    `lock_bridge.rs` is cross-checked against `lockPrimitives.length`
    in this module.  A regression on either side without updating the
    other fails the symmetry script.
@@ -54,7 +54,7 @@ must:
 1. Add the new theorem in its source module (e.g., `RwLock.lean`).
 2. Add an entry to `lockPrimitives` below.
 3. Update `lockPrimitives_count` to the new length.
-4. Update the Rust-side `SM2_THEOREM_COUNT` constant in
+4. Update the Rust-side `LOCK_THEOREM_COUNT` constant in
    `rust/sele4n-hal/src/lock_bridge.rs`.
 5. Update the `scripts/check_lock_ffi_symmetry.sh` cross-check.
 
@@ -175,7 +175,7 @@ def lockPrimitives : List LockPrimitiveTheorem := [
 /-- **WS-SM SM2.D.7**: size witness — the inventory contains exactly
     22 substantive SM2 theorems.
 
-    The Rust-side `SM2_THEOREM_COUNT = 22` constant in
+    The Rust-side `LOCK_THEOREM_COUNT = 22` constant in
     `rust/sele4n-hal/src/lock_bridge.rs` mirrors this value; the
     cross-language symmetry script (`scripts/check_lock_ffi_symmetry.sh`)
     verifies both sides agree. -/

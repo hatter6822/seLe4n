@@ -1040,7 +1040,7 @@ List LockPrimitiveTheorem` under the appropriate category:
 Update the `_count` size witness:
 `lockPrimitives.length = 22 + N` where `N` is the number of new
 theorems. The corresponding Rust constant
-`SM2_THEOREM_COUNT` (in `rust/sele4n-hal/src/lock_bridge.rs`) bumps
+`LOCK_THEOREM_COUNT` (in `rust/sele4n-hal/src/lock_bridge.rs`) bumps
 in lockstep — `scripts/check_lock_ffi_symmetry.sh` enforces the
 agreement.
 
@@ -1219,7 +1219,7 @@ delivers it:
 * `scripts/test_tier3_invariant_surface.sh` — new `#check`s
   (§7.3).
 * `scripts/check_lock_ffi_symmetry.sh` — implicit update if
-  `SM2_THEOREM_COUNT` changes.
+  `LOCK_THEOREM_COUNT` changes.
 
 ### 9.4 Documentation (Stream A + Stream C closure)
 

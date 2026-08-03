@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/sm7f-tlb-fills-6r7c3l",
-      "commit_sha": "a8a4688fa241638b792d17639728341f18f491f9",
-      "tree_sha": "a9475a53110cd719e49a822ce8e2acc88138849d",
-      "committed_at_utc": "2026-08-03T19:48:13+00:00"
+      "commit_sha": "abe6934f2d97c5d35b07b6cdab551f81a0bb0a0e",
+      "tree_sha": "a9cf158f26a5872a500f568a479e9b4c8b8d4e37",
+      "committed_at_utc": "2026-08-03T20:36:13+00:00"
     }
   },
   "source_sync": {
@@ -17,14 +17,14 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "15c07f85409646063ac8a82807b744be22f58e7388dcf9dea60fc82e88bd1060"
+    "source_digest": "ad1e4f47fff15373a0c8d6a6dd7ff2f9c8fc0124da301452a3b477c557eadc35"
   },
   "summary": {
     "module_count": 331,
     "declaration_count": 14015
   },
   "readme_sync": {
-    "version": "0.32.118",
+    "version": "0.32.119",
     "lean_toolchain": "v4.28.0",
     "production_files": 264,
     "production_loc": 238171,

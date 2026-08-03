@@ -2091,9 +2091,9 @@ mod tests {
     // The handlers store `(intid << 8) | source_cpu` so the test
     // can verify the dispatcher passed both arguments correctly.
 
-    static SM1F5_INNER_LOOKUP_FIRED: AtomicU32 = AtomicU32::new(0);
+    static INNER_LOOKUP_FIRED: AtomicU32 = AtomicU32::new(0);
     fn inner_lookup_handler(intid: u8, source_cpu: u8) {
-        SM1F5_INNER_LOOKUP_FIRED.store(
+        INNER_LOOKUP_FIRED.store(
             ((intid as u32) << 8) | (source_cpu as u32),
             Ordering::SeqCst,
         );
@@ -2132,9 +2132,9 @@ mod tests {
         }
     }
 
-    static SM1F5_INNER_DISPATCH_FIRED: AtomicU32 = AtomicU32::new(0);
+    static INNER_DISPATCH_FIRED: AtomicU32 = AtomicU32::new(0);
     fn inner_dispatch_handler(intid: u8, source_cpu: u8) {
-        SM1F5_INNER_DISPATCH_FIRED.store(
+        INNER_DISPATCH_FIRED.store(
             ((intid as u32) << 8) | (source_cpu as u32),
             Ordering::SeqCst,
         );
@@ -2145,12 +2145,12 @@ mod tests {
         // SM1.F.5 audit-pass-1: stack-local handler table again.
         // Uses a per-test counter so concurrent tests do not
         // observe each other's writes.
-        SM1F5_INNER_DISPATCH_FIRED.store(0, Ordering::SeqCst);
+        INNER_DISPATCH_FIRED.store(0, Ordering::SeqCst);
         let mut handlers: [Option<SgiHandler>; MAX_SGI_INTID as usize] =
             [None; MAX_SGI_INTID as usize];
         register_sgi_handler_in(&mut handlers, 12, inner_dispatch_handler);
         dispatch_sgi_in(&handlers, 12, 7);
-        let recorded = SM1F5_INNER_DISPATCH_FIRED.load(Ordering::SeqCst);
+        let recorded = INNER_DISPATCH_FIRED.load(Ordering::SeqCst);
         assert_eq!(
             recorded,
             (12u32 << 8) | 7,
