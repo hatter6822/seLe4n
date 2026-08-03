@@ -88,18 +88,18 @@ masked, when continued execution would be unsafe. Each is documented
 in its own docstring + audit-pass history. Listed for the
 implementer so they aren't accidentally "fixed":
 
-* `smp.rs:543` — invalid PSCI context_id (validator rejected).
-* `smp.rs:617` — timer init failure on a secondary (fatal for that
+* `smp.rs` — invalid PSCI context_id (validator rejected).
+* `smp.rs` — timer init failure on a secondary (fatal for that
   core's scheduler; primary + siblings remain alive).
-* `smp.rs:674` — post-`lean_secondary_kernel_main` idle fallback
+* `smp.rs` — post-`lean_secondary_kernel_main` idle fallback
   (Lean returns unexpectedly).
-* `trap.rs:467` — `handle_serror` (`-> !`; ARM ARM D1.13 says
+* `trap.rs` — `handle_serror` (`-> !`; ARM ARM D1.13 says
   SErrors are unrecoverable).
-* `psci.rs:526` — `system_off` non-conforming-firmware defensive
+* `psci.rs` — `system_off` non-conforming-firmware defensive
   spin (DEN0022D §5.1.9).
-* `psci.rs:578` — `system_reset` non-conforming-firmware defensive
+* `psci.rs` — `system_reset` non-conforming-firmware defensive
   spin (DEN0022D §5.1.10).
-* `gic.rs:478` — `self_check_distributor` mismatch on aarch64
+* `gic.rs` — `self_check_distributor` mismatch on aarch64
   non-test (broken interrupt routing).
 
 ### 3.2 Fail-closed FFI panics (NOT bugs — keep)

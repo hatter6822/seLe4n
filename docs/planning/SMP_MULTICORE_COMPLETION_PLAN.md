@@ -238,19 +238,19 @@ summarize.
 
 | ID | Location | Closure |
 |----|----------|---------|
-| SMP-C1 (no bring-up caller) | `rust/sele4n-hal/src/boot.rs:27-108` | SM1.D Phase 5 wiring |
-| SMP-C2 (incomplete secondary init) | `rust/sele4n-hal/src/smp.rs:213-235` | SM1.C full init |
-| SMP-C3 (shared kernelStateRef) | `SeLe4n/Platform/FFI.lean:394` | SM3 per-object lock-set discipline |
-| SMP-C4 (TLB non-IS) | `rust/sele4n-hal/src/tlb.rs:34..100` | SM1.E IS variants + SM7 shootdown protocol |
+| SMP-C1 (no bring-up caller) | `rust/sele4n-hal/src/boot.rs` | SM1.D Phase 5 wiring |
+| SMP-C2 (incomplete secondary init) | `rust/sele4n-hal/src/smp.rs` | SM1.C full init |
+| SMP-C3 (shared kernelStateRef) | `SeLe4n/Platform/FFI.lean` | SM3 per-object lock-set discipline |
+| SMP-C4 (TLB non-IS) | `rust/sele4n-hal/src/tlb.rs..100` | SM1.E IS variants + SM7 shootdown protocol |
 
 ### 3.5..3.8 HIGH findings
 
 | ID | Location | Closure |
 |----|----------|---------|
 | SMP-H1 (no SGI primitive) | `rust/sele4n-hal/src/gic.rs` | SM1.F SGI primitive |
-| SMP-H2 (missing ArchAssumption ctor) | `SeLe4n/Kernel/Architecture/Assumptions.lean:17-23` | SM0.A constructor |
-| SMP-H3 (inventory names not checked) | `Concurrency/Assumptions.lean:53-61` | SM0.C `@`-references |
-| SMP-H4 (no lock primitive) | `interrupts.rs:101-106` | SM2 verified primitives |
+| SMP-H2 (missing ArchAssumption ctor) | `SeLe4n/Kernel/Architecture/Assumptions.lean` | SM0.A constructor |
+| SMP-H3 (inventory names not checked) | `Concurrency/Assumptions.lean` | SM0.C `@`-references |
+| SMP-H4 (no lock primitive) | `interrupts.rs` | SM2 verified primitives |
 
 ### 3.9 MED + LOW findings
 

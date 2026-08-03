@@ -69,7 +69,7 @@ fix before tag), **M** medium (post-1.0 maintainability), **L** low
 | ID | Severity | Area | Summary |
 |---|---|---|---|
 | DEBT-DOC-01 | H | docs | README ↔ `codebase_map.json` metric drift (LoC ≈ 900, theorem decls 13). Verified live. |
-| DEBT-RUST-02 | M | rust | Stale workstream-ID markers in `rust/sele4n-hal/src/{trap.rs:186,lib.rs:89}` claimed by predecessor audit (H-24); this audit could **not** reproduce the `WS-V`/`AG10` markers (grep returns zero hits). Either H-24 was already discharged silently or the markers used a different spelling — re-confirm and close H-24 or open replacement finding. |
+| DEBT-RUST-02 | M | rust | Stale workstream-ID markers in `rust/sele4n-hal/src/{trap.rs,lib.rs}` claimed by predecessor audit (H-24); this audit could **not** reproduce the `WS-V`/`AG10` markers (grep returns zero hits). Either H-24 was already discharged silently or the markers used a different spelling — re-confirm and close H-24 or open replacement finding. |
 
 ### Post-1.0 maintainability (tracked, non-blocking)
 
@@ -144,17 +144,17 @@ totalling ~7800 LoC.
   `Invariant/CallReplyRecv.lean` (21) — all pure imports, AN3-A/C/D/F
   splits documented in headers.
 - **Proof debt**: 0 sorry/axiom/Classical/unjustified-unsafe. Single
-  `decide` at `QueueNoDup.lean:450` (boolean decision, justified).
+  `decide` at `QueueNoDup.lean` (boolean decision, justified).
 - **Critical invariants verified.**
   - Dual-queue head disjointness: `endpointQueueNoDup` defined at
-    `Invariant/Defs.lean:924` and bundled into the system invariant
+    `Invariant/Defs.lean` and bundled into the system invariant
     at line 1289; preservation requires the disjointness precondition
-    explicitly (`QueueNoDup.lean:102`).
+    explicitly (`QueueNoDup.lean`).
   - Capability transfer authority: `ipcUnwrapCaps` is gated on
-    `endpointGrantRight` (CapTransfer.lean:161); callers extract via
-    `endpointRights.mem .grant` (WithCaps.lean:110, 160, 196).
+    `endpointGrantRight` (CapTransfer.lean); callers extract via
+    `endpointRights.mem .grant` (WithCaps.lean).
   - Timeout idempotency: `timeoutAwareReceive` clears `timedOut`
-    immediately after detection (Timeout.lean:213); explicit-flag
+    immediately after detection (Timeout.lean); explicit-flag
     design retires the prior sentinel-collision fragility (AG8-A).
   - PIP revert safety: `timeoutThread` reverts only `.blockedOnReply`
     (line 105), justified by
@@ -179,7 +179,7 @@ totalling ~7800 LoC.
   CSpace traversal does **not** check rights, callers must use
   `capHasRight` guards at the operation layer. Documented and intended.
 - Badge derivation is one-way: `mintDerivedCap`
-  (`Capability/Operations.lean:748`) enforces rights attenuation via
+  (`Capability/Operations.lean`) enforces rights attenuation via
   `rightsSubset`. The AN4-E null-cap guard inside `mintDerivedCap`
   (lines 749–757) is explicit and unconditional;
   `mintDerivedCap_preserves_non_null` (line 762) discharges the
@@ -344,7 +344,7 @@ sequential model is trivially safe.
   (U6-I / M22) with witnessing theorems
   (`integrityFlowsTo_is_not_biba`,
   `integrityFlowsTo_denies_write_up_biba_allows`). Declassification
-  gated to a single op (`declassifyStore`, Soundness.lean:516).
+  gated to a single op (`declassifyStore`, Soundness.lean).
 - `Composition.lean` (1181) — **IF-M4 main theorem**
   `composedNonInterference_step` (line 536). 30+ inductive
   `NonInterferenceStep` arms each carry full domain-separation
@@ -405,13 +405,13 @@ sequential model is trivially safe.
 **RobinHood (4541 LoC across Core/Set/Bridge/Invariant trio).**
 
 - Probe distance `(i + capacity − idealIndex) % capacity`
-  (Core.lean:23) is underflow-safe; `displacement_roundtrip` lemma
+  (Core.lean) is underflow-safe; `displacement_roundtrip` lemma
   witnesses correctness.
 - Robin Hood three-way split (Core 130–161): empty → place; match →
   update; `resident.dist < d` → swap. Textbook and clean.
 - Load-factor invariant `loadFactorBounded` (`size·4 ≤ capacity·3`,
-  Defs.lean:50). Resize triggers at `size·4 ≥ capacity·3`
-  (Core.lean:409); doubles capacity → post-resize load ≈ 50%.
+  Defs.lean). Resize triggers at `size·4 ≥ capacity·3`
+  (Core.lean); doubles capacity → post-resize load ≈ 50%.
   `minPracticalRHCapacity := 16` (Bridge 50, 105) matches seL4 CNode
   minimum 2^4.
 - **PCD (probeChainDominant)** is preserved by every operation —
@@ -428,12 +428,12 @@ sequential model is trivially safe.
   leakage of probe-distance/insertion-loop/backshift internals.
 
 **RadixTree (1233 LoC).** All 8 ops live, 24 proofs verified.
-`extractBits` (Core.lean:37) is `(n >>> offset) % (2^width)`. Width is
+`extractBits` (Core.lean) is `(n >>> offset) % (2^width)`. Width is
 parameter; typical `radixWidth=4`. **DEBT-RT-01**: no validation that
 `offset + width ≤ 64`; current usage safe; add `radixWidth ≤ 21`
 assertion if FrozenOps is promoted post-1.0. `lookup_insert_ne`
 precondition (distinct radix positions for distinct slots,
-Invariant.lean:89) matches the well-formed CNode invariant.
+Invariant.lean) matches the well-formed CNode invariant.
 
 **FrozenOps (1884 LoC) — experimental.** Verified:
 `grep -rl 'import SeLe4n.Kernel.FrozenOps' SeLe4n` returns only
@@ -460,7 +460,7 @@ AccessRights `TryFrom<u8>` rejects > 0x1F. Sentinel value 0 reserved
 across ObjId/ThreadId/CPtr/ServiceId/InterfaceId.
 
 **sele4n-abi** (~1.4K). `#![deny(unsafe_code)]` crate-wide; the
-single `pub unsafe fn raw_syscall` (trap.rs:32) is annotated with a
+single `pub unsafe fn raw_syscall` (trap.rs) is annotated with a
 targeted `#[allow(unsafe_code)]`. asm! `clobber_abi("C")` declares all
 AAPCS64 caller-saved registers; explicit `inout` for x0–x5; x6
 `lateout(_)`; x7 input-only. MessageInfo enforces 20-bit label
@@ -511,8 +511,8 @@ overflow, etc.) is unit-tested in `message_info.rs` but not in
 system-level conformance — extend post-1.0.
 
 **DEBT-RUST-02 reproduction status.** The predecessor audit's H-24
-finding (stale `TODO(WS-V/AG10)` in `rust/sele4n-hal/src/trap.rs:186`
-and `lib.rs:89`) **could not be reproduced** — `grep -nE
+finding (stale `TODO(WS-V/AG10)` in `rust/sele4n-hal/src/trap.rs`
+and `lib.rs`) **could not be reproduced** — `grep -nE
 'TODO\(WS-V|TODO\(AG10|WS-V|AG10' rust/sele4n-hal/src/{trap,lib}.rs`
 returns zero matches. Either H-24 was discharged silently or the
 markers used a different spelling. Action: re-confirm or close H-24
@@ -534,7 +534,7 @@ sectioning post-1.0.
 
 - `set -euo pipefail` in **100 %** of shell scripts.
 - Trap-based cleanup discipline:
-  `_common.sh:119–163` (`_SELE4N_TMPFILES` array +
+  `_common.sh` (`_SELE4N_TMPFILES` array +
   `_sele4n_tmpfile_cleanup_handler`); per-script `trap … EXIT` for
   every `mktemp` (test_qemu, test_tier2_*, setup_lean_env). The
   `_common.sh` `eval` at line 140 is the only `eval` and is used to
@@ -543,7 +543,7 @@ sectioning post-1.0.
   `/tmp`); paths derived via `cd "$(dirname "${BASH_SOURCE[0]}")/.."`.
 - Python: type hints throughout; `subprocess.run([…], check=True)`
   list-form (no `shell=True`); explicit JSON schema validation in
-  `scenario_catalog.py:20–79`; no `eval()`.
+  `scenario_catalog.py`; no `eval()`.
 - Pre-commit hook is installed as a symlink — verified at audit time
   via `ls -la .git/hooks/pre-commit` →
   `→ ../../scripts/pre-commit-lean-build.sh`.
@@ -558,7 +558,7 @@ sectioning post-1.0.
   SEGMENT_DOWNLOAD_TIMEOUT_MINS=30; gitleaks/Trivy/CodeQL gated on
   non-fork PRs; uses canonical `github.token`.
 - Tier 0 hygiene gate enforces SHA-pinning
-  (`test_tier0_hygiene.sh:86`).
+  (`test_tier0_hygiene.sh`).
 
 **Documentation.**
 

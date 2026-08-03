@@ -260,7 +260,7 @@ What remains, per invariant:
     `storeTcbIpcStateAndMessage_preserves_queueNextBlockingConsistent` `hBwd` — *the predecessor of
     the enqueued thread is the old tail, blocked on the same endpoint* — established cleanly via the
     **post-state** route: `endpointQueueEnqueue_preserves_tcbQueueLinkIntegrity` (already exists,
-    `DualQueueMembership.lean:1620`) gives `a.queueNext = some tid ⇒ tid.queuePrev = some a` in `st'`;
+    `DualQueueMembership.lean`) gives `a.queueNext = some tid ⇒ tid.queuePrev = some a` in `st'`;
     the enqueue sets `tid.queuePrev := some oldTail` (non-empty) / `none` (empty), so `a = oldTail`
     (resp. no predecessor). This needs one new small lemma — `endpointQueueEnqueue_enqueued_queuePrev`
     characterising `tid.queuePrev` in `st'` (via `storeTcbQueueLinks_stored_queuePrev`, a mirror of
@@ -547,15 +547,15 @@ establish/preserve the conjunct revealed that **two transitions genuinely violat
 `pendingReceiveReply = some rid` to be `.blockedOnReceive`.  A server-first `Recv`
 with no waiting sender stashes `replyId` on the now-`.blockedOnReceive` receiver and
 enqueues it in the endpoint `receiveQ` (`endpointReceiveDual` no-sender branch,
-`Transport.lean:1728‑1746`).  Two transitions then wake such a receiver to `.ready`
+`Transport.lean`).  Two transitions then wake such a receiver to `.ready`
 via `storeTcbIpcStateAndMessage` **without clearing the stash**, leaving a `.ready`
 thread carrying `pendingReceiveReply = some rid` — a C1 violation:
 
-1. **`endpointSendDual`** rendezvous delivery (`Transport.lean:1604`): a plain `Send`
+1. **`endpointSendDual`** rendezvous delivery (`Transport.lean`): a plain `Send`
    to a stashing receiver.  (The `endpointReceiveDual` source comment at
-   `Transport.lean:1736‑1738` explicitly acknowledges this "woke via `Send`" stale
+   `Transport.lean` explicitly acknowledges this "woke via `Send`" stale
    stash and relies on a *lazy* clear on the receiver's next `Recv`.)
-2. **`notificationSignalBound`** delivery (`NotificationBind.lean:275`): a `Signal` to
+2. **`notificationSignalBound`** delivery (`NotificationBind.lean`): a `Signal` to
    a bound TCB blocked on receive.
 
 This is why the `*_preserves_ipcInvariantFull` bundles **thread** `hPRR'` rather than
@@ -563,7 +563,7 @@ prove it: the conjunct is not a true invariant of the kernel as written.
 
 **Severity: Low (model-completeness, *not* an exploitable info-flow channel).**  The
 information-flow projection already *erases* `pendingReceiveReply`
-(`InformationFlow/Projection.lean:283`, `projectKernelObject_erases_pendingReceiveReply`
+(`InformationFlow/Projection.lean`, `projectKernelObject_erases_pendingReceiveReply`
 at `:402`), so a stale stash is invisible to a low observer — there is no covert
 channel.  The impact is purely that `ipcInvariantFull`'s 17th conjunct is not
 machine-checked-preserved end-to-end (it is assumed where threaded).
@@ -576,9 +576,9 @@ receive out of `.blockedOnReceive`:
 - `notificationSignalBound` delivery store.
 
 **Do NOT** clear it globally in `storeTcbIpcStateAndMessage`: the `endpointCall`
-rendezvous (`Transport.lean:1797`) delivers to the server with the *same* helper but
-then consumes the stash via `linkServerStashedReply` (`State.lean:2434‑2445`,
-read at `Transport.lean:1819`) — a global clear makes that link fail closed
+rendezvous (`Transport.lean`) delivers to the server with the *same* helper but
+then consumes the stash via `linkServerStashedReply` (`State.lean`,
+read at `Transport.lean`) — a global clear makes that link fail closed
 `.replyCapInvalid` (verified: it breaks the F1-03 Call/reply trace
 `[IMT-011/012/014]`).  The Call path already clears the stash correctly (inside
 `linkServerStashedReply`); only the Send and notification paths leak it.

@@ -50,7 +50,7 @@ single open slice and the entire focus of **§#7** below.
    shape (rights-agnostic — only the slot write and reply-target check matter).  Verified:
    `test_full` green; the retype→mint→link→use round-trip suite passes; trace byte-identical.
 2. **Stale conjunct-count comment (from #1).** `capabilityInvariantBundle`'s
-   doc-comment (`Capability/Invariant/Defs.lean:228` / :237) still reads "the
+   doc-comment (`Capability/Invariant/Defs.lean` / :237) still reads "the
    bundle now has **6** conjuncts", but #1.a added the 7th
    (`replyCapPointsToValidReply`), so the live tuple has **7**. The comment
    describes a *worse* (out-of-date) state than the code; update it to "7" in
@@ -62,9 +62,9 @@ single open slice and the entire focus of **§#7** below.
 
 ## #2 — retype → reply-cap authority  ✅ LANDED (v0.31.140–143, 147)
 
-**Problem (closed).** `lifecycleRetypeDirect` (`Lifecycle/Operations/RetypeWrappers.lean:246`)
+**Problem (closed).** `lifecycleRetypeDirect` (`Lifecycle/Operations/RetypeWrappers.lean`)
 retypes an ObjId **in place**: the authority cap stays `.object target` while the object
-becomes `.reply`. `resolveRecvReplyId`/`extractReplyId` (`API.lean:269`, `:303`) require
+becomes `.reply`. `resolveRecvReplyId`/`extractReplyId` (`API.lean`, `:303`) require
 `.replyCap rid`, so a retyped Reply's `.object` cap yielded `.invalidCapability` —
 dynamically-retyped Reply objects were unusable; only boot-preinstalled reply caps worked.
 
@@ -79,18 +79,18 @@ the same Reply, so the result satisfies `replyCapPointsToValidReply` **by constr
 rejected as diluting the deliberate `.replyCap` authority distinction.
 
 **Sub-steps — all landed:**
-- **#2.a** ✅ — `mintReplyCap` (`Capability/Operations.lean:1154`): resolve `.object target`
+- **#2.a** ✅ — `mintReplyCap` (`Capability/Operations.lean`): resolve `.object target`
   via `cspaceLookupSlot` → require `getReply? (ReplyId.ofObjId target) ≠ none` (else
   `.invalidCapability`) → `cspaceInsertSlot` the `.replyCap rid` at dst. CDT-tracked variant
   `mintReplyCapWithCdt` (`:1172`). Mirrors `cspaceMint`'s lookup → derive → insert shape.
 - **#2.b** ✅ — `mintReplyCap_preserves_capabilityInvariantBundle`
-  (`Capability/Invariant/Preservation/Insert.lean:362`) +
+  (`Capability/Invariant/Preservation/Insert.lean`) +
   `mintReplyCapWithCdt_preserves_capabilityInvariantBundle`
-  (`…/Preservation/CopyMoveMutate.lean:221`): the inserted `.replyCap`'s rid is backed by
+  (`…/Preservation/CopyMoveMutate.lean`): the inserted `.replyCap`'s rid is backed by
   construction, discharging the `hCapBacked` hypothesis of the unifying keystone
   `cspaceInsertSlot_preserves_replyCapPointsToValidReply` (see #1.b).
 - **#2.c** ✅ — ABI: `SyscallId.mintReplyCap = 28` (`Model/Object/Types.lean`; `count := 29`),
-  decode (reuses `decodeCSpaceCopyArgs`), dispatch arm (`API.lean:914`, via
+  decode (reuses `decodeCSpaceCopyArgs`), dispatch arm (`API.lean`, via
   `dispatchCapabilityOnly` → `mintReplyCapWithCdt`), `lockSet_mintReplyCap` +
   consistency + inventory (`LockSetTransitions.lean` / `LockSetInventory.lean`, 29 lockSet
   + 29 consistency entries), Rust `sele4n-types`/`sele4n-hal` mirror (`MintReplyCap = 28`,
@@ -111,17 +111,17 @@ seL4-MCS reply caps are **rights-less**, so `mintReplyCap` now mints
 `lifecycleStaleReferenceExclusionInvariant`) only constrained `.object` cap targets; a
 `.replyCap rid` slot pointing at an absent/non-Reply object satisfied them while live
 `.reply` rejects it. The model admitted a dangling reply cap. (The runtime check
-`cspaceSlotCoherencyChecks` in `Testing/InvariantChecks.lean:126` already validated
+`cspaceSlotCoherencyChecks` in `Testing/InvariantChecks.lean` already validated
 `.replyCap rid => getReply? rid .isSome`; only the **Prop** invariant was blind.)
 
 **Approach taken.** Added, mirroring the runtime check
-(`Capability/Invariant/Defs.lean:146`):
+(`Capability/Invariant/Defs.lean`):
 ```
 def replyCapPointsToValidReply (st) : Prop :=
   ∀ oid cn slot cap rid, st.objects[oid]? = some (.cnode cn) →
     cn.lookup slot = some cap → cap.target = .replyCap rid → st.getReply? rid ≠ none
 ```
-as the **7th conjunct of `capabilityInvariantBundle`** (`Defs.lean:230–233`) — the only
+as the **7th conjunct of `capabilityInvariantBundle`** (`Defs.lean`) — the only
 *step-preserved* home (`cdtMintCompleteness` and the cross-subsystem composition are
 **boot-only**, so adding there would be vacuous-enforcement). Followed the AN4-F.5
 named-projection idiom: tuple + `structure CapabilityInvariantBundle` field
@@ -136,7 +136,7 @@ named-projection idiom: tuple + `structure CapabilityInvariantBundle` field
 
 **Sub-steps — all landed:**
 - **#1 foundations** ✅ (v0.31.144) — `replyCapPointsToValidReply` + `_of_objects_eq` frame
-  (`Defs.lean:146–160`).
+  (`Defs.lean`).
 - **#1.b (the keystone)** ✅ (v0.31.145) — the preservation lemmas. **Unifying insight:**
   most cap ops delegate to `cspaceInsertSlot`, so the *one* lemma
   `cspaceInsertSlot_preserves_replyCapPointsToValidReply
@@ -150,7 +150,7 @@ named-projection idiom: tuple + `structure CapabilityInvariantBundle` field
   (each preservation theorem appends the #1.b witness; raw destructures gained a 7th binder).
   (The initial atomic-slice estimate was ~60 sites; the realized surface was ~155 — see
   the *lesson learned* note below, which informs #7's blast-radius planning.)
-- **#1.c** ✅ — `default_capabilityInvariantBundle` (`Architecture/Invariant.lean:365`)
+- **#1.c** ✅ — `default_capabilityInvariantBundle` (`Architecture/Invariant.lean`)
   discharges the 7th conjunct vacuously on empty objects; `Boot.lean` carries it (boot has
   no reply caps); `crossSubsystemInvariantWithCdtCoverage` threads it.
 - **#1.d** ✅ — `replyCapPointsToValidReply_distinguishes_backed_and_dangling`
@@ -185,7 +185,7 @@ every reusable frame lemma (#7.0) so the realized errors are *re-pointing*, not 
 conjuncts — a forward link (`tcb.replyObject = some rid ⇒ reply.caller = some tid`) and a
 backward link (`reply.caller = some tid ⇒ tcb.replyObject = some rid ∧ tcb` is
 `.blockedOnReply`). Both only constrain TCBs that *already* have `replyObject` set;
-`replyCallerLinkage` is the **16th conjunct** of `ipcInvariantFull` (`Defs.lean:1271`), and
+`replyCallerLinkage` is the **16th conjunct** of `ipcInvariantFull` (`Defs.lean`), and
 that invariant therefore admits a `.blockedOnReply ep rt` TCB with `replyObject = none`.
 The raw single-core `endpointCall` (`DualQueue/Transport.lean`) and `endpointReceiveDual`
 (`Transport.lean`) *used to* produce exactly that intermediate: the caller blocked before the
@@ -200,7 +200,7 @@ transition; the rid is server-supplied and unknown to the raw transition. So
 `blockedOnReply ⇒ replyObject` holds at **syscall boundaries**, not **transition
 boundaries** — and `ipcInvariantFull` is a transition-level invariant. The relevant TCB
 shape is `ThreadIpcState.blockedOnReply (endpoint : ObjId) (replyTarget : Option ThreadId)`
-(`Model/Object/Types.lean:611`), with the caller's reply in `TCB.replyObject`
+(`Model/Object/Types.lean`), with the caller's reply in `TCB.replyObject`
 (`:795`) and the server-first stash in `TCB.pendingReceiveReply` (`:806`).
 
 **Optimal approach (faithful seL4-MCS fold).** Make reply-linking **atomic** with the
@@ -222,7 +222,7 @@ reply** — hence the strengthening (#7.4) is the *last* slice, after all three 
 The original `#7.a/#7.b/#7.c/#7.d` treated the fold as one transition change. The spike
 (below) proved that a *single* function's signature change is an atomic, no-green-intermediate
 re-base. But the three blocking transitions — `endpointReceiveDual` (single-core),
-`endpointReceiveDualOnCore` (per-core, `IPC/CrossCore/EndpointReply.lean:150`), and
+`endpointReceiveDualOnCore` (per-core, `IPC/CrossCore/EndpointReply.lean`), and
 `endpointCall`'s server-waiting rendezvous — are **separate functions**. Changing one
 function's signature does **not** break the others' call sites. Therefore the work splits
 into **separately green slices, one per producer family**, bracketed by a frame-pre-land
@@ -253,11 +253,11 @@ any producer still emits an unlinked `.blockedOnReply`). #7.5 closes after #7.4.
   "first step of execution":
   - `linkCallerReply_preserves_ipcInvariant` and `linkCallerReply_preserves_objects_invExt`
     — short consequences of the existing `linkCallerReply_objects_frame`
-    (`DualQueueMembership.lean:2708`) and `linkCallerReply_preserves_ipcInvariantFull`
+    (`DualQueueMembership.lean`) and `linkCallerReply_preserves_ipcInvariantFull`
     (`:3011`).
   - the `pendingReceiveReply`-store duals — short consequences of
-    `storeObject_tcb_preserves_ipcInvariant` (`CrossCore/NotificationBind.lean:202`) and
-    `storeObject_tcb_replyObject_preserves_ipcInvariantCore` (`DualQueueMembership.lean:2526`).
+    `storeObject_tcb_preserves_ipcInvariant` (`CrossCore/NotificationBind.lean`) and
+    `storeObject_tcb_replyObject_preserves_ipcInvariantCore` (`DualQueueMembership.lean`).
 
   These reference only existing definitions, so they compile with **zero** call-site churn
   and shrink every later slice's realized error set to *re-pointing* rather than novel proof.
@@ -272,11 +272,11 @@ any producer still emits an unlinked `.blockedOnReply`). #7.5 closes after #7.4.
   transition + `WithCaps`/`Checked`/`endpointReplyRecv`/`ReplyRecvWithDonation` and re-bases the
   full IPC + info-flow preservation surface.
   Thread a **required** `replyId : Option ReplyId` into `endpointReceiveDual`
-  (`Transport.lean:1634`) per recipe (a); `endpointReceiveDualWithCaps`
-  (`DualQueue/WithCaps.lean:139`) gains and forwards it; `endpointReplyRecv`'s legacy
+  (`Transport.lean`) per recipe (a); `endpointReceiveDualWithCaps`
+  (`DualQueue/WithCaps.lean`) gains and forwards it; `endpointReplyRecv`'s legacy
   single-core receive leg passes `none`. Rewire the `.receive`/`.replyRecv` dispatch in
   `API.lean` to pass the resolved `rid` and **delete the now-dead `linkReceivedCaller`**
-  (`API.lean:349`) in the *same* slice (per the remove-redundant-code directive — the fold
+  (`API.lean`) in the *same* slice (per the remove-redundant-code directive — the fold
   makes it dead the instant the dispatch passes `some rid`). Re-point the preservation suite
   to the #7.0 frames per recipe (b). **Execution order within the slice** (red until the
   last file — see *no-green-intermediate* note): `Transport` → the Tier-3 invariant files
@@ -291,7 +291,7 @@ any producer still emits an unlinked `.blockedOnReply`). #7.5 closes after #7.4.
   Folded the SM6.C cross-core receive transition, rewired the live `.receive`/`.replyRecv`
   dispatch (`replyRecvBody` + both arms) through it, and **deleted `linkReceivedCaller`** (its
   SD-051/SD-053(a,c) unit tests migrated to drive the real transition). Repeat #7.1's pattern for
-  the SM6.C cross-core receive transition (`CrossCore/EndpointReply.lean:150`), threading the
+  the SM6.C cross-core receive transition (`CrossCore/EndpointReply.lean`), threading the
   resolved `rid` from `endpointReceiveDualCrossCoreDispatch{,Checked}`. Re-point
   `CrossSubsystemPerCorePreservation` and the cross-core suites
   (`SmpCrossCoreCallSuite`, `SmpCrossCoreNotificationSuite`, `SmpCrossCoreReplySuite`).
@@ -426,9 +426,9 @@ Proofs (Tier-3, the bulk — 64 errors in `EndpointPreservation.lean` alone):
 Cross-subsystem: `CrossSubsystemPerCorePreservation`.  Tests/harness (`replyId := none`):
 `MainTraceHarness`, `NegativeStateSuite`, `SmpCrossCoreCallSuite`, `SmpCrossCoreNotificationSuite`,
 `InformationFlowSuite`, `OperationChainSuite`.  This whole paragraph **is** slice #7.1
-(single-core receive), which also removes `linkReceivedCaller` (`API.lean:349`) in the same
+(single-core receive), which also removes `linkReceivedCaller` (`API.lean`) in the same
 commit; slice #7.3 repeats for `endpointCall`'s server-waiting rendezvous (folding
-`linkServerFirstCaller`, `API.lean:386`); slice #7.2 repeats for `endpointReceiveDualOnCore`
+`linkServerFirstCaller`, `API.lean`); slice #7.2 repeats for `endpointReceiveDualOnCore`
 (the SM6.C cross-core suite); slice #7.4 strengthens `replyCallerLinkage` once all three
 paths link.  The 64-errors-in-`EndpointPreservation.lean` figure is the *measured* #7.1
 floor; apply the #1.a multiplier (estimate-to-realized ≈ 2.5×) when budgeting.

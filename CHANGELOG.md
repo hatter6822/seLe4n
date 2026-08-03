@@ -1,3 +1,52 @@
+## v0.32.109 — stale source citations removed, and the habit gated
+
+The v0.32.108 entry recorded 58 stale `file.rs:NNN` citations as reported-but-
+not-fixed. Re-measuring with a regex that was not accidentally restricted to
+lowercase `.rs` found the real figure: **511**, across Lean, Rust, shell and
+TOML references in 22 active documentation files.
+
+**How stale.** Of the 511, mechanical verification (does a symbol named in the
+surrounding prose appear within ±12 lines of the cited line?) returned:
+
+| verdict | count |
+|---|---|
+| verifiably STALE | 178 |
+| unresolvable path — `Policy.lean` names 16 different files | 66 |
+| line past end-of-file | 3 |
+| still accurate | 107 |
+| no identifier available to check | 157 |
+
+Spot-checks confirmed the classifier rather than trusting it:
+`Endpoint.lean:723` resolved to a bare `| ok p3 =>`, `Model/Object/Types.lean:611`
+to an unrelated `inductive ThreadIpcState where`, `Structures.lean:500` to a
+docstring fragment about `BEq.refl`. The 107 accurate ones were one edit above
+them away from joining the rest.
+
+**What was removed.** The line number, not the citation: `Boot.lean:551` becomes
+`Boot.lean`. The file path is stable and useful; only the numeric suffix is
+fragile, and dropping it removes something false rather than adding something
+new. Nine distinct suffix shapes were in use and all are handled — plain `:N`,
+ranges with hyphen / en-dash / non-breaking hyphen, comma lists, open-ended
+`:N+`, and multi-range tails such as `:185-190, 216–223`. Sentence commas
+survive: a comma is only consumed when digits follow it, so `Boot.lean:551, which
+…` keeps its comma.
+
+**Deliberately not touched.** `docs/dev_history/` (archival by policy).
+`CHANGELOG.md` — append-only history that quotes verbatim compiler diagnostics
+(`foo.lean:1:0: error …`) and, since v0.32.108, discusses this pattern by
+quoting it; stripping there would corrupt both. Fenced code blocks in general,
+where a line number is tool output rather than a citation. And one true negative
+the sweep surfaced and left alone: `reachable from SeLe4n.lean: 144 modules` is
+a count, not a citation.
+
+**The gate.** `scripts/check_source_line_citations.py`, wired into
+`test_docs_sync.sh` (Tier 1 and above), fails on any `File.ext:NNN` in
+documentation prose, with both exemptions above encoded rather than assumed.
+Verified to fail on a prose citation, pass on the identical text inside a code
+fence, and recover.
+
+Refs: scripts/check_source_line_citations.py
+
 ## v0.32.108 — three documentation claims that nothing enforced
 
 Continues the v0.32.107 sweep. Same defect class, three more instances: a

@@ -21,7 +21,7 @@ full 7-variant `TypeTag` list. The original audit flagged that the
 crate-level docstring elided the variant names; the inline doc fix is
 the canonical resolution.
 
-### R-ABI-L2 — Identifier count in `sele4n-types/src/lib.rs:6`
+### R-ABI-L2 — Identifier count in `sele4n-types/src/lib.rs`
 
 The crate docstring is updated to "15 newtype identifiers" when
 `SchedContextId` was added in AK4-C (commit pinned by the v0.29.x

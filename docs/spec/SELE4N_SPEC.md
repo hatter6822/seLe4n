@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.32.108` (`lakefile.toml`) |
+| **Package version** | `0.32.109` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 236,974 across 264 Lean files |
 | **Test LoC** | 48,143 across 67 Lean test suites |
@@ -1779,7 +1779,7 @@ layout; the Lean-side `trapFrameLayout` in `ExceptionModel.lean`
 **AI1-A/AI1-B (v0.27.7)**: The Rust exception handler error codes match the
 Lean model exactly. Alignment faults (`PC_ALIGN`, `SP_ALIGN`) and unknown
 exceptions return discriminant 45 (`UserException`), matching
-`ExceptionModel.lean:175-177`. The SVC handler now substantively dispatches
+`ExceptionModel.lean`. The SVC handler now substantively dispatches
 to `Kernel.syscallEntryChecked` via the FFI bridge — see §6.5.5 below.
 Named constants in `trap.rs`
 (`error_code::VM_FAULT`, `USER_EXCEPTION`, `NOT_IMPLEMENTED`) replace bare
@@ -2801,7 +2801,7 @@ regions with `perms.execute = true` return `.error .policyDenied`.
 
 ### 8.10.3 seL4 Divergence: CNode Intermediate Rights (M-06)
 
-`resolveCapAddress` (Operations.lean:85-128) does NOT check `Read` rights
+`resolveCapAddress` (Operations.lean) does NOT check `Read` rights
 on intermediate CNode capabilities during multi-level CSpace traversal.
 This diverges from seL4, which requires `Read` on each intermediate CNode.
 
@@ -2833,7 +2833,7 @@ than the sender specified; the count is available via `MessageInfo.extraCaps`.
 side effect. The receiver can detect drops by comparing the resolved count
 against the sender's declared count.
 
-**Source**: API.lean:409-416, inline comment AC3-D / API-01.
+**Source**: API.lean, inline comment AC3-D / API-01.
 
 ### 8.10.5 IPC Buffer Overflow Merge for Syscall Arguments (AK4 / R-ABI-C01)
 
@@ -3369,7 +3369,7 @@ requirements. Deployers must verify them for their specific workload and
 domain schedule configuration. The kernel provides the mechanism; the
 deployment provides the guarantee.
 
-**Source**: WCRT.lean:167-187, BandExhaustion.lean:34-43.
+**Source**: WCRT.lean, BandExhaustion.lean.
 
 ### 8.14.1.1 RPi5 Canonical Deployment Specialisation (AN5-E / DEF-AK2-K.4 RESOLVED)
 
@@ -3522,7 +3522,7 @@ unsound reasoning. A future hardware-binding workstream (tracked per-ID in
 must substitute actual MMIO reads via the FFI bridge to Rust HAL
 (`mmio.rs`).
 
-**Source**: RPi5/MmioAdapter.lean:336-356.
+**Source**: RPi5/MmioAdapter.lean.
 
 ### 8.15 Hardware Integration Roadmap (AJ6-A / H-01, H-02, H-03)
 
@@ -3695,7 +3695,7 @@ capability operations, lifecycle, and decode/dispatch paths. The
 per-operation NI proofs to the full 25-arm syscall dispatch path.
 
 **Service orchestration is explicitly outside the kernel NI boundary.** The
-`serviceOrchestrationOutsideNiBoundary` theorem (`Projection.lean:551`)
+`serviceOrchestrationOutsideNiBoundary` theorem (`Projection.lean`)
 formally proves that service orchestration internals (lifecycle policies,
 restart state, heartbeat, dependency resolution order) are not captured by the
 NI projection model. Only the service registry layer (presence and dependency
@@ -3709,7 +3709,7 @@ implications.
 #### 11.2.1 Service-presence covert channels (AN6-E.1 / IF-M01)
 
 WS-AN Phase AN6-E.1 formalizes the scope of `serviceObservable`
-(`Kernel/InformationFlow/Projection.lean:139`): the predicate covers
+(`Kernel/InformationFlow/Projection.lean`): the predicate covers
 **boolean service presence only**, not internal state. Cross-service
 covert channels — for example, one service observing another's restart
 cadence via service-presence sampling — are **NOT** closed by the kernel

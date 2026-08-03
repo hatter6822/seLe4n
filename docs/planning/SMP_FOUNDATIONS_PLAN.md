@@ -409,9 +409,9 @@ canonical reference.
 **Mathematical content**: none (pure text edits).
 
 **Files**:
-- `rust/sele4n-hal/src/boot.S:103`
-- `SeLe4n/Kernel/Architecture/Assumptions.lean:333`
-- `SeLe4n/Kernel/CrossSubsystem.lean:3264`
+- `rust/sele4n-hal/src/boot.S`
+- `SeLe4n/Kernel/Architecture/Assumptions.lean`
+- `SeLe4n/Kernel/CrossSubsystem.lean`
 
 **Edit pattern** (3 sites, identical structure):
 
@@ -443,9 +443,9 @@ CLAUDE.md "Ignoring dev_history" section forbids citing
 docs/dev_history/ from production sources. Three sites in
 production touched the rule:
 
-- rust/sele4n-hal/src/boot.S:103
-- SeLe4n/Kernel/Architecture/Assumptions.lean:333
-- SeLe4n/Kernel/CrossSubsystem.lean:3264
+- rust/sele4n-hal/src/boot.S
+- SeLe4n/Kernel/Architecture/Assumptions.lean
+- SeLe4n/Kernel/CrossSubsystem.lean
 
 All three now point at docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md
 (the active WS-SM overview).
@@ -1081,7 +1081,7 @@ and `__smp_secondary_stack_top` (verified in audit).
 
 **Goal**: Close SMP-M4. The `boot.S::secondary_entry` stub does
 not set TPIDR_EL1 (the per-CPU base register) despite the
-`smp.rs:19` docstring claim. SM0.N adds the setup so secondaries
+`smp.rs` docstring claim. SM0.N adds the setup so secondaries
 can locate their per-CPU data block on first kernel entry.
 
 **Files**:
@@ -1157,7 +1157,7 @@ pub static PER_CPU_DATA: [PerCpuData; 4] = [
 #### SM0.O — MAX_SECONDARY_CORES parameterization
 
 **Goal**: Close SMP-L2. `MAX_SECONDARY_CORES = 3` is hard-coded
-in `smp.rs:52`. Parameterize via the new
+in `smp.rs`. Parameterize via the new
 `PlatformBinding.coreCount - 1`.
 
 **File**: `rust/sele4n-hal/src/smp.rs`.

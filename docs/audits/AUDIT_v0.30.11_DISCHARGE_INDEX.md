@@ -133,7 +133,7 @@ is now `SeLe4n.UniqueSlotMap Capability` (R4.A);
 | # | Theorem | File:Line | Promoted invariant | Discharge site | Reachability check | Status |
 |---|---------|-----------|--------------------|----------------|--------------------|--------|
 | D.1 | `SeLe4n.UniqueSlotMap.keys_unique` | `SeLe4n/Model/Object/UniqueSlotMap.lean` | `cspaceSlotUnique` (now trivially derivable via `slotsUnique_holds`) | structural — `UniqueSlotMap.hWF` carried at construction time by `empty`, `insert`, `erase`, `filter`, `ofListWF` | `#check @SeLe4n.UniqueSlotMap.keys_unique` | **LANDED** (this commit) |
-| D.2 | `retypeTarget_implies_scrub_token_held` | `SeLe4n/Kernel/Capability/Invariant/Defs.lean:411` | `ScrubToken` existence (was phantom-only `cleanupHookDischarged`) | `RetypeTarget` smart constructor (third conjunct `ScrubToken.fromCleanup`) | `#check @SeLe4n.Kernel.retypeTarget_implies_scrub_token_held` | **LANDED** (commit `7da2572`; re-verified this commit) |
+| D.2 | `retypeTarget_implies_scrub_token_held` | `SeLe4n/Kernel/Capability/Invariant/Defs.lean` | `ScrubToken` existence (was phantom-only `cleanupHookDischarged`) | `RetypeTarget` smart constructor (third conjunct `ScrubToken.fromCleanup`) | `#check @SeLe4n.Kernel.retypeTarget_implies_scrub_token_held` | **LANDED** (commit `7da2572`; re-verified this commit) |
 | D.3 | `notification_waitingThreads_nodup_witness` | (DELETED — v0.31.0 close-out, C2.c4) | `Notification.waitingThreads.val.Nodup` — historical witness with vestigial `uniqueWaiters` precondition; subsumed by D.11 (`notification_waiters_nodup`) which discharges structurally via `NoDupList.hNodup` without preconditions | n/a — deleted | n/a — deleted | **DELETED** (v0.31.0 close-out, subsumed by D.11) |
 | D.4 | `SeLe4n.NoDupList.nodup_witness` | `SeLe4n/Model/Object/NoDupList.lean` | `List.Nodup` carried by smart constructor at construction time | `NoDupList.empty`, `consWithGuard`, `consWithGuard?`, `filter`, `tail?` | `#check @SeLe4n.NoDupList.nodup_witness` | **LANDED** (this commit) |
 | D.5 | `r4_structural_fix_discharge_index_documented` | `SeLe4n/Kernel/CrossSubsystem.lean` | R4.A/B/C/D closure-form discharge index | marker theorem (tier-3 invariant-surface gate) | `#check @SeLe4n.Kernel.r4_structural_fix_discharge_index_documented` | **LANDED** (this commit) |
@@ -205,7 +205,7 @@ discharge under `notificationWaiterConsistent` via
 
 | # | Subsumed finding | Subsuming structural promotion | Equivalence theorem | Reachability check | Status |
 |---|------------------|-------------------------------|---------------------|--------------------|--------|
-| E.1 | DEEP-IPC-01 (`notificationWait` runtime NoDup at `IPC/Operations/Endpoint.lean:723`) | R4.C (§3.D D.3) — full type-level `NoDupList` field-type switch + `consWithGuard?` operational gating | `notificationWait_runtime_check_implied_by_nodup` (in `IPC/Invariant/QueueNoDup.lean:691`) | `#check @SeLe4n.Kernel.notificationWait_runtime_check_implied_by_nodup` | **LANDED** (witness `7da2572`; field-type switch + `consWithGuard?` this commit) |
+| E.1 | DEEP-IPC-01 (`notificationWait` runtime NoDup at `IPC/Operations/Endpoint.lean`) | R4.C (§3.D D.3) — full type-level `NoDupList` field-type switch + `consWithGuard?` operational gating | `notificationWait_runtime_check_implied_by_nodup` (in `IPC/Invariant/QueueNoDup.lean`) | `#check @SeLe4n.Kernel.notificationWait_runtime_check_implied_by_nodup` | **LANDED** (witness `7da2572`; field-type switch + `consWithGuard?` this commit) |
 
 ### §3.F — False-positive structural witnesses (PENDING — R4.D / R12.B / R12.C / R12.D)
 
@@ -220,7 +220,7 @@ Expected rows:
 
 | # | Verified finding | Owning sub-phase | Structural artefact | Discharge mechanism | Reachability check |
 |---|------------------|------------------|---------------------|---------------------|--------------------|
-| F.1 | DEEP-CAP-02 (`cspaceMutate` rejects null caps; runtime guard at `Capability/Operations.lean:1093`) | R4.D | Two Lean theorems: `cspaceMutate_rejects_null_cap`, `cspaceMutate_null_cap_rejected` (in `Capability/Invariant/Preservation/CopyMoveMutate.lean:373,424`) + regression tests `cspaceMutate_from_null_rejected` (`tests/ModelIntegritySuite.lean:399`) and `NEG-MUTATE-NULL` (`tests/NegativeStateSuite.lean::runAuditCoverageChecks`) | Lean elaborator (proof obligation) + Tier-2 negative suite | `#check @SeLe4n.Kernel.cspaceMutate_rejects_null_cap` and `#check @SeLe4n.Kernel.cspaceMutate_null_cap_rejected` (**LANDED** commit `7da2572`, regression test extended this commit) |
+| F.1 | DEEP-CAP-02 (`cspaceMutate` rejects null caps; runtime guard at `Capability/Operations.lean`) | R4.D | Two Lean theorems: `cspaceMutate_rejects_null_cap`, `cspaceMutate_null_cap_rejected` (in `Capability/Invariant/Preservation/CopyMoveMutate.lean`) + regression tests `cspaceMutate_from_null_rejected` (`tests/ModelIntegritySuite.lean`) and `NEG-MUTATE-NULL` (`tests/NegativeStateSuite.lean::runAuditCoverageChecks`) | Lean elaborator (proof obligation) + Tier-2 negative suite | `#check @SeLe4n.Kernel.cspaceMutate_rejects_null_cap` and `#check @SeLe4n.Kernel.cspaceMutate_null_cap_rejected` (**LANDED** commit `7da2572`, regression test extended this commit) |
 | F.2 | DEEP-ARCH-01 (audit-text verification error; CacheModel/TimerModel/ExceptionModel/TlbCacheComposition correctly outside production chain) | R12.B | CI gate `scripts/check_production_staging_partition.sh` (already LANDED — verified at R0.1 baseline) | tier-0 hygiene script (gate run on every CI) | `bash scripts/check_production_staging_partition.sh` |
 | F.3 | DEEP-RUST-01 / DEEP-RUST-02 (MMIO + register `unsafe` blocks have ARM ARM citations) | R12.C | CI gate `scripts/check_arm_arm_citations.sh` (NEW — added in R12.C PR) | tier-0 hygiene script | `bash scripts/check_arm_arm_citations.sh` |
 | F.4 | DEEP-ARCH-02 (`*_fields` defs all have ≥1 consumer; not dead code) | R12.D | CI gate `scripts/check_no_orphan_fields.sh` (already LANDED — verified at R0.1 baseline) | tier-0 hygiene script | `bash scripts/check_no_orphan_fields.sh` |
@@ -289,7 +289,7 @@ Rust `decode_missing_sched_context_error` /
 
 DEBT-RUST-02 / H-24 reconfirmation. The predecessor audit's H-24
 finding raised concerns about residual workstream-ID markers
-(`WS-V` / `AG10`) in `rust/sele4n-hal/src/{trap.rs:186, lib.rs:89}`.
+(`WS-V` / `AG10`) in `rust/sele4n-hal/src/{trap.rs, lib.rs}`.
 Three independent grep passes return zero hits:
 
 1. The v0.30.11 comprehensive audit (DEBT-RUST-02 row), at

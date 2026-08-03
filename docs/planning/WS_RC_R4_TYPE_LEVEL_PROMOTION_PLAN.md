@@ -56,7 +56,7 @@ The seLe4n v0.30.11 audit-remediation workstream (`docs/audits/AUDIT_v0.30.11_WO
 
 The earlier R4 sub-tasks have already landed: R4.B added an opaque-token-backed `cleanupHookDischarged` strengthening to `RetypeTarget`, and R4.D added two `cspaceMutate` null-cap witness theorems. R4.A and R4.C remain because each touches >300 use sites across ~30–38 files, with non-trivial cross-subsystem proof obligations that demand careful PR partitioning.
 
-**The intended outcome.** After R4.A and R4.C land, every `CNode.slots` access is provably unique-keyed by construction (smart-constructor preservation lemmas discharge `invExtK` at every mutation), every `Notification.waitingThreads` access is provably duplicate-free by construction, and the corresponding state-level invariants (`cspaceSlotUnique`, `uniqueWaiters`) are deprecated to `True` because their work is now structural. The runtime duplicate guard at `Endpoint.lean:723` is replaced by a runtime-checked smart constructor (`NoDupList.consWithGuard?`) that fails closed via `.alreadyWaiting` when the cons would violate Nodup — provably equivalent to the old check under the existing `notificationWaiterConsistent` invariant.
+**The intended outcome.** After R4.A and R4.C land, every `CNode.slots` access is provably unique-keyed by construction (smart-constructor preservation lemmas discharge `invExtK` at every mutation), every `Notification.waitingThreads` access is provably duplicate-free by construction, and the corresponding state-level invariants (`cspaceSlotUnique`, `uniqueWaiters`) are deprecated to `True` because their work is now structural. The runtime duplicate guard at `Endpoint.lean` is replaced by a runtime-checked smart constructor (`NoDupList.consWithGuard?`) that fails closed via `.alreadyWaiting` when the cons would violate Nodup — provably equivalent to the old check under the existing `notificationWaiterConsistent` invariant.
 
 **Why this plan partitions into 11 sub-PRs.** Each refactor touches ~30+ files. Landing them as a single PR would exceed reviewable scope and risk a half-broken state mid-merge. The partition below keeps every commit `lake build`-green end-to-end, splits the highest-risk piece (manual `DecidableEq` for `Notification`) into its own canary PR, and uses a deprecation-alias pattern for state-invariant retirement so downstream proof callers continue to elaborate while their cleanup is staged into a follow-up commit.
 
@@ -71,7 +71,7 @@ The earlier R4 sub-tasks have already landed: R4.B added an opaque-token-backed 
 | **Hard-case API** | n/a | `NoDupList.consWithGuard` (proof-carrying) **and** `consWithGuard?` (runtime-checked) |
 | **Deriving impact** | none — `CNode` only derives `Repr`; manual `Repr UniqueSlotMap` | `Notification` derives `Repr, DecidableEq` — drop `DecidableEq` and add manual instance |
 
-**Why `structure` over refinement abbrev (`abbrev T := { x // P x }`).** A structure with a named field gives a stable global identifier (`UniqueSlotMap.table`, `NoDupList.val`), supports per-instance `Repr` independent of subtype-name leakage in pretty-printed goals, lets us attach `@[reducible] def` accessors selectively, and crucially gives us a dedicated namespace (`UniqueSlotMap.insert`, `NoDupList.consWithGuard`) where smart constructors live. The `RHSet` precedent at `SeLe4n/Kernel/RobinHood/Set.lean` is the closest in-tree template for `UniqueSlotMap` and confirms the `structure` shape scales to the larger surface. The `NonNullCap` refinement abbrev at `SeLe4n/Model/Object/Types.lean:432` is a counter-example we deliberately do not mirror: it works for a 1-field, 1-method API; both R4.A and R4.C have multi-method APIs where namespace matters.
+**Why `structure` over refinement abbrev (`abbrev T := { x // P x }`).** A structure with a named field gives a stable global identifier (`UniqueSlotMap.table`, `NoDupList.val`), supports per-instance `Repr` independent of subtype-name leakage in pretty-printed goals, lets us attach `@[reducible] def` accessors selectively, and crucially gives us a dedicated namespace (`UniqueSlotMap.insert`, `NoDupList.consWithGuard`) where smart constructors live. The `RHSet` precedent at `SeLe4n/Kernel/RobinHood/Set.lean` is the closest in-tree template for `UniqueSlotMap` and confirms the `structure` shape scales to the larger surface. The `NonNullCap` refinement abbrev at `SeLe4n/Model/Object/Types.lean` is a counter-example we deliberately do not mirror: it works for a 1-field, 1-method API; both R4.A and R4.C have multi-method APIs where namespace matters.
 
 **Why `CoeHead` over `Coe` / `CoeFun`.** `CoeHead` (vs `Coe`) allows the unification head to be a metavariable while still firing the coercion — this is what makes `cn.slots.fold f init` continue to elaborate when `cn.slots : UniqueSlotMap`, because Lean searches for `RHTable.fold` after coercing the head. `CoeFun` is for treating a value as a function (`f x` syntax) and does not apply.
 
@@ -85,12 +85,12 @@ The earlier R4 sub-tasks have already landed: R4.B added an opaque-token-backed 
 
 **Pattern-match migration accounting.** The waitingThreads surface report counts 5 `match … waitingThreads with` sites; for slots, no direct match-on-`slots` sites were observed (consumer access is via `.fold`, `.get?`, `.toList`). Each `match`-on-waitingThreads site is enumerated by file:line in §R4.C.3 below and migrated to either `tail?` (1 operational site each in `Endpoint.lean` and `FrozenOps/Operations.lean`) or `.val` (3 proof sites in `NotificationPreservation/{Wait,Signal}.lean` and `InformationFlow/Invariant/Helpers.lean`).
 
-**Why `consWithGuard?` (runtime-checked) over signature threading at `notificationWait`.** The hard case for R4.C is the cons site at `IPC/Operations/Endpoint.lean:726/1134`, which prepends a waiter onto `ntfn.waitingThreads`. Three candidate APIs:
-1. **Proof-carrying `consWithGuard (h : x ∉ l.val)`.** Used at proof sites (preservation theorems) where the bridge `not_mem_waitingThreads_of_ipcState_ne` (`IPC/Invariant/Defs.lean:567`) is in scope.
+**Why `consWithGuard?` (runtime-checked) over signature threading at `notificationWait`.** The hard case for R4.C is the cons site at `IPC/Operations/Endpoint.lean/1134`, which prepends a waiter onto `ntfn.waitingThreads`. Three candidate APIs:
+1. **Proof-carrying `consWithGuard (h : x ∉ l.val)`.** Used at proof sites (preservation theorems) where the bridge `not_mem_waitingThreads_of_ipcState_ne` (`IPC/Invariant/Defs.lean`) is in scope.
 2. **Runtime-checked `consWithGuard?` returning `Option (NoDupList α)`.** Used at the operational site. When membership is detected at runtime, returns `none`, which the caller maps to `.error .alreadyWaiting`. This **subsumes** the line-723 runtime guard: the typed smart constructor IS the duplicate guard.
 3. **Thread `notificationWaiterConsistent` through `notificationWait`'s signature.** Rejected: pollutes the public Kernel-monad surface, breaks every dispatch wire site, conflates state-level invariants with per-call obligations.
 
-**The plan offers both (1) and (2).** The bridge theorem `notificationWait_runtime_check_implied_by_nodup` (already landed at `IPC/Invariant/QueueNoDup.lean:691` from the in-flight R4.C structural-witness step) becomes the equivalence proof linking the two paths under `notificationWaiterConsistent`. Its name and citation survive R4.C's full type-level promotion unchanged, so the discharge index reachability check `#check @SeLe4n.Kernel.notificationWait_runtime_check_implied_by_nodup` keeps elaborating across the workstream.
+**The plan offers both (1) and (2).** The bridge theorem `notificationWait_runtime_check_implied_by_nodup` (already landed at `IPC/Invariant/QueueNoDup.lean` from the in-flight R4.C structural-witness step) becomes the equivalence proof linking the two paths under `notificationWaiterConsistent`. Its name and citation survive R4.C's full type-level promotion unchanged, so the discharge index reachability check `#check @SeLe4n.Kernel.notificationWait_runtime_check_implied_by_nodup` keeps elaborating across the workstream.
 
 ## Track A — `UniqueSlotMap` (7 sub-PRs, ~890 LoC total)
 
@@ -206,10 +206,10 @@ end SeLe4n
 **Why the four `@[simp]` forwarding lemmas.** Existing proofs in the kernel (e.g. `Capability/Invariant/Authority.lean`) already invoke `simp` over expressions involving `cn.slots.insert` etc. Without these forwarding lemmas, those `simp` calls would fail because the smart constructor wraps the `RHTable` operation in the `UniqueSlotMap` projection. The four `@[simp]` lemmas re-establish the rewrite path: `(u.insert s c).table` reduces to the underlying `u.table.insert s c`, and any downstream `RHTable` lemma keyed on `.insert` continues to fire.
 
 **Reused infrastructure:**
-- `RHTable.empty_invExtK` (`Bridge.lean:999`) — empty-discharge.
-- `RHTable.insert_preserves_invExtK` (`Bridge.lean:1039`) — cons-discharge.
-- `RHTable.erase_preserves_invExtK` (`Bridge.lean:1018`) — erase-discharge.
-- `RHTable.filter_preserves_invExtK` (`Bridge.lean:1083`) — filter-discharge.
+- `RHTable.empty_invExtK` (`Bridge.lean`) — empty-discharge.
+- `RHTable.insert_preserves_invExtK` (`Bridge.lean`) — cons-discharge.
+- `RHTable.erase_preserves_invExtK` (`Bridge.lean`) — erase-discharge.
+- `RHTable.filter_preserves_invExtK` (`Bridge.lean`) — filter-discharge.
 
 **If `RHTable.ofList_invExtK` is missing:** the `ofListWF` definition above sidesteps that gap via a fold over `insert`. No new lemma is required.
 
@@ -230,16 +230,16 @@ end SeLe4n
 **Why this is buildable end-to-end.** Every read-only consumer (`cn.slots.fold`, `cn.slots.get?`, `cn.slots.size`, `cn.slots.capacity`, `cn.slots.toList`, `cn.slots[s]?`) resolves through `CoeHead` + the `GetElem` instance to the underlying `RHTable`. The four `{ cn with slots := … }` mutation sites are the only elaboration risks; under the new typing the RHS becomes a `UniqueSlotMap` value which is exactly what the smart constructors return.
 
 **Mutation site treatment:**
-- `Builder.lean:287` — `cn.slots.insert slot cap` now returns `UniqueSlotMap` directly; the proof at line 291 (`RHTable.insert_preserves_invExtK …`) becomes vacuous because `invExtK` is structural. **Replace** the body of the discharge with a comment `-- WS-RC R4.A: invExtK now carried by UniqueSlotMap.insert; obligation discharged structurally.` Do **not** delete the surrounding theorem statement, since other callers may depend on its name; let R4.A.6 retire it.
-- `Projection.lean:207` — `cn.slots.filter (…)` now returns `UniqueSlotMap`; proof obligation discharged inside `UniqueSlotMap.filter`. No caller-side change.
-- `FrozenOps/Operations.lean:540, 554` — see R4.A.4. Likely on a different `FrozenCNode` structure entirely.
+- `Builder.lean` — `cn.slots.insert slot cap` now returns `UniqueSlotMap` directly; the proof at line 291 (`RHTable.insert_preserves_invExtK …`) becomes vacuous because `invExtK` is structural. **Replace** the body of the discharge with a comment `-- WS-RC R4.A: invExtK now carried by UniqueSlotMap.insert; obligation discharged structurally.` Do **not** delete the surrounding theorem statement, since other callers may depend on its name; let R4.A.6 retire it.
+- `Projection.lean` — `cn.slots.filter (…)` now returns `UniqueSlotMap`; proof obligation discharged inside `UniqueSlotMap.filter`. No caller-side change.
+- `FrozenOps/Operations.lean` — see R4.A.4. Likely on a different `FrozenCNode` structure entirely.
 
 **Verification:**
 - `lake build SeLe4n.Model.Object.Types`
 - `lake build SeLe4n.Model.Object.Structures`
 - `lake build SeLe4n.Model.Builder`
 - `lake build SeLe4n.Kernel.InformationFlow.Projection`
-- The custom `instance : BEq CNode` at `Structures.lean:954` uses `a.slots.fold` and `a.slots.size` — both lift via `CoeHead`. Verify by elaboration.
+- The custom `instance : BEq CNode` at `Structures.lean` uses `a.slots.fold` and `a.slots.size` — both lift via `CoeHead`. Verify by elaboration.
 
 **Failure mode:** `cn.slots[s]?` notation breaks because `GetElem` is not defined on `UniqueSlotMap`. **Mitigation:** the explicit `GetElem` instance shown in R4.A.1 (~5 lines).
 
@@ -250,14 +250,14 @@ end SeLe4n
 **Scope:** ~80 LoC, mechanical.
 
 **Files (literal `slots := …` syntax in tests):**
-- `tests/RobinHoodSuite.lean:251` — `CNode.mk' 4 0 0 2 (RHTable.ofList [...])` → wrap in `UniqueSlotMap.ofListWF`
-- `tests/Ak8CoverageSuite.lean:137-139` — replace `RHTable.empty 16` and chained `.insert` calls with `UniqueSlotMap.empty.insert ...`
-- `tests/NegativeStateSuite.lean:1372` — same
-- `tests/OperationChainSuite.lean:336` — `slots := RHTable.empty 16` → `slots := UniqueSlotMap.empty`
-- `tests/InformationFlowSuite.lean:565-566` — two `RHTable.ofList` literals → `UniqueSlotMap.ofListWF`
-- `tests/FrozenStateSuite.lean:116-129` — chained `.insert` over `RHTable.empty 16` → over `UniqueSlotMap.empty`
-- `SeLe4n/Testing/MainTraceHarness.lean:3005` — full literal with `RHTable.ofList cnodeSlots`
-- `SeLe4n/Testing/StateBuilder.lean:153` — capacity check on `cn.slots.capacity` and `.size` (both lift via `CoeHead`; no migration unless explicit `RHTable` typing is exposed)
+- `tests/RobinHoodSuite.lean` — `CNode.mk' 4 0 0 2 (RHTable.ofList [...])` → wrap in `UniqueSlotMap.ofListWF`
+- `tests/Ak8CoverageSuite.lean` — replace `RHTable.empty 16` and chained `.insert` calls with `UniqueSlotMap.empty.insert ...`
+- `tests/NegativeStateSuite.lean` — same
+- `tests/OperationChainSuite.lean` — `slots := RHTable.empty 16` → `slots := UniqueSlotMap.empty`
+- `tests/InformationFlowSuite.lean` — two `RHTable.ofList` literals → `UniqueSlotMap.ofListWF`
+- `tests/FrozenStateSuite.lean` — chained `.insert` over `RHTable.empty 16` → over `UniqueSlotMap.empty`
+- `SeLe4n/Testing/MainTraceHarness.lean` — full literal with `RHTable.ofList cnodeSlots`
+- `SeLe4n/Testing/StateBuilder.lean` — capacity check on `cn.slots.capacity` and `.size` (both lift via `CoeHead`; no migration unless explicit `RHTable` typing is exposed)
 
 **Migration recipe.** Cannot use `:= by decide` — RHS is constructive (a populated map value), not a proposition. Must be explicit smart-constructor calls. Replace at each site.
 
@@ -272,7 +272,7 @@ end SeLe4n
 **Scope:** 0–60 LoC depending on FrozenCNode structure.
 
 **Files:**
-- `SeLe4n/Kernel/FrozenOps/Operations.lean:540-541, 554-555`
+- `SeLe4n/Kernel/FrozenOps/Operations.lean`
 
 **Decision tree.**
 - (a) If `FrozenCNode.slots : FrozenMap …` (a *frozen* reflection of `CNode.slots`) — **this sub-PR is a no-op**, FrozenCNode operates on a different type. Verify by reading `SeLe4n/Model/FrozenState.lean`. If confirmed, **collapse R4.A.4 into the R4.A.2 verification step** (just confirm `lake build SeLe4n.Kernel.FrozenOps.Operations` still passes).
@@ -287,7 +287,7 @@ end SeLe4n
 **Scope:** ~80 LoC, deprecation-only.
 
 **Files:**
-- `SeLe4n/Kernel/Capability/Invariant/Defs.lean:27` — definition site
+- `SeLe4n/Kernel/Capability/Invariant/Defs.lean` — definition site
 - `SeLe4n/Kernel/Capability/Invariant/Authority.lean` — preservation theorems become trivial
 - `SeLe4n/Kernel/Capability/Invariant/Preservation/*.lean` — all `_preserves_cspaceSlotUnique` proofs collapse to `cspaceSlotUnique_trivial _`
 - `SeLe4n/Testing/InvariantChecks.lean` — runtime check uses the alias trivially
@@ -444,7 +444,7 @@ end SeLe4n
 - `List.Nodup.of_cons` — pop discharge.
 - `List.Nodup.filter` — filter discharge.
 
-**Why this answers the hard-case question.** The `notificationWait` cons site at `Endpoint.lean:726` uses `consWithGuard?`. The match-on-`none` path returns `.error .alreadyWaiting`; the match-on-`some wt'` path proceeds. The line-723 runtime guard is **subsumed** because the typed smart constructor IS the duplicate guard. Proof sites (preservation theorems) use `consWithGuard` with the bridge from `not_mem_waitingThreads_of_ipcState_ne`. The two paths are bridged by `notificationWait_runtime_check_implied_by_nodup` — already in tree at `IPC/Invariant/QueueNoDup.lean:691`.
+**Why this answers the hard-case question.** The `notificationWait` cons site at `Endpoint.lean` uses `consWithGuard?`. The match-on-`none` path returns `.error .alreadyWaiting`; the match-on-`some wt'` path proceeds. The line-723 runtime guard is **subsumed** because the typed smart constructor IS the duplicate guard. Proof sites (preservation theorems) use `consWithGuard` with the bridge from `not_mem_waitingThreads_of_ipcState_ne`. The two paths are bridged by `notificationWait_runtime_check_implied_by_nodup` — already in tree at `IPC/Invariant/QueueNoDup.lean`.
 
 **Verification:** `lake build SeLe4n.Model.Object.NoDupList`.
 
@@ -468,7 +468,7 @@ end SeLe4n
 -- Sequence the three field-wise decidable equalities.
 -- Field order matches the structure declaration: state, waitingThreads, pendingBadge.
 -- We rely on:
---   (a) DecidableEq NotificationState  -- inductive at Types.lean:840
+--   (a) DecidableEq NotificationState  -- inductive at Types.lean
 --   (b) DecidableEq (NoDupList ThreadId) -- from R4.C.1's instance
 --   (c) DecidableEq (Option Badge)      -- already in tree
 -- The `isTrue` body uses `Notification.mk.injEq` (auto-generated by `structure`)
@@ -511,14 +511,14 @@ instance [DecidableEq α] : DecidableEq (NoDupList α) := fun a b =>
 ```
 relies on proof irrelevance for the `hNodup` field: once `a.val = b.val`, the proof fields are propositionally equal automatically (Lean 4's `Prop` types are subsingletons), so `cases h; rfl` closes the goal. This is a standard pattern; it elaborates in <100ms on a populated `Notification` literal.
 
-**Companion `BEq Notification` instance (defensive — see failure-mode register).** Lean's `decide_eq_iff` machinery should give `BEq` from `DecidableEq` automatically, but if `KernelObject.beq` (`Structures.lean:2578`) elaborates against a missing `BEq Notification`, add immediately after the manual `DecidableEq`:
+**Companion `BEq Notification` instance (defensive — see failure-mode register).** Lean's `decide_eq_iff` machinery should give `BEq` from `DecidableEq` automatically, but if `KernelObject.beq` (`Structures.lean`) elaborates against a missing `BEq Notification`, add immediately after the manual `DecidableEq`:
 ```lean
 instance : BEq Notification where
   beq a b := decide (a = b)
 ```
 This makes the `BEq` derivation explicit and bypasses any `Decidable`-search ambiguity.
 
-**`KernelObject.beq` impact** (`Structures.lean:2578`): the `notification a, notification b => a == b` arm uses `Notification`'s `BEq`. Since `DecidableEq` implies `BEq`, the manual `DecidableEq` provides a `BEq Notification` instance via the standard derivation. If it doesn't, add a thin `instance : BEq Notification where beq a b := decide (a = b)` immediately after the manual `DecidableEq`.
+**`KernelObject.beq` impact** (`Structures.lean`): the `notification a, notification b => a == b` arm uses `Notification`'s `BEq`. Since `DecidableEq` implies `BEq`, the manual `DecidableEq` provides a `BEq Notification` instance via the standard derivation. If it doesn't, add a thin `instance : BEq Notification where beq a b := decide (a = b)` immediately after the manual `DecidableEq`.
 
 **Verification:**
 - `lake build SeLe4n.Model.Object.Types` (the canary)
@@ -539,9 +539,9 @@ This makes the `BEq` derivation explicit and bypasses any `Decidable`-search amb
 
 **Site-by-site rewiring:**
 
-**Endpoint.lean:711, 1061, 1111** — `waitingThreads := []`. Becomes `waitingThreads := NoDupList.empty`. Trivial.
+**Endpoint.lean** — `waitingThreads := []`. Becomes `waitingThreads := NoDupList.empty`. Trivial.
 
-**Endpoint.lean:726** (the line-723 guard subsumption — the hard case):
+**Endpoint.lean** (the line-723 guard subsumption — the hard case):
 ```lean
 -- BEFORE: explicit ipcState guard at line 723 + cons at line 728
 match lookupTcb st waiter with
@@ -570,9 +570,9 @@ match ntfn.waitingThreads.consWithGuard? waiter with
 ```
 The `lookupTcb` call may still be needed for downstream `storeTcbIpcState` operations; do not remove it. The runtime guard semantics are preserved: same error tag (`.alreadyWaiting`), same control flow.
 
-**Endpoint.lean:1134** — same pattern as 726.
+**Endpoint.lean** — same pattern as 726.
 
-**Endpoint.lean:649** (signal pop):
+**Endpoint.lean** (signal pop):
 ```lean
 -- BEFORE
 match ntfn.waitingThreads with
@@ -592,14 +592,14 @@ match ntfn.waitingThreads.tail? with
 | none => …  -- corresponds to the `[]` arm of the original match
 ```
 
-**Cleanup.lean:155** (filter):
+**Cleanup.lean** (filter):
 ```lean
 -- BEFORE: notif.waitingThreads.filter (· != tid)
 -- AFTER:  notif.waitingThreads.filter (· != tid)   -- type-changes from List to NoDupList
 ```
 No source change needed — `NoDupList.filter` has the same surface signature as `List.filter`. The result type lifts.
 
-**FrozenOps/Operations.lean:222** — this is the FrozenOps copy of `notificationSignal`'s pop. The shape is identical to `Endpoint.lean:649` and the migration is identical (`tail?`).
+**FrozenOps/Operations.lean** — this is the FrozenOps copy of `notificationSignal`'s pop. The shape is identical to `Endpoint.lean` and the migration is identical (`tail?`).
 
 **Verification:**
 - `lake build SeLe4n.Kernel.IPC.Operations.Endpoint`
@@ -623,9 +623,9 @@ No source change needed — `NoDupList.filter` has the same surface signature as
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` — `notificationSignal` preservation proofs
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` — frame lemmas with record literals at lines 1053, 1102, 1127, 1224, 1266, 1288
 - `SeLe4n/Kernel/IPC/Invariant/CallReplyRecv/ReplyRecv.lean` — any `Notification` literal in proof contexts
-- `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean:810` — `match` site in observability proof
-- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean:352, 354` — observability proof
-- `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean:105` — observability composition
+- `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` — `match` site in observability proof
+- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` — observability proof
+- `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` — observability composition
 
 **Three migration patterns** (per the §`Headline architectural decisions` accounting):
 
@@ -639,7 +639,7 @@ No source change needed — `NoDupList.filter` has the same surface signature as
    ```
    For each such site, prepend a `have hRestNodup : rest.Nodup := …` line that derives the proof from the surrounding `hOldNodup`. Most cases: `:= hOldNodup.of_cons` (when `rest` is the tail of a cons) or `:= hOldNodup.filter _` (when `rest` is a filter result).
 
-2. **`match … waitingThreads with | x :: rest =>` patterns in proof context** (NotificationPreservation/Signal.lean has multiple, Helpers.lean:810):
+2. **`match … waitingThreads with | x :: rest =>` patterns in proof context** (NotificationPreservation/Signal.lean has multiple, Helpers.lean):
    ```lean
    -- BEFORE
    match ntfn.waitingThreads with
@@ -654,7 +654,7 @@ No source change needed — `NoDupList.filter` has the same surface signature as
    ```
    Use the `match h : … with` form (with explicit equation) so the surviving `hNodup` can be transported.
 
-3. **`tid ∈ ntfn.waitingThreads` membership** (Composition.lean:105, Helpers.lean:798/846/848, Operations.lean:352/354):
+3. **`tid ∈ ntfn.waitingThreads` membership** (Composition.lean, Helpers.lean/846/848, Operations.lean/354):
    ```lean
    -- BEFORE
    tid ∈ ntfn.waitingThreads
@@ -682,9 +682,9 @@ No source change needed — `NoDupList.filter` has the same surface signature as
 **Scope:** ~50 LoC.
 
 **Files:**
-- `SeLe4n/Testing/MainTraceHarness.lean:105, 1763, 2037, 3013` — every `waitingThreads := []` → `waitingThreads := NoDupList.empty`
+- `SeLe4n/Testing/MainTraceHarness.lean` — every `waitingThreads := []` → `waitingThreads := NoDupList.empty`
 - `tests/ModelIntegritySuite.lean`, `tests/InformationFlowSuite.lean`, etc., wherever `Notification` literals appear with `waitingThreads := …`
-- `SeLe4n/Testing/InvariantChecks.lean:74-76` — `ntfn.waitingThreads.isEmpty` lifts via `CoeHead`; no migration needed unless the surrounding theorem typing forces it
+- `SeLe4n/Testing/InvariantChecks.lean` — `ntfn.waitingThreads.isEmpty` lifts via `CoeHead`; no migration needed unless the surrounding theorem typing forces it
 
 **Migration recipes:**
 - `waitingThreads := []` → `waitingThreads := NoDupList.empty`
@@ -703,7 +703,7 @@ No source change needed — `NoDupList.filter` has the same surface signature as
 **Scope:** ~80 LoC; parallel to R4.A.5 strategy.
 
 **Files:**
-- `SeLe4n/Kernel/IPC/Invariant/Defs.lean:584` — deprecate `uniqueWaiters` to `True`:
+- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` — deprecate `uniqueWaiters` to `True`:
   ```lean
   @[deprecated "WS-RC R4.C: uniqueWaiters is now structural via NoDupList.hNodup. \
   This alias is retained for downstream callers and removed in R4.C.7's bundle cleanup."]
@@ -730,10 +730,10 @@ No source change needed — `NoDupList.filter` has the same surface signature as
 
 **Files:**
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` — remove `uniqueWaiters` conjunct from `ipcInvariantFull` (line ~1250) and any other bundle that includes it
-- `SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean:220` — `coreIpcInvariantBundle_to_uniqueWaiters` becomes vacuous; either delete the theorem or rewrite its body to `uniqueWaiters_trivial _`
+- `SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean` — `coreIpcInvariantBundle_to_uniqueWaiters` becomes vacuous; either delete the theorem or rewrite its body to `uniqueWaiters_trivial _`
 - Every `_preserves_ipcInvariantFull` theorem — drop the `uniqueWaiters` clause from the proof body's tuple construction
 - Every caller of `_preserves_ipcInvariantFull` — drop the `uniqueWaiters` extraction
-- `SeLe4n/Kernel/Architecture/Invariant.lean:434` (`default_uniqueWaiters`) — delete or trivialise
+- `SeLe4n/Kernel/Architecture/Invariant.lean` (`default_uniqueWaiters`) — delete or trivialise
 
 **Strategy.** Use the in-tree `@[deprecated]` alias from R4.C.6 to drive a phased deletion:
 1. First commit in this PR: drop `uniqueWaiters` from each bundle definition; bundle clients now do not extract this conjunct.
@@ -747,7 +747,7 @@ No source change needed — `NoDupList.filter` has the same surface signature as
 - After each in-PR commit: full `lake build SeLe4n`
 - After final commit: `./scripts/test_full.sh` and `bash scripts/check_website_links.sh`
 
-**Failure mode:** the `coreIpcInvariantBundle_to_uniqueWaiters` theorem at `EndpointReplyAndLifecycle.lean:220` may have callers in `tests/` that elaborate against the old shape. **Mitigation:** grep `coreIpcInvariantBundle_to_uniqueWaiters` in tests/ — if hits, update them in the same PR.
+**Failure mode:** the `coreIpcInvariantBundle_to_uniqueWaiters` theorem at `EndpointReplyAndLifecycle.lean` may have callers in `tests/` that elaborate against the old shape. **Mitigation:** grep `coreIpcInvariantBundle_to_uniqueWaiters` in tests/ — if hits, update them in the same PR.
 
 ---
 
@@ -764,7 +764,7 @@ No source change needed — `NoDupList.filter` has the same surface signature as
       n.waitingThreads.val.Nodup :=
     n.waitingThreads.hNodup
   ```
-- `SeLe4n/Kernel/IPC/Invariant/QueueNoDup.lean:671` — strengthen the docstring of the existing `notification_waitingThreads_nodup_witness` to cite the discharge index entry now that R4.C has fully landed
+- `SeLe4n/Kernel/IPC/Invariant/QueueNoDup.lean` — strengthen the docstring of the existing `notification_waitingThreads_nodup_witness` to cite the discharge index entry now that R4.C has fully landed
 - `docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md` — populate §3.D row D.3 + §3.E row E.1 (full rows in §`Discharge index entries` below)
 - `SeLe4n/Kernel/CrossSubsystem.lean` — append the marker theorem:
   ```lean
@@ -876,7 +876,7 @@ Per CLAUDE.md, every commit must pass `lake build <ModulePath>` for each touched
 | R4.C.5 | Deep `do`-chain nesting in `NegativeStateSuite.lean` triggers clang `-fbracket-depth=256` (per `CLAUDE.md` build-fragile pattern) | Apply the thin-dispatcher pattern: split any new test helper into ≤150-line sub-helpers per CLAUDE.md guidance |
 | R4.C.5 | `by decide` timeout on long literal lists | None of the existing fixtures are long; if encountered, fall back to `by simp [List.Nodup]` or explicit cons-by-cons proof |
 | R4.C.6 | Downstream proof body destructures `hUnique : uniqueWaiters st` (now `True`) and fails | Same mitigation as R4.A.5: locally rewrite to `obtain _ := hUnique` |
-| R4.C.7 | Deprecation churn breaks `coreIpcInvariantBundle_to_uniqueWaiters` (`Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean:220`) | The 4-commit in-PR cleanup explicitly handles this caller; trivial alias keeps build green between commits |
+| R4.C.7 | Deprecation churn breaks `coreIpcInvariantBundle_to_uniqueWaiters` (`Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean`) | The 4-commit in-PR cleanup explicitly handles this caller; trivial alias keeps build green between commits |
 | R4.C.7 | A bundle includes `uniqueWaiters` as a non-final conjunct, breaking tuple-extraction in callers | Update bundle definition first (commit 1), then preservation theorems (commit 2), then callers (commit 3); pre-commit hook gates each |
 | R4.C.8 | Marker theorem name conflict with R4.A.7 in `CrossSubsystem.lean` | Use distinct names: `cspaceSlotUnique_promoted_to_structural` and `uniqueWaiters_promoted_to_structural` |
 
@@ -892,7 +892,7 @@ The current placeholder rows in §3.D (lines 134, 136), §3.E (line 153), and §
 |-------|-------|
 | Theorem name | `SeLe4n.UniqueSlotMap.keys_unique` |
 | File:Line | `SeLe4n/Model/Object/UniqueSlotMap.lean:<line>` |
-| Promoted invariant | `cspaceSlotUnique` (formerly `Builder.lean:291` runtime obligation, now structural) |
+| Promoted invariant | `cspaceSlotUnique` (formerly `Builder.lean` runtime obligation, now structural) |
 | Discharge site | `UniqueSlotMap.{empty,insert,erase,filter,ofListWF}` smart constructors — each carries `hWF : table.invExtK` |
 | Reachability check | `#check @SeLe4n.UniqueSlotMap.keys_unique` |
 
@@ -912,9 +912,9 @@ The current placeholder rows in §3.D (lines 134, 136), §3.E (line 153), and §
 
 | Field | Value |
 |-------|-------|
-| Subsumed finding | DEEP-IPC-01 (`notificationWait` runtime NoDup at `IPC/Operations/Endpoint.lean:723`) |
+| Subsumed finding | DEEP-IPC-01 (`notificationWait` runtime NoDup at `IPC/Operations/Endpoint.lean`) |
 | Subsuming structural promotion | R4.C (§3.D D.3); the line-723 guard is replaced by `NoDupList.consWithGuard?`'s `none` return |
-| Equivalence theorem | `SeLe4n.Kernel.notificationWait_runtime_check_implied_by_nodup` (already in tree at `IPC/Invariant/QueueNoDup.lean:691`; survives R4.C unchanged) |
+| Equivalence theorem | `SeLe4n.Kernel.notificationWait_runtime_check_implied_by_nodup` (already in tree at `IPC/Invariant/QueueNoDup.lean`; survives R4.C unchanged) |
 | Reachability check | `#check @SeLe4n.Kernel.notificationWait_runtime_check_implied_by_nodup` |
 
 ### §3.F — False-positive structural witnesses (already populated by R4.D)
@@ -1034,7 +1034,7 @@ The `CLAUDE.md` source-layout block must also gain entries:
 ## Open questions for the implementer (resolve before R4.A.2 / R4.C.2)
 
 1. **`RHTable.ofList_invExtK`** — does Lean's existing `Bridge.lean` define this lemma? If yes, `UniqueSlotMap.ofListWF` becomes a 2-line lift; if no, `ofListWF` uses the fold-over-`insert` pattern (still 2 lines but slower at compile time).
-2. **`FrozenOps/Operations.lean:540, 554`** — is `FrozenCNode.slots` typed as `RHTable Slot Capability` (in which case R4.A.4 rewires it) or `FrozenMap …` (in which case R4.A.4 is a no-op)? Reading `SeLe4n/Model/FrozenState.lean` answers this — recommended action is to confirm in the R4.A.4 first commit.
+2. **`FrozenOps/Operations.lean`** — is `FrozenCNode.slots` typed as `RHTable Slot Capability` (in which case R4.A.4 rewires it) or `FrozenMap …` (in which case R4.A.4 is a no-op)? Reading `SeLe4n/Model/FrozenState.lean` answers this — recommended action is to confirm in the R4.A.4 first commit.
 3. **`KernelObject.beq` (line 2578)** — does dropping `deriving DecidableEq` on `Notification` cascade into a `BEq Notification` requirement on the manual-`BEq KernelObject` instance? Verify by reading the instance body — it does `a == b` on each variant; the `Notification` arm needs `BEq Notification`. The manual `DecidableEq` provides this via Lean's standard `BEq`-from-`DecidableEq` derivation, but if not, R4.C.2 adds an explicit `instance : BEq Notification` immediately after.
 4. **Lean 4 v4.28.0 lemma names** — `List.Nodup.of_cons` vs `List.nodup_cons.mp` vs `List.Nodup.cons` — verify the canonical name; if absent, the inline list-induction proof is ~10 LoC.
 
@@ -1050,7 +1050,7 @@ These four questions can be answered by direct code reads at the start of R4.A.2
 
 The earlier 11-sub-PR estimate (in a prior draft of this plan) under-counted by collapsing the **bundle cleanup** work (now A.6 and C.7) into the deprecation step, and by collapsing the **proof-side rewire** into the operational rewire (now C.3 + C.4). The 15-sub-PR breakdown surfaces those as their own coherent slices, each ≤200 LoC, each with its own pre-commit gate.
 
-This plan converts two state-level invariants — `cspaceSlotUnique` (proven preserved by every CSpace operation) and `uniqueWaiters` (proven preserved by every notification operation) — into structural type-level invariants. The conversion is **redundant for correctness** (the state-level invariants are already proven), but is a true *faithfulness* improvement: it makes the property impossible to violate by construction rather than provable-but-bypassable. The runtime guard at `Endpoint.lean:723` becomes structurally subsumed by the typed `consWithGuard?` smart constructor, and the discharge index gains three reachability-gated witness theorems that future audits can re-derive from a single `#check` per closure.
+This plan converts two state-level invariants — `cspaceSlotUnique` (proven preserved by every CSpace operation) and `uniqueWaiters` (proven preserved by every notification operation) — into structural type-level invariants. The conversion is **redundant for correctness** (the state-level invariants are already proven), but is a true *faithfulness* improvement: it makes the property impossible to violate by construction rather than provable-but-bypassable. The runtime guard at `Endpoint.lean` becomes structurally subsumed by the typed `consWithGuard?` smart constructor, and the discharge index gains three reachability-gated witness theorems that future audits can re-derive from a single `#check` per closure.
 
 No shortcuts: the plan does not weaken any docstring or downgrade any invariant. The state-level `_preserves_cspaceSlotUnique` and `_preserves_uniqueWaiters` theorem chains are first deprecated to `True` (preserving callability for downstream proofs) and then cleaned up in trailing sub-PRs. Every commit is `lake build`-green end-to-end. Every sub-PR has its own verification matrix entry. The highest-risk piece (manual `DecidableEq Notification`) is isolated into its own canary PR with positive **and** negative unit tests gating review.
 

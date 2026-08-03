@@ -1550,7 +1550,7 @@ pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
 ```
 
 **Acceptance**:
-- Body matches the docstring claim from `smp.rs:202-211`.
+- Body matches the docstring claim from `smp.rs`.
 - QEMU `-smp 4` boot trace shows 4 ready banners.
 - All 4 cores reach `lean_secondary_kernel_main`.
 

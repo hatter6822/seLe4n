@@ -9,7 +9,7 @@
 ### Description
 
 seLe4n implements a strict fixed-priority preemptive scheduler matching seL4's
-classic scheduling model (`Core.lean:259–264`). Under this model, **starvation
+classic scheduling model (`Core.lean`). Under this model, **starvation
 freedom is NOT a kernel property** — a continuously runnable high-priority thread
 will indefinitely preempt all lower-priority threads.
 
@@ -47,7 +47,7 @@ enforcement but are a separate scheduling policy layer above the base kernel.
 
 ### Formal Model Status
 
-The scheduler's `schedule` function (`Core.lean:274`) selects the highest-priority
+The scheduler's `schedule` function (`Core.lean`) selects the highest-priority
 runnable thread via `chooseThread`. The EDF (Earliest Deadline First) variant
 (`edfPriority`) provides deadline-aware selection but does not enforce starvation
 freedom — it only changes the priority metric, not the preemption semantics.
@@ -69,13 +69,13 @@ invariants (`schedulerInvariantBundleFull`) concern structural correctness
 
 ### Description
 
-The `defaultLabelingContext` (`Policy.lean:214`) assigns `publicLabel` (low
+The `defaultLabelingContext` (`Policy.lean`) assigns `publicLabel` (low
 confidentiality, untrusted integrity) to ALL entities. Under this labeling,
 `securityFlowsTo` is trivially `true` for all entity pairs, meaning **no
 information flow is restricted**.
 
-This is formally proven by `defaultLabelingContext_insecure` (`Policy.lean:234`)
-and `defaultLabelingContext_all_threads_observable` (`Policy.lean:244`).
+This is formally proven by `defaultLabelingContext_insecure` (`Policy.lean`)
+and `defaultLabelingContext_all_threads_observable` (`Policy.lean`).
 
 ### Impact
 
@@ -104,7 +104,7 @@ a covert channel where a high-security domain can influence scheduling state
 observable by a low-security domain.
 
 This is formally witnessed by `acceptedCovertChannel_scheduling`
-(`Projection.lean:401`).
+(`Projection.lean`).
 
 ### Bandwidth Analysis
 
@@ -131,7 +131,7 @@ domains) would further reduce bandwidth but is beyond the kernel model's scope.
 ### Description
 
 seLe4n's integrity model deliberately differs from standard BIBA. The
-`integrityFlowsTo` function (`Policy.lean:75`) allows trusted-to-untrusted
+`integrityFlowsTo` function (`Policy.lean`) allows trusted-to-untrusted
 flow (authority delegation) and denies untrusted-to-trusted flow (privilege
 escalation). Standard BIBA reverses this: it denies write-down and allows
 write-up.
@@ -142,11 +142,11 @@ authority upward.
 
 ### Formal Witnesses
 
-- `integrityFlowsTo_is_not_biba` (`Policy.lean:115`): Proves the model differs
+- `integrityFlowsTo_is_not_biba` (`Policy.lean`): Proves the model differs
   from BIBA at the `(trusted, untrusted)` case.
-- `integrityFlowsTo_prevents_escalation` (`Policy.lean:157`): Proves
+- `integrityFlowsTo_prevents_escalation` (`Policy.lean`): Proves
   untrusted-to-trusted escalation is denied.
-- `bibaIntegrityFlowsTo` (`Policy.lean:97`): Reference BIBA implementation
+- `bibaIntegrityFlowsTo` (`Policy.lean`): Reference BIBA implementation
   provided as a drop-in alternative.
 
 ### Recommended Mitigation

@@ -42,7 +42,9 @@ python3 "${SCRIPT_DIR}/generate_codebase_map.py" --pretty --check
 #      and no workflow, so the "warning" it emits had never been seen.
 #      Tolerant by design (see that script's header) so it is quiet about
 #      the per-patch churn the `~N lines` approximation already signals.
-#   3. CLAUDE.md ↔ AGENTS.md byte-identity.  Both files state the rule in
+#   3. Source citations carrying line numbers (`Boot.lean:551`), which are
+#      stale on the next edit above them.
+#   4. CLAUDE.md ↔ AGENTS.md byte-identity.  Both files state the rule in
 #      their own headers ("the two files must stay byte-identical apart
 #      from this header"), and only the *version line* was checked, so any
 #      other divergence was invisible to CI.
@@ -51,6 +53,13 @@ python3 "${SCRIPT_DIR}/generate_codebase_map.py" --pretty --check
 "${SCRIPT_DIR}/sync_readme_from_codebase_map.sh" --check
 
 "${SCRIPT_DIR}/find_large_lean_files.sh" --check
+
+# 4. Source citations must not carry line numbers.  See the script header:
+#    511 such citations had accumulated, 178 verifiably pointing at unrelated
+#    code and 3 past end-of-file, because a line number goes stale the moment
+#    anything above it changes.  Fenced blocks (verbatim tool output) and
+#    CHANGELOG.md (append-only history, quotes real diagnostics) are exempt.
+python3 "${SCRIPT_DIR}/check_source_line_citations.py"
 
 # CLAUDE.md and AGENTS.md differ only in their leading header block: each
 # names itself in an H1 and points at the other in a blockquote.  The
