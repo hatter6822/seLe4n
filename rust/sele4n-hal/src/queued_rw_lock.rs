@@ -138,7 +138,6 @@ pub const PARKED_WAITING_READER: u8 = 1;
 pub const PARKED_WAITING_WRITER: u8 = 2;
 pub const PARKED_ADMITTED: u8 = 3;
 
-
 /// One waiter slot — exactly one per core.  The slot is OWNED by the
 /// lock for the duration of the program; no heap or stack allocation
 /// is involved.  This eliminates lifetime hazards (audit H-2).
@@ -322,14 +321,16 @@ impl QueuedRwLock {
             if reader_count >= READER_MASK {
                 return false; // Saturation: treat as if writer held.
             }
-            let new = cur + 1; // reader count increments
+            // Reader count increments.
+            let new = cur + 1;
+
             // CAS-attempt; on success return; on failure retry.
             // Use AcqRel on success to ensure proper synchronization with
             // the prior critical section (D-5 H-4 fix).
-            match self.state.compare_exchange(
-                cur, new,
-                Ordering::AcqRel, Ordering::Relaxed,
-            ) {
+            match self
+                .state
+                .compare_exchange(cur, new, Ordering::AcqRel, Ordering::Relaxed)
+            {
                 Ok(_) => return true,
                 Err(_) => {
                     core::hint::spin_loop();
@@ -346,10 +347,9 @@ impl QueuedRwLock {
     fn try_admit_as_writer(&self) -> bool {
         // AcqRel on success per D-5 H-4 audit: synchronizes with prior
         // critical sections via the state-RMW chain.
-        self.state.compare_exchange(
-            0, WRITER_BIT,
-            Ordering::AcqRel, Ordering::Relaxed,
-        ).is_ok()
+        self.state
+            .compare_exchange(0, WRITER_BIT, Ordering::AcqRel, Ordering::Relaxed)
+            .is_ok()
     }
 }
 
@@ -368,8 +368,7 @@ impl QueuedRwLock {
     /// entry; under `panic = "abort"` an out-of-range call halts the
     /// kernel rather than aliasing a sibling's slot.
     pub fn acquire_read(&self, core_id: u8) {
-        assert!((core_id as usize) < MAX_WAITERS,
-                "core_id out of range");
+        assert!((core_id as usize) < MAX_WAITERS, "core_id out of range");
         let slot = &self.slots[core_id as usize];
 
         // Step 1: prepare own slot.  Single-writer (this core).
@@ -466,10 +465,16 @@ impl QueuedRwLock {
                 }
                 // CAS-claim parked first.  Only the CAS-winner is
                 // allowed to increment state for this slot.
-                if slot.parked.compare_exchange(
-                    PARKED_WAITING_READER, PARKED_ADMITTED,
-                    Ordering::AcqRel, Ordering::Acquire,
-                ).is_ok() {
+                if slot
+                    .parked
+                    .compare_exchange(
+                        PARKED_WAITING_READER,
+                        PARKED_ADMITTED,
+                        Ordering::AcqRel,
+                        Ordering::Acquire,
+                    )
+                    .is_ok()
+                {
                     // Claimed.  Now atomically increment state.  If
                     // state has WRITER_BIT, we cannot admit right
                     // now — revert parked via CAS (NOT a STORE — see
@@ -491,16 +496,19 @@ impl QueuedRwLock {
                             // the CAS fails harmlessly with the
                             // observed value being WAITING_READER — also fine.
                             let _ = slot.parked.compare_exchange(
-                                PARKED_ADMITTED, PARKED_WAITING_READER,
-                                Ordering::AcqRel, Ordering::Acquire,
+                                PARKED_ADMITTED,
+                                PARKED_WAITING_READER,
+                                Ordering::AcqRel,
+                                Ordering::Acquire,
                             );
                             break;
                         }
                         let new_state = cur + 1;
-                        if self.state.compare_exchange(
-                            cur, new_state,
-                            Ordering::AcqRel, Ordering::Acquire,
-                        ).is_ok() {
+                        if self
+                            .state
+                            .compare_exchange(cur, new_state, Ordering::AcqRel, Ordering::Acquire)
+                            .is_ok()
+                        {
                             self.cascade_admit_readers(core_id);
                             return;
                         }
@@ -537,7 +545,9 @@ impl QueuedRwLock {
             // SAFETY: `prev_tail < MAX_WAITERS` by AcqRel swap's
             // observation invariant; the slot is owned by core
             // `prev_tail` which is currently in the queue.
-            self.slots[prev_tail as usize].next.store(core_id, Ordering::Release);
+            self.slots[prev_tail as usize]
+                .next
+                .store(core_id, Ordering::Release);
         }
 
         // Step 3: wait until predecessor signals us.
@@ -614,9 +624,11 @@ impl QueuedRwLock {
             // against infinite walks if any future regression
             // reintroduces self-linking.
             if next == current {
-                debug_assert!(false,
+                debug_assert!(
+                    false,
                     "cascade_admit_readers: self-referential next pointer at slot {}",
-                    current);
+                    current
+                );
                 return;
             }
             // SAFETY: `next < MAX_WAITERS` by the enqueue-side invariant.
@@ -684,10 +696,11 @@ impl QueuedRwLock {
                     return;
                 }
                 let new = cur + 1;
-                if self.state.compare_exchange(
-                    cur, new,
-                    Ordering::AcqRel, Ordering::Acquire,
-                ).is_ok() {
+                if self
+                    .state
+                    .compare_exchange(cur, new, Ordering::AcqRel, Ordering::Acquire)
+                    .is_ok()
+                {
                     break;
                 }
                 // CAS lost a race; retry the load + check.
@@ -707,8 +720,10 @@ impl QueuedRwLock {
             // check — if parked is WAITING_WRITER (not WAITING_READER),
             // the CAS fails and we undo (treating as "another path").
             match next_slot.parked.compare_exchange(
-                PARKED_WAITING_READER, PARKED_ADMITTED,
-                Ordering::AcqRel, Ordering::Acquire,
+                PARKED_WAITING_READER,
+                PARKED_ADMITTED,
+                Ordering::AcqRel,
+                Ordering::Acquire,
             ) {
                 Ok(_) => {
                     // We claimed the successor.  Continue cascading.
@@ -737,8 +752,10 @@ impl QueuedRwLock {
         }
         // Walk-step bound exhausted.  Indicates a chain cycle — surface
         // in test builds, silently exit in release.
-        debug_assert!(false,
-                      "cascade_admit_readers: walk exceeded MAX_WAITERS — chain cycle?");
+        debug_assert!(
+            false,
+            "cascade_admit_readers: walk exceeded MAX_WAITERS — chain cycle?"
+        );
     }
 
     /// **WS-SM SM2.C-defer D-5.5**: acquire a write lock for `core_id`.
@@ -749,8 +766,7 @@ impl QueuedRwLock {
     ///
     /// Same as `acquire_read`.
     pub fn acquire_write(&self, core_id: u8) {
-        assert!((core_id as usize) < MAX_WAITERS,
-                "core_id out of range");
+        assert!((core_id as usize) < MAX_WAITERS, "core_id out of range");
         let slot = &self.slots[core_id as usize];
 
         slot.reset(MODE_WRITE);
@@ -794,15 +810,22 @@ impl QueuedRwLock {
                 if slot.parked.load(Ordering::Acquire) == PARKED_ADMITTED {
                     return;
                 }
-                if slot.parked.compare_exchange(
-                    PARKED_WAITING_WRITER, PARKED_ADMITTED,
-                    Ordering::AcqRel, Ordering::Acquire,
-                ).is_ok() {
+                if slot
+                    .parked
+                    .compare_exchange(
+                        PARKED_WAITING_WRITER,
+                        PARKED_ADMITTED,
+                        Ordering::AcqRel,
+                        Ordering::Acquire,
+                    )
+                    .is_ok()
+                {
                     // Claimed.  Try state CAS.
-                    if self.state.compare_exchange(
-                        0, WRITER_BIT,
-                        Ordering::AcqRel, Ordering::Acquire,
-                    ).is_ok() {
+                    if self
+                        .state
+                        .compare_exchange(0, WRITER_BIT, Ordering::AcqRel, Ordering::Acquire)
+                        .is_ok()
+                    {
                         return;
                     }
                     // State non-zero (other holders).  Revert parked
@@ -814,8 +837,10 @@ impl QueuedRwLock {
                     // the CAS fails harmlessly with observed = WAITING_WRITER
                     // — also fine.
                     let _ = slot.parked.compare_exchange(
-                        PARKED_ADMITTED, PARKED_WAITING_WRITER,
-                        Ordering::AcqRel, Ordering::Acquire,
+                        PARKED_ADMITTED,
+                        PARKED_WAITING_WRITER,
+                        Ordering::AcqRel,
+                        Ordering::Acquire,
                     );
                 }
                 crate::cpu::wfe_bounded(crate::cpu::WFE_DEFAULT_TIMEOUT_TICKS);
@@ -825,7 +850,9 @@ impl QueuedRwLock {
             // BEFORE linking, same as acquire_read but with the writer
             // variant so the walker reads the correct mode atomically.
             slot.parked.store(PARKED_WAITING_WRITER, Ordering::Release);
-            self.slots[prev_tail as usize].next.store(core_id, Ordering::Release);
+            self.slots[prev_tail as usize]
+                .next
+                .store(core_id, Ordering::Release);
         }
 
         // Wait for predecessor signal.
@@ -841,8 +868,7 @@ impl QueuedRwLock {
     /// Decrements the reader count.  If the count drops to zero and a
     /// successor waiter exists, signals it for admission.
     pub fn release_read(&self, core_id: u8) {
-        assert!((core_id as usize) < MAX_WAITERS,
-                "core_id out of range");
+        assert!((core_id as usize) < MAX_WAITERS, "core_id out of range");
 
         // Decrement reader count.  `fetch_sub(1)` with AcqRel ordering:
         // Release publishes the critical-section side effects; Acquire
@@ -853,8 +879,10 @@ impl QueuedRwLock {
         // release_read call, that's a protocol violation (writer-readers
         // exclusion).  In production this can't happen if callers follow
         // the API; in test/debug builds we surface it.
-        debug_assert!((prev & WRITER_BIT) == 0,
-                      "release_read called while WRITER_BIT is set");
+        debug_assert!(
+            (prev & WRITER_BIT) == 0,
+            "release_read called while WRITER_BIT is set"
+        );
 
         // **WS-SM SM2.E MCS-RW protocol fix — signal on every release**:
         // The original protocol only called signal when prev_readers ==
@@ -905,8 +933,7 @@ impl QueuedRwLock {
     ///
     /// Clears the writer bit and signals the next waiter (if any).
     pub fn release_write(&self, core_id: u8) {
-        assert!((core_id as usize) < MAX_WAITERS,
-                "core_id out of range");
+        assert!((core_id as usize) < MAX_WAITERS, "core_id out of range");
 
         // Clear the writer bit.  `fetch_and(READER_MASK, AcqRel)` clears
         // bit 63 while preserving the reader bits — though by the
@@ -915,11 +942,14 @@ impl QueuedRwLock {
         // visible to subsequent admittees via the state-RMW chain
         // (D-5 H-4 fix).
         let _prev = self.state.fetch_and(READER_MASK, Ordering::AcqRel);
-        debug_assert!((_prev & WRITER_BIT) != 0,
-                      "release_write called while WRITER_BIT is not set; \
+        debug_assert!(
+            (_prev & WRITER_BIT) != 0,
+            "release_write called while WRITER_BIT is not set; \
                        protocol invariant violation (mode-encoded parked machine \
                        should have prevented this).  core_id={}, _prev=0x{:x}",
-                      core_id, _prev);
+            core_id,
+            _prev
+        );
 
         // Signal the next waiter.
         self.signal_next_waiter(core_id);
@@ -983,7 +1013,10 @@ impl QueuedRwLock {
     /// own value; reentrance / cross-core slot use is UB).
     pub fn acquire_read_guard(&self, core_id: u8) -> QueuedRwLockReadGuard<'_> {
         self.acquire_read(core_id);
-        QueuedRwLockReadGuard { lock: self, core_id }
+        QueuedRwLockReadGuard {
+            lock: self,
+            core_id,
+        }
     }
 
     /// **WS-SM SM2.C-defer D-5 (panic-safety RAII)**: scoped write-lock
@@ -994,7 +1027,10 @@ impl QueuedRwLock {
     /// Same as `acquire_write`.
     pub fn acquire_write_guard(&self, core_id: u8) -> QueuedRwLockWriteGuard<'_> {
         self.acquire_write(core_id);
-        QueuedRwLockWriteGuard { lock: self, core_id }
+        QueuedRwLockWriteGuard {
+            lock: self,
+            core_id,
+        }
     }
 
     /// Internal helper: signal the next waiter in the queue.
@@ -1054,8 +1090,10 @@ impl QueuedRwLock {
                 // No visible successor yet at this waypoint.  Try to
                 // atomically end the queue here.
                 match self.tail.compare_exchange(
-                    current, NONE_SENTINEL,
-                    Ordering::AcqRel, Ordering::Acquire,
+                    current,
+                    NONE_SENTINEL,
+                    Ordering::AcqRel,
+                    Ordering::Acquire,
                 ) {
                     Ok(_) => {
                         // CAS succeeded: queue is now empty.  Done.
@@ -1098,9 +1136,11 @@ impl QueuedRwLock {
             // this guard exists so any future regression that
             // reintroduces the bug surfaces in test builds rather
             // than producing an infinite walk.
-            debug_assert!(next != current,
-                          "signal_next_waiter: self-referential next pointer at slot {}",
-                          current);
+            debug_assert!(
+                next != current,
+                "signal_next_waiter: self-referential next pointer at slot {}",
+                current
+            );
             if next == current {
                 return;
             }
@@ -1157,17 +1197,20 @@ impl QueuedRwLock {
                             return;
                         }
                         let new_state = cur + 1;
-                        if self.state.compare_exchange(
-                            cur, new_state,
-                            Ordering::AcqRel, Ordering::Acquire,
-                        ).is_ok() {
+                        if self
+                            .state
+                            .compare_exchange(cur, new_state, Ordering::AcqRel, Ordering::Acquire)
+                            .is_ok()
+                        {
                             break;
                         }
                     }
                     // State incremented; now CAS parked.
                     match next_slot.parked.compare_exchange(
-                        PARKED_WAITING_READER, PARKED_ADMITTED,
-                        Ordering::AcqRel, Ordering::Acquire,
+                        PARKED_WAITING_READER,
+                        PARKED_ADMITTED,
+                        Ordering::AcqRel,
+                        Ordering::Acquire,
                     ) {
                         Ok(_) => {
                             // Reader admitted; continue walking to drain
@@ -1198,10 +1241,10 @@ impl QueuedRwLock {
                 }
                 v if v == PARKED_WAITING_WRITER => {
                     // Writer admission: state-CAS 0 → WRITER_BIT.
-                    let writer_state_set = self.state.compare_exchange(
-                        0, WRITER_BIT,
-                        Ordering::AcqRel, Ordering::Acquire,
-                    ).is_ok();
+                    let writer_state_set = self
+                        .state
+                        .compare_exchange(0, WRITER_BIT, Ordering::AcqRel, Ordering::Acquire)
+                        .is_ok();
                     if !writer_state_set {
                         // State has reader bits; cannot admit writer
                         // now.  MUST NOT walk past (would orphan the
@@ -1212,8 +1255,10 @@ impl QueuedRwLock {
                     }
                     // State has WRITER_BIT; now CAS parked.
                     match next_slot.parked.compare_exchange(
-                        PARKED_WAITING_WRITER, PARKED_ADMITTED,
-                        Ordering::AcqRel, Ordering::Acquire,
+                        PARKED_WAITING_WRITER,
+                        PARKED_ADMITTED,
+                        Ordering::AcqRel,
+                        Ordering::Acquire,
                     ) {
                         Ok(_) => {
                             // Writer admitted.  MUST NOT keep walking
@@ -1225,14 +1270,18 @@ impl QueuedRwLock {
                             // CAS failed.  Undo writer-bit via CAS
                             // with explicit assert (Stream B F2 fix).
                             let undo = self.state.compare_exchange(
-                                WRITER_BIT, 0,
-                                Ordering::AcqRel, Ordering::Acquire,
+                                WRITER_BIT,
+                                0,
+                                Ordering::AcqRel,
+                                Ordering::Acquire,
                             );
-                            debug_assert!(undo.is_ok(),
+                            debug_assert!(
+                                undo.is_ok(),
                                 "writer admit undo failed: state was 0x{:x}, \
                                  expected WRITER_BIT — protocol invariant \
                                  violation in signal_next_waiter",
-                                undo.unwrap_err());
+                                undo.unwrap_err()
+                            );
                             // observed could be NOT_IN_QUEUE, ADMITTED,
                             // or WAITING_READER.  For NOT_IN_QUEUE /
                             // WAITING_READER (iter transition), return.
@@ -1248,9 +1297,11 @@ impl QueuedRwLock {
                 }
                 _ => {
                     // Unrecognised parked value — should be unreachable.
-                    debug_assert!(false,
+                    debug_assert!(
+                        false,
                         "signal_next_waiter: unexpected parked value 0x{:x} at slot {}",
-                        parked_obs, next);
+                        parked_obs, next
+                    );
                     return;
                 }
             }
@@ -1259,8 +1310,10 @@ impl QueuedRwLock {
         // unreachable: the chain has at most `MAX_WAITERS` distinct
         // slots.  Reaching this point indicates a chain cycle —
         // a logic bug — that we surface in test builds.
-        debug_assert!(false,
-                      "signal_next_waiter: walk exceeded MAX_WAITERS — chain cycle?");
+        debug_assert!(
+            false,
+            "signal_next_waiter: walk exceeded MAX_WAITERS — chain cycle?"
+        );
     }
 }
 
@@ -1344,15 +1397,18 @@ mod tests {
             PARKED_WAITING_WRITER,
             PARKED_ADMITTED,
         ];
-        assert_eq!(states.len(), 4,
-                   "WS-SM SM2.E protocol contract: parked state machine must have \
+        assert_eq!(
+            states.len(),
+            4,
+            "WS-SM SM2.E protocol contract: parked state machine must have \
                     exactly 4 states (NOT_IN_QUEUE / WAITING_READER / WAITING_WRITER / \
                     ADMITTED).  A regression to 3 states (collapsing READER+WRITER) \
-                    re-opens the stale-mode-read race.");
+                    re-opens the stale-mode-read race."
+        );
         // Verify all are distinct (covered by pairwise test, but
         // explicit here too).
         for (i, &a) in states.iter().enumerate() {
-            for &b in &states[i+1..] {
+            for &b in &states[i + 1..] {
                 assert_ne!(a, b, "parked state values must be unique");
             }
         }
@@ -1402,7 +1458,11 @@ mod sequential_tests {
     fn single_reader_acquire_release() {
         let lock = QueuedRwLock::new();
         lock.acquire_read(0);
-        assert_eq!(lock.peek_state(), 1, "reader count should be 1 after acquire");
+        assert_eq!(
+            lock.peek_state(),
+            1,
+            "reader count should be 1 after acquire"
+        );
         lock.release_read(0);
         assert_eq!(lock.peek_state(), 0, "state should clear after release");
     }
@@ -1412,8 +1472,11 @@ mod sequential_tests {
     fn single_writer_acquire_release() {
         let lock = QueuedRwLock::new();
         lock.acquire_write(0);
-        assert_eq!(lock.peek_state(), WRITER_BIT,
-                   "writer bit should be set after acquire");
+        assert_eq!(
+            lock.peek_state(),
+            WRITER_BIT,
+            "writer bit should be set after acquire"
+        );
         lock.release_write(0);
         assert_eq!(lock.peek_state(), 0, "state should clear after release");
     }
@@ -1466,9 +1529,9 @@ mod sequential_tests {
 #[cfg(test)]
 mod cross_thread_tests {
     use super::*;
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering as StdOrdering};
     use std::sync::Arc;
     use std::thread;
-    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering as StdOrdering};
     use std::vec::Vec;
 
     /// Multi-thread acquire/release roundtrip: each of 4 threads
@@ -1508,8 +1571,12 @@ mod cross_thread_tests {
             h.join().unwrap();
         }
         // Final state: no readers, no writer.
-        assert_eq!(lock.peek_state(), 0,
-                   "final state should be 0; got {:#x}", lock.peek_state());
+        assert_eq!(
+            lock.peek_state(),
+            0,
+            "final state should be 0; got {:#x}",
+            lock.peek_state()
+        );
     }
 
     /// Multi-thread writer mutex test: 4 threads each increment a shared
@@ -1538,10 +1605,13 @@ mod cross_thread_tests {
         for h in handles {
             h.join().unwrap();
         }
-        assert_eq!(counter.load(StdOrdering::Relaxed),
-                   (MAX_WAITERS * ITER) as u64,
-                   "writer mutex should serialize: expected {} got {}",
-                   MAX_WAITERS * ITER, counter.load(StdOrdering::Relaxed));
+        assert_eq!(
+            counter.load(StdOrdering::Relaxed),
+            (MAX_WAITERS * ITER) as u64,
+            "writer mutex should serialize: expected {} got {}",
+            MAX_WAITERS * ITER,
+            counter.load(StdOrdering::Relaxed)
+        );
         assert_eq!(lock.peek_state(), 0);
     }
 
@@ -1575,9 +1645,12 @@ mod cross_thread_tests {
         for h in handles {
             h.join().unwrap();
         }
-        assert_eq!(lock.peek_state(), 0,
-                   "mixed stress should leave state clear; got {:#x}",
-                   lock.peek_state());
+        assert_eq!(
+            lock.peek_state(),
+            0,
+            "mixed stress should leave state clear; got {:#x}",
+            lock.peek_state()
+        );
     }
 
     /// **D-5 M-6 fix**: FIFO admission order assertion.
@@ -1667,10 +1740,18 @@ mod cross_thread_tests {
         let t2_adm = admit_order[2].load(StdOrdering::SeqCst);
         let t3_adm = admit_order[3].load(StdOrdering::SeqCst);
         assert_eq!(t0_adm, 0, "T0 should be the first admitted");
-        assert!(t1_adm < t2_adm,
-            "FIFO violation: T1 ({}) should admit before T2 ({})", t1_adm, t2_adm);
-        assert!(t2_adm < t3_adm,
-            "FIFO violation: T2 ({}) should admit before T3 ({})", t2_adm, t3_adm);
+        assert!(
+            t1_adm < t2_adm,
+            "FIFO violation: T1 ({}) should admit before T2 ({})",
+            t1_adm,
+            t2_adm
+        );
+        assert!(
+            t2_adm < t3_adm,
+            "FIFO violation: T2 ({}) should admit before T3 ({})",
+            t2_adm,
+            t3_adm
+        );
     }
 
     /// **D-5 H-1 fix validator**: contiguous reader concurrency.
@@ -1786,9 +1867,12 @@ mod cross_thread_tests {
         let count = observed_concurrent.load(StdOrdering::Relaxed);
         // With cascade: all 3 readers should observe count >= 2 (their
         // own plus at least one concurrent).  Without cascade: count = 0.
-        assert!(count >= 2,
+        assert!(
+            count >= 2,
             "Expected at least 2 concurrent-reader observations \
-             (H-1 cascade validation); got {}", count);
+             (H-1 cascade validation); got {}",
+            count
+        );
     }
 
     /// **D-5 acceptance gate (≥10 cross-thread tests)**: alternating
@@ -1819,9 +1903,12 @@ mod cross_thread_tests {
             h.join().unwrap();
         }
         // Final state must be clean.
-        assert_eq!(lock.peek_state(), 0,
-                   "state should be 0 after alternating R/W pattern; got {:#x}",
-                   lock.peek_state());
+        assert_eq!(
+            lock.peek_state(),
+            0,
+            "state should be 0 after alternating R/W pattern; got {:#x}",
+            lock.peek_state()
+        );
     }
 
     /// **D-5 acceptance gate (≥10 cross-thread tests)**: writer
@@ -1870,8 +1957,10 @@ mod cross_thread_tests {
         let t1 = thread::spawn(move || {
             lock_c.acquire_write(1);
             // Writer admitted.  Check that no reader was admitted before.
-            assert!(!r_adm_c.load(StdOrdering::SeqCst),
-                "writer starvation: reader admitted before queued writer");
+            assert!(
+                !r_adm_c.load(StdOrdering::SeqCst),
+                "writer starvation: reader admitted before queued writer"
+            );
             w_adm_c.store(true, StdOrdering::SeqCst);
             lock_c.release_write(1);
         });
@@ -1888,8 +1977,10 @@ mod cross_thread_tests {
         let t2 = thread::spawn(move || {
             lock_c.acquire_read(2);
             // Reader admitted.  Check that the queued writer was admitted first.
-            assert!(w_adm_c.load(StdOrdering::SeqCst),
-                "writer-after-reader: reader admitted before queued writer");
+            assert!(
+                w_adm_c.load(StdOrdering::SeqCst),
+                "writer-after-reader: reader admitted before queued writer"
+            );
             r_adm_c.store(true, StdOrdering::SeqCst);
             lock_c.release_read(2);
         });
@@ -1959,8 +2050,10 @@ mod cross_thread_tests {
         }
         stop_observer.store(true, StdOrdering::SeqCst);
         observer.join().unwrap();
-        assert!(!invariant_violated.load(StdOrdering::SeqCst),
-            "mutex invariant violated: observed state with both writer and readers");
+        assert!(
+            !invariant_violated.load(StdOrdering::SeqCst),
+            "mutex invariant violated: observed state with both writer and readers"
+        );
         assert_eq!(lock.peek_state(), 0);
     }
 
@@ -1991,8 +2084,12 @@ mod cross_thread_tests {
                     // Each thread increments ITS OWN counter while holding the lock.
                     let prev = counters_c[tid as usize].fetch_add(1, StdOrdering::SeqCst);
                     // The counter must not be touched by other slots.
-                    assert!(prev < ITER as u64,
-                        "slot {} counter overflowed: {} (alias detected?)", tid, prev);
+                    assert!(
+                        prev < ITER as u64,
+                        "slot {} counter overflowed: {} (alias detected?)",
+                        tid,
+                        prev
+                    );
                     lock_c.release_read(tid);
                 }
             }));
@@ -2003,8 +2100,11 @@ mod cross_thread_tests {
         // Each counter must equal exactly ITER.
         for tid in 0..MAX_WAITERS {
             let c = counters[tid].load(StdOrdering::SeqCst);
-            assert_eq!(c, ITER as u64,
-                "slot {} counter mismatch: expected {}, got {}", tid, ITER, c);
+            assert_eq!(
+                c, ITER as u64,
+                "slot {} counter mismatch: expected {}, got {}",
+                tid, ITER, c
+            );
         }
         assert_eq!(lock.peek_state(), 0);
     }
@@ -2038,8 +2138,11 @@ mod cross_thread_tests {
 
         // Lock should be released (state = 0).  If the guard's Drop didn't
         // fire on unwind, the writer bit would still be set and state ≠ 0.
-        assert_eq!(lock.peek_state(), 0,
-            "RAII guard Drop should release the lock on panic-unwind");
+        assert_eq!(
+            lock.peek_state(),
+            0,
+            "RAII guard Drop should release the lock on panic-unwind"
+        );
 
         // T1: verify the lock is usable again post-panic.
         let lock_c = Arc::clone(&lock);
@@ -2048,8 +2151,11 @@ mod cross_thread_tests {
             // Normal CS; guard's Drop releases on return.
         });
         t1.join().unwrap();
-        assert_eq!(lock.peek_state(), 0,
-            "lock must be usable after a previous holder panicked");
+        assert_eq!(
+            lock.peek_state(),
+            0,
+            "lock must be usable after a previous holder panicked"
+        );
     }
 
     /// **D-5 acceptance gate (≥10 cross-thread tests)**: panic-safety
@@ -2069,8 +2175,11 @@ mod cross_thread_tests {
             assert!(_result.is_err());
         });
         t0.join().unwrap();
-        assert_eq!(lock.peek_state(), 0,
-            "RAII guard Drop should release the read-lock on panic-unwind");
+        assert_eq!(
+            lock.peek_state(),
+            0,
+            "RAII guard Drop should release the read-lock on panic-unwind"
+        );
     }
 
     /// **D-5 acceptance gate (≥10 cross-thread tests)**: rapid
@@ -2098,9 +2207,16 @@ mod cross_thread_tests {
             h.join().unwrap();
         }
         // Total writes = 4 * 200 = 800.  Lock must end in state 0.
-        assert_eq!(lock.peek_state(), 0,
-            "rapid handover should leave state clean; got {:#x}", lock.peek_state());
-        assert_eq!(lock.peek_tail(), NONE_SENTINEL,
-            "rapid handover should leave queue empty");
+        assert_eq!(
+            lock.peek_state(),
+            0,
+            "rapid handover should leave state clean; got {:#x}",
+            lock.peek_state()
+        );
+        assert_eq!(
+            lock.peek_tail(),
+            NONE_SENTINEL,
+            "rapid handover should leave queue empty"
+        );
     }
 }

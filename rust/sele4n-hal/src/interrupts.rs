@@ -65,7 +65,10 @@ pub fn disable_interrupts() -> u64 {
         // Setting bits only increases masking — never unsafe. The #0xF
         // immediate sets all four DAIF bits. (ARM ARM C5.2.5)
         unsafe {
-            core::arch::asm!("msr daifset, #0xf", options(nomem, nostack, preserves_flags));
+            core::arch::asm!(
+                "msr daifset, #0xf",
+                options(nomem, nostack, preserves_flags)
+            );
         }
     }
     saved
@@ -95,7 +98,10 @@ pub fn enable_irq() {
         // delivery. This is safe to call at EL1 when the GIC and vector table
         // are properly configured. (ARM ARM C5.2.5)
         unsafe {
-            core::arch::asm!("msr daifclr, #0x2", options(nomem, nostack, preserves_flags));
+            core::arch::asm!(
+                "msr daifclr, #0x2",
+                options(nomem, nostack, preserves_flags)
+            );
         }
     }
 }
@@ -154,9 +160,7 @@ mod tests {
     #[test]
     fn with_interrupts_disabled_nesting() {
         // Nested critical sections should work correctly
-        let result = with_interrupts_disabled(|| {
-            with_interrupts_disabled(|| 99)
-        });
+        let result = with_interrupts_disabled(|| with_interrupts_disabled(|| 99));
         assert_eq!(result, 99);
     }
 

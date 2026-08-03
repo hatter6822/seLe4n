@@ -3,11 +3,11 @@
 //!
 //! Lean: `SeLe4n/Kernel/API.lean` — `apiVspaceMap`, `apiVspaceUnmap`.
 
-use sele4n_types::{CPtr, Asid, VAddr, PAddr, KernelResult, SyscallId};
+use sele4n_abi::args::{PagePerms, VSpaceMapArgs, VSpaceUnifyInstructionArgs, VSpaceUnmapArgs};
+use sele4n_abi::{invoke_syscall, MessageInfo, SyscallRequest, SyscallResponse};
 #[cfg(test)]
 use sele4n_types::KernelError;
-use sele4n_abi::{MessageInfo, SyscallRequest, SyscallResponse, invoke_syscall};
-use sele4n_abi::args::{VSpaceMapArgs, VSpaceUnmapArgs, VSpaceUnifyInstructionArgs, PagePerms};
+use sele4n_types::{Asid, CPtr, KernelResult, PAddr, SyscallId, VAddr};
 
 /// Map a physical page into a virtual address space.
 ///
@@ -26,7 +26,12 @@ pub fn vspace_map(
     // W^X pre-check (client-side, before syscall)
     perms.validate_wx()?;
 
-    let args = VSpaceMapArgs { asid, vaddr, paddr, perms };
+    let args = VSpaceMapArgs {
+        asid,
+        vaddr,
+        paddr,
+        perms,
+    };
     let encoded = args.encode();
     invoke_syscall(SyscallRequest {
         cap_addr: vspace_cap,
@@ -40,11 +45,7 @@ pub fn vspace_map(
 ///
 /// Lean: `apiVspaceUnmap` (API.lean) — requires `.write` right on `vspace_cap`.
 #[inline]
-pub fn vspace_unmap(
-    vspace_cap: CPtr,
-    asid: Asid,
-    vaddr: VAddr,
-) -> KernelResult<SyscallResponse> {
+pub fn vspace_unmap(vspace_cap: CPtr, asid: Asid, vaddr: VAddr) -> KernelResult<SyscallResponse> {
     let args = VSpaceUnmapArgs { asid, vaddr };
     let encoded = args.encode();
     invoke_syscall(SyscallRequest {
@@ -108,23 +109,44 @@ pub fn vspace_unify_instruction(
 
 /// Convenience: map a read-only page.
 pub fn vspace_map_read_only(
-    vspace_cap: CPtr, asid: Asid, vaddr: VAddr, paddr: PAddr,
+    vspace_cap: CPtr,
+    asid: Asid,
+    vaddr: VAddr,
+    paddr: PAddr,
 ) -> KernelResult<SyscallResponse> {
     vspace_map(vspace_cap, asid, vaddr, paddr, PagePerms::READ)
 }
 
 /// Convenience: map a read-write page.
 pub fn vspace_map_read_write(
-    vspace_cap: CPtr, asid: Asid, vaddr: VAddr, paddr: PAddr,
+    vspace_cap: CPtr,
+    asid: Asid,
+    vaddr: VAddr,
+    paddr: PAddr,
 ) -> KernelResult<SyscallResponse> {
-    vspace_map(vspace_cap, asid, vaddr, paddr, PagePerms::READ | PagePerms::WRITE)
+    vspace_map(
+        vspace_cap,
+        asid,
+        vaddr,
+        paddr,
+        PagePerms::READ | PagePerms::WRITE,
+    )
 }
 
 /// Convenience: map a read-execute page (code).
 pub fn vspace_map_read_execute(
-    vspace_cap: CPtr, asid: Asid, vaddr: VAddr, paddr: PAddr,
+    vspace_cap: CPtr,
+    asid: Asid,
+    vaddr: VAddr,
+    paddr: PAddr,
 ) -> KernelResult<SyscallResponse> {
-    vspace_map(vspace_cap, asid, vaddr, paddr, PagePerms::READ | PagePerms::EXECUTE)
+    vspace_map(
+        vspace_cap,
+        asid,
+        vaddr,
+        paddr,
+        PagePerms::READ | PagePerms::EXECUTE,
+    )
 }
 
 #[cfg(test)]
@@ -134,7 +156,13 @@ mod tests {
     #[test]
     fn wx_violation_rejected() {
         let wx = PagePerms::WRITE | PagePerms::EXECUTE;
-        let result = vspace_map(CPtr::from(1u64), Asid::from(1u64), VAddr::from(0x1000u64), PAddr::from(0x2000u64), wx);
+        let result = vspace_map(
+            CPtr::from(1u64),
+            Asid::from(1u64),
+            VAddr::from(0x1000u64),
+            PAddr::from(0x2000u64),
+            wx,
+        );
         assert_eq!(result, Err(KernelError::PolicyDenied));
     }
 }

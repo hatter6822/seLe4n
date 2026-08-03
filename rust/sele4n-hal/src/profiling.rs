@@ -135,7 +135,11 @@ impl LatencyStats {
 
     /// Compute the mean latency. Returns 0 if no samples recorded.
     pub fn mean(&self) -> u64 {
-        if self.count == 0 { 0 } else { self.sum / self.count }
+        if self.count == 0 {
+            0
+        } else {
+            self.sum / self.count
+        }
     }
 
     /// Check if any samples have been recorded.

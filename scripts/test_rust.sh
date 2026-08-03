@@ -62,16 +62,41 @@ run_cargo_step() {
     fi
 }
 
-echo "[1/3] Building all crates (host target)..."
+echo "[1/5] Building all crates (host target)..."
 run_cargo_step "Build succeeded" cargo build --all
 echo ""
 
-echo "[2/3] Running unit tests..."
+echo "[2/5] Running unit tests..."
 run_cargo_step "Unit tests passed" cargo test --all --features std
 echo ""
 
-echo "[3/3] Running conformance tests (RUST-XVAL-001..014)..."
+echo "[3/5] Running conformance tests (RUST-XVAL-001..014)..."
 run_cargo_step "Conformance tests passed" cargo test -p sele4n-abi --features std --test conformance
+echo ""
+
+# ----------------------------------------------------------------------------
+# Lint + format gates.
+#
+# `setup_lean_env.sh` has always installed the `clippy` and `rustfmt`
+# components, and `rust-toolchain.toml` has always listed them — but nothing
+# ever *ran* them, so "zero clippy warnings" and a consistent format were
+# claims no gate enforced.  Formatting drifted to a 6 187-line diff across 53
+# files before anyone noticed, and the clippy claim was true only because the
+# toolchain pin had frozen clippy three years behind stable.  Both are gated
+# here so neither can drift again.
+#
+# `--all-targets` covers tests and benches, not just the lib targets: a lint
+# that fires only in test code is still a lint.  `-D warnings` makes clippy
+# exit non-zero, since it reports findings as warnings by default and would
+# otherwise pass this gate while printing them.
+# ----------------------------------------------------------------------------
+
+echo "[4/5] Checking formatting (cargo fmt --check)..."
+run_cargo_step "Formatting is clean" cargo fmt --all --check
+echo ""
+
+echo "[5/5] Linting (cargo clippy --all-targets -D warnings)..."
+run_cargo_step "Clippy is clean" cargo clippy --all-targets -- -D warnings
 echo ""
 
 echo "=== All Rust tests passed ==="

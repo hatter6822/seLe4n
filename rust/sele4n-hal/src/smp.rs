@@ -1305,9 +1305,18 @@ mod tests {
         assert_eq!(table.len(), 1);
         let online = bring_up_secondaries_inner(&enabled, &ready, &count, table);
         assert_eq!(online, 1);
-        assert!(ready[1].load(Ordering::Acquire), "first secondary should be ready");
-        assert!(!ready[2].load(Ordering::Acquire), "second secondary not spawned");
-        assert!(!ready[3].load(Ordering::Acquire), "third secondary not spawned");
+        assert!(
+            ready[1].load(Ordering::Acquire),
+            "first secondary should be ready"
+        );
+        assert!(
+            !ready[2].load(Ordering::Acquire),
+            "second secondary not spawned"
+        );
+        assert!(
+            !ready[3].load(Ordering::Acquire),
+            "third secondary not spawned"
+        );
     }
 
     #[test]
@@ -1341,12 +1350,7 @@ mod tests {
         // Iterate over `ready[1..=MAX_SECONDARY_CORES]` via
         // `enumerate().skip(1).take(MAX_SECONDARY_CORES)` to keep
         // clippy's `needless_range_loop` lint quiet.
-        for (idx, slot) in ready
-            .iter()
-            .enumerate()
-            .skip(1)
-            .take(MAX_SECONDARY_CORES)
-        {
+        for (idx, slot) in ready.iter().enumerate().skip(1).take(MAX_SECONDARY_CORES) {
             assert!(
                 slot.load(Ordering::Acquire),
                 "secondary {} should be ready",
@@ -1548,13 +1552,8 @@ mod tests {
     #[test]
     fn sm1d6_inner_function_signature_pin() {
         // SM1.D.6 audit-pass-1: pin the inner-helper ABI.
-        let _: fn(
-            usize,
-            &AtomicBool,
-            &[AtomicBool],
-            &AtomicU32,
-            &[u64],
-        ) -> u32 = bring_up_secondaries_with_limit_inner;
+        let _: fn(usize, &AtomicBool, &[AtomicBool], &AtomicU32, &[u64]) -> u32 =
+            bring_up_secondaries_with_limit_inner;
     }
 
     // ========================================================================
@@ -1683,7 +1682,11 @@ mod tests {
         let online1 = bring_up_secondaries_inner(&enabled, &ready, &count, &SECONDARY_MPIDR_TABLE);
         assert_eq!(online1, MAX_SECONDARY_CORES as u32);
         for (idx, slot) in ready.iter().enumerate().skip(1) {
-            assert!(slot.load(Ordering::Acquire), "after round 1: slot {} ready", idx);
+            assert!(
+                slot.load(Ordering::Acquire),
+                "after round 1: slot {} ready",
+                idx
+            );
         }
 
         // Round 2: invoke again.  The bring-up loop's per-iteration
@@ -1699,8 +1702,11 @@ mod tests {
         let online2 = bring_up_secondaries_inner(&enabled, &ready, &count, &SECONDARY_MPIDR_TABLE);
         assert_eq!(online2, MAX_SECONDARY_CORES as u32);
         for (idx, slot) in ready.iter().enumerate().skip(1) {
-            assert!(slot.load(Ordering::Acquire),
-                "after round 2: slot {} ready (monotonic)", idx);
+            assert!(
+                slot.load(Ordering::Acquire),
+                "after round 2: slot {} ready (monotonic)",
+                idx
+            );
         }
         // Monotonicity at the count level: `online_count` reports the
         // most recent round (Release semantics, not accumulation).  A
@@ -1752,8 +1758,12 @@ mod tests {
             }
         }
         for (idx, slot) in slots.iter().enumerate() {
-            assert_eq!(slot.sgi_count.load(Ordering::Relaxed), 5,
-                "slot {} should have 5 SGIs", idx);
+            assert_eq!(
+                slot.sgi_count.load(Ordering::Relaxed),
+                5,
+                "slot {} should have 5 SGIs",
+                idx
+            );
             // Cross-counter independence.
             assert_eq!(slot.irq_count.load(Ordering::Relaxed), 0);
             assert_eq!(slot.timer_tick_count.load(Ordering::Relaxed), 0);

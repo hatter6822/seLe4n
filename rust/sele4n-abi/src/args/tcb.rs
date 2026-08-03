@@ -69,11 +69,15 @@ impl SetPriorityArgs {
     /// Validates priority ≤ 255 at the decode boundary.
     /// Returns `InvalidArgument` on out-of-range (matches Lean `decodeSetPriorityArgs`).
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
-        if regs.is_empty() { return Err(KernelError::InvalidMessageInfo); }
+        if regs.is_empty() {
+            return Err(KernelError::InvalidMessageInfo);
+        }
         if regs[0] > MAX_PRIORITY {
             return Err(KernelError::InvalidArgument);
         }
-        Ok(Self { new_priority: regs[0] })
+        Ok(Self {
+            new_priority: regs[0],
+        })
     }
 }
 
@@ -95,7 +99,9 @@ impl SetMCPriorityArgs {
     /// Validates MCP ≤ 255 at the decode boundary.
     /// Returns `InvalidArgument` on out-of-range (matches Lean `decodeSetMCPriorityArgs`).
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
-        if regs.is_empty() { return Err(KernelError::InvalidMessageInfo); }
+        if regs.is_empty() {
+            return Err(KernelError::InvalidMessageInfo);
+        }
         if regs[0] > MAX_PRIORITY {
             return Err(KernelError::InvalidArgument);
         }
@@ -130,11 +136,15 @@ impl SetIPCBufferArgs {
     /// 1.82.  `IPC_BUFFER_ALIGNMENT = 512` is a power of 2, so the
     /// two forms are mathematically equivalent.
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
-        if regs.is_empty() { return Err(KernelError::InvalidMessageInfo); }
+        if regs.is_empty() {
+            return Err(KernelError::InvalidMessageInfo);
+        }
         if (regs[0] & (IPC_BUFFER_ALIGNMENT - 1)) != 0 {
             return Err(KernelError::AlignmentError);
         }
-        Ok(Self { buffer_addr: regs[0] })
+        Ok(Self {
+            buffer_addr: regs[0],
+        })
     }
 }
 
@@ -159,8 +169,12 @@ impl SetAffinityArgs {
     /// The semantic range check (`< numCores`, or the unbind marker) is performed
     /// kernel-side by `decodeAffinity`, matching Lean `decodeSetAffinityArgs`.
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
-        if regs.is_empty() { return Err(KernelError::InvalidMessageInfo); }
-        Ok(Self { affinity_raw: regs[0] })
+        if regs.is_empty() {
+            return Err(KernelError::InvalidMessageInfo);
+        }
+        Ok(Self {
+            affinity_raw: regs[0],
+        })
     }
 }
 
@@ -199,12 +213,18 @@ mod tests {
 
     #[test]
     fn set_priority_out_of_range() {
-        assert_eq!(SetPriorityArgs::decode(&[256]), Err(KernelError::InvalidArgument));
+        assert_eq!(
+            SetPriorityArgs::decode(&[256]),
+            Err(KernelError::InvalidArgument)
+        );
     }
 
     #[test]
     fn set_priority_insufficient_regs() {
-        assert_eq!(SetPriorityArgs::decode(&[]), Err(KernelError::InvalidMessageInfo));
+        assert_eq!(
+            SetPriorityArgs::decode(&[]),
+            Err(KernelError::InvalidMessageInfo)
+        );
     }
 
     #[test]
@@ -215,12 +235,18 @@ mod tests {
 
     #[test]
     fn set_mcp_out_of_range() {
-        assert_eq!(SetMCPriorityArgs::decode(&[256]), Err(KernelError::InvalidArgument));
+        assert_eq!(
+            SetMCPriorityArgs::decode(&[256]),
+            Err(KernelError::InvalidArgument)
+        );
     }
 
     #[test]
     fn set_mcp_insufficient_regs() {
-        assert_eq!(SetMCPriorityArgs::decode(&[]), Err(KernelError::InvalidMessageInfo));
+        assert_eq!(
+            SetMCPriorityArgs::decode(&[]),
+            Err(KernelError::InvalidMessageInfo)
+        );
     }
 
     // -- D3: SetIPCBuffer --
@@ -239,7 +265,10 @@ mod tests {
 
     #[test]
     fn set_ipc_buffer_unaligned() {
-        assert_eq!(SetIPCBufferArgs::decode(&[513]), Err(KernelError::AlignmentError));
+        assert_eq!(
+            SetIPCBufferArgs::decode(&[513]),
+            Err(KernelError::AlignmentError)
+        );
     }
 
     #[test]
@@ -251,7 +280,10 @@ mod tests {
 
     #[test]
     fn set_ipc_buffer_insufficient_regs() {
-        assert_eq!(SetIPCBufferArgs::decode(&[]), Err(KernelError::InvalidMessageInfo));
+        assert_eq!(
+            SetIPCBufferArgs::decode(&[]),
+            Err(KernelError::InvalidMessageInfo)
+        );
     }
 
     // -- WS-SM SM5.H.4: SetAffinity --
@@ -279,6 +311,9 @@ mod tests {
 
     #[test]
     fn set_affinity_insufficient_regs() {
-        assert_eq!(SetAffinityArgs::decode(&[]), Err(KernelError::InvalidMessageInfo));
+        assert_eq!(
+            SetAffinityArgs::decode(&[]),
+            Err(KernelError::InvalidMessageInfo)
+        );
     }
 }

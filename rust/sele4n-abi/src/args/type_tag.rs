@@ -42,7 +42,9 @@ impl TypeTag {
 
     /// Convert to raw u64.
     #[inline]
-    pub const fn to_u64(self) -> u64 { self as u64 }
+    pub const fn to_u64(self) -> u64 {
+        self as u64
+    }
 }
 
 #[cfg(test)]

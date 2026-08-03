@@ -508,8 +508,8 @@ mod tests {
                 u64::from(i),
                 "sele4n-types round-trip failed at id {i}"
             );
-            let hal = SyscallId::from_u32(i)
-                .expect("HAL mirror must decode every canonical syscall id");
+            let hal =
+                SyscallId::from_u32(i).expect("HAL mirror must decode every canonical syscall id");
             assert_eq!(
                 hal.to_u32(),
                 i,
@@ -533,7 +533,10 @@ mod tests {
         frame.gprs[5] = 0x6666;
         frame.gprs[6] = 0x7777;
         let args = SyscallArgs::from_trap_frame(&frame);
-        assert_eq!(args.msg_regs, [0x1111, 0x2222, 0x3333, 0x4444, 0x5555, 0x6666]);
+        assert_eq!(
+            args.msg_regs,
+            [0x1111, 0x2222, 0x3333, 0x4444, 0x5555, 0x6666]
+        );
         assert_eq!(args.ipc_buffer_addr, Some(0x7777));
         // msg_info comes from x1
         assert_eq!(args.msg_info, 0x2222);

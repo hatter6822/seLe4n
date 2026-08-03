@@ -23,20 +23,20 @@
 #[cfg(feature = "std")]
 extern crate std;
 
-pub mod message_info;
-pub mod encode;
-pub mod decode;
-pub mod trap;
 pub mod args;
+pub mod decode;
+pub mod encode;
 pub mod ipc_buffer;
+pub mod message_info;
 pub mod registers;
+pub mod trap;
 
-pub use message_info::MessageInfo;
-pub use encode::{SyscallRequest, encode_syscall};
-pub use decode::{SyscallResponse, decode_response};
-pub use trap::invoke_syscall;
 pub use args::*;
+pub use decode::{decode_response, SyscallResponse};
+pub use encode::{encode_syscall, SyscallRequest};
 pub use ipc_buffer::IpcBuffer;
+pub use message_info::MessageInfo;
 pub use registers::RegisterFile;
+pub use trap::invoke_syscall;
 
 pub use sele4n_types;

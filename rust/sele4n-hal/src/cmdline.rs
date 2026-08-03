@@ -697,12 +697,8 @@ fn find_bootargs_in_dtb(blob: &[u8]) -> Option<&[u8]> {
                 // cases where a /chosen/sub appears between /chosen's
                 // direct properties.
                 if in_chosen && depth == chosen_depth {
-                    let prop_name = lookup_fdt_string(
-                        blob,
-                        strings_off,
-                        strings_size,
-                        nameoff as usize,
-                    )?;
+                    let prop_name =
+                        lookup_fdt_string(blob, strings_off, strings_size, nameoff as usize)?;
                     if prop_name == b"bootargs" {
                         return blob.get(value_start..value_end);
                     }
@@ -835,8 +831,7 @@ pub fn extract_bootargs_into(dtb_ptr: u64, buffer: &mut [u8]) -> &str {
                         // (same as missing/malformed DTB).
                         ""
                     } else {
-                        let full_slice =
-                            core::slice::from_raw_parts(dtb_ptr as *const u8, total);
+                        let full_slice = core::slice::from_raw_parts(dtb_ptr as *const u8, total);
                         bootargs_to_buffer(full_slice, buffer)
                     }
                 }
@@ -1037,7 +1032,12 @@ mod tests {
     #[test]
     fn parse_smp_enabled_true_alias_yes_on_one() {
         // SM1.D.1: every accepted truthy alias maps to `true`.
-        for token in &["smp_enabled=true", "smp_enabled=yes", "smp_enabled=on", "smp_enabled=1"] {
+        for token in &[
+            "smp_enabled=true",
+            "smp_enabled=yes",
+            "smp_enabled=on",
+            "smp_enabled=1",
+        ] {
             let cfg = parse_cmdline(token);
             assert!(cfg.smp_enabled, "{token} should set smp_enabled=true");
         }
@@ -1046,7 +1046,12 @@ mod tests {
     #[test]
     fn parse_smp_enabled_false_alias_no_off_zero() {
         // SM1.D.1: every accepted falsy alias maps to `false`.
-        for token in &["smp_enabled=false", "smp_enabled=no", "smp_enabled=off", "smp_enabled=0"] {
+        for token in &[
+            "smp_enabled=false",
+            "smp_enabled=no",
+            "smp_enabled=off",
+            "smp_enabled=0",
+        ] {
             let cfg = parse_cmdline(token);
             assert!(!cfg.smp_enabled, "{token} should set smp_enabled=false");
         }
@@ -1188,7 +1193,10 @@ mod tests {
         // SM1.D.1 robustness: unmatched quotes treated as part of
         // value (which then doesn't match any bool alias).
         let cfg = parse_cmdline("smp_enabled=\"false");
-        assert!(cfg.smp_enabled, "default `true` preserved on partial-quote value");
+        assert!(
+            cfg.smp_enabled,
+            "default `true` preserved on partial-quote value"
+        );
     }
 
     #[test]
@@ -1372,8 +1380,7 @@ mod tests {
         // SM1.D.1 end-to-end: build a minimal DTB containing
         // `/chosen/bootargs = "smp_enabled=false"` and walk it.
         let dtb = build_dtb_with_bootargs(b"smp_enabled=false");
-        let bootargs = find_bootargs_in_dtb(&dtb)
-            .expect("synthesised DTB should yield bootargs");
+        let bootargs = find_bootargs_in_dtb(&dtb).expect("synthesised DTB should yield bootargs");
         assert_eq!(bootargs, b"smp_enabled=false\0");
     }
 
@@ -1697,12 +1704,8 @@ mod tests {
     /// node in the structure stream and is found first.
     #[test]
     fn dtb_with_direct_and_nested_chosen_bootargs_picks_direct() {
-        let dtb = build_dtb_chosen_with_direct_and_nested_bootargs(
-            b"real_value",
-            b"fake_value",
-        );
-        let bootargs = find_bootargs_in_dtb(&dtb)
-            .expect("direct /chosen/bootargs must be found");
+        let dtb = build_dtb_chosen_with_direct_and_nested_bootargs(b"real_value", b"fake_value");
+        let bootargs = find_bootargs_in_dtb(&dtb).expect("direct /chosen/bootargs must be found");
         assert_eq!(
             bootargs, b"real_value\0",
             "audit-pass-1: walker must return the DIRECT /chosen/bootargs, \
@@ -1865,8 +1868,7 @@ mod tests {
         // this and return None.
         let mut dtb = build_dtb_with_bootargs(b"smp_enabled=false");
         // Find the off_dt_struct value (header bytes 8..12).
-        let off_dt_struct =
-            u32::from_be_bytes([dtb[8], dtb[9], dtb[10], dtb[11]]) as usize;
+        let off_dt_struct = u32::from_be_bytes([dtb[8], dtb[9], dtb[10], dtb[11]]) as usize;
         // Overwrite the first 4 bytes of the structure block with an
         // unknown token value (0x42).
         let unknown_token = 0x42u32.to_be_bytes();
@@ -1997,9 +1999,8 @@ mod tests {
         for len in 1usize..=7 {
             let value = vec![b'a'; len];
             let dtb = build_dtb_with_bootargs(&value);
-            let bootargs = find_bootargs_in_dtb(&dtb).unwrap_or_else(|| {
-                panic!("padding stress failed at len={}", len)
-            });
+            let bootargs = find_bootargs_in_dtb(&dtb)
+                .unwrap_or_else(|| panic!("padding stress failed at len={}", len));
             assert_eq!(
                 bootargs.len(),
                 len + 1,
@@ -2020,8 +2021,7 @@ mod tests {
     // dispatch helper was only tested indirectly.
     // ========================================================================
 
-    fn fresh_local_smp_state(
-    ) -> (
+    fn fresh_local_smp_state() -> (
         core::sync::atomic::AtomicBool,
         [core::sync::atomic::AtomicBool; 4],
         core::sync::atomic::AtomicU32,
@@ -2146,7 +2146,10 @@ mod tests {
             &count,
             &crate::smp::SECONDARY_MPIDR_TABLE,
         );
-        assert_eq!(online, 1, "smp_max_cores=2 must bring up exactly 1 secondary");
+        assert_eq!(
+            online, 1,
+            "smp_max_cores=2 must bring up exactly 1 secondary"
+        );
         assert!(enabled.load(Ordering::Acquire));
         assert!(
             ready[1].load(Ordering::Acquire),

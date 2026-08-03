@@ -196,9 +196,11 @@ impl RwLock {
             // corrupt the lock state to "writer held".  Fail-closed by
             // parking on WFE instead of corrupting.
             if s == READER_MASK {
-                debug_assert!(false,
+                debug_assert!(
+                    false,
                     "RwLock reader count exhausted (impossible under numCores ≤ 4); \
-                     state was 0x{s:x}");
+                     state was 0x{s:x}"
+                );
                 crate::cpu::wfe_bounded(crate::cpu::WFE_DEFAULT_TIMEOUT_TICKS);
                 continue;
             }
@@ -210,9 +212,11 @@ impl RwLock {
                 new_state & WRITER_BIT == 0,
                 "RwLock reader count overflow (impossible under numCores ≤ 4)"
             );
-            if self.state.compare_exchange(
-                s, new_state, Ordering::Acquire, Ordering::Relaxed,
-            ).is_ok() {
+            if self
+                .state
+                .compare_exchange(s, new_state, Ordering::Acquire, Ordering::Relaxed)
+                .is_ok()
+            {
                 return;
             }
             // CAS failed; another thread modified state.  Retry.
@@ -392,9 +396,11 @@ impl RwLock {
                 continue;
             }
             // State = 0; attempt to claim writer bit.
-            if self.state.compare_exchange(
-                0, WRITER_BIT, Ordering::Acquire, Ordering::Relaxed,
-            ).is_ok() {
+            if self
+                .state
+                .compare_exchange(0, WRITER_BIT, Ordering::Acquire, Ordering::Relaxed)
+                .is_ok()
+            {
                 return;
             }
             // CAS failed; retry.
@@ -848,8 +854,11 @@ mod tests {
         }));
         assert!(result.is_err(), "panic should have been caught");
         // Lock must be released: state should be 0.
-        assert_eq!(lock.state.load(Ordering::Acquire), 0,
-                   "Drop on RwLockReadGuard must release on panic-unwind");
+        assert_eq!(
+            lock.state.load(Ordering::Acquire),
+            0,
+            "Drop on RwLockReadGuard must release on panic-unwind"
+        );
     }
 
     /// **SM2.C.19 test**: panic-safety — with_write releases on panic.
@@ -865,8 +874,11 @@ mod tests {
         }));
         assert!(result.is_err(), "panic should have been caught");
         // Lock must be released.
-        assert_eq!(lock.state.load(Ordering::Acquire), 0,
-                   "Drop on RwLockWriteGuard must release on panic-unwind");
+        assert_eq!(
+            lock.state.load(Ordering::Acquire),
+            0,
+            "Drop on RwLockWriteGuard must release on panic-unwind"
+        );
     }
 
     /// **SM2.C.19 test**: debug_assert catches release_read without acquire.
@@ -935,8 +947,8 @@ mod tests {
     /// concurrent writes might still satisfy those bounds.)
     #[test]
     fn sm2c22_cross_thread_mixed_stress() {
-        use std::sync::Arc;
         use std::cell::UnsafeCell;
+        use std::sync::Arc;
         // Shared counter + writer-id-sentinel; writer writes both atomically
         // (under lock).  Readers verify the sentinel matches a recent
         // writer's id.
@@ -961,7 +973,7 @@ mod tests {
         for thread_idx in 0..NUM_THREADS {
             let s = Arc::clone(&shared);
             let ev = Arc::clone(&exclusion_violations);
-            let writer_id: u64 = (thread_idx as u64) + 1;  // 1..=NUM_THREADS
+            let writer_id: u64 = (thread_idx as u64) + 1; // 1..=NUM_THREADS
             handles.push(std::thread::spawn(move || {
                 for op_idx in 0..OPS_PER_THREAD {
                     if op_idx % 4 == thread_idx % 4 {
@@ -1009,15 +1021,19 @@ mod tests {
         let final_count = unsafe { *shared.counter.get() };
         assert!(final_count > 0, "writers should have incremented counter");
         let upper_bound = (NUM_THREADS * OPS_PER_THREAD) as u64;
-        assert!(final_count <= upper_bound,
-                "counter {final_count} exceeds upper bound {upper_bound}");
+        assert!(
+            final_count <= upper_bound,
+            "counter {final_count} exceeds upper bound {upper_bound}"
+        );
         // CRITICAL: zero exclusion violations.  Any non-zero count indicates
         // a writer observed its OWN sentinel modified (writer-writer
         // exclusion violation) or a reader saw an inconsistent count/id
         // pair (reader-writer or torn-read violation).
         let violations = exclusion_violations.load(std::sync::atomic::Ordering::Relaxed);
-        assert_eq!(violations, 0,
-            "RwLock exclusion violated: {violations} torn or interleaved observations");
+        assert_eq!(
+            violations, 0,
+            "RwLock exclusion violated: {violations} torn or interleaved observations"
+        );
     }
 
     /// **SM2.C.22 cross-thread stress test**: reader-multiplicity (deterministic).
@@ -1057,7 +1073,8 @@ mod tests {
                 count
             }));
         }
-        let observed: std::vec::Vec<u64> = handles.into_iter()
+        let observed: std::vec::Vec<u64> = handles
+            .into_iter()
             .map(|h| h.join().expect("worker thread panicked"))
             .collect();
         // All released.
@@ -1066,8 +1083,10 @@ mod tests {
         // the barrier guarantees all NUM_READERS have acquired before any
         // snapshot, and none release before all have snapshotted.
         for (i, count) in observed.iter().enumerate() {
-            assert!(*count >= NUM_READERS as u64,
-                "thread {i} snapshot saw only {count} readers, expected >= {NUM_READERS}");
+            assert!(
+                *count >= NUM_READERS as u64,
+                "thread {i} snapshot saw only {count} readers, expected >= {NUM_READERS}"
+            );
         }
     }
 
@@ -1109,8 +1128,8 @@ mod tests {
     /// space on stable Rust.) -/
     #[test]
     fn sm2c22_cross_thread_writer_excludes_readers() {
-        use std::sync::Arc;
         use std::sync::atomic::{AtomicBool, AtomicU64, Ordering as O};
+        use std::sync::Arc;
         const NUM_READERS: usize = 3;
         let lock = Arc::new(RwLock::new());
         // Signal that the writer has acquired and the readers should start.
@@ -1153,14 +1172,16 @@ mod tests {
                 // hypothetical case where a buggy RwLock allowed a reader
                 // to acquire while writer was held).
                 let (w2, c2) = l.snapshot();
-                assert!(w2, "writer-held snapshot mid-test should still show writer=true");
+                assert!(
+                    w2,
+                    "writer-held snapshot mid-test should still show writer=true"
+                );
                 assert_eq!(c2, 0, "writer-held snapshot mid-test should show count=0");
                 l.release_write();
             })
         };
         // Reader threads.
-        let mut reader_handles: std::vec::Vec<std::thread::JoinHandle<bool>> =
-            std::vec::Vec::new();
+        let mut reader_handles: std::vec::Vec<std::thread::JoinHandle<bool>> = std::vec::Vec::new();
         for _ in 0..NUM_READERS {
             let l = Arc::clone(&lock);
             let wa = Arc::clone(&writer_acquired);
@@ -1184,8 +1205,10 @@ mod tests {
         writer_handle.join().expect("writer thread panicked");
         for (i, h) in reader_handles.into_iter().enumerate() {
             let writer_was_clear = h.join().expect("reader thread panicked");
-            assert!(writer_was_clear,
-                "reader {i} observed writer-bit set after acquire_read (exclusion violated!)");
+            assert!(
+                writer_was_clear,
+                "reader {i} observed writer-bit set after acquire_read (exclusion violated!)"
+            );
         }
         // All released.
         assert_eq!(lock.state.load(O::Acquire), 0);

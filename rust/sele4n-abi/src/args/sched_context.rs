@@ -29,14 +29,22 @@ pub struct SchedContextConfigureArgs {
 
 impl SchedContextConfigureArgs {
     pub const fn encode(&self) -> [u64; 5] {
-        [self.budget, self.period, self.priority, self.deadline, self.domain]
+        [
+            self.budget,
+            self.period,
+            self.priority,
+            self.deadline,
+            self.domain,
+        ]
     }
 
     /// Decode from message registers. Requires 5 registers.
     ///
     /// Validates priority ≤ 255 and domain ≤ 15 at the decode boundary.
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
-        if regs.len() < 5 { return Err(KernelError::InvalidMessageInfo); }
+        if regs.len() < 5 {
+            return Err(KernelError::InvalidMessageInfo);
+        }
         if regs[2] > MAX_PRIORITY {
             return Err(KernelError::InvalidSyscallArgument);
         }
@@ -72,8 +80,12 @@ impl SchedContextBindArgs {
 
     /// Decode from message registers. Requires 1 register.
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
-        if regs.is_empty() { return Err(KernelError::InvalidMessageInfo); }
-        Ok(Self { thread_id: ThreadId::from(regs[0]) })
+        if regs.is_empty() {
+            return Err(KernelError::InvalidMessageInfo);
+        }
+        Ok(Self {
+            thread_id: ThreadId::from(regs[0]),
+        })
     }
 }
 
@@ -102,14 +114,24 @@ mod tests {
     #[test]
     fn configure_roundtrip() {
         let args = SchedContextConfigureArgs {
-            budget: 1000, period: 5000, priority: 128, deadline: 10000, domain: 0,
+            budget: 1000,
+            period: 5000,
+            priority: 128,
+            deadline: 10000,
+            domain: 0,
         };
-        assert_eq!(SchedContextConfigureArgs::decode(&args.encode()).unwrap(), args);
+        assert_eq!(
+            SchedContextConfigureArgs::decode(&args.encode()).unwrap(),
+            args
+        );
     }
 
     #[test]
     fn configure_insufficient_regs() {
-        assert_eq!(SchedContextConfigureArgs::decode(&[1, 2, 3, 4]), Err(KernelError::InvalidMessageInfo));
+        assert_eq!(
+            SchedContextConfigureArgs::decode(&[1, 2, 3, 4]),
+            Err(KernelError::InvalidMessageInfo)
+        );
     }
 
     #[test]
@@ -144,19 +166,30 @@ mod tests {
 
     #[test]
     fn bind_roundtrip() {
-        let args = SchedContextBindArgs { thread_id: ThreadId::from(42u64) };
+        let args = SchedContextBindArgs {
+            thread_id: ThreadId::from(42u64),
+        };
         assert_eq!(SchedContextBindArgs::decode(&args.encode()).unwrap(), args);
     }
 
     #[test]
     fn bind_insufficient_regs() {
-        assert_eq!(SchedContextBindArgs::decode(&[]), Err(KernelError::InvalidMessageInfo));
+        assert_eq!(
+            SchedContextBindArgs::decode(&[]),
+            Err(KernelError::InvalidMessageInfo)
+        );
     }
 
     #[test]
     fn unbind_roundtrip() {
-        assert_eq!(SchedContextUnbindArgs::decode(&[]).unwrap(), SchedContextUnbindArgs);
+        assert_eq!(
+            SchedContextUnbindArgs::decode(&[]).unwrap(),
+            SchedContextUnbindArgs
+        );
         // Extra registers are ignored
-        assert_eq!(SchedContextUnbindArgs::decode(&[1, 2, 3]).unwrap(), SchedContextUnbindArgs);
+        assert_eq!(
+            SchedContextUnbindArgs::decode(&[1, 2, 3]).unwrap(),
+            SchedContextUnbindArgs
+        );
     }
 }

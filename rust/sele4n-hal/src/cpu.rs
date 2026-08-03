@@ -540,8 +540,11 @@ mod tests {
         // AK5-I invariant: primary boot core is the unique MPIDR whose
         // masked core ID is 0. Any non-zero cluster or core ID fails.
         for raw in [0x0001_u64, 0x0100, 0x0001_0000, 0x00FF_FFFF] {
-            assert_ne!(raw & MPIDR_CORE_ID_MASK, 0,
-                "MPIDR {raw:#x} incorrectly alias to boot core");
+            assert_ne!(
+                raw & MPIDR_CORE_ID_MASK,
+                0,
+                "MPIDR {raw:#x} incorrectly alias to boot core"
+            );
         }
     }
 
@@ -584,8 +587,11 @@ mod tests {
         // AN9-G: the host stub returns exactly 0 elapsed ticks so the
         // caller's "did we time out" check (`elapsed >= max_ticks`)
         // resolves consistently to false unless `max_ticks == 0`.
-        assert_eq!(wfe_bounded(WFE_DEFAULT_TIMEOUT_TICKS), 0,
-            "host stub must return zero elapsed ticks");
+        assert_eq!(
+            wfe_bounded(WFE_DEFAULT_TIMEOUT_TICKS),
+            0,
+            "host stub must return zero elapsed ticks"
+        );
     }
 
     #[test]
@@ -614,8 +620,10 @@ mod tests {
         // used by the aarch64 build.
         let from_static: u64 = MPIDR_CORE_ID_MASK_SYM;
         let from_constant: u64 = MPIDR_CORE_ID_MASK;
-        assert_eq!(from_static, from_constant,
-            "Shared static MPIDR_CORE_ID_MASK_SYM drifted from the constant");
+        assert_eq!(
+            from_static, from_constant,
+            "Shared static MPIDR_CORE_ID_MASK_SYM drifted from the constant"
+        );
     }
 
     // ========================================================================

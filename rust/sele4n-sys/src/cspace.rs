@@ -4,9 +4,9 @@
 //! Lean: `SeLe4n/Kernel/API.lean` — `apiCspaceMint`, `apiCspaceCopy`,
 //! `apiCspaceMove`, `apiCspaceDelete`.
 
-use sele4n_types::{CPtr, Slot, Badge, AccessRights, KernelResult, SyscallId};
-use sele4n_abi::{MessageInfo, SyscallRequest, SyscallResponse, invoke_syscall};
 use sele4n_abi::args::cspace::*;
+use sele4n_abi::{invoke_syscall, MessageInfo, SyscallRequest, SyscallResponse};
+use sele4n_types::{AccessRights, Badge, CPtr, KernelResult, Slot, SyscallId};
 
 /// Mint a new capability with restricted rights and/or badge.
 ///
@@ -22,7 +22,12 @@ pub fn cspace_mint(
     rights: AccessRights,
     badge: Badge,
 ) -> KernelResult<SyscallResponse> {
-    let args = CSpaceMintArgs { src_slot, dst_slot, rights, badge };
+    let args = CSpaceMintArgs {
+        src_slot,
+        dst_slot,
+        rights,
+        badge,
+    };
     let encoded = args.encode();
     invoke_syscall(SyscallRequest {
         cap_addr: cnode_cap,
@@ -74,10 +79,7 @@ pub fn cspace_move(
 ///
 /// Lean: `apiCspaceDelete` (API.lean) — requires `.write` right on `cnode_cap`.
 #[inline]
-pub fn cspace_delete(
-    cnode_cap: CPtr,
-    target_slot: Slot,
-) -> KernelResult<SyscallResponse> {
+pub fn cspace_delete(cnode_cap: CPtr, target_slot: Slot) -> KernelResult<SyscallResponse> {
     let args = CSpaceDeleteArgs { target_slot };
     let encoded = args.encode();
     invoke_syscall(SyscallRequest {

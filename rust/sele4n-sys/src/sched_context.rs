@@ -5,9 +5,9 @@
 //! `apiSchedContextBind`, `apiSchedContextUnbind`. Added in WS-Z Phase Z5.
 //! All require `.write` right on the target SchedContext capability.
 
-use sele4n_types::{CPtr, KernelResult, SyscallId, ThreadId};
-use sele4n_abi::{MessageInfo, SyscallRequest, SyscallResponse, IpcBuffer, invoke_syscall};
 use sele4n_abi::args::sched_context::*;
+use sele4n_abi::{invoke_syscall, IpcBuffer, MessageInfo, SyscallRequest, SyscallResponse};
+use sele4n_types::{CPtr, KernelResult, SyscallId, ThreadId};
 
 /// Configure a scheduling context's CBS parameters.
 ///
@@ -65,10 +65,7 @@ pub fn sched_context_configure(
 /// Lean: `apiSchedContextBind` (API.lean) — requires `.write` right.
 /// The thread is identified by its ThreadId passed in MR[0].
 #[inline]
-pub fn sched_context_bind(
-    sc_cap: CPtr,
-    thread_id: ThreadId,
-) -> KernelResult<SyscallResponse> {
+pub fn sched_context_bind(sc_cap: CPtr, thread_id: ThreadId) -> KernelResult<SyscallResponse> {
     let args = SchedContextBindArgs { thread_id };
     let encoded = args.encode();
     invoke_syscall(SyscallRequest {
@@ -84,9 +81,7 @@ pub fn sched_context_bind(
 /// Lean: `apiSchedContextUnbind` (API.lean) — requires `.write` right.
 /// Capability-only: no additional message registers needed.
 #[inline]
-pub fn sched_context_unbind(
-    sc_cap: CPtr,
-) -> KernelResult<SyscallResponse> {
+pub fn sched_context_unbind(sc_cap: CPtr) -> KernelResult<SyscallResponse> {
     let _args = SchedContextUnbindArgs;
     invoke_syscall(SyscallRequest {
         cap_addr: sc_cap,

@@ -344,9 +344,7 @@ pub fn syscall_count_for(core_id: usize) -> u64 {
     if core_id >= PER_CPU_STATS.len() {
         return 0;
     }
-    PER_CPU_STATS[core_id]
-        .syscall_count
-        .load(Ordering::Relaxed)
+    PER_CPU_STATS[core_id].syscall_count.load(Ordering::Relaxed)
 }
 
 /// **WS-SM SM1.I.4**: read a specific core's VM-fault count.
@@ -355,9 +353,7 @@ pub fn vm_fault_count_for(core_id: usize) -> u64 {
     if core_id >= PER_CPU_STATS.len() {
         return 0;
     }
-    PER_CPU_STATS[core_id]
-        .vmfault_count
-        .load(Ordering::Relaxed)
+    PER_CPU_STATS[core_id].vmfault_count.load(Ordering::Relaxed)
 }
 
 /// **WS-SM SM1.I.4**: read a specific core's user-exception count.
@@ -507,7 +503,11 @@ mod tests {
         ];
         for (i, &ai) in addrs.iter().enumerate() {
             for (j, &aj) in addrs.iter().enumerate().skip(i + 1) {
-                assert_ne!(ai, aj, "PER_CPU_STATS[{}] and PER_CPU_STATS[{}] alias", i, j);
+                assert_ne!(
+                    ai, aj,
+                    "PER_CPU_STATS[{}] and PER_CPU_STATS[{}] alias",
+                    i, j
+                );
             }
         }
     }

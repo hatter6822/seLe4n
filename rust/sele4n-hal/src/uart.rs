@@ -311,7 +311,10 @@ struct UartLock {
 
 impl UartLock {
     const fn new() -> Self {
-        Self { locked: AtomicBool::new(false), saved_daif: AtomicU64::new(0) }
+        Self {
+            locked: AtomicBool::new(false),
+            saved_daif: AtomicU64::new(0),
+        }
     }
 
     /// Acquire the spin lock after first masking interrupts.
@@ -324,9 +327,11 @@ impl UartLock {
         // Disable interrupts BEFORE acquiring the lock to prevent an IRQ
         // handler from preempting us mid-acquisition and deadlocking.
         let saved_daif = crate::interrupts::disable_interrupts();
-        while self.locked.compare_exchange_weak(
-            false, true, Ordering::Acquire, Ordering::Relaxed
-        ).is_err() {
+        while self
+            .locked
+            .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_err()
+        {
             core::hint::spin_loop();
         }
         // Stash the DAIF snapshot AFTER the lock is held so only the owner
@@ -707,12 +712,16 @@ mod tests {
         let lock = UartLock::new();
         let r1 = exercise(&lock, true);
         assert_eq!(r1, 0xEA21_F00D);
-        assert!(!lock.is_held(),
-            "lock must be released after early-return (short path)");
+        assert!(
+            !lock.is_held(),
+            "lock must be released after early-return (short path)"
+        );
         let r2 = exercise(&lock, false);
         assert_eq!(r2, 0xEA22_F00D);
-        assert!(!lock.is_held(),
-            "lock must be released after fall-through (long path)");
+        assert!(
+            !lock.is_held(),
+            "lock must be released after fall-through (long path)"
+        );
     }
 
     #[test]
@@ -764,8 +773,10 @@ mod tests {
             panic!("simulated fault inside UART critical section");
         }));
         assert!(result.is_err(), "catch_unwind should have caught the panic");
-        assert!(!lock.is_held(),
-            "UartGuard::drop did not fire on unwind — lock leaked");
+        assert!(
+            !lock.is_held(),
+            "UartGuard::drop did not fire on unwind — lock leaked"
+        );
     }
 
     // ------------------------------------------------------------------------
@@ -863,7 +874,9 @@ mod tests {
         // lock held, this acquisition would spin forever and cargo's
         // test timeout would surface the regression.  See the
         // SM1G4_OBSERVATION_MUTEX docstring for the full rationale.
-        let _guard = SM1G4_OBSERVATION_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = SM1G4_OBSERVATION_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         crate::kprintln_core!("SM1.G.4 lock-balance smoke");
         // Re-acquire: if the macro didn't release, this hangs.
         crate::uart::with_boot_uart(|_uart| {
@@ -882,7 +895,9 @@ mod tests {
         // SM1.I audit-pass-1: re-acquire pattern after every
         // iteration — same correctness argument as the single-call
         // test above.
-        let _guard = SM1G4_OBSERVATION_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = SM1G4_OBSERVATION_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         for i in 0..16 {
             crate::kprintln_core!("SM1.G.4 iteration {}", i);
             crate::uart::with_boot_uart(|_uart| {
@@ -912,7 +927,9 @@ mod tests {
         // source-scan test `sm1g4_macro_expansion_text_uses_with_boot_uart_once`.
         //
         // SM1.I audit-pass-1: re-acquire pattern.
-        let _guard = SM1G4_OBSERVATION_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = SM1G4_OBSERVATION_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         crate::kprintln_core!("SM1.G.4 per-line atomicity smoke");
         crate::uart::with_boot_uart(|_uart| { /* re-acquire proof */ });
     }
@@ -923,7 +940,9 @@ mod tests {
         // single-lock contract.
         //
         // SM1.I audit-pass-1: re-acquire pattern.
-        let _guard = SM1G4_OBSERVATION_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = SM1G4_OBSERVATION_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         crate::kprint_core!("SM1.G.4 partial-line atomicity smoke");
         crate::uart::with_boot_uart(|_uart| { /* re-acquire proof */ });
         // Add a manual newline so subsequent test output isn't
@@ -956,8 +975,8 @@ mod tests {
         let macro_end_search_window = &source[macro_start..];
         // Search up to a generous bound (200 lines) so the test is
         // robust against macro-body expansion.
-        let macro_body_window = &macro_end_search_window
-            [..macro_end_search_window.len().min(8_000)];
+        let macro_body_window =
+            &macro_end_search_window[..macro_end_search_window.len().min(8_000)];
         assert!(
             macro_body_window.contains("with_boot_uart"),
             "kprintln_core! must use with_boot_uart for per-line atomicity"
@@ -1031,8 +1050,8 @@ mod tests {
     /// `std::thread` contention).
     #[test]
     fn sm1g3_cross_thread_kprintln_stress_no_lock_leak() {
-        use std::sync::Arc;
         use std::sync::atomic::{AtomicUsize, Ordering as StdOrdering};
+        use std::sync::Arc;
         use std::thread;
         use std::vec::Vec;
 
@@ -1041,7 +1060,9 @@ mod tests {
         // docstring for the rationale.  Use `unwrap_or_else(|e|
         // e.into_inner())` for poison defense per the audit-pass-4
         // convention.
-        let _guard = SM1G4_OBSERVATION_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = SM1G4_OBSERVATION_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
 
         const N_THREADS: usize = 4;
         const M_ITERATIONS: usize = 100;
@@ -1087,9 +1108,13 @@ mod tests {
 
         // Every iteration's CS completed.
         let total = counter.load(StdOrdering::Relaxed);
-        assert_eq!(total, N_THREADS * M_ITERATIONS,
-                   "expected {} CS completions, got {}",
-                   N_THREADS * M_ITERATIONS, total);
+        assert_eq!(
+            total,
+            N_THREADS * M_ITERATIONS,
+            "expected {} CS completions, got {}",
+            N_THREADS * M_ITERATIONS,
+            total
+        );
 
         // UART_LOCK must be released after all threads complete.  (If a worker
         // panicked or a lock release was missed, this catches it.)  Our own workers
@@ -1106,7 +1131,9 @@ mod tests {
             std::thread::yield_now();
             held = UART_LOCK.is_held();
         }
-        assert!(!held,
-                "UART_LOCK leaked after cross-thread stress: still held");
+        assert!(
+            !held,
+            "UART_LOCK leaked after cross-thread stress: still held"
+        );
     }
 }

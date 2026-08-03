@@ -156,21 +156,21 @@
 //             BaseIO CoreId` with a range check that recovers the
 //             typed `Fin numCores` identifier.
 
-pub mod cpu;
 pub mod barriers;
-pub mod registers;
-pub mod uart;
-pub mod mmu;
-pub mod trap;
 pub mod boot;
-pub mod gic;
-pub mod timer;
-pub mod interrupts;
-pub mod tlb;
 pub mod cache;
-pub mod mmio;
+pub mod cpu;
 pub mod ffi;
+pub mod gic;
+pub mod interrupts;
+pub mod mmio;
+pub mod mmu;
 pub mod profiling;
+pub mod registers;
+pub mod timer;
+pub mod tlb;
+pub mod trap;
+pub mod uart;
 // AN9-F (DEF-R-HAL-L14): typed SVC argument marshalling
 pub mod svc_dispatch;
 // AN9-J.1 (DEF-R-HAL-L20): PSCI wrapper for secondary-core bring-up.

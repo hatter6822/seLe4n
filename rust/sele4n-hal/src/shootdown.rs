@@ -304,9 +304,10 @@ pub fn all_acked_for_round_in_slice(
         online.len(),
         slots.len()
     );
-    slots.iter().enumerate().all(|(i, s)| {
-        i == initiator || !online[i] || s.acked_gen.load(Ordering::Acquire) >= gen
-    })
+    slots
+        .iter()
+        .enumerate()
+        .all(|(i, s)| i == initiator || !online[i] || s.acked_gen.load(Ordering::Acquire) >= gen)
 }
 
 // ============================================================================
@@ -1144,7 +1145,12 @@ mod tests {
                 all_acked_for_round_in_slice(&slots, 0, initiator, &ALL_ONLINE),
                 "generation 0 is vacuously satisfied"
             );
-            assert!(!all_acked_for_round_in_slice(&slots, 1, initiator, &ALL_ONLINE));
+            assert!(!all_acked_for_round_in_slice(
+                &slots,
+                1,
+                initiator,
+                &ALL_ONLINE
+            ));
             for target in 0..4usize {
                 if target != initiator {
                     ack_round_in_slice(&slots, target, 1);
@@ -1320,8 +1326,7 @@ mod tests {
                     ShootdownAckSlot::new(if bits & 4 != 0 { 1 } else { 0 }),
                     ShootdownAckSlot::new(if bits & 8 != 0 { 1 } else { 0 }),
                 ];
-                let expected = (0..4usize)
-                    .all(|c| c == initiator || (bits >> c) & 1 != 0);
+                let expected = (0..4usize).all(|c| c == initiator || (bits >> c) & 1 != 0);
                 assert_eq!(
                     all_acked_for_round_in_slice(&slots, 1, initiator, &ALL_ONLINE),
                     expected,
@@ -1508,7 +1513,11 @@ mod tests {
         let slots = fresh_boot_slots();
         // Round 9 opened by core 3: cores 0..=2 genuinely outstanding.
         assert!(!all_acked_for_round_in_slice(&slots, 9, 3, &ALL_ONLINE));
-        assert_eq!(acked_gen_in_slice(&slots, 0), 0, "precondition: outstanding");
+        assert_eq!(
+            acked_gen_in_slice(&slots, 0),
+            0,
+            "precondition: outstanding"
+        );
         tlb_shootdown_req_service_in(&mb, &slots, 0);
         assert_eq!(
             acked_gen_in_slice(&slots, 0),

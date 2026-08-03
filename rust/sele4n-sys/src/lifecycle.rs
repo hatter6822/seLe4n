@@ -3,9 +3,9 @@
 //!
 //! Lean: `SeLe4n/Kernel/API.lean` — `apiLifecycleRetype`.
 
-use sele4n_types::{CPtr, ObjId, KernelResult, SyscallId};
-use sele4n_abi::{MessageInfo, SyscallRequest, SyscallResponse, invoke_syscall};
 use sele4n_abi::args::{LifecycleRetypeArgs, TypeTag};
+use sele4n_abi::{invoke_syscall, MessageInfo, SyscallRequest, SyscallResponse};
+use sele4n_types::{CPtr, KernelResult, ObjId, SyscallId};
 
 /// Retype an untyped memory object into a specific kernel object type.
 ///
@@ -51,7 +51,11 @@ pub fn retype_notification(untyped_cap: CPtr, target: ObjId) -> KernelResult<Sys
 }
 
 /// Convenience: retype to create a CNode with the given radix width.
-pub fn retype_cnode(untyped_cap: CPtr, target: ObjId, radix_bits: u64) -> KernelResult<SyscallResponse> {
+pub fn retype_cnode(
+    untyped_cap: CPtr,
+    target: ObjId,
+    radix_bits: u64,
+) -> KernelResult<SyscallResponse> {
     lifecycle_retype(untyped_cap, target, TypeTag::CNode, radix_bits)
 }
 

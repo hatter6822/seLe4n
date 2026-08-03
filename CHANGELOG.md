@@ -1,3 +1,66 @@
+## v0.32.107 — the Rust format/lint gates that were provisioned but never wired
+
+**The drift.** `cargo fmt --check` reported a 6 187-line diff across 448 hunks
+in 53 files — every Rust crate in the workspace. Investigating the origin
+rather than just the symptom found the cause immediately: `rust-toolchain.toml`
+has always listed `components = ["clippy", "rustfmt"]`, and
+`scripts/setup_lean_env.sh` installs both with the explicit comment "so
+`cargo clippy` and `cargo fmt` [work]" — but **no gate ever ran either one**.
+`git log -S"cargo fmt"` over `scripts/` and `.github/` returns nothing. The
+tools were provisioned for checks that did not exist, so the formatting drifted
+unopposed and the project's "zero clippy warnings" claim rested on nobody
+running clippy in CI at all (v0.32.106 showed the pin had additionally frozen
+clippy three years behind stable).
+
+That is the same class of defect this codebase has fixed before in its own
+tests — an assertion that cannot fail is not a check. Two of them had been
+sitting in the build configuration.
+
+**The fix — the gate, not just the diff.** Reformatting alone would drift back.
+`scripts/test_rust.sh` (the Tier-1 Rust gate, run by `test_smoke.sh` and above)
+grows two steps:
+
+* `[4/5] cargo fmt --all --check`
+* `[5/5] cargo clippy --all-targets -- -D warnings`
+
+`--all-targets` so a lint firing only in test code still fails, and
+`-D warnings` because clippy reports findings as warnings by default and would
+otherwise pass the gate while printing them. **Both arms were verified to
+genuinely fail**: a deliberately mis-formatted function makes step 4 exit 1, and
+a `n % 4 != 0` probe makes step 5 exit 101 with `manual implementation of
+.is_multiple_of()`; both recover on revert.
+
+**What the reformat did and did not touch.** Zero comment lines: rustfmt's
+defaults (`wrap_comments`, `normalize_comments`, `format_code_in_doc_comments`
+all off) leave the hand-wrapped module headers and docstrings alone. No `asm!`
+or `global_asm!` block was altered. The changes are import ordering, line
+wrapping, and trailing commas.
+
+**One genuine regression, fixed at the source.** In `queued_rw_lock.rs` rustfmt
+treated a three-line standalone comment block as a continuation of the previous
+line's trailing comment (`let new = cur + 1; // reader count increments`) and
+indented it to column 32 to align with it — strictly worse than the input, and
+misleading about what the comment describes. Fixed in the source rather than
+worked around: the trailing comment becomes a leading one and a blank line
+separates the two blocks, after which rustfmt is stable and the comment reads
+correctly.
+
+**Verified.** Workspace builds with zero warnings; 1 087 tests pass; clippy
+clean under `-D warnings`; `cargo fmt --check` clean. The full Lean tier is
+green, including the **56 Tier-3 surface anchors that grep Rust source
+patterns** — the reformat moves lines, so those were the real risk and they all
+still resolve.
+
+**Related pre-existing drift, reported not silently "fixed".** 58 citations of
+the form `smp.rs:543` appear in `docs/audits/` and `docs/planning/`; all four
+sampled were **already stale** before this change (`smp.rs:543` cites an invalid
+PSCI `context_id` check; that line is now an idle-fallback docstring). These are
+point-in-time audit and plan records — renumbering them would falsify the
+historical record rather than repair it, and the durable fix is to stop citing
+line numbers in new prose. Recorded here rather than edited.
+
+Refs: scripts/test_rust.sh (steps 4 and 5)
+
 ## v0.32.106 — Rust toolchain pin bumped 1.82.0 → 1.94.1
 
 **Why.** The pin cuts both ways, and the second direction had been

@@ -106,7 +106,9 @@ impl SyscallId {
 
     /// Convert to raw `u64`. Lean: `SyscallId.toNat`.
     #[inline]
-    pub const fn to_u64(self) -> u64 { self as u64 }
+    pub const fn to_u64(self) -> u64 {
+        self as u64
+    }
 
     /// Required access right for this syscall.
     ///
@@ -124,7 +126,9 @@ impl SyscallId {
             Self::NotificationSignal => AccessRight::Write,
             Self::NotificationWait => AccessRight::Read,
             Self::ReplyRecv => AccessRight::Read,
-            Self::SchedContextConfigure | Self::SchedContextBind | Self::SchedContextUnbind => AccessRight::Write,
+            Self::SchedContextConfigure | Self::SchedContextBind | Self::SchedContextUnbind => {
+                AccessRight::Write
+            }
             Self::TcbSuspend | Self::TcbResume => AccessRight::Write,
             Self::TcbSetPriority | Self::TcbSetMCPriority => AccessRight::Write,
             Self::TcbSetIPCBuffer => AccessRight::Write,
@@ -189,7 +193,10 @@ mod tests {
 
     #[test]
     fn required_right_lifecycle() {
-        assert_eq!(SyscallId::LifecycleRetype.required_right(), AccessRight::Retype);
+        assert_eq!(
+            SyscallId::LifecycleRetype.required_right(),
+            AccessRight::Retype
+        );
     }
 
     #[test]
@@ -200,16 +207,28 @@ mod tests {
 
     #[test]
     fn required_right_service() {
-        assert_eq!(SyscallId::ServiceRegister.required_right(), AccessRight::Write);
-        assert_eq!(SyscallId::ServiceRevoke.required_right(), AccessRight::Write);
+        assert_eq!(
+            SyscallId::ServiceRegister.required_right(),
+            AccessRight::Write
+        );
+        assert_eq!(
+            SyscallId::ServiceRevoke.required_right(),
+            AccessRight::Write
+        );
         // ServiceQuery requires Read (not Write) — Lean API.lean:318
         assert_eq!(SyscallId::ServiceQuery.required_right(), AccessRight::Read);
     }
 
     #[test]
     fn required_right_notification() {
-        assert_eq!(SyscallId::NotificationSignal.required_right(), AccessRight::Write);
-        assert_eq!(SyscallId::NotificationWait.required_right(), AccessRight::Read);
+        assert_eq!(
+            SyscallId::NotificationSignal.required_right(),
+            AccessRight::Write
+        );
+        assert_eq!(
+            SyscallId::NotificationWait.required_right(),
+            AccessRight::Read
+        );
     }
 
     #[test]
@@ -220,9 +239,18 @@ mod tests {
     #[test]
     fn required_right_sched_context() {
         // Z5-J: All SchedContext operations require Write (API.lean:381-383)
-        assert_eq!(SyscallId::SchedContextConfigure.required_right(), AccessRight::Write);
-        assert_eq!(SyscallId::SchedContextBind.required_right(), AccessRight::Write);
-        assert_eq!(SyscallId::SchedContextUnbind.required_right(), AccessRight::Write);
+        assert_eq!(
+            SyscallId::SchedContextConfigure.required_right(),
+            AccessRight::Write
+        );
+        assert_eq!(
+            SyscallId::SchedContextBind.required_right(),
+            AccessRight::Write
+        );
+        assert_eq!(
+            SyscallId::SchedContextUnbind.required_right(),
+            AccessRight::Write
+        );
     }
 
     #[test]
@@ -265,19 +293,31 @@ mod tests {
     #[test]
     fn required_right_tcb_priority() {
         // D2: Priority management requires Write (API.lean:389-390)
-        assert_eq!(SyscallId::TcbSetPriority.required_right(), AccessRight::Write);
-        assert_eq!(SyscallId::TcbSetMCPriority.required_right(), AccessRight::Write);
+        assert_eq!(
+            SyscallId::TcbSetPriority.required_right(),
+            AccessRight::Write
+        );
+        assert_eq!(
+            SyscallId::TcbSetMCPriority.required_right(),
+            AccessRight::Write
+        );
     }
 
     #[test]
     fn required_right_tcb_ipc_buffer() {
         // D3: IPC buffer configuration requires Write (API.lean:391)
-        assert_eq!(SyscallId::TcbSetIPCBuffer.required_right(), AccessRight::Write);
+        assert_eq!(
+            SyscallId::TcbSetIPCBuffer.required_right(),
+            AccessRight::Write
+        );
     }
 
     #[test]
     fn required_right_tcb_affinity() {
         // WS-SM SM5.H.4: CPU-affinity configuration requires Write
-        assert_eq!(SyscallId::TcbSetAffinity.required_right(), AccessRight::Write);
+        assert_eq!(
+            SyscallId::TcbSetAffinity.required_right(),
+            AccessRight::Write
+        );
     }
 }

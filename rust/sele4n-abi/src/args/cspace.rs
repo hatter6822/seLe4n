@@ -3,7 +3,7 @@
 //!
 //! Lean: `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` lines 76–171.
 
-use sele4n_types::{Slot, Badge, AccessRights, KernelError, KernelResult};
+use sele4n_types::{AccessRights, Badge, KernelError, KernelResult, Slot};
 
 /// Arguments for `cspaceMint` (syscall 4).
 /// Register mapping: x2=srcSlot, x3=dstSlot, x4=rights bitmask, x5=badge.
@@ -20,7 +20,12 @@ pub struct CSpaceMintArgs {
 impl CSpaceMintArgs {
     /// Encode into message registers.
     pub const fn encode(&self) -> [u64; 4] {
-        [self.src_slot.raw(), self.dst_slot.raw(), self.rights.raw() as u64, self.badge.raw()]
+        [
+            self.src_slot.raw(),
+            self.dst_slot.raw(),
+            self.rights.raw() as u64,
+            self.badge.raw(),
+        ]
     }
 
     /// Decode from message registers. Requires 4 registers.
@@ -31,7 +36,9 @@ impl CSpaceMintArgs {
     /// for invalid rights — the message structure is correct, the argument
     /// value is invalid.
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
-        if regs.len() < 4 { return Err(KernelError::InvalidMessageInfo); }
+        if regs.len() < 4 {
+            return Err(KernelError::InvalidMessageInfo);
+        }
         if regs[2] > 0x1F {
             return Err(KernelError::InvalidArgument);
         }
@@ -61,8 +68,13 @@ impl CSpaceCopyArgs {
     }
 
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
-        if regs.len() < 2 { return Err(KernelError::InvalidMessageInfo); }
-        Ok(Self { src_slot: Slot::from(regs[0]), dst_slot: Slot::from(regs[1]) })
+        if regs.len() < 2 {
+            return Err(KernelError::InvalidMessageInfo);
+        }
+        Ok(Self {
+            src_slot: Slot::from(regs[0]),
+            dst_slot: Slot::from(regs[1]),
+        })
     }
 }
 
@@ -82,8 +94,13 @@ impl CSpaceMoveArgs {
     }
 
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
-        if regs.len() < 2 { return Err(KernelError::InvalidMessageInfo); }
-        Ok(Self { src_slot: Slot::from(regs[0]), dst_slot: Slot::from(regs[1]) })
+        if regs.len() < 2 {
+            return Err(KernelError::InvalidMessageInfo);
+        }
+        Ok(Self {
+            src_slot: Slot::from(regs[0]),
+            dst_slot: Slot::from(regs[1]),
+        })
     }
 }
 
@@ -102,8 +119,12 @@ impl CSpaceDeleteArgs {
     }
 
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
-        if regs.is_empty() { return Err(KernelError::InvalidMessageInfo); }
-        Ok(Self { target_slot: Slot::from(regs[0]) })
+        if regs.is_empty() {
+            return Err(KernelError::InvalidMessageInfo);
+        }
+        Ok(Self {
+            target_slot: Slot::from(regs[0]),
+        })
     }
 }
 
@@ -114,8 +135,10 @@ mod tests {
     #[test]
     fn mint_roundtrip() {
         let args = CSpaceMintArgs {
-            src_slot: Slot::from(1u64), dst_slot: Slot::from(2u64),
-            rights: AccessRights::try_from(0x07u8).unwrap(), badge: Badge::from(42u64),
+            src_slot: Slot::from(1u64),
+            dst_slot: Slot::from(2u64),
+            rights: AccessRights::try_from(0x07u8).unwrap(),
+            badge: Badge::from(42u64),
         };
         let encoded = args.encode();
         let decoded = CSpaceMintArgs::decode(&encoded).unwrap();
@@ -124,30 +147,44 @@ mod tests {
 
     #[test]
     fn copy_roundtrip() {
-        let args = CSpaceCopyArgs { src_slot: Slot::from(10u64), dst_slot: Slot::from(20u64) };
+        let args = CSpaceCopyArgs {
+            src_slot: Slot::from(10u64),
+            dst_slot: Slot::from(20u64),
+        };
         assert_eq!(CSpaceCopyArgs::decode(&args.encode()).unwrap(), args);
     }
 
     #[test]
     fn move_roundtrip() {
-        let args = CSpaceMoveArgs { src_slot: Slot::from(3u64), dst_slot: Slot::from(7u64) };
+        let args = CSpaceMoveArgs {
+            src_slot: Slot::from(3u64),
+            dst_slot: Slot::from(7u64),
+        };
         assert_eq!(CSpaceMoveArgs::decode(&args.encode()).unwrap(), args);
     }
 
     #[test]
     fn delete_roundtrip() {
-        let args = CSpaceDeleteArgs { target_slot: Slot::from(99u64) };
+        let args = CSpaceDeleteArgs {
+            target_slot: Slot::from(99u64),
+        };
         assert_eq!(CSpaceDeleteArgs::decode(&args.encode()).unwrap(), args);
     }
 
     #[test]
     fn mint_insufficient_regs() {
-        assert_eq!(CSpaceMintArgs::decode(&[1, 2, 3]), Err(KernelError::InvalidMessageInfo));
+        assert_eq!(
+            CSpaceMintArgs::decode(&[1, 2, 3]),
+            Err(KernelError::InvalidMessageInfo)
+        );
     }
 
     #[test]
     fn delete_empty_regs() {
-        assert_eq!(CSpaceDeleteArgs::decode(&[]), Err(KernelError::InvalidMessageInfo));
+        assert_eq!(
+            CSpaceDeleteArgs::decode(&[]),
+            Err(KernelError::InvalidMessageInfo)
+        );
     }
 
     #[test]
@@ -169,12 +206,24 @@ mod tests {
     fn mint_rights_truncation_rejected() {
         // V1-F: invalid rights return InvalidArgument (not InvalidMessageInfo)
         // 0x20 — bit 5 set, exceeds valid rights range
-        assert_eq!(CSpaceMintArgs::decode(&[1, 2, 0x20, 42]), Err(KernelError::InvalidArgument));
+        assert_eq!(
+            CSpaceMintArgs::decode(&[1, 2, 0x20, 42]),
+            Err(KernelError::InvalidArgument)
+        );
         // 0xFF — u8 max
-        assert_eq!(CSpaceMintArgs::decode(&[1, 2, 0xFF, 42]), Err(KernelError::InvalidArgument));
+        assert_eq!(
+            CSpaceMintArgs::decode(&[1, 2, 0xFF, 42]),
+            Err(KernelError::InvalidArgument)
+        );
         // 0x100 — would truncate to 0x00 without bounds check
-        assert_eq!(CSpaceMintArgs::decode(&[1, 2, 0x100, 42]), Err(KernelError::InvalidArgument));
+        assert_eq!(
+            CSpaceMintArgs::decode(&[1, 2, 0x100, 42]),
+            Err(KernelError::InvalidArgument)
+        );
         // u64::MAX — worst case
-        assert_eq!(CSpaceMintArgs::decode(&[1, 2, u64::MAX, 42]), Err(KernelError::InvalidArgument));
+        assert_eq!(
+            CSpaceMintArgs::decode(&[1, 2, u64::MAX, 42]),
+            Err(KernelError::InvalidArgument)
+        );
     }
 }

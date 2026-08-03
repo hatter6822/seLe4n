@@ -560,20 +560,12 @@ pub fn tlbi_for_sharing(domain: SharingDomain, op: TlbInvalidation) {
     match (domain, op) {
         (SharingDomain::Inner, TlbInvalidation::Vmalle1) => tlbi_vmalle1is(),
         (SharingDomain::Outer, TlbInvalidation::Vmalle1) => tlbi_vmalle1os(),
-        (SharingDomain::Inner, TlbInvalidation::Vae1 { asid, vaddr }) => {
-            tlbi_vae1is(asid, vaddr)
-        }
-        (SharingDomain::Outer, TlbInvalidation::Vae1 { asid, vaddr }) => {
-            tlbi_vae1os(asid, vaddr)
-        }
+        (SharingDomain::Inner, TlbInvalidation::Vae1 { asid, vaddr }) => tlbi_vae1is(asid, vaddr),
+        (SharingDomain::Outer, TlbInvalidation::Vae1 { asid, vaddr }) => tlbi_vae1os(asid, vaddr),
         (SharingDomain::Inner, TlbInvalidation::Aside1 { asid }) => tlbi_aside1is(asid),
         (SharingDomain::Outer, TlbInvalidation::Aside1 { asid }) => tlbi_aside1os(asid),
-        (SharingDomain::Inner, TlbInvalidation::Vale1 { asid, vaddr }) => {
-            tlbi_vale1is(asid, vaddr)
-        }
-        (SharingDomain::Outer, TlbInvalidation::Vale1 { asid, vaddr }) => {
-            tlbi_vale1os(asid, vaddr)
-        }
+        (SharingDomain::Inner, TlbInvalidation::Vale1 { asid, vaddr }) => tlbi_vale1is(asid, vaddr),
+        (SharingDomain::Outer, TlbInvalidation::Vale1 { asid, vaddr }) => tlbi_vale1os(asid, vaddr),
     }
 }
 
@@ -606,7 +598,11 @@ pub fn tlbi_local(op: TlbInvalidation) {
 /// FFI `tlbiForSharing` dispatcher and the per-descriptor handler
 /// retire path so both decode operands identically.
 #[inline]
-pub const fn decode_tlb_invalidation(op_tag: u32, asid: u16, vaddr: u64) -> Option<TlbInvalidation> {
+pub const fn decode_tlb_invalidation(
+    op_tag: u32,
+    asid: u16,
+    vaddr: u64,
+) -> Option<TlbInvalidation> {
     match op_tag {
         0 => Some(TlbInvalidation::Vmalle1),
         1 => Some(TlbInvalidation::Vae1 { asid, vaddr }),
@@ -799,7 +795,10 @@ mod tests {
     fn sm1e3_tlbi_for_sharing_inner_vae1_callable() {
         tlbi_for_sharing(
             SharingDomain::Inner,
-            TlbInvalidation::Vae1 { asid: 1, vaddr: 0x2000 },
+            TlbInvalidation::Vae1 {
+                asid: 1,
+                vaddr: 0x2000,
+            },
         );
     }
 
@@ -807,7 +806,10 @@ mod tests {
     fn sm1e3_tlbi_for_sharing_outer_vae1_callable() {
         tlbi_for_sharing(
             SharingDomain::Outer,
-            TlbInvalidation::Vae1 { asid: 1, vaddr: 0x2000 },
+            TlbInvalidation::Vae1 {
+                asid: 1,
+                vaddr: 0x2000,
+            },
         );
     }
 
@@ -825,7 +827,10 @@ mod tests {
     fn sm1e3_tlbi_for_sharing_inner_vale1_callable() {
         tlbi_for_sharing(
             SharingDomain::Inner,
-            TlbInvalidation::Vale1 { asid: 3, vaddr: 0x4000 },
+            TlbInvalidation::Vale1 {
+                asid: 3,
+                vaddr: 0x4000,
+            },
         );
     }
 
@@ -833,7 +838,10 @@ mod tests {
     fn sm1e3_tlbi_for_sharing_outer_vale1_callable() {
         tlbi_for_sharing(
             SharingDomain::Outer,
-            TlbInvalidation::Vale1 { asid: 3, vaddr: 0x4000 },
+            TlbInvalidation::Vale1 {
+                asid: 3,
+                vaddr: 0x4000,
+            },
         );
     }
 
@@ -876,10 +884,22 @@ mod tests {
         // Two `Vae1` values with different operands must compare unequal.
         // This catches a regression where the derived Eq accidentally
         // ignored the carried fields.
-        let a = TlbInvalidation::Vae1 { asid: 1, vaddr: 0x1000 };
-        let b = TlbInvalidation::Vae1 { asid: 2, vaddr: 0x1000 };
-        let c = TlbInvalidation::Vae1 { asid: 1, vaddr: 0x2000 };
-        let d = TlbInvalidation::Vae1 { asid: 1, vaddr: 0x1000 };
+        let a = TlbInvalidation::Vae1 {
+            asid: 1,
+            vaddr: 0x1000,
+        };
+        let b = TlbInvalidation::Vae1 {
+            asid: 2,
+            vaddr: 0x1000,
+        };
+        let c = TlbInvalidation::Vae1 {
+            asid: 1,
+            vaddr: 0x2000,
+        };
+        let d = TlbInvalidation::Vae1 {
+            asid: 1,
+            vaddr: 0x1000,
+        };
         assert_ne!(a, b);
         assert_ne!(a, c);
         assert_eq!(a, d);
@@ -1003,11 +1023,17 @@ mod tests {
             (0, 0x1000),
             (5, 0x12345000),
             (0xFFFF, 0xFFFF_FFFF_F000),
-            (1, 0x0000_8000_0000_0000 - 0x1000),  // vaddr just below 2^47
+            (1, 0x0000_8000_0000_0000 - 0x1000), // vaddr just below 2^47
         ];
         for &(asid, vaddr) in cases {
             let operand = encode_va_asid_operand(asid, vaddr);
-            assert_eq!(operand >> 48, asid as u64, "ASID for ({:#x}, {:#x})", asid, vaddr);
+            assert_eq!(
+                operand >> 48,
+                asid as u64,
+                "ASID for ({:#x}, {:#x})",
+                asid,
+                vaddr
+            );
             assert_eq!(
                 (operand >> 44) & 0xF,
                 0,

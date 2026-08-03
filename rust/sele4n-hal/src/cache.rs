@@ -611,19 +611,25 @@ mod tests {
     #[test]
     fn test_clean_pagetable_range_empty() {
         // AK5-D.1/AK5-K: empty range still emits DSB ISH (no panic on host).
-        unsafe { clean_pagetable_range(0x1000, 0); }
+        unsafe {
+            clean_pagetable_range(0x1000, 0);
+        }
     }
 
     #[test]
     fn test_clean_pagetable_range_aligned_page() {
         // 4 KiB page at a 64-byte-aligned address: 64 lines cleaned.
-        unsafe { clean_pagetable_range(0x1000, 4096); }
+        unsafe {
+            clean_pagetable_range(0x1000, 4096);
+        }
     }
 
     #[test]
     fn test_clean_pagetable_range_unaligned_start() {
         // Start not cache-line aligned: rounded down to line boundary.
-        unsafe { clean_pagetable_range(0x1020, 128); }
+        unsafe {
+            clean_pagetable_range(0x1020, 128);
+        }
     }
 
     #[test]

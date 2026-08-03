@@ -83,7 +83,9 @@ pub struct IpcBuffer {
 }
 
 impl Default for IpcBuffer {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl IpcBuffer {
@@ -240,7 +242,10 @@ mod tests {
     fn out_of_bounds() {
         let mut buf = IpcBuffer::new();
         assert_eq!(buf.set_mr(120, 1), Err(KernelError::IpcMessageTooLarge));
-        assert_eq!(buf.set_mr_overflow(120, 1), Err(KernelError::IpcMessageTooLarge));
+        assert_eq!(
+            buf.set_mr_overflow(120, 1),
+            Err(KernelError::IpcMessageTooLarge)
+        );
         assert_eq!(buf.get_mr(120), Err(KernelError::IpcMessageTooLarge));
     }
 

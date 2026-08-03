@@ -8,8 +8,8 @@
 //!
 //! Lean: `SeLe4n/Kernel/API.lean` — `dispatchSyscall` → `dispatchWithCap`.
 
+use sele4n_abi::{invoke_syscall, MessageInfo, SyscallRequest, SyscallResponse};
 use sele4n_types::{Badge, CPtr, KernelResult, SyscallId};
-use sele4n_abi::{MessageInfo, SyscallRequest, SyscallResponse, invoke_syscall};
 
 /// Maximum number of inline message registers (seL4_MsgMaxLength).
 pub const MAX_MSG_REGS: usize = 120;
@@ -34,13 +34,19 @@ pub struct IpcMessage {
 }
 
 impl Default for IpcMessage {
-    fn default() -> Self { Self::empty(0) }
+    fn default() -> Self {
+        Self::empty(0)
+    }
 }
 
 impl IpcMessage {
     /// Create an empty message with the given label.
     pub const fn empty(label: u64) -> Self {
-        Self { regs: [0; 4], length: 0, label }
+        Self {
+            regs: [0; 4],
+            length: 0,
+            label,
+        }
     }
 
     /// Create an empty message with the given label.
@@ -53,12 +59,20 @@ impl IpcMessage {
     ///
     /// Returns `None` if `length > 4` (exceeds ARM64 inline register capacity).
     pub const fn new_with_length(regs: [u64; 4], length: u8, label: u64) -> Option<Self> {
-        if length > 4 { return None; }
-        Some(Self { regs, length, label })
+        if length > 4 {
+            return None;
+        }
+        Some(Self {
+            regs,
+            length,
+            label,
+        })
     }
 
     /// Returns the number of valid registers (0..=4).
-    pub const fn length(&self) -> u8 { self.length }
+    pub const fn length(&self) -> u8 {
+        self.length
+    }
 
     /// Push a register value. Returns `IpcMessageTooLarge` if all 4 inline
     /// ARM64 slots (x2–x5) are full.
@@ -127,8 +141,8 @@ pub fn endpoint_receive_with_reply(
     recv_cap: CPtr,
     reply_cap: CPtr,
 ) -> KernelResult<(Badge, SyscallResponse)> {
-    let msg_info = MessageInfo::new(1, 0, 0)
-        .map_err(|_| sele4n_types::KernelError::InvalidMessageInfo)?;
+    let msg_info =
+        MessageInfo::new(1, 0, 0).map_err(|_| sele4n_types::KernelError::InvalidMessageInfo)?;
     let resp = invoke_syscall(SyscallRequest {
         cap_addr: recv_cap,
         msg_info,

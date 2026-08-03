@@ -453,10 +453,7 @@ pub fn init_cpu_interface_secondary(core_id: u64) {
     // 8 IPRIORITYR registers cover 32 INTIDs (4 priority bytes per
     // 32-bit register).
     for i in 0..8usize {
-        mmio_write32(
-            GICD_BASE + gicd::IPRIORITYR_BASE + i * 4,
-            0xA0A0_A0A0,
-        );
+        mmio_write32(GICD_BASE + gicd::IPRIORITYR_BASE + i * 4, 0xA0A0_A0A0);
     }
 
     // Banked (audit-pass-3): clear any pending SGIs/PPIs left from
@@ -905,11 +902,7 @@ pub(crate) fn lookup_sgi_handler_in(
 ///
 /// Out-of-range INTIDs return without dispatch; unregistered slots
 /// log a diagnostic and return.
-pub(crate) fn dispatch_sgi_in(
-    handlers: &[Option<SgiHandler>],
-    intid: u8,
-    source_cpu: u8,
-) {
+pub(crate) fn dispatch_sgi_in(handlers: &[Option<SgiHandler>], intid: u8, source_cpu: u8) {
     if intid >= MAX_SGI_INTID {
         // Defensive: dispatcher only valid for SGI range.  Caller
         // should have classified non-SGI INTIDs already.
@@ -923,11 +916,7 @@ pub(crate) fn dispatch_sgi_in(
             // diagnostic line catches misconfigured boot paths that
             // failed to register a handler, without panicking the
             // kernel on every spurious SGI from a buggy peer.
-            crate::kprintln!(
-                "[gic] no handler for SGI {} from cpu {}",
-                intid,
-                source_cpu
-            );
+            crate::kprintln!("[gic] no handler for SGI {} from cpu {}", intid, source_cpu);
         }
     }
 }
@@ -965,8 +954,7 @@ pub unsafe fn register_sgi_handler(intid: u8, handler: SgiHandler) {
     // trip the `static_mut_refs` lint, a hard error in edition 2024).
     // The subsequent `&mut *ptr` dereference is sound under the
     // boot-time-only contract documented on the SGI_HANDLERS static.
-    let handlers_ptr: *mut [Option<SgiHandler>; MAX_SGI_INTID as usize] =
-        &raw mut SGI_HANDLERS;
+    let handlers_ptr: *mut [Option<SgiHandler>; MAX_SGI_INTID as usize] = &raw mut SGI_HANDLERS;
     unsafe {
         register_sgi_handler_in(&mut *handlers_ptr, intid, handler);
     }
@@ -996,8 +984,7 @@ pub fn lookup_sgi_handler(intid: u8) -> Option<SgiHandler> {
     // SAFETY: `SGI_HANDLERS` is read-only after the boot-time
     // registration phase — see the static's docstring.  The `&*ptr`
     // dereference is sound under the boot-time-only-writes contract.
-    let handlers_ptr: *const [Option<SgiHandler>; MAX_SGI_INTID as usize] =
-        &raw const SGI_HANDLERS;
+    let handlers_ptr: *const [Option<SgiHandler>; MAX_SGI_INTID as usize] = &raw const SGI_HANDLERS;
     unsafe { lookup_sgi_handler_in(&*handlers_ptr, intid) }
 }
 
@@ -1027,8 +1014,7 @@ pub fn dispatch_sgi(intid: u8, source_cpu: u8) {
     //
     // SAFETY: `SGI_HANDLERS` is read-only after the boot-time
     // registration phase.
-    let handlers_ptr: *const [Option<SgiHandler>; MAX_SGI_INTID as usize] =
-        &raw const SGI_HANDLERS;
+    let handlers_ptr: *const [Option<SgiHandler>; MAX_SGI_INTID as usize] = &raw const SGI_HANDLERS;
     unsafe { dispatch_sgi_in(&*handlers_ptr, intid, source_cpu) }
 }
 
@@ -1120,10 +1106,8 @@ pub const fn iar_source_cpu(iar: u32) -> u8 {
 /// Correct only in single-core contexts where no SGI ever carries a
 /// non-zero source-CPU field.  No production caller remains; the tests
 /// that pin the legacy adapter's behaviour carry `#[allow(deprecated)]`.
-#[deprecated(
-    note = "EOIs with masked source-CPU bits — strands per-source SGI \
-            instances on multi-core builds; use dispatch_irq_with_iar"
-)]
+#[deprecated(note = "EOIs with masked source-CPU bits — strands per-source SGI \
+            instances on multi-core builds; use dispatch_irq_with_iar")]
 pub fn dispatch_irq<F: FnOnce(u32)>(handler: F) -> bool {
     dispatch_irq_inner(
         acknowledge_irq_classified(GICC_BASE),
@@ -1160,9 +1144,7 @@ where
         AckResult::Handled(intid) | AckResult::OutOfRange(intid) => intid,
         AckResult::Spurious => SPURIOUS_THRESHOLD,
     };
-    dispatch_irq_with_iar_inner(raw_iar, eoi, |intid, _source_cpu| {
-        handler(intid)
-    })
+    dispatch_irq_with_iar_inner(raw_iar, eoi, |intid, _source_cpu| handler(intid))
 }
 
 /// **WS-SM SM7.B.3**: classify a FULL `GICC_IAR` value (the raw-IAR
@@ -1680,8 +1662,11 @@ mod tests {
         // bank (covering INTIDs 0..31).  Pin this offset so a
         // refactor that changes ISENABLER_BASE doesn't break the
         // per-core SGI/PPI enable.
-        assert_eq!(gicd::ISENABLER_BASE, 0x100,
-            "GICD_ISENABLER_BASE must match GIC-400 TRM §4.3.5");
+        assert_eq!(
+            gicd::ISENABLER_BASE,
+            0x100,
+            "GICD_ISENABLER_BASE must match GIC-400 TRM §4.3.5"
+        );
         // Bank 0 = ISENABLER0 = first 32 INTIDs (SGIs 0..15 + PPIs 16..31).
         // Verify the mask we use (0xFFFF_FFFF) actually covers every SGI
         // INTID in 0..15 (low 16 bits of bank 0) AND the timer PPI.
@@ -1716,12 +1701,17 @@ mod tests {
         // INTID (0..31) priority to 0xA0.  Each register holds 4
         // priority bytes (8-bit fields), so 8 registers cover 32
         // INTIDs.  Pin the offset and the number of writes.
-        assert_eq!(gicd::IPRIORITYR_BASE, 0x400,
-            "GICD_IPRIORITYR_BASE must match GIC-400 TRM §4.3.11");
+        assert_eq!(
+            gicd::IPRIORITYR_BASE,
+            0x400,
+            "GICD_IPRIORITYR_BASE must match GIC-400 TRM §4.3.11"
+        );
         // 8 registers × 4 INTIDs per register = 32 INTIDs covered.
         let registers_for_first_32_intids: usize = 32 / 4;
-        assert_eq!(registers_for_first_32_intids, 8,
-            "Each IPRIORITYR holds 4 priority bytes; 8 regs cover 32 INTIDs");
+        assert_eq!(
+            registers_for_first_32_intids, 8,
+            "Each IPRIORITYR holds 4 priority bytes; 8 regs cover 32 INTIDs"
+        );
         // Verify the priority value (0xA0) is < GICC_PMR (0xFF) so
         // GICC_PMR=0xFF "accept all priorities < 0xFF" does NOT mask
         // these INTIDs.
@@ -1748,8 +1738,11 @@ mod tests {
         // Group 0 (= IRQ delivery, not FIQ).  Bank 0 covers INTIDs
         // 0..31; the write is to a banked register that only affects
         // the calling CPU's view.
-        assert_eq!(gicd::IGROUPR_BASE, 0x080,
-            "GICD_IGROUPR_BASE must match GIC-400 TRM §4.3.4");
+        assert_eq!(
+            gicd::IGROUPR_BASE,
+            0x080,
+            "GICD_IGROUPR_BASE must match GIC-400 TRM §4.3.4"
+        );
         // The value 0 means "all 32 INTIDs in Group 0" (IRQ).
         let group_0_value: u32 = 0;
         assert_eq!(group_0_value, 0, "Group 0 (IRQ delivery)");
@@ -1763,8 +1756,11 @@ mod tests {
         // reset leftover state).  Per GIC-400 TRM §4.3.8, writing 1
         // to a bit CLEARS the pending state; writing 0 leaves
         // unchanged.  So 0xFFFF_FFFF clears every bit.
-        assert_eq!(gicd::ICPENDR_BASE, 0x280,
-            "GICD_ICPENDR_BASE must match GIC-400 TRM §4.3.8");
+        assert_eq!(
+            gicd::ICPENDR_BASE,
+            0x280,
+            "GICD_ICPENDR_BASE must match GIC-400 TRM §4.3.8"
+        );
         // The value 0xFFFF_FFFF clears every pending bit (write-1-to-clear).
         let clear_all_pending: u32 = 0xFFFF_FFFF;
         // Bit 30 (timer PPI) included → clears stale timer pending state.
@@ -1905,7 +1901,11 @@ mod tests {
     fn sm1f1_encode_sgir_isolates_target_list_filter() {
         // TargetListFilter is bits [25:24]; verify every TLF value
         // populates that field cleanly.
-        for tlf in [SGI_TLF_CPU_TARGET_LIST, SGI_TLF_ALL_BUT_SELF, SGI_TLF_SELF_ONLY] {
+        for tlf in [
+            SGI_TLF_CPU_TARGET_LIST,
+            SGI_TLF_ALL_BUT_SELF,
+            SGI_TLF_SELF_ONLY,
+        ] {
             let enc = encode_sgir(tlf, 0, 0);
             assert_eq!(
                 (enc >> 24) & 0x3,
@@ -2038,8 +2038,10 @@ mod tests {
 
     static SM1F5_INNER_LOOKUP_FIRED: AtomicU32 = AtomicU32::new(0);
     fn sm1f5_inner_lookup_handler(intid: u8, source_cpu: u8) {
-        SM1F5_INNER_LOOKUP_FIRED
-            .store(((intid as u32) << 8) | (source_cpu as u32), Ordering::SeqCst);
+        SM1F5_INNER_LOOKUP_FIRED.store(
+            ((intid as u32) << 8) | (source_cpu as u32),
+            Ordering::SeqCst,
+        );
     }
 
     #[test]
@@ -2077,8 +2079,10 @@ mod tests {
 
     static SM1F5_INNER_DISPATCH_FIRED: AtomicU32 = AtomicU32::new(0);
     fn sm1f5_inner_dispatch_handler(intid: u8, source_cpu: u8) {
-        SM1F5_INNER_DISPATCH_FIRED
-            .store(((intid as u32) << 8) | (source_cpu as u32), Ordering::SeqCst);
+        SM1F5_INNER_DISPATCH_FIRED.store(
+            ((intid as u32) << 8) | (source_cpu as u32),
+            Ordering::SeqCst,
+        );
     }
 
     #[test]
@@ -2105,16 +2109,14 @@ mod tests {
         // logs but does not panic.  Stack-local table so we know
         // INTID 13 is genuinely unregistered (independent of other
         // tests).
-        let handlers: [Option<SgiHandler>; MAX_SGI_INTID as usize] =
-            [None; MAX_SGI_INTID as usize];
+        let handlers: [Option<SgiHandler>; MAX_SGI_INTID as usize] = [None; MAX_SGI_INTID as usize];
         dispatch_sgi_in(&handlers, 13, 0);
     }
 
     #[test]
     fn sm1f5_inner_dispatch_silent_for_out_of_range_intid() {
         // SM1.F.5 audit-pass-1: out-of-range INTIDs early-return.
-        let handlers: [Option<SgiHandler>; MAX_SGI_INTID as usize] =
-            [None; MAX_SGI_INTID as usize];
+        let handlers: [Option<SgiHandler>; MAX_SGI_INTID as usize] = [None; MAX_SGI_INTID as usize];
         dispatch_sgi_in(&handlers, 16, 0);
         dispatch_sgi_in(&handlers, 100, 0);
         dispatch_sgi_in(&handlers, 255, 0);
@@ -2122,8 +2124,7 @@ mod tests {
 
     #[test]
     fn sm1f5_inner_lookup_returns_none_for_out_of_range_intid() {
-        let handlers: [Option<SgiHandler>; MAX_SGI_INTID as usize] =
-            [None; MAX_SGI_INTID as usize];
+        let handlers: [Option<SgiHandler>; MAX_SGI_INTID as usize] = [None; MAX_SGI_INTID as usize];
         assert!(lookup_sgi_handler_in(&handlers, 16).is_none());
         assert!(lookup_sgi_handler_in(&handlers, 100).is_none());
         assert!(lookup_sgi_handler_in(&handlers, 255).is_none());
@@ -2280,7 +2281,10 @@ mod tests {
         // GICD_SGIR MMIO address.
         let addr = GICD_BASE + gicd::SGIR;
         assert_eq!(addr, 0xFF841000 + 0xF00);
-        assert_eq!(addr, 0xFF841F00, "GICD_SGIR must be at 0xFF841F00 on BCM2712");
+        assert_eq!(
+            addr, 0xFF841F00,
+            "GICD_SGIR must be at 0xFF841F00 on BCM2712"
+        );
     }
 
     // ------------------------------------------------------------------------
@@ -2320,11 +2324,8 @@ mod tests {
     fn sm7b3_dispatch_with_iar_spurious_no_eoi() {
         let mut eoi_fired = false;
         let mut handler_fired = false;
-        let handled = dispatch_irq_with_iar_inner(
-            1023,
-            |_| eoi_fired = true,
-            |_, _| handler_fired = true,
-        );
+        let handled =
+            dispatch_irq_with_iar_inner(1023, |_| eoi_fired = true, |_, _| handler_fired = true);
         assert!(!handled);
         assert!(!eoi_fired);
         assert!(!handler_fired);
@@ -2336,11 +2337,8 @@ mod tests {
     fn sm7b3_dispatch_with_iar_out_of_range_eoi_only() {
         let mut eoi_value = None;
         let mut handler_fired = false;
-        let handled = dispatch_irq_with_iar_inner(
-            300,
-            |v| eoi_value = Some(v),
-            |_, _| handler_fired = true,
-        );
+        let handled =
+            dispatch_irq_with_iar_inner(300, |v| eoi_value = Some(v), |_, _| handler_fired = true);
         assert!(handled);
         assert_eq!(eoi_value, Some(300));
         assert!(!handler_fired);

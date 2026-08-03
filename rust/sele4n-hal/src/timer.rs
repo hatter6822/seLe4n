@@ -478,14 +478,18 @@ mod tests {
     fn tick_count_starts_at_zero() {
         // Reset for test isolation.  SM1.I serialisation: acquire the
         // global state mutex so this test does not race on TICK_COUNT.
-        let _guard = TIMER_GLOBAL_STATE_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = TIMER_GLOBAL_STATE_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         TICK_COUNT.store(0, Ordering::Relaxed);
         assert_eq!(get_tick_count(), 0);
     }
 
     #[test]
     fn tick_count_increments() {
-        let _guard = TIMER_GLOBAL_STATE_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = TIMER_GLOBAL_STATE_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         TICK_COUNT.store(0, Ordering::Relaxed);
         assert_eq!(increment_tick_count(), 1);
         assert_eq!(increment_tick_count(), 2);
@@ -494,7 +498,9 @@ mod tests {
 
     #[test]
     fn timer_interval_storage() {
-        let _guard = TIMER_GLOBAL_STATE_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = TIMER_GLOBAL_STATE_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         TIMER_INTERVAL.store(54_000, Ordering::Relaxed);
         assert_eq!(TIMER_INTERVAL.load(Ordering::Relaxed), 54_000);
     }
@@ -512,7 +518,9 @@ mod tests {
         // SM1.I serialisation: acquire the global state mutex so
         // TIMER_INTERVAL and TICK_COUNT reads aren't raced by parallel
         // timer tests.
-        let _guard = TIMER_GLOBAL_STATE_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = TIMER_GLOBAL_STATE_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         // Reset before init so the precondition matches.
         TICK_COUNT.store(0, Ordering::Relaxed);
         assert_eq!(init_timer(1000), Ok(()));
@@ -524,14 +532,18 @@ mod tests {
     fn init_timer_100hz_interval() {
         // AN8-D (RUST-M03): explicit Ok(()) check.
         // SM1.I serialisation: see TIMER_GLOBAL_STATE_MUTEX docstring.
-        let _guard = TIMER_GLOBAL_STATE_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = TIMER_GLOBAL_STATE_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         assert_eq!(init_timer(100), Ok(()));
         assert_eq!(TIMER_INTERVAL.load(Ordering::Relaxed), 540_000);
     }
 
     #[test]
     fn reprogram_timer_no_panic() {
-        let _guard = TIMER_GLOBAL_STATE_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = TIMER_GLOBAL_STATE_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         TIMER_INTERVAL.store(54_000, Ordering::Relaxed);
         // On non-aarch64, read_counter returns 0, set_comparator is no-op.
         reprogram_timer();
@@ -539,7 +551,9 @@ mod tests {
 
     #[test]
     fn reprogram_timer_uninit_noop() {
-        let _guard = TIMER_GLOBAL_STATE_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = TIMER_GLOBAL_STATE_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         TIMER_INTERVAL.store(0, Ordering::Relaxed);
         // Should return early without panicking
         reprogram_timer();
@@ -621,7 +635,9 @@ mod tests {
         // and verify the counter survives.
         //
         // SM1.I serialisation: see TIMER_GLOBAL_STATE_MUTEX docstring.
-        let _guard = TIMER_GLOBAL_STATE_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = TIMER_GLOBAL_STATE_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         TICK_COUNT.store(42, Ordering::Relaxed);
         assert_eq!(init_timer_secondary(DEFAULT_TICK_HZ), Ok(()));
         assert_eq!(
@@ -646,7 +662,9 @@ mod tests {
         // so a regression where we do write the global is detectable.
         //
         // SM1.I serialisation: see TIMER_GLOBAL_STATE_MUTEX docstring.
-        let _guard = TIMER_GLOBAL_STATE_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = TIMER_GLOBAL_STATE_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         TIMER_INTERVAL.store(99_999, Ordering::Relaxed);
         assert_eq!(init_timer_secondary(DEFAULT_TICK_HZ), Ok(()));
         assert_eq!(
@@ -673,7 +691,9 @@ mod tests {
         // doesn't accidentally hard-code DEFAULT_TICK_HZ.
         //
         // SM1.I serialisation: see TIMER_GLOBAL_STATE_MUTEX docstring.
-        let _guard = TIMER_GLOBAL_STATE_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = TIMER_GLOBAL_STATE_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         TIMER_INTERVAL.store(0, Ordering::Relaxed);
         TICK_COUNT.store(0, Ordering::Relaxed);
         assert_eq!(init_timer_secondary(100), Ok(()));

@@ -28,9 +28,18 @@ pub const MAX_LABEL: u64 = (1u64 << 20) - 1;
 // (in `SeLe4n/Model/Object/Types.lean`), these assertions will fail at compile time,
 // preventing silent divergence between the Lean model and Rust FFI layer.
 const _: () = {
-    assert!(MAX_LABEL == 1_048_575, "MAX_LABEL must be 2^20 - 1 (Lean: maxLabel)");
-    assert!(MAX_MSG_LENGTH == 120, "MAX_MSG_LENGTH must be 120 (Lean: maxMessageRegisters)");
-    assert!(MAX_EXTRA_CAPS == 3, "MAX_EXTRA_CAPS must be 3 (Lean: maxExtraCaps)");
+    assert!(
+        MAX_LABEL == 1_048_575,
+        "MAX_LABEL must be 2^20 - 1 (Lean: maxLabel)"
+    );
+    assert!(
+        MAX_MSG_LENGTH == 120,
+        "MAX_MSG_LENGTH must be 120 (Lean: maxMessageRegisters)"
+    );
+    assert!(
+        MAX_EXTRA_CAPS == 3,
+        "MAX_EXTRA_CAPS must be 3 (Lean: maxExtraCaps)"
+    );
 };
 
 /// Decoded message-info word, matching `seL4_MessageInfo_t`.
@@ -57,10 +66,15 @@ impl MessageInfo {
     /// Returns `InvalidMessageInfo` if length > 120, extraCaps > 3,
     /// or label >= 2^20.
     pub const fn new(length: u8, extra_caps: u8, label: u64) -> Result<Self, KernelError> {
-        if length as u64 > MAX_MSG_LENGTH || extra_caps as u64 > MAX_EXTRA_CAPS || label > MAX_LABEL {
+        if length as u64 > MAX_MSG_LENGTH || extra_caps as u64 > MAX_EXTRA_CAPS || label > MAX_LABEL
+        {
             Err(KernelError::InvalidMessageInfo)
         } else {
-            Ok(Self { length, extra_caps, label })
+            Ok(Self {
+                length,
+                extra_caps,
+                label,
+            })
         }
     }
 
@@ -72,29 +86,45 @@ impl MessageInfo {
     /// where all arguments are known-valid constants (e.g., length ≤ 5,
     /// extra_caps = 0, label = 0).
     pub const fn new_const(length: u8, extra_caps: u8, label: u64) -> Self {
-        assert!(length as u64 <= MAX_MSG_LENGTH, "length exceeds MAX_MSG_LENGTH");
-        assert!(extra_caps as u64 <= MAX_EXTRA_CAPS, "extra_caps exceeds MAX_EXTRA_CAPS");
+        assert!(
+            length as u64 <= MAX_MSG_LENGTH,
+            "length exceeds MAX_MSG_LENGTH"
+        );
+        assert!(
+            extra_caps as u64 <= MAX_EXTRA_CAPS,
+            "extra_caps exceeds MAX_EXTRA_CAPS"
+        );
         assert!(label <= MAX_LABEL, "label exceeds MAX_LABEL");
-        Self { length, extra_caps, label }
+        Self {
+            length,
+            extra_caps,
+            label,
+        }
     }
 
     /// Number of message registers (0..=120).
     ///
     /// U3-B: Read-only accessor replacing the former `pub` field.
     #[inline]
-    pub const fn length(&self) -> u8 { self.length }
+    pub const fn length(&self) -> u8 {
+        self.length
+    }
 
     /// Number of extra capability addresses (0..=3).
     ///
     /// U3-B: Read-only accessor replacing the former `pub` field.
     #[inline]
-    pub const fn extra_caps(&self) -> u8 { self.extra_caps }
+    pub const fn extra_caps(&self) -> u8 {
+        self.extra_caps
+    }
 
     /// User-defined label (0..=2^20-1; seL4 20-bit convention).
     ///
     /// U3-B: Read-only accessor replacing the former `pub` field.
     #[inline]
-    pub const fn label(&self) -> u64 { self.label }
+    pub const fn label(&self) -> u64 {
+        self.label
+    }
 
     /// Encode into a single 64-bit register word.
     ///
@@ -118,9 +148,7 @@ impl MessageInfo {
         if self.label > MAX_LABEL {
             return Err(KernelError::InvalidMessageInfo);
         }
-        Ok((self.length as u64 & 0x7F)
-            | ((self.extra_caps as u64 & 0x3) << 7)
-            | (self.label << 9))
+        Ok((self.length as u64 & 0x7F) | ((self.extra_caps as u64 & 0x3) << 7) | (self.label << 9))
     }
 
     /// Decode a raw 64-bit word into MessageInfo.
@@ -143,8 +171,15 @@ impl MessageInfo {
         let length = (raw & 0x7F) as u8;
         let extra_caps = ((raw >> 7) & 0x3) as u8;
         let label = raw >> 9;
-        if length as u64 <= MAX_MSG_LENGTH && extra_caps as u64 <= MAX_EXTRA_CAPS && label <= MAX_LABEL {
-            Ok(Self { length, extra_caps, label })
+        if length as u64 <= MAX_MSG_LENGTH
+            && extra_caps as u64 <= MAX_EXTRA_CAPS
+            && label <= MAX_LABEL
+        {
+            Ok(Self {
+                length,
+                extra_caps,
+                label,
+            })
         } else {
             Err(KernelError::InvalidMessageInfo)
         }
@@ -179,7 +214,10 @@ mod tests {
     fn decode_invalid_length() {
         // length = 127 (0x7F) > 120
         let raw: u64 = 127;
-        assert_eq!(MessageInfo::decode(raw), Err(KernelError::InvalidMessageInfo));
+        assert_eq!(
+            MessageInfo::decode(raw),
+            Err(KernelError::InvalidMessageInfo)
+        );
     }
 
     #[test]
@@ -227,7 +265,10 @@ mod tests {
     fn decode_rejects_oversized_label() {
         // Encode a raw word with label = 2^20 (just over the limit)
         let raw: u64 = (1u64 << 20) << 9; // label field starts at bit 9
-        assert_eq!(MessageInfo::decode(raw), Err(KernelError::InvalidMessageInfo));
+        assert_eq!(
+            MessageInfo::decode(raw),
+            Err(KernelError::InvalidMessageInfo)
+        );
     }
 
     // U3-B: Accessor method tests

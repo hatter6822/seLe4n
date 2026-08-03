@@ -6,8 +6,8 @@
 //!
 //! This module uses sealed traits to prevent external implementations.
 
-use sele4n_types::{CPtr, AccessRights};
 use core::marker::PhantomData;
+use sele4n_types::{AccessRights, CPtr};
 
 // ============================================================================
 // Sealed trait pattern
@@ -37,38 +37,52 @@ pub trait CapRights: sealed::Sealed {
 /// Endpoint object marker.
 pub struct Endpoint;
 impl sealed::Sealed for Endpoint {}
-impl CapObject for Endpoint { const NAME: &'static str = "Endpoint"; }
+impl CapObject for Endpoint {
+    const NAME: &'static str = "Endpoint";
+}
 
 /// Notification object marker.
 pub struct Notification;
 impl sealed::Sealed for Notification {}
-impl CapObject for Notification { const NAME: &'static str = "Notification"; }
+impl CapObject for Notification {
+    const NAME: &'static str = "Notification";
+}
 
 /// CNode object marker.
 pub struct CNode;
 impl sealed::Sealed for CNode {}
-impl CapObject for CNode { const NAME: &'static str = "CNode"; }
+impl CapObject for CNode {
+    const NAME: &'static str = "CNode";
+}
 
 /// TCB (Thread Control Block) object marker.
 pub struct Tcb;
 impl sealed::Sealed for Tcb {}
-impl CapObject for Tcb { const NAME: &'static str = "TCB"; }
+impl CapObject for Tcb {
+    const NAME: &'static str = "TCB";
+}
 
 /// VSpaceRoot object marker.
 pub struct VSpaceRoot;
 impl sealed::Sealed for VSpaceRoot {}
-impl CapObject for VSpaceRoot { const NAME: &'static str = "VSpaceRoot"; }
+impl CapObject for VSpaceRoot {
+    const NAME: &'static str = "VSpaceRoot";
+}
 
 /// Untyped memory object marker.
 pub struct Untyped;
 impl sealed::Sealed for Untyped {}
-impl CapObject for Untyped { const NAME: &'static str = "Untyped"; }
+impl CapObject for Untyped {
+    const NAME: &'static str = "Untyped";
+}
 
 /// AF6-D: Scheduling context object marker.
 /// Used with `Cap<SchedContext>` for type-safe SchedContext capability handles.
 pub struct SchedContext;
 impl sealed::Sealed for SchedContext {}
-impl CapObject for SchedContext { const NAME: &'static str = "SchedContext"; }
+impl CapObject for SchedContext {
+    const NAME: &'static str = "SchedContext";
+}
 
 // ============================================================================
 // Rights markers
@@ -77,12 +91,16 @@ impl CapObject for SchedContext { const NAME: &'static str = "SchedContext"; }
 /// Full rights (read + write + grant + grant_reply + retype).
 pub struct FullRights;
 impl sealed::Sealed for FullRights {}
-impl CapRights for FullRights { const RIGHTS: AccessRights = AccessRights::ALL; }
+impl CapRights for FullRights {
+    const RIGHTS: AccessRights = AccessRights::ALL;
+}
 
 /// Read-only rights.
 pub struct ReadOnly;
 impl sealed::Sealed for ReadOnly {}
-impl CapRights for ReadOnly { const RIGHTS: AccessRights = AccessRights::READ; }
+impl CapRights for ReadOnly {
+    const RIGHTS: AccessRights = AccessRights::READ;
+}
 
 /// Read-write rights.
 pub struct ReadWrite;
@@ -166,18 +184,27 @@ impl<Obj: CapObject, Rts: CapRights> Cap<Obj, Rts> {
     /// `Obj` with at least the rights described by `Rts`. No runtime check
     /// is performed — the kernel validates on each syscall.
     pub const fn from_cptr(ptr: CPtr) -> Self {
-        Self { ptr, restricted_rights: Rts::RIGHTS, _obj: PhantomData, _rts: PhantomData }
+        Self {
+            ptr,
+            restricted_rights: Rts::RIGHTS,
+            _obj: PhantomData,
+            _rts: PhantomData,
+        }
     }
 
     /// Get the underlying CPtr for syscall invocation.
-    pub const fn cptr(&self) -> CPtr { self.ptr }
+    pub const fn cptr(&self) -> CPtr {
+        self.ptr
+    }
 
     /// Get the actual rights for this capability.
     ///
     /// For statically-typed caps (`FullRights`, `ReadOnly`, etc.), this returns
     /// the compile-time constant. For `Restricted` caps, this returns the
     /// runtime-computed rights mask stored at restriction time (S1-F fix).
-    pub const fn rights(&self) -> AccessRights { self.restricted_rights }
+    pub const fn rights(&self) -> AccessRights {
+        self.restricted_rights
+    }
 
     /// Convert to a read-only capability.
     ///
@@ -187,7 +214,12 @@ impl<Obj: CapObject, Rts: CapRights> Cap<Obj, Rts> {
     /// only if the restricted rights include READ.
     pub fn to_read_only(self) -> Result<Cap<Obj, ReadOnly>, CapError> {
         if AccessRights::READ.is_subset_of(&self.restricted_rights) {
-            Ok(Cap { ptr: self.ptr, restricted_rights: AccessRights::READ, _obj: PhantomData, _rts: PhantomData })
+            Ok(Cap {
+                ptr: self.ptr,
+                restricted_rights: AccessRights::READ,
+                _obj: PhantomData,
+                _rts: PhantomData,
+            })
         } else {
             Err(CapError::RightsNotSubset {
                 requested: AccessRights::READ,
@@ -205,7 +237,12 @@ impl<Obj: CapObject, Rts: CapRights> Cap<Obj, Rts> {
     pub fn restrict(self, mask: AccessRights) -> Result<Cap<Obj, Restricted>, CapError> {
         if mask.is_subset_of(&self.restricted_rights) {
             // S1-F: Store the actual restricted rights in the Cap struct
-            Ok(Cap { ptr: self.ptr, restricted_rights: mask, _obj: PhantomData, _rts: PhantomData })
+            Ok(Cap {
+                ptr: self.ptr,
+                restricted_rights: mask,
+                _obj: PhantomData,
+                _rts: PhantomData,
+            })
         } else {
             Err(CapError::RightsNotSubset {
                 requested: mask,
@@ -218,12 +255,20 @@ impl<Obj: CapObject, Rts: CapRights> Cap<Obj, Rts> {
 // Copy provides Clone automatically; no manual Clone impl needed.
 impl<Obj: CapObject, Rts: CapRights> Copy for Cap<Obj, Rts> {}
 impl<Obj: CapObject, Rts: CapRights> Clone for Cap<Obj, Rts> {
-    fn clone(&self) -> Self { *self }
+    fn clone(&self) -> Self {
+        *self
+    }
 }
 
 impl<Obj: CapObject, Rts: CapRights> core::fmt::Debug for Cap<Obj, Rts> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "Cap<{}, rights=0x{:02x}>({})", Obj::NAME, self.restricted_rights.raw(), self.ptr.raw())
+        write!(
+            f,
+            "Cap<{}, rights=0x{:02x}>({})",
+            Obj::NAME,
+            self.restricted_rights.raw(),
+            self.ptr.raw()
+        )
     }
 }
 
@@ -311,9 +356,15 @@ mod tests {
         let restricted = full.restrict(mask).unwrap();
         // S1-F: rights() must return the actual restricted mask, not EMPTY
         assert_eq!(restricted.rights(), mask);
-        assert!(restricted.rights().contains(sele4n_types::AccessRight::Read));
-        assert!(restricted.rights().contains(sele4n_types::AccessRight::Grant));
-        assert!(!restricted.rights().contains(sele4n_types::AccessRight::Write));
+        assert!(restricted
+            .rights()
+            .contains(sele4n_types::AccessRight::Read));
+        assert!(restricted
+            .rights()
+            .contains(sele4n_types::AccessRight::Grant));
+        assert!(!restricted
+            .rights()
+            .contains(sele4n_types::AccessRight::Write));
     }
 
     #[test]

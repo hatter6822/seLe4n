@@ -388,7 +388,10 @@ impl<'a> TicketLockGuard<'a> {
     #[inline]
     pub fn acquire(lock: &'a TicketLock) -> Self {
         let ticket = lock.acquire();
-        Self { lock, _ticket: ticket }
+        Self {
+            lock,
+            _ticket: ticket,
+        }
     }
 
     /// **WS-SM SM2.B.16**: get the captured ticket for diagnostic use.
@@ -560,7 +563,11 @@ mod tests {
         let _t = lock.acquire();
         assert_eq!(lock.peek_next_ticket(), 1);
         lock.release();
-        assert_eq!(lock.peek_next_ticket(), 1, "release does not advance next_ticket");
+        assert_eq!(
+            lock.peek_next_ticket(),
+            1,
+            "release does not advance next_ticket"
+        );
         for _ in 0..10u64 {
             let _ = lock.acquire();
             lock.release();
@@ -595,8 +602,10 @@ mod tests {
         assert!(lock.peek_serving() <= lock.peek_next_ticket());
         // After acquire (before release), serving < next_ticket.
         let _t = lock.acquire();
-        assert!(lock.peek_serving() < lock.peek_next_ticket(),
-                "after acquire-before-release, serving must be strictly < next_ticket");
+        assert!(
+            lock.peek_serving() < lock.peek_next_ticket(),
+            "after acquire-before-release, serving must be strictly < next_ticket"
+        );
         lock.release();
         // After balanced cycle, serving == next_ticket.
         assert_eq!(lock.peek_serving(), lock.peek_next_ticket());
@@ -738,8 +747,11 @@ mod tests {
         }));
         assert!(result.is_err(), "panic should have been caught");
         // Lock must be released: serving should have incremented to 1.
-        assert_eq!(lock.serving.load(Ordering::Acquire), 1,
-                   "Drop on TicketLockGuard must release the lock on panic-unwind");
+        assert_eq!(
+            lock.serving.load(Ordering::Acquire),
+            1,
+            "Drop on TicketLockGuard must release the lock on panic-unwind"
+        );
         // next_ticket also at 1 (one acquire happened).
         assert_eq!(lock.next_ticket.load(Ordering::Acquire), 1);
         // A subsequent acquire should succeed (lock is free).
@@ -763,8 +775,8 @@ mod tests {
     /// Lean spec's `mutex` + `FIFO` theorems certify abstractly.
     #[test]
     fn sm2b16_cross_thread_mutex_stress() {
-        use std::sync::Arc;
         use std::cell::UnsafeCell;
+        use std::sync::Arc;
         // Wrap the counter and lock in an Arc'd UnsafeCell so threads
         // can share access.  Manual Sync impl below documents the
         // safety obligation: all access is gated by the TicketLock.
@@ -804,9 +816,13 @@ mod tests {
         // Final count: exactly NUM_THREADS * OPS_PER_THREAD.
         // SAFETY: all threads joined, no concurrent access.
         let final_count = unsafe { *shared.count.get() };
-        assert_eq!(final_count, (NUM_THREADS as u64) * OPS_PER_THREAD,
-                   "lock failed to serialise increments (got {}, expected {})",
-                   final_count, (NUM_THREADS as u64) * OPS_PER_THREAD);
+        assert_eq!(
+            final_count,
+            (NUM_THREADS as u64) * OPS_PER_THREAD,
+            "lock failed to serialise increments (got {}, expected {})",
+            final_count,
+            (NUM_THREADS as u64) * OPS_PER_THREAD
+        );
         // Lock counters: each thread did OPS_PER_THREAD acquires/releases.
         let expected = (NUM_THREADS as u64) * OPS_PER_THREAD;
         assert_eq!(shared.lock.next_ticket.load(Ordering::Acquire), expected);
@@ -827,8 +843,7 @@ mod tests {
     fn sm2b16_cross_thread_fifo_observation() {
         use std::sync::{Arc, Mutex};
         let lock = Arc::new(TicketLock::new());
-        let captured: Arc<Mutex<std::vec::Vec<u64>>> =
-            Arc::new(Mutex::new(std::vec::Vec::new()));
+        let captured: Arc<Mutex<std::vec::Vec<u64>>> = Arc::new(Mutex::new(std::vec::Vec::new()));
         const NUM_THREADS: usize = 4;
         let mut handles: std::vec::Vec<std::thread::JoinHandle<()>> = std::vec::Vec::new();
         for _ in 0..NUM_THREADS {
@@ -848,14 +863,19 @@ mod tests {
         let original_len = captured_tickets.len();
         captured_tickets.sort_unstable();
         captured_tickets.dedup();
-        assert_eq!(captured_tickets.len(), original_len,
-                   "captured tickets had duplicates: {:?}",
-                   captured_tickets);
+        assert_eq!(
+            captured_tickets.len(),
+            original_len,
+            "captured tickets had duplicates: {:?}",
+            captured_tickets
+        );
         // Captured tickets form a contiguous range 0..NUM_THREADS.
         let expected: std::vec::Vec<u64> = (0..NUM_THREADS as u64).collect();
-        assert_eq!(captured_tickets, expected,
-                   "captured tickets are not contiguous 0..{}: {:?}",
-                   NUM_THREADS, captured_tickets);
+        assert_eq!(
+            captured_tickets, expected,
+            "captured tickets are not contiguous 0..{}: {:?}",
+            NUM_THREADS, captured_tickets
+        );
     }
 
     /// **SM2.B.16 test**: `release()` debug_assert catches
@@ -904,7 +924,10 @@ mod tests {
         // wrap much faster).
         let _: AtomicU64 = AtomicU64::new(0);
         // Verify the size at compile time via the structure layout.
-        assert_eq!(size_of::<AtomicU64>(), 8,
-                   "AtomicU64 must be 8 bytes (u64 width)");
+        assert_eq!(
+            size_of::<AtomicU64>(),
+            8,
+            "AtomicU64 must be 8 bytes (u64 width)"
+        );
     }
 }

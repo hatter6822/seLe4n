@@ -242,7 +242,11 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
             // to `.error .userException`.
             // WS-SM SM1.I.4: per-core user-exception attribution.
             let _ = crate::per_cpu_stats::record_user_exception();
-            crate::kprintln!("FATAL: unhandled exception EC=0x{:02x} ESR=0x{:016x}", exception_class, esr);
+            crate::kprintln!(
+                "FATAL: unhandled exception EC=0x{:02x} ESR=0x{:016x}",
+                exception_class,
+                esr
+            );
             frame.set_x0(error_code::USER_EXCEPTION);
         }
     }
@@ -684,8 +688,11 @@ mod tests {
     fn svc_stub_returns_not_implemented() {
         // The SVC handler is a pre-FFI stub. It must return NotImplemented (17)
         // to prevent userspace from interpreting the no-op as success (0).
-        assert_ne!(error_code::NOT_IMPLEMENTED, 0,
-            "SVC stub must not return success (0)");
+        assert_ne!(
+            error_code::NOT_IMPLEMENTED,
+            0,
+            "SVC stub must not return success (0)"
+        );
     }
 
     // ========================================================================
@@ -802,7 +809,9 @@ mod tests {
     fn sm1i4_handle_sync_svc_increments_per_core_syscall_count() {
         // Audit-pass-3: serialise via SM1I4_OBSERVATION_MUTEX so concurrent
         // trap-handler tests don't race on PER_CPU_STATS[0].syscall_count.
-        let _guard = SM1I4_OBSERVATION_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = SM1I4_OBSERVATION_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let before = crate::per_cpu_stats::syscall_count_for(0);
         let mut frame = zero_frame();
         frame.esr_el1 = ec::SVC_AARCH64 << 26;
@@ -819,7 +828,9 @@ mod tests {
     #[test]
     fn sm1i4_handle_sync_dabt_increments_per_core_vm_fault_count() {
         // Audit-pass-3: see SM1I4_OBSERVATION_MUTEX docstring.
-        let _guard = SM1I4_OBSERVATION_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = SM1I4_OBSERVATION_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let before = crate::per_cpu_stats::vm_fault_count_for(0);
         let mut frame = zero_frame();
         frame.esr_el1 = ec::DABT_LOWER << 26;
@@ -835,7 +846,9 @@ mod tests {
 
     #[test]
     fn sm1i4_handle_sync_iabt_increments_per_core_vm_fault_count() {
-        let _guard = SM1I4_OBSERVATION_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = SM1I4_OBSERVATION_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let before = crate::per_cpu_stats::vm_fault_count_for(0);
         let mut frame = zero_frame();
         frame.esr_el1 = ec::IABT_LOWER << 26;
@@ -851,7 +864,9 @@ mod tests {
 
     #[test]
     fn sm1i4_handle_sync_alignment_increments_per_core_user_exception_count() {
-        let _guard = SM1I4_OBSERVATION_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = SM1I4_OBSERVATION_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let before = crate::per_cpu_stats::user_exception_count_for(0);
         let mut frame = zero_frame();
         frame.esr_el1 = ec::PC_ALIGN << 26;
@@ -867,7 +882,9 @@ mod tests {
 
     #[test]
     fn sm1i4_handle_sync_sp_alignment_increments_per_core_user_exception_count() {
-        let _guard = SM1I4_OBSERVATION_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = SM1I4_OBSERVATION_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let before = crate::per_cpu_stats::user_exception_count_for(0);
         let mut frame = zero_frame();
         frame.esr_el1 = ec::SP_ALIGN << 26;
@@ -883,7 +900,9 @@ mod tests {
 
     #[test]
     fn sm1i4_handle_sync_unknown_ec_increments_per_core_user_exception_count() {
-        let _guard = SM1I4_OBSERVATION_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = SM1I4_OBSERVATION_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let before = crate::per_cpu_stats::user_exception_count_for(0);
         let mut frame = zero_frame();
         // EC = 0x3F (RES1, not a valid known class) → unknown branch.
@@ -910,7 +929,9 @@ mod tests {
         // test races against `sm1i4_handle_sync_dabt_increments_...`
         // and friends, producing a ~2% transient failure rate.
         // The mutex ensures the `assert_eq!` snapshot pair is atomic.
-        let _guard = SM1I4_OBSERVATION_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = SM1I4_OBSERVATION_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let vm_before = crate::per_cpu_stats::vm_fault_count_for(0);
         let mut frame = zero_frame();
         frame.esr_el1 = ec::SVC_AARCH64 << 26;
