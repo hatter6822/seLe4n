@@ -415,9 +415,18 @@ pub extern "C" fn ffi_send_sgi_to_all_but_self(intid: u8) {
 // The Lean ↔ Rust seam for the per-core [`crate::shootdown::SHOOTDOWN_ACK`]
 // slots — the runtime realisation of the Lean model's
 // `TlbShootdownState.shootdownAck` vector, refined by SM7.F.3 into a
-// monotone *acknowledged round generation* per core (the Lean Boolean
-// `ackOnCore c` corresponds to `acked_gen[c] >= the round's
-// TlbShootdownState.roundGeneration`).  The SM7.B protocol calls these
+// monotone *acknowledged round generation* per core.
+//
+// The generation compared here is the **runtime** one, allocated from
+// [`crate::shootdown::SHOOTDOWN_ROUND_SEQ`] under the round lock: a
+// target has serviced the round iff `acked_gen[c] >= that round's
+// runtime generation`.  It is deliberately NOT the Lean
+// `TlbShootdownState.roundGeneration` (PR #854 review P1), which orders
+// *commits* rather than hardware rounds and keys the SM7.F.3 window
+// drain.  Passing the commit-time generation into this channel is
+// precisely what let a newer round's acknowledgments certify an older
+// round nobody had executed, so the two must not be equated here.  The
+// SM7.B protocol calls these
 // through the typed `CoreId` wrappers in
 // `SeLe4n/Kernel/Concurrency/Runtime.lean` (`shootdownAckRound` /
 // `shootdownAckedGeneration` / `shootdownAllAckedForRound` /

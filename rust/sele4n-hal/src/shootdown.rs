@@ -82,11 +82,14 @@
 //! ## Boot state
 //!
 //! All slots boot at generation `0`, and no round ever carries
-//! generation `0` — the Lean `beginShootdownRound{,For}` allocates
-//! `TlbShootdownState.roundGeneration + 1` from a counter that boots at
-//! `0` (`initial_roundGeneration`).  So before the first round nobody is
-//! outstanding and a wait would trivially succeed rather than deadlock,
-//! matching the Lean model's `TlbShootdownState.initial`.
+//! generation `0` — [`allocate_round_generation`] returns
+//! pre-increment + 1 from [`SHOOTDOWN_ROUND_SEQ`], which boots at `0`,
+//! so the first round it hands out is `1`.  So before the first round
+//! nobody is outstanding and a wait would trivially succeed rather than
+//! deadlock.  The Lean `TlbShootdownState.initial` boots the same way
+//! (`initial_roundGeneration = 0`), but its counter orders *commits* and
+//! is not what these slots are compared against — see
+//! [`allocate_round_generation_in`].
 //!
 //! ## Layout
 //!
@@ -171,13 +174,13 @@ impl ShootdownAckSlot {
     }
 
     /// **WS-SM SM7.F.3**: the boot value — generation `0`, i.e.
-    /// quiescent.  Round generations are allocated from `1` upwards
-    /// (the Lean `beginShootdownRound{,For}` increments
-    /// `TlbShootdownState.roundGeneration`, which boots at `0`), so at
-    /// boot there is no round for which any core is outstanding and the
-    /// very first wait would trivially succeed rather than deadlock.
-    /// Matches the Lean `TlbShootdownState.initial`
-    /// (`initial_roundGeneration = 0`, `initial_allAcked`).
+    /// quiescent.  Runtime round generations are allocated from `1`
+    /// upwards by [`allocate_round_generation`], so at boot there is no
+    /// round for which any core is outstanding and the very first wait
+    /// would trivially succeed rather than deadlock.  The Lean
+    /// `TlbShootdownState.initial` is quiescent at boot for the same
+    /// reason (`initial_roundGeneration = 0`, `initial_allAcked`),
+    /// though its counter orders commits rather than hardware rounds.
     #[inline]
     pub const fn quiescent_at_boot() -> Self {
         Self::new(0)
@@ -586,7 +589,7 @@ pub struct ShootdownOpMailbox {
     /// round whose operands (or a conservative superset) it actually
     /// retired.
     ///
-    /// **Not** the Lean `TlbShootdownState.roundGeneration** (PR #854
+    /// **Not** the Lean `TlbShootdownState.roundGeneration` (PR #854
     /// review P1).  The two order different things on purpose: the model
     /// generation orders *commits* and keys the window drain, this one
     /// orders *hardware rounds* and keys the acknowledgment channel.
@@ -1122,9 +1125,9 @@ mod tests {
     #[test]
     fn boot_constructor_is_generation_zero() {
         // Quiescent boot: generation 0, and no round ever carries
-        // generation 0 (the Lean `beginShootdownRound{,For}` allocates
-        // `roundGeneration + 1` from a counter that boots at 0), so no
-        // core is outstanding for any round before the first one opens.
+        // generation 0 (`allocate_round_generation` returns
+        // pre-increment + 1 from a counter that boots at 0), so no core
+        // is outstanding for any round before the first one opens.
         let s = ShootdownAckSlot::quiescent_at_boot();
         assert_eq!(s.acked_gen.load(Ordering::Acquire), 0);
     }

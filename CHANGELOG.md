@@ -1,3 +1,51 @@
+## v0.32.116 — Sweep the commit/runtime generation conflation out of every contract
+
+PR #854 review, fifth round. One finding, and it is the third separate site
+of the same defect — which is the real lesson of this cut.
+
+The v0.32.112 fix split the model's commit-ordered
+`TlbShootdownState.roundGeneration` from the runtime's lock-allocated
+`SHOOTDOWN_ROUND_SEQ`, because equating them is what let a newer round's
+acknowledgments certify an older round nobody had executed. Three separate
+contracts described the acknowledgment channel in terms of the model
+counter. Each was corrected only when a review round pointed at it
+individually: the mailbox field at v0.32.113, the Lean field contract at
+v0.32.114, and now the FFI export header — which told a maintainer that
+`ackOnCore c` corresponds to `acked_gen[c] >= the round's
+TlbShootdownState.roundGeneration`, i.e. exactly the equation the fix
+exists to prevent, sitting directly above the exports that carry the
+generation across the boundary.
+
+Fixing them one at a time was the mistake. This cut sweeps instead, and
+found three further sites the review had not flagged:
+
+- the `shootdown.rs` module header's "Boot state" section and
+  `ShootdownAckSlot::quiescent_at_boot`, which both attributed the
+  from-`1`-upwards allocation to the Lean `beginShootdownRound{,For}`.
+  Since v0.32.112 that property is supplied by `allocate_round_generation`
+  (pre-increment + 1 from a `0`-based counter); the Lean opener no longer
+  has anything to do with what these slots are compared against.
+- `boot_constructor_is_generation_zero`, carrying the same attribution in
+  its comment.
+- a markdown typo introduced by the v0.32.113 correction itself
+  (`` `TlbShootdownState.roundGeneration** ``), which broke the rustdoc
+  rendering of the sentence that says the two must not be equated.
+
+And on the Lean side, `ackOnCore`'s docstring said it was "derived the same
+way the Rust initiator decides its wait is over". The comparison has the
+same *shape* but not the same meaning: the runtime's is against a
+lock-allocated generation, where allocation order is execution order, so
+`acked_gen >= gen` genuinely means every round up to `gen` was serviced;
+the model's is against a commit-ordered counter, where it does not — the
+v0.32.115 counterexample. Corrected to say so and to point at `allAcked`,
+which records the consequence.
+
+No behaviour change: comments and docstrings only. Rust 1097 (HAL 802),
+trace byte-identical.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F.3
+Refs: #854
+
 ## v0.32.115 — Workstream codes out of test identifiers; the ack mark is not a serviced prefix
 
 PR #854 review, fourth round. Two findings, both valid.

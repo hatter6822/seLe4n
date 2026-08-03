@@ -333,12 +333,19 @@ def ackedGenOnCore (st : TlbShootdownState) (c : CoreId) : Nat :=
 /-- Per-core shootdown-acknowledgment flag of `st` on core `c`: has `c`
 acknowledged the round currently open?
 
-Derived from `ackedGenOnCore` since v0.32.113 rather than stored, and
-derived the same way the Rust initiator decides its wait is over —
-`acked_gen >= gen`, here against the current `roundGeneration`.  Keeping
-this a `Bool` keeps the SM7.A/B acknowledgment theorems stated in terms
-of a core being acknowledged or not; what changed underneath is that
-"acknowledged" now names a round instead of asserting a bare flag. -/
+Derived from `ackedGenOnCore` since v0.32.113 rather than stored, by the
+same *shape* of comparison the Rust initiator uses — but against the
+model's `roundGeneration`, which is a different counter answering a
+different question, so the two are not interchangeable.  The runtime's
+`acked_gen >= gen` compares against the lock-allocated
+`SHOOTDOWN_ROUND_SEQ` generation, where allocation order is execution
+order and the comparison therefore *does* mean "every round up to `gen`
+was serviced".  Here it does not — see `allAcked`, which records the
+consequence and the reachable counterexample.
+
+Keeping this a `Bool` keeps the SM7.A/B acknowledgment theorems stated in
+terms of a core being acknowledged or not; what changed underneath is
+that "acknowledged" names a round instead of asserting a bare flag. -/
 def ackOnCore (st : TlbShootdownState) (c : CoreId) : Bool :=
   st.roundGeneration ≤ st.ackedGenOnCore c
 
