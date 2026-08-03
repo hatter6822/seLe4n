@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.32.112.
+Lean 4.28.0 toolchain, Lake build system, version 0.32.113.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -182,9 +182,9 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~33704 lines)
+- `CHANGELOG.md` (~34057 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~20449 lines)
-- `docs/WORKSTREAM_HISTORY.md` (~10167 lines)
+- `docs/WORKSTREAM_HISTORY.md` (~10192 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~6631 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4764 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
@@ -201,25 +201,26 @@ To find files that need pagination today, run:
 - `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
 - `SeLe4n/Kernel/API.lean` (~3269 lines)
 - `SeLe4n/Testing/MainTraceHarness.lean` (~3204 lines)
+- `tests/SmpTlbShootdownSuite.lean` (~3202 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~3140 lines)
 - `docs/dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md` (~3134 lines)
 - `SeLe4n/Model/Object/Structures.lean` (~3069 lines)
 - `docs/planning/SMP_RUST_HAL_PLAN.md` (~3014 lines)
-- `tests/SmpTlbShootdownSuite.lean` (~2970 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~2809 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean` (~2805 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean` (~2772 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~2733 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~2627 lines)
+- `SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean` (~2557 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` (~2505 lines)
 - `tests/ModelIntegritySuite.lean` (~2477 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md` (~2476 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md` (~2472 lines)
-- `SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean` (~2463 lines)
-- `SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean` (~2347 lines)
+- `SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean` (~2355 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_WORKSTREAM_PLAN.md` (~2340 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md` (~2339 lines)
-- `docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md` (~2326 lines)
+- `docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md` (~2325 lines)
+- `SeLe4n/Kernel/Architecture/TlbShootdown.lean` (~2310 lines)
 - `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` (~2285 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueNextBlocking.lean` (~2258 lines)
 - `tests/OperationChainSuite.lean` (~2246 lines)
@@ -236,7 +237,6 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~1990 lines)
 - `SeLe4n/Kernel/Capability/Operations.lean` (~1989 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean` (~1967 lines)
-- `SeLe4n/Kernel/Architecture/TlbShootdown.lean` (~1966 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
 - `SeLe4n/Model/Object/Types.lean` (~1963 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.1_WORKSTREAM_PLAN.md` (~1917 lines)
@@ -251,6 +251,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean` (~1782 lines)
 - `docs/dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md` (~1776 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_COMPREHENSIVE.md` (~1739 lines)
+- `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` (~1739 lines)
 - `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` (~1725 lines)
 - `docs/dev_history/audits/WORKSTREAM_PLAN_WS_O_SYSCALL_RUST_WRAPPERS.md` (~1725 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~1706 lines)
@@ -260,8 +261,7 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_FOUNDATIONS_PLAN.md` (~1665 lines)
 - `SeLe4n/Kernel/Architecture/Invariant.lean` (~1643 lines)
 - `tests/InformationFlowSuite.lean` (~1639 lines)
-- `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` (~1615 lines)
-- `SeLe4n/Platform/FFI.lean` (~1605 lines)
+- `SeLe4n/Platform/FFI.lean` (~1617 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~1464 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)

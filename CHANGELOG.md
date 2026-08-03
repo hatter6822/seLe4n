@@ -1,3 +1,94 @@
+## v0.32.113 — Generation-aware model acknowledgment; two gate fixes
+
+PR #854 review. Closes the last of the three findings from the previous
+round (the two P2s alongside the v0.32.112 P1 were fixed there; this is the
+one deferred as tracked debt, taken after all) plus the two findings the
+v0.32.112 push itself drew.
+
+**Generation-aware model acknowledgment (Codex P2).** `TlbShootdownState`
+carried `shootdownAck : Vector Bool`, and `completeShootdownOnCoreInWindow`
+set it unconditionally. So a catch-up that deliberately drained only its own
+generation window still wrote `true`, claiming every concurrently-posted
+round as acknowledged: SM7.F.3 made the *queues* generation-selective at
+v0.32.105 and left the *acknowledgment* a bare flag, and `allAcked` could
+therefore read true with a foreign round's descriptors still pending. The
+Rust side had already lost this asymmetry — the v0.32.112 P1 fix made
+`acked_gen` the sole runtime channel — so the model was the odd one out.
+
+Model-fidelity, not a hardware hazard: nothing in the live seam reads the
+model's `Bool` vector (`shootdownWaitAllAcked` goes to
+`all_acked_for_round_in_slice`), and no landed theorem was false, since the
+round capstones are stated per-round in isolation.
+
+The field is now `Vector Nat` — the highest round generation each core has
+acknowledged, mirroring `ShootdownAckSlot.acked_gen` — with
+`ackedGenOnCore` the raw slot and `ackOnCore` kept as a *derived* `Bool`
+(`roundGeneration ≤ ackedGenOnCore c`), so the SM7.A/B theorems keep their
+shapes and what changed underneath is that "acknowledged" now names a round.
+`acknowledgeShootdown` takes the generation and joins with `max`, mirroring
+`fetch_max`, so a late handler run for an older round re-affirms it without
+retracting a newer one. The window catch-up passes `hi` — its own window's
+upper bound — which is the fix; the whole-queue form passes
+`roundGeneration`, which it genuinely discharges.
+
+There is no ack reset any more, on either side. `beginShootdownRound{,For}`
+advance the generation and write it to the cores born acknowledged
+(initiator, and non-targets for the masked form); a target is unacknowledged
+because its slot still names an earlier round. That is the same change the
+Rust side made when SM7.F.3 deleted `reset_for_round`, and it needs one new
+well-formedness predicate — `ackBounded` (no core has acknowledged a round
+not yet opened) — which the two `_ackOnCore_iff` characterisations and
+`beginShootdownRound_ackOnCore_target` now take as a hypothesis, because
+without it a slot naming a fabricated future round would read as already
+acknowledging the round about to open. Preserved by every transition, and
+the born-acknowledged direction the liveness capstones use
+(`beginShootdownRoundFor_ackOnCore_of_born`) needs no hypothesis at all.
+
+Headline: `completeShootdownOnCoreInWindow_not_acks_foreign` — a catch-up
+whose window stops below a foreign round's generation does not acknowledge
+that round. It is the acknowledgment dual of
+`…_preserves_foreign`: that one says the foreign *descriptors* survive the
+drain, this one says the foreign *round* is still owed.
+
+Two bridges gained an `hi = roundGeneration` hypothesis
+(`completeShootdownOnCoreInWindow_eq_complete`,
+`handleTlbShootdownReqOnCore{,PerCore}InWindow_eq_handle`, and
+`shootdownCatchUpPerCoreInWindow_eq_catchUp`): under round serialisation the
+window reaches the current generation and the two forms coincide, and
+without it they must not — dropping the hypothesis would re-assert exactly
+the identity this fix denies.
+
+Suite §8.4 runs the interleaving on the model: round A posts, round B
+commits before A's catch-up, and A's catch-up is shown to drain only A's
+descriptors, acknowledge only generation 1, and leave B's round genuinely
+outstanding — with the load-bearing negative that no combination of A-window
+catch-ups completes B's round. Two existing assertions were restated rather
+than patched: a completed round no longer returns the ack vector to its boot
+value, it advances every slot to the round's generation, which is what makes
+the state quiescent.
+
+**Mailbox contract named the wrong generation (Codex P2).** After the
+v0.32.112 split, `ShootdownOpMailbox.generation` carries the runtime
+`SHOOTDOWN_ROUND_SEQ` value, but its doc still called it the Lean
+`roundGeneration`. Corrected, with the reason spelled out: the two order
+different things, and publishing the commit-time value here is precisely
+what allowed a newer round's acknowledgments to certify an unexecuted older
+round.
+
+**Mirror gate accepted non-identical files (Codex P2).** The
+CLAUDE.md/AGENTS.md byte-identity check compared two shell variables, and
+command substitution strips every trailing newline — so differing trailing
+blank lines, or a missing final newline, compared equal. The one thing the
+gate claims to enforce was the thing it could not see. Now extracted to
+files and compared with `cmp -s`. Verified by appending a blank line to
+`AGENTS.md`: the old form passes, the new form fails with `942a943 >`.
+
+Rust 1097 tests (HAL 802), `test_full.sh` green, trace byte-identical, new
+theorems axiom-clean.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F.3
+Refs: #854
+
 ## v0.32.112 — SECURITY: shootdown round generations allocated in hardware execution order
 
 PR #854 review (Codex P1, valid). The SM7.F.3 acknowledgment channel could

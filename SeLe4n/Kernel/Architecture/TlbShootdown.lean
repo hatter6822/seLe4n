@@ -264,8 +264,20 @@ the Rust boot state. -/
 structure TlbShootdownState where
   pendingShootdowns : Vector (List TlbShootdownDescriptor) numCores :=
     Vector.replicate numCores []
-  shootdownAck : Vector Bool numCores :=
-    Vector.replicate numCores true
+  /-- **WS-SM SM7.F.3 (PR #854 review)**: the **highest round generation**
+  each core has acknowledged — the model mirror of the Rust
+  `ShootdownAckSlot.acked_gen`, which the same review's P1 fix made the
+  sole runtime acknowledgment channel.
+
+  This was a `Vector Bool` until v0.32.113.  A flag cannot say *which*
+  round it discharged, so a catch-up that deliberately drained only its
+  own generation window still wrote `true` and thereby claimed every
+  concurrently-posted round as acknowledged — `allAcked` could read true
+  with a foreign round's descriptors still pending.  A generation says
+  what it discharged, so a window drain can only ever claim its own
+  window. -/
+  shootdownAck : Vector Nat numCores :=
+    Vector.replicate numCores 0
   roundGeneration : Nat := 0
   deriving Repr, DecidableEq
 
@@ -292,19 +304,33 @@ def pendingOnCore (st : TlbShootdownState) (c : CoreId) :
     List TlbShootdownDescriptor :=
   st.pendingShootdowns.get c
 
-/-- Per-core shootdown-acknowledgment flag of `st` on core `c`. -/
-def ackOnCore (st : TlbShootdownState) (c : CoreId) : Bool :=
+/-- **WS-SM SM7.F.3 (PR #854 review)**: the highest round generation core
+`c` has acknowledged — the raw slot, mirroring the Rust
+`ShootdownAckSlot.acked_gen`. -/
+def ackedGenOnCore (st : TlbShootdownState) (c : CoreId) : Nat :=
   st.shootdownAck.get c
+
+/-- Per-core shootdown-acknowledgment flag of `st` on core `c`: has `c`
+acknowledged the round currently open?
+
+Derived from `ackedGenOnCore` since v0.32.113 rather than stored, and
+derived the same way the Rust initiator decides its wait is over —
+`acked_gen >= gen`, here against the current `roundGeneration`.  Keeping
+this a `Bool` keeps the SM7.A/B acknowledgment theorems stated in terms
+of a core being acknowledged or not; what changed underneath is that
+"acknowledged" now names a round instead of asserting a bare flag. -/
+def ackOnCore (st : TlbShootdownState) (c : CoreId) : Bool :=
+  st.roundGeneration ≤ st.ackedGenOnCore c
 
 /-- Write core `c`'s pending-shootdown queue slot. -/
 def setPendingOnCore (st : TlbShootdownState) (c : CoreId)
     (q : List TlbShootdownDescriptor) : TlbShootdownState :=
   { st with pendingShootdowns := st.pendingShootdowns.set c.val q c.isLt }
 
-/-- Write core `c`'s shootdown-acknowledgment flag slot. -/
-def setAckOnCore (st : TlbShootdownState) (c : CoreId) (b : Bool) :
+/-- Write core `c`'s acknowledged-generation slot. -/
+def setAckedGenOnCore (st : TlbShootdownState) (c : CoreId) (g : Nat) :
     TlbShootdownState :=
-  { st with shootdownAck := st.shootdownAck.set c.val b c.isLt }
+  { st with shootdownAck := st.shootdownAck.set c.val g c.isLt }
 
 /-! ### Store/load reduction algebra
 
@@ -328,23 +354,31 @@ unaffected.  All `@[simp]` so post-write reads reduce automatically. -/
 @[simp] theorem setPendingOnCore_ackOnCore (st : TlbShootdownState)
     (c c' : CoreId) (q : List TlbShootdownDescriptor) :
     (st.setPendingOnCore c q).ackOnCore c' = st.ackOnCore c' := by
-  simp [setPendingOnCore, ackOnCore]
+  simp [setPendingOnCore, ackOnCore, ackedGenOnCore]
 
-@[simp] theorem setAckOnCore_ackOnCore_self (st : TlbShootdownState)
-    (c : CoreId) (b : Bool) :
-    (st.setAckOnCore c b).ackOnCore c = b := by
-  simp [setAckOnCore, ackOnCore]
+@[simp] theorem setAckedGenOnCore_ackedGenOnCore_self (st : TlbShootdownState)
+    (c : CoreId) (g : Nat) :
+    (st.setAckedGenOnCore c g).ackedGenOnCore c = g := by
+  simp [setAckedGenOnCore, ackedGenOnCore]
 
-@[simp] theorem setAckOnCore_ackOnCore_ne (st : TlbShootdownState)
-    (c c' : CoreId) (b : Bool) (h : c ≠ c') :
-    (st.setAckOnCore c b).ackOnCore c' = st.ackOnCore c' := by
-  simp only [setAckOnCore, ackOnCore]
-  exact SeLe4n.PerCoreVector.get_set_ne st.shootdownAck c c' b h
+@[simp] theorem setAckedGenOnCore_ackedGenOnCore_ne (st : TlbShootdownState)
+    (c c' : CoreId) (g : Nat) (h : c ≠ c') :
+    (st.setAckedGenOnCore c g).ackedGenOnCore c' = st.ackedGenOnCore c' := by
+  simp only [setAckedGenOnCore, ackedGenOnCore]
+  exact SeLe4n.PerCoreVector.get_set_ne st.shootdownAck c c' g h
 
-@[simp] theorem setAckOnCore_pendingOnCore (st : TlbShootdownState)
-    (c c' : CoreId) (b : Bool) :
-    (st.setAckOnCore c b).pendingOnCore c' = st.pendingOnCore c' := by
-  simp [setAckOnCore, pendingOnCore]
+/-- **WS-SM SM7.F.3**: writing core `c`'s generation leaves every *other*
+core's acknowledgment verdict untouched. -/
+@[simp] theorem setAckedGenOnCore_ackOnCore_ne (st : TlbShootdownState)
+    (c c' : CoreId) (g : Nat) (h : c ≠ c') :
+    (st.setAckedGenOnCore c g).ackOnCore c' = st.ackOnCore c' := by
+  simp only [TlbShootdownState.ackOnCore, setAckedGenOnCore_ackedGenOnCore_ne _ _ _ _ h]
+  rfl
+
+@[simp] theorem setAckedGenOnCore_pendingOnCore (st : TlbShootdownState)
+    (c c' : CoreId) (g : Nat) :
+    (st.setAckedGenOnCore c g).pendingOnCore c' = st.pendingOnCore c' := by
+  simp [setAckedGenOnCore, pendingOnCore]
 
 /-- **WS-SM SM7.F.3**: writing a pending queue never allocates a round —
 the generation counter is advanced only by `beginShootdownRound{,For}`. -/
@@ -353,9 +387,16 @@ the generation counter is advanced only by `beginShootdownRound{,For}`. -/
     (st.setPendingOnCore c q).roundGeneration = st.roundGeneration := rfl
 
 /-- **WS-SM SM7.F.3**: acknowledging never allocates a round. -/
-@[simp] theorem setAckOnCore_roundGeneration (st : TlbShootdownState)
-    (c : CoreId) (b : Bool) :
-    (st.setAckOnCore c b).roundGeneration = st.roundGeneration := rfl
+@[simp] theorem setAckedGenOnCore_roundGeneration (st : TlbShootdownState)
+    (c : CoreId) (g : Nat) :
+    (st.setAckedGenOnCore c g).roundGeneration = st.roundGeneration := rfl
+
+/-- **WS-SM SM7.F.3**: writing core `c`'s generation to a value at or
+above the current round makes exactly `c` acknowledged. -/
+@[simp] theorem setAckedGenOnCore_ackOnCore_self (st : TlbShootdownState)
+    (c : CoreId) (g : Nat) :
+    (st.setAckedGenOnCore c g).ackOnCore c = (st.roundGeneration ≤ g) := by
+  simp [ackOnCore]
 
 /-- **WS-SM SM7.A.2**: per-core extensionality.  Two shootdown states
 are equal once their pending queues and ack flags agree at *every*
@@ -365,7 +406,7 @@ are equal once their pending queues and ack flags agree at *every*
 equality via `SeLe4n.PerCoreVector.ext`. -/
 theorem ext_perCore {s₁ s₂ : TlbShootdownState}
     (hPend : ∀ c : CoreId, s₁.pendingOnCore c = s₂.pendingOnCore c)
-    (hAck : ∀ c : CoreId, s₁.ackOnCore c = s₂.ackOnCore c)
+    (hAck : ∀ c : CoreId, s₁.ackedGenOnCore c = s₂.ackedGenOnCore c)
     (hGen : s₁.roundGeneration = s₂.roundGeneration) :
     s₁ = s₂ := by
   have h1 : s₁.pendingShootdowns = s₂.pendingShootdowns :=
@@ -450,6 +491,25 @@ def pendingBounded (st : TlbShootdownState) : Prop :=
 instance (st : TlbShootdownState) : Decidable (pendingBounded st) :=
   inferInstanceAs (Decidable (∀ c : CoreId,
     (st.pendingOnCore c).length ≤ maxPendingPerCore))
+
+/-- **WS-SM SM7.F.3 (PR #854 review)**: well-formedness — no core has
+acknowledged a round that has not been opened.
+
+Boot satisfies it (`0 ≤ 0`) and every transition preserves it: a round
+open raises `roundGeneration` and writes exactly the new generation to
+the cores born-acknowledged, an acknowledgment writes a generation the
+opener already minted, and the drains/enqueues do not touch the vector.
+
+It is what makes "a target starts a round unacknowledged" true —
+`beginShootdownRound_ackOnCore_target` and the two `_ackOnCore_iff`
+characterisations take it as a hypothesis, because without it a slot
+carrying a fabricated future generation would read as already
+acknowledging the round about to open. -/
+def ackBounded (st : TlbShootdownState) : Prop :=
+  ∀ c : CoreId, st.ackedGenOnCore c ≤ st.roundGeneration
+
+instance (st : TlbShootdownState) : Decidable (ackBounded st) :=
+  inferInstanceAs (Decidable (∀ c : CoreId, st.ackedGenOnCore c ≤ _))
 
 /-- **WS-SM SM7.A.3**: every core has acknowledged — the initiator
 wait-loop's exit condition (plan §3.2 step 5).  Decidable so the
@@ -932,7 +992,15 @@ theorem drainShootdowns_frame_pending (st : TlbShootdownState)
 the separate, post-TLBI `acknowledgeShootdown` step). -/
 theorem drainShootdowns_frame_ack (st : TlbShootdownState) (c c' : CoreId) :
     (drainShootdowns st c).2.ackOnCore c' = st.ackOnCore c' := by
-  simp [drainShootdowns]
+  simp [drainShootdowns, TlbShootdownState.ackOnCore,
+    TlbShootdownState.ackedGenOnCore, TlbShootdownState.setPendingOnCore]
+
+/-- **WS-SM SM7.F.3**: the raw-generation form of the frame above. -/
+theorem drainShootdowns_frame_ackedGen (st : TlbShootdownState)
+    (c c' : CoreId) :
+    (drainShootdowns st c).2.ackedGenOnCore c' = st.ackedGenOnCore c' := by
+  simp [drainShootdowns, TlbShootdownState.ackedGenOnCore,
+    TlbShootdownState.setPendingOnCore]
 
 /-- **WS-SM SM7.A.6**: draining preserves the capacity invariant (the
 drained queue drops to length `0`; the rest are framed). -/
@@ -1117,7 +1185,16 @@ acknowledgment is the separate, post-TLBI step). -/
 theorem drainShootdownsInWindow_frame_ack (st : TlbShootdownState)
     (c c' : CoreId) (lo hi : Nat) :
     (drainShootdownsInWindow st c lo hi).2.ackOnCore c' = st.ackOnCore c' := by
-  simp [drainShootdownsInWindow]
+  simp [drainShootdownsInWindow, TlbShootdownState.ackOnCore,
+    TlbShootdownState.ackedGenOnCore, TlbShootdownState.setPendingOnCore]
+
+/-- **WS-SM SM7.F.3**: the raw-generation form of the frame above. -/
+theorem drainShootdownsInWindow_frame_ackedGen (st : TlbShootdownState)
+    (c c' : CoreId) (lo hi : Nat) :
+    (drainShootdownsInWindow st c lo hi).2.ackedGenOnCore c' =
+      st.ackedGenOnCore c' := by
+  simp [drainShootdownsInWindow, TlbShootdownState.ackedGenOnCore,
+    TlbShootdownState.setPendingOnCore]
 
 /-- **WS-SM SM7.F.3**: the window drain never allocates a round. -/
 theorem drainShootdownsInWindow_frame_roundGeneration (st : TlbShootdownState)
@@ -1173,77 +1250,128 @@ theorem drainShootdownsInWindow_eq_drainShootdowns_of_all {st : TlbShootdownStat
 -- SM7.A.3 — Acknowledgment operations
 -- ============================================================================
 
-/-- **WS-SM SM7.A.3**: mark core `c`'s round complete.
+/-- **WS-SM SM7.A.3 + SM7.F.3 (PR #854 review)**: record that core `c`
+has serviced every round up to and including generation `g`.
 
 The target's SGI handler calls this *after* its drained invalidations
 have retired locally (plan §3.2 step 4c).  In the Rust runtime this is
-a release-store on `SHOOTDOWN_ACK[c]` — the release edge of the
-SM7.B.4 release-acquire pairing that lets the initiator's acquire-poll
-conclude the target's TLBIs happened-before the observed `true`. -/
-def acknowledgeShootdown (st : TlbShootdownState) (c : CoreId) :
-    TlbShootdownState :=
-  st.setAckOnCore c true
+`acked_gen.fetch_max(g, Release)` — the release edge of the SM7.B.4
+release-acquire pairing that lets the initiator's acquire-poll conclude
+the target's TLBIs happened-before the generation it observes.
 
-/-- **WS-SM SM7.A.3**: acknowledging sets the caller's own flag. -/
-@[simp] theorem acknowledgeShootdown_ackOnCore_self (st : TlbShootdownState)
-    (c : CoreId) :
-    (acknowledgeShootdown st c).ackOnCore c = true := by
+`max` rather than a plain store, mirroring `fetch_max`: an
+acknowledgment may only ever move a core's generation forward, so a
+late-delivered handler run for an *older* round can re-affirm that
+older generation without retracting a newer one.  The generation
+argument is what makes the acknowledgment name the round it
+discharged — a window drain passes its own window's upper bound and
+therefore cannot claim a concurrently-posted round it did not
+drain. -/
+def acknowledgeShootdown (st : TlbShootdownState) (c : CoreId) (g : Nat) :
+    TlbShootdownState :=
+  st.setAckedGenOnCore c (max (st.ackedGenOnCore c) g)
+
+/-- **WS-SM SM7.F.3**: acknowledging never allocates a round. -/
+@[simp] theorem acknowledgeShootdown_roundGeneration (st : TlbShootdownState)
+    (c : CoreId) (g : Nat) :
+    (acknowledgeShootdown st c g).roundGeneration = st.roundGeneration := rfl
+
+/-- **WS-SM SM7.F.3**: acknowledging generation `g` leaves the caller's
+slot at least `g`. -/
+@[simp] theorem acknowledgeShootdown_ackedGenOnCore_self
+    (st : TlbShootdownState) (c : CoreId) (g : Nat) :
+    (acknowledgeShootdown st c g).ackedGenOnCore c =
+      max (st.ackedGenOnCore c) g := by
   simp [acknowledgeShootdown]
 
-/-- **WS-SM SM7.A.3**: acknowledging leaves every *other* core's flag
+/-- **WS-SM SM7.A.3**: acknowledging the round currently open marks the
+caller acknowledged — the generation form of the original flag set. -/
+@[simp] theorem acknowledgeShootdown_ackOnCore_self (st : TlbShootdownState)
+    (c : CoreId) {g : Nat} (h : st.roundGeneration ≤ g) :
+    (acknowledgeShootdown st c g).ackOnCore c = true := by
+  simp only [TlbShootdownState.ackOnCore, acknowledgeShootdown_ackedGenOnCore_self,
+    acknowledgeShootdown_roundGeneration, decide_eq_true_eq]
+  exact Nat.le_trans h (Nat.le_max_right _ _)
+
+/-- **WS-SM SM7.A.3**: acknowledging leaves every *other* core's slot
 untouched — each target answers only for itself. -/
 theorem acknowledgeShootdown_ackOnCore_ne (st : TlbShootdownState)
-    {c c' : CoreId} (h : c' ≠ c) :
-    (acknowledgeShootdown st c).ackOnCore c' = st.ackOnCore c' := by
+    {c c' : CoreId} (g : Nat) (h : c' ≠ c) :
+    (acknowledgeShootdown st c g).ackOnCore c' = st.ackOnCore c' := by
   simp only [acknowledgeShootdown]
-  exact TlbShootdownState.setAckOnCore_ackOnCore_ne st c c' true h.symm
+  exact TlbShootdownState.setAckedGenOnCore_ackOnCore_ne st c c' _ h.symm
+
+/-- **WS-SM SM7.F.3**: the raw-generation form of the frame above. -/
+theorem acknowledgeShootdown_ackedGenOnCore_ne (st : TlbShootdownState)
+    {c c' : CoreId} (g : Nat) (h : c' ≠ c) :
+    (acknowledgeShootdown st c g).ackedGenOnCore c' = st.ackedGenOnCore c' := by
+  simp only [acknowledgeShootdown]
+  exact TlbShootdownState.setAckedGenOnCore_ackedGenOnCore_ne st c c' _ h.symm
 
 /-- **WS-SM SM7.A.3**: acknowledging never touches any pending queue. -/
 theorem acknowledgeShootdown_frame_pending (st : TlbShootdownState)
-    (c c' : CoreId) :
-    (acknowledgeShootdown st c).pendingOnCore c' = st.pendingOnCore c' := by
+    (c c' : CoreId) (g : Nat) :
+    (acknowledgeShootdown st c g).pendingOnCore c' = st.pendingOnCore c' := by
   simp [acknowledgeShootdown]
 
 /-- **WS-SM SM7.A.6**: acknowledging preserves the capacity invariant. -/
 theorem acknowledgeShootdown_preserves_pendingBounded {st : TlbShootdownState}
-    (hB : pendingBounded st) (c : CoreId) :
-    pendingBounded (acknowledgeShootdown st c) := by
+    (hB : pendingBounded st) (c : CoreId) (g : Nat) :
+    pendingBounded (acknowledgeShootdown st c g) := by
   intro c'
   rw [acknowledgeShootdown_frame_pending]
   exact hB c'
 
-/-- **WS-SM SM7.A.3**: acknowledgments only accumulate — a flag already
-`true` stays `true` under further acknowledgments.  Monotonicity is
-what makes the initiator's wait loop's exit condition stable
-(`allAcked` cannot regress mid-round; only `beginShootdownRound`
-resets flags, and the global round lock — the module-header
-round-serialisation contract — serialises rounds). -/
-theorem acknowledgeShootdown_monotone (st : TlbShootdownState)
-    (c c' : CoreId) (h : st.ackOnCore c' = true) :
-    (acknowledgeShootdown st c).ackOnCore c' = true := by
+/-- **WS-SM SM7.F.3**: acknowledging a generation the opener has already
+minted preserves well-formedness. -/
+theorem acknowledgeShootdown_preserves_ackBounded {st : TlbShootdownState}
+    (hW : ackBounded st) (c : CoreId) {g : Nat} (h : g ≤ st.roundGeneration) :
+    ackBounded (acknowledgeShootdown st c g) := by
+  intro c'
+  rw [acknowledgeShootdown_roundGeneration]
   by_cases hc : c' = c
   · subst hc
-    simp
-  · rw [acknowledgeShootdown_ackOnCore_ne st hc]
+    rw [acknowledgeShootdown_ackedGenOnCore_self]
+    exact Nat.max_le.mpr ⟨hW c', h⟩
+  · rw [acknowledgeShootdown_ackedGenOnCore_ne _ _ hc]
+    exact hW c'
+
+/-- **WS-SM SM7.A.3**: acknowledgments only accumulate — an acknowledged
+core stays acknowledged under further acknowledgments.  Monotonicity is
+what makes the initiator's wait loop's exit condition stable
+(`allAcked` cannot regress mid-round; only `beginShootdownRound`
+advances the generation, and the global round lock — the module-header
+round-serialisation contract — serialises rounds). -/
+theorem acknowledgeShootdown_monotone (st : TlbShootdownState)
+    (c c' : CoreId) (g : Nat) (h : st.ackOnCore c' = true) :
+    (acknowledgeShootdown st c g).ackOnCore c' = true := by
+  by_cases hc : c' = c
+  · subst hc
+    simp only [TlbShootdownState.ackOnCore, acknowledgeShootdown_ackedGenOnCore_self,
+      acknowledgeShootdown_roundGeneration, decide_eq_true_eq]
+    simp only [TlbShootdownState.ackOnCore, decide_eq_true_eq] at h
+    exact Nat.le_trans h (Nat.le_max_left _ _)
+  · rw [acknowledgeShootdown_ackOnCore_ne st g hc]
     exact h
 
-/-- **WS-SM SM7.A.3**: an already-acknowledged flag survives any fold
+/-- **WS-SM SM7.A.3**: an already-acknowledged core survives any fold
 of further acknowledgments — the inductive engine behind
 `allCores_foldl_acknowledgeShootdown_allAcked`. -/
-theorem foldl_acknowledgeShootdown_monotone {l : List CoreId}
+theorem foldl_acknowledgeShootdown_monotone {l : List CoreId} {g : Nat}
     {st : TlbShootdownState} {c : CoreId} (h : st.ackOnCore c = true) :
-    (l.foldl acknowledgeShootdown st).ackOnCore c = true := by
+    (l.foldl (fun s x => acknowledgeShootdown s x g) st).ackOnCore c = true := by
   induction l generalizing st with
   | nil => simpa using h
   | cons x xs ih =>
     rw [List.foldl_cons]
-    exact ih (acknowledgeShootdown_monotone st x c h)
+    exact ih (acknowledgeShootdown_monotone st x c g h)
 
-/-- **WS-SM SM7.A.3**: folding acknowledgments over a list sets the
-flag of every core in the list. -/
-theorem foldl_acknowledgeShootdown_sets {l : List CoreId}
-    {st : TlbShootdownState} {c : CoreId} (hc : c ∈ l) :
-    (l.foldl acknowledgeShootdown st).ackOnCore c = true := by
+/-- **WS-SM SM7.A.3**: folding acknowledgments of the round currently
+open over a list marks every core in the list acknowledged. -/
+theorem foldl_acknowledgeShootdown_sets {l : List CoreId} {g : Nat}
+    {st : TlbShootdownState} {c : CoreId} (hc : c ∈ l)
+    (hg : st.roundGeneration ≤ g) :
+    (l.foldl (fun s x => acknowledgeShootdown s x g) st).ackOnCore c = true := by
   induction l generalizing st with
   | nil => cases hc
   | cons x xs ih =>
@@ -1251,22 +1379,23 @@ theorem foldl_acknowledgeShootdown_sets {l : List CoreId}
     rcases List.mem_cons.mp hc with hEq | hMem
     · subst hEq
       exact foldl_acknowledgeShootdown_monotone
-        (acknowledgeShootdown_ackOnCore_self st _)
-    · exact ih hMem
+        (acknowledgeShootdown_ackOnCore_self st _ hg)
+    · exact ih hMem (hg)
 
-/-- **WS-SM SM7.A.3**: once every core has acknowledged, `allAcked`
-holds — the state-level termination anchor for the SM7.B.5 initiator
-wait loop (`shootdown_wait_loop_terminates`): the loop's exit
-condition is *reachable* because acknowledging each core in
-`allCores` (every `CoreId`, by `allCores` completeness) yields a
-fully-acknowledged state, and monotonicity keeps it stable. -/
+/-- **WS-SM SM7.A.3**: once every core has acknowledged the round
+currently open, `allAcked` holds — the state-level termination anchor
+for the SM7.B.5 initiator wait loop
+(`shootdown_wait_loop_terminates`): the loop's exit condition is
+*reachable* because acknowledging each core in `allCores` (every
+`CoreId`, by `allCores` completeness) yields a fully-acknowledged
+state, and monotonicity keeps it stable. -/
 theorem allCores_foldl_acknowledgeShootdown_allAcked
-    (st : TlbShootdownState) :
-    allAcked (allCores.foldl acknowledgeShootdown st) := by
+    (st : TlbShootdownState) {g : Nat} (hg : st.roundGeneration ≤ g) :
+    allAcked (allCores.foldl (fun s x => acknowledgeShootdown s x g) st) := by
   intro c
   have hmem : c ∈ allCores := by
     simp [SeLe4n.Kernel.Concurrency.allCores]
-  exact foldl_acknowledgeShootdown_sets hmem
+  exact foldl_acknowledgeShootdown_sets hmem hg
 
 -- ============================================================================
 -- SM7.A.3 — Round initialization (plan §3.2 step 1)
@@ -1294,35 +1423,63 @@ so generations are allocated `1, 2, 3, …` in commit order and a
 descriptor's generation totally orders it against every other round. -/
 def beginShootdownRound (st : TlbShootdownState) (initiator : CoreId) :
     TlbShootdownState :=
-  { st with
-      shootdownAck :=
-        (Vector.replicate numCores false).set initiator.val true initiator.isLt,
-      roundGeneration := st.roundGeneration + 1 }
+  { st with roundGeneration := st.roundGeneration + 1 }.setAckedGenOnCore
+    initiator (st.roundGeneration + 1)
 
-/-- **WS-SM SM7.A.3**: the initiator is born-acknowledged. -/
+/-- **WS-SM SM7.A.3**: the initiator is born-acknowledged — it performs
+its own invalidation locally and is never waited on. -/
 @[simp] theorem beginShootdownRound_ackOnCore_initiator
     (st : TlbShootdownState) (initiator : CoreId) :
     (beginShootdownRound st initiator).ackOnCore initiator = true := by
-  simp [beginShootdownRound, TlbShootdownState.ackOnCore]
+  simp [beginShootdownRound, TlbShootdownState.ackOnCore,
+    TlbShootdownState.ackedGenOnCore, TlbShootdownState.setAckedGenOnCore]
 
 /-- **WS-SM SM7.A.3**: every non-initiator core starts the round
-unacknowledged — the initiator genuinely waits on each target. -/
+unacknowledged — the initiator genuinely waits on each target.
+
+Needs `ackBounded` since v0.32.113: with generations there is no reset
+to make a target unacknowledged, so what makes it so is that its slot
+cannot already name the round about to be opened. -/
 theorem beginShootdownRound_ackOnCore_target (st : TlbShootdownState)
-    {initiator c : CoreId} (h : c ≠ initiator) :
+    (hW : ackBounded st) {initiator c : CoreId} (h : c ≠ initiator) :
     (beginShootdownRound st initiator).ackOnCore c = false := by
-  simp only [beginShootdownRound, TlbShootdownState.ackOnCore]
-  rw [SeLe4n.PerCoreVector.get_set_ne _ initiator c true h.symm]
-  exact SeLe4n.PerCoreVector.replicate_get numCores false c
+  simp only [beginShootdownRound, TlbShootdownState.ackOnCore,
+    decide_eq_false_iff_not, Nat.not_le]
+  rw [show ({ st with roundGeneration := st.roundGeneration + 1
+              : TlbShootdownState }.setAckedGenOnCore initiator
+            (st.roundGeneration + 1)).ackedGenOnCore c
+        = st.ackedGenOnCore c from
+      TlbShootdownState.setAckedGenOnCore_ackedGenOnCore_ne _ _ _ _
+        (fun hEq => h hEq.symm)]
+  exact Nat.lt_succ_of_le (hW c)
 
 /-- **WS-SM SM7.A.3**: at round start, a core is acknowledged iff it is
 the initiator — the exact plan §3.2 step-1 postcondition. -/
 theorem beginShootdownRound_ackOnCore_iff (st : TlbShootdownState)
-    (initiator c : CoreId) :
+    (hW : ackBounded st) (initiator c : CoreId) :
     (beginShootdownRound st initiator).ackOnCore c = true ↔ c = initiator := by
   by_cases h : c = initiator
   · subst h
     simp
-  · simp [beginShootdownRound_ackOnCore_target st h, h]
+  · simp [beginShootdownRound_ackOnCore_target st hW h, h]
+
+/-- **WS-SM SM7.F.3**: opening a round preserves well-formedness — the
+initiator is written exactly the generation just minted and every other
+slot was already bounded by the smaller previous generation. -/
+theorem beginShootdownRound_preserves_ackBounded {st : TlbShootdownState}
+    (hW : ackBounded st) (initiator : CoreId) :
+    ackBounded (beginShootdownRound st initiator) := by
+  intro c
+  show _ ≤ st.roundGeneration + 1
+  by_cases h : c = initiator
+  · subst h
+    simp only [beginShootdownRound,
+      TlbShootdownState.setAckedGenOnCore_ackedGenOnCore_self]
+    exact Nat.le_refl _
+  · simp only [beginShootdownRound]
+    rw [TlbShootdownState.setAckedGenOnCore_ackedGenOnCore_ne _ _ _ _
+      (fun hEq => h hEq.symm)]
+    exact Nat.le_succ_of_le (hW c)
 
 /-- **WS-SM SM7.A.3**: opening a round never touches any pending queue
 (descriptors are posted by the subsequent per-target enqueues). -/
@@ -1330,7 +1487,8 @@ theorem beginShootdownRound_frame_pending (st : TlbShootdownState)
     (initiator c : CoreId) :
     (beginShootdownRound st initiator).pendingOnCore c =
       st.pendingOnCore c := by
-  simp [beginShootdownRound, TlbShootdownState.pendingOnCore]
+  simp [beginShootdownRound, TlbShootdownState.pendingOnCore,
+    TlbShootdownState.setAckedGenOnCore]
 
 /-- **WS-SM SM7.A.6**: opening a round preserves the capacity
 invariant. -/
@@ -1351,14 +1509,21 @@ theorem beginShootdownRound_preserves_pendingBounded
 -- SM7.A — Target-masked round initialization (PR #838 review P1)
 -- ============================================================================
 
-/-- **WS-SM SM7.A (PR #838 review P1)**: closed form for a fold of
-per-core ack clears — a core's flag is `false` exactly when the fold
-visited it, and untouched otherwise. -/
-theorem foldl_setAckFalse_ackOnCore (l : List CoreId) :
+/-- **WS-SM SM7.F.3 (PR #854 review)**: closed form for a fold of
+per-core generation writes — a core's slot is `g` exactly when the fold
+visited it, and untouched otherwise.
+
+Replaces the pre-v0.32.113 `foldl_setAckedGen_ackedGenOnCore`.  A masked
+round used to *clear* the targets' flags; with generations there is no
+clear at all — the round open raises `roundGeneration` and writes the
+new generation to the cores that are born-acknowledged, which leaves
+every target behind automatically.  That is the same change the Rust
+side made when SM7.F.3 deleted `reset_for_round`. -/
+theorem foldl_setAckedGen_ackedGenOnCore (l : List CoreId) (g : Nat) :
     ∀ (st : TlbShootdownState) (c : CoreId),
-      (l.foldl (fun (s : TlbShootdownState) x => s.setAckOnCore x false)
-          st).ackOnCore c =
-        if c ∈ l then false else st.ackOnCore c := by
+      (l.foldl (fun (s : TlbShootdownState) x => s.setAckedGenOnCore x g)
+          st).ackedGenOnCore c =
+        if c ∈ l then g else st.ackedGenOnCore c := by
   induction l with
   | nil => intro st c; simp
   | cons x xs ih =>
@@ -1370,14 +1535,14 @@ theorem foldl_setAckFalse_ackOnCore (l : List CoreId) :
       · subst hce
         simp [hcx]
       · rw [if_neg hcx, if_neg (by simp [List.mem_cons, hce, hcx])]
-        exact TlbShootdownState.setAckOnCore_ackOnCore_ne st x c false
+        exact TlbShootdownState.setAckedGenOnCore_ackedGenOnCore_ne st x c g
           (fun h => hce h.symm)
 
-/-- **WS-SM SM7.A (PR #838 review P1)**: a fold of ack clears never
-touches any pending queue. -/
-theorem foldl_setAckFalse_pendingOnCore (l : List CoreId) :
+/-- **WS-SM SM7.F.3**: a fold of generation writes never touches any
+pending queue. -/
+theorem foldl_setAckedGen_pendingOnCore (l : List CoreId) (g : Nat) :
     ∀ (st : TlbShootdownState) (c : CoreId),
-      (l.foldl (fun (s : TlbShootdownState) x => s.setAckOnCore x false)
+      (l.foldl (fun (s : TlbShootdownState) x => s.setAckedGenOnCore x g)
           st).pendingOnCore c =
         st.pendingOnCore c := by
   induction l with
@@ -1387,10 +1552,11 @@ theorem foldl_setAckFalse_pendingOnCore (l : List CoreId) :
     rw [List.foldl_cons, ih]
     simp
 
-/-- **WS-SM SM7.F.3**: a fold of ack clears never allocates a round. -/
-theorem foldl_setAckFalse_roundGeneration (l : List CoreId) :
+/-- **WS-SM SM7.F.3**: a fold of generation writes never allocates a
+round. -/
+theorem foldl_setAckedGen_roundGeneration (l : List CoreId) (g : Nat) :
     ∀ st : TlbShootdownState,
-      (l.foldl (fun (s : TlbShootdownState) x => s.setAckOnCore x false)
+      (l.foldl (fun (s : TlbShootdownState) x => s.setAckedGenOnCore x g)
           st).roundGeneration = st.roundGeneration := by
   induction l with
   | nil => intro st; rfl
@@ -1398,6 +1564,18 @@ theorem foldl_setAckFalse_roundGeneration (l : List CoreId) :
     intro st
     rw [List.foldl_cons, ih]
     rfl
+
+/-- **WS-SM SM7.F.3**: the cores a masked round opens
+born-acknowledged — every core that is not a target. -/
+def bornAcknowledged (targets : List CoreId) : List CoreId :=
+  allCores.filter (fun c => decide (c ∉ targets))
+
+/-- **WS-SM SM7.F.3**: membership in the born-acknowledged set is
+exactly non-membership in the target set (every `CoreId` is in
+`allCores`). -/
+@[simp] theorem mem_bornAcknowledged (targets : List CoreId) (c : CoreId) :
+    c ∈ bornAcknowledged targets ↔ c ∉ targets := by
+  simp [bornAcknowledged, SeLe4n.Kernel.Concurrency.allCores]
 
 /-- **WS-SM SM7.A (PR #838 review P1)**: open a shootdown round against
 an explicit **target set** — only the targets start unacknowledged;
@@ -1427,29 +1605,80 @@ completes during boot, before any user mapping exists to shoot down).
 configuration. -/
 def beginShootdownRoundFor (st : TlbShootdownState) (initiator : CoreId)
     (targets : List CoreId) : TlbShootdownState :=
-  (targets.foldl (fun (s : TlbShootdownState) c => s.setAckOnCore c false)
+  ((bornAcknowledged targets).foldl
+      (fun (s : TlbShootdownState) c =>
+        s.setAckedGenOnCore c (st.roundGeneration + 1))
       { st with
-          shootdownAck := Vector.replicate numCores true,
-          roundGeneration := st.roundGeneration + 1 }).setAckOnCore
-    initiator true
+          roundGeneration := st.roundGeneration + 1 }).setAckedGenOnCore
+    initiator (st.roundGeneration + 1)
 
-/-- **WS-SM SM7.A (PR #838 review P1)**: at a masked round's start, a
-core is acknowledged iff it is the initiator or not a target — the
-non-target ("offline") cores are never waited on. -/
-theorem beginShootdownRoundFor_ackOnCore_iff (st : TlbShootdownState)
+/-- **WS-SM SM7.F.3**: the generation a masked round leaves in each
+core's slot — the new generation for the initiator and every
+non-target, and the core's previous value for a target.
+
+The single closed form the masked-round characterisations below are
+read off, so they cannot drift from the definition or each other. -/
+theorem beginShootdownRoundFor_ackedGenOnCore (st : TlbShootdownState)
     (initiator : CoreId) (targets : List CoreId) (c : CoreId) :
-    (beginShootdownRoundFor st initiator targets).ackOnCore c = true ↔
-      (c = initiator ∨ c ∉ targets) := by
+    (beginShootdownRoundFor st initiator targets).ackedGenOnCore c =
+      if c = initiator ∨ c ∉ targets then st.roundGeneration + 1
+      else st.ackedGenOnCore c := by
   unfold beginShootdownRoundFor
   by_cases hci : c = initiator
   · subst hci
-    simp
-  · rw [TlbShootdownState.setAckOnCore_ackOnCore_ne _ initiator c true
-      (fun h => hci h.symm)]
-    rw [foldl_setAckFalse_ackOnCore]
+    rw [TlbShootdownState.setAckedGenOnCore_ackedGenOnCore_self,
+      if_pos (Or.inl rfl)]
+  · rw [TlbShootdownState.setAckedGenOnCore_ackedGenOnCore_ne _ _ _ _
+      (fun h => hci h.symm), foldl_setAckedGen_ackedGenOnCore]
     by_cases hct : c ∈ targets
-    · simp [hct, hci]
-    · simp [hct, hci, TlbShootdownState.ackOnCore]
+    · rw [if_neg (by simpa using hct), if_neg (by simp [hci, hct])]
+      rfl
+    · rw [if_pos (by simpa using hct), if_pos (Or.inr hct)]
+
+/-- **WS-SM SM7.F.3**: opening a masked round advances the generation. -/
+theorem beginShootdownRoundFor_gen (st : TlbShootdownState)
+    (initiator : CoreId) (targets : List CoreId) :
+    (beginShootdownRoundFor st initiator targets).roundGeneration =
+      st.roundGeneration + 1 := by
+  unfold beginShootdownRoundFor
+  rw [TlbShootdownState.setAckedGenOnCore_roundGeneration,
+    foldl_setAckedGen_roundGeneration]
+
+/-- **WS-SM SM7.A (PR #838 review P1)**: the initiator and every
+non-target are born-acknowledged at a masked round's start.
+
+The direction the liveness capstones use, and it needs no
+well-formedness hypothesis: these cores are *written* the round's own
+generation, so they are acknowledged outright rather than by an argument
+about what their slot cannot already hold. -/
+theorem beginShootdownRoundFor_ackOnCore_of_born (st : TlbShootdownState)
+    (initiator : CoreId) (targets : List CoreId) {c : CoreId}
+    (h : c = initiator ∨ c ∉ targets) :
+    (beginShootdownRoundFor st initiator targets).ackOnCore c = true := by
+  simp only [TlbShootdownState.ackOnCore, beginShootdownRoundFor_gen,
+    beginShootdownRoundFor_ackedGenOnCore, decide_eq_true_eq, if_pos h]
+  exact Nat.le_refl _
+
+/-- **WS-SM SM7.A (PR #838 review P1)**: at a masked round's start, a
+core is acknowledged iff it is the initiator or not a target — the
+non-target ("offline") cores are never waited on.
+
+Needs `ackBounded` since v0.32.113: with generations a target is
+unacknowledged because its slot still names an *earlier* round, so the
+characterisation depends on no slot naming a round that has not been
+opened. -/
+theorem beginShootdownRoundFor_ackOnCore_iff (st : TlbShootdownState)
+    (hW : ackBounded st) (initiator : CoreId) (targets : List CoreId)
+    (c : CoreId) :
+    (beginShootdownRoundFor st initiator targets).ackOnCore c = true ↔
+      (c = initiator ∨ c ∉ targets) := by
+  simp only [TlbShootdownState.ackOnCore, beginShootdownRoundFor_gen,
+    beginShootdownRoundFor_ackedGenOnCore, decide_eq_true_eq]
+  by_cases h : c = initiator ∨ c ∉ targets
+  · rw [if_pos h]
+    exact iff_of_true (Nat.le_refl _) h
+  · rw [if_neg h]
+    exact iff_of_false (Nat.not_le.mpr (Nat.lt_succ_of_le (hW c))) h
 
 /-- **WS-SM SM7.A (PR #838 review P1)**: opening a masked round never
 touches any pending queue. -/
@@ -1458,9 +1687,23 @@ theorem beginShootdownRoundFor_frame_pending (st : TlbShootdownState)
     (beginShootdownRoundFor st initiator targets).pendingOnCore c =
       st.pendingOnCore c := by
   unfold beginShootdownRoundFor
-  rw [TlbShootdownState.setAckOnCore_pendingOnCore,
-      foldl_setAckFalse_pendingOnCore]
+  rw [TlbShootdownState.setAckedGenOnCore_pendingOnCore,
+      foldl_setAckedGen_pendingOnCore]
   rfl
+
+/-- **WS-SM SM7.F.3**: opening a masked round preserves
+well-formedness. -/
+theorem beginShootdownRoundFor_preserves_ackBounded {st : TlbShootdownState}
+    (hW : ackBounded st) (initiator : CoreId) (targets : List CoreId) :
+    ackBounded (beginShootdownRoundFor st initiator targets) := by
+  intro c
+  rw [beginShootdownRoundFor_gen, beginShootdownRoundFor_ackedGenOnCore]
+  by_cases h : c = initiator ∨ c ∉ targets
+  · rw [if_pos h]
+    exact Nat.le_refl _
+  · rw [if_neg h]
+    exact Nat.le_succ_of_le (hW c)
+
 
 /-- **WS-SM SM7.A (PR #838 review P1)**: opening a masked round
 preserves the capacity invariant. -/
@@ -1480,8 +1723,8 @@ waited on, not which round this is. -/
     (beginShootdownRoundFor st initiator targets).roundGeneration =
       st.roundGeneration + 1 := by
   unfold beginShootdownRoundFor
-  rw [TlbShootdownState.setAckOnCore_roundGeneration,
-      foldl_setAckFalse_roundGeneration]
+  rw [TlbShootdownState.setAckedGenOnCore_roundGeneration,
+      foldl_setAckedGen_roundGeneration]
 
 /-- **WS-SM SM7.F.3**: the generation a masked round mints is strictly
 above every generation the pre-state could hold — the freshness fact
@@ -1535,22 +1778,19 @@ theorem beginShootdownRoundFor_allCores_eq (st : TlbShootdownState)
     rw [beginShootdownRoundFor_frame_pending, beginShootdownRound_frame_pending]
   case _ =>
     intro c
+    have hmem : c ∈ allCores := by
+      simp [SeLe4n.Kernel.Concurrency.allCores]
+    rw [beginShootdownRoundFor_ackedGenOnCore]
     by_cases hci : c = initiator
     · subst hci
-      rw [(beginShootdownRoundFor_ackOnCore_iff st c allCores c).mpr
-            (Or.inl rfl),
-          beginShootdownRound_ackOnCore_initiator]
-    · have hmem : c ∈ allCores := by
-        simp [SeLe4n.Kernel.Concurrency.allCores]
-      have h1 : (beginShootdownRoundFor st initiator allCores).ackOnCore c
-          = false := by
-        cases hval : (beginShootdownRoundFor st initiator allCores).ackOnCore c
-        · rfl
-        · exact absurd
-            ((beginShootdownRoundFor_ackOnCore_iff st initiator allCores c).mp
-              hval)
-            (by simp [hci, hmem])
-      rw [h1, beginShootdownRound_ackOnCore_target st hci]
+      rw [if_pos (Or.inl rfl)]
+      simp only [beginShootdownRound,
+        TlbShootdownState.setAckedGenOnCore_ackedGenOnCore_self]
+    · rw [if_neg (by simp [hci, hmem])]
+      simp only [beginShootdownRound]
+      rw [TlbShootdownState.setAckedGenOnCore_ackedGenOnCore_ne _ _ _ _
+        (fun h => hci h.symm)]
+      rfl
   case _ =>
     rw [beginShootdownRoundFor_roundGeneration,
         beginShootdownRound_roundGeneration]
@@ -1573,14 +1813,18 @@ target; `completeShootdownOnCore_eq` pins it to the two-step form the
 runtime actually takes. -/
 def completeShootdownOnCore (st : TlbShootdownState) (c : CoreId) :
     TlbShootdownState :=
-  acknowledgeShootdown (drainShootdowns st c).2 c
+  acknowledgeShootdown (drainShootdowns st c).2 c st.roundGeneration
 
 /-- **WS-SM SM7.A**: the round step is definitionally the drain
 followed by the acknowledgment — the handler's two state writes, in
-the protocol's order. -/
+the protocol's order.
+
+The acknowledged generation is the round currently open: a whole-queue
+drain retires every descriptor posted so far, so it genuinely discharges
+every round up to the current one. -/
 theorem completeShootdownOnCore_eq (st : TlbShootdownState) (c : CoreId) :
     completeShootdownOnCore st c =
-      acknowledgeShootdown (drainShootdowns st c).2 c := rfl
+      acknowledgeShootdown (drainShootdowns st c).2 c st.roundGeneration := rfl
 
 /-- **WS-SM SM7.B**: the handler's round step preserves the capacity
 invariant — draining empties the handled core's queue and the
@@ -1591,7 +1835,7 @@ theorem completeShootdownOnCore_preserves_pendingBounded
     {st : TlbShootdownState} (hB : pendingBounded st) (c : CoreId) :
     pendingBounded (completeShootdownOnCore st c) :=
   acknowledgeShootdown_preserves_pendingBounded
-    (drainShootdowns_preserves_pendingBounded hB c) c
+    (drainShootdowns_preserves_pendingBounded hB c) c _
 
 /-- **WS-SM SM7.A**: a completed core's queue is empty. -/
 @[simp] theorem completeShootdownOnCore_pendingOnCore_self
@@ -1606,7 +1850,8 @@ theorem completeShootdownOnCore_preserves_pendingBounded
     (st : TlbShootdownState) (c : CoreId) :
     (completeShootdownOnCore st c).ackOnCore c = true := by
   unfold completeShootdownOnCore
-  simp
+  exact acknowledgeShootdown_ackOnCore_self _ _
+    (Nat.le_of_eq (drainShootdowns_frame_roundGeneration st c).symm)
 
 /-- **WS-SM SM7.A**: completing core `c` frames every other core's
 queue. -/
@@ -1616,33 +1861,62 @@ theorem completeShootdownOnCore_frame_pending (st : TlbShootdownState)
   unfold completeShootdownOnCore
   rw [acknowledgeShootdown_frame_pending, drainShootdowns_frame_pending st h]
 
+/-- **WS-SM SM7.F.3**: the whole-queue round step never allocates a
+round. -/
+@[simp] theorem completeShootdownOnCore_roundGeneration
+    (st : TlbShootdownState) (c : CoreId) :
+    (completeShootdownOnCore st c).roundGeneration = st.roundGeneration := rfl
+
+/-- **WS-SM SM7.F.3**: a whole-queue round step records the round
+currently open. -/
+@[simp] theorem completeShootdownOnCore_ackedGenOnCore_self
+    (st : TlbShootdownState) (c : CoreId) :
+    (completeShootdownOnCore st c).ackedGenOnCore c =
+      max (st.ackedGenOnCore c) st.roundGeneration := by
+  rw [completeShootdownOnCore_eq, acknowledgeShootdown_ackedGenOnCore_self,
+    drainShootdowns_frame_ackedGen]
+
+/-- **WS-SM SM7.F.3**: completing core `c` frames every other core's
+acknowledged generation. -/
+theorem completeShootdownOnCore_frame_ackedGen (st : TlbShootdownState)
+    {c c' : CoreId} (h : c' ≠ c) :
+    (completeShootdownOnCore st c).ackedGenOnCore c' = st.ackedGenOnCore c' := by
+  rw [completeShootdownOnCore_eq, acknowledgeShootdown_ackedGenOnCore_ne _ _ h,
+    drainShootdowns_frame_ackedGen]
+
 /-- **WS-SM SM7.A**: completing core `c` frames every other core's
 flag. -/
 theorem completeShootdownOnCore_frame_ack (st : TlbShootdownState)
     {c c' : CoreId} (h : c' ≠ c) :
     (completeShootdownOnCore st c).ackOnCore c' = st.ackOnCore c' := by
   unfold completeShootdownOnCore
-  rw [acknowledgeShootdown_ackOnCore_ne _ h, drainShootdowns_frame_ack]
+  rw [acknowledgeShootdown_ackOnCore_ne _ _ h, drainShootdowns_frame_ack]
 
 /-- **WS-SM SM7.F.3**: the generation-selective round step — the state
 projection of the initiator's deferred catch-up for core `c`.
 
 Identical to `completeShootdownOnCore` except that the drain is keyed on
 this commit's round window, so a concurrently-posted round's descriptors
-survive (`completeShootdownOnCoreInWindow_preserves_foreign`).  The
-acknowledgment is unconditional: the *hardware* round already observed
-`c`'s release-store before the catch-up commit ran, so the model flag
-records a fact the runtime has certified. -/
+survive (`completeShootdownOnCoreInWindow_preserves_foreign`).
+
+**PR #854 review**: the acknowledgment names `hi` — this commit's own
+round — rather than being unconditional.  Until v0.32.113 it set a bare
+flag, so a catch-up that deliberately drained only its own window still
+claimed *every* round as acknowledged, and `allAcked` could read true
+with a concurrently-posted round's descriptors still pending: the
+queues were generation-selective but the acknowledgment was not.
+Acknowledging `hi` says exactly what was discharged, which is what the
+runtime's `acked_gen` has said since the same review's P1 fix. -/
 def completeShootdownOnCoreInWindow (st : TlbShootdownState) (c : CoreId)
     (lo hi : Nat) : TlbShootdownState :=
-  acknowledgeShootdown (drainShootdownsInWindow st c lo hi).2 c
+  acknowledgeShootdown (drainShootdownsInWindow st c lo hi).2 c hi
 
 /-- **WS-SM SM7.F.3**: the window round step is definitionally the
-window drain followed by the acknowledgment. -/
+window drain followed by the acknowledgment of the window's own round. -/
 theorem completeShootdownOnCoreInWindow_eq (st : TlbShootdownState)
     (c : CoreId) (lo hi : Nat) :
     completeShootdownOnCoreInWindow st c lo hi =
-      acknowledgeShootdown (drainShootdownsInWindow st c lo hi).2 c := rfl
+      acknowledgeShootdown (drainShootdownsInWindow st c lo hi).2 c hi := rfl
 
 /-- **WS-SM SM7.F.3 (the race-freedom lemma, round-step form)**: a
 descriptor posted by a round outside this commit's window survives the
@@ -1655,11 +1929,48 @@ theorem completeShootdownOnCoreInWindow_preserves_foreign
   rw [completeShootdownOnCoreInWindow_eq, acknowledgeShootdown_frame_pending]
   exact drainShootdownsInWindow_preserves_foreign hmem hout
 
-/-- **WS-SM SM7.F.3**: the window round step acknowledges its core. -/
+/-- **WS-SM SM7.F.3**: the window round step acknowledges its core — for
+a window that reaches the round currently open.
+
+The hypothesis is the honest one: a catch-up whose window stops short of
+the current generation (because a *later* round has been committed since)
+discharges only its own rounds, and must not read as acknowledging the
+newer one.  That is exactly the PR #854 review finding. -/
 @[simp] theorem completeShootdownOnCoreInWindow_ackOnCore_self
-    (st : TlbShootdownState) (c : CoreId) (lo hi : Nat) :
+    (st : TlbShootdownState) (c : CoreId) (lo hi : Nat)
+    (hhi : st.roundGeneration ≤ hi) :
     (completeShootdownOnCoreInWindow st c lo hi).ackOnCore c = true := by
-  simp [completeShootdownOnCoreInWindow]
+  rw [completeShootdownOnCoreInWindow_eq]
+  exact acknowledgeShootdown_ackOnCore_self _ _
+    (Nat.le_trans (Nat.le_of_eq (drainShootdownsInWindow_frame_roundGeneration st c lo hi)) hhi)
+
+/-- **WS-SM SM7.F.3 (PR #854 review)**: the window round step records
+exactly the round it drained — a core's acknowledged generation after a
+catch-up is its previous value joined with the window's upper bound, and
+never more. -/
+@[simp] theorem completeShootdownOnCoreInWindow_ackedGenOnCore_self
+    (st : TlbShootdownState) (c : CoreId) (lo hi : Nat) :
+    (completeShootdownOnCoreInWindow st c lo hi).ackedGenOnCore c =
+      max (st.ackedGenOnCore c) hi := by
+  rw [completeShootdownOnCoreInWindow_eq,
+    acknowledgeShootdown_ackedGenOnCore_self,
+    drainShootdownsInWindow_frame_ackedGen _ c c lo hi]
+
+/-- **WS-SM SM7.F.3 (PR #854 review, the headline)**: a catch-up whose
+window stops below a foreign round's generation does **not** acknowledge
+that round.
+
+The acknowledgment dual of `completeShootdownOnCoreInWindow_preserves_foreign`:
+that lemma says the foreign *descriptors* survive the drain, this one
+says the foreign *round* is still owed.  Together they are what makes a
+concurrently-committed round's work genuinely outstanding in the model
+rather than merely present-but-declared-done. -/
+theorem completeShootdownOnCoreInWindow_not_acks_foreign
+    {st : TlbShootdownState} {c : CoreId} {lo hi g : Nat}
+    (hW : st.ackedGenOnCore c < g) (hout : hi < g) :
+    (completeShootdownOnCoreInWindow st c lo hi).ackedGenOnCore c < g := by
+  rw [completeShootdownOnCoreInWindow_ackedGenOnCore_self]
+  exact Nat.max_lt.mpr ⟨hW, hout⟩
 
 /-- **WS-SM SM7.F.3**: the window round step frames every other core's
 queue. -/
@@ -1676,7 +1987,7 @@ theorem completeShootdownOnCoreInWindow_frame_ack (st : TlbShootdownState)
     {c c' : CoreId} (h : c' ≠ c) (lo hi : Nat) :
     (completeShootdownOnCoreInWindow st c lo hi).ackOnCore c' =
       st.ackOnCore c' := by
-  rw [completeShootdownOnCoreInWindow_eq, acknowledgeShootdown_ackOnCore_ne _ h,
+  rw [completeShootdownOnCoreInWindow_eq, acknowledgeShootdown_ackOnCore_ne _ _ h,
       drainShootdownsInWindow_frame_ack]
 
 /-- **WS-SM SM7.F.3**: the window round step never allocates a round. -/
@@ -1692,18 +2003,27 @@ theorem completeShootdownOnCoreInWindow_preserves_pendingBounded
     (lo hi : Nat) :
     pendingBounded (completeShootdownOnCoreInWindow st c lo hi) :=
   acknowledgeShootdown_preserves_pendingBounded
-    (drainShootdownsInWindow_preserves_pendingBounded hB c lo hi) c
+    (drainShootdownsInWindow_preserves_pendingBounded hB c lo hi) c _
 
 /-- **WS-SM SM7.F.3 (the bridge, round-step form)**: under the
 round-serialisation regime — every descriptor pending on `c` belongs to
-this commit's window — the generation-selective round step **is** the
-wholesale `completeShootdownOnCore`. -/
+this commit's window, whose upper bound is the round currently open —
+the generation-selective round step **is** the wholesale
+`completeShootdownOnCore`.
+
+The `hhi` hypothesis is new in v0.32.113 and is what the regime supplies:
+serialised rounds mean the commit's own window reaches the current
+generation, so acknowledging `hi` and acknowledging `roundGeneration`
+coincide.  Without serialisation they do not — that difference is the
+whole point of the PR #854 review fix, and dropping the hypothesis would
+re-assert the identity the fix exists to deny. -/
 theorem completeShootdownOnCoreInWindow_eq_complete {st : TlbShootdownState}
     {c : CoreId} {lo hi : Nat}
-    (hall : ∀ d ∈ st.pendingOnCore c, inRoundWindow lo hi d.generation = true) :
+    (hall : ∀ d ∈ st.pendingOnCore c, inRoundWindow lo hi d.generation = true)
+    (hhi : hi = st.roundGeneration) :
     completeShootdownOnCoreInWindow st c lo hi = completeShootdownOnCore st c := by
   rw [completeShootdownOnCoreInWindow_eq, completeShootdownOnCore_eq,
-      drainShootdownsInWindow_eq_drainShootdowns hall]
+      drainShootdownsInWindow_eq_drainShootdowns hall, hhi]
 
 /-- **WS-SM SM7.B**: round steps at *distinct* cores commute — each
 step writes only its own core's queue and flag.  This is the
@@ -1733,18 +2053,12 @@ theorem completeShootdownOnCore_comm {c₁ c₂ : CoreId} (h : c₁ ≠ c₂)
   · intro c
     by_cases h1 : c = c₁
     · subst h1
-      rw [completeShootdownOnCore_frame_ack _ h,
-          completeShootdownOnCore_ackOnCore_self,
-          completeShootdownOnCore_ackOnCore_self]
+      simp [completeShootdownOnCore_frame_ackedGen _ h]
     · by_cases h2 : c = c₂
       · subst h2
-        rw [completeShootdownOnCore_ackOnCore_self,
-            completeShootdownOnCore_frame_ack _ (Ne.symm h),
-            completeShootdownOnCore_ackOnCore_self]
-      · rw [completeShootdownOnCore_frame_ack _ h2,
-            completeShootdownOnCore_frame_ack _ h1,
-            completeShootdownOnCore_frame_ack _ h1,
-            completeShootdownOnCore_frame_ack _ h2]
+        simp [completeShootdownOnCore_frame_ackedGen _ (Ne.symm h)]
+      · simp [completeShootdownOnCore_frame_ackedGen _ h1,
+              completeShootdownOnCore_frame_ackedGen _ h2]
 
 /-- **WS-SM SM7.A**: closed form for a fold of round steps — a core's
 queue is empty exactly when the fold visited it, and untouched
@@ -1885,7 +2199,7 @@ theorem shootdownRoundFor_restores_quiescent
     by_cases hc : c ∈ targets
     · rw [if_pos hc]
     · rw [if_neg hc, foldlM_enqueueShootdown_frame_ack hpost c]
-      exact (beginShootdownRoundFor_ackOnCore_iff st initiator targets c).mpr
+      exact beginShootdownRoundFor_ackOnCore_of_born st initiator targets
         (Or.inr hc)
 
 -- ============================================================================

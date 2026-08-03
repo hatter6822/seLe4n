@@ -1709,12 +1709,13 @@ whole-queue per-core handler. -/
 theorem handleTlbShootdownReqOnCorePerCoreInWindow_eq_handle {st : SystemState}
     {c : CoreId} {lo hi : Nat}
     (hall : ∀ d ∈ st.tlbShootdown.pendingOnCore c,
-      inRoundWindow lo hi d.generation = true) :
+      inRoundWindow lo hi d.generation = true)
+    (hhi : hi = st.tlbShootdown.roundGeneration) :
     handleTlbShootdownReqOnCorePerCoreInWindow st c lo hi =
       handleTlbShootdownReqOnCorePerCore st c := by
   rw [handleTlbShootdownReqOnCorePerCoreInWindow,
       handleTlbShootdownReqOnCorePerCore,
-      handleTlbShootdownReqOnCoreInWindow_eq_handle hall,
+      handleTlbShootdownReqOnCoreInWindow_eq_handle hall hhi,
       drainShootdownsInWindow_eq_drainShootdowns hall]
 
 /-- **WS-SM SM7.F.3**: the window per-core handler never adds an entry to any
@@ -1877,7 +1878,8 @@ about. -/
 theorem shootdownCatchUpPerCoreInWindow_eq_catchUp {st : SystemState}
     {execCore : CoreId} {ops : List TlbInvalidation} {lo hi : Nat}
     (hall : ∀ (c : CoreId), ∀ d ∈ st.tlbShootdown.pendingOnCore c,
-      inRoundWindow lo hi d.generation = true) :
+      inRoundWindow lo hi d.generation = true)
+    (hhi : hi = st.tlbShootdown.roundGeneration) :
     shootdownCatchUpPerCoreInWindow st execCore ops lo hi =
       shootdownCatchUpPerCore st execCore ops := by
   unfold shootdownCatchUpPerCoreInWindow shootdownCatchUpPerCore
@@ -1887,17 +1889,22 @@ theorem shootdownCatchUpPerCoreInWindow_eq_catchUp {st : SystemState}
   suffices h : ∀ (cs : List CoreId) (s : SystemState),
       (∀ (c : CoreId), ∀ d ∈ s.tlbShootdown.pendingOnCore c,
         inRoundWindow lo hi d.generation = true) →
+      hi = s.tlbShootdown.roundGeneration →
       cs.foldl (fun s c => handleTlbShootdownReqOnCorePerCoreInWindow s c lo hi) s =
         cs.foldl handleTlbShootdownReqOnCorePerCore s by
-    rw [h (shootdownTargets execCore) st hall]
+    rw [h (shootdownTargets execCore) st hall hhi]
   intro cs
   induction cs with
-  | nil => intro s _; rfl
+  | nil => intro s _ _; rfl
   | cons t ts ih =>
-    intro s hs
+    intro s hs hg
     rw [List.foldl_cons, List.foldl_cons,
-        handleTlbShootdownReqOnCorePerCoreInWindow_eq_handle (hs t)]
-    refine ih _ fun c d hd => ?_
+        handleTlbShootdownReqOnCorePerCoreInWindow_eq_handle (hs t) hg]
+    refine ih _ (fun c d hd => ?_) (by
+      rw [handleTlbShootdownReqOnCorePerCore_tlbShootdown_eq,
+          handleTlbShootdownReqOnCore_tlbShootdown_eq,
+          completeShootdownOnCore_roundGeneration]
+      exact hg)
     -- After the whole-queue handler at `t`, `t`'s queue is empty and every
     -- other core's is framed.
     by_cases hct : c = t

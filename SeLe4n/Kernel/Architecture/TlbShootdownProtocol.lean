@@ -613,7 +613,7 @@ theorem tlbShootdownBroadcast_ack_iff {st st' : SystemState}
     {initiator : CoreId} {targets : List CoreId} {op : TlbInvalidation}
     {sgis : List (CoreId × SgiKind)}
     (h : tlbShootdownBroadcast st initiator targets op = some (st', sgis))
-    (c : CoreId) :
+    (hW : ackBounded st.tlbShootdown) (c : CoreId) :
     st'.tlbShootdown.ackOnCore c = true ↔ (c = initiator ∨ c ∉ targets) := by
   unfold tlbShootdownBroadcast at h
   cases hfold : targets.foldlM
@@ -628,7 +628,7 @@ theorem tlbShootdownBroadcast_ack_iff {st st' : SystemState}
       subst hst
       show posted.ackOnCore c = true ↔ _
       rw [foldlM_enqueueShootdown_frame_ack hfold c]
-      exact beginShootdownRoundFor_ackOnCore_iff st.tlbShootdown initiator
+      exact beginShootdownRoundFor_ackOnCore_iff st.tlbShootdown hW initiator
         targets c
 
 /-- **WS-SM SM7.B.2** (fold lemma): the posting fold preserves the
@@ -698,10 +698,10 @@ SM7.B.4 release-acquire pairing certifies against the hardware: the
 Rust handler release-stores the flag only after its TLBIs have
 `dsb`-completed. -/
 def tlbShootdownAckOnCore (st : SystemState) (c : CoreId)
-    (retired : List TlbShootdownDescriptor) : SystemState :=
+    (retired : List TlbShootdownDescriptor) (g : Nat) : SystemState :=
   { st with
       tlb := applyTlbInvalidations st.tlb (retired.map (·.op)),
-      tlbShootdown := acknowledgeShootdown st.tlbShootdown c }
+      tlbShootdown := acknowledgeShootdown st.tlbShootdown c g }
 
 /-- **WS-SM SM7.B.3**: the complete `.tlbShootdownReq` handler state
 transition — drain, retire the drained operations, acknowledge.  The
@@ -712,7 +712,7 @@ projects onto. -/
 def handleTlbShootdownReqOnCore (st : SystemState) (c : CoreId) :
     SystemState :=
   let (st', drained) := tlbShootdownDrainOnCore st c
-  tlbShootdownAckOnCore st' c drained
+  tlbShootdownAckOnCore st' c drained st.tlbShootdown.roundGeneration
 
 /-- **WS-SM SM7.B.3**: the handler's shootdown-state projection is
 exactly the SM7.A round step — the SM7.A round capstones
@@ -770,8 +770,8 @@ theorem handleTlbShootdownReqOnCore_idempotent (st : SystemState)
     have hdrain : (drainShootdowns st₁.tlbShootdown c).1 = [] := by
       rw [drainShootdowns_fst]
       exact hpend
-    have hsd : acknowledgeShootdown (drainShootdowns st₁.tlbShootdown c).2 c =
-        st₁.tlbShootdown := by
+    have hsd : acknowledgeShootdown (drainShootdowns st₁.tlbShootdown c).2 c
+          st₁.tlbShootdown.roundGeneration = st₁.tlbShootdown := by
       refine TlbShootdownState.ext_perCore ?_ ?_ rfl
       · intro c'
         rw [acknowledgeShootdown_frame_pending]
@@ -783,16 +783,19 @@ theorem handleTlbShootdownReqOnCore_idempotent (st : SystemState)
       · intro c'
         by_cases hc : c' = c
         · subst hc
-          rw [acknowledgeShootdown_ackOnCore_self]
-          exact hack.symm
-        · rw [acknowledgeShootdown_ackOnCore_ne _ hc,
-              drainShootdowns_frame_ack]
+          rw [acknowledgeShootdown_ackedGenOnCore_self,
+              drainShootdowns_frame_ackedGen]
+          exact Nat.max_eq_left
+            (by simpa [TlbShootdownState.ackOnCore] using hack)
+        · rw [acknowledgeShootdown_ackedGenOnCore_ne _ _ hc,
+              drainShootdowns_frame_ackedGen]
     have hstep : handleTlbShootdownReqOnCore st₁ c =
         { st₁ with
             tlb := applyTlbInvalidations st₁.tlb
               ((drainShootdowns st₁.tlbShootdown c).1.map (·.op)),
             tlbShootdown := acknowledgeShootdown
-              (drainShootdowns st₁.tlbShootdown c).2 c } := rfl
+              (drainShootdowns st₁.tlbShootdown c).2 c
+              st₁.tlbShootdown.roundGeneration } := rfl
     rw [hstep, hdrain, hsd]
     rfl
   apply key
@@ -832,7 +835,10 @@ only difference is which descriptors the drain claims. -/
 def handleTlbShootdownReqOnCoreInWindow (st : SystemState) (c : CoreId)
     (lo hi : Nat) : SystemState :=
   let (st', drained) := tlbShootdownDrainOnCoreInWindow st c lo hi
-  tlbShootdownAckOnCore st' c drained
+  -- **PR #854 review**: the window handler acknowledges `hi` — the round it
+  -- actually drained — not the generation currently open.  A later round
+  -- committed since this commit posted is genuinely still owed.
+  tlbShootdownAckOnCore st' c drained hi
 
 /-- **WS-SM SM7.F.3**: the window handler's shootdown-state projection is
 the SM7.F.3 round step. -/
@@ -866,13 +872,14 @@ through this equation. -/
 theorem handleTlbShootdownReqOnCoreInWindow_eq_handle {st : SystemState}
     {c : CoreId} {lo hi : Nat}
     (hall : ∀ d ∈ st.tlbShootdown.pendingOnCore c,
-      inRoundWindow lo hi d.generation = true) :
+      inRoundWindow lo hi d.generation = true)
+    (hhi : hi = st.tlbShootdown.roundGeneration) :
     handleTlbShootdownReqOnCoreInWindow st c lo hi =
       handleTlbShootdownReqOnCore st c := by
   show tlbShootdownAckOnCore
       { st with tlbShootdown := (drainShootdownsInWindow st.tlbShootdown c lo hi).2 }
-      c (drainShootdownsInWindow st.tlbShootdown c lo hi).1 = _
-  rw [drainShootdownsInWindow_eq_drainShootdowns hall]
+      c (drainShootdownsInWindow st.tlbShootdown c lo hi).1 hi = _
+  rw [drainShootdownsInWindow_eq_drainShootdowns hall, hhi]
   rfl
 
 /-- **WS-SM SM7.F.3 (race freedom, handler form)**: a descriptor posted by
@@ -1349,14 +1356,14 @@ theorem foldl_enqueueShootdownOrCoalesce_frame_ack (l : List CoreId) :
 acknowledged iff it is the initiator or outside the target set —
 identical to the strict broadcast's ack shape. -/
 theorem postShootdownRoundCoalescing_ack_iff (sd : TlbShootdownState)
-    (initiator : CoreId) (targets : List CoreId) (op : TlbInvalidation)
-    (c : CoreId) :
+    (hW : ackBounded sd) (initiator : CoreId) (targets : List CoreId)
+    (op : TlbInvalidation) (c : CoreId) :
     (postShootdownRoundCoalescing sd initiator targets op).ackOnCore c =
         true ↔
       (c = initiator ∨ c ∉ targets) := by
   unfold postShootdownRoundCoalescing
   rw [foldl_enqueueShootdownOrCoalesce_frame_ack]
-  exact beginShootdownRoundFor_ackOnCore_iff sd initiator targets c
+  exact beginShootdownRoundFor_ackOnCore_iff sd hW initiator targets c
 
 /-- **WS-SM SM7.B.9** (fold lemma): after the coalescing posting fold,
 every visited core's queue holds the round's descriptor or a

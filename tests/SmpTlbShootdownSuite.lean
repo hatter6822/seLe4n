@@ -78,15 +78,15 @@ open SeLe4n.Kernel.Concurrency
 #check @TlbShootdownState.pendingOnCore
 #check @TlbShootdownState.ackOnCore
 #check @TlbShootdownState.setPendingOnCore
-#check @TlbShootdownState.setAckOnCore
+#check @TlbShootdownState.setAckedGenOnCore
 
 -- SM7.A.2 store/load reduction algebra + extensionality:
 #check @TlbShootdownState.setPendingOnCore_pendingOnCore_self
 #check @TlbShootdownState.setPendingOnCore_pendingOnCore_ne
 #check @TlbShootdownState.setPendingOnCore_ackOnCore
-#check @TlbShootdownState.setAckOnCore_ackOnCore_self
-#check @TlbShootdownState.setAckOnCore_ackOnCore_ne
-#check @TlbShootdownState.setAckOnCore_pendingOnCore
+#check @TlbShootdownState.setAckedGenOnCore_ackedGenOnCore_self
+#check @TlbShootdownState.setAckedGenOnCore_ackedGenOnCore_ne
+#check @TlbShootdownState.setAckedGenOnCore_pendingOnCore
 #check @TlbShootdownState.ext_perCore
 #check @TlbShootdownState.initial_pendingOnCore
 #check @TlbShootdownState.initial_ackOnCore
@@ -180,8 +180,8 @@ open SeLe4n.Kernel.Concurrency
 #check @beginShootdownRoundFor_frame_pending
 #check @beginShootdownRoundFor_preserves_pendingBounded
 #check @beginShootdownRoundFor_allCores_eq
-#check @foldl_setAckFalse_ackOnCore
-#check @foldl_setAckFalse_pendingOnCore
+#check @foldl_setAckedGen_ackedGenOnCore
+#check @foldl_setAckedGen_pendingOnCore
 #check @beginRoundFor_foldlM_enqueueShootdown_isSome
 #check @shootdownRoundFor_restores_quiescent
 
@@ -695,9 +695,11 @@ example : pendingBounded TlbShootdownState.initial :=
 -- the SM7.B.5 wait-loop-termination anchor applied to a worst-case
 -- start (a fresh round opened by core 0, so three flags are down).
 example :
-    allAcked (allCores.foldl acknowledgeShootdown
+    allAcked (allCores.foldl
+      (fun s x => acknowledgeShootdown s x
+        (beginShootdownRound TlbShootdownState.initial bootCoreId).roundGeneration)
       (beginShootdownRound TlbShootdownState.initial bootCoreId)) :=
-  allCores_foldl_acknowledgeShootdown_allAcked _
+  allCores_foldl_acknowledgeShootdown_allAcked _ (Nat.le_refl _)
 
 -- SM7.A.4: enqueue-success is exactly the strict capacity test.
 example (st : TlbShootdownState) (c : CoreId) (d : TlbShootdownDescriptor) :
@@ -1094,17 +1096,20 @@ private def runAckRoundChecks : IO Unit := do
     (!(decide (allAcked opened)))
   assertBool "opening a round touches no pending queue"
     (allCores.all fun c => opened.pendingOnCore c == st0.pendingOnCore c)
-  let ackedTwo := acknowledgeShootdown opened core2
+  let roundGen := opened.roundGeneration
+  let ackedTwo := acknowledgeShootdown opened core2 roundGen
   assertBool "a target acknowledgment sets exactly its own flag"
     (ackedTwo.ackOnCore core2 && !(ackedTwo.ackOnCore core1) &&
      !(ackedTwo.ackOnCore core3) && ackedTwo.ackOnCore core0)
   assertBool "acknowledgment is monotone (initiator flag survives)"
-    ((acknowledgeShootdown ackedTwo core1).ackOnCore core0)
+    ((acknowledgeShootdown ackedTwo core1 roundGen).ackOnCore core0)
   assertBool "acknowledging every remaining target reaches allAcked"
     (decide (allAcked
-      (acknowledgeShootdown (acknowledgeShootdown ackedTwo core1) core3)))
+      (acknowledgeShootdown (acknowledgeShootdown ackedTwo core1 roundGen) core3
+        roundGen)))
   assertBool "folding acknowledgments over allCores reaches allAcked"
-    (decide (allAcked (allCores.foldl acknowledgeShootdown opened)))
+    (decide (allAcked (allCores.foldl
+      (fun s x => acknowledgeShootdown s x roundGen) opened)))
   assertBool "a round opened by a non-boot core marks only that core"
     (allCores.all fun c =>
       (beginShootdownRound st0 core3).ackOnCore c == (c == core3))
@@ -1135,7 +1140,7 @@ private def runFullRoundTripChecks : IO Unit := do
     -- then acknowledge.
     let step := fun (s : TlbShootdownState) (c : CoreId) =>
       let (drained, s') := drainShootdowns s c
-      (drained, acknowledgeShootdown s' c)
+      (drained, acknowledgeShootdown s' c s.roundGeneration)
     let (d1, s1) := step posted core1
     let (d2, s2) := step s1 core2
     let (d3, s3) := step s2 core3
@@ -1202,7 +1207,8 @@ private def runRoundCompositionChecks : IO Unit := do
     assertBool "a completed core's flag is acknowledged"
       (done.ackOnCore core2)
     assertBool "completing a core equals drain-then-acknowledge"
-      (done == acknowledgeShootdown (drainShootdowns st core2).2 core2)
+      (done == acknowledgeShootdown (drainShootdowns st core2).2 core2
+        st.roundGeneration)
     assertBool "completing core 2 frames core 1's flag (still down)"
       (!(done.ackOnCore core1))
   -- The full generic pipeline: begin → post (foldlM) → complete (foldl).
@@ -1214,15 +1220,20 @@ private def runRoundCompositionChecks : IO Unit := do
     let final := targets.foldl completeShootdownOnCore posted
     assertBool "the folded round ends quiescent (the capstone, computed)"
       (decide (shootdownQuiescent final))
-    -- WS-SM SM7.F.3: a completed round returns every *queue* and *flag* to
-    -- its boot value, but NOT the round-generation counter — that is
-    -- monotone by design, so a later round can never be confused with this
-    -- one.  Stating it as "boot state with the generation advanced by
-    -- exactly one" keeps the old assertion's strength while pinning the
-    -- counter's step.
-    assertBool "the folded round returns every queue and flag to the boot state"
+    -- WS-SM SM7.F.3 (PR #854 review): a completed round returns every
+    -- *queue* to its boot value, but neither the round-generation counter
+    -- nor the acknowledgment vector — both are monotone by design.  Since
+    -- v0.32.113 an acknowledgment names the round it discharged, so a
+    -- completed round leaves every slot AT that round's generation rather
+    -- than back at a boot flag; that is what makes the state quiescent
+    -- (`roundGeneration ≤ ackedGenOnCore c` for every core) while keeping a
+    -- later round distinguishable from this one.
+    assertBool "the folded round empties every queue"
       (final == { TlbShootdownState.initial with
-                    roundGeneration := final.roundGeneration })
+                    roundGeneration := final.roundGeneration,
+                    shootdownAck := final.shootdownAck })
+    assertBool "and leaves every core acknowledging exactly this round"
+      (allCores.all fun c => final.ackedGenOnCore c == final.roundGeneration)
     assertBool "the completed round advanced the generation counter by exactly one"
       (final.roundGeneration == TlbShootdownState.initial.roundGeneration + 1)
     assertBool "the closed form: visited cores' queues empty, initiator's untouched"
@@ -1299,12 +1310,18 @@ private def runMaskedRoundChecks : IO Unit := do
     let final := [core1].foldl completeShootdownOnCore posted
     assertBool "the round completes without cores 2/3 ever acknowledging"
       (decide (allAcked final))
-    -- WS-SM SM7.F.3: queues and flags return to boot; the round-generation
-    -- counter stays advanced (monotone by design).
-    assertBool "the completed masked round is quiescent at the boot state"
+    -- WS-SM SM7.F.3 (PR #854 review): queues return to boot; the
+    -- round-generation counter and the acknowledgment vector stay advanced
+    -- (both monotone by design — an acknowledgment now names its round).
+    -- The masked round's point is that cores 2/3 reach quiescence without
+    -- ever acknowledging: they are born at the round's generation.
+    assertBool "the completed masked round is quiescent with queues at boot"
       (decide (shootdownQuiescent final) &&
         final == { TlbShootdownState.initial with
-                     roundGeneration := final.roundGeneration })
+                     roundGeneration := final.roundGeneration,
+                     shootdownAck := final.shootdownAck })
+    assertBool "every core acknowledges the masked round, targets and non-targets alike"
+      (allCores.all fun c => final.ackedGenOnCore c == final.roundGeneration)
     assertBool "the completed masked round advanced the generation by one"
       (final.roundGeneration == 1)
   assertBool "smp_enabled=false shape: a no-target round is immediately done"
@@ -1433,6 +1450,7 @@ private def runHandlerChecks : IO Unit := do
       (tlbHasEntry drainSt.tlb entryTarget)
     -- ack half: TLB effect + flag
     let ackSt := tlbShootdownAckOnCore drainSt core2 drained
+      posted.tlbShootdown.roundGeneration
     assertBool "the ack half retires the drained operand on the view"
       (!(tlbHasEntry ackSt.tlb entryTarget) &&
         tlbHasEntry ackSt.tlb entryOtherVaddr)
@@ -1566,7 +1584,8 @@ private def runWaitLoopChecks : IO Unit := do
   let opened := beginShootdownRound TlbShootdownState.initial core0
   -- poll trace: one more target acks per poll index
   let states : Nat → TlbShootdownState := fun n =>
-    (allCores.take n).foldl acknowledgeShootdown opened
+    (allCores.take n).foldl
+      (fun s x => acknowledgeShootdown s x opened.roundGeneration) opened
   match waitAllAckedBounded 10 states with
   | none => assertBool "the wait observes the completing round" false
   | some n => do
@@ -2822,14 +2841,91 @@ private def runRoundWindowWidthChecks : IO Unit := do
     assertBool "the diff-recovered changed-target set is every remote core"
       (shootdownChangedTargets stPre stPost == shootdownTargets core0)
 
+/-- §8.4 (PR #854 review): the model acknowledgment names the round it
+discharged.
+
+Until v0.32.113 `shootdownAck` was a `Vector Bool` and the window
+catch-up set it unconditionally, so a catch-up that deliberately drained
+only its own generation window still claimed every concurrently-posted
+round as acknowledged: the queues were generation-selective but the
+acknowledgment was not, and `allAcked` could read true with a foreign
+round's descriptors still pending.  These checks are the model-side
+counterpart of the Rust
+`sm7f3_newer_round_acks_cannot_satisfy_an_older_unexecuted_round`. -/
+private def runGenerationAwareAckChecks : IO Unit := do
+  IO.println "-- §8.4 SM7.F.3 generation-aware model acknowledgment"
+  -- Round A (generation 1, initiator core0) posts to the other three.
+  let opened := beginShootdownRound TlbShootdownState.initial core0
+  let descA : TlbShootdownDescriptor :=
+    { op := .vae1 5 0x1000, initiator := core0, generation := 1 }
+  let postedA := ((([core1, core2, core3]).foldlM
+    (fun s c => enqueueShootdown s c descA) opened).getD opened)
+  -- Round B (generation 2, initiator core1) commits before A's deferred
+  -- catch-up runs — the interleaving the whole SM7.F.3 cut is about.
+  let openedB := beginShootdownRound postedA core1
+  let descB : TlbShootdownDescriptor :=
+    { op := .vae1 9 0x2000, initiator := core1, generation := 2 }
+  let postedB := ((([core0, core2, core3]).foldlM
+    (fun s c => enqueueShootdown s c descB) openedB).getD openedB)
+  assertBool "core2 holds both rounds' descriptors before any catch-up"
+    ((postedB.pendingOnCore core2).length == 2)
+  -- A's catch-up runs its own window (0, 1] on core2.
+  let afterA := completeShootdownOnCoreInWindow postedB core2 0 1
+  assertBool "A's catch-up drains only A's descriptor"
+    ((afterA.pendingOnCore core2).length == 1 &&
+      (afterA.pendingOnCore core2).all fun d => d.generation == 2)
+  -- THE fix: A's catch-up acknowledged generation 1, so B's round — the
+  -- round currently open — is still genuinely owed on core2.
+  assertBool "A's catch-up acknowledges exactly its own window"
+    (afterA.ackedGenOnCore core2 == 1)
+  assertBool "A's catch-up does NOT acknowledge B's round"
+    (!(afterA.ackOnCore core2))
+  assertBool "so the round in flight is not reported all-acknowledged"
+    (!(decide (allAcked afterA)))
+  -- The load-bearing negative: the pre-fix unconditional acknowledgment
+  -- would have marked core2 acknowledged here, and with the other two
+  -- targets' catch-ups likewise it would have reported B's round complete
+  -- with B's descriptors still queued.
+  -- A's catch-up over ALL of A's targets, plus A's own initiator core0
+  -- (which holds only B's descriptor) — the whole commit's catch-up.
+  let afterAllA :=
+    completeShootdownOnCoreInWindow
+      (completeShootdownOnCoreInWindow
+        (completeShootdownOnCoreInWindow afterA core1 0 1) core3 0 1) core0 0 1
+  assertBool "A's catch-up drained every A descriptor"
+    (allCores.all fun c =>
+      (afterAllA.pendingOnCore c).all fun d => d.generation == 2)
+  assertBool "no combination of A-window catch-ups completes B's round"
+    (!(decide (allAcked afterAllA)))
+  assertBool "and B's descriptors are all still pending"
+    (allCores.all fun c =>
+      c == core1 || (afterAllA.pendingOnCore c).any fun d => d.generation == 2)
+  -- B's own catch-up is what completes B's round.
+  let afterB :=
+    completeShootdownOnCoreInWindow
+      (completeShootdownOnCoreInWindow
+        (completeShootdownOnCoreInWindow afterAllA core0 1 2) core2 1 2) core3 1 2
+  assertBool "B's catch-up acknowledges B's round on every target"
+    (decide (allAcked afterB))
+  assertBool "and leaves the state quiescent"
+    (decide (shootdownQuiescent afterB))
+  -- Well-formedness holds throughout: no slot ever names an unopened round.
+  assertBool "every state on the path is ack-bounded"
+    (decide (ackBounded opened) && decide (ackBounded postedB) &&
+      decide (ackBounded afterA) && decide (ackBounded afterB))
+  -- Monotonicity: an acknowledgment never retracts a newer one.
+  assertBool "a late older-round acknowledgment cannot retract a newer one"
+    ((acknowledgeShootdown afterB core2 1).ackedGenOnCore core2 == 2)
+
 /-- §8 dispatcher (the CLAUDE.md thin-dispatcher pattern): C-scope nesting
-depth resets at each function boundary in the Lean codegen, so the three
+depth resets at each function boundary in the Lean codegen, so the four
 parts each stay well inside clang's `-fbracket-depth` limit. -/
 private def runRoundGenerationChecks : IO Unit := do
   IO.println "-- §8 SM7.F.3 round-generation-tagged catch-up"
   runRoundWindowChecks
   runRoundWindowBoundChecks
   runRoundWindowWidthChecks
+  runGenerationAwareAckChecks
 
 -- ----------------------------------------------------------------------------
 -- §7  Cross-cluster mock: the `.outer` portability seam, exercised

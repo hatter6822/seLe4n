@@ -579,11 +579,21 @@ pub struct ShootdownOpMailbox {
     /// Seqlock sequence: even = stable, odd = mid-publish.
     seq: AtomicU32,
     /// **WS-SM SM7.F.3**: the round generation these operands belong to
-    /// — the Lean `TlbShootdownState.roundGeneration` of the round the
-    /// initiator is running, published with the operands and read by
-    /// every handler *before* it does any TLB work.  It is what a
-    /// handler acknowledges, so an acknowledgment always names the round
-    /// whose operands (or a conservative superset) it actually retired.
+    /// — the **runtime** generation from [`SHOOTDOWN_ROUND_SEQ`], allocated
+    /// by the initiator under the round lock, published with the operands
+    /// and read by every handler *before* it does any TLB work.  It is
+    /// what a handler acknowledges, so an acknowledgment always names the
+    /// round whose operands (or a conservative superset) it actually
+    /// retired.
+    ///
+    /// **Not** the Lean `TlbShootdownState.roundGeneration** (PR #854
+    /// review P1).  The two order different things on purpose: the model
+    /// generation orders *commits* and keys the window drain, this one
+    /// orders *hardware rounds* and keys the acknowledgment channel.
+    /// Under concurrency those orders differ, and publishing the
+    /// commit-time value here is exactly what let a newer round's
+    /// acknowledgments certify an older round nobody had executed — see
+    /// [`allocate_round_generation_in`].
     ///
     /// Published outside the seqlock body with its own `Release` store
     /// so a handler can read "which round is current" without having to

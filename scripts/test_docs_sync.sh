@@ -65,19 +65,25 @@ python3 "${SCRIPT_DIR}/check_source_line_citations.py"
 # names itself in an H1 and points at the other in a blockquote.  The
 # shared body begins at the first `##` section, `## What this project is`,
 # and must be byte-identical from there on.
+# The bodies are extracted to FILES, not shell variables (PR #854 review).
+# Command substitution strips every trailing newline, so a variable
+# comparison silently accepts bodies that differ in trailing blank lines or
+# in whether the final newline is present — i.e. it accepts files that are
+# not byte-identical, which is the one thing this gate claims to enforce.
 mirror_anchor='## What this project is'
-claude_body="$(awk -v a="${mirror_anchor}" 'index($0,a)==1{f=1} f' CLAUDE.md)"
-agents_body="$(awk -v a="${mirror_anchor}" 'index($0,a)==1{f=1} f' AGENTS.md)"
-if [[ -z "${claude_body}" || -z "${agents_body}" ]]; then
+mirror_tmp="$(mktemp -d)"
+trap 'rm -rf "${mirror_tmp}"' EXIT
+awk -v a="${mirror_anchor}" 'index($0,a)==1{f=1} f' CLAUDE.md > "${mirror_tmp}/claude"
+awk -v a="${mirror_anchor}" 'index($0,a)==1{f=1} f' AGENTS.md > "${mirror_tmp}/agents"
+if [[ ! -s "${mirror_tmp}/claude" || ! -s "${mirror_tmp}/agents" ]]; then
   echo "FAIL: could not locate the shared '${mirror_anchor}' heading in both \
 CLAUDE.md and AGENTS.md; the mirror check would be vacuous." >&2
   exit 1
 fi
-if [[ "${claude_body}" != "${agents_body}" ]]; then
+if ! cmp -s "${mirror_tmp}/claude" "${mirror_tmp}/agents"; then
   echo "FAIL: CLAUDE.md and AGENTS.md have diverged below their header blocks." >&2
   echo "      Both files require byte-identical bodies (see their own headers)." >&2
-  diff <(printf '%s\n' "${claude_body}") <(printf '%s\n' "${agents_body}") \
-    | head -40 >&2
+  diff "${mirror_tmp}/claude" "${mirror_tmp}/agents" | head -40 >&2
   exit 1
 fi
 echo "PASS: CLAUDE.md and AGENTS.md bodies are byte-identical."

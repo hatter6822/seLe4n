@@ -880,18 +880,35 @@ runtime generation is now read *from* a `u64`, so the `UInt64.ofNat`
 narrowing round-trips exactly and the `Nat` identity cannot alias at the FFI
 boundary; the allocator additionally fails closed on wrap.
 
-**TRACKED DEBT — generation-aware model acknowledgment** (Codex P2, valid,
-deferred).  `completeShootdownOnCoreInWindow` acknowledges unconditionally:
-a catch-up that drains only its own window still writes the target's flag
-`true`, so with concurrent rounds the model's `allAcked` can read true while
-a foreign round's descriptors are pending.  **Model-fidelity only** — the
-runtime consults the Rust `acked_gen`, never the model's `Bool` vector, so
-no hardware hazard follows, and no landed theorem is false (the round
-capstones are stated per-round).  Closure means converting
-`TlbShootdownState.shootdownAck` from `Vector Bool` to a generation vector
-mirroring the Rust side and re-proving the SM7.A/B acknowledgment surface —
-a cut comparable in size to SM7.F.3 itself.  **Closure target: the SM8
-mount.**
+**Generation-aware model acknowledgment — CLOSED at v0.32.113** (Codex P2).
+Registered as tracked debt when the P1 landed, then taken in the following
+cut.  `completeShootdownOnCoreInWindow` acknowledged unconditionally, so a
+catch-up that drained only its own window still wrote the target's flag
+`true` and the model's `allAcked` could read true with a foreign round's
+descriptors pending: SM7.F.3 made the queues generation-selective and left
+the acknowledgment a bare flag.  Model-fidelity only — the runtime consults
+the Rust `acked_gen`, never the model's vector, and the round capstones are
+stated per-round so none was false.
+
+`TlbShootdownState.shootdownAck` is now `Vector Nat` (the highest generation
+each core has acknowledged, mirroring `ShootdownAckSlot.acked_gen`), with
+`ackedGenOnCore` the raw slot and `ackOnCore` a *derived* `Bool`
+(`roundGeneration ≤ ackedGenOnCore c`) so the SM7.A/B theorem shapes
+survive.  `acknowledgeShootdown` takes the generation and joins with `max`
+(the `fetch_max` mirror); the window catch-up passes `hi`, the whole-queue
+form passes `roundGeneration`.  There is no ack reset on either side any
+more — a round open writes the new generation to the born-acknowledged
+cores, and a target is unacknowledged because its slot names an earlier
+round.  That needs the new well-formedness predicate `ackBounded` (no core
+has acknowledged an unopened round), which the `_ackOnCore_iff`
+characterisations take as a hypothesis and every transition preserves.
+
+Headline `completeShootdownOnCoreInWindow_not_acks_foreign`: a catch-up
+whose window stops below a foreign round's generation does not acknowledge
+it — the acknowledgment dual of `…_preserves_foreign`.  The four
+window↔whole-queue bridges gained an `hi = roundGeneration` hypothesis:
+under round serialisation the two coincide, and dropping it would re-assert
+the identity the fix denies.  Suite §8.4 runs the interleaving.
 
 #### SM7.F.3 (v0.32.105) — round-generation-tagged descriptors
 
