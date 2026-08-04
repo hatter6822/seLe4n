@@ -234,6 +234,49 @@ check("an unterminated TOML multi-line string keeps the rest",
 check("a plain config comment still blanks after the fix",
       CODED in gate.strip_config("key: value  # " + CODED), False)
 
+# --- A YAML block scalar is a script, not config ----------------------
+# `run: |` bodies are shell, and the workflow files use them.  Inside
+# one, `#` is an ordinary character (`printf " #"; helper`), but the
+# config rules read it as a comment and erased the rest of the line.
+_blk = "    steps:\n      - run: |\n          printf " + dq + " #" + dq + "; " + CODED + "\n"
+check("a YAML block-scalar body is scanned as shell",
+      CODED in gate.strip_config(_blk), True)
+# The block must END at a dedent, or it would swallow the real YAML --
+# and its real comments -- that follows.
+check("a block scalar ends at the first dedent",
+      CODED in gate.strip_config(
+          "  run: |\n    echo hi\n  next: 1  # " + CODED + "\n"), False)
+
+# --- Rust allows whitespace between a macro path and its `!` ----------
+# `global_asm !("...")` is a valid call; scanning straight back from the
+# `!` sliced an empty name, so the template was blanked and its
+# linker-visible symbol bypassed the hard-zero Rust gate.
+check("a spaced macro bang still opens an asm template",
+      CODED in gate.strip_rust("global_asm !(" + dq + ".global " + CODED + dq + ")"),
+      True)
+check("a name ending in asm still opens nothing",
+      CODED in gate.strip_rust("notasm!(" + dq + CODED + dq + ");"), False)
+
+# --- Linker-name attributes accept `concat!` --------------------------
+# `#[export_name = concat!("phase5", "_helper")]` emits the joined
+# symbol, so requiring the literal to be ADJACENT to the directive
+# blanked both fragments.  The joined text never appears literally, so
+# what must survive is the coded COMPONENT.
+def _coded_in_rust(src: str) -> bool:
+    return any(gate.is_coded(tok)
+               for tok in gate.IDENTIFIER.findall(gate.strip_rust(src)))
+
+
+check("a concat! export_name keeps its coded fragment",
+      _coded_in_rust("#[export_name = concat!(" + dq + "phase5" + dq + ", "
+                     + dq + "_helper" + dq + ")] pub fn s(){}"), True)
+check("a concat! link_section keeps its coded fragment",
+      _coded_in_rust("#[link_section = concat!(" + dq + ".text.phase5" + dq + ", "
+                     + dq + "_helper" + dq + ")] static X: u8 = 0;"), True)
+# The exemption that keeps this usable: an ordinary literal is prose.
+check("an ordinary Rust literal is still prose",
+      _coded_in_rust("let msg = " + dq + CODED + dq + ";"), False)
+
 # --- A char literal holds data, not a delimiter -----------------------
 # `const Q: char = '"';` -- the quote opens no string, but a scanner
 # that does not know what a char literal is takes it as one and blanks

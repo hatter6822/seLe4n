@@ -483,7 +483,15 @@ IDENT_BEARING_STRING = re.compile(
     r"(?:export_name|link_name|link_section"          # Rust attributes
     r"|\.section|\.globa?l|\.type|\.set|\.weak|\.extern|\.size"  # asm
     r"|PROVIDE|ENTRY|KEEP|OUTPUT_ARCH)"               # linker script
-    r"\s*[=(\s]\s*$"
+    # The literal need not be ADJACENT to the directive.  Rust accepts
+    # `#[export_name = concat!("phase5", "_helper")]`, which emits the
+    # concatenated symbol, and `link_section` takes the same form -- so
+    # requiring adjacency blanked both fragments as prose and let a
+    # linker-visible coded name past the hard-zero gate.  Anything up to
+    # a statement terminator counts, which also covers the second and
+    # later `concat!` arguments.  Over-keeping here can only add
+    # findings, and comments are already blanked before this runs.
+    r"\s*[=(\s][^;\n]*$"
 )
 
 
@@ -527,8 +535,15 @@ def _opens_asm_macro(text: str, at: int) -> bool:
         j -= 1
     if j < 0 or text[j] != "!":
         return False
-    end = j
     j -= 1
+    # Rust permits whitespace between the macro path and its `!`, so
+    # `global_asm !("...")` is a valid call.  Scanning straight back
+    # from the `!` sliced an empty name there and the template was
+    # blanked as prose -- a linker-visible symbol past the hard-zero
+    # Rust gate, which is the same class as the `export_name` hole.
+    while j >= 0 and text[j] in " \t\r\n":
+        j -= 1
+    end = j + 1
     while j >= 0 and (text[j].isalnum() or text[j] == "_"):
         j -= 1
     return text[j + 1:end] in ASM_MACROS      # `core::arch::asm!` -> `asm`
@@ -806,6 +821,13 @@ def _scalar_close(text: str, start: int) -> int:
     return -1
 
 
+# A YAML block-scalar header: `run: |`, `script: >-`, `body: |2`.
+# The indicator ends the line (a trailing comment after it is legal but
+# does not occur here), and everything indented under it is the block's
+# content rather than YAML syntax.
+BLOCK_SCALAR = re.compile(r"[^\n]*:[ \t]*[|>][-+]?\d*[ \t]*(?=\n|$)")
+
+
 def strip_config(text: str) -> str:
     """YAML / TOML / plain-text data: blank `#` comments, keep the rest.
 
@@ -840,6 +862,35 @@ def strip_config(text: str) -> str:
     # `#` read as a comment.
     value_pos = ":=[,{-"
     while i < n:
+        # A YAML BLOCK SCALAR (`run: |`) is a script, not config, and it
+        # is the shape the workflow files actually use.  Inside one,
+        # `#` is an ordinary shell character -- `printf " #"; helper`
+        # is a whole command -- but the config rules read it as a
+        # comment and erased the rest of the line, so an identifier in
+        # a tracked workflow's `run:` body was invisible.
+        #
+        # The body is routed through `strip_shell`, which is the
+        # stripper for what it actually contains; the header line keeps
+        # its own config treatment.  Same principle as the per-language
+        # map: point each span at the stripper for its real syntax
+        # rather than at whichever one owns the file extension.
+        if (i == 0 or text[i - 1] == "\n") and (m := BLOCK_SCALAR.match(text, i)):
+            head_end = m.end()
+            indent = len(m.group(0)) - len(m.group(0).lstrip())
+            j = head_end + 1 if head_end < n else n
+            while j < n:
+                le = text.find("\n", j)
+                le = n if le < 0 else le
+                line = text[j:le]
+                # The block ends at the first non-blank line indented no
+                # further than its header.
+                if line.strip() and (len(line) - len(line.lstrip())) <= indent:
+                    break
+                j = le + 1 if le < n else n
+            out.append(text[i:head_end])
+            out.append(strip_shell(text[head_end:j]))
+            i = j
+            continue
         # TOML multi-line strings (`"""` / `'''`) come first, because
         # they are the one scalar here that legitimately spans lines and
         # `_scalar_close` is line-bounded by design.  Left to the

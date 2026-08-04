@@ -11,12 +11,16 @@
 //!
 //! | Key             | Type   | Default | Semantics                                |
 //! |-----------------|--------|---------|------------------------------------------|
-//! | `smp_enabled`   | bool   | `false` | Enable SMP secondary-core bring-up.      |
+//! | `smp_enabled`   | bool   | `true`  | Enable SMP secondary-core bring-up.      |
 //! | `smp_max_cores` | usize  | 4       | Upper bound on cores to bring up [0..4]. |
 //!
-//! `smp_enabled` defaults to `false` until kernel entry is serialised
-//! (SM5.I) — see [`CmdlineConfig::default`] for why, and for the
-//! condition under which it flips back.
+//! `smp_enabled` defaults to `true`: SM5.I serialised kernel entry at
+//! v0.32.142, which is the condition maintainer decision #7 attaches to
+//! the on-by-default policy.  Single-core boot is the opt-OUT
+//! (`smp_enabled=false`).  It defaulted to `false` from v0.32.136 to
+//! v0.32.141, while that precondition was unmet — see
+//! [`CmdlineConfig::default`] for the full history and for the pairing
+//! that must be restored if the kernel-entry lock is ever removed.
 //!
 //! Unknown tokens are silently ignored (forward-compatible).  Malformed
 //! values fall back to the default for the affected option — the parser

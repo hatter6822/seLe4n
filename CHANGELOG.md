@@ -1,3 +1,48 @@
+## v0.32.145 — Round 30: four holes, two of them on the binary-reachable surface
+
+PR #854 review round 30: four findings, all valid, all confirmed against
+the tree before changing anything.
+
+**1. The cmdline options TABLE still said the default was `false`** —
+and the bullet under it still said "defaults to `false` until kernel
+entry is serialised (SM5.I)", when SM5.I landed at v0.32.142. This is
+the sibling-site pattern for the eighth time and the second time in two
+cuts: v0.32.142 rewrote the `impl Default` docstring, v0.32.144 swept
+`lib.rs`/`smp.rs`/`link.ld`/`boot.S` — and both passed over the table
+sitting at the top of the very file whose default they were describing.
+
+**2. Rust allows whitespace between a macro path and its `!`.**
+`global_asm !(".global phase5_helper")` is a valid call; the backward
+scan stopped at the space and sliced an empty macro name, so the
+template was blanked as prose and its linker-visible symbol bypassed
+the hard-zero Rust gate.
+
+**3. Linker-name attributes accept `concat!`.**
+`#[export_name = concat!("phase5", "_helper")]` emits the joined symbol,
+but the matcher required the literal to be *adjacent* to the directive,
+so both fragments were blanked. The literal now need only appear before
+a statement terminator, which also covers the second and later
+arguments. Note the joined name never appears literally — what the gate
+must catch, and does, is the coded *component* `phase5`.
+
+**2 and 3 are both on `rust/`, which is a hard zero with no baseline** —
+the third and fourth spellings in this review that could have carried a
+coded symbol into the kernel binary past a PASS.
+
+**4. A YAML block scalar is a script, not config.** Inside a `run: |`
+body — the form the workflow files actually use — `#` is an ordinary
+shell character, but the config rules read it as a comment and erased
+the rest of the line. Block bodies now route through `strip_shell`,
+which is the stripper for what they actually contain; the same
+principle as the per-language map, applied to a span rather than a file.
+The block ends at the first dedent, so real YAML below it (and its real
+comments) is unaffected.
+
+Self-test 184 → 191 checks, including the three negatives that keep the
+widened rules honest: `notasm!` still opens nothing, an ordinary Rust
+literal is still prose, and a block scalar still ends at its dedent.
+Baseline unchanged at 298 pairs / 1017 occurrences — ninth consecutive
+scope extension, zero lost. Scripts + one Rust doc comment.
 ## v0.32.144 — Seven more sites carrying the contract SM5.I replaced
 
 Prompted by a fair challenge to my own wording: a v0.32.116 reply said
