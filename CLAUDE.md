@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.32.126.
+Lean 4.28.0 toolchain, Lake build system, version 0.32.127.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -523,7 +523,7 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   identifier token — and every path component — over every tracked
   non-documentation file rather than enumerating declaration forms,
   globs, or suffixes: Rust is held at zero, and every other code
-  surface (Lean, Python, shell, config, assembly) is pinned by a
+  surface (Lean, Python, shell, config, assembly, data) is pinned by a
   baseline in `scripts/identifier_naming_baseline.json` counting
   occurrences per (identifier, file), so a grandfathered name's count
   may fall but never rise — a set of pairs alone cannot see a second

@@ -42,6 +42,23 @@ making that mistake.
    the number may fall, never rise.  (Line numbers were rejected --
    they churn on every edit above them and the baseline would stop
    meaning anything.)
+6. **The code families are enumerated from the registry, not guessed.**
+   Recognising only `sm`/`an`/`ak` let `aa2_helper`, `ae6_gate` and
+   eleven further real families through.  Every generalisation tried
+   was worse than the list; see `WORKSTREAM_FAMILIES`.
+7. **Each language gets the stripper its own syntax needs.**  Sharing
+   one between Python and shell is what made `echo "${x}"` invisible:
+   Python quotes mark prose, shell quotes do not.  A stripper is now
+   added only when its rules have been checked against that language,
+   never by pointing a suffix at whichever function looks close.
+8. **Discovery is NUL-delimited.**  `git ls-files` split on whitespace
+   turns a path containing a space into fragments naming no file; the
+   read then fails and is swallowed, so the file is never scanned.
+
+Every one of these was found by review rather than by the gate itself,
+which is what the companion `test_identifier_naming_gate.py` exists to
+change: each mechanism is pinned by a check that fails against the
+version that lacked it.
 
 Documentation is exempt by **location**, not by suffix.  Audit reports
 and workstream plans are *named after* the workstream they record --
@@ -78,15 +95,34 @@ BASELINE_PATH = REPO_ROOT / "scripts" / "identifier_naming_baseline.json"
 # is split at `_` and at camelCase boundaries and lowercased, so
 # `Sm5iAffinityAnchors`, `sm5i_affinity_anchors` and `SM5I_ANCHORS` are
 # one case rather than three regexes.
-COMPONENT_CODES = (
+# The families are ENUMERATED from `docs/WORKSTREAM_HISTORY.md` rather
+# than generalised, because every generalisation tried was worse.  A
+# blanket two-letter-plus-digit rule matches 602 further identifiers
+# here -- `RPi5`, `ARMv8VSpace`, `AP_RW_EL1`, `CP15BEN`, shellcheck's
+# `SC1090`, and `SeLe4n` itself -- since kernel code is full of
+# architectural names of that shape.  Narrowing it to `a<letter><digit>`
+# still adds `at16`/`at17`.  Enumeration costs one line per family and
+# is checked against the registry by the self-test.
+WORKSTREAM_FAMILIES = (
+    "aa", "ac", "ad", "ae", "af", "ag", "ah",
+    "ai", "aj", "ak", "al", "am", "an", "sm",
+)
+
+COMPONENT_CODES = tuple(
+    re.compile(rf"^{f}\d[a-z\d]*$") for f in WORKSTREAM_FAMILIES
+) + (
     re.compile(r"^phase\d+$"),      # phase5
-    re.compile(r"^sm\d[a-z\d]*$"),  # sm1d, sm7f3 (digits/letters alternate)
-    re.compile(r"^an\d[a-z\d]*$"),  # an3b, an10
-    re.compile(r"^ak\d[a-z\d]*$"),  # ak4, ak9ce
     re.compile(r"^ws$"),            # ws_sm_, ws_rc_, ws_q_ (any arity)
     re.compile(r"^h\d{2}$"),        # I-H01 subtask codes
     re.compile(r"^tpi$"),           # TPI-D* tracked-proof ids
 )
+
+# `R<n>` phase codes (WS-RC R0..R14) are deliberately ABSENT.  They are
+# real in the documentation, but as an identifier rule `r\d+` matches 76
+# names here of which 74 are not workstream codes: ARM registers (`r0`,
+# `r1` in `SyscallArgDecode.lean`), Lean proof hypotheses (`hR0`,
+# `h_r1_eq`), and test bindings (`_r1`, `r1Cap`).  A gate that fires on
+# `r0` in a syscall decoder is a gate people turn off.
 
 IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_']*")
 CAMEL_SPLIT = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
@@ -232,6 +268,70 @@ def strip_hash(text: str) -> str:
     return "".join(out)
 
 
+# A `$` expansion inside double quotes is live code.  `$(...)` nests in
+# general; the non-greedy form covers the flat case and anything longer
+# degrades to keeping less, never to blanking a name outright.
+SHELL_EXPANSION = re.compile(r"\$\{[^}]*\}|\$\([^)]*\)|\$[A-Za-z_][A-Za-z0-9_]*")
+
+
+def keep_expansions(span: str) -> str:
+    """Blank a double-quoted span except its `$` expansions."""
+    out = [c if c == "\n" else " " for c in span]
+    for m in SHELL_EXPANSION.finditer(span):
+        out[m.start():m.end()] = list(span[m.start():m.end()])
+    return "".join(out)
+
+
+def strip_shell(text: str) -> str:
+    """Shell: blank `#` comments and KEEP every quoted span.
+
+    Routing `.sh` through the Python stripper blanked quoted text as
+    prose, so `echo "${phase5_helper}"` became invisible -- a regression,
+    since the pre-f-string code kept braces unconditionally and caught
+    it.  Shell needs its own rules, exactly as `.ld` does.
+
+    Quotes do not mark prose in shell the way they do in Python, and the
+    two kinds differ from each other:
+
+    * **Single** quotes routinely carry whole executable payloads --
+      this repository's Tier-3 script passes ~110-line scripts to
+      `bash -lc '...'` -- so their contents stay in scope.  Blanking
+      them hid `sm5d_surface`/`sm5e_surface` and 280 further
+      occurrences.
+    * **Double** quotes are message text with live `$` expansions
+      inside.  Keeping the whole span flags every `echo "AN7-A: ..."`
+      diagnostic, which is a workstream cited in prose and therefore
+      exempt by the rule; so only the expansions survive.
+
+    `#` opens a comment only at the start of a word, so `abc#def` and a
+    `${#x}` length expansion keep their text.
+    """
+    out, i, n = [], 0, len(text)
+    while i < n:
+        if (m := SHELL_EXPANSION.match(text, i)):
+            out.append(m.group(0)); i = m.end()
+        elif text[i] == "#" and (i == 0 or text[i - 1] in " \t\n;&|("):
+            j = text.find("\n", i)
+            j = n if j < 0 else j
+            out.append(" " * (j - i)); i = j
+        elif text[i] == "'":
+            j = text.find("'", i + 1)
+            j = n if j < 0 else j + 1
+            out.append(text[i:j]); i = j          # payload: keep verbatim
+        elif text[i] == '"':
+            j = i + 1
+            while j < n:
+                if text[j] == "\\":
+                    j += 2; continue
+                if text[j] == '"':
+                    j += 1; break
+                j += 1
+            out.append(keep_expansions(text[i:j])); i = j
+        else:
+            out.append(text[i]); i += 1
+    return "".join(out)
+
+
 def strip_asm(t: str) -> str:
     """AArch64 `.S`: `//` and `/* */`.  `#` is cpp, not a comment, so a
     `#define`'s identifiers stay in scope."""
@@ -259,13 +359,19 @@ CONTENT_STRIPPERS = {
     ".rs": strip_rust,
     ".lean": strip_lean,
     ".py": strip_hash,
-    ".sh": strip_hash,
-    ".bash": strip_hash,
+    ".sh": strip_shell,
+    ".bash": strip_shell,
     ".S": strip_asm,
     ".ld": strip_block_only,
     ".toml": strip_hash,
     ".yml": strip_hash,
     ".yaml": strip_hash,
+    # Data formats carry no comments and no string/code distinction, so
+    # every token is in scope.  Scenario ids and fixture labels are
+    # identifiers by the rule's own reckoning -- CLAUDE.md's worked
+    # example is renaming a *test*, and a scenario registry names tests.
+    ".json": lambda t: t,
+    ".expected": lambda t: t,
 }
 
 # Documentation, exempt by LOCATION.  Everything under `docs/` plus the
@@ -283,12 +389,25 @@ STRICT_PREFIX = "rust/"
 
 
 def tracked_all() -> list[str]:
-    out = subprocess.run(["git", "ls-files"], cwd=REPO_ROOT,
+    """Every tracked path, NUL-delimited.
+
+    `git ls-files` alone plus `str.split()` breaks any path containing
+    whitespace into fragments that name no file; the read then fails and
+    is swallowed, so the real file is never scanned.  `-z` also disables
+    the C-style quoting git otherwise applies to unusual bytes.
+    """
+    out = subprocess.run(["git", "ls-files", "-z"], cwd=REPO_ROOT,
                          capture_output=True, text=True, check=True).stdout
-    return out.split()
+    return [p for p in out.split("\0") if p]
 
 
 def is_doc(rel: str) -> bool:
+    # The baseline is a record *about* violations and necessarily spells
+    # every one of them out, so scanning it reports its own contents and
+    # each regeneration would re-add them.  Same self-reference as this
+    # module's docstring citing `phase5_helper`, one level up.
+    if rel == "scripts/identifier_naming_baseline.json":
+        return True
     return rel.startswith(DOC_PREFIXES) or rel in DOC_ROOT_FILES
 
 

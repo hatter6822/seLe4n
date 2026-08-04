@@ -1,9 +1,18 @@
 {
+ "AF1": {
+  "scripts/test_tier3_invariant_surface.sh": 1
+ },
  "AK2": {
   "scripts/test_tier3_invariant_surface.sh": 2
  },
+ "AK6": {
+  "tests/fixtures/main_trace_smoke.expected": 2
+ },
  "AN12": {
   "scripts/test_tier3_invariant_surface.sh": 1
+ },
+ "AN4": {
+  "scripts/check_lifecycle_internal_allowlist.sh": 2
  },
  "Ak8Coverage": {
   "tests/Ak8CoverageSuite.lean": 3
@@ -24,6 +33,12 @@
  "An9HardwareBindingSuite": {
   "tests/An9HardwareBindingSuite.lean": 1
  },
+ "H16": {
+  "scripts/test_tier3_invariant_surface.sh": 5
+ },
+ "ID_AA64MMFR0_EL1": {
+  "scripts/test_hw_crosscheck.sh": 1
+ },
  "SM0": {
   "scripts/test_tier3_invariant_surface.sh": 7
  },
@@ -43,7 +58,7 @@
   "scripts/test_tier3_invariant_surface.sh": 110
  },
  "SM6": {
-  "scripts/test_tier3_invariant_surface.sh": 1
+  "scripts/test_tier3_invariant_surface.sh": 5
  },
  "SM7": {
   "scripts/test_tier3_invariant_surface.sh": 1
@@ -53,6 +68,15 @@
  },
  "TEST_COUNT_AK7": {
   "scripts/ak7_cascade_baseline.sh": 5
+ },
+ "TPI": {
+  "scripts/test_tier0_hygiene.sh": 3
+ },
+ "ad1": {
+  "SeLe4n/Model/State.lean": 1
+ },
+ "ad2": {
+  "SeLe4n/Model/State.lean": 1
  },
  "ak4a01_shortPathNoOverflow": {
   "tests/DecodingSuite.lean": 2
@@ -216,6 +240,12 @@
  },
  "ak9h_04_readCStringChecked_fuel_exhausted_on_unterminated": {
   "tests/Ak9PlatformSuite.lean": 2
+ },
+ "al1bStateWithNullCapSlot": {
+  "tests/ModelIntegritySuite.lean": 5
+ },
+ "an10_": {
+  "scripts/ak7_cascade_baseline.sh": 1
  },
  "an10_a_validObjId_accepts_nonzero": {
   "tests/An10CascadeSuite.lean": 2
@@ -415,6 +445,9 @@
  "an9_hardware_binding_suite": {
   "scripts/test_tier2_negative.sh": 1
  },
+ "asidAC4": {
+  "tests/NegativeStateSuite.lean": 5
+ },
  "h05": {
   "SeLe4n/Kernel/Architecture/TlbModel.lean": 4
  },
@@ -564,6 +597,12 @@
  "pm_ak8d_03_setMCPriorityHardwareCeilingRejects": {
   "tests/PriorityManagementSuite.lean": 2
  },
+ "runAC1BudgetFailClosedChecks": {
+  "tests/NegativeStateSuite.lean": 2
+ },
+ "runAC1CdtTrackingChecks": {
+  "tests/NegativeStateSuite.lean": 2
+ },
  "runAN4A5LifecycleVisibilityChecks": {
   "tests/NegativeStateSuite.lean": 2
  },
@@ -580,31 +619,31 @@
   "tests/SmpCbsSuite.lean": 2
  },
  "sm0t_sub_args": {
-  "scripts/test_tier4_nightly_candidates.sh": 2
+  "scripts/test_tier4_nightly_candidates.sh": 3
  },
  "sm5d_surface": {
-  "scripts/test_tier3_invariant_surface.sh": 1
+  "scripts/test_tier3_invariant_surface.sh": 2
  },
  "sm5e_surface": {
-  "scripts/test_tier3_invariant_surface.sh": 1
+  "scripts/test_tier3_invariant_surface.sh": 2
  },
  "sm5f_surface": {
-  "scripts/test_tier3_invariant_surface.sh": 1
+  "scripts/test_tier3_invariant_surface.sh": 2
  },
  "sm5g_surface": {
-  "scripts/test_tier3_invariant_surface.sh": 1
+  "scripts/test_tier3_invariant_surface.sh": 2
  },
  "sm5h_surface": {
-  "scripts/test_tier3_invariant_surface.sh": 1
+  "scripts/test_tier3_invariant_surface.sh": 2
  },
  "sm5i_suite": {
-  "scripts/test_tier3_invariant_surface.sh": 1
+  "scripts/test_tier3_invariant_surface.sh": 2
  },
  "sm5i_tick_affinity": {
-  "scripts/test_tier3_invariant_surface.sh": 1
+  "scripts/test_tier3_invariant_surface.sh": 2
  },
  "sm5i_tick_cbs": {
-  "scripts/test_tier3_invariant_surface.sh": 1
+  "scripts/test_tier3_invariant_surface.sh": 2
  },
  "test_AK8_E_bound_missing_sc_is_objectNotFound": {
   "tests/Ak8CoverageSuite.lean": 2
@@ -647,5 +686,8 @@
  },
  "test_count_ak7": {
   "scripts/ak7_cascade_baseline.sh": 1
+ },
+ "vaddrAC4": {
+  "tests/NegativeStateSuite.lean": 3
  }
 }

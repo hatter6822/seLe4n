@@ -106,12 +106,52 @@ check("rb is not an f-string prefix",
 check("a comment is blanked", CODED in gate.strip_hash("# " + CODED), False)
 
 
+# --- Shell is not Python, and its two quote kinds differ --------------
+# Sharing the Python stripper blanked quoted shell as prose, so an
+# identifier used only inside double quotes was invisible.
+dollar = chr(36)
+check("a shell ${} expansion is kept",
+      CODED in gate.strip_shell("echo " + dq + dollar + "{" + CODED + "}" + dq), True)
+check("a shell $name expansion is kept",
+      CODED in gate.strip_shell("echo " + dq + dollar + CODED + dq), True)
+check("double-quoted message text is prose",
+      CODED in gate.strip_shell("echo " + dq + "AN7-A: " + CODED + dq), False)
+# Single quotes carry executable payloads (`bash -lc '...'`), so their
+# contents stay in scope; blanking them hid 280 occurrences.
+check("a single-quoted payload is code",
+      CODED in gate.strip_shell("bash -lc " + q + "def " + CODED + q), True)
+check("a shell comment is blanked",
+      CODED in gate.strip_shell("# " + CODED), False)
+check("a word-internal hash is not a comment",
+      CODED in gate.strip_shell("echo abc#" + CODED), True)
+check("a length expansion is not a comment",
+      CODED in gate.strip_shell("echo " + dollar + "{#" + CODED + "}"), True)
+
+
+# --- Discovery is NUL-delimited ---------------------------------------
+# Splitting `git ls-files` on whitespace turns a path containing a space
+# into fragments naming no file, and the failed read is swallowed.
+check("tracked paths are enumerated", len(gate.tracked_all()) > 100, True)
+check("no path fragment survives splitting",
+      all(" " not in p or (gate.REPO_ROOT / p).exists() for p in gate.tracked_all()), True)
+
+
+# --- The baseline is not scanned as code ------------------------------
+# It necessarily spells out every grandfathered name, so scanning it
+# reports its own contents and each regeneration re-adds them.
+check("the baseline exempts itself",
+      gate.is_doc("scripts/identifier_naming_baseline.json"), True)
+
+
 # --- Every maintained format has a stripper ---------------------------
 # A format absent from the table still has its path scanned, so adding
 # one is a strengthening; but its *contents* go unread until it is here.
-for suffix in (".rs", ".lean", ".py", ".sh", ".bash",
-               ".S", ".ld", ".toml", ".yml", ".yaml"):
+for suffix in (".rs", ".lean", ".py", ".sh", ".bash", ".S", ".ld",
+               ".toml", ".yml", ".yaml", ".json", ".expected"):
     check(f"{suffix} contents are scanned", suffix in gate.CONTENT_STRIPPERS, True)
+# Shell must not share Python's stripper -- that is the exact mistake.
+check("shell has its own stripper",
+      gate.CONTENT_STRIPPERS[".sh"] is not gate.CONTENT_STRIPPERS[".py"], True)
 
 # Comment syntax differs by format, and guessing wrong blanks real code.
 check("a linker script has no // comment",
@@ -124,6 +164,22 @@ check("a cpp directive is code, not a comment",
 
 # --- The code grammar -------------------------------------------------
 check("a lone ws is left alone", gate.is_coded("ws"), False)
+# Recognising only sm/an/ak let eleven further real families through.
+# The list is checked against docs/WORKSTREAM_HISTORY.md, so a family
+# retired from the registry must be retired here too.
+for family in ("aa", "ac", "ad", "ae", "af", "ag", "ah",
+               "ai", "aj", "ak", "al", "am", "an", "sm"):
+    check(f"{family} family recognised", gate.is_coded(family + "2_helper"), True)
+# `r<n>` phase codes are deliberately absent: as an identifier rule they
+# match ARM registers and Lean proof hypotheses far more often than
+# workstream codes.  Pinned so a future round does not "fix" it.
+check("r-phase deliberately not a family", gate.is_coded("r8_hardening"), False)
+check("an ARM register survives", gate.is_coded("r0"), False)
+check("a proof hypothesis survives", gate.is_coded("hR1"), False)
+# Generalising the families is what these guard against.
+check("RPi5 is not a code", gate.is_coded("RPi5"), False)
+check("ARMv8VSpace is not a code", gate.is_coded("ARMv8VSpace"), False)
+check("the project name is not a code", gate.is_coded("SeLe4n"), False)
 check("a compound ws is flagged", gate.is_coded("ws" + "_sm_helper"), True)
 check("camelCase is normalised", gate.is_coded("ws" + "SmHelper"), True)
 check("SHOUTING_CASE is normalised", gate.is_coded("SM5I" + "_ANCHORS"), True)

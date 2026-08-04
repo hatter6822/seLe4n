@@ -1,3 +1,85 @@
+## v0.32.127 — The gate's own test did not catch these either
+
+PR #854 review, sixteenth round: four P2s on the naming gate, one of
+which is a regression the fifteenth round introduced.
+
+**Shell was routed through the Python stripper, and that made the gate
+weaker than the version it replaced.** v0.32.126 taught `strip_hash` to
+blank non-f-string literals as prose — correct for Python, wrong for
+shell, where `echo "${phase5_helper}"` references a real variable. The
+pre-v0.32.126 code kept braces unconditionally and caught it; mine did
+not. Verified both ways before fixing.
+
+Shell now has its own stripper, and its two quote kinds are treated
+differently because they *are* different. Single quotes carry whole
+executable payloads — this repository's Tier-3 script passes ~110-line
+scripts to `bash -lc '...'` — so their contents stay in scope; blanking
+them hid `sm5d_surface`, `sm5e_surface` and 280 further occurrences.
+Double quotes are message text with live `$` expansions inside, so only
+the expansions survive; keeping the whole span flagged every
+`echo "AN7-A: ..."` diagnostic, which is a workstream cited in prose and
+exempt by the rule. A self-test check now pins that `.sh` and `.py` do
+not share a stripper, since sharing one is the mistake itself.
+
+**Eleven workstream families were unrecognised.** The grammar knew
+`sm`, `an` and `ak`; `docs/WORKSTREAM_HISTORY.md` also carries AG (141
+citations), AE (83), AF (76), AI (59), AJ (49), AL (48), AH (47), AC
+(33), AD (25), AA (16) and AM (14). All fourteen are now enumerated.
+
+Enumerated, not generalised, and the evidence is one-sided: a blanket
+two-letter-plus-digit rule matches 602 further identifiers here —
+`RPi5`, `ARMv8VSpace`, `AP_RW_EL1`, `CP15BEN`, shellcheck's `SC1090`,
+and `SeLe4n` itself — because kernel code is saturated with
+architectural names of that shape. Narrowing it to `a<letter><digit>`
+still admits `at16`/`at17`.
+
+**`R<n>` phase codes are deliberately declined**, against the review's
+"every project code family". They are real in the documentation, but as
+an identifier rule `r\d+` matches 76 names here of which **74** are not
+workstream codes: ARM registers (`r0`, `r1` in `SyscallArgDecode.lean`),
+Lean proof hypotheses (`hR0`, `h_r1_eq`), and test bindings (`_r1`,
+`r1Cap`). A gate that fires on `r0` in a syscall decoder is a gate
+people switch off. Pinned by a self-test check so a later round does not
+"fix" it back.
+
+**`.json` and `.expected` contents are scanned.** They were in scope by
+location after v0.32.126 but had no stripper, so only their paths were
+read. Both are data formats with no comment syntax and no code/string
+distinction, so every token counts. This immediately found `AK6` in
+`tests/fixtures/main_trace_smoke.expected`.
+
+That change also exposed a self-reference: the gate began scanning its
+own baseline, which by construction lists every grandfathered name, so
+it reported all 222 of them and each regeneration would have re-added
+them. The baseline is a record *about* violations and is exempt — the
+same reasoning that exempts this module's docstring for citing
+`phase5_helper`.
+
+**Discovery is NUL-delimited.** `git ls-files` split on whitespace turns
+a path containing a space into fragments naming no file; the read then
+fails and is swallowed, so the file is never scanned. No such path
+exists today, which is exactly when it is cheap to fix.
+
+**The change is strictly monotone, and that was checked rather than
+assumed.** Against v0.32.126: **zero** pairs lost, 24 gained (+47
+occurrences). An intermediate version of the shell stripper *did* lose
+280 occurrences, which is how the `bash -lc` blind spot was found — the
+baseline diff is what caught it, not review.
+
+New grandfathered finds, all pre-existing and none renamed here per the
+grandfathering rule: `al1bStateWithNullCapSlot`, `asidAC4`, `vaddrAC4`,
+`runAC1BudgetFailClosedChecks`, `runAC1CdtTrackingChecks` (families),
+`AK6` (`.expected`), `AN4` and a third `sm0t_sub_args` occurrence
+(shell). Three known false positives are grandfathered rather than
+excluded, and are named in the source: `ID_AA64MMFR0_EL1` (an ARM system
+register colliding with the `aa` family), and `ad1`/`ad2` (Lean
+`activeDomain` destructuring binders).
+
+Baseline: 241 pairs, 917 occurrences, 213 identifiers. Self-test 42 → 75
+checks; all 8 new ones verified failing against v0.32.126.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F
+
 ## v0.32.126 — The gate that kept failing silently now has its own tests
 
 PR #854 review, fifteenth round: four P2s, all in the naming gate itself,
