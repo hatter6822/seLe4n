@@ -350,8 +350,24 @@ check("the two format tables do not overlap",
 check("skipped formats each record a reason",
       all(v.strip() for v in gate.NO_CONTENT_SCAN.values()), True)
 
-check("the baseline is read from the index",
-      "index_contents([BASELINE_REL])" in Path(gate.__file__).read_text(),
+# Every input — sources, baseline, registry — must come from the index,
+# because paths are enumerated from the index and any working-tree read
+# lets a contributor stage one state and present another. Two rounds hit
+# this in two different inputs; the third (the registry) arrived with the
+# derivation itself. Pinning the *property* rather than a call site: no
+# bare `read_text` on a tracked file may return.
+_src = Path(gate.__file__).read_text()
+check("no input is read from the working tree",
+      [ln.strip() for ln in _src.splitlines()
+       if ".read_text(" in ln and not ln.lstrip().startswith("#")
+       and "REPO_ROOT /" not in ln],
+      [])
+check("there is one reader for tracked files",
+      _src.count("def read_tracked(") == 1
+      and _src.count("def index_contents(") == 1, True)
+check("the registry is read through it",
+      "read_tracked" in gate.registry_families.__code__.co_names, True)
+check("the baseline is read through it", "read_tracked(BASELINE_REL)" in _src,
       True)
 
 

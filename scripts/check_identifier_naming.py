@@ -124,6 +124,59 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 BASELINE_REL = "scripts/identifier_naming_baseline.json"
 BASELINE_PATH = REPO_ROOT / BASELINE_REL
 
+
+def index_contents(paths: list[str]) -> dict[str, str]:
+    """Read every path's STAGED content, in one `git cat-file --batch`.
+
+    `git ls-files` enumerates the index, so reading the working tree
+    alongside it checks a state that is not the one being committed: a
+    contributor could stage a coded identifier, delete it from the
+    unstaged copy, and get a clean result while the index still carries
+    the violation.  The docstring promises the pre-commit case runs
+    against the index, so it does.
+
+    In CI the two agree (a fresh checkout has an empty diff), which is
+    why this is a correctness fix rather than a behaviour change there.
+    One batched subprocess keeps it to a single fork for the whole tree
+    rather than one per file.
+    """
+    request = "".join(f":{p}\n" for p in paths).encode()
+    proc = subprocess.run(["git", "cat-file", "--batch"], cwd=REPO_ROOT,
+                          input=request, capture_output=True)
+    out, pos, result = proc.stdout, 0, {}
+    for path in paths:
+        nl = out.find(b"\n", pos)
+        if nl < 0:
+            break
+        header = out[pos:nl].split()
+        if len(header) < 3:            # "missing" -- unmerged or gone
+            pos = nl + 1
+            continue
+        size = int(header[2])
+        blob = out[nl + 1:nl + 1 + size]
+        pos = nl + 1 + size + 1        # trailing newline after the blob
+        try:
+            result[path] = blob.decode("utf-8")
+        except UnicodeDecodeError:
+            continue                   # binary: path still gets scanned
+    return result
+
+
+def read_tracked(rel: str) -> str | None:
+    """The ONLY way this gate reads a file: the STAGED blob, or None.
+
+    Three separate inputs feed this check -- the sources, the
+    grandfathering baseline, and the workstream registry the grammar is
+    derived from -- and each was added on its own read path.  Two review
+    rounds went to the same defect in two of them: the check enumerates
+    paths from the index, so any input read from the WORKING TREE lets a
+    contributor stage one state and present another.  Routing every read
+    through one function is what stops the next input being added on the
+    wrong path; the self-test pins that no bare `read_text` returns.
+    """
+    return index_contents([rel]).get(rel)
+
+
 # Documented shapes (CLAUDE.md): WS-*, AN3-*, AK7-*, ak9ce_01, I-H01,
 # plus phase codes.  Matching runs over *normalised components*: a token
 # is split at `_` and at camelCase boundaries and lowercased, so
@@ -160,7 +213,7 @@ BASELINE_PATH = REPO_ROOT / BASELINE_REL
 # reviewer eventually notices a missing family" into "CI fails the
 # moment the registry mentions it", which is the property the
 # hand-list never had.
-REGISTRY_PATH = REPO_ROOT / "docs" / "WORKSTREAM_HISTORY.md"
+REGISTRY_REL = "docs/WORKSTREAM_HISTORY.md"
 REGISTRY_FAMILY_RE = re.compile(r"\bWS-([A-Z]{1,2})\b")
 
 # Single-letter families, each with the measurement that decided it.
@@ -195,9 +248,12 @@ SINGLE_LETTER_DECLINED = {
 
 def registry_families() -> set[str]:
     """Family letter-codes named as `WS-XX` in the workstream registry."""
-    return {m.lower()
-            for m in REGISTRY_FAMILY_RE.findall(
-                REGISTRY_PATH.read_text(encoding="utf-8", errors="replace"))}
+    text = read_tracked(REGISTRY_REL)
+    if text is None:                    # registry not tracked: nothing to derive
+        raise SystemExit(
+            f"FAIL: {REGISTRY_REL} is not in the index; the family grammar "
+            "cannot be derived. Stage it, or fix REGISTRY_REL.")
+    return {m.lower() for m in REGISTRY_FAMILY_RE.findall(text)}
 
 
 def enforced_families() -> tuple[str, ...]:
@@ -664,43 +720,6 @@ def path_tokens(rel: str) -> list[str]:
     return out
 
 
-def index_contents(paths: list[str]) -> dict[str, str]:
-    """Read every path's STAGED content, in one `git cat-file --batch`.
-
-    `git ls-files` enumerates the index, so reading the working tree
-    alongside it checks a state that is not the one being committed: a
-    contributor could stage a coded identifier, delete it from the
-    unstaged copy, and get a clean result while the index still carries
-    the violation.  The docstring promises the pre-commit case runs
-    against the index, so it does.
-
-    In CI the two agree (a fresh checkout has an empty diff), which is
-    why this is a correctness fix rather than a behaviour change there.
-    One batched subprocess keeps it to a single fork for the whole tree
-    rather than one per file.
-    """
-    request = "".join(f":{p}\n" for p in paths).encode()
-    proc = subprocess.run(["git", "cat-file", "--batch"], cwd=REPO_ROOT,
-                          input=request, capture_output=True)
-    out, pos, result = proc.stdout, 0, {}
-    for path in paths:
-        nl = out.find(b"\n", pos)
-        if nl < 0:
-            break
-        header = out[pos:nl].split()
-        if len(header) < 3:            # "missing" -- unmerged or gone
-            pos = nl + 1
-            continue
-        size = int(header[2])
-        blob = out[nl + 1:nl + 1 + size]
-        pos = nl + 1 + size + 1        # trailing newline after the blob
-        try:
-            result[path] = blob.decode("utf-8")
-        except UnicodeDecodeError:
-            continue                   # binary: path still gets scanned
-    return result
-
-
 def is_doc(rel: str) -> bool:
     # The baseline is a record *about* violations and necessarily spells
     # every one of them out, so scanning it reports its own contents and
@@ -794,9 +813,13 @@ def main() -> int:
     # state reading sources from the index was meant to close.  Falls
     # back to the working tree when the baseline is not tracked yet
     # (its own introducing commit) or when git is unavailable.
-    staged_baseline = index_contents([BASELINE_REL]).get(BASELINE_REL)
-    raw = json.loads(staged_baseline if staged_baseline is not None
-                     else BASELINE_PATH.read_text())
+    staged_baseline = read_tracked(BASELINE_REL)
+    if staged_baseline is None:
+        print(f"FAIL: {BASELINE_REL} is not in the index; there is nothing to "
+              "ratchet against. Stage it (see --regenerate-baseline).",
+              file=sys.stderr)
+        return 1
+    raw = json.loads(staged_baseline)
     baseline = Counter({(n, f): c for n, fs in raw.items() for f, c in fs.items()})
 
     risen = sorted((k for k in ratcheted if ratcheted[k] > baseline.get(k, 0)),

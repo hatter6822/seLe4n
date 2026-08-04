@@ -1,3 +1,50 @@
+## v0.32.133 — One reader for every input
+
+PR #854 review, twenty-first round: one finding, and it is a hole in
+the fix from one cut earlier.
+
+v0.32.132 derived the family grammar from `docs/WORKSTREAM_HISTORY.md`
+to stop the hand-list falling behind — and read that registry from the
+**working tree**, while the sources and the baseline come from the
+index. So a contributor could stage a registry entry introducing
+`WS-BQ` together with `bq1_helper`, revert only the unstaged copy of
+the registry, and the grammar would be derived without `bq` while the
+staged code carried the violation.
+
+That is the third time this defect has appeared, in the third input:
+sources at v0.32.128, the baseline at v0.32.129, and now the registry —
+which arrived *with* the architectural cut that was supposed to stop
+this class of thing. Each input was added on its own read path, and
+each was fixed only when someone pointed at it.
+
+So the fix is not "read the registry from the index" but **one reader
+for every input**. `read_tracked` is now the only way this gate reads a
+file; `index_contents` is the batch form beneath it; and both the
+registry and the baseline go through it. A fourth input added tomorrow
+has one obvious path and no working-tree alternative sitting next to
+it.
+
+Two fallbacks went with it, because a fallback to the working tree is
+the same defect wearing a helpful expression. An untracked baseline is
+now a hard failure telling the contributor to stage it, rather than a
+silent read of whatever is on disk; an untracked registry likewise.
+
+**The self-test's own check for this was brittle and broke on the
+restructure** — it asserted the literal string `index_contents([
+BASELINE_REL])` appeared in the source, so renaming the call broke a
+check that was supposed to pin behaviour. Replaced with the property
+itself: no bare `read_text` on a tracked file may return, there is
+exactly one `read_tracked` and one `index_contents`, and both the
+registry and baseline route through them. That check now fails for the
+right reason — a working-tree read reappearing — rather than for a
+call site being renamed.
+
+Self-test 121 → 124 checks. Baseline unchanged at 298 pairs / 1017
+occurrences, zero lost. Both v0.32.132 ratchets re-verified against
+fabricated inputs after the restructure: an unclassified single-letter
+family fails, a new two-letter family is covered without a decision, an
+unclassified file extension fails.
+
 ## v0.32.132 — Stop patching the naming gate; fix what generates the holes
 
 Ten review rounds have each found a scope hole in this gate, and each
