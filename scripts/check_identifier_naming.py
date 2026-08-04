@@ -84,7 +84,11 @@ then trust the result.
 
 Regenerate with `--regenerate-baseline` when a workstream retires
 grandfathered names; review the diff, since the flag will also happily
-record newly introduced ones.
+record newly introduced ones.  The flag writes the working tree, and
+the check reads the index, so a regenerated baseline must be `git
+add`ed before a plain run reflects it -- that is the point rather than
+a wrinkle: an unstaged baseline excuses nothing, which is what stops a
+violation and its pardon from being staged separately.
 """
 from __future__ import annotations
 
@@ -115,6 +119,7 @@ BASELINE_PATH = REPO_ROOT / BASELINE_REL
 WORKSTREAM_FAMILIES = (
     "aa", "ac", "ad", "ae", "af", "ag", "ah",
     "ai", "aj", "ak", "al", "am", "an", "sm",
+    "z",        # WS-Z (composable performance objects), phases Z1..Z10
 )
 
 COMPONENT_CODES = tuple(
@@ -140,12 +145,33 @@ COMPONENT_CODES = tuple(
 VERSION_STAMP = re.compile(r"^v\d+$")
 BARE_NUMBER = re.compile(r"^\d+$")
 
-# `R<n>` phase codes (WS-RC R0..R14) are deliberately ABSENT.  They are
-# real in the documentation, but as an identifier rule `r\d+` matches 76
-# names here of which 74 are not workstream codes: ARM registers (`r0`,
-# `r1` in `SyscallArgDecode.lean`), Lean proof hypotheses (`hR0`,
-# `h_r1_eq`), and test bindings (`_r1`, `r1Cap`).  A gate that fires on
-# `r0` in a syscall decoder is a gate people turn off.
+# Three single-letter families are real in the registry and deliberately
+# ABSENT here, because as *identifier* rules they collide with the
+# architecture's own register namespaces.  Each was measured over the
+# whole tracked tree before being rejected, and the numbers are the
+# argument -- `z` was measured the same way and added, so this is not a
+# blanket refusal of single-letter families.
+#
+# * `R<n>` (WS-RC R0..R14): `r\d+` matches 76 names, 74 of them not
+#   workstream codes -- ARM registers (`r0`, `r1` in
+#   `SyscallArgDecode.lean`), Lean proof hypotheses (`hR0`, `h_r1_eq`),
+#   test bindings (`_r1`, `r1Cap`).
+# * `X<n>` (WS-X X1..X5): `x\d+` matches 247 identifiers; restricting to
+#   compounds (the `ws` carve-out shape) still leaves 87, of which **69
+#   touch `rust/`** -- `set_x0`, `set_x1`,
+#   `syscall_args_from_trap_frame_extracts_x0_to_x5`.  Those are AArch64
+#   general-purpose registers, and Rust is held at a hard zero with no
+#   grandfathering, so this family would fail CI on register names on
+#   the commit that added it.  Exactly one genuine code exists
+#   (`runX2RuntimeInvariantTests`, grandfathered under no rule).
+# * `D<n>` (WS-AB D1..D6): 24 identifiers, or 10 as compounds, of which
+#   **zero** are workstream codes -- Lean proof hypotheses (`hD0`..`hD3`
+#   in `DualQueueMembership.lean`), test bindings (`resD1`, `stD2`),
+#   page-table descriptors (`d0`/`d1`/`d2` in `PageTable.lean`, named
+#   for their level), and the device-tree magic `0xD00DFEED`.
+#
+# A gate that fires on `x0` in a trap frame or on a DTB magic number is
+# a gate people switch off, which costs more than the rule buys.
 
 IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_']*")
 CAMEL_SPLIT = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")

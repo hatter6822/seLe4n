@@ -395,9 +395,24 @@ pub fn all_acked_for_round(gen: u64, initiator: usize) -> bool {
 /// MUST hold this
 /// lock across the entire hardware round — the operand+generation
 /// publish, the `.tlbShootdownReq` SGI fires, its local broadcast TLBI,
-/// and the [`wait_all_acked_bounded`] poll — and release it only after
-/// observing all-acked (or immediately before the timeout path's
-/// fail-closed panic).  The mailbox is a single-round resource and the
+/// and the [`wait_all_acked_bounded`] poll — and release it **only on
+/// observing all-acked**.
+///
+/// **On timeout the lock is retained, permanently and deliberately**
+/// (PR #854 review): a round that timed out has an invalidation no
+/// target ever certified, so the correct end state is a quarantined
+/// subsystem, not a freed lock.  Keeping it held means no other core
+/// can reuse the mailbox or open a round on top of the uncertified one
+/// in the window before [`crate::gic::halt_all`] takes effect — that
+/// broadcast is best-effort, since a core with interrupts masked takes
+/// the SGI only when it unmasks.  An earlier revision released the lock
+/// immediately before the fail-closed path; do not restore that.  The
+/// live seam is `completeShootdownRounds` in
+/// `SeLe4n/Kernel/SyscallDispatchEntry.lean`, whose timeout arm calls
+/// `haltFailClosed` **without** a preceding
+/// `Concurrency.shootdownRoundLockRelease`.
+///
+/// The mailbox is a single-round resource and the
 /// Lean capacity argument assumes one round's descriptors per target at
 /// a time, so interleaved rounds would break both — see the Lean module
 /// header (`TlbShootdown.lean`, "Round serialisation contract").

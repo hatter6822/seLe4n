@@ -1,3 +1,63 @@
+## v0.32.130 — One family in, two out, and the numbers for each
+
+PR #854 review, nineteenth round: two findings, both valid, one taken
+in part.
+
+**Single-letter phase families (naming gate).** The review named three
+registry-backed families the enumerated grammar omitted — WS-X (X1–X5),
+WS-Z (Z1–Z10) and WS-AB (D1–D6) — and it is right that all three are
+real in `docs/WORKSTREAM_HISTORY.md`. As *identifier* rules they are not
+alike, and each was measured over the whole tracked tree before being
+decided:
+
+- **`z` added.** Ten hits, every one a genuine WS-Z code: `Z5`/`Z6`/`Z7`
+  scenario ids, `Z7D`/`Z8J` trace-fixture labels, `Z2`–`Z4` Tier-3
+  anchors, `runZ8SchedContextNegativeChecks`, and
+  `storeObject_scheduler_eq_z7` in production Lean. All grandfathered
+  per the rule; none in `rust/`, so the hard zero is untouched.
+- **`x` declined.** `x\d+` matches 247 identifiers. Restricting to
+  compounds — the carve-out shape used for `ws` — still leaves 87, of
+  which **69 touch `rust/`**: `set_x0`, `set_x1`,
+  `syscall_args_from_trap_frame_extracts_x0_to_x5`. Those are AArch64
+  general-purpose registers, and Rust is held at a hard zero with no
+  grandfathering available, so this family would fail CI on register
+  names on the very commit that added it. Exactly one genuine code
+  exists in the tree (`runX2RuntimeInvariantTests`).
+- **`d` declined.** 24 identifiers, or 10 as compounds, of which
+  **zero** are workstream codes: Lean proof hypotheses (`hD0`–`hD3` in
+  `DualQueueMembership.lean`), test bindings (`resD1`, `stD2`),
+  page-table descriptors (`d0`/`d1`/`d2` in `PageTable.lean`, named for
+  their level), and the device-tree magic `0xD00DFEED`.
+
+Both rejections are pinned by self-test checks naming the witnesses, so
+a later round cannot add them without re-measuring. This is the same
+reasoning that keeps `R<n>` out, and the three now share one comment
+block with their numbers.
+
+**Round-lock timeout contract (`shootdown.rs`).** The contract still
+permitted releasing `SHOOTDOWN_ROUND_LOCK` "immediately before the
+timeout path's fail-closed panic" — the behaviour v0.32.118 removed. A
+timed-out round has an invalidation no target certified, so the correct
+end state is a quarantined subsystem: the lock stays held, permanently,
+so no other core can reuse the mailbox or open a round on top of the
+uncertified one in the window before `gic::halt_all` takes effect (that
+broadcast is best-effort — a core with interrupts masked takes the SGI
+only when it unmasks). The contract now says so and cites the live Lean
+seam, whose timeout arm calls `haltFailClosed` with no preceding
+release. Contract-only; no behaviour change.
+
+Baseline 251 → 262 pairs, 932 → 1006 occurrences; zero pairs lost, the
+eleven gained all WS-Z. Self-test 97 → 105 checks, the two new `z`
+checks verified failing against v0.32.129 and the six decline-witnesses
+verified stable in both.
+
+One workflow consequence of v0.32.129's index-read, now documented:
+`--regenerate-baseline` writes the working tree while the check reads
+the index, so a regenerated baseline must be staged before a plain run
+reflects it. That is the point rather than a wrinkle — an unstaged
+baseline excuses nothing, which is exactly what stops a violation and
+its pardon from being staged separately.
+
 ## v0.32.129 — Three accounts of a lock that is not there
 
 PR #854 review, eighteenth round: four findings, three on the naming

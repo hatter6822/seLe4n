@@ -268,6 +268,23 @@ check("a bare backtick command survives", "ak9ce_01_run" in _bt, True)
 # The baseline is compared against the INDEX, like the sources it
 # excuses; a working-tree read would let a regenerated baseline pardon
 # a violation the index still carries.
+# Single-letter families.  `z` is real and enforced; `x` and `d` are
+# real in the registry but rejected as identifier rules because they
+# collide with AArch64 register names and the DTB magic.  Pinning the
+# rejections keeps a later round from adding them without re-measuring.
+check("the z family is recognised", gate.is_coded("z10_helper"), True)
+check("a z phase code is recognised", gate.is_coded("z3_gate"), True)
+check("x is not a family", gate.is_coded("x5_helper"), False)
+check("d is not a family", gate.is_coded("d6_helper"), False)
+# The witnesses: these are why. An AArch64 register accessor in Rust
+# (held at a hard zero, so no grandfathering is available) and the
+# device-tree magic number must not be violations.
+check("an AArch64 register accessor passes", gate.is_coded("set_x0"), False)
+check("a register-range test name passes",
+      gate.is_coded("syscall_args_from_trap_frame_extracts_x0_to_x5"), False)
+check("the device-tree magic passes", gate.is_coded("xD00DFEED"), False)
+check("a Lean D-hypothesis passes", gate.is_coded("hD1"), False)
+
 check("the baseline is read from the index",
       "index_contents([BASELINE_REL])" in Path(gate.__file__).read_text(),
       True)

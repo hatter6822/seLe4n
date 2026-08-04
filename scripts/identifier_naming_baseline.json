@@ -77,6 +77,31 @@
  "TPI": {
   "scripts/test_tier0_hygiene.sh": 3
  },
+ "Z2": {
+  "scripts/test_tier3_invariant_surface.sh": 1
+ },
+ "Z3": {
+  "scripts/test_tier3_invariant_surface.sh": 1
+ },
+ "Z4": {
+  "scripts/test_tier3_invariant_surface.sh": 1
+ },
+ "Z5": {
+  "tests/fixtures/scenario_registry.yaml": 19
+ },
+ "Z6": {
+  "tests/fixtures/scenario_registry.yaml": 16
+ },
+ "Z7": {
+  "tests/fixtures/scenario_registry.yaml": 8
+ },
+ "Z7D": {
+  "tests/fixtures/main_trace_smoke.expected": 8,
+  "tests/fixtures/scenario_registry.yaml": 8
+ },
+ "Z8J": {
+  "tests/fixtures/main_trace_smoke.expected": 6
+ },
  "_WS_RC_BASELINE": {
   "scripts/website_link_manifest.txt": 1
  },
@@ -630,6 +655,9 @@
  "runSm5iTickCbsChecks": {
   "tests/SmpCbsSuite.lean": 2
  },
+ "runZ8SchedContextNegativeChecks": {
+  "tests/NegativeStateSuite.lean": 2
+ },
  "sm0t_sub_args": {
   "scripts/test_tier4_nightly_candidates.sh": 3
  },
@@ -656,6 +684,9 @@
  },
  "sm5i_tick_cbs": {
   "scripts/test_tier3_invariant_surface.sh": 2
+ },
+ "storeObject_scheduler_eq_z7": {
+  "SeLe4n/Kernel/IPC/Operations/Endpoint.lean": 4
  },
  "test_AK8_E_bound_missing_sc_is_objectNotFound": {
   "tests/Ak8CoverageSuite.lean": 2
