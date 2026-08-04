@@ -5047,8 +5047,8 @@ the four new live artefacts; opens the WS-RC entry in this file.
   blocks total in HAL, 42 of which carry MMIO/asm! tokens
   (`read_volatile` / `write_volatile` / `asm!`); the two-tier rule is
   the correct shape for R12.C. E-4 (plan corrections): `PlatformConfig`
-  lives in `Platform/Boot.lean`, `bootSafeObjectCheck` (`Bool`) at
-  line 534 and `bootSafeObject` (`Prop`) at line 1456; `RetypeTarget`
+  lives in `Platform/Boot.lean`, `bootSafeObjectCheck` (`Bool`)
+  and `bootSafeObject` (`Prop`); `RetypeTarget`
   fields are `id : ObjId` and `cleanupHookDischarged : ...`.
 - **R0.3 (discharge index seed)**:
   [`docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md`](audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md)

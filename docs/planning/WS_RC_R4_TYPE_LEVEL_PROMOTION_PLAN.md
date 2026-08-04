@@ -225,12 +225,12 @@ end SeLe4n
 
 **Files:**
 - `SeLe4n/Model/Object/Types.lean` (line ~904: change `slots : RHTable SeLe4n.Slot Capability` → `slots : UniqueSlotMap`)
-- `SeLe4n/Model/Object/Structures.lean` (line 530 `CNode.empty`: use `UniqueSlotMap.empty`; line 536 `CNode.mk'`: take `UniqueSlotMap` parameter; lines 603/607: `CNode.insert` and `CNode.remove` route through `UniqueSlotMap.insert/erase`)
+- `SeLe4n/Model/Object/Structures.lean` (`CNode.empty`: use `UniqueSlotMap.empty`; `CNode.mk'`: take `UniqueSlotMap` parameter; : `CNode.insert` and `CNode.remove` route through `UniqueSlotMap.insert/erase`)
 
 **Why this is buildable end-to-end.** Every read-only consumer (`cn.slots.fold`, `cn.slots.get?`, `cn.slots.size`, `cn.slots.capacity`, `cn.slots.toList`, `cn.slots[s]?`) resolves through `CoeHead` + the `GetElem` instance to the underlying `RHTable`. The four `{ cn with slots := … }` mutation sites are the only elaboration risks; under the new typing the RHS becomes a `UniqueSlotMap` value which is exactly what the smart constructors return.
 
 **Mutation site treatment:**
-- `Builder.lean` — `cn.slots.insert slot cap` now returns `UniqueSlotMap` directly; the proof at line 291 (`RHTable.insert_preserves_invExtK …`) becomes vacuous because `invExtK` is structural. **Replace** the body of the discharge with a comment `-- WS-RC R4.A: invExtK now carried by UniqueSlotMap.insert; obligation discharged structurally.` Do **not** delete the surrounding theorem statement, since other callers may depend on its name; let R4.A.6 retire it.
+- `Builder.lean` — `cn.slots.insert slot cap` now returns `UniqueSlotMap` directly; the proof (`RHTable.insert_preserves_invExtK …`) becomes vacuous because `invExtK` is structural. **Replace** the body of the discharge with a comment `-- WS-RC R4.A: invExtK now carried by UniqueSlotMap.insert; obligation discharged structurally.` Do **not** delete the surrounding theorem statement, since other callers may depend on its name; let R4.A.6 retire it.
 - `Projection.lean` — `cn.slots.filter (…)` now returns `UniqueSlotMap`; proof obligation discharged inside `UniqueSlotMap.filter`. No caller-side change.
 - `FrozenOps/Operations.lean` — see R4.A.4. Likely on a different `FrozenCNode` structure entirely.
 
@@ -318,7 +318,7 @@ Every `_preserves_cspaceSlotUnique` theorem body collapses to `cspaceSlotUnique_
 **Scope:** ~150 LoC.
 
 **Files:**
-- `SeLe4n/Kernel/Capability/Invariant/Defs.lean` — remove `cspaceSlotUnique` conjunct from `capabilityInvariantBundle` (line 179) and `capabilityInvariantBundleWithMintCompleteness` (~line 280) and any other bundle that includes it
+- `SeLe4n/Kernel/Capability/Invariant/Defs.lean` — remove `cspaceSlotUnique` conjunct from `capabilityInvariantBundle` and `capabilityInvariantBundleWithMintCompleteness` and any other bundle that includes it
 - Every `_preserves_capabilityInvariantBundle` theorem (multiple in `Preservation/*.lean`) — drop the `cspaceSlotUnique` slot from the proof body's tuple construction
 - Every caller of `_preserves_capabilityInvariantBundle` — drop the `cspaceSlotUnique` extraction (typically the first `.1` of an `rcases` destructure)
 - `SeLe4n/Kernel/CrossSubsystem.lean` — invariant bundle composition site, drop the conjunct
@@ -460,7 +460,7 @@ end SeLe4n
 - `SeLe4n/Model/Object/Types.lean`:
   - line ~884: `waitingThreads : List SeLe4n.ThreadId` → `waitingThreads : NoDupList SeLe4n.ThreadId`
   - line ~886: drop `deriving Repr, DecidableEq` and replace with `deriving Repr` plus a manual `DecidableEq Notification` instance immediately after the structure
-  - the manual instance must precede the `KernelObject` inductive declaration (line 2566+) so its `deriving DecidableEq` (if present) or the manual `BEq KernelObject` instance (line 2578) can find `Notification` equality
+  - the manual instance must precede the `KernelObject` inductive declaration so its `deriving DecidableEq` (if present) or the manual `BEq KernelObject` instance can find `Notification` equality
 
 **Manual `DecidableEq Notification` (complete, verified):**
 
@@ -535,7 +535,7 @@ This makes the `BEq` derivation explicit and bypasses any `Decidable`-search amb
 **Files (operational only — proof-side migration deferred to R4.C.4):**
 - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean`
 - `SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean`
-- `SeLe4n/Kernel/FrozenOps/Operations.lean` (FrozenOps `notificationSignal` variant at line 222)
+- `SeLe4n/Kernel/FrozenOps/Operations.lean` (FrozenOps `notificationSignal` variant)
 
 **Site-by-site rewiring:**
 
@@ -543,7 +543,7 @@ This makes the `BEq` derivation explicit and bypasses any `Decidable`-search amb
 
 **Endpoint.lean** (the line-723 guard subsumption — the hard case):
 ```lean
--- BEFORE: explicit ipcState guard at line 723 + cons at line 728
+-- BEFORE: explicit ipcState guard + cons
 match lookupTcb st waiter with
 | none => .error .objectNotFound
 | some tcb =>
@@ -621,7 +621,7 @@ No source change needed — `NoDupList.filter` has the same surface signature as
 **Files (proof sites only):**
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Wait.lean` — `notificationWait` preservation proofs
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` — `notificationSignal` preservation proofs
-- `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` — frame lemmas with record literals at lines 1053, 1102, 1127, 1224, 1266, 1288
+- `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` — frame lemmas with record literals
 - `SeLe4n/Kernel/IPC/Invariant/CallReplyRecv/ReplyRecv.lean` — any `Notification` literal in proof contexts
 - `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` — `match` site in observability proof
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` — observability proof
@@ -629,7 +629,7 @@ No source change needed — `NoDupList.filter` has the same surface signature as
 
 **Three migration patterns** (per the §`Headline architectural decisions` accounting):
 
-1. **Record literals in proof context** (StoreObjectFrame.lean lines 1053, 1102, 1127, 1224, 1266, 1288):
+1. **Record literals in proof context** (StoreObjectFrame.lean ):
    ```lean
    -- BEFORE
    (.notification { state := …, waitingThreads := rest, pendingBadge := … })
@@ -882,7 +882,7 @@ Per CLAUDE.md, every commit must pass `lake build <ModulePath>` for each touched
 
 ## Discharge index entries (`docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md`)
 
-The current placeholder rows in §3.D (lines 134, 136), §3.E (line 153), and §3.F (line 171) are populated by these full-shape rows when the workstream lands.
+The current placeholder rows in §3.D , §3.E , and §3.F are populated by these full-shape rows when the workstream lands.
 
 ### §3.D — Type-level promotion entries
 
@@ -950,25 +950,25 @@ theorem uniqueWaiters_promoted_to_structural : True := trivial
 These are the files an implementer should re-read before each sub-PR (paths absolute):
 
 **For R4.A:**
-- `/home/user/seLe4n/SeLe4n/Model/Object/Types.lean` — CNode field declaration (~line 904)
-- `/home/user/seLe4n/SeLe4n/Model/Object/Structures.lean` — `CNode.empty`, `CNode.mk'`, `CNode.insert`, `CNode.remove`, `slotsUnique`, `BEq CNode` instance (~lines 530–960)
-- `/home/user/seLe4n/SeLe4n/Kernel/RobinHood/Bridge.lean` — existing `invExtK` preservation lemmas (lines 980–1095)
+- `/home/user/seLe4n/SeLe4n/Model/Object/Types.lean` — CNode field declaration 
+- `/home/user/seLe4n/SeLe4n/Model/Object/Structures.lean` — `CNode.empty`, `CNode.mk'`, `CNode.insert`, `CNode.remove`, `slotsUnique`, `BEq CNode` instance 
+- `/home/user/seLe4n/SeLe4n/Kernel/RobinHood/Bridge.lean` — existing `invExtK` preservation lemmas 
 - `/home/user/seLe4n/SeLe4n/Kernel/RobinHood/Set.lean` — `RHSet` precedent template (the closest in-tree shape match)
-- `/home/user/seLe4n/SeLe4n/Model/Builder.lean` — proof discharge at line 287/291
-- `/home/user/seLe4n/SeLe4n/Kernel/InformationFlow/Projection.lean` — filter site at line 207
+- `/home/user/seLe4n/SeLe4n/Model/Builder.lean` — proof discharge
+- `/home/user/seLe4n/SeLe4n/Kernel/InformationFlow/Projection.lean` — filter site
 - `/home/user/seLe4n/SeLe4n/Kernel/FrozenOps/Operations.lean` — verify FrozenCNode independence
-- `/home/user/seLe4n/SeLe4n/Kernel/Capability/Invariant/Defs.lean` — `cspaceSlotUnique` definition (line 27) and bundle composition
+- `/home/user/seLe4n/SeLe4n/Kernel/Capability/Invariant/Defs.lean` — `cspaceSlotUnique` definition and bundle composition
 
 **For R4.C:**
-- `/home/user/seLe4n/SeLe4n/Model/Object/Types.lean` — Notification field declaration (~line 884) and `deriving DecidableEq` (line 886)
-- `/home/user/seLe4n/SeLe4n/Kernel/IPC/Operations/Endpoint.lean` — `notificationWait` (line 703), `notificationSignal` (line 640), the line-723 runtime guard, the cons sites at 726 and 1134
-- `/home/user/seLe4n/SeLe4n/Kernel/IPC/Invariant/Defs.lean` — `uniqueWaiters` (line 584), `notificationWaiterConsistent` (line 558), bridge theorem `not_mem_waitingThreads_of_ipcState_ne` (line 567)
+- `/home/user/seLe4n/SeLe4n/Model/Object/Types.lean` — Notification field declaration and `deriving DecidableEq` 
+- `/home/user/seLe4n/SeLe4n/Kernel/IPC/Operations/Endpoint.lean` — `notificationWait` , `notificationSignal` , the line-723 runtime guard, the cons sites at 726 and 1134
+- `/home/user/seLe4n/SeLe4n/Kernel/IPC/Invariant/Defs.lean` — `uniqueWaiters` , `notificationWaiterConsistent` , bridge theorem `not_mem_waitingThreads_of_ipcState_ne` 
 - `/home/user/seLe4n/SeLe4n/Kernel/IPC/Invariant/QueueNoDup.lean` — existing `notification_waitingThreads_nodup_witness` and `notificationWait_runtime_check_implied_by_nodup` (the §3.E equivalence theorem; survives R4.C unchanged)
 - `/home/user/seLe4n/SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Wait.lean` — preservation proofs that adapt mechanically
 - `/home/user/seLe4n/SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` — preservation proofs that adapt mechanically
-- `/home/user/seLe4n/SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` — frame-lemma record literals (lines 1053, 1102, 1127, 1224, 1266, 1288)
-- `/home/user/seLe4n/SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean` — `removeFromAllNotificationWaitLists` filter site (line 155)
-- `/home/user/seLe4n/SeLe4n/Testing/MainTraceHarness.lean` — fixture sites (lines 105, 1763, 2037, 3013)
+- `/home/user/seLe4n/SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` — frame-lemma record literals 
+- `/home/user/seLe4n/SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean` — `removeFromAllNotificationWaitLists` filter site 
+- `/home/user/seLe4n/SeLe4n/Testing/MainTraceHarness.lean` — fixture sites 
 
 ## Verification — end-to-end (full workstream close)
 
@@ -1035,7 +1035,7 @@ The `CLAUDE.md` source-layout block must also gain entries:
 
 1. **`RHTable.ofList_invExtK`** — does Lean's existing `Bridge.lean` define this lemma? If yes, `UniqueSlotMap.ofListWF` becomes a 2-line lift; if no, `ofListWF` uses the fold-over-`insert` pattern (still 2 lines but slower at compile time).
 2. **`FrozenOps/Operations.lean`** — is `FrozenCNode.slots` typed as `RHTable Slot Capability` (in which case R4.A.4 rewires it) or `FrozenMap …` (in which case R4.A.4 is a no-op)? Reading `SeLe4n/Model/FrozenState.lean` answers this — recommended action is to confirm in the R4.A.4 first commit.
-3. **`KernelObject.beq` (line 2578)** — does dropping `deriving DecidableEq` on `Notification` cascade into a `BEq Notification` requirement on the manual-`BEq KernelObject` instance? Verify by reading the instance body — it does `a == b` on each variant; the `Notification` arm needs `BEq Notification`. The manual `DecidableEq` provides this via Lean's standard `BEq`-from-`DecidableEq` derivation, but if not, R4.C.2 adds an explicit `instance : BEq Notification` immediately after.
+3. **`KernelObject.beq` ** — does dropping `deriving DecidableEq` on `Notification` cascade into a `BEq Notification` requirement on the manual-`BEq KernelObject` instance? Verify by reading the instance body — it does `a == b` on each variant; the `Notification` arm needs `BEq Notification`. The manual `DecidableEq` provides this via Lean's standard `BEq`-from-`DecidableEq` derivation, but if not, R4.C.2 adds an explicit `instance : BEq Notification` immediately after.
 4. **Lean 4 v4.28.0 lemma names** — `List.Nodup.of_cons` vs `List.nodup_cons.mp` vs `List.Nodup.cons` — verify the canonical name; if absent, the inline list-induction proof is ~10 LoC.
 
 These four questions can be answered by direct code reads at the start of R4.A.2 / R4.C.2 in ~10 minutes; deferring them to plan-execution time keeps the plan tractable.

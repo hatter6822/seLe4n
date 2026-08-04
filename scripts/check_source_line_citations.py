@@ -93,6 +93,27 @@ def build_citation_re(extensions: set[str]) -> re.Pattern[str]:
     )
 
 
+# The same citation spelled as prose. `File.ext:NNN` is only the compact
+# form; `at line 471`, `at lines 3711-3712` and `on line 92` go stale for
+# exactly the same reason and were invisible to a gate whose PASS line
+# claims there are no prose line-number citations at all. The verb set is
+# the one that actually introduces a location in this repo's docs; a bare
+# "line 12" is left alone because it also means a line of output, a line
+# of a table, or a line in a quoted block.
+# Two spellings, both stale-able and both previously invisible:
+#   `at line 471`, `from lines 113-125`   — verb-introduced
+#   `(line 530 ...)`, `lines 603/607`     — bare, usually parenthetical
+# A two-digit floor keeps "line 5 of the table" and similar out; a
+# citation into a real source file is essentially never single-digit
+# here, and the fenced-block exemption already covers code samples such
+# as CLAUDE.md's `# lines 501-1000` pagination example.
+TEXTUAL_CITATION_RE = re.compile(
+    r'\b(?:at|on|around|near|from)\s+lines?\s+\d+'
+    r'|~?\blines?\s+\d{2,}',
+    re.IGNORECASE
+)
+
+
 def target_files() -> list[str]:
     listing = subprocess.run(
         ['bash', '-c',
@@ -149,7 +170,8 @@ def main() -> int:
                     # line as ordinary content.
                 if fence is not None:
                     continue
-                match = citation_re.search(line)
+                match = (citation_re.search(line)
+                         or TEXTUAL_CITATION_RE.search(line))
                 if match:
                     findings.append((path, lineno, match.group(0), line.strip()))
 

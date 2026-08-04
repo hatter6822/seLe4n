@@ -1,3 +1,66 @@
+## v0.32.131 — A gate that said "no line citations" while 197 remained
+
+PR #854 review, twentieth round: three findings, all valid, all taken.
+
+**Letter-suffixed phase codes.** `^phase\d+$` accepted only digits, so
+`phase2a_helper` and `phase12bRunner` passed. Widened to
+`^phase\d+[a-z]*$`; measured at zero further matches across the tracked
+tree, so it costs no baseline entry and can only fire on something new.
+
+**Hyphenated workstream IDs in content.** The round-18 fix normalised
+`-` to `_` for *paths* and deliberately not for contents, on the grounds
+that `a-b` is subtraction. That reasoning holds for Lean, Rust, Python
+and shell; it does not hold for YAML, TOML, JSON, `.txt` or `.expected`,
+where a hyphen joins a name — so `run: "WS-SM-helper"` tokenised as
+`WS` + `SM` + `helper`, the lone `WS` was ignored by the bare-token
+carve-out, and the canonical hyphenated spelling passed. Normalisation
+is now per-format (`HYPHEN_JOINS_NAMES`), applied only where the
+character cannot be an operator. It found **34 further coded
+identifiers**, every one real: `AK6-A`, `AK6-D`, `WS-B10`, `WS-N5`,
+`WS-SM`, and eleven `Z5-*`/`Z6-*` scenario ids.
+
+Baseline 262 → 298 pairs, 1006 → 1017 occurrences. Six pairs *appear*
+lost, and are not: joining hyphens re-spells `Z7D` as `Z7D-001`…`-008`,
+so the old name disappears while the same text is still counted under
+longer names. Verified pair-by-pair that every disappearance is a
+re-spelling whose successors carry the identical occurrence total —
+`AK6` 2→2, `Z5` 19→19, `Z6` 16→16, `Z7D` 8→8 twice, `Z8J` 6→6. The
+first check written for this said "genuinely lost" for three of them
+because it looked for the old name as a *component*, and `CAMEL_SPLIT`
+breaks `Z7D` into `z7`+`d`; the check was wrong, not the fix.
+
+**Textual line-number citations — the gate was vacuous in the way it
+most claimed not to be.** `check_source_line_citations.py` matched only
+the compact `File.ext:NNN` form while printing `PASS: no prose
+line-number citations across 106 documentation files`. Prose spellings
+went straight through, and there were **197** of them: 47 verb-
+introduced (`at line 471`, `from lines 113-125`) and 150 bare, usually
+parenthetical (`(line 530 …)`, `lines 603/607`, `~line 280`). The gate
+now matches both, and all 197 are removed from the seven active
+documents that carried them — the same treatment the 511 compact-form
+citations got at v0.32.109 and the 26 at v0.32.111, in several of the
+same files. Fenced blocks stay exempt, which is why CLAUDE.md's
+`# lines 501-1000` pagination example and two citations inside a
+fenced transcript survive correctly.
+
+Recorded because it nearly shipped: the first sweep applied its
+whitespace tidy to whole files rather than to the matched lines, which
+reindented **92 files and 20,000 lines** — every list, every JSON
+sample, the README logo block. Reverted and redone line-scoped, with
+the indent sliced off and restored untouched. A second pass then ate the
+space in Lean's `:=` via a "space before punctuation" rule, which was
+dropped. Seventeen results were flagged by a guard for reading badly
+after removal (a dangling `; preservation`, a leading `. This closes`, a
+`(, where`) and fixed by hand against their surrounding sentences rather
+than by another regex. The lesson is the same one the naming gate keeps
+teaching in a different key: a transform whose scope is wider than its
+subject will quietly damage everything else it touches.
+
+Self-test 105 → 112 checks; three new behavioural checks verified
+failing against v0.32.130, four stability checks verified passing in
+both. The per-format hyphen split is pinned in both directions — config
+formats must join, code formats must not — since getting it backwards
+either way is a defect.
 ## v0.32.130 — One family in, two out, and the numbers for each
 
 PR #854 review, nineteenth round: two findings, both valid, one taken

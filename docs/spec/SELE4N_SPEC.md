@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.32.130` (`lakefile.toml`) |
+| **Package version** | `0.32.131` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 238,254 across 264 Lean files |
 | **Test LoC** | 48,449 across 67 Lean test suites |
@@ -2974,7 +2974,7 @@ type-level structural promotion:
   `List.Nodup` **structurally** at construction time.  `notificationSignal`
   pops via `NoDupList.tail?`; `notificationWait` cons site is
   gated by `NoDupList.consWithGuard?` (runtime membership check
-  returning `Option`) so the duplicate rejection at line 723 is
+  returning `Option`) so the duplicate rejection is
   structural rather than upstream-convention.  The state-level
   `uniqueWaiters` invariant is now **trivially derivable** via
   `SeLe4n.Kernel.uniqueWaiters_holds`.  Structural witness theorems:

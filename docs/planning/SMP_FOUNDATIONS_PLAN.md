@@ -497,7 +497,7 @@ honestly reflect the partial state.
 
 **Edit pattern**:
 
-Before (line 296):
+Before :
 ```
 ### DEF-R-HAL-L20 — Secondary-Core Bring-Up (SMP) **[RESOLVED AT v0.30.10]**
 ```

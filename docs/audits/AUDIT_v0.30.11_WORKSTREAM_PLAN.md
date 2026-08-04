@@ -177,7 +177,7 @@ that runs on every CI cycle. Concretely:
 | DEEP-RUST-01 (MMIO `(ARM ARM B2.1)` citations) | CI gate that scans every `unsafe { … }` block in `rust/sele4n-hal/src/` and fails if the preceding 5 lines do not contain `(ARM ARM <section>)` | **R12.C** |
 | DEEP-RUST-02 (registers `(ARM ARM C5.2)` citations) | Same gate as R12.C — covered uniformly across HAL | **R12.C** |
 | DEEP-ARCH-02 (`*_fields` definitions consumed) | CI gate that fails if any `<name>_fields : List StateField` definition has fewer than 1 consumer outside the file it's declared in | **R12.D** |
-| DEEP-CAP-02 (`cspaceMutate` null-cap guard) | Witness theorem `cspaceMutate_rejects_null_cap` proving the runtime check at line 1093 is equivalent to a non-null precondition | **R4.D** |
+| DEEP-CAP-02 (`cspaceMutate` null-cap guard) | Witness theorem `cspaceMutate_rejects_null_cap` proving the runtime check is equivalent to a non-null precondition | **R4.D** |
 | DEEP-IPC-01 (`notificationWait` NoDup) | Subsumed by R4.C (NoDup at type level on `Notification.waitingThreads`) | **R4.C (no separate fix)** |
 
 Each of these is a distinct WS-RC sub-phase (R4.D for the witness
@@ -219,8 +219,8 @@ manually re-derived by a future auditor.
 |---|---|---|---|
 | DEEP-CAP-02 | `Capability/Operations.lean` checks `if cap.isNull then .error .nullCapability`; AK8-K C-L2 guard is present. | **R4.D** | Lean witness theorem `cspaceMutate_rejects_null_cap`. |
 | DEEP-ARCH-02 | `grep -rn` on each of the 11 `*_fields` definitions in `CrossSubsystem.lean` returns 3..26 consumers each. All actively used. | **R12.D** | CI gate `scripts/check_no_orphan_fields.sh` fails on `*_fields` defs with zero out-of-file consumers. |
-| DEEP-RUST-01 | `rust/sele4n-hal/src/mmio.rs` lines 54–57, 76–79, 96–98, 117–119 each cite `(ARM ARM B2.1)`. | **R12.C** | CI gate `scripts/check_arm_arm_citations.sh` fails on HAL `unsafe` blocks lacking `(ARM ARM <section>)` within 5 preceding lines. |
-| DEEP-RUST-02 | `rust/sele4n-hal/src/registers.rs` lines 20–21 and 45–46 each cite `(ARM ARM C5.2)` for `mrs`/`msr`. | **R12.C** | Same gate; covers all HAL files uniformly. |
+| DEEP-RUST-01 | `rust/sele4n-hal/src/mmio.rs` each cite `(ARM ARM B2.1)`. | **R12.C** | CI gate `scripts/check_arm_arm_citations.sh` fails on HAL `unsafe` blocks lacking `(ARM ARM <section>)` within 5 preceding lines. |
+| DEEP-RUST-02 | `rust/sele4n-hal/src/registers.rs` and 45–46 each cite `(ARM ARM C5.2)` for `mrs`/`msr`. | **R12.C** | Same gate; covers all HAL files uniformly. |
 | DEEP-IPC-01 | `Operations/Endpoint.lean` performs O(1) duplicate guard via `tcb.ipcState == .blockedOnNotification` returning `.error .alreadyWaiting`. | **R4.C** (subsumed) | Type-level `NoDupList ThreadId` on `Notification.waitingThreads` makes the duplicate impossible at the type system level. |
 | DEEP-ARCH-01 | All three "STATUS: staged" markers (CacheModel/TimerModel/ExceptionModel) are correct: each module is reachable only via `Platform/Staged.lean`, not from `SeLe4n.lean`. | **R12.B** | CI gate `scripts/check_production_staging_partition.sh` computes the transitive closure from `SeLe4n.lean` and `Platform/Staged.lean` and fails on partition violations. |
 
@@ -271,7 +271,7 @@ withdrawn-as-finding; per §1.5 the structural fix lands in **R12.B**.
 | DEEP-CAP-04 | I | R4 | `Capability/Invariant/Defs.lean` |
 | DEEP-CAP-05 | I | R7 | `Capability/Operations.lean` (header AK8-K LOW-tier) |
 | DEEP-PROOF-01 | L | R14 | `Scheduler/Operations/Preservation.lean` |
-| DEEP-LICENSE-01 | I | R10 | `SeLe4n.lean` (line 1 missing SPDX) |
+| DEEP-LICENSE-01 | I | R10 | `SeLe4n.lean` (missing SPDX) |
 | DEEP-PRECOM-01 | M | R9 | `scripts/pre-commit-lean-build.sh` |
 | DEEP-SCH-02 | I | R5 | `Scheduler/Operations/Selection.lean, :327` |
 | DEEP-SCH-03 | I | R5 | `Lifecycle/Suspend.lean, :290+` |
@@ -461,7 +461,7 @@ to find the owning phase. Files not listed here have no WS-RC remediation.
 | `SeLe4n/Model/Builder.lean` | R14 (named accessors removed once R4/R14 lands) |
 | `SeLe4n/Kernel/Capability/Operations.lean` | R4.D (witness theorem for cspaceMutate null-cap guard), R7 (AK8-K), R10 (docstring promotion), R14 (frame helper) |
 | `SeLe4n/Kernel/Capability/Invariant/Defs.lean` | R4 (RetypeTarget smart-constructor) |
-| `SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean` | R1 (line 198 NI symmetry) |
+| `SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean` | R1 (NI symmetry) |
 | `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` | R6 (cleanup-error proof verification) |
 | `SeLe4n/Kernel/IPC/Invariant/{QueueNextBlocking,QueueNoDup,QueueMembership}.lean` | R10 (linter justifier comments) |
 | `SeLe4n/Kernel/IPC/Invariant/Structural/{StoreObjectFrame,DualQueueMembership,PerOperation,QueueNextTransport}.lean` | R10 (linter justifier comments) |
@@ -600,10 +600,10 @@ The mirror locations (already correct, used as the AK1-I template):
 
 | # | Action |
 |---|---|
-| R1.1 | At line 198, replace `\| none => .ok ({ results := #[] }, st')` with `\| none => .error .invalidCapability` |
-| R1.2 | Insert the AK1-I-style comment block (verbatim copy of lines 113–125, with "send" → "call") immediately before the new line, explaining the NI-symmetry rationale |
-| R1.3 | Inspect lines 199–200 (the `\| none =>` and `\| none =>` arms for `receiveQ.head` and `getEndpoint?` mismatches): leave as `.ok` if they encode a different invariant (no receiver enqueued ≠ missing CSpace root), otherwise normalise. **Verification step:** read each arm's predecessor reasoning before changing. |
-| R1.4 | Confirm `endpointSendDualWithCaps` (line 113–127) and `endpointReceiveDualWithCaps` (lines 154–168) carry identical comment scaffolding for parity. |
+| R1.1 | Replace `\| none => .ok ({ results := #[] }, st')` with `\| none => .error .invalidCapability` |
+| R1.2 | Insert the AK1-I-style comment block (verbatim copy of , with "send" → "call") immediately before the new line, explaining the NI-symmetry rationale |
+| R1.3 | Inspect (the `\| none =>` and `\| none =>` arms for `receiveQ.head` and `getEndpoint?` mismatches): leave as `.ok` if they encode a different invariant (no receiver enqueued ≠ missing CSpace root), otherwise normalise. **Verification step:** read each arm's predecessor reasoning before changing. |
+| R1.4 | Confirm `endpointSendDualWithCaps` and `endpointReceiveDualWithCaps` carry identical comment scaffolding for parity. |
 | R1.5 | Update or extend the IPC call-path test in `tests/InformationFlowSuite.lean` and `tests/NegativeStateSuite.lean` to exercise the missing-CSpace-root fault on the call path; assert `.error .invalidCapability`. |
 
 ### 5.4 Validation
@@ -763,7 +763,7 @@ end
 
 The `@[hwTarget]` attribute is the same one used for the
 `@[extern]` declarations elsewhere in the file; verify by reading
-the existing section around lines 50–242. If the attribute name
+the existing section. If the attribute name
 differs in practice, use whatever the existing gating section uses.
 
 *R2.A.2 — Init/read API.* The two functions form a minimal API:
@@ -841,9 +841,9 @@ the typed-ABI entry point.
 | # | File | Action |
 |---|---|---|
 | R2.B.1 | `SeLe4n/Platform/FFI.lean` | Add `def syscallDispatchFromAbi (syscallId : UInt32) (msgInfo : UInt64) (regs : Array UInt64) (ipcBufferAddr : UInt64) : Kernel UInt64` that: (a) decodes `syscallId` → typed `SyscallId` via `RegisterDecode.decodeSyscallId`; (b) decodes `regs` and `msgInfo` into the appropriate typed-arg struct via `SyscallArgDecode.decodeSyscallArgs`; (c) invokes `syscallEntryChecked` with the typed args; (d) re-encodes the result back to `UInt64` per the high-bit-set encoding (bit 63 = error). |
-| R2.B.2 | `SeLe4n/Platform/FFI.lean` | Replace the stub body of `syscallDispatchInner` (lines 217–223) with a thin wrapper that reads `kernelStateRef`, calls `syscallDispatchFromAbi`, applies the result to update `kernelStateRef`, and returns the encoded `UInt64`. |
-| R2.B.3 | `SeLe4n/Platform/FFI.lean` | Replace the stub body of `suspendThreadInner` (lines 186–190) similarly: read state, call `suspendThread (ThreadId.ofUInt64 _tid)`, write state back, encode `KernelError` discriminant. |
-| R2.B.4 | `rust/sele4n-hal/src/svc_dispatch.rs` | The comment at line 308 referencing `syscallDispatchFromAbi` becomes accurate as written (no edit required); verify the identifier/symbol name (`sele4n_syscall_dispatch_inner` vs bare `syscall_dispatch_inner`) matches the Lean export and the Rust `extern "C"` block. If the comment claims `sele4n_syscall_dispatch_inner` and the Lean export is `syscall_dispatch_inner`, update either side so they match. |
+| R2.B.2 | `SeLe4n/Platform/FFI.lean` | Replace the stub body of `syscallDispatchInner` with a thin wrapper that reads `kernelStateRef`, calls `syscallDispatchFromAbi`, applies the result to update `kernelStateRef`, and returns the encoded `UInt64`. |
+| R2.B.3 | `SeLe4n/Platform/FFI.lean` | Replace the stub body of `suspendThreadInner` similarly: read state, call `suspendThread (ThreadId.ofUInt64 _tid)`, write state back, encode `KernelError` discriminant. |
+| R2.B.4 | `rust/sele4n-hal/src/svc_dispatch.rs` | The comment referencing `syscallDispatchFromAbi` becomes accurate as written (no edit required); verify the identifier/symbol name (`sele4n_syscall_dispatch_inner` vs bare `syscall_dispatch_inner`) matches the Lean export and the Rust `extern "C"` block. If the comment claims `sele4n_syscall_dispatch_inner` and the Lean export is `syscall_dispatch_inner`, update either side so they match. |
 | R2.B.5 | `SeLe4n/Platform/FFI.lean` | Add three correctness theorems to the new section: (a) `syscallDispatchFromAbi_ok_iff_syscallEntryChecked_ok` (decoding round-trip), (b) `syscallDispatchFromAbi_preserves_well_typed_invariant`, (c) `syscallDispatchInner_eq_syscallDispatchFromAbi_after_state_io`. These tie the FFI entry to the verified entry point. |
 | R2.B.6 | `SeLe4n/Kernel/API.lean` | Re-export `syscallEntryChecked` such that consumers (R2.B.1, tests) can reference it without circular imports. (Already exported; verify by direct read.) |
 
@@ -862,7 +862,7 @@ def syscallEntryChecked (ctx : LabelingContext)
 Crucially, `syscallEntryChecked` does **not** take pre-decoded
 typed args. It looks up `lookupThreadRegisterContext tid st`
 internally and invokes `decodeSyscallArgsFromState st tid layout
-regs regCount` to do the decode (line 1260). So the FFI shim
+regs regCount` to do the decode . So the FFI shim
 should NOT re-implement the decode; instead it should populate
 the current thread's register context from the FFI-passed
 register values, then call `syscallEntryChecked`.
@@ -1094,7 +1094,7 @@ SeLe4n/Platform/RPi5/VSpaceBoot.lean  bootSafeVSpaceRoot predicate
 | R3.3 | `SeLe4n/Platform/Boot.lean` | Update `bootFromPlatformChecked` to: (a) admit a `KernelObject.vspaceRoot rpi5BootVSpaceRoot` into the initial object store, (b) record the VSpace root reference in the resulting `SystemState.scheduler` so subsequent VSpace operations can find it. |
 | R3.4 | `SeLe4n/Platform/RPi5/Contract.lean` | Wire `rpi5BootVSpaceRoot` into the RPi5 `PlatformBinding` instance so the simulation harness can also exercise the path. |
 | R3.5 | `SeLe4n/Platform/Sim/Contract.lean` | Provide a corresponding sim VSpace root (or import `rpi5BootVSpaceRoot` if portable) so the sim build does not regress on the new object-store admission. |
-| R3.6 | `SeLe4n/Platform/Boot.lean` | Update the `bootFromPlatformChecked_eq_bootFromPlatform` correctness theorem at line 747 (predecessor §2.4) to account for the new object-store entry; if the proof breaks, the right approach is to extend the equality predicate, not to weaken the theorem. |
+| R3.6 | `SeLe4n/Platform/Boot.lean` | Update the `bootFromPlatformChecked_eq_bootFromPlatform` correctness theorem (predecessor §2.4) to account for the new object-store entry; if the proof breaks, the right approach is to extend the equality predicate, not to weaken the theorem. |
 | R3.7 | `tests/TwoPhaseArchSuite.lean` | Add a regression test confirming that post-boot the kernel state contains a VSpaceRoot ObjId entry whose `wxExclusiveInvariant` holds. |
 | R3.8 | `tests/An9HardwareBindingSuite.lean` (renamed in R8) | Update or extend hardware-binding tests to exercise the new boot-time VSpace admission. |
 
@@ -1208,7 +1208,7 @@ Verify the import path of `rpi5BootVSpaceRoot`.
 Recommended: Option A for parity. Cost: ~30 lines of new code.
 
 *R3.6 — Correctness theorem update.* The existing theorem
-`bootFromPlatformChecked_eq_bootFromPlatform` at line 747 proves
+`bootFromPlatformChecked_eq_bootFromPlatform` proves
 that the checked boot path produces the same result as the
 unchecked path. With R3.3 admitting an additional object, the
 proof must be widened. Approach:
@@ -1326,7 +1326,7 @@ SeLe4n/Kernel/Capability/Invariant/Preservation/CopyMoveMutate.lean  R4.D theore
 |---|---|
 | R4.A.1 | Define `private structure UniqueSlotMap where slots : RHTable Slot Capability ; uniqueSlots : (∀ s c, slots.get? s = some c → ...) := by decide`. Public API: `UniqueSlotMap.empty`, `UniqueSlotMap.insert` (returns `Option UniqueSlotMap` with the proof discharged in the smart constructor), `UniqueSlotMap.lookup`, etc. |
 | R4.A.2 | Replace `CNode.slots : RHTable Slot Capability` with `CNode.slots : UniqueSlotMap`. |
-| R4.A.3 | Update Builder.lean to use the smart constructor; the previous `slotsUnique` proof obligation in Builder lines 290–291 becomes the constructor's discharge step. |
+| R4.A.3 | Update Builder.lean to use the smart constructor; the previous `slotsUnique` proof obligation in Builder becomes the constructor's discharge step. |
 | R4.A.4 | Update every consumer of `cnode.slots` (CSpace operations, capability transfer, etc.) to access via `UniqueSlotMap.lookup` / `.insert` rather than raw `RHTable` operations. **Validation**: `lake build SeLe4n.Kernel.Capability.Operations` must remain green. |
 | R4.A.5 | Add a regression theorem `cnode_slots_unique : ∀ (cn : CNode), cn.slots.uniqueSlots`. |
 
@@ -1334,13 +1334,13 @@ SeLe4n/Kernel/Capability/Invariant/Preservation/CopyMoveMutate.lean  R4.D theore
 
 **Verified at audit time** (re-read `Capability/Invariant/Defs.lean`):
 the existing `RetypeTarget` already IS a smart-constructor pattern —
-the `structure RetypeTarget (st : SystemState)` at line 357 has
+the `structure RetypeTarget (st : SystemState)` has
 fields `id : ObjId` and `cleanupHookDischarged : Kernel.cleanupHookDischarged st id`,
 so any direct construction must supply both arguments. The
 "phantom-like" criticism in the deep audit's §5.1 is about the
 **weakness of the predicate**, not about a bypassable structure.
 
-The `cleanupHookDischarged` predicate (lines 346–350) is the
+The `cleanupHookDischarged` predicate is the
 conjunction of two state-observable properties: object-type
 metadata consistency, and absence of stale scheduler queue
 references. A caller can in principle prove these manually by
@@ -1353,7 +1353,7 @@ predicate** so manual discharge becomes infeasible.
 | R4.B.1 | At `Capability/Invariant/Defs.lean`, strengthen `cleanupHookDischarged` to additionally require an opaque **scrub-witness token** that can only be obtained as a side-effect of `lifecyclePreRetypeCleanup`. Sketch: introduce `private opaque ScrubToken : SystemState → ObjId → Type` whose only public constructor is the result of `lifecyclePreRetypeCleanup_ok`; add it as a third conjunct of `cleanupHookDischarged`. |
 | R4.B.2 | At `Lifecycle/Operations/Cleanup.lean`, change `lifecyclePreRetypeCleanup` to return `Kernel ScrubToken` rather than `Kernel Unit`, threading the token to its callers. |
 | R4.B.3 | At `Lifecycle/Operations/RetypeWrappers.lean`, update the `lifecycleRetypeWithCleanup` call chain to capture the scrub token and pass it to `mkRetypeTarget` via the strengthened `cleanupHookDischarged`. |
-| R4.B.4 | Update the `RetypeTarget` docstring at lines 332–336 to drop the "phantom-like" caveat and replace with: "The predicate now incorporates a `ScrubToken`-backed witness; manual discharge by reasoning about post-scrub state alone is no longer sufficient." |
+| R4.B.4 | Update the `RetypeTarget` docstring to drop the "phantom-like" caveat and replace with: "The predicate now incorporates a `ScrubToken`-backed witness; manual discharge by reasoning about post-scrub state alone is no longer sufficient." |
 | R4.B.5 | Add a no-bypass witness theorem: `theorem retypeTarget_implies_scrub_token_held (rt : RetypeTarget st) : ∃ token : ScrubToken st rt.id, True` — recording that every constructed `RetypeTarget` carries an opaque token whose existence proves the cleanup hook ran. |
 | R4.B.6 | Verify that the structure remains `public` (it must, since downstream lifecycle wrappers construct it); only the `ScrubToken` opaque type is `private`. The smart-constructor effect is achieved by gating the only `ScrubToken` introduction site through `lifecyclePreRetypeCleanup`. |
 
@@ -1366,7 +1366,7 @@ predicate** so manual discharge becomes infeasible.
 | R4.C.3 | Update the runtime guard at `Operations/Endpoint.lean` to consume the constructive `NoDupList.insert` (returns `Option (NoDupList ThreadId)` so duplicate insertion is statically rejected). The runtime check is preserved as a fast-path optimisation; the type-level discharge eliminates the `uniqueWaiters` upstream-convention obligation. |
 | R4.C.4 | Update every consumer of `notification.waitingThreads` (notification-wait/signal/cancel paths) to use `NoDupList` accessors. |
 | R4.C.5 | Add the structural witness theorem: `theorem notification_waiters_nodup : ∀ (n : Notification), n.waitingThreads.val.Nodup`. |
-| R4.C.6 | **Subsumption note for DEEP-IPC-01**: the deep audit's §11.1 verified that `Operations/Endpoint.lean` performs an O(1) duplicate guard at runtime. R4.C makes the duplicate **statically impossible**, so the audit's runtime-only verification is replaced by a stronger type-level guarantee. Record the closure in `AUDIT_v0.30.11_DISCHARGE_INDEX.md` with the citation: "DEEP-IPC-01 closed structurally by R4.C; runtime check at line 723 retained as defence-in-depth and proven equivalent to the type-level NoDup discharge by `notificationWait_runtime_check_implied_by_nodup`." |
+| R4.C.6 | **Subsumption note for DEEP-IPC-01**: the deep audit's §11.1 verified that `Operations/Endpoint.lean` performs an O(1) duplicate guard at runtime. R4.C makes the duplicate **statically impossible**, so the audit's runtime-only verification is replaced by a stronger type-level guarantee. Record the closure in `AUDIT_v0.30.11_DISCHARGE_INDEX.md` with the citation: "DEEP-IPC-01 closed structurally by R4.C; runtime check retained as defence-in-depth and proven equivalent to the type-level NoDup discharge by `notificationWait_runtime_check_implied_by_nodup`." |
 
 ### 8.6 Sub-task R4.D — `cspaceMutate` null-cap witness theorem (closes DEEP-CAP-02 false positive structurally)
 
@@ -1405,7 +1405,7 @@ SeLe4n/Kernel/Capability/Invariant/Preservation/CopyMoveMutate.lean  preservatio
 
 **Implementation steps (per task).**
 
-- *R4.D.1 implementation*: read lines 1081–1111 to confirm the
+- *R4.D.1 implementation*: read to confirm the
   current shape; write the theorem with a `by unfold cspaceMutate;
   intro st' hOk; ...` proof structure; build via `lake build
   SeLe4n.Kernel.Capability.Invariant.Preservation.CopyMoveMutate`
@@ -1414,7 +1414,7 @@ SeLe4n/Kernel/Capability/Invariant/Preservation/CopyMoveMutate.lean  preservatio
   result; if non-null path is taken the `.ok` arm fires else
   `.error .nullCapability` fires.
 - *R4.D.3 implementation*: Edit `Operations.lean` docstring at
-  lines 1069–1080 to append the cross-reference paragraph; do not
+   to append the cross-reference paragraph; do not
   modify the function body.
 - *R4.D.4 implementation*: locate an existing capability-error
   test in `NegativeStateSuite.lean` (e.g., one of the `cspaceCopy`
@@ -1559,7 +1559,7 @@ SeLe4n/Kernel/SchedContext/Operations.lean          schedContextConfigure (domai
 | # | Action |
 |---|---|
 | R5.G.1 | Verify whether `boundThreadDomainConsistent` (defined at `Scheduler/Invariant.lean`) requires domain propagation when a SchedContext bound to a TCB has its `domain` field rewritten. Verification by reading the invariant: `tcb.domain = sc.domain` is the conjunct. **Conclusion: yes, domain propagation IS required.** |
-| R5.G.2 | At `SchedContext/Operations.lean`, after the priority-propagation block (lines 168–186), add an analogous domain-propagation block: if `sc.boundThread = some tid`, set `boundTcb.domain := newDomain`. |
+| R5.G.2 | At `SchedContext/Operations.lean`, after the priority-propagation block , add an analogous domain-propagation block: if `sc.boundThread = some tid`, set `boundTcb.domain := newDomain`. |
 | R5.G.3 | Update the `schedContextConfigure_preserves_boundThreadDomainConsistent` invariant proof (or add it if absent) in `SchedContext/Invariant/Preservation.lean`. |
 | R5.G.4 | Add a regression test confirming the propagation. |
 
@@ -1616,7 +1616,7 @@ Read `SchedContext/Operations.lean` to confirm the
 priority-propagation pattern; the domain propagation mirrors it:
 
 ```lean
--- After the priority-propagation block at lines 168–186, add:
+-- After the priority-propagation block, add:
 match sc.boundThread with
 | none => stProp  -- no bound thread: nothing to propagate
 | some boundTid =>
@@ -1926,7 +1926,7 @@ target.
 | R7.2 | For each close-now item, implement the fix in the same PR. |
 | R7.3 | For each defer item, lift the entry into `AUDIT_v0.30.11_DEFERRED.md` with: (a) verbatim original AK8-K text; (b) closure target (workstream/PR identifier or post-1.0 milestone). Remove the entry from the source comment block. |
 | R7.4 | For each withdraw item (already-fixed but the comment was not updated), confirm by direct verification, then remove from the source comment block. |
-| R7.5 | The header comment block at lines 12–62 shrinks to a one-paragraph summary pointing readers to `AUDIT_v0.30.11_DEFERRED.md` for any residual items, per CLAUDE.md's prohibition on "in-source TODOs that age out with the surrounding workstream." |
+| R7.5 | The header comment block shrinks to a one-paragraph summary pointing readers to `AUDIT_v0.30.11_DEFERRED.md` for any residual items, per CLAUDE.md's prohibition on "in-source TODOs that age out with the surrounding workstream." |
 
 ### 11.3 Validation
 
@@ -2066,7 +2066,7 @@ edits across many files, no semantic changes, easily reviewable.
 #### License (DEEP-LICENSE-01)
 | # | File | Action |
 |---|---|---|
-| R10.1 | `SeLe4n.lean` | Insert `-- SPDX-License-Identifier: GPL-3.0-or-later` as line 1 (currently line 1 begins `/-`). |
+| R10.1 | `SeLe4n.lean` | Insert `-- SPDX-License-Identifier: GPL-3.0-or-later` as (currently begins `/-`). |
 
 #### IPC linter justifier comments (DEEP-IPC-02)
 | # | File | Action |
@@ -2082,8 +2082,8 @@ edits across many files, no semantic changes, easily reviewable.
 #### Capability docstring promotion (DEEP-CAP-01)
 | # | File | Action |
 |---|---|---|
-| R10.9 | `SeLe4n/Kernel/Capability/Operations.lean` | Promote the inline `--` rationale block at lines 964–968 into the `/-- ... -/` docstring above `cspaceCopy`. |
-| R10.10 | `SeLe4n/Kernel/Capability/Operations.lean` | Promote the inline `--` rationale block at lines 998–1001 into the `/-- ... -/` docstring above `cspaceMove`. |
+| R10.9 | `SeLe4n/Kernel/Capability/Operations.lean` | Promote the inline `--` rationale block into the `/-- ... -/` docstring above `cspaceCopy`. |
+| R10.10 | `SeLe4n/Kernel/Capability/Operations.lean` | Promote the inline `--` rationale block into the `/-- ... -/` docstring above `cspaceMove`. |
 
 #### Model field cross-references (DEEP-MODEL-03/04)
 | # | File | Action |
@@ -2150,7 +2150,7 @@ computed against the post-implementation tree.
 | R11.A.1 | Run `./scripts/report_current_state.py` to recompute live metrics. |
 | R11.A.2 | Run `./scripts/sync_readme_from_codebase_map.sh` to push the recomputed metrics into README. |
 | R11.A.3 | Manually reconcile the two inconsistent declaration counts (`README.md` "3,186" vs `:213` "2,725"). The recommended fix per deep audit §10.3 PR 11 is to drop both inline numbers and replace with a single CI-synchronised reference to `codebase_map.json`'s `proved_theorem_lemma_decls` field. |
-| R11.A.4 | Update test-suite count: `README.md` says "25 test suites" and `:193` says "24 test suites"; live count is 28 (`find tests -name "*.lean" \| wc -l`). Both lines must be updated; if the source-layout table at line 193 lists individual suites, update the count and add the missing entries. |
+| R11.A.4 | Update test-suite count: `README.md` says "25 test suites" and `:193` says "24 test suites"; live count is 28 (`find tests -name "*.lean" \| wc -l`). Both lines must be updated; if the source-layout table lists individual suites, update the count and add the missing entries. |
 | R11.A.5 | Update `production_files`/`production_loc` to match the live `find` and `wc -l` results: 167 / 109,787 (or whatever the post-R1..R10 tree reports — the metric refresh must be the last thing computed). |
 | R11.A.6 | Verify `scripts/check_version_sync.sh` and `scripts/sync_documentation_metrics.sh` both pass. |
 
@@ -2167,7 +2167,7 @@ computed against the post-implementation tree.
 
 | # | Action |
 |---|---|
-| R11.C.1 | Add an entry under `SeLe4n/Platform/*` in CLAUDE.md's "Source layout" section for: (a) `SeLe4n/Platform/FFI.lean` (lines 245+), Lean ↔ Rust bridge declarations, post-R2 routing into `syscallEntryChecked` and `suspendThread`; (b) `SeLe4n/Platform/Staged.lean`, build-anchor that pulls staged-only Architecture modules into CI; (c) `SeLe4n/Platform/RPi5/VSpaceBoot.lean`, RPi5 boot VSpace configuration with W^X compliance proof, post-R3 threaded into `bootSafeObject`. |
+| R11.C.1 | Add an entry under `SeLe4n/Platform/*` in CLAUDE.md's "Source layout" section for: (a) `SeLe4n/Platform/FFI.lean` , Lean ↔ Rust bridge declarations, post-R2 routing into `syscallEntryChecked` and `suspendThread`; (b) `SeLe4n/Platform/Staged.lean`, build-anchor that pulls staged-only Architecture modules into CI; (c) `SeLe4n/Platform/RPi5/VSpaceBoot.lean`, RPi5 boot VSpace configuration with W^X compliance proof, post-R3 threaded into `bootSafeObject`. |
 | R11.C.2 | Update the "Known large files" list under CLAUDE.md "Reading large files" if any file's line count crossed 500 between v0.30.11 and the post-R12 tree. |
 | R11.C.3 | Update the "Active workstream context" section to reflect WS-RC's status (in flight or closed, depending on landing order). |
 
@@ -2998,7 +2998,7 @@ grep "^import" SeLe4n/Kernel/Architecture/BarrierComposition.lean
 # (empty — file has no imports)
 ```
 
-The file's first import-relevant line is line 10 of the file body,
+The file's first import-relevant line is of the file body,
 which is part of the namespace declaration block, not an import.
 There is no `import SeLe4n.Kernel.Architecture.CacheModel` anywhere
 in the file.
@@ -3068,7 +3068,7 @@ not-yet-production modules. All three "STATUS: staged" markers
 
 The deep audit's verification error in §11.3 was caused by the
 auditor reading `BarrierComposition.lean`'s namespace declaration
-(line 10) as an `import` line. A future auditor performing the
+ as an `import` line. A future auditor performing the
 same trace by hand could make the same error. The R12.B gate
 removes the human from the loop:
 

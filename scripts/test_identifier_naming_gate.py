@@ -285,6 +285,27 @@ check("a register-range test name passes",
 check("the device-tree magic passes", gate.is_coded("xD00DFEED"), False)
 check("a Lean D-hypothesis passes", gate.is_coded("hD1"), False)
 
+# A phase code may carry a letter suffix.
+check("a lettered phase code is flagged", gate.is_coded("phase2a_helper"), True)
+check("a two-digit lettered phase is flagged",
+      gate.is_coded("phase12bRunner"), True)
+check("an ordinary phase word passes", gate.is_coded("phased"), False)
+
+# A hyphen joins a name in config/data and separates operands in code,
+# so content normalisation is per-format.  Getting this backwards either
+# way is a defect: normalising Lean would merge `a-b` into one token,
+# and not normalising YAML hides the canonical `WS-*` spelling.
+check("config formats join hyphenated names",
+      ".yaml" in gate.HYPHEN_JOINS_NAMES and ".toml" in gate.HYPHEN_JOINS_NAMES
+      and ".json" in gate.HYPHEN_JOINS_NAMES, True)
+check("code formats do NOT join hyphens",
+      not (gate.HYPHEN_JOINS_NAMES & {".lean", ".rs", ".py", ".sh", ".S"}), True)
+check("a hyphenated id is coded once joined",
+      gate.is_coded("WS" + "-SM-helper".replace("-", "_")), True)
+check("the same id is invisible unjoined",
+      any(gate.is_coded(t) for t in gate.IDENTIFIER.findall("WS" + "-SM-helper")),
+      False)
+
 check("the baseline is read from the index",
       "index_contents([BASELINE_REL])" in Path(gate.__file__).read_text(),
       True)

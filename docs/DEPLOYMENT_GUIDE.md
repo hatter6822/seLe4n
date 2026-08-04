@@ -58,7 +58,7 @@ blocked.
 | `integrityFlowsTo_prevents_escalation` | 157 | Proves escalation is denied |
 | `securityFlowsTo_prevents_label_escalation` | 193 | Combined 2D label proof |
 
-A standard BIBA reference implementation (`bibaIntegrityFlowsTo`, line 97) is
+A standard BIBA reference implementation (`bibaIntegrityFlowsTo`, ) is
 provided for comparison and could serve as a drop-in replacement if a deployment
 requires strict BIBA semantics.
 

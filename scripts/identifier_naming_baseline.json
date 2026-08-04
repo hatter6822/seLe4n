@@ -5,8 +5,11 @@
  "AK2": {
   "scripts/test_tier3_invariant_surface.sh": 2
  },
- "AK6": {
-  "tests/fixtures/main_trace_smoke.expected": 2
+ "AK6_A": {
+  "tests/fixtures/main_trace_smoke.expected": 1
+ },
+ "AK6_D": {
+  "tests/fixtures/main_trace_smoke.expected": 1
  },
  "AN12": {
   "scripts/test_tier3_invariant_surface.sh": 1
@@ -77,6 +80,15 @@
  "TPI": {
   "scripts/test_tier0_hygiene.sh": 3
  },
+ "WS_B10": {
+  ".github/workflows/lean_toolchain_update_proposal.yml": 2
+ },
+ "WS_N5": {
+  "tests/fixtures/robin_hood_smoke.expected": 1
+ },
+ "WS_SM": {
+  "tests/fixtures/scenario_registry.yaml": 6
+ },
  "Z2": {
   "scripts/test_tier3_invariant_surface.sh": 1
  },
@@ -86,21 +98,97 @@
  "Z4": {
   "scripts/test_tier3_invariant_surface.sh": 1
  },
- "Z5": {
-  "tests/fixtures/scenario_registry.yaml": 19
+ "Z5_AUD_10": {
+  "tests/fixtures/scenario_registry.yaml": 2
  },
- "Z6": {
-  "tests/fixtures/scenario_registry.yaml": 16
+ "Z5_AUD_7": {
+  "tests/fixtures/scenario_registry.yaml": 1
+ },
+ "Z5_AUD_9": {
+  "tests/fixtures/scenario_registry.yaml": 1
+ },
+ "Z5_F1": {
+  "tests/fixtures/scenario_registry.yaml": 5
+ },
+ "Z5_F3": {
+  "tests/fixtures/scenario_registry.yaml": 1
+ },
+ "Z5_G1": {
+  "tests/fixtures/scenario_registry.yaml": 2
+ },
+ "Z5_G3": {
+  "tests/fixtures/scenario_registry.yaml": 1
+ },
+ "Z5_H1": {
+  "tests/fixtures/scenario_registry.yaml": 1
+ },
+ "Z5_H2": {
+  "tests/fixtures/scenario_registry.yaml": 3
+ },
+ "Z5_I1": {
+  "tests/fixtures/scenario_registry.yaml": 1
+ },
+ "Z5_I2": {
+  "tests/fixtures/scenario_registry.yaml": 1
+ },
+ "Z6_AUD": {
+  "tests/fixtures/scenario_registry.yaml": 12
+ },
+ "Z6_AUD_2": {
+  "tests/fixtures/scenario_registry.yaml": 4
  },
  "Z7": {
   "tests/fixtures/scenario_registry.yaml": 8
  },
- "Z7D": {
-  "tests/fixtures/main_trace_smoke.expected": 8,
-  "tests/fixtures/scenario_registry.yaml": 8
+ "Z7D_001": {
+  "tests/fixtures/main_trace_smoke.expected": 1,
+  "tests/fixtures/scenario_registry.yaml": 1
  },
- "Z8J": {
-  "tests/fixtures/main_trace_smoke.expected": 6
+ "Z7D_002": {
+  "tests/fixtures/main_trace_smoke.expected": 1,
+  "tests/fixtures/scenario_registry.yaml": 1
+ },
+ "Z7D_003": {
+  "tests/fixtures/main_trace_smoke.expected": 1,
+  "tests/fixtures/scenario_registry.yaml": 1
+ },
+ "Z7D_004": {
+  "tests/fixtures/main_trace_smoke.expected": 1,
+  "tests/fixtures/scenario_registry.yaml": 1
+ },
+ "Z7D_005": {
+  "tests/fixtures/main_trace_smoke.expected": 1,
+  "tests/fixtures/scenario_registry.yaml": 1
+ },
+ "Z7D_006": {
+  "tests/fixtures/main_trace_smoke.expected": 1,
+  "tests/fixtures/scenario_registry.yaml": 1
+ },
+ "Z7D_007": {
+  "tests/fixtures/main_trace_smoke.expected": 1,
+  "tests/fixtures/scenario_registry.yaml": 1
+ },
+ "Z7D_008": {
+  "tests/fixtures/main_trace_smoke.expected": 1,
+  "tests/fixtures/scenario_registry.yaml": 1
+ },
+ "Z8J_001": {
+  "tests/fixtures/main_trace_smoke.expected": 1
+ },
+ "Z8J_002": {
+  "tests/fixtures/main_trace_smoke.expected": 1
+ },
+ "Z8J_003": {
+  "tests/fixtures/main_trace_smoke.expected": 1
+ },
+ "Z8J_004": {
+  "tests/fixtures/main_trace_smoke.expected": 1
+ },
+ "Z8J_005": {
+  "tests/fixtures/main_trace_smoke.expected": 1
+ },
+ "Z8J_006": {
+  "tests/fixtures/main_trace_smoke.expected": 1
  },
  "_WS_RC_BASELINE": {
   "scripts/website_link_manifest.txt": 1
@@ -732,5 +820,11 @@
  },
  "vaddrAC4": {
   "tests/NegativeStateSuite.lean": 3
+ },
+ "ws_b10": {
+  ".github/dependabot.yml": 1
+ },
+ "ws_b10'": {
+  ".github/workflows/lean_toolchain_update_proposal.yml": 1
  }
 }

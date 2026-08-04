@@ -125,7 +125,11 @@ WORKSTREAM_FAMILIES = (
 COMPONENT_CODES = tuple(
     re.compile(rf"^{f}\d[a-z\d]*$") for f in WORKSTREAM_FAMILIES
 ) + (
-    re.compile(r"^phase\d+$"),      # phase5
+    # `phase5`, and `phase2a` / `phase12b` -- a phase code may carry a
+    # letter suffix.  Widening this costs nothing measurable: `phase`
+    # followed by a digit matches zero further identifiers across the
+    # tracked tree, so the suffix can only ever fire on something new.
+    re.compile(r"^phase\d+[a-z]*$"),
     re.compile(r"^ws$"),            # ws_sm_, ws_rc_, ws_q_ (any arity)
     re.compile(r"^h\d{2}$"),        # I-H01 subtask codes
     re.compile(r"^tpi$"),           # TPI-D* tracked-proof ids
@@ -457,6 +461,20 @@ CONTENT_STRIPPERS = {
     ".expected": lambda t: t,
 }
 
+# Formats where a hyphen JOINS a name rather than separating operands.
+# In Lean, Rust and Python `a-b` is subtraction, and in shell it opens a
+# flag, so content there must not be normalised -- but a YAML key, a
+# TOML value, a JSON string and a fixture label are all names, and
+# `WS-SM-helper` in one of them is the canonical hyphenated spelling
+# the rule names first.  Path tokenisation normalises unconditionally
+# (a path component is always a name); this is the content-side
+# counterpart, applied only where the character cannot be an operator.
+# Measured: 34 further coded identifiers become visible, every one a
+# real workstream or audit id (`AK6-A`, `WS-B10`, `Z5-AUD-10`).
+HYPHEN_JOINS_NAMES = frozenset({
+    ".toml", ".yml", ".yaml", ".txt", ".json", ".expected",
+})
+
 # Documentation, exempt by LOCATION.  Everything under `docs/` plus the
 # root-level documents; nothing is exempted merely for its suffix.
 DOC_PREFIXES = ("docs/",)
@@ -581,10 +599,14 @@ def scan() -> tuple[Counter, Counter]:
             if is_coded(token):
                 bucket[(token, rel)] += 1
 
-        stripper = CONTENT_STRIPPERS.get(Path(rel).suffix)
+        suffix = Path(rel).suffix
+        stripper = CONTENT_STRIPPERS.get(suffix)
         if stripper is None or rel not in staged:
             continue
-        for token in IDENTIFIER.findall(stripper(staged[rel])):
+        body = stripper(staged[rel])
+        if suffix in HYPHEN_JOINS_NAMES:
+            body = body.replace("-", "_")
+        for token in IDENTIFIER.findall(body):
             if is_coded(token):
                 bucket[(token, rel)] += 1
     return strict, ratcheted

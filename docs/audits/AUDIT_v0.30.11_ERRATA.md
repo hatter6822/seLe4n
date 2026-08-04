@@ -133,7 +133,7 @@ against the v0.30.11 HEAD source tree:
 | Plan section | Original claim | Corrected fact |
 |---|---|---|
 | R3.3 | `PlatformConfig` lives in `Platform/Contract.lean` | Lives in `Platform/Boot.lean`. `Contract.lean` defines the `PlatformBinding` typeclass. |
-| R3.1 | `bootSafeObject` returns `Bool` at line 551 | Two functions: `bootSafeObjectCheck : Bool` at line 534 (line 551 is the VSpaceRoot arm) and `bootSafeObject : Prop` at line 1456. Both must be updated. |
+| R3.1 | `bootSafeObject` returns `Bool` | Two functions: `bootSafeObjectCheck : Bool` (is the VSpaceRoot arm) and `bootSafeObject : Prop`. Both must be updated. |
 | R3.1 | `bootSafeVSpaceRoot` returns `Bool` | Returns `Prop` at `RPi5/VSpaceBoot.lean`. The Bool variant requires `decide`. |
 | R4.B | `RetypeTarget` fields are `obj : KernelObject`, `h : afterScrub obj` | Actual fields: `id : ObjId`, `cleanupHookDischarged : ...` (parameterized by `st : SystemState`). |
 | R4.B | Add `mkRetypeTarget` smart constructor | Structure already has the smart-constructor shape; the improvement is to **strengthen the predicate** via an opaque `ScrubToken` (per refined R4.B). |

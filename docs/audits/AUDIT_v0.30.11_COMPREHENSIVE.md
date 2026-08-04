@@ -76,7 +76,7 @@ fix before tag), **M** medium (post-1.0 maintainability), **L** low
 | ID | Severity | Area | Summary |
 |---|---|---|---|
 | DEBT-ST-01 | M | Model/State+Builder | 17-conjunct tuple-projection chain in `allTablesInvExtK` plus the named-accessor workaround in Builder.lean. Acknowledged debt (AF5-F). |
-| DEBT-CAP-01 | M | Capability/Operations | Shared frame-helper extraction across the cspaceInsertSlot preservation block (theorems start at line 471 — `_preserves_scheduler`, `_preserves_services` 501, `_preserves_objects_ne` 529, etc.). |
+| DEBT-CAP-01 | M | Capability/Operations | Shared frame-helper extraction across the cspaceInsertSlot preservation block (the theorem block — `_preserves_scheduler`, `_preserves_services` 501, `_preserves_objects_ne` 529, etc.). |
 | DEBT-CAP-02 | L | Capability/Invariant/Preservation/* | Tactic-extraction for the Insert/Delete/Revoke proof scaffold (case-split → unfold → storeObject thread-through). |
 | DEBT-SCH-01 | M | Scheduler/Operations/Preservation | 3779-LoC file is cohesive but ripe for per-invariant split (5–6 files). |
 | DEBT-SCH-02 | M | Scheduler/Liveness/WCRT | Discharge `hDomainActiveRunnable` and `hBandProgress` from kernel invariants. |
@@ -109,8 +109,8 @@ or by spot-verification.
 - **Clean files**: `SeLe4n.lean`, `Main.lean`, `Model/Object.lean`,
   `Model/IntermediateState.lean` — no findings.
 - **Machine.lean** carries an intentional non-lawful `BEq RegisterFile`
-  (lines 290–306) with a witnessing counter-example
-  (`not_lawfulBEq`); safety analysis (X5-G, lines 308–327) confirms no
+  with a witnessing counter-example
+  (`not_lawfulBEq`); safety analysis (X5-G, ) confirms no
   correctness impact. `noOverlapAux` is O(n²) but bounded by hardware
   region count (~5 on RPi5).
 - **Prelude.lean** — no `sorry`/`axiom`/incomplete proofs; repetitive
@@ -119,15 +119,15 @@ or by spot-verification.
 - **Model/Object/Types.lean** — `IpcMessage` carries `Array RegValue`
   (was `Nat`) per S4-D, justified. TCB BEq manually compares 22 fields
   because `RegisterFile` BEq is non-lawful; intentional.
-  `Notification.waitingThreads : List ThreadId` rationale documented at
-  lines 850–874.
+  `Notification.waitingThreads : List ThreadId` rationale is documented
+  in the module.
 - **Model/State.lean — DEBT-ST-01**: 17-conjunct `.2.2.2…` accessor
-  depth in `allTablesInvExtK` (lines 386–395). Acknowledged at AF5-F as
+  depth in `allTablesInvExtK` . Acknowledged at AF5-F as
   a known maintenance burden. `Model/Builder.lean` carries a named-
-  accessor workaround (lines 32–97). Functional but fragile.
+  accessor workaround . Functional but fragile.
 - **Model/FreezeProofs.lean** (1661) sampled — no `sorry`, no
   `native_decide` outside CI paths; index-parity reasoning around
-  lines 294–300 uses `Nat.lt_or_ge` and `List.pairwise_iff_getElem`.
+   uses `Nat.lt_or_ge` and `List.pairwise_iff_getElem`.
   Solid.
 
 ### 2.2 IPC subsystem
@@ -147,8 +147,8 @@ totalling ~7800 LoC.
   `decide` at `QueueNoDup.lean` (boolean decision, justified).
 - **Critical invariants verified.**
   - Dual-queue head disjointness: `endpointQueueNoDup` defined at
-    `Invariant/Defs.lean` and bundled into the system invariant
-    at line 1289; preservation requires the disjointness precondition
+    `Invariant/Defs.lean` and bundled into the system invariant;
+    preservation requires the disjointness precondition
     explicitly (`QueueNoDup.lean`).
   - Capability transfer authority: `ipcUnwrapCaps` is gated on
     `endpointGrantRight` (CapTransfer.lean); callers extract via
@@ -157,10 +157,10 @@ totalling ~7800 LoC.
     immediately after detection (Timeout.lean); explicit-flag
     design retires the prior sentinel-collision fragility (AG8-A).
   - PIP revert safety: `timeoutThread` reverts only `.blockedOnReply`
-    (line 105), justified by
-    `blockingGraph_pipBoost_implies_blockedOnReply` (line 84).
+    justified by
+    `blockingGraph_pipBoost_implies_blockedOnReply` .
   - Timeout error-arm reachability:
-    `timeoutThread_succeeds_under_preconditions` (line 151) proves the
+    `timeoutThread_succeeds_under_preconditions` proves the
     error arms unreachable under valid invariants.
 - **Performance**: no list-based ops (find/filter/reverse) in hot paths;
   capability-transfer loop bounded at `maxExtraCaps = 3`; intrusive
@@ -174,19 +174,19 @@ totalling ~7800 LoC.
 
 **Capability — Operations.lean (1858)**
 
-- `resolveCapAddress_caller_rights_obligation` (line 282) explicitly
+- `resolveCapAddress_caller_rights_obligation` explicitly
   surfaces the seL4-divergence U-M25 contract: intermediate-level
   CSpace traversal does **not** check rights, callers must use
   `capHasRight` guards at the operation layer. Documented and intended.
 - Badge derivation is one-way: `mintDerivedCap`
   (`Capability/Operations.lean`) enforces rights attenuation via
   `rightsSubset`. The AN4-E null-cap guard inside `mintDerivedCap`
-  (lines 749–757) is explicit and unconditional;
-  `mintDerivedCap_preserves_non_null` (line 762) discharges the
+  is explicit and unconditional;
+  `mintDerivedCap_preserves_non_null` discharges the
   obligation that downstream callers do not need to re-check the
   mint result against the null sentinel.
 - **DEBT-CAP-01**: cross-subsystem frame-lemma copy-paste across the
-  `cspaceInsertSlot` preservation block (theorems start at line 471
+  `cspaceInsertSlot` preservation block (the theorem block
   with `cspaceInsertSlot_preserves_scheduler` and continue through
   `_preserves_services` (501), `_preserves_objects_ne` (529), and
   the matching `_invExt` / `_machine` / `_irqHandlers` theorems).
@@ -194,7 +194,7 @@ totalling ~7800 LoC.
 
 **Capability — Invariant{/Defs,/Authority,/Preservation/*}**
 
-- `Defs.lean` (1056): CDT hypothesis externalisation (lines 29–62)
+- `Defs.lean` (1056): CDT hypothesis externalisation 
   intentional; CDT structural properties (completeness, acyclicity)
   composed at the integration layer.
 - `Authority.lean`: `cspaceRevoke_local_target_reduction` proves no
@@ -209,7 +209,7 @@ totalling ~7800 LoC.
 
 - **DEBT-SCH-01**: cohesive but the largest single file in the kernel.
   5 ops × ~12 invariants ≈ 60 theorems. Split candidates already
-  outlined at lines 3711–3712: per-invariant bundling
+  outlined in the plan: per-invariant bundling
   (QueueCurrentConsistent, CurrentThreadValid, TimeSlice,
   DomainAwareness, EDF).
 
@@ -253,26 +253,26 @@ level via `Scheduler.Invariant`). Scheduler does not import Capability.
 
 **Architecture/Assumptions.lean** — AN6-B index
 `archAssumptionConsumer` enumerates all five `ArchAssumption` variants;
-marker theorem `architecture_assumptions_index` (line 155) uses
+marker theorem `architecture_assumptions_index` uses
 exhaustive case analysis so adding an assumption fails elaboration
 without a paired proof update. Exemplary template.
 
 **Architecture/AsidManager.lean — TLB-isolation correctness.**
-AK3-A rollover fix (lines 165–185) replaces the prior unconditional
+AK3-A rollover fix replaces the prior unconditional
 `ASID.mk 1` (which broke TLB isolation when ASID 1 was bound) with a
 ground-truth `activeAsids` scan over `[1, maxAsidValue)`. Fail-closed
 (`none`) when full. Three theorems carry the security guarantee:
 
-- `AsidPool.allocate_result_fresh` (line 463) — returned ASID is never
+- `AsidPool.allocate_result_fresh` — returned ASID is never
   in the pre-call `activeAsids`. Three cases (free-list reuse, bump,
   rollover) discharged via `hFreeDisj`, monotonicity, and
-  `List.find?_eq_some_iff_append.mp` (line 339).
-- `AsidPool.allocate_preserves_wellFormed` (lines 281–358) preserves
+  `List.find?_eq_some_iff_append.mp` .
+- `AsidPool.allocate_preserves_wellFormed` preserves
   all 7 conjuncts (Nodup, free⊥active, val<nextAsid, count=length…).
-- `maxAsidValue := 65536` (16-bit, ARM ARM D8.12, line 75). **Race-free.**
+- `maxAsidValue := 65536` (16-bit, ARM ARM D8.12, ). **Race-free.**
 
 **Architecture/VSpaceInvariant.lean — VSpace closure.**
-7-tuple bundle (lines 123–130): vspaceAsidRootsUnique, vspaceRootNonOverlap,
+7-tuple bundle : vspaceAsidRootsUnique, vspaceRootNonOverlap,
 asidTableConsistent (bidirectional), wxExclusiveInvariant,
 boundedAddressTranslation, vspaceCrossAsidIsolation,
 canonicalAddressInvariant. Round-trip TPI-001 theorems all proved:
@@ -283,7 +283,7 @@ semantic correctness, not reflexivity.** Helper
 and unmap success proofs.
 
 **CrossSubsystem.lean (3309)** — All 11 cross-subsystem predicates
-(lines 189–266) are actively consumed downstream. **Not a dumping
+are actively consumed downstream. **Not a dumping
 ground.** `collectQueueMembers` fuel-sufficiency uses an informal
 argument backed by acyclicity + fuel-exhaustion-returns-`none`;
 formal `QueueNextPath` ↔ `queueNext` connection is recorded as
@@ -291,7 +291,7 @@ TPI-DOC / AJ-L08 deferred post-1.0. AE5-A `Option (List ThreadId)`
 return type prevents silent truncation.
 
 **Platform/Boot.lean — 5-gate validation.**
-`bootFromPlatformChecked` (line 696) runs:
+`bootFromPlatformChecked` runs:
 
 1. `config.wellFormed` — `irqsUnique` + `objectIdsUnique` (HashSet,
    97–136)
@@ -321,7 +321,7 @@ between Sim contract memory map and `simMachineConfig.memoryMap`.
 AJ-L11 PA-width divergence (Sim 52-bit, RPi5 44-bit) is intentional.
 
 **Lifecycle/Suspend.lean — H3 atomicity.** Suspension sequence
-documented (line 210). Re-lookup of TCB after `cancelIpcBlocking`
+documented . Re-lookup of TCB after `cancelIpcBlocking`
 (223–244) is defensive even though `cancelIpcBlocking` preserves
 `schedContextBinding` structurally. **H3-ATOMICITY window** (235–237)
 between G2 and G3 documented as requiring interrupt-disabled
@@ -337,7 +337,7 @@ sequential model is trivially safe.
   documented at the head, all 85 theorems are NI-preservation /
   lowEquivalent for specific kernel ops. Cohesive but ripe for split.
 - `Projection.lean` (782) — sound, not leaky. `st.scheduler` field
-  reads (lines 339, 346, 365, 370, 375) are intentional observable
+  reads are intentional observable
   state per WS-H8 / A-36; `objects` map projection (327) does not
   leak non-observable pointers.
 - `Policy.lean` (1023) — integrity model intentionally inverts BIBA
@@ -346,7 +346,7 @@ sequential model is trivially safe.
   `integrityFlowsTo_denies_write_up_biba_allows`). Declassification
   gated to a single op (`declassifyStore`, Soundness.lean).
 - `Composition.lean` (1181) — **IF-M4 main theorem**
-  `composedNonInterference_step` (line 536). 30+ inductive
+  `composedNonInterference_step` . 30+ inductive
   `NonInterferenceStep` arms each carry full domain-separation
   hypotheses. Composition is faithful (two-sided projection
   preservation + transitivity).
@@ -359,7 +359,7 @@ sequential model is trivially safe.
 **Service.**
 
 - Hub purity: `Invariant.lean` (26) — pure imports.
-- `Acyclicity.lean` (1043) — **WS-D4 / TPI-D07 fix** at line 75:
+- `Acyclicity.lean` (1043) — **WS-D4 / TPI-D07 fix**:
   replaced unsound BFS-based definition (vacuously true on
   `src=target`) with declarative non-trivial-path; correctly captures
   acyclicity. Layered proof: declarative graph → structural lemmas →
@@ -371,7 +371,7 @@ sequential model is trivially safe.
   `registerInterface` O(1); `hasEndpointRegistered` /
   `registerService` / `lookupServiceByCap` O(n);
   `revokeService` O(1) erase + O(n) dependency removal. Acceptable
-  for registry size << 1000. AE5-B / U-20 uniqueness check at line 84
+  for registry size << 1000. AE5-B / U-20 uniqueness check
   prevents duplicate endpoint registrations. Per-thread observable
   timing via Robin Hood probing is accepted as a deployment-layer
   concern (C-L6).
@@ -380,7 +380,7 @@ sequential model is trivially safe.
 
 - Hub purity: `Invariant.lean` (56) intentionally imports only
   `Defs.lean` (not Preservation/PriorityPreservation) to break a
-  cycle. Compile-time witness (lines 49–56) re-derives
+  cycle. Compile-time witness re-derives
   `schedContextWellFormed` to fail the build if the import is
   removed. Documented and intentional.
 - `ReplenishQueue.lean` (504) — sorted-insertion uses **strict `<`**
@@ -391,9 +391,9 @@ sequential model is trivially safe.
   the sorted invariant. Cached size invariant maintained on every
   mutation.
 - `PriorityManagement.lean` (362) — **MCP authority** enforces both
-  the hardware ceiling (`maxHardwarePriority := 255` at line 81;
+  the hardware ceiling (`maxHardwarePriority := 255`;
   AK8-D / C-M05) and `targetPriority ≤ callerTcb.maxControlledPriority`
-  (`validatePriorityAuthority` at line 99).
+  (`validatePriorityAuthority`).
   `setMCPriorityOp` (327) rejects `newMCP > caller MCP` (336) and
   caps the target's priority (344–350) if it exceeds the new MCP.
   **No escalation path.** Soundness witness
@@ -523,9 +523,9 @@ in `AUDIT_v0.30.6_DISCHARGE_INDEX.md`.
 **Tests** — 28 `.lean` suites, ~18,925 LoC. All registered in tier
 scripts (`test_tier2_negative.sh`, `test_tier2_trace.sh`, scenario
 catalog). No dead suites. `Testing/Helpers.lean` primitives carry
-non-empty-string runtime guards (AN11-E.9 / TST-M09, lines 31–95);
-`expectError` checks `KernelError` equality (line 60), not substring
-— no false positives. ObjId range partitioning (lines 98–114)
+non-empty-string runtime guards (AN11-E.9 / TST-M09, );
+`expectError` checks `KernelError` equality , not substring
+— no false positives. ObjId range partitioning 
 prevents collisions across concurrent runs. **DEBT-TST-01**:
 `NegativeStateSuite` is a 3714-line monolith — split or document
 sectioning post-1.0.
@@ -537,7 +537,7 @@ sectioning post-1.0.
   `_common.sh` (`_SELE4N_TMPFILES` array +
   `_sele4n_tmpfile_cleanup_handler`); per-script `trap … EXIT` for
   every `mktemp` (test_qemu, test_tier2_*, setup_lean_env). The
-  `_common.sh` `eval` at line 140 is the only `eval` and is used to
+  `_common.sh` `eval` is the only `eval` and is used to
   re-invoke a saved trap with documented quoting inversion.
 - All variable expansions quoted; `mktemp` with templates (no naked
   `/tmp`); paths derived via `cd "$(dirname "${BASH_SOURCE[0]}")/.."`.
@@ -573,7 +573,7 @@ sectioning post-1.0.
   `AUDIT_v0.29.0_DEFERRED.md`.
 - `THIRD_PARTY_LICENSES.md` covers `cc 1.2.59`, `find-msvc-tools
   0.1.9`, `shlex 1.3.0`; matches `rust/Cargo.toml`. Zero runtime
-  deps confirmed (line 170–173).
+  deps confirmed .
 - `CONTRIBUTING.md` and `CLAUDE.md` synchronised with workflow.
 
 ---
@@ -621,7 +621,7 @@ touched by a workstream that can rename them in the same commit.
 |---|---|---|
 | Badge derivation one-way | ✓ | `mintDerivedCap` rights attenuation (Capability/Operations.lean) |
 | No sibling privilege leakage on revoke | ✓ | `cspaceRevoke_local_target_reduction` |
-| CDT acyclicity invariant tracked | ✓ | `Invariant/Defs.lean` lines 29–62 |
+| CDT acyclicity invariant tracked | ✓ | `Invariant/Defs.lean` |
 | Blocking-graph acyclicity proved-not-assumed | ✓ | `blockingAcyclic` is a defined predicate |
 | WCRT bound parametric | ✓ | `WCRTHypotheses` fields, monotonicity |
 | ASID rollover preserves TLB isolation | ✓ | `AsidPool.allocate_result_fresh` |
