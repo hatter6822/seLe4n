@@ -1,3 +1,69 @@
+## v0.32.132 — Stop patching the naming gate; fix what generates the holes
+
+Ten review rounds have each found a scope hole in this gate, and each
+was closed by adding exactly what the reviewer named. That is the
+signature of fixing instances rather than the generator, so this cut
+looks at the generator instead.
+
+**Two hand-maintained tables produced most of the holes**, and both
+were measurably incomplete at v0.32.131 — not hypothetically, right
+then:
+
+- **The family grammar.** `WORKSTREAM_FAMILIES` listed 15 codes. The
+  registry names **39**. Missing: `ab`, `rc`, and every single-letter
+  family the reviewer had not yet got to.
+- **The format map.** Five tracked extensions had no content scan and
+  nothing said whether that was deliberate.
+
+Both are now derived-and-ratcheted rather than listed.
+
+**Families are read from `docs/WORKSTREAM_HISTORY.md`.** The split that
+makes this work is arity, and it was measured over the whole tracked
+tree rather than assumed:
+
+| arity | families | non-workstream identifiers matched |
+|-------|----------|------------------------------------|
+| two-letter | 17 (`aa`..`an`, `ab`, `rc`, `sm`, `z`) | **zero, all of them** |
+| single-letter | 21 | 2–247 each |
+
+Two-letter families are therefore enforced on sight — a workstream
+added to the registry tomorrow is covered without anyone editing this
+file. Single-letter families collide with the architecture's own
+namespaces without exception (`u` → `AtomicU32`/`AtomicU64`, 48 of them
+in `rust/`; `x` → AArch64 registers x0..x30, 181 in `rust/`; `t` →
+`_t0`..`_t3`; `l` → `BOOT_L1_TABLE` and page-table levels; `i` →
+`i32`, `i18n`), so each carries a recorded decision with the count that
+decided it, and **the gate fails when the registry names one that has
+none**. Adding `runX2RuntimeInvariantTests`-style coverage would cost 69
+forced renames of register accessors in a crate held at a hard zero;
+that trade is now written down rather than re-litigated per round.
+
+This also explains the shape of the last five rounds in one line: the
+reviewer was feeding me single-letter families one at a time (`R`, `X`,
+`Z`, `D`) and I was evaluating each as a fresh question. `Z` looked
+different only because no `z<digit>` architectural name happens to
+exist here.
+
+**Every tracked file type carries an explicit scan decision.**
+`CONTENT_STRIPPERS` and the new `NO_CONTENT_SCAN` must between them
+cover every tracked non-documentation extension; anything in neither
+fails the gate with a message saying to check the format's comment and
+quoting rules rather than pointing the suffix at whichever stripper
+looks closest — which is precisely how `.sh`, `.yml` and `.toml` came
+to be routed through the Python stripper in two separate rounds.
+
+Both ratchets were verified to fire rather than assumed to: a probe
+extension fails the format check, a fabricated single-letter family
+fails the grammar check, and a fabricated two-letter family is covered
+with no decision needed. Self-test 112 → 121 checks; the four new
+mechanism checks verified failing against v0.32.131.
+
+Baseline unchanged at 298 pairs / 1017 occurrences — zero lost, zero
+gained. The derivation reproduces the hand-list's coverage exactly and
+adds the two families it was missing, both of which happen to have no
+occurrences, so this is a pure change in *how* the scope is decided
+rather than in what it currently catches.
+
 ## v0.32.131 — A gate that said "no line citations" while 197 remained
 
 PR #854 review, twentieth round: three findings, all valid, all taken.

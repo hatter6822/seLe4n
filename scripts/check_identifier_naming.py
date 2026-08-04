@@ -42,10 +42,15 @@ making that mistake.
    the number may fall, never rise.  (Line numbers were rejected --
    they churn on every edit above them and the baseline would stop
    meaning anything.)
-6. **The code families are enumerated from the registry, not guessed.**
-   Recognising only `sm`/`an`/`ak` let `aa2_helper`, `ae6_gate` and
-   eleven further real families through.  Every generalisation tried
-   was worse than the list; see `WORKSTREAM_FAMILIES`.
+6. **The code families are READ from the registry, not listed here.**
+   A hand-list let `aa2_helper`, `ae6_gate` and eleven further real
+   families through, and then `z`, and then a round arguing about `x`
+   and `d` -- five rounds, each closed by appending exactly what the
+   reviewer named.  `enforced_families()` now reads
+   `docs/WORKSTREAM_HISTORY.md`.  Two-letter families are enforced on
+   sight (all 17 collide with nothing); single-letter families collide
+   with the architecture's namespaces without exception, so each needs
+   a recorded decision and the gate FAILS on one that has none.
 7. **Each language gets the stripper its own syntax needs.**  Sharing
    one between Python and shell is what made `echo "${x}"` invisible:
    Python quotes mark prose, shell quotes do not.  A stripper is now
@@ -62,10 +67,26 @@ making that mistake.
 10. **Contents come from the index, not the working tree.**  `git
    ls-files` enumerates the index, so reading the working tree checks a
    state that is not the one being committed.
+11. **Every tracked file type carries an explicit scan decision.**
+   Four rounds each found a format unscanned or mis-routed.  The two
+   tables below (`CONTENT_STRIPPERS`, `NO_CONTENT_SCAN`) must between
+   them cover every tracked non-documentation extension, and the gate
+   fails on one they do not -- so a new file type is classified when it
+   lands, by whoever knows what it is.
 
-Every one of these was found by review rather than by the gate itself,
-which is what the companion `test_identifier_naming_gate.py` exists to
-change: each mechanism is pinned by a check that fails against the
+Notes 1-9 are fixes to *instances*: a format, a family, a separator.
+Notes 6 and 11 are different in kind, and are the reason this file
+stopped growing a new hole per round.  Both hand-maintained tables --
+the family grammar and the format map -- were the actual generator:
+every round, the repository knew about something the table did not, and
+only a reader comparing them could tell.  Deriving the families from
+the registry and requiring a decision per extension moves that
+comparison into CI, where it happens on every commit rather than
+whenever someone looks.
+
+Every mechanism here was found by review rather than by the gate
+itself, which is what the companion `test_identifier_naming_gate.py`
+exists to change: each is pinned by a check that fails against the
 version that lacked it.
 
 Documentation is exempt by **location**, not by suffix.  Audit reports
@@ -108,19 +129,100 @@ BASELINE_PATH = REPO_ROOT / BASELINE_REL
 # is split at `_` and at camelCase boundaries and lowercased, so
 # `Sm5iAffinityAnchors`, `sm5i_affinity_anchors` and `SM5I_ANCHORS` are
 # one case rather than three regexes.
-# The families are ENUMERATED from `docs/WORKSTREAM_HISTORY.md` rather
-# than generalised, because every generalisation tried was worse.  A
-# blanket two-letter-plus-digit rule matches 602 further identifiers
-# here -- `RPi5`, `ARMv8VSpace`, `AP_RW_EL1`, `CP15BEN`, shellcheck's
-# `SC1090`, and `SeLe4n` itself -- since kernel code is full of
-# architectural names of that shape.  Narrowing it to `a<letter><digit>`
-# still adds `at16`/`at17`.  Enumeration costs one line per family and
-# is checked against the registry by the self-test.
-WORKSTREAM_FAMILIES = (
-    "aa", "ac", "ad", "ae", "af", "ag", "ah",
-    "ai", "aj", "ak", "al", "am", "an", "sm",
-    "z",        # WS-Z (composable performance objects), phases Z1..Z10
-)
+#
+# The family set is DERIVED from `docs/WORKSTREAM_HISTORY.md`, not
+# hand-listed.  A hand-list was the single largest source of holes in
+# this gate: five separate review rounds each found families it lacked
+# (`aa`/`ae` and eleven more, then `z`, then `x`, `d`) and each was
+# fixed by appending exactly what the reviewer named.  The registry is
+# the authority for which workstreams exist, so it is what the grammar
+# reads -- and a workstream added there tomorrow is covered without
+# anyone remembering this file.
+#
+# Deriving alone is not enough, because the two arities behave
+# completely differently as identifier rules.  Measured over the whole
+# tracked tree:
+#
+#   * **Two-letter** families (`aa`..`an`, `ab`, `rc`, `sm`, `z`) match
+#     **zero** non-workstream identifiers, all 17 of them.  They are
+#     enforced automatically, with no per-family decision needed.
+#   * **Single-letter** families collide with the architecture's own
+#     namespaces, every one of them: `u` matches 57 (48 in `rust/` --
+#     `AtomicU32`, `AtomicU64`), `x` 247 (181 in `rust/` -- AArch64
+#     registers), `t` 78 (`_t0`.., thread bindings), `r` 105 (ARM
+#     registers, Lean hypotheses), `l` 41 (`BOOT_L1_TABLE`, page-table
+#     levels), `c` 67, `h` 52, `b`/`f`/`m` 40 each, `i` (`i32`,
+#     `i18n`).  A gate that fires on `AtomicU64` is a gate people
+#     switch off.
+#
+# So a single-letter family needs a recorded decision, and the gate
+# FAILS when the registry names one that has none.  That converts "a
+# reviewer eventually notices a missing family" into "CI fails the
+# moment the registry mentions it", which is the property the
+# hand-list never had.
+REGISTRY_PATH = REPO_ROOT / "docs" / "WORKSTREAM_HISTORY.md"
+REGISTRY_FAMILY_RE = re.compile(r"\bWS-([A-Z]{1,2})\b")
+
+# Single-letter families, each with the measurement that decided it.
+# `z` is enforced (it costs nothing); the rest are declined because the
+# count in parentheses is what enforcing them would flag.
+SINGLE_LETTER_ENFORCED = {"z"}                      # measured: 0 collisions
+SINGLE_LETTER_DECLINED = {
+    "b": "40 — B1..B4 test bindings, 10 in rust/",
+    "c": "67 — C2/C3/C9 clause labels, cache constants",
+    "d": "24 — hD0..hD3 hypotheses, page-table d0/d1/d2, 0xD00DFEED",
+    "e": "5 — e0/e1/e2 bindings and a git sha",
+    "f": "40 — F1/F13 finding ids, 8 in rust/",
+    "g": "3 — G2, hNeG1/hNeG2 hypotheses",
+    "h": "52 — H1/H12d already covered by the `h\\d{2}` subtask rule",
+    "i": "2 — `i32`, `i18n`",
+    "k": "4 — hK1/hK2 hypotheses, k1/k2 bindings",
+    "l": "41 — BOOT_L1_TABLE, BootL1Table, page-table levels, 6 in rust/",
+    "m": "40 — _m1.._m11 bindings",
+    "n": "14 — deepN1..deepN4 audit bindings",
+    "o": "4 — hO1/hO2 hypotheses",
+    "q": "6 — Q1/Q9_A labels, q0/q1 bindings",
+    "r": "105 — ARM registers r0/r1, hR0/h_r1_eq hypotheses",
+    "s": "27 — S1/S2 labels, hInvS1/hInvS2 hypotheses",
+    "t": "78 — _t0.._t3 thread bindings, 12 in rust/",
+    "u": "57 — AtomicU32/AtomicU64 and friends, 48 in rust/",
+    "v": "27 — version stamps, V8_A2 labels",
+    "w": "13 — W3/W5a/W7 labels",
+    "x": "247 — AArch64 registers x0..x30, 181 in rust/",
+    "y": "1 — hY4 hypothesis",
+}
+
+
+def registry_families() -> set[str]:
+    """Family letter-codes named as `WS-XX` in the workstream registry."""
+    return {m.lower()
+            for m in REGISTRY_FAMILY_RE.findall(
+                REGISTRY_PATH.read_text(encoding="utf-8", errors="replace"))}
+
+
+def enforced_families() -> tuple[str, ...]:
+    """Families the grammar matches, derived from the registry.
+
+    Raises if the registry names a single-letter family with no recorded
+    decision -- the ratchet that stops this list silently falling behind.
+    """
+    fams = registry_families()
+    singles = {f for f in fams if len(f) == 1}
+    unclassified = singles - SINGLE_LETTER_ENFORCED - set(SINGLE_LETTER_DECLINED)
+    if unclassified:
+        raise SystemExit(
+            "FAIL: the workstream registry names single-letter families with "
+            "no recorded decision: " + ", ".join(sorted(unclassified))
+            + "\n      Measure each over the tracked tree, then add it to "
+              "SINGLE_LETTER_ENFORCED (if it collides with nothing) or to "
+              "SINGLE_LETTER_DECLINED with the count that decided it.")
+    # Every two-letter family is enforced automatically: all 17 in the
+    # registry today collide with nothing, and the arity is what makes
+    # them safe rather than any property of the individual code.
+    return tuple(sorted({f for f in fams if len(f) > 1} | SINGLE_LETTER_ENFORCED))
+
+
+WORKSTREAM_FAMILIES = enforced_families()
 
 COMPONENT_CODES = tuple(
     re.compile(rf"^{f}\d[a-z\d]*$") for f in WORKSTREAM_FAMILIES
@@ -475,6 +577,35 @@ HYPHEN_JOINS_NAMES = frozenset({
     ".toml", ".yml", ".yaml", ".txt", ".json", ".expected",
 })
 
+# Extensions deliberately NOT content-scanned, each with the reason.
+# Together with CONTENT_STRIPPERS this must cover every tracked
+# non-documentation extension: `format_coverage_gap()` fails on
+# anything in neither, so a new file type cannot enter the repository
+# with its contents silently unexamined.
+#
+# This is the second hand-maintained table that kept this gate behind
+# the rule.  Four rounds each found a format missing or mis-routed --
+# five formats absent at once, then `.sh` pointed at the Python
+# stripper, then `.yml`/`.toml` the same way, then `.txt` -- and every
+# fix added exactly the entry named.  Requiring an explicit decision
+# per extension turns the next one into a CI failure at the moment the
+# file lands, which is the only point where someone knows what the
+# format is.
+NO_CONTENT_SCAN = {
+    ".png": "binary image",
+    ".sha256": "hex digest; the companion file's name is path-scanned",
+    ".lock": "generated by cargo; names come from Cargo.toml, scanned there",
+    ".md": "prose (the few outside docs/ are READMEs and templates)",
+    "": "extensionless: LICENSE, git hooks, CI helper stubs",
+}
+
+
+def format_coverage_gap() -> set[str]:
+    """Tracked non-doc extensions with no recorded scan decision."""
+    seen = {Path(p).suffix for p in tracked_all() if not is_doc(p)}
+    return seen - set(CONTENT_STRIPPERS) - set(NO_CONTENT_SCAN)
+
+
 # Documentation, exempt by LOCATION.  Everything under `docs/` plus the
 # root-level documents; nothing is exempted merely for its suffix.
 DOC_PREFIXES = ("docs/",)
@@ -621,6 +752,20 @@ def to_json(counts: Counter) -> dict:
 
 def main() -> int:
     status = 0
+
+    gap = format_coverage_gap()
+    if gap:
+        print("FAIL: tracked file types with no recorded scan decision: "
+              + ", ".join(sorted(x or "(no extension)" for x in gap)),
+              file=sys.stderr)
+        print("      Add a stripper to CONTENT_STRIPPERS, or an entry to "
+              "NO_CONTENT_SCAN saying why the contents hold no identifiers.",
+              file=sys.stderr)
+        print("      Do not point a new suffix at whichever stripper looks "
+              "closest -- check its comment and quoting rules first.",
+              file=sys.stderr)
+        return 1
+
     strict, ratcheted = scan()
 
     if strict:

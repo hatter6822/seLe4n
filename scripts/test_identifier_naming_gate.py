@@ -306,6 +306,50 @@ check("the same id is invisible unjoined",
       any(gate.is_coded(t) for t in gate.IDENTIFIER.findall("WS" + "-SM-helper")),
       False)
 
+# ---------------------------------------------------------------------
+# The two ratchets.  Every other check in this file pins a mechanism I
+# already knew to look for; these two exist to catch the ones I do not,
+# by failing when the repository grows a family or a file type that has
+# never been classified.  Five review rounds found missing families and
+# four found missing formats — both lists were hand-maintained.
+# ---------------------------------------------------------------------
+
+# Families come from the registry, not from a literal in the source.
+check("families are derived, not hand-listed",
+      "REGISTRY_FAMILY_RE.findall" in Path(gate.__file__).read_text(), True)
+check("the registry's two-letter families are all covered",
+      {f for f in gate.registry_families() if len(f) > 1}
+      <= set(gate.WORKSTREAM_FAMILIES), True)
+check("every registry single-letter family has a decision",
+      {f for f in gate.registry_families() if len(f) == 1}
+      <= gate.SINGLE_LETTER_ENFORCED | set(gate.SINGLE_LETTER_DECLINED), True)
+
+
+def _families_for(fams):
+    real = gate.registry_families
+    gate.registry_families = lambda: fams
+    try:
+        return gate.enforced_families()
+    except SystemExit:
+        return None
+    finally:
+        gate.registry_families = real
+
+
+check("an unclassified single-letter family FAILS the gate",
+      _families_for({"sm", "j"}), None)
+check("a new two-letter family is covered without a decision",
+      "bq" in (_families_for({"sm", "bq"}) or ()), True)
+check("a declined single-letter family stays out",
+      "x" not in (_families_for({"sm", "x"}) or ()), True)
+
+# Every tracked file type must carry an explicit scan decision.
+check("no tracked file type is unclassified", gate.format_coverage_gap(), set())
+check("the two format tables do not overlap",
+      set(gate.CONTENT_STRIPPERS) & set(gate.NO_CONTENT_SCAN), set())
+check("skipped formats each record a reason",
+      all(v.strip() for v in gate.NO_CONTENT_SCAN.values()), True)
+
 check("the baseline is read from the index",
       "index_contents([BASELINE_REL])" in Path(gate.__file__).read_text(),
       True)
