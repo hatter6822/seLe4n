@@ -40,7 +40,9 @@
 //!
 //! ## What this module owns
 //!
-//! - `SMP_ENABLED` — runtime SMP-enable flag (default `false`)
+//! - `SMP_ENABLED` — runtime SMP-enable flag (`false` at module load
+//!   as a fail-safe; Phase 5 overwrites it with the parsed cmdline
+//!   value, whose default is `true` since v0.32.142)
 //! - `SECONDARY_MPIDR_TABLE` — BCM2712 secondary-core MPIDR inventory
 //! - `MAX_SECONDARY_CORES` — number of secondaries (3 on RPi5)
 //! - `bring_up_secondaries` — primary-core entry point that issues
@@ -141,9 +143,11 @@ const _: () = assert!(
 pub static MAX_CORE_COUNT_SYM: u64 = (MAX_SECONDARY_CORES + 1) as u64;
 
 /// AN9-J: runtime SMP-enable flag.  The default is `false` so
-/// `bring_up_secondaries` is a no-op; deployments that opt in to SMP
-/// set this `true` via a kernel-command-line parameter parsed by
-/// `boot.rs::rust_boot_main` before invoking `bring_up_secondaries`.
+/// `bring_up_secondaries` is a no-op if Phase 5 never runs.  Phase 5
+/// sets it from the kernel command line parsed by
+/// `boot.rs::rust_boot_main` before invoking `bring_up_secondaries`;
+/// that parsed value defaults to `true` since v0.32.142, so single-core
+/// boot is the opt-OUT (`smp_enabled=false`).
 ///
 /// This static's `false` is a *module-load* value, not the boot policy:
 /// Phase 5 overwrites it with the parsed cmdline value, so a kernel
@@ -565,11 +569,13 @@ pub(crate) const fn validate_secondary_context_id(context_id: u64) -> Option<usi
 /// **Never returns** — `-> !` type honoured by the trailing infinite
 /// WFE loop.
 ///
-/// **Hardware reachability**: at v1.0.0 this routine is wired but
-/// unreachable in the default build (`SMP_ENABLED = false` means
-/// primary never issues CPU_ON).  The host test suite exercises the
-/// function signature and the per-helper call sites; QEMU `-smp 4`
-/// (SM1.H) will be the first runtime exerciser of the full path.
+/// **Hardware reachability**: reachable in the default build since
+/// v0.32.142 — the parsed cmdline default is `smp_enabled=true`, so the
+/// primary does issue CPU_ON.  It was unreachable by default while SMP
+/// was opt-in (v0.32.136–141) and before SM1 wired PSCI at all.  The
+/// host test suite exercises the function signature and the per-helper
+/// call sites; QEMU `-smp 4` (SM1.H) is the first runtime exerciser of
+/// the full path, and nothing here runs on hardware before SM9.E.
 #[no_mangle]
 pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
     let core_id = context_id;

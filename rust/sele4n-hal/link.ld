@@ -82,9 +82,10 @@ SECTIONS
      * stack top via `__smp_secondary_stack_top - (context_id - 1) *
      * 0x10000`.
      *
-     * Reachable only when `SMP_ENABLED=true` (default `false` at
-     * v1.0.0); the linker keeps the section present so the symbol
-     * resolves in either configuration.
+     * Reachable only when `SMP_ENABLED=true`, which is the default
+     * since SM5.I serialised kernel entry (v0.32.142); the linker keeps
+     * the section present so the symbol resolves in either
+     * configuration.
      */
     .smp_stacks (NOLOAD) : ALIGN(16) {
         __smp_secondary_stacks_bottom = .;

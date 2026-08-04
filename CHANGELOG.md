@@ -1,3 +1,50 @@
+## v0.32.144 — Seven more sites carrying the contract SM5.I replaced
+
+Prompted by a fair challenge to my own wording: a v0.32.116 reply said
+"this cut sweeps instead of patching, and the sweep found three further
+sites you hadn't flagged", which reads as though the sweep only *looked*.
+Re-checked: those three were genuinely fixed (`allocate_round_generation`
+attribution at both sites, and the rustdoc typo is gone). But auditing
+the rest of the work against that standard found seven sites that were
+not, and two of them I had **seen and skipped**.
+
+**The two I saw.** While landing SM5.I I noticed `lib.rs` still said
+"runtime-gated by `SMP_ENABLED` (default `false` at v1.0.0)" and
+"Default at v1.0.0 is `SMP_ENABLED = false` … opting in is a
+kernel-command-line flag", judged myself low on context, and stopped.
+That is exactly the round-28 finding — boot-path comments handing out
+the contract the change removed — one file over, and noticing it without
+fixing it is worse than missing it.
+
+**Five more found by sweeping for the claim** rather than the identifier:
+
+- `link.ld` — "Reachable only when `SMP_ENABLED=true` (default `false`
+  at v1.0.0)".
+- `boot.S` — "At v1.0.0 with `SMP_ENABLED = false` this is harmless
+  (secondaries never enter), but once SM1 enables PSCI bring-up…".
+  Doubly dated: SM1 landed, and the default is now `true`, so the
+  secondary-stack zeroing is **load-bearing rather than defensive**.
+  That one changes what a reader thinks the code is for.
+- `smp.rs` ×3 — the module inventory's bare "(default `false`)", the
+  `SMP_ENABLED` docstring still describing deployments that "opt in",
+  and `rust_secondary_main`'s "at v1.0.0 this routine is wired but
+  unreachable in the default build". The opt-in sentence sits directly
+  above a paragraph I *did* correct at v0.32.142 — I edited around it.
+
+Each now distinguishes the two things this claim keeps conflating: the
+`SMP_ENABLED` **static** is `false` at module load as a fail-safe, so a
+kernel that never reaches Phase 5 spawns no secondaries; the **boot
+policy** is the parsed cmdline default, `true` since v0.32.142. Stating
+only one of them is what let five sites drift.
+
+**Deliberate non-change, recorded rather than silent.** SM5.I's
+acceptance criterion also listed dropping the 14 QEMU `-append
+"smp_enabled=true"` opt-ins. They are kept: a test that relies on a
+default which has flipped twice in this PR would silently become a
+single-core test if it flipped again. Explicit intent beats brevity in
+a Tier-4 exerciser, and `docs/gitbook/10` says so.
+
+Comments only — no behaviour change. Rust 819 tests, clippy clean.
 ## v0.32.143 — Round 29: TOML multi-line strings outran the scalar closer
 
 PR #854 review round 29: one finding, valid. `_scalar_close` is

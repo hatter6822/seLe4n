@@ -35,7 +35,9 @@
 //! - `smp` — SMP secondary-core bring-up: AN9-J primary-side
 //!   `bring_up_secondaries` + WS-SM SM1.C secondary-side
 //!   `rust_secondary_main` full per-core init pipeline; runtime-gated
-//!   by `SMP_ENABLED` (default `false` at v1.0.0)
+//!   by `SMP_ENABLED` (a fail-safe `false` at module load, overwritten
+//!   in Phase 5 by the parsed cmdline — whose default is `true` since
+//!   SM5.I serialised kernel entry at v0.32.142)
 //! - `per_cpu` — Per-CPU data block + TPIDR_EL1 accessors
 //!   (WS-SM SM1.B; closes SMP-M4)
 
@@ -127,9 +129,12 @@
 //             The `psci` module exposes `cpu_on` (PSCI CPU_ON wrapper)
 //             and the `smp` module exposes `SMP_ENABLED` (runtime gate),
 //             `bring_up_secondaries` (primary-core entry), and
-//             `rust_secondary_main` (secondary-core entry).  Default
-//             at v1.0.0 is `SMP_ENABLED = false` so single-core boot
-//             is preserved; opting in is a kernel-command-line flag.
+//             `rust_secondary_main` (secondary-core entry).  The
+//             `SMP_ENABLED` static is `false` at module load so a
+//             kernel that never reaches Phase 5 spawns no secondaries;
+//             Phase 5 overwrites it with the parsed cmdline value,
+//             whose default is `true` since SM5.I (v0.32.142).
+//             Single-core boot is the opt-OUT (`smp_enabled=false`).
 //             QEMU `-smp 4` validation is gated on firmware PSCI
 //             support; host tests cover the call graph with stubs.
 //
