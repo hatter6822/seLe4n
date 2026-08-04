@@ -186,6 +186,22 @@ check("a quote closing on a later line does not swallow the comment",
       CODED in gate.strip_config(
           "a: " + dq + "open\nb: ok  # " + CODED + "\nc: " + dq + "end" + dq),
       False)
+# The quote tracking above must honour each format's ESCAPES.  Taking
+# the first matching character ends the scalar early, and the `#` then
+# reverts to opening a comment inside a value that has not closed --
+# the narrower under-reach that v0.32.137's fix for the wider one
+# opened.  The two kinds escape differently and both are exercised.
+check("a backslash-escaped quote does not end the scalar",
+      CODED in gate.strip_config(
+          "run: " + dq + "echo \\" + dq + "label # " + CODED + "\\" + dq + dq),
+      True)
+check("a TOML basic string escapes the same way",
+      CODED in gate.strip_config(
+          "name = " + dq + "a \\" + dq + "b # " + CODED + "\\" + dq + dq),
+      True)
+check("a YAML doubled quote is a literal, not a terminator",
+      CODED in gate.strip_config("cmd: " + q + "it" + q + q + "s # " + CODED + q),
+      True)
 
 
 # --- A hyphen separates words in a FILE NAME --------------------------

@@ -1,3 +1,58 @@
+## v0.32.138 — My own fix for an under-reach opened a narrower one
+
+PR #854 review, twenty-sixth round: two findings, both valid. The first
+is a **regression the previous cut introduced**.
+
+**1. Escaped quotes ended a config scalar early.** v0.32.137 taught the
+config stripper that `#` opens a comment only outside a quoted scalar.
+It located the closing quote with a plain `find`, which does not honour
+either format's escapes — so `run: "echo \"label # phase5_helper\""`
+ended the scalar at the escaped quote, and the `#` reverted to opening
+a comment *inside* a string that had not closed. The fix for one
+under-reach opened a narrower one, in the code the fix added.
+
+Closed by `_scalar_close`, which honours the escape convention each
+quote kind actually has: a double-quoted scalar (YAML double-quoted,
+TOML basic) escapes with a backslash, while a YAML single-quoted scalar
+escapes a quote by **doubling** it. Both are exercised. The
+same-line-close rule moves inside the helper, so an unterminated quote
+still cannot swallow the lines below it — the three exemptions from
+v0.32.137 are re-verified unchanged.
+
+**2. The citation gate filtered its derived extensions by name
+length.** `EXTENSION_RE` capped a suffix at eight characters, described
+as excluding numeric suffixes — but the leading-letter requirement
+already does that on its own, so the cap's only effect was dropping
+real formats for being long. It dropped `gitignore`, so
+`rust/.gitignore:12` and its GitHub-anchor spelling passed a gate whose
+entire premise is that its scope is derived rather than listed. A
+derived set that post-filters on length is a hand-maintained list in
+derivation's clothing.
+
+Cap removed; the leading-letter filter stays and is what the numeric
+exclusion actually rests on. Measured before changing it: exactly one
+extension enters the set (`gitignore`), none leaves. Added to
+`REQUIRED_EXTENSIONS` so the gate fails loudly if derivation stops
+reaching it.
+
+**Verification.** Naming self-test 163 → 166, citation self-test 19 →
+23. All six new positives fail against the previous version. The one
+new negative — a numeric suffix must not read as an extension — is
+load-bearing against a wrong implementation (drop the leading-letter
+filter and `v0.32.1:5` becomes a citation), which is now a standing
+second step after two of last round's negatives turned out vacuous.
+
+Two of the new checks run against the **live derived extension set**
+rather than the fixed one the rest of that suite uses, because the
+property under test is that derivation reaches the format at all; a
+hand-written set there would have tested the opposite.
+
+Probes on real tracked files confirm both fixes fire end-to-end: an
+escaped-quote scalar planted in `scenario_registry.yaml` trips the
+naming ratchet, and a `.gitignore` citation planted in
+`docs/DEVELOPMENT.md` trips the citation gate. Baseline unchanged at
+298 pairs / 1017 occurrences for the sixth consecutive scope extension.
+
 ## v0.32.137 — Quoting told the scanner what was prose, and it was wrong twice
 
 PR #854 review, twenty-fifth round: two findings, both valid, both the

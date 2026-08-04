@@ -703,6 +703,41 @@ def strip_shell(text: str) -> str:
     return "".join(out)
 
 
+def _scalar_close(text: str, start: int) -> int:
+    """Index of the quote closing the scalar opened at `start`, or -1.
+
+    The two quote kinds escape differently, and the difference is not
+    cosmetic.  A double-quoted scalar -- YAML double-quoted, TOML basic
+    -- escapes with a backslash; a YAML single-quoted scalar escapes a
+    quote by DOUBLING it.  Taking the first matching character instead
+    ends the scalar early, and everything after it is then scanned as
+    if it were outside the value -- including a `#`, which reverts to
+    opening a comment and blanks the rest of a line that is still
+    inside the string.
+
+    That is a regression the v0.32.137 quote-tracking introduced: the
+    fix for one under-reach opened a narrower one, reachable through
+    `run: "echo \\"label # phase5_helper\\""`.
+
+    Returns -1 at a newline: a quoted scalar closes on its own line in
+    both formats as this stripper models them, and an unterminated
+    quote must not swallow the lines below it.
+    """
+    quote, j, n = text[start], start + 1, len(text)
+    while j < n:
+        c = text[j]
+        if c == "\n":
+            return -1
+        if quote == '"' and c == "\\":
+            j += 2; continue                  # backslash escape
+        if c == quote:
+            if quote == "'" and j + 1 < n and text[j + 1] == "'":
+                j += 2; continue              # YAML `''` is a literal quote
+            return j
+        j += 1
+    return -1
+
+
 def strip_config(text: str) -> str:
     """YAML / TOML / plain-text data: blank `#` comments, keep the rest.
 
@@ -738,10 +773,8 @@ def strip_config(text: str) -> str:
             while k >= 0 and text[k] in " \t":
                 k -= 1
             opens = k < 0 or text[k] == "\n" or text[k] in value_pos
-            close = text.find(text[i], i + 1)
-            newline = text.find("\n", i + 1)
-            same_line = close >= 0 and (newline < 0 or close < newline)
-            if opens and same_line:
+            close = _scalar_close(text, i) if opens else -1
+            if close >= 0:
                 out.append(text[i:close + 1]); i = close + 1
                 continue
             out.append(text[i]); i += 1

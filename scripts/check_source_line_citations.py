@@ -48,10 +48,18 @@ import sys
 # list has to be remembered every time a format is introduced; derivation
 # cannot fall behind.
 #
-# The filter keeps extensions that start with a letter and are at most eight
-# characters, which excludes numeric suffixes (a `foo.1` man page would put
-# `1` in the set, and `v0.32.1:5` would then read as a citation).
-EXTENSION_RE = re.compile(r'\.([A-Za-z][A-Za-z0-9]{0,7})$')
+# The filter keeps extensions that start with a letter, which is what excludes
+# numeric suffixes (a `foo.1` man page would otherwise put `1` in the set, and
+# `v0.32.1:5` would then read as a citation).
+#
+# There is deliberately NO length ceiling. An earlier `{0,7}` bound was
+# described as excluding numeric suffixes, but the leading-letter requirement
+# already does that on its own — so the bound's only effect was to drop real
+# formats for being long, and it dropped `gitignore` (nine characters), leaving
+# `rust/.gitignore:12` and its GitHub-anchor spelling uncited-by-the-gate. A
+# derived set that then filters by name length is a hand-maintained list
+# wearing a derivation's clothes.
+EXTENSION_RE = re.compile(r'\.([A-Za-z][A-Za-z0-9]*)$')
 
 # A Markdown fenced-code delimiter: three or more backticks or tildes, with
 # whatever info string follows. Leading whitespace is accepted at any depth
@@ -66,7 +74,9 @@ FENCE_RE = re.compile(r'^\s*(?P<delim>`{3,}|~{3,})(?P<info>.*?)\s*$')
 # instead of quietly narrowing its own scope — the failure mode this check
 # exists to prevent, applied to the check itself.
 REQUIRED_EXTENSIONS = frozenset(
-    {'rs', 'lean', 'sh', 'py', 'toml', 'S', 'yml', 'yaml', 'ld', 'json'}
+    {'rs', 'lean', 'sh', 'py', 'toml', 'S', 'yml', 'yaml', 'ld', 'json',
+     # Nine characters, and the reason the length ceiling above is gone.
+     'gitignore'}
 )
 
 

@@ -92,6 +92,30 @@ check("extensions are derived from the tree",
       gate.REQUIRED_EXTENSIONS <= gate.cited_extensions(), True)
 check("a derived extension is matched",
       cited("in .github/workflows/lean_action_ci.yml:213"), True)
+# ...and derivation must not then filter by NAME LENGTH.  An earlier
+# `{0,7}` bound was justified as excluding numeric suffixes, but the
+# leading-letter requirement already does that, so the bound's only
+# effect was dropping real formats for being long -- `gitignore` is
+# nine characters, and both tracked `.gitignore` files went uncited.
+# A derived set that post-filters on length is a hand-list in
+# derivation's clothing.
+check("a nine-character extension is derived",
+      "gitignore" in gate.cited_extensions(), True)
+# These two run against the LIVE derived set rather than the fixed one
+# the other checks use.  The claim under test is that derivation reaches
+# this format at all, so a hand-written extension set here would test
+# the opposite of the property.
+_live = gate.build_citation_re(gate.cited_extensions())
+check("a long-extension citation is matched",
+      bool(_live.search("see rust/.gitignore:12 for the rule")), True)
+check("its GitHub-anchor spelling is matched too",
+      bool(_live.search(
+          "see [x](https://github.com/a/b/blob/c/rust/.gitignore#L12)")), True)
+# The exclusion that the length bound was wrongly credited with: a
+# numeric suffix must still not read as an extension, or every dotted
+# version in the prose becomes a citation.
+check("a numeric suffix is still not an extension",
+      cited("the version v0.32.1:5 shipped that"), False)
 
 # --- Fenced blocks are verbatim output, not citations ------------------
 # A bare '```' toggle got both tilde fences and nested fences wrong,
