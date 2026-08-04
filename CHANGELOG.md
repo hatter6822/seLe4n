@@ -1,3 +1,34 @@
+## v0.32.143 — Round 29: TOML multi-line strings outran the scalar closer
+
+PR #854 review round 29: one finding, valid. `_scalar_close` is
+line-bounded by design — an unpaired quote must not swallow the rest of
+the file — and TOML's multi-line strings are the one scalar here that
+legitimately spans lines. So `d = """` closed on its own second quote,
+the third quote opened nothing, and every `#` inside the string reverted
+to opening a comment, blanking coded identifiers on the lines below.
+
+Fixed by handling `"""` / `'''` *before* the single-quote path, keeping
+the contents verbatim: content inside a TOML string is data the gate
+should see, and over-keeping only ever adds findings. An unterminated
+fence keeps the rest of the file rather than blanking it, so a malformed
+input over-reports (loud) instead of hiding a token (silent).
+
+Both fence kinds are pinned, not just the one in the finding — basic and
+literal multi-line forms differ only in escaping, and fixing one while
+missing the other is precisely the sibling-site shape this review has
+produced seven times.
+
+**Re-probed the previous rounds' cases**, per the standing rule that my
+own fixes have introduced five regressions on this PR: the round-24
+quoted scalar, round-26 quoted-hash (YAML and TOML), round-27 block
+sequence and round-28 escaped quote all still hold, and a `#` outside
+any string still blanks — the negative that keeps "keep everything" from
+passing the three positives while silently disabling comment stripping
+for the whole format.
+
+Self-test 180 → 184 checks. Baseline unchanged at 298 pairs / 1017
+occurrences — zero lost, zero risen, for the eighth consecutive scope
+extension. Scripts only; no Lean or Rust change.
 ## v0.32.142 — SM5.I: kernel entry is serialised
 
 Closes the last open P1 on PR #854, and the oldest: kernel entry had no

@@ -840,6 +840,27 @@ def strip_config(text: str) -> str:
     # `#` read as a comment.
     value_pos = ":=[,{-"
     while i < n:
+        # TOML multi-line strings (`"""` / `'''`) come first, because
+        # they are the one scalar here that legitimately spans lines and
+        # `_scalar_close` is line-bounded by design.  Left to the
+        # single-quote path, `x = """` closes on its own second quote,
+        # the third quote opens nothing, and every `#` inside the string
+        # reverts to a comment -- blanking real identifiers on the lines
+        # below.  Kept verbatim: content inside a TOML string is data
+        # the gate should see, and over-keeping only ever adds findings.
+        if text.startswith('"""', i) or text.startswith("'''", i):
+            k = i - 1
+            while k >= 0 and text[k] in " \t":
+                k -= 1
+            if k < 0 or text[k] == "\n" or text[k] in value_pos:
+                fence = text[i:i + 3]
+                close = text.find(fence, i + 3)
+                if close >= 0:
+                    out.append(text[i:close + 3]); i = close + 3
+                    continue
+                # Unterminated: keep the rest rather than blanking it,
+                # so a malformed file over-reports instead of hiding.
+                out.append(text[i:]); break
         if text[i] in "\"'":
             k = i - 1
             while k >= 0 and text[k] in " \t":

@@ -210,6 +210,30 @@ check("a YAML sequence item is a value position",
 check("a comment after a sequence item still blanks",
       CODED in gate.strip_config("- value   # " + CODED), False)
 
+# --- TOML multi-line strings span lines; scalar closing does not ------
+# `_scalar_close` is line-bounded on purpose (an unpaired quote must not
+# swallow the file), which makes `x = """` close on its own second
+# quote: the third opens nothing and every `#` inside the string reverts
+# to a comment.  The fix runs before the single-quote path.  Both fence
+# kinds are pinned -- TOML's basic and literal multi-line forms differ
+# only in escaping, and a fix for one that missed the other is exactly
+# the sibling-site shape this review has produced repeatedly.
+check("a TOML multi-line basic string keeps its contents",
+      CODED in gate.strip_config('d = ' + dq * 3 + '\nfoo # ' + CODED
+                                 + '\n' + dq * 3), True)
+check("a TOML multi-line literal string keeps its contents",
+      CODED in gate.strip_config("d = " + q * 3 + "\nfoo # " + CODED
+                                 + "\n" + q * 3), True)
+# Unterminated: keep the rest rather than blanking it, so a malformed
+# file over-reports (loud) instead of hiding a token (silent).
+check("an unterminated TOML multi-line string keeps the rest",
+      CODED in gate.strip_config('d = ' + dq * 3 + '\nfoo # ' + CODED), True)
+# The negative that keeps the fix honest: a `#` OUTSIDE any string is
+# still a comment.  Without this, "keep everything" would pass the three
+# checks above while disabling comment stripping for the whole format.
+check("a plain config comment still blanks after the fix",
+      CODED in gate.strip_config("key: value  # " + CODED), False)
+
 # --- A char literal holds data, not a delimiter -----------------------
 # `const Q: char = '"';` -- the quote opens no string, but a scanner
 # that does not know what a char literal is takes it as one and blanks
