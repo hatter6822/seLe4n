@@ -121,6 +121,12 @@ run_check "HYGIENE" "${SCRIPT_DIR}/check_version_sync.sh"
 # — cite workstreams in docstrings, not in names.
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_identifier_naming.py"
 
+# The gate above has shipped under-enforced five times, always because a
+# hand-written piece of its scope was narrower than the rule, and its
+# failure mode is silence.  This pins each mechanism with a check that
+# provably fails against the version that lacked it.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/test_identifier_naming_gate.py"
+
 # AN10-D: AK7 cascade monotonicity gate. Reads docs/dev_history/audits/AL0_baseline.txt
 # and rejects regressions on any AK7 cascade metric (raw-match site count,
 # typed-helper adoption, storeObjectKindChecked adoption, sentinel guard

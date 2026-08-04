@@ -1,657 +1,651 @@
 {
- "AK2": [
-  "scripts/test_tier3_invariant_surface.sh"
- ],
- "AN12": [
-  "scripts/test_tier3_invariant_surface.sh"
- ],
- "Ak8Coverage": [
-  "tests/Ak8CoverageSuite.lean"
- ],
- "Ak8CoverageSuite": [
-  "tests/Ak8CoverageSuite.lean"
- ],
- "Ak9PlatformSuite": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "An10Cascade": [
-  "tests/An10CascadeSuite.lean"
- ],
- "An10CascadeSuite": [
-  "scripts/ak7_cascade_baseline.sh",
-  "tests/An10CascadeSuite.lean"
- ],
- "An9HardwareBindingSuite": [
-  "tests/An9HardwareBindingSuite.lean"
- ],
- "SM0": [
-  "scripts/test_tier3_invariant_surface.sh"
- ],
- "SM1": [
-  "scripts/test_tier3_invariant_surface.sh"
- ],
- "SM2": [
-  "scripts/test_tier3_invariant_surface.sh"
- ],
- "SM3": [
-  "scripts/test_tier3_invariant_surface.sh"
- ],
- "SM4": [
-  "scripts/test_tier3_invariant_surface.sh"
- ],
- "SM5": [
-  "scripts/test_tier3_invariant_surface.sh"
- ],
- "SM6": [
-  "scripts/test_tier3_invariant_surface.sh"
- ],
- "SM7": [
-  "scripts/test_tier3_invariant_surface.sh"
- ],
- "Sm5iAffinityAnchors": [
-  "tests/SmpCbsSuite.lean"
- ],
- "TEST_COUNT_AK7": [
-  "scripts/ak7_cascade_baseline.sh"
- ],
- "WS": [
-  "scripts/test_tier3_invariant_surface.sh"
- ],
- "ak4a01_shortPathNoOverflow": [
-  "tests/DecodingSuite.lean"
- ],
- "ak4a02_serviceRegisterOverflow": [
-  "tests/DecodingSuite.lean"
- ],
- "ak4a03_scConfigureUnmappedFails": [
-  "tests/DecodingSuite.lean"
- ],
- "ak4a04_lengthZeroIgnoresIpcBuffer": [
-  "tests/DecodingSuite.lean"
- ],
- "ak4a05_ipcBufferOutOfRange": [
-  "tests/DecodingSuite.lean"
- ],
- "ak4a06_sizeInvariant": [
-  "tests/DecodingSuite.lean"
- ],
- "ak4a07_legacyBackwardCompat": [
-  "tests/DecodingSuite.lean"
- ],
- "ak6Tests": [
-  "tests/InformationFlowSuite.lean"
- ],
- "ak7_cascade_baseline": [
-  "scripts/ak7_cascade_baseline.sh",
-  "scripts/ak7_cascade_check_monotonic.sh"
- ],
- "ak7_cascade_check_monotonic": [
-  "scripts/ak7_cascade_check_monotonic.sh"
- ],
- "ak8Tests": [
-  "tests/Ak8CoverageSuite.lean"
- ],
- "ak8_coverage_suite": [
-  "scripts/test_tier2_negative.sh"
- ],
- "ak8a_01_default_satisfies_untypedRegionsDisjoint": [
-  "tests/ModelIntegritySuite.lean"
- ],
- "ak8a_02_disjoint_untypeds_satisfy_predicate": [
-  "tests/ModelIntegritySuite.lean"
- ],
- "ak8a_03_overlapping_untypeds_violate_predicate": [
-  "tests/ModelIntegritySuite.lean"
- ],
- "ak8a_04_parent_child_containment_allowed": [
-  "tests/ModelIntegritySuite.lean"
- ],
- "ak8a_05_allocate_children_extends": [
-  "tests/ModelIntegritySuite.lean"
- ],
- "ak8a_06_allocate_preserves_region": [
-  "tests/ModelIntegritySuite.lean"
- ],
- "ak8a_07_empty_config_disjoint": [
-  "tests/ModelIntegritySuite.lean"
- ],
- "ak9_platform_suite": [
-  "scripts/test_tier2_negative.sh"
- ],
- "ak9a_01_mmioRead32_rejects_unaligned": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "ak9a_02_mmioRead64_rejects_unaligned": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "ak9a_03_mmioRead32_rejects_ram": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "ak9a_04_mmioRead32_accepts_gic": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "ak9a_05_mmioReadByte_accepts_uart": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "ak9a_06_mmioRead_alias_matches_byte": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "ak9a_07_mmioRead32_positive_success": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "ak9a_08_mmioRead64_positive_success": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "ak9b_01_sim_objectStoreEmptyAtBoot": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "ak9b_02_rpi5_objectStoreEmptyAtBoot": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "ak9c_01_empty_irqs_accepted": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "ak9c_02_missing_handler_rejected": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "ak9c_03_non_notification_rejected": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "ak9c_04_notification_accepted": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "ak9ce_01_checked_boot_rejects_bad_irq": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "ak9ce_02_checked_boot_rejects_tcb_handler": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "ak9d_01_range_within_gic_dist": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "ak9d_02_range_crosses_boundary": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "ak9f_01_classify_empty_map": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "ak9f_02_classify_unmapped": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "ak9f_03_classify_mapped": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "ak9f_04_applyMachineConfigChecked_rejects_zero_pa": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "ak9f_05_applyMachineConfigChecked_rejects_pa_over_52": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "ak9f_06_applyMachineConfigChecked_accepts_default": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "ak9fe_01_checked_boot_rejects_pa_over_52": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "ak9fe_02_checked_boot_rejects_malformed_machine_config": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "ak9g_01_enables_interrupts": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "ak9g_02_default_disabled": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "ak9g_03_withInterrupts_enables": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "ak9ge_01_checked_boot_enables_interrupts": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "ak9h_01_readCStringChecked_rejects_oob": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "ak9h_02_readCStringChecked_rejects_fuel_zero": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "ak9h_03_readCStringChecked_ok": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "ak9h_04_readCStringChecked_fuel_exhausted_on_unterminated": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "an10_a_validObjId_accepts_nonzero": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_a_validObjId_rejects_sentinel": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_a_validSchedContextId_rejects_sentinel": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_a_validThreadId_rejects_sentinel": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_a_validThreadId_roundtrip": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_b_getCNode_empty": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_b_getCNode_populated": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_b_getCNode_wrong_kind": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_b_getEndpoint_wrong_kind": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_b_getNotification_populated": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_b_getSchedContext_populated": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_b_getTcb_empty": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_b_getTcb_populated": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_b_getTcb_wrong_kind": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_b_getUntyped_populated": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_b_getVSpaceRoot_empty": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_b_getVSpaceRoot_populated": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_b_getVSpaceRoot_wrong_kind": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_c_storeObjectKindChecked_accepts_same_variant": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_c_storeObjectKindChecked_fresh": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_c_storeObjectKindChecked_rejects_cross_variant": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_cascade_suite": [
-  "scripts/test_tier2_negative.sh"
- ],
- "an10_d_clearPendingState_populated": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_d_dispatch_validators_reachable": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_d_getCurrentPriority_bound": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_d_getCurrentPriority_bound_missing": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_d_getCurrentPriority_unbound": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_d_hasSufficientBudget_positive": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_d_hasSufficientBudget_zero": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_d_lookupCspaceRoot_empty": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_d_lookupCspaceRoot_populated": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_d_lookupCspaceRoot_wrong_kind": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_d_typed_helper_equivalence": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_e_applyCallDonation_wires_h5": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_e_applyReplyDonation_wires_h6": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_e_cancelDonationValid_reduces": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_e_cancelIpcBlockingValid_reduces": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_e_clearPendingStateValid_reduces": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_e_cspaceLookupSlot_cnode_no_slot_is_invalidCapability": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_e_cspaceLookupSlot_wrong_variant_is_objectNotFound": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_e_cspaceResolvePath_wrong_variant_is_objectNotFound": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_e_donateSchedContextValid_reduces": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_e_removeRunnableValid_no_op_on_empty_queue": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_e_removeRunnableValid_reduces_to_raw": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_e_resolveCapAddress_missing_root_is_objectNotFound": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an10_e_returnDonatedSchedContextValid_reduces": [
-  "tests/An10CascadeSuite.lean"
- ],
- "an2f3_01_empty_wellFormed": [
-  "tests/ModelIntegritySuite.lean"
- ],
- "an2f3_02_coercion_roundtrip": [
-  "tests/ModelIntegritySuite.lean"
- ],
- "an6_postaudit_ak8a_objectOfKernelType_untyped_zero_regionBase": [
-  "tests/ModelIntegritySuite.lean"
- ],
- "an6b_architecture_assumptions_index_total": [
-  "tests/ModelIntegritySuite.lean"
- ],
- "an6c1_untypedObject_parent_field_default": [
-  "tests/ModelIntegritySuite.lean"
- ],
- "an6c3_untypedAncestorChain_bounded": [
-  "tests/ModelIntegritySuite.lean"
- ],
- "an6c3_untypedAncestorChain_walks_synthetic_chain": [
-  "tests/ModelIntegritySuite.lean"
- ],
- "an6c4_untypedAncestorRegionsDisjoint_default": [
-  "tests/ModelIntegritySuite.lean"
- ],
- "an6f_cxm01_collectQueueMembers_structural_signatures": [
-  "tests/ModelIntegritySuite.lean"
- ],
- "an6f_cxm04_interruptsEnabled_bundle_inhabited": [
-  "tests/ModelIntegritySuite.lean"
- ],
- "an6f_cxm05_crossSubsystemInvariant_positive": [
-  "tests/ModelIntegritySuite.lean"
- ],
- "an7d2_01_rpi5BootVSpaceRoot_wellFormed": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "an7d2_02_rpi5BootVSpaceRoot_wxCompliant": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "an7d2_03_rpi5BootVSpaceRoot_covers_mmio_regions": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "an7d2_04_rpi5BootVSpaceRoot_paddrBounded": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "an7d5_01_extractPeripherals_depth3_discovery": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "an7d5_02_extractPeripherals_zero_fuel_collapses": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "an7d5_03_extractPeripherals_skips_incomplete_nodes": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "an7d5_04_extractPeripherals_excludes_reserved_names": [
-  "tests/Ak9PlatformSuite.lean"
- ],
- "an9_hardware_binding_suite": [
-  "scripts/test_tier2_negative.sh"
- ],
- "h05": [
-  "SeLe4n/Kernel/Architecture/TlbModel.lean"
- ],
- "h10": [
-  "SeLe4n/Kernel/Architecture/Invariant.lean",
-  "SeLe4n/Kernel/CrossSubsystem.lean",
-  "SeLe4n/Kernel/CrossSubsystemPerCore.lean"
- ],
- "h11": [
-  "SeLe4n/Kernel/Architecture/Invariant.lean",
-  "SeLe4n/Kernel/CrossSubsystem.lean",
-  "SeLe4n/Kernel/CrossSubsystemPerCore.lean"
- ],
- "h12": [
-  "SeLe4n/Kernel/Architecture/Invariant.lean",
-  "SeLe4n/Kernel/CrossSubsystemPerCore.lean",
-  "SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean",
-  "SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean",
-  "SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean",
-  "SeLe4n/Kernel/Scheduler/Operations/Preservation.lean",
-  "SeLe4n/Kernel/Scheduler/Operations/Selection.lean"
- ],
- "h13": [
-  "SeLe4n/Kernel/Architecture/Invariant.lean",
-  "SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean",
-  "SeLe4n/Kernel/Scheduler/Operations/Selection.lean"
- ],
- "h14": [
-  "SeLe4n/Kernel/Architecture/Invariant.lean"
- ],
- "h16": [
-  "SeLe4n/Kernel/Architecture/Invariant.lean"
- ],
- "h16AuthSlot": [
-  "tests/NegativeStateSuite.lean"
- ],
- "h16BadAuthSlot": [
-  "tests/NegativeStateSuite.lean"
- ],
- "h16BadCleanupSlot": [
-  "tests/NegativeStateSuite.lean"
- ],
- "h16CleanupSlot": [
-  "tests/NegativeStateSuite.lean"
- ],
- "h16CnodeId": [
-  "tests/NegativeStateSuite.lean"
- ],
- "h16DeviceAuthSlot": [
-  "tests/NegativeStateSuite.lean"
- ],
- "h16DeviceCnodeId": [
-  "tests/NegativeStateSuite.lean"
- ],
- "h16DeviceState": [
-  "tests/NegativeStateSuite.lean"
- ],
- "h16DeviceUntypedId": [
-  "tests/NegativeStateSuite.lean"
- ],
- "h16ExhaustedAuthSlot": [
-  "tests/NegativeStateSuite.lean"
- ],
- "h16ExhaustedCnodeId": [
-  "tests/NegativeStateSuite.lean"
- ],
- "h16ExhaustedState": [
-  "tests/NegativeStateSuite.lean"
- ],
- "h16ExhaustedUntypedId": [
-  "tests/NegativeStateSuite.lean"
- ],
- "h16MismatchState": [
-  "tests/NegativeStateSuite.lean"
- ],
- "h16ReadOnlySlot": [
-  "tests/NegativeStateSuite.lean"
- ],
- "h16State": [
-  "tests/NegativeStateSuite.lean"
- ],
- "h16TargetId": [
-  "tests/NegativeStateSuite.lean"
- ],
- "h16TcbId": [
-  "tests/NegativeStateSuite.lean"
- ],
- "h17": [
-  "SeLe4n/Kernel/Architecture/Invariant.lean"
- ],
- "h18": [
-  "SeLe4n/Kernel/Architecture/Invariant.lean"
- ],
- "h19": [
-  "SeLe4n/Kernel/Architecture/Invariant.lean"
- ],
- "h20": [
-  "SeLe4n/Kernel/Architecture/Invariant.lean"
- ],
- "h21": [
-  "SeLe4n/Kernel/Architecture/Invariant.lean"
- ],
- "h23": [
-  "SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean",
-  "SeLe4n/Kernel/Scheduler/Operations/Preservation.lean",
-  "SeLe4n/Kernel/Scheduler/Operations/Selection.lean"
- ],
- "h31": [
-  "SeLe4n/Kernel/Scheduler/Operations/Selection.lean"
- ],
- "h64": [
-  "SeLe4n/Kernel/Architecture/RegisterDecode.lean"
- ],
- "hSm1": [
-  "SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean"
- ],
- "pm_ak2b_01_bindPropagatesPriority": [
-  "tests/PriorityManagementSuite.lean"
- ],
- "pm_ak2b_02_configurePropagatesPriority": [
-  "tests/PriorityManagementSuite.lean"
- ],
- "pm_ak2b_03_configureRebucketsBoundThread": [
-  "tests/PriorityManagementSuite.lean"
- ],
- "pm_ak2e_01_utilizationCeiling": [
-  "tests/PriorityManagementSuite.lean"
- ],
- "pm_ak2e_02_utilizationExact": [
-  "tests/PriorityManagementSuite.lean"
- ],
- "pm_ak2e_03_utilizationZeroPeriod": [
-  "tests/PriorityManagementSuite.lean"
- ],
- "pm_ak2f_01_replenishFifoOnTie": [
-  "tests/PriorityManagementSuite.lean"
- ],
- "pm_ak2f_02_replenishSortedAcrossTimes": [
-  "tests/PriorityManagementSuite.lean"
- ],
- "pm_ak8d_01_hardwarePriorityCeilingRejects": [
-  "tests/PriorityManagementSuite.lean"
- ],
- "pm_ak8d_02_maxHardwarePriorityAccepts": [
-  "tests/PriorityManagementSuite.lean"
- ],
- "pm_ak8d_03_setMCPriorityHardwareCeilingRejects": [
-  "tests/PriorityManagementSuite.lean"
- ],
- "runAN4A5LifecycleVisibilityChecks": [
-  "tests/NegativeStateSuite.lean"
- ],
- "runAk4aTests": [
-  "tests/DecodingSuite.lean"
- ],
- "runAk6Suite": [
-  "tests/InformationFlowSuite.lean"
- ],
- "runSm5hCompletionScenarios": [
-  "tests/SmpCbsSuite.lean"
- ],
- "runSm5iTickCbsChecks": [
-  "tests/SmpCbsSuite.lean"
- ],
- "sm0t_sub_args": [
-  "scripts/test_tier4_nightly_candidates.sh"
- ],
- "sm5d_surface": [
-  "scripts/test_tier3_invariant_surface.sh"
- ],
- "sm5e_surface": [
-  "scripts/test_tier3_invariant_surface.sh"
- ],
- "sm5f_surface": [
-  "scripts/test_tier3_invariant_surface.sh"
- ],
- "sm5g_surface": [
-  "scripts/test_tier3_invariant_surface.sh"
- ],
- "sm5h_surface": [
-  "scripts/test_tier3_invariant_surface.sh"
- ],
- "sm5i_suite": [
-  "scripts/test_tier3_invariant_surface.sh"
- ],
- "sm5i_tick_affinity": [
-  "scripts/test_tier3_invariant_surface.sh"
- ],
- "sm5i_tick_cbs": [
-  "scripts/test_tier3_invariant_surface.sh"
- ],
- "test_AK8_E_bound_missing_sc_is_objectNotFound": [
-  "tests/Ak8CoverageSuite.lean"
- ],
- "test_AK8_E_bound_returns_sc_priority": [
-  "tests/Ak8CoverageSuite.lean"
- ],
- "test_AK8_E_unbound_returns_tcb_priority": [
-  "tests/Ak8CoverageSuite.lean"
- ],
- "test_AK8_F_rejects_base_over_radix": [
-  "tests/Ak8CoverageSuite.lean"
- ],
- "test_AK8_F_returns_first_free_slot": [
-  "tests/Ak8CoverageSuite.lean"
- ],
- "test_AK8_G_storeEndpointChecked_cross_variant_rejected": [
-  "tests/Ak8CoverageSuite.lean"
- ],
- "test_AK8_G_storeNotificationChecked_cross_variant_rejected": [
-  "tests/Ak8CoverageSuite.lean"
- ],
- "test_AK8_G_storeTcbChecked_cross_variant_rejected": [
-  "tests/Ak8CoverageSuite.lean"
- ],
- "test_AK8_G_storeTcbChecked_same_kind_ok": [
-  "tests/Ak8CoverageSuite.lean"
- ],
- "test_AK8_H_unbind_happy_path": [
-  "tests/Ak8CoverageSuite.lean"
- ],
- "test_AK8_H_unbind_missing_tcb_no_partial_mutation": [
-  "tests/Ak8CoverageSuite.lean"
- ],
- "test_AK8_I_phantom_key_freeze_rejected": [
-  "tests/Ak8CoverageSuite.lean"
- ],
- "test_AK8_I_well_keyed_freeze_succeeds": [
-  "tests/Ak8CoverageSuite.lean"
- ],
- "test_count_ak7": [
-  "scripts/ak7_cascade_baseline.sh"
- ],
- "ws": [
-  "SeLe4n/Kernel/Scheduler/PriorityInheritance/Compute.lean"
- ]
+ "AK2": {
+  "scripts/test_tier3_invariant_surface.sh": 2
+ },
+ "AN12": {
+  "scripts/test_tier3_invariant_surface.sh": 1
+ },
+ "Ak8Coverage": {
+  "tests/Ak8CoverageSuite.lean": 3
+ },
+ "Ak8CoverageSuite": {
+  "tests/Ak8CoverageSuite.lean": 1
+ },
+ "Ak9PlatformSuite": {
+  "tests/Ak9PlatformSuite.lean": 4
+ },
+ "An10Cascade": {
+  "tests/An10CascadeSuite.lean": 3
+ },
+ "An10CascadeSuite": {
+  "scripts/ak7_cascade_baseline.sh": 2,
+  "tests/An10CascadeSuite.lean": 1
+ },
+ "An9HardwareBindingSuite": {
+  "tests/An9HardwareBindingSuite.lean": 1
+ },
+ "SM0": {
+  "scripts/test_tier3_invariant_surface.sh": 7
+ },
+ "SM1": {
+  "scripts/test_tier3_invariant_surface.sh": 6
+ },
+ "SM2": {
+  "scripts/test_tier3_invariant_surface.sh": 47
+ },
+ "SM3": {
+  "scripts/test_tier3_invariant_surface.sh": 58
+ },
+ "SM4": {
+  "scripts/test_tier3_invariant_surface.sh": 39
+ },
+ "SM5": {
+  "scripts/test_tier3_invariant_surface.sh": 110
+ },
+ "SM6": {
+  "scripts/test_tier3_invariant_surface.sh": 1
+ },
+ "SM7": {
+  "scripts/test_tier3_invariant_surface.sh": 1
+ },
+ "Sm5iAffinityAnchors": {
+  "tests/SmpCbsSuite.lean": 2
+ },
+ "TEST_COUNT_AK7": {
+  "scripts/ak7_cascade_baseline.sh": 5
+ },
+ "ak4a01_shortPathNoOverflow": {
+  "tests/DecodingSuite.lean": 2
+ },
+ "ak4a02_serviceRegisterOverflow": {
+  "tests/DecodingSuite.lean": 2
+ },
+ "ak4a03_scConfigureUnmappedFails": {
+  "tests/DecodingSuite.lean": 2
+ },
+ "ak4a04_lengthZeroIgnoresIpcBuffer": {
+  "tests/DecodingSuite.lean": 2
+ },
+ "ak4a05_ipcBufferOutOfRange": {
+  "tests/DecodingSuite.lean": 2
+ },
+ "ak4a06_sizeInvariant": {
+  "tests/DecodingSuite.lean": 2
+ },
+ "ak4a07_legacyBackwardCompat": {
+  "tests/DecodingSuite.lean": 2
+ },
+ "ak6Tests": {
+  "tests/InformationFlowSuite.lean": 2
+ },
+ "ak7_cascade_baseline": {
+  "scripts/ak7_cascade_baseline.sh": 1,
+  "scripts/ak7_cascade_check_monotonic.sh": 1
+ },
+ "ak7_cascade_check_monotonic": {
+  "scripts/ak7_cascade_check_monotonic.sh": 1
+ },
+ "ak8Tests": {
+  "tests/Ak8CoverageSuite.lean": 3
+ },
+ "ak8_coverage_suite": {
+  "scripts/test_tier2_negative.sh": 1
+ },
+ "ak8a_01_default_satisfies_untypedRegionsDisjoint": {
+  "tests/ModelIntegritySuite.lean": 2
+ },
+ "ak8a_02_disjoint_untypeds_satisfy_predicate": {
+  "tests/ModelIntegritySuite.lean": 2
+ },
+ "ak8a_03_overlapping_untypeds_violate_predicate": {
+  "tests/ModelIntegritySuite.lean": 2
+ },
+ "ak8a_04_parent_child_containment_allowed": {
+  "tests/ModelIntegritySuite.lean": 2
+ },
+ "ak8a_05_allocate_children_extends": {
+  "tests/ModelIntegritySuite.lean": 2
+ },
+ "ak8a_06_allocate_preserves_region": {
+  "tests/ModelIntegritySuite.lean": 2
+ },
+ "ak8a_07_empty_config_disjoint": {
+  "tests/ModelIntegritySuite.lean": 2
+ },
+ "ak9_platform_suite": {
+  "scripts/test_tier2_negative.sh": 1
+ },
+ "ak9a_01_mmioRead32_rejects_unaligned": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "ak9a_02_mmioRead64_rejects_unaligned": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "ak9a_03_mmioRead32_rejects_ram": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "ak9a_04_mmioRead32_accepts_gic": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "ak9a_05_mmioReadByte_accepts_uart": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "ak9a_06_mmioRead_alias_matches_byte": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "ak9a_07_mmioRead32_positive_success": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "ak9a_08_mmioRead64_positive_success": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "ak9b_01_sim_objectStoreEmptyAtBoot": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "ak9b_02_rpi5_objectStoreEmptyAtBoot": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "ak9c_01_empty_irqs_accepted": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "ak9c_02_missing_handler_rejected": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "ak9c_03_non_notification_rejected": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "ak9c_04_notification_accepted": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "ak9ce_01_checked_boot_rejects_bad_irq": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "ak9ce_02_checked_boot_rejects_tcb_handler": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "ak9d_01_range_within_gic_dist": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "ak9d_02_range_crosses_boundary": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "ak9f_01_classify_empty_map": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "ak9f_02_classify_unmapped": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "ak9f_03_classify_mapped": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "ak9f_04_applyMachineConfigChecked_rejects_zero_pa": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "ak9f_05_applyMachineConfigChecked_rejects_pa_over_52": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "ak9f_06_applyMachineConfigChecked_accepts_default": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "ak9fe_01_checked_boot_rejects_pa_over_52": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "ak9fe_02_checked_boot_rejects_malformed_machine_config": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "ak9g_01_enables_interrupts": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "ak9g_02_default_disabled": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "ak9g_03_withInterrupts_enables": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "ak9ge_01_checked_boot_enables_interrupts": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "ak9h_01_readCStringChecked_rejects_oob": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "ak9h_02_readCStringChecked_rejects_fuel_zero": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "ak9h_03_readCStringChecked_ok": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "ak9h_04_readCStringChecked_fuel_exhausted_on_unterminated": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "an10_a_validObjId_accepts_nonzero": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_a_validObjId_rejects_sentinel": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_a_validSchedContextId_rejects_sentinel": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_a_validThreadId_rejects_sentinel": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_a_validThreadId_roundtrip": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_b_getCNode_empty": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_b_getCNode_populated": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_b_getCNode_wrong_kind": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_b_getEndpoint_wrong_kind": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_b_getNotification_populated": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_b_getSchedContext_populated": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_b_getTcb_empty": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_b_getTcb_populated": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_b_getTcb_wrong_kind": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_b_getUntyped_populated": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_b_getVSpaceRoot_empty": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_b_getVSpaceRoot_populated": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_b_getVSpaceRoot_wrong_kind": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_c_storeObjectKindChecked_accepts_same_variant": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_c_storeObjectKindChecked_fresh": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_c_storeObjectKindChecked_rejects_cross_variant": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_cascade_suite": {
+  "scripts/test_tier2_negative.sh": 1
+ },
+ "an10_d_clearPendingState_populated": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_d_dispatch_validators_reachable": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_d_getCurrentPriority_bound": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_d_getCurrentPriority_bound_missing": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_d_getCurrentPriority_unbound": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_d_hasSufficientBudget_positive": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_d_hasSufficientBudget_zero": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_d_lookupCspaceRoot_empty": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_d_lookupCspaceRoot_populated": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_d_lookupCspaceRoot_wrong_kind": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_d_typed_helper_equivalence": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_e_applyCallDonation_wires_h5": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_e_applyReplyDonation_wires_h6": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_e_cancelDonationValid_reduces": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_e_cancelIpcBlockingValid_reduces": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_e_clearPendingStateValid_reduces": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_e_cspaceLookupSlot_cnode_no_slot_is_invalidCapability": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_e_cspaceLookupSlot_wrong_variant_is_objectNotFound": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_e_cspaceResolvePath_wrong_variant_is_objectNotFound": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_e_donateSchedContextValid_reduces": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_e_removeRunnableValid_no_op_on_empty_queue": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_e_removeRunnableValid_reduces_to_raw": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_e_resolveCapAddress_missing_root_is_objectNotFound": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an10_e_returnDonatedSchedContextValid_reduces": {
+  "tests/An10CascadeSuite.lean": 2
+ },
+ "an2f3_01_empty_wellFormed": {
+  "tests/ModelIntegritySuite.lean": 2
+ },
+ "an2f3_02_coercion_roundtrip": {
+  "tests/ModelIntegritySuite.lean": 2
+ },
+ "an6_postaudit_ak8a_objectOfKernelType_untyped_zero_regionBase": {
+  "tests/ModelIntegritySuite.lean": 2
+ },
+ "an6b_architecture_assumptions_index_total": {
+  "tests/ModelIntegritySuite.lean": 2
+ },
+ "an6c1_untypedObject_parent_field_default": {
+  "tests/ModelIntegritySuite.lean": 2
+ },
+ "an6c3_untypedAncestorChain_bounded": {
+  "tests/ModelIntegritySuite.lean": 2
+ },
+ "an6c3_untypedAncestorChain_walks_synthetic_chain": {
+  "tests/ModelIntegritySuite.lean": 2
+ },
+ "an6c4_untypedAncestorRegionsDisjoint_default": {
+  "tests/ModelIntegritySuite.lean": 2
+ },
+ "an6f_cxm01_collectQueueMembers_structural_signatures": {
+  "tests/ModelIntegritySuite.lean": 2
+ },
+ "an6f_cxm04_interruptsEnabled_bundle_inhabited": {
+  "tests/ModelIntegritySuite.lean": 2
+ },
+ "an6f_cxm05_crossSubsystemInvariant_positive": {
+  "tests/ModelIntegritySuite.lean": 2
+ },
+ "an7d2_01_rpi5BootVSpaceRoot_wellFormed": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "an7d2_02_rpi5BootVSpaceRoot_wxCompliant": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "an7d2_03_rpi5BootVSpaceRoot_covers_mmio_regions": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "an7d2_04_rpi5BootVSpaceRoot_paddrBounded": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "an7d5_01_extractPeripherals_depth3_discovery": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "an7d5_02_extractPeripherals_zero_fuel_collapses": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "an7d5_03_extractPeripherals_skips_incomplete_nodes": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "an7d5_04_extractPeripherals_excludes_reserved_names": {
+  "tests/Ak9PlatformSuite.lean": 2
+ },
+ "an9_hardware_binding_suite": {
+  "scripts/test_tier2_negative.sh": 1
+ },
+ "h05": {
+  "SeLe4n/Kernel/Architecture/TlbModel.lean": 4
+ },
+ "h10": {
+  "SeLe4n/Kernel/Architecture/Invariant.lean": 12,
+  "SeLe4n/Kernel/CrossSubsystem.lean": 4,
+  "SeLe4n/Kernel/CrossSubsystemPerCore.lean": 2
+ },
+ "h11": {
+  "SeLe4n/Kernel/Architecture/Invariant.lean": 12,
+  "SeLe4n/Kernel/CrossSubsystem.lean": 4,
+  "SeLe4n/Kernel/CrossSubsystemPerCore.lean": 2
+ },
+ "h12": {
+  "SeLe4n/Kernel/Architecture/Invariant.lean": 6,
+  "SeLe4n/Kernel/CrossSubsystemPerCore.lean": 2,
+  "SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean": 21,
+  "SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean": 2,
+  "SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean": 15,
+  "SeLe4n/Kernel/Scheduler/Operations/Preservation.lean": 4,
+  "SeLe4n/Kernel/Scheduler/Operations/Selection.lean": 5
+ },
+ "h13": {
+  "SeLe4n/Kernel/Architecture/Invariant.lean": 6,
+  "SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean": 2,
+  "SeLe4n/Kernel/Scheduler/Operations/Selection.lean": 1
+ },
+ "h14": {
+  "SeLe4n/Kernel/Architecture/Invariant.lean": 6
+ },
+ "h16": {
+  "SeLe4n/Kernel/Architecture/Invariant.lean": 6
+ },
+ "h16AuthSlot": {
+  "tests/NegativeStateSuite.lean": 10
+ },
+ "h16BadAuthSlot": {
+  "tests/NegativeStateSuite.lean": 2
+ },
+ "h16BadCleanupSlot": {
+  "tests/NegativeStateSuite.lean": 2
+ },
+ "h16CleanupSlot": {
+  "tests/NegativeStateSuite.lean": 3
+ },
+ "h16CnodeId": {
+  "tests/NegativeStateSuite.lean": 9
+ },
+ "h16DeviceAuthSlot": {
+  "tests/NegativeStateSuite.lean": 3
+ },
+ "h16DeviceCnodeId": {
+  "tests/NegativeStateSuite.lean": 4
+ },
+ "h16DeviceState": {
+  "tests/NegativeStateSuite.lean": 2
+ },
+ "h16DeviceUntypedId": {
+  "tests/NegativeStateSuite.lean": 6
+ },
+ "h16ExhaustedAuthSlot": {
+  "tests/NegativeStateSuite.lean": 3
+ },
+ "h16ExhaustedCnodeId": {
+  "tests/NegativeStateSuite.lean": 4
+ },
+ "h16ExhaustedState": {
+  "tests/NegativeStateSuite.lean": 2
+ },
+ "h16ExhaustedUntypedId": {
+  "tests/NegativeStateSuite.lean": 6
+ },
+ "h16MismatchState": {
+  "tests/NegativeStateSuite.lean": 2
+ },
+ "h16ReadOnlySlot": {
+  "tests/NegativeStateSuite.lean": 2
+ },
+ "h16State": {
+  "tests/NegativeStateSuite.lean": 8
+ },
+ "h16TargetId": {
+  "tests/NegativeStateSuite.lean": 17
+ },
+ "h16TcbId": {
+  "tests/NegativeStateSuite.lean": 3
+ },
+ "h17": {
+  "SeLe4n/Kernel/Architecture/Invariant.lean": 6
+ },
+ "h18": {
+  "SeLe4n/Kernel/Architecture/Invariant.lean": 6
+ },
+ "h19": {
+  "SeLe4n/Kernel/Architecture/Invariant.lean": 6
+ },
+ "h20": {
+  "SeLe4n/Kernel/Architecture/Invariant.lean": 6
+ },
+ "h21": {
+  "SeLe4n/Kernel/Architecture/Invariant.lean": 6
+ },
+ "h23": {
+  "SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean": 21,
+  "SeLe4n/Kernel/Scheduler/Operations/Preservation.lean": 4,
+  "SeLe4n/Kernel/Scheduler/Operations/Selection.lean": 5
+ },
+ "h31": {
+  "SeLe4n/Kernel/Scheduler/Operations/Selection.lean": 3
+ },
+ "h64": {
+  "SeLe4n/Kernel/Architecture/RegisterDecode.lean": 2
+ },
+ "hSm1": {
+  "SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean": 2
+ },
+ "pm_ak2b_01_bindPropagatesPriority": {
+  "tests/PriorityManagementSuite.lean": 2
+ },
+ "pm_ak2b_02_configurePropagatesPriority": {
+  "tests/PriorityManagementSuite.lean": 2
+ },
+ "pm_ak2b_03_configureRebucketsBoundThread": {
+  "tests/PriorityManagementSuite.lean": 2
+ },
+ "pm_ak2e_01_utilizationCeiling": {
+  "tests/PriorityManagementSuite.lean": 2
+ },
+ "pm_ak2e_02_utilizationExact": {
+  "tests/PriorityManagementSuite.lean": 2
+ },
+ "pm_ak2e_03_utilizationZeroPeriod": {
+  "tests/PriorityManagementSuite.lean": 2
+ },
+ "pm_ak2f_01_replenishFifoOnTie": {
+  "tests/PriorityManagementSuite.lean": 2
+ },
+ "pm_ak2f_02_replenishSortedAcrossTimes": {
+  "tests/PriorityManagementSuite.lean": 2
+ },
+ "pm_ak8d_01_hardwarePriorityCeilingRejects": {
+  "tests/PriorityManagementSuite.lean": 2
+ },
+ "pm_ak8d_02_maxHardwarePriorityAccepts": {
+  "tests/PriorityManagementSuite.lean": 2
+ },
+ "pm_ak8d_03_setMCPriorityHardwareCeilingRejects": {
+  "tests/PriorityManagementSuite.lean": 2
+ },
+ "runAN4A5LifecycleVisibilityChecks": {
+  "tests/NegativeStateSuite.lean": 2
+ },
+ "runAk4aTests": {
+  "tests/DecodingSuite.lean": 2
+ },
+ "runAk6Suite": {
+  "tests/InformationFlowSuite.lean": 2
+ },
+ "runSm5hCompletionScenarios": {
+  "tests/SmpCbsSuite.lean": 2
+ },
+ "runSm5iTickCbsChecks": {
+  "tests/SmpCbsSuite.lean": 2
+ },
+ "sm0t_sub_args": {
+  "scripts/test_tier4_nightly_candidates.sh": 2
+ },
+ "sm5d_surface": {
+  "scripts/test_tier3_invariant_surface.sh": 1
+ },
+ "sm5e_surface": {
+  "scripts/test_tier3_invariant_surface.sh": 1
+ },
+ "sm5f_surface": {
+  "scripts/test_tier3_invariant_surface.sh": 1
+ },
+ "sm5g_surface": {
+  "scripts/test_tier3_invariant_surface.sh": 1
+ },
+ "sm5h_surface": {
+  "scripts/test_tier3_invariant_surface.sh": 1
+ },
+ "sm5i_suite": {
+  "scripts/test_tier3_invariant_surface.sh": 1
+ },
+ "sm5i_tick_affinity": {
+  "scripts/test_tier3_invariant_surface.sh": 1
+ },
+ "sm5i_tick_cbs": {
+  "scripts/test_tier3_invariant_surface.sh": 1
+ },
+ "test_AK8_E_bound_missing_sc_is_objectNotFound": {
+  "tests/Ak8CoverageSuite.lean": 2
+ },
+ "test_AK8_E_bound_returns_sc_priority": {
+  "tests/Ak8CoverageSuite.lean": 2
+ },
+ "test_AK8_E_unbound_returns_tcb_priority": {
+  "tests/Ak8CoverageSuite.lean": 2
+ },
+ "test_AK8_F_rejects_base_over_radix": {
+  "tests/Ak8CoverageSuite.lean": 2
+ },
+ "test_AK8_F_returns_first_free_slot": {
+  "tests/Ak8CoverageSuite.lean": 2
+ },
+ "test_AK8_G_storeEndpointChecked_cross_variant_rejected": {
+  "tests/Ak8CoverageSuite.lean": 2
+ },
+ "test_AK8_G_storeNotificationChecked_cross_variant_rejected": {
+  "tests/Ak8CoverageSuite.lean": 2
+ },
+ "test_AK8_G_storeTcbChecked_cross_variant_rejected": {
+  "tests/Ak8CoverageSuite.lean": 2
+ },
+ "test_AK8_G_storeTcbChecked_same_kind_ok": {
+  "tests/Ak8CoverageSuite.lean": 2
+ },
+ "test_AK8_H_unbind_happy_path": {
+  "tests/Ak8CoverageSuite.lean": 2
+ },
+ "test_AK8_H_unbind_missing_tcb_no_partial_mutation": {
+  "tests/Ak8CoverageSuite.lean": 2
+ },
+ "test_AK8_I_phantom_key_freeze_rejected": {
+  "tests/Ak8CoverageSuite.lean": 2
+ },
+ "test_AK8_I_well_keyed_freeze_succeeds": {
+  "tests/Ak8CoverageSuite.lean": 2
+ },
+ "test_count_ak7": {
+  "scripts/ak7_cascade_baseline.sh": 1
+ }
 }

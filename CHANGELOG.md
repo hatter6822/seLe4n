@@ -1,3 +1,72 @@
+## v0.32.126 — The gate that kept failing silently now has its own tests
+
+PR #854 review, fifteenth round: four P2s, all in the naming gate itself,
+and all the same shape as the eleven before them — a hand-written piece of
+the checker's scope that was narrower than the rule it enforces.
+
+**Documentation was exempt by suffix, so exemption leaked into code.**
+`.md`, `.txt`, `.json`, `.expected` and `.sha256` were exempt *anywhere*,
+because the previous round reasoned about `docs/` and then implemented a
+suffix list. A suffix says nothing about whether a file is prose:
+`scripts/phase5_helper.json` and `tests/phase5_helper.expected` skipped
+even path scanning. Exemption is now by location — everything under
+`docs/`, plus the named root-level documents — so audit reports and
+workstream plans keep the exemption they need (they are *named after* the
+workstream they record) and nothing else inherits it.
+
+**The baseline was a set of pairs, which cannot see a second use.** A set
+of `(identifier, file)` pairs rejects a name appearing in a *new* file, but
+a file already containing `ak9ce` could accrue a second, third and fourth
+use with the gate silent. The baseline now counts occurrences per pair:
+the number may fall, never rise. Line numbers were considered and rejected
+— they churn on every edit above them, and a baseline that regenerates
+constantly stops meaning anything.
+
+**Python string handling was inverted.** Plain literals had their braces
+preserved (so `'{x}'` leaked prose into the scan) while triple-quoted
+f-strings were blanked wholesale (so real interpolated identifiers went
+unread). Which treatment a literal gets is now decided by whether its
+prefix actually contains `f`, checked before the quote style — `rb'{x}'`
+is not an f-string, and `'''{x}'''` without the prefix is a literal brace
+whose contents must stay blanked or the scanner reads its own docstring
+as code and fails on itself.
+
+**Five maintained formats had no stripper**, so their contents were never
+read: `.S`, `.ld`, `.toml`, `.yml` and `.yaml`. Each needs its own comment
+syntax rather than a shared guess — a linker script has no `//` comment
+and treating it as one blanks real content to end of line, while in
+assembly `#` introduces a cpp directive whose identifiers stay in scope.
+
+**The gate now has a self-test** (`scripts/test_identifier_naming_gate.py`,
+42 checks, wired into Tier 0). A gate whose failure mode is silence needs
+regression witnesses, and this one has shipped under-enforced five times.
+Every check is load-bearing: run against the pre-fix checker, fourteen of
+the sampled fourteen report the wrong answer, and one hard-errors on a
+function that version never had. A test that passes against both the
+broken and the fixed code documents nothing.
+
+The bare-`ws` carve-out is now documented as the deliberate trade it is
+rather than as a general solution. `ws` carries no digits of its own, so
+unlike `phase5` or `ak9ce` it cannot be recognised alone; in a compound it
+is flagged, which would make `wsUrl` a false positive. No such name exists
+here — the tree has zero `ws`-prefixed identifiers and zero camelCase
+`ws`-compounds — and a false positive fails loudly in CI, where this gate's
+whole history is failing quietly.
+
+Baseline re-recorded in the new format: 211 identifiers, 227 pairs, 870
+occurrences. Broadening the scan added **zero** pairs — the five new
+formats and the withdrawn suffix exemption found no violation that was
+hiding behind them, so the worry that scanning YAML would produce a
+stream of false positives from workflow job names did not materialise.
+Two pairs left, both a bare `ws`, and both were false positives the
+carve-out now correctly declines: `Compute.lean`'s is `(ws : List
+ThreadId)`, a bound variable meaning *waiters*, and the surviving `WS`
+tokens in `test_tier3_invariant_surface.sh` sit in workstream-citing
+prose and `rg` patterns, which is where the rule says they belong.
+Nothing was renamed and nothing was newly grandfathered.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F
+
 ## v0.32.125 — The scan covers scripts too; the Rust ack contract catches up
 
 PR #854 review, fourteenth round: two P2s.

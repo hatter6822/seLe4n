@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.32.125.
+Lean 4.28.0 toolchain, Lake build system, version 0.32.126.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -523,13 +523,18 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   identifier token — and every path component — over every tracked
   non-documentation file rather than enumerating declaration forms,
   globs, or suffixes: Rust is held at zero, and every other code
-  surface (Lean, Python, shell) is pinned by a baseline of
-  (identifier, file) pairs in
-  `scripts/identifier_naming_baseline.json` so a grandfathered
-  name may disappear but never appear somewhere new.  Prose is
+  surface (Lean, Python, shell, config, assembly) is pinned by a
+  baseline in `scripts/identifier_naming_baseline.json` counting
+  occurrences per (identifier, file), so a grandfathered name's count
+  may fall but never rise — a set of pairs alone cannot see a second
+  use inside a file that already contains the name.  Prose is
   exempt, as are documentation paths — an audit report or workstream
   plan is *named after* the workstream it records, and CLAUDE.md and
-  the website link manifest both cite those paths.
+  the website link manifest both cite those paths.  The exemption is
+  by location, never by suffix: a `.json` or `.expected` file outside
+  `docs/` is code as far as this gate is concerned.  The gate's own
+  mechanisms are pinned by `scripts/test_identifier_naming_gate.py`
+  (Tier 0), since a scanner that under-reaches fails silently.
 
 ## Implement-the-improvement rule
 
