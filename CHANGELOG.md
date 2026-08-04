@@ -1,3 +1,76 @@
+## v0.32.137 — Quoting told the scanner what was prose, and it was wrong twice
+
+PR #854 review, twenty-fifth round: two findings, both valid, both the
+same shape — a stripper deciding *code vs prose* from a quoting rule
+that does not mean what it was taken to mean.
+
+**1. A double-quoted shell payload is a command, not a message.** The
+shell stripper kept single-quoted spans verbatim (they carry `bash -lc`
+payloads) but reduced double-quoted spans to their `$` expansions, on
+the grounds that those are `echo "AN7-A: …"` diagnostics. Both halves
+are true, and the conclusion still does not follow: `bash -lc "lake exe
+sele4n > '${DIR}/run1.trace'"` is a payload in exactly the sense the
+single-quote rule was written for.
+
+Wider than the report. The reviewer cited one script; the tree writes
+the double-quoted spelling throughout `test_tier2_determinism.sh`,
+`test_tier3_invariant_surface.sh` and `test_tier4_nightly_candidates.sh`
+— including the invariant-anchor script the single-quote case was
+originally justified by. Which quote character the author reached for
+follows what the payload *contains* (a payload holding `'…'` must be
+double-quoted, and vice versa), so the scan was reading code as prose
+for a reason having nothing to do with whether it was code.
+
+Fixed by matching the text **preceding** the quote, exactly as the
+v0.32.134 `export_name` rule does: a span handed to `bash`/`sh`/`zsh`
+`-c` or to `eval` is kept whole; everything else keeps its previous
+treatment. So `run_check "TRACE" bash -lc "…"` keeps its payload while
+its `"TRACE"` label stays prose.
+
+**2. `#` opens a comment only outside a quoted scalar.** The config
+stripper blanked from any space-preceded `#` to end of line, so
+`run: "echo # phase5_helper"` and `name = "foo # phase5_helper"` were
+truncated mid-value. YAML and TOML both start comments only outside
+quoted scalars, and the tree already contains the shape
+(`description: "endpoint receive #1 sender: 1"`), so this was live
+rather than hypothetical.
+
+The stripper tracks quotes now, under two deliberate restrictions: a
+quote opens a scalar only in **value position** (start of line, or
+after `:` `=` `[` `,` `{`), and only when it **closes on the same
+line**. Both failure modes they prevent are over-*keeping* — an
+apostrophe in a plain scalar pairing across the comment that follows
+it, or an unpaired quote swallowing everything to the next one several
+lines down — and over-keeping turns prose into false positives, which
+is the direction that gets a gate switched off.
+
+**Self-test 152 → 163 checks.** Against the previous gate: **six fail**
+(the mechanism), five pass (the exemptions, which were already correct
+and must stay correct).
+
+Two of those five were **initially vacuous**, and finding that is the
+round's own lesson repeating. Written as `note: don't do this # …` and
+an unterminated `a: "open`, they passed against the naive
+quote-tracking implementation too — because with no *second* quote
+after the `#`, a naive scan finds no pair, falls through, and blanks
+the comment anyway. Both inputs now carry that second quote
+(`note: don't # it's …`, and a quote that closes two lines later), so
+they fail against the implementation they exist to reject. That is the
+same defect as the round-24 check which started passing for the wrong
+reason, caught this time by testing the negatives against a wrong
+implementation rather than only against the previous one.
+
+Verified end-to-end through `scan` on real tracked files rather than at
+the stripper unit: a coded identifier planted inside the actual
+`bash -lc "…"` payload in `test_tier2_determinism.sh`, and one after a
+`#` inside the real quoted scalar in `scenario_registry.yaml`, each
+trip the ratchet.
+
+Baseline unchanged at 298 pairs / 1017 occurrences — zero lost, zero
+dropped, zero new, for the fifth consecutive scope extension. The newly
+visible payloads are `lake exe`, `rg -n '^theorem …'` and `diff -q`
+invocations, and they carry no coded names.
+
 ## v0.32.136 — The premise for deferring the P1 was itself false
 
 PR #854 review, twenty-fourth round: three findings, all valid. One is a

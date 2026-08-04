@@ -126,6 +126,25 @@ check("a word-internal hash is not a comment",
       CODED in gate.strip_shell("echo abc#" + CODED), True)
 check("a length expansion is not a comment",
       CODED in gate.strip_shell("echo " + dollar + "{#" + CODED + "}"), True)
+# ...and a DOUBLE-quoted payload handed to an interpreter is code for
+# the same reason the single-quoted one is.  The tree writes it both
+# ways -- single-quoted in `test_tier0_hygiene.sh`, double-quoted in
+# the Tier-2/3/4 scripts -- and which quote the author reached for
+# follows what the payload contains, not whether it is code.
+check("a double-quoted bash -lc payload is code",
+      CODED in gate.strip_shell("bash -lc " + dq + "def " + CODED + dq), True)
+check("a double-quoted sh -c payload is code",
+      CODED in gate.strip_shell("sh -c " + dq + CODED + dq), True)
+check("an eval payload is code",
+      CODED in gate.strip_shell("eval " + dq + CODED + dq), True)
+# The exemption that keeps the gate usable: only the payload changes
+# treatment, not every double-quoted span on the line.
+check("a label beside a payload stays prose",
+      CODED in gate.strip_shell(
+          "run_check " + dq + CODED + dq + " bash -lc " + dq + "true" + dq),
+      False)
+check("an echoed diagnostic stays prose",
+      CODED in gate.strip_shell("echo " + dq + CODED + " done" + dq), False)
 
 
 # --- Config and data formats are not Python prose ---------------------
@@ -141,6 +160,32 @@ check("a hash inside a value is not a comment",
       CODED in gate.strip_config("url = " + dq + "a#" + CODED + dq), True)
 check("config does not share Python's stripper",
       gate.CONTENT_STRIPPERS[".yml"] is not gate.CONTENT_STRIPPERS[".py"], True)
+# Both formats start a `#` comment only OUTSIDE a quoted scalar.  The
+# preceding check covers `a#b` (no space); with a space in front, the
+# `#` was read as a comment and the rest of the command blanked -- and
+# the tree already holds the shape (`description: "... #1 sender: 1"`).
+check("a spaced hash inside a quoted scalar is not a comment",
+      CODED in gate.strip_config("run: " + dq + "echo # " + CODED + dq), True)
+check("a spaced hash inside a TOML string is not a comment",
+      CODED in gate.strip_config("name = " + dq + "foo # " + CODED + dq), True)
+check("a single-quoted scalar is covered too",
+      CODED in gate.strip_config("cmd: " + q + "run # " + CODED + q), True)
+# The three exemptions that keep quote-tracking from over-keeping.  All
+# three over-KEEP when wrong, which turns prose into false positives.
+check("a real trailing comment is still blanked",
+      CODED in gate.strip_config("key: value   # " + CODED), False)
+# Both inputs below carry a SECOND quote after the `#` on purpose.
+# Without it a naive scan finds no pair, falls through, and blanks the
+# comment anyway -- so the weaker spelling of these checks passes
+# against the very implementation it exists to reject.  Same failure as
+# the round-24 check that started passing for the wrong reason.
+check("an apostrophe does not pair across the comment after it",
+      CODED in gate.strip_config(
+          "note: don" + q + "t  # it" + q + "s " + CODED), False)
+check("a quote closing on a later line does not swallow the comment",
+      CODED in gate.strip_config(
+          "a: " + dq + "open\nb: ok  # " + CODED + "\nc: " + dq + "end" + dq),
+      False)
 
 
 # --- A hyphen separates words in a FILE NAME --------------------------

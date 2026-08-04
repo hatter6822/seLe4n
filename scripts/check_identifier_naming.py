@@ -603,6 +603,37 @@ SHELL_EXPANSION = re.compile(
     r"\$\{[^}]*\}|\$\([^)]*\)|\$[A-Za-z_][A-Za-z0-9_]*|`[^`]*`")
 
 
+# A double-quoted span handed to an interpreter is a COMMAND, not a
+# message, and must survive the blanking that ordinary diagnostics get.
+#
+# `bash -lc "lake exe sele4n > '${DIR}/run1.trace'"` is executable
+# source in exactly the sense that justified keeping single-quoted
+# payloads -- and this tree writes it both ways, single-quoted in
+# `test_tier0_hygiene.sh` and double-quoted in `test_tier2_determinism.sh`
+# / `test_tier3_invariant_surface.sh` / `test_tier4_nightly_candidates.sh`.
+# The choice between them follows what the payload contains (a payload
+# holding `'...'` must be double-quoted, and vice versa), so making the
+# scan depend on it read code as prose for a reason having nothing to do
+# with whether it was code.
+#
+# Matched against the text PRECEDING the quote, exactly like
+# `IDENT_BEARING_STRING`, so the enclosing `run_check "TRACE" bash -lc
+# "..."` keeps its payload while its "TRACE" label stays prose.  The
+# interpreter list is closed on purpose: each entry names a program
+# whose quoted argument IS a script.
+COMMAND_PAYLOAD = re.compile(
+    r"(?:\b(?:ba|z|k|da)?sh\s+(?:-[A-Za-z]+\s+)*"     # bash -lc, sh -c, zsh -c
+    r"|\beval\s+"                                     # eval "..."
+    r"|\bbash\s+(?:-[A-Za-z]+\s+)*)$"
+)
+
+
+def is_command_payload(text: str, at: int) -> bool:
+    """Is the double-quoted span at `at` a script handed to a shell?"""
+    line_start = text.rfind("\n", 0, at) + 1
+    return COMMAND_PAYLOAD.search(text[line_start:at]) is not None
+
+
 def keep_expansions(span: str) -> str:
     """Blank a double-quoted span except its command substitutions."""
     out = [c if c == "\n" else " " for c in span]
@@ -631,6 +662,14 @@ def strip_shell(text: str) -> str:
       inside.  Keeping the whole span flags every `echo "AN7-A: ..."`
       diagnostic, which is a workstream cited in prose and therefore
       exempt by the rule; so only the expansions survive.
+    * ...EXCEPT when the double-quoted span is itself a command being
+      handed to an interpreter.  `bash -lc "lake exe sele4n > …"` is a
+      payload in exactly the sense the single-quote rule was written
+      for, and the tree uses the double-quoted spelling in the Tier-2
+      determinism, Tier-3 invariant-surface and Tier-4 nightly scripts
+      -- the same scripts the single-quote case was justified by.
+      Which quote character the author reached for is a function of
+      what the payload itself contains, not of whether it is code.
 
     `#` opens a comment only at the start of a word, so `abc#def` and a
     `${#x}` length expansion keep their text.
@@ -655,7 +694,10 @@ def strip_shell(text: str) -> str:
                 if text[j] == '"':
                     j += 1; break
                 j += 1
-            out.append(keep_expansions(text[i:j])); i = j
+            span = text[i:j]
+            out.append(span if is_command_payload(text, i)
+                       else keep_expansions(span))
+            i = j
         else:
             out.append(text[i]); i += 1
     return "".join(out)
@@ -672,11 +714,38 @@ def strip_config(text: str) -> str:
     quoted only when the grammar forces it.
 
     `#` opens a comment only at the start of a word, so a `#` inside a
-    value keeps its line.
+    value keeps its line -- and only OUTSIDE a quoted scalar, which is
+    what both formats actually specify.  `run: "echo # phase5_helper"`
+    was truncated at the `#`, blanking the rest of a command; the tree
+    already contains the shape (`description: "endpoint receive #1
+    sender: 1"`), so this was live rather than hypothetical.
+
+    A quote opens a scalar only in VALUE position -- start of line, or
+    after `:` `=` `[` `,` `{` -- and only when it closes on the same
+    line.  Both conditions are deliberate.  Treating every `'` as an
+    opener would make an apostrophe in a plain scalar (`don't`) swallow
+    the real comment that follows it; requiring the close on one line
+    keeps an unpaired quote from swallowing the rest of the file.  Both
+    failure modes over-KEEP, which turns prose into false positives --
+    the direction that gets a gate switched off.
     """
     out, i, n = [], 0, len(text)
+    # Value position: what may precede a quote that opens a scalar.
+    value_pos = ":=[,{"
     while i < n:
-        if text[i] == "#" and (i == 0 or text[i - 1] in " \t\n"):
+        if text[i] in "\"'":
+            k = i - 1
+            while k >= 0 and text[k] in " \t":
+                k -= 1
+            opens = k < 0 or text[k] == "\n" or text[k] in value_pos
+            close = text.find(text[i], i + 1)
+            newline = text.find("\n", i + 1)
+            same_line = close >= 0 and (newline < 0 or close < newline)
+            if opens and same_line:
+                out.append(text[i:close + 1]); i = close + 1
+                continue
+            out.append(text[i]); i += 1
+        elif text[i] == "#" and (i == 0 or text[i - 1] in " \t\n"):
             j = text.find("\n", i)
             j = n if j < 0 else j
             out.append(" " * (j - i)); i = j
