@@ -1937,81 +1937,92 @@ rather than riding a round-18 remediation cut.
 a lock that excludes every other kernel entry; the five sites above
 updated to describe the mechanism that actually runs.
 
-## Intermittent `queued_rw_lock` cross-thread test hang (tracked debt, owner SM2)
+## `QueuedRwLock` deadlocks with the lock free and every waiter parked (DEFECT, owner SM2)
 
-Surfaced at v0.32.146 while adding contention witnesses. The HAL test
-binary hangs intermittently, 2-3% of full-suite runs on a four-core host.
+Found at v0.32.146 while adding contention witnesses. **This is a real
+deadlock in the lock protocol, not a test artifact.** It is not on any
+live path today — `QueuedRwLock` has no callers, no FFI exports and no
+Lean bindings — but it is the primitive SM3.C.9 intends to adopt for
+per-object locks, so it must be fixed before that adoption.
+
+### The captured state
+
+A watchdog dumped the lock the moment progress stopped:
+
+```
+progress per worker: [619, 478, 6, 394]
+state = 0x0000000000000000   (writer_bit=false, readers=0)
+tail  = 3
+  slot[0] parked=WAITING_READER  mode=READ   next=1
+  slot[1] parked=WAITING_READER  mode=READ   next=3
+  slot[2] parked=WAITING_WRITER  mode=WRITE  next=1
+  slot[3] parked=WAITING_READER  mode=READ   next=NONE
+```
+
+Two facts damn it:
+
+1. **`state == 0`.** The lock is completely free — no writer, no
+   readers — while all four cores sit parked in `WAITING_*`. Nobody
+   holds it, so no release will ever run `signal_next_waiter`, and every
+   waiter is blocked in `while parked != ADMITTED`. A lost wakeup.
+2. **Slot 2 is orphaned.** The reachable chain is `0 -> 1 -> 3`, ending
+   at `tail = 3`, which is self-consistent. Slot 2 is *not on it*:
+   nothing points to 2 and 2 is not the tail, yet slot 2 points into the
+   chain at node 1. It enqueued and then lost its predecessor link, so
+   no one will ever signal it. Worker 2's progress counter (6, against
+   ~400-600 for its peers) shows it wedged almost immediately.
+
+### Classification: deadlock, not slowness
+
+A hang was held for **15 minutes** with per-minute sampling: thread
+states constant (4 runnable, none blocked), `utime` climbing perfectly
+linearly (~13 200 ticks/minute). It burns CPU forever and never
+progresses. It does not self-resolve.
 
 ### Reproduction
 
-Run the compiled test binary directly — this rules out cargo's
-build-directory lock, which produces an identical-looking stall:
+Needs concurrent load; it never reproduces alone (0 hangs in 200 runs of
+the test by itself). Either run the full suite —
 
 ```
 cargo test -p sele4n-hal --lib --no-run
 for i in $(seq 1 60); do timeout 60 target/debug/deps/sele4n_hal-* --test-threads=4 || echo "run $i hung"; done
 ```
 
-On a hang, 825 of 826 tests have completed and one has not:
-`queued_rw_lock::cross_thread_tests::cross_thread_state_invariant_no_writer_with_readers`.
+(2-3 hangs per 100 runs; on a hang 825 of 826 tests have completed and
+`cross_thread_state_invariant_no_writer_with_readers` has not) — or,
+much faster, drive the lock directly with 4 workers doing the same
+`i % 3` write/read mix at ~4000 iterations each and a watchdog that
+dumps `state`/`tail`/slots when no worker's counter advances for 3 s.
+That reproduced on the **first** attempt and produced the dump above.
 
-### Measured facts
+### Where to look
 
-| Observation | Measurement |
-|---|---|
-| Hangs when run **alone** | 0 in 200 runs |
-| Hangs under the **full suite** | 2-3 in 100 runs |
-| Thread states at hang time | all 5 in state `R` (runnable), none blocked |
-| Tests completed at hang time | 825 of 826 |
+The orphaned slot points at the enqueue/cleanup interaction the module's
+own comments already worry about — "dangling tail", "the enqueuer is
+orphaned", the stale-self defence, and the CAS-claim symmetry between
+`signal_next_waiter` and `cascade_admit_readers`. The failure is that
+some interleaving leaves a slot enqueued but unreachable while the
+queue's visible chain stays internally consistent.
 
-It requires concurrent load; it is not reproducible in isolation.
+### What was tried and rejected
 
-### What was tried, and why it was wrong
+An earlier reading blamed missing scheduler yields and added
+`thread::yield_now()` to the test's observer loop. Measured: 3 hangs in
+100 runs with it against 2 in 60 without — unchanged — so it was
+reverted. That hypothesis was wrong on the code as well: every
+parked-wait already routes through `cpu::wfe_bounded` -> `cpu::wfe()`,
+which yields under `cfg(test)` (added by SM2.E for the same symptom).
+Note also that state `R` does not imply a non-yielding spin, since
+`yield_now()` leaves a thread runnable.
 
-**Hypothesis (falsified): nothing in the file yields.** The observer
-thread is the only spin-wait in the file with no pause of any kind, so a
-`thread::yield_now()` was added to it. Measured: **3 hangs in 100 runs
-with it, against 2 in 60 without — unchanged.** Reverted.
+### Acceptance
 
-Reading further showed the hypothesis could not have been right: every
-parked-wait in the lock already routes through `cpu::wfe_bounded` ->
-`cpu::wfe()`, which **does** yield under `cfg(test)`. That yield was
-added by SM2.E for this exact symptom; its comment records "OS scheduler
-starvation of the admitter thread causes ~10% test hangs". The yielding
-mitigation is already in place, and what remains is the residual after
-it. Scheduler starvation therefore does not explain the current 2-3%.
-
-Note that state `R` does not indicate a non-yielding spin: a thread that
-calls `yield_now()` stays runnable. The thread dump is consistent with
-threads spinning *and* yielding, making no protocol progress.
-
-### Open hypotheses
-
-1. **A rare race in the MCS-RW handover** (`signal_next_waiter` /
-   `cascade_admit_readers` / the `parked` CAS-claim protocol), exposed
-   by preemption at an unlucky point. Concurrent load makes mid-protocol
-   preemption far likelier, which fits "never alone, 2-3% under load".
-2. **A scheduling pathology yielding cannot address**, in which case it
-   is purely a host-test artifact.
-
-These have very different weight. Under (1) the defect is in a lock
-primitive intended for SM3 per-object locks, and a handover race that
-deadlocks on a host can deadlock a core on hardware. Under (2) there is
-nothing to fix in the kernel. **The question is open and should be
-closed before SM3.C.9 adopts this lock more widely.**
-
-### Suggested next step
-
-Instrument rather than guess: build a standalone harness that drives
-`QueuedRwLock` with the same 4-worker/1-observer shape plus per-thread
-progress counters and a dump of `state`, `tail` and every slot's
-`parked`/`next` on stall. That distinguishes (1) from (2) directly —
-under (1) the slot graph will show a waiter whose predecessor has
-already released.
+The direct-drive reproduction above runs 400 attempts with no stall, and
+the full suite runs 100 times with no hang.
 
 ### Relationship to the v0.32.146 witnesses
 
-The contention witnesses added at v0.32.146 raise the hit rate from
-roughly 1 run in 50 to 1 in 12, because they add concurrent load. They
-do **not** cause it: each passes 175/175 in isolation, and the hang
-reproduces without them.
+The contention witnesses raise the full-suite hit rate from roughly 1 run
+in 50 to 1 in 12 by adding load. They do not cause it: each passes
+175/175 in isolation, and the deadlock reproduces without them.

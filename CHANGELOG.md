@@ -1,3 +1,67 @@
+## v0.32.147 — The hang is a deadlock in QueuedRwLock, with the lock free
+
+v0.32.146 filed the intermittent HAL test hang as tracked debt with the
+cause open and two competing hypotheses. It is now closed: **a real
+deadlock in the `QueuedRwLock` protocol.**
+
+**The captured state.** A watchdog dumped the lock the moment progress
+stopped:
+
+```
+progress per worker: [619, 478, 6, 394]
+state = 0x0000000000000000   (writer_bit=false, readers=0)
+tail  = 3
+  slot[0] parked=WAITING_READER  mode=READ   next=1
+  slot[1] parked=WAITING_READER  mode=READ   next=3
+  slot[2] parked=WAITING_WRITER  mode=WRITE  next=1
+  slot[3] parked=WAITING_READER  mode=READ   next=NONE
+```
+
+Two facts settle it:
+
+1. **The lock is free.** `state == 0` — no writer, no readers — while
+   all four cores sit parked in `WAITING_*`. Nobody holds it, so no
+   release will ever run `signal_next_waiter`, and every waiter blocks
+   forever in `while parked != ADMITTED`. A lost wakeup.
+2. **Slot 2 is orphaned.** The reachable chain is `0 -> 1 -> 3`, ending
+   at `tail = 3`, internally consistent. Slot 2 is not on it: nothing
+   points to 2 and 2 is not the tail, yet slot 2 points into the chain
+   at node 1. It enqueued and lost its predecessor link. Its progress
+   counter — 6, against 400-600 for its peers — shows it wedged almost
+   immediately.
+
+**Deadlock, not slowness.** A hang was held 15 minutes with per-minute
+sampling: thread states constant, `utime` climbing perfectly linearly
+(~13 200 ticks/minute), no progress, no self-resolution.
+
+**Severity: not on any live path.** `QueuedRwLock` has no callers, no
+FFI exports and no Lean bindings — verified by search. It is the
+primitive SM3.C.9 intends to adopt for per-object locks, and a lock that
+deadlocks while free would hang every contending core, so it must be
+fixed before that adoption. Filed as a defect with owner SM2 rather than
+as an incident.
+
+**Reproduction, and a much faster one.** It never reproduces alone (0
+hangs in 200 runs of the test by itself) — it needs concurrent load. The
+full suite hits it 2-3 times per 100 runs. Driving the lock directly
+with four workers doing the same `i % 3` write/read mix and a watchdog
+on per-worker progress counters hit it on the **first** attempt, which
+is what made the dump above possible.
+
+**Where to look.** The orphaned slot points at the enqueue/cleanup
+interaction the module's own comments already worry about — "dangling
+tail", "the enqueuer is orphaned", the stale-self defence, and the
+CAS-claim symmetry between `signal_next_waiter` and
+`cascade_admit_readers`. Some interleaving leaves a slot enqueued but
+unreachable while the queue's visible chain stays self-consistent.
+
+**Acceptance** (in the plan entry): the direct-drive harness runs 400
+attempts with no stall, and the full suite runs 100 times with no hang.
+
+Documentation only in this cut — the defect is another workstream's to
+fix, and the diagnostic harness was removed rather than committed, since
+a test that reproduces an unfixed deadlock would wedge CI on purpose.
+
 ## v0.32.146 — SM5.I's lock had no contention test, and one had been hanging CI all along
 
 Seven contention witnesses.
