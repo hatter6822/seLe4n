@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.32.141.
+Lean 4.28.0 toolchain, Lake build system, version 0.32.142.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -796,38 +796,47 @@ documentation lives under `docs/` and `docs/gitbook/`.
   transition in `withLockSet` requires the per-core kernel-state seam
   SM5 introduces; tracked as SM5.I follow-on.
 
-  **Kernel-entry serialisation is OWED, not present (SM5.I, registered
-  v0.32.129)**: `Platform.FFI.modifyGetKernelState` is
+  **Kernel-entry serialisation LANDED (SM5.I, v0.32.142; registered as
+  debt v0.32.129)**: `Platform.FFI.modifyGetKernelState` is
   `IO.Ref.modifyGet` — a read then a write, not a cross-core atomic —
-  so two cores committing concurrently can lose one transition whole
+  so two cores committing concurrently could lose one transition whole
   (both read `st`, the second write installs a post-state derived from
   a pre-state that no longer holds, and the caller is told it
-  succeeded).  Nothing serialises kernel entry: the shootdown round
+  succeeded).  Nothing serialised kernel entry: the shootdown round
   lock serialises rounds against rounds, interrupt disabling is
   per-core, and the SM3 per-object locks are deferred at the
-  `@[export]` bodies by SM3.C.9 above.  **Unreachable today** (SMP off
-  by default, no bootable image before SM9.E); High once bootable.
-  *Correction, v0.32.136*: "SMP off by default" was **false when
-  written** — `CmdlineConfig::default` returned `smp_enabled: true`
-  and Phase 5 stores that straight into `smp::SMP_ENABLED`, so a boot
-  with no cmdline override would have brought all four cores up and
-  made the race reachable on the first bootable image; only "no
-  bootable image" was carrying the claim.  The default is now `false`,
-  restoring the precondition decision #7 states for itself ("once SM5
-  lands"), pinned by two Rust tests that fail if it is flipped back
-  without the serialisation landing.  No
-  theorem is false — transitions are pure functions and the theorems
-  say what those functions compute — but a lost update breaks the tie
-  between theorem and runtime, `preserves_foreign` (SM7.F.3) being the
-  clearest consumer.  Found in PR #854 review round 18; the review
-  reported that the round-lock bracket does not exclude other cores'
-  commits, and reviewing that surfaced **five sites naming three
-  mutually exclusive mechanisms, none live** (`IO.Ref` atomicity, a
-  trap-handler kernel-entry lock, live fine locks).  All five now state
-  the debt identically.  Closure options, lock-ordering constraints and
-  acceptance criterion:
+  `@[export]` bodies by SM3.C.9 above.  **Closed** by
+  `rust/sele4n-hal/src/kernel_entry.rs`: a global SM2-verified
+  `TicketLock` (FIFO, so no core starves) bracketing **all three**
+  state-committing entries — `lean_syscall_dispatch_cross_core`
+  (`svc_dispatch::dispatch_svc`), `lean_per_core_timer_tick`
+  (`timer::handle_timer_interrupt`) and `suspend_thread_cross_core`
+  (`ffi::sele4n_suspend_thread`, the one a `lean_` sweep misses).  Two
+  properties are load-bearing rather than incidental: the lock is
+  acquired strictly **outside** `SHOOTDOWN_ROUND_LOCK` (tripwired by
+  `assert_not_holding_round_lock`), and its spin **self-services this
+  core's pending shootdown obligation** on every poll — IRQs are masked
+  on the entry paths, so a waiter cannot take the `.tlbShootdownReq`
+  SGI and a holder blocked on its acknowledgment would otherwise
+  deadlock against it.  That is the SM7.B.7 round-lock mechanism reused.
+  Fuel-bounded, halting system-wide on exhaustion (SM7.B.6 discipline).
+  With it live, **SMP returns to decision #7's `smp_enabled: true`
+  default**, which was gated on exactly this phase.  No theorem was ever
+  false — transitions are pure functions and the theorems say what those
+  functions compute — but a lost update broke the tie between theorem
+  and runtime, `preserves_foreign` (SM7.F.3) being the clearest
+  consumer.  Found in PR #854 review round 18; the review reported that
+  the round-lock bracket does not exclude other cores' commits, and
+  reviewing that surfaced **five sites naming three mutually exclusive
+  mechanisms, none live** (`IO.Ref` atomicity, a trap-handler
+  kernel-entry lock, live fine locks).  All five now describe the lock
+  that actually runs.  **Residual**: the entry lock is one global lock,
+  not the per-object fine locks SM3.C.9 still defers, so live WCRT is
+  weaker than `PerCoreWcrt.lean`'s fine-lock bound (which remains a
+  statement about the intended discipline); and nothing here is
+  exercised on hardware before SM9.E.  See
   [`docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md`](docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md)
-  §"Kernel-entry serialisation".  Must land as its own reviewable slice.
+  §"Kernel-entry serialisation".
 
   **SM6.A cross-core `.call` — COMPLETE (v0.31.66 live dispatch → v0.31.67
   multi-core completion)**: the live `.call` syscall routes through the cross-core

@@ -195,13 +195,13 @@ pub mod per_cpu;
 // (string → config), the self-contained DTB walker
 // `extract_bootargs_into`, and the Phase-5 entry helpers
 // `parse_cmdline_from_dtb` / `apply_cmdline_and_start_smp`.  The
-// default is `smp_enabled = false`: operators opt IN via
-// `smp_enabled=true` on the kernel command line.  Maintainer decision
-// #7 makes SMP the default at v1.0.0 *once SM5 lands*, and kernel
-// entry is not yet serialised (SM5.I), so the opt-in default is what
-// keeps that gap unreachable.  See the module docstring in
-// `cmdline.rs` for the option inventory and the parser's robustness
-// contract.
+// default is `smp_enabled = true`: operators opt OUT via
+// `smp_enabled=false` on the kernel command line.  Maintainer decision
+// #7 makes SMP the default at v1.0.0 *once SM5 lands*; SM5.I
+// serialised kernel entry at v0.32.142, so the default is opt-out
+// again (it was opt-in from v0.32.136 while that was owed).  See the
+// module docstring in `cmdline.rs` for the option inventory and the
+// parser's robustness contract.
 pub mod cmdline;
 // WS-SM SM1.I.4: per-core exception / interrupt statistics.  Provides
 // `PerCpuStats` (cache-line aligned counters), the global
@@ -234,6 +234,14 @@ pub mod shootdown;
 // usage.  See the module docstring in `ticket_lock.rs` for the
 // operational mapping to the Lean spec and ARM ARM citations.
 pub mod ticket_lock;
+// WS-SM SM5.I: kernel-entry serialisation.  Every `lean_*` entry that
+// commits kernel state runs under `kernel_entry::with_kernel_entry`,
+// because `Platform.FFI.modifyGetKernelState` is a read-then-write and
+// two concurrent commits would otherwise lose one whole transition.
+// Backed by `ticket_lock::TicketLock` (FIFO, so no core starves), with
+// a spin that discharges its own pending shootdown obligation — see the
+// module docstring for why an ordinary spin deadlocks.
+pub mod kernel_entry;
 // WS-SM SM2.C.19: Rust RwLock implementation refining the Lean
 // operational spec at SeLe4n/Kernel/Concurrency/Locks/RwLock.lean.
 // Reader-writer lock with bit-packed atomic state (bit 63 = writer-held,

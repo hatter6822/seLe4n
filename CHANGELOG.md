@@ -1,3 +1,85 @@
+## v0.32.142 — SM5.I: kernel entry is serialised
+
+Closes the last open P1 on PR #854, and the oldest: kernel entry had no
+mutual exclusion at all. `Platform.FFI.modifyGetKernelState` is
+`IO.Ref.modifyGet` — a read then a write, not a cross-core atomic — so
+two cores committing concurrently both read `st`, both computed a
+post-state from it, and the second write installed a state derived from
+a pre-state that no longer held: the first core's entire transition
+discarded, with its caller told the syscall succeeded.
+
+**The lock.** New `rust/sele4n-hal/src/kernel_entry.rs`: one global
+lock, backed by the SM2 verified `TicketLock` so entry is FIFO and no
+core starves under a neighbour that re-enters in a loop.
+`with_kernel_entry` brackets every entry that commits state.
+
+**Three entries, not two.** `lean_syscall_dispatch_cross_core`
+(`svc_dispatch::dispatch_svc`), `lean_per_core_timer_tick`
+(`timer::handle_timer_interrupt`) and — the one a `lean_` sweep misses,
+because it reaches Lean through `sele4n_suspend_thread` —
+`suspend_thread_cross_core` (`ffi::sele4n_suspend_thread`). A lost
+suspend is a thread that keeps running after its caller was told it
+stopped. The bring-up entries (`lean_kernel_main`,
+`lean_secondary_kernel_main`) are deliberately outside the bracket:
+they run before their core takes part in concurrent entry.
+
+**Why the spin self-services, and why the plan's own instruction was
+wrong.** The plan required the lock to "spin with interrupts enabled so
+a holder waiting on shootdown acks can still service
+`.tlbShootdownReq`". The deadlock it names is real: core A holds this
+lock, blocks on core B's shootdown acknowledgment; B is spinning here;
+IRQs are masked on both entry paths, so B cannot take the SGI that
+would let it acknowledge. But enabling interrupts is the wrong fix and
+introduces a second deadlock — an IRQ taken mid-spin re-enters the
+kernel on a core already queued for a non-reentrant lock, so a timer
+tick would deadlock against its own core's pending syscall.
+
+The implementation keeps IRQs masked and has the waiter **discharge its
+own obligation** instead: every failed poll calls
+`shootdown::self_service_round`, which invalidates locally and
+acknowledges the published round if this core owes one — exactly what
+the SGI handler would have done, minus the interrupt. That is the
+mechanism SM7.B.7 already uses for the round lock, so this reuses a
+pattern the subsystem has already proven rather than inventing one.
+
+**Lock order and fail-closed.** Acquired strictly *outside*
+`SHOOTDOWN_ROUND_LOCK` (the transition takes that one inside the
+bracket), tripwired by `assert_not_holding_round_lock` on the one edge
+that would close a cycle. The spin is fuel-bounded and halts
+system-wide on exhaustion via `gic::halt_all`, matching the SM7.B.6
+discipline — a wedged holder means some core is stuck inside a
+transition, so stopping only the core that noticed would leave the
+others committing against a state nobody owns.
+
+`TicketLock` gains one thin accessor, `take_ticket`, so the new spin
+body can reuse the verified lock's state and ordering rather than
+reimplementing a ticket pair. `TicketLock` itself still knows nothing
+about shootdown.
+
+**SMP is on by default again (`smp_enabled: true`).** That flip is part
+of this phase's acceptance criterion, not a follow-up: decision #7 puts
+SMP on at v1.0.0 "once SM5 lands", and the default was `false` from
+v0.32.136 only because the precondition was unmet. The pinning tests
+are inverted and renamed rather than deleted, and they now pin the
+*pairing*: if the kernel-entry bracket is ever removed or bypassed, the
+default must return to `false` in the same change.
+
+**All five contradictory sites now describe the lock that runs.**
+`Platform/FFI.lean`, `Kernel/PerCoreTimerEntry.lean`,
+`Scheduler/Operations/PerCoreRunLoop.lean`,
+`Scheduler/Operations/PerCoreWcrt.lean` and `cmdline.rs` previously
+named three mutually exclusive mechanisms, none of them live.
+
+**Residual, stated rather than buried.** The entry lock is one global
+lock, not SM3.C.9's per-object fine locks — so live worst-case response
+time is *weaker* than `PerCoreWcrt.lean`'s bound, and that module now
+says so explicitly instead of letting its fine-lock bound read as a
+measurement of the runtime. And none of this is exercised on hardware
+before SM9.E.
+
+Rust 813 → 819 HAL tests (6 new, including the load-bearing one: a
+waiter offers to discharge its obligation on *every* poll, for its own
+core and not the holder's), clippy clean, zero ignored.
 ## v0.32.141 — Round 28: two contract sites the flip and the ack rewrite left behind
 
 PR #854 review round 28: two findings, both valid, both the same

@@ -1802,7 +1802,40 @@ abstractly.*
 
 ---
 
-## Kernel-entry serialisation (tracked debt, owner SM5.I)
+## Kernel-entry serialisation (LANDED, SM5.I, v0.32.142)
+
+> **Closure record.** Landed as option 1 below — a kernel-entry lock —
+> in `rust/sele4n-hal/src/kernel_entry.rs`. The acceptance criterion is
+> met: no kernel entry commits state without holding a lock that
+> excludes every other kernel entry, all five sites now describe the
+> mechanism that actually runs, and the cmdline default has returned to
+> `smp_enabled: true`.
+>
+> Three entries are bracketed, not two. `suspend_thread_cross_core`
+> reaches Lean through `ffi::sele4n_suspend_thread` rather than a
+> `lean_*` symbol, so the entry inventory below (written from a `lean_`
+> sweep) undercounted it. A lost suspend is a thread that keeps running
+> after its caller was told it stopped.
+>
+> Both constraints stated in "Closure" were honoured, and the first was
+> honoured *differently* than written. The section says the lock "must
+> spin with interrupts enabled so a holder waiting on shootdown acks can
+> still service `.tlbShootdownReq`". Enabling interrupts is the wrong
+> fix and would have introduced a second deadlock: an IRQ taken mid-spin
+> re-enters the kernel on a core already queued for a non-reentrant
+> lock, so a timer tick would deadlock against its own core's pending
+> syscall. The live implementation keeps IRQs masked and has the waiter
+> **discharge its own obligation** (`shootdown::self_service_round`) on
+> every poll — the same mechanism SM7.B.7 already uses for the round
+> lock, and it removes the need for the interrupt entirely.
+>
+> **Residual, both tracked and neither a correctness gap.** The lock is
+> one global lock rather than SM3.C.9's per-object fine locks, so live
+> WCRT is weaker than `PerCoreWcrt.lean`'s bound — that bound remains a
+> statement about the intended discipline and now says so. And nothing
+> here runs on hardware before SM9.E.
+
+### Original record (tracked debt, owner SM5.I)
 
 Surfaced by PR #854 review round 18, while reviewing the round-window
 catch-up commit. Not an SM7 defect — SM7 inherits it — but recorded

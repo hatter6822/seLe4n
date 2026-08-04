@@ -21,13 +21,24 @@ import SeLe4n.Kernel.Scheduler.Liveness.RPi5CanonicalConfig
 # WS-SM SM5.J — WCRT under fine locks (plan §3.9)
 
 Per-core scheduler operations are *designed* to run under per-object RW **fine
-locks** (SM3) rather than a single kernel-entry lock, and this module's bound is
-stated under that discipline.  The discipline is **not yet live**: SM3.C.9 defers
-wrapping the `@[export]` bodies in `withLockSet` to the SM5 per-core kernel-state
-seam, so at runtime the operations below hold no locks at all and the premise
-this bound rests on is owed (tracked SM5.I; see
-`Platform.FFI.modifyGetKernelState` for what that costs).  The bound is therefore
-a statement about the intended discipline, not a measurement of today's runtime.
+locks** (SM3), and this module's bound is stated under that discipline.
+
+**What is live is coarser than what this bound assumes.**  SM5.I (v0.32.142)
+serialises kernel entry with a single global `TicketLock`
+(`rust/sele4n-hal/src/kernel_entry.rs`), so the operations below do now run
+under a lock — but one lock for the whole kernel, not per-object fine locks.
+That closes the correctness gap this section used to record (concurrent commits
+could lose a transition whole; see `Platform.FFI.modifyGetKernelState`) and it
+gives the bound a real queue discipline to rest on, since the ticket lock is
+FIFO and bounds the waiters ahead of a core at `numCores - 1`.
+
+It does **not** make the fine-lock bound below a measurement of today's runtime.
+A single entry lock serialises operations that fine locks would let run
+concurrently, so the live worst-case response time is *weaker* than what this
+module proves: the bound stated here remains a statement about the intended
+SM3.C.9 discipline, which still defers wrapping the `@[export]` bodies in
+`withLockSet`.  Reading it as the current runtime's WCRT would overstate what
+the kernel delivers.
 
 This module bounds their **worst-case response time (WCRT)**
 under that fine-lock contention, extending the R5 domain-rotation / band-exhaustion

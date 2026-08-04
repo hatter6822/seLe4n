@@ -471,6 +471,19 @@ pub fn round_lock_release() {
     round_lock_release_in(&SHOOTDOWN_ROUND_LOCK)
 }
 
+/// **WS-SM SM5.I**: is the global round lock currently held?
+///
+/// Diagnostic only — the value is a snapshot and any caller that
+/// *acted* on it would be racing. Its one use is
+/// `kernel_entry::assert_not_holding_round_lock`, the lock-order
+/// tripwire: the kernel-entry lock is acquired strictly outside this
+/// one, and taking them in the other order is the single edge that
+/// would close a cycle.
+#[must_use]
+pub fn round_lock_is_held() -> bool {
+    SHOOTDOWN_ROUND_LOCK.load(Ordering::Acquire)
+}
+
 // ============================================================================
 // WS-SM SM7.F.3 (PR #854 review P1) — Runtime round-generation allocator
 // ============================================================================

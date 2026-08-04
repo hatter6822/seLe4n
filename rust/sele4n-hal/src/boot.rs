@@ -10,13 +10,13 @@
 //! Phase 3: GIC-400 + ARM Generic Timer initialization (AG5)
 //! Phase 4: TPIDR_EL1 setup → IRQ enable
 //! Phase 5: WS-SM SM1.D — DTB cmdline parse → secondary-core bring-up
-//!          (only when `smp_enabled=true`, which is NOT the default:
-//!           see `cmdline::CmdlineConfig::default` — SMP stays off until
-//!           SM5.I serialises kernel entry)
+//!          (`smp_enabled=true` is the default again since v0.32.142,
+//!           when SM5.I serialised kernel entry; see
+//!           `cmdline::CmdlineConfig::default`)
 //! Phase 6: Handoff to Lean kernel (AG7 — FFI bridge)
 
 /// Kernel version string — matches Lean lakefile.toml version.
-const KERNEL_VERSION: &str = "0.32.141";
+const KERNEL_VERSION: &str = "0.32.142";
 
 /// Rust entry point called from assembly `_start` after BSS zeroing and
 /// stack setup. Receives the DTB pointer from U-Boot in x0.
@@ -256,12 +256,11 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
     // SM1.D.1: parse the kernel command-line from the DTB's
     // `/chosen/bootargs` property (or use defaults if the DTB is
     // absent / malformed / missing the property).  The default config
-    // (`CmdlineConfig::default()`) has `smp_enabled = false` and
+    // (`CmdlineConfig::default()`) has `smp_enabled = true` and
     // `smp_max_cores = 4`.  Maintainer decision #7 enables SMP by
-    // default at v1.0.0 *once SM5 lands*; kernel entry is not yet
-    // serialised (SM5.I), so the default stays opt-in until it is —
-    // see `cmdline.rs` and `SMP_TLB_SHOOTDOWN_PLAN.md`
-    // §"Kernel-entry serialisation".
+    // default at v1.0.0 *once SM5 lands*; SM5.I serialised kernel entry
+    // at v0.32.142, so the default is opt-out again — see `cmdline.rs`
+    // and `SMP_TLB_SHOOTDOWN_PLAN.md` §"Kernel-entry serialisation".
     //
     // SM1.D.2: when `smp_enabled` is true, issue PSCI CPU_ON for each
     // secondary up to `smp_max_cores`, then signal them via SEV.
@@ -279,11 +278,10 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
     // Pre-SM1.D the kernel reached Phase 5's predecessor "Handoff
     // summary" without ever issuing CPU_ON, so secondaries stayed
     // parked in the boot.S `.L_secondary_spin` loop forever and only
-    // the boot core ran kernel code.  Post-SM1.D the secondaries CAN
-    // be brought online, but only on an explicit `smp_enabled=true`:
-    // under the default the boot core still runs alone by the time
-    // the Lean kernel main runs, which is what keeps the unserialised
-    // kernel entry (SM5.I) unreachable.
+    // the boot core ran kernel code.  Post-SM1.D, and with SM5.I's
+    // kernel-entry lock live since v0.32.142, all 4 RPi5 cores are
+    // online by default by the time the Lean kernel main runs; an
+    // operator opts out with `smp_enabled=false`.
     // -----------------------------------------------------------------------
     let cmdline_cfg = crate::cmdline::parse_cmdline_from_dtb(dtb_ptr);
     crate::kprintln!(
@@ -514,7 +512,7 @@ mod tests {
         // update this test in lockstep with `lakefile.toml`.
         // `scripts/check_version_sync.sh` (Tier 0) provides the
         // canonical drift check; this test is the local pin.
-        assert_eq!(KERNEL_VERSION, "0.32.141");
+        assert_eq!(KERNEL_VERSION, "0.32.142");
     }
 
     #[test]
@@ -542,12 +540,12 @@ mod tests {
         // then stores `cfg.smp_enabled` straight into
         // `smp::SMP_ENABLED`.  This is therefore the test that decides
         // whether a real boot brings secondaries up, which is why it
-        // is the boot-side half of the safety claim: kernel entry is
-        // not serialised until SM5.I, so the default must be off.
+        // is the boot-side half of the safety claim: SM5.I serialised
+        // kernel entry at v0.32.142, so the default brings cores up.
         let cfg = crate::cmdline::parse_cmdline_from_dtb(0);
         assert!(
-            !cfg.smp_enabled,
-            "Phase 5 default must leave SMP disabled until SM5.I (SM1.D.3)"
+            cfg.smp_enabled,
+            "Phase 5 default enables SMP now that SM5.I has landed (SM1.D.3)"
         );
     }
 

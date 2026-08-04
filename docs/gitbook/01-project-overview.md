@@ -112,12 +112,13 @@ per-core scheduler entry).
 SM1.D adds Phase 5 to `rust_boot_main`: a full self-contained DTB
 walker parses `/chosen/bootargs`, produces a typed `CmdlineConfig`,
 and dispatches to `bring_up_secondaries_with_limit` to spawn the
-configured set of secondaries.  **Default from v0.32.136 is
-`smp_enabled=false smp_max_cores=4`; operators opt IN via the kernel
+configured set of secondaries.  **Default from v0.32.142 is
+`smp_enabled=true smp_max_cores=4`; operators opt OUT via the kernel
 command line.**  Maintainer decision #7 puts SMP on by default at
-v1.0.0 "once SM5 lands", and SM5.I (kernel-entry serialisation) has
-not landed — see `docs/spec/SELE4N_SPEC.md` for why, and
-`cmdline::CmdlineConfig::default` for the enforcing code.
+v1.0.0 "once SM5 lands"; SM5.I (kernel-entry serialisation) landed at
+v0.32.142, so the default returned to `true` — it was `false` from
+v0.32.136 while that precondition was unmet.  See
+`docs/spec/SELE4N_SPEC.md` and `kernel_entry.rs`.
 SM1.E adds 8 broadcast TLBI wrappers (4 IS-variants `tlbi_*is` for
 inner-shareable broadcast + 4 OS-variants `tlbi_*os` for outer-
 shareable) plus the typed `tlbi_for_sharing(domain, op)` dispatcher

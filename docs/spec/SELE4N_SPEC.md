@@ -49,9 +49,9 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.32.141` (`lakefile.toml`) |
+| **Package version** | `0.32.142` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 238,317 across 264 Lean files |
+| **Production LoC** | 238,348 across 264 Lean files |
 | **Test LoC** | 48,449 across 67 Lean test suites |
 | **Proved declarations** | 7,798 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
@@ -586,12 +586,13 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    token parser produces a typed `CmdlineConfig`, and
    `apply_cmdline_and_start_smp` writes `smp::SMP_ENABLED` then
    dispatches `bring_up_secondaries_with_limit` (SM1.D.6 limit-aware
-   variant).  **Default from v0.32.136 is `smp_enabled=false
-   smp_max_cores=4`; operators opt IN via the kernel command line.**
+   variant).  **Default from v0.32.142 is `smp_enabled=true
+   smp_max_cores=4`; operators opt OUT via the kernel command line.**
    Maintainer decision #7 puts SMP on by default at v1.0.0 "once SM5
-   lands", and SM5.I — serialising kernel entry — has not landed, so
-   the precondition is unmet: `Platform.FFI.modifyGetKernelState` is
-   an `IO.Ref.modifyGet`, and booting secondaries by default would
+   lands", and SM5.I — serialising kernel entry — landed at v0.32.142,
+   so the precondition is met.  It was `false` from v0.32.136 to
+   v0.32.141, because `Platform.FFI.modifyGetKernelState` is an
+   `IO.Ref.modifyGet` and booting secondaries by default would
    make a lost transition reachable on the first bootable image.  The
    default flips back in the change that lands SM5.I.  A new
    `scan_boot_rs_calls_cmdline_smp_startup`

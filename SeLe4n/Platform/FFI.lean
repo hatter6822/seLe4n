@@ -996,32 +996,42 @@ def updateKernelState (f : SystemState → SystemState) : BaseIO Unit :=
     recover the by-product (the per-core timer-tick driver uses this to commit
     `timerTickOnCore`'s new state and recover its cross-core SGIs in one step).
 
-    **This is not a cross-core atomic.**  `IO.Ref.modifyGet` is a read followed
-    by a write, not a hardware read-modify-write, so two cores committing
-    concurrently can lose one commit entirely: both read `st`, both compute from
-    it, and the second write installs a post-state derived from a pre-state that
-    no longer holds — silently discarding the first core's whole transition and
-    returning success for it.  Every verified transition is a *pure function*, so
-    the theorems say what `f` computes, not that `f` is applied to the state the
-    caller last observed; that gap is closed by serialising kernel entry, not by
-    this combinator.
+    **This combinator is not itself a cross-core atomic.**  `IO.Ref.modifyGet`
+    is a read followed by a write, not a hardware read-modify-write, so two
+    cores calling it concurrently would lose one commit entirely: both read
+    `st`, both compute from it, and the second write installs a post-state
+    derived from a pre-state that no longer holds — silently discarding the
+    first core's whole transition and returning success for it.  Every verified
+    transition is a *pure function*, so the theorems say what `f` computes, not
+    that `f` is applied to the state the caller last observed; that gap is
+    closed by serialising kernel entry, not by this combinator.
 
-    **Serialisation is owed, not present.**  The design has kernel entry
-    serialised — `Scheduler/Operations/PerCoreRunLoop.lean` and
-    `Kernel/PerCoreTimerEntry.lean` state the tick runs under a kernel-entry lock
-    held by the trap handler, and `PerCoreWcrt.lean` bounds response time under
-    per-object fine locks — but neither mechanism is live: no kernel-entry lock
-    exists (`rust/sele4n-hal/src/cmdline.rs` records its absence), and SM3.C.9
-    defers wrapping the `@[export]` bodies in `withLockSet` until the SM5 per-core
-    kernel-state seam.  Until one of the two lands, concurrent kernel entry is
-    unsound, which is why SMP stays off by default and why there is no bootable
-    image before SM9.E.  That first half is *enforced* rather than asserted:
-    `CmdlineConfig::default` returns `smp_enabled: false`, pinned by
-    `default_boot_does_not_enable_smp_until_kernel_entry_is_serialized`.  It
-    returned `true` until v0.32.136, so every site stating this — five of them —
-    was describing a boot that would have brought the secondaries up.  Flip it
-    back only in the change that lands the serialisation.  Tracked as SM5.I; see
-    `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` §"Kernel-entry serialisation". -/
+    **Serialisation is present (SM5.I, v0.32.142).**  Every kernel entry that
+    reaches this combinator runs inside
+    `rust/sele4n-hal/src/kernel_entry.rs`'s `with_kernel_entry` bracket, so the
+    read and the write are one critical section against every other kernel
+    entry.  All three entries are bracketed —
+    `lean_syscall_dispatch_cross_core` (`svc_dispatch::dispatch_svc`),
+    `lean_per_core_timer_tick` (`timer::handle_timer_interrupt`) and
+    `suspend_thread_cross_core` (`ffi::sele4n_suspend_thread`).  The bring-up
+    entries (`lean_kernel_main`, `lean_secondary_kernel_main`) are deliberately
+    outside it: they run before their core takes part in concurrent entry.
+
+    The lock is the SM2 verified `TicketLock`, so entry is FIFO and no core
+    starves; it is acquired strictly **outside** `SHOOTDOWN_ROUND_LOCK`; and its
+    spin **discharges the waiter's own pending shootdown obligation** on every
+    poll (`shootdown::self_service_round`).  That last part is load-bearing
+    rather than an optimisation: IRQs are masked on the kernel-entry paths, so a
+    waiter cannot take the `.tlbShootdownReq` SGI, and a holder blocked on that
+    waiter's acknowledgment would otherwise deadlock against it.  It is the same
+    mechanism SM7.B.7 already uses for the round lock.
+
+    Until v0.32.142 this said the serialisation was *owed*, and five sites
+    across Lean and Rust described three mutually exclusive mechanisms, none of
+    them live.  With the lock in place, SMP returns to the default decision #7
+    states (`CmdlineConfig::default` has `smp_enabled: true`), which was gated on
+    exactly this phase.  See `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md`
+    §"Kernel-entry serialisation". -/
 def modifyGetKernelState {α : Type} (f : SystemState → α × SystemState) : BaseIO α :=
   kernelStateRef.modifyGet f
 

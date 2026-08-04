@@ -393,9 +393,18 @@ pub fn per_core_timer_tick_isr(core_id: u64) {
         extern "C" {
             fn lean_per_core_timer_tick(core_id: u64);
         }
-        unsafe {
+        // WS-SM SM5.I: the tick commits kernel state through the same
+        // `modifyGetKernelState` read-then-write the syscall path uses,
+        // so it takes the same kernel-entry lock.  Without it a tick on
+        // one core and a syscall on another can lose one commit whole.
+        //
+        // Non-reentrancy is what makes this safe on a single core: both
+        // kernel-entry paths run with IRQs masked, so a tick cannot
+        // preempt a syscall on the same core and queue behind a ticket
+        // that core already holds.
+        crate::kernel_entry::with_kernel_entry(core_id as usize, || unsafe {
             lean_per_core_timer_tick(core_id);
-        }
+        });
     }
     #[cfg(not(feature = "hw_target"))]
     let _ = core_id;

@@ -359,6 +359,33 @@ impl TicketLock {
     pub fn peek_serving(&self) -> u64 {
         self.serving.load(Ordering::Acquire)
     }
+
+    /// **WS-SM SM5.I**: take a ticket without spinning for it.
+    ///
+    /// This is [`Self::acquire`]'s step 1 in isolation — the identical
+    /// `next_ticket.fetch_add(1, Acquire)` — so a caller that needs a
+    /// different *spin body* than `acquire`'s can reuse this lock's
+    /// state and ordering rather than reimplementing a ticket pair.
+    ///
+    /// `kernel_entry` needs exactly that: its waiters must discharge
+    /// their own pending shootdown obligation on every failed poll
+    /// (otherwise a holder blocked on acknowledgments deadlocks against
+    /// a waiter that cannot take the SGI), and must be fuel-bounded so
+    /// a wedged holder fails closed instead of hanging. Neither belongs
+    /// in a general-purpose lock primitive, and `TicketLock`
+    /// deliberately knows nothing about shootdown.
+    ///
+    /// **The caller owns the obligation `acquire` discharges for you**:
+    /// having taken a ticket you MUST either spin to
+    /// [`Self::peek_serving`]` == ticket` and then eventually
+    /// [`Self::release`], or never return. Dropping a taken ticket on
+    /// the floor wedges every later ticket permanently — the counter is
+    /// monotone and nothing reissues a skipped one.
+    #[must_use]
+    #[inline]
+    pub fn take_ticket(&self) -> u64 {
+        self.next_ticket.fetch_add(1, Ordering::Acquire)
+    }
 }
 
 /// **WS-SM SM2.B.16**: RAII guard for `TicketLock`.

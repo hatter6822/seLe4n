@@ -96,12 +96,14 @@ WS-AN Phase AN9 closes every hardware-binding deferred item from
   (`parse_cmdline_from_dtb`, `apply_cmdline_and_start_smp`).
   `rust_boot_main` Phase 5 wires the parse → bring-up dispatch
   after Phase 4 (TPIDR_EL1 / IRQ enable) and before Phase 6
-  (Lean kernel handoff).  **Default from v0.32.136 is
-  `smp_enabled=false smp_max_cores=4`; operators opt IN via the
+  (Lean kernel handoff).  **Default from v0.32.142 is
+  `smp_enabled=true smp_max_cores=4`; operators opt OUT via the
   kernel command line** — maintainer decision #7 puts SMP on by
   default at v1.0.0 "once SM5 lands", and SM5.I (kernel-entry
-  serialisation) has not landed.  The Tier-4 QEMU SMP exercisers
-  therefore pass `-append "smp_enabled=true"` explicitly.  82 new HAL
+  serialisation) landed at v0.32.142.  It was `false` from v0.32.136
+  until then.  The Tier-4 QEMU SMP exercisers still pass
+  `-append "smp_enabled=true"` explicitly, which is now redundant but
+  keeps each script's intent legible without relying on the default.  82 new HAL
   unit tests in `cmdline::tests` (parser branches, DTB-blob
   fixtures, MAX_BOOTARGS_LEN buffer handling) + 7 new tests
   for `smp::bring_up_secondaries_with_limit` saturation

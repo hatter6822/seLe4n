@@ -1139,16 +1139,30 @@ pub extern "C" fn ffi_rw_lock_release_write_count(handle: u64) -> u64 {
 #[no_mangle]
 pub extern "C" fn sele4n_suspend_thread(tid: u64) -> u32 {
     crate::interrupts::with_interrupts_disabled(|| {
-        // SAFETY: in production builds `suspend_thread_cross_core` is a
-        // Lean-emitted `extern "C"` symbol; calling an extern "C"
-        // function is unsafe.  In test builds it is a Rust-side
-        // safe stub.  We use `unsafe` unconditionally so the
-        // production path is correct; the `#[allow(unused_unsafe)]`
-        // suppresses the test-only warning.
-        #[allow(unused_unsafe)]
-        unsafe {
-            suspend_thread_cross_core(tid)
-        }
+        // WS-SM SM5.I: the third kernel entry that commits state, and
+        // the one easiest to miss — it reaches Lean through
+        // `sele4n_suspend_thread` rather than a `lean_*` symbol, so a
+        // sweep for `lean_` does not find it.  `suspendThreadCrossCoreEntry`
+        // commits through the same `modifyGetKernelState` read-then-write,
+        // so it needs the same exclusion: a suspend racing a syscall on
+        // another core can otherwise lose either commit whole, and a lost
+        // suspend is a thread that keeps running after its caller was told
+        // it stopped.
+        //
+        // Interrupt disabling (outside) is per-core and orthogonal: it
+        // stops this core re-entering, not another core committing.
+        crate::kernel_entry::with_kernel_entry(crate::cpu::current_core_id() as usize, || {
+            // SAFETY: in production builds `suspend_thread_cross_core` is a
+            // Lean-emitted `extern "C"` symbol; calling an extern "C"
+            // function is unsafe.  In test builds it is a Rust-side
+            // safe stub.  We use `unsafe` unconditionally so the
+            // production path is correct; the `#[allow(unused_unsafe)]`
+            // suppresses the test-only warning.
+            #[allow(unused_unsafe)]
+            unsafe {
+                suspend_thread_cross_core(tid)
+            }
+        })
     })
 }
 
