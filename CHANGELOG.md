@@ -1,3 +1,63 @@
+## v0.32.128 — Config files are not prose, and a hyphen is a word break
+
+PR #854 review, seventeenth round: five findings on the naming gate,
+four valid and one factually wrong.
+
+**Declined: the Rust toolchain P1.** The review states that `1.94.1` "does
+not exist — the published release in this series is `1.94.0`", and that
+every build under `rust/` would fail on a nonexistent manifest before
+running. It is installed on this machine — `rustc 1.94.1 (e408947bf
+2026-03-25)`, at `~/.rustup/toolchains/1.94.1-x86_64-unknown-linux-gnu` —
+and all seven CI checks on the reviewed commit are green, including Rust
+ABI Tests, whose Fast-gate log records "installing Rust 1.94.1 toolchain"
+followed by "Rust 1.94.1 toolchain installed". No change made.
+
+**YAML and TOML were routed through the Python stripper**, which blanks
+quoted scalars as prose. A workflow's `run: "phase5_helper"` is a
+command and a `lakefile.toml` value is a build-target name; neither is
+Python prose. This is the same defect as pointing `.sh` at `strip_hash`
+one round ago, in formats where quoting carries even less meaning — YAML
+quotes a scalar only when the grammar forces it. The review named YAML;
+TOML has the identical defect and is fixed with it, since fixing the
+named instance and leaving its twin is how this gate has spent seven
+rounds. New `strip_config` blanks `#` comments and keeps everything else.
+
+It found `SM5` in `tests/fixtures/scenario_registry.yaml` and eight Lake
+target names in `lakefile.toml` (`ak8_coverage_suite`, `An10CascadeSuite`
+and friends) — real violations that had been invisible.
+
+**`.txt` had no stripper.** Four tracked text files outside `docs/` carry
+module and check identifiers; `scripts/website_link_manifest.txt` holds
+`_WS_RC_BASELINE`. Same treatment as `.json`/`.expected` last round.
+
+**A hyphen separates words in a path, and the gate did not know it.**
+`scripts/WS-SM_helpers.py` tokenised as `WS`, `SM_helpers`, `py`: the
+lone `WS` is ignored by the bare-token rule and `SM_helpers` matches no
+family, so the canonical spelling of the explicitly forbidden `WS-*`
+class passed. **This hole was opened by the v0.32.126 bare-`ws` carve-out
+itself** — before it, a bare `WS` was flagged. Paths now normalise `-` to
+`_`; contents deliberately do not, since there it is subtraction.
+
+**Contents now come from the git index, not the working tree.** `git
+ls-files` enumerates the index, so reading the working tree alongside it
+checked a state that is not the one being committed: a contributor could
+stage a coded identifier, delete it from the unstaged copy, and get a
+clean result. The module's docstring already promised the pre-commit case
+runs against the index, and per the implement-the-improvement rule the
+fix is to make the promise true rather than withdraw it. One batched
+`git cat-file --batch` reads the whole tree, so it stays a single fork.
+
+**Strictly monotone against v0.32.127, verified**: zero pairs lost, 10
+gained (+15 occurrences). Baseline 251 pairs, 932 occurrences.
+
+Self-test 75 → 86 checks. One of the new checks was **vacuous when first
+written** — it duplicated the path tokenizer instead of calling it, and
+so passed against the version lacking the fix. The tokenizer is now a
+single `path_tokens` function that both `scan` and the test call, and
+all six new checks are verified failing against v0.32.127.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F
+
 ## v0.32.127 — The gate's own test did not catch these either
 
 PR #854 review, sixteenth round: four P2s on the naming gate, one of

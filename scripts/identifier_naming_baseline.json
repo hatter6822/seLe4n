@@ -18,19 +18,23 @@
   "tests/Ak8CoverageSuite.lean": 3
  },
  "Ak8CoverageSuite": {
+  "lakefile.toml": 1,
   "tests/Ak8CoverageSuite.lean": 1
  },
  "Ak9PlatformSuite": {
+  "lakefile.toml": 1,
   "tests/Ak9PlatformSuite.lean": 4
  },
  "An10Cascade": {
   "tests/An10CascadeSuite.lean": 3
  },
  "An10CascadeSuite": {
+  "lakefile.toml": 1,
   "scripts/ak7_cascade_baseline.sh": 2,
   "tests/An10CascadeSuite.lean": 1
  },
  "An9HardwareBindingSuite": {
+  "lakefile.toml": 1,
   "tests/An9HardwareBindingSuite.lean": 1
  },
  "H16": {
@@ -55,7 +59,8 @@
   "scripts/test_tier3_invariant_surface.sh": 39
  },
  "SM5": {
-  "scripts/test_tier3_invariant_surface.sh": 110
+  "scripts/test_tier3_invariant_surface.sh": 110,
+  "tests/fixtures/scenario_registry.yaml": 6
  },
  "SM6": {
   "scripts/test_tier3_invariant_surface.sh": 5
@@ -71,6 +76,9 @@
  },
  "TPI": {
   "scripts/test_tier0_hygiene.sh": 3
+ },
+ "_WS_RC_BASELINE": {
+  "scripts/website_link_manifest.txt": 1
  },
  "ad1": {
   "SeLe4n/Model/State.lean": 1
@@ -113,6 +121,7 @@
   "tests/Ak8CoverageSuite.lean": 3
  },
  "ak8_coverage_suite": {
+  "lakefile.toml": 1,
   "scripts/test_tier2_negative.sh": 1
  },
  "ak8a_01_default_satisfies_untypedRegionsDisjoint": {
@@ -137,6 +146,7 @@
   "tests/ModelIntegritySuite.lean": 2
  },
  "ak9_platform_suite": {
+  "lakefile.toml": 1,
   "scripts/test_tier2_negative.sh": 1
  },
  "ak9a_01_mmioRead32_rejects_unaligned": {
@@ -311,6 +321,7 @@
   "tests/An10CascadeSuite.lean": 2
  },
  "an10_cascade_suite": {
+  "lakefile.toml": 1,
   "scripts/test_tier2_negative.sh": 1
  },
  "an10_d_clearPendingState_populated": {
@@ -443,6 +454,7 @@
   "tests/Ak9PlatformSuite.lean": 2
  },
  "an9_hardware_binding_suite": {
+  "lakefile.toml": 1,
   "scripts/test_tier2_negative.sh": 1
  },
  "asidAC4": {

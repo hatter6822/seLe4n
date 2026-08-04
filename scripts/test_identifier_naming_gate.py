@@ -128,12 +128,60 @@ check("a length expansion is not a comment",
       CODED in gate.strip_shell("echo " + dollar + "{#" + CODED + "}"), True)
 
 
+# --- Config and data formats are not Python prose ---------------------
+# A YAML `run:` is a command and a TOML value is often a package or
+# target name; the Python stripper blanked both as quoted prose.
+check("a YAML quoted scalar is code",
+      CODED in gate.strip_config("  run: " + dq + CODED + dq), True)
+check("a TOML value is code",
+      CODED in gate.strip_config("name = " + dq + CODED + dq), True)
+check("a config comment is blanked",
+      CODED in gate.strip_config("# " + CODED), False)
+check("a hash inside a value is not a comment",
+      CODED in gate.strip_config("url = " + dq + "a#" + CODED + dq), True)
+check("config does not share Python's stripper",
+      gate.CONTENT_STRIPPERS[".yml"] is not gate.CONTENT_STRIPPERS[".py"], True)
+
+
+# --- A hyphen separates words in a FILE NAME --------------------------
+# `WS-SM_helpers.py` splits into `WS` + `SM_helpers`, and the lone `WS`
+# is ignored by the bare-token rule -- so the carve-out that keeps `ws`
+# usable as a word opened a hole in the canonical `WS-*` spelling.
+# Calls the gate's own tokenizer, not a copy of it: a duplicate here
+# passed against the version that lacked the fix, which is exactly the
+# kind of vacuous check this file exists to avoid.
+def path_is_coded(rel: str) -> bool:
+    return any(gate.is_coded(t) for t in gate.path_tokens(rel))
+
+
+check("a hyphenated workstream path is caught",
+      path_is_coded("scripts/WS" + "-SM_helpers.py"), True)
+check("an ordinary hyphenated path passes",
+      path_is_coded("rust/rust-toolchain.toml"), False)
+check("a hyphen is not normalised in CONTENTS",   # there it is subtraction
+      CODED in gate.strip_lean("a - b"), False)
+
+
 # --- Discovery is NUL-delimited ---------------------------------------
 # Splitting `git ls-files` on whitespace turns a path containing a space
 # into fragments naming no file, and the failed read is swallowed.
 check("tracked paths are enumerated", len(gate.tracked_all()) > 100, True)
 check("no path fragment survives splitting",
       all(" " not in p or (gate.REPO_ROOT / p).exists() for p in gate.tracked_all()), True)
+
+
+# --- Contents come from the INDEX, not the working tree ---------------
+# `git ls-files` enumerates the index, so reading the working tree
+# checks a state that is not the one being committed: a coded identifier
+# could be staged and then deleted from the unstaged copy.
+check("staged contents are readable",
+      len(gate.index_contents(["scripts/check_identifier_naming.py"])), 1)
+check("the index read returns real content",
+      "COMPONENT_CODES" in gate.index_contents(
+          ["scripts/check_identifier_naming.py"])
+      .get("scripts/check_identifier_naming.py", ""), True)
+check("a missing index entry is skipped, not fatal",
+      gate.index_contents(["no/such/file.py"]), {})
 
 
 # --- The baseline is not scanned as code ------------------------------

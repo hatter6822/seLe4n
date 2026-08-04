@@ -54,6 +54,14 @@ making that mistake.
 8. **Discovery is NUL-delimited.**  `git ls-files` split on whitespace
    turns a path containing a space into fragments naming no file; the
    read then fails and is swallowed, so the file is never scanned.
+9. **A hyphen separates words in a path.**  `WS-SM_helpers.py` splits
+   into `WS` + `SM_helpers`, and the lone `WS` is ignored by the
+   bare-token rule -- so the carve-out that keeps `ws` usable as an
+   ordinary word opened a hole in the canonical `WS-*` spelling.  Paths
+   normalise `-` to `_`; contents do not, since there it is subtraction.
+10. **Contents come from the index, not the working tree.**  `git
+   ls-files` enumerates the index, so reading the working tree checks a
+   state that is not the one being committed.
 
 Every one of these was found by review rather than by the gate itself,
 which is what the companion `test_identifier_naming_gate.py` exists to
@@ -69,10 +77,10 @@ bug) let `scripts/phase5_helper.json` and `tests/phase5_helper.expected`
 skip even path scanning.
 
 Scope caveat: `git ls-files` sees *tracked* files, so a new file that
-has not been `git add`ed yet is not scanned locally.  That is right for
-CI (everything under test is committed) and for the pre-commit hook
-(which runs against the index), but a local run before staging can
-report a clean tree.  Stage, then trust the result.
+has not been `git add`ed yet is not scanned at all.  Both the paths and
+the contents come from the index, so what is checked is exactly what is
+being committed -- but a file you have not staged is invisible.  Stage,
+then trust the result.
 
 Regenerate with `--regenerate-baseline` when a workstream retires
 grandfathered names; review the diff, since the flag will also happily
@@ -332,6 +340,30 @@ def strip_shell(text: str) -> str:
     return "".join(out)
 
 
+def strip_config(text: str) -> str:
+    """YAML / TOML / plain-text data: blank `#` comments, keep the rest.
+
+    These were routed through the Python stripper, which blanks quoted
+    scalars as prose -- but a YAML `run: "phase5_helper"` is a command,
+    a TOML `name = "sele4n-hal"` is a package identifier, and neither is
+    Python prose.  Same defect as pointing `.sh` at `strip_hash`, in a
+    format where quoting carries even less meaning: YAML scalars are
+    quoted only when the grammar forces it.
+
+    `#` opens a comment only at the start of a word, so a `#` inside a
+    value keeps its line.
+    """
+    out, i, n = [], 0, len(text)
+    while i < n:
+        if text[i] == "#" and (i == 0 or text[i - 1] in " \t\n"):
+            j = text.find("\n", i)
+            j = n if j < 0 else j
+            out.append(" " * (j - i)); i = j
+        else:
+            out.append(text[i]); i += 1
+    return "".join(out)
+
+
 def strip_asm(t: str) -> str:
     """AArch64 `.S`: `//` and `/* */`.  `#` is cpp, not a comment, so a
     `#define`'s identifiers stay in scope."""
@@ -363,9 +395,10 @@ CONTENT_STRIPPERS = {
     ".bash": strip_shell,
     ".S": strip_asm,
     ".ld": strip_block_only,
-    ".toml": strip_hash,
-    ".yml": strip_hash,
-    ".yaml": strip_hash,
+    ".toml": strip_config,
+    ".yml": strip_config,
+    ".yaml": strip_config,
+    ".txt": strip_config,
     # Data formats carry no comments and no string/code distinction, so
     # every token is in scope.  Scenario ids and fixture labels are
     # identifiers by the rule's own reckoning -- CLAUDE.md's worked
@@ -401,6 +434,59 @@ def tracked_all() -> list[str]:
     return [p for p in out.split("\0") if p]
 
 
+def path_tokens(rel: str) -> list[str]:
+    """Tokenise a PATH, treating `-` as the word separator it is there.
+
+    `WS-SM_helpers.py` otherwise splits into `WS` + `SM_helpers`, and the
+    lone `WS` is ignored by the bare-token rule -- so the carve-out that
+    keeps `ws` usable as an ordinary word opened a hole in exactly the
+    canonical `WS-*` spelling.  Contents are deliberately NOT normalised
+    this way: there `a-b` is subtraction.
+
+    Kept as one function so the self-test exercises what `scan` runs
+    rather than a copy of it.
+    """
+    return [t for part in Path(rel).parts
+            for t in IDENTIFIER.findall(part.replace("-", "_"))]
+
+
+def index_contents(paths: list[str]) -> dict[str, str]:
+    """Read every path's STAGED content, in one `git cat-file --batch`.
+
+    `git ls-files` enumerates the index, so reading the working tree
+    alongside it checks a state that is not the one being committed: a
+    contributor could stage a coded identifier, delete it from the
+    unstaged copy, and get a clean result while the index still carries
+    the violation.  The docstring promises the pre-commit case runs
+    against the index, so it does.
+
+    In CI the two agree (a fresh checkout has an empty diff), which is
+    why this is a correctness fix rather than a behaviour change there.
+    One batched subprocess keeps it to a single fork for the whole tree
+    rather than one per file.
+    """
+    request = "".join(f":{p}\n" for p in paths).encode()
+    proc = subprocess.run(["git", "cat-file", "--batch"], cwd=REPO_ROOT,
+                          input=request, capture_output=True)
+    out, pos, result = proc.stdout, 0, {}
+    for path in paths:
+        nl = out.find(b"\n", pos)
+        if nl < 0:
+            break
+        header = out[pos:nl].split()
+        if len(header) < 3:            # "missing" -- unmerged or gone
+            pos = nl + 1
+            continue
+        size = int(header[2])
+        blob = out[nl + 1:nl + 1 + size]
+        pos = nl + 1 + size + 1        # trailing newline after the blob
+        try:
+            result[path] = blob.decode("utf-8")
+        except UnicodeDecodeError:
+            continue                   # binary: path still gets scanned
+    return result
+
+
 def is_doc(rel: str) -> bool:
     # The baseline is a record *about* violations and necessarily spells
     # every one of them out, so scanning it reports its own contents and
@@ -419,24 +505,21 @@ def scan() -> tuple[Counter, Counter]:
     strict: Counter = Counter()
     ratcheted: Counter = Counter()
 
-    for rel in tracked_all():
-        if is_doc(rel):
-            continue
+    tracked = [p for p in tracked_all() if not is_doc(p)]
+    staged = index_contents([p for p in tracked
+                             if Path(p).suffix in CONTENT_STRIPPERS])
+
+    for rel in tracked:
         bucket = strict if rel.startswith(STRICT_PREFIX) else ratcheted
 
-        for part in Path(rel).parts:
-            for token in IDENTIFIER.findall(part):
-                if is_coded(token):
-                    bucket[(token, rel)] += 1
+        for token in path_tokens(rel):
+            if is_coded(token):
+                bucket[(token, rel)] += 1
 
         stripper = CONTENT_STRIPPERS.get(Path(rel).suffix)
-        if stripper is None:
+        if stripper is None or rel not in staged:
             continue
-        try:
-            text = stripper((REPO_ROOT / rel).read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError):
-            continue
-        for token in IDENTIFIER.findall(text):
+        for token in IDENTIFIER.findall(stripper(staged[rel])):
             if is_coded(token):
                 bucket[(token, rel)] += 1
     return strict, ratcheted
