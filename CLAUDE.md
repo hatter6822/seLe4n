@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.32.135.
+Lean 4.28.0 toolchain, Lake build system, version 0.32.136.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -806,7 +806,16 @@ documentation lives under `docs/` and `docs/gitbook/`.
   lock serialises rounds against rounds, interrupt disabling is
   per-core, and the SM3 per-object locks are deferred at the
   `@[export]` bodies by SM3.C.9 above.  **Unreachable today** (SMP off
-  by default, no bootable image before SM9.E); High once bootable.  No
+  by default, no bootable image before SM9.E); High once bootable.
+  *Correction, v0.32.136*: "SMP off by default" was **false when
+  written** — `CmdlineConfig::default` returned `smp_enabled: true`
+  and Phase 5 stores that straight into `smp::SMP_ENABLED`, so a boot
+  with no cmdline override would have brought all four cores up and
+  made the race reachable on the first bootable image; only "no
+  bootable image" was carrying the claim.  The default is now `false`,
+  restoring the precondition decision #7 states for itself ("once SM5
+  lands"), pinned by two Rust tests that fail if it is flipped back
+  without the serialisation landing.  No
   theorem is false — transitions are pure functions and the theorems
   say what those functions compute — but a lost update breaks the tie
   between theorem and runtime, `preserves_foreign` (SM7.F.3) being the

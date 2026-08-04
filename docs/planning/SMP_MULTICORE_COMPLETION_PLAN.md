@@ -270,7 +270,7 @@ The 13 binding maintainer decisions:
 | 4 | **Path-a Vector replacement** | Cleaner final state. Cost: ~5000-7000 LoC of theorem rewrites. |
 | 5 | **numCores via PlatformBinding** | Multi-platform future-proof. |
 | 6 | **sharingDomain via PlatformBinding** | Cross-cluster support pre-positioned. |
-| 7 | **SMP enabled by default** | v1.0.0 headline capability; rigor enforced by QEMU `-smp 4` test mandate. |
+| 7 | **SMP enabled by default** | v1.0.0 headline capability; rigor enforced by QEMU `-smp 4` test mandate. **At v1.0.0, and CLAUDE.md records the condition: "once SM5 lands".** SM5.I (kernel-entry serialisation) has not landed, so from v0.32.136 `CmdlineConfig::default` is `smp_enabled: false` and the QEMU exercisers opt in explicitly. Flip both back in the change that lands SM5.I. |
 | 8 | **Per-core idle TCBs** | One per core; clean invariants. |
 | 9 | **SM0 spread across PRs** | Review-friendly small PRs. |
 | 10 | **Verified lock primitives** | TicketLock + RwLock proven in Lean; refinement to Rust impl proven. seL4 historically left these as assumptions. |

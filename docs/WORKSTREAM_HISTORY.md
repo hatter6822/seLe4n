@@ -2231,6 +2231,17 @@ its module-load default (`false`), and secondaries spun in
 parses the cmdline, defaults to SMP-on (per maintainer decision
 #7), and brings up all 4 RPi5 cores by default:
 
+> **Superseded at v0.32.136 (SM5.I).** The default is now
+> `smp_enabled: false`.  Decision #7 puts SMP on by default at
+> **v1.0.0** "once SM5 lands", and SM5.I — serialising kernel entry —
+> has not landed: `Platform.FFI.modifyGetKernelState` is an
+> `IO.Ref.modifyGet`, so two cores committing concurrently can lose a
+> transition whole.  Shipping SMP-on by default would have made that
+> reachable on the first bootable image, and five sites across Lean and
+> Rust justified deferring the lock on the grounds that SMP was off.
+> Flip back in the change that lands SM5.I; two Rust tests fail until
+> then.
+
 - **SM1.D.1**: `rust/sele4n-hal/src/cmdline.rs` (NEW FILE, ~1400
   LoC including tests) — `CmdlineConfig` + `parse_cmdline` +
   full self-contained DTB walker.  Self-contained walker

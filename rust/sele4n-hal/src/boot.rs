@@ -10,11 +10,13 @@
 //! Phase 3: GIC-400 + ARM Generic Timer initialization (AG5)
 //! Phase 4: TPIDR_EL1 setup → IRQ enable
 //! Phase 5: WS-SM SM1.D — DTB cmdline parse → secondary-core bring-up
-//!          (when `smp_enabled=true`, which is the default at v0.31.6)
+//!          (only when `smp_enabled=true`, which is NOT the default:
+//!           see `cmdline::CmdlineConfig::default` — SMP stays off until
+//!           SM5.I serialises kernel entry)
 //! Phase 6: Handoff to Lean kernel (AG7 — FFI bridge)
 
 /// Kernel version string — matches Lean lakefile.toml version.
-const KERNEL_VERSION: &str = "0.32.135";
+const KERNEL_VERSION: &str = "0.32.136";
 
 /// Rust entry point called from assembly `_start` after BSS zeroing and
 /// stack setup. Receives the DTB pointer from U-Boot in x0.
@@ -506,7 +508,7 @@ mod tests {
         // update this test in lockstep with `lakefile.toml`.
         // `scripts/check_version_sync.sh` (Tier 0) provides the
         // canonical drift check; this test is the local pin.
-        assert_eq!(KERNEL_VERSION, "0.32.135");
+        assert_eq!(KERNEL_VERSION, "0.32.136");
     }
 
     #[test]
@@ -528,14 +530,18 @@ mod tests {
     }
 
     #[test]
-    fn default_config_enables_smp() {
-        // SM1.D.3: per maintainer decision #7, defaults are SMP-on.
-        // The Phase-5 path constructs a `CmdlineConfig` via
-        // `parse_cmdline_from_dtb(0)` (NULL pointer → defaults).
+    fn default_config_leaves_smp_disabled_until_kernel_entry_serialized() {
+        // SM1.D.3: the Phase-5 path constructs a `CmdlineConfig` via
+        // `parse_cmdline_from_dtb(0)` (NULL pointer → defaults), and
+        // then stores `cfg.smp_enabled` straight into
+        // `smp::SMP_ENABLED`.  This is therefore the test that decides
+        // whether a real boot brings secondaries up, which is why it
+        // is the boot-side half of the safety claim: kernel entry is
+        // not serialised until SM5.I, so the default must be off.
         let cfg = crate::cmdline::parse_cmdline_from_dtb(0);
         assert!(
-            cfg.smp_enabled,
-            "Phase 5 default must be smp_enabled=true (SM1.D.3)"
+            !cfg.smp_enabled,
+            "Phase 5 default must leave SMP disabled until SM5.I (SM1.D.3)"
         );
     }
 

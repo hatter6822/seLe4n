@@ -1850,6 +1850,26 @@ in the kernel today. High once bootable — a lost commit can drop a
 capability revocation, a suspend, or a shootdown post, and the caller is
 told it succeeded.
 
+**Correction (v0.32.136).** The first half of that sentence was false
+when written. `CmdlineConfig::default` returned `smp_enabled: true`, and
+Phase 5 stores the parsed value straight into `smp::SMP_ENABLED` before
+calling `bring_up_secondaries` — so a boot with no `smp_enabled=false`
+on the command line would have brought all four cores up, and the
+lost-update race would have been reachable on the first bootable image
+rather than gated behind an opt-in. Only "no bootable image before
+SM9.E" was carrying the unreachability claim.
+
+The default is now `false`, which restores the precondition maintainer
+decision #7 states for itself — "SMP enabled by default at v1.0.0 *once
+SM5 lands*" — rather than reversing it. Two Rust tests pin it
+(`default_boot_does_not_enable_smp_until_kernel_entry_is_serialized` on
+the parser, and the boot-path witness on `parse_cmdline_from_dtb(0)`),
+and both fail if the default is flipped back, which is the point at
+which someone should be made to re-read this section.
+
+**Flipping the default back to `true` is part of the acceptance
+criterion below**, not a separate follow-up.
+
 ### What it does to the proofs
 
 Nothing is false. Kernel transitions are pure functions and the theorems

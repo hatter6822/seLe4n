@@ -1015,7 +1015,12 @@ def updateKernelState (f : SystemState → SystemState) : BaseIO Unit :=
     defers wrapping the `@[export]` bodies in `withLockSet` until the SM5 per-core
     kernel-state seam.  Until one of the two lands, concurrent kernel entry is
     unsound, which is why SMP stays off by default and why there is no bootable
-    image before SM9.E.  Tracked as SM5.I; see
+    image before SM9.E.  That first half is *enforced* rather than asserted:
+    `CmdlineConfig::default` returns `smp_enabled: false`, pinned by
+    `default_boot_does_not_enable_smp_until_kernel_entry_is_serialized`.  It
+    returned `true` until v0.32.136, so every site stating this — five of them —
+    was describing a boot that would have brought the secondaries up.  Flip it
+    back only in the change that lands the serialisation.  Tracked as SM5.I; see
     `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` §"Kernel-entry serialisation". -/
 def modifyGetKernelState {α : Type} (f : SystemState → α × SystemState) : BaseIO α :=
   kernelStateRef.modifyGet f

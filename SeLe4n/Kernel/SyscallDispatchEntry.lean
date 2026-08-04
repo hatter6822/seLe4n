@@ -429,8 +429,9 @@ def completeShootdownRounds (changed : List Concurrency.CoreId)
     -- `shootdownCatchUpPerCoreInWindow_preserves_foreign` at runtime — the
     -- theorem says the *pure function* preserves a concurrent round's
     -- descriptors, which is only worth having once kernel entry is
-    -- serialised.  Owed by SM5.I; unreachable today (SMP off by default, no
-    -- bootable image before SM9.E).
+    -- serialised.  Owed by SM5.I; unreachable today (SMP off by default —
+    -- enforced by `CmdlineConfig::default`, which returned `true` until
+    -- v0.32.136 — and no bootable image before SM9.E).
     Concurrency.shootdownRoundLockRelease
 
 /-- **WS-SM SM7.D.1** (the live instruction-cache maintenance seam): emit the

@@ -1,3 +1,97 @@
+## v0.32.136 — The premise for deferring the P1 was itself false
+
+PR #854 review, twenty-fourth round: three findings, all valid. One is a
+P1 that attacks the reasoning used to defer the *other* P1, and it is
+correct.
+
+**1. SMP was NOT off by default (P1).** Eleven sites across Lean, Rust
+and the plan documents justify deferring the SM5.I kernel-entry lock on
+the grounds that "SMP is off by default, and there is no bootable image
+before SM9.E". The second half holds. The first was false:
+`CmdlineConfig::default` returned `smp_enabled: true`, and Phase 5
+stores the parsed value straight into `smp::SMP_ENABLED` before calling
+`bring_up_secondaries` — so a boot with no `smp_enabled=false` on the
+command line would have brought all four cores up. The lost-update race
+would have been reachable on the first bootable image rather than gated
+behind an opt-in, with only "no bootable image" carrying the claim.
+
+Sharpest form of it: `cmdline.rs` stated both halves of the
+contradiction **three lines apart** — the SM1.D.3 bullet saying the
+default is `true`, and the SM1.D.4 bullet saying SMP is off by default
+until SM5.I closes the serialisation gap.
+
+The default is now `false`. This restores the precondition maintainer
+decision #7 states for itself — CLAUDE.md records it as "SMP enabled by
+default at v1.0.0 **once SM5 lands**" — rather than reversing it: the
+condition is what is not yet met. Two tests pin it, one on the parser
+and one on the boot path's own `parse_cmdline_from_dtb(0)`, and both
+fail if the default is flipped back, which is exactly when someone
+should be made to re-read the deferral. Three sibling tests that
+asserted the literal `true` were restated against
+`CmdlineConfig::default()` instead, since the property they are named
+for is "keeps the default", not "keeps `true`" — the literal form is
+what made them fail on a default change.
+
+Every claim site now names the enforcing symbol rather than asserting
+the fact: `FFI.lean`, `SyscallDispatchEntry.lean`, `PerCoreRunLoop.lean`,
+`PerCoreTimerEntry.lean`, `cmdline.rs`, `boot.rs`'s phase map,
+`SMP_TLB_SHOOTDOWN_PLAN.md`, `WORKSTREAM_HISTORY.md`, and
+`CLAUDE.md`/`AGENTS.md`.
+
+**2. The registry parse fell behind the registry's own spelling.** The
+v0.32.132 cut stopped the family *list* falling behind by deriving it
+from `docs/WORKSTREAM_HISTORY.md`. The derivation then fell behind the
+source's spelling: `REGISTRY_FAMILY_RE` required a word boundary after
+the family letters, and a digit is a word character, so the canonical
+fused `WS-J1` never matched. **Nine families** (`E F H I J L M N Q`)
+that appear only in the fused form never reached the grammar — the
+reviewer named one. Deriving from a source is only as good as the parse
+of that source.
+
+Fixing the parse made `j` newly visible, and **the ratchet fired**: the
+gate refused to run with a single-letter family carrying no recorded
+decision. Measured through the gate's own strippers (my first
+measurement scanned raw text and was inflated 3× by comments):
+46 occurrences, 0 in `rust/`, and **not one** is a workstream-named
+identifier — six Lean hypotheses (`hV3J1`..`hV3J5`, `hGetJ1`), the `j2`
+loop index in the Robin Hood lookup proof, and one grep pattern
+searching for a `WS-J1` prose anchor. `j` is also the second universal
+index name after `i`. Declined with that measurement recorded, exactly
+as `d` was.
+
+**3. Extensionless files were one decision covering four formats.** The
+`""` entry in `NO_CONTENT_SCAN` read "LICENSE, git hooks, CI helper
+stubs" while also silently covering both `.gitignore` files, whose
+patterns are maintained names. Worse than a missing entry: the coverage
+ratchet saw `""` as classified and reported full coverage, so no new
+extensionless file could ever be unclassified. They are now decided by
+**basename** — `.gitignore`/`.gitkeep` scanned, `LICENSE` and
+`lean-toolchain` exempt with reasons — and a new extensionless file
+fails the gate until someone classifies it. `content_rule` is the single
+lookup for both scanning and classification, so the set of files read
+and the set counted as classified cannot drift apart.
+`format_coverage_gap` returns two sets rather than one, because
+`.gitignore` is a basename beginning with a dot and a caller splitting a
+merged set on the leading `.` would send its reader to the suffix
+tables — where that file's decision does not live.
+
+Naming self-test 139 → 152 checks. Of the eleven new ones run against
+the previous gate: five **fail** there, five report the mechanism as
+**absent** (the suite cannot even execute — `content_rule` does not
+exist), and one passes, being the exemption-side check that the bare
+`WS-SM` spelling still parses — non-vacuous in the other direction,
+since it fails against a fused-only pattern. One pre-existing check had
+to be repointed: it used `j` as its example of an unclassified family,
+and fixing the parse gave `j` a decision, so it had started passing for
+the wrong reason. A negative check pinned to a specific input can be
+invalidated by an unrelated fix, silently.
+
+Planted probes confirm both gate changes fire end-to-end through `scan`:
+a coded pattern inside `.gitignore` trips the ratchet, and a new
+extensionless file trips the coverage gap with a message naming the
+right table. Baseline unchanged at 298 pairs / 1017 occurrences — zero
+lost, zero dropped, zero new, for the third consecutive scope extension.
+
 ## v0.32.135 — Symbols hiding inside strings, and citations hiding inside links
 
 PR #854 review, twenty-third round: three findings, all valid, all three

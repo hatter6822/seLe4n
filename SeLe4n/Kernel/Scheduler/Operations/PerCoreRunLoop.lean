@@ -38,7 +38,9 @@ handler, making the read-`timerTickOnCore`-commit atomic against other cores.
 That lock is **owed, not implemented** — no kernel-entry lock exists today, and
 `IO.Ref.modifyGet` alone is a read then a write rather than a cross-core atomic,
 so a tick racing a syscall commit can lose one transition whole (see
-`Platform.FFI.modifyGetKernelState`).  SMP is off by default for this reason;
+`Platform.FFI.modifyGetKernelState`).  SMP is off by default for this reason —
+enforced by `CmdlineConfig::default` (`smp_enabled: false`), which returned
+`true` until v0.32.136 while five sites including this one said otherwise;
 tracked SM5.I.  The finer-grained
 `timerTickOnCoreLockSet` (SM5.D.3) cross-domain footprint over `SchedLockId`
 (object-store ⊕ run-queue ⊕ replenish-queue write locks, ascending per plan §4.4 —

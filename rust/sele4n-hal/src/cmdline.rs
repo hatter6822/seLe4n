@@ -11,8 +11,12 @@
 //!
 //! | Key             | Type   | Default | Semantics                                |
 //! |-----------------|--------|---------|------------------------------------------|
-//! | `smp_enabled`   | bool   | `true`  | Enable SMP secondary-core bring-up.      |
+//! | `smp_enabled`   | bool   | `false` | Enable SMP secondary-core bring-up.      |
 //! | `smp_max_cores` | usize  | 4       | Upper bound on cores to bring up [0..4]. |
+//!
+//! `smp_enabled` defaults to `false` until kernel entry is serialised
+//! (SM5.I) — see [`CmdlineConfig::default`] for why, and for the
+//! condition under which it flips back.
 //!
 //! Unknown tokens are silently ignored (forward-compatible).  Malformed
 //! values fall back to the default for the affected option — the parser
@@ -23,10 +27,13 @@
 //! - **SM1.D.1**: this module's parser ([`parse_cmdline`]) +
 //!   self-contained DTB walker ([`extract_bootargs_into`]).
 //! - **SM1.D.2**: Phase 5 in `rust_boot_main` (see `boot.rs`).
-//! - **SM1.D.3**: [`CmdlineConfig::default`] has `smp_enabled = true`
-//!   per maintainer decision #7.  The static `smp::SMP_ENABLED` atomic
-//!   still defaults to `false` at module load; Phase 5 sets it to the
-//!   parsed value before invoking [`crate::smp::bring_up_secondaries`].
+//! - **SM1.D.3**: [`CmdlineConfig::default`] has `smp_enabled = false`
+//!   until SM5.I serialises kernel entry.  Maintainer decision #7 puts
+//!   SMP on by default at v1.0.0 "once SM5 lands", and that condition
+//!   is what is not yet met.  The static `smp::SMP_ENABLED` atomic is
+//!   `false` at module load too; Phase 5 sets it to the parsed value
+//!   before invoking [`crate::smp::bring_up_secondaries`], so the two
+//!   agree rather than one overriding the other.
 //! - **SM1.D.4**: per-object locks live inside objects with
 //!   `Default::default()` initialisers; no global kernel-entry lock
 //!   exists, so no init-order hazard.  See module docstring of
@@ -35,7 +42,10 @@
 //!   defined but the kernel `@[export]` bodies do not acquire them
 //!   (SM3.C.9), so concurrent kernel entry is currently serialised by
 //!   nothing at all — see `Platform.FFI.modifyGetKernelState` on the
-//!   Lean side.  SMP is off by default until SM5.I closes this.
+//!   Lean side.  SMP is off by default until SM5.I closes this, which
+//!   is enforced by [`CmdlineConfig::default`] rather than merely
+//!   asserted here — the two disagreed until v0.32.136, three lines
+//!   apart in this same docstring.
 //! - **SM1.D.5**: `per_cpu::check_per_cpu_invariants()` runs in Phase 1
 //!   of `rust_boot_main`, before TPIDR_EL1 is set and before
 //!   bring-up issues any PSCI CPU_ON.
@@ -192,26 +202,48 @@ pub struct CmdlineConfig {
 }
 
 impl Default for CmdlineConfig {
-    /// **WS-SM SM1.D.3**: Production default — SMP enabled, all 4
-    /// cores brought up.
+    /// **WS-SM SM1.D.3**: SMP **disabled** by default until kernel
+    /// entry is serialised (SM5.I).  Opt in with `smp_enabled=true`.
     ///
-    /// Per maintainer decision #7 (recorded in
-    /// `docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`), v1.0.0
-    /// defaults to "SMP on" so the verified microkernel arrives at
-    /// production with all four Cortex-A76 cores online by default.
-    /// Operators that need single-core boot can opt out via
-    /// `smp_enabled=false` on the kernel command line.
+    /// Maintainer decision #7 (recorded in
+    /// `docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`) is that the
+    /// verified microkernel arrives at **v1.0.0** with all four
+    /// Cortex-A76 cores online by default — and that decision carries
+    /// its own precondition, stated in `CLAUDE.md` as "SMP enabled by
+    /// default at v1.0.0 **once SM5 lands**".
     ///
-    /// Note: this differs from the `crate::smp::SMP_ENABLED` atomic's
-    /// initial value of `false`.  The atomic stays `false` at module
-    /// load (so a kernel that never reaches Phase 5 — e.g., one that
-    /// halts in an earlier phase due to a hardware fault — does not
-    /// accidentally start spawning secondaries).  Phase 5 explicitly
-    /// stores the parsed `smp_enabled` into the atomic before invoking
-    /// [`crate::smp::bring_up_secondaries`].
+    /// SM5.I has not landed.  `Platform.FFI.modifyGetKernelState` is an
+    /// `IO.Ref.modifyGet` — a read then a write, not a cross-core
+    /// atomic — and nothing else serialises kernel entry either: the
+    /// shootdown round lock serialises rounds against rounds, interrupt
+    /// disabling is per-core, and SM3.C.9 defers acquiring the
+    /// per-object locks in the `@[export]` bodies.  Two cores
+    /// committing concurrently can therefore lose a transition whole,
+    /// with the caller told it succeeded.
+    ///
+    /// So this default returned `true` for a precondition that is not
+    /// met.  Booting secondaries by default is the one thing that makes
+    /// that hazard reachable the moment a bootable image exists, and
+    /// the safety claims in this module and in `PerCoreRunLoop` /
+    /// `SyscallDispatchEntry` / `FFI.lean` all rest on SMP being off.
+    /// Flipping the default is what makes those claims true; it is not
+    /// a reversal of decision #7, which applies at v1.0.0 and whose
+    /// precondition this restores.
+    ///
+    /// **Flip this back to `true` in the same change that lands SM5.I**
+    /// — the acceptance criterion is in
+    /// `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` §"Kernel-entry
+    /// serialisation".
+    ///
+    /// `crate::smp::SMP_ENABLED` is likewise `false` at module load, so
+    /// a kernel that never reaches Phase 5 (e.g. one that halts earlier
+    /// on a hardware fault) never spawns secondaries.  The two are now
+    /// consistent: Phase 5 stores the parsed value into the atomic
+    /// before invoking [`crate::smp::bring_up_secondaries`], and with
+    /// no `smp_enabled=true` on the command line that value is `false`.
     fn default() -> Self {
         Self {
-            smp_enabled: true,
+            smp_enabled: false,
             smp_max_cores: crate::smp::MAX_SECONDARY_CORES + 1,
         }
     }
@@ -245,7 +277,7 @@ impl Default for CmdlineConfig {
 ///
 /// Malformed values fall back to the default for the affected option:
 ///
-/// - `smp_enabled=foo` → keeps default (`true`).
+/// - `smp_enabled=foo` → keeps default (`false`).
 /// - `smp_max_cores=999` → clamped to `MAX_SECONDARY_CORES + 1 = 4`.
 /// - `smp_max_cores=-1` → fails parse (negative not allowed for
 ///   `usize`), keeps default.
@@ -1010,12 +1042,41 @@ mod tests {
 
     #[test]
     fn parse_empty_returns_defaults() {
-        // SM1.D.3: empty cmdline → default config (SMP enabled, all
-        // cores).  This is the most common case (no DTB cmdline node).
+        // SM1.D.3: empty cmdline → default config.  This is the most
+        // common case (no DTB cmdline node), and it is therefore the
+        // case that decides what a real boot does: SMP stays OFF until
+        // SM5.I serialises kernel entry.
         let cfg = parse_cmdline("");
         assert_eq!(cfg, CmdlineConfig::default());
-        assert!(cfg.smp_enabled);
+        assert!(!cfg.smp_enabled);
         assert_eq!(cfg.smp_max_cores, crate::smp::MAX_SECONDARY_CORES + 1);
+    }
+
+    #[test]
+    fn default_boot_does_not_enable_smp_until_kernel_entry_is_serialized() {
+        // The regression witness for the safety claim itself.  Several
+        // modules across Lean and Rust justify deferring the SM5.I
+        // kernel-entry lock on the grounds that "SMP is off by
+        // default"; until v0.32.136 that was false, because
+        // `CmdlineConfig::default` returned `smp_enabled: true` and
+        // Phase 5 stores it straight into `smp::SMP_ENABLED`.  A boot
+        // with no cmdline would have brought the secondaries up and
+        // made the lost-update race reachable the moment a bootable
+        // image existed.
+        //
+        // This test fails if the default is flipped back without the
+        // serialisation landing, which is exactly when someone should
+        // be made to look at the claim again.
+        assert!(!CmdlineConfig::default().smp_enabled);
+        for cmdline in ["", "   ", "console=ttyAMA0", "smp_max_cores=4"] {
+            assert!(
+                !parse_cmdline(cmdline).smp_enabled,
+                "cmdline {cmdline:?} must not enable SMP by default"
+            );
+        }
+        // The opt-in still works, so this is a default change and not
+        // a removal of the feature.
+        assert!(parse_cmdline("smp_enabled=true").smp_enabled);
     }
 
     #[test]
@@ -1065,15 +1126,19 @@ mod tests {
     #[test]
     fn parse_smp_enabled_malformed_keeps_default() {
         // SM1.D.1 robustness: unrecognised bool value keeps default.
+        // Stated against the default itself rather than against a
+        // literal, since the property these three tests are named for
+        // is "falls back", not "falls back to `true`" — the literal
+        // form is what made them fail when the default changed.
         let cfg = parse_cmdline("smp_enabled=foo");
-        assert!(cfg.smp_enabled, "default `true` should be preserved");
+        assert_eq!(cfg.smp_enabled, CmdlineConfig::default().smp_enabled);
     }
 
     #[test]
     fn parse_smp_enabled_empty_value_keeps_default() {
         // SM1.D.1 robustness: empty value keeps default.
         let cfg = parse_cmdline("smp_enabled=");
-        assert!(cfg.smp_enabled);
+        assert_eq!(cfg.smp_enabled, CmdlineConfig::default().smp_enabled);
     }
 
     // ========================================================================
@@ -1198,9 +1263,10 @@ mod tests {
         // SM1.D.1 robustness: unmatched quotes treated as part of
         // value (which then doesn't match any bool alias).
         let cfg = parse_cmdline("smp_enabled=\"false");
-        assert!(
+        assert_eq!(
             cfg.smp_enabled,
-            "default `true` preserved on partial-quote value"
+            CmdlineConfig::default().smp_enabled,
+            "default preserved on partial-quote value"
         );
     }
 
@@ -1274,9 +1340,13 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn default_smp_enabled_is_true() {
-        // SM1.D.3: production default per maintainer decision #7.
-        assert!(CmdlineConfig::default().smp_enabled);
+    fn default_smp_enabled_is_false_until_kernel_entry_serialized() {
+        // SM1.D.3: maintainer decision #7 puts SMP on by default at
+        // v1.0.0 "once SM5 lands"; SM5.I has not landed, so the
+        // precondition is unmet and the default is off.  See
+        // `default_boot_does_not_enable_smp_until_kernel_entry_is_serialized`
+        // for why that is a safety property and not a preference.
+        assert!(!CmdlineConfig::default().smp_enabled);
     }
 
     #[test]

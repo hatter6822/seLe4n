@@ -140,10 +140,17 @@ const _: () = assert!(
 #[used]
 pub static MAX_CORE_COUNT_SYM: u64 = (MAX_SECONDARY_CORES + 1) as u64;
 
-/// AN9-J: runtime SMP-enable flag.  At v1.0.0 the default is `false`
-/// so `bring_up_secondaries` is a no-op; deployments that opt in to
-/// SMP set this `true` via a kernel-command-line parameter parsed by
+/// AN9-J: runtime SMP-enable flag.  The default is `false` so
+/// `bring_up_secondaries` is a no-op; deployments that opt in to SMP
+/// set this `true` via a kernel-command-line parameter parsed by
 /// `boot.rs::rust_boot_main` before invoking `bring_up_secondaries`.
+///
+/// This described an opt-IN model while `cmdline::CmdlineConfig`
+/// implemented opt-OUT: Phase 5 overwrites this flag with the parsed
+/// value, and that value defaulted to `true` until v0.32.136, so a boot
+/// with no cmdline enabled SMP despite what this said.  The two agree
+/// from v0.32.136 — the parsed default is `false` until SM5.I
+/// serialises kernel entry.  See `cmdline::CmdlineConfig::default`.
 pub static SMP_ENABLED: AtomicBool = AtomicBool::new(false);
 
 /// AN9-J: secondary-core readiness flags.  Index 0 is unused (the

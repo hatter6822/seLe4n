@@ -49,7 +49,8 @@ its own safe against a concurrent commit on another core (see
 kernel-entry lock across the tick; that lock is **owed, not implemented**, and
 until it (or the SM3.C.9 `withLockSet` migration) lands, a concurrent tick and
 syscall commit can lose one of the two transitions outright.  This is why SMP
-stays off by default.  Tracked SM5.I.  The finer-grained
+stays off by default — enforced by `CmdlineConfig::default` (`smp_enabled:
+false`), which returned `true` until v0.32.136.  Tracked SM5.I.  The finer-grained
 `timerTickOnCoreLockSet` cross-domain footprint (SM5.D.3) certifies the 2PL
 acquisition order a future per-object-locked migration consumes; the
 `SchedLockId`-level `withLockSet` bracket itself is the SM3.C combinator's

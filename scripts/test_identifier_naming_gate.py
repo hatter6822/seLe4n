@@ -317,6 +317,24 @@ check("the same id is invisible unjoined",
 # Families come from the registry, not from a literal in the source.
 check("families are derived, not hand-listed",
       "REGISTRY_FAMILY_RE.findall" in Path(gate.__file__).read_text(), True)
+# The registry spells a workstream `WS-Q` for the family and `WS-Q1`
+# for a phase of it, and a word boundary after the letters saw only the
+# first -- so nine families appearing ONLY in the fused form never
+# reached the grammar.  Deriving from a source is only as good as the
+# parse of that source.
+check("the fused spelling yields its family",
+      gate.REGISTRY_FAMILY_RE.findall("see WS" + "-J1 for this"), ["J"])
+check("the bare spelling still yields its family",
+      gate.REGISTRY_FAMILY_RE.findall("see WS" + "-SM for this"), ["SM"])
+check("a fused two-letter family is parsed",
+      gate.REGISTRY_FAMILY_RE.findall("WS" + "-RC12"), ["RC"])
+# Load-bearing against the REAL registry: `j` appears there only fused,
+# so it is present exactly when the parse is right.
+check("a fused-only family reaches the grammar",
+      "j" in gate.registry_families(), True)
+check("and it carries a recorded decision",
+      "j" in gate.SINGLE_LETTER_ENFORCED or "j" in gate.SINGLE_LETTER_DECLINED,
+      True)
 check("the registry's two-letter families are all covered",
       {f for f in gate.registry_families() if len(f) > 1}
       <= set(gate.WORKSTREAM_FAMILIES), True)
@@ -336,19 +354,53 @@ def _families_for(fams):
         gate.registry_families = real
 
 
+# `p` is a letter the registry does not name, so it has no decision.
+# This check previously used `j` — which the registry DOES name, in the
+# fused `WS-J1` spelling the parse could not see.  Fixing the parse gave
+# `j` a decision and this check started passing for the wrong reason,
+# which is its own small lesson: a negative check pinned to a specific
+# input can be invalidated by an unrelated fix, silently.
 check("an unclassified single-letter family FAILS the gate",
-      _families_for({"sm", "j"}), None)
+      _families_for({"sm", "p"}), None)
 check("a new two-letter family is covered without a decision",
       "bq" in (_families_for({"sm", "bq"}) or ()), True)
 check("a declined single-letter family stays out",
       "x" not in (_families_for({"sm", "x"}) or ()), True)
 
 # Every tracked file type must carry an explicit scan decision.
-check("no tracked file type is unclassified", gate.format_coverage_gap(), set())
+check("no tracked file type is unclassified",
+      gate.format_coverage_gap(), (set(), set()))
 check("the two format tables do not overlap",
       set(gate.CONTENT_STRIPPERS) & set(gate.NO_CONTENT_SCAN), set())
 check("skipped formats each record a reason",
       all(v.strip() for v in gate.NO_CONTENT_SCAN.values()), True)
+
+# ...and an extensionless file is classified by NAME, not by the one
+# `""` decision that used to stand for all of them.  That entry read
+# "LICENSE, git hooks, CI helper stubs" while also silently covering
+# both `.gitignore` files, whose patterns are maintained names -- and
+# the coverage ratchet saw `""` as classified, so it reported full
+# coverage over a decision that had stopped describing its members.
+check("a gitignore's contents are scanned",
+      gate.content_rule(".gitignore") is not None, True)
+check("a nested gitignore rides the same decision",
+      gate.content_rule("rust/.gitignore") is not None, True)
+check("licence prose stays exempt", gate.content_rule("LICENSE"), None)
+check("an extensionless name joins hyphens",       # a bare name IS a name
+      gate.content_rule(".gitignore")[1], True)
+check("extensionless tables do not overlap",
+      set(gate.EXTENSIONLESS_STRIPPERS) & set(gate.EXTENSIONLESS_NO_SCAN),
+      set())
+check("skipped extensionless files each record a reason",
+      all(v.strip() for v in gate.EXTENSIONLESS_NO_SCAN.values()), True)
+# The ratchet must fire on a NEW extensionless file, which is the part
+# the `""` entry disabled: `""` was already classified, so nothing
+# unclassified could ever appear.
+check("an unclassified extensionless file is a gap",
+      "Makefile" in (set(gate.EXTENSIONLESS_STRIPPERS)
+                     | set(gate.EXTENSIONLESS_NO_SCAN)), False)
+check("one lookup serves scanning and classification",
+      "content_rule(p)" in Path(gate.__file__).read_text(), True)
 
 # Every input — sources, baseline, registry — must come from the index,
 # because paths are enumerated from the index and any working-tree read
