@@ -420,6 +420,17 @@ def completeShootdownRounds (changed : List Concurrency.CoreId)
     -- queue drain inside the critical section (`modifyGetKernelState` is a
     -- plain `IO.Ref` update, so there is no lock to invert against), well
     -- within `shootdownRoundLockAcquireFuel`.
+    --
+    -- What that bracket does NOT buy: `SHOOTDOWN_ROUND_LOCK` serialises
+    -- *rounds* against each other, and nothing else.  An ordinary syscall
+    -- commit on another core takes no round lock, so it can interleave with
+    -- this read-modify-write and lose one of the two transitions entirely
+    -- (`Platform.FFI.modifyGetKernelState`).  That would defeat
+    -- `shootdownCatchUpPerCoreInWindow_preserves_foreign` at runtime — the
+    -- theorem says the *pure function* preserves a concurrent round's
+    -- descriptors, which is only worth having once kernel entry is
+    -- serialised.  Owed by SM5.I; unreachable today (SMP off by default, no
+    -- bootable image before SM9.E).
     Concurrency.shootdownRoundLockRelease
 
 /-- **WS-SM SM7.D.1** (the live instruction-cache maintenance seam): emit the

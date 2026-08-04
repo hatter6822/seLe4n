@@ -978,12 +978,33 @@ def getKernelState : BaseIO SystemState :=
 def updateKernelState (f : SystemState → SystemState) : BaseIO Unit :=
   kernelStateRef.modify f
 
-/-- WS-SM SM5.I: atomic read-modify-write of the kernel state, returning a
+/-- WS-SM SM5.I: read-modify-write of the kernel state, returning a
     by-product computed alongside the new state.  `f st = (a, st')` installs `st'`
-    and returns `a`, all under a single `IO.Ref.modifyGet` so no concurrent writer
-    can interleave between the read and the write (the per-core timer-tick driver
-    uses this to commit `timerTickOnCore`'s new state and recover its cross-core
-    SGIs in one step). -/
+    and returns `a` in one call, so no *further* read of the ref is needed to
+    recover the by-product (the per-core timer-tick driver uses this to commit
+    `timerTickOnCore`'s new state and recover its cross-core SGIs in one step).
+
+    **This is not a cross-core atomic.**  `IO.Ref.modifyGet` is a read followed
+    by a write, not a hardware read-modify-write, so two cores committing
+    concurrently can lose one commit entirely: both read `st`, both compute from
+    it, and the second write installs a post-state derived from a pre-state that
+    no longer holds — silently discarding the first core's whole transition and
+    returning success for it.  Every verified transition is a *pure function*, so
+    the theorems say what `f` computes, not that `f` is applied to the state the
+    caller last observed; that gap is closed by serialising kernel entry, not by
+    this combinator.
+
+    **Serialisation is owed, not present.**  The design has kernel entry
+    serialised — `Scheduler/Operations/PerCoreRunLoop.lean` and
+    `Kernel/PerCoreTimerEntry.lean` state the tick runs under a kernel-entry lock
+    held by the trap handler, and `PerCoreWcrt.lean` bounds response time under
+    per-object fine locks — but neither mechanism is live: no kernel-entry lock
+    exists (`rust/sele4n-hal/src/cmdline.rs` records its absence), and SM3.C.9
+    defers wrapping the `@[export]` bodies in `withLockSet` until the SM5 per-core
+    kernel-state seam.  Until one of the two lands, concurrent kernel entry is
+    unsound, which is why SMP stays off by default and why there is no bootable
+    image before SM9.E.  Tracked as SM5.I; see
+    `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` §"Kernel-entry serialisation". -/
 def modifyGetKernelState {α : Type} (f : SystemState → α × SystemState) : BaseIO α :=
   kernelStateRef.modifyGet f
 

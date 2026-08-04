@@ -1799,3 +1799,87 @@ cd tests/fixtures && sha256sum smp_tlb_shootdown.expected \
 protocol's correctness (Theorem 3.3.1) hinges on the
 release-acquire pairing that SM2's memory model already proves
 abstractly.*
+
+---
+
+## Kernel-entry serialisation (tracked debt, owner SM5.I)
+
+Surfaced by PR #854 review round 18, while reviewing the round-window
+catch-up commit. Not an SM7 defect — SM7 inherits it — but recorded
+here because SM7's round theorems are the most visible consumers.
+
+### The defect
+
+`Platform.FFI.modifyGetKernelState` is `IO.Ref.modifyGet`: a read
+followed by a write, not a hardware read-modify-write. Two cores
+committing concurrently both read `st`, both compute a post-state from
+it, and the second write installs a state derived from a pre-state that
+no longer holds — discarding the first core's entire transition and
+returning success for it. Every kernel entry point commits this way
+(`syscallDispatchCrossCoreEntry`, `perCoreTimerTickEntry`,
+`suspendThreadCrossCoreEntry`, the cross-core IPC entries).
+
+Nothing serialises those commits. `SHOOTDOWN_ROUND_LOCK` serialises
+rounds against rounds and takes no part here; disabling interrupts is
+per-core; the SM3 per-object locks exist but SM3.C.9 defers acquiring
+them in the `@[export]` bodies to the SM5 per-core kernel-state seam.
+
+### Why it went unnoticed for so long
+
+Five sites describe the serialisation, and they do not agree — three
+mutually exclusive mechanisms, none live:
+
+| Site | Claimed mechanism | Reality |
+|------|-------------------|---------|
+| `Platform/FFI.lean` | `IO.Ref.modifyGet` is itself atomic against concurrent writers | False of the primitive |
+| `Kernel/PerCoreTimerEntry.lean` | a kernel-entry lock the trap handler holds | No such lock exists |
+| `Scheduler/Operations/PerCoreRunLoop.lean` | same | same |
+| `Scheduler/Operations/PerCoreWcrt.lean` | per-object fine locks, live | Deferred by SM3.C.9 |
+| `rust/sele4n-hal/src/cmdline.rs` | no kernel-entry lock, fine locks instead | Accurate on the first half only |
+
+Each site is locally plausible and cites a real mechanism; only reading
+them together shows that every one defers to another that does not hold.
+All five now state the same thing: serialisation is **owed, not
+present**.
+
+### Severity
+
+**Unreachable in a shipped artifact.** SMP is off by default and no
+bootable image exists before SM9.E, so no configuration runs two cores
+in the kernel today. High once bootable — a lost commit can drop a
+capability revocation, a suspend, or a shootdown post, and the caller is
+told it succeeded.
+
+### What it does to the proofs
+
+Nothing is false. Kernel transitions are pure functions and the theorems
+say what those functions compute. What a lost update breaks is the tie
+between the theorem and the runtime: the committed state stops being the
+one the verified function was applied to. `preserves_foreign` (SM7.F.3)
+is the clearest case — it guarantees a concurrent round's descriptors
+survive the catch-up, which is worth having exactly once concurrent
+commits cannot destroy each other wholesale.
+
+### Closure
+
+Either mechanism suffices, and they are alternatives rather than stages:
+
+1. **Kernel-entry lock** — acquire in the Rust trap path around each
+   `lean_*` entry. Matches what two docstrings already describe and what
+   the WCRT bound's single-lock reading assumes. Must spin with
+   interrupts enabled so a holder waiting on shootdown acks can still
+   service `.tlbShootdownReq`, and must order outside
+   `SHOOTDOWN_ROUND_LOCK` (nothing acquires it while holding a round
+   lock, so the order is consistent today).
+2. **SM3.C.9 `withLockSet` migration** — the fine-grained endgame the
+   lock-set footprints and 2PL proofs were built for. Strictly more
+   work; strictly better WCRT.
+
+Whichever lands must be a reviewable slice of its own: it adds a
+deadlock surface to the area that produced three P1 safety defects in
+this PR alone, and it wants its own lock-order and liveness argument
+rather than riding a round-18 remediation cut.
+
+**Acceptance**: no kernel `@[export]` body commits state without holding
+a lock that excludes every other kernel entry; the five sites above
+updated to describe the mechanism that actually runs.

@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.32.128.
+Lean 4.28.0 toolchain, Lake build system, version 0.32.129.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -789,6 +789,30 @@ documentation lives under `docs/` and `docs/gitbook/`.
   **SM3.C.9 deferral**: migrating every `@[export]` body to wrap its
   transition in `withLockSet` requires the per-core kernel-state seam
   SM5 introduces; tracked as SM5.I follow-on.
+
+  **Kernel-entry serialisation is OWED, not present (SM5.I, registered
+  v0.32.129)**: `Platform.FFI.modifyGetKernelState` is
+  `IO.Ref.modifyGet` — a read then a write, not a cross-core atomic —
+  so two cores committing concurrently can lose one transition whole
+  (both read `st`, the second write installs a post-state derived from
+  a pre-state that no longer holds, and the caller is told it
+  succeeded).  Nothing serialises kernel entry: the shootdown round
+  lock serialises rounds against rounds, interrupt disabling is
+  per-core, and the SM3 per-object locks are deferred at the
+  `@[export]` bodies by SM3.C.9 above.  **Unreachable today** (SMP off
+  by default, no bootable image before SM9.E); High once bootable.  No
+  theorem is false — transitions are pure functions and the theorems
+  say what those functions compute — but a lost update breaks the tie
+  between theorem and runtime, `preserves_foreign` (SM7.F.3) being the
+  clearest consumer.  Found in PR #854 review round 18; the review
+  reported that the round-lock bracket does not exclude other cores'
+  commits, and reviewing that surfaced **five sites naming three
+  mutually exclusive mechanisms, none live** (`IO.Ref` atomicity, a
+  trap-handler kernel-entry lock, live fine locks).  All five now state
+  the debt identically.  Closure options, lock-ordering constraints and
+  acceptance criterion:
+  [`docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md`](docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md)
+  §"Kernel-entry serialisation".  Must land as its own reviewable slice.
 
   **SM6.A cross-core `.call` — COMPLETE (v0.31.66 live dispatch → v0.31.67
   multi-core completion)**: the live `.call` syscall routes through the cross-core

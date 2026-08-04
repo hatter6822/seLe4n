@@ -1,3 +1,65 @@
+## v0.32.129 — Three accounts of a lock that is not there
+
+PR #854 review, eighteenth round: four findings, three on the naming
+gate and one — the important one — on the kernel-state commit path.
+
+**Kernel-entry serialisation is owed, not present (P1, registered as
+tracked debt).** `Platform.FFI.modifyGetKernelState` is
+`IO.Ref.modifyGet`, a read then a write rather than a hardware
+read-modify-write, so two cores committing concurrently can lose one
+transition whole: both read `st`, both compute from it, and the second
+write installs a post-state derived from a pre-state that no longer
+holds, discarding the first core's work and returning success for it.
+Nothing serialises those commits — the shootdown round lock serialises
+rounds against rounds, interrupt disabling is per-core, and the SM3
+per-object locks are deferred at the `@[export]` bodies by SM3.C.9.
+
+The finding as reported was that the round-lock bracket added earlier in
+this PR does not exclude other cores' ordinary commits, which is correct.
+Reviewing it surfaced something broader: **five sites describe this
+serialisation and they name three mutually exclusive mechanisms, none of
+which is live** — `IO.Ref` atomicity (false of the primitive), a
+kernel-entry lock the trap handler holds (no such lock exists;
+`cmdline.rs` records its absence), and per-object fine locks already in
+force (deferred). Each site is locally plausible and cites a real
+mechanism; only reading them together shows every one defers to another
+that does not hold. All five now say the same thing, and the debt is
+registered with its closure options, lock-ordering constraints and
+acceptance criterion in `SMP_TLB_SHOOTDOWN_PLAN.md`.
+
+No theorem is false — transitions are pure functions and the theorems say
+what those functions compute. What a lost update breaks is the tie
+between theorem and runtime. Unreachable today (SMP off by default, no
+bootable image before SM9.E); High once bootable. Not fixed here
+deliberately: a kernel-entry lock adds a deadlock surface to the area
+that produced three P1 safety defects in this PR alone, and it wants its
+own review with its own lock-order and liveness argument.
+
+**Naming gate, three fixes.** (1) *Audit IDs* — the rule names them
+alongside workstream IDs, and no component of `AUDIT_v0.30.11` is coded
+on its own (`audit` is an ordinary word, `v0` an ordinary version); the
+family lives in the **adjacency** of a `v<n>` to a bare number, now
+matched pairwise. Measured at zero occurrences across every tracked
+non-documentation file before adding it, so it costs no baseline entry
+and fires only on something new. (2) The canonical audit ID is *dotted*,
+and `IDENTIFIER` needs a leading letter, so in
+`audit_v0.30.11_probe.sh` the `30` and `11` never became tokens at all
+and the shape was unreachable from a path; `path_tokens` now normalises
+stem-internal `.` as it already normalises `-`, leaving the suffix its
+own token so no existing name changes. (3) *Backticks* are the legacy
+spelling of `$(...)` and executable in the same places, but
+`keep_expansions` preserved only `$` forms — so a backtick command was
+visible or invisible depending on whether it sat inside double quotes.
+(4) The *baseline* is now read from the index like the sources it
+excuses; a baseline regenerated only in the working tree could pardon a
+violation the index still carried, which is exactly the split state
+v0.32.128 closed for sources and left open here.
+
+Self-test 86 → 97 checks; the six new behavioural checks verified failing
+against v0.32.128, the two neighbour checks verified stable in both.
+Baseline unchanged at 251 pairs / 932 occurrences — zero lost, zero
+gained, so all three fixes are pure strengthening.
+
 ## v0.32.128 — Config files are not prose, and a hyphen is a word break
 
 PR #854 review, seventeenth round: five findings on the naming gate,

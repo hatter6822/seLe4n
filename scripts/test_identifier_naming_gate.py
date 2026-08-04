@@ -235,6 +235,43 @@ check("a phase code is flagged", gate.is_coded("phase5"), True)
 check("an ordinary name passes", gate.is_coded("shootdownRoundLock"), False)
 check("a digit-bearing ordinary name passes", gate.is_coded("armv8Sequence"), False)
 
+# Audit IDs.  The rule names them alongside workstream IDs, and no
+# single component of `AUDIT_v0.30.11` is coded -- the shape is the
+# adjacency, so these pin the pair rule and its non-firing neighbours.
+check("an audit id is flagged", gate.is_coded("audit_v0" + "_30_11_helper"), True)
+check("a bare version stamp is flagged", gate.is_coded("v0" + "_30_11"), True)
+check("an audit log is not a code", gate.is_coded("auditLog"), False)
+check("a versioned name without a number passes",
+      gate.is_coded("sha256_v2_digest"), False)
+check("an architecture version passes", gate.is_coded("armv8_1_features"), False)
+
+# The canonical audit filename is DOTTED, and `IDENTIFIER` needs a
+# leading letter, so without stem normalisation `30` and `11` never
+# become tokens and the shape above is unreachable from a path.
+check("a dotted audit path is tokenised whole",
+      "audit_v0" + "_30_11_probe" in gate.path_tokens(
+          "scripts/audit_v0" + ".30.11_probe.sh"), True)
+check("a dotted audit path is flagged",
+      any(gate.is_coded(t)
+          for t in gate.path_tokens("scripts/audit_v0" + ".30.11_probe.sh")), True)
+check("an ordinary suffix stays its own token",
+      gate.path_tokens("SeLe4n/Model/State.lean"),
+      ["SeLe4n", "Model", "State", "lean"])
+
+# Backticks are executable in the same places `$(...)` is, including
+# inside double quotes, where the span is otherwise blanked as message
+# text.  The bare form already survived; these pin that both do.
+_bt = gate.strip_shell('a="`' + 'phase5_helper' + '`"\nb=`' + 'ak9ce_01_run' + '`\n')
+check("a quoted backtick command survives", "phase5_helper" in _bt, True)
+check("a bare backtick command survives", "ak9ce_01_run" in _bt, True)
+
+# The baseline is compared against the INDEX, like the sources it
+# excuses; a working-tree read would let a regenerated baseline pardon
+# a violation the index still carries.
+check("the baseline is read from the index",
+      "index_contents([BASELINE_REL])" in Path(gate.__file__).read_text(),
+      True)
+
 
 def main() -> int:
     if failures:

@@ -96,7 +96,8 @@ from collections import Counter
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-BASELINE_PATH = REPO_ROOT / "scripts" / "identifier_naming_baseline.json"
+BASELINE_REL = "scripts/identifier_naming_baseline.json"
+BASELINE_PATH = REPO_ROOT / BASELINE_REL
 
 # Documented shapes (CLAUDE.md): WS-*, AN3-*, AK7-*, ak9ce_01, I-H01,
 # plus phase codes.  Matching runs over *normalised components*: a token
@@ -124,6 +125,20 @@ COMPONENT_CODES = tuple(
     re.compile(r"^h\d{2}$"),        # I-H01 subtask codes
     re.compile(r"^tpi$"),           # TPI-D* tracked-proof ids
 )
+
+# Audit IDs (`AUDIT_v0.30.11`) are named by the rule alongside
+# workstream IDs, and no COMPONENT_CODE can see one: the shape
+# normalises to (`audit`, `v0`, `30`, `11`) and not one of those
+# components is coded on its own.  `audit` is an ordinary English word
+# -- an audit log, an audited transition -- and `v0` is an ordinary
+# version.  What identifies the family is their ADJACENCY: a `v<n>`
+# immediately followed by a bare number is a dotted version stamped
+# into a name, which is what the rule forbids and what no other naming
+# convention here produces.  Measured across every tracked
+# non-documentation file: zero matches, so this costs no baseline
+# entry and fires only on something new.
+VERSION_STAMP = re.compile(r"^v\d+$")
+BARE_NUMBER = re.compile(r"^\d+$")
 
 # `R<n>` phase codes (WS-RC R0..R14) are deliberately ABSENT.  They are
 # real in the documentation, but as an identifier rule `r\d+` matches 76
@@ -163,7 +178,10 @@ def is_coded(token: str) -> bool:
             continue
         if any(rx.match(c) for rx in COMPONENT_CODES):
             return True
-    return False
+    # Audit IDs live in an adjacency rather than in any one component,
+    # so they are checked over consecutive pairs.
+    return any(VERSION_STAMP.match(a) and BARE_NUMBER.match(b)
+               for a, b in zip(parts, parts[1:]))
 
 
 def blank_literal(span: str) -> str:
@@ -279,11 +297,17 @@ def strip_hash(text: str) -> str:
 # A `$` expansion inside double quotes is live code.  `$(...)` nests in
 # general; the non-greedy form covers the flat case and anything longer
 # degrades to keeping less, never to blanking a name outright.
-SHELL_EXPANSION = re.compile(r"\$\{[^}]*\}|\$\([^)]*\)|\$[A-Za-z_][A-Za-z0-9_]*")
+# Backticks are the legacy spelling of `$(...)` and are executable in
+# exactly the same places, including inside double quotes.  Leaving
+# them out meant `x="`phase5_helper`"` was blanked as message text
+# while the bare `x=`phase5_helper`` one line below survived -- the
+# same command, visible or not depending on surrounding quotes.
+SHELL_EXPANSION = re.compile(
+    r"\$\{[^}]*\}|\$\([^)]*\)|\$[A-Za-z_][A-Za-z0-9_]*|`[^`]*`")
 
 
 def keep_expansions(span: str) -> str:
-    """Blank a double-quoted span except its `$` expansions."""
+    """Blank a double-quoted span except its command substitutions."""
     out = [c if c == "\n" else " " for c in span]
     for m in SHELL_EXPANSION.finditer(span):
         out[m.start():m.end()] = list(span[m.start():m.end()])
@@ -443,11 +467,26 @@ def path_tokens(rel: str) -> list[str]:
     canonical `WS-*` spelling.  Contents are deliberately NOT normalised
     this way: there `a-b` is subtraction.
 
+    A `.` inside the STEM is a separator too, and for the same reason:
+    `audit_v0.30.11_probe.sh` otherwise yields `audit_v0` and `_probe`
+    -- `30` and `11` never become tokens at all, since `IDENTIFIER`
+    needs a leading letter -- so the canonical dotted `AUDIT_vX.Y.Z`
+    filename escapes the audit-ID rule that exists to catch it.  Only
+    the stem is normalised; the suffix stays its own token, so no
+    existing name changes and the baseline does not churn.
+
     Kept as one function so the self-test exercises what `scan` runs
     rather than a copy of it.
     """
-    return [t for part in Path(rel).parts
-            for t in IDENTIFIER.findall(part.replace("-", "_"))]
+    out = []
+    for part in Path(rel).parts:
+        p = Path(part)
+        # `.stem` drops only the LAST suffix, which is what we want:
+        # `foo.bar.sh` -> stem `foo.bar` (joined) + suffix `sh`.
+        normalised = p.stem.replace("-", "_").replace(".", "_")
+        out += IDENTIFIER.findall(normalised)
+        out += IDENTIFIER.findall(p.suffix.replace("-", "_"))
+    return out
 
 
 def index_contents(paths: list[str]) -> dict[str, str]:
@@ -556,7 +595,15 @@ def main() -> int:
               f"{sum(ratcheted.values())} occurrences.")
         return status
 
-    raw = json.loads(BASELINE_PATH.read_text())
+    # From the INDEX, for the same reason `scan` reads sources there: a
+    # baseline regenerated only in the working tree would excuse a
+    # violation the index still carries, which is precisely the split
+    # state reading sources from the index was meant to close.  Falls
+    # back to the working tree when the baseline is not tracked yet
+    # (its own introducing commit) or when git is unavailable.
+    staged_baseline = index_contents([BASELINE_REL]).get(BASELINE_REL)
+    raw = json.loads(staged_baseline if staged_baseline is not None
+                     else BASELINE_PATH.read_text())
     baseline = Counter({(n, f): c for n, fs in raw.items() for f, c in fs.items()})
 
     risen = sorted((k for k in ratcheted if ratcheted[k] > baseline.get(k, 0)),

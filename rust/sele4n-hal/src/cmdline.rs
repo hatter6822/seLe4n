@@ -28,9 +28,14 @@
 //!   still defaults to `false` at module load; Phase 5 sets it to the
 //!   parsed value before invoking [`crate::smp::bring_up_secondaries`].
 //! - **SM1.D.4**: per-object locks live inside objects with
-//!   `Default::default()` initialisers; no global BKL exists under
-//!   per-object fine locks, so no init-order hazard.  See module
-//!   docstring of `crate::smp` for the BKL-state-machine discussion.
+//!   `Default::default()` initialisers; no global kernel-entry lock
+//!   exists, so no init-order hazard.  See module docstring of
+//!   `crate::smp` for the lock-state-machine discussion.  Note the
+//!   absence is not yet compensated: the per-object fine locks are
+//!   defined but the kernel `@[export]` bodies do not acquire them
+//!   (SM3.C.9), so concurrent kernel entry is currently serialised by
+//!   nothing at all — see `Platform.FFI.modifyGetKernelState` on the
+//!   Lean side.  SMP is off by default until SM5.I closes this.
 //! - **SM1.D.5**: `per_cpu::check_per_cpu_invariants()` runs in Phase 1
 //!   of `rust_boot_main`, before TPIDR_EL1 is set and before
 //!   bring-up issues any PSCI CPU_ON.

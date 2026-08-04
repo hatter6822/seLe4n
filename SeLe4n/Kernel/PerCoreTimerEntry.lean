@@ -41,8 +41,15 @@ entry is the thin `BaseIO` shell over it (the SM5.F pattern: verified pure core 
 side-effecting shell that is inert on the no-SGI path —
 `Concurrency.fireCrossCoreSgis [] = pure ()`).
 
-The read-tick-commit is atomic under a single `IO.Ref.modifyGet`, and on hardware
-runs under the big kernel lock the trap handler holds.  The finer-grained
+The read-tick-commit issues as a single `IO.Ref.modifyGet`, which keeps the
+recovered SGIs paired with the state they came from without a second read — but
+`modifyGet` is a read then a write, not a cross-core atomic, so this is *not* on
+its own safe against a concurrent commit on another core (see
+`Platform.FFI.modifyGetKernelState`).  The design has the trap handler hold a
+kernel-entry lock across the tick; that lock is **owed, not implemented**, and
+until it (or the SM3.C.9 `withLockSet` migration) lands, a concurrent tick and
+syscall commit can lose one of the two transitions outright.  This is why SMP
+stays off by default.  Tracked SM5.I.  The finer-grained
 `timerTickOnCoreLockSet` cross-domain footprint (SM5.D.3) certifies the 2PL
 acquisition order a future per-object-locked migration consumes; the
 `SchedLockId`-level `withLockSet` bracket itself is the SM3.C combinator's
