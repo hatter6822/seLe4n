@@ -1936,3 +1936,82 @@ rather than riding a round-18 remediation cut.
 **Acceptance**: no kernel `@[export]` body commits state without holding
 a lock that excludes every other kernel entry; the five sites above
 updated to describe the mechanism that actually runs.
+
+## Intermittent `queued_rw_lock` cross-thread test hang (tracked debt, owner SM2)
+
+Surfaced at v0.32.146 while adding contention witnesses. The HAL test
+binary hangs intermittently, 2-3% of full-suite runs on a four-core host.
+
+### Reproduction
+
+Run the compiled test binary directly — this rules out cargo's
+build-directory lock, which produces an identical-looking stall:
+
+```
+cargo test -p sele4n-hal --lib --no-run
+for i in $(seq 1 60); do timeout 60 target/debug/deps/sele4n_hal-* --test-threads=4 || echo "run $i hung"; done
+```
+
+On a hang, 825 of 826 tests have completed and one has not:
+`queued_rw_lock::cross_thread_tests::cross_thread_state_invariant_no_writer_with_readers`.
+
+### Measured facts
+
+| Observation | Measurement |
+|---|---|
+| Hangs when run **alone** | 0 in 200 runs |
+| Hangs under the **full suite** | 2-3 in 100 runs |
+| Thread states at hang time | all 5 in state `R` (runnable), none blocked |
+| Tests completed at hang time | 825 of 826 |
+
+It requires concurrent load; it is not reproducible in isolation.
+
+### What was tried, and why it was wrong
+
+**Hypothesis (falsified): nothing in the file yields.** The observer
+thread is the only spin-wait in the file with no pause of any kind, so a
+`thread::yield_now()` was added to it. Measured: **3 hangs in 100 runs
+with it, against 2 in 60 without — unchanged.** Reverted.
+
+Reading further showed the hypothesis could not have been right: every
+parked-wait in the lock already routes through `cpu::wfe_bounded` ->
+`cpu::wfe()`, which **does** yield under `cfg(test)`. That yield was
+added by SM2.E for this exact symptom; its comment records "OS scheduler
+starvation of the admitter thread causes ~10% test hangs". The yielding
+mitigation is already in place, and what remains is the residual after
+it. Scheduler starvation therefore does not explain the current 2-3%.
+
+Note that state `R` does not indicate a non-yielding spin: a thread that
+calls `yield_now()` stays runnable. The thread dump is consistent with
+threads spinning *and* yielding, making no protocol progress.
+
+### Open hypotheses
+
+1. **A rare race in the MCS-RW handover** (`signal_next_waiter` /
+   `cascade_admit_readers` / the `parked` CAS-claim protocol), exposed
+   by preemption at an unlucky point. Concurrent load makes mid-protocol
+   preemption far likelier, which fits "never alone, 2-3% under load".
+2. **A scheduling pathology yielding cannot address**, in which case it
+   is purely a host-test artifact.
+
+These have very different weight. Under (1) the defect is in a lock
+primitive intended for SM3 per-object locks, and a handover race that
+deadlocks on a host can deadlock a core on hardware. Under (2) there is
+nothing to fix in the kernel. **The question is open and should be
+closed before SM3.C.9 adopts this lock more widely.**
+
+### Suggested next step
+
+Instrument rather than guess: build a standalone harness that drives
+`QueuedRwLock` with the same 4-worker/1-observer shape plus per-thread
+progress counters and a dump of `state`, `tail` and every slot's
+`parked`/`next` on stall. That distinguishes (1) from (2) directly —
+under (1) the slot graph will show a waiter whose predecessor has
+already released.
+
+### Relationship to the v0.32.146 witnesses
+
+The contention witnesses added at v0.32.146 raise the hit rate from
+roughly 1 run in 50 to 1 in 12, because they add concurrent load. They
+do **not** cause it: each passes 175/175 in isolation, and the hang
+reproduces without them.

@@ -1,3 +1,127 @@
+## v0.32.146 — SM5.I's lock had no contention test, and one had been hanging CI all along
+
+Seven contention witnesses.
+
+**The SM5.I lock was tested on one thread.** `kernel_entry.rs` landed
+with six tests, all sequential. That is the right shape for the fuel and
+servicing arms, but it cannot exercise what the lock is *for*: an
+uncontended `take_ticket` always equals `peek_serving`, so the wait loop
+never runs and every property SM5.I claims holds trivially. Three
+witnesses now drive it with real threads on the `_in` forms:
+
+1. `concurrent_kernel_entries_never_overlap` — at most one core inside
+   the bracket, ever.
+2. `no_kernel_transition_is_lost_under_concurrent_entry` — **the defect,
+   not the lock**. The body is the read-then-write shape
+   `modifyGetKernelState` has, with a widened window between the halves.
+   Unbracketed it loses updates; bracketed the count must be exact.
+3. `a_re_entering_neighbour_does_not_starve_another_core` — the FIFO
+   claim. SM5.I chose the SM2 `TicketLock` over a CAS try-lock precisely
+   for this, and a test-and-set lock passes witness 1 while starving a
+   neighbour, so exclusion alone does not establish what was chosen.
+
+**The same gap in SM7.F.3.** `shootdown.rs` had exactly one threaded
+test — the round-lock CAS stress — and none over the generation
+protocol, where all three P1 fixes live: allocation order under the
+round lock, the `fetch_max` acknowledgment, the seqlock mailbox. Four
+more witnesses cover unique-and-gapless allocation, untorn snapshots
+(operands tagged with their own generation), the lagging-target security
+property under a concurrent poller, and a stale replay racing a fresh
+run.
+
+**Mutation-tested; it caught two of mine, and the fairness one took three
+attempts.** Every witness was run against a deliberately broken
+implementation — no lock at all (the pre-SM5.I world), FIFO broken,
+non-atomic allocation, tear check removed, ack as a plain store.
+
+The allocation witness passed against a **non-atomic allocator**: without
+a start barrier the threads never overlapped, because a few hundred
+`fetch_add`s retire faster than the next thread spawns. Fixed with a
+barrier and a larger iteration count.
+
+The fairness witness needed three formulations, and the first two are
+worth recording because each looked correct:
+
+1. *the victim exhausts its fuel* — worked at 200 iterations, then
+   silently stopped catching the non-FIFO mutant when the run was
+   shortened to fix a timeout. A detector that depends on a budget being
+   reachable is disarmed by making the test cheaper.
+2. *the hog:victim ratio over the whole run* — unsound on a preemptive
+   host. The hog can hold a core for a full timeslice while the victim
+   is not scheduled and therefore is not contending at all; that is not
+   starvation, but it inflates the ratio. Failed 2 runs in 8.
+3. *overtakes while queued* — what FIFO actually promises: from the
+   moment the victim holds a ticket, only cores already ahead of it may
+   enter first. A descheduled victim contributes no sample, and a
+   majority test absorbs scheduling jitter while still catching
+   systematic starvation, where essentially every sample is bad.
+
+All seven now fail their mutants. That is the fourth and fifth variant of
+"a check that pins nothing" found on this PR.
+
+**One timeout was self-inflicted**, and it is the same lesson from the
+other side: the lost-update witness originally widened its read→write
+window with `yield_now()` *inside the critical section*, which
+deschedules the thread holding the lock while every waiter spins. A spin
+burst widens the window just as well and cannot deschedule the holder.
+
+**And a pre-existing intermittent hang, found by trying to ship them —
+diagnosed only partly, NOT fixed.** Adding the witnesses raised the
+full-suite hang rate from ~2% to ~8%, so they looked flaky. They are
+not: each passes 175/175 in isolation, and the suite hangs ~1 run in 50
+*without* them. Running the compiled test binary directly ruled out
+cargo's build-directory lock; catching a live hang and dumping thread
+state found **825 of 826 tests complete and one never returns, with all
+five of its threads in state R**:
+`queued_rw_lock::cross_thread_tests::cross_thread_state_invariant_no_writer_with_readers`.
+
+Established facts, each measured:
+
+* it **never** hangs when run alone — 0 hangs in 200 runs; it needs
+  other tests running concurrently;
+* under the full suite it hangs 2–3% of runs, reproducibly, with the
+  binary invoked directly;
+* at hang time all five of its threads are runnable, none blocked.
+
+**My first explanation was wrong, and I am recording that rather than
+the tidy version.** I proposed that nothing in the file yields — that
+`core::hint::spin_loop()` is a pause hint, not a scheduler yield — and
+added a `thread::yield_now()` to the one spin-wait lacking any pause.
+Measured: 3 hangs in 100 runs against 2 in 60 without it, i.e.
+unchanged. Reverted. Reading further showed why it could not have
+worked: every parked-wait in the lock already routes through
+`cpu::wfe_bounded` → `cpu::wfe()`, which **does** yield under
+`cfg(test)` — added by SM2.E for exactly this symptom, whose comment
+records "OS scheduler starvation of the admitter thread causes ~10%
+test hangs". The yielding fix is already present; what remains is the
+residual after it, and scheduler starvation does not explain it.
+
+So the cause is still open: either a rare race in the MCS-RW handover
+that preemption exposes, or a scheduling pathology yielding cannot
+address. **Registered as tracked debt** with the reproduction, the
+thread-state evidence, and both hypotheses — not with a confident
+explanation I have already falsified once.
+
+Not a kernel defect on the evidence available: it needs a preemptive
+scheduler oversubscribing cores, which hardware does not have. That
+said, if it turns out to be a handover race rather than scheduling, it
+would matter for SM3's per-object locks, which is why the debt entry
+says so explicitly instead of closing the question.
+
+**These witnesses raise how often it is hit**, from roughly 1 run in 50
+to 1 in 12. Stated plainly rather than discovered later: the coverage is
+worth having, the amplification is real, and the underlying bug is now
+characterised well enough for its owner to continue.
+
+**Scope, stated plainly.** The host has no SGIs, no per-PE TLB and a
+different memory model. These pin the **ordering discipline** — mutual
+exclusion, FIFO, generation identity — not the invalidation. They are
+not a substitute for hardware; that needs the SM9.E image and the QEMU
+exercisers already registered and skipping.
+
+Rust tests +7, clippy clean, zero ignored. No Lean, model or behaviour
+change; trace byte-identical.
+
 ## v0.32.145 — Round 30: four holes, two of them on the binary-reachable surface
 
 PR #854 review round 30: four findings, all valid, all confirmed against
