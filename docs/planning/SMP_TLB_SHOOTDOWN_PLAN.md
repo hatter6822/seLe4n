@@ -2023,6 +2023,20 @@ the full suite runs 100 times with no hang.
 
 ### Relationship to the v0.32.146 witnesses
 
-The contention witnesses raise the full-suite hit rate from roughly 1 run
-in 50 to 1 in 12 by adding load. They do not cause it: each passes
-175/175 in isolation, and the deadlock reproduces without them.
+The contention witnesses add concurrent load, which plausibly raises the
+hit rate, but the measurements do not establish by how much and one
+figure quoted in the v0.32.146 CHANGELOG entry (1 in 50 -> 1 in 12)
+rests on a single small-sample comparison. Everything measured:
+
+| Configuration | Hangs |
+|---|---|
+| suite **without** the witnesses (via cargo) | 1 / 50 |
+| suite **with** them (via cargo) | 4 / 50 |
+| suite with them (binary directly) | 2 / 60 |
+| suite with them, after the reverted observer yield | 3 / 100 |
+
+The three with-witness runs give 8%, 3.3% and 3.0% — consistent with
+each other and not clearly separated from the 2% baseline at these
+sample sizes. Treat "2-3 per 100" as the rate and the amplification as
+unquantified. What IS established: the witnesses do not cause it — each
+passes 175/175 in isolation, and the deadlock reproduces without them.
