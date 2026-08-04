@@ -396,6 +396,37 @@ def blank_prose(span: str) -> str:
     return "".join(c if c == "\n" else " " for c in span)
 
 
+# A string literal that supplies a LINKER-VISIBLE identifier is code, not
+# prose, and must survive the blanking that every other literal gets.
+#
+# `#[export_name = "phase5_helper"] pub fn semantic() {}` puts the coded
+# name in the symbol table while every Rust identifier around it reads
+# clean. That matters more here than the equivalent hole elsewhere: the
+# Rust scan is a hard zero with no baseline, so this was the one spelling
+# that could carry a coded symbol into the kernel binary itself past a
+# gate reporting PASS. The assembly and linker-script formats brought
+# into scope by the previous round have the same shape in their quoted
+# section and symbol names.
+#
+# Matched against the text PRECEDING the literal, so ordinary prose
+# literals — nearly every string in the tree — are unaffected. The
+# directive set is deliberately closed: each entry names a construct
+# whose string argument becomes a symbol or section name, which is why a
+# bare `name = "..."` is not in it.
+IDENT_BEARING_STRING = re.compile(
+    r"(?:export_name|link_name|link_section"          # Rust attributes
+    r"|\.section|\.globa?l|\.type|\.set|\.weak|\.extern|\.size"  # asm
+    r"|PROVIDE|ENTRY|KEEP|OUTPUT_ARCH)"               # linker script
+    r"\s*[=(\s]\s*$"
+)
+
+
+def keeps_identifiers(text: str, at: int) -> bool:
+    """Does the literal starting at `at` name a linker-visible symbol?"""
+    line_start = text.rfind("\n", 0, at) + 1
+    return IDENT_BEARING_STRING.search(text[line_start:at]) is not None
+
+
 def strip_pairs(text: str, line_comment: str, block: tuple[str, str]) -> str:
     """Blank comments and string literals for C-family / Lean syntax."""
     open_b, close_b = block
@@ -419,7 +450,8 @@ def strip_pairs(text: str, line_comment: str, block: tuple[str, str]) -> str:
             close = '"' + m.group(1)
             j = text.find(close, i + m.end() - 1)
             j = n if j < 0 else j + len(close)
-            out.append(blank_literal(text[i:j])); i = j
+            out.append(text[i:j] if keeps_identifiers(text, i)
+                       else blank_literal(text[i:j])); i = j
         elif text[i] == '"':
             j = i + 1
             while j < n:
@@ -428,7 +460,8 @@ def strip_pairs(text: str, line_comment: str, block: tuple[str, str]) -> str:
                 if text[j] == '"':
                     j += 1; break
                 j += 1
-            out.append(blank_literal(text[i:j])); i = j
+            out.append(text[i:j] if keeps_identifiers(text, i)
+                       else blank_literal(text[i:j])); i = j
         else:
             out.append(text[i]); i += 1
     return "".join(out)

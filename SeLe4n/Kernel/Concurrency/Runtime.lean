@@ -575,9 +575,14 @@ def shootdownRoundLockTryAcquire : BaseIO Bool := do
 def shootdownAllocateRoundGeneration : BaseIO Nat := do
   return (← Platform.FFI.ffiShootdownAllocateRoundGeneration).toNat
 
-/-- **WS-SM SM7.B.7**: release the global shootdown-round lock — only
-    after the initiator observed `allAcked` (or immediately before the
-    timeout path's fail-closed panic). -/
+/-- **WS-SM SM7.B.7**: release the global shootdown-round lock —
+    **only** after the initiator observed `allAcked`.
+
+    The timeout path is **not** a second caller: it retains the lock
+    permanently, quarantining the subsystem, because a target that
+    never certified its invalidation leaves a stale translation that
+    no later round may run alongside.  See
+    `Platform.FFI.ffiShootdownRoundLockRelease` for the full contract. -/
 def shootdownRoundLockRelease : BaseIO Unit :=
   Platform.FFI.ffiShootdownRoundLockRelease
 

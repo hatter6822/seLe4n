@@ -16,7 +16,7 @@ import SeLe4n.Kernel.Architecture.TlbInvalidation
 This module lands the SM7.A slice of the TLB/cache shootdown phase
 (`docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` §5): the typed shootdown
 descriptor, the per-core pending-shootdown queues, the per-core
-acknowledgment flags, the `enqueueShootdown` / `drainShootdowns`
+acknowledged-generation slots, the `enqueueShootdown` / `drainShootdowns`
 state operations, and the pending-queue capacity bound — together
 with the store/load algebra and preservation theorems the SM7.B
 protocol proofs (`tlbShootdownBroadcast_invalidatesAllCores`,
@@ -27,9 +27,14 @@ Theorem 3.3.1) compose over.
 A TLB shootdown for an `(asid, vaddr)` operand initiated by core
 `c₀` proceeds as:
 
-  1. `beginShootdownRound c₀` — every ack flag is reset to `false`
-     except the initiator's own (the initiator performs its own
-     invalidation locally, so it is born-acknowledged).
+  1. `beginShootdownRound c₀` — the round's generation is allocated
+     (`roundGeneration + 1`) and the initiator's acknowledged-generation
+     slot is advanced to it, so the initiator is born-acknowledged (it
+     performs its own invalidation locally).  **Nothing is reset**: a
+     target counts as unacknowledged because the round generation has
+     moved past the generation its slot names, not because a flag was
+     cleared.  That is what makes a stale acknowledgment from an earlier
+     round unable to satisfy this one (SM7.F.3).
   2. For each target core `c ≠ c₀`: `enqueueShootdown c desc`
      (under the pending-shootdown lock), then a `.tlbShootdownReq`
      SGI (`SgiKind.tlbShootdownReq`, INTID 1) to `c`.
@@ -335,7 +340,9 @@ structure TlbShootdownState where
 namespace TlbShootdownState
 
 /-- **WS-SM SM7.A.2**: the quiescent boot state — every pending queue
-empty, every ack flag `true`.  Witnessed quiescent by
+empty, every acknowledged-generation slot `0` against a round
+generation of `0`, so every core reads as acknowledged (no round has
+been opened to be waited on).  Witnessed quiescent by
 `initial_shootdownQuiescent` and bounded by `initial_pendingBounded`. -/
 def initial : TlbShootdownState := {}
 
@@ -481,8 +488,11 @@ every core (`Vector.replicate` reduction). -/
     initial.pendingOnCore c = [] := by
   simp [initial, pendingOnCore]
 
-/-- **WS-SM SM7.A.3**: the boot state has every ack flag `true` —
-quiescent, matching the Rust `SHOOTDOWN_ACK` boot value. -/
+/-- **WS-SM SM7.A.3**: every core reads as acknowledged at boot —
+`roundGeneration` and every slot are `0`, and `ackOnCore` is the
+comparison `roundGeneration ≤ ackedGenOnCore`, so this holds because no
+round has been opened rather than because a flag was initialised.
+Matches the Rust `ShootdownAckSlot.acked_gen` boot value. -/
 @[simp] theorem initial_ackOnCore (c : CoreId) :
     initial.ackOnCore c = true := by
   simp [initial, ackOnCore]
@@ -612,7 +622,8 @@ instance (st : TlbShootdownState) : Decidable (allAcked st) :=
   inferInstanceAs (Decidable (∀ c : CoreId, st.ackOnCore c = true))
 
 /-- **WS-SM SM7.A**: no shootdown round in flight — every queue empty
-and every flag acknowledged.  This is the state between rounds; the
+and every core's acknowledged generation at or beyond the current round
+generation.  This is the state between rounds; the
 boot state satisfies it (`initial_shootdownQuiescent`). -/
 def shootdownQuiescent (st : TlbShootdownState) : Prop :=
   (∀ c : CoreId, st.pendingOnCore c = []) ∧ allAcked st
@@ -1607,9 +1618,17 @@ theorem allCores_foldl_acknowledgeShootdown_allAcked
 
 /-- **WS-SM SM7.A.3**: open a new shootdown round.
 
-Resets every ack flag to `false` except the initiator's own, which is
-born-`true`: the initiator performs its own invalidation locally
-(plan §3.2 steps 1 + 3) and is never waited on.  The SM7.B
+Allocates the round's generation and advances the initiator's
+acknowledged-generation slot to it, so the initiator is born-acknowledged:
+it performs its own invalidation locally (plan §3.2 steps 1 + 3) and is
+never waited on.
+
+**Nothing is cleared.**  This was a reset of a `Vector Bool` until
+v0.32.113; a target is now unacknowledged because `roundGeneration` has
+advanced past the generation its slot names, which is what stops an
+acknowledgment left over from an earlier round satisfying this one
+(`beginShootdownRound_ackOnCore_target` needs `ackBounded` for exactly
+that reason — there is no reset to appeal to).  The SM7.B
 `tlbShootdownBroadcast` transition calls this exactly once per round,
 *before* enqueueing descriptors and firing `.tlbShootdownReq` SGIs;
 the single global round lock (`ShootdownRoundLockId` — the

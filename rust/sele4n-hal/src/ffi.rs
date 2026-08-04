@@ -549,9 +549,19 @@ pub extern "C" fn ffi_shootdown_allocate_round_generation() -> u64 {
     crate::shootdown::allocate_round_generation()
 }
 
-/// **WS-SM SM7.B.7**: Release the global shootdown-round lock — only
-/// after the initiator observed all-acked (or immediately before the
-/// timeout path's fail-closed panic).
+/// **WS-SM SM7.B.7**: Release the global shootdown-round lock —
+/// **only** after the initiator observed all-acked.
+///
+/// The timeout path is not a second caller. It retains the lock
+/// permanently: a target that never certified its invalidation leaves a
+/// stale translation, so every other core's round must block rather
+/// than run alongside it, and holding the lock is what quarantines the
+/// subsystem. Releasing here — which this contract permitted until the
+/// PR #854 review, and which the runtime did until v0.32.130 — reopens
+/// the mailbox for the next round while that translation is still live.
+///
+/// A caller written to this contract must treat a timeout as terminal
+/// (`halt_fail_closed`), never as a path that unwinds.
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownRoundLockRelease`
 #[no_mangle]

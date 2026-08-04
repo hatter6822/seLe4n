@@ -1,3 +1,82 @@
+## v0.32.134 — Contracts that describe the mechanism that is actually there
+
+PR #854 review, twenty-second round: four findings, all valid, three of
+them stale text left behind by earlier cuts *in this PR*.
+
+**1. The citation cleanup left orphans its own gate could not see.**
+The v0.32.109 sweep removed 511 `File.ext:NNN` citations. Where a
+sentence cited two lines of one file, it rewrote the first and left the
+second as a bare `` `:303` `` — a citation strictly worse than the one
+it replaced, since it is both stale *and* no longer says which file it
+indexes. `check_source_line_citations.py` matched neither, so it
+reported PASS over its own wreckage for twelve versions.
+
+The reviewer found two. There were **twenty**, across five files. All
+are fixed by naming the symbol the number was pointing at, which was
+already in the sentence in every single case — the numbers carried no
+information even before they went stale. `ORPHAN_CITATION_RE` now
+matches the residue, deliberately narrow (the colon must open a token
+and be followed by two or more digits, so `12:30`, `host:8080` and
+`**Note**: 42` are untouched). Repairing them also exposed that
+`WithCaps.lean:**198` had been invisible to the filename pattern too,
+because the `**` broke the match.
+
+What makes this worth more than twenty edits: a cleanup that can leave
+the tree in a state its own gate cannot see is the defect. Matching the
+residue is what makes the sweep's completion checkable rather than
+assumed.
+
+**2. A string literal can carry a linker-visible identifier.**
+`#[export_name = "phase5_helper"] pub fn semantic() {}` puts a coded
+name in the symbol table while every Rust identifier around it reads
+clean, and the shared string stripper blanked it. This mattered more
+than the equivalent hole elsewhere: the Rust scan is a hard zero with no
+baseline, so it was the one spelling that could carry a coded symbol
+into the kernel binary past a gate reporting PASS. The same shape
+applies to quoted section and symbol names in the assembly and
+linker-script formats the previous round brought into scope.
+
+Literals in identifier-bearing contexts (`export_name`, `link_name`,
+`link_section`, the assembly `.section` / `.global` / `.type` family,
+the linker-script `PROVIDE` / `ENTRY` / `KEEP`) now survive blanking.
+The directive set is closed on purpose — each entry names a construct
+whose string argument *becomes* a symbol, which is why a bare
+`name = "..."` is not in it. Ordinary prose literals are unaffected, and
+two self-test checks pin that exemption alongside the four that pin the
+mechanism.
+
+**3. Three timeout-release contracts still permitted what v0.32.130
+removed.** The live path deliberately retains the round lock on timeout
+— a target never certified its invalidation, so holding the lock
+quarantines the subsystem — but `Platform/FFI.lean`, `Concurrency/
+Runtime.lean` and `rust/sele4n-hal/src/ffi.rs` all still documented
+"or immediately before the timeout path's fail-closed panic" as a legal
+call. A future caller written to any of those contracts restores the
+mailbox-reuse window the fix closed. All three now state that the only
+legal caller is one that has observed all-acked, and that a timeout is
+terminal rather than a path that unwinds.
+
+**4. The acknowledgment contracts still described Boolean flags.** The
+field has been a monotone generation vector since v0.32.113 and boots at
+zero, but the module header, `initial`, `initial_ackOnCore`,
+`shootdownQuiescent` and `beginShootdownRound` all still described a
+false/true reset protocol — the exact mechanism whose removal was the
+SM7.F.3 security fix, documented directly above the model that replaced
+it. Rewritten around what is actually there: nothing is reset, and a
+target counts as unacknowledged because `roundGeneration` advanced past
+the generation its slot names. That is *why* a stale acknowledgment
+cannot satisfy a later round, and why
+`beginShootdownRound_ackOnCore_target` needs `ackBounded` — there is no
+reset to appeal to.
+
+Baseline unchanged at 298 pairs / 1017 occurrences, zero lost, zero
+dropped, zero new (the tree has no identifier-bearing literals carrying
+coded names — as it should not, Rust being a hard zero). Self-test
+124 → 130 checks; all four new mechanism checks verified to fail against
+the previous version, both new exemption checks verified to pass.
+Citation gate green across 106 files. Rust clippy-clean, trace
+byte-identical.
+
 ## v0.32.133 — One reader for every input
 
 PR #854 review, twenty-first round: one finding, and it is a hole in

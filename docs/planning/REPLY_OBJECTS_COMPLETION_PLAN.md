@@ -50,7 +50,7 @@ single open slice and the entire focus of **§#7** below.
    shape (rights-agnostic — only the slot write and reply-target check matter).  Verified:
    `test_full` green; the retype→mint→link→use round-trip suite passes; trace byte-identical.
 2. **Stale conjunct-count comment (from #1).** `capabilityInvariantBundle`'s
-   doc-comment (`Capability/Invariant/Defs.lean` / :237) still reads "the
+   doc-comment (`Capability/Invariant/Defs.lean`) still reads "the
    bundle now has **6** conjuncts", but #1.a added the 7th
    (`replyCapPointsToValidReply`), so the live tuple has **7**. The comment
    describes a *worse* (out-of-date) state than the code; update it to "7" in
@@ -64,7 +64,7 @@ single open slice and the entire focus of **§#7** below.
 
 **Problem (closed).** `lifecycleRetypeDirect` (`Lifecycle/Operations/RetypeWrappers.lean`)
 retypes an ObjId **in place**: the authority cap stays `.object target` while the object
-becomes `.reply`. `resolveRecvReplyId`/`extractReplyId` (`API.lean`, `:303`) require
+becomes `.reply`. `resolveRecvReplyId`/`extractReplyId` (`API.lean`) require
 `.replyCap rid`, so a retyped Reply's `.object` cap yielded `.invalidCapability` —
 dynamically-retyped Reply objects were unusable; only boot-preinstalled reply caps worked.
 
@@ -82,7 +82,7 @@ rejected as diluting the deliberate `.replyCap` authority distinction.
 - **#2.a** ✅ — `mintReplyCap` (`Capability/Operations.lean`): resolve `.object target`
   via `cspaceLookupSlot` → require `getReply? (ReplyId.ofObjId target) ≠ none` (else
   `.invalidCapability`) → `cspaceInsertSlot` the `.replyCap rid` at dst. CDT-tracked variant
-  `mintReplyCapWithCdt` (`:1172`). Mirrors `cspaceMint`'s lookup → derive → insert shape.
+  `mintReplyCapWithCdt`. Mirrors `cspaceMint`'s lookup → derive → insert shape.
 - **#2.b** ✅ — `mintReplyCap_preserves_capabilityInvariantBundle`
   (`Capability/Invariant/Preservation/Insert.lean`) +
   `mintReplyCapWithCdt_preserves_capabilityInvariantBundle`
@@ -201,7 +201,7 @@ transition; the rid is server-supplied and unknown to the raw transition. So
 boundaries** — and `ipcInvariantFull` is a transition-level invariant. The relevant TCB
 shape is `ThreadIpcState.blockedOnReply (endpoint : ObjId) (replyTarget : Option ThreadId)`
 (`Model/Object/Types.lean`), with the caller's reply in `TCB.replyObject`
-(`:795`) and the server-first stash in `TCB.pendingReceiveReply` (`:806`).
+and the server-first stash in `TCB.pendingReceiveReply`.
 
 **Optimal approach (faithful seL4-MCS fold).** Make reply-linking **atomic** with the
 blocking transition by threading the resolved `rid` into the receive/call transitions, so
@@ -253,8 +253,7 @@ any producer still emits an unlinked `.blockedOnReply`). #7.5 closes after #7.4.
   "first step of execution":
   - `linkCallerReply_preserves_ipcInvariant` and `linkCallerReply_preserves_objects_invExt`
     — short consequences of the existing `linkCallerReply_objects_frame`
-    (`DualQueueMembership.lean`) and `linkCallerReply_preserves_ipcInvariantFull`
-    (`:3011`).
+    (`DualQueueMembership.lean`) and `linkCallerReply_preserves_ipcInvariantFull`.
   - the `pendingReceiveReply`-store duals — short consequences of
     `storeObject_tcb_preserves_ipcInvariant` (`CrossCore/NotificationBind.lean`) and
     `storeObject_tcb_replyObject_preserves_ipcInvariantCore` (`DualQueueMembership.lean`).

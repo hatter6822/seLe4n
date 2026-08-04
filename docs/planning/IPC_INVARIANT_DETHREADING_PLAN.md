@@ -563,8 +563,7 @@ prove it: the conjunct is not a true invariant of the kernel as written.
 
 **Severity: Low (model-completeness, *not* an exploitable info-flow channel).**  The
 information-flow projection already *erases* `pendingReceiveReply`
-(`InformationFlow/Projection.lean`, `projectKernelObject_erases_pendingReceiveReply`
-at `:402`), so a stale stash is invisible to a low observer — there is no covert
+(`InformationFlow/Projection.lean`, `projectKernelObject_erases_pendingReceiveReply`), so a stale stash is invisible to a low observer — there is no covert
 channel.  The impact is purely that `ipcInvariantFull`'s 17th conjunct is not
 machine-checked-preserved end-to-end (it is assumed where threaded).
 

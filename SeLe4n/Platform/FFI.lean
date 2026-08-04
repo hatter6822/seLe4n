@@ -353,8 +353,20 @@ opaque ffiShootdownRoundLockTryAcquire : BaseIO UInt64
 opaque ffiShootdownAllocateRoundGeneration : BaseIO UInt64
 
 /-- **WS-SM SM7.B.7**: release the global shootdown-round lock —
-    only after the initiator observed `allAcked` (or on the timeout
-    path immediately before the fail-closed panic).
+    **only** after the initiator observed `allAcked`.
+
+    There is no other legitimate caller.  On the timeout path the lock
+    is deliberately retained **permanently**: a target never certified
+    its invalidation, so every other core's round must block rather
+    than proceed against a TLB this one could not clean, and holding
+    the lock is what quarantines the subsystem.  Releasing it there —
+    which this contract permitted until the PR #854 review, and which
+    the runtime did until v0.32.130 — reopens the mailbox for the next
+    round while the stale translation the barrier exists to prevent is
+    still live.
+
+    A caller written to this contract must therefore treat a timeout as
+    terminal (`haltFailClosed`), never as a path that unwinds.
 
     Rust: `ffi_shootdown_round_lock_release` in `sele4n-hal/src/ffi.rs` -/
 @[extern "ffi_shootdown_round_lock_release"]

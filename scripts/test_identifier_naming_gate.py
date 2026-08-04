@@ -370,6 +370,30 @@ check("the registry is read through it",
 check("the baseline is read through it", "read_tracked(BASELINE_REL)" in _src,
       True)
 
+# A string literal that supplies a linker-visible symbol is code. The
+# Rust scan is a hard zero with no baseline, so `#[export_name = "..."]`
+# was the one spelling that could put a coded name in the kernel's symbol
+# table with every surrounding identifier reading clean.
+check("Rust export_name literals are scanned",
+      "phase5_helper" in gate.strip_rust(
+          '#[export_name = "phase5_helper"] pub fn semantic() {}'), True)
+check("Rust link_name literals are scanned",
+      "ws_sm_thing" in gate.strip_rust('#[link_name = "ws_sm_thing"] fn f();'),
+      True)
+check("Rust link_section literals are scanned",
+      "an3_boot" in gate.strip_rust(
+          '#[link_section = ".text.an3_boot"] static X: u8 = 0;'), True)
+check("assembly section names are scanned",
+      "ak9ce_01" in gate.strip_asm('.section "ak9ce_01", "ax"'), True)
+# ...and the exemption that makes the whole gate usable still holds: an
+# ordinary literal is prose, or every docstring in the tree becomes a
+# violation.
+check("ordinary Rust literals stay exempt",
+      "ws_sm" in gate.strip_rust('let m = "the ws_sm workstream is prose";'),
+      False)
+check("format-string prose stays exempt",
+      "phase5" in gate.strip_rust('println!("phase5 of the plan");'), False)
+
 
 def main() -> int:
     if failures:

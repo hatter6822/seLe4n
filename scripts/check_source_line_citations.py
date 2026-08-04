@@ -113,6 +113,28 @@ TEXTUAL_CITATION_RE = re.compile(
     re.IGNORECASE
 )
 
+# The ORPHANED half of a citation pair, e.g. `` (`API.lean`, `:303`) `` or
+# `` (`Defs.lean` / :237) ``.
+#
+# These exist because the v0.32.109 sweep that removed 511 citations
+# rewrote `File.ext:NNN` and stopped there: where a sentence cited two
+# lines of one file, the second was written as a bare `:NNN` that the
+# filename pattern never matched. So the sweep stripped the anchor and
+# left the number -- a citation strictly worse than the one it replaced,
+# since it is both stale AND no longer says what file it indexes. The
+# gate reported PASS over its own wreckage for twelve versions.
+#
+# A cleanup that can leave the tree in a state its own gate cannot see
+# is the actual defect here; matching the residue is what makes the
+# sweep's completion checkable rather than assumed.
+#
+# Deliberately narrow, since a colon before digits is common: the colon
+# must open a token (preceded by a backtick, space, `(`, `,`, `/` or
+# `~`) and be followed immediately by two or more digits. That excludes
+# `12:30`, `3:2`, `host:8080` and `**Note**: 42` (space after the
+# colon), while catching every orphan spelling the sweep produced.
+ORPHAN_CITATION_RE = re.compile(r'(?:(?<=[\s`(,/~])|^):\d{2,}\b')
+
 
 def target_files() -> list[str]:
     listing = subprocess.run(
@@ -171,7 +193,8 @@ def main() -> int:
                 if fence is not None:
                     continue
                 match = (citation_re.search(line)
-                         or TEXTUAL_CITATION_RE.search(line))
+                         or TEXTUAL_CITATION_RE.search(line)
+                         or ORPHAN_CITATION_RE.search(line))
                 if match:
                     findings.append((path, lineno, match.group(0), line.strip()))
 

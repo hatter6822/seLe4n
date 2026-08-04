@@ -273,8 +273,8 @@ withdrawn-as-finding; per §1.5 the structural fix lands in **R12.B**.
 | DEEP-PROOF-01 | L | R14 | `Scheduler/Operations/Preservation.lean` |
 | DEEP-LICENSE-01 | I | R10 | `SeLe4n.lean` (missing SPDX) |
 | DEEP-PRECOM-01 | M | R9 | `scripts/pre-commit-lean-build.sh` |
-| DEEP-SCH-02 | I | R5 | `Scheduler/Operations/Selection.lean, :327` |
-| DEEP-SCH-03 | I | R5 | `Lifecycle/Suspend.lean, :290+` |
+| DEEP-SCH-02 | I | R5 | `Scheduler/Operations/Selection.lean` (`resolveEffectivePrioDeadline`) |
+| DEEP-SCH-03 | I | R5 | `Lifecycle/Suspend.lean` (`resumeThread`) |
 | DEEP-SCH-04 | I | R5 | `Scheduler/Operations/Core.lean` |
 | DEEP-SCH-05 | I | R5 | `Scheduler/RunQueue.lean` |
 | DEEP-SCH-06 | I | R5 | `SchedContext/Operations.lean` |
@@ -1527,7 +1527,7 @@ SeLe4n/Kernel/SchedContext/Operations.lean          schedContextConfigure (domai
 
 | # | Action |
 |---|---|
-| R5.C.1 | At `Selection.lean` (`effectivePriority` returns `Option Priority`) and `:327` (`resolveEffectivePrioDeadline` returns total `(Priority, Deadline)`): pick **one** convention. Recommended: both total under documented invariants (the runtime-checked hypotheses already make `effectivePriority` total), removing the `Option` wrapping at the call site. |
+| R5.C.1 | At `Selection.lean` (`effectivePriority` returns `Option Priority`) and `resolveEffectivePrioDeadline` (returns total `(Priority, Deadline)`): pick **one** convention. Recommended: both total under documented invariants (the runtime-checked hypotheses already make `effectivePriority` total), removing the `Option` wrapping at the call site. |
 | R5.C.2 | If the recommendation is reversed (both `Option`), every caller must propagate the optionality; this is the larger refactor and only justified if a kernel-state condition exists where neither is computable. |
 | R5.C.3 | Add a witness theorem under either convention that ties the two to a common "effective scheduling parameters" predicate. |
 
@@ -2149,8 +2149,8 @@ computed against the post-implementation tree.
 |---|---|
 | R11.A.1 | Run `./scripts/report_current_state.py` to recompute live metrics. |
 | R11.A.2 | Run `./scripts/sync_readme_from_codebase_map.sh` to push the recomputed metrics into README. |
-| R11.A.3 | Manually reconcile the two inconsistent declaration counts (`README.md` "3,186" vs `:213` "2,725"). The recommended fix per deep audit §10.3 PR 11 is to drop both inline numbers and replace with a single CI-synchronised reference to `codebase_map.json`'s `proved_theorem_lemma_decls` field. |
-| R11.A.4 | Update test-suite count: `README.md` says "25 test suites" and `:193` says "24 test suites"; live count is 28 (`find tests -name "*.lean" \| wc -l`). Both lines must be updated; if the source-layout table lists individual suites, update the count and add the missing entries. |
+| R11.A.3 | Manually reconcile the two inconsistent declaration counts (`README.md`'s badge "3,186" vs its source-layout table's "2,725"). The recommended fix per deep audit §10.3 PR 11 is to drop both inline numbers and replace with a single CI-synchronised reference to `codebase_map.json`'s `proved_theorem_lemma_decls` field. |
+| R11.A.4 | Update test-suite count: `README.md` says "25 test suites" and its source-layout table says "24 test suites"; live count is 28 (`find tests -name "*.lean" \| wc -l`). Both lines must be updated; if the source-layout table lists individual suites, update the count and add the missing entries. |
 | R11.A.5 | Update `production_files`/`production_loc` to match the live `find` and `wc -l` results: 167 / 109,787 (or whatever the post-R1..R10 tree reports — the metric refresh must be the last thing computed). |
 | R11.A.6 | Verify `scripts/check_version_sync.sh` and `scripts/sync_documentation_metrics.sh` both pass. |
 
@@ -3162,8 +3162,8 @@ v0.31.0 release boundary.
 | DEEP-PROOF-01 | Deep §5.3, §11.4, §12 | `Scheduler/Operations/Preservation.lean` | R14 | – | – |
 | DEEP-LICENSE-01 | Deep §3 | `SeLe4n.lean` (no SPDX) | R10 | YES | YES |
 | DEEP-PRECOM-01 | Deep §3, §11.2 | `scripts/pre-commit-lean-build.sh` | R9 | YES | YES |
-| DEEP-SCH-02 | Deep §5.3, §12 | `Scheduler/Operations/Selection.lean, :327` | R5 | – | YES |
-| DEEP-SCH-03 | Deep §5.3 | `Lifecycle/Suspend.lean, :290+` | R5 | – | YES |
+| DEEP-SCH-02 | Deep §5.3, §12 | `Scheduler/Operations/Selection.lean` (`resolveEffectivePrioDeadline`) | R5 | – | YES |
+| DEEP-SCH-03 | Deep §5.3 | `Lifecycle/Suspend.lean` (`resumeThread`) | R5 | – | YES |
 | DEEP-SCH-04 | Deep §5.3 | `Scheduler/Operations/Core.lean` | R5 | – | YES |
 | DEEP-SCH-05 | Deep §5.3 | `Scheduler/RunQueue.lean` | R5 | – | YES |
 | DEEP-SCH-06 | Deep §5.4, §12 | `SchedContext/Operations.lean` | R5 | – | YES |

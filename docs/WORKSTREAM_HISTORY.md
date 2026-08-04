@@ -3141,7 +3141,7 @@ release cut):
   `lockSet_consistent_base_plus_opt`.
 * **Source-level tracing**: each finding was verified against
   `Kernel/SchedContext/PriorityManagement.lean` (SC
-  write in `updatePrioritySource`); `:347` (`setMCPriorityOp`
+  write in `updatePrioritySource`; `setMCPriorityOp`
   capping branch); `Kernel/Architecture/IpcBufferValidation.lean`
   (VSpace + mappings read); `Kernel/Service/Registry.lean`
   (endpoint object read).  `revokeService` and
