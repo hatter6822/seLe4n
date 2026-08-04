@@ -464,7 +464,7 @@ above the current round makes exactly `c` acknowledged. -/
   simp [ackOnCore]
 
 /-- **WS-SM SM7.A.2**: per-core extensionality.  Two shootdown states
-are equal once their pending queues and ack flags agree at *every*
+are equal once their pending queues and ack slots agree at *every*
 `CoreId` and their round-generation counters agree.  Named
 `ext_perCore` to avoid clashing with the structure's auto-generated
 `TlbShootdownState.ext`; each per-core hypothesis lifts to `Vector`
@@ -819,7 +819,7 @@ theorem enqueueShootdown_frame_pending {st st' : TlbShootdownState}
       st target c _ hc.symm
   · simp at h
 
-/-- **WS-SM SM7.A.4**: enqueueing never touches any core's ack flag —
+/-- **WS-SM SM7.A.4**: enqueueing never touches any core's ack slot —
 posting a request and acknowledging completion are disjoint effects. -/
 theorem enqueueShootdown_frame_ack {st st' : TlbShootdownState}
     {target : CoreId} {d : TlbShootdownDescriptor}
@@ -924,7 +924,7 @@ theorem foldlM_enqueueShootdown_isSome (targets : List CoreId) :
         rw [enqueueShootdown_frame_pending hst' hct]
         exact hempty c (List.mem_cons_of_mem _ hc)) d
 
-/-- **WS-SM SM7.A.4**: the posting fold never touches any ack flag —
+/-- **WS-SM SM7.A.4**: the posting fold never touches any ack slot —
 the fold-level form of `enqueueShootdown_frame_ack`. -/
 theorem foldlM_enqueueShootdown_frame_ack {targets : List CoreId} :
     ∀ {st posted : TlbShootdownState} {d : TlbShootdownDescriptor},
@@ -1147,7 +1147,7 @@ Called from the `.tlbShootdownReq` SGI handler (SM7.B.3) on the
 execute one local TLBI per descriptor) and the state with that core's
 queue emptied.
 
-Deliberately does **not** set the ack flag: the handler must retire
+Deliberately does **not** set the ack slot: the handler must retire
 the drained invalidations (`tlbiForSharing` + `dsb`) *before*
 acknowledging, so the ack is a separate `acknowledgeShootdown` step —
 fusing them here would let the pure model claim an acknowledgment the
@@ -1183,7 +1183,7 @@ theorem drainShootdowns_frame_pending (st : TlbShootdownState)
   simp only [drainShootdowns]
   exact TlbShootdownState.setPendingOnCore_pendingOnCore_ne st c c' [] h.symm
 
-/-- **WS-SM SM7.A.5**: draining never touches any ack flag (the ack is
+/-- **WS-SM SM7.A.5**: draining never touches any ack slot (the ack is
 the separate, post-TLBI `acknowledgeShootdown` step). -/
 theorem drainShootdowns_frame_ack (st : TlbShootdownState) (c c' : CoreId) :
     (drainShootdowns st c).2.ackOnCore c' = st.ackOnCore c' := by
@@ -1385,7 +1385,7 @@ theorem drainShootdownsInWindow_frame_pending (st : TlbShootdownState)
   simp only [drainShootdownsInWindow]
   exact TlbShootdownState.setPendingOnCore_pendingOnCore_ne st c c' _ h.symm
 
-/-- **WS-SM SM7.F.3**: the window drain never touches an ack flag (the
+/-- **WS-SM SM7.F.3**: the window drain never touches an ack slot (the
 acknowledgment is the separate, post-TLBI step). -/
 theorem drainShootdownsInWindow_frame_ack (st : TlbShootdownState)
     (c c' : CoreId) (lo hi : Nat) :

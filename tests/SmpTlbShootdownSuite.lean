@@ -1015,7 +1015,7 @@ private def runEnqueueChecks : IO Unit := do
       (st1.pendingOnCore core1 == [descUnmapPage])
     assertBool "other cores' queues are framed"
       ([core0, core2, core3].all fun c => st1.pendingOnCore c == [])
-    assertBool "no ack flag is touched by an enqueue"
+    assertBool "no ack slot is touched by an enqueue"
       (allCores.all fun c => st1.ackOnCore c == st0.ackOnCore c)
     match enqueueShootdown st1 core1 descAsidRetire with
     | none => assertBool "second enqueue onto the same queue succeeds" false
@@ -1077,7 +1077,7 @@ private def runDrainChecks : IO Unit := do
     assertBool "draining core 1 frames every other core's queue"
       ([core0, core2, core3].all fun c =>
         st'.pendingOnCore c == st.pendingOnCore c)
-    assertBool "draining touches no ack flag"
+    assertBool "draining touches no ack slot"
       (allCores.all fun c => st'.ackOnCore c == st.ackOnCore c)
     assertBool "a second drain returns nothing (exhaustive)"
       ((drainShootdowns st' core1).1 == [])
@@ -1186,7 +1186,7 @@ private def runCoalescingChecks : IO Unit := do
     assertBool "the collapse frames every other core's queue"
       ([core0, core1, core3].all fun c =>
         collapsed.pendingOnCore c == full.pendingOnCore c)
-    assertBool "the collapse touches no ack flag"
+    assertBool "the collapse touches no ack slot"
       (allCores.all fun c => collapsed.ackOnCore c == full.ackOnCore c)
     assertBool "the collapsed state satisfies the capacity invariant"
       (decide (pendingBounded collapsed))
@@ -3141,7 +3141,7 @@ private def tracePipeline? :
     | .ok ((), stUnmap) =>
       some (stMap, stUnmap, shootdownCatchUpPerCore stUnmap core0 [opUnmapTarget])
 
-/-- Per-core view size + queue length + ack flag — the observable triple the
+/-- Per-core view size + queue length + ack slot — the observable triple the
 trace reports for each core at each stage. -/
 private def coreLine (tag : String) (st : SeLe4n.Model.SystemState)
     (c : CoreId) : String :=

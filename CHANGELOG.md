@@ -1,3 +1,55 @@
+## v0.32.141 — Round 28: two contract sites the flip and the ack rewrite left behind
+
+PR #854 review round 28: two findings, both valid, both the same
+failure mode this review has now produced seven times — a fix that
+landed at the sites named in the finding and stopped there.
+
+**1. Boot-path comments still described the opt-out SMP default.**
+v0.32.136 flipped `CmdlineConfig::default` to `smp_enabled: false` and
+v0.32.139/140 corrected five documents, but `boot.rs`'s Phase-5 block
+still said the default "has `smp_enabled = true`" and that "all 4 RPi5
+cores are online by the time the Lean kernel main runs", and `lib.rs`
+still described operators opting *out*. Those are the comments someone
+reads while working on the boot path, so they hand out exactly the
+contract the flip removed. Both corrected, and both now say *why* the
+default is opt-in (SM5.I has not landed) rather than only what it is.
+
+Swept for the claim rather than the identifier this time — "operators
+opt out via the kernel command line" contains neither `smp_enabled` nor
+the default. That found three further classes and each was checked
+rather than assumed: `smp.rs` is **already correct** (it explicitly
+records the v0.32.136 correction), and the `SMP_RUST_HAL_PLAN.md` /
+`SMP_MULTICORE_COMPLETION_PLAN.md` entries state *decision #7* — which
+is unchanged and applies at v1.0.0 — not the current default.
+
+**2. The wait memory-model contract still described Boolean flags.**
+SM7.F.3 replaced the Boolean ack vector with monotone generations, but
+`TlbShootdownWait.lean` still modelled the SM7.B.4 pairing as `ack_set`
+/ `all_acked` over a cache-line-aligned `AtomicBool`, with event shapes
+defined as store/load of `true`, and `Model/State.lean` still said boot
+leaves "all ack flags true". A proof or runtime change following those
+contracts would reintroduce the reset semantics whose removal *was* the
+security fix.
+
+Rewritten against the live API — `ack_round` (a release
+`fetch_max`), `acked_gen.load(Acquire)` tested `>= gen`,
+`all_acked_for_round`, `AtomicU64` slots booting at generation zero.
+The ordering theorems are unchanged and unchanged *on purpose*:
+release/acquire pairing is a property of the ordering annotations, not
+of the value. What the generation adds is round identity, and the
+docstrings now say that explicitly so the next reader does not conclude
+the value is incidental.
+
+The same sweep found the Boolean reading had spread as loose shorthand
+— 18 occurrences of "ack flag(s)" across four modules and the suite,
+including two that asserted Boolean state outright ("a **set** ack
+flag", "its ack flag is **down**"). All normalised to the generation
+vocabulary. `shootdown.rs`'s "replacing the SM7.A Boolean `all_acked`"
+is left alone: it is historically accurate and says so.
+
+Comments and docstrings only — no behaviour change, no proof change.
+Affected modules rebuilt individually; `docs/codebase_map.json`
+regenerated because Lean files changed.
 ## v0.32.140 — Two half-done fixes from earlier rounds, found by re-reading the asks
 
 PR #854 review sweep: a pass over all seventy-four review threads,

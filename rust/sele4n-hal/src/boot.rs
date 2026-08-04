@@ -16,7 +16,7 @@
 //! Phase 6: Handoff to Lean kernel (AG7 — FFI bridge)
 
 /// Kernel version string — matches Lean lakefile.toml version.
-const KERNEL_VERSION: &str = "0.32.140";
+const KERNEL_VERSION: &str = "0.32.141";
 
 /// Rust entry point called from assembly `_start` after BSS zeroing and
 /// stack setup. Receives the DTB pointer from U-Boot in x0.
@@ -256,8 +256,12 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
     // SM1.D.1: parse the kernel command-line from the DTB's
     // `/chosen/bootargs` property (or use defaults if the DTB is
     // absent / malformed / missing the property).  The default config
-    // (`CmdlineConfig::default()`) at v1.0.0 has `smp_enabled = true`
-    // and `smp_max_cores = 4` per maintainer decision #7.
+    // (`CmdlineConfig::default()`) has `smp_enabled = false` and
+    // `smp_max_cores = 4`.  Maintainer decision #7 enables SMP by
+    // default at v1.0.0 *once SM5 lands*; kernel entry is not yet
+    // serialised (SM5.I), so the default stays opt-in until it is —
+    // see `cmdline.rs` and `SMP_TLB_SHOOTDOWN_PLAN.md`
+    // §"Kernel-entry serialisation".
     //
     // SM1.D.2: when `smp_enabled` is true, issue PSCI CPU_ON for each
     // secondary up to `smp_max_cores`, then signal them via SEV.
@@ -275,9 +279,11 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
     // Pre-SM1.D the kernel reached Phase 5's predecessor "Handoff
     // summary" without ever issuing CPU_ON, so secondaries stayed
     // parked in the boot.S `.L_secondary_spin` loop forever and only
-    // the boot core ran kernel code.  Post-SM1.D (with the default
-    // `smp_enabled=true`), all 4 RPi5 cores are online by the time
-    // the Lean kernel main runs.
+    // the boot core ran kernel code.  Post-SM1.D the secondaries CAN
+    // be brought online, but only on an explicit `smp_enabled=true`:
+    // under the default the boot core still runs alone by the time
+    // the Lean kernel main runs, which is what keeps the unserialised
+    // kernel entry (SM5.I) unreachable.
     // -----------------------------------------------------------------------
     let cmdline_cfg = crate::cmdline::parse_cmdline_from_dtb(dtb_ptr);
     crate::kprintln!(
@@ -508,7 +514,7 @@ mod tests {
         // update this test in lockstep with `lakefile.toml`.
         // `scripts/check_version_sync.sh` (Tier 0) provides the
         // canonical drift check; this test is the local pin.
-        assert_eq!(KERNEL_VERSION, "0.32.140");
+        assert_eq!(KERNEL_VERSION, "0.32.141");
     }
 
     #[test]

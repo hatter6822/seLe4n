@@ -427,7 +427,7 @@ pub fn all_acked_for_round(gen: u64, initiator: usize) -> bool {
 /// therefore deadlock into the wait-timeout panic (holder waits on
 /// waiter's ack; waiter waits on holder's release).  The acquire loop
 /// must interleave lock attempts with **servicing the waiter's own
-/// pending obligation** (its ack flag is down ⇒ some in-flight round
+/// pending obligation** (its acknowledged generation is below the published round ⇒ some in-flight round
 /// targets it ⇒ invalidate locally, `ack_set`, retry) — which needs
 /// try-acquire semantics a ticket lock cannot provide (taking a ticket
 /// commits to the queue).  The Lean seam's cooperative loop

@@ -41,7 +41,7 @@ A round for invalidation operand `op` initiated by core `c₀`:
      drain the whole queue, retire one invalidation per drained
      descriptor, acknowledge.  The pure model applies the drained
      operations to the TLB view at the *acknowledgment* step
-     (`tlbShootdownAckOnCore`), so a set ack flag is constructively
+     (`tlbShootdownAckOnCore`), so an acknowledged generation is constructively
      "my view no longer contains the drained operands" — the exact
      reading Theorem 3.3.1's remote case needs.
   5. The initiator's wait loop exits at `allAcked` (termination:
@@ -729,7 +729,7 @@ theorem tlbShootdownBroadcast_preserves_pendingBounded {st st' : SystemState}
 
 /-- **WS-SM SM7.B.3**: the drain half of the `.tlbShootdownReq` handler
 (plan §3.2 step 4a) — core `c`'s queue is emptied and returned for the
-runtime to retire.  Deliberately does **not** touch the ack flag or the
+runtime to retire.  Deliberately does **not** touch the ack slot or the
 TLB view: the runtime executes the hardware TLBIs *between* this
 commit and the acknowledgment commit (the SM7.A drain/ack seam). -/
 def tlbShootdownDrainOnCore (st : SystemState) (c : CoreId) :
@@ -739,7 +739,7 @@ def tlbShootdownDrainOnCore (st : SystemState) (c : CoreId) :
 
 /-- **WS-SM SM7.B.3**: the acknowledgment half (plan §3.2 steps 4b+4c)
 — the retired invalidations are applied to the TLB view *at the
-acknowledgment*, so a set ack flag constructively means "my view no
+acknowledgment*, so an acknowledged generation constructively means "my view no
 longer contains the retired operands".  This is the model reading the
 SM7.B.4 release-acquire pairing certifies against the hardware: the
 Rust handler release-stores the flag only after its TLBIs have
@@ -1432,7 +1432,7 @@ theorem foldl_enqueueShootdownOrCoalesce_frame_pending (l : List CoreId) :
           (fun hEq => hc (List.mem_cons.mpr (Or.inl hEq))) d]
 
 /-- **WS-SM SM7.B.9** (fold lemma): the coalescing posting fold never
-touches any ack flag. -/
+touches any ack slot. -/
 theorem foldl_enqueueShootdownOrCoalesce_frame_ack (l : List CoreId) :
     ∀ (sd : TlbShootdownState) (d : TlbShootdownDescriptor) (c : CoreId),
       (l.foldl (fun s c => enqueueShootdownOrCoalesce s c d)

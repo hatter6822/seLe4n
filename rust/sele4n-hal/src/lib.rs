@@ -194,11 +194,14 @@ pub mod per_cpu;
 // Provides `CmdlineConfig` (typed cmdline options), `parse_cmdline`
 // (string → config), the self-contained DTB walker
 // `extract_bootargs_into`, and the Phase-5 entry helpers
-// `parse_cmdline_from_dtb` / `apply_cmdline_and_start_smp`.  Default
-// at v1.0.0 is `smp_enabled = true` (per maintainer decision #7);
-// operators opt out via `smp_enabled=false` on the kernel command
-// line.  See the module docstring in `cmdline.rs` for the option
-// inventory and the parser's robustness contract.
+// `parse_cmdline_from_dtb` / `apply_cmdline_and_start_smp`.  The
+// default is `smp_enabled = false`: operators opt IN via
+// `smp_enabled=true` on the kernel command line.  Maintainer decision
+// #7 makes SMP the default at v1.0.0 *once SM5 lands*, and kernel
+// entry is not yet serialised (SM5.I), so the opt-in default is what
+// keeps that gap unreachable.  See the module docstring in
+// `cmdline.rs` for the option inventory and the parser's robustness
+// contract.
 pub mod cmdline;
 // WS-SM SM1.I.4: per-core exception / interrupt statistics.  Provides
 // `PerCpuStats` (cache-line aligned counters), the global
