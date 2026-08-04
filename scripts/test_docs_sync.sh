@@ -61,6 +61,13 @@ python3 "${SCRIPT_DIR}/generate_codebase_map.py" --pretty --check
 #    CHANGELOG.md (append-only history, quotes real diagnostics) are exempt.
 python3 "${SCRIPT_DIR}/check_source_line_citations.py"
 
+# The gate above has now shipped under-reaching twice in consecutive
+# rounds — the orphaned `:NNN` its own cleanup sweep produced, then the
+# GitHub `#L123` anchor spelling — and both times it printed PASS over
+# documents holding exactly what it forbids.  This pins each spelling it
+# must catch, and each one it must leave alone.
+python3 "${SCRIPT_DIR}/test_source_line_citations_gate.py"
+
 # CLAUDE.md and AGENTS.md differ only in their leading header block: each
 # names itself in an H1 and points at the other in a blockquote.  The
 # shared body begins at the first `##` section, `## What this project is`,

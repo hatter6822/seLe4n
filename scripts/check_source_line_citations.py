@@ -88,8 +88,15 @@ def build_citation_re(extensions: set[str]) -> re.Pattern[str]:
     alternation = '|'.join(
         re.escape(e) for e in sorted(extensions, key=lambda e: (-len(e), e))
     )
+    # Two spellings of one citation. `foo.rs:123` is the compact form;
+    # `foo.rs#L123` and `foo.rs#L123-L130` are the GitHub anchor form,
+    # which arrives via the Markdown link
+    # `[source](https://github.com/.../foo.rs#L123-L130)` and goes stale
+    # on exactly the same edit — an insertion above line 123 — while
+    # rendering as a live link that silently points somewhere else.
     return re.compile(
-        r'(?:[A-Za-z0-9_][A-Za-z0-9_./-]*)\.(?:' + alternation + r'):\d+'
+        r'(?:[A-Za-z0-9_][A-Za-z0-9_./-]*)\.(?:' + alternation + r')'
+        r'(?::\d+|\#L\d+(?:-L\d+)?)'
     )
 
 

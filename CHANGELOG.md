@@ -1,3 +1,69 @@
+## v0.32.135 — Symbols hiding inside strings, and citations hiding inside links
+
+PR #854 review, twenty-third round: three findings, all valid, all three
+follow-ons to the two gates the previous cut changed. Tooling only — no
+Lean, no Rust, no kernel behaviour; the golden trace is byte-identical
+and the naming baseline does not move.
+
+**1. An assembly template is source, and its symbols are linker-visible.**
+v0.32.134 taught the shared string stripper to keep literals in
+identifier-bearing contexts — `#[export_name = "…"]`, `.section`,
+`PROVIDE` — by matching the text *preceding* the literal. That test
+cannot reach an inline-assembly template:
+`global_asm!(".global phase5_helper\nphase5_helper:")` puts the
+directive *inside* the string, and a template is routinely one literal
+per assembly line with only the first preceded by the macro name. Both
+spellings were blanked whole, so the declared symbol was invisible to a
+Rust scan held at a hard zero. What is tracked now is the SPAN of the
+macro's argument list, by the walk that already skips strings and
+comments correctly — matching parens over raw text would be fooled by
+either. The walk back over the macro name is exact rather than a
+fixed-width window, so `notasm!(` opens nothing.
+
+**2. A checksum manifest names a file, and the name was never scanned.**
+`.sha256` sat in `NO_CONTENT_SCAN` on the reasoning that the companion
+fixture's path is scanned anyway. But the manifest holds the filename
+`sha256sum -c` actually opens, and nothing forces it to equal the
+companion path — so the gate was checking a different string than the
+one the trace gate consumes. The digest is blanked (a hex run beginning
+with a letter tokenises as an identifier) and the name is scanned.
+
+**3. A GitHub line anchor is the same stale citation, spelled as a link.**
+`check_source_line_citations.py` matched `foo.rs:123` but not
+`foo.rs#L123` or `foo.rs#L123-L130`, so the
+`[source](https://github.com/…/foo.rs#L123-L130)` spelling passed while
+going stale on exactly the same edit — and worse, silently, because the
+link still resolves. The matcher now covers both anchor forms. No live
+violations: the active documentation holds none today, which is why
+this closes a reach gap rather than a set of citations.
+
+**The citation gate now carries its own witness suite.** It has been
+found under-reaching twice in consecutive rounds — the orphaned `:NNN`
+its own cleanup sweep produced, then this anchor form — and both times
+it printed PASS over documents holding exactly what it forbids. New
+`scripts/test_source_line_citations_gate.py` (19 checks, wired into the
+documentation tier beside the gate) pins each spelling it must catch
+and each one it must leave alone; the three anchor checks fail against
+the previous version, and the negatives (`12:30`, `host:8080`,
+`**Note**: 42`) are what keep an over-broad matcher from being the next
+defect.
+
+Naming self-test 130 → 139 checks. Per the standing rule all nine ran
+against the previous gate: **six fail there** — the three asm-template
+checks, the two manifest-name checks, and `.sha256` being content-
+scanned at all. The three that pass are the negative side, and they are
+not vacuous either: `notasm!` fails against a boundary-free regex or a
+window truncated to the macro tail, and the digest check fails against a
+keep-the-whole-line stripper. Planted probes confirm both mechanisms
+fire end-to-end through `scan`, not merely through the stripper units:
+a `global_asm!`-declared `phase5_helper` trips the Rust hard zero, and a
+coded manifest filename trips the non-Rust ratchet.
+
+Baseline unchanged at 298 pairs / 1017 occurrences — zero lost, zero
+dropped, zero new. As with the previous cut, a strictly stronger gate
+with no baseline movement: the tree contains no coded symbol in an
+assembly template and no coded filename in a manifest.
+
 ## v0.32.134 — Contracts that describe the mechanism that is actually there
 
 PR #854 review, twenty-second round: four findings, all valid, three of

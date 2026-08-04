@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.32.134.
+Lean 4.28.0 toolchain, Lake build system, version 0.32.135.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -531,12 +531,18 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   exempt, as are documentation paths — an audit report or workstream
   plan is *named after* the workstream it records, and CLAUDE.md and
   the website link manifest both cite those paths.  The exemption is
-  by location, never by suffix: a `.json`, `.txt` or `.expected` file
-  outside `docs/` is code as far as this gate is concerned.  Paths and
+  by location, never by suffix: a `.json`, `.txt`, `.sha256` or
+  `.expected` file outside `docs/` is code as far as this gate is
+  concerned.  Within a file the prose exemption stops at any literal
+  that supplies a linker-visible name — `#[export_name = "…"]`, an
+  assembly `.global`, a linker-script `PROVIDE`, an `asm!` template —
+  since each of those puts its string in the symbol table.  Paths and
   contents are both read from the git index, so the gate checks what is
   being committed rather than the working tree.  The gate's own
   mechanisms are pinned by `scripts/test_identifier_naming_gate.py`
-  (Tier 0), since a scanner that under-reaches fails silently.
+  (Tier 0), since a scanner that under-reaches fails silently; the
+  source-citation gate carries the same kind of witness suite in
+  `scripts/test_source_line_citations_gate.py`, for the same reason.
 
 ## Implement-the-improvement rule
 

@@ -427,10 +427,55 @@ def keeps_identifiers(text: str, at: int) -> bool:
     return IDENT_BEARING_STRING.search(text[line_start:at]) is not None
 
 
-def strip_pairs(text: str, line_comment: str, block: tuple[str, str]) -> str:
+# An inline-assembly template is assembly SOURCE, not prose, and the
+# symbols it declares are linker-visible exactly as `#[export_name]`'s
+# are: `global_asm!(".global phase5_helper\nphase5_helper:")` compiles
+# to a `phase5_helper` symbol that `nm` lists, while every Rust
+# identifier around it reads clean.
+#
+# The preceding-text test that covers `export_name` cannot cover this.
+# A template is routinely several adjacent literals, one per assembly
+# line, and only the first has the macro name in front of it -- so what
+# is tracked is the SPAN of the macro's argument list, by the same walk
+# that already skips strings and comments correctly.  Matching parens
+# over raw text would be fooled by either.
+#
+# The depth counter can still be skewed by a construct the walk does not
+# model -- a Rust char literal holding a bracket, `'('`.  An unmatched
+# OPENER only holds the span open longer, which scans more and misses
+# nothing; an unmatched CLOSER at the span's own depth would end it
+# early.  Neither occurs in this tree, whose template operands are
+# string literals and `in(reg) x` bindings.
+ASM_MACROS = frozenset({"asm", "global_asm", "naked_asm"})
+
+
+def _opens_asm_macro(text: str, at: int) -> bool:
+    """Is the delimiter at `at` an asm macro's argument list?
+
+    Walks backwards over whitespace, the `!`, and the macro name rather
+    than matching a fixed-width window: a window that truncates inside
+    a longer identifier makes `notasm!(` read as `asm!(`.
+    """
+    j = at - 1
+    while j >= 0 and text[j] in " \t\r\n":
+        j -= 1
+    if j < 0 or text[j] != "!":
+        return False
+    end = j
+    j -= 1
+    while j >= 0 and (text[j].isalnum() or text[j] == "_"):
+        j -= 1
+    return text[j + 1:end] in ASM_MACROS      # `core::arch::asm!` -> `asm`
+
+
+def strip_pairs(text: str, line_comment: str, block: tuple[str, str],
+                asm_templates: bool = False) -> str:
     """Blank comments and string literals for C-family / Lean syntax."""
     open_b, close_b = block
     out, i, n = [], 0, len(text)
+    # Delimiter nesting depth, and the depth at which an asm macro's
+    # argument list opened (None outside one).
+    nesting, asm_at = 0, None
     while i < n:
         if line_comment != NEVER and text.startswith(line_comment, i):
             j = text.find("\n", i)
@@ -450,7 +495,7 @@ def strip_pairs(text: str, line_comment: str, block: tuple[str, str]) -> str:
             close = '"' + m.group(1)
             j = text.find(close, i + m.end() - 1)
             j = n if j < 0 else j + len(close)
-            out.append(text[i:j] if keeps_identifiers(text, i)
+            out.append(text[i:j] if asm_at is not None or keeps_identifiers(text, i)
                        else blank_literal(text[i:j])); i = j
         elif text[i] == '"':
             j = i + 1
@@ -460,9 +505,17 @@ def strip_pairs(text: str, line_comment: str, block: tuple[str, str]) -> str:
                 if text[j] == '"':
                     j += 1; break
                 j += 1
-            out.append(text[i:j] if keeps_identifiers(text, i)
+            out.append(text[i:j] if asm_at is not None or keeps_identifiers(text, i)
                        else blank_literal(text[i:j])); i = j
         else:
+            if asm_templates and text[i] in "([{":
+                nesting += 1
+                if asm_at is None and _opens_asm_macro(text, i):
+                    asm_at = nesting
+            elif asm_templates and text[i] in ")]}":
+                if asm_at == nesting:
+                    asm_at = None
+                nesting -= 1
             out.append(text[i]); i += 1
     return "".join(out)
 
@@ -622,7 +675,29 @@ def strip_block_only(t: str) -> str:
 
 
 def strip_rust(t: str) -> str:
-    return strip_pairs(t, "//", ("/*", "*/"))
+    # Rust is the only format here that embeds assembly in a literal.
+    return strip_pairs(t, "//", ("/*", "*/"), asm_templates=True)
+
+
+# `<digest>  <name>`, the record `sha256sum` writes and `-c` reads back.
+# Two spaces for text mode, ` *` for binary; the name runs to the line
+# end.  The digest is blanked and the NAME kept: it is a real filename
+# the tree's own trace gate consumes, and a hex run beginning with a
+# letter would otherwise tokenise as an identifier.
+CHECKSUM_RECORD = re.compile(r"^([ \t]*[0-9a-fA-F]{32,128})([ \t]+\*?)(?=\S)",
+                             re.MULTILINE)
+
+
+def strip_checksum_manifest(text: str) -> str:
+    """`.sha256`: blank the digest, KEEP the filename.
+
+    Previously skipped whole, on the reasoning that the companion
+    fixture's name is path-scanned anyway.  But the manifest names the
+    file it verifies -- that name is what `sha256sum -c` opens -- and
+    nothing forces it to equal the companion path, so scanning the path
+    by proxy checks a different string than the one the gate is run on.
+    """
+    return CHECKSUM_RECORD.sub(lambda m: " " * len(m.group(0)), text)
 
 
 def strip_lean(t: str) -> str:
@@ -650,6 +725,7 @@ CONTENT_STRIPPERS = {
     # example is renaming a *test*, and a scenario registry names tests.
     ".json": lambda t: t,
     ".expected": lambda t: t,
+    ".sha256": strip_checksum_manifest,
 }
 
 # Formats where a hyphen JOINS a name rather than separating operands.
@@ -663,7 +739,7 @@ CONTENT_STRIPPERS = {
 # Measured: 34 further coded identifiers become visible, every one a
 # real workstream or audit id (`AK6-A`, `WS-B10`, `Z5-AUD-10`).
 HYPHEN_JOINS_NAMES = frozenset({
-    ".toml", ".yml", ".yaml", ".txt", ".json", ".expected",
+    ".toml", ".yml", ".yaml", ".txt", ".json", ".expected", ".sha256",
 })
 
 # Extensions deliberately NOT content-scanned, each with the reason.
@@ -682,7 +758,6 @@ HYPHEN_JOINS_NAMES = frozenset({
 # format is.
 NO_CONTENT_SCAN = {
     ".png": "binary image",
-    ".sha256": "hex digest; the companion file's name is path-scanned",
     ".lock": "generated by cargo; names come from Cargo.toml, scanned there",
     ".md": "prose (the few outside docs/ are READMEs and templates)",
     "": "extensionless: LICENSE, git hooks, CI helper stubs",

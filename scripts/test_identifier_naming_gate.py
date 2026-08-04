@@ -195,7 +195,7 @@ check("the baseline exempts itself",
 # A format absent from the table still has its path scanned, so adding
 # one is a strengthening; but its *contents* go unread until it is here.
 for suffix in (".rs", ".lean", ".py", ".sh", ".bash", ".S", ".ld",
-               ".toml", ".yml", ".yaml", ".json", ".expected"):
+               ".toml", ".yml", ".yaml", ".json", ".expected", ".sha256"):
     check(f"{suffix} contents are scanned", suffix in gate.CONTENT_STRIPPERS, True)
 # Shell must not share Python's stripper -- that is the exact mistake.
 check("shell has its own stripper",
@@ -393,6 +393,45 @@ check("ordinary Rust literals stay exempt",
       False)
 check("format-string prose stays exempt",
       "phase5" in gate.strip_rust('println!("phase5 of the plan");'), False)
+
+# The same reasoning one level in. An inline-assembly template is
+# assembly SOURCE, and a symbol it declares is linker-visible exactly as
+# `#[export_name]`'s is. The preceding-text test above cannot reach it:
+# a template is routinely one literal per assembly line and only the
+# first has the macro name in front of it, so the macro's argument SPAN
+# is what gets tracked.
+check("an asm template's symbols are scanned",
+      "phase5_helper" in gate.strip_rust('global_asm!(".global phase5_helper");'),
+      True)
+check("every literal of a multi-line template is scanned",
+      "phase5_helper" in gate.strip_rust(
+          'asm!(\n  "nop",\n  ".global phase5_helper",\n  options(nostack),\n);'),
+      True)
+check("a raw-string template is scanned",
+      "ak9ce_01" in gate.strip_rust('global_asm!(r#".global ak9ce_01"#);'), True)
+# The walk back over the macro name is exact, so a name merely ENDING in
+# `asm` opens nothing, and the span closes with the macro's own paren.
+check("a name ending in asm does not open a template",
+      "phase5_helper" in gate.strip_rust('notasm!("phase5_helper");'), False)
+check("a literal after the template closes is prose",
+      "phase5_helper" in gate.strip_rust('asm!("nop"); let m = "phase5_helper";'),
+      False)
+
+# A checksum manifest is `<digest>  <name>`, and the NAME is what
+# `sha256sum -c` opens. Scanning the companion fixture's path instead
+# checks a different string -- nothing forces the two to agree -- so the
+# manifest was covered only by proxy.
+_digest = "d645916c8523466719ce59c8640a835c7bc822a6dfad0512a2044d8073d1de77"
+check("a manifest's filename is scanned",
+      "phase5_helper" in gate.strip_checksum_manifest(
+          _digest + "  phase5_helper.expected\n"), True)
+check("a binary-mode manifest record is handled",
+      "phase5_helper" in gate.strip_checksum_manifest(
+          _digest + " *phase5_helper.expected\n"), True)
+# The digest is data, and a hex run beginning with a letter tokenises as
+# an identifier, so it must not survive into the scan.
+check("a manifest's digest is not scanned",
+      _digest in gate.strip_checksum_manifest(_digest + "  x.expected\n"), False)
 
 
 def main() -> int:
