@@ -1807,7 +1807,7 @@ pub struct CmdlineConfig {
 impl Default for CmdlineConfig {
     fn default() -> Self {
         Self {
-            smp_enabled: true,    // SM1.D.3: default = enabled
+            smp_enabled: false,   // SM1.D.3, as corrected at v0.32.136
             smp_max_cores: 4,
         }
     }
@@ -1872,7 +1872,7 @@ pub fn extract_bootargs(dtb_ptr: u64) -> &'static str {
 **Acceptance**:
 - Parses `smp_enabled=false` → `cfg.smp_enabled = false`.
 - Parses `smp_enabled=true` → `cfg.smp_enabled = true`.
-- Parses empty string → defaults (smp_enabled=true).
+- Parses empty string → defaults (smp_enabled=false since v0.32.136).
 - Robust to malformed: `smp_enabled=foo` → keeps default.
 - 10+ unit tests cover all branches.
 
@@ -1917,11 +1917,23 @@ if cmdline_cfg.smp_enabled {
 
 ---
 
-#### SM1.D.3 — Default behavior: SMP enabled
+#### SM1.D.3 — Default behavior: SMP opt-in until kernel entry is serialised
 
-Per maintainer decision #7, default is enabled. This is encoded
-in `CmdlineConfig::default()::smp_enabled = true`. Tests verify
-the default.
+Maintainer decision #7 enables SMP by default *once SM5 lands*. This
+section originally encoded the first half of that as
+`CmdlineConfig::default()::smp_enabled = true`, which read the decision
+as unconditional and shipped the default ahead of its own precondition:
+kernel entry is not serialised (`Platform.FFI.modifyGetKernelState` is a
+read-then-write, not a cross-core atomic), so a default boot would have
+brought all four cores up into an unserialised kernel.
+
+Corrected at v0.32.136 — the default is `false`, and flipping it back
+belongs to the change that lands the serialisation. Two tests pin it
+(`default_boot_does_not_enable_smp_until_kernel_entry_is_serialized` on
+the parser, plus the `parse_cmdline_from_dtb(0)` boot-path witness), so
+the flip cannot happen silently. Canonical record:
+[`SMP_TLB_SHOOTDOWN_PLAN.md`](SMP_TLB_SHOOTDOWN_PLAN.md)
+§"Kernel-entry serialisation".
 
 **Size**: T (in SM1.D.1's default impl).
 

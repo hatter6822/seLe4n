@@ -1,3 +1,62 @@
+## v0.32.140 — Two half-done fixes from earlier rounds, found by re-reading the asks
+
+PR #854 review sweep: a pass over all seventy-four review threads,
+replaying every reviewer's concrete example against the current tree
+rather than trusting the reply that claimed the fix. Seventy-two hold.
+Two were closed against the headline of the finding while the body
+asked for a second thing, and that second thing was never done.
+
+**1. `.txt` contents were never pinned by the gate's witness suite.**
+Round 22 asked for "an appropriate text/comment stripper **and a
+content-level regression probe**", noting that the self-test "merely
+verifies that `.txt` is not classified as documentation". The stripper
+landed at v0.32.128 and the probe did not — so the self-test still
+contained exactly the check the reviewer had named as insufficient.
+That matters more for this gate than for most: classification only puts
+a file *in scope*; it scans no bytes, so the passing check was not
+evidence that any `.txt` content was covered. `scripts/*_allowlist.txt`,
+`website_link_manifest.txt` and `tests/fixtures/qemu_boot_expected.txt`
+carry module and check names, which is code by this repository's rule.
+Three probes added — the dispatch reaches a stripper, an entry survives
+it, a `#` comment does not — pinned through `content_rule` rather than
+by calling the stripper directly, so they fail if `.txt` is ever
+dropped from the map. Self-test 177 → 180 checks.
+
+**2. `SMP_RUST_HAL_PLAN.md` still documented the SMP default as `true`.**
+Round 27 named the spec and two GitBook chapters; v0.32.139 fixed those
+four sites and missed a fifth, in an active planning document — the
+`CmdlineConfig::default` skeleton, the parser's behaviour list, and an
+SM1.D.3 section stating "default is enabled ... Tests verify the
+default", when the tests now verify the opposite and are named for it.
+Corrected, and the SM1.D.3 section now records *why* rather than only
+what: maintainer decision #7 enables SMP by default **once SM5 lands**,
+and shipping the default ahead of its own precondition is the defect
+v0.32.136 fixed. Points at the canonical
+`SMP_TLB_SHOOTDOWN_PLAN.md` §"Kernel-entry serialisation".
+
+**Verified, not assumed.** Every other finding was re-checked against
+the code: 40 naming-gate examples replayed through the real `scan()`
+tokenisation, 13 citation-gate spellings, the shootdown ack-generation
+contracts, the halt/timeout/lock-retention paths, and the identifier
+sweeps. Three apparent failures in the first sweep were faults in the
+verification harness, not the gate — it called `IDENTIFIER.findall`
+directly, bypassing the per-format hyphen joining and the dotted
+audit-ID matcher that `scan()` applies. Re-run through the real path,
+all three pass.
+
+The one **P1 decline** was re-confirmed from primary evidence rather
+than from the earlier reply: Rust 1.94.1 is a real release
+(`rustc 1.94.1 (e408947bf 2026-03-25)`; upstream channel manifest
+returns HTTP 200), so the "toolchain does not exist" finding is
+factually wrong and the pin stands.
+
+**Still owed:** kernel-entry serialisation (SM5.I). Valid, registered
+with an acceptance criterion, unreachable today (SMP defaults off, no
+bootable image before SM9.E), and deliberately **not** closed here —
+the plan requires it to land as its own reviewable slice with its own
+lock-order and liveness argument, since it adds a deadlock surface to
+the subsystem that produced three P1 safety defects in this PR alone.
+
 ## v0.32.139 — A char literal is not a string, and four docs still said SMP was on
 
 PR #854 review, twenty-seventh round: five findings, all valid. The
