@@ -230,6 +230,11 @@ where
 
 #[cfg(test)]
 mod tests {
+    // The crate is `no_std`; tests may use std (threads for the SM5.I
+    // contention witnesses) — same pattern as the shootdown.rs /
+    // gic.rs / rw_lock.rs test mods.
+    extern crate std;
+
     use super::*;
 
     /// An uncontended acquire returns immediately and does not need to
@@ -326,5 +331,247 @@ mod tests {
         };
         assert_eq!(out, 42);
         assert!(acquire_kernel_entry_in(&lock, 0, 4, |_| false));
+    }
+
+    // ========================================================================
+    // WS-SM SM5.I — contention witnesses
+    //
+    // The six tests above drive the lock on ONE thread. That is the right
+    // shape for the fuel and servicing arms, but it cannot exercise what
+    // this lock is FOR: every property SM5.I claims is a statement about
+    // two cores entering at once, and on one thread all of them hold
+    // trivially — an uncontended `take_ticket` always equals
+    // `peek_serving`, so the wait loop never runs.
+    //
+    // These run it with real threads on the `_in` forms, which take an
+    // explicit lock precisely so contenders never touch the global. The
+    // second is the important one: it reproduces the DEFECT rather than
+    // testing the lock, by committing through the same read-then-write
+    // shape `Platform.FFI.modifyGetKernelState` uses.
+    //
+    // Host scope, as for the SM7.F.3 witnesses: no SGIs, no per-PE TLB, a
+    // different memory model. What is pinned is the mutual exclusion and
+    // the fairness, not anything about TLBs. Hardware waits for SM9.E.
+    // ========================================================================
+
+    /// Contenders, capped at the host's real parallelism (min 2, so the
+    /// wait loop is genuinely entered).
+    fn contention_witness_threads() -> usize {
+        std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4)
+            .clamp(2, 8)
+    }
+
+    /// **WS-SM SM5.I** (contention witness): at most one core is ever
+    /// inside the kernel-entry bracket.
+    ///
+    /// The property the whole phase exists for. A ticket lock that handed
+    /// out the same serving slot twice would let two cores commit against
+    /// the same pre-state.
+    #[test]
+    fn concurrent_kernel_entries_never_overlap() {
+        const PER_THREAD: usize = 150;
+        let threads = contention_witness_threads();
+        let lock = TicketLock::new();
+        let occupancy = core::sync::atomic::AtomicU32::new(0);
+        let max_seen = core::sync::atomic::AtomicU32::new(0);
+        let entries = core::sync::atomic::AtomicUsize::new(0);
+        let start = std::sync::Barrier::new(threads);
+        std::thread::scope(|s| {
+            for core_id in 0..threads {
+                let (lock, occupancy, max_seen, entries, start) =
+                    (&lock, &occupancy, &max_seen, &entries, &start);
+                s.spawn(move || {
+                    start.wait();
+                    for _ in 0..PER_THREAD {
+                        assert!(
+                            acquire_kernel_entry_in(lock, core_id, 100_000_000, |_| false),
+                            "core {core_id} exhausted its fuel under ordinary contention"
+                        );
+                        let now = occupancy.fetch_add(1, core::sync::atomic::Ordering::SeqCst) + 1;
+                        max_seen.fetch_max(now, core::sync::atomic::Ordering::SeqCst);
+                        occupancy.fetch_sub(1, core::sync::atomic::Ordering::SeqCst);
+                        entries.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
+                        release_kernel_entry_in(lock);
+                    }
+                });
+            }
+        });
+        assert_eq!(
+            max_seen.load(core::sync::atomic::Ordering::SeqCst),
+            1,
+            "two cores were inside the kernel-entry bracket at once"
+        );
+        assert_eq!(
+            entries.load(core::sync::atomic::Ordering::SeqCst),
+            threads * PER_THREAD,
+            "every entry must complete — a lost one means a wedged acquire"
+        );
+    }
+
+    /// **WS-SM SM5.I** (defect witness): no kernel transition is lost
+    /// under concurrent entry.
+    ///
+    /// This reproduces the P1 itself rather than the lock. The commit
+    /// body is the read-then-write shape `modifyGetKernelState` has —
+    /// read the state, compute a post-state from it, write it back — with
+    /// a deliberate gap between the two halves so the interleaving is
+    /// reached rather than merely possible. Unbracketed that loses
+    /// updates; bracketed it must not, and the count is exact.
+    #[test]
+    fn no_kernel_transition_is_lost_under_concurrent_entry() {
+        const PER_THREAD: usize = 100;
+        let threads = contention_witness_threads();
+        let lock = TicketLock::new();
+        // The "kernel state": a plain cell, read and written separately,
+        // exactly as `IO.Ref.modifyGet` does.
+        let state = core::cell::UnsafeCell::new(0u64);
+        struct Shared(core::cell::UnsafeCell<u64>);
+        // SAFETY: every access below is inside the kernel-entry bracket,
+        // which is what the test is asserting provides exclusion.
+        unsafe impl Sync for Shared {}
+        let shared = Shared(state);
+        let start = std::sync::Barrier::new(threads);
+        std::thread::scope(|s| {
+            for core_id in 0..threads {
+                let (lock, shared, start) = (&lock, &shared, &start);
+                s.spawn(move || {
+                    start.wait();
+                    for _ in 0..PER_THREAD {
+                        assert!(acquire_kernel_entry_in(lock, core_id, 100_000_000, |_| {
+                            false
+                        }));
+                        // SAFETY: serialised by the bracket.
+                        unsafe {
+                            let p = shared.0.get();
+                            let observed = core::ptr::read_volatile(p);
+                            // Widen the read→write window WITHOUT
+                            // surrendering the CPU. `yield_now()` here
+                            // deschedules a thread that holds the lock,
+                            // and with several contention tests sharing
+                            // four cores the holder may not be rescheduled
+                            // for a long time while every waiter spins —
+                            // observed as an occasional multi-minute run.
+                            // A spin burst widens the window just as well
+                            // and cannot deschedule the holder.
+                            for _ in 0..64 {
+                                core::hint::spin_loop();
+                            }
+                            core::ptr::write_volatile(p, observed + 1);
+                        }
+                        release_kernel_entry_in(lock);
+                    }
+                });
+            }
+        });
+        // SAFETY: all threads have joined.
+        let final_state = unsafe { core::ptr::read_volatile(shared.0.get()) };
+        assert_eq!(
+            final_state,
+            (threads * PER_THREAD) as u64,
+            "a kernel transition was lost — the second writer installed a \
+             post-state derived from a pre-state that no longer held"
+        );
+    }
+
+    /// **WS-SM SM5.I** (fairness witness): a neighbour re-entering in a
+    /// loop cannot starve another core.
+    ///
+    /// SM5.I chose the SM2 `TicketLock` over a CAS try-lock specifically
+    /// so entry is FIFO. A test-and-set lock passes the exclusion witness
+    /// above while letting one core monopolise entry, so exclusion alone
+    /// does not establish what was chosen here.
+    ///
+    /// Measured as **overtaking while queued**, which is what FIFO
+    /// actually promises: from the moment the victim takes its ticket,
+    /// only cores already ahead of it may enter first. Two weaker
+    /// formulations were tried and rejected:
+    ///
+    /// * *the victim exhausts its fuel* — depends on the budget being
+    ///   small enough to reach, so shortening the run to keep it cheap
+    ///   silently disarmed it (mutation-verified: at 100 iterations the
+    ///   non-FIFO mutant passed);
+    /// * *the hog:victim ratio over the whole run* — unsound on a
+    ///   preemptive host, where the hog can hold the CPU for a full
+    ///   timeslice while the victim is not scheduled at all and therefore
+    ///   is not even contending. That is not starvation, but it inflates
+    ///   the ratio; it failed 2 runs in 8.
+    ///
+    /// Sampling per acquire fixes both: a descheduled victim contributes
+    /// no sample, and the majority test tolerates the scheduling jitter
+    /// that made the ratio unusable while still catching systematic
+    /// starvation, where essentially every sample is bad.
+    #[test]
+    fn a_re_entering_neighbour_does_not_starve_another_core() {
+        const TARGET: usize = 100;
+        // Under FIFO the hog can enter at most once between the victim
+        // taking its ticket and being served (its ticket was already
+        // ahead); 2 absorbs the unsynchronised read either side.
+        const MAX_OVERTAKES: usize = 2;
+        let lock = TicketLock::new();
+        let hog_entries = core::sync::atomic::AtomicUsize::new(0);
+        let victim_entries = core::sync::atomic::AtomicUsize::new(0);
+        let victim_done = core::sync::atomic::AtomicBool::new(false);
+        let prompt_serves = core::sync::atomic::AtomicUsize::new(0);
+        let start = std::sync::Barrier::new(2);
+        std::thread::scope(|s| {
+            let (lock, hog_entries, victim_entries, victim_done, prompt_serves, start) = (
+                &lock,
+                &hog_entries,
+                &victim_entries,
+                &victim_done,
+                &prompt_serves,
+                &start,
+            );
+            s.spawn(move || {
+                start.wait();
+                while !victim_done.load(core::sync::atomic::Ordering::Acquire) {
+                    assert!(acquire_kernel_entry_in(lock, 0, 100_000_000, |_| false));
+                    hog_entries.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                    release_kernel_entry_in(lock);
+                }
+            });
+            s.spawn(move || {
+                start.wait();
+                // Do not start measuring until the hog is demonstrably
+                // running: a bare barrier left the victim finishing before
+                // the hog was first scheduled in 9 of 20 runs on a 4-core
+                // host, which made the witness vacuous rather than wrong.
+                while hog_entries.load(core::sync::atomic::Ordering::Relaxed) == 0 {
+                    std::thread::yield_now();
+                }
+                for _ in 0..TARGET {
+                    let before = hog_entries.load(core::sync::atomic::Ordering::Relaxed);
+                    assert!(
+                        acquire_kernel_entry_in(lock, 1, 100_000_000, |_| false),
+                        "the victim exhausted its fuel — it was starved"
+                    );
+                    let overtaken =
+                        hog_entries.load(core::sync::atomic::Ordering::Relaxed) - before;
+                    if overtaken <= MAX_OVERTAKES {
+                        prompt_serves.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                    }
+                    victim_entries.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                    release_kernel_entry_in(lock);
+                }
+                victim_done.store(true, core::sync::atomic::Ordering::Release);
+            });
+        });
+        let hog = hog_entries.load(core::sync::atomic::Ordering::Relaxed);
+        let victim = victim_entries.load(core::sync::atomic::Ordering::Relaxed);
+        assert_eq!(victim, TARGET, "the victim did not complete its entries");
+        assert!(
+            hog >= 1,
+            "the hog never ran — the contention never happened"
+        );
+        let prompt = prompt_serves.load(core::sync::atomic::Ordering::Relaxed);
+        assert!(
+            prompt * 2 >= TARGET,
+            "the victim was overtaken more than {MAX_OVERTAKES} times on \
+             {} of its {TARGET} acquires (hog {hog}, victim {victim}) — entry \
+             is not FIFO, so a re-entering neighbour can monopolise the kernel",
+            TARGET - prompt
+        );
     }
 }

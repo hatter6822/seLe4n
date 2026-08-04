@@ -2255,4 +2255,305 @@ mod tests {
             "cores 2 and 3 (not serviceable ⇒ never poked) are never waited on"
         );
     }
+
+    // ========================================================================
+    // WS-SM SM7.F.3 — contention witnesses
+    //
+    // Every other test of the generation protocol drives it SEQUENTIALLY.
+    // That is the right shape for the effect tests — one call, one
+    // observable outcome — but it cannot exercise the property the
+    // protocol exists for, because each of the three P1 fixes on this
+    // subsystem is a claim about what two cores may do AT ONCE:
+    //
+    //   * generations are allocated under the round lock so allocation
+    //     order IS execution order (v0.32.112) — a claim about a shared
+    //     `fetch_add`;
+    //   * an acknowledgment names the round it discharged, so a stale one
+    //     cannot satisfy a later round (v0.32.105) — a claim about a
+    //     `fetch_max` racing a fresh handler;
+    //   * a handler reads a stable operand snapshot or detects the tear
+    //     and falls back — a claim about a seqlock racing a publisher.
+    //
+    // Run sequentially, all three hold trivially. These run them with real
+    // threads on the `_in`/`_in_slice` forms, which take explicit state
+    // precisely so contenders never touch a shared static. This is not a
+    // substitute for hardware: the host has no SGIs, no per-PE TLB and a
+    // different memory model, so what is pinned here is the ORDERING
+    // DISCIPLINE, not the invalidation. The rest waits for SM9.E.
+    //
+    // Each carries its own non-vacuity assertion — a witness that observes
+    // nothing must fail, not pass quietly (PR #854 rounds 17/24/25/27).
+    // ========================================================================
+
+    /// Contender count for the contention witnesses — the host's real
+    /// parallelism, floored at 2 so the race is genuinely exercised and
+    /// capped so a large CI machine does not oversubscribe the
+    /// cooperative-yield path (WS-SM SM7.B debt (7)).
+    fn contention_witness_threads() -> usize {
+        std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4)
+            .clamp(2, 8)
+    }
+
+    /// **WS-SM SM7.F.3** (contention witness): concurrent allocation
+    /// issues every generation exactly once, with no gaps.
+    ///
+    /// The v0.32.112 P1 fix rests on a round's generation ordering it
+    /// against every round whose acknowledgment could satisfy its wait.
+    /// A duplicate would break that directly — two rounds sharing a
+    /// generation means either one's acknowledgment satisfies the other,
+    /// which is the under-invalidation the tagging exists to exclude.
+    #[test]
+    fn concurrent_generation_allocation_issues_each_generation_once() {
+        const PER_THREAD: usize = 5000;
+        const MAX_TOTAL: usize = 8 * PER_THREAD;
+        let threads = contention_witness_threads();
+        let total = threads * PER_THREAD;
+        let seq = AtomicU64::new(0);
+        let seen = [const { AtomicU32::new(0) }; MAX_TOTAL];
+        // Without a start barrier the allocators do not overlap: a few
+        // hundred `fetch_add`s retire faster than the next thread spawns,
+        // so the loops run end-to-end and a NON-atomic allocator passes
+        // this test unchanged. Verified by mutation — the barrier and the
+        // iteration count are both load-bearing, not decoration.
+        let start = std::sync::Barrier::new(threads);
+        std::thread::scope(|s| {
+            for _ in 0..threads {
+                s.spawn(|| {
+                    start.wait();
+                    for _ in 0..PER_THREAD {
+                        let g = allocate_round_generation_in(&seq);
+                        assert!(g >= 1, "generations are allocated from 1 upwards");
+                        assert!((g as usize) <= MAX_TOTAL, "generation {g} out of range");
+                        seen[g as usize - 1].fetch_add(1, Ordering::SeqCst);
+                    }
+                });
+            }
+        });
+        for (i, c) in seen.iter().enumerate() {
+            let n = c.load(Ordering::SeqCst);
+            if i < total {
+                assert_eq!(n, 1, "generation {} was issued {n} times, not once", i + 1);
+            } else {
+                assert_eq!(n, 0, "generation {} issued but never allocated", i + 1);
+            }
+        }
+    }
+
+    /// **WS-SM SM7.F.3** (contention witness): a reader never observes a
+    /// torn operand set while a writer publishes.
+    ///
+    /// Each round's operands are tagged with their own generation, so a
+    /// snapshot that mixes two rounds is detectable rather than merely
+    /// unlikely: the handler would then issue one round's `tlbi` while
+    /// acknowledging another's generation.
+    #[test]
+    fn concurrent_mailbox_snapshot_is_never_torn() {
+        const ROUNDS: u64 = 4000;
+        let mb = ShootdownOpMailbox::new();
+        let writer_done = AtomicBool::new(false);
+        let consistent = AtomicUsize::new(0);
+        let readers = contention_witness_threads() - 1;
+        // Start writer and readers together so the reads genuinely race
+        // the publishes rather than arriving after the run is over.
+        let start = std::sync::Barrier::new(readers + 1);
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                start.wait();
+                for gen in 1..=ROUNDS {
+                    let len = (gen as usize % SHOOTDOWN_OP_CAPACITY) + 1;
+                    let mut ops = [ShootdownOp::VMALLE1; SHOOTDOWN_OP_CAPACITY];
+                    for (i, op) in ops.iter_mut().enumerate().take(len) {
+                        *op = ShootdownOp {
+                            op_tag: 1,
+                            asid: (gen & 0xFFFF) as u16,
+                            vaddr: (gen << 8) | i as u64,
+                        };
+                    }
+                    publish_round_ops_in(&mb, &ops[..len], gen);
+                }
+                writer_done.store(true, Ordering::Release);
+            });
+            for _ in 0..readers {
+                s.spawn(|| {
+                    start.wait();
+                    // Read the done flag BEFORE the snapshot, so the final
+                    // iteration reads a mailbox the writer has finished
+                    // with — that snapshot cannot tear, which is what
+                    // makes the non-vacuity assertion below reachable even
+                    // if every racing read happened to tear.
+                    loop {
+                        let done = writer_done.load(Ordering::Acquire);
+                        if let Some((ops, len, body_gen)) = snapshot_round_ops_in(&mb) {
+                            if body_gen != 0 {
+                                check_snapshot(&ops, len, body_gen);
+                                consistent.fetch_add(1, Ordering::Relaxed);
+                            }
+                        }
+                        if done {
+                            break;
+                        }
+                    }
+                });
+            }
+        });
+        assert!(
+            consistent.load(Ordering::Relaxed) > 0,
+            "no reader ever completed a snapshot — the consistency check never ran"
+        );
+    }
+
+    /// Every operand in a stable snapshot must belong to the round the
+    /// snapshot's own `body_generation` names.
+    fn check_snapshot(ops: &[ShootdownOp], len: usize, body_gen: u64) {
+        assert_eq!(
+            len,
+            (body_gen as usize % SHOOTDOWN_OP_CAPACITY) + 1,
+            "round {body_gen} snapshot carries {len} operands, not its own count"
+        );
+        for (i, op) in ops.iter().take(len).enumerate() {
+            assert_eq!(
+                op.vaddr,
+                (body_gen << 8) | i as u64,
+                "operand {i} of round {body_gen} came from another round"
+            );
+            assert_eq!(
+                op.asid,
+                (body_gen & 0xFFFF) as u16,
+                "operand {i} of round {body_gen} carries another round's asid"
+            );
+        }
+    }
+
+    /// **WS-SM SM7.F.3** (security witness, under contention): a lagging
+    /// core's stale acknowledgment never satisfies a later round.
+    ///
+    /// The sequential `stale_acknowledgment_cannot_satisfy_a_later_round`
+    /// pins the same property on one interleaving. This runs the wait
+    /// concurrently with the handlers, which is how the initiator actually
+    /// observes it, and asserts BOTH halves: never satisfied while a
+    /// target lags, and satisfied once it catches up — so the negative
+    /// cannot pass by being unreachable.
+    #[test]
+    fn a_lagging_cores_stale_acknowledgment_never_satisfies_a_later_round() {
+        const TARGET: u64 = 2000;
+        let slots = fresh_boot_slots();
+        let online = [true; 4];
+        let initiator = 0usize;
+        let stop = AtomicBool::new(false);
+        let satisfied_early = AtomicUsize::new(0);
+        let polls = AtomicUsize::new(0);
+        // Start both together, so the poller genuinely overlaps the
+        // handlers rather than finding the run already over — and poll at
+        // least once regardless, so the negative below can never pass by
+        // never having looked.
+        let start = std::sync::Barrier::new(2);
+        std::thread::scope(|s| {
+            // Cores 1 and 2 keep up; core 3 stays exactly one generation
+            // behind for the whole run.
+            s.spawn(|| {
+                start.wait();
+                for gen in 1..=TARGET {
+                    ack_round_in_slice(&slots, 1, gen);
+                    ack_round_in_slice(&slots, 2, gen);
+                    if gen > 1 {
+                        ack_round_in_slice(&slots, 3, gen - 1);
+                    }
+                }
+                stop.store(true, Ordering::Release);
+            });
+            s.spawn(|| {
+                start.wait();
+                loop {
+                    polls.fetch_add(1, Ordering::Relaxed);
+                    if all_acked_for_round_in_slice(&slots, TARGET, initiator, &online) {
+                        satisfied_early.fetch_add(1, Ordering::Relaxed);
+                    }
+                    if stop.load(Ordering::Acquire) {
+                        break;
+                    }
+                }
+            });
+        });
+        assert_eq!(
+            satisfied_early.load(Ordering::Relaxed),
+            0,
+            "the wait for round {TARGET} completed while core 3 was still behind it"
+        );
+        assert!(polls.load(Ordering::Relaxed) > 0, "the poller never ran");
+        ack_round_in_slice(&slots, 3, TARGET);
+        assert!(
+            all_acked_for_round_in_slice(&slots, TARGET, initiator, &online),
+            "the wait must complete once every online target has acknowledged"
+        );
+    }
+
+    /// **WS-SM SM7.F.3** (contention witness): a stale handler replay can
+    /// never lower a recorded acknowledgment.
+    ///
+    /// This is what `fetch_max` buys over a plain store, and it is only
+    /// observable when a stale replay races a fresh one: a store would let
+    /// the replay publish an older generation, and the initiator's
+    /// `acked_gen >= gen` test would then wait on a round that core had
+    /// already serviced — or, worse, a later round would see the lowered
+    /// value and the wait would be satisfied by the wrong round.
+    #[test]
+    fn a_stale_replay_never_lowers_a_recorded_acknowledgment() {
+        const ROUNDS: u64 = 2000;
+        let slots = fresh_boot_slots();
+        let stop = AtomicBool::new(false);
+        let regressions = AtomicUsize::new(0);
+        let samples = AtomicUsize::new(0);
+        // All three start together so the replay and the observer overlap
+        // the fresh run; the observer samples at least once regardless.
+        let start = std::sync::Barrier::new(3);
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                start.wait();
+                for gen in 1..=ROUNDS {
+                    ack_round_in_slice(&slots, 1, gen);
+                }
+                stop.store(true, Ordering::Release);
+            });
+            // A handler replaying old generations for the same core.
+            s.spawn(|| {
+                start.wait();
+                while !stop.load(Ordering::Acquire) {
+                    for gen in 1..=16 {
+                        ack_round_in_slice(&slots, 1, gen);
+                    }
+                }
+            });
+            s.spawn(|| {
+                start.wait();
+                let mut last = 0u64;
+                loop {
+                    let now = acked_gen_in_slice(&slots, 1);
+                    if now < last {
+                        regressions.fetch_add(1, Ordering::Relaxed);
+                    }
+                    last = now;
+                    samples.fetch_add(1, Ordering::Relaxed);
+                    if stop.load(Ordering::Acquire) {
+                        break;
+                    }
+                }
+            });
+        });
+        assert_eq!(
+            regressions.load(Ordering::Relaxed),
+            0,
+            "a stale replay lowered the recorded acknowledgment"
+        );
+        assert!(
+            samples.load(Ordering::Relaxed) > 0,
+            "the observer never sampled"
+        );
+        assert_eq!(
+            acked_gen_in_slice(&slots, 1),
+            ROUNDS,
+            "the highest acknowledged generation must survive the stale replays"
+        );
+    }
 }
