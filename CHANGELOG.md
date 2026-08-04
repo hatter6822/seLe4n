@@ -1,3 +1,95 @@
+## v0.32.139 — A char literal is not a string, and four docs still said SMP was on
+
+PR #854 review, twenty-seventh round: five findings, all valid. The
+most serious is a hole in the **hard-zero Rust surface**; the most
+embarrassing is that my own v0.32.136 cut left four documents saying
+the opposite of what it changed.
+
+**1. A Rust char literal holding a quote (hard-zero surface).**
+`const QUOTE: char = '"'; pub fn phase5_helper() {}` — the `"` opens no
+string, but `strip_pairs` did not know what a char literal was, took it
+as one, and blanked through to the next quote or to EOF. The
+declaration after it disappeared. `rust/` is held at zero with no
+baseline, so this is the second spelling found in this review that
+could carry a coded symbol **into the kernel binary** past a PASS.
+
+`CHAR_LITERAL` matches an opening quote, exactly one character or one
+escape, then a closing quote — and **requiring the close is what
+separates a char literal from a Rust lifetime**, since `&'a str` has no
+second quote and must keep reading as ordinary text. The span is kept
+rather than blanked: a char literal hides no identifier, so a
+mis-identified span can only scan more, never less. That also makes it
+safe for Lean, where `'` is a legal identifier character.
+
+I had already written about char literals at v0.32.135 — the asm-span
+comment notes that one holding a *bracket* could skew the depth
+counter. I reasoned about the bracket and not about the quote.
+
+**2. Dotted audit IDs were invisible in file contents.** `IDENTIFIER`
+stops at a dot, so `AUDIT_v0.30.11_helper` tokenises to `AUDIT_v0` plus
+`_helper` and the numeric components the adjacency rule needs are gone
+before `is_coded` sees them. Caught in a *path* (path components
+normalise separators), missed in *content*.
+
+Matched explicitly rather than by normalising `.` to `_` across
+content, which would make every dotted version in every TOML and JSON
+value read as an audit ID. What distinguishes an audit *identifier* is
+that the version is welded to surrounding name text.
+
+The exemption matters more than the rule here: measured over the
+tracked tree, the **only** matches are documentation paths in
+`scripts/website_link_manifest.txt` — a file that exists to protect
+`docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md`, which is correctly
+named for the audit it records. Without the doc-path exemption this
+rule would be nine false positives and no true ones.
+
+**3. Four documents still described SMP as on by default.** v0.32.136
+flipped `CmdlineConfig::default` and I corrected eleven claim sites —
+and missed `docs/spec/SELE4N_SPEC.md`, `docs/gitbook/01-project-overview.md`,
+`docs/gitbook/10-path-to-real-hardware-mobile-first.md` and
+`docs/gitbook/15-rust-syscall-wrappers.md` (the last still documenting
+`Default::default() = { true, 4 }`). The reviewer named three; there
+were four. All now describe the opt-**in** default, name SM5.I as the
+condition, and say the default flips back with that phase.
+
+**This is the fourth time in this review that a fix landed at the sites
+I checked and not at its siblings**, and the first where the sites were
+documentation rather than code — which is worse, because a deployer
+following the published behaviour would have configured for a boot that
+no longer happens.
+
+**4. YAML block-sequence items were not value positions.** `- "echo #
+phase5_helper"` — the preceding non-space character is `-`, which
+v0.32.137's value-position set omitted, so a sequence item reverted to
+having its `#` read as a comment. `-` added.
+
+**5. Bare dotfile citations.** `.gitignore:12` and `.gitignore#L12`
+were unmatched while `rust/.gitignore:12` matched, because the citation
+pattern required at least one character before the extension — and a
+dotfile has none, its leading dot *being* the separator. The prefix is
+optional now; the numeric-suffix exclusion still rests on the extension
+set requiring a leading letter, which is checked against an
+implementation that drops it.
+
+**Verification.** Naming self-test 166 → 177, citation 23 → 26. Of the
+eleven new checks, six fail against the previous version and one is
+absent there entirely; the four exemptions pass, and each was run
+against a deliberately wrong implementation: no-closing-quote char
+literals swallow `&'a str`, an audit rule without the doc-path
+exemption fires on the link manifest, and a numeric-allowing extension
+set turns `v0.32.1:5` into a citation.
+
+One new check was **initially not load-bearing**: the escaped-quote
+char literal was written as `'\''`, which contains no double quote, so
+nothing mistakes it for a string opener and it passed against an
+implementation with no escape handling at all. Rewritten as `'\"'`,
+which distinguishes. That is the third round running where writing the
+check was easier than writing one that could fail.
+
+Baseline unchanged at 298 pairs / 1017 occurrences — seventh
+consecutive scope extension with zero coverage lost and zero new
+grandfathering.
+
 ## v0.32.138 — My own fix for an under-reach opened a narrower one
 
 PR #854 review, twenty-sixth round: two findings, both valid. The first

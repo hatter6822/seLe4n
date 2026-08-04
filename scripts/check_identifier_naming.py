@@ -330,6 +330,49 @@ COMPONENT_CODES = tuple(
 VERSION_STAMP = re.compile(r"^v\d+$")
 BARE_NUMBER = re.compile(r"^\d+$")
 
+# The adjacency rule above works on a token's COMPONENTS, and a token is
+# what `IDENTIFIER` matches -- which stops at a dot.  So the canonical
+# dotted spelling `AUDIT_v0.30.11_helper` tokenises to `AUDIT_v0` plus
+# `_helper`, and the numeric components the adjacency needs are gone
+# before `is_coded` ever sees them.  It is caught in a PATH (path
+# components normalise separators) and was invisible in file CONTENT.
+#
+# Normalising `.` to `_` across content would fix it and cost far more
+# than it buys: every dotted version in every TOML and JSON value would
+# then read as an audit ID.  The shape is matched explicitly instead.
+# What distinguishes an audit *identifier* from an ordinary version is
+# that the dotted version is welded to surrounding name text -- a bare
+# `0.32.138` in a version field is not, and stays untouched.
+DOTTED_AUDIT_ID = re.compile(
+    r"[A-Za-z_][A-Za-z0-9_]*_[Vv]\d+(?:\.\d+)+"      # AUDIT_v0.30.11
+    r"|[Vv]\d+(?:\.\d+)+_[A-Za-z_]"                  # v0.30.11_helper
+)
+
+
+def _audit_id_hits(body: str) -> list[str]:
+    """Dotted audit IDs in `body`, excluding documentation PATHS.
+
+    The rule exempts documentation by location, and a file that lists
+    doc paths is citing them rather than naming something after a
+    workstream: `scripts/website_link_manifest.txt` exists to protect
+    `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md`, which is correctly
+    named for the audit it records.  Measured over the tracked tree,
+    those manifest entries are the ONLY matches this pattern has today
+    -- so without the exemption this rule would be nine false
+    positives and no true ones.
+    """
+    hits = []
+    for m in DOTTED_AUDIT_ID.finditer(body):
+        start = m.start()
+        while start > 0 and not body[start - 1].isspace():
+            start -= 1
+        end = m.end()
+        while end < len(body) and not body[end].isspace():
+            end += 1
+        if not is_doc(body[start:end].strip("\"'`,()[]")):
+            hits.append(m.group(0))
+    return hits
+
 # Three single-letter families are real in the registry and deliberately
 # ABSENT here, because as *identifier* rules they collide with the
 # architecture's own register namespaces.  Each was measured over the
@@ -491,6 +534,29 @@ def _opens_asm_macro(text: str, at: int) -> bool:
     return text[j + 1:end] in ASM_MACROS      # `core::arch::asm!` -> `asm`
 
 
+# A CHARACTER literal can hold a quote, and then the quote is data.
+#
+# `const QUOTE: char = '"'; pub fn phase5_helper() {}` -- the `"` opens
+# no string, but a scanner that does not know what a char literal is
+# takes it as one and blanks everything to the next quote or to EOF,
+# hiding the real declaration after it.  On the `rust/` surface, which
+# is a hard zero with no baseline, that is a coded name reaching the
+# kernel binary past a gate reporting PASS.
+#
+# Matched as: an opening `'`, exactly ONE character or one escape, then
+# a closing `'`.  Requiring the closing quote is what separates a char
+# literal from a Rust LIFETIME -- `&'a str` has no second quote, so it
+# is left alone and continues to read as ordinary text.
+#
+# The span is KEPT rather than blanked, which is the safe direction: a
+# char literal holds no identifier to hide, and keeping it means a
+# mis-identified span can only scan more, never less.  That also makes
+# it safe for Lean, where `'` is a legal identifier character (`h'`,
+# `foo'`) -- the worst case there is that `a'b'` is kept verbatim,
+# which is what would have happened anyway.
+CHAR_LITERAL = re.compile(r"'(?:[^'\\\n]|\\.)'")
+
+
 def strip_pairs(text: str, line_comment: str, block: tuple[str, str],
                 asm_templates: bool = False) -> str:
     """Blank comments and string literals for C-family / Lean syntax."""
@@ -514,6 +580,8 @@ def strip_pairs(text: str, line_comment: str, block: tuple[str, str],
                 else:
                     j += 1
             out.append(blank_prose(text[i:j])); i = j
+        elif text[i] == "'" and (m := CHAR_LITERAL.match(text, i)):
+            out.append(m.group(0)); i = m.end()   # data, not a delimiter
         elif text[i] == "r" and (m := re.match(r'r(#*)"', text[i:])):
             close = '"' + m.group(1)
             j = text.find(close, i + m.end() - 1)
@@ -766,7 +834,11 @@ def strip_config(text: str) -> str:
     """
     out, i, n = [], 0, len(text)
     # Value position: what may precede a quote that opens a scalar.
-    value_pos = ":=[,{"
+    # `-` is YAML's block-sequence indicator, so `- "echo # x"` is a
+    # quoted scalar exactly as `k: "echo # x"` is; omitting it meant a
+    # sequence item reverted to the pre-v0.32.137 behaviour and had its
+    # `#` read as a comment.
+    value_pos = ":=[,{-"
     while i < n:
         if text[i] in "\"'":
             k = i - 1
@@ -1040,6 +1112,10 @@ def scan() -> tuple[Counter, Counter]:
         for token in IDENTIFIER.findall(body):
             if is_coded(token):
                 bucket[(token, rel)] += 1
+        # Dotted audit IDs cannot survive tokenisation, so they are
+        # matched over the body directly rather than per token.
+        for name in _audit_id_hits(body):
+            bucket[(name, rel)] += 1
     return strict, ratcheted
 
 

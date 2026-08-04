@@ -202,6 +202,60 @@ check("a TOML basic string escapes the same way",
 check("a YAML doubled quote is a literal, not a terminator",
       CODED in gate.strip_config("cmd: " + q + "it" + q + q + "s # " + CODED + q),
       True)
+# `-` is YAML's block-sequence indicator, so a sequence item is a value
+# position exactly as `key:` is.  Omitting it left sequence items on the
+# pre-quote-tracking behaviour.
+check("a YAML sequence item is a value position",
+      CODED in gate.strip_config("- " + dq + "echo # " + CODED + dq), True)
+check("a comment after a sequence item still blanks",
+      CODED in gate.strip_config("- value   # " + CODED), False)
+
+# --- A char literal holds data, not a delimiter -----------------------
+# `const Q: char = '"';` -- the quote opens no string, but a scanner
+# that does not know what a char literal is takes it as one and blanks
+# through to the next quote or EOF, hiding every declaration after it.
+# On `rust/`, a hard zero with no baseline, that is a coded symbol
+# reaching the binary past a PASS.
+check("a char literal holding a quote hides nothing",
+      CODED in gate.strip_rust(
+          "const Q: char = " + q + dq + q + "; pub fn " + CODED + "() {}"), True)
+# The escape must hold a DOUBLE quote to be load-bearing: `'\''`
+# contains no `"`, so nothing mistakes it for a string opener and
+# the check passes against an implementation with no escape
+# handling at all. `'\"'` is the case that distinguishes.
+check("an escaped double quote inside a char literal",
+      CODED in gate.strip_rust(
+          "let c = " + q + "\\" + dq + q + "; pub fn " + CODED + "() {}"), True)
+# The exemption that keeps this from breaking Rust: a LIFETIME has no
+# closing quote, so requiring one is what tells the two apart.  Without
+# it `&'a str` would open a literal and swallow the code after it.
+check("a lifetime does not open a char literal",
+      "real_string" in gate.strip_rust(
+          "fn f<" + q + "a>(s: &" + q + "a str) { let x = "
+          + dq + "real_string" + dq + "; }"), False)
+check("an ordinary string literal is still prose",
+      CODED in gate.strip_rust("let s = " + dq + CODED + dq + ";"), False)
+
+# --- Dotted audit IDs survive tokenisation ----------------------------
+# `IDENTIFIER` stops at a dot, so `AUDIT_v0.30.11_helper` tokenises to
+# `AUDIT_v0` + `_helper` and the components the adjacency rule needs are
+# gone before `is_coded` sees them.  Matched over the body instead.
+check("a dotted audit ID in YAML is seen",
+      bool(gate._audit_id_hits(gate.strip_config("note: AUDIT_v0.30.11_helper"))),
+      True)
+check("a dotted audit ID in JSON is seen",
+      bool(gate._audit_id_hits('{"k": "AUDIT_v0.30.11_helper"}')), True)
+# Two exemptions, both load-bearing: a documentation PATH is exempt by
+# location (the link manifest exists to protect exactly those paths, and
+# they are the only matches in the tree today), and a bare version is
+# not an identifier -- without that, every version field would fire.
+check("a documentation path is exempt",
+      bool(gate._audit_id_hits(
+          "docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md")), False)
+check("a bare version string is not an audit ID",
+      bool(gate._audit_id_hits('version = "0.32.138"')), False)
+check("a dotted toolchain pin is not an audit ID",
+      bool(gate._audit_id_hits("leanprover/lean4:v4.28.0")), False)
 
 
 # --- A hyphen separates words in a FILE NAME --------------------------

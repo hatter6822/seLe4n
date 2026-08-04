@@ -104,8 +104,24 @@ def build_citation_re(extensions: set[str]) -> re.Pattern[str]:
     # `[source](https://github.com/.../foo.rs#L123-L130)` and goes stale
     # on exactly the same edit — an insertion above line 123 — while
     # rendering as a live link that silently points somewhere else.
+    # The path may begin with a DOT: `.gitignore:12` is a legitimate
+    # citation of a file whose name starts the path, and it goes stale
+    # on exactly the edit `rust/.gitignore:12` does. Requiring an
+    # alphanumeric first character matched the directory-qualified
+    # spelling and missed the bare one -- a citation is not less stale
+    # for being written without its directory.
+    # The part before the extension is OPTIONAL, because a dotfile has
+    # none: `.gitignore` is a name whose leading dot IS the extension
+    # separator, so `.gitignore:12` has nothing in front of it.
+    # Requiring at least one character matched `rust/.gitignore:12` and
+    # missed the bare spelling, and a citation is not less stale for
+    # being written without its directory.
+    #
+    # This does not widen the match to dotted versions: the extension
+    # set requires a leading letter, so neither `.32` nor `.1` in
+    # `v0.32.1:5` can complete the pattern.
     return re.compile(
-        r'(?:[A-Za-z0-9_][A-Za-z0-9_./-]*)\.(?:' + alternation + r')'
+        r'(?:[A-Za-z0-9_][A-Za-z0-9_./-]*)?\.(?:' + alternation + r')'
         r'(?::\d+|\#L\d+(?:-L\d+)?)'
     )
 

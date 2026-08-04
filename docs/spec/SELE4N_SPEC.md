@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.32.138` (`lakefile.toml`) |
+| **Package version** | `0.32.139` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 238,299 across 264 Lean files |
 | **Test LoC** | 48,449 across 67 Lean test suites |
@@ -586,9 +586,15 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    token parser produces a typed `CmdlineConfig`, and
    `apply_cmdline_and_start_smp` writes `smp::SMP_ENABLED` then
    dispatches `bring_up_secondaries_with_limit` (SM1.D.6 limit-aware
-   variant).  Default at v0.31.6+ is `smp_enabled=true
-   smp_max_cores=4` per maintainer decision #7 — operators opt out
-   via the kernel command line.  A new `scan_boot_rs_calls_cmdline_smp_startup`
+   variant).  **Default from v0.32.136 is `smp_enabled=false
+   smp_max_cores=4`; operators opt IN via the kernel command line.**
+   Maintainer decision #7 puts SMP on by default at v1.0.0 "once SM5
+   lands", and SM5.I — serialising kernel entry — has not landed, so
+   the precondition is unmet: `Platform.FFI.modifyGetKernelState` is
+   an `IO.Ref.modifyGet`, and booting secondaries by default would
+   make a lost transition reachable on the first bootable image.  The
+   default flips back in the change that lands SM5.I.  A new
+   `scan_boot_rs_calls_cmdline_smp_startup`
    build-script scanner pins the Phase-5 call sites textually so a
    refactor cannot silently disable the cmdline parse.
 

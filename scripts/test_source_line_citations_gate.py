@@ -116,6 +116,19 @@ check("its GitHub-anchor spelling is matched too",
 # version in the prose becomes a citation.
 check("a numeric suffix is still not an extension",
       cited("the version v0.32.1:5 shipped that"), False)
+# A DOTFILE has no part before its extension -- the leading dot IS the
+# separator -- so requiring at least one character matched
+# `rust/.gitignore:12` and missed the bare spelling. A citation is not
+# less stale for being written without its directory.
+check("a bare dotfile citation is matched",
+      bool(_live.search("see .gitignore:12 for the rule")), True)
+check("its anchor spelling is matched too",
+      bool(_live.search("see .gitignore#L12 for the rule")), True)
+# The negative that keeps the optional prefix honest: a dotted version
+# must not complete the pattern, which rests on the extension set
+# requiring a leading letter rather than on the prefix being mandatory.
+check("a dotted version is still not a citation",
+      bool(_live.search("bumped to 0.32.138 today")), False)
 
 # --- Fenced blocks are verbatim output, not citations ------------------
 # A bare '```' toggle got both tilde fences and nested fences wrong,
