@@ -76,7 +76,7 @@ Rust CAS-retry loop is a substantial proof that goes through:
 We do not encode this bisimulation formally at v1.0.0; instead, the
 refinement is reviewed at per-PR level (each Rust function's docstring
 references the corresponding Lean operation).  The cargo unit tests
-exercise the round-trip encoding (`sm2c17_encoding_round_trip`) so the
+exercise the round-trip encoding (`encoding_round_trip`) so the
 bit-level correspondence is mechanically verified.
 
 ## Why not a full bisimulation proof?

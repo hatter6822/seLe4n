@@ -40,7 +40,9 @@
 //!
 //! ## What this module owns
 //!
-//! - `SMP_ENABLED` — runtime SMP-enable flag (default `false`)
+//! - `SMP_ENABLED` — runtime SMP-enable flag (`false` at module load
+//!   as a fail-safe; Phase 5 overwrites it with the parsed cmdline
+//!   value, whose default is `true` since v0.32.142)
 //! - `SECONDARY_MPIDR_TABLE` — BCM2712 secondary-core MPIDR inventory
 //! - `MAX_SECONDARY_CORES` — number of secondaries (3 on RPi5)
 //! - `bring_up_secondaries` — primary-core entry point that issues
@@ -140,10 +142,20 @@ const _: () = assert!(
 #[used]
 pub static MAX_CORE_COUNT_SYM: u64 = (MAX_SECONDARY_CORES + 1) as u64;
 
-/// AN9-J: runtime SMP-enable flag.  At v1.0.0 the default is `false`
-/// so `bring_up_secondaries` is a no-op; deployments that opt in to
-/// SMP set this `true` via a kernel-command-line parameter parsed by
-/// `boot.rs::rust_boot_main` before invoking `bring_up_secondaries`.
+/// AN9-J: runtime SMP-enable flag.  The default is `false` so
+/// `bring_up_secondaries` is a no-op if Phase 5 never runs.  Phase 5
+/// sets it from the kernel command line parsed by
+/// `boot.rs::rust_boot_main` before invoking `bring_up_secondaries`;
+/// that parsed value defaults to `true` since v0.32.142, so single-core
+/// boot is the opt-OUT (`smp_enabled=false`).
+///
+/// This static's `false` is a *module-load* value, not the boot policy:
+/// Phase 5 overwrites it with the parsed cmdline value, so a kernel
+/// that never reaches Phase 5 never spawns secondaries.  The parsed
+/// default is `true` again since v0.32.142 (SM5.I serialised kernel
+/// entry); it was `false` from v0.32.136 while that was owed, and
+/// before v0.32.136 this docstring described an opt-IN model while
+/// `cmdline` implemented opt-OUT.  See `cmdline::CmdlineConfig::default`.
 pub static SMP_ENABLED: AtomicBool = AtomicBool::new(false);
 
 /// AN9-J: secondary-core readiness flags.  Index 0 is unused (the
@@ -168,7 +180,8 @@ pub static CORE_READY: [AtomicBool; 4] = [
 /// reached `enable_irq` — or one whose timer init failed and is parked
 /// forever in the fatal WFE halt loop — cannot take an SGI, so it must
 /// **not** be a TLB-shootdown target: masking-in such a core clears its
-/// ack flag and then hangs the initiator's [`crate::shootdown::all_acked`]
+/// acknowledgment and then hangs the initiator's
+/// [`crate::shootdown::all_acked_for_round`]
 /// wait until the SM7.B.6 fail-closed timeout panic.
 ///
 /// `CORE_IRQ_READY[c]` is therefore set by core `c` **itself**, after
@@ -556,11 +569,13 @@ pub(crate) const fn validate_secondary_context_id(context_id: u64) -> Option<usi
 /// **Never returns** — `-> !` type honoured by the trailing infinite
 /// WFE loop.
 ///
-/// **Hardware reachability**: at v1.0.0 this routine is wired but
-/// unreachable in the default build (`SMP_ENABLED = false` means
-/// primary never issues CPU_ON).  The host test suite exercises the
-/// function signature and the per-helper call sites; QEMU `-smp 4`
-/// (SM1.H) will be the first runtime exerciser of the full path.
+/// **Hardware reachability**: reachable in the default build since
+/// v0.32.142 — the parsed cmdline default is `smp_enabled=true`, so the
+/// primary does issue CPU_ON.  It was unreachable by default while SMP
+/// was opt-in (v0.32.136–141) and before SM1 wired PSCI at all.  The
+/// host test suite exercises the function signature and the per-helper
+/// call sites; QEMU `-smp 4` (SM1.H) is the first runtime exerciser of
+/// the full path, and nothing here runs on hardware before SM9.E.
 #[no_mangle]
 pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
     let core_id = context_id;
@@ -679,7 +694,7 @@ pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
     // shootdown target (see `CORE_IRQ_READY`).  A core that never
     // reaches this line (e.g. the timer-init-failure halt loop above)
     // stays excluded from every round, fail-safe.  Release-paired with
-    // the Acquire reads in `shootdown::{reset_for_round, online_mask}`.
+    // the Acquire reads in `shootdown::{online_mask, irq_ready_online}`.
     if core_idx < CORE_IRQ_READY.len() {
         CORE_IRQ_READY[core_idx].store(true, Ordering::Release);
     }
@@ -844,7 +859,7 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn sm0o_max_secondary_cores_pinned_to_platform_binding() {
+    fn max_secondary_cores_pinned_to_platform_binding() {
         // WS-SM SM0.O: the Rust constant MAX_SECONDARY_CORES is
         // structurally pinned to the Lean PlatformBinding.coreCount
         // value (4 for RPi5).  The compile-time `assert!` in smp.rs
@@ -859,7 +874,7 @@ mod tests {
     }
 
     #[test]
-    fn sm0o_secondary_mpidr_table_size_matches_max() {
+    fn secondary_mpidr_table_size_matches_max() {
         // WS-SM SM0.O: the secondary MPIDR table cardinality follows
         // MAX_SECONDARY_CORES; if the constant changes the table must
         // be updated in lockstep.
@@ -878,7 +893,7 @@ mod tests {
     // exhaustive layout/behaviour tests live in `per_cpu::tests`.
 
     #[test]
-    fn sm0n_back_compat_per_cpu_data_re_export_resolves() {
+    fn back_compat_per_cpu_data_re_export_resolves() {
         // The re-exports in this module make `crate::smp::PerCpuData`
         // and friends point at `crate::per_cpu::*` — proven by
         // constructing a value via the legacy path and inspecting it.
@@ -887,7 +902,7 @@ mod tests {
     }
 
     #[test]
-    fn sm0n_back_compat_per_cpu_data_static_re_export_resolves() {
+    fn back_compat_per_cpu_data_static_re_export_resolves() {
         // The `PER_CPU_DATA` static is reachable via both
         // `crate::per_cpu::PER_CPU_DATA` and `crate::smp::PER_CPU_DATA`.
         // Both names point at the same `#[no_mangle]` symbol, so
@@ -899,7 +914,7 @@ mod tests {
     }
 
     #[test]
-    fn sm0n_back_compat_slot_size_constants_re_exported() {
+    fn back_compat_slot_size_constants_re_exported() {
         // SM1.B kept the symbol names for `PER_CPU_DATA_SLOT_SIZE`
         // and `PER_CPU_DATA_SLOT_SIZE_SYM` to preserve boot.S linkage.
         // This test asserts both are visible through `crate::smp::*`.
@@ -908,7 +923,7 @@ mod tests {
     }
 
     #[test]
-    fn sm0n_back_compat_per_cpu_slot_addr_re_export_resolves() {
+    fn back_compat_per_cpu_slot_addr_re_export_resolves() {
         // SM1.B kept `per_cpu_slot_addr` accessible from the legacy
         // `crate::smp` path.  Spot-check the boot core's slot
         // resolves to a non-null cache-line-aligned address.
@@ -937,7 +952,7 @@ mod tests {
     // composition.
 
     #[test]
-    fn sm1c5_rust_secondary_main_has_correct_abi_signature() {
+    fn rust_secondary_main_has_correct_abi_signature() {
         // SM1.C.5: the body changed substantively but the ABI must
         // not — the C-callable signature is `extern "C" fn(u64) -> !`
         // (PSCI context_id in x0, never returns).
@@ -945,7 +960,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1c5_init_mmu_secondary_resolves_via_crate_mmu() {
+    fn init_mmu_secondary_resolves_via_crate_mmu() {
         // SM1.C.5: the `crate::mmu::init_mmu_secondary` symbol used by
         // `rust_secondary_main` resolves through the module path.
         // A regression that renames the helper would fail this test
@@ -954,19 +969,19 @@ mod tests {
     }
 
     #[test]
-    fn sm1c5_install_exception_vectors_resolves_via_crate_boot() {
+    fn install_exception_vectors_resolves_via_crate_boot() {
         // SM1.C.5: VBAR install helper resolves through `crate::boot`.
         crate::boot::install_exception_vectors();
     }
 
     #[test]
-    fn sm1c5_init_cpu_interface_secondary_resolves_via_crate_gic() {
+    fn init_cpu_interface_secondary_resolves_via_crate_gic() {
         // SM1.C.5: GIC CPU-interface helper resolves through `crate::gic`.
         crate::gic::init_cpu_interface_secondary(1);
     }
 
     #[test]
-    fn sm1c5_init_timer_secondary_resolves_via_crate_timer() {
+    fn init_timer_secondary_resolves_via_crate_timer() {
         // SM1.C.5: timer init helper resolves through `crate::timer`
         // AND returns Ok on host with the default tick rate.
         let r = crate::timer::init_timer_secondary(crate::timer::DEFAULT_TICK_HZ);
@@ -974,7 +989,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1c5_init_timer_secondary_propagates_zero_tick_error() {
+    fn init_timer_secondary_propagates_zero_tick_error() {
         // SM1.C.5: the fatal-path branch in `rust_secondary_main` is
         // taken when `init_timer_secondary` returns an Err.  Verify the
         // helper actually returns an Err on the failure input so the
@@ -987,14 +1002,14 @@ mod tests {
     }
 
     #[test]
-    fn sm1c5_enable_irq_resolves_via_crate_interrupts() {
+    fn enable_irq_resolves_via_crate_interrupts() {
         // SM1.C.5: IRQ-unmask helper resolves through
         // `crate::interrupts`.
         crate::interrupts::enable_irq();
     }
 
     #[test]
-    fn sm1c5_full_secondary_init_helper_set_is_callable_on_host() {
+    fn full_secondary_init_helper_set_is_callable_on_host() {
         // SM1.C.5 composition: every helper invoked by
         // `rust_secondary_main` is independently callable on host.
         // A regression in any helper would surface here even though
@@ -1007,7 +1022,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1c5_secondary_helpers_idempotent_in_aggregate() {
+    fn secondary_helpers_idempotent_in_aggregate() {
         // SM1.C.5: a future SM7 TLB shootdown might re-run the
         // per-core init helpers after a quiescent point.  Aggregate
         // idempotence is required: each helper must be safe to call
@@ -1022,7 +1037,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1c5_no_mangle_attribute_pinned_on_rust_secondary_main() {
+    fn no_mangle_attribute_pinned_on_rust_secondary_main() {
         // SM1.C.5: the `#[no_mangle]` attribute on `rust_secondary_main`
         // must be preserved so `boot.S::secondary_entry`'s `bl
         // rust_secondary_main` resolves at link time.  Take the
@@ -1053,7 +1068,7 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn sm1c5_validate_context_id_rejects_zero() {
+    fn validate_context_id_rejects_zero() {
         // Audit-pass-1: context_id = 0 names the boot-core slot.  A
         // secondary waking with context_id = 0 would alias the boot
         // core's PerCpuData slot; reject it.
@@ -1061,7 +1076,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1c5_validate_context_id_accepts_every_secondary_slot() {
+    fn validate_context_id_accepts_every_secondary_slot() {
         // Audit-pass-1: every context_id in [1, MAX_SECONDARY_CORES]
         // (= [1, 3] on RPi5) is a valid secondary slot.
         assert_eq!(validate_secondary_context_id(1), Some(1));
@@ -1070,14 +1085,14 @@ mod tests {
     }
 
     #[test]
-    fn sm1c5_validate_context_id_rejects_one_past_array() {
+    fn validate_context_id_rejects_one_past_array() {
         // Audit-pass-1: context_id = CORE_READY.len() (= 4 on RPi5)
         // is the first out-of-range value.  Reject.
         assert_eq!(validate_secondary_context_id(CORE_READY.len() as u64), None);
     }
 
     #[test]
-    fn sm1c5_validate_context_id_rejects_far_out_of_range() {
+    fn validate_context_id_rejects_far_out_of_range() {
         // Audit-pass-1: large context_id values must also reject.
         // Tests the upper boundary plus a few suspicious values.
         assert_eq!(validate_secondary_context_id(u64::MAX), None);
@@ -1087,7 +1102,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1c5_validate_context_id_acceptance_matches_core_ready_index() {
+    fn validate_context_id_acceptance_matches_core_ready_index() {
         // Audit-pass-1: when accepted, the returned `core_idx` equals
         // the input `context_id` (as `usize`).  This is the property
         // `rust_secondary_main` relies on for the subsequent
@@ -1103,7 +1118,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1c5_validate_context_id_aligns_with_primary_emitted_values() {
+    fn validate_context_id_aligns_with_primary_emitted_values() {
         // Audit-pass-1: the primary's `bring_up_secondaries_inner`
         // emits `context_id = idx + 1` for `idx in 0..MAX_SECONDARY_CORES`.
         // Verify every primary-emitted value is accepted by the
@@ -1119,7 +1134,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1c5_validate_context_id_is_const_correct() {
+    fn validate_context_id_is_const_correct() {
         // Audit-pass-1: the validator function is callable in const
         // contexts where the inputs are known at compile time.  This
         // forces the compiler to evaluate the validator's logic at
@@ -1137,7 +1152,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1c5_validate_context_id_rejects_u64_with_high_bits_aliasing_secondary() {
+    fn validate_context_id_rejects_u64_with_high_bits_aliasing_secondary() {
         // Audit-pass-3 (defense-in-depth): a `u64` `context_id` whose
         // high bits are set but whose low 32 bits alias a valid
         // secondary slot (1..=3) must be rejected.  The pre-audit-pass-3
@@ -1177,7 +1192,7 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn sm1c5_max_core_count_sym_matches_max_secondary_cores() {
+    fn max_core_count_sym_matches_max_secondary_cores() {
         // Audit-pass-2: the .rodata symbol must equal
         // `MAX_SECONDARY_CORES + 1`.  A drift would mean the asm
         // rejects valid context_ids (too strict) or accepts invalid
@@ -1186,7 +1201,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1c5_max_core_count_sym_matches_core_ready_array_len() {
+    fn max_core_count_sym_matches_core_ready_array_len() {
         // Audit-pass-2: the .rodata symbol must equal CORE_READY's
         // array length.  This is the runtime structural pin — if a
         // future PR changes either side, the test fails.
@@ -1194,7 +1209,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1c5_max_core_count_sym_is_four_on_rpi5() {
+    fn max_core_count_sym_is_four_on_rpi5() {
         // Audit-pass-2: pin the literal value at 4 for the production
         // RPi5 BCM2712 binding (single 4-core Cortex-A76 cluster).
         // A multi-platform port would need to bump this and the
@@ -1204,7 +1219,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1c5_max_core_count_sym_has_observable_address() {
+    fn max_core_count_sym_has_observable_address() {
         // Audit-pass-2: the .rodata symbol must have a stable
         // linker-visible address so the asm's `adrp`+`ldr` against
         // `:lo12:MAX_CORE_COUNT_SYM` resolves.  A regression dropping
@@ -1218,7 +1233,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1c5_max_core_count_sym_value_is_validator_upper_bound() {
+    fn max_core_count_sym_value_is_validator_upper_bound() {
         // Audit-pass-2 / cross-check: the asm-side bound (via
         // MAX_CORE_COUNT_SYM) and the Rust-side bound (in
         // `validate_secondary_context_id`) must agree.  The
@@ -1235,7 +1250,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1c5_max_core_count_sym_rejects_match_validator() {
+    fn max_core_count_sym_rejects_match_validator() {
         // Audit-pass-2 / cross-check: every context_id rejected by
         // the asm-level bound (>= MAX_CORE_COUNT_SYM) must also be
         // rejected by the Rust validator.  Verify on a sample
@@ -1270,7 +1285,7 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn sm1d6_with_limit_zero_brings_up_no_secondaries() {
+    fn with_limit_zero_brings_up_no_secondaries() {
         // SM1.D.6: max_cores = 0 → empty MPIDR slice, no PSCI calls.
         let (enabled, ready, count) = fresh_local_state();
         enabled.store(true, Ordering::Release);
@@ -1285,7 +1300,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1d6_with_limit_one_brings_up_no_secondaries() {
+    fn with_limit_one_brings_up_no_secondaries() {
         // SM1.D.6: max_cores = 1 → boot core only, no secondaries.
         // max_cores - 1 = 0 secondaries → empty MPIDR slice.
         let secondaries_to_spawn = 1usize.saturating_sub(1);
@@ -1294,7 +1309,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1d6_with_limit_two_brings_up_one_secondary() {
+    fn with_limit_two_brings_up_one_secondary() {
         // SM1.D.6: max_cores = 2 → 1 secondary (table[0..1]).
         let (enabled, ready, count) = fresh_local_state();
         enabled.store(true, Ordering::Release);
@@ -1304,13 +1319,22 @@ mod tests {
         assert_eq!(table.len(), 1);
         let online = bring_up_secondaries_inner(&enabled, &ready, &count, table);
         assert_eq!(online, 1);
-        assert!(ready[1].load(Ordering::Acquire), "first secondary should be ready");
-        assert!(!ready[2].load(Ordering::Acquire), "second secondary not spawned");
-        assert!(!ready[3].load(Ordering::Acquire), "third secondary not spawned");
+        assert!(
+            ready[1].load(Ordering::Acquire),
+            "first secondary should be ready"
+        );
+        assert!(
+            !ready[2].load(Ordering::Acquire),
+            "second secondary not spawned"
+        );
+        assert!(
+            !ready[3].load(Ordering::Acquire),
+            "third secondary not spawned"
+        );
     }
 
     #[test]
-    fn sm1d6_with_limit_three_brings_up_two_secondaries() {
+    fn with_limit_three_brings_up_two_secondaries() {
         // SM1.D.6: max_cores = 3 → 2 secondaries (table[0..2]).
         let (enabled, ready, count) = fresh_local_state();
         enabled.store(true, Ordering::Release);
@@ -1326,7 +1350,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1d6_with_limit_full_brings_up_all_secondaries() {
+    fn with_limit_full_brings_up_all_secondaries() {
         // SM1.D.6: max_cores = MAX_SECONDARY_CORES + 1 → all
         // secondaries.
         let (enabled, ready, count) = fresh_local_state();
@@ -1340,12 +1364,7 @@ mod tests {
         // Iterate over `ready[1..=MAX_SECONDARY_CORES]` via
         // `enumerate().skip(1).take(MAX_SECONDARY_CORES)` to keep
         // clippy's `needless_range_loop` lint quiet.
-        for (idx, slot) in ready
-            .iter()
-            .enumerate()
-            .skip(1)
-            .take(MAX_SECONDARY_CORES)
-        {
+        for (idx, slot) in ready.iter().enumerate().skip(1).take(MAX_SECONDARY_CORES) {
             assert!(
                 slot.load(Ordering::Acquire),
                 "secondary {} should be ready",
@@ -1355,7 +1374,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1d6_with_limit_oversize_saturates() {
+    fn with_limit_oversize_saturates() {
         // SM1.D.6: max_cores > platform max → saturates to platform
         // bound.  Defends against caller-side parsing errors.
         let limit = 999usize;
@@ -1366,7 +1385,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1d6_with_limit_disabled_returns_zero() {
+    fn with_limit_disabled_returns_zero() {
         // SM1.D.6: when `enabled` is false, no secondaries are
         // brought up regardless of the limit.  This is the
         // `smp_enabled=false` boot path; `apply_cmdline_and_start_smp`
@@ -1380,7 +1399,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1d6_with_limit_function_resolves_via_crate_smp() {
+    fn with_limit_function_resolves_via_crate_smp() {
         // SM1.D.6: the public function exists and has the documented
         // signature `fn(usize) -> u32`.  Pinning the signature at the
         // type-system level catches a future PR that renames or
@@ -1389,7 +1408,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1d6_with_limit_callable_on_host_via_global_state() {
+    fn with_limit_callable_on_host_via_global_state() {
         // SM1.D.6: the helper compiles and runs on host via the
         // global statics.  We invoke it with `max_cores = 1` (no
         // secondaries spawned, no global atomic perturbations) so
@@ -1416,7 +1435,7 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn sm1d6_inner_zero_max_cores_returns_zero() {
+    fn inner_zero_max_cores_returns_zero() {
         let (enabled, ready, count) = fresh_local_state();
         enabled.store(true, Ordering::Release);
         let online = bring_up_secondaries_with_limit_inner(
@@ -1434,7 +1453,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1d6_inner_one_max_cores_returns_zero() {
+    fn inner_one_max_cores_returns_zero() {
         let (enabled, ready, count) = fresh_local_state();
         enabled.store(true, Ordering::Release);
         let online = bring_up_secondaries_with_limit_inner(
@@ -1449,7 +1468,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1d6_inner_two_max_cores_brings_up_first_secondary_only() {
+    fn inner_two_max_cores_brings_up_first_secondary_only() {
         let (enabled, ready, count) = fresh_local_state();
         enabled.store(true, Ordering::Release);
         let online = bring_up_secondaries_with_limit_inner(
@@ -1466,7 +1485,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1d6_inner_four_max_cores_brings_up_all_three_secondaries() {
+    fn inner_four_max_cores_brings_up_all_three_secondaries() {
         let (enabled, ready, count) = fresh_local_state();
         enabled.store(true, Ordering::Release);
         let online = bring_up_secondaries_with_limit_inner(
@@ -1487,7 +1506,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1d6_inner_oversize_saturates_to_platform_max() {
+    fn inner_oversize_saturates_to_platform_max() {
         let (enabled, ready, count) = fresh_local_state();
         enabled.store(true, Ordering::Release);
         let online = bring_up_secondaries_with_limit_inner(
@@ -1502,7 +1521,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1d6_inner_disabled_returns_zero_regardless_of_limit() {
+    fn inner_disabled_returns_zero_regardless_of_limit() {
         let (enabled, ready, count) = fresh_local_state();
         // Leave enabled = false.
         let online = bring_up_secondaries_with_limit_inner(
@@ -1524,7 +1543,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1d6_inner_short_mpidr_table_handled_defensively() {
+    fn inner_short_mpidr_table_handled_defensively() {
         // Audit-pass-1: pass an mpidr_table shorter than
         // MAX_SECONDARY_CORES and verify the inner helper caps the
         // slice end at mpidr_table.len() instead of panicking on
@@ -1545,15 +1564,10 @@ mod tests {
     }
 
     #[test]
-    fn sm1d6_inner_function_signature_pin() {
+    fn inner_function_signature_pin() {
         // SM1.D.6 audit-pass-1: pin the inner-helper ABI.
-        let _: fn(
-            usize,
-            &AtomicBool,
-            &[AtomicBool],
-            &AtomicU32,
-            &[u64],
-        ) -> u32 = bring_up_secondaries_with_limit_inner;
+        let _: fn(usize, &AtomicBool, &[AtomicBool], &AtomicU32, &[u64]) -> u32 =
+            bring_up_secondaries_with_limit_inner;
     }
 
     // ========================================================================
@@ -1587,7 +1601,7 @@ mod tests {
     /// `record_irq_dispatch_in_slice` writes its own slot without
     /// aliasing the boot slot or other secondaries.
     #[test]
-    fn sm1i6_per_core_stats_no_cross_slot_aliasing() {
+    fn per_core_stats_no_cross_slot_aliasing() {
         let slots = [
             crate::per_cpu_stats::PerCpuStats::zero(),
             crate::per_cpu_stats::PerCpuStats::zero(),
@@ -1624,7 +1638,7 @@ mod tests {
     /// secondary's primary-emitted context_id maps to its expected
     /// core_idx with no aliasing.
     #[test]
-    fn sm1i6_validate_context_id_per_core_dispatch_no_aliasing() {
+    fn validate_context_id_per_core_dispatch_no_aliasing() {
         // Primary emits context_id = idx + 1 for idx in 0..MAX_SECONDARY_CORES.
         // Verify every accepted core_idx is distinct.
         let mut accepted: [Option<usize>; 4] = [None; 4];
@@ -1654,7 +1668,7 @@ mod tests {
     /// the GICD/GICC base addresses), but the call path through the
     /// per-core helper exercises every static reference.
     #[test]
-    fn sm1i6_cross_core_init_helper_idempotent() {
+    fn cross_core_init_helper_idempotent() {
         // Repeat the per-core init pipeline twice for every secondary.
         // A future refactor that introduced ordering-dependent state
         // (e.g., a one-shot AtomicBool guard) would fail here.
@@ -1674,7 +1688,7 @@ mod tests {
     /// per-core across multiple `bring_up_secondaries_inner` calls.
     /// (`fresh_local_state` is used so the global state doesn't pollute.)
     #[test]
-    fn sm1i6_core_ready_flag_monotonic_across_repeated_bringup() {
+    fn core_ready_flag_monotonic_across_repeated_bringup() {
         let (enabled, ready, count) = fresh_local_state();
         enabled.store(true, Ordering::Release);
 
@@ -1682,7 +1696,11 @@ mod tests {
         let online1 = bring_up_secondaries_inner(&enabled, &ready, &count, &SECONDARY_MPIDR_TABLE);
         assert_eq!(online1, MAX_SECONDARY_CORES as u32);
         for (idx, slot) in ready.iter().enumerate().skip(1) {
-            assert!(slot.load(Ordering::Acquire), "after round 1: slot {} ready", idx);
+            assert!(
+                slot.load(Ordering::Acquire),
+                "after round 1: slot {} ready",
+                idx
+            );
         }
 
         // Round 2: invoke again.  The bring-up loop's per-iteration
@@ -1698,8 +1716,11 @@ mod tests {
         let online2 = bring_up_secondaries_inner(&enabled, &ready, &count, &SECONDARY_MPIDR_TABLE);
         assert_eq!(online2, MAX_SECONDARY_CORES as u32);
         for (idx, slot) in ready.iter().enumerate().skip(1) {
-            assert!(slot.load(Ordering::Acquire),
-                "after round 2: slot {} ready (monotonic)", idx);
+            assert!(
+                slot.load(Ordering::Acquire),
+                "after round 2: slot {} ready (monotonic)",
+                idx
+            );
         }
         // Monotonicity at the count level: `online_count` reports the
         // most recent round (Release semantics, not accumulation).  A
@@ -1711,7 +1732,7 @@ mod tests {
     /// Per-core stats: the cumulative total across all slots equals
     /// the sum of individual `record_*_in_slice` calls.
     #[test]
-    fn sm1i6_per_core_stats_total_equals_sum() {
+    fn per_core_stats_total_equals_sum() {
         let slots = [
             crate::per_cpu_stats::PerCpuStats::zero(),
             crate::per_cpu_stats::PerCpuStats::zero(),
@@ -1737,7 +1758,7 @@ mod tests {
     /// Cross-core SGI INTID accumulation: every kernel-reserved SGI
     /// (SM0.H, INTIDs 0..4) per-core dispatch is recorded.
     #[test]
-    fn sm1i6_per_core_sgi_dispatch_kernel_reserved_intids() {
+    fn per_core_sgi_dispatch_kernel_reserved_intids() {
         let slots = [
             crate::per_cpu_stats::PerCpuStats::zero(),
             crate::per_cpu_stats::PerCpuStats::zero(),
@@ -1751,8 +1772,12 @@ mod tests {
             }
         }
         for (idx, slot) in slots.iter().enumerate() {
-            assert_eq!(slot.sgi_count.load(Ordering::Relaxed), 5,
-                "slot {} should have 5 SGIs", idx);
+            assert_eq!(
+                slot.sgi_count.load(Ordering::Relaxed),
+                5,
+                "slot {} should have 5 SGIs",
+                idx
+            );
             // Cross-counter independence.
             assert_eq!(slot.irq_count.load(Ordering::Relaxed), 0);
             assert_eq!(slot.timer_tick_count.load(Ordering::Relaxed), 0);
@@ -1764,7 +1789,7 @@ mod tests {
     /// up exactly `i - 1` secondaries (boot core is included in the
     /// total).
     #[test]
-    fn sm1i6_cross_core_bring_up_with_limit_boundary_progression() {
+    fn cross_core_bring_up_with_limit_boundary_progression() {
         for limit in 0..=(MAX_SECONDARY_CORES + 1) {
             let (enabled, ready, count) = fresh_local_state();
             enabled.store(true, Ordering::Release);
@@ -1789,7 +1814,7 @@ mod tests {
     /// contamination.  This is the canonical "end-to-end on host"
     /// scenario.
     #[test]
-    fn sm1i6_full_cross_core_composition() {
+    fn full_cross_core_composition() {
         // Step 1: bring up all secondaries with local state.
         let (enabled, ready, count) = fresh_local_state();
         enabled.store(true, Ordering::Release);

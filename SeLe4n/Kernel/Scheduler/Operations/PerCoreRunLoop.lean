@@ -33,8 +33,20 @@ so a core reaching a no-op outcome is still fully serviced for the tick.
 
 ## Runtime lock discipline
 
-On hardware the per-core tick runs under the big kernel lock the trap handler
-holds, so the read-`timerTickOnCore`-commit is atomic.  The finer-grained
+The per-core tick runs under a kernel-entry lock, making the
+read-`timerTickOnCore`-commit atomic against other cores.  **That lock is live
+as of SM5.I (v0.32.142)**: `rust/sele4n-hal/src/kernel_entry.rs` holds it across
+every kernel entry that commits state, which is what `IO.Ref.modifyGet` cannot
+supply on its own — it is a read then a write, not a cross-core atomic, so
+without the bracket a tick racing a syscall commit loses one transition whole
+(see `Platform.FFI.modifyGetKernelState`).
+
+It is held by the entry wrapper rather than by the trap handler itself, which is
+the same exclusion at a slightly different seam: the handler calls
+`timer::handle_timer_interrupt`, and the bracket is immediately inside it around
+the Lean call.  Until v0.32.142 this paragraph described the lock as owed, and
+SMP was off by default for that reason; with the lock live the default returns
+to decision #7's `smp_enabled: true`.  The finer-grained
 `timerTickOnCoreLockSet` (SM5.D.3) cross-domain footprint over `SchedLockId`
 (object-store ⊕ run-queue ⊕ replenish-queue write locks, ascending per plan §4.4 —
 `timerTickOnCoreLockSet_pairwise_le`) certifies the 2PL acquisition order a future

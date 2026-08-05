@@ -9,7 +9,7 @@
 
 ## 1. Motivation
 
-seLe4n's information flow model (`Projection.lean:305–337`) documents four
+seLe4n's information flow model (`Projection.lean`) documents four
 accepted covert channels beyond software-only mitigation:
 
 | ID | Channel | Current Status | Target Status |
@@ -236,7 +236,7 @@ Exactly one `axiom` (`realmMemoryIsolation`). Axiom documented in
 
 Close the machine timer covert channel (CC-2) by modeling ARM's virtual counter
 offset mechanism. Currently `st.machine.timer` is excluded from
-`ObservableState` (Projection.lean:323–326). This phase models the hardware
+`ObservableState` (Projection.lean). This phase models the hardware
 mechanism that makes that exclusion physically enforceable.
 
 **New file**: `SeLe4n/Kernel/HardwarePartition/TimerIsolation.lean`
@@ -486,7 +486,7 @@ closure report.
 | W10-G | — | **Wire `PartitionSuite` into test infrastructure.** Add to `tests/` build target in `lakefile.lean`. Ensure `test_smoke.sh` runs the new suite. ~10 lines | `lakefile.lean`, `scripts/test_smoke.sh` | Trivial |
 | W10-H | — | **Extend `MainTraceHarness.lean` with partition trace.** Add a partition-aware trace scenario: create 4 domains, assign partitions, perform domain switches, output partition IDs and flush specs. Update `tests/fixtures/main_trace_smoke.expected` with new expected output. ~30 lines | `SeLe4n/Testing/MainTraceHarness.lean`, `tests/fixtures/main_trace_smoke.expected` | Small |
 | W10-I | — | **Sorry/axiom audit.** Scan all new `.lean` files for `sorry` and `axiom`. Expected result: zero `sorry`, exactly one `axiom` (`realmMemoryIsolation` in `Realm.lean`). Run: `grep -r 'sorry' SeLe4n/Kernel/HardwarePartition/` and `grep -r 'axiom' SeLe4n/Kernel/HardwarePartition/`. Document results. | — | Trivial |
-| W10-J | CC-1,2,3,4 | **Update covert channel documentation.** Rewrite the accepted covert channel block in `Projection.lean:305–337`. Under a `PartitionBoundaryContract`: CC-2 (timer) **CLOSED** by `CNTVOFF_EL2` offset isolation (W5); CC-4 (object metadata) **CLOSED** by MPAM cache partitioning (W3-E); CC-1 (scheduling) **NARROWED** — schedule is still visible but cache amplification eliminated; CC-3 (TCB metadata) **NARROWED** — priority visible to label-observable threads but preemption-pattern inference bounded by partition isolation. Document residual bandwidth for CC-1 and CC-3. ~30 lines | `Projection.lean` | Small |
+| W10-J | CC-1,2,3,4 | **Update covert channel documentation.** Rewrite the accepted covert channel block in `Projection.lean`. Under a `PartitionBoundaryContract`: CC-2 (timer) **CLOSED** by `CNTVOFF_EL2` offset isolation (W5); CC-4 (object metadata) **CLOSED** by MPAM cache partitioning (W3-E); CC-1 (scheduling) **NARROWED** — schedule is still visible but cache amplification eliminated; CC-3 (TCB metadata) **NARROWED** — priority visible to label-observable threads but preemption-pattern inference bounded by partition isolation. Document residual bandwidth for CC-1 and CC-3. ~30 lines | `Projection.lean` | Small |
 | W10-K | — | **Update `README.md`.** Add hardware partition isolation to the metrics section. Update the "Covert channel status" row. Add WS-W to the workstream table. Sync from `docs/codebase_map.json`. ~15 lines | `README.md` | Trivial |
 | W10-L | — | **Update `docs/spec/SELE4N_SPEC.md`.** Add section "§X. Hardware Partition Isolation" covering: partition correctness theorem, MPAM integration, CCA realm model, timer isolation. Reference the new Lean modules. ~40 lines | `docs/spec/SELE4N_SPEC.md` | Small |
 | W10-M | — | **Update `docs/DEVELOPMENT.md`.** Add WS-W to active workstream list. Update "Next workstreams" section. Add new module paths to source layout. ~15 lines | `docs/DEVELOPMENT.md` | Trivial |

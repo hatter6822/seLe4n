@@ -78,15 +78,15 @@ open SeLe4n.Kernel.Concurrency
 #check @TlbShootdownState.pendingOnCore
 #check @TlbShootdownState.ackOnCore
 #check @TlbShootdownState.setPendingOnCore
-#check @TlbShootdownState.setAckOnCore
+#check @TlbShootdownState.setAckedGenOnCore
 
 -- SM7.A.2 store/load reduction algebra + extensionality:
 #check @TlbShootdownState.setPendingOnCore_pendingOnCore_self
 #check @TlbShootdownState.setPendingOnCore_pendingOnCore_ne
 #check @TlbShootdownState.setPendingOnCore_ackOnCore
-#check @TlbShootdownState.setAckOnCore_ackOnCore_self
-#check @TlbShootdownState.setAckOnCore_ackOnCore_ne
-#check @TlbShootdownState.setAckOnCore_pendingOnCore
+#check @TlbShootdownState.setAckedGenOnCore_ackedGenOnCore_self
+#check @TlbShootdownState.setAckedGenOnCore_ackedGenOnCore_ne
+#check @TlbShootdownState.setAckedGenOnCore_pendingOnCore
 #check @TlbShootdownState.ext_perCore
 #check @TlbShootdownState.initial_pendingOnCore
 #check @TlbShootdownState.initial_ackOnCore
@@ -180,8 +180,8 @@ open SeLe4n.Kernel.Concurrency
 #check @beginShootdownRoundFor_frame_pending
 #check @beginShootdownRoundFor_preserves_pendingBounded
 #check @beginShootdownRoundFor_allCores_eq
-#check @foldl_setAckFalse_ackOnCore
-#check @foldl_setAckFalse_pendingOnCore
+#check @foldl_setAckedGen_ackedGenOnCore
+#check @foldl_setAckedGen_pendingOnCore
 #check @beginRoundFor_foldlM_enqueueShootdown_isSome
 #check @shootdownRoundFor_restores_quiescent
 
@@ -216,16 +216,16 @@ open SeLe4n.Kernel.Concurrency
 #check @SeLe4n.Model.default_tlbShootdown_pendingBounded
 
 -- SM7.A completion cut — FFI seam (Rust SHOOTDOWN_ACK realisation):
-#check @SeLe4n.Platform.FFI.ffiShootdownAckSet
-#check @SeLe4n.Platform.FFI.ffiShootdownAckIsSet
-#check @SeLe4n.Platform.FFI.ffiShootdownResetForRound
-#check @SeLe4n.Platform.FFI.ffiShootdownAllAcked
-#check @SeLe4n.Kernel.Concurrency.shootdownAckSet
-#check @SeLe4n.Kernel.Concurrency.shootdownAckIsSet
-#check @SeLe4n.Kernel.Concurrency.shootdownResetForRound
-#check @SeLe4n.Kernel.Concurrency.shootdownAllAcked
-#check @SeLe4n.Kernel.Concurrency.shootdownAckSet_eq_ffi
-#check @SeLe4n.Kernel.Concurrency.shootdownResetForRound_eq_ffi
+#check @SeLe4n.Platform.FFI.ffiShootdownAckRound
+#check @SeLe4n.Platform.FFI.ffiShootdownAckedGeneration
+#check @SeLe4n.Platform.FFI.ffiShootdownAllAckedForRound
+#check @SeLe4n.Platform.FFI.ffiShootdownSelfServiceRound
+#check @SeLe4n.Kernel.Concurrency.shootdownAckRound
+#check @SeLe4n.Kernel.Concurrency.shootdownAckedGeneration
+#check @SeLe4n.Kernel.Concurrency.shootdownAllAckedForRound
+#check @SeLe4n.Kernel.Concurrency.shootdownSelfServiceRound
+#check @SeLe4n.Kernel.Concurrency.shootdownAckRound_eq_ffi
+#check @SeLe4n.Kernel.Concurrency.shootdownSelfServiceRound_eq_ffi
 #check @SeLe4n.Kernel.Concurrency.shootdownAck_ffi_core_in_range
 
 -- SM7.B — invalidation-effect semantics + encoders:
@@ -361,6 +361,12 @@ open SeLe4n.Kernel.Concurrency
 #check @SeLe4n.Kernel.Concurrency.shootdownRoundLockTryAcquire
 #check @SeLe4n.Kernel.Concurrency.shootdownRoundLockRelease
 #check @SeLe4n.Kernel.Concurrency.shootdownWaitAllAcked
+-- PR #854 review: the fail-closed barriers' actual stop.  `fatalHaltAll`
+-- broadcasts the SM0.H `haltAll` SGI before parking, so the halt is
+-- system-wide rather than a park of the core that detected the fault.
+#check @SeLe4n.Kernel.Concurrency.fatalHalt
+#check @SeLe4n.Kernel.Concurrency.fatalHaltAll
+#check @SeLe4n.Kernel.haltFailClosed
 #check @SeLe4n.Kernel.Concurrency.shootdownCoreOnline
 #check @SeLe4n.Platform.FFI.ffiShootdownRoundLockTryAcquire
 #check @SeLe4n.Platform.FFI.ffiShootdownRoundLockRelease
@@ -542,6 +548,58 @@ open SeLe4n.Kernel.Concurrency
 #check @shootdownCatchUpPerCore_initiator_view
 #check @shootdownCatchUpPerCore_preserves_tlbInvalidationConsistent_perCore
 #check @shootdownRoundPerCore_cross_subsystem
+-- SM7.F.3: round-generation-tagged descriptors — a commit's catch-up drains
+-- ONLY the rounds its own commit opened, so a concurrently-posted round's
+-- work survives for its own catch-up (the SM7.B v0.32.79 fidelity debt):
+#check @SeLe4n.Kernel.Architecture.roundDescriptor
+#check @SeLe4n.Kernel.Architecture.roundDescriptor_generation
+#check @SeLe4n.Kernel.Architecture.roundDescriptor_generation_eq_opened
+#check @SeLe4n.Kernel.Architecture.roundDescriptor_inRoundWindow
+#check @SeLe4n.Kernel.Architecture.inRoundWindow
+#check @SeLe4n.Kernel.Architecture.inRoundWindow_iff
+#check @SeLe4n.Kernel.Architecture.inRoundWindow_empty
+#check @SeLe4n.Kernel.Architecture.inRoundWindow_succ_self
+#check @SeLe4n.Kernel.Architecture.drainShootdownsInWindow
+#check @SeLe4n.Kernel.Architecture.drainShootdownsInWindow_fst
+#check @SeLe4n.Kernel.Architecture.mem_drainShootdownsInWindow_fst_iff
+#check @SeLe4n.Kernel.Architecture.drainShootdownsInWindow_preserves_foreign
+#check @SeLe4n.Kernel.Architecture.drainShootdownsInWindow_drains_own
+#check @SeLe4n.Kernel.Architecture.drainShootdownsInWindow_preserves_pendingBounded
+#check @SeLe4n.Kernel.Architecture.drainShootdownsInWindow_eq_drainShootdowns
+#check @SeLe4n.Kernel.Architecture.completeShootdownOnCoreInWindow
+#check @SeLe4n.Kernel.Architecture.completeShootdownOnCoreInWindow_preserves_foreign
+#check @SeLe4n.Kernel.Architecture.completeShootdownOnCoreInWindow_eq_complete
+#check @SeLe4n.Kernel.Architecture.beginShootdownRoundFor_roundGeneration
+#check @SeLe4n.Kernel.Architecture.beginShootdownRoundFor_roundGeneration_gt
+#check @handleTlbShootdownReqOnCoreInWindow
+#check @handleTlbShootdownReqOnCoreInWindow_tlbShootdown_eq
+#check @handleTlbShootdownReqOnCoreInWindow_tlb_eq
+#check @handleTlbShootdownReqOnCoreInWindow_eq_handle
+#check @handleTlbShootdownReqOnCoreInWindow_preserves_foreign
+#check @handleTlbShootdownReqOnCoreInWindow_empty_window_tlb
+#check @handleTlbShootdownReqOnCorePerCoreInWindow
+#check @handleTlbShootdownReqOnCorePerCoreInWindow_eq_handle
+#check @handleTlbShootdownReqOnCorePerCoreInWindow_preserves_foreign
+#check @handleTlbShootdownReqOnCorePerCoreInWindow_preserves_tlbInvalidationConsistent_perCore
+#check @foldl_handleTlbShootdownReqOnCorePerCoreInWindow_preserves_foreign
+#check @shootdownCatchUpPerCoreInWindow
+#check @shootdownCatchUpPerCoreInWindow_eq_catchUp
+#check @shootdownCatchUpPerCoreInWindow_initiator_view
+#check @shootdownCatchUpPerCoreInWindow_preserves_foreign
+#check @shootdownCatchUpPerCoreInWindow_preserves_tlbInvalidationConsistent_perCore
+-- The 12th `proofLayerInvariantBundle` conjunct (`pendingBounded`) carried
+-- across the transition the live catch-up seam actually runs:
+#check @handleTlbShootdownReqOnCoreInWindow_preserves_pendingBounded
+#check @handleTlbShootdownReqOnCorePerCore_preserves_pendingBounded
+#check @handleTlbShootdownReqOnCorePerCoreInWindow_preserves_pendingBounded
+#check @foldl_handleTlbShootdownReqOnCorePerCoreInWindow_preserves_pendingBounded
+#check @shootdownCatchUpPerCore_preserves_pendingBounded
+#check @shootdownCatchUpPerCoreInWindow_preserves_pendingBounded
+#check @shootdownRoundWindow
+#check @shootdownRoundWindow_empty_of_eq
+#check @mem_shootdownPostedOps_iff
+#check @SeLe4n.Kernel.Architecture.mem_eraseDups_of_mem
+#check @SeLe4n.Kernel.Architecture.mem_of_mem_eraseDups
 -- SM7.F.1: the translation-walk fill seam (perCoreTlb made fillable):
 #check @tlbWalkEntry
 #check @tlbWalkEntry_matches
@@ -643,9 +701,11 @@ example : pendingBounded TlbShootdownState.initial :=
 -- the SM7.B.5 wait-loop-termination anchor applied to a worst-case
 -- start (a fresh round opened by core 0, so three flags are down).
 example :
-    allAcked (allCores.foldl acknowledgeShootdown
+    allAcked (allCores.foldl
+      (fun s x => acknowledgeShootdown s x
+        (beginShootdownRound TlbShootdownState.initial bootCoreId).roundGeneration)
       (beginShootdownRound TlbShootdownState.initial bootCoreId)) :=
-  allCores_foldl_acknowledgeShootdown_allAcked _
+  allCores_foldl_acknowledgeShootdown_allAcked _ (Nat.le_refl _)
 
 -- SM7.A.4: enqueue-success is exactly the strict capacity test.
 example (st : TlbShootdownState) (c : CoreId) (d : TlbShootdownDescriptor) :
@@ -795,7 +855,7 @@ example (l : SeLe4n.Kernel.Concurrency.LockId) (initiator : CoreId) :
 
 -- SM7.B.6: the Lean wait budget mirrors the HAL constant (10 ms at
 -- the 54 MHz generic timer; Rust side pinned by
--- `sm7b_wait_timeout_matches_wfe_default`).
+-- `wait_timeout_matches_wfe_default`).
 example : shootdownWaitTimeoutTicks = 540000 :=
   shootdownWaitTimeoutTicks_value
 
@@ -867,13 +927,13 @@ private def core3 : CoreId := ⟨3, by decide⟩
 -- SM7.B callers will post: page unmap, last-level unmap, ASID
 -- retirement, full flush.
 private def descUnmapPage : TlbShootdownDescriptor :=
-  { op := .vae1 5 0x1000, initiator := core0 }
+  { op := .vae1 5 0x1000, initiator := core0, generation := 1 }
 private def descLastLevel : TlbShootdownDescriptor :=
-  { op := .vale1 5 0x2000, initiator := core0 }
+  { op := .vale1 5 0x2000, initiator := core0, generation := 1 }
 private def descAsidRetire : TlbShootdownDescriptor :=
-  { op := .aside1 7, initiator := core2 }
+  { op := .aside1 7, initiator := core2, generation := 1 }
 private def descFullFlush : TlbShootdownDescriptor :=
-  { op := .vmalle1, initiator := core1 }
+  { op := .vmalle1, initiator := core1, generation := 1 }
 
 /-- Enqueue a batch of descriptors onto one target, failing (`none`) as
 soon as any single enqueue fails — the shape of an SM7.B initiator
@@ -881,6 +941,24 @@ posting a round's descriptors. -/
 private def enqueueMany (st : TlbShootdownState) (target : CoreId)
     (ds : List TlbShootdownDescriptor) : Option TlbShootdownState :=
   ds.foldlM (fun s d => enqueueShootdown s target d) st
+
+/-- **WS-SM SM7.F.3**: does the queue hold a descriptor with exactly this
+operand and initiator?
+
+Generation-agnostic on purpose: since SM7.F.3 a descriptor also carries the
+generation of the round that posted it, which is a function of how many rounds
+the state has opened so far — an implementation detail these coverage checks do
+not depend on.  What they assert is that the round's *invalidation obligation*
+reached the target. -/
+private def queueHasOp (q : List TlbShootdownDescriptor) (op : TlbInvalidation)
+    (initiator : CoreId) : Bool :=
+  q.any (fun d => d.op == op && d.initiator == initiator)
+
+/-- **WS-SM SM7.F.3**: is the queue exactly one descriptor with this operand
+and initiator?  The exact-posting form of `queueHasOp`. -/
+private def queueIsExactly (q : List TlbShootdownDescriptor)
+    (op : TlbInvalidation) (initiator : CoreId) : Bool :=
+  q.map (fun d => (d.op, d.initiator)) == [(op, initiator)]
 
 -- ----------------------------------------------------------------------------
 -- §3.1  Descriptor construction + operand round-trips (SM7.A.1)
@@ -937,7 +1015,7 @@ private def runEnqueueChecks : IO Unit := do
       (st1.pendingOnCore core1 == [descUnmapPage])
     assertBool "other cores' queues are framed"
       ([core0, core2, core3].all fun c => st1.pendingOnCore c == [])
-    assertBool "no ack flag is touched by an enqueue"
+    assertBool "no ack slot is touched by an enqueue"
       (allCores.all fun c => st1.ackOnCore c == st0.ackOnCore c)
     match enqueueShootdown st1 core1 descAsidRetire with
     | none => assertBool "second enqueue onto the same queue succeeds" false
@@ -999,7 +1077,7 @@ private def runDrainChecks : IO Unit := do
     assertBool "draining core 1 frames every other core's queue"
       ([core0, core2, core3].all fun c =>
         st'.pendingOnCore c == st.pendingOnCore c)
-    assertBool "draining touches no ack flag"
+    assertBool "draining touches no ack slot"
       (allCores.all fun c => st'.ackOnCore c == st.ackOnCore c)
     assertBool "a second drain returns nothing (exhaustive)"
       ((drainShootdowns st' core1).1 == [])
@@ -1024,17 +1102,20 @@ private def runAckRoundChecks : IO Unit := do
     (!(decide (allAcked opened)))
   assertBool "opening a round touches no pending queue"
     (allCores.all fun c => opened.pendingOnCore c == st0.pendingOnCore c)
-  let ackedTwo := acknowledgeShootdown opened core2
+  let roundGen := opened.roundGeneration
+  let ackedTwo := acknowledgeShootdown opened core2 roundGen
   assertBool "a target acknowledgment sets exactly its own flag"
     (ackedTwo.ackOnCore core2 && !(ackedTwo.ackOnCore core1) &&
      !(ackedTwo.ackOnCore core3) && ackedTwo.ackOnCore core0)
   assertBool "acknowledgment is monotone (initiator flag survives)"
-    ((acknowledgeShootdown ackedTwo core1).ackOnCore core0)
+    ((acknowledgeShootdown ackedTwo core1 roundGen).ackOnCore core0)
   assertBool "acknowledging every remaining target reaches allAcked"
     (decide (allAcked
-      (acknowledgeShootdown (acknowledgeShootdown ackedTwo core1) core3)))
+      (acknowledgeShootdown (acknowledgeShootdown ackedTwo core1 roundGen) core3
+        roundGen)))
   assertBool "folding acknowledgments over allCores reaches allAcked"
-    (decide (allAcked (allCores.foldl acknowledgeShootdown opened)))
+    (decide (allAcked (allCores.foldl
+      (fun s x => acknowledgeShootdown s x roundGen) opened)))
   assertBool "a round opened by a non-boot core marks only that core"
     (allCores.all fun c =>
       (beginShootdownRound st0 core3).ackOnCore c == (c == core3))
@@ -1047,7 +1128,8 @@ private def runFullRoundTripChecks : IO Unit := do
   IO.println "-- §3.7 full 4-core state-level shootdown round trip"
   -- Core 0 unmaps a page of ASID 5: open the round, post one page-unmap
   -- descriptor per remote core (the plan §3.2 step-2 loop).
-  let desc : TlbShootdownDescriptor := { op := .vae1 5 0x1000, initiator := core0 }
+  let desc : TlbShootdownDescriptor :=
+    { op := .vae1 5 0x1000, initiator := core0, generation := 1 }
   let opened := beginShootdownRound TlbShootdownState.initial core0
   let posted? := [core1, core2, core3].foldlM
     (fun s c => enqueueShootdown s c desc) opened
@@ -1064,7 +1146,7 @@ private def runFullRoundTripChecks : IO Unit := do
     -- then acknowledge.
     let step := fun (s : TlbShootdownState) (c : CoreId) =>
       let (drained, s') := drainShootdowns s c
-      (drained, acknowledgeShootdown s' c)
+      (drained, acknowledgeShootdown s' c s.roundGeneration)
     let (d1, s1) := step posted core1
     let (d2, s2) := step s1 core2
     let (d3, s3) := step s2 core3
@@ -1097,14 +1179,14 @@ private def runCoalescingChecks : IO Unit := do
   | some full => do
     let collapsed := enqueueShootdownOrCoalesce full core2 descAsidRetire
     assertBool "at capacity the queue collapses to a single full flush"
-      (collapsed.pendingOnCore core2 ==
-        [{ op := .vmalle1, initiator := descAsidRetire.initiator }])
+      (queueIsExactly (collapsed.pendingOnCore core2) .vmalle1
+        descAsidRetire.initiator)
     assertBool "the collapsed descriptor carries the requesting initiator"
       ((collapsed.pendingOnCore core2).all fun d => d.initiator == core2)
     assertBool "the collapse frames every other core's queue"
       ([core0, core1, core3].all fun c =>
         collapsed.pendingOnCore c == full.pendingOnCore c)
-    assertBool "the collapse touches no ack flag"
+    assertBool "the collapse touches no ack slot"
       (allCores.all fun c => collapsed.ackOnCore c == full.ackOnCore c)
     assertBool "the collapsed state satisfies the capacity invariant"
       (decide (pendingBounded collapsed))
@@ -1131,7 +1213,8 @@ private def runRoundCompositionChecks : IO Unit := do
     assertBool "a completed core's flag is acknowledged"
       (done.ackOnCore core2)
     assertBool "completing a core equals drain-then-acknowledge"
-      (done == acknowledgeShootdown (drainShootdowns st core2).2 core2)
+      (done == acknowledgeShootdown (drainShootdowns st core2).2 core2
+        st.roundGeneration)
     assertBool "completing core 2 frames core 1's flag (still down)"
       (!(done.ackOnCore core1))
   -- The full generic pipeline: begin → post (foldlM) → complete (foldl).
@@ -1143,8 +1226,22 @@ private def runRoundCompositionChecks : IO Unit := do
     let final := targets.foldl completeShootdownOnCore posted
     assertBool "the folded round ends quiescent (the capstone, computed)"
       (decide (shootdownQuiescent final))
-    assertBool "the folded round ends exactly at the boot state"
-      (final == TlbShootdownState.initial)
+    -- WS-SM SM7.F.3 (PR #854 review): a completed round returns every
+    -- *queue* to its boot value, but neither the round-generation counter
+    -- nor the acknowledgment vector — both are monotone by design.  Since
+    -- v0.32.113 an acknowledgment names the round it discharged, so a
+    -- completed round leaves every slot AT that round's generation rather
+    -- than back at a boot flag; that is what makes the state quiescent
+    -- (`roundGeneration ≤ ackedGenOnCore c` for every core) while keeping a
+    -- later round distinguishable from this one.
+    assertBool "the folded round empties every queue"
+      (final == { TlbShootdownState.initial with
+                    roundGeneration := final.roundGeneration,
+                    shootdownAck := final.shootdownAck })
+    assertBool "and leaves every core acknowledging exactly this round"
+      (allCores.all fun c => final.ackedGenOnCore c == final.roundGeneration)
+    assertBool "the completed round advanced the generation counter by exactly one"
+      (final.roundGeneration == TlbShootdownState.initial.roundGeneration + 1)
     assertBool "the closed form: visited cores' queues empty, initiator's untouched"
       (targets.all (fun c => final.pendingOnCore c == []) &&
         final.pendingOnCore core0 == opened.pendingOnCore core0)
@@ -1219,8 +1316,20 @@ private def runMaskedRoundChecks : IO Unit := do
     let final := [core1].foldl completeShootdownOnCore posted
     assertBool "the round completes without cores 2/3 ever acknowledging"
       (decide (allAcked final))
-    assertBool "the completed masked round is quiescent at the boot state"
-      (decide (shootdownQuiescent final) && final == TlbShootdownState.initial)
+    -- WS-SM SM7.F.3 (PR #854 review): queues return to boot; the
+    -- round-generation counter and the acknowledgment vector stay advanced
+    -- (both monotone by design — an acknowledgment now names its round).
+    -- The masked round's point is that cores 2/3 reach quiescence without
+    -- ever acknowledging: they are born at the round's generation.
+    assertBool "the completed masked round is quiescent with queues at boot"
+      (decide (shootdownQuiescent final) &&
+        final == { TlbShootdownState.initial with
+                     roundGeneration := final.roundGeneration,
+                     shootdownAck := final.shootdownAck })
+    assertBool "every core acknowledges the masked round, targets and non-targets alike"
+      (allCores.all fun c => final.ackedGenOnCore c == final.roundGeneration)
+    assertBool "the completed masked round advanced the generation by one"
+      (final.roundGeneration == 1)
   assertBool "smp_enabled=false shape: a no-target round is immediately done"
     (decide (allAcked (beginShootdownRoundFor TlbShootdownState.initial core0 [])))
   assertBool "all-online masked round equals the unmasked round"
@@ -1313,8 +1422,7 @@ private def runBroadcastChecks : IO Unit := do
                 (core3, .tlbShootdownReq)])
     assertBool "each target's queue holds exactly the round descriptor"
       ([core1, core2, core3].all fun c =>
-        posted.tlbShootdown.pendingOnCore c ==
-          [{ op := opUnmapTarget, initiator := core0 }])
+        queueIsExactly (posted.tlbShootdown.pendingOnCore c) opUnmapTarget core0)
     assertBool "the initiator's own queue stays empty"
       (posted.tlbShootdown.pendingOnCore core0 == [])
     assertBool "only the initiator is acknowledged after posting"
@@ -1341,13 +1449,14 @@ private def runHandlerChecks : IO Unit := do
     -- drain half: queue emptied, nothing else
     let (drainSt, drained) := tlbShootdownDrainOnCore posted core2
     assertBool "the drain half returns the posted descriptor"
-      (drained == [{ op := opUnmapTarget, initiator := core0 }])
+      (queueIsExactly drained opUnmapTarget core0)
     assertBool "the drain half does not acknowledge"
       (!(drainSt.tlbShootdown.ackOnCore core2))
     assertBool "the drain half does not touch the TLB view"
       (tlbHasEntry drainSt.tlb entryTarget)
     -- ack half: TLB effect + flag
     let ackSt := tlbShootdownAckOnCore drainSt core2 drained
+      posted.tlbShootdown.roundGeneration
     assertBool "the ack half retires the drained operand on the view"
       (!(tlbHasEntry ackSt.tlb entryTarget) &&
         tlbHasEntry ackSt.tlb entryOtherVaddr)
@@ -1426,8 +1535,8 @@ private def runCallerWrapperChecks : IO Unit := do
     | .ok ((), stUnmapped) => do
       assertBool "the unmap posts the page operand to every other core"
         ([core1, core2, core3].all fun c =>
-          stUnmapped.tlbShootdown.pendingOnCore c ==
-            [{ op := opUnmapTarget, initiator := core0 }])
+          queueIsExactly (stUnmapped.tlbShootdown.pendingOnCore c) opUnmapTarget
+            core0)
       assertBool "the unmap opens a round waited on every target"
         (allCores.all fun c =>
           stUnmapped.tlbShootdown.ackOnCore c == (c == core0))
@@ -1457,8 +1566,8 @@ private def runCallerWrapperChecks : IO Unit := do
       | .ok (result, st') =>
           result.requiresFlush &&
             [core0, core1, core3].all (fun c =>
-              (st'.tlbShootdown.pendingOnCore c).contains
-                { op := encodeAsidInvalidation ⟨5⟩, initiator := core2 })
+              queueHasOp (st'.tlbShootdown.pendingOnCore c)
+                (encodeAsidInvalidation ⟨5⟩) core2)
       | .error _ => false)
   -- capacity overflow: 17 rounds without a runtime catch-up coalesce
   let overflow := (List.range 17).foldl
@@ -1481,7 +1590,8 @@ private def runWaitLoopChecks : IO Unit := do
   let opened := beginShootdownRound TlbShootdownState.initial core0
   -- poll trace: one more target acks per poll index
   let states : Nat → TlbShootdownState := fun n =>
-    (allCores.take n).foldl acknowledgeShootdown opened
+    (allCores.take n).foldl
+      (fun s x => acknowledgeShootdown s x opened.roundGeneration) opened
   match waitAllAckedBounded 10 states with
   | none => assertBool "the wait observes the completing round" false
   | some n => do
@@ -1545,6 +1655,37 @@ private def runDiffRecoveryChecks : IO Unit := do
 -- §4.9  Completion cut: bundle carriage, commutativity, capstones,
 --        remap detection, operand collapse, round-lock model (SM7.B)
 -- ----------------------------------------------------------------------------
+
+/-- The live `.vspaceRoot` a retype destroys — carrying `asid5`. -/
+private def rtVsp : SeLe4n.ObjId := ⟨891⟩
+
+/-- The non-VSpace retype target (the negative control: posts nothing). -/
+private def rtEp : SeLe4n.ObjId := ⟨892⟩
+
+/-- The CNode holding the two retype capabilities. -/
+private def rtCn : SeLe4n.ObjId := ⟨890⟩
+
+/-- The retype-capable state driven by §4.9's CSpaceAddr sweep-closure check and
+by §8's multi-round-window group, so both exercise the same objects through the
+same production entry point (`lifecycleRetypeWithCleanupShootdown{,PerCore}`).
+The retype path's type-lockstep gate reads lifecycle metadata, hence the
+`withLifecycleObjectType` rows. -/
+private def rtMultiState : SeLe4n.Model.SystemState :=
+  let capVsp : Capability :=
+    { target := .object rtVsp, rights := AccessRightSet.ofList [.retype] }
+  let capEp : Capability :=
+    { target := .object rtEp, rights := AccessRightSet.ofList [.retype] }
+  (BootstrapBuilder.empty
+    |>.withObject rtVsp (.vspaceRoot { asid := asid5, mappings := {} })
+    |>.withObject rtEp (.endpoint {})
+    |>.withObject rtCn (.cnode
+        { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.UniqueSlotMap.ofListWF
+            [(SeLe4n.Slot.ofNat 0, capVsp), (SeLe4n.Slot.ofNat 1, capEp)] })
+    |>.withLifecycleObjectType rtVsp .vspaceRoot
+    |>.withLifecycleObjectType rtEp .endpoint
+    |>.withLifecycleObjectType rtCn .cnode
+    |>.buildChecked)
 
 private def runCompletionCutChecks : IO Unit := do
   IO.println "-- §4.9 completion cut: bundle carriage + commutativity + capstones"
@@ -1638,42 +1779,26 @@ private def runCompletionCutChecks : IO Unit := do
         | .error _ => false
         | .ok ((), stUnmapped) =>
             ([core1, core2, core3].all fun c =>
-              (stUnmapped.tlbShootdown.pendingOnCore c).contains
-                { op := opUnmapTarget, initiator := core0 }) &&
+              queueHasOp (stUnmapped.tlbShootdown.pendingOnCore c) opUnmapTarget
+                core0) &&
             (match vspaceMapPageCheckedWithShootdownFromState core0 asid5
                 vaddrPage (SeLe4n.PAddr.ofNat 0x6000) .readOnly stUnmapped with
              | .ok ((), stRemapped) =>
                  decide (stRemapped.tlbShootdown = stUnmapped.tlbShootdown) &&
                  decide (pendingBounded stRemapped.tlbShootdown)
              | .error _ => false))
-  -- (i) the CSpaceAddr retype-with-shootdown sibling (sweep closure)
-  let rtVsp : SeLe4n.ObjId := ⟨891⟩
-  let rtEp : SeLe4n.ObjId := ⟨892⟩
-  let rtCn : SeLe4n.ObjId := ⟨890⟩
-  let rtCapVsp : Capability :=
-    { target := .object rtVsp, rights := AccessRightSet.ofList [.retype] }
-  let rtCapEp : Capability :=
-    { target := .object rtEp, rights := AccessRightSet.ofList [.retype] }
-  let rtSt := (BootstrapBuilder.empty
-    |>.withObject rtVsp (.vspaceRoot { asid := asid5, mappings := {} })
-    |>.withObject rtEp (.endpoint {})
-    |>.withObject rtCn (.cnode
-        { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.UniqueSlotMap.ofListWF
-            [(SeLe4n.Slot.ofNat 0, rtCapVsp), (SeLe4n.Slot.ofNat 1, rtCapEp)] })
-    -- The retype path's type-lockstep gate reads lifecycle metadata.
-    |>.withLifecycleObjectType rtVsp .vspaceRoot
-    |>.withLifecycleObjectType rtEp .endpoint
-    |>.withLifecycleObjectType rtCn .cnode
-    |>.buildChecked)
+  -- (i) the CSpaceAddr retype-with-shootdown sibling (sweep closure).  The
+  -- state is `rtMultiState` (top level, §8) so this group and §8's
+  -- multi-round-window group drive the same objects through the same entry.
+  let rtSt := rtMultiState
   assertBool "the CSpaceAddr retype of a live vspaceRoot posts the .aside1 round"
     (match SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdown core0
         { cnode := rtCn, slot := SeLe4n.Slot.ofNat 0 } rtVsp
         (.endpoint {}) rtSt with
      | .ok ((), st') =>
          [core1, core2, core3].all (fun c =>
-           (st'.tlbShootdown.pendingOnCore c).contains
-             { op := encodeAsidInvalidation asid5, initiator := core0 }) &&
+           queueHasOp (st'.tlbShootdown.pendingOnCore c)
+             (encodeAsidInvalidation asid5) core0) &&
          decide (pendingBounded st'.tlbShootdown)
      | .error _ => false)
   let rtNewNtfn : SeLe4n.Model.KernelObject :=
@@ -1744,8 +1869,7 @@ private def runLiveDispatchChecks : IO Unit := do
         | .ok _ => false)
     assertBool "the live unmap posts the page operand to every other core"
       ([core1, core2, core3].all fun c =>
-        (st'.tlbShootdown.pendingOnCore c).contains
-          { op := opUnmapTarget, initiator := core0 })
+        queueHasOp (st'.tlbShootdown.pendingOnCore c) opUnmapTarget core0)
     assertBool "the live unmap keeps the initiator's queue empty"
       (st'.tlbShootdown.pendingOnCore core0 == [])
     assertBool "the live unmap preserves the capacity conjunct"
@@ -1861,8 +1985,7 @@ private def runPerCoreTlbBroadcastChecks : IO Unit := do
     -- that makes perCoreTlb a genuine consumer of tlbShootdown).
     assertBool "the broadcast posts the operand to every target's shootdown queue"
       ([core1, core2, core3].all fun c =>
-        (st'.tlbShootdown.pendingOnCore c).contains
-          { op := opUnmapTarget, initiator := core0 })
+        queueHasOp (st'.tlbShootdown.pendingOnCore c) opUnmapTarget core0)
     assertBool "the broadcast keeps the initiator's shootdown queue empty"
       (st'.tlbShootdown.pendingOnCore core0 == [])
     -- SM7.B/C: the shootdown capacity conjunct (12th) is preserved.
@@ -2154,13 +2277,15 @@ private def runPerCoreTlbCoalescingOverflowChecks : IO Unit := do
       core1 { entries := [entryOtherVaddr] }
     -- First visit: queue is (max-1) < max ⇒ op (keeps the op-unrelated entry).
     -- Second visit: the fold's evolved queue is now = max ⇒ coalesce ⇒ full flush.
-    let dupView := shootdownRoundViewsCoalescing viewsSeeded sdNearFull core0
+    let dupView := shootdownRoundViewsCoalescing viewsSeeded sdNearFull
+      (roundDescriptor sdNearFull core0 opUnmapTarget) core0
       [core1, core1] opUnmapTarget
     assertBool "a duplicate target that overflows on its second visit is full-flushed (Finding 4)"
       ((dupView.get core1).entries.isEmpty)
     -- With a single visit (no overflow) the same seed keeps the op-unrelated entry —
     -- confirming the full flush above is genuinely the second-visit coalesce.
-    let singleView := shootdownRoundViewsCoalescing viewsSeeded sdNearFull core0
+    let singleView := shootdownRoundViewsCoalescing viewsSeeded sdNearFull
+      (roundDescriptor sdNearFull core0 opUnmapTarget) core0
       [core1] opUnmapTarget
     assertBool "a single (non-overflowing) visit keeps the op-unrelated entry"
       (tlbHasEntry (singleView.get core1) entryOtherVaddr)
@@ -2206,8 +2331,8 @@ private def runPerCoreTlbLiveLifecycleChecks : IO Unit := do
       assertBool "the remote mapping core still holds the (now-stale) entry before catch-up"
         ((tlbOnCore stUnmapA core1).entries.any (fun e => e.asid == asid5 && e.vaddr == vaddrPage))
       assertBool "the unmap posts a covering descriptor to the remote mapping core"
-        ((stUnmapA.tlbShootdown.pendingOnCore core1).contains
-          { op := opUnmapTarget, initiator := core0 })
+        ((stUnmapA.tlbShootdown.pendingOnCore core1).any
+          (fun d => d.op == opUnmapTarget && d.initiator == core0))
       assertBool "the initiator's own view was retired atomically with the unmap (F.4(b)(i))"
         (!((tlbOnCore stUnmapA core0).entries.any (fun e => e.asid == asid5 && e.vaddr == vaddrPage)))
       assertBool "the committed post-unmap state keeps the per-core checker GREEN (pending disjunct)"
@@ -2222,6 +2347,83 @@ private def runPerCoreTlbLiveLifecycleChecks : IO Unit := do
         (!((tlbOnCore stFinal core1).entries.any (fun e => e.asid == asid5 && e.vaddr == vaddrPage)))
       assertBool "the catch-up drains the remote target's shootdown queue"
         ((stFinal.tlbShootdown.pendingOnCore core1).isEmpty)
+      assertBool "after the catch-up the per-core checker is GREEN"
+        (tlbInvalidationConsistentCheck_perCore stFinal)
+
+-- ----------------------------------------------------------------------------
+-- §5.11  SM7.F.5 — the ACCESS-time fill: the plan's acceptance criterion
+--         ("map → access (fill) → cross-core unmap") with a genuine *access*.
+--
+--         §5.10 above walks map → fill → unmap, but its fill is the *mapping*
+--         core caching what it just installed.  Until SM7.F.5 that was the
+--         only fill in the model, so a core that merely ACCESSED a page some
+--         other core had mapped cached nothing, and both Theorem 3.3.1 and the
+--         13th bundle conjunct were vacuous for it — the common case on real
+--         hardware, and exactly the case a shootdown exists to handle.
+--
+--         Here core1 maps, **core0 accesses** (the kernel's own IPC-buffer walk
+--         while decoding a syscall's overflow message registers — the seam
+--         `syscallEntryChecked` now runs), and core1 then unmaps cross-core.
+-- ----------------------------------------------------------------------------
+
+private def runPerCoreTlbAccessFillChecks : IO Unit := do
+  IO.println "-- §5.11 per-core TLB: access-time IPC-buffer fill (SM7.F.5)"
+  -- `udState`'s caller has its IPC buffer at `vaddrPage`, in the `asid5` root.
+  -- core1 maps that page; only core1 caches it (the F.4 mapping-seam fill).
+  match vspaceMapPageCheckedWithShootdownFromStatePerCore core1 asid5 vaddrPage
+      (SeLe4n.PAddr.ofNat 0x2000) .readOnly (udState []) with
+  | .error _ => assertBool "the live per-core map succeeds" false
+  | .ok ((), stMapB) => do
+    assertBool "before any access, the non-mapping core has cached nothing"
+      ((tlbOnCore stMapB core0).entries.isEmpty)
+    -- core0 decodes a syscall for that thread carrying ONE overflow message
+    -- register: the kernel walks the caller's IPC buffer, and that walk fills
+    -- core0's TLB — a core caching a translation it did NOT establish.
+    let stAccessed := tlbFillIpcBufferOnCore stMapB core0 udCaller 1
+    assertBool "the access-time walk caches the IPC-buffer page on the ACCESSING core (SM7.F.5)"
+      ((tlbOnCore stAccessed core0).entries.any
+        (fun e => e.asid == asid5 && e.vaddr == vaddrPage))
+    -- The load-bearing negative: a decode that read no overflow slot performs
+    -- no walk, so it caches nothing.  Without this, "the fill fires" could be
+    -- satisfied by a fill that always fires.
+    assertBool "a decode with no overflow registers performs no walk and caches nothing"
+      ((tlbOnCore (tlbFillIpcBufferOnCore stMapB core0 udCaller 0) core0).entries.isEmpty)
+    assertBool "the access-time fill is core-local — no other core cached it"
+      ([core2, core3].all fun c => (tlbOnCore stAccessed c).entries.isEmpty)
+    assertBool "the access-time fill keeps the per-core checker green (consistent by construction)"
+      (tlbInvalidationConsistentCheck_perCore stAccessed)
+    assertBool "the access-time fill posts no shootdown — it is a pure TLB-model event"
+      (decide (shootdownQuiescent stAccessed.tlbShootdown))
+    -- Correspondence: the entry cached is the translation the READ resolved.
+    -- The read goes tid → tcb.vspaceRoot → root; the fill goes asid →
+    -- resolveAsidRoot.  Two routes, and this pins that they agree.
+    match SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr stAccessed udCaller 0 with
+    | .error _ => assertBool "the IPC-buffer read the fill models actually succeeds" false
+    | .ok _ =>
+      assertBool "the cached entry's physical page is the one the read resolves through"
+        ((tlbOnCore stAccessed core0).entries.any
+          (fun e => e.vaddr == vaddrPage && e.paddr == SeLe4n.PAddr.ofNat 0x2000))
+    -- Now the cross-core unmap: core1 tears the mapping down.  core0's cached
+    -- entry — acquired purely by ACCESS — is exactly what the shootdown must
+    -- reach.  Before SM7.F.5 there was no such entry to reach.
+    match vspaceUnmapPageWithShootdownPerCore core1 asid5 vaddrPage stAccessed with
+    | .error _ => assertBool "the live cross-core unmap succeeds" false
+    | .ok ((), stUnmapB) => do
+      assertBool "the accessing core still holds its (now-stale) entry before catch-up"
+        ((tlbOnCore stUnmapB core0).entries.any
+          (fun e => e.asid == asid5 && e.vaddr == vaddrPage))
+      assertBool "the unmap posts a covering descriptor to the ACCESSING core"
+        ((stUnmapB.tlbShootdown.pendingOnCore core0).any
+          (fun d => d.op == opUnmapTarget && d.initiator == core1))
+      assertBool "the committed post-unmap state stays GREEN (stale but covered)"
+        (tlbInvalidationConsistentCheck_perCore stUnmapB)
+      -- The closure: the catch-up removes the access-acquired stale entry.
+      let stFinal := shootdownCatchUpPerCore stUnmapB core1 [opUnmapTarget]
+      assertBool "the catch-up removes the ACCESS-acquired stale entry (SM7.F.5 acceptance)"
+        (!((tlbOnCore stFinal core0).entries.any
+          (fun e => e.asid == asid5 && e.vaddr == vaddrPage)))
+      assertBool "the catch-up drains the accessing core's shootdown queue"
+        ((stFinal.tlbShootdown.pendingOnCore core0).isEmpty)
       assertBool "after the catch-up the per-core checker is GREEN"
         (tlbInvalidationConsistentCheck_perCore stFinal)
 
@@ -2336,7 +2538,8 @@ private def runShootdownBackpressureChecks
       (stressOpOf core0)
   assertBool "the seventeenth round collapses each full queue to one full flush"
     ([core1, core2, core3].all fun c =>
-      at17.tlbShootdown.pendingOnCore c == [{ op := .vmalle1, initiator := core0 }])
+      (at17.tlbShootdown.pendingOnCore c).map (·.op) == [TlbInvalidation.vmalle1] &&
+        (at17.tlbShootdown.pendingOnCore c).all (fun d => d.initiator == core0))
   assertBool "backpressure never breaches the capacity conjunct"
     (decide (pendingBounded at16.tlbShootdown) &&
       decide (pendingBounded at17.tlbShootdown))
@@ -2442,9 +2645,9 @@ private def runConcurrentUnmapStressChecks : IO Unit := do
       -- descriptors the OTHER three initiators posted, in initiation order.
       assertBool "each core queues exactly the three remote initiators' descriptors"
         (allCores.all fun c =>
-          stStorm.tlbShootdown.pendingOnCore c ==
+          (stStorm.tlbShootdown.pendingOnCore c).map (fun d => (d.op, d.initiator)) ==
             (stressAssignments.filter (fun a => a.1 != c)).map
-              (fun a => { op := encodePageInvalidation asid5 a.2.1, initiator := a.1 }))
+              (fun a => (encodePageInvalidation asid5 a.2.1, a.1)))
       assertBool "no core queues its own round (the initiator is never a target)"
         (allCores.all fun c =>
           !((stStorm.tlbShootdown.pendingOnCore c).any fun d => d.initiator == c))
@@ -2467,6 +2670,413 @@ private def runConcurrentUnmapStressChecks : IO Unit := do
       assertBool "mid-storm the pending-aware per-core invariant is GREEN"
         (tlbInvalidationConsistentCheck_perCore stStorm)
       runConcurrentUnmapDrainChecks stFilled stStorm
+
+-- ----------------------------------------------------------------------------
+-- §8  SM7.F.3 — round-generation-tagged descriptors: a commit's catch-up
+--     drains ONLY its own rounds
+--
+--     The model posting and the model catch-up are two separate atomic
+--     commits, and only the *hardware* round runs under `SHOOTDOWN_ROUND_LOCK`.
+--     So a concurrently-committed round can post descriptors between them.  A
+--     whole-queue catch-up would swallow that round's freshly-queued work and
+--     declare the model quiescent before its SGIs had fired — the model
+--     claiming a core clean of an invalidation the hardware had not yet
+--     performed.  Keying the drain on the commit's own round-generation window
+--     closes it; this group exercises the closure on the SAME real
+--     page-table-backed storm state §6 builds.
+-- ----------------------------------------------------------------------------
+
+/-- The generation window a commit that opened exactly the rounds between
+`pre` and `post` recovers from its own state diff — what the live seam passes
+to `shootdownCatchUpPerCoreInWindow`. -/
+private def windowOf (pre post : SeLe4n.Model.SystemState) : Nat × Nat :=
+  shootdownRoundWindow pre post
+
+/-- §8 part (10): the second ASID of a **multi-round** retype.  Retyping a live
+`.vspaceRoot` into a *different* `.vspaceRoot` puts two distinct ASIDs in the
+flush set (`retypeShootdownAsidList`), and the wrapper opens one round per ASID
+— the only production path whose single commit opens more than one round, and
+therefore the only one whose recovered window is wider than a single
+generation. -/
+private def rtAsidNew : SeLe4n.ASID := ⟨9⟩
+
+/-- §8 part (10): the object a multi-round retype installs — a fresh
+`.vspaceRoot` under `rtAsidNew`, so the destroyed (`asid5`) and installed
+(`rtAsidNew`) ASIDs differ and neither is deduplicated away. -/
+private def rtNewVsp : SeLe4n.Model.KernelObject :=
+  .vspaceRoot { asid := rtAsidNew, mappings := {} }
+
+
+private def runRoundWindowChecks : IO Unit := do
+  -- (1) Generation allocation: the counter boots at 0, a round open advances
+  -- it by exactly one, and the round's descriptors carry that value.
+  assertBool "the boot shootdown state is at generation 0"
+    (TlbShootdownState.initial.roundGeneration == 0)
+  let opened := beginShootdownRoundFor TlbShootdownState.initial core0
+    (shootdownTargets core0)
+  assertBool "a round open allocates the next generation"
+    (opened.roundGeneration == 1)
+  assertBool "the posted descriptor carries the opened round's generation"
+    ((roundDescriptor TlbShootdownState.initial core0 opUnmapTarget).generation
+      == opened.roundGeneration)
+  assertBool "opening a round never touches a pending queue"
+    (allCores.all fun c => opened.pendingOnCore c == [])
+  -- (2) The window predicate: a commit that opened one round admits exactly
+  -- that generation; a commit that opened none admits nothing.
+  assertBool "the round's own generation is inside its commit's window"
+    (inRoundWindow 0 1 1)
+  assertBool "an earlier round's generation is outside the window"
+    (!(inRoundWindow 1 2 1))
+  assertBool "a later round's generation is outside the window"
+    (!(inRoundWindow 0 1 2))
+  assertBool "a commit that opened no round has an empty window"
+    ([0, 1, 2, 3, 7].all fun g => !(inRoundWindow 5 5 g))
+  -- (3) The race, on the real storm state.  Core 0's commit opened round 1;
+  -- cores 1..3 then committed rounds 2..4 before any catch-up ran.
+  match stressFilled?, stressStormed? with
+  | none, _ => assertBool "the storm scenario builds" false
+  | _, none => assertBool "all four concurrent unmaps commit" false
+  | some stFilled, some stStorm => do
+    assertBool "four concurrent commits allocated four distinct generations"
+      (stFilled.tlbShootdown.roundGeneration == 0 &&
+        stStorm.tlbShootdown.roundGeneration == 4)
+    assertBool "each queued descriptor carries its own initiator's generation"
+      (allCores.all fun c =>
+        (stStorm.tlbShootdown.pendingOnCore c).all fun d =>
+          match stressAssignments.findIdx? (fun a => a.1 == d.initiator) with
+          | some i => d.generation == i + 1
+          | none => false)
+    -- Core 0's catch-up: its own commit's window is (0, 1].
+    let window0 : Nat × Nat := (0, 1)
+    let caught0 := shootdownCatchUpPerCoreInWindow stStorm core0
+      [stressOpOf core0] window0.1 window0.2
+    assertBool "core 0's catch-up drains its OWN round's descriptors"
+      ([core1, core2, core3].all fun c =>
+        !((caught0.tlbShootdown.pendingOnCore c).any fun d => d.generation == 1))
+    assertBool "core 0's catch-up leaves every CONCURRENT round's work pending"
+      ([core2, core3].all fun c =>
+        (caught0.tlbShootdown.pendingOnCore c).length == 2)
+    assertBool "the surviving descriptors are exactly the other rounds'"
+      ([core2, core3].all fun c =>
+        (caught0.tlbShootdown.pendingOnCore c).all fun d => d.generation > 1)
+    -- The contrast: the pre-SM7.F.3 whole-queue catch-up drains everything,
+    -- so the model would report quiescence with three rounds' SGIs unfired.
+    let caughtAll := shootdownCatchUpPerCore stStorm core0 [stressOpOf core0]
+    assertBool "a whole-queue catch-up would have swallowed the concurrent rounds"
+      ([core1, core2, core3].all fun c =>
+        (caughtAll.tlbShootdown.pendingOnCore c).isEmpty)
+    assertBool "the window catch-up and the whole-queue catch-up genuinely differ here"
+      (!(caught0.tlbShootdown == caughtAll.tlbShootdown))
+    -- (4) The window catch-up is still SOUND: it removes exactly its own
+    -- round's covered entries, and the pending-aware invariant holds.
+    assertBool "core 0's round is retired on every remote view by its own catch-up"
+      ([core1, core2, core3].all fun c =>
+        !(viewCaches caught0 c (SeLe4n.VAddr.ofNat 0x1000)))
+    assertBool "the other rounds' pages survive on the cores that did not initiate them"
+      (viewCaches caught0 core1 (SeLe4n.VAddr.ofNat 0x3000))
+    assertBool "after the window catch-up the pending-aware checker is GREEN"
+      (tlbInvalidationConsistentCheck_perCore caught0)
+    -- (5) Every round's own catch-up, run in turn, ends quiescent — nothing is
+    -- lost by refusing to drain a foreign round.
+    let allCaught :=
+      (List.range 4).foldl
+        (fun st i =>
+          let c := (stressAssignments[i]?).map (·.1) |>.getD core0
+          shootdownCatchUpPerCoreInWindow st c [stressOpOf c] i (i + 1))
+        stStorm
+    assertBool "running every commit's own catch-up drains every queue"
+      (allCores.all fun c => (allCaught.tlbShootdown.pendingOnCore c).isEmpty)
+    assertBool "and leaves no core caching any of the four unmapped pages"
+      (allCores.all fun c =>
+        stressAssignments.all fun a => !(viewCaches allCaught c a.2.1))
+    assertBool "the fully-caught-up state is per-core consistent"
+      (tlbInvalidationConsistentCheck_perCore allCaught)
+  -- (6) The bridge: with a SINGLE round in flight (the serialised regime), the
+  -- window catch-up IS the whole-queue catch-up — nothing about an ordinary
+  -- one-round commit changes.
+  match stressFilled? with
+  | none => assertBool "the storm scenario builds" false
+  | some stFilled => do
+    match vspaceUnmapPageWithShootdownPerCore core0 asid5
+        (SeLe4n.VAddr.ofNat 0x1000) stFilled with
+    | .error _ => assertBool "the single live unmap commits" false
+    | .ok ((), stOne) => do
+      let w := windowOf stFilled stOne
+      assertBool "a single-round commit's window is exactly one generation wide"
+        (w.1 == 0 && w.2 == 1)
+      -- `SystemState` has no `BEq`, so compare the fields the two catch-ups
+      -- can differ on: the shootdown queues/flags and every core's TLB view.
+      let inWin := shootdownCatchUpPerCoreInWindow stOne core0 [stressOpOf core0] w.1 w.2
+      let whole := shootdownCatchUpPerCore stOne core0 [stressOpOf core0]
+      assertBool "under round serialisation the window catch-up IS the whole-queue catch-up"
+        (inWin.tlbShootdown == whole.tlbShootdown && sameViews inWin whole)
+      -- (7) Diff-recovery precision: the operands the runtime broadcasts and
+      -- publishes are exactly this commit's own window's.
+      assertBool "the diff-recovered operand list is this commit's own round's"
+        (shootdownPostedOps stFilled stOne == [stressOpOf core0])
+      assertBool "the diff-recovered changed-target set is every remote core"
+        (shootdownChangedTargets stFilled stOne == shootdownTargets core0)
+  -- (8) Inertness: a commit that opened no round recovers an empty window and
+  -- its catch-up is a no-op on every queue and view.
+  match stressFilled? with
+  | none => assertBool "the storm scenario builds" false
+  | some stFilled => do
+    let w := windowOf stFilled stFilled
+    assertBool "a no-round commit recovers an empty window"
+      (w.1 == w.2)
+    assertBool "a no-round commit changes no target"
+      (shootdownChangedTargets stFilled stFilled == [])
+    let inert := shootdownCatchUpPerCoreInWindow stFilled core0 [] w.1 w.2
+    assertBool "an empty-window catch-up drains nothing"
+      (allCores.all fun c =>
+        inert.tlbShootdown.pendingOnCore c == stFilled.tlbShootdown.pendingOnCore c)
+    assertBool "an empty-window catch-up retires nothing from any view"
+      (allCores.all fun c =>
+        (tlbOnCore inert c).entries.length == (tlbOnCore stFilled c).entries.length)
+
+/-- §8, part 2 of 3: the 12th `proofLayerInvariantBundle` conjunct
+(`pendingBounded`) across the window catch-up.  Split out per the CLAUDE.md
+thin-dispatcher guidance — a single `do`-block holding all three parts runs
+past the ~150-line bracket-depth threshold. -/
+private def runRoundWindowBoundChecks : IO Unit := do
+  -- (9) Invariant-bundle carriage: the 12th `proofLayerInvariantBundle`
+  -- conjunct (`pendingBounded`) survives the window catch-up — the transition
+  -- the live seam actually runs.  A window drain deliberately leaves foreign
+  -- descriptors queued, so unlike a whole-queue drain it does NOT trivially
+  -- empty the queues; the bound has to be carried, and
+  -- `shootdownCatchUpPerCoreInWindow_preserves_pendingBounded` is what carries
+  -- it.  Checked at the exact point the drain is weakest: mid-storm, with three
+  -- concurrent rounds' work still pending.
+  match stressStormed? with
+  | none => assertBool "all four concurrent unmaps commit" false
+  | some stStorm => do
+    assertBool "the mid-storm state satisfies the shootdown capacity conjunct"
+      (decide (pendingBounded stStorm.tlbShootdown))
+    let caught0 := shootdownCatchUpPerCoreInWindow stStorm core0
+      [stressOpOf core0] 0 1
+    assertBool "the window catch-up preserves the shootdown capacity conjunct"
+      (decide (pendingBounded caught0.tlbShootdown))
+    assertBool "and it did so with foreign descriptors genuinely left queued"
+      ([core2, core3].all fun c =>
+        !(caught0.tlbShootdown.pendingOnCore c).isEmpty)
+    assertBool "the whole-queue catch-up preserves it too"
+      (decide (pendingBounded
+        (shootdownCatchUpPerCore stStorm core0 [stressOpOf core0]).tlbShootdown))
+    assertBool "every commit's own catch-up, run in turn, keeps the bound"
+      (decide (pendingBounded
+        ((List.range 4).foldl
+          (fun st i =>
+            let c := (stressAssignments[i]?).map (·.1) |>.getD core0
+            shootdownCatchUpPerCoreInWindow st c [stressOpOf c] i (i + 1))
+          stStorm).tlbShootdown))
+
+/-- §8, part 3 of 3: a round window WIDER than one generation — the live
+two-ASID retype.  Split out per the CLAUDE.md thin-dispatcher guidance. -/
+private def runRoundWindowWidthChecks : IO Unit := do
+  -- (10) A window WIDER than one generation.  Every other group here exercises
+  -- a one-round commit, where `roundGen := window.2` and a width-1 window would
+  -- be indistinguishable from a correct one.  Retyping a live `.vspaceRoot` into
+  -- a *different* `.vspaceRoot` is the production path that breaks that tie: its
+  -- flush set holds two distinct ASIDs, so ONE commit opens TWO rounds and the
+  -- recovered window must admit both.  A width-1 window would strand the first
+  -- round's descriptors on every remote core — the model reporting quiescence
+  -- with an ASID's translations still cached.
+  let stPre := rtMultiState
+  assertBool "a two-ASID retype's flush set holds both the destroyed and installed ASID"
+    (SeLe4n.Kernel.retypeShootdownAsidList stPre rtVsp rtNewVsp == [asid5, rtAsidNew])
+  match SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdownPerCore core0
+      { cnode := rtCn, slot := SeLe4n.Slot.ofNat 0 } rtVsp rtNewVsp stPre with
+  | .error _ => assertBool "the two-ASID retype commits" false
+  | .ok ((), stPost) => do
+    let w := windowOf stPre stPost
+    assertBool "one commit opened two rounds, so its window is two generations wide"
+      (w.1 == 0 && w.2 == 2)
+    assertBool "both rounds' descriptors are queued on every remote core"
+      ([core1, core2, core3].all fun c =>
+        queueHasOp (stPost.tlbShootdown.pendingOnCore c)
+          (encodeAsidInvalidation asid5) core0 &&
+        queueHasOp (stPost.tlbShootdown.pendingOnCore c)
+          (encodeAsidInvalidation rtAsidNew) core0)
+    assertBool "the two queued descriptors carry generations 1 and 2"
+      ([core1, core2, core3].all fun c =>
+        ((stPost.tlbShootdown.pendingOnCore c).map (·.generation)) == [1, 2])
+    assertBool "a two-round commit still respects the capacity bound"
+      (decide (pendingBounded stPost.tlbShootdown))
+    -- The commit's own catch-up drains BOTH of its rounds.
+    let caught := shootdownCatchUpPerCoreInWindow stPost core0
+      (shootdownPostedOps stPre stPost) w.1 w.2
+    assertBool "the commit's own catch-up drains both of its rounds"
+      (allCores.all fun c => (caught.tlbShootdown.pendingOnCore c).isEmpty)
+    assertBool "and the fully-drained state satisfies the capacity conjunct"
+      (decide (pendingBounded caught.tlbShootdown))
+    -- The tie-breaker: a width-1 window (the bug a single-round test cannot
+    -- see) strands the FIRST round's descriptors on every remote core.
+    let narrow := shootdownCatchUpPerCoreInWindow stPost core0
+      (shootdownPostedOps stPre stPost) 1 2
+    assertBool "a width-1 window would strand the first round on every remote core"
+      ([core1, core2, core3].all fun c =>
+        (narrow.tlbShootdown.pendingOnCore c).map (·.generation) == [1])
+    -- Diff recovery is window-restricted too: the runtime broadcasts and
+    -- publishes BOTH operands, deduplicated, and nothing else.
+    assertBool "the diff-recovered operand list is both rounds' operands"
+      (shootdownPostedOps stPre stPost ==
+        [encodeAsidInvalidation asid5, encodeAsidInvalidation rtAsidNew])
+    assertBool "the diff-recovered changed-target set is every remote core"
+      (shootdownChangedTargets stPre stPost == shootdownTargets core0)
+
+/-- §8.4 (PR #854 review): the model acknowledgment names the round it
+discharged.
+
+Until v0.32.113 `shootdownAck` was a `Vector Bool` and the window
+catch-up set it unconditionally, so a catch-up that deliberately drained
+only its own generation window still claimed every concurrently-posted
+round as acknowledged: the queues were generation-selective but the
+acknowledgment was not, and `allAcked` could read true with a foreign
+round's descriptors still pending.  These checks are the model-side
+counterpart of the Rust
+`newer_round_acks_cannot_satisfy_an_older_unexecuted_round`. -/
+private def runGenerationAwareAckChecks : IO Unit := do
+  IO.println "-- §8.4 SM7.F.3 generation-aware model acknowledgment"
+  -- Round A (generation 1, initiator core0) posts to the other three.
+  let opened := beginShootdownRound TlbShootdownState.initial core0
+  let descA : TlbShootdownDescriptor :=
+    { op := .vae1 5 0x1000, initiator := core0, generation := 1 }
+  let postedA := ((([core1, core2, core3]).foldlM
+    (fun s c => enqueueShootdown s c descA) opened).getD opened)
+  -- Round B (generation 2, initiator core1) commits before A's deferred
+  -- catch-up runs — the interleaving the whole SM7.F.3 cut is about.
+  let openedB := beginShootdownRound postedA core1
+  let descB : TlbShootdownDescriptor :=
+    { op := .vae1 9 0x2000, initiator := core1, generation := 2 }
+  let postedB := ((([core0, core2, core3]).foldlM
+    (fun s c => enqueueShootdown s c descB) openedB).getD openedB)
+  assertBool "core2 holds both rounds' descriptors before any catch-up"
+    ((postedB.pendingOnCore core2).length == 2)
+  -- A's catch-up runs its own window (0, 1] on core2.
+  let afterA := completeShootdownOnCoreInWindow postedB core2 0 1
+  assertBool "A's catch-up drains only A's descriptor"
+    ((afterA.pendingOnCore core2).length == 1 &&
+      (afterA.pendingOnCore core2).all fun d => d.generation == 2)
+  -- THE fix: A's catch-up acknowledged generation 1, so B's round — the
+  -- round currently open — is still genuinely owed on core2.
+  assertBool "A's catch-up acknowledges exactly its own window"
+    (afterA.ackedGenOnCore core2 == 1)
+  assertBool "A's catch-up does NOT acknowledge B's round"
+    (!(afterA.ackOnCore core2))
+  assertBool "so the round in flight is not reported all-acknowledged"
+    (!(decide (allAcked afterA)))
+  -- The load-bearing negative: the pre-fix unconditional acknowledgment
+  -- would have marked core2 acknowledged here, and with the other two
+  -- targets' catch-ups likewise it would have reported B's round complete
+  -- with B's descriptors still queued.
+  -- A's catch-up over ALL of A's targets, plus A's own initiator core0
+  -- (which holds only B's descriptor) — the whole commit's catch-up.
+  let afterAllA :=
+    completeShootdownOnCoreInWindow
+      (completeShootdownOnCoreInWindow
+        (completeShootdownOnCoreInWindow afterA core1 0 1) core3 0 1) core0 0 1
+  assertBool "A's catch-up drained every A descriptor"
+    (allCores.all fun c =>
+      (afterAllA.pendingOnCore c).all fun d => d.generation == 2)
+  assertBool "no combination of A-window catch-ups completes B's round"
+    (!(decide (allAcked afterAllA)))
+  assertBool "and B's descriptors are all still pending"
+    (allCores.all fun c =>
+      c == core1 || (afterAllA.pendingOnCore c).any fun d => d.generation == 2)
+  -- B's own catch-up is what completes B's round.
+  let afterB :=
+    completeShootdownOnCoreInWindow
+      (completeShootdownOnCoreInWindow
+        (completeShootdownOnCoreInWindow afterAllA core0 1 2) core2 1 2) core3 1 2
+  assertBool "B's catch-up acknowledges B's round on every target"
+    (decide (allAcked afterB))
+  assertBool "and leaves the state quiescent"
+    (decide (shootdownQuiescent afterB))
+  -- Well-formedness holds throughout: no slot ever names an unopened round.
+  assertBool "every state on the path is ack-bounded"
+    (decide (ackBounded opened) && decide (ackBounded postedB) &&
+      decide (ackBounded afterA) && decide (ackBounded afterB))
+  -- Monotonicity: an acknowledgment never retracts a newer one.
+  assertBool "a late older-round acknowledgment cannot retract a newer one"
+    ((acknowledgeShootdown afterB core2 1).ackedGenOnCore core2 == 2)
+
+/-- §8.5 (PR #854 review): the model's acknowledgment high-water mark is
+**not** a serviced-prefix claim, and `allAcked` alone is therefore not a
+completion predicate.
+
+§8.4 exercises catch-ups in commit order (A then B), where acknowledging
+`hi` leaves a later round correctly outstanding.  This group runs the
+*reverse* order, which the v0.32.112 separation of commit generations from
+runtime generations explicitly permits: round A commits generation 1 and
+stalls before the hardware round lock while round B commits generation 2 and
+executes first.
+
+B's catch-up drains only generation-2 descriptors but records `hi = 2`, and
+because `ackOnCore` tests `roundGeneration ≤ ackedGenOnCore` every core then
+reads as acknowledged — while A's generation-1 descriptors are still queued
+and A's hardware round has never run.  So `allAcked` can be true with work
+outstanding.
+
+What remains sound is `shootdownQuiescent`, which conjoins the pending
+queues: it is false here, correctly.  These assertions pin that split so it
+cannot regress silently — the model's source of truth for outstanding work is
+the queues, not the ack vector, whose role is to mirror the Rust `acked_gen`
+(where the prefix reading *is* valid, because runtime generations are
+allocated under the round lock and so are execution-ordered). -/
+private def runReverseOrderAckChecks : IO Unit := do
+  IO.println "-- §8.5 SM7.F.3 acknowledgment is not a serviced prefix"
+  let opened := beginShootdownRound TlbShootdownState.initial core0
+  let descA : TlbShootdownDescriptor :=
+    { op := .vae1 5 0x1000, initiator := core0, generation := 1 }
+  let postedA := ((([core1, core2, core3]).foldlM
+    (fun s c => enqueueShootdown s c descA) opened).getD opened)
+  -- Round B commits second and executes FIRST — the ordering the commit /
+  -- runtime generation split permits.
+  let openedB := beginShootdownRound postedA core1
+  let descB : TlbShootdownDescriptor :=
+    { op := .vae1 9 0x2000, initiator := core1, generation := 2 }
+  let postedB := ((([core0, core2, core3]).foldlM
+    (fun s c => enqueueShootdown s c descB) openedB).getD openedB)
+  let afterB :=
+    completeShootdownOnCoreInWindow
+      (completeShootdownOnCoreInWindow
+        (completeShootdownOnCoreInWindow postedB core0 1 2) core2 1 2) core3 1 2
+  assertBool "B's catch-up drained exactly its own generation"
+    (allCores.all fun c =>
+      (afterB.pendingOnCore c).all fun d => d.generation == 1)
+  assertBool "A's round is still genuinely outstanding on its targets"
+    (([core1, core2, core3]).all fun c =>
+      ((afterB.pendingOnCore c).filter fun d => d.generation == 1).length == 1)
+  -- THE point: the high-water mark reads as acknowledged anyway.
+  assertBool "every core's acknowledged generation reached B's round"
+    (allCores.all fun c => afterB.ackedGenOnCore c == 2)
+  assertBool "so allAcked is TRUE even though A was never serviced"
+    (decide (allAcked afterB))
+  -- ...and the predicate that conjoins the queues is correctly false.
+  assertBool "shootdownQuiescent is FALSE — the queues are the source of truth"
+    (!(decide (shootdownQuiescent afterB)))
+  assertBool "well-formedness holds throughout the reverse order"
+    (decide (ackBounded postedB) && decide (ackBounded afterB))
+  -- A's own catch-up is what actually clears its descriptors.
+  let afterA :=
+    completeShootdownOnCoreInWindow
+      (completeShootdownOnCoreInWindow
+        (completeShootdownOnCoreInWindow afterB core1 0 1) core2 0 1) core3 0 1
+  assertBool "A's catch-up clears the remaining descriptors"
+    (allCores.all fun c => (afterA.pendingOnCore c).isEmpty)
+  assertBool "and only then is the state quiescent"
+    (decide (shootdownQuiescent afterA))
+
+/-- §8 dispatcher (the CLAUDE.md thin-dispatcher pattern): C-scope nesting
+depth resets at each function boundary in the Lean codegen, so the four
+parts each stay well inside clang's `-fbracket-depth` limit. -/
+private def runRoundGenerationChecks : IO Unit := do
+  IO.println "-- §8 SM7.F.3 round-generation-tagged catch-up"
+  runRoundWindowChecks
+  runRoundWindowBoundChecks
+  runRoundWindowWidthChecks
+  runGenerationAwareAckChecks
+  runReverseOrderAckChecks
 
 -- ----------------------------------------------------------------------------
 -- §7  Cross-cluster mock: the `.outer` portability seam, exercised
@@ -2608,7 +3218,7 @@ private def tracePipeline? :
     | .ok ((), stUnmap) =>
       some (stMap, stUnmap, shootdownCatchUpPerCore stUnmap core0 [opUnmapTarget])
 
-/-- Per-core view size + queue length + ack flag — the observable triple the
+/-- Per-core view size + queue length + ack slot — the observable triple the
 trace reports for each core at each stage. -/
 private def coreLine (tag : String) (st : SeLe4n.Model.SystemState)
     (c : CoreId) : String :=
@@ -2730,7 +3340,9 @@ def runSmpTlbShootdownChecks : IO Unit := do
   runPerCoreTlbUseAfterRetypeChecks
   runPerCoreTlbCoalescingOverflowChecks
   runPerCoreTlbLiveLifecycleChecks
+  runPerCoreTlbAccessFillChecks
   runConcurrentUnmapStressChecks
+  runRoundGenerationChecks
   runCrossClusterMockChecks
   runTraceFixtureCheck
   IO.println "===================================================="

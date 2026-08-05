@@ -7,8 +7,8 @@
 //! - x2–x5: message registers [0..3]
 //! - x7: syscall number (SyscallId.toNat)
 
-use sele4n_types::{CPtr, SyscallId, KernelError};
 use crate::MessageInfo;
+use sele4n_types::{CPtr, KernelError, SyscallId};
 
 /// A syscall request, ready to be encoded into registers.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -27,9 +27,9 @@ pub struct SyscallRequest {
 ///
 /// Note: The actual `arm64DefaultLayout` in Lean uses x7 for the syscall
 /// number register, matching the seLe4n convention (distinct from Linux's x8).
-pub const REG_CAP_ADDR: usize = 0;    // x0
-pub const REG_MSG_INFO: usize = 1;    // x1
-pub const REG_MSG_BASE: usize = 2;    // x2–x5
+pub const REG_CAP_ADDR: usize = 0; // x0
+pub const REG_MSG_INFO: usize = 1; // x1
+pub const REG_MSG_BASE: usize = 2; // x2–x5
 pub const REG_SYSCALL_NUM: usize = 6; // x7 (mapped to array index 6)
 
 /// Encode a typed syscall request into a 7-element register array.
@@ -44,13 +44,13 @@ pub const REG_SYSCALL_NUM: usize = 6; // x7 (mapped to array index 6)
 #[inline]
 pub fn encode_syscall(req: &SyscallRequest) -> Result<[u64; 7], KernelError> {
     Ok([
-        req.cap_addr.raw(),              // x0: CPtr
-        req.msg_info.encode()?,          // x1: MessageInfo
-        req.msg_regs[0],                 // x2: msg_reg[0]
-        req.msg_regs[1],                 // x3: msg_reg[1]
-        req.msg_regs[2],                 // x4: msg_reg[2]
-        req.msg_regs[3],                 // x5: msg_reg[3]
-        req.syscall_id.to_u64(),         // x7: syscall number
+        req.cap_addr.raw(),      // x0: CPtr
+        req.msg_info.encode()?,  // x1: MessageInfo
+        req.msg_regs[0],         // x2: msg_reg[0]
+        req.msg_regs[1],         // x3: msg_reg[1]
+        req.msg_regs[2],         // x4: msg_reg[2]
+        req.msg_regs[3],         // x5: msg_reg[3]
+        req.syscall_id.to_u64(), // x7: syscall number
     ])
 }
 
@@ -67,11 +67,11 @@ mod tests {
             syscall_id: SyscallId::Send,
         };
         let regs = encode_syscall(&req).unwrap();
-        assert_eq!(regs[0], 100);  // x0 = CPtr
-        assert_eq!(regs[1], 2);    // x1 = MessageInfo(length=2)
-        assert_eq!(regs[2], 10);   // x2 = msg_reg[0]
-        assert_eq!(regs[3], 20);   // x3 = msg_reg[1]
-        assert_eq!(regs[6], 0);    // x7 = SyscallId::Send = 0
+        assert_eq!(regs[0], 100); // x0 = CPtr
+        assert_eq!(regs[1], 2); // x1 = MessageInfo(length=2)
+        assert_eq!(regs[2], 10); // x2 = msg_reg[0]
+        assert_eq!(regs[3], 20); // x3 = msg_reg[1]
+        assert_eq!(regs[6], 0); // x7 = SyscallId::Send = 0
     }
 
     #[test]
@@ -90,6 +90,9 @@ mod tests {
     fn encode_rejects_oversized_label() {
         // V2-H: Construction of invalid MessageInfo must go through new(),
         // which rejects labels >= 2^20. We verify the error path via new().
-        assert_eq!(MessageInfo::new(0, 0, 1u64 << 20), Err(KernelError::InvalidMessageInfo));
+        assert_eq!(
+            MessageInfo::new(0, 0, 1u64 << 20),
+            Err(KernelError::InvalidMessageInfo)
+        );
     }
 }

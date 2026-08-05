@@ -41,8 +41,21 @@ entry is the thin `BaseIO` shell over it (the SM5.F pattern: verified pure core 
 side-effecting shell that is inert on the no-SGI path —
 `Concurrency.fireCrossCoreSgis [] = pure ()`).
 
-The read-tick-commit is atomic under a single `IO.Ref.modifyGet`, and on hardware
-runs under the big kernel lock the trap handler holds.  The finer-grained
+The read-tick-commit issues as a single `IO.Ref.modifyGet`, which keeps the
+recovered SGIs paired with the state they came from without a second read — but
+`modifyGet` is a read then a write, not a cross-core atomic, so this is *not* on
+its own safe against a concurrent commit on another core (see
+`Platform.FFI.modifyGetKernelState`).  **The kernel-entry lock supplies that
+exclusion as of SM5.I (v0.32.142)**: `timer::handle_timer_interrupt` runs this
+entry inside `kernel_entry::with_kernel_entry`, so the read-tick-commit is one
+critical section against every other kernel entry — the syscall dispatch and the
+cross-core suspend included.  The lock is the SM2 verified `TicketLock` (FIFO,
+so a tick cannot be starved by a neighbour's syscall loop), it is acquired
+outside `SHOOTDOWN_ROUND_LOCK`, and its spin self-services this core's pending
+shootdown obligation so a holder blocked on our acknowledgment cannot deadlock
+against us.  Until v0.32.142 this paragraph said the lock was owed, and SMP was
+off by default for that reason; with the lock live the default returns to
+decision #7's `smp_enabled: true`.  The finer-grained
 `timerTickOnCoreLockSet` cross-domain footprint (SM5.D.3) certifies the 2PL
 acquisition order a future per-object-locked migration consumes; the
 `SchedLockId`-level `withLockSet` bracket itself is the SM3.C combinator's

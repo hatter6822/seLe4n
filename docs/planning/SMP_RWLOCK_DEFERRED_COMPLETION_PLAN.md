@@ -193,7 +193,7 @@ generally, a state proven `Reachable` from `unheld` by the
 operational-step closure).
 
 **Why `Reachable`, not just `wf`** (closes audit finding M-3): the
-operational `applyOp` at `RwLock.lean:613-626` admits a fast-path for
+operational `applyOp` at `RwLock.lean` admits a fast-path for
 `tryAcquireRead` when the head waiter is itself a reader (the new
 core acquires directly, bypassing the queue). Under arbitrary `wf`
 initial states, the configuration `readers = [r0], waiters = [(r1,
@@ -201,7 +201,7 @@ initial states, the configuration `readers = [r0], waiters = [(r1,
 from `unheld`. From it, `tryAcquireRead r3` admits `r3` before the
 queued `r1`, violating any FIFO-order theorem.  We close this gap by
 mirroring SM2.B's `KernelStep` + `Reachable` pattern (see
-`TicketLock.lean:1834-1850`) and quantifying D-1..D-4 over
+`TicketLock.lean`) and quantifying D-1..D-4 over
 `Reachable`-witnessed executions only.
 
     namespace SeLe4n.Kernel.Concurrency
@@ -1524,7 +1524,7 @@ impl QueuedRwLock {
    return until `parked == true`.  The `loop`+`wfe_bounded` structure
    makes this explicit: timeouts retry the loop, not return.  Panics
    on `panic = "abort"` (mandatory for `no_std` per
-   `rust/Cargo.toml:33`) terminate the kernel, so a partial-release
+   `rust/Cargo.toml`) terminate the kernel, so a partial-release
    panic between enqueue and admit is impossible.
 4. **No ABA**: indices are bounded `[0, numCores)` integers; the same
    slot index returning to play is the SAME slot, not a freed-and-
@@ -1622,7 +1622,7 @@ same op sequence and compares states via `rwLockSim`.
 The original §5.6 sketch had two soundness problems.  First, it
 proposed adding link-time FFI access from Lean test executables to
 the HAL — directly violating the WS-RC R12.B fail-closed FFI
-discipline documented in `SeLe4n/Platform/FFI.lean:67-72` ("any path
+discipline documented in `SeLe4n/Platform/FFI.lean` ("any path
 that reaches an `@[extern]` symbol without the Rust HAL linked would
 surface as a missing-symbol link error at build time").  Second, the
 harness passed lock state as a UInt64 argument (`ffiRwLockAcquireRead
@@ -1829,7 +1829,7 @@ than the existing `lake exe` test executables that complete in
 seconds.  Opt-in nightly keeps the smoke test fast and stable.
 
 **Why two oracles and not Lean linking against `libsele4n_hal.a`**
-(closes audit finding H-3): the project's `Platform/FFI.lean:67-72`
+(closes audit finding H-3): the project's `Platform/FFI.lean`
 documents a uniform fail-closed FFI policy — `@[extern]` symbols
 without HAL linking surface as build-time link errors.  Allowing a
 "host-stub libsele4n_hal.a for tests only" exception establishes a
@@ -1914,7 +1914,7 @@ operationally.)
 | D-5 `WaiterNode` lifetime bug | N/A | N/A | **Eliminated by design** (closes audit H-2): slots are owned by the lock for the lock's lifetime; no stack-allocated nodes; no AtomicPtr; no borrow-checker bypass |
 | D-5 fast-path FIFO violation | N/A | N/A | **Eliminated by design** (closes audit H-1): the MCS protocol enqueues unconditionally before checking state; no state-only fast-path that could bypass concurrent enqueuers |
 | D-5 release-path successor-signaling race | MED | HIGH | The remaining principal risk; mitigated by `loom` exhaustive-interleaving tests on op-sequences of length ≤ 4 (audit M-10 acceptance gate) and `cargo +nightly miri test` runs |
-| D-6 FFI link-time setup violates fail-closed discipline | N/A | N/A | **Eliminated by design** (closes audit H-3): two-oracle process-boundary harness; no Lean-to-HAL linking; `Platform/FFI.lean:67-72` discipline preserved |
+| D-6 FFI link-time setup violates fail-closed discipline | N/A | N/A | **Eliminated by design** (closes audit H-3): two-oracle process-boundary harness; no Lean-to-HAL linking; `Platform/FFI.lean` discipline preserved |
 | D-6 cross-language tests are flaky on heavy CI load | LOW | LOW | Deterministic generation under fixed seed (audit M-10 acceptance gate); no timing-dependent assertions; oracles communicate via stdin/stdout, no shared mutable state |
 | Calendar slip on D-4 (estimated 5-8 weeks; could blow up) | MED | LOW | Acceptable — this is post-1.0 work; v1.0.0 is shipped with the v1.0.0-form claims |
 

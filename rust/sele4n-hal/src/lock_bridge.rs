@@ -108,8 +108,7 @@ use crate::ticket_lock::TicketLock;
 /// Test-only; `#[cfg(test)]`-gated.  See the audit-pass commentary
 /// above for the rationale.
 #[cfg(test)]
-pub(crate) static SM2D_TRACE_TEST_MUTEX: std::sync::Mutex<()> =
-    std::sync::Mutex::new(());
+pub(crate) static LOCK_TRACE_TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 // ============================================================================
 // SM2.D pool dimensions
@@ -173,12 +172,8 @@ pub static STATIC_TICKET_LOCK_POOL: [TicketLock; STATIC_TICKET_LOCK_POOL_SIZE] =
 /// **WS-SM SM2.D**: static pool of 4 `RwLock`s.
 ///
 /// See [`STATIC_TICKET_LOCK_POOL`] for the design notes.
-pub static STATIC_RW_LOCK_POOL: [RwLock; STATIC_RW_LOCK_POOL_SIZE] = [
-    RwLock::new(),
-    RwLock::new(),
-    RwLock::new(),
-    RwLock::new(),
-];
+pub static STATIC_RW_LOCK_POOL: [RwLock; STATIC_RW_LOCK_POOL_SIZE] =
+    [RwLock::new(), RwLock::new(), RwLock::new(), RwLock::new()];
 
 // ============================================================================
 // SM2.D.4 — Tracing counters
@@ -551,7 +546,11 @@ pub fn rw_lock_snapshot(handle: u64) -> u64 {
     // WRITER_BIT or 0) with the count — matches the abstract
     // `encodeRwLock` form documented at SM2.C.16.
     let (writer, count) = STATIC_RW_LOCK_POOL[idx].snapshot();
-    let writer_bit = if writer { crate::rw_lock::WRITER_BIT } else { 0 };
+    let writer_bit = if writer {
+        crate::rw_lock::WRITER_BIT
+    } else {
+        0
+    };
     writer_bit | count
 }
 
@@ -630,7 +629,7 @@ pub fn rw_lock_release_write_count(handle: u64) -> u64 {
 ///   FIFO admission, bounded-wait × 2, RA-pairing × 2, wf-invariant,
 ///   reader batching, no-writer-starvation)
 /// * 2 refinement theorems (TicketLock refinement, RwLock refinement)
-pub const SM2_THEOREM_COUNT: usize = 22;
+pub const LOCK_THEOREM_COUNT: usize = 22;
 
 // ============================================================================
 // SM2.D.5 — Static linker-time check (build.rs scanner anchor)
@@ -646,7 +645,7 @@ pub const SM2_THEOREM_COUNT: usize = 22;
 /// script can verify this module's presence.  The string is checked
 /// textually in `build.rs` to confirm `lock_bridge.rs` participates in
 /// the SM2.D FFI surface.
-pub const SM2D_BUILD_ANCHOR: &str = "WS-SM SM2.D lock-bridge module present";
+pub const LOCK_BRIDGE_BUILD_ANCHOR: &str = "WS-SM SM2.D lock-bridge module present";
 
 // ============================================================================
 // Tests
@@ -661,14 +660,14 @@ mod tests {
     // --------------------------------------------------------------------
 
     #[test]
-    fn sm2d_decode_ticket_lock_handle_accepts_valid_indices() {
+    fn decode_ticket_lock_handle_accepts_valid_indices() {
         for idx in 0..STATIC_TICKET_LOCK_POOL_SIZE as u64 {
             assert_eq!(decode_ticket_lock_handle(idx), Some(idx as usize));
         }
     }
 
     #[test]
-    fn sm2d_decode_ticket_lock_handle_rejects_out_of_range() {
+    fn decode_ticket_lock_handle_rejects_out_of_range() {
         assert_eq!(
             decode_ticket_lock_handle(STATIC_TICKET_LOCK_POOL_SIZE as u64),
             None
@@ -688,7 +687,7 @@ mod tests {
     /// regression that re-introduced `(handle as usize) < POOL_SIZE`
     /// would silently accept these inputs — failing this test.
     #[test]
-    fn sm2d_decode_handles_reject_u64_with_high_bits_aliasing_slot() {
+    fn decode_handles_reject_u64_with_high_bits_aliasing_slot() {
         assert_eq!(decode_ticket_lock_handle(0x1_0000_0001), None);
         assert_eq!(decode_ticket_lock_handle(0x1_0000_0002), None);
         assert_eq!(decode_ticket_lock_handle(0x1_0000_0003), None);
@@ -699,23 +698,20 @@ mod tests {
     }
 
     #[test]
-    fn sm2d_decode_rw_lock_handle_accepts_valid_indices() {
+    fn decode_rw_lock_handle_accepts_valid_indices() {
         for idx in 0..STATIC_RW_LOCK_POOL_SIZE as u64 {
             assert_eq!(decode_rw_lock_handle(idx), Some(idx as usize));
         }
     }
 
     #[test]
-    fn sm2d_decode_rw_lock_handle_rejects_out_of_range() {
-        assert_eq!(
-            decode_rw_lock_handle(STATIC_RW_LOCK_POOL_SIZE as u64),
-            None
-        );
+    fn decode_rw_lock_handle_rejects_out_of_range() {
+        assert_eq!(decode_rw_lock_handle(STATIC_RW_LOCK_POOL_SIZE as u64), None);
         assert_eq!(decode_rw_lock_handle(u64::MAX), None);
     }
 
     #[test]
-    fn sm2d_decode_handles_const_callable() {
+    fn decode_handles_const_callable() {
         const T_OK: Option<usize> = decode_ticket_lock_handle(0);
         const T_OOR: Option<usize> = decode_ticket_lock_handle(99);
         const R_OK: Option<usize> = decode_rw_lock_handle(0);
@@ -731,7 +727,7 @@ mod tests {
     // --------------------------------------------------------------------
 
     #[test]
-    fn sm2d_ticket_lock_static_handle_returns_index() {
+    fn ticket_lock_static_handle_returns_index() {
         for idx in 0..STATIC_TICKET_LOCK_POOL_SIZE as u64 {
             assert_eq!(ticket_lock_static_handle(idx), idx);
         }
@@ -739,12 +735,12 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "exceeds pool size")]
-    fn sm2d_ticket_lock_static_handle_out_of_range_panics() {
+    fn ticket_lock_static_handle_out_of_range_panics() {
         let _ = ticket_lock_static_handle(STATIC_TICKET_LOCK_POOL_SIZE as u64);
     }
 
     #[test]
-    fn sm2d_rw_lock_static_handle_returns_index() {
+    fn rw_lock_static_handle_returns_index() {
         for idx in 0..STATIC_RW_LOCK_POOL_SIZE as u64 {
             assert_eq!(rw_lock_static_handle(idx), idx);
         }
@@ -752,7 +748,7 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "exceeds pool size")]
-    fn sm2d_rw_lock_static_handle_out_of_range_panics() {
+    fn rw_lock_static_handle_out_of_range_panics() {
         let _ = rw_lock_static_handle(STATIC_RW_LOCK_POOL_SIZE as u64);
     }
 
@@ -761,7 +757,7 @@ mod tests {
     // --------------------------------------------------------------------
 
     #[test]
-    fn sm2d_ticket_lock_peek_accessors_match_runtime_state() {
+    fn ticket_lock_peek_accessors_match_runtime_state() {
         // The SM2.D.1 `ticket_lock_peek_holder` FFI helper composes
         // `peek_next_ticket` and `peek_serving` (added on TicketLock
         // for this purpose).  Verify those accessors return the live
@@ -788,19 +784,25 @@ mod tests {
     }
 
     #[test]
-    fn sm2d_static_ticket_pool_size_matches_constant() {
+    fn static_ticket_pool_size_matches_constant() {
         assert_eq!(STATIC_TICKET_LOCK_POOL.len(), STATIC_TICKET_LOCK_POOL_SIZE);
     }
 
     #[test]
-    fn sm2d_static_rw_pool_size_matches_constant() {
+    fn static_rw_pool_size_matches_constant() {
         assert_eq!(STATIC_RW_LOCK_POOL.len(), STATIC_RW_LOCK_POOL_SIZE);
     }
 
     #[test]
-    fn sm2d_trace_counter_arrays_match_pool_size() {
-        assert_eq!(TICKET_LOCK_ACQUIRE_COUNT.len(), STATIC_TICKET_LOCK_POOL_SIZE);
-        assert_eq!(TICKET_LOCK_RELEASE_COUNT.len(), STATIC_TICKET_LOCK_POOL_SIZE);
+    fn trace_counter_arrays_match_pool_size() {
+        assert_eq!(
+            TICKET_LOCK_ACQUIRE_COUNT.len(),
+            STATIC_TICKET_LOCK_POOL_SIZE
+        );
+        assert_eq!(
+            TICKET_LOCK_RELEASE_COUNT.len(),
+            STATIC_TICKET_LOCK_POOL_SIZE
+        );
         assert_eq!(RW_LOCK_ACQUIRE_READ_COUNT.len(), STATIC_RW_LOCK_POOL_SIZE);
         assert_eq!(RW_LOCK_RELEASE_READ_COUNT.len(), STATIC_RW_LOCK_POOL_SIZE);
         assert_eq!(RW_LOCK_ACQUIRE_WRITE_COUNT.len(), STATIC_RW_LOCK_POOL_SIZE);
@@ -808,15 +810,15 @@ mod tests {
     }
 
     // --------------------------------------------------------------------
-    // SM2_THEOREM_COUNT pinning
+    // LOCK_THEOREM_COUNT pinning
     // --------------------------------------------------------------------
 
     #[test]
-    fn sm2d_theorem_count_is_22() {
-        assert_eq!(SM2_THEOREM_COUNT, 22);
+    fn theorem_count_is_22() {
+        assert_eq!(LOCK_THEOREM_COUNT, 22);
         // Cross-check the breakdown:
         //   4 memory-model + 6 TicketLock + 10 RwLock + 2 refinement = 22.
-        assert_eq!(4 + 6 + 10 + 2, SM2_THEOREM_COUNT);
+        assert_eq!(4 + 6 + 10 + 2, LOCK_THEOREM_COUNT);
     }
 
     // --------------------------------------------------------------------
@@ -824,9 +826,9 @@ mod tests {
     // --------------------------------------------------------------------
 
     #[test]
-    fn sm2d_build_anchor_string_intact() {
-        assert!(SM2D_BUILD_ANCHOR.contains("WS-SM SM2.D"));
-        assert!(SM2D_BUILD_ANCHOR.contains("lock-bridge"));
+    fn build_anchor_string_intact() {
+        assert!(LOCK_BRIDGE_BUILD_ANCHOR.contains("WS-SM SM2.D"));
+        assert!(LOCK_BRIDGE_BUILD_ANCHOR.contains("lock-bridge"));
     }
 }
 
@@ -839,7 +841,7 @@ mod runtime_tests {
     //
     // These tests use disjoint pool slots from cross-thread tests below
     // to avoid contention.  Each test owns its slot exclusively:
-    //   * sm2d1_acquire_release_returns_ticket   → slot 0
+    //   * acquire_release_returns_ticket   → slot 0
     //   * sm2d1_peek_holder_packs_counters       → slot 1
     //   * sm2d1_acquire_increments_counter       → slot 2
     //   * (slot 3 reserved for the cross-thread test sm2d8_*)
@@ -853,17 +855,19 @@ mod runtime_tests {
     // --------------------------------------------------------------------
 
     // The shared serialisation mutex is defined at the module level
-    // below the test module (see `SM2D_TRACE_TEST_MUTEX` outside this
+    // below the test module (see `LOCK_TRACE_TEST_MUTEX` outside this
     // `mod runtime_tests`) so it is reachable from
     // `crate::ffi::tests` via `pub(crate)`.
 
     #[test]
-    fn sm2d1_acquire_release_returns_ticket() {
+    fn acquire_release_returns_ticket() {
         // Slot 0 is shared across multiple tests for sequential reuse;
         // the lock is re-usable across tests (since acquire+release
         // is monotonic).  We just verify acquire returns a u64 and
         // release doesn't panic.
-        let _guard = SM2D_TRACE_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = LOCK_TRACE_TEST_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let h = ticket_lock_static_handle(0);
         // Snapshot the counter to verify advance below.
         let before_acq = ticket_lock_acquire_count(h);
@@ -877,13 +881,23 @@ mod runtime_tests {
         // Counters advanced by exactly 1.
         let after_acq = ticket_lock_acquire_count(h);
         let after_rel = ticket_lock_release_count(h);
-        assert_eq!(after_acq, before_acq + 1, "acquire counter must advance by 1");
-        assert_eq!(after_rel, before_rel + 1, "release counter must advance by 1");
+        assert_eq!(
+            after_acq,
+            before_acq + 1,
+            "acquire counter must advance by 1"
+        );
+        assert_eq!(
+            after_rel,
+            before_rel + 1,
+            "release counter must advance by 1"
+        );
     }
 
     #[test]
-    fn sm2d1_peek_holder_packs_next_and_serving() {
-        let _guard = SM2D_TRACE_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+    fn peek_holder_packs_next_and_serving() {
+        let _guard = LOCK_TRACE_TEST_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let h = ticket_lock_static_handle(1);
         // Snapshot before any op.  Since this test shares slot 1 with
         // potentially other tests in the future, we treat the
@@ -897,7 +911,9 @@ mod runtime_tests {
         // Under wf: serving <= next_ticket.
         assert!(
             srv_low <= next_low,
-            "serving ({}) must be <= next_ticket ({})", srv_low, next_low
+            "serving ({}) must be <= next_ticket ({})",
+            srv_low,
+            next_low
         );
         // Do one acquire-release and verify both counters advance.
         let _ = ticket_lock_acquire(h);
@@ -911,8 +927,10 @@ mod runtime_tests {
     }
 
     #[test]
-    fn sm2d1_acquire_increments_trace_counter() {
-        let _guard = SM2D_TRACE_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+    fn acquire_increments_trace_counter() {
+        let _guard = LOCK_TRACE_TEST_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let h = ticket_lock_static_handle(2);
         let before = ticket_lock_acquire_count(h);
         for _ in 0..5 {
@@ -929,13 +947,15 @@ mod runtime_tests {
     // Slot layout:
     //   * sm2d2_read_acquire_release           → slot 0
     //   * sm2d2_write_acquire_release          → slot 1
-    //   * sm2d2_snapshot_returns_state         → slot 2
+    //   * snapshot_returns_state         → slot 2
     //   * (slot 3 reserved for cross-thread sm2d8_rw_*)
     // --------------------------------------------------------------------
 
     #[test]
-    fn sm2d2_read_acquire_release_increments_counters() {
-        let _guard = SM2D_TRACE_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+    fn read_acquire_release_increments_counters() {
+        let _guard = LOCK_TRACE_TEST_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let h = rw_lock_static_handle(0);
         let before_acq = rw_lock_acquire_read_count(h);
         let before_rel = rw_lock_release_read_count(h);
@@ -948,8 +968,10 @@ mod runtime_tests {
     }
 
     #[test]
-    fn sm2d2_write_acquire_release_increments_counters() {
-        let _guard = SM2D_TRACE_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+    fn write_acquire_release_increments_counters() {
+        let _guard = LOCK_TRACE_TEST_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let h = rw_lock_static_handle(1);
         let before_acq = rw_lock_acquire_write_count(h);
         let before_rel = rw_lock_release_write_count(h);
@@ -962,8 +984,10 @@ mod runtime_tests {
     }
 
     #[test]
-    fn sm2d2_snapshot_returns_state() {
-        let _guard = SM2D_TRACE_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+    fn snapshot_returns_state() {
+        let _guard = LOCK_TRACE_TEST_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let h = rw_lock_static_handle(2);
         // Before any op (or after a balanced sequence), state is unheld.
         let snap = rw_lock_snapshot(h);
@@ -981,8 +1005,14 @@ mod runtime_tests {
         let snap_held = rw_lock_snapshot(h);
         let count_held = snap_held & crate::rw_lock::READER_MASK;
         let writer_held = (snap_held >> 63) & 1;
-        assert!(count_held >= 1, "reader count must be at least 1 while held");
-        assert_eq!(writer_held, 0, "writer bit must be clear while a reader holds");
+        assert!(
+            count_held >= 1,
+            "reader count must be at least 1 while held"
+        );
+        assert_eq!(
+            writer_held, 0,
+            "writer bit must be clear while a reader holds"
+        );
         rw_lock_release_read(h);
     }
 
@@ -1010,14 +1040,16 @@ mod runtime_tests {
     // preserved (the single mutex over-serialised but didn't break
     // anything), but the split makes the lock-discipline intent
     // explicit and removes the spurious serialisation.
-    static SM2D8_TICKET_SLOT3_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    static SM2D8_RW_SLOT3_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    static TICKET_SLOT3_TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    static RW_SLOT3_TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
-    fn sm2d8_ticket_lock_cross_thread_serializes_increments() {
-        use std::sync::Arc;
+    fn ticket_lock_cross_thread_serializes_increments() {
         use std::cell::UnsafeCell;
-        let _guard = SM2D8_TICKET_SLOT3_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        use std::sync::Arc;
+        let _guard = TICKET_SLOT3_TEST_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
 
         // Use slot 3 exclusively.
         let h = ticket_lock_static_handle(3);
@@ -1077,14 +1109,16 @@ mod runtime_tests {
     }
 
     #[test]
-    fn sm2d8_rw_lock_cross_thread_read_acquires_concurrent() {
+    fn rw_lock_cross_thread_read_acquires_concurrent() {
         // Multiple readers should be allowed to hold the lock
         // concurrently.  Spawn N reader threads that each hold the read
         // lock for a short window and verify they observe the reader
         // count is at least 1 (and at most NUM_THREADS) during their
         // critical section.
         use std::sync::Arc;
-        let _guard = SM2D8_RW_SLOT3_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = RW_SLOT3_TEST_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
 
         let h = rw_lock_static_handle(3);
         let pre_acq = rw_lock_acquire_read_count(h);
@@ -1130,7 +1164,9 @@ mod runtime_tests {
         // be up to NUM_READERS.  On a single-core host with cooperative
         // scheduling we may see only 1, but on a multi-core host we
         // commonly see >= 2.  We assert just the lower bound.
-        let max_observed = *counter_observed_max.lock().unwrap_or_else(|e| e.into_inner());
+        let max_observed = *counter_observed_max
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         assert!(
             max_observed >= 1,
             "every reader must observe itself: got max {}",
@@ -1139,18 +1175,21 @@ mod runtime_tests {
         assert!(
             max_observed <= NUM_READERS as u64,
             "reader count cannot exceed reader thread count: got {} > {}",
-            max_observed, NUM_READERS
+            max_observed,
+            NUM_READERS
         );
     }
 
     #[test]
-    fn sm2d8_rw_lock_cross_thread_writer_excludes_readers() {
+    fn rw_lock_cross_thread_writer_excludes_readers() {
         // While a writer holds the lock, no reader can hold it.  Spawn
         // 1 writer + N readers contending for the same lock; verify
         // that during any moment, the snapshot is either (writer-held,
         // 0 readers) or (no writer, k readers).
         use std::sync::Arc;
-        let _guard = SM2D8_RW_SLOT3_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = RW_SLOT3_TEST_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
 
         let h = rw_lock_static_handle(3);
         let pre_aw = rw_lock_acquire_write_count(h);

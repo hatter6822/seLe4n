@@ -58,7 +58,7 @@ blocked.
 | `integrityFlowsTo_prevents_escalation` | 157 | Proves escalation is denied |
 | `securityFlowsTo_prevents_label_escalation` | 193 | Combined 2D label proof |
 
-A standard BIBA reference implementation (`bibaIntegrityFlowsTo`, line 97) is
+A standard BIBA reference implementation (`bibaIntegrityFlowsTo`, ) is
 provided for comparison and could serve as a drop-in replacement if a deployment
 requires strict BIBA semantics.
 
@@ -105,7 +105,7 @@ isolation beyond the kernel model's scope.
 
 ### 2.1 Security Labeling Override (F-07) -- MANDATORY
 
-The `defaultLabelingContext` (`Policy.lean:220`) assigns `publicLabel` (low
+The `defaultLabelingContext` (`Policy.lean`) assigns `publicLabel` (low
 confidentiality, untrusted integrity) to **ALL** entities. Under this labeling,
 `securityFlowsTo` is trivially `true` for all entity pairs, meaning **no
 information flow is restricted**.
@@ -142,7 +142,7 @@ def productionLabelingContext : LabelingContext :=
     serviceLabelOf := fun _ => SecurityLabel.kernelTrusted }
 ```
 
-The `LabelingContext` structure (`Policy.lean:206`) requires four label
+The `LabelingContext` structure (`Policy.lean`) requires four label
 assignment functions (`objectLabelOf`, `threadLabelOf`, `endpointLabelOf`,
 `serviceLabelOf`) plus an optional `memoryOwnership` for memory projection.
 
@@ -180,7 +180,7 @@ ensure that information flows only through policy-authorized channels.
 **Service orchestration internals** are explicitly outside the NI boundary.
 
 The `serviceOrchestrationOutsideNiBoundary` theorem
-(`Projection.lean:551`) formally proves that service orchestration state
+(`Projection.lean`) formally proves that service orchestration state
 (lifecycle policies, restart state, heartbeat, dependency resolution order)
 is not captured by the NI projection model. Only the service registry layer
 (presence and dependency edges) is observable.

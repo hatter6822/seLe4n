@@ -17,6 +17,7 @@ import SeLe4n.Kernel.Architecture.PerCoreTlbModel
 import SeLe4n.Kernel.Architecture.PerCoreCacheModel
 import SeLe4n.Kernel.Service.Invariant
 import SeLe4n.Kernel.CrossSubsystem
+import SeLe4n.Kernel.IPC.Invariant.LookupCongruence
 -- AK8-A audit remediation: retype preservation needs `retypeFromUntyped`
 -- definition + structural field-preservation facts from Lifecycle.
 import SeLe4n.Kernel.Lifecycle.Invariant
@@ -86,6 +87,21 @@ coalesces to a covered full flush), and every non-shootdown kernel
 transition frames `SystemState.tlbShootdown`, so the component transports
 definitionally through the adapter preservation proofs below.
 
+WS-SM SM7.F.3 (PR #854 review): `ackBounded st.tlbShootdown` added as the
+15th component — no core has acknowledged a shootdown round that has not
+been opened.  Introduced with the v0.32.113 generation-carrying
+acknowledgment vector, where it is what makes "a target starts a round
+unacknowledged" true: with generations there is no ack reset, so a target
+is unacknowledged precisely because its slot still names an earlier round.
+Left as an optional hypothesis on the acknowledgment-shape lemmas it landed
+with, which meant reasoning from the standard bundle could admit a state
+with `ackedGenOnCore c > roundGeneration` and defeat them — the project's
+"enforce it structurally" case, applied to a predicate this workstream had
+itself just introduced.  Carried here alongside its sibling
+`pendingBounded`: both read only `SystemState.tlbShootdown`, which every
+non-shootdown transition frames, so it transports definitionally through
+the adapter preservation proofs below.
+
 WS-SM SM7.C / SM7.F.2: `tlbInvalidationConsistent_perCore st` added as the
 13th component — the per-core TLB consistency invariant.  SM7.F.2 states it
 in its **honest, pending-aware** form: on every core, every cached entry is
@@ -133,7 +149,8 @@ def proofLayerInvariantBundle (st : SystemState) : Prop :=
     notificationWaiterConsistent st ∧
     pendingBounded st.tlbShootdown ∧
     tlbInvalidationConsistent_perCore st ∧
-    icacheCoherent_perCore st
+    icacheCoherent_perCore st ∧
+    ackBounded st.tlbShootdown
 
 /-- Proof-carrying local preservation hooks required to compose adapter paths with invariant bundles. -/
 structure AdapterProofHooks (contract : RuntimeBoundaryContract) where
@@ -577,7 +594,7 @@ private theorem default_schedulerInvariantBundleFull :
 
 theorem default_system_state_proofLayerInvariantBundle :
     proofLayerInvariantBundle (default : SystemState) := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   -- 1. schedulerInvariantBundleFull (WS-H12e: now uses full bundle)
   · exact default_schedulerInvariantBundleFull
   -- 2. capabilityInvariantBundle (6-tuple: unique, sound, bounded, completeness, acyclicity, depth)
@@ -633,6 +650,9 @@ theorem default_system_state_proofLayerInvariantBundle :
   -- 14. icacheCoherent_perCore (WS-SM SM7.D: every core's boot instruction
   --     cache is cold, hence trivially coherent)
   · exact default_icacheCoherent_perCore
+  -- 15. ackBounded (WS-SM SM7.F.3 PR #854 review: boot slots and the round
+  --     counter are all `0`)
+  · exact default_tlbShootdown_ackBounded
 
 -- ============================================================================
 -- M-08/WS-E6: Architecture assumption consumption bridge theorems
@@ -874,6 +894,107 @@ private theorem serviceNontrivialPath_of_services_eq {st st' : SystemState}
   induction h with
   | single hedge => exact .single (serviceEdge_of_services_eq hSvc hedge)
   | cons hedge _ ih => exact .cons (serviceEdge_of_services_eq hSvc hedge) ih
+
+-- ============================================================================
+-- WS-SM SM7.F.5 — bundle carriage across a `perCoreTlb` write
+-- ============================================================================
+
+/-! Fourteen of the fifteen `proofLayerInvariantBundle` conjuncts never read
+`perCoreTlb`, and twelve of them transport **definitionally**: a structure
+update to a field a predicate does not project is invisible to that predicate.
+
+Three atomic predicates block the remaining two, for two structural reasons —
+neither of which is term size or proof budget, so neither is fixable by raising
+`maxHeartbeats`:
+
+* **A `match` stuck on a symbolic `Nat`.** `PriorityInheritance.blockingChain`
+  recurses on a fuel argument that defaults to `st.objectIndex.length`.  With a
+  symbolic fuel the match never reduces, so `isDefEq` never reaches the field
+  projections inside the body and falls back to comparing the two *unreduced*
+  applications — whose state arguments differ.  (With a literal fuel the very
+  same `rfl` succeeds, which is how this was localised.)  The same shape
+  reaches the bundle a second time through `dualQueueSystemInvariant`, whose
+  queue-chain acyclicity is fuel-recursive in the same way.
+* **An `inductive` family parameterised by the state.**
+  `serviceNontrivialPath (st : SystemState) : ServiceId → ServiceId → Prop`
+  applied to two different states yields two different *types*; definitional
+  equality of the applications demands definitional equality of the parameters,
+  which is precisely what fails here.  No amount of unfolding can bridge it.
+
+Each is bridged by a congruence lemma the codebase already carries
+(`dualQueueSystemInvariant_of_getElem_eq`, `blockingAcyclic_frame`,
+`serviceNontrivialPath_of_services_eq`), so the carriage below is composition
+rather than new proof.
+
+The thirteenth conjunct, `tlbInvalidationConsistent_perCore`, genuinely reads
+the field, so it is supplied by the caller: this is a **carriage** lemma, not
+an `iff`.  A `perCoreTlb` write can of course break that conjunct — proving it
+still holds is the writer's obligation, and the point of this lemma is that it
+is the writer's *only* obligation. -/
+
+/-- The twenty-conjunct IPC bundle transports across a `perCoreTlb` write. -/
+private theorem ipcInvariantFull_setPerCoreTlb {st : SystemState}
+    {t : Vector TlbState Concurrency.numCores} (h : ipcInvariantFull st) :
+    ipcInvariantFull { st with perCoreTlb := t } := by
+  obtain ⟨c1, c2, c3, c4, c5, c6, c7, c8, c9, c10,
+          c11, c12, c13, c14, c15, c16, c17, c18, c19, c20⟩ := h
+  exact ⟨c1, dualQueueSystemInvariant_of_getElem_eq (s1 := st)
+           (s2 := { st with perCoreTlb := t }) (fun _ => rfl) c2,
+         c3, c4, c5, c6, c7, c8, c9, c10,
+         c11, c12, c13, c14, c15, c16, c17, c18, c19, c20⟩
+
+/-- The service graph transports: acyclicity rides the inductive-path
+    congruence, the count bound is definitional. -/
+private theorem serviceGraphInvariant_setPerCoreTlb {st : SystemState}
+    {t : Vector TlbState Concurrency.numCores} (h : serviceGraphInvariant st) :
+    serviceGraphInvariant { st with perCoreTlb := t } :=
+  ⟨fun sid hp =>
+     h.1 sid (serviceNontrivialPath_of_services_eq (st := st)
+                (st' := { st with perCoreTlb := t }) rfl hp), h.2⟩
+
+/-- The cross-subsystem bundle transports; only the service graph and the
+    blocking-chain acyclicity need their congruences. -/
+private theorem crossSubsystemInvariant_setPerCoreTlb {st : SystemState}
+    {t : Vector TlbState Concurrency.numCores} (h : crossSubsystemInvariant st) :
+    crossSubsystemInvariant { st with perCoreTlb := t } := by
+  obtain ⟨d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12⟩ := h
+  exact ⟨d1, d2, d3, d4, d5, serviceGraphInvariant_setPerCoreTlb d6, d7, d8, d9,
+         PriorityInheritance.blockingAcyclic_frame st _ d10
+           (fun tid => PriorityInheritance.blockingServer_congr_objects _ _ tid rfl) rfl,
+         d11, d12⟩
+
+private theorem coreIpcInvariantBundle_setPerCoreTlb {st : SystemState}
+    {t : Vector TlbState Concurrency.numCores} (h : coreIpcInvariantBundle st) :
+    coreIpcInvariantBundle { st with perCoreTlb := t } :=
+  ⟨h.1, h.2.1, ipcInvariantFull_setPerCoreTlb h.2.2⟩
+
+private theorem ipcSchedulerCouplingInvariantBundle_setPerCoreTlb {st : SystemState}
+    {t : Vector TlbState Concurrency.numCores}
+    (h : ipcSchedulerCouplingInvariantBundle st) :
+    ipcSchedulerCouplingInvariantBundle { st with perCoreTlb := t } :=
+  ⟨coreIpcInvariantBundle_setPerCoreTlb h.1, h.2.1, h.2.2.1, h.2.2.2⟩
+
+/-- **WS-SM SM7.F.5**: `proofLayerInvariantBundle` carriage across a write to
+`perCoreTlb`.
+
+Every conjunct but the thirteenth is carried here; the thirteenth reads the
+field being written and is therefore the caller's obligation.  This is the
+general statement for *any* `perCoreTlb` writer — the SM7.F.4 mapping-seam fill
+and the SM7.F.5 access-time fill both discharge it the same way. -/
+theorem proofLayerInvariantBundle_setPerCoreTlb (st : SystemState)
+    (t : Vector TlbState Concurrency.numCores)
+    (h : proofLayerInvariantBundle st)
+    (hPerCoreTlbConsistent :
+      tlbInvalidationConsistent_perCore { st with perCoreTlb := t }) :
+    proofLayerInvariantBundle { st with perCoreTlb := t } := by
+  obtain ⟨bSched, bCap, bCoreIpc, bCoupling, bLifecycle, bService, bVSpace,
+          bCross, bTlb, bSchedExt, bNtfn, bPending, _bPerCoreTlbPre,
+          bIcache, bAck⟩ := h
+  exact ⟨bSched, bCap, coreIpcInvariantBundle_setPerCoreTlb bCoreIpc,
+         ipcSchedulerCouplingInvariantBundle_setPerCoreTlb bCoupling,
+         bLifecycle, bService, bVSpace, crossSubsystemInvariant_setPerCoreTlb bCross,
+         bTlb, bSchedExt, bNtfn, bPending, hPerCoreTlbConsistent,
+         bIcache, bAck⟩
 
 /-- U4-G/U4-H: advanceTimerState preserves serviceGraphInvariant.
     advanceTimerState only modifies machine.timer; services and objects are unchanged. -/

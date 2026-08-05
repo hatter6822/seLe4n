@@ -279,83 +279,144 @@ opaque ffiSendSgiToAllButSelf : (intid : UInt8) → BaseIO Unit
 -- WS-SM SM7.A.3 — TLB-shootdown acknowledgment-flag FFI bindings
 -- ============================================================================
 --
--- The link-time bridge to the per-core `SHOOTDOWN_ACK` AtomicBool
--- array (`rust/sele4n-hal/src/shootdown.rs`) — the runtime realisation
--- of the Lean `TlbShootdownState.shootdownAck` vector.  Lean callers
--- use the typed `CoreId` wrappers in
--- `SeLe4n/Kernel/Concurrency/Runtime.lean` (`shootdownAckSet` /
--- `shootdownAckIsSet` / `shootdownResetForRound` / `shootdownAllAcked`),
--- whose `Fin numCores` typing makes the Rust fail-closed panic arms
--- structurally unreachable (`shootdownAck_ffi_core_in_range`).
+-- The link-time bridge to the per-core `SHOOTDOWN_ACK` array
+-- (`rust/sele4n-hal/src/shootdown.rs`) — the runtime realisation of the
+-- Lean `TlbShootdownState.shootdownAck` vector.  Since SM7.F.3 each
+-- slot holds a monotone *acknowledged round generation* rather than a
+-- Boolean, so the Lean `ackOnCore c = true` for a round of generation
+-- `g` corresponds to the runtime `acked_gen[c] >= g`; an acknowledgment
+-- therefore names the round it discharged and a stale one can never
+-- satisfy a later round.  Lean callers use the typed `CoreId` wrappers
+-- in `SeLe4n/Kernel/Concurrency/Runtime.lean` (`shootdownAckRound` /
+-- `shootdownAckedGeneration` / `shootdownAllAckedForRound` /
+-- `shootdownSelfServiceRound`), whose `Fin numCores` typing makes the
+-- Rust fail-closed panic arms structurally unreachable
+-- (`shootdownAck_ffi_core_in_range`).
 -- Release/acquire ordering rationale: shootdown.rs module docs; the
 -- SM2.A-level formalisation is SM7.B.4 (`shootdownAck_release_acquire`).
 
-/-- **WS-SM SM7.A.3**: release-set the given core's shootdown ack flag
-    (the target handler's plan §3.2 step 4c, AFTER its drained TLBIs
-    retired).  Panics on the Rust side if `coreId ≥ 4`.
+/-- **WS-SM SM7.F.3**: acknowledge round generation `gen` for the given
+    core (the target handler's plan §3.2 step 4c, AFTER the round's
+    TLBIs retired locally).  Monotone (`fetch_max`) on the Rust side, so
+    a stale handler can never lower a core's recorded generation.
+    Panics on the Rust side if `coreId ≥ 4`.
 
-    Rust: `ffi_shootdown_ack_set` in `sele4n-hal/src/ffi.rs` -/
-@[extern "ffi_shootdown_ack_set"]
-opaque ffiShootdownAckSet : (coreId : UInt64) → BaseIO Unit
+    Rust: `ffi_shootdown_ack_round` in `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_shootdown_ack_round"]
+opaque ffiShootdownAckRound : (coreId : UInt64) → (gen : UInt64) → BaseIO Unit
 
-/-- **WS-SM SM7.A.3**: acquire-load the given core's shootdown ack
-    flag; `1` = acknowledged.  Panics on the Rust side if `coreId ≥ 4`.
+/-- **WS-SM SM7.F.3**: acquire-load the highest round generation the
+    given core has acknowledged.  Panics on the Rust side if
+    `coreId ≥ 4`.
 
-    Rust: `ffi_shootdown_ack_is_set` in `sele4n-hal/src/ffi.rs` -/
-@[extern "ffi_shootdown_ack_is_set"]
-opaque ffiShootdownAckIsSet : (coreId : UInt64) → BaseIO UInt64
+    Rust: `ffi_shootdown_acked_generation` in `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_shootdown_acked_generation"]
+opaque ffiShootdownAckedGeneration : (coreId : UInt64) → BaseIO UInt64
 
-/-- **WS-SM SM7.A.3**: open a new shootdown round — every flag drops
-    to `false` except the initiator's own (plan §3.2 step 1; the
-    runtime `beginShootdownRound`).  Panics on the Rust side if
-    `initiator ≥ 4`.
+/-- **WS-SM SM7.F.3**: acquire-poll the acknowledgment slots for round
+    generation `gen` — the initiator wait-loop's exit condition
+    (plan §3.2 step 5); `1` = every IRQ-serviceable non-initiator core
+    has acknowledged `gen`.  Panics on the Rust side if `initiator ≥ 4`.
 
-    Rust: `ffi_shootdown_reset_for_round` in `sele4n-hal/src/ffi.rs` -/
-@[extern "ffi_shootdown_reset_for_round"]
-opaque ffiShootdownResetForRound : (initiator : UInt64) → BaseIO Unit
+    Rust: `ffi_shootdown_all_acked_for_round` in `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_shootdown_all_acked_for_round"]
+opaque ffiShootdownAllAckedForRound :
+    (gen : UInt64) → (initiator : UInt64) → BaseIO UInt64
 
-/-- **WS-SM SM7.A.3**: acquire-poll every shootdown ack flag — the
-    initiator wait-loop's exit condition (plan §3.2 step 5); `1` =
-    every core acknowledged.
+/-- **WS-SM SM7.B.7 + SM7.F.3**: the cooperative round-lock acquire's
+    self-service arm — if this core has not yet acknowledged the
+    currently published round, flush its own TLB (`TLBI VMALLE1`, local)
+    and acknowledge that round.  `1` = it serviced a round.  Combining
+    the generation read, the flush and the acknowledgment in one Rust
+    call keeps the "latch the generation BEFORE any TLB work" discipline
+    in one place; splitting it across the FFI would let a newer round
+    publish in between and make the acknowledgment name a round this
+    core had not serviced.  Panics on the Rust side if `coreId ≥ 4`.
 
-    Rust: `ffi_shootdown_all_acked` in `sele4n-hal/src/ffi.rs` -/
-@[extern "ffi_shootdown_all_acked"]
-opaque ffiShootdownAllAcked : BaseIO UInt64
+    Rust: `ffi_shootdown_self_service_round` in `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_shootdown_self_service_round"]
+opaque ffiShootdownSelfServiceRound : (coreId : UInt64) → BaseIO UInt64
 
-/-- **WS-SM SM7.B.7**: try to acquire THE global shootdown-round lock
-    (a Rust CAS try-lock; `1` = acquired) — the runtime realisation of
-    `Architecture.ShootdownRoundLockId`.  Never blocks: the caller's
-    cooperative loop interleaves retries with servicing its own
-    pending shootdown obligation, because a blind spin (IRQs masked in
-    the SVC path) could never take an in-flight round's
-    `.tlbShootdownReq` SGI while that round waits on THIS core's
-    acknowledgment — a deadlock resolved only by the wait-timeout
-    panic.  The winner must bracket the entire hardware round: flag
-    reset, SGI fire, local TLBI, `allAcked` wait (the SM7.A
-    round-serialisation contract).
-
-    Rust: `ffi_shootdown_round_lock_try_acquire` in
-    `sele4n-hal/src/ffi.rs` -/
 @[extern "ffi_shootdown_round_lock_try_acquire"]
 opaque ffiShootdownRoundLockTryAcquire : BaseIO UInt64
 
+/-- **WS-SM SM7.F.3** (PR #854 review P1): allocate the next runtime
+    shootdown round generation (a `fetch_add` on the Rust counter; fails
+    closed on wrap).
+
+    The caller must already hold the round lock — that is what makes the
+    allocation order the hardware execution order, which the monotone
+    `acked_gen >= gen` wait depends on.
+
+    Rust: `ffi_shootdown_allocate_round_generation` in `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_shootdown_allocate_round_generation"]
+opaque ffiShootdownAllocateRoundGeneration : BaseIO UInt64
+
 /-- **WS-SM SM7.B.7**: release the global shootdown-round lock —
-    only after the initiator observed `allAcked` (or on the timeout
-    path immediately before the fail-closed panic).
+    **only** after the initiator observed `allAcked`.
+
+    There is no other legitimate caller.  On the timeout path the lock
+    is deliberately retained **permanently**: a target never certified
+    its invalidation, so every other core's round must block rather
+    than proceed against a TLB this one could not clean, and holding
+    the lock is what quarantines the subsystem.  Releasing it there —
+    which this contract permitted until the PR #854 review, and which
+    the runtime did until v0.32.130 — reopens the mailbox for the next
+    round while the stale translation the barrier exists to prevent is
+    still live.
+
+    A caller written to this contract must therefore treat a timeout as
+    terminal (`haltFailClosed`), never as a path that unwinds.
 
     Rust: `ffi_shootdown_round_lock_release` in `sele4n-hal/src/ffi.rs` -/
 @[extern "ffi_shootdown_round_lock_release"]
 opaque ffiShootdownRoundLockRelease : BaseIO Unit
 
-/-- **WS-SM SM7.B.5 + B.6**: bounded acquire-poll for `allAcked` —
-    spins up to `timeoutTicks` generic-timer ticks; returns `1` on
-    observed `allAcked`, `0` on timeout (the caller's fail-closed
-    panic trigger; the poll's verdict semantics are
-    `Architecture.shootdown_timeout_handling`).
+/-- **WS-SM SM7.B.6 + SM7.B.7**: park this PE permanently — the
+    fail-closed barrier's actual stop.  **Never returns.**
+
+    Lean's `panic!` cannot serve as a fail-closed barrier: it requires
+    `[Inhabited α]` precisely because the runtime prints the message and
+    then returns the default value, so in `BaseIO Unit` it reports the
+    violation and execution continues (PR #854 review).  The seam
+    therefore calls `panic!` for the diagnostic and this for the halt.
+
+    The `BaseIO Unit` type is the FFI convention, not a claim that this
+    returns — `ffi_fatal_halt` is `-> !` on the Rust side.  Callers must
+    still not rely on that alone; see `haltFailClosed`.
+
+    Rust: `ffi_fatal_halt` in `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_fatal_halt"]
+opaque ffiFatalHalt : BaseIO Unit
+
+/-- **WS-SM SM0.H + SM7.B.6/B.7 (PR #854 review)**: broadcast the
+    `haltAll` SGI (INTID 4) to every other PE, then park this one.
+    **Never returns.**
+
+    This is the form the fail-closed barriers use.  `ffiFatalHalt` parks
+    only the calling PE, which is not a barrier: the other cores keep
+    running against a TLB this core has just declared it could not
+    clean, and the target that never acknowledged can resume with the
+    stale translation.  `SgiKind.haltAll` had been reserved since SM0.H
+    and documented as "halt all cores" with no handler behind it; the
+    Rust side now registers one at boot.
+
+    Rust: `ffi_fatal_halt_all` in `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_fatal_halt_all"]
+opaque ffiFatalHaltAll : BaseIO Unit
+
+/-- **WS-SM SM7.B.5 + B.6 + SM7.F.3**: bounded acquire-poll for round
+    generation `gen` acknowledged — spins up to `timeoutTicks`
+    generic-timer ticks; returns `1` on observed all-acked-for-`gen`,
+    `0` on timeout (the caller's fail-closed panic trigger; the poll's
+    verdict semantics are `Architecture.shootdown_timeout_handling`).
+    Panics on the Rust side if `initiator ≥ 4`.
 
     Rust: `ffi_shootdown_wait_all_acked` in `sele4n-hal/src/ffi.rs` -/
 @[extern "ffi_shootdown_wait_all_acked"]
-opaque ffiShootdownWaitAllAcked : (timeoutTicks : UInt64) → BaseIO UInt64
+opaque ffiShootdownWaitAllAcked :
+    (gen : UInt64) → (initiator : UInt64) → (onlineMask : UInt64) →
+      (timeoutTicks : UInt64) → BaseIO UInt64
 
 /-- **WS-SM SM7.B.2 (runtime target masking)**: the online-core bitmask
     (bit `c` set ⇔ core `c` is IRQ-serviceable; the boot core is always
@@ -389,14 +450,15 @@ opaque ffiShootdownPublishBegin : BaseIO Unit
 opaque ffiShootdownPublishSlot :
     (index : UInt64) → (opTag : UInt32) → (asid : UInt16) → (vaddr : UInt64) → BaseIO Unit
 
-/-- **WS-SM SM7.B (debt (1))**: commit the publish of `len` operands
-    (bumps the seqlock to stable).  `len` above capacity collapses to a
-    single `vmalle1`; `len == 0` leaves the mailbox empty so the handler
-    falls back to the conservative local `vmalle1`.
+/-- **WS-SM SM7.B (debt (1)) + SM7.F.3**: commit the publish of `len`
+    operands belonging to round generation `gen` (bumps the seqlock to
+    stable, then publishes the generation).  `len` above capacity
+    collapses to a single `vmalle1`; `len == 0` leaves the mailbox empty
+    so the handler falls back to the conservative local `vmalle1`.
 
     Rust: `ffi_shootdown_publish_commit` in `sele4n-hal/src/ffi.rs` -/
 @[extern "ffi_shootdown_publish_commit"]
-opaque ffiShootdownPublishCommit : (len : UInt64) → BaseIO Unit
+opaque ffiShootdownPublishCommit : (len : UInt64) → (gen : UInt64) → BaseIO Unit
 
 -- ============================================================================
 -- AG7-A-iii: MMIO FFI declarations
@@ -928,12 +990,48 @@ def getKernelState : BaseIO SystemState :=
 def updateKernelState (f : SystemState → SystemState) : BaseIO Unit :=
   kernelStateRef.modify f
 
-/-- WS-SM SM5.I: atomic read-modify-write of the kernel state, returning a
+/-- WS-SM SM5.I: read-modify-write of the kernel state, returning a
     by-product computed alongside the new state.  `f st = (a, st')` installs `st'`
-    and returns `a`, all under a single `IO.Ref.modifyGet` so no concurrent writer
-    can interleave between the read and the write (the per-core timer-tick driver
-    uses this to commit `timerTickOnCore`'s new state and recover its cross-core
-    SGIs in one step). -/
+    and returns `a` in one call, so no *further* read of the ref is needed to
+    recover the by-product (the per-core timer-tick driver uses this to commit
+    `timerTickOnCore`'s new state and recover its cross-core SGIs in one step).
+
+    **This combinator is not itself a cross-core atomic.**  `IO.Ref.modifyGet`
+    is a read followed by a write, not a hardware read-modify-write, so two
+    cores calling it concurrently would lose one commit entirely: both read
+    `st`, both compute from it, and the second write installs a post-state
+    derived from a pre-state that no longer holds — silently discarding the
+    first core's whole transition and returning success for it.  Every verified
+    transition is a *pure function*, so the theorems say what `f` computes, not
+    that `f` is applied to the state the caller last observed; that gap is
+    closed by serialising kernel entry, not by this combinator.
+
+    **Serialisation is present (SM5.I, v0.32.142).**  Every kernel entry that
+    reaches this combinator runs inside
+    `rust/sele4n-hal/src/kernel_entry.rs`'s `with_kernel_entry` bracket, so the
+    read and the write are one critical section against every other kernel
+    entry.  All three entries are bracketed —
+    `lean_syscall_dispatch_cross_core` (`svc_dispatch::dispatch_svc`),
+    `lean_per_core_timer_tick` (`timer::handle_timer_interrupt`) and
+    `suspend_thread_cross_core` (`ffi::sele4n_suspend_thread`).  The bring-up
+    entries (`lean_kernel_main`, `lean_secondary_kernel_main`) are deliberately
+    outside it: they run before their core takes part in concurrent entry.
+
+    The lock is the SM2 verified `TicketLock`, so entry is FIFO and no core
+    starves; it is acquired strictly **outside** `SHOOTDOWN_ROUND_LOCK`; and its
+    spin **discharges the waiter's own pending shootdown obligation** on every
+    poll (`shootdown::self_service_round`).  That last part is load-bearing
+    rather than an optimisation: IRQs are masked on the kernel-entry paths, so a
+    waiter cannot take the `.tlbShootdownReq` SGI, and a holder blocked on that
+    waiter's acknowledgment would otherwise deadlock against it.  It is the same
+    mechanism SM7.B.7 already uses for the round lock.
+
+    Until v0.32.142 this said the serialisation was *owed*, and five sites
+    across Lean and Rust described three mutually exclusive mechanisms, none of
+    them live.  With the lock in place, SMP returns to the default decision #7
+    states (`CmdlineConfig::default` has `smp_enabled: true`), which was gated on
+    exactly this phase.  See `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md`
+    §"Kernel-entry serialisation". -/
 def modifyGetKernelState {α : Type} (f : SystemState → α × SystemState) : BaseIO α :=
   kernelStateRef.modifyGet f
 

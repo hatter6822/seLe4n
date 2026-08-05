@@ -16,7 +16,7 @@ import SeLe4n.Kernel.Architecture.TlbInvalidation
 This module lands the SM7.A slice of the TLB/cache shootdown phase
 (`docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` §5): the typed shootdown
 descriptor, the per-core pending-shootdown queues, the per-core
-acknowledgment flags, the `enqueueShootdown` / `drainShootdowns`
+acknowledged-generation slots, the `enqueueShootdown` / `drainShootdowns`
 state operations, and the pending-queue capacity bound — together
 with the store/load algebra and preservation theorems the SM7.B
 protocol proofs (`tlbShootdownBroadcast_invalidatesAllCores`,
@@ -27,9 +27,14 @@ Theorem 3.3.1) compose over.
 A TLB shootdown for an `(asid, vaddr)` operand initiated by core
 `c₀` proceeds as:
 
-  1. `beginShootdownRound c₀` — every ack flag is reset to `false`
-     except the initiator's own (the initiator performs its own
-     invalidation locally, so it is born-acknowledged).
+  1. `beginShootdownRound c₀` — the round's generation is allocated
+     (`roundGeneration + 1`) and the initiator's acknowledged-generation
+     slot is advanced to it, so the initiator is born-acknowledged (it
+     performs its own invalidation locally).  **Nothing is reset**: a
+     target counts as unacknowledged because the round generation has
+     moved past the generation its slot names, not because a flag was
+     cleared.  That is what makes a stale acknowledgment from an earlier
+     round unable to satisfy this one (SM7.F.3).
   2. For each target core `c ≠ c₀`: `enqueueShootdown c desc`
      (under the pending-shootdown lock), then a `.tlbShootdownReq`
      SGI (`SgiKind.tlbShootdownReq`, INTID 1) to `c`.
@@ -58,46 +63,97 @@ on the Rust side of the FFI seam:
   kernel maintains under the pending-shootdown lock discipline
   (SM7.B.7 declares the lock-set).
 * `shootdownAck` models `rust/sele4n-hal/src/shootdown.rs`'s
-  `SHOOTDOWN_ACK` — one cache-line-aligned `AtomicBool` per core.
-  The Bool vector here captures the *values*; the release-store /
+  `SHOOTDOWN_ACK` — one cache-line-aligned slot per core, holding the
+  highest round generation that core has discharged.  Since v0.32.113
+  this is a `Vector Nat`, not a `Vector Bool`: an acknowledgment names
+  the round it discharged, mirroring the Rust `acked_gen : AtomicU64`
+  advanced by a release `fetch_max`.  `ackOnCore` is the derived
+  predicate `roundGeneration ≤ ackedGenOnCore c`.  The release-store /
   acquire-load pairing that makes cross-core propagation sound is
   realised by the Rust atomics and proven against the SM2.A memory
   model at SM7.B.4 (`shootdownAck_release_acquire`).
 
 The quiescent state (no shootdown round in flight) has every queue
-empty and every ack flag `true` — "nobody is being waited on".
-`TlbShootdownState.initial` (the boot state) is quiescent, matching
-the Rust `SHOOTDOWN_ACK` boot value of all-`true`.
+empty and every core's acknowledged generation at or above the open
+round — "nobody is being waited on".  `TlbShootdownState.initial` (the
+boot state) is quiescent at generation 0, matching the Rust boot value:
+nothing is cleared to open a round, so a core that has never
+acknowledged anything already satisfies the round-0 test.
 
 ## Round serialisation contract (SM7.A audit; SM7.B.7 obligation)
 
-The ack vector carries **no round identity**, so it is a
-single-round resource: at most one shootdown round may be in flight
-system-wide.  The plan §3.2 precondition (the initiator holds the
-VSpaceRoot write lock) is **not** sufficient to guarantee this — two
-initiators shooting down *different* VSpaces hold different VSpaceRoot
-locks and would interleave rounds, with two concrete failures: (a)
-initiator B's `beginShootdownRound` marks B's own flag `true` while A
-still waits on that core's invalidation for A's round, so A's
-`allAcked` poll can exit before A's descriptors are drained — a stale
-TLB entry stays live on the target, the exact SMP-C4 hazard; and (b)
-B's reset clears A's born-`true` flag, which nothing re-sets if A
-polls with IRQs masked — a mutual hang.  SM7.B.7 therefore MUST
-serialise rounds under the single global `ShootdownRoundLockId`
-(below), acquired before any per-core `ShootdownQueueLockId`; every
-serialisation statement in this module and in the Rust realisation
-assumes exactly that contract.
+Rounds are serialised system-wide under the single global
+`ShootdownRoundLockId` (below), acquired before any per-core
+`ShootdownQueueLockId`.  The plan §3.2 precondition (the initiator
+holds the VSpaceRoot write lock) is **not** sufficient — two initiators
+shooting down *different* VSpaces hold different VSpaceRoot locks and
+would interleave.
+
+**Why, now that acknowledgments carry round identity.**  The SM7.A
+audit justified this contract by two failure modes of a *Boolean* ack
+vector: (a) initiator B's round marking B's flag while A still waited
+on that core, letting A's poll exit early — the SMP-C4 hazard; and (b)
+B's reset clearing A's born-`true` flag, a mutual hang.  Both are now
+closed by the representation itself and neither is the live reason:
+`ackOnCore` tests `roundGeneration ≤ ackedGenOnCore c`, so a later
+round only ever *raises* the bar rather than satisfying an older wait,
+and nothing is cleared to open a round, so there is no flag to lose.
+
+What still requires serialisation is the runtime's single shared
+operand mailbox and the SGI/wait pairing around it: the initiator
+publishes one round's operands, fires the SGIs, and blocks until its
+targets acknowledge *that* round.  Two rounds interleaved there would
+have the second overwrite the first's operands mid-flight, which no
+generation on the acknowledgment side can repair.  That is what
+`SHOOTDOWN_ROUND_LOCK` brackets.
+
+**Two generations, and which is which (SM7.F.3).**  The word
+"generation" names two distinct counters, and conflating them was the
+v0.32.112 security defect, so they are kept apart deliberately:
+
+* The **model** generation — `roundGeneration` here, advanced by
+  `beginShootdownRound{,For}` and stamped onto each posted descriptor
+  (`TlbShootdownDescriptor.generation`).  It is allocated at *commit
+  time*, inside the atomic state transition, and its job is to answer
+  "which descriptors belong to this commit?" — which is what makes the
+  window drain (`drainShootdownsInWindow`) exact.
+* The **runtime** generation — `SHOOTDOWN_ROUND_SEQ` in
+  `rust/sele4n-hal/src/shootdown.rs`, allocated by `fetch_add` *while
+  holding the round lock*, so allocation order is hardware execution
+  order by construction.  It answers "which hardware round is this,
+  relative to the rounds whose acknowledgments could satisfy its
+  wait?", and it is the one the Rust `acked_gen` comparison uses.
+
+They cannot be the same counter: the model's is ordered by commit and
+the hardware round is bracketed by a lock taken *afterwards*, so a
+round committed earlier can execute later.  Keying the acknowledgment
+wait on the model counter let an older round be certified by a newer
+round's acknowledgments with its operands still resident in every
+remote TLB — the SMP-C4 hazard, fixed at v0.32.112.
+
+The model's own acknowledgment channel mirrors the runtime's shape
+(monotone, generation-valued, never reset) rather than abstracting it
+to a Boolean, so the property that matters — an acknowledgment names
+the round it discharged — is stated here and not merely promised by the
+FFI.
 
 ## Capacity bound (SM7.A.6)
 
-Every pending queue is bounded by `maxPendingPerCore = 16`
-(plan §4.1): a typical kernel never queues more than a few
-descriptors — the global round lock (see above) serialises rounds, so
-at most one round's descriptors are in flight per target — and the
-bound is deliberately conservative.  `enqueueShootdown` is
-fail-closed: at capacity it returns `none` rather than silently
-dropping or unboundedly growing, and `pendingBounded` is preserved
-by every operation in this module.
+Every pending queue is bounded by `maxPendingPerCore = 16` (plan §4.1)
+and the bound is deliberately conservative — it is an envelope over
+what a target can accumulate *between drains*, which is one descriptor
+per round posted against it.  That is **not** one round: a single
+commit can open several rounds (the retype wrappers open one per
+flushed ASID — `retypeShootdownAsids`), and posting happens in the
+pure transition while the catch-up drain happens in the dispatch
+entry, so a concurrently committed round can post into the same queue
+in between.  The bound is therefore maintained by construction rather
+than by a counting argument: `enqueueShootdown` is fail-closed — at
+capacity it returns `none` rather than silently dropping or unboundedly
+growing — its coalescing sibling `enqueueShootdownOrCoalesce` collapses
+a full queue to a single covering `.vmalle1` (a superset, never an
+under-invalidation), and `pendingBounded` is preserved by every
+operation in this module.
 
 ## Production reachability
 
@@ -165,10 +221,24 @@ remote core.
   target sets its *own* flag; the initiator polls), so the handler
   does not need this field for correctness; it identifies the round
   owner for the optional direct-ack SGI (`SgiKind.tlbShootdownAck`,
-  plan §3.2 step 4d) and for post-mortem trace attribution. -/
+  plan §3.2 step 4d) and for post-mortem trace attribution.
+* `generation` (SM7.F.3) — the round that posted this descriptor,
+  allocated by `beginShootdownRound{,For}` from the monotone
+  `TlbShootdownState.roundGeneration` counter.  It is what lets a
+  round's deferred catch-up drain **only its own** descriptors: the
+  model posting and the model catch-up are two separate atomic steps
+  (`syscallDispatchCrossCoreEntry`'s commit, then
+  `completeShootdownRounds`'s commit), neither under the hardware
+  round lock, so without a round identity one round's catch-up fold
+  would drain a *concurrently posted* round's freshly-queued
+  descriptors and claim quiescence before that round's SGIs had
+  fired.  See `drainShootdownsInWindow` for the selective drain and
+  `shootdownCatchUpPerCoreInWindow` (`PerCoreTlbModel.lean`) for the
+  live seam that uses it. -/
 structure TlbShootdownDescriptor where
   op : TlbInvalidation
   initiator : CoreId
+  generation : Nat
   deriving DecidableEq, Repr, Inhabited
 
 -- ============================================================================
@@ -176,12 +246,14 @@ structure TlbShootdownDescriptor where
 -- ============================================================================
 
 /-- **WS-SM SM7.A.6**: upper bound on each core's pending-shootdown
-queue length (plan §4.1).  The global round lock (`ShootdownRoundLockId`
-— the module-header round-serialisation contract) serialises shootdown
-rounds, so a target's queue holds at most one round's descriptors at a
-time; `16` is a conservative envelope over every SM7.B caller (the
-worst wired unmap path enqueues one descriptor per target per round).
-`enqueueShootdown` fails closed at this bound. -/
+queue length (plan §4.1).  Every SM7.B caller enqueues one descriptor
+per target per round, so this is a conservative envelope over the
+rounds a target can accumulate between drains — several per commit for
+the multi-ASID retype wrappers, plus any concurrently committed round
+that posts before this commit's catch-up (see the module header's
+capacity-bound section).  `enqueueShootdown` fails closed at this
+bound; `enqueueShootdownOrCoalesce` collapses to a covering
+`.vmalle1`. -/
 def maxPendingPerCore : Nat := 16
 
 /-- **WS-SM SM7.A.6**: the capacity bound admits at least one pending
@@ -201,26 +273,76 @@ theorem maxPendingPerCore_pos : 0 < maxPendingPerCore := by decide
   Writers append under the pending-shootdown lock discipline
   (SM7.B.7); core `c`'s `.tlbShootdownReq` SGI handler drains the
   whole queue (`drainShootdowns`).
-* `shootdownAck` (SM7.A.3) — core `c`'s slot is `true` once `c` has
-  completed (and locally retired) every invalidation of the current
-  round; the initiator's wait loop polls for `allAcked`.  Models the
-  Rust `SHOOTDOWN_ACK` per-core `AtomicBool` array (release-store on
-  set, acquire-load on poll; formalised at SM7.B.4).
+* `shootdownAck` (SM7.A.3; generation-valued since v0.32.113) — core
+  `c`'s slot holds the highest round generation `c` has completed (and
+  locally retired every invalidation of); `ackOnCore` reads it as
+  "has `c` discharged the open round?" and the initiator's wait loop
+  polls for `allAcked`.  Models the Rust `SHOOTDOWN_ACK` per-core
+  `acked_gen : AtomicU64` array (release `fetch_max` on acknowledge,
+  acquire-load on poll; formalised at SM7.B.4).
 
-Both fields default to the quiescent boot values: empty queues and
-all-acknowledged flags (`true` = "no round in flight, nobody waited
-on"), matching `initial_shootdownQuiescent` and the Rust boot state. -/
+* `roundGeneration` (SM7.F.3) — the number of shootdown rounds opened
+  so far; `beginShootdownRound{,For}` increments it and stamps the
+  round's descriptors with the resulting value, so generations are
+  allocated `1, 2, 3, …` in **commit** order (`0` is the boot value,
+  which no descriptor ever carries).  Monotone by construction: no
+  operation in this module decreases it.
+
+  **This is NOT the generation the runtime rounds run under** (PR #854
+  review P1).  The two counters answer different questions and are
+  deliberately independent:
+
+  - *this* one orders **commits**, and keys the SM7.F.3 window drain —
+    "which descriptors belong to this commit?" — so it must be
+    allocated by the pure transition, inside the atomic state commit;
+  - the runtime's `SHOOTDOWN_ROUND_SEQ` orders **hardware rounds**, and
+    keys the acknowledgment channel — "which round is this, relative to
+    the rounds whose acknowledgments could satisfy its wait?" — so it is
+    allocated by `completeShootdownRounds` while holding the round lock,
+    which is what makes allocation order equal execution order.
+
+  Conflating them is the ordering bug the review found: nothing relates
+  a commit's position to its position in the round-lock queue, so under
+  concurrency a round committed earlier can execute later and have its
+  monotone `acked_gen >= gen` wait satisfied by a newer round's
+  acknowledgments — returning from a round no target serviced, with the
+  operands still live in every remote TLB.  What
+  `rust/sele4n-hal/src/shootdown.rs` publishes into
+  `ShootdownOpMailbox::generation`, and what each target's handler
+  acknowledges (`ack_round`), is therefore the **runtime** generation,
+  never this field.
+
+All three fields default to the quiescent boot values: empty queues,
+every core's acknowledged generation `0`, and round generation `0` —
+so `roundGeneration ≤ ackedGenOnCore c` holds for every core at boot
+("no round in flight, nobody waited on"), matching
+`initial_shootdownQuiescent` and the Rust boot state. -/
 structure TlbShootdownState where
   pendingShootdowns : Vector (List TlbShootdownDescriptor) numCores :=
     Vector.replicate numCores []
-  shootdownAck : Vector Bool numCores :=
-    Vector.replicate numCores true
+  /-- **WS-SM SM7.F.3 (PR #854 review)**: the **highest round generation**
+  each core has acknowledged — the model mirror of the Rust
+  `ShootdownAckSlot.acked_gen`, which the same review's P1 fix made the
+  sole runtime acknowledgment channel.
+
+  This was a `Vector Bool` until v0.32.113.  A flag cannot say *which*
+  round it discharged, so a catch-up that deliberately drained only its
+  own generation window still wrote `true` and thereby claimed every
+  concurrently-posted round as acknowledged — `allAcked` could read true
+  with a foreign round's descriptors still pending.  A generation says
+  what it discharged, so a window drain can only ever claim its own
+  window. -/
+  shootdownAck : Vector Nat numCores :=
+    Vector.replicate numCores 0
+  roundGeneration : Nat := 0
   deriving Repr, DecidableEq
 
 namespace TlbShootdownState
 
 /-- **WS-SM SM7.A.2**: the quiescent boot state — every pending queue
-empty, every ack flag `true`.  Witnessed quiescent by
+empty, every acknowledged-generation slot `0` against a round
+generation of `0`, so every core reads as acknowledged (no round has
+been opened to be waited on).  Witnessed quiescent by
 `initial_shootdownQuiescent` and bounded by `initial_pendingBounded`. -/
 def initial : TlbShootdownState := {}
 
@@ -240,19 +362,40 @@ def pendingOnCore (st : TlbShootdownState) (c : CoreId) :
     List TlbShootdownDescriptor :=
   st.pendingShootdowns.get c
 
-/-- Per-core shootdown-acknowledgment flag of `st` on core `c`. -/
-def ackOnCore (st : TlbShootdownState) (c : CoreId) : Bool :=
+/-- **WS-SM SM7.F.3 (PR #854 review)**: the highest round generation core
+`c` has acknowledged — the raw slot, mirroring the Rust
+`ShootdownAckSlot.acked_gen`. -/
+def ackedGenOnCore (st : TlbShootdownState) (c : CoreId) : Nat :=
   st.shootdownAck.get c
+
+/-- Per-core shootdown-acknowledgment flag of `st` on core `c`: has `c`
+acknowledged the round currently open?
+
+Derived from `ackedGenOnCore` since v0.32.113 rather than stored, by the
+same *shape* of comparison the Rust initiator uses — but against the
+model's `roundGeneration`, which is a different counter answering a
+different question, so the two are not interchangeable.  The runtime's
+`acked_gen >= gen` compares against the lock-allocated
+`SHOOTDOWN_ROUND_SEQ` generation, where allocation order is execution
+order and the comparison therefore *does* mean "every round up to `gen`
+was serviced".  Here it does not — see `allAcked`, which records the
+consequence and the reachable counterexample.
+
+Keeping this a `Bool` keeps the SM7.A/B acknowledgment theorems stated in
+terms of a core being acknowledged or not; what changed underneath is
+that "acknowledged" names a round instead of asserting a bare flag. -/
+def ackOnCore (st : TlbShootdownState) (c : CoreId) : Bool :=
+  st.roundGeneration ≤ st.ackedGenOnCore c
 
 /-- Write core `c`'s pending-shootdown queue slot. -/
 def setPendingOnCore (st : TlbShootdownState) (c : CoreId)
     (q : List TlbShootdownDescriptor) : TlbShootdownState :=
   { st with pendingShootdowns := st.pendingShootdowns.set c.val q c.isLt }
 
-/-- Write core `c`'s shootdown-acknowledgment flag slot. -/
-def setAckOnCore (st : TlbShootdownState) (c : CoreId) (b : Bool) :
+/-- Write core `c`'s acknowledged-generation slot. -/
+def setAckedGenOnCore (st : TlbShootdownState) (c : CoreId) (g : Nat) :
     TlbShootdownState :=
-  { st with shootdownAck := st.shootdownAck.set c.val b c.isLt }
+  { st with shootdownAck := st.shootdownAck.set c.val g c.isLt }
 
 /-! ### Store/load reduction algebra
 
@@ -276,39 +419,67 @@ unaffected.  All `@[simp]` so post-write reads reduce automatically. -/
 @[simp] theorem setPendingOnCore_ackOnCore (st : TlbShootdownState)
     (c c' : CoreId) (q : List TlbShootdownDescriptor) :
     (st.setPendingOnCore c q).ackOnCore c' = st.ackOnCore c' := by
-  simp [setPendingOnCore, ackOnCore]
+  simp [setPendingOnCore, ackOnCore, ackedGenOnCore]
 
-@[simp] theorem setAckOnCore_ackOnCore_self (st : TlbShootdownState)
-    (c : CoreId) (b : Bool) :
-    (st.setAckOnCore c b).ackOnCore c = b := by
-  simp [setAckOnCore, ackOnCore]
+@[simp] theorem setAckedGenOnCore_ackedGenOnCore_self (st : TlbShootdownState)
+    (c : CoreId) (g : Nat) :
+    (st.setAckedGenOnCore c g).ackedGenOnCore c = g := by
+  simp [setAckedGenOnCore, ackedGenOnCore]
 
-@[simp] theorem setAckOnCore_ackOnCore_ne (st : TlbShootdownState)
-    (c c' : CoreId) (b : Bool) (h : c ≠ c') :
-    (st.setAckOnCore c b).ackOnCore c' = st.ackOnCore c' := by
-  simp only [setAckOnCore, ackOnCore]
-  exact SeLe4n.PerCoreVector.get_set_ne st.shootdownAck c c' b h
+@[simp] theorem setAckedGenOnCore_ackedGenOnCore_ne (st : TlbShootdownState)
+    (c c' : CoreId) (g : Nat) (h : c ≠ c') :
+    (st.setAckedGenOnCore c g).ackedGenOnCore c' = st.ackedGenOnCore c' := by
+  simp only [setAckedGenOnCore, ackedGenOnCore]
+  exact SeLe4n.PerCoreVector.get_set_ne st.shootdownAck c c' g h
 
-@[simp] theorem setAckOnCore_pendingOnCore (st : TlbShootdownState)
-    (c c' : CoreId) (b : Bool) :
-    (st.setAckOnCore c b).pendingOnCore c' = st.pendingOnCore c' := by
-  simp [setAckOnCore, pendingOnCore]
+/-- **WS-SM SM7.F.3**: writing core `c`'s generation leaves every *other*
+core's acknowledgment verdict untouched. -/
+@[simp] theorem setAckedGenOnCore_ackOnCore_ne (st : TlbShootdownState)
+    (c c' : CoreId) (g : Nat) (h : c ≠ c') :
+    (st.setAckedGenOnCore c g).ackOnCore c' = st.ackOnCore c' := by
+  simp only [TlbShootdownState.ackOnCore, setAckedGenOnCore_ackedGenOnCore_ne _ _ _ _ h]
+  rfl
+
+@[simp] theorem setAckedGenOnCore_pendingOnCore (st : TlbShootdownState)
+    (c c' : CoreId) (g : Nat) :
+    (st.setAckedGenOnCore c g).pendingOnCore c' = st.pendingOnCore c' := by
+  simp [setAckedGenOnCore, pendingOnCore]
+
+/-- **WS-SM SM7.F.3**: writing a pending queue never allocates a round —
+the generation counter is advanced only by `beginShootdownRound{,For}`. -/
+@[simp] theorem setPendingOnCore_roundGeneration (st : TlbShootdownState)
+    (c : CoreId) (q : List TlbShootdownDescriptor) :
+    (st.setPendingOnCore c q).roundGeneration = st.roundGeneration := rfl
+
+/-- **WS-SM SM7.F.3**: acknowledging never allocates a round. -/
+@[simp] theorem setAckedGenOnCore_roundGeneration (st : TlbShootdownState)
+    (c : CoreId) (g : Nat) :
+    (st.setAckedGenOnCore c g).roundGeneration = st.roundGeneration := rfl
+
+/-- **WS-SM SM7.F.3**: writing core `c`'s generation to a value at or
+above the current round makes exactly `c` acknowledged. -/
+@[simp] theorem setAckedGenOnCore_ackOnCore_self (st : TlbShootdownState)
+    (c : CoreId) (g : Nat) :
+    (st.setAckedGenOnCore c g).ackOnCore c = (st.roundGeneration ≤ g) := by
+  simp [ackOnCore]
 
 /-- **WS-SM SM7.A.2**: per-core extensionality.  Two shootdown states
-are equal once their pending queues and ack flags agree at *every*
-`CoreId`.  Named `ext_perCore` to avoid clashing with the structure's
-auto-generated `TlbShootdownState.ext`; each per-core hypothesis lifts
-to `Vector` equality via `SeLe4n.PerCoreVector.ext`. -/
+are equal once their pending queues and ack slots agree at *every*
+`CoreId` and their round-generation counters agree.  Named
+`ext_perCore` to avoid clashing with the structure's auto-generated
+`TlbShootdownState.ext`; each per-core hypothesis lifts to `Vector`
+equality via `SeLe4n.PerCoreVector.ext`. -/
 theorem ext_perCore {s₁ s₂ : TlbShootdownState}
     (hPend : ∀ c : CoreId, s₁.pendingOnCore c = s₂.pendingOnCore c)
-    (hAck : ∀ c : CoreId, s₁.ackOnCore c = s₂.ackOnCore c) :
+    (hAck : ∀ c : CoreId, s₁.ackedGenOnCore c = s₂.ackedGenOnCore c)
+    (hGen : s₁.roundGeneration = s₂.roundGeneration) :
     s₁ = s₂ := by
   have h1 : s₁.pendingShootdowns = s₂.pendingShootdowns :=
     SeLe4n.PerCoreVector.ext fun c => hPend c
   have h2 : s₁.shootdownAck = s₂.shootdownAck :=
     SeLe4n.PerCoreVector.ext fun c => hAck c
-  obtain ⟨p₁, a₁⟩ := s₁
-  obtain ⟨p₂, a₂⟩ := s₂
+  obtain ⟨p₁, a₁, g₁⟩ := s₁
+  obtain ⟨p₂, a₂, g₂⟩ := s₂
   simp_all
 
 /-- **WS-SM SM7.A.2**: the boot state has an empty pending queue on
@@ -317,13 +488,57 @@ every core (`Vector.replicate` reduction). -/
     initial.pendingOnCore c = [] := by
   simp [initial, pendingOnCore]
 
-/-- **WS-SM SM7.A.3**: the boot state has every ack flag `true` —
-quiescent, matching the Rust `SHOOTDOWN_ACK` boot value. -/
+/-- **WS-SM SM7.A.3**: every core reads as acknowledged at boot —
+`roundGeneration` and every slot are `0`, and `ackOnCore` is the
+comparison `roundGeneration ≤ ackedGenOnCore`, so this holds because no
+round has been opened rather than because a flag was initialised.
+Matches the Rust `ShootdownAckSlot.acked_gen` boot value. -/
 @[simp] theorem initial_ackOnCore (c : CoreId) :
     initial.ackOnCore c = true := by
   simp [initial, ackOnCore]
 
+/-- **WS-SM SM7.F.3**: no round has been opened at boot, so the
+generation counter starts at `0` — a value no descriptor ever carries
+(`beginShootdownRound{,For}` stamps `roundGeneration + 1`). -/
+@[simp] theorem initial_roundGeneration : initial.roundGeneration = 0 := rfl
+
 end TlbShootdownState
+
+-- ============================================================================
+-- SM7.F.3 — The descriptor a round posts
+-- ============================================================================
+
+/-- **WS-SM SM7.F.3**: the descriptor a round opened from `sd` posts to
+each of its targets.
+
+Factored out so the round's *generation* is written once: a round open
+(`beginShootdownRound{,For}`) advances `sd.roundGeneration` by one, so
+the descriptors the posting fold appends must carry
+`sd.roundGeneration + 1` — the generation of the round *being opened*,
+not of the pre-state.  `roundDescriptor_generation_eq_opened` pins that
+agreement, and it is what makes every posted descriptor land inside its
+own commit's window (`inRoundWindow`). -/
+def roundDescriptor (sd : TlbShootdownState) (initiator : CoreId)
+    (op : TlbInvalidation) : TlbShootdownDescriptor :=
+  { op := op, initiator := initiator, generation := sd.roundGeneration + 1 }
+
+/-- **WS-SM SM7.F.3**: the round descriptor carries the round's operand. -/
+@[simp] theorem roundDescriptor_op (sd : TlbShootdownState)
+    (initiator : CoreId) (op : TlbInvalidation) :
+    (roundDescriptor sd initiator op).op = op := rfl
+
+/-- **WS-SM SM7.F.3**: the round descriptor is attributed to the round's
+initiator. -/
+@[simp] theorem roundDescriptor_initiator (sd : TlbShootdownState)
+    (initiator : CoreId) (op : TlbInvalidation) :
+    (roundDescriptor sd initiator op).initiator = initiator := rfl
+
+/-- **WS-SM SM7.F.3**: the round descriptor carries the generation the
+round open allocates. -/
+@[simp] theorem roundDescriptor_generation (sd : TlbShootdownState)
+    (initiator : CoreId) (op : TlbInvalidation) :
+    (roundDescriptor sd initiator op).generation = sd.roundGeneration + 1 :=
+  rfl
 
 -- ============================================================================
 -- SM7.A.6 — State invariants
@@ -345,9 +560,61 @@ instance (st : TlbShootdownState) : Decidable (pendingBounded st) :=
   inferInstanceAs (Decidable (∀ c : CoreId,
     (st.pendingOnCore c).length ≤ maxPendingPerCore))
 
-/-- **WS-SM SM7.A.3**: every core has acknowledged — the initiator
-wait-loop's exit condition (plan §3.2 step 5).  Decidable so the
-SM7.B wait loop and the test suite can evaluate it directly. -/
+/-- **WS-SM SM7.F.3 (PR #854 review)**: well-formedness — no core has
+acknowledged a round that has not been opened.
+
+Boot satisfies it (`0 ≤ 0`) and every transition preserves it: a round
+open raises `roundGeneration` and writes exactly the new generation to
+the cores born-acknowledged, an acknowledgment writes a generation the
+opener already minted, and the drains/enqueues do not touch the vector.
+
+It is what makes "a target starts a round unacknowledged" true —
+`beginShootdownRound_ackOnCore_target` and the two `_ackOnCore_iff`
+characterisations take it as a hypothesis, because without it a slot
+carrying a fabricated future generation would read as already
+acknowledging the round about to open. -/
+def ackBounded (st : TlbShootdownState) : Prop :=
+  ∀ c : CoreId, st.ackedGenOnCore c ≤ st.roundGeneration
+
+instance (st : TlbShootdownState) : Decidable (ackBounded st) :=
+  inferInstanceAs (Decidable (∀ c : CoreId, st.ackedGenOnCore c ≤ _))
+
+/-- **WS-SM SM7.A.3**: every core has acknowledged at or beyond the round
+currently open — the initiator wait-loop's exit condition (plan §3.2
+step 5).  Decidable so the SM7.B wait loop and the test suite can
+evaluate it directly.
+
+**Not a completion predicate on its own** (PR #854 review).  It is a
+high-water mark, so reading it as "every round up to `roundGeneration`
+has been serviced" is a *prefix* claim, and since v0.32.112 that claim
+does not hold of the model: commit generations are allocated by the pure
+transition and hardware rounds execute in round-lock order, and the two
+orders are deliberately independent.  Concretely — round A commits
+generation 1 and stalls before the lock while round B commits generation
+2 and runs first; B's catch-up records `hi = 2` on every target, so
+every core reads acknowledged, while A's generation-1 descriptors are
+still queued and A's round has never run.  `SmpTlbShootdownSuite` §8.5
+computes exactly that state, so this limitation is machine-checked
+rather than asserted.
+
+The model's source of truth for outstanding work is the **pending
+queues**, so the sound completion predicate is `shootdownQuiescent`,
+which conjoins them and is correctly false in that scenario.  Every
+round capstone concludes `shootdownQuiescent`, and
+`shootdownRound_allAcked` derives this from a *quiescent* pre-state —
+where no earlier round is outstanding and the prefix reading is
+therefore recovered — so no landed theorem depends on the unsound
+reading.
+
+The ack vector's role here is to mirror the Rust `acked_gen`, where the
+prefix reading **is** valid: runtime generations are allocated under the
+round lock, so allocation order is execution order and a target
+acknowledging generation `g` has necessarily serviced every round it was
+sent up to `g`.  Representing the model's discharged generations as a
+**set** rather than a high-water mark — which would make the model
+independently sound rather than sound-relative-to-quiescence — is
+registered as tracked debt in `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md`
+§SM7.F.3. -/
 def allAcked (st : TlbShootdownState) : Prop :=
   ∀ c : CoreId, st.ackOnCore c = true
 
@@ -355,7 +622,8 @@ instance (st : TlbShootdownState) : Decidable (allAcked st) :=
   inferInstanceAs (Decidable (∀ c : CoreId, st.ackOnCore c = true))
 
 /-- **WS-SM SM7.A**: no shootdown round in flight — every queue empty
-and every flag acknowledged.  This is the state between rounds; the
+and every core's acknowledged generation at or beyond the current round
+generation.  This is the state between rounds; the
 boot state satisfies it (`initial_shootdownQuiescent`). -/
 def shootdownQuiescent (st : TlbShootdownState) : Prop :=
   (∀ c : CoreId, st.pendingOnCore c = []) ∧ allAcked st
@@ -363,12 +631,74 @@ def shootdownQuiescent (st : TlbShootdownState) : Prop :=
 instance (st : TlbShootdownState) : Decidable (shootdownQuiescent st) :=
   inferInstanceAs (Decidable ((∀ c : CoreId, st.pendingOnCore c = []) ∧
     allAcked st))
+/-! ### The acknowledgment mark is not a serviced prefix
+
+**WS-SM SM7.F.3 (PR #854 review).**  `ackedGenOnCore` is a monotone
+high-water mark and `ackOnCore` compares it with `≤`, which reads as
+"every round up to the open one was serviced".  On the **runtime** side
+that reading is sound: `SHOOTDOWN_ROUND_SEQ` is allocated under the
+round lock, so allocation order *is* execution order and a core that
+acknowledged `g` necessarily serviced every round it was a target of.
+
+The **model** generation orders *commits*, and since v0.32.112 commit
+order is deliberately not execution order — that separation is what
+fixed the P1.  So under a reverse interleaving (A commits generation 1
+and stalls; B commits 2 and runs its catch-up first) every core's mark
+reaches 2 while A's generation-1 descriptors are still queued.
+
+The two theorems below pin the resulting division of labour, so it is
+enforced by proof rather than by remembering it:
+
+* `allAcked` is the *wait predicate* — "every core acknowledged the open
+  round".  It does **not** imply that every posted descriptor was
+  drained, and `allAcked_not_serviced_prefix` exhibits a well-formed
+  state where it holds and work is outstanding.
+* `shootdownQuiescent` is the *completion predicate*.  Its queue half is
+  generation-exact, so it means what `allAcked` alone does not; every
+  round capstone (`shootdownRound_allAcked`, `coalescingRound_allAcked`)
+  accordingly derives from a **quiescent** pre-state rather than from an
+  acknowledgment mark. -/
+
+/-- **WS-SM SM7.F.3 (PR #854 review)** — the load-bearing negative:
+`allAcked` is not a serviced-prefix claim.
+
+A well-formed state (`ackBounded`) can satisfy `allAcked` while an
+earlier round's descriptors are still pending, so no future refactor may
+strengthen `allAcked` into "every round completed" without this
+existence proof failing.  Reachability through the real transitions —
+A posts, B commits, B's catch-up runs first — is exercised by
+`SmpTlbShootdownSuite` §8.5. -/
+theorem allAcked_not_serviced_prefix :
+    ∃ st : TlbShootdownState,
+      ackBounded st ∧ allAcked st ∧ ¬ shootdownQuiescent st := by
+  refine ⟨{ pendingShootdowns :=
+              (Vector.replicate numCores ([] : List TlbShootdownDescriptor)).set 0
+                [{ op := .vmalle1, initiator := bootCoreId, generation := 1 }],
+            shootdownAck := Vector.replicate numCores 2,
+            roundGeneration := 2 }, ?_, ?_, ?_⟩ <;> decide
+
+/-- **WS-SM SM7.F.3 (PR #854 review)**: the queues are the source of
+truth — quiescence genuinely means every posted descriptor was drained,
+which is the property `allAcked` alone does not carry. -/
+theorem shootdownQuiescent_pending_nil {st : TlbShootdownState}
+    (h : shootdownQuiescent st) (c : CoreId) :
+    st.pendingOnCore c = [] := h.1 c
+
 
 /-- **WS-SM SM7.A.6**: the boot state satisfies the capacity bound. -/
 theorem initial_pendingBounded : pendingBounded TlbShootdownState.initial := by
   intro c
   rw [TlbShootdownState.initial_pendingOnCore]
   exact Nat.zero_le _
+
+/-- **WS-SM SM7.F.3 (PR #854 review)**: the boot state is ack-bounded —
+every slot and the round counter are `0`.
+
+The base case of the 15th `proofLayerInvariantBundle` conjunct. -/
+theorem initial_ackBounded : ackBounded TlbShootdownState.initial := by
+  intro c
+  simp [TlbShootdownState.ackedGenOnCore, TlbShootdownState.initial,
+    SeLe4n.PerCoreVector.replicate_get]
 
 /-- **WS-SM SM7.A.3**: the boot state is fully acknowledged. -/
 theorem initial_allAcked : allAcked TlbShootdownState.initial := fun c =>
@@ -489,7 +819,7 @@ theorem enqueueShootdown_frame_pending {st st' : TlbShootdownState}
       st target c _ hc.symm
   · simp at h
 
-/-- **WS-SM SM7.A.4**: enqueueing never touches any core's ack flag —
+/-- **WS-SM SM7.A.4**: enqueueing never touches any core's ack slot —
 posting a request and acknowledging completion are disjoint effects. -/
 theorem enqueueShootdown_frame_ack {st st' : TlbShootdownState}
     {target : CoreId} {d : TlbShootdownDescriptor}
@@ -500,6 +830,33 @@ theorem enqueueShootdown_frame_ack {st st' : TlbShootdownState}
   · injection h with h
     subst h
     simp
+  · simp at h
+
+/-- **WS-SM SM7.F.3 (PR #854 review)**: the raw-generation form of the
+posting frame. -/
+theorem enqueueShootdown_frame_ackedGen {st st' : TlbShootdownState}
+    {target : CoreId} {d : TlbShootdownDescriptor}
+    (h : enqueueShootdown st target d = some st') (c : CoreId) :
+    st'.ackedGenOnCore c = st.ackedGenOnCore c := by
+  unfold enqueueShootdown at h
+  split at h
+  · injection h with h
+    subst h
+    simp [TlbShootdownState.ackedGenOnCore, TlbShootdownState.setPendingOnCore]
+  · simp at h
+
+/-- **WS-SM SM7.F.3**: posting a descriptor never allocates a round —
+the generation is allocated once, by the round open, and every
+descriptor of the round carries that same value. -/
+theorem enqueueShootdown_frame_roundGeneration {st st' : TlbShootdownState}
+    {target : CoreId} {d : TlbShootdownDescriptor}
+    (h : enqueueShootdown st target d = some st') :
+    st'.roundGeneration = st.roundGeneration := by
+  unfold enqueueShootdown at h
+  split at h
+  · injection h with h
+    subst h
+    rfl
   · simp at h
 
 /-- **WS-SM SM7.A.6**: a successful enqueue preserves the capacity
@@ -567,7 +924,7 @@ theorem foldlM_enqueueShootdown_isSome (targets : List CoreId) :
         rw [enqueueShootdown_frame_pending hst' hct]
         exact hempty c (List.mem_cons_of_mem _ hc)) d
 
-/-- **WS-SM SM7.A.4**: the posting fold never touches any ack flag —
+/-- **WS-SM SM7.A.4**: the posting fold never touches any ack slot —
 the fold-level form of `enqueueShootdown_frame_ack`. -/
 theorem foldlM_enqueueShootdown_frame_ack {targets : List CoreId} :
     ∀ {st posted : TlbShootdownState} {d : TlbShootdownDescriptor},
@@ -642,13 +999,24 @@ least everything the dropped descriptors would have — lands with the
 SM7.C per-core TLB effect semantics (`tlbInvalidateOnCore`), which is
 where "what an op removes" is first defined; until then the two
 coverage theorems pin the syntactic half (a `.vmalle1` descriptor is
-present whenever anything was dropped). -/
+present whenever anything was dropped).
+
+**Generation attribution (SM7.F.3).**  The collapsed descriptor
+carries the *incoming* request's generation, exactly as it carries the
+incoming request's initiator: it is the requesting round that owes the
+work, so it is that round's catch-up which must retire it.  This is
+sound in both directions — the collapse only ever *widens* an operand
+to `.vmalle1`, which covers every dropped descriptor whatever its
+generation, so an older round whose descriptor was absorbed has its
+obligation discharged early (safe over-application) rather than
+dropped, and its own catch-up then correctly finds nothing left to
+do. -/
 def enqueueShootdownOrCoalesce (st : TlbShootdownState) (target : CoreId)
     (d : TlbShootdownDescriptor) : TlbShootdownState :=
   match enqueueShootdown st target d with
   | some st' => st'
   | none =>
-    st.setPendingOnCore target [{ op := .vmalle1, initiator := d.initiator }]
+    st.setPendingOnCore target [{ op := .vmalle1, initiator := d.initiator, generation := d.generation }]
 
 /-- **WS-SM SM7.A.6**: below capacity, the coalescing enqueue is
 exactly `enqueueShootdown`. -/
@@ -665,7 +1033,7 @@ theorem enqueueShootdownOrCoalesce_of_full {st : TlbShootdownState}
     {target : CoreId} (d : TlbShootdownDescriptor)
     (h : maxPendingPerCore ≤ (st.pendingOnCore target).length) :
     (enqueueShootdownOrCoalesce st target d).pendingOnCore target =
-      [{ op := .vmalle1, initiator := d.initiator }] := by
+      [{ op := .vmalle1, initiator := d.initiator, generation := d.generation }] := by
   simp only [enqueueShootdownOrCoalesce, enqueueShootdown_eq_none_of_full d h]
   simp
 
@@ -681,7 +1049,7 @@ theorem enqueueShootdownOrCoalesce_request_covered (st : TlbShootdownState)
   split
   next st' heq => exact Or.inl (enqueueShootdown_mem heq)
   next heq =>
-    exact Or.inr ⟨{ op := .vmalle1, initiator := d.initiator }, by simp, rfl⟩
+    exact Or.inr ⟨{ op := .vmalle1, initiator := d.initiator, generation := d.generation }, by simp, rfl⟩
 
 /-- **WS-SM SM7.A.6 (audit)**: the coalescing enqueue never loses a
 *previously queued* request either — every descriptor that was pending
@@ -705,7 +1073,7 @@ theorem enqueueShootdownOrCoalesce_pending_covered (st : TlbShootdownState)
     exact List.mem_append_left _ hOld
   next heq =>
     right
-    exact ⟨{ op := .vmalle1, initiator := d.initiator }, by simp, rfl⟩
+    exact ⟨{ op := .vmalle1, initiator := d.initiator, generation := d.generation }, by simp, rfl⟩
 
 /-- **WS-SM SM7.A.6**: the coalescing enqueue preserves the capacity
 invariant **unconditionally** — no success hypothesis needed (the
@@ -750,6 +1118,24 @@ theorem enqueueShootdownOrCoalesce_frame_ack (st : TlbShootdownState)
   next st' heq => exact enqueueShootdown_frame_ack heq c
   next heq => simp
 
+/-- **WS-SM SM7.F.3 (PR #854 review)**: the coalescing enqueue preserves
+well-formedness — it frames both the ack vector and the counter. -/
+theorem enqueueShootdownOrCoalesce_preserves_ackBounded
+    {st : TlbShootdownState} (hW : ackBounded st) (target : CoreId)
+    (d : TlbShootdownDescriptor) :
+    ackBounded (enqueueShootdownOrCoalesce st target d) := by
+  intro c
+  unfold enqueueShootdownOrCoalesce
+  split
+  next st' heq =>
+    rw [enqueueShootdown_frame_ackedGen heq c,
+      enqueueShootdown_frame_roundGeneration heq]
+    exact hW c
+  next heq =>
+    show _ ≤ st.roundGeneration
+    simpa [TlbShootdownState.ackedGenOnCore, TlbShootdownState.setPendingOnCore]
+      using hW c
+
 -- ============================================================================
 -- SM7.A.5 — drainShootdowns
 -- ============================================================================
@@ -761,7 +1147,7 @@ Called from the `.tlbShootdownReq` SGI handler (SM7.B.3) on the
 execute one local TLBI per descriptor) and the state with that core's
 queue emptied.
 
-Deliberately does **not** set the ack flag: the handler must retire
+Deliberately does **not** set the ack slot: the handler must retire
 the drained invalidations (`tlbiForSharing` + `dsb`) *before*
 acknowledging, so the ack is a separate `acknowledgeShootdown` step —
 fusing them here would let the pure model claim an acknowledgment the
@@ -797,11 +1183,29 @@ theorem drainShootdowns_frame_pending (st : TlbShootdownState)
   simp only [drainShootdowns]
   exact TlbShootdownState.setPendingOnCore_pendingOnCore_ne st c c' [] h.symm
 
-/-- **WS-SM SM7.A.5**: draining never touches any ack flag (the ack is
+/-- **WS-SM SM7.A.5**: draining never touches any ack slot (the ack is
 the separate, post-TLBI `acknowledgeShootdown` step). -/
 theorem drainShootdowns_frame_ack (st : TlbShootdownState) (c c' : CoreId) :
     (drainShootdowns st c).2.ackOnCore c' = st.ackOnCore c' := by
-  simp [drainShootdowns]
+  simp [drainShootdowns, TlbShootdownState.ackOnCore,
+    TlbShootdownState.ackedGenOnCore, TlbShootdownState.setPendingOnCore]
+
+/-- **WS-SM SM7.F.3**: the raw-generation form of the frame above. -/
+theorem drainShootdowns_frame_ackedGen (st : TlbShootdownState)
+    (c c' : CoreId) :
+    (drainShootdowns st c).2.ackedGenOnCore c' = st.ackedGenOnCore c' := by
+  simp [drainShootdowns, TlbShootdownState.ackedGenOnCore,
+    TlbShootdownState.setPendingOnCore]
+
+/-- **WS-SM SM7.F.3 (PR #854 review)**: draining preserves
+well-formedness — it touches neither the ack vector nor the counter. -/
+theorem drainShootdowns_preserves_ackBounded {st : TlbShootdownState}
+    (hW : ackBounded st) (c : CoreId) :
+    ackBounded (drainShootdowns st c).2 := by
+  intro c'
+  rw [drainShootdowns_frame_ackedGen]
+  show _ ≤ st.roundGeneration
+  exact hW c'
 
 /-- **WS-SM SM7.A.6**: draining preserves the capacity invariant (the
 drained queue drops to length `0`; the rest are framed). -/
@@ -831,6 +1235,11 @@ theorem enqueueShootdown_isSome_after_drain (st : TlbShootdownState)
   rw [enqueueShootdown_isSome_iff, drainShootdowns_pending_self]
   exact maxPendingPerCore_pos
 
+/-- **WS-SM SM7.F.3**: draining never allocates a round. -/
+theorem drainShootdowns_frame_roundGeneration (st : TlbShootdownState)
+    (c : CoreId) :
+    (drainShootdowns st c).2.roundGeneration = st.roundGeneration := rfl
+
 /-- **WS-SM SM7.A.4 + SM7.A.5**: enqueue/drain round trip — the target's
 handler drains exactly the pre-existing queue with the new descriptor
 appended, in FIFO order. -/
@@ -841,80 +1250,343 @@ theorem drainShootdowns_after_enqueue {st st' : TlbShootdownState}
   rw [drainShootdowns_fst, enqueueShootdown_pending_target h]
 
 -- ============================================================================
+-- SM7.F.3 — Round-generation-selective drain (a commit drains its own rounds)
+-- ============================================================================
+--
+-- `drainShootdowns` empties a core's queue wholesale.  That is the right
+-- model of a *target's own* `.tlbShootdownReq` handler under the round-
+-- serialisation contract (its queue then holds exactly the in-flight
+-- round's descriptors), but it is the wrong model of the **initiator's
+-- deferred catch-up**, which is a second atomic step taken *after* the
+-- hardware round and NOT under the round lock.  Between a commit's
+-- posting step and its catch-up step another core's commit can post its
+-- own round; a wholesale drain would swallow those freshly-queued
+-- descriptors and declare the model quiescent before that round's SGIs
+-- had fired.  The window drain below is keyed on the descriptor's round
+-- generation, so a catch-up retires exactly the rounds its own commit
+-- opened and leaves every concurrent round's work pending.
+
+/-- **WS-SM SM7.F.3**: does generation `g` belong to the round window a
+single syscall commit opened?
+
+A commit allocates a *contiguous* block of generations: `lo` is the
+`roundGeneration` the commit observed on entry and `hi` the one it left
+behind, so the rounds it opened are exactly `lo < g ≤ hi`.  A commit
+that opened no round has `lo = hi`, and the window is empty
+(`inRoundWindow_empty`).  Most maintenance-bearing syscalls open one
+round; the retype-with-shootdown wrappers open up to two (the destroyed
+and the installed ASID — `retypeShootdownAsidList`), which is why the
+diff recovery is a window rather than a single generation. -/
+def inRoundWindow (lo hi g : Nat) : Bool := decide (lo < g ∧ g ≤ hi)
+
+/-- **WS-SM SM7.F.3**: membership in the window, as a proposition. -/
+theorem inRoundWindow_iff (lo hi g : Nat) :
+    inRoundWindow lo hi g = true ↔ (lo < g ∧ g ≤ hi) := by
+  simp [inRoundWindow]
+
+/-- **WS-SM SM7.F.3**: a commit that opened no round has an empty
+window — its catch-up drains nothing, which is exactly the inertness the
+non-shootdown syscalls need. -/
+theorem inRoundWindow_empty (lo g : Nat) : inRoundWindow lo lo g = false := by
+  simp only [inRoundWindow, decide_eq_false_iff_not, not_and, Nat.not_le]
+  omega
+
+/-- **WS-SM SM7.F.3**: the generation a round-open allocates is always in
+that commit's own window — the well-formedness fact every posting site
+discharges (`lo` is the pre-commit counter, the round's generation is
+`lo + 1`, and `hi` is at least that). -/
+theorem inRoundWindow_succ_self {lo hi : Nat} (h : lo + 1 ≤ hi) :
+    inRoundWindow lo hi (lo + 1) = true := by
+  rw [inRoundWindow_iff]
+  omega
+
+/-- **WS-SM SM7.F.3**: drain exactly the descriptors this commit's own
+rounds posted onto core `c`, leaving every *other* round's queued work
+pending.
+
+Returns the drained descriptors in FIFO order (`List.filter` is
+order-preserving, so the SM7.A.5 FIFO contract carries) together with
+the state whose queue retains the complement.  This is the operation the
+live catch-up seam runs (`shootdownCatchUpPerCoreInWindow`); under the
+round-serialisation regime — where a core's queue holds only the
+in-flight round's descriptors — it coincides with the wholesale
+`drainShootdowns` (`drainShootdownsInWindow_eq_drainShootdowns`), which
+is how every SM7.A/B round theorem carries over unchanged. -/
+def drainShootdownsInWindow (st : TlbShootdownState) (c : CoreId)
+    (lo hi : Nat) : List TlbShootdownDescriptor × TlbShootdownState :=
+  ((st.pendingOnCore c).filter (fun d => inRoundWindow lo hi d.generation),
+   st.setPendingOnCore c
+     ((st.pendingOnCore c).filter
+       (fun d => !inRoundWindow lo hi d.generation)))
+
+/-- **WS-SM SM7.F.3**: the window drain returns the in-window prefix-
+preserving sublist of the pending queue. -/
+theorem drainShootdownsInWindow_fst (st : TlbShootdownState) (c : CoreId)
+    (lo hi : Nat) :
+    (drainShootdownsInWindow st c lo hi).1 =
+      (st.pendingOnCore c).filter (fun d => inRoundWindow lo hi d.generation) :=
+  rfl
+
+/-- **WS-SM SM7.F.3**: a descriptor is drained iff it was pending *and*
+belongs to this commit's rounds. -/
+theorem mem_drainShootdownsInWindow_fst_iff (st : TlbShootdownState)
+    (c : CoreId) (lo hi : Nat) (d : TlbShootdownDescriptor) :
+    d ∈ (drainShootdownsInWindow st c lo hi).1 ↔
+      (d ∈ st.pendingOnCore c ∧ inRoundWindow lo hi d.generation = true) := by
+  rw [drainShootdownsInWindow_fst, List.mem_filter]
+
+/-- **WS-SM SM7.F.3**: every drained descriptor was pending — the window
+drain never invents work. -/
+theorem mem_pending_of_mem_drainShootdownsInWindow_fst {st : TlbShootdownState}
+    {c : CoreId} {lo hi : Nat} {d : TlbShootdownDescriptor}
+    (h : d ∈ (drainShootdownsInWindow st c lo hi).1) :
+    d ∈ st.pendingOnCore c :=
+  ((mem_drainShootdownsInWindow_fst_iff st c lo hi d).mp h).1
+
+/-- **WS-SM SM7.F.3**: after the window drain, core `c`'s queue is
+exactly the out-of-window complement. -/
+@[simp] theorem drainShootdownsInWindow_pending_self (st : TlbShootdownState)
+    (c : CoreId) (lo hi : Nat) :
+    (drainShootdownsInWindow st c lo hi).2.pendingOnCore c =
+      (st.pendingOnCore c).filter
+        (fun d => !inRoundWindow lo hi d.generation) := by
+  simp [drainShootdownsInWindow]
+
+/-- **WS-SM SM7.F.3 (the race-freedom lemma)**: a descriptor posted by a
+round *outside* this commit's window is still pending after the drain.
+
+This is the model-fidelity property the whole generation mechanism
+exists for: a concurrently-posted round's descriptors survive another
+round's catch-up, so the model can never claim a core clean of an
+invalidation whose SGI has not yet fired. -/
+theorem drainShootdownsInWindow_preserves_foreign {st : TlbShootdownState}
+    {c : CoreId} {lo hi : Nat} {d : TlbShootdownDescriptor}
+    (hmem : d ∈ st.pendingOnCore c)
+    (hout : inRoundWindow lo hi d.generation = false) :
+    d ∈ (drainShootdownsInWindow st c lo hi).2.pendingOnCore c := by
+  rw [drainShootdownsInWindow_pending_self, List.mem_filter]
+  exact ⟨hmem, by simp [hout]⟩
+
+/-- **WS-SM SM7.F.3**: the dual — a descriptor this commit's own rounds
+posted is gone from the queue afterwards (the catch-up genuinely
+completes its own work). -/
+theorem drainShootdownsInWindow_drains_own {st : TlbShootdownState}
+    {c : CoreId} {lo hi : Nat} {d : TlbShootdownDescriptor}
+    (hin : inRoundWindow lo hi d.generation = true) :
+    d ∉ (drainShootdownsInWindow st c lo hi).2.pendingOnCore c := by
+  rw [drainShootdownsInWindow_pending_self, List.mem_filter]
+  simp [hin]
+
+/-- **WS-SM SM7.F.3**: the window drain touches only core `c`'s queue. -/
+theorem drainShootdownsInWindow_frame_pending (st : TlbShootdownState)
+    {c c' : CoreId} (h : c' ≠ c) (lo hi : Nat) :
+    (drainShootdownsInWindow st c lo hi).2.pendingOnCore c' =
+      st.pendingOnCore c' := by
+  simp only [drainShootdownsInWindow]
+  exact TlbShootdownState.setPendingOnCore_pendingOnCore_ne st c c' _ h.symm
+
+/-- **WS-SM SM7.F.3**: the window drain never touches an ack slot (the
+acknowledgment is the separate, post-TLBI step). -/
+theorem drainShootdownsInWindow_frame_ack (st : TlbShootdownState)
+    (c c' : CoreId) (lo hi : Nat) :
+    (drainShootdownsInWindow st c lo hi).2.ackOnCore c' = st.ackOnCore c' := by
+  simp [drainShootdownsInWindow, TlbShootdownState.ackOnCore,
+    TlbShootdownState.ackedGenOnCore, TlbShootdownState.setPendingOnCore]
+
+/-- **WS-SM SM7.F.3**: the raw-generation form of the frame above. -/
+theorem drainShootdownsInWindow_frame_ackedGen (st : TlbShootdownState)
+    (c c' : CoreId) (lo hi : Nat) :
+    (drainShootdownsInWindow st c lo hi).2.ackedGenOnCore c' =
+      st.ackedGenOnCore c' := by
+  simp [drainShootdownsInWindow, TlbShootdownState.ackedGenOnCore,
+    TlbShootdownState.setPendingOnCore]
+
+/-- **WS-SM SM7.F.3**: the window drain never allocates a round. -/
+theorem drainShootdownsInWindow_frame_roundGeneration (st : TlbShootdownState)
+    (c : CoreId) (lo hi : Nat) :
+    (drainShootdownsInWindow st c lo hi).2.roundGeneration =
+      st.roundGeneration := rfl
+
+/-- **WS-SM SM7.F.3 (PR #854 review)**: the window drain preserves
+well-formedness — it touches neither the ack vector nor the counter. -/
+theorem drainShootdownsInWindow_preserves_ackBounded {st : TlbShootdownState}
+    (hW : ackBounded st) (c : CoreId) (lo hi : Nat) :
+    ackBounded (drainShootdownsInWindow st c lo hi).2 := by
+  intro c'
+  rw [drainShootdownsInWindow_frame_ackedGen]
+  show _ ≤ st.roundGeneration
+  exact hW c'
+
+/-- **WS-SM SM7.F.3**: the window drain preserves the capacity invariant
+— a filtered queue is never longer than the original. -/
+theorem drainShootdownsInWindow_preserves_pendingBounded
+    {st : TlbShootdownState} (hB : pendingBounded st) (c : CoreId)
+    (lo hi : Nat) :
+    pendingBounded (drainShootdownsInWindow st c lo hi).2 := by
+  intro c'
+  by_cases hc : c' = c
+  · subst hc
+    rw [drainShootdownsInWindow_pending_self]
+    exact Nat.le_trans (List.length_filter_le _ _) (hB c')
+  · rw [drainShootdownsInWindow_frame_pending st hc]
+    exact hB c'
+
+/-- **WS-SM SM7.F.3 (the bridge)**: when every descriptor pending on
+core `c` belongs to this commit's window — the round-serialisation
+regime, where a core's queue holds only the in-flight round's work — the
+selective drain **is** the wholesale `drainShootdowns`.
+
+Every SM7.A/B round theorem is stated against `drainShootdowns`; this is
+what carries them to the live, generation-selective seam. -/
+theorem drainShootdownsInWindow_eq_drainShootdowns {st : TlbShootdownState}
+    {c : CoreId} {lo hi : Nat}
+    (hall : ∀ d ∈ st.pendingOnCore c, inRoundWindow lo hi d.generation = true) :
+    drainShootdownsInWindow st c lo hi = drainShootdowns st c := by
+  have hself : (st.pendingOnCore c).filter
+      (fun d => inRoundWindow lo hi d.generation) = st.pendingOnCore c :=
+    List.filter_eq_self.mpr hall
+  have hcomp : (st.pendingOnCore c).filter
+      (fun d => !inRoundWindow lo hi d.generation) = [] := by
+    refine List.filter_eq_nil_iff.mpr fun d hd => ?_
+    simp [hall d hd]
+  simp only [drainShootdownsInWindow, drainShootdowns, hself, hcomp]
+
+/-- **WS-SM SM7.F.3**: from a state whose queues hold only this commit's
+own rounds, the window drain is the wholesale drain on *every* core —
+the fold-level form of the bridge. -/
+theorem drainShootdownsInWindow_eq_drainShootdowns_of_all {st : TlbShootdownState}
+    {lo hi : Nat}
+    (hall : ∀ (c : CoreId), ∀ d ∈ st.pendingOnCore c,
+      inRoundWindow lo hi d.generation = true) (c : CoreId) :
+    drainShootdownsInWindow st c lo hi = drainShootdowns st c :=
+  drainShootdownsInWindow_eq_drainShootdowns (hall c)
+
+-- ============================================================================
 -- SM7.A.3 — Acknowledgment operations
 -- ============================================================================
 
-/-- **WS-SM SM7.A.3**: mark core `c`'s round complete.
+/-- **WS-SM SM7.A.3 + SM7.F.3 (PR #854 review)**: record that core `c`
+has serviced every round up to and including generation `g`.
 
 The target's SGI handler calls this *after* its drained invalidations
 have retired locally (plan §3.2 step 4c).  In the Rust runtime this is
-a release-store on `SHOOTDOWN_ACK[c]` — the release edge of the
-SM7.B.4 release-acquire pairing that lets the initiator's acquire-poll
-conclude the target's TLBIs happened-before the observed `true`. -/
-def acknowledgeShootdown (st : TlbShootdownState) (c : CoreId) :
-    TlbShootdownState :=
-  st.setAckOnCore c true
+`acked_gen.fetch_max(g, Release)` — the release edge of the SM7.B.4
+release-acquire pairing that lets the initiator's acquire-poll conclude
+the target's TLBIs happened-before the generation it observes.
 
-/-- **WS-SM SM7.A.3**: acknowledging sets the caller's own flag. -/
-@[simp] theorem acknowledgeShootdown_ackOnCore_self (st : TlbShootdownState)
-    (c : CoreId) :
-    (acknowledgeShootdown st c).ackOnCore c = true := by
+`max` rather than a plain store, mirroring `fetch_max`: an
+acknowledgment may only ever move a core's generation forward, so a
+late-delivered handler run for an *older* round can re-affirm that
+older generation without retracting a newer one.  The generation
+argument is what makes the acknowledgment name the round it
+discharged — a window drain passes its own window's upper bound and
+therefore cannot claim a concurrently-posted round it did not
+drain. -/
+def acknowledgeShootdown (st : TlbShootdownState) (c : CoreId) (g : Nat) :
+    TlbShootdownState :=
+  st.setAckedGenOnCore c (max (st.ackedGenOnCore c) g)
+
+/-- **WS-SM SM7.F.3**: acknowledging never allocates a round. -/
+@[simp] theorem acknowledgeShootdown_roundGeneration (st : TlbShootdownState)
+    (c : CoreId) (g : Nat) :
+    (acknowledgeShootdown st c g).roundGeneration = st.roundGeneration := rfl
+
+/-- **WS-SM SM7.F.3**: acknowledging generation `g` leaves the caller's
+slot at least `g`. -/
+@[simp] theorem acknowledgeShootdown_ackedGenOnCore_self
+    (st : TlbShootdownState) (c : CoreId) (g : Nat) :
+    (acknowledgeShootdown st c g).ackedGenOnCore c =
+      max (st.ackedGenOnCore c) g := by
   simp [acknowledgeShootdown]
 
-/-- **WS-SM SM7.A.3**: acknowledging leaves every *other* core's flag
+/-- **WS-SM SM7.A.3**: acknowledging the round currently open marks the
+caller acknowledged — the generation form of the original flag set. -/
+@[simp] theorem acknowledgeShootdown_ackOnCore_self (st : TlbShootdownState)
+    (c : CoreId) {g : Nat} (h : st.roundGeneration ≤ g) :
+    (acknowledgeShootdown st c g).ackOnCore c = true := by
+  simp only [TlbShootdownState.ackOnCore, acknowledgeShootdown_ackedGenOnCore_self,
+    acknowledgeShootdown_roundGeneration, decide_eq_true_eq]
+  exact Nat.le_trans h (Nat.le_max_right _ _)
+
+/-- **WS-SM SM7.A.3**: acknowledging leaves every *other* core's slot
 untouched — each target answers only for itself. -/
 theorem acknowledgeShootdown_ackOnCore_ne (st : TlbShootdownState)
-    {c c' : CoreId} (h : c' ≠ c) :
-    (acknowledgeShootdown st c).ackOnCore c' = st.ackOnCore c' := by
+    {c c' : CoreId} (g : Nat) (h : c' ≠ c) :
+    (acknowledgeShootdown st c g).ackOnCore c' = st.ackOnCore c' := by
   simp only [acknowledgeShootdown]
-  exact TlbShootdownState.setAckOnCore_ackOnCore_ne st c c' true h.symm
+  exact TlbShootdownState.setAckedGenOnCore_ackOnCore_ne st c c' _ h.symm
+
+/-- **WS-SM SM7.F.3**: the raw-generation form of the frame above. -/
+theorem acknowledgeShootdown_ackedGenOnCore_ne (st : TlbShootdownState)
+    {c c' : CoreId} (g : Nat) (h : c' ≠ c) :
+    (acknowledgeShootdown st c g).ackedGenOnCore c' = st.ackedGenOnCore c' := by
+  simp only [acknowledgeShootdown]
+  exact TlbShootdownState.setAckedGenOnCore_ackedGenOnCore_ne st c c' _ h.symm
 
 /-- **WS-SM SM7.A.3**: acknowledging never touches any pending queue. -/
 theorem acknowledgeShootdown_frame_pending (st : TlbShootdownState)
-    (c c' : CoreId) :
-    (acknowledgeShootdown st c).pendingOnCore c' = st.pendingOnCore c' := by
+    (c c' : CoreId) (g : Nat) :
+    (acknowledgeShootdown st c g).pendingOnCore c' = st.pendingOnCore c' := by
   simp [acknowledgeShootdown]
 
 /-- **WS-SM SM7.A.6**: acknowledging preserves the capacity invariant. -/
 theorem acknowledgeShootdown_preserves_pendingBounded {st : TlbShootdownState}
-    (hB : pendingBounded st) (c : CoreId) :
-    pendingBounded (acknowledgeShootdown st c) := by
+    (hB : pendingBounded st) (c : CoreId) (g : Nat) :
+    pendingBounded (acknowledgeShootdown st c g) := by
   intro c'
   rw [acknowledgeShootdown_frame_pending]
   exact hB c'
 
-/-- **WS-SM SM7.A.3**: acknowledgments only accumulate — a flag already
-`true` stays `true` under further acknowledgments.  Monotonicity is
-what makes the initiator's wait loop's exit condition stable
-(`allAcked` cannot regress mid-round; only `beginShootdownRound`
-resets flags, and the global round lock — the module-header
-round-serialisation contract — serialises rounds). -/
-theorem acknowledgeShootdown_monotone (st : TlbShootdownState)
-    (c c' : CoreId) (h : st.ackOnCore c' = true) :
-    (acknowledgeShootdown st c).ackOnCore c' = true := by
+/-- **WS-SM SM7.F.3**: acknowledging a generation the opener has already
+minted preserves well-formedness. -/
+theorem acknowledgeShootdown_preserves_ackBounded {st : TlbShootdownState}
+    (hW : ackBounded st) (c : CoreId) {g : Nat} (h : g ≤ st.roundGeneration) :
+    ackBounded (acknowledgeShootdown st c g) := by
+  intro c'
+  rw [acknowledgeShootdown_roundGeneration]
   by_cases hc : c' = c
   · subst hc
-    simp
-  · rw [acknowledgeShootdown_ackOnCore_ne st hc]
+    rw [acknowledgeShootdown_ackedGenOnCore_self]
+    exact Nat.max_le.mpr ⟨hW c', h⟩
+  · rw [acknowledgeShootdown_ackedGenOnCore_ne _ _ hc]
+    exact hW c'
+
+/-- **WS-SM SM7.A.3**: acknowledgments only accumulate — an acknowledged
+core stays acknowledged under further acknowledgments.  Monotonicity is
+what makes the initiator's wait loop's exit condition stable
+(`allAcked` cannot regress mid-round; only `beginShootdownRound`
+advances the generation, and the global round lock — the module-header
+round-serialisation contract — serialises rounds). -/
+theorem acknowledgeShootdown_monotone (st : TlbShootdownState)
+    (c c' : CoreId) (g : Nat) (h : st.ackOnCore c' = true) :
+    (acknowledgeShootdown st c g).ackOnCore c' = true := by
+  by_cases hc : c' = c
+  · subst hc
+    simp only [TlbShootdownState.ackOnCore, acknowledgeShootdown_ackedGenOnCore_self,
+      acknowledgeShootdown_roundGeneration, decide_eq_true_eq]
+    simp only [TlbShootdownState.ackOnCore, decide_eq_true_eq] at h
+    exact Nat.le_trans h (Nat.le_max_left _ _)
+  · rw [acknowledgeShootdown_ackOnCore_ne st g hc]
     exact h
 
-/-- **WS-SM SM7.A.3**: an already-acknowledged flag survives any fold
+/-- **WS-SM SM7.A.3**: an already-acknowledged core survives any fold
 of further acknowledgments — the inductive engine behind
 `allCores_foldl_acknowledgeShootdown_allAcked`. -/
-theorem foldl_acknowledgeShootdown_monotone {l : List CoreId}
+theorem foldl_acknowledgeShootdown_monotone {l : List CoreId} {g : Nat}
     {st : TlbShootdownState} {c : CoreId} (h : st.ackOnCore c = true) :
-    (l.foldl acknowledgeShootdown st).ackOnCore c = true := by
+    (l.foldl (fun s x => acknowledgeShootdown s x g) st).ackOnCore c = true := by
   induction l generalizing st with
   | nil => simpa using h
   | cons x xs ih =>
     rw [List.foldl_cons]
-    exact ih (acknowledgeShootdown_monotone st x c h)
+    exact ih (acknowledgeShootdown_monotone st x c g h)
 
-/-- **WS-SM SM7.A.3**: folding acknowledgments over a list sets the
-flag of every core in the list. -/
-theorem foldl_acknowledgeShootdown_sets {l : List CoreId}
-    {st : TlbShootdownState} {c : CoreId} (hc : c ∈ l) :
-    (l.foldl acknowledgeShootdown st).ackOnCore c = true := by
+/-- **WS-SM SM7.A.3**: folding acknowledgments of the round currently
+open over a list marks every core in the list acknowledged. -/
+theorem foldl_acknowledgeShootdown_sets {l : List CoreId} {g : Nat}
+    {st : TlbShootdownState} {c : CoreId} (hc : c ∈ l)
+    (hg : st.roundGeneration ≤ g) :
+    (l.foldl (fun s x => acknowledgeShootdown s x g) st).ackOnCore c = true := by
   induction l generalizing st with
   | nil => cases hc
   | cons x xs ih =>
@@ -922,22 +1594,23 @@ theorem foldl_acknowledgeShootdown_sets {l : List CoreId}
     rcases List.mem_cons.mp hc with hEq | hMem
     · subst hEq
       exact foldl_acknowledgeShootdown_monotone
-        (acknowledgeShootdown_ackOnCore_self st _)
-    · exact ih hMem
+        (acknowledgeShootdown_ackOnCore_self st _ hg)
+    · exact ih hMem (hg)
 
-/-- **WS-SM SM7.A.3**: once every core has acknowledged, `allAcked`
-holds — the state-level termination anchor for the SM7.B.5 initiator
-wait loop (`shootdown_wait_loop_terminates`): the loop's exit
-condition is *reachable* because acknowledging each core in
-`allCores` (every `CoreId`, by `allCores` completeness) yields a
-fully-acknowledged state, and monotonicity keeps it stable. -/
+/-- **WS-SM SM7.A.3**: once every core has acknowledged the round
+currently open, `allAcked` holds — the state-level termination anchor
+for the SM7.B.5 initiator wait loop
+(`shootdown_wait_loop_terminates`): the loop's exit condition is
+*reachable* because acknowledging each core in `allCores` (every
+`CoreId`, by `allCores` completeness) yields a fully-acknowledged
+state, and monotonicity keeps it stable. -/
 theorem allCores_foldl_acknowledgeShootdown_allAcked
-    (st : TlbShootdownState) :
-    allAcked (allCores.foldl acknowledgeShootdown st) := by
+    (st : TlbShootdownState) {g : Nat} (hg : st.roundGeneration ≤ g) :
+    allAcked (allCores.foldl (fun s x => acknowledgeShootdown s x g) st) := by
   intro c
   have hmem : c ∈ allCores := by
     simp [SeLe4n.Kernel.Concurrency.allCores]
-  exact foldl_acknowledgeShootdown_sets hmem
+  exact foldl_acknowledgeShootdown_sets hmem hg
 
 -- ============================================================================
 -- SM7.A.3 — Round initialization (plan §3.2 step 1)
@@ -945,9 +1618,17 @@ theorem allCores_foldl_acknowledgeShootdown_allAcked
 
 /-- **WS-SM SM7.A.3**: open a new shootdown round.
 
-Resets every ack flag to `false` except the initiator's own, which is
-born-`true`: the initiator performs its own invalidation locally
-(plan §3.2 steps 1 + 3) and is never waited on.  The SM7.B
+Allocates the round's generation and advances the initiator's
+acknowledged-generation slot to it, so the initiator is born-acknowledged:
+it performs its own invalidation locally (plan §3.2 steps 1 + 3) and is
+never waited on.
+
+**Nothing is cleared.**  This was a reset of a `Vector Bool` until
+v0.32.113; a target is now unacknowledged because `roundGeneration` has
+advanced past the generation its slot names, which is what stops an
+acknowledgment left over from an earlier round satisfying this one
+(`beginShootdownRound_ackOnCore_target` needs `ackBounded` for exactly
+that reason — there is no reset to appeal to).  The SM7.B
 `tlbShootdownBroadcast` transition calls this exactly once per round,
 *before* enqueueing descriptors and firing `.tlbShootdownReq` SGIs;
 the single global round lock (`ShootdownRoundLockId` — the
@@ -955,36 +1636,73 @@ module-header round-serialisation contract; the per-VSpace VSpaceRoot
 lock alone is NOT sufficient) serialises rounds, so a reset can never
 race a straggling acknowledgment from a previous round (the previous
 initiator only released the round lock after observing `allAcked`,
-which happens-after every previous ack-set). -/
+which happens-after every previous ack-set).
+
+**Generation allocation (SM7.F.3)**: the round open is also where the
+round's identity is minted — `roundGeneration` is incremented, and the
+posting fold stamps every descriptor of the round with the resulting
+value.  The counter is monotone (nothing in this module decreases it),
+so generations are allocated `1, 2, 3, …` in commit order and a
+descriptor's generation totally orders it against every other round. -/
 def beginShootdownRound (st : TlbShootdownState) (initiator : CoreId) :
     TlbShootdownState :=
-  { st with shootdownAck :=
-      (Vector.replicate numCores false).set initiator.val true initiator.isLt }
+  { st with roundGeneration := st.roundGeneration + 1 }.setAckedGenOnCore
+    initiator (st.roundGeneration + 1)
 
-/-- **WS-SM SM7.A.3**: the initiator is born-acknowledged. -/
+/-- **WS-SM SM7.A.3**: the initiator is born-acknowledged — it performs
+its own invalidation locally and is never waited on. -/
 @[simp] theorem beginShootdownRound_ackOnCore_initiator
     (st : TlbShootdownState) (initiator : CoreId) :
     (beginShootdownRound st initiator).ackOnCore initiator = true := by
-  simp [beginShootdownRound, TlbShootdownState.ackOnCore]
+  simp [beginShootdownRound, TlbShootdownState.ackOnCore,
+    TlbShootdownState.ackedGenOnCore, TlbShootdownState.setAckedGenOnCore]
 
 /-- **WS-SM SM7.A.3**: every non-initiator core starts the round
-unacknowledged — the initiator genuinely waits on each target. -/
+unacknowledged — the initiator genuinely waits on each target.
+
+Needs `ackBounded` since v0.32.113: with generations there is no reset
+to make a target unacknowledged, so what makes it so is that its slot
+cannot already name the round about to be opened. -/
 theorem beginShootdownRound_ackOnCore_target (st : TlbShootdownState)
-    {initiator c : CoreId} (h : c ≠ initiator) :
+    (hW : ackBounded st) {initiator c : CoreId} (h : c ≠ initiator) :
     (beginShootdownRound st initiator).ackOnCore c = false := by
-  simp only [beginShootdownRound, TlbShootdownState.ackOnCore]
-  rw [SeLe4n.PerCoreVector.get_set_ne _ initiator c true h.symm]
-  exact SeLe4n.PerCoreVector.replicate_get numCores false c
+  simp only [beginShootdownRound, TlbShootdownState.ackOnCore,
+    decide_eq_false_iff_not, Nat.not_le]
+  rw [show ({ st with roundGeneration := st.roundGeneration + 1
+              : TlbShootdownState }.setAckedGenOnCore initiator
+            (st.roundGeneration + 1)).ackedGenOnCore c
+        = st.ackedGenOnCore c from
+      TlbShootdownState.setAckedGenOnCore_ackedGenOnCore_ne _ _ _ _
+        (fun hEq => h hEq.symm)]
+  exact Nat.lt_succ_of_le (hW c)
 
 /-- **WS-SM SM7.A.3**: at round start, a core is acknowledged iff it is
 the initiator — the exact plan §3.2 step-1 postcondition. -/
 theorem beginShootdownRound_ackOnCore_iff (st : TlbShootdownState)
-    (initiator c : CoreId) :
+    (hW : ackBounded st) (initiator c : CoreId) :
     (beginShootdownRound st initiator).ackOnCore c = true ↔ c = initiator := by
   by_cases h : c = initiator
   · subst h
     simp
-  · simp [beginShootdownRound_ackOnCore_target st h, h]
+  · simp [beginShootdownRound_ackOnCore_target st hW h, h]
+
+/-- **WS-SM SM7.F.3**: opening a round preserves well-formedness — the
+initiator is written exactly the generation just minted and every other
+slot was already bounded by the smaller previous generation. -/
+theorem beginShootdownRound_preserves_ackBounded {st : TlbShootdownState}
+    (hW : ackBounded st) (initiator : CoreId) :
+    ackBounded (beginShootdownRound st initiator) := by
+  intro c
+  show _ ≤ st.roundGeneration + 1
+  by_cases h : c = initiator
+  · subst h
+    simp only [beginShootdownRound,
+      TlbShootdownState.setAckedGenOnCore_ackedGenOnCore_self]
+    exact Nat.le_refl _
+  · simp only [beginShootdownRound]
+    rw [TlbShootdownState.setAckedGenOnCore_ackedGenOnCore_ne _ _ _ _
+      (fun hEq => h hEq.symm)]
+    exact Nat.le_succ_of_le (hW c)
 
 /-- **WS-SM SM7.A.3**: opening a round never touches any pending queue
 (descriptors are posted by the subsequent per-target enqueues). -/
@@ -992,7 +1710,8 @@ theorem beginShootdownRound_frame_pending (st : TlbShootdownState)
     (initiator c : CoreId) :
     (beginShootdownRound st initiator).pendingOnCore c =
       st.pendingOnCore c := by
-  simp [beginShootdownRound, TlbShootdownState.pendingOnCore]
+  simp [beginShootdownRound, TlbShootdownState.pendingOnCore,
+    TlbShootdownState.setAckedGenOnCore]
 
 /-- **WS-SM SM7.A.6**: opening a round preserves the capacity
 invariant. -/
@@ -1003,18 +1722,31 @@ theorem beginShootdownRound_preserves_pendingBounded
   rw [beginShootdownRound_frame_pending]
   exact hB c
 
+/-- **WS-SM SM7.F.3**: opening a round allocates the next generation. -/
+@[simp] theorem beginShootdownRound_roundGeneration (st : TlbShootdownState)
+    (initiator : CoreId) :
+    (beginShootdownRound st initiator).roundGeneration =
+      st.roundGeneration + 1 := rfl
+
 -- ============================================================================
 -- SM7.A — Target-masked round initialization (PR #838 review P1)
 -- ============================================================================
 
-/-- **WS-SM SM7.A (PR #838 review P1)**: closed form for a fold of
-per-core ack clears — a core's flag is `false` exactly when the fold
-visited it, and untouched otherwise. -/
-theorem foldl_setAckFalse_ackOnCore (l : List CoreId) :
+/-- **WS-SM SM7.F.3 (PR #854 review)**: closed form for a fold of
+per-core generation writes — a core's slot is `g` exactly when the fold
+visited it, and untouched otherwise.
+
+Replaces the pre-v0.32.113 `foldl_setAckedGen_ackedGenOnCore`.  A masked
+round used to *clear* the targets' flags; with generations there is no
+clear at all — the round open raises `roundGeneration` and writes the
+new generation to the cores that are born-acknowledged, which leaves
+every target behind automatically.  That is the same change the Rust
+side made when SM7.F.3 deleted `reset_for_round`. -/
+theorem foldl_setAckedGen_ackedGenOnCore (l : List CoreId) (g : Nat) :
     ∀ (st : TlbShootdownState) (c : CoreId),
-      (l.foldl (fun (s : TlbShootdownState) x => s.setAckOnCore x false)
-          st).ackOnCore c =
-        if c ∈ l then false else st.ackOnCore c := by
+      (l.foldl (fun (s : TlbShootdownState) x => s.setAckedGenOnCore x g)
+          st).ackedGenOnCore c =
+        if c ∈ l then g else st.ackedGenOnCore c := by
   induction l with
   | nil => intro st c; simp
   | cons x xs ih =>
@@ -1026,14 +1758,14 @@ theorem foldl_setAckFalse_ackOnCore (l : List CoreId) :
       · subst hce
         simp [hcx]
       · rw [if_neg hcx, if_neg (by simp [List.mem_cons, hce, hcx])]
-        exact TlbShootdownState.setAckOnCore_ackOnCore_ne st x c false
+        exact TlbShootdownState.setAckedGenOnCore_ackedGenOnCore_ne st x c g
           (fun h => hce h.symm)
 
-/-- **WS-SM SM7.A (PR #838 review P1)**: a fold of ack clears never
-touches any pending queue. -/
-theorem foldl_setAckFalse_pendingOnCore (l : List CoreId) :
+/-- **WS-SM SM7.F.3**: a fold of generation writes never touches any
+pending queue. -/
+theorem foldl_setAckedGen_pendingOnCore (l : List CoreId) (g : Nat) :
     ∀ (st : TlbShootdownState) (c : CoreId),
-      (l.foldl (fun (s : TlbShootdownState) x => s.setAckOnCore x false)
+      (l.foldl (fun (s : TlbShootdownState) x => s.setAckedGenOnCore x g)
           st).pendingOnCore c =
         st.pendingOnCore c := by
   induction l with
@@ -1043,12 +1775,38 @@ theorem foldl_setAckFalse_pendingOnCore (l : List CoreId) :
     rw [List.foldl_cons, ih]
     simp
 
+/-- **WS-SM SM7.F.3**: a fold of generation writes never allocates a
+round. -/
+theorem foldl_setAckedGen_roundGeneration (l : List CoreId) (g : Nat) :
+    ∀ st : TlbShootdownState,
+      (l.foldl (fun (s : TlbShootdownState) x => s.setAckedGenOnCore x g)
+          st).roundGeneration = st.roundGeneration := by
+  induction l with
+  | nil => intro st; rfl
+  | cons x xs ih =>
+    intro st
+    rw [List.foldl_cons, ih]
+    rfl
+
+/-- **WS-SM SM7.F.3**: the cores a masked round opens
+born-acknowledged — every core that is not a target. -/
+def bornAcknowledged (targets : List CoreId) : List CoreId :=
+  allCores.filter (fun c => decide (c ∉ targets))
+
+/-- **WS-SM SM7.F.3**: membership in the born-acknowledged set is
+exactly non-membership in the target set (every `CoreId` is in
+`allCores`). -/
+@[simp] theorem mem_bornAcknowledged (targets : List CoreId) (c : CoreId) :
+    c ∈ bornAcknowledged targets ↔ c ∉ targets := by
+  simp [bornAcknowledged, SeLe4n.Kernel.Concurrency.allCores]
+
 /-- **WS-SM SM7.A (PR #838 review P1)**: open a shootdown round against
 an explicit **target set** — only the targets start unacknowledged;
 every non-target (and the initiator) is born-`true`.
 
-This is the model of the runtime's online-masked reset
-(`reset_for_round_in_slice_masked`, `shootdown.rs`, driven by the
+This is the model of the runtime's online-masked round (SM7.F.3
+removed the ack reset, so the mask now lives on the *wait* —
+`all_acked_for_round_in_slice`, `shootdown.rs`, driven by the
 `smp::CORE_IRQ_READY` IRQ-serviceable snapshot — PR #839 review P1):
 a core that is offline (a partial-core boot — `smp_enabled=false`, the
 v1.0.0 default — an `smp_max_cores` cap, or a PSCI CPU_ON rejection),
@@ -1070,27 +1828,80 @@ completes during boot, before any user mapping exists to shoot down).
 configuration. -/
 def beginShootdownRoundFor (st : TlbShootdownState) (initiator : CoreId)
     (targets : List CoreId) : TlbShootdownState :=
-  (targets.foldl (fun (s : TlbShootdownState) c => s.setAckOnCore c false)
-      { st with shootdownAck := Vector.replicate numCores true }).setAckOnCore
-    initiator true
+  ((bornAcknowledged targets).foldl
+      (fun (s : TlbShootdownState) c =>
+        s.setAckedGenOnCore c (st.roundGeneration + 1))
+      { st with
+          roundGeneration := st.roundGeneration + 1 }).setAckedGenOnCore
+    initiator (st.roundGeneration + 1)
 
-/-- **WS-SM SM7.A (PR #838 review P1)**: at a masked round's start, a
-core is acknowledged iff it is the initiator or not a target — the
-non-target ("offline") cores are never waited on. -/
-theorem beginShootdownRoundFor_ackOnCore_iff (st : TlbShootdownState)
+/-- **WS-SM SM7.F.3**: the generation a masked round leaves in each
+core's slot — the new generation for the initiator and every
+non-target, and the core's previous value for a target.
+
+The single closed form the masked-round characterisations below are
+read off, so they cannot drift from the definition or each other. -/
+theorem beginShootdownRoundFor_ackedGenOnCore (st : TlbShootdownState)
     (initiator : CoreId) (targets : List CoreId) (c : CoreId) :
-    (beginShootdownRoundFor st initiator targets).ackOnCore c = true ↔
-      (c = initiator ∨ c ∉ targets) := by
+    (beginShootdownRoundFor st initiator targets).ackedGenOnCore c =
+      if c = initiator ∨ c ∉ targets then st.roundGeneration + 1
+      else st.ackedGenOnCore c := by
   unfold beginShootdownRoundFor
   by_cases hci : c = initiator
   · subst hci
-    simp
-  · rw [TlbShootdownState.setAckOnCore_ackOnCore_ne _ initiator c true
-      (fun h => hci h.symm)]
-    rw [foldl_setAckFalse_ackOnCore]
+    rw [TlbShootdownState.setAckedGenOnCore_ackedGenOnCore_self,
+      if_pos (Or.inl rfl)]
+  · rw [TlbShootdownState.setAckedGenOnCore_ackedGenOnCore_ne _ _ _ _
+      (fun h => hci h.symm), foldl_setAckedGen_ackedGenOnCore]
     by_cases hct : c ∈ targets
-    · simp [hct, hci]
-    · simp [hct, hci, TlbShootdownState.ackOnCore]
+    · rw [if_neg (by simpa using hct), if_neg (by simp [hci, hct])]
+      rfl
+    · rw [if_pos (by simpa using hct), if_pos (Or.inr hct)]
+
+/-- **WS-SM SM7.F.3**: opening a masked round advances the generation. -/
+theorem beginShootdownRoundFor_gen (st : TlbShootdownState)
+    (initiator : CoreId) (targets : List CoreId) :
+    (beginShootdownRoundFor st initiator targets).roundGeneration =
+      st.roundGeneration + 1 := by
+  unfold beginShootdownRoundFor
+  rw [TlbShootdownState.setAckedGenOnCore_roundGeneration,
+    foldl_setAckedGen_roundGeneration]
+
+/-- **WS-SM SM7.A (PR #838 review P1)**: the initiator and every
+non-target are born-acknowledged at a masked round's start.
+
+The direction the liveness capstones use, and it needs no
+well-formedness hypothesis: these cores are *written* the round's own
+generation, so they are acknowledged outright rather than by an argument
+about what their slot cannot already hold. -/
+theorem beginShootdownRoundFor_ackOnCore_of_born (st : TlbShootdownState)
+    (initiator : CoreId) (targets : List CoreId) {c : CoreId}
+    (h : c = initiator ∨ c ∉ targets) :
+    (beginShootdownRoundFor st initiator targets).ackOnCore c = true := by
+  simp only [TlbShootdownState.ackOnCore, beginShootdownRoundFor_gen,
+    beginShootdownRoundFor_ackedGenOnCore, decide_eq_true_eq, if_pos h]
+  exact Nat.le_refl _
+
+/-- **WS-SM SM7.A (PR #838 review P1)**: at a masked round's start, a
+core is acknowledged iff it is the initiator or not a target — the
+non-target ("offline") cores are never waited on.
+
+Needs `ackBounded` since v0.32.113: with generations a target is
+unacknowledged because its slot still names an *earlier* round, so the
+characterisation depends on no slot naming a round that has not been
+opened. -/
+theorem beginShootdownRoundFor_ackOnCore_iff (st : TlbShootdownState)
+    (hW : ackBounded st) (initiator : CoreId) (targets : List CoreId)
+    (c : CoreId) :
+    (beginShootdownRoundFor st initiator targets).ackOnCore c = true ↔
+      (c = initiator ∨ c ∉ targets) := by
+  simp only [TlbShootdownState.ackOnCore, beginShootdownRoundFor_gen,
+    beginShootdownRoundFor_ackedGenOnCore, decide_eq_true_eq]
+  by_cases h : c = initiator ∨ c ∉ targets
+  · rw [if_pos h]
+    exact iff_of_true (Nat.le_refl _) h
+  · rw [if_neg h]
+    exact iff_of_false (Nat.not_le.mpr (Nat.lt_succ_of_le (hW c))) h
 
 /-- **WS-SM SM7.A (PR #838 review P1)**: opening a masked round never
 touches any pending queue. -/
@@ -1099,9 +1910,23 @@ theorem beginShootdownRoundFor_frame_pending (st : TlbShootdownState)
     (beginShootdownRoundFor st initiator targets).pendingOnCore c =
       st.pendingOnCore c := by
   unfold beginShootdownRoundFor
-  rw [TlbShootdownState.setAckOnCore_pendingOnCore,
-      foldl_setAckFalse_pendingOnCore]
+  rw [TlbShootdownState.setAckedGenOnCore_pendingOnCore,
+      foldl_setAckedGen_pendingOnCore]
   rfl
+
+/-- **WS-SM SM7.F.3**: opening a masked round preserves
+well-formedness. -/
+theorem beginShootdownRoundFor_preserves_ackBounded {st : TlbShootdownState}
+    (hW : ackBounded st) (initiator : CoreId) (targets : List CoreId) :
+    ackBounded (beginShootdownRoundFor st initiator targets) := by
+  intro c
+  rw [beginShootdownRoundFor_gen, beginShootdownRoundFor_ackedGenOnCore]
+  by_cases h : c = initiator ∨ c ∉ targets
+  · rw [if_pos h]
+    exact Nat.le_refl _
+  · rw [if_neg h]
+    exact Nat.le_succ_of_le (hW c)
+
 
 /-- **WS-SM SM7.A (PR #838 review P1)**: opening a masked round
 preserves the capacity invariant. -/
@@ -1113,34 +1938,85 @@ theorem beginShootdownRoundFor_preserves_pendingBounded
   rw [beginShootdownRoundFor_frame_pending]
   exact hB c
 
+/-- **WS-SM SM7.F.3**: opening a masked round allocates the next
+generation, exactly as the unmasked form does — the mask decides who is
+waited on, not which round this is. -/
+@[simp] theorem beginShootdownRoundFor_roundGeneration (st : TlbShootdownState)
+    (initiator : CoreId) (targets : List CoreId) :
+    (beginShootdownRoundFor st initiator targets).roundGeneration =
+      st.roundGeneration + 1 := by
+  unfold beginShootdownRoundFor
+  rw [TlbShootdownState.setAckedGenOnCore_roundGeneration,
+      foldl_setAckedGen_roundGeneration]
+
+/-- **WS-SM SM7.F.3**: the generation a masked round mints is strictly
+above every generation the pre-state could hold — the freshness fact
+that makes a round's descriptors distinguishable from every earlier
+round's. -/
+theorem beginShootdownRoundFor_roundGeneration_gt (st : TlbShootdownState)
+    (initiator : CoreId) (targets : List CoreId) :
+    st.roundGeneration <
+      (beginShootdownRoundFor st initiator targets).roundGeneration := by
+  rw [beginShootdownRoundFor_roundGeneration]
+  omega
+
+/-- **WS-SM SM7.F.3**: the descriptor the posting fold appends carries
+exactly the generation the round open allocated — the agreement that
+makes `roundDescriptor` well-formed against `beginShootdownRoundFor`.
+Stated as an equation rather than baked into `roundDescriptor`'s
+definition so a refactor that changes the round open's allocation
+strategy breaks here rather than silently mis-stamping descriptors. -/
+theorem roundDescriptor_generation_eq_opened (sd : TlbShootdownState)
+    (initiator : CoreId) (targets : List CoreId) (op : TlbInvalidation) :
+    (roundDescriptor sd initiator op).generation =
+      (beginShootdownRoundFor sd initiator targets).roundGeneration := by
+  rw [roundDescriptor_generation, beginShootdownRoundFor_roundGeneration]
+
+/-- **WS-SM SM7.F.3**: a round's own descriptor lands inside the window
+`(sd.roundGeneration, (opened state).roundGeneration]` — the window a
+commit that opened exactly this one round recovers from its `(pre, post)`
+diff.  This is the well-formedness fact the live catch-up needs: what a
+commit posts, its own catch-up drains. -/
+theorem roundDescriptor_inRoundWindow (sd : TlbShootdownState)
+    (initiator : CoreId) (targets : List CoreId) (op : TlbInvalidation) :
+    inRoundWindow sd.roundGeneration
+        (beginShootdownRoundFor sd initiator targets).roundGeneration
+        (roundDescriptor sd initiator op).generation = true := by
+  rw [roundDescriptor_generation, beginShootdownRoundFor_roundGeneration,
+      inRoundWindow_iff]
+  omega
+
 /-- **WS-SM SM7.A (PR #838 review P1)**: with every core targeted, the
 masked round-open is exactly `beginShootdownRound` — the fully-online
-configuration collapses to the unmasked form (mechanically mirrored by
-the Rust `sm7a3_masked_reset_all_online_equals_unmasked_reset` test). -/
+configuration collapses to the unmasked form (mechanically mirrored on
+the Rust side by `wait_matches_conjunction_exhaustively`, whose
+all-online rows are the unmasked wait). -/
 theorem beginShootdownRoundFor_allCores_eq (st : TlbShootdownState)
     (initiator : CoreId) :
     beginShootdownRoundFor st initiator allCores =
       beginShootdownRound st initiator := by
-  apply TlbShootdownState.ext_perCore
-  · intro c
+  refine TlbShootdownState.ext_perCore ?_ ?_ ?_
+  case _ =>
+    intro c
     rw [beginShootdownRoundFor_frame_pending, beginShootdownRound_frame_pending]
-  · intro c
+  case _ =>
+    intro c
+    have hmem : c ∈ allCores := by
+      simp [SeLe4n.Kernel.Concurrency.allCores]
+    rw [beginShootdownRoundFor_ackedGenOnCore]
     by_cases hci : c = initiator
     · subst hci
-      rw [(beginShootdownRoundFor_ackOnCore_iff st c allCores c).mpr
-            (Or.inl rfl),
-          beginShootdownRound_ackOnCore_initiator]
-    · have hmem : c ∈ allCores := by
-        simp [SeLe4n.Kernel.Concurrency.allCores]
-      have h1 : (beginShootdownRoundFor st initiator allCores).ackOnCore c
-          = false := by
-        cases hval : (beginShootdownRoundFor st initiator allCores).ackOnCore c
-        · rfl
-        · exact absurd
-            ((beginShootdownRoundFor_ackOnCore_iff st initiator allCores c).mp
-              hval)
-            (by simp [hci, hmem])
-      rw [h1, beginShootdownRound_ackOnCore_target st hci]
+      rw [if_pos (Or.inl rfl)]
+      simp only [beginShootdownRound,
+        TlbShootdownState.setAckedGenOnCore_ackedGenOnCore_self]
+    · rw [if_neg (by simp [hci, hmem])]
+      simp only [beginShootdownRound]
+      rw [TlbShootdownState.setAckedGenOnCore_ackedGenOnCore_ne _ _ _ _
+        (fun h => hci h.symm)]
+      rfl
+  case _ =>
+    rw [beginShootdownRoundFor_roundGeneration,
+        beginShootdownRound_roundGeneration]
 
 -- ============================================================================
 -- SM7.A — Round-level composition (the SM7.B protocol's state skeleton)
@@ -1160,14 +2036,18 @@ target; `completeShootdownOnCore_eq` pins it to the two-step form the
 runtime actually takes. -/
 def completeShootdownOnCore (st : TlbShootdownState) (c : CoreId) :
     TlbShootdownState :=
-  acknowledgeShootdown (drainShootdowns st c).2 c
+  acknowledgeShootdown (drainShootdowns st c).2 c st.roundGeneration
 
 /-- **WS-SM SM7.A**: the round step is definitionally the drain
 followed by the acknowledgment — the handler's two state writes, in
-the protocol's order. -/
+the protocol's order.
+
+The acknowledged generation is the round currently open: a whole-queue
+drain retires every descriptor posted so far, so it genuinely discharges
+every round up to the current one. -/
 theorem completeShootdownOnCore_eq (st : TlbShootdownState) (c : CoreId) :
     completeShootdownOnCore st c =
-      acknowledgeShootdown (drainShootdowns st c).2 c := rfl
+      acknowledgeShootdown (drainShootdowns st c).2 c st.roundGeneration := rfl
 
 /-- **WS-SM SM7.B**: the handler's round step preserves the capacity
 invariant — draining empties the handled core's queue and the
@@ -1178,7 +2058,18 @@ theorem completeShootdownOnCore_preserves_pendingBounded
     {st : TlbShootdownState} (hB : pendingBounded st) (c : CoreId) :
     pendingBounded (completeShootdownOnCore st c) :=
   acknowledgeShootdown_preserves_pendingBounded
-    (drainShootdowns_preserves_pendingBounded hB c) c
+    (drainShootdowns_preserves_pendingBounded hB c) c _
+
+/-- **WS-SM SM7.F.3 (PR #854 review)**: the whole-queue round step
+preserves well-formedness — it acknowledges the round currently open,
+which is by definition not ahead of the counter. -/
+theorem completeShootdownOnCore_preserves_ackBounded {st : TlbShootdownState}
+    (hW : ackBounded st) (c : CoreId) :
+    ackBounded (completeShootdownOnCore st c) := by
+  rw [completeShootdownOnCore_eq]
+  exact acknowledgeShootdown_preserves_ackBounded
+    (drainShootdowns_preserves_ackBounded hW c) c
+    (Nat.le_of_eq (drainShootdowns_frame_roundGeneration st c).symm)
 
 /-- **WS-SM SM7.A**: a completed core's queue is empty. -/
 @[simp] theorem completeShootdownOnCore_pendingOnCore_self
@@ -1193,7 +2084,8 @@ theorem completeShootdownOnCore_preserves_pendingBounded
     (st : TlbShootdownState) (c : CoreId) :
     (completeShootdownOnCore st c).ackOnCore c = true := by
   unfold completeShootdownOnCore
-  simp
+  exact acknowledgeShootdown_ackOnCore_self _ _
+    (Nat.le_of_eq (drainShootdowns_frame_roundGeneration st c).symm)
 
 /-- **WS-SM SM7.A**: completing core `c` frames every other core's
 queue. -/
@@ -1203,13 +2095,187 @@ theorem completeShootdownOnCore_frame_pending (st : TlbShootdownState)
   unfold completeShootdownOnCore
   rw [acknowledgeShootdown_frame_pending, drainShootdowns_frame_pending st h]
 
+/-- **WS-SM SM7.F.3**: the whole-queue round step never allocates a
+round. -/
+@[simp] theorem completeShootdownOnCore_roundGeneration
+    (st : TlbShootdownState) (c : CoreId) :
+    (completeShootdownOnCore st c).roundGeneration = st.roundGeneration := rfl
+
+/-- **WS-SM SM7.F.3**: a whole-queue round step records the round
+currently open. -/
+@[simp] theorem completeShootdownOnCore_ackedGenOnCore_self
+    (st : TlbShootdownState) (c : CoreId) :
+    (completeShootdownOnCore st c).ackedGenOnCore c =
+      max (st.ackedGenOnCore c) st.roundGeneration := by
+  rw [completeShootdownOnCore_eq, acknowledgeShootdown_ackedGenOnCore_self,
+    drainShootdowns_frame_ackedGen]
+
+/-- **WS-SM SM7.F.3**: completing core `c` frames every other core's
+acknowledged generation. -/
+theorem completeShootdownOnCore_frame_ackedGen (st : TlbShootdownState)
+    {c c' : CoreId} (h : c' ≠ c) :
+    (completeShootdownOnCore st c).ackedGenOnCore c' = st.ackedGenOnCore c' := by
+  rw [completeShootdownOnCore_eq, acknowledgeShootdown_ackedGenOnCore_ne _ _ h,
+    drainShootdowns_frame_ackedGen]
+
 /-- **WS-SM SM7.A**: completing core `c` frames every other core's
 flag. -/
 theorem completeShootdownOnCore_frame_ack (st : TlbShootdownState)
     {c c' : CoreId} (h : c' ≠ c) :
     (completeShootdownOnCore st c).ackOnCore c' = st.ackOnCore c' := by
   unfold completeShootdownOnCore
-  rw [acknowledgeShootdown_ackOnCore_ne _ h, drainShootdowns_frame_ack]
+  rw [acknowledgeShootdown_ackOnCore_ne _ _ h, drainShootdowns_frame_ack]
+
+/-- **WS-SM SM7.F.3**: the generation-selective round step — the state
+projection of the initiator's deferred catch-up for core `c`.
+
+Identical to `completeShootdownOnCore` except that the drain is keyed on
+this commit's round window, so a concurrently-posted round's descriptors
+survive (`completeShootdownOnCoreInWindow_preserves_foreign`).
+
+**PR #854 review**: the acknowledgment names `hi` — this commit's own
+round — rather than being unconditional.  Until v0.32.113 it set a bare
+flag, so a catch-up that deliberately drained only its own window still
+claimed *every* round as acknowledged, and `allAcked` could read true
+with a concurrently-posted round's descriptors still pending: the
+queues were generation-selective but the acknowledgment was not.
+Acknowledging `hi` says exactly what was discharged, which is what the
+runtime's `acked_gen` has said since the same review's P1 fix. -/
+def completeShootdownOnCoreInWindow (st : TlbShootdownState) (c : CoreId)
+    (lo hi : Nat) : TlbShootdownState :=
+  acknowledgeShootdown (drainShootdownsInWindow st c lo hi).2 c hi
+
+/-- **WS-SM SM7.F.3**: the window round step is definitionally the
+window drain followed by the acknowledgment of the window's own round. -/
+theorem completeShootdownOnCoreInWindow_eq (st : TlbShootdownState)
+    (c : CoreId) (lo hi : Nat) :
+    completeShootdownOnCoreInWindow st c lo hi =
+      acknowledgeShootdown (drainShootdownsInWindow st c lo hi).2 c hi := rfl
+
+/-- **WS-SM SM7.F.3 (the race-freedom lemma, round-step form)**: a
+descriptor posted by a round outside this commit's window survives the
+catch-up step. -/
+theorem completeShootdownOnCoreInWindow_preserves_foreign
+    {st : TlbShootdownState} {c : CoreId} {lo hi : Nat}
+    {d : TlbShootdownDescriptor} (hmem : d ∈ st.pendingOnCore c)
+    (hout : inRoundWindow lo hi d.generation = false) :
+    d ∈ (completeShootdownOnCoreInWindow st c lo hi).pendingOnCore c := by
+  rw [completeShootdownOnCoreInWindow_eq, acknowledgeShootdown_frame_pending]
+  exact drainShootdownsInWindow_preserves_foreign hmem hout
+
+/-- **WS-SM SM7.F.3**: the window round step acknowledges its core — for
+a window that reaches the round currently open.
+
+The hypothesis is the honest one: a catch-up whose window stops short of
+the current generation (because a *later* round has been committed since)
+discharges only its own rounds, and must not read as acknowledging the
+newer one.  That is exactly the PR #854 review finding. -/
+@[simp] theorem completeShootdownOnCoreInWindow_ackOnCore_self
+    (st : TlbShootdownState) (c : CoreId) (lo hi : Nat)
+    (hhi : st.roundGeneration ≤ hi) :
+    (completeShootdownOnCoreInWindow st c lo hi).ackOnCore c = true := by
+  rw [completeShootdownOnCoreInWindow_eq]
+  exact acknowledgeShootdown_ackOnCore_self _ _
+    (Nat.le_trans (Nat.le_of_eq (drainShootdownsInWindow_frame_roundGeneration st c lo hi)) hhi)
+
+/-- **WS-SM SM7.F.3 (PR #854 review)**: the window round step records
+exactly the round it drained — a core's acknowledged generation after a
+catch-up is its previous value joined with the window's upper bound, and
+never more. -/
+@[simp] theorem completeShootdownOnCoreInWindow_ackedGenOnCore_self
+    (st : TlbShootdownState) (c : CoreId) (lo hi : Nat) :
+    (completeShootdownOnCoreInWindow st c lo hi).ackedGenOnCore c =
+      max (st.ackedGenOnCore c) hi := by
+  rw [completeShootdownOnCoreInWindow_eq,
+    acknowledgeShootdown_ackedGenOnCore_self,
+    drainShootdownsInWindow_frame_ackedGen _ c c lo hi]
+
+/-- **WS-SM SM7.F.3 (PR #854 review, the headline)**: a catch-up whose
+window stops below a foreign round's generation does **not** acknowledge
+that round.
+
+The acknowledgment dual of `completeShootdownOnCoreInWindow_preserves_foreign`:
+that lemma says the foreign *descriptors* survive the drain, this one
+says the foreign *round* is still owed.  Together they are what makes a
+concurrently-committed round's work genuinely outstanding in the model
+rather than merely present-but-declared-done. -/
+theorem completeShootdownOnCoreInWindow_not_acks_foreign
+    {st : TlbShootdownState} {c : CoreId} {lo hi g : Nat}
+    (hW : st.ackedGenOnCore c < g) (hout : hi < g) :
+    (completeShootdownOnCoreInWindow st c lo hi).ackedGenOnCore c < g := by
+  rw [completeShootdownOnCoreInWindow_ackedGenOnCore_self]
+  exact Nat.max_lt.mpr ⟨hW, hout⟩
+
+/-- **WS-SM SM7.F.3 (PR #854 review)**: the window round step preserves
+well-formedness, for a window that does not reach past the round counter.
+
+The hypothesis is the honest one and the live seam supplies it: the
+catch-up's window upper bound is the *post*-commit generation, and the
+catch-up runs on that post-state, so `hi ≤ roundGeneration` holds
+there.  A window claiming to discharge a round that has not been opened
+is exactly the state this invariant exists to exclude. -/
+theorem completeShootdownOnCoreInWindow_preserves_ackBounded
+    {st : TlbShootdownState} (hW : ackBounded st) (c : CoreId) {lo hi : Nat}
+    (hhi : hi ≤ st.roundGeneration) :
+    ackBounded (completeShootdownOnCoreInWindow st c lo hi) := by
+  rw [completeShootdownOnCoreInWindow_eq]
+  exact acknowledgeShootdown_preserves_ackBounded
+    (drainShootdownsInWindow_preserves_ackBounded hW c lo hi) c
+    (Nat.le_trans hhi
+      (Nat.le_of_eq (drainShootdownsInWindow_frame_roundGeneration st c lo hi).symm))
+
+/-- **WS-SM SM7.F.3**: the window round step frames every other core's
+queue. -/
+theorem completeShootdownOnCoreInWindow_frame_pending (st : TlbShootdownState)
+    {c c' : CoreId} (h : c' ≠ c) (lo hi : Nat) :
+    (completeShootdownOnCoreInWindow st c lo hi).pendingOnCore c' =
+      st.pendingOnCore c' := by
+  rw [completeShootdownOnCoreInWindow_eq, acknowledgeShootdown_frame_pending,
+      drainShootdownsInWindow_frame_pending st h]
+
+/-- **WS-SM SM7.F.3**: the window round step frames every other core's
+flag. -/
+theorem completeShootdownOnCoreInWindow_frame_ack (st : TlbShootdownState)
+    {c c' : CoreId} (h : c' ≠ c) (lo hi : Nat) :
+    (completeShootdownOnCoreInWindow st c lo hi).ackOnCore c' =
+      st.ackOnCore c' := by
+  rw [completeShootdownOnCoreInWindow_eq, acknowledgeShootdown_ackOnCore_ne _ _ h,
+      drainShootdownsInWindow_frame_ack]
+
+/-- **WS-SM SM7.F.3**: the window round step never allocates a round. -/
+theorem completeShootdownOnCoreInWindow_frame_roundGeneration
+    (st : TlbShootdownState) (c : CoreId) (lo hi : Nat) :
+    (completeShootdownOnCoreInWindow st c lo hi).roundGeneration =
+      st.roundGeneration := rfl
+
+/-- **WS-SM SM7.F.3**: the window round step preserves the capacity
+invariant. -/
+theorem completeShootdownOnCoreInWindow_preserves_pendingBounded
+    {st : TlbShootdownState} (hB : pendingBounded st) (c : CoreId)
+    (lo hi : Nat) :
+    pendingBounded (completeShootdownOnCoreInWindow st c lo hi) :=
+  acknowledgeShootdown_preserves_pendingBounded
+    (drainShootdownsInWindow_preserves_pendingBounded hB c lo hi) c _
+
+/-- **WS-SM SM7.F.3 (the bridge, round-step form)**: under the
+round-serialisation regime — every descriptor pending on `c` belongs to
+this commit's window, whose upper bound is the round currently open —
+the generation-selective round step **is** the wholesale
+`completeShootdownOnCore`.
+
+The `hhi` hypothesis is new in v0.32.113 and is what the regime supplies:
+serialised rounds mean the commit's own window reaches the current
+generation, so acknowledging `hi` and acknowledging `roundGeneration`
+coincide.  Without serialisation they do not — that difference is the
+whole point of the PR #854 review fix, and dropping the hypothesis would
+re-assert the identity the fix exists to deny. -/
+theorem completeShootdownOnCoreInWindow_eq_complete {st : TlbShootdownState}
+    {c : CoreId} {lo hi : Nat}
+    (hall : ∀ d ∈ st.pendingOnCore c, inRoundWindow lo hi d.generation = true)
+    (hhi : hi = st.roundGeneration) :
+    completeShootdownOnCoreInWindow st c lo hi = completeShootdownOnCore st c := by
+  rw [completeShootdownOnCoreInWindow_eq, completeShootdownOnCore_eq,
+      drainShootdownsInWindow_eq_drainShootdowns hall, hhi]
 
 /-- **WS-SM SM7.B**: round steps at *distinct* cores commute — each
 step writes only its own core's queue and flag.  This is the
@@ -1220,7 +2286,7 @@ theorem completeShootdownOnCore_comm {c₁ c₂ : CoreId} (h : c₁ ≠ c₂)
     (st : TlbShootdownState) :
     completeShootdownOnCore (completeShootdownOnCore st c₁) c₂ =
       completeShootdownOnCore (completeShootdownOnCore st c₂) c₁ := by
-  apply TlbShootdownState.ext_perCore
+  refine TlbShootdownState.ext_perCore ?_ ?_ rfl
   · intro c
     by_cases h1 : c = c₁
     · subst h1
@@ -1239,18 +2305,12 @@ theorem completeShootdownOnCore_comm {c₁ c₂ : CoreId} (h : c₁ ≠ c₂)
   · intro c
     by_cases h1 : c = c₁
     · subst h1
-      rw [completeShootdownOnCore_frame_ack _ h,
-          completeShootdownOnCore_ackOnCore_self,
-          completeShootdownOnCore_ackOnCore_self]
+      simp [completeShootdownOnCore_frame_ackedGen _ h]
     · by_cases h2 : c = c₂
       · subst h2
-        rw [completeShootdownOnCore_ackOnCore_self,
-            completeShootdownOnCore_frame_ack _ (Ne.symm h),
-            completeShootdownOnCore_ackOnCore_self]
-      · rw [completeShootdownOnCore_frame_ack _ h2,
-            completeShootdownOnCore_frame_ack _ h1,
-            completeShootdownOnCore_frame_ack _ h1,
-            completeShootdownOnCore_frame_ack _ h2]
+        simp [completeShootdownOnCore_frame_ackedGen _ (Ne.symm h)]
+      · simp [completeShootdownOnCore_frame_ackedGen _ h1,
+              completeShootdownOnCore_frame_ackedGen _ h2]
 
 /-- **WS-SM SM7.A**: closed form for a fold of round steps — a core's
 queue is empty exactly when the fold visited it, and untouched
@@ -1391,7 +2451,7 @@ theorem shootdownRoundFor_restores_quiescent
     by_cases hc : c ∈ targets
     · rw [if_pos hc]
     · rw [if_neg hc, foldlM_enqueueShootdown_frame_ack hpost c]
-      exact (beginShootdownRoundFor_ackOnCore_iff st initiator targets c).mpr
+      exact beginShootdownRoundFor_ackOnCore_of_born st initiator targets
         (Or.inr hc)
 
 -- ============================================================================
@@ -1413,7 +2473,11 @@ initiator observes `allAcked`.
 
 The type is deliberately fieldless: there is exactly one round lock
 (`ShootdownRoundLockId.singleton` — every two values are equal), which
-structurally encodes "at most one round in flight". -/
+structurally encodes "at most one round *holding the lock*".  Note
+that this bounds the hardware round (publish → SGI → wait), not the
+model's pending queues: posting precedes the lock and the catch-up
+drain follows it, so a queue can hold several rounds' descriptors —
+which is why the drain is window-restricted (SM7.F.3). -/
 structure ShootdownRoundLockId where
   deriving DecidableEq, Repr, Inhabited
 

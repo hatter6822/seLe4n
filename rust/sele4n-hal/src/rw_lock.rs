@@ -196,9 +196,11 @@ impl RwLock {
             // corrupt the lock state to "writer held".  Fail-closed by
             // parking on WFE instead of corrupting.
             if s == READER_MASK {
-                debug_assert!(false,
+                debug_assert!(
+                    false,
                     "RwLock reader count exhausted (impossible under numCores ≤ 4); \
-                     state was 0x{s:x}");
+                     state was 0x{s:x}"
+                );
                 crate::cpu::wfe_bounded(crate::cpu::WFE_DEFAULT_TIMEOUT_TICKS);
                 continue;
             }
@@ -210,9 +212,11 @@ impl RwLock {
                 new_state & WRITER_BIT == 0,
                 "RwLock reader count overflow (impossible under numCores ≤ 4)"
             );
-            if self.state.compare_exchange(
-                s, new_state, Ordering::Acquire, Ordering::Relaxed,
-            ).is_ok() {
+            if self
+                .state
+                .compare_exchange(s, new_state, Ordering::Acquire, Ordering::Relaxed)
+                .is_ok()
+            {
                 return;
             }
             // CAS failed; another thread modified state.  Retry.
@@ -392,9 +396,11 @@ impl RwLock {
                 continue;
             }
             // State = 0; attempt to claim writer bit.
-            if self.state.compare_exchange(
-                0, WRITER_BIT, Ordering::Acquire, Ordering::Relaxed,
-            ).is_ok() {
+            if self
+                .state
+                .compare_exchange(0, WRITER_BIT, Ordering::Acquire, Ordering::Relaxed)
+                .is_ok()
+            {
                 return;
             }
             // CAS failed; retry.
@@ -594,7 +600,7 @@ mod tests {
 
     /// **SM2.C.19 test**: new RwLock has state = 0.
     #[test]
-    fn sm2c19_new_initial_state() {
+    fn new_initial_state() {
         let lock = RwLock::new();
         assert_eq!(lock.state.load(Ordering::Acquire), 0);
         let (writer, count) = lock.snapshot();
@@ -604,7 +610,7 @@ mod tests {
 
     /// **SM2.C.19 test**: single read acquire increments reader count.
     #[test]
-    fn sm2c19_single_read_acquire() {
+    fn single_read_acquire() {
         let lock = RwLock::new();
         lock.acquire_read();
         let (writer, count) = lock.snapshot();
@@ -618,7 +624,7 @@ mod tests {
 
     /// **SM2.C.19 test**: multiple sequential read acquires accumulate.
     #[test]
-    fn sm2c19_multi_read_sequential() {
+    fn multi_read_sequential() {
         let lock = RwLock::new();
         lock.acquire_read();
         lock.acquire_read();
@@ -635,7 +641,7 @@ mod tests {
 
     /// **SM2.C.19 test**: writer acquire sets writer bit.
     #[test]
-    fn sm2c19_write_acquire() {
+    fn write_acquire() {
         let lock = RwLock::new();
         lock.acquire_write();
         let (writer, count) = lock.snapshot();
@@ -652,7 +658,7 @@ mod tests {
     /// `rwLock_writer_readers_exclusion` theorem ensures readers and writer
     /// cannot coexist; the Rust CAS-retry loop enforces this dynamically.
     #[test]
-    fn sm2c19_writer_state_excludes_readers() {
+    fn writer_state_excludes_readers() {
         let lock = RwLock::new();
         lock.acquire_write();
         let (writer, count) = lock.snapshot();
@@ -663,7 +669,7 @@ mod tests {
 
     /// **SM2.C.19 test**: writer-then-reader cycle.
     #[test]
-    fn sm2c19_write_release_then_read() {
+    fn write_release_then_read() {
         let lock = RwLock::new();
         lock.acquire_write();
         lock.release_write();
@@ -677,7 +683,7 @@ mod tests {
 
     /// **SM2.C.19 test**: reader-then-writer cycle (sequential).
     #[test]
-    fn sm2c19_read_release_then_write() {
+    fn read_release_then_write() {
         let lock = RwLock::new();
         lock.acquire_read();
         lock.release_read();
@@ -691,7 +697,7 @@ mod tests {
 
     /// **SM2.C.19 test**: with_read executes closure and releases.
     #[test]
-    fn sm2c19_with_read_executes() {
+    fn with_read_executes() {
         let lock = RwLock::new();
         let result = lock.with_read(|| 42);
         assert_eq!(result, 42);
@@ -701,7 +707,7 @@ mod tests {
 
     /// **SM2.C.19 test**: with_write executes closure and releases.
     #[test]
-    fn sm2c19_with_write_executes() {
+    fn with_write_executes() {
         let lock = RwLock::new();
         let result = lock.with_write(|| 77);
         assert_eq!(result, 77);
@@ -711,7 +717,7 @@ mod tests {
 
     /// **SM2.C.19 test**: cache-line alignment.
     #[test]
-    fn sm2c19_cache_line_aligned() {
+    fn cache_line_aligned() {
         assert_eq!(align_of::<RwLock>(), 64);
         // Size is at least 8 bytes (one u64 field) and at most 64 (alignment).
         assert!(size_of::<RwLock>() >= 8);
@@ -720,14 +726,14 @@ mod tests {
 
     /// **SM2.C.19 test**: const constructor works in static context.
     #[test]
-    fn sm2c19_const_constructor() {
+    fn const_constructor() {
         static GLOBAL_LOCK: RwLock = RwLock::new();
         assert_eq!(GLOBAL_LOCK.state.load(Ordering::Acquire), 0);
     }
 
     /// **SM2.C.19 test**: Default matches new().
     #[test]
-    fn sm2c19_default_matches_new() {
+    fn default_matches_new() {
         let lock_default = RwLock::default();
         let lock_new = RwLock::new();
         assert_eq!(
@@ -738,7 +744,7 @@ mod tests {
 
     /// **SM2.C.19 test**: writer bit constants match the Lean spec.
     #[test]
-    fn sm2c19_writer_bit_constants() {
+    fn writer_bit_constants() {
         assert_eq!(WRITER_BIT_POS, 63);
         assert_eq!(WRITER_BIT, 1u64 << 63);
         assert_eq!(READER_MASK, (1u64 << 63) - 1);
@@ -750,7 +756,7 @@ mod tests {
 
     /// **SM2.C.19 test**: reader-count snapshot correctness.
     #[test]
-    fn sm2c19_snapshot_correctness() {
+    fn snapshot_correctness() {
         let lock = RwLock::new();
         // Initial: (false, 0).
         assert_eq!(lock.snapshot(), (false, 0));
@@ -774,7 +780,7 @@ mod tests {
 
     /// **SM2.C.19 test**: 100-cycle read acquire/release loop.
     #[test]
-    fn sm2c19_many_read_cycles() {
+    fn many_read_cycles() {
         let lock = RwLock::new();
         for _ in 0..100 {
             lock.acquire_read();
@@ -785,7 +791,7 @@ mod tests {
 
     /// **SM2.C.19 test**: 100-cycle write acquire/release loop.
     #[test]
-    fn sm2c19_many_write_cycles() {
+    fn many_write_cycles() {
         let lock = RwLock::new();
         for _ in 0..100 {
             lock.acquire_write();
@@ -800,7 +806,7 @@ mod tests {
     /// re-entrant nesting (would deadlock on the second acquire if writer
     /// is waiting).
     #[test]
-    fn sm2c19_sequential_with_read() {
+    fn sequential_with_read() {
         let lock = RwLock::new();
         let a = lock.with_read(|| 1);
         let b = lock.with_read(|| 2);
@@ -817,7 +823,7 @@ mod tests {
     /// refactor that changes a signature must update this test, surfacing
     /// the API change at review time.
     #[test]
-    fn sm2c19_public_api_signature_pin() {
+    fn public_api_signature_pin() {
         let _new: fn() -> RwLock = RwLock::new;
         let _acquire_read: fn(&RwLock) = RwLock::acquire_read;
         let _release_read: fn(&RwLock) = RwLock::release_read;
@@ -831,13 +837,13 @@ mod tests {
     /// Forces a const-context evaluation: if `RwLock::new` weren't `const fn`,
     /// the `static` declaration would fail to compile.
     #[test]
-    fn sm2c19_new_is_const_fn() {
+    fn new_is_const_fn() {
         static _LOCK_AS_STATIC: RwLock = RwLock::new();
     }
 
     /// **SM2.C.19 test**: panic-safety — with_read releases on panic.
     #[test]
-    fn sm2c19_with_read_releases_on_panic() {
+    fn with_read_releases_on_panic() {
         use std::panic;
         let lock = RwLock::new();
         let lock_ref = &lock;
@@ -848,13 +854,16 @@ mod tests {
         }));
         assert!(result.is_err(), "panic should have been caught");
         // Lock must be released: state should be 0.
-        assert_eq!(lock.state.load(Ordering::Acquire), 0,
-                   "Drop on RwLockReadGuard must release on panic-unwind");
+        assert_eq!(
+            lock.state.load(Ordering::Acquire),
+            0,
+            "Drop on RwLockReadGuard must release on panic-unwind"
+        );
     }
 
     /// **SM2.C.19 test**: panic-safety — with_write releases on panic.
     #[test]
-    fn sm2c19_with_write_releases_on_panic() {
+    fn with_write_releases_on_panic() {
         use std::panic;
         let lock = RwLock::new();
         let lock_ref = &lock;
@@ -865,15 +874,18 @@ mod tests {
         }));
         assert!(result.is_err(), "panic should have been caught");
         // Lock must be released.
-        assert_eq!(lock.state.load(Ordering::Acquire), 0,
-                   "Drop on RwLockWriteGuard must release on panic-unwind");
+        assert_eq!(
+            lock.state.load(Ordering::Acquire),
+            0,
+            "Drop on RwLockWriteGuard must release on panic-unwind"
+        );
     }
 
     /// **SM2.C.19 test**: debug_assert catches release_read without acquire.
     #[cfg(debug_assertions)]
     #[test]
     #[should_panic(expected = "RwLock::release_read called in invalid state")]
-    fn sm2c19_release_read_without_acquire_panics_in_debug() {
+    fn release_read_without_acquire_panics_in_debug() {
         let lock = RwLock::new();
         lock.release_read();
     }
@@ -882,7 +894,7 @@ mod tests {
     #[cfg(debug_assertions)]
     #[test]
     #[should_panic(expected = "called without a matching acquire_write")]
-    fn sm2c19_release_write_without_acquire_panics_in_debug() {
+    fn release_write_without_acquire_panics_in_debug() {
         let lock = RwLock::new();
         lock.release_write();
     }
@@ -892,7 +904,7 @@ mod tests {
     /// Spawns NUM_THREADS, each doing OPS_PER_THREAD reader acquire-release
     /// cycles.  The final state must be 0 (all readers released).
     #[test]
-    fn sm2c22_cross_thread_reader_stress() {
+    fn cross_thread_reader_stress() {
         use std::sync::Arc;
         let lock = Arc::new(RwLock::new());
         const NUM_THREADS: usize = 4;
@@ -934,9 +946,9 @@ mod tests {
     /// test exclusion semantically — a buggy RwLock that allowed
     /// concurrent writes might still satisfy those bounds.)
     #[test]
-    fn sm2c22_cross_thread_mixed_stress() {
-        use std::sync::Arc;
+    fn cross_thread_mixed_stress() {
         use std::cell::UnsafeCell;
+        use std::sync::Arc;
         // Shared counter + writer-id-sentinel; writer writes both atomically
         // (under lock).  Readers verify the sentinel matches a recent
         // writer's id.
@@ -961,7 +973,7 @@ mod tests {
         for thread_idx in 0..NUM_THREADS {
             let s = Arc::clone(&shared);
             let ev = Arc::clone(&exclusion_violations);
-            let writer_id: u64 = (thread_idx as u64) + 1;  // 1..=NUM_THREADS
+            let writer_id: u64 = (thread_idx as u64) + 1; // 1..=NUM_THREADS
             handles.push(std::thread::spawn(move || {
                 for op_idx in 0..OPS_PER_THREAD {
                     if op_idx % 4 == thread_idx % 4 {
@@ -1009,15 +1021,19 @@ mod tests {
         let final_count = unsafe { *shared.counter.get() };
         assert!(final_count > 0, "writers should have incremented counter");
         let upper_bound = (NUM_THREADS * OPS_PER_THREAD) as u64;
-        assert!(final_count <= upper_bound,
-                "counter {final_count} exceeds upper bound {upper_bound}");
+        assert!(
+            final_count <= upper_bound,
+            "counter {final_count} exceeds upper bound {upper_bound}"
+        );
         // CRITICAL: zero exclusion violations.  Any non-zero count indicates
         // a writer observed its OWN sentinel modified (writer-writer
         // exclusion violation) or a reader saw an inconsistent count/id
         // pair (reader-writer or torn-read violation).
         let violations = exclusion_violations.load(std::sync::atomic::Ordering::Relaxed);
-        assert_eq!(violations, 0,
-            "RwLock exclusion violated: {violations} torn or interleaved observations");
+        assert_eq!(
+            violations, 0,
+            "RwLock exclusion violated: {violations} torn or interleaved observations"
+        );
     }
 
     /// **SM2.C.22 cross-thread stress test**: reader-multiplicity (deterministic).
@@ -1033,7 +1049,7 @@ mod tests {
     /// (M-5 audit fix: replaces the prior non-deterministic test that
     /// asserted only `>= 1`.)
     #[test]
-    fn sm2c22_cross_thread_reader_multiplicity_deterministic() {
+    fn cross_thread_reader_multiplicity_deterministic() {
         use std::sync::{Arc, Barrier};
         const NUM_READERS: usize = 4;
         let lock = Arc::new(RwLock::new());
@@ -1057,7 +1073,8 @@ mod tests {
                 count
             }));
         }
-        let observed: std::vec::Vec<u64> = handles.into_iter()
+        let observed: std::vec::Vec<u64> = handles
+            .into_iter()
             .map(|h| h.join().expect("worker thread panicked"))
             .collect();
         // All released.
@@ -1066,8 +1083,10 @@ mod tests {
         // the barrier guarantees all NUM_READERS have acquired before any
         // snapshot, and none release before all have snapshotted.
         for (i, count) in observed.iter().enumerate() {
-            assert!(*count >= NUM_READERS as u64,
-                "thread {i} snapshot saw only {count} readers, expected >= {NUM_READERS}");
+            assert!(
+                *count >= NUM_READERS as u64,
+                "thread {i} snapshot saw only {count} readers, expected >= {NUM_READERS}"
+            );
         }
     }
 
@@ -1108,9 +1127,9 @@ mod tests {
     /// blocked" signal).  Neither is implementable purely in user-
     /// space on stable Rust.) -/
     #[test]
-    fn sm2c22_cross_thread_writer_excludes_readers() {
-        use std::sync::Arc;
+    fn cross_thread_writer_excludes_readers() {
         use std::sync::atomic::{AtomicBool, AtomicU64, Ordering as O};
+        use std::sync::Arc;
         const NUM_READERS: usize = 3;
         let lock = Arc::new(RwLock::new());
         // Signal that the writer has acquired and the readers should start.
@@ -1153,14 +1172,16 @@ mod tests {
                 // hypothetical case where a buggy RwLock allowed a reader
                 // to acquire while writer was held).
                 let (w2, c2) = l.snapshot();
-                assert!(w2, "writer-held snapshot mid-test should still show writer=true");
+                assert!(
+                    w2,
+                    "writer-held snapshot mid-test should still show writer=true"
+                );
                 assert_eq!(c2, 0, "writer-held snapshot mid-test should show count=0");
                 l.release_write();
             })
         };
         // Reader threads.
-        let mut reader_handles: std::vec::Vec<std::thread::JoinHandle<bool>> =
-            std::vec::Vec::new();
+        let mut reader_handles: std::vec::Vec<std::thread::JoinHandle<bool>> = std::vec::Vec::new();
         for _ in 0..NUM_READERS {
             let l = Arc::clone(&lock);
             let wa = Arc::clone(&writer_acquired);
@@ -1184,8 +1205,10 @@ mod tests {
         writer_handle.join().expect("writer thread panicked");
         for (i, h) in reader_handles.into_iter().enumerate() {
             let writer_was_clear = h.join().expect("reader thread panicked");
-            assert!(writer_was_clear,
-                "reader {i} observed writer-bit set after acquire_read (exclusion violated!)");
+            assert!(
+                writer_was_clear,
+                "reader {i} observed writer-bit set after acquire_read (exclusion violated!)"
+            );
         }
         // All released.
         assert_eq!(lock.state.load(O::Acquire), 0);
@@ -1196,7 +1219,7 @@ mod tests {
     /// Cross-references the Lean spec's `rwLock_encode_decode_roundtrip`
     /// and `rwLock_decode_encode_roundtrip` at concrete values.
     #[test]
-    fn sm2c17_encoding_round_trip() {
+    fn encoding_round_trip() {
         // No writer, 0 readers.
         let encoded = 0u64;
         assert_eq!(encoded & WRITER_BIT, 0);

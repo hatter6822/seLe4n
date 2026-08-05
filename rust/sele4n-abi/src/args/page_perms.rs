@@ -18,7 +18,9 @@ impl PagePerms {
 
     /// Returns the raw inner value.
     #[inline]
-    pub const fn raw(&self) -> u8 { self.0 }
+    pub const fn raw(&self) -> u8 {
+        self.0
+    }
     pub const WRITE: Self = Self(1 << 1);
     pub const EXECUTE: Self = Self(1 << 2);
     pub const USER: Self = Self(1 << 3);
@@ -54,14 +56,18 @@ impl TryFrom<u64> for PagePerms {
     /// because the message structure is correct — the argument value is invalid.
     #[inline]
     fn try_from(v: u64) -> Result<Self, Self::Error> {
-        if v > 0x1F { return Err(KernelError::InvalidArgument); }
+        if v > 0x1F {
+            return Err(KernelError::InvalidArgument);
+        }
         Ok(Self(v as u8))
     }
 }
 
 impl From<PagePerms> for u64 {
     #[inline]
-    fn from(p: PagePerms) -> u64 { p.0 as u64 }
+    fn from(p: PagePerms) -> u64 {
+        p.0 as u64
+    }
 }
 
 /// V1-G (M-RS-5): `BitOr` combines permission bits. The result is always
@@ -74,7 +80,9 @@ impl From<PagePerms> for u64 {
 /// issuing the syscall, and the kernel re-validates on entry.
 impl core::ops::BitOr for PagePerms {
     type Output = Self;
-    fn bitor(self, rhs: Self) -> Self { Self(self.0 | rhs.0) }
+    fn bitor(self, rhs: Self) -> Self {
+        Self(self.0 | rhs.0)
+    }
 }
 
 /// Fallible OR that rejects W^X violations at combine time.
@@ -127,15 +135,30 @@ mod tests {
 
     #[test]
     fn checked_bitor_wx_rejected() {
-        assert_eq!(PagePerms::WRITE.checked_bitor(PagePerms::EXECUTE), Err(KernelError::PolicyDenied));
+        assert_eq!(
+            PagePerms::WRITE.checked_bitor(PagePerms::EXECUTE),
+            Err(KernelError::PolicyDenied)
+        );
     }
 
     #[test]
     fn try_from_truncation_rejected() {
         // V1-F consistency: invalid perms return InvalidArgument
-        assert_eq!(PagePerms::try_from(0x20u64), Err(KernelError::InvalidArgument));
-        assert_eq!(PagePerms::try_from(0xFFu64), Err(KernelError::InvalidArgument));
-        assert_eq!(PagePerms::try_from(0x100u64), Err(KernelError::InvalidArgument));
-        assert_eq!(PagePerms::try_from(u64::MAX), Err(KernelError::InvalidArgument));
+        assert_eq!(
+            PagePerms::try_from(0x20u64),
+            Err(KernelError::InvalidArgument)
+        );
+        assert_eq!(
+            PagePerms::try_from(0xFFu64),
+            Err(KernelError::InvalidArgument)
+        );
+        assert_eq!(
+            PagePerms::try_from(0x100u64),
+            Err(KernelError::InvalidArgument)
+        );
+        assert_eq!(
+            PagePerms::try_from(u64::MAX),
+            Err(KernelError::InvalidArgument)
+        );
     }
 }

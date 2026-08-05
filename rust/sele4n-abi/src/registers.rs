@@ -26,7 +26,9 @@ pub struct RegisterFile {
 impl RegisterFile {
     /// Create a zeroed register file.
     pub const fn new() -> Self {
-        Self { regs: [0; NUM_REGS] }
+        Self {
+            regs: [0; NUM_REGS],
+        }
     }
 
     /// Create from a raw array.
@@ -69,15 +71,21 @@ impl RegisterFile {
 }
 
 impl Default for RegisterFile {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl From<[u64; NUM_REGS]> for RegisterFile {
-    fn from(regs: [u64; NUM_REGS]) -> Self { Self::from_array(regs) }
+    fn from(regs: [u64; NUM_REGS]) -> Self {
+        Self::from_array(regs)
+    }
 }
 
 impl From<RegisterFile> for [u64; NUM_REGS] {
-    fn from(rf: RegisterFile) -> Self { rf.into_array() }
+    fn from(rf: RegisterFile) -> Self {
+        rf.into_array()
+    }
 }
 
 #[cfg(test)]

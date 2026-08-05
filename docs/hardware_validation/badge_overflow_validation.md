@@ -66,7 +66,7 @@ representation matches exactly, with no risk of width mismatch.
 
 ## Cross-Reference
 
-- Lean Badge type: `SeLe4n/Prelude.lean` (lines 510-576)
+- Lean Badge type: `SeLe4n/Prelude.lean` 
 - Rust Badge type: `rust/sele4n-types/src/identifiers.rs`
 - Test suite (Lean): `tests/BadgeOverflowSuite.lean`
 - Round-trip theorems: `Badge.toNat_ofNatMasked`, `Badge.ofNatMasked_toNat`

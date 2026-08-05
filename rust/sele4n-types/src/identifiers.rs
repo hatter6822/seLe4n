@@ -22,19 +22,35 @@ impl ObjId {
 
     /// Returns the raw inner value.
     #[inline]
-    pub const fn raw(&self) -> u64 { self.0 }
+    pub const fn raw(&self) -> u64 {
+        self.0
+    }
 
     /// Returns `true` if this is the reserved sentinel value.
     #[inline]
-    pub const fn is_reserved(&self) -> bool { self.0 == 0 }
+    pub const fn is_reserved(&self) -> bool {
+        self.0 == 0
+    }
 
     /// Returns `true` if this is a valid (non-sentinel) identifier.
     #[inline]
-    pub const fn is_valid(&self) -> bool { self.0 != 0 }
+    pub const fn is_valid(&self) -> bool {
+        self.0 != 0
+    }
 }
 
-impl From<u64> for ObjId { #[inline] fn from(v: u64) -> Self { Self(v) } }
-impl From<ObjId> for u64 { #[inline] fn from(id: ObjId) -> u64 { id.0 } }
+impl From<u64> for ObjId {
+    #[inline]
+    fn from(v: u64) -> Self {
+        Self(v)
+    }
+}
+impl From<ObjId> for u64 {
+    #[inline]
+    fn from(id: ObjId) -> u64 {
+        id.0
+    }
+}
 
 /// Thread (TCB) identifier. Value 0 is the reserved sentinel (H-06/WS-E3).
 ///
@@ -49,19 +65,35 @@ impl ThreadId {
 
     /// Returns the raw inner value.
     #[inline]
-    pub const fn raw(&self) -> u64 { self.0 }
+    pub const fn raw(&self) -> u64 {
+        self.0
+    }
 
     #[inline]
-    pub const fn is_reserved(&self) -> bool { self.0 == 0 }
+    pub const fn is_reserved(&self) -> bool {
+        self.0 == 0
+    }
 
     /// Convert to `ObjId`, preserving the injection property.
     /// Lean: `ThreadId.toObjId` (Prelude.lean:93)
     #[inline]
-    pub const fn to_obj_id(&self) -> ObjId { ObjId(self.0) }
+    pub const fn to_obj_id(&self) -> ObjId {
+        ObjId(self.0)
+    }
 }
 
-impl From<u64> for ThreadId { #[inline] fn from(v: u64) -> Self { Self(v) } }
-impl From<ThreadId> for u64 { #[inline] fn from(id: ThreadId) -> u64 { id.0 } }
+impl From<u64> for ThreadId {
+    #[inline]
+    fn from(v: u64) -> Self {
+        Self(v)
+    }
+}
+impl From<ThreadId> for u64 {
+    #[inline]
+    fn from(id: ThreadId) -> u64 {
+        id.0
+    }
+}
 
 /// Capability-space pointer value.
 ///
@@ -76,14 +108,28 @@ impl CPtr {
 
     /// Returns the raw inner value.
     #[inline]
-    pub const fn raw(&self) -> u64 { self.0 }
+    pub const fn raw(&self) -> u64 {
+        self.0
+    }
 
     #[inline]
-    pub const fn is_reserved(&self) -> bool { self.0 == 0 }
+    pub const fn is_reserved(&self) -> bool {
+        self.0 == 0
+    }
 }
 
-impl From<u64> for CPtr { #[inline] fn from(v: u64) -> Self { Self(v) } }
-impl From<CPtr> for u64 { #[inline] fn from(p: CPtr) -> u64 { p.0 } }
+impl From<u64> for CPtr {
+    #[inline]
+    fn from(v: u64) -> Self {
+        Self(v)
+    }
+}
+impl From<CPtr> for u64 {
+    #[inline]
+    fn from(p: CPtr) -> u64 {
+        p.0
+    }
+}
 
 /// Slot index within a CNode.
 ///
@@ -95,7 +141,9 @@ pub struct Slot(pub(crate) u64);
 impl Slot {
     /// Returns the raw inner value.
     #[inline]
-    pub const fn raw(&self) -> u64 { self.0 }
+    pub const fn raw(&self) -> u64 {
+        self.0
+    }
 
     /// V1-H (M-RS-7): Maximum valid slot index.
     /// Lean: CNode radix is bounded; slot indices must fit within the radix width.
@@ -104,15 +152,29 @@ impl Slot {
 
     /// Returns `true` if this slot index exceeds the maximum valid range.
     #[inline]
-    pub const fn is_reserved(&self) -> bool { self.0 > Self::MAX_VALID }
+    pub const fn is_reserved(&self) -> bool {
+        self.0 > Self::MAX_VALID
+    }
 
     /// Returns `true` if this slot index is within the valid range.
     #[inline]
-    pub const fn is_valid(&self) -> bool { self.0 <= Self::MAX_VALID }
+    pub const fn is_valid(&self) -> bool {
+        self.0 <= Self::MAX_VALID
+    }
 }
 
-impl From<u64> for Slot { #[inline] fn from(v: u64) -> Self { Self(v) } }
-impl From<Slot> for u64 { #[inline] fn from(s: Slot) -> u64 { s.0 } }
+impl From<u64> for Slot {
+    #[inline]
+    fn from(v: u64) -> Self {
+        Self(v)
+    }
+}
+impl From<Slot> for u64 {
+    #[inline]
+    fn from(s: Slot) -> u64 {
+        s.0
+    }
+}
 
 /// Scheduling domain identifier.
 ///
@@ -124,7 +186,9 @@ pub struct DomainId(pub(crate) u64);
 impl DomainId {
     /// Returns the raw inner value.
     #[inline]
-    pub const fn raw(&self) -> u64 { self.0 }
+    pub const fn raw(&self) -> u64 {
+        self.0
+    }
 
     /// V1-H (M-RS-7): Type-level maximum — seL4 uses 8-bit domain IDs (256 max).
     /// Values ≥ 256 are invalid at the type level. Note: the seLe4n kernel
@@ -134,15 +198,29 @@ impl DomainId {
 
     /// Returns `true` if this domain ID exceeds the valid range.
     #[inline]
-    pub const fn is_reserved(&self) -> bool { self.0 > Self::MAX_VALID }
+    pub const fn is_reserved(&self) -> bool {
+        self.0 > Self::MAX_VALID
+    }
 
     /// Returns `true` if this domain ID is within the valid range.
     #[inline]
-    pub const fn is_valid(&self) -> bool { self.0 <= Self::MAX_VALID }
+    pub const fn is_valid(&self) -> bool {
+        self.0 <= Self::MAX_VALID
+    }
 }
 
-impl From<u64> for DomainId { #[inline] fn from(v: u64) -> Self { Self(v) } }
-impl From<DomainId> for u64 { #[inline] fn from(d: DomainId) -> u64 { d.0 } }
+impl From<u64> for DomainId {
+    #[inline]
+    fn from(v: u64) -> Self {
+        Self(v)
+    }
+}
+impl From<DomainId> for u64 {
+    #[inline]
+    fn from(d: DomainId) -> u64 {
+        d.0
+    }
+}
 
 /// Thread priority level (EDF scheduling).
 ///
@@ -154,7 +232,9 @@ pub struct Priority(pub(crate) u64);
 impl Priority {
     /// Returns the raw inner value.
     #[inline]
-    pub const fn raw(&self) -> u64 { self.0 }
+    pub const fn raw(&self) -> u64 {
+        self.0
+    }
 
     /// V1-H (M-RS-7): seL4 uses 8-bit priorities (0–255).
     /// Lean: `maxPriority = 255`. Values > 255 are invalid.
@@ -162,15 +242,29 @@ impl Priority {
 
     /// Returns `true` if this priority exceeds the valid range.
     #[inline]
-    pub const fn is_reserved(&self) -> bool { self.0 > Self::MAX_VALID }
+    pub const fn is_reserved(&self) -> bool {
+        self.0 > Self::MAX_VALID
+    }
 
     /// Returns `true` if this priority is within the valid range.
     #[inline]
-    pub const fn is_valid(&self) -> bool { self.0 <= Self::MAX_VALID }
+    pub const fn is_valid(&self) -> bool {
+        self.0 <= Self::MAX_VALID
+    }
 }
 
-impl From<u64> for Priority { #[inline] fn from(v: u64) -> Self { Self(v) } }
-impl From<Priority> for u64 { #[inline] fn from(p: Priority) -> u64 { p.0 } }
+impl From<u64> for Priority {
+    #[inline]
+    fn from(v: u64) -> Self {
+        Self(v)
+    }
+}
+impl From<Priority> for u64 {
+    #[inline]
+    fn from(p: Priority) -> u64 {
+        p.0
+    }
+}
 
 /// Deadline for EDF scheduling. 0 means "no deadline" (infinite, lowest urgency).
 ///
@@ -188,11 +282,23 @@ impl Deadline {
 
     /// Returns the raw inner value.
     #[inline]
-    pub const fn raw(&self) -> u64 { self.0 }
+    pub const fn raw(&self) -> u64 {
+        self.0
+    }
 }
 
-impl From<u64> for Deadline { #[inline] fn from(v: u64) -> Self { Self(v) } }
-impl From<Deadline> for u64 { #[inline] fn from(d: Deadline) -> u64 { d.0 } }
+impl From<u64> for Deadline {
+    #[inline]
+    fn from(v: u64) -> Self {
+        Self(v)
+    }
+}
+impl From<Deadline> for u64 {
+    #[inline]
+    fn from(d: Deadline) -> u64 {
+        d.0
+    }
+}
 
 /// Interrupt request line identifier.
 ///
@@ -204,11 +310,23 @@ pub struct Irq(pub(crate) u64);
 impl Irq {
     /// Returns the raw inner value.
     #[inline]
-    pub const fn raw(&self) -> u64 { self.0 }
+    pub const fn raw(&self) -> u64 {
+        self.0
+    }
 }
 
-impl From<u64> for Irq { #[inline] fn from(v: u64) -> Self { Self(v) } }
-impl From<Irq> for u64 { #[inline] fn from(i: Irq) -> u64 { i.0 } }
+impl From<u64> for Irq {
+    #[inline]
+    fn from(v: u64) -> Self {
+        Self(v)
+    }
+}
+impl From<Irq> for u64 {
+    #[inline]
+    fn from(i: Irq) -> u64 {
+        i.0
+    }
+}
 
 /// Service identity in the orchestration layer. Value 0 is sentinel (H-06/WS-E3).
 ///
@@ -222,14 +340,28 @@ impl ServiceId {
 
     /// Returns the raw inner value.
     #[inline]
-    pub const fn raw(&self) -> u64 { self.0 }
+    pub const fn raw(&self) -> u64 {
+        self.0
+    }
 
     #[inline]
-    pub const fn is_reserved(&self) -> bool { self.0 == 0 }
+    pub const fn is_reserved(&self) -> bool {
+        self.0 == 0
+    }
 }
 
-impl From<u64> for ServiceId { #[inline] fn from(v: u64) -> Self { Self(v) } }
-impl From<ServiceId> for u64 { #[inline] fn from(s: ServiceId) -> u64 { s.0 } }
+impl From<u64> for ServiceId {
+    #[inline]
+    fn from(v: u64) -> Self {
+        Self(v)
+    }
+}
+impl From<ServiceId> for u64 {
+    #[inline]
+    fn from(s: ServiceId) -> u64 {
+        s.0
+    }
+}
 
 /// Interface specification identifier. Value 0 is sentinel.
 ///
@@ -243,14 +375,28 @@ impl InterfaceId {
 
     /// Returns the raw inner value.
     #[inline]
-    pub const fn raw(&self) -> u64 { self.0 }
+    pub const fn raw(&self) -> u64 {
+        self.0
+    }
 
     #[inline]
-    pub const fn is_reserved(&self) -> bool { self.0 == 0 }
+    pub const fn is_reserved(&self) -> bool {
+        self.0 == 0
+    }
 }
 
-impl From<u64> for InterfaceId { #[inline] fn from(v: u64) -> Self { Self(v) } }
-impl From<InterfaceId> for u64 { #[inline] fn from(i: InterfaceId) -> u64 { i.0 } }
+impl From<u64> for InterfaceId {
+    #[inline]
+    fn from(v: u64) -> Self {
+        Self(v)
+    }
+}
+impl From<InterfaceId> for u64 {
+    #[inline]
+    fn from(i: InterfaceId) -> u64 {
+        i.0
+    }
+}
 
 /// Endpoint or notification badge value.
 /// Bounded to 64-bit machine word (Lean: `machineWordBits = 64`).
@@ -263,7 +409,9 @@ pub struct Badge(pub(crate) u64);
 impl Badge {
     /// Returns the raw inner value.
     #[inline]
-    pub const fn raw(&self) -> u64 { self.0 }
+    pub const fn raw(&self) -> u64 {
+        self.0
+    }
 
     /// Bitwise OR for notification badge accumulation.
     /// Lean: `Badge.bor` (Prelude.lean:380)
@@ -273,8 +421,18 @@ impl Badge {
     }
 }
 
-impl From<u64> for Badge { #[inline] fn from(v: u64) -> Self { Self(v) } }
-impl From<Badge> for u64 { #[inline] fn from(b: Badge) -> u64 { b.0 } }
+impl From<u64> for Badge {
+    #[inline]
+    fn from(v: u64) -> Self {
+        Self(v)
+    }
+}
+impl From<Badge> for u64 {
+    #[inline]
+    fn from(b: Badge) -> u64 {
+        b.0
+    }
+}
 
 /// Address-space identifier (ASID).
 ///
@@ -286,11 +444,23 @@ pub struct Asid(pub(crate) u64);
 impl Asid {
     /// Returns the raw inner value.
     #[inline]
-    pub const fn raw(&self) -> u64 { self.0 }
+    pub const fn raw(&self) -> u64 {
+        self.0
+    }
 }
 
-impl From<u64> for Asid { #[inline] fn from(v: u64) -> Self { Self(v) } }
-impl From<Asid> for u64 { #[inline] fn from(a: Asid) -> u64 { a.0 } }
+impl From<u64> for Asid {
+    #[inline]
+    fn from(v: u64) -> Self {
+        Self(v)
+    }
+}
+impl From<Asid> for u64 {
+    #[inline]
+    fn from(a: Asid) -> u64 {
+        a.0
+    }
+}
 
 /// Virtual-memory address.
 ///
@@ -302,11 +472,23 @@ pub struct VAddr(pub(crate) u64);
 impl VAddr {
     /// Returns the raw inner value.
     #[inline]
-    pub const fn raw(&self) -> u64 { self.0 }
+    pub const fn raw(&self) -> u64 {
+        self.0
+    }
 }
 
-impl From<u64> for VAddr { #[inline] fn from(v: u64) -> Self { Self(v) } }
-impl From<VAddr> for u64 { #[inline] fn from(a: VAddr) -> u64 { a.0 } }
+impl From<u64> for VAddr {
+    #[inline]
+    fn from(v: u64) -> Self {
+        Self(v)
+    }
+}
+impl From<VAddr> for u64 {
+    #[inline]
+    fn from(a: VAddr) -> u64 {
+        a.0
+    }
+}
 
 /// Physical-memory address.
 ///
@@ -318,11 +500,23 @@ pub struct PAddr(pub(crate) u64);
 impl PAddr {
     /// Returns the raw inner value.
     #[inline]
-    pub const fn raw(&self) -> u64 { self.0 }
+    pub const fn raw(&self) -> u64 {
+        self.0
+    }
 }
 
-impl From<u64> for PAddr { #[inline] fn from(v: u64) -> Self { Self(v) } }
-impl From<PAddr> for u64 { #[inline] fn from(a: PAddr) -> u64 { a.0 } }
+impl From<u64> for PAddr {
+    #[inline]
+    fn from(v: u64) -> Self {
+        Self(v)
+    }
+}
+impl From<PAddr> for u64 {
+    #[inline]
+    fn from(a: PAddr) -> u64 {
+        a.0
+    }
+}
 
 /// Register-width machine word (raw register value).
 ///
@@ -334,11 +528,23 @@ pub struct RegValue(pub(crate) u64);
 impl RegValue {
     /// Returns the raw inner value.
     #[inline]
-    pub const fn raw(&self) -> u64 { self.0 }
+    pub const fn raw(&self) -> u64 {
+        self.0
+    }
 }
 
-impl From<u64> for RegValue { #[inline] fn from(v: u64) -> Self { Self(v) } }
-impl From<RegValue> for u64 { #[inline] fn from(r: RegValue) -> u64 { r.0 } }
+impl From<u64> for RegValue {
+    #[inline]
+    fn from(v: u64) -> Self {
+        Self(v)
+    }
+}
+impl From<RegValue> for u64 {
+    #[inline]
+    fn from(r: RegValue) -> u64 {
+        r.0
+    }
+}
 
 /// AK4-C (R-ABI-H01 / HIGH): Scheduling-context identifier.
 ///
@@ -363,15 +569,21 @@ impl SchedContextId {
 
     /// Returns the raw inner value.
     #[inline]
-    pub const fn raw(&self) -> u64 { self.0 }
+    pub const fn raw(&self) -> u64 {
+        self.0
+    }
 
     /// Returns `true` if this is the reserved sentinel value.
     #[inline]
-    pub const fn is_reserved(&self) -> bool { self.0 == 0 }
+    pub const fn is_reserved(&self) -> bool {
+        self.0 == 0
+    }
 
     /// Returns `true` if this is a valid (non-sentinel) identifier.
     #[inline]
-    pub const fn is_valid(&self) -> bool { self.0 != 0 }
+    pub const fn is_valid(&self) -> bool {
+        self.0 != 0
+    }
 
     /// AK4-C: Construct a typed `SchedContextId`, rejecting the sentinel value.
     /// Use this in argument-decode positions where a caller-supplied value
@@ -380,18 +592,34 @@ impl SchedContextId {
     /// Returns `None` for `value == 0` (sentinel).
     #[inline]
     pub const fn new(value: u64) -> Option<Self> {
-        if value == 0 { None } else { Some(Self(value)) }
+        if value == 0 {
+            None
+        } else {
+            Some(Self(value))
+        }
     }
 
     /// Convert to the underlying object identifier (the kernel stores
     /// scheduling contexts in the shared object store alongside other
     /// kernel objects). Lean mirror: `SchedContextId.toObjId`.
     #[inline]
-    pub const fn to_obj_id(&self) -> ObjId { ObjId(self.0) }
+    pub const fn to_obj_id(&self) -> ObjId {
+        ObjId(self.0)
+    }
 }
 
-impl From<u64> for SchedContextId { #[inline] fn from(v: u64) -> Self { Self(v) } }
-impl From<SchedContextId> for u64 { #[inline] fn from(s: SchedContextId) -> u64 { s.0 } }
+impl From<u64> for SchedContextId {
+    #[inline]
+    fn from(v: u64) -> Self {
+        Self(v)
+    }
+}
+impl From<SchedContextId> for u64 {
+    #[inline]
+    fn from(s: SchedContextId) -> u64 {
+        s.0
+    }
+}
 
 #[cfg(test)]
 mod tests {

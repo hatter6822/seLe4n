@@ -359,20 +359,42 @@ pub fn dispatch_svc(syscall_id: u32, args: &SyscallArgs) -> Result<u64, Dispatch
     // extern "C" symbol resolved at link time.  The arguments cross
     // the FFI boundary as `u32 + 8 × u64` which the Lean side reads
     // via the @[extern] declaration in `SeLe4n/Platform/FFI.lean`.
-    #[allow(unused_unsafe)]
-    let raw = unsafe {
-        lean_syscall_dispatch_cross_core(
-            sid.to_u32(),
-            args.msg_info,
-            args.msg_regs[0],
-            args.msg_regs[1],
-            args.msg_regs[2],
-            args.msg_regs[3],
-            args.msg_regs[4],
-            args.msg_regs[5],
-            args.ipc_buffer_addr.unwrap_or(0),
-        )
-    };
+    // WS-SM SM5.I: serialise kernel entry.  The Lean side commits its
+    // post-state through `modifyGetKernelState`, an `IO.Ref.modifyGet`
+    // — a read then a write, not a cross-core atomic — so two cores
+    // dispatching concurrently would both read the same pre-state and
+    // the second write would discard the first core's whole transition
+    // while returning success for it.  The bracket makes the read and
+    // the write one critical section against every other kernel entry.
+    //
+    // The lock is taken OUTSIDE any shootdown round lock the transition
+    // itself may take (`completeShootdownRounds` takes that one inside
+    // here), and its spin self-services this core's pending shootdown
+    // obligation — without that a holder blocked on our acknowledgment
+    // would deadlock against us, since IRQs are masked on this path and
+    // the `.tlbShootdownReq` SGI cannot preempt the spin.
+    let raw =
+        crate::kernel_entry::with_kernel_entry(crate::cpu::current_core_id() as usize, || {
+            // SAFETY (production): `lean_syscall_dispatch_cross_core` is a
+            // Lean-emitted extern "C" symbol resolved at link time.  The
+            // arguments cross the FFI boundary as `u32 + 8 × u64` which the
+            // Lean side reads via the @[extern] declaration in
+            // `SeLe4n/Platform/FFI.lean`.
+            #[allow(unused_unsafe)]
+            unsafe {
+                lean_syscall_dispatch_cross_core(
+                    sid.to_u32(),
+                    args.msg_info,
+                    args.msg_regs[0],
+                    args.msg_regs[1],
+                    args.msg_regs[2],
+                    args.msg_regs[3],
+                    args.msg_regs[4],
+                    args.msg_regs[5],
+                    args.ipc_buffer_addr.unwrap_or(0),
+                )
+            }
+        });
 
     if (raw >> 63) & 1 == 1 {
         // Error path: low 32 bits hold the raw `KernelError`
@@ -508,8 +530,8 @@ mod tests {
                 u64::from(i),
                 "sele4n-types round-trip failed at id {i}"
             );
-            let hal = SyscallId::from_u32(i)
-                .expect("HAL mirror must decode every canonical syscall id");
+            let hal =
+                SyscallId::from_u32(i).expect("HAL mirror must decode every canonical syscall id");
             assert_eq!(
                 hal.to_u32(),
                 i,
@@ -533,7 +555,10 @@ mod tests {
         frame.gprs[5] = 0x6666;
         frame.gprs[6] = 0x7777;
         let args = SyscallArgs::from_trap_frame(&frame);
-        assert_eq!(args.msg_regs, [0x1111, 0x2222, 0x3333, 0x4444, 0x5555, 0x6666]);
+        assert_eq!(
+            args.msg_regs,
+            [0x1111, 0x2222, 0x3333, 0x4444, 0x5555, 0x6666]
+        );
         assert_eq!(args.ipc_buffer_addr, Some(0x7777));
         // msg_info comes from x1
         assert_eq!(args.msg_info, 0x2222);
@@ -614,7 +639,7 @@ mod tests {
     }
 
     #[test]
-    fn syscall_id_min_inline_args_matches_ak4_abi() {
+    fn syscall_id_min_inline_args_match_abi_contract() {
         // Spot-check the canonical ABI values against AK4 documentation.
         assert_eq!(SyscallId::CSpaceMint.min_inline_args(), 5);
         assert_eq!(SyscallId::ServiceRegister.min_inline_args(), 4);

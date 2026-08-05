@@ -51,12 +51,12 @@ composition theorem and the WCRT bound are both faithful and parametric.
 
 However, the project is **not bootable to a working state on hardware** as
 of v0.30.11. The FFI bridge from the Rust HAL into the Lean kernel
-(`@[export syscall_dispatch_inner]` at `SeLe4n/Platform/FFI.lean:217` and
-`@[export suspend_thread_inner]` at line 186) is a STUB that returns
+(`@[export syscall_dispatch_inner]` at `SeLe4n/Platform/FFI.lean` and
+`@[export suspend_thread_inner]`) is a STUB that returns
 `KernelError::NotImplemented = 17` on every call. The verified
-`syscallEntryChecked` entry point in `Kernel/API.lean:1244` is **never
+`syscallEntryChecked` entry point in `Kernel/API.lean` is **never
 invoked from the hardware path**. A separate Rust-side comment in
-`rust/sele4n-hal/src/svc_dispatch.rs:308` claims production "resolves to
+`rust/sele4n-hal/src/svc_dispatch.rs` claims production "resolves to
 the Lean kernel's `syscallDispatchFromAbi`" — a function name that **does
 not exist** anywhere in the Lean source tree. This documentation
 discrepancy masked the gap from the predecessor audit.
@@ -172,13 +172,13 @@ risk), **L** low (cosmetic / cleanup), **I** informational.
 |---|---|---|---|---|
 | DEEP-FFI-01 | H | Platform/FFI + Rust HAL | implementation | `syscall_dispatch_inner` and `suspend_thread_inner` Lean exports are stubs returning `NotImplemented = 17`; verified hardware path never reaches `syscallEntryChecked`. Wire the routing — disclosure-only patches are rejected. |
 | DEEP-IPC-03 | H | IPC/DualQueue/WithCaps:198 | implementation | `endpointCallWithCaps` returns `.ok ({ results := #[] }, st')` on missing receiver-CSpace-root; AK1-I closed send and receive paths but the call path remains asymmetric. NI covert-channel risk. |
-| DEEP-FFI-02 | M | Rust HAL | implementation | `rust/sele4n-hal/src/svc_dispatch.rs:308` comment describes Lean fn `syscallDispatchFromAbi`. The function should exist (it is the typed-ABI entry point that Tier 2 of the must-fix sequence builds). Implement the function, not edit the comment. |
-| DEEP-DOC-01 | M | README (was H, downgraded §11.4) | documentation | README internally inconsistent: line 92 says "3,186 theorem/lemma declarations"; line 213 says "2,725 proved declarations" — same page. Pure documentation drift; one-PR refresh. |
-| DEEP-DOC-02 | M | AGENTS.md | documentation | `AGENTS.md` line 7 declares project version **0.12.4** vs actual **0.30.11**. The entire file is from ~v0.12.x — it references audits at v0.11.0/v0.12.2 and a "WS-F (v0.12.2 audit remediation)" workstream. Best fix: rewrite to mirror CLAUDE.md or replace with a 10-line redirect (§11.5). |
+| DEEP-FFI-02 | M | Rust HAL | implementation | `rust/sele4n-hal/src/svc_dispatch.rs` comment describes Lean fn `syscallDispatchFromAbi`. The function should exist (it is the typed-ABI entry point that Tier 2 of the must-fix sequence builds). Implement the function, not edit the comment. |
+| DEEP-DOC-01 | M | README (was H, downgraded §11.4) | documentation | README internally inconsistent: says "3,186 theorem/lemma declarations"; says "2,725 proved declarations" — same page. Pure documentation drift; one-PR refresh. |
+| DEEP-DOC-02 | M | AGENTS.md | documentation | `AGENTS.md` declares project version **0.12.4** vs actual **0.30.11**. The entire file is from ~v0.12.x — it references audits at v0.11.0/v0.12.2 and a "WS-F (v0.12.2 audit remediation)" workstream. Best fix: rewrite to mirror CLAUDE.md or replace with a 10-line redirect (§11.5). |
 | DEEP-DOC-03 | M | CLAUDE.md | documentation | Source-layout section omits `SeLe4n/Platform/FFI.lean` (245 LoC, contains the stub bridges flagged as DEEP-FFI-01), `SeLe4n/Platform/Staged.lean` (the build-anchor that pulls FFI into CI), and `SeLe4n/Platform/RPi5/VSpaceBoot.lean`. Verified by `grep -c "FFI" CLAUDE.md` → 0. |
 | DEEP-TEST-01 | M | tests/Ak8CoverageSuite.lean | implementation | 25+ test functions named `test_AK8_E_*`, `test_AK8_F_*`, `test_AK8_G_*`, `test_AK8_H_*`, `test_AK8_I_*`. CLAUDE.md identifier policy bans workstream IDs in identifiers. Filename `Ak8CoverageSuite.lean` is also a violation. Mechanical rename PR. |
-| DEEP-TEST-02 | L | README + codebase_map.json | documentation | Test-suite count drift: README says "25 test suites" (line 38) and elsewhere "24 test suites" (source layout); actual is 28. |
-| DEEP-PROOF-01 | L | Scheduler/Operations/Preservation (was M, downgraded §11.4) | implementation (post-1.0) | `Classical.byContradiction` at `Preservation.lean:1720` (single explicit Classical use). Surrounding `by_cases` already invokes `Classical.em` implicitly; full elimination requires proof restructuring. The implement-the-improvement rule prefers restructuring over weakening the "constructive Lean kernel" claim, but Lean stdlib Classical is foundationally safe — restructure scheduled for v1.x. |
+| DEEP-TEST-02 | L | README + codebase_map.json | documentation | Test-suite count drift: README says "25 test suites" and elsewhere "24 test suites" (source layout); actual is 28. |
+| DEEP-PROOF-01 | L | Scheduler/Operations/Preservation (was M, downgraded §11.4) | implementation (post-1.0) | `Classical.byContradiction` at `Preservation.lean` (single explicit Classical use). Surrounding `by_cases` already invokes `Classical.em` implicitly; full elimination requires proof restructuring. The implement-the-improvement rule prefers restructuring over weakening the "constructive Lean kernel" claim, but Lean stdlib Classical is foundationally safe — restructure scheduled for v1.x. |
 | DEEP-PRECOM-01 | M | scripts/pre-commit-lean-build.sh | implementation | The `sorry`-detection regex chain is fragile against block-comment syntax. Verification pass found the failure mode is OVER-zealous (rejects legitimate doc references to `sorry` in `/-…-/` blocks), not UNDER-zealous as initially documented. Replace with a Lean-tokeniser-based check. |
 
 ### Findings re-confirmed from predecessor (still applicable)
@@ -202,19 +202,19 @@ counterpart) at the end.
 
 **Tier 1 — IPC NI symmetry (one-line code change, smallest slice):**
 
-1. **DEEP-IPC-03** — at `SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean:198`,
+1. **DEEP-IPC-03** — at `SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean`,
    replace `.ok ({ results := #[] }, st')` with
-   `.error .invalidCapability`. Mirror the AK1-I comment block
-   from line 113-125. This closes the last NI asymmetry between
+   `.error .invalidCapability`. Mirror the AK1-I comment block.
+   This closes the last NI asymmetry between
    send/receive/call cap-transfer paths.
 
 **Tier 2 — Hardware-dispatch implementation (the headline pre-1.0
 work; no longer a documentation tier):**
 
 2. **DEEP-FFI-01 IMPLEMENTATION (was: disclosure).** Wire
-   `@[export syscall_dispatch_inner]` (`SeLe4n/Platform/FFI.lean:217`)
-   into `syscallEntryChecked` (`Kernel/API.lean:1244`) and
-   `@[export suspend_thread_inner]` (line 186) into `suspendThread`
+   `@[export syscall_dispatch_inner]` (`SeLe4n/Platform/FFI.lean`)
+   into `syscallEntryChecked` (`Kernel/API.lean`) and
+   `@[export suspend_thread_inner]` into `suspendThread`
    (`Kernel/Lifecycle/Suspend.lean`). This requires:
    - Threading the active `SystemState` through the FFI boundary
      (the v1.x work item the docstring already names). Options
@@ -238,7 +238,7 @@ work; no longer a documentation tier):**
    implement-the-improvement rule.
 
 3. **DEEP-FFI-02 IMPLEMENTATION (was: comment fix).** The Rust
-   comment at `rust/sele4n-hal/src/svc_dispatch.rs:308` describes
+   comment at `rust/sele4n-hal/src/svc_dispatch.rs` describes
    a Lean function `syscallDispatchFromAbi` that does not exist.
    Per the implement-the-improvement rule, the remediation is to
    **add** `syscallDispatchFromAbi` as the typed-ABI entry point
@@ -253,7 +253,7 @@ work; no longer a documentation tier):**
 
 3a. **DEEP-FFI-03 IMPLEMENTATION (was: docstring clarification).**
     Wrap the two `@[export]` declarations in
-    `SeLe4n/Platform/FFI.lean` (lines 185–190 and 216–223) in the
+    `SeLe4n/Platform/FFI.lean` (and 216–223) in the
     same `hwTarget`-conditional `section` already used for the
     `@[extern]` declarations. After this, the FFI.lean docstring's
     claim "the `@[extern]` attribute is only active when building
@@ -264,9 +264,9 @@ work; no longer a documentation tier):**
 **Tier 3 — Boot VSpace wiring + spec completeness (medium slice):**
 
 4. **DEEP-BOOT-01 IMPLEMENTATION (was: thread or remove).**
-   At `SeLe4n/Platform/Boot.lean:551`, rewrite `bootSafeObject`
+   At `SeLe4n/Platform/Boot.lean`, rewrite `bootSafeObject`
    to admit `VSpaceRoot` objects that satisfy
-   `bootSafeVSpaceRoot` (RPi5/VSpaceBoot.lean:272–297). Then
+   `bootSafeVSpaceRoot` (RPi5/VSpaceBoot.lean). Then
    thread `rpi5BootVSpaceRoot` (RPi5/VSpaceBoot.lean) into the
    boot result so the W^X-compliance proof carries through to
    runtime. The "or remove the unwired data structure" alternative
@@ -276,7 +276,7 @@ work; no longer a documentation tier):**
 
 5. **DEEP-IF-02 IMPLEMENTATION (was: document the truncation).**
    Complete the parameterised `SecurityDomain` lattice section at
-   `Policy.lean:484–500` so the spec is end-to-end. The originally
+   `Policy.lean` so the spec is end-to-end. The originally
    recommended "document that the section is intentionally
    truncated as a post-1.0 hook" is struck per the
    implement-the-improvement rule.
@@ -303,7 +303,7 @@ work; no longer a documentation tier):**
 
 8. **DEEP-CAP-04 IMPLEMENTATION (was: louder comment).** Make the
    `RetypeTarget` "phantom witness" predicate
-   (`Capability/Invariant/Defs.lean:345–367`) non-bypassable. Wrap
+   (`Capability/Invariant/Defs.lean`) non-bypassable. Wrap
    the construction in a smart-constructor helper whose only
    public form requires invocation of the cleanup hook
    (`scrubLifecycleObject`); make the underlying `structure`
@@ -316,7 +316,7 @@ work; no longer a documentation tier):**
    type-level NoDup constraint to the notification
    `waitingThreads` field, so the `uniqueWaiters` predicate is
    discharged structurally rather than maintained by upstream
-   convention. The runtime guard at `Operations/Endpoint.lean:723`
+   convention. The runtime guard at `Operations/Endpoint.lean`
    continues to reject duplicate enqueue attempts; the new
    constraint additionally proves no future code path can
    bypass the guard without a corresponding type-level
@@ -326,46 +326,46 @@ work; no longer a documentation tier):**
 
 10. **DEEP-SUSP-01 IMPLEMENTATION (was: document/handle).** Add
     a PIP-recomputation step to `resumeThread`
-    (`Lifecycle/Suspend.lean:290+`) so a thread whose blocking
+    (`Lifecycle/Suspend.lean`) so a thread whose blocking
     chain changed during suspension has its `pipBoost` correctly
     re-derived on resume. Required for H4 readiness; needed
     in v1.0 if any non-trivial blocking chain can include a
     suspended holder.
 
 11. **DEEP-SUSP-02 IMPLEMENTATION (was: document or split).**
-    Split `cancelDonation` (`Lifecycle/Suspend.lean:88–105`)
+    Split `cancelDonation` (`Lifecycle/Suspend.lean`)
     into `cancelBoundDonation` and `cancelDonatedDonation`.
     The two arms have distinct semantics ("unbind in place" vs
     "return to original owner") that should not be compressed
     under a single name.
 
 12. **DEEP-SCH-02 IMPLEMENTATION (was: document the asymmetry).**
-    Make `effectivePriority` (`Selection.lean:225–241`) and
-    `resolveEffectivePrioDeadline` (line 327) share a single
+    Make `effectivePriority` (`Selection.lean`) and
+    `resolveEffectivePrioDeadline` share a single
     fail-safe convention. Either both return `Option`, or both
     are total under invariants; the asymmetric API contract is
     a structural smell.
 
 13. **DEEP-SCH-04 IMPLEMENTATION** (already an implementation
     finding in the original audit). Surface
-    `.missingSchedContext` from `Operations/Core.lean:715–717`
+    `.missingSchedContext` from `Operations/Core.lean`
     instead of the silent no-preempt fallback.
 
 14. **DEEP-SCH-05 IMPLEMENTATION** (already an implementation
-    finding). Replace the `RunQueue.lean:238` defensive
+    finding). Replace the `RunQueue.lean` defensive
     priority-0 fallback with explicit error or assertion.
 
 15. **DEEP-SCH-06 IMPLEMENTATION (was: verify).** If
     `boundThreadDomainConsistent` requires it, wire domain
     propagation into `schedContextConfigure`
-    (`SchedContext/Operations.lean:141–185`); if the invariant
+    (`SchedContext/Operations.lean`); if the invariant
     does not require it, prove the domain field on the bound
     TCB is reachable without it. Either way, the "stale field"
     risk must be discharged structurally.
 
 16. **DEEP-CAP-05 IMPLEMENTATION (was: move to debt register).**
     Address the "AK8-K LOW-tier" deferred items currently
-    documented in the `Capability/Operations.lean:12–62`
+    documented in the `Capability/Operations.lean`
     header. Items whose fix fits inside this audit cycle are
     closed in this tier; items that genuinely cannot ship in
     v1.0 are lifted into the project debt register
@@ -376,10 +376,10 @@ work; no longer a documentation tier):**
 (small implementation slices):**
 
 17. **DEEP-PRECOM-01** — replace the fragile `sorry`-detection
-    regex chain in `scripts/pre-commit-lean-build.sh:59,61`
+    regex chain in `scripts/pre-commit-lean-build.sh`
     with a Lean-tokeniser-based check.
 18. **DEEP-LICENSE-01** — add `-- SPDX-License-Identifier:
-    GPL-3.0-or-later` as line 1 of `SeLe4n.lean`.
+    GPL-3.0-or-later` as of `SeLe4n.lean`.
 19. **DEEP-TEST-01 / DEEP-TEST-02** — rename
     `Ak8CoverageSuite.lean`, `An9HardwareBindingSuite.lean`,
     `Ak9PlatformSuite.lean`, `An10CascadeSuite.lean` and their
@@ -461,12 +461,12 @@ All counts produced by `find` and `wc -l` against the live tree on
 | Rust LoC | ~13,391 | (no figure) | ~13,391 | OK |
 | `sorry` in Lean (production) | **0** | 0 | n/a | OK |
 | `axiom` in Lean (production) | **0** | 0 | n/a | OK |
-| `Classical.*` in Lean (production) | **1** (`Classical.byContradiction` at `Scheduler/Operations/Preservation.lean:1720`) | "0 Classical.choice" (predecessor audit) | n/a | predecessor audit only checked `Classical.choice`, not all Classical |
+| `Classical.*` in Lean (production) | **1** (`Classical.byContradiction` at `Scheduler/Operations/Preservation.lean`) | "0 Classical.choice" (predecessor audit) | n/a | predecessor audit only checked `Classical.choice`, not all Classical |
 | `partial def` in Lean (production) | **0** | n/a | n/a | OK (`tests/` has 2, expected) |
 | `noncomputable` in Lean (production) | **0** | n/a | n/a | OK |
 | `unsafe { … }` in Rust HAL | 53 | n/a | n/a | OK (matches prior count) |
 | `unsafe` in Rust non-HAL | 1 (`raw_syscall` in sele4n-abi) | n/a | n/a | OK |
-| `#[allow(dead_code)]` in Rust | 3 | n/a | n/a | mmu.rs (module-level, justified), trap.rs:147 (`NOT_IMPLEMENTED` constant), gic.rs:76 (`ICENABLER_BASE`) |
+| `#[allow(dead_code)]` in Rust | 3 | n/a | n/a | mmu.rs (module-level, justified), trap.rs (`NOT_IMPLEMENTED` constant), gic.rs (`ICENABLER_BASE`) |
 | `set_option linter.*` in Lean | 14 files | n/a | n/a | 7 in IPC structural quartet, 3 in Architecture/Invariant, 2 in Scheduler, 1 in Builder, 1 in Testing/Deprecated |
 | TODO/FIXME/HACK in Lean production | **0** | n/a | n/a | clean |
 
@@ -523,7 +523,7 @@ proofs. ✓
 per modified `.lean` file. The hook is symlinked from
 `.git/hooks/pre-commit`. Two findings:
 
-- **DEEP-PRECOM-01 (M)** confirmed: the `sorry`-regex (line 65) chains
+- **DEEP-PRECOM-01 (M)** confirmed: the `sorry`-regex chains
   `grep -v` filters that exclude lines starting with `--` or `/-`. A
   multi-line `/- ... sorry ... -/` block-comment span is **not**
   excluded — only the line that starts with `/-` is, and only by direct
@@ -549,7 +549,7 @@ follow `set -euo pipefail`; all four source `_common.sh`/`test_lib.sh`.
 No timing oddities. ✓
 
 **Build verification of the staged module.**
-`scripts/test_tier1_build.sh:25` runs `lake build SeLe4n.Platform.Staged`
+`scripts/test_tier1_build.sh` runs `lake build SeLe4n.Platform.Staged`
 in addition to the default `lake build`. This forces the seven
 not-in-Main modules (FFI, RPi5.Contract, RPi5.VSpaceBoot, Sim.Contract,
 CacheModel, ExceptionModel, TimerModel, BarrierComposition,
@@ -573,32 +573,32 @@ identifiers (`ObjId`, `ThreadId`, `CPtr`, `Slot`, `DomainId`,
 `KernelError`, IPC message types, and 15 `LawfulBEq` instances. No
 proof debt. Audit observations:
 
-- The 15 `LawfulBEq` instances (lines 1076–1115) are repetitive but
+- The 15 `LawfulBEq` instances are repetitive but
   necessary — Lean does not derive `LawfulBEq` for `structure` wrappers
   even when the underlying field has it. A single `deriving` macro
   would compress this. Style nit only — **DEEP-PRELUDE-01 (I)**.
-- Lines 1131+ contain `HashSet`/`RHTable` helper lemmas that are
-  domain-specific (e.g., `HashSet_contains_insert_iff`, lines 1131,
+- contain `HashSet`/`RHTable` helper lemmas that are
+  domain-specific (e.g., `HashSet_contains_insert_iff`, ,
   1173). Could plausibly live in `Prelude/HashSetLemmas.lean` to keep
   Prelude focused. Mild bloat — **DEEP-PRELUDE-02 (I)**.
-- `IpcMessage.checkBounds`/`bounded` (lines 528–546) — `Bool` and
+- `IpcMessage.checkBounds`/`bounded` — `Bool` and
   `Prop` versions both enforce `registers.size ≤ 120 ∧ caps.size ≤ 3`;
   `checkBounds_iff_bounded` proves equivalence. ✓
 
 **`SeLe4n/Machine.lean` (977 LoC).** Machine state primitives.
-Intentional non-lawful `BEq RegisterFile` (lines 290–306): `RegisterFile`
+Intentional non-lawful `BEq RegisterFile` : `RegisterFile`
 contains a `gpr : Fin 32 → UInt64` function field, so `BEq` cannot be
-genuinely `LawfulBEq`. Witness `not_lawfulBEq` (lines 297–306) constructs
+genuinely `LawfulBEq`. Witness `not_lawfulBEq` constructs
 two register files that BEq-compare equal at indices 0–31 but differ at
-out-of-range index 32. The proof is sound and the safety analysis (X5-G,
-lines 308–327) confirms no proof relies on `LawfulBEq RegisterFile`. ✓
+out-of-range index 32. The proof is sound and the safety analysis (X5-G)
+confirms no proof relies on `LawfulBEq RegisterFile`. ✓
 
-`MemoryRegion.wellFormed` (lines 197–203) is `Prop`-valued with a
+`MemoryRegion.wellFormed` is `Prop`-valued with a
 `Decidable` instance. `noOverlapAux` is O(n²) but bounded by RPi5 region
 count (~5). Verified.
 
 **`SeLe4n/Model/Object/Types.lean` (1759 LoC).** Same non-lawful pattern
-in TCB: `BEq TCB` (lines 736–751) compares 22 fields manually, including
+in TCB: `BEq TCB` compares 22 fields manually, including
 `registerContext : RegisterFile`, so `LawfulBEq TCB` is also not derivable.
 Verified field count = 22:
 `tid, priority, domain, cspaceRoot, vspaceRoot, ipcBuffer, ipcState,
@@ -607,11 +607,11 @@ pendingMessage, registerContext, faultHandler, boundNotification,
 schedContextBinding, timeoutBudget, maxControlledPriority, pipBoost,
 timedOut`. Predecessor audit said "22 fields"; ✓.
 
-`Notification.waitingThreads : List ThreadId` (lines 850–874) is
+`Notification.waitingThreads : List ThreadId` is
 intentionally a list, not a HashSet, because notification waits are
 expected to be rare (≤4 typical). The associated `uniqueWaiters`
 predicate is asserted; **operationally enforced** by
-`notificationWait` at `Operations/Endpoint.lean:723` via an O(1)
+`notificationWait` at `Operations/Endpoint.lean` via an O(1)
 `tcb.ipcState = .blockedOnNotification notificationId` check
 (`.error .alreadyWaiting`). The originally-filed DEEP-IPC-01 was
 **WITHDRAWN** in §11.1 after this verification.
@@ -620,22 +620,22 @@ predicate is asserted; **operationally enforced** by
 type-level file: `VSpaceRoot`, `CNode`, `KernelObject`, CDT helpers.
 No `sorry`/`axiom`. CNode `slots : RHTable Slot Capability` carries an
 implicit `slotsUnique` invariant; CNode constructors must prove it
-(Builder.lean:290–291). **DEEP-MODEL-01 (L)** (from Model agent): add
+(Builder.lean). **DEEP-MODEL-01 (L)** (from Model agent): add
 an inline comment on the `slots` field flagging the proof obligation,
 since it is not type-enforced at the field level.
 
 **`SeLe4n/Model/State.lean` (2226 LoC).** SystemState is a 17-field
 record with `RHTable`-backed indices. The `allTablesInvExtK` invariant
 chains 17 RHTable invariant predicates; the conjunction is then
-projected by `.2.2.2…` chains (e.g., lines 386–395). Predecessor's
-DEBT-ST-01 stands. The Builder.lean named accessors (lines 32–97) are
+projected by `.2.2.2…` chains (e.g., ). Predecessor's
+DEBT-ST-01 stands. The Builder.lean named accessors are
 **`private theorem`s** (verified by reading the file) — external code
 cannot use them and must redo the destructuring. **DEEP-MODEL-02 (L)**:
 either expose the 17 named accessors as public lemmas, or adopt a
 named-fields invariant record (`structure AllTablesInv` with one field
 per table). The latter is the proper long-term fix.
 
-`SystemState.scheduler.replenishQueue` (line 146) is initialised to
+`SystemState.scheduler.replenishQueue` is initialised to
 empty and maintained by CBS operations, but the sortedness invariant
 (`replenishQueueSorted`) is documented in
 `Kernel/SchedContext/ReplenishQueue.lean`, not asserted at the State
@@ -643,7 +643,7 @@ level. **DEEP-MODEL-03 (I)**: cross-reference the invariant in
 State.lean's docstring.
 
 `LifecycleMetadata.capabilityRefs : RHTable SlotRef CapTarget` (line
-~189) is documented as "empty during boot" (Builder.lean:195) but the
+~189) is documented as "empty during boot" (Builder.lean) but the
 runtime-maintenance guarantee is implicit in invariant preservation
 proofs scattered across the Capability subsystem.
 **DEEP-MODEL-04 (I)**: add a single canonical comment naming every
@@ -653,7 +653,7 @@ auditing the field can find them without grep.
 **`SeLe4n/Model/IntermediateState.lean`, `Builder.lean`, `FrozenState.lean`,
 `FreezeProofs.lean`.** Q3 builder phase + Q5/Q6 freeze model.
 `FreezeProofs.lean` (1661) verified clean. The index-parity proof
-(lines 294–303) uses `Nat.lt_or_ge` and `List.pairwise_iff_getElem`,
+ uses `Nat.lt_or_ge` and `List.pairwise_iff_getElem`,
 which is the standard idiom in mathlib-free proofs. ✓
 
 ## 5. Lean kernel subsystems
@@ -667,12 +667,12 @@ BadgeIpcCapsAndCdtMaps}.lean.**
 
 Verified (re-confirming predecessor §2.3):
 
-- `mintDerivedCap` (Operations.lean:748–795) enforces rights attenuation
-  via `rightsSubset`. The null-cap guard (lines 749–757) is explicit.
+- `mintDerivedCap` (Operations.lean) enforces rights attenuation
+  via `rightsSubset`. The null-cap guard is explicit.
   ✓
-- `cspaceRevoke_local_target_reduction` (Authority.lean:59–67) proves
+- `cspaceRevoke_local_target_reduction` (Authority.lean) proves
   no sibling privilege leakage on local revoke. ✓
-- CDT acyclicity: `Defs.lean:29–62` externalises CDT structural
+- CDT acyclicity: `Defs.lean` externalises CDT structural
   hypothesis via documented obligations. Composition lives at the
   CrossSubsystem layer (`CrossSubsystem.lean`).
 - AN4-F.3 split (Insert ← Delete ← CopyMoveMutate ← Revoke ←
@@ -681,36 +681,35 @@ Verified (re-confirming predecessor §2.3):
 
 New findings in this audit (deep-dive agent):
 
-- **DEEP-CAP-01 (L)**: `cspaceCopy`/`cspaceMove` (Operations.lean:959,
-  1002) guard against null caps but **do not document the guard in the
+- **DEEP-CAP-01 (L)**: `cspaceCopy`/`cspaceMove` (Operations.lean) guard against null caps but **do not document the guard in the
   function docstring**. Reader-inferable behaviour vs documented
   behaviour are inconsistent.
 - ~~**DEEP-CAP-02 (L)**~~: **WITHDRAWN — see §11.1.** The
   agent claim was that `cspaceMutate` does not validate the
-  precondition. False positive: line 1093
+  precondition. False positive: 
   `if cap.isNull then .error .nullCapability` IS the validation,
-  and the docstring at lines 1069–1080 describes the design.
-- **DEEP-CAP-03 (I)**: `mintDerivedCap` (Operations.lean:750–756)
+  and the docstring describes the design.
+- **DEEP-CAP-03 (I)**: `mintDerivedCap` (Operations.lean)
   ordering of guards is `rights → null`. If the parent is non-null but
   the constructed child happens to match the null sentinel, the error
   is `.nullCapability` rather than `.invalidCapability`. Defensible
   but fragile — document the order in the docstring.
 - **DEEP-CAP-04 (I)**: The `RetypeTarget` "phantom witness" predicate
-  (Invariant/Defs.lean:345–367) acknowledges (line 332–335) that a
+  (Invariant/Defs.lean) acknowledges that a
   caller could in principle construct it without invoking the cleanup
   hook by manually proving the two component properties. This is
   intentional and isolated from real call paths, but the comment
   should be louder ("**deliberately phantom-like; correctness depends
   on no caller bypassing the cleanup invocation**").
 - **DEEP-CAP-05 (I)**: The Capability/Operations.lean header comment
-  block at lines 12–62 enumerates predecessor "AK8-K LOW-tier" findings.
+  block enumerates predecessor "AK8-K LOW-tier" findings.
   Several are documented as deferred (`C-L3` IPC-buffer CDT edge
   without sender-rights record). For v1.0 the decision is "ship
   documented", but the deferred items should appear in the project
   debt register, not just in source comments.
 
 The predecessor's DEBT-CAP-01 (frame-helper extraction across
-`cspaceInsertSlot_preserves_*` block, theorems start at line 471) and
+`cspaceInsertSlot_preserves_*` block, the theorem block) and
 DEBT-CAP-02 (tactic extraction for the Insert/Delete/Revoke proof
 scaffold) are re-confirmed and unchanged.
 
@@ -736,13 +735,13 @@ New findings:
 - **DEEP-IPC-02 (M)**: **Linter suppression of `unusedVariables` in
   the IPC structural quartet plus three `Invariant/Queue*.lean`
   files** — `set_option linter.unusedVariables false` at:
-  - `Invariant/QueueNextBlocking.lean:24`
-  - `Invariant/QueueNoDup.lean:25`
-  - `Invariant/QueueMembership.lean:13`
-  - `Invariant/Structural/StoreObjectFrame.lean:37`
-  - `Invariant/Structural/DualQueueMembership.lean:38`
-  - `Invariant/Structural/PerOperation.lean:38`
-  - `Invariant/Structural/QueueNextTransport.lean:36`
+  - `Invariant/QueueNextBlocking.lean`
+  - `Invariant/QueueNoDup.lean`
+  - `Invariant/QueueMembership.lean`
+  - `Invariant/Structural/StoreObjectFrame.lean`
+  - `Invariant/Structural/DualQueueMembership.lean`
+  - `Invariant/Structural/PerOperation.lean`
+  - `Invariant/Structural/QueueNextTransport.lean`
   Seven files. The IPC agent flagged this as "masking potentially dead
   hypotheses". Each suppression is in a structural-invariant file
   where defensive pattern-matches do legitimately produce unused
@@ -752,18 +751,18 @@ New findings:
   such comments was verified by reading all 7 files; none has the
   justifier comment.
 - **DEEP-IPC-03 (H — narrowed in §11.3)**: `endpointCallWithCaps`
-  (DualQueue/WithCaps.lean:198) silently returns `.ok ({ results := #[] }, st')`
+  (DualQueue/WithCaps.lean) silently returns `.ok ({ results := #[] }, st')`
   when the receiver's CSpace root is missing. The send and receive
   paths were already aligned with `.error .invalidCapability` under
-  AK1-I (lines 125 and 158); only the call path remained
+  AK1-I (and 158); only the call path remained
   asymmetric. **Information-flow risk**: a malicious caller can
   distinguish "receiver-CSpace-root present" from "missing" by
   observing `.ok` vs (some other error), giving a covert channel
   via
   `KernelError`. Should be closed before v1.0 to maintain NI symmetry.
 - **DEEP-IPC-04 (I)**: `cleanupPreReceiveDonation`
-  (Operations/Endpoint.lean:459–488) has a defensive `.error _ => st`
-  fallback at line 485 that absorbs failures from
+  (Operations/Endpoint.lean) has a defensive `.error _ => st`
+  fallback that absorbs failures from
   `returnDonatedSchedContext`. The comment claims the error branch
   is unreachable under `ipcInvariantFull`, with formal proof in
   `cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull`
@@ -791,18 +790,18 @@ Replenishment, Yield, BandExhaustion, DomainRotation, WCRT}.lean.**
 Re-confirmed (§2.3 predecessor):
 
 - WCRT bound `wcrtBound = D·L_max + N·(B+P)` is parametric — verified
-  at `Liveness/WCRT.lean:82`. The two externalised hypotheses
+  at `Liveness/WCRT.lean`. The two externalised hypotheses
   `hDomainActiveRunnable` and `hBandProgress` (DEBT-SCH-02) remain.
-- `blockingAcyclic` is a **defined invariant predicate** (BlockingGraph
-  lines 148–149), not assumed.
+- `blockingAcyclic` is a **defined invariant predicate** (BlockingGraph),
+  not assumed.
 - AK3-A ASID rollover fix and the `validatePriorityAuthority` MCP
-  bound (SchedContext/PriorityManagement.lean:99) — both verified.
+  bound (SchedContext/PriorityManagement.lean) — both verified.
 - DEBT-SCH-01: Preservation.lean is 3779 lines and is ripe for split.
 
 New findings:
 
 - **DEEP-PROOF-01 (M)**: `Classical.byContradiction` use at
-  `Operations/Preservation.lean:1720` (only instance kernel-wide).
+  `Operations/Preservation.lean` (only instance kernel-wide).
   The case is decidable: it constructs an existential witness from a
   negated universal, where the universal quantifier ranges over
   `outTid : ThreadId` constrained by `st.scheduler.current = some outTid`.
@@ -816,29 +815,29 @@ New findings:
   concern is purely consistency-of-discipline: the project's stated
   goal of "constructive Lean kernel" is breached by this single
   instance.
-- **DEEP-SCH-01 (I)**: `RunQueue.lean:66–72` — the implicit invariant
+- **DEEP-SCH-01 (I)**: `RunQueue.lean` — the implicit invariant
   "every thread in `membership` has entry in `threadPriority`" is
   documented in a comment but **not enforced as a structure-level
   proof obligation**. Predecessor flagged this; we re-confirm that
   the only enforcement is `InvariantChecks.runQueueThreadPriorityConsistentB`
   (a runtime debug check). For v1.0 acceptable; document the trade-off
   in the file header.
-- **DEEP-SCH-02 (I)**: `Operations/Selection.lean:225–241`
-  (`effectivePriority` returns `Option`) vs `:327`
+- **DEEP-SCH-02 (I)**: `Operations/Selection.lean`
+  (`effectivePriority` returns `Option`) vs
   (`resolveEffectivePrioDeadline` returns total `(Priority, Deadline)`)
   — asymmetric API contract. Both correct under invariants, but a
   uniform "fail-open vs fail-safe" convention would help maintainers.
-- **DEEP-SCH-03 (I)**: `Lifecycle/Suspend.lean:75–84`
-  (`cancelIpcBlocking` clears IPC state to `.ready`) vs `:290+`
+- **DEEP-SCH-03 (I)**: `Lifecycle/Suspend.lean`
+  (`cancelIpcBlocking` clears IPC state to `.ready`) vs
   (`resumeThread` reconstructs `.ready` manually) — duplication. A
   shared helper would reduce divergence risk if IPC initialisation
   evolves.
-- **DEEP-SCH-04 (I)**: `Operations/Core.lean:715–717` — bound budget
+- **DEEP-SCH-04 (I)**: `Operations/Core.lean` — bound budget
   path has a `(state, false)` no-preemption fallback when SchedContext
   lookup fails. Silent miss instead of an error result. Unreachable
   under invariants but a future invariant violation would be
   swallowed. Consider surfacing `.missingSchedContext` in v1.x.
-- **DEEP-SCH-05 (I)**: `RunQueue.lean:238` — `rotateToBack`
+- **DEEP-SCH-05 (I)**: `RunQueue.lean` — `rotateToBack`
   defensive fallback `threadPriority[tid]?.getD ⟨0⟩` when `tid ∉ rq`.
   Silently chooses priority 0; commented as "unreachable under
   invariant" but no assertion guards.
@@ -856,22 +855,22 @@ Operations.lean, PriorityManagement.lean (362), Invariant.lean (hub
 
 Re-confirmed:
 - `ReplenishQueue.lean` sorted-insertion uses **strict `<`** for
-  FIFO same-tick fairness (lines 278–299) — correct per AK2-F / S-M04.
+  FIFO same-tick fairness — correct per AK2-F / S-M04.
 - `popDue` is single-pass prefix split on the sorted invariant; no
   re-scan.
 - MCP authority enforces both hardware ceiling
-  (`maxHardwarePriority := 255`, line 81) and
-  `targetPriority ≤ callerTcb.maxControlledPriority` (line 99).
+  (`maxHardwarePriority := 255`, ) and
+  `targetPriority ≤ callerTcb.maxControlledPriority` .
   Soundness witness `validatePriorityAuthority_bound` (110–117).
 
 The hub (`Invariant.lean`, 56 LoC) intentionally imports only `Defs`
-to break a cycle; lines 49–56 carry a compile-time witness re-deriving
+to break a cycle; carry a compile-time witness re-deriving
 `schedContextWellFormed` to fail the build if the import is removed.
 Documented and intentional — verified.
 
 New findings:
 
-- **DEEP-SCH-06 (I)**: `SchedContext/Operations.lean:141–185`
+- **DEEP-SCH-06 (I)**: `SchedContext/Operations.lean`
   (`schedContextConfigure`) propagates priority changes to the bound
   TCB and re-buckets in RunQueue, but **does not re-validate domain
   assignment**. If the SchedContext's domain changes,
@@ -885,23 +884,23 @@ New findings:
 **Suspend.lean, Invariant/SuspendPreservation.lean, Operations/{ScrubAndUntyped (764), CleanupPreservation (460), RetypeWrappers (279), Cleanup (204)}.lean.**
 
 Re-confirmed:
-- H3-atomicity window in `Suspend.lean:235–237` documented (requires
+- H3-atomicity window in `Suspend.lean` documented (requires
   interrupt-disabled execution on real hardware via
   `with_interrupts_disabled` Rust HAL helper).
-- Defensive re-lookup of TCB after `cancelIpcBlocking` (Suspend.lean:223–244)
+- Defensive re-lookup of TCB after `cancelIpcBlocking` (Suspend.lean)
   is unnecessary in the sequential model but inexpensive insurance.
 
 New findings:
 
 - **DEEP-SUSP-01 (I)** (from Scheduler agent): **`resumeThread` does
-  not include a PIP re-computation step** — `Suspend.lean:290+`. If
+  not include a PIP re-computation step** — `Suspend.lean`. If
   a suspended thread previously inherited priority and is later
   resumed, its `pipBoost` field is preserved unchanged but the
   blocking chain may have changed during suspension. Under the
   current single-thread-suspended assumption this is correct, but
   H4 (e.g., suspending a thread that holds a lock another thread is
   waiting on) would expose the gap.
-- **DEEP-SUSP-02 (I)**: `cancelDonation` (Suspend.lean:88–105) has
+- **DEEP-SUSP-02 (I)**: `cancelDonation` (Suspend.lean) has
   two branches under one function name — `.bound` unbinds in place
   while `.donated` calls `cleanupDonatedSchedContext`. The
   documentation says "return to original owner" but the actual
@@ -915,14 +914,14 @@ TLB+cache coherency, exception/interrupt model, register/syscall
 decode, IPC-buffer validation.**
 
 Re-confirmed (§2.4 predecessor):
-- Four-layer W^X defence: `vspaceMapPage` (VSpace.lean:102) →
-  `VSpaceRoot.mapPage` (VSpaceInvariant.lean:964–967) →
-  `wxExclusiveInvariant` (line 317) → SCTLR.WXN at HAL level.
-- ASID rollover scan over `[1, 65535)` (AsidManager.lean:165–185)
+- Four-layer W^X defence: `vspaceMapPage` (VSpace.lean) →
+  `VSpaceRoot.mapPage` (VSpaceInvariant.lean) →
+  `wxExclusiveInvariant` → SCTLR.WXN at HAL level.
+- ASID rollover scan over `[1, 65535)` (AsidManager.lean)
   fail-closed; three correctness theorems
   (`allocate_result_fresh`, `allocate_preserves_wellFormed`,
   `maxAsidValue := 65536`).
-- VSpace 7-tuple invariant (VSpaceInvariant.lean:123–130): all
+- VSpace 7-tuple invariant (VSpaceInvariant.lean): all
   conjuncts proved.
 - TPI-001 round-trip: `vspaceLookup_after_map`,
   `vspaceLookup_map_other`, `vspaceLookup_after_unmap`,
@@ -931,7 +930,7 @@ Re-confirmed (§2.4 predecessor):
 New findings:
 
 - **DEEP-ARCH-01 (L — narrowed §11.3)**: **Stale "STATUS: staged
-  for H3" marker** on `CacheModel.lean:15–18`. Direct trace of
+  for H3" marker** on `CacheModel.lean`. Direct trace of
   imports: `SeLe4n.lean → TlbModel.lean → BarrierComposition.lean →
   CacheModel.lean`. CacheModel IS in the production chain, so the
   marker is misleading. **TimerModel.lean and ExceptionModel.lean
@@ -966,28 +965,28 @@ Service/{Interface, Operations, Registry (416), Registry/Invariant,
 Invariant/Policy, Invariant/Acyclicity (1043)}.lean.**
 
 Re-confirmed and verified:
-- `composedNonInterference_step` (Composition.lean:536–551) —
+- `composedNonInterference_step` (Composition.lean) —
   35 inductive `NonInterferenceStep` arms exhaustively cover the
   kernel transition surface. ✓
-- `enforcementBridge_to_NonInterferenceStep` (Soundness.lean:753–825)
+- `enforcementBridge_to_NonInterferenceStep` (Soundness.lean)
   bridges 11 checked wrappers (endpointSendDualChecked,
   notificationSignalChecked, cspaceCopyChecked, cspaceMoveChecked,
   endpointReceiveDualChecked, registerServiceChecked,
   endpointCallChecked, endpointReplyChecked, cspaceMintChecked,
   notificationWaitChecked, endpointReplyRecvChecked) to NI steps.
 - Single declassification gate: `declassifyStore`
-  (Soundness.lean:516–530), with three correctness theorems (lines
+  (Soundness.lean), with three correctness theorems (lines
   586–603). No bypass paths.
 - BIBA-inverted `integrityFlowsTo` is intentional with witness
   theorems `integrityFlowsTo_is_not_biba`,
   `integrityFlowsTo_denies_write_up_biba_allows`. Documented design
   choice.
 - `serviceDependencyAcyclic` is **declarative** (post WS-D4 fix at
-  Acyclicity.lean:75) and bridged to the executable path via
+  Acyclicity.lean) and bridged to the executable path via
   `bfs_complete_for_nontrivialPath`. ✓
-- `enforcementBoundary` list (Wrappers.lean:204–248) is the canonical
+- `enforcementBoundary` list (Wrappers.lean) is the canonical
   classification table; completeness compile-checked via
-  `decide` (line 307).
+  `decide` .
 
 New findings (most are informational / design-clarity):
 
@@ -995,11 +994,11 @@ New findings (most are informational / design-clarity):
   by `Soundness.lean` but the agent did not locate its definition in
   the audited scope. Likely lives in an external package or in
   `Policy.lean` outside the audited line range. Verify.
-- **DEEP-IF-02 (I)**: `Policy.lean:484–500` introduces a
+- **DEEP-IF-02 (I)**: `Policy.lean` introduces a
   parameterised `SecurityDomain` lattice but the section is
   truncated mid-spec. Status: post-1.0 extensibility hook — confirm.
 - The closure-form `hProjEq` discharge for the 6 capability dispatch
-  arms (Operations.lean:27–100) — DEBT-IF-02 from predecessor —
+  arms (Operations.lean) — DEBT-IF-02 from predecessor —
   remains open.
 
 ### 5.8 Verified data structures (RobinHood, RadixTree, FrozenOps) and CrossSubsystem
@@ -1010,12 +1009,12 @@ Invariant/{Defs, Preservation (2505), Lookup (2186)}.lean. ~7600 LoC.
 Re-confirmed:
 - Probe distance `(i + capacity − idealIndex) % capacity` — underflow
   safe (capacity ≥ 4 enforced; actually ≥ 16 by `minPracticalRHCapacity`,
-  Bridge.lean:50,105).
+  Bridge.lean).
 - Robin Hood three-way split (Core 130–161). Textbook.
-- Load-factor invariant `size·4 ≤ capacity·3` (Defs.lean:50). Resize
-  triggers at `size·4 ≥ capacity·3` (Core.lean:409).
+- Load-factor invariant `size·4 ≤ capacity·3` (Defs.lean). Resize
+  triggers at `size·4 ≥ capacity·3` (Core.lean).
 - `LawfulBEq (RHTable α β)` is **not** an instance — callers must
-  supply `[LawfulBEq β]` (AK8-J). Documented at Invariant lines 114–139.
+  supply `[LawfulBEq β]` (AK8-J). Documented at Invariant .
 - All key operations (`get` after `insert`, `get` after `erase`)
   have functional-correctness theorems for both colliding and
   non-colliding cases.
@@ -1032,7 +1031,7 @@ For Slot ranges currently used (radixWidth = 4), no overflow risk.
 Commutativity, Invariant. **Verified test-only**: `grep -rln "import SeLe4n.Kernel.FrozenOps" SeLe4n` returns only FrozenOps's own files. The 6 test suites that import FrozenOps (Ak8CoverageSuite, SuspendResumeSuite, FrozenOpsSuite, TwoPhaseArchSuite, IpcBufferSuite, PriorityManagementSuite) confirm experimental status. **DEBT-FR-01**: surface "FrozenOps is experimental, not in v1.0" in README and SECURITY_ADVISORY (currently only in `Core.lean` header).
 
 **CrossSubsystem (`SeLe4n/Kernel/CrossSubsystem.lean`, 3309 LoC).**
-The cross-subsystem invariant bundles 12 conjuncts (lines 673–685):
+The cross-subsystem invariant bundles 12 conjuncts :
 `registryEndpointValid`, `registryInterfaceValid`,
 `registryDependencyConsistent`, `noStaleEndpointQueueReferences`,
 `noStaleNotificationWaitReferences`, `serviceGraphInvariant`,
@@ -1068,7 +1067,7 @@ in CLAUDE.md only documents 13 of them.
 
 **`SeLe4n/Platform/FFI.lean` (245 LoC).** Two flavours of declarations:
 
-1. `@[extern "ffi_*"] opaque ...` (20 declarations, lines 50–242):
+1. `@[extern "ffi_*"] opaque ...` (20 declarations, ):
    Lean → Rust direction. Lean calls into the HAL. Each Lean opaque
    matches a Rust `#[no_mangle] pub extern "C" fn ffi_*` in
    `rust/sele4n-hal/src/ffi.rs`. Verified by direct grep — every
@@ -1085,23 +1084,23 @@ in CLAUDE.md only documents 13 of them.
 Both `@[export]` functions are **stubs returning `NotImplemented = 17`**:
 
 - `@[export suspend_thread_inner] def suspendThreadInner (_tid : UInt64) : UInt32 := 17`
-  (line 186–190). Rust `extern "C" { fn suspend_thread_inner(tid: u64) -> u32; }` at
-  `sele4n-hal/src/ffi.rs:325`.
+  Rust `extern "C" { fn suspend_thread_inner(tid: u64) -> u32; }` at
+  `sele4n-hal/src/ffi.rs`.
 - `@[export syscall_dispatch_inner] def syscallDispatchInner (_syscallId : UInt32) (_msgInfo : UInt64) (_x0 _x1 _x2 _x3 _x4 _x5 : UInt64) (_ipcBufferAddr : UInt64) : UInt64 := ((1 : UInt64) <<< 63) ||| 17`
-  (line 217–223). Rust `extern "C" { fn syscall_dispatch_inner(...) -> u64; }`
-  at `sele4n-hal/src/svc_dispatch.rs:314–326`.
+  Rust `extern "C" { fn syscall_dispatch_inner(...) -> u64; }`
+  at `sele4n-hal/src/svc_dispatch.rs`.
 
 The Lean docstrings honestly acknowledge the gap:
 
-- Line 187: "Until the AN9-D Lean glue routes into `suspendThread`
+- : "Until the AN9-D Lean glue routes into `suspendThread`
   proper (requires threading the active SystemState through the FFI,
   which is the v1.x work item)."
-- Line 213: "the Rust-→-Lean glue is the channel this AN9-F sub-task
+- : "the Rust-→-Lean glue is the channel this AN9-F sub-task
   delivers... Substantive routing into `syscallEntryChecked` is the
   closure work documented in `docs/HARDWARE_TESTING.md` §4.4."
 
 **The Rust-side comment is dishonest, however.** At
-`sele4n-hal/src/svc_dispatch.rs:308`:
+`sele4n-hal/src/svc_dispatch.rs`:
 
 > "In production builds this resolves to the Lean kernel's
 > `syscallDispatchFromAbi` (declared via `@[extern
@@ -1114,7 +1113,7 @@ archived `AUDIT_v0.30.6_WORKSTREAM_PLAN.md` line that proposed adding
 the function under that name. The proposal was never implemented; the
 Rust comment was never updated. The actual `@[extern]` symbol is
 `sele4n_syscall_dispatch_inner` (no, wait — verifying directly: the
-`@[export]` in FFI.lean line 216 is `syscall_dispatch_inner`, not
+`@[export]` in FFI.lean is `syscall_dispatch_inner`, not
 `sele4n_syscall_dispatch_inner`; the `sele4n_` prefix appears only in
 the Rust comment. The Lean exported symbol is bare
 `syscall_dispatch_inner`). **DEEP-FFI-02 (M)** confirmed: the comment
@@ -1129,7 +1128,7 @@ stub. The stub returns `(1 << 63) | 17`. The Rust caller decodes
 high-bit-set as `KernelError::NotImplemented` and propagates to user
 space. **Every userspace syscall on hardware fails with `NotImplemented`.**
 
-The verified `syscallEntryChecked` at `Kernel/API.lean:1244` (with
+The verified `syscallEntryChecked` at `Kernel/API.lean` (with
 all the IF-checked dispatch theorems below it) is currently exercised
 only by the simulation trace harness (`MainTraceHarness.lean`) and the
 `KernelErrorMatrixSuite` — never by hardware execution.
@@ -1154,7 +1153,7 @@ rule:
    tag (`v0.31.0` "verified specification release") covers the
    current state honestly.
 
-**Compilation gating gap.** FFI.lean docstring (lines 34–39) says
+**Compilation gating gap.** FFI.lean docstring says
 "`@[extern]` is only active when building with `-DhwTarget=true`."
 This is true for the `@[extern]` declarations (Lean → Rust). It is
 **silent** about `@[export]` declarations (Rust ← Lean), which are
@@ -1168,11 +1167,11 @@ asymmetric description.
 ### 6.2 Other Platform findings
 
 **`SeLe4n/Platform/Boot.lean` (2115 LoC).** 5-gate validation in
-`bootFromPlatformChecked` (line 696). Predecessor §2.4 fully covered.
+`bootFromPlatformChecked` . Predecessor §2.4 fully covered.
 
 - DEBT-BOOT-01 (AF3-F minimum-configuration validation: ≥1 thread,
   valid scheduler state) — re-confirmed open.
-- **DEEP-BOOT-01 (M)**: `bootSafeObjectCheck` (line 551) explicitly
+- **DEEP-BOOT-01 (M)**: `bootSafeObjectCheck` explicitly
   rejects all `VSpaceRoot` objects (`| .vspaceRoot _ => false`). This
   means the checked boot path admits **no kernel VSpace** at boot.
   The actual mapping is loaded later via Rust HAL hardcoded tables
@@ -1193,7 +1192,7 @@ parser. Predecessor §2.4 verified `readBE32`/`readBE64` use
 `ByteArray.get?` (none on OOB), and `parseFdtHeader` validates blob
 size ≥ 40 B, magic `0xD00DFEED`, version ≥ 16, totalsize.
 
-- **DEEP-FDT-01 (L)**: `findMemoryRegPropertyChecked` (lines 695–740)
+- **DEEP-FDT-01 (L)**: `findMemoryRegPropertyChecked` 
   conflates fuel exhaustion with malformed-blob: returns
   `.error .malformedBlob` when FDT_END is reached without finding
   the `/memory` node. Two distinct conditions ("fuel ran out" vs
@@ -1203,7 +1202,7 @@ size ≥ 40 B, magic `0xD00DFEED`, version ≥ 16, totalsize.
 **`SeLe4n/Platform/Staged.lean` (67 LoC).** Pure imports + a single
 `stagedBuildAnchor : Unit := ()` to force the dependency graph to
 include 10 modules that are otherwise orphans. Verified working —
-`scripts/test_tier1_build.sh:25` runs `lake build SeLe4n.Platform.Staged`.
+`scripts/test_tier1_build.sh` runs `lake build SeLe4n.Platform.Staged`.
 **DEEP-DOC-03**: this file is missing from CLAUDE.md source layout.
 
 **`SeLe4n/Platform/RPi5/Board.lean`.** 5 hardware regions
@@ -1216,7 +1215,7 @@ at audit time). ✓
 VSpace configuration. Three permission constants
 (`permsTextRX`, `permsDataRW`, `permsMmioRW`) all proven
 `wxCompliant = true` by `decide`. The full `rpi5BootVSpaceRoot`
-proven W^X compliant (lines 232–238). **Verified production-correct
+proven W^X compliant . **Verified production-correct
 but not yet wired** (DEEP-BOOT-01 above). DEEP-DOC-03: missing from
 CLAUDE.md source layout.
 
@@ -1232,37 +1231,37 @@ Four crates: `sele4n-types` (~555 LoC), `sele4n-abi` (~1.4K),
 
 ### 7.1 Safety-discipline summary
 
-- `#![deny(unsafe_code)]` in `sele4n-types/src/lib.rs:38`,
-  `sele4n-abi/src/lib.rs:21`, `sele4n-sys/src/lib.rs:47`. ✓
-- `#![allow(unsafe_code)]` in `sele4n-hal/src/lib.rs:31` (HAL must
+- `#![deny(unsafe_code)]` in `sele4n-types/src/lib.rs`,
+  `sele4n-abi/src/lib.rs`, `sele4n-sys/src/lib.rs`. ✓
+- `#![allow(unsafe_code)]` in `sele4n-hal/src/lib.rs` (HAL must
   access hardware). ✓
 - `unsafe { … }` blocks: 53 in HAL, 1 in `sele4n-abi` (`raw_syscall`
-  in `trap.rs:32`, justified, single function).
-- `#[allow(dead_code)]`: 3 instances (`mmu.rs:140` module-level
-  reference constants, `trap.rs:147` for `NOT_IMPLEMENTED = 17`,
-  `gic.rs:76` for `ICENABLER_BASE`). All three documented.
+  in `trap.rs`, justified, single function).
+- `#[allow(dead_code)]`: 3 instances (`mmu.rs` module-level
+  reference constants, `trap.rs` for `NOT_IMPLEMENTED = 17`,
+  `gic.rs` for `ICENABLER_BASE`). All three documented.
 - Zero runtime dependencies. Build-time: `cc = "1.2"` pinned in
-  `sele4n-hal/Cargo.toml:20`.
+  `sele4n-hal/Cargo.toml`.
 
 ### 7.2 New findings
 
-- **DEEP-FFI-02 (M)**: `svc_dispatch.rs:308` — comment references
+- **DEEP-FFI-02 (M)**: `svc_dispatch.rs` — comment references
   nonexistent Lean function `syscallDispatchFromAbi`. Already detailed
   above in §6.1.
 - ~~**DEEP-RUST-01 (L)**~~: **WITHDRAWN — see §11.1.** Direct
-  verification: every MMIO unsafe block at lines 54–57, 76–79,
+  verification: every MMIO unsafe block,
   96–98, 117–119 cites `(ARM ARM B2.1)`. The agent's claim was
   incorrect.
 - ~~**DEEP-RUST-02 (L)**~~: **WITHDRAWN — see §11.1.** Direct
-  verification: `mrs`/`msr` `asm!` blocks at lines 20–21 and
+  verification: `mrs`/`msr` `asm!` blocks and
   45–46 cite `(ARM ARM C5.2)`, the appropriate section for
   system register access mnemonics.
-- **DEEP-RUST-03 (I)**: `sele4n-abi/src/trap.rs:2-6` — module-level
+- **DEEP-RUST-03 (I)**: `sele4n-abi/src/trap.rs` — module-level
   comment claims "the **single** `unsafe` block in the entire
   library." Technically inaccurate: only `raw_syscall` is unsafe,
   while the `unsafe` is on the function (not a block). Cosmetic.
-- **DEEP-RUST-04 (L)**: `THIRD_PARTY_LICENSES.md:41` lists
-  `cc 1.2.59` while `sele4n-hal/Cargo.toml:20` pins `cc = "1.2"`
+- **DEEP-RUST-04 (L)**: `THIRD_PARTY_LICENSES.md` lists
+  `cc 1.2.59` while `sele4n-hal/Cargo.toml` pins `cc = "1.2"`
   (semver range). The license file should clarify "cc semver range
   1.2.x; current resolved version 1.2.59" or similar.
 - **DEEP-RUST-05 (I)**: `sele4n-abi/src/lib.rs` and
@@ -1280,11 +1279,11 @@ Four crates: `sele4n-types` (~555 LoC), `sele4n-abi` (~1.4K),
 ### 7.3 Re-confirmed without further finding
 
 - GIC-400 init order matches GIC-400 TRM §3.1/§4.3
-  (`gic.rs:129-184`); self-check via `ITARGETSR[8]` readback on
-  `aarch64 + not(test)` (lines 281–296, 298–330).
+  (`gic.rs`); self-check via `ITARGETSR[8]` readback on
+  `aarch64 + not(test)` .
 - IRQ dispatch ordering: EOI fires **before** handler (post-AN8-C),
   preventing GIC lockup on handler panic. Tests verify ordering.
-- MMU SCTLR_EL1 set as full bitmap (`mmu.rs:198-209`), matching
+- MMU SCTLR_EL1 set as full bitmap (`mmu.rs`), matching
   ARM ARM D17.2.120; RES1 bits 4,7,8,11,20,22,23,28,29 explicit.
 - TrapFrame `36 × 8 = 288 bytes`, 16-byte aligned, with compile-time
   `offset_of!` assertions.
@@ -1304,8 +1303,8 @@ Four crates: `sele4n-types` (~555 LoC), `sele4n-abi` (~1.4K),
 - Tier scripts execute every suite either directly or via tier
   script aggregation. No orphan suites.
 - `Testing/Helpers.lean` primitives carry non-empty-string runtime
-  guards (lines 31–95) and `expectError` checks `KernelError`
-  equality (line 60), not substring — no false positives.
+  guards and `expectError` checks `KernelError`
+  equality , not substring — no false positives.
 - Predecessor DEBT-TST-01 (NegativeStateSuite is 3714 lines)
   re-confirmed open.
 
@@ -1330,9 +1329,9 @@ New findings:
   same pattern. AN9, AK9, AN10 in filename.
 - **DEEP-TEST-03 (M)**: Limited dedicated test coverage of
   `syscallEntryChecked` — the production entry point per
-  `Kernel/API.lean:87`. Found in `KernelErrorMatrixSuite.lean` (3
-  references, line 312–319), `InformationFlowSuite.lean` (1
-  reference, line 346 in a comment), `MainTraceHarness.lean`
+  `Kernel/API.lean`. Found in `KernelErrorMatrixSuite.lean` (3
+  references, ), `InformationFlowSuite.lean` (1
+  reference, in a comment), `MainTraceHarness.lean`
   (1 trace path V8-A). For a "production entry point" claim, this
   is sparse. A dedicated `SyscallDispatchSuite.lean` with
   per-syscall positive and negative cases would close the gap.
@@ -1343,7 +1342,7 @@ New findings:
 ### 8.2 Scripts (49 files)
 
 - `set -euo pipefail` in 100% of shell scripts.
-- Trap-based cleanup discipline via `_common.sh:119–163`.
+- Trap-based cleanup discipline via `_common.sh`.
 - Pre-commit hook (`scripts/pre-commit-lean-build.sh`) is symlinked
   from `.git/hooks/pre-commit`. Verified at audit time.
 
@@ -1351,7 +1350,7 @@ New findings:
 
 - **DEEP-PRECOM-01 (M)**: documented above in §3. The `sorry`-detection
   regex is fragile against block-comment `/- ... sorry ... -/` spans.
-- **DEEP-SCRIPT-01 (I)**: `scripts/website_link_manifest.txt:18` says
+- **DEEP-SCRIPT-01 (I)**: `scripts/website_link_manifest.txt` says
   "Last synchronized: 2026-03-02" — 56 days stale. The manifest is
   enforced by Tier-0 hygiene (`scripts/check_website_links.sh`) so
   staleness in the comment doesn't affect correctness, but the
@@ -1372,8 +1371,8 @@ New findings:
 New finding:
 
 - **DEEP-CI-01 (L)**: Concurrency control inconsistency.
-  `lean_action_ci.yml` correctly sets `cancel-in-progress: true`
-  (lines 19–21), but the other workflows
+  `lean_action_ci.yml` correctly sets `cancel-in-progress: true`,
+  but the other workflows
   (`platform_security_baseline.yml`,
   `lean_toolchain_update_proposal.yml`,
   `nightly_determinism.yml`,
@@ -1396,17 +1395,17 @@ The active canon is:
 New findings:
 
 - **DEEP-DOC-01 (H)** confirmed: README has internally inconsistent
-  proved-declaration count. Line 92 says "3,186 theorem/lemma
-  declarations"; line 213 says "2,725 proved declarations". The
+  proved-declaration count. says "3,186 theorem/lemma
+  declarations"; says "2,725 proved declarations". The
   former matches `codebase_map.json`'s prior-cycle snapshot; the
   latter is older. Both numbers appear on the same rendered page.
   The reader cannot tell which is current.
-- **DEEP-DOC-02 (M)** confirmed: `AGENTS.md:7` says
+- **DEEP-DOC-02 (M)** confirmed: `AGENTS.md` says
   "version 0.12.4". Actual is 0.30.11. AGENTS.md is the canonical
   guidance file for external contributors and Claude Code agents;
   stale version metadata misleads them.
 - **DEEP-DOC-03 (M)** confirmed: `CLAUDE.md` source-layout section
-  (lines 77–234) omits **3 files** that are part of the production
+   omits **3 files** that are part of the production
   Lean tree:
   - `SeLe4n/Platform/FFI.lean` (245 lines, contains the v1.x stub
     bridges that determine hardware boot success).
@@ -1426,7 +1425,7 @@ New findings:
   `docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md` (and to this
   document, post-merge).
 - **DEEP-DOC-05 (I)** — REVISED §12: Project description in
-  `CLAUDE.md` line 9 reads: "First hardware target: Raspberry Pi
+  `CLAUDE.md` reads: "First hardware target: Raspberry Pi
   5." Earlier drafts of this audit recommended qualifying the
   phrasing with a "proof-artefact ready for v1.0; full syscall
   dispatch on hardware lands in v1.x" caveat. **§12 strikes that
@@ -1439,7 +1438,7 @@ New findings:
   tagged before that, the project's release scope itself is
   miscommitted (see §10.4 — pre-v1.0 release `v0.31.0` is
   available for the current state).
-- **DEEP-DOC-06 (L)**: README test-suite count drift. Line 38 says
+- **DEEP-DOC-06 (L)**: README test-suite count drift. says
   "Test Lean LoC | 16,168 across 25 test suites"; the source-layout
   table elsewhere says "tests/ — 24 test suites"; actual is 28. The
   `codebase_map.json` correctly says 28. README is doubly-stale.
@@ -1452,12 +1451,12 @@ New findings:
 |---|---|---|
 | `sorry` (production) | **0** | grep-verified across SeLe4n/ |
 | `axiom` (production) | **0** | grep-verified |
-| `Classical.byContradiction` | **1** | `Scheduler/Operations/Preservation.lean:1720` (DEEP-PROOF-01) |
+| `Classical.byContradiction` | **1** | `Scheduler/Operations/Preservation.lean` (DEEP-PROOF-01) |
 | `Classical.choice` | **0** | grep-verified |
 | `Classical.em` (explicit) | **0** | grep-verified |
 | `noncomputable` (production) | **0** | grep-verified |
 | `partial def` (production) | **0** | grep-verified |
-| `partial def` (tests) | 2 | `tests/TraceSequenceProbe.lean:249`, `tests/OperationChainSuite.lean:419` (probe loop, expected) |
+| `partial def` (tests) | 2 | `tests/TraceSequenceProbe.lean`, `tests/OperationChainSuite.lean` (probe loop, expected) |
 | `unsafe` (Lean) | **0** | n/a in Lean |
 | `unsafe { … }` (Rust HAL) | 53 | each ARM-ARM-cited (with DEEP-RUST-01/02 noting two missing references) |
 | `unsafe` (Rust non-HAL) | 1 | `sele4n-abi/src/trap.rs::raw_syscall`, single-function unsafe, justified |
@@ -1498,7 +1497,7 @@ New findings:
 |---|---|---|
 | Badge derivation one-way | ✓ | `mintDerivedCap` rights attenuation |
 | No sibling privilege leakage on revoke | ✓ | `cspaceRevoke_local_target_reduction` |
-| CDT acyclicity invariant | ✓ | `Invariant/Defs.lean` lines 29–62 |
+| CDT acyclicity invariant | ✓ | `Invariant/Defs.lean` |
 | Blocking-graph acyclicity | ✓ | `blockingAcyclic` (defined predicate) |
 | WCRT bound parametric | ✓ | `WCRTHypotheses` fields, monotone reduction |
 | ASID rollover preserves TLB isolation | ✓ | `AsidPool.allocate_result_fresh` |
@@ -1546,14 +1545,14 @@ clarity improvement.
 Dead-code findings, consolidated:
 
 - **DEEP-ARCH-02**: 11 `_fields` definitions in CrossSubsystem.lean
-  (lines 887–930). At least 7 appear unused (per Architecture agent
+  At least 7 appear unused (per Architecture agent
   finding 4a). Manual verification: `grep -rn "noStaleEndpointQueueReferences_fields"
   /home/user/seLe4n/SeLe4n` should reveal consumers; if 0 hits beyond
   the definition, the def is dead.
-- **`rust/sele4n-hal/src/gic.rs:76 ICENABLER_BASE`** — `#[allow(dead_code)]`
+- **`rust/sele4n-hal/src/gic.rs ICENABLER_BASE`** — `#[allow(dead_code)]`
   documented as future selective-disable surface. If no near-term
   plan to use it, remove.
-- **`rust/sele4n-hal/src/trap.rs:147 NOT_IMPLEMENTED = 17`** —
+- **`rust/sele4n-hal/src/trap.rs NOT_IMPLEMENTED = 17`** —
   declared with `#[allow(dead_code)]`. Used only in test stub;
   consider inlining.
 - **`SeLe4n/Platform/RPi5/VSpaceBoot.lean rpi5BootVSpaceRoot`** —
@@ -1582,61 +1581,61 @@ only real candidates this audit found.
 > false positives. The §11.6 table has the post-correction
 > headline counts.
 
-| DEEP-FFI-01 | H | Platform/FFI + Rust HAL | **Implement the dispatch routing.** Wire `syscall_dispatch_inner` (`Platform/FFI.lean:217`) into `syscallEntryChecked` (`Kernel/API.lean:1244`) and `suspend_thread_inner` (line 186) into `suspendThread` (`Kernel/Lifecycle/Suspend.lean`). Threading `SystemState` through the FFI is the v1.x work item the docstring already names; per CLAUDE.md's implement-the-improvement rule, this work is what unblocks v1.0 — release-note disclosure is not a substitute. (Original recommendation "disclose the gap in release notes" struck per §12.) |
-| DEEP-FFI-02 | M | rust/sele4n-hal/src/svc_dispatch.rs:308 | **Implement `syscallDispatchFromAbi`** as the typed-ABI Lean entry point that the comment describes. Once DEEP-FFI-01 lands, this function is the body of `syscallDispatchInner` (FFI.lean) — it decodes the eight `UInt64` register slots via `RegisterDecode`/`SyscallArgDecode`, calls `syscallEntryChecked`, and re-encodes the result. Then the Rust comment is true as written. (Original recommendation "replace the reference with the existing exported symbol name" struck per §12 — the comment was describing the better state, and the better state is what we should implement.) |
-| DEEP-FFI-03 | I | SeLe4n/Platform/FFI.lean:34–39 | **Implement uniform compile-time gating.** The docstring asserts `@[extern]` is gated by `-DhwTarget=true`, but `@[export]` symbols are always compiled. Wrap the two `@[export]` declarations (lines 185–190 and 216–223) in the same `hwTarget`-conditional `section`/`end` so both directions of the FFI bridge share a single gating mechanism. Then the docstring is accurate end-to-end. (Original recommendation "clarify the docstring asymmetry" struck per §12.) |
-| DEEP-DOC-01 | M | README.md:92 vs :213 | (DOWNGRADED H→M §11.4) Reconcile "3,186" and "2,725" theorem-count numbers. Best fix: drop both, link to `codebase_map.json`, add CI sync check (§10.3 PR 11 post-§12). Pure documentation drift (the docs are inferior to the code; legitimate-exception clause of the implement-the-improvement rule). |
+| DEEP-FFI-01 | H | Platform/FFI + Rust HAL | **Implement the dispatch routing.** Wire `syscall_dispatch_inner` (`Platform/FFI.lean`) into `syscallEntryChecked` (`Kernel/API.lean`) and `suspend_thread_inner` into `suspendThread` (`Kernel/Lifecycle/Suspend.lean`). Threading `SystemState` through the FFI is the v1.x work item the docstring already names; per CLAUDE.md's implement-the-improvement rule, this work is what unblocks v1.0 — release-note disclosure is not a substitute. (Original recommendation "disclose the gap in release notes" struck per §12.) |
+| DEEP-FFI-02 | M | rust/sele4n-hal/src/svc_dispatch.rs | **Implement `syscallDispatchFromAbi`** as the typed-ABI Lean entry point that the comment describes. Once DEEP-FFI-01 lands, this function is the body of `syscallDispatchInner` (FFI.lean) — it decodes the eight `UInt64` register slots via `RegisterDecode`/`SyscallArgDecode`, calls `syscallEntryChecked`, and re-encodes the result. Then the Rust comment is true as written. (Original recommendation "replace the reference with the existing exported symbol name" struck per §12 — the comment was describing the better state, and the better state is what we should implement.) |
+| DEEP-FFI-03 | I | SeLe4n/Platform/FFI.lean | **Implement uniform compile-time gating.** The docstring asserts `@[extern]` is gated by `-DhwTarget=true`, but `@[export]` symbols are always compiled. Wrap the two `@[export]` declarations (and 216–223) in the same `hwTarget`-conditional `section`/`end` so both directions of the FFI bridge share a single gating mechanism. Then the docstring is accurate end-to-end. (Original recommendation "clarify the docstring asymmetry" struck per §12.) |
+| DEEP-DOC-01 | M | README.md, badge vs source-layout table | (DOWNGRADED H→M §11.4) Reconcile "3,186" and "2,725" theorem-count numbers. Best fix: drop both, link to `codebase_map.json`, add CI sync check (§10.3 PR 11 post-§12). Pure documentation drift (the docs are inferior to the code; legitimate-exception clause of the implement-the-improvement rule). |
 | DEEP-DOC-02 | M | AGENTS.md (entire file) | (REFINED §11.5) Entire file is from ~v0.12.x — version bump alone is insufficient. Best fix: replace with a 10-line redirect stub pointing to CLAUDE.md, OR full rewrite mirroring CLAUDE.md with CI-enforced sync check. |
 | DEEP-DOC-03 | M | CLAUDE.md source-layout section | Add entries for `SeLe4n/Platform/FFI.lean`, `SeLe4n/Platform/Staged.lean`, `SeLe4n/Platform/RPi5/VSpaceBoot.lean`. |
 | DEEP-DOC-04 | L | README.md audit-history table | Annotate `AUDIT_v0.29.0_*` and `AUDIT_v0.30.6_*` links as "archived". |
 | DEEP-DOC-05 | I | CLAUDE.md project description | (REVISED §12.) The original "qualify with v1.0 dispatch-stub note" recommendation is struck per the implement-the-improvement rule. The CLAUDE.md statement "First hardware target: Raspberry Pi 5" is the design intent and must be made true via DEEP-FFI-01, not weakened. No documentation change is required as long as v1.0 is contingent on the FFI implementation landing. If v1.0 ships without DEEP-FFI-01, the project's release-readiness premise is itself broken and the audit's recommendation is to defer the tag, not to soften the documentation. |
 | DEEP-DOC-06 | L | README.md test-suite count | Update 25/24 → 28; resync from `codebase_map.json`. |
-| DEEP-PROOF-01 | L | Scheduler/Operations/Preservation.lean:1711-1721 | (DOWNGRADED M→L §11.4; REVISED §12.) Restructure the proof constructively (case-analysis on `Option ThreadId`) so the explicit `Classical.byContradiction` and the surrounding implicit `Classical.em` from `by_cases` both go away. The "or add a CLAUDE.md note clarifying that Lean stdlib Classical is permitted" alternative is struck per the implement-the-improvement rule: if the project's stated "constructive Lean kernel" discipline is the design intent, the kernel must conform — the documentation must not be relaxed to match a single non-constructive site. Severity remains L because Lean-stdlib `Classical.byContradiction` is foundationally safe; pre-1.0 priority is *medium-low* and the work is a v1.x research-style task. |
-| DEEP-LICENSE-01 | I | SeLe4n.lean | Add `-- SPDX-License-Identifier: GPL-3.0-or-later` as line 1 (matches the 247 other files). |
+| DEEP-PROOF-01 | L | Scheduler/Operations/Preservation.lean | (DOWNGRADED M→L §11.4; REVISED §12.) Restructure the proof constructively (case-analysis on `Option ThreadId`) so the explicit `Classical.byContradiction` and the surrounding implicit `Classical.em` from `by_cases` both go away. The "or add a CLAUDE.md note clarifying that Lean stdlib Classical is permitted" alternative is struck per the implement-the-improvement rule: if the project's stated "constructive Lean kernel" discipline is the design intent, the kernel must conform — the documentation must not be relaxed to match a single non-constructive site. Severity remains L because Lean-stdlib `Classical.byContradiction` is foundationally safe; pre-1.0 priority is *medium-low* and the work is a v1.x research-style task. |
+| DEEP-LICENSE-01 | I | SeLe4n.lean | Add `-- SPDX-License-Identifier: GPL-3.0-or-later` as (matches the 247 other files). |
 | DEEP-MODEL-01 | L | Model/Object/Structures.lean CNode | (REVISED §12.) **Enforce the `slotsUnique` invariant structurally.** Either (a) replace `slots : RHTable Slot Capability` with an opaque `UniqueSlotMap` whose constructors discharge `slotsUnique`, or (b) bundle `slots` with a paired `slotsUnique : ...` proof field so the predicate is type-level. Original "inline comment on the slots field flagging the proof obligation" recommendation struck per §12 — the documentation already implies the invariant; the code should make it structurally inviolable rather than merely advertised. |
 | DEEP-MODEL-02 | L | Model/State.lean + Builder.lean | (REFINED §11.5) Best fix: refactor `allTablesInvExtK` from a 17-tuple conjunction to a `structure` with named `Prop` fields. Then call sites use `h.objects`/`h.scheduler` etc.; adding a new RHTable field becomes a one-line structure change with compile-time enforcement. The public-accessor option is a stepping-stone, not the proper fix. Subsumes DEBT-ST-01. |
-| DEEP-MODEL-03 | I | Model/State.lean:146 | Cross-reference `replenishQueueSorted` invariant defined in SchedContext/ReplenishQueue.lean. |
+| DEEP-MODEL-03 | I | Model/State.lean | Cross-reference `replenishQueueSorted` invariant defined in SchedContext/ReplenishQueue.lean. |
 | DEEP-MODEL-04 | I | Model/State.lean LifecycleMetadata | Document mutation sites for `capabilityRefs`. |
-| DEEP-PRELUDE-01 | I | Prelude.lean:1076–1115 | Macro-generate the 15 `LawfulBEq` instances for typed identifiers. |
-| DEEP-PRELUDE-02 | I | Prelude.lean:1131+ | Move HashSet/RHTable helper lemmas to `Prelude/HashSetLemmas.lean`. |
-| DEEP-CAP-01 | L | Capability/Operations.lean:959, 1002 | (REFINED §11.5) The null-cap guards ARE documented — but in inline `--` comments inside the function body (lines 964–968 for cspaceCopy, 998–1001 for cspaceMove). Best fix: promote these inline rationale blocks UP into the formal `/-- ... -/` docstring above each function. No code change. |
-| ~~DEEP-CAP-02~~ | ~~L~~ | ~~Capability/Operations.lean:1081–1111~~ | **WITHDRAWN (§11.1)** — `cspaceMutate` DOES enforce the precondition via the `cap.isNull` guard at line 1093. False positive. |
-| ~~DEEP-CAP-03~~ | I | Capability/Operations.lean:740–747 | (NO-ACTION §11.5) Guard order rationale already documented in the existing docstring at lines 740–747. No additional documentation needed. |
-| DEEP-CAP-04 | I | Capability/Invariant/Defs.lean:345–367 | (REVISED §12.) **Make the `RetypeTarget` predicate non-bypassable.** Wrap construction in a smart-constructor whose only public form requires invocation of the cleanup hook (`scrubLifecycleObject`); make the underlying structure private. Direct construction by manually proving the two component properties is then statically prevented. Original "strengthen the warning comment" recommendation struck per §12 — the comment admitted a real bypass route, and the bypass route is what should be closed, not merely louder-warned. |
-| DEEP-CAP-05 | I | Capability/Operations.lean:12–62 | (REVISED §12.) **Address the deferred items.** Each "AK8-K LOW-tier" comment in the header describes a known issue with a known fix; per the implement-the-improvement rule, those whose fix fits the current scope are closed in this audit cycle, and those that genuinely cannot ship in v1.0 are lifted into the project debt register with explicit closure targets. Original "move from header comment to project debt register" recommendation is the *minimum* acceptable action — fixing them is the optimal action and is preferred wherever effort permits. |
-| ~~DEEP-IPC-01~~ | ~~M~~ | ~~Model/Object/Types.lean Notification, IPC ops~~ | **WITHDRAWN (§11.1)** — `notificationWait` already has an O(1) duplicate guard at `Operations/Endpoint.lean:723` (`tcb.ipcState = .blockedOnNotification` test → `.error .alreadyWaiting`). False positive. |
+| DEEP-PRELUDE-01 | I | Prelude.lean | Macro-generate the 15 `LawfulBEq` instances for typed identifiers. |
+| DEEP-PRELUDE-02 | I | Prelude.lean | Move HashSet/RHTable helper lemmas to `Prelude/HashSetLemmas.lean`. |
+| DEEP-CAP-01 | L | Capability/Operations.lean | (REFINED §11.5) The null-cap guards ARE documented — but in inline `--` comments inside the function body (for cspaceCopy, 998–1001 for cspaceMove). Best fix: promote these inline rationale blocks UP into the formal `/-- ... -/` docstring above each function. No code change. |
+| ~~DEEP-CAP-02~~ | ~~L~~ | ~~Capability/Operations.lean~~ | **WITHDRAWN (§11.1)** — `cspaceMutate` DOES enforce the precondition via the `cap.isNull` guard. False positive. |
+| ~~DEEP-CAP-03~~ | I | Capability/Operations.lean | (NO-ACTION §11.5) Guard order rationale already documented in the existing docstring. No additional documentation needed. |
+| DEEP-CAP-04 | I | Capability/Invariant/Defs.lean | (REVISED §12.) **Make the `RetypeTarget` predicate non-bypassable.** Wrap construction in a smart-constructor whose only public form requires invocation of the cleanup hook (`scrubLifecycleObject`); make the underlying structure private. Direct construction by manually proving the two component properties is then statically prevented. Original "strengthen the warning comment" recommendation struck per §12 — the comment admitted a real bypass route, and the bypass route is what should be closed, not merely louder-warned. |
+| DEEP-CAP-05 | I | Capability/Operations.lean | (REVISED §12.) **Address the deferred items.** Each "AK8-K LOW-tier" comment in the header describes a known issue with a known fix; per the implement-the-improvement rule, those whose fix fits the current scope are closed in this audit cycle, and those that genuinely cannot ship in v1.0 are lifted into the project debt register with explicit closure targets. Original "move from header comment to project debt register" recommendation is the *minimum* acceptable action — fixing them is the optimal action and is preferred wherever effort permits. |
+| ~~DEEP-IPC-01~~ | ~~M~~ | ~~Model/Object/Types.lean Notification, IPC ops~~ | **WITHDRAWN (§11.1)** — `notificationWait` already has an O(1) duplicate guard at `Operations/Endpoint.lean` (`tcb.ipcState = .blockedOnNotification` test → `.error .alreadyWaiting`). False positive. |
 | DEEP-IPC-02 | M | 7 files in IPC/Invariant | Add a one-line justification comment beside each `set_option linter.unusedVariables false`. |
-| DEEP-IPC-03 | H | IPC/DualQueue/WithCaps.lean:**198 only** (NARROWED §11.3) | At `:198`, replace `.ok ({ results := #[] }, st')` with `.error .invalidCapability`. AK1-I closure already fixed the send (line 125) and receive (line 158) paths; only the `endpointCallWithCaps` path still has the asymmetry. One-line fix mirroring AK1-I comment block. |
-| DEEP-IPC-04 | I | IPC/Operations/Endpoint.lean:485 | Verify the formal proof `cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull` exists and is sorry-free. If the proof is missing, **prove it** rather than weaken the docstring claim that "the error branch is unreachable under `ipcInvariantFull`" — per the implement-the-improvement rule the docstring describes the better state. |
-| DEEP-IPC-05 | I | Model/Object/Types.lean Notification | (REVISED §12.) **Make NoDup type-level on `waitingThreads`.** The `uniqueWaiters` predicate is currently asserted (and operationally enforced via the runtime guard at `Operations/Endpoint.lean:723` per §11.1's withdrawal of DEEP-IPC-01). The improvement is to make NoDup statically discharged (e.g., refinement type, opaque NoDupList). Original "cross-references DEEP-IPC-01" treatment struck per §12 — the cross-reference described the runtime guard but did not propose making the upstream invariant type-level, which is what the implement-the-improvement rule requires. |
-| ~~DEEP-SCH-01~~ | I | Scheduler/RunQueue.lean:66–72 | (NO-ACTION §11.5) The implicit invariant is already documented in a 6-line comment at lines 66–72 inside the structure body, with a reference to `InvariantChecks.runQueueThreadPriorityConsistentB`. |
-| DEEP-SCH-02 | I | Scheduler/Operations/Selection.lean:225–241 vs :327 | (REVISED §12.) **Make the API contract uniform.** Either `effectivePriority` and `resolveEffectivePrioDeadline` both return `Option`, or both are total under invariants; the asymmetric contract is a structural smell. Original "document fail-open vs fail-safe" recommendation struck per §12 — symmetric APIs are the better state and should be implemented, not asymmetric APIs labelled with disclaimers. |
-| DEEP-SCH-03 | I | Lifecycle/Suspend.lean:75–84 / :290+ | Extract shared "restore-to-ready" helper. (Already implementation-first; no §12 revision needed.) |
-| DEEP-SCH-04 | I | Scheduler/Operations/Core.lean:715–717 | Surface `.missingSchedContext` instead of silent no-preempt fallback. (Already implementation-first; no §12 revision needed.) |
-| DEEP-SCH-05 | I | Scheduler/RunQueue.lean:238 | Replace defensive priority-0 fallback with explicit error or assertion. (Already implementation-first; no §12 revision needed.) |
-| DEEP-SCH-06 | I | SchedContext/Operations.lean:141–185 | (REVISED §12.) **Implement domain propagation** for `schedContextConfigure` if `boundThreadDomainConsistent` requires it; if not, prove the field is reachable without it. Either way, the "stale field" risk is discharged structurally. Original "verify domain propagation" recommendation struck per §12 — verification alone leaves the gap latent if the answer is "yes, propagation is required." The fix must follow the verification step. |
+| DEEP-IPC-03 | H | IPC/DualQueue/WithCaps.lean, **`endpointCallWithCaps` only** (NARROWED §11.3) | In `endpointCallWithCaps`, replace `.ok ({ results := #[] }, st')` with `.error .invalidCapability`. AK1-I closure already fixed the send and receive paths; only the `endpointCallWithCaps` path still has the asymmetry. One-line fix mirroring AK1-I comment block. |
+| DEEP-IPC-04 | I | IPC/Operations/Endpoint.lean | Verify the formal proof `cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull` exists and is sorry-free. If the proof is missing, **prove it** rather than weaken the docstring claim that "the error branch is unreachable under `ipcInvariantFull`" — per the implement-the-improvement rule the docstring describes the better state. |
+| DEEP-IPC-05 | I | Model/Object/Types.lean Notification | (REVISED §12.) **Make NoDup type-level on `waitingThreads`.** The `uniqueWaiters` predicate is currently asserted (and operationally enforced via the runtime guard at `Operations/Endpoint.lean` per §11.1's withdrawal of DEEP-IPC-01). The improvement is to make NoDup statically discharged (e.g., refinement type, opaque NoDupList). Original "cross-references DEEP-IPC-01" treatment struck per §12 — the cross-reference described the runtime guard but did not propose making the upstream invariant type-level, which is what the implement-the-improvement rule requires. |
+| ~~DEEP-SCH-01~~ | I | Scheduler/RunQueue.lean | (NO-ACTION §11.5) The implicit invariant is already documented in a 6-line comment inside the structure body, with a reference to `InvariantChecks.runQueueThreadPriorityConsistentB`. |
+| DEEP-SCH-02 | I | Scheduler/Operations/Selection.lean, `effectivePriority` vs `resolveEffectivePrioDeadline` | (REVISED §12.) **Make the API contract uniform.** Either `effectivePriority` and `resolveEffectivePrioDeadline` both return `Option`, or both are total under invariants; the asymmetric contract is a structural smell. Original "document fail-open vs fail-safe" recommendation struck per §12 — symmetric APIs are the better state and should be implemented, not asymmetric APIs labelled with disclaimers. |
+| DEEP-SCH-03 | I | Lifecycle/Suspend.lean, `suspendThread` / `resumeThread` | Extract shared "restore-to-ready" helper. (Already implementation-first; no §12 revision needed.) |
+| DEEP-SCH-04 | I | Scheduler/Operations/Core.lean | Surface `.missingSchedContext` instead of silent no-preempt fallback. (Already implementation-first; no §12 revision needed.) |
+| DEEP-SCH-05 | I | Scheduler/RunQueue.lean | Replace defensive priority-0 fallback with explicit error or assertion. (Already implementation-first; no §12 revision needed.) |
+| DEEP-SCH-06 | I | SchedContext/Operations.lean | (REVISED §12.) **Implement domain propagation** for `schedContextConfigure` if `boundThreadDomainConsistent` requires it; if not, prove the field is reachable without it. Either way, the "stale field" risk is discharged structurally. Original "verify domain propagation" recommendation struck per §12 — verification alone leaves the gap latent if the answer is "yes, propagation is required." The fix must follow the verification step. |
 | DEEP-SUSP-01 | I | Lifecycle/Suspend.lean resumeThread | (REVISED §12.) **Implement PIP recomputation on resume.** A thread whose blocking chain changed during suspension must have its `pipBoost` re-derived when resumed. Original "document/handle PIP recomputation" recommendation struck per §12 — the documented design implies the recomputation is required, and per the implement-the-improvement rule the code must conform. |
-| DEEP-SUSP-02 | I | Lifecycle/Suspend.lean:88–105 | (REVISED §12.) **Split `cancelDonation` into `cancelBoundDonation` and `cancelDonatedDonation`.** The two semantic arms ("unbind in place" vs "return to original owner") are distinct enough that compressing them under a single name is a readability and correctness hazard. Original "document the two-arm semantics OR split" recommendation: the "or" branch is struck per §12. |
+| DEEP-SUSP-02 | I | Lifecycle/Suspend.lean | (REVISED §12.) **Split `cancelDonation` into `cancelBoundDonation` and `cancelDonatedDonation`.** The two semantic arms ("unbind in place" vs "return to original owner") are distinct enough that compressing them under a single name is a readability and correctness hazard. Original "document the two-arm semantics OR split" recommendation: the "or" branch is struck per §12. |
 | DEEP-ARCH-01 | L | **CacheModel.lean only** (NARROWED §11.3) | Reclassify "STATUS: staged for H3" marker on `CacheModel.lean` — it IS in the production chain via `BarrierComposition` ← `TlbModel` ← `SeLe4n.lean`. TimerModel and ExceptionModel are genuinely staged-only; their markers are correct. |
-| ~~DEEP-ARCH-02~~ | ~~L~~ | ~~CrossSubsystem.lean:887–930~~ | **WITHDRAWN (§11.1)** — every one of the 11 `_fields` definitions has 3–26 active consumers in the kernel (verified by `grep -rn`). False positive. |
+| ~~DEEP-ARCH-02~~ | ~~L~~ | ~~CrossSubsystem.lean~~ | **WITHDRAWN (§11.1)** — every one of the 11 `_fields` definitions has 3–26 active consumers in the kernel (verified by `grep -rn`). False positive. |
 | DEEP-ARCH-03 | I | Architecture/ExceptionModel.lean | (REVISED §12.) **Add the formal Lean-level bridge** from `ExceptionModel`'s classification to `InterruptDispatch`'s acknowledge→handle→EOI flow. Original "document the boundary" recommendation struck per §12 — the documentation's framing assumes the boundary will eventually be bridged formally; that's the implementation work. |
 | DEEP-ARCH-04 | I | Architecture/IpcBufferValidation.lean | The marker is either correct or stale. If the file is in production, **remove the stale marker** (legitimate-exception clause: doc is the inferior artefact). If the file is genuinely staged-only, **add the marker** (so the staged state is visible to readers and the file is enrolled in `Platform/Staged.lean`). Verification first, then the corresponding action. |
 | DEEP-IF-01 | I | InformationFlow/Soundness.lean | Verify import path of `DeclassificationPolicy` structure. If missing, **define it** rather than weaken the soundness theorem statement. |
-| DEEP-IF-02 | I | Policy.lean:484–500 | (REVISED §12.) **Complete the parameterised `SecurityDomain` lattice section.** Original "document that the section is intentionally truncated as a post-1.0 hook" recommendation struck per §12 — the spec implies a complete lattice; the implementation must finish it rather than the spec be re-framed as deliberately truncated. |
-| DEEP-BOOT-01 | M | Platform/Boot.lean:551 + RPi5/VSpaceBoot.lean | (REVISED §12.) **Thread `rpi5BootVSpaceRoot` through the boot result** by rewriting `bootSafeObject` (line 551) to admit `VSpaceRoot` objects that satisfy `bootSafeVSpaceRoot` (RPi5/VSpaceBoot.lean:272–297). Original "thread it OR remove the unwired data structure" alternative struck per §12 — the verified data structure is the better state and the code must consume it; removing finished proof work to match an inferior boot path is rejected. |
-| DEEP-FDT-01 | L | Platform/DeviceTree.lean:695–740 | Distinguish fuel exhaustion from malformed-blob in `findMemoryRegPropertyChecked`. |
+| DEEP-IF-02 | I | Policy.lean | (REVISED §12.) **Complete the parameterised `SecurityDomain` lattice section.** Original "document that the section is intentionally truncated as a post-1.0 hook" recommendation struck per §12 — the spec implies a complete lattice; the implementation must finish it rather than the spec be re-framed as deliberately truncated. |
+| DEEP-BOOT-01 | M | Platform/Boot.lean + RPi5/VSpaceBoot.lean | (REVISED §12.) **Thread `rpi5BootVSpaceRoot` through the boot result** by rewriting `bootSafeObject` to admit `VSpaceRoot` objects that satisfy `bootSafeVSpaceRoot` (RPi5/VSpaceBoot.lean). Original "thread it OR remove the unwired data structure" alternative struck per §12 — the verified data structure is the better state and the code must consume it; removing finished proof work to match an inferior boot path is rejected. |
+| DEEP-FDT-01 | L | Platform/DeviceTree.lean | Distinguish fuel exhaustion from malformed-blob in `findMemoryRegPropertyChecked`. |
 | ~~DEEP-RUST-01~~ | ~~L~~ | ~~rust/sele4n-hal/src/mmio.rs~~ | **WITHDRAWN (§11.1)** — every MMIO unsafe block already cites `(ARM ARM B2.1)`. False positive. |
 | ~~DEEP-RUST-02~~ | ~~L~~ | ~~rust/sele4n-hal/src/registers.rs~~ | **WITHDRAWN (§11.1)** — `mrs`/`msr` `asm!` blocks already cite `(ARM ARM C5.2)`, the correct section for system register access mnemonics. False positive. |
-| DEEP-RUST-03 | I | sele4n-abi/src/trap.rs:2-6 | Correct module-level comment about "single unsafe block." |
-| DEEP-RUST-04 | L | THIRD_PARTY_LICENSES.md:41 | Clarify cc semver range vs resolved version. |
+| DEEP-RUST-03 | I | sele4n-abi/src/trap.rs | Correct module-level comment about "single unsafe block." |
+| DEEP-RUST-04 | L | THIRD_PARTY_LICENSES.md | Clarify cc semver range vs resolved version. |
 | DEEP-RUST-05 | I | sele4n-abi/src/lib.rs, sele4n-sys/src/lib.rs | Add module-level doc comments. |
 | DEEP-RUST-06 | L | sele4n-abi/tests/conformance.rs | Extend conformance to 6 missing syscalls (ServiceRegister/Revoke/Query, NotificationSignal/Wait, ReplyRecv). |
 | DEEP-TEST-01 | M | tests/Ak8CoverageSuite.lean | Rename file + 25+ test functions to remove `AK8` workstream-ID prefix. |
 | DEEP-TEST-02 | L | tests/{An9HardwareBindingSuite, Ak9PlatformSuite, An10CascadeSuite}.lean | Same rename treatment. |
 | DEEP-TEST-03 | M | tests/ | Add a dedicated `SyscallDispatchSuite.lean` exercising `syscallEntryChecked` per syscall. |
 | DEEP-TEST-04 | L | tests/fixtures/main_trace_smoke.expected | Verified non-empty; no action. |
-| DEEP-PRECOM-01 | M | scripts/pre-commit-lean-build.sh:59,61 | (INVERTED §11.2) The regex is OVER-zealous (false-positive on `/-…-/` block-comment `sorry` mentions), not under-zealous. No real `sorry`s slip through; the failure mode is rejecting legitimate doc references. Best fix: replace with a Lean-tokeniser-based check via `lean --run` on a small parser script. |
-| DEEP-SCRIPT-01 | I | scripts/website_link_manifest.txt:18 | Auto-update or remove the "Last synchronized" timestamp. |
+| DEEP-PRECOM-01 | M | scripts/pre-commit-lean-build.sh | (INVERTED §11.2) The regex is OVER-zealous (false-positive on `/-…-/` block-comment `sorry` mentions), not under-zealous. No real `sorry`s slip through; the failure mode is rejecting legitimate doc references. Best fix: replace with a Lean-tokeniser-based check via `lean --run` on a small parser script. |
+| DEEP-SCRIPT-01 | I | scripts/website_link_manifest.txt | Auto-update or remove the "Last synchronized" timestamp. |
 | DEEP-SCRIPT-02 | I | scripts/*.py | All clean. No action. |
 | DEEP-CI-01 | L | .github/workflows/*.yml | Add `concurrency:` block to non-Lean workflows. |
 
@@ -1671,7 +1670,7 @@ documented-better-state-than-code conflict.
 
 1. **PR 1 — IPC NI symmetry (one line).** Close DEEP-IPC-03 by
    aligning the call cap-transfer error with the send/receive
-   pattern at `IPC/DualQueue/WithCaps.lean:198`.
+   pattern at `IPC/DualQueue/WithCaps.lean`.
 2. **PR 2 — Hardware syscall dispatch wiring (substantive).**
    Close DEEP-FFI-01 + DEEP-FFI-02 + DEEP-FFI-03 + DEEP-DOC-05
    together: thread `SystemState` through the FFI, implement
@@ -1801,7 +1800,7 @@ the project has acknowledged in its own DEBT-DOC-01 register.
 The audit finds **two H-severity findings** affecting v1.0 readiness
 (post-verification): DEEP-FFI-01 (the syscall-dispatch stub on
 hardware) and DEEP-IPC-03 (the call-path NI asymmetry, narrowed to
-one line at `IPC/DualQueue/WithCaps.lean:198`). The first is
+one line at `IPC/DualQueue/WithCaps.lean`). The first is
 acknowledged debt that, per the §12 revision and CLAUDE.md's
 implement-the-improvement rule, must be **closed by implementing
 the dispatch routing**, not by release-note disclosure. The second
@@ -1853,17 +1852,17 @@ findings emerged from the verification pass; several findings were
 
 - **DEEP-CAP-02 — WITHDRAWN.** Claim was that `cspaceMutate` does
   not validate "slot already contains a capability" before mutation.
-  False: `Capability/Operations.lean:1093` explicitly checks
+  False: `Capability/Operations.lean` explicitly checks
   `if cap.isNull then .error .nullCapability` (the AK8-K C-L2
-  occupied-slot guard). The docstring at lines 1069–1080 also
+  occupied-slot guard). The docstring also
   documents the guarded design. The agent confused
   "`cspaceLookupSlot` returns `cap = Capability.null` on empty slot"
   (which it does, by CNode semantics) with "no validation occurs"
-  (which is wrong — line 1093 IS the validation). Action: none.
+  (which is wrong — IS the validation). Action: none.
 
 - **DEEP-ARCH-02 — WITHDRAWN.** Claim was that 7 of 11
   `*_fields : List StateField` definitions in
-  `CrossSubsystem.lean:887–930` are dead metadata. False: direct
+  `CrossSubsystem.lean` are dead metadata. False: direct
   consumer counts via `grep -rn` for each name show 3 to 26
   consumers per field. Verified counts: `registryEndpointValid_fields`
   16, `registryInterfaceValid_fields` 3,
@@ -1879,12 +1878,12 @@ findings emerged from the verification pass; several findings were
 
 - **DEEP-RUST-01 — WITHDRAWN.** Claim was that MMIO unsafe blocks in
   `rust/sele4n-hal/src/mmio.rs` lack ARM ARM section references.
-  False: every MMIO unsafe block (lines 54–57, 76–79, 96–98, 117–119)
+  False: every MMIO unsafe block 
   cites `(ARM ARM B2.1)`. The agent missed this. Action: none.
 
 - **DEEP-RUST-02 — WITHDRAWN.** Claim was that `mrs`/`msr` `asm!`
   blocks in `rust/sele4n-hal/src/registers.rs` lack ARM ARM
-  references. False: lines 20–21 and 45–46 both cite
+  references. False: and 45–46 both cite
   `(ARM ARM C5.2)`, which is the correct section for
   MRS/MSR mnemonics (system register access). The agent confused
   C5.2 (instruction definition) with D17 (system register
@@ -1893,11 +1892,11 @@ findings emerged from the verification pass; several findings were
 
 - **DEEP-IPC-01 — WITHDRAWN.** Claim was that `notificationWait` has
   no NoDup guard on `waitingThreads`, so duplicates could be added
-  upstream-error. False: `Operations/Endpoint.lean:723` does an
+  upstream-error. False: `Operations/Endpoint.lean` does an
   O(1) duplicate check via the `tcb.ipcState ==
   .blockedOnNotification notificationId` test before enqueueing,
   rejecting with `.error .alreadyWaiting`. The "WS-G7/F-P11"
-  comment at line 719 documents this design. Action: none.
+  comment documents this design. Action: none.
 
 ### 11.2 Findings INVERTED (the description was wrong direction)
 
@@ -1905,7 +1904,7 @@ findings emerged from the verification pass; several findings were
   `sorry` regex would silently MISS a `sorry` in a multi-line
   `/- ... -/` block comment. Direct test (a 4-line block comment
   containing the word `sorry` was fed through the actual regex
-  chain at `scripts/pre-commit-lean-build.sh:59,61`) shows the
+  chain at `scripts/pre-commit-lean-build.sh`) shows the
   OPPOSITE: the line containing `sorry` IS flagged because none of
   the `grep -v` filters exclude lines that are merely INSIDE a
   block comment (the filters only exclude `--`-prefixed lines and
@@ -1915,7 +1914,7 @@ findings emerged from the verification pass; several findings were
   negative on real `sorry`s in block comments).
   Practical impact: zero — the codebase has no block-comment `sorry`
   references (the three matches in `tests/OperationChainSuite.lean`
-  at lines 1660, 1661, 1668 are all in `--` line comments and are
+  are all in `--` line comments and are
   correctly excluded). The recommendation stands (replace the
   fragile regex with a tokeniser), but the rationale shifts from
   "lets bad code through" to "rejects legitimate documentation."
@@ -1927,12 +1926,12 @@ findings emerged from the verification pass; several findings were
   AND `endpointCallWithCaps` silently return `.ok` on missing
   receiver CSpace root, while only `endpointReceiveDualWithCaps`
   fails closed. Direct read of
-  `IPC/DualQueue/WithCaps.lean:113–125` shows that **the AK1-I
-  closure already fixed the send path** — line 125 returns
+  `IPC/DualQueue/WithCaps.lean` shows that **the AK1-I
+  closure already fixed the send path** — returns
   `.error .invalidCapability`, with a 13-line comment (lines
   113–125) documenting the NI symmetry. The receive path is also
-  closed (line 158 likewise errors). The asymmetry persists
-  **only in `endpointCallWithCaps`** (line 198, where the missing
+  closed (likewise errors). The asymmetry persists
+  **only in `endpointCallWithCaps`**, where the missing
   receiver-CSpace-root case still returns
   `.ok ({ results := #[] }, st')`). Severity stays H — NI
   symmetry across send/receive/call is the design goal — but the
@@ -1966,9 +1965,9 @@ findings emerged from the verification pass; several findings were
   not blocking).
 
 - **DEEP-PROOF-01 — M → L.** The single `Classical.byContradiction`
-  use at `Scheduler/Operations/Preservation.lean:1720` is inside
+  use at `Scheduler/Operations/Preservation.lean` is inside
   a proof that already invokes classical logic implicitly via
-  `by_cases` on a non-decidable proposition (line 1711 — the
+  `by_cases` on a non-decidable proposition (— the
   universal quantifier over `outTid`). Removing only the explicit
   `Classical.byContradiction` does NOT make the proof constructive;
   the `by_cases` would still desugar to `Classical.em`. To fully
@@ -2044,7 +2043,7 @@ better approach exists, it is recorded here:
   guard) — recommendation refined.** The verification pass
   confirmed that the null-cap guards ARE documented — but in
   inline `--` comments inside the function body
-  (`Operations.lean:964–968` for cspaceCopy, lines 998–1001 for
+  (`Operations.lean` for cspaceCopy, for
   cspaceMove), not in the formal `/-- ... -/` docstring above
   the function signature. The optimal fix is to **promote the
   inline rationale to the docstring**, not to write new
@@ -2057,7 +2056,7 @@ better approach exists, it is recorded here:
   NO-ACTION.** The verification pass observed that the design
   rationale for the guard order (rights → null) is already
   documented in the `mintDerivedCap` docstring at
-  `Operations.lean:740–747`. The agent's complaint was that the
+  `Operations.lean`. The agent's complaint was that the
   ordering is "fragile"; on closer reading, the design is
   intentional and well-explained. Action: none. Severity demoted
   from I to "no action."
@@ -2065,7 +2064,7 @@ better approach exists, it is recorded here:
 - **DEEP-SCH-01 (RunQueue implicit invariant) — DOWNGRADE TO
   NO-ACTION.** The implicit invariant `membership ↔
   threadPriority consistency` is already documented in the
-  `RunQueue` structure body at lines 66–72 with a 6-line
+  `RunQueue` structure body with a 6-line
   comment explaining the design choice and pointing to the
   runtime check (`InvariantChecks.runQueueThreadPriorityConsistentB`).
   No additional documentation is needed. Action: none.
@@ -2221,7 +2220,7 @@ rule's legitimate-exception clause (documentation describing a
 artefact and updating it to match the code is correct):
 
 - **DEEP-IPC-03** — already implementation-first in original audit
-  (one-line code change at `IPC/DualQueue/WithCaps.lean:198`).
+  (one-line code change at `IPC/DualQueue/WithCaps.lean`).
 - **DEEP-SCH-03/04/05** — already implementation-first.
 - **DEEP-FDT-01** — already implementation-first.
 - **DEEP-PRECOM-01** — already implementation-first (replace

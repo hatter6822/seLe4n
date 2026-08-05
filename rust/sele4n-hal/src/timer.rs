@@ -393,9 +393,18 @@ pub fn per_core_timer_tick_isr(core_id: u64) {
         extern "C" {
             fn lean_per_core_timer_tick(core_id: u64);
         }
-        unsafe {
+        // WS-SM SM5.I: the tick commits kernel state through the same
+        // `modifyGetKernelState` read-then-write the syscall path uses,
+        // so it takes the same kernel-entry lock.  Without it a tick on
+        // one core and a syscall on another can lose one commit whole.
+        //
+        // Non-reentrancy is what makes this safe on a single core: both
+        // kernel-entry paths run with IRQs masked, so a tick cannot
+        // preempt a syscall on the same core and queue behind a ticket
+        // that core already holds.
+        crate::kernel_entry::with_kernel_entry(core_id as usize, || unsafe {
             lean_per_core_timer_tick(core_id);
-        }
+        });
     }
     #[cfg(not(feature = "hw_target"))]
     let _ = core_id;
@@ -478,14 +487,18 @@ mod tests {
     fn tick_count_starts_at_zero() {
         // Reset for test isolation.  SM1.I serialisation: acquire the
         // global state mutex so this test does not race on TICK_COUNT.
-        let _guard = TIMER_GLOBAL_STATE_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = TIMER_GLOBAL_STATE_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         TICK_COUNT.store(0, Ordering::Relaxed);
         assert_eq!(get_tick_count(), 0);
     }
 
     #[test]
     fn tick_count_increments() {
-        let _guard = TIMER_GLOBAL_STATE_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = TIMER_GLOBAL_STATE_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         TICK_COUNT.store(0, Ordering::Relaxed);
         assert_eq!(increment_tick_count(), 1);
         assert_eq!(increment_tick_count(), 2);
@@ -494,7 +507,9 @@ mod tests {
 
     #[test]
     fn timer_interval_storage() {
-        let _guard = TIMER_GLOBAL_STATE_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = TIMER_GLOBAL_STATE_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         TIMER_INTERVAL.store(54_000, Ordering::Relaxed);
         assert_eq!(TIMER_INTERVAL.load(Ordering::Relaxed), 54_000);
     }
@@ -512,7 +527,9 @@ mod tests {
         // SM1.I serialisation: acquire the global state mutex so
         // TIMER_INTERVAL and TICK_COUNT reads aren't raced by parallel
         // timer tests.
-        let _guard = TIMER_GLOBAL_STATE_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = TIMER_GLOBAL_STATE_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         // Reset before init so the precondition matches.
         TICK_COUNT.store(0, Ordering::Relaxed);
         assert_eq!(init_timer(1000), Ok(()));
@@ -524,14 +541,18 @@ mod tests {
     fn init_timer_100hz_interval() {
         // AN8-D (RUST-M03): explicit Ok(()) check.
         // SM1.I serialisation: see TIMER_GLOBAL_STATE_MUTEX docstring.
-        let _guard = TIMER_GLOBAL_STATE_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = TIMER_GLOBAL_STATE_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         assert_eq!(init_timer(100), Ok(()));
         assert_eq!(TIMER_INTERVAL.load(Ordering::Relaxed), 540_000);
     }
 
     #[test]
     fn reprogram_timer_no_panic() {
-        let _guard = TIMER_GLOBAL_STATE_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = TIMER_GLOBAL_STATE_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         TIMER_INTERVAL.store(54_000, Ordering::Relaxed);
         // On non-aarch64, read_counter returns 0, set_comparator is no-op.
         reprogram_timer();
@@ -539,7 +560,9 @@ mod tests {
 
     #[test]
     fn reprogram_timer_uninit_noop() {
-        let _guard = TIMER_GLOBAL_STATE_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = TIMER_GLOBAL_STATE_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         TIMER_INTERVAL.store(0, Ordering::Relaxed);
         // Should return early without panicking
         reprogram_timer();
@@ -597,7 +620,7 @@ mod tests {
     // =====================================================================
 
     #[test]
-    fn sm1c4_init_timer_secondary_returns_ok_on_host_with_default_tick_hz() {
+    fn init_timer_secondary_returns_ok_on_host_with_default_tick_hz() {
         // SM1.C.4: on host (CNTFRQ_EL0 read returns 0 because of the
         // host-stub `read_sysreg!`), `init_timer_secondary` falls back
         // to `COUNTER_FREQ_HZ` and returns Ok.
@@ -606,7 +629,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1c4_init_timer_secondary_rejects_zero_tick_hz() {
+    fn init_timer_secondary_rejects_zero_tick_hz() {
         // SM1.C.4: shape parity with `init_timer` — a zero tick rate
         // would cause division by zero in the interval computation, so
         // we reject it explicitly with `TimerError::ZeroTickHz`.
@@ -614,14 +637,16 @@ mod tests {
     }
 
     #[test]
-    fn sm1c4_init_timer_secondary_does_not_reset_tick_count() {
+    fn init_timer_secondary_does_not_reset_tick_count() {
         // SM1.C.4 contract: `TICK_COUNT` is owned by the primary core;
         // a secondary's bring-up must NOT reset it.  Pre-seed the
         // counter with a sentinel value, run `init_timer_secondary`,
         // and verify the counter survives.
         //
         // SM1.I serialisation: see TIMER_GLOBAL_STATE_MUTEX docstring.
-        let _guard = TIMER_GLOBAL_STATE_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = TIMER_GLOBAL_STATE_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         TICK_COUNT.store(42, Ordering::Relaxed);
         assert_eq!(init_timer_secondary(DEFAULT_TICK_HZ), Ok(()));
         assert_eq!(
@@ -634,7 +659,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1c4_init_timer_secondary_does_not_perturb_timer_interval() {
+    fn init_timer_secondary_does_not_perturb_timer_interval() {
         // SM1.C.4 contract: the global `TIMER_INTERVAL` is populated
         // by the primary's `init_timer`; the secondary's locally-
         // computed interval matches that value, but we must NOT write
@@ -646,7 +671,9 @@ mod tests {
         // so a regression where we do write the global is detectable.
         //
         // SM1.I serialisation: see TIMER_GLOBAL_STATE_MUTEX docstring.
-        let _guard = TIMER_GLOBAL_STATE_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = TIMER_GLOBAL_STATE_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         TIMER_INTERVAL.store(99_999, Ordering::Relaxed);
         assert_eq!(init_timer_secondary(DEFAULT_TICK_HZ), Ok(()));
         assert_eq!(
@@ -659,7 +686,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1c4_init_timer_secondary_signature_returns_result() {
+    fn init_timer_secondary_signature_returns_result() {
         // SM1.C.4: return type matches `init_timer` exactly so call
         // sites in `rust_secondary_main` can use the same `match`
         // pattern.
@@ -667,13 +694,15 @@ mod tests {
     }
 
     #[test]
-    fn sm1c4_init_timer_secondary_accepts_full_tick_hz_range() {
+    fn init_timer_secondary_accepts_full_tick_hz_range() {
         // SM1.C.4: shape parity with `init_timer` — a 100 Hz tick
         // rate (10ms ticks) must also work.  Verifies the function
         // doesn't accidentally hard-code DEFAULT_TICK_HZ.
         //
         // SM1.I serialisation: see TIMER_GLOBAL_STATE_MUTEX docstring.
-        let _guard = TIMER_GLOBAL_STATE_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = TIMER_GLOBAL_STATE_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         TIMER_INTERVAL.store(0, Ordering::Relaxed);
         TICK_COUNT.store(0, Ordering::Relaxed);
         assert_eq!(init_timer_secondary(100), Ok(()));
@@ -682,7 +711,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1c4_init_timer_signature_unchanged() {
+    fn init_timer_signature_unchanged() {
         // SM1.C.4 / regression: the primary's `init_timer` signature
         // must not drift — `rust_boot_main`'s call site depends on it.
         let _: fn(u32) -> Result<(), TimerError> = init_timer;
@@ -736,7 +765,7 @@ mod tests {
     /// SM5.D.1: the per-core timer ISR is callable on the host (the
     /// `hw_target`-gated Lean call is omitted) and does not panic.
     #[test]
-    fn sm5d1_per_core_timer_tick_isr_callable_on_host() {
+    fn per_core_timer_tick_isr_callable_on_host() {
         let _guard = TIMER_GLOBAL_STATE_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
@@ -750,7 +779,7 @@ mod tests {
     /// (the SMP-localised diagnostic), via `record_timer_tick`.  On the host the
     /// calling core is the boot core (TPIDR_EL1 stub returns 0).
     #[test]
-    fn sm5d1_per_core_timer_tick_isr_records_tick() {
+    fn per_core_timer_tick_isr_records_tick() {
         let _guard = TIMER_GLOBAL_STATE_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
@@ -769,7 +798,7 @@ mod tests {
     /// but never advances the global monotonic counter, mirroring the Lean model
     /// where `timerTickOnCore` never advances `machine.timer`).
     #[test]
-    fn sm5d1_per_core_timer_tick_isr_does_not_advance_global_tick_count() {
+    fn per_core_timer_tick_isr_does_not_advance_global_tick_count() {
         let _guard = TIMER_GLOBAL_STATE_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
@@ -784,7 +813,7 @@ mod tests {
 
     /// SM5.D.1: signature pin — `per_core_timer_tick_isr` is `fn(u64)`.
     #[test]
-    fn sm5d1_per_core_timer_tick_isr_signature() {
+    fn per_core_timer_tick_isr_signature() {
         let f: fn(u64) = per_core_timer_tick_isr;
         let _ = f;
     }

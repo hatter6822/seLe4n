@@ -35,7 +35,9 @@
 //! - `smp` — SMP secondary-core bring-up: AN9-J primary-side
 //!   `bring_up_secondaries` + WS-SM SM1.C secondary-side
 //!   `rust_secondary_main` full per-core init pipeline; runtime-gated
-//!   by `SMP_ENABLED` (default `false` at v1.0.0)
+//!   by `SMP_ENABLED` (a fail-safe `false` at module load, overwritten
+//!   in Phase 5 by the parsed cmdline — whose default is `true` since
+//!   SM5.I serialised kernel entry at v0.32.142)
 //! - `per_cpu` — Per-CPU data block + TPIDR_EL1 accessors
 //!   (WS-SM SM1.B; closes SMP-M4)
 
@@ -127,9 +129,12 @@
 //             The `psci` module exposes `cpu_on` (PSCI CPU_ON wrapper)
 //             and the `smp` module exposes `SMP_ENABLED` (runtime gate),
 //             `bring_up_secondaries` (primary-core entry), and
-//             `rust_secondary_main` (secondary-core entry).  Default
-//             at v1.0.0 is `SMP_ENABLED = false` so single-core boot
-//             is preserved; opting in is a kernel-command-line flag.
+//             `rust_secondary_main` (secondary-core entry).  The
+//             `SMP_ENABLED` static is `false` at module load so a
+//             kernel that never reaches Phase 5 spawns no secondaries;
+//             Phase 5 overwrites it with the parsed cmdline value,
+//             whose default is `true` since SM5.I (v0.32.142).
+//             Single-core boot is the opt-OUT (`smp_enabled=false`).
 //             QEMU `-smp 4` validation is gated on firmware PSCI
 //             support; host tests cover the call graph with stubs.
 //
@@ -156,21 +161,21 @@
 //             BaseIO CoreId` with a range check that recovers the
 //             typed `Fin numCores` identifier.
 
-pub mod cpu;
 pub mod barriers;
-pub mod registers;
-pub mod uart;
-pub mod mmu;
-pub mod trap;
 pub mod boot;
-pub mod gic;
-pub mod timer;
-pub mod interrupts;
-pub mod tlb;
 pub mod cache;
-pub mod mmio;
+pub mod cpu;
 pub mod ffi;
+pub mod gic;
+pub mod interrupts;
+pub mod mmio;
+pub mod mmu;
 pub mod profiling;
+pub mod registers;
+pub mod timer;
+pub mod tlb;
+pub mod trap;
+pub mod uart;
 // AN9-F (DEF-R-HAL-L14): typed SVC argument marshalling
 pub mod svc_dispatch;
 // AN9-J.1 (DEF-R-HAL-L20): PSCI wrapper for secondary-core bring-up.
@@ -194,11 +199,14 @@ pub mod per_cpu;
 // Provides `CmdlineConfig` (typed cmdline options), `parse_cmdline`
 // (string → config), the self-contained DTB walker
 // `extract_bootargs_into`, and the Phase-5 entry helpers
-// `parse_cmdline_from_dtb` / `apply_cmdline_and_start_smp`.  Default
-// at v1.0.0 is `smp_enabled = true` (per maintainer decision #7);
-// operators opt out via `smp_enabled=false` on the kernel command
-// line.  See the module docstring in `cmdline.rs` for the option
-// inventory and the parser's robustness contract.
+// `parse_cmdline_from_dtb` / `apply_cmdline_and_start_smp`.  The
+// default is `smp_enabled = true`: operators opt OUT via
+// `smp_enabled=false` on the kernel command line.  Maintainer decision
+// #7 makes SMP the default at v1.0.0 *once SM5 lands*; SM5.I
+// serialised kernel entry at v0.32.142, so the default is opt-out
+// again (it was opt-in from v0.32.136 while that was owed).  See the
+// module docstring in `cmdline.rs` for the option inventory and the
+// parser's robustness contract.
 pub mod cmdline;
 // WS-SM SM1.I.4: per-core exception / interrupt statistics.  Provides
 // `PerCpuStats` (cache-line aligned counters), the global
@@ -209,16 +217,19 @@ pub mod cmdline;
 // See the module docstring in `per_cpu_stats.rs` for the counter
 // inventory.
 pub mod per_cpu_stats;
-// WS-SM SM7.A.3: per-core TLB-shootdown acknowledgment flags.  Provides
-// `ShootdownAckFlag` (one cache-line-aligned AtomicBool per core), the
-// global `SHOOTDOWN_ACK` array (boots quiescent all-`true`), and the
-// `ack_set` (release) / `ack_is_set` / `all_acked` (acquire) /
-// `reset_for_round` accessors the SM7.B shootdown protocol composes:
-// each target's `.tlbShootdownReq` SGI handler release-sets its own
-// flag after its local TLBIs retire; the initiator acquire-polls until
-// every flag is set.  The runtime realisation of the Lean
-// `TlbShootdownState.shootdownAck` vector; see the module docstring in
-// `shootdown.rs` for the protocol role and ordering rationale.
+// WS-SM SM7.A.3 / SM7.F.3: per-core TLB-shootdown acknowledgment slots.
+// Provides `ShootdownAckSlot` (one cache-line-aligned AtomicU64
+// generation per core), the global `SHOOTDOWN_ACK` array (boots
+// quiescent at generation `0`, which no round ever carries), and the
+// `ack_round` (release fetch_max) / `acked_gen` / `all_acked_for_round`
+// (acquire) accessors the SM7.B shootdown protocol composes: each
+// target's `.tlbShootdownReq` SGI handler advances its own generation
+// after that round's local TLBIs retire; the initiator acquire-polls
+// until every online target has reached the round's generation.  The
+// runtime realisation of the Lean `TlbShootdownState.shootdownAck`
+// vector, refined with round identity so a stale SGI cannot forge an
+// acknowledgment; see the module docstring in `shootdown.rs` for the
+// protocol role and ordering rationale.
 pub mod shootdown;
 // WS-SM SM2.B.16: Rust TicketLock implementation refining the Lean
 // operational spec at SeLe4n/Kernel/Concurrency/Locks/TicketLock.lean.
@@ -228,6 +239,14 @@ pub mod shootdown;
 // usage.  See the module docstring in `ticket_lock.rs` for the
 // operational mapping to the Lean spec and ARM ARM citations.
 pub mod ticket_lock;
+// WS-SM SM5.I: kernel-entry serialisation.  Every `lean_*` entry that
+// commits kernel state runs under `kernel_entry::with_kernel_entry`,
+// because `Platform.FFI.modifyGetKernelState` is a read-then-write and
+// two concurrent commits would otherwise lose one whole transition.
+// Backed by `ticket_lock::TicketLock` (FIFO, so no core starves), with
+// a spin that discharges its own pending shootdown obligation — see the
+// module docstring for why an ordinary spin deadlocks.
+pub mod kernel_entry;
 // WS-SM SM2.C.19: Rust RwLock implementation refining the Lean
 // operational spec at SeLe4n/Kernel/Concurrency/Locks/RwLock.lean.
 // Reader-writer lock with bit-packed atomic state (bit 63 = writer-held,
@@ -252,7 +271,7 @@ pub mod queued_rw_lock;
 // `STATIC_TICKET_LOCK_POOL` / `STATIC_RW_LOCK_POOL` static arrays,
 // handle-based addressing, always-on Relaxed atomic trace counters
 // (used by the SM2.D.8 cross-core serialisation test), and the
-// SM2_THEOREM_COUNT constant pinning the SM2 theorem inventory.  See
+// LOCK_THEOREM_COUNT constant pinning the SM2 theorem inventory.  See
 // the module docstring in `lock_bridge.rs` for the handle encoding,
 // trace-counter rationale, and ARM ARM citations.
 pub mod lock_bridge;

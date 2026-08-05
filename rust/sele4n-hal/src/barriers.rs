@@ -494,8 +494,10 @@ mod tests {
         // would fail the count assertion below.
         const RUST_LEAF_COUNT: usize = 6;
         const LEAN_LEAF_COUNT: usize = 6;
-        assert_eq!(RUST_LEAF_COUNT, LEAN_LEAF_COUNT,
-            "Rust BarrierKind leaf count must match Lean BarrierKind leaf count");
+        assert_eq!(
+            RUST_LEAF_COUNT, LEAN_LEAF_COUNT,
+            "Rust BarrierKind leaf count must match Lean BarrierKind leaf count"
+        );
 
         let kinds = [
             BarrierKind::None,
@@ -505,8 +507,11 @@ mod tests {
             BarrierKind::DsbOshst,
             BarrierKind::Isb,
         ];
-        assert_eq!(kinds.len(), RUST_LEAF_COUNT,
-            "kinds array must enumerate every leaf variant");
+        assert_eq!(
+            kinds.len(),
+            RUST_LEAF_COUNT,
+            "kinds array must enumerate every leaf variant"
+        );
 
         for kind in kinds {
             // Pattern-match exhaustively to provoke a compile error if

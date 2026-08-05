@@ -4,9 +4,9 @@
 //! Lean: `SeLe4n/Kernel/API.lean` — `apiServiceRegister`, `apiServiceRevoke`,
 //! `apiServiceQuery`. Added in WS-Q1-D.
 
-use sele4n_types::{CPtr, InterfaceId, ServiceId, KernelResult, SyscallId};
-use sele4n_abi::{MessageInfo, SyscallRequest, SyscallResponse, IpcBuffer, invoke_syscall};
 use sele4n_abi::args::service::*;
+use sele4n_abi::{invoke_syscall, IpcBuffer, MessageInfo, SyscallRequest, SyscallResponse};
+use sele4n_types::{CPtr, InterfaceId, KernelResult, ServiceId, SyscallId};
 
 /// Register a service with the given interface specification.
 ///
@@ -74,9 +74,7 @@ pub fn service_revoke(
 /// No additional message registers — the endpoint object ID comes from
 /// the capability target.
 #[inline]
-pub fn service_query(
-    endpoint_cap: CPtr,
-) -> KernelResult<SyscallResponse> {
+pub fn service_query(endpoint_cap: CPtr) -> KernelResult<SyscallResponse> {
     invoke_syscall(SyscallRequest {
         cap_addr: endpoint_cap,
         msg_info: MessageInfo::new_const(0, 0, 0),

@@ -25,7 +25,9 @@ pub enum AccessRight {
 impl AccessRight {
     /// Bit position for this right. Lean: `AccessRight.toBit`.
     #[inline]
-    pub const fn to_bit(self) -> u8 { self as u8 }
+    pub const fn to_bit(self) -> u8 {
+        self as u8
+    }
 
     /// All access rights in canonical order (bit 0..4).
     /// Lean: `AccessRight.all`.
@@ -67,7 +69,9 @@ impl AccessRights {
 
     /// Returns the raw inner value.
     #[inline]
-    pub const fn raw(&self) -> u8 { self.0 }
+    pub const fn raw(&self) -> u8 {
+        self.0
+    }
 
     /// Read-only.
     pub const READ: Self = Self(1 << 0);
@@ -140,7 +144,12 @@ impl TryFrom<u8> for AccessRights {
     }
 }
 
-impl From<AccessRights> for u8 { #[inline] fn from(r: AccessRights) -> u8 { r.0 } }
+impl From<AccessRights> for u8 {
+    #[inline]
+    fn from(r: AccessRights) -> u8 {
+        r.0
+    }
+}
 
 /// Error returned when constructing `AccessRights` from an invalid byte.
 ///
@@ -151,13 +160,17 @@ pub struct AccessRightsError(pub u8);
 impl core::ops::BitOr for AccessRights {
     type Output = Self;
     #[inline]
-    fn bitor(self, rhs: Self) -> Self { self.union(rhs) }
+    fn bitor(self, rhs: Self) -> Self {
+        self.union(rhs)
+    }
 }
 
 impl core::ops::BitAnd for AccessRights {
     type Output = Self;
     #[inline]
-    fn bitand(self, rhs: Self) -> Self { self.inter(rhs) }
+    fn bitand(self, rhs: Self) -> Self {
+        self.inter(rhs)
+    }
 }
 
 #[cfg(test)]

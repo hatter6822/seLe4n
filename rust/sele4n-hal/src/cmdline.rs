@@ -14,6 +14,14 @@
 //! | `smp_enabled`   | bool   | `true`  | Enable SMP secondary-core bring-up.      |
 //! | `smp_max_cores` | usize  | 4       | Upper bound on cores to bring up [0..4]. |
 //!
+//! `smp_enabled` defaults to `true`: SM5.I serialised kernel entry at
+//! v0.32.142, which is the condition maintainer decision #7 attaches to
+//! the on-by-default policy.  Single-core boot is the opt-OUT
+//! (`smp_enabled=false`).  It defaulted to `false` from v0.32.136 to
+//! v0.32.141, while that precondition was unmet — see
+//! [`CmdlineConfig::default`] for the full history and for the pairing
+//! that must be restored if the kernel-entry lock is ever removed.
+//!
 //! Unknown tokens are silently ignored (forward-compatible).  Malformed
 //! values fall back to the default for the affected option — the parser
 //! never panics on user input.
@@ -24,13 +32,25 @@
 //!   self-contained DTB walker ([`extract_bootargs_into`]).
 //! - **SM1.D.2**: Phase 5 in `rust_boot_main` (see `boot.rs`).
 //! - **SM1.D.3**: [`CmdlineConfig::default`] has `smp_enabled = true`
-//!   per maintainer decision #7.  The static `smp::SMP_ENABLED` atomic
-//!   still defaults to `false` at module load; Phase 5 sets it to the
-//!   parsed value before invoking [`crate::smp::bring_up_secondaries`].
+//!   since v0.32.142, when SM5.I serialised kernel entry.  Maintainer
+//!   decision #7 puts SMP on by default at v1.0.0 "once SM5 lands";
+//!   that condition is now met.  The static `smp::SMP_ENABLED` atomic is
+//!   `false` at module load too; Phase 5 sets it to the parsed value
+//!   before invoking [`crate::smp::bring_up_secondaries`], so the two
+//!   agree rather than one overriding the other.
 //! - **SM1.D.4**: per-object locks live inside objects with
-//!   `Default::default()` initialisers; no global BKL exists under
-//!   per-object fine locks, so no init-order hazard.  See module
-//!   docstring of `crate::smp` for the BKL-state-machine discussion.
+//!   `Default::default()` initialisers; no global kernel-entry lock
+//!   exists, so no init-order hazard.  See module docstring of
+//!   `crate::smp` for the lock-state-machine discussion.  Note the
+//!   absence is not yet compensated: the per-object fine locks are
+//!   defined but the kernel `@[export]` bodies do not acquire them
+//!   (SM3.C.9).  Concurrent kernel entry is serialised instead by the
+//!   SM5.I global entry lock (`crate::kernel_entry`), which is coarser
+//!   than the fine locks but is live — see
+//!   `Platform.FFI.modifyGetKernelState` on the Lean side.  Between
+//!   v0.32.136 and v0.32.141 nothing serialised it and SMP was off by
+//!   default for that reason; before v0.32.136 this docstring claimed
+//!   SMP was off while the default said otherwise, three lines apart.
 //! - **SM1.D.5**: `per_cpu::check_per_cpu_invariants()` runs in Phase 1
 //!   of `rust_boot_main`, before TPIDR_EL1 is set and before
 //!   bring-up issues any PSCI CPU_ON.
@@ -187,23 +207,42 @@ pub struct CmdlineConfig {
 }
 
 impl Default for CmdlineConfig {
-    /// **WS-SM SM1.D.3**: Production default — SMP enabled, all 4
-    /// cores brought up.
+    /// **WS-SM SM1.D.3**: SMP **disabled** by default until kernel
+    /// entry is serialised (SM5.I).  Opt in with `smp_enabled=true`.
     ///
-    /// Per maintainer decision #7 (recorded in
-    /// `docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`), v1.0.0
-    /// defaults to "SMP on" so the verified microkernel arrives at
-    /// production with all four Cortex-A76 cores online by default.
-    /// Operators that need single-core boot can opt out via
-    /// `smp_enabled=false` on the kernel command line.
+    /// Maintainer decision #7 (recorded in
+    /// `docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`) is that the
+    /// verified microkernel arrives at **v1.0.0** with all four
+    /// Cortex-A76 cores online by default — and that decision carries
+    /// its own precondition, stated in `CLAUDE.md` as "SMP enabled by
+    /// default at v1.0.0 **once SM5 lands**".
     ///
-    /// Note: this differs from the `crate::smp::SMP_ENABLED` atomic's
-    /// initial value of `false`.  The atomic stays `false` at module
-    /// load (so a kernel that never reaches Phase 5 — e.g., one that
-    /// halts in an earlier phase due to a hardware fault — does not
-    /// accidentally start spawning secondaries).  Phase 5 explicitly
-    /// stores the parsed `smp_enabled` into the atomic before invoking
-    /// [`crate::smp::bring_up_secondaries`].
+    /// **SM5.I landed at v0.32.142**, so that precondition is met and
+    /// this default is `true`.  `Platform.FFI.modifyGetKernelState` is
+    /// an `IO.Ref.modifyGet` — a read then a write, not a cross-core
+    /// atomic — so on its own two cores committing concurrently would
+    /// lose a transition whole, with the caller told it succeeded.
+    /// `crate::kernel_entry` closes that: every kernel entry that
+    /// commits state runs inside its `TicketLock` bracket.
+    ///
+    /// This default was `false` from v0.32.136 to v0.32.141 precisely
+    /// because the lock did not exist, and before v0.32.136 it was
+    /// `true` while the safety claims in this module and in
+    /// `PerCoreRunLoop` / `SyscallDispatchEntry` / `FFI.lean` all
+    /// rested on SMP being off — the contradiction PR #854 found.
+    ///
+    /// **The pairing is the invariant**: if the kernel-entry bracket is
+    /// ever removed or bypassed, this default must return to `false` in
+    /// the same change.  See
+    /// `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` §"Kernel-entry
+    /// serialisation".
+    ///
+    /// `crate::smp::SMP_ENABLED` is likewise `false` at module load, so
+    /// a kernel that never reaches Phase 5 (e.g. one that halts earlier
+    /// on a hardware fault) never spawns secondaries.  The two are now
+    /// consistent: Phase 5 stores the parsed value into the atomic
+    /// before invoking [`crate::smp::bring_up_secondaries`], and with
+    /// no `smp_enabled=true` on the command line that value is `false`.
     fn default() -> Self {
         Self {
             smp_enabled: true,
@@ -240,7 +279,7 @@ impl Default for CmdlineConfig {
 ///
 /// Malformed values fall back to the default for the affected option:
 ///
-/// - `smp_enabled=foo` → keeps default (`true`).
+/// - `smp_enabled=foo` → keeps default (`false`).
 /// - `smp_max_cores=999` → clamped to `MAX_SECONDARY_CORES + 1 = 4`.
 /// - `smp_max_cores=-1` → fails parse (negative not allowed for
 ///   `usize`), keeps default.
@@ -482,10 +521,10 @@ fn validate_fdt_header(hdr: &FdtHeader) -> bool {
         return false;
     }
     // Block offsets must be 4-byte aligned (FDT tokens are 4-byte).
-    if hdr.off_dt_struct % 4 != 0 {
+    if !hdr.off_dt_struct.is_multiple_of(4) {
         return false;
     }
-    if hdr.off_dt_strings % 4 != 0 {
+    if !hdr.off_dt_strings.is_multiple_of(4) {
         return false;
     }
     // Audit-pass-2: block offsets must be at or beyond the 40-byte
@@ -697,12 +736,8 @@ fn find_bootargs_in_dtb(blob: &[u8]) -> Option<&[u8]> {
                 // cases where a /chosen/sub appears between /chosen's
                 // direct properties.
                 if in_chosen && depth == chosen_depth {
-                    let prop_name = lookup_fdt_string(
-                        blob,
-                        strings_off,
-                        strings_size,
-                        nameoff as usize,
-                    )?;
+                    let prop_name =
+                        lookup_fdt_string(blob, strings_off, strings_size, nameoff as usize)?;
                     if prop_name == b"bootargs" {
                         return blob.get(value_start..value_end);
                     }
@@ -835,8 +870,7 @@ pub fn extract_bootargs_into(dtb_ptr: u64, buffer: &mut [u8]) -> &str {
                         // (same as missing/malformed DTB).
                         ""
                     } else {
-                        let full_slice =
-                            core::slice::from_raw_parts(dtb_ptr as *const u8, total);
+                        let full_slice = core::slice::from_raw_parts(dtb_ptr as *const u8, total);
                         bootargs_to_buffer(full_slice, buffer)
                     }
                 }
@@ -1010,12 +1044,51 @@ mod tests {
 
     #[test]
     fn parse_empty_returns_defaults() {
-        // SM1.D.3: empty cmdline → default config (SMP enabled, all
-        // cores).  This is the most common case (no DTB cmdline node).
+        // SM1.D.3: empty cmdline → default config.  This is the most
+        // common case (no DTB cmdline node), and it is therefore the
+        // case that decides what a real boot does: SMP is ON, because
+        // SM5.I serialised kernel entry at v0.32.142.
         let cfg = parse_cmdline("");
         assert_eq!(cfg, CmdlineConfig::default());
         assert!(cfg.smp_enabled);
         assert_eq!(cfg.smp_max_cores, crate::smp::MAX_SECONDARY_CORES + 1);
+    }
+
+    #[test]
+    fn default_boot_enables_smp_now_that_kernel_entry_is_serialized() {
+        // The regression witness for the safety claim itself.  Several
+        // modules across Lean and Rust justify deferring the SM5.I
+        // kernel-entry lock on the grounds that "SMP is off by
+        // default"; until v0.32.136 that was false, because
+        // `CmdlineConfig::default` returned `smp_enabled: true` and
+        // Phase 5 stores it straight into `smp::SMP_ENABLED`.  A boot
+        // with no cmdline would have brought the secondaries up and
+        // made the lost-update race reachable the moment a bootable
+        // image existed.
+        //
+        // SM5.I landed at v0.32.142 (`kernel_entry.rs`), so the
+        // precondition maintainer decision #7 states for itself --
+        // "SMP enabled by default at v1.0.0 once SM5 lands" -- is met,
+        // and the default is `true` again.  This test now pins the
+        // PAIRING: if the kernel-entry bracket is ever removed or
+        // bypassed, the default must return to `false` in the same
+        // change, and this is where that conversation starts.
+        assert!(CmdlineConfig::default().smp_enabled);
+        // A cmdline that does not mention `smp_enabled` gets the
+        // default, whatever the default currently is — these are the
+        // spellings a real boot actually presents.
+        for cmdline in ["", "   ", "console=ttyAMA0", "smp_max_cores=4"] {
+            assert!(
+                parse_cmdline(cmdline).smp_enabled,
+                "cmdline {cmdline:?} must take the SMP default"
+            );
+        }
+        // ...and the opt-out still works, which is the half that keeps
+        // single-core boot reachable for anyone who needs it.
+        assert!(!parse_cmdline("smp_enabled=false").smp_enabled);
+        // The opt-in still works, so this is a default change and not
+        // a removal of the feature.
+        assert!(parse_cmdline("smp_enabled=true").smp_enabled);
     }
 
     #[test]
@@ -1037,7 +1110,12 @@ mod tests {
     #[test]
     fn parse_smp_enabled_true_alias_yes_on_one() {
         // SM1.D.1: every accepted truthy alias maps to `true`.
-        for token in &["smp_enabled=true", "smp_enabled=yes", "smp_enabled=on", "smp_enabled=1"] {
+        for token in &[
+            "smp_enabled=true",
+            "smp_enabled=yes",
+            "smp_enabled=on",
+            "smp_enabled=1",
+        ] {
             let cfg = parse_cmdline(token);
             assert!(cfg.smp_enabled, "{token} should set smp_enabled=true");
         }
@@ -1046,7 +1124,12 @@ mod tests {
     #[test]
     fn parse_smp_enabled_false_alias_no_off_zero() {
         // SM1.D.1: every accepted falsy alias maps to `false`.
-        for token in &["smp_enabled=false", "smp_enabled=no", "smp_enabled=off", "smp_enabled=0"] {
+        for token in &[
+            "smp_enabled=false",
+            "smp_enabled=no",
+            "smp_enabled=off",
+            "smp_enabled=0",
+        ] {
             let cfg = parse_cmdline(token);
             assert!(!cfg.smp_enabled, "{token} should set smp_enabled=false");
         }
@@ -1055,15 +1138,19 @@ mod tests {
     #[test]
     fn parse_smp_enabled_malformed_keeps_default() {
         // SM1.D.1 robustness: unrecognised bool value keeps default.
+        // Stated against the default itself rather than against a
+        // literal, since the property these three tests are named for
+        // is "falls back", not "falls back to `true`" — the literal
+        // form is what made them fail when the default changed.
         let cfg = parse_cmdline("smp_enabled=foo");
-        assert!(cfg.smp_enabled, "default `true` should be preserved");
+        assert_eq!(cfg.smp_enabled, CmdlineConfig::default().smp_enabled);
     }
 
     #[test]
     fn parse_smp_enabled_empty_value_keeps_default() {
         // SM1.D.1 robustness: empty value keeps default.
         let cfg = parse_cmdline("smp_enabled=");
-        assert!(cfg.smp_enabled);
+        assert_eq!(cfg.smp_enabled, CmdlineConfig::default().smp_enabled);
     }
 
     // ========================================================================
@@ -1188,7 +1275,11 @@ mod tests {
         // SM1.D.1 robustness: unmatched quotes treated as part of
         // value (which then doesn't match any bool alias).
         let cfg = parse_cmdline("smp_enabled=\"false");
-        assert!(cfg.smp_enabled, "default `true` preserved on partial-quote value");
+        assert_eq!(
+            cfg.smp_enabled,
+            CmdlineConfig::default().smp_enabled,
+            "default preserved on partial-quote value"
+        );
     }
 
     #[test]
@@ -1261,8 +1352,12 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn default_smp_enabled_is_true() {
-        // SM1.D.3: production default per maintainer decision #7.
+    fn default_smp_enabled_is_true_now_that_kernel_entry_serialized() {
+        // SM1.D.3: maintainer decision #7 puts SMP on by default at
+        // v1.0.0 "once SM5 lands"; SM5.I landed at v0.32.142, so the
+        // precondition is met and the default is on.  See
+        // `default_boot_enables_smp_now_that_kernel_entry_is_serialized`
+        // for why the pairing is a safety property, not a preference.
         assert!(CmdlineConfig::default().smp_enabled);
     }
 
@@ -1372,8 +1467,7 @@ mod tests {
         // SM1.D.1 end-to-end: build a minimal DTB containing
         // `/chosen/bootargs = "smp_enabled=false"` and walk it.
         let dtb = build_dtb_with_bootargs(b"smp_enabled=false");
-        let bootargs = find_bootargs_in_dtb(&dtb)
-            .expect("synthesised DTB should yield bootargs");
+        let bootargs = find_bootargs_in_dtb(&dtb).expect("synthesised DTB should yield bootargs");
         assert_eq!(bootargs, b"smp_enabled=false\0");
     }
 
@@ -1556,7 +1650,7 @@ mod tests {
         s.extend_from_slice(value);
         s.push(0); // null terminator
                    // pad to 4-byte boundary
-        while s.len() % 4 != 0 {
+        while !s.len().is_multiple_of(4) {
             s.push(0);
         }
         // END_NODE (chosen)
@@ -1637,7 +1731,7 @@ mod tests {
         s.extend_from_slice(&other_nameoff.to_be_bytes());
         s.extend_from_slice(value);
         // pad to 4
-        while s.len() % 4 != 0 {
+        while !s.len().is_multiple_of(4) {
             s.push(0);
         }
         s.extend_from_slice(&FDT_END_NODE.to_be_bytes()); // chosen end
@@ -1697,12 +1791,8 @@ mod tests {
     /// node in the structure stream and is found first.
     #[test]
     fn dtb_with_direct_and_nested_chosen_bootargs_picks_direct() {
-        let dtb = build_dtb_chosen_with_direct_and_nested_bootargs(
-            b"real_value",
-            b"fake_value",
-        );
-        let bootargs = find_bootargs_in_dtb(&dtb)
-            .expect("direct /chosen/bootargs must be found");
+        let dtb = build_dtb_chosen_with_direct_and_nested_bootargs(b"real_value", b"fake_value");
+        let bootargs = find_bootargs_in_dtb(&dtb).expect("direct /chosen/bootargs must be found");
         assert_eq!(
             bootargs, b"real_value\0",
             "audit-pass-1: walker must return the DIRECT /chosen/bootargs, \
@@ -1865,8 +1955,7 @@ mod tests {
         // this and return None.
         let mut dtb = build_dtb_with_bootargs(b"smp_enabled=false");
         // Find the off_dt_struct value (header bytes 8..12).
-        let off_dt_struct =
-            u32::from_be_bytes([dtb[8], dtb[9], dtb[10], dtb[11]]) as usize;
+        let off_dt_struct = u32::from_be_bytes([dtb[8], dtb[9], dtb[10], dtb[11]]) as usize;
         // Overwrite the first 4 bytes of the structure block with an
         // unknown token value (0x42).
         let unknown_token = 0x42u32.to_be_bytes();
@@ -1944,7 +2033,7 @@ mod tests {
             let name = format!("n{}\0", i);
             s.extend_from_slice(name.as_bytes());
             // Pad to 4-byte boundary.
-            while s.len() % 4 != 0 {
+            while !s.len().is_multiple_of(4) {
                 s.push(0);
             }
         }
@@ -1997,9 +2086,8 @@ mod tests {
         for len in 1usize..=7 {
             let value = vec![b'a'; len];
             let dtb = build_dtb_with_bootargs(&value);
-            let bootargs = find_bootargs_in_dtb(&dtb).unwrap_or_else(|| {
-                panic!("padding stress failed at len={}", len)
-            });
+            let bootargs = find_bootargs_in_dtb(&dtb)
+                .unwrap_or_else(|| panic!("padding stress failed at len={}", len));
             assert_eq!(
                 bootargs.len(),
                 len + 1,
@@ -2020,8 +2108,7 @@ mod tests {
     // dispatch helper was only tested indirectly.
     // ========================================================================
 
-    fn fresh_local_smp_state(
-    ) -> (
+    fn fresh_local_smp_state() -> (
         core::sync::atomic::AtomicBool,
         [core::sync::atomic::AtomicBool; 4],
         core::sync::atomic::AtomicU32,
@@ -2146,7 +2233,10 @@ mod tests {
             &count,
             &crate::smp::SECONDARY_MPIDR_TABLE,
         );
-        assert_eq!(online, 1, "smp_max_cores=2 must bring up exactly 1 secondary");
+        assert_eq!(
+            online, 1,
+            "smp_max_cores=2 must bring up exactly 1 secondary"
+        );
         assert!(enabled.load(Ordering::Acquire));
         assert!(
             ready[1].load(Ordering::Acquire),
@@ -2258,7 +2348,7 @@ mod tests {
         s.extend_from_slice(&bootargs_nameoff.to_be_bytes());
         s.extend_from_slice(value);
         s.push(0); // null
-        while s.len() % 4 != 0 {
+        while !s.len().is_multiple_of(4) {
             s.push(0);
         }
         // END_NODE (sub)
@@ -2318,7 +2408,7 @@ mod tests {
         s.extend_from_slice(&bootargs_nameoff.to_be_bytes());
         s.extend_from_slice(direct_value);
         s.push(0); // null
-        while s.len() % 4 != 0 {
+        while !s.len().is_multiple_of(4) {
             s.push(0);
         }
 
@@ -2332,7 +2422,7 @@ mod tests {
         s.extend_from_slice(&bootargs_nameoff.to_be_bytes());
         s.extend_from_slice(nested_value);
         s.push(0); // null
-        while s.len() % 4 != 0 {
+        while !s.len().is_multiple_of(4) {
             s.push(0);
         }
         // END_NODE (sub)

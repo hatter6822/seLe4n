@@ -58,7 +58,7 @@ The current SMP scaffolding cannot be activated: four CRITICAL
 gaps make `SMP_ENABLED = true` either dead code (no caller) or a
 correctness hazard. The AN9-J disposition
 ("activation cost is just flipping the runtime flag",
-`AUDIT_v0.29.0_DEFERRED.md:296`) is materially inaccurate.
+`AUDIT_v0.29.0_DEFERRED.md`) is materially inaccurate.
 Shipping v1.0.0 under that disposition would ship a non-functional
 SMP binary on a 4-core SoC.
 
@@ -238,19 +238,19 @@ summarize.
 
 | ID | Location | Closure |
 |----|----------|---------|
-| SMP-C1 (no bring-up caller) | `rust/sele4n-hal/src/boot.rs:27-108` | SM1.D Phase 5 wiring |
-| SMP-C2 (incomplete secondary init) | `rust/sele4n-hal/src/smp.rs:213-235` | SM1.C full init |
-| SMP-C3 (shared kernelStateRef) | `SeLe4n/Platform/FFI.lean:394` | SM3 per-object lock-set discipline |
-| SMP-C4 (TLB non-IS) | `rust/sele4n-hal/src/tlb.rs:34..100` | SM1.E IS variants + SM7 shootdown protocol |
+| SMP-C1 (no bring-up caller) | `rust/sele4n-hal/src/boot.rs` | SM1.D Phase 5 wiring |
+| SMP-C2 (incomplete secondary init) | `rust/sele4n-hal/src/smp.rs` | SM1.C full init |
+| SMP-C3 (shared kernelStateRef) | `SeLe4n/Platform/FFI.lean` | SM3 per-object lock-set discipline |
+| SMP-C4 (TLB non-IS) | `rust/sele4n-hal/src/tlb.rs..100` | SM1.E IS variants + SM7 shootdown protocol |
 
 ### 3.5..3.8 HIGH findings
 
 | ID | Location | Closure |
 |----|----------|---------|
 | SMP-H1 (no SGI primitive) | `rust/sele4n-hal/src/gic.rs` | SM1.F SGI primitive |
-| SMP-H2 (missing ArchAssumption ctor) | `SeLe4n/Kernel/Architecture/Assumptions.lean:17-23` | SM0.A constructor |
-| SMP-H3 (inventory names not checked) | `Concurrency/Assumptions.lean:53-61` | SM0.C `@`-references |
-| SMP-H4 (no lock primitive) | `interrupts.rs:101-106` | SM2 verified primitives |
+| SMP-H2 (missing ArchAssumption ctor) | `SeLe4n/Kernel/Architecture/Assumptions.lean` | SM0.A constructor |
+| SMP-H3 (inventory names not checked) | `Concurrency/Assumptions.lean` | SM0.C `@`-references |
+| SMP-H4 (no lock primitive) | `interrupts.rs` | SM2 verified primitives |
 
 ### 3.9 MED + LOW findings
 
@@ -270,7 +270,7 @@ The 13 binding maintainer decisions:
 | 4 | **Path-a Vector replacement** | Cleaner final state. Cost: ~5000-7000 LoC of theorem rewrites. |
 | 5 | **numCores via PlatformBinding** | Multi-platform future-proof. |
 | 6 | **sharingDomain via PlatformBinding** | Cross-cluster support pre-positioned. |
-| 7 | **SMP enabled by default** | v1.0.0 headline capability; rigor enforced by QEMU `-smp 4` test mandate. |
+| 7 | **SMP enabled by default** | v1.0.0 headline capability; rigor enforced by QEMU `-smp 4` test mandate. **At v1.0.0, and CLAUDE.md records the condition: "once SM5 lands".** That condition was briefly violated: the default shipped `true` while kernel entry was unserialised, was set to `false` at v0.32.136 to restore it, and returned to `true` at v0.32.142 when SM5.I landed the kernel-entry lock — which is the change the condition was waiting for. `CmdlineConfig::default` is `smp_enabled: true` again and the QEMU exercisers no longer opt in explicitly. |
 | 8 | **Per-core idle TCBs** | One per core; clean invariants. |
 | 9 | **SM0 spread across PRs** | Review-friendly small PRs. |
 | 10 | **Verified lock primitives** | TicketLock + RwLock proven in Lean; refinement to Rust impl proven. seL4 historically left these as assumptions. |

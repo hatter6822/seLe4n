@@ -413,14 +413,26 @@ pub extern "C" fn ffi_send_sgi_to_all_but_self(intid: u8) {
 // ============================================================================
 //
 // The Lean ↔ Rust seam for the per-core [`crate::shootdown::SHOOTDOWN_ACK`]
-// flags — the runtime realisation of the Lean model's
-// `TlbShootdownState.shootdownAck` vector.  The SM7.B protocol calls
-// these through the typed `CoreId` wrappers in
-// `SeLe4n/Kernel/Concurrency/Runtime.lean` (`shootdownAckSet` /
-// `shootdownAckIsSet` / `shootdownResetForRound` / `shootdownAllAcked`),
-// whose `Fin numCores` argument typing makes the panic arms below
-// structurally unreachable from well-typed kernel code
-// (`shootdownAck_ffi_core_in_range` on the Lean side).
+// slots — the runtime realisation of the Lean model's
+// `TlbShootdownState.shootdownAck` vector, refined by SM7.F.3 into a
+// monotone *acknowledged round generation* per core.
+//
+// The generation compared here is the **runtime** one, allocated from
+// [`crate::shootdown::SHOOTDOWN_ROUND_SEQ`] under the round lock: a
+// target has serviced the round iff `acked_gen[c] >= that round's
+// runtime generation`.  It is deliberately NOT the Lean
+// `TlbShootdownState.roundGeneration` (PR #854 review P1), which orders
+// *commits* rather than hardware rounds and keys the SM7.F.3 window
+// drain.  Passing the commit-time generation into this channel is
+// precisely what let a newer round's acknowledgments certify an older
+// round nobody had executed, so the two must not be equated here.  The
+// SM7.B protocol calls these
+// through the typed `CoreId` wrappers in
+// `SeLe4n/Kernel/Concurrency/Runtime.lean` (`shootdownAckRound` /
+// `shootdownAckedGeneration` / `shootdownAllAckedForRound` /
+// `shootdownSelfServiceRound`), whose `Fin numCores` argument typing
+// makes the panic arms below structurally unreachable from well-typed
+// kernel code (`shootdownAck_ffi_core_in_range` on the Lean side).
 //
 // Bound checks run in `u64` space BEFORE the `usize` cast (the same
 // defense as `ffi_per_core_irq_count`: a hypothetical 32-bit port must
@@ -449,52 +461,60 @@ fn shootdown_core_id_checked(core_id: u64, caller: &str) -> usize {
     core_id as usize
 }
 
-/// **WS-SM SM7.A.3**: Release-set the given core's shootdown ack flag
-/// (plan §3.2 step 4c — the target's SGI handler calls this only after
-/// its drained TLBIs have retired).
+/// **WS-SM SM7.F.3**: Acknowledge round generation `gen` for the given
+/// core (plan §3.2 step 4c — the target's SGI handler calls this only
+/// after the round's TLBIs have retired locally).  Monotone
+/// (`fetch_max`), so a stale handler can never lower a core's recorded
+/// generation.
 ///
-/// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownAckSet`
+/// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownAckRound`
 #[no_mangle]
-pub extern "C" fn ffi_shootdown_ack_set(core_id: u64) {
-    crate::shootdown::ack_set(shootdown_core_id_checked(core_id, "ffi_shootdown_ack_set"));
+pub extern "C" fn ffi_shootdown_ack_round(core_id: u64, gen: u64) {
+    crate::shootdown::ack_round(
+        shootdown_core_id_checked(core_id, "ffi_shootdown_ack_round"),
+        gen,
+    );
 }
 
-/// **WS-SM SM7.A.3**: Acquire-load the given core's shootdown ack flag.
-/// Returns `1` if acknowledged, `0` otherwise.
+/// **WS-SM SM7.F.3**: Acquire-load the highest round generation the
+/// given core has acknowledged.
 ///
-/// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownAckIsSet`
+/// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownAckedGeneration`
 #[no_mangle]
-pub extern "C" fn ffi_shootdown_ack_is_set(core_id: u64) -> u64 {
-    crate::shootdown::ack_is_set(shootdown_core_id_checked(
+pub extern "C" fn ffi_shootdown_acked_generation(core_id: u64) -> u64 {
+    crate::shootdown::acked_gen(shootdown_core_id_checked(
         core_id,
-        "ffi_shootdown_ack_is_set",
+        "ffi_shootdown_acked_generation",
+    ))
+}
+
+/// **WS-SM SM7.F.3**: Acquire-poll the acknowledgment slots for round
+/// generation `gen` — the initiator wait-loop's exit condition
+/// (plan §3.2 step 5).  Returns `1` when every IRQ-serviceable
+/// non-initiator core has acknowledged `gen`, `0` otherwise.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownAllAckedForRound`
+#[no_mangle]
+pub extern "C" fn ffi_shootdown_all_acked_for_round(gen: u64, initiator: u64) -> u64 {
+    crate::shootdown::all_acked_for_round(
+        gen,
+        shootdown_core_id_checked(initiator, "ffi_shootdown_all_acked_for_round"),
+    ) as u64
+}
+
+/// **WS-SM SM7.B.7 + SM7.F.3**: The cooperative round-lock acquire's
+/// self-service arm — if this core has not yet acknowledged the
+/// currently published round, flush its own TLB and acknowledge that
+/// round.  Returns `1` when it serviced a round, `0` when nothing was
+/// outstanding.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownSelfServiceRound`
+#[no_mangle]
+pub extern "C" fn ffi_shootdown_self_service_round(core_id: u64) -> u64 {
+    crate::shootdown::self_service_round(shootdown_core_id_checked(
+        core_id,
+        "ffi_shootdown_self_service_round",
     )) as u64
-}
-
-/// **WS-SM SM7.A.3**: Open a new shootdown round — every flag drops to
-/// `false` except the initiator's own (plan §3.2 step 1; the Lean
-/// `beginShootdownRound`).  Must only be called by the round initiator
-/// under the global shootdown-round lock (see the shootdown.rs
-/// round-serialisation contract; SM7.B.7 — the per-VSpace VSpaceRoot
-/// lock alone is NOT sufficient).
-///
-/// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownResetForRound`
-#[no_mangle]
-pub extern "C" fn ffi_shootdown_reset_for_round(initiator: u64) {
-    crate::shootdown::reset_for_round(shootdown_core_id_checked(
-        initiator,
-        "ffi_shootdown_reset_for_round",
-    ));
-}
-
-/// **WS-SM SM7.A.3**: Acquire-poll every shootdown ack flag — the
-/// initiator wait-loop's exit condition (plan §3.2 step 5).  Returns
-/// `1` when every core has acknowledged, `0` otherwise.
-///
-/// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownAllAcked`
-#[no_mangle]
-pub extern "C" fn ffi_shootdown_all_acked() -> u64 {
-    crate::shootdown::all_acked() as u64
 }
 
 /// **WS-SM SM7.B.7**: Try to acquire THE global shootdown-round lock
@@ -513,9 +533,35 @@ pub extern "C" fn ffi_shootdown_round_lock_try_acquire() -> u64 {
     crate::shootdown::round_lock_try_acquire() as u64
 }
 
-/// **WS-SM SM7.B.7**: Release the global shootdown-round lock — only
-/// after the initiator observed all-acked (or immediately before the
-/// timeout path's fail-closed panic).
+/// **WS-SM SM7.F.3** (PR #854 review P1): allocate the next runtime
+/// shootdown round generation.
+///
+/// Called by the Lean seam immediately **after** it acquires the round
+/// lock, so the allocation order is the hardware execution order — which
+/// is what the monotone `acked_gen >= gen` wait requires.  Using the
+/// model's commit-time generation here instead would let a round that
+/// committed earlier but executed later be certified by the acks of a
+/// round that committed later and executed first.  Fails closed on wrap.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownAllocateRoundGeneration`
+#[no_mangle]
+pub extern "C" fn ffi_shootdown_allocate_round_generation() -> u64 {
+    crate::shootdown::allocate_round_generation()
+}
+
+/// **WS-SM SM7.B.7**: Release the global shootdown-round lock —
+/// **only** after the initiator observed all-acked.
+///
+/// The timeout path is not a second caller. It retains the lock
+/// permanently: a target that never certified its invalidation leaves a
+/// stale translation, so every other core's round must block rather
+/// than run alongside it, and holding the lock is what quarantines the
+/// subsystem. Releasing here — which this contract permitted until the
+/// PR #854 review, and which the runtime did until v0.32.130 — reopens
+/// the mailbox for the next round while that translation is still live.
+///
+/// A caller written to this contract must treat a timeout as terminal
+/// (`halt_fail_closed`), never as a path that unwinds.
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownRoundLockRelease`
 #[no_mangle]
@@ -523,15 +569,57 @@ pub extern "C" fn ffi_shootdown_round_lock_release() {
     crate::shootdown::round_lock_release();
 }
 
-/// **WS-SM SM7.B.5 + B.6**: Bounded acquire-poll for all-acknowledged
-/// — spins up to `timeout_ticks` generic-timer ticks.  Returns `1` on
-/// observed all-acked, `0` on a genuine timeout (the Lean caller's
-/// fail-closed panic trigger).
+/// **WS-SM SM7.B.6 + SM7.B.7**: park this PE permanently — the
+/// fail-closed barrier's actual stop.  **Never returns.**
+///
+/// Called by the Lean seam after its `panic!` has reported the
+/// violation.  The two are separate because Lean's `panic!` prints and
+/// then returns the `Inhabited` default (PR #854 review): it is the
+/// diagnostic, this is the halt.  Crossing either shootdown barrier —
+/// an unacknowledged round or a wedged round holder — means committing
+/// state whose soundness depends on an invalidation that never
+/// happened, which is the SMP-C4 stale-TLB hazard.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiFatalHalt`
+#[no_mangle]
+pub extern "C" fn ffi_fatal_halt() -> ! {
+    crate::cpu::fatal_halt()
+}
+
+/// **WS-SM SM0.H + SM7.B.6/B.7 (PR #854 review)**: broadcast `haltAll`
+/// to every other PE, then park this one. **Never returns.**
+///
+/// This is what the shootdown barriers call. Parking only the detecting
+/// core leaves the rest of the machine running against a TLB that core
+/// has just declared it could not clean — the hazard the barrier exists
+/// to stop — so the halt has to be system-wide to be a barrier at all.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiFatalHaltAll`
+#[no_mangle]
+pub extern "C" fn ffi_fatal_halt_all() -> ! {
+    crate::gic::halt_all()
+}
+
+/// **WS-SM SM7.B.5 + B.6 + SM7.F.3**: Bounded acquire-poll for round
+/// generation `gen` acknowledged — spins up to `timeout_ticks`
+/// generic-timer ticks.  Returns `1` on observed all-acked-for-`gen`,
+/// `0` on a genuine timeout (the Lean caller's fail-closed panic
+/// trigger).
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownWaitAllAcked`
 #[no_mangle]
-pub extern "C" fn ffi_shootdown_wait_all_acked(timeout_ticks: u64) -> u64 {
-    crate::shootdown::wait_all_acked_bounded(timeout_ticks) as u64
+pub extern "C" fn ffi_shootdown_wait_all_acked(
+    gen: u64,
+    initiator: u64,
+    online_mask: u64,
+    timeout_ticks: u64,
+) -> u64 {
+    crate::shootdown::wait_all_acked_bounded(
+        gen,
+        shootdown_core_id_checked(initiator, "ffi_shootdown_wait_all_acked"),
+        online_mask,
+        timeout_ticks,
+    ) as u64
 }
 
 /// **WS-SM SM7.B.2**: The online-core bitmask (bit `c` ⇔ core `c`
@@ -578,15 +666,16 @@ pub extern "C" fn ffi_shootdown_publish_slot(index: u64, op_tag: u32, asid: u16,
     );
 }
 
-/// **WS-SM SM7.B (debt (1))**: commit the publish of `len` operands —
-/// bumps the seqlock to stable (Release).  `len` above capacity collapses
-/// to one `vmalle1`; `len == 0` leaves the mailbox empty (handler falls
-/// back to `vmalle1`).
+/// **WS-SM SM7.B (debt (1)) + SM7.F.3**: commit the publish of `len`
+/// operands belonging to round generation `gen` — bumps the seqlock to
+/// stable (Release), then publishes the generation.  `len` above capacity
+/// collapses to one `vmalle1`; `len == 0` leaves the mailbox empty
+/// (handler falls back to `vmalle1`).
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownPublishCommit`
 #[no_mangle]
-pub extern "C" fn ffi_shootdown_publish_commit(len: u64) {
-    crate::shootdown::publish_commit_in(&crate::shootdown::SHOOTDOWN_OPS, len as usize);
+pub extern "C" fn ffi_shootdown_publish_commit(len: u64, gen: u64) {
+    crate::shootdown::publish_commit_in(&crate::shootdown::SHOOTDOWN_OPS, len as usize, gen);
 }
 
 // ============================================================================
@@ -1050,16 +1139,30 @@ pub extern "C" fn ffi_rw_lock_release_write_count(handle: u64) -> u64 {
 #[no_mangle]
 pub extern "C" fn sele4n_suspend_thread(tid: u64) -> u32 {
     crate::interrupts::with_interrupts_disabled(|| {
-        // SAFETY: in production builds `suspend_thread_cross_core` is a
-        // Lean-emitted `extern "C"` symbol; calling an extern "C"
-        // function is unsafe.  In test builds it is a Rust-side
-        // safe stub.  We use `unsafe` unconditionally so the
-        // production path is correct; the `#[allow(unused_unsafe)]`
-        // suppresses the test-only warning.
-        #[allow(unused_unsafe)]
-        unsafe {
-            suspend_thread_cross_core(tid)
-        }
+        // WS-SM SM5.I: the third kernel entry that commits state, and
+        // the one easiest to miss — it reaches Lean through
+        // `sele4n_suspend_thread` rather than a `lean_*` symbol, so a
+        // sweep for `lean_` does not find it.  `suspendThreadCrossCoreEntry`
+        // commits through the same `modifyGetKernelState` read-then-write,
+        // so it needs the same exclusion: a suspend racing a syscall on
+        // another core can otherwise lose either commit whole, and a lost
+        // suspend is a thread that keeps running after its caller was told
+        // it stopped.
+        //
+        // Interrupt disabling (outside) is per-core and orthogonal: it
+        // stops this core re-entering, not another core committing.
+        crate::kernel_entry::with_kernel_entry(crate::cpu::current_core_id() as usize, || {
+            // SAFETY: in production builds `suspend_thread_cross_core` is a
+            // Lean-emitted `extern "C"` symbol; calling an extern "C"
+            // function is unsafe.  In test builds it is a Rust-side
+            // safe stub.  We use `unsafe` unconditionally so the
+            // production path is correct; the `#[allow(unused_unsafe)]`
+            // suppresses the test-only warning.
+            #[allow(unused_unsafe)]
+            unsafe {
+                suspend_thread_cross_core(tid)
+            }
+        })
     })
 }
 
@@ -1355,44 +1458,44 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn sm1e4_ffi_tlbi_for_sharing_inner_vmalle1_no_panic() {
+    fn ffi_tlbi_for_sharing_inner_vmalle1_no_panic() {
         // (Inner, Vmalle1) → tlbi_vmalle1is via the dispatcher.
         ffi_tlbi_for_sharing(0, 0, 0, 0);
     }
 
     #[test]
-    fn sm1e4_ffi_tlbi_for_sharing_outer_vmalle1_no_panic() {
+    fn ffi_tlbi_for_sharing_outer_vmalle1_no_panic() {
         // (Outer, Vmalle1) → tlbi_vmalle1os via the dispatcher.
         ffi_tlbi_for_sharing(1, 0, 0, 0);
     }
 
     #[test]
-    fn sm1e4_ffi_tlbi_for_sharing_inner_vae1_no_panic() {
+    fn ffi_tlbi_for_sharing_inner_vae1_no_panic() {
         ffi_tlbi_for_sharing(0, 1, 42, 0x1000);
     }
 
     #[test]
-    fn sm1e4_ffi_tlbi_for_sharing_outer_vae1_no_panic() {
+    fn ffi_tlbi_for_sharing_outer_vae1_no_panic() {
         ffi_tlbi_for_sharing(1, 1, 42, 0x1000);
     }
 
     #[test]
-    fn sm1e4_ffi_tlbi_for_sharing_inner_aside1_no_panic() {
+    fn ffi_tlbi_for_sharing_inner_aside1_no_panic() {
         ffi_tlbi_for_sharing(0, 2, 7, 0);
     }
 
     #[test]
-    fn sm1e4_ffi_tlbi_for_sharing_outer_aside1_no_panic() {
+    fn ffi_tlbi_for_sharing_outer_aside1_no_panic() {
         ffi_tlbi_for_sharing(1, 2, 7, 0);
     }
 
     #[test]
-    fn sm1e4_ffi_tlbi_for_sharing_inner_vale1_no_panic() {
+    fn ffi_tlbi_for_sharing_inner_vale1_no_panic() {
         ffi_tlbi_for_sharing(0, 3, 3, 0x4000);
     }
 
     #[test]
-    fn sm1e4_ffi_tlbi_for_sharing_outer_vale1_no_panic() {
+    fn ffi_tlbi_for_sharing_outer_vale1_no_panic() {
         ffi_tlbi_for_sharing(1, 3, 3, 0x4000);
     }
 
@@ -1420,7 +1523,7 @@ mod tests {
     // coverage.
 
     #[test]
-    fn sm1e4_decode_sharing_domain_tag_accepts_0_and_1() {
+    fn decode_sharing_domain_tag_accepts_0_and_1() {
         // Audit-pass-1: the only valid tags are 0 (Inner) and 1 (Outer).
         assert_eq!(
             decode_sharing_domain_tag(0),
@@ -1433,7 +1536,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1e4_decode_sharing_domain_tag_rejects_out_of_range() {
+    fn decode_sharing_domain_tag_rejects_out_of_range() {
         // Audit-pass-1: every other value rejects via None.  The FFI
         // wrapper translates None into a panic that aborts the kernel.
         assert_eq!(decode_sharing_domain_tag(2), None);
@@ -1443,7 +1546,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1e4_decode_sharing_domain_tag_const_callable() {
+    fn decode_sharing_domain_tag_const_callable() {
         // Audit-pass-1: decoder is `const fn` so call sites with
         // literal arguments evaluate at compile time.
         const D0: Option<crate::tlb::SharingDomain> = decode_sharing_domain_tag(0);
@@ -1453,7 +1556,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1e4_decode_tlb_invalidation_tag_accepts_0_to_3() {
+    fn decode_tlb_invalidation_tag_accepts_0_to_3() {
         // Audit-pass-1: the four valid op_tags map to typed variants.
         assert_eq!(
             decode_tlb_invalidation_tag(0, 0, 0),
@@ -1480,7 +1583,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1e4_decode_tlb_invalidation_tag_rejects_out_of_range() {
+    fn decode_tlb_invalidation_tag_rejects_out_of_range() {
         // Audit-pass-1: any tag >= 4 returns None.  The FFI wrapper
         // translates None into a panic.
         assert_eq!(decode_tlb_invalidation_tag(4, 0, 0), None);
@@ -1490,7 +1593,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1e4_decode_tlb_invalidation_tag_const_callable() {
+    fn decode_tlb_invalidation_tag_const_callable() {
         // Audit-pass-1: decoder is `const fn`.
         const OP_VMALLE1: Option<crate::tlb::TlbInvalidation> =
             decode_tlb_invalidation_tag(0, 0, 0);
@@ -1500,7 +1603,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1e4_decode_tlb_invalidation_tag_vmalle1_discards_operands() {
+    fn decode_tlb_invalidation_tag_vmalle1_discards_operands() {
         // Audit-pass-1: Vmalle1 (op_tag=0) ignores asid and vaddr.
         // Verify the variant is identical regardless of operand inputs.
         let with_zeros = decode_tlb_invalidation_tag(0, 0, 0);
@@ -1511,7 +1614,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1e4_decode_tlb_invalidation_tag_aside1_discards_vaddr() {
+    fn decode_tlb_invalidation_tag_aside1_discards_vaddr() {
         // Audit-pass-1: Aside1 (op_tag=2) carries asid but ignores vaddr.
         let with_zero = decode_tlb_invalidation_tag(2, 5, 0);
         let with_data = decode_tlb_invalidation_tag(2, 5, 0xDEAD_BEEF);
@@ -1527,7 +1630,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1e4_decode_signature_pins() {
+    fn decode_signature_pins() {
         // Audit-pass-1: pin decoder signatures so a future refactor
         // (e.g., changing Option to Result) breaks compilation here.
         let _: fn(u32) -> Option<crate::tlb::SharingDomain> = decode_sharing_domain_tag;
@@ -1536,7 +1639,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1e4_ffi_tlbi_for_sharing_signature_pin() {
+    fn ffi_tlbi_for_sharing_signature_pin() {
         // Pin the FFI signature.  A future ABI change would break
         // every Lean caller — pinning here surfaces the regression
         // at compile time.
@@ -1544,7 +1647,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1e4_ffi_tlbi_for_sharing_combinatorial_coverage() {
+    fn ffi_tlbi_for_sharing_combinatorial_coverage() {
         // SM1.E.4: cover every valid (domain, op) combination in one
         // tight loop.  This is the structural witness that the
         // dispatcher's match expression is exhaustive over the
@@ -1561,7 +1664,7 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn sm1f6_ffi_send_sgi_no_panic_on_host() {
+    fn ffi_send_sgi_no_panic_on_host() {
         // Host stub: GICD_SGIR write is a no-op via mmio_write32;
         // verify the FFI boundary doesn't panic.
         ffi_send_sgi(0x0F, 0); // INTID 0 (reschedule) to all cores
@@ -1569,12 +1672,12 @@ mod tests {
     }
 
     #[test]
-    fn sm1f6_ffi_send_sgi_to_self_no_panic_on_host() {
+    fn ffi_send_sgi_to_self_no_panic_on_host() {
         ffi_send_sgi_to_self(1); // INTID 1 (tlbShootdownReq)
     }
 
     #[test]
-    fn sm1f6_ffi_send_sgi_to_all_but_self_no_panic_on_host() {
+    fn ffi_send_sgi_to_all_but_self_no_panic_on_host() {
         ffi_send_sgi_to_all_but_self(2); // INTID 2 (tlbShootdownAck)
     }
 
@@ -1595,7 +1698,7 @@ mod tests {
     // and rely on the underlying gic test suite for the bound proof.
 
     #[test]
-    fn sm1f6_ffi_send_sgi_signature_pin() {
+    fn ffi_send_sgi_signature_pin() {
         // Pin every FFI export's signature.
         let _: extern "C" fn(u8, u8) = ffi_send_sgi;
         let _: extern "C" fn(u8) = ffi_send_sgi_to_self;
@@ -1603,7 +1706,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1f6_ffi_send_sgi_covers_every_kernel_reserved_intid() {
+    fn ffi_send_sgi_covers_every_kernel_reserved_intid() {
         // SM0.H reserves SGI INTIDs 0..4 for kernel coordination.
         // Verify every reserved INTID is callable through the FFI.
         for intid in 0..5u8 {
@@ -1618,14 +1721,14 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn sm1i3_ffi_idle_wait_no_panic_on_host() {
+    fn ffi_idle_wait_no_panic_on_host() {
         // Host stub: cpu::idle_wait → cpu::wfe → spin_loop.  Returns
         // immediately; no inter-test state corruption.
         ffi_idle_wait();
     }
 
     #[test]
-    fn sm1i3_ffi_idle_wait_bounded_returns_zero_on_host() {
+    fn ffi_idle_wait_bounded_returns_zero_on_host() {
         // Host stub: cpu::idle_wait_bounded → cpu::wfe_bounded which
         // returns 0 elapsed ticks deterministically on host.
         assert_eq!(
@@ -1635,7 +1738,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1i3_ffi_idle_wait_bounded_accepts_zero_budget() {
+    fn ffi_idle_wait_bounded_accepts_zero_budget() {
         // Edge case: max_ticks = 0 must not panic.  Caller's
         // "did we time out" check (`elapsed >= max_ticks`) trivially
         // succeeds on this input.  Host stub returns 0; verify
@@ -1646,7 +1749,7 @@ mod tests {
     }
 
     #[test]
-    fn sm1i3_ffi_idle_wait_signatures_pinned() {
+    fn ffi_idle_wait_signatures_pinned() {
         // Pin the FFI export signatures.
         let _: extern "C" fn() = ffi_idle_wait;
         let _: extern "C" fn(u64) -> u64 = ffi_idle_wait_bounded;
@@ -1667,7 +1770,7 @@ mod tests {
     // `handle_synchronous_exception`, not the FFI surface.
 
     #[test]
-    fn sm1i4_ffi_per_core_irq_count_in_range_returns_snapshot() {
+    fn ffi_per_core_irq_count_in_range_returns_snapshot() {
         // The counter may have been advanced by other tests running
         // in parallel; we just verify the call returns a u64 without
         // panicking.
@@ -1677,32 +1780,32 @@ mod tests {
     }
 
     #[test]
-    fn sm1i4_ffi_per_core_irq_count_out_of_range_returns_zero() {
+    fn ffi_per_core_irq_count_out_of_range_returns_zero() {
         assert_eq!(ffi_per_core_irq_count(4), 0);
         assert_eq!(ffi_per_core_irq_count(100), 0);
         assert_eq!(ffi_per_core_irq_count(u64::MAX), 0);
     }
 
     #[test]
-    fn sm1i4_ffi_per_core_timer_tick_count_out_of_range_returns_zero() {
+    fn ffi_per_core_timer_tick_count_out_of_range_returns_zero() {
         assert_eq!(ffi_per_core_timer_tick_count(4), 0);
         assert_eq!(ffi_per_core_timer_tick_count(u64::MAX), 0);
     }
 
     #[test]
-    fn sm1i4_ffi_per_core_sgi_count_out_of_range_returns_zero() {
+    fn ffi_per_core_sgi_count_out_of_range_returns_zero() {
         assert_eq!(ffi_per_core_sgi_count(4), 0);
         assert_eq!(ffi_per_core_sgi_count(u64::MAX), 0);
     }
 
     #[test]
-    fn sm1i4_ffi_per_core_syscall_count_out_of_range_returns_zero() {
+    fn ffi_per_core_syscall_count_out_of_range_returns_zero() {
         assert_eq!(ffi_per_core_syscall_count(4), 0);
         assert_eq!(ffi_per_core_syscall_count(u64::MAX), 0);
     }
 
     #[test]
-    fn sm1i4_ffi_per_core_stats_signatures_pinned() {
+    fn ffi_per_core_stats_signatures_pinned() {
         // Pin every per-core stats FFI export signature.  A future
         // ABI change that broke the Lean caller would surface here.
         let _: extern "C" fn(u64) -> u64 = ffi_per_core_irq_count;
@@ -1724,7 +1827,7 @@ mod tests {
     // ----------------------------------------------------------------
 
     #[test]
-    fn sm1i4_ffi_per_core_irq_count_rejects_u64_with_high_bits_aliasing_slot() {
+    fn ffi_per_core_irq_count_rejects_u64_with_high_bits_aliasing_slot() {
         // 0x1_0000_0001 on a 32-bit target would truncate to 1 (in-
         // range).  On aarch64 the value is far out of range so the
         // bound check returns 0.
@@ -1734,19 +1837,19 @@ mod tests {
     }
 
     #[test]
-    fn sm1i4_ffi_per_core_timer_tick_count_rejects_u64_with_high_bits_aliasing_slot() {
+    fn ffi_per_core_timer_tick_count_rejects_u64_with_high_bits_aliasing_slot() {
         assert_eq!(ffi_per_core_timer_tick_count(0x1_0000_0001), 0);
         assert_eq!(ffi_per_core_timer_tick_count(0xFFFF_FFFF_0000_0000), 0);
     }
 
     #[test]
-    fn sm1i4_ffi_per_core_sgi_count_rejects_u64_with_high_bits_aliasing_slot() {
+    fn ffi_per_core_sgi_count_rejects_u64_with_high_bits_aliasing_slot() {
         assert_eq!(ffi_per_core_sgi_count(0x1_0000_0001), 0);
         assert_eq!(ffi_per_core_sgi_count(0xFFFF_FFFF_0000_0000), 0);
     }
 
     #[test]
-    fn sm1i4_ffi_per_core_syscall_count_rejects_u64_with_high_bits_aliasing_slot() {
+    fn ffi_per_core_syscall_count_rejects_u64_with_high_bits_aliasing_slot() {
         assert_eq!(ffi_per_core_syscall_count(0x1_0000_0001), 0);
         assert_eq!(ffi_per_core_syscall_count(0xFFFF_FFFF_0000_0000), 0);
     }
@@ -1756,15 +1859,15 @@ mod tests {
     //
     // `ffi_switch_to_thread` records a per-core current-thread id; tests that
     // mutate + observe `PER_CPU_CURRENT_THREAD` are serialised through
-    // `SM5B7_SWITCH_TARGET_MUTEX` so cargo's parallel runner cannot race two
+    // `SWITCH_TARGET_TEST_MUTEX` so cargo's parallel runner cannot race two
     // writers/readers on the same core slot.
     // ========================================================================
 
-    static SM5B7_SWITCH_TARGET_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    static SWITCH_TARGET_TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
-    fn sm5b7_ffi_switch_to_thread_records_and_reads_back_per_core() {
-        let _guard = SM5B7_SWITCH_TARGET_MUTEX
+    fn ffi_switch_to_thread_records_and_reads_back_per_core() {
+        let _guard = SWITCH_TARGET_TEST_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         // Distinct tids to distinct cores; each core reads back exactly its own
@@ -1787,7 +1890,7 @@ mod tests {
     }
 
     #[test]
-    fn sm5b7_ffi_switch_to_thread_out_of_range_returns_error_status() {
+    fn ffi_switch_to_thread_out_of_range_returns_error_status() {
         // Out-of-range core_id returns the non-zero (1) status and records nothing.
         assert_eq!(ffi_switch_to_thread(7, 4), 1);
         assert_eq!(ffi_switch_to_thread(7, 100), 1);
@@ -1795,8 +1898,8 @@ mod tests {
     }
 
     #[test]
-    fn sm5b7_ffi_switch_to_thread_out_of_range_records_nothing() {
-        let _guard = SM5B7_SWITCH_TARGET_MUTEX
+    fn ffi_switch_to_thread_out_of_range_records_nothing() {
+        let _guard = SWITCH_TARGET_TEST_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         // Record a known value on core 0, then attempt an out-of-range switch:
@@ -1807,14 +1910,14 @@ mod tests {
     }
 
     #[test]
-    fn sm5b7_ffi_per_core_current_thread_out_of_range_returns_sentinel() {
+    fn ffi_per_core_current_thread_out_of_range_returns_sentinel() {
         assert_eq!(ffi_per_core_current_thread(4), NO_CURRENT_THREAD);
         assert_eq!(ffi_per_core_current_thread(100), NO_CURRENT_THREAD);
         assert_eq!(ffi_per_core_current_thread(u64::MAX), NO_CURRENT_THREAD);
     }
 
     #[test]
-    fn sm5b7_ffi_switch_to_thread_rejects_u64_high_bits_aliasing_slot() {
+    fn ffi_switch_to_thread_rejects_u64_high_bits_aliasing_slot() {
         // Same u64-before-cast defense as the per-core stats FFI: a high-bit
         // core_id (which a 32-bit `as usize` would truncate to an in-range slot)
         // is rejected in u64 space — switch returns 1 and records nothing; read
@@ -1832,7 +1935,7 @@ mod tests {
     }
 
     #[test]
-    fn sm5b7_ffi_switch_signatures_pinned() {
+    fn ffi_switch_signatures_pinned() {
         // Pin the SM5.B.7 FFI export signatures; an ABI change breaking the
         // Lean `@[extern]` callers would surface here.
         let _: extern "C" fn(u64, u64) -> u64 = ffi_switch_to_thread;
@@ -1856,14 +1959,14 @@ mod tests {
 
     // **WS-SM SM2.D audit-pass**: the shared serialisation mutex
     // for SM2.D counter-observation tests lives in
-    // `crate::lock_bridge::SM2D_TRACE_TEST_MUTEX`.  This re-export
-    // makes `SM2D_TRACE_TEST_MUTEX` resolve from the test bodies
+    // `crate::lock_bridge::LOCK_TRACE_TEST_MUTEX`.  This re-export
+    // makes `LOCK_TRACE_TEST_MUTEX` resolve from the test bodies
     // below WITHOUT a fully-qualified path, and — critically —
     // ties FFI-side observations to the SAME mutex instance that
     // `lock_bridge::runtime_tests` uses.  Without the shared
     // instance the two test modules would race on the same pool
     // slots (0..2) and break counter-delta assertions.
-    use crate::lock_bridge::SM2D_TRACE_TEST_MUTEX;
+    use crate::lock_bridge::LOCK_TRACE_TEST_MUTEX;
 
     /// **SM2.D.5 test**: every SM2.D FFI export's signature is pinned.
     ///
@@ -1875,7 +1978,7 @@ mod tests {
     /// that accidentally dropped the `extern "C"` qualifier would
     /// fail to bind here.
     #[test]
-    fn sm2d_ffi_signatures_pinned() {
+    fn ffi_signatures_pinned() {
         let _t_handle: extern "C" fn(u64) -> u64 = ffi_ticket_lock_static_handle;
         let _t_acq: extern "C" fn(u64) -> u64 = ffi_ticket_lock_acquire;
         let _t_rel: extern "C" fn(u64) = ffi_ticket_lock_release;
@@ -1898,13 +2001,13 @@ mod tests {
     /// **SM2.D.1 test**: `ffi_ticket_lock_static_handle(0..3)` returns
     /// the pool index unchanged.
     ///
-    /// Out-of-range coverage is in `lock_bridge::tests::sm2d_ticket_lock_static_handle_out_of_range_panics`,
+    /// Out-of-range coverage is in `lock_bridge::tests::ticket_lock_static_handle_out_of_range_panics`,
     /// which targets the inner helper directly so the panic is caught
     /// by `#[should_panic]` rather than becoming a non-unwinding
     /// abort when it crosses the `extern "C"` FFI boundary (which
     /// Rust edition 2021 converts to a process abort via SIGABRT).
     #[test]
-    fn sm2d1_ffi_ticket_lock_static_handle_returns_index() {
+    fn ffi_ticket_lock_static_handle_returns_index() {
         for idx in 0..crate::lock_bridge::STATIC_TICKET_LOCK_POOL_SIZE as u64 {
             assert_eq!(ffi_ticket_lock_static_handle(idx), idx);
         }
@@ -1913,8 +2016,8 @@ mod tests {
     /// **SM2.D.1 test**: `ffi_ticket_lock_acquire` followed by
     /// `ffi_ticket_lock_release` increments both counters by 1.
     #[test]
-    fn sm2d1_ffi_ticket_lock_acquire_release_increments_counters() {
-        let _guard = SM2D_TRACE_TEST_MUTEX
+    fn ffi_ticket_lock_acquire_release_increments_counters() {
+        let _guard = LOCK_TRACE_TEST_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let h = ffi_ticket_lock_static_handle(0);
@@ -1929,8 +2032,8 @@ mod tests {
     /// **SM2.D.1 test**: `ffi_ticket_lock_peek_holder` packs
     /// `next_ticket` and `serving` into the same u64.
     #[test]
-    fn sm2d1_ffi_ticket_lock_peek_holder_packs_state() {
-        let _guard = SM2D_TRACE_TEST_MUTEX
+    fn ffi_ticket_lock_peek_holder_packs_state() {
+        let _guard = LOCK_TRACE_TEST_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let h = ffi_ticket_lock_static_handle(1);
@@ -1949,10 +2052,10 @@ mod tests {
     /// **SM2.D.2 test**: `ffi_rw_lock_static_handle(0..3)` returns
     /// the pool index unchanged.
     ///
-    /// Out-of-range coverage is in `lock_bridge::tests::sm2d_rw_lock_static_handle_out_of_range_panics`
-    /// for the same reason as `sm2d1_ffi_ticket_lock_static_handle_returns_index`.
+    /// Out-of-range coverage is in `lock_bridge::tests::rw_lock_static_handle_out_of_range_panics`
+    /// for the same reason as `ffi_ticket_lock_static_handle_returns_index`.
     #[test]
-    fn sm2d2_ffi_rw_lock_static_handle_returns_index() {
+    fn ffi_rw_lock_static_handle_returns_index() {
         for idx in 0..crate::lock_bridge::STATIC_RW_LOCK_POOL_SIZE as u64 {
             assert_eq!(ffi_rw_lock_static_handle(idx), idx);
         }
@@ -1961,8 +2064,8 @@ mod tests {
     /// **SM2.D.2 test**: read-acquire/release cycle increments both
     /// counters.
     #[test]
-    fn sm2d2_ffi_rw_lock_read_cycle_increments_counters() {
-        let _guard = SM2D_TRACE_TEST_MUTEX
+    fn ffi_rw_lock_read_cycle_increments_counters() {
+        let _guard = LOCK_TRACE_TEST_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let h = ffi_rw_lock_static_handle(0);
@@ -1977,8 +2080,8 @@ mod tests {
     /// **SM2.D.2 test**: write-acquire/release cycle increments both
     /// counters.
     #[test]
-    fn sm2d2_ffi_rw_lock_write_cycle_increments_counters() {
-        let _guard = SM2D_TRACE_TEST_MUTEX
+    fn ffi_rw_lock_write_cycle_increments_counters() {
+        let _guard = LOCK_TRACE_TEST_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let h = ffi_rw_lock_static_handle(1);
@@ -1995,8 +2098,8 @@ mod tests {
     /// snapshot during a read-hold has bit 63 clear and at least
     /// one reader bit set.
     #[test]
-    fn sm2d2_ffi_rw_lock_snapshot_distinguishes_held() {
-        let _guard = SM2D_TRACE_TEST_MUTEX
+    fn ffi_rw_lock_snapshot_distinguishes_held() {
+        let _guard = LOCK_TRACE_TEST_MUTEX
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let h = ffi_rw_lock_static_handle(2);
@@ -2012,7 +2115,7 @@ mod tests {
         ffi_rw_lock_release_read(h);
     }
     // ----------------------------------------------------------------
-    // WS-SM SM7.A.3 — shootdown ack-flag FFI exports.
+    // WS-SM SM7.A.3 / SM7.F.3 — shootdown acknowledgment FFI exports.
     //
     // Mutating valid-input coverage lives in shootdown.rs on
     // stack-local slices; the tests here pin the FFI contract only —
@@ -2024,29 +2127,29 @@ mod tests {
     // ----------------------------------------------------------------
 
     #[test]
-    #[should_panic(expected = "ffi_shootdown_ack_set: core_id 4 out of range")]
-    fn sm7a3_shootdown_core_id_checked_panics_out_of_range() {
-        let _ = shootdown_core_id_checked(4, "ffi_shootdown_ack_set");
+    #[should_panic(expected = "ffi_shootdown_ack_round: core_id 4 out of range")]
+    fn shootdown_core_id_checked_panics_out_of_range() {
+        let _ = shootdown_core_id_checked(4, "ffi_shootdown_ack_round");
     }
 
     #[test]
     #[should_panic(
-        expected = "ffi_shootdown_ack_is_set: core_id 18446744073709551615 out of range"
+        expected = "ffi_shootdown_acked_generation: core_id 18446744073709551615 out of range"
     )]
-    fn sm7a3_shootdown_core_id_checked_panics_at_u64_max() {
-        let _ = shootdown_core_id_checked(u64::MAX, "ffi_shootdown_ack_is_set");
+    fn shootdown_core_id_checked_panics_at_u64_max() {
+        let _ = shootdown_core_id_checked(u64::MAX, "ffi_shootdown_acked_generation");
     }
 
     #[test]
-    #[should_panic(expected = "ffi_shootdown_reset_for_round: core_id 4294967297 out of range")]
-    fn sm7a3_shootdown_core_id_checked_rejects_u64_with_high_bits_aliasing_slot() {
+    #[should_panic(expected = "ffi_shootdown_wait_all_acked: core_id 4294967297 out of range")]
+    fn shootdown_core_id_checked_rejects_u64_with_high_bits_aliasing_slot() {
         // 0x1_0000_0001 would truncate to slot 1 on a 32-bit usize;
         // the u64-space bound check must reject it BEFORE the cast.
-        let _ = shootdown_core_id_checked(0x1_0000_0001, "ffi_shootdown_reset_for_round");
+        let _ = shootdown_core_id_checked(0x1_0000_0001, "ffi_shootdown_wait_all_acked");
     }
 
     #[test]
-    fn sm7a3_shootdown_core_id_checked_passes_every_valid_core() {
+    fn shootdown_core_id_checked_passes_every_valid_core() {
         for core in 0..4u64 {
             assert_eq!(
                 shootdown_core_id_checked(core, "test"),
@@ -2058,31 +2161,46 @@ mod tests {
     }
 
     #[test]
-    fn sm7a3_ffi_shootdown_boot_state_reads_quiescent() {
+    fn ffi_shootdown_boot_state_reads_quiescent() {
         // Read-only on the global (no ffi test mutates SHOOTDOWN_ACK,
         // so the boot values are stable under parallel execution).
         assert_eq!(
-            ffi_shootdown_all_acked(),
+            ffi_shootdown_all_acked_for_round(0, 0),
             1,
-            "boot state is all-acknowledged"
+            "generation 0 is vacuously satisfied at boot"
         );
         for core in 0..4u64 {
             assert_eq!(
-                ffi_shootdown_ack_is_set(core),
-                1,
-                "core {} boots acknowledged",
+                ffi_shootdown_acked_generation(core),
+                0,
+                "core {} boots at generation 0",
                 core
             );
         }
     }
 
     #[test]
-    fn sm7a3_ffi_shootdown_signatures_pinned() {
+    fn ffi_shootdown_signatures_pinned() {
         // Pin every shootdown FFI export signature; an ABI change
         // that broke the Lean @[extern] bindings would surface here.
-        let _: extern "C" fn(u64) = ffi_shootdown_ack_set;
-        let _: extern "C" fn(u64) -> u64 = ffi_shootdown_ack_is_set;
-        let _: extern "C" fn(u64) = ffi_shootdown_reset_for_round;
-        let _: extern "C" fn() -> u64 = ffi_shootdown_all_acked;
+        let _: extern "C" fn(u64, u64) = ffi_shootdown_ack_round;
+        let _: extern "C" fn(u64) -> u64 = ffi_shootdown_acked_generation;
+        let _: extern "C" fn(u64, u64) -> u64 = ffi_shootdown_all_acked_for_round;
+        let _: extern "C" fn(u64) -> u64 = ffi_shootdown_self_service_round;
+        // PR #854 review: the wait carries the round's own online mask
+        // (gen, initiator, online_mask, timeout_ticks) rather than
+        // re-reading CORE_IRQ_READY on the Rust side.
+        let _: extern "C" fn(u64, u64, u64, u64) -> u64 = ffi_shootdown_wait_all_acked;
+        let _: extern "C" fn(u64, u64) = ffi_shootdown_publish_commit;
+    }
+
+    /// **PR #854 review**: the fail-closed halt seams are non-returning
+    /// at the ABI, not merely by convention — `-> !` cannot be satisfied
+    /// by a function that falls through, so this fails to compile if
+    /// either is ever softened.
+    #[test]
+    fn ffi_fatal_halt_signatures_are_never_returning() {
+        let _: extern "C" fn() -> ! = ffi_fatal_halt;
+        let _: extern "C" fn() -> ! = ffi_fatal_halt_all;
     }
 }

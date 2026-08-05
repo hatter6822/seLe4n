@@ -71,7 +71,7 @@ Delivered anchors (WS-B7 closeout):
 **v0.11.6 audit note (M-13):** The `securityFlowsTo` comment has been
 clarified to document the non-standard "both dimensions flow upward" lattice.
 The implementation is internally consistent and all proofs are sound, but the
-lattice does not implement standard BLP+BIBA. See `Policy.lean:48-59` for
+lattice does not implement standard BLP+BIBA. See `Policy.lean` for
 the updated documentation.
 
 ## IF-M2 — Two-run relational state framework

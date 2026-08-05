@@ -808,8 +808,10 @@ structure SystemState where
       SM3.A.10 `objStoreLock` field above landed the same way).
 
       Defaults to `TlbShootdownState.initial` — the quiescent boot
-      state (all queues empty, all flags acknowledged), matching the
-      Rust `SHOOTDOWN_ACK` boot value; pinned by
+      state (all queues empty, every core's acknowledged generation
+      zero, and `roundGeneration` zero, so `ackOnCore` holds
+      vacuously because no round has been opened), matching the Rust
+      `SHOOTDOWN_ACK` slots' `acked_gen` boot value; pinned by
       `default_tlbShootdown_initial` / the SM7.A default-state
       theorems below.
 
@@ -1033,8 +1035,10 @@ instance : Inhabited SystemState where
     -- theorems (SM3.A.11) can discharge by `rfl`.
     objStoreLock := SeLe4n.Kernel.Concurrency.RwLockState.unheld
     -- WS-SM SM7.A: TLB-shootdown coordination state starts quiescent
-    -- (all pending queues empty, all ack flags true — nobody waited
-    -- on) at boot, matching the Rust SHOOTDOWN_ACK boot value.
+    -- at boot (all pending queues empty; every acknowledged
+    -- generation and `roundGeneration` zero, so no round is
+    -- outstanding), matching the Rust SHOOTDOWN_ACK slots' `acked_gen`
+    -- boot value.
     -- Explicit listing pins the default-state invariant so the
     -- `default_tlbShootdown_initial` / `default_tlbShootdown_quiescent`
     -- theorems (SM7.A) can discharge by `rfl` / the initial-state
@@ -1237,6 +1241,15 @@ theorem default_tlbShootdown_pendingBounded :
       (default : SystemState).tlbShootdown :=
   SeLe4n.Kernel.Architecture.pendingBounded_of_shootdownQuiescent
     default_tlbShootdown_quiescent
+
+/-- **WS-SM SM7.F.3 (PR #854 review)**: the default SystemState is
+ack-bounded — no core has acknowledged a round that has not been opened
+(every slot and the round counter are `0` at boot).  The base case of the
+15th `proofLayerInvariantBundle` conjunct. -/
+theorem default_tlbShootdown_ackBounded :
+    SeLe4n.Kernel.Architecture.ackBounded
+      (default : SystemState).tlbShootdown :=
+  SeLe4n.Kernel.Architecture.initial_ackBounded
 
 /-- WS-SM SM7.C.1: at boot every core's TLB view is empty — the per-core
 generalisation of `tlb := TlbState.empty`.  Discharged by

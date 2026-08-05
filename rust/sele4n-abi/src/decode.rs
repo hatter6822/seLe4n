@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Syscall response decoding — unpacks ARM64 registers into typed results.
 
-use sele4n_types::{KernelError, KernelResult, Badge};
 use crate::MessageInfo;
+use sele4n_types::{Badge, KernelError, KernelResult};
 
 /// A decoded syscall response from the kernel.
 ///
@@ -42,8 +42,7 @@ pub fn decode_response(regs: [u64; 7]) -> KernelResult<SyscallResponse> {
         // AF6-A: Unrecognized codes (≥54, excluding sentinel 255) map to
         // UnknownKernelError — semantically correct fallback instead of
         // InvalidSyscallNumber which implies a different kind of protocol error.
-        let err = KernelError::from_u32(regs[0] as u32)
-            .unwrap_or(KernelError::UnknownKernelError);
+        let err = KernelError::from_u32(regs[0] as u32).unwrap_or(KernelError::UnknownKernelError);
         return Err(err);
     }
 
@@ -56,7 +55,9 @@ pub fn decode_response(regs: [u64; 7]) -> KernelResult<SyscallResponse> {
 
 impl SyscallResponse {
     /// Interpret x1 as an IPC badge (valid for Receive/ReplyRecv syscalls).
-    pub fn badge(&self) -> Badge { Badge::from(self.x1_raw) }
+    pub fn badge(&self) -> Badge {
+        Badge::from(self.x1_raw)
+    }
 
     /// Interpret x1 as message info (valid for Send/Call/Reply syscalls).
     pub fn msg_info(&self) -> KernelResult<MessageInfo> {
@@ -64,7 +65,9 @@ impl SyscallResponse {
     }
 
     /// Get the raw x1 register value for direct inspection.
-    pub const fn x1_raw(&self) -> u64 { self.x1_raw }
+    pub const fn x1_raw(&self) -> u64 {
+        self.x1_raw
+    }
 }
 
 #[cfg(test)]
@@ -94,13 +97,19 @@ mod tests {
     fn decode_u64_overflow_rejected() {
         // 0x1_0000_0000 would truncate to 0 (false success) without range guard
         let regs = [0x1_0000_0000u64, 0, 0, 0, 0, 0, 0];
-        assert_eq!(decode_response(regs), Err(KernelError::InvalidSyscallNumber));
+        assert_eq!(
+            decode_response(regs),
+            Err(KernelError::InvalidSyscallNumber)
+        );
     }
 
     #[test]
     fn decode_u64_max_rejected() {
         let regs = [u64::MAX, 0, 0, 0, 0, 0, 0];
-        assert_eq!(decode_response(regs), Err(KernelError::InvalidSyscallNumber));
+        assert_eq!(
+            decode_response(regs),
+            Err(KernelError::InvalidSyscallNumber)
+        );
     }
 
     #[test]
@@ -122,7 +131,10 @@ mod tests {
     fn decode_thread_on_different_core_error() {
         // WS-SM SM5.B.4: discriminant 53 round-trips to ThreadOnDifferentCore.
         let regs = [53, 0, 0, 0, 0, 0, 0];
-        assert_eq!(decode_response(regs), Err(KernelError::ThreadOnDifferentCore));
+        assert_eq!(
+            decode_response(regs),
+            Err(KernelError::ThreadOnDifferentCore)
+        );
     }
 
     #[test]

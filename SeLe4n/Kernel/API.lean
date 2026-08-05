@@ -48,6 +48,7 @@ import SeLe4n.Kernel.Architecture.IpcBufferValidation
 -- `.vspaceMap` / `.vspaceUnmap` arms dispatch through (initiator-atomic
 -- `perCoreTlb` retirement + translation-walk fill; projection-invisible).
 import SeLe4n.Kernel.Architecture.PerCoreTlbModel
+import SeLe4n.Kernel.Architecture.IpcBufferTlbFill
 
 /-!
 # L-01/WS-E6: Unified Public Kernel API
@@ -1930,7 +1931,16 @@ def syscallEntryChecked (ctx : LabelingContext)
                 st tid layout regs regCount with
         | .error e => .error e
         | .ok decoded =>
-          dispatchSyscallChecked ctx decoded tid st
+          -- WS-SM SM7.F.5: the decode above walked this thread's IPC buffer
+          -- for each overflow message register.  On hardware that walk fills
+          -- the *executing* core's TLB; record it, so `perCoreTlb` holds the
+          -- translations a core acquired by access rather than only those it
+          -- established by mapping.  Purely a TLB-model event
+          -- (`tlbFillIpcBufferOnCore_frame`), and inert when the syscall
+          -- carried no overflow registers.
+          dispatchSyscallChecked ctx decoded tid
+            (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
+              st executingCore tid decoded.overflowCount)
 
 -- ============================================================================
 -- U5-A/U5-D: Dispatch structural equivalence theorems
@@ -2371,6 +2381,12 @@ def syscallEntry (layout : SeLe4n.SyscallRegisterLayout)
                 st tid layout regs regCount with
         | .error e => .error e
         | .ok decoded =>
+          -- WS-SM SM7.F.5: deliberately **no** access-time `perCoreTlb` fill
+          -- here.  This is the boot-pinned pre-SMP entry, whose TLB view is
+          -- the scalar `st.tlb`; `perCoreTlb` is its per-core refinement and
+          -- is filled at the per-core entry (`syscallEntryChecked`), which is
+          -- what the SMP dispatch path actually runs.  Filling the per-core
+          -- model from the boot-pinned entry would mix the two models.
           dispatchSyscall decoded tid st
 
 -- ============================================================================

@@ -113,6 +113,20 @@ run_check "HYGIENE" "${SCRIPT_DIR}/check_website_links.sh"
 # AH4-F: Version sync — validate all version-bearing files match lakefile.toml.
 run_check "HYGIENE" "${SCRIPT_DIR}/check_version_sync.sh"
 
+# Internal-first naming: no workstream IDs, audit IDs, or phase codes in
+# identifiers (CLAUDE.md).  Scans every identifier token — any visibility,
+# fields, params, locals — rather than enumerating declaration forms, so
+# there is no declaration syntax it can fail to think of.  Rust is held at
+# zero; Lean ratchets against its grandfathered baseline.  Prose is exempt
+# — cite workstreams in docstrings, not in names.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_identifier_naming.py"
+
+# The gate above has shipped under-enforced five times, always because a
+# hand-written piece of its scope was narrower than the rule, and its
+# failure mode is silence.  This pins each mechanism with a check that
+# provably fails against the version that lacked it.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/test_identifier_naming_gate.py"
+
 # AN10-D: AK7 cascade monotonicity gate. Reads docs/dev_history/audits/AL0_baseline.txt
 # and rejects regressions on any AK7 cascade metric (raw-match site count,
 # typed-helper adoption, storeObjectKindChecked adoption, sentinel guard
@@ -167,7 +181,7 @@ run_check "HYGIENE" "${SCRIPT_DIR}/check_bcm2712_freshness.sh"
 # (`SeLe4n/Platform/FFI.lean`) and the Rust side (`ffi.rs` +
 # `lock_bridge.rs`) agree on the SM2.D FFI symbol list, and that
 # the SM2 theorem count constant agrees between the Lean
-# `lockPrimitives.length` and Rust `SM2_THEOREM_COUNT`.  A drift
+# `lockPrimitives.length` and Rust `LOCK_THEOREM_COUNT`.  A drift
 # on either side without updating the other fails the gate.
 run_check "HYGIENE" "${SCRIPT_DIR}/check_lock_ffi_symmetry.sh"
 

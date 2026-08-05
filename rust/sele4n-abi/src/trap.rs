@@ -4,8 +4,8 @@
 //! On ARM64 (AArch64), the kernel entry point is the `svc #0` instruction.
 //! On non-AArch64 targets (host testing), a mock implementation is provided.
 
-use sele4n_types::{KernelResult, KernelError};
-use crate::{SyscallRequest, SyscallResponse, encode_syscall, decode_response};
+use crate::{decode_response, encode_syscall, SyscallRequest, SyscallResponse};
+use sele4n_types::{KernelError, KernelResult};
 
 /// Invoke a raw syscall by writing registers and executing `svc #0`.
 ///
@@ -104,8 +104,8 @@ pub fn invoke_syscall(req: SyscallRequest) -> KernelResult<SyscallResponse> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sele4n_types::{CPtr, SyscallId};
     use crate::message_info::MessageInfo;
+    use sele4n_types::{CPtr, SyscallId};
 
     #[test]
     #[cfg(not(target_arch = "aarch64"))]

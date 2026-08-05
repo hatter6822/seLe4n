@@ -510,7 +510,7 @@ Preservation shape:
 - WS-RC R1 / DEEP-IPC-03 (v0.30.11) IPC call-path NI symmetry: `endpointCallWithCaps` `lookupCspaceRoot = none` arm now returns `.error .invalidCapability` (was `.ok ({ results := #[] }, st')` — covert channel via `KernelError`). All three IPC capability-transfer wrappers (`endpointSendDualWithCaps`, `endpointReceiveDualWithCaps`, `endpointCallWithCaps`) now fail closed identically on the missing-CSpace-root structural fault. The arm is structurally unreachable under `intrusiveQueueWellFormed` (a sub-clause of `dualQueueSystemInvariant`); the new `.error` is fail-closed defense-in-depth. `endpointCallWithCaps_preserves_ipcInvariant` (`Kernel/IPC/Invariant/CallReplyRecv/ReplyRecv.lean`) updated so the arm becomes vacuous via `simp [hLookup] at hStep`, mirroring the post-AK1-I send-path tactic.
 - WS-RC R4.A / DEEP-MODEL-01 (v0.30.11) `CNode.slots` structural promotion: `CNode.slots : SeLe4n.UniqueSlotMap Capability` (wraps `RHTable Slot Capability` with `invExtK` invariant carried structurally at construction time). Foundation module `SeLe4n/Model/Object/UniqueSlotMap.lean` exposes `empty`, `insert`, `erase`, `filter`, `ofListWF` smart constructors that each discharge `invExtK` via the corresponding `RHTable._preserves_invExtK` lemma; `keys_unique : ∀ u, u.table.invExtK` is the structural witness. State-level `cspaceSlotUnique` invariant is now trivially derivable via `SeLe4n.Model.CNode.slotsUnique_holds : ∀ cn, cn.slotsUnique`; preservation theorems (`empty/insert/remove/revokeTargetLocal_slotsUnique`) collapse to one-liner projections of the smart-constructor result's `hWF` field.
 - WS-RC R4.B / DEEP-CAP-04 (v0.30.11) `RetypeTarget` non-bypassable construction: `cleanupHookDischarged` now requires an opaque `ScrubToken` whose only public introduction is `ScrubToken.fromCleanup` (gated on a successful `lifecyclePreRetypeCleanup` outcome). The no-bypass property is codified by `retypeTarget_implies_scrub_token_held : ∀ st (rt : RetypeTarget st), ScrubToken st rt.id`. Defined in `Kernel/Capability/Invariant/Defs.lean`.
-- WS-RC R4.C / DEEP-IPC-05 (subsumes DEEP-IPC-01; v0.30.11) `Notification.waitingThreads` structural promotion: `Notification.waitingThreads : SeLe4n.NoDupList SeLe4n.ThreadId` (wraps `List ThreadId` with `List.Nodup` carried structurally at construction time). Foundation module `SeLe4n/Model/Object/NoDupList.lean` exposes `empty`, `consWithGuard`, `consWithGuard?`, `tail?`, `filter` smart constructors. `notificationSignal` pops via `NoDupList.tail?`; `notificationWait` cons site is gated by `NoDupList.consWithGuard?` so the duplicate rejection at the operational entry point is structural. The `notificationWait_runtime_check_implied_by_nodup` theorem bridges the runtime TCB ipcState guard at `Endpoint.lean:723` to type-level non-membership under `notificationWaiterConsistent`. State-level `uniqueWaiters` invariant is now trivially derivable via `SeLe4n.Kernel.uniqueWaiters_holds`. Structural witness theorems: `NoDupList.nodup_witness`, `notification_waitingThreads_nodup_witness`, `notificationWait_runtime_check_implied_by_nodup`.
+- WS-RC R4.C / DEEP-IPC-05 (subsumes DEEP-IPC-01; v0.30.11) `Notification.waitingThreads` structural promotion: `Notification.waitingThreads : SeLe4n.NoDupList SeLe4n.ThreadId` (wraps `List ThreadId` with `List.Nodup` carried structurally at construction time). Foundation module `SeLe4n/Model/Object/NoDupList.lean` exposes `empty`, `consWithGuard`, `consWithGuard?`, `tail?`, `filter` smart constructors. `notificationSignal` pops via `NoDupList.tail?`; `notificationWait` cons site is gated by `NoDupList.consWithGuard?` so the duplicate rejection at the operational entry point is structural. The `notificationWait_runtime_check_implied_by_nodup` theorem bridges the runtime TCB ipcState guard at `Endpoint.lean` to type-level non-membership under `notificationWaiterConsistent`. State-level `uniqueWaiters` invariant is now trivially derivable via `SeLe4n.Kernel.uniqueWaiters_holds`. Structural witness theorems: `NoDupList.nodup_witness`, `notification_waitingThreads_nodup_witness`, `notificationWait_runtime_check_implied_by_nodup`.
 - WS-RC R4.D / DEEP-CAP-02 (v0.30.11) `cspaceMutate` null-cap witness theorems: `cspaceMutate_rejects_null_cap` (every successful mutation witnesses a non-null pre-state capability) and `cspaceMutate_null_cap_rejected` (every null-cap input totalises to `.nullCapability`), both in `Kernel/Capability/Invariant/Preservation/CopyMoveMutate.lean`. Regression tests in `tests/ModelIntegritySuite.lean::cspaceMutate_from_null_rejected` and `tests/NegativeStateSuite.lean::NEG-MUTATE-NULL`.
 - **WS-RC R4 close-out (v0.31.0)** — completes the structural-invariant retirement that the v0.30.11 R4 partial landing left open.  **The state-level `cspaceSlotUnique` and `uniqueWaiters` predicates have been deleted entirely**; the substantive content is carried structurally by `UniqueSlotMap.hWF` (on `CNode.slots`) and `NoDupList.hNodup` (on `Notification.waitingThreads`).  No backwards-compatibility shims remain.
   - **R4.A.5/.6/.7**: `cspaceSlotUnique` predicate, its `cspaceSlotUnique_trivial` discharge helper, and the entire `cspaceSlotUnique_of_storeObject_{nonCNode,cnode,endpoint_store}` / `_objects_eq` / `_of_storeTcbIpcState` / `_through_{blocking,handshake}_path` transfer chain (8 theorems) are all deleted.  The historical bridge `cspaceLookupSound_of_cspaceSlotUnique` is renamed to the unconditional `cspaceLookupSound_holds`.  `capabilityInvariantBundle` shrunk from 7 to 6 conjuncts.  22 vestigial `(_hSlotUniq : cspaceSlotUnique st)` parameters across 5 files removed.  Plan-named witnesses `cnode_slots_unique` and `cspaceSlotUnique_promoted_to_structural` are retained.
@@ -960,8 +960,39 @@ view-outcome demotion):
   issuing PE; `shootdownTargets` excludes it), perCoreTlb-only so
   trace-safe (`shootdownCatchUpPerCore_agrees_singleView` = the SM7.B
   single-view target fold's `tlb`/`tlbShootdown` effect;
-  `shootdownCatchUpPerCore_initiator_view` = faithfulness); the live
-  `completeShootdownRounds` seam runs `shootdownCatchUpPerCore`
+  `shootdownCatchUpPerCore_initiator_view` = faithfulness); since
+  SM7.F.3 the live `completeShootdownRounds` seam runs the
+  generation-selective `shootdownCatchUpPerCoreInWindow`
+
+Per-core TLB model — v0.32.105 SM7.F.3 cut (round-generation-tagged
+descriptors).  A syscall's shootdown work spans two atomic commits and
+only the *hardware* round is under `SHOOTDOWN_ROUND_LOCK`, so a
+concurrently-committed round can post between them; a whole-queue
+catch-up swallowed its descriptors and claimed quiescence before that
+round's SGIs had fired:
+- `TlbShootdownDescriptor.generation` / `TlbShootdownState.roundGeneration`
+  / `roundDescriptor` — the round identity, minted by
+  `beginShootdownRound{,For}` and stamped on every posted descriptor
+  (`roundDescriptor_generation_eq_opened`)
+- `inRoundWindow` / `shootdownRoundWindow` — a commit's own rounds are
+  the generations in `(pre.roundGeneration, post.roundGeneration]`, a
+  *window* because the retype wrappers open one round per flushed ASID;
+  recovered from the same `(pre, post)` diff as the target set
+- `drainShootdownsInWindow_preserves_foreign` /
+  `handleTlbShootdownReqOnCore{,PerCore}InWindow_preserves_foreign` /
+  `shootdownCatchUpPerCoreInWindow_preserves_foreign` — the headline
+  race-freedom chain: a concurrently-posted round's descriptors survive
+  another round's catch-up.  Duals: `…_drains_own`
+- `drainShootdownsInWindow_eq_drainShootdowns` /
+  `…InWindow_eq_handle` / `shootdownCatchUpPerCoreInWindow_eq_catchUp`
+  — the exactness bridges: under round serialisation a core's queue
+  holds only this commit's work, so the window drain **is** the
+  whole-queue drain and every landed SM7.A/B round theorem carries over
+- `mem_shootdownPostedOps_iff` — the runtime broadcasts and publishes
+  exactly its own window's operands, in both directions (including that
+  the deduplication never drops one — the unsafe direction; the two
+  `List.eraseDups` membership lemmas Lean core does not ship are proven
+  locally as `mem_eraseDups_of_mem` / `mem_of_mem_eraseDups`)
 - `shootdownRoundPerCore_cross_subsystem` — the C.7 capstone on the
   **operative** drains-at-ack round; `tlbInvalidateOnAllCores` is
   documented as the eager view-outcome abstraction (views ahead of the
@@ -1957,7 +1988,7 @@ New predicate in `Scheduler/Invariant.lean`:
 
 ### O(1) membership audit (A-18)
 
-Confirmed that `schedule` (`Operations/Core.lean:235`) uses O(1) `RunQueue.contains`
+Confirmed that `schedule` (`Operations/Core.lean`) uses O(1) `RunQueue.contains`
 via `tid ∈ st'.scheduler.runQueue` (backed by `HashSet`), not the O(n)
 `runnable` flat-list alias. No code change required.
 
@@ -3154,7 +3185,7 @@ transitive propagation, reversion, frame preservation, zero-fuel identity.
 
 **CPtr masking** (`Capability/Operations.lean`):
 - `resolveCapAddress` now masks CPtr via `addr.toNat % machineWordMax` at entry,
-  matching `resolveSlot` (Structures.lean:500). Prevents unbounded Lean Nat from
+  matching `resolveSlot` (Structures.lean). Prevents unbounded Lean Nat from
   resolving to different CNode slots than 64-bit hardware registers.
 - `resolveCapAddress_guard_match` and `resolveCapAddress_guard_reject` updated
   to reflect masked expression.
@@ -3217,7 +3248,7 @@ transitive propagation, reversion, frame preservation, zero-fuel identity.
   mutations (25+ callsites: IPC, scheduler, capability, VSpace operations)
   preserve `objectIndex.length` exactly. Covers the common path.
 - `retypeFromUntyped_capacity_gated` — proves the allocation boundary
-  (`retypeFromUntyped`, Lifecycle/Operations.lean:626) gates on `maxObjects`.
+  (`retypeFromUntyped`, Lifecycle/Operations.lean) gates on `maxObjects`.
   Covers the only new-object creation path.
 - `storeObject_capacity_safe_of_existing` — composes in-place safety with
   `objectIndexBounded` to prove capacity invariant preservation.

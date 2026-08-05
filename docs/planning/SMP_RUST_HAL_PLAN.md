@@ -1203,10 +1203,10 @@ NONE.
   and other secondaries continue running unaffected.
 
   Test coverage: 13 new HAL tests across two test groups:
-  - `smp::tests::sm1c5_validate_context_id_*` (7 tests): cover
+  - `smp::tests::validate_context_id_*` (7 tests): cover
     every Rust-layer rejection / acceptance case including
     const-context evaluation.
-  - `smp::tests::sm1c5_max_core_count_sym_*` (6 tests): cover
+  - `smp::tests::max_core_count_sym_*` (6 tests): cover
     the `.rodata` symbol value (= 4 on RPi5), address
     observability, cross-layer bound consistency (asm and Rust
     bounds agree), and that every asm-rejected context_id is
@@ -1254,7 +1254,7 @@ NONE.
   Reformulated to do the bounds check in `u64` space FIRST,
   then narrow to `usize` on the accepted path.  Mathematically
   equivalent on 64-bit; strictly more correct on 32-bit.
-  New test `sm1c5_validate_context_id_rejects_u64_with_high_bits_aliasing_secondary`
+  New test `validate_context_id_rejects_u64_with_high_bits_aliasing_secondary`
   exercises five boundary cases (`0x1_0000_0001`,
   `0x1_0000_0002`, `0x1_0000_0003`, `0x1_0000_0000`,
   `0xFFFF_FFFF_0000_0000`) — all must reject.
@@ -1550,7 +1550,7 @@ pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
 ```
 
 **Acceptance**:
-- Body matches the docstring claim from `smp.rs:202-211`.
+- Body matches the docstring claim from `smp.rs`.
 - QEMU `-smp 4` boot trace shows 4 ready banners.
 - All 4 cores reach `lean_secondary_kernel_main`.
 
@@ -1722,7 +1722,7 @@ plan's stub-form sketch:
   at module load so a halted kernel never accidentally spawns
   secondaries.
 - A new build.rs scanner
-  (`scan_boot_rs_phase5_uses_cmdline`) pins the Phase 5 call
+  (`scan_boot_rs_calls_cmdline_smp_startup`) pins the Phase 5 call
   sites at build time so a refactor cannot silently disable the
   cmdline parse.
 
@@ -1807,7 +1807,7 @@ pub struct CmdlineConfig {
 impl Default for CmdlineConfig {
     fn default() -> Self {
         Self {
-            smp_enabled: true,    // SM1.D.3: default = enabled
+            smp_enabled: true,    // SM1.D.3 (false v0.32.136–141; see below)
             smp_max_cores: 4,
         }
     }
@@ -1872,7 +1872,7 @@ pub fn extract_bootargs(dtb_ptr: u64) -> &'static str {
 **Acceptance**:
 - Parses `smp_enabled=false` → `cfg.smp_enabled = false`.
 - Parses `smp_enabled=true` → `cfg.smp_enabled = true`.
-- Parses empty string → defaults (smp_enabled=true).
+- Parses empty string → defaults (smp_enabled=true; false v0.32.136–141).
 - Robust to malformed: `smp_enabled=foo` → keeps default.
 - 10+ unit tests cover all branches.
 
@@ -1917,11 +1917,26 @@ if cmdline_cfg.smp_enabled {
 
 ---
 
-#### SM1.D.3 — Default behavior: SMP enabled
+#### SM1.D.3 — Default behavior: SMP enabled, and the condition it waited on
 
-Per maintainer decision #7, default is enabled. This is encoded
-in `CmdlineConfig::default()::smp_enabled = true`. Tests verify
-the default.
+Maintainer decision #7 enables SMP by default *once SM5 lands*. This
+section originally encoded the first half of that as
+`CmdlineConfig::default()::smp_enabled = true`, which read the decision
+as unconditional and shipped the default ahead of its own precondition:
+kernel entry was not serialised (`Platform.FFI.modifyGetKernelState` is
+a read-then-write, not a cross-core atomic), so a default boot would
+have brought all four cores up into an unserialised kernel.
+
+Set to `false` at v0.32.136 to restore the precondition, and back to
+`true` at **v0.32.142**, when SM5.I landed the global kernel-entry lock
+— the change the condition was waiting for. The QEMU exercisers no
+longer pass `smp_enabled=true` explicitly.
+
+The value is not the point; the ordering is. The default may be `true`
+only while kernel entry is serialised, so the two must move together.
+Canonical record:
+[`SMP_TLB_SHOOTDOWN_PLAN.md`](SMP_TLB_SHOOTDOWN_PLAN.md)
+§"Kernel-entry serialisation".
 
 **Size**: T (in SM1.D.1's default impl).
 
@@ -2758,24 +2773,24 @@ Plus testability:
 8 new cross-core test scenarios in `smp::tests::sm1i6_*` exercising
 the SM1.I infrastructure:
 
-- `sm1i6_per_core_stats_no_cross_slot_aliasing` — every core's
+- `per_core_stats_no_cross_slot_aliasing` — every core's
   `record_*_in_slice` writes its own slot without contention.
-- `sm1i6_validate_context_id_per_core_dispatch_no_aliasing` —
+- `validate_context_id_per_core_dispatch_no_aliasing` —
   PSCI context_id validator's per-core dispatch is bijective.
-- `sm1i6_cross_core_init_helper_idempotent` — `init_cpu_interface_secondary`
+- `cross_core_init_helper_idempotent` — `init_cpu_interface_secondary`
   composition (MMU + VBAR + GIC + timer + IRQ) is idempotent under
   repeated cross-core invocation.
-- `sm1i6_core_ready_flag_monotonic_across_repeated_bringup` —
+- `core_ready_flag_monotonic_across_repeated_bringup` —
   CORE_READY flags advance monotonically (no false reverts).
-- `sm1i6_per_core_stats_total_equals_sum` — cumulative across
+- `per_core_stats_total_equals_sum` — cumulative across
   slots equals sum of inner-form record calls.
-- `sm1i6_per_core_sgi_dispatch_kernel_reserved_intids` — every
+- `per_core_sgi_dispatch_kernel_reserved_intids` — every
   kernel-reserved SGI (SM0.H, INTIDs 0..4) per-core dispatch
   recorded.
-- `sm1i6_cross_core_bring_up_with_limit_boundary_progression` —
+- `cross_core_bring_up_with_limit_boundary_progression` —
   `bring_up_secondaries_with_limit_inner` honours the limit
   boundary for every `i in 0..MAX_SECONDARY_CORES+1`.
-- `sm1i6_full_cross_core_composition` — end-to-end: bring-up +
+- `full_cross_core_composition` — end-to-end: bring-up +
   validator dispatch + per-core stats accumulation compose
   without inter-test contamination.
 

@@ -3,8 +3,8 @@
 //!
 //! Lean: `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` lines 117–131.
 
-use sele4n_types::{Asid, VAddr, PAddr, KernelError, KernelResult};
 use crate::args::PagePerms;
+use sele4n_types::{Asid, KernelError, KernelResult, PAddr, VAddr};
 
 /// Arguments for `vspaceMap` (syscall 9).
 /// Register mapping: x2=asid, x3=vaddr, x4=paddr, x5=perms word.
@@ -25,7 +25,12 @@ pub struct VSpaceMapArgs {
 
 impl VSpaceMapArgs {
     pub const fn encode(&self) -> [u64; 4] {
-        [self.asid.raw(), self.vaddr.raw(), self.paddr.raw(), self.perms.raw() as u64]
+        [
+            self.asid.raw(),
+            self.vaddr.raw(),
+            self.paddr.raw(),
+            self.perms.raw() as u64,
+        ]
     }
 
     /// Decode register values into typed VSpaceMapArgs.
@@ -34,7 +39,9 @@ impl VSpaceMapArgs {
     /// permission bitmask (0–0x1F). Values > 0x1F are rejected with
     /// `InvalidArgument` to prevent silent truncation (V1-F consistency).
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
-        if regs.len() < 4 { return Err(KernelError::InvalidMessageInfo); }
+        if regs.len() < 4 {
+            return Err(KernelError::InvalidMessageInfo);
+        }
         let perms = PagePerms::try_from(regs[3])?;
         Ok(Self {
             asid: Asid::from(regs[0]),
@@ -61,8 +68,13 @@ impl VSpaceUnmapArgs {
     }
 
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
-        if regs.len() < 2 { return Err(KernelError::InvalidMessageInfo); }
-        Ok(Self { asid: Asid::from(regs[0]), vaddr: VAddr::from(regs[1]) })
+        if regs.len() < 2 {
+            return Err(KernelError::InvalidMessageInfo);
+        }
+        Ok(Self {
+            asid: Asid::from(regs[0]),
+            vaddr: VAddr::from(regs[1]),
+        })
     }
 }
 
@@ -84,7 +96,9 @@ mod tests {
     #[test]
     fn map_roundtrip() {
         let args = VSpaceMapArgs {
-            asid: Asid::from(1u64), vaddr: VAddr::from(0x1000u64), paddr: PAddr::from(0x2000u64),
+            asid: Asid::from(1u64),
+            vaddr: VAddr::from(0x1000u64),
+            paddr: PAddr::from(0x2000u64),
             perms: PagePerms::try_from(0x07u64).unwrap(),
         };
         assert_eq!(VSpaceMapArgs::decode(&args.encode()).unwrap(), args);
@@ -92,7 +106,10 @@ mod tests {
 
     #[test]
     fn unmap_roundtrip() {
-        let args = VSpaceUnmapArgs { asid: Asid::from(1u64), vaddr: VAddr::from(0x3000u64) };
+        let args = VSpaceUnmapArgs {
+            asid: Asid::from(1u64),
+            vaddr: VAddr::from(0x3000u64),
+        };
         assert_eq!(VSpaceUnmapArgs::decode(&args.encode()).unwrap(), args);
     }
 
@@ -100,26 +117,39 @@ mod tests {
     fn unify_instruction_roundtrip() {
         // WS-SM SM7.D: the unify operand shape is the unmap operand shape.
         let args = VSpaceUnifyInstructionArgs {
-            asid: Asid::from(2u64), vaddr: VAddr::from(0x4000u64),
+            asid: Asid::from(2u64),
+            vaddr: VAddr::from(0x4000u64),
         };
-        assert_eq!(VSpaceUnifyInstructionArgs::decode(&args.encode()).unwrap(), args);
+        assert_eq!(
+            VSpaceUnifyInstructionArgs::decode(&args.encode()).unwrap(),
+            args
+        );
     }
 
     #[test]
     fn map_insufficient_regs() {
-        assert_eq!(VSpaceMapArgs::decode(&[1, 2, 3]), Err(KernelError::InvalidMessageInfo));
+        assert_eq!(
+            VSpaceMapArgs::decode(&[1, 2, 3]),
+            Err(KernelError::InvalidMessageInfo)
+        );
     }
 
     // T3-C: Invalid perms rejected at decode boundary
     // V1-F consistency: returns InvalidArgument (not InvalidMessageInfo)
     #[test]
     fn map_invalid_perms_rejected() {
-        assert_eq!(VSpaceMapArgs::decode(&[1, 0x1000, 0x2000, 0xFF]),
-                   Err(KernelError::InvalidArgument));
-        assert_eq!(VSpaceMapArgs::decode(&[1, 0x1000, 0x2000, 0x20]),
-                   Err(KernelError::InvalidArgument));
-        assert_eq!(VSpaceMapArgs::decode(&[1, 0x1000, 0x2000, u64::MAX]),
-                   Err(KernelError::InvalidArgument));
+        assert_eq!(
+            VSpaceMapArgs::decode(&[1, 0x1000, 0x2000, 0xFF]),
+            Err(KernelError::InvalidArgument)
+        );
+        assert_eq!(
+            VSpaceMapArgs::decode(&[1, 0x1000, 0x2000, 0x20]),
+            Err(KernelError::InvalidArgument)
+        );
+        assert_eq!(
+            VSpaceMapArgs::decode(&[1, 0x1000, 0x2000, u64::MAX]),
+            Err(KernelError::InvalidArgument)
+        );
     }
 
     #[test]

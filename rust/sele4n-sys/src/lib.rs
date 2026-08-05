@@ -49,14 +49,14 @@
 #[cfg(feature = "std")]
 extern crate std;
 
-pub mod ipc;
+pub mod cap;
 pub mod cspace;
+pub mod ipc;
 pub mod lifecycle;
-pub mod vspace;
+pub mod sched_context;
 pub mod service;
 pub mod tcb;
-pub mod sched_context;
-pub mod cap;
+pub mod vspace;
 
 pub use sele4n_abi;
 pub use sele4n_types;

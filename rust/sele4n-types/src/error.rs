@@ -276,7 +276,10 @@ mod tests {
         assert!(KernelError::from_u32(54).is_none());
         assert!(KernelError::from_u32(254).is_none());
         // 255 is now UnknownKernelError (AF6-A sentinel)
-        assert_eq!(KernelError::from_u32(255), Some(KernelError::UnknownKernelError));
+        assert_eq!(
+            KernelError::from_u32(255),
+            Some(KernelError::UnknownKernelError)
+        );
         assert!(KernelError::from_u32(256).is_none());
         assert!(KernelError::from_u32(u32::MAX).is_none());
     }
@@ -351,10 +354,16 @@ mod tests {
     #[test]
     fn unknown_kernel_error_sentinel() {
         assert_eq!(KernelError::UnknownKernelError as u32, 255);
-        assert_eq!(KernelError::from_u32(255), Some(KernelError::UnknownKernelError));
+        assert_eq!(
+            KernelError::from_u32(255),
+            Some(KernelError::UnknownKernelError)
+        );
         // Gap between 53 and 255 is all None
         for i in 54..255u32 {
-            assert!(KernelError::from_u32(i).is_none(), "unexpected variant at {i}");
+            assert!(
+                KernelError::from_u32(i).is_none(),
+                "unexpected variant at {i}"
+            );
         }
     }
 }

@@ -3,7 +3,7 @@
 //!
 //! Lean: `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` lines 496–694.
 
-use sele4n_types::{InterfaceId, ServiceId, KernelError, KernelResult};
+use sele4n_types::{InterfaceId, KernelError, KernelResult, ServiceId};
 
 /// Maximum method count for a service registration.
 /// Lean: service registrations are bounded to prevent resource exhaustion.
@@ -47,7 +47,9 @@ impl ServiceRegisterArgs {
     /// V1-I (L-RS-2): Added bounds validation for `method_count` (≤ 1024)
     /// and `max_message_size`/`max_response_size` (≤ 960 bytes = 120 regs × 8).
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
-        if regs.len() < 5 { return Err(KernelError::InvalidMessageInfo); }
+        if regs.len() < 5 {
+            return Err(KernelError::InvalidMessageInfo);
+        }
         if regs[1] > MAX_METHOD_COUNT {
             return Err(KernelError::InvalidArgument);
         }
@@ -87,8 +89,12 @@ impl ServiceRevokeArgs {
     }
 
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
-        if regs.is_empty() { return Err(KernelError::InvalidMessageInfo); }
-        Ok(Self { target_service: ServiceId::from(regs[0]) })
+        if regs.is_empty() {
+            return Err(KernelError::InvalidMessageInfo);
+        }
+        Ok(Self {
+            target_service: ServiceId::from(regs[0]),
+        })
     }
 }
 
@@ -131,13 +137,18 @@ mod tests {
 
     #[test]
     fn revoke_roundtrip() {
-        let args = ServiceRevokeArgs { target_service: ServiceId::from(42u64) };
+        let args = ServiceRevokeArgs {
+            target_service: ServiceId::from(42u64),
+        };
         assert_eq!(ServiceRevokeArgs::decode(&args.encode()).unwrap(), args);
     }
 
     #[test]
     fn register_insufficient_regs() {
-        assert_eq!(ServiceRegisterArgs::decode(&[1, 2, 3, 4]), Err(KernelError::InvalidMessageInfo));
+        assert_eq!(
+            ServiceRegisterArgs::decode(&[1, 2, 3, 4]),
+            Err(KernelError::InvalidMessageInfo)
+        );
     }
 
     // V1-I: bounds validation
@@ -167,7 +178,13 @@ mod tests {
 
     #[test]
     fn register_boundary_values_accepted() {
-        let args = ServiceRegisterArgs::decode(&[1, MAX_METHOD_COUNT, MAX_SERVICE_MESSAGE_SIZE, MAX_SERVICE_MESSAGE_SIZE, 1]);
+        let args = ServiceRegisterArgs::decode(&[
+            1,
+            MAX_METHOD_COUNT,
+            MAX_SERVICE_MESSAGE_SIZE,
+            MAX_SERVICE_MESSAGE_SIZE,
+            1,
+        ]);
         assert!(args.is_ok());
     }
 }

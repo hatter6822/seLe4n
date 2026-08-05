@@ -75,11 +75,12 @@ _start:
     // WS-SM SM0.M (closes SMP-M3): Zero the SMP secondary-core stacks.
     //
     // The `.smp_stacks` region (link.ld) is `(NOLOAD)` and therefore not
-    // zeroed by the BSS sweep above.  At v1.0.0 with `SMP_ENABLED = false`
-    // this is harmless (secondaries never enter), but once SM1 enables
-    // PSCI bring-up the stale RAM contents would be observable to
-    // secondary cores after PSCI CPU_ON — a defensive zeroing here
-    // closes the gap structurally rather than relying on the
+    // zeroed by the BSS sweep above.  This was harmless while SMP was
+    // off by default and secondaries never entered; SM1 landed the PSCI
+    // bring-up and SM5.I (v0.32.142) made SMP the default, so the
+    // zeroing is now load-bearing rather than defensive — without it
+    // the stale RAM contents are observable to secondary cores after
+    // PSCI CPU_ON.  Closed structurally here rather than relying on the
     // "secondaries never enter" runtime invariant.
     //
     // Cost on Cortex-A76: 192 KiB / 16 B = 12 288 stp instructions ≈

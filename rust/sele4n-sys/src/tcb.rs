@@ -6,18 +6,16 @@
 //! D3 (IPC buffer), WS-SM SM5.H.4 (CPU affinity). All require `.write` right on the
 //! target TCB capability.
 
-use sele4n_types::{CPtr, KernelResult, SyscallId};
-use sele4n_abi::{MessageInfo, SyscallRequest, SyscallResponse, invoke_syscall};
 use sele4n_abi::args::tcb::*;
+use sele4n_abi::{invoke_syscall, MessageInfo, SyscallRequest, SyscallResponse};
+use sele4n_types::{CPtr, KernelResult, SyscallId};
 
 /// Suspend a thread (transition to Inactive state).
 ///
 /// Lean: `suspendThread` (Lifecycle/Suspend.lean) — requires `.write` right.
 /// Capability-only: no additional message registers needed.
 #[inline]
-pub fn tcb_suspend(
-    tcb_cap: CPtr,
-) -> KernelResult<SyscallResponse> {
+pub fn tcb_suspend(tcb_cap: CPtr) -> KernelResult<SyscallResponse> {
     let _args = SuspendArgs;
     invoke_syscall(SyscallRequest {
         cap_addr: tcb_cap,
@@ -32,9 +30,7 @@ pub fn tcb_suspend(
 /// Lean: `resumeThread` (Lifecycle/Suspend.lean) — requires `.write` right.
 /// Capability-only: no additional message registers needed.
 #[inline]
-pub fn tcb_resume(
-    tcb_cap: CPtr,
-) -> KernelResult<SyscallResponse> {
+pub fn tcb_resume(tcb_cap: CPtr) -> KernelResult<SyscallResponse> {
     let _args = ResumeArgs;
     invoke_syscall(SyscallRequest {
         cap_addr: tcb_cap,
@@ -49,10 +45,7 @@ pub fn tcb_resume(
 /// Lean: `setPriorityOp` (SchedContext/PriorityManagement.lean) — requires
 /// `.write` right. Priority must be ≤ 255 and bounded by the caller's MCP.
 #[inline]
-pub fn tcb_set_priority(
-    tcb_cap: CPtr,
-    new_priority: u64,
-) -> KernelResult<SyscallResponse> {
+pub fn tcb_set_priority(tcb_cap: CPtr, new_priority: u64) -> KernelResult<SyscallResponse> {
     let args = SetPriorityArgs { new_priority };
     let encoded = args.encode();
     invoke_syscall(SyscallRequest {
@@ -68,10 +61,7 @@ pub fn tcb_set_priority(
 /// Lean: `setMCPriorityOp` (SchedContext/PriorityManagement.lean) — requires
 /// `.write` right. MCP must be ≤ 255.
 #[inline]
-pub fn tcb_set_mcp(
-    tcb_cap: CPtr,
-    new_mcp: u64,
-) -> KernelResult<SyscallResponse> {
+pub fn tcb_set_mcp(tcb_cap: CPtr, new_mcp: u64) -> KernelResult<SyscallResponse> {
     let args = SetMCPriorityArgs { new_mcp };
     let encoded = args.encode();
     invoke_syscall(SyscallRequest {
@@ -87,10 +77,7 @@ pub fn tcb_set_mcp(
 /// Lean: `setIPCBufferOp` (Architecture/IpcBufferValidation.lean) — requires
 /// `.write` right. Address must be aligned to 512 bytes (seL4 convention).
 #[inline]
-pub fn tcb_set_ipc_buffer(
-    tcb_cap: CPtr,
-    buffer_addr: u64,
-) -> KernelResult<SyscallResponse> {
+pub fn tcb_set_ipc_buffer(tcb_cap: CPtr, buffer_addr: u64) -> KernelResult<SyscallResponse> {
     let args = SetIPCBufferArgs { buffer_addr };
     let encoded = args.encode();
     invoke_syscall(SyscallRequest {
@@ -110,10 +97,7 @@ pub fn tcb_set_ipc_buffer(
 /// Lean: `setThreadCpuAffinityOp` (Scheduler/Operations/Core.lean), dispatched as
 /// `SyscallId.tcbSetAffinity` in `API.lean`.
 #[inline]
-pub fn tcb_set_affinity(
-    tcb_cap: CPtr,
-    affinity_raw: u64,
-) -> KernelResult<SyscallResponse> {
+pub fn tcb_set_affinity(tcb_cap: CPtr, affinity_raw: u64) -> KernelResult<SyscallResponse> {
     let args = SetAffinityArgs { affinity_raw };
     let encoded = args.encode();
     invoke_syscall(SyscallRequest {

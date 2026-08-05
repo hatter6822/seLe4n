@@ -3,8 +3,8 @@
 //!
 //! Lean: `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` lines 109–115.
 
-use sele4n_types::{ObjId, KernelError, KernelResult};
 use super::type_tag::TypeTag;
+use sele4n_types::{KernelError, KernelResult, ObjId};
 
 /// Arguments for `lifecycleRetype` (syscall 8).
 /// Register mapping: x2=targetObj, x3=newType tag, x4=size hint.
@@ -35,7 +35,9 @@ impl LifecycleRetypeArgs {
     /// values > 7. Returns `InvalidTypeTag` for invalid type tags,
     /// `InvalidMessageInfo` for insufficient registers.
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
-        if regs.len() < 3 { return Err(KernelError::InvalidMessageInfo); }
+        if regs.len() < 3 {
+            return Err(KernelError::InvalidMessageInfo);
+        }
         let new_type = TypeTag::from_u64(regs[1])?;
         Ok(Self {
             target_obj: ObjId::from(regs[0]),
@@ -51,21 +53,37 @@ mod tests {
 
     #[test]
     fn roundtrip() {
-        let args = LifecycleRetypeArgs { target_obj: ObjId::from(42u64), new_type: TypeTag::Notification, size: 4096 };
+        let args = LifecycleRetypeArgs {
+            target_obj: ObjId::from(42u64),
+            new_type: TypeTag::Notification,
+            size: 4096,
+        };
         assert_eq!(LifecycleRetypeArgs::decode(&args.encode()).unwrap(), args);
     }
 
     #[test]
     fn insufficient_regs() {
-        assert_eq!(LifecycleRetypeArgs::decode(&[1, 2]), Err(KernelError::InvalidMessageInfo));
+        assert_eq!(
+            LifecycleRetypeArgs::decode(&[1, 2]),
+            Err(KernelError::InvalidMessageInfo)
+        );
     }
 
     // V1-C: Invalid type tag values must be rejected
     #[test]
     fn invalid_type_tag_rejected() {
-        assert_eq!(LifecycleRetypeArgs::decode(&[42, 8, 0]), Err(KernelError::InvalidTypeTag));
-        assert_eq!(LifecycleRetypeArgs::decode(&[42, 100, 0]), Err(KernelError::InvalidTypeTag));
-        assert_eq!(LifecycleRetypeArgs::decode(&[42, u64::MAX, 0]), Err(KernelError::InvalidTypeTag));
+        assert_eq!(
+            LifecycleRetypeArgs::decode(&[42, 8, 0]),
+            Err(KernelError::InvalidTypeTag)
+        );
+        assert_eq!(
+            LifecycleRetypeArgs::decode(&[42, 100, 0]),
+            Err(KernelError::InvalidTypeTag)
+        );
+        assert_eq!(
+            LifecycleRetypeArgs::decode(&[42, u64::MAX, 0]),
+            Err(KernelError::InvalidTypeTag)
+        );
     }
 
     #[test]

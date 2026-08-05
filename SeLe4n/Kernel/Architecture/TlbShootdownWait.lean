@@ -25,11 +25,19 @@ fail-closed panic never fires on a completed round).
 ## Runtime correspondence
 
 * SM7.B.4's trace events model `rust/sele4n-hal/src/shootdown.rs`:
-  `ack_set` is the release-store (`Ordering::Release`), the
-  initiator's `all_acked` poll is the acquire-load
-  (`Ordering::Acquire`), and the target's pre-ack `dsb` (baked into
-  every `tlb.rs` TLBI primitive) is the same-core event sequenced
-  before the release-store.
+  `ack_round` is the release-store — a monotone
+  `acked_gen.fetch_max(gen, Release)`, not a plain store — the
+  initiator's `all_acked_for_round` poll is the acquire-load
+  (`acked_gen.load(Acquire)`, tested `>= gen`), and the target's
+  pre-ack `dsb` (baked into every `tlb.rs` TLBI primitive) is the
+  same-core event sequenced before the release-store.
+
+  The acknowledgment is **generation-valued, not Boolean** (SM7.F.3).
+  Nothing is cleared to open a round, so an acknowledgment left over
+  from an earlier round cannot satisfy a later one — the ordering
+  theorems below are unchanged by that, since release/acquire pairing
+  is a property of the ordering annotations rather than of the value,
+  but the *value* is what carries the round identity.
 * SM7.B.5/B.6's poll trace models
   `shootdown.rs::wait_all_acked_bounded`: one `states i` snapshot per
   poll iteration; the `deadline` function is each target's handler
@@ -46,22 +54,23 @@ namespace SeLe4n.Kernel.Architecture
 open SeLe4n.Kernel.Concurrency
 
 -- ============================================================================
--- SM7.B.4 — The ack flag's atomic location + release-acquire pairing
+-- SM7.B.4 — The ack slot's atomic location + release-acquire pairing
 -- ============================================================================
 
 /-- **WS-SM SM7.B.4**: concrete location ID for core `c`'s shootdown
-ack flag — the SM2.A model of `SHOOTDOWN_ACK[c]` (`shootdown.rs`; one
-cache-line-aligned `AtomicBool` per core).  `base` is the array's
-location base under the SM2.B-style refinement assignment; per-core
-flags occupy consecutive location IDs. -/
+ack slot — the SM2.A model of `SHOOTDOWN_ACK[c].acked_gen`
+(`shootdown.rs`; one cache-line-aligned `AtomicU64` per core, booting
+at generation zero).  `base` is the array's location base under the
+SM2.B-style refinement assignment; per-core slots occupy consecutive
+location IDs. -/
 def AtomicLocation.shootdownAckOf (base : Nat) (c : CoreId) :
     AtomicLocation :=
   ⟨base + c.val⟩
 
-/-- **WS-SM SM7.B.4**: distinct cores' ack flags never alias — each
+/-- **WS-SM SM7.B.4**: distinct cores' ack slots never alias — each
 target answers on its own atomic location, so one target's release
 cannot satisfy the initiator's acquire-poll of another target's
-flag. -/
+slot. -/
 theorem AtomicLocation.shootdownAckOf_injective (base : Nat)
     {c c' : CoreId} (h : c ≠ c') :
     AtomicLocation.shootdownAckOf base c ≠
@@ -79,10 +88,10 @@ If, in a well-formed execution trace:
 * the target's TLBI-retirement event (`e_tlbi` — the `dsb` completing
   its drained invalidations) is sequenced before its ack
   release-store `e_rel` (program order in the SGI handler: TLBI, then
-  `dsb`, then `ack_set`);
+  `dsb`, then `ack_round`);
 * the release-store synchronizes-with the initiator's acquire-load
-  `e_acq` (same ack location, the load observes the stored `true` —
-  ARM ARM B2.3.7); and
+  `e_acq` (same ack location, the load observes the stored generation
+  — ARM ARM B2.3.7); and
 * the acquire-load is sequenced before the initiator's subsequent
   access `e_obs` (the initiator only proceeds after its poll),
 
@@ -104,7 +113,10 @@ theorem shootdownAck_release_acquire (t : MemoryTrace)
 -- ============================================================================
 
 /-- **WS-SM SM7.B.4**: the target's ack release-store event shape —
-`SHOOTDOWN_ACK[target].store(true, Release)` in `shootdown.rs`. -/
+`ack_round(target, gen)` in `shootdown.rs`, i.e.
+`SHOOTDOWN_ACK[target].acked_gen.fetch_max(gen, Release)`.  `value`
+is the acknowledged generation (1 in the witness below), not a
+Boolean flag. -/
 def shootdownAckReleaseStore (base : Nat) (target : CoreId) (seq : Nat) :
     MemoryEvent :=
   { core := target
@@ -115,7 +127,9 @@ def shootdownAckReleaseStore (base : Nat) (target : CoreId) (seq : Nat) :
     seqNum := seq }
 
 /-- **WS-SM SM7.B.4**: the initiator's ack acquire-load event shape —
-the `all_acked` poll's per-flag `load(Acquire)` observing `true`. -/
+the `all_acked_for_round` poll's per-slot
+`acked_gen.load(Acquire)`, observing a generation it then tests
+`>= gen`. -/
 def shootdownAckAcquireLoad (base : Nat) (initiator target : CoreId)
     (seq : Nat) : MemoryEvent :=
   { core := initiator
@@ -127,7 +141,7 @@ def shootdownAckAcquireLoad (base : Nat) (initiator target : CoreId)
 
 /-- The concrete witness execution: target core 1 retires its TLBI
 (`e_tlbi`, the handler's `dsb`-completion marker), release-stores its
-ack; initiator core 0 acquire-loads the `true`, then proceeds
+ack; initiator core 0 acquire-loads that generation, then proceeds
 (`e_obs`).  Kept concrete (base 0, cores 0/1) so every side condition
 evaluates by `decide` — the SM7.B.4 pairing is witnessed on an actual
 trace, not only schematically. -/
@@ -303,7 +317,7 @@ private theorem le_foldl_max (f : CoreId → Nat) (l : List CoreId) :
 initiator's wait loop terminates.
 
 Constructive form: given monotone acknowledgments and, for every
-core, a *deadline* poll index by which that core's flag is set (each
+core, a *deadline* poll index by which that core's acknowledged generation reaches the round (each
 target's handler completion — guaranteed because the `.tlbShootdownReq`
 SGI is delivered and its handler is short, panic-free, and
 unconditionally acknowledges; the initiator and every non-target core
@@ -509,7 +523,7 @@ def AtomicLocation.shootdownRoundLockAt (base : Nat) : AtomicLocation :=
 /-- **WS-SM SM7.B.7**: the round lock never aliases any core's ack
 flag — releasing the lock cannot satisfy an ack acquire-poll and vice
 versa, provided the refinement assignment separates the two location
-ranges (the ack flags occupy `[ackBase, ackBase + numCores)`). -/
+ranges (the ack slots occupy `[ackBase, ackBase + numCores)`). -/
 theorem AtomicLocation.shootdownRoundLockAt_ne_shootdownAckOf
     {lockBase ackBase : Nat}
     (h : lockBase < ackBase ∨ ackBase + numCores ≤ lockBase) (c : CoreId) :
@@ -547,7 +561,7 @@ new holder on success, by the existing holder on failure). -/
 intervening release cannot both succeed — the second attempt always
 finds the lock held.  This is the at-most-one-initiator property that
 serialises rounds (the runtime stress witness is the Rust
-`sm7b_round_lock_*` HAL tests). -/
+`round_lock_*` HAL tests). -/
 theorem roundLockTryAcquire_mutex (held : Bool) :
     ¬((roundLockTryAcquire held).1 = true ∧
       (roundLockTryAcquire (roundLockTryAcquire held).2).1 = true) := by
@@ -586,15 +600,28 @@ def shootdownRoundLockAcquireCas (base : Nat) (next : CoreId)
 
 /-- **WS-SM SM7.B.7** (`shootdownRoundLock_release_acquire`): the
 cross-round publication chain.  If the previous holder's last
-critical-section access (`e_crit` — its masked ack reset, its posted
-queues, its catch-up commit) is sequenced before its lock release
-`e_rel`, the release synchronizes-with the next holder's successful
-CAS `e_acq`, and that CAS is sequenced before the next holder's first
-critical-section access `e_next`, then `e_crit` happens-before
-`e_next`.  This is what makes the ack vector safe *without* a round
-identity: under the serialised lock, a new round's
-`reset_for_round` can never race a previous round's ack traffic —
-every prior-round access is ordered before the reset. -/
+critical-section access (`e_crit` — its operand publication, its
+posted queues, its catch-up commit) is sequenced before its lock
+release `e_rel`, the release synchronizes-with the next holder's
+successful CAS `e_acq`, and that CAS is sequenced before the next
+holder's first critical-section access `e_next`, then `e_crit`
+happens-before `e_next`.  This is what makes the single-round
+`SHOOTDOWN_OPS` mailbox safe to reuse: under the serialised lock a new
+round's publication can never race the previous round's, so every
+prior-round access is ordered before it.  (Robustness of the
+*acknowledgment* channel against a stale SGI delivered inside a later
+round is a separate, stronger property, supplied by SM7.F.3's
+generation tagging rather than by this edge.)
+
+**The live bracket covers every `e_crit` named here** (PR #854 review).
+`completeShootdownRounds` released the lock immediately after the
+acknowledgment wait and ran its catch-up commit *outside* it, so this
+contract named an access the bracket did not cover and could not be
+instantiated at the catch-up.  The release now follows the commit, so
+the enumeration above is true of the runtime rather than aspirational.
+On the failure path the lock is deliberately never released: a target
+that could not certify its invalidation must block every other core's
+round rather than let it proceed. -/
 theorem shootdownRoundLock_release_acquire (t : MemoryTrace)
     {e_crit e_rel e_acq e_next : MemoryEvent}
     (h_holder : sequencedBefore t e_crit e_rel)
@@ -651,7 +678,7 @@ ticks — 10 ms at the BCM2712 54 MHz generic timer.  Mirrors the Rust
 `cpu::WFE_DEFAULT_TIMEOUT_TICKS` (the established bounded-wait budget
 of the SM1/SM2 spin primitives); the conformance is pinned by
 `shootdownWaitTimeoutTicks_value` here and the
-`sm7b_wait_timeout_matches_wfe_default` HAL test on the Rust side.  A
+`wait_timeout_matches_wfe_default` HAL test on the Rust side.  A
 round completes in < 1 µs on the 4-core BCM2712 (plan §3.4), so the
 budget carries four orders of magnitude of slack — a timeout means a
 genuinely hung or deaf target core, which v1.0.0 treats as fatal

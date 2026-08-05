@@ -409,9 +409,9 @@ canonical reference.
 **Mathematical content**: none (pure text edits).
 
 **Files**:
-- `rust/sele4n-hal/src/boot.S:103`
-- `SeLe4n/Kernel/Architecture/Assumptions.lean:333`
-- `SeLe4n/Kernel/CrossSubsystem.lean:3264`
+- `rust/sele4n-hal/src/boot.S`
+- `SeLe4n/Kernel/Architecture/Assumptions.lean`
+- `SeLe4n/Kernel/CrossSubsystem.lean`
 
 **Edit pattern** (3 sites, identical structure):
 
@@ -443,9 +443,9 @@ CLAUDE.md "Ignoring dev_history" section forbids citing
 docs/dev_history/ from production sources. Three sites in
 production touched the rule:
 
-- rust/sele4n-hal/src/boot.S:103
-- SeLe4n/Kernel/Architecture/Assumptions.lean:333
-- SeLe4n/Kernel/CrossSubsystem.lean:3264
+- rust/sele4n-hal/src/boot.S
+- SeLe4n/Kernel/Architecture/Assumptions.lean
+- SeLe4n/Kernel/CrossSubsystem.lean
 
 All three now point at docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md
 (the active WS-SM overview).
@@ -465,10 +465,10 @@ COMPLETE (was the pre-release audit-remediation workstream from
 v0.21.7..v0.22.10) and never owned SMP. The claims are stale.
 
 **Files**:
-- `docs/spec/SELE4N_SPEC.md:509-519` (§6.4 Hardware Limitations)
-- `docs/DEVELOPMENT.md:68`
-- `docs/gitbook/01-project-overview.md:94`
-- `docs/hardware_validation/speculation_barriers.md:85-87`
+- `docs/spec/SELE4N_SPEC.md` (§6.4 Hardware Limitations)
+- `docs/DEVELOPMENT.md`
+- `docs/gitbook/01-project-overview.md`
+- `docs/hardware_validation/speculation_barriers.md`
 
 **Edit pattern**: Replace "Symmetric multiprocessing support is
 deferred to WS-V" → "Symmetric multiprocessing is implemented in
@@ -488,16 +488,16 @@ etc.) — each gets repointed to its WS-SM phase plan.
 #### SM0.L — Rewrite DEFERRED.md::DEF-R-HAL-L20 disposition
 
 **Goal**: SMP-M2 root cause. The dispositioning row
-`AUDIT_v0.29.0_DEFERRED.md:296-316` claims DEF-R-HAL-L20 is
+`AUDIT_v0.29.0_DEFERRED.md` claims DEF-R-HAL-L20 is
 "RESOLVED at v0.30.10". This is materially inaccurate: only the
 scaffolding is in place, not the activation. The row needs to
 honestly reflect the partial state.
 
-**File**: `docs/dev_history/audits/AUDIT_v0.29.0_DEFERRED.md:290-340`.
+**File**: `docs/dev_history/audits/AUDIT_v0.29.0_DEFERRED.md`.
 
 **Edit pattern**:
 
-Before (line 296):
+Before :
 ```
 ### DEF-R-HAL-L20 — Secondary-Core Bring-Up (SMP) **[RESOLVED AT v0.30.10]**
 ```
@@ -1081,7 +1081,7 @@ and `__smp_secondary_stack_top` (verified in audit).
 
 **Goal**: Close SMP-M4. The `boot.S::secondary_entry` stub does
 not set TPIDR_EL1 (the per-CPU base register) despite the
-`smp.rs:19` docstring claim. SM0.N adds the setup so secondaries
+`smp.rs` docstring claim. SM0.N adds the setup so secondaries
 can locate their per-CPU data block on first kernel entry.
 
 **Files**:
@@ -1157,7 +1157,7 @@ pub static PER_CPU_DATA: [PerCpuData; 4] = [
 #### SM0.O — MAX_SECONDARY_CORES parameterization
 
 **Goal**: Close SMP-L2. `MAX_SECONDARY_CORES = 3` is hard-coded
-in `smp.rs:52`. Parameterize via the new
+in `smp.rs`. Parameterize via the new
 `PlatformBinding.coreCount - 1`.
 
 **File**: `rust/sele4n-hal/src/smp.rs`.

@@ -122,12 +122,18 @@ echo "[META]   kernel image: ${KERNEL_IMAGE}"
 echo "[META]   log: ${LOG}"
 
 set +e
+# SMP is OFF by default until SM5.I serialises kernel entry
+# (`CmdlineConfig::default`), so an SMP exerciser must opt in on the
+# kernel command line rather than rely on the built-in default --
+# otherwise this boots single-core and tests nothing it is named for.
+# Drop the -append when the default flips back with SM5.I.
 timeout "${TIMEOUT_SECS}s" qemu-system-aarch64 \
     -machine "virt,secure=on,virtualization=on" \
     -cpu cortex-a76 \
     -smp 4 \
     -m 1G \
     -kernel "${KERNEL_IMAGE}" \
+    -append "smp_enabled=true" \
     -nographic \
     -serial mon:stdio \
     -d guest_errors \

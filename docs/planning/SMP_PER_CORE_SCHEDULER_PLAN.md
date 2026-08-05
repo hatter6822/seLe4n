@@ -997,7 +997,7 @@ similar to SM0/SM1 patterns.)
 > - **SM5.K.2 / SM5.K.3** `tests/SmpTimerSuite.lean` / `tests/SmpPipSuite.lean` — already
 >   landed with SM5.D (v0.31.41) and SM5.F (v0.31.50) respectively; re-confirmed green.
 > - **SM5.K.4** `tests/fixtures/smp_4core_scheduler.expected` (+ `.sha256`) — the
->   deterministic 12-line 4-core scheduler trace, each line **COMPUTED** from the live
+> deterministic 12--core scheduler trace, each line **COMPUTED** from the live
 >   `chooseThreadOnCore` / `determineTargetCore` / `wakeThread` / `switchToThreadOnCore`
 >   decisions on `stFourCore` (a scheduling-logic regression diverges the golden trace).
 >   `SmpSchedulerSuite` verifies the live trace byte-for-byte against it; the

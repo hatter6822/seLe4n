@@ -200,7 +200,11 @@ impl AbstractState {
     /// real `RwLock::peek_state()` output if needed).
     #[allow(dead_code)]
     fn to_packed(&self) -> u64 {
-        let writer_bit = if self.writer_held.is_some() { WRITER_BIT } else { 0 };
+        let writer_bit = if self.writer_held.is_some() {
+            WRITER_BIT
+        } else {
+            0
+        };
         let reader_count = self.readers.len() as u64;
         writer_bit | reader_count
     }
@@ -208,7 +212,8 @@ impl AbstractState {
 
 fn main() {
     let mut input = String::new();
-    std::io::stdin().read_to_string(&mut input)
+    std::io::stdin()
+        .read_to_string(&mut input)
         .expect("failed to read stdin");
     let ops = parse_trace(&input).expect("parse error");
     let mut state = AbstractState::default();

@@ -1,3 +1,3146 @@
+## v0.33.0 — SM7.F closed for real: a core now caches what it accessed
+
+A minor bump, because the per-core TLB model stops being a model of one
+special case. Through v0.32.149 `tlbFillOnCore` had exactly one caller,
+inside the mapping seam, so every entry in `perCoreTlb` was cached by the
+core that *mapped* it. A core that merely accessed a page another core
+had mapped cached nothing — and for that core Theorem 3.3.1 and the 13th
+`proofLayerInvariantBundle` conjunct were vacuous, satisfied by an empty
+view rather than a maintained one. That is the common case on hardware,
+and precisely the case a shootdown exists to handle. SM7.F's own
+acceptance criterion reads "map → **access (fill)** → cross-core unmap";
+the middle step had nothing to run.
+
+This release closes it, and closes two things found on the way.
+
+**The access-time fill (v0.32.150).** New production module
+`Architecture/IpcBufferTlbFill.lean` fills at the one place the kernel
+translates a *user* address on the syscall path — the IPC-buffer walk for
+overflow message registers — live in `API.syscallEntryChecked`. Keyed on
+the page, because `tlbEntryMatches` compares virtual addresses for
+equality rather than containment, so a byte-keyed entry would survive the
+very page invalidation meant to evict it. The correspondence theorem
+`tlbFillIpcBufferOnCore_caches_read_translation` is load-bearing: the read
+resolves `tid → tcb.vspaceRoot → root` while the fill resolves
+`asid → resolveAsidRoot`, and its `hResolve` premise is exactly the claim
+that those two routes agree — which the ASID-rebind hazard can falsify.
+`SmpTlbShootdownSuite` §5.11 runs the criterion with a genuine access:
+core1 maps, **core0 accesses**, the catch-up removes the access-acquired
+entry.
+
+**A pre-existing defect (v0.32.150).** `ipcBufferReadMr` handed the slot's
+*byte* address to `VSpaceRoot.lookup`, an exact-key table whose keys are
+page bases. Every slot but the zeroth missed, so **any syscall carrying
+two or more overflow message registers failed** against a correctly mapped
+buffer; slot 0 worked only because its offset is zero. Coverage exercised
+`overflowCount` 0 and 1 only, which is why it survived — and the module's
+own docstring already described the per-slot, page-crossing behaviour the
+code did not implement. Fixed with `VAddr.pageBase` / `VAddr.pageOffset`.
+Fail-closed, so a fidelity defect rather than a security one.
+
+**Whole-bundle carriage (v0.32.151).** v0.32.150 recorded "three conjuncts
+fail `isDefEq`" as debt; the causes turned out to be structural, not
+budgetary — a `match` stuck on a symbolic `Nat` fuel, and an `inductive`
+family parameterised by the state. All three blockers already had
+congruence lemmas; the bundle lacked carriage only because those
+congruences were private and bound to specific transitions. New
+`proofLayerInvariantBundle_setPerCoreTlb` is the reusable layer.
+
+Zero sorry/axiom; golden trace byte-identical throughout.
+
+**Disclosed, not implemented.** The scalar `tlb` (9th conjunct) stays
+unconditional and empty-live — the pre-SMP single-view model `perCoreTlb`
+refines, and the boot-pinned `syscallEntry` is deliberately left unfilled
+so the two models do not mix. There is no TLB capacity/eviction model: a
+modelled view retains every entry ever filled, which is the safe direction
+(a strictly stronger obligation than hardware imposes) but is now on the
+record rather than tacit.
+
+**Still open.** SM7.F.4(b)(iv), the user-unreachable ASID-allocate, remains
+gated on SM8's ASID object family.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F
+
+## v0.32.151 — why the bundle would not carry across a `perCoreTlb` write, and the fix
+
+v0.32.150 could not prove `proofLayerInvariantBundle` carriage across the
+access-time TLB fill and recorded it as tracked debt with the observation
+that three conjuncts "fail `isDefEq` outright". That was where the
+investigation stopped, and "it does not typecheck" is not a reason. This
+cut finds the actual causes and closes the gap.
+
+**Two structural causes, neither about term size or proof budget** — which
+is why raising `maxHeartbeats` changed nothing:
+
+1. **A `match` stuck on a symbolic `Nat`.**
+   `PriorityInheritance.blockingChain` recurses on a fuel argument that
+   defaults to `st.objectIndex.length`. With a symbolic fuel that match
+   never reduces, so `isDefEq` never reaches the field projections inside
+   the body and falls back to comparing the two *unreduced* applications —
+   whose state arguments differ. The diagnosis is settled by experiment
+   rather than argument: with a **literal** fuel the very same `rfl`
+   succeeds. The same shape reaches the bundle again through
+   `dualQueueSystemInvariant`, whose queue-chain acyclicity is
+   fuel-recursive in the same way.
+2. **An `inductive` family parameterised by the state.**
+   `serviceNontrivialPath (st : SystemState) : ServiceId → ServiceId → Prop`
+   applied to two different states yields two different *types*.
+   Definitional equality of the applications demands definitional equality
+   of the parameters, which is precisely what fails — and no amount of
+   unfolding can bridge it.
+
+**A correction to the v0.32.150 note**: it said the three blockers "wrap the
+twenty-conjunct `ipcInvariantFull`". Only one does
+(`dualQueueSystemInvariant`); the other two arrive through
+`crossSubsystemInvariant`, as `serviceGraphInvariant` and `blockingAcyclic`.
+Twelve of the fifteen conjuncts transport definitionally.
+
+**The fix — composition, not new proof.** All three blockers already had
+congruence lemmas: `dualQueueSystemInvariant_of_getElem_eq`,
+`PriorityInheritance.blockingAcyclic_frame` (with
+`blockingServer_congr_objects`), and `serviceNontrivialPath_of_services_eq`.
+The reason the bundle had no carriage was not that the proofs were missing
+but that these congruences were **private and bound to specific transitions**
+— written for the adapter preservation proofs rather than exposed as a
+reusable field-agreement layer. New `proofLayerInvariantBundle_setPerCoreTlb`
+(`Architecture/Invariant.lean`) is that layer, stated once for any
+`perCoreTlb` writer.
+
+**Stated as carriage, not an `iff`.** The thirteenth conjunct
+(`tlbInvalidationConsistent_perCore`) genuinely reads the field being
+written, so the writer must supply it — a `perCoreTlb` write really can
+break it. That obligation is load-bearing rather than decorative:
+substituting the *pre*-state's own thirteenth conjunct fails to typecheck,
+which is the adversarial check that the statement pins something.
+`tlbFillIpcBufferOnCore_preserves_proofLayerInvariantBundle` now discharges
+it from the substantive per-core proof, closing the v0.32.150 debt.
+
+Zero sorry/axiom (`propext`, `Quot.sound`); trace byte-identical; no
+behavioural change — this cut adds theorems only.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F.5
+
+## v0.32.150 — SM7.F.5: the access-time TLB fill, and the IPC-buffer translation it needed
+
+SM7.F is recorded CLOSED, and its acceptance criterion reads "map →
+**access (fill)** → cross-core unmap". The access-time fill was never
+built. `tlbFillOnCore` had exactly one caller — inside
+`vspaceMapPageCheckedWithShootdownFromStatePerCore` — so every entry in
+the per-core TLB model was cached by the core that *mapped* it. A core
+that merely accessed a page another core had mapped cached nothing, and
+for that core Theorem 3.3.1 and the 13th `proofLayerInvariantBundle`
+conjunct were vacuous: satisfied by an empty view rather than by a
+maintained one. That is the common case on hardware, and precisely the
+case a shootdown exists to handle. No theorem was false and there was no
+live defect — an empty view is trivially consistent — but the criterion's
+middle step had nothing to run.
+
+**The seam.** The kernel translates a *user* virtual address on exactly
+one syscall path: reading the caller's IPC buffer for the overflow
+message registers, when a syscall carries more than the four the ABI
+passes in registers. New production module
+`SeLe4n/Kernel/Architecture/IpcBufferTlbFill.lean` makes that walk fill
+`perCoreTlb` — `ipcBufferWalkPlan` (what the walk resolves, by the read's
+own route), `ipcBufferOverflowPages` (the *distinct* pages walked, since
+`tlbInsertOnCore` prepends without deduplicating), and
+`tlbFillIpcBufferOnCore`. Live in `API.syscallEntryChecked`, the per-core
+entry the SMP dispatch runs, applied before the transition exactly as the
+hardware walk precedes the operation. `syscallEntry` — the boot-pinned
+pre-SMP entry, whose view is the scalar `tlb` — is deliberately left
+unfilled so the two models do not mix.
+
+**Keyed on the page, deliberately.** `tlbEntryMatches` compares virtual
+addresses for equality, not containment, so an entry keyed at a byte
+offset would survive the page invalidation a later unmap posts — the
+invariant reachably false. The fill caches `ipcBufferSlotPage`, the same
+page base the read resolves through: one definition, two consumers.
+
+**Theorems.** `_frame`, `_tlbOnCore_ne` (a walk is a this-core event —
+the SMP asymmetry, now on the live path),
+`_preserves_tlbInvalidationConsistent_perCore` (substantive: every added
+entry is one a real walk resolved), `_eq_setPerCoreTlb`, and the
+load-bearing `tlbFillIpcBufferOnCore_caches_read_translation` — the read
+resolves `tid → tcb.vspaceRoot → root` while the fill resolves
+`asid → resolveAsidRoot`, and its `hResolve` premise is exactly the claim
+that those routes agree, which the ASID-rebind hazard can falsify. Zero
+sorry/axiom. Trace byte-identical (`perCoreTlb` ∉ `projectState`).
+
+**Pre-existing defect fixed — the prerequisite.** `ipcBufferReadMr`
+handed the slot's *byte* address to `VSpaceRoot.lookup`, an exact-key
+table whose keys are page bases. Every slot but the zeroth therefore
+missed, so **any syscall carrying two or more overflow message registers
+failed with `invalidMessageInfo` against a correctly mapped buffer**, and
+slot 0 resolved only because its offset is zero. Existing coverage
+exercised `overflowCount` 0 and 1 only, which is why it survived; the
+module's own docstring already described the per-slot, page-crossing
+behaviour the code did not implement. Fixed by splitting the address —
+`VAddr.pageBase` / `VAddr.pageOffset`, new in `Prelude.lean` beside
+`pageBytes` — resolving the containing page and carrying the intra-page
+offset through to the physical address. Fail-closed, so no security
+exposure; a fidelity defect. Regression gates in `DecodingSuite`: two
+overflow slots, a non-page-aligned buffer, and a slot crossing into an
+unmapped page still failing closed. The fixture now keys its mapping on
+the page base, as `mapPage` does.
+
+**Tests.** `SmpTlbShootdownSuite` §5.11 (13 assertions): core1 maps,
+**core0 accesses**, and the cross-core unmap's catch-up removes the entry
+core0 acquired purely by access — the acceptance criterion with its
+middle step genuinely exercised. Includes the load-bearing negative (a
+decode with no overflow registers performs no walk and caches nothing),
+so "the fill fires" cannot be satisfied by a fill that always fires.
+
+**Disclosed, not implemented.** The scalar `tlb` (9th conjunct) remains
+unconditional and empty-live — the pre-SMP single-view model `perCoreTlb`
+refines, out of SM7.F scope. There is no TLB capacity/eviction model: a
+modelled view retains every entry ever filled, which is the safe
+direction (a strictly stronger obligation than hardware imposes) but was
+undisclosed and is now on the record.
+
+**Tracked.** Whole-`proofLayerInvariantBundle` carriage across a
+`perCoreTlb` write: twelve of fifteen conjuncts transport definitionally,
+three wrap `ipcInvariantFull` and fail `isDefEq` outright (more
+heartbeats do not help). Pre-existing — the mapping-seam fill writes the
+same field on the live `.vspaceMap` path. Closure target:
+`perCoreTlb`-independence for `ipcInvariantFull`, closing both fills at
+once.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F.5
+
+## v0.32.149 — SM3.C.9: the syscall→lock-set dispatcher, and one live export under it
+
+SM3 built the per-object lock discipline — `LockId` (kind level 0..9 ×
+object) with a proven total order, forty-one `lockSet_*` footprints,
+`permittedKinds`, and `withLockSet`'s 2PL / serializability /
+observer-atomicity theorems. It never built the piece that connects them
+to a running syscall: a function from *the syscall about to run* to *the
+lock set its footprint needs*. Without it those theorems describe an
+intended discipline rather than the live path, which is what SM3.C.9 was
+deferred to close.
+
+**New `Concurrency/Locks/LockSetForSyscall.lean`** supplies it, and
+returns **`Option LockSet`**:
+
+* `some S` — this syscall's footprint **is** `S`;
+* `none` — not yet declared; the caller keeps its existing
+  serialisation.
+
+The alternative — a "best effort" set for undeclared arms — is the one
+shape this must not take. A declared set that misses a write is not a
+smaller optimisation, it is a **false footprint**: the 2PL argument then
+rests on exclusion the runtime never established, and it surfaces as a
+corrupted object under contention rather than as a failed proof. `none`
+cannot be wrong, and it makes the migration monotone — each later cut
+turns one `none` into a `some` together with its coverage proof.
+
+Three theorems, zero `sorry`, axioms `propext` + `Quot.sound` only: the
+`tcbSuspend` arm is wired to its resolver; **every other arm returns
+`none`** (the load-bearing negative — declaring the next footprint must
+change this theorem); and the suspend footprint resolves exactly when the
+target names a TCB.
+
+**Live**: `suspend_thread_cross_core` now runs its transition inside
+`withLockSet` with the resolved footprint — the first live export under a
+declared per-object lock set. The caller is resolved from
+`currentOnCore`; the five optional members (blocked endpoint or
+notification, consumed Reply, bound or donated SchedContext, the
+donation's original owner) come from the victim's own fields, the same
+ones the suspend pipeline branches on.
+
+**What this does NOT do, stated because the next reader will assume
+otherwise.** Declaring a footprint does not make per-object locks
+operative. `Platform.FFI.modifyGetKernelState` is `IO.Ref.modifyGet`
+over one global `SystemState` — a whole-state read-then-write — so two
+cores holding disjoint footprints would still lose one commit whole.
+The granularity that matters there is the granularity of the *commit*,
+not of the footprint. Until the commit is partitioned the SM5.I
+kernel-entry lock stays, and what this buys is the model-level property:
+SM3's theorems now apply to the transition the kernel actually runs. A
+correction to v0.32.148's closing note — the deadlock was *a* blocker to
+per-object adoption, not *the* blocker.
+
+**The AK7 gate caught a real defect in this cut.** The first resolver read
+the object store raw (`objects[...]?` matched on `.tcb`), moving
+`RAW_MATCH_TCB` 54 → 55 and `RAW_LOOKUP_TID` 1310 → 1312. Re-anchoring
+the baseline with a note about a benign increment would have been the
+easy move and the wrong one: a footprint is a statement *about* the
+object store and has no business reading it in the un-migrated way. The
+code now reads through the AL2-A `getTcb?` accessor, so the metrics are
+unchanged and `GETTCB_ADOPTION` rises 2157 → 2159 — the bar held and the
+code moved.
+
+Scope: one of thirty arms declared. The other twenty-nine keep their
+existing serialisation, which is sound; each conversion is a later cut
+that must land its coverage proof alongside.
+## v0.32.148 — QueuedRwLock: the deadlock was structural, so the queue is gone
+
+v0.32.147 traced the intermittent HAL hang to a genuine deadlock in
+`QueuedRwLock`: the lock **free** (`state == 0`), every core parked, no
+releaser left to signal anyone. This replaces the algorithm.
+
+**Why not a patch.** The captured interleaving is not a missing case. A
+writer queued behind a reader; the reader released and its walk *reached*
+the writer but could not admit it (other readers still held), so it
+returned — leaving the admission to "a future signal from a reader's
+release", exactly as that site's comment claimed. The last reader then
+released, but readers are admitted **en masse** by `cascade_admit_readers`
+and release independently, so its slot was no longer in the queue: its
+`next` was a fossil from an earlier incarnation, its walk dead-ended on a
+slot since reset, and it never reached the writer. The writer's one
+remaining link was then destroyed by its predecessor's next `reset()`.
+
+The surgical repair was tried first — record the deferred waiter so
+whoever drains the lock completes the admission. It fixed that
+interleaving and **immediately exposed a second, independent one**:
+`signal_next_waiter` tripping its own "walk exceeded MAX_WAITERS — chain
+cycle?" assertion, because two cores can link behind each other across
+incarnations.
+
+Both have one cause: **a core's slot is reused the moment it re-acquires,
+while other cores still hold references to it.** Every guard the protocol
+had accumulated — stale-self detection, the mode-encoded four-state
+`parked` machine, CAS-claim symmetry, walk-past-stale,
+signal-on-every-release — was a patch on a consequence of that. A sixth
+was not going to converge.
+
+**The replacement.** A ticket lock: `next_ticket` issues positions,
+`now_serving` names the position entitled to enter. Readers join the
+reader count and pass the ticket on *immediately*, so a contiguous run
+enters together; writers wait for the count to drain, hold exclusively,
+and pass the ticket on at release. `state` keeps its bit-packed layout,
+so writer-readers exclusion and `peek_state` read exactly as before.
+
+Deadlock-freedom is now one sentence: **`now_serving` is advanced exactly
+once per issued ticket, unconditionally, by whoever that ticket admits.**
+No path returns without either advancing it or holding the lock. That is
+the property the MCS version could not maintain, because the duty to
+admit the next waiter rested on a chain reference that could be stale,
+destroyed, or unreachable. FIFO is admission-in-ticket-order — stronger
+and simpler than the chain gave. There is no `next` to go stale, no slot
+to reuse, no chain to cycle, no walk to dead-end.
+
+~370 lines replace ~1300.
+
+**Evidence.** All 26 pre-existing tests pass, including
+`cross_thread_state_invariant_no_writer_with_readers` — the one that
+deadlocked. The twelve cross-thread behavioural tests carried over
+**unchanged**, which is what makes them evidence: they were written
+against the old design. Plus the acceptance runs recorded in the plan.
+
+`build.rs`'s protocol scanner pinned the old machinery (the parked
+constants, the stale-self literal). It now pins the ticket hand-off and
+keeps the CAS-not-`fetch_or` writer-admission rule — the change that gate
+anticipated in its own text ("If you intend to restructure the parked
+machine, update the scanner in lockstep and verify... under stress test").
+
+Removed with the algorithm: `WaiterSlot`, `PARKED_*`, `MODE_*`, and the
+seven tests that asserted on them. They described machinery that no
+longer exists; keeping them as green tests over a deleted design would
+have been the vacuity this PR has spent thirty rounds removing.
+
+Still no callers — the fix lands before SM3.C.9 adopts it per-object,
+which was the point of fixing it now rather than filing it.
+## v0.32.147 — The hang is a deadlock in QueuedRwLock, with the lock free
+
+v0.32.146 filed the intermittent HAL test hang as tracked debt with the
+cause open and two competing hypotheses. It is now closed: **a real
+deadlock in the `QueuedRwLock` protocol.**
+
+**The captured state.** A watchdog dumped the lock the moment progress
+stopped:
+
+```
+progress per worker: [619, 478, 6, 394]
+state = 0x0000000000000000   (writer_bit=false, readers=0)
+tail  = 3
+  slot[0] parked=WAITING_READER  mode=READ   next=1
+  slot[1] parked=WAITING_READER  mode=READ   next=3
+  slot[2] parked=WAITING_WRITER  mode=WRITE  next=1
+  slot[3] parked=WAITING_READER  mode=READ   next=NONE
+```
+
+Two facts settle it:
+
+1. **The lock is free.** `state == 0` — no writer, no readers — while
+   all four cores sit parked in `WAITING_*`. Nobody holds it, so no
+   release will ever run `signal_next_waiter`, and every waiter blocks
+   forever in `while parked != ADMITTED`. A lost wakeup.
+2. **Slot 2 is orphaned.** The reachable chain is `0 -> 1 -> 3`, ending
+   at `tail = 3`, internally consistent. Slot 2 is not on it: nothing
+   points to 2 and 2 is not the tail, yet slot 2 points into the chain
+   at node 1. It enqueued and lost its predecessor link. Its progress
+   counter — 6, against 400-600 for its peers — shows it wedged almost
+   immediately.
+
+**Deadlock, not slowness.** A hang was held 15 minutes with per-minute
+sampling: thread states constant, `utime` climbing perfectly linearly
+(~13 200 ticks/minute), no progress, no self-resolution.
+
+**Severity: not on any live path.** `QueuedRwLock` has no callers, no
+FFI exports and no Lean bindings — verified by search. It is the
+primitive SM3.C.9 intends to adopt for per-object locks, and a lock that
+deadlocks while free would hang every contending core, so it must be
+fixed before that adoption. Filed as a defect with owner SM2 rather than
+as an incident.
+
+**Reproduction, and a much faster one.** It never reproduces alone (0
+hangs in 200 runs of the test by itself) — it needs concurrent load. The
+full suite hits it 2-3 times per 100 runs. Driving the lock directly
+with four workers doing the same `i % 3` write/read mix and a watchdog
+on per-worker progress counters hit it on the **first** attempt, which
+is what made the dump above possible.
+
+**Where to look.** The orphaned slot points at the enqueue/cleanup
+interaction the module's own comments already worry about — "dangling
+tail", "the enqueuer is orphaned", the stale-self defence, and the
+CAS-claim symmetry between `signal_next_waiter` and
+`cascade_admit_readers`. Some interleaving leaves a slot enqueued but
+unreachable while the queue's visible chain stays self-consistent.
+
+**Acceptance** (in the plan entry): the direct-drive harness runs 400
+attempts with no stall, and the full suite runs 100 times with no hang.
+
+Documentation only in this cut — the defect is another workstream's to
+fix, and the diagnostic harness was removed rather than committed, since
+a test that reproduces an unfixed deadlock would wedge CI on purpose.
+
+## v0.32.146 — SM5.I's lock had no contention test, and one had been hanging CI all along
+
+Seven contention witnesses.
+
+**The SM5.I lock was tested on one thread.** `kernel_entry.rs` landed
+with six tests, all sequential. That is the right shape for the fuel and
+servicing arms, but it cannot exercise what the lock is *for*: an
+uncontended `take_ticket` always equals `peek_serving`, so the wait loop
+never runs and every property SM5.I claims holds trivially. Three
+witnesses now drive it with real threads on the `_in` forms:
+
+1. `concurrent_kernel_entries_never_overlap` — at most one core inside
+   the bracket, ever.
+2. `no_kernel_transition_is_lost_under_concurrent_entry` — **the defect,
+   not the lock**. The body is the read-then-write shape
+   `modifyGetKernelState` has, with a widened window between the halves.
+   Unbracketed it loses updates; bracketed the count must be exact.
+3. `a_re_entering_neighbour_does_not_starve_another_core` — the FIFO
+   claim. SM5.I chose the SM2 `TicketLock` over a CAS try-lock precisely
+   for this, and a test-and-set lock passes witness 1 while starving a
+   neighbour, so exclusion alone does not establish what was chosen.
+
+**The same gap in SM7.F.3.** `shootdown.rs` had exactly one threaded
+test — the round-lock CAS stress — and none over the generation
+protocol, where all three P1 fixes live: allocation order under the
+round lock, the `fetch_max` acknowledgment, the seqlock mailbox. Four
+more witnesses cover unique-and-gapless allocation, untorn snapshots
+(operands tagged with their own generation), the lagging-target security
+property under a concurrent poller, and a stale replay racing a fresh
+run.
+
+**Mutation-tested; it caught two of mine, and the fairness one took three
+attempts.** Every witness was run against a deliberately broken
+implementation — no lock at all (the pre-SM5.I world), FIFO broken,
+non-atomic allocation, tear check removed, ack as a plain store.
+
+The allocation witness passed against a **non-atomic allocator**: without
+a start barrier the threads never overlapped, because a few hundred
+`fetch_add`s retire faster than the next thread spawns. Fixed with a
+barrier and a larger iteration count.
+
+The fairness witness needed three formulations, and the first two are
+worth recording because each looked correct:
+
+1. *the victim exhausts its fuel* — worked at 200 iterations, then
+   silently stopped catching the non-FIFO mutant when the run was
+   shortened to fix a timeout. A detector that depends on a budget being
+   reachable is disarmed by making the test cheaper.
+2. *the hog:victim ratio over the whole run* — unsound on a preemptive
+   host. The hog can hold a core for a full timeslice while the victim
+   is not scheduled and therefore is not contending at all; that is not
+   starvation, but it inflates the ratio. Failed 2 runs in 8.
+3. *overtakes while queued* — what FIFO actually promises: from the
+   moment the victim holds a ticket, only cores already ahead of it may
+   enter first. A descheduled victim contributes no sample, and a
+   majority test absorbs scheduling jitter while still catching
+   systematic starvation, where essentially every sample is bad.
+
+All seven now fail their mutants. That is the fourth and fifth variant of
+"a check that pins nothing" found on this PR.
+
+**One timeout was self-inflicted**, and it is the same lesson from the
+other side: the lost-update witness originally widened its read→write
+window with `yield_now()` *inside the critical section*, which
+deschedules the thread holding the lock while every waiter spins. A spin
+burst widens the window just as well and cannot deschedule the holder.
+
+**And a pre-existing intermittent hang, found by trying to ship them —
+diagnosed only partly, NOT fixed.** Adding the witnesses raised the
+full-suite hang rate from ~2% to ~8%, so they looked flaky. They are
+not: each passes 175/175 in isolation, and the suite hangs ~1 run in 50
+*without* them. Running the compiled test binary directly ruled out
+cargo's build-directory lock; catching a live hang and dumping thread
+state found **825 of 826 tests complete and one never returns, with all
+five of its threads in state R**:
+`queued_rw_lock::cross_thread_tests::cross_thread_state_invariant_no_writer_with_readers`.
+
+Established facts, each measured:
+
+* it **never** hangs when run alone — 0 hangs in 200 runs; it needs
+  other tests running concurrently;
+* under the full suite it hangs 2–3% of runs, reproducibly, with the
+  binary invoked directly;
+* at hang time all five of its threads are runnable, none blocked.
+
+**My first explanation was wrong, and I am recording that rather than
+the tidy version.** I proposed that nothing in the file yields — that
+`core::hint::spin_loop()` is a pause hint, not a scheduler yield — and
+added a `thread::yield_now()` to the one spin-wait lacking any pause.
+Measured: 3 hangs in 100 runs against 2 in 60 without it, i.e.
+unchanged. Reverted. Reading further showed why it could not have
+worked: every parked-wait in the lock already routes through
+`cpu::wfe_bounded` → `cpu::wfe()`, which **does** yield under
+`cfg(test)` — added by SM2.E for exactly this symptom, whose comment
+records "OS scheduler starvation of the admitter thread causes ~10%
+test hangs". The yielding fix is already present; what remains is the
+residual after it, and scheduler starvation does not explain it.
+
+So the cause is still open: either a rare race in the MCS-RW handover
+that preemption exposes, or a scheduling pathology yielding cannot
+address. **Registered as tracked debt** with the reproduction, the
+thread-state evidence, and both hypotheses — not with a confident
+explanation I have already falsified once.
+
+Not a kernel defect on the evidence available: it needs a preemptive
+scheduler oversubscribing cores, which hardware does not have. That
+said, if it turns out to be a handover race rather than scheduling, it
+would matter for SM3's per-object locks, which is why the debt entry
+says so explicitly instead of closing the question.
+
+**These witnesses raise how often it is hit**, from roughly 1 run in 50
+to 1 in 12. Stated plainly rather than discovered later: the coverage is
+worth having, the amplification is real, and the underlying bug is now
+characterised well enough for its owner to continue.
+
+**Scope, stated plainly.** The host has no SGIs, no per-PE TLB and a
+different memory model. These pin the **ordering discipline** — mutual
+exclusion, FIFO, generation identity — not the invalidation. They are
+not a substitute for hardware; that needs the SM9.E image and the QEMU
+exercisers already registered and skipping.
+
+Rust tests +7, clippy clean, zero ignored. No Lean, model or behaviour
+change; trace byte-identical.
+
+## v0.32.145 — Round 30: four holes, two of them on the binary-reachable surface
+
+PR #854 review round 30: four findings, all valid, all confirmed against
+the tree before changing anything.
+
+**1. The cmdline options TABLE still said the default was `false`** —
+and the bullet under it still said "defaults to `false` until kernel
+entry is serialised (SM5.I)", when SM5.I landed at v0.32.142. This is
+the sibling-site pattern for the eighth time and the second time in two
+cuts: v0.32.142 rewrote the `impl Default` docstring, v0.32.144 swept
+`lib.rs`/`smp.rs`/`link.ld`/`boot.S` — and both passed over the table
+sitting at the top of the very file whose default they were describing.
+
+**2. Rust allows whitespace between a macro path and its `!`.**
+`global_asm !(".global phase5_helper")` is a valid call; the backward
+scan stopped at the space and sliced an empty macro name, so the
+template was blanked as prose and its linker-visible symbol bypassed
+the hard-zero Rust gate.
+
+**3. Linker-name attributes accept `concat!`.**
+`#[export_name = concat!("phase5", "_helper")]` emits the joined symbol,
+but the matcher required the literal to be *adjacent* to the directive,
+so both fragments were blanked. The literal now need only appear before
+a statement terminator, which also covers the second and later
+arguments. Note the joined name never appears literally — what the gate
+must catch, and does, is the coded *component* `phase5`.
+
+**2 and 3 are both on `rust/`, which is a hard zero with no baseline** —
+the third and fourth spellings in this review that could have carried a
+coded symbol into the kernel binary past a PASS.
+
+**4. A YAML block scalar is a script, not config.** Inside a `run: |`
+body — the form the workflow files actually use — `#` is an ordinary
+shell character, but the config rules read it as a comment and erased
+the rest of the line. Block bodies now route through `strip_shell`,
+which is the stripper for what they actually contain; the same
+principle as the per-language map, applied to a span rather than a file.
+The block ends at the first dedent, so real YAML below it (and its real
+comments) is unaffected.
+
+Self-test 184 → 191 checks, including the three negatives that keep the
+widened rules honest: `notasm!` still opens nothing, an ordinary Rust
+literal is still prose, and a block scalar still ends at its dedent.
+Baseline unchanged at 298 pairs / 1017 occurrences — ninth consecutive
+scope extension, zero lost. Scripts + one Rust doc comment.
+## v0.32.144 — Seven more sites carrying the contract SM5.I replaced
+
+Prompted by a fair challenge to my own wording: a v0.32.116 reply said
+"this cut sweeps instead of patching, and the sweep found three further
+sites you hadn't flagged", which reads as though the sweep only *looked*.
+Re-checked: those three were genuinely fixed (`allocate_round_generation`
+attribution at both sites, and the rustdoc typo is gone). But auditing
+the rest of the work against that standard found seven sites that were
+not, and two of them I had **seen and skipped**.
+
+**The two I saw.** While landing SM5.I I noticed `lib.rs` still said
+"runtime-gated by `SMP_ENABLED` (default `false` at v1.0.0)" and
+"Default at v1.0.0 is `SMP_ENABLED = false` … opting in is a
+kernel-command-line flag", judged myself low on context, and stopped.
+That is exactly the round-28 finding — boot-path comments handing out
+the contract the change removed — one file over, and noticing it without
+fixing it is worse than missing it.
+
+**Five more found by sweeping for the claim** rather than the identifier:
+
+- `link.ld` — "Reachable only when `SMP_ENABLED=true` (default `false`
+  at v1.0.0)".
+- `boot.S` — "At v1.0.0 with `SMP_ENABLED = false` this is harmless
+  (secondaries never enter), but once SM1 enables PSCI bring-up…".
+  Doubly dated: SM1 landed, and the default is now `true`, so the
+  secondary-stack zeroing is **load-bearing rather than defensive**.
+  That one changes what a reader thinks the code is for.
+- `smp.rs` ×3 — the module inventory's bare "(default `false`)", the
+  `SMP_ENABLED` docstring still describing deployments that "opt in",
+  and `rust_secondary_main`'s "at v1.0.0 this routine is wired but
+  unreachable in the default build". The opt-in sentence sits directly
+  above a paragraph I *did* correct at v0.32.142 — I edited around it.
+
+Each now distinguishes the two things this claim keeps conflating: the
+`SMP_ENABLED` **static** is `false` at module load as a fail-safe, so a
+kernel that never reaches Phase 5 spawns no secondaries; the **boot
+policy** is the parsed cmdline default, `true` since v0.32.142. Stating
+only one of them is what let five sites drift.
+
+**Deliberate non-change, recorded rather than silent.** SM5.I's
+acceptance criterion also listed dropping the 14 QEMU `-append
+"smp_enabled=true"` opt-ins. They are kept: a test that relies on a
+default which has flipped twice in this PR would silently become a
+single-core test if it flipped again. Explicit intent beats brevity in
+a Tier-4 exerciser, and `docs/gitbook/10` says so.
+
+Comments only — no behaviour change. Rust 819 tests, clippy clean.
+## v0.32.143 — Round 29: TOML multi-line strings outran the scalar closer
+
+PR #854 review round 29: one finding, valid. `_scalar_close` is
+line-bounded by design — an unpaired quote must not swallow the rest of
+the file — and TOML's multi-line strings are the one scalar here that
+legitimately spans lines. So `d = """` closed on its own second quote,
+the third quote opened nothing, and every `#` inside the string reverted
+to opening a comment, blanking coded identifiers on the lines below.
+
+Fixed by handling `"""` / `'''` *before* the single-quote path, keeping
+the contents verbatim: content inside a TOML string is data the gate
+should see, and over-keeping only ever adds findings. An unterminated
+fence keeps the rest of the file rather than blanking it, so a malformed
+input over-reports (loud) instead of hiding a token (silent).
+
+Both fence kinds are pinned, not just the one in the finding — basic and
+literal multi-line forms differ only in escaping, and fixing one while
+missing the other is precisely the sibling-site shape this review has
+produced seven times.
+
+**Re-probed the previous rounds' cases**, per the standing rule that my
+own fixes have introduced five regressions on this PR: the round-24
+quoted scalar, round-26 quoted-hash (YAML and TOML), round-27 block
+sequence and round-28 escaped quote all still hold, and a `#` outside
+any string still blanks — the negative that keeps "keep everything" from
+passing the three positives while silently disabling comment stripping
+for the whole format.
+
+Self-test 180 → 184 checks. Baseline unchanged at 298 pairs / 1017
+occurrences — zero lost, zero risen, for the eighth consecutive scope
+extension. Scripts only; no Lean or Rust change.
+## v0.32.142 — SM5.I: kernel entry is serialised
+
+Closes the last open P1 on PR #854, and the oldest: kernel entry had no
+mutual exclusion at all. `Platform.FFI.modifyGetKernelState` is
+`IO.Ref.modifyGet` — a read then a write, not a cross-core atomic — so
+two cores committing concurrently both read `st`, both computed a
+post-state from it, and the second write installed a state derived from
+a pre-state that no longer held: the first core's entire transition
+discarded, with its caller told the syscall succeeded.
+
+**The lock.** New `rust/sele4n-hal/src/kernel_entry.rs`: one global
+lock, backed by the SM2 verified `TicketLock` so entry is FIFO and no
+core starves under a neighbour that re-enters in a loop.
+`with_kernel_entry` brackets every entry that commits state.
+
+**Three entries, not two.** `lean_syscall_dispatch_cross_core`
+(`svc_dispatch::dispatch_svc`), `lean_per_core_timer_tick`
+(`timer::handle_timer_interrupt`) and — the one a `lean_` sweep misses,
+because it reaches Lean through `sele4n_suspend_thread` —
+`suspend_thread_cross_core` (`ffi::sele4n_suspend_thread`). A lost
+suspend is a thread that keeps running after its caller was told it
+stopped. The bring-up entries (`lean_kernel_main`,
+`lean_secondary_kernel_main`) are deliberately outside the bracket:
+they run before their core takes part in concurrent entry.
+
+**Why the spin self-services, and why the plan's own instruction was
+wrong.** The plan required the lock to "spin with interrupts enabled so
+a holder waiting on shootdown acks can still service
+`.tlbShootdownReq`". The deadlock it names is real: core A holds this
+lock, blocks on core B's shootdown acknowledgment; B is spinning here;
+IRQs are masked on both entry paths, so B cannot take the SGI that
+would let it acknowledge. But enabling interrupts is the wrong fix and
+introduces a second deadlock — an IRQ taken mid-spin re-enters the
+kernel on a core already queued for a non-reentrant lock, so a timer
+tick would deadlock against its own core's pending syscall.
+
+The implementation keeps IRQs masked and has the waiter **discharge its
+own obligation** instead: every failed poll calls
+`shootdown::self_service_round`, which invalidates locally and
+acknowledges the published round if this core owes one — exactly what
+the SGI handler would have done, minus the interrupt. That is the
+mechanism SM7.B.7 already uses for the round lock, so this reuses a
+pattern the subsystem has already proven rather than inventing one.
+
+**Lock order and fail-closed.** Acquired strictly *outside*
+`SHOOTDOWN_ROUND_LOCK` (the transition takes that one inside the
+bracket), tripwired by `assert_not_holding_round_lock` on the one edge
+that would close a cycle. The spin is fuel-bounded and halts
+system-wide on exhaustion via `gic::halt_all`, matching the SM7.B.6
+discipline — a wedged holder means some core is stuck inside a
+transition, so stopping only the core that noticed would leave the
+others committing against a state nobody owns.
+
+`TicketLock` gains one thin accessor, `take_ticket`, so the new spin
+body can reuse the verified lock's state and ordering rather than
+reimplementing a ticket pair. `TicketLock` itself still knows nothing
+about shootdown.
+
+**SMP is on by default again (`smp_enabled: true`).** That flip is part
+of this phase's acceptance criterion, not a follow-up: decision #7 puts
+SMP on at v1.0.0 "once SM5 lands", and the default was `false` from
+v0.32.136 only because the precondition was unmet. The pinning tests
+are inverted and renamed rather than deleted, and they now pin the
+*pairing*: if the kernel-entry bracket is ever removed or bypassed, the
+default must return to `false` in the same change.
+
+**All five contradictory sites now describe the lock that runs.**
+`Platform/FFI.lean`, `Kernel/PerCoreTimerEntry.lean`,
+`Scheduler/Operations/PerCoreRunLoop.lean`,
+`Scheduler/Operations/PerCoreWcrt.lean` and `cmdline.rs` previously
+named three mutually exclusive mechanisms, none of them live.
+
+**Residual, stated rather than buried.** The entry lock is one global
+lock, not SM3.C.9's per-object fine locks — so live worst-case response
+time is *weaker* than `PerCoreWcrt.lean`'s bound, and that module now
+says so explicitly instead of letting its fine-lock bound read as a
+measurement of the runtime. And none of this is exercised on hardware
+before SM9.E.
+
+Rust 813 → 819 HAL tests (6 new, including the load-bearing one: a
+waiter offers to discharge its obligation on *every* poll, for its own
+core and not the holder's), clippy clean, zero ignored.
+## v0.32.141 — Round 28: two contract sites the flip and the ack rewrite left behind
+
+PR #854 review round 28: two findings, both valid, both the same
+failure mode this review has now produced seven times — a fix that
+landed at the sites named in the finding and stopped there.
+
+**1. Boot-path comments still described the opt-out SMP default.**
+v0.32.136 flipped `CmdlineConfig::default` to `smp_enabled: false` and
+v0.32.139/140 corrected five documents, but `boot.rs`'s Phase-5 block
+still said the default "has `smp_enabled = true`" and that "all 4 RPi5
+cores are online by the time the Lean kernel main runs", and `lib.rs`
+still described operators opting *out*. Those are the comments someone
+reads while working on the boot path, so they hand out exactly the
+contract the flip removed. Both corrected, and both now say *why* the
+default is opt-in (SM5.I has not landed) rather than only what it is.
+
+Swept for the claim rather than the identifier this time — "operators
+opt out via the kernel command line" contains neither `smp_enabled` nor
+the default. That found three further classes and each was checked
+rather than assumed: `smp.rs` is **already correct** (it explicitly
+records the v0.32.136 correction), and the `SMP_RUST_HAL_PLAN.md` /
+`SMP_MULTICORE_COMPLETION_PLAN.md` entries state *decision #7* — which
+is unchanged and applies at v1.0.0 — not the current default.
+
+**2. The wait memory-model contract still described Boolean flags.**
+SM7.F.3 replaced the Boolean ack vector with monotone generations, but
+`TlbShootdownWait.lean` still modelled the SM7.B.4 pairing as `ack_set`
+/ `all_acked` over a cache-line-aligned `AtomicBool`, with event shapes
+defined as store/load of `true`, and `Model/State.lean` still said boot
+leaves "all ack flags true". A proof or runtime change following those
+contracts would reintroduce the reset semantics whose removal *was* the
+security fix.
+
+Rewritten against the live API — `ack_round` (a release
+`fetch_max`), `acked_gen.load(Acquire)` tested `>= gen`,
+`all_acked_for_round`, `AtomicU64` slots booting at generation zero.
+The ordering theorems are unchanged and unchanged *on purpose*:
+release/acquire pairing is a property of the ordering annotations, not
+of the value. What the generation adds is round identity, and the
+docstrings now say that explicitly so the next reader does not conclude
+the value is incidental.
+
+The same sweep found the Boolean reading had spread as loose shorthand
+— 18 occurrences of "ack flag(s)" across four modules and the suite,
+including two that asserted Boolean state outright ("a **set** ack
+flag", "its ack flag is **down**"). All normalised to the generation
+vocabulary. `shootdown.rs`'s "replacing the SM7.A Boolean `all_acked`"
+is left alone: it is historically accurate and says so.
+
+Comments and docstrings only — no behaviour change, no proof change.
+Affected modules rebuilt individually; `docs/codebase_map.json`
+regenerated because Lean files changed.
+## v0.32.140 — Two half-done fixes from earlier rounds, found by re-reading the asks
+
+PR #854 review sweep: a pass over all seventy-four review threads,
+replaying every reviewer's concrete example against the current tree
+rather than trusting the reply that claimed the fix. Seventy-two hold.
+Two were closed against the headline of the finding while the body
+asked for a second thing, and that second thing was never done.
+
+**1. `.txt` contents were never pinned by the gate's witness suite.**
+Round 22 asked for "an appropriate text/comment stripper **and a
+content-level regression probe**", noting that the self-test "merely
+verifies that `.txt` is not classified as documentation". The stripper
+landed at v0.32.128 and the probe did not — so the self-test still
+contained exactly the check the reviewer had named as insufficient.
+That matters more for this gate than for most: classification only puts
+a file *in scope*; it scans no bytes, so the passing check was not
+evidence that any `.txt` content was covered. `scripts/*_allowlist.txt`,
+`website_link_manifest.txt` and `tests/fixtures/qemu_boot_expected.txt`
+carry module and check names, which is code by this repository's rule.
+Three probes added — the dispatch reaches a stripper, an entry survives
+it, a `#` comment does not — pinned through `content_rule` rather than
+by calling the stripper directly, so they fail if `.txt` is ever
+dropped from the map. Self-test 177 → 180 checks.
+
+**2. `SMP_RUST_HAL_PLAN.md` still documented the SMP default as `true`.**
+Round 27 named the spec and two GitBook chapters; v0.32.139 fixed those
+four sites and missed a fifth, in an active planning document — the
+`CmdlineConfig::default` skeleton, the parser's behaviour list, and an
+SM1.D.3 section stating "default is enabled ... Tests verify the
+default", when the tests now verify the opposite and are named for it.
+Corrected, and the SM1.D.3 section now records *why* rather than only
+what: maintainer decision #7 enables SMP by default **once SM5 lands**,
+and shipping the default ahead of its own precondition is the defect
+v0.32.136 fixed. Points at the canonical
+`SMP_TLB_SHOOTDOWN_PLAN.md` §"Kernel-entry serialisation".
+
+**Verified, not assumed.** Every other finding was re-checked against
+the code: 40 naming-gate examples replayed through the real `scan()`
+tokenisation, 13 citation-gate spellings, the shootdown ack-generation
+contracts, the halt/timeout/lock-retention paths, and the identifier
+sweeps. Three apparent failures in the first sweep were faults in the
+verification harness, not the gate — it called `IDENTIFIER.findall`
+directly, bypassing the per-format hyphen joining and the dotted
+audit-ID matcher that `scan()` applies. Re-run through the real path,
+all three pass.
+
+The one **P1 decline** was re-confirmed from primary evidence rather
+than from the earlier reply: Rust 1.94.1 is a real release
+(`rustc 1.94.1 (e408947bf 2026-03-25)`; upstream channel manifest
+returns HTTP 200), so the "toolchain does not exist" finding is
+factually wrong and the pin stands.
+
+**Still owed:** kernel-entry serialisation (SM5.I). Valid, registered
+with an acceptance criterion, unreachable today (SMP defaults off, no
+bootable image before SM9.E), and deliberately **not** closed here —
+the plan requires it to land as its own reviewable slice with its own
+lock-order and liveness argument, since it adds a deadlock surface to
+the subsystem that produced three P1 safety defects in this PR alone.
+
+## v0.32.139 — A char literal is not a string, and four docs still said SMP was on
+
+PR #854 review, twenty-seventh round: five findings, all valid. The
+most serious is a hole in the **hard-zero Rust surface**; the most
+embarrassing is that my own v0.32.136 cut left four documents saying
+the opposite of what it changed.
+
+**1. A Rust char literal holding a quote (hard-zero surface).**
+`const QUOTE: char = '"'; pub fn phase5_helper() {}` — the `"` opens no
+string, but `strip_pairs` did not know what a char literal was, took it
+as one, and blanked through to the next quote or to EOF. The
+declaration after it disappeared. `rust/` is held at zero with no
+baseline, so this is the second spelling found in this review that
+could carry a coded symbol **into the kernel binary** past a PASS.
+
+`CHAR_LITERAL` matches an opening quote, exactly one character or one
+escape, then a closing quote — and **requiring the close is what
+separates a char literal from a Rust lifetime**, since `&'a str` has no
+second quote and must keep reading as ordinary text. The span is kept
+rather than blanked: a char literal hides no identifier, so a
+mis-identified span can only scan more, never less. That also makes it
+safe for Lean, where `'` is a legal identifier character.
+
+I had already written about char literals at v0.32.135 — the asm-span
+comment notes that one holding a *bracket* could skew the depth
+counter. I reasoned about the bracket and not about the quote.
+
+**2. Dotted audit IDs were invisible in file contents.** `IDENTIFIER`
+stops at a dot, so `AUDIT_v0.30.11_helper` tokenises to `AUDIT_v0` plus
+`_helper` and the numeric components the adjacency rule needs are gone
+before `is_coded` sees them. Caught in a *path* (path components
+normalise separators), missed in *content*.
+
+Matched explicitly rather than by normalising `.` to `_` across
+content, which would make every dotted version in every TOML and JSON
+value read as an audit ID. What distinguishes an audit *identifier* is
+that the version is welded to surrounding name text.
+
+The exemption matters more than the rule here: measured over the
+tracked tree, the **only** matches are documentation paths in
+`scripts/website_link_manifest.txt` — a file that exists to protect
+`docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md`, which is correctly
+named for the audit it records. Without the doc-path exemption this
+rule would be nine false positives and no true ones.
+
+**3. Four documents still described SMP as on by default.** v0.32.136
+flipped `CmdlineConfig::default` and I corrected eleven claim sites —
+and missed `docs/spec/SELE4N_SPEC.md`, `docs/gitbook/01-project-overview.md`,
+`docs/gitbook/10-path-to-real-hardware-mobile-first.md` and
+`docs/gitbook/15-rust-syscall-wrappers.md` (the last still documenting
+`Default::default() = { true, 4 }`). The reviewer named three; there
+were four. All now describe the opt-**in** default, name SM5.I as the
+condition, and say the default flips back with that phase.
+
+**This is the fourth time in this review that a fix landed at the sites
+I checked and not at its siblings**, and the first where the sites were
+documentation rather than code — which is worse, because a deployer
+following the published behaviour would have configured for a boot that
+no longer happens.
+
+**4. YAML block-sequence items were not value positions.** `- "echo #
+phase5_helper"` — the preceding non-space character is `-`, which
+v0.32.137's value-position set omitted, so a sequence item reverted to
+having its `#` read as a comment. `-` added.
+
+**5. Bare dotfile citations.** `.gitignore:12` and `.gitignore#L12`
+were unmatched while `rust/.gitignore:12` matched, because the citation
+pattern required at least one character before the extension — and a
+dotfile has none, its leading dot *being* the separator. The prefix is
+optional now; the numeric-suffix exclusion still rests on the extension
+set requiring a leading letter, which is checked against an
+implementation that drops it.
+
+**Verification.** Naming self-test 166 → 177, citation 23 → 26. Of the
+eleven new checks, six fail against the previous version and one is
+absent there entirely; the four exemptions pass, and each was run
+against a deliberately wrong implementation: no-closing-quote char
+literals swallow `&'a str`, an audit rule without the doc-path
+exemption fires on the link manifest, and a numeric-allowing extension
+set turns `v0.32.1:5` into a citation.
+
+One new check was **initially not load-bearing**: the escaped-quote
+char literal was written as `'\''`, which contains no double quote, so
+nothing mistakes it for a string opener and it passed against an
+implementation with no escape handling at all. Rewritten as `'\"'`,
+which distinguishes. That is the third round running where writing the
+check was easier than writing one that could fail.
+
+Baseline unchanged at 298 pairs / 1017 occurrences — seventh
+consecutive scope extension with zero coverage lost and zero new
+grandfathering.
+
+## v0.32.138 — My own fix for an under-reach opened a narrower one
+
+PR #854 review, twenty-sixth round: two findings, both valid. The first
+is a **regression the previous cut introduced**.
+
+**1. Escaped quotes ended a config scalar early.** v0.32.137 taught the
+config stripper that `#` opens a comment only outside a quoted scalar.
+It located the closing quote with a plain `find`, which does not honour
+either format's escapes — so `run: "echo \"label # phase5_helper\""`
+ended the scalar at the escaped quote, and the `#` reverted to opening
+a comment *inside* a string that had not closed. The fix for one
+under-reach opened a narrower one, in the code the fix added.
+
+Closed by `_scalar_close`, which honours the escape convention each
+quote kind actually has: a double-quoted scalar (YAML double-quoted,
+TOML basic) escapes with a backslash, while a YAML single-quoted scalar
+escapes a quote by **doubling** it. Both are exercised. The
+same-line-close rule moves inside the helper, so an unterminated quote
+still cannot swallow the lines below it — the three exemptions from
+v0.32.137 are re-verified unchanged.
+
+**2. The citation gate filtered its derived extensions by name
+length.** `EXTENSION_RE` capped a suffix at eight characters, described
+as excluding numeric suffixes — but the leading-letter requirement
+already does that on its own, so the cap's only effect was dropping
+real formats for being long. It dropped `gitignore`, so
+`rust/.gitignore:12` and its GitHub-anchor spelling passed a gate whose
+entire premise is that its scope is derived rather than listed. A
+derived set that post-filters on length is a hand-maintained list in
+derivation's clothing.
+
+Cap removed; the leading-letter filter stays and is what the numeric
+exclusion actually rests on. Measured before changing it: exactly one
+extension enters the set (`gitignore`), none leaves. Added to
+`REQUIRED_EXTENSIONS` so the gate fails loudly if derivation stops
+reaching it.
+
+**Verification.** Naming self-test 163 → 166, citation self-test 19 →
+23. All six new positives fail against the previous version. The one
+new negative — a numeric suffix must not read as an extension — is
+load-bearing against a wrong implementation (drop the leading-letter
+filter and `v0.32.1:5` becomes a citation), which is now a standing
+second step after two of last round's negatives turned out vacuous.
+
+Two of the new checks run against the **live derived extension set**
+rather than the fixed one the rest of that suite uses, because the
+property under test is that derivation reaches the format at all; a
+hand-written set there would have tested the opposite.
+
+Probes on real tracked files confirm both fixes fire end-to-end: an
+escaped-quote scalar planted in `scenario_registry.yaml` trips the
+naming ratchet, and a `.gitignore` citation planted in
+`docs/DEVELOPMENT.md` trips the citation gate. Baseline unchanged at
+298 pairs / 1017 occurrences for the sixth consecutive scope extension.
+
+## v0.32.137 — Quoting told the scanner what was prose, and it was wrong twice
+
+PR #854 review, twenty-fifth round: two findings, both valid, both the
+same shape — a stripper deciding *code vs prose* from a quoting rule
+that does not mean what it was taken to mean.
+
+**1. A double-quoted shell payload is a command, not a message.** The
+shell stripper kept single-quoted spans verbatim (they carry `bash -lc`
+payloads) but reduced double-quoted spans to their `$` expansions, on
+the grounds that those are `echo "AN7-A: …"` diagnostics. Both halves
+are true, and the conclusion still does not follow: `bash -lc "lake exe
+sele4n > '${DIR}/run1.trace'"` is a payload in exactly the sense the
+single-quote rule was written for.
+
+Wider than the report. The reviewer cited one script; the tree writes
+the double-quoted spelling throughout `test_tier2_determinism.sh`,
+`test_tier3_invariant_surface.sh` and `test_tier4_nightly_candidates.sh`
+— including the invariant-anchor script the single-quote case was
+originally justified by. Which quote character the author reached for
+follows what the payload *contains* (a payload holding `'…'` must be
+double-quoted, and vice versa), so the scan was reading code as prose
+for a reason having nothing to do with whether it was code.
+
+Fixed by matching the text **preceding** the quote, exactly as the
+v0.32.134 `export_name` rule does: a span handed to `bash`/`sh`/`zsh`
+`-c` or to `eval` is kept whole; everything else keeps its previous
+treatment. So `run_check "TRACE" bash -lc "…"` keeps its payload while
+its `"TRACE"` label stays prose.
+
+**2. `#` opens a comment only outside a quoted scalar.** The config
+stripper blanked from any space-preceded `#` to end of line, so
+`run: "echo # phase5_helper"` and `name = "foo # phase5_helper"` were
+truncated mid-value. YAML and TOML both start comments only outside
+quoted scalars, and the tree already contains the shape
+(`description: "endpoint receive #1 sender: 1"`), so this was live
+rather than hypothetical.
+
+The stripper tracks quotes now, under two deliberate restrictions: a
+quote opens a scalar only in **value position** (start of line, or
+after `:` `=` `[` `,` `{`), and only when it **closes on the same
+line**. Both failure modes they prevent are over-*keeping* — an
+apostrophe in a plain scalar pairing across the comment that follows
+it, or an unpaired quote swallowing everything to the next one several
+lines down — and over-keeping turns prose into false positives, which
+is the direction that gets a gate switched off.
+
+**Self-test 152 → 163 checks.** Against the previous gate: **six fail**
+(the mechanism), five pass (the exemptions, which were already correct
+and must stay correct).
+
+Two of those five were **initially vacuous**, and finding that is the
+round's own lesson repeating. Written as `note: don't do this # …` and
+an unterminated `a: "open`, they passed against the naive
+quote-tracking implementation too — because with no *second* quote
+after the `#`, a naive scan finds no pair, falls through, and blanks
+the comment anyway. Both inputs now carry that second quote
+(`note: don't # it's …`, and a quote that closes two lines later), so
+they fail against the implementation they exist to reject. That is the
+same defect as the round-24 check which started passing for the wrong
+reason, caught this time by testing the negatives against a wrong
+implementation rather than only against the previous one.
+
+Verified end-to-end through `scan` on real tracked files rather than at
+the stripper unit: a coded identifier planted inside the actual
+`bash -lc "…"` payload in `test_tier2_determinism.sh`, and one after a
+`#` inside the real quoted scalar in `scenario_registry.yaml`, each
+trip the ratchet.
+
+Baseline unchanged at 298 pairs / 1017 occurrences — zero lost, zero
+dropped, zero new, for the fifth consecutive scope extension. The newly
+visible payloads are `lake exe`, `rg -n '^theorem …'` and `diff -q`
+invocations, and they carry no coded names.
+
+## v0.32.136 — The premise for deferring the P1 was itself false
+
+PR #854 review, twenty-fourth round: three findings, all valid. One is a
+P1 that attacks the reasoning used to defer the *other* P1, and it is
+correct.
+
+**1. SMP was NOT off by default (P1).** Eleven sites across Lean, Rust
+and the plan documents justify deferring the SM5.I kernel-entry lock on
+the grounds that "SMP is off by default, and there is no bootable image
+before SM9.E". The second half holds. The first was false:
+`CmdlineConfig::default` returned `smp_enabled: true`, and Phase 5
+stores the parsed value straight into `smp::SMP_ENABLED` before calling
+`bring_up_secondaries` — so a boot with no `smp_enabled=false` on the
+command line would have brought all four cores up. The lost-update race
+would have been reachable on the first bootable image rather than gated
+behind an opt-in, with only "no bootable image" carrying the claim.
+
+Sharpest form of it: `cmdline.rs` stated both halves of the
+contradiction **three lines apart** — the SM1.D.3 bullet saying the
+default is `true`, and the SM1.D.4 bullet saying SMP is off by default
+until SM5.I closes the serialisation gap.
+
+The default is now `false`. This restores the precondition maintainer
+decision #7 states for itself — CLAUDE.md records it as "SMP enabled by
+default at v1.0.0 **once SM5 lands**" — rather than reversing it: the
+condition is what is not yet met. Two tests pin it, one on the parser
+and one on the boot path's own `parse_cmdline_from_dtb(0)`, and both
+fail if the default is flipped back, which is exactly when someone
+should be made to re-read the deferral. Three sibling tests that
+asserted the literal `true` were restated against
+`CmdlineConfig::default()` instead, since the property they are named
+for is "keeps the default", not "keeps `true`" — the literal form is
+what made them fail on a default change.
+
+Every claim site now names the enforcing symbol rather than asserting
+the fact: `FFI.lean`, `SyscallDispatchEntry.lean`, `PerCoreRunLoop.lean`,
+`PerCoreTimerEntry.lean`, `cmdline.rs`, `boot.rs`'s phase map,
+`SMP_TLB_SHOOTDOWN_PLAN.md`, `WORKSTREAM_HISTORY.md`, and
+`CLAUDE.md`/`AGENTS.md`.
+
+**2. The registry parse fell behind the registry's own spelling.** The
+v0.32.132 cut stopped the family *list* falling behind by deriving it
+from `docs/WORKSTREAM_HISTORY.md`. The derivation then fell behind the
+source's spelling: `REGISTRY_FAMILY_RE` required a word boundary after
+the family letters, and a digit is a word character, so the canonical
+fused `WS-J1` never matched. **Nine families** (`E F H I J L M N Q`)
+that appear only in the fused form never reached the grammar — the
+reviewer named one. Deriving from a source is only as good as the parse
+of that source.
+
+Fixing the parse made `j` newly visible, and **the ratchet fired**: the
+gate refused to run with a single-letter family carrying no recorded
+decision. Measured through the gate's own strippers (my first
+measurement scanned raw text and was inflated 3× by comments):
+46 occurrences, 0 in `rust/`, and **not one** is a workstream-named
+identifier — six Lean hypotheses (`hV3J1`..`hV3J5`, `hGetJ1`), the `j2`
+loop index in the Robin Hood lookup proof, and one grep pattern
+searching for a `WS-J1` prose anchor. `j` is also the second universal
+index name after `i`. Declined with that measurement recorded, exactly
+as `d` was.
+
+**3. Extensionless files were one decision covering four formats.** The
+`""` entry in `NO_CONTENT_SCAN` read "LICENSE, git hooks, CI helper
+stubs" while also silently covering both `.gitignore` files, whose
+patterns are maintained names. Worse than a missing entry: the coverage
+ratchet saw `""` as classified and reported full coverage, so no new
+extensionless file could ever be unclassified. They are now decided by
+**basename** — `.gitignore`/`.gitkeep` scanned, `LICENSE` and
+`lean-toolchain` exempt with reasons — and a new extensionless file
+fails the gate until someone classifies it. `content_rule` is the single
+lookup for both scanning and classification, so the set of files read
+and the set counted as classified cannot drift apart.
+`format_coverage_gap` returns two sets rather than one, because
+`.gitignore` is a basename beginning with a dot and a caller splitting a
+merged set on the leading `.` would send its reader to the suffix
+tables — where that file's decision does not live.
+
+Naming self-test 139 → 152 checks. Of the eleven new ones run against
+the previous gate: five **fail** there, five report the mechanism as
+**absent** (the suite cannot even execute — `content_rule` does not
+exist), and one passes, being the exemption-side check that the bare
+`WS-SM` spelling still parses — non-vacuous in the other direction,
+since it fails against a fused-only pattern. One pre-existing check had
+to be repointed: it used `j` as its example of an unclassified family,
+and fixing the parse gave `j` a decision, so it had started passing for
+the wrong reason. A negative check pinned to a specific input can be
+invalidated by an unrelated fix, silently.
+
+Planted probes confirm both gate changes fire end-to-end through `scan`:
+a coded pattern inside `.gitignore` trips the ratchet, and a new
+extensionless file trips the coverage gap with a message naming the
+right table. Baseline unchanged at 298 pairs / 1017 occurrences — zero
+lost, zero dropped, zero new, for the third consecutive scope extension.
+
+## v0.32.135 — Symbols hiding inside strings, and citations hiding inside links
+
+PR #854 review, twenty-third round: three findings, all valid, all three
+follow-ons to the two gates the previous cut changed. Tooling only — no
+Lean, no Rust, no kernel behaviour; the golden trace is byte-identical
+and the naming baseline does not move.
+
+**1. An assembly template is source, and its symbols are linker-visible.**
+v0.32.134 taught the shared string stripper to keep literals in
+identifier-bearing contexts — `#[export_name = "…"]`, `.section`,
+`PROVIDE` — by matching the text *preceding* the literal. That test
+cannot reach an inline-assembly template:
+`global_asm!(".global phase5_helper\nphase5_helper:")` puts the
+directive *inside* the string, and a template is routinely one literal
+per assembly line with only the first preceded by the macro name. Both
+spellings were blanked whole, so the declared symbol was invisible to a
+Rust scan held at a hard zero. What is tracked now is the SPAN of the
+macro's argument list, by the walk that already skips strings and
+comments correctly — matching parens over raw text would be fooled by
+either. The walk back over the macro name is exact rather than a
+fixed-width window, so `notasm!(` opens nothing.
+
+**2. A checksum manifest names a file, and the name was never scanned.**
+`.sha256` sat in `NO_CONTENT_SCAN` on the reasoning that the companion
+fixture's path is scanned anyway. But the manifest holds the filename
+`sha256sum -c` actually opens, and nothing forces it to equal the
+companion path — so the gate was checking a different string than the
+one the trace gate consumes. The digest is blanked (a hex run beginning
+with a letter tokenises as an identifier) and the name is scanned.
+
+**3. A GitHub line anchor is the same stale citation, spelled as a link.**
+`check_source_line_citations.py` matched `foo.rs:123` but not
+`foo.rs#L123` or `foo.rs#L123-L130`, so the
+`[source](https://github.com/…/foo.rs#L123-L130)` spelling passed while
+going stale on exactly the same edit — and worse, silently, because the
+link still resolves. The matcher now covers both anchor forms. No live
+violations: the active documentation holds none today, which is why
+this closes a reach gap rather than a set of citations.
+
+**The citation gate now carries its own witness suite.** It has been
+found under-reaching twice in consecutive rounds — the orphaned `:NNN`
+its own cleanup sweep produced, then this anchor form — and both times
+it printed PASS over documents holding exactly what it forbids. New
+`scripts/test_source_line_citations_gate.py` (19 checks, wired into the
+documentation tier beside the gate) pins each spelling it must catch
+and each one it must leave alone; the three anchor checks fail against
+the previous version, and the negatives (`12:30`, `host:8080`,
+`**Note**: 42`) are what keep an over-broad matcher from being the next
+defect.
+
+Naming self-test 130 → 139 checks. Per the standing rule all nine ran
+against the previous gate: **six fail there** — the three asm-template
+checks, the two manifest-name checks, and `.sha256` being content-
+scanned at all. The three that pass are the negative side, and they are
+not vacuous either: `notasm!` fails against a boundary-free regex or a
+window truncated to the macro tail, and the digest check fails against a
+keep-the-whole-line stripper. Planted probes confirm both mechanisms
+fire end-to-end through `scan`, not merely through the stripper units:
+a `global_asm!`-declared `phase5_helper` trips the Rust hard zero, and a
+coded manifest filename trips the non-Rust ratchet.
+
+Baseline unchanged at 298 pairs / 1017 occurrences — zero lost, zero
+dropped, zero new. As with the previous cut, a strictly stronger gate
+with no baseline movement: the tree contains no coded symbol in an
+assembly template and no coded filename in a manifest.
+
+## v0.32.134 — Contracts that describe the mechanism that is actually there
+
+PR #854 review, twenty-second round: four findings, all valid, three of
+them stale text left behind by earlier cuts *in this PR*.
+
+**1. The citation cleanup left orphans its own gate could not see.**
+The v0.32.109 sweep removed 511 `File.ext:NNN` citations. Where a
+sentence cited two lines of one file, it rewrote the first and left the
+second as a bare `` `:303` `` — a citation strictly worse than the one
+it replaced, since it is both stale *and* no longer says which file it
+indexes. `check_source_line_citations.py` matched neither, so it
+reported PASS over its own wreckage for twelve versions.
+
+The reviewer found two. There were **twenty**, across five files. All
+are fixed by naming the symbol the number was pointing at, which was
+already in the sentence in every single case — the numbers carried no
+information even before they went stale. `ORPHAN_CITATION_RE` now
+matches the residue, deliberately narrow (the colon must open a token
+and be followed by two or more digits, so `12:30`, `host:8080` and
+`**Note**: 42` are untouched). Repairing them also exposed that
+`WithCaps.lean:**198` had been invisible to the filename pattern too,
+because the `**` broke the match.
+
+What makes this worth more than twenty edits: a cleanup that can leave
+the tree in a state its own gate cannot see is the defect. Matching the
+residue is what makes the sweep's completion checkable rather than
+assumed.
+
+**2. A string literal can carry a linker-visible identifier.**
+`#[export_name = "phase5_helper"] pub fn semantic() {}` puts a coded
+name in the symbol table while every Rust identifier around it reads
+clean, and the shared string stripper blanked it. This mattered more
+than the equivalent hole elsewhere: the Rust scan is a hard zero with no
+baseline, so it was the one spelling that could carry a coded symbol
+into the kernel binary past a gate reporting PASS. The same shape
+applies to quoted section and symbol names in the assembly and
+linker-script formats the previous round brought into scope.
+
+Literals in identifier-bearing contexts (`export_name`, `link_name`,
+`link_section`, the assembly `.section` / `.global` / `.type` family,
+the linker-script `PROVIDE` / `ENTRY` / `KEEP`) now survive blanking.
+The directive set is closed on purpose — each entry names a construct
+whose string argument *becomes* a symbol, which is why a bare
+`name = "..."` is not in it. Ordinary prose literals are unaffected, and
+two self-test checks pin that exemption alongside the four that pin the
+mechanism.
+
+**3. Three timeout-release contracts still permitted what v0.32.130
+removed.** The live path deliberately retains the round lock on timeout
+— a target never certified its invalidation, so holding the lock
+quarantines the subsystem — but `Platform/FFI.lean`, `Concurrency/
+Runtime.lean` and `rust/sele4n-hal/src/ffi.rs` all still documented
+"or immediately before the timeout path's fail-closed panic" as a legal
+call. A future caller written to any of those contracts restores the
+mailbox-reuse window the fix closed. All three now state that the only
+legal caller is one that has observed all-acked, and that a timeout is
+terminal rather than a path that unwinds.
+
+**4. The acknowledgment contracts still described Boolean flags.** The
+field has been a monotone generation vector since v0.32.113 and boots at
+zero, but the module header, `initial`, `initial_ackOnCore`,
+`shootdownQuiescent` and `beginShootdownRound` all still described a
+false/true reset protocol — the exact mechanism whose removal was the
+SM7.F.3 security fix, documented directly above the model that replaced
+it. Rewritten around what is actually there: nothing is reset, and a
+target counts as unacknowledged because `roundGeneration` advanced past
+the generation its slot names. That is *why* a stale acknowledgment
+cannot satisfy a later round, and why
+`beginShootdownRound_ackOnCore_target` needs `ackBounded` — there is no
+reset to appeal to.
+
+Baseline unchanged at 298 pairs / 1017 occurrences, zero lost, zero
+dropped, zero new (the tree has no identifier-bearing literals carrying
+coded names — as it should not, Rust being a hard zero). Self-test
+124 → 130 checks; all four new mechanism checks verified to fail against
+the previous version, both new exemption checks verified to pass.
+Citation gate green across 106 files. Rust clippy-clean, trace
+byte-identical.
+
+## v0.32.133 — One reader for every input
+
+PR #854 review, twenty-first round: one finding, and it is a hole in
+the fix from one cut earlier.
+
+v0.32.132 derived the family grammar from `docs/WORKSTREAM_HISTORY.md`
+to stop the hand-list falling behind — and read that registry from the
+**working tree**, while the sources and the baseline come from the
+index. So a contributor could stage a registry entry introducing
+`WS-BQ` together with `bq1_helper`, revert only the unstaged copy of
+the registry, and the grammar would be derived without `bq` while the
+staged code carried the violation.
+
+That is the third time this defect has appeared, in the third input:
+sources at v0.32.128, the baseline at v0.32.129, and now the registry —
+which arrived *with* the architectural cut that was supposed to stop
+this class of thing. Each input was added on its own read path, and
+each was fixed only when someone pointed at it.
+
+So the fix is not "read the registry from the index" but **one reader
+for every input**. `read_tracked` is now the only way this gate reads a
+file; `index_contents` is the batch form beneath it; and both the
+registry and the baseline go through it. A fourth input added tomorrow
+has one obvious path and no working-tree alternative sitting next to
+it.
+
+Two fallbacks went with it, because a fallback to the working tree is
+the same defect wearing a helpful expression. An untracked baseline is
+now a hard failure telling the contributor to stage it, rather than a
+silent read of whatever is on disk; an untracked registry likewise.
+
+**The self-test's own check for this was brittle and broke on the
+restructure** — it asserted the literal string `index_contents([
+BASELINE_REL])` appeared in the source, so renaming the call broke a
+check that was supposed to pin behaviour. Replaced with the property
+itself: no bare `read_text` on a tracked file may return, there is
+exactly one `read_tracked` and one `index_contents`, and both the
+registry and baseline route through them. That check now fails for the
+right reason — a working-tree read reappearing — rather than for a
+call site being renamed.
+
+Self-test 121 → 124 checks. Baseline unchanged at 298 pairs / 1017
+occurrences, zero lost. Both v0.32.132 ratchets re-verified against
+fabricated inputs after the restructure: an unclassified single-letter
+family fails, a new two-letter family is covered without a decision, an
+unclassified file extension fails.
+
+## v0.32.132 — Stop patching the naming gate; fix what generates the holes
+
+Ten review rounds have each found a scope hole in this gate, and each
+was closed by adding exactly what the reviewer named. That is the
+signature of fixing instances rather than the generator, so this cut
+looks at the generator instead.
+
+**Two hand-maintained tables produced most of the holes**, and both
+were measurably incomplete at v0.32.131 — not hypothetically, right
+then:
+
+- **The family grammar.** `WORKSTREAM_FAMILIES` listed 15 codes. The
+  registry names **39**. Missing: `ab`, `rc`, and every single-letter
+  family the reviewer had not yet got to.
+- **The format map.** Five tracked extensions had no content scan and
+  nothing said whether that was deliberate.
+
+Both are now derived-and-ratcheted rather than listed.
+
+**Families are read from `docs/WORKSTREAM_HISTORY.md`.** The split that
+makes this work is arity, and it was measured over the whole tracked
+tree rather than assumed:
+
+| arity | families | non-workstream identifiers matched |
+|-------|----------|------------------------------------|
+| two-letter | 17 (`aa`..`an`, `ab`, `rc`, `sm`, `z`) | **zero, all of them** |
+| single-letter | 21 | 2–247 each |
+
+Two-letter families are therefore enforced on sight — a workstream
+added to the registry tomorrow is covered without anyone editing this
+file. Single-letter families collide with the architecture's own
+namespaces without exception (`u` → `AtomicU32`/`AtomicU64`, 48 of them
+in `rust/`; `x` → AArch64 registers x0..x30, 181 in `rust/`; `t` →
+`_t0`..`_t3`; `l` → `BOOT_L1_TABLE` and page-table levels; `i` →
+`i32`, `i18n`), so each carries a recorded decision with the count that
+decided it, and **the gate fails when the registry names one that has
+none**. Adding `runX2RuntimeInvariantTests`-style coverage would cost 69
+forced renames of register accessors in a crate held at a hard zero;
+that trade is now written down rather than re-litigated per round.
+
+This also explains the shape of the last five rounds in one line: the
+reviewer was feeding me single-letter families one at a time (`R`, `X`,
+`Z`, `D`) and I was evaluating each as a fresh question. `Z` looked
+different only because no `z<digit>` architectural name happens to
+exist here.
+
+**Every tracked file type carries an explicit scan decision.**
+`CONTENT_STRIPPERS` and the new `NO_CONTENT_SCAN` must between them
+cover every tracked non-documentation extension; anything in neither
+fails the gate with a message saying to check the format's comment and
+quoting rules rather than pointing the suffix at whichever stripper
+looks closest — which is precisely how `.sh`, `.yml` and `.toml` came
+to be routed through the Python stripper in two separate rounds.
+
+Both ratchets were verified to fire rather than assumed to: a probe
+extension fails the format check, a fabricated single-letter family
+fails the grammar check, and a fabricated two-letter family is covered
+with no decision needed. Self-test 112 → 121 checks; the four new
+mechanism checks verified failing against v0.32.131.
+
+Baseline unchanged at 298 pairs / 1017 occurrences — zero lost, zero
+gained. The derivation reproduces the hand-list's coverage exactly and
+adds the two families it was missing, both of which happen to have no
+occurrences, so this is a pure change in *how* the scope is decided
+rather than in what it currently catches.
+
+## v0.32.131 — A gate that said "no line citations" while 197 remained
+
+PR #854 review, twentieth round: three findings, all valid, all taken.
+
+**Letter-suffixed phase codes.** `^phase\d+$` accepted only digits, so
+`phase2a_helper` and `phase12bRunner` passed. Widened to
+`^phase\d+[a-z]*$`; measured at zero further matches across the tracked
+tree, so it costs no baseline entry and can only fire on something new.
+
+**Hyphenated workstream IDs in content.** The round-18 fix normalised
+`-` to `_` for *paths* and deliberately not for contents, on the grounds
+that `a-b` is subtraction. That reasoning holds for Lean, Rust, Python
+and shell; it does not hold for YAML, TOML, JSON, `.txt` or `.expected`,
+where a hyphen joins a name — so `run: "WS-SM-helper"` tokenised as
+`WS` + `SM` + `helper`, the lone `WS` was ignored by the bare-token
+carve-out, and the canonical hyphenated spelling passed. Normalisation
+is now per-format (`HYPHEN_JOINS_NAMES`), applied only where the
+character cannot be an operator. It found **34 further coded
+identifiers**, every one real: `AK6-A`, `AK6-D`, `WS-B10`, `WS-N5`,
+`WS-SM`, and eleven `Z5-*`/`Z6-*` scenario ids.
+
+Baseline 262 → 298 pairs, 1006 → 1017 occurrences. Six pairs *appear*
+lost, and are not: joining hyphens re-spells `Z7D` as `Z7D-001`…`-008`,
+so the old name disappears while the same text is still counted under
+longer names. Verified pair-by-pair that every disappearance is a
+re-spelling whose successors carry the identical occurrence total —
+`AK6` 2→2, `Z5` 19→19, `Z6` 16→16, `Z7D` 8→8 twice, `Z8J` 6→6. The
+first check written for this said "genuinely lost" for three of them
+because it looked for the old name as a *component*, and `CAMEL_SPLIT`
+breaks `Z7D` into `z7`+`d`; the check was wrong, not the fix.
+
+**Textual line-number citations — the gate was vacuous in the way it
+most claimed not to be.** `check_source_line_citations.py` matched only
+the compact `File.ext:NNN` form while printing `PASS: no prose
+line-number citations across 106 documentation files`. Prose spellings
+went straight through, and there were **197** of them: 47 verb-
+introduced (`at line 471`, `from lines 113-125`) and 150 bare, usually
+parenthetical (`(line 530 …)`, `lines 603/607`, `~line 280`). The gate
+now matches both, and all 197 are removed from the seven active
+documents that carried them — the same treatment the 511 compact-form
+citations got at v0.32.109 and the 26 at v0.32.111, in several of the
+same files. Fenced blocks stay exempt, which is why CLAUDE.md's
+`# lines 501-1000` pagination example and two citations inside a
+fenced transcript survive correctly.
+
+Recorded because it nearly shipped: the first sweep applied its
+whitespace tidy to whole files rather than to the matched lines, which
+reindented **92 files and 20,000 lines** — every list, every JSON
+sample, the README logo block. Reverted and redone line-scoped, with
+the indent sliced off and restored untouched. A second pass then ate the
+space in Lean's `:=` via a "space before punctuation" rule, which was
+dropped. Seventeen results were flagged by a guard for reading badly
+after removal (a dangling `; preservation`, a leading `. This closes`, a
+`(, where`) and fixed by hand against their surrounding sentences rather
+than by another regex. The lesson is the same one the naming gate keeps
+teaching in a different key: a transform whose scope is wider than its
+subject will quietly damage everything else it touches.
+
+Self-test 105 → 112 checks; three new behavioural checks verified
+failing against v0.32.130, four stability checks verified passing in
+both. The per-format hyphen split is pinned in both directions — config
+formats must join, code formats must not — since getting it backwards
+either way is a defect.
+## v0.32.130 — One family in, two out, and the numbers for each
+
+PR #854 review, nineteenth round: two findings, both valid, one taken
+in part.
+
+**Single-letter phase families (naming gate).** The review named three
+registry-backed families the enumerated grammar omitted — WS-X (X1–X5),
+WS-Z (Z1–Z10) and WS-AB (D1–D6) — and it is right that all three are
+real in `docs/WORKSTREAM_HISTORY.md`. As *identifier* rules they are not
+alike, and each was measured over the whole tracked tree before being
+decided:
+
+- **`z` added.** Ten hits, every one a genuine WS-Z code: `Z5`/`Z6`/`Z7`
+  scenario ids, `Z7D`/`Z8J` trace-fixture labels, `Z2`–`Z4` Tier-3
+  anchors, `runZ8SchedContextNegativeChecks`, and
+  `storeObject_scheduler_eq_z7` in production Lean. All grandfathered
+  per the rule; none in `rust/`, so the hard zero is untouched.
+- **`x` declined.** `x\d+` matches 247 identifiers. Restricting to
+  compounds — the carve-out shape used for `ws` — still leaves 87, of
+  which **69 touch `rust/`**: `set_x0`, `set_x1`,
+  `syscall_args_from_trap_frame_extracts_x0_to_x5`. Those are AArch64
+  general-purpose registers, and Rust is held at a hard zero with no
+  grandfathering available, so this family would fail CI on register
+  names on the very commit that added it. Exactly one genuine code
+  exists in the tree (`runX2RuntimeInvariantTests`).
+- **`d` declined.** 24 identifiers, or 10 as compounds, of which
+  **zero** are workstream codes: Lean proof hypotheses (`hD0`–`hD3` in
+  `DualQueueMembership.lean`), test bindings (`resD1`, `stD2`),
+  page-table descriptors (`d0`/`d1`/`d2` in `PageTable.lean`, named for
+  their level), and the device-tree magic `0xD00DFEED`.
+
+Both rejections are pinned by self-test checks naming the witnesses, so
+a later round cannot add them without re-measuring. This is the same
+reasoning that keeps `R<n>` out, and the three now share one comment
+block with their numbers.
+
+**Round-lock timeout contract (`shootdown.rs`).** The contract still
+permitted releasing `SHOOTDOWN_ROUND_LOCK` "immediately before the
+timeout path's fail-closed panic" — the behaviour v0.32.118 removed. A
+timed-out round has an invalidation no target certified, so the correct
+end state is a quarantined subsystem: the lock stays held, permanently,
+so no other core can reuse the mailbox or open a round on top of the
+uncertified one in the window before `gic::halt_all` takes effect (that
+broadcast is best-effort — a core with interrupts masked takes the SGI
+only when it unmasks). The contract now says so and cites the live Lean
+seam, whose timeout arm calls `haltFailClosed` with no preceding
+release. Contract-only; no behaviour change.
+
+Baseline 251 → 262 pairs, 932 → 1006 occurrences; zero pairs lost, the
+eleven gained all WS-Z. Self-test 97 → 105 checks, the two new `z`
+checks verified failing against v0.32.129 and the six decline-witnesses
+verified stable in both.
+
+One workflow consequence of v0.32.129's index-read, now documented:
+`--regenerate-baseline` writes the working tree while the check reads
+the index, so a regenerated baseline must be staged before a plain run
+reflects it. That is the point rather than a wrinkle — an unstaged
+baseline excuses nothing, which is exactly what stops a violation and
+its pardon from being staged separately.
+
+## v0.32.129 — Three accounts of a lock that is not there
+
+PR #854 review, eighteenth round: four findings, three on the naming
+gate and one — the important one — on the kernel-state commit path.
+
+**Kernel-entry serialisation is owed, not present (P1, registered as
+tracked debt).** `Platform.FFI.modifyGetKernelState` is
+`IO.Ref.modifyGet`, a read then a write rather than a hardware
+read-modify-write, so two cores committing concurrently can lose one
+transition whole: both read `st`, both compute from it, and the second
+write installs a post-state derived from a pre-state that no longer
+holds, discarding the first core's work and returning success for it.
+Nothing serialises those commits — the shootdown round lock serialises
+rounds against rounds, interrupt disabling is per-core, and the SM3
+per-object locks are deferred at the `@[export]` bodies by SM3.C.9.
+
+The finding as reported was that the round-lock bracket added earlier in
+this PR does not exclude other cores' ordinary commits, which is correct.
+Reviewing it surfaced something broader: **five sites describe this
+serialisation and they name three mutually exclusive mechanisms, none of
+which is live** — `IO.Ref` atomicity (false of the primitive), a
+kernel-entry lock the trap handler holds (no such lock exists;
+`cmdline.rs` records its absence), and per-object fine locks already in
+force (deferred). Each site is locally plausible and cites a real
+mechanism; only reading them together shows every one defers to another
+that does not hold. All five now say the same thing, and the debt is
+registered with its closure options, lock-ordering constraints and
+acceptance criterion in `SMP_TLB_SHOOTDOWN_PLAN.md`.
+
+No theorem is false — transitions are pure functions and the theorems say
+what those functions compute. What a lost update breaks is the tie
+between theorem and runtime. Unreachable today (SMP off by default, no
+bootable image before SM9.E); High once bootable. Not fixed here
+deliberately: a kernel-entry lock adds a deadlock surface to the area
+that produced three P1 safety defects in this PR alone, and it wants its
+own review with its own lock-order and liveness argument.
+
+**Naming gate, three fixes.** (1) *Audit IDs* — the rule names them
+alongside workstream IDs, and no component of `AUDIT_v0.30.11` is coded
+on its own (`audit` is an ordinary word, `v0` an ordinary version); the
+family lives in the **adjacency** of a `v<n>` to a bare number, now
+matched pairwise. Measured at zero occurrences across every tracked
+non-documentation file before adding it, so it costs no baseline entry
+and fires only on something new. (2) The canonical audit ID is *dotted*,
+and `IDENTIFIER` needs a leading letter, so in
+`audit_v0.30.11_probe.sh` the `30` and `11` never became tokens at all
+and the shape was unreachable from a path; `path_tokens` now normalises
+stem-internal `.` as it already normalises `-`, leaving the suffix its
+own token so no existing name changes. (3) *Backticks* are the legacy
+spelling of `$(...)` and executable in the same places, but
+`keep_expansions` preserved only `$` forms — so a backtick command was
+visible or invisible depending on whether it sat inside double quotes.
+(4) The *baseline* is now read from the index like the sources it
+excuses; a baseline regenerated only in the working tree could pardon a
+violation the index still carried, which is exactly the split state
+v0.32.128 closed for sources and left open here.
+
+Self-test 86 → 97 checks; the six new behavioural checks verified failing
+against v0.32.128, the two neighbour checks verified stable in both.
+Baseline unchanged at 251 pairs / 932 occurrences — zero lost, zero
+gained, so all three fixes are pure strengthening.
+
+## v0.32.128 — Config files are not prose, and a hyphen is a word break
+
+PR #854 review, seventeenth round: five findings on the naming gate,
+four valid and one factually wrong.
+
+**Declined: the Rust toolchain P1.** The review states that `1.94.1` "does
+not exist — the published release in this series is `1.94.0`", and that
+every build under `rust/` would fail on a nonexistent manifest before
+running. It is installed on this machine — `rustc 1.94.1 (e408947bf
+2026-03-25)`, at `~/.rustup/toolchains/1.94.1-x86_64-unknown-linux-gnu` —
+and all seven CI checks on the reviewed commit are green, including Rust
+ABI Tests, whose Fast-gate log records "installing Rust 1.94.1 toolchain"
+followed by "Rust 1.94.1 toolchain installed". No change made.
+
+**YAML and TOML were routed through the Python stripper**, which blanks
+quoted scalars as prose. A workflow's `run: "phase5_helper"` is a
+command and a `lakefile.toml` value is a build-target name; neither is
+Python prose. This is the same defect as pointing `.sh` at `strip_hash`
+one round ago, in formats where quoting carries even less meaning — YAML
+quotes a scalar only when the grammar forces it. The review named YAML;
+TOML has the identical defect and is fixed with it, since fixing the
+named instance and leaving its twin is how this gate has spent seven
+rounds. New `strip_config` blanks `#` comments and keeps everything else.
+
+It found `SM5` in `tests/fixtures/scenario_registry.yaml` and eight Lake
+target names in `lakefile.toml` (`ak8_coverage_suite`, `An10CascadeSuite`
+and friends) — real violations that had been invisible.
+
+**`.txt` had no stripper.** Four tracked text files outside `docs/` carry
+module and check identifiers; `scripts/website_link_manifest.txt` holds
+`_WS_RC_BASELINE`. Same treatment as `.json`/`.expected` last round.
+
+**A hyphen separates words in a path, and the gate did not know it.**
+`scripts/WS-SM_helpers.py` tokenised as `WS`, `SM_helpers`, `py`: the
+lone `WS` is ignored by the bare-token rule and `SM_helpers` matches no
+family, so the canonical spelling of the explicitly forbidden `WS-*`
+class passed. **This hole was opened by the v0.32.126 bare-`ws` carve-out
+itself** — before it, a bare `WS` was flagged. Paths now normalise `-` to
+`_`; contents deliberately do not, since there it is subtraction.
+
+**Contents now come from the git index, not the working tree.** `git
+ls-files` enumerates the index, so reading the working tree alongside it
+checked a state that is not the one being committed: a contributor could
+stage a coded identifier, delete it from the unstaged copy, and get a
+clean result. The module's docstring already promised the pre-commit case
+runs against the index, and per the implement-the-improvement rule the
+fix is to make the promise true rather than withdraw it. One batched
+`git cat-file --batch` reads the whole tree, so it stays a single fork.
+
+**Strictly monotone against v0.32.127, verified**: zero pairs lost, 10
+gained (+15 occurrences). Baseline 251 pairs, 932 occurrences.
+
+Self-test 75 → 86 checks. One of the new checks was **vacuous when first
+written** — it duplicated the path tokenizer instead of calling it, and
+so passed against the version lacking the fix. The tokenizer is now a
+single `path_tokens` function that both `scan` and the test call, and
+all six new checks are verified failing against v0.32.127.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F
+
+## v0.32.127 — The gate's own test did not catch these either
+
+PR #854 review, sixteenth round: four P2s on the naming gate, one of
+which is a regression the fifteenth round introduced.
+
+**Shell was routed through the Python stripper, and that made the gate
+weaker than the version it replaced.** v0.32.126 taught `strip_hash` to
+blank non-f-string literals as prose — correct for Python, wrong for
+shell, where `echo "${phase5_helper}"` references a real variable. The
+pre-v0.32.126 code kept braces unconditionally and caught it; mine did
+not. Verified both ways before fixing.
+
+Shell now has its own stripper, and its two quote kinds are treated
+differently because they *are* different. Single quotes carry whole
+executable payloads — this repository's Tier-3 script passes ~110-line
+scripts to `bash -lc '...'` — so their contents stay in scope; blanking
+them hid `sm5d_surface`, `sm5e_surface` and 280 further occurrences.
+Double quotes are message text with live `$` expansions inside, so only
+the expansions survive; keeping the whole span flagged every
+`echo "AN7-A: ..."` diagnostic, which is a workstream cited in prose and
+exempt by the rule. A self-test check now pins that `.sh` and `.py` do
+not share a stripper, since sharing one is the mistake itself.
+
+**Eleven workstream families were unrecognised.** The grammar knew
+`sm`, `an` and `ak`; `docs/WORKSTREAM_HISTORY.md` also carries AG (141
+citations), AE (83), AF (76), AI (59), AJ (49), AL (48), AH (47), AC
+(33), AD (25), AA (16) and AM (14). All fourteen are now enumerated.
+
+Enumerated, not generalised, and the evidence is one-sided: a blanket
+two-letter-plus-digit rule matches 602 further identifiers here —
+`RPi5`, `ARMv8VSpace`, `AP_RW_EL1`, `CP15BEN`, shellcheck's `SC1090`,
+and `SeLe4n` itself — because kernel code is saturated with
+architectural names of that shape. Narrowing it to `a<letter><digit>`
+still admits `at16`/`at17`.
+
+**`R<n>` phase codes are deliberately declined**, against the review's
+"every project code family". They are real in the documentation, but as
+an identifier rule `r\d+` matches 76 names here of which **74** are not
+workstream codes: ARM registers (`r0`, `r1` in `SyscallArgDecode.lean`),
+Lean proof hypotheses (`hR0`, `h_r1_eq`), and test bindings (`_r1`,
+`r1Cap`). A gate that fires on `r0` in a syscall decoder is a gate
+people switch off. Pinned by a self-test check so a later round does not
+"fix" it back.
+
+**`.json` and `.expected` contents are scanned.** They were in scope by
+location after v0.32.126 but had no stripper, so only their paths were
+read. Both are data formats with no comment syntax and no code/string
+distinction, so every token counts. This immediately found `AK6` in
+`tests/fixtures/main_trace_smoke.expected`.
+
+That change also exposed a self-reference: the gate began scanning its
+own baseline, which by construction lists every grandfathered name, so
+it reported all 222 of them and each regeneration would have re-added
+them. The baseline is a record *about* violations and is exempt — the
+same reasoning that exempts this module's docstring for citing
+`phase5_helper`.
+
+**Discovery is NUL-delimited.** `git ls-files` split on whitespace turns
+a path containing a space into fragments naming no file; the read then
+fails and is swallowed, so the file is never scanned. No such path
+exists today, which is exactly when it is cheap to fix.
+
+**The change is strictly monotone, and that was checked rather than
+assumed.** Against v0.32.126: **zero** pairs lost, 24 gained (+47
+occurrences). An intermediate version of the shell stripper *did* lose
+280 occurrences, which is how the `bash -lc` blind spot was found — the
+baseline diff is what caught it, not review.
+
+New grandfathered finds, all pre-existing and none renamed here per the
+grandfathering rule: `al1bStateWithNullCapSlot`, `asidAC4`, `vaddrAC4`,
+`runAC1BudgetFailClosedChecks`, `runAC1CdtTrackingChecks` (families),
+`AK6` (`.expected`), `AN4` and a third `sm0t_sub_args` occurrence
+(shell). Three known false positives are grandfathered rather than
+excluded, and are named in the source: `ID_AA64MMFR0_EL1` (an ARM system
+register colliding with the `aa` family), and `ad1`/`ad2` (Lean
+`activeDomain` destructuring binders).
+
+Baseline: 241 pairs, 917 occurrences, 213 identifiers. Self-test 42 → 75
+checks; all 8 new ones verified failing against v0.32.126.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F
+
+## v0.32.126 — The gate that kept failing silently now has its own tests
+
+PR #854 review, fifteenth round: four P2s, all in the naming gate itself,
+and all the same shape as the eleven before them — a hand-written piece of
+the checker's scope that was narrower than the rule it enforces.
+
+**Documentation was exempt by suffix, so exemption leaked into code.**
+`.md`, `.txt`, `.json`, `.expected` and `.sha256` were exempt *anywhere*,
+because the previous round reasoned about `docs/` and then implemented a
+suffix list. A suffix says nothing about whether a file is prose:
+`scripts/phase5_helper.json` and `tests/phase5_helper.expected` skipped
+even path scanning. Exemption is now by location — everything under
+`docs/`, plus the named root-level documents — so audit reports and
+workstream plans keep the exemption they need (they are *named after* the
+workstream they record) and nothing else inherits it.
+
+**The baseline was a set of pairs, which cannot see a second use.** A set
+of `(identifier, file)` pairs rejects a name appearing in a *new* file, but
+a file already containing `ak9ce` could accrue a second, third and fourth
+use with the gate silent. The baseline now counts occurrences per pair:
+the number may fall, never rise. Line numbers were considered and rejected
+— they churn on every edit above them, and a baseline that regenerates
+constantly stops meaning anything.
+
+**Python string handling was inverted.** Plain literals had their braces
+preserved (so `'{x}'` leaked prose into the scan) while triple-quoted
+f-strings were blanked wholesale (so real interpolated identifiers went
+unread). Which treatment a literal gets is now decided by whether its
+prefix actually contains `f`, checked before the quote style — `rb'{x}'`
+is not an f-string, and `'''{x}'''` without the prefix is a literal brace
+whose contents must stay blanked or the scanner reads its own docstring
+as code and fails on itself.
+
+**Five maintained formats had no stripper**, so their contents were never
+read: `.S`, `.ld`, `.toml`, `.yml` and `.yaml`. Each needs its own comment
+syntax rather than a shared guess — a linker script has no `//` comment
+and treating it as one blanks real content to end of line, while in
+assembly `#` introduces a cpp directive whose identifiers stay in scope.
+
+**The gate now has a self-test** (`scripts/test_identifier_naming_gate.py`,
+42 checks, wired into Tier 0). A gate whose failure mode is silence needs
+regression witnesses, and this one has shipped under-enforced five times.
+Every check is load-bearing: run against the pre-fix checker, fourteen of
+the sampled fourteen report the wrong answer, and one hard-errors on a
+function that version never had. A test that passes against both the
+broken and the fixed code documents nothing.
+
+The bare-`ws` carve-out is now documented as the deliberate trade it is
+rather than as a general solution. `ws` carries no digits of its own, so
+unlike `phase5` or `ak9ce` it cannot be recognised alone; in a compound it
+is flagged, which would make `wsUrl` a false positive. No such name exists
+here — the tree has zero `ws`-prefixed identifiers and zero camelCase
+`ws`-compounds — and a false positive fails loudly in CI, where this gate's
+whole history is failing quietly.
+
+Baseline re-recorded in the new format: 211 identifiers, 227 pairs, 870
+occurrences. Broadening the scan added **zero** pairs — the five new
+formats and the withdrawn suffix exemption found no violation that was
+hiding behind them, so the worry that scanning YAML would produce a
+stream of false positives from workflow job names did not materialise.
+Two pairs left, both a bare `ws`, and both were false positives the
+carve-out now correctly declines: `Compute.lean`'s is `(ws : List
+ThreadId)`, a bound variable meaning *waiters*, and the surviving `WS`
+tokens in `test_tier3_invariant_surface.sh` sit in workstream-citing
+prose and `rg` patterns, which is where the rule says they belong.
+Nothing was renamed and nothing was newly grandfathered.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F
+
+## v0.32.125 — The scan covers scripts too; the Rust ack contract catches up
+
+PR #854 review, fourteenth round: two P2s.
+
+**The naming gate's suffix list was the same mistake one level down.**
+v0.32.123 replaced hand-written globs with `git ls-files` so file discovery
+could not under-reach — and then filtered the result to `.rs` and `.lean`,
+which is a hand-written scope by another name. `scripts/phase5_helper.py`
+passed cleanly, as would a coded identifier in any script.
+
+Now every tracked non-documentation file is in scope: paths always,
+contents wherever a stripper knows the language (Rust, Lean, Python,
+shell). Rust stays at a hard zero; every other code surface ratchets
+against the grandfathered baseline, which is why it grew 199 → 229 pairs —
+the broadened scan found real pre-existing violations
+(`scripts/ak7_cascade_check_monotonic.sh`, `ak8_coverage_suite` and
+friends), grandfathered per the rule rather than renamed here.
+
+**Documentation is deliberately exempt, and the docstring now says so
+instead of over-claiming.** The previous text promised "every tracked
+source", which is what made this finding land. But `docs/audits/`
+and `docs/planning/` files are *named after* the workstream they record —
+`WS_RC_R4_CLOSEOUT_PLAN.md` is correct, not a violation — and CLAUDE.md
+cites those paths while `website_link_manifest.txt` protects them.
+"Enforcing" the rule there would break live citations and the published
+site to rename files whose names are doing their job. Prose and the
+documents carrying it get the same exemption docstrings already have.
+
+The Python stripper blanks triple-quoted docstrings, which is load-bearing
+rather than incidental: this scanner's own docstring cites `phase5_helper`,
+`ak9ce_01` and `I-H01` as examples, so a version that read its own prose as
+code would fail on itself.
+
+**The Rust shootdown header still described the pre-SM7.F.3 protocol.**
+v0.32.122 corrected the Lean side's stale Boolean contract and did not
+sweep the Rust mirror: `shootdown.rs` still declared the model field as
+`Vector Bool` backed by one `AtomicBool` per core, and the handler
+docstring still said the global slots boot `true`. Both describe the
+removed reset-era design and contradict the `AtomicU64` generation slots
+the file actually implements.
+
+Rewritten to describe generation slots booting at 0, with the two
+properties that matter stated as such: an acknowledgment names the round
+it discharged, so a `.tlbShootdownReq` SGI left pending by an earlier round
+cannot satisfy a later round's wait; and because nothing is cleared to open
+a round, there is no window between opening one and publishing its
+operands. The Boolean vector had both hazards.
+
+Verified by neutering: `scripts/phase5_helper.py` (the reported example)
+and `sm9e_probe` added to a shell script are both rejected; the clean tree
+passes; Rust holds at zero.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F.3
+Refs: #854
+
+## v0.32.124 — Interpolated strings are code; the mirror header is checked
+
+PR #854 review, thirteenth round: two P2s, both gates, both mine.
+
+**Interpolation expressions were being blanked as prose.** The naming
+scanner strips string literals before tokenising, which is right for
+`"AK7 rationale"` and wrong for `s!"{phase5_helper}"` — Lean interpolation
+holds real code inside what lexically looks like a string, so a forbidden
+identifier referenced there was invisible to the gate.
+
+Codex reported the Lean case. **Rust has the identical gap** through inline
+format args (`println!("{phase5_helper}")`, and the same in raw strings),
+which is exactly the "fixed it only where it was reported" move that
+produced the previous four rounds — so both are fixed. String blanking is
+now interpolation-aware: `{...}` spans are preserved as code, `{{`/`}}`
+stay escapes, and everything else in the literal is still blanked. Six
+cases pinned in both directions, including that ordinary prose inside a
+string remains exempt in both languages.
+
+**The mirror gate's body comparison had an unchecked prefix.** v0.32.111
+fixed this gate once (it compared shell variables, so trailing-byte
+differences slipped through). The remaining hole was upstream of that: both
+sides were extracted starting at `## What this project is`, so anything
+above the anchor was discarded from the comparison — a divergent paragraph
+of instructions added to one mirror's header region passed a gate whose
+entire claim is "byte-identical apart from this header".
+
+Both headers are fixed text that names the file and points at its mirror,
+so they are now pinned verbatim and compared byte-for-byte before the body
+check runs. The pinned text is spliced from the files themselves rather
+than retyped, so it cannot drift at authoring time.
+
+Verified by neutering, both gates and both directions: an extra
+instruction in CLAUDE.md's header now fails on the pin, body divergence
+still fails on the body check, and the clean tree passes. Rust holds at
+zero under the interpolation-aware scan; the Lean baseline is unchanged at
+199 pairs, which is itself evidence the change added no false positives.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F.3
+Refs: #854
+
+## v0.32.123 — Naming gate: remove the categories of mistake, not the instances
+
+PR #854 review, twelfth round: four P2s, all against the gate, all valid.
+This is the third consecutive round on it, and the pattern is the finding:
+each time the checker's *scope* was hand-specified, and each time the scope
+was narrower than the rule.
+
+The four gaps, each verified before fixing:
+
+1. **Paths were never scanned.** The rule covers file and directory names,
+   but the checker only read `path.read_text()`, so
+   `src/ws_sm_helpers.rs` with well-named contents passed.
+2. **Multi-component codes bypassed the grammar.** `ws_[a-z]_` accepted
+   only a single letter, so `ws_sm_helper` and `ws_rc_state` walked
+   through, and the documented `I-H01` subtask shape had no alternative at
+   all.
+3. **The ratchet compared net counts.** A patch deleting one grandfathered
+   Lean name and adding a different forbidden one left the count at 150 and
+   passed; because the scan deduplicates by identifier, *copying* an
+   existing offender into new code was invisible too.
+4. **Integration tests were outside the globs.** `rust/*/tests/**` was
+   never matched, so `rust/sele4n-abi/tests/conformance.rs` could carry
+   anything.
+
+Rather than patch four instances, each fix removes the category:
+
+- **File discovery is `git ls-files`**, not hand-written globs. Every
+  tracked source is in scope by construction, not because someone
+  remembered to add it. (Closes 4.)
+- **Path components are tokenized** alongside contents. (Closes 1.)
+- **One normalized component grammar**: tokens split at `_` and camelCase
+  boundaries, lowercased, matched against the documented shapes — so
+  `Sm5iAffinityAnchors`, `sm5i_affinity_anchors` and `SM5I_ANCHORS` are one
+  case rather than three regexes. (Closes 2.)
+- **The baseline is a set of (identifier, file) pairs** in
+  `scripts/identifier_naming_baseline.json`. A name may disappear from it;
+  it may never appear somewhere new. (Closes 3.)
+
+Verified in both directions, including the exact case the review named. All
+four bypasses now fail with the offending name and file. For the duplicate
+case, a first attempt used a *derived* name (`Ak8Coverage_probe`) — which
+only exercises the new-identifier path — so it was re-run with the
+identical token `Ak8Coverage` copied into `Prelude.lean`: identifier count
+unchanged, rejected on the new pair. Nine legitimate names (`break0`,
+`x86_64`, `stream1`, `ask4`, `smoke`, `answer`, `make4`, `washer`,
+`transform`) still pass, which the widened grammar genuinely put at risk.
+
+One self-inflicted regression caught mid-rewrite: the first component
+pattern `^sm\d+[a-z]*$` cannot match `sm7f3` (digits and letters
+alternate), so `sm7f3_probe` — which the *previous* gate caught — began
+passing. Corrected to `^sm\d[a-z\d]*$` before commit.
+
+Rust holds at zero under the widened scope. The Lean baseline records 185
+identifiers / 199 pairs, up from a count of 150, because path scanning and
+the wider grammar legitimately see more. Gate runtime 3.6 s → 8.7 s.
+
+Documented scope caveat: `git ls-files` sees tracked files, so a new file
+not yet `git add`ed is not scanned locally. Correct for CI and for the
+pre-commit hook, which run against committed content and the index
+respectively.
+
+Rust 1107, HAL 812; trace byte-identical.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F.3
+Refs: #854
+
+## v0.32.122 — The naming gate had the defect it was built to catch
+
+PR #854 review, eleventh round: two P2s. The first is against the gate
+v0.32.121 added, and it is the same defect one level up.
+
+**The gate under-matched exactly the way the sweeps did.** It keyed on
+declaration syntax and matched the literal text `pub `, so
+`pub(crate) fn phase5_helper` walked straight through, `pub(super)`
+likewise, and struct fields were never scanned at all. Confirmed by
+probe: a file carrying four forbidden identifiers passed with
+"PASS: Rust declared identifiers carry no workstream/phase codes". A gate
+that reports a hard zero while accepting violations is worse than no gate,
+because the zero gets believed.
+
+The fix is to stop enumerating declaration forms. `check_identifier_naming.py`
+(replacing the `.sh`) strips comments and string literals — handling nested
+block comments and raw strings — and then treats **every remaining
+identifier token** as in scope: any visibility, fields, parameters, locals,
+enum variants, uses. There is no declaration syntax left to fail to think
+of, which is the only property that makes "zero" mean zero. Code-class
+patterns are anchored to a name boundary so ordinary words are not caught
+(unanchored `ak[0-9]` matches "break0").
+
+Both directions verified rather than assumed: the four bypasses Codex
+found are now reported with file:line, and a file citing `AK7`/`phase5` in
+a doc comment, a line comment and a string literal still passes — prose
+stays exempt, which is what the rule actually says. The Lean ratchet
+re-baselines 127 → **150** because token scanning sees more than
+declaration scanning did; spot-checked as genuine (`Ak8Coverage`,
+`ak4a01_shortPathNoOverflow`, `test_AK8_G_…`, `Sm5iAffinityAnchors`), no
+false positives.
+
+**The second P2: a safety rationale describing a model that no longer
+exists.** `TlbShootdown.lean`'s serialisation contract still said the ack
+vector "carries no round identity" and called a Boolean abstraction
+faithful — true when written, but v0.32.113 changed the field to
+`Vector Nat` with `ackOnCore = roundGeneration ≤ ackedGenOnCore c`. Stale
+prose on a central safety argument misdirects exactly the future work most
+likely to depend on it.
+
+Rewritten, and the two failure modes the contract originally cited are now
+recorded as closed by the representation rather than by the lock: a later
+round only *raises* the acknowledgment bar, so it cannot satisfy an older
+wait, and nothing is cleared to open a round, so there is no born-`true`
+flag to lose. Both checked against the code — `beginShootdownRound`
+increments the counter and marks only the initiator, clearing nothing. What
+still needs serialisation is the single shared operand mailbox, which no
+acknowledgment-side generation can repair.
+
+The section now also separates the **two** generations by name, since
+conflating them was the v0.32.112 defect: the *model* generation
+(commit-time, keys the window drain) and the *runtime* generation
+(allocated under the round lock, so allocation order is hardware execution
+order).
+
+Rust 1107, HAL 812; Lean docstring-only, module builds clean; trace
+byte-identical.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F.3
+Refs: #854
+
+## v0.32.121 — Internal-first naming: clear the residue, then gate it
+
+PR #854 review, tenth round: one P1, and the fourth pass at the same
+finding class. The recurrence is the more interesting half.
+
+**The residue.** v0.32.119 reported zero workstream codes left in Rust
+identifiers. It matched prefixes, so `sm1d_phase5_defaults_smp_enabled_to_true`
+was de-prefixed to `phase5_defaults_smp_enabled_to_true` and counted as
+clean — the phase code was in the middle of the name, not the front.
+Renamed by subject, along with three the reviewer did not flag:
+
+- `phase5_defaults_smp_enabled_to_true` → `default_config_enables_smp`
+- `phase5_defaults_smp_max_cores_to_platform_max` →
+  `default_config_sets_smp_max_cores_to_platform_max`
+- `scan_boot_rs_phase5_uses_cmdline` → `scan_boot_rs_calls_cmdline_smp_startup`
+- `syscall_id_min_inline_args_matches_ak4_abi` (an audit ID) →
+  `syscall_id_min_inline_args_match_abi_contract`
+
+The third is a build-time contract scanner: `build.rs` declares and calls
+it, `boot.rs` cites it in a comment, and **four documentation files name
+it**. Renaming the declaration alone would have reproduced v0.32.119's own
+dangling-reference defect, so all ten sites moved together. `CHANGELOG.md`
+is deliberately untouched — its entries are historical statements, true of
+the version they describe.
+
+**The gate, which is the actual fix.** Four rounds of this finding is
+evidence about process, not about vigilance: every sweep was a hand-written
+grep, and every pattern was narrower than the rule. Prefix-only missed an
+embedded phase code; `fn`-only missed statics and consts. So
+`scripts/check_identifier_naming.sh` now runs in Tier 0 over *declared
+identifiers* of every kind:
+
+- **Rust — hard zero.** Cleaned here; any new violation fails the build.
+- **Lean — ratchet at 127.** CLAUDE.md grandfathers historical identifiers
+  ("stay as-is until touched"), so the count may fall but never rise.
+  Failing on the existing 127 would be a gate nobody could pass.
+
+Prose stays exempt: docstrings, comments, commit messages, and CHANGELOG
+entries are the *correct* places to cite a workstream.
+
+Both mechanisms were verified by neutering rather than assumption. The gate
+was fed a `fn` carrying a prefix-plus-phase-code and a `const` carrying an
+audit ID — the exact class v0.32.119's sweep missed — and rejected both.
+The renamed build scanner was checked to be genuinely live by breaking the
+contract it enforces and confirming `build.rs` panics. The repo's own
+shellcheck gate then rejected the new script's first draft (SC2001), which
+is a fair advertisement for gates over sweeps.
+
+Rust 1107, HAL 812, zero ignored; pure rename (10 insertions, 10
+deletions); trace byte-identical.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F.3
+Refs: #854
+
+## v0.32.120 — Route the generation-wrap barrier through the system-wide halt
+
+PR #854 review, ninth round: one P2, and a consistency gap left by
+v0.32.118's own fix.
+
+That cut established that a shootdown barrier failure must stop **every**
+PE — the initiator's page-table transition is already committed, so parking
+one core leaves the others running against translations nothing will
+invalidate. It routed the round-lock and acknowledgment barriers through
+`gic::halt_all`, and missed the third: `allocate_round_generation_in`'s
+wrap guard was a bare `assert!`, which takes the ordinary panic/abort path.
+
+**The gap is wider than "different halt path".** The repository defines
+**no `#[panic_handler]` anywhere** — the HAL is `#![no_std]`, and the
+handler belongs to a final binary crate that does not exist until SM9.E.
+So the wrap branch's halt behaviour was not merely inconsistent, it was
+undefined, and would be decided later by a crate nobody has written.
+`gic::halt_all` is defined today.
+
+At the wrap point the caller holds the round lock and has published neither
+operands nor SGIs, so the remote TLBs are stale with no pending
+invalidation — precisely the state the broadcast exists for. Now:
+best-effort `kprintln!` diagnostic, then `gic::halt_all()`, the same split
+between *reporting* and *stopping* that `haltFailClosed` uses on the Lean
+side.
+
+Reachability is unchanged and remains theoretical: `u64::MAX` allocations
+is ~584,000 years at one round per microsecond. This is defense-in-depth on
+a branch that should never execute, which is why it is a P2 — but a barrier
+whose behaviour is undefined is not a barrier.
+
+Two tests, and the negative was checked by neutering rather than assumed:
+`round_generation_wrap_reaches_the_system_wide_halt` seeds the counter one
+below wrap and expects `fatal_halt`'s message, so reverting to the local
+`assert!` fails it (confirmed by doing exactly that); the companion
+`round_generation_near_wrap_still_allocates` pins that the guard does not
+fire on ordinary allocations, so the first cannot pass vacuously.
+
+Rust 1105 → 1107 (HAL 810 → 812), zero ignored; trace byte-identical.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F.3
+Refs: #854
+
+## v0.32.119 — Finish the workstream-code sweep, including the kinds two passes missed
+
+PR #854 review, eighth round: one P1 (convention), and it lands on my own
+claim rather than on pre-existing code. v0.32.118 said the sweep was
+complete; it was not, in two ways neither of the previous passes could see.
+
+**What the earlier passes actually matched.** v0.32.117 matched `sm7[a-f]`
+only. v0.32.118 widened that to `fn sm[0-9]…` — every *function
+definition*, crate-wide, 370 of them — and reported zero remaining. Both
+numbers were true of what they measured and neither was the rule:
+
+1. **Only `fn` declarations.** Statics and consts were never matched, so
+   ten items survived: `SM2D_TRACE_TEST_MUTEX` (the one flagged),
+   `SM2_THEOREM_COUNT`, `SM2D_BUILD_ANCHOR`, `SM5B7_SWITCH_TARGET_MUTEX`,
+   `SM1I4_OBSERVATION_MUTEX`, `SM2D8_TICKET_SLOT3_MUTEX`,
+   `SM2D8_RW_SLOT3_MUTEX`, `SM1G4_OBSERVATION_MUTEX`, and the two
+   `SM1F5_INNER_*_FIRED` counters.
+
+2. **Per-file mappings, so cross-file references were invisible.** The
+   v0.32.118 pass built its rename map from each file's own definitions,
+   so a doc-comment in `ffi.rs` naming a test defined in `lock_bridge.rs`
+   was left pointing at a symbol that no longer existed. Three such
+   references survived, in `ffi.rs` (×2) and `per_cpu.rs`.
+
+The sweep is now over identifiers of **every kind**, matched
+case-insensitively, with one crate-wide mapping applied to every reference
+site rather than per file. Zero remain.
+
+**Two were cross-language contracts**, which is why this is worth more than
+a mechanical rename. `SM2_THEOREM_COUNT` (→ `LOCK_THEOREM_COUNT`) is read
+by `scripts/check_lock_ffi_symmetry.sh` through a literal `grep -oP 'pub
+const SM2_THEOREM_COUNT…'`, pinned as a string in `build.rs`, and cited
+three times in `LockPrimitives.lean` plus twice in the spec.
+`SM2D_BUILD_ANCHOR` (→ `LOCK_BRIDGE_BUILD_ANCHOR`) is likewise a `build.rs`
+string literal. Renaming either without its readers would have broken the
+Lean↔Rust symmetry gate silently — the grep would match nothing and the
+count would compare against `0`. All readers moved in the same commit; the
+gate passes and still verifies 16 symbols.
+
+The `SM2D_BUILD_ANCHOR` **value** — `"WS-SM SM2.D lock-bridge module
+present"` — is unchanged, along with the test asserting it contains
+`"WS-SM SM2.D"`. Workstream IDs in strings and docstrings are explicitly
+allowed; it is identifiers that must describe their semantics.
+
+Rust 1105 (HAL 810), zero ignored; `test_full.sh` green; trace
+byte-identical.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F.3
+Refs: #854
+
+## v0.32.118 — Make the fail-closed halt system-wide, and stop it firing on boot
+
+PR #854 review, seventh round: three findings on the v0.32.117 cut, all
+valid, two of them consequences of that cut rather than pre-existing.
+
+**SECURITY — the fail-closed halt stopped only the core that detected the
+fault.** v0.32.117 gave the shootdown barriers a genuine halt, but
+`cpu::fatal_halt` parks the calling PE and nothing else, and the path had
+already released `SHOOTDOWN_ROUND_LOCK`. The mapping change is committed by
+then, so every other core carried on against a TLB the initiator had just
+declared it could not clean, and the target that never acknowledged could
+resume with the stale translation. A per-PE park is not a barrier.
+
+`SgiKind.haltAll` (INTID 4) has been reserved since SM0.H and documented as
+"halt all cores (panic / shutdown)" — with **no handler registered**, so a
+broadcast would have been acknowledged and dropped. That declaration is now
+functional: `gic::halt_all_handler` parks the receiving PE, boot registers
+it beside the shootdown handler, and `gic::halt_all` broadcasts to all but
+self before parking. `haltFailClosed` routes through it.
+
+Paired with that, the timeout path no longer releases the round lock.
+Holding it quarantines the subsystem: a core reaching the round before it
+services the halt SGI blocks rather than proceeding. Best-effort by nature
+— a core with interrupts masked takes the SGI when it unmasks — but
+strictly better than the park it replaces.
+
+**A boot-time liveness regression the same cut created.** The SGI loop
+targets the round's `onlineMask`, captured once in Lean; `wait_all_acked_
+bounded` then re-read `CORE_IRQ_READY` on the Rust side. A secondary
+publishing IRQ-readiness between the two reads is therefore absent from the
+loop (never poked) and present in the wait (required to acknowledge), so
+the round can only time out — and since v0.32.117 that halts the machine.
+`bring_up_secondaries_inner` returns after its `CPU_ON` calls without
+waiting for secondaries to publish, so this is ordinary boot rather than a
+contrived interleaving. The header's claim that "bring-up never overlaps a
+round" was an obligation nothing enforced.
+
+The wait now takes the round's own mask across the FFI (`online_from_mask`
+is the inverse of the existing fold, roundtrip-tested). The regression
+witness asserts both directions: the round completes against the targets it
+poked, and the pre-fix fresh-snapshot form does not.
+
+**The round lock now brackets the catch-up commit.**
+`shootdownRoundLock_release_acquire` names "its catch-up commit" among the
+accesses ordered before the release, but the live path released first, so
+the contract named an access the bracket did not cover and the theorem was
+un-instantiable there. The release moved after the commit — cheap, since
+`modifyGetKernelState` is a plain `IO.Ref` update with no lock to invert
+against, and the drain is bounded well inside the acquire fuel.
+
+**Workstream codes: the sweep finished.** v0.32.117 claimed a sweep but
+matched only the `sm7[a-f]` family, leaving `gic.rs` and `ffi.rs` half
+renamed — worse than either extreme. All **370** coded identifiers across
+15 files are now stripped, collision-checked per file, with the seven
+documents referencing them updated where the name still resolves. Globs in
+historical plan prose that name deleted tests stay as record.
+
+Rust 1099 → 1105 (HAL 804 → 810), zero ignored; `test_full.sh` green;
+trace byte-identical.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F.3
+Refs: #854
+
+## v0.32.117 — Make the fail-closed shootdown barriers actually halt
+
+PR #854 review, sixth round. Two P1s, two P2s, and a sweep of every
+review thread on the PR — several of which had never been answered.
+
+**SECURITY — both shootdown fail-closed barriers were fail-open.**
+`SyscallDispatchEntry`'s round-lock fuel exhaustion and acknowledgment
+timeout both reported the violation with Lean's `panic!` and then carried
+on. `panic!` requires `[Inhabited α]` precisely because the runtime prints
+the message and returns the default value; in `BaseIO Unit` that is `()`.
+Confirmed by running it rather than reasoning about it — the message
+printed, execution continued, and the process exited `0`.
+
+The consequences are the SMP-C4 stale-TLB hazard in both cases. The
+acquire returned as though it held the round lock, so the caller went on
+to allocate a generation and overwrite the shared mailbox while the real
+holder was still running. The timeout fell through into
+`shootdownCatchUpPerCoreInWindow`, marking the model caught up when a
+target had never certified its invalidation. High severity once bootable
+(SM9.E); not reachable today.
+
+Fixed by splitting the two roles. `panic!` keeps the diagnostic, since it
+is the only thing there that produces a message; `cpu::fatal_halt` — a
+Rust `-> !` that masks interrupts and parks the PE in a WFE loop, reached
+through the new `ffi_fatal_halt` seam — is the halt. Interrupts are masked
+first so a core that has declared its view untrustworthy cannot then
+service another round's SGI. `haltFailClosed` also recurses after the
+call, which is unreachable, so the function is non-returning in *Lean's*
+semantics and not only by the FFI's promise — the distinction the
+barriers got wrong to begin with. Witnessed by `fatal_halt_does_not_return`
+(`#[should_panic]` on host) and a `fn() -> !` signature check that fails to
+compile if anyone makes it fall through.
+
+**Workstream codes out of 37 test identifiers.** The review flagged the
+`sm7f3_*` prefixes; those were renamed a commit earlier, but the same
+sweep found `sm7a3_`, `sm7b2_`, `sm7b3_`, `sm7b5_`, `sm7b6_`, `sm7b7_` and
+`sm7b_` still in place across `shootdown.rs`, `ffi.rs` and `gic.rs` — all
+three heavily modified by this PR, which is the condition the naming rule
+attaches to renaming historical identifiers. Every prefix was stripped
+(the remainder was already semantic), checked for collisions against the
+whole crate first. Five Tier-3 anchors and six doc references pointed at
+the old names and would have failed; each now names a test that exists.
+Two references naming tests SM7.F.3 *deleted* with `reset_for_round` are
+left as historical record, since renaming them would invent a symbol.
+
+**The acknowledgment mark is not a serviced prefix, now by proof.**
+`ackOnCore` compares a monotone high-water mark with `≤`, which reads as
+"every round up to the open one was serviced". That reading is sound for
+the runtime generation (allocated under the round lock, so allocation
+order is execution order) and *not* for the model's, which orders commits
+— the separation that fixed the P1. An audit of all three `allAcked`
+consumers found none actually treats it as a prefix: every capstone
+derives from a quiescent pre-state. But that was discipline, not
+structure, so it is now pinned — `allAcked_not_serviced_prefix` exhibits a
+well-formed state where `allAcked` holds with work outstanding, and
+`shootdownQuiescent_pending_nil` records that the queues are the source of
+truth. Both axiom-clean. A future refactor cannot strengthen `allAcked`
+into "every round completed" without the existence proof failing.
+
+**Markdown fences.** `check_source_line_citations.py` recognised only
+backticks and toggled unconditionally, so a `~~~` transcript was treated
+as prose and a ``` run inside a ```` block closed it early — the exemption
+the script advertises did not cover valid fences. It now tracks the
+delimiter character and run length per CommonMark.
+
+Rust 1097 → 1099 (HAL 802 → 804), zero ignored; `test_full.sh` green;
+trace byte-identical.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F.3
+Refs: #854
+
+## v0.32.116 — Sweep the commit/runtime generation conflation out of every contract
+
+PR #854 review, fifth round. One finding, and it is the third separate site
+of the same defect — which is the real lesson of this cut.
+
+The v0.32.112 fix split the model's commit-ordered
+`TlbShootdownState.roundGeneration` from the runtime's lock-allocated
+`SHOOTDOWN_ROUND_SEQ`, because equating them is what let a newer round's
+acknowledgments certify an older round nobody had executed. Three separate
+contracts described the acknowledgment channel in terms of the model
+counter. Each was corrected only when a review round pointed at it
+individually: the mailbox field at v0.32.113, the Lean field contract at
+v0.32.114, and now the FFI export header — which told a maintainer that
+`ackOnCore c` corresponds to `acked_gen[c] >= the round's
+TlbShootdownState.roundGeneration`, i.e. exactly the equation the fix
+exists to prevent, sitting directly above the exports that carry the
+generation across the boundary.
+
+Fixing them one at a time was the mistake. This cut sweeps instead, and
+found three further sites the review had not flagged:
+
+- the `shootdown.rs` module header's "Boot state" section and
+  `ShootdownAckSlot::quiescent_at_boot`, which both attributed the
+  from-`1`-upwards allocation to the Lean `beginShootdownRound{,For}`.
+  Since v0.32.112 that property is supplied by `allocate_round_generation`
+  (pre-increment + 1 from a `0`-based counter); the Lean opener no longer
+  has anything to do with what these slots are compared against.
+- `boot_constructor_is_generation_zero`, carrying the same attribution in
+  its comment.
+- a markdown typo introduced by the v0.32.113 correction itself
+  (`` `TlbShootdownState.roundGeneration** ``), which broke the rustdoc
+  rendering of the sentence that says the two must not be equated.
+
+And on the Lean side, `ackOnCore`'s docstring said it was "derived the same
+way the Rust initiator decides its wait is over". The comparison has the
+same *shape* but not the same meaning: the runtime's is against a
+lock-allocated generation, where allocation order is execution order, so
+`acked_gen >= gen` genuinely means every round up to `gen` was serviced;
+the model's is against a commit-ordered counter, where it does not — the
+v0.32.115 counterexample. Corrected to say so and to point at `allAcked`,
+which records the consequence.
+
+No behaviour change: comments and docstrings only. Rust 1097 (HAL 802),
+trace byte-identical.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F.3
+Refs: #854
+
+## v0.32.115 — Workstream codes out of test identifiers; the ack mark is not a serviced prefix
+
+PR #854 review, fourth round. Two findings, both valid.
+
+**Workstream codes in test identifiers (Codex P1).** Twenty-five tests added
+by this PR carried the `sm7f3_` phase-code prefix. The project forbids
+workstream, audit and phase codes in *every* identifier — tests included —
+because the labels age out and hide what the test is about, and new code must
+comply from day one. All twenty-five renamed to their semantic subject
+(`stale_acknowledgment_cannot_satisfy_a_later_round`,
+`round_generation_allocator_is_strictly_increasing_from_one`, and so on).
+
+Two references would otherwise have been left dangling and are fixed with
+them: the Tier-3 anchor in `test_tier3_invariant_surface.sh` pinning
+`fn sm7f3_stale_acknowledgment_cannot_satisfy_a_later_round`, and a suite
+docstring cross-reference. Both gates re-verified green after the rename
+rather than assumed.
+
+**The acknowledgment mark is not a serviced prefix (Codex P2, partially
+closed).** `ackOnCore` tests `roundGeneration ≤ ackedGenOnCore`, which reads
+as "every round up to the current one has been serviced". Since v0.32.112
+that reading is false of the model: commit generations are allocated by the
+pure transition while hardware rounds execute in round-lock order, and the
+two orders are deliberately independent. Round A commits generation 1 and
+stalls before the lock while round B commits 2 and runs first; B's catch-up
+records `hi = 2` on every target, so every core reads acknowledged while A's
+generation-1 descriptors are still queued and A's round has never run.
+
+Verified by computation rather than argued:
+
+```
+roundGeneration     = 2
+ackedGen per core   = [2, 2, 2, 2]
+gen-1 still pending = [0, 1, 1, 1]
+allAcked            = true
+shootdownQuiescent  = false
+```
+
+Scope, stated precisely. No hardware hazard: the runtime consults the Rust
+`acked_gen`, where the prefix reading *is* valid, because runtime generations
+are allocated under the round lock and so are execution-ordered. No false
+landed theorem either: every round capstone concludes `shootdownQuiescent`,
+which conjoins the pending queues and is correctly false above, and
+`shootdownRound_allAcked` derives `allAcked` from a *quiescent* pre-state,
+which recovers the prefix. The unsound reading is `allAcked` taken alone.
+
+Closed in this cut: `SmpTlbShootdownSuite` §8.5 computes the reverse-order
+state, so the limitation is a machine-checked fact rather than prose — it
+pins that `allAcked` is true there, that `shootdownQuiescent` is false, and
+that only A's own catch-up clears the descriptors. The `allAcked` contract is
+corrected to state what it does and does not guarantee, and to name the
+queues as the model's source of truth for outstanding work.
+
+Not closed in this cut: the representation itself. Replacing the per-core
+high-water mark with the *set* of generations that core discharged would make
+the model independently sound rather than sound-relative-to-quiescence.
+Attempted here and reverted: unlike the v0.32.113 `Vector Bool → Vector Nat`
+change, which preserved a scalar comparison and rewrote mechanically, a set
+changes `ackBounded` from a scalar `≤` to a quantified membership and so
+restructures every proof that touches it — 69 errors in `TlbShootdown.lean`
+alone before the dependent modules, against an estimate of "comparable to
+v0.32.113". Registered as tracked debt in
+`docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` §SM7.F.3 with the SM8 mount as
+closure target, rather than carried as a fifth in-flight rewrite of the same
+field.
+
+`test_smoke.sh` green, Rust 1097 (HAL 802), trace byte-identical.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F.3
+Refs: #854
+
+## v0.32.114 — ackBounded becomes the 15th invariant conjunct; Lean generation contract corrected
+
+PR #854 review, third round on the SM7.F.3 work. Two findings, both valid,
+both consequences of the two preceding cuts.
+
+**ackBounded carried in the global invariant (Codex P2).** v0.32.113
+introduced `ackBounded` — no core has acknowledged a shootdown round that has
+not been opened — and left it as an optional hypothesis on the
+acknowledgment-shape lemmas that needed it. Nothing carried it. Reasoning
+from `proofLayerInvariantBundle` could therefore admit a state with
+`ackedGenOnCore c > roundGeneration`, and opening the next round there leaves
+that target already acknowledged, defeating
+`beginShootdownRoundFor_ackOnCore_iff` even though the bundle holds.
+
+No production transition can actually reach such a state — the preservation
+proofs below say so — but that was exactly the problem: the fact lived in the
+proofs rather than in the invariant, so a consumer reasoning from the
+standard bundle could not discharge the premise. This project's own rule is
+that an invariant maintained only by convention gets enforced structurally,
+and the predicate this workstream had just introduced was the violation.
+
+`ackBounded st.tlbShootdown` is now the **15th `proofLayerInvariantBundle`
+conjunct**, threaded exactly as SM7.B threaded the 12th (`pendingBounded`):
+boot witness (`initial_ackBounded` → `default_tlbShootdown_ackBounded`),
+definitional transport through the three adapter preservation proofs (they
+touch machine and scheduler, neither of which the conjunct reads), the Boot
+general bridge via `bootFromPlatform_tlbShootdown_eq`, and freeze wholesale.
+
+Carried through the production surface by twenty-odd new preservation
+theorems mirroring the `pendingBounded` chain: the drains and both enqueue
+forms (which frame the ack vector and the counter alike), the round steps,
+the posting folds, both broadcasts, the `.tlbShootdownReq` handler in its
+whole-queue and window forms, the per-core handler and catch-up fold the live
+seam actually runs, and the six live wrappers (`withShootdownRound`, the
+unmap/map entries, both typed flushes, ASID-allocate).
+
+The window forms carry `hi ≤ roundGeneration` as a hypothesis rather than
+proving it unconditionally, because unconditionally it is false: a window
+claiming to discharge a round that has not been opened is precisely the state
+the invariant excludes. The live seam supplies it — the catch-up's window
+upper bound is the post-commit generation and the catch-up runs on that
+post-state.
+
+**Lean generation contract named the wrong counter (Codex P2).** The
+v0.32.112 fix split the model's commit-time `roundGeneration` from the
+runtime's `SHOOTDOWN_ROUND_SEQ`. The Rust-side mailbox comment was corrected
+then; the Lean-side field contract still said `roundGeneration`'s runtime
+mirror is `ShootdownOpMailbox::generation`, which is the conflation the P1 fix
+exists to prevent — and a maintainer reading it could restore the very
+identity that let newer acknowledgments certify an older unexecuted round.
+Rewritten to state what each counter orders (commits vs hardware rounds),
+what each keys (the window drain vs the acknowledgment channel), and why
+publishing this one into the mailbox is the bug. The stale boot-state
+sentence describing "all-acknowledged flags (`true` = …)" is corrected to the
+generation form the same cut introduced.
+
+`test_full.sh` green, Rust unchanged at 1097 (HAL 802), trace byte-identical,
+new theorems axiom-clean.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F.3
+Refs: #854
+
+## v0.32.113 — Generation-aware model acknowledgment; two gate fixes
+
+PR #854 review. Closes the last of the three findings from the previous
+round (the two P2s alongside the v0.32.112 P1 were fixed there; this is the
+one deferred as tracked debt, taken after all) plus the two findings the
+v0.32.112 push itself drew.
+
+**Generation-aware model acknowledgment (Codex P2).** `TlbShootdownState`
+carried `shootdownAck : Vector Bool`, and `completeShootdownOnCoreInWindow`
+set it unconditionally. So a catch-up that deliberately drained only its own
+generation window still wrote `true`, claiming every concurrently-posted
+round as acknowledged: SM7.F.3 made the *queues* generation-selective at
+v0.32.105 and left the *acknowledgment* a bare flag, and `allAcked` could
+therefore read true with a foreign round's descriptors still pending. The
+Rust side had already lost this asymmetry — the v0.32.112 P1 fix made
+`acked_gen` the sole runtime channel — so the model was the odd one out.
+
+Model-fidelity, not a hardware hazard: nothing in the live seam reads the
+model's `Bool` vector (`shootdownWaitAllAcked` goes to
+`all_acked_for_round_in_slice`), and no landed theorem was false, since the
+round capstones are stated per-round in isolation.
+
+The field is now `Vector Nat` — the highest round generation each core has
+acknowledged, mirroring `ShootdownAckSlot.acked_gen` — with
+`ackedGenOnCore` the raw slot and `ackOnCore` kept as a *derived* `Bool`
+(`roundGeneration ≤ ackedGenOnCore c`), so the SM7.A/B theorems keep their
+shapes and what changed underneath is that "acknowledged" now names a round.
+`acknowledgeShootdown` takes the generation and joins with `max`, mirroring
+`fetch_max`, so a late handler run for an older round re-affirms it without
+retracting a newer one. The window catch-up passes `hi` — its own window's
+upper bound — which is the fix; the whole-queue form passes
+`roundGeneration`, which it genuinely discharges.
+
+There is no ack reset any more, on either side. `beginShootdownRound{,For}`
+advance the generation and write it to the cores born acknowledged
+(initiator, and non-targets for the masked form); a target is unacknowledged
+because its slot still names an earlier round. That is the same change the
+Rust side made when SM7.F.3 deleted `reset_for_round`, and it needs one new
+well-formedness predicate — `ackBounded` (no core has acknowledged a round
+not yet opened) — which the two `_ackOnCore_iff` characterisations and
+`beginShootdownRound_ackOnCore_target` now take as a hypothesis, because
+without it a slot naming a fabricated future round would read as already
+acknowledging the round about to open. Preserved by every transition, and
+the born-acknowledged direction the liveness capstones use
+(`beginShootdownRoundFor_ackOnCore_of_born`) needs no hypothesis at all.
+
+Headline: `completeShootdownOnCoreInWindow_not_acks_foreign` — a catch-up
+whose window stops below a foreign round's generation does not acknowledge
+that round. It is the acknowledgment dual of
+`…_preserves_foreign`: that one says the foreign *descriptors* survive the
+drain, this one says the foreign *round* is still owed.
+
+Two bridges gained an `hi = roundGeneration` hypothesis
+(`completeShootdownOnCoreInWindow_eq_complete`,
+`handleTlbShootdownReqOnCore{,PerCore}InWindow_eq_handle`, and
+`shootdownCatchUpPerCoreInWindow_eq_catchUp`): under round serialisation the
+window reaches the current generation and the two forms coincide, and
+without it they must not — dropping the hypothesis would re-assert exactly
+the identity this fix denies.
+
+Suite §8.4 runs the interleaving on the model: round A posts, round B
+commits before A's catch-up, and A's catch-up is shown to drain only A's
+descriptors, acknowledge only generation 1, and leave B's round genuinely
+outstanding — with the load-bearing negative that no combination of A-window
+catch-ups completes B's round. Two existing assertions were restated rather
+than patched: a completed round no longer returns the ack vector to its boot
+value, it advances every slot to the round's generation, which is what makes
+the state quiescent.
+
+**Mailbox contract named the wrong generation (Codex P2).** After the
+v0.32.112 split, `ShootdownOpMailbox.generation` carries the runtime
+`SHOOTDOWN_ROUND_SEQ` value, but its doc still called it the Lean
+`roundGeneration`. Corrected, with the reason spelled out: the two order
+different things, and publishing the commit-time value here is precisely
+what allowed a newer round's acknowledgments to certify an unexecuted older
+round.
+
+**Mirror gate accepted non-identical files (Codex P2).** The
+CLAUDE.md/AGENTS.md byte-identity check compared two shell variables, and
+command substitution strips every trailing newline — so differing trailing
+blank lines, or a missing final newline, compared equal. The one thing the
+gate claims to enforce was the thing it could not see. Now extracted to
+files and compared with `cmp -s`. Verified by appending a blank line to
+`AGENTS.md`: the old form passes, the new form fails with `942a943 >`.
+
+Rust 1097 tests (HAL 802), `test_full.sh` green, trace byte-identical, new
+theorems axiom-clean.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F.3
+Refs: #854
+
+## v0.32.112 — SECURITY: shootdown round generations allocated in hardware execution order
+
+PR #854 review (Codex P1, valid). The SM7.F.3 acknowledgment channel could
+certify a round that no target core had serviced, leaving the initiator's
+operands resident in every remote TLB while the initiator returned to
+userspace believing them retired — an under-invalidation, the SMP-C4
+stale-TLB hazard. It is the dual of the hazard SM7.F.3 landed to close at
+v0.32.105: that one was a *stale* acknowledgment satisfying a later round,
+this one is a *newer* acknowledgment satisfying an earlier round.
+
+**Mechanism.** The acknowledgment test is monotone — `acked_gen >= gen`
+over slots advanced by `fetch_max` — so a round's generation must order it
+against the rounds whose acknowledgments could satisfy its wait, i.e.
+against hardware execution order. It did not: `completeShootdownRounds`
+keyed the round on `window.2`, the model's `TlbShootdownState.roundGeneration`,
+which the pure transition advances *inside the atomic state commit*, while
+the hardware round is bracketed by `SHOOTDOWN_ROUND_LOCK` acquired
+afterwards. Nothing relates the two orders. A core could commit generation
+N, stall before the lock, and by the time it acquired the lock find every
+one of its targets already acknowledging a *later* generation — its wait
+then passing instantly, before any target had read its mailbox or taken its
+SGI.
+
+Two concurrent rounds are not enough to reach it, because a round's
+initiator never acknowledges its own slot: it takes a third round, one
+whose targets include the second round's initiator, to lift every one of
+the stalled core's targets to or above its generation. That is the steady
+state on a busy system — the shootdown-bearing syscalls are the whole
+unmap family.
+
+Not reachable in a shipped artifact: there is no bootable image until
+SM9.E and SMP is off by default until v1.0.0. High severity once bootable,
+the same rating as the v0.32.100 and v0.32.105 hazards, and it needs two
+or more cores committing shootdown-bearing syscalls concurrently.
+
+**Fix.** Separate the two round identities, which answer different
+questions. The *model* generation answers "which descriptors belong to this
+commit?" and must be allocated at commit time to key the SM7.F.3 window
+drain — unchanged. The *runtime* generation answers "which hardware round
+is this, relative to the rounds whose acknowledgments could satisfy it?"
+and is now allocated by `shootdown::allocate_round_generation` — a
+`fetch_add` on the new `SHOOTDOWN_ROUND_SEQ`, performed **while holding the
+round lock**, so allocation order is execution order by construction and no
+older round can be certified by a newer round's acknowledgments. The seam
+moved the allocation to immediately after
+`acquireShootdownRoundLockServicingSelf` and uses it for both the mailbox
+publish and the wait. The catch-up drain still keys on the model window,
+which is why the two counters can diverge freely.
+
+The counter is 0-based and returns pre-increment + 1, so a round never
+carries generation 0 — a slot's initial `acked_gen` is 0 and `0 >= 0` would
+pass a wait with nothing serviced. This preserves the property the old
+`window.2 > window.1` argument supplied.
+
+**Generation overflow (Codex P2, valid).** `UInt64.ofNat gen` wrapped at
+2^64 while the Rust slots retain their high `acked_gen` values through
+`fetch_max`, so a wrapped generation would be satisfied vacuously — and so
+would every low generation after it. Unreachable in practice (~584,000
+years at one round per microsecond) but exactly the aliasing the generation
+tagging exists to exclude, so it is rejected structurally rather than
+argued away: the runtime generation is now *read from* a `u64` counter, so
+the `UInt64.ofNat` narrowing on the publish/wait path round-trips exactly,
+and `allocate_round_generation_in` additionally fails closed if the counter
+ever wraps.
+
+**Tests.** `sm7f3_newer_round_acks_cannot_satisfy_an_older_unexecuted_round`
+is the regression witness, and it carries the defect as a live assertion:
+it runs the three-round interleaving under commit-time keying and asserts
+the wait *does* pass with nothing serviced, then runs the same interleaving
+under lock-held allocation and asserts it does not.
+`sm7f3_round_generation_allocator_is_strictly_increasing_from_one` pins the
+allocator's density and 1-based start. Rust 1095 → 1097 tests, HAL 800 →
+802. Trace byte-identical.
+
+**Tracked debt (Codex P2, valid, deferred).** The *model's*
+`completeShootdownOnCoreInWindow` acknowledges unconditionally, so a
+catch-up that drains only its own window still writes the target's flag to
+`true` — with concurrent rounds the model's `allAcked` can therefore read
+true while a foreign round's descriptors are still pending. Model-fidelity
+only: the runtime consults the Rust `acked_gen`, never the model's `Bool`
+vector, so no hardware hazard follows and no landed theorem is false (the
+round capstones are stated per-round). Closing it means converting
+`TlbShootdownState.shootdownAck` from `Vector Bool` to a generation vector
+mirroring the Rust side and re-proving the SM7.A/B acknowledgment surface —
+a cut comparable in size to SM7.F.3 itself. Registered in
+`docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` §SM7.F.3; closure target is the
+SM8 mount.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F.3
+Refs: #854
+
+## v0.32.111 — CI review: the Rust gate now actually runs on CI, and three gates widened
+
+PR #854 review. The v0.32.110 audit fixed gates that reported more coverage
+than they had; CI and the reviewer found four more of exactly that shape,
+including two in gates this branch had just written.
+
+**CI was red, and my local run could not have caught it.** Tier 0 hygiene runs
+`shellcheck`, which is absent from the sandbox this branch was developed in —
+`test_tier0_hygiene.sh` prints "shellcheck unavailable; optional shell lint not
+executed" and carries on, so a locally green `test_full.sh` said nothing about
+it. Three findings in `find_large_lean_files.sh` were mine: SC2001 on the two
+`sed 's/^/  /'` indent calls added at v0.32.110, and SC2016 on the bullet
+parser added at v0.32.108. The `sed` calls are now an `indent_lines` read loop
+(space-safe *and* lint-clean, where the `sed` was only the former); the parser
+carries a `disable=SC2016` with the reason, since its single quotes are
+required — double quotes would let the shell eat the backslashes before `sed`
+saw them. shellcheck is now installed locally, so this class is verifiable here
+rather than only on CI.
+
+**The Rust gate was never invoked by CI.** v0.32.107 wired `cargo fmt --check`
+and `cargo clippy -D warnings` into `test_rust.sh` because nothing ran them —
+but the `test-rust` CI job runs a bare `cargo test --workspace` and never calls
+that script, so on a pull request they still did not run, and neither did the
+conformance suite or `--features std`. The gate was fixed and left unreachable:
+the same defect one level up. The job now runs `./scripts/test_rust.sh`, with
+`rustfmt` and `clippy` added to the toolchain components so the steps fail on a
+finding rather than a missing binary.
+
+**A warning is not a gate.** The v0.32.110 skipped-test summary emitted a
+GitHub warning and returned 0, after which the script printed "All Rust tests
+passed" — so the zero-ignored-tests invariant remained a claim nothing
+enforced, which is the exact criticism that cut was written to answer. A
+non-zero ignored count now fails the step and names each skipped test.
+Verified by injecting a ```ignore fence: the gate exits 1 and reports the
+offender.
+
+**Clippy skipped the configuration under test.** Every crate declares
+`default = []` and the test steps pass `--features std`, but the lint step
+passed neither that nor `--all-features` — so `#[cfg(feature = "std")]` code,
+`KernelError`'s `Display` impl among it, was never linted, and the
+zero-warning claim excluded the code the tests actually compile.
+`--all-features` (not `--features std`, which cargo rejects workspace-wide
+because `sele4n-hal` has no such feature) closes it; still clean.
+
+**The citation gate's extension list was too narrow.** It matched
+`rs|lean|sh|py|toml|S`, omitting `.yml`, `.yaml`, `.ld` and `.json` — formats
+the repository contains — so `lean_action_ci.yml:213` passed unchecked. A
+hard-coded list has to be remembered whenever a format is introduced; the set
+is now derived from `git ls-files`, filtered to extensions beginning with a
+letter (a `foo.1` man page would otherwise put `1` in the set and make
+`v0.32.1:5` read as a citation), with a `REQUIRED_EXTENSIONS` floor so a broken
+derivation fails loudly instead of quietly narrowing the gate's own scope.
+
+Widening it found **26 further stale citations** in four active documents —
+`README.md:92`, `AGENTS.md:7`, `docs/spec/SELE4N_SPEC.md:509`,
+`scripts/website_link_manifest.txt:18` — the same defect as the 511 removed at
+v0.32.109, hidden only by the extension list. All stripped by the same rule:
+the path stays, the fragile numeric suffix goes, across every suffix shape
+(plain, hyphen/en-dash ranges, comma lists).
+
+Tier 0 now passes with shellcheck genuinely executing; Rust 1095 passing, 0
+ignored, fmt and clippy clean under `--all-features`.
+
+## v0.32.110 — SM7.F.3 audit: the 12th conjunct carried, four false docstrings corrected, two dead doctests revived
+
+A deep audit of the v0.32.105–109 cut, run against the code rather than against
+the documentation describing it. Nothing in it was a live safety defect; every
+finding was a claim that had stopped being true, a proof obligation the live
+seam did not carry, or a gate that reported more coverage than it had.
+
+**The invariant gap (the substantive one).** SM7.B carried `pendingBounded` —
+the 12th `proofLayerInvariantBundle` conjunct — through the *single-view*
+handler. v0.32.81 then swapped the live catch-up fold to the **per-core**
+handler and v0.32.105 restricted it to the commit's round window, and neither
+cut carried the conjunct forward, so the transition
+`SyscallDispatchEntry.completeShootdownRounds` actually runs had no bound
+proof at all. It does now, through five new theorems in `PerCoreTlbModel.lean`:
+`handleTlbShootdownReqOnCorePerCore{,InWindow}_preserves_pendingBounded`, the
+fold, `shootdownCatchUpPerCore{,InWindow}_preserves_pendingBounded`. Each step
+is definitional on `tlbShootdown` — the per-core handlers write only
+`perCoreTlb` on top of their single-view counterparts, and
+`drainInitiatorPerCoreView` writes only the initiator's view — so the bound
+rides the SM7.B lemmas rather than being re-derived. The gap mattered because a
+window drain *deliberately* leaves foreign descriptors queued: unlike a
+whole-queue drain it does not empty the queues, so the bound does not fall out.
+
+**Four docstrings that were false.** The capacity-bound justification in
+`TlbShootdown.lean` (module header and `maxPendingPerCore`) argued that the
+global round lock serialises rounds, so "at most one round's descriptors are in
+flight per target". SM7.F.3 exists precisely because that is wrong, and the
+counterexample needs no concurrency: the retype wrappers open one round per
+flushed ASID, so a single two-ASID commit queues generations 1 and 2 on every
+remote core before any drain. The bound is fine — it is maintained by
+construction (`enqueueShootdown` fails closed, `enqueueShootdownOrCoalesce`
+collapses to a covering `.vmalle1`), not by that counting argument — so the
+prose was corrected rather than the constant. The module header's
+round-serialisation section now also states what the runtime refines and why:
+the Rust ack channel carries a generation because a `.tlbShootdownReq` SGI can
+stay pending across the cooperative round-lock acquire and be taken inside a
+later round, a delivery shape the model — where a handler application is an
+explicit function call — cannot represent.
+
+**Five references to symbols that no longer exist.** SM7.F.3 removed the ack
+reset; `reset_for_round_in_slice_masked`,
+`sm7a3_masked_reset_all_online_equals_unmasked_reset` and three prose mentions
+of `reset_for_round` survived it in `TlbShootdown.lean`,
+`TlbShootdownProtocol.lean`, `TlbShootdownWait.lean`, `smp.rs` and `lib.rs`.
+Each now names the live symbol, and where the reset carried an argument — the
+PR #838 online mask, the PR #839 `CORE_IRQ_READY` snapshot — the replacement
+says where that argument moved (onto the wait). The dead global
+`publish_round_ops` wrapper is gone; the live path drives the three `_in` entry
+points across the FFI boundary because it never holds a Rust slice, and the
+retained batch helper now says so.
+
+**Tests.** §8 gains 15 assertions (29 → 44). Nine cover the new conjunct at the
+point the drain is weakest — mid-storm, with three concurrent rounds' work still
+pending, checked to be genuinely non-empty so the assertion cannot pass
+vacuously. Six cover a round window **wider than one generation**: every prior
+group exercised a single-round commit, where `roundGen := window.2` and a
+width-1 window would be indistinguishable from a correct one. A live
+`lifecycleRetypeWithCleanupShootdownPerCore` into a different-ASID `.vspaceRoot`
+opens two rounds, the recovered window is `(0, 2]`, and the commit's own
+catch-up drains both — with the load-bearing negative that a width-1 window
+strands the first round's descriptors on every remote core. Suite 303 → 318
+runtime assertions; six `#check` anchors and three Tier-3 anchors added.
+
+**Gates that over-reported.** `test_rust.sh` printed the tail of the cargo log,
+so a 1093-test workspace run was summarised as "1 passed" — whichever binary ran
+last happened to be a single-doctest crate. It now aggregates the per-binary
+`test result:` lines, and flags skipped tests rather than letting them hide in a
+green summary. That immediately surfaced **two ignored doctests** against the
+project's standing "zero `#[ignore]`'d" claim: both were ```` ```ignore ````
+fences, which are not compiled at all and so rot silently.
+
+Converting them found a real defect. All four print macros — `kprint!`,
+`kprintln!`, `kprint_core!`, `kprintln_core!` — are `#[macro_export]`ed but
+expand to `$crate::uart::with_boot_uart`, which was `pub(crate)`: exported in
+name only, unusable by any consumer of the crate. The seam is now
+`#[doc(hidden)] pub` (a macro-expansion seam, not API to reach for directly),
+which makes the export true; the `kprintln_core!` doctest compiles as an
+external crate and is the regression gate on it. Rust 1093 → 1095 passing, **0
+ignored**, HAL still 800, clippy and rustfmt clean.
+
+`find_large_lean_files.sh` reported drifted paths through an unquoted `printf`
+expansion, which word-splits — a path containing a space would have been
+reported as two files; it now indents with `sed`.
+
+§8 is now three helpers behind a thin dispatcher: the additions pushed
+`runRoundGenerationChecks` to 209 lines, past the ~150-line threshold the
+project keeps for deep `do`-chains (they compile to nested C `if`-trees that can
+exceed clang's `-fbracket-depth`). C-scope depth resets at each function
+boundary, so the parts each stay well inside it.
+
+Every claim above was checked against the code: the conformance-pairing table in
+`shootdown.rs` cites 16 tests and all 16 exist, `--tolerance` was probed at
+0/1/5/100 and on invalid input (exit 2), the five new theorems are axiom-clean
+(`propext`, `Quot.sound`), the five changed Lean modules build with zero linter
+warnings, and the golden trace fixture is byte-identical.
+
+## v0.32.109 — stale source citations removed, and the habit gated
+
+The v0.32.108 entry recorded 58 stale `file.rs:NNN` citations as reported-but-
+not-fixed. Re-measuring with a regex that was not accidentally restricted to
+lowercase `.rs` found the real figure: **511**, across Lean, Rust, shell and
+TOML references in 22 active documentation files.
+
+**How stale.** Of the 511, mechanical verification (does a symbol named in the
+surrounding prose appear within ±12 lines of the cited line?) returned:
+
+| verdict | count |
+|---|---|
+| verifiably STALE | 178 |
+| unresolvable path — `Policy.lean` names 16 different files | 66 |
+| line past end-of-file | 3 |
+| still accurate | 107 |
+| no identifier available to check | 157 |
+
+Spot-checks confirmed the classifier rather than trusting it:
+`Endpoint.lean:723` resolved to a bare `| ok p3 =>`, `Model/Object/Types.lean:611`
+to an unrelated `inductive ThreadIpcState where`, `Structures.lean:500` to a
+docstring fragment about `BEq.refl`. The 107 accurate ones were one edit above
+them away from joining the rest.
+
+**What was removed.** The line number, not the citation: `Boot.lean:551` becomes
+`Boot.lean`. The file path is stable and useful; only the numeric suffix is
+fragile, and dropping it removes something false rather than adding something
+new. Nine distinct suffix shapes were in use and all are handled — plain `:N`,
+ranges with hyphen / en-dash / non-breaking hyphen, comma lists, open-ended
+`:N+`, and multi-range tails such as `:185-190, 216–223`. Sentence commas
+survive: a comma is only consumed when digits follow it, so `Boot.lean:551, which
+…` keeps its comma.
+
+**Deliberately not touched.** `docs/dev_history/` (archival by policy).
+`CHANGELOG.md` — append-only history that quotes verbatim compiler diagnostics
+(`foo.lean:1:0: error …`) and, since v0.32.108, discusses this pattern by
+quoting it; stripping there would corrupt both. Fenced code blocks in general,
+where a line number is tool output rather than a citation. And one true negative
+the sweep surfaced and left alone: `reachable from SeLe4n.lean: 144 modules` is
+a count, not a citation.
+
+**The gate.** `scripts/check_source_line_citations.py`, wired into
+`test_docs_sync.sh` (Tier 1 and above), fails on any `File.ext:NNN` in
+documentation prose, with both exemptions above encoded rather than assumed.
+Verified to fail on a prose citation, pass on the identical text inside a code
+fence, and recover.
+
+Refs: scripts/check_source_line_citations.py
+
+## v0.32.108 — three documentation claims that nothing enforced
+
+Continues the v0.32.107 sweep. Same defect class, three more instances: a
+claim the project publishes, a check that could have caught drift, and no
+wiring between them.
+
+**1. README + SELE4N_SPEC headline metrics were wrong — and it was this
+session's own doing.** `test_docs_sync.sh` verifies `docs/codebase_map.json`
+matches the tree, but nothing verified that anything *downstream* of the map
+had been re-synced **from** it. Regenerating the map and forgetting
+`sync_readme_from_codebase_map.sh` therefore published stale numbers with a
+green gate. Confirmed by computing the metrics at `origin/main`, where they
+matched the published figures exactly — so the drift (Production LoC
+235,825 → 236,974; Test LoC 47,915 → 48,143; proved declarations
+7,674 → 7,744) was introduced by the SM7.F.3 work and the gate let it through.
+
+**2. The "Known large files" drift detector had never run.**
+`find_large_lean_files.sh --check` exists and works; CLAUDE.md documents it.
+But its only caller is `sync_documentation_metrics.sh`, which is in **no test
+tier and no workflow** — so the warning it emits had never been seen, and the
+list was already stale at `origin/main`.
+
+The check was also *unfixably* noisy: an exact string comparison of a block
+whose counts are explicitly approximations (`~N lines`), so any patch touching
+any 800-line file failed it. That forces the choice between noisy and
+invisible, and it had chosen invisible. `--check` is now **tolerant**: the set
+of listed files must match exactly (a file crossing the threshold changes the
+reading guidance), and each count must be within `--tolerance` percent
+(default 10) of actual. `--tolerance 0` restores exact comparison. Verified to
+discriminate: 3.4% drift passes, 15% fails, membership change fails.
+
+**3. CLAUDE.md ↔ AGENTS.md byte-identity was documented but ungated.** Both
+files state the rule in their own headers; only the *version line* was
+checked, via `version_locations.sh`. Any other divergence — a policy edited in
+one file and not the other, exactly what the rule exists to prevent — was
+invisible to CI.
+
+**The fix is the wiring.** All three now run in `test_docs_sync.sh`, which
+Tier 1 and above already execute. Each was verified to genuinely fail and
+recover: a mutated README metric, a count past tolerance, a file removed from
+the list, and a heading changed in one mirror only. The mirror check carries an
+explicit vacuity guard that fails loudly if its anchor heading is missing —
+which caught a real bug in the anchor on first run.
+
+**Also corrected.** CLAUDE.md and AGENTS.md described PR #820 review #4 (the
+vestigial 2-arg `lean_endpoint_call_cross_core` export) as "the remaining
+cleanup item". It was done: the export is gone and only two historical comments
+recording its removal still name it. The prose now says so.
+`sync_documentation_metrics.sh`'s header, which justified warn-only treatment
+by the list being approximate, now points at the tolerance that makes the same
+list gateable.
+
+Refs: scripts/test_docs_sync.sh (documentation-claim drift gates)
+
+## v0.32.107 — the Rust format/lint gates that were provisioned but never wired
+
+**The drift.** `cargo fmt --check` reported a 6 187-line diff across 448 hunks
+in 53 files — every Rust crate in the workspace. Investigating the origin
+rather than just the symptom found the cause immediately: `rust-toolchain.toml`
+has always listed `components = ["clippy", "rustfmt"]`, and
+`scripts/setup_lean_env.sh` installs both with the explicit comment "so
+`cargo clippy` and `cargo fmt` [work]" — but **no gate ever ran either one**.
+`git log -S"cargo fmt"` over `scripts/` and `.github/` returns nothing. The
+tools were provisioned for checks that did not exist, so the formatting drifted
+unopposed and the project's "zero clippy warnings" claim rested on nobody
+running clippy in CI at all (v0.32.106 showed the pin had additionally frozen
+clippy three years behind stable).
+
+That is the same class of defect this codebase has fixed before in its own
+tests — an assertion that cannot fail is not a check. Two of them had been
+sitting in the build configuration.
+
+**The fix — the gate, not just the diff.** Reformatting alone would drift back.
+`scripts/test_rust.sh` (the Tier-1 Rust gate, run by `test_smoke.sh` and above)
+grows two steps:
+
+* `[4/5] cargo fmt --all --check`
+* `[5/5] cargo clippy --all-targets -- -D warnings`
+
+`--all-targets` so a lint firing only in test code still fails, and
+`-D warnings` because clippy reports findings as warnings by default and would
+otherwise pass the gate while printing them. **Both arms were verified to
+genuinely fail**: a deliberately mis-formatted function makes step 4 exit 1, and
+a `n % 4 != 0` probe makes step 5 exit 101 with `manual implementation of
+.is_multiple_of()`; both recover on revert.
+
+**What the reformat did and did not touch.** Zero comment lines: rustfmt's
+defaults (`wrap_comments`, `normalize_comments`, `format_code_in_doc_comments`
+all off) leave the hand-wrapped module headers and docstrings alone. No `asm!`
+or `global_asm!` block was altered. The changes are import ordering, line
+wrapping, and trailing commas.
+
+**One genuine regression, fixed at the source.** In `queued_rw_lock.rs` rustfmt
+treated a three-line standalone comment block as a continuation of the previous
+line's trailing comment (`let new = cur + 1; // reader count increments`) and
+indented it to column 32 to align with it — strictly worse than the input, and
+misleading about what the comment describes. Fixed in the source rather than
+worked around: the trailing comment becomes a leading one and a blank line
+separates the two blocks, after which rustfmt is stable and the comment reads
+correctly.
+
+**Verified.** Workspace builds with zero warnings; 1 087 tests pass; clippy
+clean under `-D warnings`; `cargo fmt --check` clean. The full Lean tier is
+green, including the **56 Tier-3 surface anchors that grep Rust source
+patterns** — the reformat moves lines, so those were the real risk and they all
+still resolve.
+
+**Related pre-existing drift, reported not silently "fixed".** 58 citations of
+the form `smp.rs:543` appear in `docs/audits/` and `docs/planning/`; all four
+sampled were **already stale** before this change (`smp.rs:543` cites an invalid
+PSCI `context_id` check; that line is now an idle-fallback docstring). These are
+point-in-time audit and plan records — renumbering them would falsify the
+historical record rather than repair it, and the durable fix is to stop citing
+line numbers in new prose. Recorded here rather than edited.
+
+Refs: scripts/test_rust.sh (steps 4 and 5)
+
+## v0.32.106 — Rust toolchain pin bumped 1.82.0 → 1.94.1
+
+**Why.** The pin cuts both ways, and the second direction had been
+overlooked: freezing the toolchain also freezes `clippy`, so every lint added
+upstream since the pin silently stopped running against this codebase. The
+project claims "zero clippy warnings", and under the 1.82.0 pin that was true —
+but only because a three-year-old clippy had nothing more to say. A developer
+whose *default* toolchain is current sees warnings the gate does not, and
+"fixing" them can break the pinned build outright: `clippy::manual_is_multiple_of`
+suggests `u64::is_multiple_of`, stabilised in 1.87, which 1.82 rejects as an
+unstable feature. That is exactly the failure mode PR #777's pin was introduced
+to prevent, arriving from the opposite direction.
+
+**What changed.** All four pin sites move in lockstep, as
+`rust/rust-toolchain.toml` documents:
+
+1. `rust/rust-toolchain.toml` — `channel = "1.94.1"`
+2. `rust/Cargo.toml` — `[workspace.package].rust-version = "1.94"`
+3. `.github/workflows/lean_action_ci.yml` — the `dtolnay/rust-toolchain`
+   step's `toolchain: 1.94.1`
+4. `scripts/setup_lean_env.sh` — `RUST_TOOLCHAIN_VERSION="1.94.1"`
+
+Both the toolchain file's and the setup script's header comments now state the
+clippy-drift direction explicitly, so the next reader has the whole rationale
+rather than half of it.
+
+**The lint surface it exposed.** Exactly one lint, eight sites, all in the FDT
+parser: `manual_is_multiple_of` on the 4-byte alignment and padding checks
+(`cmdline.rs` — two DTB header offset validations and six struct-block padding
+loops). Rewritten as `!x.is_multiple_of(4)`, which is what the check means.
+
+**Verified under the new pin.** Workspace builds clean; 1 087 tests pass across
+all crates (800 HAL, 102 + 100 conformance, and the rest); `cargo clippy
+--all-targets` reports zero warnings; `scripts/test_rust.sh` green.
+
+**Deliberately not changed.** `cargo fmt --check` reports a 6 187-line diff —
+identical on 1.82.0 and 1.94.1, so it is pre-existing drift rather than
+anything the bump introduced, and `rustfmt` is not part of any gate. The
+bare-metal `aarch64-unknown-none` build fails identically on both toolchains in
+a container without a cross-assembler (the `cc` crate falls back to the host
+`as` for `boot.S`); that path is Tier-4/hardware and is unaffected by the pin.
+Both are left for their own slices rather than folded in here.
+
+Refs: docs/gitbook/15-rust-syscall-wrappers.md (AA2 toolchain pin)
+
+## v0.32.105 — SM7.F.3: a shootdown round's catch-up drains only its own round
+
+**Closes SM7.F** (the last open sub-task of "Operative per-core TLB fills") and,
+in the Rust mirror the sub-task calls for, closes a **security** hazard in the
+acknowledgment channel.
+
+**The model-fidelity gap (the SM7.B v0.32.79 debt).** A syscall's shootdown
+work spans two atomic commits: the pure transition posts the descriptors, and
+`completeShootdownRounds` commits the catch-up afterwards. Only the *hardware*
+round runs under `SHOOTDOWN_ROUND_LOCK`, so a concurrently committed round can
+post between them. The catch-up drained each target's **whole** queue, so it
+swallowed that round's freshly-queued descriptors and declared the model
+quiescent before its `.tlbShootdownReq` SGIs had fired — the model claiming a
+core clean of an invalidation the hardware had not yet performed.
+
+**The model change.** `TlbShootdownDescriptor` gains `generation : Nat`;
+`TlbShootdownState` gains a monotone `roundGeneration : Nat` that
+`beginShootdownRound{,For}` advances, and `roundDescriptor` stamps every posted
+descriptor with the opened round's value
+(`roundDescriptor_generation_eq_opened`). A commit's own rounds are exactly the
+generations in `shootdownRoundWindow pre post = (pre.gen, post.gen]` — a
+*window* rather than a single generation, because the retype wrappers open one
+round per flushed ASID. The selective forms the live seam now runs are
+`drainShootdownsInWindow` → `completeShootdownOnCoreInWindow` →
+`handleTlbShootdownReqOnCore{,PerCore}InWindow` →
+`shootdownCatchUpPerCoreInWindow`, with
+`shootdownCatchUpPerCoreInWindow_preserves_foreign` (a concurrently posted
+round's descriptors survive) as the headline and `…_drains_own` as its dual.
+
+Every landed SM7.A/B round theorem carries over unchanged through the exactness
+bridges — `drainShootdownsInWindow_eq_drainShootdowns`,
+`handleTlbShootdownReqOnCore{,PerCore}InWindow_eq_handle`,
+`shootdownCatchUpPerCoreInWindow_eq_catchUp` — because under round
+serialisation a core's queue holds only this commit's work, so the window drain
+*is* the whole-queue drain. `shootdownPostedOps` is likewise window-restricted,
+so the runtime broadcasts and publishes exactly its own round's operands;
+`mem_shootdownPostedOps_iff` pins both directions, including that the operand
+deduplication never drops an entry (the unsafe direction) — Lean core ships
+`List.eraseDups` without membership lemmas, so both are proven here
+(`mem_eraseDups_of_mem` / `mem_of_mem_eraseDups`).
+
+**SECURITY — the Rust mirror.** Under the SM7.A Boolean `SHOOTDOWN_ACK` vector
+a round opened by *clearing* every online target's flag, and the handler set
+its flag unconditionally after retiring whatever the mailbox held. A
+`.tlbShootdownReq` SGI left pending by an **earlier** round — the cooperative
+round-lock acquire self-acknowledges without consuming the interrupt, and IRQs
+are masked on the SVC path — could be delivered inside a later round's
+`reset → publish` window. Its handler then retired the *previous* round's
+operands and acknowledged, satisfying the new round's `all_acked` wait with
+that target's TLB still holding the translation the round was supposed to
+retire: an under-invalidation, the SMP-C4 stale-TLB hazard. High severity once
+bootable (SM9.E); latent today, since there is no bootable image.
+
+The fix makes an acknowledgment *name the round it discharged*.
+`ShootdownAckSlot` holds a monotone `acked_gen : AtomicU64` advanced by
+`fetch_max`; the mailbox publishes the round's generation; and the handler
+(`tlb_shootdown_req_service_in`) latches that generation **before** any TLB
+work and acknowledges exactly it — so every branch it can take, the precise
+per-descriptor retire or the conservative `tlbi vmalle1` fallback, provably
+discharges the generation acknowledged. The initiator waits for
+`acked_gen[c] >= gen` across the IRQ-serviceable non-initiator cores. With the
+round identified by its generation there is nothing to clear before it opens,
+so `reset_for_round*` is **gone** — the window the hazard lived in no longer
+exists, and Tier-3 anchors negatively pin its absence (a reset would erase the
+monotonicity the mechanism rests on). The PR #838-P1 online mask moves from the
+reset to the wait, where it belongs. The cooperative self-service arm becomes
+one Rust call (`self_service_round`) so the generation read, the local flush
+and the acknowledgment cannot be split by a newer round's publish.
+
+**Tests.** `SmpTlbShootdownSuite` §8 (`runRoundGenerationChecks`, 29 runtime
+assertions) drives the closure on the same real page-table-backed four-round
+storm §6 builds: generation allocation and stamping, the window predicate and
+its diff recovery, core 0's catch-up draining only generation 1 while cores 2–3
+keep the concurrent rounds' work, the explicit contrast that the whole-queue
+catch-up *would* have swallowed them, every commit's own catch-up run in turn
+ending quiescent with no page left cached, the single-round bridge, diff-recovery
+precision, and empty-window inertness. Rust: the
+`sm7f3_stale_acknowledgment_cannot_satisfy_a_later_round` regression test is the
+security fix's direct witness, with
+`sm7f3_wait_times_out_on_stale_acknowledgments_only` its wait-loop companion;
+plus the exhaustive 2⁴ × 4-initiator wait-predicate conformance, the
+handler/self-service generation tests, and the mailbox generation round-trip and
+its mismatch fallback. HAL 798 → 800; zero clippy warnings under the pinned
+1.82.0 toolchain; golden trace byte-identical (`perCoreTlb` and `tlbShootdown`
+are projection-invisible).
+
+**Residual.** SM7.F.4(b)(iv) — the `requiresFlush` ASID-allocate
+(`asidAllocateWithShootdown`) — stays gated on SM8: the wrapper is complete and
+proven but user-unreachable, because no ASID object family or assign syscall
+exists yet. A completeness gap, not a safety hole.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F.3
+
 ## v0.32.104 — Tier 3: the surface gate no longer depends on Tier 1 having run
 
 **The failure.** Running `scripts/test_tier3_invariant_surface.sh` on its own —

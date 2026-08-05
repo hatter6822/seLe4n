@@ -119,11 +119,11 @@ echo "[4/4] Verifying SM2 theorem count agreement..."
 # The literal "= 22" appears on the same line as the theorem statement;
 # we extract the integer after the final `=` (PCRE lookbehind).
 lean_count=$(grep -oP '^theorem lockPrimitives_count\s*:\s*lockPrimitives\.length\s*=\s*\K\d+' "${LOCK_PRIMITIVES_LEAN}" || echo "0")
-# Rust: `pub const SM2_THEOREM_COUNT: usize = 22;`
-rust_count=$(grep -oP 'pub const SM2_THEOREM_COUNT:\s*usize\s*=\s*\K\d+' "${LOCK_BRIDGE_RUST}" || echo "0")
+# Rust: `pub const LOCK_THEOREM_COUNT: usize = 22;`
+rust_count=$(grep -oP 'pub const LOCK_THEOREM_COUNT:\s*usize\s*=\s*\K\d+' "${LOCK_BRIDGE_RUST}" || echo "0")
 
 if [[ "${lean_count}" != "${rust_count}" ]]; then
-  echo "  MISMATCH: Lean lockPrimitives_count = ${lean_count}, Rust SM2_THEOREM_COUNT = ${rust_count}" >&2
+  echo "  MISMATCH: Lean lockPrimitives_count = ${lean_count}, Rust LOCK_THEOREM_COUNT = ${rust_count}" >&2
   failures=$((failures + 1))
 elif [[ "${lean_count}" == "0" ]]; then
   echo "  ERROR: could not extract SM2 theorem count from either side" >&2
