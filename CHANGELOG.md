@@ -1,3 +1,66 @@
+## v0.33.0 — SM7.F closed for real: a core now caches what it accessed
+
+A minor bump, because the per-core TLB model stops being a model of one
+special case. Through v0.32.149 `tlbFillOnCore` had exactly one caller,
+inside the mapping seam, so every entry in `perCoreTlb` was cached by the
+core that *mapped* it. A core that merely accessed a page another core
+had mapped cached nothing — and for that core Theorem 3.3.1 and the 13th
+`proofLayerInvariantBundle` conjunct were vacuous, satisfied by an empty
+view rather than a maintained one. That is the common case on hardware,
+and precisely the case a shootdown exists to handle. SM7.F's own
+acceptance criterion reads "map → **access (fill)** → cross-core unmap";
+the middle step had nothing to run.
+
+This release closes it, and closes two things found on the way.
+
+**The access-time fill (v0.32.150).** New production module
+`Architecture/IpcBufferTlbFill.lean` fills at the one place the kernel
+translates a *user* address on the syscall path — the IPC-buffer walk for
+overflow message registers — live in `API.syscallEntryChecked`. Keyed on
+the page, because `tlbEntryMatches` compares virtual addresses for
+equality rather than containment, so a byte-keyed entry would survive the
+very page invalidation meant to evict it. The correspondence theorem
+`tlbFillIpcBufferOnCore_caches_read_translation` is load-bearing: the read
+resolves `tid → tcb.vspaceRoot → root` while the fill resolves
+`asid → resolveAsidRoot`, and its `hResolve` premise is exactly the claim
+that those two routes agree — which the ASID-rebind hazard can falsify.
+`SmpTlbShootdownSuite` §5.11 runs the criterion with a genuine access:
+core1 maps, **core0 accesses**, the catch-up removes the access-acquired
+entry.
+
+**A pre-existing defect (v0.32.150).** `ipcBufferReadMr` handed the slot's
+*byte* address to `VSpaceRoot.lookup`, an exact-key table whose keys are
+page bases. Every slot but the zeroth missed, so **any syscall carrying
+two or more overflow message registers failed** against a correctly mapped
+buffer; slot 0 worked only because its offset is zero. Coverage exercised
+`overflowCount` 0 and 1 only, which is why it survived — and the module's
+own docstring already described the per-slot, page-crossing behaviour the
+code did not implement. Fixed with `VAddr.pageBase` / `VAddr.pageOffset`.
+Fail-closed, so a fidelity defect rather than a security one.
+
+**Whole-bundle carriage (v0.32.151).** v0.32.150 recorded "three conjuncts
+fail `isDefEq`" as debt; the causes turned out to be structural, not
+budgetary — a `match` stuck on a symbolic `Nat` fuel, and an `inductive`
+family parameterised by the state. All three blockers already had
+congruence lemmas; the bundle lacked carriage only because those
+congruences were private and bound to specific transitions. New
+`proofLayerInvariantBundle_setPerCoreTlb` is the reusable layer.
+
+Zero sorry/axiom; golden trace byte-identical throughout.
+
+**Disclosed, not implemented.** The scalar `tlb` (9th conjunct) stays
+unconditional and empty-live — the pre-SMP single-view model `perCoreTlb`
+refines, and the boot-pinned `syscallEntry` is deliberately left unfilled
+so the two models do not mix. There is no TLB capacity/eviction model: a
+modelled view retains every entry ever filled, which is the safe direction
+(a strictly stronger obligation than hardware imposes) but is now on the
+record rather than tacit.
+
+**Still open.** SM7.F.4(b)(iv), the user-unreachable ASID-allocate, remains
+gated on SM8's ASID object family.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F
+
 ## v0.32.151 — why the bundle would not carry across a `perCoreTlb` write, and the fix
 
 v0.32.150 could not prove `proofLayerInvariantBundle` carriage across the
