@@ -17,6 +17,7 @@
 
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
 import SeLe4n.Kernel.Concurrency.Runtime
+import SeLe4n.Kernel.Concurrency.Locks.LockSetForSyscall
 -- WS-SM SM6.E: the per-core suspend behind `suspendThreadCrossCoreEntry`.
 import SeLe4n.Kernel.IPC.CrossCore.Cancellation
 -- WS-SM SM7.B: the shootdown round's pure transitions + diff recovery
@@ -650,12 +651,41 @@ def suspendThreadCrossCoreEntry (tid : UInt64) : BaseIO UInt32 := do
         ((Platform.FFI.KernelError.toUInt32 .invalidArgument,
           ([] : List (CoreId × SgiKind))), st)
     | some vtid =>
-        match Lifecycle.Suspend.suspendThreadOnCore st vtid execCore with
-        | Except.ok (st', _) =>
-            (((0 : UInt32),
-              PriorityInheritance.computeCrossCoreSgis st st' execCore), st')
-        | Except.error e =>
-            ((Platform.FFI.KernelError.toUInt32 e, ([] : List (CoreId × SgiKind))), st))
+        -- **WS-SM SM3.C.9**: run the transition inside its declared
+        -- per-object lock set.  `suspend_thread_cross_core` is the first
+        -- live export to do this, which is what makes SM3's 2PL and
+        -- serializability theorems statements about the path the kernel
+        -- actually runs rather than about an intended discipline.
+        --
+        -- The caller is the thread currently on the executing core; its
+        -- TCB is read-locked, the victim's is write-locked, and the
+        -- optional members (blocked endpoint / notification, consumed
+        -- Reply, bound or donated SchedContext, donation's original
+        -- owner) are resolved from the victim's own fields — the same
+        -- fields the suspend pipeline branches on.
+        --
+        -- `none` means no footprint has been declared for this
+        -- transition, in which case the transition runs exactly as
+        -- before under the SM5.I kernel-entry lock.  Falling back is
+        -- always sound; claiming a footprint that does not cover a write
+        -- would not be.
+        let action : SystemState →
+            SystemState × (UInt32 × List (CoreId × SgiKind)) := fun s =>
+          match Lifecycle.Suspend.suspendThreadOnCore s vtid execCore with
+          | Except.ok (s', _) =>
+              (s', ((0 : UInt32),
+                    PriorityInheritance.computeCrossCoreSgis s s' execCore))
+          | Except.error e =>
+              (s, (Platform.FFI.KernelError.toUInt32 e,
+                   ([] : List (CoreId × SgiKind))))
+        let callerTid := (st.scheduler.currentOnCore execCore).getD vtid
+        match Concurrency.lockSetForSyscall .tcbSuspend callerTid vtid st with
+        | some lockSet =>
+            let (st', r) := Concurrency.withLockSet lockSet execCore action st
+            (r, st')
+        | none =>
+            let (st', r) := action st
+            (r, st'))
   Concurrency.fireCrossCoreSgis result.2
   pure result.1
 

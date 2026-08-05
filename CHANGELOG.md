@@ -1,3 +1,68 @@
+## v0.32.149 — SM3.C.9: the syscall→lock-set dispatcher, and one live export under it
+
+SM3 built the per-object lock discipline — `LockId` (kind level 0..9 ×
+object) with a proven total order, forty-one `lockSet_*` footprints,
+`permittedKinds`, and `withLockSet`'s 2PL / serializability /
+observer-atomicity theorems. It never built the piece that connects them
+to a running syscall: a function from *the syscall about to run* to *the
+lock set its footprint needs*. Without it those theorems describe an
+intended discipline rather than the live path, which is what SM3.C.9 was
+deferred to close.
+
+**New `Concurrency/Locks/LockSetForSyscall.lean`** supplies it, and
+returns **`Option LockSet`**:
+
+* `some S` — this syscall's footprint **is** `S`;
+* `none` — not yet declared; the caller keeps its existing
+  serialisation.
+
+The alternative — a "best effort" set for undeclared arms — is the one
+shape this must not take. A declared set that misses a write is not a
+smaller optimisation, it is a **false footprint**: the 2PL argument then
+rests on exclusion the runtime never established, and it surfaces as a
+corrupted object under contention rather than as a failed proof. `none`
+cannot be wrong, and it makes the migration monotone — each later cut
+turns one `none` into a `some` together with its coverage proof.
+
+Three theorems, zero `sorry`, axioms `propext` + `Quot.sound` only: the
+`tcbSuspend` arm is wired to its resolver; **every other arm returns
+`none`** (the load-bearing negative — declaring the next footprint must
+change this theorem); and the suspend footprint resolves exactly when the
+target names a TCB.
+
+**Live**: `suspend_thread_cross_core` now runs its transition inside
+`withLockSet` with the resolved footprint — the first live export under a
+declared per-object lock set. The caller is resolved from
+`currentOnCore`; the five optional members (blocked endpoint or
+notification, consumed Reply, bound or donated SchedContext, the
+donation's original owner) come from the victim's own fields, the same
+ones the suspend pipeline branches on.
+
+**What this does NOT do, stated because the next reader will assume
+otherwise.** Declaring a footprint does not make per-object locks
+operative. `Platform.FFI.modifyGetKernelState` is `IO.Ref.modifyGet`
+over one global `SystemState` — a whole-state read-then-write — so two
+cores holding disjoint footprints would still lose one commit whole.
+The granularity that matters there is the granularity of the *commit*,
+not of the footprint. Until the commit is partitioned the SM5.I
+kernel-entry lock stays, and what this buys is the model-level property:
+SM3's theorems now apply to the transition the kernel actually runs. A
+correction to v0.32.148's closing note — the deadlock was *a* blocker to
+per-object adoption, not *the* blocker.
+
+**The AK7 gate caught a real defect in this cut.** The first resolver read
+the object store raw (`objects[...]?` matched on `.tcb`), moving
+`RAW_MATCH_TCB` 54 → 55 and `RAW_LOOKUP_TID` 1310 → 1312. Re-anchoring
+the baseline with a note about a benign increment would have been the
+easy move and the wrong one: a footprint is a statement *about* the
+object store and has no business reading it in the un-migrated way. The
+code now reads through the AL2-A `getTcb?` accessor, so the metrics are
+unchanged and `GETTCB_ADOPTION` rises 2157 → 2159 — the bar held and the
+code moved.
+
+Scope: one of thirty arms declared. The other twenty-nine keep their
+existing serialisation, which is sound; each conversion is a later cut
+that must land its coverage proof alongside.
 ## v0.32.148 — QueuedRwLock: the deadlock was structural, so the queue is gone
 
 v0.32.147 traced the intermittent HAL hang to a genuine deadlock in

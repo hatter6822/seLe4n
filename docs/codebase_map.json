@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/sm7f-tlb-fills-6r7c3l",
-      "commit_sha": "b143eb4519f7a92dff88485b76d2ff769b062e51",
-      "tree_sha": "e278573ebce442471adb53ef34824a3e618fe13c",
-      "committed_at_utc": "2026-08-04T20:40:39+00:00"
+      "commit_sha": "396c33b0a2022c6bbdbf16fb8a24cf732c11b2d0",
+      "tree_sha": "a47a442e12f8ab5cf150e891c732cb7677fdace5",
+      "committed_at_utc": "2026-08-05T00:18:52+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "e253556e5b26ccd5aa04196f1b8f3ebc2a468cbfa8ac976e7fab0ab8db41c8cd"
+    "source_digest": "5901c235334e65b5b8ce9f8f41a6e5e5e8b515f53944870fff5aacae854f9d90"
   },
   "summary": {
-    "module_count": 331,
-    "declaration_count": 14015
+    "module_count": 332,
+    "declaration_count": 14021
   },
   "readme_sync": {
-    "version": "0.32.148",
+    "version": "0.32.149",
     "lean_toolchain": "v4.28.0",
-    "production_files": 264,
-    "production_loc": 238348,
+    "production_files": 265,
+    "production_loc": 238555,
     "test_files": 67,
     "test_loc": 48449,
-    "proved_theorem_lemma_decls": 7798,
+    "proved_theorem_lemma_decls": 7801,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -31809,6 +31809,102 @@
             "releaseAll",
             "withLockSet",
             "withLockSet_eq_decomposition"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.Concurrency.Locks.LockSetForSyscall",
+      "path": "SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean",
+      "declaration_count": 6,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.Concurrency",
+          "line": 50,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "suspendFootprintOf",
+          "line": 72,
+          "called": [
+            "LockSet",
+            "ObjId",
+            "ReplyId",
+            "SchedContextId",
+            "SystemState",
+            "ThreadId",
+            "callerTid",
+            "getTcb",
+            "lockSet_tcbSuspend",
+            "none",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "lockSetForSyscall",
+          "line": 113,
+          "called": [
+            "LockSet",
+            "SyscallId",
+            "SystemState",
+            "ThreadId",
+            "callerTid",
+            "cspaceCopy",
+            "cspaceMint",
+            "cspaceMove",
+            "mintReplyCap",
+            "none",
+            "notificationSignal",
+            "notificationWait",
+            "schedContextBind",
+            "schedContextConfigure",
+            "schedContextUnbind",
+            "st",
+            "suspendFootprintOf"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lockSetForSyscall_tcbSuspend",
+          "line": 138,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "callerTid",
+            "lockSetForSyscall",
+            "st",
+            "suspendFootprintOf"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lockSetForSyscall_undeclared_none",
+          "line": 151,
+          "called": [
+            "SyscallId",
+            "SystemState",
+            "ThreadId",
+            "callerTid",
+            "lockSetForSyscall",
+            "none",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "suspendFootprintOf_isSome_iff",
+          "line": 163,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "callerTid",
+            "getTcb",
+            "st",
+            "suspendFootprintOf"
           ]
         }
       ]
@@ -140093,13 +140189,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 77,
+          "line": 78,
           "called": []
         },
         {
           "kind": "def",
           "name": "shootdownSharingDomain",
-          "line": 90,
+          "line": 91,
           "called": [
             "RPi5Platform",
             "SharingDomain"
@@ -140108,7 +140204,7 @@
         {
           "kind": "theorem",
           "name": "shootdownSharingDomain_rpi5",
-          "line": 96,
+          "line": 97,
           "called": [
             "shootdownSharingDomain"
           ]
@@ -140116,7 +140212,7 @@
         {
           "kind": "def",
           "name": "haltFailClosed",
-          "line": 127,
+          "line": 128,
           "called": [
             "fatalHaltAll"
           ]
@@ -140124,13 +140220,13 @@
         {
           "kind": "def",
           "name": "shootdownRoundLockAcquireFuel",
-          "line": 136,
+          "line": 137,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "shootdownRoundLockAcquireFuel_value",
-          "line": 139,
+          "line": 140,
           "called": [
             "shootdownRoundLockAcquireFuel"
           ]
@@ -140138,7 +140234,7 @@
         {
           "kind": "def",
           "name": "acquireShootdownRoundLockServicingSelf",
-          "line": 162,
+          "line": 163,
           "called": [
             "CoreId",
             "haltFailClosed",
@@ -140151,7 +140247,7 @@
         {
           "kind": "def",
           "name": "publishShootdownOps",
-          "line": 197,
+          "line": 198,
           "called": [
             "TlbInvalidation",
             "length",
@@ -140166,7 +140262,7 @@
         {
           "kind": "def",
           "name": "completeShootdownRounds",
-          "line": 290,
+          "line": 291,
           "called": [
             "CoreId",
             "TlbInvalidation",
@@ -140194,7 +140290,7 @@
         {
           "kind": "def",
           "name": "completeIcacheMaintenance",
-          "line": 472,
+          "line": 473,
           "called": [
             "ICacheInvalidation",
             "icMaintenanceBroadcast"
@@ -140203,7 +140299,7 @@
         {
           "kind": "theorem",
           "name": "completeIcacheMaintenance_nil",
-          "line": 480,
+          "line": 481,
           "called": [
             "completeIcacheMaintenance",
             "pure"
@@ -140212,7 +140308,7 @@
         {
           "kind": "theorem",
           "name": "completeIcacheMaintenance_singleton",
-          "line": 486,
+          "line": 487,
           "called": [
             "ICacheInvalidation",
             "completeIcacheMaintenance",
@@ -140222,7 +140318,7 @@
         {
           "kind": "theorem",
           "name": "completeIcacheMaintenance_cons",
-          "line": 494,
+          "line": 495,
           "called": [
             "ICacheInvalidation",
             "completeIcacheMaintenance",
@@ -140232,7 +140328,7 @@
         {
           "kind": "theorem",
           "name": "completeShootdownRounds_nil",
-          "line": 505,
+          "line": 506,
           "called": [
             "CoreId",
             "TlbInvalidation",
@@ -140243,7 +140339,7 @@
         {
           "kind": "def",
           "name": "syscallDispatchCrossCoreEntry",
-          "line": 523,
+          "line": 524,
           "called": [
             "CoreId",
             "ICacheInvalidation",
@@ -140269,7 +140365,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchCrossCoreEntry_def",
-          "line": 565,
+          "line": 566,
           "called": [
             "CoreId",
             "ICacheInvalidation",
@@ -140296,7 +140392,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchCrossCoreEntry_sgis_nil_single_core",
-          "line": 600,
+          "line": 601,
           "called": [
             "CoreId",
             "SystemState",
@@ -140312,15 +140408,19 @@
         {
           "kind": "def",
           "name": "suspendThreadCrossCoreEntry",
-          "line": 644,
+          "line": 645,
           "called": [
             "CoreId",
             "Kernel",
             "KernelError.toUInt32",
             "SgiKind",
+            "SystemState",
+            "callerTid",
             "computeCrossCoreSgis",
             "currentCoreId",
+            "currentOnCore",
             "fireCrossCoreSgis",
+            "lockSetForSyscall",
             "modifyGetKernelState",
             "none",
             "ofNat",
@@ -140328,7 +140428,8 @@
             "st",
             "suspendThreadOnCore",
             "toNat",
-            "toValid"
+            "toValid",
+            "withLockSet"
           ]
         }
       ]
