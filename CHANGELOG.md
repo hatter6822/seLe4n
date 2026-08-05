@@ -1,3 +1,71 @@
+## v0.32.148 — QueuedRwLock: the deadlock was structural, so the queue is gone
+
+v0.32.147 traced the intermittent HAL hang to a genuine deadlock in
+`QueuedRwLock`: the lock **free** (`state == 0`), every core parked, no
+releaser left to signal anyone. This replaces the algorithm.
+
+**Why not a patch.** The captured interleaving is not a missing case. A
+writer queued behind a reader; the reader released and its walk *reached*
+the writer but could not admit it (other readers still held), so it
+returned — leaving the admission to "a future signal from a reader's
+release", exactly as that site's comment claimed. The last reader then
+released, but readers are admitted **en masse** by `cascade_admit_readers`
+and release independently, so its slot was no longer in the queue: its
+`next` was a fossil from an earlier incarnation, its walk dead-ended on a
+slot since reset, and it never reached the writer. The writer's one
+remaining link was then destroyed by its predecessor's next `reset()`.
+
+The surgical repair was tried first — record the deferred waiter so
+whoever drains the lock completes the admission. It fixed that
+interleaving and **immediately exposed a second, independent one**:
+`signal_next_waiter` tripping its own "walk exceeded MAX_WAITERS — chain
+cycle?" assertion, because two cores can link behind each other across
+incarnations.
+
+Both have one cause: **a core's slot is reused the moment it re-acquires,
+while other cores still hold references to it.** Every guard the protocol
+had accumulated — stale-self detection, the mode-encoded four-state
+`parked` machine, CAS-claim symmetry, walk-past-stale,
+signal-on-every-release — was a patch on a consequence of that. A sixth
+was not going to converge.
+
+**The replacement.** A ticket lock: `next_ticket` issues positions,
+`now_serving` names the position entitled to enter. Readers join the
+reader count and pass the ticket on *immediately*, so a contiguous run
+enters together; writers wait for the count to drain, hold exclusively,
+and pass the ticket on at release. `state` keeps its bit-packed layout,
+so writer-readers exclusion and `peek_state` read exactly as before.
+
+Deadlock-freedom is now one sentence: **`now_serving` is advanced exactly
+once per issued ticket, unconditionally, by whoever that ticket admits.**
+No path returns without either advancing it or holding the lock. That is
+the property the MCS version could not maintain, because the duty to
+admit the next waiter rested on a chain reference that could be stale,
+destroyed, or unreachable. FIFO is admission-in-ticket-order — stronger
+and simpler than the chain gave. There is no `next` to go stale, no slot
+to reuse, no chain to cycle, no walk to dead-end.
+
+~370 lines replace ~1300.
+
+**Evidence.** All 26 pre-existing tests pass, including
+`cross_thread_state_invariant_no_writer_with_readers` — the one that
+deadlocked. The twelve cross-thread behavioural tests carried over
+**unchanged**, which is what makes them evidence: they were written
+against the old design. Plus the acceptance runs recorded in the plan.
+
+`build.rs`'s protocol scanner pinned the old machinery (the parked
+constants, the stale-self literal). It now pins the ticket hand-off and
+keeps the CAS-not-`fetch_or` writer-admission rule — the change that gate
+anticipated in its own text ("If you intend to restructure the parked
+machine, update the scanner in lockstep and verify... under stress test").
+
+Removed with the algorithm: `WaiterSlot`, `PARKED_*`, `MODE_*`, and the
+seven tests that asserted on them. They described machinery that no
+longer exists; keeping them as green tests over a deleted design would
+have been the vacuity this PR has spent thirty rounds removing.
+
+Still no callers — the fix lands before SM3.C.9 adopts it per-object,
+which was the point of fixing it now rather than filing it.
 ## v0.32.147 — The hang is a deadlock in QueuedRwLock, with the lock free
 
 v0.32.146 filed the intermittent HAL test hang as tracked debt with the

@@ -1937,15 +1937,15 @@ rather than riding a round-18 remediation cut.
 a lock that excludes every other kernel entry; the five sites above
 updated to describe the mechanism that actually runs.
 
-## `QueuedRwLock` deadlocks with the lock free and every waiter parked (DEFECT, owner SM2)
+## `QueuedRwLock` deadlocked with the lock free — RESOLVED at v0.32.148
 
-Found at v0.32.146 while adding contention witnesses. **This is a real
-deadlock in the lock protocol, not a test artifact.** It is not on any
-live path today — `QueuedRwLock` has no callers, no FFI exports and no
-Lean bindings — but it is the primitive SM3.C.9 intends to adopt for
-per-object locks, so it must be fixed before that adoption.
+Found at v0.32.147 while adding contention witnesses; **fixed at
+v0.32.148 by replacing the algorithm.** It was never on a live path —
+`QueuedRwLock` has no callers, no FFI exports and no Lean bindings — but
+it is the primitive SM3.C.9 intends to adopt for per-object locks, so it
+was fixed before that adoption rather than filed against it.
 
-### The captured state
+### The defect
 
 A watchdog dumped the lock the moment progress stopped:
 
@@ -1959,84 +1959,86 @@ tail  = 3
   slot[3] parked=WAITING_READER  mode=READ   next=NONE
 ```
 
-Two facts damn it:
+The lock is **free** while all four cores sit parked waiting for it, and
+slot 2 is orphaned — the reachable chain `0 -> 1 -> 3` ends consistently
+at `tail = 3` and slot 2 is not on it. Held 15 minutes: thread states
+constant, `utime` linear, no self-resolution.
 
-1. **`state == 0`.** The lock is completely free — no writer, no
-   readers — while all four cores sit parked in `WAITING_*`. Nobody
-   holds it, so no release will ever run `signal_next_waiter`, and every
-   waiter is blocked in `while parked != ADMITTED`. A lost wakeup.
-2. **Slot 2 is orphaned.** The reachable chain is `0 -> 1 -> 3`, ending
-   at `tail = 3`, which is self-consistent. Slot 2 is *not on it*:
-   nothing points to 2 and 2 is not the tail, yet slot 2 points into the
-   chain at node 1. It enqueued and then lost its predecessor link, so
-   no one will ever signal it. Worker 2's progress counter (6, against
-   ~400-600 for its peers) shows it wedged almost immediately.
+### The interleaving (event trace)
 
-### Classification: deadlock, not slowness
-
-A hang was held for **15 minutes** with per-minute sampling: thread
-states constant (4 runnable, none blocked), `utime` climbing perfectly
-linearly (~13 200 ticks/minute). It burns CPU forever and never
-progresses. It does not self-resolve.
-
-### Reproduction
-
-Needs concurrent load; it never reproduces alone (0 hangs in 200 runs of
-the test by itself). Either run the full suite —
+Instrumenting every protocol decision gave the sequence:
 
 ```
-cargo test -p sele4n-hal --lib --no-run
-for i in $(seq 1 60); do timeout 60 target/debug/deps/sele4n_hal-* --test-threads=4 || echo "run $i hung"; done
+core3 SWAP prev=2          core3 (WRITER) enqueues behind core2
+core3 LINK prev=2          slots[2].next = 3
+core2 releases
+core2 SIG_STOP tgt=3       walk REACHED core3 but could not admit it —
+                           readers still held — so it returned, leaving
+                           the admission to "a future signal from a
+                           reader's release", as its comment claimed
+core0 releases             (core0 is the LAST reader)
+core0 SIG_STOP tgt=2       core0's own `next` is a FOSSIL pointing at
+                           core2, which had already moved on
+                           (PARKED_NOT_IN_QUEUE) -> returned WITHOUT
+                           ever reaching core3
+core2 re-acquires          reset() clears slots[2].next
+                           -> core3's only link DESTROYED
 ```
 
-(2-3 hangs per 100 runs; on a hang 825 of 826 tests have completed and
-`cross_thread_state_invariant_no_writer_with_readers` has not) — or,
-much faster, drive the lock directly with 4 workers doing the same
-`i % 3` write/read mix at ~4000 iterations each and a watchdog that
-dumps `state`/`tail`/slots when no worker's counter advances for 3 s.
-That reproduced on the **first** attempt and produced the dump above.
+The false premise is that a releaser can reach the queue. It walks from
+*its own* slot, but readers are admitted en masse by
+`cascade_admit_readers` and release independently, so a released
+reader's slot need not be in the queue at all.
 
-### Where to look
+### Why it was replaced rather than patched
 
-The orphaned slot points at the enqueue/cleanup interaction the module's
-own comments already worry about — "dangling tail", "the enqueuer is
-orphaned", the stale-self defence, and the CAS-claim symmetry between
-`signal_next_waiter` and `cascade_admit_readers`. The failure is that
-some interleaving leaves a slot enqueued but unreachable while the
-queue's visible chain stays internally consistent.
+The surgical repair — record the deferred waiter so whoever drains the
+lock completes the admission — was implemented and **did** fix that
+interleaving. It immediately exposed a second, independent one:
+`signal_next_waiter` tripping its own "walk exceeded MAX_WAITERS — chain
+cycle?" assertion, because two cores can link behind each other across
+incarnations.
 
-### What was tried and rejected
+Both have one cause: a core's slot is reused the moment it re-acquires,
+while other cores still hold references to it. Every guard the protocol
+had accumulated — stale-self detection, the mode-encoded four-state
+`parked` machine, CAS-claim symmetry, walk-past-stale,
+signal-on-every-release — was a patch on a consequence of that.
 
-An earlier reading blamed missing scheduler yields and added
-`thread::yield_now()` to the test's observer loop. Measured: 3 hangs in
-100 runs with it against 2 in 60 without — unchanged — so it was
-reverted. That hypothesis was wrong on the code as well: every
-parked-wait already routes through `cpu::wfe_bounded` -> `cpu::wfe()`,
-which yields under `cfg(test)` (added by SM2.E for the same symptom).
-Note also that state `R` does not imply a non-yielding spin, since
-`yield_now()` leaves a thread runnable.
+### The replacement
 
-### Acceptance
+A ticket lock. `next_ticket` issues positions, `now_serving` names the
+position entitled to enter. Readers join the reader count and pass the
+ticket on immediately (so a contiguous run enters together); writers wait
+for the count to drain, hold exclusively, and pass it on at release.
+`state` keeps its bit-packed layout, so writer-readers exclusion and
+`peek_state` are unchanged.
 
-The direct-drive reproduction above runs 400 attempts with no stall, and
-the full suite runs 100 times with no hang.
+Deadlock-freedom is one sentence: **`now_serving` advances exactly once
+per issued ticket, unconditionally, by whoever that ticket admits.** No
+path returns without either advancing it or holding the lock. FIFO is
+admission-in-ticket-order, stronger than the chain gave. There is no
+`next` to go stale, no slot to reuse, no chain to cycle, no walk to
+dead-end. ~370 lines replace ~1300.
 
-### Relationship to the v0.32.146 witnesses
+### Acceptance (all met at v0.32.148)
 
-The contention witnesses add concurrent load, which plausibly raises the
-hit rate, but the measurements do not establish by how much and one
-figure quoted in the v0.32.146 CHANGELOG entry (1 in 50 -> 1 in 12)
-rests on a single small-sample comparison. Everything measured:
+| Check | Before | After |
+|---|---|---|
+| Direct-drive harness, 400 attempts x 3000 iters x 4 cores | stalled on attempt 0 | **no stall** |
+| Full suite, 100 runs, `--test-threads=4` | 2-3 hangs | **0 hangs** |
+| Pre-existing tests in the file | 1 deadlocking | **26/26 pass** |
+| `test_rust.sh` | — | 1114 passed, clippy clean, 0 ignored |
 
-| Configuration | Hangs |
-|---|---|
-| suite **without** the witnesses (via cargo) | 1 / 50 |
-| suite **with** them (via cargo) | 4 / 50 |
-| suite with them (binary directly) | 2 / 60 |
-| suite with them, after the reverted observer yield | 3 / 100 |
+The twelve cross-thread behavioural tests carried over **unchanged** —
+they were written against the MCS design, so their passing is evidence
+about the contract rather than about the new implementation's own shape.
 
-The three with-witness runs give 8%, 3.3% and 3.0% — consistent with
-each other and not clearly separated from the 2% baseline at these
-sample sizes. Treat "2-3 per 100" as the rate and the amplification as
-unquantified. What IS established: the witnesses do not cause it — each
-passes 175/175 in isolation, and the deadlock reproduces without them.
+### Collateral
+
+`WaiterSlot`, `PARKED_*` and `MODE_*` are gone with the algorithm, along
+with the seven tests that asserted on them; nothing outside the file
+referenced any of it. `build.rs`'s protocol scanner pinned the old
+machinery by literal string and now pins the ticket hand-off, keeping the
+CAS-not-`fetch_or` writer-admission rule verbatim — the substitution that
+gate's own text anticipated.

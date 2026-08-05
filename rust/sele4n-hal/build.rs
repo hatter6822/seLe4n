@@ -1066,33 +1066,35 @@ fn scan_ffi_rs_exposes_switch_to_thread_exports() {
     }
 }
 
-/// **WS-SM SM2.E** (closes the queued_rw_lock protocol contract): verify
-/// that `queued_rw_lock.rs` retains the protocol invariants Stream A
-/// + Stream B established to eliminate the documented hangs and the
-///   residual writer-readers exclusion panic.
+/// **WS-SM SM2** (closes the queued_rw_lock protocol contract): verify
+/// that `queued_rw_lock.rs` retains the invariants that make the ticket
+/// protocol deadlock-free.
 ///
-/// The scanner checks for THREE contractual patterns:
+/// This scanner previously pinned the MCS queue's guards — the
+/// mode-encoded four-state `parked` machine and the stale-self tail
+/// detection. That queue **deadlocked** (v0.32.147: the lock free,
+/// `state == 0`, every core parked) and was replaced at v0.32.148 by a
+/// ticket protocol with no linked structure at all, so those patterns no
+/// longer exist to pin. Their scanner entries are gone rather than
+/// weakened: they described machinery that is not there.
 ///
-/// 1. **Mode-encoded four-state parked machine**: the four constants
-///    `PARKED_NOT_IN_QUEUE`, `PARKED_WAITING_READER`,
-///    `PARKED_WAITING_WRITER`, `PARKED_ADMITTED` must all be defined.
-///    A regression that collapses WAITING_READER and WAITING_WRITER
-///    back to a single WAITING re-opens the stale-mode-read race
-///    that PR #790 commit-3 left unresolved — the walker would
-///    consult `slot.mode` (Relaxed, race-prone) instead of the
-///    atomic mode-encoded parked value.
+/// What replaces them is the property the whole deadlock-freedom
+/// argument rests on, plus the exclusion invariant that outlived the
+/// rewrite:
 ///
-/// 2. **Stale-self tail detection**: the literal
-///    `if raw_prev_tail == core_id` must appear in BOTH
-///    `acquire_read` and `acquire_write` (at least 2 occurrences in
-///    the file).  Removing this detection re-opens the self-link
-///    deadlock that PR #790 closed.
+/// 1. **The ticket is passed on exactly once per issued ticket.** Both
+///    `now_serving.fetch_add` (in `pass_turn`) and `next_ticket.fetch_add`
+///    (in `take_ticket`) must be present. A regression that advances
+///    `now_serving` by a store of some computed value can regress it and
+///    admit two cores at once; one that drops the advance entirely
+///    strands every later ticket — which is precisely how the MCS
+///    version failed, with the duty to admit the next waiter resting on a
+///    chain reference that could be stale or destroyed.
 ///
-/// 3. **Writer admission via state-CAS (not fetch_or)**: the FORBIDDEN
-///    `state.fetch_or(WRITER_BIT` pattern must NOT appear anywhere in
-///    `signal_next_waiter` or in admission paths.  A regression that
-///    re-introduces `fetch_or` for writer admission re-opens the
-///    writer-readers coexistence race.
+/// 2. **Writer admission is a CAS from exactly zero, never `fetch_or`.**
+///    Carried over unchanged: `fetch_or` sets the writer bit even when
+///    reader bits are set, producing the `WRITER_BIT | reader_bits` state
+///    that directly violates writer-readers exclusion.
 fn scan_queued_rw_lock_protocol_intact() {
     let path = "src/queued_rw_lock.rs";
     println!("cargo:rerun-if-changed={path}");
@@ -1102,11 +1104,6 @@ fn scan_queued_rw_lock_protocol_intact() {
     };
 
     // Strip comments to avoid false positives from documentation.
-    // The state machine, like the other build scanners, uses a simple
-    // line-based filter: lines starting with `//` (after trimming
-    // whitespace) are dropped.  This is adequate for our needs — the
-    // protocol contract uses constants and CAS calls in code, not in
-    // comments.
     let mut stripped = String::new();
     for line in contents.lines() {
         let trimmed = line.trim_start();
@@ -1117,50 +1114,40 @@ fn scan_queued_rw_lock_protocol_intact() {
         stripped.push('\n');
     }
 
-    // Check (1): four-state parked machine.
-    let required_constants = [
-        "pub const PARKED_NOT_IN_QUEUE: u8",
-        "pub const PARKED_WAITING_READER: u8",
-        "pub const PARKED_WAITING_WRITER: u8",
-        "pub const PARKED_ADMITTED: u8",
+    // Check (1): the ticket hand-off primitives.
+    let required = [
+        (
+            "self.now_serving.fetch_add(1",
+            "the ticket is passed on by a monotone fetch_add",
+        ),
+        (
+            "self.next_ticket.fetch_add(1",
+            "tickets are issued by a monotone fetch_add",
+        ),
     ];
-    for needle in required_constants {
+    for (needle, why) in required {
         if !stripped.contains(needle) {
             panic!(
-                "WS-SM SM2.E protocol regression: `{path}` no longer defines `{needle}`.  \
-                 The mode-encoded four-state parked machine is essential for \
-                 the writer-readers exclusion invariant under cross-iteration \
-                 stale-chain-link traversal.  Removing this constant re-opens \
-                 the residual writer-readers panic that Stream B closed.  \
-                 If you intend to restructure the parked machine, update the \
-                 scanner in lockstep and verify the protocol still satisfies \
-                 the SM2.A operational memory model's writer-readers exclusion \
-                 invariant under stress test."
+                "WS-SM SM2 protocol regression: `{path}` no longer contains \
+                 `{needle}` ({why}).  `now_serving` must be advanced exactly \
+                 once per issued ticket, unconditionally, by whoever that \
+                 ticket admits — a reader on entry, a writer on exit.  That \
+                 single property is the whole deadlock-freedom argument: it \
+                 is what guarantees every issued ticket is eventually \
+                 served.  The MCS queue this replaced had no such guarantee \
+                 and deadlocked with the lock free.  If you intend to \
+                 restructure the hand-off, update this scanner in lockstep \
+                 and re-run the contention harness (400 attempts, 4 cores) \
+                 plus the full suite 100x."
             );
         }
     }
 
-    // Check (2): stale-self tail detection in both acquire paths.
-    let stale_self_pattern = "if raw_prev_tail == core_id";
-    let occurrences = stripped.matches(stale_self_pattern).count();
-    if occurrences < 2 {
-        panic!(
-            "WS-SM SM2.E protocol regression: `{path}` no longer carries the \
-             stale-self tail detection (`{stale_self_pattern}`) in both \
-             `acquire_read` and `acquire_write`.  Found {occurrences} \
-             occurrence(s); required: 2 (one per acquire path).  Removing \
-             this detection re-opens the self-link deadlock that PR #790 \
-             closed (10% → 0% hang rate).  If you intend to restructure \
-             the acquire path, update this scanner in lockstep and verify \
-             stress passes 100/100 iterations."
-        );
-    }
-
-    // Check (3): forbidden fetch_or for writer admission.
+    // Check (2): forbidden fetch_or for writer admission.
     let forbidden_pattern = "self.state.fetch_or(WRITER_BIT";
     if stripped.contains(forbidden_pattern) {
         panic!(
-            "WS-SM SM2.E protocol regression: `{path}` contains the forbidden \
+            "WS-SM SM2 protocol regression: `{path}` contains the forbidden \
              pattern `{forbidden_pattern}`.  Writer admission MUST use \
              `state.compare_exchange(0, WRITER_BIT)` — never `fetch_or` — \
              because `fetch_or` unconditionally sets the writer bit even when \
