@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/sm7f-tlb-fills-6r7c3l",
-      "commit_sha": "edb23faf3c299d5597ecbc6d77d64a814b6db711",
-      "tree_sha": "9757d92a1a0fd001987328c53e6c6b09fcb13712",
-      "committed_at_utc": "2026-08-05T04:30:08+00:00"
+      "commit_sha": "1c35477810c624b389d149c44f6326e78c1899b2",
+      "tree_sha": "ad677557ca79e60b9b40034b75ec000094694208",
+      "committed_at_utc": "2026-08-05T05:14:08+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "e0dd0585e1fb1d5c3f68bd068cb5f3d317c04b62d5c5763c244ea5a1cfd843dc"
+    "source_digest": "567bfcc7b7236ee2500bff7ecc48a6f28b5790c04e7eef83a95d905528427dfb"
   },
   "summary": {
     "module_count": 333,
@@ -27,7 +27,7 @@
     "version": "0.32.151",
     "lean_toolchain": "v4.28.0",
     "production_files": 266,
-    "production_loc": 239247,
+    "production_loc": 239252,
     "test_files": 67,
     "test_loc": 48581,
     "proved_theorem_lemma_decls": 7834,
@@ -5046,7 +5046,7 @@
         {
           "kind": "theorem",
           "name": "advanceTimerState_preserves_serviceGraphInvariant",
-          "line": 997,
+          "line": 1001,
           "called": [
             "SystemState",
             "advanceTimerState",
@@ -5058,7 +5058,7 @@
         {
           "kind": "theorem",
           "name": "advanceTimerState_preserves_proofLayerInvariantBundle",
-          "line": 1012,
+          "line": 1016,
           "called": [
             "SystemState",
             "advanceTimerState",
@@ -5076,7 +5076,7 @@
         {
           "kind": "theorem",
           "name": "writeRegisterState_preserves_capabilityInvariantBundle",
-          "line": 1064,
+          "line": 1068,
           "called": [
             "RegName",
             "RegValue",
@@ -5089,7 +5089,7 @@
         {
           "kind": "theorem",
           "name": "writeRegisterState_preserves_ipcInvariantFull",
-          "line": 1072,
+          "line": 1076,
           "called": [
             "ObjId",
             "QueueNextPath",
@@ -5115,7 +5115,7 @@
         {
           "kind": "theorem",
           "name": "writeRegisterState_preserves_proofLayerInvariantBundle",
-          "line": 1130,
+          "line": 1134,
           "called": [
             "RegName",
             "RegValue",
@@ -5140,7 +5140,7 @@
         {
           "kind": "theorem",
           "name": "contextSwitchState_preserves_ipcInvariantFull",
-          "line": 1209,
+          "line": 1213,
           "called": [
             "ObjId",
             "QueueNextPath",
@@ -5168,7 +5168,7 @@
         {
           "kind": "theorem",
           "name": "contextSwitchState_preserves_proofLayerInvariantBundle",
-          "line": 1294,
+          "line": 1298,
           "called": [
             "RegisterFile",
             "SystemState",
@@ -5208,7 +5208,7 @@
         {
           "kind": "def",
           "name": "registerDecodeConsistent",
-          "line": 1463,
+          "line": 1467,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -5220,7 +5220,7 @@
         {
           "kind": "theorem",
           "name": "default_registerDecodeConsistent",
-          "line": 1469,
+          "line": 1473,
           "called": [
             "SystemState",
             "default",
@@ -5231,7 +5231,7 @@
         {
           "kind": "theorem",
           "name": "registerDecodeConsistent_of_proofLayerInvariantBundle",
-          "line": 1476,
+          "line": 1480,
           "called": [
             "SystemState",
             "currentThreadValid",
@@ -5243,7 +5243,7 @@
         {
           "kind": "theorem",
           "name": "advanceTimerState_preserves_registerDecodeConsistent",
-          "line": 1490,
+          "line": 1494,
           "called": [
             "SystemState",
             "advanceTimerState",
@@ -5254,7 +5254,7 @@
         {
           "kind": "theorem",
           "name": "writeRegisterState_preserves_registerDecodeConsistent",
-          "line": 1498,
+          "line": 1502,
           "called": [
             "RegName",
             "RegValue",
@@ -5267,7 +5267,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_preserves_untypedRegionsDisjoint_nonUntypedChild",
-          "line": 1566,
+          "line": 1570,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -5289,7 +5289,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_objectOfKernelType_preserves_untypedRegionsDisjoint",
-          "line": 1620,
+          "line": 1624,
           "called": [
             "CSpaceAddr",
             "KernelObjectType",
@@ -5306,7 +5306,7 @@
         {
           "kind": "theorem",
           "name": "objectOfKernelType_untyped_hardcodes_zero_regionBase",
-          "line": 1697,
+          "line": 1701,
           "called": [
             "UntypedObject",
             "objectOfKernelType",
@@ -5316,7 +5316,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_via_objectOfKernelType_untyped_child_has_zero_regionBase",
-          "line": 1716,
+          "line": 1720,
           "called": [
             "CSpaceAddr",
             "ObjId",
@@ -5336,7 +5336,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_untypedRegionsDisjoint_retype_to_untyped_documented",
-          "line": 1753,
+          "line": 1757,
           "called": [
             "UntypedObject",
             "objectOfKernelType",

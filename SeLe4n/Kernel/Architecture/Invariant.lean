@@ -984,13 +984,17 @@ and the SM7.F.5 access-time fill both discharge it the same way. -/
 theorem proofLayerInvariantBundle_setPerCoreTlb (st : SystemState)
     (t : Vector TlbState Concurrency.numCores)
     (h : proofLayerInvariantBundle st)
-    (h13 : tlbInvalidationConsistent_perCore { st with perCoreTlb := t }) :
+    (hPerCoreTlbConsistent :
+      tlbInvalidationConsistent_perCore { st with perCoreTlb := t }) :
     proofLayerInvariantBundle { st with perCoreTlb := t } := by
-  obtain ⟨b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, _b13, b14, b15⟩ := h
-  exact ⟨b1, b2, coreIpcInvariantBundle_setPerCoreTlb b3,
-         ipcSchedulerCouplingInvariantBundle_setPerCoreTlb b4,
-         b5, b6, b7, crossSubsystemInvariant_setPerCoreTlb b8,
-         b9, b10, b11, b12, h13, b14, b15⟩
+  obtain ⟨bSched, bCap, bCoreIpc, bCoupling, bLifecycle, bService, bVSpace,
+          bCross, bTlb, bSchedExt, bNtfn, bPending, _bPerCoreTlbPre,
+          bIcache, bAck⟩ := h
+  exact ⟨bSched, bCap, coreIpcInvariantBundle_setPerCoreTlb bCoreIpc,
+         ipcSchedulerCouplingInvariantBundle_setPerCoreTlb bCoupling,
+         bLifecycle, bService, bVSpace, crossSubsystemInvariant_setPerCoreTlb bCross,
+         bTlb, bSchedExt, bNtfn, bPending, hPerCoreTlbConsistent,
+         bIcache, bAck⟩
 
 /-- U4-G/U4-H: advanceTimerState preserves serviceGraphInvariant.
     advanceTimerState only modifies machine.timer; services and objects are unchanged. -/

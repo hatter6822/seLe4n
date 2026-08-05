@@ -454,11 +454,12 @@ theorem tlbFillIpcBufferOnCore_preserves_proofLayerInvariantBundle
     (st : SystemState) (c : CoreId) (tid : ThreadId) (overflowCount : Nat)
     (h : proofLayerInvariantBundle st) :
     proofLayerInvariantBundle (tlbFillIpcBufferOnCore st c tid overflowCount) := by
-  have h13 := tlbFillIpcBufferOnCore_preserves_tlbInvalidationConsistent_perCore
+  have hPerCoreTlbConsistent :=
+    tlbFillIpcBufferOnCore_preserves_tlbInvalidationConsistent_perCore
     st c tid overflowCount
     (by unfold proofLayerInvariantBundle at h; exact h.2.2.2.2.2.2.2.2.2.2.2.2.1)
   obtain ⟨t, hEq⟩ := tlbFillIpcBufferOnCore_eq_setPerCoreTlb st c tid overflowCount
-  rw [hEq] at h13 ⊢
-  exact proofLayerInvariantBundle_setPerCoreTlb st t h h13
+  rw [hEq] at hPerCoreTlbConsistent ⊢
+  exact proofLayerInvariantBundle_setPerCoreTlb st t h hPerCoreTlbConsistent
 
 end SeLe4n.Kernel.Architecture
