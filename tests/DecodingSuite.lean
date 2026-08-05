@@ -558,8 +558,13 @@ private def buildIpcDecodeState
   let mappings : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.VAddr
                    (SeLe4n.PAddr × SeLe4n.Model.PagePermissions) :=
     if mapIpcBuffer then
+      -- Key the mapping on the *page base*, as `VSpaceRoot.mapPage` does:
+      -- `mappings` is an exact-key table whose keys are page bases, and
+      -- translation resolves the containing page.  For a page-aligned buffer
+      -- (the default) this is the buffer address itself; for an offset buffer
+      -- it is the page that actually contains it.
       SeLe4n.Kernel.RobinHood.RHTable.ofList
-        [(ipcBufferVA, (ipcBufferPA, { read := true, write := true }))]
+        [(ipcBufferVA.pageBase, (ipcBufferPA, { read := true, write := true }))]
     else
       SeLe4n.Kernel.RobinHood.RHTable.ofList []
   let vsRoot : SeLe4n.Model.VSpaceRoot :=
@@ -697,6 +702,53 @@ private def ak4a07_legacyBackwardCompat : IO Unit := do
     expect "legacy overflowCount=0" (decoded.overflowCount == 0)
   | .error _ => expect "legacy failed" false
 
+/-- Two overflow slots resolve through the same page.
+
+    The regression gate for the page-granular translation fix.  Every slot
+    beyond the zeroth sits at a *byte* offset from the buffer base, while
+    `VSpaceRoot.mappings` is keyed by page base — so the pre-fix read looked up
+    `ipcBuffer + 8` as if it were a mapping key, missed, and failed the whole
+    decode with `invalidMessageInfo` against a correctly mapped buffer.  Only
+    slot 0 ever worked, and only because its offset is zero, which is why the
+    existing coverage (`overflowCount` 0 and 1) never saw it. -/
+private def ipcBufferDecodeTwoOverflowSlots : IO Unit := do
+  -- msgLen 6 = 4 inline + 2 overflow, so the decode reads slots 0 AND 1.
+  let st := buildIpcDecodeState 11 6 #[⟨1⟩, ⟨10⟩, ⟨256⟩, ⟨256⟩]
+  let tid : SeLe4n.ThreadId := ⟨800⟩
+  let regs : SeLe4n.RegisterFile :=
+    match st.objects[tid.toObjId]? with
+    | some (.tcb tcb) => tcb.registerContext
+    | _ => default
+  match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout regs 32 with
+  | .ok decoded =>
+    expect "two overflow slots decode" true
+    expect "overflowCount=2" (decoded.overflowCount == 2)
+    expect "msgRegs.size=6" (decoded.msgRegs.size == 6)
+  | .error _ => expect "two overflow slots decode (regression)" false
+
+/-- The intra-page offset is carried through to the physical address.
+
+    A buffer at a non-page-aligned virtual address resolves through its
+    containing page, and the offset within that page must reach the physical
+    read — otherwise every slot would read the page's first word.  The pre-fix
+    read failed outright here (the address was not a mapping key). -/
+private def ipcBufferReadCarriesIntraPageOffset : IO Unit := do
+  -- Buffer 0x10 bytes into the mapped page at VA 0x10000 → PA 0x20000.
+  let st := buildIpcDecodeState 11 5 #[⟨0⟩, ⟨0⟩, ⟨0⟩, ⟨0⟩]
+      (SeLe4n.VAddr.ofNat 0x10010) (SeLe4n.PAddr.ofNat 0x20000) true
+  match ipcBufferReadMr st ⟨800⟩ 0 with
+  | .ok _ => expect "a non-page-aligned IPC buffer resolves through its page" true
+  | .error _ =>
+    expect "a non-page-aligned IPC buffer resolves through its page" false
+  -- And a buffer whose slot crosses into an unmapped page still fails closed.
+  let stEdge := buildIpcDecodeState 11 5 #[⟨0⟩, ⟨0⟩, ⟨0⟩, ⟨0⟩]
+      (SeLe4n.VAddr.ofNat 0x10FF8) (SeLe4n.PAddr.ofNat 0x20000) true
+  match ipcBufferReadMr stEdge ⟨800⟩ 1 with
+  | .ok _ => expect "a slot crossing into an unmapped page fails closed" false
+  | .error e =>
+    expect "a slot crossing into an unmapped page fails closed"
+      (e == .ipcBufferVAddrUnmapped)
+
 /-- Run AK4-A IPC-buffer merge regression tests. -/
 private def runAk4aTests : IO Unit := do
   IO.println "--- AK4-A: IPC-buffer merge (R-ABI-C01) ---"
@@ -707,6 +759,8 @@ private def runAk4aTests : IO Unit := do
   ak4a05_ipcBufferOutOfRange
   ak4a06_sizeInvariant
   ak4a07_legacyBackwardCompat
+  ipcBufferDecodeTwoOverflowSlots
+  ipcBufferReadCarriesIntraPageOffset
 
 private def runSyscallArgDecodeTests : IO Unit := do
   IO.println "--- Layer 2: SyscallArgDecode ---"

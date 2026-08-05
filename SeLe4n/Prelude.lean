@@ -938,6 +938,53 @@ def ipcBufferAlignment : Nat := 512
     constructors reject it rather than normalising it. -/
 def pageBytes : Nat := 4096
 
+/-- The base address of the page containing `va`.
+
+    Translation on ARMv8 is *page-granular*: the walk resolves the containing
+    page, and the low bits select a byte within it.  Anything that resolves a
+    byte address through a page table must therefore split it here rather than
+    handing the raw address to a page-keyed structure — `VSpaceRoot.mappings`
+    is keyed by the page base (`VSpaceRoot.mapPage` refuses to install any
+    other key), so a lookup at an unsplit byte address misses for every offset
+    except zero.
+
+    Lives beside `pageBytes` so that the read side and the TLB-fill side share
+    one definition: a fill must cache the page the read actually walked, and
+    two copies of this arithmetic could drift apart. -/
+def VAddr.pageBase (va : VAddr) : VAddr :=
+  VAddr.ofNat (va.toNat / pageBytes * pageBytes)
+
+/-- The byte offset of `va` within its containing page — the low bits that
+    translation carries through unchanged from virtual to physical. -/
+def VAddr.pageOffset (va : VAddr) : Nat :=
+  va.toNat % pageBytes
+
+/-- The page base is page-aligned — the property that makes it a legal
+    `VSpaceRoot.mappings` key, and (since `tlbEntryMatches` compares virtual
+    addresses for *equality*, not containment) the property that makes a TLB
+    entry keyed at it reachable by a page invalidation for the same page. -/
+theorem VAddr.pageBase_aligned (va : VAddr) :
+    (VAddr.pageBase va).toNat % pageBytes = 0 := by
+  simp [VAddr.pageBase, VAddr.ofNat, VAddr.toNat, pageBytes, Nat.mul_mod_left]
+
+/-- Splitting an address and recombining the halves is the identity: the page
+    base plus the intra-page offset is the original address. -/
+theorem VAddr.pageBase_add_pageOffset (va : VAddr) :
+    (VAddr.pageBase va).toNat + VAddr.pageOffset va = va.toNat := by
+  unfold VAddr.pageBase VAddr.pageOffset
+  simp only [VAddr.ofNat, VAddr.toNat]
+  exact Nat.div_add_mod' va.val pageBytes
+
+/-- An already-aligned address is its own page base — so a page-aligned IPC
+    buffer's slot 0 resolves exactly as it did before the split was
+    introduced (the compatibility direction for existing callers). -/
+theorem VAddr.pageBase_of_aligned {va : VAddr}
+    (h : va.toNat % pageBytes = 0) : VAddr.pageBase va = va := by
+  have harith : va.val / pageBytes * pageBytes = va.val :=
+    Nat.div_mul_cancel (Nat.dvd_of_mod_eq_zero h)
+  unfold VAddr.pageBase VAddr.ofNat VAddr.toNat
+  rw [harith]
+
 /-- Physical-memory address in the abstract model.
 
     AN2-B.4 / H-13 (Theme 4.3): The `mk` constructor is `private`. External

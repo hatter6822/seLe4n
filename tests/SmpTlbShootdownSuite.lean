@@ -2351,6 +2351,83 @@ private def runPerCoreTlbLiveLifecycleChecks : IO Unit := do
         (tlbInvalidationConsistentCheck_perCore stFinal)
 
 -- ----------------------------------------------------------------------------
+-- §5.11  SM7.F.5 — the ACCESS-time fill: the plan's acceptance criterion
+--         ("map → access (fill) → cross-core unmap") with a genuine *access*.
+--
+--         §5.10 above walks map → fill → unmap, but its fill is the *mapping*
+--         core caching what it just installed.  Until SM7.F.5 that was the
+--         only fill in the model, so a core that merely ACCESSED a page some
+--         other core had mapped cached nothing, and both Theorem 3.3.1 and the
+--         13th bundle conjunct were vacuous for it — the common case on real
+--         hardware, and exactly the case a shootdown exists to handle.
+--
+--         Here core1 maps, **core0 accesses** (the kernel's own IPC-buffer walk
+--         while decoding a syscall's overflow message registers — the seam
+--         `syscallEntryChecked` now runs), and core1 then unmaps cross-core.
+-- ----------------------------------------------------------------------------
+
+private def runPerCoreTlbAccessFillChecks : IO Unit := do
+  IO.println "-- §5.11 per-core TLB: access-time IPC-buffer fill (SM7.F.5)"
+  -- `udState`'s caller has its IPC buffer at `vaddrPage`, in the `asid5` root.
+  -- core1 maps that page; only core1 caches it (the F.4 mapping-seam fill).
+  match vspaceMapPageCheckedWithShootdownFromStatePerCore core1 asid5 vaddrPage
+      (SeLe4n.PAddr.ofNat 0x2000) .readOnly (udState []) with
+  | .error _ => assertBool "the live per-core map succeeds" false
+  | .ok ((), stMapB) => do
+    assertBool "before any access, the non-mapping core has cached nothing"
+      ((tlbOnCore stMapB core0).entries.isEmpty)
+    -- core0 decodes a syscall for that thread carrying ONE overflow message
+    -- register: the kernel walks the caller's IPC buffer, and that walk fills
+    -- core0's TLB — a core caching a translation it did NOT establish.
+    let stAccessed := tlbFillIpcBufferOnCore stMapB core0 udCaller 1
+    assertBool "the access-time walk caches the IPC-buffer page on the ACCESSING core (SM7.F.5)"
+      ((tlbOnCore stAccessed core0).entries.any
+        (fun e => e.asid == asid5 && e.vaddr == vaddrPage))
+    -- The load-bearing negative: a decode that read no overflow slot performs
+    -- no walk, so it caches nothing.  Without this, "the fill fires" could be
+    -- satisfied by a fill that always fires.
+    assertBool "a decode with no overflow registers performs no walk and caches nothing"
+      ((tlbOnCore (tlbFillIpcBufferOnCore stMapB core0 udCaller 0) core0).entries.isEmpty)
+    assertBool "the access-time fill is core-local — no other core cached it"
+      ([core2, core3].all fun c => (tlbOnCore stAccessed c).entries.isEmpty)
+    assertBool "the access-time fill keeps the per-core checker green (consistent by construction)"
+      (tlbInvalidationConsistentCheck_perCore stAccessed)
+    assertBool "the access-time fill posts no shootdown — it is a pure TLB-model event"
+      (decide (shootdownQuiescent stAccessed.tlbShootdown))
+    -- Correspondence: the entry cached is the translation the READ resolved.
+    -- The read goes tid → tcb.vspaceRoot → root; the fill goes asid →
+    -- resolveAsidRoot.  Two routes, and this pins that they agree.
+    match SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr stAccessed udCaller 0 with
+    | .error _ => assertBool "the IPC-buffer read the fill models actually succeeds" false
+    | .ok _ =>
+      assertBool "the cached entry's physical page is the one the read resolves through"
+        ((tlbOnCore stAccessed core0).entries.any
+          (fun e => e.vaddr == vaddrPage && e.paddr == SeLe4n.PAddr.ofNat 0x2000))
+    -- Now the cross-core unmap: core1 tears the mapping down.  core0's cached
+    -- entry — acquired purely by ACCESS — is exactly what the shootdown must
+    -- reach.  Before SM7.F.5 there was no such entry to reach.
+    match vspaceUnmapPageWithShootdownPerCore core1 asid5 vaddrPage stAccessed with
+    | .error _ => assertBool "the live cross-core unmap succeeds" false
+    | .ok ((), stUnmapB) => do
+      assertBool "the accessing core still holds its (now-stale) entry before catch-up"
+        ((tlbOnCore stUnmapB core0).entries.any
+          (fun e => e.asid == asid5 && e.vaddr == vaddrPage))
+      assertBool "the unmap posts a covering descriptor to the ACCESSING core"
+        ((stUnmapB.tlbShootdown.pendingOnCore core0).any
+          (fun d => d.op == opUnmapTarget && d.initiator == core1))
+      assertBool "the committed post-unmap state stays GREEN (stale but covered)"
+        (tlbInvalidationConsistentCheck_perCore stUnmapB)
+      -- The closure: the catch-up removes the access-acquired stale entry.
+      let stFinal := shootdownCatchUpPerCore stUnmapB core1 [opUnmapTarget]
+      assertBool "the catch-up removes the ACCESS-acquired stale entry (SM7.F.5 acceptance)"
+        (!((tlbOnCore stFinal core0).entries.any
+          (fun e => e.asid == asid5 && e.vaddr == vaddrPage)))
+      assertBool "the catch-up drains the accessing core's shootdown queue"
+        ((stFinal.tlbShootdown.pendingOnCore core0).isEmpty)
+      assertBool "after the catch-up the per-core checker is GREEN"
+        (tlbInvalidationConsistentCheck_perCore stFinal)
+
+-- ----------------------------------------------------------------------------
 -- §6  Concurrent-unmap stress: four cores, four rounds in flight
 --
 --     The model is deterministic and sequential, so genuine concurrency shows
@@ -3263,6 +3340,7 @@ def runSmpTlbShootdownChecks : IO Unit := do
   runPerCoreTlbUseAfterRetypeChecks
   runPerCoreTlbCoalescingOverflowChecks
   runPerCoreTlbLiveLifecycleChecks
+  runPerCoreTlbAccessFillChecks
   runConcurrentUnmapStressChecks
   runRoundGenerationChecks
   runCrossClusterMockChecks

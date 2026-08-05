@@ -1034,6 +1034,18 @@ run_check "INVARIANT" rg -n '^theorem vspaceMapPageCheckedWithShootdownFromState
 run_check "INVARIANT" rg -n 'vspaceUnmapPageWithShootdownPerCore' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
 run_check "INVARIANT" rg -n 'vspaceMapPageCheckedWithShootdownFromStatePerCore' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^private def runPerCoreTlbLiveLifecycleChecks' tests/SmpTlbShootdownSuite.lean
+# WS-SM SM7.F.5: the ACCESS-time fill — a core caches translations it did not
+# map (the IPC-buffer walk), live on the per-core syscall entry.
+run_check "INVARIANT" rg -n '^def tlbFillIpcBufferOnCore' SeLe4n/Kernel/Architecture/IpcBufferTlbFill.lean
+run_check "INVARIANT" rg -n '^theorem tlbFillIpcBufferOnCore_caches_read_translation' SeLe4n/Kernel/Architecture/IpcBufferTlbFill.lean
+run_check "INVARIANT" rg -n '^theorem tlbFillIpcBufferOnCore_preserves_tlbInvalidationConsistent_perCore' SeLe4n/Kernel/Architecture/IpcBufferTlbFill.lean
+run_check "INVARIANT" rg -n 'tlbFillIpcBufferOnCore' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^private def runPerCoreTlbAccessFillChecks' tests/SmpTlbShootdownSuite.lean
+# The page-granular IPC-buffer translation the fill rests on: the read and the
+# fill must resolve through ONE page computation, not two copies.
+run_check "INVARIANT" rg -n '^def VAddr.pageBase' SeLe4n/Prelude.lean
+run_check "INVARIANT" rg -n '^def ipcBufferSlotPage' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
+run_check "INVARIANT" rg -n 'ipcBufferSlotPage tcb.ipcBuffer idx' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
 # WS-SM SM7.F.4(b)(iii): the retype seam drains the initiator's per-core view.
 run_check "INVARIANT" rg -n '^def lifecycleRetypeDirectWithCleanupShootdownPerCore' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
 run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectWithCleanupShootdownPerCore_initiator_drained' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean

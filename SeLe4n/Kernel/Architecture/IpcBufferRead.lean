@@ -78,6 +78,32 @@ def maxOverflowSlots : Nat := maxMessageRegisters - 4
 -- AK4-A.1: Pure IPC-buffer word read helper
 -- ============================================================================
 
+/-- The virtual address of overflow slot `idx` in a thread's IPC buffer.
+
+    The single source for this arithmetic: the read below resolves it, and
+    the SM7.F access-time TLB fill caches the page it resolves through.  Two
+    copies could drift apart, and a fill that cached a different page than the
+    read walked would be a fill of an entry hardware never loaded. -/
+def ipcBufferSlotAddr (ipcBuffer : VAddr) (idx : Nat) : VAddr :=
+  VAddr.ofNat (ipcBuffer.toNat + idx * 8)
+
+/-- The page through which overflow slot `idx` resolves.
+
+    The single source shared by `ipcBufferReadMr` below (which looks the page
+    up) and the SM7.F access-time TLB fill (which caches it): the fill must
+    cache *the page the read walked*, and stating that arithmetic twice is how
+    the two would drift.  Being a page base is what makes an entry keyed here
+    reachable by a page invalidation — `tlbEntryMatches` compares virtual
+    addresses for equality, not containment, so an entry keyed at an unaligned
+    byte address would survive the shootdown that is supposed to evict it. -/
+def ipcBufferSlotPage (ipcBuffer : VAddr) (idx : Nat) : VAddr :=
+  (ipcBufferSlotAddr ipcBuffer idx).pageBase
+
+/-- The page a slot resolves through is page-aligned. -/
+theorem ipcBufferSlotPage_aligned (ipcBuffer : VAddr) (idx : Nat) :
+    (ipcBufferSlotPage ipcBuffer idx).toNat % pageBytes = 0 :=
+  VAddr.pageBase_aligned _
+
 /-- Read a single overflow message register from a thread's IPC buffer.
 
     **Layout convention:** The thread's IPC buffer starts at VAddr
@@ -85,6 +111,18 @@ def maxOverflowSlots : Nat := maxMessageRegisters - 4
     `i * 8`. The corresponding virtual address resolves through the
     thread's VSpace to a physical address, from which `readUInt64`
     assembles an 8-byte little-endian word.
+
+    **Translation is page-granular.** `VSpaceRoot.mappings` is an exact-key
+    table whose keys are page bases (`VSpaceRoot.mapPage` installs no other
+    key), so the slot's *byte* address must be split: the containing page is
+    looked up, and the intra-page offset is carried through to the physical
+    address.  Handing the raw byte address to `lookup` — as this function did
+    before v0.32.150 — misses for every slot but the zeroth, so a syscall
+    carrying two or more overflow registers failed with
+    `ipcBufferVAddrUnmapped` against a correctly mapped buffer, and slot zero
+    resolved only because its offset happens to be zero.  seL4 routinely
+    carries many message registers through the IPC buffer; the truncation was
+    a model-fidelity defect, fail-closed but real.
 
     **Failure modes (all collapse to `.invalidMessageInfo` at the decode
     boundary):**
@@ -109,13 +147,42 @@ def ipcBufferReadMr (st : SystemState) (tid : ThreadId) (idx : Nat)
     | some tcb =>
       match st.getVSpaceRoot? tcb.vspaceRoot with
       | some root =>
-        let offsetVA : VAddr := VAddr.ofNat (tcb.ipcBuffer.toNat + idx * 8)
-        match root.lookup offsetVA with
+        let slotVA : VAddr := ipcBufferSlotAddr tcb.ipcBuffer idx
+        -- Page-granular translation: resolve the containing page, then carry
+        -- the intra-page offset through to the physical address.
+        match root.lookup (ipcBufferSlotPage tcb.ipcBuffer idx) with
         | some (paddr, _perms) =>
-          .ok (SeLe4n.Kernel.Architecture.readUInt64 st.machine.memory paddr)
+          .ok (SeLe4n.Kernel.Architecture.readUInt64 st.machine.memory
+                 (PAddr.ofNat (paddr.toNat + slotVA.pageOffset)))
         | none => .error .ipcBufferVAddrUnmapped
       | none => .error .vspaceRootInvalid
     | none => .error .threadNotFound
+
+/-- **WS-SM SM7.F.5**: the positive characterisation — what a *successful*
+    read resolves to.  The failure-mode theorems below say when the read
+    fails; this one pins the physical address it reads from when it succeeds,
+    which is what the access-time TLB fill must agree with.
+
+    Note the shape: the page comes from `ipcBufferSlotPage` and the offset
+    from `ipcBufferSlotAddr`, so the address read is
+    `page's physical base + the slot's offset within the page`. -/
+theorem ipcBufferReadMr_ok_of_mapped
+    (st : SystemState) (tid : ThreadId) (tcb : SeLe4n.Model.TCB)
+    (root : SeLe4n.Model.VSpaceRoot) (idx : Nat)
+    (pa : SeLe4n.PAddr) (perms : SeLe4n.Model.PagePermissions)
+    (hBound : idx < maxOverflowSlots)
+    (hTcb : st.getTcb? tid = some tcb)
+    (hRoot : st.getVSpaceRoot? tcb.vspaceRoot = some root)
+    (hMapped : root.lookup (ipcBufferSlotPage tcb.ipcBuffer idx)
+                 = some (pa, perms)) :
+    ipcBufferReadMr st tid idx
+      = .ok (SeLe4n.Kernel.Architecture.readUInt64 st.machine.memory
+               (PAddr.ofNat
+                 (pa.toNat + (ipcBufferSlotAddr tcb.ipcBuffer idx).pageOffset))) := by
+  unfold ipcBufferReadMr
+  split
+  · next hGe => exact absurd hGe (by omega)
+  · simp only [hTcb, hRoot, hMapped]
 
 /-- AK4-A.1: Out-of-range index — reads above `maxOverflowSlots` fail. -/
 theorem ipcBufferReadMr_out_of_range

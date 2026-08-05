@@ -829,13 +829,112 @@ the scalar `tlbConsistent` shares the vacuity but stays out of SM7.F scope):
   wiring — is the tracked SM7.F.4(b) obligation; the catch-up already drains the
   initiator on the live path, so no correctness hole today.)
 
+#### SM7.F.5 (v0.32.150) — the access-time fill
+
+**The gap.**  `tlbFillOnCore` was invoked from exactly one site (the F.4(a)
+mapping seam), so `perCoreTlb` modelled only translations a core established
+itself.  The acceptance criterion's "access (fill)" step therefore had nothing
+to run, and the per-core TLB invariant plus Theorem 3.3.1 stayed vacuous for
+any core that had not done the mapping.
+
+**The seam.**  The kernel performs exactly one translation of a *user* virtual
+address on the syscall path: reading the caller's IPC buffer for the overflow
+message registers, when a syscall carries more than the four the ABI passes in
+registers (`RegisterDecode.decodeSyscallArgsFromState` →
+`IpcBufferRead.ipcBufferReadMr`, which resolves through the caller's VSpace).
+On hardware that walk fills the executing core's TLB.  New production module
+`Architecture/IpcBufferTlbFill.lean` makes it fill `perCoreTlb`:
+`ipcBufferWalkPlan` (what the walk resolves — the read's own route, TCB then
+VSpace root), `ipcBufferOverflowPages` (the *distinct* pages walked;
+`tlbInsertOnCore` prepends without deduplicating and a TLB caches one entry
+per page), and `tlbFillIpcBufferOnCore` folding `tlbFillOnCore` over them.
+**Live** in `API.syscallEntryChecked` — the per-core entry the SMP dispatch
+runs — applied to the state passed to `dispatchSyscallChecked`, so the fill
+precedes the transition exactly as the hardware walk precedes the operation.
+
+**Keyed on the page, deliberately.**  `tlbEntryMatches` compares virtual
+addresses for *equality*, not containment, so an entry keyed at a byte offset
+would not be matched by the page invalidation a later unmap posts — it would
+survive the shootdown meant to evict it and make the invariant reachably
+false.  The fill caches `ipcBufferSlotPage`, the same page base the read
+resolves through: one definition with two consumers, so "cache what the read
+walked" holds by construction rather than by a theorem that could rot.
+
+**Theorems.**  `_frame` (objects / ASID table / shootdown state untouched),
+`_tlbOnCore_ne` (a walk is a this-core event — the SMP asymmetry, now on the
+live path), `_preserves_tlbInvalidationConsistent_perCore` (substantive: every
+entry added is one a real walk resolved, hence consistent by construction),
+`_eq_setPerCoreTlb` (the fill writes that field and nothing else),
+`ipcBufferOverflowPages_aligned`, and the correspondence
+`tlbFillIpcBufferOnCore_caches_read_translation` — the load-bearing one, since
+the read resolves `tid → tcb.vspaceRoot → root` while the fill resolves
+`asid → resolveAsidRoot`; its `hResolve` premise is exactly the statement that
+those two routes agree, which the ASID-rebind hazard can falsify.  Zero
+sorry/axiom (`propext`, `Quot.sound`).  Trace byte-identical.
+
+**Prerequisite defect fixed (pre-existing).**  `ipcBufferReadMr` passed the
+slot's *byte* address to `VSpaceRoot.lookup`, which is an exact-key table
+whose keys are page bases — so every slot but the zeroth missed, and any
+syscall carrying two or more overflow message registers failed with
+`invalidMessageInfo` against a correctly mapped buffer.  Slot 0 worked only
+because its offset is zero.  Existing coverage exercised `overflowCount` 0 and
+1 only, which is why it survived; the module's own docstring already described
+the per-slot, page-crossing behaviour the code did not implement.  Fixed by
+splitting the address (`VAddr.pageBase` / `VAddr.pageOffset`, new in
+`Prelude.lean` beside `pageBytes`): resolve the containing page, carry the
+intra-page offset through to the physical address.  Fail-closed, so no
+security exposure — a fidelity defect.  Regression gates in `DecodingSuite`
+(two overflow slots; a non-page-aligned buffer; a slot crossing into an
+unmapped page still failing closed), and the fixture now keys its mapping on
+the page base as `mapPage` does.
+
+**Disclosed, not implemented.**  Two neighbouring limitations, stated here
+rather than silently carried:
+
+* The **scalar `tlb`** (9th conjunct) remains unconditional and empty-live.
+  It is the pre-SMP single-view model that `perCoreTlb` refines, and
+  `syscallEntry` — the boot-pinned entry — is deliberately left unfilled so
+  the two models do not mix.  Out of SM7.F scope, unchanged by this cut.
+* There is **no TLB capacity or eviction model**: a modelled view retains
+  every entry ever filled.  This is the safe direction (the invariant carries
+  a strictly stronger obligation than hardware imposes, since a real TLB may
+  drop entries at will), but it was undisclosed and is now on the record.
+
+**Tracked.**  Whole-`proofLayerInvariantBundle` carriage across a `perCoreTlb`
+write.  Twelve of the fifteen conjuncts transport definitionally; three wrap
+the twenty-conjunct `ipcInvariantFull` and fail `isDefEq` outright (raising
+`maxHeartbeats` does not help), so closing it needs genuine
+`perCoreTlb`-independence lemmas for those predicates.  Pre-existing rather
+than introduced here — the F.4(a) mapping-seam fill writes the same field on
+the live `.vspaceMap` path, and the API-level bundle theorems take dispatch
+preservation as a hypothesis rather than proving it.  Nothing depends on it
+and no invariant is weakened; the risk is proof completeness.  Closure target:
+`perCoreTlb`-independence for `ipcInvariantFull`, which closes both fills at
+once.
+
 **Acceptance.**  A live map → access (fill) → cross-core unmap (shootdown)
 → catch-up sequence in which a real remote cached entry is created and then
 provably removed, under the pending-aware invariant, with no cross-round
 draining.  Zero sorry/axiom; golden trace byte-identical (`perCoreTlb` is
-projection-invisible).  **Met at v0.32.105** — `SmpTlbShootdownSuite` §5.10
-(the live single-round lifecycle) and §8 (the four-round concurrent case, in
-which each commit's catch-up drains only its own rounds).
+projection-invisible).  **Structurally met at v0.32.105** —
+`SmpTlbShootdownSuite` §5.10 (the live single-round lifecycle) and §8 (the
+four-round concurrent case, in which each commit's catch-up drains only its
+own rounds) — but with one word of the criterion unrealised until v0.32.150:
+the **access**.
+
+Through v0.32.105 `tlbFillOnCore` had exactly one caller, inside
+`vspaceMapPageCheckedWithShootdownFromStatePerCore`, so every entry in the
+model was cached by the core that *mapped* it.  A core that merely accessed a
+page another core had mapped cached nothing, and for that core Theorem 3.3.1
+and the 13th bundle conjunct remained vacuous — satisfied by an empty view
+rather than by a maintained one.  That is the common case on hardware, and
+precisely the case a shootdown exists to handle.  No theorem was false and no
+live defect followed (an empty view is trivially consistent), but the
+acceptance criterion's "access (fill)" step was not exercised because the
+model had no access-time fill to exercise.  **Genuinely met at v0.32.150** —
+see SM7.F.5 below and `SmpTlbShootdownSuite` §5.11, where core1 maps, **core0
+accesses**, and the cross-core unmap's catch-up removes the entry core0
+acquired purely by access.
 
 #### SM7.F.3 (v0.32.112) — generations allocated in hardware execution order
 
