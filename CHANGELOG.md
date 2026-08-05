@@ -1,3 +1,62 @@
+## v0.32.151 — why the bundle would not carry across a `perCoreTlb` write, and the fix
+
+v0.32.150 could not prove `proofLayerInvariantBundle` carriage across the
+access-time TLB fill and recorded it as tracked debt with the observation
+that three conjuncts "fail `isDefEq` outright". That was where the
+investigation stopped, and "it does not typecheck" is not a reason. This
+cut finds the actual causes and closes the gap.
+
+**Two structural causes, neither about term size or proof budget** — which
+is why raising `maxHeartbeats` changed nothing:
+
+1. **A `match` stuck on a symbolic `Nat`.**
+   `PriorityInheritance.blockingChain` recurses on a fuel argument that
+   defaults to `st.objectIndex.length`. With a symbolic fuel that match
+   never reduces, so `isDefEq` never reaches the field projections inside
+   the body and falls back to comparing the two *unreduced* applications —
+   whose state arguments differ. The diagnosis is settled by experiment
+   rather than argument: with a **literal** fuel the very same `rfl`
+   succeeds. The same shape reaches the bundle again through
+   `dualQueueSystemInvariant`, whose queue-chain acyclicity is
+   fuel-recursive in the same way.
+2. **An `inductive` family parameterised by the state.**
+   `serviceNontrivialPath (st : SystemState) : ServiceId → ServiceId → Prop`
+   applied to two different states yields two different *types*.
+   Definitional equality of the applications demands definitional equality
+   of the parameters, which is precisely what fails — and no amount of
+   unfolding can bridge it.
+
+**A correction to the v0.32.150 note**: it said the three blockers "wrap the
+twenty-conjunct `ipcInvariantFull`". Only one does
+(`dualQueueSystemInvariant`); the other two arrive through
+`crossSubsystemInvariant`, as `serviceGraphInvariant` and `blockingAcyclic`.
+Twelve of the fifteen conjuncts transport definitionally.
+
+**The fix — composition, not new proof.** All three blockers already had
+congruence lemmas: `dualQueueSystemInvariant_of_getElem_eq`,
+`PriorityInheritance.blockingAcyclic_frame` (with
+`blockingServer_congr_objects`), and `serviceNontrivialPath_of_services_eq`.
+The reason the bundle had no carriage was not that the proofs were missing
+but that these congruences were **private and bound to specific transitions**
+— written for the adapter preservation proofs rather than exposed as a
+reusable field-agreement layer. New `proofLayerInvariantBundle_setPerCoreTlb`
+(`Architecture/Invariant.lean`) is that layer, stated once for any
+`perCoreTlb` writer.
+
+**Stated as carriage, not an `iff`.** The thirteenth conjunct
+(`tlbInvalidationConsistent_perCore`) genuinely reads the field being
+written, so the writer must supply it — a `perCoreTlb` write really can
+break it. That obligation is load-bearing rather than decorative:
+substituting the *pre*-state's own thirteenth conjunct fails to typecheck,
+which is the adversarial check that the statement pins something.
+`tlbFillIpcBufferOnCore_preserves_proofLayerInvariantBundle` now discharges
+it from the substantive per-core proof, closing the v0.32.150 debt.
+
+Zero sorry/axiom (`propext`, `Quot.sound`); trace byte-identical; no
+behavioural change — this cut adds theorems only.
+
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.F.5
+
 ## v0.32.150 — SM7.F.5: the access-time TLB fill, and the IPC-buffer translation it needed
 
 SM7.F is recorded CLOSED, and its acceptance criterion reads "map →

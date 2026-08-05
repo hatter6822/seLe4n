@@ -900,17 +900,52 @@ rather than silently carried:
   a strictly stronger obligation than hardware imposes, since a real TLB may
   drop entries at will), but it was undisclosed and is now on the record.
 
-**Tracked.**  Whole-`proofLayerInvariantBundle` carriage across a `perCoreTlb`
-write.  Twelve of the fifteen conjuncts transport definitionally; three wrap
-the twenty-conjunct `ipcInvariantFull` and fail `isDefEq` outright (raising
-`maxHeartbeats` does not help), so closing it needs genuine
-`perCoreTlb`-independence lemmas for those predicates.  Pre-existing rather
-than introduced here — the F.4(a) mapping-seam fill writes the same field on
-the live `.vspaceMap` path, and the API-level bundle theorems take dispatch
-preservation as a hypothesis rather than proving it.  Nothing depends on it
-and no invariant is weakened; the risk is proof completeness.  Closure target:
-`perCoreTlb`-independence for `ipcInvariantFull`, which closes both fills at
-once.
+**Whole-bundle carriage — CLOSED at v0.32.151.**  The landing cut could not
+prove `proofLayerInvariantBundle` carriage across the fill and recorded it as
+debt.  Investigating *why* found two structural causes, neither of which is
+term size or proof budget (raising `maxHeartbeats` changes nothing), and both
+of which already had congruence lemmas in the codebase — so the closure is
+composition, not new proof.
+
+Of the fifteen conjuncts, twelve transport **definitionally**: a structure
+update to a field a predicate never projects is invisible to it.  Exactly
+three atomic predicates block the other two, for two distinct reasons:
+
+* **A `match` stuck on a symbolic `Nat`.**
+  `PriorityInheritance.blockingChain` recurses on a fuel argument defaulting to
+  `st.objectIndex.length`.  With a symbolic fuel the match never reduces, so
+  `isDefEq` never reaches the field projections in the body and falls back to
+  comparing the two *unreduced* applications — whose state arguments differ.
+  The diagnosis is decidable by experiment: with a **literal** fuel the very
+  same `rfl` succeeds.  The same shape reaches the bundle a second time through
+  `dualQueueSystemInvariant` (fuel-recursive queue-chain acyclicity).
+* **An `inductive` family parameterised by the state.**
+  `serviceNontrivialPath (st : SystemState) : ServiceId → ServiceId → Prop`
+  applied to two different states is two different *types*; definitional
+  equality of the applications requires definitional equality of the
+  parameters, which is exactly what fails.  Unfolding can never bridge this.
+
+The landing cut's note said "three wrap the twenty-conjunct `ipcInvariantFull`"
+— that was wrong.  Only `dualQueueSystemInvariant` sits inside
+`ipcInvariantFull`; the other two arrive through `crossSubsystemInvariant`
+(`serviceGraphInvariant` and `blockingAcyclic`).
+
+**The fix** is one reusable carriage lemma,
+`proofLayerInvariantBundle_setPerCoreTlb` (`Architecture/Invariant.lean`),
+composed from lemmas that already existed —
+`dualQueueSystemInvariant_of_getElem_eq` (`IPC/Invariant/LookupCongruence.lean`),
+`PriorityInheritance.blockingAcyclic_frame` + `blockingServer_congr_objects`,
+and the file-local `serviceNontrivialPath_of_services_eq`.  The reason the
+bundle had no carriage before is that those congruences were **private and
+bound to specific transitions** (the adapter preservation proofs) rather than
+exposed as a reusable field-agreement layer.
+
+The lemma is stated as **carriage, not an `iff`**: the thirteenth conjunct
+genuinely reads `perCoreTlb`, so a writer must supply it.  That obligation is
+load-bearing rather than decorative — substituting the *pre*-state's own
+thirteenth conjunct fails to typecheck, which is the adversarial check that
+the statement pins something.  `tlbFillIpcBufferOnCore_preserves_proofLayerInvariantBundle`
+discharges it from the substantive per-core proof.  Zero sorry/axiom.
 
 **Acceptance.**  A live map → access (fill) → cross-core unmap (shootdown)
 → catch-up sequence in which a real remote cached entry is created and then

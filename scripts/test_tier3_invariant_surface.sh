@@ -1046,6 +1046,10 @@ run_check "INVARIANT" rg -n '^private def runPerCoreTlbAccessFillChecks' tests/S
 run_check "INVARIANT" rg -n '^def VAddr.pageBase' SeLe4n/Prelude.lean
 run_check "INVARIANT" rg -n '^def ipcBufferSlotPage' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
 run_check "INVARIANT" rg -n 'ipcBufferSlotPage tcb.ipcBuffer idx' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
+# WS-SM SM7.F.5: whole-bundle carriage across a `perCoreTlb` write — the
+# reusable layer, and the fill's discharge of its single obligation.
+run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle_setPerCoreTlb' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem tlbFillIpcBufferOnCore_preserves_proofLayerInvariantBundle' SeLe4n/Kernel/Architecture/IpcBufferTlbFill.lean
 # WS-SM SM7.F.4(b)(iii): the retype seam drains the initiator's per-core view.
 run_check "INVARIANT" rg -n '^def lifecycleRetypeDirectWithCleanupShootdownPerCore' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
 run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectWithCleanupShootdownPerCore_initiator_drained' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean

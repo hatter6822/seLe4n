@@ -430,34 +430,35 @@ theorem tlbFillIpcBufferOnCore_eq_setPerCoreTlb
   | some plan => exact foldl_tlbFillOnCore_eq_setPerCoreTlb c plan.1 plan.2 st
 
 /-!
-### Whole-bundle carriage — tracked, and why it is not closed here
+### Whole-bundle carriage
 
 `tlbFillIpcBufferOnCore_eq_setPerCoreTlb` above pins that the fill writes
-`perCoreTlb` and nothing else, and the thirteenth conjunct — the only one that
-reads that field — is preserved by
-`tlbFillIpcBufferOnCore_preserves_tlbInvalidationConsistent_perCore`.  The
-other fourteen conjuncts of `proofLayerInvariantBundle` do not read
-`perCoreTlb` at all, so they are *semantically* untouched.
+`perCoreTlb` and nothing else, so the whole bundle follows from the general
+carriage lemma `proofLayerInvariantBundle_setPerCoreTlb` (`Invariant.lean`),
+whose one remaining obligation is the thirteenth conjunct — the only one that
+reads the field being written, and the one this module proves substantively.
 
-Twelve of those fourteen also transport **definitionally** (`exact h.…`
-typechecks against the updated record).  Three do not —
-`coreIpcInvariantBundle`, `ipcSchedulerCouplingInvariantBundle` and their
-neighbour wrap the twenty-conjunct `ipcInvariantFull`, and `isDefEq` fails on
-them outright rather than merely running out of budget (raising
-`maxHeartbeats` does not change the outcome).  Closing the whole-bundle
-statement therefore needs genuine `perCoreTlb`-independence lemmas for those
-three predicates, not a bigger proof budget.
+Twelve of the other fourteen conjuncts transport definitionally; the two that
+do not are blocked by a fuel-recursive `match` stuck on a symbolic `Nat` and by
+an `inductive` family parameterised by the state.  Both are bridged by
+congruence lemmas the codebase already carries — see the commentary on
+`proofLayerInvariantBundle_setPerCoreTlb` for the full diagnosis. -/
 
-This is **pre-existing** rather than introduced here: the SM7.F.4 mapping-seam
-fill writes `perCoreTlb` on the live `.vspaceMap` path under exactly the same
-conditions, and the API-level bundle theorems take dispatch preservation as a
-*hypothesis* (`hDispatchPres`) rather than proving it, so no bundle carriage
-exists across either fill today.  Nothing here depends on it, and no invariant
-is weakened by its absence — the risk is proof completeness, not soundness.
+/-- **WS-SM SM7.F.5**: the access-time fill preserves the whole
+`proofLayerInvariantBundle`.
 
-Closure target: `perCoreTlb`-independence for `ipcInvariantFull` (and hence for
-its two wrappers), which would let the whole-bundle statement close for both
-fills at once.
--/
+The fill writes only `perCoreTlb`, and the one conjunct that reads it is
+preserved substantively — every entry the fill adds is one a real page-table
+walk resolved, hence consistent by construction. -/
+theorem tlbFillIpcBufferOnCore_preserves_proofLayerInvariantBundle
+    (st : SystemState) (c : CoreId) (tid : ThreadId) (overflowCount : Nat)
+    (h : proofLayerInvariantBundle st) :
+    proofLayerInvariantBundle (tlbFillIpcBufferOnCore st c tid overflowCount) := by
+  have h13 := tlbFillIpcBufferOnCore_preserves_tlbInvalidationConsistent_perCore
+    st c tid overflowCount
+    (by unfold proofLayerInvariantBundle at h; exact h.2.2.2.2.2.2.2.2.2.2.2.2.1)
+  obtain ⟨t, hEq⟩ := tlbFillIpcBufferOnCore_eq_setPerCoreTlb st c tid overflowCount
+  rw [hEq] at h13 ⊢
+  exact proofLayerInvariantBundle_setPerCoreTlb st t h h13
 
 end SeLe4n.Kernel.Architecture
