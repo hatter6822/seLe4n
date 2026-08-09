@@ -2458,8 +2458,8 @@ and aggregates them into `projectStateOnCore`, with the per-core
 low-equivalence `lowEquivalentOnCore` and its ∀-core form
 `lowEquivalent_smp`.
 
-`InformationFlow/ObservableStatePerCore.lean` (WS-SM SM8.A, v0.33.1;
-completed v0.33.2) adds the observer itself and what bounds it:
+`InformationFlow/ObservableStatePerCore.lean` (WS-SM SM8.A, v0.33.2;
+completed v0.33.3) adds the observer itself and what bounds it:
 
 - `PerCoreObserver` — the `(core, clearance)` pair as a value, and
   `ObservableState.onCore ctx c L s` as the state it sees.  Defined *as*

@@ -1,12 +1,12 @@
-## v0.33.2 — SM8.A completed: the gaps in v0.33.1, closed
+## v0.33.3 — SM8.A completed: the gaps in v0.33.2, closed
 
-A self-audit of the v0.33.1 SM8.A cut found one shipped factual error,
+A self-audit of the v0.33.2 SM8.A cut found one shipped factual error,
 two headline theorems weaker than the truth, several theorems with no
 runtime coverage at all, and an asymmetry in the read-set sweep. This
 release closes every one of them. SM8.A is now complete rather than
 merely landed.
 
-**The factual error.** v0.33.1 said "twelve corollaries" of
+**The factual error.** v0.33.2 said "twelve corollaries" of
 `onCore_perCore_independence` in six documents and the commit message.
 There were eleven. There are now **fifteen** — the count moved because
 the corollary set itself was incomplete (below), but the number in the
@@ -14,7 +14,7 @@ docs was wrong independently of that, and it is exactly the class of
 claim-vs-evidence drift `docs/CLAIM_EVIDENCE_INDEX.md` exists to catch.
 
 **The partition tripwire is now a checked fact, not an argument.**
-v0.33.1 asserted in six places that adding a fourteenth `ObservableState`
+v0.33.2 asserted in six places that adding a fourteenth `ObservableState`
 component "fails to compile". Nothing pinned that.
 `ObservableState.ofFragments` reassembles a state from its two fragments
 and `ofFragments_eta` proves the round trip, so the partition is a
@@ -38,7 +38,7 @@ order. Strengthened, with `filter_sublist_filter_of_imp` as substrate and
 `visibilityLe_mem_runnable` / `_mem_objectIndex` deriving the membership
 forms so no consumer loses anything.
 
-**The read-set sweep is symmetric.** v0.33.1 named `perCoreTlb` but not
+**The read-set sweep is symmetric.** v0.33.2 named `perCoreTlb` but not
 its SM7.D structural sibling `perCoreICache`, nor
 `pendingIcacheMaintenance`, `tlbShootdown`, or the scalar `tlb`. All four
 added; the SM7 memory-subsystem surface is now swept whole.
@@ -65,9 +65,9 @@ both sides at the right layer.
 **Coverage: 68 assertions / 8 groups → 112 / 13.** The two theorems with
 the most proof effort behind them were the two least exercised. The
 fixture now carries a **CNode** with one low-target and one high-target
-capability (v0.33.1 had none, so `projectCNode_lookup_monotone` — the
+capability (v0.33.2 had none, so `projectCNode_lookup_monotone` — the
 reason `RHTable` was extended at all — had zero runtime coverage), a
-**configured memory-ownership model** (v0.33.1 left `memoryOwnership` at
+**configured memory-ownership model** (v0.33.2 left `memoryOwnership` at
 `none`, making every `memory` claim vacuously true), a **third clearance**
 `mid` strictly between low and high (transitivity of `visibilityLe` has
 nothing to compose with two labels), service-registry entry-level checks,
@@ -76,7 +76,7 @@ with its own load-bearing negative.
 
 **Anchors are complete by construction.** All 108 `#check` anchors and the
 Tier-3 block are verified against the module's 104 declarations by set
-difference, including the `@[simp]` definition-pinning layer that v0.33.1
+difference, including the `@[simp]` definition-pinning layer that v0.33.2
 left out of Tier-3 entirely. Headline anchors added to
 `tests/SmpSurfaceAnchors.lean`, the file the plan names as the SM8 anchor
 home. Four §5 corollaries that Tier-3 had missed are now pinned.
@@ -99,7 +99,7 @@ no axiom dependency to print. Theorems and tests only; the golden trace is byte-
 
 Refs: docs/planning/SMP_INFORMATION_FLOW_PLAN.md §5 (SM8.A)
 
-## v0.33.1 — SM8.A: the per-core observer, and what it is allowed to see
+## v0.33.2 — SM8.A: the per-core observer, and what it is allowed to see
 
 WS-SM Phase SM8 opens. SM8.A mounts the SMP information-flow *observer* —
 the pair `(c, L)` of a core and a security clearance (plan Definition
@@ -197,6 +197,23 @@ Theorems and tests only: no transition changed, and the golden trace is
 byte-identical.
 
 Refs: docs/planning/SMP_INFORMATION_FLOW_PLAN.md §5 (SM8.A)
+
+## v0.33.1 — Ukrainian localization added
+
+Documentation-only. Adds Ukrainian (`uk`) as an eleventh supported
+translation, following the project's existing "Adding a new language"
+process (`docs/i18n/LANGUAGES.md`): `docs/i18n/uk/README.md`,
+`docs/i18n/uk/CONTRIBUTING.md`, and `docs/i18n/uk/QUICKSTART.md`,
+translated from the current English sources. Registered the new
+language everywhere the existing ten are wired in: the language table
+in `docs/i18n/LANGUAGES.md`; the language selector in the root
+`README.md`; the sibling-language nav bars in all ten other
+`docs/i18n/*/{README,CONTRIBUTING,QUICKSTART}.md` files; the website
+link manifest (`scripts/website_link_manifest.txt`); and the version
+sync gate (`scripts/version_locations.sh`, whose per-language loop now
+includes `uk`, and `CLAUDE.md`/`AGENTS.md`, whose version-sites list
+was corrected from "the ten" to "the eleven" `docs/i18n/*/README.md`
+badges).
 
 ## v0.33.0 — SM7.F closed for real: a core now caches what it accessed
 

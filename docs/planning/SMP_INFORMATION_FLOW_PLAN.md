@@ -6,7 +6,7 @@
 > **Target releases**: v0.91.0 .. v0.97.x (parallel with SM7)
 > **Calendar estimate**: 5-8 weeks
 > **Sub-task count**: 40-55 across ~15-22 PRs
-> **Status**: SM8.A COMPLETE at v0.33.2 (landed v0.33.1); SM8.B–SM8.E pending
+> **Status**: SM8.A COMPLETE at v0.33.3 (landed v0.33.2); SM8.B–SM8.E pending
 
 ## 1. Phase goal
 
@@ -125,7 +125,7 @@ SM8 adds:
 `enforcementBoundaryExtended` grows by one entry per channel that reaches
 the enforcement boundary.
 
-> **CC-6 / CC-7 registered at the SM8.A cut (v0.33.2).**  SM7.C and SM7.D
+> **CC-6 / CC-7 registered at the SM8.A cut (v0.33.3).**  SM7.C and SM7.D
 > mounted `SystemState.perCoreTlb` and `SystemState.perCoreICache` — two
 > genuinely *per-core* views of hardware caches that did not exist when the
 > CC-1…CC-4 inventory was written.  SM8.A proved both **outside the per-core
@@ -186,7 +186,7 @@ core. The field's added; the audit invariant preserved.
 
 ## 5. Detailed sub-task breakdown
 
-### SM8.A — Per-core observable state (1 PR by decision, 6 sub-tasks) — **LANDED v0.33.1, COMPLETE v0.33.2**
+### SM8.A — Per-core observable state (1 PR by decision, 6 sub-tasks) — **LANDED v0.33.2, COMPLETE v0.33.3**
 
 | Sub | Description | Theorem | Est | Status |
 |-----|-------------|---------|-----|--------|
@@ -197,7 +197,7 @@ core. The field's added; the audit invariant preserved.
 | SM8.A.5 | `onCore_label_monotone` | Theorem | M | LANDED |
 | SM8.A.6 | Start `tests/SmpInformationFlowSuite.lean` | M | LANDED |
 
-**Landing record (v0.33.1, completed v0.33.2).**  New staged module
+**Landing record (v0.33.2, completed v0.33.3).**  New staged module
 `SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean` (104
 declarations; staged-only count 54 → 55; SM8.B's `crossCoreNonInterference`
 is the first consumer), layered on the SM4.D per-core projections in
@@ -334,7 +334,7 @@ SM8.B; the lock-contention channel CC-5 is SM8.B.8; the
 
 ### SM8.B — Per-core NI proofs (5 PRs, 14 sub-tasks)
 
-> **Constructor count re-anchored at the SM8.A cut (v0.33.1).**  This
+> **Constructor count re-anchored at the SM8.A cut (v0.33.2).**  This
 > phase was scoped against a 32-constructor NI surface at the `v0.31.2`
 > audited cut.  The live surface is **35**: `KernelOperation` has 35
 > variants (`kernelOperation_count`) and `kernelOperationNiConstructor`
@@ -425,7 +425,7 @@ SM8.B; the lock-contention channel CC-5 is SM8.B.8; the
 ## 8. Acceptance gate
 
 - [x] `ObservableState.onCore` defined and proven a projection (SM8.A,
-      v0.33.1 / v0.33.2 — `onCore_isProjection_of_globalProjection` as an
+      v0.33.2 / v0.33.3 — `onCore_isProjection_of_globalProjection` as an
       exact `iff` against `observableFactorOnCore`, with the field partition
       established as a *bijection* by `ObservableState.ofFragments` +
       `ofFragments_eta`).

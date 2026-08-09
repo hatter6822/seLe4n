@@ -159,5 +159,6 @@ docs/i18n/pt-BR/
 docs/i18n/ru/
 docs/i18n/de/
 docs/i18n/hi/
+docs/i18n/uk/
 scripts/
 tests/

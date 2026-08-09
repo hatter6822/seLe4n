@@ -114,7 +114,7 @@ _reg 'README.md' \
      'README.md Version table row'
 
 # --- i18n README badges (all 10 locales carry the shields.io badge) ---------
-for _lang in ar de es fr hi ja ko pt-BR ru zh-CN; do
+for _lang in ar de es fr hi ja ko pt-BR ru uk zh-CN; do
   _reg "docs/i18n/${_lang}/README.md" \
        's/(version-)[0-9]+[.][0-9]+[.][0-9]+(-blue)/\1@NEW@\2/' \
        'version-@VER@-blue' \

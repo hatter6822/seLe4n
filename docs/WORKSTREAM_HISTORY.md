@@ -24,8 +24,8 @@ Plan:
 SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
-**Current sub-phase: SM8.A per-core observable state COMPLETE (v0.33.2;
-landed v0.33.1) — SM8 opens.**  The v0.33.2 cut closes a self-audit of the
+**Current sub-phase: SM8.A per-core observable state COMPLETE (v0.33.3;
+landed v0.33.2) — SM8 opens.**  The v0.33.3 cut closes a self-audit of the
 landing: one shipped count error ("twelve corollaries" where there were
 eleven — there are now fifteen, the sweep having been incomplete too), an
 A.2 headline that was a one-line alias of the SM4.D congruence (now an exact
