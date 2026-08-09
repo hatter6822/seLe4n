@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Безопасность" /></a>
-  <img src="https://img.shields.io/badge/version-0.33.0-blue" alt="Версия" />
+  <img src="https://img.shields.io/badge/version-0.33.1-blue" alt="Версия" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Лицензия" /></a>
 </p>
@@ -40,7 +40,8 @@
   <a href="../pt-BR/README.md">Português</a> ·
   **Русский** ·
   <a href="../de/README.md">Deutsch</a> ·
-  <a href="../hi/README.md">हिन्दी</a>
+  <a href="../hi/README.md">हिन्दी</a> ·
+  <a href="../uk/README.md">Українська</a>
 </p>
 
 ---
