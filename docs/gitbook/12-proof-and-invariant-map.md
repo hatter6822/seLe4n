@@ -2458,8 +2458,8 @@ and aggregates them into `projectStateOnCore`, with the per-core
 low-equivalence `lowEquivalentOnCore` and its ∀-core form
 `lowEquivalent_smp`.
 
-`InformationFlow/ObservableStatePerCore.lean` (WS-SM SM8.A, v0.33.1) adds
-the observer itself and what bounds it:
+`InformationFlow/ObservableStatePerCore.lean` (WS-SM SM8.A, v0.33.1;
+completed v0.33.2) adds the observer itself and what bounds it:
 
 - `PerCoreObserver` — the `(core, clearance)` pair as a value, and
   `ObservableState.onCore ctx c L s` as the state it sees.  Defined *as*
@@ -2468,35 +2468,68 @@ the observer itself and what bounds it:
   every SM8 theorem at `bootCoreId` to the live single-core
   `projectState`.
 - `SharedObservableFragment` / `PerCoreObservableFragment` — the seven
-  shared and six per-core components, with `ObservableState.ext_fragments`
-  making the partition **total**: a fourteenth `ObservableState` field
-  registered in neither fragment fails to compile.
-- `onCore_isProjection_of_globalProjection` — the per-core observer learns
-  exactly the global projection plus its own core's six slots.
+  shared and six per-core components.  The partition is a **bijection**:
+  `ObservableState.ofFragments` reassembles a state from the pair,
+  `ofFragments_eta` proves the round trip, and `ext_fragments` /
+  `fragments_injective` give determination and faithfulness.  A
+  fourteenth `ObservableState` field registered in neither fragment
+  leaves `ofFragments` unable to supply it — a compile error as a
+  checked fact rather than an argument.
+- `onCore_isProjection_of_globalProjection` — an **`iff`**: two states
+  are indistinguishable to `(c, L)` exactly when they agree on
+  `observableFactorOnCore` (the global projection's shared fragment
+  paired with core `c`'s per-core fragment).  The observer learns that
+  pair, all of it and nothing beyond it.
+  `onCore_congr_of_globalProjection` is the state-level convenience form.
 - `onCore_perCore_independence` — the read set: six shared state
   components plus the observer core's five scheduler slots and its
-  register bank, and nothing else.  Twelve corollaries frame the
+  register bank, and nothing else.  **Fifteen** corollaries frame the
   cross-core scheduler and register-bank writes, and the components
-  outside the read set entirely (replenishment queue, timeout log,
-  `scThreadIndex`, the machine timer, the SM7.C `perCoreTlb` view).
-- `onCore_label_monotone` over `ObservableState.visibilityLe` — raising
-  the observer's clearance can only widen what it sees.  A *visibility*
-  order rather than component equality, because CNode slot redaction is
-  the only observer-dependent part of object projection
-  (`projectKernelObject_observer_independent_off_cnode`) and it is
-  monotone (`projectCNode_lookup_monotone`).
+  outside the read set entirely — replenishment queue, timeout log,
+  `scThreadIndex`, machine timer, and the whole SM7 memory-subsystem
+  surface (`perCoreTlb`, `perCoreICache`, `pendingIcacheMaintenance`,
+  `tlbShootdown`, the scalar `tlb`).
+- `onCore_label_monotone` over `ObservableState.visibilityLe`, with the
+  ∀-core `onCore_label_monotone_smp` — raising the observer's clearance
+  can only widen what it sees.  The two list clauses are `List.Sublist`,
+  not membership: both components filter the *same* underlying list, so
+  order is preserved, and a run queue's order is its dispatch order
+  (`filter_sublist_filter_of_imp`; membership forms derived).  Only
+  `objects` is compared by visibility, and that widening is pinned from
+  both sides — `projectKernelObject_observer_independent_off_cnode`
+  (CNode redaction is the only observer-dependent part of object
+  projection), `onCore_objects_label_invariant_off_cnode`, and
+  `onCore_objects_cnode` / `onCore_objects_cnode_slot_monotone` (the
+  CNode refinement lifted to the observable-state layer).
 - `onCore_decidable` — decides a strictly weaker *slice* relation, since
   observable-state equality is not decidable (five components are
   functions over unbounded domains; `RegisterFile`'s structural `BEq` is
-  provably not lawful).  The strictness is proved, not asserted:
-  `perCoreSlice_erases_register_content` /
-  `perCoreSlice_erases_shared_content`.
-- `onCore_schedulingTransparency` — the accepted covert channel CC-1
-  restated per core; under SMP the channel exists once per core.
+  provably not lawful).  `lowEquivalentSliceOnCoreCheckWithRegs` is the
+  finer register-aware companion.  Every limitation is proved, not
+  asserted: `perCoreSlice_erases_register_content` /
+  `_shared_content` and `machineRegs_beq_not_injective`.
+- `onCore_schedulingTransparency` — accepted covert channel CC-1 stated
+  against the **raw** scheduler reads (what the observer gets, rather
+  than an equality between two clearances that any constant function
+  would satisfy); under SMP the channel exists once per core.
+  `_label_invariant` is the two-observer corollary.
 
-Runtime coverage: `tests/SmpInformationFlowSuite.lean` (68 assertions
-across 8 groups on a four-thread / four-core fixture, each group carrying
-a load-bearing negative).  Per-core NI *preservation* across transitions
+Two further channels are registered at this cut: `perCoreTlb` and
+`perCoreICache` are proven outside the read set, which is a statement
+about the *model* — a real observer times its own accesses — so, exactly
+as for the CC-2 machine timer, **CC-6** (per-core TLB residency) and
+**CC-7** (per-core instruction-cache residency) join the accepted-channel
+inventory in `docs/planning/SMP_INFORMATION_FLOW_PLAN.md` §3.5, one
+instance per core, with the formal `CovertChannel` treatment scoped to
+SM8.B.8.
+
+Runtime coverage: `tests/SmpInformationFlowSuite.lean` (108 anchors —
+every one of the module's 104 declarations — 21 elaboration examples, and
+112 runtime assertions across 13 groups on a four-thread / four-core
+fixture under a three-clearance labeling, carrying a CNode and a
+configured memory-ownership model so slot redaction and address
+observability are exercised on real values; each group carries a
+load-bearing negative).  Per-core NI *preservation* across transitions
 (`crossCoreNonInterference`) is WS-SM SM8.B.
 
 ## 32. WS-Q3 IntermediateState formalization (v0.17.9)

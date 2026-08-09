@@ -31,27 +31,40 @@ the missing structure around it:
   declassification audit quantify over one thing.
 * **The shared / per-core field partition** (§3).  `ObservableState`'s
   thirteen components split into seven that the observer sees identically
-  from every core and six that are restricted to core `c`.
-  `ObservableState.ext_fragments` makes the partition **total**: a
-  fourteenth `ObservableState` field that is registered in neither
-  fragment fails to compile, so the plan §7 "per-core projection missing a
-  field" risk is a build error rather than a silent gap.
+  from every core and six that are restricted to core `c`.  The partition
+  is a **bijection**, not a convenient grouping:
+  `ObservableState.ofFragments` reassembles a state from the pair and
+  `ofFragments_eta` proves the round trip, so a fourteenth
+  `ObservableState` field registered in neither fragment leaves
+  `ofFragments` unable to supply it.  The plan §7 "per-core projection
+  missing a field" risk is therefore a compile error as a *checked fact*,
+  not as an argument about one.  The headline
+  `onCore_isProjection_of_globalProjection` is the exact `iff` that
+  follows: the observer learns the global projection's shared fragment
+  paired with core `c`'s per-core fragment — all of it, and nothing beyond.
 * **The decidable fragment** (§4).  Observable-state equality is *not*
   decidable — five components are functions over unbounded domains and the
   sixth (`machineRegs`) contains `RegisterFile.gpr`, whose structural `BEq`
   is provably not lawful (`RegisterFile.not_lawfulBEq`).  §4 carves out the
-  fragment that *is* decidable, proves it a sound refuter, and proves it a
-  **strict** fragment so no caller can mistake it for full equality.
+  fragment that *is* decidable, adds the finer register-aware check that
+  carries the ARM64 structural comparison as far as computation allows,
+  proves both sound refuters, and proves both **strict** so no caller can
+  mistake either for full equality.
 * **Per-core independence** (§5).  The read set of the per-core observable
-  state is characterised exactly: the seven shared state components plus
-  core `c`'s five scheduler slots and core `c`'s register bank — and
-  *nothing else*, in particular no other core's slots.  Note this does not
-  follow from `projectStateOnCore_congr`, whose `hBase` hypothesis is
-  equality of the whole global projection and therefore drags the **boot**
-  core's slots in; SM8.B needs the boot-core-free form.
+  state is characterised exactly: the six shared state components
+  (`objects`, `services`, `irqHandlers`, `objectIndex`,
+  `scheduler.domainSchedule`, `machine.memory`) plus core `c`'s five
+  scheduler slots and core `c`'s register bank — and *nothing else*, in
+  particular no other core's slots.  Note this does not follow from
+  `projectStateOnCore_congr`, whose `hBase` hypothesis is equality of the
+  whole global projection and therefore drags the **boot** core's slots in;
+  SM8.B needs the boot-core-free form.
 * **Label monotonicity** (§6).  Raising the observer's clearance can only
-  widen what it sees.  The scheduling components are label-*invariant*
-  (the accepted CC-1 channel, restated per core).
+  widen what it sees, over a `visibilityLe` preorder whose every clause is
+  as strong as the truth allows — the two list components by `Sublist`, so
+  order is preserved; everything but `objects` by value.  The scheduling
+  components pass through *unfiltered* (the accepted CC-1 channel, restated
+  per core and stated against the raw scheduler reads).
 
 ## Relationship to the live surface
 
@@ -60,8 +73,16 @@ Every definition here is a conservative re-presentation of
 *definitionally* the live single-core `projectState ctx ⟨L⟩ s` and the
 existing non-interference surface is untouched.
 
-Axiom-clean: every theorem depends only on the standard foundational
-axioms (`propext` / `Quot.sound` / `Classical.choice`).
+Axiom-clean: every declaration depends only on the standard foundational
+axioms (`propext` / `Quot.sound` / `Classical.choice`), checked exhaustively
+rather than by sampling.
+
+Two per-core hardware views this module proves *invisible* — the SM7.C
+`perCoreTlb` and the SM7.D `perCoreICache` — are nonetheless registered as
+**accepted covert channels CC-6 and CC-7** in the plan's §3.5 inventory, on
+the CC-2 machine-timer precedent: excluding a field from the projection is a
+statement about the model, and a real observer still measures cache and TLB
+residency by timing its own accesses.
 -/
 
 namespace SeLe4n.Kernel
@@ -277,6 +298,56 @@ theorem ObservableState.ext_fragments {v₁ v₂ : ObservableState}
   subst_vars
   rfl
 
+/-- SM8.A.2: rebuild an observable state from its two fragments.
+
+Together with `ofFragments_sharedFragment` / `ofFragments_perCoreFragment` /
+`ofFragments_eta` below this makes the partition a **bijection**
+`ObservableState ≃ SharedObservableFragment × PerCoreObservableFragment`, which
+is what turns "a fourteenth field is a compile error" from an argument into a
+checked fact: a new `ObservableState` component leaves this definition unable
+to produce it. -/
+def ObservableState.ofFragments (sh : SharedObservableFragment)
+    (pc : PerCoreObservableFragment) : ObservableState :=
+  { objects := sh.objects
+    runnable := pc.runnable
+    current := pc.current
+    services := sh.services
+    activeDomain := pc.activeDomain
+    irqHandlers := sh.irqHandlers
+    objectIndex := sh.objectIndex
+    domainTimeRemaining := pc.domainTimeRemaining
+    domainSchedule := sh.domainSchedule
+    domainScheduleIndex := pc.domainScheduleIndex
+    machineRegs := pc.machineRegs
+    memory := sh.memory
+    serviceRegistry := sh.serviceRegistry }
+
+@[simp] theorem ObservableState.ofFragments_sharedFragment (sh : SharedObservableFragment)
+    (pc : PerCoreObservableFragment) : (ObservableState.ofFragments sh pc).sharedFragment = sh := by
+  cases sh; rfl
+
+@[simp] theorem ObservableState.ofFragments_perCoreFragment (sh : SharedObservableFragment)
+    (pc : PerCoreObservableFragment) : (ObservableState.ofFragments sh pc).perCoreFragment = pc := by
+  cases pc; rfl
+
+/-- SM8.A.2 (the load-bearing half of the tripwire): the two fragments carry
+**all** of an observable state — reassembling them returns the original.
+
+`ext_fragments` says the fragments determine the state; this says they
+*constitute* it.  A component added to `ObservableState` and registered in
+neither fragment makes `ofFragments` unable to supply it, so the definition
+above stops compiling before this theorem is ever reached. -/
+@[simp] theorem ObservableState.ofFragments_eta (v : ObservableState) :
+    ObservableState.ofFragments v.sharedFragment v.perCoreFragment = v := by
+  cases v; rfl
+
+/-- SM8.A.2: the fragment pair is a faithful encoding — distinct observable
+states have distinct fragment pairs. -/
+theorem ObservableState.fragments_injective {v₁ v₂ : ObservableState}
+    (h : (v₁.sharedFragment, v₁.perCoreFragment) = (v₂.sharedFragment, v₂.perCoreFragment)) :
+    v₁ = v₂ :=
+  ObservableState.ext_fragments (congrArg Prod.fst h) (congrArg Prod.snd h)
+
 /-- SM8.A.2 (definition-pinning): the shared fragment of the per-core
 observable state, spelled out.  Every component is a *label-only* projection —
 no `…OnCore` accessor appears — which is what makes the fragment
@@ -413,22 +484,57 @@ theorem onCore_sharedFragment_core_independent (ctx : LabelingContext)
     (ObservableState.onCore ctx c L s).sharedFragment =
       (ObservableState.onCore ctx c' L s).sharedFragment := rfl
 
-/-- SM8.A.2 (headline): **the per-core observable state is a projection of the
-global projection.**
+/-- SM8.A.2: what the per-core observer at `(c, L)` actually holds — the shared
+fragment of the **global** projection, paired with core `c`'s per-core
+fragment. -/
+def observableFactorOnCore (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel)
+    (s : SystemState) : SharedObservableFragment × PerCoreObservableFragment :=
+  ((projectState ctx (IfObserver.ofLabel L) s).sharedFragment,
+   (ObservableState.onCore ctx c L s).perCoreFragment)
 
-Two states that the global observer at `L` cannot tell apart, and whose core
-`c` scheduler slots and register bank agree, are indistinguishable to the
-per-core observer `(c, L)`.  Equivalently: `ObservableState.onCore` factors as
+/-- SM8.A.2 (headline): **the per-core observable state is exactly a projection
+of the global projection.**
 
-    (global projection at L, core c's six slots) ↦ per-core view
+Two states are indistinguishable to the observer `(c, L)` **if and only if**
+they agree on the shared fragment of the *global* projection at `L` and on core
+`c`'s per-core fragment.  So `ObservableState.onCore` factors through
 
-so the per-core observer learns exactly the global projection plus core `c`'s
-scheduler state — no more.
+    s ↦ (global projection's shared part at L, core c's six slots)
 
-Contrast `onCore_perCore_independence` (§5), which replaces the
-global-projection hypothesis by the *state-level* reads it depends on and is
-therefore free of any reference to the boot core. -/
+and the factoring is *faithful*: the observer learns that pair, all of it and
+nothing beyond it.
+
+Both directions carry weight.  `→` is the completeness half — no observable
+difference escapes the pair.  `←` is the soundness half, and it is the one the
+SM4.D congruence could not give: it needs the §3 partition to be total
+(`ext_fragments`), not merely a convenient grouping.  The state-level
+convenience form is `onCore_congr_of_globalProjection` below; the
+boot-core-free form SM8.B consumes is `onCore_perCore_independence` (§5). -/
 theorem onCore_isProjection_of_globalProjection
+    (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel) (s₁ s₂ : SystemState) :
+    ObservableState.onCore ctx c L s₁ = ObservableState.onCore ctx c L s₂ ↔
+      observableFactorOnCore ctx c L s₁ = observableFactorOnCore ctx c L s₂ := by
+  constructor
+  · intro h
+    have hS : (projectState ctx (IfObserver.ofLabel L) s₁).sharedFragment
+        = (projectState ctx (IfObserver.ofLabel L) s₂).sharedFragment := by
+      rw [← onCore_sharedFragment_eq_globalProjection ctx c L s₁,
+          ← onCore_sharedFragment_eq_globalProjection ctx c L s₂]
+      exact congrArg ObservableState.sharedFragment h
+    have hP : (ObservableState.onCore ctx c L s₁).perCoreFragment
+        = (ObservableState.onCore ctx c L s₂).perCoreFragment :=
+      congrArg ObservableState.perCoreFragment h
+    unfold observableFactorOnCore
+    rw [hS, hP]
+  · intro h
+    refine ObservableState.ext_fragments ?_ (congrArg Prod.snd h)
+    rw [onCore_sharedFragment_eq_globalProjection, onCore_sharedFragment_eq_globalProjection]
+    exact congrArg Prod.fst h
+
+/-- SM8.A.2 (state-level convenience form): equal global projections plus equal
+core-`c` slots give equal per-core views.  A direct instance of the SM4.D
+per-core congruence; the substantive statement is the `iff` above. -/
+theorem onCore_congr_of_globalProjection
     (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel) {s₁ s₂ : SystemState}
     (hGlobal : projectState ctx (IfObserver.ofLabel L) s₁
       = projectState ctx (IfObserver.ofLabel L) s₂)
@@ -579,6 +685,69 @@ form the runtime suite decides on. -/
         domainScheduleIndex := projectDomainScheduleIndexOnCore ctx (IfObserver.ofLabel L) s c
         registersObservable :=
           (projectMachineRegsOnCore ctx (IfObserver.ofLabel L) s c).isSome } := rfl
+
+/-! ### The finer check: carrying the register bank's structural comparison
+
+The slice keeps only whether the register bank is *observable*.  The bank's
+content can still be compared — by `RegisterFile`'s structural `BEq` over `pc`,
+`sp` and the 32 architectural GPRs, which is exactly what the model documents
+that instance for.  The check below is therefore strictly finer than
+`lowEquivalentSliceOnCore` while remaining computable.
+
+It is **not** a decision procedure for observable equality, and cannot be made
+one: `RegisterFile`'s `BEq` is not lawful (`RegisterFile.not_lawfulBEq`), so
+`= true` does not imply the banks are equal, and the shared components are
+still absent.  Its guarantee is one-directional and stated as such below. -/
+
+/-- `Option RegisterFile`'s structural comparison is reflexive (it inherits
+`RegisterFile.beq_self`), which is what makes the finer check sound. -/
+theorem machineRegs_beq_self (o : Option RegisterFile) : (o == o) = true := by
+  cases o with
+  | none => rfl
+  | some rf => exact RegisterFile.beq_self rf
+
+/-- SM8.A.3 (finer check): the decidable slice **plus** the register bank's
+structural comparison. -/
+def lowEquivalentSliceOnCoreCheckWithRegs (ctx : LabelingContext) (c : CoreId)
+    (L : SecurityLabel) (s₁ s₂ : SystemState) : Bool :=
+  decide (lowEquivalentSliceOnCore ctx c L s₁ s₂) &&
+    ((ObservableState.onCore ctx c L s₁).machineRegs
+      == (ObservableState.onCore ctx c L s₂).machineRegs)
+
+/-- SM8.A.3: the finer check is a sound refuter too — observable equality at
+`(c, L)` implies it returns `true`, so a `false` is a genuine difference. -/
+theorem lowEquivalentSliceOnCoreCheckWithRegs_of_lowEquivalentOnCore
+    (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel) {s₁ s₂ : SystemState}
+    (h : lowEquivalentOnCore ctx (IfObserver.ofLabel L) s₁ s₂ c) :
+    lowEquivalentSliceOnCoreCheckWithRegs ctx c L s₁ s₂ = true := by
+  have hView : ObservableState.onCore ctx c L s₁ = ObservableState.onCore ctx c L s₂ := h
+  simp only [lowEquivalentSliceOnCoreCheckWithRegs, hView, Bool.and_eq_true,
+    decide_eq_true_eq, machineRegs_beq_self, and_true]
+  exact lowEquivalentSliceOnCore_of_lowEquivalentOnCore ctx c L h
+
+/-- SM8.A.3: the finer check refines the slice — it can only reject more. -/
+theorem lowEquivalentSliceOnCoreCheckWithRegs_le_slice (ctx : LabelingContext) (c : CoreId)
+    (L : SecurityLabel) (s₁ s₂ : SystemState)
+    (h : lowEquivalentSliceOnCoreCheckWithRegs ctx c L s₁ s₂ = true) :
+    lowEquivalentSliceOnCore ctx c L s₁ s₂ := by
+  simp only [lowEquivalentSliceOnCoreCheckWithRegs, Bool.and_eq_true, decide_eq_true_eq] at h
+  exact h.1
+
+/-- SM8.A.3 (the finer check is still strict): `RegisterFile`'s comparison is
+not lawful, so even the register-aware check accepts states whose banks differ.
+Two banks agreeing on `pc`, `sp` and all 32 architectural GPRs but differing at
+an out-of-range index compare equal — the same counterexample class as
+`RegisterFile.not_lawfulBEq`.  No computable check can close this: the `gpr`
+field is a function over an unbounded index type. -/
+theorem machineRegs_beq_not_injective :
+    ∃ rf₁ rf₂ : RegisterFile, (rf₁ == rf₂) = true ∧ rf₁ ≠ rf₂ := by
+  refine ⟨{ pc := ⟨0⟩, sp := ⟨0⟩, gpr := fun _ => ⟨0⟩ },
+          { pc := ⟨0⟩, sp := ⟨0⟩, gpr := fun r => if r.val = 32 then ⟨1⟩ else ⟨0⟩ },
+          by decide, ?_⟩
+  intro h
+  have hgpr : (0 : Nat) = 1 :=
+    congrArg (fun rf : RegisterFile => (rf.gpr ⟨32⟩).val) h
+  exact absurd hgpr (by decide)
 
 -- ============================================================================
 -- §5  SM8.A.4 — per-core independence (the read set of the per-core view)
@@ -817,6 +986,45 @@ theorem capTargetObservable_monotone (ctx : LabelingContext) {L₁ L₂ : Securi
   | cnodeSlot cnode _ => exact objectObservable_monotone ctx hFlow cnode h
   | replyCap rid => exact objectObservable_monotone ctx hFlow rid.toObjId h
 
+/-- SM8.A.4: the SM7.D per-core instruction-cache view is invisible to every
+per-core observer — the structural sibling of `perCoreTlb` above, and a timing
+channel for the same reason (a resident line is evidence of a past fetch). -/
+theorem onCore_perCoreICache (ctx : LabelingContext) (L : SecurityLabel)
+    (s : SystemState) (c : CoreId)
+    (v : Vector ICacheState SeLe4n.Kernel.Concurrency.numCores) :
+    ObservableState.onCore ctx c L { s with perCoreICache := v }
+      = ObservableState.onCore ctx c L s :=
+  onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
+
+/-- SM8.A.4: the SM7.D cache-maintenance emission ledger is invisible on every
+core.  It is drained in the same atomic step that commits the transition, so it
+never holds cross-core content across an observation point; the theorem states
+the stronger fact that it is outside the read set regardless. -/
+theorem onCore_pendingIcacheMaintenance (ctx : LabelingContext) (L : SecurityLabel)
+    (s : SystemState) (c : CoreId)
+    (v : List SeLe4n.Kernel.Architecture.ICacheInvalidation) :
+    ObservableState.onCore ctx c L { s with pendingIcacheMaintenance := v }
+      = ObservableState.onCore ctx c L s :=
+  onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
+
+/-- SM8.A.4: the SM7.A/B TLB-shootdown state (per-core pending queues +
+acknowledgment vector + round generation) is invisible on every core. -/
+theorem onCore_tlbShootdown (ctx : LabelingContext) (L : SecurityLabel)
+    (s : SystemState) (c : CoreId)
+    (v : SeLe4n.Kernel.Architecture.TlbShootdownState) :
+    ObservableState.onCore ctx c L { s with tlbShootdown := v }
+      = ObservableState.onCore ctx c L s :=
+  onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
+
+/-- SM8.A.4: the pre-SMP scalar TLB view (the 9th `proofLayerInvariantBundle`
+conjunct's subject) is invisible on every core, completing the sweep over the
+memory-subsystem state the SM7 phases mounted. -/
+theorem onCore_tlb (ctx : LabelingContext) (L : SecurityLabel)
+    (s : SystemState) (c : CoreId) (v : TlbState) :
+    ObservableState.onCore ctx c L { s with tlb := v }
+      = ObservableState.onCore ctx c L s :=
+  onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
+
 /-- SM8.A.5: memory-address observability is monotone.  Vacuous when no
 ownership model is configured (`memoryAddressObservable` is then constantly
 `false`) or the address is unowned; otherwise the owning domain's label flows
@@ -878,43 +1086,82 @@ theorem projectKernelObject_observer_independent_off_cnode
   case cnode cn => exact absurd rfl (hNotCNode cn)
   all_goals rfl
 
+/-- A widening filter predicate yields a **sublist**, not merely a superset.
+
+General `List` fact, kept local because SM8.A is its only consumer today; lift
+it to `Prelude.lean` if a second one appears.  It is what lets the
+`visibilityLe` list clauses below preserve *order* — the two projections filter
+the *same* underlying list, so a wider clearance can only re-admit elements in
+place, never reorder them.  Ordering is security-relevant here: a run queue's
+order is its dispatch order. -/
+theorem filter_sublist_filter_of_imp {α : Type} (l : List α) (p q : α → Bool)
+    (h : ∀ a, p a = true → q a = true) : (l.filter p).Sublist (l.filter q) := by
+  induction l with
+  | nil => simp
+  | cons a t ih =>
+    cases hp : p a with
+    | false =>
+      cases hq : q a with
+      | false => simpa [List.filter_cons, hp, hq] using ih
+      | true => simpa [List.filter_cons, hp, hq] using ih.cons a
+    | true =>
+      have hq : q a = true := h a hp
+      simpa [List.filter_cons, hp, hq] using ih.cons₂ a
+
 /-! ### The per-core observable order -/
 
 /-- SM8.A.5: `v₁` is observationally **below** `v₂` when everything visible in
 `v₁` is visible in `v₂`, with the same value where the component carries one.
 
-Every component that *can* be compared by value is: only `objects` is compared
-by `isSome`, because a wider clearance may legitimately reveal more of a
-visible CNode (see `projectCNode_lookup_monotone` for the refinement, and
+Every clause is as strong as the truth allows.  The two list components are
+compared by `List.Sublist`, not by membership: both are filters of the *same*
+underlying list, so the wider clearance re-admits elements in place and the
+order is preserved — and a run queue's order is its dispatch order, so a
+membership-only clause would discard security-relevant structure.  Every
+`Option`/`Bool` component is compared by value.  Only `objects` is compared by
+`isSome`, because a wider clearance may legitimately reveal more of a visible
+CNode — see `projectCNode_lookup_monotone` and
+`onCore_objects_cnode_slot_monotone` for that refinement, and
 `onCore_objects_label_invariant_off_cnode` for the arms where equality does
-hold).  Weakening any other clause to `isSome` would understate what is
-actually proved. -/
+hold. -/
 def ObservableState.visibilityLe (v₁ v₂ : ObservableState) : Prop :=
   (∀ oid, (v₁.objects oid).isSome = true → (v₂.objects oid).isSome = true) ∧
-  (∀ t, t ∈ v₁.runnable → t ∈ v₂.runnable) ∧
+  v₁.runnable.Sublist v₂.runnable ∧
   (∀ t, v₁.current = some t → v₂.current = some t) ∧
   (∀ sid, v₁.services sid = true → v₂.services sid = true) ∧
   (∀ irq oid, v₁.irqHandlers irq = some oid → v₂.irqHandlers irq = some oid) ∧
-  (∀ oid, oid ∈ v₁.objectIndex → oid ∈ v₂.objectIndex) ∧
+  v₁.objectIndex.Sublist v₂.objectIndex ∧
   (∀ pa b, v₁.memory pa = some b → v₂.memory pa = some b) ∧
   (∀ sid e, v₁.serviceRegistry sid = some e → v₂.serviceRegistry sid = some e) ∧
   (∀ rf, v₁.machineRegs = some rf → v₂.machineRegs = some rf)
 
 theorem ObservableState.visibilityLe_refl (v : ObservableState) : v.visibilityLe v :=
-  ⟨fun _ h => h, fun _ h => h, fun _ h => h, fun _ h => h, fun _ _ h => h,
-   fun _ h => h, fun _ _ h => h, fun _ _ h => h, fun _ h => h⟩
+  ⟨fun _ h => h, List.Sublist.refl _, fun _ h => h, fun _ h => h, fun _ _ h => h,
+   List.Sublist.refl _, fun _ _ h => h, fun _ _ h => h, fun _ h => h⟩
 
 theorem ObservableState.visibilityLe_trans {v₁ v₂ v₃ : ObservableState}
     (h₁ : v₁.visibilityLe v₂) (h₂ : v₂.visibilityLe v₃) : v₁.visibilityLe v₃ :=
   ⟨fun oid h => h₂.1 oid (h₁.1 oid h),
-   fun t h => h₂.2.1 t (h₁.2.1 t h),
+   h₁.2.1.trans h₂.2.1,
    fun t h => h₂.2.2.1 t (h₁.2.2.1 t h),
    fun sid h => h₂.2.2.2.1 sid (h₁.2.2.2.1 sid h),
    fun irq oid h => h₂.2.2.2.2.1 irq oid (h₁.2.2.2.2.1 irq oid h),
-   fun oid h => h₂.2.2.2.2.2.1 oid (h₁.2.2.2.2.2.1 oid h),
+   h₁.2.2.2.2.2.1.trans h₂.2.2.2.2.2.1,
    fun pa b h => h₂.2.2.2.2.2.2.1 pa b (h₁.2.2.2.2.2.2.1 pa b h),
    fun sid e h => h₂.2.2.2.2.2.2.2.1 sid e (h₁.2.2.2.2.2.2.2.1 sid e h),
    fun rf h => h₂.2.2.2.2.2.2.2.2 rf (h₁.2.2.2.2.2.2.2.2 rf h)⟩
+
+/-- SM8.A.5: the membership consequence of the `runnable` sublist clause — the
+form most consumers want, derived so the stronger clause costs nothing. -/
+theorem ObservableState.visibilityLe_mem_runnable {v₁ v₂ : ObservableState}
+    (h : v₁.visibilityLe v₂) {t : SeLe4n.ThreadId} (ht : t ∈ v₁.runnable) : t ∈ v₂.runnable :=
+  h.2.1.subset ht
+
+/-- SM8.A.5: the membership consequence of the `objectIndex` sublist clause. -/
+theorem ObservableState.visibilityLe_mem_objectIndex {v₁ v₂ : ObservableState}
+    (h : v₁.visibilityLe v₂) {oid : SeLe4n.ObjId} (ho : oid ∈ v₁.objectIndex) :
+    oid ∈ v₂.objectIndex :=
+  h.2.2.2.2.2.1.subset ho
 
 /-- SM8.A.5 (headline): **the per-core observable state is monotone in the
 observer's clearance.**  On any fixed core, an observer whose clearance
@@ -933,10 +1180,10 @@ theorem onCore_label_monotone (ctx : LabelingContext) (c : CoreId) {L₁ L₂ : 
     by_cases hObs : objectObservable ctx (IfObserver.ofLabel L₁) oid = true
     · simpa [objectObservable_monotone ctx hFlow oid hObs, hObs] using hSome
     · simp [hObs] at hSome
-  · -- runnable: same core-c run queue, wider filter predicate
-    intro t ht
-    simp only [onCore_runnable, projectRunnableOnCore, List.mem_filter] at ht ⊢
-    exact ⟨ht.1, threadObservable_monotone ctx hFlow t ht.2⟩
+  · -- runnable: the SAME core-c run queue under a widening filter, so the
+    -- wider view is a sublist — order preserved, not merely a superset
+    simp only [onCore_runnable, projectRunnableOnCore]
+    exact filter_sublist_filter_of_imp _ _ _ (fun t ht => threadObservable_monotone ctx hFlow t ht)
   · -- current
     intro t ht
     simp only [onCore_current, projectCurrentOnCore] at ht ⊢
@@ -967,10 +1214,10 @@ theorem onCore_label_monotone (ctx : LabelingContext) (c : CoreId) {L₁ L₂ : 
         subst hEq
         simp [objectObservable_monotone ctx hFlow _ hObs]
       · simp [hObs] at hIrq
-  · -- objectIndex
-    intro oid hoid
-    simp only [onCore_objectIndex, projectObjectIndex, List.mem_filter] at hoid ⊢
-    exact ⟨hoid.1, objectObservable_monotone ctx hFlow oid hoid.2⟩
+  · -- objectIndex: likewise a sublist of the same underlying index
+    simp only [onCore_objectIndex, projectObjectIndex]
+    exact filter_sublist_filter_of_imp _ _ _
+      (fun oid hoid => objectObservable_monotone ctx hFlow oid hoid)
   · -- memory
     intro pa b hm
     simp only [onCore_memory, projectMemory] at hm ⊢
@@ -1018,6 +1265,23 @@ theorem onCore_objects_label_invariant_off_cnode (ctx : LabelingContext) (c : Co
       (IfObserver.ofLabel L₁) obj hNotCNode]
   · simp [hObs] at hSome
 
+/-- SM8.A.5: the SMP form of the visibility order — the wider clearance
+dominates on **every** core.  Mirrors the SM4.D `lowEquivalent_smp` idiom, so
+SM8.B can quantify over observers uniformly. -/
+def visibilityLe_smp (ctx : LabelingContext) (L₁ L₂ : SecurityLabel) (s : SystemState) : Prop :=
+  ∀ c : CoreId, (ObservableState.onCore ctx c L₁ s).visibilityLe
+    (ObservableState.onCore ctx c L₂ s)
+
+theorem visibilityLe_smp_at (ctx : LabelingContext) (L₁ L₂ : SecurityLabel) (s : SystemState)
+    (c : CoreId) (h : visibilityLe_smp ctx L₁ L₂ s) :
+    (ObservableState.onCore ctx c L₁ s).visibilityLe (ObservableState.onCore ctx c L₂ s) := h c
+
+/-- SM8.A.5 (SMP headline): clearance monotonicity holds on every core at once. -/
+theorem onCore_label_monotone_smp (ctx : LabelingContext) {L₁ L₂ : SecurityLabel}
+    (hFlow : securityFlowsTo L₁ L₂ = true) (s : SystemState) :
+    visibilityLe_smp ctx L₁ L₂ s :=
+  fun c => onCore_label_monotone ctx c hFlow s
+
 /-- SM8.A.5 (observer form): monotonicity for two observers on the same core
 whose clearances are ordered. -/
 theorem observerView_label_monotone (ctx : LabelingContext) {o₁ o₂ : PerCoreObserver}
@@ -1029,15 +1293,68 @@ theorem observerView_label_monotone (ctx : LabelingContext) {o₁ o₂ : PerCore
   cases hCore
   exact onCore_label_monotone ctx c₁ hFlow s
 
-/-- SM8.A.5 (the non-monotone components): the four scheduling components are
-label-**invariant**, not merely monotone — they are visible to every observer
-under scheduling transparency.
+/-- SM8.A.5: the per-core observable object at an **observable CNode** is the
+observer-filtered CNode.  The bridge that carries `projectCNode_lookup_monotone`
+up to the layer SM8.A is about. -/
+theorem onCore_objects_cnode (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel)
+    (s : SystemState) (oid : SeLe4n.ObjId) (cn : CNode)
+    (hGet : s.objects[oid]? = some (.cnode cn))
+    (hObs : objectObservable ctx (IfObserver.ofLabel L) oid = true) :
+    (ObservableState.onCore ctx c L s).objects oid
+      = some (.cnode (projectCNode ctx (IfObserver.ofLabel L) cn)) := by
+  simp only [onCore_objects, projectObjects, hObs, if_true, hGet, Option.map_some,
+    projectKernelObject_cnode]
+
+/-- SM8.A.5 (object-content refinement, at the observable-state layer): a CNode
+slot the narrower observer can see is still there, **with the same capability**,
+for the wider one.
+
+This is the `objects` clause of `ObservableState.visibilityLe` sharpened from
+"the object stays visible" to "the object's visible content only grows", which
+is the precise sense in which a higher clearance sees more of an object it can
+already see. -/
+theorem onCore_objects_cnode_slot_monotone (ctx : LabelingContext) (c : CoreId)
+    {L₁ L₂ : SecurityLabel} (hFlow : securityFlowsTo L₁ L₂ = true) (s : SystemState)
+    (oid : SeLe4n.ObjId) (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability)
+    (hGet : s.objects[oid]? = some (.cnode cn))
+    (hObs : objectObservable ctx (IfObserver.ofLabel L₁) oid = true)
+    (hSlot : ∀ cn₁, (ObservableState.onCore ctx c L₁ s).objects oid = some (.cnode cn₁) →
+      cn₁.lookup slot = some cap) :
+    ∃ cn₂, (ObservableState.onCore ctx c L₂ s).objects oid = some (.cnode cn₂) ∧
+      cn₂.lookup slot = some cap := by
+  refine ⟨projectCNode ctx (IfObserver.ofLabel L₂) cn,
+    onCore_objects_cnode ctx c L₂ s oid cn hGet (objectObservable_monotone ctx hFlow oid hObs),
+    ?_⟩
+  exact projectCNode_lookup_monotone ctx hFlow cn slot cap
+    (hSlot _ (onCore_objects_cnode ctx c L₁ s oid cn hGet hObs))
+
+/-- SM8.A.5 (the non-monotone components): the four scheduling components pass
+through **unfiltered** — the observer reads core `c`'s raw scheduler state, with
+no label gate anywhere in the path.
+
+Stated against the state rather than as an equality between two clearances
+(which would be true of any constant function): this says *what* the observer
+gets, so it is evidence about the channel's content and not merely that some
+filter is label-blind.  The two-clearance form is the corollary below.
 
 This is the per-core restatement of the accepted covert channel CC-1
-(`acceptedCovertChannel_scheduling`): under SMP each core carries its own
+(`acceptedCovertChannel_scheduling`, mirroring the single-core
+`schedulingCovertChannel_bounded_width`): under SMP each core carries its own
 `activeDomain` / `domainTimeRemaining` / `domainScheduleIndex`, so the channel
-exists once per core, and the system-wide `domainSchedule` is shared. -/
+exists **once per core**, while the system-wide `domainSchedule` is shared. -/
 theorem onCore_schedulingTransparency (ctx : LabelingContext) (c : CoreId)
+    (L : SecurityLabel) (s : SystemState) :
+    (ObservableState.onCore ctx c L s).activeDomain = s.scheduler.activeDomainOnCore c ∧
+      (ObservableState.onCore ctx c L s).domainTimeRemaining =
+        s.scheduler.domainTimeRemainingOnCore c ∧
+      (ObservableState.onCore ctx c L s).domainSchedule = s.scheduler.domainSchedule ∧
+      (ObservableState.onCore ctx c L s).domainScheduleIndex =
+        s.scheduler.domainScheduleIndexOnCore c :=
+  ⟨rfl, rfl, rfl, rfl⟩
+
+/-- SM8.A.5: the label-invariance that follows — an immediate corollary of the
+unfiltered reads above, and the form a two-observer argument uses. -/
+theorem onCore_schedulingTransparency_label_invariant (ctx : LabelingContext) (c : CoreId)
     (L₁ L₂ : SecurityLabel) (s : SystemState) :
     (ObservableState.onCore ctx c L₁ s).activeDomain =
         (ObservableState.onCore ctx c L₂ s).activeDomain ∧
@@ -1046,8 +1363,10 @@ theorem onCore_schedulingTransparency (ctx : LabelingContext) (c : CoreId)
       (ObservableState.onCore ctx c L₁ s).domainSchedule =
         (ObservableState.onCore ctx c L₂ s).domainSchedule ∧
       (ObservableState.onCore ctx c L₁ s).domainScheduleIndex =
-        (ObservableState.onCore ctx c L₂ s).domainScheduleIndex :=
-  ⟨rfl, rfl, rfl, rfl⟩
+        (ObservableState.onCore ctx c L₂ s).domainScheduleIndex := by
+  obtain ⟨a₁, b₁, c₁, d₁⟩ := onCore_schedulingTransparency ctx c L₁ s
+  obtain ⟨a₂, b₂, c₂, d₂⟩ := onCore_schedulingTransparency ctx c L₂ s
+  exact ⟨a₁.trans a₂.symm, b₁.trans b₂.symm, c₁.trans c₂.symm, d₁.trans d₂.symm⟩
 
 /-- SM8.A.5 (non-vacuity): monotonicity is **strict** under a non-trivial
 labeling.  Under `testLabelingContext`, object 0 carries `kernelTrusted`; a

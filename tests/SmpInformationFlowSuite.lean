@@ -71,6 +71,11 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @ObservableState.sharedFragment
 #check @ObservableState.perCoreFragment
 #check @ObservableState.ext_fragments
+#check @ObservableState.ofFragments
+#check @ObservableState.ofFragments_sharedFragment
+#check @ObservableState.ofFragments_perCoreFragment
+#check @ObservableState.ofFragments_eta
+#check @ObservableState.fragments_injective
 #check @onCore_sharedFragment
 #check @onCore_perCoreFragment
 #check @onCore_objects
@@ -89,7 +94,9 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @onCore_sharedFragment_eq_globalProjection
 #check @onCore_sharedFragment_determined_by_globalProjection
 #check @onCore_sharedFragment_core_independent
+#check @observableFactorOnCore
 #check @onCore_isProjection_of_globalProjection
+#check @onCore_congr_of_globalProjection
 
 -- §1.3  SM8.A.3 — the decidable fragment
 #check @PerCoreObservableSlice
@@ -101,6 +108,11 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @perCoreSlice_erases_register_content
 #check @perCoreSlice_erases_shared_content
 #check @onCore_perCoreSlice
+#check @machineRegs_beq_self
+#check @lowEquivalentSliceOnCoreCheckWithRegs
+#check @lowEquivalentSliceOnCoreCheckWithRegs_of_lowEquivalentOnCore
+#check @lowEquivalentSliceOnCoreCheckWithRegs_le_slice
+#check @machineRegs_beq_not_injective
 
 -- §1.4  SM8.A.4 — per-core independence
 #check @onCore_perCore_independence
@@ -115,6 +127,10 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @onCore_scThreadIndex
 #check @onCore_machineTimer
 #check @onCore_perCoreTlb
+#check @onCore_perCoreICache
+#check @onCore_pendingIcacheMaintenance
+#check @onCore_tlbShootdown
+#check @onCore_tlb
 
 -- §1.5  SM8.A.5 — label monotonicity
 #check @objectObservable_monotone
@@ -127,12 +143,21 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @projectCNode_lookup_monotone
 #check @projectKernelObject_observer_independent_off_cnode
 #check @onCore_objects_label_invariant_off_cnode
+#check @onCore_objects_cnode
+#check @onCore_objects_cnode_slot_monotone
+#check @filter_sublist_filter_of_imp
 #check @ObservableState.visibilityLe
+#check @ObservableState.visibilityLe_mem_runnable
+#check @ObservableState.visibilityLe_mem_objectIndex
 #check @ObservableState.visibilityLe_refl
 #check @ObservableState.visibilityLe_trans
 #check @onCore_label_monotone
+#check @visibilityLe_smp
+#check @visibilityLe_smp_at
+#check @onCore_label_monotone_smp
 #check @observerView_label_monotone
 #check @onCore_schedulingTransparency
+#check @onCore_schedulingTransparency_label_invariant
 #check @onCore_label_monotone_strict
 
 -- §1.6  The RobinHood filter characterisation SM8.A.5 completed
@@ -166,7 +191,25 @@ example (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel) (s₁ s₂ : Sy
       (ObservableState.onCore ctx c L s₂).sharedFragment :=
   onCore_sharedFragment_determined_by_globalProjection ctx c L h
 
--- SM8.A.2: the per-core view is a projection of the global projection.
+-- SM8.A.2 (headline): the per-core view is EXACTLY the factor pair — both
+-- directions, so the pair is a complete and faithful invariant of the view.
+example (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel) (s₁ s₂ : SystemState) :
+    ObservableState.onCore ctx c L s₁ = ObservableState.onCore ctx c L s₂ ↔
+      observableFactorOnCore ctx c L s₁ = observableFactorOnCore ctx c L s₂ :=
+  onCore_isProjection_of_globalProjection ctx c L s₁ s₂
+
+-- SM8.A.2: the soundness half applied — equal factors give an equal view.
+example (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel) (s₁ s₂ : SystemState)
+    (h : observableFactorOnCore ctx c L s₁ = observableFactorOnCore ctx c L s₂) :
+    ObservableState.onCore ctx c L s₁ = ObservableState.onCore ctx c L s₂ :=
+  (onCore_isProjection_of_globalProjection ctx c L s₁ s₂).mpr h
+
+-- SM8.A.2: the fragments constitute the state (the tripwire's load-bearing half).
+example (v : ObservableState) :
+    ObservableState.ofFragments v.sharedFragment v.perCoreFragment = v :=
+  ObservableState.ofFragments_eta v
+
+-- SM8.A.2 (state-level convenience form).
 example (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel) (s₁ s₂ : SystemState)
     (hGlobal : projectState ctx (IfObserver.ofLabel L) s₁
       = projectState ctx (IfObserver.ofLabel L) s₂)
@@ -177,7 +220,7 @@ example (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel) (s₁ s₂ : Sy
     (hDSI : s₁.scheduler.domainScheduleIndexOnCore c = s₂.scheduler.domainScheduleIndexOnCore c)
     (hRegs : s₁.machine.regsOnCore c = s₂.machine.regsOnCore c) :
     ObservableState.onCore ctx c L s₁ = ObservableState.onCore ctx c L s₂ :=
-  onCore_isProjection_of_globalProjection ctx c L hGlobal hRQ hCur hAD hDTR hDSI hRegs
+  onCore_congr_of_globalProjection ctx c L hGlobal hRQ hCur hAD hDTR hDSI hRegs
 
 -- SM8.A.3: observable equality at the observer implies slice equality (sound refuter).
 example (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel) (s₁ s₂ : SystemState)
@@ -253,11 +296,36 @@ example (ctx : LabelingContext) (c : CoreId) (L₁ L₂ : SecurityLabel)
       = (ObservableState.onCore ctx c L₁ s).objects oid :=
   onCore_objects_label_invariant_off_cnode ctx c hFlow s oid obj hGet hNotCNode hVisible
 
--- SM8.A.5: the scheduling components are label-invariant (accepted channel CC-1).
+-- SM8.A.5: the scheduling components pass through UNFILTERED — the observer
+-- reads core c's raw scheduler state (accepted channel CC-1, per core).
+example (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel) (s : SystemState) :
+    (ObservableState.onCore ctx c L s).activeDomain = s.scheduler.activeDomainOnCore c :=
+  (onCore_schedulingTransparency ctx c L s).1
+
+-- SM8.A.5: hence label-invariant, the two-observer corollary.
 example (ctx : LabelingContext) (c : CoreId) (L₁ L₂ : SecurityLabel) (s : SystemState) :
     (ObservableState.onCore ctx c L₁ s).activeDomain =
       (ObservableState.onCore ctx c L₂ s).activeDomain :=
-  (onCore_schedulingTransparency ctx c L₁ L₂ s).1
+  (onCore_schedulingTransparency_label_invariant ctx c L₁ L₂ s).1
+
+-- SM8.A.5 (SMP form): clearance monotonicity on every core at once.
+example (ctx : LabelingContext) (L₁ L₂ : SecurityLabel)
+    (hFlow : securityFlowsTo L₁ L₂ = true) (s : SystemState) :
+    visibilityLe_smp ctx L₁ L₂ s :=
+  onCore_label_monotone_smp ctx hFlow s
+
+-- SM8.A.5: a CNode slot visible at the narrower clearance survives, with the
+-- same capability, at the wider one — at the observable-state layer.
+example (ctx : LabelingContext) (c : CoreId) (L₁ L₂ : SecurityLabel)
+    (hFlow : securityFlowsTo L₁ L₂ = true) (s : SystemState) (oid : SeLe4n.ObjId)
+    (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability)
+    (hGet : s.objects[oid]? = some (.cnode cn))
+    (hObs : objectObservable ctx (IfObserver.ofLabel L₁) oid = true)
+    (hSlot : ∀ cn₁, (ObservableState.onCore ctx c L₁ s).objects oid = some (.cnode cn₁) →
+      cn₁.lookup slot = some cap) :
+    ∃ cn₂, (ObservableState.onCore ctx c L₂ s).objects oid = some (.cnode cn₂) ∧
+      cn₂.lookup slot = some cap :=
+  onCore_objects_cnode_slot_monotone ctx c hFlow s oid cn slot cap hGet hObs hSlot
 
 -- ============================================================================
 -- §3  Runtime assertions (Tier-2): the four-thread / four-core IF fixture
@@ -274,10 +342,19 @@ private def c0 : CoreId := bootCoreId
 private def c1 : CoreId := ⟨1, by decide⟩
 private def c2 : CoreId := ⟨2, by decide⟩
 
-/-- The two clearances.  `securityFlowsTo lowLabel highLabel = true` and
-`securityFlowsTo highLabel lowLabel = false`, so the pair is a genuine
-strict step of the flow order (checked in §3.5). -/
+/-- The three clearances, forming a **strict chain** `low ⊏ mid ⊏ high` in the
+2×2 confidentiality×integrity lattice (each step checked in §3.5):
+
+* `low`  = (low confidentiality, untrusted)  — `SecurityLabel.publicLabel`
+* `mid`  = (low confidentiality, trusted)
+* `high` = (high confidentiality, trusted)   — `SecurityLabel.kernelTrusted`
+
+`mid` is a genuine middle: `securityFlowsTo mid lowLabel = false` (so `low ⊏ mid`
+strictly) and `securityFlowsTo highLabel mid = false` (so `mid ⊏ high` strictly).
+The chain is what makes the `visibilityLe` transitivity checks in §3.5
+non-vacuous — with only two clearances, transitivity has nothing to compose. -/
 private def lowLabel : SecurityLabel := SecurityLabel.publicLabel
+private def midLabel : SecurityLabel := { confidentiality := .low, integrity := .trusted }
 private def highLabel : SecurityLabel := SecurityLabel.kernelTrusted
 
 /-- The fixture's clearance step, as a reusable term.  A `by decide` written
@@ -285,6 +362,12 @@ inside a `fun c => …` cannot discharge this goal: the observer record carries
 the free core component `c`, and `decide` refuses a goal with free variables
 even when (as here) the statement does not depend on it. -/
 private theorem lowLabel_flowsTo_highLabel : securityFlowsTo lowLabel highLabel = true := by
+  decide
+
+private theorem lowLabel_flowsTo_midLabel : securityFlowsTo lowLabel midLabel = true := by
+  decide
+
+private theorem midLabel_flowsTo_highLabel : securityFlowsTo midLabel highLabel = true := by
   decide
 
 -- Fixture OIDs (range 1000–1020 — see the range table in SeLe4n/Testing/Helpers.lean).
@@ -300,6 +383,29 @@ private def lowCurrent : SeLe4n.ThreadId := ⟨1010⟩
 private def highCurrent : SeLe4n.ThreadId := ⟨1011⟩
 private def lowQueued : SeLe4n.ThreadId := ⟨1012⟩
 private def highQueued : SeLe4n.ThreadId := ⟨1013⟩
+/-- A `mid`-labelled endpoint: invisible to `low`, visible to `mid` and `high`.
+Without it the three-clearance chain would be observationally degenerate. -/
+private def midEndpoint : SeLe4n.ObjId := ⟨1014⟩
+/-- A CNode holding two capabilities — one naming a low target, one naming a
+high target — so CNode **slot redaction** (the only observer-dependent part of
+object projection) has something to redact. -/
+private def probeCNode : SeLe4n.ObjId := ⟨1015⟩
+private def lowSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 1
+private def highSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 2
+private def lowSlotCap : Capability :=
+  { target := .object lowEndpoint, rights := AccessRightSet.ofList [.read] }
+private def highSlotCap : Capability :=
+  { target := .object highEndpoint, rights := AccessRightSet.ofList [.read] }
+/-- The raw CNode the fixture stores (both slots present, unredacted). -/
+private def probeCNodeValue : CNode :=
+  { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+    slots := SeLe4n.UniqueSlotMap.ofListWF [(lowSlot, lowSlotCap), (highSlot, highSlotCap)] }
+/-- Physical addresses for the memory-ownership probes (§3.8). -/
+private def lowPage : SeLe4n.PAddr := SeLe4n.PAddr.ofNat 0x40000000
+private def highPage : SeLe4n.PAddr := SeLe4n.PAddr.ofNat 0x40001000
+private def unownedPage : SeLe4n.PAddr := SeLe4n.PAddr.ofNat 0x40002000
+private def lowDomain : SeLe4n.DomainId := ⟨1⟩
+private def highDomain : SeLe4n.DomainId := ⟨2⟩
 
 /-- The suite's labeling context: the high endpoint, the two high threads (and
 their backing objects) and the high service carry `kernelTrusted`; everything
@@ -313,6 +419,7 @@ private def probeLabeling : LabelingContext :=
       if oid = highEndpoint then highLabel
       else if oid = highCurrent.toObjId then highLabel
       else if oid = highQueued.toObjId then highLabel
+      else if oid = midEndpoint then midLabel
       else lowLabel
     threadLabelOf := fun tid =>
       if tid = highCurrent then highLabel
@@ -320,6 +427,22 @@ private def probeLabeling : LabelingContext :=
       else lowLabel
     endpointLabelOf := fun oid => if oid = highEndpoint then highLabel else lowLabel
     serviceLabelOf := fun sid => if sid = highService then highLabel else lowLabel }
+
+/-- `probeLabeling` **with a memory-ownership model configured**.
+
+`LabelingContext.memoryOwnership` defaults to `none`, under which
+`memoryAddressObservable` is constantly `false` and every `memory` claim is
+vacuously true.  This variant assigns `lowPage` to a low-labelled domain and
+`highPage` to a high-labelled one, leaving `unownedPage` unowned, so §3.8
+exercises all three branches of the gate on real values. -/
+private def probeLabelingWithMemory : LabelingContext :=
+  { probeLabeling with
+    memoryOwnership := some
+      { regionOwner := fun pa =>
+          if pa = lowPage then some lowDomain
+          else if pa = highPage then some highDomain
+          else none
+        domainLabelOf := fun d => if d = highDomain then highLabel else lowLabel } }
 
 private def mkTcb (tid : Nat) (prio : Nat) (aff : Option CoreId) : TCB :=
   { tid := ⟨tid⟩, priority := ⟨prio⟩, domain := ⟨0⟩, cspaceRoot := cnRoot,
@@ -348,6 +471,8 @@ private def probeState : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject lowEndpoint (.endpoint {})
       |>.withObject highEndpoint (.endpoint {})
+      |>.withObject midEndpoint (.endpoint {})
+      |>.withObject probeCNode (.cnode probeCNodeValue)
       |>.withObject lowCurrent.toObjId (.tcb (mkTcb 1010 40 none))
       |>.withObject highCurrent.toObjId (.tcb (mkTcb 1011 50 (some c1)))
       |>.withObject lowQueued.toObjId (.tcb (mkTcb 1012 40 none))
@@ -362,9 +487,35 @@ private def probeState : SystemState :=
         c1 (RunQueue.ofList [(highQueued, ⟨50⟩)])).setCurrentOnCore
         c0 (some lowCurrent)).setCurrentOnCore c1 (some highCurrent)) }
 
-/-- The two observers the suite compares. -/
+/-- The three observers the suite compares. -/
 private def lowObserver : IfObserver := IfObserver.ofLabel lowLabel
+private def midObserver : IfObserver := IfObserver.ofLabel midLabel
 private def highObserver : IfObserver := IfObserver.ofLabel highLabel
+
+/-- The fixture's CNode really is in the store, as the exact value the slot
+assertions read.  `KernelObject` has no `DecidableEq` (its CNode arm is
+RHTable-backed), so this is a definitional computation rather than a `decide`;
+it doubles as the fixture non-vacuity gate for §3.8. -/
+private theorem probeState_holds_probeCNode :
+    probeState.objects[probeCNode]? = some (.cnode probeCNodeValue) := by rfl
+
+/-- The shared object index does not read the observer's core (§3.2), so this
+membership fact needs no core argument and applies at every one.  Spelled with
+`IfObserver.ofLabel lowLabel` rather than `lowObserver` so it matches the
+reduct of `(ObservableState.onCore … c lowLabel …).objectIndex` syntactically. -/
+private theorem lowEndpoint_mem_lowObjectIndex :
+    lowEndpoint ∈ projectObjectIndex probeLabeling (IfObserver.ofLabel lowLabel) probeState := by
+  decide
+
+/-- The capability the observer at `(c, L)` sees in `probeCNode`'s `slot`,
+read **through the observable state** rather than through `projectCNode`.
+`Option Capability` has `DecidableEq`, so unlike the whole projected object
+this is a decidable end-to-end check of the redaction. -/
+private def cnodeSlotThroughView (c : CoreId) (L : SecurityLabel) (slot : SeLe4n.Slot) :
+    Option Capability :=
+  match (ObservableState.onCore probeLabeling c L probeState).objects probeCNode with
+  | some (.cnode cn) => cn.lookup slot
+  | _ => none
 
 /-- §3.0  Fixture non-vacuity.  Every later group reads this state; if the
 builder had silently produced an empty one (the `buildChecked` panic-to-default
@@ -751,9 +902,19 @@ private def runSchedulingTransparencyChecks : IO Unit := do
           = (ObservableState.onCore probeLabeling c highLabel stSplitDomains).domainSchedule ∧
         (ObservableState.onCore probeLabeling c lowLabel stSplitDomains).domainScheduleIndex
           = (ObservableState.onCore probeLabeling c highLabel stSplitDomains).domainScheduleIndex)))
+  assertBool "the scheduling components are UNFILTERED reads of the raw scheduler"
+    (allCores.all (fun c =>
+      decide ((ObservableState.onCore probeLabeling c lowLabel stSplitDomains).activeDomain
+          = stSplitDomains.scheduler.activeDomainOnCore c ∧
+        (ObservableState.onCore probeLabeling c lowLabel stSplitDomains).domainScheduleIndex
+          = stSplitDomains.scheduler.domainScheduleIndexOnCore c ∧
+        (ObservableState.onCore probeLabeling c lowLabel stSplitDomains).domainTimeRemaining
+          = stSplitDomains.scheduler.domainTimeRemainingOnCore c)))
   assertBool "onCore_schedulingTransparency applies on every core (theorem level)"
     (allCores.all (fun c =>
-      have _h := onCore_schedulingTransparency probeLabeling c lowLabel highLabel stSplitDomains
+      have _h := onCore_schedulingTransparency probeLabeling c lowLabel stSplitDomains
+      have _h2 := onCore_schedulingTransparency_label_invariant probeLabeling c lowLabel
+        highLabel stSplitDomains
       true))
   assertBool "the channel is PER CORE: cores 0 and 1 report different domains"
     (!decide ((ObservableState.onCore probeLabeling c0 lowLabel stSplitDomains).activeDomain
@@ -794,6 +955,266 @@ private def runCrossCoreInvisibilityChecks : IO Unit := do
     (decide (ObservableState.sliceOnCore probeLabeling c0 highLabel stHighReshuffle
       = ObservableState.sliceOnCore probeLabeling c0 highLabel probeState))
 
+/-- §3.8  CNode slot redaction — the one observer-dependent part of object
+projection, and the only place where a wider clearance reveals *more of an
+object it can already see*.
+
+Everything here is computed on the real fixture CNode (two slots: one naming a
+low target, one naming a high target).  Without this group
+`projectCNode_lookup_monotone` and `onCore_objects_cnode_slot_monotone` — the
+results the RobinHood filter-characterisation extension was made for — would
+have no runtime coverage at all. -/
+private def runCNodeRedactionChecks : IO Unit := do
+  IO.println "--- §3.8 CNode slot redaction and its monotonicity ---"
+  assertBool "the raw fixture CNode holds BOTH slots (non-vacuity)"
+    (decide (probeCNodeValue.lookup lowSlot = some lowSlotCap ∧
+             probeCNodeValue.lookup highSlot = some highSlotCap))
+  assertBool "the CNode object is observable to every clearance (its own label is low)"
+    (decide (objectObservable probeLabeling lowObserver probeCNode = true ∧
+             objectObservable probeLabeling highObserver probeCNode = true))
+  -- Slot-level redaction, computed through the live projection.
+  assertBool "the low observer sees the low-target slot"
+    (decide ((projectCNode probeLabeling lowObserver probeCNodeValue).lookup lowSlot
+      = some lowSlotCap))
+  assertBool "REDACTED: the low observer does NOT see the high-target slot"
+    (decide ((projectCNode probeLabeling lowObserver probeCNodeValue).lookup highSlot = none))
+  assertBool "the high observer sees BOTH slots (the redaction is not unconditional)"
+    (decide ((projectCNode probeLabeling highObserver probeCNodeValue).lookup lowSlot
+        = some lowSlotCap ∧
+      (projectCNode probeLabeling highObserver probeCNodeValue).lookup highSlot
+        = some highSlotCap))
+  assertBool "MONOTONE: the slot the low observer sees survives at the high clearance"
+    (have _h : (projectCNode probeLabeling highObserver probeCNodeValue).lookup lowSlot
+        = some lowSlotCap :=
+      projectCNode_lookup_monotone probeLabeling lowLabel_flowsTo_highLabel probeCNodeValue
+        lowSlot lowSlotCap (by decide)
+     true)
+  -- The same story at the observable-state layer, on every core.
+  assertBool "the observable CNode IS the filtered CNode, on every core (theorem level)"
+    (allCores.all (fun c =>
+      have _h : (ObservableState.onCore probeLabeling c lowLabel probeState).objects probeCNode
+          = some (.cnode (projectCNode probeLabeling (IfObserver.ofLabel lowLabel)
+              probeCNodeValue)) :=
+        onCore_objects_cnode probeLabeling c lowLabel probeState probeCNode probeCNodeValue
+          probeState_holds_probeCNode (by decide)
+      true))
+  assertBool "END-TO-END: through the observable state the low observer sees only the low slot"
+    (allCores.all (fun c =>
+      decide (cnodeSlotThroughView c lowLabel lowSlot = some lowSlotCap ∧
+              cnodeSlotThroughView c lowLabel highSlot = none)))
+  assertBool "END-TO-END: the high observer sees BOTH slots through the observable state"
+    (allCores.all (fun c =>
+      decide (cnodeSlotThroughView c highLabel lowSlot = some lowSlotCap ∧
+              cnodeSlotThroughView c highLabel highSlot = some highSlotCap)))
+  assertBool "END-TO-END: the mid observer matches the low one (the high target stays hidden)"
+    (allCores.all (fun c =>
+      decide (cnodeSlotThroughView c midLabel lowSlot = some lowSlotCap ∧
+              cnodeSlotThroughView c midLabel highSlot = none)))
+  assertBool "onCore_objects_cnode_slot_monotone applies on every core (theorem level)"
+    (allCores.all (fun c =>
+      have _h : ∃ cn₂,
+          (ObservableState.onCore probeLabeling c highLabel probeState).objects probeCNode
+            = some (.cnode cn₂) ∧ cn₂.lookup lowSlot = some lowSlotCap :=
+        onCore_objects_cnode_slot_monotone probeLabeling c lowLabel_flowsTo_highLabel probeState
+          probeCNode probeCNodeValue lowSlot lowSlotCap probeState_holds_probeCNode (by decide)
+          (fun cn₁ h => by
+            rw [onCore_objects_cnode probeLabeling c lowLabel probeState probeCNode
+              probeCNodeValue probeState_holds_probeCNode (by decide)] at h
+            injection h with h; injection h with h; subst h; decide)
+      true))
+  -- Capability-target observability: all three CapTarget arms.
+  assertBool "capTargetObservable gates .object by the target's label"
+    (decide (capTargetObservable probeLabeling lowObserver (.object lowEndpoint) = true ∧
+             capTargetObservable probeLabeling lowObserver (.object highEndpoint) = false ∧
+             capTargetObservable probeLabeling highObserver (.object highEndpoint) = true))
+  assertBool "capTargetObservable gates .cnodeSlot by the CONTAINING CNode's label"
+    (decide (capTargetObservable probeLabeling lowObserver (.cnodeSlot probeCNode highSlot)
+        = true ∧
+      capTargetObservable probeLabeling lowObserver (.cnodeSlot highEndpoint lowSlot) = false))
+  assertBool "capTargetObservable gates .replyCap by the reply object's label"
+    (decide (capTargetObservable probeLabeling lowObserver
+        (.replyCap ⟨lowEndpoint.toNat⟩) = true ∧
+      capTargetObservable probeLabeling lowObserver (.replyCap ⟨highEndpoint.toNat⟩) = false))
+  assertBool "capTargetObservable_monotone applies on all three arms"
+    (have _a : capTargetObservable probeLabeling highObserver (.object lowEndpoint) = true :=
+      capTargetObservable_monotone probeLabeling lowLabel_flowsTo_highLabel _ (by decide)
+     have _b : capTargetObservable probeLabeling highObserver
+         (.cnodeSlot probeCNode highSlot) = true :=
+      capTargetObservable_monotone probeLabeling lowLabel_flowsTo_highLabel _ (by decide)
+     have _c : capTargetObservable probeLabeling highObserver
+         (.replyCap ⟨lowEndpoint.toNat⟩) = true :=
+      capTargetObservable_monotone probeLabeling lowLabel_flowsTo_highLabel _ (by decide)
+     true)
+
+/-- §3.9  Memory projection under a configured ownership model.
+
+`LabelingContext.memoryOwnership` defaults to `none`, and under that default
+`memoryAddressObservable` is constantly `false` — so a suite that never
+configures it exercises the `memory` clause only vacuously.  This group runs
+`probeLabelingWithMemory`, which owns two pages at different labels and leaves a
+third unowned, so all three branches of the gate are computed. -/
+private def runMemoryProjectionChecks : IO Unit := do
+  IO.println "--- §3.9 memory projection under a real ownership model ---"
+  assertBool "NON-VACUITY: without an ownership model no address is observable"
+    (decide (memoryAddressObservable probeLabeling lowObserver lowPage = false ∧
+             memoryAddressObservable probeLabeling highObserver lowPage = false))
+  assertBool "with the model, the low-owned page is observable to the low observer"
+    (decide (memoryAddressObservable probeLabelingWithMemory lowObserver lowPage = true))
+  assertBool "the high-owned page is NOT observable to the low observer"
+    (decide (memoryAddressObservable probeLabelingWithMemory lowObserver highPage = false))
+  assertBool "…but IS to the high observer (the negative above is not vacuous)"
+    (decide (memoryAddressObservable probeLabelingWithMemory highObserver highPage = true))
+  assertBool "an unowned page is observable to nobody"
+    (decide (memoryAddressObservable probeLabelingWithMemory lowObserver unownedPage = false ∧
+             memoryAddressObservable probeLabelingWithMemory highObserver unownedPage = false))
+  assertBool "memoryAddressObservable_monotone applies on the owned page"
+    (have _h : memoryAddressObservable probeLabelingWithMemory highObserver lowPage = true :=
+      memoryAddressObservable_monotone probeLabelingWithMemory lowLabel_flowsTo_highLabel
+        lowPage (by decide)
+     true)
+  -- Through the observable state: the projected byte is the real memory content.
+  assertBool "the projected memory byte is the machine's actual byte where observable"
+    (allCores.all (fun c =>
+      decide ((ObservableState.onCore probeLabelingWithMemory c lowLabel probeState).memory lowPage
+        = some (probeState.machine.memory lowPage))))
+  assertBool "…and none where not observable (high page, unowned page)"
+    (allCores.all (fun c =>
+      decide ((ObservableState.onCore probeLabelingWithMemory c lowLabel probeState).memory
+          highPage = none ∧
+        (ObservableState.onCore probeLabelingWithMemory c lowLabel probeState).memory
+          unownedPage = none)))
+  assertBool "onCore_label_monotone applies under the memory-owning context"
+    (allCores.all (fun c =>
+      have _h : (ObservableState.onCore probeLabelingWithMemory c lowLabel probeState).visibilityLe
+          (ObservableState.onCore probeLabelingWithMemory c highLabel probeState) :=
+        onCore_label_monotone probeLabelingWithMemory c lowLabel_flowsTo_highLabel probeState
+      true))
+
+/-- §3.10  Service-registry projection at the *entry* level.
+
+`services` (boolean presence) is covered in §3.5; this group covers
+`serviceRegistry`, whose `visibilityLe` clause is value-preserving rather than
+merely visibility-preserving — a strengthening that would otherwise ship without
+a runtime witness. -/
+private def runServiceRegistryChecks : IO Unit := do
+  IO.println "--- §3.10 service-registry projection (entry level) ---"
+  assertBool "the low observer gets the low service's FULL entry"
+    (allCores.all (fun c =>
+      decide ((ObservableState.onCore probeLabeling c lowLabel probeState).serviceRegistry
+        lowService = some (mkServiceEntry lowService lowEndpoint))))
+  assertBool "STRICT: the low observer gets none for the high service"
+    (allCores.all (fun c =>
+      decide ((ObservableState.onCore probeLabeling c lowLabel probeState).serviceRegistry
+        highService = none)))
+  assertBool "…while the high observer gets its full entry (not vacuous)"
+    (allCores.all (fun c =>
+      decide ((ObservableState.onCore probeLabeling c highLabel probeState).serviceRegistry
+        highService = some (mkServiceEntry highService highEndpoint))))
+  assertBool "VALUE-PRESERVING: the low service's entry is IDENTICAL at both clearances"
+    (allCores.all (fun c =>
+      decide ((ObservableState.onCore probeLabeling c lowLabel probeState).serviceRegistry
+          lowService
+        = (ObservableState.onCore probeLabeling c highLabel probeState).serviceRegistry
+          lowService)))
+  assertBool "the registry projection agrees with the presence projection"
+    (allCores.all (fun c =>
+      decide (((ObservableState.onCore probeLabeling c lowLabel probeState).serviceRegistry
+          lowService).isSome
+        = (ObservableState.onCore probeLabeling c lowLabel probeState).services lowService)))
+
+/-- §3.11  The three-clearance chain `low ⊏ mid ⊏ high`.
+
+Transitivity of `visibilityLe` cannot be exercised with two clearances — there
+is nothing to compose.  This group runs the real middle clearance, checks each
+step is *strict* in the flow order, and composes the two monotonicity instances
+into the end-to-end one, confirming it agrees with the direct proof.  It also
+exercises the `Sublist` (order-preserving) form of the two list clauses. -/
+private def runClearanceChainChecks : IO Unit := do
+  IO.println "--- §3.11 the three-clearance chain (low ⊏ mid ⊏ high) ---"
+  assertBool "the chain is strict at both steps"
+    (decide (securityFlowsTo lowLabel midLabel = true ∧
+             securityFlowsTo midLabel lowLabel = false ∧
+             securityFlowsTo midLabel highLabel = true ∧
+             securityFlowsTo highLabel midLabel = false))
+  assertBool "the chain is observationally non-degenerate: mid sees the mid endpoint, low does not"
+    (decide (objectObservable probeLabeling lowObserver midEndpoint = false ∧
+             objectObservable probeLabeling midObserver midEndpoint = true ∧
+             objectObservable probeLabeling highObserver midEndpoint = true))
+  assertBool "…and the three object indices are STRICTLY increasing in length"
+    (decide ((ObservableState.onCore probeLabeling c0 lowLabel probeState).objectIndex.length <
+        (ObservableState.onCore probeLabeling c0 midLabel probeState).objectIndex.length ∧
+      (ObservableState.onCore probeLabeling c0 midLabel probeState).objectIndex.length <
+        (ObservableState.onCore probeLabeling c0 highLabel probeState).objectIndex.length))
+  assertBool "visibilityLe_refl applies at every (core, clearance)"
+    (allCores.all (fun c =>
+      have _h : (ObservableState.onCore probeLabeling c midLabel probeState).visibilityLe
+          (ObservableState.onCore probeLabeling c midLabel probeState) :=
+        ObservableState.visibilityLe_refl _
+      true))
+  assertBool "visibilityLe_trans composes low ⊑ mid ⊑ high into low ⊑ high"
+    (allCores.all (fun c =>
+      have _h : (ObservableState.onCore probeLabeling c lowLabel probeState).visibilityLe
+          (ObservableState.onCore probeLabeling c highLabel probeState) :=
+        ObservableState.visibilityLe_trans
+          (onCore_label_monotone (L₁ := lowLabel) (L₂ := midLabel) probeLabeling c
+            lowLabel_flowsTo_midLabel probeState)
+          (onCore_label_monotone (L₁ := midLabel) (L₂ := highLabel) probeLabeling c
+            midLabel_flowsTo_highLabel probeState)
+      true))
+  assertBool "the SMP aggregate holds for both steps of the chain"
+    (have _h₁ : visibilityLe_smp probeLabeling lowLabel midLabel probeState :=
+      onCore_label_monotone_smp probeLabeling lowLabel_flowsTo_midLabel probeState
+     have _h₂ : visibilityLe_smp probeLabeling midLabel highLabel probeState :=
+      onCore_label_monotone_smp probeLabeling midLabel_flowsTo_highLabel probeState
+     true)
+  -- The Sublist strengthening, computed: order is preserved, not merely membership.
+  assertBool "ORDER-PRESERVING: the low objectIndex is a SUBLIST of the mid one"
+    (allCores.all (fun c =>
+      decide ((ObservableState.onCore probeLabeling c lowLabel probeState).objectIndex.Sublist
+        (ObservableState.onCore probeLabeling c midLabel probeState).objectIndex)))
+  assertBool "…and the mid objectIndex a sublist of the high one"
+    (allCores.all (fun c =>
+      decide ((ObservableState.onCore probeLabeling c midLabel probeState).objectIndex.Sublist
+        (ObservableState.onCore probeLabeling c highLabel probeState).objectIndex)))
+  assertBool "the run-queue clause is a sublist too (core 1: [] ⊑ [highQueued])"
+    (decide ((ObservableState.onCore probeLabeling c1 lowLabel probeState).runnable.Sublist
+      (ObservableState.onCore probeLabeling c1 highLabel probeState).runnable))
+  assertBool "the derived membership corollaries apply"
+    (allCores.all (fun c =>
+      have _h : lowEndpoint ∈ (ObservableState.onCore probeLabeling c highLabel probeState).objectIndex :=
+        ObservableState.visibilityLe_mem_objectIndex
+          (onCore_label_monotone probeLabeling c lowLabel_flowsTo_highLabel probeState)
+          lowEndpoint_mem_lowObjectIndex
+      true))
+
+/-- §3.12  The finer register-aware check (SM8.A.3), and its limit. -/
+private def runFinerCheckChecks : IO Unit := do
+  IO.println "--- §3.12 the register-aware finer check ---"
+  assertBool "the finer check accepts a state against itself on every core"
+    (allCores.all (fun c =>
+      lowEquivalentSliceOnCoreCheckWithRegs probeLabeling c lowLabel probeState probeState))
+  assertBool "the finer check REJECTS a differing register bank the slice accepts"
+    (let stRegs : SystemState :=
+       { probeState with
+         machine := probeState.machine.setRegsOnCore c0 { pc := ⟨7⟩, sp := ⟨9⟩, gpr := fun _ => ⟨1⟩ } }
+     -- the coarse slice accepts (registersObservable is unchanged) …
+     decide (ObservableState.sliceOnCore probeLabeling c0 lowLabel stRegs
+        = ObservableState.sliceOnCore probeLabeling c0 lowLabel probeState) &&
+     -- … while the finer check rejects: it is strictly finer.
+     !lowEquivalentSliceOnCoreCheckWithRegs probeLabeling c0 lowLabel stRegs probeState)
+  assertBool "the finer check refines the slice (soundness direction)"
+    (allCores.all (fun c =>
+      have _h : lowEquivalentSliceOnCore probeLabeling c lowLabel probeState probeState :=
+        lowEquivalentSliceOnCoreCheckWithRegs_le_slice probeLabeling c lowLabel probeState
+          probeState (lowEquivalentSliceOnCoreCheckWithRegs_of_lowEquivalentOnCore
+            probeLabeling c lowLabel (lowEquivalentOnCore_refl probeLabeling lowObserver
+              probeState c))
+      true))
+  assertBool "…and is STILL not a decision procedure (BEq is not lawful)"
+    (have _h : ∃ rf₁ rf₂ : RegisterFile, (rf₁ == rf₂) = true ∧ rf₁ ≠ rf₂ :=
+      machineRegs_beq_not_injective
+     true)
+
 def runSmpInformationFlowChecks : IO Unit := do
   IO.println "WS-SM SM8.A — Per-core observable state suite"
   IO.println "===================================="
@@ -805,6 +1226,11 @@ def runSmpInformationFlowChecks : IO Unit := do
   runMonotonicityChecks
   runSchedulingTransparencyChecks
   runCrossCoreInvisibilityChecks
+  runCNodeRedactionChecks
+  runMemoryProjectionChecks
+  runServiceRegistryChecks
+  runClearanceChainChecks
+  runFinerCheckChecks
   IO.println "===================================="
   IO.println "All SM8.A per-core observable-state checks PASS."
 

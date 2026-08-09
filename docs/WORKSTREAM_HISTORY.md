@@ -24,8 +24,32 @@ Plan:
 SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
-**Current sub-phase: SM8.A per-core observable state LANDED (v0.33.1) —
-SM8 opens.**  The SMP information-flow *observer* — the pair `(c, L)` of a
+**Current sub-phase: SM8.A per-core observable state COMPLETE (v0.33.2;
+landed v0.33.1) — SM8 opens.**  The v0.33.2 cut closes a self-audit of the
+landing: one shipped count error ("twelve corollaries" where there were
+eleven — there are now fifteen, the sweep having been incomplete too), an
+A.2 headline that was a one-line alias of the SM4.D congruence (now an exact
+`iff` against `observableFactorOnCore`), a partition tripwire asserted rather
+than checked (now a bijection, `ofFragments` + `ofFragments_eta`), two
+`visibilityLe` clauses weaker than the truth (now `List.Sublist`, so order —
+a run queue's dispatch order — is preserved), an asymmetric read-set sweep
+(the SM7 memory surface is now covered whole: `perCoreICache`,
+`pendingIcacheMaintenance`, `tlbShootdown`, scalar `tlb` joined
+`perCoreTlb`), a CC-1 statement with no content (now against the raw
+scheduler reads), a decidable surface that stopped short of what computation
+allows (`lowEquivalentSliceOnCoreCheckWithRegs`), a CNode refinement stranded
+one layer below its subject (now lifted by `onCore_objects_cnode_slot_monotone`),
+and coverage gaps in which the two most proof-heavy theorems were the two
+least exercised — the fixture had no CNode at all and left `memoryOwnership`
+unset, so both were vacuous.  Coverage 68 assertions / 8 groups → **112 / 13**;
+anchors now verified complete by set difference against the module's 104
+declarations, in the suite and in Tier-3 (including the `@[simp]` layer),
+with headline anchors also in `tests/SmpSurfaceAnchors.lean`.  Two accepted
+covert channels registered: `perCoreTlb` and `perCoreICache` are outside the
+model's read set, but that is a statement about the model — a real observer
+times its own accesses — so CC-6 and CC-7 join the §3.5 inventory on the
+CC-2 machine-timer precedent, one instance per core, formal treatment scoped
+to SM8.B.8.  Delivered as one PR by decision.  The SMP information-flow *observer* — the pair `(c, L)` of a
 core and a security clearance (plan Definition 3.1.1) — and the state that
 observer sees (`ObservableState.onCore`, Definition 3.2.1), in the new staged
 module `InformationFlow/ObservableStatePerCore.lean` (staged-only 54 → 55).
