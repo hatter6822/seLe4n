@@ -146,9 +146,24 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @onCore_objects_cnode
 #check @onCore_objects_cnode_slot_monotone
 #check @filter_sublist_filter_of_imp
+#check @cnodeVisibilityLe
+#check @cnodeVisibilityLe_refl
+#check @cnodeVisibilityLe_trans
+#check @eq_of_cnodeVisibilityLe_of_slots_eq
+#check @objectVisibilityLe
+#check @objectVisibilityLe_refl
+#check @objectVisibilityLe_trans
+#check @eq_of_objectVisibilityLe_of_not_cnode
+#check @objectVisibilityLe_cnode
+#check @projectCNode_visibilityLe_monotone
+#check @projectKernelObject_visibilityLe_monotone
 #check @ObservableState.visibilityLe
 #check @ObservableState.visibilityLe_mem_runnable
 #check @ObservableState.visibilityLe_mem_objectIndex
+#check @ObservableState.visibilityLe_objects_isSome
+#check @ObservableState.visibilityLe_objects_eq_of_not_cnode
+#check @ObservableState.visibilityLe_cnode_lookup
+#check @ObservableState.eq_of_visibilityLe_antisymm
 #check @ObservableState.visibilityLe_refl
 #check @ObservableState.visibilityLe_trans
 #check @onCore_label_monotone
@@ -269,14 +284,40 @@ example (ctx : LabelingContext) (c : CoreId) (L₁ L₂ : SecurityLabel)
     (hFlow : securityFlowsTo L₁ L₂ = true) (s : SystemState) (t : SeLe4n.ThreadId)
     (ht : (ObservableState.onCore ctx c L₁ s).current = some t) :
     (ObservableState.onCore ctx c L₂ s).current = some t :=
-  (onCore_label_monotone ctx c hFlow s).2.2.1 t ht
+  (onCore_label_monotone ctx c hFlow s).current t ht
 
--- SM8.A.5: monotonicity, extracted at the `objects` component (visibility only).
+-- SM8.A.5: monotonicity, extracted at the `objects` component — presence.
 example (ctx : LabelingContext) (c : CoreId) (L₁ L₂ : SecurityLabel)
     (hFlow : securityFlowsTo L₁ L₂ = true) (s : SystemState) (oid : SeLe4n.ObjId)
     (h : ((ObservableState.onCore ctx c L₁ s).objects oid).isSome = true) :
     ((ObservableState.onCore ctx c L₂ s).objects oid).isSome = true :=
-  (onCore_label_monotone ctx c hFlow s).1 oid h
+  ObservableState.visibilityLe_objects_isSome (onCore_label_monotone ctx c hFlow s) h
+
+-- SM8.A.5: and at the `objects` component — *content*.  A visible non-CNode
+-- object keeps its value, from the order alone.  This is what the pre-v0.33.4
+-- `isSome`-only clause could not deliver: it permitted a wider clearance to
+-- swap a visible endpoint for an unrelated object at the same id.
+example (ctx : LabelingContext) (c : CoreId) (L₁ L₂ : SecurityLabel)
+    (hFlow : securityFlowsTo L₁ L₂ = true) (s : SystemState) (oid : SeLe4n.ObjId)
+    (e : Endpoint) (h : (ObservableState.onCore ctx c L₁ s).objects oid = some (.endpoint e)) :
+    (ObservableState.onCore ctx c L₂ s).objects oid = some (.endpoint e) :=
+  ObservableState.visibilityLe_objects_eq_of_not_cnode
+    (onCore_label_monotone ctx c hFlow s) h (fun _ => KernelObject.noConfusion)
+
+-- SM8.A.5: the four scheduling components are *equal* across clearances, from
+-- the order alone.  Omitting these clauses (pre-v0.33.4) left two states with
+-- different `activeDomain` dominating each other in both directions.
+example (ctx : LabelingContext) (c : CoreId) (L₁ L₂ : SecurityLabel)
+    (hFlow : securityFlowsTo L₁ L₂ = true) (s : SystemState) :
+    (ObservableState.onCore ctx c L₁ s).activeDomain
+      = (ObservableState.onCore ctx c L₂ s).activeDomain :=
+  (onCore_label_monotone ctx c hFlow s).activeDomain
+
+-- SM8.A.5: mutual domination plus agreement on `objects` is equality — the
+-- completeness check on the clause list.
+example (v : ObservableState) : v = v :=
+  ObservableState.eq_of_visibilityLe_antisymm
+    (ObservableState.visibilityLe_refl v) (ObservableState.visibilityLe_refl v) rfl
 
 -- SM8.A.5: a CNode slot visible at the narrower clearance survives at the wider one.
 example (ctx : LabelingContext) (L₁ L₂ : SecurityLabel) (hFlow : securityFlowsTo L₁ L₂ = true)
@@ -400,6 +441,25 @@ private def highSlotCap : Capability :=
 private def probeCNodeValue : CNode :=
   { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
     slots := SeLe4n.UniqueSlotMap.ofListWF [(lowSlot, lowSlotCap), (highSlot, highSlotCap)] }
+
+/-- The CSpace root every fixture TCB names.
+
+`KernelObject.wellFormed` requires a TCB's `cspaceRoot` and `vspaceRoot` to
+resolve in the object store, so a fixture whose TCBs point at absent ids is one
+the kernel's own construction paths (`lifecycleRetype`, which validates
+`wellFormed` before installing) would reject — the evidence would be computed on
+an unreachable state.  Both roots are therefore real objects, and §3.0 checks
+the well-formedness that makes them necessary.  Empty slots: this root exists to
+be *referenced*, and the redaction probe is `probeCNode`. -/
+private def rootCNodeValue : CNode :=
+  { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8,
+    slots := SeLe4n.UniqueSlotMap.ofListWF [] }
+
+/-- The VSpace root every fixture TCB names.  Its ASID is distinct from any
+other in the fixture (it is the only VSpaceRoot), so the builder's ASID
+uniqueness check has nothing to collide with. -/
+private def rootVSpaceValue : VSpaceRoot :=
+  { asid := ⟨7⟩, mappings := SeLe4n.Kernel.RobinHood.RHTable.empty 16 }
 /-- Physical addresses for the memory-ownership probes (§3.8). -/
 private def lowPage : SeLe4n.PAddr := SeLe4n.PAddr.ofNat 0x40000000
 private def highPage : SeLe4n.PAddr := SeLe4n.PAddr.ofNat 0x40001000
@@ -460,7 +520,8 @@ private def mkServiceEntry (sid : ServiceId) (backing : SeLe4n.ObjId) : ServiceG
 * core 1 — current `highCurrent`, run queue `[highQueued]` (both high-labelled);
 * cores 2 and 3 — idle;
 * shared — a low and a high endpoint, a low and a high service, a low and a
-  high IRQ handler.
+  high IRQ handler, and the CSpace/VSpace roots every TCB names (so every TCB
+  is `KernelObject.wellFormed`, checked in §3.0).
 
 Every thread is dequeue-on-dispatch consistent (a core's current thread is not
 in that core's run queue).  The two cores' contents are label-disjoint, which
@@ -469,6 +530,8 @@ each other. -/
 private def probeState : SystemState :=
   let base :=
     (BootstrapBuilder.empty
+      |>.withObject cnRoot (.cnode rootCNodeValue)
+      |>.withObject vsRoot (.vspaceRoot rootVSpaceValue)
       |>.withObject lowEndpoint (.endpoint {})
       |>.withObject highEndpoint (.endpoint {})
       |>.withObject midEndpoint (.endpoint {})
@@ -517,6 +580,42 @@ private def cnodeSlotThroughView (c : CoreId) (L : SecurityLabel) (slot : SeLe4n
   | some (.cnode cn) => cn.lookup slot
   | _ => none
 
+/-- The low endpoint's value as the low observer sees it (§3.13).  Computed, so
+it is the fixture's actual object and not an assumed one. -/
+private theorem lowEndpoint_view_low :
+    (ObservableState.onCore probeLabeling c0 lowLabel probeState).objects lowEndpoint
+      = some (.endpoint {}) := by rfl
+
+/-- …and the **same** value as the high observer sees it — derived from
+`visibilityLe` alone, not recomputed.  This is the content half of the `objects`
+clause: off the CNode arm a wider clearance may not change what it shows. -/
+private theorem lowEndpoint_view_high :
+    (ObservableState.onCore probeLabeling c0 highLabel probeState).objects lowEndpoint
+      = some (.endpoint {}) :=
+  ObservableState.visibilityLe_objects_eq_of_not_cnode
+    (onCore_label_monotone probeLabeling c0 lowLabel_flowsTo_highLabel probeState)
+    lowEndpoint_view_low (fun _ => KernelObject.noConfusion)
+
+/-- The substitution an `isSome`-only clause would have accepted (§3.13). -/
+private theorem endpoint_not_visibilityLe_notification (e : Endpoint) (n : Notification) :
+    ¬ objectVisibilityLe (.endpoint e) (.notification n) := by
+  intro h
+  cases h
+
+/-- …and the cross-arm substitution, in the other direction (§3.13). -/
+private theorem cnode_not_visibilityLe_endpoint (cn : CNode) (e : Endpoint) :
+    ¬ objectVisibilityLe (.cnode cn) (.endpoint e) := by
+  intro h
+  exact h.elim
+
+/-- The low observer's own view with its `activeDomain` moved (§3.13).  Every
+component the pre-v0.33.4 relation constrained is untouched, so this is exactly
+the state that dominated the real view in both directions before the four
+scheduling clauses were added. -/
+private def domainShiftedView : ObservableState :=
+  { ObservableState.onCore probeLabeling c0 lowLabel probeState with
+    activeDomain := ⟨9⟩ }
+
 /-- §3.0  Fixture non-vacuity.  Every later group reads this state; if the
 builder had silently produced an empty one (the `buildChecked` panic-to-default
 failure mode) every assertion below would pass vacuously.  These checks fail
@@ -531,6 +630,27 @@ private def runFixtureChecks : IO Unit := do
              (probeState.objects[highCurrent.toObjId]?).isSome = true ∧
              (probeState.objects[lowQueued.toObjId]?).isSome = true ∧
              (probeState.objects[highQueued.toObjId]?).isSome = true))
+  -- The state has to be one the kernel could actually reach.  A TCB whose
+  -- `cspaceRoot`/`vspaceRoot` do not resolve fails `KernelObject.wellFormed`,
+  -- which `lifecycleRetype` validates before installing an object — so a
+  -- fixture missing its roots would compute all of the evidence below on a
+  -- state no construction path can produce.
+  assertBool "both declared TCB roots are real objects in the store"
+    (decide ((probeState.objects[cnRoot]?).isSome = true ∧
+             (probeState.objects[vsRoot]?).isSome = true))
+  assertBool "every fixture TCB is KernelObject.wellFormed"
+    (decide ((KernelObject.tcb (mkTcb 1010 40 none)).wellFormed probeState.objects ∧
+             (KernelObject.tcb (mkTcb 1011 50 (some c1))).wellFormed probeState.objects ∧
+             (KernelObject.tcb (mkTcb 1012 40 none)).wellFormed probeState.objects ∧
+             (KernelObject.tcb (mkTcb 1013 50 (some c1))).wellFormed probeState.objects))
+  assertBool "both CNodes in the fixture are KernelObject.wellFormed"
+    (decide ((KernelObject.cnode rootCNodeValue).wellFormed probeState.objects ∧
+             (KernelObject.cnode probeCNodeValue).wellFormed probeState.objects))
+  -- The load-bearing negative: well-formedness is a real constraint here, not
+  -- something every TCB satisfies.  A TCB naming an absent root is rejected.
+  assertBool "a TCB naming an absent root is NOT well-formed"
+    (decide (¬ (KernelObject.tcb
+      { (mkTcb 1010 40 none) with cspaceRoot := ⟨1019⟩ }).wellFormed probeState.objects))
   assertBool "core 0 runs the low thread, core 1 runs the high thread"
     (decide (probeState.scheduler.currentOnCore c0 = some lowCurrent ∧
              probeState.scheduler.currentOnCore c1 = some highCurrent))
@@ -1215,6 +1335,80 @@ private def runFinerCheckChecks : IO Unit := do
       machineRegs_beq_not_injective
      true)
 
+/-- §3.13  The object-content order, and the four scheduling clauses.
+
+`ObservableState.visibilityLe` compared `objects` by `isSome` and said nothing
+at all about the four scheduling components until v0.33.4.  Both gaps are
+observable on this fixture, so this group states the strengthened clauses as
+computed facts and pins the two things the old relation could not exclude. -/
+private def runObjectContentOrderChecks : IO Unit := do
+  IO.println "--- §3.13 the object-content order ---"
+  assertBool "CONTENT: a visible endpoint has the SAME value at both clearances"
+    (have _h : (ObservableState.onCore probeLabeling c0 highLabel probeState).objects lowEndpoint
+        = some (.endpoint {}) := lowEndpoint_view_high
+     true)
+  assertBool "…and that follows from the ORDER alone, on every core"
+    (allCores.all (fun c =>
+      have _h : ∀ e : Endpoint,
+          (ObservableState.onCore probeLabeling c lowLabel probeState).objects lowEndpoint
+            = some (.endpoint e) →
+          (ObservableState.onCore probeLabeling c highLabel probeState).objects lowEndpoint
+            = some (.endpoint e) := fun _ h =>
+        ObservableState.visibilityLe_objects_eq_of_not_cnode
+          (onCore_label_monotone probeLabeling c lowLabel_flowsTo_highLabel probeState) h
+          (fun _ => KernelObject.noConfusion)
+      true))
+  -- The load-bearing negatives: an `isSome`-preserving relation would accept
+  -- both of these substitutions.  `objectVisibilityLe` accepts neither.
+  assertBool "STRICT: a visible endpoint may NOT widen into a notification"
+    (have _h : ∀ (e : Endpoint) (n : Notification),
+        ¬ objectVisibilityLe (.endpoint e) (.notification n) :=
+      endpoint_not_visibilityLe_notification
+     true)
+  assertBool "STRICT: a visible CNode may NOT widen into a non-CNode"
+    (have _h : ∀ (cn : CNode) (e : Endpoint), ¬ objectVisibilityLe (.cnode cn) (.endpoint e) :=
+      cnode_not_visibilityLe_endpoint
+     true)
+  assertBool "the CNode arm IS related, and the relation carries the slot"
+    (have _h : cnodeVisibilityLe (projectCNode probeLabeling lowObserver probeCNodeValue)
+        (projectCNode probeLabeling highObserver probeCNodeValue) :=
+      projectCNode_visibilityLe_monotone probeLabeling lowLabel_flowsTo_highLabel probeCNodeValue
+     true)
+  assertBool "…and the CNode arm genuinely widens here (low: 1 slot, high: 2)"
+    (decide (cnodeSlotThroughView c0 lowLabel lowSlot = some lowSlotCap ∧
+             cnodeSlotThroughView c0 lowLabel highSlot = none ∧
+             cnodeSlotThroughView c0 highLabel lowSlot = some lowSlotCap ∧
+             cnodeSlotThroughView c0 highLabel highSlot = some highSlotCap))
+  -- The four scheduling clauses (CC-1): equal, not merely visible.
+  assertBool "SCHEDULING: all four components are EQUAL across clearances"
+    (allCores.all (fun c =>
+      have _h : (ObservableState.onCore probeLabeling c lowLabel probeState).activeDomain
+            = (ObservableState.onCore probeLabeling c highLabel probeState).activeDomain ∧
+          (ObservableState.onCore probeLabeling c lowLabel probeState).domainTimeRemaining
+            = (ObservableState.onCore probeLabeling c highLabel probeState).domainTimeRemaining ∧
+          (ObservableState.onCore probeLabeling c lowLabel probeState).domainSchedule
+            = (ObservableState.onCore probeLabeling c highLabel probeState).domainSchedule ∧
+          (ObservableState.onCore probeLabeling c lowLabel probeState).domainScheduleIndex
+            = (ObservableState.onCore probeLabeling c highLabel probeState).domainScheduleIndex :=
+        let h := onCore_label_monotone probeLabeling c lowLabel_flowsTo_highLabel probeState
+        ⟨h.activeDomain, h.domainTimeRemaining, h.domainSchedule, h.domainScheduleIndex⟩
+      true))
+  assertBool "ANTISYMMETRY: mutual domination plus equal objects is equality"
+    (allCores.all (fun c =>
+      have _h : ObservableState.onCore probeLabeling c lowLabel probeState
+          = ObservableState.onCore probeLabeling c lowLabel probeState :=
+        ObservableState.eq_of_visibilityLe_antisymm
+          (ObservableState.visibilityLe_refl _) (ObservableState.visibilityLe_refl _) rfl
+      true))
+  assertBool "…and it is a REAL constraint: differing activeDomain breaks it"
+    (decide (¬ (ObservableState.onCore probeLabeling c0 lowLabel probeState).activeDomain
+        = domainShiftedView.activeDomain) &&
+     -- the shifted view still dominates in the `isSome`/list/value clauses the
+     -- pre-v0.33.4 relation had — only the new `activeDomain` clause separates
+     -- them, so `visibilityLe` is now antisymmetric where it was not.
+     decide ((ObservableState.onCore probeLabeling c0 lowLabel probeState).runnable
+        = domainShiftedView.runnable))
+
 def runSmpInformationFlowChecks : IO Unit := do
   IO.println "WS-SM SM8.A — Per-core observable state suite"
   IO.println "===================================="
@@ -1231,6 +1425,7 @@ def runSmpInformationFlowChecks : IO Unit := do
   runServiceRegistryChecks
   runClearanceChainChecks
   runFinerCheckChecks
+  runObjectContentOrderChecks
   IO.println "===================================="
   IO.println "All SM8.A per-core observable-state checks PASS."
 

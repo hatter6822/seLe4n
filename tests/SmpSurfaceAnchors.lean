@@ -446,7 +446,11 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
   -- phase's headline surface, so a rename that slipped past the dedicated suite
   -- still fails this file.  Elaboration-time only — the checks above are the
   -- runtime part of this suite.
-  assertBool "SM8.A headline surface resolves (observer, partition, decidability)"
+  -- Assertion labels below name the *semantics*, not the phase: the Tier-3
+  -- companion greps them from a shell string, where the identifier-naming
+  -- gate reads a phase code as code rather than as prose.  The phase is
+  -- named in the comments above, which are exempt.
+  assertBool "per-core observer surface resolves (observer, partition, decidability)"
     (have _o : SeLe4n.Kernel.LabelingContext → SeLe4n.Kernel.Concurrency.CoreId →
         SeLe4n.Kernel.SecurityLabel → SeLe4n.Model.SystemState → SeLe4n.Kernel.ObservableState :=
       SeLe4n.Kernel.ObservableState.onCore
@@ -454,7 +458,7 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
         SeLe4n.Kernel.ObservableState.ofFragments v.sharedFragment v.perCoreFragment = v :=
       SeLe4n.Kernel.ObservableState.ofFragments_eta
      true)
-  assertBool "SM8.A independence + monotonicity headlines resolve"
+  assertBool "per-core independence + clearance monotonicity headlines resolve"
     (have _i := @SeLe4n.Kernel.onCore_perCore_independence
      have _m := @SeLe4n.Kernel.onCore_label_monotone
      have _s := @SeLe4n.Kernel.onCore_label_monotone_smp

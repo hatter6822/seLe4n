@@ -121,7 +121,7 @@ accidental interference when suites are run independently.
                                         (distinct caller/server CNodes), live-API
                                         CSpace 860-864, contention 870)
   SmpNotificationSuite     900-926     WS-SM SM6.F.2 aggregate cross-core notification fixtures
-  SmpInformationFlowSuite  1000-1015   WS-SM SM8.A per-core observable-state fixture
+  SmpInformationFlowSuite  1000-1019   WS-SM SM8.A per-core observable-state fixture
                                        (cspace/vspace roots 1000-1001, low/high
                                         endpoints 1002-1003, low/high services
                                         1004-1005, low/high threads 1010-1013,

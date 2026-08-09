@@ -6,7 +6,8 @@
 > **Target releases**: v0.91.0 .. v0.97.x (parallel with SM7)
 > **Calendar estimate**: 5-8 weeks
 > **Sub-task count**: 40-55 across ~15-22 PRs
-> **Status**: SM8.A COMPLETE at v0.33.3 (landed v0.33.2); SM8.B–SM8.E pending
+> **Status**: SM8.A COMPLETE at v0.33.3, review cut v0.33.4 (landed
+> v0.33.2); SM8.B–SM8.E pending
 
 ## 1. Phase goal
 
@@ -186,7 +187,7 @@ core. The field's added; the audit invariant preserved.
 
 ## 5. Detailed sub-task breakdown
 
-### SM8.A — Per-core observable state (1 PR by decision, 6 sub-tasks) — **LANDED v0.33.2, COMPLETE v0.33.3**
+### SM8.A — Per-core observable state (1 PR by decision, 6 sub-tasks) — **LANDED v0.33.2, COMPLETE v0.33.3, REVIEW CUT v0.33.4**
 
 | Sub | Description | Theorem | Est | Status |
 |-----|-------------|---------|-----|--------|
@@ -197,14 +198,14 @@ core. The field's added; the audit invariant preserved.
 | SM8.A.5 | `onCore_label_monotone` | Theorem | M | LANDED |
 | SM8.A.6 | Start `tests/SmpInformationFlowSuite.lean` | M | LANDED |
 
-**Landing record (v0.33.2, completed v0.33.3).**  New staged module
-`SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean` (104
+**Landing record (v0.33.2, completed v0.33.3, review cut v0.33.4).**  New
+staged module `SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean` (119
 declarations; staged-only count 54 → 55; SM8.B's `crossCoreNonInterference`
 is the first consumer), layered on the SM4.D per-core projections in
 `ProjectionPerCore.lean`.  Zero `sorry`/`axiom` — of the module's
-104 declarations, the 100 term-level ones each depend only on `propext` /
+119 declarations, the 113 term-level ones each depend only on `propext` /
 `Quot.sound` / `Classical.choice` (checked exhaustively, not by sampling);
-the remaining 4 are structures.  No
+the remaining 6 are structures.  No
 transition changed, so the golden trace is byte-identical.
 
 *Delivered as one PR rather than the three this table projected — the
@@ -281,15 +282,26 @@ parts do not stand alone.*
   underlying list, so order is preserved, and a run queue's order is its
   dispatch order (`filter_sublist_filter_of_imp` is the substrate;
   `visibilityLe_mem_runnable` / `_mem_objectIndex` derive the membership
-  forms so nothing is lost).  Only `objects` is compared by visibility,
-  because a wider clearance may legitimately reveal more of an object it can
-  already see — and that widening is pinned exactly:
-  `projectKernelObject_observer_independent_off_cnode` (CNode redaction is
-  the *only* observer-dependent part of object projection),
-  `onCore_objects_label_invariant_off_cnode` (elsewhere the projected value
-  is identical), and `onCore_objects_cnode` /
-  `onCore_objects_cnode_slot_monotone` (the CNode refinement lifted to the
-  observable-state layer, where SM8.A's subject lives).
+  forms so nothing is lost).  `objects` is the one component whose *content*
+  may widen, and it is compared by `objectVisibilityLe`, which pins that
+  widening exactly: equality on every arm but `.cnode` (which is what
+  `projectKernelObject_observer_independent_off_cnode` makes true — CNode
+  redaction is the *only* observer-dependent part of object projection), and
+  `cnodeVisibilityLe` on the CNode arm, where the five non-slot fields are
+  fixed and slots may only be un-redacted.  `eq_of_objectVisibilityLe_of_not_cnode`
+  and `ObservableState.visibilityLe_{objects_eq_of_not_cnode,cnode_lookup}` are
+  the consumer forms, derivable from a `visibilityLe` hypothesis with no access
+  to the underlying state — as is `visibilityLe_objects_isSome`, the weakest.
+  The four scheduling components are **unfiltered** (CC-1), so their clauses are
+  equality; `ObservableState.eq_of_visibilityLe_antisymm` is the completeness
+  check on the whole clause list (mutual domination plus agreement on `objects`
+  is equality, so a fourteenth component with no clause leaves a goal nothing
+  can close).  The state-level forms
+  `onCore_objects_label_invariant_off_cnode`, `onCore_objects_cnode` and
+  `onCore_objects_cnode_slot_monotone` remain as the two-projections-of-one-state
+  statements, and `projectCNode_visibilityLe_monotone` /
+  `projectKernelObject_visibilityLe_monotone` are the bridges that discharge the
+  `objects` clause.
   `onCore_schedulingTransparency` states CC-1 against the **raw** scheduler
   reads — what the observer gets, not merely that two clearances agree,
   which any constant function satisfies — with
@@ -300,9 +312,9 @@ parts do not stand alone.*
   `RHTable.filter_getElem?_of_pred` supplies the forward direction and
   `RHTable.filter_getElem?_iff` states the characterisation as the `iff`.
 * **SM8.A.6** — `tests/SmpInformationFlowSuite.lean`
-  (`smp_information_flow_suite`): **108 `#check` surface anchors** (every
-  one of the module's 104 declarations, verified by set difference), 21
-  elaboration-time examples, and **112 runtime assertions across 13
+  (`smp_information_flow_suite`): **123 `#check` surface anchors** (every
+  one of the module's 119 declarations, verified by set difference), 25
+  elaboration-time examples, and **125 runtime assertions across 14
   groups**.  The fixture is four threads on four cores under a
   three-clearance labeling `low ⊏ mid ⊏ high`, with low/mid/high endpoints,
   low/high services and IRQ handlers, a **CNode carrying one low-target and
@@ -324,8 +336,61 @@ parts do not stand alone.*
   **every** module symbol including the `@[simp]` definition-pinning layer,
   verified by set difference — with headline anchors additionally in
   `tests/SmpSurfaceAnchors.lean`, the file §5 SM8.E.1 names as the SM8
-  anchor home.  Fixture OID band 1000–1015 registered in
+  anchor home.  Fixture OID band 1000–1019 registered in
   `SeLe4n/Testing/Helpers.lean`.
+
+**Review cut (v0.33.4).**  Three findings from the automated review of the
+SM8.A pull request, all valid, all closed.  Two concern
+`ObservableState.visibilityLe`, whose docstring claimed every clause was "as
+strong as the truth allows" while two were not — the project's
+implement-the-improvement case, so the relation was strengthened rather than
+the claim weakened.
+
+1. **The `objects` clause preserved only `isSome`** (P1).  A consumer holding
+   `v₁.visibilityLe v₂` could conclude an object was still *present*, not that
+   it was the same object: the relation admitted replacing a visible endpoint,
+   TCB or Reply with an unrelated object at the same id, which is the opposite
+   of "a wider clearance sees at least as much".  The state-level lemmas that
+   bound the widening (`onCore_objects_label_invariant_off_cnode`,
+   `onCore_objects_cnode_slot_monotone`) did not help, since neither follows
+   from a `visibilityLe` hypothesis alone.  Closed by comparing content:
+   `objectVisibilityLe` is equality on every arm but `.cnode` and
+   `cnodeVisibilityLe` on that one — five non-slot fields pinned, slots only
+   un-redacted — with `eq_of_cnodeVisibilityLe_of_slots_eq` the tripwire that
+   fails if `CNode` grows a sixth non-slot field.  The consumer forms
+   (`visibilityLe_objects_eq_of_not_cnode`, `visibilityLe_cnode_lookup`,
+   `visibilityLe_objects_isSome`) all derive from the order alone.
+2. **The four scheduling components had no clause at all** (P1).  `activeDomain`,
+   `domainTimeRemaining`, `domainSchedule` and `domainScheduleIndex` are
+   unfiltered (CC-1), so the truth about them is equality — and with no clause
+   the order held in *both directions* between two states that differed in
+   them, silently discarding the CC-1 content an SM8.B consumer would read as
+   preserved.  Closed by adding the four equality clauses, and
+   `ObservableState.eq_of_visibilityLe_antisymm` now states the property that
+   was false: mutual domination plus agreement on `objects` is equality.  That
+   theorem is also the standing completeness check on the clause list — it
+   discharges one goal per `ObservableState` field, so a fourteenth component
+   with no clause leaves a goal nothing can close, the same discipline
+   `ofFragments_eta` applies to the field partition.  `visibilityLe` became a
+   **structure** in the process, one named field per component in declaration
+   order, so the clause list can be read against the component list and
+   consumers write `h.runnable` rather than a projection chain.
+3. **The fixture's TCBs named roots that did not exist** (P2).  Every
+   `probeState` TCB declared `cspaceRoot := cnRoot` and `vspaceRoot := vsRoot`,
+   but the builder inserted neither, so all four failed
+   `KernelObject.wellFormed` — which `lifecycleRetype` validates before
+   installing an object.  The evidence was therefore computed on a state no
+   construction path can reach.  Closed by building both roots (§3.0 now checks
+   TCB and CNode well-formedness, with the load-bearing negative that a TCB
+   naming an absent root is rejected); OID band 1000–1015 → 1000–1019.
+
+Suite 112 → **125 runtime assertions / 14 groups** (new §3.13 exercises the
+object-content order and the four scheduling clauses, and shows the shifted-
+`activeDomain` view that dominated the real one before this cut); module 104 →
+**119 declarations**, all 113 term-level ones re-checked axiom-clean; Tier-3
+anchors extended, including negative pins that the four scheduling clauses stay
+equalities.  Theorems and tests only — no transition changed, trace
+byte-identical.
 
 **Deliberately not in SM8.A** (each is a later sub-phase, not an
 omission): the per-core NI *preservation* theorems over transitions are

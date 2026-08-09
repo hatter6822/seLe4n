@@ -1,3 +1,81 @@
+## v0.33.4 — SM8.A review cut: the visibility order says what it claimed
+
+Three findings from the automated review of the SM8.A pull request, all
+valid, all closed. Two are the project's implement-the-improvement case:
+`ObservableState.visibilityLe`'s docstring said every clause was "as
+strong as the truth allows", and two of them were not — so the relation
+was strengthened rather than the claim weakened.
+
+**The `objects` clause preserved only `isSome`.** A consumer holding
+`v₁.visibilityLe v₂` could conclude that an object was still *present* in
+`v₂`, not that it was the same object: the relation admitted replacing a
+visible endpoint, TCB or Reply with an unrelated object at the same id,
+which is the opposite of "a wider clearance sees at least as much". The
+lemmas that bounded the widening
+(`onCore_objects_label_invariant_off_cnode`,
+`onCore_objects_cnode_slot_monotone`) did not close the gap, because
+neither follows from a `visibilityLe` hypothesis alone — both need the
+underlying state. The clause now compares content:
+`objectVisibilityLe` is equality on every arm but `.cnode` — which is
+exactly what `projectKernelObject_observer_independent_off_cnode` makes
+true — and `cnodeVisibilityLe` on that one, where the five non-slot
+fields are pinned and slots may only be un-redacted.
+`eq_of_cnodeVisibilityLe_of_slots_eq` is the tripwire: it fails if `CNode`
+grows a sixth non-slot field. The consumer forms
+(`visibilityLe_objects_eq_of_not_cnode`, `visibilityLe_cnode_lookup`,
+`visibilityLe_objects_isSome`) all derive from the order alone, which is
+what an SM8.B consumer will have.
+
+**The four scheduling components had no clause at all.**
+`activeDomain`, `domainTimeRemaining`, `domainSchedule` and
+`domainScheduleIndex` pass through unfiltered — accepted covert channel
+CC-1 — so the truth about them is equality, and with no clause at all the
+order held in *both directions* between two states that differed in them.
+A downstream consumer reading the order as "everything visible in `v₁`
+survives in `v₂`" would silently drop the CC-1 content. The four equality
+clauses are now present, and `ObservableState.eq_of_visibilityLe_antisymm`
+states the property that was false: mutual domination plus agreement on
+`objects` is equality. (`objects` stays a hypothesis rather than a
+conclusion because it is the one component that deliberately widens, and
+mutual domination there yields equal *lookups* rather than equal slot
+maps — a `UniqueSlotMap` is a hash table, and two tables with the same
+contents may differ in probe order.) That theorem is also the standing
+completeness check: it discharges one goal per `ObservableState` field, so
+a fourteenth component with no clause leaves a goal nothing can close —
+the same discipline `ofFragments_eta` already applies to the field
+partition. `visibilityLe` became a **structure** in the process, one named
+field per component in declaration order, so the clause list reads against
+the component list and consumers write `h.runnable` instead of
+`h.2.2.2.2.2.1`.
+
+**The fixture's TCBs named roots that did not exist.** Every `probeState`
+TCB declared `cspaceRoot := cnRoot` and `vspaceRoot := vsRoot`, but the
+builder chain inserted neither object, so all four failed
+`KernelObject.wellFormed` — the predicate `lifecycleRetype` validates
+before installing an object. The four-thread runtime evidence was
+therefore computed on a state no construction path can reach. Both roots
+are now built; §3.0 checks TCB and CNode well-formedness, with the
+load-bearing negative that a TCB naming an absent root is rejected. The
+fixture OID band widens 1000–1015 → 1000–1019.
+
+Suite 112 → **125 runtime assertions / 14 groups**: the new §3.13
+exercises the object-content order (a visible endpoint keeps its value
+across clearances, derived from the order; an endpoint may not widen into
+a notification, nor a CNode into a non-CNode; the CNode arm genuinely
+widens on this fixture) and the four scheduling clauses, including the
+shifted-`activeDomain` view that dominated the real one in both directions
+before this cut. Module 104 → **119 declarations**, all 113 term-level
+ones re-checked axiom-clean (`propext` / `Quot.sound` /
+`Classical.choice`, exhaustively rather than by sampling); the other 6 are
+structures. Tier-3 anchors extended, including negative pins that the four
+scheduling clauses stay equalities and that the fixture builds its
+declared roots.
+
+Theorems and tests only: no transition changed, and the golden trace is
+byte-identical.
+
+Refs: docs/planning/SMP_INFORMATION_FLOW_PLAN.md §5 (SM8.A review cut)
+
 ## v0.33.3 — SM8.A completed: the gaps in v0.33.2, closed
 
 A self-audit of the v0.33.2 SM8.A cut found one shipped factual error,

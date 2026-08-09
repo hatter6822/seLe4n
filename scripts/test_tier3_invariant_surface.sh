@@ -1450,13 +1450,40 @@ run_check "INVARIANT" rg -n '^theorem projectCNode_lookup_monotone' SeLe4n/Kerne
 run_check "INVARIANT" rg -n '^theorem projectKernelObject_observer_independent_off_cnode' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^theorem onCore_objects_label_invariant_off_cnode' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^theorem filter_sublist_filter_of_imp' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^def ObservableState.visibilityLe' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+# SM8.A.5 object-content refinement.  The `objects` clause must compare CONTENT,
+# not presence: an `isSome`-only clause lets a wider clearance substitute an
+# unrelated object at an id it had already shown.
+run_check "INVARIANT" rg -n '^structure cnodeVisibilityLe' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cnodeVisibilityLe_refl' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cnodeVisibilityLe_trans' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem eq_of_cnodeVisibilityLe_of_slots_eq' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^def objectVisibilityLe' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem objectVisibilityLe_refl' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem objectVisibilityLe_trans' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem eq_of_objectVisibilityLe_of_not_cnode' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem objectVisibilityLe_cnode' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem projectCNode_visibilityLe_monotone' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem projectKernelObject_visibilityLe_monotone' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^structure ObservableState.visibilityLe' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^theorem ObservableState.visibilityLe_mem_runnable' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^theorem ObservableState.visibilityLe_mem_objectIndex' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem ObservableState.visibilityLe_objects_isSome' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem ObservableState.visibilityLe_objects_eq_of_not_cnode' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem ObservableState.visibilityLe_cnode_lookup' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+# The completeness check on the clause list: a fourteenth `ObservableState`
+# component with no clause leaves this proof a goal nothing can close.
+run_check "INVARIANT" rg -n '^theorem ObservableState.eq_of_visibilityLe_antisymm' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 # The two list clauses must stay `Sublist` (order-preserving), not membership:
 # a run queue's order is its dispatch order.
 run_check "INVARIANT" rg -n 'runnable.Sublist' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n 'objectIndex.Sublist' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+# The four scheduling components (CC-1) are unfiltered, so their clauses must be
+# EQUALITY.  Omitting them left two states with different `activeDomain`
+# dominating each other in both directions.
+run_check "INVARIANT" rg -n '^  activeDomain : v₁.activeDomain = v₂.activeDomain' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^  domainTimeRemaining : v₁.domainTimeRemaining = v₂.domainTimeRemaining' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^  domainSchedule : v₁.domainSchedule = v₂.domainSchedule' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^  domainScheduleIndex : v₁.domainScheduleIndex = v₂.domainScheduleIndex' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^theorem onCore_label_monotone' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^def visibilityLe_smp' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^theorem onCore_label_monotone_smp' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
@@ -1476,8 +1503,16 @@ run_check "INVARIANT" rg -n '^theorem RHTable.filter_getElem\?_of_pred' SeLe4n/K
 run_check "INVARIANT" rg -n '^theorem RHTable.filter_getElem\?_iff' SeLe4n/Kernel/RobinHood/Bridge.lean
 # SM8.A.6 suite + module registrations (Tier-2 runner, lakefile, staged anchor).
 run_check "INVARIANT" rg -n '^def runSmpInformationFlowChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runObjectContentOrderChecks' tests/SmpInformationFlowSuite.lean
+# The fixture must build the roots its TCBs declare: a TCB whose cspaceRoot /
+# vspaceRoot do not resolve fails `KernelObject.wellFormed`, so the evidence
+# would be computed on a state no construction path can reach.
+run_check "INVARIANT" rg -n 'withObject cnRoot \(\.cnode rootCNodeValue\)' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'withObject vsRoot \(\.vspaceRoot rootVSpaceValue\)' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'every fixture TCB is KernelObject.wellFormed' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.InformationFlow\.ObservableStatePerCore' tests/SmpSurfaceAnchors.lean
-run_check "INVARIANT" rg -n 'SM8.A headline surface resolves' tests/SmpSurfaceAnchors.lean
+run_check "INVARIANT" rg -n 'per-core observer surface resolves' tests/SmpSurfaceAnchors.lean
+run_check "INVARIANT" rg -n 'per-core independence \+ clearance monotonicity headlines resolve' tests/SmpSurfaceAnchors.lean
 run_check "INVARIANT" rg -n '^run_check(_with_timeout)? "TRACE" lake exe smp_information_flow_suite' scripts/test_tier2_negative.sh
 run_check "INVARIANT" rg -n '^name = "smp_information_flow_suite"' lakefile.toml
 run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.InformationFlow\.ObservableStatePerCore' SeLe4n/Platform/Staged.lean

@@ -2459,7 +2459,8 @@ low-equivalence `lowEquivalentOnCore` and its ∀-core form
 `lowEquivalent_smp`.
 
 `InformationFlow/ObservableStatePerCore.lean` (WS-SM SM8.A, v0.33.2;
-completed v0.33.3) adds the observer itself and what bounds it:
+completed v0.33.3, review cut v0.33.4) adds the observer itself and what
+bounds it:
 
 - `PerCoreObserver` — the `(core, clearance)` pair as a value, and
   `ObservableState.onCore ctx c L s` as the state it sees.  Defined *as*
@@ -2494,13 +2495,25 @@ completed v0.33.3) adds the observer itself and what bounds it:
   can only widen what it sees.  The two list clauses are `List.Sublist`,
   not membership: both components filter the *same* underlying list, so
   order is preserved, and a run queue's order is its dispatch order
-  (`filter_sublist_filter_of_imp`; membership forms derived).  Only
-  `objects` is compared by visibility, and that widening is pinned from
-  both sides — `projectKernelObject_observer_independent_off_cnode`
-  (CNode redaction is the only observer-dependent part of object
-  projection), `onCore_objects_label_invariant_off_cnode`, and
-  `onCore_objects_cnode` / `onCore_objects_cnode_slot_monotone` (the
-  CNode refinement lifted to the observable-state layer).
+  (`filter_sublist_filter_of_imp`; membership forms derived).  The four
+  scheduling clauses are equality — those components are unfiltered
+  (CC-1), so visibility would be the wrong relation.  `objects` is the one
+  component whose *content* may widen, and `objectVisibilityLe` pins that
+  widening: equality on every arm but `.cnode` (which is what
+  `projectKernelObject_observer_independent_off_cnode` makes true — CNode
+  redaction is the only observer-dependent part of object projection) and
+  `cnodeVisibilityLe` on that one, where the five non-slot fields are fixed
+  and slots may only be un-redacted.
+  `ObservableState.eq_of_visibilityLe_antisymm` is the completeness check
+  on the clause list — mutual domination plus agreement on `objects` is
+  equality, so a fourteenth component with no clause leaves a goal nothing
+  can close.  The state-level bounds
+  `onCore_objects_label_invariant_off_cnode` and `onCore_objects_cnode` /
+  `onCore_objects_cnode_slot_monotone` remain as the
+  two-projections-of-one-state statements, while
+  `visibilityLe_objects_eq_of_not_cnode`, `visibilityLe_cnode_lookup` and
+  `visibilityLe_objects_isSome` are the consumer forms that follow from the
+  order alone.
 - `onCore_decidable` — decides a strictly weaker *slice* relation, since
   observable-state equality is not decidable (five components are
   functions over unbounded domains; `RegisterFile`'s structural `BEq` is
@@ -2523,13 +2536,14 @@ inventory in `docs/planning/SMP_INFORMATION_FLOW_PLAN.md` §3.5, one
 instance per core, with the formal `CovertChannel` treatment scoped to
 SM8.B.8.
 
-Runtime coverage: `tests/SmpInformationFlowSuite.lean` (108 anchors —
-every one of the module's 104 declarations — 21 elaboration examples, and
-112 runtime assertions across 13 groups on a four-thread / four-core
+Runtime coverage: `tests/SmpInformationFlowSuite.lean` (123 anchors —
+every one of the module's 119 declarations — 25 elaboration examples, and
+125 runtime assertions across 14 groups on a four-thread / four-core
 fixture under a three-clearance labeling, carrying a CNode and a
 configured memory-ownership model so slot redaction and address
-observability are exercised on real values; each group carries a
-load-bearing negative).  Per-core NI *preservation* across transitions
+observability are exercised on real values, and building the CSpace and
+VSpace roots its TCBs declare so every one is `KernelObject.wellFormed`;
+each group carries a load-bearing negative).  Per-core NI *preservation* across transitions
 (`crossCoreNonInterference`) is WS-SM SM8.B.
 
 ## 32. WS-Q3 IntermediateState formalization (v0.17.9)

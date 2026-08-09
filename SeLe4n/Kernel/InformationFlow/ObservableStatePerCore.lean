@@ -60,11 +60,16 @@ the missing structure around it:
   whole global projection and therefore drags the **boot** core's slots in;
   SM8.B needs the boot-core-free form.
 * **Label monotonicity** (§6).  Raising the observer's clearance can only
-  widen what it sees, over a `visibilityLe` preorder whose every clause is
-  as strong as the truth allows — the two list components by `Sublist`, so
-  order is preserved; everything but `objects` by value.  The scheduling
-  components pass through *unfiltered* (the accepted CC-1 channel, restated
-  per core and stated against the raw scheduler reads).
+  widen what it sees, over a `visibilityLe` preorder carrying one clause per
+  `ObservableState` component, each as strong as the truth allows — the two
+  list components by `Sublist`, so order is preserved; the four scheduling
+  components (the accepted CC-1 channel, which passes through *unfiltered*)
+  by equality; the remaining partial components by value; and `objects` by
+  `objectVisibilityLe`, which is equality off the CNode arm and slot
+  un-redaction on it.  `ObservableState.eq_of_visibilityLe_antisymm` is the
+  completeness check on that clause list: mutual domination plus agreement on
+  `objects` is equality, so a fourteenth component with no clause leaves a
+  goal nothing can close.
 
 ## Relationship to the live surface
 
@@ -1086,6 +1091,130 @@ theorem projectKernelObject_observer_independent_off_cnode
   case cnode cn => exact absurd rfl (hNotCNode cn)
   all_goals rfl
 
+/-! ### Object-content refinement
+
+The `objects` component of `ObservableState.visibilityLe` is the only one whose
+*content* may widen, so it needs a relation of its own rather than an `isSome`
+implication.  Without one the order would let a wider clearance substitute an
+unrelated object at an id it had already shown — the opposite of "sees at least
+as much". -/
+
+/-- SM8.A.5: the visibility order on a **projected CNode**.
+
+`projectCNode` is `{ cn with slots := cn.slots.filter … }`, so raising the
+clearance may re-admit redacted slots and may do nothing else.  This relation
+says exactly that: the five non-slot fields are pinned, and every capability
+the narrower observer can look up is still there — same slot, same capability
+— for the wider one.  It may not be moved, altered, or dropped.
+
+Named fields rather than a nested conjunction, so a consumer writes
+`h.lookup` instead of a projection chain and `eq_of_cnodeVisibilityLe_of_slots_eq`
+can state that the field list is exhaustive. -/
+structure cnodeVisibilityLe (cn₁ cn₂ : CNode) : Prop where
+  depth : cn₁.depth = cn₂.depth
+  guardWidth : cn₁.guardWidth = cn₂.guardWidth
+  guardValue : cn₁.guardValue = cn₂.guardValue
+  radixWidth : cn₁.radixWidth = cn₂.radixWidth
+  lock : cn₁.lock = cn₂.lock
+  lookup : ∀ slot cap, cn₁.lookup slot = some cap → cn₂.lookup slot = some cap
+
+theorem cnodeVisibilityLe_refl (cn : CNode) : cnodeVisibilityLe cn cn :=
+  ⟨rfl, rfl, rfl, rfl, rfl, fun _ _ h => h⟩
+
+theorem cnodeVisibilityLe_trans {cn₁ cn₂ cn₃ : CNode}
+    (h₁ : cnodeVisibilityLe cn₁ cn₂) (h₂ : cnodeVisibilityLe cn₂ cn₃) :
+    cnodeVisibilityLe cn₁ cn₃ :=
+  ⟨h₁.depth.trans h₂.depth, h₁.guardWidth.trans h₂.guardWidth,
+   h₁.guardValue.trans h₂.guardValue, h₁.radixWidth.trans h₂.radixWidth,
+   h₁.lock.trans h₂.lock, fun slot cap h => h₂.lookup slot cap (h₁.lookup slot cap h)⟩
+
+/-- SM8.A.5: the field list of `cnodeVisibilityLe` is **exhaustive** — two
+CNodes ordered by it whose slot maps agree are equal.  A sixth non-slot field
+added to `CNode` makes this proof fail, which is how the relation learns it has
+to grow. -/
+theorem eq_of_cnodeVisibilityLe_of_slots_eq {cn₁ cn₂ : CNode}
+    (h : cnodeVisibilityLe cn₁ cn₂) (hSlots : cn₁.slots = cn₂.slots) : cn₁ = cn₂ := by
+  obtain ⟨d₁, gw₁, gv₁, rw₁, s₁, lk₁⟩ := cn₁
+  obtain ⟨d₂, gw₂, gv₂, rw₂, s₂, lk₂⟩ := cn₂
+  obtain ⟨hd, hgw, hgv, hrw, hlk, _⟩ := h
+  simp_all
+
+/-- SM8.A.5: the visibility order on a **projected kernel object**.
+
+Off the CNode arm `projectKernelObject` does not read the observer at all
+(`projectKernelObject_observer_independent_off_cnode`), so the only admissible
+relation there is equality: a wider clearance may not substitute a different
+endpoint, TCB, notification, VSpaceRoot, Untyped, SchedContext or Reply at an
+id it already showed.  On the CNode arm it is `cnodeVisibilityLe` — slots may
+be un-redacted, nothing else may move.  The arms are not interchangeable: a
+CNode may not widen into a non-CNode, or the reverse. -/
+def objectVisibilityLe (o₁ o₂ : KernelObject) : Prop :=
+  match o₁ with
+  | .cnode cn₁ =>
+      match o₂ with
+      | .cnode cn₂ => cnodeVisibilityLe cn₁ cn₂
+      | _ => False
+  | _ => o₁ = o₂
+
+theorem objectVisibilityLe_refl (o : KernelObject) : objectVisibilityLe o o := by
+  cases o <;> first | exact cnodeVisibilityLe_refl _ | rfl
+
+theorem objectVisibilityLe_trans {o₁ o₂ o₃ : KernelObject}
+    (h₁ : objectVisibilityLe o₁ o₂) (h₂ : objectVisibilityLe o₂ o₃) :
+    objectVisibilityLe o₁ o₃ := by
+  cases o₁
+  case cnode cn₁ =>
+    cases o₂
+    case cnode cn₂ =>
+      cases o₃
+      case cnode cn₃ => exact cnodeVisibilityLe_trans h₁ h₂
+      all_goals exact h₂.elim
+    all_goals exact h₁.elim
+  all_goals (cases h₁; exact h₂)
+
+/-- SM8.A.5: off the CNode arm the object order **is** equality.  This is the
+property a consumer needs in order to know that a visible endpoint or TCB
+cannot be swapped for something else by a wider clearance — and, unlike
+`onCore_objects_label_invariant_off_cnode`, it follows from a `visibilityLe`
+hypothesis alone, with no access to the underlying state. -/
+theorem eq_of_objectVisibilityLe_of_not_cnode {o₁ o₂ : KernelObject}
+    (h : objectVisibilityLe o₁ o₂) (hNotCNode : ∀ cn, o₁ ≠ .cnode cn) : o₁ = o₂ := by
+  cases o₁
+  case cnode cn => exact absurd rfl (hNotCNode cn)
+  all_goals exact h
+
+/-- SM8.A.5: on the CNode arm, the wider side is a CNode too, related by
+`cnodeVisibilityLe`. -/
+theorem objectVisibilityLe_cnode {cn₁ : CNode} {o₂ : KernelObject}
+    (h : objectVisibilityLe (.cnode cn₁) o₂) :
+    ∃ cn₂, o₂ = .cnode cn₂ ∧ cnodeVisibilityLe cn₁ cn₂ := by
+  cases o₂
+  case cnode cn₂ => exact ⟨cn₂, rfl, h⟩
+  all_goals exact h.elim
+
+/-- SM8.A.5: `projectCNode` is monotone in the clearance **as a CNode** — not
+merely slot by slot.  The shape is pinned because the projection rewrites only
+`slots`. -/
+theorem projectCNode_visibilityLe_monotone (ctx : LabelingContext) {L₁ L₂ : SecurityLabel}
+    (hFlow : securityFlowsTo L₁ L₂ = true) (cn : CNode) :
+    cnodeVisibilityLe (projectCNode ctx (IfObserver.ofLabel L₁) cn)
+      (projectCNode ctx (IfObserver.ofLabel L₂) cn) :=
+  ⟨rfl, rfl, rfl, rfl, rfl,
+   fun slot cap h => projectCNode_lookup_monotone ctx hFlow cn slot cap h⟩
+
+/-- SM8.A.5: the whole object projection is monotone in the clearance.  This is
+the lemma the `objects` clause of `ObservableState.visibilityLe` is discharged
+by, and it is what makes that clause a statement about content rather than
+about mere presence. -/
+theorem projectKernelObject_visibilityLe_monotone (ctx : LabelingContext)
+    {L₁ L₂ : SecurityLabel} (hFlow : securityFlowsTo L₁ L₂ = true) (obj : KernelObject) :
+    objectVisibilityLe (projectKernelObject ctx (IfObserver.ofLabel L₁) obj)
+      (projectKernelObject ctx (IfObserver.ofLabel L₂) obj) := by
+  cases obj
+  case cnode cn =>
+    simpa only [projectKernelObject_cnode] using projectCNode_visibilityLe_monotone ctx hFlow cn
+  all_goals exact objectVisibilityLe_refl _
+
 /-- A widening filter predicate yields a **sublist**, not merely a superset.
 
 General `List` fact, kept local because SM8.A is its only consumer today; lift
@@ -1108,60 +1237,189 @@ theorem filter_sublist_filter_of_imp {α : Type} (l : List α) (p q : α → Boo
       have hq : q a = true := h a hp
       simpa [List.filter_cons, hp, hq] using ih.cons₂ a
 
+/-- Mutual implication between two `Option`s at every value is equality.  Kept
+private: it is the antisymmetry step for the six partial components of
+`ObservableState.visibilityLe`, and nothing else needs it yet. -/
+private theorem eq_of_option_imp {α : Type _} {x y : Option α}
+    (h₁ : ∀ a, x = some a → y = some a) (h₂ : ∀ a, y = some a → x = some a) : x = y := by
+  cases x with
+  | none =>
+    cases y with
+    | none => rfl
+    | some a => exact h₂ a rfl
+  | some a => exact (h₁ a rfl).symm
+
+/-- The `Bool` companion of `eq_of_option_imp`, for the `services` component. -/
+private theorem eq_of_bool_imp {a b : Bool}
+    (h₁ : a = true → b = true) (h₂ : b = true → a = true) : a = b := by
+  cases a <;> cases b <;> simp_all
+
 /-! ### The per-core observable order -/
 
 /-- SM8.A.5: `v₁` is observationally **below** `v₂` when everything visible in
 `v₁` is visible in `v₂`, with the same value where the component carries one.
 
-Every clause is as strong as the truth allows.  The two list components are
-compared by `List.Sublist`, not by membership: both are filters of the *same*
-underlying list, so the wider clearance re-admits elements in place and the
-order is preserved — and a run queue's order is its dispatch order, so a
-membership-only clause would discard security-relevant structure.  Every
-`Option`/`Bool` component is compared by value.  Only `objects` is compared by
-`isSome`, because a wider clearance may legitimately reveal more of a visible
-CNode — see `projectCNode_lookup_monotone` and
-`onCore_objects_cnode_slot_monotone` for that refinement, and
-`onCore_objects_label_invariant_off_cnode` for the arms where equality does
-hold. -/
-def ObservableState.visibilityLe (v₁ v₂ : ObservableState) : Prop :=
-  (∀ oid, (v₁.objects oid).isSome = true → (v₂.objects oid).isSome = true) ∧
-  v₁.runnable.Sublist v₂.runnable ∧
-  (∀ t, v₁.current = some t → v₂.current = some t) ∧
-  (∀ sid, v₁.services sid = true → v₂.services sid = true) ∧
-  (∀ irq oid, v₁.irqHandlers irq = some oid → v₂.irqHandlers irq = some oid) ∧
-  v₁.objectIndex.Sublist v₂.objectIndex ∧
-  (∀ pa b, v₁.memory pa = some b → v₂.memory pa = some b) ∧
-  (∀ sid e, v₁.serviceRegistry sid = some e → v₂.serviceRegistry sid = some e) ∧
-  (∀ rf, v₁.machineRegs = some rf → v₂.machineRegs = some rf)
+One field per `ObservableState` component, in declaration order, so the clause
+list can be read off against the component list.  Every clause is as strong as
+the truth allows:
 
-theorem ObservableState.visibilityLe_refl (v : ObservableState) : v.visibilityLe v :=
-  ⟨fun _ h => h, List.Sublist.refl _, fun _ h => h, fun _ h => h, fun _ _ h => h,
-   List.Sublist.refl _, fun _ _ h => h, fun _ _ h => h, fun _ h => h⟩
+* `objects` is the only component whose *content* may widen, and it widens only
+  by CNode slot un-redaction: `objectVisibilityLe` pins equality on every other
+  arm.  Stating it as an `isSome` implication — as this definition did before
+  v0.33.4 — would have let a wider clearance replace a visible endpoint with an
+  unrelated object.
+* the two list components are compared by `List.Sublist`, not by membership:
+  both are filters of the *same* underlying list, so a wider clearance re-admits
+  elements in place and the order is preserved — and a run queue's order is its
+  dispatch order, so a membership-only clause would discard security-relevant
+  structure.
+* the four scheduling components pass through **unfiltered** (accepted covert
+  channel CC-1, restated by `onCore_schedulingTransparency`), so the truth about
+  them is equality, not visibility.  Omitting them — as this definition did
+  before v0.33.4 — left two states with different `activeDomain` dominating each
+  other in both directions.
+* every remaining partial component is compared by value.
+
+`ObservableState.eq_of_visibilityLe_antisymm` is the completeness check on this
+list: a fourteenth component with no clause here makes that proof fail. -/
+structure ObservableState.visibilityLe (v₁ v₂ : ObservableState) : Prop where
+  objects : ∀ oid obj₁, v₁.objects oid = some obj₁ →
+    ∃ obj₂, v₂.objects oid = some obj₂ ∧ objectVisibilityLe obj₁ obj₂
+  runnable : v₁.runnable.Sublist v₂.runnable
+  current : ∀ t, v₁.current = some t → v₂.current = some t
+  services : ∀ sid, v₁.services sid = true → v₂.services sid = true
+  activeDomain : v₁.activeDomain = v₂.activeDomain
+  irqHandlers : ∀ irq oid, v₁.irqHandlers irq = some oid → v₂.irqHandlers irq = some oid
+  objectIndex : v₁.objectIndex.Sublist v₂.objectIndex
+  domainTimeRemaining : v₁.domainTimeRemaining = v₂.domainTimeRemaining
+  domainSchedule : v₁.domainSchedule = v₂.domainSchedule
+  domainScheduleIndex : v₁.domainScheduleIndex = v₂.domainScheduleIndex
+  machineRegs : ∀ rf, v₁.machineRegs = some rf → v₂.machineRegs = some rf
+  memory : ∀ pa b, v₁.memory pa = some b → v₂.memory pa = some b
+  serviceRegistry : ∀ sid e, v₁.serviceRegistry sid = some e → v₂.serviceRegistry sid = some e
+
+theorem ObservableState.visibilityLe_refl (v : ObservableState) : v.visibilityLe v where
+  objects := fun _ obj₁ h => ⟨obj₁, h, objectVisibilityLe_refl obj₁⟩
+  runnable := List.Sublist.refl _
+  current := fun _ h => h
+  services := fun _ h => h
+  activeDomain := rfl
+  irqHandlers := fun _ _ h => h
+  objectIndex := List.Sublist.refl _
+  domainTimeRemaining := rfl
+  domainSchedule := rfl
+  domainScheduleIndex := rfl
+  machineRegs := fun _ h => h
+  memory := fun _ _ h => h
+  serviceRegistry := fun _ _ h => h
 
 theorem ObservableState.visibilityLe_trans {v₁ v₂ v₃ : ObservableState}
-    (h₁ : v₁.visibilityLe v₂) (h₂ : v₂.visibilityLe v₃) : v₁.visibilityLe v₃ :=
-  ⟨fun oid h => h₂.1 oid (h₁.1 oid h),
-   h₁.2.1.trans h₂.2.1,
-   fun t h => h₂.2.2.1 t (h₁.2.2.1 t h),
-   fun sid h => h₂.2.2.2.1 sid (h₁.2.2.2.1 sid h),
-   fun irq oid h => h₂.2.2.2.2.1 irq oid (h₁.2.2.2.2.1 irq oid h),
-   h₁.2.2.2.2.2.1.trans h₂.2.2.2.2.2.1,
-   fun pa b h => h₂.2.2.2.2.2.2.1 pa b (h₁.2.2.2.2.2.2.1 pa b h),
-   fun sid e h => h₂.2.2.2.2.2.2.2.1 sid e (h₁.2.2.2.2.2.2.2.1 sid e h),
-   fun rf h => h₂.2.2.2.2.2.2.2.2 rf (h₁.2.2.2.2.2.2.2.2 rf h)⟩
+    (h₁ : v₁.visibilityLe v₂) (h₂ : v₂.visibilityLe v₃) : v₁.visibilityLe v₃ where
+  objects := by
+    intro oid obj₁ hGet
+    obtain ⟨obj₂, hGet₂, hLe₂⟩ := h₁.objects oid obj₁ hGet
+    obtain ⟨obj₃, hGet₃, hLe₃⟩ := h₂.objects oid obj₂ hGet₂
+    exact ⟨obj₃, hGet₃, objectVisibilityLe_trans hLe₂ hLe₃⟩
+  runnable := h₁.runnable.trans h₂.runnable
+  current := fun t h => h₂.current t (h₁.current t h)
+  services := fun sid h => h₂.services sid (h₁.services sid h)
+  activeDomain := h₁.activeDomain.trans h₂.activeDomain
+  irqHandlers := fun irq oid h => h₂.irqHandlers irq oid (h₁.irqHandlers irq oid h)
+  objectIndex := h₁.objectIndex.trans h₂.objectIndex
+  domainTimeRemaining := h₁.domainTimeRemaining.trans h₂.domainTimeRemaining
+  domainSchedule := h₁.domainSchedule.trans h₂.domainSchedule
+  domainScheduleIndex := h₁.domainScheduleIndex.trans h₂.domainScheduleIndex
+  machineRegs := fun rf h => h₂.machineRegs rf (h₁.machineRegs rf h)
+  memory := fun pa b h => h₂.memory pa b (h₁.memory pa b h)
+  serviceRegistry := fun sid e h => h₂.serviceRegistry sid e (h₁.serviceRegistry sid e h)
 
 /-- SM8.A.5: the membership consequence of the `runnable` sublist clause — the
 form most consumers want, derived so the stronger clause costs nothing. -/
 theorem ObservableState.visibilityLe_mem_runnable {v₁ v₂ : ObservableState}
     (h : v₁.visibilityLe v₂) {t : SeLe4n.ThreadId} (ht : t ∈ v₁.runnable) : t ∈ v₂.runnable :=
-  h.2.1.subset ht
+  h.runnable.subset ht
 
 /-- SM8.A.5: the membership consequence of the `objectIndex` sublist clause. -/
 theorem ObservableState.visibilityLe_mem_objectIndex {v₁ v₂ : ObservableState}
     (h : v₁.visibilityLe v₂) {oid : SeLe4n.ObjId} (ho : oid ∈ v₁.objectIndex) :
     oid ∈ v₂.objectIndex :=
-  h.2.2.2.2.2.1.subset ho
+  h.objectIndex.subset ho
+
+/-- SM8.A.5: the presence consequence of the `objects` clause — the weakest
+form, kept because it is the shape most consumers reach for first. -/
+theorem ObservableState.visibilityLe_objects_isSome {v₁ v₂ : ObservableState}
+    (h : v₁.visibilityLe v₂) {oid : SeLe4n.ObjId}
+    (hSome : (v₁.objects oid).isSome = true) : (v₂.objects oid).isSome = true := by
+  cases hGet : v₁.objects oid with
+  | none => rw [hGet] at hSome; simp at hSome
+  | some obj₁ =>
+    obtain ⟨_, hGet₂, _⟩ := h.objects oid obj₁ hGet
+    simp [hGet₂]
+
+/-- SM8.A.5: from the order **alone**, a visible non-CNode object keeps its
+value.  The state-level `onCore_objects_label_invariant_off_cnode` says the same
+thing about the two projections of one state; this says it about any two states
+in the order, which is what an SM8.B consumer holding only `visibilityLe` has. -/
+theorem ObservableState.visibilityLe_objects_eq_of_not_cnode {v₁ v₂ : ObservableState}
+    (h : v₁.visibilityLe v₂) {oid : SeLe4n.ObjId} {obj : KernelObject}
+    (hGet : v₁.objects oid = some obj) (hNotCNode : ∀ cn, obj ≠ .cnode cn) :
+    v₂.objects oid = some obj := by
+  obtain ⟨obj₂, hGet₂, hLe⟩ := h.objects oid obj hGet
+  rw [hGet₂, eq_of_objectVisibilityLe_of_not_cnode hLe hNotCNode]
+
+/-- SM8.A.5: from the order **alone**, a visible CNode slot keeps its
+capability.  The `visibilityLe`-hypothesis form of
+`onCore_objects_cnode_slot_monotone`. -/
+theorem ObservableState.visibilityLe_cnode_lookup {v₁ v₂ : ObservableState}
+    (h : v₁.visibilityLe v₂) {oid : SeLe4n.ObjId} {cn₁ : CNode}
+    {slot : SeLe4n.Slot} {cap : Capability}
+    (hGet : v₁.objects oid = some (.cnode cn₁)) (hLookup : cn₁.lookup slot = some cap) :
+    ∃ cn₂, v₂.objects oid = some (.cnode cn₂) ∧ cn₂.lookup slot = some cap := by
+  obtain ⟨obj₂, hGet₂, hLe⟩ := h.objects oid _ hGet
+  obtain ⟨cn₂, hEq, hCn⟩ := objectVisibilityLe_cnode hLe
+  exact ⟨cn₂, hEq ▸ hGet₂, hCn.lookup slot cap hLookup⟩
+
+/-- SM8.A.5 (**the completeness check on the clause list**): two states that
+dominate each other and agree on `objects` are **equal**.
+
+`objects` is a hypothesis rather than a conclusion because it is the one
+component the order deliberately lets widen, and mutual domination on it yields
+equal *lookups* rather than equal slot maps — a `UniqueSlotMap` is a hash table,
+and two tables with the same contents may differ in probe order.
+
+Every other component is a conclusion, and that is the point.  The proof
+discharges one goal per `ObservableState` field, so a fourteenth component with
+no clause in `visibilityLe` leaves a goal nothing can close — the same
+compile-error discipline `ObservableState.ofFragments_eta` applies to the field
+partition.  It is also the statement that fails for the pre-v0.33.4 definition:
+the four scheduling components had no clause, so two states differing in
+`activeDomain` dominated each other and this theorem was false. -/
+theorem ObservableState.eq_of_visibilityLe_antisymm {v₁ v₂ : ObservableState}
+    (h₁ : v₁.visibilityLe v₂) (h₂ : v₂.visibilityLe v₁)
+    (hObjects : v₁.objects = v₂.objects) : v₁ = v₂ := by
+  have hRunnable : v₁.runnable = v₂.runnable :=
+    h₁.runnable.eq_of_length (Nat.le_antisymm h₁.runnable.length_le h₂.runnable.length_le)
+  have hObjectIndex : v₁.objectIndex = v₂.objectIndex :=
+    h₁.objectIndex.eq_of_length
+      (Nat.le_antisymm h₁.objectIndex.length_le h₂.objectIndex.length_le)
+  have hCurrent : v₁.current = v₂.current := eq_of_option_imp h₁.current h₂.current
+  have hServices : v₁.services = v₂.services :=
+    funext fun sid => eq_of_bool_imp (h₁.services sid) (h₂.services sid)
+  have hIrq : v₁.irqHandlers = v₂.irqHandlers :=
+    funext fun irq => eq_of_option_imp (h₁.irqHandlers irq) (h₂.irqHandlers irq)
+  have hRegs : v₁.machineRegs = v₂.machineRegs := eq_of_option_imp h₁.machineRegs h₂.machineRegs
+  have hMemory : v₁.memory = v₂.memory :=
+    funext fun pa => eq_of_option_imp (h₁.memory pa) (h₂.memory pa)
+  have hRegistry : v₁.serviceRegistry = v₂.serviceRegistry :=
+    funext fun sid => eq_of_option_imp (h₁.serviceRegistry sid) (h₂.serviceRegistry sid)
+  have hDomain := h₁.activeDomain
+  have hRemaining := h₁.domainTimeRemaining
+  have hSchedule := h₁.domainSchedule
+  have hIndex := h₁.domainScheduleIndex
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _⟩ := v₁
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _⟩ := v₂
+  simp only [ObservableState.mk.injEq]
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> assumption
 
 /-- SM8.A.5 (headline): **the per-core observable state is monotone in the
 observer's clearance.**  On any fixed core, an observer whose clearance
@@ -1173,13 +1431,24 @@ scheduler slots, the label selects entities). -/
 theorem onCore_label_monotone (ctx : LabelingContext) (c : CoreId) {L₁ L₂ : SecurityLabel}
     (hFlow : securityFlowsTo L₁ L₂ = true) (s : SystemState) :
     (ObservableState.onCore ctx c L₁ s).visibilityLe (ObservableState.onCore ctx c L₂ s) := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  · -- objects: visibility widens; the projected content may widen too (CNodes)
-    intro oid hSome
-    simp only [onCore_objects, projectObjects] at hSome ⊢
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · -- objects: visibility widens, and the projected *content* widens only by
+    -- CNode slot un-redaction (`projectKernelObject_visibilityLe_monotone`)
+    intro oid obj₁ hGet
+    simp only [onCore_objects, projectObjects] at hGet ⊢
     by_cases hObs : objectObservable ctx (IfObserver.ofLabel L₁) oid = true
-    · simpa [objectObservable_monotone ctx hFlow oid hObs, hObs] using hSome
-    · simp [hObs] at hSome
+    · rw [if_pos hObs] at hGet
+      cases hLook : s.objects[oid]? with
+      | none => rw [hLook] at hGet; simp at hGet
+      | some obj =>
+        rw [hLook] at hGet
+        simp only [Option.map_some, Option.some.injEq] at hGet
+        subst hGet
+        refine ⟨projectKernelObject ctx (IfObserver.ofLabel L₂) obj, ?_,
+          projectKernelObject_visibilityLe_monotone ctx hFlow obj⟩
+        -- `cases hLook :` already substituted `some obj` into the goal
+        rw [if_pos (objectObservable_monotone ctx hFlow oid hObs), Option.map_some]
+    · rw [if_neg hObs] at hGet; simp at hGet
   · -- runnable: the SAME core-c run queue under a widening filter, so the
     -- wider view is a sublist — order preserved, not merely a superset
     simp only [onCore_runnable, projectRunnableOnCore]
@@ -1202,6 +1471,8 @@ theorem onCore_label_monotone (ctx : LabelingContext) (c : CoreId) {L₁ L₂ : 
     by_cases hObs : serviceObservable ctx (IfObserver.ofLabel L₁) sid = true
     · simpa [serviceObservable_monotone ctx hFlow sid hObs, hObs] using hs
     · simp [hObs] at hs
+  · -- activeDomain: unfiltered (CC-1), so equal rather than merely visible
+    rfl
   · -- irqHandlers
     intro irq oid hIrq
     simp only [onCore_irqHandlers, projectIrqHandlers] at hIrq ⊢
@@ -1218,6 +1489,22 @@ theorem onCore_label_monotone (ctx : LabelingContext) (c : CoreId) {L₁ L₂ : 
     simp only [onCore_objectIndex, projectObjectIndex]
     exact filter_sublist_filter_of_imp _ _ _
       (fun oid hoid => objectObservable_monotone ctx hFlow oid hoid)
+  · -- domainTimeRemaining: unfiltered (CC-1)
+    rfl
+  · -- domainSchedule: unfiltered (CC-1)
+    rfl
+  · -- domainScheduleIndex: unfiltered (CC-1)
+    rfl
+  · -- machineRegs: exact — both clearances return core `c`'s own bank
+    intro rf hr
+    simp only [onCore_machineRegs, projectMachineRegsOnCore] at hr ⊢
+    cases hCur : s.scheduler.currentOnCore c with
+    | none => rw [hCur] at hr; simp at hr
+    | some tid =>
+      rw [hCur] at hr
+      by_cases hObs : threadObservable ctx (IfObserver.ofLabel L₁) tid = true
+      · simpa [threadObservable_monotone ctx hFlow _ hObs, hObs] using hr
+      · simp [hObs] at hr
   · -- memory
     intro pa b hm
     simp only [onCore_memory, projectMemory] at hm ⊢
@@ -1231,16 +1518,6 @@ theorem onCore_label_monotone (ctx : LabelingContext) (c : CoreId) {L₁ L₂ : 
     by_cases hObs : serviceObservable ctx (IfObserver.ofLabel L₁) sid = true
     · simpa [serviceObservable_monotone ctx hFlow sid hObs, hObs] using hs
     · simp [hObs] at hs
-  · -- machineRegs: exact — both clearances return core `c`'s own bank
-    intro rf hr
-    simp only [onCore_machineRegs, projectMachineRegsOnCore] at hr ⊢
-    cases hCur : s.scheduler.currentOnCore c with
-    | none => rw [hCur] at hr; simp at hr
-    | some tid =>
-      rw [hCur] at hr
-      by_cases hObs : threadObservable ctx (IfObserver.ofLabel L₁) tid = true
-      · simpa [threadObservable_monotone ctx hFlow _ hObs, hObs] using hr
-      · simp [hObs] at hr
 
 /-- SM8.A.5 (the `objects` component, exactly): off the CNode arm, an object
 visible at the narrower clearance projects to the **same value** at the wider
