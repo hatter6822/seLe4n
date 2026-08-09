@@ -397,7 +397,7 @@ omission): the per-core NI *preservation* theorems over transitions are
 SM8.B; the lock-contention channel CC-5 is SM8.B.8; the
 `DeclassificationEvent.originatingCore` extension is SM8.C.
 
-### SM8.B — Per-core NI proofs (5 PRs, 14 sub-tasks)
+### SM8.B — Per-core NI proofs (14 sub-tasks)
 
 > **Constructor count re-anchored at the SM8.A cut (v0.33.2).**  This
 > phase was scoped against a 32-constructor NI surface at the `v0.31.2`
@@ -428,7 +428,7 @@ SM8.B; the lock-contention channel CC-5 is SM8.B.8; the
 | SM8.B.13 | `crossCoreLeakage_bounded` | Theorem | L |
 | SM8.B.14 | 15+ NI scenarios (tests) | L |
 
-### SM8.C — Per-core declassification audit (3 PRs, 7 sub-tasks)
+### SM8.C — Per-core declassification audit (7 sub-tasks)
 
 | Sub | Description | Theorem | Est |
 |-----|-------------|---------|-----|
@@ -440,7 +440,7 @@ SM8.B; the lock-contention channel CC-5 is SM8.B.8; the
 | SM8.C.6 | Cross-core declass rules | Theorem | M |
 | SM8.C.7 | Per-core declass test scenarios | M |
 
-### SM8.D — Information flow under fine locks (3 PRs, 6 sub-tasks)
+### SM8.D — Information flow under fine locks (6 sub-tasks)
 
 | Sub | Description | Theorem | Est |
 |-----|-------------|---------|-----|
@@ -451,7 +451,7 @@ SM8.B; the lock-contention channel CC-5 is SM8.B.8; the
 | SM8.D.5 | Secure-information-flow witness under fine locks | Theorem | M |
 | SM8.D.6 | Lock-contention IF scenarios (5 tests) | M |
 
-### SM8.E — Tests + closure (2 PRs, 3 sub-tasks)
+### SM8.E — Tests + closure (3 sub-tasks)
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
