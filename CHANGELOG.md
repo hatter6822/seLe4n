@@ -1,3 +1,281 @@
+## v0.33.4 — SM8.A review cut: the visibility order says what it claimed
+
+Three findings from the automated review of the SM8.A pull request, all
+valid, all closed. Two are the project's implement-the-improvement case:
+`ObservableState.visibilityLe`'s docstring said every clause was "as
+strong as the truth allows", and two of them were not — so the relation
+was strengthened rather than the claim weakened.
+
+**The `objects` clause preserved only `isSome`.** A consumer holding
+`v₁.visibilityLe v₂` could conclude that an object was still *present* in
+`v₂`, not that it was the same object: the relation admitted replacing a
+visible endpoint, TCB or Reply with an unrelated object at the same id,
+which is the opposite of "a wider clearance sees at least as much". The
+lemmas that bounded the widening
+(`onCore_objects_label_invariant_off_cnode`,
+`onCore_objects_cnode_slot_monotone`) did not close the gap, because
+neither follows from a `visibilityLe` hypothesis alone — both need the
+underlying state. The clause now compares content:
+`objectVisibilityLe` is equality on every arm but `.cnode` — which is
+exactly what `projectKernelObject_observer_independent_off_cnode` makes
+true — and `cnodeVisibilityLe` on that one, where the five non-slot
+fields are pinned and slots may only be un-redacted.
+`eq_of_cnodeVisibilityLe_of_slots_eq` is the tripwire: it fails if `CNode`
+grows a sixth non-slot field. The consumer forms
+(`visibilityLe_objects_eq_of_not_cnode`, `visibilityLe_cnode_lookup`,
+`visibilityLe_objects_isSome`) all derive from the order alone, which is
+what an SM8.B consumer will have.
+
+**The four scheduling components had no clause at all.**
+`activeDomain`, `domainTimeRemaining`, `domainSchedule` and
+`domainScheduleIndex` pass through unfiltered — accepted covert channel
+CC-1 — so the truth about them is equality, and with no clause at all the
+order held in *both directions* between two states that differed in them.
+A downstream consumer reading the order as "everything visible in `v₁`
+survives in `v₂`" would silently drop the CC-1 content. The four equality
+clauses are now present, and `ObservableState.eq_of_visibilityLe_antisymm`
+states the property that was false: mutual domination plus agreement on
+`objects` is equality. (`objects` stays a hypothesis rather than a
+conclusion because it is the one component that deliberately widens, and
+mutual domination there yields equal *lookups* rather than equal slot
+maps — a `UniqueSlotMap` is a hash table, and two tables with the same
+contents may differ in probe order.) That theorem is also the standing
+completeness check: it discharges one goal per `ObservableState` field, so
+a fourteenth component with no clause leaves a goal nothing can close —
+the same discipline `ofFragments_eta` already applies to the field
+partition. `visibilityLe` became a **structure** in the process, one named
+field per component in declaration order, so the clause list reads against
+the component list and consumers write `h.runnable` instead of
+`h.2.2.2.2.2.1`.
+
+**The fixture's TCBs named roots that did not exist.** Every `probeState`
+TCB declared `cspaceRoot := cnRoot` and `vspaceRoot := vsRoot`, but the
+builder chain inserted neither object, so all four failed
+`KernelObject.wellFormed` — the predicate `lifecycleRetype` validates
+before installing an object. The four-thread runtime evidence was
+therefore computed on a state no construction path can reach. Both roots
+are now built; §3.0 checks TCB and CNode well-formedness, with the
+load-bearing negative that a TCB naming an absent root is rejected. The
+fixture OID band widens 1000–1015 → 1000–1019.
+
+Suite 112 → **125 runtime assertions / 14 groups**: the new §3.13
+exercises the object-content order (a visible endpoint keeps its value
+across clearances, derived from the order; an endpoint may not widen into
+a notification, nor a CNode into a non-CNode; the CNode arm genuinely
+widens on this fixture) and the four scheduling clauses, including the
+shifted-`activeDomain` view that dominated the real one in both directions
+before this cut. Module 104 → **119 declarations**, all 113 term-level
+ones re-checked axiom-clean (`propext` / `Quot.sound` /
+`Classical.choice`, exhaustively rather than by sampling); the other 6 are
+structures. Tier-3 anchors extended, including negative pins that the four
+scheduling clauses stay equalities and that the fixture builds its
+declared roots.
+
+Theorems and tests only: no transition changed, and the golden trace is
+byte-identical.
+
+Refs: docs/planning/SMP_INFORMATION_FLOW_PLAN.md §5 (SM8.A review cut)
+
+## v0.33.3 — SM8.A completed: the gaps in v0.33.2, closed
+
+A self-audit of the v0.33.2 SM8.A cut found one shipped factual error,
+two headline theorems weaker than the truth, several theorems with no
+runtime coverage at all, and an asymmetry in the read-set sweep. This
+release closes every one of them. SM8.A is now complete rather than
+merely landed.
+
+**The factual error.** v0.33.2 said "twelve corollaries" of
+`onCore_perCore_independence` in six documents and the commit message.
+There were eleven. There are now **fifteen** — the count moved because
+the corollary set itself was incomplete (below), but the number in the
+docs was wrong independently of that, and it is exactly the class of
+claim-vs-evidence drift `docs/CLAIM_EVIDENCE_INDEX.md` exists to catch.
+
+**The partition tripwire is now a checked fact, not an argument.**
+v0.33.2 asserted in six places that adding a fourteenth `ObservableState`
+component "fails to compile". Nothing pinned that.
+`ObservableState.ofFragments` reassembles a state from its two fragments
+and `ofFragments_eta` proves the round trip, so the partition is a
+*bijection*: a new component leaves `ofFragments` unable to supply it.
+
+**The A.2 headline is no longer an alias.** As shipped,
+`onCore_isProjection_of_globalProjection` was a one-line delegation to
+SM4.D's `projectStateOnCore_congr` — it proved nothing SM4.D had not. It
+is now an **`iff`** against `observableFactorOnCore` (the global
+projection's shared fragment paired with core `c`'s per-core fragment):
+the observer learns that pair, all of it and nothing beyond it. The `←`
+direction is the one the SM4.D congruence could not give, because it
+needs the partition to be total. The old convenience form survives as
+`onCore_congr_of_globalProjection`.
+
+**`visibilityLe` stops understating what is true.** The `runnable` and
+`objectIndex` clauses were membership; both components are filters of the
+*same* underlying list under a widening predicate, so `List.Sublist`
+holds — order is preserved, and a run queue's order is its dispatch
+order. Strengthened, with `filter_sublist_filter_of_imp` as substrate and
+`visibilityLe_mem_runnable` / `_mem_objectIndex` deriving the membership
+forms so no consumer loses anything.
+
+**The read-set sweep is symmetric.** v0.33.2 named `perCoreTlb` but not
+its SM7.D structural sibling `perCoreICache`, nor
+`pendingIcacheMaintenance`, `tlbShootdown`, or the scalar `tlb`. All four
+added; the SM7 memory-subsystem surface is now swept whole.
+
+**CC-1 is stated with content.** `onCore_schedulingTransparency` was
+`⟨rfl, rfl, rfl, rfl⟩` between two clearances — true of any constant
+function. It now states the four scheduling components against the **raw**
+scheduler reads, so it says what the observer gets;
+`_label_invariant` is the two-observer corollary.
+
+**The decidable surface goes as far as computation allows.**
+`lowEquivalentSliceOnCoreCheckWithRegs` adds the ARM64 structural
+comparison of `pc` / `sp` / the 32 GPRs to the slice, and
+`machineRegs_beq_not_injective` proves that even the finer check is not a
+decision procedure — `RegisterFile`'s `BEq` is not lawful, and no
+computable check can close a function over an unbounded index type.
+
+**The CNode refinement reaches the layer SM8.A is about.**
+`projectCNode_lookup_monotone` was stated one level below the observable
+state. `onCore_objects_cnode` and `onCore_objects_cnode_slot_monotone`
+lift it, so the `objects` clause's `isSome` weakening is now bounded from
+both sides at the right layer.
+
+**Coverage: 68 assertions / 8 groups → 112 / 13.** The two theorems with
+the most proof effort behind them were the two least exercised. The
+fixture now carries a **CNode** with one low-target and one high-target
+capability (v0.33.2 had none, so `projectCNode_lookup_monotone` — the
+reason `RHTable` was extended at all — had zero runtime coverage), a
+**configured memory-ownership model** (v0.33.2 left `memoryOwnership` at
+`none`, making every `memory` claim vacuously true), a **third clearance**
+`mid` strictly between low and high (transitivity of `visibilityLe` has
+nothing to compose with two labels), service-registry entry-level checks,
+and the register-aware check's rejection case. New groups §3.8–§3.12, each
+with its own load-bearing negative.
+
+**Anchors are complete by construction.** All 108 `#check` anchors and the
+Tier-3 block are verified against the module's 104 declarations by set
+difference, including the `@[simp]` definition-pinning layer that v0.33.2
+left out of Tier-3 entirely. Headline anchors added to
+`tests/SmpSurfaceAnchors.lean`, the file the plan names as the SM8 anchor
+home. Four §5 corollaries that Tier-3 had missed are now pinned.
+
+**Two new accepted covert channels registered.** SM8.A proved
+`perCoreTlb` and `perCoreICache` outside the observable read set, which is
+a statement about the *model*: a real observer times its own accesses, and
+a kernel projection cannot deny it that. Exactly the CC-2 machine-timer
+situation, so they get the same treatment — CC-6 (per-core TLB residency)
+and CC-7 (per-core instruction-cache residency) are registered in the
+plan's §3.5 inventory and the spec, one instance per core, with the formal
+`CovertChannel` treatment scoped to SM8.B.8 alongside CC-5. Recording them
+in the inventory rather than a source docstring is deliberate: a channel
+that lives only in a comment ages out with the code around it.
+
+Zero `sorry`/`axiom` — the module's 104 declarations are 100 term-level
+(every one verified against `#print axioms`) plus 4 structures, which carry
+no axiom dependency to print. Theorems and tests only; the golden trace is byte-identical and
+`test_full` is green.
+
+Refs: docs/planning/SMP_INFORMATION_FLOW_PLAN.md §5 (SM8.A)
+
+## v0.33.2 — SM8.A: the per-core observer, and what it is allowed to see
+
+WS-SM Phase SM8 opens. SM8.A mounts the SMP information-flow *observer* —
+the pair `(c, L)` of a core and a security clearance (plan Definition
+3.1.1) — and the state that observer sees (`ObservableState.onCore`,
+Definition 3.2.1), in the new staged module
+`SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean`.
+
+SM4.D had already lifted the six scheduler-reading IF-M1 projections to
+per-core forms and aggregated them into `projectStateOnCore`. That is the
+(core, observer) projection in *function* form; SM8.A supplies the
+structure around it that SM8.B's `crossCoreNonInterference` needs, and
+`ObservableState.onCore ctx bootCoreId L s` is *definitionally* the live
+single-core `projectState`, so nothing on the existing non-interference
+surface moves.
+
+**The field partition, made total (SM8.A.2).** `ObservableState`'s
+thirteen components split into seven the observer sees identically from
+every core and six restricted to core `c`. The split is not a comment:
+`ObservableState.ext_fragments` rebuilds an observable state from the two
+fragments, so a fourteenth field registered in neither of them leaves that
+theorem unprovable. The plan's §7 risk "per-core projection missing a
+field" is now a build error rather than a review checklist item. The
+headline `onCore_isProjection_of_globalProjection` states the factoring:
+the per-core observer learns exactly the global projection plus core `c`'s
+six slots, and `onCore_sharedFragment_core_independent` states the
+orthogonality of the two observer dimensions — the core selects scheduler
+slots, the label selects entities.
+
+**A decidable fragment, and honesty about its limits (SM8.A.3).**
+Observable-state equality is not decidable: five components are functions
+over unbounded domains, and `machineRegs` carries a `RegisterFile` whose
+structural `BEq` is provably not lawful (`RegisterFile.not_lawfulBEq`).
+The `onCore_decidable` instance therefore decides a *slice* — the five
+`DecidableEq` per-core scheduler components plus the register bank's
+observability — and comes with both halves of its own limitation stated
+as theorems: `lowEquivalentSliceOnCore_of_lowEquivalentOnCore` (equal
+views ⇒ equal slices, so a decided mismatch is a genuine observable
+difference) and `perCoreSlice_erases_register_content` /
+`perCoreSlice_erases_shared_content` (the converse fails, on both halves
+of the partition). A caller cannot mistake the decision procedure for a
+decision about the observable state.
+
+**Per-core independence, without the boot core (SM8.A.4).**
+`onCore_perCore_independence` characterises the read set of the per-core
+observable state: six shared state components plus core `c`'s five
+scheduler slots and its register bank — and nothing else. This does *not*
+follow from the SM4.D `projectStateOnCore_congr`, whose hypothesis is
+equality of the whole global projection and therefore drags the **boot**
+core's slots in; a cross-core transition on core `c'` generally breaks
+that hypothesis when `c'` is the boot core, which is exactly the case
+SM8.B has to reason about. Twelve corollaries instantiate it: the six
+per-core scheduler setters and the register bank at `c ≠ c'`, and the
+components outside the read set entirely (replenishment queue, timeout
+log, `scThreadIndex`, the machine timer, the SM7.C per-core TLB view) —
+invisible on *every* core, including the one written.
+
+**Clearance monotonicity (SM8.A.5).** `onCore_label_monotone`: raising the
+observer's clearance can only widen what it sees, proved gate by gate from
+`securityFlowsTo_trans` over a new `ObservableState.visibilityLe` preorder.
+Deliberately a *visibility* order and not component equality, because a
+wider clearance may legitimately reveal more of an object it can already
+see: `projectCNode_lookup_monotone` proves a CNode slot visible at the
+narrower clearance survives at the wider one, and
+`projectKernelObject_observer_independent_off_cnode` proves the CNode arm
+is the only one where the observer is read at all. The four scheduling
+components move in neither direction —
+`onCore_schedulingTransparency` restates accepted covert channel CC-1 per
+core, which under SMP means one copy of the channel per core.
+
+**A RobinHood gap closed.** `filter_get_subset` and `filter_get_pred` gave
+only the left-to-right half of the filter-lookup characterisation, so a
+*monotone* predicate change could not be transported through a filter at
+all. `RHTable.filter_getElem?_of_pred` supplies the forward direction and
+`RHTable.filter_getElem?_iff` states the characterisation as the `iff`, so
+a future consumer cannot pick up one half and hand-roll the other. The
+CNode slot monotonicity above is the first consumer.
+
+**Tests (SM8.A.6).** New `tests/SmpInformationFlowSuite.lean`
+(`smp_information_flow_suite`, 68 runtime assertions across 8 groups,
+plus 83 `#check` surface anchors and 15 elaboration-time examples), Tier-2
+and Tier-3 wired. The fixture is four threads on four cores under a
+non-trivial labeling — core 0 runs low threads, core 1 runs high ones,
+with low and high endpoints, services and IRQ handlers shared — and every
+group carries a load-bearing negative. §3.4 shows the *same* write applied
+to the observer's own core does change its view, so the `c ≠ c'`
+hypothesis of the cross-core frames is necessary rather than decorative;
+§3.5 shows the high observer strictly outsees the low one on six separate
+components, so monotonicity is not equality in disguise; §3.7 shows a
+purely high remote reshuffle is invisible to the low observer on every
+core while the high observer's own view does move.
+
+Staged-only module count 54 → 55. Zero `sorry`/`axiom` — every SM8.A
+theorem depends only on `propext` / `Quot.sound` / `Classical.choice`.
+Theorems and tests only: no transition changed, and the golden trace is
+byte-identical.
+
+Refs: docs/planning/SMP_INFORMATION_FLOW_PLAN.md §5 (SM8.A)
+
 ## v0.33.1 — Ukrainian localization added
 
 Documentation-only. Adds Ukrainian (`uk`) as an eleventh supported

@@ -24,8 +24,74 @@ Plan:
 SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
-**Current sub-phase: SM7.F.3 round-generation-tagged descriptors LANDED
-(v0.32.105) — SM7.F CLOSED.**  A shootdown round's deferred catch-up drains
+**Current sub-phase: SM8.A per-core observable state COMPLETE (v0.33.3,
+review cut v0.33.4; landed v0.33.2) — SM8 opens.**  The v0.33.3 cut closes a self-audit of the
+landing: one shipped count error ("twelve corollaries" where there were
+eleven — there are now fifteen, the sweep having been incomplete too), an
+A.2 headline that was a one-line alias of the SM4.D congruence (now an exact
+`iff` against `observableFactorOnCore`), a partition tripwire asserted rather
+than checked (now a bijection, `ofFragments` + `ofFragments_eta`), two
+`visibilityLe` clauses weaker than the truth (now `List.Sublist`, so order —
+a run queue's dispatch order — is preserved), an asymmetric read-set sweep
+(the SM7 memory surface is now covered whole: `perCoreICache`,
+`pendingIcacheMaintenance`, `tlbShootdown`, scalar `tlb` joined
+`perCoreTlb`), a CC-1 statement with no content (now against the raw
+scheduler reads), a decidable surface that stopped short of what computation
+allows (`lowEquivalentSliceOnCoreCheckWithRegs`), a CNode refinement stranded
+one layer below its subject (now lifted by `onCore_objects_cnode_slot_monotone`),
+and coverage gaps in which the two most proof-heavy theorems were the two
+least exercised — the fixture had no CNode at all and left `memoryOwnership`
+unset, so both were vacuous.  Coverage 68 assertions / 8 groups → **112 / 13**;
+anchors now verified complete by set difference against the module's 104
+declarations, in the suite and in Tier-3 (including the `@[simp]` layer),
+with headline anchors also in `tests/SmpSurfaceAnchors.lean`.  Two accepted
+covert channels registered: `perCoreTlb` and `perCoreICache` are outside the
+model's read set, but that is a statement about the model — a real observer
+times its own accesses — so CC-6 and CC-7 join the §3.5 inventory on the
+CC-2 machine-timer precedent, one instance per core, formal treatment scoped
+to SM8.B.8.  Delivered as one PR by decision.  The SMP information-flow *observer* — the pair `(c, L)` of a
+core and a security clearance (plan Definition 3.1.1) — and the state that
+observer sees (`ObservableState.onCore`, Definition 3.2.1), in the new staged
+module `InformationFlow/ObservableStatePerCore.lean` (staged-only 54 → 55).
+SM4.D had already lifted the six scheduler-reading IF-M1 projections to
+per-core forms; SM8.A supplies the structure around them that SM8.B's
+`crossCoreNonInterference` needs, without moving the live surface —
+`ObservableState.onCore ctx bootCoreId L s` is *definitionally* the live
+single-core `projectState`.  Four things are load-bearing.  (1) The thirteen
+`ObservableState` components partition into seven shared and six per-core, and
+`ObservableState.ext_fragments` makes that partition **total**: a fourteenth
+field registered in neither fragment leaves the theorem unprovable, so the
+plan §7 risk "per-core projection missing a field" is a build error rather
+than a review checklist item.  (2) Observable-state equality is *not*
+decidable — five components are functions over unbounded domains and
+`machineRegs` carries a `RegisterFile` whose structural `BEq` is provably not
+lawful — so `onCore_decidable` decides a deliberately distinct *slice*
+relation and ships both halves of its own limitation as theorems, one saying a
+decided mismatch is a genuine observable difference and two saying the
+converse fails.  (3) `onCore_perCore_independence` characterises the read set
+without mentioning the boot core, which the SM4.D `projectStateOnCore_congr`
+cannot do: that lemma's hypothesis is equality of the whole *global*
+projection, and the global projection reads the boot core's slots, so a
+cross-core transition on the boot core breaks it — exactly SM8.B's case.
+(4) `onCore_label_monotone` is a *visibility* order rather than component
+equality, because a wider clearance may legitimately reveal more of an object
+it can already see; `projectCNode_lookup_monotone` makes that precise and
+needed a RobinHood gap closed first (`filter_get_subset` + `filter_get_pred`
+gave only one direction of the filter-lookup characterisation, so a monotone
+predicate change could not be transported through a filter at all).
+`tests/SmpInformationFlowSuite.lean` runs 68 assertions across 8 groups on a
+four-thread / four-core fixture with a non-trivial labeling, every group
+carrying a load-bearing negative.  Zero sorry/axiom; theorems and tests only,
+so the golden trace is byte-identical.  Plan:
+[`docs/planning/SMP_INFORMATION_FLOW_PLAN.md`](planning/SMP_INFORMATION_FLOW_PLAN.md)
+§5 SM8.A.
+
+**Prior sub-phase: SM7 CLOSED at v0.33.0** (SM7.F.5, the access-time TLB
+fill — a core now caches translations it merely *accessed*, not only ones it
+mapped, so Theorem 3.3.1 and the 13th `proofLayerInvariantBundle` conjunct
+stop being vacuous for the common hardware case; see the `CHANGELOG.md`
+v0.33.0 entry).  Prior: SM7.F.3 round-generation-tagged descriptors LANDED
+(v0.32.105) — SM7.F CLOSED.  A shootdown round's deferred catch-up drains
 only the rounds its *own* commit opened, so a concurrently-committed round's
 freshly-posted descriptors survive for its own catch-up instead of being
 swallowed (the SM7.B v0.32.79 model-fidelity debt).  `TlbShootdownDescriptor`

@@ -2446,6 +2446,106 @@ objects outside the observer's clearance are filtered out by projection.
 - `InformationFlow/Invariant/Operations.lean` — per-operation NI proofs
 - `InformationFlow/Invariant/Composition.lean` — trace-level IF-M4
 
+### Layer 3 under SMP — the per-core observer (WS-SM SM4.D + SM8.A)
+
+Two modules extend Layer 3 from a single observer to a per-core one.
+
+`InformationFlow/ProjectionPerCore.lean` (WS-SM SM4.D) lifts the six
+scheduler-reading projections (`projectRunnable`, `projectCurrent`,
+`projectActiveDomain`, `projectDomainTimeRemaining`,
+`projectDomainScheduleIndex`, `projectMachineRegs`) to `…OnCore c` forms
+and aggregates them into `projectStateOnCore`, with the per-core
+low-equivalence `lowEquivalentOnCore` and its ∀-core form
+`lowEquivalent_smp`.
+
+`InformationFlow/ObservableStatePerCore.lean` (WS-SM SM8.A, v0.33.2;
+completed v0.33.3, review cut v0.33.4) adds the observer itself and what
+bounds it:
+
+- `PerCoreObserver` — the `(core, clearance)` pair as a value, and
+  `ObservableState.onCore ctx c L s` as the state it sees.  Defined *as*
+  `projectStateOnCore ctx ⟨L⟩ s c`, so there is one projection function
+  and the two modules cannot drift; `onCore_bootCore` is `rfl`, tying
+  every SM8 theorem at `bootCoreId` to the live single-core
+  `projectState`.
+- `SharedObservableFragment` / `PerCoreObservableFragment` — the seven
+  shared and six per-core components.  The partition is a **bijection**:
+  `ObservableState.ofFragments` reassembles a state from the pair,
+  `ofFragments_eta` proves the round trip, and `ext_fragments` /
+  `fragments_injective` give determination and faithfulness.  A
+  fourteenth `ObservableState` field registered in neither fragment
+  leaves `ofFragments` unable to supply it — a compile error as a
+  checked fact rather than an argument.
+- `onCore_isProjection_of_globalProjection` — an **`iff`**: two states
+  are indistinguishable to `(c, L)` exactly when they agree on
+  `observableFactorOnCore` (the global projection's shared fragment
+  paired with core `c`'s per-core fragment).  The observer learns that
+  pair, all of it and nothing beyond it.
+  `onCore_congr_of_globalProjection` is the state-level convenience form.
+- `onCore_perCore_independence` — the read set: six shared state
+  components plus the observer core's five scheduler slots and its
+  register bank, and nothing else.  **Fifteen** corollaries frame the
+  cross-core scheduler and register-bank writes, and the components
+  outside the read set entirely — replenishment queue, timeout log,
+  `scThreadIndex`, machine timer, and the whole SM7 memory-subsystem
+  surface (`perCoreTlb`, `perCoreICache`, `pendingIcacheMaintenance`,
+  `tlbShootdown`, the scalar `tlb`).
+- `onCore_label_monotone` over `ObservableState.visibilityLe`, with the
+  ∀-core `onCore_label_monotone_smp` — raising the observer's clearance
+  can only widen what it sees.  The two list clauses are `List.Sublist`,
+  not membership: both components filter the *same* underlying list, so
+  order is preserved, and a run queue's order is its dispatch order
+  (`filter_sublist_filter_of_imp`; membership forms derived).  The four
+  scheduling clauses are equality — those components are unfiltered
+  (CC-1), so visibility would be the wrong relation.  `objects` is the one
+  component whose *content* may widen, and `objectVisibilityLe` pins that
+  widening: equality on every arm but `.cnode` (which is what
+  `projectKernelObject_observer_independent_off_cnode` makes true — CNode
+  redaction is the only observer-dependent part of object projection) and
+  `cnodeVisibilityLe` on that one, where the five non-slot fields are fixed
+  and slots may only be un-redacted.
+  `ObservableState.eq_of_visibilityLe_antisymm` is the completeness check
+  on the clause list — mutual domination plus agreement on `objects` is
+  equality, so a fourteenth component with no clause leaves a goal nothing
+  can close.  The state-level bounds
+  `onCore_objects_label_invariant_off_cnode` and `onCore_objects_cnode` /
+  `onCore_objects_cnode_slot_monotone` remain as the
+  two-projections-of-one-state statements, while
+  `visibilityLe_objects_eq_of_not_cnode`, `visibilityLe_cnode_lookup` and
+  `visibilityLe_objects_isSome` are the consumer forms that follow from the
+  order alone.
+- `onCore_decidable` — decides a strictly weaker *slice* relation, since
+  observable-state equality is not decidable (five components are
+  functions over unbounded domains; `RegisterFile`'s structural `BEq` is
+  provably not lawful).  `lowEquivalentSliceOnCoreCheckWithRegs` is the
+  finer register-aware companion.  Every limitation is proved, not
+  asserted: `perCoreSlice_erases_register_content` /
+  `_shared_content` and `machineRegs_beq_not_injective`.
+- `onCore_schedulingTransparency` — accepted covert channel CC-1 stated
+  against the **raw** scheduler reads (what the observer gets, rather
+  than an equality between two clearances that any constant function
+  would satisfy); under SMP the channel exists once per core.
+  `_label_invariant` is the two-observer corollary.
+
+Two further channels are registered at this cut: `perCoreTlb` and
+`perCoreICache` are proven outside the read set, which is a statement
+about the *model* — a real observer times its own accesses — so, exactly
+as for the CC-2 machine timer, **CC-6** (per-core TLB residency) and
+**CC-7** (per-core instruction-cache residency) join the accepted-channel
+inventory in `docs/planning/SMP_INFORMATION_FLOW_PLAN.md` §3.5, one
+instance per core, with the formal `CovertChannel` treatment scoped to
+SM8.B.8.
+
+Runtime coverage: `tests/SmpInformationFlowSuite.lean` (123 anchors —
+every one of the module's 119 declarations — 25 elaboration examples, and
+125 runtime assertions across 14 groups on a four-thread / four-core
+fixture under a three-clearance labeling, carrying a CNode and a
+configured memory-ownership model so slot redaction and address
+observability are exercised on real values, and building the CSpace and
+VSpace roots its TCBs declare so every one is `KernelObject.wellFormed`;
+each group carries a load-bearing negative).  Per-core NI *preservation* across transitions
+(`crossCoreNonInterference`) is WS-SM SM8.B.
+
 ## 32. WS-Q3 IntermediateState formalization (v0.17.9)
 
 WS-Q3 introduces the builder-phase state model: a dependently-typed wrapper

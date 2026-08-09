@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/sm7f-tlb-fills-6r7c3l",
-      "commit_sha": "6ed66fcc915491b3ee74ce011721f3f093758ee6",
-      "tree_sha": "f726b12f01c3b6af71088aff3090a7cfdbc04d73",
-      "committed_at_utc": "2026-08-05T05:31:36+00:00"
+      "branch": "claude/sm8a-per-core-observable-state-e2cwln",
+      "commit_sha": "8c6158106d68e5bc56152bed446d73932f342dfb",
+      "tree_sha": "7a26bde1495076b99cd2bd60557d63f47bfe5442",
+      "committed_at_utc": "2026-08-09T20:15:26+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "567bfcc7b7236ee2500bff7ecc48a6f28b5790c04e7eef83a95d905528427dfb"
+    "source_digest": "74bc0fe7e3f5e10a43e0e0efb267b3f5924f2b0ed536d7584b8385955f5c5290"
   },
   "summary": {
-    "module_count": 333,
-    "declaration_count": 14063
+    "module_count": 335,
+    "declaration_count": 14280
   },
   "readme_sync": {
-    "version": "0.33.1",
+    "version": "0.33.4",
     "lean_toolchain": "v4.28.0",
-    "production_files": 266,
-    "production_loc": 239252,
-    "test_files": 67,
-    "test_loc": 48581,
-    "proved_theorem_lemma_decls": 7834,
+    "production_files": 267,
+    "production_loc": 240960,
+    "test_files": 68,
+    "test_loc": 50043,
+    "proved_theorem_lemma_decls": 7933,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -92108,6 +92108,1685 @@
       "declarations": []
     },
     {
+      "module": "SeLe4n.Kernel.InformationFlow.ObservableStatePerCore",
+      "path": "SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean",
+      "declaration_count": 122,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 93,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "IfObserver.ofLabel",
+          "line": 108,
+          "called": [
+            "IfObserver",
+            "SecurityLabel"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "IfObserver.ofLabel_clearance",
+          "line": 110,
+          "called": [
+            "IfObserver.ofLabel",
+            "SecurityLabel"
+          ]
+        },
+        {
+          "kind": "structure",
+          "name": "PerCoreObserver",
+          "line": 122,
+          "called": [
+            "CoreId",
+            "SecurityLabel"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "PerCoreObserver.toIfObserver",
+          "line": 131,
+          "called": [
+            "IfObserver",
+            "IfObserver.ofLabel",
+            "PerCoreObserver"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "PerCoreObserver.toIfObserver_clearance",
+          "line": 134,
+          "called": [
+            "PerCoreObserver"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "PerCoreObserver.onBootCore",
+          "line": 139,
+          "called": [
+            "PerCoreObserver",
+            "SecurityLabel",
+            "bootCoreId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ObservableState.onCore",
+          "line": 158,
+          "called": [
+            "CoreId",
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "ObservableState",
+            "SecurityLabel",
+            "SystemState",
+            "projectStateOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_eq_projectStateOnCore",
+          "line": 165,
+          "called": [
+            "CoreId",
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "projectStateOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_bootCore",
+          "line": 173,
+          "called": [
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "bootCoreId",
+            "projectState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "PerCoreObserver.view",
+          "line": 177,
+          "called": [
+            "LabelingContext",
+            "ObservableState",
+            "ObservableState.onCore",
+            "PerCoreObserver",
+            "SystemState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "lowEquivalentForObserver",
+          "line": 184,
+          "called": [
+            "LabelingContext",
+            "PerCoreObserver",
+            "SystemState",
+            "view"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lowEquivalentForObserver_iff_lowEquivalentOnCore",
+          "line": 190,
+          "called": [
+            "LabelingContext",
+            "PerCoreObserver",
+            "SystemState",
+            "lowEquivalentForObserver",
+            "lowEquivalentOnCore",
+            "toIfObserver"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lowEquivalentForObserver_bootCore",
+          "line": 197,
+          "called": [
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "PerCoreObserver.onBootCore",
+            "SecurityLabel",
+            "SystemState",
+            "lowEquivalent",
+            "lowEquivalentForObserver"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lowEquivalentForObserver_refl",
+          "line": 202,
+          "called": [
+            "LabelingContext",
+            "PerCoreObserver",
+            "SystemState",
+            "lowEquivalentForObserver"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lowEquivalentForObserver_symm",
+          "line": 205,
+          "called": [
+            "LabelingContext",
+            "PerCoreObserver",
+            "SystemState",
+            "lowEquivalentForObserver",
+            "symm"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lowEquivalentForObserver_trans",
+          "line": 209,
+          "called": [
+            "LabelingContext",
+            "PerCoreObserver",
+            "SystemState",
+            "lowEquivalentForObserver",
+            "trans"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lowEquivalent_smp_iff_forall_observer",
+          "line": 219,
+          "called": [
+            "CoreId",
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "SecurityLabel",
+            "SystemState",
+            "lowEquivalentForObserver",
+            "lowEquivalent_smp"
+          ]
+        },
+        {
+          "kind": "structure",
+          "name": "SharedObservableFragment",
+          "line": 249,
+          "called": [
+            "DomainScheduleEntry",
+            "Irq",
+            "KernelObject",
+            "ObjId",
+            "PAddr",
+            "ServiceGraphEntry",
+            "ServiceId"
+          ]
+        },
+        {
+          "kind": "structure",
+          "name": "PerCoreObservableFragment",
+          "line": 260,
+          "called": [
+            "DomainId",
+            "RegisterFile",
+            "ThreadId",
+            "runnable"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ObservableState.sharedFragment",
+          "line": 269,
+          "called": [
+            "ObservableState",
+            "SharedObservableFragment"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ObservableState.perCoreFragment",
+          "line": 279,
+          "called": [
+            "ObservableState",
+            "PerCoreObservableFragment",
+            "runnable"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ObservableState.ext_fragments",
+          "line": 294,
+          "called": [
+            "ObservableState",
+            "ObservableState.perCoreFragment",
+            "ObservableState.sharedFragment",
+            "perCoreFragment",
+            "sharedFragment"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ObservableState.ofFragments",
+          "line": 314,
+          "called": [
+            "ObservableState",
+            "PerCoreObservableFragment",
+            "SharedObservableFragment",
+            "runnable"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ObservableState.ofFragments_sharedFragment",
+          "line": 330,
+          "called": [
+            "ObservableState.ofFragments",
+            "PerCoreObservableFragment",
+            "SharedObservableFragment",
+            "sharedFragment"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ObservableState.ofFragments_perCoreFragment",
+          "line": 334,
+          "called": [
+            "ObservableState.ofFragments",
+            "PerCoreObservableFragment",
+            "SharedObservableFragment",
+            "perCoreFragment"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ObservableState.ofFragments_eta",
+          "line": 345,
+          "called": [
+            "ObservableState",
+            "ObservableState.ofFragments",
+            "perCoreFragment",
+            "sharedFragment"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ObservableState.fragments_injective",
+          "line": 351,
+          "called": [
+            "ObservableState",
+            "ObservableState.ext_fragments",
+            "perCoreFragment",
+            "sharedFragment"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_sharedFragment",
+          "line": 360,
+          "called": [
+            "CoreId",
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "projectDomainSchedule",
+            "projectIrqHandlers",
+            "projectMemory",
+            "projectObjectIndex",
+            "projectObjects",
+            "projectServicePresence",
+            "projectServiceRegistry",
+            "sharedFragment"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_perCoreFragment",
+          "line": 374,
+          "called": [
+            "CoreId",
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "perCoreFragment",
+            "projectActiveDomainOnCore",
+            "projectCurrentOnCore",
+            "projectDomainScheduleIndexOnCore",
+            "projectDomainTimeRemainingOnCore",
+            "projectMachineRegsOnCore",
+            "projectRunnableOnCore",
+            "runnable"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_objects",
+          "line": 392,
+          "called": [
+            "CoreId",
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "projectObjects"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_services",
+          "line": 396,
+          "called": [
+            "CoreId",
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "projectServicePresence"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_irqHandlers",
+          "line": 401,
+          "called": [
+            "CoreId",
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "projectIrqHandlers"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_objectIndex",
+          "line": 406,
+          "called": [
+            "CoreId",
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "projectObjectIndex"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_domainSchedule",
+          "line": 411,
+          "called": [
+            "CoreId",
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "projectDomainSchedule"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_memory",
+          "line": 416,
+          "called": [
+            "CoreId",
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "projectMemory"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_serviceRegistry",
+          "line": 420,
+          "called": [
+            "CoreId",
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "projectServiceRegistry"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_runnable",
+          "line": 425,
+          "called": [
+            "CoreId",
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "projectRunnableOnCore",
+            "runnable"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_current",
+          "line": 430,
+          "called": [
+            "CoreId",
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "projectCurrentOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_activeDomain",
+          "line": 435,
+          "called": [
+            "CoreId",
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "projectActiveDomainOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_domainTimeRemaining",
+          "line": 440,
+          "called": [
+            "CoreId",
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "projectDomainTimeRemainingOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_domainScheduleIndex",
+          "line": 445,
+          "called": [
+            "CoreId",
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "projectDomainScheduleIndexOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_machineRegs",
+          "line": 450,
+          "called": [
+            "CoreId",
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "projectMachineRegsOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_sharedFragment_eq_globalProjection",
+          "line": 458,
+          "called": [
+            "CoreId",
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "projectState",
+            "sharedFragment"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_sharedFragment_determined_by_globalProjection",
+          "line": 469,
+          "called": [
+            "CoreId",
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "onCore_sharedFragment_eq_globalProjection",
+            "projectState",
+            "sharedFragment"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_sharedFragment_core_independent",
+          "line": 487,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "sharedFragment"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "observableFactorOnCore",
+          "line": 495,
+          "called": [
+            "CoreId",
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "PerCoreObservableFragment",
+            "SecurityLabel",
+            "SharedObservableFragment",
+            "SystemState",
+            "perCoreFragment",
+            "projectState",
+            "sharedFragment"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_isProjection_of_globalProjection",
+          "line": 518,
+          "called": [
+            "CoreId",
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "ObservableState.ext_fragments",
+            "ObservableState.onCore",
+            "ObservableState.perCoreFragment",
+            "ObservableState.sharedFragment",
+            "SecurityLabel",
+            "SystemState",
+            "observableFactorOnCore",
+            "onCore_sharedFragment_eq_globalProjection",
+            "perCoreFragment",
+            "projectState",
+            "sharedFragment"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_congr_of_globalProjection",
+          "line": 542,
+          "called": [
+            "CoreId",
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "activeDomainOnCore",
+            "currentOnCore",
+            "domainScheduleIndexOnCore",
+            "domainTimeRemainingOnCore",
+            "projectState",
+            "projectStateOnCore_congr",
+            "regsOnCore",
+            "runQueueOnCore"
+          ]
+        },
+        {
+          "kind": "structure",
+          "name": "PerCoreObservableSlice",
+          "line": 585,
+          "called": [
+            "DomainId",
+            "ThreadId",
+            "runnable"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ObservableState.perCoreSlice",
+          "line": 597,
+          "called": [
+            "ObservableState",
+            "PerCoreObservableSlice",
+            "runnable"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ObservableState.sliceOnCore",
+          "line": 606,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "PerCoreObservableSlice",
+            "SecurityLabel",
+            "SystemState",
+            "perCoreSlice"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "lowEquivalentSliceOnCore",
+          "line": 613,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "ObservableState.sliceOnCore",
+            "SecurityLabel",
+            "SystemState"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "onCore_decidable",
+          "line": 618,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "SecurityLabel",
+            "SystemState",
+            "lowEquivalentSliceOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lowEquivalentSliceOnCore_of_lowEquivalentOnCore",
+          "line": 626,
+          "called": [
+            "CoreId",
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "ObservableState.perCoreSlice",
+            "SecurityLabel",
+            "SystemState",
+            "lowEquivalentOnCore",
+            "lowEquivalentSliceOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perCoreSlice_erases_register_content",
+          "line": 636,
+          "called": [
+            "ObservableState",
+            "RegisterFile",
+            "none",
+            "perCoreSlice",
+            "runnable"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perCoreSlice_erases_shared_content",
+          "line": 663,
+          "called": [
+            "ObjId",
+            "ObservableState",
+            "none",
+            "ofNat",
+            "perCoreSlice",
+            "runnable"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_perCoreSlice",
+          "line": 683,
+          "called": [
+            "CoreId",
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "ObservableState.sliceOnCore",
+            "SecurityLabel",
+            "SystemState",
+            "projectActiveDomainOnCore",
+            "projectCurrentOnCore",
+            "projectDomainScheduleIndexOnCore",
+            "projectDomainTimeRemainingOnCore",
+            "projectMachineRegsOnCore",
+            "projectRunnableOnCore",
+            "runnable"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "machineRegs_beq_self",
+          "line": 709,
+          "called": [
+            "RegisterFile",
+            "RegisterFile.beq_self",
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "lowEquivalentSliceOnCoreCheckWithRegs",
+          "line": 716,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "lowEquivalentSliceOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lowEquivalentSliceOnCoreCheckWithRegs_of_lowEquivalentOnCore",
+          "line": 724,
+          "called": [
+            "CoreId",
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "lowEquivalentOnCore",
+            "lowEquivalentSliceOnCoreCheckWithRegs",
+            "lowEquivalentSliceOnCore_of_lowEquivalentOnCore",
+            "machineRegs_beq_self"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lowEquivalentSliceOnCoreCheckWithRegs_le_slice",
+          "line": 734,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "SecurityLabel",
+            "SystemState",
+            "lowEquivalentSliceOnCore",
+            "lowEquivalentSliceOnCoreCheckWithRegs"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "machineRegs_beq_not_injective",
+          "line": 747,
+          "called": [
+            "RegisterFile"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_perCore_independence",
+          "line": 787,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "ObservableState.ext_fragments",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "activeDomainOnCore",
+            "currentOnCore",
+            "domainScheduleIndexOnCore",
+            "domainTimeRemainingOnCore",
+            "lookupService",
+            "onCore_perCoreFragment",
+            "onCore_sharedFragment",
+            "projectActiveDomainOnCore_frame",
+            "projectCurrentOnCore_frame",
+            "projectDomainSchedule",
+            "projectDomainScheduleIndexOnCore_frame",
+            "projectDomainTimeRemainingOnCore_frame",
+            "projectIrqHandlers",
+            "projectMachineRegsOnCore_frame",
+            "projectMemory_eq_of_memory_eq",
+            "projectObjectIndex",
+            "projectObjects",
+            "projectRunnableOnCore_frame",
+            "projectServicePresence",
+            "projectServiceRegistry_eq_of_services_eq",
+            "regsOnCore",
+            "runQueueOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_setCurrentOnCore_ne",
+          "line": 822,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "ThreadId",
+            "onCore_perCore_independence",
+            "setCurrentOnCore",
+            "symm"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_setRunQueueOnCore_ne",
+          "line": 832,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "RunQueue",
+            "SecurityLabel",
+            "SystemState",
+            "onCore_perCore_independence",
+            "setRunQueueOnCore",
+            "symm"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_setActiveDomainOnCore_ne",
+          "line": 844,
+          "called": [
+            "CoreId",
+            "DomainId",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "onCore_perCore_independence",
+            "setActiveDomainOnCore",
+            "symm"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_setDomainTimeRemainingOnCore_ne",
+          "line": 854,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "onCore_perCore_independence",
+            "setDomainTimeRemainingOnCore",
+            "symm"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_setDomainScheduleIndexOnCore_ne",
+          "line": 864,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "onCore_perCore_independence",
+            "setDomainScheduleIndexOnCore",
+            "symm"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_setRegsOnCore_ne",
+          "line": 876,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "MachineState.regsOnCore_setRegsOnCore_ne",
+            "ObservableState.onCore",
+            "RegisterFile",
+            "SecurityLabel",
+            "SystemState",
+            "onCore_perCore_independence",
+            "setRegsOnCore",
+            "symm"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_setReplenishQueueOnCore",
+          "line": 893,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "ReplenishQueue",
+            "SecurityLabel",
+            "SystemState",
+            "onCore_perCore_independence",
+            "setReplenishQueueOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_setLastTimeoutErrorsOnCore",
+          "line": 901,
+          "called": [
+            "CoreId",
+            "KernelError",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "ThreadId",
+            "onCore_perCore_independence",
+            "setLastTimeoutErrorsOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_scThreadIndex",
+          "line": 910,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "RHTable",
+            "SchedContextId",
+            "SecurityLabel",
+            "SystemState",
+            "ThreadId",
+            "onCore_perCore_independence"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_machineTimer",
+          "line": 923,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "onCore_perCore_independence"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_perCoreTlb",
+          "line": 933,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "TlbState",
+            "numCores",
+            "onCore_perCore_independence"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "objectObservable_monotone",
+          "line": 963,
+          "called": [
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "ObjId",
+            "SecurityLabel",
+            "objectObservable",
+            "securityFlowsTo",
+            "securityFlowsTo_trans"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "threadObservable_monotone",
+          "line": 970,
+          "called": [
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "SecurityLabel",
+            "ThreadId",
+            "securityFlowsTo",
+            "securityFlowsTo_trans",
+            "threadObservable"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceObservable_monotone",
+          "line": 977,
+          "called": [
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "SecurityLabel",
+            "ServiceId",
+            "securityFlowsTo",
+            "securityFlowsTo_trans",
+            "serviceObservable"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "capTargetObservable_monotone",
+          "line": 985,
+          "called": [
+            "CapTarget",
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "SecurityLabel",
+            "capTargetObservable",
+            "objectObservable_monotone",
+            "securityFlowsTo",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_perCoreICache",
+          "line": 997,
+          "called": [
+            "CoreId",
+            "ICacheState",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "numCores",
+            "onCore_perCore_independence"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_pendingIcacheMaintenance",
+          "line": 1008,
+          "called": [
+            "CoreId",
+            "ICacheInvalidation",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "onCore_perCore_independence"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_tlbShootdown",
+          "line": 1017,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "TlbShootdownState",
+            "onCore_perCore_independence"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_tlb",
+          "line": 1027,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "TlbState",
+            "onCore_perCore_independence"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "memoryAddressObservable_monotone",
+          "line": 1037,
+          "called": [
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "PAddr",
+            "SecurityLabel",
+            "memoryAddressObservable",
+            "securityFlowsTo",
+            "securityFlowsTo_trans"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "projectCNode",
+          "line": 1055,
+          "called": [
+            "CNode",
+            "IfObserver",
+            "LabelingContext",
+            "capTargetObservable",
+            "filter"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "projectKernelObject_cnode",
+          "line": 1061,
+          "called": [
+            "CNode",
+            "IfObserver",
+            "LabelingContext",
+            "projectCNode",
+            "projectKernelObject"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "projectCNode_lookup_monotone",
+          "line": 1070,
+          "called": [
+            "CNode",
+            "Capability",
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "RHTable.filter_getElem",
+            "RHTable.invExtK_invExt",
+            "SecurityLabel",
+            "Slot",
+            "capTargetObservable_monotone",
+            "get",
+            "invExt",
+            "lookup",
+            "projectCNode",
+            "securityFlowsTo",
+            "table_filter"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "projectKernelObject_observer_independent_off_cnode",
+          "line": 1086,
+          "called": [
+            "IfObserver",
+            "KernelObject",
+            "LabelingContext",
+            "projectKernelObject"
+          ]
+        },
+        {
+          "kind": "structure",
+          "name": "cnodeVisibilityLe",
+          "line": 1113,
+          "called": [
+            "CNode",
+            "lookup"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cnodeVisibilityLe_refl",
+          "line": 1121,
+          "called": [
+            "CNode",
+            "cnodeVisibilityLe"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cnodeVisibilityLe_trans",
+          "line": 1124,
+          "called": [
+            "CNode",
+            "cnodeVisibilityLe",
+            "lookup",
+            "trans"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "eq_of_cnodeVisibilityLe_of_slots_eq",
+          "line": 1135,
+          "called": [
+            "CNode",
+            "cnodeVisibilityLe"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "objectVisibilityLe",
+          "line": 1151,
+          "called": [
+            "KernelObject",
+            "cnodeVisibilityLe"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "objectVisibilityLe_refl",
+          "line": 1159,
+          "called": [
+            "KernelObject",
+            "cnodeVisibilityLe_refl",
+            "objectVisibilityLe"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "objectVisibilityLe_trans",
+          "line": 1162,
+          "called": [
+            "KernelObject",
+            "cnodeVisibilityLe_trans",
+            "objectVisibilityLe"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "eq_of_objectVisibilityLe_of_not_cnode",
+          "line": 1180,
+          "called": [
+            "KernelObject",
+            "objectVisibilityLe"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "objectVisibilityLe_cnode",
+          "line": 1188,
+          "called": [
+            "CNode",
+            "KernelObject",
+            "cnodeVisibilityLe",
+            "objectVisibilityLe"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "projectCNode_visibilityLe_monotone",
+          "line": 1198,
+          "called": [
+            "CNode",
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "SecurityLabel",
+            "cnodeVisibilityLe",
+            "projectCNode",
+            "projectCNode_lookup_monotone",
+            "securityFlowsTo"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "projectKernelObject_visibilityLe_monotone",
+          "line": 1209,
+          "called": [
+            "IfObserver.ofLabel",
+            "KernelObject",
+            "LabelingContext",
+            "SecurityLabel",
+            "objectVisibilityLe",
+            "objectVisibilityLe_refl",
+            "projectCNode_visibilityLe_monotone",
+            "projectKernelObject",
+            "projectKernelObject_cnode",
+            "securityFlowsTo"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "filter_sublist_filter_of_imp",
+          "line": 1226,
+          "called": [
+            "cons",
+            "filter"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "eq_of_option_imp",
+          "line": 1243,
+          "called": [
+            "none",
+            "symm"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "eq_of_bool_imp",
+          "line": 1253,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "ObservableState.visibilityLe",
+          "line": 1285,
+          "called": [
+            "ObservableState",
+            "objectVisibilityLe",
+            "runnable"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ObservableState.visibilityLe_refl",
+          "line": 1301,
+          "called": [
+            "ObservableState",
+            "objectVisibilityLe_refl",
+            "refl",
+            "runnable",
+            "visibilityLe"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ObservableState.visibilityLe_trans",
+          "line": 1316,
+          "called": [
+            "ObservableState",
+            "objectVisibilityLe_trans",
+            "runnable",
+            "trans",
+            "visibilityLe"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ObservableState.visibilityLe_mem_runnable",
+          "line": 1338,
+          "called": [
+            "ObservableState",
+            "ThreadId",
+            "runnable",
+            "subset",
+            "visibilityLe"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ObservableState.visibilityLe_mem_objectIndex",
+          "line": 1343,
+          "called": [
+            "ObjId",
+            "ObservableState",
+            "subset",
+            "visibilityLe"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ObservableState.visibilityLe_objects_isSome",
+          "line": 1350,
+          "called": [
+            "ObjId",
+            "ObservableState",
+            "none",
+            "visibilityLe"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ObservableState.visibilityLe_objects_eq_of_not_cnode",
+          "line": 1363,
+          "called": [
+            "KernelObject",
+            "ObjId",
+            "ObservableState",
+            "eq_of_objectVisibilityLe_of_not_cnode",
+            "visibilityLe"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ObservableState.visibilityLe_cnode_lookup",
+          "line": 1373,
+          "called": [
+            "CNode",
+            "Capability",
+            "ObjId",
+            "ObservableState",
+            "Slot",
+            "lookup",
+            "objectVisibilityLe_cnode",
+            "visibilityLe"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ObservableState.eq_of_visibilityLe_antisymm",
+          "line": 1397,
+          "called": [
+            "ObservableState",
+            "eq_of_bool_imp",
+            "eq_of_option_imp",
+            "le_antisymm",
+            "runnable",
+            "visibilityLe"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_label_monotone",
+          "line": 1431,
+          "called": [
+            "CoreId",
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "currentOnCore",
+            "filter_sublist_filter_of_imp",
+            "memoryAddressObservable",
+            "memoryAddressObservable_monotone",
+            "none",
+            "objectObservable",
+            "objectObservable_monotone",
+            "onCore_current",
+            "onCore_irqHandlers",
+            "onCore_machineRegs",
+            "onCore_memory",
+            "onCore_objectIndex",
+            "onCore_objects",
+            "onCore_runnable",
+            "onCore_serviceRegistry",
+            "onCore_services",
+            "projectCurrentOnCore",
+            "projectIrqHandlers",
+            "projectKernelObject",
+            "projectKernelObject_visibilityLe_monotone",
+            "projectMachineRegsOnCore",
+            "projectMemory",
+            "projectObjectIndex",
+            "projectObjects",
+            "projectRunnableOnCore",
+            "projectServicePresence",
+            "projectServiceRegistry",
+            "securityFlowsTo",
+            "serviceObservable",
+            "serviceObservable_monotone",
+            "threadObservable",
+            "threadObservable_monotone",
+            "visibilityLe"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_objects_label_invariant_off_cnode",
+          "line": 1528,
+          "called": [
+            "CoreId",
+            "IfObserver.ofLabel",
+            "KernelObject",
+            "LabelingContext",
+            "ObjId",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "objectObservable",
+            "objectObservable_monotone",
+            "onCore_objects",
+            "projectKernelObject_observer_independent_off_cnode",
+            "projectObjects",
+            "securityFlowsTo"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "visibilityLe_smp",
+          "line": 1548,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "visibilityLe"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "visibilityLe_smp_at",
+          "line": 1552,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "visibilityLe",
+            "visibilityLe_smp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_label_monotone_smp",
+          "line": 1557,
+          "called": [
+            "LabelingContext",
+            "SecurityLabel",
+            "SystemState",
+            "onCore_label_monotone",
+            "securityFlowsTo",
+            "visibilityLe_smp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "observerView_label_monotone",
+          "line": 1564,
+          "called": [
+            "LabelingContext",
+            "PerCoreObserver",
+            "SystemState",
+            "onCore_label_monotone",
+            "securityFlowsTo",
+            "view",
+            "visibilityLe"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_objects_cnode",
+          "line": 1576,
+          "called": [
+            "CNode",
+            "CoreId",
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "ObjId",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "objectObservable",
+            "onCore_objects",
+            "projectCNode",
+            "projectKernelObject_cnode",
+            "projectObjects"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_objects_cnode_slot_monotone",
+          "line": 1593,
+          "called": [
+            "CNode",
+            "Capability",
+            "CoreId",
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "ObjId",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "Slot",
+            "SystemState",
+            "lookup",
+            "objectObservable",
+            "objectObservable_monotone",
+            "onCore_objects_cnode",
+            "projectCNode",
+            "projectCNode_lookup_monotone",
+            "securityFlowsTo"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_schedulingTransparency",
+          "line": 1622,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "activeDomainOnCore",
+            "domainScheduleIndexOnCore",
+            "domainTimeRemainingOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_schedulingTransparency_label_invariant",
+          "line": 1634,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "onCore_schedulingTransparency",
+            "symm",
+            "trans"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "onCore_label_monotone_strict",
+          "line": 1654,
+          "called": [
+            "IfObserver.ofLabel",
+            "Kernel",
+            "kernelTrusted",
+            "objectObservable",
+            "ofNat",
+            "publicLabel",
+            "securityFlowsTo",
+            "testLabelingContext"
+          ]
+        }
+      ]
+    },
+    {
       "module": "SeLe4n.Kernel.InformationFlow.Policy",
       "path": "SeLe4n/Kernel/InformationFlow/Policy.lean",
       "declaration_count": 99,
@@ -100571,7 +102250,7 @@
     {
       "module": "SeLe4n.Kernel.RobinHood.Bridge",
       "path": "SeLe4n/Kernel/RobinHood/Bridge.lean",
-      "declaration_count": 52,
+      "declaration_count": 54,
       "declarations": [
         {
           "kind": "namespace",
@@ -101094,8 +102773,34 @@
         },
         {
           "kind": "theorem",
+          "name": "RHTable.filter_getElem",
+          "line": 970,
+          "called": [
+            "RHTable",
+            "RHTable.get_some_slot_entry",
+            "filter",
+            "filter_fold_present",
+            "get",
+            "invExt"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "RHTable.filter_getElem",
+          "line": 982,
+          "called": [
+            "RHTable",
+            "RHTable.filter_get_pred",
+            "RHTable.filter_get_subset",
+            "filter",
+            "get",
+            "invExt"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "RHTable.filter_filter_getElem",
-          "line": 960,
+          "line": 990,
           "called": [
             "RHTable",
             "RHTable.filter_get_pred",
@@ -101112,8 +102817,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:988>",
-          "line": 988,
+          "name": "<anonymous:instance:1018>",
+          "line": 1018,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -101123,7 +102828,7 @@
         {
           "kind": "def",
           "name": "RHTable.invExtK",
-          "line": 1002,
+          "line": 1032,
           "called": [
             "RHTable",
             "capacity",
@@ -101134,7 +102839,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.invExtK_invExt",
-          "line": 1006,
+          "line": 1036,
           "called": [
             "RHTable",
             "invExt",
@@ -101144,7 +102849,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.invExtK_size_lt_capacity",
-          "line": 1009,
+          "line": 1039,
           "called": [
             "RHTable",
             "capacity",
@@ -101155,7 +102860,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.invExtK_capacity_ge4",
-          "line": 1012,
+          "line": 1042,
           "called": [
             "RHTable",
             "capacity",
@@ -101165,7 +102870,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.mk_invExtK",
-          "line": 1016,
+          "line": 1046,
           "called": [
             "RHTable",
             "capacity",
@@ -101177,7 +102882,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.empty_invExtK",
-          "line": 1025,
+          "line": 1055,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -101188,7 +102893,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.erase_capacity_eq",
-          "line": 1037,
+          "line": 1067,
           "called": [
             "RHTable",
             "RHTable.erase",
@@ -101199,7 +102904,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.erase_preserves_invExtK",
-          "line": 1044,
+          "line": 1074,
           "called": [
             "RHTable",
             "erase",
@@ -101212,7 +102917,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.insert_capacity_ge4",
-          "line": 1056,
+          "line": 1086,
           "called": [
             "RHTable",
             "RHTable.insert",
@@ -101225,7 +102930,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.insert_preserves_invExtK",
-          "line": 1065,
+          "line": 1095,
           "called": [
             "RHTable",
             "insert",
@@ -101238,7 +102943,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.getElem",
-          "line": 1078,
+          "line": 1108,
           "called": [
             "RHTable",
             "erase",
@@ -101249,7 +102954,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.filter_capacity_eq",
-          "line": 1089,
+          "line": 1119,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -101263,7 +102968,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.filter_preserves_invExtK",
-          "line": 1109,
+          "line": 1139,
           "called": [
             "RHTable",
             "filter",
@@ -101276,7 +102981,7 @@
         {
           "kind": "theorem",
           "name": "cnode_capacity_always_ge4",
-          "line": 1133,
+          "line": 1163,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -160268,13 +161973,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Platform.Staged",
-          "line": 533,
+          "line": 544,
           "called": []
         },
         {
           "kind": "def",
           "name": "stagedBuildAnchor",
-          "line": 539,
+          "line": 550,
           "called": []
         }
       ]
@@ -193461,6 +195166,1495 @@
       ]
     },
     {
+      "module": "tests.SmpInformationFlowSuite",
+      "path": "tests/SmpInformationFlowSuite.lean",
+      "declaration_count": 93,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing.SmpInformationFlow",
+          "line": 37,
+          "called": [
+            "IfObserver.ofLabel",
+            "IfObserver.ofLabel_clearance",
+            "ObservableState.eq_of_visibilityLe_antisymm",
+            "ObservableState.ext_fragments",
+            "ObservableState.fragments_injective",
+            "ObservableState.ofFragments",
+            "ObservableState.ofFragments_eta",
+            "ObservableState.ofFragments_perCoreFragment",
+            "ObservableState.ofFragments_sharedFragment",
+            "ObservableState.onCore",
+            "ObservableState.perCoreFragment",
+            "ObservableState.perCoreSlice",
+            "ObservableState.sharedFragment",
+            "ObservableState.sliceOnCore",
+            "ObservableState.visibilityLe",
+            "ObservableState.visibilityLe_cnode_lookup",
+            "ObservableState.visibilityLe_mem_objectIndex",
+            "ObservableState.visibilityLe_mem_runnable",
+            "ObservableState.visibilityLe_objects_eq_of_not_cnode",
+            "ObservableState.visibilityLe_objects_isSome",
+            "ObservableState.visibilityLe_refl",
+            "ObservableState.visibilityLe_trans",
+            "PerCoreObservableFragment",
+            "PerCoreObservableSlice",
+            "PerCoreObserver",
+            "PerCoreObserver.onBootCore",
+            "PerCoreObserver.toIfObserver",
+            "PerCoreObserver.toIfObserver_clearance",
+            "PerCoreObserver.view",
+            "RHTable.filter_getElem",
+            "SharedObservableFragment",
+            "capTargetObservable_monotone",
+            "cnodeVisibilityLe",
+            "cnodeVisibilityLe_refl",
+            "cnodeVisibilityLe_trans",
+            "eq_of_cnodeVisibilityLe_of_slots_eq",
+            "eq_of_objectVisibilityLe_of_not_cnode",
+            "filter_sublist_filter_of_imp",
+            "lowEquivalentForObserver",
+            "lowEquivalentForObserver_bootCore",
+            "lowEquivalentForObserver_iff_lowEquivalentOnCore",
+            "lowEquivalentForObserver_refl",
+            "lowEquivalentForObserver_symm",
+            "lowEquivalentForObserver_trans",
+            "lowEquivalentSliceOnCore",
+            "lowEquivalentSliceOnCoreCheckWithRegs",
+            "lowEquivalentSliceOnCoreCheckWithRegs_le_slice",
+            "lowEquivalentSliceOnCoreCheckWithRegs_of_lowEquivalentOnCore",
+            "lowEquivalentSliceOnCore_of_lowEquivalentOnCore",
+            "lowEquivalent_smp_iff_forall_observer",
+            "machineRegs_beq_not_injective",
+            "machineRegs_beq_self",
+            "memoryAddressObservable_monotone",
+            "objectObservable_monotone",
+            "objectVisibilityLe",
+            "objectVisibilityLe_cnode",
+            "objectVisibilityLe_refl",
+            "objectVisibilityLe_trans",
+            "observableFactorOnCore",
+            "observerView_label_monotone",
+            "onCore_activeDomain",
+            "onCore_bootCore",
+            "onCore_congr_of_globalProjection",
+            "onCore_current",
+            "onCore_decidable",
+            "onCore_domainSchedule",
+            "onCore_domainScheduleIndex",
+            "onCore_domainTimeRemaining",
+            "onCore_eq_projectStateOnCore",
+            "onCore_irqHandlers",
+            "onCore_isProjection_of_globalProjection",
+            "onCore_label_monotone",
+            "onCore_label_monotone_smp",
+            "onCore_label_monotone_strict",
+            "onCore_machineRegs",
+            "onCore_machineTimer",
+            "onCore_memory",
+            "onCore_objectIndex",
+            "onCore_objects",
+            "onCore_objects_cnode",
+            "onCore_objects_cnode_slot_monotone",
+            "onCore_objects_label_invariant_off_cnode",
+            "onCore_pendingIcacheMaintenance",
+            "onCore_perCoreFragment",
+            "onCore_perCoreICache",
+            "onCore_perCoreSlice",
+            "onCore_perCoreTlb",
+            "onCore_perCore_independence",
+            "onCore_runnable",
+            "onCore_scThreadIndex",
+            "onCore_schedulingTransparency",
+            "onCore_schedulingTransparency_label_invariant",
+            "onCore_serviceRegistry",
+            "onCore_services",
+            "onCore_setActiveDomainOnCore_ne",
+            "onCore_setCurrentOnCore_ne",
+            "onCore_setDomainScheduleIndexOnCore_ne",
+            "onCore_setDomainTimeRemainingOnCore_ne",
+            "onCore_setLastTimeoutErrorsOnCore",
+            "onCore_setRegsOnCore_ne",
+            "onCore_setReplenishQueueOnCore",
+            "onCore_setRunQueueOnCore_ne",
+            "onCore_sharedFragment",
+            "onCore_sharedFragment_core_independent",
+            "onCore_sharedFragment_determined_by_globalProjection",
+            "onCore_sharedFragment_eq_globalProjection",
+            "onCore_tlb",
+            "onCore_tlbShootdown",
+            "perCoreSlice_erases_register_content",
+            "perCoreSlice_erases_shared_content",
+            "projectCNode",
+            "projectCNode_lookup_monotone",
+            "projectCNode_visibilityLe_monotone",
+            "projectKernelObject_cnode",
+            "projectKernelObject_observer_independent_off_cnode",
+            "projectKernelObject_visibilityLe_monotone",
+            "serviceObservable_monotone",
+            "threadObservable_monotone",
+            "visibilityLe_smp",
+            "visibilityLe_smp_at"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:187>",
+          "line": 187,
+          "called": [
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "bootCoreId",
+            "onCore_bootCore",
+            "projectState"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:192>",
+          "line": 192,
+          "called": [
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "PerCoreObserver.onBootCore",
+            "SecurityLabel",
+            "SystemState",
+            "lowEquivalent",
+            "lowEquivalentForObserver",
+            "lowEquivalentForObserver_bootCore"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:198>",
+          "line": 198,
+          "called": [
+            "ObservableState",
+            "ObservableState.ext_fragments",
+            "perCoreFragment",
+            "sharedFragment"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:203>",
+          "line": 203,
+          "called": [
+            "CoreId",
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "onCore_sharedFragment_determined_by_globalProjection",
+            "projectState",
+            "sharedFragment"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:211>",
+          "line": 211,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "observableFactorOnCore",
+            "onCore_isProjection_of_globalProjection"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:217>",
+          "line": 217,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "observableFactorOnCore",
+            "onCore_isProjection_of_globalProjection"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:223>",
+          "line": 223,
+          "called": [
+            "ObservableState",
+            "ObservableState.ofFragments",
+            "ObservableState.ofFragments_eta",
+            "perCoreFragment",
+            "sharedFragment"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:228>",
+          "line": 228,
+          "called": [
+            "CoreId",
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "activeDomainOnCore",
+            "currentOnCore",
+            "domainScheduleIndexOnCore",
+            "domainTimeRemainingOnCore",
+            "onCore_congr_of_globalProjection",
+            "projectState",
+            "regsOnCore",
+            "runQueueOnCore"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:241>",
+          "line": 241,
+          "called": [
+            "CoreId",
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "SecurityLabel",
+            "SystemState",
+            "lowEquivalentOnCore",
+            "lowEquivalentSliceOnCore",
+            "lowEquivalentSliceOnCore_of_lowEquivalentOnCore"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:247>",
+          "line": 247,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "activeDomainOnCore",
+            "currentOnCore",
+            "domainScheduleIndexOnCore",
+            "domainTimeRemainingOnCore",
+            "onCore_perCore_independence",
+            "regsOnCore",
+            "runQueueOnCore"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:263>",
+          "line": 263,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "ThreadId",
+            "onCore_setCurrentOnCore_ne",
+            "setCurrentOnCore"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:270>",
+          "line": 270,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "RegisterFile",
+            "SecurityLabel",
+            "SystemState",
+            "onCore_setRegsOnCore_ne",
+            "setRegsOnCore"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:277>",
+          "line": 277,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "onCore_machineTimer"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:283>",
+          "line": 283,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "ThreadId",
+            "onCore_label_monotone",
+            "securityFlowsTo"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:290>",
+          "line": 290,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "ObjId",
+            "ObservableState.onCore",
+            "ObservableState.visibilityLe_objects_isSome",
+            "SecurityLabel",
+            "SystemState",
+            "onCore_label_monotone",
+            "securityFlowsTo"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:300>",
+          "line": 300,
+          "called": [
+            "CoreId",
+            "Endpoint",
+            "LabelingContext",
+            "ObjId",
+            "ObservableState.onCore",
+            "ObservableState.visibilityLe_objects_eq_of_not_cnode",
+            "SecurityLabel",
+            "SystemState",
+            "onCore_label_monotone",
+            "securityFlowsTo"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:310>",
+          "line": 310,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "onCore_label_monotone",
+            "securityFlowsTo"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:318>",
+          "line": 318,
+          "called": [
+            "ObservableState",
+            "ObservableState.eq_of_visibilityLe_antisymm",
+            "ObservableState.visibilityLe_refl"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:323>",
+          "line": 323,
+          "called": [
+            "CNode",
+            "Capability",
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "SecurityLabel",
+            "Slot",
+            "lookup",
+            "projectCNode",
+            "projectCNode_lookup_monotone",
+            "securityFlowsTo"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:331>",
+          "line": 331,
+          "called": [
+            "CoreId",
+            "KernelObject",
+            "LabelingContext",
+            "ObjId",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "onCore_objects_label_invariant_off_cnode",
+            "securityFlowsTo"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:342>",
+          "line": 342,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "activeDomainOnCore",
+            "onCore_schedulingTransparency"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:347>",
+          "line": 347,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
+            "onCore_schedulingTransparency_label_invariant"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:353>",
+          "line": 353,
+          "called": [
+            "LabelingContext",
+            "SecurityLabel",
+            "SystemState",
+            "onCore_label_monotone_smp",
+            "securityFlowsTo",
+            "visibilityLe_smp"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:360>",
+          "line": 360,
+          "called": [
+            "CNode",
+            "Capability",
+            "CoreId",
+            "IfObserver.ofLabel",
+            "LabelingContext",
+            "ObjId",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "Slot",
+            "SystemState",
+            "lookup",
+            "objectObservable",
+            "onCore_objects_cnode_slot_monotone",
+            "securityFlowsTo"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "assertBool",
+          "line": 375,
+          "called": [
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "c0",
+          "line": 382,
+          "called": [
+            "CoreId",
+            "bootCoreId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "c1",
+          "line": 383,
+          "called": [
+            "CoreId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "c2",
+          "line": 384,
+          "called": [
+            "CoreId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "lowLabel",
+          "line": 397,
+          "called": [
+            "SecurityLabel",
+            "publicLabel"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "midLabel",
+          "line": 398,
+          "called": [
+            "SecurityLabel"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "highLabel",
+          "line": 399,
+          "called": [
+            "SecurityLabel",
+            "kernelTrusted"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lowLabel_flowsTo_highLabel",
+          "line": 405,
+          "called": [
+            "highLabel",
+            "lowLabel",
+            "securityFlowsTo"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lowLabel_flowsTo_midLabel",
+          "line": 408,
+          "called": [
+            "lowLabel",
+            "midLabel",
+            "securityFlowsTo"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "midLabel_flowsTo_highLabel",
+          "line": 411,
+          "called": [
+            "highLabel",
+            "midLabel",
+            "securityFlowsTo"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "cnRoot",
+          "line": 415,
+          "called": [
+            "ObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "vsRoot",
+          "line": 416,
+          "called": [
+            "ObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "lowEndpoint",
+          "line": 417,
+          "called": [
+            "ObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "highEndpoint",
+          "line": 418,
+          "called": [
+            "ObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "lowService",
+          "line": 419,
+          "called": [
+            "ServiceId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "highService",
+          "line": 420,
+          "called": [
+            "ServiceId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "lowIrq",
+          "line": 421,
+          "called": [
+            "Irq"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "highIrq",
+          "line": 422,
+          "called": [
+            "Irq"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "lowCurrent",
+          "line": 423,
+          "called": [
+            "ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "highCurrent",
+          "line": 424,
+          "called": [
+            "ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "lowQueued",
+          "line": 425,
+          "called": [
+            "ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "highQueued",
+          "line": 426,
+          "called": [
+            "ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "midEndpoint",
+          "line": 429,
+          "called": [
+            "ObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "probeCNode",
+          "line": 433,
+          "called": [
+            "ObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "lowSlot",
+          "line": 434,
+          "called": [
+            "Slot",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "highSlot",
+          "line": 435,
+          "called": [
+            "Slot",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "lowSlotCap",
+          "line": 436,
+          "called": [
+            "Capability",
+            "lowEndpoint",
+            "ofList"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "highSlotCap",
+          "line": 438,
+          "called": [
+            "Capability",
+            "highEndpoint",
+            "ofList"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "probeCNodeValue",
+          "line": 441,
+          "called": [
+            "CNode",
+            "highSlot",
+            "highSlotCap",
+            "lowSlot",
+            "lowSlotCap",
+            "ofListWF"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rootCNodeValue",
+          "line": 454,
+          "called": [
+            "CNode",
+            "ofListWF"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rootVSpaceValue",
+          "line": 461,
+          "called": [
+            "RHTable.empty",
+            "VSpaceRoot"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "lowPage",
+          "line": 464,
+          "called": [
+            "PAddr",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "highPage",
+          "line": 465,
+          "called": [
+            "PAddr",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "unownedPage",
+          "line": 466,
+          "called": [
+            "PAddr",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "lowDomain",
+          "line": 467,
+          "called": [
+            "DomainId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "highDomain",
+          "line": 468,
+          "called": [
+            "DomainId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "probeLabeling",
+          "line": 477,
+          "called": [
+            "LabelingContext",
+            "highCurrent",
+            "highEndpoint",
+            "highLabel",
+            "highQueued",
+            "highService",
+            "lowLabel",
+            "midEndpoint",
+            "midLabel",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "probeLabelingWithMemory",
+          "line": 498,
+          "called": [
+            "LabelingContext",
+            "highDomain",
+            "highLabel",
+            "highPage",
+            "lowDomain",
+            "lowLabel",
+            "lowPage",
+            "none",
+            "probeLabeling"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "mkTcb",
+          "line": 507,
+          "called": [
+            "CoreId",
+            "TCB",
+            "cnRoot",
+            "ofNat",
+            "vsRoot"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "mkServiceEntry",
+          "line": 512,
+          "called": [
+            "ObjId",
+            "ServiceGraphEntry",
+            "ServiceId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "probeState",
+          "line": 530,
+          "called": [
+            "SystemState",
+            "build",
+            "c0",
+            "c1",
+            "cnRoot",
+            "empty",
+            "highCurrent",
+            "highEndpoint",
+            "highIrq",
+            "highQueued",
+            "highService",
+            "lowCurrent",
+            "lowEndpoint",
+            "lowIrq",
+            "lowQueued",
+            "lowService",
+            "midEndpoint",
+            "mkServiceEntry",
+            "mkTcb",
+            "none",
+            "ofList",
+            "probeCNode",
+            "probeCNodeValue",
+            "rootCNodeValue",
+            "rootVSpaceValue",
+            "setCurrentOnCore",
+            "setRunQueueOnCore",
+            "toObjId",
+            "vsRoot",
+            "withIrqHandler",
+            "withObject",
+            "withService"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "lowObserver",
+          "line": 554,
+          "called": [
+            "IfObserver",
+            "IfObserver.ofLabel",
+            "lowLabel"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "midObserver",
+          "line": 555,
+          "called": [
+            "IfObserver",
+            "IfObserver.ofLabel",
+            "midLabel"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "highObserver",
+          "line": 556,
+          "called": [
+            "IfObserver",
+            "IfObserver.ofLabel",
+            "highLabel"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "probeState_holds_probeCNode",
+          "line": 562,
+          "called": [
+            "probeCNode",
+            "probeCNodeValue"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lowEndpoint_mem_lowObjectIndex",
+          "line": 569,
+          "called": [
+            "IfObserver.ofLabel",
+            "lowEndpoint",
+            "lowLabel",
+            "probeLabeling",
+            "probeState",
+            "projectObjectIndex"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "cnodeSlotThroughView",
+          "line": 577,
+          "called": [
+            "Capability",
+            "CoreId",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "Slot",
+            "lookup",
+            "none",
+            "probeCNode",
+            "probeLabeling",
+            "probeState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lowEndpoint_view_low",
+          "line": 585,
+          "called": [
+            "ObservableState.onCore",
+            "c0",
+            "lowEndpoint",
+            "lowLabel",
+            "probeLabeling",
+            "probeState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lowEndpoint_view_high",
+          "line": 592,
+          "called": [
+            "ObservableState.onCore",
+            "ObservableState.visibilityLe_objects_eq_of_not_cnode",
+            "c0",
+            "highLabel",
+            "lowEndpoint",
+            "lowEndpoint_view_low",
+            "lowLabel_flowsTo_highLabel",
+            "onCore_label_monotone",
+            "probeLabeling",
+            "probeState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpoint_not_visibilityLe_notification",
+          "line": 600,
+          "called": [
+            "Endpoint",
+            "Notification",
+            "objectVisibilityLe"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cnode_not_visibilityLe_endpoint",
+          "line": 606,
+          "called": [
+            "CNode",
+            "Endpoint",
+            "objectVisibilityLe"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "domainShiftedView",
+          "line": 615,
+          "called": [
+            "ObservableState",
+            "ObservableState.onCore",
+            "c0",
+            "lowLabel",
+            "probeLabeling",
+            "probeState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runFixtureChecks",
+          "line": 623,
+          "called": [
+            "assertBool",
+            "c0",
+            "c1",
+            "c2",
+            "cnRoot",
+            "currentOnCore",
+            "highCurrent",
+            "highEndpoint",
+            "highObserver",
+            "highQueued",
+            "highService",
+            "lowCurrent",
+            "lowEndpoint",
+            "lowLabel",
+            "lowObserver",
+            "lowQueued",
+            "mkTcb",
+            "none",
+            "objectObservable",
+            "probeCNodeValue",
+            "probeLabeling",
+            "rootCNodeValue",
+            "runQueueOnCore",
+            "securityFlowsTo",
+            "threadObservable",
+            "toList",
+            "toObjId",
+            "vsRoot",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runObserverChecks",
+          "line": 692,
+          "called": [
+            "CoreId",
+            "ObservableState.onCore",
+            "all",
+            "assertBool",
+            "bootCoreId",
+            "highLabel",
+            "lowEquivalentForObserver",
+            "lowEquivalentForObserver_refl",
+            "lowEquivalent_smp",
+            "lowEquivalent_smp_iff_forall_observer",
+            "lowLabel",
+            "lowObserver",
+            "onCore_bootCore",
+            "onCore_eq_projectStateOnCore",
+            "probeLabeling",
+            "probeState",
+            "projectState",
+            "projectStateOnCore"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runPartitionChecks",
+          "line": 721,
+          "called": [
+            "ObservableState.ext_fragments",
+            "ObservableState.onCore",
+            "all",
+            "assertBool",
+            "bootCoreId",
+            "c0",
+            "c1",
+            "c2",
+            "highCurrent",
+            "highIrq",
+            "highLabel",
+            "highQueued",
+            "highService",
+            "lowCurrent",
+            "lowEndpoint",
+            "lowIrq",
+            "lowLabel",
+            "lowQueued",
+            "lowService",
+            "none",
+            "probeLabeling",
+            "probeState",
+            "runnable"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runDecidableSliceChecks",
+          "line": 787,
+          "called": [
+            "ObservableState",
+            "ObservableState.sliceOnCore",
+            "all",
+            "assertBool",
+            "c0",
+            "c1",
+            "highLabel",
+            "lowCurrent",
+            "lowEquivalentOnCore_refl",
+            "lowEquivalentSliceOnCore",
+            "lowEquivalentSliceOnCore_of_lowEquivalentOnCore",
+            "lowLabel",
+            "lowObserver",
+            "lowQueued",
+            "perCoreSlice",
+            "perCoreSlice_erases_register_content",
+            "perCoreSlice_erases_shared_content",
+            "probeLabeling",
+            "probeState",
+            "runnable"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runIndependenceChecks",
+          "line": 832,
+          "called": [
+            "ObservableState.onCore",
+            "ObservableState.sliceOnCore",
+            "SystemState",
+            "all",
+            "assertBool",
+            "c0",
+            "c1",
+            "empty",
+            "lowLabel",
+            "lowObserver",
+            "lowQueued",
+            "ofList",
+            "onCore_machineTimer",
+            "onCore_setCurrentOnCore_ne",
+            "onCore_setRegsOnCore_ne",
+            "onCore_setReplenishQueueOnCore",
+            "probeLabeling",
+            "probeState",
+            "projectMachineRegsOnCore",
+            "setActiveDomainOnCore",
+            "setCurrentOnCore",
+            "setDomainTimeRemainingOnCore",
+            "setRegsOnCore",
+            "setReplenishQueueOnCore",
+            "setRunQueueOnCore"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runMonotonicityChecks",
+          "line": 936,
+          "called": [
+            "ObservableState.onCore",
+            "PerCoreObserver",
+            "all",
+            "assertBool",
+            "c0",
+            "c1",
+            "highCurrent",
+            "highEndpoint",
+            "highIrq",
+            "highLabel",
+            "highObserver",
+            "highQueued",
+            "highService",
+            "length",
+            "lowEndpoint",
+            "lowIrq",
+            "lowLabel",
+            "lowLabel_flowsTo_highLabel",
+            "lowObserver",
+            "lowQueued",
+            "lowService",
+            "none",
+            "objectObservable",
+            "observerView_label_monotone",
+            "onCore_label_monotone",
+            "probeLabeling",
+            "probeState",
+            "runnable",
+            "securityFlowsTo",
+            "serviceObservable",
+            "threadObservable",
+            "view",
+            "visibilityLe"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runSchedulingTransparencyChecks",
+          "line": 1009,
+          "called": [
+            "ObservableState.onCore",
+            "SystemState",
+            "activeDomainOnCore",
+            "all",
+            "assertBool",
+            "bootCoreId",
+            "c0",
+            "c1",
+            "domainScheduleIndexOnCore",
+            "domainTimeRemainingOnCore",
+            "highLabel",
+            "lowLabel",
+            "onCore_schedulingTransparency",
+            "onCore_schedulingTransparency_label_invariant",
+            "probeLabeling",
+            "probeState",
+            "setActiveDomainOnCore",
+            "setDomainScheduleIndexOnCore"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runCrossCoreInvisibilityChecks",
+          "line": 1053,
+          "called": [
+            "ObservableState.onCore",
+            "ObservableState.sliceOnCore",
+            "SystemState",
+            "all",
+            "assertBool",
+            "c0",
+            "c1",
+            "c2",
+            "empty",
+            "highLabel",
+            "highQueued",
+            "lowLabel",
+            "none",
+            "probeLabeling",
+            "probeState",
+            "setCurrentOnCore",
+            "setRunQueueOnCore"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runCNodeRedactionChecks",
+          "line": 1087,
+          "called": [
+            "IfObserver.ofLabel",
+            "ObservableState.onCore",
+            "all",
+            "assertBool",
+            "capTargetObservable",
+            "capTargetObservable_monotone",
+            "cnodeSlotThroughView",
+            "highEndpoint",
+            "highLabel",
+            "highObserver",
+            "highSlot",
+            "highSlotCap",
+            "lookup",
+            "lowEndpoint",
+            "lowLabel",
+            "lowLabel_flowsTo_highLabel",
+            "lowObserver",
+            "lowSlot",
+            "lowSlotCap",
+            "midLabel",
+            "none",
+            "objectObservable",
+            "onCore_objects_cnode",
+            "onCore_objects_cnode_slot_monotone",
+            "probeCNode",
+            "probeCNodeValue",
+            "probeLabeling",
+            "probeState",
+            "probeState_holds_probeCNode",
+            "projectCNode",
+            "projectCNode_lookup_monotone",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runMemoryProjectionChecks",
+          "line": 1176,
+          "called": [
+            "ObservableState.onCore",
+            "all",
+            "assertBool",
+            "highLabel",
+            "highObserver",
+            "highPage",
+            "lowLabel",
+            "lowLabel_flowsTo_highLabel",
+            "lowObserver",
+            "lowPage",
+            "memoryAddressObservable",
+            "memoryAddressObservable_monotone",
+            "none",
+            "onCore_label_monotone",
+            "probeLabeling",
+            "probeLabelingWithMemory",
+            "probeState",
+            "unownedPage",
+            "visibilityLe"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runServiceRegistryChecks",
+          "line": 1219,
+          "called": [
+            "ObservableState.onCore",
+            "all",
+            "assertBool",
+            "highEndpoint",
+            "highLabel",
+            "highService",
+            "lowEndpoint",
+            "lowLabel",
+            "lowService",
+            "mkServiceEntry",
+            "none",
+            "probeLabeling",
+            "probeState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runClearanceChainChecks",
+          "line": 1252,
+          "called": [
+            "ObservableState.onCore",
+            "ObservableState.visibilityLe_mem_objectIndex",
+            "ObservableState.visibilityLe_refl",
+            "ObservableState.visibilityLe_trans",
+            "all",
+            "assertBool",
+            "c0",
+            "c1",
+            "highLabel",
+            "highObserver",
+            "length",
+            "lowEndpoint",
+            "lowEndpoint_mem_lowObjectIndex",
+            "lowLabel",
+            "lowLabel_flowsTo_highLabel",
+            "lowLabel_flowsTo_midLabel",
+            "lowObserver",
+            "midEndpoint",
+            "midLabel",
+            "midLabel_flowsTo_highLabel",
+            "midObserver",
+            "objectObservable",
+            "onCore_label_monotone",
+            "onCore_label_monotone_smp",
+            "probeLabeling",
+            "probeState",
+            "runnable",
+            "securityFlowsTo",
+            "visibilityLe",
+            "visibilityLe_smp"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runFinerCheckChecks",
+          "line": 1311,
+          "called": [
+            "ObservableState.sliceOnCore",
+            "RegisterFile",
+            "SystemState",
+            "all",
+            "assertBool",
+            "c0",
+            "lowEquivalentOnCore_refl",
+            "lowEquivalentSliceOnCore",
+            "lowEquivalentSliceOnCoreCheckWithRegs",
+            "lowEquivalentSliceOnCoreCheckWithRegs_le_slice",
+            "lowEquivalentSliceOnCoreCheckWithRegs_of_lowEquivalentOnCore",
+            "lowLabel",
+            "lowObserver",
+            "machineRegs_beq_not_injective",
+            "probeLabeling",
+            "probeState",
+            "setRegsOnCore"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runObjectContentOrderChecks",
+          "line": 1344,
+          "called": [
+            "CNode",
+            "Endpoint",
+            "Notification",
+            "ObservableState.eq_of_visibilityLe_antisymm",
+            "ObservableState.onCore",
+            "ObservableState.visibilityLe_objects_eq_of_not_cnode",
+            "ObservableState.visibilityLe_refl",
+            "all",
+            "assertBool",
+            "c0",
+            "cnodeSlotThroughView",
+            "cnodeVisibilityLe",
+            "cnode_not_visibilityLe_endpoint",
+            "endpoint_not_visibilityLe_notification",
+            "highLabel",
+            "highObserver",
+            "highSlot",
+            "highSlotCap",
+            "lowEndpoint",
+            "lowEndpoint_view_high",
+            "lowLabel",
+            "lowLabel_flowsTo_highLabel",
+            "lowObserver",
+            "lowSlot",
+            "lowSlotCap",
+            "none",
+            "objectVisibilityLe",
+            "onCore_label_monotone",
+            "probeCNodeValue",
+            "probeLabeling",
+            "probeState",
+            "projectCNode",
+            "projectCNode_visibilityLe_monotone",
+            "runnable"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runSmpInformationFlowChecks",
+          "line": 1412,
+          "called": [
+            "runCNodeRedactionChecks",
+            "runClearanceChainChecks",
+            "runCrossCoreInvisibilityChecks",
+            "runDecidableSliceChecks",
+            "runFinerCheckChecks",
+            "runFixtureChecks",
+            "runIndependenceChecks",
+            "runMemoryProjectionChecks",
+            "runMonotonicityChecks",
+            "runObjectContentOrderChecks",
+            "runObserverChecks",
+            "runPartitionChecks",
+            "runSchedulingTransparencyChecks",
+            "runServiceRegistryChecks"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "main",
+          "line": 1434,
+          "called": [
+            "runSmpInformationFlowChecks"
+          ]
+        }
+      ]
+    },
+    {
       "module": "tests.SmpInvariantSuite",
       "path": "tests/SmpInvariantSuite.lean",
       "declaration_count": 41,
@@ -198209,7 +201403,7 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing.SmpSurfaceAnchors",
-          "line": 39,
+          "line": 40,
           "called": [
             "LockPrimitiveCategory",
             "LockPrimitiveTheorem",
@@ -198313,18 +201507,10 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:220>",
-          "line": 220,
-          "called": [
-            "staticTicketLockPoolSize"
-          ]
-        },
-        {
-          "kind": "example",
           "name": "<anonymous:example:221>",
           "line": 221,
           "called": [
-            "staticRwLockPoolSize"
+            "staticTicketLockPoolSize"
           ]
         },
         {
@@ -198332,7 +201518,7 @@
           "name": "<anonymous:example:222>",
           "line": 222,
           "called": [
-            "staticTicketLockPoolSize"
+            "staticRwLockPoolSize"
           ]
         },
         {
@@ -198340,30 +201526,29 @@
           "name": "<anonymous:example:223>",
           "line": 223,
           "called": [
+            "staticTicketLockPoolSize"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:224>",
+          "line": 224,
+          "called": [
             "staticRwLockPoolSize"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:227>",
-          "line": 227,
+          "name": "<anonymous:example:228>",
+          "line": 228,
           "called": [
             "length"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:229>",
-          "line": 229,
-          "called": [
-            "filter",
-            "length"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:234>",
-          "line": 234,
+          "name": "<anonymous:example:230>",
+          "line": 230,
           "called": [
             "filter",
             "length"
@@ -198371,8 +201556,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:239>",
-          "line": 239,
+          "name": "<anonymous:example:235>",
+          "line": 235,
           "called": [
             "filter",
             "length"
@@ -198380,8 +201565,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:244>",
-          "line": 244,
+          "name": "<anonymous:example:240>",
+          "line": 240,
           "called": [
             "filter",
             "length"
@@ -198389,40 +201574,49 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:254>",
-          "line": 254,
+          "name": "<anonymous:example:245>",
+          "line": 245,
+          "called": [
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:255>",
+          "line": 255,
           "called": [
             "peekTicketLockNextTicket"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:258>",
-          "line": 258,
+          "name": "<anonymous:example:259>",
+          "line": 259,
           "called": [
             "peekTicketLockServing"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:262>",
-          "line": 262,
+          "name": "<anonymous:example:263>",
+          "line": 263,
           "called": [
             "peekTicketLockNextTicket"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:265>",
-          "line": 265,
+          "name": "<anonymous:example:266>",
+          "line": 266,
           "called": [
             "peekTicketLockServing"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:269>",
-          "line": 269,
+          "name": "<anonymous:example:270>",
+          "line": 270,
           "called": [
             "peekTicketLockNextTicket",
             "peekTicketLockServing"
@@ -198431,7 +201625,7 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 280,
+          "line": 281,
           "called": [
             "pure",
             "throw"
@@ -198440,8 +201634,16 @@
         {
           "kind": "def",
           "name": "runSmpSurfaceAnchorChecks",
-          "line": 297,
+          "line": 298,
           "called": [
+            "CoreId",
+            "LabelingContext",
+            "ObservableState",
+            "ObservableState.ofFragments",
+            "ObservableState.ofFragments_eta",
+            "ObservableState.onCore",
+            "SecurityLabel",
+            "SystemState",
             "acquireReadLock_eq_ffi",
             "acquireTicketLock_eq_ffi",
             "acquireWriteLock_eq_ffi",
@@ -198451,15 +201653,21 @@
             "mkRwLockHandle",
             "mkTicketLockHandle",
             "numCores",
+            "onCore_isProjection_of_globalProjection",
+            "onCore_label_monotone",
+            "onCore_label_monotone_smp",
+            "onCore_perCore_independence",
             "peekTicketLockEncoding_roundtrip_u32_masked",
             "peekTicketLockHolder_eq_ffi",
             "peekTicketLockNextTicket",
             "peekTicketLockNextTicket_is_high32",
             "peekTicketLockServing",
             "peekTicketLockServing_is_low32",
+            "perCoreFragment",
             "releaseReadLock_eq_ffi",
             "releaseTicketLock_eq_ffi",
             "releaseWriteLock_eq_ffi",
+            "sharedFragment",
             "snapshotRwLock_eq_ffi",
             "staticRwLockPoolSize",
             "staticTicketLockPoolSize",
@@ -198472,7 +201680,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 446,
+          "line": 473,
           "called": [
             "runSmpSurfaceAnchorChecks"
           ]

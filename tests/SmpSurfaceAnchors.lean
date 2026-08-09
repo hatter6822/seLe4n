@@ -16,6 +16,7 @@ import SeLe4n.Kernel.Concurrency.Locks.RwLock
 import SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement
 import SeLe4n.Kernel.Concurrency.LockSet
 import SeLe4n.Platform.FFI
+import SeLe4n.Kernel.InformationFlow.ObservableStatePerCore
 
 /-!
 # WS-SM SM2.D.6 — Verified-lock-primitive surface anchors
@@ -438,8 +439,34 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
   assertBool "SM3.E inventory has 111 entries"
     (decide (SeLe4n.Kernel.Concurrency.serializabilityTheorems.length = 111))
 
+  IO.println "--- §8 WS-SM SM8.A — per-core observable-state headline surface ---"
+  -- The plan (§5 SM8.E.1) names this file as the SM8 anchor home.  The SM8.A
+  -- *exhaustive* per-symbol anchors live in `tests/SmpInformationFlowSuite.lean`
+  -- next to the runtime groups that exercise them; what is pinned here is the
+  -- phase's headline surface, so a rename that slipped past the dedicated suite
+  -- still fails this file.  Elaboration-time only — the checks above are the
+  -- runtime part of this suite.
+  -- Assertion labels below name the *semantics*, not the phase: the Tier-3
+  -- companion greps them from a shell string, where the identifier-naming
+  -- gate reads a phase code as code rather than as prose.  The phase is
+  -- named in the comments above, which are exempt.
+  assertBool "per-core observer surface resolves (observer, partition, decidability)"
+    (have _o : SeLe4n.Kernel.LabelingContext → SeLe4n.Kernel.Concurrency.CoreId →
+        SeLe4n.Kernel.SecurityLabel → SeLe4n.Model.SystemState → SeLe4n.Kernel.ObservableState :=
+      SeLe4n.Kernel.ObservableState.onCore
+     have _f : ∀ v : SeLe4n.Kernel.ObservableState,
+        SeLe4n.Kernel.ObservableState.ofFragments v.sharedFragment v.perCoreFragment = v :=
+      SeLe4n.Kernel.ObservableState.ofFragments_eta
+     true)
+  assertBool "per-core independence + clearance monotonicity headlines resolve"
+    (have _i := @SeLe4n.Kernel.onCore_perCore_independence
+     have _m := @SeLe4n.Kernel.onCore_label_monotone
+     have _s := @SeLe4n.Kernel.onCore_label_monotone_smp
+     have _p := @SeLe4n.Kernel.onCore_isProjection_of_globalProjection
+     true)
+
   IO.println "============================================================"
-  IO.println "All SM2.D + SM3.E.8 surface anchor checks PASS."
+  IO.println "All SM2.D + SM3.E.8 + SM8.A surface anchor checks PASS."
 
 end SeLe4n.Testing.SmpSurfaceAnchors
 
