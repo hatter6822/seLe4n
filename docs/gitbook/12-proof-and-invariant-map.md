@@ -2446,6 +2446,59 @@ objects outside the observer's clearance are filtered out by projection.
 - `InformationFlow/Invariant/Operations.lean` — per-operation NI proofs
 - `InformationFlow/Invariant/Composition.lean` — trace-level IF-M4
 
+### Layer 3 under SMP — the per-core observer (WS-SM SM4.D + SM8.A)
+
+Two modules extend Layer 3 from a single observer to a per-core one.
+
+`InformationFlow/ProjectionPerCore.lean` (WS-SM SM4.D) lifts the six
+scheduler-reading projections (`projectRunnable`, `projectCurrent`,
+`projectActiveDomain`, `projectDomainTimeRemaining`,
+`projectDomainScheduleIndex`, `projectMachineRegs`) to `…OnCore c` forms
+and aggregates them into `projectStateOnCore`, with the per-core
+low-equivalence `lowEquivalentOnCore` and its ∀-core form
+`lowEquivalent_smp`.
+
+`InformationFlow/ObservableStatePerCore.lean` (WS-SM SM8.A, v0.33.1) adds
+the observer itself and what bounds it:
+
+- `PerCoreObserver` — the `(core, clearance)` pair as a value, and
+  `ObservableState.onCore ctx c L s` as the state it sees.  Defined *as*
+  `projectStateOnCore ctx ⟨L⟩ s c`, so there is one projection function
+  and the two modules cannot drift; `onCore_bootCore` is `rfl`, tying
+  every SM8 theorem at `bootCoreId` to the live single-core
+  `projectState`.
+- `SharedObservableFragment` / `PerCoreObservableFragment` — the seven
+  shared and six per-core components, with `ObservableState.ext_fragments`
+  making the partition **total**: a fourteenth `ObservableState` field
+  registered in neither fragment fails to compile.
+- `onCore_isProjection_of_globalProjection` — the per-core observer learns
+  exactly the global projection plus its own core's six slots.
+- `onCore_perCore_independence` — the read set: six shared state
+  components plus the observer core's five scheduler slots and its
+  register bank, and nothing else.  Twelve corollaries frame the
+  cross-core scheduler and register-bank writes, and the components
+  outside the read set entirely (replenishment queue, timeout log,
+  `scThreadIndex`, the machine timer, the SM7.C `perCoreTlb` view).
+- `onCore_label_monotone` over `ObservableState.visibilityLe` — raising
+  the observer's clearance can only widen what it sees.  A *visibility*
+  order rather than component equality, because CNode slot redaction is
+  the only observer-dependent part of object projection
+  (`projectKernelObject_observer_independent_off_cnode`) and it is
+  monotone (`projectCNode_lookup_monotone`).
+- `onCore_decidable` — decides a strictly weaker *slice* relation, since
+  observable-state equality is not decidable (five components are
+  functions over unbounded domains; `RegisterFile`'s structural `BEq` is
+  provably not lawful).  The strictness is proved, not asserted:
+  `perCoreSlice_erases_register_content` /
+  `perCoreSlice_erases_shared_content`.
+- `onCore_schedulingTransparency` — the accepted covert channel CC-1
+  restated per core; under SMP the channel exists once per core.
+
+Runtime coverage: `tests/SmpInformationFlowSuite.lean` (68 assertions
+across 8 groups on a four-thread / four-core fixture, each group carrying
+a load-bearing negative).  Per-core NI *preservation* across transitions
+(`crossCoreNonInterference`) is WS-SM SM8.B.
+
 ## 32. WS-Q3 IntermediateState formalization (v0.17.9)
 
 WS-Q3 introduces the builder-phase state model: a dependently-typed wrapper

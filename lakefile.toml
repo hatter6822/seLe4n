@@ -5,7 +5,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 
 name = "seLe4n"
-version = "0.33.0"
+version = "0.33.1"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
@@ -600,3 +600,16 @@ root = "tests.SmpCacheMaintenanceSuite"
 [[lean_exe]]
 name = "vspace_capability_binding_suite"
 root = "tests.VSpaceCapabilityBindingSuite"
+
+# WS-SM SM8.A: per-core observable state suite — the SMP information-flow
+# observer `(core, label)` and the state it observes.  Runs a four-thread /
+# four-core fixture under a non-trivial labeling (core 0 low, core 1 high) and
+# decides: the shared / per-core field partition, the decidable slice (with its
+# strictness witnesses), per-core independence under cross-core scheduler and
+# register-bank writes — including the load-bearing negative that the same
+# write on the observer's own core IS visible — clearance monotonicity with
+# per-component strictness, per-core scheduling transparency (CC-1), and the
+# cross-core invisibility of a purely high remote reshuffle.
+[[lean_exe]]
+name = "smp_information_flow_suite"
+root = "tests.SmpInformationFlowSuite"

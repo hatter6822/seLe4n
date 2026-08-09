@@ -1,3 +1,102 @@
+## v0.33.1 — SM8.A: the per-core observer, and what it is allowed to see
+
+WS-SM Phase SM8 opens. SM8.A mounts the SMP information-flow *observer* —
+the pair `(c, L)` of a core and a security clearance (plan Definition
+3.1.1) — and the state that observer sees (`ObservableState.onCore`,
+Definition 3.2.1), in the new staged module
+`SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean`.
+
+SM4.D had already lifted the six scheduler-reading IF-M1 projections to
+per-core forms and aggregated them into `projectStateOnCore`. That is the
+(core, observer) projection in *function* form; SM8.A supplies the
+structure around it that SM8.B's `crossCoreNonInterference` needs, and
+`ObservableState.onCore ctx bootCoreId L s` is *definitionally* the live
+single-core `projectState`, so nothing on the existing non-interference
+surface moves.
+
+**The field partition, made total (SM8.A.2).** `ObservableState`'s
+thirteen components split into seven the observer sees identically from
+every core and six restricted to core `c`. The split is not a comment:
+`ObservableState.ext_fragments` rebuilds an observable state from the two
+fragments, so a fourteenth field registered in neither of them leaves that
+theorem unprovable. The plan's §7 risk "per-core projection missing a
+field" is now a build error rather than a review checklist item. The
+headline `onCore_isProjection_of_globalProjection` states the factoring:
+the per-core observer learns exactly the global projection plus core `c`'s
+six slots, and `onCore_sharedFragment_core_independent` states the
+orthogonality of the two observer dimensions — the core selects scheduler
+slots, the label selects entities.
+
+**A decidable fragment, and honesty about its limits (SM8.A.3).**
+Observable-state equality is not decidable: five components are functions
+over unbounded domains, and `machineRegs` carries a `RegisterFile` whose
+structural `BEq` is provably not lawful (`RegisterFile.not_lawfulBEq`).
+The `onCore_decidable` instance therefore decides a *slice* — the five
+`DecidableEq` per-core scheduler components plus the register bank's
+observability — and comes with both halves of its own limitation stated
+as theorems: `lowEquivalentSliceOnCore_of_lowEquivalentOnCore` (equal
+views ⇒ equal slices, so a decided mismatch is a genuine observable
+difference) and `perCoreSlice_erases_register_content` /
+`perCoreSlice_erases_shared_content` (the converse fails, on both halves
+of the partition). A caller cannot mistake the decision procedure for a
+decision about the observable state.
+
+**Per-core independence, without the boot core (SM8.A.4).**
+`onCore_perCore_independence` characterises the read set of the per-core
+observable state: six shared state components plus core `c`'s five
+scheduler slots and its register bank — and nothing else. This does *not*
+follow from the SM4.D `projectStateOnCore_congr`, whose hypothesis is
+equality of the whole global projection and therefore drags the **boot**
+core's slots in; a cross-core transition on core `c'` generally breaks
+that hypothesis when `c'` is the boot core, which is exactly the case
+SM8.B has to reason about. Twelve corollaries instantiate it: the six
+per-core scheduler setters and the register bank at `c ≠ c'`, and the
+components outside the read set entirely (replenishment queue, timeout
+log, `scThreadIndex`, the machine timer, the SM7.C per-core TLB view) —
+invisible on *every* core, including the one written.
+
+**Clearance monotonicity (SM8.A.5).** `onCore_label_monotone`: raising the
+observer's clearance can only widen what it sees, proved gate by gate from
+`securityFlowsTo_trans` over a new `ObservableState.visibilityLe` preorder.
+Deliberately a *visibility* order and not component equality, because a
+wider clearance may legitimately reveal more of an object it can already
+see: `projectCNode_lookup_monotone` proves a CNode slot visible at the
+narrower clearance survives at the wider one, and
+`projectKernelObject_observer_independent_off_cnode` proves the CNode arm
+is the only one where the observer is read at all. The four scheduling
+components move in neither direction —
+`onCore_schedulingTransparency` restates accepted covert channel CC-1 per
+core, which under SMP means one copy of the channel per core.
+
+**A RobinHood gap closed.** `filter_get_subset` and `filter_get_pred` gave
+only the left-to-right half of the filter-lookup characterisation, so a
+*monotone* predicate change could not be transported through a filter at
+all. `RHTable.filter_getElem?_of_pred` supplies the forward direction and
+`RHTable.filter_getElem?_iff` states the characterisation as the `iff`, so
+a future consumer cannot pick up one half and hand-roll the other. The
+CNode slot monotonicity above is the first consumer.
+
+**Tests (SM8.A.6).** New `tests/SmpInformationFlowSuite.lean`
+(`smp_information_flow_suite`, 68 runtime assertions across 8 groups,
+plus 83 `#check` surface anchors and 15 elaboration-time examples), Tier-2
+and Tier-3 wired. The fixture is four threads on four cores under a
+non-trivial labeling — core 0 runs low threads, core 1 runs high ones,
+with low and high endpoints, services and IRQ handlers shared — and every
+group carries a load-bearing negative. §3.4 shows the *same* write applied
+to the observer's own core does change its view, so the `c ≠ c'`
+hypothesis of the cross-core frames is necessary rather than decorative;
+§3.5 shows the high observer strictly outsees the low one on six separate
+components, so monotonicity is not equality in disguise; §3.7 shows a
+purely high remote reshuffle is invisible to the low observer on every
+core while the high observer's own view does move.
+
+Staged-only module count 54 → 55. Zero `sorry`/`axiom` — every SM8.A
+theorem depends only on `propext` / `Quot.sound` / `Classical.choice`.
+Theorems and tests only: no transition changed, and the golden trace is
+byte-identical.
+
+Refs: docs/planning/SMP_INFORMATION_FLOW_PLAN.md §5 (SM8.A)
+
 ## v0.33.0 — SM7.F closed for real: a core now caches what it accessed
 
 A minor bump, because the per-core TLB model stops being a model of one

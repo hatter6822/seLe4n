@@ -482,6 +482,17 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyNI
 -- single-core teardown/return projection obligations that the production
 -- closure forms (`suspendThread_preserves_projection` G3/G5) document.
 import SeLe4n.Kernel.IPC.CrossCore.CancellationNI
+-- WS-SM SM8.A: the per-core observable state — the SMP information-flow
+-- observer `(c, L)` (plan Definition 3.1.1) and the state it observes
+-- (`ObservableState.onCore`, Definition 3.2.1), layered on the SM4.D
+-- per-core projections.  Supplies the shared/per-core field partition with
+-- its totality tripwire (`ObservableState.ext_fragments`), the decidable
+-- slice + its strictness witnesses, the boot-core-free read-set
+-- characterisation `onCore_perCore_independence` (the cross-core frames the
+-- SM8.B non-interference proofs consume), and clearance monotonicity
+-- `onCore_label_monotone`.  Reachability: staged at SM8.A; SM8.B's
+-- `crossCoreNonInterference` is the first consumer.
+import SeLe4n.Kernel.InformationFlow.ObservableStatePerCore
 -- WS-SM SM6.A: the cross-core-aware syscall dispatch entry —
 -- `syscallDispatchCrossCoreEntry` (`@[export lean_syscall_dispatch_cross_core]`).
 -- Runs the verified `syscallDispatchFromAbi` atomically via `modifyGetKernelState`,

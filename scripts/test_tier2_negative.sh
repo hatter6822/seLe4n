@@ -434,4 +434,20 @@ run_check_with_timeout "TRACE" lake exe smp_cache_maintenance_suite
 # in dispatch and only dispatch can witness it.
 run_check_with_timeout "TRACE" lake exe vspace_capability_binding_suite
 
+# WS-SM SM8.A — per-core observable state.  Computes the SMP information-flow
+# observer's view `(core, label)` on a four-thread / four-core fixture under a
+# non-trivial labeling (core 0 runs low threads, core 1 runs high ones) and
+# decides every decidable claim: fixture non-vacuity, the boot-core bridge to
+# the live `projectState`, the shared / per-core field partition (per-core
+# components restricted to their core, shared components identical on every
+# core), the decidable slice with its two strictness witnesses, per-core
+# independence under cross-core current / run-queue / domain / register-bank
+# writes and the read-set-excluded fields (replenishment queue, machine timer)
+# — including the load-bearing negative that the SAME write on the observer's
+# own core IS visible — clearance monotonicity with per-component strictness
+# (current, run queue, object index, services, IRQ routing, object visibility),
+# per-core scheduling transparency (accepted covert channel CC-1, one copy per
+# core), and the cross-core invisibility of a purely high remote reshuffle.
+run_check_with_timeout "TRACE" lake exe smp_information_flow_suite
+
 finalize_report

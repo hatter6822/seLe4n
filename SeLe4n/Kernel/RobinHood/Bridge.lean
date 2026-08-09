@@ -956,6 +956,36 @@ theorem RHTable.filter_get_pred [BEq α] [Hashable α] [LawfulBEq α]
     have hNone := filter_fold_absent_by_pred t f k hExt hSkip
     rw [hNone] at hGet; exact absurd hGet (by simp)
 
+/-- WS-SM SM8.A: the **forward** half of the filter-lookup characterisation —
+    an entry the predicate accepts survives the filter.
+
+    Together with `filter_get_subset` (the filter adds nothing) and
+    `filter_get_pred` (the filter keeps only accepted entries) this completes
+    `(t.filter f).get? k = some v ↔ t.get? k = some v ∧ f k v = true`; the two
+    existing lemmas gave only the left-to-right direction, so a *monotone*
+    predicate change could not be transported through the filter.  The SM8.A
+    label-monotonicity proof for CNode slot projections is the first consumer:
+    widening the observer's clearance widens `capTargetObservable`, and a slot
+    the narrower filter kept must still be present under the wider one. -/
+theorem RHTable.filter_getElem?_of_pred [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (f : α → β → Bool) (k : α) (v : β)
+    (hExt : t.invExt)
+    (hGet : t.get? k = some v) (hf : f k v = true) :
+    (t.filter f).get? k = some v := by
+  have ⟨p, hp, e, hSlotP, hKeyE, hValE⟩ := RHTable.get_some_slot_entry t k v hGet
+  have hfE : f e.key e.value = true := by rw [eq_of_beq hKeyE, hValE]; exact hf
+  exact filter_fold_present t f k v hExt p hp e hSlotP hKeyE hValE hfE hExt.2.2.1
+
+/-- WS-SM SM8.A: the filter-lookup characterisation, both directions.  Stated
+    as the `iff` so a consumer cannot pick up only the half it happens to need
+    and re-derive the other by hand. -/
+theorem RHTable.filter_getElem?_iff [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (f : α → β → Bool) (k : α) (v : β)
+    (hExt : t.invExt) :
+    (t.filter f).get? k = some v ↔ (t.get? k = some v ∧ f k v = true) :=
+  ⟨fun h => ⟨RHTable.filter_get_subset t f k v hExt h, RHTable.filter_get_pred t f k v hExt h⟩,
+   fun h => RHTable.filter_getElem?_of_pred t f k v hExt h.1 h.2⟩
+
 /-- Filter idempotence at a key: filtering twice gives the same lookup as filtering once. -/
 theorem RHTable.filter_filter_getElem? [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (f : α → β → Bool) (k : α)

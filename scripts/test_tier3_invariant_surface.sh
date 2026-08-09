@@ -1334,6 +1334,79 @@ run_check "INVARIANT" rg -n '^theorem retypeInitiatorDrain_drained' SeLe4n/Kerne
 run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectWithCleanupShootdownPerCore_preserves_tlbInvalidationConsistent_perCore' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
 run_check "INVARIANT" rg -n '^theorem lifecycleRetypeWithCleanupShootdownPerCore_preserves_tlbInvalidationConsistent_perCore' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
 
+# ============================================================================
+# WS-SM SM8.A — Per-core observable state
+#
+# The SMP information-flow observer `(core, label)` and the state it observes.
+# These anchors pin: the observer and its view, the shared / per-core field
+# partition together with its totality tripwire, the decidable slice and both
+# strictness witnesses (the slice must never be mistaken for observable
+# equality), the boot-core-free read-set characterisation and its cross-core
+# frames, clearance monotonicity with its gate lemmas, the RobinHood filter
+# characterisation SM8.A.5 completed, and the suite / staged registrations.
+# ============================================================================
+# SM8.A.1 the observer + its view + the boot-core bridge to the live surface.
+run_check "INVARIANT" rg -n '^def IfObserver.ofLabel' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^structure PerCoreObserver' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^def ObservableState.onCore' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_eq_projectStateOnCore' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_bootCore' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^def lowEquivalentForObserver' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem lowEquivalent_smp_iff_forall_observer' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+# SM8.A.2 the field partition + its totality tripwire + the headline projection.
+run_check "INVARIANT" rg -n '^structure SharedObservableFragment' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^structure PerCoreObservableFragment' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem ObservableState.ext_fragments' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_sharedFragment_eq_globalProjection' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_sharedFragment_determined_by_globalProjection' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_sharedFragment_core_independent' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_isProjection_of_globalProjection' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+# SM8.A.3 the decidable slice — the instance AND both strictness witnesses.
+# The witnesses are load-bearing: without them a reader could take the decision
+# procedure for a decision about observable-state equality, which it is not
+# (five ObservableState components are functions over unbounded domains).
+run_check "INVARIANT" rg -n '^structure PerCoreObservableSlice' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^def lowEquivalentSliceOnCore' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^instance onCore_decidable' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem lowEquivalentSliceOnCore_of_lowEquivalentOnCore' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem perCoreSlice_erases_register_content' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem perCoreSlice_erases_shared_content' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+# SM8.A.4 the read-set characterisation + the cross-core frames + the excluded
+# fields (the machine timer's exclusion restated per core).
+run_check "INVARIANT" rg -n '^theorem onCore_perCore_independence' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_setCurrentOnCore_ne' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_setRunQueueOnCore_ne' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_setActiveDomainOnCore_ne' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_setRegsOnCore_ne' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_setReplenishQueueOnCore' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_machineTimer' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_perCoreTlb' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+# SM8.A.5 gate monotonicity + the visibility order + the CC-1 restatement.
+run_check "INVARIANT" rg -n '^theorem objectObservable_monotone' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem threadObservable_monotone' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem serviceObservable_monotone' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem capTargetObservable_monotone' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem memoryAddressObservable_monotone' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem projectCNode_lookup_monotone' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem projectKernelObject_observer_independent_off_cnode' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_objects_label_invariant_off_cnode' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^def ObservableState.visibilityLe' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_label_monotone' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem observerView_label_monotone' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_schedulingTransparency' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_label_monotone_strict' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+# SM8.A.5 substrate: the RobinHood filter-lookup characterisation completed.
+# `filter_get_subset` + `filter_get_pred` gave only one direction, so a monotone
+# predicate change could not be transported through a CNode's slot filter.
+run_check "INVARIANT" rg -n '^theorem RHTable.filter_getElem\?_of_pred' SeLe4n/Kernel/RobinHood/Bridge.lean
+run_check "INVARIANT" rg -n '^theorem RHTable.filter_getElem\?_iff' SeLe4n/Kernel/RobinHood/Bridge.lean
+# SM8.A.6 suite + module registrations (Tier-2 runner, lakefile, staged anchor).
+run_check "INVARIANT" rg -n '^def runSmpInformationFlowChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^run_check(_with_timeout)? "TRACE" lake exe smp_information_flow_suite' scripts/test_tier2_negative.sh
+run_check "INVARIANT" rg -n '^name = "smp_information_flow_suite"' lakefile.toml
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.InformationFlow\.ObservableStatePerCore' SeLe4n/Platform/Staged.lean
+run_check "INVARIANT" rg -n '^SeLe4n\.Kernel\.InformationFlow\.ObservableStatePerCore' scripts/staged_module_allowlist.txt
+
 # WS-H12d IPC message payload bounds anchors — predicate definitions + enforcement + theorems.
 run_check "INVARIANT" rg -n '^def maxMessageRegisters' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^def maxExtraCaps' SeLe4n/Model/Object/Types.lean
