@@ -28,6 +28,7 @@
 | Русский | Russian | [ПРОЧТИМЕНЯ](ru/README.md) | [Руководство](ru/CONTRIBUTING.md) | [Быстрый старт](ru/QUICKSTART.md) |
 | Deutsch | German | [LIESMICH](de/README.md) | [Mitwirken](de/CONTRIBUTING.md) | [Schnellstart](de/QUICKSTART.md) |
 | हिन्दी | Hindi | [परिचय](hi/README.md) | [योगदान गाइड](hi/CONTRIBUTING.md) | [त्वरित प्रारंभ](hi/QUICKSTART.md) |
+| Українська | Ukrainian | [README](uk/README.md) | [CONTRIBUTING](uk/CONTRIBUTING.md) | [Швидкий старт](uk/QUICKSTART.md) |
 
 ---
 

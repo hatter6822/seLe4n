@@ -1,3 +1,20 @@
+## v0.33.1 — Ukrainian localization added
+
+Documentation-only. Adds Ukrainian (`uk`) as an eleventh supported
+translation, following the project's existing "Adding a new language"
+process (`docs/i18n/LANGUAGES.md`): `docs/i18n/uk/README.md`,
+`docs/i18n/uk/CONTRIBUTING.md`, and `docs/i18n/uk/QUICKSTART.md`,
+translated from the current English sources. Registered the new
+language everywhere the existing ten are wired in: the language table
+in `docs/i18n/LANGUAGES.md`; the language selector in the root
+`README.md`; the sibling-language nav bars in all ten other
+`docs/i18n/*/{README,CONTRIBUTING,QUICKSTART}.md` files; the website
+link manifest (`scripts/website_link_manifest.txt`); and the version
+sync gate (`scripts/version_locations.sh`, whose per-language loop now
+includes `uk`, and `CLAUDE.md`/`AGENTS.md`, whose version-sites list
+was corrected from "the ten" to "the eleven" `docs/i18n/*/README.md`
+badges).
+
 ## v0.33.0 — SM7.F closed for real: a core now caches what it accessed
 
 A minor bump, because the per-core TLB model stops being a model of one
