@@ -430,6 +430,36 @@ SM8.B; the lock-contention channel CC-5 is SM8.B.8; the
 | SM8.B.13 | `crossCoreLeakage_bounded` | Theorem | L | LANDED |
 | SM8.B.14 | 15+ NI scenarios (tests) | L | LANDED |
 
+**Audit cut (v0.33.7).**  A deep audit of the v0.33.6 follow-up found two
+further items, both closed.
+
+1. **The live `.call` arm writes cores no write set named.**
+   `endpointCallOnCore_confinedToCores` is true of that *transition*, but the
+   live arm is `endpointCallCrossCoreDispatch` = transition +
+   `applyCallDonation` + `propagatePipChainCrossCore`, and the chain walk
+   re-buckets each boosted server's run queue on that server's **home** core.
+   The `syscallEntry_preserves_projectionOnCore` docstring nonetheless said the
+   dispatch is "invisible on every core outside that set" — false for the live
+   arm, and the same documentation-ahead-of-code failure the v0.33.6 cut existed
+   to remove, reintroduced one layer up.  Closed by making it true:
+   `pipChainWriteSet` (the walk's own write set, mirroring its fuel recursion)
+   with `propagatePipChainCrossCore_confinedToCores` by induction,
+   `applyCallDonation_confinedToCores` (per-core silent), and
+   `endpointCallLiveWriteSet` — the union that actually bounds the live arm —
+   with projection lemmas so a caller discharges membership once.
+2. **Both marquee write sets were tested only in their degenerate branches.**
+   The suite computed `notificationSignalWriteSet` with no waiter (`= []`) and
+   `endpointCallWriteSet` with no receiver (`= [c0]`), so the two-element set —
+   the flagship case, the whole reason `observableSlotsConfinedToCores` exists —
+   had **zero runtime coverage**, and the group's "not a singleton" negative was
+   `[c0] ≠ [c0, c2]`, trivially true.  Closed with a real rendezvous fixture
+   (receiver and waiter both homed on core 2): §5.0 checks the call's set is
+   `[c2, c0]` — two distinct cores — that the notification's names the waiter's
+   home core and not the signaller's, and that the set genuinely *varies* with
+   the state, which is what rules out a constant satisfying the theorem.
+
+Suite 186 → 193 assertions / 29 groups; 359 declarations axiom-clean.
+
 **Follow-up cut (v0.33.6) — the self-audit closure.**  A review of the v0.33.5
 landing against the code rather than the prose found six things short of
 optimal.  All are closed; the headline is the first.

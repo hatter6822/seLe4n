@@ -1,3 +1,59 @@
+## v0.33.7 — SM8.B audit: the live dispatch is more than the transition, and the two-core case had no runtime coverage
+
+A deep audit of the v0.33.6 cut, checked against the code rather than the prose.
+Two real findings, both mine, both closed.  Theorems and tests only; trace
+byte-identical.
+
+**The live `.call` arm writes cores no write set named.**  v0.33.6 proved
+`endpointCallOnCore_confinedToCores` over the write set
+`[receiverHome, executingCore]` — true of that transition.  But the live arm is
+`endpointCallCrossCoreDispatch`, which runs the transition **and then**
+`applyCallDonation` and `propagatePipChainCrossCore`; the chain walk re-buckets
+each boosted server's run queue on that server's *home* core, which the call's
+own write set does not name.  The `syscallEntry_preserves_projectionOnCore`
+docstring nevertheless said "the dispatch is invisible on every core outside
+that set".  That is false for the live dispatch, and it is the same
+documentation-ahead-of-code failure the previous cut was supposed to eliminate —
+reintroduced one layer up while fixing it below.
+
+Closed by making the statement true rather than narrowing it.  New
+`updatePipBoostOnCore_confinedToCores` (a re-bucketing writes one core's run
+queue and the boosted TCB), `pipBoostWithWake_confinedToCores`, and
+`pipChainWriteSet` — the walk's write set, defined by mirroring its own fuel
+recursion including the state threading, with
+`propagatePipChainCrossCore_confinedToCores` proved by induction on the fuel.
+`applyCallDonation_confinedToCores` shows the donation is per-core silent (it
+touches bindings and at most the replenishment queue, which SM8.A already places
+outside the observer's read set).  `endpointCallLiveWriteSet` is the union that
+actually bounds the live arm, with the two projection lemmas that let a caller
+discharge membership once.  The docstring now states the boundary precisely and
+points at the union.
+
+**Both marquee write sets were tested only in their degenerate branches.**  The
+v0.33.6 suite computed `notificationSignalWriteSet` on a notification with *no
+waiter* (`= []`) and `endpointCallWriteSet` on an endpoint with *no receiver*
+(`= [c0]`).  So the two-element write set — the flagship case, the entire reason
+`observableSlotsConfinedToCores` exists — had **zero runtime coverage**, and the
+group's "NEGATIVE: a two-element write set is not a singleton" assertion was
+`[c0] ≠ [c0, c2]`, trivially true and testing nothing.  A reader counting
+assertions would have concluded the case was covered.
+
+Closed with a real rendezvous fixture: an endpoint carrying a receiver homed on
+core 2, and a notification carrying a waiter homed on core 2.  New §5.0 checks
+that the call's write set is `[c2, c0]` — two *distinct* cores — that the
+notification's names the waiter's home core and **not** the signaller's, and
+that the write set genuinely varies with the state (one core vs two), which is
+what rules out the theorem being satisfied by a constant.  The weak negative is
+replaced by that variation check.
+
+Suite 186 -> **193 assertions / 29 groups**; 8 new `#check` anchors (every
+declaration of the cross-core module, verified complete by set difference
+against the codebase map) plus Tier-3 pins on the live-write-set symbols and on
+the two-core runtime group.  359 declarations across the four SM8
+information-flow modules, all axiom-clean.
+
+Refs: docs/planning/SMP_INFORMATION_FLOW_PLAN.md §5 (Phase SM8.B)
+
 ## v0.33.6 — SM8.B follow-up: the cross-core direction actually instantiated, and a tautology removed
 
 A self-audit of the v0.33.5 SM8.B cut, checked against the code rather than the

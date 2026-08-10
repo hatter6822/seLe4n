@@ -15,6 +15,7 @@ transition that actually writes a remote core.  This module supplies them.
 import SeLe4n.Kernel.InformationFlow.NonInterferencePerCore
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReply
 import SeLe4n.Kernel.IPC.CrossCore.Cancellation
+import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
 
 /-!
 # WS-SM SM8.B — non-interference at the cross-core transitions
@@ -81,6 +82,7 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (CoreId bootCoreId)
 open SeLe4n.Kernel.Lifecycle.Suspend
+open SeLe4n.Kernel.PriorityInheritance
 
 -- ============================================================================
 -- §1  The per-core scheduler primitives
@@ -731,6 +733,118 @@ theorem cancellationCrossCore_confinedToCores (st : SystemState) (tid : SeLe4n.T
     observableSlotsConfinedToCores st (descheduleThread st tid executingCore).1
       [determineTargetCore st tid] :=
   descheduleThread_confinedToCores st tid executingCore
+
+-- ============================================================================
+-- §5a  SM5.F — the priority-inheritance chain walk
+-- ============================================================================
+--
+-- The below-API transitions above are *not* the whole live picture.  The live
+-- `.call` arm is `endpointCallCrossCoreDispatch`, which runs the transition and
+-- then `applyCallDonation` + `propagatePipChainCrossCore`; the chain walk
+-- re-buckets each boosted server's run queue **on that server's home core**, so
+-- it can write cores the endpoint call's own write set does not name.
+--
+-- Leaving that out would make any claim about the live dispatch's write set
+-- false, so the chain walk gets a write set of its own, by the same discipline:
+-- computed from the pre-state, mirroring the transition's own recursion.
+
+/-- SM8.B.2: a PIP re-bucketing writes core `c`'s run queue and the boosted
+TCB, and nothing else per-core. -/
+theorem updatePipBoostOnCore_confinedToCores (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) :
+    observableSlotsConfinedToCores st (updatePipBoostOnCore st c tid) [c] := by
+  refine ⟨fun c' hc => updatePipBoostOnCore_runQueueOnCore_ne st c c' tid
+            (fun h => hc (by simp [h])),
+          fun c' _ => updatePipBoostOnCore_currentOnCore st c c' tid, ?_, ?_, ?_, ?_⟩
+  all_goals intro c' _
+  all_goals simp only [updatePipBoostOnCore]
+  all_goals repeat' split
+  all_goals first
+    | rfl
+    | simp only [SchedulerState.setRunQueueOnCore_activeDomainOnCore,
+        SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore,
+        SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
+
+/-- SM8.B.2: one chain step writes exactly the boosted thread's home core. -/
+theorem pipBoostWithWake_confinedToCores (st : SystemState) (tid : SeLe4n.ThreadId)
+    (executingCore : CoreId) :
+    observableSlotsConfinedToCores st (pipBoostWithWake st tid executingCore).1
+      [determineTargetCore st tid] :=
+  updatePipBoostOnCore_confinedToCores st (determineTargetCore st tid) tid
+
+/-- SM8.B.2: **the cores a cross-core PIP chain walk may write** — the home core
+of every member the walk reaches, computed from the pre-state by mirroring the
+walk's own fuel recursion.  The state is threaded exactly as
+`propagatePipChainCrossCore` threads it, so the two agree member for member. -/
+def pipChainWriteSet (st : SystemState) (startTid : SeLe4n.ThreadId)
+    (executingCore : CoreId) : Nat → List CoreId
+  | 0 => []
+  | fuel + 1 =>
+      determineTargetCore st startTid ::
+        (match blockingServer st startTid with
+         | some nextServer =>
+             pipChainWriteSet (pipBoostWithWake st startTid executingCore).1 nextServer
+               executingCore fuel
+         | none => [])
+
+/-- SM8.B.2 (**SM5.F, cross-core**): the chain walk's per-core writes stay inside
+`pipChainWriteSet`.  By induction on the fuel, composing one
+`pipBoostWithWake_confinedToCores` per step. -/
+theorem propagatePipChainCrossCore_confinedToCores (executingCore : CoreId) :
+    ∀ (fuel : Nat) (st : SystemState) (startTid : SeLe4n.ThreadId),
+      observableSlotsConfinedToCores st
+        (propagatePipChainCrossCore st startTid executingCore fuel).1
+        (pipChainWriteSet st startTid executingCore fuel)
+  | 0, st, _ => observableSlotsConfinedToCores_of_eq _ rfl
+  | fuel + 1, st, startTid => by
+      rw [propagatePipChainCrossCore_step]
+      simp only [pipChainWriteSet]
+      cases hNext : blockingServer st startTid with
+      | none =>
+        exact pipBoostWithWake_confinedToCores st startTid executingCore
+      | some nextServer =>
+        exact observableSlotsConfinedToCores_trans
+          (pipBoostWithWake_confinedToCores st startTid executingCore)
+          (propagatePipChainCrossCore_confinedToCores executingCore fuel
+            (pipBoostWithWake st startTid executingCore).1 nextServer)
+
+/-- SM8.B.2: SchedContext donation is per-core silent — it rewrites bindings in
+the object store and, at most, the replenishment queue, which SM8.A's
+`onCore_perCore_independence` puts outside the observer's read set entirely. -/
+theorem applyCallDonation_confinedToCores (st st' : SystemState)
+    (callerVtid receiverVtid : SeLe4n.ValidThreadId)
+    (hStep : applyCallDonation st callerVtid receiverVtid = .ok st') :
+    observableSlotsConfinedToCores st st' [] :=
+  observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+    (applyCallDonation_scheduler_eq st callerVtid receiverVtid st' hStep)
+    (applyCallDonation_machine_eq st callerVtid receiverVtid st' hStep)
+
+/-- SM8.B.2: **the cores the live cross-core `.call` may write.**
+
+`endpointCallCrossCoreDispatch` is not just `endpointCallOnCore`: it runs the
+transition, then `applyCallDonation`, then `propagatePipChainCrossCore`.  The
+donation is per-core silent, but the chain walk re-buckets each boosted server's
+run queue on that server's **home** core, which the endpoint call's own write set
+does not name.  A claim about the live dispatch therefore has to be made against
+the union — anything narrower would be false. -/
+def endpointCallLiveWriteSet (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (caller : SeLe4n.ThreadId) (executingCore : CoreId) : List CoreId :=
+  endpointCallWriteSet st endpointId executingCore
+    ++ pipChainWriteSet st caller executingCore st.objectIndex.length
+
+/-- SM8.B.2: the live write set contains the below-API one, so a core outside it
+is outside both.  The composition rule that makes the union the right premise. -/
+theorem endpointCallWriteSet_subset_live (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (caller : SeLe4n.ThreadId) (executingCore : CoreId) (c : CoreId)
+    (h : c ∉ endpointCallLiveWriteSet st endpointId caller executingCore) :
+    c ∉ endpointCallWriteSet st endpointId executingCore :=
+  fun hm => h (List.mem_append.mpr (Or.inl hm))
+
+theorem pipChainWriteSet_subset_live (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (caller : SeLe4n.ThreadId) (executingCore : CoreId) (c : CoreId)
+    (h : c ∉ endpointCallLiveWriteSet st endpointId caller executingCore) :
+    c ∉ pipChainWriteSet st caller executingCore st.objectIndex.length :=
+  fun hm => h (List.mem_append.mpr (Or.inr hm))
 
 -- ============================================================================
 -- §6  The non-interference instantiations

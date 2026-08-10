@@ -591,8 +591,18 @@ stating precisely rather than gesturing at:
   premise is **false in general** — those transitions really do write a remote
   core.  What holds instead is the set-of-cores statement, and
   `NonInterferenceCrossCore` proves it for each of them: the writes stay inside
-  a write set computed from the pre-state, so the dispatch is invisible on every
-  core outside that set.
+  a write set computed from the pre-state.
+
+  **Read that boundary precisely.**  Those write sets bound the *below-API
+  transitions*, and the live dispatch is more than the transition: the `.call`
+  arm is `endpointCallCrossCoreDispatch`, which additionally runs
+  `applyCallDonation` (per-core silent) and `propagatePipChainCrossCore` (which
+  re-buckets each boosted server's run queue on that server's **home** core, so
+  it can write cores the call's own write set does not name).  A statement about
+  the live arm has to be made against the union —
+  `endpointCallLiveWriteSet` — and anything narrower would be false.  The chain
+  walk's own write set (`pipChainWriteSet`, proved by fuel induction mirroring
+  the walk's recursion) is what makes that union computable.
 
 (The two inner witnesses,
 `dispatchCapabilityOnly_preserves_projection` and

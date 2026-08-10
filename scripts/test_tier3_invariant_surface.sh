@@ -1768,6 +1768,21 @@ run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_confinedToCores' SeLe4n
 run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem wakeThread_crossCoreNonInterference_of_visible_thread' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+# v0.33.7 audit closure: the live `.call` arm is more than `endpointCallOnCore`
+# — it also runs the donation and the PIP chain walk, and the chain walk
+# re-buckets on each boosted server's HOME core.  Bounding the live arm needs
+# the chain walk's own write set, so these pin it and the union.
+run_check "INVARIANT" rg -n '^def pipChainWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^def endpointCallLiveWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointCallWriteSet_subset_live' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem applyCallDonation_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+# The flagship two-core case must be exercised at RUNTIME, not only proved: the
+# first cut computed both marquee write sets in their degenerate (empty /
+# executing-core-only) branches, so the two-element set had no coverage.
+run_check "INVARIANT" rg -n '^  runTwoCoreWriteSetChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'so the call.s write set names TWO distinct cores' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'the notification write set names the waiter.s home core' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.InformationFlow\.NonInterferenceCrossCore' SeLe4n/Platform/Staged.lean
 run_check "INVARIANT" rg -n '^SeLe4n\.Kernel\.InformationFlow\.NonInterferenceCrossCore' scripts/staged_module_allowlist.txt
 run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.InformationFlow\.NonInterferenceCrossCore' tests/SmpInformationFlowSuite.lean

@@ -387,6 +387,18 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @CrossCoreTransition.all
 #check @crossCoreNiTheorem
 #check @crossCoreNiTheorem_count
+-- §1.8 (cont.) WS-SM SM8.B v0.33.7 — the live-dispatch legs: the PIP chain
+-- walk's write set (proved by fuel induction) and the union that bounds the
+-- live `.call` arm.  Without these the cross-core write sets bound only the
+-- below-API transitions, and a claim about the live dispatch would be false.
+#check @updatePipBoostOnCore_confinedToCores
+#check @pipBoostWithWake_confinedToCores
+#check @pipChainWriteSet
+#check @propagatePipChainCrossCore_confinedToCores
+#check @applyCallDonation_confinedToCores
+#check @endpointCallLiveWriteSet
+#check @endpointCallWriteSet_subset_live
+#check @pipChainWriteSet_subset_live
 #check @crossCoreNiTheorem_injective
 #check @crossCoreTransitionWakesRemote
 #check @crossCoreTransitionWakesRemote_count
@@ -1859,6 +1871,66 @@ private def remoteWakePost : SystemState :=
 private def remoteDeschedulePost : SystemState :=
   (SeLe4n.Kernel.descheduleThread crossCoreState remoteHomedThread c0).1
 
+-- A state where a call really **rendezvouses**: an endpoint with a receiver
+-- waiting, and that receiver homed on core 2.  Without this the endpoint-call
+-- write set only ever computes its degenerate one-element branch, and the
+-- flagship two-core case would have no runtime coverage at all.
+private def crossCoreEndpoint : SeLe4n.ObjId := ⟨1019⟩
+private def crossCoreReceiver : SeLe4n.ThreadId := ⟨1020⟩
+private def crossCoreWaiter : SeLe4n.ThreadId := ⟨1021⟩
+
+private def rendezvousState : SystemState :=
+  { crossCoreState with
+      objects :=
+        ((crossCoreState.objects.insert crossCoreReceiver.toObjId
+            (.tcb { mkTcb 1020 40 (some c2) with
+                      ipcState := .blockedOnReceive crossCoreEndpoint })).insert
+          crossCoreEndpoint
+            (.endpoint { receiveQ := { head := some crossCoreReceiver
+                                       tail := some crossCoreReceiver } })).insert
+          crossCoreWaiter.toObjId
+            (.tcb { mkTcb 1021 40 (some c2) with
+                      ipcState := .blockedOnNotification highNotification }) }
+
+/-- The same state with a **waiter** parked on the high notification, so the
+notification write set computes its non-degenerate branch too. -/
+private def waitingNotificationState : SystemState :=
+  { rendezvousState with
+      objects := rendezvousState.objects.insert highNotification
+        (.notification { state := .waiting
+                         waitingThreads := ⟨[crossCoreWaiter], by simp⟩
+                         pendingBadge := none
+                         boundTCB := none }) }
+
+/-- §5.0  The two-core rendezvous — the flagship case, on a real state. -/
+private def runTwoCoreWriteSetChecks : IO Unit := do
+  IO.println "--- §5.0 the TWO-core endpoint-call write set ---"
+  assertBool "the endpoint really has a receiver waiting"
+    (decide (SeLe4n.Kernel.endpointCallReceiver? rendezvousState crossCoreEndpoint
+      = some crossCoreReceiver))
+  assertBool "…and that receiver is homed on core 2, not the caller's core 0"
+    (decide (SeLe4n.Kernel.determineTargetCore rendezvousState crossCoreReceiver = c2 ∧
+             c2 ≠ c0))
+  assertBool "so the call's write set names TWO distinct cores"
+    (decide (SeLe4n.Kernel.endpointCallWriteSet rendezvousState crossCoreEndpoint c0
+      = [c2, c0]))
+  -- The load-bearing negative: this is the case no single-core confinement
+  -- statement can express, which is why `observableSlotsConfinedToCores` exists.
+  assertBool "NEGATIVE: the two-core set is not a singleton on either core"
+    (decide (SeLe4n.Kernel.endpointCallWriteSet rendezvousState crossCoreEndpoint c0 ≠ [c0] ∧
+             SeLe4n.Kernel.endpointCallWriteSet rendezvousState crossCoreEndpoint c0 ≠ [c2]))
+  assertBool "the notification write set names the waiter's home core, not the signaller's"
+    (decide (SeLe4n.Kernel.notificationSignalWriteSet waitingNotificationState highNotification
+      = [c2]))
+  assertBool "NEGATIVE: …and that is NOT the executing core"
+    (decide (SeLe4n.Kernel.notificationSignalWriteSet waitingNotificationState highNotification
+      ≠ [c0]))
+  -- The lock-set coherence theorem, computed: the write set names the home core
+  -- of exactly the thread the SM6.B lock set pre-resolves.
+  assertBool "the write set and the SM6.B lock-set pre-resolution name one thread"
+    (decide (SeLe4n.Kernel.notificationSignalWaiter? waitingNotificationState highNotification
+      = some crossCoreWaiter))
+
 /-- §5.1  The cross-core write sets, computed on a real state. -/
 private def runCrossCoreWriteSetChecks : IO Unit := do
   IO.println "--- §5.1 cross-core write sets, computed from the pre-state ---"
@@ -1911,10 +1983,16 @@ private def runCoreSetAlgebraChecks : IO Unit := do
   assertBool "the covered-transition theorem names are pairwise distinct"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.map
       SeLe4n.Kernel.crossCoreNiTheorem).eraseDups.length = 6))
-  -- The load-bearing negative: widening a write set is sound, narrowing is not
-  -- — a single-core statement cannot cover the endpoint call.
-  assertBool "NEGATIVE: a two-element write set is not a singleton"
-    (decide (SeLe4n.Kernel.endpointCallWriteSet crossCoreState lowEndpoint c0 ≠ [c0, c2]))
+  -- The load-bearing negative: the write set is *state-dependent*, so it is not
+  -- a constant the theorem could be satisfying vacuously.  With no receiver the
+  -- call writes one core; with a remote receiver waiting it writes two — and
+  -- that second case is what no single-core statement can express.
+  assertBool "NEGATIVE: the write set really varies with the state (1 core vs 2)"
+    (decide (SeLe4n.Kernel.endpointCallWriteSet crossCoreState lowEndpoint c0
+               ≠ SeLe4n.Kernel.endpointCallWriteSet rendezvousState crossCoreEndpoint c0 ∧
+             (SeLe4n.Kernel.endpointCallWriteSet crossCoreState lowEndpoint c0).length = 1 ∧
+             (SeLe4n.Kernel.endpointCallWriteSet rendezvousState crossCoreEndpoint c0).length
+               = 2))
 
 /-- A generic labeling context for the SM8.B.11 gate checks: every flow allowed,
 so the gate's only remaining input is whether a subject exists. -/
@@ -2246,6 +2324,7 @@ def runSmpInformationFlowChecks : IO Unit := do
   runCovertChannelInventoryChecks
   runCatchAllPremiseChecks
   runPolicyAndReleaseBridgeChecks
+  runTwoCoreWriteSetChecks
   runCrossCoreWriteSetChecks
   runVisibleRemoteWakeChecks
   runCoreSetAlgebraChecks
