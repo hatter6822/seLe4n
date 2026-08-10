@@ -154,21 +154,38 @@ run_check() {
 #
 # Usage:
 #   run_negative_check "INVARIANT" rg -n 'forbidden_symbol' SeLe4n/
+# PR #861 review (P2): only ripgrep's documented *no-match* status counts as
+# absence.  `rg` exits 0 on a match, 1 on a clean no-match, and 2 on an error —
+# an unrecognized flag, an unreadable path, a malformed pattern.  Treating every
+# nonzero status as "absent" made those errors silent PASSes, i.e. a gate that
+# fails open exactly when it is misconfigured, which is when it is least likely
+# to be noticed.  Status 2 (and anything else) is now an infrastructure failure.
 run_negative_check() {
   local category="$1"
   shift
 
   log_section "${category}" "RUN (must not match): $*"
-  if "$@" >/dev/null 2>&1; then
-    record_failure "${category}" "Forbidden pattern present: $*"
-    if [[ "${CONTINUE_MODE}" -eq 0 ]]; then
-      finalize_report
-    fi
-    return 1
-  fi
+  local status=0
+  "$@" >/dev/null 2>&1 || status=$?
 
-  log_section "${category}" "PASS"
-  return 0
+  case "${status}" in
+    0)
+      record_failure "${category}" "Forbidden pattern present: $*"
+      ;;
+    1)
+      log_section "${category}" "PASS"
+      return 0
+      ;;
+    *)
+      record_failure "${category}" \
+        "Negative check could not run (exit ${status}, not a clean no-match): $*"
+      ;;
+  esac
+
+  if [[ "${CONTINUE_MODE}" -eq 0 ]]; then
+    finalize_report
+  fi
+  return 1
 }
 
 # AN11-B (H-21): Run a command under `timeout`, mapping the canonical

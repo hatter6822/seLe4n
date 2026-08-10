@@ -40,7 +40,22 @@ MAP = os.path.join(REPO, "docs", "codebase_map.json")
 # is a trust-base extension and must fail the gate.
 ALLOWED = {"propext", "Classical.choice", "Quot.sound"}
 
-TERM_KINDS = {"theorem", "lemma", "def", "abbrev", "instance"}
+# Declaration kinds that name a term and can therefore be probed.  `opaque`,
+# `axiom` and `constant` are included deliberately: PR #861 review pointed out
+# that an `opaque` whose body reaches an imported non-standard axiom would have
+# been skipped while the gate still reported everything clean, and the Tier 0
+# textual scan only prevents *declaring* a local `axiom`.
+TERM_KINDS = {"theorem", "lemma", "def", "abbrev", "instance",
+              "opaque", "axiom", "constant"}
+
+# Kinds that name no term and so have nothing to probe.  Anything the map
+# reports that is in neither set is an unrecognised kind and fails the gate
+# rather than being silently dropped -- a sweep that quietly ignores a
+# declaration form it has not seen before fails open.
+NON_TERM_KINDS = {"namespace", "structure", "inductive", "class",
+                  "section", "end", "macro", "macro_rules", "syntax",
+                  "notation", "elab", "elab_rules", "instance_type",
+                  "example", "attribute", "open", "deriving"}
 
 # The WS-SM SM8 information-flow surface, as a convenience selector.
 SMP_INFORMATION_FLOW = [
@@ -78,8 +93,13 @@ def load_modules(names: list[str]) -> tuple[dict[str, list[str]], list[str]]:
         src = open(os.path.join(REPO, mod["path"])).read().splitlines()
         probeable = []
         for d in mod["declarations"]:
-            if d["kind"] not in TERM_KINDS:
+            if d["kind"] in NON_TERM_KINDS:
                 continue
+            if d["kind"] not in TERM_KINDS:
+                print(f"FAIL: {name}.{d['name']} has unrecognised declaration "
+                      f"kind {d['kind']!r}.  Classify it in TERM_KINDS or "
+                      f"NON_TERM_KINDS -- refusing to skip it silently.")
+                sys.exit(2)
             line = src[d["line"] - 1] if 0 < d["line"] <= len(src) else ""
             if line.lstrip().startswith("private "):
                 skipped.append(f"{name}.{d['name']}")
@@ -166,6 +186,11 @@ def main() -> int:
     errors = [ln for ln in combined.splitlines() if diag.match(ln)]
     if errors:
         print("FAIL: the axiom probe did not elaborate.")
+        print("      The usual cause is a STALE docs/codebase_map.json: the probe")
+        print("      names declarations from the map, so a rename or removal that")
+        print("      has not been regenerated produces unknown-identifier errors.")
+        print("      Regenerate with ./scripts/generate_codebase_map.py "
+              "--pretty --output docs/codebase_map.json")
         for line in errors:
             print("  " + line)
         return 1

@@ -501,10 +501,24 @@ theorem endpointFlowCheckAtCore_stable_under_confined_transition
 /-- SM8.B.11 (non-vacuity of the *stability* claim): the resolved gate is not a
 constant function — it really does move when the subject changes.  Without this,
 `…_depends_only_on_subject` and `…_stable_under_confined_transition` would be
-satisfied by a gate that always returned `false`. -/
+satisfied by a gate that always returned `false`.
+
+The subject is a **non-sentinel** `ThreadId`: `ThreadId.isReserved` is
+`val = 0`, so a state whose current thread is `⟨0⟩` violates
+`currentThreadValidOnCore` and would make this a witness over an unreachable
+state (PR #861 review).
+
+What the review also asked for — a subject "backed by a real TCB" — is
+deliberately *not* added, and the reason is the point of the theorem above:
+`endpointFlowCheckAtCore` reads `currentOnCore` and the labeling context's
+domain maps, and **never touches the object store**, so the presence or content
+of a TCB cannot change its value.  Requiring one would suggest the gate consults
+state it provably does not consult. -/
 theorem endpointFlowCheckAtCore_is_not_constant :
     ∃ (ctx : GenericLabelingContext) (epPolicy : EndpointFlowPolicy)
-      (endpointId : SeLe4n.ObjId) (st₁ st₂ : SystemState) (c : CoreId),
+      (endpointId : SeLe4n.ObjId) (st₁ st₂ : SystemState) (c : CoreId)
+      (subject : SeLe4n.ThreadId), subject.isReserved = false ∧
+      st₁.scheduler.currentOnCore c = some subject ∧
       endpointFlowCheckAtCore ctx epPolicy endpointId st₁ c
         ≠ endpointFlowCheckAtCore ctx epPolicy endpointId st₂ c := by
   refine ⟨{ policy := { canFlow := fun _ _ => true }
@@ -512,10 +526,11 @@ theorem endpointFlowCheckAtCore_is_not_constant :
             endpointDomainOf := fun _ => ⟨0⟩, serviceDomainOf := fun _ => ⟨0⟩ },
           { endpointPolicy := fun _ => none }, ⟨0⟩,
           { (default : SystemState) with scheduler :=
-              (default : SystemState).scheduler.setCurrentOnCore bootCoreId (some ⟨0⟩) },
-          (default : SystemState), bootCoreId, ?_⟩
-  simp only [endpointFlowCheckAtCore, SchedulerState.setCurrentOnCore_currentOnCore_self]
-  decide
+              (default : SystemState).scheduler.setCurrentOnCore bootCoreId (some ⟨1⟩) },
+          (default : SystemState), bootCoreId, ⟨1⟩, by decide, ?_, ?_⟩
+  · simp only [SchedulerState.setCurrentOnCore_currentOnCore_self]
+  · simp only [endpointFlowCheckAtCore, SchedulerState.setCurrentOnCore_currentOnCore_self]
+    decide
 
 /-- SM8.B.11: under the per-core restriction, an endpoint flow admitted at any
 core is admitted by the global policy — the per-core lift of
@@ -601,8 +616,10 @@ stating precisely rather than gesturing at:
   it can write cores the call's own write set does not name).  A statement about
   the live arm has to be made against the union —
   `endpointCallLiveWriteSet` — and anything narrower would be false.  The chain
-  walk's own write set (`pipChainWriteSet`, proved by fuel induction mirroring
-  the walk's recursion) is what makes that union computable.
+  leg is `pipChainWriteSet`, proved sound by fuel induction mirroring the walk's
+  own recursion; note it is **not** recoverable from the pre-state, because the
+  live walk starts at the resolved *receiver* at the *post-donation* state, and
+  both the call and the donation move `blockingServer`.
 
 (The two inner witnesses,
 `dispatchCapabilityOnly_preserves_projection` and

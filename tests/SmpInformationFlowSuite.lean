@@ -399,12 +399,13 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @endpointCallLiveWriteSet
 #check @endpointCallWriteSet_subset_live
 #check @pipChainWriteSet_subset_live
+#check @endpointCallLive_confinedToCores
 #check @cancelIpcBlocking_confinedToCores
 #check @cancelIpcBlockingOnCore_confinedToCores
 #check @cancelIpcBlockingOnCore_crossCoreNonInterference
 #check @crossCoreNiTheorem_injective
-#check @crossCoreTransitionWakesRemote
-#check @crossCoreTransitionWakesRemote_count
+#check @crossCoreTransitionWritesRemote
+#check @crossCoreTransitionWritesRemote_count
 #check @crossCoreTransition_invisible_to_every_observer
 
 -- §1.7  SM8.B — the enforcement boundary and the covert-channel inventory
@@ -1835,10 +1836,28 @@ private theorem remoteCoreWrite_reconstruction_on_c0 :
   crossCoreLeakage_bounded_reconstruction niLabeling niLowObserver c0_ne_c1
     remoteCoreWrite_confined
 
-/-- Decide the six confinement component equalities on the concrete four-core
-fixture.  `observableSlotsConfinedToCore` is a `∀ c` structure and therefore not
-decidable; with `numCores = 4` the componentwise check is, and it is the same
-statement. -/
+/-- The register-bank half of `observableSlotsConfinedToCore`'s sixth field,
+decided on the ARM64 architectural registers.
+
+`RegisterFile.gpr` is a function `RegName → RegValue`, so the bank is not
+decidably equal in general; this compares `pc`, `sp` and every modeled GPR,
+which is the same slice `lowEquivalentSliceOnCoreCheckWithRegs` uses.  It is a
+sound *refuter*: agreement here does not prove the banks equal, but any
+difference on a modeled register is caught. -/
+private def regsAgreeOn (st st' : SystemState) (c : CoreId) : Bool :=
+  let r := st.machine.regsOnCore c
+  let r' := st'.machine.regsOnCore c
+  decide (r'.pc = r.pc) && decide (r'.sp = r.sp) &&
+    (List.range SeLe4n.RegName.arm64GPRCount).all
+      (fun i => decide (r'.gpr ⟨i⟩ = r.gpr ⟨i⟩))
+
+/-- Decides confinement of a step's per-core writes to core `c₀`.
+
+Covers **all six** fields of `observableSlotsConfinedToCore` — the five
+scheduler slots and the register bank.  The register clause was missing until
+PR #861 review: without it every runtime assertion here would still pass if a
+transition corrupted another core's registers, which is precisely the class of
+regression the cancellation machine-frame work exists to exclude. -/
 private def confinedCheck (st st' : SystemState) (c₀ : CoreId) : Bool :=
   allCores.all (fun c =>
     if c = c₀ then true
@@ -1849,7 +1868,8 @@ private def confinedCheck (st st' : SystemState) (c₀ : CoreId) : Bool :=
       decide (st'.scheduler.domainTimeRemainingOnCore c
         = st.scheduler.domainTimeRemainingOnCore c) &&
       decide (st'.scheduler.domainScheduleIndexOnCore c
-        = st.scheduler.domainScheduleIndexOnCore c))
+        = st.scheduler.domainScheduleIndexOnCore c) &&
+      regsAgreeOn st st' c)
 
 -- ============================================================================
 -- §5 fixtures — a thread homed on a *remote* core
@@ -1912,6 +1932,13 @@ private def waitingNotificationState : SystemState :=
       scheduler := rendezvousState.scheduler.setRunQueueOnCore c2
         (RunQueue.ofList [(crossCoreWaiter, ⟨40⟩)]) }
 
+/-- `crossCoreState` differing **only** in core 1's program counter — the witness
+that `confinedCheck`'s register clause is not vacuous. -/
+private def core1RegWriteState : SystemState :=
+  { crossCoreState with
+      machine := crossCoreState.machine.setRegsOnCore c1
+        { crossCoreState.machine.regsOnCore c1 with pc := ⟨0x4000⟩ } }
+
 /-- §5.0  The two-core rendezvous — the flagship case, on a real state. -/
 private def runTwoCoreWriteSetChecks : IO Unit := do
   IO.println "--- §5.0 the TWO-core endpoint-call write set ---"
@@ -1958,6 +1985,14 @@ private def runCrossCoreWriteSetChecks : IO Unit := do
     (decide (SeLe4n.Kernel.notificationSignalWriteSet crossCoreState highNotification = []))
   assertBool "an endpoint call with no waiting receiver writes only the caller's core"
     (decide (SeLe4n.Kernel.endpointCallWriteSet crossCoreState lowEndpoint c0 = [c0]))
+  -- The confinement checker's sixth field is the register bank (PR #861 review
+  -- added it).  This is the load-bearing negative that it is not vacuous: a
+  -- state differing from the pre-state ONLY in core 1's `pc` must fail
+  -- confinement to core 2, and would have passed before the clause existed.
+  assertBool "NEGATIVE: a foreign core's register write breaks confinement"
+    (!confinedCheck crossCoreState core1RegWriteState c2)
+  assertBool "…while the same write IS permitted when core 1 is the writing core"
+    (confinedCheck crossCoreState core1RegWriteState c1)
 
 /-- §5.2  The headline: a *visible* thread woken remotely is still invisible. -/
 private def runVisibleRemoteWakeChecks : IO Unit := do
@@ -2017,9 +2052,9 @@ private def runCoreSetAlgebraChecks : IO Unit := do
     (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 7))
   assertBool "six of the seven can name a core other than the executing one"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
-      SeLe4n.Kernel.crossCoreTransitionWakesRemote).length = 6))
+      SeLe4n.Kernel.crossCoreTransitionWritesRemote).length = 6))
   assertBool "…and the wait is the one that cannot"
-    (decide (SeLe4n.Kernel.crossCoreTransitionWakesRemote .notificationWait = false))
+    (decide (SeLe4n.Kernel.crossCoreTransitionWritesRemote .notificationWait = false))
   assertBool "the covered-transition theorem names are pairwise distinct"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.map
       SeLe4n.Kernel.crossCoreNiTheorem).eraseDups.length = 7))

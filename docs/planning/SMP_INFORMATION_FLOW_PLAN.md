@@ -430,6 +430,29 @@ SM8.B; the lock-contention channel CC-5 is SM8.B.8; the
 | SM8.B.13 | `crossCoreLeakage_bounded` | Theorem | L | LANDED |
 | SM8.B.14 | 15+ NI scenarios (tests) | L | LANDED |
 
+**PR #861 review cut (v0.33.9).**  Seven automated-review findings, all
+verified against the code and all valid.  The load-bearing one:
+`endpointCallLiveWriteSet` walked the *caller* at the *pre-state*, while the live
+arm runs `propagatePipChainCrossCore st'' receiverTid` — the resolved **receiver**
+at the **post-donation** state.  Those are different chains (the call blocks the
+caller on reply and the donation rewrites SchedContext bindings, so
+`blockingServer` moves), so the union could omit cores the live arm writes.  No
+theorem was false — none asserted the live bound — but the definition was wrong
+for its stated purpose.  `chainState` / `chainStart` are now explicit parameters
+whose docstring says what they must be instantiated to and why the pre-state
+cannot supply them, with `endpointCallLive_confinedToCores` composing the legs.
+
+Also closed: `crossCoreTransitionWakesRemote` renamed to `…WritesRemote` (reply,
+deschedule and cancellation write remotely without waking); three **fail-open
+gates** repaired — `run_negative_check` accepted `rg` exit 2 as absence,
+`confinedCheck` omitted the register banks from a six-field predicate, and the
+axiom sweep silently dropped unrecognised declaration kinds; the flow-gate
+non-vacuity witness moved off the reserved sentinel thread id; and the
+staged-module headline corrected 57 → 58.
+
+Left open deliberately: whether the branch's four patch bumps collapse into one
+for the merge — that rewrites pushed commits, so it is the maintainer's call.
+
 **Audit cut (v0.33.7).**  A deep audit of the v0.33.6 follow-up found two
 further items, both closed.
 

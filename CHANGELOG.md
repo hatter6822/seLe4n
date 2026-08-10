@@ -1,3 +1,76 @@
+## v0.33.9 — PR #861 review: the live write set named the wrong chain, and three gates failed open
+
+Seven findings from the automated review of PR #861, all verified against the
+code and all valid.  Six are closed here; the seventh (whether four patch bumps
+should collapse into one for the merge) is a maintainer decision and is left
+open deliberately.  Theorems, tooling and tests only; trace byte-identical.
+
+**P1 — `endpointCallLiveWriteSet` walked the wrong chain.**  The live `.call`
+arm runs `propagatePipChainCrossCore st'' receiverTid executingCore`: the walk
+starts at the **resolved receiver** at the **post-donation** state.  The
+definition walked the *caller* at the *pre-state*.  Those are genuinely
+different chains — the call blocks the caller on reply and the donation rewrites
+SchedContext bindings, so `blockingServer` at `st''` is not `blockingServer` at
+`st` — so the union could omit cores the live arm writes.  No theorem was false
+(none asserted the live bound), but the definition was wrong for its stated
+purpose and its docstring said it bounded the live arm.  That is the same
+documentation-ahead-of-code failure this PR's earlier cuts existed to remove,
+committed once more while removing it.
+
+Fixed by making the dependency explicit instead of guessed: `chainState` and
+`chainStart` are now parameters, the docstring says what they must be
+instantiated to and why the pre-state cannot supply them, and
+`endpointCallLive_confinedToCores` composes the three legs in the
+path-reduction style SM6.A uses for the same pipeline.
+
+**P1 — `crossCoreTransitionWakesRemote` described the wrong semantics.**  It
+returns `true` for reply, deschedule and cancellation, none of which wakes
+anything; its callers read it as "can name a core other than the executing
+one".  Renamed `crossCoreTransitionWritesRemote` throughout, per the
+internal-first naming rule.
+
+**P2 — `run_negative_check` failed open.**  It treated every nonzero exit as
+proof of absence, but `rg` exits 1 on a clean no-match and **2** on an error —
+an unrecognised flag, an unreadable path, a malformed pattern.  Those became
+silent PASSes: a gate that fails open exactly when it is misconfigured.  Only
+status 1 is now absence; anything else is recorded as an infrastructure failure.
+
+**P2 — `confinedCheck` omitted the register banks.**  Its comment claimed all
+six fields of `observableSlotsConfinedToCore`; it compared five.  Every runtime
+assertion built on it would therefore still have passed if a transition
+corrupted another core's registers — precisely the regression the cancellation
+machine-frame work exists to exclude.  Added `regsAgreeOn` (pc, sp, and every
+index in the modelled `arm64GPRCount` range) with a load-bearing negative: a
+state differing only in core 1's `pc` must fail confinement to core 2, and does.
+
+**P2 — the axiom sweep skipped unrecognised kinds.**  `TERM_KINDS` excluded
+`opaque` / `axiom` / `constant`, and anything else the map might report was
+dropped silently.  Both sets are now explicit and an unclassified kind **fails
+the gate** rather than being skipped — which immediately caught `macro_rules`
+(from this PR's own `niName!` macro) as unclassified.  Also: the probe's
+"did not elaborate" error now names a stale `docs/codebase_map.json` as the
+usual cause, which is what it was.
+
+**P2 — the flow-gate non-vacuity witness used the reserved sentinel.**
+`ThreadId.isReserved` is `val = 0`, so a state whose current thread is `⟨0⟩`
+violates `currentThreadValidOnCore`.  The witness now uses a non-sentinel
+subject and carries `subject.isReserved = false` in its statement.  The review
+also asked for a subject backed by a real TCB; that is deliberately *not* added,
+and the docstring says why — `endpointFlowCheckAtCore` provably never reads the
+object store, so requiring a TCB would imply it consults state it does not.
+
+**P2 — the staged-module headline said 57.**  The allowlist and the partition
+gate both say 58.  Corrected in `CLAUDE.md` and its `AGENTS.md` mirror.
+
+**Left open: the version-per-PR question (P1).**  The branch ships four patch
+bumps (0.33.5 … 0.33.8) in one PR, so on merge three of them were never live
+releases.  Collapsing to a single bump means rewriting four pushed commits, so
+it is the maintainer's call rather than something to force-push unilaterally.
+
+Suite 198 -> **200 assertions / 30 groups**; 363 declarations axiom-clean.
+
+Refs: docs/planning/SMP_INFORMATION_FLOW_PLAN.md §5 (Phase SM8.B)
+
 ## v0.33.8 — SM8.B: the composed cross-core cancellation, and the machine frame that was blocking it
 
 Closes the one item the v0.33.7 audit left registered rather than proven.

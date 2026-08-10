@@ -846,29 +846,74 @@ theorem applyCallDonation_confinedToCores (st st' : SystemState)
 /-- SM8.B.2: **the cores the live cross-core `.call` may write.**
 
 `endpointCallCrossCoreDispatch` is not just `endpointCallOnCore`: it runs the
-transition, then `applyCallDonation`, then `propagatePipChainCrossCore`.  The
-donation is per-core silent, but the chain walk re-buckets each boosted server's
-run queue on that server's **home** core, which the endpoint call's own write set
-does not name.  A claim about the live dispatch therefore has to be made against
-the union — anything narrower would be false. -/
+transition (in its WithCaps form), then `applyCallDonation`, then
+`propagatePipChainCrossCore`.  The donation is per-core silent, but the chain
+walk re-buckets each boosted server's run queue on that server's **home** core,
+which the endpoint call's own write set does not name.  A claim about the live
+dispatch has to be made against the union — anything narrower is false.
+
+**The chain leg is not computable from the pre-state, and this signature says
+so.**  The live walk is `propagatePipChainCrossCore st'' receiverTid`: it starts
+at the *resolved receiver*, not the caller, and runs at the *post-donation*
+state, not `st`.  Both matter — the call blocks the caller on reply and the
+donation rewrites SchedContext bindings, so `blockingServer` at `st''` is
+genuinely not `blockingServer` at `st`, and a pre-state walk from the caller
+would name a different chain.  An earlier form of this definition did exactly
+that and was wrong (PR #861 review).
+
+So `chainState` and `chainStart` are explicit parameters rather than something
+this definition pretends to recover: instantiate them at the post-donation state
+and the receiver `endpointCallReceiver? st endpointId` resolves.  The
+`pipChainWriteSet` leg is then sound by
+`propagatePipChainCrossCore_confinedToCores` at that state. -/
 def endpointCallLiveWriteSet (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (caller : SeLe4n.ThreadId) (executingCore : CoreId) : List CoreId :=
+    (executingCore : CoreId) (chainState : SystemState)
+    (chainStart : SeLe4n.ThreadId) : List CoreId :=
   endpointCallWriteSet st endpointId executingCore
-    ++ pipChainWriteSet st caller executingCore st.objectIndex.length
+    ++ pipChainWriteSet chainState chainStart executingCore
+        chainState.objectIndex.length
 
 /-- SM8.B.2: the live write set contains the below-API one, so a core outside it
 is outside both.  The composition rule that makes the union the right premise. -/
 theorem endpointCallWriteSet_subset_live (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (caller : SeLe4n.ThreadId) (executingCore : CoreId) (c : CoreId)
-    (h : c ∉ endpointCallLiveWriteSet st endpointId caller executingCore) :
+    (executingCore : CoreId) (chainState : SystemState) (chainStart : SeLe4n.ThreadId)
+    (c : CoreId)
+    (h : c ∉ endpointCallLiveWriteSet st endpointId executingCore chainState chainStart) :
     c ∉ endpointCallWriteSet st endpointId executingCore :=
   fun hm => h (List.mem_append.mpr (Or.inl hm))
 
 theorem pipChainWriteSet_subset_live (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (caller : SeLe4n.ThreadId) (executingCore : CoreId) (c : CoreId)
-    (h : c ∉ endpointCallLiveWriteSet st endpointId caller executingCore) :
-    c ∉ pipChainWriteSet st caller executingCore st.objectIndex.length :=
+    (executingCore : CoreId) (chainState : SystemState) (chainStart : SeLe4n.ThreadId)
+    (c : CoreId)
+    (h : c ∉ endpointCallLiveWriteSet st endpointId executingCore chainState chainStart) :
+    c ∉ pipChainWriteSet chainState chainStart executingCore
+          chainState.objectIndex.length :=
   fun hm => h (List.mem_append.mpr (Or.inr hm))
+
+/-- SM8.B.2: **the live `.call` composition, bounded.**
+
+Stated in the path-reduction style SM6.A uses for the same pipeline: the caller
+names the intermediate states, and this composes the two legs' confinement into
+the union.  `hTrans` is whatever the WithCaps transition contributes (discharged
+by `endpointCallOnCore_confinedToCores` plus the capability-transfer frame),
+`hDonation` is the per-core-silent donation, and the chain leg is
+`propagatePipChainCrossCore_confinedToCores` at the state the walk actually runs
+at — which is the point of taking `chainState` rather than guessing it. -/
+theorem endpointCallLive_confinedToCores (st stTrans stDon : SystemState)
+    (endpointId : SeLe4n.ObjId) (executingCore : CoreId) (chainStart : SeLe4n.ThreadId)
+    (hTrans : observableSlotsConfinedToCores st stTrans
+      (endpointCallWriteSet st endpointId executingCore))
+    (hDonation : observableSlotsConfinedToCores stTrans stDon []) :
+    observableSlotsConfinedToCores st
+      (propagatePipChainCrossCore stDon chainStart executingCore
+        stDon.objectIndex.length).1
+      (endpointCallLiveWriteSet st endpointId executingCore stDon chainStart) :=
+  observableSlotsConfinedToCores_trans
+    (observableSlotsConfinedToCores_mono
+      (by intro c hc; simpa using hc)
+      (observableSlotsConfinedToCores_trans hTrans hDonation))
+    (propagatePipChainCrossCore_confinedToCores executingCore
+      stDon.objectIndex.length stDon chainStart)
 
 -- ============================================================================
 -- §6  The non-interference instantiations
@@ -1049,11 +1094,13 @@ theorem crossCoreNiTheorem_injective :
       | rfl
       | (exact absurd h (by simp only [crossCoreNiTheorem]; decide))
 
-/-- SM8.B.2: **exactly two** of the six write sets can name a core other than the
-executing one — the wake-bearing transitions.  A reader checking "does this
-module actually exercise the cross-core direction" can check this instead of
-reading six proofs. -/
-def crossCoreTransitionWakesRemote : CrossCoreTransition → Bool
+/-- SM8.B.2: **which transitions can write a core other than the executing
+one.**  Named for remote *writes*, not for wakes: a reply, a deschedule and a
+cancellation all name a remote core without waking anything, and the earlier
+`…WakesRemote` spelling described the wrong semantics (PR #861 review).  A
+reader checking "does this module actually exercise the cross-core direction"
+can check this instead of reading seven proofs. -/
+def crossCoreTransitionWritesRemote : CrossCoreTransition → Bool
   | .wake => true
   | .endpointCall => true
   | .notificationSignal => true
@@ -1062,7 +1109,7 @@ def crossCoreTransitionWakesRemote : CrossCoreTransition → Bool
   | .deschedule => true
   | .cancelIpcBlocking => true
 
-theorem crossCoreTransitionWakesRemote_count :
-    (CrossCoreTransition.all.filter crossCoreTransitionWakesRemote).length = 6 := by decide
+theorem crossCoreTransitionWritesRemote_count :
+    (CrossCoreTransition.all.filter crossCoreTransitionWritesRemote).length = 6 := by decide
 
 end SeLe4n.Kernel
