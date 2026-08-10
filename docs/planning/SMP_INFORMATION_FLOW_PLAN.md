@@ -430,6 +430,66 @@ SM8.B; the lock-contention channel CC-5 is SM8.B.8; the
 | SM8.B.13 | `crossCoreLeakage_bounded` | Theorem | L | LANDED |
 | SM8.B.14 | 15+ NI scenarios (tests) | L | LANDED |
 
+**Follow-up cut (v0.33.6) — the self-audit closure.**  A review of the v0.33.5
+landing against the code rather than the prose found six things short of
+optimal.  All are closed; the headline is the first.
+
+1. **`crossCoreNonInterference` had no instantiation at a genuinely cross-core
+   transition.**  Every one of the forty-odd confinement lemmas was for a
+   single-core transition, so every application in the module had
+   `c' = bootCoreId`; the only `c' ≠ bootCoreId` uses were in the test suite,
+   against a hand-built record update rather than a transition.  Closed by the
+   new staged module `InformationFlow/NonInterferenceCrossCore.lean` (staged
+   57 → 58), which required generalising confinement from one core to a **set**
+   (`observableSlotsConfinedToCores`, factored through the new
+   `observableSlotsAgreeOn` primitive so the substantive proof exists once and
+   the thirty-five existing lifts do not churn) — because `endpointCallOnCore`
+   writes the receiver's home core *and* the caller's own, two targets that in
+   the interesting case differ.  Six transitions instantiated over pre-state
+   write sets, on a reusable home-core frame layer (a store preserves a home
+   core unless it is a *migration*, which no IPC-pipeline store is).  Coherence
+   with SM3: the write sets are keyed on the same pre-resolutions the lock sets
+   use (`notificationSignalWriteSet_eq_lockSet_waiter`, `endpointCallReceiver?`).
+   **What it buys over SM6**: those results are conditional on the woken thread
+   being non-observable; this holds for a *fully visible* one, because the
+   remote core's slots did not move.
+2. **`endpointFlowCheck_state_independent` was a tautology** — `X = X` by `rfl`
+   with unused state/core binders, cited in five prose sites as evidence, and
+   provable for a function that *does* read state.  Replaced by
+   `endpointFlowCheckAtCore` (which genuinely takes a state and a core) plus
+   `…_depends_only_on_subject`, the SMP corollary
+   `…_stable_under_confined_transition` (a transition on other cores cannot flip
+   core `c`'s gate), and `…_is_not_constant`.  A Tier-3 **negative** anchor
+   forbids the old symbol.  `endpointPolicyRestricted_perCore` keeps its vacuous
+   `∀ _c` — it is the `…_smp` naming idiom — but the docstring now says so and
+   credits the `iff`, not the tautology.
+3. **Two docstrings over-claimed** (the module header's "§5 instantiates
+   `crossCoreNonInterference` at cross-core transitions", and
+   `syscallEntry_preserves_projectionOnCore`'s "§4 discharges the obligation for
+   each operation the dispatch routes to" — false for the `…OnCore` arms the
+   live cross-core dispatch actually routes to).  Both corrected against the new
+   module.
+4. **Two coverage tables were unverified data**: `perCoreConfinementDerived`
+   ended in a wildcard (so a new variant would be silently misclassified — all
+   thirty-five arms are now enumerated), and both theorem-name tables were plain
+   strings with no link to a declaration (now through `niName!`, a compile-time
+   identifier-validating macro in the `pcist!` idiom).
+5. **The axiom check was not exhaustive** despite being published as such: its
+   regex missed three `@[simp] theorem` declarations.  Replaced by
+   `scripts/check_module_axioms.py`, driven by `docs/codebase_map.json` and
+   **run** from Tier 3; it reports the two `private` helpers it cannot probe
+   rather than dropping them.  351 declarations, all axiom-clean.
+6. **Scenario count**: 167 → 186 assertions / 28 groups, four new groups driving
+   real cross-core transitions with load-bearing negatives.
+
+Scoped follow-on registered rather than claimed: `cancelIpcBlockingOnCore`'s
+*composed* confinement (the SM6.E deschedule primitive is covered;
+the object-level teardown is per-core silent in fact but the codebase carries
+only its `scheduler` frame, so one lemma — `cancelIpcBlocking_machine_eq` beside
+the existing `cancelIpcBlocking_scheduler_eq` — closes it), and the
+`endpointReceiveDualOnCore` / `endpointReplyRecvOnCore` composites, which compose
+the same primitives.
+
 **Landing record (v0.33.5).**  Two new staged modules (staged-only count 55 →
 57), 188 declarations, zero `sorry`/`axiom` — every one of the 184 term-level
 declarations depends only on `propext` / `Quot.sound` / `Classical.choice`,

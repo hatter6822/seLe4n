@@ -2547,6 +2547,17 @@ each group carries a load-bearing negative).
 
 ### Layer 3 under SMP — per-core non-interference (WS-SM SM8.B)
 
+> **v0.33.6 follow-up.**  The v0.33.5 cut proved `crossCoreNonInterference` but
+> never instantiated it at a transition that writes a remote core — all thirty-five
+> per-operation lifts are boot-core-confined, so `c'` was always the boot core.
+> `InformationFlow/NonInterferenceCrossCore` supplies six instantiations over
+> set-of-cores write sets computed from the pre-state (an endpoint call writes
+> two cores: the receiver's home and the caller's own).  The resulting guarantee
+> is strictly stronger than the SM6 per-core NI results on the per-core half —
+> those require the woken thread to be non-observable, this holds for a fully
+> visible one.  The same cut removed a tautology (`endpointFlowCheck_state_independent`,
+> `X = X` by `rfl`) in favour of a genuinely state- and core-dependent gate.
+
 `InformationFlow/NonInterferencePerCore.lean` and
 `InformationFlow/CovertChannelPerCore.lean` (WS-SM SM8.B, v0.33.5; staged,
 188 declarations, axiom-clean) prove that transitions leave the SM8.A

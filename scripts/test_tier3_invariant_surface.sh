@@ -1703,7 +1703,15 @@ run_check "INVARIANT" rg -n '^def endpointPolicyRestricted_perCore' SeLe4n/Kerne
 run_check "INVARIANT" rg -n '^theorem endpointPolicyRestricted_perCore_iff' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointPolicyRestricted_perCore_at' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointPolicyRestricted_perCore_no_overrides' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem endpointFlowCheck_state_independent' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^def endpointFlowCheckAtCore' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointFlowCheckAtCore_depends_only_on_subject' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointFlowCheckAtCore_stable_under_confined_transition' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointFlowCheckAtCore_is_not_constant' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+# NEGATIVE: `endpointFlowCheck_state_independent` was a tautology (`X = X` by
+# `rfl`, with unused state/core binders) cited in five prose sites as evidence.
+# It must not return: a claim about `endpointFlowCheck` itself can only ever be
+# reflexivity, since that function takes neither a state nor a core.
+run_negative_check "INVARIANT" rg -n 'endpointFlowCheck_state_independent' SeLe4n/ tests/
 run_check "INVARIANT" rg -n '^theorem endpointFlowCheck_restricted_subset_perCore' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointPolicyRestricted_perCore_is_necessary' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem syscallEntry_preserves_projectionOnCore' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
@@ -1740,6 +1748,46 @@ run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.InformationFlow\.NonInterfe
 run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.InformationFlow\.CovertChannelPerCore' SeLe4n/Platform/Staged.lean
 run_check "INVARIANT" rg -n '^SeLe4n\.Kernel\.InformationFlow\.NonInterferencePerCore' scripts/staged_module_allowlist.txt
 run_check "INVARIANT" rg -n '^SeLe4n\.Kernel\.InformationFlow\.CovertChannelPerCore' scripts/staged_module_allowlist.txt
+
+# WS-SM SM8.B (v0.33.6) — non-interference at the genuinely cross-core
+# transitions.  The set-of-cores confinement algebra, the home-core frame layer,
+# the six write sets and their NI instantiations.
+run_check "INVARIANT" rg -n '^structure observableSlotsAgreeOn' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^structure observableSlotsConfinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreNonInterference_of_agreeOn' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreNonInterference_ofCores' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem observableSlotsConfinedToCores_singleton_iff' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem observableSlotsConfinedToCores_mono' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem observableSlotsConfinedToCores_trans' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem storeObject_tcb_determineTargetCore_eq' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueuePopHead_determineTargetCore_eq' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^def notificationSignalWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^def endpointCallWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalWriteSet_eq_lockSet_waiter' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem wakeThread_crossCoreNonInterference_of_visible_thread' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.InformationFlow\.NonInterferenceCrossCore' SeLe4n/Platform/Staged.lean
+run_check "INVARIANT" rg -n '^SeLe4n\.Kernel\.InformationFlow\.NonInterferenceCrossCore' scripts/staged_module_allowlist.txt
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.InformationFlow\.NonInterferenceCrossCore' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runCrossCoreWriteSetChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runVisibleRemoteWakeChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runCoreSetAlgebraChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runResolvedFlowGateChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: on core 2 itself the run queue DID move, visibly' tests/SmpInformationFlowSuite.lean
+# The compile-time-validated name table (`niName!`) and the enumerated
+# confinement split.  NEGATIVE: `perCoreConfinementDerived` must not regain a
+# wildcard arm — a wildcard cannot be an exhaustiveness tripwire.
+run_check "INVARIANT" rg -n 'syntax \(name := perCoreNiTheoremNameMacro\)' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n 'niName! nonInterference_perCore_chooseThread' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n 'niName! endpointCallOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_negative_check "INVARIANT" rg -n '^  \| _ => true' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+# The repeatable, map-driven axiom sweep replaces the regex generator that
+# missed three `@[simp] theorem` declarations.  Run it, do not merely assert it
+# exists: a checked-in tool nobody invokes is not a gate.
+run_check "INVARIANT" test -x scripts/check_module_axioms.py
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && ./scripts/check_module_axioms.py --all-smp-information-flow'
 
 
 # WS-H12d IPC message payload bounds anchors — predicate definitions + enforcement + theorems.

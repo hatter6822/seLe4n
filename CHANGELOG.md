@@ -1,3 +1,132 @@
+## v0.33.6 — SM8.B follow-up: the cross-core direction actually instantiated, and a tautology removed
+
+A self-audit of the v0.33.5 SM8.B cut, checked against the code rather than the
+prose describing it. Every finding is closed. Three new staged declarations sets,
+one new module, zero `sorry`/`axiom`, trace byte-identical.
+
+**`crossCoreNonInterference` had no instantiation at a transition that writes a
+remote core.** The theorem was general and sound, but all forty-odd confinement
+lemmas were for single-core transitions and every application inside the module
+had `c' = bootCoreId`; the only `c' ≠ bootCoreId` uses were three lines in the
+test suite against a hand-built record update. So the interesting direction — the
+whole point of a per-core theorem — was unexercised.
+
+Closed by `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (staged;
+staged-only 57 → 58), which needed a generalisation first: `endpointCallOnCore`
+wakes the receiver on the receiver's home core **and** deschedules the caller on
+the caller's own core, two write targets and in the interesting case two
+different ones, so no single-core statement covers it. `NonInterferencePerCore`
+gains `observableSlotsAgreeOn` (the single-core agreement primitive the
+substantive proof actually consumes), `observableSlotsConfinedToCores` (write
+sets as lists) with monotonicity and an append-composition rule, and
+`crossCoreNonInterference_ofCores`. `crossCoreNonInterference` is re-derived
+through the agreement primitive, so its statement and the thirty-five existing
+lifts are untouched.
+
+Six transitions are then instantiated over write sets **computed from the
+pre-state**: the wake and deschedule primitives, the notification signal and
+wait, the endpoint call, and the reply. Naming the target at the pre-state
+across a multi-store pipeline needed a reusable home-core frame layer — a home
+core is `getTcb?` composed with `cpuAffinity`, so a store preserves it whenever
+it is not a *migration*, which no IPC-pipeline store is
+(`storeObject_tcb_determineTargetCore_eq`, the endpoint-store companion that
+needs no disjointness hypothesis because an endpoint is not a TCB at either end,
+`storeTcbQueueLinks_…`, `endpointQueuePopHead_…`). SM6.B made this argument once
+for one pipeline; it is now stated once and used five times.
+
+**What this buys over SM6.** The SM6 per-core NI results route through
+`wakeThread_preserves_projectionOnCore`, whose `hHighThread` hypothesis says the
+woken thread is *not observable* — under which the run-queue insert is invisible
+because the filter drops it, on the woken thread's own core as much as anywhere.
+`crossCoreNonInterference` says something strictly stronger for a remote
+observer: waking a **fully visible** thread on core `c'` is invisible on core
+`c ∉ cs`, because core `c`'s six slots did not move. No label hypothesis on the
+per-core half at all. That is the honest division of labour — labels govern the
+shared half, core identity governs the per-core half — and
+`wakeThread_crossCoreNonInterference_of_visible_thread` is it.
+
+Coherence with the 2PL layer is stated, not assumed: the notification write set
+names the home core of exactly the thread `notificationSignalWaiter?`
+pre-resolves (`notificationSignalWriteSet_eq_lockSet_waiter`), and the endpoint
+call's uses SM6.A's own `endpointCallReceiver?` — so the declared
+information-flow write set and the declared lock footprint cannot name different
+threads.
+
+**`endpointFlowCheck_state_independent` was a tautology.** It read
+`endpointFlowCheck … = endpointFlowCheck …` by `rfl`, with two `SystemState` and
+two `CoreId` binders that appeared nowhere in the statement — provable for a
+function that *does* read state, which is exactly what it purported to exclude.
+Five prose sites cited it as evidence. The property it gestured at is real but is
+a *type-level* fact (the signature has neither parameter), so it needs no
+theorem; what needs one is the gate as the kernel **resolves** it. New
+`endpointFlowCheckAtCore` takes a state and a core and reads the current thread
+there, and `endpointFlowCheckAtCore_depends_only_on_subject` proves its only such
+dependence is through which thread is the subject — false for a gate that let a
+core's active domain widen what its current thread may send to. The SMP corollary
+`…_stable_under_confined_transition` consumes the new confinement machinery: a
+transition on other cores cannot flip core `c`'s gate, so an SMP kernel cannot be
+made to admit a denied flow by rescheduling. `…_is_not_constant` keeps the
+stability claim from being satisfied by a gate that always says `false`. This is
+the same defect class as the v0.32.99 `kernelCodeWriteOwesPoUClean` finding, and
+a Tier-3 negative anchor now forbids the old symbol by name.
+
+`endpointPolicyRestricted_perCore` keeps its vacuous `∀ _c` — it is the SM4.D
+`…_smp` naming idiom over a predicate that mentions no state and no core — but
+the docstring now says so plainly and points at the `iff` as the *proof* that it
+is notation, instead of crediting the tautology.
+
+**Two docstrings of mine over-claimed** and are corrected against the new module:
+`NonInterferencePerCore`'s header said §5 instantiates `crossCoreNonInterference`
+at cross-core transitions (§5 is the operation taxonomy; it does not), and
+`syscallEntry_preserves_projectionOnCore` said §4 discharges the confinement
+obligation "for each operation the dispatch routes to" — but the live cross-core
+dispatch routes `.call`/`.reply`/`.notificationSignal` to the `…OnCore` forms,
+for which boot-core confinement is **false**. It now states the split: derived
+for the thirty-one same-core operations, and the set-of-cores statement for the
+four that genuinely write elsewhere.
+
+**Two coverage tables were unverified data.** `perCoreConfinementDerived` ended
+in `| _ => true`, so a new `KernelOperation` variant would have been silently
+classified as derived (only the count theorem would have caught it, one step from
+the cause); all thirty-five arms are now enumerated, making a new variant a
+compile error at the table itself. And both theorem-name tables were plain
+strings with no link to a declaration — a rename left them naming something that
+no longer existed. Both now go through `niName!`, a compile-time
+identifier-validating macro in the idiom of `pcist!`
+(`Scheduler/Invariant/PerCoreInvariantSuiteInventory`): it elaborates the
+identifier and returns its spelling, and `let _ := @ident; "…"` zeta-reduces so
+the `rfl`/`decide` proofs over the tables are unaffected.
+
+**The v0.33.5 axiom check was not exhaustive**, though it was published as
+"checked exhaustively rather than by sampling". Its generator anchored a regex at
+`^(private )?(theorem|def|…)`, which skipped every `@[simp] theorem` — three of
+a hundred and eighty-four. The conclusion held (all three are clean) but the
+claim ran ahead of the evidence. Replaced by `scripts/check_module_axioms.py`,
+which reads declarations from `docs/codebase_map.json` — generated from
+elaborated source, so exhaustive by construction — and is now **run** from Tier 3
+rather than merely existing. It reports the two `private` helpers it cannot probe
+from another file instead of dropping them silently. 351 declarations across the
+four SM8 information-flow modules, all axiom-clean.
+
+Also: `scripts/test_lib.sh` gains `run_negative_check`, the dual of `run_check`
+for anchors that pin *absence* (an inline `! rg …` does not route through
+`record_failure`, so a regression would have printed nothing and passed);
+`NoDupList.head?_eq_of_tail?` and its `none` companion, the general fact that two
+accessors destructuring the same list agree; and
+`notification_ne_waiter_of_store` de-privatised in `NotificationSignal.lean`
+rather than copied, on the v0.32.60 precedent.
+
+Tests: `tests/SmpInformationFlowSuite.lean` 167 → **186 assertions across 28
+groups**, four new groups driving genuine cross-core transitions on a fixture
+carrying a **visible** thread homed on core 2 — the write sets computed on a real
+state, the wake seen not to move cores 0/1/3, the resolved gate stable across a
+remote wake — each with a load-bearing negative, including that on core 2 itself
+the run queue *did* move visibly, which is exactly the case the theorem does not
+claim. 39 new `#check` anchors covering every declaration of the new module,
+verified complete by set difference against the codebase map.
+
+Refs: docs/planning/SMP_INFORMATION_FLOW_PLAN.md §5 (Phase SM8.B)
+
 ## v0.33.5 — SM8.B: per-core non-interference, and the lock field that should not have been observable
 
 WS-SM Phase SM8.B — the SMP lift of the whole non-interference surface. Two

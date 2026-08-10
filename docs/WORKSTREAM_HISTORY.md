@@ -24,7 +24,63 @@ Plan:
 SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
-**Current sub-phase: SM8.B per-core non-interference LANDED (v0.33.5).**
+**Current sub-phase: SM8.B follow-up cut LANDED (v0.33.6) — the self-audit
+closure.**  A review of the v0.33.5 landing, checked against the code rather than
+the prose describing it, found six things short of optimal; all are closed.
+
+The headline is that **`crossCoreNonInterference` had no instantiation at a
+transition that writes a remote core**.  The theorem was general and sound, but
+all forty-odd confinement lemmas were for single-core transitions, so every
+application inside the module had `c' = bootCoreId`, and the only `c' ≠
+bootCoreId` uses were three lines in the test suite against a hand-built record
+update rather than a transition.  The interesting direction — the whole point of
+a per-core theorem — was unexercised.
+
+Closed by the new staged module `InformationFlow/NonInterferenceCrossCore.lean`
+(staged-only 57 → 58), which needed a generalisation first: `endpointCallOnCore`
+wakes the receiver on the receiver's home core **and** deschedules the caller on
+the caller's own, two write targets that in the interesting case differ, so no
+single-core statement covers it.  `NonInterferencePerCore` gains
+`observableSlotsAgreeOn` (the single-core agreement primitive the substantive
+proof actually consumes), `observableSlotsConfinedToCores` with monotonicity and
+append-composition, and `crossCoreNonInterference_ofCores`;
+`crossCoreNonInterference` is re-derived through the agreement primitive so its
+statement and the thirty-five lifts are untouched.  Six transitions are
+instantiated over write sets **computed from the pre-state**, which required a
+reusable home-core frame layer: a home core is `getTcb?` composed with
+`cpuAffinity`, so a store preserves it unless it is a *migration*, which no
+IPC-pipeline store is.  Write sets are keyed on the same pre-resolutions the SM3
+lock sets use, so the declared information-flow footprint and the declared 2PL
+footprint cannot name different threads.
+
+**What this buys over SM6**: the SM6 per-core NI results route through
+`wakeThread_preserves_projectionOnCore`, conditional on `hHighThread` — the woken
+thread must be non-observable, under which the run-queue insert is invisible
+because the filter drops it.  `crossCoreNonInterference` says something strictly
+stronger for a remote observer: waking a **fully visible** thread on core `c'` is
+invisible on core `c ∉ cs`, because core `c`'s six slots did not move.  Labels
+govern the shared half; core identity governs the per-core half.
+
+The other five: the `endpointFlowCheck_state_independent` **tautology** (`X = X`
+by `rfl` with unused state and core binders, cited in five prose sites as
+evidence, and provable for a function that *does* read state) replaced by
+`endpointFlowCheckAtCore` and three real theorems about it, with a Tier-3
+negative anchor forbidding the old symbol; two over-claiming docstrings of the
+v0.33.5 cut corrected against the new module; `perCoreConfinementDerived`'s
+wildcard arm replaced by all thirty-five enumerated arms (a wildcard cannot be an
+exhaustiveness tripwire); both theorem-name tables routed through `niName!`, a
+compile-time identifier-validating macro in the `pcist!` idiom; and the axiom
+sweep — published as exhaustive but whose regex skipped three `@[simp] theorem`
+declarations — replaced by the map-driven `scripts/check_module_axioms.py`, now
+**run** from Tier 3 rather than merely existing.  351 declarations axiom-clean.
+
+Suite 167 → 186 assertions / 28 groups, four new groups driving genuine
+cross-core transitions on a fixture carrying a *visible* thread homed on core 2.
+Registered follow-on rather than claimed: `cancelIpcBlockingOnCore`'s composed
+confinement (the deschedule primitive is covered) and the
+receive-dual / replyRecv composites.
+
+**Prior sub-phase: SM8.B per-core non-interference LANDED (v0.33.5).**
 The SMP lift of the whole non-interference surface, in two new staged modules
 (`InformationFlow/NonInterferencePerCore.lean`, 151 declarations;
 `InformationFlow/CovertChannelPerCore.lean`, 37; staged-only 55 → 57), 188

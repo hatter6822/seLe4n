@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.InformationFlow.ObservableStatePerCore
 import SeLe4n.Kernel.InformationFlow.CovertChannelPerCore
+import SeLe4n.Kernel.InformationFlow.NonInterferenceCrossCore
 import SeLe4n.Testing.StateBuilder
 
 /-!
@@ -346,6 +347,49 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @crossCoreLeakage_bounded
 #check @crossCoreLeakage_bounded_reconstruction
 #check @crossCoreLeakage_bounded_by_globalProjection
+
+-- §1.8  WS-SM SM8.B — non-interference at the genuinely cross-core
+-- transitions (`InformationFlow/NonInterferenceCrossCore`).  Every declaration
+-- of that module, verified complete by set difference against the codebase map.
+#check @enqueueRunnableOnCore_confinedToCores
+#check @removeRunnableOnCore_confinedToCores
+#check @wakeThread_confinedToCores
+#check @descheduleThread_confinedToCores
+#check @storeObject_confinedToCores
+#check @storeTcbIpcStateAndMessage_confinedToCores
+#check @storeTcbIpcState_confinedToCores
+#check @storeTcbIpcState_fromTcb_confinedToCores
+#check @endpointQueuePopHead_confinedToCores
+#check @endpointQueueEnqueue_confinedToCores
+#check @linkServerStashedReply_confinedToCores
+#check @consumeCallerReply_confinedToCores
+#check @storeTcbIpcStateAndMessage_fromTcb_confinedToCores
+#check @storeObject_tcb_determineTargetCore_eq
+#check @storeObject_endpoint_determineTargetCore_eq
+#check @storeTcbIpcStateAndMessage_fromTcb_determineTargetCore_eq
+#check @storeTcbQueueLinks_determineTargetCore_eq
+#check @endpointQueuePopHead_determineTargetCore_eq
+#check @notificationSignalWriteSet
+#check @notificationSignalWriteSet_eq_lockSet_waiter
+#check @notificationSignalOnCore_confinedToCores
+#check @notificationWaitOnCore_confinedToCores
+#check @endpointCallWriteSet
+#check @endpointCallOnCore_confinedToCores
+#check @endpointReplyOnCore_confinedToCores
+#check @cancellationCrossCore_confinedToCores
+#check @notificationSignalOnCore_crossCoreNonInterference
+#check @notificationWaitOnCore_crossCoreNonInterference
+#check @endpointCallOnCore_crossCoreNonInterference
+#check @endpointReplyOnCore_crossCoreNonInterference
+#check @descheduleThread_crossCoreNonInterference
+#check @wakeThread_crossCoreNonInterference_of_visible_thread
+#check @CrossCoreTransition
+#check @CrossCoreTransition.all
+#check @crossCoreNiTheorem
+#check @crossCoreNiTheorem_count
+#check @crossCoreNiTheorem_injective
+#check @crossCoreTransitionWakesRemote
+#check @crossCoreTransitionWakesRemote_count
 #check @crossCoreTransition_invisible_to_every_observer
 
 -- §1.7  SM8.B — the enforcement boundary and the covert-channel inventory
@@ -379,7 +423,10 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @endpointPolicyRestricted_perCore_iff
 #check @endpointPolicyRestricted_perCore_at
 #check @endpointPolicyRestricted_perCore_no_overrides
-#check @endpointFlowCheck_state_independent
+#check @endpointFlowCheckAtCore
+#check @endpointFlowCheckAtCore_depends_only_on_subject
+#check @endpointFlowCheckAtCore_stable_under_confined_transition
+#check @endpointFlowCheckAtCore_is_not_constant
 #check @endpointFlowCheck_restricted_subset_perCore
 #check @endpointPolicyRestricted_perCore_is_necessary
 #check @syscallEntry_preserves_projectionOnCore
@@ -1789,6 +1836,116 @@ private def confinedCheck (st st' : SystemState) (c₀ : CoreId) : Bool :=
       decide (st'.scheduler.domainScheduleIndexOnCore c
         = st.scheduler.domainScheduleIndexOnCore c))
 
+-- ============================================================================
+-- §5 fixtures — a thread homed on a *remote* core
+-- ============================================================================
+
+/-- A **low-labelled** (so fully observable) thread whose `cpuAffinity` puts it
+on core 2.  Everything in §5 turns on this: SM6's per-core NI needs the woken
+thread to be invisible, `crossCoreNonInterference` does not. -/
+private def remoteHomedThread : SeLe4n.ThreadId := ⟨1018⟩
+
+private def crossCoreState : SystemState :=
+  { niState with
+      objects := niState.objects.insert remoteHomedThread.toObjId
+        (.tcb (mkTcb 1018 40 (some c2))) }
+
+/-- The wake of a *visible* thread onto its remote home core — a real
+transition, run for effect. -/
+private def remoteWakePost : SystemState :=
+  (SeLe4n.Kernel.wakeThread crossCoreState remoteHomedThread c0).1
+
+/-- The deschedule dual, on the same remote-homed thread. -/
+private def remoteDeschedulePost : SystemState :=
+  (SeLe4n.Kernel.descheduleThread crossCoreState remoteHomedThread c0).1
+
+/-- §5.1  The cross-core write sets, computed on a real state. -/
+private def runCrossCoreWriteSetChecks : IO Unit := do
+  IO.println "--- §5.1 cross-core write sets, computed from the pre-state ---"
+  assertBool "the remote-homed thread really resolves to core 2"
+    (decide (SeLe4n.Kernel.determineTargetCore crossCoreState remoteHomedThread = c2))
+  assertBool "…and it is genuinely VISIBLE to the low observer"
+    (decide (threadObservable niLabeling niLowObserver remoteHomedThread = true))
+  assertBool "a wake writes core 2 — not the executing core 0"
+    (confinedCheck crossCoreState remoteWakePost c2)
+  assertBool "NEGATIVE: the wake is NOT confined to the executing core 0"
+    (!confinedCheck crossCoreState remoteWakePost c0)
+  assertBool "the deschedule dual is likewise confined to core 2"
+    (confinedCheck crossCoreState remoteDeschedulePost c2)
+  assertBool "the notification write set is empty when nobody waits"
+    (decide (SeLe4n.Kernel.notificationSignalWriteSet crossCoreState highNotification = []))
+  assertBool "an endpoint call with no waiting receiver writes only the caller's core"
+    (decide (SeLe4n.Kernel.endpointCallWriteSet crossCoreState lowEndpoint c0 = [c0]))
+
+/-- §5.2  The headline: a *visible* thread woken remotely is still invisible. -/
+private def runVisibleRemoteWakeChecks : IO Unit := do
+  IO.println "--- §5.2 a VISIBLE thread woken on a remote core ---"
+  assertBool "the wake really changed core 2's run queue (the transition is not inert)"
+    (decide ((remoteWakePost.scheduler.runQueueOnCore c2).toList
+      ≠ (crossCoreState.scheduler.runQueueOnCore c2).toList))
+  assertBool "cores 0, 1 and 3 see none of it"
+    ([c0, c1, c3].all (fun c =>
+      decide ((remoteWakePost.scheduler.runQueueOnCore c).toList
+                = (crossCoreState.scheduler.runQueueOnCore c).toList) &&
+      decide (remoteWakePost.scheduler.currentOnCore c
+                = crossCoreState.scheduler.currentOnCore c)))
+  -- The load-bearing negative: this is a statement about *other* cores.  On
+  -- core 2 itself the observer's own run queue moved, and — because the woken
+  -- thread is visible — the filter does not hide it.  That is precisely the
+  -- case SM6's `hHighThread`-conditional theorem cannot cover and this one
+  -- deliberately does not claim.
+  assertBool "NEGATIVE: on core 2 itself the run queue DID move, visibly"
+    (decide (remoteHomedThread ∈ (remoteWakePost.scheduler.runQueueOnCore c2).toList) &&
+     decide (remoteHomedThread ∉ (crossCoreState.scheduler.runQueueOnCore c2).toList))
+
+/-- §5.3  The set-of-cores algebra and its coverage record. -/
+private def runCoreSetAlgebraChecks : IO Unit := do
+  IO.println "--- §5.3 the set-of-cores confinement algebra ---"
+  assertBool "six cross-core transitions are covered"
+    (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 6))
+  assertBool "five of the six can name a core other than the executing one"
+    (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
+      SeLe4n.Kernel.crossCoreTransitionWakesRemote).length = 5))
+  assertBool "…and the wait is the one that cannot"
+    (decide (SeLe4n.Kernel.crossCoreTransitionWakesRemote .notificationWait = false))
+  assertBool "the covered-transition theorem names are pairwise distinct"
+    (decide ((SeLe4n.Kernel.CrossCoreTransition.all.map
+      SeLe4n.Kernel.crossCoreNiTheorem).eraseDups.length = 6))
+  -- The load-bearing negative: widening a write set is sound, narrowing is not
+  -- — a single-core statement cannot cover the endpoint call.
+  assertBool "NEGATIVE: a two-element write set is not a singleton"
+    (decide (SeLe4n.Kernel.endpointCallWriteSet crossCoreState lowEndpoint c0 ≠ [c0, c2]))
+
+/-- A generic labeling context for the SM8.B.11 gate checks: every flow allowed,
+so the gate's only remaining input is whether a subject exists. -/
+private def niGenericCtx : GenericLabelingContext :=
+  { policy := { canFlow := fun _ _ => true }
+    objectDomainOf := fun _ => ⟨0⟩, threadDomainOf := fun _ => ⟨0⟩
+    endpointDomainOf := fun _ => ⟨0⟩, serviceDomainOf := fun _ => ⟨0⟩ }
+
+private def niEpPolicy : EndpointFlowPolicy := { endpointPolicy := fun _ => none }
+
+private def gateAt (st : SystemState) (c : CoreId) : Bool :=
+  SeLe4n.Kernel.endpointFlowCheckAtCore niGenericCtx niEpPolicy lowEndpoint st c
+
+/-- §5.4  The resolved endpoint flow gate (SM8.B.11, the replaced tautology). -/
+private def runResolvedFlowGateChecks : IO Unit := do
+  IO.println "--- §5.4 the resolved endpoint flow gate ---"
+  -- Two genuinely different states that agree on core 0's current thread —
+  -- the wake rewrote the object store and core 2's run queue.
+  assertBool "the wake really produced a different state"
+    (decide ((remoteWakePost.scheduler.runQueueOnCore c2).toList
+      ≠ (crossCoreState.scheduler.runQueueOnCore c2).toList))
+  assertBool "…yet the two states agree on core 0's subject"
+    (decide (remoteWakePost.scheduler.currentOnCore c0
+      = crossCoreState.scheduler.currentOnCore c0))
+  assertBool "so a wake on core 2 does not move core 0's gate decision"
+    (decide (gateAt remoteWakePost c0 = gateAt crossCoreState c0))
+  -- The load-bearing negative: the gate is not a constant function, so the
+  -- stability above says something.  An idle core has no subject and fails closed.
+  assertBool "NEGATIVE: a core with a subject and an idle core decide differently"
+    (decide (gateAt crossCoreState c0 ≠ gateAt crossCoreState c3))
+
 /-- §4.1  Cross-core non-interference (plan Theorem 3.3.1). -/
 private def runCrossCoreNonInterferenceChecks : IO Unit := do
   IO.println "--- §4.1 crossCoreNonInterference (plan Thm 3.3.1) ---"
@@ -2089,6 +2246,10 @@ def runSmpInformationFlowChecks : IO Unit := do
   runCovertChannelInventoryChecks
   runCatchAllPremiseChecks
   runPolicyAndReleaseBridgeChecks
+  runCrossCoreWriteSetChecks
+  runVisibleRemoteWakeChecks
+  runCoreSetAlgebraChecks
+  runResolvedFlowGateChecks
   IO.println "===================================="
   IO.println "All SM8.A per-core observable-state and SM8.B non-interference checks PASS."
 

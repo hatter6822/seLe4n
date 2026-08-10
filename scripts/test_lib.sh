@@ -144,6 +144,33 @@ run_check() {
   return 1
 }
 
+# WS-SM SM8.B (v0.33.6): the dual of `run_check` — the command MUST fail.
+#
+# Surface anchors so far could only pin that something *is* present.  Several
+# SM8.B findings were the opposite shape: a tautology that must not come back, a
+# wildcard match arm that must not be reintroduced.  Grepping for absence needs
+# an inverted check, and writing `! rg …` inline does not route through
+# `record_failure`, so a regression would print nothing and pass.
+#
+# Usage:
+#   run_negative_check "INVARIANT" rg -n 'forbidden_symbol' SeLe4n/
+run_negative_check() {
+  local category="$1"
+  shift
+
+  log_section "${category}" "RUN (must not match): $*"
+  if "$@" >/dev/null 2>&1; then
+    record_failure "${category}" "Forbidden pattern present: $*"
+    if [[ "${CONTINUE_MODE}" -eq 0 ]]; then
+      finalize_report
+    fi
+    return 1
+  fi
+
+  log_section "${category}" "PASS"
+  return 0
+}
+
 # AN11-B (H-21): Run a command under `timeout`, mapping the canonical
 # `coreutils` exit code 124 (timeout fired) to an explicit, actionable
 # failure message that names the timeout budget. Other non-zero exits keep

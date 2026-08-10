@@ -509,6 +509,16 @@ import SeLe4n.Kernel.InformationFlow.NonInterferencePerCore
 -- endpoint-policy restriction, and the bridge from the release-grade
 -- single-core dispatch non-interference witnesses to the per-core statement.
 import SeLe4n.Kernel.InformationFlow.CovertChannelPerCore
+-- WS-SM SM8.B: non-interference at the transitions that genuinely write a
+-- *remote* core.  `NonInterferencePerCore`'s thirty-five lifts are all confined
+-- to the boot core, so `crossCoreNonInterference`'s interesting direction had no
+-- instantiation at a real cross-core transition; this module supplies six, over
+-- pre-state-computed write sets (`observableSlotsConfinedToCores`, including the
+-- two-element set an endpoint call needs) and a reusable home-core frame layer.
+-- Strictly stronger than the SM6 per-core NI results on the per-core half: those
+-- require the woken thread to be non-observable, these hold for a fully visible
+-- one.  Reachability: staged at SM8.B; SM8.C is the next consumer.
+import SeLe4n.Kernel.InformationFlow.NonInterferenceCrossCore
 -- WS-SM SM6.A: the cross-core-aware syscall dispatch entry —
 -- `syscallDispatchCrossCoreEntry` (`@[export lean_syscall_dispatch_cross_core]`).
 -- Runs the verified `syscallDispatchFromAbi` atomically via `modifyGetKernelState`,

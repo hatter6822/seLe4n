@@ -16,9 +16,14 @@ import SeLe4n.Kernel.Concurrency.Locks.WithLockSet
 -- The SM6.A/SM6.B cross-core non-interference modules own the `*_machine_eq`
 -- frames for the IPC primitives (`storeTcbIpcState{,AndMessage}`,
 -- `storeTcbQueueLinks`, `endpointQueue{PopHead,Enqueue}`).  §4 composes them
--- into the per-operation confinement lemmas rather than re-deriving them, and
--- §5 instantiates `crossCoreNonInterference` at those modules' genuinely
--- cross-core transitions.
+-- into the per-operation confinement lemmas rather than re-deriving them.
+--
+-- Every operation lifted in this module is confined to the **boot core**, so
+-- every application of §2 here has `c' = bootCoreId`.  The instantiations at
+-- transitions that genuinely write a *remote* core live in the companion
+-- module `InformationFlow.NonInterferenceCrossCore`, which needs §1b's
+-- set-of-cores confinement (an endpoint call writes two cores) and is the
+-- reason §1b exists.
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallNiPerCore
 import SeLe4n.Kernel.IPC.CrossCore.NotificationSignalNI
 
@@ -147,6 +152,164 @@ discharge the read-only and decode-failure operations use. -/
 theorem observableSlotsConfinedToCore_of_eq {st st' : SystemState} (c₀ : CoreId)
     (h : st' = st) : observableSlotsConfinedToCore st st' c₀ := by
   cases h; exact observableSlotsConfinedToCore_refl _ c₀
+
+-- ============================================================================
+-- §1a  The single-core agreement primitive
+-- ============================================================================
+--
+-- `crossCoreNonInterference` never uses confinement as such: it uses the six
+-- component equalities **at the one core the observer sits on**.  Naming that
+-- weaker fact separately is what lets the substantive proof exist once while
+-- several different write-set disciplines feed it — confinement to one core
+-- (§1), confinement to a *set* of cores (§1b, which the genuinely cross-core
+-- SM6 transitions need, since an endpoint call writes the receiver's home core
+-- *and* the caller's), and any future discipline that can produce agreement at
+-- a given core.
+
+/-- SM8.B.2: **core `c`'s six observable slots agree between two states.**
+Exactly the per-core half of the observer's view at core `c`, with no claim
+about any other core. -/
+structure observableSlotsAgreeOn (st st' : SystemState) (c : CoreId) : Prop where
+  runQueue : st'.scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c
+  current : st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c
+  activeDomain : st'.scheduler.activeDomainOnCore c = st.scheduler.activeDomainOnCore c
+  domainTimeRemaining :
+    st'.scheduler.domainTimeRemainingOnCore c = st.scheduler.domainTimeRemainingOnCore c
+  domainScheduleIndex :
+    st'.scheduler.domainScheduleIndexOnCore c = st.scheduler.domainScheduleIndexOnCore c
+  regs : st'.machine.regsOnCore c = st.machine.regsOnCore c
+
+/-- SM8.B.1: confinement to core `c₀` gives agreement at every *other* core. -/
+theorem observableSlotsConfinedToCore.agreeOn {st st' : SystemState} {c c₀ : CoreId}
+    (h : observableSlotsConfinedToCore st st' c₀) (hne : c ≠ c₀) :
+    observableSlotsAgreeOn st st' c :=
+  ⟨h.runQueue c hne, h.current c hne, h.activeDomain c hne,
+   h.domainTimeRemaining c hne, h.domainScheduleIndex c hne, h.regs c hne⟩
+
+-- ============================================================================
+-- §1b  Confinement to a *set* of cores
+-- ============================================================================
+--
+-- The single-core form cannot state what the SM6 cross-core transitions do.
+-- `endpointCallOnCore` wakes the receiver on the receiver's home core and
+-- deschedules the caller on the caller's own core: two per-core write targets,
+-- and in the interesting case two *different* ones.  Widening the single-core
+-- predicate to "some core" would be useless (it would exempt every core); the
+-- honest generalisation names the write set.
+
+/-- SM8.B.2: **the per-core observable slots a step writes are confined to the
+cores in `cs`.**  The `cs = [c₀]` instance is `observableSlotsConfinedToCore`
+(`observableSlotsConfinedToCores_singleton_iff`); the genuinely cross-core SM6
+transitions instantiate it at two-element lists. -/
+structure observableSlotsConfinedToCores (st st' : SystemState) (cs : List CoreId) : Prop where
+  runQueue : ∀ c, c ∉ cs →
+    st'.scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c
+  current : ∀ c, c ∉ cs →
+    st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c
+  activeDomain : ∀ c, c ∉ cs →
+    st'.scheduler.activeDomainOnCore c = st.scheduler.activeDomainOnCore c
+  domainTimeRemaining : ∀ c, c ∉ cs →
+    st'.scheduler.domainTimeRemainingOnCore c = st.scheduler.domainTimeRemainingOnCore c
+  domainScheduleIndex : ∀ c, c ∉ cs →
+    st'.scheduler.domainScheduleIndexOnCore c = st.scheduler.domainScheduleIndexOnCore c
+  regs : ∀ c, c ∉ cs → st'.machine.regsOnCore c = st.machine.regsOnCore c
+
+/-- SM8.B.2: set-confinement gives agreement at every core outside the set. -/
+theorem observableSlotsConfinedToCores.agreeOn {st st' : SystemState} {c : CoreId}
+    {cs : List CoreId} (h : observableSlotsConfinedToCores st st' cs) (hne : c ∉ cs) :
+    observableSlotsAgreeOn st st' c :=
+  ⟨h.runQueue c hne, h.current c hne, h.activeDomain c hne,
+   h.domainTimeRemaining c hne, h.domainScheduleIndex c hne, h.regs c hne⟩
+
+theorem observableSlotsConfinedToCores_refl (st : SystemState) (cs : List CoreId) :
+    observableSlotsConfinedToCores st st cs :=
+  ⟨fun _ _ => rfl, fun _ _ => rfl, fun _ _ => rfl, fun _ _ => rfl, fun _ _ => rfl,
+   fun _ _ => rfl⟩
+
+/-- SM8.B.2: the one-core instance is exactly `observableSlotsConfinedToCore`. -/
+theorem observableSlotsConfinedToCores_singleton_iff {st st' : SystemState} {c₀ : CoreId} :
+    observableSlotsConfinedToCores st st' [c₀] ↔ observableSlotsConfinedToCore st st' c₀ := by
+  constructor
+  · intro h
+    exact ⟨fun c hc => h.runQueue c (by simpa using hc),
+      fun c hc => h.current c (by simpa using hc),
+      fun c hc => h.activeDomain c (by simpa using hc),
+      fun c hc => h.domainTimeRemaining c (by simpa using hc),
+      fun c hc => h.domainScheduleIndex c (by simpa using hc),
+      fun c hc => h.regs c (by simpa using hc)⟩
+  · intro h
+    exact ⟨fun c hc => h.runQueue c (by simpa using hc),
+      fun c hc => h.current c (by simpa using hc),
+      fun c hc => h.activeDomain c (by simpa using hc),
+      fun c hc => h.domainTimeRemaining c (by simpa using hc),
+      fun c hc => h.domainScheduleIndex c (by simpa using hc),
+      fun c hc => h.regs c (by simpa using hc)⟩
+
+theorem observableSlotsConfinedToCores_of_single {st st' : SystemState} {c₀ : CoreId}
+    (h : observableSlotsConfinedToCore st st' c₀) :
+    observableSlotsConfinedToCores st st' [c₀] :=
+  observableSlotsConfinedToCores_singleton_iff.mpr h
+
+/-- SM8.B.2: **widening the declared write set is always sound.**  The direction
+that matters: a step confined to `cs` is confined to any superset, so two steps
+with different write sets compose into their union. -/
+theorem observableSlotsConfinedToCores_mono {st st' : SystemState} {cs cs' : List CoreId}
+    (hsub : ∀ c, c ∈ cs → c ∈ cs') (h : observableSlotsConfinedToCores st st' cs) :
+    observableSlotsConfinedToCores st st' cs' :=
+  ⟨fun c hc => h.runQueue c (fun hm => hc (hsub c hm)),
+   fun c hc => h.current c (fun hm => hc (hsub c hm)),
+   fun c hc => h.activeDomain c (fun hm => hc (hsub c hm)),
+   fun c hc => h.domainTimeRemaining c (fun hm => hc (hsub c hm)),
+   fun c hc => h.domainScheduleIndex c (fun hm => hc (hsub c hm)),
+   fun c hc => h.regs c (fun hm => hc (hsub c hm))⟩
+
+/-- SM8.B.2: **composition accumulates write sets.**  A two-step transition
+writing `cs₁` then `cs₂` writes `cs₁ ++ cs₂` — the rule that assembles a
+cross-core IPC transition (store the objects, wake on the receiver's home core,
+deschedule on the caller's) from its primitive frames. -/
+theorem observableSlotsConfinedToCores_trans {st stMid st' : SystemState}
+    {cs₁ cs₂ : List CoreId}
+    (h₁ : observableSlotsConfinedToCores st stMid cs₁)
+    (h₂ : observableSlotsConfinedToCores stMid st' cs₂) :
+    observableSlotsConfinedToCores st st' (cs₁ ++ cs₂) :=
+  have hl : ∀ {c : CoreId}, c ∉ cs₁ ++ cs₂ → c ∉ cs₁ :=
+    fun hc hm => hc (List.mem_append.mpr (Or.inl hm))
+  have hr : ∀ {c : CoreId}, c ∉ cs₁ ++ cs₂ → c ∉ cs₂ :=
+    fun hc hm => hc (List.mem_append.mpr (Or.inr hm))
+  ⟨fun c hc => (h₂.runQueue c (hr hc)).trans (h₁.runQueue c (hl hc)),
+   fun c hc => (h₂.current c (hr hc)).trans (h₁.current c (hl hc)),
+   fun c hc => (h₂.activeDomain c (hr hc)).trans (h₁.activeDomain c (hl hc)),
+   fun c hc => (h₂.domainTimeRemaining c (hr hc)).trans (h₁.domainTimeRemaining c (hl hc)),
+   fun c hc => (h₂.domainScheduleIndex c (hr hc)).trans (h₁.domainScheduleIndex c (hl hc)),
+   fun c hc => (h₂.regs c (hr hc)).trans (h₁.regs c (hl hc))⟩
+
+/-- SM8.B.2: a step touching neither the scheduler nor any register bank is
+confined to the **empty** write set — the strongest confinement statement there
+is, and the one every object-store-only step in a cross-core pipeline gets. -/
+theorem observableSlotsConfinedToCores_nil_of_scheduler_regs_eq {st st' : SystemState}
+    (hSched : st'.scheduler = st.scheduler)
+    (hRegs : ∀ c, st'.machine.regsOnCore c = st.machine.regsOnCore c) :
+    observableSlotsConfinedToCores st st' [] :=
+  ⟨fun _ _ => by rw [hSched], fun _ _ => by rw [hSched], fun _ _ => by rw [hSched],
+   fun _ _ => by rw [hSched], fun _ _ => by rw [hSched], fun c _ => hRegs c⟩
+
+theorem observableSlotsConfinedToCores_nil_of_scheduler_machine_eq {st st' : SystemState}
+    (hSched : st'.scheduler = st.scheduler) (hMach : st'.machine = st.machine) :
+    observableSlotsConfinedToCores st st' [] :=
+  observableSlotsConfinedToCores_nil_of_scheduler_regs_eq hSched (fun _ => by rw [hMach])
+
+theorem observableSlotsConfinedToCores_of_eq {st st' : SystemState} (cs : List CoreId)
+    (h : st' = st) : observableSlotsConfinedToCores st st' cs := by
+  cases h; exact observableSlotsConfinedToCores_refl _ cs
+
+/-- SM8.B.2: the empty write set is confined to any write set — the arm every
+scheduler-silent branch of a cross-core transition takes.  (A transition whose
+*declared* set is `cs` may of course write nothing on some path; declaring the
+union is what makes the theorem one statement rather than one per path.) -/
+theorem observableSlotsConfinedToCores_widen {st st' : SystemState} {cs : List CoreId}
+    (h : observableSlotsConfinedToCores st st' []) :
+    observableSlotsConfinedToCores st st' cs :=
+  observableSlotsConfinedToCores_mono (fun _ hm => absurd hm (List.not_mem_nil)) h
 
 /-- SM8.B.2: **the shared half of the observer's view is unchanged.**
 
@@ -286,10 +449,9 @@ Proof: SM8.A's field partition is a bijection, so the view is determined by its
 two fragments.  `hRuns` gives core `c`'s per-core fragment through the six SM4.D
 frame lemmas (each names only core `c`, which `hne` puts outside the written
 core); `hShared` gives the shared fragment componentwise. -/
-theorem crossCoreNonInterference (ctx : LabelingContext) (observer : IfObserver)
-    {st st' : SystemState} {c c' : CoreId}
-    (hne : c ≠ c')
-    (hRuns : observableSlotsConfinedToCore st st' c')
+theorem crossCoreNonInterference_of_agreeOn (ctx : LabelingContext) (observer : IfObserver)
+    {st st' : SystemState} {c : CoreId}
+    (hAgree : observableSlotsAgreeOn st st' c)
     (hShared : sharedViewUnchanged ctx observer st st') :
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c := by
   refine ObservableState.ext_fragments ?_ ?_
@@ -297,12 +459,44 @@ theorem crossCoreNonInterference (ctx : LabelingContext) (observer : IfObserver)
     exact ⟨hShared.objects, hShared.services, hShared.irqHandlers, hShared.objectIndex,
       hShared.domainSchedule, hShared.memory, hShared.serviceRegistry⟩
   · simp only [projectStateOnCore_perCoreFragment, PerCoreObservableFragment.mk.injEq]
-    exact ⟨projectRunnableOnCore_frame _ _ (hRuns.runQueue c hne),
-      projectCurrentOnCore_frame _ _ (hRuns.current c hne),
-      projectActiveDomainOnCore_frame _ _ (hRuns.activeDomain c hne),
-      projectDomainTimeRemainingOnCore_frame _ _ (hRuns.domainTimeRemaining c hne),
-      projectDomainScheduleIndexOnCore_frame _ _ (hRuns.domainScheduleIndex c hne),
-      projectMachineRegsOnCore_frame _ _ (hRuns.current c hne) (hRuns.regs c hne)⟩
+    exact ⟨projectRunnableOnCore_frame _ _ hAgree.runQueue,
+      projectCurrentOnCore_frame _ _ hAgree.current,
+      projectActiveDomainOnCore_frame _ _ hAgree.activeDomain,
+      projectDomainTimeRemainingOnCore_frame _ _ hAgree.domainTimeRemaining,
+      projectDomainScheduleIndexOnCore_frame _ _ hAgree.domainScheduleIndex,
+      projectMachineRegsOnCore_frame _ _ hAgree.current hAgree.regs⟩
+
+theorem crossCoreNonInterference (ctx : LabelingContext) (observer : IfObserver)
+    {st st' : SystemState} {c c' : CoreId}
+    (hne : c ≠ c')
+    (hRuns : observableSlotsConfinedToCore st st' c')
+    (hShared : sharedViewUnchanged ctx observer st st') :
+    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
+  crossCoreNonInterference_of_agreeOn ctx observer (hRuns.agreeOn hne) hShared
+
+/-- SM8.B.2 (**the genuinely multi-core form**): a transition whose per-core
+writes stay within the core set `cs` is invisible to an observer on any core
+outside `cs`, unless it moves the shared half.
+
+This is the form the SM6 cross-core transitions satisfy, and the reason §1b
+exists: `endpointCallOnCore` writes the receiver's home core *and* the caller's
+own core, so no single-core statement covers it.  `NonInterferenceCrossCore`
+instantiates this at each cross-core transition with the write set read off the
+transition's own definition.
+
+Note what is **not** required: nothing about the *labels* of the threads
+involved.  The SM6 per-core NI results are conditional on the woken thread being
+non-observable (`wakeThread_preserves_projectionOnCore` takes `hHighThread`);
+this says that a wake of even a **fully visible** thread on core `c'` is
+invisible on core `c ∉ cs`, because that core's slots did not move.  The label
+hypotheses are needed only for the *shared* half. -/
+theorem crossCoreNonInterference_ofCores (ctx : LabelingContext) (observer : IfObserver)
+    {st st' : SystemState} {c : CoreId} {cs : List CoreId}
+    (hne : c ∉ cs)
+    (hRuns : observableSlotsConfinedToCores st st' cs)
+    (hShared : sharedViewUnchanged ctx observer st st') :
+    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
+  crossCoreNonInterference_of_agreeOn ctx observer (hRuns.agreeOn hne) hShared
 
 /-- SM8.B.2 (plan Definition 3.2.1 form): the same statement about
 `ObservableState.onCore c L`, the observable state the plan's Theorem 3.3.1
@@ -2149,50 +2343,68 @@ theorem nonInterference_perCore_handleInterrupt (ctx : LabelingContext) (observe
 -- §5  SM8.B.5 — per-core coverage of the operation taxonomy
 -- ============================================================================
 
+/-- SM8.B.5: a **compile-time-validated** theorem name.  Elaborates the
+identifier and returns its spelling, so a table entry naming a theorem that does
+not exist — or one that has since been renamed — is a build failure rather than
+a silently stale string.
+
+The same device as `pcist!` in `Scheduler/Invariant/PerCoreInvariantSuiteInventory`,
+narrowed to the one thing needed here.  `let _ := @ident; "…"` zeta-reduces, so
+the `rfl`/`decide` proofs over the table are unaffected. -/
+syntax (name := perCoreNiTheoremNameMacro) "niName!" ident : term
+
+macro_rules
+  | `(niName! $ident:ident) => do
+      let nameStxLit := Lean.Syntax.mkStrLit ident.getId.toString
+      `(let _ := @$ident; $nameStxLit)
+
 /-- SM8.B.5: the name of each `KernelOperation`'s **per-core** non-interference
 theorem, in the idiom of `kernelOperationNiConstructor` (which names its
 single-core `NonInterferenceStep` constructor).
+
+Every entry goes through `niName!`, so the string and the declaration cannot
+drift apart.
 
 The match is exhaustive, so a new `KernelOperation` variant fails to compile
 until it is given a per-core theorem — the same tripwire the single-core
 mapping carries, one layer up.  `niStepCoverage_perCore_injective` and
 `niStepCoverage_perCore_count` make the correspondence 1:1 and complete. -/
 def kernelOperationPerCoreNiTheorem : KernelOperation → String
-  | .chooseThread                   => "nonInterference_perCore_chooseThread"
-  | .endpointSendDual               => "nonInterference_perCore_endpointSendDual"
-  | .cspaceMint                     => "nonInterference_perCore_cspaceMint"
-  | .cspaceRevoke                   => "nonInterference_perCore_cspaceRevoke"
-  | .lifecycleRetype                => "nonInterference_perCore_lifecycleRetype"
-  | .lifecycleRevokeDeleteRetype    => "nonInterference_perCore_lifecycleRevokeDeleteRetype"
-  | .notificationSignal             => "nonInterference_perCore_notificationSignal"
-  | .notificationWait               => "nonInterference_perCore_notificationWait"
-  | .cspaceInsertSlot               => "nonInterference_perCore_cspaceInsertSlot"
-  | .schedule                       => "nonInterference_perCore_schedule"
-  | .vspaceMapPage                  => "nonInterference_perCore_vspaceMapPage"
-  | .vspaceUnmapPage                => "nonInterference_perCore_vspaceUnmapPage"
-  | .vspaceLookup                   => "nonInterference_perCore_vspaceLookup"
-  | .cspaceCopy                     => "nonInterference_perCore_cspaceCopy"
-  | .cspaceMove                     => "nonInterference_perCore_cspaceMove"
-  | .cspaceDeleteSlot               => "nonInterference_perCore_cspaceDeleteSlot"
-  | .endpointReply                  => "nonInterference_perCore_endpointReply"
-  | .endpointReceiveDualHigh        => "nonInterference_perCore_endpointReceiveDual"
-  | .endpointCallHigh               => "nonInterference_perCore_endpointCall"
-  | .endpointReplyRecvHigh          => "nonInterference_perCore_endpointReplyRecv"
-  | .storeObjectHigh                => "nonInterference_perCore_storeObject"
-  | .setCurrentThread               => "nonInterference_perCore_setCurrentThread"
-  | .ensureRunnableHigh             => "nonInterference_perCore_ensureRunnable"
-  | .removeRunnableHigh             => "nonInterference_perCore_removeRunnable"
-  | .storeTcbIpcStateAndMessageHigh => "nonInterference_perCore_storeTcbIpcStateAndMessage"
-  | .storeTcbQueueLinksHigh         => "nonInterference_perCore_storeTcbQueueLinks"
-  | .cspaceMutateHigh               => "nonInterference_perCore_cspaceMutate"
-  | .handleYield                    => "nonInterference_perCore_handleYield"
-  | .timerTick                      => "nonInterference_perCore_timerTick"
-  | .syscallDecodeError             => "nonInterference_perCore_syscallDecodeError"
-  | .syscallDispatchHigh            => "nonInterference_perCore_syscallDispatch"
-  | .registerServiceChecked         => "nonInterference_perCore_registerServiceChecked"
-  | .endpointCallWithDonationHigh   => "nonInterference_perCore_endpointCallWithDonation"
-  | .endpointReplyWithReversionHigh => "nonInterference_perCore_endpointReplyWithReversion"
-  | .handleInterrupt                => "nonInterference_perCore_handleInterrupt"
+  | .chooseThread                   => niName! nonInterference_perCore_chooseThread
+  | .endpointSendDual               => niName! nonInterference_perCore_endpointSendDual
+  | .cspaceMint                     => niName! nonInterference_perCore_cspaceMint
+  | .cspaceRevoke                   => niName! nonInterference_perCore_cspaceRevoke
+  | .lifecycleRetype                => niName! nonInterference_perCore_lifecycleRetype
+  | .lifecycleRevokeDeleteRetype    => niName! nonInterference_perCore_lifecycleRevokeDeleteRetype
+  | .notificationSignal             => niName! nonInterference_perCore_notificationSignal
+  | .notificationWait               => niName! nonInterference_perCore_notificationWait
+  | .cspaceInsertSlot               => niName! nonInterference_perCore_cspaceInsertSlot
+  | .schedule                       => niName! nonInterference_perCore_schedule
+  | .vspaceMapPage                  => niName! nonInterference_perCore_vspaceMapPage
+  | .vspaceUnmapPage                => niName! nonInterference_perCore_vspaceUnmapPage
+  | .vspaceLookup                   => niName! nonInterference_perCore_vspaceLookup
+  | .cspaceCopy                     => niName! nonInterference_perCore_cspaceCopy
+  | .cspaceMove                     => niName! nonInterference_perCore_cspaceMove
+  | .cspaceDeleteSlot               => niName! nonInterference_perCore_cspaceDeleteSlot
+  | .endpointReply                  => niName! nonInterference_perCore_endpointReply
+  | .endpointReceiveDualHigh        => niName! nonInterference_perCore_endpointReceiveDual
+  | .endpointCallHigh               => niName! nonInterference_perCore_endpointCall
+  | .endpointReplyRecvHigh          => niName! nonInterference_perCore_endpointReplyRecv
+  | .storeObjectHigh                => niName! nonInterference_perCore_storeObject
+  | .setCurrentThread               => niName! nonInterference_perCore_setCurrentThread
+  | .ensureRunnableHigh             => niName! nonInterference_perCore_ensureRunnable
+  | .removeRunnableHigh             => niName! nonInterference_perCore_removeRunnable
+  | .storeTcbIpcStateAndMessageHigh => niName! nonInterference_perCore_storeTcbIpcStateAndMessage
+  | .storeTcbQueueLinksHigh         => niName! nonInterference_perCore_storeTcbQueueLinks
+  | .cspaceMutateHigh               => niName! nonInterference_perCore_cspaceMutate
+  | .handleYield                    => niName! nonInterference_perCore_handleYield
+  | .timerTick                      => niName! nonInterference_perCore_timerTick
+  | .syscallDecodeError             => niName! nonInterference_perCore_syscallDecodeError
+  | .syscallDispatchHigh            => niName! nonInterference_perCore_syscallDispatch
+  | .registerServiceChecked         => niName! nonInterference_perCore_registerServiceChecked
+  | .endpointCallWithDonationHigh   => niName! nonInterference_perCore_endpointCallWithDonation
+  | .endpointReplyWithReversionHigh => niName! nonInterference_perCore_endpointReplyWithReversion
+  | .handleInterrupt                => niName! nonInterference_perCore_handleInterrupt
 
 /-- SM8.B.5: the per-core theorem names are pairwise distinct — the mapping is
 1:1, so no two operations were given the same lift. -/
@@ -2247,13 +2459,27 @@ theorem niStepCoverage_perCore_count :
 premise**, or whether the caller must supply it.
 
 `false` exactly for the four constructors that carry a whole-state projection
-hypothesis and no operational one.  Recorded as a decidable function rather
-than as prose, so `perCoreConfinementDerived_count` can state the split as a
-checked fact and a new catch-all constructor cannot be added silently. -/
+hypothesis and no operational one.
+
+**Enumerated, not wildcarded.**  An earlier form ended `| _ => true`, which
+silently classified any future `KernelOperation` variant as "derived" — a
+wildcard cannot be an exhaustiveness tripwire, and only
+`perCoreConfinementDerived_count` breaking would have caught it, one step
+removed from the cause.  Spelling all thirty-five arms out makes a new variant a
+*compile* error here, at the table that would have mis-described it. -/
 def perCoreConfinementDerived : KernelOperation → Bool
   | .syscallDispatchHigh | .endpointCallWithDonationHigh
   | .endpointReplyWithReversionHigh | .handleInterrupt => false
-  | _ => true
+  | .chooseThread | .endpointSendDual | .cspaceMint | .cspaceRevoke
+  | .lifecycleRetype | .lifecycleRevokeDeleteRetype | .notificationSignal
+  | .notificationWait | .cspaceInsertSlot | .schedule | .vspaceMapPage
+  | .vspaceUnmapPage | .vspaceLookup | .cspaceCopy | .cspaceMove
+  | .cspaceDeleteSlot | .endpointReply | .endpointReceiveDualHigh
+  | .endpointCallHigh | .endpointReplyRecvHigh | .storeObjectHigh
+  | .setCurrentThread | .ensureRunnableHigh | .removeRunnableHigh
+  | .storeTcbIpcStateAndMessageHigh | .storeTcbQueueLinksHigh
+  | .cspaceMutateHigh | .handleYield | .timerTick | .syscallDecodeError
+  | .registerServiceChecked => true
 
 /-- SM8.B.5: thirty-one of the thirty-five operations discharge the confinement
 premise from their own semantics; exactly four — the catch-alls — do not. -/

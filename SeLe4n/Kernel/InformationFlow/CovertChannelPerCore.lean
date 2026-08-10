@@ -413,14 +413,17 @@ theorem acceptedCovertChannel_scheduling_is_model_visible (ctx : LabelingContext
 per-endpoint policy override may only *restrict* the global policy, and must do
 so as seen from every core.
 
-Defined as the ∀-core quantification in the SM4.D `…_smp` idiom rather than as a
-new predicate: the enforcement decision reads the labeling context and the two
-domains and **no per-core state**, so the core coordinate cannot change it.
-`endpointPolicyRestricted_perCore_iff` records that as an `iff` rather than
-leaving it implicit, and `endpointFlowCheck_state_independent` is the fact that
-makes it true — which is exactly the security-relevant SMP statement here: a
-transition on another core can never flip a flow gate, so the SMP kernel cannot
-be made to admit a denied flow by rescheduling. -/
+**The quantifier here is vacuous, deliberately and provably.**  `_c` is unused
+because `endpointPolicyRestricted` mentions no state and no core: it is a
+property of two policies.  This is the SM4.D `…_smp` idiom applied for uniformity
+of naming, and `endpointPolicyRestricted_perCore_iff` is the *proof* that it is
+notation rather than content — stated as an `iff` precisely so no reader has to
+take the claim on trust.
+
+The security content SMP actually adds is not here but in
+`endpointFlowCheckAtCore` below: the gate as the kernel *resolves* it does depend
+on the state and the core, and the theorem worth having is that its only such
+dependence is through which thread is the subject. -/
 def endpointPolicyRestricted_perCore (globalPolicy : DomainFlowPolicy)
     (epPolicy : EndpointFlowPolicy) : Prop :=
   ∀ _c : CoreId, endpointPolicyRestricted globalPolicy epPolicy
@@ -443,19 +446,76 @@ theorem endpointPolicyRestricted_perCore_no_overrides (globalPolicy : DomainFlow
     endpointPolicyRestricted_perCore globalPolicy { endpointPolicy := fun _ => none } :=
   fun _ => endpointPolicyRestricted_no_overrides globalPolicy
 
-/-- SM8.B.11 (the substantive SMP fact): **the endpoint flow decision reads no
-system state at all**, so it is the same on every core and cannot be changed by
-a transition running elsewhere.
+/-- SM8.B.11: **the endpoint flow gate as the kernel resolves it in context** —
+at state `st`, on core `c`, for the thread currently running there, sending to
+`endpointId`.
 
-This is what makes the per-core lift trivial *and* is the property worth having:
-under SMP the executing core is a scheduling coordinate threaded through
-`determineExecutingCore`, and a reader could reasonably wonder whether the
-enforcement gate picks it up.  It does not. -/
-theorem endpointFlowCheck_state_independent (ctx : GenericLabelingContext)
+Unlike `endpointFlowCheck`, this genuinely reads the system state and the core:
+it has to, because the *subject* of a flow is whoever is running.  Introducing it
+is what makes the state-independence claim below a theorem rather than a
+tautology — a claim about `endpointFlowCheck` itself could only ever be `rfl`,
+since that function takes neither a state nor a core. -/
+def endpointFlowCheckAtCore (ctx : GenericLabelingContext) (epPolicy : EndpointFlowPolicy)
+    (endpointId : SeLe4n.ObjId) (st : SystemState) (c : CoreId) : Bool :=
+  match st.scheduler.currentOnCore c with
+  | none => false
+  | some tid =>
+      endpointFlowCheck ctx epPolicy endpointId
+        (ctx.threadDomainOf tid) (ctx.endpointDomainOf endpointId)
+
+/-- SM8.B.11 (**the substantive SMP fact**): the resolved gate depends on the
+state and the core **only** through which thread is the subject.
+
+Two states and two cores that agree on the current thread give the same
+decision — so the gate consults no other per-core coordinate: not the core's
+active domain, not its run queue, not its register bank, not its identity.  This
+would be *false* for a gate that (say) let a core's active domain widen what its
+current thread may send to, which is exactly the sort of SMP-introduced
+domain-confusion bug the theorem excludes. -/
+theorem endpointFlowCheckAtCore_depends_only_on_subject (ctx : GenericLabelingContext)
     (epPolicy : EndpointFlowPolicy) (endpointId : SeLe4n.ObjId)
-    (src dst : SecurityDomain) (_st₁ _st₂ : SystemState) (_c₁ _c₂ : CoreId) :
-    endpointFlowCheck ctx epPolicy endpointId src dst =
-      endpointFlowCheck ctx epPolicy endpointId src dst := rfl
+    (st₁ st₂ : SystemState) (c₁ c₂ : CoreId)
+    (hSubject : st₁.scheduler.currentOnCore c₁ = st₂.scheduler.currentOnCore c₂) :
+    endpointFlowCheckAtCore ctx epPolicy endpointId st₁ c₁
+      = endpointFlowCheckAtCore ctx epPolicy endpointId st₂ c₂ := by
+  unfold endpointFlowCheckAtCore
+  rw [hSubject]
+
+/-- SM8.B.11 (the SMP corollary, via SM8.B.2's confinement machinery): **a
+transition running on other cores cannot flip core `c`'s flow gate.**
+
+So an SMP kernel cannot be made to admit a denied flow by rescheduling: whatever
+another core is doing, core `c`'s enforcement decision for its own current
+thread is exactly what it was.  Note this consumes
+`observableSlotsConfinedToCores` — the same write-set discipline the cross-core
+non-interference results use — rather than re-deriving anything. -/
+theorem endpointFlowCheckAtCore_stable_under_confined_transition
+    (ctx : GenericLabelingContext) (epPolicy : EndpointFlowPolicy)
+    (endpointId : SeLe4n.ObjId) {st st' : SystemState} {c : CoreId} {cs : List CoreId}
+    (hne : c ∉ cs) (hRuns : observableSlotsConfinedToCores st st' cs) :
+    endpointFlowCheckAtCore ctx epPolicy endpointId st' c
+      = endpointFlowCheckAtCore ctx epPolicy endpointId st c :=
+  endpointFlowCheckAtCore_depends_only_on_subject ctx epPolicy endpointId st' st c c
+    (hRuns.agreeOn hne).current
+
+/-- SM8.B.11 (non-vacuity of the *stability* claim): the resolved gate is not a
+constant function — it really does move when the subject changes.  Without this,
+`…_depends_only_on_subject` and `…_stable_under_confined_transition` would be
+satisfied by a gate that always returned `false`. -/
+theorem endpointFlowCheckAtCore_is_not_constant :
+    ∃ (ctx : GenericLabelingContext) (epPolicy : EndpointFlowPolicy)
+      (endpointId : SeLe4n.ObjId) (st₁ st₂ : SystemState) (c : CoreId),
+      endpointFlowCheckAtCore ctx epPolicy endpointId st₁ c
+        ≠ endpointFlowCheckAtCore ctx epPolicy endpointId st₂ c := by
+  refine ⟨{ policy := { canFlow := fun _ _ => true }
+            objectDomainOf := fun _ => ⟨0⟩, threadDomainOf := fun _ => ⟨0⟩
+            endpointDomainOf := fun _ => ⟨0⟩, serviceDomainOf := fun _ => ⟨0⟩ },
+          { endpointPolicy := fun _ => none }, ⟨0⟩,
+          { (default : SystemState) with scheduler :=
+              (default : SystemState).scheduler.setCurrentOnCore bootCoreId (some ⟨0⟩) },
+          (default : SystemState), bootCoreId, ?_⟩
+  simp only [endpointFlowCheckAtCore, SchedulerState.setCurrentOnCore_currentOnCore_self]
+  decide
 
 /-- SM8.B.11: under the per-core restriction, an endpoint flow admitted at any
 core is admitted by the global policy — the per-core lift of
@@ -517,9 +577,24 @@ it from the boot-core observer to all of them.
 
 The confinement premise is not decoration.  The *live* SMP entry is
 `syscallDispatchCrossCoreEntry`, whose cross-core arms genuinely write a remote
-core's run queue, so a per-core statement cannot be free — and §4b of
-`NonInterferencePerCore` discharges exactly this obligation for each operation
-the dispatch routes to.  (The two inner witnesses,
+core's run queue, so a per-core statement cannot be free.
+
+Where the premise comes from depends on which arm ran, and the split is worth
+stating precisely rather than gesturing at:
+
+* for a dispatch that stays on the executing core, §4 of
+  `NonInterferencePerCore` derives boot-core confinement from the operation's
+  own semantics — thirty-one of the thirty-five operations;
+* for a dispatch that routes cross-core (`.call` → `endpointCallOnCore`,
+  `.reply` → `endpointReplyOnCore`, `.notificationSignal` →
+  `notificationSignalOnCore`, `.tcbSuspend` → the `descheduleThread` leg), the
+  premise is **false in general** — those transitions really do write a remote
+  core.  What holds instead is the set-of-cores statement, and
+  `NonInterferenceCrossCore` proves it for each of them: the writes stay inside
+  a write set computed from the pre-state, so the dispatch is invisible on every
+  core outside that set.
+
+(The two inner witnesses,
 `dispatchCapabilityOnly_preserves_projection` and
 `dispatchSyscallChecked_preserves_projection`, are reached through this one:
 their hypotheses mention `dispatchCapabilityOnly` / `dispatchWithCapChecked`,

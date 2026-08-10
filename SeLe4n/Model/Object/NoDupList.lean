@@ -166,6 +166,31 @@ fast on the hot read-only paths. -/
 
 @[inline] def head? (l : NoDupList α) : Option α := l.val.head?
 
+/-- `head?` and `tail?` agree on the head: both destructure `val`, so a `tail?`
+that produces a pair fixes what `head?` returns.  Consumers that resolve the
+same list through the two different accessors — a lock set through `head?`, the
+transition it guards through `tail?` — need this to state that they name one
+thread. -/
+theorem head?_eq_of_tail? {l : NoDupList α} {p : α × NoDupList α}
+    (h : l.tail? = some p) : l.head? = some p.1 := by
+  cases l with
+  | mk lv lh =>
+    cases lv with
+    | nil => simp [tail?] at h
+    | cons x xs =>
+      simp only [tail?] at h
+      simp only [Option.some.injEq] at h
+      simp [head?, ← h]
+
+/-- The `none` companion of `head?_eq_of_tail?`. -/
+theorem head?_eq_none_of_tail?_eq_none {l : NoDupList α}
+    (h : l.tail? = none) : l.head? = none := by
+  cases l with
+  | mk lv lh =>
+    cases lv with
+    | nil => rfl
+    | cons x xs => simp [tail?] at h
+
 @[inline] def isEmpty (l : NoDupList α) : Bool := l.val.isEmpty
 
 @[inline] def contains (l : NoDupList α) [BEq α] (x : α) : Bool :=
