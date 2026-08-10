@@ -1873,6 +1873,23 @@ run_check "INVARIANT" rg -n 'schedulingChannel_alphabet_bounded' docs/DEPLOYMENT
 # mistakes is worth less than the anchor.
 run_negative_check "INVARIANT" rg -n 'No bits-per-switch figure is' docs/SECURITY_ADVISORY.md docs/DEPLOYMENT_GUIDE.md
 run_check "INVARIANT" rg -n '^theorem crossCoreTransitionIsLiveArm_count :' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+# Round 9.  (a) The capacity premises are one citable bundle, not three theorem
+# signatures an operator must reconstruct.
+run_check "INVARIANT" rg -n '^def schedulingCapacityPreconditions' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^def schedulingCapacityComparable' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n 'schedulingCapacityPreconditions' docs/SECURITY_ADVISORY.md docs/DEPLOYMENT_GUIDE.md
+# (b) The unsupported "sub-bit-per-second" figure must not come back: it
+# contradicted the upper bound by three orders of magnitude for one config.
+run_negative_check "INVARIANT" rg -n 'Sub-bit-per-second' docs/SECURITY_ADVISORY.md docs/DEPLOYMENT_GUIDE.md SeLe4n/
+# (c) The unchanged-schedule premise holds because nothing writes the field.
+# If a reconfiguration setter ever lands, this anchor fails and the capacity
+# figure must be restated before it can pass again.
+# Matches a DEFINITION, not a mention: the docstring that explains the absence
+# necessarily names the symbol, and an anchor that cannot tell those apart fires
+# on its own justification (this is the third time in this PR).
+run_negative_check "INVARIANT" rg -n 'def setDomainSchedule\b' SeLe4n/
+# (d) `CovertChannelId.all` cannot silently omit a constructor.
+run_check "INVARIANT" rg -n '^theorem CovertChannelId.mem_all' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 # CC-1's mitigation must state the PROVEN bound, not disclaim one: retracting a
 # claim to match weaker code is the direction the project forbids.
 run_negative_check "INVARIANT" rg -n 'No capacity bound is claimed' SeLe4n/

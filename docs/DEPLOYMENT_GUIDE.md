@@ -81,8 +81,9 @@ creating a bounded covert channel.
 |--------|-------|
 | Observable values per observation | 4 scalars |
 | Channel capacity | &le; log&#8322;(N &times; (Q+1)) &times; switchFreq bps, N = \|domainSchedule\|, Q = your countdown cap |
-| Typical bandwidth (N&le;16, Q&le;255, F&le;100 Hz) | &le; 1200 bits/second |
-| Without a countdown cap | **Unbounded** — see below |
+| Upper bound (N&le;16, Q&le;255, F&le;100 Hz) | &le; 1200 bits/second |
+| Realizable rate | **Not bounded by this analysis** — budget against the upper bound |
+| Without a countdown cap, or with an empty schedule | **Unbounded** — see below |
 | Instances | **One per core** under SMP |
 
 **Formal witnesses** (`SeLe4n/Kernel/InformationFlow/Projection.lean`):
@@ -98,6 +99,20 @@ creating a bounded covert channel.
 
 **Mitigation**: Temporal partitioning via domain scheduling (already present).
 Each domain receives guaranteed time quanta.
+
+**You must supply a non-empty schedule and a countdown cap Q.**  Both are
+deployment obligations; the kernel discharges the other three conditions
+(`domainScheduleIndexInBoundsOnCore`, `domainConsistentOnCore`, and an unchanged
+`domainSchedule` — there is no `setDomainSchedule` in the model).  The full list
+is `schedulingCapacityPreconditions` / `schedulingCapacityComparable` in
+`CovertChannelPerCore.lean`; `docs/SECURITY_ADVISORY.md` §SA-3 tabulates who
+discharges each.  An empty schedule (single-domain mode) makes the index-bounds
+invariant vacuous, so the observed index is unbounded and no figure applies.
+
+**No "practical bandwidth" figure is offered.**  Earlier revisions claimed
+sub-bit-per-second at the same switch rates this table costs at up to 1200
+bits/second; that claim had no derivation and has been removed rather than
+re-justified.
 
 **You must supply Q.**  The capacity figure above holds only for a deployment
 that caps `domainTimeRemaining`; without such a cap this analysis gives **no**

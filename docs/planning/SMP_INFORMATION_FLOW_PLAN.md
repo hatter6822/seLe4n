@@ -430,6 +430,48 @@ SM8.B; the lock-contention channel CC-5 is SM8.B.8; the
 | SM8.B.13 | `crossCoreLeakage_bounded` | Theorem | L | LANDED |
 | SM8.B.14 | 15+ NI scenarios (tests) | L | LANDED |
 
+**PR #861 review round 9 (v0.33.5).**  Three findings, all P2, all valid, all
+against the previous two rounds' own remediation of CC-1.
+
+1. **P2 — the advisory contradicted itself by three orders of magnitude.**
+   Round 8 replaced the capacity figure but left the inherited "Sub-bit-per-second
+   under normal scheduling configurations (domain switches at 1–100 Hz)" line
+   directly above a table costing that same configuration at ≤ 1200 bits/second.
+   The smaller number had no derivation anywhere.  Removed rather than
+   re-justified: a *realizable* rate needs a model of how much of the alphabet a
+   sender controls and a receiver resolves, and this kernel model has neither, so
+   the advisory now says plainly that only the upper bound is supported and that
+   operators should budget against it.  Removing an unsupported *optimistic
+   security* claim is the conservative direction, not the forbidden one.
+
+2. **P2 — the operator guidance named one premise of four.**  The advisory told
+   operators to supply `Q` and mentioned `domainConsistentOnCore`, but
+   `schedulingChannel_alphabet_bounded` also needs a **non-empty** schedule, and
+   `schedulingChannel_full_observation_determined` needs the two states' schedules
+   to be the *same list* — and `domainSchedule` is projected unfiltered, so fixing
+   its length bounds nothing about its contents.  A figure whose hypotheses are
+   spread across three signatures is a figure that gets quoted without them.
+   Closed by bundling: `schedulingCapacityPreconditions` (per state) and
+   `schedulingCapacityComparable` (across two states), each with a
+   `…_of_preconditions` restatement of the bound, cited by name from both operator
+   documents, and a table in §SA-3 saying **who discharges each**.  The empty
+   schedule is now stated as genuinely excluded rather than quietly unhandled —
+   `domainScheduleIndexInBoundsOnCore` degenerates to `True` there, so the
+   observed index is unbounded.  The unchanged-schedule premise is discharged by
+   the kernel today rather than delegated: `SchedulerState` has no
+   `setDomainSchedule`, the only assignments in the tree are the boot builder and
+   the freeze copy, and a Tier-3 anchor now fails if a reconfiguration setter
+   lands — which is the point at which this figure would have to be restated.
+
+3. **P2 — `CovertChannelId.all` could fail open.**  The match-based tables are
+   exhaustive by construction (a new constructor is a missing case), but `all` is
+   hand-written, and every count, the inventory equality and the evidence-sharing
+   check quantify over `all` rather than over the type.  A constructor omitted
+   from the list would leave a channel unaudited with every gate green.
+   `CovertChannelId.mem_all` (`cases id <;> decide`) makes the omission a
+   compile error; `CovertChannelId.all_nodup` keeps the counts counting channels
+   rather than repetitions.
+
 **PR #861 review round 8 (v0.33.5).**  Two findings, both P2, both valid, and
 both cases of a fix that stopped one step short of where it needed to reach.
 

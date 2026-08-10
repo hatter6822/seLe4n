@@ -684,8 +684,12 @@ theorem acceptedCovertChannel_scheduling
       `domainScheduleIndex`, `domainTimeRemaining`)
     - **Capacity**: ≤ log₂(N × (Q + 1)) × switchFreq bits/second, where N =
       |domainSchedule| and Q bounds `domainTimeRemaining`
-    - **Practical bandwidth**: Sub-bit-per-second under normal scheduling
-      configurations (domain switches at 1–100 Hz)
+    - **Realizable rate**: not bounded by this analysis.  Earlier revisions
+      claimed "sub-bit per second" at the same switch rates costed below at up
+      to 1200 bits/second — two figures three orders of magnitude apart for one
+      configuration, the smaller with no derivation.  Removed rather than
+      re-justified: a realizable rate needs a model of how much of the alphabet
+      a sender controls and a receiver resolves, and this model has neither.
     - **Theoretical maximum**: With |domainSchedule| = N entries, a countdown
       capped at Q, and switch frequency F Hz, an observer can extract at most
       log₂(N × (Q + 1)) × F bits/second. For typical configurations (N ≤ 16,
@@ -704,8 +708,16 @@ theorem acceptedCovertChannel_scheduling
       ignored: `schedulingChannel_full_observation_determined` shows two states
       the encoding identifies expose the same active domain — under
       `domainConsistentOnCore`, the invariant that actually ties it to
-      `domainSchedule[index]`.  A deployment that does not cap the countdown
-      does not get this bound.
+      `domainSchedule[index]`.  A deployment that does not cap the countdown —
+      or that runs the empty single-domain schedule, which makes the
+      index-bounds invariant vacuous and so leaves the observed index unbounded
+      — does not get this bound.  The complete premise list is
+      `schedulingCapacityPreconditions` (per state) and
+      `schedulingCapacityComparable` (across two states, adding that
+      `domainSchedule` is itself unchanged: it is projected unfiltered, so a
+      mutable schedule is its own channel).  `docs/SECURITY_ADVISORY.md` §SA-3
+      tabulates which premises the kernel discharges and which the deployment
+      must.
 
     **Mitigation status**: Temporal partitioning via domain scheduling bounds
     the channel bandwidth. Each domain receives guaranteed time quanta regardless

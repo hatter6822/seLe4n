@@ -111,9 +111,17 @@ This is formally witnessed by `acceptedCovertChannel_scheduling`
 - **Channel capacity**: ≤ log₂(N × (Q + 1)) × switchFreq bits/second, where
   N = |domainSchedule| and **Q is a deployment-supplied bound on
   `domainTimeRemaining`**
-- **Practical bandwidth**: Sub-bit-per-second under normal scheduling
-  configurations (domain switches at 1–100 Hz)
-- **Theoretical maximum**: for N ≤ 16, Q ≤ 255, F ≤ 100 Hz, ≤ 1200 bits/second
+- **Upper bound**: for N ≤ 16, Q ≤ 255, F ≤ 100 Hz, ≤ 1200 bits/second
+- **Realizable rate**: **not bounded by this analysis** — see below
+
+**There is no "practical bandwidth" figure.**  Earlier revisions of this
+advisory claimed "sub-bit-per-second under normal scheduling configurations" at
+the *same* 1–100 Hz switch rates the table now costs at up to 1200 bits/second —
+two numbers three orders of magnitude apart for one configuration, and the
+smaller one had no derivation behind it (PR #861 review round 9).  It has been
+removed rather than re-justified: deriving a realizable rate needs a model of how
+much of the alphabet a sender can actually control and a receiver actually
+resolve, and this kernel model has neither.  **Budget against the upper bound.**
 
 **Operators must supply Q.**  This advisory previously quoted
 ≤ log₂(|domainSchedule|) × switchFreq, omitting the Q factor.  That figure is
@@ -122,6 +130,19 @@ This is formally witnessed by `acceptedCovertChannel_scheduling`
 alone bounds nothing, because `domainTimeRemaining` is projected unfiltered and
 ranges over all of `Nat`.  A deployment that does not cap the domain countdown
 has **no** capacity bound from this analysis.
+
+**Every condition the bound rests on**, bundled as
+`schedulingCapacityPreconditions` (per state) and `schedulingCapacityComparable`
+(across two states) so they can be cited by name rather than reconstructed from
+three theorem signatures:
+
+| Condition | Who discharges it |
+|-----------|-------------------|
+| `domainSchedule` non-empty | **Deployment.** Single-domain mode (empty schedule) makes the index-bounds invariant vacuous, so the observed index is unbounded and this analysis yields no figure. |
+| `domainTimeRemaining ≤ Q` | **Deployment.** No cap, no bound. |
+| `domainScheduleIndexInBoundsOnCore` | Kernel — maintained by the domain transitions. |
+| `domainConsistentOnCore` | Kernel — what makes `activeDomain` a function of the schedule and index rather than a fourth independent value. |
+| `domainSchedule` unchanged between observations | Kernel **today**: there is no `setDomainSchedule`, and the only assignments in the tree are the boot builder and the freeze copy. A Tier-3 anchor pins that absence. Adding a schedule-reconfiguration syscall would invalidate this figure — the schedule is projected unfiltered, so a mutable schedule is its own channel and fixing N bounds nothing about its contents. |
 
 The corrected figure is proven rather than asserted:
 `schedulingChannel_alphabet_bounded` injects the per-core observation alphabet

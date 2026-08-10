@@ -815,6 +815,76 @@ theorem schedulingChannel_full_observation_determined (quantumBound : Nat)
   simp only []
   rw [hDom₁, hDom₂, hSame]
 
+/-- SM8.B.9: **every premise the capacity bound needs, as one predicate.**
+
+The ninth review round observed that the operator-facing guidance quoted
+`log₂(N × (Q + 1)) × F` while naming only the countdown cap `Q` as a deployment
+obligation — but `schedulingChannel_alphabet_bounded` also needs a *non-empty*
+schedule and the index-bounds invariant, and the cross-state form additionally
+needs `domainConsistentOnCore`.  A capacity figure whose hypotheses are spread
+across three theorem signatures is a figure an operator will quote without them.
+
+Bundled here so the conditions are one checkable object, cited by one name in the
+advisory and the deployment guide.
+
+**The empty schedule is genuinely excluded, not merely unhandled**:
+`domainScheduleIndexInBoundsOnCore` degenerates to `True` when the schedule is
+empty (its first disjunct), so single-domain mode places *no* bound on the
+observed index — and the index is projected unfiltered.  This analysis therefore
+gives no capacity bound in that configuration, exactly as it gives none without
+a countdown cap. -/
+def schedulingCapacityPreconditions (quantumBound : Nat) (s : SystemState) (c : CoreId) :
+    Prop :=
+  s.scheduler.domainSchedule ≠ []
+  ∧ domainScheduleIndexInBoundsOnCore s c
+  ∧ domainConsistentOnCore s c
+  ∧ s.scheduler.domainTimeRemainingOnCore c ≤ quantumBound
+
+/-- SM8.B.9: the capacity bound, stated against the bundled preconditions — the
+form the operator documentation cites. -/
+theorem schedulingChannel_alphabet_bounded_of_preconditions (quantumBound : Nat)
+    (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel) (s : SystemState)
+    (hPre : schedulingCapacityPreconditions quantumBound s c) :
+    schedulingObservationCode quantumBound ctx c L s
+      < s.scheduler.domainSchedule.length * (quantumBound + 1) :=
+  schedulingChannel_alphabet_bounded quantumBound ctx c L s hPre.2.1 hPre.1 hPre.2.2.2
+
+/-- SM8.B.9: **the cross-state premise the per-state bundle cannot carry.**
+
+`schedulingChannel_full_observation_determined` compares two states, and needs
+their schedules to be *the same list* — not merely the same length.  The schedule
+is itself projected unfiltered, so a deployment that rewrites it between
+observations has a second channel that fixing `N` does nothing about.
+
+Nothing in the kernel writes this field: `SchedulerState` has a
+`setDomainScheduleIndexOnCore` but **no** `setDomainSchedule`, and the only
+assignments in the tree are the boot builder and the freeze copy (which is
+`rfl`).  So the premise holds by construction today, and a Tier-3 negative anchor
+keeps it that way; introducing a reconfiguration syscall would break that anchor
+and must come with this bound restated. -/
+def schedulingCapacityComparable (quantumBound : Nat) (s₁ s₂ : SystemState) (c : CoreId) :
+    Prop :=
+  schedulingCapacityPreconditions quantumBound s₁ c
+  ∧ schedulingCapacityPreconditions quantumBound s₂ c
+  ∧ s₁.scheduler.domainSchedule = s₂.scheduler.domainSchedule
+
+/-- SM8.B.9: under the comparable-state preconditions, equal codes mean equal
+complete observations — the whole-channel statement, with every hypothesis it
+rests on named in one place. -/
+theorem schedulingChannel_full_observation_determined_of_preconditions (quantumBound : Nat)
+    (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel) (s₁ s₂ : SystemState)
+    (hPre : schedulingCapacityComparable quantumBound s₁ s₂ c)
+    (hCode : schedulingObservationCode quantumBound ctx c L s₁
+      = schedulingObservationCode quantumBound ctx c L s₂) :
+    schedulingObservationFullOnCore ctx c L s₁ = schedulingObservationFullOnCore ctx c L s₂ := by
+  obtain ⟨⟨hNE₁, hB₁, hC₁, hQ₁⟩, ⟨_, hB₂, hC₂, hQ₂⟩, hSched⟩ := hPre
+  have hTrans₁ := onCore_schedulingTransparency ctx c L s₁
+  have hTrans₂ := onCore_schedulingTransparency ctx c L s₂
+  refine schedulingChannel_full_observation_determined quantumBound ctx c L s₁ s₂ hSched
+    hNE₁ hC₁ hC₂ hB₁ hB₂ ?_ ?_ hCode
+  · simpa [schedulingObservationOnCore, hTrans₁.2.1] using hQ₁
+  · simpa [schedulingObservationOnCore, hTrans₂.2.1] using hQ₂
+
 /-- SM8.B.9: the bound is **not vacuous** — with a two-entry schedule and a
 countdown capped at 3 the alphabet has at most 8 elements, and a concrete state
 lands inside it. -/
@@ -867,6 +937,25 @@ inductive CovertChannelId where
 def CovertChannelId.all : List CovertChannelId :=
   [.schedulingState, .machineTimer, .tcbMetadata, .objectStoreMetadata, .lockContention,
    .tlbResidency, .icacheResidency]
+
+/-- SM8.B.8: **`all` really is all of them.**
+
+The match-based tables below are exhaustive by construction — a new constructor
+is a missing case and the module stops compiling.  `all` is not: it is a
+hand-written list, and a constructor omitted from it would sail past
+`covertChannelEntry_eq_inventory`, past both count theorems and past the
+evidence-sharing check, because every one of those quantifies over `all` rather
+than over the type (PR #861 review round 9).  The new channel would simply not
+be audited.
+
+`decide` closes that: adding a constructor without extending `all` now fails
+*this* theorem, so the enumeration cannot fail open. -/
+theorem CovertChannelId.mem_all (id : CovertChannelId) : id ∈ CovertChannelId.all := by
+  cases id <;> decide
+
+/-- SM8.B.8: and it lists each exactly once, so the counts below count channels
+rather than repetitions. -/
+theorem CovertChannelId.all_nodup : CovertChannelId.all.Nodup := by decide
 
 /-- SM8.B.8: the entry each id names. -/
 def covertChannelEntry : CovertChannelId → CovertChannel

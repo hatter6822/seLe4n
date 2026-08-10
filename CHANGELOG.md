@@ -202,6 +202,23 @@ deployment-supplied and that without it there is no bound, cite the three
 theorems, and note the channel exists once per core.  Tier 3 pins both.
 
 
+**CC-1's guidance says what it can support.**  The advisory claimed
+sub-bit-per-second beside a table costing the same configuration at ≤ 1200
+bits/second, with no derivation for the smaller figure; it is removed, and only
+the proven upper bound is offered.  The bound's premises — non-empty schedule,
+countdown cap, index bounds, domain consistency, and an unchanged schedule
+across observations — are bundled as `schedulingCapacityPreconditions` /
+`schedulingCapacityComparable`, cited by name from both operator documents, with
+§SA-3 tabulating who discharges each.  The unchanged-schedule premise is a
+kernel fact rather than a deployment promise: there is no `setDomainSchedule`,
+and a Tier-3 anchor fails if one lands.
+
+**The covert-channel enumeration cannot fail open.**  `CovertChannelId.all` is
+hand-written while every count and inventory check quantifies over it, so a new
+constructor omitted from the list would go unaudited with all gates green.
+`CovertChannelId.mem_all` makes that a compile error.
+
+
 ### Tests
 
 `tests/SmpInformationFlowSuite.lean` — **243 runtime assertions** across the
