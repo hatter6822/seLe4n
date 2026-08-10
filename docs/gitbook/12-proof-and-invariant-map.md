@@ -2543,8 +2543,52 @@ fixture under a three-clearance labeling, carrying a CNode and a
 configured memory-ownership model so slot redaction and address
 observability are exercised on real values, and building the CSpace and
 VSpace roots its TCBs declare so every one is `KernelObject.wellFormed`;
-each group carries a load-bearing negative).  Per-core NI *preservation* across transitions
-(`crossCoreNonInterference`) is WS-SM SM8.B.
+each group carries a load-bearing negative).
+
+### Layer 3 under SMP — per-core non-interference (WS-SM SM8.B)
+
+`InformationFlow/NonInterferencePerCore.lean` and
+`InformationFlow/CovertChannelPerCore.lean` (WS-SM SM8.B, v0.33.5; staged,
+188 declarations, axiom-clean) prove that transitions leave the SM8.A
+observer alone.
+
+* **`crossCoreNonInterference`** (plan Theorem 3.3.1) — a transition whose
+  per-core writes are confined to core `c'` is invisible on core `c ≠ c'`
+  unless the shared, label-filtered half of the view moves.  Both premises
+  are frames: `observableSlotsConfinedToCore` (the plan's
+  `transitionRunsOnCore`, register banks included) and `sharedViewUnchanged`
+  (the plan's two object clauses together).  The plan's serializability
+  route is unavailable while SM3.C.9 defers the fine locks, so the theorem
+  is proven from the frames — weaker assumption, stronger result — with
+  `crossCoreNonInterference_of_disjoint_lockSet` the bridge that recovers
+  the plan's argument once they land.
+* **`nonInterference_perCore`** — the corollary at the boot core: there the
+  per-core view *is* `projectState`, so the existing
+  `step_preserves_projection` applies verbatim.  All 35 `KernelOperation`
+  variants get a lift; **31 derive** the confinement premise from the
+  operation's own semantics, discharging the SM4.C / SM4.D `hOtherIdle`
+  obligation for them, and the four catch-all constructors take it
+  explicitly because they genuinely range over remote-core writes
+  (`perCoreConfinementDerived_count` pins the split).
+* **The per-object `lock` left the projection.**  `RwLockState` is three
+  fields of core identities, so projecting it re-opened the placement
+  channel SM5.B closed on `TCB.cpuAffinity`.  With it erased,
+  `withLockSet_preserves_projection` holds **unconditionally** — no
+  hypothesis on the lock set, none on contention — leaving CC-5 a hardware
+  timing channel and nothing more.
+* **The channel inventory is data.**  `acceptedCovertChannelsPerCore` lists
+  CC-1 … CC-7 as records carrying the plan's number, the WS-W mitigation,
+  the severity, model-visibility and per-core multiplicity, each paired with
+  the theorem that fixes its status; three model-visible, four
+  hardware-only, five per-core.  `enforcementBoundaryPerCore` is the
+  canonical 38 plus the 2PL bracket = 39, `SyscallId` coverage re-checked.
+* **`crossCoreLeakage_bounded`** is an `↔`: a `c'`-confined transition
+  freezes core `c`'s per-core fragment, so the view moves iff the shared
+  fragment does — six of thirteen components carry no cross-core flow.
+
+Runtime coverage: the same suite grows to 167 assertions across 24 groups
+(ten new SM8.B groups) with 188 `#check` anchors.  Per-core declassification
+audit is WS-SM SM8.C.
 
 ## 32. WS-Q3 IntermediateState formalization (v0.17.9)
 

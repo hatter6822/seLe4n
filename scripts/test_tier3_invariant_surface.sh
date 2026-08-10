@@ -1518,6 +1518,230 @@ run_check "INVARIANT" rg -n '^name = "smp_information_flow_suite"' lakefile.toml
 run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.InformationFlow\.ObservableStatePerCore' SeLe4n/Platform/Staged.lean
 run_check "INVARIANT" rg -n '^SeLe4n\.Kernel\.InformationFlow\.ObservableStatePerCore' scripts/staged_module_allowlist.txt
 
+# ---------------------------------------------------------------------------
+# WS-SM SM8.B — per-core non-interference (plan SMP_INFORMATION_FLOW_PLAN.md §5).
+# Every public symbol of the two SM8.B modules is pinned, verified by set
+# difference against the module sources, so a rename or a silent deletion fails
+# Tier 3 even if the dedicated suite still compiles.
+run_check "INVARIANT" rg -n '^structure observableSlotsConfinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem observableSlotsConfinedToCore_refl' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem observableSlotsConfinedToCore_trans' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem observableSlotsConfinedToCore_of_scheduler_machine_eq' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem observableSlotsConfinedToCore_of_scheduler_regs_eq' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem observableSlotsConfinedToCore_of_eq' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^structure sharedViewUnchanged' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem sharedViewUnchanged_refl' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem sharedViewUnchanged_trans' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem sharedViewUnchanged_of_globalProjection' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem sharedViewUnchanged_of_state_frames' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem projectStateOnCore_sharedFragment' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem projectStateOnCore_perCoreFragment' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreNonInterference_onCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreNonInterference_observer' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreNonInterference_of_state_frames' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem lowEquivalent_smp_of_projection_and_confinement' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_observer' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem composedNonInterference_step_perCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_to_singleCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem trace_preserves_projectionOnCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem storeObject_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem storeCapabilityRef_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem storeTcbIpcState_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem storeTcbIpcStateAndMessage_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem storeTcbQueueLinks_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem storeTcbReceiveComplete_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueuePopHead_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueEnqueue_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem linkCallerReply_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem linkServerStashedReply_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem consumeCallerReply_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cleanupPreReceiveDonation_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem ensureRunnable_confinedToBootCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem removeRunnable_confinedToBootCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem setCurrentThread_confinedToBootCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem saveOutgoingContext_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem restoreIncomingContext_confinedToBootCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem machineTick_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem setRunQueueBootCore_confinedToBootCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem chooseThread_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem schedule_confinedToBootCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem handleYield_confinedToBootCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem timerTick_confinedToBootCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem storeTcbIpcState_fromTcb_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem storeTcbIpcStateAndMessage_fromTcb_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignal_confinedToBootCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem notificationWait_confinedToBootCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointSendDual_confinedToBootCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cleanupPreReceiveDonationChecked_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDual_confinedToBootCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointCall_confinedToBootCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointReply_confinedToBootCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyRecv_confinedToBootCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem attachSlotToCdtNode_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem detachSlotFromCdt_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem ensureCdtNodeForSlot_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cdtEdge_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cspaceLookupSlot_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cspaceInsertSlot_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlotCore_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlot_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cspaceCopy_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cspaceMove_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cspaceMint_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cspaceRevoke_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cspaceMutate_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRevokeDeleteRetype_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem vspaceMapPage_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem vspaceUnmapPage_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem vspaceLookup_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem registerService_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem registerServiceChecked_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_chooseThread' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_endpointSendDual' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_cspaceMint' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_cspaceRevoke' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_lifecycleRetype' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_lifecycleRevokeDeleteRetype' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_notificationSignal' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_notificationWait' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_cspaceInsertSlot' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_schedule' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_vspaceMapPage' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_vspaceUnmapPage' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_vspaceLookup' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_cspaceCopy' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_cspaceMove' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_cspaceDeleteSlot' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_endpointReply' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_endpointReceiveDual' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_endpointCall' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_endpointReplyRecv' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_storeObject' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_setCurrentThread' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_ensureRunnable' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_removeRunnable' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_storeTcbIpcStateAndMessage' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_storeTcbQueueLinks' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_cspaceMutate' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_handleYield' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_timerTick' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_syscallDecodeError' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_registerServiceChecked' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_syscallDispatch' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_endpointCallWithDonation' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_endpointReplyWithReversion' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_handleInterrupt' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^def kernelOperationPerCoreNiTheorem' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem niStepCoverage_perCore_injective' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem niStepCoverage_perCore_count' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^def perCoreConfinementDerived' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem perCoreConfinementDerived_count' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem niStepCoverage_perCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem projectKernelObject_updateLock' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem updateObjectAt_updateLock_preserves_projectObjects' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem projectState_eq_of_objects_projection_eq' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem updateObjectAt_updateLock_scheduler_eq' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem updateObjectAt_updateLock_machine_eq' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem updateObjectAt_updateLock_objectIndex_eq' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem updateObjectAt_updateLock_services_eq' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem updateObjectAt_updateLock_irqHandlers_eq' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem updateObjectLockAt_preserves_projection' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem updateObjectAt_updateLock_preserves_objects_invExt' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem updateObjectLockAt_preserves_objects_invExt' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem acquireLockOnObject_preserves_projection' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem releaseLockOnObject_preserves_projection' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem acquireLockOnObject_preserves_objects_invExt' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem releaseLockOnObject_preserves_objects_invExt' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem updateObjectLockAt_scheduler_eq' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem updateObjectLockAt_machine_eq' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem acquireLockOnObject_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem releaseLockOnObject_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem acquireAll_preserves_objects_invExt' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem releaseAll_preserves_objects_invExt' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem acquireAll_preserves_projection' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem releaseAll_preserves_projection' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem acquireAll_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem releaseAll_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem withLockSet_preserves_projection' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem withLockSet_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_underLockSet' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreNonInterference_of_disjoint_lockSet' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreLeakage_bounded' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreLeakage_bounded_reconstruction' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreLeakage_bounded_by_globalProjection' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreTransition_invisible_to_every_observer' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^def enforcementBoundaryPerCore' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_count' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_extends_canonical' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^def enforcementBoundaryPerCoreComplete' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_is_complete' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_entry_is_new' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^inductive CovertChannelSeverity' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^structure CovertChannel' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^def acceptedCovertChannel_scheduling_perCore' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^def acceptedCovertChannel_machineTimer' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^def acceptedCovertChannel_tcbMetadata' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^def acceptedCovertChannel_objectStoreMetadata' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^def acceptedCovertChannel_lockContention' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^def acceptedCovertChannel_tlbResidency' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^def acceptedCovertChannel_icacheResidency' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^def acceptedCovertChannelsPerCore' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_perCoreCount' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_perCore_ids' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_modelVisible_count' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_perCoreInstance_count' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_hardwareChannels_are_not_modelVisible' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_smp_additions' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_lockContention_is_timing_only' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_residency_excluded_from_view' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_scheduling_is_model_visible' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^def endpointPolicyRestricted_perCore' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointPolicyRestricted_perCore_iff' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointPolicyRestricted_perCore_at' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointPolicyRestricted_perCore_no_overrides' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointFlowCheck_state_independent' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointFlowCheck_restricted_subset_perCore' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointPolicyRestricted_perCore_is_necessary' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntry_preserves_projectionOnCore' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntry_success_perCore_NI' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntry_error_perCore_NI' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_release_of_perCore' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_release_of_perCore_observer' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+# The confinement premise of the four catch-all NI constructors must stay an
+# explicit argument: deriving it would be *false* (the live cross-core dispatch
+# writes a remote core), so these two pins guard the split.
+run_check "INVARIANT" rg -n 'perCoreConfinementDerived_count' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '\| \.syscallDispatchHigh \| \.endpointCallWithDonationHigh' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+# SM8.B.4: the per-object `lock` must stay OUT of the projection.  Without the
+# erasure the 2PL bracket is a model-level state channel carrying core
+# identities (writerHeld / readers / waiters), re-opening the placement channel
+# WS-SM SM5.B closed on `TCB.cpuAffinity`.  Pinned on every projected arm.
+run_check "INVARIANT" rg -n 'lock := SeLe4n.Kernel.Concurrency.RwLockState.unheld' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n 'lock := SeLe4n.Kernel.Concurrency.RwLockState.unheld' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^  \| \.endpoint e =>' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^  \| \.notification n =>' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^  \| \.vspaceRoot v =>' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^  \| \.untyped u =>' SeLe4n/Kernel/InformationFlow/Projection.lean
+# SM8.B.14 suite + module registrations.
+run_check "INVARIANT" rg -n '^  runCrossCoreNonInterferenceChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runLockSetNonInterferenceChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runCovertChannelInventoryChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runCatchAllPremiseChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: the RAW lock field genuinely changed' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.InformationFlow\.CovertChannelPerCore' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.InformationFlow\.CovertChannelPerCore' tests/SmpSurfaceAnchors.lean
+run_check "INVARIANT" rg -n 'cross-core non-interference \+ per-core lift headlines resolve' tests/SmpSurfaceAnchors.lean
+run_check "INVARIANT" rg -n 'lock-set non-interference \+ the covert-channel inventory resolve' tests/SmpSurfaceAnchors.lean
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.InformationFlow\.NonInterferencePerCore' SeLe4n/Platform/Staged.lean
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.InformationFlow\.CovertChannelPerCore' SeLe4n/Platform/Staged.lean
+run_check "INVARIANT" rg -n '^SeLe4n\.Kernel\.InformationFlow\.NonInterferencePerCore' scripts/staged_module_allowlist.txt
+run_check "INVARIANT" rg -n '^SeLe4n\.Kernel\.InformationFlow\.CovertChannelPerCore' scripts/staged_module_allowlist.txt
+
+
 # WS-H12d IPC message payload bounds anchors — predicate definitions + enforcement + theorems.
 run_check "INVARIANT" rg -n '^def maxMessageRegisters' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^def maxExtraCaps' SeLe4n/Model/Object/Types.lean

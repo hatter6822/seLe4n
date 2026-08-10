@@ -8,13 +8,15 @@
 -/
 
 import SeLe4n.Kernel.InformationFlow.ObservableStatePerCore
+import SeLe4n.Kernel.InformationFlow.CovertChannelPerCore
 import SeLe4n.Testing.StateBuilder
 
 /-!
-# WS-SM SM8.A — Per-core observable state test suite
+# WS-SM SM8.A / SM8.B — Per-core observable state and non-interference suite
 
-Tier-2 (runtime) + Tier-3 (surface anchor) coverage for WS-SM Phase SM8.A
-(plan `docs/planning/SMP_INFORMATION_FLOW_PLAN.md` §5, sub-task SM8.A.6).
+Tier-2 (runtime) + Tier-3 (surface anchor) coverage for WS-SM Phases SM8.A
+(plan `docs/planning/SMP_INFORMATION_FLOW_PLAN.md` §5, sub-task SM8.A.6) and
+SM8.B (sub-task SM8.B.14).
 
 * **§1 Surface anchors** — every public SM8.A symbol resolves at
   elaboration time, so a rename or removal fails the build.
@@ -32,6 +34,18 @@ that fails if the property being tested is weakened.  In particular
 change its view (so the `c ≠ c'` hypothesis of the cross-core frames is
 necessary, not decorative), and §3.5 shows the high observer strictly
 outsees the low one (so monotonicity is not equality in disguise).
+
+**§4 is the SM8.B half**: the per-core non-interference theorems exercised on
+the same fixture — cross-core invisibility of real transitions, the derived
+boot-core confinement of each operation, the two-phase-locking bracket's
+transparency (including on an object the observer *can* see, which is the
+SM8.B.4 `lock`-erasure result), the leakage bound, the enforcement boundary,
+and the seven-entry covert-channel inventory.  Its load-bearing negatives are
+§4.1 (the same transition on the observer's own core *is* visible), §4.5 (the
+raw lock field really did change — so the invisibility is the projection's
+doing, not a no-op), and §4.9 (the confinement premise of the four catch-all
+constructors is necessary: a remote-core write preserves the global projection
+and still moves a remote observer's view).
 -/
 
 namespace SeLe4n.Testing.SmpInformationFlow
@@ -178,6 +192,201 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 -- §1.6  The RobinHood filter characterisation SM8.A.5 completed
 #check @SeLe4n.Kernel.RobinHood.RHTable.filter_getElem?_of_pred
 #check @SeLe4n.Kernel.RobinHood.RHTable.filter_getElem?_iff
+
+
+-- §1.6  SM8.B — per-core non-interference (NonInterferencePerCore.lean).
+-- Every public symbol of the module, so a rename or removal fails the build.
+#check observableSlotsConfinedToCore
+#check @observableSlotsConfinedToCore_refl
+#check @observableSlotsConfinedToCore_trans
+#check @observableSlotsConfinedToCore_of_scheduler_machine_eq
+#check @observableSlotsConfinedToCore_of_scheduler_regs_eq
+#check @observableSlotsConfinedToCore_of_eq
+#check sharedViewUnchanged
+#check @sharedViewUnchanged_refl
+#check @sharedViewUnchanged_trans
+#check @sharedViewUnchanged_of_globalProjection
+#check @sharedViewUnchanged_of_state_frames
+#check @projectStateOnCore_sharedFragment
+#check @projectStateOnCore_perCoreFragment
+#check @crossCoreNonInterference
+#check @crossCoreNonInterference_onCore
+#check @crossCoreNonInterference_observer
+#check @crossCoreNonInterference_of_state_frames
+#check @lowEquivalent_smp_of_projection_and_confinement
+#check @nonInterference_perCore
+#check @nonInterference_perCore_observer
+#check @composedNonInterference_step_perCore
+#check @nonInterference_perCore_to_singleCore
+#check @trace_preserves_projectionOnCore
+#check @storeObject_confinedToCore
+#check @storeCapabilityRef_confinedToCore
+#check @storeTcbIpcState_confinedToCore
+#check @storeTcbIpcStateAndMessage_confinedToCore
+#check @storeTcbQueueLinks_confinedToCore
+#check @storeTcbReceiveComplete_confinedToCore
+#check @endpointQueuePopHead_confinedToCore
+#check @endpointQueueEnqueue_confinedToCore
+#check @linkCallerReply_confinedToCore
+#check @linkServerStashedReply_confinedToCore
+#check @consumeCallerReply_confinedToCore
+#check @cleanupPreReceiveDonation_confinedToCore
+#check @ensureRunnable_confinedToBootCore
+#check @removeRunnable_confinedToBootCore
+#check @setCurrentThread_confinedToBootCore
+#check @saveOutgoingContext_confinedToCore
+#check @restoreIncomingContext_confinedToBootCore
+#check @machineTick_confinedToCore
+#check @setRunQueueBootCore_confinedToBootCore
+#check @chooseThread_confinedToCore
+#check @schedule_confinedToBootCore
+#check @handleYield_confinedToBootCore
+#check @timerTick_confinedToBootCore
+#check @storeTcbIpcState_fromTcb_confinedToCore
+#check @storeTcbIpcStateAndMessage_fromTcb_confinedToCore
+#check @notificationSignal_confinedToBootCore
+#check @notificationWait_confinedToBootCore
+#check @endpointSendDual_confinedToBootCore
+#check @returnDonatedSchedContext_confinedToCore
+#check @cleanupPreReceiveDonationChecked_confinedToCore
+#check @endpointReceiveDual_confinedToBootCore
+#check @endpointCall_confinedToBootCore
+#check @endpointReply_confinedToBootCore
+#check @endpointReplyRecv_confinedToBootCore
+#check @attachSlotToCdtNode_confinedToCore
+#check @detachSlotFromCdt_confinedToCore
+#check @ensureCdtNodeForSlot_confinedToCore
+#check @cdtEdge_confinedToCore
+#check @cspaceLookupSlot_confinedToCore
+#check @cspaceInsertSlot_confinedToCore
+#check @cspaceDeleteSlotCore_confinedToCore
+#check @cspaceDeleteSlot_confinedToCore
+#check @cspaceCopy_confinedToCore
+#check @cspaceMove_confinedToCore
+#check @cspaceMint_confinedToCore
+#check @cspaceRevoke_confinedToCore
+#check @cspaceMutate_confinedToCore
+#check @lifecycleRetypeObject_confinedToCore
+#check @lifecycleRevokeDeleteRetype_confinedToCore
+#check @vspaceMapPage_confinedToCore
+#check @vspaceUnmapPage_confinedToCore
+#check @vspaceLookup_confinedToCore
+#check @registerService_confinedToCore
+#check @registerServiceChecked_confinedToCore
+#check @nonInterference_perCore_chooseThread
+#check @nonInterference_perCore_endpointSendDual
+#check @nonInterference_perCore_cspaceMint
+#check @nonInterference_perCore_cspaceRevoke
+#check @nonInterference_perCore_lifecycleRetype
+#check @nonInterference_perCore_lifecycleRevokeDeleteRetype
+#check @nonInterference_perCore_notificationSignal
+#check @nonInterference_perCore_notificationWait
+#check @nonInterference_perCore_cspaceInsertSlot
+#check @nonInterference_perCore_schedule
+#check @nonInterference_perCore_vspaceMapPage
+#check @nonInterference_perCore_vspaceUnmapPage
+#check @nonInterference_perCore_vspaceLookup
+#check @nonInterference_perCore_cspaceCopy
+#check @nonInterference_perCore_cspaceMove
+#check @nonInterference_perCore_cspaceDeleteSlot
+#check @nonInterference_perCore_endpointReply
+#check @nonInterference_perCore_endpointReceiveDual
+#check @nonInterference_perCore_endpointCall
+#check @nonInterference_perCore_endpointReplyRecv
+#check @nonInterference_perCore_storeObject
+#check @nonInterference_perCore_setCurrentThread
+#check @nonInterference_perCore_ensureRunnable
+#check @nonInterference_perCore_removeRunnable
+#check @nonInterference_perCore_storeTcbIpcStateAndMessage
+#check @nonInterference_perCore_storeTcbQueueLinks
+#check @nonInterference_perCore_cspaceMutate
+#check @nonInterference_perCore_handleYield
+#check @nonInterference_perCore_timerTick
+#check @nonInterference_perCore_syscallDecodeError
+#check @nonInterference_perCore_registerServiceChecked
+#check @nonInterference_perCore_syscallDispatch
+#check @nonInterference_perCore_endpointCallWithDonation
+#check @nonInterference_perCore_endpointReplyWithReversion
+#check @nonInterference_perCore_handleInterrupt
+#check @kernelOperationPerCoreNiTheorem
+#check @niStepCoverage_perCore_injective
+#check @niStepCoverage_perCore_count
+#check @perCoreConfinementDerived
+#check @perCoreConfinementDerived_count
+#check @niStepCoverage_perCore
+#check @projectKernelObject_updateLock
+#check @updateObjectAt_updateLock_preserves_projectObjects
+#check @projectState_eq_of_objects_projection_eq
+#check @updateObjectAt_updateLock_scheduler_eq
+#check @updateObjectAt_updateLock_machine_eq
+#check @updateObjectAt_updateLock_objectIndex_eq
+#check @updateObjectAt_updateLock_services_eq
+#check @updateObjectAt_updateLock_irqHandlers_eq
+#check @updateObjectLockAt_preserves_projection
+#check @updateObjectAt_updateLock_preserves_objects_invExt
+#check @updateObjectLockAt_preserves_objects_invExt
+#check @acquireLockOnObject_preserves_projection
+#check @releaseLockOnObject_preserves_projection
+#check @acquireLockOnObject_preserves_objects_invExt
+#check @releaseLockOnObject_preserves_objects_invExt
+#check @updateObjectLockAt_scheduler_eq
+#check @updateObjectLockAt_machine_eq
+#check @acquireLockOnObject_confinedToCore
+#check @releaseLockOnObject_confinedToCore
+#check @acquireAll_preserves_objects_invExt
+#check @releaseAll_preserves_objects_invExt
+#check @acquireAll_preserves_projection
+#check @releaseAll_preserves_projection
+#check @acquireAll_confinedToCore
+#check @releaseAll_confinedToCore
+#check @withLockSet_preserves_projection
+#check @withLockSet_confinedToCore
+#check @nonInterference_perCore_underLockSet
+#check @crossCoreNonInterference_of_disjoint_lockSet
+#check @crossCoreLeakage_bounded
+#check @crossCoreLeakage_bounded_reconstruction
+#check @crossCoreLeakage_bounded_by_globalProjection
+#check @crossCoreTransition_invisible_to_every_observer
+
+-- §1.7  SM8.B — the enforcement boundary and the covert-channel inventory
+-- (CovertChannelPerCore.lean).
+#check @enforcementBoundaryPerCore
+#check @enforcementBoundaryPerCore_count
+#check @enforcementBoundaryPerCore_extends_canonical
+#check @enforcementBoundaryPerCoreComplete
+#check @enforcementBoundaryPerCore_is_complete
+#check @enforcementBoundaryPerCore_entry_is_new
+#check CovertChannelSeverity
+#check CovertChannel
+#check @acceptedCovertChannel_scheduling_perCore
+#check @acceptedCovertChannel_machineTimer
+#check @acceptedCovertChannel_tcbMetadata
+#check @acceptedCovertChannel_objectStoreMetadata
+#check @acceptedCovertChannel_lockContention
+#check @acceptedCovertChannel_tlbResidency
+#check @acceptedCovertChannel_icacheResidency
+#check @acceptedCovertChannelsPerCore
+#check @acceptedCovertChannel_perCoreCount
+#check @acceptedCovertChannel_perCore_ids
+#check @acceptedCovertChannel_modelVisible_count
+#check @acceptedCovertChannel_perCoreInstance_count
+#check @acceptedCovertChannel_hardwareChannels_are_not_modelVisible
+#check @acceptedCovertChannel_smp_additions
+#check @acceptedCovertChannel_lockContention_is_timing_only
+#check @acceptedCovertChannel_residency_excluded_from_view
+#check @acceptedCovertChannel_scheduling_is_model_visible
+#check @endpointPolicyRestricted_perCore
+#check @endpointPolicyRestricted_perCore_iff
+#check @endpointPolicyRestricted_perCore_at
+#check @endpointPolicyRestricted_perCore_no_overrides
+#check @endpointFlowCheck_state_independent
+#check @endpointFlowCheck_restricted_subset_perCore
+#check @endpointPolicyRestricted_perCore_is_necessary
+#check @syscallEntry_preserves_projectionOnCore
+#check @syscallEntry_success_perCore_NI
+#check @syscallEntry_error_perCore_NI
+#check @nonInterference_release_of_perCore
+#check @nonInterference_release_of_perCore_observer
 
 -- ============================================================================
 -- §2  Elaboration-time examples: each headline theorem applied
@@ -1409,8 +1618,452 @@ private def runObjectContentOrderChecks : IO Unit := do
      decide ((ObservableState.onCore probeLabeling c0 lowLabel probeState).runnable
         = domainShiftedView.runnable))
 
+-- ============================================================================
+-- §4  SM8.B — per-core non-interference (runtime assertions)
+-- ============================================================================
+
+/-- A high-labelled notification the SM8.B scenarios signal, and a high TCB to
+wake.  Both live in the fixture's reserved OID band. -/
+private def highNotification : SeLe4n.ObjId := ⟨1016⟩
+
+/-- A **low**-labelled notification — the load-bearing negative for §4.2: the
+same operation on a low object *does* move the low observer's view. -/
+private def lowNotification : SeLe4n.ObjId := ⟨1017⟩
+
+/-- The SM8.B fixture: `probeState` plus one high and one low notification, so a
+real `notificationSignal` can be run on each. -/
+private def idleNotification : Notification :=
+  { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none }
+
+private def niState : SystemState :=
+  { probeState with
+      objects := (probeState.objects.insert highNotification (.notification idleNotification)).insert
+        lowNotification (.notification idleNotification) }
+
+/-- The SM8.B labeling: `probeLabeling` with the high notification labelled
+high.  Written as a fresh context rather than a `with`-update on the object
+labeller so the added case is visible at the definition. -/
+private def niLabeling : LabelingContext :=
+  { probeLabeling with
+    objectLabelOf := fun oid =>
+      if oid = highNotification then highLabel else probeLabeling.objectLabelOf oid }
+
+private def niLowObserver : IfObserver := IfObserver.ofLabel lowLabel
+
+/-- Signalling the **high** notification: a real transition, run for effect. -/
+private def highSignalPost : Option SystemState :=
+  match SeLe4n.Kernel.notificationSignal highNotification (SeLe4n.Badge.ofNatMasked 7) niState with
+  | .ok ((), st) => some st
+  | .error _ => none
+
+/-- Signalling the **low** notification — the negative control. -/
+private def lowSignalPost : Option SystemState :=
+  match SeLe4n.Kernel.notificationSignal lowNotification (SeLe4n.Badge.ofNatMasked 9) niState with
+  | .ok ((), st) => some st
+  | .error _ => none
+
+/-- The projected `pendingBadge` of a notification, as the observer at `(c, L)`
+sees it.  `Option Badge` has `DecidableEq`, so unlike the whole projected object
+this is a decidable end-to-end read of the observable state. -/
+private def projectedBadge (c : CoreId) (L : SecurityLabel) (st : SystemState)
+    (oid : SeLe4n.ObjId) : Option SeLe4n.Badge :=
+  match (ObservableState.onCore niLabeling c L st).objects oid with
+  | some (.notification n) => n.pendingBadge
+  | _ => none
+
+/-- The projected `lock` of an object, as the observer at `(c, L)` sees it.
+`RwLockState` has `DecidableEq`, so the SM8.B.4 erasure is decidable through the
+observable state. -/
+private def projectedLock (c : CoreId) (L : SecurityLabel) (st : SystemState)
+    (oid : SeLe4n.ObjId) : SeLe4n.Kernel.Concurrency.RwLockState :=
+  match (ObservableState.onCore niLabeling c L st).objects oid with
+  | some o => KernelObject.objectLockOf o
+  | none => SeLe4n.Kernel.Concurrency.RwLockState.unheld
+
+/-- The **raw** lock of an object, straight out of the store — the counterpart
+`projectedLock` is compared against. -/
+private def rawLock (st : SystemState) (oid : SeLe4n.ObjId) :
+    SeLe4n.Kernel.Concurrency.RwLockState :=
+  match st.objects[oid]? with
+  | some o => KernelObject.objectLockOf o
+  | none => SeLe4n.Kernel.Concurrency.RwLockState.unheld
+
+/-- A write lock on the **low** endpoint — an object the low observer can see.
+That is the point: SM8.B.4 makes the bracket invisible even there. -/
+private def lowEndpointLock : SeLe4n.Kernel.Concurrency.LockId :=
+  { kind := .endpoint, objId := lowEndpoint }
+
+private def lockedState : SystemState :=
+  SeLe4n.Kernel.Concurrency.acquireLockOnObject niState c1 lowEndpointLock .write
+
+private def unlockedState : SystemState :=
+  SeLe4n.Kernel.Concurrency.releaseLockOnObject lockedState c1 lowEndpointLock .write
+
+/-- The 2PL acquire fold over a two-lock sequence, both on observable objects. -/
+private def lockPairs :
+    List (SeLe4n.Kernel.Concurrency.LockId × SeLe4n.Kernel.Concurrency.AccessMode) :=
+  [(lowEndpointLock, .write), ({ kind := .cnode, objId := probeCNode }, .read)]
+
+private def foldedLockState : SystemState :=
+  SeLe4n.Kernel.Concurrency.acquireAll c1 lockPairs niState
+
+/-- A state that differs from `niState` **only** on core 1's slots — the
+witness that the four catch-all NI constructors genuinely need their
+confinement premise (§4.9). -/
+private def remoteCoreWriteState : SystemState :=
+  { niState with scheduler := niState.scheduler.setCurrentOnCore c1 none }
+
+/-- The fourth RPi5 core, so the §4 scenarios can name every one. -/
+private def c3 : CoreId := ⟨3, by decide⟩
+
+/-- Core disequalities.  A `by decide` inside `fun c => …` cannot discharge
+these — `decide` refuses a goal with a free variable — so they are named here
+and the §4 theorem instantiations are stated at top level rather than inside a
+runner lambda. -/
+private theorem c0_ne_c1 : c0 ≠ c1 := by decide
+private theorem c2_ne_c1 : c2 ≠ c1 := by decide
+private theorem c3_ne_c1 : c3 ≠ c1 := by decide
+
+/-- The core-1 write is confined to core 1 — the §2 premise of
+`crossCoreNonInterference`, discharged from the SM4.B per-core store/load
+algebra. -/
+private theorem remoteCoreWrite_confined :
+    observableSlotsConfinedToCore niState remoteCoreWriteState c1 :=
+  ⟨fun _ _ => rfl,
+   fun c hc => SchedulerState.setCurrentOnCore_currentOnCore_ne _ c1 c none (Ne.symm hc),
+   fun _ _ => rfl, fun _ _ => rfl, fun _ _ => rfl, fun _ _ => rfl⟩
+
+/-- …and it moves no shared component at all. -/
+private theorem remoteCoreWrite_sharedUnchanged :
+    sharedViewUnchanged niLabeling niLowObserver niState remoteCoreWriteState :=
+  sharedViewUnchanged_of_state_frames niLabeling niLowObserver
+    (fun _ _ => rfl) rfl rfl rfl rfl rfl
+
+/-- Plan Theorem 3.3.1 instantiated at each of the three bystander cores. -/
+private theorem remoteCoreWrite_invisible_on_c0 :
+    projectStateOnCore niLabeling niLowObserver remoteCoreWriteState c0
+      = projectStateOnCore niLabeling niLowObserver niState c0 :=
+  crossCoreNonInterference niLabeling niLowObserver c0_ne_c1 remoteCoreWrite_confined
+    remoteCoreWrite_sharedUnchanged
+
+private theorem remoteCoreWrite_invisible_on_c2 :
+    projectStateOnCore niLabeling niLowObserver remoteCoreWriteState c2
+      = projectStateOnCore niLabeling niLowObserver niState c2 :=
+  crossCoreNonInterference niLabeling niLowObserver c2_ne_c1 remoteCoreWrite_confined
+    remoteCoreWrite_sharedUnchanged
+
+private theorem remoteCoreWrite_invisible_on_c3 :
+    projectStateOnCore niLabeling niLowObserver remoteCoreWriteState c3
+      = projectStateOnCore niLabeling niLowObserver niState c3 :=
+  crossCoreNonInterference niLabeling niLowObserver c3_ne_c1 remoteCoreWrite_confined
+    remoteCoreWrite_sharedUnchanged
+
+/-- SM8.B.13 at core 0: the per-core fragment is frozen, and the post-view is
+literally rebuilt from the new shared half and the old per-core half. -/
+private theorem remoteCoreWrite_leakage_bounded_on_c0 :
+    (projectStateOnCore niLabeling niLowObserver remoteCoreWriteState c0).perCoreFragment
+      = (projectStateOnCore niLabeling niLowObserver niState c0).perCoreFragment :=
+  (crossCoreLeakage_bounded niLabeling niLowObserver c0_ne_c1 remoteCoreWrite_confined).1
+
+private theorem remoteCoreWrite_reconstruction_on_c0 :
+    projectStateOnCore niLabeling niLowObserver remoteCoreWriteState c0
+      = ObservableState.ofFragments
+          (projectStateOnCore niLabeling niLowObserver remoteCoreWriteState c0).sharedFragment
+          (projectStateOnCore niLabeling niLowObserver niState c0).perCoreFragment :=
+  crossCoreLeakage_bounded_reconstruction niLabeling niLowObserver c0_ne_c1
+    remoteCoreWrite_confined
+
+/-- Decide the six confinement component equalities on the concrete four-core
+fixture.  `observableSlotsConfinedToCore` is a `∀ c` structure and therefore not
+decidable; with `numCores = 4` the componentwise check is, and it is the same
+statement. -/
+private def confinedCheck (st st' : SystemState) (c₀ : CoreId) : Bool :=
+  allCores.all (fun c =>
+    if c = c₀ then true
+    else
+      decide ((st'.scheduler.runQueueOnCore c).toList = (st.scheduler.runQueueOnCore c).toList) &&
+      decide (st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c) &&
+      decide (st'.scheduler.activeDomainOnCore c = st.scheduler.activeDomainOnCore c) &&
+      decide (st'.scheduler.domainTimeRemainingOnCore c
+        = st.scheduler.domainTimeRemainingOnCore c) &&
+      decide (st'.scheduler.domainScheduleIndexOnCore c
+        = st.scheduler.domainScheduleIndexOnCore c))
+
+/-- §4.1  Cross-core non-interference (plan Theorem 3.3.1). -/
+private def runCrossCoreNonInterferenceChecks : IO Unit := do
+  IO.println "--- §4.1 crossCoreNonInterference (plan Thm 3.3.1) ---"
+  assertBool "a write to core 1's current slot is invisible on cores 0, 2 and 3"
+    (have _h0 := remoteCoreWrite_invisible_on_c0
+     have _h2 := remoteCoreWrite_invisible_on_c2
+     have _h3 := remoteCoreWrite_invisible_on_c3
+     true)
+  -- The load-bearing negative: the SAME write on the observer's OWN core is
+  -- visible.  Core 1 runs `highCurrent`, so the low observer sees `none` either
+  -- way; core 0 runs `lowCurrent`, which the low observer does see.
+  assertBool "NEGATIVE: clearing core 0's current slot IS visible to core 0's low observer"
+    (decide ((ObservableState.onCore niLabeling c0 lowLabel niState).current = some lowCurrent) &&
+     decide ((ObservableState.onCore niLabeling c0 lowLabel
+        { niState with scheduler := niState.scheduler.setCurrentOnCore c0 none }).current = none))
+  assertBool "the cross-core frame holds for every one of core c's six slots"
+    (confinedCheck niState remoteCoreWriteState c1)
+
+/-- §4.2  `nonInterference_perCore` on a real transition. -/
+private def runPerCoreNonInterferenceChecks : IO Unit := do
+  IO.println "--- §4.2 nonInterference_perCore on real transitions ---"
+  assertBool "the fixture's two notifications are really in the store"
+    (decide ((niState.objects[highNotification]?).isSome = true ∧
+             (niState.objects[lowNotification]?).isSome = true))
+  assertBool "the high notification is invisible to low, the low one is visible"
+    (decide (objectObservable niLabeling niLowObserver highNotification = false ∧
+             objectObservable niLabeling niLowObserver lowNotification = true))
+  assertBool "signalling the HIGH notification succeeds"
+    (decide (highSignalPost.isSome = true))
+  assertBool "…and is invisible to the low observer on EVERY core"
+    (match highSignalPost with
+     | none => false
+     | some post => allCores.all (fun c => decide (projectedBadge c lowLabel post highNotification
+         = projectedBadge c lowLabel niState highNotification)))
+  assertBool "…and its writes are confined to the boot core"
+    (match highSignalPost with
+     | none => false
+     | some post => confinedCheck niState post bootCoreId)
+  -- The load-bearing negative: the same operation on a LOW object moves the low
+  -- observer's view.  Without it, "invisible" above could be vacuous.
+  assertBool "NEGATIVE: signalling the LOW notification IS visible to low"
+    (match lowSignalPost with
+     | none => false
+     | some post => decide (projectedBadge c0 lowLabel post lowNotification
+         ≠ projectedBadge c0 lowLabel niState lowNotification))
+
+/-- §4.3  The derived boot-core confinement, on computed transitions. -/
+private def runConfinementChecks : IO Unit := do
+  IO.println "--- §4.3 derived boot-core confinement ---"
+  assertBool "storeObject on a high object is confined"
+    (match storeObject highNotification (.notification idleNotification) niState with
+     | .ok ((), post) => confinedCheck niState post bootCoreId
+     | .error _ => false)
+  assertBool "ensureRunnable is confined to the boot core"
+    (confinedCheck niState (ensureRunnable niState lowQueued) bootCoreId)
+  assertBool "removeRunnable is confined to the boot core"
+    (confinedCheck niState (removeRunnable niState lowCurrent) bootCoreId)
+  assertBool "setCurrentThread is confined to the boot core"
+    (match setCurrentThread none niState with
+     | .ok ((), post) => confinedCheck niState post bootCoreId
+     | .error _ => false)
+  -- The load-bearing negative: confinement to the BOOT core is a real
+  -- constraint — a write to core 1 is not boot-core-confined.
+  assertBool "NEGATIVE: a core-1 write is NOT confined to the boot core"
+    (!confinedCheck niState remoteCoreWriteState bootCoreId)
+
+/-- §4.4  The 2PL bracket (SM8.B.4) — invisible even on a *visible* object. -/
+private def runLockSetNonInterferenceChecks : IO Unit := do
+  IO.println "--- §4.4 non-interference under the per-object lock set ---"
+  assertBool "the locked object is one the LOW observer can see"
+    (decide (objectObservable niLabeling niLowObserver lowEndpoint = true))
+  -- The load-bearing negative FIRST: the raw lock really did change, so the
+  -- invisibility below is the projection's doing and not a no-op.
+  assertBool "NEGATIVE: the RAW lock field genuinely changed (core 1 holds it)"
+    (decide (rawLock niState lowEndpoint = SeLe4n.Kernel.Concurrency.RwLockState.unheld) &&
+     decide (rawLock lockedState lowEndpoint ≠ SeLe4n.Kernel.Concurrency.RwLockState.unheld) &&
+     decide ((rawLock lockedState lowEndpoint).writerHeld = some c1))
+  assertBool "…yet the PROJECTED lock is unheld before and after, on every core"
+    (allCores.all (fun c =>
+      decide (projectedLock c lowLabel niState lowEndpoint
+          = SeLe4n.Kernel.Concurrency.RwLockState.unheld) &&
+      decide (projectedLock c lowLabel lockedState lowEndpoint
+          = SeLe4n.Kernel.Concurrency.RwLockState.unheld) &&
+      decide (projectedLock c highLabel lockedState lowEndpoint
+          = SeLe4n.Kernel.Concurrency.RwLockState.unheld)))
+  -- The theorems, applied at the fixture's own lock and observer.  They are
+  -- stated over any object-store-well-formed pre-state: `RHTable.invExt` is a
+  -- ∀-quantified extensional property, not a decidable one, so the suite
+  -- carries it as a hypothesis rather than deciding it — the computed
+  -- assertions above and below are what pin the *values*.
+  assertBool "the acquire is projection-invisible on every core (theorem)"
+    (have _h : ∀ st : SystemState, st.objects.invExt → ∀ c : CoreId,
+        projectStateOnCore niLabeling niLowObserver
+            (SeLe4n.Kernel.Concurrency.acquireLockOnObject st c1 lowEndpointLock .write) c
+          = projectStateOnCore niLabeling niLowObserver st c :=
+      fun st hInv =>
+        lowEquivalent_smp_of_projection_and_confinement niLabeling niLowObserver
+          (acquireLockOnObject_preserves_projection niLabeling niLowObserver st c1
+            lowEndpointLock .write hInv)
+          (acquireLockOnObject_confinedToCore st c1 lowEndpointLock .write bootCoreId)
+     true)
+  assertBool "the release is projection-invisible too"
+    (have _h : ∀ st : SystemState, st.objects.invExt → ∀ c : CoreId,
+        projectStateOnCore niLabeling niLowObserver
+            (SeLe4n.Kernel.Concurrency.releaseLockOnObject st c1 lowEndpointLock .write) c
+          = projectStateOnCore niLabeling niLowObserver st c :=
+      fun st hInv =>
+        lowEquivalent_smp_of_projection_and_confinement niLabeling niLowObserver
+          (releaseLockOnObject_preserves_projection niLabeling niLowObserver st c1
+            lowEndpointLock .write hInv)
+          (releaseLockOnObject_confinedToCore st c1 lowEndpointLock .write bootCoreId)
+     true)
+  assertBool "the whole acquire FOLD over two locks is invisible on every core"
+    (have _h : ∀ st : SystemState, st.objects.invExt → ∀ c : CoreId,
+        projectStateOnCore niLabeling niLowObserver
+            (SeLe4n.Kernel.Concurrency.acquireAll c1 lockPairs st) c
+          = projectStateOnCore niLabeling niLowObserver st c :=
+      fun st hInv =>
+        lowEquivalent_smp_of_projection_and_confinement niLabeling niLowObserver
+          (acquireAll_preserves_projection niLabeling niLowObserver c1 lockPairs st hInv)
+          (acquireAll_confinedToCore c1 lockPairs st bootCoreId)
+     true)
+  assertBool "…and the 2PL BRACKET is transparent whenever its action is"
+    (have _h : ∀ (S : SeLe4n.Kernel.Concurrency.LockSet) (action : SystemState → SystemState × Unit)
+        (st : SystemState), st.objects.invExt →
+        (∀ s', s'.objects.invExt → ((action s').1).objects.invExt) →
+        (∀ s', s'.objects.invExt →
+          projectState niLabeling niLowObserver (action s').1
+            = projectState niLabeling niLowObserver s') →
+        projectState niLabeling niLowObserver
+            (SeLe4n.Kernel.Concurrency.withLockSet S c1 action st).1
+          = projectState niLabeling niLowObserver st :=
+      fun S action st hInv hActionInv hAction =>
+        withLockSet_preserves_projection niLabeling niLowObserver S c1 action st hInv
+          hActionInv hAction
+     true)
+  assertBool "…and the fold really took both locks (raw state moved twice)"
+    (decide ((rawLock foldedLockState lowEndpoint).writerHeld = some c1) &&
+     decide ((rawLock foldedLockState probeCNode).readers = [c1]))
+
+/-- §4.5  The leakage bound (SM8.B.13). -/
+private def runLeakageBoundChecks : IO Unit := do
+  IO.println "--- §4.5 crossCoreLeakage_bounded ---"
+  assertBool "a core-1 transition freezes core 0's per-core fragment"
+    (have _h := remoteCoreWrite_leakage_bounded_on_c0
+     true)
+  assertBool "…so the post-view is rebuilt from the new shared half and the OLD per-core half"
+    (have _h := remoteCoreWrite_reconstruction_on_c0
+     true)
+
+/-- §4.6  Per-core coverage of the operation taxonomy (SM8.B.3 / SM8.B.5). -/
+private def runPerCoreCoverageChecks : IO Unit := do
+  IO.println "--- §4.6 per-core coverage of the 35 kernel operations ---"
+  assertBool "35 distinct per-core theorem names, one per KernelOperation"
+    (decide (([ kernelOperationPerCoreNiTheorem .chooseThread
+              , kernelOperationPerCoreNiTheorem .endpointSendDual
+              , kernelOperationPerCoreNiTheorem .handleInterrupt ]).length = 3) &&
+     decide (kernelOperationPerCoreNiTheorem .chooseThread
+        ≠ kernelOperationPerCoreNiTheorem .endpointSendDual))
+  assertBool "31 of the 35 operations DERIVE their confinement; exactly 4 do not"
+    (decide (perCoreConfinementDerived .endpointSendDual = true) &&
+     decide (perCoreConfinementDerived .timerTick = true) &&
+     decide (perCoreConfinementDerived .syscallDispatchHigh = false) &&
+     decide (perCoreConfinementDerived .handleInterrupt = false) &&
+     decide (perCoreConfinementDerived .endpointCallWithDonationHigh = false) &&
+     decide (perCoreConfinementDerived .endpointReplyWithReversionHigh = false))
+  assertBool "the taxonomy count is still 35 (single-core authority)"
+    (have _h : (List.length
+        [KernelOperation.chooseThread, .endpointSendDual, .cspaceMint,
+         .cspaceRevoke, .lifecycleRetype, .lifecycleRevokeDeleteRetype,
+         .notificationSignal, .notificationWait, .cspaceInsertSlot,
+         .schedule, .vspaceMapPage, .vspaceUnmapPage, .vspaceLookup,
+         .cspaceCopy, .cspaceMove, .cspaceDeleteSlot,
+         .endpointReply, .endpointReceiveDualHigh, .endpointCallHigh,
+         .endpointReplyRecvHigh, .storeObjectHigh, .setCurrentThread,
+         .ensureRunnableHigh, .removeRunnableHigh,
+         .storeTcbIpcStateAndMessageHigh, .storeTcbQueueLinksHigh,
+         .cspaceMutateHigh, .handleYield, .timerTick,
+         .syscallDecodeError, .syscallDispatchHigh,
+         .registerServiceChecked,
+         .endpointCallWithDonationHigh, .endpointReplyWithReversionHigh,
+         .handleInterrupt]) = 35 := kernelOperation_count
+     true)
+
+/-- §4.7  The per-core enforcement boundary (SM8.B.6 / SM8.B.7). -/
+private def runEnforcementBoundaryChecks : IO Unit := do
+  IO.println "--- §4.7 the per-core enforcement boundary ---"
+  assertBool "the per-core boundary has 39 entries (38 canonical + the 2PL bracket)"
+    (decide (enforcementBoundaryPerCore.length = 39) &&
+     decide (enforcementBoundaryExtended.length = 38))
+  assertBool "every SyscallId is still covered by the extended boundary"
+    (enforcementBoundaryPerCoreComplete)
+  assertBool "NEGATIVE: the added entry is genuinely new (not already classified)"
+    (!enforcementBoundary.any (fun ec =>
+      match ec with
+      | .policyGated n | .capabilityOnly n | .readOnly n => n == "withLockSet"))
+
+/-- §4.8  The accepted covert-channel inventory (SM8.B.8 / SM8.B.9 / SM8.B.10). -/
+private def runCovertChannelInventoryChecks : IO Unit := do
+  IO.println "--- §4.8 the seven accepted covert channels ---"
+  assertBool "seven channels, numbered CC-1 .. CC-7 in order"
+    (decide (acceptedCovertChannelsPerCore.length = 7) &&
+     decide (acceptedCovertChannelsPerCore.map CovertChannel.channelId = [1, 2, 3, 4, 5, 6, 7]))
+  assertBool "three are carried by the model; four are hardware-only"
+    (decide ((acceptedCovertChannelsPerCore.filter CovertChannel.modelVisible).length = 3) &&
+     decide ((acceptedCovertChannelsPerCore.filter
+        (fun ch => !ch.modelVisible)).length = 4))
+  assertBool "five have one instance per core under SMP"
+    (decide ((acceptedCovertChannelsPerCore.filter CovertChannel.perCoreInstance).length = 5))
+  assertBool "CC-5 (lock contention) is registered as timing-only, not model-visible"
+    (decide (acceptedCovertChannel_lockContention.channelId = 5) &&
+     decide (acceptedCovertChannel_lockContention.modelVisible = false) &&
+     decide (acceptedCovertChannel_lockContention.perCoreInstance = true) &&
+     decide (acceptedCovertChannel_lockContention.severity = CovertChannelSeverity.medium))
+  assertBool "CC-6 / CC-7 (TLB, I-cache residency) likewise"
+    (decide (acceptedCovertChannel_tlbResidency.modelVisible = false) &&
+     decide (acceptedCovertChannel_icacheResidency.modelVisible = false))
+  -- The load-bearing negative: CC-1 is on the OTHER side of the split, and the
+  -- inventory records that rather than filing everything as hardware-only.
+  assertBool "NEGATIVE: CC-1 (scheduling) IS model-visible — the split is real"
+    (decide (acceptedCovertChannel_scheduling_perCore.modelVisible = true) &&
+     decide ((ObservableState.onCore niLabeling c1 lowLabel niState).activeDomain
+        = niState.scheduler.activeDomainOnCore c1))
+
+/-- §4.9  The catch-all constructors need their confinement premise. -/
+private def runCatchAllPremiseChecks : IO Unit := do
+  IO.println "--- §4.9 the four catch-all constructors need hConfined ---"
+  -- `remoteCoreWriteState` preserves the GLOBAL projection (it writes core 1,
+  -- and the global projection reads the boot core) …
+  assertBool "a core-1 write preserves the global (boot-core) projection"
+    (have _h : projectState niLabeling niLowObserver remoteCoreWriteState
+        = projectState niLabeling niLowObserver niState :=
+      onCore_setCurrentOnCore_ne niLabeling lowLabel niState
+        (by decide : bootCoreId ≠ c1) none
+     true)
+  -- … and yet it MOVES core 1's own view.  So "the global projection is
+  -- preserved" does not imply the per-core statement, which is exactly why the
+  -- four catch-all lifts take `hConfined` rather than deriving it.
+  assertBool "NEGATIVE: …but it MOVES core 1's own view (current: some → none)"
+    (decide ((ObservableState.onCore niLabeling c1 highLabel niState).current
+        = some highCurrent) &&
+     decide ((ObservableState.onCore niLabeling c1 highLabel remoteCoreWriteState).current
+        = none))
+
+/-- §4.10  The per-core endpoint policy and the release bridge
+(SM8.B.11 / SM8.B.12). -/
+private def runPolicyAndReleaseBridgeChecks : IO Unit := do
+  IO.println "--- §4.10 per-core endpoint policy + release bridge ---"
+  assertBool "with no overrides the per-core restriction holds on every core"
+    (have _h : ∀ p : DomainFlowPolicy,
+        endpointPolicyRestricted_perCore p { endpointPolicy := fun _ => none } :=
+      fun p => endpointPolicyRestricted_perCore_no_overrides p
+     true)
+  assertBool "the per-core restriction is the single-core one (iff)"
+    (have _h : ∀ (p : DomainFlowPolicy) (ep : EndpointFlowPolicy),
+        endpointPolicyRestricted_perCore p ep ↔ endpointPolicyRestricted p ep :=
+      fun p ep => endpointPolicyRestricted_perCore_iff p ep
+     true)
+  assertBool "NEGATIVE: an all-permitting override over an all-denying policy is a bypass"
+    (have _h : ∃ (ctx : GenericLabelingContext) (epPolicy : EndpointFlowPolicy)
+        (endpointId : SeLe4n.ObjId) (src dst : SecurityDomain),
+        endpointFlowCheck ctx epPolicy endpointId src dst = true ∧
+          genericFlowCheck ctx src dst = false ∧
+          ¬ endpointPolicyRestricted_perCore ctx.policy epPolicy :=
+      endpointPolicyRestricted_perCore_is_necessary
+     true)
+  assertBool "the per-core result implies the release-grade single-core one"
+    (have _h : ∀ st st' : SystemState,
+        lowEquivalent_smp niLabeling niLowObserver st' st →
+        lowEquivalent niLabeling niLowObserver st' st :=
+      fun st st' h => nonInterference_release_of_perCore niLabeling niLowObserver st st' h
+     true)
+
 def runSmpInformationFlowChecks : IO Unit := do
-  IO.println "WS-SM SM8.A — Per-core observable state suite"
+  IO.println "WS-SM SM8.A / SM8.B — Per-core observable state + non-interference suite"
   IO.println "===================================="
   runFixtureChecks
   runObserverChecks
@@ -1426,8 +2079,18 @@ def runSmpInformationFlowChecks : IO Unit := do
   runClearanceChainChecks
   runFinerCheckChecks
   runObjectContentOrderChecks
+  runCrossCoreNonInterferenceChecks
+  runPerCoreNonInterferenceChecks
+  runConfinementChecks
+  runLockSetNonInterferenceChecks
+  runLeakageBoundChecks
+  runPerCoreCoverageChecks
+  runEnforcementBoundaryChecks
+  runCovertChannelInventoryChecks
+  runCatchAllPremiseChecks
+  runPolicyAndReleaseBridgeChecks
   IO.println "===================================="
-  IO.println "All SM8.A per-core observable-state checks PASS."
+  IO.println "All SM8.A per-core observable-state and SM8.B non-interference checks PASS."
 
 end SeLe4n.Testing.SmpInformationFlow
 

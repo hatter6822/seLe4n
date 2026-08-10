@@ -1,3 +1,131 @@
+## v0.33.5 — SM8.B: per-core non-interference, and the lock field that should not have been observable
+
+WS-SM Phase SM8.B — the SMP lift of the whole non-interference surface. Two
+new staged modules (staged-only 55 → 57), 188 declarations, zero
+`sorry`/`axiom` (every one of the 184 term-level declarations checked with
+`#print axioms`, not sampled). No transition changed; the golden trace is
+byte-identical.
+
+**The security fix first, because it is the part that changes behaviour of
+the model rather than adding to it.** `projectKernelObject` carried each
+kernel object's `lock : RwLockState` straight into the observable state —
+its `.reply` arm even documented that "only `lock` survives (an
+`RwLockState` carrying no cross-domain identity)". That is false.
+`RwLockState` is `writerHeld : Option CoreId`, `readers : List CoreId` and
+`waiters : List (CoreId × AccessMode)`: every field a core identity. An
+observer that could see an object would therefore read off the set of cores
+currently operating on it — the *placement* channel WS-SM SM5.B closed by
+stripping `TCB.cpuAffinity`, re-opened through a different field and on
+every object kind rather than only TCBs. The field is now erased
+structurally on every projected arm, per SM5.B's own stated discipline: not
+justified by "no live operation sets it yet" (true today only because
+SM3.C.9 still defers wrapping the `@[export]` bodies in `withLockSet`), but
+by the field being concurrency-control plumbing rather than part of the
+object's observable logical identity. Nothing else in the library moved.
+
+With the erasure, the SM3 two-phase-locking bracket is non-interference
+transparent **unconditionally**: `withLockSet_preserves_projection` needs no
+hypothesis about which objects the lock set names and none about whether the
+locks are contended. That is what leaves the lock-contention covert channel
+CC-5 a hardware *timing* channel and nothing more, exactly as the plan's
+Definition 3.4.1 describes it — the model carries no state flow through lock
+acquisition at all, so a spinning core's only signal is wall-clock time.
+
+**`crossCoreNonInterference` (plan Theorem 3.3.1)** rests on the SM8.A field
+partition being a bijection: the observer's view is determined by its two
+fragments, so proving both halves unchanged *is* proving the view unchanged.
+Its two premises are the plan's two, restated as frames —
+`observableSlotsConfinedToCore st st' c'` (the plan's `transitionRunsOnCore`:
+every per-core slot outside core `c'` comes through unchanged, register banks
+included, which under SM5.I is a genuine obligation and not a structural
+fact) and `sharedViewUnchanged` (the plan's
+`transitionDoesntMutateLabelLeqObjects` and
+`transitionDoesntSignalLabelObservableNotification` together, since
+signalling a notification writes its object). The plan discharges the
+theorem from serializability; that argument is not available on the live
+path, because SM3.C.9 defers the per-object fine locks and v0.32.142
+serialises kernel entry with one global ticket lock. The theorem is proven
+from the frame premises instead — strictly weaker assumption, strictly
+stronger result — and
+`crossCoreNonInterference_of_disjoint_lockSet` supplies the plan's argument
+as a bridge, so once SM3.C.9 lands it becomes a corollary rather than an
+assumption.
+
+`nonInterference_perCore` is then a corollary of it: at `bootCoreId` the
+per-core view *is* `projectState`, so the existing
+`step_preserves_projection` applies verbatim; at every other core it is
+Theorem 3.3.1 at `c' = bootCoreId`, with the shared half free because the
+shared fragment of the per-core view is the shared fragment of the global
+projection.
+
+**All thirty-five per-operation lifts**, each taking exactly the hypotheses
+its `NonInterferenceStep` constructor takes. Thirty-one *derive* the
+confinement premise from the operation's own semantics — `schedule`,
+`handleYield`, `timerTick` and all seven IPC transitions included — which
+**discharges** the obligation the SM4.C / SM4.D per-core preservation
+theorems carry as an `hOtherIdle` / `hNonBootIdle` hypothesis with a "SM5
+discharges it" note. The remaining four (`syscallDispatchHigh`,
+`endpointCallWithDonationHigh`, `endpointReplyWithReversionHigh`,
+`handleInterrupt`) carry a whole-state projection hypothesis and no
+operational one, so they range over transitions that genuinely do write a
+remote core — the live cross-core dispatch among them — and take the premise
+explicitly. `perCoreConfinementDerived_count` records the 31/4 split as a
+checked fact; suite §4.9 is the load-bearing negative, exhibiting a
+transition that preserves the *global* projection and still moves a remote
+core's own view.
+
+Also in this cut: `niStepCoverage_perCore` with
+`kernelOperationPerCoreNiTheorem` (injective, 35, exhaustive-match tripwire);
+`enforcementBoundaryPerCore` — the canonical 38-entry boundary plus the one
+operation SMP adds, the 2PL bracket, classified capability-only for the same
+reason `storeObject` is — at **39** entries, re-anchored from the plan's
+`v0.31.2`-era "23" and left as a separate list because promoting the entry
+into the canonical boundary is SM8.E.3's sub-task; the accepted covert
+channels as **data** rather than prose, seven entries CC-1 … CC-7
+(`acceptedCovertChannel_perCoreCount = 7`, re-anchored from the plan's
+pre-CC-6/CC-7 "= 5"), each carrying the theorem that fixes its status —
+`withLockSet_preserves_projection` for CC-5, `onCore_perCoreTlb` /
+`onCore_perCoreICache` for CC-6 / CC-7, `onCore_schedulingTransparency` for
+CC-1 — split three model-visible, four hardware-only, five per-core;
+`endpointPolicyRestricted_perCore` with `endpointFlowCheck_state_independent`
+(the enforcement gate reads no per-core state, so a transition running
+elsewhere can never flip it) and a non-vacuity witness that an
+all-permitting endpoint override over an all-denying policy really is a
+bypass; the release bridge both ways
+(`syscallEntry_preserves_projectionOnCore` up, `nonInterference_release_of_perCore`
+down); and `crossCoreLeakage_bounded` as an **`↔`**, which is what makes it a
+bound — a `c'`-confined transition freezes core `c`'s per-core fragment
+outright, so the observer's view moves if and only if the shared fragment
+moves, and `_reconstruction` says so constructively by rebuilding the
+post-view from the new shared half and the observer's own pre-transition
+per-core half.
+
+`tests/SmpInformationFlowSuite.lean` grows 125 → **167 runtime assertions
+across 24 groups**, with ten new SM8.B groups on the same four-thread /
+four-core fixture (extended with a high and a low notification so real
+transitions can be run). Every group carries a load-bearing negative: the
+same write on the observer's *own* core is visible; signalling a *low*
+notification is visible; a core-1 write is not boot-core-confined; the raw
+lock field genuinely changed, so the bracket's invisibility is the
+projection's doing and not a no-op; CC-1 is on the model-visible side of the
+inventory split; global-projection preservation does not imply the per-core
+statement; the policy-restriction hypothesis is necessary. 188 `#check`
+anchors — every declaration of both modules — plus headline anchors in
+`tests/SmpSurfaceAnchors.lean` and a Tier-3 block pinning every module symbol
+by set difference, the 31/4 split, and the `lock` erasure on each projected
+arm.
+
+AK7 re-anchor: `RAW_LOOKUP_TID` 1310 → 1314. The four increments are the
+`hRecvQueueNextHigh` / `hSendQueueNextHigh` hypotheses of the four IPC
+per-operation lifts, verbatim copies of the corresponding
+`NonInterferenceStep` constructor fields, so the metric counts the same
+hypothesis twice; the confinement proofs reduce the operations' own
+object-store matches with `split` rather than naming the scrutinee, so there
+is no new live raw read. `GETTCB_ADOPTION` 2157 → 2163 and
+`GETVSPACEROOT_ADOPTION` 43 → 46 both grow.
+
+Refs: docs/planning/SMP_INFORMATION_FLOW_PLAN.md §5 (Phase SM8.B)
+
 ## v0.33.4 — SM8.A review cut: the visibility order says what it claimed
 
 Three findings from the automated review of the SM8.A pull request, all

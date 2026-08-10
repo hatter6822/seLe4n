@@ -49,14 +49,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.33.4` (`lakefile.toml`) |
+| **Package version** | `0.33.5` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 240,960 across 267 Lean files |
-| **Test LoC** | 50,043 across 68 Lean test suites |
-| **Proved declarations** | 7,933 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 244,405 across 269 Lean files |
+| **Test LoC** | 50,725 across 68 Lean test suites |
+| **Proved declarations** | 8,105 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.27.6_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.27.6_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (5 HIGH, 27 MED, 28 LOW). All actionable findings remediated via WS-AI (7 phases, 37 sub-tasks). |
-| **Active workstream** | **WS-SM (SMP multi-core completion) IN FLIGHT** — closes at v1.0.0 with a bootable verified SMP microkernel on Raspberry Pi 5. Current sub-phase: **SM8.A per-core observable state COMPLETE (v0.33.3, review cut v0.33.4; landed v0.33.2) — SM8 opens**: the SMP information-flow *observer* is the pair `(core, clearance)` as a value (`PerCoreObserver`), and the state it sees is `ObservableState.onCore ctx c L s`, *defined as* `projectStateOnCore ctx ⟨L⟩ s c` so the SM8 observer and the SM4.D projection layer cannot drift (`onCore_bootCore` is `rfl`, tying every SM8 theorem at `bootCoreId` to the live single-core `projectState`). The thirteen `ObservableState` components partition into seven shared and six per-core, and the partition is a **bijection** — `ofFragments` reassembles a state from the pair and `ofFragments_eta` proves the round trip — so a fourteenth field registered in neither is a compile error as a checked fact. `onCore_perCore_independence` bounds the read set to six shared components plus the observer core's five scheduler slots and its register bank, without mentioning the boot core (which the SM4.D congruence cannot do), with fifteen corollaries covering the cross-core writes and every excluded component. `onCore_label_monotone` proves visibility monotone in clearance over `ObservableState.visibilityLe`, a structure carrying one clause per component: the two list clauses are `List.Sublist` (order-preserving — a run queue's order is its dispatch order), the four scheduling clauses are equality (those components are unfiltered, accepted covert channel CC-1), and the `objects` clause compares **content** via `objectVisibilityLe` — equality off the CNode arm, slot un-redaction on it. `eq_of_visibilityLe_antisymm` is the completeness check on that clause list. Decidability is partial by necessity and every limitation is proved (`RegisterFile.not_lawfulBEq`; `onCore_decidable` decides a strictly weaker slice, `lowEquivalentSliceOnCoreCheckWithRegs` a finer companion). Channels CC-6 (per-core TLB residency) and CC-7 (per-core instruction-cache residency) registered, one instance per core, on the CC-2 machine-timer precedent. Zero sorry/axiom; theorems and tests only, trace byte-identical. Next: SM8.B per-core NI proofs (`crossCoreNonInterference`). |
+| **Active workstream** | **WS-SM (SMP multi-core completion) IN FLIGHT** — closes at v1.0.0 with a bootable verified SMP microkernel on Raspberry Pi 5. Current sub-phase: **SM8.A per-core observable state COMPLETE (v0.33.3, review cut v0.33.4; landed v0.33.2) — SM8 opens**: the SMP information-flow *observer* is the pair `(core, clearance)` as a value (`PerCoreObserver`), and the state it sees is `ObservableState.onCore ctx c L s`, *defined as* `projectStateOnCore ctx ⟨L⟩ s c` so the SM8 observer and the SM4.D projection layer cannot drift (`onCore_bootCore` is `rfl`, tying every SM8 theorem at `bootCoreId` to the live single-core `projectState`). The thirteen `ObservableState` components partition into seven shared and six per-core, and the partition is a **bijection** — `ofFragments` reassembles a state from the pair and `ofFragments_eta` proves the round trip — so a fourteenth field registered in neither is a compile error as a checked fact. `onCore_perCore_independence` bounds the read set to six shared components plus the observer core's five scheduler slots and its register bank, without mentioning the boot core (which the SM4.D congruence cannot do), with fifteen corollaries covering the cross-core writes and every excluded component. `onCore_label_monotone` proves visibility monotone in clearance over `ObservableState.visibilityLe`, a structure carrying one clause per component: the two list clauses are `List.Sublist` (order-preserving — a run queue's order is its dispatch order), the four scheduling clauses are equality (those components are unfiltered, accepted covert channel CC-1), and the `objects` clause compares **content** via `objectVisibilityLe` — equality off the CNode arm, slot un-redaction on it. `eq_of_visibilityLe_antisymm` is the completeness check on that clause list. Decidability is partial by necessity and every limitation is proved (`RegisterFile.not_lawfulBEq`; `onCore_decidable` decides a strictly weaker slice, `lowEquivalentSliceOnCoreCheckWithRegs` a finer companion). Channels CC-6 (per-core TLB residency) and CC-7 (per-core instruction-cache residency) registered, one instance per core, on the CC-2 machine-timer precedent. Zero sorry/axiom; theorems and tests only, trace byte-identical. **SM8.B per-core NI proofs LANDED (v0.33.5)**: `crossCoreNonInterference` (plan Thm 3.3.1) proven from the frame premises — the plan's serializability route is unavailable while SM3.C.9 defers the fine locks, so the bridge `crossCoreNonInterference_of_disjoint_lockSet` makes it a corollary once they land; `nonInterference_perCore` as its boot-core corollary; all 35 per-operation lifts, **31 with the confinement premise derived** (discharging the SM4.C/SM4.D `hOtherIdle` obligation for them) and 4 catch-alls taking it explicitly; `withLockSet_preserves_projection` **unconditional**, which required erasing the per-object `lock` from the projection (`RwLockState` is three fields of `CoreId`s — the SM5.B placement channel re-opened through another field), leaving CC-5 a hardware timing channel only; the seven accepted covert channels CC-1…CC-7 as data with per-channel witness theorems; `enforcementBoundaryPerCore` at 39; `endpointPolicyRestricted_perCore`; the release bridge both ways; and `crossCoreLeakage_bounded` as an `↔`. Next: SM8.C per-core declassification audit. |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -3899,10 +3899,78 @@ asserted (`perCoreSlice_erases_register_content`,
 `perCoreSlice_erases_shared_content`, `machineRegs_beq_not_injective`), so
 a decided equality can never be read as observable equality.
 
-Not yet covered at SM8.A: per-core *preservation* of non-interference
-across transitions (`crossCoreNonInterference`), the lock-contention
-timing channel, and per-core declassification audit. These are WS-SM
-SM8.B–SM8.D; see
+#### 11.2.5 Per-core non-interference under SMP (WS-SM SM8.B)
+
+SM8.A said what a per-core observer can see; SM8.B proves that transitions
+leave it alone.
+
+**`crossCoreNonInterference` (plan Theorem 3.3.1)** — a transition whose
+per-core writes stay on core `c'` is invisible to an observer on core
+`c ≠ c'` unless it moves the shared, label-filtered half of the view.  The
+proof is the SM8.A partition applied twice: the per-core fragment is frozen
+by the frame premise `observableSlotsConfinedToCore st st' c'` (every
+per-core slot outside core `c'` unchanged, register banks included — under
+SM5.I a real obligation, not a structural fact), and the shared fragment by
+`sharedViewUnchanged`, which is the plan's "does not mutate any object with
+`labelOf o ⊑ L`" together with its "does not signal an observable
+notification" (signalling writes the notification's object).
+
+The plan discharges Theorem 3.3.1 from serializability.  That argument is
+**not available on the live path**: SM3.C.9 still defers wrapping the
+`@[export]` bodies in `withLockSet`, and v0.32.142 serialises kernel entry
+with one global ticket lock rather than the per-object fine locks.  The
+theorem is therefore proven from the frame premises directly — strictly
+weaker assumption, strictly stronger result — and
+`crossCoreNonInterference_of_disjoint_lockSet` supplies the plan's argument
+as a bridge, so once SM3.C.9 lands it becomes a corollary.
+
+**`nonInterference_perCore`** follows: at `bootCoreId` the per-core view *is*
+`projectState`, so the existing single-core `step_preserves_projection`
+applies verbatim; elsewhere it is Theorem 3.3.1 at `c' = bootCoreId`.  All
+thirty-five `KernelOperation` variants get a lift, and **thirty-one derive
+the confinement premise from the operation's own semantics** rather than
+assuming it — which discharges, for those operations, the obligation the
+SM4.C / SM4.D per-core preservation theorems carry as an `hOtherIdle`
+hypothesis.  The four catch-all constructors (`syscallDispatchHigh`,
+`endpointCallWithDonationHigh`, `endpointReplyWithReversionHigh`,
+`handleInterrupt`) carry no operational hypothesis and genuinely range over
+remote-core writes, so they take the premise explicitly;
+`perCoreConfinementDerived_count` pins the 31/4 split.
+
+**The per-object `lock` is no longer projected.**  `RwLockState` carries
+`writerHeld : Option CoreId`, `readers : List CoreId` and
+`waiters : List (CoreId × AccessMode)` — every field a core identity — and
+`projectKernelObject` previously passed it through.  An observer able to see
+an object would therefore read off which cores were operating on it: the
+per-thread *placement* channel WS-SM SM5.B closed by stripping
+`TCB.cpuAffinity`, re-opened through a different field and on every object
+kind.  The field is now erased structurally on every projected arm, per the
+same discipline SM5.B states — not justified by "no live operation sets it
+yet".  With the erasure, the SM3 two-phase-locking bracket is
+non-interference transparent **unconditionally**
+(`withLockSet_preserves_projection`: no hypothesis on the lock set, none on
+contention), which is what leaves the lock-contention channel CC-5 a
+hardware *timing* channel and nothing more.
+
+**The accepted covert channels are data.**  `acceptedCovertChannelsPerCore`
+lists CC-1 … CC-7 as `CovertChannel` records carrying the plan's channel
+number, the WS-W mitigation note, the severity, whether the channel is
+*model-visible* (carried by `ObservableState`) and whether SMP gives it one
+instance per core — three model-visible, four hardware-only, five per-core,
+each split checked rather than asserted, and each entry paired with the
+theorem that fixes its status.  `enforcementBoundaryPerCore` is the canonical
+38-entry boundary plus the one operation SMP adds — the 2PL bracket,
+capability-only for the same reason `storeObject` is — at 39 entries, with
+`SyscallId` coverage re-checked against the extended list.
+
+**`crossCoreLeakage_bounded`** states the bound as an `↔`: a `c'`-confined
+transition freezes core `c`'s per-core fragment outright, so the observer's
+view moves *if and only if* the shared fragment moves — six of the thirteen
+components carry no cross-core flow at all.
+
+Not yet covered: per-core declassification audit
+(`DeclassificationEvent.originatingCore`) and information flow under fine
+locks.  These are WS-SM SM8.C–SM8.D; see
 [`docs/planning/SMP_INFORMATION_FLOW_PLAN.md`](../planning/SMP_INFORMATION_FLOW_PLAN.md).
 
 ## 12. Licensing and Third-Party Attribution

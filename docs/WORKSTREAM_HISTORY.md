@@ -24,7 +24,76 @@ Plan:
 SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
-**Current sub-phase: SM8.A per-core observable state COMPLETE (v0.33.3,
+**Current sub-phase: SM8.B per-core non-interference LANDED (v0.33.5).**
+The SMP lift of the whole non-interference surface, in two new staged modules
+(`InformationFlow/NonInterferencePerCore.lean`, 151 declarations;
+`InformationFlow/CovertChannelPerCore.lean`, 37; staged-only 55 → 57), 188
+declarations, zero `sorry`/`axiom` (all 184 term-level ones checked
+exhaustively), trace byte-identical.
+
+`crossCoreNonInterference` — plan Theorem 3.3.1 — is proven from two *frame*
+premises rather than from serializability, and that is the substantive design
+call.  The plan's proof sketch appeals to Corollary 2.1.11 ("c-observable state
+writes happen only with c's locks held, which c' does not have"), but that
+argument is not available on the live path: SM3.C.9 still defers wrapping the
+`@[export]` bodies in `withLockSet`, and v0.32.142 serialises kernel entry with
+one global ticket lock rather than the per-object fine locks.  Proving from the
+frames assumes strictly less and therefore concludes strictly more;
+`crossCoreNonInterference_of_disjoint_lockSet` supplies the plan's argument as a
+bridge, so once SM3.C.9 lands it becomes a corollary rather than an assumption.
+
+`nonInterference_perCore` is then a corollary at the boot core, where the
+per-core view *is* `projectState`.  All thirty-five `KernelOperation` variants
+get a lift, and **thirty-one derive the confinement premise** from the
+operation's own semantics — `schedule`, `handleYield`, `timerTick` and all seven
+IPC transitions among them — which *discharges* the obligation the SM4.C / SM4.D
+per-core preservation theorems carry as an `hOtherIdle` / `hNonBootIdle`
+hypothesis with a "SM5 discharges it" note.  The four catch-all constructors
+carry a whole-state projection hypothesis and no operational one, so they range
+over transitions that genuinely write a remote core (the live cross-core
+dispatch among them) and take the premise explicitly;
+`perCoreConfinementDerived_count` records the 31/4 split as a checked fact, and
+the suite's §4.9 is the load-bearing negative — a transition that preserves the
+*global* projection and still moves a remote core's own view.
+
+**A security fix was required to get SM8.B.4.**  `projectKernelObject` carried
+each object's `lock : RwLockState` into the observable state — its `.reply` arm
+even documented that the field carries "no cross-domain identity", which is
+false: `RwLockState` is `writerHeld : Option CoreId`, `readers : List CoreId`
+and `waiters : List (CoreId × AccessMode)`.  An observer able to see an object
+would therefore read off the set of cores operating on it: the per-thread
+*placement* channel WS-SM SM5.B closed by stripping `TCB.cpuAffinity`, re-opened
+through a different field and on every object kind rather than only TCBs.  The
+field is now erased structurally on every projected arm, per SM5.B's own stated
+discipline — not justified by "no live operation sets it yet" (true today only
+because the fine locks are deferred).  With the erasure,
+`withLockSet_preserves_projection` holds **unconditionally**: no hypothesis
+about which objects the lock set names, none about contention.  That is what
+leaves the lock-contention channel CC-5 a hardware *timing* channel and nothing
+more, exactly as the plan's Definition 3.4.1 describes it.
+
+Also landed: `niStepCoverage_perCore` with an injective 35-name theorem mapping;
+`enforcementBoundaryPerCore` — the canonical 38-entry boundary plus the one
+operation SMP adds, the 2PL bracket — at **39**, re-anchored from the plan's
+`v0.31.2`-era "23 entries" and kept as a separate list because promoting the
+entry is SM8.E.3's sub-task; the accepted covert channels as **data**, seven
+entries CC-1 … CC-7 (`acceptedCovertChannel_perCoreCount = 7`, re-anchored from
+the plan's pre-CC-6/CC-7 "= 5"), split three model-visible / four hardware-only
+/ five per-core with each entry paired to the theorem fixing its status;
+`endpointPolicyRestricted_perCore` with `endpointFlowCheck_state_independent`
+(the enforcement gate reads no per-core state, so rescheduling cannot flip a
+flow decision) and a non-vacuity witness; the release bridge in both directions;
+and `crossCoreLeakage_bounded` as an **`↔`** — a `c'`-confined transition
+freezes core `c`'s per-core fragment outright, so the observer's view moves if
+and only if the shared fragment moves.  `tests/SmpInformationFlowSuite.lean`
+125 → **167 assertions / 24 groups**, 188 `#check` anchors.  AK7 re-anchor:
+`RAW_LOOKUP_TID` 1310 → 1314 (four verbatim copies of `NonInterferenceStep`
+constructor hypotheses in the IPC lifts' statements; no new live raw read).
+Plan:
+[`docs/planning/SMP_INFORMATION_FLOW_PLAN.md`](planning/SMP_INFORMATION_FLOW_PLAN.md)
+§5 SM8.B.
+
+**Prior sub-phase: SM8.A per-core observable state COMPLETE (v0.33.3,
 review cut v0.33.4; landed v0.33.2) — SM8 opens.**  The v0.33.3 cut closes a self-audit of the
 landing: one shipped count error ("twelve corollaries" where there were
 eleven — there are now fifteen, the sweep having been incomplete too), an

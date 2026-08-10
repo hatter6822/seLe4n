@@ -7,7 +7,7 @@
 > **Calendar estimate**: 5-8 weeks
 > **Sub-task count**: 40-55 across ~15-22 PRs
 > **Status**: SM8.A COMPLETE at v0.33.3, review cut v0.33.4 (landed
-> v0.33.2); SM8.B–SM8.E pending
+> v0.33.2); SM8.B LANDED at v0.33.5; SM8.C–SM8.E pending
 
 ## 1. Phase goal
 
@@ -413,20 +413,192 @@ SM8.B; the lock-contention channel CC-5 is SM8.B.8; the
 
 | Sub | Description | Theorem | Est |
 |-----|-------------|---------|-----|
-| SM8.B.1 | `nonInterference_perCore` (existing NI generalized) | Theorem | XL |
-| SM8.B.2 | `crossCoreNonInterference` (Thm 3.3.1) | Theorem | XL |
-| SM8.B.3 | Per-core NI for each of the 35 `kernelOperationNi` constructors (re-anchored at SM8.A — see note below) | 35 theorems | L |
-| SM8.B.4 | NI under per-object lock-set | Theorem | L |
-| SM8.B.5 | `niStepCoverage_perCore` | Theorem | M |
-| SM8.B.6 | `enforcementBoundaryExtended_perCore` (23 entries) | Definition + theorem | M |
-| SM8.B.7 | Boundary completeness witness | Theorem | M |
-| SM8.B.8 | `acceptedCovertChannel_lockContention` | Definition | M |
-| SM8.B.9 | Mitigation note (WS-W partitioning) | Documentation | S |
-| SM8.B.10 | `acceptedCovertChannel_perCoreCount = 5` | Theorem | T |
-| SM8.B.11 | `endpointPolicyRestricted_perCore` | Theorem | M |
-| SM8.B.12 | Per-core NI bridge to NI release | Theorem | M |
-| SM8.B.13 | `crossCoreLeakage_bounded` | Theorem | L |
-| SM8.B.14 | 15+ NI scenarios (tests) | L |
+| Sub | Description | Theorem | Est | Status |
+|-----|-------------|---------|-----|--------|
+| SM8.B.1 | `nonInterference_perCore` (existing NI generalized) | Theorem | XL | LANDED |
+| SM8.B.2 | `crossCoreNonInterference` (Thm 3.3.1) | Theorem | XL | LANDED |
+| SM8.B.3 | Per-core NI for each of the 35 `kernelOperationNi` constructors (re-anchored at SM8.A — see note above) | 35 theorems | L | LANDED |
+| SM8.B.4 | NI under per-object lock-set | Theorem | L | LANDED |
+| SM8.B.5 | `niStepCoverage_perCore` | Theorem | M | LANDED |
+| SM8.B.6 | `enforcementBoundaryPerCore` (39 entries — re-anchored) | Definition + theorem | M | LANDED |
+| SM8.B.7 | Boundary completeness witness | Theorem | M | LANDED |
+| SM8.B.8 | `acceptedCovertChannel_lockContention` | Definition | M | LANDED |
+| SM8.B.9 | Mitigation note (WS-W partitioning) | Documentation | S | LANDED |
+| SM8.B.10 | `acceptedCovertChannel_perCoreCount = 7` (re-anchored) | Theorem | T | LANDED |
+| SM8.B.11 | `endpointPolicyRestricted_perCore` | Theorem | M | LANDED |
+| SM8.B.12 | Per-core NI bridge to NI release | Theorem | M | LANDED |
+| SM8.B.13 | `crossCoreLeakage_bounded` | Theorem | L | LANDED |
+| SM8.B.14 | 15+ NI scenarios (tests) | L | LANDED |
+
+**Landing record (v0.33.5).**  Two new staged modules (staged-only count 55 →
+57), 188 declarations, zero `sorry`/`axiom` — every one of the 184 term-level
+declarations depends only on `propext` / `Quot.sound` / `Classical.choice`,
+checked exhaustively rather than by sampling.  No transition changed, so the
+golden trace is byte-identical.
+
+* `SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean` (151
+  declarations) — SM8.B.1 … SM8.B.5 and SM8.B.13.
+* `SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean` (37 declarations) —
+  SM8.B.6 … SM8.B.12.
+
+* **SM8.B.2 first, because SM8.B.1 is its corollary.**
+  `crossCoreNonInterference` (plan Theorem 3.3.1) rests on SM8.A's field
+  partition being a *bijection*: the view is determined by its two fragments, so
+  proving both halves unchanged **is** proving the view unchanged.  The two
+  premises are the plan's two, restated as frames —
+  `observableSlotsConfinedToCore st st' c'` (the plan's `transitionRunsOnCore`:
+  every per-core slot outside core `c'` comes through unchanged, register banks
+  included, which under SM5.I is a genuine obligation rather than a structural
+  fact) and `sharedViewUnchanged` (the plan's
+  `transitionDoesntMutateLabelLeqObjects` **and**
+  `transitionDoesntSignalLabelObservableNotification` together, since signalling
+  a notification writes its object).  *The plan's own proof sketch is not
+  available*: it discharges Theorem 3.3.1 from serializability, and SM3.C.9
+  still defers wrapping the `@[export]` bodies in `withLockSet` while v0.32.142
+  serialises kernel entry with one global ticket lock.  The theorem is therefore
+  proven from the frame premises, which assumes strictly less and so concludes
+  strictly more; `crossCoreNonInterference_of_disjoint_lockSet` supplies the
+  plan's argument as a *bridge*, so once SM3.C.9 lands it is a corollary rather
+  than an assumption.
+* **SM8.B.1** — `nonInterference_perCore` splits by core: at `bootCoreId` the
+  per-core view **is** `projectState`, so the existing
+  `step_preserves_projection` applies verbatim; at every other core it is
+  SM8.B.2 at `c' = bootCoreId`, with the shared half free because the shared
+  fragment of the per-core view *is* the shared fragment of the global
+  projection.  `lowEquivalent_smp_of_projection_and_confinement` is the reusable
+  core, factored out because §6 (the lock bracket) and §4 of the boundary module
+  (the release bridge) supply the same two premises without being
+  `NonInterferenceStep`s.  Plus the two-sided `composedNonInterference_step_perCore`
+  and the trace form.
+* **SM8.B.3 — the confinement premise is *derived*, not assumed.**  All
+  thirty-five per-operation lifts, each taking exactly the hypotheses its
+  `NonInterferenceStep` constructor takes.  Thirty-one discharge
+  `observableSlotsConfinedToCore … bootCoreId` from the operation's own
+  semantics — including `schedule`, `handleYield`, `timerTick` and all seven IPC
+  transitions, whose case skeletons mirror the SM6.D.2
+  `…_passiveServerIdleFrameOnCore` proofs.  **This strengthens the SM4.C / SM4.D
+  precedent**, whose per-core preservation theorems carry the same fact as an
+  `hOtherIdle` / `hNonBootIdle` hypothesis with a "SM5 discharges it" note: for
+  these operations it is now discharged.  The remaining four
+  (`syscallDispatchHigh`, `endpointCallWithDonationHigh`,
+  `endpointReplyWithReversionHigh`, `handleInterrupt`) carry a whole-state
+  projection hypothesis and no operational one, so they range over transitions
+  that genuinely *do* write a remote core — the live cross-core dispatch among
+  them — and take the premise explicitly.  `perCoreConfinementDerived` records
+  the 31/4 split as a decidable function and `perCoreConfinementDerived_count`
+  as a checked fact, so a new catch-all cannot be added silently.  Suite §4.9 is
+  the load-bearing negative: a core-1 write preserves the *global* projection
+  and still moves core 1's own view, so the premise is necessary.
+* **SM8.B.4 — and the security fix it forced.**  The 2PL bracket is
+  non-interference transparent: `withLockSet_preserves_projection` holds with
+  **no** hypothesis about which objects the lock set names and none about
+  contention.  Getting there required closing a real gap.  `RwLockState` carries
+  `writerHeld : Option CoreId`, `readers : List CoreId` and
+  `waiters : List (CoreId × AccessMode)` — every field a core identity — and
+  `projectKernelObject` carried the per-object `lock` straight through (its
+  `.reply` arm even documented "only `lock` survives (an `RwLockState` carrying
+  no cross-domain identity)", which is false).  An observer that can see an
+  object would therefore read off the set of cores operating on it: the
+  *placement* channel WS-SM SM5.B closed by stripping `TCB.cpuAffinity`,
+  re-opened through another field and on every object kind rather than just
+  TCBs.  `lock` is now erased structurally on every projected arm — per SM5.B's
+  own stated discipline, *not* justified by "no live operation sets it yet"
+  (true today only because SM3.C.9 defers the fine locks).  With the erasure,
+  CC-5 is a hardware **timing** channel and nothing more, exactly as plan
+  Definition 3.4.1 describes it.  The whole library rebuilt unchanged and the
+  trace is byte-identical.
+* **SM8.B.5** — `niStepCoverage_perCore` (the exhaustive-match tripwire, one
+  layer up from `niStepConstructorCoverage`), `kernelOperationPerCoreNiTheorem`
+  naming each operation's per-core theorem with
+  `niStepCoverage_perCore_injective` / `_count` making the correspondence 1:1
+  and complete at 35.
+* **SM8.B.6 / SM8.B.7** — `enforcementBoundaryPerCore`: the canonical 38-entry
+  boundary plus the one operation SMP adds, the 2PL bracket, classified
+  capability-only for the same reason as `storeObject`'s (an internal building
+  block used under an already-capability-guarded context, consulting no
+  information-flow policy).  **Re-anchored**: the plan's "23 entries" figure was
+  written against the `v0.31.2` cut, and the live canonical count is 38, so the
+  per-core boundary is 39.  A *separate* list rather than an edit to the
+  canonical one, because promoting the entry is SM8.E.3's sub-task and moving
+  the base count here would leave SM8.E a figure to reconcile.  Completeness in
+  three parts: the per-core list extends the canonical one (`rfl`), every
+  `SyscallId` is still covered (`decide`, not `native_decide`), and the added
+  entry is genuinely new.
+* **SM8.B.8 / SM8.B.9 / SM8.B.10** — the accepted covert channels as **data**:
+  a `CovertChannel` record carrying the plan's CC-number, the description, the
+  WS-W mitigation note, the severity, whether the channel is *model-visible*
+  (carried by `ObservableState`) and whether SMP gives it one instance per core.
+  Seven entries, CC-1 … CC-7, with `acceptedCovertChannel_perCore_ids` pinning
+  the numbering by `rfl`.  **Re-anchored**: the plan's sub-task line reads
+  `= 5`, written before CC-6 and CC-7 existed — the SM8.A cut registered them
+  when SM7.C and SM7.D mounted the per-core TLB and instruction-cache views, and
+  §3.5 lists all seven, so asserting 5 would produce a false count.  The split
+  is checked, not asserted: three model-visible, four hardware-only, five
+  per-core.  Every entry carries the theorem that fixes its status —
+  `withLockSet_preserves_projection` for CC-5, `onCore_perCoreTlb` /
+  `onCore_perCoreICache` for CC-6 / CC-7, `onCore_schedulingTransparency` for
+  CC-1 — so an entry cannot be reclassified without the theorem moving.
+* **SM8.B.11** — `endpointPolicyRestricted_perCore` in the SM4.D `…_smp` idiom,
+  with `_iff` recording that the core coordinate cannot change the decision and
+  `endpointFlowCheck_state_independent` the fact that makes it true: the
+  enforcement gate reads the labeling context and the two domains and **no
+  per-core state**, so a transition running elsewhere can never flip it.
+  `endpointPolicyRestricted_perCore_is_necessary` is the non-vacuity witness —
+  an all-permitting override over an all-denying policy really is a bypass.
+* **SM8.B.12** — the bridge to the release-grade witnesses, both ways: *up*,
+  `syscallEntry_preserves_projection` plus boot-core confinement gives the
+  per-core statement (`syscallEntry_preserves_projectionOnCore`,
+  `syscallEntry_success_perCore_NI`, and the hypothesis-free failure case);
+  *down*, the per-core statement implies the release-grade one at `bootCoreId`,
+  so SM8.B strengthens the release surface rather than running beside it.  The
+  two inner witnesses are reached through the entry point because
+  `dispatchCapabilityOnly` / `dispatchWithCapChecked` are `private` to
+  `API.lean`.
+* **SM8.B.13** — `crossCoreLeakage_bounded` as an `↔`, which is what makes it a
+  bound: a transition confined to core `c'` freezes core `c`'s per-core fragment
+  outright, so the observer's view moves **if and only if** the shared fragment
+  moves.  `crossCoreLeakage_bounded_reconstruction` states it constructively —
+  the post-view is literally rebuilt from the new shared half and the observer's
+  *own* pre-transition per-core half — so six of the thirteen components carry
+  no cross-core flow at all.
+* **SM8.B.14** — `tests/SmpInformationFlowSuite.lean` grows to **167 runtime
+  assertions across 24 groups** (was 125 / 14) on the same four-thread /
+  four-core fixture, extended with a high and a low notification so real
+  transitions can be run.  Ten new groups (§4.1 … §4.10) cover cross-core
+  invisibility, `nonInterference_perCore` on a real `notificationSignal`, the
+  derived confinement, the lock bracket, the leakage bound, per-core coverage,
+  the boundary, the channel inventory, the catch-all premise and the policy /
+  release bridge.  Load-bearing negatives: §4.1 (the same write on the
+  observer's *own* core is visible), §4.2 (signalling a *low* notification is
+  visible), §4.3 (a core-1 write is not boot-core-confined), §4.4 (the raw lock
+  field genuinely changed — so the invisibility is the projection's doing, not a
+  no-op), §4.8 (CC-1 is on the model-visible side, so the split is real), §4.9
+  (global-projection preservation does not imply the per-core statement), §4.10
+  (the policy-restriction hypothesis is necessary).  188 `#check` anchors — every
+  declaration of both modules — plus headline anchors in
+  `tests/SmpSurfaceAnchors.lean` and a Tier-3 block that pins every module
+  symbol by set difference, the 31/4 split, and the `lock` erasure on each
+  projected arm.
+
+**AK7 re-anchor.**  `RAW_LOOKUP_TID` 1310 → 1314.  The four increments are the
+`hRecvQueueNextHigh` / `hSendQueueNextHigh` hypotheses of the four IPC
+per-operation lifts, which are *verbatim copies* of the corresponding
+`NonInterferenceStep` constructor fields and so must mention
+`st.objects[receiver.toObjId]?` to typecheck — the metric counts the same
+hypothesis twice.  No new live raw read: the confinement proofs reduce the
+operations' own object-store matches with `split` rather than naming the
+scrutinee.  `GETTCB_ADOPTION` 2157 → 2163 and `GETVSPACEROOT_ADOPTION` 43 → 46
+grow (should-grow metrics).
+
+**Deliberately not in SM8.B** (each a later sub-phase, not an omission): the
+`DeclassificationEvent.originatingCore` extension and the cross-core
+declassification audit are SM8.C; the lock-state visibility documentation and
+the reader-multiplicity / writer-exclusion theorems are SM8.D (whose D.1–D.3
+this cut partly pre-empts and partly falsifies — see the note under that
+table, since the erasure means there is no lock state left to be visible);
+promoting the
+`withLockSet` boundary entry into the canonical `enforcementBoundary` (38 → 39)
+and the `smp_information_flow.expected` fixture are SM8.E.
 
 ### SM8.C — Per-core declassification audit (7 sub-tasks)
 
@@ -450,6 +622,34 @@ SM8.B; the lock-contention channel CC-5 is SM8.B.8; the
 | SM8.D.4 | Biba-integrity under per-core locks | Theorem | M |
 | SM8.D.5 | Secure-information-flow witness under fine locks | Theorem | M |
 | SM8.D.6 | Lock-contention IF scenarios (5 tests) | M |
+
+**Note — SM8.B moved the ground under D.1–D.3.**  This table was written
+while `projectKernelObject` carried each object's `lock : RwLockState` into
+the observable state, which is what made "lock state visibility" something to
+document and "reader multiplicity" something to prove unobservable.  SM8.B
+erased the field on every projected arm (it is three fields of `CoreId`s, so
+it re-opened the SM5.B placement channel through a different field and on
+every object kind), so at the model level:
+
+- **D.1** is no longer a docstring about what an observer sees of the lock —
+  it is the statement that an observer sees *nothing* of it.  The erasure
+  itself, plus the Tier-3 anchors pinning `lock := …unheld` on each arm, is
+  the evidence; what remains for D.1 is the *hardware* side, where a real
+  observer times its own acquisitions.
+- **D.2** is now structurally true rather than a theorem to prove:
+  `withLockSet_preserves_projection` holds unconditionally, with no
+  hypothesis on which objects the lock set names or whether they are
+  contended, and reader multiplicity is not a component of `ObservableState`
+  at all.  D.2 should be restated as the *timing* claim (CC-5), which is the
+  only form that is still open.
+- **D.3** is **false as written** at the model level — a blocked reader
+  observes nothing of writer exclusion in the projection.  It is true only as
+  wall-clock delay, i.e. CC-5 again.  Restate it as such rather than
+  reinstating the field.
+
+D.4–D.6 are unaffected: Biba integrity and the secure-flow witness are about
+which subjects may write which objects, not about the lock word, and the
+contention scenarios are timing scenarios.
 
 ### SM8.E — Tests + closure (3 sub-tasks)
 
@@ -494,10 +694,21 @@ SM8.B; the lock-contention channel CC-5 is SM8.B.8; the
       exact `iff` against `observableFactorOnCore`, with the field partition
       established as a *bijection* by `ObservableState.ofFragments` +
       `ofFragments_eta`).
-- [ ] `nonInterference_perCore` proven.
-- [ ] `crossCoreNonInterference` proven.
-- [ ] All 35 NI constructor per-core variants proven (count re-anchored at SM8.A; `kernelOperation_count` / `niStepCoverage_count` are the authority).
-- [ ] Lock-contention channel documented; boundary expanded.
+- [x] `nonInterference_perCore` proven (SM8.B, v0.33.5 — with the confinement
+      premise *derived* for thirty-one of the thirty-five operations, which also
+      discharges the SM4.C / SM4.D `hOtherIdle` obligation for them).
+- [x] `crossCoreNonInterference` proven (SM8.B, v0.33.5 — from the frame
+      premises rather than from serializability, which SM3.C.9 still defers;
+      `crossCoreNonInterference_of_disjoint_lockSet` is the bridge that makes
+      the plan's own argument a corollary once the fine locks go live).
+- [x] All 35 NI constructor per-core variants proven (SM8.B, v0.33.5; count
+      re-anchored at SM8.A — `kernelOperation_count` / `niStepCoverage_count`
+      are the authority, and `niStepCoverage_perCore_count` matches them).
+- [x] Lock-contention channel documented; boundary expanded (SM8.B, v0.33.5 —
+      CC-5 registered with `withLockSet_preserves_projection` as its witness,
+      which required erasing the per-object `lock` from the projection;
+      `enforcementBoundaryPerCore` at 39 entries, the canonical list's promotion
+      to 39 remaining as SM8.E.3).
 - [ ] `DeclassificationEvent.originatingCore` field; audit trail updated.
 - [ ] Tier 0..3 green.
 
@@ -509,7 +720,14 @@ SM8.B; the lock-contention channel CC-5 is SM8.B.8; the
 
 ## 10. Theorem catalogue for SM8
 
-~18 substantive theorems (§6.1).
+~18 substantive theorems (§6.1).  Landed so far: SM8.A's five headline
+theorems (§5 SM8.A landing record) and SM8.B's `crossCoreNonInterference`,
+`nonInterference_perCore`, the 35 per-operation lifts, `niStepCoverage_perCore`,
+`withLockSet_preserves_projection` / `nonInterference_perCore_underLockSet`,
+`enforcementBoundaryPerCore` + its completeness witness,
+`acceptedCovertChannel_lockContention` (CC-5) with the seven-entry inventory,
+`endpointPolicyRestricted_perCore`, the release bridge, and
+`crossCoreLeakage_bounded`.
 
 ## Appendix A — Verification commands
 

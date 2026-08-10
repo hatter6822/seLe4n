@@ -208,7 +208,8 @@ WS-G5: Uses `HashMap.filter` for O(m) filtering on HashMap-backed CNode slots. -
 def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : KernelObject) : KernelObject :=
   match obj with
   | .cnode cn =>
-      .cnode { cn with slots := cn.slots.filter (fun _ cap =>
+      .cnode { cn with lock := SeLe4n.Kernel.Concurrency.RwLockState.unheld,
+                       slots := cn.slots.filter (fun _ cap =>
         capTargetObservable ctx observer cap.target) }
   | .tcb tcb =>
       -- WS-H12c: Strip registerContext from projected TCBs. Register context
@@ -280,12 +281,14 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
       .tcb { tcb with registerContext := default, schedContextBinding := .unbound,
                        pipBoost := none, pendingMessage := none, timedOut := false,
                        cpuAffinity := none, replyObject := none,
-                       pendingReceiveReply := none }
+                       pendingReceiveReply := none,
+                       lock := SeLe4n.Kernel.Concurrency.RwLockState.unheld }
   | .schedContext sc =>
       -- AI4-A: Strip boundThread — internal scheduling plumbing binding a
       -- SchedContext to its owning thread. Donation chain changes modify only
       -- this field and must not leak through the NI projection.
-      .schedContext { sc with boundThread := none }
+      .schedContext { sc with boundThread := none,
+                              lock := SeLe4n.Kernel.Concurrency.RwLockState.unheld }
   | .reply r =>
       -- WS-SM SM6.D (PR #822 review, Reply objects): Strip the Reply object's
       -- cross-domain linkage — `caller` (the back-link to the blocked caller
@@ -303,11 +306,36 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
       -- `replyId` field need not equal that key (`wellFormed` does not enforce it,
       -- and a retyped Reply is built with `ReplyId.sentinel`), so an un-normalized
       -- internal id would leak a hidden ReplyId through a low-visible Reply object.
-      -- Erasing it to the canonical sentinel removes the channel; only `lock`
-      -- survives (an `RwLockState` carrying no cross-domain identity).
+      -- Erasing it to the canonical sentinel removes the channel.
       .reply { r with replyId := SeLe4n.ReplyId.sentinel,
-                      caller := none, donatedSc := none, prev := none }
-  | other => other
+                      caller := none, donatedSc := none, prev := none,
+                      lock := SeLe4n.Kernel.Concurrency.RwLockState.unheld }
+  -- WS-SM SM8.B.4: strip the per-object `lock`.  `RwLockState` carries
+  -- `writerHeld : Option CoreId`, `readers : List CoreId` and
+  -- `waiters : List (CoreId × AccessMode)` — every field a **core identity**.
+  -- Leaving it in the projection would hand any observer that can see an object
+  -- the set of cores currently operating on it, which is exactly the per-thread
+  -- placement channel WS-SM SM5.B closed by stripping `TCB.cpuAffinity`,
+  -- re-opened through a different field and on every object kind rather than
+  -- just TCBs.  Stripped structurally, per the same discipline SM5.B states:
+  -- not justified by "no live operation sets it yet" (true today only because
+  -- SM3.C.9 still defers wrapping the `@[export]` bodies in `withLockSet`), but
+  -- by the field being concurrency-control plumbing rather than part of the
+  -- object's observable logical identity — the same class as `pipBoost`,
+  -- `schedContextBinding` and `registerContext` above.
+  --
+  -- With the field erased, the SM3 two-phase-locking bracket is *unconditionally*
+  -- invisible (`withLockSet_preserves_projection`), so the lock-contention
+  -- channel CC-5 is a hardware **timing** channel only, exactly as the SM8 plan's
+  -- Definition 3.4.1 describes it — there is no model-level state flow left.
+  | .endpoint e =>
+      .endpoint { e with lock := SeLe4n.Kernel.Concurrency.RwLockState.unheld }
+  | .notification n =>
+      .notification { n with lock := SeLe4n.Kernel.Concurrency.RwLockState.unheld }
+  | .vspaceRoot v =>
+      .vspaceRoot { v with lock := SeLe4n.Kernel.Concurrency.RwLockState.unheld }
+  | .untyped u =>
+      .untyped { u with lock := SeLe4n.Kernel.Concurrency.RwLockState.unheld }
 
 /-- WS-F3/F-22: `projectKernelObject` is idempotent — filtering twice yields
 observationally equivalent results to filtering once.

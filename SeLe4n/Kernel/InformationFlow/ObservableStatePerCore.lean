@@ -1051,9 +1051,14 @@ theorem memoryAddressObservable_monotone (ctx : LabelingContext) {L₁ L₂ : Se
 /-! ### Object-content refinement across clearances -/
 
 /-- The observer-filtered CNode that `projectKernelObject` produces in its
-`.cnode` arm, named so the slot-level lemmas below have a handle. -/
+`.cnode` arm, named so the slot-level lemmas below have a handle.
+
+The `lock` erasure mirrors `projectKernelObject`'s (WS-SM SM8.B.4): an
+`RwLockState` is a set of core identities, and carrying it into the projection
+would re-open the placement channel SM5.B closed on `TCB.cpuAffinity`. -/
 def projectCNode (ctx : LabelingContext) (observer : IfObserver) (cn : CNode) : CNode :=
-  { cn with slots := cn.slots.filter (fun _ cap => capTargetObservable ctx observer cap.target) }
+  { cn with lock := SeLe4n.Kernel.Concurrency.RwLockState.unheld,
+            slots := cn.slots.filter (fun _ cap => capTargetObservable ctx observer cap.target) }
 
 /-- Definition-pinning: `projectKernelObject`'s `.cnode` arm **is**
 `projectCNode`, so the slot lemmas below are statements about the live
