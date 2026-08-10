@@ -1899,6 +1899,17 @@ run_check "INVARIANT" rg -n '^theorem crossCoreLiveArmDelegationBacked_count' Se
 run_check "INVARIANT" rg -n '^theorem crossCoreLiveArm_readOffTheArm_count' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCap_tcbSuspend_delegates' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_receive_delegates' SeLe4n/Kernel/API.lean
+# Round 11: the evidence must carry a PROOF indexed by the syscall, not a name.
+# A name check says a declaration exists; it does not say the declaration is
+# about the arm citing it.  `syscallDelegates` makes the obligation a Prop
+# computed from the syscall, so a proof cannot be borrowed between arms, and
+# undelegated syscalls map to `False` so evidence cannot be fabricated.
+run_check "INVARIANT" rg -n '^def syscallDelegates' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n 'delegationProof \(sid : SyscallId\) \(proof : syscallDelegates sid\)' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreLiveArmEvidence_syscall_matches' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_negative_check "INVARIANT" rg -n 'delegationTheorem \(theoremName : String\)' SeLe4n/
+# The sibling enumeration fail-open, fixed alongside CovertChannelId.all.
+run_check "INVARIANT" rg -n '^theorem CrossCoreTransition.mem_all' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # CC-1's mitigation must state the PROVEN bound, not disclaim one: retracting a
 # claim to match weaker code is the direction the project forbids.
 run_negative_check "INVARIANT" rg -n 'No capacity bound is claimed' SeLe4n/

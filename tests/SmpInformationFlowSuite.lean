@@ -527,6 +527,15 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @CovertChannelId.mem_all
 #check @CovertChannelId.all_nodup
 #check LiveArmEvidence
+#check @LiveArmEvidence.isDelegationBacked
+#check @LiveArmEvidence.syscall?
+#check @crossCoreLiveArmSyscall
+#check @crossCoreLiveArmEvidence_syscall_matches
+#check @CrossCoreTransition.mem_all
+#check @CrossCoreTransition.all_nodup
+#check @SeLe4n.Kernel.syscallDelegates
+#check @SeLe4n.Kernel.syscallDelegates_receive
+#check @SeLe4n.Kernel.syscallDelegates_tcbSuspend
 #check @crossCoreLiveArmEvidence
 #check @crossCoreLiveArmDelegationBacked_count
 #check @crossCoreLiveArm_readOffTheArm_count

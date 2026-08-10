@@ -224,13 +224,19 @@ nine rounds are four classes, and the largest — twelve of them — is "a claim
 about the code held only by prose".  The diagnostic is sharp: `API.lean`'s eight
 `dispatchWithCap_…_delegates` theorems tie those arms to the dispatch, and not
 one of the eight drifted; the seven cross-core arms had no such theorem and
-drifted three times.  `LiveArmEvidence` now records, as data, whether a live-arm
+drifted three times.  `LiveArmEvidence` now records, as a *proof*, whether a live-arm
 claim is backed by a delegation theorem or merely read off the arm, with both
-counts as theorems so the residual is tracked rather than invisible;
+counts as theorems so the residual is tracked rather than invisible.  The first
+cut recorded a theorem name, which review round 11 rightly rejected as the same
+defect one level up — a name check does not say the declaration is about the arm
+citing it; the obligation `syscallDelegates sid` is now a proposition computed
+from the syscall, so proofs cannot be borrowed between arms and undelegated
+syscalls map to `False`;
 `dispatchWithCap_tcbSuspend_delegates` and
 `dispatchWithCapChecked_receive_delegates` are the first two, the latter being
-the arm round 8 found misclassified.  `CovertChannelId.mem_all` closes the same
-shape of hole in the channel enumeration, and the "match a definition, not a
+the arm round 8 found misclassified.  `CovertChannelId.mem_all` and `CrossCoreTransition.mem_all` close the same
+shape of hole in two enumerations (the second was missed in the commit that
+fixed the first), and the "match a definition, not a
 mention" convention for negative anchors is recorded at `run_negative_check`
 after three of this PR's anchors fired on the comment explaining what they
 forbid.

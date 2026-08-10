@@ -452,10 +452,23 @@ that a theorem fails to compile and a docstring does not.
 Three structural changes follow, and they are the reason this round is not
 another patch:
 
-1. **A live-arm claim now carries its evidence as data** (`LiveArmEvidence`,
-   §7).  An entry is either `delegationTheorem` — tied to `API.lean` by a
-   `niName!`-validated citation, so a wrong entry breaks the build — or
-   `readOffTheArm`, a human assertion.  `crossCoreLiveArmDelegationBacked_count`
+1. **A live-arm claim now carries its evidence as a proof** (`LiveArmEvidence`,
+   §7).  An entry is either `delegationProof sid h` — where `h : syscallDelegates
+   sid`, a proposition *computed from the syscall* in `API.lean` — or
+   `readOffTheArm`, a human assertion.
+
+   The first cut recorded a theorem *name* validated by `niName!`, and review
+   round 11 rightly rejected it: a name check establishes that some declaration
+   exists, not that it says anything about the arm citing it, so `.receive`
+   could have cited the `tcbSuspend` theorem and counted as backed.  That was
+   the class-A defect reproduced inside the class-A fix.  With the obligation
+   indexed by the syscall, `syscallDelegates .receive` and
+   `syscallDelegates .tcbSuspend` are different propositions and a proof cannot
+   be borrowed; syscalls with no delegation theorem map to `False`, so evidence
+   for them cannot be constructed at all.  Both are checked negatively — the
+   borrowed proof is a type mismatch, the fabricated one is unprovable — and
+   `crossCoreLiveArmEvidence_syscall_matches` additionally pins each entry's
+   syscall to its own transition.  `crossCoreLiveArmDelegationBacked_count`
    (= 2) and `crossCoreLiveArm_readOffTheArm_count` (= 5) make the residual a
    *tracked quantity* rather than something a reader reconstructs by grepping.
    Closing it means adding five delegation theorems, and the counts cannot
@@ -464,9 +477,12 @@ another patch:
    second is round 8's subject, so the arm that was misclassified is now the
    arm that cannot be.
 
-2. **Enumerations cannot fail open.**  `CovertChannelId.mem_all` (round 9) is
-   the same shape of fix: a hand-written list that every count quantified over,
-   now provably total.
+2. **Enumerations cannot fail open.**  `CovertChannelId.mem_all` (round 9) and
+   `CrossCoreTransition.mem_all` (round 11) are the same shape of fix: a
+   hand-written list that every count quantified over, now provably total.  The
+   second was missed in the commit that made the first — evidence that this
+   needs applying uniformly to every enumeration a gate quantifies over, not
+   case by case as reviewers find them.
 
 3. **Negative anchors are written against definitions, not mentions.**  The
    convention is recorded at `run_negative_check` itself, because three of this

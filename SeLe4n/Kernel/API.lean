@@ -3297,10 +3297,16 @@ theorem dispatchSyscallChecked_preserves_projection
 -- and this file, so a wrong entry does not compile.  The cross-core arms had no
 -- such tie, and every one of the three drifts happened there.
 --
--- These supply it.  `crossCoreLiveArmDelegation` (NonInterferenceCrossCore §7)
--- now requires every entry classified live to name one of these by a
--- compile-time-validated identifier, so "X is the live arm for syscall S" is a
--- claim backed by a theorem saying the dispatch for S routes to X.
+-- These supply it.  `syscallDelegates` below turns each into a proposition
+-- *indexed by the syscall*, and `crossCoreLiveArmEvidence`
+-- (NonInterferenceCrossCore §7) carries a proof of it — so "X is the live arm
+-- for syscall S" is a claim the type checker enforces.  A proof cannot be
+-- borrowed between arms, and syscalls with no delegation theorem map to
+-- `False`, so evidence for them cannot be constructed at all.
+--
+-- The first cut of this recorded a theorem *name* instead, which review round 11
+-- rightly rejected: a name check establishes that some declaration exists, not
+-- that it says anything about the arm citing it.
 -- ============================================================================
 
 /-- **The live `.tcbSuspend` arm routes to `suspendThreadOnCore`.**  Capability-only,
@@ -3343,5 +3349,64 @@ theorem dispatchWithCapChecked_receive_delegates
        | (st', .ok (_, _)) => .ok ((), st')
        | (_, .error e) => .error e) := by
   simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget, hFlow, hReply]
+
+/-- **The delegation obligation for a syscall, as a proposition indexed by it.**
+
+PR #861 review round 11: the first cut of this mechanism recorded delegation
+evidence as a `String` validated by `niName!`.  That checks only that *some*
+declaration by that name exists — the `.receive` entry could have cited
+`dispatchWithCap_tcbSuspend_delegates` and every count would still have passed.
+It was the same defect the mechanism existed to prevent, one level up: a claim
+("this theorem backs this arm") held by prose rather than by a type.
+
+Here the obligation is a `Prop` computed *from the syscall*, so a proof of it
+cannot be borrowed from another arm — `syscallDelegates .receive` and
+`syscallDelegates .tcbSuspend` are different propositions.  Arms with no
+delegation theorem yet map to `False`, which is deliberate: evidence for them
+cannot be fabricated, so the inventory's backed/unbacked split is enforced by
+the type checker rather than by a `Bool` someone can flip. -/
+def syscallDelegates : SyscallId → Prop
+  | .receive =>
+      ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+        (gate : SyscallGate) (cap : Capability) (epId : SeLe4n.ObjId)
+        (replyIdOpt : Option SeLe4n.ReplyId) (st : SystemState),
+        decoded.syscallId = .receive →
+        cap.target = .object epId →
+        securityFlowsTo (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true →
+        resolveRecvReplyId gate decoded st = .ok replyIdOpt →
+        dispatchWithCapChecked ctx decoded tid gate cap st =
+          (match endpointReceiveDualOnCore epId tid replyIdOpt
+                  (determineExecutingCore st tid) st with
+           | (st', .ok (_, _)) => .ok ((), st')
+           | (_, .error e) => .error e)
+  | .tcbSuspend =>
+      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
+        (cap : Capability) (objId : SeLe4n.ObjId) (vtid : SeLe4n.ValidThreadId)
+        (st : SystemState),
+        decoded.syscallId = .tcbSuspend →
+        cap.target = .object objId →
+        (∃ a, Architecture.SyscallArgDecode.decodeSuspendArgs decoded = .ok a) →
+        validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vtid →
+        dispatchWithCap decoded tid gate cap st =
+          (match Lifecycle.Suspend.suspendThreadOnCore st vtid
+                  (determineExecutingCore st tid) with
+           | .ok (st', _) => .ok ((), st')
+           | .error e => .error e)
+  -- Every other syscall: no delegation theorem exists yet.  `False` rather than
+  -- `True` so the absence is unforgeable — an inventory entry claiming
+  -- delegation evidence for one of these cannot be constructed.
+  | _ => False
+
+/-- The `.receive` obligation, discharged. -/
+theorem syscallDelegates_receive : syscallDelegates .receive := by
+  intro ctx decoded tid gate cap epId replyIdOpt st hSyscall hTarget hFlow hReply
+  exact dispatchWithCapChecked_receive_delegates ctx decoded tid gate cap epId replyIdOpt st
+    hSyscall hTarget hFlow hReply
+
+/-- The `.tcbSuspend` obligation, discharged. -/
+theorem syscallDelegates_tcbSuspend : syscallDelegates .tcbSuspend := by
+  intro decoded tid gate cap objId vtid st hSyscall hTarget hDecode hValid
+  exact dispatchWithCap_tcbSuspend_delegates decoded tid gate cap objId vtid st
+    hSyscall hTarget hDecode hValid
 
 end SeLe4n.Kernel

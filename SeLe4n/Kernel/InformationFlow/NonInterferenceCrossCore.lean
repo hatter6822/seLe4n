@@ -2486,6 +2486,25 @@ def CrossCoreTransition.all : List CrossCoreTransition :=
    .endpointReplyRecv, .replyRecvBodyDispatch, .deschedule, .cancelIpcBlocking,
    .suspendThreadDispatch]
 
+/-- SM8.B.2: **`all` really is all of them.**
+
+Every count, the injectivity check and both evidence tallies quantify over this
+hand-written list rather than over the type, so a constructor omitted from it
+would leave a transition out of the audited surface with all of them still
+green.  The match-based tables are exhaustive by construction; this list is not,
+and needs its own theorem.
+
+Caught by PR #861 review round 11 — the identical fix had just been applied to
+`CovertChannelId.all` two files away, and the sibling was missed in the same
+commit.  Enumerations that gates quantify over need this uniformly, not
+case-by-case. -/
+theorem CrossCoreTransition.mem_all (t : CrossCoreTransition) :
+    t ∈ CrossCoreTransition.all := by
+  cases t <;> decide
+
+/-- SM8.B.2: and lists each exactly once, so the counts count transitions. -/
+theorem CrossCoreTransition.all_nodup : CrossCoreTransition.all.Nodup := by decide
+
 /-- SM8.B.2: the name of each covered transition's non-interference theorem,
 compile-time-validated through `niName!` — a renamed or deleted theorem breaks
 this table rather than leaving it naming something that no longer exists. -/
@@ -2572,68 +2591,103 @@ theorem crossCoreNiTheorem_injective :
 Nine review rounds on PR #861 produced twenty-six findings, and the single
 largest class — three separate rounds — was this inventory asserting that some
 function is the arm the live dispatch reaches, wrongly.  Round 4 found three
-arms missing entirely; round 5 found `.reply` / `.replyRecv` / `.tcbSuspend`
-naming the below-API transition instead of the wrapper that does strictly more;
-round 8 found `.receive` classified a leg when the checked arm calls it
-directly.
+arms missing; round 5 found `.reply` / `.replyRecv` / `.tcbSuspend` naming the
+below-API transition instead of the wrapper that does strictly more; round 8
+found `.receive` classified a leg when the checked arm calls it directly.
 
 The root cause is visible in `API.lean`: eight dispatch arms carry a
 `dispatchWithCap_…_delegates` theorem, and **none of those eight ever drifted**.
 The tie is not documentation — it is a theorem saying `dispatch S = f …`, so a
 wrong entry fails to compile.  The cross-core arms had no such theorem, and all
-three drifts happened there.  Prose cannot hold a claim about `API.lean` in
-place; a proof obligation can.
+three drifts happened there.
 
-This type makes the distinction *data*: an entry is either backed by a
-delegation theorem (mechanically tied to the dispatch) or it is a human
-assertion, and the second kind is counted rather than indistinguishable from the
-first. -/
+**The first cut of this type recorded a theorem *name*, and round 11 correctly
+rejected it**: `niName!` checks that a declaration by that name exists, not that
+it proves anything about *this* transition, so `.receive` could have cited the
+`tcbSuspend` theorem and counted as backed.  That was the same defect one level
+up — a claim held by a string rather than by a type.
+
+So the evidence now carries a **proof of `syscallDelegates sid`**, a proposition
+computed from the syscall in `API.lean`.  `syscallDelegates .receive` and
+`syscallDelegates .tcbSuspend` are different propositions, so a proof cannot be
+borrowed between arms; and every syscall without a delegation theorem maps to
+`False`, so evidence for it cannot be constructed at all. -/
 inductive LiveArmEvidence where
-  /-- A `…_delegates` theorem in `API.lean` states that this syscall's dispatch
-  routes to the named function.  A wrong entry breaks the build. -/
-  | delegationTheorem (theoremName : String)
+  /-- A proof that this arm's syscall delegates to the named implementation.
+  The proposition is indexed by `sid`, so the proof is not transferable. -/
+  | delegationProof (sid : SyscallId) (proof : syscallDelegates sid)
   /-- No delegation theorem yet: the classification rests on reading the arm.
   Honest, and weaker — this is the state the three drifts happened in. -/
   | readOffTheArm (note : String)
-  deriving DecidableEq, Repr
 
-/-- SM8.B.2: the evidence backing each live-arm classification.  Non-live
-entries are `readOffTheArm` with the reason they are not live. -/
+/-- SM8.B.2: whether an entry is mechanically tied to the dispatch. -/
+def LiveArmEvidence.isDelegationBacked : LiveArmEvidence → Bool
+  | .delegationProof _ _ => true
+  | .readOffTheArm _ => false
+
+/-- SM8.B.2: the syscall a delegation-backed entry is tied to, so the tie can be
+checked against the transition rather than taken on trust. -/
+def LiveArmEvidence.syscall? : LiveArmEvidence → Option SyscallId
+  | .delegationProof sid _ => some sid
+  | .readOffTheArm _ => none
+
+/-- SM8.B.2: the syscall each live arm belongs to — `none` for the below-API
+transitions, which are not syscall arms at all. -/
+def crossCoreLiveArmSyscall : CrossCoreTransition → Option SyscallId
+  | .wake => none
+  | .endpointCall => none
+  | .endpointCallDispatch => some .call
+  | .notificationSignal => none
+  | .notificationSignalBound => some .notificationSignal
+  | .notificationWait => some .notificationWait
+  | .endpointReply => none
+  | .endpointReplyDispatch => some .reply
+  | .endpointReceiveDual => some .receive
+  | .endpointReplyRecv => none
+  | .replyRecvBodyDispatch => some .replyRecv
+  | .deschedule => none
+  | .cancelIpcBlocking => none
+  | .suspendThreadDispatch => some .tcbSuspend
+
+/-- SM8.B.2: the evidence backing each live-arm classification. -/
 def crossCoreLiveArmEvidence : CrossCoreTransition → LiveArmEvidence
   | .wake => .readOffTheArm "below-API primitive, not a syscall arm"
-  | .endpointCall => .readOffTheArm "below-API transition; the live arm is .endpointCallDispatch"
+  | .endpointCall => .readOffTheArm "below-API transition; live arm is .endpointCallDispatch"
   | .endpointCallDispatch =>
       .readOffTheArm "checked `.call` arm calls endpointCallCrossCoreDispatch; delegation theorem pending"
-  | .notificationSignal => .readOffTheArm "below-API transition; the live arm is .notificationSignalBound"
+  | .notificationSignal => .readOffTheArm "below-API transition; live arm is .notificationSignalBound"
   | .notificationSignalBound =>
-      .readOffTheArm "checked `.signal` arm; wrapper is definitionally the OnCore call; delegation theorem pending"
+      .readOffTheArm "checked `.signal` arm; wrapper definitionally the OnCore call; delegation theorem pending"
   | .notificationWait =>
-      .readOffTheArm "checked `.wait` arm; wrapper is definitionally the OnCore call; delegation theorem pending"
-  | .endpointReply => .readOffTheArm "below-API transition; the live arm is .endpointReplyDispatch"
+      .readOffTheArm "checked `.wait` arm; wrapper definitionally the OnCore call; delegation theorem pending"
+  | .endpointReply => .readOffTheArm "below-API transition; live arm is .endpointReplyDispatch"
   | .endpointReplyDispatch =>
       .readOffTheArm "checked `.reply` arm calls endpointReplyCrossCoreDispatch; delegation theorem pending"
-  | .endpointReceiveDual =>
-      .delegationTheorem (niName! dispatchWithCapChecked_receive_delegates)
-  | .endpointReplyRecv => .readOffTheArm "both legs below the donation; the live arm is .replyRecvBodyDispatch"
+  | .endpointReceiveDual => .delegationProof .receive syscallDelegates_receive
+  | .endpointReplyRecv => .readOffTheArm "both legs below the donation; live arm is .replyRecvBodyDispatch"
   | .replyRecvBodyDispatch =>
       .readOffTheArm "checked `.replyRecv` arm calls replyRecvBody; delegation theorem pending"
   | .deschedule => .readOffTheArm "below-API primitive, not a syscall arm"
-  | .cancelIpcBlocking => .readOffTheArm "below-API composite; the live arm is .suspendThreadDispatch"
-  | .suspendThreadDispatch =>
-      .delegationTheorem (niName! dispatchWithCap_tcbSuspend_delegates)
+  | .cancelIpcBlocking => .readOffTheArm "below-API composite; live arm is .suspendThreadDispatch"
+  | .suspendThreadDispatch => .delegationProof .tcbSuspend syscallDelegates_tcbSuspend
+
+/-- SM8.B.2 (**the tie is checked, not assumed**): a delegation-backed entry
+names the syscall its own transition belongs to.  Round 11's example — the
+`.receive` entry citing the `tcbSuspend` theorem — is now excluded twice over:
+by the indexed proposition, and by this. -/
+theorem crossCoreLiveArmEvidence_syscall_matches (t : CrossCoreTransition) :
+    (crossCoreLiveArmEvidence t).syscall?.isSome = true →
+      (crossCoreLiveArmEvidence t).syscall? = crossCoreLiveArmSyscall t := by
+  cases t <;> simp [crossCoreLiveArmEvidence, crossCoreLiveArmSyscall,
+    LiveArmEvidence.syscall?]
 
 /-- SM8.B.2: **how many live arms are mechanically tied to the dispatch.**
 
-Two of seven today.  The number is stated so the gap is a tracked quantity that
-can only be closed by adding delegation theorems — not a property a reader has
-to reconstruct by grepping.  Raising it is the follow-on; letting it silently
-fall is a broken theorem. -/
+Two of seven today.  Stated so the gap is a tracked quantity closable only by
+adding delegation theorems — not something a reader reconstructs by grepping. -/
 def crossCoreLiveArmDelegationBacked : List CrossCoreTransition :=
   CrossCoreTransition.all.filter (fun t =>
-    crossCoreTransitionIsLiveArm t &&
-      (match crossCoreLiveArmEvidence t with
-       | .delegationTheorem _ => true
-       | .readOffTheArm _ => false))
+    crossCoreTransitionIsLiveArm t && (crossCoreLiveArmEvidence t).isDelegationBacked)
 
 theorem crossCoreLiveArmDelegationBacked_count :
     crossCoreLiveArmDelegationBacked.length = 2 := by decide
@@ -2642,10 +2696,8 @@ theorem crossCoreLiveArmDelegationBacked_count :
 of `API.lean`, which is the state every one of the three drifts occurred in. -/
 theorem crossCoreLiveArm_readOffTheArm_count :
     (CrossCoreTransition.all.filter (fun t =>
-      crossCoreTransitionIsLiveArm t &&
-        (match crossCoreLiveArmEvidence t with
-         | .delegationTheorem _ => false
-         | .readOffTheArm _ => true))).length = 5 := by decide
+      crossCoreTransitionIsLiveArm t
+        && !(crossCoreLiveArmEvidence t).isDelegationBacked)).length = 5 := by decide
 
 /-- SM8.B.2: **which transitions can write a core other than the executing
 one.**  Named for remote *writes*, not for wakes: a reply, a deschedule and a
