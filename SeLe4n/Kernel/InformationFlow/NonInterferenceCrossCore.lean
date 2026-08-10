@@ -70,9 +70,12 @@ collapse to the empty set on the fail-closed arms.
 * §2 — the SM6.B notification signal and wait.
 * §3 — the SM6.A endpoint call (the two-core case).
 * §4 — the SM6.C reply.
-* §5 — the SM6.E cancellation *primitive*.  The composed
-  `cancelIpcBlockingOnCore` is **not** covered; see the scope note there, which
-  says why and what one lemma would close it.
+* §5 — the SM6.E cancellation: the `descheduleThread` primitive and the
+  composed `cancelIpcBlockingOnCore` (teardown + home-core removal).
+* §5a — the SM5.F priority-inheritance chain walk, and the union that bounds
+  the **live** `.call` arm.  The below-API write sets do not bound it on their
+  own: `endpointCallCrossCoreDispatch` also runs the donation and the chain
+  walk, and the walk re-buckets on each boosted server's *home* core.
 * §6 — the non-interference instantiations.
 * §7 — coverage, as checkable data.
 -/
@@ -716,23 +719,44 @@ theorem endpointReplyOnCore_confinedToCores (replier target : SeLe4n.ThreadId)
 **home** core, not the core running the cancellation.  This restates that at the
 SM6.E name so the coverage list below reads off one theorem per sub-phase: a
 `tcbSuspend` issued on core 0 against a victim homed on core 2 is invisible to
-observers on cores 1 and 3 outright.
-
-**Scope note (honest, and deliberately not papered over).**  The *composed*
-`cancelIpcBlockingOnCore` — the object-level teardown followed by this
-deschedule — is **not** covered here.  The teardown is per-core silent in fact,
-but the codebase carries only its `scheduler` frame
-(`cancelIpcBlocking_scheduler_eq`); the matching machine/register frame does not
-exist, and its components (`clearTcbIpcFields` is `private`, the queue sweeps are
-folds) put deriving one outside this cut.  Registered as scoped follow-on work
-in the plan rather than claimed: adding
-`cancelIpcBlocking_machine_eq` beside the existing scheduler frame in
-`Lifecycle/Suspend.lean` closes it in one lemma. -/
+observers on cores 1 and 3 outright. -/
 theorem cancellationCrossCore_confinedToCores (st : SystemState) (tid : SeLe4n.ThreadId)
     (executingCore : CoreId) :
     observableSlotsConfinedToCores st (descheduleThread st tid executingCore).1
       [determineTargetCore st tid] :=
   descheduleThread_confinedToCores st tid executingCore
+
+/-- SM8.B.2: the SM6.E object-level teardown is per-core **silent** — it rewrites
+the victim's IPC fields, the endpoint/notification queues it sat in, and its
+reply link, and touches neither the scheduler nor any register bank.
+
+The `machine` half is `cancelIpcBlocking_machine_eq`, added beside the
+long-standing `cancelIpcBlocking_scheduler_eq` for this consumer: per-core
+confinement reads the register banks as well as the scheduler slots, so a
+scheduler frame alone never bounded the teardown's observable writes. -/
+theorem cancelIpcBlocking_confinedToCores (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) :
+    observableSlotsConfinedToCores st (cancelIpcBlocking st tid tcb) [] :=
+  observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+    (cancelIpcBlocking_scheduler_eq st tid tcb) (cancelIpcBlocking_machine_eq st tid tcb)
+
+/-- SM8.B.2 (**SM6.E, the composed cancellation**): `cancelIpcBlockingOnCore`
+writes only the victim's **home** core — not the core running the cancellation,
+and not any core the victim's endpoint or notification neighbours are homed on.
+
+`[] ++ [home]`: the teardown contributes nothing per-core, the home-core removal
+contributes one core.  Unlike the wake pipelines this needs no pushback through
+the §1a frame layer, because `cancelIpcBlockingOnCore` reads its home core from
+the pre-state itself. -/
+theorem cancelIpcBlockingOnCore_confinedToCores (victim : SeLe4n.ThreadId) (tcb : TCB)
+    (executingCore : CoreId) (st : SystemState) :
+    observableSlotsConfinedToCores st
+      (cancelIpcBlockingOnCore victim tcb executingCore st).1
+      [determineTargetCore st victim] :=
+  observableSlotsConfinedToCores_trans
+    (cancelIpcBlocking_confinedToCores st victim tcb)
+    (removeRunnableOnCore_confinedToCores (cancelIpcBlocking st victim tcb) victim
+      (determineTargetCore st victim))
 
 -- ============================================================================
 -- §5a  SM5.F — the priority-inheritance chain walk
@@ -933,6 +957,20 @@ theorem descheduleThread_crossCoreNonInterference (ctx : LabelingContext)
   crossCoreNonInterference_ofCores ctx observer (by simpa using hne)
     (descheduleThread_confinedToCores st tid executingCore) hShared
 
+/-- SM8.B.2 (SM6.E, composed): a cross-core IPC-blocking cancellation is
+invisible to any core that is not the victim's home core. -/
+theorem cancelIpcBlockingOnCore_crossCoreNonInterference (ctx : LabelingContext)
+    (observer : IfObserver) (victim : SeLe4n.ThreadId) (tcb : TCB)
+    (executingCore : CoreId) (st : SystemState) (c : CoreId)
+    (hne : c ≠ determineTargetCore st victim)
+    (hShared : sharedViewUnchanged ctx observer st
+      (cancelIpcBlockingOnCore victim tcb executingCore st).1) :
+    projectStateOnCore ctx observer
+        (cancelIpcBlockingOnCore victim tcb executingCore st).1 c
+      = projectStateOnCore ctx observer st c :=
+  crossCoreNonInterference_ofCores ctx observer (by simpa using hne)
+    (cancelIpcBlockingOnCore_confinedToCores victim tcb executingCore st) hShared
+
 /-- SM8.B.2 (**the headline, and the thing SM6 cannot say**): waking a thread on
 a remote core is invisible to a third core *whatever that thread's label*.
 
@@ -981,10 +1019,13 @@ inductive CrossCoreTransition where
   | endpointReply
   /-- SM6.E — the deschedule primitive. -/
   | deschedule
+  /-- SM6.E — the *composed* IPC-blocking cancellation (teardown + deschedule). -/
+  | cancelIpcBlocking
   deriving DecidableEq, Repr
 
 def CrossCoreTransition.all : List CrossCoreTransition :=
-  [.wake, .endpointCall, .notificationSignal, .notificationWait, .endpointReply, .deschedule]
+  [.wake, .endpointCall, .notificationSignal, .notificationWait, .endpointReply, .deschedule,
+   .cancelIpcBlocking]
 
 /-- SM8.B.2: the name of each covered transition's non-interference theorem,
 compile-time-validated through `niName!` — a renamed or deleted theorem breaks
@@ -996,8 +1037,9 @@ def crossCoreNiTheorem : CrossCoreTransition → String
   | .notificationWait => niName! notificationWaitOnCore_crossCoreNonInterference
   | .endpointReply => niName! endpointReplyOnCore_crossCoreNonInterference
   | .deschedule => niName! descheduleThread_crossCoreNonInterference
+  | .cancelIpcBlocking => niName! cancelIpcBlockingOnCore_crossCoreNonInterference
 
-theorem crossCoreNiTheorem_count : CrossCoreTransition.all.length = 6 := by rfl
+theorem crossCoreNiTheorem_count : CrossCoreTransition.all.length = 7 := by rfl
 
 theorem crossCoreNiTheorem_injective :
     ∀ t₁ t₂ : CrossCoreTransition, crossCoreNiTheorem t₁ = crossCoreNiTheorem t₂ → t₁ = t₂ := by
@@ -1018,8 +1060,9 @@ def crossCoreTransitionWakesRemote : CrossCoreTransition → Bool
   | .notificationWait => false
   | .endpointReply => true
   | .deschedule => true
+  | .cancelIpcBlocking => true
 
 theorem crossCoreTransitionWakesRemote_count :
-    (CrossCoreTransition.all.filter crossCoreTransitionWakesRemote).length = 5 := by decide
+    (CrossCoreTransition.all.filter crossCoreTransitionWakesRemote).length = 6 := by decide
 
 end SeLe4n.Kernel

@@ -1767,7 +1767,7 @@ run_check "INVARIANT" rg -n '^theorem notificationSignalWriteSet_eq_lockSet_wait
 run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem wakeThread_crossCoreNonInterference_of_visible_thread' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n 'CrossCoreTransition.all.length = 7' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # v0.33.7 audit closure: the live `.call` arm is more than `endpointCallOnCore`
 # — it also runs the donation and the PIP chain walk, and the chain walk
 # re-buckets on each boosted server's HOME core.  Bounding the live arm needs
@@ -1777,6 +1777,20 @@ run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_confinedToCores
 run_check "INVARIANT" rg -n '^def endpointCallLiveWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointCallWriteSet_subset_live' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem applyCallDonation_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+# v0.33.8: the composed SM6.E cancellation.  Its blocker was that only a
+# `scheduler` frame existed for the teardown — per-core confinement reads the
+# register banks too, so `cancelIpcBlocking_machine_eq` is what unblocks it.
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_machine_eq' SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean
+run_check "INVARIANT" rg -n '^theorem restoreToReady_machine_eq' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n '^theorem consumeReplyLink_machine_eq' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n '^theorem removeFromAllEndpointQueues_machine_eq' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem removeFromAllNotificationWaitLists_machine_eq' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^  runComposedCancellationChecks' tests/SmpInformationFlowSuite.lean
+# The victim must really occupy the home core's run queue, or §5.2b's negative
+# would be testing a transition that wrote nothing.
+run_check "INVARIANT" rg -n 'NEGATIVE: it is NOT confined to the executing core 0' tests/SmpInformationFlowSuite.lean
 # The flagship two-core case must be exercised at RUNTIME, not only proved: the
 # first cut computed both marquee write sets in their degenerate (empty /
 # executing-core-only) branches, so the two-element set had no coverage.

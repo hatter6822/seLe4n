@@ -101,6 +101,15 @@ theorem restoreToReady_scheduler_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
     (restoreToReady st tid).scheduler = st.scheduler := by
   unfold restoreToReady; split <;> rfl
 
+/-- WS-SM SM8.B: `restoreToReady` only writes `objects` — the machine, and hence
+every core's register bank, is framed.  The information-flow counterpart of
+`restoreToReady_scheduler_eq`: per-core confinement reads the register banks as
+well as the scheduler slots, so a scheduler frame alone does not bound a step's
+observable writes. -/
+theorem restoreToReady_machine_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (restoreToReady st tid).machine = st.machine := by
+  unfold restoreToReady; split <;> rfl
+
 /-- Helper: restoreToReady preserves the serviceRegistry. -/
 theorem restoreToReady_serviceRegistry_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
     (restoreToReady st tid).serviceRegistry = st.serviceRegistry := by
@@ -120,6 +129,14 @@ theorem restoreToReady_lifecycle_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
 theorem clearTcbIpcFields_scheduler_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
     (clearTcbIpcFields st tid).scheduler = st.scheduler :=
   restoreToReady_scheduler_eq st tid
+
+/-- WS-SM SM8.B: the machine companion of `clearTcbIpcFields_scheduler_eq`.
+Stated here rather than at the consumer because `clearTcbIpcFields` is
+`private`, so only this file can name it — the same reason its scheduler frame
+lives here. -/
+theorem clearTcbIpcFields_machine_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (clearTcbIpcFields st tid).machine = st.machine :=
+  restoreToReady_machine_eq st tid
 
 /-- Helper: clearTcbIpcFields preserves the serviceRegistry (back-compat). -/
 theorem clearTcbIpcFields_serviceRegistry_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
@@ -360,6 +377,24 @@ theorem consumeReplyLink_scheduler_eq (st : SystemState) (tid : SeLe4n.ThreadId)
   unfold consumeReplyLink; split
   · rfl
   · rw [clearReplyObjectCaller_scheduler_eq, clearTcbReplyObject_scheduler_eq]
+
+/-- WS-SM SM8.B: `clearReplyObjectCaller` only writes `objects` — machine framed. -/
+theorem clearReplyObjectCaller_machine_eq (st : SystemState) (rid : SeLe4n.ReplyId) :
+    (clearReplyObjectCaller st rid).machine = st.machine := by
+  unfold clearReplyObjectCaller; split <;> rfl
+
+/-- WS-SM SM8.B: `clearTcbReplyObject` only writes `objects` — machine framed. -/
+theorem clearTcbReplyObject_machine_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (clearTcbReplyObject st tid).machine = st.machine := by
+  unfold clearTcbReplyObject; split <;> rfl
+
+/-- WS-SM SM8.B: `consumeReplyLink` preserves the machine (both legs only write
+`objects`). -/
+theorem consumeReplyLink_machine_eq (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) :
+    (consumeReplyLink st tid tcb).machine = st.machine := by
+  unfold consumeReplyLink; split
+  · rfl
+  · rw [clearReplyObjectCaller_machine_eq, clearTcbReplyObject_machine_eq]
 
 /-- `consumeReplyLink` preserves the serviceRegistry. -/
 theorem consumeReplyLink_serviceRegistry_eq (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) :

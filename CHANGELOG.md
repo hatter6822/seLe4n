@@ -1,3 +1,52 @@
+## v0.33.8 — SM8.B: the composed cross-core cancellation, and the machine frame that was blocking it
+
+Closes the one item the v0.33.7 audit left registered rather than proven.
+Theorems and tests only; trace byte-identical.
+
+**The blocker was a missing frame, not a hard proof.**  `cancelIpcBlockingOnCore`
+is the SM6.E teardown followed by a home-core removal, and the removal's
+confinement was already proven.  What was missing sat one layer down: per-core
+confinement (`observableSlotsConfinedToCores`) reads each core's **register
+bank** as well as its scheduler slots — under SM5.I every core banks its own
+`RegisterFile` inside one `MachineState`, so "this step wrote no other core's
+registers" is a genuine obligation — and the codebase carried only
+`cancelIpcBlocking_scheduler_eq`.  A scheduler frame alone never bounded the
+teardown's observable writes.
+
+`cancelIpcBlocking_machine_eq` now sits beside it, over the same five `ipcState`
+arms, on a new leaf layer: `restoreToReady_machine_eq` (and
+`clearTcbIpcFields_machine_eq`, which has to live in `Suspend.lean` because the
+helper is `private` — the same reason its scheduler frame lives there),
+`clearReplyObjectCaller_machine_eq` / `clearTcbReplyObject_machine_eq` /
+`consumeReplyLink_machine_eq`, and the two queue sweeps
+`removeFromAllEndpointQueues_machine_eq` /
+`removeFromAllNotificationWaitLists_machine_eq` — the sweeps by the same
+`RHTable.fold_preserves` argument SM7.B used for `tlbShootdown`, seeded from the
+new `spliceOutMidQueueNode_machine_eq`.
+
+On top of it: `cancelIpcBlocking_confinedToCores` (the teardown is per-core
+silent — write set `[]`) and `cancelIpcBlockingOnCore_confinedToCores` (`[] ++
+[home]`), with `cancelIpcBlockingOnCore_crossCoreNonInterference`.  Unlike the
+wake pipelines this needs no pushback through the home-core frame layer, because
+`cancelIpcBlockingOnCore` reads its home core from the pre-state itself.  The
+coverage table goes 6 → **7** transitions, 5 → **6** remote-capable, and the
+module header's §5 line — which said the composed form was *not* covered — is
+now true.
+
+**A test that would have been vacuous, caught by its own negative.**  The first
+version of the §5.2b scenario put the victim on the notification's waiter list
+but not in any run queue.  `removeRunnableOnCore` is then a no-op, so the
+composed cancellation wrote nothing per-core and was trivially confined to
+*every* core — including the executing one.  The load-bearing negative ("it is
+NOT confined to the executing core 0") failed, which is exactly what it is for.
+The fixture now puts the victim in core 2's run queue, which is the state the
+suspend pipeline actually acts on: capture the TCB, tear down, deschedule.
+
+Suite 193 -> **198 assertions / 30 groups**; 362 declarations across the four
+SM8 information-flow modules axiom-clean.
+
+Refs: docs/planning/SMP_INFORMATION_FLOW_PLAN.md §5 (Phase SM8.B)
+
 ## v0.33.7 — SM8.B audit: the live dispatch is more than the transition, and the two-core case had no runtime coverage
 
 A deep audit of the v0.33.6 cut, checked against the code rather than the prose.

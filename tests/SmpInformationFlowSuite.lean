@@ -399,6 +399,9 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @endpointCallLiveWriteSet
 #check @endpointCallWriteSet_subset_live
 #check @pipChainWriteSet_subset_live
+#check @cancelIpcBlocking_confinedToCores
+#check @cancelIpcBlockingOnCore_confinedToCores
+#check @cancelIpcBlockingOnCore_crossCoreNonInterference
 #check @crossCoreNiTheorem_injective
 #check @crossCoreTransitionWakesRemote
 #check @crossCoreTransitionWakesRemote_count
@@ -1900,7 +1903,14 @@ private def waitingNotificationState : SystemState :=
         (.notification { state := .waiting
                          waitingThreads := ⟨[crossCoreWaiter], by simp⟩
                          pendingBadge := none
-                         boundTCB := none }) }
+                         boundTCB := none })
+      -- The victim must genuinely occupy core 2's run queue, or the composed
+      -- cancellation's home-core removal is a no-op and §5.2b's negative — that
+      -- the write is NOT confined to the executing core — would be testing a
+      -- transition that wrote nothing at all.  This is the state the suspend
+      -- pipeline acts on: the TCB is captured, then torn down and descheduled.
+      scheduler := rendezvousState.scheduler.setRunQueueOnCore c2
+        (RunQueue.ofList [(crossCoreWaiter, ⟨40⟩)]) }
 
 /-- §5.0  The two-core rendezvous — the flagship case, on a real state. -/
 private def runTwoCoreWriteSetChecks : IO Unit := do
@@ -1970,19 +1980,49 @@ private def runVisibleRemoteWakeChecks : IO Unit := do
     (decide (remoteHomedThread ∈ (remoteWakePost.scheduler.runQueueOnCore c2).toList) &&
      decide (remoteHomedThread ∉ (crossCoreState.scheduler.runQueueOnCore c2).toList))
 
+/-- The composed SM6.E cancellation of a victim blocked on a notification and
+homed on core 2 — the teardown really has queue work to do here, so the
+per-core-silence of the teardown is exercised rather than assumed. -/
+private def cancelledVictimTcb : TCB :=
+  { mkTcb 1021 40 (some c2) with ipcState := .blockedOnNotification highNotification }
+
+private def cancelPost : SystemState :=
+  (SeLe4n.Kernel.cancelIpcBlockingOnCore crossCoreWaiter cancelledVictimTcb c0
+    waitingNotificationState).1
+
+/-- §5.2b  The composed cross-core cancellation. -/
+private def runComposedCancellationChecks : IO Unit := do
+  IO.println "--- §5.2b the composed cross-core cancellation ---"
+  assertBool "the victim is blocked on the notification and homed on core 2"
+    (decide (SeLe4n.Kernel.determineTargetCore waitingNotificationState crossCoreWaiter = c2))
+  assertBool "the teardown has real work: the victim is on the notification's waiter list"
+    (match waitingNotificationState.getNotification? highNotification with
+     | some n => decide (n.waitingThreads.val.contains crossCoreWaiter = true)
+     | none => false)
+  assertBool "the cancellation is confined to the victim's home core 2"
+    (confinedCheck waitingNotificationState cancelPost c2)
+  -- The load-bearing negative: it is NOT confined to the core that ran it, so
+  -- the theorem is about a genuinely remote write, not a local one.
+  assertBool "NEGATIVE: it is NOT confined to the executing core 0"
+    (!confinedCheck waitingNotificationState cancelPost c0)
+  assertBool "the teardown really removed the victim from the waiter list"
+    (match cancelPost.getNotification? highNotification with
+     | some n => decide (n.waitingThreads.val.contains crossCoreWaiter = false)
+     | none => false)
+
 /-- §5.3  The set-of-cores algebra and its coverage record. -/
 private def runCoreSetAlgebraChecks : IO Unit := do
   IO.println "--- §5.3 the set-of-cores confinement algebra ---"
-  assertBool "six cross-core transitions are covered"
-    (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 6))
-  assertBool "five of the six can name a core other than the executing one"
+  assertBool "seven cross-core transitions are covered"
+    (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 7))
+  assertBool "six of the seven can name a core other than the executing one"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
-      SeLe4n.Kernel.crossCoreTransitionWakesRemote).length = 5))
+      SeLe4n.Kernel.crossCoreTransitionWakesRemote).length = 6))
   assertBool "…and the wait is the one that cannot"
     (decide (SeLe4n.Kernel.crossCoreTransitionWakesRemote .notificationWait = false))
   assertBool "the covered-transition theorem names are pairwise distinct"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.map
-      SeLe4n.Kernel.crossCoreNiTheorem).eraseDups.length = 6))
+      SeLe4n.Kernel.crossCoreNiTheorem).eraseDups.length = 7))
   -- The load-bearing negative: the write set is *state-dependent*, so it is not
   -- a constant the theorem could be satisfying vacuously.  With no receiver the
   -- call writes one core; with a remote receiver waiting it writes two — and
@@ -2327,6 +2367,7 @@ def runSmpInformationFlowChecks : IO Unit := do
   runTwoCoreWriteSetChecks
   runCrossCoreWriteSetChecks
   runVisibleRemoteWakeChecks
+  runComposedCancellationChecks
   runCoreSetAlgebraChecks
   runResolvedFlowGateChecks
   IO.println "===================================="

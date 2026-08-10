@@ -68,6 +68,16 @@ theorem spliceOutMidQueueNode_tlbShootdown_eq
     (spliceOutMidQueueNode st tid).tlbShootdown = st.tlbShootdown := by
   unfold spliceOutMidQueueNode; split <;> rfl
 
+/-- WS-SM SM8.B: spliceOutMidQueueNode only modifies `objects` — the machine
+(and hence every core's register bank) is framed.  The information-flow
+counterpart of `spliceOutMidQueueNode_scheduler_eq`: per-core confinement reads
+the register banks as well as the scheduler slots, so the scheduler frame alone
+does not bound a step's observable writes. -/
+theorem spliceOutMidQueueNode_machine_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (spliceOutMidQueueNode st tid).machine = st.machine := by
+  unfold spliceOutMidQueueNode; split <;> rfl
+
 /-- W6-B: removeFromAllEndpointQueues only modifies `objects`, preserving
     scheduler, lifecycle, and serviceRegistry simultaneously. Reduces
     redundancy from 3 near-identical proofs to a single bundled theorem. -/
@@ -125,6 +135,20 @@ theorem removeFromAllEndpointQueues_tlbShootdown_eq
     hSplice
     (fun acc _ _ hAcc => by split <;> first | exact hAcc | (split <;> exact hAcc))
 
+/-- WS-SM SM8.B: removeFromAllEndpointQueues only modifies `objects` — the
+machine is framed.  Same fold-preservation argument as
+`removeFromAllEndpointQueues_tlbShootdown_eq`, seeded from the splice frame. -/
+theorem removeFromAllEndpointQueues_machine_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (removeFromAllEndpointQueues st tid).machine = st.machine := by
+  have hSplice := spliceOutMidQueueNode_machine_eq st tid
+  unfold removeFromAllEndpointQueues
+  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves
+    (spliceOutMidQueueNode st tid).objects (spliceOutMidQueueNode st tid) _
+    (fun acc => acc.machine = st.machine)
+    hSplice
+    (fun acc _ _ hAcc => by split <;> first | exact hAcc | (split <;> exact hAcc))
+
 /-- W6-B: removeFromAllNotificationWaitLists only modifies `objects`, preserving
     scheduler, lifecycle, and serviceRegistry simultaneously. -/
 theorem removeFromAllNotificationWaitLists_preserves
@@ -137,6 +161,17 @@ theorem removeFromAllNotificationWaitLists_preserves
     (fun acc => acc.scheduler = st.scheduler ∧ acc.lifecycle = st.lifecycle ∧
                 acc.serviceRegistry = st.serviceRegistry)
     ⟨rfl, rfl, rfl⟩
+    (fun acc _ _ hAcc => by split <;> first | exact hAcc | (split <;> exact hAcc))
+
+/-- WS-SM SM8.B: removeFromAllNotificationWaitLists only modifies `objects` —
+the machine is framed. -/
+theorem removeFromAllNotificationWaitLists_machine_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (removeFromAllNotificationWaitLists st tid).machine = st.machine := by
+  unfold removeFromAllNotificationWaitLists
+  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves st.objects st _
+    (fun acc => acc.machine = st.machine)
+    rfl
     (fun acc _ _ hAcc => by split <;> first | exact hAcc | (split <;> exact hAcc))
 
 /-- R4-A.2: removeFromAllNotificationWaitLists preserves the scheduler. -/

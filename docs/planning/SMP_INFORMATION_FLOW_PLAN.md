@@ -512,13 +512,19 @@ optimal.  All are closed; the headline is the first.
 6. **Scenario count**: 167 → 186 assertions / 28 groups, four new groups driving
    real cross-core transitions with load-bearing negatives.
 
-Scoped follow-on registered rather than claimed: `cancelIpcBlockingOnCore`'s
-*composed* confinement (the SM6.E deschedule primitive is covered;
-the object-level teardown is per-core silent in fact but the codebase carries
-only its `scheduler` frame, so one lemma — `cancelIpcBlocking_machine_eq` beside
-the existing `cancelIpcBlocking_scheduler_eq` — closes it), and the
-`endpointReceiveDualOnCore` / `endpointReplyRecvOnCore` composites, which compose
-the same primitives.
+**CLOSED at v0.33.8**: `cancelIpcBlockingOnCore`'s *composed* confinement.  The
+blocker was the missing frame, not a hard proof — per-core confinement reads each
+core's register bank as well as its scheduler slots, and only
+`cancelIpcBlocking_scheduler_eq` existed.  `cancelIpcBlocking_machine_eq` now
+sits beside it on a new leaf layer (`restoreToReady` / `clearTcbIpcFields` /
+the reply-link legs / both queue sweeps, the sweeps by the same
+`RHTable.fold_preserves` argument SM7.B used for `tlbShootdown`), giving
+`cancelIpcBlocking_confinedToCores` (`[]`) and
+`cancelIpcBlockingOnCore_confinedToCores` (`[] ++ [home]`) with its NI
+instantiation.  Coverage 6 → 7 transitions.
+
+Remaining scoped follow-on: the `endpointReceiveDualOnCore` /
+`endpointReplyRecvOnCore` composites, which compose the same primitives.
 
 **Landing record (v0.33.5).**  Two new staged modules (staged-only count 55 →
 57), 188 declarations, zero `sorry`/`axiom` — every one of the 184 term-level
