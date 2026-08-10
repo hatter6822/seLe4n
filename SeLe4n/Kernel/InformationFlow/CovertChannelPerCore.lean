@@ -94,7 +94,19 @@ present in the per-core boundary.
 this re-checks it against the extended one, so a future edit that *replaces*
 rather than appends is caught.  Decided rather than argued, and with `decide`
 rather than `native_decide` — the Lean runtime evaluator stays out of the
-trusted computing base (AF4-A). -/
+trusted computing base (AF4-A).
+
+**Scope, stated because the name overpromises** (PR #861 review): the entry
+names come from `syscallIdToEnforcementName`, which maps `.call` to the
+*single-core* `endpointCallChecked`.  Under SMP the live arm is
+`endpointCallCrossCoreDispatchChecked`, so this witness establishes that the
+per-core list still covers every syscall — it does **not** audit that the
+cross-core wrappers the live dispatch actually reaches are classified.  Building
+the mapping from the live cross-core wrapper names is SM8.E.3's job, which is
+also where the entry gets promoted into the canonical boundary; doing it here
+would move a count SM8.E has still to reconcile.  Recorded rather than implied,
+because a completeness theorem that quietly checks the wrong table is worse than
+no theorem. -/
 def enforcementBoundaryPerCoreComplete : Bool :=
   SyscallId.all.all (fun sid =>
     let name := syscallIdToEnforcementName sid

@@ -1,3 +1,56 @@
+## v0.33.10 — PR #861 review round 2: probe the private declarations, and stop overstating two theorems
+
+Four findings on the previous fix commit, all verified valid.  Two closed
+outright; two closed as *claims*, with the underlying work registered rather
+than implied.  Theorems, tooling and documentation only; trace byte-identical.
+
+**The axiom sweep skipped `private` declarations on a justification that was
+false.**  The docstring argued that a private helper's axioms surface at
+whichever public theorem consumes it, and that a private helper used by nothing
+is dead code "which the unused-declaration lint covers".  There is no
+unused-declaration lint in this repository — the review checked, and so did I.
+So a private declaration with no public consumer was dropped from both the probe
+and the total while the gate still reported every requested declaration clean:
+an exercised fail-open path in a gate whose entire purpose is to fail closed.
+
+Closed properly rather than by weakening the claim: `probe_private` elaborates
+each defining module's own source with `#print axioms` appended, where the
+private names are in scope.  (`open private` is a Mathlib command this toolchain
+does not carry, and Lean mangles the real name, so re-elaboration is the
+available route.)  363 → **365** declarations probed, the two private
+`ObservableStatePerCore` helpers included.
+
+**The landed SM8.B.11 plan record still cited a theorem this PR deleted.**  It
+named `endpointFlowCheck_state_independent` as "the fact that makes it true" —
+the tautology removed two cuts ago, with a Tier-3 negative anchor forbidding its
+return — and repeated its claim that the enforcement gate "reads no per-core
+state".  The resolved gate reads `scheduler.currentOnCore c`; that is the whole
+point of `endpointFlowCheckAtCore`.  The record now cites
+`endpointFlowCheckAtCore_depends_only_on_subject` and
+`…_stable_under_confined_transition`, which are the statements that carry the
+SMP content.
+
+**`endpointCallLive_confinedToCores` does not reach the live dispatch, and now
+says so.**  `stTrans` and `stDon` are arbitrary states, `hTrans` and `hDonation`
+are hypotheses about them, and the theorem never mentions
+`endpointCallCrossCoreDispatch`.  It is a composition lemma over three legs that
+*are* individually proven at the states they run at.  Its docstring previously
+implied more.  What is missing to reach the live arm is now named: a confinement
+lemma for `endpointCallWithCapsOnCore` (the live dispatch calls the WithCaps
+form, not `endpointCallOnCore`) and a reduction of the dispatch to its real
+intermediate states.  Registered in the plan as its own slice.
+
+**`enforcementBoundaryPerCoreComplete` audits the single-core table.**
+`syscallIdToEnforcementName` maps `.call` to `endpointCallChecked`, while the
+live SMP arm is `endpointCallCrossCoreDispatchChecked`.  The witness does
+establish that the per-core list covers every syscall; it does not audit the
+cross-core wrappers the live dispatch reaches.  Scope recorded at the theorem —
+a completeness theorem that quietly checks the wrong table is worse than no
+theorem — with the live-wrapper mapping left to SM8.E.3, which already owns the
+boundary reconciliation.
+
+Refs: docs/planning/SMP_INFORMATION_FLOW_PLAN.md §5 (Phase SM8.B)
+
 ## v0.33.9 — PR #861 review: the live write set named the wrong chain, and three gates failed open
 
 Seven findings from the automated review of PR #861, all verified against the

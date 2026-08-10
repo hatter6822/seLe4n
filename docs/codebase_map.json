@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/sm8b-per-core-ni-proofs-3ogvws",
-      "commit_sha": "27023dc7aed58be47d3f1498aa01ae318ea0e256",
-      "tree_sha": "7773046d928bb02fb0258e6aaf70188269f79351",
-      "committed_at_utc": "2026-08-10T05:14:59+00:00"
+      "commit_sha": "51a0843f72df4a87e188c5577262d729da6e5824",
+      "tree_sha": "c6c81226a86553639d566c3358f3976020b1dcb1",
+      "committed_at_utc": "2026-08-10T06:49:08+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "73b92cad1a13a0040f38f266f97ed43b176299cd150343d5053db1753bad970c"
+    "source_digest": "9d7071bb4263f80e035e542a6f629502a22c8f73480944c45232e304463dcfd0"
   },
   "summary": {
     "module_count": 338,
     "declaration_count": 14614
   },
   "readme_sync": {
-    "version": "0.33.9",
+    "version": "0.33.10",
     "lean_toolchain": "v4.28.0",
     "production_files": 270,
-    "production_loc": 245981,
+    "production_loc": 246008,
     "test_files": 68,
     "test_loc": 51041,
     "proved_theorem_lemma_decls": 8175,
@@ -86906,7 +86906,7 @@
         {
           "kind": "def",
           "name": "enforcementBoundaryPerCoreComplete",
-          "line": 98,
+          "line": 110,
           "called": [
             "all",
             "any",
@@ -86917,7 +86917,7 @@
         {
           "kind": "theorem",
           "name": "enforcementBoundaryPerCore_is_complete",
-          "line": 105,
+          "line": 117,
           "called": [
             "enforcementBoundaryPerCoreComplete"
           ]
@@ -86925,7 +86925,7 @@
         {
           "kind": "theorem",
           "name": "enforcementBoundaryPerCore_entry_is_new",
-          "line": 111,
+          "line": 123,
           "called": [
             "any",
             "readOnly"
@@ -86934,13 +86934,13 @@
         {
           "kind": "inductive",
           "name": "CovertChannelSeverity",
-          "line": 123,
+          "line": 135,
           "called": []
         },
         {
           "kind": "structure",
           "name": "CovertChannel",
-          "line": 144,
+          "line": 156,
           "called": [
             "CovertChannelSeverity"
           ]
@@ -86948,7 +86948,7 @@
         {
           "kind": "def",
           "name": "acceptedCovertChannel_scheduling_perCore",
-          "line": 170,
+          "line": 182,
           "called": [
             "CovertChannel",
             "schedulingCovertChannel_bounded_width"
@@ -86957,7 +86957,7 @@
         {
           "kind": "def",
           "name": "acceptedCovertChannel_machineTimer",
-          "line": 188,
+          "line": 200,
           "called": [
             "CovertChannel",
             "level",
@@ -86967,7 +86967,7 @@
         {
           "kind": "def",
           "name": "acceptedCovertChannel_tcbMetadata",
-          "line": 203,
+          "line": 215,
           "called": [
             "CovertChannel"
           ]
@@ -86975,7 +86975,7 @@
         {
           "kind": "def",
           "name": "acceptedCovertChannel_objectStoreMetadata",
-          "line": 218,
+          "line": 230,
           "called": [
             "CovertChannel"
           ]
@@ -86983,7 +86983,7 @@
         {
           "kind": "def",
           "name": "acceptedCovertChannel_lockContention",
-          "line": 245,
+          "line": 257,
           "called": [
             "CovertChannel",
             "free",
@@ -86993,7 +86993,7 @@
         {
           "kind": "def",
           "name": "acceptedCovertChannel_tlbResidency",
-          "line": 264,
+          "line": 276,
           "called": [
             "CovertChannel",
             "onCore_perCoreTlb",
@@ -87003,7 +87003,7 @@
         {
           "kind": "def",
           "name": "acceptedCovertChannel_icacheResidency",
-          "line": 280,
+          "line": 292,
           "called": [
             "CovertChannel",
             "onCore_perCoreICache",
@@ -87013,7 +87013,7 @@
         {
           "kind": "def",
           "name": "acceptedCovertChannelsPerCore",
-          "line": 297,
+          "line": 309,
           "called": [
             "CovertChannel",
             "acceptedCovertChannel_icacheResidency",
@@ -87028,7 +87028,7 @@
         {
           "kind": "theorem",
           "name": "acceptedCovertChannel_perCoreCount",
-          "line": 314,
+          "line": 326,
           "called": [
             "length"
           ]
@@ -87036,13 +87036,13 @@
         {
           "kind": "theorem",
           "name": "acceptedCovertChannel_perCore_ids",
-          "line": 320,
+          "line": 332,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "acceptedCovertChannel_modelVisible_count",
-          "line": 328,
+          "line": 340,
           "called": [
             "filter",
             "length"
@@ -87051,7 +87051,7 @@
         {
           "kind": "theorem",
           "name": "acceptedCovertChannel_perCoreInstance_count",
-          "line": 334,
+          "line": 346,
           "called": [
             "filter",
             "length"
@@ -87060,13 +87060,13 @@
         {
           "kind": "theorem",
           "name": "acceptedCovertChannel_hardwareChannels_are_not_modelVisible",
-          "line": 346,
+          "line": 358,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "acceptedCovertChannel_smp_additions",
-          "line": 360,
+          "line": 372,
           "called": [
             "filter",
             "length"
@@ -87075,7 +87075,7 @@
         {
           "kind": "theorem",
           "name": "acceptedCovertChannel_lockContention_is_timing_only",
-          "line": 371,
+          "line": 383,
           "called": [
             "CoreId",
             "IfObserver",
@@ -87091,7 +87091,7 @@
         {
           "kind": "theorem",
           "name": "acceptedCovertChannel_residency_excluded_from_view",
-          "line": 386,
+          "line": 398,
           "called": [
             "CoreId",
             "ICacheState",
@@ -87108,7 +87108,7 @@
         {
           "kind": "theorem",
           "name": "acceptedCovertChannel_scheduling_is_model_visible",
-          "line": 401,
+          "line": 413,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -87122,7 +87122,7 @@
         {
           "kind": "def",
           "name": "endpointPolicyRestricted_perCore",
-          "line": 427,
+          "line": 439,
           "called": [
             "CoreId",
             "DomainFlowPolicy",
@@ -87133,7 +87133,7 @@
         {
           "kind": "theorem",
           "name": "endpointPolicyRestricted_perCore_iff",
-          "line": 431,
+          "line": 443,
           "called": [
             "DomainFlowPolicy",
             "EndpointFlowPolicy",
@@ -87145,7 +87145,7 @@
         {
           "kind": "theorem",
           "name": "endpointPolicyRestricted_perCore_at",
-          "line": 437,
+          "line": 449,
           "called": [
             "CoreId",
             "DomainFlowPolicy",
@@ -87157,7 +87157,7 @@
         {
           "kind": "theorem",
           "name": "endpointPolicyRestricted_perCore_no_overrides",
-          "line": 445,
+          "line": 457,
           "called": [
             "DomainFlowPolicy",
             "endpointPolicyRestricted_no_overrides",
@@ -87168,7 +87168,7 @@
         {
           "kind": "def",
           "name": "endpointFlowCheckAtCore",
-          "line": 458,
+          "line": 470,
           "called": [
             "CoreId",
             "EndpointFlowPolicy",
@@ -87185,7 +87185,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheckAtCore_depends_only_on_subject",
-          "line": 475,
+          "line": 487,
           "called": [
             "CoreId",
             "EndpointFlowPolicy",
@@ -87201,7 +87201,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheckAtCore_stable_under_confined_transition",
-          "line": 492,
+          "line": 504,
           "called": [
             "CoreId",
             "EndpointFlowPolicy",
@@ -87219,7 +87219,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheckAtCore_is_not_constant",
-          "line": 517,
+          "line": 529,
           "called": [
             "CoreId",
             "EndpointFlowPolicy",
@@ -87242,7 +87242,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheck_restricted_subset_perCore",
-          "line": 539,
+          "line": 551,
           "called": [
             "CoreId",
             "EndpointFlowPolicy",
@@ -87260,7 +87260,7 @@
         {
           "kind": "theorem",
           "name": "endpointPolicyRestricted_perCore_is_necessary",
-          "line": 553,
+          "line": 565,
           "called": [
             "EndpointFlowPolicy",
             "GenericLabelingContext",
@@ -87276,7 +87276,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_preserves_projectionOnCore",
-          "line": 630,
+          "line": 642,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -87296,7 +87296,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_success_perCore_NI",
-          "line": 645,
+          "line": 657,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -87320,7 +87320,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_error_perCore_NI",
-          "line": 663,
+          "line": 675,
           "called": [
             "IfObserver",
             "KernelError",
@@ -87338,7 +87338,7 @@
         {
           "kind": "theorem",
           "name": "nonInterference_release_of_perCore",
-          "line": 677,
+          "line": 689,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -87352,7 +87352,7 @@
         {
           "kind": "theorem",
           "name": "nonInterference_release_of_perCore_observer",
-          "line": 684,
+          "line": 696,
           "called": [
             "IfObserver.ofLabel",
             "Kernel",
@@ -93298,7 +93298,7 @@
         {
           "kind": "theorem",
           "name": "endpointCallLive_confinedToCores",
-          "line": 902,
+          "line": 917,
           "called": [
             "CoreId",
             "ObjId",
@@ -93319,7 +93319,7 @@
         {
           "kind": "theorem",
           "name": "notificationSignalOnCore_crossCoreNonInterference",
-          "line": 932,
+          "line": 947,
           "called": [
             "Badge",
             "CoreId",
@@ -93342,7 +93342,7 @@
         {
           "kind": "theorem",
           "name": "notificationWaitOnCore_crossCoreNonInterference",
-          "line": 949,
+          "line": 964,
           "called": [
             "CoreId",
             "IfObserver",
@@ -93362,7 +93362,7 @@
         {
           "kind": "theorem",
           "name": "endpointCallOnCore_crossCoreNonInterference",
-          "line": 964,
+          "line": 979,
           "called": [
             "CoreId",
             "IfObserver",
@@ -93385,7 +93385,7 @@
         {
           "kind": "theorem",
           "name": "endpointReplyOnCore_crossCoreNonInterference",
-          "line": 980,
+          "line": 995,
           "called": [
             "CoreId",
             "IfObserver",
@@ -93406,7 +93406,7 @@
         {
           "kind": "theorem",
           "name": "descheduleThread_crossCoreNonInterference",
-          "line": 995,
+          "line": 1010,
           "called": [
             "CoreId",
             "IfObserver",
@@ -93425,7 +93425,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlockingOnCore_crossCoreNonInterference",
-          "line": 1007,
+          "line": 1022,
           "called": [
             "CoreId",
             "IfObserver",
@@ -93445,7 +93445,7 @@
         {
           "kind": "theorem",
           "name": "wakeThread_crossCoreNonInterference_of_visible_thread",
-          "line": 1033,
+          "line": 1048,
           "called": [
             "CoreId",
             "IfObserver",
@@ -93464,7 +93464,7 @@
         {
           "kind": "inductive",
           "name": "CrossCoreTransition",
-          "line": 1054,
+          "line": 1069,
           "called": [
             "cancelIpcBlocking",
             "endpointCall",
@@ -93476,7 +93476,7 @@
         {
           "kind": "def",
           "name": "CrossCoreTransition.all",
-          "line": 1071,
+          "line": 1086,
           "called": [
             "CrossCoreTransition",
             "cancelIpcBlocking",
@@ -93489,7 +93489,7 @@
         {
           "kind": "def",
           "name": "crossCoreNiTheorem",
-          "line": 1078,
+          "line": 1093,
           "called": [
             "CrossCoreTransition",
             "cancelIpcBlocking",
@@ -93509,7 +93509,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreNiTheorem_count",
-          "line": 1087,
+          "line": 1102,
           "called": [
             "length"
           ]
@@ -93517,7 +93517,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreNiTheorem_injective",
-          "line": 1089,
+          "line": 1104,
           "called": [
             "CrossCoreTransition",
             "crossCoreNiTheorem"
@@ -93526,7 +93526,7 @@
         {
           "kind": "def",
           "name": "crossCoreTransitionWritesRemote",
-          "line": 1103,
+          "line": 1118,
           "called": [
             "CrossCoreTransition",
             "cancelIpcBlocking",
@@ -93539,7 +93539,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreTransitionWritesRemote_count",
-          "line": 1112,
+          "line": 1127,
           "called": [
             "Kernel",
             "crossCoreTransitionWritesRemote",

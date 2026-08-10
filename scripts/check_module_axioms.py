@@ -20,8 +20,16 @@ Usage:
     scripts/check_module_axioms.py <Module.Name> [<Module.Name> ...]
     scripts/check_module_axioms.py --all-smp-information-flow
 
+`private` declarations cannot be named from another file, so they are probed by
+re-elaborating their own module's source with the probes appended.  They are not
+skipped: an earlier form of this script excluded them on the strength of an
+"unused-declaration lint" that does not exist in this repository (PR #861
+review), which made a private declaration with no public consumer an exercised
+fail-open path.
+
 Exit status is non-zero if any declaration depends on a non-standard axiom, if a
-module is absent from the map, or if the map is stale with respect to the tree.
+module is absent from the map, if the map presents a declaration kind neither
+set classifies, or if the map is stale with respect to the tree.
 """
 
 from __future__ import annotations
@@ -69,14 +77,19 @@ SMP_INFORMATION_FLOW = [
 def load_modules(names: list[str]) -> tuple[dict[str, list[str]], list[str]]:
     """Return (probeable declarations per module, private declarations skipped).
 
-    `#print axioms` cannot name a `private` declaration from another file, so
-    those are separated out rather than crashing the probe.  They are not a hole:
-    a private helper is by construction used only inside its own module, and
-    `#print axioms` on a public consumer reports the union of everything that
-    consumer's proof term touches -- so a private helper reaching for a
-    non-standard axiom surfaces at whichever public theorem uses it.  A private
-    helper used by *nothing* is dead code, which the unused-declaration lint
-    covers.  They are printed either way, so the skip is never silent.
+    `#print axioms` cannot name a `private` declaration from *another* file, so
+    they are collected separately and probed by `probe_private` below, which
+    elaborates the module's own source with the probes appended -- inside the
+    defining module the names are in scope.
+
+    They are NOT waved through.  An earlier form of this script skipped them,
+    arguing that a public consumer's `#print axioms` would surface any bad axiom
+    a private helper reached and that an unused private helper is dead code
+    "which the unused-declaration lint covers".  PR #861 review established that
+    no such lint exists in this repository, so that was a false justification
+    for an exercised fail-open path: a private declaration with no public
+    consumer would have been dropped from both the probe and the total while the
+    gate still reported everything clean.
     """
     with open(MAP) as fh:
         data = json.load(fh)
@@ -107,6 +120,45 @@ def load_modules(names: list[str]) -> tuple[dict[str, list[str]], list[str]]:
                 probeable.append(d["name"])
         out[name] = probeable
     return out, skipped
+
+
+def probe_private(names: list[str]) -> tuple[str, int]:
+    """Probe `private` declarations by elaborating each defining module's own
+    source with `#print axioms` appended.
+
+    Costs a re-elaboration of the module, which is why only modules that
+    actually declare private terms are re-run.  It is the only way to name a
+    private declaration: Lean mangles the real name, and `open private` is a
+    Mathlib command this toolchain does not carry.
+    """
+    with open(MAP) as fh:
+        data = json.load(fh)
+    by_name = {m["module"]: m for m in data["modules"]}
+
+    by_module: dict[str, list[str]] = {}
+    for qualified in names:
+        mod, _, decl = qualified.rpartition(".")
+        by_module.setdefault(mod, []).append(decl)
+
+    combined, total = "", 0
+    for mod, decls in by_module.items():
+        src_path = os.path.join(REPO, by_name[mod]["path"])
+        body = open(src_path).read()
+        body += ("\n\n-- axiom probe (appended by scripts/check_module_axioms.py)\n"
+                 "open SeLe4n SeLe4n.Model SeLe4n.Kernel\n")
+        for d in decls:
+            body += f"#print axioms {d}\n"
+            total += 1
+        with tempfile.NamedTemporaryFile("w", suffix=".lean", delete=False) as fh:
+            fh.write(body)
+            path = fh.name
+        try:
+            proc = subprocess.run(["lake", "env", "lean", path],
+                                  cwd=REPO, capture_output=True, text=True)
+        finally:
+            os.unlink(path)
+        combined += proc.stdout + proc.stderr
+    return combined, total
 
 
 def build_probe(modules: dict[str, list[str]]) -> tuple[str, int]:
@@ -195,17 +247,27 @@ def main() -> int:
             print("  " + line)
         return 1
 
-    dep, free, offenders = parse(combined)
+    priv_out, priv_total = ("", 0)
+    if skipped:
+        priv_out, priv_total = probe_private(skipped)
+        priv_errors = [ln for ln in priv_out.splitlines() if diag.match(ln)]
+        if priv_errors:
+            print("FAIL: the private-declaration probe did not elaborate.")
+            for line in priv_errors:
+                print("  " + line)
+            return 1
+
+    dep, free, offenders = parse(combined + priv_out)
     checked = dep + free
+    total += priv_total
 
     for name, decls in modules.items():
         print(f"  {name}: {len(decls)} term-level declarations")
     if skipped:
-        print(f"  skipped {len(skipped)} `private` declaration(s), unreachable by "
-              f"`#print axioms` from another file (covered transitively by their "
-              f"public consumers):")
-        for s in skipped:
-            print("    " + s)
+        print(f"  probed {len(skipped)} `private` declaration(s) inside their "
+              f"defining module (not reachable by name from another file):")
+        for p in skipped:
+            print("    " + p)
 
     if checked != total:
         print(f"FAIL: asked for {total} declarations, Lean reported {checked}.")

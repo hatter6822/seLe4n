@@ -890,15 +890,30 @@ theorem pipChainWriteSet_subset_live (st : SystemState) (endpointId : SeLe4n.Obj
           chainState.objectIndex.length :=
   fun hm => h (List.mem_append.mpr (Or.inr hm))
 
-/-- SM8.B.2: **the live `.call` composition, bounded.**
+/-- SM8.B.2: **the composition rule for the live `.call` legs.**
 
-Stated in the path-reduction style SM6.A uses for the same pipeline: the caller
-names the intermediate states, and this composes the two legs' confinement into
-the union.  `hTrans` is whatever the WithCaps transition contributes (discharged
-by `endpointCallOnCore_confinedToCores` plus the capability-transfer frame),
-`hDonation` is the per-core-silent donation, and the chain leg is
-`propagatePipChainCrossCore_confinedToCores` at the state the walk actually runs
-at — which is the point of taking `chainState` rather than guessing it. -/
+Read the signature literally: `stTrans` and `stDon` are *arbitrary* states and
+`hTrans` / `hDonation` are *hypotheses about them*.  This is a composition
+lemma, and on its own it does **not** establish a bound on
+`endpointCallCrossCoreDispatch` — nothing here mentions that function, its
+caller, message or rights, and no reduction theorem in this repository supplies
+these premises from an actual dispatch result (PR #861 review, second round;
+the first round's version of this was worse — it guessed the chain from the
+pre-state and the caller, which is the wrong chain entirely).
+
+What is genuinely proven, and all that is:
+
+* each leg's confinement, at the state that leg actually runs at
+  (`endpointCallOnCore_confinedToCores`, `applyCallDonation_confinedToCores`,
+  `propagatePipChainCrossCore_confinedToCores`); and
+* that those compose into the union, which is this theorem.
+
+**What is missing to reach the live arm**, and is registered in the plan rather
+than implied here: a confinement lemma for `endpointCallWithCapsOnCore` (the
+live dispatch calls the WithCaps form, not `endpointCallOnCore`), and a
+reduction of `endpointCallCrossCoreDispatch` to its real intermediate states so
+`stTrans` / `stDon` / `chainStart` can be instantiated at the resolved receiver
+and the post-donation state instead of supplied by hand. -/
 theorem endpointCallLive_confinedToCores (st stTrans stDon : SystemState)
     (endpointId : SeLe4n.ObjId) (executingCore : CoreId) (chainStart : SeLe4n.ThreadId)
     (hTrans : observableSlotsConfinedToCores st stTrans

@@ -49,9 +49,9 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.33.9` (`lakefile.toml`) |
+| **Package version** | `0.33.10` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 245,981 across 270 Lean files |
+| **Production LoC** | 246,008 across 270 Lean files |
 | **Test LoC** | 51,041 across 68 Lean test suites |
 | **Proved declarations** | 8,175 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |

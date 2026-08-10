@@ -430,6 +430,40 @@ SM8.B; the lock-contention channel CC-5 is SM8.B.8; the
 | SM8.B.13 | `crossCoreLeakage_bounded` | Theorem | L | LANDED |
 | SM8.B.14 | 15+ NI scenarios (tests) | L | LANDED |
 
+**PR #861 review round 2 (v0.33.10).**  Four findings on the fix commit, all
+valid.  Two closed outright, two closed as *claims* with the underlying work
+registered rather than implied:
+
+1. **The axiom sweep skipped `private` declarations on a false justification.**
+   It argued a public consumer's probe would surface any bad axiom and that an
+   unused private helper is dead code "which the unused-declaration lint
+   covers" — no such lint exists in this repository, so a private declaration
+   with no public consumer was dropped from both the probe and the total while
+   the gate reported everything clean.  **Closed**: private declarations are now
+   probed by re-elaborating their defining module's source with the probes
+   appended (`open private` is a Mathlib command this toolchain lacks, and Lean
+   mangles the real name).  365 declarations, up from 363.
+2. **The landed SM8.B.11 record still cited `endpointFlowCheck_state_independent`**
+   — removed in the same PR, with a Tier-3 anchor forbidding its return — and
+   repeated its false claim that the gate "reads no per-core state".  It reads
+   `scheduler.currentOnCore c`.  **Closed**: the record now cites
+   `endpointFlowCheckAtCore_depends_only_on_subject` and
+   `…_stable_under_confined_transition`.
+3. **`endpointCallLive_confinedToCores` does not reach the live dispatch.**
+   Correct: `stTrans` / `stDon` are arbitrary states and the theorem never
+   mentions `endpointCallCrossCoreDispatch`.  It is a *composition lemma*, and
+   its docstring now says exactly that.  **Registered, not implied**: reaching
+   the live arm needs a confinement lemma for `endpointCallWithCapsOnCore` (the
+   live dispatch calls the WithCaps form) plus a reduction of the dispatch to
+   its real intermediate states.  That is a coherent slice of its own.
+4. **`enforcementBoundaryPerCoreComplete` audits the single-core table.**
+   `syscallIdToEnforcementName` maps `.call` to `endpointCallChecked`, while the
+   live SMP arm is `endpointCallCrossCoreDispatchChecked`.  The witness shows the
+   per-core list still covers every syscall; it does not audit the cross-core
+   wrappers.  **Scope recorded** at the theorem; building the mapping from the
+   live wrapper names belongs with SM8.E.3, which already owns the boundary
+   reconciliation.
+
 **PR #861 review cut (v0.33.9).**  Seven automated-review findings, all
 verified against the code and all valid.  The load-bearing one:
 `endpointCallLiveWriteSet` walked the *caller* at the *pre-state*, while the live
@@ -658,10 +692,16 @@ golden trace is byte-identical.
   `onCore_perCoreICache` for CC-6 / CC-7, `onCore_schedulingTransparency` for
   CC-1 — so an entry cannot be reclassified without the theorem moving.
 * **SM8.B.11** — `endpointPolicyRestricted_perCore` in the SM4.D `…_smp` idiom,
-  with `_iff` recording that the core coordinate cannot change the decision and
-  `endpointFlowCheck_state_independent` the fact that makes it true: the
-  enforcement gate reads the labeling context and the two domains and **no
-  per-core state**, so a transition running elsewhere can never flip it.
+  with `_iff` recording that the core coordinate cannot change the decision.
+  (The v0.33.6 cut named `endpointFlowCheck_state_independent` here as "the fact
+  that makes it true"; that theorem was a tautology and has been **removed**, with
+  a Tier-3 negative anchor forbidding its return.  The substantive statements are
+  `endpointFlowCheckAtCore_depends_only_on_subject` — the resolved gate depends on
+  the state and the core *only* through which thread is the subject — and
+  `endpointFlowCheckAtCore_stable_under_confined_transition`, which is the SMP
+  content: a transition confined to other cores cannot flip core `c`'s gate.  Note
+  the resolved gate *does* read `scheduler.currentOnCore c`, so "reads no per-core
+  state" was itself wrong.)
   `endpointPolicyRestricted_perCore_is_necessary` is the non-vacuity witness —
   an all-permitting override over an all-denying policy really is a bypass.
 * **SM8.B.12** — the bridge to the release-grade witnesses, both ways: *up*,
