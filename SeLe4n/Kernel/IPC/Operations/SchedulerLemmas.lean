@@ -358,6 +358,26 @@ theorem storeTcbReceiveComplete_scheduler_eq
       have hEq := Except.ok.inj hStep; subst hEq
       exact storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore
 
+/-- WS-SM SM8.B.2: `storeTcbReceiveComplete` does not modify the machine, so no
+core's banked `RegisterFile` moves.  Paired with the scheduler frame above, this
+is what makes the bound-delivery badge store per-core silent. -/
+theorem storeTcbReceiveComplete_machine_eq
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (msg : Option IpcMessage)
+    (hStep : storeTcbReceiveComplete st tid msg = .ok st') :
+    st'.machine = st.machine := by
+  unfold storeTcbReceiveComplete at hStep
+  cases hTcb : lookupTcb st tid with
+  | none => simp [hTcb] at hStep
+  | some tcb =>
+    simp only [hTcb] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore] at hStep
+      have hEq := Except.ok.inj hStep; subst hEq
+      exact storeObject_machine_eq st pair.2 tid.toObjId _ hStore
+
 /-- WS-F1: `storeTcbIpcStateAndMessage` preserves endpoint objects. -/
 theorem storeTcbIpcStateAndMessage_preserves_endpoint
     (st st' : SystemState) (tid : SeLe4n.ThreadId)

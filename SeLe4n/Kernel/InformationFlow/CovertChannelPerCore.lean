@@ -13,6 +13,7 @@
 
 import SeLe4n.Kernel.InformationFlow.NonInterferencePerCore
 import SeLe4n.Kernel.API
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreDomain
 
 /-!
 # WS-SM SM8.B — the per-core enforcement boundary and the SMP covert channels
@@ -71,21 +72,71 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId)
 -- into `enforcementBoundary` itself, and doing it here would move a count that
 -- SM8.E has still to reconcile.
 
-/-- SM8.B.6: the SMP enforcement boundary — the canonical classification plus
-the two-phase-locking bracket the per-object lock discipline introduces. -/
-def enforcementBoundaryPerCore : List EnforcementClass :=
-  enforcementBoundaryExtended ++ [.capabilityOnly "withLockSet"]
+/-- SM8.B.6: **the operations the live SMP dispatch actually reaches**, for the
+syscalls whose arm SM6 re-routed through a cross-core wrapper.
 
-/-- SM8.B.6: the per-core boundary has 39 entries — the live canonical 38 plus
-the 2PL bracket.  Re-anchored at the SM8.A cut; `enforcementBoundaryExtended_count`
-is the authority for the base figure. -/
-theorem enforcementBoundaryPerCore_count : enforcementBoundaryPerCore.length = 39 := by rfl
+Read off `API.dispatchWithCapChecked` / `dispatchCapabilityOnly` arm by arm, not
+from the plan: `.call` runs `endpointCallCrossCoreDispatchChecked`, `.reply` runs
+`endpointReplyCrossCoreDispatchChecked`, `.replyRecv` runs `replyRecvBody` (the
+two-leg composition), `.receive` runs the per-core `endpointReceiveDualOnCore`,
+the two notification arms run their bound / wait cross-core dispatches, and
+`.tcbSuspend` runs `suspendThreadOnCore`.
+
+Each keeps the class its single-core counterpart carries — a cross-core wrapper
+re-routes *where* a transition lands, never *what authority* it demands — and
+`enforcementBoundaryPerCore_crossCore_classes_match` is the check on that.
+
+**Read `.policyGated` as a property of the arm, not of the named function.**
+Two of these entries name an operation that performs no flow check itself:
+`.receive` runs the *unchecked* `endpointReceiveDualOnCore` because its enclosing
+arm has already rejected a denied `endpoint→receiver` flow with `.flowDenied`
+before reaching it, and `replyRecvBody` likewise runs under the arm's
+`securityFlowsTo` guard on `replier→prevCaller`.  That is the same convention the
+canonical boundary uses (`cspaceDelete` names `cspaceDeleteSlot`, not a
+`…Checked` wrapper): the entry names the operation reached, the class records how
+authority is derived on the path that reaches it.  Stated here because
+`.policyGated "endpointReceiveDualOnCore"` would otherwise read as a claim that
+the function gates, which it does not. -/
+def crossCoreEnforcementEntries : List EnforcementClass :=
+  [ .policyGated "endpointCallCrossCoreDispatchChecked"
+  , .policyGated "endpointReplyCrossCoreDispatchChecked"
+  , .policyGated "replyRecvBody"
+  , .policyGated "endpointReceiveDualOnCore"
+  , .policyGated "notificationSignalBoundCrossCoreDispatchChecked"
+  , .policyGated "notificationWaitCrossCoreDispatchChecked"
+  , .capabilityOnly "suspendThreadOnCore" ]
+
+/-- SM8.B.6: the SMP enforcement boundary — the canonical classification, the
+two-phase-locking bracket the per-object lock discipline introduces, and the
+seven live cross-core wrappers.
+
+The canonical entries are **kept**, not replaced: the boot-pinned
+`syscallDispatchInner` still reaches the single-core wrappers, so both surfaces
+are live and both must be classified. -/
+def enforcementBoundaryPerCore : List EnforcementClass :=
+  enforcementBoundaryExtended ++ [.capabilityOnly "withLockSet"] ++ crossCoreEnforcementEntries
+
+/-- SM8.B.6: the per-core boundary has 46 entries — the live canonical 38, the
+2PL bracket, and the seven cross-core wrappers.  Re-anchored at the SM8.A cut and
+again in the fourth review round; `enforcementBoundaryExtended_count` is the
+authority for the base figure. -/
+theorem enforcementBoundaryPerCore_count : enforcementBoundaryPerCore.length = 46 := by rfl
 
 /-- SM8.B.7 (completeness, part 1): the per-core boundary **extends** the
-canonical one — it is the canonical list followed by the new entry, so no
-existing classification was dropped or reclassified in the lift. -/
+canonical one — it is the canonical list followed by the 2PL bracket and the
+seven live cross-core wrappers, so no existing classification was dropped or
+reclassified in the lift.  Additive by construction: `List.IsPrefix` is the
+statement that the canonical list survives unmodified as a prefix. -/
 theorem enforcementBoundaryPerCore_extends_canonical :
-    enforcementBoundaryPerCore = enforcementBoundary ++ [.capabilityOnly "withLockSet"] := rfl
+    enforcementBoundaryPerCore
+      = enforcementBoundary ++ ([.capabilityOnly "withLockSet"] ++ crossCoreEnforcementEntries) :=
+  rfl
+
+/-- SM8.B.7: and the canonical list is a genuine prefix, so nothing in it moved
+position either — the form a reader can use without unfolding the append. -/
+theorem enforcementBoundary_prefix_of_perCore :
+    enforcementBoundary <+: enforcementBoundaryPerCore :=
+  ⟨[.capabilityOnly "withLockSet"] ++ crossCoreEnforcementEntries, rfl⟩
 
 /-- SM8.B.7 (completeness, part 2): every `SyscallId` still maps to an entry
 present in the per-core boundary.
@@ -96,17 +147,15 @@ rather than appends is caught.  Decided rather than argued, and with `decide`
 rather than `native_decide` — the Lean runtime evaluator stays out of the
 trusted computing base (AF4-A).
 
-**Scope, stated because the name overpromises** (PR #861 review): the entry
-names come from `syscallIdToEnforcementName`, which maps `.call` to the
-*single-core* `endpointCallChecked`.  Under SMP the live arm is
-`endpointCallCrossCoreDispatchChecked`, so this witness establishes that the
-per-core list still covers every syscall — it does **not** audit that the
-cross-core wrappers the live dispatch actually reaches are classified.  Building
-the mapping from the live cross-core wrapper names is SM8.E.3's job, which is
-also where the entry gets promoted into the canonical boundary; doing it here
-would move a count SM8.E has still to reconcile.  Recorded rather than implied,
-because a completeness theorem that quietly checks the wrong table is worse than
-no theorem. -/
+This is the **single-core** half of the audit: it re-checks the canonical
+mapping against the extended list, so a future edit that *replaces* rather than
+appends is caught.  The SMP half — that the wrappers the live cross-core
+dispatch reaches are classified — is
+`enforcementBoundaryPerCore_is_complete_crossCore` below.  Both are needed: the
+boot-pinned `syscallDispatchInner` still reaches the single-core wrappers.
+
+Decided rather than argued, and with `decide` rather than `native_decide` — the
+Lean runtime evaluator stays out of the trusted computing base (AF4-A). -/
 def enforcementBoundaryPerCoreComplete : Bool :=
   SyscallId.all.all (fun sid =>
     let name := syscallIdToEnforcementName sid
@@ -116,6 +165,71 @@ def enforcementBoundaryPerCoreComplete : Bool :=
 
 theorem enforcementBoundaryPerCore_is_complete : enforcementBoundaryPerCoreComplete = true := by
   decide
+
+/-- SM8.B.6: **the operation each syscall reaches under SMP.**
+
+Differs from `syscallIdToEnforcementName` at exactly the seven arms SM6
+re-routed; every other syscall reaches the same operation it did before SMP, so
+it falls through to the canonical mapping rather than being restated (a second
+full copy would be a second thing to keep in sync). -/
+def syscallIdToEnforcementNamePerCore : SyscallId → String
+  | .call                => "endpointCallCrossCoreDispatchChecked"
+  | .reply               => "endpointReplyCrossCoreDispatchChecked"
+  | .replyRecv           => "replyRecvBody"
+  | .receive             => "endpointReceiveDualOnCore"
+  | .notificationSignal  => "notificationSignalBoundCrossCoreDispatchChecked"
+  | .notificationWait    => "notificationWaitCrossCoreDispatchChecked"
+  | .tcbSuspend          => "suspendThreadOnCore"
+  | sid                  => syscallIdToEnforcementName sid
+
+/-- SM8.B.7 (completeness, part 2b — **the SMP half**): every `SyscallId` maps,
+*through the per-core mapping*, to an entry present in the per-core boundary.
+
+This is the theorem the fourth review round asked for.  Its predecessor audited
+the canonical table, whose `.call` entry is the single-core `endpointCallChecked`
+— so it could return `true` with no entry corresponding to the operation the
+live SMP dispatch actually reaches.  This one is built from the live cross-core
+wrapper names, so that hole is closed. -/
+def enforcementBoundaryPerCoreCompleteCrossCore : Bool :=
+  SyscallId.all.all (fun sid =>
+    let name := syscallIdToEnforcementNamePerCore sid
+    enforcementBoundaryPerCore.any (fun ec =>
+      match ec with
+      | .policyGated n | .capabilityOnly n | .readOnly n => n == name))
+
+theorem enforcementBoundaryPerCore_is_complete_crossCore :
+    enforcementBoundaryPerCoreCompleteCrossCore = true := by decide
+
+/-- SM8.B.7: the seven re-routed arms are genuinely re-routed — the per-core
+mapping differs from the canonical one at exactly those syscalls, and nowhere
+else.  A syscall silently added to (or dropped from) the cross-core surface
+moves this count. -/
+theorem syscallIdToEnforcementNamePerCore_differs_at_seven :
+    (SyscallId.all.filter (fun sid =>
+      decide (syscallIdToEnforcementNamePerCore sid ≠ syscallIdToEnforcementName sid))).length
+      = 7 := by decide
+
+/-- SM8.B.7: **a cross-core wrapper carries the same enforcement class as the
+single-core operation it replaced.**  Re-routing a transition to another core
+changes where it lands, not what authority it demands, and this is where that
+claim is checked rather than asserted: for each re-routed syscall, the class of
+its per-core entry equals the class of its canonical one. -/
+theorem enforcementBoundaryPerCore_crossCore_classes_match :
+    ([SyscallId.call, .reply, .replyRecv, .receive, .notificationSignal,
+      .notificationWait, .tcbSuspend].all (fun sid =>
+        let canonical := enforcementBoundary.find? (fun ec =>
+          match ec with
+          | .policyGated n | .capabilityOnly n | .readOnly n =>
+              n == syscallIdToEnforcementName sid)
+        let perCore := enforcementBoundaryPerCore.find? (fun ec =>
+          match ec with
+          | .policyGated n | .capabilityOnly n | .readOnly n =>
+              n == syscallIdToEnforcementNamePerCore sid)
+        match canonical, perCore with
+        | some (.policyGated _), some (.policyGated _) => true
+        | some (.capabilityOnly _), some (.capabilityOnly _) => true
+        | some (.readOnly _), some (.readOnly _) => true
+        | _, _ => false)) = true := by decide
 
 /-- SM8.B.7 (completeness, part 3): the entry SMP adds is genuinely new — the
 canonical boundary does not already classify `withLockSet`, so the count really
@@ -187,8 +301,11 @@ def acceptedCovertChannel_scheduling_perCore : CovertChannel :=
        unfiltered to every observer; under SMP each core carries its own."
     mitigation :=
       "Temporal partitioning: each domain gets a guaranteed quantum regardless \
-       of other domains' behaviour, bounding the channel at log2(|domainSchedule|) \
-       bits per domain switch (schedulingCovertChannel_bounded_width)."
+       of other domains' behaviour. No capacity bound is claimed: only the \
+       schedule-index component has a bounded alphabet \
+       (schedulingChannelIndex_alphabet_bounded), and domainTimeRemaining is an \
+       unrestricted Nat carried unfiltered \
+       (schedulingChannel_not_bounded_by_scheduleLength)."
     severity := .low
     modelVisible := true
     perCoreInstance := true }
@@ -415,6 +532,169 @@ theorem acceptedCovertChannel_scheduling_is_model_visible (ctx : LabelingContext
     acceptedCovertChannel_scheduling_perCore.modelVisible = true ∧
       (ObservableState.onCore ctx c L s).activeDomain = s.scheduler.activeDomainOnCore c :=
   ⟨rfl, (onCore_schedulingTransparency ctx c L s).1⟩
+
+/-- SM8.B.8 (the CC-2 witness): the machine timer is registered
+`modelVisible := false`, and `onCore_machineTimer` is why — advancing the
+counter moves no per-core observer's view at all. -/
+theorem acceptedCovertChannel_machineTimer_excluded_from_view (ctx : LabelingContext)
+    (L : SecurityLabel) (s : SystemState) (c : CoreId) (t : Nat) :
+    acceptedCovertChannel_machineTimer.modelVisible = false ∧
+      ObservableState.onCore ctx c L { s with machine := { s.machine with timer := t } }
+        = ObservableState.onCore ctx c L s :=
+  ⟨rfl, onCore_machineTimer ctx L s c t⟩
+
+/-- SM8.B.8 (the CC-3 witness): TCB metadata is registered `modelVisible := true`,
+and `onCore_objects` is why — the observer's view *is* the label-filtered object
+store, so an observable thread's TCB (priority, IPC state) is carried through it.
+
+Note what this does **not** say: that every TCB is visible.  The filter is real,
+and CC-3 is about the metadata of threads the observer can already see. -/
+theorem acceptedCovertChannel_tcbMetadata_is_model_visible (ctx : LabelingContext)
+    (c : CoreId) (L : SecurityLabel) (s : SystemState) :
+    acceptedCovertChannel_tcbMetadata.modelVisible = true ∧
+      (ObservableState.onCore ctx c L s).objects
+        = projectObjects ctx (IfObserver.ofLabel L) s :=
+  ⟨rfl, onCore_objects ctx c L s⟩
+
+/-- SM8.B.8 (the CC-4 witness): object-store metadata is registered
+`modelVisible := true`, and `onCore_objectIndex` is why — the label-filtered
+object index is a component of the observer's view, so the observable object
+population is carried by the model rather than merely inferable from hardware. -/
+theorem acceptedCovertChannel_objectStoreMetadata_is_model_visible (ctx : LabelingContext)
+    (c : CoreId) (L : SecurityLabel) (s : SystemState) :
+    acceptedCovertChannel_objectStoreMetadata.modelVisible = true ∧
+      (ObservableState.onCore ctx c L s).objectIndex
+        = projectObjectIndex ctx (IfObserver.ofLabel L) s :=
+  ⟨rfl, onCore_objectIndex ctx c L s⟩
+
+-- ----------------------------------------------------------------------------
+-- SM8.B.9 — what is actually bounded about CC-1, and what is not
+-- ----------------------------------------------------------------------------
+--
+-- The fourth review round found this entry's mitigation citing
+-- `schedulingCovertChannel_bounded_width` for a `log2(|domainSchedule|)`
+-- bits-per-switch figure.  That theorem proves three definitional equalities
+-- (the projections are the raw scheduler reads) and contains no cardinality,
+-- frequency or capacity argument -- its own docstring's "bounded to exactly 4
+-- observable values" counts *components*, not values.  The two theorems below
+-- replace the unsupported figure with what is true: one component has a bounded
+-- alphabet, and the others do not, so schedule length alone bounds nothing.
+
+/-- SM8.B.9: **the one genuinely bounded component of CC-1.**  Under the
+scheduler's own index-bounds invariant, the observed `domainScheduleIndex` on
+any core is either reading an empty schedule (single-domain mode, one value) or
+lies strictly below `|domainSchedule|`.
+
+So the *index* component's alphabet has at most `max 1 |domainSchedule|`
+elements, and that -- not the whole channel -- is what a
+`log2(|domainSchedule|)` figure can describe. -/
+theorem schedulingChannelIndex_alphabet_bounded (ctx : LabelingContext) (c : CoreId)
+    (L : SecurityLabel) (s : SystemState)
+    (hBounds : domainScheduleIndexInBoundsOnCore s c) :
+    s.scheduler.domainSchedule = [] ∨
+      (ObservableState.onCore ctx c L s).domainScheduleIndex
+        < (ObservableState.onCore ctx c L s).domainSchedule.length := by
+  rcases hBounds with hEmpty | hLt
+  · exact Or.inl hEmpty
+  · exact Or.inr (by
+      rw [(onCore_schedulingTransparency ctx c L s).2.2.2,
+        (onCore_schedulingTransparency ctx c L s).2.2.1]
+      exact hLt)
+
+/-- SM8.B.9 (**the load-bearing negative**): schedule length does *not* bound
+CC-1.  `domainTimeRemaining` is an unrestricted `Nat` carried through the
+projection unfiltered, so for any two values -- however far apart, and with the
+schedule and the index held fixed -- the observer distinguishes the two states.
+
+This is why the entry's mitigation no longer claims a bits-per-switch figure:
+bounding the channel would need a range hypothesis on the quantum and a
+switch-frequency hypothesis, neither of which the model carries.  Temporal
+partitioning is still the right mitigation; it is just not a proven capacity
+bound. -/
+theorem schedulingChannel_not_bounded_by_scheduleLength (ctx : LabelingContext) (c : CoreId)
+    (L : SecurityLabel) (s : SystemState) (t₁ t₂ : Nat) (hNe : t₁ ≠ t₂) :
+    (ObservableState.onCore ctx c L
+        { s with scheduler := s.scheduler.setDomainTimeRemainingOnCore c t₁ }).domainTimeRemaining
+      ≠ (ObservableState.onCore ctx c L
+          { s with scheduler := s.scheduler.setDomainTimeRemainingOnCore c t₂ }).domainTimeRemaining := by
+  rw [(onCore_schedulingTransparency ctx c L _).2.1,
+    (onCore_schedulingTransparency ctx c L _).2.1]
+  simpa using hNe
+
+-- ----------------------------------------------------------------------------
+-- The classification is exhaustive *and* evidence-bound
+-- ----------------------------------------------------------------------------
+--
+-- The seven witnesses above are individually real, but on their own they leave
+-- the same hole the fourth review round found in the count theorems: nothing
+-- forces a *new* entry to have one, and nothing forces an existing entry's
+-- `modelVisible` literal to match a projection theorem rather than merely
+-- matching itself.  `CovertChannelId` closes that by making the inventory a
+-- total function out of a finite enum: a new channel is a new constructor, and
+-- a new constructor is a missing case in every table below.
+
+/-- SM8.B.8: the inventory's index set.  An enum rather than a `Nat`, so the
+tables below are exhaustive by pattern match. -/
+inductive CovertChannelId where
+  | schedulingState
+  | machineTimer
+  | tcbMetadata
+  | objectStoreMetadata
+  | lockContention
+  | tlbResidency
+  | icacheResidency
+  deriving DecidableEq, Repr
+
+def CovertChannelId.all : List CovertChannelId :=
+  [.schedulingState, .machineTimer, .tcbMetadata, .objectStoreMetadata, .lockContention,
+   .tlbResidency, .icacheResidency]
+
+/-- SM8.B.8: the entry each id names. -/
+def covertChannelEntry : CovertChannelId → CovertChannel
+  | .schedulingState => acceptedCovertChannel_scheduling_perCore
+  | .machineTimer => acceptedCovertChannel_machineTimer
+  | .tcbMetadata => acceptedCovertChannel_tcbMetadata
+  | .objectStoreMetadata => acceptedCovertChannel_objectStoreMetadata
+  | .lockContention => acceptedCovertChannel_lockContention
+  | .tlbResidency => acceptedCovertChannel_tlbResidency
+  | .icacheResidency => acceptedCovertChannel_icacheResidency
+
+/-- SM8.B.8: **the projection theorem that justifies each entry's
+`modelVisible`**, compile-time-validated through `niName!`.
+
+This is the table the fourth review round asked for.  Every id must name a
+theorem, the macro rejects a name that does not resolve, and each named theorem
+states the entry's `modelVisible` literal *conjoined with* the projection fact
+that makes it true — so a reclassification without a matching change to the
+projection breaks the witness, not just this string. -/
+def covertChannelEvidence : CovertChannelId → String
+  | .schedulingState => niName! acceptedCovertChannel_scheduling_is_model_visible
+  | .machineTimer => niName! acceptedCovertChannel_machineTimer_excluded_from_view
+  | .tcbMetadata => niName! acceptedCovertChannel_tcbMetadata_is_model_visible
+  | .objectStoreMetadata => niName! acceptedCovertChannel_objectStoreMetadata_is_model_visible
+  | .lockContention => niName! acceptedCovertChannel_lockContention_is_timing_only
+  | .tlbResidency => niName! acceptedCovertChannel_residency_excluded_from_view
+  | .icacheResidency => niName! acceptedCovertChannel_residency_excluded_from_view
+
+/-- SM8.B.8: the id-indexed inventory **is** the list one, entry for entry and in
+order.  Without this the enum would be a second inventory that could drift from
+the first. -/
+theorem covertChannelEntry_eq_inventory :
+    CovertChannelId.all.map covertChannelEntry = acceptedCovertChannelsPerCore := rfl
+
+/-- SM8.B.8: every id has evidence — no entry carries an empty citation.  Trivial
+to read, load-bearing to have: with `covertChannelEvidence` total, adding a
+channel without deciding what proves its classification is a compile error, and
+this rules out discharging that obligation with `""`. -/
+theorem covertChannelEvidence_nonempty :
+    ∀ id : CovertChannelId, (covertChannelEvidence id).length > 0 := by
+  intro id; cases id <;> decide
+
+/-- SM8.B.8: the two residency channels share a witness (it proves both
+exclusions at once) and every other channel has its own.  Pinned so a reader
+knows the sharing is intentional rather than a copy-paste. -/
+theorem covertChannelEvidence_shared_only_for_residency :
+    (CovertChannelId.all.map covertChannelEvidence).eraseDups.length = 6 := by decide
 
 
 -- ============================================================================

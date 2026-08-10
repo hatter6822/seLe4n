@@ -1,3 +1,82 @@
+## v0.33.11 — PR #861 review round 4: three live cross-core arms were unaudited, and CC-1's capacity claim was unsupported
+
+WS-SM SM8.B.  Five review findings across rounds 2 and 4, all verified against
+the code before acting.  Two were genuine coverage gaps, three were claims the
+theorems did not support.
+
+**P1 — the live `.call` arm now has a bound of its own.**  Round 2 observed that
+`endpointCallLive_confinedToCores` quantifies over arbitrary intermediate states
+and never mentions `endpointCallCrossCoreDispatch`, so it composed hypotheses
+rather than bounding the live arm.  Closed by reducing the dispatch to its own
+intermediates: `endpointCallDispatchChainWriteSet` mirrors the dispatch's control
+flow — same receiver resolution, same WithCaps call, same `applyCallDonation` —
+so the chain leg is keyed on the *resolved receiver* at the *post-donation*
+state, which is where the dispatch keys it.  `endpointCallCrossCoreDispatch_confinedToCores`
+is the bound, `endpointCallDispatchWriteSet_eq_live_of_rendezvous` states the
+instantiation explicitly, and `…_crossCoreNonInterference` is the NI form.  The
+WithCaps leg required new machine frames down to the leaves
+(`ipcTransferSingleCap_preserves_machine` → `ipcUnwrapCapsLoop_preserves_machine`
+→ `ipcUnwrapCaps_preserves_machine`), since confinement reads register banks as
+well as run queues.
+
+**P1 — three live cross-core arms were omitted from the inventory.**  Round 4
+found that `notificationSignalBoundOnCore` (production `.signal` on the
+bound-delivery path), `endpointReceiveDualOnCore` (`.receive` rendezvousing with
+a blocked sender) and `endpointReplyRecvOnCore` (`.replyRecv` composing its two
+legs) all wake threads on remote home cores, yet had no write set, confinement
+lemma or NI theorem — while the inventory's count, injectivity and coverage
+checks passed without them.  All three now have the full trio, and
+`CrossCoreTransition` grows 7 → 11 with a new `crossCoreTransitionIsLiveArm`
+partition (5 live arms) so the distinction between a below-API transition and
+the arm the syscall dispatch actually reaches is checkable data.
+
+Two home-core frames were the prerequisite: `endpointQueueRemoveDual` and
+`storeTcbReceiveComplete` had to be proven non-migrations
+(`endpointQueueRemoveDual_tcb_cpuAffinity_backward` in `DualQueue/Transport.lean`,
+composed with the forward transport into `…_determineTargetCore_eq`), or a write
+set could not name a woken thread's home core at the pre-state at all.
+`storeTcbQueueLinks_machine_eq` moved from `EndpointCallNiPerCore.lean` down to
+`DualQueue/Core.lean`, beside its subject, so the layer below can use it.
+
+**P2 — the covert-channel classification is now evidence-bound.**  `modelVisible`
+accepted an arbitrary `Bool`, and the count theorem plus
+`acceptedCovertChannel_hardwareChannels_are_not_modelVisible` only re-read the
+chosen literals; CC-2, CC-3 and CC-4 had no theorem tying them to the projection
+at all.  Each now has one, and the classification is a total function out of a
+new `CovertChannelId` enum with a `niName!`-validated evidence table, so a new
+channel is a compile error until someone decides what proves its status.
+
+**P2 — CC-1's mitigation claimed a capacity bound no theorem supports.**  It cited
+`schedulingCovertChannel_bounded_width` for `log2(|domainSchedule|)` bits per
+switch; that theorem proves three definitional equalities and contains no
+cardinality or frequency argument, and its own docstring's "bounded to exactly 4
+observable values" counts *components* (`domainTimeRemaining` alone ranges over
+all of `Nat`).  Replaced with what is true: `schedulingChannelIndex_alphabet_bounded`
+(the index component, under the scheduler's index-bounds invariant) and the
+load-bearing negative `schedulingChannel_not_bounded_by_scheduleLength`.  The
+`Projection.lean` docstring and `docs/DEPLOYMENT_GUIDE.md` are corrected too.
+
+**P2 — the per-core enforcement boundary audits the SMP path.**
+`enforcementBoundaryPerCoreComplete` checked the canonical name table, whose
+`.call` entry is the single-core `endpointCallChecked`, so it could return `true`
+with no entry for the operation the live SMP dispatch reaches.  Added
+`syscallIdToEnforcementNamePerCore` (built from the live arms, differing at
+exactly seven syscalls), the seven `crossCoreEnforcementEntries`, and
+`enforcementBoundaryPerCore_is_complete_crossCore`; boundary 39 → 46.  The
+canonical entries are kept rather than replaced — the boot-pinned
+`syscallDispatchInner` still reaches the single-core wrappers — and
+`enforcementBoundaryPerCore_crossCore_classes_match` checks that re-routing never
+changed an operation's enforcement class.
+
+Test note: the bound-delivery fixture initially left the bound TCB with no queue
+back-link, so `endpointQueueRemoveDual` failed closed and the whole group would
+have been checking an inert transition.  Its own non-inertness assertion caught
+it.  Suite 200 → 231 assertions / 30 → 32 groups; 411 declarations axiom-clean
+(up from 365).  Theorems, tests and documentation only; trace byte-identical.
+
+Refs: docs/planning/SMP_INFORMATION_FLOW_PLAN.md §SM8.B
+Refs: #861
+
 ## v0.33.10 — PR #861 review round 2: probe the private declarations, and stop overstating two theorems
 
 Four findings on the previous fix commit, all verified valid.  Two closed

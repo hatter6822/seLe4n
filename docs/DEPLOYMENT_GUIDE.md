@@ -89,10 +89,15 @@ creating a bounded covert channel.
 | Theorem | Line | Purpose |
 |---------|------|---------|
 | `acceptedCovertChannel_scheduling` | 404 | Witnesses channel existence |
-| `schedulingCovertChannel_bounded_width` | 443 | Confirms 4-value bound |
+| `schedulingCovertChannel_bounded_width` | 443 | Confirms the channel is transparent (the projections are the raw scheduler reads) — **not** a capacity bound |
+| `schedulingChannelIndex_alphabet_bounded` | `CovertChannelPerCore.lean` | Bounds the schedule-index component's alphabet by `\|domainSchedule\|` |
+| `schedulingChannel_not_bounded_by_scheduleLength` | `CovertChannelPerCore.lean` | States what is *not* bounded: `domainTimeRemaining` is an unrestricted `Nat` |
 
-**Mitigation**: Temporal partitioning via domain scheduling (already present)
-bounds channel bandwidth. Each domain receives guaranteed time quanta.
+**Mitigation**: Temporal partitioning via domain scheduling (already present).
+Each domain receives guaranteed time quanta. No bits-per-switch figure is
+claimed: only the schedule-index component has a bounded alphabet, and bounding
+the channel as a whole would need a range hypothesis on the quantum and a
+switch-frequency hypothesis, neither of which the model carries.
 
 **seL4 precedent**: This covert channel matches seL4's accepted design
 (Murray et al., "seL4: From General Purpose to a Proof of Information Flow

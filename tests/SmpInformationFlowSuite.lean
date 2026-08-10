@@ -407,6 +407,35 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @crossCoreTransitionWritesRemote
 #check @crossCoreTransitionWritesRemote_count
 #check @crossCoreTransition_invisible_to_every_observer
+-- The live `.call` arm (PR #861 review round 2): the WithCaps leg's frames, the
+-- write set that mirrors the dispatch's own control flow, and the bound itself.
+#check @ipcUnwrapCaps_confinedToCores
+#check @endpointCallWithCapsOnCore_scheduler_eq
+#check @endpointCallWithCapsOnCore_machine_eq
+#check @endpointCallWithCapsOnCore_confinedToCores
+#check @endpointCallDispatchChainWriteSet
+#check @endpointCallDispatchWriteSet
+#check @endpointCallCrossCoreDispatch_confinedToCores
+#check @endpointCallDispatchWriteSet_eq_live_of_rendezvous
+#check @endpointCallCrossCoreDispatch_crossCoreNonInterference
+-- The three live arms the fourth review round found uncovered.
+#check @linkCallerReply_confinedToCores
+#check @endpointQueueRemoveDual_confinedToCores
+#check @storeTcbReceiveComplete_confinedToCores
+#check @cleanupPreReceiveDonationChecked_confinedToCores
+#check @endpointQueueRemoveDual_determineTargetCore_eq
+#check @storeTcbReceiveComplete_determineTargetCore_eq
+#check @endpointReceiveDualWriteSet
+#check @endpointReceiveDualOnCore_confinedToCores
+#check @endpointReceiveDualOnCore_crossCoreNonInterference
+#check @endpointReplyRecvWriteSet
+#check @endpointReplyRecvOnCore_confinedToCores
+#check @endpointReplyRecvOnCore_crossCoreNonInterference
+#check @notificationSignalBoundWriteSet
+#check @notificationSignalBoundOnCore_confinedToCores
+#check @notificationSignalBoundOnCore_crossCoreNonInterference
+#check @crossCoreTransitionIsLiveArm
+#check @crossCoreTransitionIsLiveArm_count
 
 -- §1.7  SM8.B — the enforcement boundary and the covert-channel inventory
 -- (CovertChannelPerCore.lean).
@@ -435,6 +464,26 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @acceptedCovertChannel_lockContention_is_timing_only
 #check @acceptedCovertChannel_residency_excluded_from_view
 #check @acceptedCovertChannel_scheduling_is_model_visible
+-- PR #861 review round 4: the classification is evidence-bound, the live
+-- cross-core wrappers are classified, and CC-1's capacity claim is corrected.
+#check @acceptedCovertChannel_machineTimer_excluded_from_view
+#check @acceptedCovertChannel_tcbMetadata_is_model_visible
+#check @acceptedCovertChannel_objectStoreMetadata_is_model_visible
+#check CovertChannelId
+#check @covertChannelEntry
+#check @covertChannelEvidence
+#check @covertChannelEntry_eq_inventory
+#check @covertChannelEvidence_nonempty
+#check @covertChannelEvidence_shared_only_for_residency
+#check @schedulingChannelIndex_alphabet_bounded
+#check @schedulingChannel_not_bounded_by_scheduleLength
+#check @crossCoreEnforcementEntries
+#check @enforcementBoundary_prefix_of_perCore
+#check @syscallIdToEnforcementNamePerCore
+#check @enforcementBoundaryPerCoreCompleteCrossCore
+#check @enforcementBoundaryPerCore_is_complete_crossCore
+#check @syscallIdToEnforcementNamePerCore_differs_at_seven
+#check @enforcementBoundaryPerCore_crossCore_classes_match
 #check @endpointPolicyRestricted_perCore
 #check @endpointPolicyRestricted_perCore_iff
 #check @endpointPolicyRestricted_perCore_at
@@ -2045,19 +2094,178 @@ private def runComposedCancellationChecks : IO Unit := do
      | some n => decide (n.waitingThreads.val.contains crossCoreWaiter = false)
      | none => false)
 
+-- ---------------------------------------------------------------------------
+-- §5.2c fixtures — the three live cross-core arms the fourth review round found
+-- uncovered: a bound-delivery signal, a receive rendezvousing with a blocked
+-- sender, and the composed `replyRecv`.
+-- ---------------------------------------------------------------------------
+
+/-- A sender parked on `crossCoreEndpoint`'s **send** queue and homed on core 2,
+so `endpointReceiveDualOnCore` takes its rendezvous branch and wakes remotely.
+Without a real sender the receive-dual write set only ever computes the
+`[executingCore]` block branch. -/
+private def crossCoreSender : SeLe4n.ThreadId := ⟨1022⟩
+
+private def blockedSenderState : SystemState :=
+  { crossCoreState with
+      objects :=
+        (crossCoreState.objects.insert crossCoreSender.toObjId
+            (.tcb { mkTcb 1022 40 (some c2) with
+                      ipcState := .blockedOnSend crossCoreEndpoint })).insert
+          crossCoreEndpoint
+            (.endpoint { sendQ := { head := some crossCoreSender
+                                    tail := some crossCoreSender } }) }
+
+private def receiveDualPost : SystemState :=
+  (SeLe4n.Kernel.endpointReceiveDualOnCore crossCoreEndpoint remoteHomedThread none c0
+    blockedSenderState).1
+
+/-- A notification with a **bound TCB** that is blocked on an endpoint receive
+and homed on core 2 — the state in which the live `.signal` arm takes its
+bound-delivery path rather than the plain waiter-wake path. -/
+private def boundTcbThread : SeLe4n.ThreadId := ⟨1023⟩
+
+private def boundNotificationState : SystemState :=
+  { crossCoreState with
+      objects :=
+        -- `queuePPrev := some .endpointHead` is load-bearing, not decoration:
+        -- `endpointQueueRemoveDual` fails closed on a TCB with no queue
+        -- back-link, so without it the bound delivery returns the pre-state and
+        -- the whole group would be checking an inert transition.  The
+        -- non-inertness assertion below is what caught its absence.
+        ((crossCoreState.objects.insert boundTcbThread.toObjId
+            (.tcb { mkTcb 1023 40 (some c2) with
+                      ipcState := .blockedOnReceive crossCoreEndpoint
+                      queuePrev := none
+                      queuePPrev := some .endpointHead
+                      queueNext := none })).insert
+          crossCoreEndpoint
+            (.endpoint { receiveQ := { head := some boundTcbThread
+                                       tail := some boundTcbThread } })).insert
+          highNotification
+            (.notification { state := .idle
+                             waitingThreads := ⟨[], by simp⟩
+                             pendingBadge := none
+                             boundTCB := some boundTcbThread }) }
+
+private def boundSignalPost : SystemState :=
+  (SeLe4n.Kernel.notificationSignalBoundOnCore highNotification
+    (SeLe4n.Badge.ofNatMasked 7) c0 boundNotificationState).1
+
+/-- A state in which **both** `replyRecv` legs do work: a caller parked in
+`.blockedOnReply` (so the reply leg succeeds and wakes it on core 3), on top of
+the blocked sender the receive leg rendezvouses with (core 2).  The two legs
+therefore name *different* cores, which is what makes the composed write set a
+genuine union rather than a coincidence. -/
+private def replyBlockedCaller : SeLe4n.ThreadId := ⟨1024⟩
+
+private def replyRecvState : SystemState :=
+  { blockedSenderState with
+      objects := blockedSenderState.objects.insert replyBlockedCaller.toObjId
+        (.tcb { mkTcb 1024 40 (some c3) with
+                  ipcState := .blockedOnReply crossCoreEndpoint (some remoteHomedThread)
+                  replyObject := none }) }
+
+private def replyRecvMsg : IpcMessage :=
+  { registers := #[], caps := #[], badge := none }
+
+/-- §5.2c  The three live cross-core arms (fourth review round). -/
+private def runLiveCrossCoreArmChecks : IO Unit := do
+  IO.println "--- §5.2c the live cross-core arms: bound signal, receive dual, replyRecv ---"
+  -- (a) The receive dual, rendezvousing with a blocked sender homed elsewhere.
+  assertBool "the blocked sender is homed on core 2, not the executing core 0"
+    (decide (SeLe4n.Kernel.determineTargetCore blockedSenderState crossCoreSender = c2))
+  assertBool "the receive-dual write set names the sender's home core"
+    (decide (SeLe4n.Kernel.endpointReceiveDualWriteSet blockedSenderState crossCoreEndpoint c0
+      = [c2]))
+  assertBool "the rendezvous really woke the sender onto core 2 (not inert)"
+    (decide ((receiveDualPost.scheduler.runQueueOnCore c2).toList
+      ≠ (blockedSenderState.scheduler.runQueueOnCore c2).toList))
+  assertBool "the receive dual is confined to core 2"
+    (confinedCheck blockedSenderState receiveDualPost c2)
+  -- Load-bearing negative: it is a genuinely *remote* write, so the executing
+  -- core is not the right confinement target.
+  assertBool "NEGATIVE: the receive dual is NOT confined to the executing core 0"
+    (!confinedCheck blockedSenderState receiveDualPost c0)
+  -- …and the *other* branch is exercised too, so the write set is not constant.
+  assertBool "with no sender queued the write set is the receiver's own core"
+    (decide (SeLe4n.Kernel.endpointReceiveDualWriteSet rendezvousState crossCoreEndpoint c0
+      = [c0]))
+  -- (b) The bound-delivery signal.
+  assertBool "the bound TCB is homed on core 2 and is the notification's binding"
+    (decide (SeLe4n.Kernel.determineTargetCore boundNotificationState boundTcbThread = c2) &&
+     (match boundNotificationState.getNotification? highNotification with
+      | some n => decide (n.boundTCB = some boundTcbThread)
+      | none => false))
+  assertBool "the bound-signal write set names the bound TCB's home core"
+    (decide (SeLe4n.Kernel.notificationSignalBoundWriteSet boundNotificationState
+      highNotification = [c2]))
+  assertBool "the bound delivery really woke the bound TCB onto core 2"
+    (decide ((boundSignalPost.scheduler.runQueueOnCore c2).toList
+      ≠ (boundNotificationState.scheduler.runQueueOnCore c2).toList))
+  assertBool "the bound signal is confined to core 2"
+    (confinedCheck boundNotificationState boundSignalPost c2)
+  assertBool "NEGATIVE: the bound signal is NOT confined to the executing core 0"
+    (!confinedCheck boundNotificationState boundSignalPost c0)
+  -- The fall-through branch: with no bound TCB the write set is the plain
+  -- signal's, so the bound wrapper is not silently the same function.
+  assertBool "NEGATIVE: with no bound TCB it falls through to the plain signal's set"
+    (decide (SeLe4n.Kernel.notificationSignalBoundWriteSet crossCoreState highNotification
+      = SeLe4n.Kernel.notificationSignalWriteSet crossCoreState highNotification))
+  -- (c) The composed replyRecv: its write set leads with the reply target's
+  -- home core, and the receive leg is read at the *intermediate* state.
+  assertBool "the reply leg really succeeds here (a blocked-on-reply caller on core 3)"
+    (match (SeLe4n.Kernel.endpointReplyOnCore remoteHomedThread replyBlockedCaller
+        replyRecvMsg c0 replyRecvState).2 with
+     | .ok _ => decide (SeLe4n.Kernel.determineTargetCore replyRecvState replyBlockedCaller = c3)
+     | .error _ => false)
+  -- Both legs contribute, and they name *different* cores: the reply target's
+  -- home core 3, then the receive leg's set computed at the *intermediate*
+  -- state, which is the rendezvousing sender's core 2.
+  assertBool "the composed set is the reply core followed by the receive leg's set"
+    (decide (SeLe4n.Kernel.endpointReplyRecvWriteSet crossCoreEndpoint remoteHomedThread
+        replyBlockedCaller replyRecvMsg c0 replyRecvState
+      = SeLe4n.Kernel.determineTargetCore replyRecvState replyBlockedCaller
+          :: SeLe4n.Kernel.endpointReceiveDualWriteSet
+              (SeLe4n.Kernel.endpointReplyOnCore remoteHomedThread replyBlockedCaller
+                replyRecvMsg c0 replyRecvState).1
+              crossCoreEndpoint c0))
+  assertBool "…and it names two DIFFERENT cores — a real union, not a coincidence"
+    (decide (SeLe4n.Kernel.endpointReplyRecvWriteSet crossCoreEndpoint remoteHomedThread
+      replyBlockedCaller replyRecvMsg c0 replyRecvState = [c3, c2]))
+  -- The load-bearing negative: when the reply leg fails closed the tail is
+  -- empty, so the composition is genuinely conditional on the leg's outcome
+  -- rather than always appending the receive set.
+  assertBool "NEGATIVE: a failed reply leg contributes no receive-leg cores"
+    (decide (SeLe4n.Kernel.endpointReplyRecvWriteSet crossCoreEndpoint remoteHomedThread
+      crossCoreSender replyRecvMsg c0 blockedSenderState = [c2]))
+
 /-- §5.3  The set-of-cores algebra and its coverage record. -/
 private def runCoreSetAlgebraChecks : IO Unit := do
   IO.println "--- §5.3 the set-of-cores confinement algebra ---"
-  assertBool "seven cross-core transitions are covered"
-    (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 7))
-  assertBool "six of the seven can name a core other than the executing one"
+  assertBool "eleven cross-core transitions are covered"
+    (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 11))
+  assertBool "ten of the eleven can name a core other than the executing one"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
-      SeLe4n.Kernel.crossCoreTransitionWritesRemote).length = 6))
+      SeLe4n.Kernel.crossCoreTransitionWritesRemote).length = 10))
   assertBool "…and the wait is the one that cannot"
     (decide (SeLe4n.Kernel.crossCoreTransitionWritesRemote .notificationWait = false))
+  assertBool "five of the eleven are the arms the live syscall dispatch reaches"
+    (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
+      SeLe4n.Kernel.crossCoreTransitionIsLiveArm).length = 5))
+  -- The fourth review round's finding, as a checked fact: the three arms it
+  -- named are in the inventory and are all classified as live.
+  assertBool "the bound signal, the receive dual and replyRecv are all covered"
+    ([SeLe4n.Kernel.CrossCoreTransition.notificationSignalBound,
+      .endpointReceiveDual, .endpointReplyRecv].all (fun t =>
+        decide (t ∈ SeLe4n.Kernel.CrossCoreTransition.all)))
+  assertBool "the bound signal and replyRecv are live arms; the bare receive dual is a leg"
+    (decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .notificationSignalBound = true) &&
+     decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .endpointReplyRecv = true) &&
+     decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .endpointReceiveDual = false))
   assertBool "the covered-transition theorem names are pairwise distinct"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.map
-      SeLe4n.Kernel.crossCoreNiTheorem).eraseDups.length = 7))
+      SeLe4n.Kernel.crossCoreNiTheorem).eraseDups.length = 11))
   -- The load-bearing negative: the write set is *state-dependent*, so it is not
   -- a constant the theorem could be satisfying vacuously.  With no receiver the
   -- call writes one core; with a remote receiver waiting it writes two — and
@@ -2286,12 +2494,32 @@ private def runPerCoreCoverageChecks : IO Unit := do
 /-- §4.7  The per-core enforcement boundary (SM8.B.6 / SM8.B.7). -/
 private def runEnforcementBoundaryChecks : IO Unit := do
   IO.println "--- §4.7 the per-core enforcement boundary ---"
-  assertBool "the per-core boundary has 39 entries (38 canonical + the 2PL bracket)"
-    (decide (enforcementBoundaryPerCore.length = 39) &&
-     decide (enforcementBoundaryExtended.length = 38))
-  assertBool "every SyscallId is still covered by the extended boundary"
+  assertBool "46 entries: 38 canonical + the 2PL bracket + 7 live cross-core wrappers"
+    (decide (enforcementBoundaryPerCore.length = 46) &&
+     decide (enforcementBoundaryExtended.length = 38) &&
+     decide (crossCoreEnforcementEntries.length = 7))
+  assertBool "every SyscallId is still covered by the extended boundary (single-core half)"
     (enforcementBoundaryPerCoreComplete)
-  assertBool "NEGATIVE: the added entry is genuinely new (not already classified)"
+  assertBool "every SyscallId's LIVE cross-core operation is covered (SMP half)"
+    (enforcementBoundaryPerCoreCompleteCrossCore)
+  assertBool "the per-core mapping re-routes exactly seven syscalls"
+    (decide ((SyscallId.all.filter (fun sid =>
+      decide (syscallIdToEnforcementNamePerCore sid
+        ≠ syscallIdToEnforcementName sid))).length = 7))
+  assertBool ".call reaches the cross-core wrapper, not the single-core one"
+    (decide (syscallIdToEnforcementNamePerCore .call
+        = "endpointCallCrossCoreDispatchChecked") &&
+     decide (syscallIdToEnforcementName .call = "endpointCallChecked"))
+  -- The load-bearing negative: the SMP completeness check is *not* vacuous —
+  -- it fails against the canonical list, which classifies only the single-core
+  -- wrappers.  This is the hole the fourth review round found.
+  assertBool "NEGATIVE: the SMP mapping is NOT covered by the canonical boundary"
+    (!(SyscallId.all.all (fun sid =>
+      let name := syscallIdToEnforcementNamePerCore sid
+      enforcementBoundary.any (fun ec =>
+        match ec with
+        | .policyGated n | .capabilityOnly n | .readOnly n => n == name))))
+  assertBool "NEGATIVE: the added 2PL entry is genuinely new (not already classified)"
     (!enforcementBoundary.any (fun ec =>
       match ec with
       | .policyGated n | .capabilityOnly n | .readOnly n => n == "withLockSet"))
@@ -2322,6 +2550,53 @@ private def runCovertChannelInventoryChecks : IO Unit := do
     (decide (acceptedCovertChannel_scheduling_perCore.modelVisible = true) &&
      decide ((ObservableState.onCore niLabeling c1 lowLabel niState).activeDomain
         = niState.scheduler.activeDomainOnCore c1))
+  -- SM8.B.8 (fourth review round): every entry is reachable from the enum and
+  -- carries a named projection theorem, so a new channel cannot be filed
+  -- without deciding what proves its classification.
+  assertBool "the id-indexed inventory IS the list one, entry for entry"
+    (decide (CovertChannelId.all.map covertChannelEntry = acceptedCovertChannelsPerCore) &&
+     decide (CovertChannelId.all.length = 7))
+  assertBool "every channel cites a projection theorem (no empty citation)"
+    (CovertChannelId.all.all (fun id => decide ((covertChannelEvidence id).length > 0)))
+  assertBool "six distinct witnesses — the two residency channels share one"
+    (decide ((CovertChannelId.all.map covertChannelEvidence).eraseDups.length = 6))
+  -- The load-bearing negative for the evidence table: the citations are not all
+  -- the same string, i.e. the table really does discriminate between channels.
+  assertBool "NEGATIVE: the machine-timer and scheduling citations differ"
+    (decide (covertChannelEvidence .machineTimer ≠ covertChannelEvidence .schedulingState))
+
+/-- §4.8a  CC-1's capacity claim: what is bounded, and what is not
+(SM8.B.9, fourth review round). -/
+private def runSchedulingChannelBoundChecks : IO Unit := do
+  IO.println "--- §4.8a CC-1: the bounded component, and the unbounded one ---"
+  -- The bounded half: with a real three-entry schedule and an in-bounds index,
+  -- the observed index lies strictly below the schedule length.
+  let schedState : SystemState :=
+    { niState with
+        scheduler := { niState.scheduler with
+          domainSchedule := [⟨⟨0⟩, 10⟩, ⟨⟨1⟩, 10⟩, ⟨⟨0⟩, 10⟩] } }
+  assertBool "the observed schedule index is below the schedule length"
+    (decide ((ObservableState.onCore niLabeling c1 lowLabel schedState).domainScheduleIndex
+        < (ObservableState.onCore niLabeling c1 lowLabel schedState).domainSchedule.length))
+  assertBool "the observed schedule IS the system-wide one (shared, not per-core)"
+    (decide ((ObservableState.onCore niLabeling c1 lowLabel schedState).domainSchedule
+        = schedState.scheduler.domainSchedule))
+  -- The unbounded half, and the point of the correction: two states differing
+  -- only in `domainTimeRemaining` are observationally distinct, with the SAME
+  -- three-entry schedule.  So `log2 3` bounds nothing here.
+  let quantumA : SystemState :=
+    { schedState with
+        scheduler := schedState.scheduler.setDomainTimeRemainingOnCore c1 7 }
+  let quantumB : SystemState :=
+    { schedState with
+        scheduler := schedState.scheduler.setDomainTimeRemainingOnCore c1 4242 }
+  assertBool "NEGATIVE: schedule length does NOT bound the channel — the quantum does not fit"
+    (decide ((ObservableState.onCore niLabeling c1 lowLabel quantumA).domainTimeRemaining
+        ≠ (ObservableState.onCore niLabeling c1 lowLabel quantumB).domainTimeRemaining) &&
+     decide ((ObservableState.onCore niLabeling c1 lowLabel quantumA).domainSchedule
+        = (ObservableState.onCore niLabeling c1 lowLabel quantumB).domainSchedule))
+  assertBool "the distinguishing value is well outside a 3-entry alphabet"
+    (decide (4242 > (schedState.scheduler.domainSchedule.length)))
 
 /-- §4.9  The catch-all constructors need their confinement premise. -/
 private def runCatchAllPremiseChecks : IO Unit := do
@@ -2397,12 +2672,14 @@ def runSmpInformationFlowChecks : IO Unit := do
   runPerCoreCoverageChecks
   runEnforcementBoundaryChecks
   runCovertChannelInventoryChecks
+  runSchedulingChannelBoundChecks
   runCatchAllPremiseChecks
   runPolicyAndReleaseBridgeChecks
   runTwoCoreWriteSetChecks
   runCrossCoreWriteSetChecks
   runVisibleRemoteWakeChecks
   runComposedCancellationChecks
+  runLiveCrossCoreArmChecks
   runCoreSetAlgebraChecks
   runResolvedFlowGateChecks
   IO.println "===================================="

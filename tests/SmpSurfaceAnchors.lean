@@ -476,8 +476,12 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
   assertBool "lock-set non-interference + the covert-channel inventory resolve"
     (have _w := @SeLe4n.Kernel.withLockSet_preserves_projection
      have _u := @SeLe4n.Kernel.nonInterference_perCore_underLockSet
-     have _e : SeLe4n.Kernel.enforcementBoundaryPerCore.length = 39 :=
+     have _e : SeLe4n.Kernel.enforcementBoundaryPerCore.length = 46 :=
        SeLe4n.Kernel.enforcementBoundaryPerCore_count
+     -- PR #861 review round 4: the boundary now also classifies the seven live
+     -- cross-core wrappers, and the SMP completeness half audits them.
+     have _x := @SeLe4n.Kernel.syscallIdToEnforcementNamePerCore
+     have _c := SeLe4n.Kernel.enforcementBoundaryPerCore_is_complete_crossCore
      have _i : SeLe4n.Kernel.acceptedCovertChannelsPerCore.length = 7 :=
        SeLe4n.Kernel.acceptedCovertChannel_perCoreCount
      have _l := SeLe4n.Kernel.acceptedCovertChannel_lockContention

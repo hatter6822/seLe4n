@@ -44,23 +44,8 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId)
 -- §1  Machine-register frame for the object steps (mirrors `*_scheduler_eq`)
 -- ============================================================================
 
-/-- `storeTcbQueueLinks` leaves the machine registers untouched. -/
-theorem storeTcbQueueLinks_machine_eq
-    (st st' : SystemState) (tid : SeLe4n.ThreadId)
-    (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev) (next : Option SeLe4n.ThreadId)
-    (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
-    st'.machine = st.machine := by
-  unfold storeTcbQueueLinks at hStep
-  cases hTcb : lookupTcb st tid with
-  | none => simp [hTcb] at hStep
-  | some tcb =>
-    simp only [hTcb] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb (tcbWithQueueLinks tcb prev pprev next)) st with
-    | error e => simp [hStore] at hStep
-    | ok pair =>
-      simp only [hStore] at hStep
-      have hEq := Except.ok.inj hStep; subst hEq
-      exact storeObject_machine_eq st pair.2 tid.toObjId _ hStore
+-- (`storeTcbQueueLinks_machine_eq` moved to `DualQueue/Core.lean`, beside its
+-- subject, so the `endpointQueueRemoveDual` frames below that layer can use it.)
 
 /-- `storeTcbIpcStateAndMessage` leaves the machine registers untouched. -/
 theorem storeTcbIpcStateAndMessage_machine_eq

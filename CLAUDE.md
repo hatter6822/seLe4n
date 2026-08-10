@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.33.10.
+Lean 4.28.0 toolchain, Lake build system, version 0.33.11.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -182,9 +182,9 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~37254 lines)
+- `CHANGELOG.md` (~37508 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~20449 lines)
-- `docs/WORKSTREAM_HISTORY.md` (~10436 lines)
+- `docs/WORKSTREAM_HISTORY.md` (~10472 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~6631 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4764 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
@@ -204,13 +204,14 @@ To find files that need pagination today, run:
 - `SeLe4n/Testing/MainTraceHarness.lean` (~3204 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~3140 lines)
 - `docs/dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md` (~3134 lines)
+- `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~3086 lines)
 - `SeLe4n/Model/Object/Structures.lean` (~3069 lines)
-- `SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean` (~3033 lines)
+- `SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean` (~3053 lines)
 - `docs/planning/SMP_RUST_HAL_PLAN.md` (~3029 lines)
-- `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~2809 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean` (~2805 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean` (~2772 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~2733 lines)
+- `tests/SmpInformationFlowSuite.lean` (~2691 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean` (~2639 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~2627 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean` (~2602 lines)
@@ -221,7 +222,6 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md` (~2472 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_WORKSTREAM_PLAN.md` (~2340 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md` (~2339 lines)
-- `tests/SmpInformationFlowSuite.lean` (~2338 lines)
 - `docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md` (~2325 lines)
 - `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` (~2285 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueNextBlocking.lean` (~2258 lines)
@@ -234,11 +234,11 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` (~2083 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~2070 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2067 lines)
+- `SeLe4n/Kernel/Capability/Operations.lean` (~2030 lines)
 - `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~2022 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2019 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~2011 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~1990 lines)
-- `SeLe4n/Kernel/Capability/Operations.lean` (~1989 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean` (~1967 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
 - `SeLe4n/Model/Object/Types.lean` (~1963 lines)
@@ -248,6 +248,7 @@ To find files that need pagination today, run:
 - `docs/dev_history/planning/V3E_IPC_UNWRAP_CAPS_LOOP_COMPOSITION_PLAN.md` (~1891 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md` (~1889 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1854 lines)
+- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~1809 lines)
 - `SeLe4n/Model/FreezeProofs.lean` (~1806 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.6_WORKSTREAM_PLAN.md` (~1801 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.21_WORKSTREAM_PLAN.md` (~1800 lines)
@@ -262,20 +263,20 @@ To find files that need pagination today, run:
 - `SeLe4n/Platform/FFI.lean` (~1699 lines)
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
 - `SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean` (~1671 lines)
-- `SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean` (~1667 lines)
+- `SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean` (~1668 lines)
 - `docs/planning/SMP_FOUNDATIONS_PLAN.md` (~1665 lines)
 - `tests/InformationFlowSuite.lean` (~1639 lines)
+- `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~1488 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
-- `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~1464 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
 - `docs/dev_history/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` (~1414 lines)
 - `docs/dev_history/AUDIT_v0.23.21_WORKSTREAM_PLAN.md` (~1411 lines)
 - `docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md` (~1382 lines)
+- `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~1377 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1363 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (~1357 lines)
 - `tests/SmpIpcSuite.lean` (~1350 lines)
-- `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~1342 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` (~1342 lines)
 - `docs/planning/SMP_PANIC_HANG_REMEDIATION_PLAN.md` (~1342 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean` (~1337 lines)
@@ -311,19 +312,20 @@ To find files that need pagination today, run:
 - `tests/SyscallDispatchSuite.lean` (~1047 lines)
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
 - `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1037 lines)
-- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~1025 lines)
+- `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~1027 lines)
 - `SeLe4n/Kernel/InformationFlow/Policy.lean` (~1023 lines)
-- `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~1007 lines)
+- `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~1005 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~1002 lines)
 - `docs/planning/SMP_CROSS_CORE_IPC_PLAN.md` (~988 lines)
+- `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~986 lines)
 - `docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md` (~984 lines)
-- `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~970 lines)
-- `SeLe4n/Kernel/InformationFlow/Projection.lean` (~968 lines)
+- `SeLe4n/Kernel/InformationFlow/Projection.lean` (~981 lines)
+- `SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean` (~971 lines)
+- `docs/planning/SMP_INFORMATION_FLOW_PLAN.md` (~965 lines)
 - `docs/dev_history/planning/WS_X_LEAN_ETHEREUM_FORMALIZATION_PLAN.md` (~958 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` (~943 lines)
 - `SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean` (~940 lines)
 - `SeLe4n/Kernel/Concurrency/MemoryModel.lean` (~935 lines)
-- `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~931 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md` (~930 lines)
 - `tests/SmpFoundationsSuite.lean` (~928 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_COMPREHENSIVE.md` (~921 lines)
@@ -331,13 +333,12 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~891 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean` (~886 lines)
+- `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean` (~885 lines)
 - `docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md` (~884 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean` (~882 lines)
 - `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean` (~843 lines)
-- `docs/planning/SMP_INFORMATION_FLOW_PLAN.md` (~835 lines)
 - `SeLe4n/Model/FrozenState.lean` (~834 lines)
-- `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean` (~833 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Preservation/BadgeIpcCapsAndCdtMaps.lean` (~831 lines)
 - `tests/TwoPhaseArchSuite.lean` (~819 lines)
 - `docs/dev_history/audits/WS_RC_R4_CLOSEOUT_PLAN.md` (~818 lines)
@@ -728,6 +729,7 @@ documentation lives under `docs/` and `docs/gitbook/`.
   | SM8.B (audit) | LANDED | v0.33.7 | Deep-audit closure of the v0.33.6 cut.  (1) **The live `.call` arm writes cores no write set named**: `endpointCallOnCore_confinedToCores` is true of the *transition*, but the live arm is `endpointCallCrossCoreDispatch` = transition + `applyCallDonation` + `propagatePipChainCrossCore`, and the chain walk re-buckets each boosted server's run queue on that server's **home** core — while the `syscallEntry_preserves_projectionOnCore` docstring said the dispatch is "invisible on every core outside that set".  Closed by making it true rather than narrowing: `pipChainWriteSet` (the walk's write set, mirroring its own fuel recursion) + `propagatePipChainCrossCore_confinedToCores` (induction on fuel) + `applyCallDonation_confinedToCores` (per-core silent) + `endpointCallLiveWriteSet`, the union that bounds the live arm, with projection lemmas.  (2) **Both marquee write sets were tested only in their degenerate branches** — no waiter (`= []`) and no receiver (`= [c0]`), so the two-element set had **zero runtime coverage** and the "not a singleton" negative was trivially true; closed with a real rendezvous fixture (receiver + waiter homed on core 2) checking `[c2, c0]`, the waiter's home core over the signaller's, and that the set varies with the state.  Suite 186 → 193 assertions / 29 groups; 359 declarations axiom-clean. |
   | SM8.B (cancellation) | LANDED | v0.33.8 | The composed SM6.E cross-core cancellation — the last item the v0.33.7 audit left registered.  The blocker was a missing **frame**, not a hard proof: per-core confinement reads each core's *register bank* as well as its scheduler slots (SM5.I banks every core's `RegisterFile` in one `MachineState`), and the codebase carried only `cancelIpcBlocking_scheduler_eq`.  `cancelIpcBlocking_machine_eq` now sits beside it over the same five `ipcState` arms, on a new leaf layer — `restoreToReady_machine_eq` (+ `clearTcbIpcFields_machine_eq`, which must live in `Suspend.lean` since the helper is `private`), the reply-link legs, and both queue sweeps by the `RHTable.fold_preserves` argument SM7.B used for `tlbShootdown`, seeded from the new `spliceOutMidQueueNode_machine_eq`.  On top: `cancelIpcBlocking_confinedToCores` (teardown is per-core silent, `[]`) and `cancelIpcBlockingOnCore_confinedToCores` (`[] ++ [home]`) with `cancelIpcBlockingOnCore_crossCoreNonInterference`; coverage 6 → **7** transitions, 5 → **6** remote-capable, and the module header's §5 line is now true.  Test note: the first §5.2b fixture left the victim out of any run queue, making the removal a no-op and the scenario vacuous — its own load-bearing negative caught it, and the fixture now queues the victim on core 2 (the state the suspend pipeline acts on).  Suite 193 → 198 assertions / 30 groups; 362 declarations axiom-clean. |
   | SM8.B (PR review) | LANDED | v0.33.9 | PR #861 automated-review closure — seven findings, all verified valid.  **P1**: `endpointCallLiveWriteSet` walked the *caller* at the *pre-state*, but the live arm runs `propagatePipChainCrossCore st'' receiverTid` — the resolved **receiver** at the **post-donation** state, a genuinely different chain (the call blocks the caller on reply, the donation rewrites SC bindings, so `blockingServer` moves).  No theorem was false, but the definition was wrong for its purpose and its docstring claimed it bounded the live arm; `chainState`/`chainStart` are now explicit parameters and `endpointCallLive_confinedToCores` composes the legs in SM6.A's path-reduction style.  **P1**: `crossCoreTransitionWakesRemote` → `crossCoreTransitionWritesRemote` (reply/deschedule/cancellation write remotely without waking).  **P2 ×3, all fail-open gates**: `run_negative_check` treated `rg` exit 2 (bad flag, missing path) as absence — now only exit 1 counts, anything else is an infrastructure failure; `confinedCheck` compared five of six confinement fields, omitting the **register banks**, so a foreign-core register corruption would have passed every assertion built on it — `regsAgreeOn` added with a load-bearing negative; the axiom sweep silently dropped unrecognised declaration kinds — now fails closed, which immediately caught `macro_rules`.  **P2 ×2**: the flow-gate non-vacuity witness used the reserved sentinel `⟨0⟩` (a state violating `currentThreadValidOnCore`) — now a non-sentinel subject carrying `isReserved = false`, with the docstring explaining why a real TCB is deliberately *not* required (the gate provably never reads the object store); staged-module headline 57 → 58.  Left open for the maintainer: whether the branch's four patch bumps collapse into one for the merge.  Suite 198 → 200 assertions / 30 groups; 363 declarations axiom-clean. |
+  | SM8.B (review rounds 2+4) | LANDED | v0.33.10 → v0.33.11 | Five findings, all verified against the code.  **v0.33.10**: the axiom sweep skipped `private` declarations on a justification ("the unused-declaration lint covers it") naming a lint this repository does not have — an exercised fail-open path, closed by re-elaborating each defining module's source with the probes appended; a stale plan citation to the deleted `endpointFlowCheck_state_independent` corrected.  **v0.33.11 (P1) — the live `.call` arm now has a bound of its own**: `endpointCallLive_confinedToCores` quantified over arbitrary intermediate states and never mentioned `endpointCallCrossCoreDispatch`, so it composed hypotheses rather than bounding the live arm; `endpointCallDispatchChainWriteSet` now mirrors the dispatch's own control flow (chain keyed on the resolved receiver at the post-donation state), `endpointCallCrossCoreDispatch_confinedToCores` is the bound and `endpointCallDispatchWriteSet_eq_live_of_rendezvous` states the instantiation; the WithCaps leg needed new machine frames down to `ipcTransferSingleCap_preserves_machine`, since confinement reads register banks as well as run queues.  **v0.33.11 (P1) — three live cross-core arms were unaudited**: `notificationSignalBoundOnCore` (production `.signal`, bound delivery), `endpointReceiveDualOnCore` (`.receive` rendezvousing with a blocked sender) and `endpointReplyRecvOnCore` (`.replyRecv`, both legs) all wake threads on remote home cores, yet the inventory's count, injectivity and remote-write checks all passed without them; each now has a write set, a confinement lemma and an NI instantiation, and `CrossCoreTransition` grows 7 → 11 with `crossCoreTransitionIsLiveArm` (5) separating a below-API transition from the arm the dispatch reaches.  The prerequisite was two home-core frames — a write set may name a pre-state home core only if the intervening stores are non-migrations — via the new `endpointQueueRemoveDual_tcb_cpuAffinity_backward`.  **v0.33.11 (P2 ×3)**: the covert-channel classification was self-certifying (`modelVisible` an arbitrary `Bool`, the count and hardware-channel theorems only re-reading the literals, CC-2/3/4 with no projection theorem at all) — now a total function out of `CovertChannelId` with a `niName!`-validated evidence table; CC-1's mitigation cited `schedulingCovertChannel_bounded_width` for a `log2(|domainSchedule|)` bits-per-switch figure that theorem does not prove (it is three `rfl`s, and its "4 observable values" counts *components* — `domainTimeRemaining` ranges over all of `Nat`) — replaced by `schedulingChannelIndex_alphabet_bounded` plus the load-bearing negative `schedulingChannel_not_bounded_by_scheduleLength`, with `Projection.lean` and `docs/DEPLOYMENT_GUIDE.md` corrected; and `enforcementBoundaryPerCoreComplete` audited the single-core name table, so it could pass with no entry for the operation the live SMP dispatch reaches — `syscallIdToEnforcementNamePerCore` (differing at exactly seven syscalls) + `crossCoreEnforcementEntries` + `enforcementBoundaryPerCore_is_complete_crossCore` close it, boundary 39 → 46, canonical entries kept rather than replaced since the boot-pinned `syscallDispatchInner` still reaches them.  Test note: the bound-delivery fixture initially left the bound TCB with no queue back-link, so the dequeue failed closed and the group would have checked an inert transition — its own non-inertness assertion caught it.  Suite 200 → 231 assertions / 30 → 32 groups; 411 declarations axiom-clean (up from 365).  Still open for the maintainer: whether the branch's patch bumps collapse into one for the merge. |
   | SM8.C–SM8.E | PENDING | — | Per-core declassification audit (`DeclassificationEvent.originatingCore`), information flow under fine locks, closure |
   | SM9 | PENDING | — | Release closure (→ v1.0.0) |
 
@@ -771,6 +773,18 @@ documentation lives under `docs/` and `docs/gitbook/`.
  **v0.32.98 PR #845 review closure**: (1) **PA page alignment** — `vspaceMapPageChecked` and the production `vspaceMapPageCheckedWithFlushFromState` validated VA canonicality and the PA bound but not alignment, so a mapping could carry an unaligned PA while the ARMv8 descriptor and both HAL cache loops use the aligned base; the model would then record an operand naming an address hardware never touches.  Both now reject with `.alignmentError` (rejecting structurally rather than normalizing — an unaligned page mapping is meaningless on ARMv8).  Two tests were themselves relying on the gap (`MainTraceHarness` CAT-025 and `NegativeStateSuite` mapped `2^n - 1`, all-ones and never page-aligned, to probe the PA bound); both now use the largest page-aligned in-bounds PA, trace byte-identical.  Seven downstream proofs gained a `split` for the new branch.  (2) **safe-API reachability** — `rust/sele4n-sys` gains `vspace_unify_instruction` (v0.32.96 shipped the syscall but left it hand-encode-only), plus `VSpaceUnifyInstructionArgs` in `sele4n-abi`.  (3) **ABI naming** — `VspaceUnifyInstruction` → `VSpaceUnifyInstruction`, matching its `VSpaceMap`/`VSpaceUnmap` siblings, with a Tier-3 anchor against the old spelling.  (4) the legacy `syscallDispatchInner` ledger drain was **attempted and reverted** — `icMaintenanceBroadcast` carries an `@[extern]` symbol simulation builds deliberately do not link, and the module's link-gating policy forbids stubbing it; the entry is vestigial and the append-only ledger defers rather than loses, so closure is removing the export (SM9.E), recorded with the reasoning.
 
  **v0.32.99 PR #845 review round 3**: five findings, all consequences of this PR's own changes — (1) the page-alignment guard reached only two of the four checked map wrappers; both remaining ones guarded and `checkedMapWrappers_reject_unaligned` now pins all four to the same rejection (the duplication across wrappers is what let two drift).  (2) `checkedDispatch_capabilityOnly_eq_unchecked` was advertised as complete but enumerated 14 of 16 arms, omitting `.vspaceUnifyInstruction` and `.mintReplyCap`; both added plus their per-arm theorems.  (3) `.vspaceUnifyInstruction` was outside `lockSetTransitions_within_bound`, which supplies the size premise for bounded-wait/WCRT reasoning; `lockSet_vspaceUnifyInstruction_size_le` added.  (4) **the clean-to-PoU obligation was vacuous** — `kernelCodeWriteOwesPoUClean` ignored its site argument and asserted only barrier-list membership, mentioning neither `DC CVAU` nor any instruction invalidate, so it stayed provable with every clean absent; it is now a `PoUCleanObligation` naming the concrete per-site operations (`DCacheMaintenance.isClean` rejects invalidate-only, which would discard the bytes just written), with `kernelCodeWriteSites_emission_pending` recording as a decidable fact that the obligation is declared rather than discharged.  (5) the `sele4n-sys` wrapper documented `AsidNotBound` for an unbound ASID, but the capability binding returns `IllegalAuthority` first (deliberately — no ASID-existence oracle); contract corrected.
+
+  **AK7 re-anchor at v0.33.11**: `RAW_LOOKUP_TID` 1314 → 1318.  All four
+  increments are in the two **additive characterisation** lemmas
+  `endpointQueueRemoveDual_tcb_cpuAffinity_backward` and
+  `storeTcbQueueLinks_tcb_cpuAffinity_backward` — verbatim mirrors of their
+  already-baselined `ipcState` siblings, stating facts *about*
+  `objects[….toObjId]?` in the same class as `getTcb?_eq_some_iff`.  No new
+  live raw read: the consumer
+  `endpointQueueRemoveDual_determineTargetCore_eq` reads exclusively through
+  `determineTargetCore_congr` and `SystemState.getTcb?_eq_some_iff`.  The
+  should-grow metrics rose alongside (`GETTCB_ADOPTION` 2163 → 2181,
+  `GETENDPOINT_ADOPTION` 120 → 128, `GETNOTIFICATION_ADOPTION` 66 → 72).
 
   **Rust HAL at v0.32.120**: 812 tests, zero clippy warnings,
   zero `#[ignore]`'d.

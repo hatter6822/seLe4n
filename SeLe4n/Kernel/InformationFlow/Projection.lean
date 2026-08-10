@@ -704,8 +704,21 @@ theorem acceptedCovertChannel_scheduling
     channel's existence and confirms it is not accidentally introduced by the
     information-flow enforcement layer.
 
-    This theorem witnesses that the scheduling state is bounded to exactly
-    4 observable values, confirming the bandwidth analysis upper bound. -/
+    **What this theorem proves, precisely** (corrected WS-SM SM8.B, PR #861
+    review): that the three scheduling projections are the raw scheduler reads —
+    the channel is transparent, and the information-flow layer does not
+    accidentally add to it. It is *not* a capacity result: there is no
+    cardinality, frequency or bandwidth argument here, and the "4" below counts
+    projected **components**, not values (`domainTimeRemaining` alone ranges
+    over all of `Nat`). An earlier form of this docstring read the count as a
+    value bound and cited it as an upper bound on the channel; that reading was
+    wrong.
+
+    For the part that genuinely is bounded — the schedule-index alphabet, under
+    the scheduler's index-bounds invariant — see
+    `schedulingChannelIndex_alphabet_bounded`, and for the statement that
+    schedule length does *not* bound the rest, its companion
+    `schedulingChannel_not_bounded_by_scheduleLength`. -/
 theorem schedulingCovertChannel_bounded_width
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) :
     -- The scheduling covert channel consists of exactly 4 scalar projections:

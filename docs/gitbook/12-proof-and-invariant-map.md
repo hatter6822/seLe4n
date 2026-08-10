@@ -2558,6 +2558,21 @@ each group carries a load-bearing negative).
 > visible one.  The same cut removed a tautology (`endpointFlowCheck_state_independent`,
 > `X = X` by `rfl`) in favour of a genuinely state- and core-dependent gate.
 
+> **v0.33.11 review round 4.**  Three arms the live syscall dispatch reaches —
+> `.signal` on the bound-delivery path, `.receive` rendezvousing with a blocked
+> sender, and `.replyRecv` composing both legs — wake threads on remote home
+> cores and had no confinement or non-interference theorem, while the inventory's
+> count, injectivity and remote-write checks all passed without them.  All three
+> now carry the full trio and the inventory is eleven transitions, with
+> `crossCoreTransitionIsLiveArm` separating a below-API transition from the arm
+> the dispatch reaches.  The same cut bounds the live `.call` arm itself
+> (`endpointCallCrossCoreDispatch_confinedToCores`, over a write set that mirrors
+> the dispatch's own control flow), makes the covert-channel classification
+> evidence-bound through a total `CovertChannelId` table, replaces CC-1's
+> unsupported `log2(|domainSchedule|)` capacity figure with the component that is
+> genuinely bounded plus the statement of what is not, and extends the
+> enforcement boundary to audit the live cross-core wrappers (39 → 46 entries).
+
 `InformationFlow/NonInterferencePerCore.lean` and
 `InformationFlow/CovertChannelPerCore.lean` (WS-SM SM8.B, v0.33.5; staged,
 188 declarations, axiom-clean) prove that transitions leave the SM8.A

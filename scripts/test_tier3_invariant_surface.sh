@@ -1767,7 +1767,7 @@ run_check "INVARIANT" rg -n '^theorem notificationSignalWriteSet_eq_lockSet_wait
 run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem wakeThread_crossCoreNonInterference_of_visible_thread' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n 'CrossCoreTransition.all.length = 7' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n 'CrossCoreTransition.all.length = 11' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # v0.33.7 audit closure: the live `.call` arm is more than `endpointCallOnCore`
 # — it also runs the donation and the PIP chain walk, and the chain walk
 # re-buckets on each boosted server's HOME core.  Bounding the live arm needs
@@ -1817,6 +1817,64 @@ run_negative_check "INVARIANT" rg -n '^  \| _ => true' SeLe4n/Kernel/Information
 # exists: a checked-in tool nobody invokes is not a gate.
 run_check "INVARIANT" test -x scripts/check_module_axioms.py
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && ./scripts/check_module_axioms.py --all-smp-information-flow'
+
+# PR #861 review round 2: the live `.call` arm is bounded by a write set that
+# mirrors the dispatch's own control flow, not by hand-supplied intermediate
+# states.  NEGATIVE: `endpointCallLiveWriteSet` must stay a composition rule —
+# if it regains the job of guessing the chain, the reduction below is dead.
+run_check "INVARIANT" rg -n '^def endpointCallDispatchChainWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^def endpointCallDispatchWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointCallCrossCoreDispatch_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointCallDispatchWriteSet_eq_live_of_rendezvous' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointCallCrossCoreDispatch_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointCallWithCapsOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem ipcUnwrapCaps_preserves_machine' SeLe4n/Kernel/IPC/Operations/CapTransfer.lean
+
+# PR #861 review round 4 (P1): the three live cross-core arms the inventory used
+# to omit — a bound-delivery signal, a receive rendezvousing with a blocked
+# sender, and the composed `replyRecv`.  Each needs a write set, a confinement
+# lemma and an NI instantiation, and the inventory must count all eleven.
+run_check "INVARIANT" rg -n '^def notificationSignalBoundWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^def endpointReceiveDualWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^def endpointReplyRecvWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count : CrossCoreTransition\.all\.length = 11' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^def crossCoreTransitionIsLiveArm' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^  runLiveCrossCoreArmChecks' tests/SmpInformationFlowSuite.lean
+# The home-core frames those confinement proofs rest on: a dequeue and a badge
+# store must be proven non-migrations, or the write sets could not name a
+# pre-state home core at all.
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_tcb_cpuAffinity_backward' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_determineTargetCore_eq' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem storeTcbReceiveComplete_determineTargetCore_eq' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+
+# PR #861 review round 4 (P2): every covert-channel entry is tied to a projection
+# theorem through a total, compile-time-validated table, so a new channel cannot
+# be filed without deciding what proves its classification.
+run_check "INVARIANT" rg -n '^inductive CovertChannelId' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^def covertChannelEvidence' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem covertChannelEntry_eq_inventory' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n 'niName! acceptedCovertChannel_machineTimer_excluded_from_view' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+
+# PR #861 review round 4 (P2): CC-1's mitigation no longer claims a capacity
+# figure no theorem supports.  NEGATIVE: the log2 bits-per-switch claim must not
+# come back — `schedulingCovertChannel_bounded_width` proves transparency only.
+run_check "INVARIANT" rg -n '^theorem schedulingChannelIndex_alphabet_bounded' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem schedulingChannel_not_bounded_by_scheduleLength' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_negative_check "INVARIANT" rg -n 'bits per domain switch' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+
+# PR #861 review round 2 (P2) / round 4 (P2): the per-core enforcement boundary
+# audits the LIVE cross-core wrappers, not only the single-core table.
+run_check "INVARIANT" rg -n '^def crossCoreEnforcementEntries' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^def syscallIdToEnforcementNamePerCore' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_is_complete_crossCore' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_crossCore_classes_match' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem syscallIdToEnforcementNamePerCore_differs_at_seven' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 
 
 # WS-H12d IPC message payload bounds anchors — predicate definitions + enforcement + theorems.

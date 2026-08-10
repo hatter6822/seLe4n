@@ -311,6 +311,26 @@ theorem observableSlotsConfinedToCores_widen {st st' : SystemState} {cs : List C
     observableSlotsConfinedToCores st st' cs :=
   observableSlotsConfinedToCores_mono (fun _ hm => absurd hm (List.not_mem_nil)) h
 
+/-- SM8.B.2: a per-core-silent prefix followed by a step writing exactly `c`
+lands inside the singleton `[c]`.  The composition shape every "several object
+stores, then one scheduler write" pipeline takes; stated once so those proofs do
+not each re-derive `[] ++ [c] = [c]`. -/
+theorem observableSlotsConfinedToCores_widen_cons {st stMid st' : SystemState} {c : CoreId}
+    (h₁ : observableSlotsConfinedToCores st stMid [])
+    (h₂ : observableSlotsConfinedToCores stMid st' [c]) :
+    observableSlotsConfinedToCores st st' [c] :=
+  observableSlotsConfinedToCores_mono (fun _ hm => hm)
+    (List.nil_append [c] ▸ observableSlotsConfinedToCores_trans h₁ h₂)
+
+/-- SM8.B.2: a transition that writes no core at all is confined to *any*
+declared set — the arm every fail-closed or wake-free path of a cross-core
+transition takes.  A synonym for `_widen` with the argument order the pipeline
+proofs read more naturally. -/
+theorem observableSlotsConfinedToCores_widen_any {st st' : SystemState} {cs : List CoreId}
+    (h : observableSlotsConfinedToCores st st' []) :
+    observableSlotsConfinedToCores st st' cs :=
+  observableSlotsConfinedToCores_widen h
+
 /-- SM8.B.2: **the shared half of the observer's view is unchanged.**
 
 One field per component of `SharedObservableFragment`.  Stated at the

@@ -1621,7 +1621,8 @@ filter is label-blind.  The two-clearance form is the corollary below.
 
 This is the per-core restatement of the accepted covert channel CC-1
 (`acceptedCovertChannel_scheduling`, mirroring the single-core
-`schedulingCovertChannel_bounded_width`): under SMP each core carries its own
+`schedulingCovertChannel_bounded_width` — which, despite its name, proves
+transparency rather than a capacity bound): under SMP each core carries its own
 `activeDomain` / `domainTimeRemaining` / `domainScheduleIndex`, so the channel
 exists **once per core**, while the system-wide `domainSchedule` is shared. -/
 theorem onCore_schedulingTransparency (ctx : LabelingContext) (c : CoreId)

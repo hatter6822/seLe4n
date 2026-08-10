@@ -430,9 +430,70 @@ SM8.B; the lock-contention channel CC-5 is SM8.B.8; the
 | SM8.B.13 | `crossCoreLeakage_bounded` | Theorem | L | LANDED |
 | SM8.B.14 | 15+ NI scenarios (tests) | L | LANDED |
 
+**PR #861 review round 4 (v0.33.11).**  Three new findings, plus the two items
+round 2 had registered rather than built.  All five now closed.
+
+1. **P1 — three live cross-core arms were unaudited.**
+   `notificationSignalBoundOnCore` (the production `.signal` bound-delivery
+   path), `endpointReceiveDualOnCore` (`.receive` rendezvousing with a blocked
+   sender) and `endpointReplyRecvOnCore` (`.replyRecv` composing both legs) all
+   wake threads on remote home cores, and none had a write set, a confinement
+   lemma or an NI theorem — while `crossCoreNiTheorem_count`, the injectivity
+   check and the remote-write filter all passed without them.  An inventory that
+   reports coverage it does not have is worse than a shorter one.  **Closed**:
+   each gets `…WriteSet` / `…_confinedToCores` / `…_crossCoreNonInterference`,
+   and `CrossCoreTransition` grows 7 → 11 with `crossCoreTransitionIsLiveArm`
+   (5 live arms) separating a below-API transition from the arm the syscall
+   dispatch actually reaches.
+
+   Two home-core frames were the prerequisite, not incidental work: a write set
+   may name a woken thread's home core at the *pre-state* only if the stores
+   between are non-migrations, so `endpointQueueRemoveDual` and
+   `storeTcbReceiveComplete` each needed one.  The first came out of a new
+   `endpointQueueRemoveDual_tcb_cpuAffinity_backward` (the `ipcState` companion's
+   mirror) composed with the existing forward transport.
+
+2. **P1 (round 2, item 3 — now built, not registered).**  The live `.call` arm is
+   bounded by `endpointCallCrossCoreDispatch_confinedToCores`, whose write set
+   `endpointCallDispatchChainWriteSet` mirrors the dispatch's own control flow,
+   so the chain leg is keyed on the resolved receiver at the post-donation state.
+   `endpointCallDispatchWriteSet_eq_live_of_rendezvous` states the instantiation
+   explicitly.  `endpointCallWithCapsOnCore_confinedToCores` closes the WithCaps
+   gap, via new machine frames down to `ipcTransferSingleCap_preserves_machine`.
+
+3. **P2 (round 2, item 4 — now built).**  `syscallIdToEnforcementNamePerCore` is
+   built from the live cross-core wrapper names (differing at exactly seven
+   syscalls), `crossCoreEnforcementEntries` classifies them, and
+   `enforcementBoundaryPerCore_is_complete_crossCore` audits the SMP path.
+   Boundary 39 → 46.  The canonical entries are **kept**, not replaced — the
+   boot-pinned `syscallDispatchInner` still reaches the single-core wrappers —
+   and `enforcementBoundaryPerCore_crossCore_classes_match` checks that
+   re-routing a transition never changed its enforcement class.  (SM8.E.3 still
+   owns promoting the entry into the canonical boundary.)
+
+4. **P2 — the covert-channel classification was self-certifying.**  `modelVisible`
+   took an arbitrary `Bool`, and both the count theorem and
+   `acceptedCovertChannel_hardwareChannels_are_not_modelVisible` merely re-read
+   the literals; CC-2, CC-3 and CC-4 had no theorem tying them to the projection.
+   **Closed**: each has one, and the inventory is now a total function out of
+   `CovertChannelId` with a `niName!`-validated evidence table, so a new channel
+   cannot be filed without deciding what proves its classification.
+
+5. **P2 — CC-1's mitigation claimed a capacity bound nothing supports.**  It cited
+   `schedulingCovertChannel_bounded_width` for `log2(|domainSchedule|)` bits per
+   switch.  That theorem is three `rfl`s (the projections are the raw scheduler
+   reads) with no cardinality or frequency argument, and its own docstring's
+   "bounded to exactly 4 observable values" counts *components* —
+   `domainTimeRemaining` alone ranges over all of `Nat`.  **Closed** by proving
+   what is true (`schedulingChannelIndex_alphabet_bounded`, the index component
+   under the scheduler's index-bounds invariant) and stating what is not
+   (`schedulingChannel_not_bounded_by_scheduleLength`).  The `Projection.lean`
+   docstring and `docs/DEPLOYMENT_GUIDE.md` are corrected; a Tier-3 negative
+   anchor forbids the bits-per-switch claim's return.
+
 **PR #861 review round 2 (v0.33.10).**  Four findings on the fix commit, all
-valid.  Two closed outright, two closed as *claims* with the underlying work
-registered rather than implied:
+valid.  Two closed outright; items 3 and 4 were closed as *claims* with the
+underlying work registered, and both were **built at v0.33.11** (above):
 
 1. **The axiom sweep skipped `private` declarations on a false justification.**
    It argued a public consumer's probe would surface any bad axiom and that an

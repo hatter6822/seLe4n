@@ -228,6 +228,58 @@ theorem ipcUnwrapCaps_preserves_scheduler
   · simp at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
   · exact ipcUnwrapCapsLoop_preserves_scheduler _ _ _ _ _ _ _ _ _ _ hStep
 
+/-- WS-SM SM8.B.2: the transfer loop never touches the machine, so no core's
+banked `RegisterFile` moves.  Same induction as the scheduler companion above,
+one `ipcTransferSingleCap_preserves_machine` per step. -/
+theorem ipcUnwrapCapsLoop_preserves_machine
+    (caps : Array Capability) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
+    (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
+    (hStep : ipcUnwrapCapsLoop caps senderRoot receiverRoot idx nextBase accResults fuel st
+             = .ok (summary, st')) :
+    st'.machine = st.machine := by
+  induction fuel generalizing idx nextBase accResults st with
+  | zero =>
+    simp [ipcUnwrapCapsLoop] at hStep
+    obtain ⟨_, rfl⟩ := hStep; rfl
+  | succ n ih =>
+    simp only [ipcUnwrapCapsLoop] at hStep
+    cases hCap : caps[idx]? with
+    | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
+    | some cap =>
+      simp [hCap] at hStep
+      cases hTransfer : ipcTransferSingleCap cap
+          { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0 }
+          receiverRoot nextBase maxExtraCaps st with
+      | error e =>
+        simp [hTransfer] at hStep
+        obtain ⟨_, rfl⟩ := hStep; rfl
+      | ok pair =>
+        rcases pair with ⟨result, stNext⟩
+        have hMach := ipcTransferSingleCap_preserves_machine cap _ receiverRoot nextBase
+          maxExtraCaps st stNext result hTransfer
+        simp [hTransfer] at hStep
+        cases result with
+        | installed c s => rw [ih _ _ _ _ hStep, hMach]
+        | noSlot => rw [ih _ _ _ _ hStep, hMach]
+        | grantDenied => rw [ih _ _ _ _ hStep, hMach]
+
+/-- WS-SM SM8.B.2: IPC capability transfer is machine-invariant.  Paired with
+`ipcUnwrapCaps_preserves_scheduler`, this is what makes the WithCaps leg of the
+cross-core `.call` contribute nothing to the transition's per-core write set. -/
+theorem ipcUnwrapCaps_preserves_machine
+    (msg : IpcMessage)
+    (senderRoot receiverRoot : SeLe4n.ObjId)
+    (slotBase : SeLe4n.Slot) (grantRight : Bool)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st
+             = .ok (summary, st')) :
+    st'.machine = st.machine := by
+  unfold ipcUnwrapCaps at hStep
+  split at hStep
+  · simp at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
+  · exact ipcUnwrapCapsLoop_preserves_machine _ _ _ _ _ _ _ _ _ _ hStep
+
 theorem ipcUnwrapCapsLoop_preserves_services
     (caps : Array Capability) (senderRoot receiverRoot : SeLe4n.ObjId)
     (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)

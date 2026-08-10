@@ -15,6 +15,7 @@ transition that actually writes a remote core.  This module supplies them.
 import SeLe4n.Kernel.InformationFlow.NonInterferencePerCore
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReply
 import SeLe4n.Kernel.IPC.CrossCore.Cancellation
+import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDispatch
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
 
 /-!
@@ -208,6 +209,40 @@ theorem consumeCallerReply_confinedToCores (st st' : SystemState)
     (SystemState.consumeCallerReply_scheduler_eq st st' caller rid hStep)
     (SystemState.consumeCallerReply_machine_eq st st' caller rid hStep)
 
+theorem linkCallerReply_confinedToCores (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (st st' : SystemState)
+    (hStep : SystemState.linkCallerReply caller rid st = .ok ((), st')) :
+    observableSlotsConfinedToCores st st' [] :=
+  observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+    (linkCallerReply_scheduler_eq st st' caller rid hStep)
+    (linkCallerReply_machine_eq st st' caller rid hStep)
+
+theorem endpointQueueRemoveDual_confinedToCores (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool) (tid : SeLe4n.ThreadId) (st st' : SystemState)
+    (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st')) :
+    observableSlotsConfinedToCores st st' [] :=
+  observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+    (endpointQueueRemoveDual_scheduler_eq st st' endpointId isReceiveQ tid hStep)
+    (endpointQueueRemoveDual_machine_eq st st' endpointId isReceiveQ tid hStep)
+
+theorem storeTcbReceiveComplete_confinedToCores (st st' : SystemState)
+    (tid : SeLe4n.ThreadId) (msg : Option IpcMessage)
+    (hStep : storeTcbReceiveComplete st tid msg = .ok st') :
+    observableSlotsConfinedToCores st st' [] :=
+  observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+    (storeTcbReceiveComplete_scheduler_eq st st' tid msg hStep)
+    (storeTcbReceiveComplete_machine_eq st st' tid msg hStep)
+
+theorem cleanupPreReceiveDonationChecked_confinedToCores (st st' : SystemState)
+    (receiver : SeLe4n.ThreadId)
+    (hStep : cleanupPreReceiveDonationChecked st receiver = .ok st') :
+    observableSlotsConfinedToCores st st' [] := by
+  have hEq : cleanupPreReceiveDonation st receiver = st' :=
+    cleanupPreReceiveDonationChecked_ok_eq_cleanup st st' receiver hStep
+  exact observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+    (hEq ▸ cleanupPreReceiveDonation_scheduler_eq st receiver)
+    (hEq ▸ cleanupPreReceiveDonation_machine_eq st receiver)
+
 theorem storeTcbIpcStateAndMessage_fromTcb_confinedToCores (st st' : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (ipc : ThreadIpcState) (msg : Option IpcMessage)
     (hStep : storeTcbIpcStateAndMessage_fromTcb st tid tcb ipc msg = .ok st') :
@@ -311,6 +346,57 @@ theorem storeTcbQueueLinks_determineTargetCore_eq (st st' : SystemState)
         (tcbWithQueueLinks tcb prev pprev next) x
         ((SystemState.getTcb?_eq_some_iff st tid tcb).mpr
           (lookupTcb_some_objects st tid tcb hLk)) rfl hObjInv hStore
+
+/-- SM8.B.2: `endpointQueueRemoveDual` is not a migration — the mid-queue splice
+rewrites the endpoint, the removed thread's links and its neighbours', never an
+affinity.  Composed from the two directions of the transition's own TCB
+transport: backward gives affinity agreement where the post-state has a TCB,
+forward rules out a TCB appearing or vanishing. -/
+theorem endpointQueueRemoveDual_determineTargetCore_eq (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid x : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st')) :
+    determineTargetCore st' x = determineTargetCore st x := by
+  refine determineTargetCore_congr st st' x ?_
+  cases hPost : st'.getTcb? x with
+  | none =>
+    cases hPre : st.getTcb? x with
+    | none => simp
+    | some tcb =>
+      -- A TCB cannot vanish: the forward transport produces one at the same key.
+      obtain ⟨tcb', hTcb'⟩ := endpointQueueRemoveDual_tcb_forward st st' endpointId
+        isReceiveQ tid x.toObjId tcb hObjInv hStep
+        ((SystemState.getTcb?_eq_some_iff st x tcb).mp hPre)
+      rw [(SystemState.getTcb?_eq_some_iff st' x tcb').mpr hTcb'] at hPost
+      exact absurd hPost (by simp)
+  | some tcb' =>
+    obtain ⟨tcb, hPreRaw, hAff⟩ := endpointQueueRemoveDual_tcb_cpuAffinity_backward st st'
+      endpointId isReceiveQ tid x tcb' hObjInv hStep
+      ((SystemState.getTcb?_eq_some_iff st' x tcb').mp hPost)
+    rw [(SystemState.getTcb?_eq_some_iff st x tcb).mpr hPreRaw]
+    simp [hAff]
+
+/-- SM8.B.2: `storeTcbReceiveComplete` is not a migration — it rewrites the
+receiver's `ipcState`, `pendingMessage` and reply stash, never its affinity. -/
+theorem storeTcbReceiveComplete_determineTargetCore_eq (st st' : SystemState)
+    (tid : SeLe4n.ThreadId) (msg : Option IpcMessage) (x : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbReceiveComplete st tid msg = .ok st') :
+    determineTargetCore st' x = determineTargetCore st x := by
+  unfold storeTcbReceiveComplete at hStep
+  cases hTcb : lookupTcb st tid with
+  | none => simp [hTcb] at hStep
+  | some tcb =>
+    simp only [hTcb] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore] at hStep
+      have hEq := Except.ok.inj hStep; subst hEq
+      exact storeObject_tcb_determineTargetCore_eq st pair.2 tid tcb
+        { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none } x
+        ((SystemState.getTcb?_eq_some_iff st tid tcb).mpr
+          (lookupTcb_some_objects st tid tcb hTcb)) rfl hObjInv hStore
 
 /-- SM8.B.2: `endpointQueuePopHead` is not a migration either — it rewrites the
 endpoint's queue and two threads' link fields, and nothing's affinity. -/
@@ -538,6 +624,67 @@ theorem notificationWaitOnCore_confinedToCores (notificationId : SeLe4n.ObjId)
                     (storeTcbIpcState_fromTcb_confinedToCores st1 st2 waiter tcb _ hIpc))
                   (removeRunnableOnCore_confinedToCores st2 waiter executingCore)
 
+/-- SM8.B.2: **the cores a bound-aware cross-core signal may write** — the bound
+TCB's home core when the badge is delivered directly, otherwise the plain
+signal's set.
+
+`boundDeliveryTarget?` is the transition's own pre-state resolution, so the
+declared set and the transition name the same TCB. -/
+def notificationSignalBoundWriteSet (st : SystemState) (notificationId : SeLe4n.ObjId) :
+    List CoreId :=
+  match boundDeliveryTarget? st notificationId with
+  | some (t, _) => [determineTargetCore st t]
+  | none => notificationSignalWriteSet st notificationId
+
+/-- SM8.B.2 (**SM6.B, cross-core** — the *bound* signal, the live `.signal` arm):
+a bound-aware signal's per-core writes stay inside
+`notificationSignalBoundWriteSet`.
+
+Two shapes:
+
+* **Bound delivery** — dequeue the bound TCB from the endpoint it is blocked on,
+  store the badge, **wake it on its home core**: `[] ++ [] ++ [boundHome]`.
+  Naming `boundHome` at the pre-state needs the dequeue and the badge store to
+  be non-migrations, which is what the two §1a frames added for this path say.
+* **Fall-through** — no bound-delivery target, so the transition *is*
+  `notificationSignalOnCore` and its own confinement applies verbatim. -/
+theorem notificationSignalBoundOnCore_confinedToCores (notificationId : SeLe4n.ObjId)
+    (badge : SeLe4n.Badge) (executingCore : CoreId) (st : SystemState)
+    (hObjInv : st.objects.invExt) :
+    observableSlotsConfinedToCores st
+      (notificationSignalBoundOnCore notificationId badge executingCore st).1
+      (notificationSignalBoundWriteSet st notificationId) := by
+  unfold notificationSignalBoundOnCore notificationSignalBoundWriteSet
+  cases hTarget : boundDeliveryTarget? st notificationId with
+  | none =>
+    simp only []
+    exact notificationSignalOnCore_confinedToCores notificationId badge executingCore st hObjInv
+  | some pair =>
+    obtain ⟨t, epId⟩ := pair
+    simp only []
+    cases hRemove : endpointQueueRemoveDual epId true t st with
+    | error e => exact observableSlotsConfinedToCores_of_eq _ rfl
+    | ok u =>
+      obtain ⟨_, st1⟩ := u
+      simp only []
+      have hInv1 : st1.objects.invExt :=
+        endpointQueueRemoveDual_preserves_objects_invExt st st1 epId true t hObjInv hRemove
+      have hT1 : determineTargetCore st1 t = determineTargetCore st t :=
+        endpointQueueRemoveDual_determineTargetCore_eq st st1 epId true t t hObjInv hRemove
+      cases hStore : storeTcbReceiveComplete st1 t
+          (some { IpcMessage.empty with badge := some badge }) with
+      | error e => exact observableSlotsConfinedToCores_of_eq _ rfl
+      | ok st2 =>
+        have hT2 : determineTargetCore st2 t = determineTargetCore st1 t :=
+          storeTcbReceiveComplete_determineTargetCore_eq st1 st2 t _ t hInv1 hStore
+        have hChain := observableSlotsConfinedToCores_widen_cons
+          (observableSlotsConfinedToCores_trans
+            (endpointQueueRemoveDual_confinedToCores epId true t st st1 hRemove)
+            (storeTcbReceiveComplete_confinedToCores st1 st2 t _ hStore))
+          (wakeThread_confinedToCores st2 t executingCore)
+        rw [hT2, hT1] at hChain
+        exact hChain
+
 -- ============================================================================
 -- §3  SM6.A — the endpoint call
 -- ============================================================================
@@ -709,6 +856,209 @@ theorem endpointReplyOnCore_confinedToCores (replier target : SeLe4n.ThreadId)
                     (consumeCallerReply_confinedToCores _ st2 target rid hConsume)
                 · exact observableSlotsConfinedToCores_of_eq _ rfl
         · exact observableSlotsConfinedToCores_of_eq _ rfl
+
+-- ============================================================================
+-- §4a  SM6.C — the receive leg, and the composed `replyRecv`
+-- ============================================================================
+
+/-- SM8.B.2: **the cores a cross-core endpoint receive may write** — the woken
+sender's home core on a rendezvous, the receiver's own core when it blocks.
+
+Read from the pre-state through the same `sendQ.head` the transition resolves,
+so the declared set and the transition name the same sender.  The two arms are
+genuinely exclusive: a receive that rendezvouses does not block, and a receive
+that blocks wakes nobody. -/
+def endpointReceiveDualWriteSet (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (executingCore : CoreId) : List CoreId :=
+  match st.getEndpoint? endpointId with
+  | some ep =>
+      match ep.sendQ.head with
+      | some sender => [determineTargetCore st sender]
+      | none => [executingCore]
+  | none => []
+
+/-- SM8.B.2 (**SM6.C, cross-core** — the `replyRecv` receive leg): a cross-core
+endpoint receive's per-core writes stay inside `endpointReceiveDualWriteSet`.
+
+Three shapes, all covered:
+
+* **`blockedOnSend` rendezvous** — pop the send queue, mark the sender `.ready`,
+  **wake it on its home core**, store the receiver's message:
+  `[] ++ [] ++ [senderHome] ++ []`.  The §1a frame layer is what lets
+  `senderHome` be named at the pre-state.
+* **`blockedOnCall` rendezvous** — the caller becomes `.blockedOnReply` and is
+  deliberately *not* woken (the Call contract), so this path writes no core at
+  all and is covered by the declared set through the append.
+* **Block path** — return any donated SchedContext, enqueue on the receive
+  queue, stash the server's reply object, then deschedule the receiver on **its
+  own** core: `[executingCore]`.
+
+Every fail-closed arm returns the pre-state. -/
+theorem endpointReceiveDualOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
+    (executingCore : CoreId) (st : SystemState) (hObjInv : st.objects.invExt) :
+    observableSlotsConfinedToCores st
+      (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1
+      (endpointReceiveDualWriteSet st endpointId executingCore) := by
+  unfold endpointReceiveDualOnCore endpointReceiveDualWriteSet
+  cases hEp : st.getEndpoint? endpointId with
+  | none =>
+    simp only []
+    split <;> exact observableSlotsConfinedToCores_of_eq _ rfl
+  | some ep =>
+    simp only []
+    cases hHead : ep.sendQ.head with
+    | none =>
+      -- Block path: every step is scheduler-silent until the receiver is
+      -- descheduled on its own core.
+      simp only []
+      split
+      · exact observableSlotsConfinedToCores_of_eq _ rfl
+      · next stClean hClean =>
+        split
+        · exact observableSlotsConfinedToCores_of_eq _ rfl
+        · next st1 hEnq =>
+          have hPre := observableSlotsConfinedToCores_trans
+            (cleanupPreReceiveDonationChecked_confinedToCores st stClean receiver hClean)
+            (endpointQueueEnqueue_confinedToCores endpointId true receiver stClean st1 hEnq)
+          split
+          · exact observableSlotsConfinedToCores_of_eq _ rfl
+          · next st2 hIpc =>
+            have hPre2 := observableSlotsConfinedToCores_trans hPre
+              (storeTcbIpcState_confinedToCores st1 st2 receiver _ hIpc)
+            split
+            · exact observableSlotsConfinedToCores_widen_cons hPre2
+                (removeRunnableOnCore_confinedToCores st2 receiver executingCore)
+            · next rTcb hTcb =>
+              split
+              · split
+                · exact observableSlotsConfinedToCores_of_eq _ rfl
+                · next _ st3 hStash =>
+                  exact observableSlotsConfinedToCores_widen_cons
+                    (observableSlotsConfinedToCores_trans hPre2
+                      (storeObject_confinedToCores st2 st3 _ _ hStash))
+                    (removeRunnableOnCore_confinedToCores st3 receiver executingCore)
+              · exact observableSlotsConfinedToCores_of_eq _ rfl
+    | some senderHead =>
+      simp only []
+      split
+      · exact observableSlotsConfinedToCores_of_eq _ rfl
+      · next sender senderTcb st1 hPop =>
+        have hEpObj : st.objects[endpointId]? = some (.endpoint ep) :=
+          (SystemState.getEndpoint?_eq_some_iff st endpointId ep).mp hEp
+        have hPopHead : ep.sendQ.head = some sender := by
+          have h := endpointQueuePopHead_returns_head endpointId false st ep sender st1
+            hEpObj hPop
+          simpa using h
+        have hSender : sender = senderHead := by
+          rw [hHead] at hPopHead; simpa using hPopHead.symm
+        have hInv1 : st1.objects.invExt :=
+          endpointQueuePopHead_preserves_objects_invExt endpointId false st st1
+            sender senderTcb hObjInv hPop
+        have hT1 : determineTargetCore st1 sender = determineTargetCore st sender :=
+          endpointQueuePopHead_determineTargetCore_eq endpointId false st st1
+            sender senderTcb sender hObjInv hPop
+        have hPopConf := endpointQueuePopHead_confinedToCores endpointId false st st1
+          sender hPop
+        split
+        · -- `blockedOnCall` sender: recorded as `.blockedOnReply`, never woken.
+          rw [if_pos rfl]
+          split
+          · exact observableSlotsConfinedToCores_of_eq _ rfl
+          · next st2 hIpc =>
+            split
+            · exact observableSlotsConfinedToCores_of_eq _ rfl
+            · next rid =>
+              split
+              · exact observableSlotsConfinedToCores_of_eq _ rfl
+              · next st3 hLink =>
+                split
+                · next st4 hMsg =>
+                  exact observableSlotsConfinedToCores_widen_any
+                    (observableSlotsConfinedToCores_trans
+                      (observableSlotsConfinedToCores_trans hPopConf
+                        (storeTcbIpcStateAndMessage_confinedToCores st1 st2 sender _ _ hIpc))
+                      (observableSlotsConfinedToCores_trans
+                        (linkCallerReply_confinedToCores sender rid st2 st3 hLink)
+                        (storeTcbIpcStateAndMessage_confinedToCores st3 st4 receiver _ _ hMsg)))
+                · exact observableSlotsConfinedToCores_of_eq _ rfl
+        · -- `blockedOnSend` sender: woken on its own home core.
+          rw [if_neg (by simp)]
+          split
+          · exact observableSlotsConfinedToCores_of_eq _ rfl
+          · next st2 hReady =>
+            have hT2 : determineTargetCore st2 sender = determineTargetCore st1 sender :=
+              storeTcbIpcStateAndMessage_determineTargetCore_eq st1 st2 sender
+                .ready none sender hInv1 hReady
+            split
+            · next st3 hMsg =>
+              have hChain := observableSlotsConfinedToCores_trans
+                (observableSlotsConfinedToCores_trans hPopConf
+                  (storeTcbIpcStateAndMessage_confinedToCores st1 st2 sender .ready none hReady))
+                (observableSlotsConfinedToCores_trans
+                  (wakeThread_confinedToCores st2 sender executingCore)
+                  (storeTcbIpcStateAndMessage_confinedToCores
+                    (wakeThread st2 sender executingCore).1 st3 receiver _ _ hMsg))
+              rw [hT2, hT1, hSender] at hChain
+              exact observableSlotsConfinedToCores_mono (by intro c hc; simpa using hc) hChain
+            · exact observableSlotsConfinedToCores_of_eq _ rfl
+
+/-- SM8.B.2: **the cores a cross-core `replyRecv` may write** — the answered
+caller's home core from the reply leg, plus whatever the receive leg writes at
+the state the reply leg leaves behind.
+
+Like `endpointCallDispatchChainWriteSet` this mirrors the transition's own
+control flow rather than guessing: the receive leg runs at `st1`, the reply's
+post-state, so its write set is read there.  Reading it at `st` would be wrong
+for the same reason the call's chain leg cannot be read at `st` — the reply
+unblocks a thread, which can change which sender heads the send queue. -/
+def endpointReplyRecvWriteSet (endpointId : SeLe4n.ObjId)
+    (receiver replyTarget : SeLe4n.ThreadId) (msg : IpcMessage)
+    (executingCore : CoreId) (st : SystemState) : List CoreId :=
+  determineTargetCore st replyTarget ::
+    (match endpointReplyOnCore receiver replyTarget msg executingCore st with
+     | (st1, .ok _) => endpointReceiveDualWriteSet st1 endpointId executingCore
+     | (_, .error _) => [])
+
+/-- SM8.B.2 (**SM6.C, cross-core** — the composed `replyRecv`): both legs
+together stay inside `endpointReplyRecvWriteSet`.
+
+`endpointReplyRecvOnCore` is all-or-nothing: a failed leg returns the pre-state,
+so only the both-succeed path writes anything, and there it is exactly the reply
+leg's target home core followed by the receive leg's set at the intermediate
+state.  The receive leg's `objects.invExt` premise is discharged from the reply
+leg's own preservation theorem rather than assumed. -/
+theorem endpointReplyRecvOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
+    (receiver replyTarget : SeLe4n.ThreadId) (msg : IpcMessage)
+    (replyId : Option SeLe4n.ReplyId) (executingCore : CoreId) (st : SystemState)
+    (hObjInv : st.objects.invExt) :
+    observableSlotsConfinedToCores st
+      (endpointReplyRecvOnCore endpointId receiver replyTarget msg replyId executingCore st).1
+      (endpointReplyRecvWriteSet endpointId receiver replyTarget msg executingCore st) := by
+  unfold endpointReplyRecvOnCore endpointReplyRecvWriteSet
+  have hReply := endpointReplyOnCore_confinedToCores receiver replyTarget msg executingCore st
+    hObjInv
+  have hInv1 : (endpointReplyOnCore receiver replyTarget msg executingCore st).1.objects.invExt :=
+    endpointReplyOnCore_preserves_objects_invExt receiver replyTarget msg executingCore st hObjInv
+  cases hRep : endpointReplyOnCore receiver replyTarget msg executingCore st with
+  | mk st1 res =>
+    rw [hRep] at hReply hInv1
+    cases res with
+    | error e => simp only []; exact observableSlotsConfinedToCores_of_eq _ rfl
+    | ok replySgi =>
+      simp only []
+      have hRecv := endpointReceiveDualOnCore_confinedToCores endpointId receiver replyId
+        executingCore st1 hInv1
+      cases hRcv : endpointReceiveDualOnCore endpointId receiver replyId executingCore st1 with
+      | mk st2 res2 =>
+        rw [hRcv] at hRecv
+        cases res2 with
+        | error e => simp only []; exact observableSlotsConfinedToCores_of_eq _ rfl
+        | ok pair =>
+          rcases pair with ⟨_, recvSgi⟩
+          simp only []
+          have h := observableSlotsConfinedToCores_trans hReply hRecv
+          simpa using h
 
 -- ============================================================================
 -- §5  SM6.E — the cancellation transition
@@ -894,26 +1244,13 @@ theorem pipChainWriteSet_subset_live (st : SystemState) (endpointId : SeLe4n.Obj
 
 Read the signature literally: `stTrans` and `stDon` are *arbitrary* states and
 `hTrans` / `hDonation` are *hypotheses about them*.  This is a composition
-lemma, and on its own it does **not** establish a bound on
-`endpointCallCrossCoreDispatch` — nothing here mentions that function, its
-caller, message or rights, and no reduction theorem in this repository supplies
-these premises from an actual dispatch result (PR #861 review, second round;
-the first round's version of this was worse — it guessed the chain from the
-pre-state and the caller, which is the wrong chain entirely).
+lemma; on its own it establishes nothing about `endpointCallCrossCoreDispatch`.
 
-What is genuinely proven, and all that is:
-
-* each leg's confinement, at the state that leg actually runs at
-  (`endpointCallOnCore_confinedToCores`, `applyCallDonation_confinedToCores`,
-  `propagatePipChainCrossCore_confinedToCores`); and
-* that those compose into the union, which is this theorem.
-
-**What is missing to reach the live arm**, and is registered in the plan rather
-than implied here: a confinement lemma for `endpointCallWithCapsOnCore` (the
-live dispatch calls the WithCaps form, not `endpointCallOnCore`), and a
-reduction of `endpointCallCrossCoreDispatch` to its real intermediate states so
-`stTrans` / `stDon` / `chainStart` can be instantiated at the resolved receiver
-and the post-donation state instead of supplied by hand. -/
+It is no longer the end of the story.  §5b below discharges those premises from
+an actual dispatch result — `endpointCallCrossCoreDispatch_confinedToCores`,
+whose write set mirrors the dispatch's own control flow and instantiates this
+rule at the resolved receiver and the post-donation state.  This theorem is what
+that one composes with. -/
 theorem endpointCallLive_confinedToCores (st stTrans stDon : SystemState)
     (endpointId : SeLe4n.ObjId) (executingCore : CoreId) (chainStart : SeLe4n.ThreadId)
     (hTrans : observableSlotsConfinedToCores st stTrans
@@ -929,6 +1266,252 @@ theorem endpointCallLive_confinedToCores (st stTrans stDon : SystemState)
       (observableSlotsConfinedToCores_trans hTrans hDonation))
     (propagatePipChainCrossCore_confinedToCores executingCore
       stDon.objectIndex.length stDon chainStart)
+
+-- ============================================================================
+-- §5b  The live `.call` arm itself
+-- ============================================================================
+--
+-- §5a bounds the legs.  This section bounds `endpointCallCrossCoreDispatch` —
+-- the function the live `.call` syscall arm actually calls — by reducing it to
+-- its own intermediate states rather than taking them as parameters.
+
+/-- SM8.B.2: IPC capability transfer is per-core silent.  It rewrites the
+receiver's CNode and the CDT, never a run queue and never a register bank, so it
+contributes nothing to the cross-core `.call`'s write set. -/
+theorem ipcUnwrapCaps_confinedToCores (msg : IpcMessage)
+    (senderRoot receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot) (grantRight : Bool)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st
+             = .ok (summary, st')) :
+    observableSlotsConfinedToCores st st' [] :=
+  observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+    (ipcUnwrapCaps_preserves_scheduler msg senderRoot receiverRoot slotBase grantRight
+      st st' summary hStep)
+    (ipcUnwrapCaps_preserves_machine msg senderRoot receiverRoot slotBase grantRight
+      st st' summary hStep)
+
+/-- SM8.B.2: the WithCaps call leaves the bare call's run queues in place — every
+arm either *is* the bare call's post-state or is that state after an
+`ipcUnwrapCaps`, which preserves the scheduler. -/
+theorem endpointCallWithCapsOnCore_scheduler_eq (endpointId : SeLe4n.ObjId)
+    (caller : SeLe4n.ThreadId) (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : CoreId) (st : SystemState) :
+    (endpointCallWithCapsOnCore endpointId caller msg endpointRights callerCspaceRoot
+        receiverSlotBase executingCore st).1.scheduler
+      = (endpointCallOnCore endpointId caller msg executingCore st).1.scheduler := by
+  unfold endpointCallWithCapsOnCore
+  cases hCall : endpointCallOnCore endpointId caller msg executingCore st with
+  | mk stCall res =>
+    cases res with
+    | error e => rfl
+    | ok sgi =>
+      simp only []
+      repeat' split
+      all_goals first
+        | rfl
+        | (rename_i h; exact ipcUnwrapCaps_preserves_scheduler _ _ _ _ _ _ _ _ h)
+
+/-- SM8.B.2: and the register banks, by the same case analysis. -/
+theorem endpointCallWithCapsOnCore_machine_eq (endpointId : SeLe4n.ObjId)
+    (caller : SeLe4n.ThreadId) (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : CoreId) (st : SystemState) :
+    (endpointCallWithCapsOnCore endpointId caller msg endpointRights callerCspaceRoot
+        receiverSlotBase executingCore st).1.machine
+      = (endpointCallOnCore endpointId caller msg executingCore st).1.machine := by
+  unfold endpointCallWithCapsOnCore
+  cases hCall : endpointCallOnCore endpointId caller msg executingCore st with
+  | mk stCall res =>
+    cases res with
+    | error e => rfl
+    | ok sgi =>
+      simp only []
+      repeat' split
+      all_goals first
+        | rfl
+        | (rename_i h; exact ipcUnwrapCaps_preserves_machine _ _ _ _ _ _ _ _ h)
+
+/-- SM8.B.2: the **WithCaps** cross-core call — the form the live dispatch calls
+— is confined to the bare call's write set.  The extra leg is `ipcUnwrapCaps`,
+which by the lemma above writes no core at all, so the two forms declare the
+same per-core footprint.
+
+Proved through the two frames rather than by re-walking the WithCaps branch
+tree: confinement reads only `scheduler` and the register banks, and on both of
+those the WithCaps post-state *is* the bare call's. -/
+theorem endpointCallWithCapsOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
+    (caller : SeLe4n.ThreadId) (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : CoreId) (st : SystemState) (hObjInv : st.objects.invExt) :
+    observableSlotsConfinedToCores st
+      (endpointCallWithCapsOnCore endpointId caller msg endpointRights callerCspaceRoot
+        receiverSlotBase executingCore st).1
+      (endpointCallWriteSet st endpointId executingCore) := by
+  have h := observableSlotsConfinedToCores_trans
+    (endpointCallOnCore_confinedToCores endpointId caller msg executingCore st hObjInv)
+    (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+      (endpointCallWithCapsOnCore_scheduler_eq endpointId caller msg endpointRights
+        callerCspaceRoot receiverSlotBase executingCore st)
+      (endpointCallWithCapsOnCore_machine_eq endpointId caller msg endpointRights
+        callerCspaceRoot receiverSlotBase executingCore st))
+  simpa using h
+
+/-- SM8.B.2: **the chain leg the live `.call` actually walks**, recovered from
+the pre-state by mirroring `endpointCallCrossCoreDispatch`'s own control flow —
+same receiver resolution, same WithCaps call, same `applyCallDonation` — so the
+walk is keyed on the *resolved receiver* at the *post-donation* state, which is
+where the dispatch keys it.  Every arm on which the dispatch does not walk a
+chain returns `[]`. -/
+def endpointCallDispatchChainWriteSet
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointRights : AccessRightSet) (callerCspaceRoot : SeLe4n.ObjId)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId)
+    (st : SystemState) : List CoreId :=
+  let maybeReceiver := match st.getEndpoint? endpointId with
+    | some ep => ep.receiveQ.head
+    | none    => none
+  match endpointCallWithCapsOnCore endpointId caller msg endpointRights callerCspaceRoot
+      receiverSlotBase executingCore st with
+  | (_, .error _) => []
+  | (st', .ok _) =>
+      match maybeReceiver with
+      | some receiverTid =>
+        match SeLe4n.ThreadId.toValid? caller, SeLe4n.ThreadId.toValid? receiverTid with
+        | some callerV, some receiverV =>
+          match applyCallDonation st' callerV receiverV with
+          | .error _ => []
+          | .ok st'' =>
+              pipChainWriteSet st'' receiverTid executingCore st''.objectIndex.length
+        | _, _ => []
+      | none => []
+
+/-- SM8.B.2: **the cores the live cross-core `.call` may write** — the endpoint
+call's own two-core set, plus the chain the dispatch really walks.  A function of
+the dispatch's own arguments, so it can be evaluated at a call site rather than
+supplied by hand. -/
+def endpointCallDispatchWriteSet
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointRights : AccessRightSet) (callerCspaceRoot : SeLe4n.ObjId)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId)
+    (st : SystemState) : List CoreId :=
+  endpointCallWriteSet st endpointId executingCore
+    ++ endpointCallDispatchChainWriteSet endpointId caller msg endpointRights
+        callerCspaceRoot receiverSlotBase executingCore st
+
+/-- SM8.B.2 (**the live `.call` bound**): `endpointCallCrossCoreDispatch` — the
+function `API.dispatchWithCap`'s `.call` arm routes through — writes no core
+outside `endpointCallDispatchWriteSet`.
+
+This is the theorem the composition rule §5a was missing.  The proof splits on
+exactly the scrutinees the dispatch splits on, so each branch's write set is the
+one that branch's states justify: the fail-closed arms and the no-receiver arm
+stop at the WithCaps post-state (`endpointCallWriteSet`), and the rendezvous arm
+composes WithCaps, the per-core-silent donation and the chain walk at the
+post-donation state — `endpointCallLive_confinedToCores` instantiated at the
+receiver `ep.receiveQ.head` and the state `applyCallDonation` returns. -/
+theorem endpointCallCrossCoreDispatch_confinedToCores (endpointId : SeLe4n.ObjId)
+    (caller : SeLe4n.ThreadId) (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : CoreId) (st : SystemState) (hObjInv : st.objects.invExt) :
+    observableSlotsConfinedToCores st
+      (endpointCallCrossCoreDispatch endpointId caller msg endpointRights callerCspaceRoot
+        receiverSlotBase executingCore st).1
+      (endpointCallDispatchWriteSet endpointId caller msg endpointRights callerCspaceRoot
+        receiverSlotBase executingCore st) := by
+  have hCaps := endpointCallWithCapsOnCore_confinedToCores endpointId caller msg
+    endpointRights callerCspaceRoot receiverSlotBase executingCore st hObjInv
+  -- A core outside the union is outside the endpoint-call leg, which is what
+  -- every arm short of the full rendezvous needs.
+  have hWiden : ∀ (stPost : SystemState) (extra : List CoreId),
+      observableSlotsConfinedToCores st stPost
+        (endpointCallWriteSet st endpointId executingCore) →
+      observableSlotsConfinedToCores st stPost
+        (endpointCallWriteSet st endpointId executingCore ++ extra) :=
+    fun _ _ h => observableSlotsConfinedToCores_mono
+      (fun _ hc => List.mem_append.mpr (Or.inl hc)) h
+  unfold endpointCallCrossCoreDispatch endpointCallDispatchWriteSet
+    endpointCallDispatchChainWriteSet
+  cases hWith : endpointCallWithCapsOnCore endpointId caller msg endpointRights
+      callerCspaceRoot receiverSlotBase executingCore st with
+  | mk stWith res =>
+    rw [hWith] at hCaps
+    cases res with
+    | error e => simp only []; exact hWiden _ _ hCaps
+    | ok pair =>
+      rcases pair with ⟨summary, sgi⟩
+      simp only []
+      cases hEp : st.getEndpoint? endpointId with
+      | none => simp only []; exact hWiden _ _ hCaps
+      | some ep =>
+        simp only []
+        cases hHead : ep.receiveQ.head with
+        | none => simp only []; exact hWiden _ _ hCaps
+        | some receiverTid =>
+          simp only []
+          cases hCallerV : SeLe4n.ThreadId.toValid? caller with
+          | none => simp only []; exact hWiden _ _ hCaps
+          | some callerV =>
+            cases hRecvV : SeLe4n.ThreadId.toValid? receiverTid with
+            | none => simp only []; exact hWiden _ _ hCaps
+            | some receiverV =>
+              simp only []
+              cases hDon : applyCallDonation stWith callerV receiverV with
+              | error e => simp only []; exact hWiden _ _ hCaps
+              | ok stDon =>
+                simp only []
+                exact endpointCallLive_confinedToCores st stWith stDon endpointId
+                  executingCore receiverTid hCaps
+                  (applyCallDonation_confinedToCores stWith stDon callerV receiverV hDon)
+
+/-- SM8.B.2: on the rendezvous path the live write set **is** the §5a union,
+instantiated at the states the dispatch really produces.  Stated separately so
+the instantiation is visible rather than buried inside the proof above: the
+chain start is the resolved receiver and the chain state is the post-donation
+state, the two things the second review round said were being supplied by hand. -/
+theorem endpointCallDispatchWriteSet_eq_live_of_rendezvous (endpointId : SeLe4n.ObjId)
+    (caller : SeLe4n.ThreadId) (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : CoreId) (st stWith stDon : SystemState) (receiverTid : SeLe4n.ThreadId)
+    (callerV receiverV : SeLe4n.ValidThreadId) (summary : CapTransferSummary)
+    (sgi : Option (CoreId × Concurrency.SgiKind))
+    (hRecv : (match st.getEndpoint? endpointId with
+              | some ep => ep.receiveQ.head
+              | none => none) = some receiverTid)
+    (hWith : endpointCallWithCapsOnCore endpointId caller msg endpointRights callerCspaceRoot
+      receiverSlotBase executingCore st = (stWith, .ok (summary, sgi)))
+    (hCallerV : SeLe4n.ThreadId.toValid? caller = some callerV)
+    (hRecvV : SeLe4n.ThreadId.toValid? receiverTid = some receiverV)
+    (hDon : applyCallDonation stWith callerV receiverV = .ok stDon) :
+    endpointCallDispatchWriteSet endpointId caller msg endpointRights callerCspaceRoot
+        receiverSlotBase executingCore st
+      = endpointCallLiveWriteSet st endpointId executingCore stDon receiverTid := by
+  unfold endpointCallDispatchWriteSet endpointCallDispatchChainWriteSet endpointCallLiveWriteSet
+  simp only [hWith, hRecv, hCallerV, hRecvV, hDon]
+
+/-- SM8.B.2 (**the live `.call` non-interference**): the syscall arm the kernel
+really runs on a cross-core `Call` is invisible to any core outside its write
+set — receiver's home core, caller's own core, and the priority-inheritance
+chain's home cores — with no hypothesis on the clearance of the caller, the
+receiver, or any boosted server. -/
+theorem endpointCallCrossCoreDispatch_crossCoreNonInterference (ctx : LabelingContext)
+    (observer : IfObserver) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
+    (msg : IpcMessage) (endpointRights : AccessRightSet) (callerCspaceRoot : SeLe4n.ObjId)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState) (c : CoreId)
+    (hObjInv : st.objects.invExt)
+    (hne : c ∉ endpointCallDispatchWriteSet endpointId caller msg endpointRights
+      callerCspaceRoot receiverSlotBase executingCore st)
+    (hShared : sharedViewUnchanged ctx observer st
+      (endpointCallCrossCoreDispatch endpointId caller msg endpointRights callerCspaceRoot
+        receiverSlotBase executingCore st).1) :
+    projectStateOnCore ctx observer
+        (endpointCallCrossCoreDispatch endpointId caller msg endpointRights callerCspaceRoot
+          receiverSlotBase executingCore st).1 c
+      = projectStateOnCore ctx observer st c :=
+  crossCoreNonInterference_ofCores ctx observer hne
+    (endpointCallCrossCoreDispatch_confinedToCores endpointId caller msg endpointRights
+      callerCspaceRoot receiverSlotBase executingCore st hObjInv)
+    hShared
 
 -- ============================================================================
 -- §6  The non-interference instantiations
@@ -1005,6 +1588,60 @@ theorem endpointReplyOnCore_crossCoreNonInterference (ctx : LabelingContext)
   crossCoreNonInterference_ofCores ctx observer (by simpa using hne)
     (endpointReplyOnCore_confinedToCores replier target msg executingCore st hObjInv) hShared
 
+/-- SM8.B.2 (SM6.C): a cross-core **receive** — the `replyRecv` receive leg — is
+invisible to any core outside its write set: the woken sender's home core on a
+rendezvous, the receiver's own core when it blocks. -/
+theorem endpointReceiveDualOnCore_crossCoreNonInterference (ctx : LabelingContext)
+    (observer : IfObserver) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId) (executingCore : CoreId) (st : SystemState) (c : CoreId)
+    (hObjInv : st.objects.invExt)
+    (hne : c ∉ endpointReceiveDualWriteSet st endpointId executingCore)
+    (hShared : sharedViewUnchanged ctx observer st
+      (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1) :
+    projectStateOnCore ctx observer
+        (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1 c
+      = projectStateOnCore ctx observer st c :=
+  crossCoreNonInterference_ofCores ctx observer hne
+    (endpointReceiveDualOnCore_confinedToCores endpointId receiver replyId executingCore st
+      hObjInv)
+    hShared
+
+/-- SM8.B.2 (SM6.C, **the composed live `.replyRecv`**): both legs together are
+invisible to any core outside the union of the reply target's home core and the
+receive leg's set at the intermediate state. -/
+theorem endpointReplyRecvOnCore_crossCoreNonInterference (ctx : LabelingContext)
+    (observer : IfObserver) (endpointId : SeLe4n.ObjId) (receiver replyTarget : SeLe4n.ThreadId)
+    (msg : IpcMessage) (replyId : Option SeLe4n.ReplyId) (executingCore : CoreId)
+    (st : SystemState) (c : CoreId)
+    (hObjInv : st.objects.invExt)
+    (hne : c ∉ endpointReplyRecvWriteSet endpointId receiver replyTarget msg executingCore st)
+    (hShared : sharedViewUnchanged ctx observer st
+      (endpointReplyRecvOnCore endpointId receiver replyTarget msg replyId executingCore st).1) :
+    projectStateOnCore ctx observer
+        (endpointReplyRecvOnCore endpointId receiver replyTarget msg replyId executingCore st).1 c
+      = projectStateOnCore ctx observer st c :=
+  crossCoreNonInterference_ofCores ctx observer hne
+    (endpointReplyRecvOnCore_confinedToCores endpointId receiver replyTarget msg replyId
+      executingCore st hObjInv)
+    hShared
+
+/-- SM8.B.2 (SM6.B, **the live `.signal` bound-delivery arm**): a bound-aware
+signal is invisible to any core that is neither the bound TCB's home core (when
+the badge is delivered directly) nor the plain signal's waiter home core. -/
+theorem notificationSignalBoundOnCore_crossCoreNonInterference (ctx : LabelingContext)
+    (observer : IfObserver) (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+    (executingCore : CoreId) (st : SystemState) (c : CoreId)
+    (hObjInv : st.objects.invExt)
+    (hne : c ∉ notificationSignalBoundWriteSet st notificationId)
+    (hShared : sharedViewUnchanged ctx observer st
+      (notificationSignalBoundOnCore notificationId badge executingCore st).1) :
+    projectStateOnCore ctx observer
+        (notificationSignalBoundOnCore notificationId badge executingCore st).1 c
+      = projectStateOnCore ctx observer st c :=
+  crossCoreNonInterference_ofCores ctx observer hne
+    (notificationSignalBoundOnCore_confinedToCores notificationId badge executingCore st hObjInv)
+    hShared
+
 /-- SM8.B.2 (SM6.E): a cross-core deschedule is invisible to any core that is not
 the victim's home core. -/
 theorem descheduleThread_crossCoreNonInterference (ctx : LabelingContext)
@@ -1069,14 +1706,23 @@ entries name theorems in this file. -/
 inductive CrossCoreTransition where
   /-- SM5.C — the wake primitive, target = the woken thread's home core. -/
   | wake
-  /-- SM6.A — the endpoint call; the only **two-core** write set. -/
+  /-- SM6.A — the endpoint call; the first **two-core** write set. -/
   | endpointCall
+  /-- SM6.A — the **live** `.call` arm: the call, the donation, and the
+  priority-inheritance chain walk on each boosted server's home core. -/
+  | endpointCallDispatch
   /-- SM6.B — the notification signal. -/
   | notificationSignal
+  /-- SM6.B — the **live** `.signal` arm, covering bound delivery. -/
+  | notificationSignalBound
   /-- SM6.B — the notification wait. -/
   | notificationWait
   /-- SM6.C — the reply. -/
   | endpointReply
+  /-- SM6.C — the receive leg of `replyRecv`. -/
+  | endpointReceiveDual
+  /-- SM6.C — the **live** `.replyRecv` arm: both legs composed. -/
+  | endpointReplyRecv
   /-- SM6.E — the deschedule primitive. -/
   | deschedule
   /-- SM6.E — the *composed* IPC-blocking cancellation (teardown + deschedule). -/
@@ -1084,7 +1730,8 @@ inductive CrossCoreTransition where
   deriving DecidableEq, Repr
 
 def CrossCoreTransition.all : List CrossCoreTransition :=
-  [.wake, .endpointCall, .notificationSignal, .notificationWait, .endpointReply, .deschedule,
+  [.wake, .endpointCall, .endpointCallDispatch, .notificationSignal, .notificationSignalBound,
+   .notificationWait, .endpointReply, .endpointReceiveDual, .endpointReplyRecv, .deschedule,
    .cancelIpcBlocking]
 
 /-- SM8.B.2: the name of each covered transition's non-interference theorem,
@@ -1093,13 +1740,41 @@ this table rather than leaving it naming something that no longer exists. -/
 def crossCoreNiTheorem : CrossCoreTransition → String
   | .wake => niName! wakeThread_crossCoreNonInterference_of_visible_thread
   | .endpointCall => niName! endpointCallOnCore_crossCoreNonInterference
+  | .endpointCallDispatch => niName! endpointCallCrossCoreDispatch_crossCoreNonInterference
   | .notificationSignal => niName! notificationSignalOnCore_crossCoreNonInterference
+  | .notificationSignalBound => niName! notificationSignalBoundOnCore_crossCoreNonInterference
   | .notificationWait => niName! notificationWaitOnCore_crossCoreNonInterference
   | .endpointReply => niName! endpointReplyOnCore_crossCoreNonInterference
+  | .endpointReceiveDual => niName! endpointReceiveDualOnCore_crossCoreNonInterference
+  | .endpointReplyRecv => niName! endpointReplyRecvOnCore_crossCoreNonInterference
   | .deschedule => niName! descheduleThread_crossCoreNonInterference
   | .cancelIpcBlocking => niName! cancelIpcBlockingOnCore_crossCoreNonInterference
 
-theorem crossCoreNiTheorem_count : CrossCoreTransition.all.length = 7 := by rfl
+theorem crossCoreNiTheorem_count : CrossCoreTransition.all.length = 11 := by rfl
+
+/-- SM8.B.2: **which entries are the arms the live syscall dispatch actually
+reaches**, as opposed to the below-API transitions they are built from.
+
+This distinction is the point of the three entries added in the fourth review
+round: `.signal` on the bound-delivery path, `.receive` rendezvousing with a
+blocked sender, and `.replyRecv` combining its legs are all live behaviour, and
+an inventory that passed its count and injectivity checks without them was
+reporting coverage it did not have. -/
+def crossCoreTransitionIsLiveArm : CrossCoreTransition → Bool
+  | .wake => false
+  | .endpointCall => false
+  | .endpointCallDispatch => true
+  | .notificationSignal => false
+  | .notificationSignalBound => true
+  | .notificationWait => true
+  | .endpointReply => false
+  | .endpointReceiveDual => false
+  | .endpointReplyRecv => true
+  | .deschedule => false
+  | .cancelIpcBlocking => true
+
+theorem crossCoreTransitionIsLiveArm_count :
+    (CrossCoreTransition.all.filter crossCoreTransitionIsLiveArm).length = 5 := by decide
 
 theorem crossCoreNiTheorem_injective :
     ∀ t₁ t₂ : CrossCoreTransition, crossCoreNiTheorem t₁ = crossCoreNiTheorem t₂ → t₁ = t₂ := by
@@ -1114,17 +1789,21 @@ one.**  Named for remote *writes*, not for wakes: a reply, a deschedule and a
 cancellation all name a remote core without waking anything, and the earlier
 `…WakesRemote` spelling described the wrong semantics (PR #861 review).  A
 reader checking "does this module actually exercise the cross-core direction"
-can check this instead of reading seven proofs. -/
+can check this instead of reading eleven proofs. -/
 def crossCoreTransitionWritesRemote : CrossCoreTransition → Bool
   | .wake => true
   | .endpointCall => true
+  | .endpointCallDispatch => true
   | .notificationSignal => true
+  | .notificationSignalBound => true
   | .notificationWait => false
   | .endpointReply => true
+  | .endpointReceiveDual => true
+  | .endpointReplyRecv => true
   | .deschedule => true
   | .cancelIpcBlocking => true
 
 theorem crossCoreTransitionWritesRemote_count :
-    (CrossCoreTransition.all.filter crossCoreTransitionWritesRemote).length = 6 := by decide
+    (CrossCoreTransition.all.filter crossCoreTransitionWritesRemote).length = 10 := by decide
 
 end SeLe4n.Kernel
