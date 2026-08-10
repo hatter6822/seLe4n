@@ -544,17 +544,46 @@ theorem acceptedCovertChannel_machineTimer_excluded_from_view (ctx : LabelingCon
   ⟨rfl, onCore_machineTimer ctx L s c t⟩
 
 /-- SM8.B.8 (the CC-3 witness): TCB metadata is registered `modelVisible := true`,
-and `onCore_objects` is why — the observer's view *is* the label-filtered object
-store, so an observable thread's TCB (priority, IPC state) is carried through it.
+and this says **why in terms of the metadata itself** — for a thread the observer
+can already see, the projected TCB carries the *same* `priority` and the *same*
+`ipcState` as the real one.
 
-Note what this does **not** say: that every TCB is visible.  The filter is real,
-and CC-3 is about the metadata of threads the observer can already see. -/
+The fifth review round rejected the previous form, which asserted only
+`(onCore …).objects = projectObjects …`.  That is a component identity: it
+never selects a TCB and never mentions either field, so erasing `priority` from
+`projectKernelObject`'s `.tcb` arm would have left it — and every inventory
+check built on it — green while invalidating the `modelVisible := true`
+classification it exists to justify.  Both equations below are `rfl` *because*
+those fields survive the projection; strip either one and this theorem stops
+compiling.
+
+Note what this still does **not** say: that every TCB is visible.  The filter is
+real, which is what the `hObservable` premise carries — CC-3 is about the
+metadata of threads the observer can already see. -/
 theorem acceptedCovertChannel_tcbMetadata_is_model_visible (ctx : LabelingContext)
-    (c : CoreId) (L : SecurityLabel) (s : SystemState) :
+    (c : CoreId) (L : SecurityLabel) (s : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hObservable : objectObservable ctx (IfObserver.ofLabel L) tid.toObjId = true)
+    (hLookup : s.getTcb? tid = some tcb) :
     acceptedCovertChannel_tcbMetadata.modelVisible = true ∧
-      (ObservableState.onCore ctx c L s).objects
-        = projectObjects ctx (IfObserver.ofLabel L) s :=
-  ⟨rfl, onCore_objects ctx c L s⟩
+      ∃ projected : TCB,
+        (ObservableState.onCore ctx c L s).objects tid.toObjId = some (.tcb projected)
+        ∧ projected.priority = tcb.priority
+        ∧ projected.ipcState = tcb.ipcState := by
+  refine ⟨rfl, ?_⟩
+  rw [onCore_objects ctx c L s]
+  unfold projectObjects
+  rw [if_pos hObservable, (SystemState.getTcb?_eq_some_iff s tid tcb).mp hLookup]
+  exact ⟨_, rfl, rfl, rfl⟩
+
+/-- SM8.B.8 (the CC-3 component identity): the observer's `objects` view *is* the
+label-filtered object store.  Kept as its own statement — it is true and used —
+but it is deliberately no longer the channel's witness, because it holds
+independently of which TCB fields survive projection. -/
+theorem onCore_objects_eq_projectObjects (ctx : LabelingContext)
+    (c : CoreId) (L : SecurityLabel) (s : SystemState) :
+    (ObservableState.onCore ctx c L s).objects
+      = projectObjects ctx (IfObserver.ofLabel L) s :=
+  onCore_objects ctx c L s
 
 /-- SM8.B.8 (the CC-4 witness): object-store metadata is registered
 `modelVisible := true`, and `onCore_objectIndex` is why — the label-filtered

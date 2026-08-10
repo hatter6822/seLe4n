@@ -219,6 +219,23 @@ theorem cleanupDonatedSchedContext_scheduler_eq
       | (injection h with h; subst h; rfl)
       | exact returnDonatedSchedContext_scheduler_eq st st' tid _ _ h
 
+/-- WS-SM SM8.B: `cleanupDonatedSchedContext` never touches the machine state
+either — the register banks included.  Added beside the scheduler frame for the
+SM8.B per-core confinement consumer: per-core confinement reads each core's
+register bank as well as its scheduler slots (SM5.I banks every core's
+`RegisterFile` inside one `MachineState`), so a scheduler frame alone never
+bounded this step's observable writes. -/
+theorem cleanupDonatedSchedContext_machine_eq
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (h : cleanupDonatedSchedContext st tid = .ok st') :
+    st'.machine = st.machine := by
+  simp only [cleanupDonatedSchedContext] at h
+  split at h
+  · injection h with h; subst h; rfl
+  · split at h <;> first
+      | (injection h with h; subst h; rfl)
+      | exact returnDonatedSchedContext_machine_eq st st' tid _ _ h
+
 /-- WS-SM SM7.B: `cleanupDonatedSchedContext` never touches the
 TLB-shootdown state (mirrors `cleanupDonatedSchedContext_scheduler_eq`;
 `pendingBounded` bundle-carriage link through the retype cleanup

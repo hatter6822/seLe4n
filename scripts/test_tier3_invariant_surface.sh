@@ -1767,7 +1767,37 @@ run_check "INVARIANT" rg -n '^theorem notificationSignalWriteSet_eq_lockSet_wait
 run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem wakeThread_crossCoreNonInterference_of_visible_thread' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n 'CrossCoreTransition.all.length = 11' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n 'CrossCoreTransition.all.length = 14' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+# Review round 5: a LIVE inventory entry must name the function the syscall
+# dispatch calls.  Three entries named a below-API transition their wrapper does
+# strictly more than, so the wrappers get entries — and bounds — of their own.
+run_check "INVARIANT" rg -n '^def endpointReplyDispatchWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyCrossCoreDispatch_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyCrossCoreDispatch_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^def replyRecvBodyWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvBody_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvBody_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^def suspendThreadOnCoreWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem suspendThreadOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem suspendThreadOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+# The leaf frames those bounds rest on: per-core confinement reads the domain
+# slots and the register banks, and the ARM64 context switch had frames for
+# neither.
+run_check "INVARIANT" rg -n '^theorem switchToThreadOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem handleRescheduleSgiOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem suspendRescheduleOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem cleanupDonatedSchedContext_machine_eq' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
+# The CC-3 witness must depend on the metadata it witnesses: a component
+# identity on `objects` stays green if `priority` is erased from the TCB
+# projection.  Pin the fields by name.
+run_check "INVARIANT" rg -n 'projected.priority = tcb.priority' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n 'projected.ipcState = tcb.ipcState' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+# The confinement checker must compare the WHOLE run queue: `toList` is `flat`,
+# which a re-bucketing write leaves untouched.
+run_check "INVARIANT" rg -n '^private def runQueueAgreeOn' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runRunQueueComparisonChecks' tests/SmpInformationFlowSuite.lean
+# confinedCheck must not decide the run-queue clause on `toList` alone.
+run_negative_check "INVARIANT" rg -n 'decide \(\(st..scheduler.runQueueOnCore c\).toList' tests/SmpInformationFlowSuite.lean
 # v0.33.7 audit closure: the live `.call` arm is more than `endpointCallOnCore`
 # — it also runs the donation and the PIP chain walk, and the chain walk
 # re-buckets on each boosted server's HOME core.  Bounding the live arm needs
@@ -1843,7 +1873,7 @@ run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_crossCoreNonInte
 run_check "INVARIANT" rg -n '^def endpointReplyRecvWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count : CrossCoreTransition\.all\.length = 11' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count : CrossCoreTransition\.all\.length = 14' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^def crossCoreTransitionIsLiveArm' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^  runLiveCrossCoreArmChecks' tests/SmpInformationFlowSuite.lean
 # The home-core frames those confinement proofs rest on: a dequeue and a badge

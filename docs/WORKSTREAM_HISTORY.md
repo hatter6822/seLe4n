@@ -24,8 +24,8 @@ Plan:
 SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
-**Current sub-phase: SM8.B cancellation cut LANDED (v0.33.8).**  Closes the one
-item the v0.33.7 audit left registered rather than proven: the composed
+**Current sub-phase: SM8.B cancellation cut LANDED (v0.33.5).**  Closes the one
+item the v0.33.5 audit left registered rather than proven: the composed
 cross-core cancellation `cancelIpcBlockingOnCore`.
 
 The blocker was a missing **frame**, not a hard proof.  Per-core confinement
@@ -60,11 +60,11 @@ capture the TCB, tear down, deschedule.
 
 Suite 193 → 198 assertions / 30 groups; 362 declarations axiom-clean.
 
-**Prior sub-phase: SM8.B audit cut LANDED (v0.33.7).**  A deep audit of the
-v0.33.6 follow-up, again checked against the code rather than the prose, found
+**Prior sub-phase: SM8.B audit cut LANDED (v0.33.5).**  A deep audit of the
+v0.33.5 follow-up, again checked against the code rather than the prose, found
 two further items.
 
-**The live `.call` arm writes cores no write set named.**  v0.33.6 proved
+**The live `.call` arm writes cores no write set named.**  v0.33.5 proved
 `endpointCallOnCore_confinedToCores` over `[receiverHome, executingCore]` —
 true of that *transition*.  But the live arm is
 `endpointCallCrossCoreDispatch`, which runs the transition and then
@@ -73,7 +73,7 @@ each boosted server's run queue on that server's **home** core, which the call's
 own write set does not name.  The `syscallEntry_preserves_projectionOnCore`
 docstring nonetheless said the dispatch is "invisible on every core outside that
 set" — false for the live arm, and the same documentation-ahead-of-code failure
-the v0.33.6 cut existed to remove, reintroduced one layer up while fixing it
+the v0.33.5 cut existed to remove, reintroduced one layer up while fixing it
 below.  Closed by making the statement true rather than narrowing it:
 `updatePipBoostOnCore_confinedToCores`, `pipBoostWithWake_confinedToCores`, and
 `pipChainWriteSet` — the walk's own write set, defined by mirroring its fuel
@@ -86,7 +86,7 @@ actually bounds the live arm, with projection lemmas so a caller discharges
 membership once.
 
 **Both marquee write sets were tested only in their degenerate branches.**  The
-v0.33.6 suite computed `notificationSignalWriteSet` on a notification with no
+v0.33.5 suite computed `notificationSignalWriteSet` on a notification with no
 waiter (`= []`) and `endpointCallWriteSet` on an endpoint with no receiver
 (`= [c0]`).  So the two-element write set — the flagship case, the entire reason
 `observableSlotsConfinedToCores` exists — had **zero runtime coverage**, and the
@@ -102,7 +102,7 @@ what rules out the theorem being satisfied by a constant.
 Suite 186 → 193 assertions / 29 groups; 359 declarations across the four SM8
 information-flow modules axiom-clean; trace byte-identical.
 
-**Prior sub-phase: SM8.B follow-up cut LANDED (v0.33.6) — the self-audit
+**Prior sub-phase: SM8.B follow-up cut LANDED (v0.33.5) — the self-audit
 closure.**  A review of the v0.33.5 landing, checked against the code rather than
 the prose describing it, found six things short of optimal; all are closed.
 
@@ -227,7 +227,7 @@ Plan:
 [`docs/planning/SMP_INFORMATION_FLOW_PLAN.md`](planning/SMP_INFORMATION_FLOW_PLAN.md)
 §5 SM8.B.
 
-**Review rounds 2 and 4 (v0.33.10 → v0.33.11) — five findings, all verified
+**Review rounds 2 and 4 (v0.33.5 → v0.33.5) — five findings, all verified
 against the code before acting.**  Two were coverage gaps; three were claims the
 theorems did not support.
 

@@ -2547,7 +2547,7 @@ each group carries a load-bearing negative).
 
 ### Layer 3 under SMP — per-core non-interference (WS-SM SM8.B)
 
-> **v0.33.6 follow-up.**  The v0.33.5 cut proved `crossCoreNonInterference` but
+> **v0.33.5 follow-up.**  The v0.33.5 cut proved `crossCoreNonInterference` but
 > never instantiated it at a transition that writes a remote core — all thirty-five
 > per-operation lifts are boot-core-confined, so `c'` was always the boot core.
 > `InformationFlow/NonInterferenceCrossCore` supplies six instantiations over
@@ -2558,7 +2558,7 @@ each group carries a load-bearing negative).
 > visible one.  The same cut removed a tautology (`endpointFlowCheck_state_independent`,
 > `X = X` by `rfl`) in favour of a genuinely state- and core-dependent gate.
 
-> **v0.33.11 review round 4.**  Three arms the live syscall dispatch reaches —
+> **v0.33.5 review round 4.**  Three arms the live syscall dispatch reaches —
 > `.signal` on the bound-delivery path, `.receive` rendezvousing with a blocked
 > sender, and `.replyRecv` composing both legs — wake threads on remote home
 > cores and had no confinement or non-interference theorem, while the inventory's

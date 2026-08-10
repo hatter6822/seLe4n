@@ -430,7 +430,84 @@ SM8.B; the lock-contention channel CC-5 is SM8.B.8; the
 | SM8.B.13 | `crossCoreLeakage_bounded` | Theorem | L | LANDED |
 | SM8.B.14 | 15+ NI scenarios (tests) | L | LANDED |
 
-**PR #861 review round 4 (v0.33.11).**  Three new findings, plus the two items
+**PR #861 review round 5 (v0.33.5).**  Three findings, all verified valid
+against the code before acting; all closed.
+
+1. **P1 — the live reply, replyRecv and suspend wrappers had no bound.**  The
+   inventory marked `.replyRecv` and `.tcbSuspend` live while citing
+   `endpointReplyRecvOnCore` and `cancelIpcBlockingOnCore`, and it had no entry
+   at all for the live `.reply`.  Each of the three production wrappers does
+   strictly more per-core writing than the transition it wraps:
+   `endpointReplyCrossCoreDispatch` adds the SchedContext donation **return**
+   (which deschedules the now-passive recorded server on *its own* core) and
+   the priority-inheritance **reversion**; `replyRecvBody` adds
+   `replyRecvReturnDonation` (which may return the old client's SC, donate the
+   new client's, deschedule the recorded server, and always walks the chain);
+   `suspendThreadOnCore` adds the chain reversion, the donation-cancellation
+   arms, the running-core dequeue when `runningCoreOf?` diverges from the home,
+   and the G7 scheduling point on the executing core.  So the narrower theorems
+   never bounded the live arms, exactly as round 4 established for `.call`.
+
+   Closed by building the same reduction `.call` got: a write set that mirrors
+   each wrapper's own control flow (`endpointReplyDispatchWriteSet`,
+   `replyRecvBodyWriteSet`, `suspendThreadOnCoreWriteSet` — every leg read at
+   the state that leg actually runs at), a confinement theorem that splits on
+   the wrapper's own scrutinees, and an NI instantiation.  Nine new leaf frames
+   were needed first, because per-core confinement reads the domain slots and
+   the register banks and the ARM64 context switch had frames for neither:
+   `preemptCurrentOnCore` / `switchToThreadOnCore` domain frames,
+   `switchToThreadOnCore_confinedToCores`,
+   `handleRescheduleSgiOnCore_confinedToCores`,
+   `suspendRescheduleOnCore_confinedToCores`,
+   `clearPendingState_confinedToCores`, both donation-cancellation arms,
+   `migrateSchedContextReplenishment_confinedToCores`, and
+   `cleanupDonatedSchedContext_machine_eq` (added beside its scheduler sibling
+   in `Cleanup.lean`, following the precedent this workstream set with
+   `cancelIpcBlocking_machine_eq`).
+
+   `CrossCoreTransition` grows 11 → **14**, live arms 5 → **6**, remote writers
+   10 → **13**.  The two notification arms are deliberately *not* re-pointed:
+   `notificationSignalBoundCrossCoreDispatch` and
+   `notificationWaitCrossCoreDispatch` are definitionally
+   `…OnCore … (determineExecutingCore st …) st` — the same function at a
+   resolved core, adding no step — so the `…OnCore` theorem is already a
+   statement about the live arm.  `crossCoreTransitionIsLiveArm`'s docstring
+   now states that test explicitly.
+
+2. **P2 — the CC-3 witness was independent of the metadata it witnessed.**
+   `acceptedCovertChannel_tcbMetadata_is_model_visible` concluded only
+   `(onCore …).objects = projectObjects …`: a component identity that never
+   selects a TCB and never mentions `priority` or `ipcState`, so erasing either
+   field from `projectKernelObject`'s `.tcb` arm would have left it — and every
+   inventory check built on it — green while invalidating the
+   `modelVisible := true` classification the theorem exists to justify.  It now
+   takes an observability premise and a TCB lookup and concludes that the
+   *projected* TCB carries the same `priority` and the same `ipcState`, both by
+   `rfl`; strip either field and the theorem stops compiling.  The component
+   identity survives as `onCore_objects_eq_projectObjects`, documented as
+   deliberately not the witness.
+
+3. **P2 — the confinement checker compared run queues by `toList`.**
+   `RunQueue.toList` is `flat`, so a re-bucketing write leaves it untouched
+   while `byPriority`, `threadPriority` and `maxPriority` all move — and
+   re-bucketing on a *remote* core is precisely what the PIP-chain leg of the
+   live `.call`, `.reply` and `.tcbSuspend` arms does.  Every runtime
+   confinement assertion in the suite would have reported a core unwritten that
+   the transition had genuinely written.  `runQueueAgreeOn` now compares all six
+   operational fields (the proof fields make `RunQueue` undecidable), and
+   §5.3b carries the load-bearing negative: a single-thread re-bucketing that
+   `toList` reports equal, `runQueueAgreeOn` rejects, and `confinedCheck` with
+   it.  Sound-refuter direction documented, as for `regsAgreeOn`.
+
+**Versioning.**  Round 1 also raised, as P1, that the branch was shipping one
+patch version per review round (v0.33.5 … v0.33.11) with a release header each,
+against the every-PR-ships-one-version policy — 0.33.6 through 0.33.11 would
+never have been live releases.  The cuts are review iterations on a single
+change, so they are collapsed into **one** `v0.33.5` with one coherent
+`CHANGELOG.md` entry, and the round records in this section are kept as the
+narrative of how the change reached its final form.
+
+**PR #861 review round 4 (v0.33.5).**  Three new findings, plus the two items
 round 2 had registered rather than built.  All five now closed.
 
 1. **P1 — three live cross-core arms were unaudited.**
@@ -491,9 +568,9 @@ round 2 had registered rather than built.  All five now closed.
    docstring and `docs/DEPLOYMENT_GUIDE.md` are corrected; a Tier-3 negative
    anchor forbids the bits-per-switch claim's return.
 
-**PR #861 review round 2 (v0.33.10).**  Four findings on the fix commit, all
+**PR #861 review round 2 (v0.33.5).**  Four findings on the fix commit, all
 valid.  Two closed outright; items 3 and 4 were closed as *claims* with the
-underlying work registered, and both were **built at v0.33.11** (above):
+underlying work registered, and both were **built at v0.33.5** (above):
 
 1. **The axiom sweep skipped `private` declarations on a false justification.**
    It argued a public consumer's probe would surface any bad axiom and that an
@@ -525,7 +602,7 @@ underlying work registered, and both were **built at v0.33.11** (above):
    live wrapper names belongs with SM8.E.3, which already owns the boundary
    reconciliation.
 
-**PR #861 review cut (v0.33.9).**  Seven automated-review findings, all
+**PR #861 review cut (v0.33.5).**  Seven automated-review findings, all
 verified against the code and all valid.  The load-bearing one:
 `endpointCallLiveWriteSet` walked the *caller* at the *pre-state*, while the live
 arm runs `propagatePipChainCrossCore st'' receiverTid` — the resolved **receiver**
@@ -548,7 +625,7 @@ staged-module headline corrected 57 → 58.
 Left open deliberately: whether the branch's four patch bumps collapse into one
 for the merge — that rewrites pushed commits, so it is the maintainer's call.
 
-**Audit cut (v0.33.7).**  A deep audit of the v0.33.6 follow-up found two
+**Audit cut (v0.33.5).**  A deep audit of the follow-up work found two
 further items, both closed.
 
 1. **The live `.call` arm writes cores no write set named.**
@@ -558,7 +635,7 @@ further items, both closed.
    re-buckets each boosted server's run queue on that server's **home** core.
    The `syscallEntry_preserves_projectionOnCore` docstring nonetheless said the
    dispatch is "invisible on every core outside that set" — false for the live
-   arm, and the same documentation-ahead-of-code failure the v0.33.6 cut existed
+   arm, and the same documentation-ahead-of-code failure the follow-up cut existed
    to remove, reintroduced one layer up.  Closed by making it true:
    `pipChainWriteSet` (the walk's own write set, mirroring its fuel recursion)
    with `propagatePipChainCrossCore_confinedToCores` by induction,
@@ -578,7 +655,7 @@ further items, both closed.
 
 Suite 186 → 193 assertions / 29 groups; 359 declarations axiom-clean.
 
-**Follow-up cut (v0.33.6) — the self-audit closure.**  A review of the v0.33.5
+**Follow-up cut (v0.33.5) — the self-audit closure.**  A review of the landing
 landing against the code rather than the prose found six things short of
 optimal.  All are closed; the headline is the first.
 
@@ -630,7 +707,7 @@ optimal.  All are closed; the headline is the first.
 6. **Scenario count**: 167 → 186 assertions / 28 groups, four new groups driving
    real cross-core transitions with load-bearing negatives.
 
-**CLOSED at v0.33.8**: `cancelIpcBlockingOnCore`'s *composed* confinement.  The
+**CLOSED at v0.33.5**: `cancelIpcBlockingOnCore`'s *composed* confinement.  The
 blocker was the missing frame, not a hard proof — per-core confinement reads each
 core's register bank as well as its scheduler slots, and only
 `cancelIpcBlocking_scheduler_eq` existed.  `cancelIpcBlocking_machine_eq` now
@@ -754,7 +831,7 @@ golden trace is byte-identical.
   CC-1 — so an entry cannot be reclassified without the theorem moving.
 * **SM8.B.11** — `endpointPolicyRestricted_perCore` in the SM4.D `…_smp` idiom,
   with `_iff` recording that the core coordinate cannot change the decision.
-  (The v0.33.6 cut named `endpointFlowCheck_state_independent` here as "the fact
+  (The v0.33.5 cut named `endpointFlowCheck_state_independent` here as "the fact
   that makes it true"; that theorem was a tautology and has been **removed**, with
   a Tier-3 negative anchor forbidding its return.  The substantive statements are
   `endpointFlowCheckAtCore_depends_only_on_subject` — the resolved gate depends on

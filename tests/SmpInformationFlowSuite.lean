@@ -437,6 +437,42 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @crossCoreTransitionIsLiveArm
 #check @crossCoreTransitionIsLiveArm_count
 
+-- §1.6b  SM8.B — the LIVE cross-core wrappers (PR #861 review round 5).  Each
+-- of these bounds the function the syscall dispatch actually calls, not a
+-- below-API transition it is built from.
+#check @applyReplyDonationOnCore_confinedToCores
+#check @endpointReplyDispatchWriteSet
+#check @endpointReplyCrossCoreDispatch_confinedToCores
+#check @endpointReplyCrossCoreDispatch_crossCoreNonInterference
+#check @replyRecvDescheduleAndWalkWriteSet
+#check @replyRecvDescheduleAndWalk_confinedToCores
+#check @replyRecvReturnDonationWriteSet
+#check @replyRecvReturnDonation_confinedToCores
+#check @replyRecvBodyWriteSet
+#check @replyRecvBody_confinedToCores
+#check @replyRecvBody_crossCoreNonInterference
+#check @preemptCurrentOnCore_activeDomainOnCore
+#check @preemptCurrentOnCore_domainTimeRemainingOnCore
+#check @preemptCurrentOnCore_domainScheduleIndexOnCore
+#check @switchToThreadOnCore_activeDomainOnCore
+#check @switchToThreadOnCore_domainTimeRemainingOnCore
+#check @switchToThreadOnCore_domainScheduleIndexOnCore
+#check @switchToThreadOnCore_confinedToCores
+#check @handleRescheduleSgiOnCore_confinedToCores
+#check @suspendRescheduleOnCore_confinedToCores
+#check @clearPendingState_confinedToCores
+#check @cancelBoundDonationOnCore_confinedToCores
+#check @migrateSchedContextReplenishment_confinedToCores
+#check @cancelDonatedDonationOnCore_confinedToCores
+#check @suspendDequeues_confinedToCores
+#check @suspendInactiveStore_confinedToCores
+#check @suspendDonationArms_confinedToCores
+#check @suspendThreadOnCoreWriteSet
+#check @suspendThreadOnCore_confinedToCores
+#check @suspendThreadOnCore_crossCoreNonInterference
+#check @SeLe4n.Kernel.cleanupDonatedSchedContext_machine_eq
+#check @onCore_objects_eq_projectObjects
+
 -- §1.7  SM8.B — the enforcement boundary and the covert-channel inventory
 -- (CovertChannelPerCore.lean).
 #check @enforcementBoundaryPerCore
@@ -1900,18 +1936,51 @@ private def regsAgreeOn (st st' : SystemState) (c : CoreId) : Bool :=
     (List.range SeLe4n.RegName.arm64GPRCount).all
       (fun i => decide (r'.gpr ⟨i⟩ = r.gpr ⟨i⟩))
 
+/-- The run-queue half of `observableSlotsConfinedToCore`'s first field, decided
+on **every operational field** of `RunQueue`.
+
+`RunQueue` carries proof fields (`flat_wf`, `flat_wf_rev`, `mem_invExtK`) so it
+has no `DecidableEq`; this compares the six fields that carry data — the two
+priority tables, the membership set, the flat list, the cached size and the
+cached maximum.
+
+Comparing `RunQueue.toList` alone was **not** sufficient, which is what the
+fifth review round caught: `toList` is `flat`, so a re-bucketing write — for
+instance `updatePipBoostOnCore` moving a thread between priority buckets, which
+is exactly what the PIP-chain leg of the live `.call`, `.reply` and
+`.tcbSuspend` arms does on a *remote* core — leaves `flat` untouched while
+`byPriority`, `threadPriority` and `maxPriority` all move.  Every assertion
+built on the old comparison would have reported confinement on a core the
+transition had genuinely written.
+
+A sound *refuter*, like `regsAgreeOn`: the table comparisons go through
+`toList`, so two tables holding the same entries in different slot layouts
+would be reported as differing.  That direction is safe — it can only turn a
+passing assertion red, never a failing one green. -/
+private def runQueueAgreeOn (st st' : SystemState) (c : CoreId) : Bool :=
+  let q := st.scheduler.runQueueOnCore c
+  let q' := st'.scheduler.runQueueOnCore c
+  decide (q'.flat = q.flat) &&
+  decide (q'.size = q.size) &&
+  decide (q'.maxPriority = q.maxPriority) &&
+  decide (q'.byPriority.toList = q.byPriority.toList) &&
+  decide (q'.threadPriority.toList = q.threadPriority.toList) &&
+  decide (q'.membership.toList = q.membership.toList)
+
 /-- Decides confinement of a step's per-core writes to core `c₀`.
 
 Covers **all six** fields of `observableSlotsConfinedToCore` — the five
 scheduler slots and the register bank.  The register clause was missing until
 PR #861 review: without it every runtime assertion here would still pass if a
 transition corrupted another core's registers, which is precisely the class of
-regression the cancellation machine-frame work exists to exclude. -/
+regression the cancellation machine-frame work exists to exclude.  The
+run-queue clause was widened from `toList` to every operational field in the
+round after that, for the same reason — see `runQueueAgreeOn`. -/
 private def confinedCheck (st st' : SystemState) (c₀ : CoreId) : Bool :=
   allCores.all (fun c =>
     if c = c₀ then true
     else
-      decide ((st'.scheduler.runQueueOnCore c).toList = (st.scheduler.runQueueOnCore c).toList) &&
+      runQueueAgreeOn st st' c &&
       decide (st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c) &&
       decide (st'.scheduler.activeDomainOnCore c = st.scheduler.activeDomainOnCore c) &&
       decide (st'.scheduler.domainTimeRemainingOnCore c
@@ -2240,32 +2309,95 @@ private def runLiveCrossCoreArmChecks : IO Unit := do
     (decide (SeLe4n.Kernel.endpointReplyRecvWriteSet crossCoreEndpoint remoteHomedThread
       crossCoreSender replyRecvMsg c0 blockedSenderState = [c2]))
 
+-- §5.3b fixtures — a re-bucketing write, the case `RunQueue.toList` misses.
+
+/-- The remote-homed thread queued on core 2. -/
+private def oneQueuedOnCore2 : SystemState :=
+  SeLe4n.Kernel.enqueueRunnableOnCore crossCoreState c2 remoteHomedThread
+
+/-- The **same** thread, same queue, moved to a different priority bucket — the
+shape `updatePipBoostOnCore` produces when a donation raises or reverts a
+server's effective priority on its home core.  With one thread in the queue
+`flat` is `[tid]` before and after, so a `toList` comparison sees nothing. -/
+private def reBucketedOnCore2 : SystemState :=
+  let q := oneQueuedOnCore2.scheduler.runQueueOnCore c2
+  { oneQueuedOnCore2 with
+      scheduler := oneQueuedOnCore2.scheduler.setRunQueueOnCore c2
+        ((q.remove remoteHomedThread).insert remoteHomedThread ⟨7⟩) }
+
+/-- §5.3b  The run-queue comparison, and why `toList` was not enough.
+
+The fifth review round found `confinedCheck` deciding the run-queue clause on
+`RunQueue.toList`, which is `flat`.  A re-bucketing write leaves `flat` alone,
+so every confinement assertion in this file would have passed on a core the
+transition had genuinely written — exactly the remote PIP-chain writes the live
+`.call`, `.reply` and `.tcbSuspend` arms perform. -/
+private def runRunQueueComparisonChecks : IO Unit := do
+  IO.println "--- §5.3b the run-queue comparison ---"
+  let q  := oneQueuedOnCore2.scheduler.runQueueOnCore c2
+  let q' := reBucketedOnCore2.scheduler.runQueueOnCore c2
+  assertBool "the fixture really queued the thread on core 2"
+    (decide (q.flat = [remoteHomedThread]))
+  assertBool "the re-bucketed queue holds the same single thread"
+    (decide (q'.flat = [remoteHomedThread]))
+  -- The load-bearing negative: the OLD comparison cannot tell these apart.
+  assertBool "NEGATIVE: a `toList` comparison reports these two queues equal"
+    (decide (q'.toList = q.toList))
+  assertBool "…but the priority bucket really moved"
+    (decide (q'.maxPriority ≠ q.maxPriority))
+  assertBool "…and the per-thread priority with it"
+    (decide (q'.threadPriority.toList ≠ q.threadPriority.toList))
+  -- So the widened comparison catches it, and `confinedCheck` with it.
+  assertBool "runQueueAgreeOn rejects the re-bucketing"
+    (runQueueAgreeOn oneQueuedOnCore2 reBucketedOnCore2 c2 = false)
+  assertBool "confinedCheck therefore reports core 2 as written"
+    (confinedCheck oneQueuedOnCore2 reBucketedOnCore2 c0 = false)
+  assertBool "…and still accepts it when core 2 is the declared write target"
+    (confinedCheck oneQueuedOnCore2 reBucketedOnCore2 c2 = true)
+  assertBool "the untouched cores are still reported unwritten"
+    (runQueueAgreeOn oneQueuedOnCore2 reBucketedOnCore2 c1 = true
+     && runQueueAgreeOn oneQueuedOnCore2 reBucketedOnCore2 c3 = true)
+
 /-- §5.3  The set-of-cores algebra and its coverage record. -/
 private def runCoreSetAlgebraChecks : IO Unit := do
   IO.println "--- §5.3 the set-of-cores confinement algebra ---"
-  assertBool "eleven cross-core transitions are covered"
-    (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 11))
-  assertBool "ten of the eleven can name a core other than the executing one"
+  assertBool "fourteen cross-core transitions are covered"
+    (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 14))
+  assertBool "thirteen of the fourteen can name a core other than the executing one"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
-      SeLe4n.Kernel.crossCoreTransitionWritesRemote).length = 10))
+      SeLe4n.Kernel.crossCoreTransitionWritesRemote).length = 13))
   assertBool "…and the wait is the one that cannot"
     (decide (SeLe4n.Kernel.crossCoreTransitionWritesRemote .notificationWait = false))
-  assertBool "five of the eleven are the arms the live syscall dispatch reaches"
+  assertBool "six of the fourteen are the arms the live syscall dispatch reaches"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
-      SeLe4n.Kernel.crossCoreTransitionIsLiveArm).length = 5))
+      SeLe4n.Kernel.crossCoreTransitionIsLiveArm).length = 6))
   -- The fourth review round's finding, as a checked fact: the three arms it
   -- named are in the inventory and are all classified as live.
   assertBool "the bound signal, the receive dual and replyRecv are all covered"
     ([SeLe4n.Kernel.CrossCoreTransition.notificationSignalBound,
       .endpointReceiveDual, .endpointReplyRecv].all (fun t =>
         decide (t ∈ SeLe4n.Kernel.CrossCoreTransition.all)))
-  assertBool "the bound signal and replyRecv are live arms; the bare receive dual is a leg"
+  -- The FIFTH review round's finding, as a checked fact: a live entry must name
+  -- the function the dispatch calls.  The three wrappers that do strictly more
+  -- than their below-API transition now have their own entries, and it is those
+  -- — not the narrower legs — that are classified live.
+  assertBool "the three live wrappers are in the inventory"
+    ([SeLe4n.Kernel.CrossCoreTransition.endpointReplyDispatch,
+      .replyRecvBodyDispatch, .suspendThreadDispatch].all (fun t =>
+        decide (t ∈ SeLe4n.Kernel.CrossCoreTransition.all)))
+  assertBool "the wrappers are the live arms; their legs are legs"
+    (decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .endpointReplyDispatch = true) &&
+     decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .replyRecvBodyDispatch = true) &&
+     decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .suspendThreadDispatch = true) &&
+     decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .endpointReply = false) &&
+     decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .endpointReplyRecv = false) &&
+     decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .cancelIpcBlocking = false))
+  assertBool "the bound signal stays live; the bare receive dual is a leg"
     (decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .notificationSignalBound = true) &&
-     decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .endpointReplyRecv = true) &&
      decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .endpointReceiveDual = false))
   assertBool "the covered-transition theorem names are pairwise distinct"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.map
-      SeLe4n.Kernel.crossCoreNiTheorem).eraseDups.length = 11))
+      SeLe4n.Kernel.crossCoreNiTheorem).eraseDups.length = 14))
   -- The load-bearing negative: the write set is *state-dependent*, so it is not
   -- a constant the theorem could be satisfying vacuously.  With no receiver the
   -- call writes one core; with a remote receiver waiting it writes two — and
@@ -2680,6 +2812,7 @@ def runSmpInformationFlowChecks : IO Unit := do
   runVisibleRemoteWakeChecks
   runComposedCancellationChecks
   runLiveCrossCoreArmChecks
+  runRunQueueComparisonChecks
   runCoreSetAlgebraChecks
   runResolvedFlowGateChecks
   IO.println "===================================="
