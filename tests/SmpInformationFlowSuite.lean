@@ -517,6 +517,9 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @schedulingObservationCode
 #check @schedulingObservationCode_injective
 #check @schedulingChannel_alphabet_bounded
+#check @schedulingObservationFullOnCore
+#check @schedulingObservation_activeDomain_determined
+#check @schedulingChannel_full_observation_determined
 #check @crossCoreEnforcementEntries
 #check @enforcementBoundary_prefix_of_perCore
 #check @syscallIdToEnforcementNamePerCore

@@ -430,6 +430,39 @@ SM8.B; the lock-contention channel CC-5 is SM8.B.8; the
 | SM8.B.13 | `crossCoreLeakage_bounded` | Theorem | L | LANDED |
 | SM8.B.14 | 15+ NI scenarios (tests) | L | LANDED |
 
+**PR #861 review round 7 (v0.33.5).**  One finding, P1, valid — and it is a
+defect in the *previous round's own remediation*, which is the most useful kind
+of review comment this cycle produced.
+
+**P1 — the capacity bound omitted `activeDomain` on a false justification.**
+Round 6's `schedulingObservationOnCore` carries the schedule index and the
+countdown, and its docstring justified dropping the third observable component
+by saying that "under the index-bounds invariant [`activeDomain`] is a function
+of the schedule and the index".  It is not.
+`domainScheduleIndexInBoundsOnCore` constrains the *index* and says nothing
+whatever about `activeDomainOnCore`; the invariant that ties the active domain
+to `domainSchedule[index]` is the separate `domainConsistentOnCore` (SM5.G.2).
+So two states could satisfy both the index bound and the quantum bound, share a
+schedule, an index and a countdown — hence receive the same code — while
+exposing *different* active domains to the observer.  The alphabet bound was
+therefore a bound on two of the channel's three components, not on the channel.
+
+Closed by proving the omission rather than asserting it.
+`schedulingObservation_activeDomain_determined` shows that under
+`domainConsistentOnCore` (plus the index bound and a non-empty schedule) the
+observed `activeDomain` **is** `DomainScheduleEntry.domain` of the entry at the
+observed index; `schedulingObservationFullOnCore` names the complete
+three-component observation; and `schedulingChannel_full_observation_determined`
+shows that two states the encoding identifies expose the same complete
+observation, active domain included.  That is what licenses bounding the channel
+by the two-component code, and it now carries the right invariant as an explicit
+hypothesis instead of citing the wrong one.
+
+The domain schedule itself is a hypothesis (`s₁ … = s₂ …`) rather than a
+component of the code, and deliberately: a capacity figure is quoted for a fixed
+schedule, and a deployment that rewrites its schedule at runtime is changing the
+channel rather than transmitting through it.
+
 **PR #861 review round 6 (v0.33.5).**  Two findings, both P1, both valid, both
 the same failure mode the earlier rounds kept surfacing — a mechanism that did
 less than its description claimed.

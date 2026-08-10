@@ -178,6 +178,16 @@ alone bounds nothing.  Both sites now state the same proven figure.
 
 Theorems, gates and documentation only; trace byte-identical.
 
+**The bound covers the whole channel.**  A further round found that the
+encoding's omission of `activeDomain` rested on the wrong invariant:
+`domainScheduleIndexInBoundsOnCore` constrains the index alone, and the tie to
+`domainSchedule[index]` is the separate `domainConsistentOnCore`.  Two states
+could otherwise share a schedule, index and countdown — hence a code — while
+exposing different active domains.  `schedulingObservation_activeDomain_determined`
+and `schedulingChannel_full_observation_determined` now prove the omission under
+the invariant that actually licenses it.
+
+
 ### Tests
 
 `tests/SmpInformationFlowSuite.lean` — **243 runtime assertions** across the

@@ -700,7 +700,12 @@ theorem acceptedCovertChannel_scheduling
       **proven**, not asserted: `schedulingChannel_alphabet_bounded` injects the
       per-core observation alphabet into `Fin (N × (Q + 1))`, and
       `schedulingObservationCode_injective` is why that injection loses nothing.
-      A deployment that does not cap the countdown does not get this bound.
+      The third observable component, `activeDomain`, is covered rather than
+      ignored: `schedulingChannel_full_observation_determined` shows two states
+      the encoding identifies expose the same active domain — under
+      `domainConsistentOnCore`, the invariant that actually ties it to
+      `domainSchedule[index]`.  A deployment that does not cap the countdown
+      does not get this bound.
 
     **Mitigation status**: Temporal partitioning via domain scheduling bounds
     the channel bandwidth. Each domain receives guaranteed time quanta regardless

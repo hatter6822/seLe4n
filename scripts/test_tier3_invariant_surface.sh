@@ -1856,6 +1856,11 @@ run_check "INVARIANT" bash -lc 'source ~/.elan/env && ./scripts/check_module_axi
 # read only for the contrast line.
 run_check "INVARIANT" rg -n '^theorem schedulingChannel_alphabet_bounded' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem schedulingObservationCode_injective' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+# The bound must cover the WHOLE observation: omitting `activeDomain` is licensed
+# by `domainConsistentOnCore`, not by the index-bounds invariant (round 7).
+run_check "INVARIANT" rg -n '^theorem schedulingObservation_activeDomain_determined' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem schedulingChannel_full_observation_determined' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n 'domainConsistentOnCore' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 # CC-1's mitigation must state the PROVEN bound, not disclaim one: retracting a
 # claim to match weaker code is the direction the project forbids.
 run_negative_check "INVARIANT" rg -n 'No capacity bound is claimed' SeLe4n/

@@ -306,7 +306,9 @@ def acceptedCovertChannel_scheduling_perCore : CovertChannel :=
        caps domainTimeRemaining — proven as an injection of the observation \
        alphabet into Fin (|domainSchedule| * (quantumBound + 1)) by \
        schedulingChannel_alphabet_bounded with \
-       schedulingObservationCode_injective. At switch frequency F the rate bound \
+       schedulingObservationCode_injective, and covering the active domain too \
+       via schedulingChannel_full_observation_determined under \
+       domainConsistentOnCore. At switch frequency F the rate bound \
        is that figure times F. The quantum cap is a required hypothesis, not a \
        formality: schedulingChannel_not_bounded_by_scheduleLength proves that \
        |domainSchedule| alone bounds nothing, because domainTimeRemaining is an \
@@ -637,9 +639,13 @@ theorem schedulingChannelIndex_alphabet_bounded (ctx : LabelingContext) (c : Cor
 
 /-- SM8.B.9: **the observation an SMP scheduling-channel receiver can make** on
 core `c` — the two unfiltered per-core components the observer's view exposes,
-paired.  `activeDomain` is omitted deliberately: under the index-bounds
-invariant it is a function of the schedule and the index, so it carries no
-alphabet of its own. -/
+paired.  `activeDomain` is omitted deliberately, but **not** because the
+index-bounds invariant makes it redundant — that was the fifth round's claim and
+it was wrong.  `domainScheduleIndexInBoundsOnCore` constrains the index alone;
+the invariant that ties `activeDomainOnCore` to `domainSchedule[index]` is the
+separate `domainConsistentOnCore` (SM5.G.2).
+`schedulingChannel_full_observation_determined` is what licenses the omission,
+and it takes that invariant as a hypothesis. -/
 def schedulingObservationOnCore (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel)
     (s : SystemState) : Nat × Nat :=
   ((ObservableState.onCore ctx c L s).domainScheduleIndex,
@@ -724,6 +730,90 @@ theorem schedulingChannel_alphabet_bounded (quantumBound : Nat) (ctx : LabelingC
         rw [Nat.add_mul, Nat.one_mul]
     _ ≤ s.scheduler.domainSchedule.length * (quantumBound + 1) :=
         Nat.mul_le_mul_right _ hIdx
+
+/-- SM8.B.9: **the complete scheduling observation**, active domain included.
+
+`schedulingObservationOnCore` deliberately carries only the index and the
+countdown; this is the whole tuple, and `schedulingChannel_full_observation_determined`
+below is what licenses bounding the channel by the smaller one. -/
+def schedulingObservationFullOnCore (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel)
+    (s : SystemState) : SeLe4n.DomainId × Nat × Nat :=
+  ((ObservableState.onCore ctx c L s).activeDomain,
+   (ObservableState.onCore ctx c L s).domainScheduleIndex,
+   (ObservableState.onCore ctx c L s).domainTimeRemaining)
+
+/-- SM8.B.9: **the active domain is a function of the schedule and the index** —
+under `domainConsistentOnCore`, which is the invariant that actually ties them.
+
+The fifth review round's form of the capacity bound claimed this held "under the
+index-bounds invariant", and that was wrong: `domainScheduleIndexInBoundsOnCore`
+constrains the index and says nothing about `activeDomainOnCore`.  The tie is a
+*separate* invariant (`domainConsistentOnCore`, SM5.G.2), so without it two
+states could share a schedule, an index and a countdown while exposing different
+active domains — and the code below would map them together while the observer
+told them apart. -/
+theorem schedulingObservation_activeDomain_determined (ctx : LabelingContext) (c : CoreId)
+    (L : SecurityLabel) (s : SystemState)
+    (hCons : domainConsistentOnCore s c)
+    (hBounds : domainScheduleIndexInBoundsOnCore s c)
+    (hNonEmpty : s.scheduler.domainSchedule ≠ []) :
+    ∃ entry : DomainScheduleEntry,
+      s.scheduler.domainSchedule[(ObservableState.onCore ctx c L s).domainScheduleIndex]?
+          = some entry
+      ∧ (ObservableState.onCore ctx c L s).activeDomain = DomainScheduleEntry.domain entry := by
+  have hTrans := onCore_schedulingTransparency ctx c L s
+  have hIdx : s.scheduler.domainScheduleIndexOnCore c < s.scheduler.domainSchedule.length := by
+    rcases hBounds with hEmpty | hLt
+    · exact absurd hEmpty hNonEmpty
+    · exact hLt
+  obtain ⟨entry, hEntry⟩ :
+      ∃ e, s.scheduler.domainSchedule[s.scheduler.domainScheduleIndexOnCore c]? = some e :=
+    ⟨_, List.getElem?_eq_getElem hIdx⟩
+  refine ⟨entry, ?_, ?_⟩
+  · rw [hTrans.2.2.2]; exact hEntry
+  · rw [hTrans.1]; exact hCons entry hEntry
+
+/-- SM8.B.9 (**the capacity bound covers the whole channel**): two states the
+code identifies have the *same complete observation* — active domain included.
+
+This is what the alphabet bound needs in order to be a bound on the scheduling
+channel rather than on two of its three components.  The schedule is a hypothesis
+rather than a component of the code because it is quasi-static configuration: a
+capacity figure is quoted for a fixed domain schedule, and a deployment that
+rewrites its schedule at runtime is changing the channel, not transmitting
+through it. -/
+theorem schedulingChannel_full_observation_determined (quantumBound : Nat)
+    (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel) (s₁ s₂ : SystemState)
+    (hSched : s₁.scheduler.domainSchedule = s₂.scheduler.domainSchedule)
+    (hNonEmpty : s₁.scheduler.domainSchedule ≠ [])
+    (hCons₁ : domainConsistentOnCore s₁ c) (hCons₂ : domainConsistentOnCore s₂ c)
+    (hBounds₁ : domainScheduleIndexInBoundsOnCore s₁ c)
+    (hBounds₂ : domainScheduleIndexInBoundsOnCore s₂ c)
+    (hQ₁ : (schedulingObservationOnCore ctx c L s₁).2 ≤ quantumBound)
+    (hQ₂ : (schedulingObservationOnCore ctx c L s₂).2 ≤ quantumBound)
+    (hCode : schedulingObservationCode quantumBound ctx c L s₁
+      = schedulingObservationCode quantumBound ctx c L s₂) :
+    schedulingObservationFullOnCore ctx c L s₁ = schedulingObservationFullOnCore ctx c L s₂ := by
+  have hPair := schedulingObservationCode_injective quantumBound ctx c L s₁ s₂ hQ₁ hQ₂ hCode
+  have hIdx : (ObservableState.onCore ctx c L s₁).domainScheduleIndex
+      = (ObservableState.onCore ctx c L s₂).domainScheduleIndex :=
+    congrArg Prod.fst hPair
+  have hRem : (ObservableState.onCore ctx c L s₁).domainTimeRemaining
+      = (ObservableState.onCore ctx c L s₂).domainTimeRemaining :=
+    congrArg Prod.snd hPair
+  obtain ⟨e₁, hLook₁, hDom₁⟩ :=
+    schedulingObservation_activeDomain_determined ctx c L s₁ hCons₁ hBounds₁ hNonEmpty
+  obtain ⟨e₂, hLook₂, hDom₂⟩ :=
+    schedulingObservation_activeDomain_determined ctx c L s₂ hCons₂ hBounds₂ (hSched ▸ hNonEmpty)
+  have hSame : e₁ = e₂ := by
+    have h₁ := hLook₁
+    rw [hSched, hIdx] at h₁
+    rw [h₁] at hLook₂
+    exact Option.some.inj hLook₂
+  simp only [schedulingObservationFullOnCore]
+  refine Prod.ext ?_ (Prod.ext hIdx hRem)
+  simp only []
+  rw [hDom₁, hDom₂, hSame]
 
 /-- SM8.B.9: the bound is **not vacuous** — with a two-entry schedule and a
 countdown capped at 3 the alphabet has at most 8 elements, and a concrete state
