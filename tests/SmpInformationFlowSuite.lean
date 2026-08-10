@@ -513,6 +513,10 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @covertChannelEvidence_shared_only_for_residency
 #check @schedulingChannelIndex_alphabet_bounded
 #check @schedulingChannel_not_bounded_by_scheduleLength
+#check @schedulingObservationOnCore
+#check @schedulingObservationCode
+#check @schedulingObservationCode_injective
+#check @schedulingChannel_alphabet_bounded
 #check @crossCoreEnforcementEntries
 #check @enforcementBoundary_prefix_of_perCore
 #check @syscallIdToEnforcementNamePerCore

@@ -430,6 +430,58 @@ SM8.B; the lock-contention channel CC-5 is SM8.B.8; the
 | SM8.B.13 | `crossCoreLeakage_bounded` | Theorem | L | LANDED |
 | SM8.B.14 | 15+ NI scenarios (tests) | L | LANDED |
 
+**PR #861 review round 6 (v0.33.5).**  Two findings, both P1, both valid, both
+the same failure mode the earlier rounds kept surfacing — a mechanism that did
+less than its description claimed.
+
+1. **P1 — the axiom sweep was still not exhaustive, and said it was.**  Round 2
+   moved the sweep off a source regex and onto `docs/codebase_map.json`,
+   describing the map as "generated from the elaborated source" and the sweep as
+   "exhaustive by construction".  Both were false: `generate_codebase_map.py`
+   builds the map with a line-oriented `DECL_HEAD_RE` over source text and never
+   consults Lean's environment, so it records the *syntax* a file contains, not
+   the *constants* the file produces.  A `macro_rules` / `elab` command that
+   generates a declaration contributes only the invocation; the generated
+   constant is absent from both the probe and the total, and can reach an
+   imported non-standard axiom without the textual `axiom` keyword appearing
+   anywhere.
+
+   Closed by enumerating **Lean's own environment**: the generated probe walks
+   `env.constants`, keeps every constant whose defining module
+   (`Environment.getModuleIdxFor?`) is one of the targets, and calls
+   `Lean.collectAxioms` on each — no filtering by declaration kind, by name
+   shape, or by privacy.  The gap this closes is not marginal: on the SM8
+   information-flow surface the map lists **462** declarations while the
+   environment holds **1359** constants for the same four modules.  All 1359 are
+   axiom-clean.  Fail-closed was verified by narrowing the allowed set, which
+   makes the gate exit non-zero and name every offender.  The map is still read,
+   but only to print the source-declaration count beside the environment count,
+   so the difference stays visible instead of being mistaken for agreement.
+
+2. **P1 — CC-1's capacity bound was retracted rather than proven.**  Round 4
+   replaced the `log₂(|domainSchedule|) × switchFreq` figure with an explicit
+   "No capacity bound is claimed", on the grounds that `domainTimeRemaining` is
+   an unrestricted `Nat` carried unfiltered.  The observation was right and the
+   remedy was the direction this project forbids — and it left the two sites
+   contradicting each other, since `Projection.lean` still advertised the
+   original figure.
+
+   Closed by proving a real bound instead.  `schedulingObservationOnCore` names
+   what the receiver actually reads (the index and the countdown; `activeDomain`
+   is a function of the two under the bounds invariant, so it carries no
+   alphabet of its own), `schedulingObservationCode` encodes it positionally,
+   and `schedulingChannel_alphabet_bounded` injects that alphabet into
+   `Fin (|domainSchedule| × (quantumBound + 1))` under two hypotheses: the
+   scheduler's index-bounds invariant, and a deployment cap on the countdown.
+   `schedulingObservationCode_injective` is what makes it a bound on the
+   *channel* rather than on an arbitrary function.  So the capacity is
+   `log₂(N × (Q + 1))` bits per observation and `× F` per second — strictly more
+   informative than the figure it replaces, and the quantum cap is recorded as a
+   required hypothesis rather than a formality, with
+   `schedulingChannel_not_bounded_by_scheduleLength` standing as the proof that
+   `N` alone bounds nothing.  Both `Projection.lean` and the inventory entry now
+   state the same proven figure.
+
 **PR #861 review round 5 (v0.33.5).**  Three findings, all verified valid
 against the code before acting; all closed.
 

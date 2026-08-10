@@ -682,14 +682,25 @@ theorem acceptedCovertChannel_scheduling
     **Channel characteristics**:
     - **Source**: 4 scheduling scalar values (`activeDomain`, `domainSchedule`,
       `domainScheduleIndex`, `domainTimeRemaining`)
-    - **Capacity**: ≤ log₂(|domainSchedule|) × switchFreq bits/second
+    - **Capacity**: ≤ log₂(N × (Q + 1)) × switchFreq bits/second, where N =
+      |domainSchedule| and Q bounds `domainTimeRemaining`
     - **Practical bandwidth**: Sub-bit-per-second under normal scheduling
       configurations (domain switches at 1–100 Hz)
-    - **Theoretical maximum**: With |domainSchedule| = N entries and switch
-      frequency F Hz, an observer can extract at most log₂(N) × F bits/second
-      by measuring domain transitions. For typical configurations (N ≤ 16,
-      F ≤ 100 Hz), this is ≤ 400 bits/second — well below practical exploitation
-      thresholds for most security policies.
+    - **Theoretical maximum**: With |domainSchedule| = N entries, a countdown
+      capped at Q, and switch frequency F Hz, an observer can extract at most
+      log₂(N × (Q + 1)) × F bits/second. For typical configurations (N ≤ 16,
+      Q ≤ 255, F ≤ 100 Hz) this is ≤ 1200 bits/second — the figure a deployment
+      should compare against its own policy.
+
+      **The Q factor is load-bearing, and the earlier form of this note omitted
+      it** (WS-SM SM8.B, PR #861 review): the claim used to read log₂(N) × F,
+      which is false as stated, because `domainTimeRemaining` is projected
+      unfiltered and ranges over all of `Nat` — `schedulingChannel_not_bounded_by_scheduleLength`
+      proves exactly that N alone bounds nothing.  The corrected figure is
+      **proven**, not asserted: `schedulingChannel_alphabet_bounded` injects the
+      per-core observation alphabet into `Fin (N × (Q + 1))`, and
+      `schedulingObservationCode_injective` is why that injection loses nothing.
+      A deployment that does not cap the countdown does not get this bound.
 
     **Mitigation status**: Temporal partitioning via domain scheduling bounds
     the channel bandwidth. Each domain receives guaranteed time quanta regardless

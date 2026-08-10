@@ -1749,7 +1749,7 @@ run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.InformationFlow\.CovertChan
 run_check "INVARIANT" rg -n '^SeLe4n\.Kernel\.InformationFlow\.NonInterferencePerCore' scripts/staged_module_allowlist.txt
 run_check "INVARIANT" rg -n '^SeLe4n\.Kernel\.InformationFlow\.CovertChannelPerCore' scripts/staged_module_allowlist.txt
 
-# WS-SM SM8.B (v0.33.6) — non-interference at the genuinely cross-core
+# WS-SM SM8.B (v0.33.5) — non-interference at the genuinely cross-core
 # transitions.  The set-of-cores confinement algebra, the home-core frame layer,
 # the six write sets and their NI instantiations.
 run_check "INVARIANT" rg -n '^structure observableSlotsAgreeOn' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
@@ -1842,11 +1842,30 @@ run_check "INVARIANT" rg -n 'syntax \(name := perCoreNiTheoremNameMacro\)' SeLe4
 run_check "INVARIANT" rg -n 'niName! nonInterference_perCore_chooseThread' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n 'niName! endpointCallOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_negative_check "INVARIANT" rg -n '^  \| _ => true' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-# The repeatable, map-driven axiom sweep replaces the regex generator that
-# missed three `@[simp] theorem` declarations.  Run it, do not merely assert it
-# exists: a checked-in tool nobody invokes is not a gate.
+# The axiom sweep enumerates Lean's ELABORATED ENVIRONMENT, not source text.
+# Two earlier forms were not exhaustive despite saying so: a regex generator
+# that missed `@[simp] theorem`, then a `docs/codebase_map.json`-driven sweep --
+# but that map is itself a line-oriented source scan, so elaborator output
+# (equation lemmas, match auxiliaries, macro-generated constants) never reached
+# the probe.  Run it, do not merely assert it exists: a checked-in tool nobody
+# invokes is not a gate.
 run_check "INVARIANT" test -x scripts/check_module_axioms.py
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && ./scripts/check_module_axioms.py --all-smp-information-flow'
+# Pin the mechanism, negatively: the sweep must not go back to reading the map
+# as its declaration source.  `env.constants` is the enumeration; the map may be
+# read only for the contrast line.
+run_check "INVARIANT" rg -n '^theorem schedulingChannel_alphabet_bounded' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem schedulingObservationCode_injective' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+# CC-1's mitigation must state the PROVEN bound, not disclaim one: retracting a
+# claim to match weaker code is the direction the project forbids.
+run_negative_check "INVARIANT" rg -n 'No capacity bound is claimed' SeLe4n/
+run_check "INVARIANT" rg -n 'log2\(\|domainSchedule\| \* \(quantumBound \+ 1\)\)' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n 'env.constants.toList' scripts/check_module_axioms.py
+run_check "INVARIANT" rg -n 'getModuleIdxFor\?' scripts/check_module_axioms.py
+run_check "INVARIANT" rg -n 'Lean.collectAxioms' scripts/check_module_axioms.py
+# The old mechanism's fingerprint: a `#print axioms` probe built from map
+# declaration names.  Its absence is what keeps the sweep on `env.constants`.
+run_negative_check "INVARIANT" rg -n 'print axioms' scripts/check_module_axioms.py
 
 # PR #861 review round 2: the live `.call` arm is bounded by a write set that
 # mirrors the dispatch's own control flow, not by hand-supplied intermediate

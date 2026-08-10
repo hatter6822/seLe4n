@@ -144,7 +144,7 @@ run_check() {
   return 1
 }
 
-# WS-SM SM8.B (v0.33.6): the dual of `run_check` — the command MUST fail.
+# WS-SM SM8.B (v0.33.5): the dual of `run_check` — the command MUST fail.
 #
 # Surface anchors so far could only pin that something *is* present.  Several
 # SM8.B findings were the opposite shape: a tautology that must not come back, a

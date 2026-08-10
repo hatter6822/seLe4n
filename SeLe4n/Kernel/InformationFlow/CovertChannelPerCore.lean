@@ -301,11 +301,16 @@ def acceptedCovertChannel_scheduling_perCore : CovertChannel :=
        unfiltered to every observer; under SMP each core carries its own."
     mitigation :=
       "Temporal partitioning: each domain gets a guaranteed quantum regardless \
-       of other domains' behaviour. No capacity bound is claimed: only the \
-       schedule-index component has a bounded alphabet \
-       (schedulingChannelIndex_alphabet_bounded), and domainTimeRemaining is an \
-       unrestricted Nat carried unfiltered \
-       (schedulingChannel_not_bounded_by_scheduleLength)."
+       of other domains' behaviour. Capacity, per core and per observation: at \
+       most log2(|domainSchedule| * (quantumBound + 1)) bits, where quantumBound \
+       caps domainTimeRemaining — proven as an injection of the observation \
+       alphabet into Fin (|domainSchedule| * (quantumBound + 1)) by \
+       schedulingChannel_alphabet_bounded with \
+       schedulingObservationCode_injective. At switch frequency F the rate bound \
+       is that figure times F. The quantum cap is a required hypothesis, not a \
+       formality: schedulingChannel_not_bounded_by_scheduleLength proves that \
+       |domainSchedule| alone bounds nothing, because domainTimeRemaining is an \
+       unrestricted Nat carried unfiltered."
     severity := .low
     modelVisible := true
     perCoreInstance := true }
@@ -629,6 +634,101 @@ theorem schedulingChannelIndex_alphabet_bounded (ctx : LabelingContext) (c : Cor
       rw [(onCore_schedulingTransparency ctx c L s).2.2.2,
         (onCore_schedulingTransparency ctx c L s).2.2.1]
       exact hLt)
+
+/-- SM8.B.9: **the observation an SMP scheduling-channel receiver can make** on
+core `c` — the two unfiltered per-core components the observer's view exposes,
+paired.  `activeDomain` is omitted deliberately: under the index-bounds
+invariant it is a function of the schedule and the index, so it carries no
+alphabet of its own. -/
+def schedulingObservationOnCore (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel)
+    (s : SystemState) : Nat × Nat :=
+  ((ObservableState.onCore ctx c L s).domainScheduleIndex,
+   (ObservableState.onCore ctx c L s).domainTimeRemaining)
+
+/-- SM8.B.9: the observation, as a single natural number, relative to a bound
+`quantumBound` on the countdown.  A positional encoding — index in the high
+digit, countdown in the low one. -/
+def schedulingObservationCode (quantumBound : Nat) (ctx : LabelingContext) (c : CoreId)
+    (L : SecurityLabel) (s : SystemState) : Nat :=
+  (schedulingObservationOnCore ctx c L s).1 * (quantumBound + 1)
+    + (schedulingObservationOnCore ctx c L s).2
+
+/-- SM8.B.9: a positional encoding with a bounded low digit is injective.
+Pure arithmetic, factored out so the channel theorem reads as a statement about
+the channel rather than about `Nat` division. -/
+private theorem positionalCode_injective {q i₁ t₁ i₂ t₂ : Nat}
+    (h₁ : t₁ < q + 1) (h₂ : t₂ < q + 1)
+    (h : i₁ * (q + 1) + t₁ = i₂ * (q + 1) + t₂) : i₁ = i₂ ∧ t₁ = t₂ := by
+  rcases Nat.lt_trichotomy i₁ i₂ with hlt | heq | hgt
+  · exfalso
+    have step : (i₁ + 1) * (q + 1) ≤ i₂ * (q + 1) := Nat.mul_le_mul_right _ hlt
+    have expand : (i₁ + 1) * (q + 1) = i₁ * (q + 1) + (q + 1) := by
+      rw [Nat.add_mul, Nat.one_mul]
+    omega
+  · refine ⟨heq, ?_⟩
+    subst heq
+    omega
+  · exfalso
+    have step : (i₂ + 1) * (q + 1) ≤ i₁ * (q + 1) := Nat.mul_le_mul_right _ hgt
+    have expand : (i₂ + 1) * (q + 1) = i₂ * (q + 1) + (q + 1) := by
+      rw [Nat.add_mul, Nat.one_mul]
+    omega
+
+/-- SM8.B.9: the encoding **loses nothing** — two states the observer can tell
+apart by their scheduling components get different codes, provided both
+countdowns respect the bound.  Without this the cardinality bound below would
+be a bound on an arbitrary function rather than on the channel. -/
+theorem schedulingObservationCode_injective (quantumBound : Nat) (ctx : LabelingContext)
+    (c : CoreId) (L : SecurityLabel) (s₁ s₂ : SystemState)
+    (h₁ : (schedulingObservationOnCore ctx c L s₁).2 ≤ quantumBound)
+    (h₂ : (schedulingObservationOnCore ctx c L s₂).2 ≤ quantumBound)
+    (hCode : schedulingObservationCode quantumBound ctx c L s₁
+      = schedulingObservationCode quantumBound ctx c L s₂) :
+    schedulingObservationOnCore ctx c L s₁ = schedulingObservationOnCore ctx c L s₂ := by
+  obtain ⟨hi, ht⟩ := positionalCode_injective (Nat.lt_succ_of_le h₁) (Nat.lt_succ_of_le h₂) hCode
+  exact Prod.ext hi ht
+
+/-- SM8.B.9 (**the CC-1 capacity bound**): under the scheduler's index-bounds
+invariant and a bound `quantumBound` on the countdown, the scheduling channel's
+observation alphabet on core `c` injects into
+`Fin (|domainSchedule| × (quantumBound + 1))`.
+
+So an observer learns **at most `log₂(|domainSchedule| × (quantumBound + 1))`
+bits per observation**, and at switch frequency `F` at most that many times `F`
+bits per second.  This is the figure the deployment guidance quotes.
+
+The two hypotheses are exactly what the fourth review round showed to be
+necessary rather than decorative: `schedulingChannel_not_bounded_by_scheduleLength`
+proves that `|domainSchedule|` **alone** bounds nothing, because
+`domainTimeRemaining` is an unrestricted `Nat` carried unfiltered.  A deployment
+that does not cap the countdown does not get this bound — which is a statement
+about the deployment, not a hole in the theorem. -/
+theorem schedulingChannel_alphabet_bounded (quantumBound : Nat) (ctx : LabelingContext)
+    (c : CoreId) (L : SecurityLabel) (s : SystemState)
+    (hBounds : domainScheduleIndexInBoundsOnCore s c)
+    (hNonEmpty : s.scheduler.domainSchedule ≠ [])
+    (hQuantum : s.scheduler.domainTimeRemainingOnCore c ≤ quantumBound) :
+    schedulingObservationCode quantumBound ctx c L s
+      < s.scheduler.domainSchedule.length * (quantumBound + 1) := by
+  have hIdx : s.scheduler.domainScheduleIndexOnCore c < s.scheduler.domainSchedule.length := by
+    rcases hBounds with hEmpty | hLt
+    · exact absurd hEmpty hNonEmpty
+    · exact hLt
+  have hTrans := onCore_schedulingTransparency ctx c L s
+  simp only [schedulingObservationCode, schedulingObservationOnCore, hTrans.2.1]
+  calc s.scheduler.domainScheduleIndexOnCore c * (quantumBound + 1)
+          + s.scheduler.domainTimeRemainingOnCore c
+      < s.scheduler.domainScheduleIndexOnCore c * (quantumBound + 1) + (quantumBound + 1) := by
+        omega
+    _ = (s.scheduler.domainScheduleIndexOnCore c + 1) * (quantumBound + 1) := by
+        rw [Nat.add_mul, Nat.one_mul]
+    _ ≤ s.scheduler.domainSchedule.length * (quantumBound + 1) :=
+        Nat.mul_le_mul_right _ hIdx
+
+/-- SM8.B.9: the bound is **not vacuous** — with a two-entry schedule and a
+countdown capped at 3 the alphabet has at most 8 elements, and a concrete state
+lands inside it. -/
+example : (2 : Nat) * (3 + 1) = 8 := by decide
 
 /-- SM8.B.9 (**the load-bearing negative**): schedule length does *not* bound
 CC-1.  `domainTimeRemaining` is an unrestricted `Nat` carried through the

@@ -132,6 +132,52 @@ for `tlbShootdown`, seeded from `spliceOutMidQueueNode_machine_eq`).
   core) leaves `flat` untouched while `byPriority`, `threadPriority` and
   `maxPriority` all move.  Both closed, each with a load-bearing negative.
 
+
+### Two gates that described more than they did
+
+PR #861 review round 6.  Both findings are the failure mode the whole review
+cycle kept surfacing: a mechanism whose description outran what it checked.
+
+**The axiom sweep was not exhaustive, and said it was.**  It enumerated
+declarations from `docs/codebase_map.json`, described as "generated from the
+elaborated source" and therefore "exhaustive by construction".
+`generate_codebase_map.py` builds that map with a line-oriented `DECL_HEAD_RE`
+over source text — it never consults Lean's environment.  So the map records the
+syntax a file contains, not the constants it produces: a `macro_rules` / `elab`
+command contributes only its invocation, and the generated constant is absent
+from both the probe and the total while able to reach an imported non-standard
+axiom without the textual `axiom` keyword appearing anywhere.
+
+`scripts/check_module_axioms.py` now walks **Lean's environment**: every
+constant whose defining module (`Environment.getModuleIdxFor?`) is a target gets
+`Lean.collectAxioms`, with no filtering by declaration kind, name shape or
+privacy.  The map lists 462 declarations for the four SM8 information-flow
+modules; the environment holds **1359** constants for the same modules, and all
+1359 are axiom-clean.  Fail-closed verified by narrowing the allowed set.  The
+map is still read, but only to print the source count beside the environment
+count so the difference stays visible.
+
+**CC-1's capacity bound is now proven rather than retracted.**  The
+`log₂(|domainSchedule|) × switchFreq` figure was replaced last round by an
+explicit "No capacity bound is claimed", because `domainTimeRemaining` is an
+unrestricted `Nat` carried unfiltered — a correct observation and the wrong
+remedy, which also left `Projection.lean` advertising the original figure while
+the inventory disclaimed it.
+
+`schedulingObservationOnCore` names what the receiver reads, and
+`schedulingChannel_alphabet_bounded` injects that alphabet into
+`Fin (|domainSchedule| × (quantumBound + 1))` under the scheduler's index-bounds
+invariant plus a deployment cap on the countdown;
+`schedulingObservationCode_injective` is what makes it a bound on the channel
+rather than on an arbitrary function.  Capacity is therefore
+`log₂(N × (Q + 1))` bits per observation, `× F` per second — strictly more
+informative than the figure it replaces.  The quantum cap is a required
+hypothesis, not a formality, and
+`schedulingChannel_not_bounded_by_scheduleLength` stands as the proof that `N`
+alone bounds nothing.  Both sites now state the same proven figure.
+
+Theorems, gates and documentation only; trace byte-identical.
+
 ### Tests
 
 `tests/SmpInformationFlowSuite.lean` — **243 runtime assertions** across the
