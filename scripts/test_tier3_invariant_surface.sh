@@ -1861,6 +1861,18 @@ run_check "INVARIANT" rg -n '^theorem schedulingObservationCode_injective' SeLe4
 run_check "INVARIANT" rg -n '^theorem schedulingObservation_activeDomain_determined' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem schedulingChannel_full_observation_determined' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n 'domainConsistentOnCore' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+# The OPERATOR-FACING documents must carry the Q factor.  Round 8 found the
+# advisory and the deployment guide still quoting the Q-free figure the kernel
+# now disproves — the theorems were fixed and the documents an operator actually
+# reads were not.  Pin both, positively and negatively.
+run_check "INVARIANT" rg -n 'quantumBound|Q \+ 1|Q\+1' docs/SECURITY_ADVISORY.md
+run_check "INVARIANT" rg -n 'schedulingChannel_alphabet_bounded' docs/SECURITY_ADVISORY.md
+run_check "INVARIANT" rg -n 'schedulingChannel_alphabet_bounded' docs/DEPLOYMENT_GUIDE.md
+# Scoped to the two GUIDANCE documents: the plan legitimately quotes the retracted
+# wording when recording why it was wrong, and a history that cannot name its own
+# mistakes is worth less than the anchor.
+run_negative_check "INVARIANT" rg -n 'No bits-per-switch figure is' docs/SECURITY_ADVISORY.md docs/DEPLOYMENT_GUIDE.md
+run_check "INVARIANT" rg -n '^theorem crossCoreTransitionIsLiveArm_count :' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # CC-1's mitigation must state the PROVEN bound, not disclaim one: retracting a
 # claim to match weaker code is the direction the project forbids.
 run_negative_check "INVARIANT" rg -n 'No capacity bound is claimed' SeLe4n/

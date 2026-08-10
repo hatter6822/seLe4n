@@ -2375,9 +2375,9 @@ private def runCoreSetAlgebraChecks : IO Unit := do
       SeLe4n.Kernel.crossCoreTransitionWritesRemote).length = 13))
   assertBool "…and the wait is the one that cannot"
     (decide (SeLe4n.Kernel.crossCoreTransitionWritesRemote .notificationWait = false))
-  assertBool "six of the fourteen are the arms the live syscall dispatch reaches"
+  assertBool "seven of the fourteen are the arms the live syscall dispatch reaches"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
-      SeLe4n.Kernel.crossCoreTransitionIsLiveArm).length = 6))
+      SeLe4n.Kernel.crossCoreTransitionIsLiveArm).length = 7))
   -- The fourth review round's finding, as a checked fact: the three arms it
   -- named are in the inventory and are all classified as live.
   assertBool "the bound signal, the receive dual and replyRecv are all covered"
@@ -2399,9 +2399,17 @@ private def runCoreSetAlgebraChecks : IO Unit := do
      decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .endpointReply = false) &&
      decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .endpointReplyRecv = false) &&
      decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .cancelIpcBlocking = false))
-  assertBool "the bound signal stays live; the bare receive dual is a leg"
+  -- Round 8: the receive dual is a leg of `replyRecvBody` AND the function the
+  -- live `.receive` arm calls directly, so it is a live arm too.  The
+  -- enforcement table has said so since round 4; this inventory now agrees.
+  assertBool "the bound signal and the receive dual are both live arms"
     (decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .notificationSignalBound = true) &&
-     decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .endpointReceiveDual = false))
+     decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .endpointReceiveDual = true))
+  assertBool "…and the two inventories agree on it"
+    (SeLe4n.Kernel.crossCoreEnforcementEntries.any (fun e =>
+      match e with
+      | .policyGated n | .capabilityOnly n | .readOnly n =>
+        n == "endpointReceiveDualOnCore"))
   assertBool "the covered-transition theorem names are pairwise distinct"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.map
       SeLe4n.Kernel.crossCoreNiTheorem).eraseDups.length = 14))

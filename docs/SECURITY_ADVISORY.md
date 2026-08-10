@@ -108,17 +108,40 @@ This is formally witnessed by `acceptedCovertChannel_scheduling`
 
 ### Bandwidth Analysis
 
-- **Channel capacity**: Bounded by domain schedule length × switch frequency
+- **Channel capacity**: ≤ log₂(N × (Q + 1)) × switchFreq bits/second, where
+  N = |domainSchedule| and **Q is a deployment-supplied bound on
+  `domainTimeRemaining`**
 - **Practical bandwidth**: Sub-bit-per-second under normal scheduling
-  configurations (domain switches at 1–100 Hz, 4 scalar values per observation)
-- **Theoretical maximum**: ≤ log₂(|domainSchedule|) × switchFreq bits/second
+  configurations (domain switches at 1–100 Hz)
+- **Theoretical maximum**: for N ≤ 16, Q ≤ 255, F ≤ 100 Hz, ≤ 1200 bits/second
+
+**Operators must supply Q.**  This advisory previously quoted
+≤ log₂(|domainSchedule|) × switchFreq, omitting the Q factor.  That figure is
+**false as stated** and the kernel now proves it so:
+`schedulingChannel_not_bounded_by_scheduleLength` shows that schedule length
+alone bounds nothing, because `domainTimeRemaining` is projected unfiltered and
+ranges over all of `Nat`.  A deployment that does not cap the domain countdown
+has **no** capacity bound from this analysis.
+
+The corrected figure is proven rather than asserted:
+`schedulingChannel_alphabet_bounded` injects the per-core observation alphabet
+into `Fin (N × (Q + 1))`, `schedulingObservationCode_injective` is why that
+injection loses nothing, and `schedulingChannel_full_observation_determined`
+extends it to the third observable component (`activeDomain`) under
+`domainConsistentOnCore`.  All three are in
+`SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean`.
+
+Under SMP the channel exists **once per core** — each core carries its own
+`activeDomain`, `domainTimeRemaining` and `domainScheduleIndex` — so a
+deployment budgeting total leakage should multiply by the core count.
 
 ### Mitigation
 
 Temporal partitioning via domain scheduling (already present) bounds the channel
-bandwidth. This covert channel is accepted per seL4 design precedent (Murray et
-al., CCS 2013). Hardware-level isolation (partitioned caches, separate timer
-domains) would further reduce bandwidth but is beyond the kernel model's scope.
+bandwidth, **given a countdown cap Q**. This covert channel is accepted per seL4
+design precedent (Murray et al., CCS 2013). Hardware-level isolation (partitioned
+caches, separate timer domains) would further reduce bandwidth but is beyond the
+kernel model's scope.
 
 ---
 

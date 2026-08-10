@@ -188,6 +188,20 @@ and `schedulingChannel_full_observation_determined` now prove the omission under
 the invariant that actually licenses it.
 
 
+**Two inventories, one syscall path.**  `endpointReceiveDualOnCore` was
+classified a below-API leg while `crossCoreEnforcementEntries` listed it among
+the live cross-core operations — and the live `.receive` arm calls it directly,
+after applying its own flow gate.  Live-arm count 6 → 7, and the suite now
+asserts the two inventories agree rather than checking each alone.
+
+**The corrected capacity bound reached the operators.**  `SECURITY_ADVISORY.md`
+§SA-3 and `DEPLOYMENT_GUIDE.md` still quoted the Q-free figure the kernel proves
+false; the guide additionally still carried the intermediate "no bound is
+claimed" retraction.  Both now state `log₂(N × (Q + 1)) × F`, that Q is
+deployment-supplied and that without it there is no bound, cite the three
+theorems, and note the channel exists once per core.  Tier 3 pins both.
+
+
 ### Tests
 
 `tests/SmpInformationFlowSuite.lean` — **243 runtime assertions** across the

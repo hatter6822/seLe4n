@@ -80,24 +80,32 @@ creating a bounded covert channel.
 | Metric | Value |
 |--------|-------|
 | Observable values per observation | 4 scalars |
-| Channel capacity | &le; log&#8322;(\|domainSchedule\|) &times; switchFreq bps |
-| Typical bandwidth (N&le;16, F&le;100 Hz) | &le; 400 bits/second |
-| Practical exploitation threshold | Well below usable data exfiltration |
+| Channel capacity | &le; log&#8322;(N &times; (Q+1)) &times; switchFreq bps, N = \|domainSchedule\|, Q = your countdown cap |
+| Typical bandwidth (N&le;16, Q&le;255, F&le;100 Hz) | &le; 1200 bits/second |
+| Without a countdown cap | **Unbounded** — see below |
+| Instances | **One per core** under SMP |
 
 **Formal witnesses** (`SeLe4n/Kernel/InformationFlow/Projection.lean`):
 
 | Theorem | Line | Purpose |
 |---------|------|---------|
-| `acceptedCovertChannel_scheduling` | 404 | Witnesses channel existence |
-| `schedulingCovertChannel_bounded_width` | 443 | Confirms the channel is transparent (the projections are the raw scheduler reads) — **not** a capacity bound |
-| `schedulingChannelIndex_alphabet_bounded` | `CovertChannelPerCore.lean` | Bounds the schedule-index component's alphabet by `\|domainSchedule\|` |
-| `schedulingChannel_not_bounded_by_scheduleLength` | `CovertChannelPerCore.lean` | States what is *not* bounded: `domainTimeRemaining` is an unrestricted `Nat` |
+| `acceptedCovertChannel_scheduling` | `Projection.lean` | Witnesses channel existence |
+| `schedulingCovertChannel_bounded_width` | `Projection.lean` | Confirms the channel is transparent (the projections are the raw scheduler reads) — **not** a capacity bound |
+| `schedulingChannel_not_bounded_by_scheduleLength` | `CovertChannelPerCore.lean` | Why Q is required: `domainTimeRemaining` is an unrestricted `Nat`, so schedule length alone bounds nothing |
+| `schedulingChannel_alphabet_bounded` | `CovertChannelPerCore.lean` | **The capacity bound**: the observation alphabet injects into `Fin (N × (Q+1))` |
+| `schedulingObservationCode_injective` | `CovertChannelPerCore.lean` | Why that injection loses nothing |
+| `schedulingChannel_full_observation_determined` | `CovertChannelPerCore.lean` | Extends the bound to `activeDomain`, under `domainConsistentOnCore` |
 
 **Mitigation**: Temporal partitioning via domain scheduling (already present).
-Each domain receives guaranteed time quanta. No bits-per-switch figure is
-claimed: only the schedule-index component has a bounded alphabet, and bounding
-the channel as a whole would need a range hypothesis on the quantum and a
-switch-frequency hypothesis, neither of which the model carries.
+Each domain receives guaranteed time quanta.
+
+**You must supply Q.**  The capacity figure above holds only for a deployment
+that caps `domainTimeRemaining`; without such a cap this analysis gives **no**
+bound, and `schedulingChannel_not_bounded_by_scheduleLength` is the proof of
+that rather than a caveat about it.  An earlier revision of this guide quoted
+&le; log&#8322;(\|domainSchedule\|) &times; switchFreq with no Q factor — that
+figure was false as stated, and a revision after it swung the other way and
+claimed no bound at all.  Both are superseded by the proven bound.
 
 **seL4 precedent**: This covert channel matches seL4's accepted design
 (Murray et al., "seL4: From General Purpose to a Proof of Information Flow

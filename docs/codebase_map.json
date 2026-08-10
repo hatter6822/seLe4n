@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/sm8b-per-core-ni-proofs-3ogvws",
-      "commit_sha": "df2b40f5a2f96e04f8ea99d90d03e475af88a5c1",
-      "tree_sha": "6e851f10e93dfda0b87366ed12b29e4311ad1f06",
-      "committed_at_utc": "2026-08-10T21:26:33+00:00"
+      "commit_sha": "02f68a667d1ff4ccdfd75bdc9c3d5c38988173e6",
+      "tree_sha": "75fa8902390b4684de8cdcf9e073eb6d57b7cbd2",
+      "committed_at_utc": "2026-08-10T21:48:56+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "9bd75818d1e733b0e2fe39e106e5ca7d8600602472cea8d92d6d284ff9505617"
+    "source_digest": "79b85c2ae8537c3c0c0884026e96ac5e28fbac21bb09bf8a012d06f9e3aa6e24"
   },
   "summary": {
     "module_count": 338,
@@ -27,9 +27,9 @@
     "version": "0.33.5",
     "lean_toolchain": "v4.28.0",
     "production_files": 270,
-    "production_loc": 248460,
+    "production_loc": 248469,
     "test_files": 68,
-    "test_loc": 51462,
+    "test_loc": 51470,
     "proved_theorem_lemma_decls": 8250,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -95168,7 +95168,7 @@
         {
           "kind": "def",
           "name": "crossCoreTransitionIsLiveArm",
-          "line": 2534,
+          "line": 2543,
           "called": [
             "CrossCoreTransition",
             "cancelIpcBlocking",
@@ -95184,7 +95184,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreTransitionIsLiveArm_count",
-          "line": 2550,
+          "line": 2559,
           "called": [
             "crossCoreTransitionIsLiveArm",
             "filter",
@@ -95194,7 +95194,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreNiTheorem_injective",
-          "line": 2553,
+          "line": 2562,
           "called": [
             "CrossCoreTransition",
             "crossCoreNiTheorem"
@@ -95203,7 +95203,7 @@
         {
           "kind": "def",
           "name": "crossCoreTransitionWritesRemote",
-          "line": 2567,
+          "line": 2576,
           "called": [
             "CrossCoreTransition",
             "cancelIpcBlocking",
@@ -95219,7 +95219,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreTransitionWritesRemote_count",
-          "line": 2583,
+          "line": 2592,
           "called": [
             "Kernel",
             "crossCoreTransitionWritesRemote",
@@ -204206,6 +204206,7 @@
           "called": [
             "CrossCoreTransition.all",
             "all",
+            "any",
             "assertBool",
             "c0",
             "cancelIpcBlocking",
@@ -204223,13 +204224,14 @@
             "lowEndpoint",
             "notificationSignalBound",
             "notificationWait",
+            "readOnly",
             "rendezvousState"
           ]
         },
         {
           "kind": "def",
           "name": "niGenericCtx",
-          "line": 2421,
+          "line": 2429,
           "called": [
             "GenericLabelingContext"
           ]
@@ -204237,7 +204239,7 @@
         {
           "kind": "def",
           "name": "niEpPolicy",
-          "line": 2426,
+          "line": 2434,
           "called": [
             "EndpointFlowPolicy",
             "none"
@@ -204246,7 +204248,7 @@
         {
           "kind": "def",
           "name": "gateAt",
-          "line": 2428,
+          "line": 2436,
           "called": [
             "CoreId",
             "SystemState",
@@ -204260,7 +204262,7 @@
         {
           "kind": "def",
           "name": "runResolvedFlowGateChecks",
-          "line": 2432,
+          "line": 2440,
           "called": [
             "assertBool",
             "c0",
@@ -204277,7 +204279,7 @@
         {
           "kind": "def",
           "name": "runCrossCoreNonInterferenceChecks",
-          "line": 2450,
+          "line": 2458,
           "called": [
             "ObservableState.onCore",
             "assertBool",
@@ -204299,7 +204301,7 @@
         {
           "kind": "def",
           "name": "runPerCoreNonInterferenceChecks",
-          "line": 2468,
+          "line": 2476,
           "called": [
             "all",
             "assertBool",
@@ -204322,7 +204324,7 @@
         {
           "kind": "def",
           "name": "runConfinementChecks",
-          "line": 2496,
+          "line": 2504,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -204343,7 +204345,7 @@
         {
           "kind": "def",
           "name": "runLockSetNonInterferenceChecks",
-          "line": 2516,
+          "line": 2524,
           "called": [
             "CoreId",
             "LockSet",
@@ -204388,7 +204390,7 @@
         {
           "kind": "def",
           "name": "runLeakageBoundChecks",
-          "line": 2590,
+          "line": 2598,
           "called": [
             "assertBool",
             "remoteCoreWrite_leakage_bounded_on_c0",
@@ -204398,7 +204400,7 @@
         {
           "kind": "def",
           "name": "runPerCoreCoverageChecks",
-          "line": 2600,
+          "line": 2608,
           "called": [
             "assertBool",
             "chooseThread",
@@ -204431,7 +204433,7 @@
         {
           "kind": "def",
           "name": "runEnforcementBoundaryChecks",
-          "line": 2634,
+          "line": 2642,
           "called": [
             "all",
             "any",
@@ -204448,7 +204450,7 @@
         {
           "kind": "def",
           "name": "runCovertChannelInventoryChecks",
-          "line": 2667,
+          "line": 2675,
           "called": [
             "ObservableState.onCore",
             "acceptedCovertChannelsPerCore",
@@ -204468,7 +204470,7 @@
         {
           "kind": "def",
           "name": "runSchedulingChannelBoundChecks",
-          "line": 2709,
+          "line": 2717,
           "called": [
             "ObservableState.onCore",
             "SystemState",
@@ -204484,7 +204486,7 @@
         {
           "kind": "def",
           "name": "runCatchAllPremiseChecks",
-          "line": 2741,
+          "line": 2749,
           "called": [
             "ObservableState.onCore",
             "assertBool",
@@ -204505,7 +204507,7 @@
         {
           "kind": "def",
           "name": "runPolicyAndReleaseBridgeChecks",
-          "line": 2762,
+          "line": 2770,
           "called": [
             "DomainFlowPolicy",
             "EndpointFlowPolicy",
@@ -204534,7 +204536,7 @@
         {
           "kind": "def",
           "name": "runSmpInformationFlowChecks",
-          "line": 2789,
+          "line": 2797,
           "called": [
             "runCNodeRedactionChecks",
             "runCatchAllPremiseChecks",
@@ -204574,7 +204576,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 2830,
+          "line": 2838,
           "called": [
             "runSmpInformationFlowChecks"
           ]

@@ -430,6 +430,40 @@ SM8.B; the lock-contention channel CC-5 is SM8.B.8; the
 | SM8.B.13 | `crossCoreLeakage_bounded` | Theorem | L | LANDED |
 | SM8.B.14 | 15+ NI scenarios (tests) | L | LANDED |
 
+**PR #861 review round 8 (v0.33.5).**  Two findings, both P2, both valid, and
+both cases of a fix that stopped one step short of where it needed to reach.
+
+1. **P2 — the receive dual was misclassified as a below-API leg.**  Round 5 set
+   `crossCoreTransitionIsLiveArm .endpointReceiveDual := false` on the strength
+   of it being a leg of `replyRecvBody`.  It is that, *and* it is the function
+   `API.dispatchWithCapChecked`'s `.receive` arm calls directly: that arm applies
+   the `endpoint→receiver` flow gate itself and then invokes
+   `endpointReceiveDualOnCore` with no wrapper in between — the same shape as the
+   two notification arms, which round 5 *did* classify live for exactly that
+   reason.  Being a leg does not stop something being a live arm.  The
+   misclassification also contradicted `crossCoreEnforcementEntries`, which has
+   listed `endpointReceiveDualOnCore` among the live cross-core operations since
+   round 4, so the repository held two inventories disagreeing about a production
+   syscall path.  Set to `true`, live-arm count 6 → **7**, the docstring rewritten
+   to state the leg-versus-arm distinction, and the suite now asserts that the
+   two inventories agree rather than checking each in isolation.
+
+2. **P2 — the corrected capacity bound never reached the operators.**  Rounds 6
+   and 7 fixed `Projection.lean` and the inventory entry, but
+   `docs/SECURITY_ADVISORY.md` §SA-3 still told anyone performing the documented
+   deployment risk assessment that capacity is `≤ log₂(|domainSchedule|) ×
+   switchFreq` — the figure the kernel now *proves* false.  Sweeping for the
+   pattern rather than fixing only the flagged file found
+   `docs/DEPLOYMENT_GUIDE.md` carrying **both** errors at once: the Q-free table
+   figure, and round 4's "No bits-per-switch figure is claimed" retraction that
+   round 6 removed everywhere else.  Both documents now carry the proven
+   `log₂(N × (Q + 1)) × F` figure, state that Q is deployment-supplied and that
+   without it there is *no* bound, cite the three theorems, and note that the
+   channel exists once per core under SMP.  Tier 3 pins both positively (the Q
+   factor and the theorem name must be present) and negatively (the retraction
+   phrasing must not return), because this class of drift — theorems corrected,
+   operator documentation left behind — is invisible to every proof-level gate.
+
 **PR #861 review round 7 (v0.33.5).**  One finding, P1, valid — and it is a
 defect in the *previous round's own remediation*, which is the most useful kind
 of review comment this cycle produced.

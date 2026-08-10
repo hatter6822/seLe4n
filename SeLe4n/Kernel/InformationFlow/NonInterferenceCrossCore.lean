@@ -2526,11 +2526,20 @@ wrapper entries of their own: `.reply` routes to `endpointReplyCrossCoreDispatch
 and a scheduling point).  Each does strictly more per-core writing than the
 below-API transition it wraps, so the narrower theorem never bounded it.
 
-The two notification arms are a different case and are *not* re-pointed:
+Three entries are a different case and are *not* re-pointed, because their live
+arm calls the `…OnCore` transition **directly**:
 `notificationSignalBoundCrossCoreDispatch` and `notificationWaitCrossCoreDispatch`
-are definitionally `…OnCore … (determineExecutingCore st …) st` — the same
-function at a resolved core, adding no step — so the `…OnCore` theorem is a
-statement about the live arm already. -/
+are definitionally `…OnCore … (determineExecutingCore st …) st`, and
+`API.dispatchWithCapChecked`'s `.receive` arm applies its `endpoint→receiver`
+flow gate and then invokes `endpointReceiveDualOnCore` itself.  For those the
+`…OnCore` theorem is a statement about the live arm already.
+
+**Being a leg does not stop something being a live arm** (PR #861 review round
+8).  `endpointReceiveDualOnCore` is the receive leg of `replyRecvBody` *and* the
+function the live `.receive` syscall reaches; an earlier cut marked it `false` on
+the strength of the first fact alone, which contradicted
+`crossCoreEnforcementEntries` — that table has listed it among the live
+cross-core operations since round 4 — and under-reported the live-arm count. -/
 def crossCoreTransitionIsLiveArm : CrossCoreTransition → Bool
   | .wake => false
   | .endpointCall => false
@@ -2540,7 +2549,7 @@ def crossCoreTransitionIsLiveArm : CrossCoreTransition → Bool
   | .notificationWait => true
   | .endpointReply => false
   | .endpointReplyDispatch => true
-  | .endpointReceiveDual => false
+  | .endpointReceiveDual => true
   | .endpointReplyRecv => false
   | .replyRecvBodyDispatch => true
   | .deschedule => false
@@ -2548,7 +2557,7 @@ def crossCoreTransitionIsLiveArm : CrossCoreTransition → Bool
   | .suspendThreadDispatch => true
 
 theorem crossCoreTransitionIsLiveArm_count :
-    (CrossCoreTransition.all.filter crossCoreTransitionIsLiveArm).length = 6 := by decide
+    (CrossCoreTransition.all.filter crossCoreTransitionIsLiveArm).length = 7 := by decide
 
 theorem crossCoreNiTheorem_injective :
     ∀ t₁ t₂ : CrossCoreTransition, crossCoreNiTheorem t₁ = crossCoreNiTheorem t₂ → t₁ = t₂ := by
