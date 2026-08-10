@@ -3282,4 +3282,66 @@ theorem dispatchSyscallChecked_preserves_projection
   · -- none: error
     simp at hStep
 
+-- ============================================================================
+-- PR #861 review (architectural) — delegation theorems for the CROSS-CORE arms
+--
+-- Three of the nine review rounds on this PR found the same defect in different
+-- clothes: an inventory in `NonInterferenceCrossCore.lean` claiming that some
+-- function is "the arm the live dispatch reaches", where the claim was wrong
+-- (round 4: three arms missing; round 5: `.reply`/`.replyRecv`/`.tcbSuspend`
+-- naming the below-API transition rather than the wrapper; round 8: `.receive`
+-- classified a leg when the live arm calls it directly).
+--
+-- The eight `dispatchWithCap_…_delegates` theorems above never drifted, and the
+-- reason is structural rather than lucky: they *are* the tie between the table
+-- and this file, so a wrong entry does not compile.  The cross-core arms had no
+-- such tie, and every one of the three drifts happened there.
+--
+-- These supply it.  `crossCoreLiveArmDelegation` (NonInterferenceCrossCore §7)
+-- now requires every entry classified live to name one of these by a
+-- compile-time-validated identifier, so "X is the live arm for syscall S" is a
+-- claim backed by a theorem saying the dispatch for S routes to X.
+-- ============================================================================
+
+/-- **The live `.tcbSuspend` arm routes to `suspendThreadOnCore`.**  Capability-only,
+so this covers both `dispatchWithCap` and `dispatchWithCapChecked` (the latter
+consults `dispatchCapabilityOnly` first). -/
+theorem dispatchWithCap_tcbSuspend_delegates
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
+    (cap : Capability) (objId : SeLe4n.ObjId) (vtid : SeLe4n.ValidThreadId)
+    (st : SystemState)
+    (hSyscall : decoded.syscallId = .tcbSuspend)
+    (hTarget : cap.target = .object objId)
+    (hDecode : ∃ a, Architecture.SyscallArgDecode.decodeSuspendArgs decoded = .ok a)
+    (hValid : validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vtid) :
+    dispatchWithCap decoded tid gate cap st =
+      (match Lifecycle.Suspend.suspendThreadOnCore st vtid
+              (determineExecutingCore st tid) with
+       | .ok (st', _) => .ok ((), st')
+       | .error e => .error e) := by
+  obtain ⟨a, hD⟩ := hDecode
+  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hD, hValid]
+
+/-- **The live `.receive` arm routes to `endpointReceiveDualOnCore`.**
+
+Round 8 of the PR #861 review classified this transition a below-API "leg" of
+`replyRecvBody`.  It is that — and it is also what the checked `.receive` arm
+calls directly, once its own `endpoint→receiver` gate has passed.  A theorem
+saying so is the thing that was missing: with it, the misclassification is a
+broken citation rather than a prose disagreement between two tables. -/
+theorem dispatchWithCapChecked_receive_delegates
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (cap : Capability) (epId : SeLe4n.ObjId)
+    (replyIdOpt : Option SeLe4n.ReplyId) (st : SystemState)
+    (hSyscall : decoded.syscallId = .receive)
+    (hTarget : cap.target = .object epId)
+    (hFlow : securityFlowsTo (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true)
+    (hReply : resolveRecvReplyId gate decoded st = .ok replyIdOpt) :
+    dispatchWithCapChecked ctx decoded tid gate cap st =
+      (match endpointReceiveDualOnCore epId tid replyIdOpt
+              (determineExecutingCore st tid) st with
+       | (st', .ok (_, _)) => .ok ((), st')
+       | (_, .error e) => .error e) := by
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget, hFlow, hReply]
+
 end SeLe4n.Kernel

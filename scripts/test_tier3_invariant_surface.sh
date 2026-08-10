@@ -1890,6 +1890,15 @@ run_negative_check "INVARIANT" rg -n 'Sub-bit-per-second' docs/SECURITY_ADVISORY
 run_negative_check "INVARIANT" rg -n 'def setDomainSchedule\b' SeLe4n/
 # (d) `CovertChannelId.all` cannot silently omit a constructor.
 run_check "INVARIANT" rg -n '^theorem CovertChannelId.mem_all' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+# (e) ARCHITECTURAL: a live-arm claim is either backed by a delegation theorem
+# in API.lean or explicitly counted as read-off-the-arm.  The eight arms that
+# had such a theorem never drifted across nine review rounds; the seven that did
+# not drifted three times.  The counts make the residual a tracked quantity.
+run_check "INVARIANT" rg -n '^inductive LiveArmEvidence' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreLiveArmDelegationBacked_count' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreLiveArm_readOffTheArm_count' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_tcbSuspend_delegates' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_receive_delegates' SeLe4n/Kernel/API.lean
 # CC-1's mitigation must state the PROVEN bound, not disclaim one: retracting a
 # claim to match weaker code is the direction the project forbids.
 run_negative_check "INVARIANT" rg -n 'No capacity bound is claimed' SeLe4n/

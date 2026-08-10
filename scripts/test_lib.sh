@@ -146,6 +146,16 @@ run_check() {
 
 # WS-SM SM8.B (v0.33.5): the dual of `run_check` — the command MUST fail.
 #
+# CONVENTION (learned the hard way — this misfired three times in PR #861):
+# a negative anchor over a prose-bearing tree fires on the comment that
+# *explains* the forbidden thing.  A docstring saying "there is no
+# setDomainSchedule" contains `setDomainSchedule`; a plan recording why a phrase
+# was retracted contains the phrase.  So:
+#   * match a DEFINITION, not a mention  (`def foo\b`, not `foo\b`), or
+#   * scope the paths to the files where the ban is meant to bite.
+# An anchor that cannot tell a use from an explanation costs more than it buys:
+# the next person loosens it, and loosens it wrongly.
+#
 # Surface anchors so far could only pin that something *is* present.  Several
 # SM8.B findings were the opposite shape: a tautology that must not come back, a
 # wildcard match arm that must not be reintroduced.  Grepping for absence needs

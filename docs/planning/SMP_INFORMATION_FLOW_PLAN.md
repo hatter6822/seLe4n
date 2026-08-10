@@ -430,6 +430,56 @@ SM8.B; the lock-contention channel CC-5 is SM8.B.8; the
 | SM8.B.13 | `crossCoreLeakage_bounded` | Theorem | L | LANDED |
 | SM8.B.14 | 15+ NI scenarios (tests) | L | LANDED |
 
+### Why nine review rounds — a root-cause note
+
+Twenty-six findings across nine rounds is not nine independent defects; it is
+four classes, and one of them accounts for nearly half:
+
+| Class | Findings | Root cause |
+|-------|----------|------------|
+| **A. A claim outruns its mechanism** | 12 | An assertion *about* code (which function the dispatch reaches; which invariant licenses an omission; that a sweep is exhaustive) is held only by prose, so nothing fails when it stops being true. |
+| **B. A gate fails open** | 4 | `run_negative_check` exit codes, `confinedCheck`'s missing register and run-queue fields, the axiom sweep's skipped declaration kinds. |
+| **C. One claim restated in N documents** | 4 | The capacity figure lived in four places; the staged count in three; each correction had to be applied everywhere and each round missed one. |
+| **D. Versioning** | 1 | — |
+
+Class A has a sharp diagnostic in this repository.  `API.lean` carries eight
+`dispatchWithCap_…_delegates` theorems — statements of the form
+`dispatch S = f …` — and **not one of those eight arms drifted across nine
+rounds**.  The seven cross-core arms had no such theorem, and rounds 4, 5 and 8
+each found a wrong claim about exactly those.  The difference is not care; it is
+that a theorem fails to compile and a docstring does not.
+
+Three structural changes follow, and they are the reason this round is not
+another patch:
+
+1. **A live-arm claim now carries its evidence as data** (`LiveArmEvidence`,
+   §7).  An entry is either `delegationTheorem` — tied to `API.lean` by a
+   `niName!`-validated citation, so a wrong entry breaks the build — or
+   `readOffTheArm`, a human assertion.  `crossCoreLiveArmDelegationBacked_count`
+   (= 2) and `crossCoreLiveArm_readOffTheArm_count` (= 5) make the residual a
+   *tracked quantity* rather than something a reader reconstructs by grepping.
+   Closing it means adding five delegation theorems, and the counts cannot
+   silently drift while that happens.  `dispatchWithCap_tcbSuspend_delegates`
+   and `dispatchWithCapChecked_receive_delegates` are the first two — the
+   second is round 8's subject, so the arm that was misclassified is now the
+   arm that cannot be.
+
+2. **Enumerations cannot fail open.**  `CovertChannelId.mem_all` (round 9) is
+   the same shape of fix: a hand-written list that every count quantified over,
+   now provably total.
+
+3. **Negative anchors are written against definitions, not mentions.**  The
+   convention is recorded at `run_negative_check` itself, because three of this
+   PR's anchors fired on the comment explaining the thing they forbid — and an
+   anchor that cannot distinguish a use from an explanation gets loosened
+   wrongly by whoever hits it next.
+
+Class C is not yet closed structurally: the capacity figure is still restated in
+`Projection.lean`, the inventory's mitigation string, `SECURITY_ADVISORY.md` and
+`DEPLOYMENT_GUIDE.md`, held together only by Tier-3 anchors checking that each
+mentions the theorem name.  Single-sourcing it — generating the prose from one
+Lean definition — is the registered follow-on.
+
 **PR #861 review round 9 (v0.33.5).**  Three findings, all P2, all valid, all
 against the previous two rounds' own remediation of CC-1.
 

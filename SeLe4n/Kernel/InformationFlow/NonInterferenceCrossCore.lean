@@ -2567,6 +2567,86 @@ theorem crossCoreNiTheorem_injective :
       | rfl
       | (exact absurd h (by simp only [crossCoreNiTheorem]; decide))
 
+/-- SM8.B.2: **what backs a "this is the live arm" claim.**
+
+Nine review rounds on PR #861 produced twenty-six findings, and the single
+largest class — three separate rounds — was this inventory asserting that some
+function is the arm the live dispatch reaches, wrongly.  Round 4 found three
+arms missing entirely; round 5 found `.reply` / `.replyRecv` / `.tcbSuspend`
+naming the below-API transition instead of the wrapper that does strictly more;
+round 8 found `.receive` classified a leg when the checked arm calls it
+directly.
+
+The root cause is visible in `API.lean`: eight dispatch arms carry a
+`dispatchWithCap_…_delegates` theorem, and **none of those eight ever drifted**.
+The tie is not documentation — it is a theorem saying `dispatch S = f …`, so a
+wrong entry fails to compile.  The cross-core arms had no such theorem, and all
+three drifts happened there.  Prose cannot hold a claim about `API.lean` in
+place; a proof obligation can.
+
+This type makes the distinction *data*: an entry is either backed by a
+delegation theorem (mechanically tied to the dispatch) or it is a human
+assertion, and the second kind is counted rather than indistinguishable from the
+first. -/
+inductive LiveArmEvidence where
+  /-- A `…_delegates` theorem in `API.lean` states that this syscall's dispatch
+  routes to the named function.  A wrong entry breaks the build. -/
+  | delegationTheorem (theoremName : String)
+  /-- No delegation theorem yet: the classification rests on reading the arm.
+  Honest, and weaker — this is the state the three drifts happened in. -/
+  | readOffTheArm (note : String)
+  deriving DecidableEq, Repr
+
+/-- SM8.B.2: the evidence backing each live-arm classification.  Non-live
+entries are `readOffTheArm` with the reason they are not live. -/
+def crossCoreLiveArmEvidence : CrossCoreTransition → LiveArmEvidence
+  | .wake => .readOffTheArm "below-API primitive, not a syscall arm"
+  | .endpointCall => .readOffTheArm "below-API transition; the live arm is .endpointCallDispatch"
+  | .endpointCallDispatch =>
+      .readOffTheArm "checked `.call` arm calls endpointCallCrossCoreDispatch; delegation theorem pending"
+  | .notificationSignal => .readOffTheArm "below-API transition; the live arm is .notificationSignalBound"
+  | .notificationSignalBound =>
+      .readOffTheArm "checked `.signal` arm; wrapper is definitionally the OnCore call; delegation theorem pending"
+  | .notificationWait =>
+      .readOffTheArm "checked `.wait` arm; wrapper is definitionally the OnCore call; delegation theorem pending"
+  | .endpointReply => .readOffTheArm "below-API transition; the live arm is .endpointReplyDispatch"
+  | .endpointReplyDispatch =>
+      .readOffTheArm "checked `.reply` arm calls endpointReplyCrossCoreDispatch; delegation theorem pending"
+  | .endpointReceiveDual =>
+      .delegationTheorem (niName! dispatchWithCapChecked_receive_delegates)
+  | .endpointReplyRecv => .readOffTheArm "both legs below the donation; the live arm is .replyRecvBodyDispatch"
+  | .replyRecvBodyDispatch =>
+      .readOffTheArm "checked `.replyRecv` arm calls replyRecvBody; delegation theorem pending"
+  | .deschedule => .readOffTheArm "below-API primitive, not a syscall arm"
+  | .cancelIpcBlocking => .readOffTheArm "below-API composite; the live arm is .suspendThreadDispatch"
+  | .suspendThreadDispatch =>
+      .delegationTheorem (niName! dispatchWithCap_tcbSuspend_delegates)
+
+/-- SM8.B.2: **how many live arms are mechanically tied to the dispatch.**
+
+Two of seven today.  The number is stated so the gap is a tracked quantity that
+can only be closed by adding delegation theorems — not a property a reader has
+to reconstruct by grepping.  Raising it is the follow-on; letting it silently
+fall is a broken theorem. -/
+def crossCoreLiveArmDelegationBacked : List CrossCoreTransition :=
+  CrossCoreTransition.all.filter (fun t =>
+    crossCoreTransitionIsLiveArm t &&
+      (match crossCoreLiveArmEvidence t with
+       | .delegationTheorem _ => true
+       | .readOffTheArm _ => false))
+
+theorem crossCoreLiveArmDelegationBacked_count :
+    crossCoreLiveArmDelegationBacked.length = 2 := by decide
+
+/-- SM8.B.2: and the residual — the live arms still resting on a human reading
+of `API.lean`, which is the state every one of the three drifts occurred in. -/
+theorem crossCoreLiveArm_readOffTheArm_count :
+    (CrossCoreTransition.all.filter (fun t =>
+      crossCoreTransitionIsLiveArm t &&
+        (match crossCoreLiveArmEvidence t with
+         | .delegationTheorem _ => false
+         | .readOffTheArm _ => true))).length = 5 := by decide
+
 /-- SM8.B.2: **which transitions can write a core other than the executing
 one.**  Named for remote *writes*, not for wakes: a reply, a deschedule and a
 cancellation all name a remote core without waking anything, and the earlier

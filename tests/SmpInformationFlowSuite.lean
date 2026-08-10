@@ -526,6 +526,12 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @schedulingChannel_full_observation_determined_of_preconditions
 #check @CovertChannelId.mem_all
 #check @CovertChannelId.all_nodup
+#check LiveArmEvidence
+#check @crossCoreLiveArmEvidence
+#check @crossCoreLiveArmDelegationBacked_count
+#check @crossCoreLiveArm_readOffTheArm_count
+#check @SeLe4n.Kernel.dispatchWithCap_tcbSuspend_delegates
+#check @SeLe4n.Kernel.dispatchWithCapChecked_receive_delegates
 #check @crossCoreEnforcementEntries
 #check @enforcementBoundary_prefix_of_perCore
 #check @syscallIdToEnforcementNamePerCore
