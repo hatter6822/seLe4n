@@ -522,7 +522,7 @@ ABI-encoded result word
 pure dispatch never takes the `.error` arm; the arm is discharged inertly).
 
 **WS-SM SM8.B (PR #861 review round 17): the local half of the reschedule.**
-`PriorityInheritance.scheduleLocalSuccessor` runs *inside* the atomic step,
+`PriorityInheritance.scheduleLocalSuccessorLive` runs *inside* the atomic step,
 before the diffs are taken, and dispatches a successor when the transition
 vacated this core (`localSuccessorNeeded`).  It is the inline dual of
 `currentSlotChangeSgis`, which pokes every *remote* core whose `current` slot
@@ -531,6 +531,14 @@ core does not interrupt itself, it runs the handler inline.  That inline half
 did not exist: every blocking IPC leg cleared the caller's slot and nothing
 selected a successor, and the periodic tick provably cannot cover for it
 (`timerTickOnCore_cannot_dispatch_vacated_core`).
+
+**Gated (round 20).**  The wrapper is `scheduleLocalSuccessorLive`, which is
+the identity until `contextRestoreSeamLive` is true.  Dispatching a successor
+whose context the runtime cannot install into the trap frame would be worse than
+dispatching none: hardware returns through the blocked caller's frame either
+way, but `currentOnCore = none` makes the caller's next syscall fail *closed*
+(`.illegalState`) whereas a named successor **misattributes** it.  The switch
+therefore turns on with the seam it depends on, not before.
 
 Two properties of the placement are load-bearing.  It is **inside** the
 `modifyGetKernelState` closure, so the successor is dispatched in the same
@@ -553,7 +561,7 @@ def syscallDispatchCrossCoreEntry
     match Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
         ipcBufferAddr st with
     | Except.ok (encoded, st') =>
-        let st'' := PriorityInheritance.scheduleLocalSuccessor st st' execCore
+        let st'' := PriorityInheritance.scheduleLocalSuccessorLive st st' execCore
         ((encoded, PriorityInheritance.computeCrossCoreSgis st st'' execCore,
           Architecture.shootdownChangedTargets st st'',
           Architecture.shootdownPostedOps st st'',
@@ -597,7 +605,7 @@ theorem syscallDispatchCrossCoreEntry_def
           match Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
               ipcBufferAddr st with
           | Except.ok (encoded, st') =>
-              let st'' := PriorityInheritance.scheduleLocalSuccessor st st' execCore
+              let st'' := PriorityInheritance.scheduleLocalSuccessorLive st st' execCore
               ((encoded, PriorityInheritance.computeCrossCoreSgis st st'' execCore,
                 Architecture.shootdownChangedTargets st st'',
                 Architecture.shootdownPostedOps st st'',
@@ -710,7 +718,7 @@ def suspendThreadCrossCoreEntry (tid : UInt64) : BaseIO UInt32 := do
             SystemState × (UInt32 × List (CoreId × SgiKind)) := fun s =>
           match Lifecycle.Suspend.suspendThreadOnCore s vtid execCore with
           | Except.ok (s', _) =>
-              let s'' := PriorityInheritance.scheduleLocalSuccessor s s' execCore
+              let s'' := PriorityInheritance.scheduleLocalSuccessorLive s s' execCore
               (s'', ((0 : UInt32),
                     PriorityInheritance.computeCrossCoreSgis s s'' execCore))
           | Except.error e =>

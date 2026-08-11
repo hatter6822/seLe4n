@@ -657,6 +657,12 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @SeLe4n.Kernel.PriorityInheritance.contextRestoreWired
 #check @SeLe4n.Kernel.PriorityInheritance.contextSwitchSites_restore_pending
 #check @SeLe4n.Kernel.PriorityInheritance.contextRestoreWired_none
+#check @SeLe4n.Kernel.PriorityInheritance.contextRestoreSeamLive
+#check @SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessorLive
+#check @SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessorLive_inert
+#check @SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessorLive_eq_of_seam_live
+#check @SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessorLive_guard_eq_register
+#check @SeLe4n.Kernel.PriorityInheritance.suspendReschedule_guard_eq_register
 #check @SeLe4n.Kernel.SchedContextOps.schedContextReplenishHome
 #check @SeLe4n.Kernel.SchedContextOps.purgeReplenishmentOnCore
 #check @SeLe4n.Kernel.SchedContextOps.purgeReplenishmentFromAllCores
@@ -2753,6 +2759,25 @@ private def runVacatedCoreChecks : IO Unit := do
   assertBool "NEGATIVE: and inert on a core that was already idle before the send"
     (decide (SeLe4n.Kernel.PriorityInheritance.localSuccessorNeeded niState vacatedPost c3
       = false))
+  -- Round 20: the assertions above are about the pure transition, which is
+  -- correct and stays.  What the live entries run is the *gated* wrapper, and
+  -- it is inert until the hardware restore seam exists — because dispatching a
+  -- successor the runtime cannot install misattributes the blocked caller's
+  -- next syscall, where leaving the core idle fails closed.
+  assertBool "the LIVE successor dispatch is inert while the restore seam is not"
+    (decide (SeLe4n.Kernel.PriorityInheritance.contextRestoreSeamLive = false) &&
+     decide ((SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessorLive
+       niState vacatedPost c0).scheduler.currentOnCore c0 = none))
+  -- The load-bearing negative: the guard is the ONLY thing holding it — the
+  -- underlying transition does dispatch, so this is a coupling and not a
+  -- transition that happens to do nothing.
+  assertBool "NEGATIVE: the ungated transition WOULD dispatch, so the guard is load-bearing"
+    (decide ((SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessor
+       niState vacatedPost c0).scheduler.currentOnCore c0 = some lowQueued))
+  -- …and the register agrees with the guard, both reading one constant.
+  assertBool "the site's register entry matches the guard"
+    (decide (SeLe4n.Kernel.PriorityInheritance.contextRestoreWired .vacatedCoreSuccessor = false)
+     && decide (SeLe4n.Kernel.PriorityInheritance.contextRestoreWired .suspendReschedule = false))
   -- Review round 18: the model dispatches a successor; hardware does not yet
   -- know.  No context-switch site restores the incoming context before
   -- exception return, so the register is the whole list — and stays so until

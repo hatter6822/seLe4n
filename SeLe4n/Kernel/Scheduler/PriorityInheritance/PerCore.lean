@@ -1527,6 +1527,22 @@ theorem currentSlotChangeSgis_fires_on_change (pre post : SystemState)
     simp only [Bool.and_eq_true, bne_iff_ne, ne_eq]
     exact ⟨hne, hChanged⟩⟩, rfl⟩
 
+/-- WS-SM SM8.B (PR #861 review round 20): **is the hardware context-restore
+seam live?**
+
+`false` until SM9.E, and the single source of truth for that fact — the
+`contextRestoreWired` register below reads it rather than carrying its own
+literals, so the two cannot drift and the flip is one constant.
+
+Three things must land together before it becomes `true`, and none of them fits
+a non-interference cut: a `VSpaceRoot → TTBR0` binding (the model carries an
+ASID and an abstract `VAddr → PAddr` table, not a translation-table physical
+base), a full outgoing-frame save (`writeFfiRegistersToTcb` spills only x0..x5
+and x7, so `regsOnCore` is stale for x6, x8..x30, SP and PC), and per-core
+staging (the kernel-entry lock closes in `dispatch_svc` before the trap handler
+would install). -/
+def contextRestoreSeamLive : Bool := false
+
 /-- WS-SM SM8.B (PR #861 review round 17): did this transition **vacate the
 executing core** — leave it with no current thread when it had one?
 
@@ -1608,6 +1624,42 @@ theorem scheduleLocalSuccessor_of_post_running (pre post : SystemState) (execCor
   apply scheduleLocalSuccessor_of_not_needed
   unfold localSuccessorNeeded
   simp [h]
+
+/-- WS-SM SM8.B (PR #861 review round 20): **the successor dispatch as the live
+entries run it** — gated on the restore seam it depends on.
+
+`scheduleLocalSuccessor` is correct at the model level and its theorems say so.
+But dispatching a successor the runtime cannot install is not an improvement on
+not dispatching one: with `currentOnCore = none` the syscall path fails *closed*
+(`syscallDispatchFromAbi` returns `.illegalState`), while with a named successor
+it **misidentifies** — the blocked caller keeps running on hardware, and its
+next syscall is attributed to the thread the model believes is current.
+
+So the switch is coupled to its prerequisite rather than described alongside it.
+Today this is `post`; when SM9.E flips `contextRestoreSeamLive` it becomes the
+dispatch, with no other edit.  The vacated-core liveness defect stays open and
+stays recorded (`contextSwitchSites_restore_pending`) — this is about not
+shipping a worse failure mode in exchange for fixing it.
+
+Deliberately a *wrapper*: folding the guard into `scheduleLocalSuccessor` would
+make every theorem about it conditional, and those theorems are what SM9.E
+enables rather than has to re-prove. -/
+def scheduleLocalSuccessorLive (pre post : SystemState) (execCore : CoreId) : SystemState :=
+  if contextRestoreSeamLive then scheduleLocalSuccessor pre post execCore else post
+
+/-- WS-SM SM8.B: what the kernel does **today** — nothing.  `rfl`, so this is
+the definition rather than a claim about it. -/
+@[simp] theorem scheduleLocalSuccessorLive_inert (pre post : SystemState) (execCore : CoreId) :
+    scheduleLocalSuccessorLive pre post execCore = post := rfl
+
+/-- WS-SM SM8.B: and what it does once the seam is live — the full dispatch, so
+the flip loses nothing. -/
+theorem scheduleLocalSuccessorLive_eq_of_seam_live (pre post : SystemState) (execCore : CoreId)
+    (h : contextRestoreSeamLive = true) :
+    scheduleLocalSuccessorLive pre post execCore = scheduleLocalSuccessor pre post execCore := by
+  unfold scheduleLocalSuccessorLive
+  rw [h]
+  rfl
 
 /-- WS-SM SM8.B: the two halves of the guard, forward. -/
 theorem localSuccessorNeeded_post_none (pre post : SystemState) (execCore : CoreId)
@@ -1969,10 +2021,17 @@ cut.  `contextRestoreWired` is the partition: wiring one means flipping its
 entry, which breaks the theorem below and forces the change to be reviewed
 rather than absorbed silently. -/
 def contextRestoreWired : ContextSwitchSite → Bool
+  -- The timer ISR calls `lean_per_core_timer_tick`, which returns `void`, and
+  -- SGI INTID 0 has no registered handler — neither has a trap frame to install
+  -- into, independently of the syscall seam.
   | .timerPreemption      => false
   | .rescheduleSgi        => false
-  | .suspendReschedule    => false
-  | .vacatedCoreSuccessor => false
+  -- The two syscall-entry sites are wired exactly when the seam is.  Read from
+  -- `contextRestoreSeamLive` rather than repeated as literals (round 20), so
+  -- this register and the guard on `scheduleLocalSuccessorLive` cannot drift:
+  -- the successor is dispatched precisely when its context can be installed.
+  | .suspendReschedule    => contextRestoreSeamLive
+  | .vacatedCoreSuccessor => contextRestoreSeamLive
 
 /-- WS-SM SM8.B (the honesty marker): **no** context-switch site restores
 hardware context yet.
@@ -1997,5 +2056,26 @@ theorem contextSwitchSites_restore_pending :
 /-- WS-SM SM8.B: the same fact in the form a consumer would read. -/
 theorem contextRestoreWired_none (s : ContextSwitchSite) : contextRestoreWired s = false := by
   cases s <;> rfl
+
+/-- WS-SM SM8.B (PR #861 review round 20, **the coupling**): the live successor
+dispatch is inert exactly while its own site is unwired.
+
+This is what makes the ordering a mechanism rather than a note.  A transition
+that changes `currentOnCore` on a core whose restore is not wired leaves the
+model and the hardware disagreeing about who is running — and
+`syscallDispatchFromAbi` identifies its caller *solely* by
+`currentOnCore executingCore`, so that disagreement misattributes the next
+syscall.  Since `currentOnCore = none` instead fails closed (`.illegalState`),
+dispatching an uninstallable successor is strictly worse than dispatching none.
+
+Both sides read `contextRestoreSeamLive`, so SM9.E flips one constant and the
+dispatch and its register move together. -/
+theorem scheduleLocalSuccessorLive_guard_eq_register :
+    contextRestoreSeamLive = contextRestoreWired .vacatedCoreSuccessor := rfl
+
+/-- WS-SM SM8.B: and the same for the suspend entry, which installs through the
+identical seam. -/
+theorem suspendReschedule_guard_eq_register :
+    contextRestoreSeamLive = contextRestoreWired .suspendReschedule := rfl
 
 end SeLe4n.Kernel.PriorityInheritance
