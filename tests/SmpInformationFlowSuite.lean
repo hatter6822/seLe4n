@@ -656,13 +656,7 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @SeLe4n.Kernel.PriorityInheritance.contextSwitchSites_complete
 #check @SeLe4n.Kernel.PriorityInheritance.contextRestoreWired
 #check @SeLe4n.Kernel.PriorityInheritance.contextSwitchSites_restore_pending
-#check @SeLe4n.Kernel.PriorityInheritance.contextRestoreWired_interruptSites_pending
-#check @SeLe4n.Kernel.PriorityInheritance.contextSwitchSites_restore_wired
-#check @SeLe4n.Kernel.PriorityInheritance.ContextInstall
-#check @SeLe4n.Kernel.PriorityInheritance.contextInstallFor
-#check @SeLe4n.Kernel.PriorityInheritance.contextInstallFor_install_same_vspace
-#check @SeLe4n.Kernel.PriorityInheritance.contextInstallFor_crossAddressSpace_of_vspace_ne
-#check @SeLe4n.Kernel.performContextInstall
+#check @SeLe4n.Kernel.PriorityInheritance.contextRestoreWired_none
 #check @SeLe4n.Kernel.SchedContextOps.schedContextReplenishHome
 #check @SeLe4n.Kernel.SchedContextOps.purgeReplenishmentOnCore
 #check @SeLe4n.Kernel.SchedContextOps.purgeReplenishmentFromAllCores
@@ -2708,18 +2702,6 @@ its send queue and `removeRunnableOnCore` clears core 0's `current` slot. -/
 private def vacatedPost : SystemState :=
   (SeLe4n.Kernel.endpointSendDualOnCore lowEndpoint lowCurrent vacatingSendMsg c0 niState).1
 
-/-- A post-state in which core 0 switched to a thread in a **different**
-address space — `otherRootThread` names `probeCNode` as its VSpace root rather
-than the shared `vsRoot`, so the install must refuse rather than run it under
-the outgoing thread's tables. -/
-private def otherRootThread : SeLe4n.ThreadId := ⟨1031⟩
-
-private def crossSpaceSwitchPost : SystemState :=
-  { niState with
-      objects := niState.objects.insert otherRootThread.toObjId
-        (.tcb { mkTcb 1031 40 none with vspaceRoot := probeCNode })
-      scheduler := niState.scheduler.setCurrentOnCore c0 (some otherRootThread) }
-
 /-- The same state after the entry seam's local reschedule. -/
 private def vacatedRescheduled : SystemState :=
   SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessor niState vacatedPost c0
@@ -2775,37 +2757,15 @@ private def runVacatedCoreChecks : IO Unit := do
   -- know.  No context-switch site restores the incoming context before
   -- exception return, so the register is the whole list — and stays so until
   -- SM9.E wires the first one, at which point this assertion fails.
-  assertBool "all four context-switch sites are registered"
-    (decide (SeLe4n.Kernel.PriorityInheritance.contextSwitchSites.length = 4))
-  -- Round 19: the two syscall entries now install the incoming thread's
-  -- registers into the trap frame, so the vacated-core successor and the
-  -- suspend reschedule are wired.
-  assertBool "both syscall-entry sites install a context"
-    (decide (SeLe4n.Kernel.PriorityInheritance.contextRestoreWired .vacatedCoreSuccessor = true)
-     && decide (SeLe4n.Kernel.PriorityInheritance.contextRestoreWired .suspendReschedule = true))
-  -- The load-bearing negative: the two interrupt-driven sites are NOT wired,
-  -- so the marker records a real partition rather than a blanket claim.
-  assertBool "NEGATIVE: the timer and SGI sites are still unwired"
-    (decide (SeLe4n.Kernel.PriorityInheritance.contextRestoreWired .timerPreemption = false)
-     && decide (SeLe4n.Kernel.PriorityInheritance.contextRestoreWired .rescheduleSgi = false))
-  -- The install decision itself: same address space installs, differing
-  -- address spaces refuse.  Computed on the §5.5 vacated-core states.
-  assertBool "a same-address-space switch yields an install"
-    (match SeLe4n.Kernel.PriorityInheritance.contextInstallFor
-        niState vacatedRescheduled c0 with
-     | .install _ => true
-     | _ => false)
-  -- NEGATIVE: the refusal arm is reachable — a switch to a thread in another
-  -- address space is refused, not installed under the wrong page tables.
-  assertBool "NEGATIVE: a cross-address-space switch is refused"
-    (match SeLe4n.Kernel.PriorityInheritance.contextInstallFor
-        niState crossSpaceSwitchPost c0 with
-     | .crossAddressSpace => true
-     | _ => false)
-  assertBool "…and a syscall that returns to its caller installs nothing"
-    (match SeLe4n.Kernel.PriorityInheritance.contextInstallFor niState niState c0 with
-     | .unchanged => true
-     | _ => false)
+  assertBool "the context-restore obligation is registered for all four sites"
+    (decide (SeLe4n.Kernel.PriorityInheritance.contextSwitchSites.length = 4) &&
+     SeLe4n.Kernel.PriorityInheritance.contextSwitchSites.all
+       (fun s => !SeLe4n.Kernel.PriorityInheritance.contextRestoreWired s))
+  -- The load-bearing negative: the round-17 successor is IN the register, so
+  -- the marker covers the site this cut added rather than only pre-existing ones.
+  assertBool "NEGATIVE: the vacated-core successor is itself a registered site"
+    (decide (SeLe4n.Kernel.PriorityInheritance.ContextSwitchSite.vacatedCoreSuccessor
+      ∈ SeLe4n.Kernel.PriorityInheritance.contextSwitchSites))
 
 -- ---------------------------------------------------------------------------
 -- §5.6 fixtures — the replenish queue, the third per-core scheduler slot.  A

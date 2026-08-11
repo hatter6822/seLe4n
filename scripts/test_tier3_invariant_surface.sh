@@ -2023,20 +2023,6 @@ run_check "INVARIANT" rg -n '^inductive ContextSwitchSite' SeLe4n/Kernel/Schedul
 run_check "INVARIANT" rg -n '^theorem contextSwitchSites_restore_pending' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
 run_check "INVARIANT" rg -n '^theorem contextSwitchSites_complete' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
 
-# PR #861 review round 19: the two syscall entries now install the incoming
-# thread's registers into the trap frame, so a modelled switch reaches hardware.
-# The install is sound without a TTBR0_EL1 write only because it is confined to
-# switches within one address space -- pinned by the isolation theorem, and by
-# the refusal arm the model resolves to when the address space changes.
-run_check "INVARIANT" rg -n '^theorem contextInstallFor_install_same_vspace' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
-run_check "INVARIANT" rg -n 'crossAddressSpace' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
-run_check "INVARIANT" rg -n 'performContextInstall result' SeLe4n/Kernel/SyscallDispatchEntry.lean
-run_check "INVARIANT" rg -n 'ffi_context_install_refuse' rust/sele4n-hal/src/ffi.rs
-run_check "INVARIANT" rg -n 'install_into_frame' rust/sele4n-hal/src/trap.rs
-# NEGATIVE: the refusal must halt, not fall through into an install under the
-# outgoing thread's page tables.
-run_check "INVARIANT" rg -n 'ffi_fatal_halt_all\(\)' rust/sele4n-hal/src/ffi.rs
-
 # PR #861 review round 17: the citation table above validates only that a name
 # resolves, so it accepted a witness filed against the wrong channel.  The
 # binding obligation is the dependently-typed one, whose arms are checked

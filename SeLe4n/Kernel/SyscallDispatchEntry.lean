@@ -508,45 +508,6 @@ theorem completeShootdownRounds_nil
     (execCore : Concurrency.CoreId) :
     completeShootdownRounds [] ops window execCore = pure () := rfl
 
-/-- **WS-SM SM8.B**: the general-purpose registers a context install carries —
-x0..x30.  The ARM64 trap frame's `gprs` array, and `RegisterFile.gpr`'s
-hardware range minus the zero register (`RegName.arm64GPRCount` counts xzr,
-which no frame stores). -/
-def contextInstallGprCount : Nat := 31
-
-/-- **WS-SM SM8.B (PR #861 review rounds 18/19)**: stage and commit the
-incoming thread's register context, or refuse.
-
-The runtime half of `PriorityInheritance.contextInstallFor`.  Called after the
-transition has committed and before exception return, so the frame the trap
-handler returns through carries the thread the model says is current.
-
-* `.unchanged` — no staging at all, so a syscall that returns to its caller
-  pays nothing and the trap handler's buffer stays empty.
-* `.install regs` — x0..x30 staged one at a time (the SM7.B mailbox protocol),
-  then `SP_EL0` and `ELR_EL1` committed together.  Sound without a `TTBR0_EL1`
-  write precisely because `contextInstallFor` only produces this arm when the
-  incoming thread shares the outgoing thread's address space
-  (`contextInstallFor_install_same_vspace`).
-* `.crossAddressSpace` — refuse.  The alternative is running the incoming
-  thread under the outgoing thread's page tables. -/
-def performContextInstall (inst : PriorityInheritance.ContextInstall) : BaseIO Unit :=
-  match inst with
-  | .unchanged => pure ()
-  | .crossAddressSpace => Platform.FFI.ffiContextInstallRefuse
-  | .install regs => do
-      Platform.FFI.ffiContextInstallBegin
-      (List.range contextInstallGprCount).forM (fun i =>
-        Platform.FFI.ffiContextInstallGpr (UInt64.ofNat i)
-          (UInt64.ofNat (regs.gpr ⟨i⟩).val))
-      Platform.FFI.ffiContextInstallCommit
-        (UInt64.ofNat regs.sp.val) (UInt64.ofNat regs.pc.val)
-
-/-- **WS-SM SM8.B**: a commit that changed nothing about the current thread
-emits no FFI traffic at all. -/
-@[simp] theorem performContextInstall_unchanged :
-    performContextInstall .unchanged = pure () := rfl
-
 /-- **WS-SM SM6.A**: the cross-core-aware syscall dispatch entry — the live
 SGI-dispatch seam.  Reads the deployment labeling context and the executing core
 from the hardware (`currentCoreId`), runs the verified
@@ -597,16 +558,14 @@ def syscallDispatchCrossCoreEntry
           Architecture.shootdownChangedTargets st st'',
           Architecture.shootdownPostedOps st st'',
           Architecture.shootdownRoundWindow st st'',
-          st''.pendingIcacheMaintenance,
-          PriorityInheritance.contextInstallFor st st'' execCore),
+          st''.pendingIcacheMaintenance),
          Architecture.clearIcacheMaintenance st'')
     | Except.error e =>
         ((Platform.FFI.encodeError e, ([] : List (CoreId × SgiKind)),
           ([] : List CoreId),
           ([] : List Architecture.TlbInvalidation),
           ((0, 0) : Nat × Nat),
-          ([] : List Architecture.ICacheInvalidation),
-          PriorityInheritance.ContextInstall.unchanged), st))
+          ([] : List Architecture.ICacheInvalidation)), st))
   Concurrency.fireCrossCoreSgis result.2.1
   -- WS-SM SM7.B: run the shootdown round(s) this commit posted (inert
   -- when the syscall touched no pending-shootdown queue).
@@ -617,11 +576,7 @@ def syscallDispatchCrossCoreEntry
   -- are dropped.  The operand is the model's own — the ledger was read and
   -- cleared in the atomic step above, so it is emitted exactly once and never
   -- stranded into the next syscall.  Inert when nothing was owed.
-  completeIcacheMaintenance result.2.2.2.2.2.1
-  -- WS-SM SM8.B: last, so the incoming thread's frame is installed only after
-  -- every maintenance action this commit owed has been issued.  Inert unless
-  -- the commit changed which thread this core is running.
-  performContextInstall result.2.2.2.2.2.2
+  completeIcacheMaintenance result.2.2.2.2.2
   pure result.1
 
 /-- **WS-SM SM6.A** structural marker: `syscallDispatchCrossCoreEntry` unfolds to
@@ -647,20 +602,17 @@ theorem syscallDispatchCrossCoreEntry_def
                 Architecture.shootdownChangedTargets st st'',
                 Architecture.shootdownPostedOps st st'',
                 Architecture.shootdownRoundWindow st st'',
-                st''.pendingIcacheMaintenance,
-                PriorityInheritance.contextInstallFor st st'' execCore),
+                st''.pendingIcacheMaintenance),
                Architecture.clearIcacheMaintenance st'')
           | Except.error e =>
               ((Platform.FFI.encodeError e, ([] : List (CoreId × SgiKind)),
                 ([] : List CoreId),
                 ([] : List Architecture.TlbInvalidation),
                 ((0, 0) : Nat × Nat),
-                ([] : List Architecture.ICacheInvalidation),
-                PriorityInheritance.ContextInstall.unchanged), st))
+                ([] : List Architecture.ICacheInvalidation)), st))
         Concurrency.fireCrossCoreSgis result.2.1
         completeShootdownRounds result.2.2.1 result.2.2.2.1 result.2.2.2.2.1 execCore
-        completeIcacheMaintenance result.2.2.2.2.2.1
-        performContextInstall result.2.2.2.2.2.2
+        completeIcacheMaintenance result.2.2.2.2.2
         pure result.1) := rfl
 
 /-- **WS-SM SM6.A** trace-safety witness: on the boot core, when every thread's
@@ -724,8 +676,7 @@ def suspendThreadCrossCoreEntry (tid : UInt64) : BaseIO UInt32 := do
     match threadId.toValid? with
     | none =>
         ((Platform.FFI.KernelError.toUInt32 .invalidArgument,
-          ([] : List (CoreId × SgiKind)),
-          PriorityInheritance.ContextInstall.unchanged), st)
+          ([] : List (CoreId × SgiKind))), st)
     | some vtid =>
         -- **WS-SM SM3.C.9**: run the transition inside its declared
         -- per-object lock set.  `suspend_thread_cross_core` is the first
@@ -756,18 +707,15 @@ def suspendThreadCrossCoreEntry (tid : UInt64) : BaseIO UInt32 := do
         -- away, so that the entry seams do not disagree about who is
         -- responsible for a vacated core.
         let action : SystemState →
-            SystemState × (UInt32 × List (CoreId × SgiKind) ×
-              PriorityInheritance.ContextInstall) := fun s =>
+            SystemState × (UInt32 × List (CoreId × SgiKind)) := fun s =>
           match Lifecycle.Suspend.suspendThreadOnCore s vtid execCore with
           | Except.ok (s', _) =>
               let s'' := PriorityInheritance.scheduleLocalSuccessor s s' execCore
               (s'', ((0 : UInt32),
-                    PriorityInheritance.computeCrossCoreSgis s s'' execCore,
-                    PriorityInheritance.contextInstallFor s s'' execCore))
+                    PriorityInheritance.computeCrossCoreSgis s s'' execCore))
           | Except.error e =>
               (s, (Platform.FFI.KernelError.toUInt32 e,
-                   ([] : List (CoreId × SgiKind)),
-                   PriorityInheritance.ContextInstall.unchanged))
+                   ([] : List (CoreId × SgiKind))))
         let callerTid := (st.scheduler.currentOnCore execCore).getD vtid
         match Concurrency.lockSetForSyscall .tcbSuspend callerTid vtid st with
         | some lockSet =>
@@ -776,12 +724,7 @@ def suspendThreadCrossCoreEntry (tid : UInt64) : BaseIO UInt32 := do
         | none =>
             let (st', r) := action st
             (r, st'))
-  Concurrency.fireCrossCoreSgis result.2.1
-  -- WS-SM SM8.B: the same install the syscall entry performs.  Wiring only one
-  -- of the two state-committing entries would leave `.suspendReschedule` half
-  -- covered — a switch installed on one path and not the other is exactly the
-  -- partial state the refusal arm exists to avoid.
-  performContextInstall result.2.2
+  Concurrency.fireCrossCoreSgis result.2
   pure result.1
 
 end SeLe4n.Kernel

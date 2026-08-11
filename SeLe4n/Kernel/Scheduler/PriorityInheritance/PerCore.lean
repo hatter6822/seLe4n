@@ -1903,140 +1903,6 @@ def emitBoostWakeSgi (sgi : Option (CoreId × SgiKind)) : BaseIO Unit :=
 @[simp] theorem emitBoostWakeSgi_none : (emitBoostWakeSgi none : BaseIO Unit) = pure () := rfl
 
 -- ============================================================================
--- WS-SM SM8.B — the context install (PR #861 review rounds 18/19)
--- ============================================================================
-
-/-- WS-SM SM8.B: **what the runtime must install into the trap frame** after a
-commit on the executing core.
-
-A change of current thread is only real once the incoming thread's context
-reaches hardware.  Three outcomes, and the third is the point of the type:
-
-* `.unchanged` — the commit left the same thread current (or left the core
-  idle, in which case there is nothing to return into and the caller does not
-  resume).  Nothing to install.
-* `.install regs` — the thread changed and the incoming thread **shares the
-  outgoing thread's address space**.  Then the register file is the whole
-  context: no `TTBR0_EL1` change is required, so installing GPRs, `SP_EL0` and
-  `ELR_EL1` is a complete and correct switch.
-* `.crossAddressSpace` — the thread changed and the address space with it.
-  **Fail closed.**  The model cannot compute the `TTBR0_EL1` value this needs:
-  `VSpaceRoot` carries an `asid` and an abstract `mappings` table, not the
-  physical base of a hardware translation table, and no `VSpaceRoot → TTBR0`
-  binding exists anywhere.  Installing registers anyway would run the incoming
-  thread's code under the outgoing thread's page tables — a memory-isolation
-  violation, strictly worse than not switching.  So this arm is a refusal, and
-  the missing binding is the precisely-stated SM9.E remainder. -/
-inductive ContextInstall where
-  | unchanged
-  | install (regs : SeLe4n.RegisterFile)
-  | crossAddressSpace
-  deriving Inhabited
-
-/-- WS-SM SM8.B: the install decision for a commit `pre → post` on `execCore`.
-
-The registers come from `post.machine.regsOnCore execCore`, which
-`switchToThreadOnCore` has already set to the incoming TCB's
-`registerContext` — so the seam installs the model's own value rather than
-recomputing one, and cannot disagree with it.
-
-Every branch that cannot establish "same address space" resolves to
-`.crossAddressSpace`, including the unresolvable-TCB branches: a switch whose
-endpoints do not both resolve is exactly the case where nothing is known about
-the tables in force. -/
-def contextInstallFor (pre post : SystemState) (execCore : CoreId) : ContextInstall :=
-  match pre.scheduler.currentOnCore execCore, post.scheduler.currentOnCore execCore with
-  | some outgoing, some incoming =>
-      if outgoing == incoming then .unchanged
-      else
-        match pre.getTcb? outgoing, post.getTcb? incoming with
-        | some outTcb, some inTcb =>
-            if outTcb.vspaceRoot == inTcb.vspaceRoot then
-              .install (post.machine.regsOnCore execCore)
-            else .crossAddressSpace
-        | _, _ => .crossAddressSpace
-  -- Idle → running: the tables in force are whatever the last thread left, so
-  -- this is an address-space change with an unknown origin.  Fail closed.
-  | none, some _ => .crossAddressSpace
-  -- Running → idle, and idle → idle: the caller does not resume, so there is
-  -- no frame to install into.  (`scheduleLocalSuccessor` turns the first of
-  -- these into a `some`/`some` case whenever a successor exists.)
-  | _, none => .unchanged
-
-/-- WS-SM SM8.B: a commit that did not change the current thread installs
-nothing — so every syscall that merely returns to its caller is inert here. -/
-@[simp] theorem contextInstallFor_unchanged (pre post : SystemState) (execCore : CoreId)
-    (tid : SeLe4n.ThreadId)
-    (hPre : pre.scheduler.currentOnCore execCore = some tid)
-    (hPost : post.scheduler.currentOnCore execCore = some tid) :
-    contextInstallFor pre post execCore = .unchanged := by
-  unfold contextInstallFor
-  rw [hPre, hPost]
-  simp
-
-/-- WS-SM SM8.B: a commit that left the core idle installs nothing. -/
-@[simp] theorem contextInstallFor_post_idle (pre post : SystemState) (execCore : CoreId)
-    (hPost : post.scheduler.currentOnCore execCore = none) :
-    contextInstallFor pre post execCore = .unchanged := by
-  unfold contextInstallFor
-  rw [hPost]
-  cases pre.scheduler.currentOnCore execCore <;> rfl
-
-/-- WS-SM SM8.B (**the isolation property**): an `.install` is only ever
-produced when the incoming thread runs in the **same address space** as the
-outgoing one.
-
-This is what makes installing registers without touching `TTBR0_EL1` sound.
-Stated as an existential over the two TCBs rather than as a side condition, so
-a future relaxation of the guard cannot keep this theorem. -/
-theorem contextInstallFor_install_same_vspace (pre post : SystemState) (execCore : CoreId)
-    (regs : SeLe4n.RegisterFile)
-    (h : contextInstallFor pre post execCore = .install regs) :
-    ∃ outgoing incoming outTcb inTcb,
-      pre.scheduler.currentOnCore execCore = some outgoing
-      ∧ post.scheduler.currentOnCore execCore = some incoming
-      ∧ pre.getTcb? outgoing = some outTcb
-      ∧ post.getTcb? incoming = some inTcb
-      ∧ outTcb.vspaceRoot = inTcb.vspaceRoot
-      ∧ regs = post.machine.regsOnCore execCore := by
-  unfold contextInstallFor at h
-  split at h
-  · next outgoing incoming hPre hPost =>
-    split at h
-    · exact absurd h (by simp)
-    · next hNe =>
-      split at h
-      · next outTcb inTcb hOut hIn =>
-        split at h
-        · next hVs =>
-          refine ⟨outgoing, incoming, outTcb, inTcb, hPre, hPost, hOut, hIn, ?_, ?_⟩
-          · exact eq_of_beq hVs
-          · simpa using h.symm
-        · exact absurd h (by simp)
-      · exact absurd h (by simp)
-  · exact absurd h (by simp)
-  · exact absurd h (by simp)
-
-/-- WS-SM SM8.B: and the dual — a switch across address spaces never yields an
-`.install`.  The fail-closed direction, stated so a reader does not have to
-read the definition to trust it. -/
-theorem contextInstallFor_crossAddressSpace_of_vspace_ne (pre post : SystemState)
-    (execCore : CoreId) (outgoing incoming : SeLe4n.ThreadId) (outTcb inTcb : TCB)
-    (hPre : pre.scheduler.currentOnCore execCore = some outgoing)
-    (hPost : post.scheduler.currentOnCore execCore = some incoming)
-    (hNe : outgoing ≠ incoming)
-    (hOut : pre.getTcb? outgoing = some outTcb)
-    (hIn : post.getTcb? incoming = some inTcb)
-    (hVs : outTcb.vspaceRoot ≠ inTcb.vspaceRoot) :
-    contextInstallFor pre post execCore = .crossAddressSpace := by
-  unfold contextInstallFor
-  rw [hPre, hPost]
-  simp only []
-  rw [if_neg (by simpa using hNe), hOut, hIn]
-  simp only []
-  rw [if_neg (by simpa using hVs)]
-
--- ============================================================================
 -- WS-SM SM8.B — the context-restore obligation, as a tripwire
 -- ============================================================================
 
@@ -2103,16 +1969,10 @@ cut.  `contextRestoreWired` is the partition: wiring one means flipping its
 entry, which breaks the theorem below and forces the change to be reviewed
 rather than absorbed silently. -/
 def contextRestoreWired : ContextSwitchSite → Bool
-  -- The timer ISR calls `lean_per_core_timer_tick`, which returns `void`; the
-  -- preemption it decides is discarded.
   | .timerPreemption      => false
-  -- SGI INTID 0 still has no registered handler, so a cross-core wake never
-  -- reaches a trap frame to install into.
   | .rescheduleSgi        => false
-  -- Both state-committing syscall entries install
-  -- (`syscallDispatchCrossCoreEntry` and `suspendThreadCrossCoreEntry`).
-  | .suspendReschedule    => true
-  | .vacatedCoreSuccessor => true
+  | .suspendReschedule    => false
+  | .vacatedCoreSuccessor => false
 
 /-- WS-SM SM8.B (the honesty marker): **no** context-switch site restores
 hardware context yet.
@@ -2131,26 +1991,11 @@ still the right change (a kernel that never dispatches a successor is not a
 kernel), but the two must land in that order, which is what this marker
 records. -/
 theorem contextSwitchSites_restore_pending :
-    contextSwitchSites.filter (fun s => !contextRestoreWired s)
-      = [.timerPreemption, .rescheduleSgi] := by
+    contextSwitchSites.filter (fun s => !contextRestoreWired s) = contextSwitchSites := by
   decide
 
-/-- WS-SM SM8.B: and the dual — exactly the two syscall-entry sites install. -/
-theorem contextSwitchSites_restore_wired :
-    contextSwitchSites.filter contextRestoreWired
-      = [.suspendReschedule, .vacatedCoreSuccessor] := by
-  decide
-
-/-- WS-SM SM8.B: the two interrupt-driven sites remain unwired.
-
-Both need something this cut does not build: the timer ISR needs
-`lean_per_core_timer_tick` to return an install decision instead of `void`, and
-the reschedule SGI needs a registered INTID-0 handler before there is any trap
-frame to install into.  Neither is a proof gap — they are runtime seams, and
-they are the SM9.E remainder together with the `VSpaceRoot → TTBR0` binding the
-`.crossAddressSpace` arm refuses without. -/
-theorem contextRestoreWired_interruptSites_pending :
-    contextRestoreWired .timerPreemption = false
-      ∧ contextRestoreWired .rescheduleSgi = false := ⟨rfl, rfl⟩
+/-- WS-SM SM8.B: the same fact in the form a consumer would read. -/
+theorem contextRestoreWired_none (s : ContextSwitchSite) : contextRestoreWired s = false := by
+  cases s <;> rfl
 
 end SeLe4n.Kernel.PriorityInheritance

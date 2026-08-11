@@ -641,53 +641,6 @@ pub extern "C" fn ffi_shootdown_online_mask() -> u64 {
 /// `send_sgi` orders the publish before any target can take the SGI).
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownPublishBegin`
-/// **WS-SM SM8.B (PR #861 review rounds 18/19)**: open a context-install
-/// staging round, discarding any partially-staged predecessor.
-///
-/// Lean binding: `SeLe4n.Platform.FFI.ffiContextInstallBegin`
-#[no_mangle]
-pub extern "C" fn ffi_context_install_begin() {
-    crate::context_install::stage_begin_in(&crate::context_install::STAGED_CONTEXT);
-}
-
-/// **WS-SM SM8.B**: stage general-purpose register `index` (x0..x30).
-///
-/// Lean binding: `SeLe4n.Platform.FFI.ffiContextInstallGpr`
-#[no_mangle]
-pub extern "C" fn ffi_context_install_gpr(index: u64, value: u64) {
-    crate::context_install::stage_gpr_in(
-        &crate::context_install::STAGED_CONTEXT,
-        index as usize,
-        value,
-    );
-}
-
-/// **WS-SM SM8.B**: commit the staged registers with `SP_EL0` and the
-/// exception-return address, making them eligible for installation.
-///
-/// Lean binding: `SeLe4n.Platform.FFI.ffiContextInstallCommit`
-#[no_mangle]
-pub extern "C" fn ffi_context_install_commit(sp: u64, pc: u64) {
-    crate::context_install::stage_commit_in(&crate::context_install::STAGED_CONTEXT, sp, pc);
-}
-
-/// **WS-SM SM8.B**: refuse a context install that crosses address spaces.
-///
-/// The model cannot supply the `TTBR0_EL1` such a switch needs — `VSpaceRoot`
-/// carries an ASID and an abstract mapping table, not a translation-table
-/// physical base — so returning into the incoming thread would run its code
-/// under the outgoing thread's page tables.  That is a memory-isolation
-/// violation, so the system halts instead, on the SM7.B fail-closed discipline.
-///
-/// Lean binding: `SeLe4n.Platform.FFI.ffiContextInstallRefuse`
-#[no_mangle]
-pub extern "C" fn ffi_context_install_refuse() {
-    // Clear first: a halt that somehow returns must not leave a stale stage
-    // that a later exception return would install.
-    crate::context_install::stage_begin_in(&crate::context_install::STAGED_CONTEXT);
-    ffi_fatal_halt_all()
-}
-
 #[no_mangle]
 pub extern "C" fn ffi_shootdown_publish_begin() {
     crate::shootdown::publish_begin_in(&crate::shootdown::SHOOTDOWN_OPS);
