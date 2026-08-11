@@ -73,10 +73,50 @@ BOOT_PINNED = {
 # `schedContextConfigure` and both arms of `schedContextUnbind` — after
 # round 13 had routed the *run-queue* half of the very same operations per-core.
 # Two slots checked out of three is how that survived.
+STATE = os.path.join(SRC, "Model", "State.lean")
+
+
+def per_core_scheduler_fields() -> list[str]:
+    """The `SchedulerState` fields that are per-core `Vector`s.
+
+    PR #861 review round 25: the read and write inventories were hand-written,
+    and a hand-written inventory is how three of the seven per-core slots came
+    to be unchecked — `activeDomain`, `domainScheduleIndex`,
+    `domainTimeRemaining` and `lastTimeoutErrors` were all absent, so a live
+    helper selecting against `activeDomainOnCore bootCoreId` passed the gate
+    and its self-test alike.  Deriving the list from the structure means a
+    field added to `SchedulerState` is covered the day it lands, which is the
+    same reason the axiom sweep enumerates the elaborated environment and this
+    gate's roots come from the enforcement map.
+
+    Fails closed: a parse that finds nothing raises rather than returning an
+    empty inventory, which would silently disable every pattern below.
+    """
+    src = open(STATE, encoding="utf-8").read()
+    m = re.search(r"^structure SchedulerState where$(.*?)^\S", src, re.M | re.S)
+    if not m:
+        raise SystemExit("[per-core-routing] cannot locate `structure SchedulerState`")
+    fields = re.findall(r"^\s{2}([a-z][A-Za-z0-9_']*)\s*:\s*Vector\b[^\n]*\bnumCores\b",
+                        m.group(1), re.M)
+    if not fields:
+        raise SystemExit("[per-core-routing] no per-core Vector fields parsed from "
+                         "SchedulerState -- the gate would check nothing")
+    return fields
+
+
+PER_CORE_FIELDS = per_core_scheduler_fields()
+
 BOOT_READS = [
     re.compile(r"currentOnCore\s+bootCoreId"),
     re.compile(r"runQueueOnCore\s+bootCoreId"),
     re.compile(r"replenishQueueOnCore\s+bootCoreId"),
+] + [
+    # The derived remainder: every per-core slot that is not one of the three
+    # spelled out above (kept literal because their comments record the
+    # defects that put them there).
+    re.compile(rf"\b{f}OnCore\s+bootCoreId")
+    for f in PER_CORE_FIELDS
+    if f not in {"current", "runQueue", "replenishQueue"}
 ]
 
 # PR #861 review round 23: the three patterns above are *accessor reads*, and a
@@ -92,7 +132,7 @@ BOOT_READS = [
 # intervening arguments on one line.  Over-matching is the safe direction here:
 # a false positive is one allowlist line, a false negative is a wedged core.
 BOOT_WRITE_CALLEES = [
-    "setCurrentOnCore",
+    # Per-core operations that are not plain field setters.
     "removeRunnableOnCore",
     "enqueueRunnableOnCore",
     "handleRescheduleSgiOnCore",
@@ -100,8 +140,14 @@ BOOT_WRITE_CALLEES = [
     "switchToThreadOnCore",
     "preemptCurrentOnCore",
     "removeReplenishmentsOnCore",
-    "setReplenishQueueOnCore",
-    "setRunQueueOnCore",
+    "advanceDomainOnCore",
+    "decrementDomainTimeOnCore",
+] + [
+    # ... plus one setter per per-core field, derived for the reason above:
+    # `setActiveDomainOnCore bootCoreId` pins a secondary core's domain
+    # selection to the boot core's just as surely as `setCurrentOnCore` pins
+    # its current thread.
+    f"set{f[0].upper()}{f[1:]}OnCore" for f in PER_CORE_FIELDS
 ]
 BOOT_WRITES = [
     re.compile(rf"\b{callee}\b.{{0,100}}?\bbootCoreId\b")
@@ -419,7 +465,28 @@ def main() -> int:
             ("removeRunnableOnCore st tid\n            bootCoreId", True),
             ("let st2 :=\n  setCurrentOnCore\n    bootCoreId\n    none", True),
             ("switchToThreadOnCore st tid\n  (determineTargetCore st tid)", False),
+            # Round 25: the derived slots.  Each of these passed the gate
+            # before the inventory came from `SchedulerState` itself.
+            ("setActiveDomainOnCore bootCoreId d", True),
+            ("setDomainScheduleIndexOnCore bootCoreId 0", True),
+            ("setDomainTimeRemainingOnCore bootCoreId n", True),
+            ("setLastTimeoutErrorsOnCore bootCoreId []", True),
         ]
+        # Round 25: the derivation must see every per-core slot.  A parse that
+        # silently returns a subset is the failure mode the hand-written list
+        # already demonstrated, so the count is pinned rather than trusted.
+        want_fields = {"runQueue", "current", "activeDomain", "domainTimeRemaining",
+                       "domainScheduleIndex", "replenishQueue", "lastTimeoutErrors"}
+        if set(PER_CORE_FIELDS) != want_fields:
+            print(f"[per-core-routing] SELF-TEST FAIL: per-core field derivation gives "
+                  f"{sorted(PER_CORE_FIELDS)}, expected {sorted(want_fields)}.  If a field "
+                  f"was added to SchedulerState, extend this set in the same commit.")
+            return 1
+        for f in PER_CORE_FIELDS:
+            if not any(pat.search(f"{f}OnCore bootCoreId") for pat in BOOT_READS):
+                print(f"[per-core-routing] SELF-TEST FAIL: no read pattern covers "
+                      f"{f}OnCore")
+                return 1
         for probe, want in write_probes:
             got = any(pat.search(collapse_whitespace(probe)) for pat in BOOT_WRITES)
             if got != want:
