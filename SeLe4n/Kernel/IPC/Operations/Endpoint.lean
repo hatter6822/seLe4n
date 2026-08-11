@@ -180,6 +180,44 @@ theorem foldl_removeRunnableStepOnCore_runQueueOnCore_mem
       simp [removeRunnableStepOnCore, SchedulerState.setCurrentOnCore_runQueueOnCore,
         SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hne]
 
+/-- WS-SM SM8.B: the `current`-slot analogue of the two run-queue fold lemmas —
+a step at another core leaves this core's current slot alone, and the step at
+`c` itself clears it exactly when it held the thread. -/
+theorem foldl_removeRunnableStepOnCore_currentOnCore
+    (cs : List SeLe4n.Kernel.Concurrency.CoreId) (tid : SeLe4n.ThreadId)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    ∀ st : SystemState, c ∈ cs → cs.Nodup →
+      (cs.foldl (removeRunnableStepOnCore tid) st).scheduler.currentOnCore c
+        = if st.scheduler.currentOnCore c = some tid then none
+          else st.scheduler.currentOnCore c := by
+  have hFrame : ∀ (ds : List SeLe4n.Kernel.Concurrency.CoreId) (st : SystemState),
+      c ∉ ds →
+      (ds.foldl (removeRunnableStepOnCore tid) st).scheduler.currentOnCore c
+        = st.scheduler.currentOnCore c := by
+    intro ds
+    induction ds with
+    | nil => intro _ _; rfl
+    | cons d dd ih =>
+      intro st hc
+      have hne : d ≠ c := fun h => hc (by simp [h])
+      have hd : c ∉ dd := fun h => hc (by simp [h])
+      rw [List.foldl_cons, ih _ hd]
+      simp [removeRunnableStepOnCore, SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hne,
+        SchedulerState.setRunQueueOnCore_currentOnCore]
+  induction cs with
+  | nil => intro _ hc _; exact absurd hc (by simp)
+  | cons d ds ih =>
+    intro st hc hnd
+    rcases List.mem_cons.mp hc with hEq | hIn
+    · subst hEq
+      rw [List.foldl_cons, hFrame ds _ (List.nodup_cons.mp hnd).1]
+      simp [removeRunnableStepOnCore, SchedulerState.setCurrentOnCore_currentOnCore_self,
+        SchedulerState.setRunQueueOnCore_currentOnCore]
+    · have hne : d ≠ c := fun h => (List.nodup_cons.mp hnd).1 (h ▸ hIn)
+      rw [List.foldl_cons, ih _ hIn (List.nodup_cons.mp hnd).2]
+      simp [removeRunnableStepOnCore, SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hne,
+        SchedulerState.setRunQueueOnCore_currentOnCore]
+
 /-- WS-SM SM8.B: the sweep's closed form — **every** core's run queue comes back
 with the thread removed. -/
 @[simp] theorem removeRunnableFromAllCores_runQueueOnCore (st : SystemState)
@@ -187,6 +225,22 @@ with the thread removed. -/
     (removeRunnableFromAllCores st tid).scheduler.runQueueOnCore c
       = (st.scheduler.runQueueOnCore c).remove tid :=
   foldl_removeRunnableStepOnCore_runQueueOnCore_mem _ tid c st
+    (SeLe4n.Kernel.Concurrency.mem_allCores c)
+    SeLe4n.Kernel.Concurrency.allCores_nodup
+
+/-- WS-SM SM8.B: the sweep's closed form on the **current** slot — a core running
+the thread is cleared, every other core keeps whatever it was running.
+
+The companion to the run-queue form, and the fact the round-16 SGI fix rests on:
+a core whose `current` held the destroyed thread has a *changed* slot in the
+post-state, which is what `currentSlotChangeSgis` keys the remote poke on. -/
+@[simp] theorem removeRunnableFromAllCores_currentOnCore (st : SystemState)
+    (tid : SeLe4n.ThreadId) (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (removeRunnableFromAllCores st tid).scheduler.currentOnCore c
+      = if st.scheduler.currentOnCore c = some tid then none
+        else st.scheduler.currentOnCore c := by
+  unfold removeRunnableFromAllCores
+  exact foldl_removeRunnableStepOnCore_currentOnCore _ tid c st
     (SeLe4n.Kernel.Concurrency.mem_allCores c)
     SeLe4n.Kernel.Concurrency.allCores_nodup
 

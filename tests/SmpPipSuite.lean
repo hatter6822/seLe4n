@@ -278,13 +278,19 @@ example (st : SystemState) (vtid : SeLe4n.ValidThreadId) (ec : CoreId) (tcb : TC
 
 -- SM5.F.4: the diff-based dispatch is inert on single-core (PR #831 review 4
 -- added the empty-secondary-current-slot premise when the descheduled/deboosted
--- diff rules were re-keyed from the home to the pre-state running core).
+-- diff rules were re-keyed from the home to the pre-state running core; PR #861
+-- review round 16 added the *post*-state twin when the slot-indexed rule
+-- `currentSlotChangeSgis` joined the diff — that rule reads both states, so
+-- inertness needs both to be quiet on the secondary cores, which on a genuine
+-- single-core deployment they are).
 example (pre post : SystemState)
     (hAllBoot : ∀ t, determineTargetCore post t = bootCoreId)
     (hNoRemoteCur : ∀ c : CoreId, c ≠ bootCoreId →
-      pre.scheduler.currentOnCore c = none) :
+      pre.scheduler.currentOnCore c = none)
+    (hNoRemoteCurPost : ∀ c : CoreId, c ≠ bootCoreId →
+      post.scheduler.currentOnCore c = none) :
     crossCoreWakeDispatch pre post bootCoreId = pure () :=
-  crossCoreWakeDispatch_singleCore pre post hAllBoot hNoRemoteCur
+  crossCoreWakeDispatch_singleCore pre post hAllBoot hNoRemoteCur hNoRemoteCurPost
 
 -- SM5.F.4: memory-model — the boost publication happens-before the home core observes it.
 example (boostCore homeCore : CoreId) (loc : AtomicLocation) (v : Nat) :

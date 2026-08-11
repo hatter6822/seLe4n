@@ -1,8 +1,9 @@
 {
-  "_comment": "Enforcement-boundary labels are not always Lean definition names. This maps a label to the definition the arm reaches, so scripts/check_live_arm_per_core_routing.py can walk it. Missing alias = hard failure, never a silent skip. Every entry here is VERIFIED against the live dispatch arm in SeLe4n/Kernel/API.lean (PR #861 review round 15): the gate rejects an alias the arm does not call, so a coincidental name match can no longer stand in for the real operation.",
+  "_comment": "Enforcement-boundary labels are not always Lean definition names. This maps a label to the definition the arm reaches, so scripts/check_live_arm_per_core_routing.py can walk it. Missing alias = hard failure, never a silent skip. Every entry here is VERIFIED against the live dispatch arm in SeLe4n/Kernel/API.lean (PR #861 review round 15): the gate rejects an alias the arm does not call, so a coincidental name match can no longer stand in for the real operation. Round 16: the verification now strips leading-dot constructor references before looking for the root, so an arm header (`| .schedContextUnbind =>`) or a decode guard (`decoded.syscallId = .schedContextUnbind`) can no longer stand in for a call \u2014 which is what let the schedContextUnbind label pass while the arm called the OnCore wrapper.",
   "setIPCBuffer": "setIPCBufferOp",
   "setPriority": "setPriorityOnCore",
   "setMCPriority": "setMCPriorityOnCore",
   "lookupService": "lookupServiceByCap",
-  "setThreadCpuAffinity": "setThreadCpuAffinityOp"
+  "setThreadCpuAffinity": "setThreadCpuAffinityOp",
+  "schedContextUnbind": "schedContextUnbindOnCore"
 }

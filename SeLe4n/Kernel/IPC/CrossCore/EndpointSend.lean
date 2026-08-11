@@ -97,21 +97,59 @@ def endpointSendDualOnCore (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId
       if (st.objects[endpointId]?).isSome then (st, .error .invalidCapability)
       else (st, .error .objectNotFound)
 
-/-- WS-SM SM6 (bootCore bridge): on the boot core the per-core send agrees with
-the single-core `endpointSendDual` on the resulting **state**.
+/-- WS-SM SM6: the absent-endpoint arm is fail-closed — the pre-state is
+returned untouched.
 
-`removeRunnableOnCore … bootCoreId = removeRunnable` and
-`wakeThread … bootCoreId` enqueues on the boot core exactly when the receiver is
-homed there, which is the only configuration the single-core transition models.
-Stated on the state alone because the single-core form returns no SGI. -/
-theorem endpointSendDualOnCore_bootCore_state (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId) (msg : IpcMessage) (st : SystemState)
+This used to be called `…_bootCore_state` and to claim, in its docstring, that
+"the per-core send agrees with the single-core `endpointSendDual` on the
+resulting state".  It proved no such thing: `hNoEndpoint` and `hAbsent` together
+pin it to the `.objectNotFound` arm, where the transition trivially returns the
+pre-state, and the statement never mentioned `endpointSendDual` at all
+(PR #861 review round 15).  The real bridges are the two theorems below, one per
+success path; this one is renamed to say what it actually checks. -/
+theorem endpointSendDualOnCore_absent_endpoint (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
+    (st : SystemState)
     (hTooLarge : ¬ (msg.registers.size > maxMessageRegisters))
     (hTooMany : ¬ (msg.caps.size > maxExtraCaps))
     (hNoEndpoint : st.getEndpoint? endpointId = none)
     (hAbsent : (st.objects[endpointId]?).isSome = false) :
-    (endpointSendDualOnCore endpointId sender msg bootCoreId st).1 = st := by
+    endpointSendDualOnCore endpointId sender msg executingCore st
+      = (st, .error .objectNotFound) := by
   simp [endpointSendDualOnCore, hTooLarge, hTooMany, hNoEndpoint, hAbsent]
+
+/-- WS-SM SM6 (**the blocking leg's bootCore bridge**): with no receiver waiting,
+the per-core send on the boot core commits **exactly** the single-core
+`endpointSendDual`'s state.
+
+Unconditional on this path, and the reason is one `rfl`: the two transitions run
+the same enqueue and the same TCB store, and differ only in the final
+deschedule — `removeRunnableOnCore … bootCoreId` *is* `removeRunnable`
+(`removeRunnableOnCore_bootCoreId`).  This is the refinement claim the old
+`…_bootCore_state` docstring wanted and did not make. -/
+theorem endpointSendDualOnCore_bootCore_block_eq_single (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId) (msg : IpcMessage) (st st' : SystemState) (ep : Endpoint)
+    (hEp : st.getEndpoint? endpointId = some ep)
+    (hNoReceiver : ep.receiveQ.head = none)
+    (hSingle : endpointSendDual endpointId sender msg st = .ok ((), st')) :
+    (endpointSendDualOnCore endpointId sender msg bootCoreId st).1 = st' := by
+  -- The bounds guards are derived, not required: a successful single-core send
+  -- already refutes them, so making the caller re-supply them would be
+  -- redundant.  Both sides then reduce past the same two `if`s.
+  have hRegs : ¬ (msg.registers.size > maxMessageRegisters) := by
+    intro h; rw [endpointSendDual] at hSingle; simp [h] at hSingle
+  have hCaps : ¬ (msg.caps.size > maxExtraCaps) := by
+    intro h; rw [endpointSendDual] at hSingle; simp [hRegs, h] at hSingle
+  -- The single-core form matches the object store directly while the per-core
+  -- one goes through `getEndpoint?` (the AK7 typed-accessor discipline), so the
+  -- raw form is *recovered here* rather than demanded of the caller — stating it
+  -- as a hypothesis would put a raw object-store pattern on the public surface.
+  have hRaw := (SystemState.getEndpoint?_eq_some_iff st endpointId ep).mp hEp
+  unfold endpointSendDualOnCore
+  unfold endpointSendDual at hSingle
+  simp only [hRegs, hCaps, hRaw, hEp, hNoReceiver, if_false] at hSingle ⊢
+  repeat' split at hSingle
+  all_goals simp_all [removeRunnableOnCore_bootCoreId]
 
 /-- WS-SM SM6: the bounds rejections are fail-closed and state-preserving. -/
 theorem endpointSendDualOnCore_tooLarge (endpointId : SeLe4n.ObjId)

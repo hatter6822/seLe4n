@@ -619,6 +619,17 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @vspaceMapPageCheckedWithShootdownFromState_framed
 #check @vspaceMapPageCheckedWithShootdownFromStatePerCore_confinedToCores
 #check @vspaceMapPageCheckedWithShootdownFromStatePerCore_crossCoreNonInterference
+-- Round 16: the slot-indexed SGI rule — the diff seam's fix for a change whose
+-- subject the post-state no longer contains.
+#check @SeLe4n.Kernel.PriorityInheritance.currentSlotChangeSgis
+#check @SeLe4n.Kernel.PriorityInheritance.currentSlotChangeSgis_not_execCore
+#check @SeLe4n.Kernel.PriorityInheritance.currentSlotChangeSgis_reschedule
+#check @SeLe4n.Kernel.PriorityInheritance.currentSlotChangeSgis_fires_on_change
+#check @SeLe4n.Kernel.removeRunnableFromAllCores_currentOnCore
+#check @SeLe4n.Kernel.foldl_removeRunnableStepOnCore_currentOnCore
+-- Round 16: the send bridge that actually mentions the single-core transition.
+#check @SeLe4n.Kernel.endpointSendDualOnCore_absent_endpoint
+#check @SeLe4n.Kernel.endpointSendDualOnCore_bootCore_block_eq_single
 #check @SeLe4n.Kernel.dispatchWithCap_tcbSuspend_delegates
 #check @SeLe4n.Kernel.dispatchWithCapChecked_receive_delegates
 -- SM8.B (PR #861 review round 10): the live `.send` arm, rerouted off the
@@ -628,7 +639,6 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @SeLe4n.Kernel.endpointSendCrossCoreDispatchChecked
 #check @SeLe4n.Kernel.endpointSendDualOnCore_tooLarge
 #check @SeLe4n.Kernel.endpointSendDualOnCore_tooManyCaps
-#check @SeLe4n.Kernel.endpointSendDualOnCore_bootCore_state
 #check @SeLe4n.Kernel.endpointSendDualWithCapsOnCore_no_caps
 #check @SeLe4n.Kernel.endpointSendCrossCoreDispatchChecked_flow_denied
 #check @SeLe4n.Kernel.endpointSendCrossCoreDispatchChecked_flow_allowed

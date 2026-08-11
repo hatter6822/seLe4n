@@ -6,6 +6,54 @@ the every-PR-ships-one-version policy.  The automated review rounds are folded
 in below rather than shipped as separate patch versions — they were review
 iterations on this change, not releases.
 
+### Review round 16 — the diff seam could not see a destroyed thread
+
+**A P1 in round 15's own fix.**  Round 15 made the retype destroy path sweep
+every core, which clears a remote core's `current` slot when the thread being
+destroyed was running there.  But the SGI re-derivation is **object-indexed**:
+`computeCrossCoreSgis` folds `crossCoreSgiBody` over `post.objectIndex`, and that
+body opens by matching the post-state object against `some (.tcb tpost)`.  A
+retype replaces the TCB, so the body finds no thread to reason about and emits
+nothing — leaving the remote processor executing a thread whose storage had
+already been scrubbed and repurposed, with no poke.
+
+The hazard predates the sweep (before it, the remote `current` was not even
+cleared), but the sweep is what made the *model* record the change while the
+runtime still fired no interrupt, so it is fixed here.  Fixed at the class
+rather than the instance: the new `currentSlotChangeSgis` derives a
+`.reschedule` from a **changed `current` slot**, independent of any object, and
+`computeCrossCoreSgis` now folds the object-indexed rules together with it.  A
+remote core whose current thread changed must re-run its scheduler whether the
+outgoing thread was descheduled, deboosted, or destroyed — and only the first
+two are visible to an object-indexed rule.  The executing core is excluded by
+construction, so single-core builds stay inert; `computeCrossCoreSgis_nil_single_core`
+and its two callers gained the post-state twin of the premise they already
+carried for the pre-state, which is the same single-core fact.  Supporting
+closed form: `removeRunnableFromAllCores_currentOnCore`.
+
+**The gate's root verification was defeated by the arm header.**  Round 15 added
+a check that each mapped operation is the one its dispatch arm calls, but it
+tokenized the whole arm — so `| .schedContextUnbind =>` made the *label* look
+like a call and the check passed while the walk started from the single-core
+body, never reaching the wrapper's preemption seam.  Stripping only
+`|`-prefixed patterns was not enough (the `syscallDelegates` guard
+`decoded.syscallId = .schedContextUnbind` reintroduced the bare name with no `|`
+in sight); the boundary that actually separates a constructor from a call is the
+**leading dot**, and that is what is stripped now.  With it, the gate correctly
+rejected `.schedContextUnbind`'s stale root and the verified alias was added.
+
+**`endpointSendDualOnCore_bootCore_state` proved nothing it claimed.**  Its
+docstring said the per-core send "agrees with the single-core `endpointSendDual`
+on the resulting state"; its hypotheses pinned it to the `.objectNotFound` arm,
+where the transition trivially returns the pre-state, and the statement never
+mentioned `endpointSendDual`.  Renamed to `…_absent_endpoint`, which is what it
+checks, and joined by the real bridge: `endpointSendDualOnCore_bootCore_block_eq_single`
+proves **full state equality** with the single-core transition on the blocking
+path, unconditionally at the boot core — the two run the same enqueue and the
+same TCB store and differ only in a deschedule that `removeRunnableOnCore_bootCoreId`
+makes definitionally equal.  The bounds guards are derived from the single-core
+success rather than demanded again of the caller.
+
 ### Review round 15 — the destroy path, and two gates that failed open
 
 **Seventh live boot-pinning defect, found by the round-14 gate's own reach and

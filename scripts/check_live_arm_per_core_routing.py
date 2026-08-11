@@ -197,6 +197,32 @@ def takes_a_core(body: str) -> bool:
     return re.search(r"(?<![A-Za-z0-9_'])CoreId(?![A-Za-z0-9_'])", head) is not None
 
 
+# A *leading-dot* term — a dot not preceded by an identifier character.  In Lean
+# that is anonymous-constructor notation (`.ok`, `.error`, `.schedContextUnbind`),
+# never a call by short name.  A qualified call keeps its dot preceded by an
+# identifier (`SchedContextOps.schedContextUnbindOnCore`) and so is left alone.
+LEADING_DOT_CTOR = re.compile(r"(?<![A-Za-z0-9_'])\.[A-Za-z][A-Za-z0-9_']*")
+
+
+def strip_arm_patterns(body: str) -> str:
+    """Remove constructor references so only genuine call sites remain.
+
+    PR #861 review round 16: the dispatch-verification check tokenized the whole
+    arm, so the arm header `| .schedContextUnbind =>` made the *label*
+    `schedContextUnbind` look like a call.  The live arm calls
+    `schedContextUnbindOnCore`; the check passed on the header alone, and the
+    walk then started from the single-core body — missing the wrapper's
+    `priorityRescheduleOnCore` path entirely.  Same fail-open shape as the two
+    round-15 gate defects.
+
+    Stripping only `|`-prefixed patterns is not enough, which the fix's own first
+    attempt proved: `decoded.syscallId = .schedContextUnbind` in the
+    `syscallDelegates` arm reintroduced the bare name with no `|` in sight.  The
+    boundary that actually separates the two is the *leading dot*.
+    """
+    return LEADING_DOT_CTOR.sub(" ", body)
+
+
 def strip_comments(body: str) -> str:
     body = re.sub(r"/-.*?-/", " ", body, flags=re.S)
     return "\n".join(l for l in body.split("\n") if not l.strip().startswith("--"))
@@ -333,7 +359,7 @@ def main() -> int:
         arm = arms.get(sid)
         if arm is None:
             unverified.append((sid, root, "no `| .<syscall> =>` arm in API.lean"))
-        elif root not in called_names(strip_comments(arm)):
+        elif root not in called_names(strip_arm_patterns(strip_comments(arm))):
             unverified.append((sid, root,
                                f"the dispatch arm never mentions `{root}`"
                                + (f" (label `{labels[sid]}`)" if labels[sid] != root else "")))

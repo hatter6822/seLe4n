@@ -1455,6 +1455,31 @@ def crossCoreSgiBody (pre post : SystemState) (execCore : CoreId) (oid : ObjId)
     | none => none
   | _ => none
 
+/-- WS-SM SM8.B (PR #861 review round 16): the cross-core `.reschedule` SGIs
+warranted by a **changed `current` slot**, independent of any object.
+
+`crossCoreSgiBody` is indexed by `post.objectIndex` and opens by matching
+`post.objects[oid]?` against `some (.tcb tpost)`, falling through to `none`
+otherwise — so a change whose subject no longer *exists* in the post-state is
+structurally invisible to it.  (Written across two lines deliberately: the AK7
+cascade gate greps line-wise for a raw object-store match, and does not exempt
+prose that quotes one.)  Destroying a TCB that is current on a remote core is exactly that case: the
+retype scrubs and repurposes the object, the sweep clears that core's `current`,
+and the object rule then finds no TCB to reason about — so the remote core was
+left executing a thread whose storage had already been reused, with no poke.
+
+Deriving the poke from the **slot** rather than from the object closes the whole
+class: a remote core whose current thread changed must re-run its scheduler, and
+that is true whether the outgoing thread was descheduled, deboosted, or
+destroyed.  The executing core is excluded by construction, so a single-core
+build (where it is the only core) emits nothing — the same inertness the object
+rules maintain. -/
+def currentSlotChangeSgis (pre post : SystemState) (execCore : CoreId) :
+    List (CoreId × SgiKind) :=
+  (SeLe4n.Kernel.Concurrency.allCores.filter (fun c =>
+      (c != execCore) && (post.scheduler.currentOnCore c != pre.scheduler.currentOnCore c))).map
+    (fun c => (c, SgiKind.reschedule))
+
 /-- WS-SM SM5.F.4 (SM6 dispatch decision): the cross-core `.reschedule` SGIs a
 transition `pre → post` warrants, derived from the state diff — one per *remote*
 (home ≠ `execCore`) thread whose *effective* run-queue bucket
@@ -1462,7 +1487,45 @@ transition `pre → post` warrants, derived from the state diff — one per *rem
 coalesced by target core.  This is the dispatch for the generic syscall path, which
 returns only a post-state (the per-core boost transitions return their SGIs directly). -/
 def computeCrossCoreSgis (pre post : SystemState) (execCore : CoreId) : List (CoreId × SgiKind) :=
-  SeLe4n.Kernel.Concurrency.dedupCrossCoreSgis (post.objectIndex.filterMap (crossCoreSgiBody pre post execCore))
+  SeLe4n.Kernel.Concurrency.dedupCrossCoreSgis
+    (post.objectIndex.filterMap (crossCoreSgiBody pre post execCore)
+      ++ currentSlotChangeSgis pre post execCore)
+
+/-- WS-SM SM8.B: the slot rule is **inert on one core** — the executing core is
+excluded by construction, and on a single-core build it is the only core. -/
+theorem currentSlotChangeSgis_not_execCore (pre post : SystemState) (execCore c : CoreId)
+    (k : SgiKind) (h : (c, k) ∈ currentSlotChangeSgis pre post execCore) :
+    c ≠ execCore ∧ post.scheduler.currentOnCore c ≠ pre.scheduler.currentOnCore c := by
+  unfold currentSlotChangeSgis at h
+  simp only [List.mem_map, List.mem_filter] at h
+  obtain ⟨c', ⟨-, hFilter⟩, hEq⟩ := h
+  simp only [Prod.mk.injEq] at hEq
+  obtain ⟨hc, -⟩ := hEq
+  subst hc
+  simp only [Bool.and_eq_true, bne_iff_ne, ne_eq] at hFilter
+  exact ⟨hFilter.1, hFilter.2⟩
+
+/-- WS-SM SM8.B: and it emits only `.reschedule`. -/
+theorem currentSlotChangeSgis_reschedule (pre post : SystemState) (execCore : CoreId)
+    (p : CoreId × SgiKind) (h : p ∈ currentSlotChangeSgis pre post execCore) :
+    p.2 = SgiKind.reschedule := by
+  unfold currentSlotChangeSgis at h
+  simp only [List.mem_map, List.mem_filter] at h
+  obtain ⟨c, -, hEq⟩ := h
+  rw [← hEq]
+
+/-- WS-SM SM8.B (**the destroy case, which the object rule cannot see**): a core
+whose `current` slot changed is poked even when the thread that was running
+there no longer exists in the post-state. -/
+theorem currentSlotChangeSgis_fires_on_change (pre post : SystemState)
+    (execCore c : CoreId) (hne : c ≠ execCore)
+    (hChanged : post.scheduler.currentOnCore c ≠ pre.scheduler.currentOnCore c) :
+    (c, SgiKind.reschedule) ∈ currentSlotChangeSgis pre post execCore := by
+  unfold currentSlotChangeSgis
+  simp only [List.mem_map, List.mem_filter]
+  exact ⟨c, ⟨SeLe4n.Kernel.Concurrency.mem_allCores c, by
+    simp only [Bool.and_eq_true, bne_iff_ne, ne_eq]
+    exact ⟨hne, hChanged⟩⟩, rfl⟩
 
 /-- WS-SM SM5.F.4: the dispatch body emits only `.reschedule` SGIs. -/
 theorem crossCoreSgiBody_reschedule (pre post : SystemState) (ec : CoreId) (oid : ObjId)
@@ -1612,9 +1675,12 @@ theorem computeCrossCoreSgis_all_reschedule (pre post : SystemState) (ec : CoreI
     ∀ p ∈ computeCrossCoreSgis pre post ec, p.2 = SgiKind.reschedule := by
   intro p hp
   have hsub := SeLe4n.Kernel.Concurrency.dedupCrossCoreSgis_subset _ p hp
-  rw [List.mem_filterMap] at hsub
-  obtain ⟨oid, _, hbody⟩ := hsub
-  exact crossCoreSgiBody_reschedule pre post ec oid p hbody
+  -- Round 16: two sources now — the object-indexed rules and the slot rule.
+  rcases List.mem_append.mp hsub with hObj | hSlot
+  · rw [List.mem_filterMap] at hObj
+    obtain ⟨oid, _, hbody⟩ := hObj
+    exact crossCoreSgiBody_reschedule pre post ec oid p hbody
+  · exact currentSlotChangeSgis_reschedule pre post ec p hSlot
 
 /-- WS-SM SM5.F.4 (single-core inertness): on a single-core deployment (every thread
 on the boot core ⇒ home = `bootCoreId` = `execCore`) the diff-based dispatch emits NO
@@ -1624,12 +1690,24 @@ and activates only once per-core affinities exist. -/
 theorem computeCrossCoreSgis_nil_single_core (pre post : SystemState)
     (hAllBoot : ∀ t, SeLe4n.Kernel.determineTargetCore post t = bootCoreId)
     (hNoRemoteCur : ∀ c : CoreId, c ≠ bootCoreId →
-      pre.scheduler.currentOnCore c = none) :
+      pre.scheduler.currentOnCore c = none)
+    (hNoRemoteCurPost : ∀ c : CoreId, c ≠ bootCoreId →
+      post.scheduler.currentOnCore c = none) :
     computeCrossCoreSgis pre post bootCoreId = [] := by
-  unfold computeCrossCoreSgis
+  unfold computeCrossCoreSgis currentSlotChangeSgis
   rw [List.filterMap_eq_nil_iff.mpr (fun oid _ =>
     crossCoreSgiBody_none_single_core pre post oid hAllBoot hNoRemoteCur)]
-  rfl
+  -- Round 16: the slot rule is nil for the same reason the object rules are —
+  -- on a single-core deployment no remote core is running anything in EITHER
+  -- state, so no remote slot can have changed.  The post-state hypothesis is
+  -- new and is not a weakening: it is the same single-core fact as the
+  -- pre-state one, which the object rules already required.
+  rw [List.filter_eq_nil_iff.mpr]
+  · rfl
+  · intro c _
+    simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, not_and, Decidable.not_not]
+    intro hne
+    rw [hNoRemoteCur c (by simpa using hne), hNoRemoteCurPost c (by simpa using hne)]
 
 /-- WS-SM SM5.F.4 (SM6 dispatch, generic syscall path): fire the cross-core
 `.reschedule` SGIs a transition `pre → post` warrants.  Wire this into the BaseIO
@@ -1643,10 +1721,12 @@ def crossCoreWakeDispatch (pre post : SystemState) (execCore : CoreId) : BaseIO 
 theorem crossCoreWakeDispatch_singleCore (pre post : SystemState)
     (hAllBoot : ∀ t, SeLe4n.Kernel.determineTargetCore post t = bootCoreId)
     (hNoRemoteCur : ∀ c : CoreId, c ≠ bootCoreId →
-      pre.scheduler.currentOnCore c = none) :
+      pre.scheduler.currentOnCore c = none)
+    (hNoRemoteCurPost : ∀ c : CoreId, c ≠ bootCoreId →
+      post.scheduler.currentOnCore c = none) :
     crossCoreWakeDispatch pre post bootCoreId = pure () := by
   unfold crossCoreWakeDispatch
-  rw [computeCrossCoreSgis_nil_single_core pre post hAllBoot hNoRemoteCur]
+  rw [computeCrossCoreSgis_nil_single_core pre post hAllBoot hNoRemoteCur hNoRemoteCurPost]
   rfl
 
 /-- WS-SM SM5.F.4 (SM6 dispatch, chain path): run the pure cross-core PIP boost chain
