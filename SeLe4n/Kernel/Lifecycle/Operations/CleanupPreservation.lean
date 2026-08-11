@@ -211,7 +211,9 @@ theorem cleanupTcbReferences_tlbShootdown_eq
   unfold cleanupTcbReferences
   rw [removeFromAllNotificationWaitLists_tlbShootdown_eq,
       removeFromAllEndpointQueues_tlbShootdown_eq]
-  exact removeRunnable_tlbShootdown_eq st tid
+  -- Via the sweep's own frame.  Reducing through `removeRunnableFromAllCores`
+  -- here would have to whnf the per-core guard at every core.
+  exact removeRunnableFromAllCores_tlbShootdown st tid
 
 -- ============================================================================
 -- WS-SM SM6.E: cleanup primitives preserve `objects.invExt`
@@ -1122,10 +1124,13 @@ theorem lifecyclePreRetypeCleanup_flat_subset
             (scThreadIndexRemove stDon.scThreadIndex scId tcb.tid) }
         | _ => stDon).scheduler = stDon.scheduler := by
         cases tcb.schedContextBinding <;> rfl
-      rw [cleanupTcbReferences_scheduler_eq_removeRunnableFromAllCores,
-        removeRunnableFromAllCores_runQueueOnCore] at h
-      rw [hScIdxSched, hDonSched] at h
-      exact (List.mem_filter.mp h).1
+      rw [cleanupTcbReferences_scheduler_eq_removeRunnableFromAllCores] at h
+      -- Take the sweep off first (it handles its own per-core guard), then
+      -- collapse the scheduler-preserving prefix.  The other order leaves the
+      -- rewrites looking for a pattern under the guard's condition.
+      have hSub := removeRunnableFromAllCores_flat_subset _ tcb.tid x bootCoreId h
+      rw [hScIdxSched, hDonSched] at hSub
+      exact hSub
   | cnode cn =>
     simp only [lifecyclePreRetypeCleanup] at hOk
     cases newObj <;> (simp only [] at hOk; first

@@ -111,15 +111,67 @@ def removeRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
             else (st.scheduler.currentOnCore bootCoreId))
   }
 
+/-- WS-SM SM8.B (PR #861 review round 17): **does core `c` hold this thread at
+all** — in its run queue, or as its current thread?
+
+The sweep's guard, and therefore the sweep's write set.  Reading it from the
+pre-state is what lets the destroy path declare the cores it touches instead of
+declaring all of them. -/
+def threadOccupiesCore (st : SystemState) (tid : SeLe4n.ThreadId)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) : Bool :=
+  (st.scheduler.runQueueOnCore c).contains tid
+    || (st.scheduler.currentOnCore c == some tid)
+
 /-- WS-SM SM8.B: one core's share of the destroy sweep — drop the thread from
-that core's run queue and clear its current slot if it holds it. -/
+that core's run queue and clear its current slot if it holds it.
+
+**Write-set-honest** (PR #861 review round 17): a core that holds the thread
+neither way is left *literally* untouched, rather than rewritten with values
+equal to the ones already there.  The unguarded form wrote
+`setRunQueueOnCore c ((runQueueOnCore c).remove tid)` at every core, and while
+that removal changes nothing a non-member can observe
+(`RunQueue.remove_content_of_not_mem`), it is not *syntactically* the old queue
+— so the sweep's write set could only ever be bounded by `allCores`, and
+`.lifecycleRetype` inherited that.
+
+Same discipline as the v0.32.65 cancellation sweeps (insert-only-on-change).
+Proving the unguarded form inert instead would need "erasing an absent key from
+a Robin Hood table is the identity", a real theorem about backward-shift
+deletion that is not on file and that nothing else wants. -/
 def removeRunnableStepOnCore (tid : SeLe4n.ThreadId) (st : SystemState)
     (c : SeLe4n.Kernel.Concurrency.CoreId) : SystemState :=
-  { st with
-      scheduler := (st.scheduler.setRunQueueOnCore c
-          ((st.scheduler.runQueueOnCore c).remove tid)).setCurrentOnCore c
-          (if (st.scheduler.currentOnCore c) = some tid then none
-            else (st.scheduler.currentOnCore c)) }
+  if threadOccupiesCore st tid c then
+    { st with
+        scheduler := (st.scheduler.setRunQueueOnCore c
+            ((st.scheduler.runQueueOnCore c).remove tid)).setCurrentOnCore c
+            (if (st.scheduler.currentOnCore c) = some tid then none
+              else (st.scheduler.currentOnCore c)) }
+  else st
+
+/-- WS-SM SM8.B: the guard is exactly "this core holds the thread", so an
+unoccupied core is framed by the step at it. -/
+@[simp] theorem removeRunnableStepOnCore_of_not_occupies (tid : SeLe4n.ThreadId)
+    (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (h : threadOccupiesCore st tid c = false) :
+    removeRunnableStepOnCore tid st c = st := by
+  unfold removeRunnableStepOnCore
+  simp [h]
+
+/-- WS-SM SM8.B: a step at core `d` does not change whether core `c` holds the
+thread — occupancy reads only `c`'s own two slots, and a step writes only `d`'s.
+This is what lets the sweep's guard be read from the pre-state even though the
+fold evaluates it against the accumulator. -/
+theorem removeRunnableStepOnCore_threadOccupiesCore_ne (tid : SeLe4n.ThreadId)
+    (st : SystemState) (c d : SeLe4n.Kernel.Concurrency.CoreId) (hne : d ≠ c) :
+    threadOccupiesCore (removeRunnableStepOnCore tid st d) tid c
+      = threadOccupiesCore st tid c := by
+  unfold removeRunnableStepOnCore threadOccupiesCore
+  split
+  · simp [SchedulerState.setCurrentOnCore_runQueueOnCore,
+      SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hne,
+      SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hne,
+      SchedulerState.setRunQueueOnCore_currentOnCore]
+  · rfl
 
 /-- WS-SM SM8.B: **remove a thread from every core's scheduler state.**
 
@@ -153,8 +205,11 @@ theorem foldl_removeRunnableStepOnCore_runQueueOnCore_not_mem
     have hne : d ≠ c := fun h => hc (by simp [h])
     have hd : c ∉ ds := fun h => hc (by simp [h])
     rw [List.foldl_cons, ih _ hd]
-    simp [removeRunnableStepOnCore, SchedulerState.setCurrentOnCore_runQueueOnCore,
-      SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hne]
+    unfold removeRunnableStepOnCore
+    split
+    · simp [SchedulerState.setCurrentOnCore_runQueueOnCore,
+        SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hne]
+    · rfl
 
 /-- WS-SM SM8.B: and the step at `c` itself removes the thread — so over a
 duplicate-free list containing `c`, `c`'s queue comes back without it. -/
@@ -163,7 +218,8 @@ theorem foldl_removeRunnableStepOnCore_runQueueOnCore_mem
     (c : SeLe4n.Kernel.Concurrency.CoreId) :
     ∀ st : SystemState, c ∈ cs → cs.Nodup →
       (cs.foldl (removeRunnableStepOnCore tid) st).scheduler.runQueueOnCore c
-        = (st.scheduler.runQueueOnCore c).remove tid := by
+        = if threadOccupiesCore st tid c then (st.scheduler.runQueueOnCore c).remove tid
+          else st.scheduler.runQueueOnCore c := by
   induction cs with
   | nil => intro _ hc _; exact absurd hc (by simp)
   | cons d ds ih =>
@@ -173,12 +229,19 @@ theorem foldl_removeRunnableStepOnCore_runQueueOnCore_mem
       rw [List.foldl_cons,
         foldl_removeRunnableStepOnCore_runQueueOnCore_not_mem ds tid c _
           (List.nodup_cons.mp hnd).1]
-      simp [removeRunnableStepOnCore, SchedulerState.setCurrentOnCore_runQueueOnCore,
-        SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+      by_cases hOcc : threadOccupiesCore st tid c = true
+      · rw [removeRunnableStepOnCore, if_pos hOcc, if_pos hOcc]
+        simp [SchedulerState.setCurrentOnCore_runQueueOnCore,
+          SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+      · rw [removeRunnableStepOnCore, if_neg hOcc, if_neg hOcc]
     · have hne : d ≠ c := fun h => (List.nodup_cons.mp hnd).1 (h ▸ hIn)
-      rw [List.foldl_cons, ih _ hIn (List.nodup_cons.mp hnd).2]
-      simp [removeRunnableStepOnCore, SchedulerState.setCurrentOnCore_runQueueOnCore,
-        SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hne]
+      rw [List.foldl_cons, ih _ hIn (List.nodup_cons.mp hnd).2,
+        removeRunnableStepOnCore_threadOccupiesCore_ne tid st c d hne]
+      by_cases hOccD : threadOccupiesCore st tid d = true
+      · rw [removeRunnableStepOnCore, if_pos hOccD]
+        simp [SchedulerState.setCurrentOnCore_runQueueOnCore,
+          SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hne]
+      · rw [removeRunnableStepOnCore, if_neg hOccD]
 
 /-- WS-SM SM8.B: the `current`-slot analogue of the two run-queue fold lemmas —
 a step at another core leaves this core's current slot alone, and the step at
@@ -202,8 +265,11 @@ theorem foldl_removeRunnableStepOnCore_currentOnCore
       have hne : d ≠ c := fun h => hc (by simp [h])
       have hd : c ∉ dd := fun h => hc (by simp [h])
       rw [List.foldl_cons, ih _ hd]
-      simp [removeRunnableStepOnCore, SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hne,
-        SchedulerState.setRunQueueOnCore_currentOnCore]
+      unfold removeRunnableStepOnCore
+      split
+      · simp [SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hne,
+          SchedulerState.setRunQueueOnCore_currentOnCore]
+      · rfl
   induction cs with
   | nil => intro _ hc _; exact absurd hc (by simp)
   | cons d ds ih =>
@@ -211,18 +277,31 @@ theorem foldl_removeRunnableStepOnCore_currentOnCore
     rcases List.mem_cons.mp hc with hEq | hIn
     · subst hEq
       rw [List.foldl_cons, hFrame ds _ (List.nodup_cons.mp hnd).1]
-      simp [removeRunnableStepOnCore, SchedulerState.setCurrentOnCore_currentOnCore_self]
+      by_cases hOcc : threadOccupiesCore st tid c = true
+      · rw [removeRunnableStepOnCore, if_pos hOcc]
+        simp [SchedulerState.setCurrentOnCore_currentOnCore_self]
+      · rw [removeRunnableStepOnCore, if_neg hOcc]
+        -- Not occupied means the current slot does not hold `tid` either, so
+        -- the conditional on the right collapses to the identity.
+        have : st.scheduler.currentOnCore c ≠ some tid := by
+          intro hEq'
+          exact hOcc (by simp [threadOccupiesCore, hEq'])
+        simp [this]
     · have hne : d ≠ c := fun h => (List.nodup_cons.mp hnd).1 (h ▸ hIn)
       rw [List.foldl_cons, ih _ hIn (List.nodup_cons.mp hnd).2]
-      simp [removeRunnableStepOnCore, SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hne,
-        SchedulerState.setRunQueueOnCore_currentOnCore]
+      by_cases hOccD : threadOccupiesCore st tid d = true
+      · rw [removeRunnableStepOnCore, if_pos hOccD]
+        simp [SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hne,
+          SchedulerState.setRunQueueOnCore_currentOnCore]
+      · rw [removeRunnableStepOnCore, if_neg hOccD]
 
 /-- WS-SM SM8.B: the sweep's closed form — **every** core's run queue comes back
 with the thread removed. -/
 @[simp] theorem removeRunnableFromAllCores_runQueueOnCore (st : SystemState)
     (tid : SeLe4n.ThreadId) (c : SeLe4n.Kernel.Concurrency.CoreId) :
     (removeRunnableFromAllCores st tid).scheduler.runQueueOnCore c
-      = (st.scheduler.runQueueOnCore c).remove tid :=
+      = if threadOccupiesCore st tid c then (st.scheduler.runQueueOnCore c).remove tid
+        else st.scheduler.runQueueOnCore c :=
   foldl_removeRunnableStepOnCore_runQueueOnCore_mem _ tid c st
     (SeLe4n.Kernel.Concurrency.mem_allCores c)
     SeLe4n.Kernel.Concurrency.allCores_nodup
@@ -248,7 +327,14 @@ theorem removeRunnableFromAllCores_not_mem (st : SystemState) (tid : SeLe4n.Thre
     (c : SeLe4n.Kernel.Concurrency.CoreId) :
     ¬ (tid ∈ (removeRunnableFromAllCores st tid).scheduler.runQueueOnCore c) := by
   rw [removeRunnableFromAllCores_runQueueOnCore]
-  exact RunQueue.not_mem_remove_self _ _
+  -- Occupied: the removal takes it out.  Unoccupied: it was never there — the
+  -- guard's `false` gives exactly that, since occupancy includes queue
+  -- membership.
+  split
+  · exact RunQueue.not_mem_remove_self _ _
+  · next hOcc =>
+    intro hMem
+    exact hOcc (by simp [threadOccupiesCore, RunQueue.mem_iff_contains.mp hMem])
 
 /-- WS-SM SM8.B: the sweep only ever removes — it never introduces a thread. -/
 theorem removeRunnableFromAllCores_flat_subset (st : SystemState)
@@ -256,7 +342,9 @@ theorem removeRunnableFromAllCores_flat_subset (st : SystemState)
     (h : x ∈ ((removeRunnableFromAllCores st tid).scheduler.runQueueOnCore c).flat) :
     x ∈ (st.scheduler.runQueueOnCore c).flat := by
   rw [removeRunnableFromAllCores_runQueueOnCore] at h
-  exact (List.mem_filter.mp h).1
+  split at h
+  · exact (List.mem_filter.mp h).1
+  · exact h
 
 /-- WS-SM SM8.B: the sweep is scheduler-only — every other field frames, by
 induction over the core list rather than by reducing it. -/
@@ -272,8 +360,19 @@ theorem foldl_removeRunnableStepOnCore_frame
   | cons d ds ih =>
     intro st
     obtain ⟨h1, h2, h3, h4⟩ := ih (removeRunnableStepOnCore tid st d)
-    exact ⟨by rw [List.foldl_cons, h1]; rfl, by rw [List.foldl_cons, h2]; rfl,
-           by rw [List.foldl_cons, h3]; rfl, by rw [List.foldl_cons, h4]; rfl⟩
+    -- The step frames all four fields in *both* guard branches: the taken one
+    -- writes only `scheduler`, the untaken one writes nothing.
+    have hStep : ∀ (s : SystemState) (e : SeLe4n.Kernel.Concurrency.CoreId),
+        (removeRunnableStepOnCore tid s e).objects = s.objects
+        ∧ (removeRunnableStepOnCore tid s e).lifecycle = s.lifecycle
+        ∧ (removeRunnableStepOnCore tid s e).machine = s.machine
+        ∧ (removeRunnableStepOnCore tid s e).tlbShootdown = s.tlbShootdown := by
+      intro s e
+      unfold removeRunnableStepOnCore
+      split <;> exact ⟨rfl, rfl, rfl, rfl⟩
+    obtain ⟨g1, g2, g3, g4⟩ := hStep st d
+    exact ⟨by rw [List.foldl_cons, h1, g1], by rw [List.foldl_cons, h2, g2],
+           by rw [List.foldl_cons, h3, g3], by rw [List.foldl_cons, h4, g4]⟩
 
 @[simp] theorem removeRunnableFromAllCores_objects (st : SystemState)
     (tid : SeLe4n.ThreadId) :
