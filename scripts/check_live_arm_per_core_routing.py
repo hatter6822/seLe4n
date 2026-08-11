@@ -168,8 +168,23 @@ BOOT_WRITE_CALLEES = [
     # its current thread.
     f"set{f[0].upper()}{f[1:]}OnCore" for f in PER_CORE_FIELDS
 ]
+# Round 28: the character budget is gone.  Whitespace normalization fixed the
+# wrapped-argument case but left the gap measured in characters, so a call
+# whose state argument is a long composed expression pushed `bootCoreId` past
+# 100 characters and out of reach -- the same under-reach one spelling further
+# out, for the fourth time on this gate.
+#
+# The budget is now in ARGUMENTS, not characters: a parenthesized expression is
+# one argument however long it is.  Unlike the accessors, a mutator's core is
+# not always last (`setCurrentOnCore bootCoreId none` puts it first), so
+# `bootCoreId` is accepted as any of the first six arguments and the match does
+# not anchor what follows.  Keeping each intervening token a well-formed
+# argument is what still rejects an unrelated `bootCoreId` further down the
+# body -- `==` or `)).getD` between them breaks the chain, which is how the
+# `determineExecutingCore` false positive stays excluded.
+_ARG_ONE = rf"\s+(?:{_PAREN}|[A-Za-z_][A-Za-z0-9_.']*)(?:\.[A-Za-z_][A-Za-z0-9_.']*)?"
 BOOT_WRITES = [
-    re.compile(rf"\b{callee}\b.{{0,100}}?\bbootCoreId\b")
+    re.compile(rf"\b{callee}\b(?:{_ARG_ONE}){{0,6}}\s+{_BOOT}\b")
     for callee in BOOT_WRITE_CALLEES
 ]
 
@@ -490,6 +505,18 @@ def main() -> int:
             ("setDomainScheduleIndexOnCore bootCoreId 0", True),
             ("setDomainTimeRemainingOnCore bootCoreId n", True),
             ("setLastTimeoutErrorsOnCore bootCoreId []", True),
+            # Round 28: a long composed argument.  Under the old 100-character
+            # budget this was invisible; as one parenthesized argument it is
+            # caught regardless of length.
+            ("removeRunnableOnCore (rebuild (merge alphaState betaState) "
+             "(collate gammaQueue deltaQueue epsilonQueue) "
+             "(resolve zetaBinding etaBinding thetaBinding iotaBinding) "
+             "(finalize kappaSnapshot lambdaSnapshot muSnapshot)) "
+             "targetThreadId bootCoreId", True),
+            ("setCurrentOnCore (project (compose one two three four five six "
+             "seven eight nine ten eleven twelve)).scheduler bootCoreId", True),
+            # ... and a distant, unrelated mention still is not a finding.
+            ("removeRunnableOnCore st tid c\n  let other := lookup bootCoreId", False),
         ]
         # Round 25: the derivation must see every per-core slot.  A parse that
         # silently returns a subset is the failure mode the hand-written list
