@@ -300,7 +300,7 @@ def strip_comments(body: str) -> str:
     return "\n".join(l for l in body.split("\n") if not l.strip().startswith("--"))
 
 
-def normalize_ws(body: str) -> str:
+def collapse_whitespace(body: str) -> str:
     """Collapse every whitespace run to one space.
 
     PR #861 review round 24: the boot-*write* patterns first shipped with
@@ -343,7 +343,7 @@ def scan(percore: dict[str, str], bodies: dict[str, str], depth: int,
                             continue
                         findings.append((sid, name, pat.pattern,
                                          "reads the boot core's scheduler slot directly"))
-                flat = normalize_ws(body)
+                flat = collapse_whitespace(body)
                 for pat in BOOT_WRITES:
                     if pat.search(flat):
                         if (sid, pat.pattern) in allow:
@@ -421,7 +421,7 @@ def main() -> int:
             ("switchToThreadOnCore st tid\n  (determineTargetCore st tid)", False),
         ]
         for probe, want in write_probes:
-            got = any(pat.search(normalize_ws(probe)) for pat in BOOT_WRITES)
+            got = any(pat.search(collapse_whitespace(probe)) for pat in BOOT_WRITES)
             if got != want:
                 verb = "missed" if want else "false-positived on"
                 print(f"[per-core-routing] SELF-TEST FAIL: boot-write patterns "
