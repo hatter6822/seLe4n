@@ -1527,6 +1527,151 @@ theorem currentSlotChangeSgis_fires_on_change (pre post : SystemState)
     simp only [Bool.and_eq_true, bne_iff_ne, ne_eq]
     exact ⟨hne, hChanged⟩⟩, rfl⟩
 
+/-- WS-SM SM8.B (PR #861 review round 17): did this transition **vacate the
+executing core** — leave it with no current thread when it had one?
+
+The local half of `currentSlotChangeSgis`.  That rule pokes every *remote* core
+whose `current` slot changed and excludes the executing core by construction,
+for the correct reason — a core does not send itself an interrupt, it runs the
+handler inline.  The inline half was never built, so the exclusion was total: a
+core that vacated its own slot ran no scheduler at all.
+
+Gated on the **change**, not on the post-state alone.  `post.current = none` by
+itself would fire on a core that was already idle before the syscall, which is
+not a vacated core and needs no reschedule; and firing unconditionally would add
+preemption points that do not exist today, since
+`handleRescheduleSgiOnCore` switches whenever a candidate outranks the current
+thread. -/
+def localSuccessorNeeded (pre post : SystemState) (execCore : CoreId) : Bool :=
+  (pre.scheduler.currentOnCore execCore != none) &&
+    (post.scheduler.currentOnCore execCore == none)
+
+/-- WS-SM SM8.B (PR #861 review round 17): **run the executing core's scheduler
+when the transition vacated it.**
+
+Every blocking leg of the IPC surface — `endpointSendDualOnCore` on the block
+path, `endpointReceiveDualOnCore`, `endpointCallOnCore`,
+`notificationWaitOnCore` — clears the caller's `current` slot and stops.
+Nothing then selects a successor: the timer tick cannot
+(`timerTickOnCore_eq_prepared`'s `none` arm returns the prepared state
+untouched, and `processReplenishmentsDueOnCore_currentOnCore_eq` says the
+prepared state leaves the slot alone), and the SGI list deliberately excludes
+the executing core.  The core therefore idles with a populated run queue until
+some *other* core happens to poke it — a liveness defect, and a denial of
+service when no other core does.
+
+Stated as a **pure state function** so every property below is a theorem about a
+pure function, in the project's style; the `BaseIO` entry seam calls it once.
+
+The `.error` arm keeps the committed post-state (fail-closed: a reschedule that
+cannot pick a successor must not discard the transition that just committed).
+It is reachable only through `switchToThreadOnCore`'s own rejections — the
+*selection* side is total, since `chooseBestRunnableEffective_always_ok` (this
+PR, review round 15) made the scan skip a non-TCB entry rather than fail.  That
+is what lets this be stated without a scheduler-invariant hypothesis. -/
+def scheduleLocalSuccessor (pre post : SystemState) (execCore : CoreId) : SystemState :=
+  if localSuccessorNeeded pre post execCore then
+    match handleRescheduleSgiOnCore post execCore with
+    | .ok st => st
+    | .error _ => post
+  else post
+
+/-- WS-SM SM8.B: the rule is **inert unless the executing core was vacated** —
+so a transition that left the slot alone, or that rescheduled the core itself,
+passes through unchanged. -/
+@[simp] theorem scheduleLocalSuccessor_of_not_needed (pre post : SystemState) (execCore : CoreId)
+    (h : localSuccessorNeeded pre post execCore = false) :
+    scheduleLocalSuccessor pre post execCore = post := by
+  unfold scheduleLocalSuccessor
+  simp [h]
+
+/-- WS-SM SM8.B: in particular, inert when the core was **already idle** before
+the transition.  A core with nothing to run is not a vacated core. -/
+theorem scheduleLocalSuccessor_of_pre_idle (pre post : SystemState) (execCore : CoreId)
+    (h : pre.scheduler.currentOnCore execCore = none) :
+    scheduleLocalSuccessor pre post execCore = post := by
+  apply scheduleLocalSuccessor_of_not_needed
+  unfold localSuccessorNeeded
+  simp [h]
+
+/-- WS-SM SM8.B: and inert when the transition **left a thread running** on the
+executing core.
+
+This is what makes it safe to apply the rule at *every* entry, including
+`suspendThreadCrossCoreEntry`, whose transition already runs its own scheduling
+point (`suspendRescheduleOnCore`): where a transition rescheduled the core
+itself, the post-state slot is populated and this rule does not fire.  The two
+mechanisms cannot both dispatch. -/
+theorem scheduleLocalSuccessor_of_post_running (pre post : SystemState) (execCore : CoreId)
+    (tid : SeLe4n.ThreadId) (h : post.scheduler.currentOnCore execCore = some tid) :
+    scheduleLocalSuccessor pre post execCore = post := by
+  apply scheduleLocalSuccessor_of_not_needed
+  unfold localSuccessorNeeded
+  simp [h]
+
+/-- WS-SM SM8.B: the two halves of the guard, forward. -/
+theorem localSuccessorNeeded_post_none (pre post : SystemState) (execCore : CoreId)
+    (h : localSuccessorNeeded pre post execCore = true) :
+    post.scheduler.currentOnCore execCore = none := by
+  unfold localSuccessorNeeded at h
+  simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, beq_iff_eq] at h
+  exact h.2
+
+theorem localSuccessorNeeded_pre_some (pre post : SystemState) (execCore : CoreId)
+    (h : localSuccessorNeeded pre post execCore = true) :
+    pre.scheduler.currentOnCore execCore ≠ none := by
+  unfold localSuccessorNeeded at h
+  simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, beq_iff_eq] at h
+  exact h.1
+
+/-- WS-SM SM8.B: a vacated core admits **any** candidate — the preemption gate's
+`none` arm.  There is no incumbent to outrank, so the comparison the gate would
+otherwise make does not arise. -/
+theorem candidateOutranksCurrentOnCore_of_vacated (post : SystemState) (execCore : CoreId)
+    (tid : SeLe4n.ThreadId) (h : post.scheduler.currentOnCore execCore = none) :
+    candidateOutranksCurrentOnCore post execCore tid = true := by
+  unfold candidateOutranksCurrentOnCore
+  rw [h]
+
+/-- WS-SM SM8.B (**the headline**): a vacated core **dispatches its successor**.
+
+When the transition left the executing core with no current thread and that
+core's run queue holds a budget-eligible candidate, the post-entry state has
+that candidate running.  This is the property whose absence was the defect: the
+same premises previously left `current = none` with the queue untouched, and
+nothing in the system would have changed that before the next unrelated
+cross-core poke.
+
+`hOutrank` — the premise its cross-core sibling
+`wakeThread_then_handle_dispatches_current` has to assume — is *discharged*
+here rather than assumed, because a vacated core has no incumbent. -/
+theorem scheduleLocalSuccessor_dispatches (pre post : SystemState) (execCore : CoreId)
+    (tid : SeLe4n.ThreadId) (st' : SystemState)
+    (hNeeded : localSuccessorNeeded pre post execCore = true)
+    (hChosen : chooseThreadEffectiveOnCore post execCore = .ok (some tid))
+    (hSwitch : switchToThreadOnCore post execCore tid = .ok st') :
+    (scheduleLocalSuccessor pre post execCore).scheduler.currentOnCore execCore = some tid := by
+  have hOutrank : candidateOutranksCurrentOnCore post execCore tid = true :=
+    candidateOutranksCurrentOnCore_of_vacated post execCore tid
+      (localSuccessorNeeded_post_none pre post execCore hNeeded)
+  have hHandle : handleRescheduleSgiOnCore post execCore = .ok st' := by
+    rw [handleRescheduleSgiOnCore_eq_switch_of_choose_some post execCore tid hChosen hOutrank]
+    exact hSwitch
+  unfold scheduleLocalSuccessor
+  rw [if_pos hNeeded, hHandle]
+  exact handleRescheduleSgiOnCore_switches_current post execCore tid st' hChosen hOutrank hHandle
+
+/-- WS-SM SM8.B: and the selection side cannot be what blocks it.  A vacated
+core whose run queue holds no budget-eligible thread keeps the committed
+post-state — the honest idle outcome, distinct from the defect it replaces
+(which idled a core whose queue *did* hold an eligible thread). -/
+theorem scheduleLocalSuccessor_idle_of_no_candidate (pre post : SystemState) (execCore : CoreId)
+    (hChosen : chooseThreadEffectiveOnCore post execCore = .ok none) :
+    scheduleLocalSuccessor pre post execCore = post := by
+  unfold scheduleLocalSuccessor handleRescheduleSgiOnCore
+  rw [hChosen]
+  split <;> rfl
+
 /-- WS-SM SM5.F.4: the dispatch body emits only `.reschedule` SGIs. -/
 theorem crossCoreSgiBody_reschedule (pre post : SystemState) (ec : CoreId) (oid : ObjId)
     (p : CoreId × SgiKind) (h : crossCoreSgiBody pre post ec oid = some p) :

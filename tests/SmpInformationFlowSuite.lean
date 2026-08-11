@@ -627,6 +627,24 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @SeLe4n.Kernel.PriorityInheritance.currentSlotChangeSgis_fires_on_change
 #check @SeLe4n.Kernel.removeRunnableFromAllCores_currentOnCore
 #check @SeLe4n.Kernel.foldl_removeRunnableStepOnCore_currentOnCore
+-- Round 17: the LOCAL half of that rule — a core does not interrupt itself, it
+-- runs the handler inline, and the inline half did not exist.
+#check @SeLe4n.Kernel.PriorityInheritance.localSuccessorNeeded
+#check @SeLe4n.Kernel.PriorityInheritance.localSuccessorNeeded_post_none
+#check @SeLe4n.Kernel.PriorityInheritance.localSuccessorNeeded_pre_some
+#check @SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessor
+#check @SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessor_of_not_needed
+#check @SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessor_of_pre_idle
+#check @SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessor_of_post_running
+#check @SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessor_dispatches
+#check @SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessor_idle_of_no_candidate
+#check @SeLe4n.Kernel.PriorityInheritance.candidateOutranksCurrentOnCore_of_vacated
+-- Round 17: and the fact that makes the gap a defect rather than a latency
+-- question — the periodic tick provably cannot cover for it.
+#check @SeLe4n.Kernel.processOneReplenishmentOnCore_currentOnCore_eq
+#check @SeLe4n.Kernel.processReplenishmentsDueOnCore_currentOnCore_eq
+#check @SeLe4n.Kernel.timerTickOnCorePrepared_currentOnCore_eq
+#check @SeLe4n.Kernel.timerTickOnCore_cannot_dispatch_vacated_core
 -- Round 16: the send bridge that actually mentions the single-core transition.
 #check @SeLe4n.Kernel.endpointSendDualOnCore_absent_endpoint
 #check @SeLe4n.Kernel.endpointSendDualOnCore_bootCore_block_eq_single
@@ -2652,6 +2670,73 @@ private def runResolvedFlowGateChecks : IO Unit := do
   assertBool "NEGATIVE: a core with a subject and an idle core decide differently"
     (decide (gateAt crossCoreState c0 ≠ gateAt crossCoreState c3))
 
+-- ---------------------------------------------------------------------------
+-- §5.5 fixtures — the vacated core.  `probeState` already has exactly the shape
+-- the defect needs: core 0 runs `lowCurrent` with `lowQueued` waiting in its run
+-- queue.  A blocking send by the current thread vacates the core; the question
+-- is whether anything then dispatches `lowQueued`.
+-- ---------------------------------------------------------------------------
+
+private def vacatingSendMsg : IpcMessage :=
+  { registers := #[], caps := #[], badge := none }
+
+/-- The blocking send: `lowEndpoint` has no receiver, so `lowCurrent` parks on
+its send queue and `removeRunnableOnCore` clears core 0's `current` slot. -/
+private def vacatedPost : SystemState :=
+  (SeLe4n.Kernel.endpointSendDualOnCore lowEndpoint lowCurrent vacatingSendMsg c0 niState).1
+
+/-- The same state after the entry seam's local reschedule. -/
+private def vacatedRescheduled : SystemState :=
+  SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessor niState vacatedPost c0
+
+/-- §5.5  The vacated core (review round 17).
+
+The defect and its fix, computed on a real blocking send rather than argued.
+The negative here is the *defect itself*: the committed transition leaves core 0
+with no current thread while its run queue still holds an eligible one, and
+neither the SGI list nor the timer tick changes that. -/
+private def runVacatedCoreChecks : IO Unit := do
+  IO.println "--- §5.5 the vacated core: a blocking send must leave a successor ---"
+  -- The fixture is what we think it is.
+  assertBool "core 0 starts with a current thread and a non-empty run queue"
+    (decide (niState.scheduler.currentOnCore c0 = some lowCurrent) &&
+     decide ((niState.scheduler.runQueueOnCore c0).toList ≠ []))
+  -- The send really blocks — without this the whole group is inert.
+  assertBool "the send blocks: core 0's current slot is cleared"
+    (decide (vacatedPost.scheduler.currentOnCore c0 = none))
+  assertBool "…and the sender is parked on the endpoint, not merely dequeued"
+    (match vacatedPost.getTcb? lowCurrent with
+     | some tcb => decide (tcb.ipcState = .blockedOnSend lowEndpoint)
+     | none => false)
+  -- NEGATIVE — the defect.  This is the state the kernel committed before this
+  -- cut: a core with nothing running and a runnable thread queued on it.
+  assertBool "NEGATIVE: the raw transition strands an eligible thread on an idle core"
+    (decide (vacatedPost.scheduler.currentOnCore c0 = none) &&
+     decide ((vacatedPost.scheduler.runQueueOnCore c0).toList ≠ []))
+  -- …and neither of the two mechanisms that might have covered for it does.
+  assertBool "NEGATIVE: the SGI diff does not poke the executing core"
+    (SeLe4n.Kernel.PriorityInheritance.computeCrossCoreSgis niState vacatedPost c0
+      |>.all (fun p => decide (p.1 ≠ c0)))
+  assertBool "NEGATIVE: a timer tick on the vacated core still leaves it idle"
+    (match SeLe4n.Kernel.timerTickOnCore vacatedPost c0 with
+     | .ok res => decide (res.1.scheduler.currentOnCore c0 = none)
+     | .error _ => false)
+  -- The fix: the entry seam's local reschedule dispatches the queued thread.
+  assertBool "the local reschedule dispatches the queued thread"
+    (decide (vacatedRescheduled.scheduler.currentOnCore c0 = some lowQueued))
+  assertBool "…and takes it out of the run queue (dequeue-on-dispatch)"
+    (decide ((vacatedRescheduled.scheduler.runQueueOnCore c0).toList = []))
+  -- The guard is a guard: the rule is inert where the core still runs something.
+  assertBool "NEGATIVE: the rule is inert when the transition left a thread running"
+    (decide (SeLe4n.Kernel.PriorityInheritance.localSuccessorNeeded niState niState c0 = false))
+  -- …and on a core that was already idle the guard is false, so an idle core is
+  -- never mistaken for a vacated one.  Stated on the guard rather than on the
+  -- resulting slot: core 3 has an empty run queue, so "still idle afterwards"
+  -- would hold whether the rule fired or not.
+  assertBool "NEGATIVE: and inert on a core that was already idle before the send"
+    (decide (SeLe4n.Kernel.PriorityInheritance.localSuccessorNeeded niState vacatedPost c3
+      = false))
+
 /-- §4.1  Cross-core non-interference (plan Theorem 3.3.1). -/
 private def runCrossCoreNonInterferenceChecks : IO Unit := do
   IO.println "--- §4.1 crossCoreNonInterference (plan Thm 3.3.1) ---"
@@ -3058,6 +3143,7 @@ def runSmpInformationFlowChecks : IO Unit := do
   runRunQueueComparisonChecks
   runCoreSetAlgebraChecks
   runResolvedFlowGateChecks
+  runVacatedCoreChecks
   IO.println "===================================="
   IO.println "All SM8.A per-core observable-state and SM8.B non-interference checks PASS."
 

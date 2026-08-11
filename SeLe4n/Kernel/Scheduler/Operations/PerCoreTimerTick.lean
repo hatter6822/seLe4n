@@ -1172,6 +1172,51 @@ theorem processReplenishmentsDueOnCore_lastTimeoutErrorsOnCore_eq (st : SystemSt
   rw [key]
   simp [SchedulerState.setReplenishQueueOnCore_lastTimeoutErrorsOnCore]
 
+/-- WS-SM SM5.D.4: `processOneReplenishmentOnCore` leaves every core's `current`
+slot unchanged — it refills a SchedContext and may *enqueue* a woken thread, but
+enqueueing is not dispatching. -/
+theorem processOneReplenishmentOnCore_currentOnCore_eq (st : SystemState) (ec : CoreId)
+    (scId : SeLe4n.SchedContextId) (now : Nat) (c' : CoreId) :
+    (processOneReplenishmentOnCore st ec scId now).1.scheduler.currentOnCore c'
+      = st.scheduler.currentOnCore c' := by
+  simp only [processOneReplenishmentOnCore]
+  split
+  · split
+    · rw [refillSchedContext_scheduler_eq]
+    · rw [wakeThread_state_eq_enqueue, enqueueRunnableOnCore_currentOnCore,
+        refillSchedContext_scheduler_eq]
+  · rw [refillSchedContext_scheduler_eq]
+
+/-- WS-SM SM8.B (PR #861 review round 17): `processReplenishmentsDueOnCore`
+leaves every core's `current` slot unchanged.
+
+This is the load-bearing half of *the timer tick cannot rescue a vacated core*.
+`timerTickOnCore_eq_prepared`'s `| none =>` arm — the arm taken exactly when the
+core has no current thread — returns `timerTickOnCorePrepared` verbatim, and the
+prepared state is the timeout-error clear composed with this replenishment pass.
+Neither writes `current`, so a core that entered the tick vacated leaves it
+vacated, however many ticks elapse.  Without this the round-17 defect would be a
+latency question ("the next tick picks it up"); with it, nothing in the system
+dispatches that core until some *other* core happens to poke it. -/
+theorem processReplenishmentsDueOnCore_currentOnCore_eq (st : SystemState)
+    (c : CoreId) (now : Nat) (c' : CoreId) :
+    (processReplenishmentsDueOnCore st c now).1.scheduler.currentOnCore c'
+      = st.scheduler.currentOnCore c' := by
+  simp only [processReplenishmentsDueOnCore]
+  generalize ((st.scheduler.replenishQueueOnCore c).popDue now).2 = dueIds
+  have key : ∀ acc : SystemState × List (CoreId × SgiKind),
+      (dueIds.foldl (fun acc scId =>
+        let (s, sgi?) := processOneReplenishmentOnCore acc.1 c scId now
+        (s, acc.2 ++ sgi?.toList)) acc).1.scheduler.currentOnCore c'
+      = acc.1.scheduler.currentOnCore c' := by
+    intro acc
+    induction dueIds generalizing acc with
+    | nil => rfl
+    | cons hd tl ih => rw [List.foldl_cons, ih]
+                       exact processOneReplenishmentOnCore_currentOnCore_eq acc.1 c hd now c'
+  rw [key]
+  simp [SchedulerState.setReplenishQueueOnCore_currentOnCore]
+
 /-- WS-SM SM5.D.6: `decrementDomainTimeOnCore` leaves every core's
 `lastTimeoutErrors` slot unchanged (it writes only domain slots). -/
 theorem decrementDomainTimeOnCore_lastTimeoutErrorsOnCore (st : SystemState) (c c' : CoreId) :
@@ -1239,6 +1284,42 @@ theorem timerTickOnCorePrepared_lastTimeoutErrors_eq (st : SystemState) (c : Cor
   simp only [timerTickOnCorePrepared]
   rw [processReplenishmentsDueOnCore_lastTimeoutErrorsOnCore_eq]
   simp [SchedulerState.setLastTimeoutErrorsOnCore_lastTimeoutErrorsOnCore_self]
+
+/-- WS-SM SM8.B (PR #861 review round 17): the prepared state does not dispatch —
+it leaves every core's `current` slot exactly as it found it. -/
+theorem timerTickOnCorePrepared_currentOnCore_eq (st : SystemState) (c c' : CoreId) :
+    (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c'
+      = st.scheduler.currentOnCore c' := by
+  simp only [timerTickOnCorePrepared]
+  rw [processReplenishmentsDueOnCore_currentOnCore_eq]
+  simp [SchedulerState.setLastTimeoutErrorsOnCore_currentOnCore]
+
+/-- WS-SM SM8.B (PR #861 review round 17): **the timer tick cannot rescue a
+vacated core.**
+
+A core that enters its tick with no current thread leaves it with no current
+thread — however many ticks elapse, and regardless of what its run queue holds.
+`timerTickOnCore` branches on exactly that slot
+(`timerTickOnCore_eq_prepared`), and its `none` arm returns the prepared state
+verbatim: a timeout-error clear and a replenishment pass, neither of which
+dispatches.  Every scheduling decision the tick can make lives in the `some`
+arm, behind the current thread it does not have.
+
+This is what makes the round-17 finding a defect rather than a latency
+question.  The blocking IPC legs vacate the caller's core; the cross-core SGI
+list excludes it by construction (`currentSlotChangeSgis_not_execCore`); and by
+this theorem the periodic tick does not cover for either.  Absent the
+`scheduleLocalSuccessor` seam, nothing dispatches that core until some
+*unrelated* transition on *another* core happens to poke it. -/
+theorem timerTickOnCore_cannot_dispatch_vacated_core (st : SystemState) (c : CoreId)
+    (res : SystemState × List (CoreId × SgiKind))
+    (hIdle : st.scheduler.currentOnCore c = none)
+    (hTick : timerTickOnCore st c = .ok res) :
+    res.1.scheduler.currentOnCore c = none := by
+  rw [timerTickOnCore_eq_prepared] at hTick
+  rw [timerTickOnCorePrepared_currentOnCore_eq st c c, hIdle] at hTick
+  simp only [Except.ok.injEq] at hTick
+  rw [← hTick, timerTickOnCorePrepared_currentOnCore_eq, hIdle]
 
 /-- WS-SM SM5.D.2 (preservation): the prepared state preserves the object-store
 invariant (the SM5.D.4 replenishment preserves it). -/

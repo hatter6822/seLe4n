@@ -519,7 +519,29 @@ shootdown round(s) the commit posted (`completeShootdownRounds`, recovered from
 the `tlbShootdown` diff; inert for every non-shootdown syscall).  Returns the
 ABI-encoded result word
 (every kernel rejection is encoded into the success word with bit 63 set, so the
-pure dispatch never takes the `.error` arm; the arm is discharged inertly). -/
+pure dispatch never takes the `.error` arm; the arm is discharged inertly).
+
+**WS-SM SM8.B (PR #861 review round 17): the local half of the reschedule.**
+`PriorityInheritance.scheduleLocalSuccessor` runs *inside* the atomic step,
+before the diffs are taken, and dispatches a successor when the transition
+vacated this core (`localSuccessorNeeded`).  It is the inline dual of
+`currentSlotChangeSgis`, which pokes every *remote* core whose `current` slot
+changed and excludes the executing core by construction — correctly, since a
+core does not interrupt itself, it runs the handler inline.  That inline half
+did not exist: every blocking IPC leg cleared the caller's slot and nothing
+selected a successor, and the periodic tick provably cannot cover for it
+(`timerTickOnCore_cannot_dispatch_vacated_core`).
+
+Two properties of the placement are load-bearing.  It is **inside** the
+`modifyGetKernelState` closure, so the successor is dispatched in the same
+atomic step that commits the transition — a second `modifyGetKernelState` would
+be a separate read-modify-write another core could interleave with.  And the
+SGI, shootdown and I-cache diffs are taken against the **final** state `st''`
+rather than the pre-reschedule `st'`, so what the hardware is told to do
+describes the state that was actually committed;
+`handleRescheduleSgiOnCore` writes the executing core's register bank as well as
+its scheduler slots.  Inert (`st'' = st'`) for every syscall that left a thread
+running on this core — including every arm of a single-core build. -/
 @[export lean_syscall_dispatch_cross_core]
 def syscallDispatchCrossCoreEntry
     (syscallId : UInt32) (msgInfo : UInt64)
@@ -531,12 +553,13 @@ def syscallDispatchCrossCoreEntry
     match Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
         ipcBufferAddr st with
     | Except.ok (encoded, st') =>
-        ((encoded, PriorityInheritance.computeCrossCoreSgis st st' execCore,
-          Architecture.shootdownChangedTargets st st',
-          Architecture.shootdownPostedOps st st',
-          Architecture.shootdownRoundWindow st st',
-          st'.pendingIcacheMaintenance),
-         Architecture.clearIcacheMaintenance st')
+        let st'' := PriorityInheritance.scheduleLocalSuccessor st st' execCore
+        ((encoded, PriorityInheritance.computeCrossCoreSgis st st'' execCore,
+          Architecture.shootdownChangedTargets st st'',
+          Architecture.shootdownPostedOps st st'',
+          Architecture.shootdownRoundWindow st st'',
+          st''.pendingIcacheMaintenance),
+         Architecture.clearIcacheMaintenance st'')
     | Except.error e =>
         ((Platform.FFI.encodeError e, ([] : List (CoreId × SgiKind)),
           ([] : List CoreId),
@@ -574,12 +597,13 @@ theorem syscallDispatchCrossCoreEntry_def
           match Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
               ipcBufferAddr st with
           | Except.ok (encoded, st') =>
-              ((encoded, PriorityInheritance.computeCrossCoreSgis st st' execCore,
-                Architecture.shootdownChangedTargets st st',
-                Architecture.shootdownPostedOps st st',
-                Architecture.shootdownRoundWindow st st',
-                st'.pendingIcacheMaintenance),
-               Architecture.clearIcacheMaintenance st')
+              let st'' := PriorityInheritance.scheduleLocalSuccessor st st' execCore
+              ((encoded, PriorityInheritance.computeCrossCoreSgis st st'' execCore,
+                Architecture.shootdownChangedTargets st st'',
+                Architecture.shootdownPostedOps st st'',
+                Architecture.shootdownRoundWindow st st'',
+                st''.pendingIcacheMaintenance),
+               Architecture.clearIcacheMaintenance st'')
           | Except.error e =>
               ((Platform.FFI.encodeError e, ([] : List (CoreId × SgiKind)),
                 ([] : List CoreId),
@@ -672,12 +696,23 @@ def suspendThreadCrossCoreEntry (tid : UInt64) : BaseIO UInt32 := do
         -- before under the SM5.I kernel-entry lock.  Falling back is
         -- always sound; claiming a footprint that does not cover a write
         -- would not be.
+        --
+        -- **WS-SM SM8.B (review round 17)**: the local reschedule applies here
+        -- too, and is *self-disabling* on this path —
+        -- `suspendThreadOnCore` runs its own scheduling point
+        -- (`suspendRescheduleOnCore`), so where it dispatched a successor the
+        -- post-state slot is populated and `localSuccessorNeeded` is false
+        -- (`scheduleLocalSuccessor_of_post_running`).  The two mechanisms
+        -- cannot both dispatch.  It is applied anyway rather than reasoned
+        -- away, so that the entry seams do not disagree about who is
+        -- responsible for a vacated core.
         let action : SystemState →
             SystemState × (UInt32 × List (CoreId × SgiKind)) := fun s =>
           match Lifecycle.Suspend.suspendThreadOnCore s vtid execCore with
           | Except.ok (s', _) =>
-              (s', ((0 : UInt32),
-                    PriorityInheritance.computeCrossCoreSgis s s' execCore))
+              let s'' := PriorityInheritance.scheduleLocalSuccessor s s' execCore
+              (s'', ((0 : UInt32),
+                    PriorityInheritance.computeCrossCoreSgis s s'' execCore))
           | Except.error e =>
               (s, (Platform.FFI.KernelError.toUInt32 e,
                    ([] : List (CoreId × SgiKind))))
