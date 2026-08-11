@@ -88,7 +88,7 @@ architectural improvements enabled by the Lean 4 proof framework:
 |-----------|-------|
 | **Version** | `0.33.5` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 253,339 across 273 files |
+| **Production Lean LoC** | 253,350 across 273 files |
 | **Test Lean LoC** | 51,998 across 68 test suites |
 | **Proved declarations** | 8,421 theorem/lemma declarations (zero sorry/axiom) |
 | **Rust crates** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) across 48 source files |

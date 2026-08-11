@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/sm8b-per-core-ni-proofs-3ogvws",
-      "commit_sha": "cecb42e04c9b0778616149bfdb7e723a89f9a2ce",
-      "tree_sha": "89ed373ced16dd9a59d7817e0e5ced810aecd144",
-      "committed_at_utc": "2026-08-11T21:00:55+00:00"
+      "commit_sha": "d9d46373810eca1315ff11c9c19f5caa10be94f7",
+      "tree_sha": "64f6a4783e459926fff883aeffeb70f83605c066",
+      "committed_at_utc": "2026-08-11T21:40:22+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "37c43853b7e83039d0644fcf3bc081b77439854b89d3186ebc5107ffa460b2ba"
+    "source_digest": "bc86b2b35cf7d308b71a8e651b8b71cf4b94493927775e18a7fedc5c940b3afa"
   },
   "summary": {
     "module_count": 341,
@@ -27,7 +27,7 @@
     "version": "0.33.5",
     "lean_toolchain": "v4.28.0",
     "production_files": 273,
-    "production_loc": 253339,
+    "production_loc": 253350,
     "test_files": 68,
     "test_loc": 51998,
     "proved_theorem_lemma_decls": 8421,
@@ -147745,7 +147745,7 @@
         {
           "kind": "def",
           "name": "scheduleLocalSuccessorLive",
-          "line": 1647,
+          "line": 1658,
           "called": [
             "CoreId",
             "SystemState",
@@ -147756,7 +147756,7 @@
         {
           "kind": "theorem",
           "name": "scheduleLocalSuccessorLive_inert",
-          "line": 1652,
+          "line": 1663,
           "called": [
             "CoreId",
             "SystemState",
@@ -147766,7 +147766,7 @@
         {
           "kind": "theorem",
           "name": "scheduleLocalSuccessorLive_eq_of_seam_live",
-          "line": 1657,
+          "line": 1668,
           "called": [
             "CoreId",
             "SystemState",
@@ -147778,7 +147778,7 @@
         {
           "kind": "theorem",
           "name": "localSuccessorNeeded_post_none",
-          "line": 1665,
+          "line": 1676,
           "called": [
             "CoreId",
             "SystemState",
@@ -147790,7 +147790,7 @@
         {
           "kind": "theorem",
           "name": "localSuccessorNeeded_pre_some",
-          "line": 1672,
+          "line": 1683,
           "called": [
             "CoreId",
             "SystemState",
@@ -147802,7 +147802,7 @@
         {
           "kind": "theorem",
           "name": "candidateOutranksCurrentOnCore_of_vacated",
-          "line": 1682,
+          "line": 1693,
           "called": [
             "CoreId",
             "SystemState",
@@ -147815,7 +147815,7 @@
         {
           "kind": "theorem",
           "name": "scheduleLocalSuccessor_dispatches",
-          "line": 1700,
+          "line": 1711,
           "called": [
             "CoreId",
             "SystemState",
@@ -147836,7 +147836,7 @@
         {
           "kind": "theorem",
           "name": "scheduleLocalSuccessor_idle_of_no_candidate",
-          "line": 1720,
+          "line": 1731,
           "called": [
             "CoreId",
             "SystemState",
@@ -147849,7 +147849,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreSgiBody_reschedule",
-          "line": 1728,
+          "line": 1739,
           "called": [
             "CoreId",
             "ObjId",
@@ -147861,7 +147861,7 @@
         {
           "kind": "theorem",
           "name": "currentScan_boot_of_single_core",
-          "line": 1755,
+          "line": 1766,
           "called": [
             "CoreId",
             "SystemState",
@@ -147874,7 +147874,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreSgiBody_none_single_core",
-          "line": 1772,
+          "line": 1783,
           "called": [
             "CoreId",
             "ObjId",
@@ -147890,7 +147890,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreSgiBody_remote_wake",
-          "line": 1799,
+          "line": 1810,
           "called": [
             "CoreId",
             "ObjId",
@@ -147905,7 +147905,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreSgiBody_remote_deschedule",
-          "line": 1824,
+          "line": 1835,
           "called": [
             "CoreId",
             "ObjId",
@@ -147921,7 +147921,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreSgiBody_remote_deboost_current",
-          "line": 1849,
+          "line": 1860,
           "called": [
             "CoreId",
             "ObjId",
@@ -147938,7 +147938,7 @@
         {
           "kind": "theorem",
           "name": "computeCrossCoreSgis_all_reschedule",
-          "line": 1871,
+          "line": 1882,
           "called": [
             "CoreId",
             "SystemState",
@@ -147951,7 +147951,7 @@
         {
           "kind": "theorem",
           "name": "computeCrossCoreSgis_nil_single_core",
-          "line": 1887,
+          "line": 1898,
           "called": [
             "CoreId",
             "SystemState",
@@ -147967,7 +147967,7 @@
         {
           "kind": "def",
           "name": "crossCoreWakeDispatch",
-          "line": 1914,
+          "line": 1925,
           "called": [
             "CoreId",
             "SystemState",
@@ -147978,7 +147978,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreWakeDispatch_singleCore",
-          "line": 1918,
+          "line": 1929,
           "called": [
             "CoreId",
             "SystemState",
@@ -147994,7 +147994,7 @@
         {
           "kind": "def",
           "name": "pipChainWakeDispatch",
-          "line": 1933,
+          "line": 1944,
           "called": [
             "CoreId",
             "SystemState",
@@ -148008,7 +148008,7 @@
         {
           "kind": "theorem",
           "name": "pipChainWakeDispatch_singleCore",
-          "line": 1939,
+          "line": 1950,
           "called": [
             "SystemState",
             "ThreadId",
@@ -148024,7 +148024,7 @@
         {
           "kind": "def",
           "name": "emitBoostWakeSgi",
-          "line": 1951,
+          "line": 1962,
           "called": [
             "CoreId",
             "SgiKind",
@@ -148034,7 +148034,7 @@
         {
           "kind": "theorem",
           "name": "emitBoostWakeSgi_none",
-          "line": 1955,
+          "line": 1966,
           "called": [
             "emitBoostWakeSgi",
             "none",
@@ -148044,13 +148044,13 @@
         {
           "kind": "inductive",
           "name": "ContextSwitchSite",
-          "line": 1970,
+          "line": 1981,
           "called": []
         },
         {
           "kind": "def",
           "name": "contextSwitchSites",
-          "line": 1984,
+          "line": 1995,
           "called": [
             "ContextSwitchSite"
           ]
@@ -148058,7 +148058,7 @@
         {
           "kind": "theorem",
           "name": "contextSwitchSites_complete",
-          "line": 1990,
+          "line": 2001,
           "called": [
             "ContextSwitchSite",
             "contextSwitchSites"
@@ -148067,7 +148067,7 @@
         {
           "kind": "def",
           "name": "contextRestoreWired",
-          "line": 2023,
+          "line": 2034,
           "called": [
             "ContextSwitchSite",
             "contextRestoreSeamLive"
@@ -148076,7 +148076,7 @@
         {
           "kind": "theorem",
           "name": "contextSwitchSites_restore_pending",
-          "line": 2052,
+          "line": 2063,
           "called": [
             "contextRestoreWired",
             "contextSwitchSites",
@@ -148086,7 +148086,7 @@
         {
           "kind": "theorem",
           "name": "contextRestoreWired_none",
-          "line": 2057,
+          "line": 2068,
           "called": [
             "ContextSwitchSite",
             "contextRestoreWired"
@@ -148095,7 +148095,7 @@
         {
           "kind": "theorem",
           "name": "scheduleLocalSuccessorLive_guard_eq_register",
-          "line": 2073,
+          "line": 2084,
           "called": [
             "contextRestoreSeamLive",
             "contextRestoreWired"
@@ -148104,7 +148104,7 @@
         {
           "kind": "theorem",
           "name": "suspendReschedule_guard_eq_register",
-          "line": 2078,
+          "line": 2089,
           "called": [
             "contextRestoreSeamLive",
             "contextRestoreWired"

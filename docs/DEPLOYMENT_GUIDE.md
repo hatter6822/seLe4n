@@ -80,7 +80,7 @@ creating a bounded covert channel.
 | Metric | Value |
 |--------|-------|
 | Observable values per observation | 4 scalars |
-| Channel capacity | &le; log&#8322;(N &times; (Q+1)) &times; switchFreq bps, N = \|domainSchedule\|, Q = your countdown cap |
+| Channel capacity | &le; log&#8322;(N &times; (Q+1)) &times; tickFreq bps, N = \|domainSchedule\|, Q = your countdown cap |
 | Upper bound (N&le;16, Q&le;255, F = 1000 Hz tick) | &le; 12 bits per observation, &le; 12&nbsp;000 bits/second |
 | Realizable rate | **Not bounded by this analysis** — budget against the upper bound |
 | Without a countdown cap, or with an empty schedule | **Unbounded** — see below |
