@@ -231,6 +231,12 @@ pub mod per_cpu_stats;
 // acknowledgment; see the module docstring in `shootdown.rs` for the
 // protocol role and ordering rationale.
 pub mod shootdown;
+
+/// **WS-SM SM8.B (PR #861 review rounds 18/19)**: the context-install seam —
+/// the staging buffer the kernel fills with the incoming thread's registers
+/// and the trap handler applies to its frame before exception return.  Without
+/// it a modelled context switch never reached hardware.
+pub mod context_install;
 // WS-SM SM2.B.16: Rust TicketLock implementation refining the Lean
 // operational spec at SeLe4n/Kernel/Concurrency/Locks/TicketLock.lean.
 // FIFO spinlock with bounded wait, cache-line aligned.  Provides

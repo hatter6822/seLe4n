@@ -215,6 +215,17 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
                 Ok(retval) => frame.set_x0(retval),
                 Err(e) => frame.set_x0(e.to_u32() as u64),
             }
+            // WS-SM SM8.B (PR #861 review rounds 18/19): if the transition
+            // switched this core to a different thread, return through *that*
+            // thread's context rather than the caller's.
+            //
+            // Ordering matters: the result word is written into the caller's
+            // frame first and the install then overwrites the whole register
+            // file, so a switch discards the return value — correctly, since
+            // the value belongs to the thread that blocked, and its frame was
+            // saved into its TCB by the transition.  A syscall that returns to
+            // its caller stages nothing and this is a single relaxed load.
+            let _switched = crate::context_install::install_into_frame(frame);
         }
         ec::DABT_LOWER | ec::DABT_CURRENT => {
             // Data abort — VM fault (KernelError::VmFault = 44)

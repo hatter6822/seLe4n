@@ -461,6 +461,50 @@ opaque ffiShootdownPublishSlot :
 opaque ffiShootdownPublishCommit : (len : UInt64) → (gen : UInt64) → BaseIO Unit
 
 -- ============================================================================
+-- WS-SM SM8.B (PR #861 review rounds 18/19): context install
+-- ============================================================================
+-- The seam that makes a modelled context switch real.  Before this, every
+-- change of `currentOnCore` stayed inside `SystemState`: the SVC path returned
+-- through the *original* caller's trap frame, so hardware resumed the thread
+-- the model had just descheduled.  Staged with the same begin/slot/commit
+-- protocol as the SM7.B shootdown mailbox, and consumed by the trap handler
+-- after the transition has committed but before exception return.
+
+/-- **WS-SM SM8.B**: open a context-install staging buffer for this core,
+    discarding anything a previous commit left behind.
+
+    Rust: `ffi_context_install_begin` in `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_context_install_begin"]
+opaque ffiContextInstallBegin : BaseIO Unit
+
+/-- **WS-SM SM8.B**: stage general-purpose register `index` (0..30, i.e.
+    x0..x30) at `value`.  An out-of-range index is rejected by the Rust side
+    rather than wrapping.
+
+    Rust: `ffi_context_install_gpr` in `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_context_install_gpr"]
+opaque ffiContextInstallGpr : (index : UInt64) → (value : UInt64) → BaseIO Unit
+
+/-- **WS-SM SM8.B**: commit the staged registers together with `SP_EL0` and the
+    exception-return address (`ELR_EL1`, the model's `RegisterFile.pc`).  The
+    trap handler installs the buffer into its frame only after seeing this.
+
+    Rust: `ffi_context_install_commit` in `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_context_install_commit"]
+opaque ffiContextInstallCommit : (sp : UInt64) → (pc : UInt64) → BaseIO Unit
+
+/-- **WS-SM SM8.B**: refuse the install — the commit switched to a thread in a
+    *different address space*, and the model cannot supply the `TTBR0_EL1` that
+    needs (`VSpaceRoot` carries an ASID and an abstract mapping table, not a
+    translation-table physical base).  Returning into the incoming thread with
+    the outgoing thread's tables in force would be a memory-isolation
+    violation, so the runtime halts instead.
+
+    Rust: `ffi_context_install_refuse` in `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_context_install_refuse"]
+opaque ffiContextInstallRefuse : BaseIO Unit
+
+-- ============================================================================
 -- AG7-A-iii: MMIO FFI declarations
 -- ============================================================================
 
