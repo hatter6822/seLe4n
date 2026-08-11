@@ -1902,4 +1902,100 @@ def emitBoostWakeSgi (sgi : Option (CoreId × SgiKind)) : BaseIO Unit :=
 /-- WS-SM SM5.F.4: a local boost/resume (`none`) fires nothing. -/
 @[simp] theorem emitBoostWakeSgi_none : (emitBoostWakeSgi none : BaseIO Unit) = pure () := rfl
 
+-- ============================================================================
+-- WS-SM SM8.B — the context-restore obligation, as a tripwire
+-- ============================================================================
+
+/-- WS-SM SM8.B (PR #861 review round 18): **the sites that change which thread
+a core's model says is current.**
+
+Each of these writes `scheduler.currentOnCore` and — through
+`switchToThreadOnCore` — `machine.regsOnCore`.  On hardware a change of current
+thread is only real once the *outgoing* context is saved into the outgoing
+TCB and the *incoming* `registerContext`, `ELR_EL1`, `SPSR_EL1` and address
+space are restored before `eret`.  This enumeration exists so that obligation
+is a checked partition rather than prose. -/
+inductive ContextSwitchSite where
+  /-- The periodic tick's preemption point (`timerTickOnCore` →
+      `scheduleEffectiveOnCore` → `switchToThreadOnCore`). -/
+  | timerPreemption
+  /-- The cross-core `.reschedule` SGI handler (`handleRescheduleSgiOnCore`). -/
+  | rescheduleSgi
+  /-- The suspend pipeline's own scheduling point (`suspendRescheduleOnCore`). -/
+  | suspendReschedule
+  /-- The vacated-core successor dispatch added in review round 17
+      (`scheduleLocalSuccessor`, in `syscallDispatchCrossCoreEntry`). -/
+  | vacatedCoreSuccessor
+  deriving DecidableEq, Repr, Inhabited
+
+/-- WS-SM SM8.B: the enumeration. -/
+def contextSwitchSites : List ContextSwitchSite :=
+  [.timerPreemption, .rescheduleSgi, .suspendReschedule, .vacatedCoreSuccessor]
+
+/-- WS-SM SM8.B (the tripwire): every constructor is listed.  A new site that
+changes a core's current thread breaks this `decide`, which is the reminder
+that it owes the hardware restore below. -/
+theorem contextSwitchSites_complete (s : ContextSwitchSite) : s ∈ contextSwitchSites := by
+  cases s <;> decide
+
+/-- WS-SM SM8.B: **does this site restore the incoming thread's context to
+hardware before exception return?**
+
+For v0.33.5 the answer is uniformly `false`, and that is a statement about the
+runtime rather than about any of these transitions:
+
+* the SVC path writes its result into the *original caller's* `ExceptionFrame`
+  and returns from that frame (`rust/sele4n-hal/src/trap.rs`, the
+  `ec::SVC_AARCH64` arm);
+* `lean_per_core_timer_tick` returns `void`, so the timer ISR discards whatever
+  the model decided (`rust/sele4n-hal/src/timer.rs`);
+* SGI INTID 0 (`.reschedule`) has **no registered handler at all** — only the
+  TLB-shootdown request and halt-all INTIDs are registered
+  (`rust/sele4n-hal/src/gic.rs`);
+* and `machine.regsOnCore` is named nowhere in `SeLe4n/Platform/FFI.lean`, so
+  no seam exists to carry a register bank across the boundary in either
+  direction.
+
+The consequence is model/hardware divergence about which thread is running,
+and it is not merely cosmetic: `syscallDispatchFromAbi` identifies its caller
+*solely* by `st.scheduler.currentOnCore executingCore`, so a syscall arriving
+from the thread hardware actually resumed would be attributed to the thread the
+model believes is current.
+
+Registered rather than fixed because the fix is the SM9.E bring-up seam —
+outgoing-context save, incoming-context restore, `ELR`/`SPSR`/`TTBR0`/ASID —
+which is a coherent slice of its own and not part of a non-interference proof
+cut.  `contextRestoreWired` is the partition: wiring one means flipping its
+entry, which breaks the theorem below and forces the change to be reviewed
+rather than absorbed silently. -/
+def contextRestoreWired : ContextSwitchSite → Bool
+  | .timerPreemption      => false
+  | .rescheduleSgi        => false
+  | .suspendReschedule    => false
+  | .vacatedCoreSuccessor => false
+
+/-- WS-SM SM8.B (the honesty marker): **no** context-switch site restores
+hardware context yet.
+
+Stated as the full list rather than as "some are pending", because today the
+gap is total — this is the one form that makes the *scope* of the divergence
+checkable.  When SM9.E wires the first restore, this theorem fails and the
+register must be updated in the same commit.
+
+Note the direction of the round-17 change against this backdrop.  Before it, a
+blocking syscall left `currentOnCore = none`, and `syscallDispatchFromAbi`
+fails *closed* on that (`.illegalState`).  After it the slot names a real
+successor, so the same divergence would misidentify a caller rather than
+reject it — worse, on a system that had a restore seam to diverge from.  It is
+still the right change (a kernel that never dispatches a successor is not a
+kernel), but the two must land in that order, which is what this marker
+records. -/
+theorem contextSwitchSites_restore_pending :
+    contextSwitchSites.filter (fun s => !contextRestoreWired s) = contextSwitchSites := by
+  decide
+
+/-- WS-SM SM8.B: the same fact in the form a consumer would read. -/
+theorem contextRestoreWired_none (s : ContextSwitchSite) : contextRestoreWired s = false := by
+  cases s <;> rfl
+
 end SeLe4n.Kernel.PriorityInheritance

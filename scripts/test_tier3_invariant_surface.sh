@@ -2013,6 +2013,16 @@ run_check "INVARIANT" rg -n '^def covertChannelEvidenceName' SeLe4n/Kernel/Infor
 run_check "INVARIANT" rg -n '^theorem covertChannelEntry_eq_inventory' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n 'niName! acceptedCovertChannel_machineTimer_excluded_from_view' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 
+# PR #861 review round 18: the model's context switches have no hardware
+# restore seam yet (the SVC path returns into the original caller's frame, the
+# timer ISR discards the result, and SGI INTID 0 has no registered handler).
+# Registered as a checked partition so SM9.E cannot wire the first restore
+# without updating it.  The `_restore_pending` theorem is the load-bearing one:
+# it says the gap is TOTAL, so any wiring breaks it.
+run_check "INVARIANT" rg -n '^inductive ContextSwitchSite' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
+run_check "INVARIANT" rg -n '^theorem contextSwitchSites_restore_pending' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
+run_check "INVARIANT" rg -n '^theorem contextSwitchSites_complete' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
+
 # PR #861 review round 17: the citation table above validates only that a name
 # resolves, so it accepted a witness filed against the wrong channel.  The
 # binding obligation is the dependently-typed one, whose arms are checked
