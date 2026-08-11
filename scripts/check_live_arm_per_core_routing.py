@@ -106,17 +106,28 @@ def per_core_scheduler_fields() -> list[str]:
 
 PER_CORE_FIELDS = per_core_scheduler_fields()
 
+# PR #861 review round 26: these first shipped as `<accessor>\s+bootCoreId`,
+# which matches only the dot-notation spelling (`st.scheduler.currentOnCore
+# bootCoreId`), because there the receiver precedes the name.  The accessors
+# take the scheduler state explicitly, so `currentOnCore st.scheduler
+# bootCoreId` is an equally ordinary Lean call and went unmatched -- half the
+# spellings of every boot-pinned read.  The literal defects this gate caught
+# earlier all happened to be written the first way, which is why the gap
+# survived.  Reads now use the same bounded-gap shape as the writes below,
+# against the same normalized body, so the two halves cannot drift apart.
+# The core is the accessor's LAST argument, so at most one argument may sit
+# between the two: none in dot notation (`sched.currentOnCore bootCoreId`), one
+# under explicit application (`currentOnCore st.scheduler bootCoreId`).  A
+# bounded any-character gap was tried first and over-matched
+# `determineExecutingCore`, where `currentOnCore c` is a read of the *searched*
+# core and `bootCoreId` is the `find?.getD` fallback one line later -- a
+# legitimate default, not a pinned read.  Matching the argument shape rather
+# than a character budget tells the two apart.
+_ARG = r"(?:\s+[A-Za-z_][A-Za-z0-9_.']*)?"
+_BOOT = r"(?:[A-Za-z_][A-Za-z0-9_.']*\.)?bootCoreId"
 BOOT_READS = [
-    re.compile(r"currentOnCore\s+bootCoreId"),
-    re.compile(r"runQueueOnCore\s+bootCoreId"),
-    re.compile(r"replenishQueueOnCore\s+bootCoreId"),
-] + [
-    # The derived remainder: every per-core slot that is not one of the three
-    # spelled out above (kept literal because their comments record the
-    # defects that put them there).
-    re.compile(rf"\b{f}OnCore\s+bootCoreId")
+    re.compile(rf"\b{f}OnCore\b{_ARG}\s+{_BOOT}\b")
     for f in PER_CORE_FIELDS
-    if f not in {"current", "runQueue", "replenishQueue"}
 ]
 
 # PR #861 review round 23: the three patterns above are *accessor reads*, and a
@@ -383,13 +394,13 @@ def scan(percore: dict[str, str], bodies: dict[str, str], depth: int,
                         if (sid, sym) in allow:
                             continue
                         findings.append((sid, name, sym, why))
+                flat = collapse_whitespace(body)
                 for pat in BOOT_READS:
-                    if pat.search(body):
+                    if pat.search(flat):
                         if (sid, pat.pattern) in allow:
                             continue
                         findings.append((sid, name, pat.pattern,
                                          "reads the boot core's scheduler slot directly"))
-                flat = collapse_whitespace(body)
                 for pat in BOOT_WRITES:
                     if pat.search(flat):
                         if (sid, pat.pattern) in allow:
@@ -482,10 +493,29 @@ def main() -> int:
                   f"{sorted(PER_CORE_FIELDS)}, expected {sorted(want_fields)}.  If a field "
                   f"was added to SchedulerState, extend this set in the same commit.")
             return 1
+        # Round 26: probe BOTH spellings per field -- dot-notation (receiver
+        # before the name) and explicit application (receiver between the name
+        # and the core), wrapped as well.  Probing only the first is what let
+        # the explicit form go unmatched for every field.
         for f in PER_CORE_FIELDS:
-            if not any(pat.search(f"{f}OnCore bootCoreId") for pat in BOOT_READS):
-                print(f"[per-core-routing] SELF-TEST FAIL: no read pattern covers "
-                      f"{f}OnCore")
+            for spelling in (f"{f}OnCore bootCoreId",
+                             f"{f}OnCore st.scheduler bootCoreId",
+                             f"{f}OnCore\n  sched\n  bootCoreId"):
+                if not any(pat.search(collapse_whitespace(spelling))
+                           for pat in BOOT_READS):
+                    print(f"[per-core-routing] SELF-TEST FAIL: no read pattern covers "
+                          f"{spelling!r}")
+                    return 1
+        # Two negatives, both real: a read at a computed core, and the
+        # `find?`-with-boot-fallback shape in `determineExecutingCore`, which a
+        # bounded any-character gap did flag.
+        for benign in ("currentOnCore st.scheduler (determineTargetCore st tid)",
+                       "(Concurrency.allCores.find? (fun c => "
+                       "st.scheduler.currentOnCore c == some tid)).getD\n"
+                       "    Concurrency.bootCoreId"):
+            if any(pat.search(collapse_whitespace(benign)) for pat in BOOT_READS):
+                print(f"[per-core-routing] SELF-TEST FAIL: read patterns flag a "
+                      f"genuine per-core read: {benign!r}")
                 return 1
         for probe, want in write_probes:
             got = any(pat.search(collapse_whitespace(probe)) for pat in BOOT_WRITES)
