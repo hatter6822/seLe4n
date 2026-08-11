@@ -211,8 +211,7 @@ theorem foldl_removeRunnableStepOnCore_currentOnCore
     rcases List.mem_cons.mp hc with hEq | hIn
     · subst hEq
       rw [List.foldl_cons, hFrame ds _ (List.nodup_cons.mp hnd).1]
-      simp [removeRunnableStepOnCore, SchedulerState.setCurrentOnCore_currentOnCore_self,
-        SchedulerState.setRunQueueOnCore_currentOnCore]
+      simp [removeRunnableStepOnCore, SchedulerState.setCurrentOnCore_currentOnCore_self]
     · have hne : d ≠ c := fun h => (List.nodup_cons.mp hnd).1 (h ▸ hIn)
       rw [List.foldl_cons, ih _ hIn (List.nodup_cons.mp hnd).2]
       simp [removeRunnableStepOnCore, SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hne,
@@ -329,7 +328,12 @@ circular import (Scheduler.Invariant → ... → Endpoint). When a TCB has a
 PIP boost (from priority inheritance), the RunQueue must insert at the
 boosted priority to preserve priority-inversion bounds; otherwise the
 boosted thread lands in the wrong priority bucket until the next
-scheduler tick. -/
+scheduler tick.
+
+The agreement with the scheduler's copy is **checked**, not assumed:
+`ipcEffectiveRunQueuePriority_eq_effectiveRunQueuePriority`
+(`IPC/CrossCore/EndpointSend.lean`, the first module that sees both names)
+makes a change to either body that the other does not mirror a build failure. -/
 @[inline] def ipcEffectiveRunQueuePriority (tcb : TCB) : SeLe4n.Priority :=
   match tcb.pipBoost with
   | none => tcb.priority

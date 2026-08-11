@@ -575,6 +575,106 @@ private theorem insertLoop_preserves_slot [BEq α] [Hashable α] [LawfulBEq α]
               mod_add_mod_eq]; exact h
         exact ih (idx % capacity + 1) k v (d + 1) slots hLen hNR'
 
+/-- **The insert and lookup walks are in lockstep.**  If `getLoop` finds `k`
+holding exactly `v`, then `insertLoop` for `(k, v)` leaves the slot array
+**untouched** and reports no size change.
+
+The two loops branch three ways on the same conditions at the same index:
+
+* empty slot — `getLoop` answers `none`, so this cannot happen before the find;
+* `e.key == k` — `getLoop` answers `some e.value`, and `insertLoop` overwrites
+  that slot with `{ e with value := v }`.  With `v = e.value` that is `e` again,
+  so the write is a no-op set;
+* `e.dist < d` — `getLoop` answers `none` (Robin Hood early termination), so
+  this cannot happen before the find either, which is what rules out
+  `insertLoop`'s *displacing* branch;
+* otherwise both advance to `(i + 1, d + 1)` over the **same** slots.
+
+So no Robin Hood invariant is needed: the lookup's success is itself the witness
+that the insert walk takes only non-mutating steps until the key-match branch,
+and that branch is a same-value write.  This is the structural fact none of the
+`get`-level theorems above provide — they say what the post-insert table *reads
+back as*, not that it is the *same table*. -/
+private theorem insertLoop_id_of_getLoop [BEq α] [Hashable α] [LawfulBEq α]
+    (fuel : Nat) (idx : Nat) (k : α) (v : β) (d : Nat)
+    (slots : Array (Option (RHEntry α β)))
+    (capacity : Nat) (hLen : slots.size = capacity) (hCapPos : 0 < capacity)
+    (hGet : getLoop fuel idx k d slots capacity hLen hCapPos = some v) :
+    insertLoop fuel idx k v d slots capacity hLen hCapPos = (slots, false) := by
+  induction fuel generalizing idx d with
+  | zero => simp [getLoop] at hGet
+  | succ n ih =>
+    have hIdx : idx % capacity < slots.size := by rw [hLen]; exact Nat.mod_lt _ hCapPos
+    cases hSlot : slots[idx % capacity]'hIdx with
+    | none => rw [getLoop] at hGet; simp only [hSlot] at hGet; exact absurd hGet (by simp)
+    | some e =>
+      rw [getLoop] at hGet
+      simp only [hSlot] at hGet
+      by_cases hKey : e.key == k
+      · -- The key-match branch: `getLoop` returned `e.value`, so `v = e.value`
+        -- and the write is `slots.set i (some e)` at a slot already holding it.
+        simp only [hKey, ite_true, Option.some.injEq] at hGet
+        subst hGet
+        unfold insertLoop
+        simp only [hSlot, hKey, ite_true]
+        have hSetSelf : slots.set (idx % capacity) (some e) hIdx = slots := by
+          apply Array.ext
+          · simp
+          · intro j hj1 _
+            rw [Array.getElem_set]
+            split
+            · next hEq => subst hEq; exact hSlot.symm
+            · rfl
+        simp only [Prod.mk.injEq, and_true]
+        exact hSetSelf
+      · by_cases hRH : e.dist < d
+        · -- Robin Hood early termination: `getLoop` answered `none`, so this
+          -- step is unreachable before the find — which is exactly what keeps
+          -- `insertLoop` out of its displacing branch.
+          simp only [hKey, hRH, ite_true] at hGet
+          exact absurd hGet (by simp)
+        · simp only [hKey, ite_false, hRH, ite_false] at hGet
+          unfold insertLoop
+          simp only [hSlot, hKey, ite_false, hRH]
+          exact ih (idx % capacity + 1) (d + 1) hGet
+
+/-- **Re-inserting a key's current value is the identity** (no-resize form).
+
+`insertNoResize` and `get?` start the same walk — same ideal index, same fuel,
+same initial distance — so `insertLoop_id_of_getLoop` gives back the very same
+slot array and `false` for "size grew".  Every other field is copied verbatim,
+so the whole table is unchanged.
+
+Stated because agreement on `get?` is *not* enough to conclude two Robin Hood
+tables are equal: the layout is insertion-order-dependent, so there is no
+extensionality principle to appeal to.  This is a structural identity, proved
+structurally. -/
+theorem RHTable.insertNoResize_eq_self_of_get? [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k : α) (v : β) (h : t.get? k = some v) :
+    RHTable.insertNoResize t k v = t := by
+  unfold RHTable.get? at h
+  unfold RHTable.insertNoResize
+  simp only [insertLoop_id_of_getLoop t.capacity (idealIndex k t.capacity t.hCapPos) k v 0
+    t.slots t.capacity t.hSlotsLen t.hCapPos h]
+  rfl
+
+/-- **Re-inserting a key's current value is the identity** — the full `insert`,
+which must additionally not trip the resize threshold.
+
+The hypothesis is not ceremony: `insert` resizes *before* delegating, and a
+resize rehashes every entry, so at load factor `insert k v ≠ t` even for a key
+already holding `v`.  Callers that need the identity therefore have to know they
+are below the threshold; `insertNoResize_eq_self_of_get?` is the unconditional
+form for callers that can use it directly. -/
+theorem RHTable.insert_eq_self_of_get? [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k : α) (v : β)
+    (hNoResize : ¬ (t.size * 4 ≥ t.capacity * 3))
+    (h : t.get? k = some v) :
+    t.insert k v = t := by
+  unfold RHTable.insert
+  simp only [if_neg hNoResize]
+  exact RHTable.insertNoResize_eq_self_of_get? t k v h
+
 /-- After `insertLoop` with fuel = capacity and d = 0, the result
     contains an entry with `key == k = true` and `value = v` at some position,
     provided the table has a reachable empty slot within the probe window. -/
