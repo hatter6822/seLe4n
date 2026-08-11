@@ -2409,8 +2409,18 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   | .error err =>
     IO.println s!"[SCO-015] schedContextUnbind runqueue-removal: error {reprStr err}"
   | .ok ((), stUnboundRQ) =>
-    let removed := !(stUnboundRQ.scheduler.runQueueOnCore bootCoreId).contains tidInRQ
-    IO.println s!"[SCO-015] schedContextUnbind runqueue-removal: removed={removed}"
+    -- WS-SM SM8.B (PR #861 review round 14): this probe used to report
+    -- `removed=true` and treat it as the expected outcome, which recorded a
+    -- defect as evidence.  `chooseThreadOnCore` selects exclusively from the run
+    -- queue and an unbound thread is fully schedulable at its legacy TCB
+    -- priority (`resolveEffectivePrioDeadline`'s `.unbound` arm), so removing a
+    -- runnable thread without re-inserting it left it ready and permanently
+    -- unschedulable.  The probe now checks what the transition must actually
+    -- guarantee: the thread is STILL QUEUED, at its legacy priority.
+    let stillQueued := (stUnboundRQ.scheduler.runQueueOnCore bootCoreId).contains tidInRQ
+    let atLegacyPrio :=
+      (stUnboundRQ.scheduler.runQueueOnCore bootCoreId).threadPriority[tidInRQ]? == some ⟨50⟩
+    IO.println s!"[SCO-015] schedContextUnbind runqueue-rebucket: queued={stillQueued} legacyPrio={atLegacyPrio}"
 
   -- Z5-AUD-16: schedContextYieldTo — budget-starved target gets enqueued
   -- Tests Z5-I2: when target's budgetRemaining was 0 and transfer makes it > 0,

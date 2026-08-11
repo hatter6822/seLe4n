@@ -347,18 +347,40 @@ def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
           -- on `bootCoreId` the preemption guard never fired for a thread current
           -- on a secondary core, which kept running at its now-revoked SC priority.
           let unbindHome := determineTargetCore st tid
-          let st0 := if (st.scheduler.currentOnCore unbindHome) == some tid then
+          let wasCurrent := (st.scheduler.currentOnCore unbindHome) == some tid
+          let st0 := if wasCurrent then
             { st with scheduler := st.scheduler.setCurrentOnCore unbindHome none }
           else st
-          -- Z5-H2: If thread is in RunQueue (runnable but not current), remove it.
-          -- After unbind the thread reverts to legacy priority; the next schedule
-          -- call will re-enqueue it correctly if still runnable.
-          let st1 := if tid ∈ (st0.scheduler.runQueueOnCore unbindHome) then
-            { st0 with scheduler := st0.scheduler.setRunQueueOnCore unbindHome ((st0.scheduler.runQueueOnCore unbindHome).remove tid) }
-          else st0
+          -- Z5-H2: re-bucket the thread at its post-unbind (legacy) priority.
+          --
+          -- WS-SM SM8.B (PR #861 review round 14): this used to **remove** the
+          -- thread and rely on "the next schedule call will re-enqueue it
+          -- correctly if still runnable".  Nothing does.  `chooseThreadOnCore`
+          -- selects exclusively from `runQueueOnCore`, never scanning ready
+          -- TCBs, and an unbound thread is fully schedulable in this model —
+          -- `resolveEffectivePrioDeadline`'s `.unbound` arm returns the legacy
+          -- TCB priority rather than making the thread passive.  So a runnable
+          -- thread was left ready and permanently unschedulable by a successful
+          -- syscall.  Pre-existing and reachable on a single core: before the
+          -- home-core fix above the same removal ran against `bootCoreId`.
+          --
+          -- Both entry shapes strand the thread, so both are repaired.  A thread
+          -- that was **current** is not in the run queue (dequeue-on-dispatch),
+          -- so clearing `current` leaves it nowhere; it is enqueued here.  A
+          -- thread that was **queued** is removed and re-inserted at the legacy
+          -- priority, which is the re-bucket the docstring always described.
+          let updatedTcb := { tcb with schedContextBinding := SchedContextBinding.unbound }
+          let legacyPrio := effectiveRunQueuePriority updatedTcb
+          let homeQueue := st0.scheduler.runQueueOnCore unbindHome
+          let rebucketed := (homeQueue.remove tid).insert tid legacyPrio
+          let st1 :=
+            if tid ∈ homeQueue then
+              { st0 with scheduler := st0.scheduler.setRunQueueOnCore unbindHome rebucketed }
+            else if wasCurrent then
+              { st0 with scheduler := st0.scheduler.setRunQueueOnCore unbindHome rebucketed }
+            else st0
           -- Z5-H2 cont: Clear both sides of the binding
           let updatedSc := { sc with boundThread := none, isActive := false }
-          let updatedTcb := { tcb with schedContextBinding := SchedContextBinding.unbound }
           let st2 := { st1 with objects := st1.objects.insert vScId.val (KernelObject.schedContext updatedSc) }
           let st3 := { st2 with objects := st2.objects.insert tid.toObjId (KernelObject.tcb updatedTcb) }
           -- Z5-H3: Remove SchedContext from replenish queue

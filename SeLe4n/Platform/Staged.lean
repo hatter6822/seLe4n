@@ -512,7 +512,7 @@ import SeLe4n.Kernel.InformationFlow.CovertChannelPerCore
 -- WS-SM SM8.B: non-interference at the transitions that genuinely write a
 -- *remote* core.  `NonInterferencePerCore`'s thirty-five lifts are all confined
 -- to the boot core, so `crossCoreNonInterference`'s interesting direction had no
--- instantiation at a real cross-core transition; this module supplies sixteen, over
+-- instantiation at a real cross-core transition; this module supplies nineteen, over
 -- pre-state-computed write sets (`observableSlotsConfinedToCores`, including the
 -- two-element set an endpoint call needs) and a reusable home-core frame layer.
 -- Strictly stronger than the SM6 per-core NI results on the per-core half: those

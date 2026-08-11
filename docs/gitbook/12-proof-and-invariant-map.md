@@ -2550,7 +2550,7 @@ each group carries a load-bearing negative).
 > **v0.33.5 follow-up.**  The v0.33.5 cut proved `crossCoreNonInterference` but
 > never instantiated it at a transition that writes a remote core — all thirty-five
 > per-operation lifts are boot-core-confined, so `c'` was always the boot core.
-> `InformationFlow/NonInterferenceCrossCore` supplies sixteen instantiations over
+> `InformationFlow/NonInterferenceCrossCore` supplies nineteen instantiations over
 > set-of-cores write sets computed from the pre-state (an endpoint call writes
 > two cores: the receiver's home and the caller's own).  The resulting guarantee
 > is strictly stronger than the SM6 per-core NI results on the per-core half —

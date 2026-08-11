@@ -13,6 +13,11 @@ transition that actually writes a remote core.  This module supplies them.
 -/
 
 import SeLe4n.Kernel.InformationFlow.NonInterferencePerCore
+-- WS-SM SM8.B (review round 14): the SM5.I raw-insert home-core atoms
+-- (`determineTargetCore_insert_tcb`, `getTcb?_insert_schedContext_eq`) the
+-- SchedContext confinement proofs compose.  Cycle-free: this module's closure
+-- contains neither NonInterferencePerCore nor this file.
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsAffinity
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReply
 import SeLe4n.Kernel.IPC.CrossCore.Cancellation
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDispatch
@@ -93,6 +98,39 @@ open SeLe4n.Kernel.PriorityInheritance
 -- ============================================================================
 -- §1  The per-core scheduler primitives
 -- ============================================================================
+
+/-- SM8.B.2: a bare run-queue write is confined to the core it names.
+
+The structural helper the SchedContext proofs compose, rather than re-deriving
+the six-field obligation inline each time — which is where a `simp_all` hid the
+mid-state home-core problem in the first attempt. -/
+theorem setRunQueueOnCore_confinedToCores (st : SystemState) (cc : CoreId)
+    (q : SeLe4n.Kernel.RunQueue) :
+    observableSlotsConfinedToCores st
+      { st with scheduler := st.scheduler.setRunQueueOnCore cc q } [cc] := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro c hc <;>
+    simp only [List.mem_singleton] at hc
+  · exact SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ cc c q (fun h => hc h.symm)
+  · exact SchedulerState.setRunQueueOnCore_currentOnCore _ cc c q
+  · exact SchedulerState.setRunQueueOnCore_activeDomainOnCore _ cc c q
+  · exact SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore _ cc c q
+  · exact SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore _ cc c q
+  · rfl
+
+/-- SM8.B.2: a **replenish**-queue write is confined to no core at all — the
+replenish queue is outside the six observable slots, so it is per-core silent
+even on the core it names. -/
+theorem setReplenishQueueOnCore_confinedToCores (st : SystemState) (cc : CoreId)
+    (q : SeLe4n.Kernel.ReplenishQueue) :
+    observableSlotsConfinedToCores st
+      { st with scheduler := st.scheduler.setReplenishQueueOnCore cc q } [] := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro c _
+  · exact SchedulerState.setReplenishQueueOnCore_runQueueOnCore _ cc c q
+  · exact SchedulerState.setReplenishQueueOnCore_currentOnCore _ cc c q
+  · exact SchedulerState.setReplenishQueueOnCore_activeDomainOnCore _ cc c q
+  · exact SchedulerState.setReplenishQueueOnCore_domainTimeRemainingOnCore _ cc c q
+  · exact SchedulerState.setReplenishQueueOnCore_domainScheduleIndexOnCore _ cc c q
+  · rfl
 
 /-- SM8.B.2: `enqueueRunnableOnCore` writes core `cc`'s run-queue slot and the
 enqueued TCB, and nothing else per-core. -/
@@ -310,6 +348,37 @@ theorem storeObject_endpoint_determineTargetCore_eq (st st' : SystemState)
       storeObject_objects_eq st st' endpointId (.endpoint ep') hObjInv hStore]
   · simp only [SystemState.getTcb?,
       storeObject_objects_ne st st' endpointId x.toObjId (.endpoint ep') hEq hObjInv hStore]
+
+/-- SM8.B.2: storing a **SchedContext** preserves every thread's home core.
+
+The `storeObject_endpoint_determineTargetCore_eq` argument verbatim, and for the
+same reason it needs no disjointness hypothesis: at a different id the TCB
+lookup is framed, and at the *same* id `getTcb?` fails both before and after
+(`SystemState.getTcb?` matches only `some (.tcb _)`, and a SchedContext is not a
+TCB), so both sides read the unbound default.
+
+Added in PR #861 review round 14 for the SchedContext arms: the reroute through
+`determineTargetCore` made them remote writers, and their write sets name the
+home core at the *pre*-state while the transitions compute it after this
+store. -/
+theorem storeObject_schedContext_determineTargetCore_eq (st st' : SystemState)
+    (scObjId : SeLe4n.ObjId) (sc sc' : SchedContext) (x : SeLe4n.ThreadId)
+    (hPre : st.objects[scObjId]? = some (.schedContext sc))
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject scObjId (.schedContext sc') st = .ok ((), st')) :
+    determineTargetCore st' x = determineTargetCore st x := by
+  refine determineTargetCore_congr st st' x ?_
+  by_cases hEq : x.toObjId = scObjId
+  · simp only [SystemState.getTcb?, hEq, hPre,
+      storeObject_objects_eq st st' scObjId (.schedContext sc') hObjInv hStore]
+  · simp only [SystemState.getTcb?,
+      storeObject_objects_ne st st' scObjId x.toObjId (.schedContext sc') hEq hObjInv hStore]
+
+-- The raw-`objects.insert` frames these operations need already exist as SM5.I
+-- atoms in `Scheduler/Operations/PerCoreTickCbsAffinity.lean`, imported above:
+-- `determineTargetCore_insert_tcb` (a TCB insert with unchanged `cpuAffinity`) and
+-- `getTcb?_insert_schedContext_eq` (a SchedContext insert leaves every TCB lookup
+-- alone).  They are used rather than re-proved here.
 
 /-- SM8.B.2: the `_fromTcb` IPC store is not a migration either. -/
 theorem storeTcbIpcStateAndMessage_fromTcb_determineTargetCore_eq (st st' : SystemState)
@@ -2585,6 +2654,376 @@ theorem endpointSendCrossCoreDispatchChecked_crossCoreNonInterference
     hShared
 
 -- ============================================================================
+-- §5h  The live SchedContext arms
+-- ============================================================================
+--
+-- PR #861 review round 14, and a direct consequence of this cut's own change:
+-- `schedContextBind` / `schedContextConfigure` / `schedContextUnbind` used to
+-- re-bucket and preempt against `bootCoreId`, so they wrote no remote core and
+-- had no business in this inventory.  Routing them through `determineTargetCore`
+-- makes them genuine remote writers, and a remote writer without a write set is
+-- exactly the gap this module exists to close.
+
+/-- SM8.B.2: the thread a SchedContext operation's scheduler effects act on,
+resolved from the pre-state — the SC's bound thread, if it has one. -/
+def schedContextSubject? (st : SystemState) (scObjId : SeLe4n.ObjId) :
+    Option SeLe4n.ThreadId :=
+  match st.getSchedContext? (SeLe4n.SchedContextId.ofObjId scObjId) with
+  | some sc => sc.boundThread
+  | none    => none
+
+/-- SM8.B.2: **the cores `.schedContextUnbind` and `.schedContextConfigure` may
+write** — the bound thread's home core alone.
+
+Both have a single scheduling effect (clear-and-requeue, or re-bucket) and after
+this cut both land on `determineTargetCore` of the SC's bound thread.  An SC with
+no bound thread has no scheduling effect at all, hence the empty set.
+
+**Not `.schedContextBind`**, which resolves its thread from an *argument*:
+binding rejects an SC that already has one (`sc.boundThread.isSome → .error
+.illegalState`), so on every success path this set is empty while bind does write
+a run queue.  `schedContextBindWriteSet` is its write set.  (The earlier wording
+here claimed to cover "every one of these operations", which was false for bind
+— PR #861 review round 14.) -/
+def schedContextWriteSet (st : SystemState) (scObjId : SeLe4n.ObjId) : List CoreId :=
+  match schedContextSubject? st scObjId with
+  | some tid => [determineTargetCore st tid]
+  | none     => []
+
+/-- SM8.B.2 (**the live `.schedContextUnbind` bound**): unbinding writes no core
+outside `schedContextWriteSet`.
+
+The transition's scheduler effects are a `setCurrentOnCore` and a
+`setRunQueueOnCore`, both at the subject's home core, plus a
+`setReplenishQueueOnCore` — which touches no confined slot, the replenish queue
+being outside the six `observableSlotsConfinedToCores` fields.  Everything else
+it does is object-store and index writes. -/
+theorem schedContextUnbind_confinedToCores (vScId : SeLe4n.ValidObjId)
+    (st st' : SystemState)
+    (hStep : SchedContextOps.schedContextUnbind vScId st = .ok ((), st')) :
+    observableSlotsConfinedToCores st st' (schedContextWriteSet st vScId.val) := by
+  unfold SchedContextOps.schedContextUnbind schedContextWriteSet schedContextSubject? at *
+  split at hStep
+  · next sc hSc =>
+    simp only [hSc]
+    split at hStep
+    · exact absurd hStep (by simp)
+    · next tid hBound =>
+      simp only [hBound]
+      split at hStep
+      · next tcb hTcb =>
+        rw [Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨-, hs⟩ := hStep
+        subst hs
+        refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro c hc <;>
+          simp only [List.mem_singleton, not_false_iff] at hc <;>
+          -- The setters are at the subject's home core; `hc` says `c` is not it.
+          -- Orient the disequality the `_ne` lemmas expect before simplifying.
+          (have hne : determineTargetCore st tid ≠ c := fun h => hc h.symm) <;>
+          (repeat' split) <;>
+          simp_all [SchedulerState.setCurrentOnCore_runQueueOnCore,
+            SchedulerState.setRunQueueOnCore_runQueueOnCore_ne,
+            SchedulerState.setCurrentOnCore_currentOnCore_ne,
+            SchedulerState.setRunQueueOnCore_currentOnCore,
+            SchedulerState.setReplenishQueueOnCore_runQueueOnCore,
+            SchedulerState.setReplenishQueueOnCore_currentOnCore,
+            SchedulerState.setCurrentOnCore_activeDomainOnCore,
+            SchedulerState.setRunQueueOnCore_activeDomainOnCore,
+            SchedulerState.setReplenishQueueOnCore_activeDomainOnCore,
+            SchedulerState.setCurrentOnCore_domainTimeRemainingOnCore,
+            SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore,
+            SchedulerState.setReplenishQueueOnCore_domainTimeRemainingOnCore,
+            SchedulerState.setCurrentOnCore_domainScheduleIndexOnCore,
+            SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore,
+            SchedulerState.setReplenishQueueOnCore_domainScheduleIndexOnCore]
+      · next hNoTcb =>
+        rw [Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨-, hs⟩ := hStep
+        subst hs
+        exact ⟨fun _ _ => rfl, fun _ _ => rfl, fun _ _ => rfl, fun _ _ => rfl,
+               fun _ _ => rfl, fun _ _ => rfl⟩
+  · exact absurd hStep (by simp)
+
+/-- SM8.B.2 (**the live `.schedContextUnbind` non-interference**): unbinding is
+invisible on every core outside the subject's home core, with no hypothesis on
+the subject's clearance. -/
+theorem schedContextUnbind_crossCoreNonInterference (ctx : LabelingContext)
+    (observer : IfObserver) (vScId : SeLe4n.ValidObjId) (st st' : SystemState) (c : CoreId)
+    (hStep : SchedContextOps.schedContextUnbind vScId st = .ok ((), st'))
+    (hne : c ∉ schedContextWriteSet st vScId.val)
+    (hShared : sharedViewUnchanged ctx observer st st') :
+    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
+  crossCoreNonInterference_ofCores ctx observer hne
+    (schedContextUnbind_confinedToCores vScId st st' hStep) hShared
+
+
+/-- SM8.B.2: **the cores a `.schedContextBind` may write** — the bound thread's
+home core.
+
+Deliberately **not** `schedContextWriteSet`: bind rejects an SC that already has
+a bound thread (`sc.boundThread.isSome → .error .illegalState`), so on every
+success path `schedContextSubject?` is `none` and that set is empty — while bind
+genuinely writes a run queue.  The thread is an argument here, so this reads it
+directly. -/
+def schedContextBindWriteSet (st : SystemState) (tid : SeLe4n.ThreadId) : List CoreId :=
+  [determineTargetCore st tid]
+
+/-- SM8.B.2 (**the live `.schedContextBind` bound**): binding writes no core
+outside the bound thread's home core.
+
+Bind has exactly one scheduling effect — the re-bucket this cut routed through
+`determineTargetCore` — reached across two object writes, and the work is the
+home-core bridge: the transition computes its target two inserts later than the
+write set names it.  Neither insert is a migration.  The SchedContext insert
+leaves every TCB lookup alone (`getTcb?_insert_schedContext_eq`); the TCB insert
+rewrites `schedContextBinding` and `priority`, never `cpuAffinity`
+(`determineTargetCore_insert_tcb`).
+
+The bridge is **transported into the disequality** rather than rewritten into the
+goal: the post-state is a structure literal far too large to restate, but
+`hHome ▸ hne` gives the setter's own frame lemma exactly the hypothesis it
+wants, and `exact` closes the rest up to definitional equality. -/
+theorem schedContextBind_confinedToCores (vScId : SeLe4n.ValidObjId)
+    (vThreadId : SeLe4n.ValidThreadId) (st st' : SystemState)
+    (hObjInv : st.objects.invExt)
+    (hStep : SchedContextOps.schedContextBind vScId vThreadId st = .ok ((), st')) :
+    observableSlotsConfinedToCores st st' (schedContextBindWriteSet st vThreadId.val) := by
+  unfold SchedContextOps.schedContextBind at hStep
+  split at hStep
+  · next sc hSc =>
+    split at hStep
+    · exact absurd hStep (by simp)
+    · split at hStep
+      · next tcb hTcb =>
+        split at hStep
+        · exact absurd hStep (by simp)
+        · split at hStep
+          · next hUnbound =>
+            rw [Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨-, hs⟩ := hStep
+            subst hs
+            let sc1 : SchedContext := { sc with boundThread := some vThreadId.val }
+            let scObj : KernelObject := .schedContext sc1
+            let st1 : SystemState := { st with objects := st.objects.insert vScId.val scObj }
+            let tcb1 : TCB :=
+              { tcb with schedContextBinding := SchedContextBinding.bound ⟨vScId.val.toNat⟩,
+                         priority := sc.priority }
+            let tcbObj : KernelObject := .tcb tcb1
+            let st2 : SystemState :=
+              { st1 with objects := st1.objects.insert vThreadId.val.toObjId tcbObj }
+            have hScRaw : st.objects.get? vScId.val = some (.schedContext sc) := by
+              simpa using (SystemState.getSchedContext?_eq_some_iff st
+                (SeLe4n.SchedContextId.ofObjId vScId.val) sc).mp hSc
+            have hT1 : ∀ x : SeLe4n.ThreadId, st1.getTcb? x = st.getTcb? x := fun x =>
+              getTcb?_insert_schedContext_eq st st1
+                (SeLe4n.SchedContextId.ofObjId vScId.val) sc sc1 hObjInv
+                (by simpa using hScRaw) rfl x
+            have hInv1 : st1.objects.invExt :=
+              SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _ hObjInv
+            have hTcb1 : st1.objects.get? vThreadId.val.toObjId = some (.tcb tcb) := by
+              have h := hT1 vThreadId.val
+              rw [hTcb] at h
+              simpa using (SystemState.getTcb?_eq_some_iff st1 vThreadId.val tcb).mp h
+            have hHome : determineTargetCore st2 vThreadId.val
+                = determineTargetCore st vThreadId.val := by
+              refine Eq.trans (determineTargetCore_insert_tcb st1 st2 vThreadId.val tcb tcb1
+                hInv1 hTcb1 rfl rfl vThreadId.val) ?_
+              exact determineTargetCore_congr st st1 vThreadId.val (by rw [hT1 vThreadId.val])
+            refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro c hc <;>
+              simp only [schedContextBindWriteSet, List.mem_singleton] at hc
+            · have hne : determineTargetCore st vThreadId.val ≠ c := fun h => hc h.symm
+              split
+              · exact SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ c _ (hHome ▸ hne)
+              · rfl
+            · split
+              · exact SchedulerState.setRunQueueOnCore_currentOnCore _ _ c _
+              · rfl
+            · split
+              · exact SchedulerState.setRunQueueOnCore_activeDomainOnCore _ _ c _
+              · rfl
+            · split
+              · exact SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore _ _ c _
+              · rfl
+            · split
+              · exact SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore _ _ c _
+              · rfl
+            · -- registers: untouched on both arms, but the projection only
+              -- reduces once the run-queue `if` is resolved.
+              split <;> rfl
+          · exact absurd hStep (by simp)
+      · exact absurd hStep (by simp)
+  · exact absurd hStep (by simp)
+
+/-- SM8.B.2 (**the live `.schedContextBind` non-interference**): binding is
+invisible on every core outside the bound thread's home core, with no hypothesis
+on that thread's clearance. -/
+theorem schedContextBind_crossCoreNonInterference (ctx : LabelingContext)
+    (observer : IfObserver) (vScId : SeLe4n.ValidObjId) (vThreadId : SeLe4n.ValidThreadId)
+    (st st' : SystemState) (c : CoreId)
+    (hObjInv : st.objects.invExt)
+    (hStep : SchedContextOps.schedContextBind vScId vThreadId st = .ok ((), st'))
+    (hne : c ∉ schedContextBindWriteSet st vThreadId.val)
+    (hShared : sharedViewUnchanged ctx observer st st') :
+    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
+  crossCoreNonInterference_ofCores ctx observer hne
+    (schedContextBind_confinedToCores vScId vThreadId st st' hObjInv hStep) hShared
+
+/-- SM8.B.2 (**the live `.schedContextConfigure` bound**): a configure writes no
+core outside its subject's home core.
+
+Two scheduler writes, and only one of them is confined-relevant: the
+replenish-queue purge is outside the six observable slots, so it is per-core
+silent even on the core it names.  The run-queue re-bucket needs the same
+home-core bridge as bind, one hop longer — the target is computed after the
+replenish write (scheduler-only, objects untouched), the `storeObject` of the
+reconfigured SchedContext (`storeObject_schedContext_determineTargetCore_eq`) and
+the TCB **priority** insert, which is not a migration.
+
+The `boundThread = none` and `getTcb? = none` arms perform no scheduling work at
+all, and the trailing domain propagation is an object write. -/
+theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
+    (budget period priority deadline domain : Nat) (st st' : SystemState)
+    (hObjInv : st.objects.invExt)
+    (hStep : SchedContextOps.schedContextConfigure vScId budget period priority deadline domain st
+      = .ok ((), st')) :
+    observableSlotsConfinedToCores st st' (schedContextWriteSet st vScId.val) := by
+  unfold SchedContextOps.schedContextConfigure schedContextWriteSet schedContextSubject? at *
+  split at hStep
+  · exact absurd hStep (by simp)
+  · split at hStep
+    · next sc hSc =>
+      simp only [hSc]
+      -- Zeta-reduce the `let updated := …` binder so the admission guard is a
+      -- splittable `if` rather than a `have`-wrapped one.
+      simp only [] at hStep
+      split at hStep
+      · -- admission granted
+        split at hStep
+        · exact absurd hStep (by simp)
+        · next stStored hStore =>
+          have hScRaw : st.objects.get? vScId.val = some (.schedContext sc) := by
+            simpa using (SystemState.getSchedContext?_eq_some_iff st
+              (SeLe4n.SchedContextId.ofObjId vScId.val) sc).mp hSc
+          split at hStep
+          · -- no bound thread: no scheduling effect at all
+            next hNone =>
+            simp only [hNone]
+            rw [Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨-, hs⟩ := hStep
+            subst hs
+            exact observableSlotsConfinedToCores_trans
+              (setReplenishQueueOnCore_confinedToCores st bootCoreId _)
+              (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+                (storeObject_scheduler_eq _ _ _ _ hStore)
+                (storeObject_machine_eq _ _ _ _ hStore))
+          · next boundTid hBound =>
+            simp only [hBound]
+            have hInvStored : stStored.objects.invExt :=
+              -- Named again for the same reason: the store's pre-state is the
+              -- post-replenish one, not `st`.
+              -- `by exact` postpones these until `hStore` has fixed the
+              -- pre-state; passed directly they pin it to `st` first.
+              storeObject_preserves_objects_invExt (st' := stStored) (hStore := hStore)
+                (hObjInv := by exact hObjInv)
+            -- The SchedContext store is not a migration, and the replenish write
+            -- leaves `objects` alone, so the home core is already the pre-state's.
+            have hHomeStored : ∀ x : SeLe4n.ThreadId,
+                determineTargetCore stStored x = determineTargetCore st x := fun x => by
+              -- The lemma's own conclusion names the store's pre-state — the
+              -- post-replenish one.  Ascribing the statement up front would pin
+              -- that to `st` and the store hypothesis would stop matching, so it
+              -- is elaborated unascribed and closed by defeq: the replenish
+              -- write leaves `objects`, and `determineTargetCore` reads nothing
+              -- else.
+              have h := storeObject_schedContext_determineTargetCore_eq (x := x) (sc := sc)
+                (hStore := hStore) (hPre := by exact hScRaw) (hObjInv := by exact hObjInv)
+              exact h
+            split at hStep
+            · next boundTcb hTcbStored =>
+              have hTcbStoredRaw :
+                  stStored.objects.get? boundTid.toObjId = some (.tcb boundTcb) := by
+                simpa using (SystemState.getTcb?_eq_some_iff stStored boundTid boundTcb).mp
+                  hTcbStored
+              let boundTcb2 : TCB := { boundTcb with priority := ⟨priority⟩ }
+              let boundObj : KernelObject := .tcb boundTcb2
+              let stWithTcb : SystemState :=
+                { stStored with objects := stStored.objects.insert boundTid.toObjId boundObj }
+              have hHomeWith : determineTargetCore stWithTcb boundTid
+                  = determineTargetCore st boundTid :=
+                Eq.trans
+                  (determineTargetCore_insert_tcb stStored stWithTcb boundTid boundTcb boundTcb2
+                    hInvStored hTcbStoredRaw rfl rfl boundTid)
+                  (hHomeStored boundTid)
+              rw [Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨-, hs⟩ := hStep
+              subst hs
+              -- The prefix common to every arm: replenish purge then the SC
+              -- store, neither of which is confined-relevant.
+              have hStoredConf : observableSlotsConfinedToCores st stStored [] :=
+                observableSlotsConfinedToCores_trans
+                  (setReplenishQueueOnCore_confinedToCores st bootCoreId _)
+                  (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+                    (storeObject_scheduler_eq _ _ _ _ hStore)
+                    (storeObject_machine_eq _ _ _ _ hStore))
+              refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro c hc <;>
+                simp only [List.mem_singleton] at hc <;>
+                (have hne : determineTargetCore stWithTcb boundTid ≠ c := by
+                  rw [hHomeWith]; exact fun h => hc h.symm) <;>
+                -- Hoisted: a nested `by simp` inside a `first` alternative throws
+                -- rather than backtracking, so the alternatives below carry no
+                -- tactic blocks of their own.
+                (have hNil : c ∉ ([] : List CoreId) := by simp) <;>
+                (repeat' split) <;>
+                first
+                  -- arms that stop at `stStored` / `stWithTcb` (object writes only)
+                  | exact hStoredConf.runQueue c hNil
+                  | exact hStoredConf.current c hNil
+                  | exact hStoredConf.activeDomain c hNil
+                  | exact hStoredConf.domainTimeRemaining c hNil
+                  | exact hStoredConf.domainScheduleIndex c hNil
+                  | exact hStoredConf.regs c hNil
+                  -- arms that additionally take the run-queue re-bucket
+                  | (rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ c _ hne]
+                     exact hStoredConf.runQueue c hNil)
+                  | (rw [SchedulerState.setRunQueueOnCore_currentOnCore]
+                     exact hStoredConf.current c hNil)
+                  | (rw [SchedulerState.setRunQueueOnCore_activeDomainOnCore]
+                     exact hStoredConf.activeDomain c hNil)
+                  | (rw [SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore]
+                     exact hStoredConf.domainTimeRemaining c hNil)
+                  | (rw [SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
+                     exact hStoredConf.domainScheduleIndex c hNil)
+                  | rfl
+            · -- the bound TCB vanished behind the store: no scheduling effect
+              next hNoTcb =>
+              rw [Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨-, hs⟩ := hStep
+              subst hs
+              refine observableSlotsConfinedToCores_widen_any ?_
+              exact observableSlotsConfinedToCores_trans
+                (setReplenishQueueOnCore_confinedToCores st bootCoreId _)
+                (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+                  (storeObject_scheduler_eq _ _ _ _ hStore)
+                  (storeObject_machine_eq _ _ _ _ hStore))
+      · exact absurd hStep (by simp)
+    · exact absurd hStep (by simp)
+
+/-- SM8.B.2 (**the live `.schedContextConfigure` non-interference**): a configure
+is invisible on every core outside its subject's home core. -/
+theorem schedContextConfigure_crossCoreNonInterference (ctx : LabelingContext)
+    (observer : IfObserver) (vScId : SeLe4n.ValidObjId)
+    (budget period priority deadline domain : Nat) (st st' : SystemState) (c : CoreId)
+    (hObjInv : st.objects.invExt)
+    (hStep : SchedContextOps.schedContextConfigure vScId budget period priority deadline domain st
+      = .ok ((), st'))
+    (hne : c ∉ schedContextWriteSet st vScId.val)
+    (hShared : sharedViewUnchanged ctx observer st st') :
+    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
+  crossCoreNonInterference_ofCores ctx observer hne
+    (schedContextConfigure_confinedToCores vScId budget period priority deadline domain
+      st st' hObjInv hStep) hShared
+
+-- ============================================================================
 -- §6  The non-interference instantiations
 -- ============================================================================
 --
@@ -2786,6 +3225,17 @@ inductive CrossCoreTransition where
   PR #861 review round 10, which found the arm still routed to the boot-pinned
   `endpointSendDualWithCaps`. -/
   | endpointSendDispatch
+  /-- SM8.B — the **live** `.schedContextUnbind` arm: clear-and-requeue on the
+  bound thread's home core.  Added in PR #861 review round 14, after this cut's
+  own home-core routing made it a remote writer. -/
+  | schedContextUnbindDispatch
+  /-- SM8.B — the **live** `.schedContextBind` arm: re-bucket on the bound
+  thread's home core.  Its write set reads the thread from the *argument*, not
+  from the SC — bind rejects an already-bound SC. -/
+  | schedContextBindDispatch
+  /-- SM8.B — the **live** `.schedContextConfigure` arm: re-bucket the bound
+  thread on its home core when a reconfigure changes its priority. -/
+  | schedContextConfigureDispatch
   /-- SM6.B — the notification signal. -/
   | notificationSignal
   /-- SM6.B — the **live** `.signal` arm, covering bound delivery. -/
@@ -2816,6 +3266,7 @@ inductive CrossCoreTransition where
 
 def CrossCoreTransition.all : List CrossCoreTransition :=
   [.wake, .endpointCall, .endpointCallDispatch, .endpointSendDispatch,
+   .schedContextUnbindDispatch, .schedContextBindDispatch, .schedContextConfigureDispatch,
    .notificationSignal, .notificationSignalBound,
    .notificationWait, .endpointReply, .endpointReplyDispatch, .endpointReceiveDual,
    .endpointReplyRecv, .replyRecvBodyDispatch, .deschedule, .cancelIpcBlocking,
@@ -2849,6 +3300,12 @@ def crossCoreNiTheorem : CrossCoreTransition → String
   | .endpointCallDispatch => niName! endpointCallCrossCoreDispatch_crossCoreNonInterference
   | .endpointSendDispatch =>
       niName! endpointSendDualWithCapsOnCore_crossCoreNonInterference
+  | .schedContextUnbindDispatch =>
+      niName! schedContextUnbind_crossCoreNonInterference
+  | .schedContextBindDispatch =>
+      niName! schedContextBind_crossCoreNonInterference
+  | .schedContextConfigureDispatch =>
+      niName! schedContextConfigure_crossCoreNonInterference
   | .notificationSignal => niName! notificationSignalOnCore_crossCoreNonInterference
   | .notificationSignalBound => niName! notificationSignalBoundOnCore_crossCoreNonInterference
   | .notificationWait => niName! notificationWaitOnCore_crossCoreNonInterference
@@ -2863,7 +3320,7 @@ def crossCoreNiTheorem : CrossCoreTransition → String
   | .suspendThreadDispatch => niName! suspendThreadOnCore_crossCoreNonInterference
   | .resumeThreadDispatch => niName! resumeThreadOnCore_crossCoreNonInterference
 
-theorem crossCoreNiTheorem_count : CrossCoreTransition.all.length = 16 := by rfl
+theorem crossCoreNiTheorem_count : CrossCoreTransition.all.length = 19 := by rfl
 
 /-- SM8.B.2: **which entries are the arms the live syscall dispatch actually
 reaches**, as opposed to the below-API transitions they are built from.
@@ -2902,6 +3359,9 @@ def crossCoreTransitionIsLiveArm : CrossCoreTransition → Bool
   | .endpointCall => false
   | .endpointCallDispatch => true
   | .endpointSendDispatch => true
+  | .schedContextUnbindDispatch => true
+  | .schedContextBindDispatch => true
+  | .schedContextConfigureDispatch => true
   | .notificationSignal => false
   | .notificationSignalBound => true
   | .notificationWait => true
@@ -2916,7 +3376,7 @@ def crossCoreTransitionIsLiveArm : CrossCoreTransition → Bool
   | .resumeThreadDispatch => true
 
 theorem crossCoreTransitionIsLiveArm_count :
-    (CrossCoreTransition.all.filter crossCoreTransitionIsLiveArm).length = 9 := by decide
+    (CrossCoreTransition.all.filter crossCoreTransitionIsLiveArm).length = 12 := by decide
 
 theorem crossCoreNiTheorem_injective :
     ∀ t₁ t₂ : CrossCoreTransition, crossCoreNiTheorem t₁ = crossCoreNiTheorem t₂ → t₁ = t₂ := by
@@ -2978,6 +3438,9 @@ def crossCoreLiveArmSyscall : CrossCoreTransition → Option SyscallId
   | .endpointCall => none
   | .endpointCallDispatch => some .call
   | .endpointSendDispatch => some .send
+  | .schedContextUnbindDispatch => some .schedContextUnbind
+  | .schedContextBindDispatch => some .schedContextBind
+  | .schedContextConfigureDispatch => some .schedContextConfigure
   | .notificationSignal => none
   | .notificationSignalBound => some .notificationSignal
   | .notificationWait => some .notificationWait
@@ -2998,6 +3461,12 @@ def crossCoreLiveArmEvidence : CrossCoreTransition → LiveArmEvidence
   | .endpointCallDispatch =>
       .readOffTheArm "checked `.call` arm calls endpointCallCrossCoreDispatch; delegation theorem pending"
   | .endpointSendDispatch => .delegationProof .send syscallDelegates_send
+  | .schedContextUnbindDispatch =>
+      .readOffTheArm "capability-only `.schedContextUnbind` arm; delegation theorem pending"
+  | .schedContextBindDispatch =>
+      .readOffTheArm "capability-only `.schedContextBind` arm; delegation theorem pending"
+  | .schedContextConfigureDispatch =>
+      .readOffTheArm "capability-only `.schedContextConfigure` arm; delegation theorem pending"
   | .notificationSignal => .readOffTheArm "below-API transition; live arm is .notificationSignalBound"
   | .notificationSignalBound =>
       .readOffTheArm "checked `.signal` arm; wrapper definitionally the OnCore call; delegation theorem pending"
@@ -3027,7 +3496,7 @@ theorem crossCoreLiveArmEvidence_syscall_matches (t : CrossCoreTransition) :
 
 /-- SM8.B.2: **how many live arms are mechanically tied to the dispatch.**
 
-Four of nine today.  Stated so the gap is a tracked quantity closable only by
+Four of twelve today.  Stated so the gap is a tracked quantity closable only by
 adding delegation theorems — not something a reader reconstructs by grepping. -/
 def crossCoreLiveArmDelegationBacked : List CrossCoreTransition :=
   CrossCoreTransition.all.filter (fun t =>
@@ -3041,7 +3510,7 @@ of `API.lean`, which is the state every one of the three drifts occurred in. -/
 theorem crossCoreLiveArm_readOffTheArm_count :
     (CrossCoreTransition.all.filter (fun t =>
       crossCoreTransitionIsLiveArm t
-        && !(crossCoreLiveArmEvidence t).isDelegationBacked)).length = 5 := by decide
+        && !(crossCoreLiveArmEvidence t).isDelegationBacked)).length = 8 := by decide
 
 /-- SM8.B.2: **which transitions can write a core other than the executing
 one.**  Named for remote *writes*, not for wakes: a reply, a deschedule and a
@@ -3054,6 +3523,9 @@ def crossCoreTransitionWritesRemote : CrossCoreTransition → Bool
   | .endpointCall => true
   | .endpointCallDispatch => true
   | .endpointSendDispatch => true
+  | .schedContextUnbindDispatch => true
+  | .schedContextBindDispatch => true
+  | .schedContextConfigureDispatch => true
   | .notificationSignal => true
   | .notificationSignalBound => true
   | .notificationWait => false
@@ -3068,6 +3540,6 @@ def crossCoreTransitionWritesRemote : CrossCoreTransition → Bool
   | .resumeThreadDispatch => true
 
 theorem crossCoreTransitionWritesRemote_count :
-    (CrossCoreTransition.all.filter crossCoreTransitionWritesRemote).length = 15 := by decide
+    (CrossCoreTransition.all.filter crossCoreTransitionWritesRemote).length = 18 := by decide
 
 end SeLe4n.Kernel

@@ -321,6 +321,64 @@ fails if the gate no longer detects them, so a gate that loses its reach fails
 loudly instead of passing everything — that self-test is what exposed the
 unresolvable-name hole in the first place.
 
+### Review round 14: the unbind stranded the thread it unbound
+
+A **pre-existing, single-core-reachable** defect the home-core routing above put
+under a spotlight.  `schedContextUnbind` removed a runnable thread from the run
+queue and relied on "the next schedule call will re-enqueue it correctly if
+still runnable".  Nothing does: `chooseThreadOnCore` selects exclusively from
+the run queue and never scans ready TCBs, and an unbound thread is fully
+schedulable in this model — `resolveEffectivePrioDeadline`'s `.unbound` arm
+returns the legacy TCB priority rather than making the thread passive.  A
+successful syscall therefore left a runnable thread ready and permanently
+unschedulable.  Both entry shapes strand it, so both are repaired: a thread that
+was **current** is not in the queue (dequeue-on-dispatch) and is enqueued after
+`current` is cleared; a thread that was **queued** is re-bucketed at its legacy
+priority, which is the behaviour the docstring always described.
+
+This is the one fixture change in the cut, and the old line was asserting the
+defect: `[SCO-015] … removed=true`.  The probe now checks what the transition
+must guarantee — `queued=true legacyPrio=true`.
+
+Routing the three SchedContext arms through `determineTargetCore` also made them
+remote writers, which owes the cross-core inventory an entry — **all three now
+have one**, so `CrossCoreTransition` goes 16 → 19 entries, 9 → 12 live arms and
+15 → 18 remote writers.
+
+The first cut proved only `.schedContextUnbind` and recorded the other two as
+`crossCoreRemoteWriterPendingAudit`, a counted gap; that list is now **deleted**
+rather than emptied, since an empty tracked-debt list with a vacuously-true
+disjointness theorem reads as coverage.  A Tier-3 negative anchor forbids its
+return.
+
+What made bind and configure resist was not proof budget.  Unbind computes its
+home core at the **pre-state**, so the declared write set is already the one the
+transition writes; bind and configure compute theirs at a **mid-state** — two
+object inserts later for bind, and behind a replenish-queue write plus a
+SchedContext store plus a TCB priority insert for configure — and no tactic can
+bridge that without affinity-stability frames.  The §1a home-core frame layer
+gains `storeObject_schedContext_determineTargetCore_eq` (the endpoint lemma's
+argument verbatim: at a different key the TCB lookup is framed, at the same key
+it fails on both sides because a SchedContext is not a TCB, so no disjointness
+hypothesis is needed), and the raw-`objects.insert` frames turned out to exist
+already as SM5.I atoms — `determineTargetCore_insert_tcb` and
+`getTcb?_insert_schedContext_eq` in `Scheduler/Operations/PerCoreTickCbsAffinity`
+— so that module is imported rather than its lemmas re-proved.  Two structural
+helpers (`setRunQueueOnCore_confinedToCores`,
+`setReplenishQueueOnCore_confinedToCores`) carry the six-field obligation, which
+is what a `simp_all` was papering over on the first attempt.
+
+Because the post-states are structure literals far too large to restate, the
+bridge is transported **into the disequality** (`hHome ▸ hne`) rather than
+rewritten into the goal.
+
+One claim was corrected rather than restated: `schedContextWriteSet`'s docstring
+said it gave "the cores a SchedContext operation may write" for *every* one of
+them.  False for bind, which resolves its thread from an argument — and since
+bind rejects an already-bound SC, that set is empty on exactly the paths where
+bind does write a run queue.  `schedContextBindWriteSet` is its own write set and
+the docstring now says which operations it covers.
+
 ### The per-core enforcement mapping was five arms short — now fourteen
 
 `syscallIdToEnforcementNamePerCore` claimed to differ from the canonical mapping
@@ -372,7 +430,7 @@ about the constants it never reached.
 
 ### Tests
 
-`tests/SmpInformationFlowSuite.lean` — **258 runtime assertions** across the
+`tests/SmpInformationFlowSuite.lean` — **260 runtime assertions** across the
 SM8.A and SM8.B groups, every group carrying a load-bearing negative, plus
 `#check` anchors for every module symbol and Tier-3 pins.  Two fixtures were
 themselves vacuous and are fixed: the cancellation victim was left out of every

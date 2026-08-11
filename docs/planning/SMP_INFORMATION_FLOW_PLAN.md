@@ -501,6 +501,28 @@ by the domain-switch frequency, where the observed countdown is decremented by
 every timer tick), and correcting it meant four separate edits held together by
 nothing but the anchors.
 
+**PR #861 review round 14 — the SchedContext arms, audited (v0.33.5).**  The
+reroute above made all three remote writers, so all three owe the cross-core
+inventory an entry; the first cut proved only `.schedContextUnbind` and tracked
+the rest as a counted `crossCoreRemoteWriterPendingAudit`.  That list is now
+deleted rather than emptied — an empty tracked-debt list reads as coverage — and
+a Tier-3 negative anchor forbids its return.
+
+The obstacle was structural, not effort.  Unbind resolves its home core at the
+pre-state, so its declared write set is already the core it writes; bind and
+configure resolve theirs at a mid-state, and closing that needs
+affinity-stability frames.  `storeObject_schedContext_determineTargetCore_eq`
+extends the §1a layer; the raw-`objects.insert` frames already existed as SM5.I
+atoms (`determineTargetCore_insert_tcb`, `getTcb?_insert_schedContext_eq`) and
+are imported rather than re-proved.  The lesson for the next arm: when a write
+set names a pre-state core, check *where the transition computes it* before
+reaching for a tactic.
+
+The round also corrected a docstring that outran its definition —
+`schedContextWriteSet` claimed to cover every SchedContext operation, but bind
+resolves its thread from an argument and rejects an already-bound SC, so that set
+is empty on exactly the paths where bind writes a run queue.
+
 **PR #861 — the boot-pinned-arm class, closed by a gate (v0.33.5).**  Rounds
 10 and 12 found the same defect three times, one syscall per round, and the
 pattern was going to continue: nothing said *which* live arms were per-core

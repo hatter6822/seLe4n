@@ -551,6 +551,18 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @SeLe4n.Kernel.schedulingCapacityRun
 #check @SeLe4n.Kernel.schedulingCapacityRun_singleton
 #check @SeLe4n.Kernel.schedulingChannel_trace_determines_observations
+#check @SeLe4n.Kernel.schedContextSubject?
+#check @SeLe4n.Kernel.schedContextWriteSet
+#check @SeLe4n.Kernel.schedContextUnbind_confinedToCores
+#check @SeLe4n.Kernel.schedContextUnbind_crossCoreNonInterference
+#check @SeLe4n.Kernel.storeObject_schedContext_determineTargetCore_eq
+#check @SeLe4n.Kernel.setRunQueueOnCore_confinedToCores
+#check @SeLe4n.Kernel.setReplenishQueueOnCore_confinedToCores
+#check @SeLe4n.Kernel.schedContextBindWriteSet
+#check @SeLe4n.Kernel.schedContextBind_confinedToCores
+#check @SeLe4n.Kernel.schedContextBind_crossCoreNonInterference
+#check @SeLe4n.Kernel.schedContextConfigure_confinedToCores
+#check @SeLe4n.Kernel.schedContextConfigure_crossCoreNonInterference
 #check @CovertChannelId.mem_all
 #check @CovertChannelId.all_nodup
 #check LiveArmEvidence
@@ -2481,16 +2493,33 @@ private def runRunQueueComparisonChecks : IO Unit := do
 /-- §5.3  The set-of-cores algebra and its coverage record. -/
 private def runCoreSetAlgebraChecks : IO Unit := do
   IO.println "--- §5.3 the set-of-cores confinement algebra ---"
-  assertBool "sixteen cross-core transitions are covered"
-    (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 16))
-  assertBool "fifteen of the sixteen can name a core other than the executing one"
+  assertBool "nineteen cross-core transitions are covered"
+    (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 19))
+  assertBool "eighteen of the nineteen can name a core other than the executing one"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
-      SeLe4n.Kernel.crossCoreTransitionWritesRemote).length = 15))
+      SeLe4n.Kernel.crossCoreTransitionWritesRemote).length = 18))
   assertBool "…and the wait is the one that cannot"
     (decide (SeLe4n.Kernel.crossCoreTransitionWritesRemote .notificationWait = false))
-  assertBool "nine of the sixteen are the arms the live syscall dispatch reaches"
+  assertBool "twelve of the nineteen are the arms the live syscall dispatch reaches"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
-      SeLe4n.Kernel.crossCoreTransitionIsLiveArm).length = 9))
+      SeLe4n.Kernel.crossCoreTransitionIsLiveArm).length = 12))
+  -- Round 14: routing the SchedContext arms through `determineTargetCore` made
+  -- them remote writers.  `.schedContextUnbind` is audited; the other two are a
+  -- COUNTED gap rather than a silent one, and deliberately not in the inventory,
+  -- whose contract is that every entry names a real NI theorem.
+  -- Round 14 closure: all THREE SchedContext arms this cut made remote writers
+  -- are audited, so the counted `crossCoreRemoteWriterPendingAudit` gap is gone.
+  assertBool "all three SchedContext arms are in the inventory and live"
+    ([SeLe4n.Kernel.CrossCoreTransition.schedContextUnbindDispatch,
+      .schedContextBindDispatch, .schedContextConfigureDispatch].all (fun t =>
+        decide (t ∈ SeLe4n.Kernel.CrossCoreTransition.all)
+          && SeLe4n.Kernel.crossCoreTransitionIsLiveArm t
+          && SeLe4n.Kernel.crossCoreTransitionWritesRemote t))
+  assertBool "…each naming its own syscall"
+    (decide (SeLe4n.Kernel.crossCoreLiveArmSyscall .schedContextBindDispatch
+               = some SeLe4n.Model.SyscallId.schedContextBind
+             ∧ SeLe4n.Kernel.crossCoreLiveArmSyscall .schedContextConfigureDispatch
+               = some SeLe4n.Model.SyscallId.schedContextConfigure))
   -- Round 10's finding, as a checked fact: `.send` was the last IPC arm still
   -- routed to a boot-pinned transition, and it is now both in the inventory and
   -- backed by a delegation proof rather than by a reading of `API.lean`.
@@ -2536,7 +2565,7 @@ private def runCoreSetAlgebraChecks : IO Unit := do
         n == "endpointReceiveDualOnCore"))
   assertBool "the covered-transition theorem names are pairwise distinct"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.map
-      SeLe4n.Kernel.crossCoreNiTheorem).eraseDups.length = 16))
+      SeLe4n.Kernel.crossCoreNiTheorem).eraseDups.length = 19))
   -- The load-bearing negative: the write set is *state-dependent*, so it is not
   -- a constant the theorem could be satisfying vacuously.  With no receiver the
   -- call writes one core; with a remote receiver waiting it writes two — and
