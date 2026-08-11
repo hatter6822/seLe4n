@@ -471,11 +471,12 @@ another patch:
    syscall to its own transition.  `crossCoreLiveArmDelegationBacked_count`
    (= 2) and `crossCoreLiveArm_readOffTheArm_count` (= 5) make the residual a
    *tracked quantity* rather than something a reader reconstructs by grepping.
-   Closing it means adding five delegation theorems, and the counts cannot
-   silently drift while that happens.  `dispatchWithCap_tcbSuspend_delegates`
-   and `dispatchWithCapChecked_receive_delegates` are the first two — the
-   second is round 8's subject, so the arm that was misclassified is now the
-   arm that cannot be.
+   Closing it means adding delegation theorems, and the counts cannot silently
+   drift while that happens.  `dispatchWithCap_tcbSuspend_delegates` and
+   `dispatchWithCapChecked_receive_delegates` were the first two — the second is
+   round 8's subject, so the arm that was misclassified is now the arm that
+   cannot be — and rounds 10 and 12 added `.tcbResume` and `.send`, taking the
+   backed count to 4 of 9 live arms.
 
 2. **Enumerations cannot fail open.**  `CovertChannelId.mem_all` (round 9) and
    `CrossCoreTransition.mem_all` (round 11) are the same shape of fix: a
@@ -494,7 +495,42 @@ Class C is not yet closed structurally: the capacity figure is still restated in
 `Projection.lean`, the inventory's mitigation string, `SECURITY_ADVISORY.md` and
 `DEPLOYMENT_GUIDE.md`, held together only by Tier-3 anchors checking that each
 mentions the theorem name.  Single-sourcing it — generating the prose from one
-Lean definition — is the registered follow-on.
+Lean definition — is the registered follow-on.  Round 12 is the predicted failure: the
+*rate* factor in that figure was wrong in all four places at once (it multiplied
+by the domain-switch frequency, where the observed countdown is decremented by
+every timer tick), and correcting it meant four separate edits held together by
+nothing but the anchors.
+
+**PR #861 review rounds 10 and 12 (v0.33.5) — three boot-pinned live arms.**
+The last syscall arms whose *scheduling* effects still targeted `bootCoreId`
+unconditionally.  No theorem was false — the transitions are pure functions and
+the theorems say what those functions compute — but each is a real multi-core
+scheduling defect, so each is fixed by rerouting rather than by qualifying a
+claim.
+
+* `.tcbResume` → `resumeThreadOnCore` (was `resumeThread`, enqueueing on the
+  boot core regardless of `cpuAffinity`).
+* `.send` → `endpointSendDualWithCapsOnCore` /
+  `endpointSendCrossCoreDispatchChecked` (new production
+  `IPC/CrossCore/EndpointSend.lean`).  `endpointSendDualWithCaps` is boot-pinned
+  on *both* of its scheduling effects: a rendezvous receiver woken with
+  `ensureRunnable`, a blocking sender descheduled with `removeRunnable`.
+* `.tcbSetPriority` / `.tcbSetMCPriority` → `setPriorityOnCore` /
+  `setMCPriorityOnCore` (new production
+  `SchedContext/PriorityManagementPerCore.lean`).  These were boot-pinned twice:
+  the re-bucket tested membership in the boot core's run queue — a silent no-op
+  for a target queued elsewhere, so a demotion never took effect and the
+  scheduler kept dispatching at the old band — and the preemption check read the
+  boot core's current thread.  `migrateRunQueueBucket` is now the `bootCoreId`
+  instance of `migrateRunQueueBucketOnCore`.
+
+The per-core enforcement mapping was also five arms short: besides these four it
+had never listed the three SM7.D/SM7.F architecture wrappers, live per-core arms
+since v0.32.94.  Re-routed arms 7 → 14, boundary 46 → 53.
+
+Round 12 additionally found CC-1's rate factor wrong (see the class-C note
+above) and the axiom sweep failing open on a nonzero exit with no Lean
+diagnostic.
 
 **PR #861 review round 9 (v0.33.5).**  Three findings, all P2, all valid, all
 against the previous two rounds' own remediation of CC-1.

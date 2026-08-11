@@ -1767,7 +1767,7 @@ run_check "INVARIANT" rg -n '^theorem notificationSignalWriteSet_eq_lockSet_wait
 run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem wakeThread_crossCoreNonInterference_of_visible_thread' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n 'CrossCoreTransition.all.length = 14' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n 'CrossCoreTransition.all.length = 16' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # Review round 5: a LIVE inventory entry must name the function the syscall
 # dispatch calls.  Three entries named a below-API transition their wrapper does
 # strictly more than, so the wrappers get entries — and bounds — of their own.
@@ -1921,6 +1921,39 @@ run_check "INVARIANT" rg -n 'Lean.collectAxioms' scripts/check_module_axioms.py
 # declaration names.  Its absence is what keeps the sweep on `env.constants`.
 run_negative_check "INVARIANT" rg -n 'print axioms' scripts/check_module_axioms.py
 
+# PR #861 review round 10/12: the last boot-pinned live arms.  Each reroute is
+# pinned positively (the per-core operation exists and the arm's delegation
+# theorem names it) and negatively (the boot-pinned call site is gone from the
+# arm).  The negatives match the CALL SITE, not the mention: the single-core
+# operations remain in the tree as the pre-SMP surface and are named in prose.
+run_check "INVARIANT" rg -n '^def endpointSendDualOnCore' SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean
+run_check "INVARIANT" rg -n '^def endpointSendDualWithCapsOnCore' SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean
+run_check "INVARIANT" rg -n '^def endpointSendCrossCoreDispatchChecked' SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_send_delegates' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_send_delegates' SeLe4n/Kernel/API.lean
+run_negative_check "INVARIANT" rg -n 'match endpointSendDualWithCaps epId' SeLe4n/Kernel/API.lean
+run_negative_check "INVARIANT" rg -n 'match endpointSendDualChecked ctx epId' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def migrateRunQueueBucketOnCore' SeLe4n/Kernel/SchedContext/PriorityManagement.lean
+run_check "INVARIANT" rg -n '^def setPriorityOnCore' SeLe4n/Kernel/SchedContext/PriorityManagementPerCore.lean
+run_check "INVARIANT" rg -n '^def setMCPriorityOnCore' SeLe4n/Kernel/SchedContext/PriorityManagementPerCore.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_tcbSetPriority_delegates' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_tcbSetMCPriority_delegates' SeLe4n/Kernel/API.lean
+run_negative_check "INVARIANT" rg -n 'PriorityManagement.setPriorityOp st$' SeLe4n/Kernel/API.lean
+run_negative_check "INVARIANT" rg -n 'PriorityManagement.setMCPriorityOp st$' SeLe4n/Kernel/API.lean
+# The bucket migration must not go back to reading only the boot core's queue.
+run_negative_check "INVARIANT" rg -n 'runQueueOnCore bootCoreId' SeLe4n/Kernel/SchedContext/PriorityManagement.lean
+# CC-1: the rate factor is the TICK rate.  The pacing theorem is what stops the
+# guidance drifting back to the domain-switch frequency, and the run-length
+# capacity is stated per observation so the two factors travel together.
+run_check "INVARIANT" rg -n '^theorem schedulingObservation_changes_on_domain_tick' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem schedulingChannel_trace_capacity' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem boundedCodeTraces_length' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n 'tickFreq' docs/SECURITY_ADVISORY.md
+run_negative_check "INVARIANT" rg -n 'switchFreq bits/second' docs/SECURITY_ADVISORY.md docs/DEPLOYMENT_GUIDE.md
+# The axiom sweep must fail closed on a nonzero exit, not only on a Lean
+# diagnostic: `lake` can fail before Lean runs at all.
+run_check "INVARIANT" rg -n 'proc.returncode != 0' scripts/check_module_axioms.py
+
 # PR #861 review round 2: the live `.call` arm is bounded by a write set that
 # mirrors the dispatch's own control flow, not by hand-supplied intermediate
 # states.  NEGATIVE: `endpointCallLiveWriteSet` must stay a composition rule —
@@ -1946,7 +1979,7 @@ run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_crossCoreNonInte
 run_check "INVARIANT" rg -n '^def endpointReplyRecvWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count : CrossCoreTransition\.all\.length = 14' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count : CrossCoreTransition\.all\.length = 16' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^def crossCoreTransitionIsLiveArm' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^  runLiveCrossCoreArmChecks' tests/SmpInformationFlowSuite.lean
 # The home-core frames those confinement proofs rest on: a dequeue and a badge
@@ -1977,7 +2010,7 @@ run_check "INVARIANT" rg -n '^def crossCoreEnforcementEntries' SeLe4n/Kernel/Inf
 run_check "INVARIANT" rg -n '^def syscallIdToEnforcementNamePerCore' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_is_complete_crossCore' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_crossCore_classes_match' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem syscallIdToEnforcementNamePerCore_differs_at_seven' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem syscallIdToEnforcementNamePerCore_differs_at_fourteen' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 
 
 # WS-H12d IPC message payload bounds anchors — predicate definitions + enforcement + theorems.

@@ -1164,6 +1164,15 @@ theorem resumeReadyMidState_scheduler_eq (st : SystemState) (tid : ThreadId) :
   simp only [resumeReadyMidState]
   split <;> simp [Lifecycle.Suspend.restoreToReady_scheduler_eq]
 
+/-- WS-SM SM8.B: and the machine state, register banks included.  Added beside
+the scheduler frame for the per-core confinement consumer: SM5.I banks every
+core's `RegisterFile` inside one `MachineState`, so a scheduler frame alone
+never bounded this step's observable writes. -/
+theorem resumeReadyMidState_machine_eq (st : SystemState) (tid : ThreadId) :
+    (resumeReadyMidState st tid).machine = st.machine := by
+  simp only [resumeReadyMidState]
+  split <;> simp [Lifecycle.Suspend.restoreToReady_machine_eq]
+
 /-- WS-SM SM5.F.6 (plan §3.6, resume H3c): the **complete** per-core resume sets the
 resumed thread's `threadState := .Ready` — the run-queue enqueue (no-op when already
 runnable, else `_makes_ready` which touches only `ipcState`) preserves it, so the

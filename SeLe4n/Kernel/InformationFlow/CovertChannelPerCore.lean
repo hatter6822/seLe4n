@@ -104,11 +104,31 @@ def crossCoreEnforcementEntries : List EnforcementClass :=
   , .policyGated "endpointReceiveDualOnCore"
   , .policyGated "notificationSignalBoundCrossCoreDispatchChecked"
   , .policyGated "notificationWaitCrossCoreDispatchChecked"
-  , .capabilityOnly "suspendThreadOnCore" ]
+  , .capabilityOnly "suspendThreadOnCore"
+  -- PR #861 review round 10: the `.send` arm was still boot-pinned through
+  -- `endpointSendDualWithCaps`; rerouted, so its live operation is now this one.
+  , .policyGated "endpointSendCrossCoreDispatchChecked"
+  -- Round 10, same finding on the resume side.
+  , .capabilityOnly "resumeThreadOnCore"
+  -- PR #861 review round 12: the SM7.D/SM7.F architecture wrappers are live
+  -- per-core arms too — each is what its `dispatchWithCap_…_delegates` theorem
+  -- says the arm reaches, and each does strictly more than the canonical
+  -- operation it replaced (initiator-atomic TLB drain, I-cache maintenance).
+  -- Leaving them out let the per-core table report a cross-core surface of
+  -- seven when the live one is twelve.
+  , .capabilityOnly "vspaceMapPageCheckedWithShootdownFromStatePerCore"
+  , .capabilityOnly "vspaceUnmapPageWithShootdownAndIcacheBroadcast"
+  , .capabilityOnly "lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache"
+  -- PR #861 review round 12: the priority-control arms were boot-pinned twice
+  -- over — the run-queue re-bucket tested membership in the BOOT core's queue
+  -- (a silent no-op for a thread queued anywhere else, so a demotion never took
+  -- effect) and the preemption check read the boot core's current thread.
+  , .capabilityOnly "setPriorityOnCore"
+  , .capabilityOnly "setMCPriorityOnCore" ]
 
 /-- SM8.B.6: the SMP enforcement boundary — the canonical classification, the
 two-phase-locking bracket the per-object lock discipline introduces, and the
-seven live cross-core wrappers.
+fourteen live cross-core wrappers.
 
 The canonical entries are **kept**, not replaced: the boot-pinned
 `syscallDispatchInner` still reaches the single-core wrappers, so both surfaces
@@ -116,15 +136,16 @@ are live and both must be classified. -/
 def enforcementBoundaryPerCore : List EnforcementClass :=
   enforcementBoundaryExtended ++ [.capabilityOnly "withLockSet"] ++ crossCoreEnforcementEntries
 
-/-- SM8.B.6: the per-core boundary has 46 entries — the live canonical 38, the
-2PL bracket, and the seven cross-core wrappers.  Re-anchored at the SM8.A cut and
-again in the fourth review round; `enforcementBoundaryExtended_count` is the
-authority for the base figure. -/
-theorem enforcementBoundaryPerCore_count : enforcementBoundaryPerCore.length = 46 := by rfl
+/-- SM8.B.6: the per-core boundary has 53 entries — the live canonical 38, the
+2PL bracket, and the fourteen cross-core wrappers.  Re-anchored at the SM8.A cut,
+in the fourth review round, and again in rounds 10 and 12 as the `.send`, resume
+and architecture arms joined the cross-core surface;
+`enforcementBoundaryExtended_count` is the authority for the base figure. -/
+theorem enforcementBoundaryPerCore_count : enforcementBoundaryPerCore.length = 53 := by rfl
 
 /-- SM8.B.7 (completeness, part 1): the per-core boundary **extends** the
 canonical one — it is the canonical list followed by the 2PL bracket and the
-seven live cross-core wrappers, so no existing classification was dropped or
+fourteen live cross-core wrappers, so no existing classification was dropped or
 reclassified in the lift.  Additive by construction: `List.IsPrefix` is the
 statement that the canonical list survives unmodified as a prefix. -/
 theorem enforcementBoundaryPerCore_extends_canonical :
@@ -168,10 +189,13 @@ theorem enforcementBoundaryPerCore_is_complete : enforcementBoundaryPerCoreCompl
 
 /-- SM8.B.6: **the operation each syscall reaches under SMP.**
 
-Differs from `syscallIdToEnforcementName` at exactly the seven arms SM6
-re-routed; every other syscall reaches the same operation it did before SMP, so
-it falls through to the canonical mapping rather than being restated (a second
-full copy would be a second thing to keep in sync). -/
+Differs from `syscallIdToEnforcementName` at exactly the fourteen arms the SMP
+work re-routed — seven from SM6, `.send` and `.tcbResume` from PR #861 review
+round 10, the three SM7.D/SM7.F architecture wrappers, and the two
+priority-control arms from round 12; every other syscall
+reaches the same operation it did before SMP, so it falls through to the
+canonical mapping rather than being restated (a second full copy would be a
+second thing to keep in sync). -/
 def syscallIdToEnforcementNamePerCore : SyscallId → String
   | .call                => "endpointCallCrossCoreDispatchChecked"
   | .reply               => "endpointReplyCrossCoreDispatchChecked"
@@ -180,6 +204,13 @@ def syscallIdToEnforcementNamePerCore : SyscallId → String
   | .notificationSignal  => "notificationSignalBoundCrossCoreDispatchChecked"
   | .notificationWait    => "notificationWaitCrossCoreDispatchChecked"
   | .tcbSuspend          => "suspendThreadOnCore"
+  | .send                => "endpointSendCrossCoreDispatchChecked"
+  | .tcbResume           => "resumeThreadOnCore"
+  | .vspaceMap           => "vspaceMapPageCheckedWithShootdownFromStatePerCore"
+  | .vspaceUnmap         => "vspaceUnmapPageWithShootdownAndIcacheBroadcast"
+  | .lifecycleRetype     => "lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache"
+  | .tcbSetPriority      => "setPriorityOnCore"
+  | .tcbSetMCPriority    => "setMCPriorityOnCore"
   | sid                  => syscallIdToEnforcementName sid
 
 /-- SM8.B.7 (completeness, part 2b — **the SMP half**): every `SyscallId` maps,
@@ -200,14 +231,19 @@ def enforcementBoundaryPerCoreCompleteCrossCore : Bool :=
 theorem enforcementBoundaryPerCore_is_complete_crossCore :
     enforcementBoundaryPerCoreCompleteCrossCore = true := by decide
 
-/-- SM8.B.7: the seven re-routed arms are genuinely re-routed — the per-core
+/-- SM8.B.7: the fourteen re-routed arms are genuinely re-routed — the per-core
 mapping differs from the canonical one at exactly those syscalls, and nowhere
 else.  A syscall silently added to (or dropped from) the cross-core surface
-moves this count. -/
-theorem syscallIdToEnforcementNamePerCore_differs_at_seven :
+moves this count.
+
+Was seven until PR #861 review round 10 rerouted `.send` and `.tcbResume` off
+their boot-pinned operations, and round 12 observed that the three SM7.D/SM7.F
+architecture wrappers had been live per-core arms all along without appearing
+here. -/
+theorem syscallIdToEnforcementNamePerCore_differs_at_fourteen :
     (SyscallId.all.filter (fun sid =>
       decide (syscallIdToEnforcementNamePerCore sid ≠ syscallIdToEnforcementName sid))).length
-      = 7 := by decide
+      = 14 := by decide
 
 /-- SM8.B.7: **a cross-core wrapper carries the same enforcement class as the
 single-core operation it replaced.**  Re-routing a transition to another core
@@ -216,7 +252,8 @@ claim is checked rather than asserted: for each re-routed syscall, the class of
 its per-core entry equals the class of its canonical one. -/
 theorem enforcementBoundaryPerCore_crossCore_classes_match :
     ([SyscallId.call, .reply, .replyRecv, .receive, .notificationSignal,
-      .notificationWait, .tcbSuspend].all (fun sid =>
+      .notificationWait, .tcbSuspend, .send, .tcbResume, .vspaceMap, .vspaceUnmap,
+      .lifecycleRetype, .tcbSetPriority, .tcbSetMCPriority].all (fun sid =>
         let canonical := enforcementBoundary.find? (fun ec =>
           match ec with
           | .policyGated n | .capabilityOnly n | .readOnly n =>
@@ -308,12 +345,17 @@ def acceptedCovertChannel_scheduling_perCore : CovertChannel :=
        schedulingChannel_alphabet_bounded with \
        schedulingObservationCode_injective, and covering the active domain too \
        via schedulingChannel_full_observation_determined under \
-       domainConsistentOnCore. At switch frequency F the rate bound \
-       is that figure times F. The quantum cap is a required hypothesis, not a \
-       formality: schedulingChannel_not_bounded_by_scheduleLength proves that \
+       domainConsistentOnCore. The observation rate is the TIMER-TICK rate, not \
+       the domain-switch rate: an ordinary tick decrements the observed \
+       countdown, so consecutive observations differ between switches \
+       (schedulingObservation_changes_on_domain_tick). Over an n-tick run the \
+       whole trace is one of alphabet^n possibilities \
+       (schedulingChannel_trace_capacity into boundedCodeTraces). The quantum \
+       cap is a required hypothesis, not a formality: \
+       schedulingChannel_not_bounded_by_scheduleLength proves that \
        |domainSchedule| alone bounds nothing, because domainTimeRemaining is an \
        unrestricted Nat carried unfiltered."
-    severity := .low
+    severity := .medium
     modelVisible := true
     perCoreInstance := true }
 
@@ -884,6 +926,141 @@ theorem schedulingChannel_full_observation_determined_of_preconditions (quantumB
     hNE₁ hC₁ hC₂ hB₁ hB₂ ?_ ?_ hCode
   · simpa [schedulingObservationOnCore, hTrans₁.2.1] using hQ₁
   · simpa [schedulingObservationOnCore, hTrans₂.2.1] using hQ₂
+
+-- ============================================================================
+-- SM8.B.9 — the CC-1 **observation-rate** bound (PR #861 review round 12)
+-- ============================================================================
+--
+-- The alphabet bound above says how much ONE observation carries.  A bandwidth
+-- figure needs the second factor, and the guidance had it wrong: it multiplied
+-- by the domain-**switch** frequency.  The observable tuple carries
+-- `domainTimeRemaining`, and that field is decremented on every ordinary timer
+-- tick, so consecutive observations differ *between* switches too — the
+-- observation rate is the **tick** rate, which on the canonical RPi5
+-- configuration (`configDefaultTimeSlice = 1000`, a 1 ms tick) is three orders
+-- of magnitude higher than the switch rate.
+--
+-- `schedulingObservation_changes_on_domain_tick` below is that fact as a
+-- theorem, and the trace-capacity bound is stated per observation rather than
+-- per switch so the two cannot drift apart again.
+
+/-- SM8.B.9 (**the pacing fact**): an ordinary timer tick — one that does *not*
+reach a domain boundary — **changes the observation**.
+
+`decrementDomainTimeOnCore` is the tick's domain-countdown leg, and the countdown
+is the second component of the observed tuple, so a tick with time left produces
+an observation distinct from the previous one.  Consequently the observer is not
+paced by domain switches: it can read a fresh value once per tick. -/
+theorem schedulingObservation_changes_on_domain_tick (ctx : LabelingContext)
+    (c : CoreId) (L : SecurityLabel) (s : SystemState)
+    (hPos : 0 < s.scheduler.domainTimeRemainingOnCore c) :
+    schedulingObservationOnCore ctx c L (decrementDomainTimeOnCore s c)
+      ≠ schedulingObservationOnCore ctx c L s := by
+  intro hEq
+  have hTransPre := onCore_schedulingTransparency ctx c L s
+  have hTransPost := onCore_schedulingTransparency ctx c L (decrementDomainTimeOnCore s c)
+  have hSnd : (schedulingObservationOnCore ctx c L (decrementDomainTimeOnCore s c)).2
+      = (schedulingObservationOnCore ctx c L s).2 := by rw [hEq]
+  rw [show (schedulingObservationOnCore ctx c L (decrementDomainTimeOnCore s c)).2
+        = (decrementDomainTimeOnCore s c).scheduler.domainTimeRemainingOnCore c from
+        hTransPost.2.1,
+      show (schedulingObservationOnCore ctx c L s).2
+        = s.scheduler.domainTimeRemainingOnCore c from hTransPre.2.1,
+      decrementDomainTimeOnCore_decrements] at hSnd
+  omega
+
+/-- SM8.B.9: **every code trace of length `n` over an alphabet of size `a`**,
+enumerated.  The observer's whole run of observations is one element of this
+list, and the list's length is exactly `a ^ n` — which is the capacity statement
+without a logarithm, and without Mathlib's cardinality machinery. -/
+def boundedCodeTraces (alphabet : Nat) : Nat → List (List Nat)
+  | 0 => [[]]
+  | n + 1 =>
+      (List.range alphabet).flatMap (fun x => (boundedCodeTraces alphabet n).map (x :: ·))
+
+/-- SM8.B.9: the enumeration has exactly `alphabet ^ n` elements. -/
+theorem boundedCodeTraces_length (alphabet : Nat) :
+    ∀ n, (boundedCodeTraces alphabet n).length = alphabet ^ n
+  | 0 => by simp [boundedCodeTraces]
+  | n + 1 => by
+      have hConst : ∀ l : List Nat,
+          (List.map (fun _ => alphabet ^ n) l).sum = l.length * alphabet ^ n := by
+        intro l
+        induction l with
+        | nil => simp
+        | cons a t ih => simp [ih, Nat.succ_mul, Nat.add_comm]
+      simp [boundedCodeTraces, List.length_flatMap, boundedCodeTraces_length alphabet n,
+        hConst, Nat.pow_succ, Nat.mul_comm]
+
+/-- SM8.B.9: and it contains **exactly** the length-`n` traces whose every entry
+is below the alphabet size — so the count above is a count of the right set,
+not of a superset that happens to be easy to enumerate. -/
+theorem mem_boundedCodeTraces (alphabet : Nat) :
+    ∀ (n : Nat) (l : List Nat),
+      l ∈ boundedCodeTraces alphabet n ↔ (l.length = n ∧ ∀ x ∈ l, x < alphabet)
+  | 0, l => by
+      constructor
+      · intro h
+        simp only [boundedCodeTraces, List.mem_singleton] at h
+        subst h; simp
+      · rintro ⟨hLen, -⟩
+        simp only [boundedCodeTraces, List.mem_singleton]
+        exact List.eq_nil_of_length_eq_zero hLen
+  | n + 1, l => by
+      simp only [boundedCodeTraces, List.mem_flatMap, List.mem_map, List.mem_range]
+      constructor
+      · rintro ⟨x, hx, t, ht, rfl⟩
+        obtain ⟨hLen, hAll⟩ := (mem_boundedCodeTraces alphabet n t).mp ht
+        refine ⟨by simp [hLen], ?_⟩
+        intro y hy
+        rcases List.mem_cons.mp hy with rfl | hy'
+        · exact hx
+        · exact hAll y hy'
+      · rintro ⟨hLen, hAll⟩
+        cases l with
+        | nil => simp at hLen
+        | cons x t =>
+          refine ⟨x, hAll x (by simp), t, ?_, rfl⟩
+          refine (mem_boundedCodeTraces alphabet n t).mpr ⟨by simpa using hLen, ?_⟩
+          intro y hy
+          exact hAll y (List.mem_cons_of_mem _ hy)
+
+/-- SM8.B.9: the sequence of codes an observer on `(c, L)` reads off a run. -/
+def schedulingObservationTrace (quantumBound : Nat) (ctx : LabelingContext)
+    (c : CoreId) (L : SecurityLabel) (run : List SystemState) : List Nat :=
+  run.map (schedulingObservationCode quantumBound ctx c L)
+
+/-- SM8.B.9 (**the CC-1 bandwidth bound**): over a run of `n` observations —
+one per **timer tick**, by the pacing fact above, not one per domain switch —
+the observer's whole trace is a single element of `boundedCodeTraces alphabet n`,
+a set of exactly `alphabet ^ n` elements, where
+`alphabet = |domainSchedule| × (quantumBound + 1)`.
+
+Equivalently: at most `log₂(alphabet)` bits per tick, and no more over the run
+than that times the number of ticks.  Every state in the run must satisfy the
+bundled preconditions and share one schedule — the same conditions the
+per-observation bound needs, applied pointwise, which is why they are quantified
+rather than assumed once. -/
+theorem schedulingChannel_trace_capacity (quantumBound : Nat) (ctx : LabelingContext)
+    (c : CoreId) (L : SecurityLabel) (run : List SystemState) (alphabet : Nat)
+    (hPre : ∀ s ∈ run, schedulingCapacityPreconditions quantumBound s c)
+    (hAlphabet : ∀ s ∈ run, s.scheduler.domainSchedule.length * (quantumBound + 1) ≤ alphabet) :
+    schedulingObservationTrace quantumBound ctx c L run
+      ∈ boundedCodeTraces alphabet run.length := by
+  refine (mem_boundedCodeTraces alphabet run.length _).mpr ⟨by simp [schedulingObservationTrace], ?_⟩
+  intro x hx
+  simp only [schedulingObservationTrace, List.mem_map] at hx
+  obtain ⟨s, hs, rfl⟩ := hx
+  exact Nat.lt_of_lt_of_le
+    (schedulingChannel_alphabet_bounded_of_preconditions quantumBound ctx c L s (hPre s hs))
+    (hAlphabet s hs)
+
+/-- SM8.B.9: the capacity really is exponential in the run length and nothing
+smaller — a one-tick run over an eight-element alphabet admits eight traces, a
+two-tick run sixty-four.  Stated so the `alphabet ^ n` is a computed fact rather
+than a reading of the definition. -/
+example : (boundedCodeTraces 8 1).length = 8 ∧ (boundedCodeTraces 8 2).length = 64 := by
+  constructor <;> simp [boundedCodeTraces_length]
 
 /-- SM8.B.9: the bound is **not vacuous** — with a two-entry schedule and a
 countdown capped at 3 the alphabet has at most 8 elements, and a concrete state

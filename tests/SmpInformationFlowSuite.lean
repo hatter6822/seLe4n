@@ -524,12 +524,42 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @schedulingCapacityComparable
 #check @schedulingChannel_alphabet_bounded_of_preconditions
 #check @schedulingChannel_full_observation_determined_of_preconditions
+-- SM8.B.9 (PR #861 review round 12): the CC-1 rate factor is the TICK rate,
+-- and the run-length capacity that goes with it.
+#check @schedulingObservation_changes_on_domain_tick
+#check @boundedCodeTraces
+#check @boundedCodeTraces_length
+#check @mem_boundedCodeTraces
+#check @schedulingObservationTrace
+#check @schedulingChannel_trace_capacity
+-- SM8.B (round 12): the per-core priority-control arms.
+#check @SeLe4n.Kernel.SchedContext.PriorityManagement.migrateRunQueueBucketOnCore
+#check @SeLe4n.Kernel.SchedContext.PriorityManagement.priorityRescheduleOnCore
+#check @SeLe4n.Kernel.SchedContext.PriorityManagement.priorityRescheduleOnCore_sgi_shape
+#check @SeLe4n.Kernel.SchedContext.PriorityManagement.setPriorityOnCore
+#check @SeLe4n.Kernel.SchedContext.PriorityManagement.setMCPriorityOnCore
+#check @SeLe4n.Kernel.SchedContext.PriorityManagement.setPriorityOnCore_raise_no_sgi
+#check @SeLe4n.Kernel.SchedContext.PriorityManagement.setPriorityOnCore_authority_rejected
+#check @SeLe4n.Kernel.SchedContext.PriorityManagement.setMCPriorityOnCore_authority_rejected
+#check @migrateRunQueueBucketOnCore_preserves_projection
+#check @setPriorityOnCore_preserves_projection
+#check @setMCPriorityOnCore_preserves_projection
+#check @SeLe4n.Kernel.dispatchWithCap_tcbSetPriority_delegates
+#check @SeLe4n.Kernel.dispatchWithCap_tcbSetMCPriority_delegates
+#check @SeLe4n.Kernel.syscallDelegates_tcbSetPriority
+#check @SeLe4n.Kernel.syscallDelegates_tcbSetMCPriority
 #check @CovertChannelId.mem_all
 #check @CovertChannelId.all_nodup
 #check LiveArmEvidence
 #check @LiveArmEvidence.isDelegationBacked
 #check @LiveArmEvidence.syscall?
 #check @crossCoreLiveArmSyscall
+#check @resumeThreadOnCoreWriteSet
+#check @resumeReadyMidState_confinedToCores
+#check @resumeThreadOnCore_confinedToCores
+#check @resumeThreadOnCore_crossCoreNonInterference
+#check @SeLe4n.Kernel.dispatchWithCap_tcbResume_delegates
+#check @SeLe4n.Kernel.syscallDelegates_tcbResume
 #check @crossCoreLiveArmEvidence_syscall_matches
 #check @CrossCoreTransition.mem_all
 #check @CrossCoreTransition.all_nodup
@@ -541,12 +571,34 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @crossCoreLiveArm_readOffTheArm_count
 #check @SeLe4n.Kernel.dispatchWithCap_tcbSuspend_delegates
 #check @SeLe4n.Kernel.dispatchWithCapChecked_receive_delegates
+-- SM8.B (PR #861 review round 10): the live `.send` arm, rerouted off the
+-- boot-pinned `endpointSendDualWithCaps`, and the per-core audit it owes.
+#check @SeLe4n.Kernel.endpointSendDualOnCore
+#check @SeLe4n.Kernel.endpointSendDualWithCapsOnCore
+#check @SeLe4n.Kernel.endpointSendCrossCoreDispatchChecked
+#check @SeLe4n.Kernel.endpointSendDualOnCore_tooLarge
+#check @SeLe4n.Kernel.endpointSendDualOnCore_tooManyCaps
+#check @SeLe4n.Kernel.endpointSendDualOnCore_bootCore_state
+#check @SeLe4n.Kernel.endpointSendDualWithCapsOnCore_no_caps
+#check @SeLe4n.Kernel.endpointSendCrossCoreDispatchChecked_flow_denied
+#check @SeLe4n.Kernel.endpointSendCrossCoreDispatchChecked_flow_allowed
+#check @endpointSendWriteSet
+#check @endpointSendDualOnCore_confinedToCores
+#check @endpointSendDualWithCapsOnCore_scheduler_eq
+#check @endpointSendDualWithCapsOnCore_machine_eq
+#check @endpointSendDualWithCapsOnCore_confinedToCores
+#check @endpointSendCrossCoreDispatchChecked_confinedToCores
+#check @endpointSendDualWithCapsOnCore_crossCoreNonInterference
+#check @endpointSendCrossCoreDispatchChecked_crossCoreNonInterference
+#check @SeLe4n.Kernel.dispatchWithCap_send_delegates
+#check @SeLe4n.Kernel.dispatchWithCapChecked_send_delegates
+#check @SeLe4n.Kernel.syscallDelegates_send
 #check @crossCoreEnforcementEntries
 #check @enforcementBoundary_prefix_of_perCore
 #check @syscallIdToEnforcementNamePerCore
 #check @enforcementBoundaryPerCoreCompleteCrossCore
 #check @enforcementBoundaryPerCore_is_complete_crossCore
-#check @syscallIdToEnforcementNamePerCore_differs_at_seven
+#check @syscallIdToEnforcementNamePerCore_differs_at_fourteen
 #check @enforcementBoundaryPerCore_crossCore_classes_match
 #check @endpointPolicyRestricted_perCore
 #check @endpointPolicyRestricted_perCore_iff
@@ -2102,6 +2154,19 @@ private def runTwoCoreWriteSetChecks : IO Unit := do
   assertBool "NEGATIVE: the two-core set is not a singleton on either core"
     (decide (SeLe4n.Kernel.endpointCallWriteSet rendezvousState crossCoreEndpoint c0 ≠ [c0] ∧
              SeLe4n.Kernel.endpointCallWriteSet rendezvousState crossCoreEndpoint c0 ≠ [c2]))
+  -- The `.send` write set on the SAME rendezvous state.  A send has one
+  -- scheduling effect where a call has two, so this is the sharper set — and on
+  -- the rendezvous path the single core it names is the RECEIVER's, not the
+  -- sender's, which is precisely what the boot-pinned `ensureRunnable` got wrong.
+  assertBool "the send's rendezvous write set is the receiver's home core alone"
+    (decide (SeLe4n.Kernel.endpointSendWriteSet rendezvousState crossCoreEndpoint c0
+      = [c2]))
+  assertBool "NEGATIVE: …which is NOT the executing core, and not the call's two-core set"
+    (decide (SeLe4n.Kernel.endpointSendWriteSet rendezvousState crossCoreEndpoint c0 ≠ [c0] ∧
+             SeLe4n.Kernel.endpointSendWriteSet rendezvousState crossCoreEndpoint c0
+               ≠ SeLe4n.Kernel.endpointCallWriteSet rendezvousState crossCoreEndpoint c0))
+  assertBool "with nobody waiting the send blocks the sender on its own core instead"
+    (decide (SeLe4n.Kernel.endpointSendWriteSet crossCoreState lowEndpoint c0 = [c0]))
   assertBool "the notification write set names the waiter's home core, not the signaller's"
     (decide (SeLe4n.Kernel.notificationSignalWriteSet waitingNotificationState highNotification
       = [c2]))
@@ -2389,16 +2454,27 @@ private def runRunQueueComparisonChecks : IO Unit := do
 /-- §5.3  The set-of-cores algebra and its coverage record. -/
 private def runCoreSetAlgebraChecks : IO Unit := do
   IO.println "--- §5.3 the set-of-cores confinement algebra ---"
-  assertBool "fourteen cross-core transitions are covered"
-    (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 14))
-  assertBool "thirteen of the fourteen can name a core other than the executing one"
+  assertBool "sixteen cross-core transitions are covered"
+    (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 16))
+  assertBool "fifteen of the sixteen can name a core other than the executing one"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
-      SeLe4n.Kernel.crossCoreTransitionWritesRemote).length = 13))
+      SeLe4n.Kernel.crossCoreTransitionWritesRemote).length = 15))
   assertBool "…and the wait is the one that cannot"
     (decide (SeLe4n.Kernel.crossCoreTransitionWritesRemote .notificationWait = false))
-  assertBool "seven of the fourteen are the arms the live syscall dispatch reaches"
+  assertBool "nine of the sixteen are the arms the live syscall dispatch reaches"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
-      SeLe4n.Kernel.crossCoreTransitionIsLiveArm).length = 7))
+      SeLe4n.Kernel.crossCoreTransitionIsLiveArm).length = 9))
+  -- Round 10's finding, as a checked fact: `.send` was the last IPC arm still
+  -- routed to a boot-pinned transition, and it is now both in the inventory and
+  -- backed by a delegation proof rather than by a reading of `API.lean`.
+  assertBool "the live `.send` arm is covered and delegation-backed"
+    (decide (SeLe4n.Kernel.CrossCoreTransition.endpointSendDispatch
+               ∈ SeLe4n.Kernel.CrossCoreTransition.all
+             ∧ SeLe4n.Kernel.crossCoreTransitionIsLiveArm .endpointSendDispatch = true
+             ∧ (SeLe4n.Kernel.crossCoreLiveArmEvidence .endpointSendDispatch).syscall?
+                 = some SeLe4n.Model.SyscallId.send))
+  assertBool "four live arms are mechanically tied to the dispatch"
+    (decide (SeLe4n.Kernel.crossCoreLiveArmDelegationBacked.length = 4))
   -- The fourth review round's finding, as a checked fact: the three arms it
   -- named are in the inventory and are all classified as live.
   assertBool "the bound signal, the receive dual and replyRecv are all covered"
@@ -2433,7 +2509,7 @@ private def runCoreSetAlgebraChecks : IO Unit := do
         n == "endpointReceiveDualOnCore"))
   assertBool "the covered-transition theorem names are pairwise distinct"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.map
-      SeLe4n.Kernel.crossCoreNiTheorem).eraseDups.length = 14))
+      SeLe4n.Kernel.crossCoreNiTheorem).eraseDups.length = 16))
   -- The load-bearing negative: the write set is *state-dependent*, so it is not
   -- a constant the theorem could be satisfying vacuously.  With no receiver the
   -- call writes one core; with a remote receiver waiting it writes two — and
@@ -2662,18 +2738,30 @@ private def runPerCoreCoverageChecks : IO Unit := do
 /-- §4.7  The per-core enforcement boundary (SM8.B.6 / SM8.B.7). -/
 private def runEnforcementBoundaryChecks : IO Unit := do
   IO.println "--- §4.7 the per-core enforcement boundary ---"
-  assertBool "46 entries: 38 canonical + the 2PL bracket + 7 live cross-core wrappers"
-    (decide (enforcementBoundaryPerCore.length = 46) &&
+  assertBool "53 entries: 38 canonical + the 2PL bracket + 14 live cross-core wrappers"
+    (decide (enforcementBoundaryPerCore.length = 53) &&
      decide (enforcementBoundaryExtended.length = 38) &&
-     decide (crossCoreEnforcementEntries.length = 7))
+     decide (crossCoreEnforcementEntries.length = 14))
   assertBool "every SyscallId is still covered by the extended boundary (single-core half)"
     (enforcementBoundaryPerCoreComplete)
   assertBool "every SyscallId's LIVE cross-core operation is covered (SMP half)"
     (enforcementBoundaryPerCoreCompleteCrossCore)
-  assertBool "the per-core mapping re-routes exactly seven syscalls"
+  assertBool "the per-core mapping re-routes exactly fourteen syscalls"
     (decide ((SyscallId.all.filter (fun sid =>
       decide (syscallIdToEnforcementNamePerCore sid
-        ≠ syscallIdToEnforcementName sid))).length = 7))
+        ≠ syscallIdToEnforcementName sid))).length = 14))
+  -- Round 10 and round 12 additions, as checked facts: `.send` and `.tcbResume`
+  -- were rerouted off boot-pinned operations, and the three SM7.D/SM7.F
+  -- architecture wrappers had been live per-core arms without appearing here.
+  assertBool "the seven arms added after the first cut all re-route"
+    ([SyscallId.send, .tcbResume, .vspaceMap, .vspaceUnmap, .lifecycleRetype,
+      .tcbSetPriority, .tcbSetMCPriority].all
+      (fun sid => decide (syscallIdToEnforcementNamePerCore sid
+        ≠ syscallIdToEnforcementName sid)))
+  assertBool ".send reaches the cross-core checked send, not the boot-pinned one"
+    (decide (syscallIdToEnforcementNamePerCore .send
+        = "endpointSendCrossCoreDispatchChecked") &&
+     decide (syscallIdToEnforcementName .send = "endpointSendDualChecked"))
   assertBool ".call reaches the cross-core wrapper, not the single-core one"
     (decide (syscallIdToEnforcementNamePerCore .call
         = "endpointCallCrossCoreDispatchChecked") &&
@@ -2709,6 +2797,24 @@ private def runCovertChannelInventoryChecks : IO Unit := do
      decide (acceptedCovertChannel_lockContention.modelVisible = false) &&
      decide (acceptedCovertChannel_lockContention.perCoreInstance = true) &&
      decide (acceptedCovertChannel_lockContention.severity = CovertChannelSeverity.medium))
+  -- Round 12: the inventory's CC-1 severity and the advisory's §SA-3 heading
+  -- disagreed (`.low` vs MEDIUM).  The advisory is right — the channel is
+  -- read once per timer tick, not once per domain switch.
+  assertBool "CC-1 is MEDIUM, matching SECURITY_ADVISORY §SA-3"
+    (decide (acceptedCovertChannel_scheduling_perCore.severity
+      = CovertChannelSeverity.medium))
+  -- The rate fact, computed: one decrement of the observed countdown is one
+  -- distinguishable observation, so ticks pace the channel.
+  assertBool "the run-length capacity is exactly alphabet ^ n"
+    (decide ((boundedCodeTraces 8 0).length = 1 &&
+             (boundedCodeTraces 8 1).length = 8 &&
+             (boundedCodeTraces 8 2).length = 64 &&
+             (boundedCodeTraces 3 3).length = 27))
+  assertBool "…and the enumeration holds exactly the bounded traces of that length"
+    (decide ((boundedCodeTraces 3 2).all (fun l =>
+       l.length = 2 && l.all (fun x => x < 3))))
+  assertBool "NEGATIVE: an out-of-alphabet trace is not in the enumeration"
+    (decide ([3, 0] ∉ boundedCodeTraces 3 2 ∧ [0] ∉ boundedCodeTraces 3 2))
   assertBool "CC-6 / CC-7 (TLB, I-cache residency) likewise"
     (decide (acceptedCovertChannel_tlbResidency.modelVisible = false) &&
      decide (acceptedCovertChannel_icacheResidency.modelVisible = false))

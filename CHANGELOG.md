@@ -242,14 +242,100 @@ after three of this PR's anchors fired on the comment explaining what they
 forbid.
 
 
+### Three live arms were still boot-pinned — kernel defects, fixed
+
+Review rounds 10 and 12 found the last syscall arms whose *scheduling* effects
+still targeted `bootCoreId` unconditionally.  None is a proof failure — the
+theorems say what the functions compute — but each is a real multi-core
+scheduling defect, so the fix is the reroute, not a caveat.
+
+* **`.tcbResume`** called `resumeThread`, which enqueues on `bootCoreId`
+  regardless of `cpuAffinity`, so resuming a thread homed on a secondary core
+  put it on a run queue its own core never dispatches from.  Rerouted to
+  `resumeThreadOnCore`.
+* **`.send`** called `endpointSendDualWithCaps`, whose two scheduling effects
+  are both boot-pinned: a rendezvous receiver is woken with `ensureRunnable`
+  (wrong queue when the receiver is homed elsewhere) and a sender with nobody
+  waiting is descheduled with `removeRunnable` (so a sender blocking on a
+  secondary core stays current and runnable there).  New production module
+  `SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean` supplies
+  `endpointSendDualOnCore` / `endpointSendDualWithCapsOnCore` /
+  `endpointSendCrossCoreDispatchChecked`, built exactly like their SM6.A/SM6.C
+  siblings, and both the checked and unchecked arms route through them.
+* **`.tcbSetPriority` / `.tcbSetMCPriority`** were boot-pinned *twice*:
+  `migrateRunQueueBucket` tested membership in `runQueueOnCore bootCoreId`, so
+  for a target queued on any other core the re-bucket was a silent no-op — the
+  priority field moved while the run queue kept the old band, leaving the
+  scheduler dispatching the thread at its **old** priority indefinitely (the
+  priority-inversion case that function exists to prevent, one core over) — and
+  the preemption check read `currentOnCore bootCoreId`.  `migrateRunQueueBucket`
+  is now the `bootCoreId` instance of `migrateRunQueueBucketOnCore`, and the new
+  `SeLe4n/Kernel/SchedContext/PriorityManagementPerCore.lean` supplies
+  `setPriorityOnCore` / `setMCPriorityOnCore`, which re-bucket on the target's
+  home core and preempt the core `runningCoreOf?` says is actually running it.
+
+Each reroute ships its delegation theorem and its `syscallDelegates` obligation,
+so the inventory's live-arm claim is type-checked rather than read off
+`API.lean`: `dispatchWithCap{,Checked}_send_delegates`,
+`dispatchWithCap_tcbSetPriority_delegates`,
+`dispatchWithCap_tcbSetMCPriority_delegates`.  Delegation-backed live arms go
+2 → 4 (`.send` joins `.receive`, `.tcbSuspend`, `.tcbResume`).  `.send` also
+gets its per-core write set, confinement and non-interference
+(`endpointSendWriteSet` — *sharper* than `.call`'s, because a send has one
+scheduling effect where a call has two), and the priority ops get
+`setPriorityOnCore_preserves_projection` /
+`setMCPriorityOnCore_preserves_projection` over the generalised
+`migrateRunQueueBucketOnCore_preserves_projection` (free on a remote core: the
+projection reads the boot core's queue only).  Trace byte-identical throughout.
+
+### The per-core enforcement mapping was five arms short — now fourteen
+
+`syscallIdToEnforcementNamePerCore` claimed to differ from the canonical mapping
+at "exactly the seven arms SM6 re-routed".  It missed the three SM7.D/SM7.F
+architecture wrappers, which have been live per-core arms since v0.32.94
+(`vspaceMapPageCheckedWithShootdownFromStatePerCore`,
+`vspaceUnmapPageWithShootdownAndIcacheBroadcast`,
+`lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache`), and now also carries
+the four arms this cut reroutes.  Boundary 46 → 53 entries, differs-at 7 → 14,
+with `enforcementBoundaryPerCore_crossCore_classes_match` extended so each new
+entry's enforcement class is checked against its canonical sibling rather than
+assumed.
+
+### CC-1's bandwidth was costed at the wrong rate
+
+The capacity figure multiplied `log₂(N × (Q+1))` by the domain-**switch**
+frequency.  `domainTimeRemaining` is one of the three observed components and
+every ordinary timer tick decrements it, so consecutive observations differ
+*between* switches: the observer is paced by **ticks**, three orders of
+magnitude faster on the canonical 1 ms configuration.  The advisory's ≤ 1200
+bits/second at F ≤ 100 Hz becomes ≤ 12 bits per observation and ≤ 12 000
+bits/second at a 1 kHz tick.  Proven rather than restated:
+`schedulingObservation_changes_on_domain_tick` is the pacing fact, and
+`schedulingChannel_trace_capacity` is the run-length form — an n-observation
+trace is one element of `boundedCodeTraces alphabet n`, whose length is exactly
+`alphabet ^ n` (`boundedCodeTraces_length`), with `mem_boundedCodeTraces` fixing
+that the enumeration is the right set and not a convenient superset.  CC-1's
+inventory severity was `.low` while `docs/SECURITY_ADVISORY.md` §SA-3 headed it
+MEDIUM; the advisory is right and the inventory now agrees.
+
+`scripts/check_module_axioms.py` also failed open on a nonzero exit: it filtered
+for position-formatted Lean diagnostics, so a probe that printed
+`AXIOMSWEEP_BADCOUNT 0` and then died — a kill signal, a later driver failure, a
+`lake` that never reached Lean — was parsed as a clean sweep.  Any nonzero exit
+is now rejected *before* the summary is read, since a partial run proves nothing
+about the constants it never reached.
+
 ### Tests
 
-`tests/SmpInformationFlowSuite.lean` — **243 runtime assertions** across the
+`tests/SmpInformationFlowSuite.lean` — **254 runtime assertions** across the
 SM8.A and SM8.B groups, every group carrying a load-bearing negative, plus
 `#check` anchors for every module symbol and Tier-3 pins.  Two fixtures were
 themselves vacuous and are fixed: the cancellation victim was left out of every
 run queue (making the removal a no-op, caught by its own negative), and four
-TCBs named VSpace roots the builder never inserted.
+TCBs named VSpace roots the builder never inserted.  The reroutes add positive
+Tier-3 anchors for each per-core operation and *negative* ones for each
+boot-pinned call site, matching the call site rather than the mention — the
+single-core operations stay in the tree as the pre-SMP surface.
 
 ## v0.33.4 — SM8.A review cut: the visibility order says what it claimed
 

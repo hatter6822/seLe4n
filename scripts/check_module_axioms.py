@@ -142,6 +142,22 @@ def main() -> int:
         os.unlink(probe_path)
 
     combined = proc.stdout + proc.stderr
+    # PR #861 review round 12: **any** nonzero exit is a failure, checked before
+    # the summary is parsed.  `lake` can fail before Lean runs at all (no
+    # toolchain, a broken manifest, an unbuildable dependency), and it can fail
+    # *after* the `run_cmd` sweep has already printed `AXIOMSWEEP_BADCOUNT 0` —
+    # a kill signal, or a later driver failure.  Either way the position regex
+    # below matches nothing, so without this the script would parse the
+    # already-emitted zero and report PASS on a run that did not complete.  A
+    # fail-closed proof-surface gate cannot do that, so the exit code decides
+    # first and the captured diagnostics are printed either way.
+    if proc.returncode != 0:
+        print(f"FAIL: the axiom probe exited {proc.returncode}.  A nonzero exit is")
+        print("      rejected before the sweep summary is read: the probe may have")
+        print("      printed a summary and then died, and a partial run proves")
+        print("      nothing about the constants it never reached.")
+        print(combined[-4000:] or "      (no output)")
+        return 1
     # Match Lean diagnostics by position prefix, not by the bare word "error":
     # declaration names legitimately contain it (`syscallEntry_error_perCore_NI`).
     diag = re.compile(r"^.*\.lean:\d+:\d+: error")

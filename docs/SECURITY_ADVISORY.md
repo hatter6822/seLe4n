@@ -108,16 +108,28 @@ This is formally witnessed by `acceptedCovertChannel_scheduling`
 
 ### Bandwidth Analysis
 
-- **Channel capacity**: ≤ log₂(N × (Q + 1)) × switchFreq bits/second, where
+- **Channel capacity**: ≤ log₂(N × (Q + 1)) × **tickFreq** bits/second, where
   N = |domainSchedule| and **Q is a deployment-supplied bound on
   `domainTimeRemaining`**
-- **Upper bound**: for N ≤ 16, Q ≤ 255, F ≤ 100 Hz, ≤ 1200 bits/second
+- **Upper bound**: for N ≤ 16, Q ≤ 255 each observation is ≤ 12 bits, and at
+  the canonical RPi5 1 ms tick (F = 1000 Hz) that is ≤ **12 000 bits/second**
 - **Realizable rate**: **not bounded by this analysis** — see below
+
+**The rate factor is the tick rate, not the switch rate.**  This advisory
+previously quoted ≤ 1200 bits/second at a ≤ 100 Hz *domain-switch* rate.  That
+understates the channel by an order of magnitude on the canonical
+configuration: `domainTimeRemaining` is one of the observed components and an
+ordinary timer tick decrements it, so consecutive observations differ between
+switches and the observer is paced by **ticks**
+(`schedulingObservation_changes_on_domain_tick`, PR #861 review round 12).  The
+run-length form is `schedulingChannel_trace_capacity`: over n observations the
+observer's whole trace is one element of `boundedCodeTraces alphabet n`, a set
+whose size is exactly `alphabet ^ n`.
 
 **There is no "practical bandwidth" figure.**  Earlier revisions of this
 advisory claimed "sub-bit-per-second under normal scheduling configurations" at
-the *same* 1–100 Hz switch rates the table now costs at up to 1200 bits/second —
-two numbers three orders of magnitude apart for one configuration, and the
+the *same* configurations the table now costs at thousands of bits/second —
+two numbers orders of magnitude apart for one configuration, and the
 smaller one had no derivation behind it (PR #861 review round 9).  It has been
 removed rather than re-justified: deriving a realizable rate needs a model of how
 much of the alphabet a sender can actually control and a receiver actually

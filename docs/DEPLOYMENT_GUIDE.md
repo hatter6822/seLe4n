@@ -81,7 +81,7 @@ creating a bounded covert channel.
 |--------|-------|
 | Observable values per observation | 4 scalars |
 | Channel capacity | &le; log&#8322;(N &times; (Q+1)) &times; switchFreq bps, N = \|domainSchedule\|, Q = your countdown cap |
-| Upper bound (N&le;16, Q&le;255, F&le;100 Hz) | &le; 1200 bits/second |
+| Upper bound (N&le;16, Q&le;255, F = 1000 Hz tick) | &le; 12 bits per observation, &le; 12&nbsp;000 bits/second |
 | Realizable rate | **Not bounded by this analysis** — budget against the upper bound |
 | Without a countdown cap, or with an empty schedule | **Unbounded** — see below |
 | Instances | **One per core** under SMP |
@@ -96,6 +96,8 @@ creating a bounded covert channel.
 | `schedulingChannel_alphabet_bounded` | `CovertChannelPerCore.lean` | **The capacity bound**: the observation alphabet injects into `Fin (N × (Q+1))` |
 | `schedulingObservationCode_injective` | `CovertChannelPerCore.lean` | Why that injection loses nothing |
 | `schedulingChannel_full_observation_determined` | `CovertChannelPerCore.lean` | Extends the bound to `activeDomain`, under `domainConsistentOnCore` |
+| `schedulingObservation_changes_on_domain_tick` | `CovertChannelPerCore.lean` | **Why the rate factor is the tick rate**: an ordinary tick decrements the observed countdown, so observations differ between domain switches |
+| `schedulingChannel_trace_capacity` | `CovertChannelPerCore.lean` | The run-length bound: an n-observation trace is one of `alphabet ^ n` (`boundedCodeTraces`, whose length is exactly that) |
 
 **Mitigation**: Temporal partitioning via domain scheduling (already present).
 Each domain receives guaranteed time quanta.
@@ -110,9 +112,16 @@ discharges each.  An empty schedule (single-domain mode) makes the index-bounds
 invariant vacuous, so the observed index is unbounded and no figure applies.
 
 **No "practical bandwidth" figure is offered.**  Earlier revisions claimed
-sub-bit-per-second at the same switch rates this table costs at up to 1200
+sub-bit-per-second at the same rates this table costs at thousands of
 bits/second; that claim had no derivation and has been removed rather than
 re-justified.
+
+**Budget against the tick rate, not the switch rate.**  An earlier revision of
+this table multiplied the per-observation figure by the domain-*switch*
+frequency.  `domainTimeRemaining` is one of the observed components and every
+ordinary timer tick decrements it, so a receiver can read a fresh value once per
+tick — three orders of magnitude more often on the canonical 1 ms
+configuration.  `schedulingObservation_changes_on_domain_tick` is the proof.
 
 **You must supply Q.**  The capacity figure above holds only for a deployment
 that caps `domainTimeRemaining`; without such a cap this analysis gives **no**

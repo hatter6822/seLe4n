@@ -682,19 +682,33 @@ theorem acceptedCovertChannel_scheduling
     **Channel characteristics**:
     - **Source**: 4 scheduling scalar values (`activeDomain`, `domainSchedule`,
       `domainScheduleIndex`, `domainTimeRemaining`)
-    - **Capacity**: ≤ log₂(N × (Q + 1)) × switchFreq bits/second, where N =
-      |domainSchedule| and Q bounds `domainTimeRemaining`
+    - **Capacity**: ≤ log₂(N × (Q + 1)) × tickFreq bits/second, where N =
+      |domainSchedule| and Q bounds `domainTimeRemaining`.  The second factor
+      is the **timer-tick** rate, not the domain-switch rate — see below.
     - **Realizable rate**: not bounded by this analysis.  Earlier revisions
-      claimed "sub-bit per second" at the same switch rates costed below at up
-      to 1200 bits/second — two figures three orders of magnitude apart for one
+      claimed "sub-bit per second" at the same configurations costed below at
+      thousands of bits/second — two figures orders of magnitude apart for one
       configuration, the smaller with no derivation.  Removed rather than
       re-justified: a realizable rate needs a model of how much of the alphabet
       a sender controls and a receiver resolves, and this model has neither.
     - **Theoretical maximum**: With |domainSchedule| = N entries, a countdown
-      capped at Q, and switch frequency F Hz, an observer can extract at most
+      capped at Q, and **tick** frequency F Hz, an observer can extract at most
       log₂(N × (Q + 1)) × F bits/second. For typical configurations (N ≤ 16,
-      Q ≤ 255, F ≤ 100 Hz) this is ≤ 1200 bits/second — the figure a deployment
+      Q ≤ 255) each observation is ≤ 12 bits, and at the canonical RPi5 1 ms
+      tick (F = 1000 Hz) that is ≤ 12 000 bits/second — the figure a deployment
       should compare against its own policy.
+
+      **The rate factor is the tick rate, and earlier revisions used the
+      domain-switch rate** (WS-SM SM8.B, PR #861 review round 12), quoting
+      ≤ 1200 bits/second at F ≤ 100 Hz.  That understates the channel by an
+      order of magnitude on the canonical configuration, because
+      `domainTimeRemaining` is one of the observed components and an ordinary
+      tick decrements it: consecutive observations differ *between* switches, so
+      the observer is paced by ticks.  `schedulingObservation_changes_on_domain_tick`
+      is that fact as a theorem, and `schedulingChannel_trace_capacity` states
+      the run-length bound per observation — over n observations the whole trace
+      is one of `alphabet ^ n` possibilities (`boundedCodeTraces`, whose length
+      is exactly that) — so the two factors cannot drift apart again.
 
       **The Q factor is load-bearing, and the earlier form of this note omitted
       it** (WS-SM SM8.B, PR #861 review): the claim used to read log₂(N) × F,

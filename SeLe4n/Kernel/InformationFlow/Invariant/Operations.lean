@@ -15,6 +15,7 @@ import SeLe4n.Kernel.Scheduler.PriorityInheritance.Preservation
 -- the capability-only dispatch arms of the public API.
 import SeLe4n.Kernel.Architecture.IpcBufferValidation
 import SeLe4n.Kernel.SchedContext.PriorityManagement
+import SeLe4n.Kernel.SchedContext.PriorityManagementPerCore
 import SeLe4n.Kernel.SchedContext.Operations
 import SeLe4n.Kernel.Lifecycle.Suspend
 import SeLe4n.Kernel.Lifecycle.Operations
@@ -3779,23 +3780,50 @@ theorem runQueue_remove_insert_preserves_projection_at_high
 -- AK6-F Step 2: migrateRunQueueBucket preservation
 -- ============================================================================
 
+/-- WS-SM SM8.B: the **per-core** bucket migration preserves the projection.
+
+Two shapes, and the remote one is the reason the generalisation is free:
+`projectState` reads the **boot** core's run queue, so a re-bucket on any other
+core is invisible outright.  On the boot core it is the pre-SMP argument. -/
+theorem migrateRunQueueBucketOnCore_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (newPriority : SeLe4n.Priority)
+    (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (hTidHigh : threadObservable ctx observer tid = false) :
+    projectState ctx observer
+      (SchedContext.PriorityManagement.migrateRunQueueBucketOnCore st tid newPriority c) =
+    projectState ctx observer st := by
+  unfold SchedContext.PriorityManagement.migrateRunQueueBucketOnCore
+  split
+  · by_cases hc : c = bootCoreId
+    · subst hc
+      exact runQueue_remove_insert_preserves_projection_at_high ctx observer st tid _ hTidHigh
+    · simp only [projectState, projectRunnable, projectCurrent, projectActiveDomain,
+        projectDomainTimeRemaining, projectDomainScheduleIndex, projectMachineRegs,
+        SchedulerState.runnable,
+        SchedulerState.setRunQueueOnCore_currentOnCore,
+        SchedulerState.setRunQueueOnCore_activeDomainOnCore,
+        SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore,
+        SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore,
+        SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc]
+      rfl
+  · rfl
+
 /-- AK6-F Step 2: `migrateRunQueueBucket` preserves projection when the
     target thread is non-observable. Either the thread is not in runQueue
     (state unchanged) or it's removed and re-inserted at a computed
-    effective priority — both cases handled by the Step 1 frames. -/
+    effective priority — both cases handled by the Step 1 frames.
+
+    WS-SM SM8.B: now the `bootCoreId` instance of the per-core statement above. -/
 theorem migrateRunQueueBucket_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState) (tid : SeLe4n.ThreadId) (newPriority : SeLe4n.Priority)
     (hTidHigh : threadObservable ctx observer tid = false) :
     projectState ctx observer
       (SchedContext.PriorityManagement.migrateRunQueueBucket st tid newPriority) =
-    projectState ctx observer st := by
-  unfold SchedContext.PriorityManagement.migrateRunQueueBucket
-  split
-  · -- tid ∈ runQueue: remove then insert
-    exact runQueue_remove_insert_preserves_projection_at_high ctx observer st tid _ hTidHigh
-  · -- tid ∉ runQueue: state unchanged
-    rfl
+    projectState ctx observer st :=
+  migrateRunQueueBucketOnCore_preserves_projection ctx observer st tid newPriority
+    bootCoreId hTidHigh
 
 -- ============================================================================
 -- WS-SM SM5.H.4 audit: information-flow non-interference for the `tcbSetAffinity`
@@ -4113,6 +4141,106 @@ theorem setPriorityOp_preserves_projection
   · simp at hStep  -- caller not TCB
 
 -- ============================================================================
+-- WS-SM SM8.B: the PER-CORE priority ops (the live `.tcbSetPriority` /
+-- `.tcbSetMCPriority` dispatch targets after PR #861 review round 12)
+-- ============================================================================
+
+/-- WS-SM SM8.B: the priority ops' preemption seam preserves the projection,
+given the caller's witness for the reschedule it may run.
+
+Two of its three arms change nothing at all; only the local arm calls
+`handleRescheduleSgiOnCore`, and only for that arm is `hReschedProj` used.  The
+remote arm posts an SGI and returns the state it was given, which is why a
+cross-core preemption needs no witness here — the remote core's own handler is a
+separate transition with its own theorem. -/
+theorem priorityRescheduleOnCore_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st stMid stFinal : SystemState) (running? : Option SeLe4n.Kernel.Concurrency.CoreId)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (shouldPreempt : Bool)
+    (sgi : Option (SeLe4n.Kernel.Concurrency.CoreId × SeLe4n.Kernel.Concurrency.SgiKind))
+    (hMid : projectState ctx observer stMid = projectState ctx observer st)
+    (hReschedProj : ∀ stIn stOut c,
+                      projectState ctx observer stIn = projectState ctx observer st →
+                      handleRescheduleSgiOnCore stIn c = .ok stOut →
+                      projectState ctx observer stOut = projectState ctx observer st)
+    (hStep : SchedContext.PriorityManagement.priorityRescheduleOnCore stMid running?
+              executingCore shouldPreempt = .ok (stFinal, sgi)) :
+    projectState ctx observer stFinal = projectState ctx observer st := by
+  unfold SchedContext.PriorityManagement.priorityRescheduleOnCore at hStep
+  split at hStep
+  · split at hStep
+    · split at hStep
+      · split at hStep
+        · next stOut hResched =>
+          rw [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨hs, -⟩ := hStep
+          exact hs ▸ hReschedProj _ stOut _ hMid hResched
+        · exact absurd hStep (by simp)
+      · rw [Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨hs, -⟩ := hStep
+        exact hs ▸ hMid
+    · rw [Except.ok.injEq, Prod.mk.injEq] at hStep
+      obtain ⟨hs, -⟩ := hStep
+      exact hs ▸ hMid
+  · rw [Except.ok.injEq, Prod.mk.injEq] at hStep
+    obtain ⟨hs, -⟩ := hStep
+    exact hs ▸ hMid
+
+/-- WS-SM SM8.B: `setPriorityOnCore` preserves the projection under exactly the
+hypotheses `setPriorityOp_preserves_projection` takes, with the preemption
+witness restated for the per-core reschedule the op actually runs.
+
+The per-core bucket migration carries through `migrateRunQueueBucketOnCore`'s own
+preservation lemma, which is *weaker* to satisfy on a remote core, not stronger:
+`projectState` reads the boot core's queue only. -/
+theorem setPriorityOnCore_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st st' : SystemState) (vCallerTid vTargetTid : SeLe4n.ValidThreadId)
+    (newPriority : SeLe4n.Priority) (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (sgi : Option (SeLe4n.Kernel.Concurrency.CoreId × SeLe4n.Kernel.Concurrency.SgiKind))
+    (hTargetThreadHigh : threadObservable ctx observer vTargetTid.val = false)
+    (hTargetObjHigh : objectObservable ctx observer vTargetTid.val.toObjId = false)
+    (hScHigh : ∀ targetTcb, st.getTcb? vTargetTid.val = some targetTcb →
+                ∀ scId, (targetTcb.schedContextBinding = SchedContextBinding.bound scId ∨
+                         ∃ donor, targetTcb.schedContextBinding = SchedContextBinding.donated scId donor) →
+                objectObservable ctx observer scId.toObjId = false)
+    (hObjInv : st.objects.invExt)
+    (hReschedProj : ∀ stIn stOut c,
+                      projectState ctx observer stIn = projectState ctx observer st →
+                      handleRescheduleSgiOnCore stIn c = .ok stOut →
+                      projectState ctx observer stOut = projectState ctx observer st)
+    (hStep : SchedContext.PriorityManagement.setPriorityOnCore st vCallerTid vTargetTid
+              newPriority executingCore = .ok (st', sgi)) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  unfold SchedContext.PriorityManagement.setPriorityOnCore at hStep
+  split at hStep
+  · split at hStep
+    · exact absurd hStep (by simp)
+    · split at hStep
+      · next targetTcb hTarget =>
+        have hProj1 :
+            projectState ctx observer
+              (SchedContext.PriorityManagement.updatePrioritySource st vTargetTid.val
+                targetTcb newPriority) = projectState ctx observer st :=
+          updatePrioritySource_preserves_projection ctx observer st vTargetTid.val targetTcb
+            newPriority hTargetObjHigh (hScHigh targetTcb hTarget) hObjInv
+        have hProj2 :
+            projectState ctx observer
+              (SchedContext.PriorityManagement.migrateRunQueueBucketOnCore
+                (SchedContext.PriorityManagement.updatePrioritySource st vTargetTid.val
+                  targetTcb newPriority)
+                vTargetTid.val newPriority (determineTargetCore st vTargetTid.val)) =
+            projectState ctx observer st := by
+          rw [migrateRunQueueBucketOnCore_preserves_projection ctx observer _ vTargetTid.val
+               newPriority _ hTargetThreadHigh]
+          exact hProj1
+        simp only [] at hStep
+        exact priorityRescheduleOnCore_preserves_projection ctx observer st _ st' _
+          executingCore _ sgi hProj2 hReschedProj hStep
+      · exact absurd hStep (by simp)
+  · exact absurd hStep (by simp)
+
+-- ============================================================================
 -- AK6-F Step 4: setMCPriorityOp preservation
 -- ============================================================================
 
@@ -4201,6 +4329,72 @@ theorem setMCPriorityOp_preserves_projection
           exact hStAfterMCP
       · simp at hStep
   · simp at hStep
+
+/-- WS-SM SM8.B: `setMCPriorityOnCore` preserves the projection, under the same
+hypotheses as `setMCPriorityOp_preserves_projection` with the per-core reschedule
+witness in place of the boot-pinned `schedule` one. -/
+theorem setMCPriorityOnCore_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st st' : SystemState) (vCallerTid vTargetTid : SeLe4n.ValidThreadId)
+    (newMCP : SeLe4n.Priority) (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (sgi : Option (SeLe4n.Kernel.Concurrency.CoreId × SeLe4n.Kernel.Concurrency.SgiKind))
+    (hTargetThreadHigh : threadObservable ctx observer vTargetTid.val = false)
+    (hTargetObjHigh : objectObservable ctx observer vTargetTid.val.toObjId = false)
+    (hScHighForUpdated : ∀ targetTcb, st.getTcb? vTargetTid.val = some targetTcb →
+                ∀ scId,
+                  (({ targetTcb with maxControlledPriority := newMCP } : TCB).schedContextBinding = SchedContextBinding.bound scId ∨
+                   ∃ donor, ({ targetTcb with maxControlledPriority := newMCP } : TCB).schedContextBinding = SchedContextBinding.donated scId donor) →
+                objectObservable ctx observer scId.toObjId = false)
+    (hObjInv : st.objects.invExt)
+    (hReschedProj : ∀ stIn stOut c,
+                      projectState ctx observer stIn = projectState ctx observer st →
+                      handleRescheduleSgiOnCore stIn c = .ok stOut →
+                      projectState ctx observer stOut = projectState ctx observer st)
+    (hStep : SchedContext.PriorityManagement.setMCPriorityOnCore st vCallerTid vTargetTid
+              newMCP executingCore = .ok (st', sgi)) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  unfold SchedContext.PriorityManagement.setMCPriorityOnCore at hStep
+  split at hStep
+  · split at hStep
+    · exact absurd hStep (by simp)
+    · split at hStep
+      · next targetTcb hTarget =>
+        let targetTcb' : TCB := { targetTcb with maxControlledPriority := newMCP }
+        let stAfterMCP : SystemState :=
+          { st with objects := st.objects.insert vTargetTid.val.toObjId (.tcb targetTcb') }
+        have hStAfterMCP : projectState ctx observer stAfterMCP = projectState ctx observer st :=
+          objects_insert_preserves_projection_high ctx observer st vTargetTid.val.toObjId _
+            hTargetObjHigh hObjInv
+        have hObjInvMCP : stAfterMCP.objects.invExt :=
+          SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _ hObjInv
+        simp only [] at hStep
+        split at hStep
+        · have hProj1 :
+              projectState ctx observer
+                (SchedContext.PriorityManagement.updatePrioritySource
+                  stAfterMCP vTargetTid.val targetTcb' newMCP) =
+              projectState ctx observer st := by
+            rw [updatePrioritySource_preserves_projection ctx observer stAfterMCP vTargetTid.val
+                 targetTcb' newMCP hTargetObjHigh
+                 (fun scId hB => hScHighForUpdated targetTcb hTarget scId hB) hObjInvMCP]
+            exact hStAfterMCP
+          have hProj2 :
+              projectState ctx observer
+                (SchedContext.PriorityManagement.migrateRunQueueBucketOnCore
+                  (SchedContext.PriorityManagement.updatePrioritySource
+                    stAfterMCP vTargetTid.val targetTcb' newMCP)
+                  vTargetTid.val newMCP (determineTargetCore stAfterMCP vTargetTid.val)) =
+              projectState ctx observer st := by
+            rw [migrateRunQueueBucketOnCore_preserves_projection ctx observer _ vTargetTid.val
+                 newMCP _ hTargetThreadHigh]
+            exact hProj1
+          exact priorityRescheduleOnCore_preserves_projection ctx observer st _ st' _
+            executingCore true sgi hProj2 hReschedProj hStep
+        · rw [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨hs, -⟩ := hStep
+          exact hs ▸ hStAfterMCP
+      · exact absurd hStep (by simp)
+  · exact absurd hStep (by simp)
 
 -- ============================================================================
 -- AK6-F.11: lookupServiceByCap state + projection preservation

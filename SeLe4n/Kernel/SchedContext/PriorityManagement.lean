@@ -231,10 +231,10 @@ has an active `pipBoost`, the RunQueue placement uses
 scheduling band after priority changes. Without this, a `setPriorityOp` on
 a PIP-boosted thread would drop it to the new base priority, causing
 priority inversion for the entire blocking chain. -/
-def migrateRunQueueBucket (st : SystemState) (tid : SeLe4n.ThreadId)
-    (newPriority : SeLe4n.Priority) : SystemState :=
-  if tid ∈ (st.scheduler.runQueueOnCore bootCoreId) then
-    let rq := (st.scheduler.runQueueOnCore bootCoreId).remove tid
+def migrateRunQueueBucketOnCore (st : SystemState) (tid : SeLe4n.ThreadId)
+    (newPriority : SeLe4n.Priority) (homeCore : Concurrency.CoreId) : SystemState :=
+  if tid ∈ (st.scheduler.runQueueOnCore homeCore) then
+    let rq := (st.scheduler.runQueueOnCore homeCore).remove tid
     -- AI3-B (M-22): Apply PIP boost to new priority.
     -- AK2-J (S-M08): The defensive fallback (TCB missing — unreachable under
     -- `runnableThreadsAreTCBs`) now takes the max of `newPriority` and the
@@ -246,13 +246,26 @@ def migrateRunQueueBucket (st : SystemState) (tid : SeLe4n.ThreadId)
         | none => newPriority
         | some boostPrio => ⟨Nat.max newPriority.val boostPrio.val⟩
       | none =>
-        match (st.scheduler.runQueueOnCore bootCoreId).threadPriority[tid]? with
+        match (st.scheduler.runQueueOnCore homeCore).threadPriority[tid]? with
         | some rqPrio => ⟨Nat.max newPriority.val rqPrio.val⟩
         | none => newPriority
     let rq := rq.insert tid effectivePrio
-    { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId rq }
+    { st with scheduler := st.scheduler.setRunQueueOnCore homeCore rq }
   else
     st
+
+/-- D2-E / WS-SM SM8.B: the boot-core instance, kept as the name the pre-SMP
+single-core proof surface uses.  Definitionally `migrateRunQueueBucketOnCore …
+bootCoreId`, so every existing statement about it is unchanged. -/
+def migrateRunQueueBucket (st : SystemState) (tid : SeLe4n.ThreadId)
+    (newPriority : SeLe4n.Priority) : SystemState :=
+  migrateRunQueueBucketOnCore st tid newPriority bootCoreId
+
+/-- WS-SM SM8.B: the bridge, `rfl`. -/
+@[simp] theorem migrateRunQueueBucket_eq_onCore (st : SystemState) (tid : SeLe4n.ThreadId)
+    (newPriority : SeLe4n.Priority) :
+    migrateRunQueueBucket st tid newPriority
+      = migrateRunQueueBucketOnCore st tid newPriority bootCoreId := rfl
 
 /-- D2-E: Set the scheduling priority of a target thread.
 

@@ -12,6 +12,7 @@ import SeLe4n.Kernel.Capability.Operations
 import SeLe4n.Kernel.IPC.DualQueue
 import SeLe4n.Kernel.IPC.Invariant
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDispatch
+import SeLe4n.Kernel.IPC.CrossCore.EndpointSend
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyDispatch
 import SeLe4n.Kernel.IPC.CrossCore.NotificationBindDispatch
 -- WS-SM SM6.E: the live per-core suspend (`suspendThreadOnCore`) behind the
@@ -37,6 +38,7 @@ import SeLe4n.Kernel.Architecture.SyscallArgDecode
 import SeLe4n.Kernel.SchedContext.Operations
 import SeLe4n.Kernel.Lifecycle.Suspend
 import SeLe4n.Kernel.SchedContext.PriorityManagement
+import SeLe4n.Kernel.SchedContext.PriorityManagementPerCore
 import SeLe4n.Kernel.IPC.Operations.Donation
 
 import SeLe4n.Kernel.Architecture.Adapter
@@ -1215,14 +1217,27 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
       | .error e => .error e
       | .ok _ =>
         -- AL7-C / AL8 (WS-AL / AK7-E.cascade): type-level sentinel rejection.
-        -- `validateThreadIdArg` returns `ValidThreadId`; `resumeThread` now
-        -- ACCEPTS `ValidThreadId` — the type system forbids sentinel IDs
-        -- from reaching the handler. No runtime double-check needed.
+        -- `validateThreadIdArg` returns `ValidThreadId`; the handler ACCEPTS
+        -- `ValidThreadId` — the type system forbids sentinel IDs from reaching
+        -- it. No runtime double-check needed.
+        --
+        -- WS-SM (PR #861 review round 10): route through the **per-core** resume.
+        -- The boot-pinned `resumeThread` enqueues on `bootCoreId` unconditionally,
+        -- so resuming a thread whose `cpuAffinity` homes it on a secondary core
+        -- put it on the wrong run queue — it would never be dispatched by its own
+        -- core, and the boot core would treat it as runnable.  `resumeThreadOnCore`
+        -- enqueues on `determineTargetCore` and runs the reschedule locally or
+        -- hands the home core a `.reschedule` SGI.  The SGI is dropped here for
+        -- the same reason `.tcbSuspend` drops its own: the diff seam re-derives
+        -- cross-core pokes from the committed `(pre, post)` states, and a thread
+        -- newly runnable on a remote home core is exactly
+        -- `crossCoreSgiBody_remote_wake`.
         match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
         | .error e => .error e
         | .ok vtid =>
-            match Lifecycle.Suspend.resumeThread st vtid with
-            | .ok st' => .ok ((), st')
+            match Lifecycle.Suspend.resumeThreadOnCore st vtid
+                (determineExecutingCore st tid) with
+            | .ok (st', _) => .ok ((), st')
             | .error e => .error e
     | _ => fun _ => .error .invalidCapability
   -- AE1-A: D2-K TCB setPriority — priority from message register, target from capability
@@ -1241,10 +1256,18 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
             match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
             | .error e => .error e
             | .ok vTargetTid =>
-                match SchedContext.PriorityManagement.setPriorityOp st
+                -- WS-SM SM8.B (PR #861 review round 12): route through the
+                -- **per-core** priority op.  `setPriorityOp` re-buckets on
+                -- `runQueueOnCore bootCoreId`, so for a target queued on a
+                -- secondary core the membership test failed and the migration was
+                -- a silent no-op — the priority field moved while the run queue's
+                -- cached band did not, leaving the scheduler dispatching the
+                -- thread at its OLD priority.  `setPriorityOnCore` migrates on the
+                -- target's home core and preempts the core actually running it.
+                match SchedContext.PriorityManagement.setPriorityOnCore st
                     vCallerTid vTargetTid
-                    (Priority.ofNat args.newPriority) with
-                | .ok st' => .ok ((), st')
+                    (Priority.ofNat args.newPriority) (determineExecutingCore st tid) with
+                | .ok (st', _) => .ok ((), st')
                 | .error e => .error e
     | _ => fun _ => .error .invalidCapability
   -- AE1-A: D2-K TCB setMCPriority — MCP from message register, target from capability
@@ -1262,10 +1285,14 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
             match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
             | .error e => .error e
             | .ok vTargetTid =>
-                match SchedContext.PriorityManagement.setMCPriorityOp st
+                -- WS-SM SM8.B (PR #861 review round 12): the per-core MCP op —
+                -- same boot-pinned re-bucket and preemption defects as
+                -- `.tcbSetPriority`, reached whenever the new ceiling caps a
+                -- target's current priority.
+                match SchedContext.PriorityManagement.setMCPriorityOnCore st
                     vCallerTid vTargetTid
-                    (Priority.ofNat args.newMCP) with
-                | .ok st' => .ok ((), st')
+                    (Priority.ofNat args.newMCP) (determineExecutingCore st tid) with
+                | .ok (st', _) => .ok ((), st')
                 | .error e => .error e
     | _ => fun _ => .error .invalidCapability
   -- AE1-B: D3-H TCB setIPCBuffer — buffer address from message register, target from capability
@@ -1349,10 +1376,21 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
         -- wake, so its server-first reply stash is cleared once it leaves
         -- `.blockedOnReceive` (a stash lives only on a blocked receiver).
         let wokenReceiver? := (st.getEndpoint? epId).bind (·.receiveQ.head)
-        match endpointSendDualWithCaps epId tid msg cap.rights gate.cspaceRoot
-            decoded.capRecvSlot st with
-        | .error e => .error e
-        | .ok (_, st') => clearWokenReceiverStash wokenReceiver? st'
+        -- WS-SM SM8.B (PR #861 review round 10): route through the **per-core**
+        -- send transition, like `.call`/`.receive`/`.reply`.  The single-core
+        -- `endpointSendDual` wakes a rendezvous receiver with the boot-pinned
+        -- `ensureRunnable` and deschedules a blocking sender with the boot-pinned
+        -- `removeRunnable`, so on a multi-core system a receiver woken by a remote
+        -- sender lands on a run queue its own core never dispatches from, and a
+        -- sender blocking on a secondary core stays current/runnable there.
+        -- `endpointSendDualWithCapsOnCore … executingCore` wakes the receiver on
+        -- *its* home core and removes the sender from *its own* core; on the boot
+        -- core it is the single-core transition.
+        let executingCore := determineExecutingCore st tid
+        match endpointSendDualWithCapsOnCore epId tid msg cap.rights gate.cspaceRoot
+            decoded.capRecvSlot executingCore st with
+        | (_, .error e) => .error e
+        | (st', .ok _) => clearWokenReceiverStash wokenReceiver? st'
     | _ => fun _ => .error .invalidCapability
   | .receive =>
     match cap.target with
@@ -1624,10 +1662,15 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
         -- WS-SM SM6.D (PR #822 review): clear the woken receiver's server-first reply
         -- stash (mirrors the unchecked `.send` arm).
         let wokenReceiver? := (st.getEndpoint? epId).bind (·.receiveQ.head)
-        match endpointSendDualChecked ctx epId tid msg cap.rights gate.cspaceRoot
-            decoded.capRecvSlot st with
-        | .error e => .error e
-        | .ok (_, st') => clearWokenReceiverStash wokenReceiver? st'
+        -- WS-SM SM8.B (PR #861 review round 10): the cross-core checked send
+        -- (mirrors the unchecked arm; `endpointSendDualChecked` was boot-pinned
+        -- through `endpointSendDualWithCaps`).  Bounds first, then the
+        -- sender→endpoint flow gate, then the per-core transition.
+        let executingCore := determineExecutingCore st tid
+        match endpointSendCrossCoreDispatchChecked ctx epId tid msg cap.rights
+            gate.cspaceRoot decoded.capRecvSlot executingCore st with
+        | (_, .error e) => .error e
+        | (st', .ok _) => clearWokenReceiverStash wokenReceiver? st'
     | _ => fun _ => .error .invalidCapability
   -- T6-I: IPC receive — checked for endpoint→receiver flow
   | .receive =>
@@ -2770,8 +2813,11 @@ theorem dispatchWithCap_vspaceUnifyInstruction_unauthorized
 -- WS-K-E: Service policy and IPC message population delegation theorems
 -- ============================================================================
 
-/-- WS-K-E/M-D01: When send dispatch is invoked, the IPC message includes
-resolved extra capabilities and uses the WithCaps send path. -/
+/-- WS-K-E/M-D01 / WS-SM SM8.B: When send dispatch is invoked, the IPC message
+includes resolved extra capabilities and routes through the **cross-core**
+WithCaps send (`endpointSendDualWithCapsOnCore` — the per-core send with home-core
+receiver wake and executing-core sender deschedule), at the executing core derived
+from the live state (`determineExecutingCore st tid` — the sender's own core). -/
 theorem dispatchWithCap_send_uses_withCaps
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
     (cap : Capability) (epId : SeLe4n.ObjId)
@@ -2784,10 +2830,11 @@ theorem dispatchWithCap_send_uses_withCaps
         let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
         let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
         let wokenReceiver? := (st.getEndpoint? epId).bind (·.receiveQ.head)
-        match endpointSendDualWithCaps epId tid msg cap.rights gate.cspaceRoot
-            decoded.capRecvSlot st with
-        | .error e => .error e
-        | .ok (_, st') => clearWokenReceiverStash wokenReceiver? st' := by
+        let executingCore := determineExecutingCore st tid
+        match endpointSendDualWithCapsOnCore epId tid msg cap.rights gate.cspaceRoot
+            decoded.capRecvSlot executingCore st with
+        | (_, .error e) => .error e
+        | (st', .ok _) => clearWokenReceiverStash wokenReceiver? st' := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
 
 /-- WS-K-E/M-D01 / WS-SM SM6.A: When call dispatch is invoked, the IPC message
@@ -3126,12 +3173,15 @@ theorem dispatchWithCap_preservation_composition_witness :
     uses frame lemmas for most phases but takes ONE closure over an
     external call (schedule/RHTable-fold) whose preservation depends on
     invariants varying per caller:
-    - `.tcbSetPriority` → `setPriorityOp_preserves_projection` (v0.29.10)
-      body uses `updatePrioritySource_preserves_projection` +
-      `migrateRunQueueBucket_preserves_projection`; takes `hSchedProj`
-      for the optional preemption-schedule branch.
-    - `.tcbSetMCPriority` → `setMCPriorityOp_preserves_projection` (v0.29.10)
-      mirror structure to setPriorityOp.
+    - `.tcbSetPriority` → `setPriorityOnCore_preserves_projection` (WS-SM SM8.B;
+      the arm was rerouted off the boot-pinned `setPriorityOp` in PR #861 review
+      round 12, and `setPriorityOp_preserves_projection` (v0.29.10) remains the
+      statement for the pre-SMP operation) body uses
+      `updatePrioritySource_preserves_projection` +
+      `migrateRunQueueBucketOnCore_preserves_projection`; takes `hReschedProj`
+      for the optional local preemption branch.
+    - `.tcbSetMCPriority` → `setMCPriorityOnCore_preserves_projection` (WS-SM
+      SM8.B; same reroute) mirror structure to setPriorityOnCore.
     - `.serviceRevoke` → `revokeService_preserves_projection` (AK6F.12)
       body uses `congr 1` over all 13 `projectState` components;
       takes `hServiceProjEq` for the `removeDependenciesOf` fold-induction
@@ -3328,6 +3378,29 @@ theorem dispatchWithCap_tcbSuspend_delegates
   obtain ⟨a, hD⟩ := hDecode
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hD, hValid]
 
+/-- **The live `.tcbResume` arm routes to `resumeThreadOnCore`.**
+
+Round 10 of the PR #861 review found this arm still calling the boot-pinned
+`resumeThread`, which enqueues on `bootCoreId` regardless of the target's
+`cpuAffinity` — so resuming a thread homed on a secondary core put it on the
+wrong run queue.  The reroute is the fix; this theorem is what stops the
+inventory claiming the arm is covered while it points somewhere else. -/
+theorem dispatchWithCap_tcbResume_delegates
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
+    (cap : Capability) (objId : SeLe4n.ObjId) (vtid : SeLe4n.ValidThreadId)
+    (st : SystemState)
+    (hSyscall : decoded.syscallId = .tcbResume)
+    (hTarget : cap.target = .object objId)
+    (hDecode : ∃ a, Architecture.SyscallArgDecode.decodeResumeArgs decoded = .ok a)
+    (hValid : validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vtid) :
+    dispatchWithCap decoded tid gate cap st =
+      (match Lifecycle.Suspend.resumeThreadOnCore st vtid
+              (determineExecutingCore st tid) with
+       | .ok (st', _) => .ok ((), st')
+       | .error e => .error e) := by
+  obtain ⟨a, hD⟩ := hDecode
+  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hD, hValid]
+
 /-- **The live `.receive` arm routes to `endpointReceiveDualOnCore`.**
 
 Round 8 of the PR #861 review classified this transition a below-API "leg" of
@@ -3350,6 +3423,96 @@ theorem dispatchWithCapChecked_receive_delegates
        | (_, .error e) => .error e) := by
   simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget, hFlow, hReply]
 
+/-- **The live unchecked `.send` arm routes to `endpointSendDualWithCapsOnCore`.**
+
+Round 10 of the PR #861 review found this arm still calling the boot-pinned
+`endpointSendDualWithCaps`, whose two scheduling effects both target `bootCoreId`:
+a rendezvous receiver is woken with `ensureRunnable` (wrong run queue when the
+receiver is homed elsewhere), and a sender with no receiver is descheduled with
+`removeRunnable` (so a sender blocking on a secondary core stays current and
+runnable there).  The reroute is the fix; this theorem is the tie that stops the
+per-core inventory claiming the arm is covered while it points somewhere else. -/
+theorem dispatchWithCap_send_delegates
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
+    (cap : Capability) (epId : SeLe4n.ObjId) (st : SystemState)
+    (hSyscall : decoded.syscallId = .send)
+    (hTarget : cap.target = .object epId) :
+    dispatchWithCap decoded tid gate cap st =
+      (match endpointSendDualWithCapsOnCore epId tid
+              { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
+                caps := resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded)
+                          gate.capDepth st,
+                badge := cap.badge }
+              cap.rights gate.cspaceRoot decoded.capRecvSlot
+              (determineExecutingCore st tid) st with
+       | (_, .error e) => .error e
+       | (st', .ok _) =>
+           clearWokenReceiverStash ((st.getEndpoint? epId).bind (·.receiveQ.head)) st') := by
+  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
+
+/-- **The live checked `.send` arm routes to `endpointSendCrossCoreDispatchChecked`.**
+The checked mirror of `dispatchWithCap_send_delegates`; the gate is inside the
+cross-core operation (bounds, then `sender → endpoint`), exactly as
+`endpointSendDualChecked` carried it before the reroute. -/
+theorem dispatchWithCapChecked_send_delegates
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (cap : Capability) (epId : SeLe4n.ObjId) (st : SystemState)
+    (hSyscall : decoded.syscallId = .send)
+    (hTarget : cap.target = .object epId) :
+    dispatchWithCapChecked ctx decoded tid gate cap st =
+      (match endpointSendCrossCoreDispatchChecked ctx epId tid
+              { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
+                caps := resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded)
+                          gate.capDepth st,
+                badge := cap.badge }
+              cap.rights gate.cspaceRoot decoded.capRecvSlot
+              (determineExecutingCore st tid) st with
+       | (_, .error e) => .error e
+       | (st', .ok _) =>
+           clearWokenReceiverStash ((st.getEndpoint? epId).bind (·.receiveQ.head)) st') := by
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget]
+
+/-- **The live `.tcbSetPriority` arm routes to `setPriorityOnCore`.**
+
+Round 12 of the PR #861 review found this arm still calling `setPriorityOp`,
+which is boot-pinned twice: `migrateRunQueueBucket` tests membership in
+`runQueueOnCore bootCoreId` — so for a target queued on any other core the
+re-bucket is a silent no-op and the run queue keeps the *old* priority band —
+and the preemption check reads `currentOnCore bootCoreId`. -/
+theorem dispatchWithCap_tcbSetPriority_delegates
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
+    (cap : Capability) (objId : SeLe4n.ObjId) (vCallerTid vTargetTid : SeLe4n.ValidThreadId)
+    (args : Architecture.SyscallArgDecode.SetPriorityArgs) (st : SystemState)
+    (hSyscall : decoded.syscallId = .tcbSetPriority)
+    (hTarget : cap.target = .object objId)
+    (hDecode : decodeSetPriorityArgs decoded = .ok args)
+    (hCaller : validateThreadIdArg tid = .ok vCallerTid)
+    (hValid : validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vTargetTid) :
+    dispatchWithCap decoded tid gate cap st =
+      (match SchedContext.PriorityManagement.setPriorityOnCore st vCallerTid vTargetTid
+              (SeLe4n.Priority.ofNat args.newPriority) (determineExecutingCore st tid) with
+       | .ok (st', _) => .ok ((), st')
+       | .error e => .error e) := by
+  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode, hCaller, hValid]
+
+/-- **The live `.tcbSetMCPriority` arm routes to `setMCPriorityOnCore`.**  Same
+reroute, reached whenever the new ceiling caps the target's current priority. -/
+theorem dispatchWithCap_tcbSetMCPriority_delegates
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
+    (cap : Capability) (objId : SeLe4n.ObjId) (vCallerTid vTargetTid : SeLe4n.ValidThreadId)
+    (args : Architecture.SyscallArgDecode.SetMCPriorityArgs) (st : SystemState)
+    (hSyscall : decoded.syscallId = .tcbSetMCPriority)
+    (hTarget : cap.target = .object objId)
+    (hDecode : decodeSetMCPriorityArgs decoded = .ok args)
+    (hCaller : validateThreadIdArg tid = .ok vCallerTid)
+    (hValid : validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vTargetTid) :
+    dispatchWithCap decoded tid gate cap st =
+      (match SchedContext.PriorityManagement.setMCPriorityOnCore st vCallerTid vTargetTid
+              (SeLe4n.Priority.ofNat args.newMCP) (determineExecutingCore st tid) with
+       | .ok (st', _) => .ok ((), st')
+       | .error e => .error e) := by
+  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode, hCaller, hValid]
+
 /-- **The delegation obligation for a syscall, as a proposition indexed by it.**
 
 PR #861 review round 11: the first cut of this mechanism recorded delegation
@@ -3366,6 +3529,52 @@ delegation theorem yet map to `False`, which is deliberate: evidence for them
 cannot be fabricated, so the inventory's backed/unbacked split is enforced by
 the type checker rather than by a `Bool` someone can flip. -/
 def syscallDelegates : SyscallId → Prop
+  | .send =>
+      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
+        (cap : Capability) (epId : SeLe4n.ObjId) (st : SystemState),
+        decoded.syscallId = .send →
+        cap.target = .object epId →
+        dispatchWithCap decoded tid gate cap st =
+          (match endpointSendDualWithCapsOnCore epId tid
+                  { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
+                    caps := resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded)
+                              gate.capDepth st,
+                    badge := cap.badge }
+                  cap.rights gate.cspaceRoot decoded.capRecvSlot
+                  (determineExecutingCore st tid) st with
+           | (_, .error e) => .error e
+           | (st', .ok _) =>
+               clearWokenReceiverStash ((st.getEndpoint? epId).bind (·.receiveQ.head)) st')
+  | .tcbSetPriority =>
+      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
+        (cap : Capability) (objId : SeLe4n.ObjId)
+        (vCallerTid vTargetTid : SeLe4n.ValidThreadId)
+        (args : Architecture.SyscallArgDecode.SetPriorityArgs) (st : SystemState),
+        decoded.syscallId = .tcbSetPriority →
+        cap.target = .object objId →
+        decodeSetPriorityArgs decoded = .ok args →
+        validateThreadIdArg tid = .ok vCallerTid →
+        validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vTargetTid →
+        dispatchWithCap decoded tid gate cap st =
+          (match SchedContext.PriorityManagement.setPriorityOnCore st vCallerTid vTargetTid
+                  (SeLe4n.Priority.ofNat args.newPriority) (determineExecutingCore st tid) with
+           | .ok (st', _) => .ok ((), st')
+           | .error e => .error e)
+  | .tcbSetMCPriority =>
+      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
+        (cap : Capability) (objId : SeLe4n.ObjId)
+        (vCallerTid vTargetTid : SeLe4n.ValidThreadId)
+        (args : Architecture.SyscallArgDecode.SetMCPriorityArgs) (st : SystemState),
+        decoded.syscallId = .tcbSetMCPriority →
+        cap.target = .object objId →
+        decodeSetMCPriorityArgs decoded = .ok args →
+        validateThreadIdArg tid = .ok vCallerTid →
+        validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vTargetTid →
+        dispatchWithCap decoded tid gate cap st =
+          (match SchedContext.PriorityManagement.setMCPriorityOnCore st vCallerTid vTargetTid
+                  (SeLe4n.Priority.ofNat args.newMCP) (determineExecutingCore st tid) with
+           | .ok (st', _) => .ok ((), st')
+           | .error e => .error e)
   | .receive =>
       ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
         (gate : SyscallGate) (cap : Capability) (epId : SeLe4n.ObjId)
@@ -3392,6 +3601,19 @@ def syscallDelegates : SyscallId → Prop
                   (determineExecutingCore st tid) with
            | .ok (st', _) => .ok ((), st')
            | .error e => .error e)
+  | .tcbResume =>
+      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
+        (cap : Capability) (objId : SeLe4n.ObjId) (vtid : SeLe4n.ValidThreadId)
+        (st : SystemState),
+        decoded.syscallId = .tcbResume →
+        cap.target = .object objId →
+        (∃ a, Architecture.SyscallArgDecode.decodeResumeArgs decoded = .ok a) →
+        validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vtid →
+        dispatchWithCap decoded tid gate cap st =
+          (match Lifecycle.Suspend.resumeThreadOnCore st vtid
+                  (determineExecutingCore st tid) with
+           | .ok (st', _) => .ok ((), st')
+           | .error e => .error e)
   -- Every other syscall: no delegation theorem exists yet.  `False` rather than
   -- `True` so the absence is unforgeable — an inventory entry claiming
   -- delegation evidence for one of these cannot be constructed.
@@ -3403,10 +3625,36 @@ theorem syscallDelegates_receive : syscallDelegates .receive := by
   exact dispatchWithCapChecked_receive_delegates ctx decoded tid gate cap epId replyIdOpt st
     hSyscall hTarget hFlow hReply
 
+/-- The `.tcbResume` obligation, discharged. -/
+theorem syscallDelegates_tcbResume : syscallDelegates .tcbResume := by
+  intro decoded tid gate cap objId vtid st hSyscall hTarget hDecode hValid
+  exact dispatchWithCap_tcbResume_delegates decoded tid gate cap objId vtid st
+    hSyscall hTarget hDecode hValid
+
 /-- The `.tcbSuspend` obligation, discharged. -/
 theorem syscallDelegates_tcbSuspend : syscallDelegates .tcbSuspend := by
   intro decoded tid gate cap objId vtid st hSyscall hTarget hDecode hValid
   exact dispatchWithCap_tcbSuspend_delegates decoded tid gate cap objId vtid st
     hSyscall hTarget hDecode hValid
+
+/-- The `.send` obligation, discharged. -/
+theorem syscallDelegates_send : syscallDelegates .send := by
+  intro decoded tid gate cap epId st hSyscall hTarget
+  exact dispatchWithCap_send_delegates decoded tid gate cap epId st hSyscall hTarget
+
+/-- The `.tcbSetPriority` obligation, discharged. -/
+theorem syscallDelegates_tcbSetPriority : syscallDelegates .tcbSetPriority := by
+  intro decoded tid gate cap objId vCallerTid vTargetTid args st hSyscall hTarget hDecode
+    hCaller hValid
+  exact dispatchWithCap_tcbSetPriority_delegates decoded tid gate cap objId vCallerTid
+    vTargetTid args st hSyscall hTarget hDecode hCaller hValid
+
+/-- The `.tcbSetMCPriority` obligation, discharged. -/
+theorem syscallDelegates_tcbSetMCPriority : syscallDelegates .tcbSetMCPriority := by
+  intro decoded tid gate cap objId vCallerTid vTargetTid args st hSyscall hTarget hDecode
+    hCaller hValid
+  exact dispatchWithCap_tcbSetMCPriority_delegates decoded tid gate cap objId vCallerTid
+    vTargetTid args st hSyscall hTarget hDecode hCaller hValid
+
 
 end SeLe4n.Kernel
