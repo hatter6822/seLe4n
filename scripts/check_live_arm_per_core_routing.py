@@ -104,7 +104,7 @@ BOOT_WRITE_CALLEES = [
     "setRunQueueOnCore",
 ]
 BOOT_WRITES = [
-    re.compile(rf"\b{callee}\b[^\n]{{0,100}}?\bbootCoreId\b")
+    re.compile(rf"\b{callee}\b.{{0,100}}?\bbootCoreId\b")
     for callee in BOOT_WRITE_CALLEES
 ]
 
@@ -300,6 +300,21 @@ def strip_comments(body: str) -> str:
     return "\n".join(l for l in body.split("\n") if not l.strip().startswith("--"))
 
 
+def normalize_ws(body: str) -> str:
+    """Collapse every whitespace run to one space.
+
+    PR #861 review round 24: the boot-*write* patterns first shipped with
+    `[^\\n]{0,100}`, so a call whose arguments wrap — which in Lean is simply a
+    call longer than the line budget — slipped past them, and the self-test's
+    probes were all single-line so it passed with the gap.  Matching against a
+    normalized body makes the `{0,100}` budget a distance in tokens rather than
+    in source characters, so indentation and line breaks cannot hide a literal
+    boot core.  The `BOOT_READS` patterns were never affected (`\\s` matches a
+    newline); this is the newer patterns' own regression.
+    """
+    return re.sub(r"\s+", " ", body)
+
+
 def called_names(body: str) -> set[str]:
     return set(re.findall(r"[A-Za-z_][A-Za-z0-9_']*", body))
 
@@ -328,8 +343,9 @@ def scan(percore: dict[str, str], bodies: dict[str, str], depth: int,
                             continue
                         findings.append((sid, name, pat.pattern,
                                          "reads the boot core's scheduler slot directly"))
+                flat = normalize_ws(body)
                 for pat in BOOT_WRITES:
-                    if pat.search(body):
+                    if pat.search(flat):
                         if (sid, pat.pattern) in allow:
                             continue
                         findings.append((sid, name, pat.pattern,
@@ -397,9 +413,15 @@ def main() -> int:
             ("handleRescheduleSgiOnCore st bootCoreId", True),
             ("let st2 := enqueueRunnableOnCore st1 tid bootCoreId", True),
             ("switchToThreadOnCore st tid (determineTargetCore st tid)", False),
+            # Round 24: the same violations with their arguments wrapped, which
+            # is how a real call of this length is written.  These are the
+            # probes whose absence let the single-line gap ship.
+            ("removeRunnableOnCore st tid\n            bootCoreId", True),
+            ("let st2 :=\n  setCurrentOnCore\n    bootCoreId\n    none", True),
+            ("switchToThreadOnCore st tid\n  (determineTargetCore st tid)", False),
         ]
         for probe, want in write_probes:
-            got = any(pat.search(probe) for pat in BOOT_WRITES)
+            got = any(pat.search(normalize_ws(probe)) for pat in BOOT_WRITES)
             if got != want:
                 verb = "missed" if want else "false-positived on"
                 print(f"[per-core-routing] SELF-TEST FAIL: boot-write patterns "
