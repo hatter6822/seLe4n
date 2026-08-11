@@ -1630,16 +1630,27 @@ entries run it** — gated on the restore seam it depends on.
 
 `scheduleLocalSuccessor` is correct at the model level and its theorems say so.
 But dispatching a successor the runtime cannot install is not an improvement on
-not dispatching one: with `currentOnCore = none` the syscall path fails *closed*
-(`syscallDispatchFromAbi` returns `.illegalState`), while with a named successor
-it **misidentifies** — the blocked caller keeps running on hardware, and its
-next syscall is attributed to the thread the model believes is current.
+not dispatching one.
 
-So the switch is coupled to its prerequisite rather than described alongside it.
-Today this is `post`; when SM9.E flips `contextRestoreSeamLive` it becomes the
-dispatch, with no other edit.  The vacated-core liveness defect stays open and
-stays recorded (`contextSwitchSites_restore_pending`) — this is about not
-shipping a worse failure mode in exchange for fixing it.
+**Neither state is safe, and this gate does not make one safe** (PR #861 review
+round 21 — an earlier version of this note claimed otherwise and was wrong).
+Without a context-restore seam the SVC path returns through the blocked caller's
+own frame either way, so the caller **keeps executing user code it should not be
+running**, on both sides of this guard.  What differs is only what happens at
+its *next* syscall: with `currentOnCore = none` the dispatch rejects it
+(`syscallDispatchFromAbi` returns `.illegalState`), while with a named successor
+it is **attributed to that successor**.  Rejection is better than
+misattribution, so the gate picks the less-bad of two broken states — it is a
+relative choice, not a safety property, and "fails closed" describes the syscall
+boundary alone.
+
+The switch is therefore coupled to its prerequisite rather than described
+alongside it.  Today this is `post`; when SM9.E flips `contextRestoreSeamLive`
+it becomes the dispatch, with no other edit.  The vacated-core liveness defect
+stays open and stays recorded (`contextSwitchSites_restore_pending`), as does
+the larger fact it belongs to: with no context restore and no registered
+INTID-0 handler, *no* modelled thread switch reaches hardware on any path —
+timer preemption, cross-core wake, or syscall.
 
 Deliberately a *wrapper*: folding the guard into `scheduleLocalSuccessor` would
 make every theorem about it conditional, and those theorems are what SM9.E
