@@ -2320,7 +2320,9 @@ theorem chooseBestRunnableBy_result_fields
   | cons hd tl ih =>
       unfold chooseBestRunnableBy at hOk
       cases hHdObj : objects hd.toObjId with
-      | none => simp [hHdObj] at hOk
+      -- Round 15: a non-TCB entry is now *skipped* rather than failing the
+      -- scan, so these arms recurse on the tail with the incumbent unchanged.
+      | none => simp only [hHdObj] at hOk; exact ih init hOk hInit
       | some obj =>
           cases obj with
           | tcb hdTcb =>
@@ -2351,7 +2353,7 @@ theorem chooseBestRunnableBy_result_fields
                           simp only [hBeat] at hOk
                           exact ih (some (initTid, initPrio, initDl)) hOk hInit
           | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
-              simp [hHdObj] at hOk
+              simp only [hHdObj] at hOk; exact ih init hOk hInit
 
 /-- WS-H6: Result of `chooseBestRunnableBy` (init = none) is a member of the scanned list. -/
 private theorem chooseBestRunnableBy_result_mem_aux
@@ -2374,7 +2376,11 @@ private theorem chooseBestRunnableBy_result_mem_aux
     have hAllTl : ∀ t, t ∈ tl → ∃ tcb, objects t.toObjId = some (.tcb tcb) :=
       fun t ht => hAllTcb t (List.mem_cons.mpr (Or.inr ht))
     cases hHdObj : objects hd.toObjId with
-    | none => simp [hHdObj] at hOk
+    -- Round 15: skipped, not failed — recurse with the incumbent unchanged.
+    | none =>
+      simp only [hHdObj] at hOk
+      exact (ih init hOk hAllTl).elim
+        (fun h => Or.inl (List.mem_cons.mpr (Or.inr h))) Or.inr
     | some obj =>
       cases obj with
       | tcb hdTcb =>
@@ -2409,7 +2415,9 @@ private theorem chooseBestRunnableBy_result_mem_aux
               have := ih (some (initTid, initPrio, initDl)) hOk hAllTl
               exact this.elim (fun h => Or.inl (List.mem_cons.mpr (Or.inr h))) Or.inr
       | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
-        simp [hHdObj] at hOk
+        simp only [hHdObj] at hOk
+        exact (ih init hOk hAllTl).elim
+          (fun h => Or.inl (List.mem_cons.mpr (Or.inr h))) Or.inr
 
 private theorem chooseBestRunnableBy_result_mem
     (objects : SeLe4n.ObjId → Option KernelObject)

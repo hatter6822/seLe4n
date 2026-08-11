@@ -263,7 +263,12 @@ theorem cleanupDonatedSchedContext_tlbShootdown_eq
     must preserve lifecycle for its proofs.
     This prevents dangling-reference scenarios after a TCB is retyped. -/
 def cleanupTcbReferences (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
-  let st := removeRunnable st tid
+  -- WS-SM SM8.B (PR #861 review round 15): sweep **every** core, not the boot
+  -- core alone.  This runs on the destroy path (`lifecyclePreRetypeCleanup`),
+  -- and a retype of a TCB queued on a secondary core used to leave that queue
+  -- holding an ObjId that no longer resolves to a `.tcb` — after which
+  -- `chooseBestRunnableBy` failed that core's entire selection scan forever.
+  let st := removeRunnableFromAllCores st tid
   let st := removeFromAllEndpointQueues st tid
   removeFromAllNotificationWaitLists st tid
 

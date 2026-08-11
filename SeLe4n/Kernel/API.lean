@@ -39,6 +39,7 @@ import SeLe4n.Kernel.SchedContext.Operations
 import SeLe4n.Kernel.Lifecycle.Suspend
 import SeLe4n.Kernel.SchedContext.PriorityManagement
 import SeLe4n.Kernel.SchedContext.PriorityManagementPerCore
+import SeLe4n.Kernel.SchedContext.OperationsPerCore
 import SeLe4n.Kernel.IPC.Operations.Donation
 
 import SeLe4n.Kernel.Architecture.Adapter
@@ -1137,7 +1138,21 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
           -- via ValidObjId signature on schedContextUnbind.
           match validateObjIdArg scId with
           | .error e => .error e
-          | .ok vScId => SchedContextOps.schedContextUnbind vScId st
+          | .ok vScId =>
+              -- WS-SM SM8.B (PR #861 review round 15): route through the
+              -- **per-core** unbind.  Revoking a SchedContext demotes its bound
+              -- thread to the legacy TCB priority, and the single-core form
+              -- cleared that thread's `current` slot without any scheduling
+              -- point — nothing in `syscallDispatchCrossCoreEntry` reschedules
+              -- locally, and `crossCoreSgiBody` deliberately emits nothing for
+              -- the executing core — so a thread that unbound its own
+              -- SchedContext kept running while the model said its core had no
+              -- current thread, and its next syscall resolved
+              -- `determineExecutingCore` to the boot-core fallback.
+              match SchedContextOps.schedContextUnbindOnCore vScId
+                  (determineExecutingCore st tid) st with
+              | .ok (st', _) => .ok ((), st')
+              | .error e => .error e
     | _ => fun _ => .error .invalidCapability
   -- WS-SM SM6.B: bind a notification to the capability-target TCB (seL4
   -- NotificationBind).  Cap target = the TCB; msgRegs[0] = the notification ObjId.
@@ -3495,6 +3510,31 @@ theorem dispatchWithCap_tcbSetPriority_delegates
        | .error e => .error e) := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode, hCaller, hValid]
 
+/-- **The live `.schedContextUnbind` arm routes to `schedContextUnbindOnCore`.**
+
+Round 15 of the PR #861 review found the arm calling the single-core
+`schedContextUnbind`, which clears the demoted thread's `current` slot and stops
+there.  No scheduling point follows it — `syscallDispatchCrossCoreEntry` only
+commits and fires the diff-recovered SGIs, and `crossCoreSgiBody` emits nothing
+for the executing core — so the thread returned to userspace still running while
+the model recorded its core as having no current thread, and its next syscall
+resolved `determineExecutingCore` to the boot-core fallback. -/
+theorem dispatchWithCap_schedContextUnbind_delegates
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
+    (cap : Capability) (scId : SeLe4n.ObjId) (vScId : SeLe4n.ValidObjId)
+    (st : SystemState)
+    (hSyscall : decoded.syscallId = .schedContextUnbind)
+    (hTarget : cap.target = .object scId)
+    (hDecode : ∃ a, decodeSchedContextUnbindArgs decoded = .ok a)
+    (hValid : validateObjIdArg scId = .ok vScId) :
+    dispatchWithCap decoded tid gate cap st =
+      (match SchedContextOps.schedContextUnbindOnCore vScId
+              (determineExecutingCore st tid) st with
+       | .ok (st', _) => .ok ((), st')
+       | .error e => .error e) := by
+  obtain ⟨a, hArgs⟩ := hDecode
+  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hArgs, hValid]
+
 /-- **The live `.tcbSetMCPriority` arm routes to `setMCPriorityOnCore`.**  Same
 reroute, reached whenever the new ceiling caps the target's current priority. -/
 theorem dispatchWithCap_tcbSetMCPriority_delegates
@@ -3614,6 +3654,19 @@ def syscallDelegates : SyscallId → Prop
                   (determineExecutingCore st tid) with
            | .ok (st', _) => .ok ((), st')
            | .error e => .error e)
+  | .schedContextUnbind =>
+      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
+        (cap : Capability) (scId : SeLe4n.ObjId) (vScId : SeLe4n.ValidObjId)
+        (st : SystemState),
+        decoded.syscallId = .schedContextUnbind →
+        cap.target = .object scId →
+        (∃ a, decodeSchedContextUnbindArgs decoded = .ok a) →
+        validateObjIdArg scId = .ok vScId →
+        dispatchWithCap decoded tid gate cap st =
+          (match SchedContextOps.schedContextUnbindOnCore vScId
+                  (determineExecutingCore st tid) st with
+           | .ok (st', _) => .ok ((), st')
+           | .error e => .error e)
   -- Every other syscall: no delegation theorem exists yet.  `False` rather than
   -- `True` so the absence is unforgeable — an inventory entry claiming
   -- delegation evidence for one of these cannot be constructed.
@@ -3655,6 +3708,12 @@ theorem syscallDelegates_tcbSetMCPriority : syscallDelegates .tcbSetMCPriority :
     hCaller hValid
   exact dispatchWithCap_tcbSetMCPriority_delegates decoded tid gate cap objId vCallerTid
     vTargetTid args st hSyscall hTarget hDecode hCaller hValid
+
+/-- The `.schedContextUnbind` obligation, discharged. -/
+theorem syscallDelegates_schedContextUnbind : syscallDelegates .schedContextUnbind := by
+  intro decoded tid gate cap scId vScId st hSyscall hTarget hDecode hValid
+  exact dispatchWithCap_schedContextUnbind_delegates decoded tid gate cap scId vScId st
+    hSyscall hTarget hDecode hValid
 
 
 end SeLe4n.Kernel

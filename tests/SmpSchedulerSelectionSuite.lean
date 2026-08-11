@@ -400,12 +400,25 @@ private def runLockSetChecks : IO Unit := do
 budget-aware selector's CBS-budget rejection (the budget-guarantee in action). -/
 private def runAdvancedScenarios : IO Unit := do
   IO.println "--- §3.8 error path / EDF / budget-aware selection ---"
-  -- Error path: a run queue referencing a non-TCB "ghost" thread must error
-  -- (`.error schedulerInvariantViolation`), i.e. neither select nor idle-fall-back.
-  assertBool "error path: a corrupt run queue selects nothing"
+  -- Corrupt run queue: a "ghost" entry (a run-queue thread id whose object is
+  -- not a TCB) is **skipped**, so the selector reports the honest outcome for a
+  -- queue with nothing selectable — idle fallback — rather than failing.
+  --
+  -- WS-SM SM8.B (PR #861 review round 15) changed this contract, and the second
+  -- assertion is the one that moved: it used to read "does NOT report idle
+  -- fallback (it errors)".  The error was not a local rejection — it aborted the
+  -- whole selection scan, both the max-bucket pass and the full-list fallback,
+  -- and nothing on that path removes the ghost, so the core could never schedule
+  -- again.  `runnableThreadsAreTCBs` still says no ghost should exist; the
+  -- scheduler just no longer needs that to be true in order to make progress.
+  assertBool "corrupt run queue: the ghost entry is not selected"
     (!decide (chooseThreadOnCoreSelects stGhost bootCoreId tidGhost))
-  assertBool "error path: a corrupt run queue does NOT report idle fallback (it errors)"
-    (!decide (chooseThreadOnCoreIdleFallback stGhost bootCoreId))
+  assertBool "corrupt run queue: the ghost is SKIPPED, so the core idles rather than wedging"
+    (decide (chooseThreadOnCoreIdleFallback stGhost bootCoreId))
+  -- The load-bearing negative: skipping must not have made selection total by
+  -- making it vacuous — a queue holding a real, eligible TCB still selects it.
+  assertBool "NEGATIVE: a well-formed queue still selects its thread"
+    (decide (chooseThreadOnCoreSelects stEdf bootCoreId tidB))
   -- EDF tie-break: equal priority, B has earlier deadline ⇒ B wins.
   assertBool "EDF: equal-priority thread B (deadline 3) beats A (deadline 5)"
     (decide (chooseThreadOnCoreSelects stEdf bootCoreId tidB))

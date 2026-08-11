@@ -2,9 +2,78 @@
 
 WS-SM **SM8.B — per-core NI proofs** (plan
 `docs/planning/SMP_INFORMATION_FLOW_PLAN.md` §3.3), landed as one release per
-the every-PR-ships-one-version policy.  Five automated review rounds are folded
+the every-PR-ships-one-version policy.  The automated review rounds are folded
 in below rather than shipped as separate patch versions — they were review
 iterations on this change, not releases.
+
+### Review round 15 — the destroy path, and two gates that failed open
+
+**Seventh live boot-pinning defect, found by the round-14 gate's own reach and
+fixed here.** `cleanupTcbReferences` (the retype destroy path, reached from the
+live `.lifecycleRetype` arm through `lifecyclePreRetypeCleanup`) removed the
+target TCB from the **boot** core's run queue only.  Retyping a TCB queued on
+any other core therefore left a run-queue entry whose object no longer resolves
+to a `.tcb`, and `chooseBestRunnableBy` returned `.error
+.schedulerInvariantViolation` for the *entire* scan — max-priority bucket and
+full-list fallback alike — on every subsequent call, with nothing on the failure
+path to remove the entry.  One stale entry stopped that core scheduling
+anything, permanently.  Availability, fail-closed, High once SMP is bootable
+(SM9.E); unreachable today.  Closed by `removeRunnableFromAllCores`, which
+sweeps `allCores` rather than resolving one — a destroy has no home core, and
+sweeping also covers the SM6.E review-4 case where a thread is current on a core
+`determineTargetCore` does not name.  Supported by `mem_allCores` (the
+completeness half of the enumeration, beside `allCores_length`/`_nodup`) and a
+closed-form/frame family proved by induction over the core list.
+
+**Selection hardened so one bad entry costs one thread, not one core.** Both
+scans — `chooseBestRunnableBy` and the budget-aware
+`chooseBestRunnableEffective` the live SGI handler reaches — now **skip** a
+non-TCB run-queue entry instead of failing.  `runnableThreadsAreTCBs` is
+unchanged and still carried; what changed is that the scheduler's *liveness* no
+longer rests on it, which `chooseBestRunnableBy_always_ok` /
+`chooseBestRunnableEffective_always_ok` state outright (selection is now total
+for **any** list).  Three suite cases asserted the old fail-closed contract and
+are re-pointed at the stronger one, each keeping a load-bearing negative that
+the entry is skipped rather than dispatched.
+
+**`.schedContextUnbind` had no scheduling point (round 15 P1).** Revoking a
+SchedContext demotes its bound thread to the legacy priority, and the
+single-core form cleared that thread's `current` slot with nothing following:
+`syscallDispatchCrossCoreEntry` does no local scheduling and `crossCoreSgiBody`
+deliberately emits nothing for the executing core, so a thread that unbound its
+own SchedContext returned to userspace still running while the model recorded
+its core as idle — after which `determineExecutingCore` resolved to the
+boot-core fallback.  New production `SchedContext/OperationsPerCore.lean`
+(`schedContextUnbindOnCore`) resolves the core **actually** running the thread
+(`runningCoreOf?`, not the queue home) and runs the shared preemption seam,
+inline when local and as a `.reschedule` SGI when remote.  Live behind
+`.schedContextUnbind` with a delegation theorem and `syscallDelegates`
+obligation.
+
+**Two gates were themselves failing open** — the same defect class the axiom
+sweep had.  `check_live_arm_per_core_routing.py` (a) truncated every
+`@[attribute]` / `def` declaration to its attribute line, so 11 definitions
+(`suspendThreadInner` among them) were indexed as empty and anything inside them
+was invisible; and (b) accepted an enforcement label that coincidentally named
+*some* Lean definition even when the live arm called a different one —
+`.tcbSetAffinity` resolved to `setThreadCpuAffinity` while the arm calls
+`setThreadCpuAffinityOp`, bypassing the scheduling-relevant body.  Both closed;
+every label→definition alias is now **verified against the dispatch arm**, and
+the self-test gained a structural probe for the attribute form.
+
+**The other half of the per-core obligation, now checked.** Re-routing an arm to
+a per-core operation is only half the work: it can then write a core it is not
+executing on, which the cross-core NI inventory exists to bound.  Rounds 12 and
+14 rerouted five arms and gave three of them entries; nothing checked the
+pairing, so a reviewer found each miss one at a time.  The gate now fails when a
+live arm whose operation takes a `CoreId` has no `crossCoreLiveArmSyscall` entry.
+Running it closed the gap for `.tcbSetPriority` / `.tcbSetMCPriority`
+(inventory 19 → 21 entries, 12 → 14 live arms, 18 → 20 remote writers, 4 → 7
+delegation-backed) and produced empty-write-set proofs for the memory-subsystem
+arms `.vspaceMap` / `.vspaceUnmap`, which write no scheduler slot or register
+bank on any core.  Both priority ops now share one named effect
+(`applyPriorityChangeOnCore`), removing a four-line duplicate and giving the
+information-flow layer one obligation instead of two copies of it.
 
 ### The theorems
 

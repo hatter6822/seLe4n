@@ -99,6 +99,32 @@ theorem priorityRescheduleOnCore_no_preempt (st : SystemState)
     priorityRescheduleOnCore st running? ec false = .ok (st, none) := by
   simp [priorityRescheduleOnCore]
 
+/-- WS-SM SM8.B: the priority ops' **shared state effect** — write the new value
+to whichever field owns the thread's priority, re-bucket it on its home core, and
+run the preemption seam on the core actually running it.
+
+Both `setPriorityOnCore` and `setMCPriorityOnCore` perform exactly this once
+their own authority and capping rules have decided *what* value to write and
+*whether* it can preempt, so naming it removes a four-line duplicate that would
+otherwise have to be kept in step by eye — and gives the information-flow layer
+one write-set obligation to discharge instead of two copies of it. -/
+def applyPriorityChangeOnCore (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (newPriority : SeLe4n.Priority) (executingCore : CoreId) (shouldPreempt : Bool) :
+    Except KernelError (SystemState × Option (CoreId × SgiKind)) :=
+  priorityRescheduleOnCore
+    (migrateRunQueueBucketOnCore (updatePrioritySource st tid tcb newPriority) tid newPriority
+      (determineTargetCore st tid))
+    (Lifecycle.Suspend.runningCoreOf? st tid) executingCore shouldPreempt
+
+/-- WS-SM SM8.B: a non-preempting change (a raise, or a ceiling that does not
+bite) surfaces no SGI. -/
+theorem applyPriorityChangeOnCore_no_preempt (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (newPriority : SeLe4n.Priority) (executingCore : CoreId) :
+    applyPriorityChangeOnCore st tid tcb newPriority executingCore false
+      = .ok (migrateRunQueueBucketOnCore (updatePrioritySource st tid tcb newPriority) tid
+              newPriority (determineTargetCore st tid), none) := by
+  simp [applyPriorityChangeOnCore, priorityRescheduleOnCore]
+
 /-- WS-SM SM8.B (operation): **set a thread's priority, across cores.**
 
 `setPriorityOp`'s per-core form.  Identical authority (`validatePriorityAuthority`
@@ -124,11 +150,7 @@ def setPriorityOnCore (st : SystemState) (vCallerTid vTargetTid : SeLe4n.ValidTh
       match st.getTcb? vTargetTid.val with
       | some targetTcb =>
         let oldPriority := getCurrentPriority st targetTcb
-        let home := determineTargetCore st vTargetTid.val
-        let running? := Lifecycle.Suspend.runningCoreOf? st vTargetTid.val
-        let st1 := updatePrioritySource st vTargetTid.val targetTcb newPriority
-        let st2 := migrateRunQueueBucketOnCore st1 vTargetTid.val newPriority home
-        priorityRescheduleOnCore st2 running? executingCore
+        applyPriorityChangeOnCore st vTargetTid.val targetTcb newPriority executingCore
           (decide (newPriority.val < oldPriority.val))
       | none => .error .invalidArgument
   | none => .error .invalidArgument
@@ -152,11 +174,7 @@ def setMCPriorityOnCore (st : SystemState) (vCallerTid vTargetTid : SeLe4n.Valid
           objects := st.objects.insert vTargetTid.val.toObjId (.tcb targetTcb') }
         let currentPrio := getCurrentPriority stMcp targetTcb'
         if currentPrio.val > newMCP.val then
-          let home := determineTargetCore stMcp vTargetTid.val
-          let running? := Lifecycle.Suspend.runningCoreOf? stMcp vTargetTid.val
-          let st1 := updatePrioritySource stMcp vTargetTid.val targetTcb' newMCP
-          let st2 := migrateRunQueueBucketOnCore st1 vTargetTid.val newMCP home
-          priorityRescheduleOnCore st2 running? executingCore true
+          applyPriorityChangeOnCore stMcp vTargetTid.val targetTcb' newMCP executingCore true
         else
           .ok (stMcp, none)
       | none => .error .invalidArgument
@@ -203,7 +221,7 @@ theorem setPriorityOnCore_raise_no_sgi (st st' : SystemState)
     sgi = none := by
   simp only [setPriorityOnCore, hCaller, hAuth, hTarget] at hStep
   rw [show (decide (newPriority.val < (getCurrentPriority st targetTcb).val)) = false by
-        simp [hRaise], priorityRescheduleOnCore_no_preempt] at hStep
+        simp [hRaise], applyPriorityChangeOnCore_no_preempt] at hStep
   rw [Except.ok.injEq, Prod.mk.injEq] at hStep
   exact hStep.2.symm
 

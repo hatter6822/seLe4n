@@ -1,1 +1,22 @@
-[]
+[
+  {
+    "syscall": "vspaceMap",
+    "symbol": "cross-core-inventory",
+    "reason": "SM7.F.4 wrapper, live since v0.32.89 and never re-routed by this PR. It takes a CoreId, but every field it writes past the object store is outside the observer's read set: perCoreTlb, tlbShootdown and pendingIcacheMaintenance are all proven invisible on EVERY core by the SM8.A onCore_perCore_independence corollaries, and it touches neither a scheduler slot nor a register bank. Closure target: an inventory entry with an empty write set, once the scheduler/machine frames for the shootdown wrappers exist."
+  },
+  {
+    "syscall": "vspaceUnmap",
+    "symbol": "cross-core-inventory",
+    "reason": "SM7.D wrapper, live since v0.32.94 and never re-routed by this PR. Same argument as vspaceMap: its cross-core effect is a TLB shootdown round plus an I-cache maintenance record, and SM8.A proves perCoreTlb / perCoreICache / pendingIcacheMaintenance / tlbShootdown outside the per-core observer's read set. Closure target: an inventory entry with an empty write set."
+  },
+  {
+    "syscall": "lifecycleRetype",
+    "symbol": "cross-core-inventory",
+    "reason": "SM7.D/SM7.F retype wrapper, live since v0.32.94 and never re-routed by this PR. Same argument as vspaceUnmap. Closure target: an inventory entry with an empty write set."
+  },
+  {
+    "syscall": "tcbSetAffinity",
+    "symbol": "cross-core-inventory",
+    "reason": "TRACKED DEBT, not an unobservable write. setThreadCpuAffinityWithMigration genuinely writes TWO cores' run queues (migrateRunQueueOnAffinityChange oldCore newCore), so it owes a real write set and confinement proof. It is allowlisted rather than proven here only because it has been per-core since SM5.H.4 and was not re-routed by this PR: the gap is pre-existing, not introduced. The boot-pinned executingCore that setThreadCpuAffinityOp passes is separately inert -- it selects only the SGI, which the op discards, and the poke rides the diff seam's crossCoreSgiBody_remote_wake rule. Closure target: setThreadCpuAffinityWithMigration_confinedToCores over [oldCore, newCore], with newCore expressed from the affinity argument rather than the mid-state."
+  }
+]

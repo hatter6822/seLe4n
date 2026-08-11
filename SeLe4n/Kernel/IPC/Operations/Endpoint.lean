@@ -111,6 +111,137 @@ def removeRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
             else (st.scheduler.currentOnCore bootCoreId))
   }
 
+/-- WS-SM SM8.B: one core's share of the destroy sweep — drop the thread from
+that core's run queue and clear its current slot if it holds it. -/
+def removeRunnableStepOnCore (tid : SeLe4n.ThreadId) (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) : SystemState :=
+  { st with
+      scheduler := (st.scheduler.setRunQueueOnCore c
+          ((st.scheduler.runQueueOnCore c).remove tid)).setCurrentOnCore c
+          (if (st.scheduler.currentOnCore c) = some tid then none
+            else (st.scheduler.currentOnCore c)) }
+
+/-- WS-SM SM8.B: **remove a thread from every core's scheduler state.**
+
+`removeRunnable` clears the boot core alone, which is right for a thread that is
+merely blocking — it blocks where it runs — and wrong for a thread that is being
+**destroyed**.  A retype of a live TCB ran the boot-core form
+(`cleanupTcbReferences`), so retyping a thread queued on any other core left a
+run-queue entry whose object no longer resolves to a `.tcb`; `chooseBestRunnableBy`
+then failed that core's *entire* selection scan, permanently, because nothing
+removes the entry on the failure path.  Found in PR #861 review round 15.
+
+A destroy has no home core to speak of — the object is going away — so this
+sweeps `allCores` rather than resolving one.  That also covers the SM6.E
+review-4 divergence, where a thread is current on a core that is not the one
+`determineTargetCore` names. -/
+def removeRunnableFromAllCores (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+  SeLe4n.Kernel.Concurrency.allCores.foldl (removeRunnableStepOnCore tid) st
+
+/-- WS-SM SM8.B: a step at another core leaves this core's run queue alone, so a
+sweep over a list omitting `c` frames `c`. -/
+theorem foldl_removeRunnableStepOnCore_runQueueOnCore_not_mem
+    (cs : List SeLe4n.Kernel.Concurrency.CoreId) (tid : SeLe4n.ThreadId)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    ∀ st : SystemState, c ∉ cs →
+      (cs.foldl (removeRunnableStepOnCore tid) st).scheduler.runQueueOnCore c
+        = st.scheduler.runQueueOnCore c := by
+  induction cs with
+  | nil => intro st _; rfl
+  | cons d ds ih =>
+    intro st hc
+    have hne : d ≠ c := fun h => hc (by simp [h])
+    have hd : c ∉ ds := fun h => hc (by simp [h])
+    rw [List.foldl_cons, ih _ hd]
+    simp [removeRunnableStepOnCore, SchedulerState.setCurrentOnCore_runQueueOnCore,
+      SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hne]
+
+/-- WS-SM SM8.B: and the step at `c` itself removes the thread — so over a
+duplicate-free list containing `c`, `c`'s queue comes back without it. -/
+theorem foldl_removeRunnableStepOnCore_runQueueOnCore_mem
+    (cs : List SeLe4n.Kernel.Concurrency.CoreId) (tid : SeLe4n.ThreadId)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    ∀ st : SystemState, c ∈ cs → cs.Nodup →
+      (cs.foldl (removeRunnableStepOnCore tid) st).scheduler.runQueueOnCore c
+        = (st.scheduler.runQueueOnCore c).remove tid := by
+  induction cs with
+  | nil => intro _ hc _; exact absurd hc (by simp)
+  | cons d ds ih =>
+    intro st hc hnd
+    rcases List.mem_cons.mp hc with hEq | hIn
+    · subst hEq
+      rw [List.foldl_cons,
+        foldl_removeRunnableStepOnCore_runQueueOnCore_not_mem ds tid c _
+          (List.nodup_cons.mp hnd).1]
+      simp [removeRunnableStepOnCore, SchedulerState.setCurrentOnCore_runQueueOnCore,
+        SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+    · have hne : d ≠ c := fun h => (List.nodup_cons.mp hnd).1 (h ▸ hIn)
+      rw [List.foldl_cons, ih _ hIn (List.nodup_cons.mp hnd).2]
+      simp [removeRunnableStepOnCore, SchedulerState.setCurrentOnCore_runQueueOnCore,
+        SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hne]
+
+/-- WS-SM SM8.B: the sweep's closed form — **every** core's run queue comes back
+with the thread removed. -/
+@[simp] theorem removeRunnableFromAllCores_runQueueOnCore (st : SystemState)
+    (tid : SeLe4n.ThreadId) (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (removeRunnableFromAllCores st tid).scheduler.runQueueOnCore c
+      = (st.scheduler.runQueueOnCore c).remove tid :=
+  foldl_removeRunnableStepOnCore_runQueueOnCore_mem _ tid c st
+    (SeLe4n.Kernel.Concurrency.mem_allCores c)
+    SeLe4n.Kernel.Concurrency.allCores_nodup
+
+/-- WS-SM SM8.B: and so the destroyed thread is in no core's run queue. -/
+theorem removeRunnableFromAllCores_not_mem (st : SystemState) (tid : SeLe4n.ThreadId)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    ¬ (tid ∈ (removeRunnableFromAllCores st tid).scheduler.runQueueOnCore c) := by
+  rw [removeRunnableFromAllCores_runQueueOnCore]
+  exact RunQueue.not_mem_remove_self _ _
+
+/-- WS-SM SM8.B: the sweep only ever removes — it never introduces a thread. -/
+theorem removeRunnableFromAllCores_flat_subset (st : SystemState)
+    (tid x : SeLe4n.ThreadId) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (h : x ∈ ((removeRunnableFromAllCores st tid).scheduler.runQueueOnCore c).flat) :
+    x ∈ (st.scheduler.runQueueOnCore c).flat := by
+  rw [removeRunnableFromAllCores_runQueueOnCore] at h
+  exact (List.mem_filter.mp h).1
+
+/-- WS-SM SM8.B: the sweep is scheduler-only — every other field frames, by
+induction over the core list rather than by reducing it. -/
+theorem foldl_removeRunnableStepOnCore_frame
+    (cs : List SeLe4n.Kernel.Concurrency.CoreId) (tid : SeLe4n.ThreadId) :
+    ∀ st : SystemState,
+      (cs.foldl (removeRunnableStepOnCore tid) st).objects = st.objects
+      ∧ (cs.foldl (removeRunnableStepOnCore tid) st).lifecycle = st.lifecycle
+      ∧ (cs.foldl (removeRunnableStepOnCore tid) st).machine = st.machine
+      ∧ (cs.foldl (removeRunnableStepOnCore tid) st).tlbShootdown = st.tlbShootdown := by
+  induction cs with
+  | nil => intro _; exact ⟨rfl, rfl, rfl, rfl⟩
+  | cons d ds ih =>
+    intro st
+    obtain ⟨h1, h2, h3, h4⟩ := ih (removeRunnableStepOnCore tid st d)
+    exact ⟨by rw [List.foldl_cons, h1]; rfl, by rw [List.foldl_cons, h2]; rfl,
+           by rw [List.foldl_cons, h3]; rfl, by rw [List.foldl_cons, h4]; rfl⟩
+
+@[simp] theorem removeRunnableFromAllCores_objects (st : SystemState)
+    (tid : SeLe4n.ThreadId) :
+    (removeRunnableFromAllCores st tid).objects = st.objects :=
+  (foldl_removeRunnableStepOnCore_frame _ tid st).1
+
+@[simp] theorem removeRunnableFromAllCores_lifecycle (st : SystemState)
+    (tid : SeLe4n.ThreadId) :
+    (removeRunnableFromAllCores st tid).lifecycle = st.lifecycle :=
+  (foldl_removeRunnableStepOnCore_frame _ tid st).2.1
+
+@[simp] theorem removeRunnableFromAllCores_machine (st : SystemState)
+    (tid : SeLe4n.ThreadId) :
+    (removeRunnableFromAllCores st tid).machine = st.machine :=
+  (foldl_removeRunnableStepOnCore_frame _ tid st).2.2.1
+
+@[simp] theorem removeRunnableFromAllCores_tlbShootdown (st : SystemState)
+    (tid : SeLe4n.ThreadId) :
+    (removeRunnableFromAllCores st tid).tlbShootdown = st.tlbShootdown :=
+  (foldl_removeRunnableStepOnCore_frame _ tid st).2.2.2
+
 /-- WS-SM SM7.B: `removeRunnable` is scheduler-only — the TLB-shootdown
 state is framed (`pendingBounded` bundle-carriage leaf). -/
 theorem removeRunnable_tlbShootdown_eq (st : SystemState) (tid : SeLe4n.ThreadId) :

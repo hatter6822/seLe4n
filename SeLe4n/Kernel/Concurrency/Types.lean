@@ -109,6 +109,13 @@ Lean Std `List.length_finRange` `@[simp]` lemma. -/
 theorem allCores_length : allCores.length = numCores := by
   simp [allCores, List.length_finRange]
 
+/-- WS-SM SM8.B: **every** core is in `allCores` — the completeness half of the
+enumeration.  `allCores_length` and `allCores_nodup` say the list is the right
+size and has no repeats; without this a sweep over it could still miss a core,
+which is exactly what a destroy path must not do. -/
+@[simp] theorem mem_allCores (c : CoreId) : c ∈ allCores := by
+  simp [allCores]
+
 /-- WS-SM SM0.E: `allCores` has no duplicate entries.  Lean 4.28's
 standard library does not export a `List.nodup_finRange` lemma, so this
 routes through the WS-SM SM4.A.2 general lemma

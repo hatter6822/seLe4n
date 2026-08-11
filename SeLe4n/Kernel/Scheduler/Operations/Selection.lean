@@ -167,7 +167,23 @@ def chooseBestRunnableBy
             else
               best
           chooseBestRunnableBy objects eligible rest best'
-      | _ => .error .schedulerInvariantViolation
+      -- WS-SM SM8.B (PR #861 review round 15): **skip** an entry whose object is
+      -- not a TCB rather than failing the scan.
+      --
+      -- This arm used to return `.error .schedulerInvariantViolation`, which
+      -- made the *whole* selection fail — both the max-bucket scan and the
+      -- full-list fallback — for every future call, because nothing on the
+      -- failure path removes the offending entry.  One stale entry therefore
+      -- wedged a core permanently, and the retype destroy path could produce one
+      -- (it swept only the boot core; see `removeRunnableFromAllCores`).
+      --
+      -- The invariant that no such entry exists is unchanged and still carried:
+      -- `runnableThreadsAreTCBs` (`Scheduler/Invariant.lean`) and its per-core
+      -- form.  What changes is that the scheduler's *liveness* no longer depends
+      -- on it — a violation now costs one unschedulable thread instead of one
+      -- dead core.  Skipping is also the only safe direction: the entry cannot
+      -- be dispatched, since there is no TCB to switch to.
+      | _ => chooseBestRunnableBy objects eligible rest best
 
 def chooseBestRunnableInDomain
     (objects : SeLe4n.ObjId → Option KernelObject)
@@ -497,7 +513,14 @@ def chooseBestRunnableEffective
             else
               best
           chooseBestRunnableEffective st eligible rest best'
-      | _ => .error .schedulerInvariantViolation
+      -- WS-SM SM8.B (PR #861 review round 15): skip, do not fail — see
+      -- `chooseBestRunnableBy` above for why.  This budget-aware variant is the
+      -- one the live SGI handler reaches (`chooseThreadEffectiveOnCore` →
+      -- `handleRescheduleSgiOnCore`), so it carries the same hazard and takes
+      -- the same repair; leaving the two arms different would be worse than
+      -- either choice, since the two scans are meant to agree
+      -- (`chooseBestRunnableEffective_eq_chooseBestRunnableBy`).
+      | _ => chooseBestRunnableEffective st eligible rest best
 
 /-- Z4-D/E: SchedContext-aware domain-filtered selection. -/
 def chooseBestRunnableInDomainEffective
@@ -932,8 +955,12 @@ theorem chooseBestRunnableEffective_unbound_equiv
   | nil => simp [chooseBestRunnableEffective, chooseBestRunnableBy]
   | cons tid rest ih =>
     simp only [chooseBestRunnableEffective, chooseBestRunnableBy]
+    have hRest : ∀ t ∈ rest, ∀ tcb : TCB,
+        st.objects.get? t.toObjId = some (.tcb tcb) →
+        tcb.schedContextBinding = .unbound ∧ tcb.pipBoost = none :=
+      fun t hMemRest => hAllUnbound t (List.mem_cons_of_mem _ hMemRest)
     cases hObj : st.objects.get? tid.toObjId with
-    | none => rfl
+    | none => exact ih best hRest
     | some obj =>
       cases obj with
       | tcb tcb =>
@@ -944,7 +971,7 @@ theorem chooseBestRunnableEffective_unbound_equiv
         apply ih
         intro t hMemRest
         exact hAllUnbound t (List.mem_cons_of_mem _ hMemRest)
-      | _ => rfl
+      | _ => exact ih best hRest
 
 -- ============================================================================
 -- WS-SM SM5.B — Per-core context switch (`switchToThreadOnCore`)

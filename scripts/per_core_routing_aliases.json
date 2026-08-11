@@ -1,6 +1,8 @@
 {
-  "_comment": "Enforcement-boundary labels are not always Lean definition names. This maps a label to the definition the arm reaches, so scripts/check_live_arm_per_core_routing.py can walk it. Missing alias = hard failure, never a silent skip.",
+  "_comment": "Enforcement-boundary labels are not always Lean definition names. This maps a label to the definition the arm reaches, so scripts/check_live_arm_per_core_routing.py can walk it. Missing alias = hard failure, never a silent skip. Every entry here is VERIFIED against the live dispatch arm in SeLe4n/Kernel/API.lean (PR #861 review round 15): the gate rejects an alias the arm does not call, so a coincidental name match can no longer stand in for the real operation.",
   "setIPCBuffer": "setIPCBufferOp",
   "setPriority": "setPriorityOnCore",
-  "setMCPriority": "setMCPriorityOnCore"
+  "setMCPriority": "setMCPriorityOnCore",
+  "lookupService": "lookupServiceByCap",
+  "setThreadCpuAffinity": "setThreadCpuAffinityOp"
 }

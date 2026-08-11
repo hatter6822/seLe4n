@@ -2097,6 +2097,27 @@ theorem suspendRescheduleOnCore_confinedToCores (st st' : SystemState)
          | exact observableSlotsConfinedToCores_refl _ _)
     | exact absurd h (by simp)
 
+/-- SM8.B.2: the priority ops' preemption seam writes at most the **executing**
+core.  Its remote leg is an SGI *return value*, not a state change: the running
+core is poked, and pokes are not writes.  Shared with the per-core SchedContext
+unbind, whose demotion needs the same scheduling point. -/
+theorem priorityRescheduleOnCore_confinedToCores (st st' : SystemState)
+    (running? : Option CoreId) (executingCore : CoreId) (shouldPreempt : Bool)
+    (sgi : Option (CoreId × Concurrency.SgiKind))
+    (h : SchedContext.PriorityManagement.priorityRescheduleOnCore st running?
+      executingCore shouldPreempt = .ok (st', sgi)) :
+    observableSlotsConfinedToCores st st' [executingCore] := by
+  unfold SchedContext.PriorityManagement.priorityRescheduleOnCore at h
+  repeat' split at h
+  all_goals first
+    | (rw [Except.ok.injEq, Prod.mk.injEq] at h
+       obtain ⟨hs, -⟩ := h
+       subst hs
+       first
+         | exact handleRescheduleSgiOnCore_confinedToCores st _ executingCore (by assumption)
+         | exact observableSlotsConfinedToCores_refl _ _)
+    | exact absurd h (by simp)
+
 /-- SM8.B.2: clearing a suspended thread's transient fields is per-core silent —
 it rewrites one TCB and touches neither the scheduler nor a register bank. -/
 theorem clearPendingState_confinedToCores (st : SystemState) (tid : SeLe4n.ThreadId) :
@@ -2716,7 +2737,7 @@ theorem schedContextUnbind_confinedToCores (vScId : SeLe4n.ValidObjId)
         obtain ⟨-, hs⟩ := hStep
         subst hs
         refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro c hc <;>
-          simp only [List.mem_singleton, not_false_iff] at hc <;>
+          simp only [List.mem_singleton] at hc <;>
           -- The setters are at the subject's home core; `hc` says `c` is not it.
           -- Orient the disequality the `_ne` lemmas expect before simplifying.
           (have hne : determineTargetCore st tid ≠ c := fun h => hc h.symm) <;>
@@ -3023,6 +3044,559 @@ theorem schedContextConfigure_crossCoreNonInterference (ctx : LabelingContext)
     (schedContextConfigure_confinedToCores vScId budget period priority deadline domain
       st st' hObjInv hStep) hShared
 
+/-- SM8.B.2: **the cores the live `.schedContextUnbind` may write** — the demoted
+thread's home core, where the revocation re-buckets it, and the executing core,
+which runs the demotion's scheduling point inline.
+
+The scheduling point is what PR #861 review round 15 added: revoking a
+SchedContext drops the bound thread to its legacy priority, and the single-core
+transition cleared its `current` slot with nothing to follow.  When the running
+core is remote the seam only *posts* its SGI, so the declared set
+over-approximates by one core on that path — over-approximating is the safe
+direction, and it is the shape `resumeThreadOnCoreWriteSet` already uses. -/
+def schedContextUnbindOnCoreWriteSet (st : SystemState) (scObjId : SeLe4n.ObjId)
+    (executingCore : CoreId) : List CoreId :=
+  schedContextWriteSet st scObjId ++ [executingCore]
+
+/-- SM8.B.2 (**the live `.schedContextUnbind` bound**): the per-core unbind
+writes no core outside the demoted thread's home and the executing core.
+
+Two legs, composed by `observableSlotsConfinedToCores_trans` — which is why the
+write set is literally the concatenation the transition performs: the revocation
+(bounded by `schedContextUnbind_confinedToCores`) and the preemption seam
+(bounded by `priorityRescheduleOnCore_confinedToCores`).  A rejected unbind never
+reaches the seam. -/
+theorem schedContextUnbindOnCore_confinedToCores (vScId : SeLe4n.ValidObjId)
+    (executingCore : CoreId) (st st' : SystemState)
+    (sgi : Option (CoreId × Concurrency.SgiKind))
+    (hStep : SchedContextOps.schedContextUnbindOnCore vScId executingCore st
+      = .ok (st', sgi)) :
+    observableSlotsConfinedToCores st st'
+      (schedContextUnbindOnCoreWriteSet st vScId.val executingCore) := by
+  unfold SchedContextOps.schedContextUnbindOnCore schedContextUnbindOnCoreWriteSet at *
+  simp only [] at hStep
+  split at hStep
+  · exact absurd hStep (by simp)
+  · next stMid hUnbind =>
+    exact observableSlotsConfinedToCores_trans
+      (schedContextUnbind_confinedToCores vScId st stMid hUnbind)
+      (priorityRescheduleOnCore_confinedToCores stMid st' _ executingCore true sgi hStep)
+
+/-- SM8.B.3 (**the live `.schedContextUnbind` arm, cross-core**): an unbind is
+invisible on every core outside its write set — including the core the demoted
+thread was running on, when that is not the observer's. -/
+theorem schedContextUnbindOnCore_crossCoreNonInterference (ctx : LabelingContext)
+    (observer : IfObserver) (vScId : SeLe4n.ValidObjId) (executingCore : CoreId)
+    (st st' : SystemState) (c : CoreId)
+    (sgi : Option (CoreId × Concurrency.SgiKind))
+    (hStep : SchedContextOps.schedContextUnbindOnCore vScId executingCore st
+      = .ok (st', sgi))
+    (hne : c ∉ schedContextUnbindOnCoreWriteSet st vScId.val executingCore)
+    (hShared : sharedViewUnchanged ctx observer st st') :
+    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
+  crossCoreNonInterference_ofCores ctx observer hne
+    (schedContextUnbindOnCore_confinedToCores vScId executingCore st st' sgi hStep) hShared
+
+-- ============================================================================
+-- §5i  The live priority-control arms
+-- ============================================================================
+--
+-- PR #861 review round 12 rerouted `.tcbSetPriority` / `.tcbSetMCPriority` off
+-- their doubly-boot-pinned operations, and round 15's inventory-completeness
+-- check (`scripts/check_live_arm_per_core_routing.py`) observed that the reroute
+-- was only half the obligation: a per-core operation can write a core it is not
+-- executing on, and nothing here bounded what these two write.  `.tcbSetAffinity`
+-- was never rerouted — it has been per-core since SM5.H.4 — and had the same
+-- gap for the same reason.
+
+/-- SM8.B.2: rewriting a thread's priority source is per-core silent — it stores
+one TCB or one SchedContext and touches neither the scheduler nor a register
+bank. -/
+theorem updatePrioritySource_confinedToCores (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (newPriority : SeLe4n.Priority) :
+    observableSlotsConfinedToCores st
+      (SchedContext.PriorityManagement.updatePrioritySource st tid tcb newPriority) [] :=
+  observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+    (by unfold SchedContext.PriorityManagement.updatePrioritySource
+        repeat' split
+        all_goals rfl)
+    (by unfold SchedContext.PriorityManagement.updatePrioritySource
+        repeat' split
+        all_goals rfl)
+
+/-- SM8.B.2: the run-queue bucket migration writes exactly the core it is given.
+
+The generalisation of `migrateRunQueueBucket`, which was pinned to `bootCoreId`
+in both its membership test and its write — so a target queued anywhere else got
+a silent no-op while its priority field moved (PR #861 review rounds 10 and 12,
+the defect this whole layer exists to keep from recurring). -/
+theorem migrateRunQueueBucketOnCore_confinedToCores (st : SystemState)
+    (tid : SeLe4n.ThreadId) (newPriority : SeLe4n.Priority) (homeCore : CoreId) :
+    observableSlotsConfinedToCores st
+      (SchedContext.PriorityManagement.migrateRunQueueBucketOnCore st tid newPriority homeCore)
+      [homeCore] := by
+  unfold SchedContext.PriorityManagement.migrateRunQueueBucketOnCore
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro c hc <;>
+    simp only [List.mem_singleton] at hc <;>
+    (have hne : homeCore ≠ c := fun h => hc h.symm) <;>
+    (repeat' split) <;>
+    simp_all [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne,
+      SchedulerState.setRunQueueOnCore_currentOnCore,
+      SchedulerState.setRunQueueOnCore_activeDomainOnCore,
+      SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore,
+      SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
+
+/-- SM8.B.2: the priority ops' shared state effect — store the new value, then
+re-bucket on the given core — writes exactly that core.
+
+Factored out because both ops perform it and because composing it in one step
+keeps the intermediate terms small: chaining the two leaves inline forces
+`isDefEq` over a fully-expanded mid-state and times out. -/
+theorem priorityUpdateAndMigrate_confinedToCores (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (p : SeLe4n.Priority) (home : CoreId) :
+    observableSlotsConfinedToCores st
+      (SchedContext.PriorityManagement.migrateRunQueueBucketOnCore
+        (SchedContext.PriorityManagement.updatePrioritySource st tid tcb p) tid p home)
+      [home] :=
+  observableSlotsConfinedToCores_widen_cons
+    (updatePrioritySource_confinedToCores st tid tcb p)
+    (migrateRunQueueBucketOnCore_confinedToCores _ tid p home)
+
+/-- SM8.B.2: the priority ops' **whole** state effect writes the target's home
+core and the executing core, and nothing else.
+
+Stated against the named effect `applyPriorityChangeOnCore` rather than its
+three composed steps, and over a base-state *variable*.  Both matter: written
+out inline, the composition's metavariables (base state, TCB, home core) have to
+be recovered by unifying a `migrateRunQueueBucketOnCore (updatePrioritySource …)
+…` pattern against a fully-expanded mid-state, which does not terminate at any
+heartbeat budget — raising it to a million changed nothing, the same
+"term shape, not budget" lesson v0.32.151 recorded.  Named and generalised, the
+caller instantiates it with one first-order match against its own `hStep`. -/
+theorem applyPriorityChangeOnCore_confinedToCores (base st' : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (p : SeLe4n.Priority)
+    (executingCore : CoreId) (shouldPreempt : Bool)
+    (sgi : Option (CoreId × Concurrency.SgiKind))
+    (hStep : SchedContext.PriorityManagement.applyPriorityChangeOnCore base tid tcb p
+      executingCore shouldPreempt = .ok (st', sgi)) :
+    observableSlotsConfinedToCores base st' [determineTargetCore base tid, executingCore] :=
+  observableSlotsConfinedToCores_trans
+    (priorityUpdateAndMigrate_confinedToCores base tid tcb p (determineTargetCore base tid))
+    (priorityRescheduleOnCore_confinedToCores _ st' _ executingCore shouldPreempt sgi hStep)
+
+/-- SM8.B.2: **the cores the live `.tcbSetPriority` / `.tcbSetMCPriority` may
+write** — the target's home core, where its run-queue bucket migrates, and the
+executing core, which runs the demotion's preemption point inline.  A remote
+preemption is posted as an SGI, so the set over-approximates by one core there. -/
+def priorityControlWriteSet (st : SystemState) (tid : SeLe4n.ThreadId)
+    (executingCore : CoreId) : List CoreId :=
+  [determineTargetCore st tid, executingCore]
+
+/-- SM8.B.2 (**the live `.tcbSetPriority` bound**): setting a priority writes no
+core outside the target's home and the executing core.
+
+Three legs — the priority-source store (silent), the bucket migration (the home
+core), the preemption seam (the executing core) — and the home core is resolved
+at the **pre-state**, exactly where `setPriorityOnCore` resolves it, so no
+home-core bridge is needed. -/
+theorem setPriorityOnCore_confinedToCores (st st' : SystemState)
+    (vCallerTid vTargetTid : SeLe4n.ValidThreadId) (newPriority : SeLe4n.Priority)
+    (executingCore : CoreId) (sgi : Option (CoreId × Concurrency.SgiKind))
+    (hStep : SchedContext.PriorityManagement.setPriorityOnCore st vCallerTid vTargetTid
+      newPriority executingCore = .ok (st', sgi)) :
+    observableSlotsConfinedToCores st st'
+      (priorityControlWriteSet st vTargetTid.val executingCore) := by
+  unfold SchedContext.PriorityManagement.setPriorityOnCore priorityControlWriteSet at *
+  split at hStep
+  · next callerTcb _ =>
+    split at hStep
+    · exact absurd hStep (by simp)
+    · split at hStep
+      · next targetTcb hTarget =>
+        simp only [] at hStep
+        exact applyPriorityChangeOnCore_confinedToCores st st' vTargetTid.val targetTcb
+          newPriority executingCore _ sgi hStep
+      · exact absurd hStep (by simp)
+  · exact absurd hStep (by simp)
+
+/-- SM8.B.3 (**the live `.tcbSetPriority` arm, cross-core**): a priority change is
+invisible on every core outside the target's home and the executing core. -/
+theorem setPriorityOnCore_crossCoreNonInterference (ctx : LabelingContext)
+    (observer : IfObserver) (st st' : SystemState)
+    (vCallerTid vTargetTid : SeLe4n.ValidThreadId) (newPriority : SeLe4n.Priority)
+    (executingCore c : CoreId) (sgi : Option (CoreId × Concurrency.SgiKind))
+    (hStep : SchedContext.PriorityManagement.setPriorityOnCore st vCallerTid vTargetTid
+      newPriority executingCore = .ok (st', sgi))
+    (hne : c ∉ priorityControlWriteSet st vTargetTid.val executingCore)
+    (hShared : sharedViewUnchanged ctx observer st st') :
+    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
+  crossCoreNonInterference_ofCores ctx observer hne
+    (setPriorityOnCore_confinedToCores st st' vCallerTid vTargetTid newPriority
+      executingCore sgi hStep) hShared
+
+/-- SM8.B.2 (**the live `.tcbSetMCPriority` bound**): capping a thread's maximum
+controlled priority writes no core outside the target's home and the executing
+core, and the uncapped path writes no core at all.
+
+One extra hop over `.tcbSetPriority`: the ceiling is stored *before* the home
+core is resolved, so the transition reads `determineTargetCore` at a mid-state.
+That store rewrites `maxControlledPriority`, never `cpuAffinity`, so it is not a
+migration and the §1a bridge `determineTargetCore_insert_tcb` carries the
+mid-state core back to the pre-state one the write set names. -/
+theorem setMCPriorityOnCore_confinedToCores (st st' : SystemState)
+    (vCallerTid vTargetTid : SeLe4n.ValidThreadId) (newMCP : SeLe4n.Priority)
+    (executingCore : CoreId) (sgi : Option (CoreId × Concurrency.SgiKind))
+    (hObjInv : st.objects.invExt)
+    (hStep : SchedContext.PriorityManagement.setMCPriorityOnCore st vCallerTid vTargetTid
+      newMCP executingCore = .ok (st', sgi)) :
+    observableSlotsConfinedToCores st st'
+      (priorityControlWriteSet st vTargetTid.val executingCore) := by
+  unfold SchedContext.PriorityManagement.setMCPriorityOnCore priorityControlWriteSet at *
+  split at hStep
+  · next callerTcb _ =>
+    split at hStep
+    · exact absurd hStep (by simp)
+    · split at hStep
+      · next targetTcb hTarget =>
+        simp only [] at hStep
+        -- The ceiling store: an object write, so per-core silent, and not a
+        -- migration — which is what lets the mid-state home core be the
+        -- pre-state one.  Both facts are stated over a *generic* post-state
+        -- constrained by its fields, so neither has to restate the nested
+        -- record-update literal the transition builds.
+        have hSilent : ∀ r : SystemState, r.scheduler = st.scheduler →
+            r.machine = st.machine → observableSlotsConfinedToCores st r [] :=
+          fun _ h1 h2 => observableSlotsConfinedToCores_nil_of_scheduler_machine_eq h1 h2
+        have hHome : ∀ (o : KernelObject) (t' : TCB), o = .tcb t' →
+            t'.cpuAffinity = targetTcb.cpuAffinity →
+            determineTargetCore { st with objects := st.objects.insert vTargetTid.val.toObjId o }
+              vTargetTid.val = determineTargetCore st vTargetTid.val := by
+          rintro o t' rfl hAff
+          exact determineTargetCore_insert_tcb st _ vTargetTid.val targetTcb t' hObjInv
+            (by rw [← RHTable_getElem?_eq_get?]
+                exact (SystemState.getTcb?_eq_some_iff st vTargetTid.val targetTcb).mp hTarget)
+            hAff rfl _
+        split at hStep
+        · -- `hSilent`'s equations are left as goals rather than given as `rfl`
+          -- here: supplied eagerly they would force Lean to solve
+          -- `?r.scheduler =?= st.scheduler` for an unknown `?r`, and projecting a
+          -- metavariable sends `whnf` into the fully-expanded 27-field mid-state
+          -- record.  Deferred, `?r` is fixed first by the second leg and both
+          -- close by `rfl`.
+          refine observableSlotsConfinedToCores_mono ?_
+            (observableSlotsConfinedToCores_trans (hSilent _ ?_ ?_)
+              (applyPriorityChangeOnCore_confinedToCores _ st' vTargetTid.val _ newMCP
+                executingCore true sgi hStep))
+          · intro c hc
+            simp only [List.nil_append, List.mem_cons, List.not_mem_nil, or_false] at hc ⊢
+            rcases hc with hc | hc
+            · exact Or.inl (hc ▸ hHome _ _ rfl rfl)
+            · exact Or.inr hc
+          · rfl
+          · rfl
+        · rw [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨hs, -⟩ := hStep
+          subst hs
+          exact observableSlotsConfinedToCores_widen_any (hSilent _ rfl rfl)
+      · exact absurd hStep (by simp)
+  · exact absurd hStep (by simp)
+
+/-- SM8.B.3 (**the live `.tcbSetMCPriority` arm, cross-core**): a ceiling change is
+invisible on every core outside the target's home and the executing core. -/
+theorem setMCPriorityOnCore_crossCoreNonInterference (ctx : LabelingContext)
+    (observer : IfObserver) (st st' : SystemState)
+    (vCallerTid vTargetTid : SeLe4n.ValidThreadId) (newMCP : SeLe4n.Priority)
+    (executingCore c : CoreId) (sgi : Option (CoreId × Concurrency.SgiKind))
+    (hObjInv : st.objects.invExt)
+    (hStep : SchedContext.PriorityManagement.setMCPriorityOnCore st vCallerTid vTargetTid
+      newMCP executingCore = .ok (st', sgi))
+    (hne : c ∉ priorityControlWriteSet st vTargetTid.val executingCore)
+    (hShared : sharedViewUnchanged ctx observer st st') :
+    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
+  crossCoreNonInterference_ofCores ctx observer hne
+    (setMCPriorityOnCore_confinedToCores st st' vCallerTid vTargetTid newMCP
+      executingCore sgi hObjInv hStep) hShared
+
+-- ============================================================================
+-- §5j  The live memory-subsystem arms
+-- ============================================================================
+--
+-- `.vspaceMap`, `.vspaceUnmap` and `.lifecycleRetype` route through per-core
+-- wrappers (they take an `executingCore`), so round 15's inventory-completeness
+-- check demands an entry for each.  Their entry is the **strongest** one this
+-- module can carry: an *empty* write set.  Every field these wrappers touch
+-- beyond the object store — `tlb`, `perCoreTlb`, `tlbShootdown`,
+-- `perCoreICache`, `pendingIcacheMaintenance` — is proven outside the per-core
+-- observer's read set by SM8.A (`onCore_perCore_independence` and its
+-- corollaries), and none of them writes a scheduler slot or a register bank on
+-- any core at all.
+--
+-- Stating that as a theorem rather than as an exception matters: an allowlist
+-- entry is invisible to `crossCoreNiTheorem_count` and friends, so four live
+-- arms would have been excluded from every coverage count in this file — the
+-- same "reports coverage it does not have" failure that retired
+-- `crossCoreRemoteWriterPendingAudit` earlier in this PR.
+
+/-- SM8.B.2: caching a per-core TLB view writes no scheduler slot. -/
+@[simp] theorem setTlbOnCore_scheduler (st : SystemState) (c : CoreId)
+    (t : TlbState) :
+    (Architecture.setTlbOnCore st c t).scheduler = st.scheduler := rfl
+
+@[simp] theorem setTlbOnCore_machine (st : SystemState) (c : CoreId)
+    (t : TlbState) :
+    (Architecture.setTlbOnCore st c t).machine = st.machine := rfl
+
+/-- SM8.B.2: the initiator's own TLB drain is likewise scheduler-silent. -/
+@[simp] theorem drainInitiatorPerCoreView_scheduler (st : SystemState) (c : CoreId)
+    (ops : List Architecture.TlbInvalidation) :
+    (Architecture.drainInitiatorPerCoreView st c ops).scheduler = st.scheduler := rfl
+
+@[simp] theorem drainInitiatorPerCoreView_machine (st : SystemState) (c : CoreId)
+    (ops : List Architecture.TlbInvalidation) :
+    (Architecture.drainInitiatorPerCoreView st c ops).machine = st.machine := rfl
+
+/-- SM8.B.2: the whole memory-subsystem surface is scheduler- and
+register-silent.  One lemma per layer, each `rfl` or a one-step composition, so
+the wrappers below reduce to `storeObject`'s frames at the leaf.
+
+`SchedulerMachineFramed` bundles the pair because every layer needs both and
+carrying them separately doubles the chain. -/
+abbrev SchedulerMachineFramed (st st' : SystemState) : Prop :=
+  st'.scheduler = st.scheduler ∧ st'.machine = st.machine
+
+theorem observableSlotsConfinedToCores_nil_of_framed {st st' : SystemState}
+    (h : SchedulerMachineFramed st st') :
+    observableSlotsConfinedToCores st st' [] :=
+  observableSlotsConfinedToCores_nil_of_scheduler_machine_eq h.1 h.2
+
+/-- SM8.B.2: unmapping a page is one `storeObject` of the rewritten root. -/
+theorem vspaceUnmapPage_framed (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (st st' : SystemState)
+    (h : Architecture.vspaceUnmapPage asid vaddr st = .ok ((), st')) :
+    SchedulerMachineFramed st st' := by
+  unfold Architecture.vspaceUnmapPage at h
+  split at h
+  · exact absurd h (by simp)
+  · split at h
+    · exact absurd h (by simp)
+    · exact ⟨storeObject_scheduler_eq _ _ _ _ h, storeObject_machine_eq _ _ _ _ h⟩
+
+/-- SM8.B.2: the TLB flush the unmap appends writes only `tlb`. -/
+theorem vspaceUnmapPageWithFlush_framed (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (st st' : SystemState)
+    (h : Architecture.vspaceUnmapPageWithFlush asid vaddr st = .ok ((), st')) :
+    SchedulerMachineFramed st st' := by
+  unfold Architecture.vspaceUnmapPageWithFlush at h
+  split at h
+  · exact absurd h (by simp)
+  · next stMid hMid =>
+    rw [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨-, hs⟩ := h
+    subst hs
+    exact vspaceUnmapPage_framed asid vaddr st stMid hMid
+
+/-- SM8.B.2: posting a shootdown round writes only `tlbShootdown`. -/
+theorem withShootdownRound_framed (executingCore : CoreId)
+    (op : Architecture.TlbInvalidation) (st st' : SystemState)
+    (h : Architecture.withShootdownRound executingCore op st = .ok ((), st')) :
+    SchedulerMachineFramed st st' := by
+  rw [Architecture.withShootdownRound_total, Except.ok.injEq, Prod.mk.injEq] at h
+  obtain ⟨-, hs⟩ := h
+  subst hs
+  exact ⟨rfl, rfl⟩
+
+/-- SM8.B.2: unmap-with-round — page table, TLB, then the posted round. -/
+theorem vspaceUnmapPageWithShootdown_framed (executingCore : CoreId)
+    (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (st st' : SystemState)
+    (h : Architecture.vspaceUnmapPageWithShootdown executingCore asid vaddr st
+      = .ok ((), st')) :
+    SchedulerMachineFramed st st' := by
+  unfold Architecture.vspaceUnmapPageWithShootdown at h
+  split at h
+  · exact absurd h (by simp)
+  · next stFlush hFlush =>
+    obtain ⟨hs1, hm1⟩ := vspaceUnmapPageWithFlush_framed asid vaddr st stFlush hFlush
+    obtain ⟨hs2, hm2⟩ := withShootdownRound_framed executingCore _ stFlush st' h
+    exact ⟨by rw [hs2, hs1], by rw [hm2, hm1]⟩
+
+/-- SM8.B.2: the initiator-atomic unmap — page table, TLB, round, initiator
+view — writes no scheduler slot and no register bank. -/
+theorem vspaceUnmapPageWithShootdownPerCore_framed (executingCore : CoreId)
+    (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (st st' : SystemState)
+    (h : Architecture.vspaceUnmapPageWithShootdownPerCore executingCore asid vaddr st
+      = .ok ((), st')) :
+    SchedulerMachineFramed st st' := by
+  unfold Architecture.vspaceUnmapPageWithShootdownPerCore at h
+  split at h
+  · exact absurd h (by simp)
+  · next stRound hRound =>
+    rw [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨-, hs⟩ := h
+    subst hs
+    obtain ⟨hs1, hm1⟩ :=
+      vspaceUnmapPageWithShootdown_framed executingCore asid vaddr st stRound hRound
+    exact ⟨by rw [drainInitiatorPerCoreView_scheduler, hs1],
+           by rw [drainInitiatorPerCoreView_machine, hm1]⟩
+
+/-- SM8.B.2: caching a walked translation is `perCoreTlb`-only. -/
+@[simp] theorem tlbFillOnCore_scheduler (st : SystemState) (c : CoreId)
+    (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) :
+    (Architecture.tlbFillOnCore st c asid vaddr).scheduler = st.scheduler := by
+  unfold Architecture.tlbFillOnCore
+  split <;> rfl
+
+@[simp] theorem tlbFillOnCore_machine (st : SystemState) (c : CoreId)
+    (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) :
+    (Architecture.tlbFillOnCore st c asid vaddr).machine = st.machine := by
+  unfold Architecture.tlbFillOnCore
+  split <;> rfl
+
+/-- SM8.B.2: mapping a page is one `storeObject` of the rewritten root. -/
+theorem vspaceMapPage_framed (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr) (perms : PagePermissions) (st st' : SystemState)
+    (h : Architecture.vspaceMapPage asid vaddr paddr perms st = .ok ((), st')) :
+    SchedulerMachineFramed st st' := by
+  unfold Architecture.vspaceMapPage at h
+  repeat' split at h
+  all_goals first
+    | exact absurd h (by simp)
+    | exact ⟨storeObject_scheduler_eq _ _ _ _ h, storeObject_machine_eq _ _ _ _ h⟩
+
+/-- SM8.B.2: the checked map wrapper adds only guards and a `tlb` write. -/
+theorem vspaceMapPageCheckedWithFlushFromState_framed (asid : SeLe4n.ASID)
+    (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr) (perms : PagePermissions)
+    (st st' : SystemState)
+    (h : Architecture.vspaceMapPageCheckedWithFlushFromState asid vaddr paddr perms st
+      = .ok ((), st')) :
+    SchedulerMachineFramed st st' := by
+  unfold Architecture.vspaceMapPageCheckedWithFlushFromState
+    Architecture.vspaceMapPageWithFlush at h
+  split at h
+  · exact absurd h (by simp)
+  · split at h
+    · exact absurd h (by simp)
+    · split at h
+      · exact absurd h (by simp)
+      · split at h
+        · exact absurd h (by simp)
+        · next stMap hMap =>
+          rw [Except.ok.injEq, Prod.mk.injEq] at h
+          obtain ⟨-, hs⟩ := h
+          subst hs
+          exact vspaceMapPage_framed asid vaddr paddr perms st stMap hMap
+
+/-- SM8.B.2: a *remap* posts a round; a fresh map does not.  Either way the
+scheduler and the register banks frame. -/
+theorem vspaceMapPageCheckedWithShootdownFromState_framed (executingCore : CoreId)
+    (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
+    (perms : PagePermissions) (st st' : SystemState)
+    (h : Architecture.vspaceMapPageCheckedWithShootdownFromState executingCore asid vaddr
+      paddr perms st = .ok ((), st')) :
+    SchedulerMachineFramed st st' := by
+  unfold Architecture.vspaceMapPageCheckedWithShootdownFromState at h
+  simp only [] at h
+  split at h
+  · exact absurd h (by simp)
+  · next stFlush hFlush =>
+    obtain ⟨hs1, hm1⟩ :=
+      vspaceMapPageCheckedWithFlushFromState_framed asid vaddr paddr perms st stFlush hFlush
+    split at h
+    · obtain ⟨hs2, hm2⟩ := withShootdownRound_framed executingCore _ stFlush st' h
+      exact ⟨by rw [hs2, hs1], by rw [hm2, hm1]⟩
+    · rw [Except.ok.injEq, Prod.mk.injEq] at h
+      obtain ⟨-, hs⟩ := h
+      subst hs
+      exact ⟨hs1, hm1⟩
+
+/-- SM8.B.2 (**the live `.vspaceMap` bound**): the initiator-atomic map writes
+**no core** — page tables, the scalar TLB, an optional remap round, the
+initiator's drain and the fresh fill are all outside the observer's read set. -/
+theorem vspaceMapPageCheckedWithShootdownFromStatePerCore_confinedToCores
+    (executingCore : CoreId) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr) (perms : PagePermissions) (st st' : SystemState)
+    (hStep : Architecture.vspaceMapPageCheckedWithShootdownFromStatePerCore executingCore
+      asid vaddr paddr perms st = .ok ((), st')) :
+    observableSlotsConfinedToCores st st' [] := by
+  refine observableSlotsConfinedToCores_nil_of_framed ?_
+  unfold Architecture.vspaceMapPageCheckedWithShootdownFromStatePerCore at hStep
+  split at hStep
+  · exact absurd hStep (by simp)
+  · next stRound hRound =>
+    rw [Except.ok.injEq, Prod.mk.injEq] at hStep
+    obtain ⟨-, hs⟩ := hStep
+    subst hs
+    obtain ⟨hs1, hm1⟩ := vspaceMapPageCheckedWithShootdownFromState_framed executingCore
+      asid vaddr paddr perms st stRound hRound
+    exact ⟨by rw [tlbFillOnCore_scheduler, drainInitiatorPerCoreView_scheduler, hs1],
+           by rw [tlbFillOnCore_machine, drainInitiatorPerCoreView_machine, hm1]⟩
+
+/-- SM8.B.3 (**the live `.vspaceMap` arm, cross-core**): a map is invisible on
+every core. -/
+theorem vspaceMapPageCheckedWithShootdownFromStatePerCore_crossCoreNonInterference
+    (ctx : LabelingContext) (observer : IfObserver) (executingCore : CoreId)
+    (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
+    (perms : PagePermissions) (st st' : SystemState) (c : CoreId)
+    (hStep : Architecture.vspaceMapPageCheckedWithShootdownFromStatePerCore executingCore
+      asid vaddr paddr perms st = .ok ((), st'))
+    (hShared : sharedViewUnchanged ctx observer st st') :
+    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
+  crossCoreNonInterference_ofCores ctx observer (by simp)
+    (vspaceMapPageCheckedWithShootdownFromStatePerCore_confinedToCores executingCore asid
+      vaddr paddr perms st st' hStep) hShared
+
+/-- SM8.B.2: the I-cache broadcast seam writes only `perCoreICache` and the
+maintenance ledger, so it frames whatever its wrapped transition frames. -/
+theorem withIcacheBroadcast_framed
+    (mkOp : SystemState → Option Architecture.ICacheInvalidation) (k : Kernel Unit)
+    (st st' : SystemState)
+    (hk : ∀ s s', k s = .ok ((), s') → SchedulerMachineFramed s s')
+    (h : Architecture.withIcacheBroadcast mkOp k st = .ok ((), st')) :
+    SchedulerMachineFramed st st' := by
+  unfold Architecture.withIcacheBroadcast at h
+  simp only [] at h
+  split at h
+  · exact absurd h (by simp)
+  · next stK hK =>
+    obtain ⟨hs, hm⟩ := hk st stK hK
+    split at h
+    · rw [Except.ok.injEq, Prod.mk.injEq] at h
+      obtain ⟨-, he⟩ := h
+      subst he
+      exact ⟨hs, hm⟩
+    · rw [Except.ok.injEq, Prod.mk.injEq] at h
+      obtain ⟨-, he⟩ := h
+      subst he
+      exact ⟨hs, hm⟩
+
+/-- SM8.B.2 (**the live `.vspaceUnmap` bound**): the unmap seam writes **no
+core**.  Page tables, the scalar TLB, the shootdown round, the initiator's own
+per-core view and the I-cache ledger — none of them is a scheduler slot or a
+register bank, on any core. -/
+theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_confinedToCores
+    (executingCore : CoreId) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (st st' : SystemState)
+    (hStep : Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast executingCore
+      asid vaddr st = .ok ((), st')) :
+    observableSlotsConfinedToCores st st' [] :=
+  observableSlotsConfinedToCores_nil_of_framed
+    (withIcacheBroadcast_framed _ _ st st'
+      (fun _ _ hk => vspaceUnmapPageWithShootdownPerCore_framed executingCore asid vaddr _ _ hk)
+      hStep)
+
+/-- SM8.B.3 (**the live `.vspaceUnmap` arm, cross-core**): an unmap is invisible
+on **every** core — the strongest form of the cross-core statement, and the
+reason this arm needs no exception. -/
+theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_crossCoreNonInterference
+    (ctx : LabelingContext) (observer : IfObserver) (executingCore : CoreId)
+    (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (st st' : SystemState) (c : CoreId)
+    (hStep : Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast executingCore
+      asid vaddr st = .ok ((), st'))
+    (hShared : sharedViewUnchanged ctx observer st st') :
+    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
+  crossCoreNonInterference_ofCores ctx observer (by simp)
+    (vspaceUnmapPageWithShootdownAndIcacheBroadcast_confinedToCores executingCore asid vaddr
+      st st' hStep) hShared
+
 -- ============================================================================
 -- §6  The non-interference instantiations
 -- ============================================================================
@@ -3262,6 +3836,8 @@ inductive CrossCoreTransition where
   and the reschedule.  Added in PR #861 review round 10, which found the arm
   still routed to the boot-pinned `resumeThread`. -/
   | resumeThreadDispatch
+  | setPriorityDispatch
+  | setMCPriorityDispatch
   deriving DecidableEq, Repr
 
 def CrossCoreTransition.all : List CrossCoreTransition :=
@@ -3270,7 +3846,8 @@ def CrossCoreTransition.all : List CrossCoreTransition :=
    .notificationSignal, .notificationSignalBound,
    .notificationWait, .endpointReply, .endpointReplyDispatch, .endpointReceiveDual,
    .endpointReplyRecv, .replyRecvBodyDispatch, .deschedule, .cancelIpcBlocking,
-   .suspendThreadDispatch, .resumeThreadDispatch]
+   .suspendThreadDispatch, .resumeThreadDispatch,
+   .setPriorityDispatch, .setMCPriorityDispatch]
 
 /-- SM8.B.2: **`all` really is all of them.**
 
@@ -3301,7 +3878,7 @@ def crossCoreNiTheorem : CrossCoreTransition → String
   | .endpointSendDispatch =>
       niName! endpointSendDualWithCapsOnCore_crossCoreNonInterference
   | .schedContextUnbindDispatch =>
-      niName! schedContextUnbind_crossCoreNonInterference
+      niName! schedContextUnbindOnCore_crossCoreNonInterference
   | .schedContextBindDispatch =>
       niName! schedContextBind_crossCoreNonInterference
   | .schedContextConfigureDispatch =>
@@ -3319,8 +3896,10 @@ def crossCoreNiTheorem : CrossCoreTransition → String
   | .cancelIpcBlocking => niName! cancelIpcBlockingOnCore_crossCoreNonInterference
   | .suspendThreadDispatch => niName! suspendThreadOnCore_crossCoreNonInterference
   | .resumeThreadDispatch => niName! resumeThreadOnCore_crossCoreNonInterference
+  | .setPriorityDispatch => niName! setPriorityOnCore_crossCoreNonInterference
+  | .setMCPriorityDispatch => niName! setMCPriorityOnCore_crossCoreNonInterference
 
-theorem crossCoreNiTheorem_count : CrossCoreTransition.all.length = 19 := by rfl
+theorem crossCoreNiTheorem_count : CrossCoreTransition.all.length = 21 := by rfl
 
 /-- SM8.B.2: **which entries are the arms the live syscall dispatch actually
 reaches**, as opposed to the below-API transitions they are built from.
@@ -3374,9 +3953,11 @@ def crossCoreTransitionIsLiveArm : CrossCoreTransition → Bool
   | .cancelIpcBlocking => false
   | .suspendThreadDispatch => true
   | .resumeThreadDispatch => true
+  | .setPriorityDispatch => true
+  | .setMCPriorityDispatch => true
 
 theorem crossCoreTransitionIsLiveArm_count :
-    (CrossCoreTransition.all.filter crossCoreTransitionIsLiveArm).length = 12 := by decide
+    (CrossCoreTransition.all.filter crossCoreTransitionIsLiveArm).length = 14 := by decide
 
 theorem crossCoreNiTheorem_injective :
     ∀ t₁ t₂ : CrossCoreTransition, crossCoreNiTheorem t₁ = crossCoreNiTheorem t₂ → t₁ = t₂ := by
@@ -3453,6 +4034,8 @@ def crossCoreLiveArmSyscall : CrossCoreTransition → Option SyscallId
   | .cancelIpcBlocking => none
   | .suspendThreadDispatch => some .tcbSuspend
   | .resumeThreadDispatch => some .tcbResume
+  | .setPriorityDispatch => some .tcbSetPriority
+  | .setMCPriorityDispatch => some .tcbSetMCPriority
 
 /-- SM8.B.2: the evidence backing each live-arm classification. -/
 def crossCoreLiveArmEvidence : CrossCoreTransition → LiveArmEvidence
@@ -3462,7 +4045,7 @@ def crossCoreLiveArmEvidence : CrossCoreTransition → LiveArmEvidence
       .readOffTheArm "checked `.call` arm calls endpointCallCrossCoreDispatch; delegation theorem pending"
   | .endpointSendDispatch => .delegationProof .send syscallDelegates_send
   | .schedContextUnbindDispatch =>
-      .readOffTheArm "capability-only `.schedContextUnbind` arm; delegation theorem pending"
+      .delegationProof .schedContextUnbind syscallDelegates_schedContextUnbind
   | .schedContextBindDispatch =>
       .readOffTheArm "capability-only `.schedContextBind` arm; delegation theorem pending"
   | .schedContextConfigureDispatch =>
@@ -3483,6 +4066,10 @@ def crossCoreLiveArmEvidence : CrossCoreTransition → LiveArmEvidence
   | .cancelIpcBlocking => .readOffTheArm "below-API composite; live arm is .suspendThreadDispatch"
   | .suspendThreadDispatch => .delegationProof .tcbSuspend syscallDelegates_tcbSuspend
   | .resumeThreadDispatch => .delegationProof .tcbResume syscallDelegates_tcbResume
+  | .setPriorityDispatch =>
+      .delegationProof .tcbSetPriority syscallDelegates_tcbSetPriority
+  | .setMCPriorityDispatch =>
+      .delegationProof .tcbSetMCPriority syscallDelegates_tcbSetMCPriority
 
 /-- SM8.B.2 (**the tie is checked, not assumed**): a delegation-backed entry
 names the syscall its own transition belongs to.  Round 11's example — the
@@ -3503,14 +4090,14 @@ def crossCoreLiveArmDelegationBacked : List CrossCoreTransition :=
     crossCoreTransitionIsLiveArm t && (crossCoreLiveArmEvidence t).isDelegationBacked)
 
 theorem crossCoreLiveArmDelegationBacked_count :
-    crossCoreLiveArmDelegationBacked.length = 4 := by decide
+    crossCoreLiveArmDelegationBacked.length = 7 := by decide
 
 /-- SM8.B.2: and the residual — the live arms still resting on a human reading
 of `API.lean`, which is the state every one of the three drifts occurred in. -/
 theorem crossCoreLiveArm_readOffTheArm_count :
     (CrossCoreTransition.all.filter (fun t =>
       crossCoreTransitionIsLiveArm t
-        && !(crossCoreLiveArmEvidence t).isDelegationBacked)).length = 8 := by decide
+        && !(crossCoreLiveArmEvidence t).isDelegationBacked)).length = 7 := by decide
 
 /-- SM8.B.2: **which transitions can write a core other than the executing
 one.**  Named for remote *writes*, not for wakes: a reply, a deschedule and a
@@ -3538,8 +4125,10 @@ def crossCoreTransitionWritesRemote : CrossCoreTransition → Bool
   | .cancelIpcBlocking => true
   | .suspendThreadDispatch => true
   | .resumeThreadDispatch => true
+  | .setPriorityDispatch => true
+  | .setMCPriorityDispatch => true
 
 theorem crossCoreTransitionWritesRemote_count :
-    (CrossCoreTransition.all.filter crossCoreTransitionWritesRemote).length = 18 := by decide
+    (CrossCoreTransition.all.filter crossCoreTransitionWritesRemote).length = 20 := by decide
 
 end SeLe4n.Kernel

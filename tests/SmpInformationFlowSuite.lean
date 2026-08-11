@@ -584,6 +584,41 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @crossCoreLiveArmEvidence
 #check @crossCoreLiveArmDelegationBacked_count
 #check @crossCoreLiveArm_readOffTheArm_count
+-- Round 15: the per-core SchedContext unbind and its scheduling point.
+#check @SeLe4n.Kernel.SchedContextOps.schedContextBoundThread?
+#check @SeLe4n.Kernel.SchedContextOps.schedContextRunningCore?
+#check @SeLe4n.Kernel.SchedContextOps.schedContextUnbindOnCore
+#check @SeLe4n.Kernel.SchedContextOps.schedContextUnbindOnCore_error
+#check @SeLe4n.Kernel.SchedContextOps.schedContextUnbindOnCore_no_running_core
+#check @SeLe4n.Kernel.SchedContextOps.schedContextUnbindOnCore_sgi_shape
+#check @SeLe4n.Kernel.SchedContextOps.schedContextUnbindOnCore_local_reschedules
+#check @schedContextUnbindOnCoreWriteSet
+#check @schedContextUnbindOnCore_confinedToCores
+#check @schedContextUnbindOnCore_crossCoreNonInterference
+-- Round 15: the priority-control arms, and the shared effect they now name.
+#check @SeLe4n.Kernel.SchedContext.PriorityManagement.applyPriorityChangeOnCore
+#check @SeLe4n.Kernel.SchedContext.PriorityManagement.applyPriorityChangeOnCore_no_preempt
+#check @priorityRescheduleOnCore_confinedToCores
+#check @updatePrioritySource_confinedToCores
+#check @migrateRunQueueBucketOnCore_confinedToCores
+#check @priorityUpdateAndMigrate_confinedToCores
+#check @applyPriorityChangeOnCore_confinedToCores
+#check @priorityControlWriteSet
+#check @setPriorityOnCore_confinedToCores
+#check @setPriorityOnCore_crossCoreNonInterference
+#check @setMCPriorityOnCore_confinedToCores
+#check @setMCPriorityOnCore_crossCoreNonInterference
+-- Round 15: the memory-subsystem arms, proven to write NO core rather than
+-- excused by an allowlist entry.
+#check @SchedulerMachineFramed
+#check @observableSlotsConfinedToCores_nil_of_framed
+#check @vspaceUnmapPageWithShootdownPerCore_framed
+#check @withIcacheBroadcast_framed
+#check @vspaceUnmapPageWithShootdownAndIcacheBroadcast_confinedToCores
+#check @vspaceUnmapPageWithShootdownAndIcacheBroadcast_crossCoreNonInterference
+#check @vspaceMapPageCheckedWithShootdownFromState_framed
+#check @vspaceMapPageCheckedWithShootdownFromStatePerCore_confinedToCores
+#check @vspaceMapPageCheckedWithShootdownFromStatePerCore_crossCoreNonInterference
 #check @SeLe4n.Kernel.dispatchWithCap_tcbSuspend_delegates
 #check @SeLe4n.Kernel.dispatchWithCapChecked_receive_delegates
 -- SM8.B (PR #861 review round 10): the live `.send` arm, rerouted off the
@@ -2493,16 +2528,16 @@ private def runRunQueueComparisonChecks : IO Unit := do
 /-- §5.3  The set-of-cores algebra and its coverage record. -/
 private def runCoreSetAlgebraChecks : IO Unit := do
   IO.println "--- §5.3 the set-of-cores confinement algebra ---"
-  assertBool "nineteen cross-core transitions are covered"
-    (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 19))
-  assertBool "eighteen of the nineteen can name a core other than the executing one"
+  assertBool "twenty-one cross-core transitions are covered"
+    (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 21))
+  assertBool "twenty of the twenty-one can name a core other than the executing one"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
-      SeLe4n.Kernel.crossCoreTransitionWritesRemote).length = 18))
+      SeLe4n.Kernel.crossCoreTransitionWritesRemote).length = 20))
   assertBool "…and the wait is the one that cannot"
     (decide (SeLe4n.Kernel.crossCoreTransitionWritesRemote .notificationWait = false))
-  assertBool "twelve of the nineteen are the arms the live syscall dispatch reaches"
+  assertBool "fourteen of the twenty-one are the arms the live syscall dispatch reaches"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
-      SeLe4n.Kernel.crossCoreTransitionIsLiveArm).length = 12))
+      SeLe4n.Kernel.crossCoreTransitionIsLiveArm).length = 14))
   -- Round 14: routing the SchedContext arms through `determineTargetCore` made
   -- them remote writers.  `.schedContextUnbind` is audited; the other two are a
   -- COUNTED gap rather than a silent one, and deliberately not in the inventory,
@@ -2529,8 +2564,8 @@ private def runCoreSetAlgebraChecks : IO Unit := do
              ∧ SeLe4n.Kernel.crossCoreTransitionIsLiveArm .endpointSendDispatch = true
              ∧ (SeLe4n.Kernel.crossCoreLiveArmEvidence .endpointSendDispatch).syscall?
                  = some SeLe4n.Model.SyscallId.send))
-  assertBool "four live arms are mechanically tied to the dispatch"
-    (decide (SeLe4n.Kernel.crossCoreLiveArmDelegationBacked.length = 4))
+  assertBool "seven live arms are mechanically tied to the dispatch"
+    (decide (SeLe4n.Kernel.crossCoreLiveArmDelegationBacked.length = 7))
   -- The fourth review round's finding, as a checked fact: the three arms it
   -- named are in the inventory and are all classified as live.
   assertBool "the bound signal, the receive dual and replyRecv are all covered"
@@ -2565,7 +2600,7 @@ private def runCoreSetAlgebraChecks : IO Unit := do
         n == "endpointReceiveDualOnCore"))
   assertBool "the covered-transition theorem names are pairwise distinct"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.map
-      SeLe4n.Kernel.crossCoreNiTheorem).eraseDups.length = 19))
+      SeLe4n.Kernel.crossCoreNiTheorem).eraseDups.length = 21))
   -- The load-bearing negative: the write set is *state-dependent*, so it is not
   -- a constant the theorem could be satisfying vacuously.  With no receiver the
   -- call writes one core; with a remote receiver waiting it writes two — and

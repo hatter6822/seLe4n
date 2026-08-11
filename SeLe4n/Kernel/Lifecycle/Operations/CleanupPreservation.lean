@@ -890,18 +890,16 @@ theorem cleanupTcbReferences_removes_from_runnable
   unfold cleanupTcbReferences
   rw [removeFromAllNotificationWaitLists_scheduler_eq]
   rw [removeFromAllEndpointQueues_scheduler_eq]
-  unfold removeRunnable
-  simp only [SchedulerState.setCurrentOnCore_runQueueOnCore,
-    SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-  exact RunQueue.not_mem_remove_self _ _
+  exact removeRunnableFromAllCores_not_mem st tid bootCoreId
 
 /-- Cleanup preserves lifecycle metadata. -/
 theorem cleanupTcbReferences_lifecycle_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (cleanupTcbReferences st tid).lifecycle = st.lifecycle := by
   unfold cleanupTcbReferences
-  rw [removeFromAllNotificationWaitLists_lifecycle_eq]
-  exact removeFromAllEndpointQueues_lifecycle_eq (removeRunnable st tid) tid
+  rw [removeFromAllNotificationWaitLists_lifecycle_eq,
+    removeFromAllEndpointQueues_lifecycle_eq (removeRunnableFromAllCores st tid) tid]
+  exact removeRunnableFromAllCores_lifecycle st tid
 
 /-- CDT detach preserves the objects store. -/
 theorem detachSlotFromCdt_objects_eq (st : SystemState) (ref : SlotRef) :
@@ -1054,10 +1052,7 @@ theorem cleanupTcbReferences_flat_subset
   unfold cleanupTcbReferences at h
   rw [removeFromAllNotificationWaitLists_scheduler_eq] at h
   rw [removeFromAllEndpointQueues_scheduler_eq] at h
-  unfold removeRunnable at h
-  simp only [SchedulerState.setCurrentOnCore_runQueueOnCore,
-    SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at h
-  exact (List.mem_filter.mp h).1
+  exact removeRunnableFromAllCores_flat_subset st tid x bootCoreId h
 
 /-- CDT cleanup preserves the scheduler. -/
 theorem detachCNodeSlots_scheduler_eq
@@ -1083,12 +1078,13 @@ theorem detachCNodeSlots_tlbShootdown_eq
         { cnode := cnodeId, slot := slot }).trans hAcc)
 
 /-- Cleanup preserves the scheduler state. -/
-theorem cleanupTcbReferences_scheduler_eq_removeRunnable
+theorem cleanupTcbReferences_scheduler_eq_removeRunnableFromAllCores
     (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (cleanupTcbReferences st tid).scheduler = (removeRunnable st tid).scheduler := by
+    (cleanupTcbReferences st tid).scheduler
+      = (removeRunnableFromAllCores st tid).scheduler := by
   unfold cleanupTcbReferences
   rw [removeFromAllNotificationWaitLists_scheduler_eq]
-  exact removeFromAllEndpointQueues_scheduler_eq (removeRunnable st tid) tid
+  exact removeFromAllEndpointQueues_scheduler_eq (removeRunnableFromAllCores st tid) tid
 
 /-- Pre-retype cleanup flat list subset: any element in the post-cleanup flat
     list was in the pre-cleanup flat list. AJ1-A (M-14): conditional on `.ok`. -/
@@ -1126,10 +1122,9 @@ theorem lifecyclePreRetypeCleanup_flat_subset
             (scThreadIndexRemove stDon.scThreadIndex scId tcb.tid) }
         | _ => stDon).scheduler = stDon.scheduler := by
         cases tcb.schedContextBinding <;> rfl
-      rw [cleanupTcbReferences_scheduler_eq_removeRunnable] at h
-      unfold removeRunnable at h; rw [hScIdxSched, hDonSched] at h
-      simp only [SchedulerState.setCurrentOnCore_runQueueOnCore,
-        SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at h
+      rw [cleanupTcbReferences_scheduler_eq_removeRunnableFromAllCores,
+        removeRunnableFromAllCores_runQueueOnCore] at h
+      rw [hScIdxSched, hDonSched] at h
       exact (List.mem_filter.mp h).1
   | cnode cn =>
     simp only [lifecyclePreRetypeCleanup] at hOk
