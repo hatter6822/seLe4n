@@ -11,6 +11,7 @@ import SeLe4n.Kernel.Scheduler.PriorityInheritance.BoundedInversion
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreWake
 import SeLe4n.Kernel.Lifecycle.Suspend
 import SeLe4n.Kernel.Concurrency.Runtime
+import SeLe4n.Kernel.Concurrency.ContextRestoreSeam
 
 /-!
 # WS-SM SM5.F — Per-core priority inheritance protocol (theorem surface)
@@ -1527,21 +1528,13 @@ theorem currentSlotChangeSgis_fires_on_change (pre post : SystemState)
     simp only [Bool.and_eq_true, bne_iff_ne, ne_eq]
     exact ⟨hne, hChanged⟩⟩, rfl⟩
 
-/-- WS-SM SM8.B (PR #861 review round 20): **is the hardware context-restore
-seam live?**
-
-`false` until SM9.E, and the single source of truth for that fact — the
-`contextRestoreWired` register below reads it rather than carrying its own
-literals, so the two cannot drift and the flip is one constant.
-
-Three things must land together before it becomes `true`, and none of them fits
-a non-interference cut: a `VSpaceRoot → TTBR0` binding (the model carries an
-ASID and an abstract `VAddr → PAddr` table, not a translation-table physical
-base), a full outgoing-frame save (`writeFfiRegistersToTcb` spills only x0..x5
-and x7, so `regsOnCore` is stale for x6, x8..x30, SP and PC), and per-core
-staging (the kernel-entry lock closes in `dispatch_svc` before the trap handler
-would install). -/
-def contextRestoreSeamLive : Bool := false
+/-! `contextRestoreSeamLive` — the seam flag every consumer reads — now lives
+in `SeLe4n.Kernel.Concurrency.ContextRestoreSeam`, imported above and
+re-exported by this namespace.  It moved down (PR #861 review round 29)
+because `SchedContext/OperationsPerCore.lean` needs the *same* flag for its
+own local-reschedule guard and cannot import this module: that edge closes a
+cycle through `Kernel.API` / `Model.FreezeProofs` / `Platform.Boot`.  A second
+literal would have been the round-20 drift defect all over again. -/
 
 /-- WS-SM SM8.B (PR #861 review round 17): did this transition **vacate the
 executing core** — leave it with no current thread when it had one?
@@ -2061,18 +2054,32 @@ still the right change (a kernel that never dispatches a successor is not a
 kernel), but the two must land in that order, which is what this marker
 records.
 
-**Why exactly one of the four sites is gated** (PR #861 review round 23, which
-reached `.rescheduleSgi` through the `.tcbResume` reroute and asked why that
-switch is not gated as `scheduleLocalSuccessorLive` is).  The gate on
-`.vacatedCoreSuccessor` exists because this PR *created* that site: it keeps a
-proofs cut from adding a new instance of a pre-existing defect class.  The
-other three predate it, and gating them would not buy what it appears to.
-`.timerPreemption` is ungated and fires on every tick, so gating a syscall-path
-switch does not prevent a misattributed context — it delays it to the next
-tick.  A partial gate that reads as a fix is worse than an enumerated gap,
-which is why the remedy here is this register rather than three more guards.
-`resumeThreadOnCore`'s local arm is `.rescheduleSgi`, already listed.  SM9.E
-wires all four or none. -/
+**Which switches are gated, and why not all of them** (PR #861 review rounds 23
+and 28).  The rule is *this PR does not add new instances of a pre-existing
+defect class* — not *this PR fixes the class*.  So the two scheduling points it
+introduced are gated on `contextRestoreSeamLive`:
+
+* `.vacatedCoreSuccessor` — created in round 17, guarded by
+  `scheduleLocalSuccessorLive`;
+* the `.schedContextUnbind` local reschedule — created in round 15, guarded by
+  `SchedContextOps.unbindRescheduleTarget?` (its *remote* arm is ungated, since
+  a cross-core `.reschedule` SGI is a real poke at another processor and has
+  nothing to do with the missing restore).
+
+Everything else predates this PR and stays ungated, because gating it would not
+buy what it appears to.  `.timerPreemption` fires on every tick, so gating a
+syscall-path switch does not prevent a misattributed context — it delays it by
+one tick.  A partial gate that reads as a fix is worse than an enumerated gap,
+which is why the remedy for the rest is this register rather than more guards.
+`resumeThreadOnCore`'s local arm and the priority ops' preemption check are
+both `.rescheduleSgi`, already listed, and both predate this PR (the priority
+check was boot-pinned before it was rerouted).  SM9.E wires all four or none.
+
+All the guards read the one flag, which since round 29 lives in
+`SeLe4n.Kernel.Concurrency.ContextRestoreSeam` — low enough that the
+`SchedContext` operations can import it, which this module is not (that edge
+closes a cycle through `Kernel.API` / `Model.FreezeProofs` / `Platform.Boot`).
+One definition, so the flip stays a one-constant change. -/
 theorem contextSwitchSites_restore_pending :
     contextSwitchSites.filter (fun s => !contextRestoreWired s) = contextSwitchSites := by
   decide
