@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/sm8b-per-core-ni-proofs-3ogvws",
-      "commit_sha": "d9d46373810eca1315ff11c9c19f5caa10be94f7",
-      "tree_sha": "64f6a4783e459926fff883aeffeb70f83605c066",
-      "committed_at_utc": "2026-08-11T21:40:22+00:00"
+      "commit_sha": "789fd70d893ff77fb85e7c733196d4769019bbc4",
+      "tree_sha": "c0c9042d49e971800bb8751bc516d87837d51409",
+      "committed_at_utc": "2026-08-11T22:43:04+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "bc86b2b35cf7d308b71a8e651b8b71cf4b94493927775e18a7fedc5c940b3afa"
+    "source_digest": "c303fa7e8738552633e03443c9b4bf93e942075897ac29c2a037fedb7c3c345a"
   },
   "summary": {
     "module_count": 341,
@@ -27,7 +27,7 @@
     "version": "0.33.5",
     "lean_toolchain": "v4.28.0",
     "production_files": 273,
-    "production_loc": 253350,
+    "production_loc": 253369,
     "test_files": 68,
     "test_loc": 51998,
     "proved_theorem_lemma_decls": 8421,
@@ -97673,7 +97673,7 @@
         {
           "kind": "def",
           "name": "crossCoreLiveArmDelegationBacked",
-          "line": 4108,
+          "line": 4114,
           "called": [
             "CrossCoreTransition",
             "crossCoreLiveArmEvidence",
@@ -97685,7 +97685,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreLiveArmDelegationBacked_count",
-          "line": 4112,
+          "line": 4118,
           "called": [
             "length"
           ]
@@ -97693,7 +97693,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreLiveArm_readOffTheArm_count",
-          "line": 4117,
+          "line": 4123,
           "called": [
             "crossCoreLiveArmEvidence",
             "crossCoreTransitionIsLiveArm",
@@ -97705,7 +97705,7 @@
         {
           "kind": "def",
           "name": "crossCoreTransitionWritesRemote",
-          "line": 4128,
+          "line": 4134,
           "called": [
             "CrossCoreTransition",
             "cancelIpcBlocking",
@@ -97721,7 +97721,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreTransitionWritesRemote_count",
-          "line": 4151,
+          "line": 4157,
           "called": [
             "Kernel",
             "crossCoreTransitionWritesRemote",
@@ -148076,7 +148076,7 @@
         {
           "kind": "theorem",
           "name": "contextSwitchSites_restore_pending",
-          "line": 2063,
+          "line": 2076,
           "called": [
             "contextRestoreWired",
             "contextSwitchSites",
@@ -148086,7 +148086,7 @@
         {
           "kind": "theorem",
           "name": "contextRestoreWired_none",
-          "line": 2068,
+          "line": 2081,
           "called": [
             "ContextSwitchSite",
             "contextRestoreWired"
@@ -148095,7 +148095,7 @@
         {
           "kind": "theorem",
           "name": "scheduleLocalSuccessorLive_guard_eq_register",
-          "line": 2084,
+          "line": 2097,
           "called": [
             "contextRestoreSeamLive",
             "contextRestoreWired"
@@ -148104,7 +148104,7 @@
         {
           "kind": "theorem",
           "name": "suspendReschedule_guard_eq_register",
-          "line": 2089,
+          "line": 2102,
           "called": [
             "contextRestoreSeamLive",
             "contextRestoreWired"
