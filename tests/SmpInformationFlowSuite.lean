@@ -645,6 +645,13 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @SeLe4n.Kernel.processReplenishmentsDueOnCore_currentOnCore_eq
 #check @SeLe4n.Kernel.timerTickOnCorePrepared_currentOnCore_eq
 #check @SeLe4n.Kernel.timerTickOnCore_cannot_dispatch_vacated_core
+-- Round 17: the third per-core scheduler slot.  The gate checked `current` and
+-- the run queues; the replenish queue is the one it could not see.
+#check @SeLe4n.Kernel.SchedContextOps.schedContextReplenishHome
+#check @SeLe4n.Kernel.SchedContextOps.purgeReplenishmentOnCore
+#check @SeLe4n.Kernel.SchedContextOps.purgeReplenishmentFromAllCores
+#check @SeLe4n.Kernel.purgeReplenishmentOnCore_confinedToCores
+#check @SeLe4n.Kernel.purgeReplenishmentFromAllCores_confinedToCores
 -- Round 16: the send bridge that actually mentions the single-core transition.
 #check @SeLe4n.Kernel.endpointSendDualOnCore_absent_endpoint
 #check @SeLe4n.Kernel.endpointSendDualOnCore_bootCore_block_eq_single
@@ -2737,6 +2744,85 @@ private def runVacatedCoreChecks : IO Unit := do
     (decide (SeLe4n.Kernel.PriorityInheritance.localSuccessorNeeded niState vacatedPost c3
       = false))
 
+-- ---------------------------------------------------------------------------
+-- §5.6 fixtures — the replenish queue, the third per-core scheduler slot.  A
+-- SchedContext bound to `remoteHomedThread` (homed on core 2), with its
+-- eligibility entry queued where the CBS machinery actually puts it: core 2's
+-- replenish queue, not the boot core's.
+-- ---------------------------------------------------------------------------
+
+private def replenishSc : SeLe4n.ObjId := ⟨1030⟩
+private def replenishScId : SeLe4n.SchedContextId := ⟨1030⟩
+
+private def replenishScValue : SchedContext :=
+  { scId := replenishScId
+    budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩, deadline := ⟨0⟩, domain := ⟨0⟩
+    budgetRemaining := ⟨100⟩
+    replenishments := [{ amount := ⟨100⟩, eligibleAt := 500 }]
+    boundThread := some remoteHomedThread
+    isActive := true }
+
+/-- The bound thread carries the reverse link, so `schedContextUnbind` reaches
+its TCB arm rather than the missing-TCB one. -/
+private def replenishState : SystemState :=
+  let withSc := crossCoreState.objects.insert replenishSc (.schedContext replenishScValue)
+  let withTcb := withSc.insert remoteHomedThread.toObjId
+    (.tcb { mkTcb 1018 40 (some c2) with
+              schedContextBinding := .bound replenishScId })
+  { crossCoreState with
+      objects := withTcb
+      scheduler := crossCoreState.scheduler.setReplenishQueueOnCore c2
+        (ReplenishQueue.empty.insert replenishScId 500) }
+
+private def replenishScValidId : SeLe4n.ValidObjId :=
+  ⟨replenishSc, by decide⟩
+
+private def unboundState : Option SystemState :=
+  match SeLe4n.Kernel.SchedContextOps.schedContextUnbind replenishScValidId replenishState with
+  | .ok ((), post) => some post
+  | .error _ => none
+
+/-- §5.6  The replenish queue (review round 17, the eighth boot-pinned site).
+
+Replenishments are enqueued per core and drained by that core's tick, so a
+purge keyed on `bootCoreId` never touched the entry that actually exists.  The
+negative here is the shape of the defect: purging the boot core leaves core 2's
+entry exactly where it was. -/
+private def runReplenishHomeCoreChecks : IO Unit := do
+  IO.println "--- §5.6 the replenish queue purges on the SC's home core ---"
+  -- The fixture puts the entry where the CBS machinery would.
+  assertBool "the SC's replenishment is queued on core 2, not the boot core"
+    (decide ((replenishState.scheduler.replenishQueueOnCore c2).entries.length = 1) &&
+     decide ((replenishState.scheduler.replenishQueueOnCore c0).entries.length = 0))
+  assertBool "the SC is bound to a thread homed on core 2"
+    (decide (SeLe4n.Kernel.determineTargetCore replenishState remoteHomedThread = c2))
+  assertBool "…so the home-core helper resolves to core 2"
+    (decide (SeLe4n.Kernel.SchedContextOps.schedContextReplenishHome
+      replenishState replenishScValue = c2))
+  -- NEGATIVE — the defect.  A boot-core purge is a no-op against this state.
+  assertBool "NEGATIVE: purging the BOOT core leaves core 2's entry in place"
+    (decide (((SeLe4n.Kernel.SchedContextOps.purgeReplenishmentOnCore
+        replenishState c0 replenishScId).scheduler.replenishQueueOnCore c2).entries.length = 1))
+  -- The fix: the live unbind purges the entry that exists.
+  assertBool "the live unbind succeeds"
+    (decide (unboundState.isSome = true))
+  assertBool "…and core 2's replenish queue is empty afterwards"
+    (match unboundState with
+     | none => false
+     | some post => decide ((post.scheduler.replenishQueueOnCore c2).entries.length = 0))
+  -- The all-cores sweep, for the arm whose TCB is already gone.
+  assertBool "the all-cores sweep clears the entry wherever it sits"
+    (decide (((SeLe4n.Kernel.SchedContextOps.purgeReplenishmentFromAllCores
+        replenishState replenishScId).scheduler.replenishQueueOnCore c2).entries.length = 0))
+  assertBool "…and is inert on cores that never held one"
+    (allCores.all (fun c =>
+      decide (((SeLe4n.Kernel.SchedContextOps.purgeReplenishmentFromAllCores
+        replenishState replenishScId).scheduler.replenishQueueOnCore c).entries.length = 0)))
+  -- An unbound SC has no home and no entry to strand: the boot-core default.
+  assertBool "NEGATIVE: an unbound SC resolves to the boot core, not core 2"
+    (decide (SeLe4n.Kernel.SchedContextOps.schedContextReplenishHome
+      replenishState { replenishScValue with boundThread := none } = c0))
+
 /-- §4.1  Cross-core non-interference (plan Theorem 3.3.1). -/
 private def runCrossCoreNonInterferenceChecks : IO Unit := do
   IO.println "--- §4.1 crossCoreNonInterference (plan Thm 3.3.1) ---"
@@ -3144,6 +3230,7 @@ def runSmpInformationFlowChecks : IO Unit := do
   runCoreSetAlgebraChecks
   runResolvedFlowGateChecks
   runVacatedCoreChecks
+  runReplenishHomeCoreChecks
   IO.println "===================================="
   IO.println "All SM8.A per-core observable-state and SM8.B non-interference checks PASS."
 

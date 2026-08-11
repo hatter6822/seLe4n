@@ -132,6 +132,26 @@ theorem setReplenishQueueOnCore_confinedToCores (st : SystemState) (cc : CoreId)
   · exact SchedulerState.setReplenishQueueOnCore_domainScheduleIndexOnCore _ cc c q
   · rfl
 
+/-- SM8.B.2 (PR #861 review round 17): a replenish-queue **purge** writes no
+confined slot, at any core.
+
+The named form of the lemma above, for the SchedContext operations' per-core
+purges.  The replenish queue is not one of the six confined slots, so the
+purge's *target core* does not enter the write set — which is what lets the
+round-17 fix reroute all three purge sites without widening any bound. -/
+theorem purgeReplenishmentOnCore_confinedToCores (st : SystemState) (cc : CoreId)
+    (scId : SeLe4n.SchedContextId) :
+    observableSlotsConfinedToCores st
+      (SchedContextOps.purgeReplenishmentOnCore st cc scId) [] := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro c _ <;> simp
+
+/-- SM8.B.2: and so does the all-cores sweep — every fold step is the above. -/
+theorem purgeReplenishmentFromAllCores_confinedToCores (st : SystemState)
+    (scId : SeLe4n.SchedContextId) :
+    observableSlotsConfinedToCores st
+      (SchedContextOps.purgeReplenishmentFromAllCores st scId) [] := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro c _ <;> simp
+
 /-- SM8.B.2: `enqueueRunnableOnCore` writes core `cc`'s run-queue slot and the
 enqueued TCB, and nothing else per-core. -/
 theorem enqueueRunnableOnCore_confinedToCores (st : SystemState) (cc : CoreId)
@@ -2933,7 +2953,7 @@ theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
             obtain ⟨-, hs⟩ := hStep
             subst hs
             exact observableSlotsConfinedToCores_trans
-              (setReplenishQueueOnCore_confinedToCores st bootCoreId _)
+              (purgeReplenishmentOnCore_confinedToCores st _ _)
               (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
                 (storeObject_scheduler_eq _ _ _ _ hStore)
                 (storeObject_machine_eq _ _ _ _ hStore))
@@ -2982,7 +3002,7 @@ theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
               -- store, neither of which is confined-relevant.
               have hStoredConf : observableSlotsConfinedToCores st stStored [] :=
                 observableSlotsConfinedToCores_trans
-                  (setReplenishQueueOnCore_confinedToCores st bootCoreId _)
+                  (purgeReplenishmentOnCore_confinedToCores st _ _)
                   (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
                     (storeObject_scheduler_eq _ _ _ _ hStore)
                     (storeObject_machine_eq _ _ _ _ hStore))
@@ -3022,7 +3042,7 @@ theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
               subst hs
               refine observableSlotsConfinedToCores_widen_any ?_
               exact observableSlotsConfinedToCores_trans
-                (setReplenishQueueOnCore_confinedToCores st bootCoreId _)
+                (purgeReplenishmentOnCore_confinedToCores st _ _)
                 (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
                   (storeObject_scheduler_eq _ _ _ _ hStore)
                   (storeObject_machine_eq _ _ _ _ hStore))

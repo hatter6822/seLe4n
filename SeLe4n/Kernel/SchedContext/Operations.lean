@@ -35,6 +35,157 @@ open SeLe4n.Model
 open SeLe4n.Kernel
 
 -- ============================================================================
+-- WS-SM SM8.B: per-core replenish-queue purging
+-- ============================================================================
+
+/-- WS-SM SM8.B (PR #861 review round 17): the core whose replenish queue holds
+`sc`'s eligibility entry.
+
+Replenishments are enqueued **per core** — `replenishOnCore` writes
+`replenishQueueOnCore c` for the core the SC's bound thread runs on — and drained
+per core by that core's timer tick.  So an SC's entry lives on its bound
+thread's home core, not on the boot core; an affinity change moves it
+(`migrateSchedContextReplenishment`), which is what keeps this reading true
+rather than merely true at bind time.
+
+An SC with no bound thread has no home, and also no live replenishment to
+strand, so the boot core is the right default — the same one
+`determineTargetCore` itself falls back to. -/
+def schedContextReplenishHome (st : SystemState) (sc : SchedContext) :
+    SeLe4n.Kernel.Concurrency.CoreId :=
+  match sc.boundThread with
+  | some boundTid => determineTargetCore st boundTid
+  | none => bootCoreId
+
+/-- WS-SM SM8.B: drop `scId`'s replenishment from core `c`'s queue. -/
+def purgeReplenishmentOnCore (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (scId : SchedContextId) : SystemState :=
+  let cleaned := ReplenishQueue.remove (st.scheduler.replenishQueueOnCore c) scId
+  { st with scheduler := st.scheduler.setReplenishQueueOnCore c cleaned }
+
+/-- WS-SM SM8.B: drop `scId`'s replenishment from **every** core's queue.
+
+The form for a purge whose home core cannot be computed — an unbind whose bound
+TCB is already gone from the store has no `cpuAffinity` left to read, so there
+is no core to name and the only sound answer is all of them.  Same shape, and
+the same reasoning, as `removeRunnableFromAllCores` on the destroy path. -/
+def purgeReplenishmentFromAllCores (st : SystemState)
+    (scId : SchedContextId) : SystemState :=
+  SeLe4n.Kernel.Concurrency.allCores.foldl
+    (fun s c => purgeReplenishmentOnCore s c scId) st
+
+/-! ### Frames
+
+The replenish queue is **not** one of the six `observableSlotsConfinedToCores`
+slots, so both purges are invisible to per-core confinement — at every core,
+including the one written.  Stated as `@[simp]` frames on the helpers rather
+than left to unfold at each use site, so the confinement proofs reason about
+the purge as a unit and a later change to its body cannot silently escape
+them. -/
+
+@[simp] theorem purgeReplenishmentOnCore_machine (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (scId : SchedContextId) :
+    (purgeReplenishmentOnCore st c scId).machine = st.machine := rfl
+
+@[simp] theorem purgeReplenishmentOnCore_currentOnCore (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (scId : SchedContextId)
+    (c' : SeLe4n.Kernel.Concurrency.CoreId) :
+    (purgeReplenishmentOnCore st c scId).scheduler.currentOnCore c'
+      = st.scheduler.currentOnCore c' := by
+  simp [purgeReplenishmentOnCore, SchedulerState.setReplenishQueueOnCore_currentOnCore]
+
+@[simp] theorem purgeReplenishmentOnCore_runQueueOnCore (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (scId : SchedContextId)
+    (c' : SeLe4n.Kernel.Concurrency.CoreId) :
+    (purgeReplenishmentOnCore st c scId).scheduler.runQueueOnCore c'
+      = st.scheduler.runQueueOnCore c' := by
+  simp [purgeReplenishmentOnCore, SchedulerState.setReplenishQueueOnCore_runQueueOnCore]
+
+@[simp] theorem purgeReplenishmentOnCore_activeDomainOnCore (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (scId : SchedContextId)
+    (c' : SeLe4n.Kernel.Concurrency.CoreId) :
+    (purgeReplenishmentOnCore st c scId).scheduler.activeDomainOnCore c'
+      = st.scheduler.activeDomainOnCore c' := by
+  simp [purgeReplenishmentOnCore, SchedulerState.setReplenishQueueOnCore_activeDomainOnCore]
+
+@[simp] theorem purgeReplenishmentOnCore_domainTimeRemainingOnCore (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (scId : SchedContextId)
+    (c' : SeLe4n.Kernel.Concurrency.CoreId) :
+    (purgeReplenishmentOnCore st c scId).scheduler.domainTimeRemainingOnCore c'
+      = st.scheduler.domainTimeRemainingOnCore c' := by
+  simp [purgeReplenishmentOnCore,
+    SchedulerState.setReplenishQueueOnCore_domainTimeRemainingOnCore]
+
+@[simp] theorem purgeReplenishmentOnCore_domainScheduleIndexOnCore (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (scId : SchedContextId)
+    (c' : SeLe4n.Kernel.Concurrency.CoreId) :
+    (purgeReplenishmentOnCore st c scId).scheduler.domainScheduleIndexOnCore c'
+      = st.scheduler.domainScheduleIndexOnCore c' := by
+  simp [purgeReplenishmentOnCore,
+    SchedulerState.setReplenishQueueOnCore_domainScheduleIndexOnCore]
+
+@[simp] theorem purgeReplenishmentOnCore_objects (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (scId : SchedContextId) :
+    (purgeReplenishmentOnCore st c scId).objects = st.objects := rfl
+
+/-- The sweep inherits every frame above, one fold step at a time. -/
+private theorem purgeReplenishmentFromAllCores_frame
+    {α : Type} (f : SystemState → α) (scId : SchedContextId)
+    (hStep : ∀ (s : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId),
+      f (purgeReplenishmentOnCore s c scId) = f s) (st : SystemState) :
+    f (purgeReplenishmentFromAllCores st scId) = f st := by
+  unfold purgeReplenishmentFromAllCores
+  generalize SeLe4n.Kernel.Concurrency.allCores = cores
+  induction cores generalizing st with
+  | nil => rfl
+  | cons hd tl ih => rw [List.foldl_cons, ih, hStep]
+
+@[simp] theorem purgeReplenishmentFromAllCores_machine (st : SystemState)
+    (scId : SchedContextId) :
+    (purgeReplenishmentFromAllCores st scId).machine = st.machine :=
+  purgeReplenishmentFromAllCores_frame (·.machine) scId (fun _ _ => rfl) st
+
+@[simp] theorem purgeReplenishmentFromAllCores_currentOnCore (st : SystemState)
+    (scId : SchedContextId) (c' : SeLe4n.Kernel.Concurrency.CoreId) :
+    (purgeReplenishmentFromAllCores st scId).scheduler.currentOnCore c'
+      = st.scheduler.currentOnCore c' :=
+  purgeReplenishmentFromAllCores_frame (·.scheduler.currentOnCore c') scId
+    (fun s c => purgeReplenishmentOnCore_currentOnCore s c scId c') st
+
+@[simp] theorem purgeReplenishmentFromAllCores_runQueueOnCore (st : SystemState)
+    (scId : SchedContextId) (c' : SeLe4n.Kernel.Concurrency.CoreId) :
+    (purgeReplenishmentFromAllCores st scId).scheduler.runQueueOnCore c'
+      = st.scheduler.runQueueOnCore c' :=
+  purgeReplenishmentFromAllCores_frame (·.scheduler.runQueueOnCore c') scId
+    (fun s c => purgeReplenishmentOnCore_runQueueOnCore s c scId c') st
+
+@[simp] theorem purgeReplenishmentFromAllCores_activeDomainOnCore (st : SystemState)
+    (scId : SchedContextId) (c' : SeLe4n.Kernel.Concurrency.CoreId) :
+    (purgeReplenishmentFromAllCores st scId).scheduler.activeDomainOnCore c'
+      = st.scheduler.activeDomainOnCore c' :=
+  purgeReplenishmentFromAllCores_frame (·.scheduler.activeDomainOnCore c') scId
+    (fun s c => purgeReplenishmentOnCore_activeDomainOnCore s c scId c') st
+
+@[simp] theorem purgeReplenishmentFromAllCores_domainTimeRemainingOnCore (st : SystemState)
+    (scId : SchedContextId) (c' : SeLe4n.Kernel.Concurrency.CoreId) :
+    (purgeReplenishmentFromAllCores st scId).scheduler.domainTimeRemainingOnCore c'
+      = st.scheduler.domainTimeRemainingOnCore c' :=
+  purgeReplenishmentFromAllCores_frame (·.scheduler.domainTimeRemainingOnCore c') scId
+    (fun s c => purgeReplenishmentOnCore_domainTimeRemainingOnCore s c scId c') st
+
+@[simp] theorem purgeReplenishmentFromAllCores_domainScheduleIndexOnCore (st : SystemState)
+    (scId : SchedContextId) (c' : SeLe4n.Kernel.Concurrency.CoreId) :
+    (purgeReplenishmentFromAllCores st scId).scheduler.domainScheduleIndexOnCore c'
+      = st.scheduler.domainScheduleIndexOnCore c' :=
+  purgeReplenishmentFromAllCores_frame (·.scheduler.domainScheduleIndexOnCore c') scId
+    (fun s c => purgeReplenishmentOnCore_domainScheduleIndexOnCore s c scId c') st
+
+@[simp] theorem purgeReplenishmentFromAllCores_objects (st : SystemState)
+    (scId : SchedContextId) :
+    (purgeReplenishmentFromAllCores st scId).objects = st.objects :=
+  purgeReplenishmentFromAllCores_frame (·.objects) scId (fun _ _ => rfl) st
+
+-- ============================================================================
 -- Z5-F1: Parameter validation
 -- ============================================================================
 
@@ -143,9 +294,15 @@ def schedContextConfigure (vScId : ValidObjId) (budget period priority deadline 
           -- AK2-G: purge stale system replenishQueue entries for this vScId.val
           -- before storing the reconfigured object.
           let scIdTyped : SchedContextId := ⟨vScId.val.toNat⟩
-          let cleanedQueue := ReplenishQueue.remove (st.scheduler.replenishQueueOnCore bootCoreId) scIdTyped
-          let stCleaned := { st with scheduler :=
-            st.scheduler.setReplenishQueueOnCore bootCoreId cleanedQueue }
+          -- WS-SM SM8.B (PR #861 review round 17): purge on the SC's HOME core.
+          -- Keyed on `bootCoreId` this was a silent no-op for an SC whose bound
+          -- thread runs anywhere else: the reconfigure installed a fresh
+          -- replenishment eligible one period out while the *old* entry stayed
+          -- queued on the home core, which still fired it — two budgets in the
+          -- first period, defeating the reset and breaking CBS bandwidth
+          -- isolation.  The same defect round 13 found in this operation's
+          -- run-queue re-bucketing, one field over.
+          let stCleaned := purgeReplenishmentOnCore st (schedContextReplenishHome st sc) scIdTyped
           -- AK2-B option B (S-H04): if the SchedContext is currently bound to a
           -- thread and configure changes the SC priority, propagate the new
           -- priority into the bound TCB's `priority` field AND re-bucket the
@@ -383,10 +540,14 @@ def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
           let updatedSc := { sc with boundThread := none, isActive := false }
           let st2 := { st1 with objects := st1.objects.insert vScId.val (KernelObject.schedContext updatedSc) }
           let st3 := { st2 with objects := st2.objects.insert tid.toObjId (KernelObject.tcb updatedTcb) }
-          -- Z5-H3: Remove SchedContext from replenish queue
+          -- Z5-H3: Remove SchedContext from replenish queue.
+          -- WS-SM SM8.B (PR #861 review round 17): on `unbindHome`, the same
+          -- core this operation already re-buckets the run queue on.  The
+          -- run-queue side was routed per-core in round 13 and the replenish
+          -- side was missed, so an unbind left the SC's eligibility entry
+          -- queued on its home core with nothing bound to consume it.
           let scIdTyped : SchedContextId := ⟨vScId.val.toNat⟩
-          let cleanedQueue := ReplenishQueue.remove (st3.scheduler.replenishQueueOnCore bootCoreId) scIdTyped
-          let st4 := { st3 with scheduler := st3.scheduler.setReplenishQueueOnCore bootCoreId cleanedQueue }
+          let st4 := purgeReplenishmentOnCore st3 unbindHome scIdTyped
           -- S-05/PERF-O1: Remove thread from per-SchedContext thread index
           let st5 := { st4 with scThreadIndex :=
             (scThreadIndexRemove st4.scThreadIndex scIdTyped tid) }
@@ -395,9 +556,14 @@ def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
         | none =>
           let updatedSc := { sc with boundThread := none, isActive := false }
           let st1 := { st with objects := st.objects.insert vScId.val (KernelObject.schedContext updatedSc) }
+          -- WS-SM SM8.B (PR #861 review round 17): this arm is reached when the
+          -- bound TCB is **already gone from the store**, so there is no
+          -- `cpuAffinity` left to read and no home core to name — a
+          -- `determineTargetCore` here would resolve to `bootCoreId` and
+          -- reinstate exactly the boot-pinning being fixed.  Sweep instead, as
+          -- the destroy path does for run queues.
           let scIdTyped : SchedContextId := ⟨vScId.val.toNat⟩
-          let cleanedQueue := ReplenishQueue.remove (st1.scheduler.replenishQueueOnCore bootCoreId) scIdTyped
-          let st2 := { st1 with scheduler := st1.scheduler.setReplenishQueueOnCore bootCoreId cleanedQueue }
+          let st2 := purgeReplenishmentFromAllCores st1 scIdTyped
           -- S-05/PERF-O1: Remove stale index entry even when TCB is missing
           let st3 := { st2 with scThreadIndex :=
             (scThreadIndexRemove st2.scThreadIndex scIdTyped tid) }

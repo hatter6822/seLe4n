@@ -64,9 +64,19 @@ BOOT_PINNED = {
     "handleRescheduleSgi":       "boot-core reschedule; per-core form is handleRescheduleSgiOnCore",
 }
 # A raw read of the boot core's scheduler slots inside a live operation.
+#
+# PR #861 review round 17: `replenishQueueOnCore` joined the list because it is
+# the third per-core scheduler slot and the gate could not see it.  A
+# replenishment is enqueued on the bound thread's home core (`replenishOnCore`)
+# and drained by that core's tick, so a purge keyed on `bootCoreId` is a silent
+# no-op for any SC bound to a thread homed elsewhere.  Three live sites had it —
+# `schedContextConfigure` and both arms of `schedContextUnbind` — after
+# round 13 had routed the *run-queue* half of the very same operations per-core.
+# Two slots checked out of three is how that survived.
 BOOT_READS = [
     re.compile(r"currentOnCore\s+bootCoreId"),
     re.compile(r"runQueueOnCore\s+bootCoreId"),
+    re.compile(r"replenishQueueOnCore\s+bootCoreId"),
 ]
 
 DECL = re.compile(r"^(?:@\[[^\]]*\]\s*)?(?:private\s+|protected\s+|partial\s+|noncomputable\s+)*"
