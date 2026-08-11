@@ -79,6 +79,35 @@ BOOT_READS = [
     re.compile(r"replenishQueueOnCore\s+bootCoreId"),
 ]
 
+# PR #861 review round 23: the three patterns above are *accessor reads*, and a
+# gate that sees only reads is half a gate.  The per-core scheduler *mutators*
+# take their core as a positional argument, so `removeRunnableOnCore st tid
+# bootCoreId` pins the write to the boot core just as surely as
+# `runQueueOnCore bootCoreId` pinned the read — and recreates precisely the
+# secondary-core defect this gate exists to close, while staying green.  The
+# asymmetry was invisible because every defect found so far happened to be
+# spelled as a read.
+#
+# The core argument is not adjacent to the callee, so each pattern spans the
+# intervening arguments on one line.  Over-matching is the safe direction here:
+# a false positive is one allowlist line, a false negative is a wedged core.
+BOOT_WRITE_CALLEES = [
+    "setCurrentOnCore",
+    "removeRunnableOnCore",
+    "enqueueRunnableOnCore",
+    "handleRescheduleSgiOnCore",
+    "migrateRunQueueBucketOnCore",
+    "switchToThreadOnCore",
+    "preemptCurrentOnCore",
+    "removeReplenishmentsOnCore",
+    "setReplenishQueueOnCore",
+    "setRunQueueOnCore",
+]
+BOOT_WRITES = [
+    re.compile(rf"\b{callee}\b[^\n]{{0,100}}?\bbootCoreId\b")
+    for callee in BOOT_WRITE_CALLEES
+]
+
 DECL = re.compile(r"^(?:@\[[^\]]*\]\s*)?(?:private\s+|protected\s+|partial\s+|noncomputable\s+)*"
                   r"(?:def|abbrev)\s+([A-Za-z_][A-Za-z0-9_.'?!]*)", re.M)
 TOP = re.compile(r"^(?:@\[|/--|/-!|private\s|protected\s|partial\s|noncomputable\s|def\s|abbrev\s|"
@@ -299,6 +328,13 @@ def scan(percore: dict[str, str], bodies: dict[str, str], depth: int,
                             continue
                         findings.append((sid, name, pat.pattern,
                                          "reads the boot core's scheduler slot directly"))
+                for pat in BOOT_WRITES:
+                    if pat.search(body):
+                        if (sid, pat.pattern) in allow:
+                            continue
+                        findings.append((sid, name, pat.pattern,
+                                         "writes a per-core scheduler slot at a literal "
+                                         "bootCoreId; pass the operation's own core"))
                 nxt.extend(called_names(body) & bodies.keys())
             frontier = nxt
     return findings
@@ -348,6 +384,27 @@ def main() -> int:
             print(f"[per-core-routing] SELF-TEST FAIL: reach {depth} does not detect "
                   f"the known boot-pinned arms: {sorted(missing)}")
             return 1
+        # Round 23: the boot-*write* patterns must actually match.  They were
+        # added to a tree that has no violation of that shape, so the scan went
+        # green the moment they landed — which is equally what a broken regex
+        # looks like.  These synthetic spellings are the difference between the
+        # two, and the last one pins that a genuine per-core call (core taken
+        # from `determineTargetCore`, not a literal) is NOT flagged, so the
+        # patterns cannot be "fixed" into rejecting correct code.
+        write_probes = [
+            ("removeRunnableOnCore st tid bootCoreId", True),
+            ("setCurrentOnCore bootCoreId none", True),
+            ("handleRescheduleSgiOnCore st bootCoreId", True),
+            ("let st2 := enqueueRunnableOnCore st1 tid bootCoreId", True),
+            ("switchToThreadOnCore st tid (determineTargetCore st tid)", False),
+        ]
+        for probe, want in write_probes:
+            got = any(pat.search(probe) for pat in BOOT_WRITES)
+            if got != want:
+                verb = "missed" if want else "false-positived on"
+                print(f"[per-core-routing] SELF-TEST FAIL: boot-write patterns "
+                      f"{verb}: {probe!r}")
+                return 1
         # Round 15: the `@[attribute]` / `def` form must index its real body.
         # Checked structurally rather than by naming one definition, so a rename
         # cannot quietly retire the check: no indexed body may consist solely of

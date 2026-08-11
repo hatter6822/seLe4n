@@ -2059,7 +2059,20 @@ successor, so the same divergence would misidentify a caller rather than
 reject it — worse, on a system that had a restore seam to diverge from.  It is
 still the right change (a kernel that never dispatches a successor is not a
 kernel), but the two must land in that order, which is what this marker
-records. -/
+records.
+
+**Why exactly one of the four sites is gated** (PR #861 review round 23, which
+reached `.rescheduleSgi` through the `.tcbResume` reroute and asked why that
+switch is not gated as `scheduleLocalSuccessorLive` is).  The gate on
+`.vacatedCoreSuccessor` exists because this PR *created* that site: it keeps a
+proofs cut from adding a new instance of a pre-existing defect class.  The
+other three predate it, and gating them would not buy what it appears to.
+`.timerPreemption` is ungated and fires on every tick, so gating a syscall-path
+switch does not prevent a misattributed context — it delays it to the next
+tick.  A partial gate that reads as a fix is worse than an enumerated gap,
+which is why the remedy here is this register rather than three more guards.
+`resumeThreadOnCore`'s local arm is `.rescheduleSgi`, already listed.  SM9.E
+wires all four or none. -/
 theorem contextSwitchSites_restore_pending :
     contextSwitchSites.filter (fun s => !contextRestoreWired s) = contextSwitchSites := by
   decide
