@@ -1221,6 +1221,105 @@ def covertChannelEntry : CovertChannelId → CovertChannel
   | .tlbResidency => acceptedCovertChannel_tlbResidency
   | .icacheResidency => acceptedCovertChannel_icacheResidency
 
+/-- SM8.B.8 (PR #861 review round 17): **the property each channel's evidence
+must establish**, stated through `covertChannelEntry id` rather than through a
+named constant.
+
+`covertChannelEvidenceName` below is validated only in that its string resolves
+to *some* declaration — so mapping `.machineTimer` at the scheduling witness
+passed every check the module had.  This is the type that makes the mapping
+itself checkable: because each arm reads `(covertChannelEntry id).modelVisible`
+and `covertChannelEntry` reduces definitionally to the entry constant,
+supplying the wrong channel's theorem is a **type error**, not a documentation
+slip.  A `.machineTimer` arm demands `… .modelVisible = false`, and the
+scheduling witness proves `= true` about a different entry.
+
+Each arm is the conclusion of the theorem the corresponding
+`covertChannelEvidenceName` arm names, so nothing new has to be proved —
+`covertChannelEvidence` discharges them by citation. -/
+def CovertChannelId.evidenceProp : CovertChannelId → Prop
+  | .schedulingState =>
+      ∀ (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel) (s : SystemState),
+        (covertChannelEntry .schedulingState).modelVisible = true ∧
+          (ObservableState.onCore ctx c L s).activeDomain = s.scheduler.activeDomainOnCore c
+  | .machineTimer =>
+      ∀ (ctx : LabelingContext) (L : SecurityLabel) (s : SystemState) (c : CoreId) (t : Nat),
+        (covertChannelEntry .machineTimer).modelVisible = false ∧
+          ObservableState.onCore ctx c L { s with machine := { s.machine with timer := t } }
+            = ObservableState.onCore ctx c L s
+  | .tcbMetadata =>
+      ∀ (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel) (s : SystemState)
+        (tid : SeLe4n.ThreadId) (tcb : TCB),
+        objectObservable ctx (IfObserver.ofLabel L) tid.toObjId = true →
+        s.getTcb? tid = some tcb →
+        (covertChannelEntry .tcbMetadata).modelVisible = true ∧
+          ∃ projected : TCB,
+            (ObservableState.onCore ctx c L s).objects tid.toObjId = some (.tcb projected)
+            ∧ projected.priority = tcb.priority
+            ∧ projected.ipcState = tcb.ipcState
+  | .objectStoreMetadata =>
+      ∀ (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel) (s : SystemState),
+        (covertChannelEntry .objectStoreMetadata).modelVisible = true ∧
+          (ObservableState.onCore ctx c L s).objectIndex
+            = projectObjectIndex ctx (IfObserver.ofLabel L) s
+  | .lockContention =>
+      ∀ (ctx : LabelingContext) (observer : IfObserver)
+        (S : SeLe4n.Kernel.Concurrency.LockSet) (core : CoreId)
+        (action : SystemState → SystemState × Unit) (s : SystemState),
+        s.objects.invExt →
+        (∀ s', s'.objects.invExt → ((action s').1).objects.invExt) →
+        (∀ s', s'.objects.invExt →
+          projectState ctx observer (action s').1 = projectState ctx observer s') →
+        (covertChannelEntry .lockContention).modelVisible = false ∧
+          projectState ctx observer
+              (SeLe4n.Kernel.Concurrency.withLockSet S core action s).1
+            = projectState ctx observer s
+  | .tlbResidency =>
+      ∀ (ctx : LabelingContext) (L : SecurityLabel) (s : SystemState) (c : CoreId)
+        (vTlb : Vector TlbState SeLe4n.Kernel.Concurrency.numCores),
+        (covertChannelEntry .tlbResidency).modelVisible = false ∧
+          ObservableState.onCore ctx c L { s with perCoreTlb := vTlb }
+            = ObservableState.onCore ctx c L s
+  | .icacheResidency =>
+      ∀ (ctx : LabelingContext) (L : SecurityLabel) (s : SystemState) (c : CoreId)
+        (vIcache : Vector ICacheState SeLe4n.Kernel.Concurrency.numCores),
+        (covertChannelEntry .icacheResidency).modelVisible = false ∧
+          ObservableState.onCore ctx c L { s with perCoreICache := vIcache }
+            = ObservableState.onCore ctx c L s
+
+/-- SM8.B.8 (review round 17): **the evidence itself**, as a dependently-typed
+total function — the load-bearing obligation the string table below only names.
+
+Every channel must supply a proof of *its own* `evidenceProp`, so the id → proof
+mapping is checked by the elaborator rather than by a reader comparing two
+lists.  Adding a channel without deciding what proves its classification is now
+a missing-arm error, and misattributing an existing proof is a type error.
+
+The two residency channels legitimately share `…_residency_excluded_from_view`,
+which proves both exclusions at once; here each takes the projection of that
+theorem it needs, so the sharing is visible in the proof term rather than
+asserted about a repeated string. -/
+def covertChannelEvidence : (id : CovertChannelId) → id.evidenceProp
+  | .schedulingState => fun ctx c L s =>
+      acceptedCovertChannel_scheduling_is_model_visible ctx c L s
+  | .machineTimer => fun ctx L s c t =>
+      acceptedCovertChannel_machineTimer_excluded_from_view ctx L s c t
+  | .tcbMetadata => fun ctx c L s tid tcb hObs hLookup =>
+      acceptedCovertChannel_tcbMetadata_is_model_visible ctx c L s tid tcb hObs hLookup
+  | .objectStoreMetadata => fun ctx c L s =>
+      acceptedCovertChannel_objectStoreMetadata_is_model_visible ctx c L s
+  | .lockContention => fun ctx observer S core action s hInv hActionInv hAction =>
+      acceptedCovertChannel_lockContention_is_timing_only ctx observer S core action s
+        hInv hActionInv hAction
+  | .tlbResidency => fun ctx L s c vTlb =>
+      let ⟨hTlb, _, hViewTlb, _⟩ :=
+        acceptedCovertChannel_residency_excluded_from_view ctx L s c vTlb default
+      ⟨hTlb, hViewTlb⟩
+  | .icacheResidency => fun ctx L s c vIcache =>
+      let ⟨_, hIcache, _, hViewIcache⟩ :=
+        acceptedCovertChannel_residency_excluded_from_view ctx L s c default vIcache
+      ⟨hIcache, hViewIcache⟩
+
 /-- SM8.B.8: **the projection theorem that justifies each entry's
 `modelVisible`**, compile-time-validated through `niName!`.
 
@@ -1228,8 +1327,11 @@ This is the table the fourth review round asked for.  Every id must name a
 theorem, the macro rejects a name that does not resolve, and each named theorem
 states the entry's `modelVisible` literal *conjoined with* the projection fact
 that makes it true — so a reclassification without a matching change to the
-projection breaks the witness, not just this string. -/
-def covertChannelEvidence : CovertChannelId → String
+projection breaks the witness, not just this string.
+
+Kept for the count theorems and the Tier-3 anchors, which need a comparable
+value; `covertChannelEvidence` above is the obligation that actually binds. -/
+def covertChannelEvidenceName : CovertChannelId → String
   | .schedulingState => niName! acceptedCovertChannel_scheduling_is_model_visible
   | .machineTimer => niName! acceptedCovertChannel_machineTimer_excluded_from_view
   | .tcbMetadata => niName! acceptedCovertChannel_tcbMetadata_is_model_visible
@@ -1249,14 +1351,14 @@ to read, load-bearing to have: with `covertChannelEvidence` total, adding a
 channel without deciding what proves its classification is a compile error, and
 this rules out discharging that obligation with `""`. -/
 theorem covertChannelEvidence_nonempty :
-    ∀ id : CovertChannelId, (covertChannelEvidence id).length > 0 := by
+    ∀ id : CovertChannelId, (covertChannelEvidenceName id).length > 0 := by
   intro id; cases id <;> decide
 
 /-- SM8.B.8: the two residency channels share a witness (it proves both
 exclusions at once) and every other channel has its own.  Pinned so a reader
 knows the sharing is intentional rather than a copy-paste. -/
 theorem covertChannelEvidence_shared_only_for_residency :
-    (CovertChannelId.all.map covertChannelEvidence).eraseDups.length = 6 := by decide
+    (CovertChannelId.all.map covertChannelEvidenceName).eraseDups.length = 6 := by decide
 
 
 -- ============================================================================

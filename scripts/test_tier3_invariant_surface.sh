@@ -2009,9 +2009,21 @@ run_check "INVARIANT" rg -n '^theorem storeTcbReceiveComplete_determineTargetCor
 # theorem through a total, compile-time-validated table, so a new channel cannot
 # be filed without deciding what proves its classification.
 run_check "INVARIANT" rg -n '^inductive CovertChannelId' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^def covertChannelEvidence' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^def covertChannelEvidenceName' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem covertChannelEntry_eq_inventory' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n 'niName! acceptedCovertChannel_machineTimer_excluded_from_view' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+
+# PR #861 review round 17: the citation table above validates only that a name
+# resolves, so it accepted a witness filed against the wrong channel.  The
+# binding obligation is the dependently-typed one, whose arms are checked
+# against `covertChannelEntry id`.  Pinned as a *dependent* signature — the
+# `(id : CovertChannelId) → id.evidenceProp` shape is what makes a misattributed
+# proof a type error, so a revert to `CovertChannelId → String` fails here.
+run_check "INVARIANT" rg -n '^def CovertChannelId.evidenceProp' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^def covertChannelEvidence : \(id : CovertChannelId\) → id\.evidenceProp' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+# Each `evidenceProp` arm must read the entry through `covertChannelEntry id`
+# rather than naming a constant: that indirection is what ties the arm to the id.
+run_check "INVARIANT" rg -n '\(covertChannelEntry \.machineTimer\)\.modelVisible = false' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 
 # PR #861 review round 4 (P2): CC-1's mitigation no longer claims a capacity
 # figure no theorem supports.  NEGATIVE: the log2 bits-per-switch claim must not

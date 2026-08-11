@@ -507,6 +507,8 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @acceptedCovertChannel_objectStoreMetadata_is_model_visible
 #check CovertChannelId
 #check @covertChannelEntry
+#check @covertChannelEvidenceName
+#check @CovertChannelId.evidenceProp
 #check @covertChannelEvidence
 #check @covertChannelEntry_eq_inventory
 #check @covertChannelEvidence_nonempty
@@ -3103,13 +3105,34 @@ private def runCovertChannelInventoryChecks : IO Unit := do
     (decide (CovertChannelId.all.map covertChannelEntry = acceptedCovertChannelsPerCore) &&
      decide (CovertChannelId.all.length = 7))
   assertBool "every channel cites a projection theorem (no empty citation)"
-    (CovertChannelId.all.all (fun id => decide ((covertChannelEvidence id).length > 0)))
+    (CovertChannelId.all.all (fun id => decide ((covertChannelEvidenceName id).length > 0)))
   assertBool "six distinct witnesses — the two residency channels share one"
-    (decide ((CovertChannelId.all.map covertChannelEvidence).eraseDups.length = 6))
+    (decide ((CovertChannelId.all.map covertChannelEvidenceName).eraseDups.length = 6))
   -- The load-bearing negative for the evidence table: the citations are not all
   -- the same string, i.e. the table really does discriminate between channels.
   assertBool "NEGATIVE: the machine-timer and scheduling citations differ"
-    (decide (covertChannelEvidence .machineTimer ≠ covertChannelEvidence .schedulingState))
+    (decide (covertChannelEvidenceName .machineTimer ≠ covertChannelEvidenceName .schedulingState))
+  -- SM8.B.8 (review round 17): the citation is a *name*; the obligation is the
+  -- dependently-typed `covertChannelEvidence`, whose arms are checked against
+  -- `covertChannelEntry id` — so a misattributed proof is a type error rather
+  -- than a wrong string.  Elaborating each arm at its own id is the check;
+  -- the assertion records that all seven do.
+  assertBool "every channel supplies a proof of ITS OWN evidenceProp"
+    (have _s := covertChannelEvidence .schedulingState
+     have _m := covertChannelEvidence .machineTimer
+     have _t := covertChannelEvidence .tcbMetadata
+     have _o := covertChannelEvidence .objectStoreMetadata
+     have _l := covertChannelEvidence .lockContention
+     have _v := covertChannelEvidence .tlbResidency
+     have _i := covertChannelEvidence .icacheResidency
+     true)
+  -- The load-bearing negative for the *typed* table: the two classifications
+  -- are genuinely different propositions, so the arms are not interchangeable.
+  -- A `.machineTimer` arm must prove `modelVisible = false`; the scheduling
+  -- witness proves `= true`, and the entries are distinct objects.
+  assertBool "NEGATIVE: the two classifications are opposite, so arms cannot swap"
+    (decide ((covertChannelEntry .schedulingState).modelVisible = true) &&
+     decide ((covertChannelEntry .machineTimer).modelVisible = false))
 
 /-- §4.8a  CC-1's capacity claim: what is bounded, and what is not
 (SM8.B.9, fourth review round). -/
