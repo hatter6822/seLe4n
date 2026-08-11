@@ -1948,6 +1948,12 @@ run_negative_check "INVARIANT" rg -n 'runQueueOnCore bootCoreId' SeLe4n/Kernel/S
 run_check "INVARIANT" rg -n '^theorem schedulingObservation_changes_on_domain_tick' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem schedulingChannel_trace_capacity' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem boundedCodeTraces_length' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+# Round 13: the trace bound quantifies the RUN preconditions, whose schedule
+# clause is what turns the code count into a capacity claim.  The negative
+# forbids the weaker pointwise premise returning to the theorem's signature.
+run_check "INVARIANT" rg -n '^def schedulingCapacityRun' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem schedulingChannel_trace_determines_observations' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_negative_check "INVARIANT" rg -n 'hPre : ∀ s ∈ run, schedulingCapacityPreconditions' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n 'tickFreq' docs/SECURITY_ADVISORY.md
 run_negative_check "INVARIANT" rg -n 'switchFreq bits/second' docs/SECURITY_ADVISORY.md docs/DEPLOYMENT_GUIDE.md
 # The axiom sweep must fail closed on a nonzero exit, not only on a Lean

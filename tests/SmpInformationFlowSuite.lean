@@ -548,6 +548,9 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @SeLe4n.Kernel.dispatchWithCap_tcbSetMCPriority_delegates
 #check @SeLe4n.Kernel.syscallDelegates_tcbSetPriority
 #check @SeLe4n.Kernel.syscallDelegates_tcbSetMCPriority
+#check @SeLe4n.Kernel.schedulingCapacityRun
+#check @SeLe4n.Kernel.schedulingCapacityRun_singleton
+#check @SeLe4n.Kernel.schedulingChannel_trace_determines_observations
 #check @CovertChannelId.mem_all
 #check @CovertChannelId.all_nodup
 #check LiveArmEvidence
@@ -1473,6 +1476,30 @@ private def runSchedulingTransparencyChecks : IO Unit := do
       have _h2 := onCore_schedulingTransparency_label_invariant probeLabeling c lowLabel
         highLabel stSplitDomains
       true))
+  -- PR #861 review round 13: the trace-capacity bound quantifies
+  -- `schedulingCapacityRun`, whose second clause fixes ONE schedule across the
+  -- run.  This is the load-bearing negative: two states with same-length but
+  -- DIFFERENT schedules produce the same index/countdown code, yet expose
+  -- different active domains — so without the clause the `alphabet ^ n` count
+  -- would count fewer behaviours than an observer can distinguish.
+  let schedA : SystemState :=
+    { probeState with
+      scheduler := { probeState.scheduler with domainSchedule := [⟨⟨7⟩, 5⟩, ⟨⟨8⟩, 5⟩] } }
+  let schedB : SystemState :=
+    { probeState with
+      scheduler := { probeState.scheduler with domainSchedule := [⟨⟨9⟩, 5⟩, ⟨⟨8⟩, 5⟩] } }
+  assertBool "two same-length schedules give the SAME index/countdown code"
+    (decide (SeLe4n.Kernel.schedulingObservationCode 8 probeLabeling c0 lowLabel schedA
+      = SeLe4n.Kernel.schedulingObservationCode 8 probeLabeling c0 lowLabel schedB))
+  assertBool "NEGATIVE: …yet the observer sees different schedules, so the code alone is not the observation"
+    (!decide ((ObservableState.onCore probeLabeling c0 lowLabel schedA).domainSchedule
+      = (ObservableState.onCore probeLabeling c0 lowLabel schedB).domainSchedule))
+  assertBool "NEGATIVE: so a two-state run over both is NOT one schedule (the required clause fails)"
+    (!decide (schedA.scheduler.domainSchedule = schedB.scheduler.domainSchedule))
+  assertBool "the run preconditions hold trivially for a one-state run"
+    (have _h := @SeLe4n.Kernel.schedulingCapacityRun_singleton
+     have _t := @SeLe4n.Kernel.schedulingChannel_trace_determines_observations
+     true)
   assertBool "the channel is PER CORE: cores 0 and 1 report different domains"
     (!decide ((ObservableState.onCore probeLabeling c0 lowLabel stSplitDomains).activeDomain
       = (ObservableState.onCore probeLabeling c1 lowLabel stSplitDomains).activeDomain))

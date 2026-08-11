@@ -178,11 +178,18 @@ def schedContextConfigure (vScId : ValidObjId) (budget period priority deadline 
                     let effectivePri : SeLe4n.Priority := match boundTcb.pipBoost with
                       | none => newPri
                       | some boostPri => ⟨Nat.max priority boostPri.val⟩
-                    if boundTid ∈ (stWithTcb.scheduler.runQueueOnCore bootCoreId) then
-                      let rqRemoved := (stWithTcb.scheduler.runQueueOnCore bootCoreId).remove boundTid
+                    -- WS-SM SM8.B (PR #861 review round 13, found by
+                    -- `scripts/check_live_arm_per_core_routing.py`): re-bucket on the
+                    -- bound thread's HOME core.  Keyed on `bootCoreId` this was a
+                    -- silent no-op for a thread queued anywhere else, so the priority
+                    -- moved while the run queue kept the old band — the same defect
+                    -- rounds 10 and 12 found in `migrateRunQueueBucket`.
+                    let boundHome := determineTargetCore stWithTcb boundTid
+                    if boundTid ∈ (stWithTcb.scheduler.runQueueOnCore boundHome) then
+                      let rqRemoved := (stWithTcb.scheduler.runQueueOnCore boundHome).remove boundTid
                       let rqInserted := rqRemoved.insert boundTid effectivePri
                       { stWithTcb with scheduler :=
-                        stWithTcb.scheduler.setRunQueueOnCore bootCoreId rqInserted }
+                        stWithTcb.scheduler.setRunQueueOnCore boundHome rqInserted }
                     else stWithTcb
                 -- R5.G (DEEP-SCH-06): Domain propagation. The
                 -- `boundThreadDomainConsistent` invariant in
@@ -289,10 +296,13 @@ def schedContextBind (vScId : ValidObjId) (vThreadId : ValidThreadId) : Kernel U
             -- AE3-J/SC-09: Run queue insertion uses pre-update sc.priority.
             -- AG1-A: Now uses effective priority (base + PIP boost) to ensure
             -- PIP-boosted threads are placed in the correct bucket.
-            let st3 := if vThreadId.val ∈ (st2.scheduler.runQueueOnCore bootCoreId) then
-              let rqRemoved := (st2.scheduler.runQueueOnCore bootCoreId).remove vThreadId.val
+            -- WS-SM SM8.B (review round 13): the bound thread's HOME core, not the
+            -- boot core — see `schedContextConfigure` above for the defect this fixes.
+            let bindHome := determineTargetCore st2 vThreadId.val
+            let st3 := if vThreadId.val ∈ (st2.scheduler.runQueueOnCore bindHome) then
+              let rqRemoved := (st2.scheduler.runQueueOnCore bindHome).remove vThreadId.val
               let rqInserted := rqRemoved.insert vThreadId.val (resolveInsertPriority st2 vThreadId.val sc)
-              { st2 with scheduler := st2.scheduler.setRunQueueOnCore bootCoreId rqInserted }
+              { st2 with scheduler := st2.scheduler.setRunQueueOnCore bindHome rqInserted }
             else st2
             -- S-05/PERF-O1: Add thread to per-SchedContext thread index
             let st4 := { st3 with scThreadIndex :=
@@ -333,14 +343,18 @@ def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
           -- Z5-H1: Preemption guard — if bound thread is current, clear current
           -- to force rescheduling. Under dequeue-on-dispatch, the current thread
           -- is not in the RunQueue, so clearing current is sufficient.
-          let st0 := if (st.scheduler.currentOnCore bootCoreId) == some tid then
-            { st with scheduler := st.scheduler.setCurrentOnCore bootCoreId none }
+          -- WS-SM SM8.B (review round 13): the unbound thread's HOME core.  Keyed
+          -- on `bootCoreId` the preemption guard never fired for a thread current
+          -- on a secondary core, which kept running at its now-revoked SC priority.
+          let unbindHome := determineTargetCore st tid
+          let st0 := if (st.scheduler.currentOnCore unbindHome) == some tid then
+            { st with scheduler := st.scheduler.setCurrentOnCore unbindHome none }
           else st
           -- Z5-H2: If thread is in RunQueue (runnable but not current), remove it.
           -- After unbind the thread reverts to legacy priority; the next schedule
           -- call will re-enqueue it correctly if still runnable.
-          let st1 := if tid ∈ (st0.scheduler.runQueueOnCore bootCoreId) then
-            { st0 with scheduler := st0.scheduler.setRunQueueOnCore bootCoreId ((st0.scheduler.runQueueOnCore bootCoreId).remove tid) }
+          let st1 := if tid ∈ (st0.scheduler.runQueueOnCore unbindHome) then
+            { st0 with scheduler := st0.scheduler.setRunQueueOnCore unbindHome ((st0.scheduler.runQueueOnCore unbindHome).remove tid) }
           else st0
           -- Z5-H2 cont: Clear both sides of the binding
           let updatedSc := { sc with boundThread := none, isActive := false }
@@ -420,8 +434,10 @@ def schedContextYieldTo (st : SystemState) (fromScId targetScId : SchedContextId
         match targetSc.boundThread with
         | some tid =>
           -- AG1-A: Use effective priority (base + PIP boost) for RunQueue insertion
-          if tid ∉ (st2.scheduler.runQueueOnCore bootCoreId) && (st2.scheduler.currentOnCore bootCoreId) != some tid then
-            { st2 with scheduler := st2.scheduler.setRunQueueOnCore bootCoreId ((st2.scheduler.runQueueOnCore bootCoreId).insert tid (resolveInsertPriority st2 tid targetSc)) }
+          -- WS-SM SM8.B (review round 13): re-enqueue on the thread's HOME core.
+          let refillHome := determineTargetCore st2 tid
+          if tid ∉ (st2.scheduler.runQueueOnCore refillHome) && (st2.scheduler.currentOnCore refillHome) != some tid then
+            { st2 with scheduler := st2.scheduler.setRunQueueOnCore refillHome ((st2.scheduler.runQueueOnCore refillHome).insert tid (resolveInsertPriority st2 tid targetSc)) }
           else st2
         | none => st2
       else st2

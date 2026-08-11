@@ -501,6 +501,31 @@ by the domain-switch frequency, where the observed countdown is decremented by
 every timer tick), and correcting it meant four separate edits held together by
 nothing but the anchors.
 
+**PR #861 — the boot-pinned-arm class, closed by a gate (v0.33.5).**  Rounds
+10 and 12 found the same defect three times, one syscall per round, and the
+pattern was going to continue: nothing said *which* live arms were per-core
+correct, so the reviewer was performing a manual sweep on the project's behalf.
+A grep over the dispatch arms would have caught none of them either — every one
+was a hop down (`.tcbSetPriority` named `setPriorityOp`; `setPriorityOp` called
+`migrateRunQueueBucket`).
+
+`scripts/check_live_arm_per_core_routing.py` checks the transitive property:
+from `syscallIdToEnforcementNamePerCore` (total over `SyscallId`), walk two hops
+of the call graph and fail on any boot-pinned scheduler primitive reached.
+Tier 0, so it runs on every PR and push.  It found three arms no review round
+had reached — `schedContextBind`, `schedContextConfigure` and
+`schedContextUnbind` — all now resolved through `determineTargetCore`.
+
+Two properties keep it honest.  It **fails closed on an unresolvable operation
+name**: a mapped label that is not a Lean definition means the walk starts
+nowhere, which is how `.tcbSetIPCBuffer` was passing (unchecked, not clean);
+labels differing from definition names go through an explicit alias table and a
+missing alias is an error.  And `--self-test` re-walks the pre-SMP operations,
+failing if the gate no longer detects them — which is what surfaced the
+unresolvable-name hole.  Reach is stated rather than assumed: the source-text
+call graph is sound at two hops and near-total by three, so the gate walks two,
+which is where every defect found so far lived.
+
 **PR #861 review rounds 10 and 12 (v0.33.5) — three boot-pinned live arms.**
 The last syscall arms whose *scheduling* effects still targeted `bootCoreId`
 unconditionally.  No theorem was false — the transitions are pure functions and

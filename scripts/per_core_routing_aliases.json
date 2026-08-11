@@ -1,0 +1,6 @@
+{
+  "_comment": "Enforcement-boundary labels are not always Lean definition names. This maps a label to the definition the arm reaches, so scripts/check_live_arm_per_core_routing.py can walk it. Missing alias = hard failure, never a silent skip.",
+  "setIPCBuffer": "setIPCBufferOp",
+  "setPriority": "setPriorityOnCore",
+  "setMCPriority": "setMCPriorityOnCore"
+}

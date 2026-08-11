@@ -1025,6 +1025,31 @@ theorem mem_boundedCodeTraces (alphabet : Nat) :
           intro y hy
           exact hAll y (List.mem_cons_of_mem _ hy)
 
+/-- SM8.B.9: **the preconditions a whole run must satisfy** for the trace bound
+to be a capacity claim — the per-state bundle at every state, and one schedule
+across the run.
+
+The second clause is the run-level form of `schedulingCapacityComparable`'s
+schedule equality, and it is required for the same reason: the schedule is
+projected unfiltered, so two same-length but different schedules are two
+observer-distinguishable configurations that the index/countdown code cannot
+tell apart.  Fixing `N` bounds the alphabet; it does not bound the schedule's
+contents. -/
+def schedulingCapacityRun (quantumBound : Nat) (run : List SystemState) (c : CoreId) : Prop :=
+  (∀ s ∈ run, schedulingCapacityPreconditions quantumBound s c)
+  ∧ (∀ s₁ ∈ run, ∀ s₂ ∈ run, s₁.scheduler.domainSchedule = s₂.scheduler.domainSchedule)
+
+/-- SM8.B.9: a run of one state satisfies the run preconditions as soon as that
+state satisfies the per-state bundle — schedule equality is reflexive, so the
+single-observation case needs nothing extra. -/
+theorem schedulingCapacityRun_singleton (quantumBound : Nat) (s : SystemState) (c : CoreId)
+    (hPre : schedulingCapacityPreconditions quantumBound s c) :
+    schedulingCapacityRun quantumBound [s] c := by
+  refine ⟨?_, ?_⟩
+  · intro x hx; rw [List.mem_singleton.mp hx]; exact hPre
+  · intro a ha b hb
+    rw [List.mem_singleton.mp ha, List.mem_singleton.mp hb]
+
 /-- SM8.B.9: the sequence of codes an observer on `(c, L)` reads off a run. -/
 def schedulingObservationTrace (quantumBound : Nat) (ctx : LabelingContext)
     (c : CoreId) (L : SecurityLabel) (run : List SystemState) : List Nat :=
@@ -1037,13 +1062,22 @@ a set of exactly `alphabet ^ n` elements, where
 `alphabet = |domainSchedule| × (quantumBound + 1)`.
 
 Equivalently: at most `log₂(alphabet)` bits per tick, and no more over the run
-than that times the number of ticks.  Every state in the run must satisfy the
-bundled preconditions and share one schedule — the same conditions the
-per-observation bound needs, applied pointwise, which is why they are quantified
-rather than assumed once. -/
+than that times the number of ticks.
+
+**The run-level preconditions are `schedulingCapacityRun`, and the schedule
+clause is load-bearing** (PR #861 review round 13).  An earlier cut quantified
+only `schedulingCapacityPreconditions` pointwise while its docstring claimed the
+states shared one schedule.  The membership conclusion was still true, but the
+*capacity reading* it supports was not: the observer also sees `domainSchedule`
+and the `activeDomain` it determines, so with two same-length but different
+schedules in one run the code trace stops distinguishing what the observer
+distinguishes, and `alphabet ^ n` counts fewer behaviours than exist.  The
+premise is required here, and `schedulingChannel_trace_determines_observations`
+below is what turns the count into a capacity claim: under it, the code trace
+determines the *full* observation trace. -/
 theorem schedulingChannel_trace_capacity (quantumBound : Nat) (ctx : LabelingContext)
     (c : CoreId) (L : SecurityLabel) (run : List SystemState) (alphabet : Nat)
-    (hPre : ∀ s ∈ run, schedulingCapacityPreconditions quantumBound s c)
+    (hRun : schedulingCapacityRun quantumBound run c)
     (hAlphabet : ∀ s ∈ run, s.scheduler.domainSchedule.length * (quantumBound + 1) ≤ alphabet) :
     schedulingObservationTrace quantumBound ctx c L run
       ∈ boundedCodeTraces alphabet run.length := by
@@ -1052,8 +1086,51 @@ theorem schedulingChannel_trace_capacity (quantumBound : Nat) (ctx : LabelingCon
   simp only [schedulingObservationTrace, List.mem_map] at hx
   obtain ⟨s, hs, rfl⟩ := hx
   exact Nat.lt_of_lt_of_le
-    (schedulingChannel_alphabet_bounded_of_preconditions quantumBound ctx c L s (hPre s hs))
+    (schedulingChannel_alphabet_bounded_of_preconditions quantumBound ctx c L s (hRun.1 s hs))
     (hAlphabet s hs)
+
+/-- SM8.B.9 (**what makes the count a capacity bound**): under the run
+preconditions, and with one schedule across *both* runs, equal code traces mean
+equal **complete** observation traces — active domain included.
+
+Without this the `alphabet ^ n` figure counts *codes*, not observer-distinguishable
+behaviours.  With it, the observer's whole run of observations is a function of
+an element of a set of exactly `alphabet ^ n`, which is the statement the
+deployment guidance quotes.
+
+Proved pointwise off `schedulingChannel_full_observation_determined_of_preconditions`
+by induction on the two runs — the code trace being a `List.map`, equal traces
+give equal heads and equal tails. -/
+theorem schedulingChannel_trace_determines_observations (quantumBound : Nat)
+    (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel) :
+    ∀ (run₁ run₂ : List SystemState),
+      schedulingCapacityRun quantumBound run₁ c →
+      schedulingCapacityRun quantumBound run₂ c →
+      (∀ s₁ ∈ run₁, ∀ s₂ ∈ run₂,
+        s₁.scheduler.domainSchedule = s₂.scheduler.domainSchedule) →
+      schedulingObservationTrace quantumBound ctx c L run₁
+        = schedulingObservationTrace quantumBound ctx c L run₂ →
+      run₁.map (schedulingObservationFullOnCore ctx c L)
+        = run₂.map (schedulingObservationFullOnCore ctx c L)
+  | [], [], _, _, _, _ => rfl
+  | [], _ :: _, _, _, _, hCode => by simp [schedulingObservationTrace] at hCode
+  | _ :: _, [], _, _, _, hCode => by simp [schedulingObservationTrace] at hCode
+  | s₁ :: t₁, s₂ :: t₂, hRun₁, hRun₂, hSched, hCode => by
+      simp only [schedulingObservationTrace, List.map_cons, List.cons.injEq] at hCode
+      obtain ⟨hHead, hTail⟩ := hCode
+      have hFull : schedulingObservationFullOnCore ctx c L s₁
+          = schedulingObservationFullOnCore ctx c L s₂ :=
+        schedulingChannel_full_observation_determined_of_preconditions quantumBound ctx c L
+          s₁ s₂ ⟨hRun₁.1 s₁ (by simp), hRun₂.1 s₂ (by simp),
+                 hSched s₁ (by simp) s₂ (by simp)⟩ hHead
+      have hRest := schedulingChannel_trace_determines_observations quantumBound ctx c L t₁ t₂
+        ⟨fun s hs => hRun₁.1 s (List.mem_cons_of_mem _ hs),
+         fun a ha b hb => hRun₁.2 a (List.mem_cons_of_mem _ ha) b (List.mem_cons_of_mem _ hb)⟩
+        ⟨fun s hs => hRun₂.1 s (List.mem_cons_of_mem _ hs),
+         fun a ha b hb => hRun₂.2 a (List.mem_cons_of_mem _ ha) b (List.mem_cons_of_mem _ hb)⟩
+        (fun a ha b hb => hSched a (List.mem_cons_of_mem _ ha) b (List.mem_cons_of_mem _ hb))
+        hTail
+      simp only [List.map_cons, hFull, hRest]
 
 /-- SM8.B.9: the capacity really is exponential in the run length and nothing
 smaller — a one-tick run over an eight-element alphabet admits eight traces, a

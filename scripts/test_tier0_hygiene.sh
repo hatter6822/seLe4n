@@ -113,6 +113,17 @@ run_check "HYGIENE" "${SCRIPT_DIR}/check_website_links.sh"
 # AH4-F: Version sync — validate all version-bearing files match lakefile.toml.
 run_check "HYGIENE" "${SCRIPT_DIR}/check_version_sync.sh"
 
+# WS-SM SM8.B: no live syscall arm may reach a boot-pinned scheduler primitive.
+# PR #861 review rounds 10 and 12 found this defect three times, one syscall per
+# round — `.tcbResume`, `.send`, `.tcbSetPriority`/`.tcbSetMCPriority` — each
+# fixed on discovery, none found by a gate.  Running the check here found three
+# more (`.schedContextBind`, `.schedContextConfigure`, `.schedContextUnbind`)
+# that no review round had reached.  The self-test runs first: it re-walks the
+# pre-SMP operations and fails if the gate no longer detects them, so a gate
+# that has lost its reach fails loudly instead of passing everything.
+run_check "HYGIENE" "${SCRIPT_DIR}/check_live_arm_per_core_routing.py" --self-test
+run_check "HYGIENE" "${SCRIPT_DIR}/check_live_arm_per_core_routing.py"
+
 # Internal-first naming: no workstream IDs, audit IDs, or phase codes in
 # identifiers (CLAUDE.md).  Scans every identifier token — any visibility,
 # fields, params, locals — rather than enumerating declaration forms, so

@@ -288,6 +288,39 @@ scheduling effect where a call has two), and the priority ops get
 `migrateRunQueueBucketOnCore_preserves_projection` (free on a remote core: the
 projection reads the boot core's queue only).  Trace byte-identical throughout.
 
+### The class, closed by a gate rather than by another round
+
+Three review rounds found the same defect three times, one syscall each, and a
+grep over the dispatch arms would have caught none of them: every one was a hop
+down (`.tcbSetPriority` named `setPriorityOp`; `setPriorityOp` called
+`migrateRunQueueBucket`).  `scripts/check_live_arm_per_core_routing.py` checks
+the transitive property instead.  It starts from
+`syscallIdToEnforcementNamePerCore` — the total map recording which operation
+each syscall reaches under SMP — walks two hops of the call graph, and fails on
+any boot-pinned scheduler primitive found along the way.  Registered as a Tier 0
+hygiene gate, so it runs on every PR and push.
+
+**Running it found three more that no review round had reached**:
+`schedContextBind` re-bucketed the bound thread on `runQueueOnCore bootCoreId`
+(a silent no-op for a thread queued elsewhere — the same shape as
+`migrateRunQueueBucket`), `schedContextConfigure` did the same on a priority
+change, and `schedContextUnbind` both checked `currentOnCore bootCoreId` for its
+preemption guard (so a thread current on a secondary core kept running at its
+now-revoked SC priority) and removed from the boot queue.  All four sites now
+resolve the target's home core with `determineTargetCore`; no signature changed,
+so the existing invariant proofs carry, and on the boot core the behaviour is
+definitionally what it was.
+
+Two properties keep the gate from becoming decoration.  It **fails closed on an
+unresolvable operation name** — a mapped label that is not a Lean definition
+means the walk starts nowhere and the syscall is unchecked rather than clean,
+which is how `.tcbSetIPCBuffer` was passing; boundary labels that differ from
+their definition names now go through an explicit alias table, and a missing
+alias is an error.  And `--self-test` re-walks the *pre-SMP* operations and
+fails if the gate no longer detects them, so a gate that loses its reach fails
+loudly instead of passing everything — that self-test is what exposed the
+unresolvable-name hole in the first place.
+
 ### The per-core enforcement mapping was five arms short — now fourteen
 
 `syscallIdToEnforcementNamePerCore` claimed to differ from the canonical mapping
@@ -318,6 +351,18 @@ that the enumeration is the right set and not a convenient superset.  CC-1's
 inventory severity was `.low` while `docs/SECURITY_ADVISORY.md` §SA-3 headed it
 MEDIUM; the advisory is right and the inventory now agrees.
 
+Round 13 then found that the trace bound quantified only the *pointwise*
+preconditions while its docstring claimed the run shared one schedule.  The
+membership conclusion was true either way, but the capacity *reading* was not:
+the observer also sees `domainSchedule` and the `activeDomain` it determines, so
+two same-length but different schedules in one run make the code trace
+distinguish less than the observer does.  `schedulingCapacityRun` is the
+run-level premise (per-state bundle + one schedule) and
+`schedulingChannel_trace_determines_observations` is what turns the count into a
+capacity claim: under it, equal code traces mean equal **complete** observation
+traces.  The suite's negative is two same-length schedules with the same code
+and different observed schedules.
+
 `scripts/check_module_axioms.py` also failed open on a nonzero exit: it filtered
 for position-formatted Lean diagnostics, so a probe that printed
 `AXIOMSWEEP_BADCOUNT 0` and then died — a kill signal, a later driver failure, a
@@ -327,7 +372,7 @@ about the constants it never reached.
 
 ### Tests
 
-`tests/SmpInformationFlowSuite.lean` — **254 runtime assertions** across the
+`tests/SmpInformationFlowSuite.lean` — **258 runtime assertions** across the
 SM8.A and SM8.B groups, every group carrying a load-bearing negative, plus
 `#check` anchors for every module symbol and Tier-3 pins.  Two fixtures were
 themselves vacuous and are fixed: the cancellation victim was left out of every
