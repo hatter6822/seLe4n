@@ -137,10 +137,23 @@ def index_definitions() -> dict[str, str]:
 
 ARM = re.compile(r"^([ \t]*)\|\s*\.([A-Za-z][A-Za-z0-9]*)\s*=>", re.M)
 COL0 = re.compile(r"^[A-Za-z@/]")
+# The definitions whose `SyscallId` arms are live dispatch paths.  Anything else
+# matching on `SyscallId` in `API.lean` — the authority table, the lock-set
+# table, delegation-theorem statements — is not a code path and must not be
+# walked (round 20).
+DISPATCH_DEFS = re.compile(r"^dispatch(WithCap|CapabilityOnly|Syscall)")
 
 
-def dispatch_arm_bodies(path: str) -> dict[str, str]:
-    """Map a `SyscallId` constructor to the text of every dispatch arm matching it.
+def dispatch_arm_bodies(path: str) -> dict[str, list[str]]:
+    """Map a `SyscallId` constructor to the text of each dispatch arm matching it.
+
+    PR #861 review round 20: **one entry per arm, not one concatenated blob.**
+    A syscall commonly has two production roots — the unchecked arm and the
+    information-flow-checked one — and `.send` is the case in point
+    (`endpointSendDualWithCapsOnCore` vs `endpointSendCrossCoreDispatchChecked`).
+    Concatenating them let the checked arm satisfy root verification while the
+    unchecked arm was never walked, so a boot-pinned regression confined to it
+    would have left this gate green.
 
     PR #861 review round 15: the label -> definition translation must be
     *verified against the dispatch*, not assumed.  An enforcement-boundary label
@@ -158,8 +171,28 @@ def dispatch_arm_bodies(path: str) -> dict[str, str]:
     lines = text.split("\n")
     marks = [(text[:m.start()].count("\n"), len(m.group(1)), m.group(2))
              for m in ARM.finditer(text)]
-    out: dict[str, str] = {}
+    # Round 20: an arm counts only if it sits inside a *dispatch* definition.
+    # `API.lean` also matches on `SyscallId` for the authority table
+    # (`| .send => .write`) and inside delegation-theorem statements, and those
+    # are not code paths.  Walking them produced spurious reach — a theorem
+    # statement's `∀`-bound names resolve to unrelated definitions.
+    def_at: list[tuple[int, str]] = []
+    for m in DECL.finditer(text):
+        def_at.append((text[:m.start()].count("\n"), m.group(1)))
+
+    def enclosing(line: int) -> str:
+        name = ""
+        for ln, nm in def_at:
+            if ln <= line:
+                name = nm
+            else:
+                break
+        return name
+
+    out: dict[str, list[str]] = {}
     for i, (ln, indent, sid) in enumerate(marks):
+        if not DISPATCH_DEFS.match(enclosing(ln)):
+            continue
         end = len(lines)
         for j in range(i + 1, len(marks)):
             if marks[j][1] <= indent:
@@ -169,7 +202,7 @@ def dispatch_arm_bodies(path: str) -> dict[str, str]:
             if COL0.match(lines[j]):
                 end = j
                 break
-        out[sid] = out.get(sid, "") + "\n" + "\n".join(lines[ln:end])
+        out.setdefault(sid, []).append("\n".join(lines[ln:end]))
     return out
 
 
@@ -365,14 +398,40 @@ def main() -> int:
     # names some unrelated `def` walked the wrong body and passed by accident.
     arms = dispatch_arm_bodies(API)
     unverified = []
+    # Round 20: every arm is verified and walked, not just the one that happens
+    # to name the mapped root.  `.send` has two production arms — the unchecked
+    # one calls `endpointSendDualWithCapsOnCore`, the checked one
+    # `endpointSendCrossCoreDispatchChecked` — so requiring only that *some* arm
+    # mentions the mapped operation let a boot-pinned regression hide in the
+    # other.  `extra_roots` carries each arm's own callees into the scan below.
+    extra_roots: dict[str, set[str]] = {}
     for sid, root in sorted(percore.items()):
-        arm = arms.get(sid)
-        if arm is None:
+        armlist = arms.get(sid)
+        if not armlist:
             unverified.append((sid, root, "no `| .<syscall> =>` arm in API.lean"))
-        elif root not in called_names(strip_arm_patterns(strip_comments(arm))):
+            continue
+        called_per_arm = [called_names(strip_arm_patterns(strip_comments(a))) for a in armlist]
+        # Every root this syscall is declared to have: the mapped one, plus any
+        # siblings named in the aliases file under `<label>#alt`.  Declared
+        # rather than inferred — taking each arm's callees as roots would walk
+        # names an arm merely mentions, and over-approximating a *reach* gate
+        # produces findings against code the arm cannot run.
+        declared = {root}
+        alt = aliases.get(labels[sid] + "#alt")
+        if isinstance(alt, str):
+            declared.add(alt)
+        elif isinstance(alt, list):
+            declared.update(alt)
+        uncovered = [i for i, c in enumerate(called_per_arm)
+                     if not (declared & c)]
+        if uncovered:
             unverified.append((sid, root,
-                               f"the dispatch arm never mentions `{root}`"
-                               + (f" (label `{labels[sid]}`)" if labels[sid] != root else "")))
+                               f"dispatch arm #{uncovered[0]} calls none of "
+                               f"{sorted(declared)} — declare it as "
+                               f"`\"{labels[sid]}#alt\"` in the aliases file"))
+            continue
+        extra_roots.setdefault(sid, set()).update(d for d in declared
+                                                  if d != root and d in bodies)
     if unverified:
         print("[per-core-routing] FAIL: a mapped operation is not the one its live "
               "dispatch arm calls, so the walk starts from the wrong body:")
@@ -411,7 +470,15 @@ def main() -> int:
         print("[per-core-routing] with the reason its per-core writes are unobservable.")
         return 1
 
-    findings = scan(percore, bodies, depth, allow)
+    # Round 20: scan the mapped root AND every second-arm root discovered above,
+    # so both production paths of a two-arm syscall are walked.
+    scan_roots = dict(percore)
+    for sid, roots in extra_roots.items():
+        for i, extra in enumerate(sorted(roots)):
+            scan_roots[f"{sid}#{i}"] = extra
+    findings = scan(scan_roots, bodies, depth, allow)
+    # Report a second-arm finding against the syscall, not the synthetic key.
+    findings = [(sid.split("#", 1)[0], *rest) for sid, *rest in findings]
 
     if listing:
         for sid, op in sorted(percore.items()):
