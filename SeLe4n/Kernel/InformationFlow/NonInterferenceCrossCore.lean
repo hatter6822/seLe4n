@@ -4103,7 +4103,13 @@ theorem crossCoreLiveArmEvidence_syscall_matches (t : CrossCoreTransition) :
 
 /-- SM8.B.2: **how many live arms are mechanically tied to the dispatch.**
 
-Four of twelve today.  Stated so the gap is a tracked quantity closable only by
+Seven of fourteen today — `crossCoreLiveArmDelegationBacked_count` and
+`crossCoreTransitionIsLiveArm_count` immediately below are the two halves, so
+the ratio is read off machine-checked facts rather than restated here.  (It
+said "four of twelve" until PR #861 review round 27: both counts moved as this
+PR rerouted arms, and prose that repeats a `decide` is prose that goes stale
+the next time the `decide` changes.  Naming the theorems is the part that
+keeps it honest.)  Stated so the gap is a tracked quantity closable only by
 adding delegation theorems — not something a reader reconstructs by grepping. -/
 def crossCoreLiveArmDelegationBacked : List CrossCoreTransition :=
   CrossCoreTransition.all.filter (fun t =>

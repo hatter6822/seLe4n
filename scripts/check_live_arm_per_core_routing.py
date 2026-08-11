@@ -123,7 +123,15 @@ PER_CORE_FIELDS = per_core_scheduler_fields()
 # core and `bootCoreId` is the `find?.getD` fallback one line later -- a
 # legitimate default, not a pinned read.  Matching the argument shape rather
 # than a character budget tells the two apart.
-_ARG = r"(?:\s+[A-Za-z_][A-Za-z0-9_.']*)?"
+# One argument: a (dotted) identifier, or a parenthesized expression with an
+# optional field selection after it -- `(prepare st).scheduler`.  Round 27:
+# the identifier-only form missed every computed receiver, which is the same
+# under-reach as the dot-notation-only form it replaced, one spelling further
+# out.  Nesting is bounded at two levels, which covers the receivers a call of
+# this shape actually has; a deeper one would need a real parser, and the
+# self-test's negatives are what keep the bound from silently widening.
+_PAREN = r"\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)"
+_ARG = rf"(?:\s+(?:{_PAREN}|[A-Za-z_][A-Za-z0-9_.']*)(?:\.[A-Za-z_][A-Za-z0-9_.']*)?)?"
 _BOOT = r"(?:[A-Za-z_][A-Za-z0-9_.']*\.)?bootCoreId"
 BOOT_READS = [
     re.compile(rf"\b{f}OnCore\b{_ARG}\s+{_BOOT}\b")
@@ -500,7 +508,10 @@ def main() -> int:
         for f in PER_CORE_FIELDS:
             for spelling in (f"{f}OnCore bootCoreId",
                              f"{f}OnCore st.scheduler bootCoreId",
-                             f"{f}OnCore\n  sched\n  bootCoreId"):
+                             f"{f}OnCore\n  sched\n  bootCoreId",
+                             # Round 27: computed receivers.
+                             f"{f}OnCore (prepare st).scheduler bootCoreId",
+                             f"{f}OnCore (mk (f x) y).scheduler Concurrency.bootCoreId"):
                 if not any(pat.search(collapse_whitespace(spelling))
                            for pat in BOOT_READS):
                     print(f"[per-core-routing] SELF-TEST FAIL: no read pattern covers "
