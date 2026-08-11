@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/sm8b-per-core-ni-proofs-3ogvws",
-      "commit_sha": "2b135e7324f13ffff93d01503911a2a4c02669c8",
-      "tree_sha": "b77ee901b630249be2c791b96febab86d22d335f",
-      "committed_at_utc": "2026-08-11T20:22:33+00:00"
+      "commit_sha": "dd04cfb2e8cdd0ff8e6b750e71fe01f972a642b1",
+      "tree_sha": "3f800482a904d889e610ff6baf0867f84b300c2c",
+      "committed_at_utc": "2026-08-11T20:46:21+00:00"
     }
   },
   "source_sync": {

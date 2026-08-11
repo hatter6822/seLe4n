@@ -420,7 +420,7 @@ SM8.B; the lock-contention channel CC-5 is SM8.B.8; the
 | SM8.B.3 | Per-core NI for each of the 35 `kernelOperationNi` constructors (re-anchored at SM8.A — see note above) | 35 theorems | L | LANDED |
 | SM8.B.4 | NI under per-object lock-set | Theorem | L | LANDED |
 | SM8.B.5 | `niStepCoverage_perCore` | Theorem | M | LANDED |
-| SM8.B.6 | `enforcementBoundaryPerCore` (39 entries — re-anchored) | Definition + theorem | M | LANDED |
+| SM8.B.6 | `enforcementBoundaryPerCore` (53 entries — re-anchored) | Definition + theorem | M | LANDED |
 | SM8.B.7 | Boundary completeness witness | Theorem | M | LANDED |
 | SM8.B.8 | `acceptedCovertChannel_lockContention` | Definition | M | LANDED |
 | SM8.B.9 | Mitigation note (WS-W partitioning) | Documentation | S | LANDED |
