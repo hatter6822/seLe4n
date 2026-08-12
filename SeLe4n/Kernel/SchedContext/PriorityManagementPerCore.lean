@@ -13,6 +13,7 @@
 
 import SeLe4n.Kernel.SchedContext.PriorityManagement
 import SeLe4n.Kernel.Lifecycle.Suspend
+import SeLe4n.Kernel.Concurrency.ContextRestoreSeam
 
 /-!
 # WS-SM SM8.B — per-core priority control
@@ -63,9 +64,26 @@ def priorityRescheduleOnCore (st : SystemState) (running? : Option CoreId)
     match running? with
     | some rc =>
         if rc == executingCore then
-          match handleRescheduleSgiOnCore st executingCore with
-          | .ok st' => .ok (st', none)
-          | .error e => .error e
+          -- PR #861 review rounds 23/28/32: the LOCAL arm is gated on the hardware
+        -- context-restore seam.  It records a successor in `currentOnCore`, but
+        -- with `contextRestoreSeamLive` still `false` the SVC path returns
+        -- through the *caller's* frame, so the next syscall from this core is
+        -- attributed to a thread that never started running.
+        --
+        -- This PR made that reachable here: before it, the arm was boot-pinned,
+        -- so executing on a secondary core poked the boot core rather than
+        -- switching this one.  Rerouting per-core is the right fix and it is
+        -- what newly enables the local switch, which puts this on the
+        -- "created here" side of the rule in `contextSwitchSites_restore_pending`.
+        --
+        -- The REMOTE arm below is deliberately ungated: a cross-core
+        -- `.reschedule` SGI is a real poke at another processor and has nothing
+        -- to do with the missing restore.
+        if SeLe4n.Kernel.PriorityInheritance.contextRestoreSeamLive then
+            match handleRescheduleSgiOnCore st executingCore with
+            | .ok st' => .ok (st', none)
+            | .error e => .error e
+          else .ok (st, none)
         else .ok (st, some (rc, SgiKind.reschedule))
     | none => .ok (st, none)
   else .ok (st, none)
@@ -81,7 +99,10 @@ theorem priorityRescheduleOnCore_sgi_shape (st st' : SystemState)
   · split at h
     · next rc _ =>
       split at h
-      · split at h <;> simp_all
+      · -- Both local sub-arms return `none` (gated: `(st, none)`; live: the
+        -- handler's `(st', none)`), so a `some` SGI is absurd either way.
+        repeat' split at h
+        all_goals simp_all
       · next hne =>
         rw [Except.ok.injEq, Prod.mk.injEq] at h
         obtain ⟨-, hSgi⟩ := h

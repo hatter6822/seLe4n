@@ -2456,16 +2456,26 @@ theorem resumeThreadOnCore_confinedToCores (st st' : SystemState)
           (resumeReadyMidState_confinedToCores st vtid.val)
           (enqueueRunnableOnCore_confinedToCores _ (determineTargetCore st vtid.val) vtid.val)
       split at hStep
-      · -- LOCAL: the home core is the executing core, reschedule runs inline.
-        -- `[target] ++ [executingCore]` *is* the declared set, definitionally.
+      · -- LOCAL: PR #861 review round 32 gated the inline reschedule on the
+        -- context-restore seam, so there is one more `split` than before.  With
+        -- the seam dark the state is the enqueued mid-state and the prefix
+        -- bound is already the whole story; when SM9.E flips the flag the
+        -- `handleRescheduleSgiOnCore_confinedToCores` step below carries it.
         split at hStep
-        · next st4 hResched =>
-          rw [Except.ok.injEq, Prod.mk.injEq] at hStep
+        · split at hStep
+          · next st4 hResched =>
+            rw [Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨hs, -⟩ := hStep
+            subst hs
+            exact observableSlotsConfinedToCores_trans hPre
+              (handleRescheduleSgiOnCore_confinedToCores _ st4 executingCore hResched)
+          · exact absurd hStep (by simp)
+        · rw [Except.ok.injEq, Prod.mk.injEq] at hStep
           obtain ⟨hs, -⟩ := hStep
           subst hs
-          exact observableSlotsConfinedToCores_trans hPre
-            (handleRescheduleSgiOnCore_confinedToCores _ st4 executingCore hResched)
-        · exact absurd hStep (by simp)
+          exact observableSlotsConfinedToCores_mono
+            (fun _ hm => by simp only [resumeThreadOnCoreWriteSet, List.mem_cons,
+              List.not_mem_nil, or_false] at hm ⊢; simp_all) hPre
       · -- REMOTE: the SGI is returned, not applied, so only the home core moves.
         rw [Except.ok.injEq, Prod.mk.injEq] at hStep
         obtain ⟨hs, -⟩ := hStep

@@ -4170,12 +4170,19 @@ theorem priorityRescheduleOnCore_preserves_projection
   split at hStep
   · split at hStep
     · split at hStep
-      · split at hStep
-        · next stOut hResched =>
-          rw [Except.ok.injEq, Prod.mk.injEq] at hStep
+      · -- PR #861 review round 32: the local arm is gated on the context-restore
+        -- seam, so there is one more `split` here than before — the gated branch
+        -- leaves the state at `stMid`, which `hMid` already covers.
+        split at hStep
+        · split at hStep
+          · next stOut hResched =>
+            rw [Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨hs, -⟩ := hStep
+            exact hs ▸ hReschedProj _ stOut _ hMid hResched
+          · exact absurd hStep (by simp)
+        · rw [Except.ok.injEq, Prod.mk.injEq] at hStep
           obtain ⟨hs, -⟩ := hStep
-          exact hs ▸ hReschedProj _ stOut _ hMid hResched
-        · exact absurd hStep (by simp)
+          exact hs ▸ hMid
       · rw [Except.ok.injEq, Prod.mk.injEq] at hStep
         obtain ⟨hs, -⟩ := hStep
         exact hs ▸ hMid

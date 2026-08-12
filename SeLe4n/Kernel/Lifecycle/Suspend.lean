@@ -11,6 +11,7 @@ import SeLe4n.Kernel.Lifecycle.Operations
 import SeLe4n.Kernel.Scheduler.Operations
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.Propagate
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.Compute
+import SeLe4n.Kernel.Concurrency.ContextRestoreSeam
 
 /-! # D1: Thread Suspension & Resumption
 
@@ -292,9 +293,26 @@ def resumeThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThreadId) (executi
         -- LOCAL: run the per-core reschedule handler inline on the executing core
         -- (the exact handler the remote core would run on the SGI) — preemption-gated
         -- and switch-based (no inversion, no drop).  No SGI is returned.
-        match handleRescheduleSgiOnCore st3 executingCore with
-        | .ok st4 => .ok (st4, none)
-        | .error e => .error e
+        -- PR #861 review rounds 23/28/32: the LOCAL arm is gated on the hardware
+        -- context-restore seam.  It records a successor in `currentOnCore`, but
+        -- with `contextRestoreSeamLive` still `false` the SVC path returns
+        -- through the *caller's* frame, so the next syscall from this core is
+        -- attributed to a thread that never started running.
+        --
+        -- This PR made that reachable here: before it, the arm was boot-pinned,
+        -- so executing on a secondary core poked the boot core rather than
+        -- switching this one.  Rerouting per-core is the right fix and it is
+        -- what newly enables the local switch, which puts this on the
+        -- "created here" side of the rule in `contextSwitchSites_restore_pending`.
+        --
+        -- The REMOTE arm below is deliberately ungated: a cross-core
+        -- `.reschedule` SGI is a real poke at another processor and has nothing
+        -- to do with the missing restore.
+        if SeLe4n.Kernel.PriorityInheritance.contextRestoreSeamLive then
+          match handleRescheduleSgiOnCore st3 executingCore with
+          | .ok st4 => .ok (st4, none)
+          | .error e => .error e
+        else .ok (st3, none)
       else
         -- REMOTE: hand the home core a `.reschedule` SGI so it runs the same handler.
         .ok (st3, some (target, SgiKind.reschedule))

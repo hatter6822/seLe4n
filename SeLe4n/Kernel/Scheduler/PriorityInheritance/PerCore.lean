@@ -1215,17 +1215,16 @@ theorem resumeThreadOnCore_sets_threadState (st : SystemState) (vtid : SeLe4n.Va
   by_cases hLoc : (determineTargetCore st vtid.val == ec) = true
   · -- LOCAL: the inline `handleRescheduleSgiOnCore` frames out `tid` (not `ec`'s
     -- current), so `tid` keeps the `.Ready` it had in `st3`.
-    simp only [hLoc, if_true] at h
-    cases hH : handleRescheduleSgiOnCore (enqueueRunnableOnCore (resumeReadyMidState st vtid.val)
-        (determineTargetCore st vtid.val) vtid.val) ec with
-    | error e => rw [hH] at h; simp at h
-    | ok st4 =>
-      rw [hH] at h
-      simp only [Except.ok.injEq, Prod.mk.injEq] at h
-      obtain ⟨hst4, _⟩ := h
-      subst hst4
-      rw [handleRescheduleSgiOnCore_getTcb?_ne_current _ ec vtid.val st4 hst3inv hst3cur hH]
-      exact ⟨t3, hst3get, hst3ready⟩
+    -- PR #861 review round 32: the local arm is gated on the context-restore
+    -- seam, and the flag is a literal `false`, so this branch now returns the
+    -- enqueued state `st3` unchanged — the same shape as REMOTE below.  When
+    -- SM9.E flips the constant this reduction stops firing and the
+    -- `handleRescheduleSgiOnCore_getTcb?_ne_current` step returns.
+    simp only [hLoc, if_true, contextRestoreSeamLive, Bool.false_eq_true, if_false] at h
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨hst', _⟩ := h
+    subst hst'
+    exact ⟨t3, hst3get, hst3ready⟩
   · -- REMOTE: the result is the enqueued state `st3` directly.
     simp only [Bool.not_eq_true] at hLoc
     simp only [hLoc, Bool.false_eq_true, if_false] at h
@@ -1251,16 +1250,12 @@ theorem resumeThreadOnCore_preserves_objects_invExt (st : SystemState) (vtid : S
   simp only [resumeThreadOnCore, hGet] at h
   rw [if_neg (by simp [hInactive])] at h
   by_cases hLoc : (determineTargetCore st vtid.val == ec) = true
-  · simp only [hLoc, if_true] at h
-    cases hH : handleRescheduleSgiOnCore (enqueueRunnableOnCore (resumeReadyMidState st vtid.val)
-        (determineTargetCore st vtid.val) vtid.val) ec with
-    | error e => rw [hH] at h; simp at h
-    | ok st4 =>
-      rw [hH] at h
-      simp only [Except.ok.injEq, Prod.mk.injEq] at h
-      obtain ⟨hst4, _⟩ := h
-      subst hst4
-      exact handleRescheduleSgiOnCore_preserves_objects_invExt _ ec st4 hst3inv hH
+  · -- Round 32: gated local arm — the state is `st3` (see the note above).
+    simp only [hLoc, if_true, contextRestoreSeamLive, Bool.false_eq_true, if_false] at h
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨hst', _⟩ := h
+    subst hst'
+    exact hst3inv
   · simp only [Bool.not_eq_true] at hLoc
     simp only [hLoc, Bool.false_eq_true, if_false] at h
     simp only [Except.ok.injEq, Prod.mk.injEq] at h
@@ -1299,14 +1294,13 @@ theorem resumeThreadOnCore_local_no_sgi (st : SystemState) (vtid : SeLe4n.ValidT
     sgi = none := by
   simp only [resumeThreadOnCore, hGet] at h
   rw [if_neg (by simp [hInactive])] at h
-  simp only [hLocal, beq_self_eq_true, if_true] at h
-  cases hH : handleRescheduleSgiOnCore (enqueueRunnableOnCore (resumeReadyMidState st vtid.val)
-      ec vtid.val) ec with
-  | error e => rw [hH] at h; simp at h
-  | ok st4 =>
-    rw [hH] at h
-    simp only [Except.ok.injEq, Prod.mk.injEq] at h
-    exact h.2.symm
+  -- Round 32: the local arm is gated on the context-restore seam, so it returns
+  -- `(st3, none)` directly.  The conclusion is unchanged — a local resume still
+  -- posts no SGI — and it is now true for a simpler reason.
+  simp only [hLocal, beq_self_eq_true, if_true, contextRestoreSeamLive,
+    Bool.false_eq_true, if_false] at h
+  simp only [Except.ok.injEq, Prod.mk.injEq] at h
+  exact h.2.symm
 
 /-- WS-SM SM5.F.6: a REMOTE complete resume succeeds and returns the `.reschedule`
 SGI to the resumed thread's home core. -/
@@ -2062,18 +2056,33 @@ introduced are gated on `contextRestoreSeamLive`:
 * `.vacatedCoreSuccessor` — created in round 17, guarded by
   `scheduleLocalSuccessorLive`;
 * the `.schedContextUnbind` local reschedule — created in round 15, guarded by
-  `SchedContextOps.unbindRescheduleTarget?` (its *remote* arm is ungated, since
-  a cross-core `.reschedule` SGI is a real poke at another processor and has
-  nothing to do with the missing restore).
+  `SchedContextOps.unbindRescheduleTarget?`;
+* `priorityRescheduleOnCore`'s local arm — shared by `.tcbSetPriority`,
+  `.tcbSetMCPriority` and (redundantly, above the call-site guard)
+  `.schedContextUnbind`;
+* `resumeThreadOnCore`'s local arm, behind `.tcbResume`.
 
-Everything else predates this PR and stays ungated, because gating it would not
-buy what it appears to.  `.timerPreemption` fires on every tick, so gating a
-syscall-path switch does not prevent a misattributed context — it delays it by
-one tick.  A partial gate that reads as a fix is worse than an enumerated gap,
-which is why the remedy for the rest is this register rather than more guards.
-`resumeThreadOnCore`'s local arm and the priority ops' preemption check are
-both `.rescheduleSgi`, already listed, and both predate this PR (the priority
-check was boot-pinned before it was rerouted).  SM9.E wires all four or none.
+In each case the *remote* arm is deliberately ungated: a cross-core
+`.reschedule` SGI is a real poke at another processor and has nothing to do
+with the missing restore.
+
+**A correction (round 32).** The last two were declined in rounds 23 and 28 on
+the grounds that their scheduling points predate this PR.  That was the wrong
+granularity.  The *point* is old; the **local switch on a secondary core** is
+new, because both arms were boot-pinned before this cut rerouted them — running
+`.tcbSetPriority` on core 2 used to poke the boot core, not switch core 2.  So
+they sit on the "created here" side of the rule after all, and they are gated
+now.
+
+The supporting argument offered at the time — that `.timerPreemption` is
+ungated and fires every tick, so gating a syscall path only delays a
+misattributed context rather than preventing one — is true, and is a statement
+about how *incomplete* the mitigation is, not a licence to skip it.  It applied
+equally to the two sites that were gated, which is what made the position
+inconsistent.
+
+`.timerPreemption` remains the one ungated site, and cannot be gated: it is how
+threads get scheduled at all.  SM9.E closes it with the rest.
 
 All the guards read the one flag, which since round 29 lives in
 `SeLe4n.Kernel.Concurrency.ContextRestoreSeam` — low enough that the
