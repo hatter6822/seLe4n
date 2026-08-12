@@ -22,13 +22,14 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-cd "${REPO_ROOT}"
+cd "${REPO_ROOT}" || exit 1
 
 # shellcheck source=/dev/null
 source "${SCRIPT_DIR}/test_lib.sh"
 
 FIXTURE_DIR="SeLe4n/Kernel"
 FIXTURE="${FIXTURE_DIR}/CodeViewWiringWitness.lean"
+# shellcheck disable=SC2317  # invoked by the EXIT trap below, not by name
 cleanup() { rm -f "${REPO_ROOT}/${FIXTURE}" "${REPO_ROOT}/.lake/build/leancodeview/${FIXTURE}"; }
 trap cleanup EXIT
 
@@ -45,6 +46,7 @@ LEANEOF
 # the verdict is read off `FAILURE_COUNT` instead of the exit status.  Driving
 # `run_check` itself rather than `_run_with_view` is the point: the routing
 # decision has to be reached through the function the 1696 anchors call.
+# shellcheck disable=SC2034  # read by run_check/finalize_report in test_lib.sh
 CONTINUE_MODE=1
 failures=0
 note() { echo "[code-view-wiring] $*"; }
