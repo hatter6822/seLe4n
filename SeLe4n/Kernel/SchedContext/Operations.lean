@@ -475,12 +475,26 @@ def schedContextBind (vScId : ValidObjId) (vThreadId : ValidThreadId) : Kernel U
 
 /-- Z5-H1/H2/H3: Unbind a thread from a SchedContext.
 1. Verify the SchedContext has a bound thread
-2. (H1) If bound thread is the current thread, clear current to trigger
-   rescheduling — prevents unbinding the running thread without preemption
-3. (H2) If thread is in RunQueue, remove it (it will be re-enqueued at
-   legacy TCB priority by the next schedule call if still runnable)
+2. (H1) If the bound thread is **running on some core**, clear that core's
+   current slot to trigger rescheduling — the core is found by
+   `runningCoreOf?`, not by `determineTargetCore`, because the two diverge for
+   an unbound-affinity thread running on a secondary core (PR #861 review
+   rounds 39/40) and the wrapper's scheduling point reads the former
+3. (H2) Re-bucket the thread on its **home** core at its post-unbind legacy
+   TCB priority — removed and re-inserted if it was queued, inserted if it was
+   current, in **this** transition
 4. Clear both sides of the bidirectional binding
 5. (H3) Remove SchedContext from replenish queue
+
+**The re-bucket is immediate, not deferred** (PR #861 review rounds 38/40).
+This step used to remove the thread and say "it will be re-enqueued at legacy
+TCB priority by the next schedule call if still runnable".  Nothing does:
+`chooseThreadOnCore` selects exclusively from `runQueueOnCore` and never scans
+ready TCBs, and an unbound thread is fully schedulable (the `.unbound` arm of
+`resolveEffectivePrioDeadline` returns the legacy TCB priority rather than
+making the thread passive).  A successful unbind therefore left a runnable
+thread ready and permanently unschedulable.  Callers and proof authors should
+not reason about an intermediate non-runnable state: there is none.
 
 **AL8 (WS-AL / AK7-E.cascade)**: `scId` is `ValidObjId` for compile-time
 sentinel rejection. -/
@@ -497,17 +511,39 @@ def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
       | some tid =>
         match st.getTcb? tid with
         | some tcb =>
-          -- Z5-H1: Preemption guard — if bound thread is current, clear current
-          -- to force rescheduling. Under dequeue-on-dispatch, the current thread
-          -- is not in the RunQueue, so clearing current is sufficient.
-          -- WS-SM SM8.B (review round 13): the unbound thread's HOME core.  Keyed
-          -- on `bootCoreId` the preemption guard never fired for a thread current
-          -- on a secondary core, which kept running at its now-revoked SC priority.
+          -- Z5-H1: Preemption guard — if the bound thread is current, clear
+          -- current to force rescheduling.  Under dequeue-on-dispatch the
+          -- current thread is not in the RunQueue, so clearing current is
+          -- sufficient to take it off the processor.
+          --
+          -- WS-SM SM8.B (review round 13): keyed on `bootCoreId` the guard never
+          -- fired for a thread current on a secondary core, which kept running
+          -- at its now-revoked SC priority.
+          --
+          -- WS-SM SM8.B (review round 39): …and keying it on the *home* core was
+          -- still wrong, because the guard and the scheduling point that follows
+          -- it were reading **different cores**.  `schedContextUnbindOnCore`
+          -- resolves its reschedule target through `runningCoreOf?` — the core
+          -- actually executing the thread — while this guard used
+          -- `determineTargetCore`, the affinity home.  Those agree whenever
+          -- affinity is set, since a thread is only dispatched on a core its
+          -- affinity admits; they diverge for an **unbound-affinity thread
+          -- running on a secondary core**, which is admitted (see
+          -- `runningCoreOf?`).  In that case home is boot, `wasCurrent` was
+          -- false, and the thread was left current on the secondary core AND
+          -- absent from every run queue — the round-13 defect surviving one
+          -- field over.  Both halves now read `runningCoreOf?`.
+          --
+          -- The *queue* side below stays on the home core, and deliberately: an
+          -- unbound thread belongs on its home core's run queue, which is where
+          -- the next selection will look for it.
           let unbindHome := determineTargetCore st tid
-          let wasCurrent := (st.scheduler.currentOnCore unbindHome) == some tid
-          let st0 := if wasCurrent then
-            { st with scheduler := st.scheduler.setCurrentOnCore unbindHome none }
-          else st
+          let runCore? := runningCoreOf? st tid
+          let wasCurrent := runCore?.isSome
+          let st0 := match runCore? with
+            | some runCore =>
+                { st with scheduler := st.scheduler.setCurrentOnCore runCore none }
+            | none => st
           -- Z5-H2: re-bucket the thread at its post-unbind (legacy) priority.
           --
           -- WS-SM SM8.B (PR #861 review round 14): this used to **remove** the

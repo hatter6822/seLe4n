@@ -1256,42 +1256,49 @@ a two-core victim is *not* confined to one of them; the retype writes remote
 while its two VSpace siblings do not.  Tier 3 pins the new symbols and pins
 the empty allowlist **negatively**, so a waiver cannot quietly return.
 
-#### Round 39 — the unbind guard and its reschedule key on different cores
+#### Rounds 39/40 — the unbind guard and its reschedule now key on one core
 
-Found while verifying a review finding that turned out not to hold. The finding
-asked for a local reschedule after `schedContextUnbind` clears the executing
-core's `current`; the live arm already has one — `schedContextUnbindOnCore`
-calls the **ungated** `priorityRescheduleOnCore` and resolves its target through
-`schedContextRunningCore?`, which is `runningCoreOf?`, so a caller unbinding its
-own SC on the core it runs on does get the inline scheduling point.
+`schedContextUnbind`'s preemption guard cleared `currentOnCore unbindHome`,
+where `unbindHome = determineTargetCore st tid` — the *affinity home* — while
+`schedContextUnbindOnCore` resolves its reschedule through
+`schedContextRunningCore?`, which is `runningCoreOf?` — the core the thread is
+*actually running on*.
 
-What verification did surface is a **key mismatch** between the two halves:
+They agree whenever affinity is set, because a thread is only dispatched on a
+core its affinity admits.  They diverge for an **unbound-affinity thread running
+on a secondary core**, which the model admits (the SM6.E review-4 case that
+`runningCoreOf?` exists for): home is boot, so `wasCurrent` was false, the thread
+was neither cleared from the secondary core's `current` slot nor enqueued, and
+the reschedule then ran against a state that still had it current.  Same class
+as the round-13 defect, one field over.
 
-* the inner transition's preemption guard clears `currentOnCore unbindHome`,
-  where `unbindHome = determineTargetCore st tid` — the *affinity home*;
-* the wrapper's reschedule fires at `runningCoreOf? st tid` — the core the
-  thread is *actually* running on.
+Found while verifying a round-39 review comment that asked for a local
+reschedule after unbind — which the live arm already has, since
+`schedContextUnbindOnCore` calls the **ungated** `priorityRescheduleOnCore`.
+Round 40's reviewer reached the same divergence independently.
 
-These agree whenever affinity is set, because a thread is only dispatched on a
-core its affinity admits. They diverge for an **unbound-affinity thread running
-on a secondary core**, which is admitted (the SM6.E review-4 case that
-`runningCoreOf?` exists for): home is boot, `wasCurrent` is therefore false, the
-thread is neither cleared from the secondary core's `current` slot nor enqueued,
-and the reschedule then runs against a state that still has it current. Same
-class as the round-15 defect, one field over.
+**Fixed.**  Both halves read `runningCoreOf?`.  The *queue* side deliberately
+stays on the home core: an unbound thread belongs on its home core's run queue,
+which is where the next selection looks for it.  `runningCoreOf?` moved from
+`Lifecycle/Suspend.lean` down to `Scheduler/Operations/Core.lean` — the lowest
+module both paths can see, and the natural home for a "which core runs this
+thread" query — with an `export` preserving `Lifecycle.Suspend.runningCoreOf?`
+for every existing qualified reference.
 
-**Not fixed in this cut, and the reason is scope rather than difficulty.** The
-surgical change is to key the *guard* on the running core while leaving the
-run-queue re-bucket and the replenishment purge on the home core — both of which
-are correct as they stand. But `runningCoreOf?` lives in `Lifecycle/Suspend.lean`,
-which `SchedContext/Operations.lean` cannot import, and the right answer is to
-move it down to a module both can see (the move this PR already made for
-`contextRestoreSeamLive`) rather than to add a fourth copy of a two-line
-`allCores.find?`. That is a namespace change touching every qualified reference,
-and it should not be rushed in behind a security fix.
+The confinement proof rejected the widened footprint, which is what it is for.
+`schedContextUnbindWriteSet` is now its own set naming both cores, split out
+from `schedContextWriteSet` so `.schedContextConfigure`'s bound stays sharp —
+configure only re-buckets, so the running core is not in its footprint and
+declaring it would weaken a statement for nothing.
 
-**Closure target: SM8.C**, with the move as its first step. Registered rather
-than deferred silently: the defect is reachable, and the fix is known.
+**Still open, and deliberately so.**  While `contextRestoreSeamLive` is false, a
+local reschedule moves the model's `current` without hardware following.  Round
+33 kept the unbind's reschedule ungated because the alternative then — a cleared
+`current` with no successor and nothing to resolve it — was worse.  Round 38's
+immediate re-bucket changed that precondition: the thread is now enqueued, so a
+gated local arm would leave a coherent state that the next timer tick resolves.
+Re-gating is therefore sound now and was not before.  It reverses a decision
+taken with the maintainer in round 33, so it is raised rather than applied.
 
 #### Registered debt (deferred out of SM8.B, scheduled to be fixed)
 

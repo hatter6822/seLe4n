@@ -2990,8 +2990,28 @@ def schedContextWriteSet (st : SystemState) (scObjId : SeLe4n.ObjId) : List Core
   | some tid => [determineTargetCore st tid]
   | none     => []
 
+/-- SM8.B.2: **the cores a `.schedContextUnbind` may write** — the subject's
+home core *and* the core actually running it.
+
+Deliberately **not** `schedContextWriteSet` (PR #861 review round 39/40).  The
+two differ, and the difference is the defect this set exists to make visible:
+the run-queue re-bucket lands on the subject's **home** core, while the
+preemption guard clears `current` on the core actually **running** it.  Those
+coincide whenever affinity is set — a thread is only dispatched on a core its
+affinity admits — and diverge for an unbound-affinity thread running on a
+secondary core, which is admitted (see `runningCoreOf?`).
+
+Keeping `schedContextWriteSet` at the singleton keeps `.schedContextConfigure`'s
+bound sharp: configure only re-buckets, so the running core is not in its
+footprint and declaring it would weaken a statement for no reason. -/
+def schedContextUnbindWriteSet (st : SystemState) (scObjId : SeLe4n.ObjId) :
+    List CoreId :=
+  match schedContextSubject? st scObjId with
+  | some tid => determineTargetCore st tid :: (runningCoreOf? st tid).toList
+  | none     => []
+
 /-- SM8.B.2 (**the live `.schedContextUnbind` bound**): unbinding writes no core
-outside `schedContextWriteSet`.
+outside `schedContextUnbindWriteSet`.
 
 The transition's scheduler effects are a `setCurrentOnCore` and a
 `setRunQueueOnCore`, both at the subject's home core, plus a
@@ -3001,8 +3021,9 @@ it does is object-store and index writes. -/
 theorem schedContextUnbind_confinedToCores (vScId : SeLe4n.ValidObjId)
     (st st' : SystemState)
     (hStep : SchedContextOps.schedContextUnbind vScId st = .ok ((), st')) :
-    observableSlotsConfinedToCores st st' (schedContextWriteSet st vScId.val) := by
-  unfold SchedContextOps.schedContextUnbind schedContextWriteSet schedContextSubject? at *
+    observableSlotsConfinedToCores st st' (schedContextUnbindWriteSet st vScId.val) := by
+  unfold SchedContextOps.schedContextUnbind schedContextUnbindWriteSet
+    schedContextSubject? at *
   split at hStep
   · next sc hSc =>
     simp only [hSc]
@@ -3016,10 +3037,12 @@ theorem schedContextUnbind_confinedToCores (vScId : SeLe4n.ValidObjId)
         obtain ⟨-, hs⟩ := hStep
         subst hs
         refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro c hc <;>
-          simp only [List.mem_singleton] at hc <;>
-          -- The setters are at the subject's home core; `hc` says `c` is not it.
-          -- Orient the disequality the `_ne` lemmas expect before simplifying.
-          (have hne : determineTargetCore st tid ≠ c := fun h => hc h.symm) <;>
+          -- Two cores now: the re-bucket's home core and the guard's running
+          -- core.  `hc` rules out both; orient each disequality the way the
+          -- `_ne` lemmas expect before simplifying.
+          simp only [List.mem_cons, Option.mem_toList, not_or] at hc <;>
+          (have hne : determineTargetCore st tid ≠ c := fun h => hc.1 h.symm) <;>
+          (have hcRun : runningCoreOf? st tid ≠ some c := hc.2) <;>
           (repeat' split) <;>
           -- the replenish-queue setters are not in this transition's footprint;
           -- their five frames were carried here and never fired
@@ -3042,12 +3065,12 @@ theorem schedContextUnbind_confinedToCores (vScId : SeLe4n.ValidObjId)
   · exact absurd hStep (by simp)
 
 /-- SM8.B.2 (**the live `.schedContextUnbind` non-interference**): unbinding is
-invisible on every core outside the subject's home core, with no hypothesis on
-the subject's clearance. -/
+invisible on every core outside the subject's home core and the core running
+it, with no hypothesis on the subject's clearance. -/
 theorem schedContextUnbind_crossCoreNonInterference (ctx : LabelingContext)
     (observer : IfObserver) (vScId : SeLe4n.ValidObjId) (st st' : SystemState) (c : CoreId)
     (hStep : SchedContextOps.schedContextUnbind vScId st = .ok ((), st'))
-    (hne : c ∉ schedContextWriteSet st vScId.val)
+    (hne : c ∉ schedContextUnbindWriteSet st vScId.val)
     (hShared : sharedViewUnchanged ctx observer st st') :
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
   crossCoreNonInterference_ofCores ctx observer hne
@@ -3475,7 +3498,7 @@ over-approximates by one core on that path — over-approximating is the safe
 direction, and it is the shape `resumeThreadOnCoreWriteSet` already uses. -/
 def schedContextUnbindOnCoreWriteSet (st : SystemState) (scObjId : SeLe4n.ObjId)
     (executingCore : CoreId) : List CoreId :=
-  schedContextWriteSet st scObjId ++ [executingCore]
+  schedContextUnbindWriteSet st scObjId ++ [executingCore]
 
 /-- SM8.B.2 (**the live `.schedContextUnbind` bound**): the per-core unbind
 writes no core outside the demoted thread's home and the executing core.

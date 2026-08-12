@@ -669,22 +669,12 @@ def clearPendingState (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :
 -- D1-G: suspendThread (composite)
 -- ============================================================================
 
-/-- WS-SM SM6.E (PR #831 review 4, P1): the core **actually running** `tid` —
-the first core whose current slot holds it (`none` when not current anywhere).
-`determineTargetCore` is the wake/queue *home* (affinity defaulting to boot),
-but the two can diverge: unbinding a thread running on a secondary core is
-admitted (`setThreadCpuAffinityWithMigration`'s reject gate fires only when
-the NEW affinity forbids the running core, and `cpuAffinity = none` admits
-every core), leaving the thread current on that core while its home reverts
-to `bootCoreId`.  A suspend must deschedule and poke the running core, not
-the home — descheduling only the home would mark the victim `.Inactive`
-while the secondary core keeps executing it.  Completeness of the
-first-match scan rests on `currentThreadUniqueAcrossCores`
-(`Scheduler/Invariant/PerCore.lean`, audit closure): a thread is current on
-at most one core. -/
-def runningCoreOf? (st : SystemState) (tid : SeLe4n.ThreadId) : Option CoreId :=
-  SeLe4n.Kernel.Concurrency.allCores.find? (fun c =>
-    st.scheduler.currentOnCore c == some tid)
+-- WS-SM SM8.B (PR #861 review round 39): `runningCoreOf?` moved down to
+-- `Scheduler/Operations/Core.lean` so the unbind path can key its preemption
+-- guard on it (see the definition's docstring).  Re-exported here so
+-- `Lifecycle.Suspend.runningCoreOf?` keeps resolving for every existing
+-- qualified reference.
+export SeLe4n.Kernel (runningCoreOf?)
 
 /-- WS-SM SM6.E (PR #831 review 2): snapshot of core `ec`'s current thread and
 its *effective* run-queue priority (`resolveEffectivePrioDeadline`), taken at

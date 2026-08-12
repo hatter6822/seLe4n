@@ -1951,6 +1951,18 @@ run_check "INVARIANT" rg -n '^theorem syscallDelegates_lifecycleRetype' SeLe4n/K
 # Anchored positively (the guard exists, and the pipeline calls it) and
 # negatively (the rejection cannot be softened to a warning or dropped).
 run_check "INVARIANT" rg -n '^def threadCurrentOnSomeCore' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
+# Rounds 39/40: the unbind's preemption guard and its scheduling point must read
+# the SAME core.  The guard was keyed on the affinity home while
+# `schedContextUnbindOnCore` reschedules at `runningCoreOf?`; those diverge for
+# an unbound-affinity thread on a secondary core.  Pinned positively (the guard
+# reads the running core) and negatively (it must not go back to the home core).
+run_check "INVARIANT" rg -n 'let runCore\? := runningCoreOf\? st tid' SeLe4n/Kernel/SchedContext/Operations.lean
+run_negative_check "INVARIANT" rg -n 'let wasCurrent := \(st\.scheduler\.currentOnCore unbindHome\)' SeLe4n/Kernel/SchedContext/Operations.lean
+run_check "INVARIANT" rg -n '^def schedContextUnbindWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+# `runningCoreOf?` moved down so the unbind path can see it; the `export` keeps
+# `Lifecycle.Suspend.runningCoreOf?` resolving for every existing reference.
+run_check "INVARIANT" rg -n '^def runningCoreOf\?' SeLe4n/Kernel/Scheduler/Operations/Core.lean
+run_check "INVARIANT" rg -n '^export SeLe4n\.Kernel \(runningCoreOf\?\)' SeLe4n/Kernel/Lifecycle/Suspend.lean
 run_check "INVARIANT" rg -n '^def retypeRunningTargetRejected' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
 run_check "INVARIANT" rg -n 'if threadCurrentOnSomeCore st tcb\.tid then' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
 run_negative_check "INVARIANT" bash -c "rg -q 'threadCurrentOnSomeCore' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean && ! rg -q 'revocationRequired' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean"
@@ -2431,7 +2443,9 @@ run_check "INVARIANT" rg -n '^@\[inline\] def pipChainStart_tcbSuspend' SeLe4n/K
 # PR #831 review 4: the running-core resolution (an unbound victim current on
 # a secondary core is descheduled + poked on THAT core), the re-keyed diff
 # rules, and the write-set-honest sweeps + neighbour-TCB footprint members.
-run_check "INVARIANT" rg -n '^def runningCoreOf\?' SeLe4n/Kernel/Lifecycle/Suspend.lean
+# Rounds 39/40: the definition moved to `Scheduler/Operations/Core.lean` so the
+# unbind path can key its guard on it; `Suspend.lean` re-exports the name.
+run_check "INVARIANT" rg -n '^def runningCoreOf\?' SeLe4n/Kernel/Scheduler/Operations/Core.lean
 run_check "INVARIANT" rg -n '^theorem currentScan_boot_of_single_core' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
 run_check "INVARIANT" rg -n '^def cancelSpliceNeighbors\?' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 # Audit closure (v0.32.66): running-core footprint triple, EDF deadline rules,

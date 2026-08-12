@@ -2914,6 +2914,29 @@ private def unboundState : Option SystemState :=
   | .ok ((), post) => some post
   | .error _ => none
 
+/-- §5.8 fixture (round 39/40): the **divergence** — a bound thread with **no
+CPU affinity**, so `determineTargetCore` says boot, that is nevertheless
+*current on core 2*.  Admitted: `cpuAffinity = none` admits every core, so a
+thread can be dispatched on a secondary core and keep boot as its home.
+
+This is the state on which the unbind's two halves used to read different
+cores — the guard clearing `currentOnCore (determineTargetCore …)` = boot, the
+wrapper rescheduling at `runningCoreOf?` = core 2. -/
+private def unboundAffinityRunningRemoteState : SystemState :=
+  let withSc := crossCoreState.objects.insert replenishSc (.schedContext replenishScValue)
+  let withTcb := withSc.insert remoteHomedThread.toObjId
+    (.tcb { mkTcb 1018 40 none with
+              schedContextBinding := .bound replenishScId })
+  { crossCoreState with
+      objects := withTcb
+      scheduler := crossCoreState.scheduler.setCurrentOnCore c2 (some remoteHomedThread) }
+
+private def unboundDivergentPost : Option SystemState :=
+  match SeLe4n.Kernel.SchedContextOps.schedContextUnbind replenishScValidId
+          unboundAffinityRunningRemoteState with
+  | .ok ((), post) => some post
+  | .error _ => none
+
 /-- §5.6  The replenish queue (review round 17, the eighth boot-pinned site).
 
 Replenishments are enqueued per core and drained by that core's tick, so a
@@ -2954,6 +2977,53 @@ private def runReplenishHomeCoreChecks : IO Unit := do
   assertBool "NEGATIVE: an unbound SC resolves to the boot core, not core 2"
     (decide (SeLe4n.Kernel.SchedContextOps.schedContextReplenishHome
       replenishState { replenishScValue with boundThread := none } = c0))
+
+/-- §5.8  The unbind guard and its scheduling point read the SAME core
+(rounds 39/40).
+
+The guard used `determineTargetCore` — the affinity *home* — while
+`schedContextUnbindOnCore` resolved its reschedule through `runningCoreOf?` —
+the core actually executing the thread.  Those agree whenever affinity is set,
+because a thread is only dispatched on a core its affinity admits.  They
+diverge for an unbound-affinity thread running on a secondary core, and there
+the guard fired on the wrong core: the thread stayed current on core 2 *and*
+was absent from every run queue, which is the round-13 defect one field over. -/
+private def runUnbindCoreAgreementChecks : IO Unit := do
+  IO.println "--- §5.8 the unbind guard and its reschedule read one core ---"
+  -- the fixture is the divergence, and it is not vacuous
+  assertBool "the fixture really diverges: home is boot, running core is 2"
+    (decide (SeLe4n.Kernel.determineTargetCore unboundAffinityRunningRemoteState
+               remoteHomedThread = c0)
+      && decide (SeLe4n.Kernel.runningCoreOf? unboundAffinityRunningRemoteState
+                   remoteHomedThread = some c2))
+  assertBool "the unbind succeeds on it"
+    (decide (unboundDivergentPost.isSome = true))
+  -- THE FIX: the thread is taken off the core it was actually running on.
+  assertBool "core 2's current slot is cleared — the core it really ran on"
+    (match unboundDivergentPost with
+     | none => false
+     | some post => decide (post.scheduler.currentOnCore c2 = none))
+  -- …and it lands on its home queue, so the next selection can find it.
+  assertBool "…and it is enqueued on its HOME core, which is boot"
+    (match unboundDivergentPost with
+     | none => false
+     | some post =>
+       decide ((post.scheduler.runQueueOnCore c0).contains remoteHomedThread = true))
+  -- LOAD-BEARING NEGATIVE: the pre-fix behaviour, stated so it cannot return.
+  -- Keying the guard on the home core would have left core 2 still running the
+  -- thread, because boot's current slot never held it in the first place.
+  assertBool "NEGATIVE: boot's current slot never held it, so a home-keyed guard was a no-op"
+    (decide (unboundAffinityRunningRemoteState.scheduler.currentOnCore c0
+               ≠ some remoteHomedThread))
+  -- …and the thread is genuinely nowhere afterwards but its home queue: not
+  -- current on any core, which is what "taken off the processor" means.
+  assertBool "the demoted thread is current on NO core afterwards"
+    (match unboundDivergentPost with
+     | none => false
+     | some post => decide (SeLe4n.Kernel.runningCoreOf? post remoteHomedThread = none))
+  -- The affinity-matched case still behaves: home and running core coincide.
+  assertBool "the affinity-matched unbind is unchanged (home = running core)"
+    (decide (SeLe4n.Kernel.determineTargetCore replenishState remoteHomedThread = c2))
 
 -- ============================================================================
 -- §5.7 fixtures — the destroy sweep, and the occupancy that bounds it
@@ -3510,6 +3580,7 @@ def runSmpInformationFlowChecks : IO Unit := do
   runVacatedCoreChecks
   runReplenishHomeCoreChecks
   runRetypeWriteSetChecks
+  runUnbindCoreAgreementChecks
   IO.println "===================================="
   IO.println "All SM8.A per-core observable-state and SM8.B non-interference checks PASS."
 

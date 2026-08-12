@@ -1615,6 +1615,33 @@ def migrateRunQueueOnAffinityChange (st : SystemState) (tid : SeLe4n.ThreadId)
         { st with scheduler := sched' }
       else st
 
+/-- WS-SM SM6.E (PR #831 review 4, P1): the core **actually running** `tid` —
+the first core whose current slot holds it (`none` when not current anywhere).
+`determineTargetCore` is the wake/queue *home* (affinity defaulting to boot),
+but the two can diverge: unbinding a thread running on a secondary core is
+admitted (`setThreadCpuAffinityWithMigration`'s reject gate fires only when
+the NEW affinity forbids the running core, and `cpuAffinity = none` admits
+every core), leaving the thread current on that core while its home reverts
+to `bootCoreId`.  A suspend must deschedule and poke the running core, not
+the home — descheduling only the home would mark the victim `.Inactive`
+while the secondary core keeps executing it.  Completeness of the
+first-match scan rests on `currentThreadUniqueAcrossCores`
+(`Scheduler/Invariant/PerCore.lean`, audit closure): a thread is current on
+at most one core.
+
+**Lives here, not in `Lifecycle/Suspend.lean`, since PR #861 review round 39.**
+The unbind path needs it too — its preemption guard was keyed on
+`determineTargetCore` while the wrapper's reschedule was keyed on this, and
+those diverge for exactly the case the paragraph above describes.  Fixing that
+required the predicate to be visible from `SchedContext/Operations.lean`, which
+cannot import `Suspend`; this module is the lowest one both can see, and a
+"which core runs this thread" query belongs with the scheduler operations
+regardless.  `Lifecycle.Suspend.runningCoreOf?` remains a working name via an
+`export`, so every existing qualified reference is unchanged. -/
+def runningCoreOf? (st : SystemState) (tid : SeLe4n.ThreadId) : Option CoreId :=
+  SeLe4n.Kernel.Concurrency.allCores.find? (fun c =>
+    st.scheduler.currentOnCore c == some tid)
+
 /-- WS-SM SM5.H.4 (plan §3.8, full thread migration): set a thread's CPU affinity
 **and** migrate everything that follows the thread to its new home core — its
 bound SchedContext's pending replenishments (`migrateSchedContextReplenishment`)

@@ -1,5 +1,42 @@
 ## v0.33.5 — SM8.B: per-core non-interference, at the transitions that really run
 
+**Review rounds 39/40 — the unbind guard and its scheduling point now read one
+core.**  `schedContextUnbind`'s preemption guard cleared
+`currentOnCore (determineTargetCore …)` — the affinity *home* — while
+`schedContextUnbindOnCore` resolves its reschedule through `runningCoreOf?` —
+the core actually executing the thread.  Those agree whenever affinity is set,
+because a thread is only dispatched on a core its affinity admits.  They diverge
+for an **unbound-affinity thread running on a secondary core**, which is
+admitted: home is boot, the guard therefore fired on a slot that never held the
+thread, and the thread was left current on the secondary core *and* absent from
+every run queue — the round-13 defect one field over.  I found this while
+verifying a round-39 review comment that turned out not to hold; round 40's
+reviewer reached the same divergence independently.
+
+Both halves now read `runningCoreOf?`.  The *queue* side deliberately stays on
+the home core: an unbound thread belongs on its home core's run queue, which is
+where the next selection looks.  To make that possible the predicate moved from
+`Lifecycle/Suspend.lean` down to `Scheduler/Operations/Core.lean` — the lowest
+module both the suspend and unbind paths can see, and where a "which core runs
+this thread" query belongs anyway — with an `export` keeping
+`Lifecycle.Suspend.runningCoreOf?` resolving for every existing reference.
+
+The confinement proof caught the widened footprint, which is what it is for:
+`schedContextUnbindWriteSet` is now its own set naming both cores, split out
+from `schedContextWriteSet` so `.schedContextConfigure`'s bound stays sharp —
+configure only re-buckets, so the running core is not in its footprint.
+
+Two contracts corrected in the same round, both describing behaviour earlier
+fixes had already replaced: `schedContextUnbind`'s said the queued thread is
+merely removed and re-enqueued by a later scheduling call (round 38 made the
+re-bucket immediate, because nothing re-enqueues), and `chooseThreadOnCore`'s
+said a malformed queue entry surfaces `.schedulerInvariantViolation` (round 15
+made both scans skip it, because surfacing it wedged the core permanently).
+
+Trace byte-identical; `SmpInformationFlowSuite` §5.8 adds seven assertions on
+the divergence fixture, including the load-bearing negative that boot's current
+slot never held the thread — so a home-keyed guard was a no-op there.
+
 **Review round 39 — SECURITY: the retype refuses to destroy a running thread.**
 `cleanupTcbReferences` sweeps every core and its step clears `currentOnCore c`
 wherever it finds the thread, the **executing** core included — where the caller
