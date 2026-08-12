@@ -4057,6 +4057,36 @@ theorem setThreadCpuAffinityOp_preserves_projection
     exact setThreadCpuAffinityWithMigration_preserves_projection ctx observer st vTargetTid.val
       affinity bootCoreId stWith sgi hTargetThreadHigh hTargetObjHigh hObjInv hWith
 
+/-- WS-SM SM8.B (PR #861 review round 42): the same, for the **live** wrapper.
+
+Round 37 rerouted `dispatchCapabilityOnly`'s `.tcbSetAffinity` arm to
+`setThreadCpuAffinityOnCore`, so the arm's discharge cited a theorem about the
+operation it no longer calls.  The boot-core theorem does transport — the
+committed state does not depend on the core argument
+(`setThreadCpuAffinityOp_eq_onCore_state`) — but making every caller perform
+that transport by hand is the wrong half of the fix, and a discharge table that
+names a retired wrapper is the kind of drift this surface keeps paying for.
+
+Stated directly instead, at arbitrary `executingCore`.  The proof is the
+boot-core one with the core generalised: the migration lemma already takes the
+core as an argument, so nothing about the argument's *value* was load-bearing —
+which is the same fact `setThreadCpuAffinityOnCore_state_core_independent`
+records operationally. -/
+theorem setThreadCpuAffinityOnCore_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st st' : SystemState) (vTargetTid : SeLe4n.ValidThreadId)
+    (affinity : Option SeLe4n.Kernel.Concurrency.CoreId)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (sgi : Option (SeLe4n.Kernel.Concurrency.CoreId × SeLe4n.Kernel.Concurrency.SgiKind))
+    (hTargetThreadHigh : threadObservable ctx observer vTargetTid.val = false)
+    (hTargetObjHigh : objectObservable ctx observer vTargetTid.val.toObjId = false)
+    (hObjInv : st.objects.invExt)
+    (hStep : setThreadCpuAffinityOnCore st vTargetTid affinity executingCore = .ok (st', sgi)) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  unfold setThreadCpuAffinityOnCore at hStep
+  exact setThreadCpuAffinityWithMigration_preserves_projection ctx observer st vTargetTid.val
+    affinity executingCore st' sgi hTargetThreadHigh hTargetObjHigh hObjInv hStep
+
 -- ============================================================================
 -- AK6-F Step 3: setPriorityOp preservation
 -- ============================================================================

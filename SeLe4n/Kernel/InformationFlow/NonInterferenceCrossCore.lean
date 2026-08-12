@@ -3013,11 +3013,20 @@ def schedContextUnbindWriteSet (st : SystemState) (scObjId : SeLe4n.ObjId) :
 /-- SM8.B.2 (**the live `.schedContextUnbind` bound**): unbinding writes no core
 outside `schedContextUnbindWriteSet`.
 
-The transition's scheduler effects are a `setCurrentOnCore` and a
-`setRunQueueOnCore`, both at the subject's home core, plus a
+The transition's scheduler effects are a `setCurrentOnCore` at the subject's
+**running** core and a `setRunQueueOnCore` at its **home** core, plus a
 `setReplenishQueueOnCore` — which touches no confined slot, the replenish queue
 being outside the six `observableSlotsConfinedToCores` fields.  Everything else
-it does is object-store and index writes. -/
+it does is object-store and index writes.
+
+The two cores are named separately because they genuinely differ (PR #861
+review rounds 40/42): for an affinity-free thread running on a secondary core
+the home is the boot core while `runningCoreOf?` is the secondary one, and the
+transition must clear the slot that actually holds the thread while re-queueing
+it where the next selection looks.  That is why `schedContextUnbindWriteSet`
+names both, and why it is a set of its own rather than `schedContextWriteSet` —
+`.schedContextConfigure` only re-buckets, so declaring the running core there
+would weaken its bound for nothing. -/
 theorem schedContextUnbind_confinedToCores (vScId : SeLe4n.ValidObjId)
     (st st' : SystemState)
     (hStep : SchedContextOps.schedContextUnbind vScId st = .ok ((), st')) :

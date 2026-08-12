@@ -348,12 +348,24 @@ run_cmd do
   logInfo m!"ROUTE_SIZES prims={prims.size} pinned={pinned.size} boot={boot.size}"
   -- The alias witness must be detected, here, every run.  Without it the
   -- zeta-reduction above is a claim rather than a checked fact.
+  --
+  -- Each witness runs the **whole** production verdict, head and argument both
+  -- (PR #861 review round 42).  This loop used to discard the head and pass on
+  -- the argument alone, which made the COMPOSITE witness attest to nothing it
+  -- was built for: its point is that the *head* classification is derived
+  -- rather than hand-listed, so with `routeReachesPerCoreSlot` regressed to a
+  -- constant `false` the production scan would go silent while COMPOSITE still
+  -- reported ok.  A self-test that cannot fail when the thing it guards breaks
+  -- is the fail-open shape this gate exists to close, reproduced inside the
+  -- gate itself.  All three heads reach a slot, so requiring the conjunction
+  -- costs nothing and each witness now checks the same decision the scan makes.
   for (wit, tag) in [(`routeSelfTestAlias, "ALIAS"), (`routeSelfTestLiteralZero, "ZERO"),
                      (`routeSelfTestComposite, "COMPOSITE")] do
     let mut ok := false
     if let some ci := env.find? wit then
       if let some v := ci.value? then
-        for (_, a) in routeBootHits boot v do
+        for (p, a) in routeBootHits boot v do
+          if !(routeReachesPerCoreSlot env prims 6 p) then continue
           if let .const c _ := a then
             if boot.contains c then ok := true
           if !ok then
@@ -530,7 +542,16 @@ def run_probe(roots: list[str], hops: int) -> tuple[dict, str]:
             "      ALIAS = a core passed through a local binding "
             "(`let c := bootCoreId; f … c`);\n"
             "      ZERO  = a core written as the literal `⟨0, _⟩` rather than "
-            "as `bootCoreId`.")
+            "as `bootCoreId`;\n"
+            "      COMPOSITE = the boot core reaching a slot through a "
+            "*composite* operation\n"
+            "                  (`scheduleEffectiveOnCore`) rather than a field "
+            "setter directly,\n"
+            "                  so this one fails when the derived reach "
+            "predicate stops reaching.\n"
+            "      All three miss at once when `routeReachesPerCoreSlot` is "
+            "broken, since every\n"
+            "      witness runs the full head-and-argument verdict.")
     for tag in ("ROUTE_STEM_UNRESOLVED", "ROUTE_UNRESOLVED",
                 "ROUTE_DISPATCH_UNRESOLVED", "ROUTE_UNNARROWABLE"):
         bad = re.findall(rf"{tag} (\S+)", out)
