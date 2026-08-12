@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/sm8b-per-core-ni-proofs-3ogvws",
-      "commit_sha": "52a1077fa65a69c6f89c02143e7243edbd923c76",
-      "tree_sha": "2a004a2e5ccf31194823940a892d5c94ab2e9d69",
-      "committed_at_utc": "2026-08-12T06:38:08+00:00"
+      "commit_sha": "59e70fde2b620f62d24db8a9ab3547e92b2abb05",
+      "tree_sha": "4dc554aae1206fa0b898e36b9a798a10b5d3cdb4",
+      "committed_at_utc": "2026-08-12T08:05:32+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "79a8a69d30b148325d78086b1dd8c8a8b3e0466c5b03b3599c016bae6b09e5a1"
+    "source_digest": "44e4ad94099da2974e8ffb26ec689bb8bd863272a26ff1bcf1ceefeac8b38c45"
   },
   "summary": {
     "module_count": 342,
@@ -27,7 +27,7 @@
     "version": "0.33.5",
     "lean_toolchain": "v4.28.0",
     "production_files": 274,
-    "production_loc": 254779,
+    "production_loc": 254782,
     "test_files": 68,
     "test_loc": 52184,
     "proved_theorem_lemma_decls": 8477,
@@ -88073,7 +88073,7 @@
         {
           "kind": "theorem",
           "name": "enforcementBoundaryPerCore_count",
-          "line": 151,
+          "line": 154,
           "called": [
             "length"
           ]
@@ -88081,7 +88081,7 @@
         {
           "kind": "theorem",
           "name": "enforcementBoundaryPerCore_extends_canonical",
-          "line": 158,
+          "line": 161,
           "called": [
             "crossCoreEnforcementEntries",
             "enforcementBoundary",
@@ -88091,7 +88091,7 @@
         {
           "kind": "theorem",
           "name": "enforcementBoundary_prefix_of_perCore",
-          "line": 165,
+          "line": 168,
           "called": [
             "crossCoreEnforcementEntries",
             "enforcementBoundary",
@@ -88101,7 +88101,7 @@
         {
           "kind": "def",
           "name": "enforcementBoundaryPerCoreComplete",
-          "line": 187,
+          "line": 190,
           "called": [
             "all",
             "any",
@@ -88112,7 +88112,7 @@
         {
           "kind": "theorem",
           "name": "enforcementBoundaryPerCore_is_complete",
-          "line": 194,
+          "line": 197,
           "called": [
             "enforcementBoundaryPerCoreComplete"
           ]
@@ -88120,7 +88120,7 @@
         {
           "kind": "def",
           "name": "syscallIdToEnforcementNamePerCore",
-          "line": 206,
+          "line": 209,
           "called": [
             "SyscallId",
             "notificationSignal",
@@ -88131,7 +88131,7 @@
         {
           "kind": "def",
           "name": "enforcementBoundaryPerCoreCompleteCrossCore",
-          "line": 232,
+          "line": 235,
           "called": [
             "all",
             "any",
@@ -88142,7 +88142,7 @@
         {
           "kind": "theorem",
           "name": "enforcementBoundaryPerCore_is_complete_crossCore",
-          "line": 239,
+          "line": 242,
           "called": [
             "enforcementBoundaryPerCoreCompleteCrossCore"
           ]
@@ -88150,7 +88150,7 @@
         {
           "kind": "theorem",
           "name": "syscallIdToEnforcementNamePerCore_differs_at_fifteen",
-          "line": 251,
+          "line": 254,
           "called": [
             "filter",
             "length",
@@ -88161,7 +88161,7 @@
         {
           "kind": "theorem",
           "name": "enforcementBoundaryPerCore_crossCore_classes_match",
-          "line": 261,
+          "line": 264,
           "called": [
             "all",
             "canonical",
@@ -88175,7 +88175,7 @@
         {
           "kind": "theorem",
           "name": "enforcementBoundaryPerCore_entry_is_new",
-          "line": 282,
+          "line": 285,
           "called": [
             "any",
             "readOnly"
@@ -88184,13 +88184,13 @@
         {
           "kind": "inductive",
           "name": "CovertChannelSeverity",
-          "line": 294,
+          "line": 297,
           "called": []
         },
         {
           "kind": "structure",
           "name": "CovertChannel",
-          "line": 315,
+          "line": 318,
           "called": [
             "CovertChannelSeverity"
           ]
@@ -88198,7 +88198,7 @@
         {
           "kind": "def",
           "name": "acceptedCovertChannel_scheduling_perCore",
-          "line": 341,
+          "line": 344,
           "called": [
             "CovertChannel",
             "boundedCodeTraces",
@@ -88214,7 +88214,7 @@
         {
           "kind": "def",
           "name": "acceptedCovertChannel_machineTimer",
-          "line": 374,
+          "line": 377,
           "called": [
             "CovertChannel",
             "level",
@@ -88224,7 +88224,7 @@
         {
           "kind": "def",
           "name": "acceptedCovertChannel_tcbMetadata",
-          "line": 389,
+          "line": 392,
           "called": [
             "CovertChannel"
           ]
@@ -88232,7 +88232,7 @@
         {
           "kind": "def",
           "name": "acceptedCovertChannel_objectStoreMetadata",
-          "line": 404,
+          "line": 407,
           "called": [
             "CovertChannel"
           ]
@@ -88240,7 +88240,7 @@
         {
           "kind": "def",
           "name": "acceptedCovertChannel_lockContention",
-          "line": 431,
+          "line": 434,
           "called": [
             "CovertChannel",
             "free",
@@ -88250,7 +88250,7 @@
         {
           "kind": "def",
           "name": "acceptedCovertChannel_tlbResidency",
-          "line": 450,
+          "line": 453,
           "called": [
             "CovertChannel",
             "onCore_perCoreTlb",
@@ -88260,7 +88260,7 @@
         {
           "kind": "def",
           "name": "acceptedCovertChannel_icacheResidency",
-          "line": 466,
+          "line": 469,
           "called": [
             "CovertChannel",
             "onCore_perCoreICache",
@@ -88270,7 +88270,7 @@
         {
           "kind": "def",
           "name": "acceptedCovertChannelsPerCore",
-          "line": 483,
+          "line": 486,
           "called": [
             "CovertChannel",
             "acceptedCovertChannel_icacheResidency",
@@ -88285,7 +88285,7 @@
         {
           "kind": "theorem",
           "name": "acceptedCovertChannel_perCoreCount",
-          "line": 500,
+          "line": 503,
           "called": [
             "length"
           ]
@@ -88293,13 +88293,13 @@
         {
           "kind": "theorem",
           "name": "acceptedCovertChannel_perCore_ids",
-          "line": 506,
+          "line": 509,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "acceptedCovertChannel_modelVisible_count",
-          "line": 514,
+          "line": 517,
           "called": [
             "filter",
             "length"
@@ -88308,7 +88308,7 @@
         {
           "kind": "theorem",
           "name": "acceptedCovertChannel_perCoreInstance_count",
-          "line": 520,
+          "line": 523,
           "called": [
             "filter",
             "length"
@@ -88317,13 +88317,13 @@
         {
           "kind": "theorem",
           "name": "acceptedCovertChannel_hardwareChannels_are_not_modelVisible",
-          "line": 532,
+          "line": 535,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "acceptedCovertChannel_smp_additions",
-          "line": 546,
+          "line": 549,
           "called": [
             "filter",
             "length"
@@ -88332,7 +88332,7 @@
         {
           "kind": "theorem",
           "name": "acceptedCovertChannel_lockContention_is_timing_only",
-          "line": 557,
+          "line": 560,
           "called": [
             "CoreId",
             "IfObserver",
@@ -88348,7 +88348,7 @@
         {
           "kind": "theorem",
           "name": "acceptedCovertChannel_residency_excluded_from_view",
-          "line": 572,
+          "line": 575,
           "called": [
             "CoreId",
             "ICacheState",
@@ -88365,7 +88365,7 @@
         {
           "kind": "theorem",
           "name": "acceptedCovertChannel_scheduling_is_model_visible",
-          "line": 587,
+          "line": 590,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -88379,7 +88379,7 @@
         {
           "kind": "theorem",
           "name": "acceptedCovertChannel_machineTimer_excluded_from_view",
-          "line": 596,
+          "line": 599,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -88392,7 +88392,7 @@
         {
           "kind": "theorem",
           "name": "acceptedCovertChannel_tcbMetadata_is_model_visible",
-          "line": 620,
+          "line": 623,
           "called": [
             "CoreId",
             "IfObserver.ofLabel",
@@ -88412,7 +88412,7 @@
         {
           "kind": "theorem",
           "name": "onCore_objects_eq_projectObjects",
-          "line": 639,
+          "line": 642,
           "called": [
             "CoreId",
             "IfObserver.ofLabel",
@@ -88427,7 +88427,7 @@
         {
           "kind": "theorem",
           "name": "acceptedCovertChannel_objectStoreMetadata_is_model_visible",
-          "line": 649,
+          "line": 652,
           "called": [
             "CoreId",
             "IfObserver.ofLabel",
@@ -88442,7 +88442,7 @@
         {
           "kind": "theorem",
           "name": "schedulingChannelIndex_alphabet_bounded",
-          "line": 677,
+          "line": 680,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -88457,7 +88457,7 @@
         {
           "kind": "def",
           "name": "schedulingObservationOnCore",
-          "line": 699,
+          "line": 702,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -88469,7 +88469,7 @@
         {
           "kind": "def",
           "name": "schedulingObservationCode",
-          "line": 707,
+          "line": 710,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -88481,7 +88481,7 @@
         {
           "kind": "theorem",
           "name": "positionalCode_injective",
-          "line": 715,
+          "line": 718,
           "called": [
             "lt_trichotomy"
           ]
@@ -88489,7 +88489,7 @@
         {
           "kind": "theorem",
           "name": "schedulingObservationCode_injective",
-          "line": 737,
+          "line": 740,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -88504,7 +88504,7 @@
         {
           "kind": "theorem",
           "name": "schedulingChannel_alphabet_bounded",
-          "line": 762,
+          "line": 765,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -88522,7 +88522,7 @@
         {
           "kind": "def",
           "name": "schedulingObservationFullOnCore",
-          "line": 789,
+          "line": 792,
           "called": [
             "CoreId",
             "DomainId",
@@ -88535,7 +88535,7 @@
         {
           "kind": "theorem",
           "name": "schedulingObservation_activeDomain_determined",
-          "line": 805,
+          "line": 808,
           "called": [
             "CoreId",
             "DomainScheduleEntry",
@@ -88554,7 +88554,7 @@
         {
           "kind": "theorem",
           "name": "schedulingChannel_full_observation_determined",
-          "line": 835,
+          "line": 838,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -88574,7 +88574,7 @@
         {
           "kind": "def",
           "name": "schedulingCapacityPreconditions",
-          "line": 886,
+          "line": 889,
           "called": [
             "CoreId",
             "SystemState",
@@ -88586,7 +88586,7 @@
         {
           "kind": "theorem",
           "name": "schedulingChannel_alphabet_bounded_of_preconditions",
-          "line": 895,
+          "line": 898,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -88601,7 +88601,7 @@
         {
           "kind": "def",
           "name": "schedulingCapacityComparable",
-          "line": 915,
+          "line": 918,
           "called": [
             "CoreId",
             "SystemState",
@@ -88611,7 +88611,7 @@
         {
           "kind": "theorem",
           "name": "schedulingChannel_full_observation_determined_of_preconditions",
-          "line": 924,
+          "line": 927,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -88628,7 +88628,7 @@
         {
           "kind": "theorem",
           "name": "schedulingObservation_changes_on_domain_tick",
-          "line": 962,
+          "line": 965,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -88644,13 +88644,13 @@
         {
           "kind": "def",
           "name": "boundedCodeTraces",
-          "line": 984,
+          "line": 987,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "boundedCodeTraces_length",
-          "line": 990,
+          "line": 993,
           "called": [
             "boundedCodeTraces",
             "cons",
@@ -88660,7 +88660,7 @@
         {
           "kind": "theorem",
           "name": "mem_boundedCodeTraces",
-          "line": 1006,
+          "line": 1009,
           "called": [
             "boundedCodeTraces",
             "cons",
@@ -88671,7 +88671,7 @@
         {
           "kind": "def",
           "name": "schedulingCapacityRun",
-          "line": 1046,
+          "line": 1049,
           "called": [
             "CoreId",
             "SystemState",
@@ -88681,7 +88681,7 @@
         {
           "kind": "theorem",
           "name": "schedulingCapacityRun_singleton",
-          "line": 1053,
+          "line": 1056,
           "called": [
             "CoreId",
             "SystemState",
@@ -88692,7 +88692,7 @@
         {
           "kind": "def",
           "name": "schedulingObservationTrace",
-          "line": 1062,
+          "line": 1065,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -88704,7 +88704,7 @@
         {
           "kind": "theorem",
           "name": "schedulingChannel_trace_capacity",
-          "line": 1086,
+          "line": 1089,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -88721,7 +88721,7 @@
         {
           "kind": "theorem",
           "name": "schedulingChannel_trace_determines_observations",
-          "line": 1112,
+          "line": 1115,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -88735,8 +88735,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:1147>",
-          "line": 1147,
+          "name": "<anonymous:example:1150>",
+          "line": 1150,
           "called": [
             "boundedCodeTraces",
             "boundedCodeTraces_length",
@@ -88745,14 +88745,14 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:1153>",
-          "line": 1153,
+          "name": "<anonymous:example:1156>",
+          "line": 1156,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "schedulingChannel_not_bounded_by_scheduleLength",
-          "line": 1165,
+          "line": 1168,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -88766,13 +88766,13 @@
         {
           "kind": "inductive",
           "name": "CovertChannelId",
-          "line": 1189,
+          "line": 1192,
           "called": []
         },
         {
           "kind": "def",
           "name": "CovertChannelId.all",
-          "line": 1199,
+          "line": 1202,
           "called": [
             "CovertChannelId"
           ]
@@ -88780,7 +88780,7 @@
         {
           "kind": "theorem",
           "name": "CovertChannelId.mem_all",
-          "line": 1215,
+          "line": 1218,
           "called": [
             "CovertChannelId",
             "CovertChannelId.all"
@@ -88789,13 +88789,13 @@
         {
           "kind": "theorem",
           "name": "CovertChannelId.all_nodup",
-          "line": 1220,
+          "line": 1223,
           "called": []
         },
         {
           "kind": "def",
           "name": "covertChannelEntry",
-          "line": 1223,
+          "line": 1226,
           "called": [
             "CovertChannel",
             "CovertChannelId",
@@ -88811,7 +88811,7 @@
         {
           "kind": "def",
           "name": "CovertChannelId.evidenceProp",
-          "line": 1248,
+          "line": 1251,
           "called": [
             "CoreId",
             "CovertChannelId",
@@ -88841,7 +88841,7 @@
         {
           "kind": "def",
           "name": "covertChannelEvidence",
-          "line": 1310,
+          "line": 1313,
           "called": [
             "CovertChannelId",
             "acceptedCovertChannel_lockContention_is_timing_only",
@@ -88857,7 +88857,7 @@
         {
           "kind": "def",
           "name": "covertChannelEvidenceName",
-          "line": 1342,
+          "line": 1345,
           "called": [
             "CovertChannelId",
             "acceptedCovertChannel_lockContention_is_timing_only",
@@ -88871,7 +88871,7 @@
         {
           "kind": "theorem",
           "name": "covertChannelEntry_eq_inventory",
-          "line": 1354,
+          "line": 1357,
           "called": [
             "acceptedCovertChannelsPerCore",
             "covertChannelEntry"
@@ -88880,7 +88880,7 @@
         {
           "kind": "theorem",
           "name": "covertChannelEvidence_nonempty",
-          "line": 1361,
+          "line": 1364,
           "called": [
             "CovertChannelId",
             "covertChannelEvidenceName",
@@ -88890,7 +88890,7 @@
         {
           "kind": "theorem",
           "name": "covertChannelEvidence_shared_only_for_residency",
-          "line": 1368,
+          "line": 1371,
           "called": [
             "covertChannelEvidenceName",
             "length"
@@ -88899,7 +88899,7 @@
         {
           "kind": "def",
           "name": "endpointPolicyRestricted_perCore",
-          "line": 1391,
+          "line": 1394,
           "called": [
             "CoreId",
             "DomainFlowPolicy",
@@ -88910,7 +88910,7 @@
         {
           "kind": "theorem",
           "name": "endpointPolicyRestricted_perCore_iff",
-          "line": 1395,
+          "line": 1398,
           "called": [
             "DomainFlowPolicy",
             "EndpointFlowPolicy",
@@ -88922,7 +88922,7 @@
         {
           "kind": "theorem",
           "name": "endpointPolicyRestricted_perCore_at",
-          "line": 1401,
+          "line": 1404,
           "called": [
             "CoreId",
             "DomainFlowPolicy",
@@ -88934,7 +88934,7 @@
         {
           "kind": "theorem",
           "name": "endpointPolicyRestricted_perCore_no_overrides",
-          "line": 1409,
+          "line": 1412,
           "called": [
             "DomainFlowPolicy",
             "endpointPolicyRestricted_no_overrides",
@@ -88945,7 +88945,7 @@
         {
           "kind": "def",
           "name": "endpointFlowCheckAtCore",
-          "line": 1422,
+          "line": 1425,
           "called": [
             "CoreId",
             "EndpointFlowPolicy",
@@ -88962,7 +88962,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheckAtCore_depends_only_on_subject",
-          "line": 1439,
+          "line": 1442,
           "called": [
             "CoreId",
             "EndpointFlowPolicy",
@@ -88978,7 +88978,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheckAtCore_stable_under_confined_transition",
-          "line": 1456,
+          "line": 1459,
           "called": [
             "CoreId",
             "EndpointFlowPolicy",
@@ -88996,7 +88996,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheckAtCore_is_not_constant",
-          "line": 1481,
+          "line": 1484,
           "called": [
             "CoreId",
             "EndpointFlowPolicy",
@@ -89019,7 +89019,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheck_restricted_subset_perCore",
-          "line": 1503,
+          "line": 1506,
           "called": [
             "CoreId",
             "EndpointFlowPolicy",
@@ -89037,7 +89037,7 @@
         {
           "kind": "theorem",
           "name": "endpointPolicyRestricted_perCore_is_necessary",
-          "line": 1517,
+          "line": 1520,
           "called": [
             "EndpointFlowPolicy",
             "GenericLabelingContext",
@@ -89053,7 +89053,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_preserves_projectionOnCore",
-          "line": 1594,
+          "line": 1597,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -89073,7 +89073,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_success_perCore_NI",
-          "line": 1609,
+          "line": 1612,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -89097,7 +89097,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_error_perCore_NI",
-          "line": 1627,
+          "line": 1630,
           "called": [
             "IfObserver",
             "KernelError",
@@ -89115,7 +89115,7 @@
         {
           "kind": "theorem",
           "name": "nonInterference_release_of_perCore",
-          "line": 1641,
+          "line": 1644,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -89129,7 +89129,7 @@
         {
           "kind": "theorem",
           "name": "nonInterference_release_of_perCore_observer",
-          "line": 1648,
+          "line": 1651,
           "called": [
             "IfObserver.ofLabel",
             "Kernel",

@@ -1676,6 +1676,13 @@ run_check "INVARIANT" rg -n '^theorem crossCoreLeakage_bounded_by_globalProjecti
 run_check "INVARIANT" rg -n '^theorem crossCoreTransition_invisible_to_every_observer' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^def enforcementBoundaryPerCore' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_count' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+# Round 38: the docstring above that theorem restated its number and went stale
+# one commit after the theorem moved — the third time in this PR that prose
+# repeating a `decide` drifted from it.  Anchoring the PAIR couples them: bump
+# the theorem without the sentence and this fails, which is the only mechanism
+# that has actually held.
+run_check "INVARIANT" rg -n 'per-core boundary has 54 entries' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore\.length = 54' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_extends_canonical' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^def enforcementBoundaryPerCoreComplete' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_is_complete' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean

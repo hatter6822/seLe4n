@@ -143,16 +143,19 @@ are live and both must be classified. -/
 def enforcementBoundaryPerCore : List EnforcementClass :=
   enforcementBoundaryExtended ++ [.capabilityOnly "withLockSet"] ++ crossCoreEnforcementEntries
 
-/-- SM8.B.6: the per-core boundary has 53 entries — the live canonical 38, the
-2PL bracket, and the fourteen cross-core wrappers.  Re-anchored at the SM8.A cut,
-in the fourth review round, and again in rounds 10 and 12 as the `.send`, resume
-and architecture arms joined the cross-core surface;
-`enforcementBoundaryExtended_count` is the authority for the base figure. -/
+/-- SM8.B.6: the per-core boundary has 54 entries — the live canonical 38, the
+2PL bracket, and the fifteen cross-core wrappers.  Re-anchored at the SM8.A cut,
+in the fourth review round, again in rounds 10 and 12 as the `.send`, resume and
+architecture arms joined the cross-core surface, and in round 37 as the routing
+gate found `.tcbSetAffinity`.  `enforcementBoundaryExtended_count` is the
+authority for the base figure and this theorem for the total; the sentence above
+is worth what they are worth, and round 38 caught it stale at 53 one commit
+after the theorem moved. -/
 theorem enforcementBoundaryPerCore_count : enforcementBoundaryPerCore.length = 54 := by rfl
 
 /-- SM8.B.7 (completeness, part 1): the per-core boundary **extends** the
 canonical one — it is the canonical list followed by the 2PL bracket and the
-fourteen live cross-core wrappers, so no existing classification was dropped or
+fifteen live cross-core wrappers, so no existing classification was dropped or
 reclassified in the lift.  Additive by construction: `List.IsPrefix` is the
 statement that the canonical list survives unmodified as a prefix. -/
 theorem enforcementBoundaryPerCore_extends_canonical :
@@ -196,7 +199,7 @@ theorem enforcementBoundaryPerCore_is_complete : enforcementBoundaryPerCoreCompl
 
 /-- SM8.B.6: **the operation each syscall reaches under SMP.**
 
-Differs from `syscallIdToEnforcementName` at exactly the fourteen arms the SMP
+Differs from `syscallIdToEnforcementName` at exactly the fifteen arms the SMP
 work re-routed — seven from SM6, `.send` and `.tcbResume` from PR #861 review
 round 10, the three SM7.D/SM7.F architecture wrappers, and the two
 priority-control arms from round 12; every other syscall

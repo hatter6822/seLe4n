@@ -1,5 +1,14 @@
 ## v0.33.5 — SM8.B: per-core non-interference, at the transitions that really run
 
+**Review round 38 — the boundary count, one commit later.**  Round 37 moved
+`enforcementBoundaryPerCore_count` to 54 and updated one neighbouring paragraph;
+three other sites kept saying 53 and "fourteen", including the docstring
+directly above the theorem and the status row in `CLAUDE.md` / `AGENTS.md`.
+Corrected — and this time coupled: a Tier-3 anchor pins the docstring's number
+and the theorem's together, so bumping one without the other fails the gate.
+That is the third instance in this PR of prose restating a `decide` and drifting
+from it, and the first with a mechanism rather than a promise behind the fix.
+
 **Review round 37 — the gate finds the eighth boot-pinned live arm.**  The
 routing gate's primitive list was hand-written, and omitted every *composite*
 per-core scheduler operation — `scheduleEffectiveOnCore`, `scheduleOrIdleOnCore`,
