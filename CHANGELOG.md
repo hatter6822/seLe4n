@@ -1,5 +1,45 @@
 ## v0.33.5 — SM8.B: per-core non-interference, at the transitions that really run
 
+**Review round 39 — SECURITY: the retype refuses to destroy a running thread.**
+`cleanupTcbReferences` sweeps every core and its step clears `currentOnCore c`
+wherever it finds the thread, the **executing** core included — where the caller
+itself runs.  Nothing on the retype path guarded against that, so a thread
+holding a `.retype`-capable capability to its own TCB could destroy itself: the
+core's current slot cleared, no successor scheduled (`scheduleLocalSuccessorLive`
+is inert until SM9.E), execution returning through a frame whose TCB the retype
+has scrubbed and re-purposed, and every later syscall from that core resolving
+`determineExecutingCore` to `bootCoreId`.  A denial of service against every
+thread on the core, not only the caller.  Medium now, High once bootable.
+
+Partly pre-existing rather than introduced here: the pre-SMP `removeRunnable`
+clears `currentOnCore bootCoreId` identically, so the boot-core instance predates
+this cut and round 15's all-cores sweep widened it.
+
+Closed by `threadCurrentOnSomeCore` / `retypeRunningTargetRejected`, rejecting in
+`lifecyclePreRetypeCleanup`'s `.tcb` arm with `.revocationRequired` — the error
+that path already uses for "clear this precondition first", reading here as
+"suspend or switch away from this thread before destroying it".  The guard scans
+**every** core, matching `setThreadCpuAffinityWithMigration`'s precedent, and
+reads the **pre-state**: every later `let` shadows it with the swept state in
+which the tested slot is already clear.  Trace byte-identical, so nothing in the
+tree was relying on the defect.
+
+Also this round: the enforcement-class equivalence theorem now quantifies over
+the **computed** mapping-difference list instead of a hand-written enumeration
+that had drifted twice, so a new re-route enters the check the moment the mapping
+changes.
+
+Two findings verified and closed without code changes, and one registered.  The
+send bridge is covered on both success paths (`…_bootCore_block_eq_single`,
+`…_bootCore_rendezvous_eq_single`); the attributed-definition scan was fixed in
+round 15 and boot-pinned detection has since moved to the elaborated-environment
+probe entirely.  The request for a local reschedule after unbind is already
+satisfied — but verifying it surfaced a real key mismatch between the inner
+guard (`determineTargetCore`) and the wrapper's reschedule (`runningCoreOf?`),
+which diverge for an unbound-affinity thread on a secondary core; registered
+against SM8.C rather than rushed, since the clean fix moves `runningCoreOf?`
+down the import graph.
+
 **Review round 38 — the boundary count, one commit later.**  Round 37 moved
 `enforcementBoundaryPerCore_count` to 54 and updated one neighbouring paragraph;
 three other sites kept saying 53 and "fourteen", including the docstring

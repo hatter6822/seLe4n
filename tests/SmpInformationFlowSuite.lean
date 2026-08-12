@@ -3029,6 +3029,40 @@ private def runRetypeWriteSetChecks : IO Unit := do
     (decide (SeLe4n.Kernel.lifecycleRetypeWriteSet retypeVictimState lowEndpoint = []))
   assertBool "retyping an absent object writes no core"
     (decide (SeLe4n.Kernel.lifecycleRetypeWriteSet retypeVictimState ⟨999999⟩ = []))
+  -- Round 39: the destroy path refuses to destroy a RUNNING thread.  Without
+  -- the guard the sweep clears the current slot of whichever core runs the
+  -- target — the executing core included — and nothing schedules a successor,
+  -- so a thread with a `.retype` capability to its own TCB wedges its core.
+  assertBool "a victim that is merely QUEUED is still retypeable"
+    (decide (SeLe4n.Kernel.threadCurrentOnSomeCore retypeVictimState remoteHomedThread
+               = false)
+      && (match SeLe4n.Kernel.lifecyclePreRetypeCleanup retypeVictimState
+                  remoteHomedThread.toObjId (.tcb (mkTcb 1018 40 (some c2)))
+                  (.tcb (mkTcb 1018 40 (some c2))) with
+          | .ok _ => true
+          | .error _ => false))
+  -- LOAD-BEARING NEGATIVE: the same call on a victim that is CURRENT is
+  -- rejected, and rejected with the error the path already uses for
+  -- "clear this precondition first".
+  assertBool "NEGATIVE: a victim CURRENT on a core is refused with .revocationRequired"
+    (decide (SeLe4n.Kernel.threadCurrentOnSomeCore retypeVictimTwoCoreState
+               remoteHomedThread = true)
+      && (match SeLe4n.Kernel.lifecyclePreRetypeCleanup retypeVictimTwoCoreState
+                  remoteHomedThread.toObjId (.tcb (mkTcb 1018 40 (some c2)))
+                  (.tcb (mkTcb 1018 40 (some c2))) with
+          | .error .revocationRequired => true
+          | _ => false))
+  -- …and the guard scans every core, not just the executing one: the victim
+  -- above is current on core 3, which no caller here is executing on.
+  assertBool "the guard scans every core, not only the executing one"
+    (allCores.any (fun c =>
+      decide (retypeVictimTwoCoreState.scheduler.currentOnCore c = some remoteHomedThread)
+        && decide (c ≠ c0)))
+  -- NEGATIVE: a non-TCB object is never refused by this guard — only a thread
+  -- can be running, and rejecting anything else would break every other retype.
+  assertBool "NEGATIVE: the guard admits every non-TCB object"
+    (!SeLe4n.Kernel.retypeRunningTargetRejected retypeVictimTwoCoreState
+        (.endpoint {}))
 
 /-- §4.1  Cross-core non-interference (plan Theorem 3.3.1). -/
 private def runCrossCoreNonInterferenceChecks : IO Unit := do
@@ -3232,6 +3266,14 @@ private def runEnforcementBoundaryChecks : IO Unit := do
   -- Round 37: `.tcbSetAffinity` is the fifteenth, and the first found by the
   -- routing gate rather than by a review round.  Its op hardcoded `bootCoreId`
   -- as the executing core and discarded the SGI that argument determined.
+  -- Round 39: the class-equivalence theorem now quantifies over the computed
+  -- difference list rather than a hand-written one.  This is its anti-vacuity
+  -- check: the list it ranges over is non-empty and is exactly the re-routed
+  -- set, so `.all` is not trivially true.
+  assertBool "the class-match set IS the re-routed set, and is non-empty"
+    (decide ((SyscallId.all.filter (fun sid =>
+      decide (syscallIdToEnforcementNamePerCore sid
+        ≠ syscallIdToEnforcementName sid))).length = 15))
   assertBool "the affinity arm re-routes to the per-core form"
     (decide (syscallIdToEnforcementNamePerCore .tcbSetAffinity
                = "setThreadCpuAffinityOnCore")

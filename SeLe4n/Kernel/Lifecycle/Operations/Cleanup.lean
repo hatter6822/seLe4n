@@ -37,6 +37,83 @@ callers with `.retype` but not `.write` were incorrectly rejected. -/
 def lifecycleRetypeAuthority (cap : Capability) (target : SeLe4n.ObjId) : Bool :=
   decide (cap.target = .object target) && Capability.hasRight cap .retype
 
+/-- **WS-SM SM8.B (PR #861 review round 39): is this thread the current thread
+of some core?**
+
+The destroy path's precondition.  `cleanupTcbReferences` sweeps every core and
+its step clears `currentOnCore c` wherever it finds the thread — including the
+**executing** core, which is where the caller itself runs.  A thread holding a
+`.retype`-capable capability to its own TCB could therefore destroy itself: the
+core's `current` slot is cleared, no successor is scheduled
+(`scheduleLocalSuccessorLive` is inert until SM9.E), and execution returns
+through a frame whose TCB the retype has scrubbed and re-purposed.  Subsequent
+syscalls from that core resolve `determineExecutingCore` to `bootCoreId`, so
+their scheduling effects land on the wrong core — a denial of service against
+every thread on that core, not only the caller.
+
+Partly pre-existing rather than introduced by the per-core sweep: the pre-SMP
+`removeRunnable` clears `currentOnCore bootCoreId` in exactly the same way, so
+the boot-core instance predates this cut and the all-cores sweep widened it.
+
+Scans **every** core rather than the executing one alone, matching
+`setThreadCpuAffinityWithMigration`'s guard against rebinding a running thread:
+dequeue-on-dispatch means a running thread is in no run queue, so the sweep
+cannot repair it wherever it runs.  Held as a `Bool` here because the predicate
+sits below `runningCoreOf?` in the import DAG; the two agree
+(`runningCoreOf?_isSome_iff_threadCurrentOnSomeCore`). -/
+def threadCurrentOnSomeCore (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
+  SeLe4n.Kernel.Concurrency.allCores.any (fun c =>
+    st.scheduler.currentOnCore c == some tid)
+
+/-- **WS-SM SM8.B (PR #861 review round 39): the retype's running-target
+rejection**, as a named predicate on the object being destroyed.
+
+Only a TCB can be running, so every other object kind is admitted outright —
+and stating that as `@[simp]` lemmas below is what lets the six non-TCB arms of
+`lifecyclePreRetypeCleanup`'s existing proofs reduce the guard away instead of
+each growing a `split`. -/
+def retypeRunningTargetRejected (st : SystemState) (currentObj : KernelObject) : Bool :=
+  match currentObj with
+  | .tcb tcb => threadCurrentOnSomeCore st tcb.tid
+  | _ => false
+
+@[simp] theorem retypeRunningTargetRejected_tcb (st : SystemState) (tcb : TCB) :
+    retypeRunningTargetRejected st (.tcb tcb) = threadCurrentOnSomeCore st tcb.tid := rfl
+
+@[simp] theorem retypeRunningTargetRejected_cnode (st : SystemState) (cn : CNode) :
+    retypeRunningTargetRejected st (.cnode cn) = false := rfl
+
+@[simp] theorem retypeRunningTargetRejected_endpoint (st : SystemState) (ep : Endpoint) :
+    retypeRunningTargetRejected st (.endpoint ep) = false := rfl
+
+@[simp] theorem retypeRunningTargetRejected_notification (st : SystemState) (n : Notification) :
+    retypeRunningTargetRejected st (.notification n) = false := rfl
+
+@[simp] theorem retypeRunningTargetRejected_reply (st : SystemState) (r : SeLe4n.Kernel.Reply) :
+    retypeRunningTargetRejected st (.reply r) = false := rfl
+
+@[simp] theorem retypeRunningTargetRejected_vspaceRoot (st : SystemState) (v : VSpaceRoot) :
+    retypeRunningTargetRejected st (.vspaceRoot v) = false := rfl
+
+@[simp] theorem retypeRunningTargetRejected_untyped (st : SystemState) (u : UntypedObject) :
+    retypeRunningTargetRejected st (.untyped u) = false := rfl
+
+@[simp] theorem retypeRunningTargetRejected_schedContext (st : SystemState) (sc : SeLe4n.Kernel.SchedContext) :
+    retypeRunningTargetRejected st (.schedContext sc) = false := rfl
+
+/-- WS-SM SM8.B: the guard is exactly "some core has this thread current". -/
+theorem threadCurrentOnSomeCore_iff (st : SystemState) (tid : SeLe4n.ThreadId) :
+    threadCurrentOnSomeCore st tid = true
+      ↔ ∃ c, st.scheduler.currentOnCore c = some tid := by
+  unfold threadCurrentOnSomeCore
+  constructor
+  · intro h
+    obtain ⟨c, -, hc⟩ := List.any_eq_true.mp h
+    exact ⟨c, by simpa using hc⟩
+  · intro ⟨c, hc⟩
+    exact List.any_eq_true.mpr
+      ⟨c, SeLe4n.Kernel.Concurrency.mem_allCores c, by simp [hc]⟩
+
 
 -- ============================================================================
 -- WS-H2: Lifecycle Safety Guards

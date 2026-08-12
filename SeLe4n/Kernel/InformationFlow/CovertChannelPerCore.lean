@@ -260,11 +260,19 @@ theorem syscallIdToEnforcementNamePerCore_differs_at_fifteen :
 single-core operation it replaced.**  Re-routing a transition to another core
 changes where it lands, not what authority it demands, and this is where that
 claim is checked rather than asserted: for each re-routed syscall, the class of
-its per-core entry equals the class of its canonical one. -/
+its per-core entry equals the class of its canonical one.
+
+**Quantified over the mapping-difference list, not a hand-written one**
+(PR #861 review round 39).  The enumeration here listed fourteen syscalls and
+went stale the moment round 37 made `.tcbSetAffinity` the fifteenth re-route —
+the second time this list drifted from the mapping it is supposed to audit.
+Computing it from the difference makes the checked set exactly the re-routed
+set by construction, so a new re-route enters this theorem the moment the
+mapping changes and the two inventories cannot part company again. -/
 theorem enforcementBoundaryPerCore_crossCore_classes_match :
-    ([SyscallId.call, .reply, .replyRecv, .receive, .notificationSignal,
-      .notificationWait, .tcbSuspend, .send, .tcbResume, .vspaceMap, .vspaceUnmap,
-      .lifecycleRetype, .tcbSetPriority, .tcbSetMCPriority].all (fun sid =>
+    ((SyscallId.all.filter (fun sid =>
+        decide (syscallIdToEnforcementNamePerCore sid
+          ≠ syscallIdToEnforcementName sid))).all (fun sid =>
         let canonical := enforcementBoundary.find? (fun ec =>
           match ec with
           | .policyGated n | .capabilityOnly n | .readOnly n =>

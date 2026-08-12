@@ -120,6 +120,11 @@ theorem lifecycleRetypeWithCleanup_ok_runnable_no_dangling
       rw [hSchedEq, scrubObjectMemory_scheduler_eq]
       -- Extract intermediate state from lifecyclePreRetypeCleanup
       simp only [lifecyclePreRetypeCleanup] at hClean
+      -- Round 39: the running-target rejection is vacuous on the `.ok` path.
+      rw [if_neg (by
+        intro hRun
+        rw [if_pos hRun] at hClean
+        exact absurd hClean (by simp))] at hClean
       cases hDon : cleanupDonatedSchedContext st tcb.tid with
       | error e => rw [hDon] at hClean; simp at hClean
       | ok stDon =>

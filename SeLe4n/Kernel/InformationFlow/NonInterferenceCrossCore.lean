@@ -4117,6 +4117,11 @@ theorem lifecyclePreRetypeCleanup_confinedToCores
   cases currentObj with
   | tcb tcb =>
     simp only [lifecyclePreRetypeCleanup] at hOk
+    -- Round 39: the running-target rejection is vacuous on the `.ok` path.
+    rw [if_neg (by
+      intro hRun
+      rw [if_pos hRun] at hOk
+      exact absurd hOk (by simp))] at hOk
     cases hDon : cleanupDonatedSchedContext st tcb.tid with
     | error e => rw [hDon] at hOk; contradiction
     | ok stDon =>

@@ -955,10 +955,36 @@ theorem detachCNodeSlots_lifecycle_eq
       CDT slot mappings to prevent orphaned derivation tree references. -/
 def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     (currentObj newObj : KernelObject) : Except KernelError SystemState :=
+  -- WS-SM SM8.B (PR #861 review round 39): **refuse to destroy a running
+  -- thread.**  See `threadCurrentOnSomeCore` for why: the sweep below clears
+  -- the current slot of whichever core runs the target, the executing core
+  -- included, and nothing schedules a successor there.  `.revocationRequired`
+  -- is the error this path already uses for "clear this precondition first"
+  -- (an in-use Reply, a TCB still holding a reply link), and it reads correctly
+  -- here as "suspend or switch away from this thread before destroying it".
+  --
+  -- Placed **first**, before every `let` that shadows `st`: the check has to
+  -- read the pre-state, and by the time the final `.tcb` arm runs the sweep has
+  -- already cleared the very slot it would test.
   -- Z7-P / AJ1-A (M-14): Return donated SchedContext before destroying TCB.
   -- Error propagated — failed cleanup would leave dangling SchedContext refs.
   match (match currentObj with
-    | .tcb tcb => cleanupDonatedSchedContext st tcb.tid
+    | .tcb tcb =>
+        -- WS-SM SM8.B (PR #861 review round 39): **refuse to destroy a running
+        -- thread.**  The sweep below clears the current slot of whichever core
+        -- runs the target — the executing core included, which is where the
+        -- caller itself runs — and nothing schedules a successor there.  See
+        -- `threadCurrentOnSomeCore`.  `.revocationRequired` is the error this
+        -- path already uses for "clear this precondition first" (an in-use
+        -- Reply, a TCB still holding a reply link), and reads correctly here as
+        -- "suspend or switch away from this thread before destroying it".
+        --
+        -- Placed inside the arm that already cases on `currentObj`, and reading
+        -- the **pre-state** `st`: every later `let` shadows `st` with the swept
+        -- state, in which the slot this tests has already been cleared.
+        if threadCurrentOnSomeCore st tcb.tid then
+          (.error .revocationRequired : Except KernelError SystemState)
+        else cleanupDonatedSchedContext st tcb.tid
     | _ => .ok st) with
   | .error e => .error e
   | .ok st =>
@@ -1130,6 +1156,11 @@ theorem lifecyclePreRetypeCleanup_flat_subset
   | tcb tcb =>
     -- Unfold with known currentObj = .tcb tcb
     simp only [lifecyclePreRetypeCleanup] at hOk
+    -- Round 39: the running-target rejection is vacuous on the `.ok` path.
+    rw [if_neg (by
+      intro hRun
+      rw [if_pos hRun] at hOk
+      exact absurd hOk (by simp))] at hOk
     -- Inner match reduces to cleanupDonatedSchedContext st tcb.tid
     -- Outer match dispatches on the result
     cases hDon : cleanupDonatedSchedContext st tcb.tid with
@@ -1200,6 +1231,11 @@ theorem lifecyclePreRetypeCleanup_tlbShootdown_eq
   cases currentObj with
   | tcb tcb =>
     simp only [lifecyclePreRetypeCleanup] at hOk
+    -- Round 39: the running-target rejection is vacuous on the `.ok` path.
+    rw [if_neg (by
+      intro hRun
+      rw [if_pos hRun] at hOk
+      exact absurd hOk (by simp))] at hOk
     cases hDon : cleanupDonatedSchedContext st tcb.tid with
     | error e => rw [hDon] at hOk; contradiction
     | ok stDon =>
