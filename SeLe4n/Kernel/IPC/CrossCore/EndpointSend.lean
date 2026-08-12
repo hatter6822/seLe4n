@@ -77,8 +77,14 @@ def endpointSendDualOnCore (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId
               | .ok st'' =>
                   -- Cross-core receiver wake (SM5.C): route to the receiver's
                   -- HOME core, not the boot core.
-                  ((wakeThread st'' receiver executingCore).1,
-                   .ok (wakeThread st'' receiver executingCore).2)
+                  --
+                  -- Bound once.  Projecting `.1` and `.2` out of two separate
+                  -- calls made the compiled path run the whole wake twice --
+                  -- object-store update and run-queue insertion included -- to
+                  -- take the state from one and the SGI from the other, on the
+                  -- send rendezvous, which is as hot as this kernel's paths get.
+                  let (stWoken, wakeSgi) := wakeThread st'' receiver executingCore
+                  (stWoken, .ok wakeSgi)
       | none =>
           match endpointQueueEnqueue endpointId false sender st with
           | .error e => (st, .error e)
