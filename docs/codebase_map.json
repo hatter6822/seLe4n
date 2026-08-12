@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/sm8b-per-core-ni-proofs-3ogvws",
-      "commit_sha": "99b97bab913ee289eeadae742f5ffd705d7f8cf4",
-      "tree_sha": "2647d2ea36835c0e6d774c35b0c6790178b71256",
-      "committed_at_utc": "2026-08-12T18:02:05+00:00"
+      "commit_sha": "dc19a476397d1318c968ac27cccdd3b68544f6ce",
+      "tree_sha": "7c612e09739dd836fa8b822d0b91b7b96535bbf6",
+      "committed_at_utc": "2026-08-12T18:53:15+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "5ad73c6efe3d5273501f4887ee6ba605cf86e60c103009790e90b54b7738fbb7"
+    "source_digest": "07a18ffdf34c8384e2aad017651e41237736f2e3474b4f57ebe19e40d55c0d7a"
   },
   "summary": {
     "module_count": 342,
-    "declaration_count": 15043
+    "declaration_count": 15045
   },
   "readme_sync": {
     "version": "0.33.5",
     "lean_toolchain": "v4.28.0",
     "production_files": 274,
-    "production_loc": 254997,
+    "production_loc": 255058,
     "test_files": 68,
     "test_loc": 52297,
-    "proved_theorem_lemma_decls": 8486,
+    "proved_theorem_lemma_decls": 8488,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -107278,7 +107278,7 @@
     {
       "module": "SeLe4n.Kernel.Lifecycle.Operations.CleanupPreservation",
       "path": "SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean",
-      "declaration_count": 64,
+      "declaration_count": 65,
       "declarations": [
         {
           "kind": "namespace",
@@ -108095,8 +108095,24 @@
         },
         {
           "kind": "theorem",
+          "name": "lifecyclePreRetypeCleanup_rejects_current_anywhere",
+          "line": 1147,
+          "called": [
+            "CoreId",
+            "KernelObject",
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "currentOnCore",
+            "lifecyclePreRetypeCleanup",
+            "st",
+            "threadCurrentOnSomeCore_iff"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "cleanupTcbReferences_machine_eq",
-          "line": 1140,
+          "line": 1163,
           "called": [
             "SystemState",
             "ThreadId",
@@ -108110,7 +108126,7 @@
         {
           "kind": "theorem",
           "name": "lifecyclePreRetypeCleanup_flat_subset",
-          "line": 1149,
+          "line": 1172,
           "called": [
             "KernelObject",
             "ObjId",
@@ -108134,7 +108150,7 @@
         {
           "kind": "theorem",
           "name": "lifecyclePreRetypeCleanup_tlbShootdown_eq",
-          "line": 1226,
+          "line": 1249,
           "called": [
             "KernelObject",
             "ObjId",
@@ -108153,13 +108169,13 @@
         {
           "kind": "namespace",
           "name": "Internal",
-          "line": 1278,
+          "line": 1301,
           "called": []
         },
         {
           "kind": "def",
           "name": "lifecycleRetypeObject",
-          "line": 1314,
+          "line": 1337,
           "called": [
             "CSpaceAddr",
             "Kernel",
@@ -108176,7 +108192,7 @@
         {
           "kind": "theorem",
           "name": "cspaceLookupSlot_pair_state_eq",
-          "line": 1342,
+          "line": 1365,
           "called": [
             "CSpaceAddr",
             "Capability",
@@ -108188,7 +108204,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_tlbShootdown_eq",
-          "line": 1356,
+          "line": 1379,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -108205,7 +108221,7 @@
         {
           "kind": "def",
           "name": "lifecycleRevokeDeleteRetype",
-          "line": 1422,
+          "line": 1445,
           "called": [
             "CSpaceAddr",
             "Kernel",
@@ -148871,7 +148887,7 @@
         {
           "kind": "def",
           "name": "scheduleLocalSuccessorLive",
-          "line": 1651,
+          "line": 1654,
           "called": [
             "CoreId",
             "SystemState",
@@ -148882,7 +148898,7 @@
         {
           "kind": "theorem",
           "name": "scheduleLocalSuccessorLive_inert",
-          "line": 1656,
+          "line": 1659,
           "called": [
             "CoreId",
             "SystemState",
@@ -148892,7 +148908,7 @@
         {
           "kind": "theorem",
           "name": "scheduleLocalSuccessorLive_eq_of_seam_live",
-          "line": 1661,
+          "line": 1664,
           "called": [
             "CoreId",
             "SystemState",
@@ -148904,7 +148920,7 @@
         {
           "kind": "theorem",
           "name": "localSuccessorNeeded_post_none",
-          "line": 1669,
+          "line": 1672,
           "called": [
             "CoreId",
             "SystemState",
@@ -148916,7 +148932,7 @@
         {
           "kind": "theorem",
           "name": "localSuccessorNeeded_pre_some",
-          "line": 1676,
+          "line": 1679,
           "called": [
             "CoreId",
             "SystemState",
@@ -148928,7 +148944,7 @@
         {
           "kind": "theorem",
           "name": "candidateOutranksCurrentOnCore_of_vacated",
-          "line": 1686,
+          "line": 1689,
           "called": [
             "CoreId",
             "SystemState",
@@ -148941,7 +148957,7 @@
         {
           "kind": "theorem",
           "name": "scheduleLocalSuccessor_dispatches",
-          "line": 1704,
+          "line": 1707,
           "called": [
             "CoreId",
             "SystemState",
@@ -148962,7 +148978,7 @@
         {
           "kind": "theorem",
           "name": "scheduleLocalSuccessor_idle_of_no_candidate",
-          "line": 1724,
+          "line": 1727,
           "called": [
             "CoreId",
             "SystemState",
@@ -148975,7 +148991,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreSgiBody_reschedule",
-          "line": 1732,
+          "line": 1735,
           "called": [
             "CoreId",
             "ObjId",
@@ -148987,7 +149003,7 @@
         {
           "kind": "theorem",
           "name": "currentScan_boot_of_single_core",
-          "line": 1759,
+          "line": 1762,
           "called": [
             "CoreId",
             "SystemState",
@@ -149000,7 +149016,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreSgiBody_none_single_core",
-          "line": 1776,
+          "line": 1779,
           "called": [
             "CoreId",
             "ObjId",
@@ -149016,7 +149032,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreSgiBody_remote_wake",
-          "line": 1803,
+          "line": 1806,
           "called": [
             "CoreId",
             "ObjId",
@@ -149031,7 +149047,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreSgiBody_remote_deschedule",
-          "line": 1828,
+          "line": 1831,
           "called": [
             "CoreId",
             "ObjId",
@@ -149047,7 +149063,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreSgiBody_remote_deboost_current",
-          "line": 1853,
+          "line": 1856,
           "called": [
             "CoreId",
             "ObjId",
@@ -149064,7 +149080,7 @@
         {
           "kind": "theorem",
           "name": "computeCrossCoreSgis_all_reschedule",
-          "line": 1875,
+          "line": 1878,
           "called": [
             "CoreId",
             "SystemState",
@@ -149077,7 +149093,7 @@
         {
           "kind": "theorem",
           "name": "computeCrossCoreSgis_nil_single_core",
-          "line": 1891,
+          "line": 1894,
           "called": [
             "CoreId",
             "SystemState",
@@ -149093,7 +149109,7 @@
         {
           "kind": "def",
           "name": "crossCoreWakeDispatch",
-          "line": 1918,
+          "line": 1921,
           "called": [
             "CoreId",
             "SystemState",
@@ -149104,7 +149120,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreWakeDispatch_singleCore",
-          "line": 1922,
+          "line": 1925,
           "called": [
             "CoreId",
             "SystemState",
@@ -149120,7 +149136,7 @@
         {
           "kind": "def",
           "name": "pipChainWakeDispatch",
-          "line": 1937,
+          "line": 1940,
           "called": [
             "CoreId",
             "SystemState",
@@ -149134,7 +149150,7 @@
         {
           "kind": "theorem",
           "name": "pipChainWakeDispatch_singleCore",
-          "line": 1943,
+          "line": 1946,
           "called": [
             "SystemState",
             "ThreadId",
@@ -149150,7 +149166,7 @@
         {
           "kind": "def",
           "name": "emitBoostWakeSgi",
-          "line": 1955,
+          "line": 1958,
           "called": [
             "CoreId",
             "SgiKind",
@@ -149160,7 +149176,7 @@
         {
           "kind": "theorem",
           "name": "emitBoostWakeSgi_none",
-          "line": 1959,
+          "line": 1962,
           "called": [
             "emitBoostWakeSgi",
             "none",
@@ -149170,13 +149186,13 @@
         {
           "kind": "inductive",
           "name": "ContextSwitchSite",
-          "line": 1974,
+          "line": 1977,
           "called": []
         },
         {
           "kind": "def",
           "name": "contextSwitchSites",
-          "line": 1988,
+          "line": 1991,
           "called": [
             "ContextSwitchSite"
           ]
@@ -149184,7 +149200,7 @@
         {
           "kind": "theorem",
           "name": "contextSwitchSites_complete",
-          "line": 1994,
+          "line": 1997,
           "called": [
             "ContextSwitchSite",
             "contextSwitchSites"
@@ -149193,7 +149209,7 @@
         {
           "kind": "def",
           "name": "contextRestoreWired",
-          "line": 2027,
+          "line": 2030,
           "called": [
             "ContextSwitchSite",
             "contextRestoreSeamLive"
@@ -149202,7 +149218,7 @@
         {
           "kind": "theorem",
           "name": "contextSwitchSites_restore_pending",
-          "line": 2102,
+          "line": 2105,
           "called": [
             "contextRestoreWired",
             "contextSwitchSites",
@@ -149212,7 +149228,7 @@
         {
           "kind": "theorem",
           "name": "contextRestoreWired_none",
-          "line": 2107,
+          "line": 2110,
           "called": [
             "ContextSwitchSite",
             "contextRestoreWired"
@@ -149221,7 +149237,7 @@
         {
           "kind": "theorem",
           "name": "scheduleLocalSuccessorLive_guard_eq_register",
-          "line": 2123,
+          "line": 2126,
           "called": [
             "contextRestoreSeamLive",
             "contextRestoreWired"
@@ -149230,7 +149246,7 @@
         {
           "kind": "theorem",
           "name": "suspendReschedule_guard_eq_register",
-          "line": 2128,
+          "line": 2131,
           "called": [
             "contextRestoreSeamLive",
             "contextRestoreWired"
@@ -153610,7 +153626,7 @@
     {
       "module": "SeLe4n.Kernel.SyscallDispatchEntry",
       "path": "SeLe4n/Kernel/SyscallDispatchEntry.lean",
-      "declaration_count": 18,
+      "declaration_count": 19,
       "declarations": [
         {
           "kind": "namespace",
@@ -153765,7 +153781,7 @@
         {
           "kind": "def",
           "name": "syscallDispatchCrossCoreEntry",
-          "line": 554,
+          "line": 555,
           "called": [
             "CoreId",
             "ICacheInvalidation",
@@ -153792,7 +153808,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchCrossCoreEntry_def",
-          "line": 597,
+          "line": 598,
           "called": [
             "CoreId",
             "ICacheInvalidation",
@@ -153819,8 +153835,24 @@
         },
         {
           "kind": "theorem",
+          "name": "vacatedCore_next_syscall_rejected",
+          "line": 645,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "SystemState",
+            "currentOnCore",
+            "encodeError",
+            "none",
+            "scheduleLocalSuccessorLive",
+            "syscallDispatchFromAbi",
+            "syscallDispatchFromAbi_illegalState_when_no_current"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "syscallDispatchCrossCoreEntry_sgis_nil_single_core",
-          "line": 633,
+          "line": 668,
           "called": [
             "CoreId",
             "SystemState",
@@ -153836,7 +153868,7 @@
         {
           "kind": "def",
           "name": "suspendThreadCrossCoreEntry",
-          "line": 680,
+          "line": 715,
           "called": [
             "CoreId",
             "Kernel",

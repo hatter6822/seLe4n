@@ -1789,6 +1789,16 @@ run_check "INVARIANT" rg -n 'CrossCoreTransition.all.length = 25' SeLe4n/Kernel/
 # both lack.
 run_negative_check "INVARIANT" rg -n 'else \.ok \(st3, none\)' \
   SeLe4n/Kernel/Lifecycle/Suspend.lean
+# PR #861 review rounds 39/41: the gate's justification is "rejection, not
+# misattribution" — challenged twice on the review, both times asserting that a
+# vacated core instead falls back to `bootCoreId`.  The claim is a theorem, and
+# these anchors keep it cited where the argument is made: a docstring that
+# argues from a proof must name it, or the next reader is back to taking the
+# prose's word for it.
+run_check "INVARIANT" rg -n '^theorem vacatedCore_next_syscall_rejected' \
+  SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n 'vacatedCore_next_syscall_rejected' \
+  SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
 # ... and the wrappers that replaced it must exist.
 run_check "INVARIANT" rg -n '^def resumeThreadOnCoreLive' SeLe4n/Kernel/Lifecycle/Suspend.lean
 run_check "INVARIANT" rg -n '^def resumeThreadEnqueueOnly' SeLe4n/Kernel/Lifecycle/Suspend.lean

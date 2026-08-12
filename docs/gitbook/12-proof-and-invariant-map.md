@@ -2571,7 +2571,9 @@ each group carries a load-bearing negative).
 > evidence-bound through a total `CovertChannelId` table, replaces CC-1's
 > unsupported `log2(|domainSchedule|)` capacity figure with the component that is
 > genuinely bounded plus the statement of what is not, and extends the
-> enforcement boundary to audit the live cross-core wrappers (39 → 53 entries).
+> enforcement boundary to audit the live cross-core wrappers (39 → 53 entries;
+> 54 once round 37 re-routed `.tcbSetAffinity` — `enforcementBoundaryPerCore_count`
+> is the machine-checked figure).
 
 `InformationFlow/NonInterferencePerCore.lean` and
 `InformationFlow/CovertChannelPerCore.lean` (WS-SM SM8.B, v0.33.5; staged,

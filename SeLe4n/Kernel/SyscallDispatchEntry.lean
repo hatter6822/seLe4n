@@ -537,7 +537,8 @@ the identity until `contextRestoreSeamLive` is true.  Dispatching a successor
 whose context the runtime cannot install into the trap frame would be worse than
 dispatching none: hardware returns through the blocked caller's frame either
 way, but `currentOnCore = none` makes the caller's next syscall fail *closed*
-(`.illegalState`) whereas a named successor **misattributes** it.  The switch
+(`.illegalState` — `vacatedCore_next_syscall_rejected` below, over the state
+this entry commits) whereas a named successor **misattributes** it.  The switch
 therefore turns on with the seam it depends on, not before.
 
 Two properties of the placement are load-bearing.  It is **inside** the
@@ -622,6 +623,40 @@ theorem syscallDispatchCrossCoreEntry_def
         completeShootdownRounds result.2.2.1 result.2.2.2.1 result.2.2.2.2.1 execCore
         completeIcacheMaintenance result.2.2.2.2.2
         pure result.1) := rfl
+
+/-- **WS-SM SM8.B** (PR #861 review rounds 39/41): the gating argument's
+"rejection, not misattribution" half, as a theorem rather than as prose.
+
+The gate above (`scheduleLocalSuccessorLive`, inert until the restore seam is
+live) is justified by a claim about what happens *next*: a blocking transition
+leaves `currentOnCore execCore = none`, and the caller's next syscall is then
+**rejected** rather than attributed to some other thread.  That claim has been
+challenged twice on the review — both times asserting the opposite, that the
+next syscall silently falls back to `bootCoreId` — so it is stated here at the
+entry, over the state the entry actually commits (the *gated* wrapper's output,
+so the theorem tracks whichever side of the seam is live).
+
+The fallback the challenge describes is real but belongs to
+`determineExecutingCore`, which is reached only with a caller id already in
+hand.  Resolution happens first, in `syscallDispatchFromAbi`, and it has no
+fallback: no current thread on the issuing core means `.illegalState` with the
+state returned unmodified.  A change that gave the entry a fallback core — the
+outcome the challenge fears — breaks this theorem. -/
+theorem vacatedCore_next_syscall_rejected
+    (ctx : LabelingContext) (execCore : CoreId)
+    (pre post : SystemState)
+    (syscallId : UInt32) (msgInfo : UInt64)
+    (x0 x1 x2 x3 x4 x5 ipcBufferAddr : UInt64)
+    (hMsg : msgInfo = x1)
+    (hVacated :
+      (PriorityInheritance.scheduleLocalSuccessorLive pre post execCore).scheduler.currentOnCore
+        execCore = none) :
+    Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+        ipcBufferAddr (PriorityInheritance.scheduleLocalSuccessorLive pre post execCore)
+      = Except.ok (Platform.FFI.encodeError .illegalState,
+                   PriorityInheritance.scheduleLocalSuccessorLive pre post execCore) :=
+  Platform.FFI.syscallDispatchFromAbi_illegalState_when_no_current ctx execCore syscallId msgInfo
+    x0 x1 x2 x3 x4 x5 ipcBufferAddr _ hMsg hVacated
 
 /-- **WS-SM SM6.A** trace-safety witness: on the boot core, when every thread's
 home core is the boot core (the single-core configuration), the diff-recovered

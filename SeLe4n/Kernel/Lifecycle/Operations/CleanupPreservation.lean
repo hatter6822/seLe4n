@@ -1130,6 +1130,29 @@ theorem cleanupTcbReferences_scheduler_eq_removeRunnableFromAllCores
   rw [removeFromAllNotificationWaitLists_scheduler_eq]
   exact removeFromAllEndpointQueues_scheduler_eq (removeRunnableFromAllCores st tid) tid
 
+/-- **WS-SM SM8.B (PR #861 review round 40): the destroyed-remote-current case
+is unreachable.**
+
+A separate finding asked for a `.reschedule` SGI when a retype destroys a TCB
+that is current on a **remote** core: the sweep clears that core's slot, the
+object then stops being a TCB, and `crossCoreSgiBody` — which opens by matching
+the post-state object against a TCB — re-derives nothing, leaving the remote
+processor running scrubbed storage.
+
+The round-39 guard closes it by construction rather than by adding a rule: the
+cleanup rejects a target current on **any** core, so no retype ever reaches a
+state in which a remote core's current slot held the destroyed thread.  Stated
+as a theorem because "unreachable" is exactly the kind of claim that rots — if
+the guard is ever narrowed to the executing core, this stops compiling. -/
+theorem lifecyclePreRetypeCleanup_rejects_current_anywhere
+    (st : SystemState) (target : SeLe4n.ObjId) (tcb : TCB) (newObj : KernelObject)
+    (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (hCur : st.scheduler.currentOnCore c = some tcb.tid) :
+    lifecyclePreRetypeCleanup st target (.tcb tcb) newObj = .error .revocationRequired := by
+  unfold lifecyclePreRetypeCleanup
+  simp only []
+  rw [if_pos (threadCurrentOnSomeCore_iff st tcb.tid |>.mpr ⟨c, hCur⟩)]
+
 /-- WS-SM SM8.B.2: the TCB reference scrub writes no register bank.
 
 The `machine` companion of `cleanupTcbReferences_scheduler_eq_removeRunnableFromAllCores`.

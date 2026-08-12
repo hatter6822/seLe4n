@@ -1631,8 +1631,11 @@ Without a context-restore seam the SVC path returns through the blocked caller's
 own frame either way, so the caller **keeps executing user code it should not be
 running**, on both sides of this guard.  What differs is only what happens at
 its *next* syscall: with `currentOnCore = none` the dispatch rejects it
-(`syscallDispatchFromAbi` returns `.illegalState`), while with a named successor
-it is **attributed to that successor**.  Rejection is better than
+(`syscallDispatchFromAbi` returns `.illegalState` — proven, not asserted:
+`Platform.FFI.syscallDispatchFromAbi_illegalState_when_no_current`, instantiated
+over this wrapper's own output by `SyscallDispatchEntry`'s
+`vacatedCore_next_syscall_rejected`), while with a named successor it is
+**attributed to that successor**.  Rejection is better than
 misattribution, so the gate picks the less-bad of two broken states — it is a
 relative choice, not a safety property, and "fails closed" describes the syscall
 boundary alone.
