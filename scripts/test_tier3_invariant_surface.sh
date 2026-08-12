@@ -1780,9 +1780,8 @@ run_check "INVARIANT" rg -n 'CrossCoreTransition.all.length = 22' SeLe4n/Kernel/
 # in-transition form left behind — `resumeThreadOnCore`'s gated local arm ended
 # `else .ok (st3, none)`, a shape the un-gated body and the enqueue-only sibling
 # both lack.
-run_negative_check "INVARIANT" \
-  'in-transition context-restore gate in resumeThreadOnCore' \
-  rg -n 'else \.ok \(st3, none\)' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_negative_check "INVARIANT" rg -n 'else \.ok \(st3, none\)' \
+  SeLe4n/Kernel/Lifecycle/Suspend.lean
 # ... and the wrappers that replaced it must exist.
 run_check "INVARIANT" rg -n '^def resumeThreadOnCoreLive' SeLe4n/Kernel/Lifecycle/Suspend.lean
 run_check "INVARIANT" rg -n '^def resumeThreadEnqueueOnly' SeLe4n/Kernel/Lifecycle/Suspend.lean

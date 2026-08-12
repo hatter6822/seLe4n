@@ -200,20 +200,29 @@ private def routeDispatch : List String :=
 private def routePinned : List String :=
   [@PINNED@]
 
-/-- Applications of a per-core primitive one of whose arguments IS the
-`bootCoreId` constant.  A statement about the term, so no spelling of the call
-can hide it. -/
+/-- Applications of a per-core primitive, paired with each of their **closed**
+arguments.  Purely collected here; whether an argument *is* the boot core is
+decided in `MetaM` below, because that question is definitional rather than
+syntactic.
+
+`bootCoreId` elaborates to `⟨0, numCores_pos⟩`, so a hand-written `(0 : CoreId)`
+or `⟨0, h⟩` is the same value carrying a different proof term — a different
+`Expr`, invisible to a `.const` test (PR #861 review round 33).  Loose bvars are
+excluded: an open term cannot be compared soundly. -/
 private partial def routeBootHits (prims boot : Std.HashSet Name) (e : Expr) :
-    Array Name := Id.run do
-  let mut hits : Array Name := #[]
+    Array (Name × Expr) := Id.run do
+  let mut hits : Array (Name × Expr) := #[]
   -- Beta-reduce the head for the same reason: `(fun c => removeRunnableOnCore
   -- st tid c) bootCoreId` is an application of a lambda, not of the primitive.
   let e := e.headBeta
   if let .const p _ := e.getAppFn then
     if prims.contains p then
       for a in e.getAppArgs do
-        if let .const c _ := a.consumeMData then
-          if boot.contains c then hits := hits.push p
+        let a := a.consumeMData
+        if let .const c _ := a then
+          if boot.contains c then hits := hits.push (p, a)
+        else if !a.hasLooseBVars then
+          hits := hits.push (p, a)
   match e with
   | .app f a         => return hits ++ routeBootHits prims boot f
                                  ++ routeBootHits prims boot a
@@ -245,6 +254,13 @@ kernel happens to contain today. -/
 def routeSelfTestAlias st tid :=
   let c := SeLe4n.Kernel.Concurrency.bootCoreId
   SeLe4n.Kernel.removeRunnableOnCore st tid c
+
+/-- A second witness, for the *other* spelling: `bootCoreId` elaborates to
+`⟨0, numCores_pos⟩`, so a hand-written core zero is the same value with a
+different proof term.  A `.const` test misses it; the definitional test below
+must not. -/
+def routeSelfTestLiteralZero st tid :=
+  SeLe4n.Kernel.removeRunnableOnCore st tid ⟨0, SeLe4n.Kernel.Concurrency.numCores_pos⟩
 
 run_cmd do
   let env ← getEnv
@@ -283,15 +299,18 @@ run_cmd do
   logInfo m!"ROUTE_SIZES prims={prims.size} pinned={pinned.size} boot={boot.size}"
   -- The alias witness must be detected, here, every run.  Without it the
   -- zeta-reduction above is a claim rather than a checked fact.
-  match env.find? `routeSelfTestAlias with
-  | some ci =>
-    match ci.value? with
-    | some v =>
-      if (routeBootHits prims boot v).isEmpty then
-        logInfo m!"ROUTE_ALIAS_WITNESS_MISSED"
-      else logInfo m!"ROUTE_ALIAS_WITNESS ok"
-    | none => logInfo m!"ROUTE_ALIAS_WITNESS_MISSED"
-  | none => logInfo m!"ROUTE_ALIAS_WITNESS_MISSED"
+  for (wit, tag) in [(`routeSelfTestAlias, "ALIAS"), (`routeSelfTestLiteralZero, "ZERO")] do
+    let mut ok := false
+    if let some ci := env.find? wit then
+      if let some v := ci.value? then
+        for (_, a) in routeBootHits prims boot v do
+          if let .const c _ := a then
+            if boot.contains c then ok := true
+          if !ok then
+            for b in boot do
+              if ← liftTermElabM (Lean.Meta.isDefEq a (.const b [])) then ok := true
+    if ok then logInfo m!"ROUTE_WITNESS_{tag} ok"
+    else logInfo m!"ROUTE_WITNESS_MISSED {tag}"
   -- Everything the syscall dispatch can reach, computed once and used only to
   -- disambiguate colliding short names.
   let mut dispatchReach : Std.HashSet Name := {}
@@ -360,7 +379,19 @@ run_cmd do
         if pinned.contains m then findings := findings.insert m
         if let some ci := env.find? m then
           if let some v := ci.value? then
-            for h in routeBootHits prims boot v do findings := findings.insert h
+            for (p, a) in routeBootHits prims boot v do
+              if let .const c _ := a then
+                if boot.contains c then
+                  findings := findings.insert p
+                  continue
+              -- Definitional test: `(0 : CoreId)` and `⟨0, h⟩` are `bootCoreId`
+              -- by any other spelling.  `isDefEq` fails fast on a type mismatch,
+              -- so passing every closed argument through it is cheap.
+              for b in boot do
+                let same ← liftTermElabM (Lean.Meta.isDefEq a (.const b []))
+                if same then
+                  findings := findings.insert p
+                  break
       for f in findings do
         logInfo m!"ROUTE_FINDING {r} {f}"
       logInfo m!"ROUTE_ROOT {r} {seen.size}"
@@ -429,11 +460,14 @@ def run_probe(roots: list[str], hops: int) -> tuple[dict, str]:
     diag = re.compile(r"^.*\.lean:\d+:\d+: error")
     if any(diag.match(ln) for ln in out.splitlines()):
         raise RuntimeError(f"the routing probe did not elaborate\n{out[-3000:]}")
-    if "ROUTE_ALIAS_WITNESS_MISSED" in out:
+    missed = re.findall(r"ROUTE_WITNESS_MISSED (\S+)", out)
+    if missed:
         raise RuntimeError(
-            "the probe's own `let`-alias witness was NOT detected, so the "
-            "traversal no longer\n      sees a core passed through a local "
-            "binding (`let c := bootCoreId; f … c`).")
+            f"the probe's own boot-core witnesses were NOT detected: {missed}.\n"
+            "      ALIAS = a core passed through a local binding "
+            "(`let c := bootCoreId; f … c`);\n"
+            "      ZERO  = a core written as the literal `⟨0, _⟩` rather than "
+            "as `bootCoreId`.")
     for tag in ("ROUTE_STEM_UNRESOLVED", "ROUTE_UNRESOLVED",
                 "ROUTE_DISPATCH_UNRESOLVED", "ROUTE_UNNARROWABLE"):
         bad = re.findall(rf"{tag} (\S+)", out)
