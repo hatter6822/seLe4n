@@ -374,6 +374,60 @@ theorem foldl_removeRunnableStepOnCore_frame
     exact ⟨by rw [List.foldl_cons, h1, g1], by rw [List.foldl_cons, h2, g2],
            by rw [List.foldl_cons, h3, g3], by rw [List.foldl_cons, h4, g4]⟩
 
+/-- WS-SM SM8.B (PR #861 review round 35): the sweep leaves every core's **domain**
+slots alone.
+
+The three domain slots complete the six-field observable set: the sweep's step
+writes only `runQueueOnCore` and `currentOnCore`, in the taken branch, and
+nothing at all in the untaken one.  Needed because `observableSlotsConfinedToCores`
+quantifies over all six, and the `.lifecycleRetype` write set is the first
+consumer to ask the sweep for them. -/
+theorem foldl_removeRunnableStepOnCore_domain_frame
+    (cs : List SeLe4n.Kernel.Concurrency.CoreId) (tid : SeLe4n.ThreadId) :
+    ∀ (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId),
+      (cs.foldl (removeRunnableStepOnCore tid) st).scheduler.activeDomainOnCore c
+        = st.scheduler.activeDomainOnCore c
+      ∧ (cs.foldl (removeRunnableStepOnCore tid) st).scheduler.domainTimeRemainingOnCore c
+        = st.scheduler.domainTimeRemainingOnCore c
+      ∧ (cs.foldl (removeRunnableStepOnCore tid) st).scheduler.domainScheduleIndexOnCore c
+        = st.scheduler.domainScheduleIndexOnCore c := by
+  induction cs with
+  | nil => intro _ _; exact ⟨rfl, rfl, rfl⟩
+  | cons d ds ih =>
+    intro st c
+    obtain ⟨h1, h2, h3⟩ := ih (removeRunnableStepOnCore tid st d) c
+    have hStep : ∀ (s : SystemState) (e : SeLe4n.Kernel.Concurrency.CoreId),
+        (removeRunnableStepOnCore tid s e).scheduler.activeDomainOnCore c
+          = s.scheduler.activeDomainOnCore c
+        ∧ (removeRunnableStepOnCore tid s e).scheduler.domainTimeRemainingOnCore c
+          = s.scheduler.domainTimeRemainingOnCore c
+        ∧ (removeRunnableStepOnCore tid s e).scheduler.domainScheduleIndexOnCore c
+          = s.scheduler.domainScheduleIndexOnCore c := by
+      intro s e
+      unfold removeRunnableStepOnCore
+      split <;> simp
+    obtain ⟨g1, g2, g3⟩ := hStep st d
+    exact ⟨by rw [List.foldl_cons, h1, g1], by rw [List.foldl_cons, h2, g2],
+           by rw [List.foldl_cons, h3, g3]⟩
+
+@[simp] theorem removeRunnableFromAllCores_activeDomainOnCore (st : SystemState)
+    (tid : SeLe4n.ThreadId) (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (removeRunnableFromAllCores st tid).scheduler.activeDomainOnCore c
+      = st.scheduler.activeDomainOnCore c :=
+  (foldl_removeRunnableStepOnCore_domain_frame _ tid st c).1
+
+@[simp] theorem removeRunnableFromAllCores_domainTimeRemainingOnCore (st : SystemState)
+    (tid : SeLe4n.ThreadId) (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (removeRunnableFromAllCores st tid).scheduler.domainTimeRemainingOnCore c
+      = st.scheduler.domainTimeRemainingOnCore c :=
+  (foldl_removeRunnableStepOnCore_domain_frame _ tid st c).2.1
+
+@[simp] theorem removeRunnableFromAllCores_domainScheduleIndexOnCore (st : SystemState)
+    (tid : SeLe4n.ThreadId) (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (removeRunnableFromAllCores st tid).scheduler.domainScheduleIndexOnCore c
+      = st.scheduler.domainScheduleIndexOnCore c :=
+  (foldl_removeRunnableStepOnCore_domain_frame _ tid st c).2.2
+
 @[simp] theorem removeRunnableFromAllCores_objects (st : SystemState)
     (tid : SeLe4n.ThreadId) :
     (removeRunnableFromAllCores st tid).objects = st.objects :=

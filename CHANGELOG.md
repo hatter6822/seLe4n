@@ -1,5 +1,57 @@
 ## v0.33.5 — SM8.B: per-core non-interference, at the transitions that really run
 
+**Review round 35 — the per-core routing allowlist reaches zero.**
+`scripts/check_live_arm_per_core_routing.py` walks two hops out from each live
+syscall arm and fails on any boot-pinned scheduler primitive it reaches; it
+found seven live-arm defects this PR, and thereafter passed only because three
+syscalls held waivers.  An allowlist that never empties is a gate that has
+stopped being one, so the three become inventory entries and the file becomes
+`[]` — pinned negatively by a Tier 3 anchor, so a waiver cannot quietly return.
+
+`.vspaceMap` and `.vspaceUnmap` carry an **empty** write set, which their
+confinement theorems already proved; they held waivers only because the
+inventory had no way to *say* "takes an executing core, writes no core".
+`.lifecycleRetype` genuinely writes scheduler state — destroying a TCB sweeps it
+out of every core's run queue and current slot, since a destroy has no home core
+to key on.  The naive bound `allCores` is true and carries no information; the
+honest one is the set of cores the victim occupied in the **pre-state** (the
+only state that still has it), available because review round 17 made the
+sweep's step *guarded*, so an unoccupied core is left literally untouched rather
+than rewritten with equal values.  Confinement composes up five layers — cleanup,
+scrub and store, ASID rounds, initiator drain, I-cache broadcast — with every
+layer but the cleanup discharged by a frame.
+
+All three arrive **delegation-backed** rather than read off the arm
+(`syscallDelegates_{lifecycleRetype,vspaceMap,vspaceUnmap}`), so the ratio
+improves as well as grows: 10 of 18 live arms mechanically tied to the dispatch,
+where it was 7 of 15.  Counts: 22 → 25 transitions, 21 → 22 remote writers.  New
+reusable algebra: `observableSlotsConfinedToCores_of_framed_{prefix,suffix}` (a
+framed step must not widen the declared set, where composition alone leaves
+`[] ++ cs`) and a `_suffix_regs` variant keyed on the register banks, needed
+because the retype's memory scrub writes `machine.memory` and the whole-machine
+form is false of it.  `SmpInformationFlowSuite` §5.7 adds 14 assertions with
+four load-bearing negatives.
+
+Also corrected: the paragraph above `crossCoreLiveArmDelegationBacked` warned
+that "prose that repeats a `decide` is prose that goes stale", and had itself
+gone stale — it read "seven of fourteen" while the count theorem beside it
+already read 15.
+
+**Registered debt, deferred out of this release and scheduled to be fixed** (see
+`docs/planning/SMP_INFORMATION_FLOW_PLAN.md` §SM8.B): the configured endpoint
+flow policy is still unenforced — `endpointFlowCheck` has no live consumer, so
+the runtime is strictly more permissive than the configured policy.  Not a
+security advisory, for a specific reason: `LabelingContext` has no
+`endpointPolicy` field at all, so no operator can configure a policy that is
+then ignored — the feature was never wired rather than bypassed.  The design and
+the chosen cut (conjoin rather than replace; `embedLegacyLabel` is total so no
+context lift is needed; reorder the three policy structures above
+`LabelingContext`; take the consistent cut so no `enforcementSoundness_*`
+theorem concludes less than the live gate enforces) are recorded there with
+SM8.C as the closure phase.  Separately, the live `.send` has no
+`ipcInvariantFull` preservation theorem, tracked against SM6.D's open
+bundle-carriage list with the boot-core instance as the first slice.
+
 **Review round 34 — the context-restore gate moved into wrappers.**  An earlier
 cut of this release gated two transitions by folding `if contextRestoreSeamLive`
 *inside* them (`resumeThreadOnCore`, `priorityRescheduleOnCore`).  The flag is a

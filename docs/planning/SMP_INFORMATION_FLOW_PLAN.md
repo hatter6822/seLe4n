@@ -1208,6 +1208,103 @@ promoting the
 `withLockSet` boundary entry into the canonical `enforcementBoundary` (38 → 39)
 and the `smp_information_flow.expected` fixture are SM8.E.
 
+#### Round 35 — the per-core routing allowlist reaches zero
+
+`scripts/check_live_arm_per_core_routing.py` starts from
+`syscallIdToEnforcementNamePerCore`, walks two hops of the call graph and fails
+on any boot-pinned scheduler primitive it reaches.  It found seven live-arm
+defects across rounds 15, 16 and its own first run.  It passed thereafter only
+because three syscalls held waivers in
+`scripts/per_core_routing_allowlist.json`; **an allowlist that never empties is
+a gate that has stopped being one**, so this cut closes it.
+
+The three become `CrossCoreTransition` entries (22 → 25 constructors, 15 → 18
+live arms), and all three arrive **delegation-backed** rather than read off the
+arm — `syscallDelegates_{lifecycleRetype,vspaceMap,vspaceUnmap}` discharge the
+existing `dispatchWithCap_*_delegates` theorems, taking the mechanically-tied
+count 7 → 10 of 18.
+
+* **`.vspaceMap` / `.vspaceUnmap`** carry an **empty** write set, which their
+  `_confinedToCores` theorems already proved.  They held waivers only because
+  the inventory keyed entries by live-arm syscall and had no way to *say*
+  "takes an executing core, writes no core"; `crossCoreTransitionWritesRemote`
+  already admitted `false` (`.notificationWait` is one), so the entries slot in
+  and `crossCoreTransitionWritesRemote_count` goes 21 → 22 of 25.
+* **`.lifecycleRetype`** genuinely writes scheduler state: destroying a TCB
+  sweeps it out of *every* core's run queue and current slot, because a destroy
+  has no home core to key on.  The naive bound `allCores` is true and carries no
+  information.  The honest one is `threadOccupiedCores` — the cores the victim
+  held in the **pre-state**, which is the only state that still has it — and it
+  is available because round 17 rewrote the sweep's step to be *guarded* by
+  `threadOccupiesCore`, so an unoccupied core is left literally untouched rather
+  than rewritten with equal values.  `lifecycleRetypeWriteSet` resolves it
+  through the object store; the confinement composes up five layers
+  (cleanup → scrub + store → ASID rounds → initiator drain → I-cache broadcast),
+  every layer but the cleanup discharged by a frame.
+
+Two new pieces of algebra generalise across the stack:
+`observableSlotsConfinedToCores_of_framed_{prefix,suffix}` (a framed step does
+not widen the declared set, where `_trans` alone would leave `[] ++ cs`), and a
+`_suffix_regs` variant keyed on the register banks rather than whole-machine
+equality — needed because the retype's memory scrub writes `machine.memory`,
+which makes the whole-machine form false of it.  `withIcacheBroadcast` gains the
+write-set-keyed companion of `withIcacheBroadcast_framed` for the same reason.
+
+Suite: `SmpInformationFlowSuite` §5.7, 14 assertions with four load-bearing
+negatives — the occupancy set is *not* `allCores`; the sweep is *not* inert;
+a two-core victim is *not* confined to one of them; the retype writes remote
+while its two VSpace siblings do not.  Tier 3 pins the new symbols and pins
+the empty allowlist **negatively**, so a waiver cannot quietly return.
+
+#### Registered debt (deferred out of SM8.B, scheduled to be fixed)
+
+Neither of these is documented away: both are owed work with a named closure
+phase, per the implement-the-improvement rule.
+
+**(a) The configured endpoint flow policy is not enforced — closure target
+SM8.C.**  `endpointFlowCheck` has no live consumer, so the runtime is strictly
+more permissive than the configured policy (`endpointPolicyRestricted` in
+`Policy.lean` pins overrides as narrowing-only).
+
+*Not a security advisory, for a specific reason*: `LabelingContext` (in
+`Policy.lean`) has no `endpointPolicy` field at all, so no operator can
+configure a policy that is then ignored.  Nothing is bypassed — the feature was
+never wired.  It must still be **built**.
+
+The design is surveyed and the cut is decided:
+
+* Conjoin, do not replace: `securityFlowsTo … && endpointOverrideAllows …`, the
+  second vacuously true where no override is configured.
+* `embedLegacyLabel` (`Policy.lean`) is **total**, so the conjunct reads
+  labels directly and needs no `GenericLabelingContext` — this sidesteps the
+  dead `liftLegacyContext` rather than reviving it.
+* Four endpoint-keyed gate sites: `API.lean` `.receive` and `.replyRecv`,
+  `EndpointSend.lean`, `EndpointCallDispatch.lean`.
+* The field is a forward reference, so the cut reorders `SecurityDomain` /
+  `DomainFlowPolicy` / `EndpointFlowPolicy` above `LabelingContext` — verified
+  clean, zero backward dependencies, and a defaulted field forces zero of the 22
+  construction sites to change.
+* Take the **consistent** cut (~10–12 files, 16 proofs).  The minimal one
+  (6 files, 6 proofs) leaves four `enforcementSoundness_*` theorems concluding
+  something weaker than the live gate enforces, which is exactly the split state
+  this project's rules exist to prevent.  Landing an `hNoOverride` collapse
+  lemma first turns most of the 16 repairs into one-line hypothesis additions.
+* The endpoint-keyed `checkedDispatch_*_eq_unchecked` theorems gain a real
+  `hOverride` premise — they quantify over an arbitrary `ctx`, so the conjunct
+  is not free.
+
+**(b) The live `.send` sits outside the invariant-preservation chain — closure
+target SM6.D's open bundle-carriage list.**  `endpointSendDualOnCore` /
+`…WithCapsOnCore` (`IPC/CrossCore/EndpointSend.lean`, new in round 12) have no
+`_preserves_ipcInvariantFull`, where the call-side sibling has seven
+(`EndpointCallInvariant.lean`, 2805 lines — that is the size of the per-core
+case).  The boot-core instance is the cheap first slice:
+`endpointSendDualOnCore_bootCore_block_eq_single` and
+`…_bootCore_rendezvous_eq_single` already rewrite both success arms to the
+single-core transition, so that instance rewrites to the existing single-core
+preservation theorem.  This joins the bound-delivery and `withLockSet` conjuncts
+already tracked there.
+
 ### SM8.C — Per-core declassification audit (7 sub-tasks)
 
 | Sub | Description | Theorem | Est |

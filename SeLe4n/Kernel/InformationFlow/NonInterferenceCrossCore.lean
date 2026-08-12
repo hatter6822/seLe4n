@@ -2157,6 +2157,131 @@ theorem priorityRescheduleOnCoreLive_confinedToCores (st st' : SystemState)
       st st' running? executingCore shouldPreempt sgi h]
     exact observableSlotsConfinedToCores_refl _ _
 
+/-- SM8.B.2 (PR #861 review round 35): **the cores a destroy sweep actually
+touches** — those the thread occupies in the pre-state.
+
+`removeRunnableFromAllCores` folds over *every* core, so the naive bound is
+`allCores`, which is true and useless.  Round 17 rewrote the step to be
+**guarded** by `threadOccupiesCore` precisely so a sharper bound would be
+available: an unoccupied core is left literally untouched, not rewritten with
+equal values.  This is that bound. -/
+def threadOccupiedCores (st : SystemState) (tid : SeLe4n.ThreadId) : List CoreId :=
+  Concurrency.allCores.filter (threadOccupiesCore st tid)
+
+/-- SM8.B.2: a core outside the occupancy set does not hold the thread. -/
+theorem not_threadOccupiesCore_of_not_mem (st : SystemState) (tid : SeLe4n.ThreadId)
+    (c : CoreId) (h : c ∉ threadOccupiedCores st tid) :
+    threadOccupiesCore st tid c = false := by
+  cases hOcc : threadOccupiesCore st tid c with
+  | false => rfl
+  | true =>
+    exact absurd (List.mem_filter.mpr ⟨Concurrency.mem_allCores c, by simp [hOcc]⟩) h
+
+/-- SM8.B.2 (**the destroy sweep's bound**): the sweep writes no core the thread
+does not occupy.
+
+All six observable slots: the two the guarded step writes come from the sweep's
+closed forms (both keyed on the *pre-state* guard, which is what makes a
+pre-state write set possible at all), the three domain slots from the round-35
+fold frame, and the register banks because the sweep never touches `machine`. -/
+theorem removeRunnableFromAllCores_confinedToCores (st : SystemState)
+    (tid : SeLe4n.ThreadId) :
+    observableSlotsConfinedToCores st (removeRunnableFromAllCores st tid)
+      (threadOccupiedCores st tid) := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro c hc
+  · rw [removeRunnableFromAllCores_runQueueOnCore]
+    simp [not_threadOccupiesCore_of_not_mem st tid c hc]
+  · rw [removeRunnableFromAllCores_currentOnCore]
+    have hOcc := not_threadOccupiesCore_of_not_mem st tid c hc
+    unfold threadOccupiesCore at hOcc
+    simp only [Bool.or_eq_false_iff, beq_eq_false_iff_ne] at hOcc
+    simp [hOcc.2]
+  · exact removeRunnableFromAllCores_activeDomainOnCore st tid c
+  · exact removeRunnableFromAllCores_domainTimeRemainingOnCore st tid c
+  · exact removeRunnableFromAllCores_domainScheduleIndexOnCore st tid c
+  · rw [removeRunnableFromAllCores_machine]
+
+/-- SM8.B.2: occupancy is a scheduler read, so a scheduler-preserving prefix
+does not move the write set.
+
+Load-bearing for the retype: the sweep runs several steps into the cleanup
+pipeline, but the write set is declared at the pipeline's **entry** state.  The
+two are the same set precisely because everything in between frames the
+scheduler. -/
+theorem threadOccupiedCores_congr {st st' : SystemState} (tid : SeLe4n.ThreadId)
+    (h : st'.scheduler = st.scheduler) :
+    threadOccupiedCores st' tid = threadOccupiedCores st tid := by
+  unfold threadOccupiedCores threadOccupiesCore
+  rw [h]
+
+/-- SM8.B.2: a scheduler- and machine-preserving prefix can be dropped from a
+confinement statement.
+
+The composition shape the retype pipeline needs everywhere: only one of its
+steps writes a scheduler slot, and the several around it must be discharged
+without inflating the declared set (which `observableSlotsConfinedToCores_trans`
+alone would do, leaving `[] ++ cs`). -/
+theorem observableSlotsConfinedToCores_of_framed_prefix {st stMid st' : SystemState}
+    {cs : List CoreId}
+    (hSched : stMid.scheduler = st.scheduler) (hMach : stMid.machine = st.machine)
+    (h : observableSlotsConfinedToCores stMid st' cs) :
+    observableSlotsConfinedToCores st st' cs :=
+  ⟨fun c hc => (h.runQueue c hc).trans (by rw [hSched]),
+   fun c hc => (h.current c hc).trans (by rw [hSched]),
+   fun c hc => (h.activeDomain c hc).trans (by rw [hSched]),
+   fun c hc => (h.domainTimeRemaining c hc).trans (by rw [hSched]),
+   fun c hc => (h.domainScheduleIndex c hc).trans (by rw [hSched]),
+   fun c hc => (h.regs c hc).trans (by rw [hMach])⟩
+
+/-- SM8.B.2: and the mirror — a framed **suffix** does not move the set either,
+where "framed" here reaches only as far as the observer does.
+
+The register-bank form rather than the whole-machine one, because the retype's
+memory scrub writes `machine.memory` and the whole-machine version would be
+false of it. -/
+theorem observableSlotsConfinedToCores_of_framed_suffix_regs {st stMid st' : SystemState}
+    {cs : List CoreId}
+    (hSched : st'.scheduler = stMid.scheduler)
+    (hRegs : ∀ c, st'.machine.regsOnCore c = stMid.machine.regsOnCore c)
+    (h : observableSlotsConfinedToCores st stMid cs) :
+    observableSlotsConfinedToCores st st' cs :=
+  ⟨fun c hc => (by rw [hSched] : st'.scheduler.runQueueOnCore c = _).trans (h.runQueue c hc),
+   fun c hc => (by rw [hSched] : st'.scheduler.currentOnCore c = _).trans (h.current c hc),
+   fun c hc => (by rw [hSched] : st'.scheduler.activeDomainOnCore c = _).trans
+     (h.activeDomain c hc),
+   fun c hc => (by rw [hSched] : st'.scheduler.domainTimeRemainingOnCore c = _).trans
+     (h.domainTimeRemaining c hc),
+   fun c hc => (by rw [hSched] : st'.scheduler.domainScheduleIndexOnCore c = _).trans
+     (h.domainScheduleIndex c hc),
+   fun c hc => (hRegs c).trans (h.regs c hc)⟩
+
+/-- SM8.B.2: the whole-machine instance of the suffix rule, for the steps that
+frame `machine` outright. -/
+theorem observableSlotsConfinedToCores_of_framed_suffix {st stMid st' : SystemState}
+    {cs : List CoreId}
+    (hSched : st'.scheduler = stMid.scheduler) (hMach : st'.machine = stMid.machine)
+    (h : observableSlotsConfinedToCores st stMid cs) :
+    observableSlotsConfinedToCores st st' cs :=
+  ⟨fun c hc => (by rw [hSched] : st'.scheduler.runQueueOnCore c = _).trans (h.runQueue c hc),
+   fun c hc => (by rw [hSched] : st'.scheduler.currentOnCore c = _).trans (h.current c hc),
+   fun c hc => (by rw [hSched] : st'.scheduler.activeDomainOnCore c = _).trans
+     (h.activeDomain c hc),
+   fun c hc => (by rw [hSched] : st'.scheduler.domainTimeRemainingOnCore c = _).trans
+     (h.domainTimeRemaining c hc),
+   fun c hc => (by rw [hSched] : st'.scheduler.domainScheduleIndexOnCore c = _).trans
+     (h.domainScheduleIndex c hc),
+   fun c hc => (by rw [hMach] : st'.machine.regsOnCore c = _).trans (h.regs c hc)⟩
+
+/-- SM8.B.2: **the TCB reference scrub's bound** — the destroy sweep, plus two
+object-store sweeps that write no scheduler slot at all. -/
+theorem cleanupTcbReferences_confinedToCores (st : SystemState) (tid : SeLe4n.ThreadId) :
+    observableSlotsConfinedToCores st (cleanupTcbReferences st tid)
+      (threadOccupiedCores st tid) :=
+  observableSlotsConfinedToCores_of_framed_suffix
+    (cleanupTcbReferences_scheduler_eq_removeRunnableFromAllCores st tid)
+    (by rw [cleanupTcbReferences_machine_eq, removeRunnableFromAllCores_machine])
+    (removeRunnableFromAllCores_confinedToCores st tid)
+
 /-- SM8.B.2: clearing a suspended thread's transient fields is per-core silent —
 it rewrites one TCB and touches neither the scheduler nor a register bank. -/
 theorem clearPendingState_confinedToCores (st : SystemState) (tid : SeLe4n.ThreadId) :
@@ -2814,21 +2939,18 @@ theorem schedContextUnbind_confinedToCores (vScId : SeLe4n.ValidObjId)
           -- Orient the disequality the `_ne` lemmas expect before simplifying.
           (have hne : determineTargetCore st tid ≠ c := fun h => hc h.symm) <;>
           (repeat' split) <;>
+          -- the replenish-queue setters are not in this transition's footprint;
+          -- their five frames were carried here and never fired
           simp_all [SchedulerState.setCurrentOnCore_runQueueOnCore,
             SchedulerState.setRunQueueOnCore_runQueueOnCore_ne,
             SchedulerState.setCurrentOnCore_currentOnCore_ne,
             SchedulerState.setRunQueueOnCore_currentOnCore,
-            SchedulerState.setReplenishQueueOnCore_runQueueOnCore,
-            SchedulerState.setReplenishQueueOnCore_currentOnCore,
             SchedulerState.setCurrentOnCore_activeDomainOnCore,
             SchedulerState.setRunQueueOnCore_activeDomainOnCore,
-            SchedulerState.setReplenishQueueOnCore_activeDomainOnCore,
             SchedulerState.setCurrentOnCore_domainTimeRemainingOnCore,
             SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore,
-            SchedulerState.setReplenishQueueOnCore_domainTimeRemainingOnCore,
             SchedulerState.setCurrentOnCore_domainScheduleIndexOnCore,
-            SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore,
-            SchedulerState.setReplenishQueueOnCore_domainScheduleIndexOnCore]
+            SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
       · next hNoTcb =>
         rw [Except.ok.injEq, Prod.mk.injEq] at hStep
         obtain ⟨-, hs⟩ := hStep
@@ -3813,6 +3935,334 @@ theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_crossCoreNonInterference
       st st' hStep) hShared
 
 -- ============================================================================
+-- §5c  The live `.lifecycleRetype` arm — a sweep bounded by occupancy
+-- ============================================================================
+--
+-- The third and last routing-allowlist exception, and the only one of the three
+-- that genuinely writes scheduler state: destroying a TCB sweeps it out of
+-- **every** core's run queue and current slot, because a destroy has no home
+-- core to key on.
+--
+-- The naive bound is therefore `allCores`, which is true and says nothing.  The
+-- honest one is the set of cores the destroyed thread actually occupied in the
+-- pre-state, and it is available only because review round 17 rewrote the
+-- sweep's step to be *guarded* by `threadOccupiesCore`: an unoccupied core is
+-- left literally untouched rather than rewritten with equal values.
+--
+-- Everything else the retype pipeline does — the donation return, the
+-- `scThreadIndex` removal, the two IPC-reference sweeps, the service-registration
+-- cleanup, the CDT detach, the memory scrub, the object store, the ASID
+-- shootdown rounds, the initiator's own TLB drain and the I-cache broadcast —
+-- writes no scheduler slot and no register bank, and each of those is discharged
+-- by a frame rather than by an argument.
+
+/-- SM8.B.2: the I-cache broadcast seam preserves whatever confinement its
+wrapped transition has.
+
+The `withIcacheBroadcast_framed` sibling, keyed on the write set rather than on
+whole-machine equality — the retype needs this one because its memory scrub
+genuinely writes `machine`, so the `Framed` form is unavailable. -/
+theorem withIcacheBroadcast_confinedToCores
+    (mkOp : SystemState → Option Architecture.ICacheInvalidation) (k : Kernel Unit)
+    (cs : List CoreId) (st st' : SystemState)
+    (hk : ∀ s', k st = .ok ((), s') → observableSlotsConfinedToCores st s' cs)
+    (h : Architecture.withIcacheBroadcast mkOp k st = .ok ((), st')) :
+    observableSlotsConfinedToCores st st' cs := by
+  unfold Architecture.withIcacheBroadcast at h
+  simp only [] at h
+  split at h
+  · exact absurd h (by simp)
+  · next stK hK =>
+    have hInner := hk stK hK
+    split at h <;>
+      · rw [Except.ok.injEq, Prod.mk.injEq] at h
+        obtain ⟨-, he⟩ := h
+        subst he
+        exact observableSlotsConfinedToCores_of_framed_suffix (stMid := stK) rfl rfl hInner
+
+/-- SM8.B.2: **where a `.lifecycleRetype` writes**, as a function of the object
+being destroyed.
+
+Only the TCB arm names any core, and it names the ones the doomed thread
+occupies.  Every other kind of object — CNode, endpoint, notification, reply,
+VSpace root, untyped, scheduling context — is scheduler-silent, so its write set
+is empty. -/
+def lifecycleRetypeWriteSetOf (st : SystemState) (currentObj : KernelObject) :
+    List CoreId :=
+  match currentObj with
+  | .tcb tcb => threadOccupiedCores st tcb.tid
+  | _ => []
+
+/-- SM8.B.2: the same set, resolved from the target's id through the pre-state
+store.  Retyping an absent object writes nothing (the pipeline errors out).
+
+Read through the AN10-B accessor `getObject?` rather than the store directly:
+this is a live-path definition, and the retype's own pipeline is the last place
+this subsystem should be reintroducing raw matches. -/
+def lifecycleRetypeWriteSet (st : SystemState) (target : SeLe4n.ObjId) : List CoreId :=
+  match st.getObject? target with
+  | some obj => lifecycleRetypeWriteSetOf st obj
+  | none => []
+
+/-- SM8.B.2: the TCB cleanup arm, with its scheduler- and machine-silent prefix
+abstracted.
+
+Stated separately because the arm runs at one of two mid-states (the
+`scThreadIndex` removal fires only for a `.bound` binding) and the two differ in
+nothing the observer reads. -/
+private theorem tcbCleanupArm_confinedToCores (st stMid : SystemState)
+    (tid : SeLe4n.ThreadId)
+    (hSched : stMid.scheduler = st.scheduler) (hMach : stMid.machine = st.machine) :
+    observableSlotsConfinedToCores st (cleanupTcbReferences stMid tid)
+      (threadOccupiedCores st tid) := by
+  refine observableSlotsConfinedToCores_of_framed_prefix hSched hMach ?_
+  rw [← threadOccupiedCores_congr (st' := stMid) tid hSched]
+  exact cleanupTcbReferences_confinedToCores stMid tid
+
+/-- SM8.B.2 (**the cleanup pipeline's bound**): the pre-retype cleanup writes no
+core outside the destroyed object's write set.
+
+The case split is the definition's own: the TCB arm carries the sweep, the CNode
+and endpoint arms are frames, and the remaining kinds return the state
+unchanged.  The TCB arm's three prefix steps — the donated-SC return, the
+`scThreadIndex` removal, and (on the error path) the reply-link rejection — are
+all scheduler- and machine-preserving, which is also why the write set may be
+read at the pipeline's entry state rather than at the sweep's. -/
+theorem lifecyclePreRetypeCleanup_confinedToCores
+    (st stClean : SystemState) (target : SeLe4n.ObjId) (currentObj newObj : KernelObject)
+    (hOk : lifecyclePreRetypeCleanup st target currentObj newObj = .ok stClean) :
+    observableSlotsConfinedToCores st stClean (lifecycleRetypeWriteSetOf st currentObj) := by
+  cases currentObj with
+  | tcb tcb =>
+    simp only [lifecyclePreRetypeCleanup] at hOk
+    cases hDon : cleanupDonatedSchedContext st tcb.tid with
+    | error e => rw [hDon] at hOk; contradiction
+    | ok stDon =>
+      rw [hDon] at hOk
+      have hDonSched : stDon.scheduler = st.scheduler :=
+        cleanupDonatedSchedContext_scheduler_eq st stDon tcb.tid hDon
+      have hDonMach : stDon.machine = st.machine :=
+        cleanupDonatedSchedContext_machine_eq st stDon tcb.tid hDon
+      simp only [] at hOk
+      have hRO : tcb.replyObject.isSome = false := by
+        cases hr : tcb.replyObject.isSome with
+        | false => rfl
+        | true => rw [if_pos hr] at hOk; exact absurd hOk (by simp)
+      rw [if_neg (by simp [hRO])] at hOk
+      injection hOk with hOk; subst hOk
+      simp only [lifecycleRetypeWriteSetOf]
+      -- the `scThreadIndex` removal fires only for a `.bound` binding, and is
+      -- scheduler- and machine-silent when it does
+      cases tcb.schedContextBinding with
+      | bound scId =>
+        exact tcbCleanupArm_confinedToCores st
+          { stDon with
+            scThreadIndex := scThreadIndexRemove stDon.scThreadIndex scId tcb.tid }
+          tcb.tid hDonSched hDonMach
+      | unbound => exact tcbCleanupArm_confinedToCores st stDon tcb.tid hDonSched hDonMach
+      | donated _ _ => exact tcbCleanupArm_confinedToCores st stDon tcb.tid hDonSched hDonMach
+  | cnode cn =>
+    simp only [lifecyclePreRetypeCleanup, lifecycleRetypeWriteSetOf] at hOk ⊢
+    have hDetach : observableSlotsConfinedToCores st (detachCNodeSlots st target cn) [] :=
+      observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+        (detachCNodeSlots_scheduler_eq st target cn)
+        (detachCNodeSlots_machine_eq st target cn)
+    cases newObj <;>
+      (simp only [] at hOk
+       injection hOk with hOk
+       subst hOk
+       first
+         | exact observableSlotsConfinedToCores_refl _ _
+         | exact hDetach)
+  | endpoint _ =>
+    simp only [lifecyclePreRetypeCleanup, lifecycleRetypeWriteSetOf] at hOk ⊢
+    injection hOk with hOk; subst hOk
+    exact observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+      (cleanupEndpointServiceRegistrations_scheduler_eq st target)
+      (cleanupEndpointServiceRegistrations_machine_eq st target)
+  | reply _ =>
+    simp only [lifecyclePreRetypeCleanup, lifecycleRetypeWriteSetOf] at hOk ⊢
+    split at hOk
+    · cases hOk
+    · injection hOk with hOk; subst hOk; exact observableSlotsConfinedToCores_refl _ _
+  | notification _ | vspaceRoot _ | untyped _ | schedContext _ =>
+    simp only [lifecyclePreRetypeCleanup, lifecycleRetypeWriteSetOf] at hOk ⊢
+    injection hOk with hOk; subst hOk; exact observableSlotsConfinedToCores_refl _ _
+
+/-- SM8.B.2: the object-store replacement is scheduler- and machine-silent. -/
+private theorem lifecycleRetypeDirect_framed
+    (authCap : Capability) (target : SeLe4n.ObjId) (newObj : KernelObject)
+    (st st' : SystemState)
+    (h : lifecycleRetypeDirect authCap target newObj st = .ok ((), st')) :
+    st'.scheduler = st.scheduler ∧ st'.machine = st.machine := by
+  unfold lifecycleRetypeDirect at h
+  split at h
+  · exact absurd h (by simp)
+  · split at h
+    · split at h
+      · exact ⟨storeObject_scheduler_eq st st' target newObj h,
+              storeObject_machine_eq st st' target newObj h⟩
+      · exact absurd h (by simp)
+    · exact absurd h (by simp)
+
+/-- SM8.B.2: the base retype-with-cleanup writes no core outside the write set.
+
+Three of its four steps are frames — the well-formedness reject, the memory
+scrub (`machine.memory`, and `machine.regs` is a field beside it) and the object
+store — so the whole transition's bound is the cleanup's. -/
+theorem lifecycleRetypeDirectWithCleanup_confinedToCores
+    (authCap : Capability) (target : SeLe4n.ObjId) (newObj : KernelObject)
+    (st st' : SystemState)
+    (h : lifecycleRetypeDirectWithCleanup authCap target newObj st = .ok ((), st')) :
+    observableSlotsConfinedToCores st st' (lifecycleRetypeWriteSet st target) := by
+  unfold lifecycleRetypeDirectWithCleanup at h
+  simp only [lifecycleRetypeWriteSet, SystemState.getObject?_eq_getElem]
+  split at h
+  · exact absurd h (by simp)
+  · next =>
+    split at h
+    · -- absent target: the direct store errors or replaces, either way scheduler-silent
+      next hNone =>
+        rw [hNone]
+        obtain ⟨hs, hm⟩ := lifecycleRetypeDirect_framed authCap target newObj st st' h
+        exact observableSlotsConfinedToCores_nil_of_scheduler_machine_eq hs hm
+    · next currentObj hSome =>
+      rw [hSome]
+      split at h
+      · exact absurd h (by simp)
+      · next stClean hClean =>
+        have hCleanConf :=
+          lifecyclePreRetypeCleanup_confinedToCores st stClean target currentObj newObj hClean
+        obtain ⟨hs, hm⟩ := lifecycleRetypeDirect_framed authCap target newObj _ st' h
+        -- the scrub writes `machine.memory`, so the suffix frame here is the
+        -- register-bank one rather than whole-machine equality
+        refine observableSlotsConfinedToCores_of_framed_suffix_regs
+          (hs.trans (scrubObjectMemory_scheduler_eq stClean target currentObj.objectType))
+          (fun c => by
+            rw [hm, scrubObjectMemory_regsOnCore]) hCleanConf
+
+/-- SM8.B.2: the initiator's own per-core TLB drain is scheduler- and
+machine-silent, on both arms. -/
+@[simp] theorem retypeInitiatorDrain_scheduler
+    (executingCore : CoreId) (asids : List SeLe4n.ASID) (st : SystemState) :
+    (retypeInitiatorDrain executingCore asids st).scheduler = st.scheduler := by
+  unfold retypeInitiatorDrain
+  cases asids <;> simp
+
+@[simp] theorem retypeInitiatorDrain_machine
+    (executingCore : CoreId) (asids : List SeLe4n.ASID) (st : SystemState) :
+    (retypeInitiatorDrain executingCore asids st).machine = st.machine := by
+  unfold retypeInitiatorDrain
+  cases asids <;> simp
+
+/-- SM8.B.2: adding the ASID shootdown rounds does not widen the write set —
+TLB maintenance is not scheduling. -/
+theorem lifecycleRetypeDirectWithCleanupShootdown_confinedToCores
+    (executingCore : CoreId) (authCap : Capability) (target : SeLe4n.ObjId)
+    (newObj : KernelObject) (st st' : SystemState)
+    (h : lifecycleRetypeDirectWithCleanupShootdown executingCore authCap target newObj st
+      = .ok ((), st')) :
+    observableSlotsConfinedToCores st st' (lifecycleRetypeWriteSet st target) := by
+  unfold lifecycleRetypeDirectWithCleanupShootdown at h
+  cases hBase : lifecycleRetypeDirectWithCleanup authCap target newObj st with
+  | error e => rw [hBase] at h; exact absurd h (by simp)
+  | ok pair =>
+    obtain ⟨u, stBase⟩ := pair
+    cases u
+    rw [hBase] at h
+    simp only [] at h
+    rw [retypeShootdownAsids_eq] at h
+    rw [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨-, he⟩ := h
+    subst he
+    exact observableSlotsConfinedToCores_of_framed_suffix
+      (retypeAsidRoundFold_scheduler _ _ _) (retypeAsidRoundFold_machine _ _ _)
+      (lifecycleRetypeDirectWithCleanup_confinedToCores authCap target newObj st stBase hBase)
+
+/-- SM8.B.2: nor does the initiator's own per-core view drain. -/
+theorem lifecycleRetypeDirectWithCleanupShootdownPerCore_confinedToCores
+    (executingCore : CoreId) (authCap : Capability) (target : SeLe4n.ObjId)
+    (newObj : KernelObject) (st st' : SystemState)
+    (h : lifecycleRetypeDirectWithCleanupShootdownPerCore executingCore authCap target
+      newObj st = .ok ((), st')) :
+    observableSlotsConfinedToCores st st' (lifecycleRetypeWriteSet st target) := by
+  unfold lifecycleRetypeDirectWithCleanupShootdownPerCore at h
+  cases hRound : lifecycleRetypeDirectWithCleanupShootdown executingCore authCap target
+      newObj st with
+  | error e => rw [hRound] at h; exact absurd h (by simp)
+  | ok pair =>
+    obtain ⟨u, stRound⟩ := pair
+    cases u
+    rw [hRound] at h
+    simp only [] at h
+    rw [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨-, he⟩ := h
+    subst he
+    exact observableSlotsConfinedToCores_of_framed_suffix
+      (retypeInitiatorDrain_scheduler _ _ _) (retypeInitiatorDrain_machine _ _ _)
+      (lifecycleRetypeDirectWithCleanupShootdown_confinedToCores executingCore authCap target
+        newObj st stRound hRound)
+
+/-- SM8.B.2 (**the live `.lifecycleRetype` bound**): a retype writes no core the
+destroyed object did not occupy.
+
+The third routing-allowlist exception discharged, and the sharp statement rather
+than the trivially-true `allCores` one: destroying a thread that no core held
+(suspended, or queued nowhere) is invisible on **every** core, and destroying a
+running one is visible only where it ran.  Retyping anything that is not a TCB
+has an empty write set outright. -/
+theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_confinedToCores
+    (executingCore : CoreId) (authCap : Capability) (target : SeLe4n.ObjId)
+    (newObj : KernelObject) (st st' : SystemState)
+    (h : lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache executingCore authCap
+      target newObj st = .ok ((), st')) :
+    observableSlotsConfinedToCores st st' (lifecycleRetypeWriteSet st target) :=
+  withIcacheBroadcast_confinedToCores _ _ _ st st'
+    (fun _ hk => lifecycleRetypeDirectWithCleanupShootdownPerCore_confinedToCores
+      executingCore authCap target newObj st _ hk) h
+
+/-- SM8.B.3 (**the live `.lifecycleRetype` arm, cross-core**): a retype is
+invisible on every core the destroyed object did not occupy.
+
+Read the hypotheses: `hne` is membership in a set computed from the **pre-state**
+(it has to be — the destroyed thread is gone from the post-state), and `hShared`
+is the object-level premise.  There is no hypothesis about the label of the
+thread being destroyed.
+
+The CSpaceAddr sibling `lifecycleRetypeWithCleanupShootdownPerCoreIcache` gets no
+entry of its own because no syscall arm routes to it; if one ever does, the
+per-core routing gate will ask for this proof at that form before the arm can
+merge. -/
+theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_crossCoreNonInterference
+    (ctx : LabelingContext) (observer : IfObserver) (executingCore : CoreId)
+    (authCap : Capability) (target : SeLe4n.ObjId) (newObj : KernelObject)
+    (st st' : SystemState) (c : CoreId)
+    (hne : c ∉ lifecycleRetypeWriteSet st target)
+    (hStep : lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache executingCore authCap
+      target newObj st = .ok ((), st'))
+    (hShared : sharedViewUnchanged ctx observer st st') :
+    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
+  crossCoreNonInterference_ofCores ctx observer hne
+    (lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_confinedToCores executingCore
+      authCap target newObj st st' hStep) hShared
+
+/-- SM8.B.2: destroying an object that is not a TCB writes **no** core.
+
+The load-bearing sharpness check on the other side from
+`removeRunnableFromAllCores_confinedToCores`: the write set is not merely
+*smaller* than `allCores`, it is empty for six of the seven object kinds. -/
+theorem lifecycleRetypeWriteSet_nil_of_not_tcb (st : SystemState) (target : SeLe4n.ObjId)
+    (h : ∀ tcb : TCB, st.objects[target]? ≠ some (.tcb tcb)) :
+    lifecycleRetypeWriteSet st target = [] := by
+  unfold lifecycleRetypeWriteSet SystemState.getObject?
+  cases hObj : st.objects[target]? with
+  | none => rfl
+  | some obj =>
+    cases obj with
+    | tcb tcb => exact absurd hObj (h tcb)
+    | _ => rfl
+
+-- ============================================================================
 -- §6  The non-interference instantiations
 -- ============================================================================
 --
@@ -4058,6 +4508,23 @@ inductive CrossCoreTransition where
   | resumeThreadDispatch
   | setPriorityDispatch
   | setMCPriorityDispatch
+  /-- SM8.B — the **live** `.vspaceMap` arm.  The first of the three entries
+  added in PR #861 review round 35 to empty the per-core routing allowlist: it
+  takes an executing core, so the gate demands an entry, and its write set is
+  **empty** — page tables, the scalar TLB, the shootdown round, the initiator's
+  own per-core view and the I-cache ledger are none of them a scheduler slot or
+  a register bank on any core.  Until this entry existed the inventory had no way
+  to *say* "writes no core", which is the only reason the arm held a waiver. -/
+  | vspaceMapDispatch
+  /-- SM8.B — the **live** `.vspaceUnmap` arm.  Empty write set, same reasons. -/
+  | vspaceUnmapDispatch
+  /-- SM8.B — the **live** `.lifecycleRetype` arm, and the one of the final three
+  that genuinely writes scheduler state: destroying a TCB sweeps it out of every
+  core's run queue and current slot, because a destroy has no home core to key
+  on.  Its write set is therefore the set of cores the destroyed thread
+  *occupied* — sharp rather than the trivially-true `allCores`, and available
+  only because review round 17 made the sweep's step guarded. -/
+  | lifecycleRetypeDispatch
   deriving DecidableEq, Repr
 
 def CrossCoreTransition.all : List CrossCoreTransition :=
@@ -4068,7 +4535,8 @@ def CrossCoreTransition.all : List CrossCoreTransition :=
    .notificationWait, .endpointReply, .endpointReplyDispatch, .endpointReceiveDual,
    .endpointReplyRecv, .replyRecvBodyDispatch, .deschedule, .cancelIpcBlocking,
    .suspendThreadDispatch, .resumeThreadDispatch,
-   .setPriorityDispatch, .setMCPriorityDispatch]
+   .setPriorityDispatch, .setMCPriorityDispatch,
+   .vspaceMapDispatch, .vspaceUnmapDispatch, .lifecycleRetypeDispatch]
 
 /-- SM8.B.2: **`all` really is all of them.**
 
@@ -4121,8 +4589,14 @@ def crossCoreNiTheorem : CrossCoreTransition → String
   | .resumeThreadDispatch => niName! resumeThreadOnCore_crossCoreNonInterference
   | .setPriorityDispatch => niName! setPriorityOnCore_crossCoreNonInterference
   | .setMCPriorityDispatch => niName! setMCPriorityOnCore_crossCoreNonInterference
+  | .vspaceMapDispatch =>
+      niName! vspaceMapPageCheckedWithShootdownFromStatePerCore_crossCoreNonInterference
+  | .vspaceUnmapDispatch =>
+      niName! vspaceUnmapPageWithShootdownAndIcacheBroadcast_crossCoreNonInterference
+  | .lifecycleRetypeDispatch =>
+      niName! lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_crossCoreNonInterference
 
-theorem crossCoreNiTheorem_count : CrossCoreTransition.all.length = 22 := by rfl
+theorem crossCoreNiTheorem_count : CrossCoreTransition.all.length = 25 := by rfl
 
 /-- SM8.B.2: **which entries are the arms the live syscall dispatch actually
 reaches**, as opposed to the below-API transitions they are built from.
@@ -4179,10 +4653,20 @@ def crossCoreTransitionIsLiveArm : CrossCoreTransition → Bool
   | .resumeThreadDispatch => true
   | .setPriorityDispatch => true
   | .setMCPriorityDispatch => true
+  | .vspaceMapDispatch => true
+  | .vspaceUnmapDispatch => true
+  | .lifecycleRetypeDispatch => true
 
 theorem crossCoreTransitionIsLiveArm_count :
-    (CrossCoreTransition.all.filter crossCoreTransitionIsLiveArm).length = 15 := by decide
+    (CrossCoreTransition.all.filter crossCoreTransitionIsLiveArm).length = 18 := by decide
 
+-- The check is quadratic in the inventory and linear in each theorem name, and
+-- round 35's three entries (one of them 76 characters) pushed it past the
+-- default budget: 25 constructors is 600 disequalities to decide where 22 was
+-- 463.  Raising the budget rather than weakening the check — the statement is
+-- the point, and a `Nodup`-on-the-image reformulation decides the same
+-- comparisons.
+set_option maxHeartbeats 1000000 in
 theorem crossCoreNiTheorem_injective :
     ∀ t₁ t₂ : CrossCoreTransition, crossCoreNiTheorem t₁ = crossCoreNiTheorem t₂ → t₁ = t₂ := by
   intro t₁ t₂ h
@@ -4261,6 +4745,9 @@ def crossCoreLiveArmSyscall : CrossCoreTransition → Option SyscallId
   | .resumeThreadDispatch => some .tcbResume
   | .setPriorityDispatch => some .tcbSetPriority
   | .setMCPriorityDispatch => some .tcbSetMCPriority
+  | .vspaceMapDispatch => some .vspaceMap
+  | .vspaceUnmapDispatch => some .vspaceUnmap
+  | .lifecycleRetypeDispatch => some .lifecycleRetype
 
 /-- SM8.B.2: the evidence backing each live-arm classification. -/
 def crossCoreLiveArmEvidence : CrossCoreTransition → LiveArmEvidence
@@ -4297,6 +4784,10 @@ def crossCoreLiveArmEvidence : CrossCoreTransition → LiveArmEvidence
       .delegationProof .tcbSetPriority syscallDelegates_tcbSetPriority
   | .setMCPriorityDispatch =>
       .delegationProof .tcbSetMCPriority syscallDelegates_tcbSetMCPriority
+  | .vspaceMapDispatch => .delegationProof .vspaceMap syscallDelegates_vspaceMap
+  | .vspaceUnmapDispatch => .delegationProof .vspaceUnmap syscallDelegates_vspaceUnmap
+  | .lifecycleRetypeDispatch =>
+      .delegationProof .lifecycleRetype syscallDelegates_lifecycleRetype
 
 /-- SM8.B.2 (**the tie is checked, not assumed**): a delegation-backed entry
 names the syscall its own transition belongs to.  Round 11's example — the
@@ -4310,20 +4801,28 @@ theorem crossCoreLiveArmEvidence_syscall_matches (t : CrossCoreTransition) :
 
 /-- SM8.B.2: **how many live arms are mechanically tied to the dispatch.**
 
-Seven of fourteen today — `crossCoreLiveArmDelegationBacked_count` and
+Ten of eighteen today — `crossCoreLiveArmDelegationBacked_count` and
 `crossCoreTransitionIsLiveArm_count` immediately below are the two halves, so
-the ratio is read off machine-checked facts rather than restated here.  (It
-said "four of twelve" until PR #861 review round 27: both counts moved as this
-PR rerouted arms, and prose that repeats a `decide` is prose that goes stale
-the next time the `decide` changes.  Naming the theorems is the part that
-keeps it honest.)  Stated so the gap is a tracked quantity closable only by
-adding delegation theorems — not something a reader reconstructs by grepping. -/
+the ratio is read off machine-checked facts rather than restated here.
+
+The parenthetical this paragraph used to carry warned that "prose that repeats a
+`decide` is prose that goes stale the next time the `decide` changes", and then
+went stale: it said "seven of fourteen" while `crossCoreTransitionIsLiveArm_count`
+already read 15, having moved when round 27 rerouted an arm.  Round 35's three
+entries — `.vspaceMap`, `.vspaceUnmap` and `.lifecycleRetype`, the three that
+emptied the per-core routing allowlist — moved both halves again, and all three
+arrive delegation-backed, so the ratio improved rather than merely grew.  The
+number above is therefore worth exactly what the two theorem names beside it are
+worth; if it disagrees with them, believe them.
+
+Stated so the gap is a tracked quantity closable only by adding delegation
+theorems — not something a reader reconstructs by grepping. -/
 def crossCoreLiveArmDelegationBacked : List CrossCoreTransition :=
   CrossCoreTransition.all.filter (fun t =>
     crossCoreTransitionIsLiveArm t && (crossCoreLiveArmEvidence t).isDelegationBacked)
 
 theorem crossCoreLiveArmDelegationBacked_count :
-    crossCoreLiveArmDelegationBacked.length = 7 := by decide
+    crossCoreLiveArmDelegationBacked.length = 10 := by decide
 
 /-- SM8.B.2: and the residual — the live arms still resting on a human reading
 of `API.lean`, which is the state every one of the three drifts occurred in. -/
@@ -4361,8 +4860,12 @@ def crossCoreTransitionWritesRemote : CrossCoreTransition → Bool
   | .resumeThreadDispatch => true
   | .setPriorityDispatch => true
   | .setMCPriorityDispatch => true
+  -- the two VSpace arms take an executing core and write **no** core with it
+  | .vspaceMapDispatch => false
+  | .vspaceUnmapDispatch => false
+  | .lifecycleRetypeDispatch => true
 
 theorem crossCoreTransitionWritesRemote_count :
-    (CrossCoreTransition.all.filter crossCoreTransitionWritesRemote).length = 21 := by decide
+    (CrossCoreTransition.all.filter crossCoreTransitionWritesRemote).length = 22 := by decide
 
 end SeLe4n.Kernel

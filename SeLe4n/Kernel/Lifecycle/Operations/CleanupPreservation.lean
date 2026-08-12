@@ -1067,6 +1067,22 @@ theorem detachCNodeSlots_scheduler_eq
           = acc.scheduler := by unfold SystemState.detachSlotFromCdt; split <;> rfl
       exact this.trans hAcc)
 
+/-- WS-SM SM8.B.2: CDT cleanup writes no register bank.
+
+The `machine` companion of `detachCNodeSlots_scheduler_eq`, by the same
+`RHTable.fold_preserves` argument: `detachSlotFromCdt` rewrites the CDT map and
+nothing else, in both of its branches. -/
+theorem detachCNodeSlots_machine_eq
+    (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) :
+    (detachCNodeSlots st cnodeId cn).machine = st.machine := by
+  simp only [detachCNodeSlots]
+  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots.table st _
+    (fun acc => acc.machine = st.machine)
+    rfl (fun acc slot _cap hAcc => by
+      have : (SystemState.detachSlotFromCdt acc { cnode := cnodeId, slot := slot }).machine
+          = acc.machine := by unfold SystemState.detachSlotFromCdt; split <;> rfl
+      exact this.trans hAcc)
+
 /-- WS-SM SM7.B: CDT cleanup is CDT-only — the TLB-shootdown state is
 framed. -/
 theorem detachCNodeSlots_tlbShootdown_eq
@@ -1087,6 +1103,20 @@ theorem cleanupTcbReferences_scheduler_eq_removeRunnableFromAllCores
   unfold cleanupTcbReferences
   rw [removeFromAllNotificationWaitLists_scheduler_eq]
   exact removeFromAllEndpointQueues_scheduler_eq (removeRunnableFromAllCores st tid) tid
+
+/-- WS-SM SM8.B.2: the TCB reference scrub writes no register bank.
+
+The `machine` companion of `cleanupTcbReferences_scheduler_eq_removeRunnableFromAllCores`.
+Note the asymmetry, which is the whole point of the pair: the sweep *does* write
+scheduler slots (on the cores the thread occupied) and writes `machine` on none,
+so the retype's write set is bounded by the former while the latter contributes
+nothing. -/
+theorem cleanupTcbReferences_machine_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (cleanupTcbReferences st tid).machine = st.machine := by
+  unfold cleanupTcbReferences
+  rw [removeFromAllNotificationWaitLists_machine_eq,
+      removeFromAllEndpointQueues_machine_eq, removeRunnableFromAllCores_machine]
 
 /-- Pre-retype cleanup flat list subset: any element in the post-cleanup flat
     list was in the pre-cleanup flat list. AJ1-A (M-14): conditional on `.ok`. -/

@@ -138,6 +138,18 @@ theorem scrubObjectMemory_scheduler_eq (st : SystemState) (objectId : SeLe4n.Obj
     (objType : KernelObjectType) :
     (scrubObjectMemory st objectId objType).scheduler = st.scheduler := rfl
 
+/-- WS-SM SM8.B.2: `scrubObjectMemory` preserves every core's register bank.
+
+The scrub is the one step of the retype pipeline that genuinely writes
+`machine`, so the whole-machine frame the other steps use is unavailable here
+and the per-core observer's read set has to be addressed directly: `machine.regs`
+is a field beside `machine.memory`, and `zeroMemoryRange` rewrites only the
+latter. -/
+theorem scrubObjectMemory_regsOnCore (st : SystemState) (objectId : SeLe4n.ObjId)
+    (objType : KernelObjectType) (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (scrubObjectMemory st objectId objType).machine.regsOnCore c
+      = st.machine.regsOnCore c := rfl
+
 /-- S6-C: `scrubObjectMemory` preserves lifecycle metadata. -/
 theorem scrubObjectMemory_lifecycle_eq (st : SystemState) (objectId : SeLe4n.ObjId)
     (objType : KernelObjectType) :

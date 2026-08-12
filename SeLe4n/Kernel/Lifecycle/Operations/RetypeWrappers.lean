@@ -424,6 +424,24 @@ theorem retypeAsidRoundStep_objects
   unfold retypeAsidRoundStep
   rw [(Architecture.tlbShootdownBroadcastCoalescing_frame _ _ _ _).1]
 
+/-- **WS-SM SM8.B.2**: the round step frames the scheduler.
+
+TLB maintenance is not scheduling: the step writes the scalar `tlb` and posts to
+`tlbShootdown`, and neither is a per-core observable slot. -/
+theorem retypeAsidRoundStep_scheduler
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (a : SeLe4n.ASID) (s : SystemState) :
+    (retypeAsidRoundStep executingCore a s).scheduler = s.scheduler := by
+  unfold retypeAsidRoundStep
+  rw [(Architecture.tlbShootdownBroadcastCoalescing_frame _ _ _ _).2.1]
+
+/-- **WS-SM SM8.B.2**: the round step frames the machine, register banks
+included. -/
+theorem retypeAsidRoundStep_machine
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (a : SeLe4n.ASID) (s : SystemState) :
+    (retypeAsidRoundStep executingCore a s).machine = s.machine := by
+  unfold retypeAsidRoundStep
+  rw [(Architecture.tlbShootdownBroadcastCoalescing_frame _ _ _ _).2.2.1]
+
 /-- **WS-SM SM7.F.4(b)(iii)**: the round step frames the ASID table. -/
 theorem retypeAsidRoundStep_asidTable
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (a : SeLe4n.ASID) (s : SystemState) :
@@ -453,6 +471,31 @@ theorem retypeAsidRoundFold_objects
       have h1 : retypeAsidRoundFold executingCore (a :: rest) s
         = retypeAsidRoundFold executingCore rest (retypeAsidRoundStep executingCore a s) := rfl
       rw [h1, ih, retypeAsidRoundStep_objects]
+
+/-- **WS-SM SM8.B.2**: the round fold frames the scheduler — one round per
+flushed ASID, none of them scheduling. -/
+theorem retypeAsidRoundFold_scheduler
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (asids : List SeLe4n.ASID)
+    (s : SystemState) :
+    (retypeAsidRoundFold executingCore asids s).scheduler = s.scheduler := by
+  induction asids generalizing s with
+  | nil => rfl
+  | cons a rest ih =>
+      have h1 : retypeAsidRoundFold executingCore (a :: rest) s
+        = retypeAsidRoundFold executingCore rest (retypeAsidRoundStep executingCore a s) := rfl
+      rw [h1, ih, retypeAsidRoundStep_scheduler]
+
+/-- **WS-SM SM8.B.2**: the round fold frames the machine. -/
+theorem retypeAsidRoundFold_machine
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (asids : List SeLe4n.ASID)
+    (s : SystemState) :
+    (retypeAsidRoundFold executingCore asids s).machine = s.machine := by
+  induction asids generalizing s with
+  | nil => rfl
+  | cons a rest ih =>
+      have h1 : retypeAsidRoundFold executingCore (a :: rest) s
+        = retypeAsidRoundFold executingCore rest (retypeAsidRoundStep executingCore a s) := rfl
+      rw [h1, ih, retypeAsidRoundStep_machine]
 
 /-- **WS-SM SM7.F.4(b)(iii)**: the round fold frames the ASID table. -/
 theorem retypeAsidRoundFold_asidTable

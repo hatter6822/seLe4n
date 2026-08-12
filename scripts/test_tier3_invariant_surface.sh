@@ -1767,7 +1767,7 @@ run_check "INVARIANT" rg -n '^theorem notificationSignalWriteSet_eq_lockSet_wait
 run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem wakeThread_crossCoreNonInterference_of_visible_thread' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n 'CrossCoreTransition.all.length = 22' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n 'CrossCoreTransition.all.length = 25' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 
 # PR #861 review round 34: the context-restore gate lives in WRAPPERS, never
 # inside the transitions.  An in-transition `if contextRestoreSeamLive` reduces
@@ -1925,6 +1925,26 @@ run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_receive_delegates' 
 # undelegated syscalls map to `False` so evidence cannot be fabricated.
 run_check "INVARIANT" rg -n '^def syscallDelegates' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n 'delegationProof \(sid : SyscallId\) \(proof : syscallDelegates sid\)' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+# (f) Round 35: the three entries that emptied the per-core routing allowlist.
+# Two of them exist to say "this live arm takes a core and writes NONE", which
+# the inventory could not express before; the third carries the destroy sweep's
+# occupancy bound.  All three arrive delegation-backed.
+run_check "INVARIANT" rg -n '^def threadOccupiedCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem removeRunnableFromAllCores_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^def lifecycleRetypeWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem lifecyclePreRetypeCleanup_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem syscallDelegates_lifecycleRetype' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallDelegates_vspaceMap' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallDelegates_vspaceUnmap' SeLe4n/Kernel/API.lean
+# The gate's whole point is that its exception list empties.  Pinned NEGATIVELY:
+# any allowlist row at all — the file is a JSON array, so a `"syscall"` key is
+# exactly one waiver — fails this check.  A gate whose waiver list can quietly
+# regrow has stopped being a gate, which is the argument the three entries above
+# were written to settle.
+run_negative_check "INVARIANT" rg -n '"syscall"' scripts/per_core_routing_allowlist.json
 run_check "INVARIANT" rg -n '^theorem crossCoreLiveArmEvidence_syscall_matches' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_negative_check "INVARIANT" rg -n 'delegationTheorem \(theoremName : String\)' SeLe4n/
 # The sibling enumeration fail-open, fixed alongside CovertChannelId.all.
@@ -2004,7 +2024,7 @@ run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_crossCoreNonInte
 run_check "INVARIANT" rg -n '^def endpointReplyRecvWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count : CrossCoreTransition\.all\.length = 22' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count : CrossCoreTransition\.all\.length = 25' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # Round 14: all three SchedContext arms this cut made remote writers are audited.
 # The negative is the point — `crossCoreRemoteWriterPendingAudit` was the counted
 # gap while two were unproven, and it must not come back as an empty list, which

@@ -574,6 +574,32 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @SeLe4n.Kernel.setThreadCpuAffinityWithMigration_crossCoreNonInterference
 #check @SeLe4n.Kernel.schedContextConfigure_confinedToCores
 #check @SeLe4n.Kernel.schedContextConfigure_crossCoreNonInterference
+-- SM8.B.2 (PR #861 review round 35): the three entries that emptied the
+-- per-core routing allowlist.  Two carry an EMPTY write set — the shape the
+-- inventory previously could not express, which is the only reason those arms
+-- held waivers — and the retype carries the sweep bounded by pre-state
+-- occupancy.
+#check @SeLe4n.Kernel.threadOccupiedCores
+#check @SeLe4n.Kernel.not_threadOccupiesCore_of_not_mem
+#check @SeLe4n.Kernel.threadOccupiedCores_congr
+#check @SeLe4n.Kernel.removeRunnableFromAllCores_confinedToCores
+#check @SeLe4n.Kernel.observableSlotsConfinedToCores_of_framed_prefix
+#check @SeLe4n.Kernel.observableSlotsConfinedToCores_of_framed_suffix
+#check @SeLe4n.Kernel.observableSlotsConfinedToCores_of_framed_suffix_regs
+#check @SeLe4n.Kernel.cleanupTcbReferences_confinedToCores
+#check @SeLe4n.Kernel.withIcacheBroadcast_confinedToCores
+#check @SeLe4n.Kernel.lifecycleRetypeWriteSetOf
+#check @SeLe4n.Kernel.lifecycleRetypeWriteSet
+#check @SeLe4n.Kernel.lifecycleRetypeWriteSet_nil_of_not_tcb
+#check @SeLe4n.Kernel.lifecyclePreRetypeCleanup_confinedToCores
+#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanup_confinedToCores
+#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdown_confinedToCores
+#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdownPerCore_confinedToCores
+#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_confinedToCores
+#check @SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_crossCoreNonInterference
+#check @SeLe4n.Kernel.syscallDelegates_lifecycleRetype
+#check @SeLe4n.Kernel.syscallDelegates_vspaceMap
+#check @SeLe4n.Kernel.syscallDelegates_vspaceUnmap
 #check @CovertChannelId.mem_all
 #check @CovertChannelId.all_nodup
 #check LiveArmEvidence
@@ -2195,7 +2221,7 @@ private def runQueueAgreeOn (st st' : SystemState) (c : CoreId) : Bool :=
   decide (q'.threadPriority.toList = q.threadPriority.toList) &&
   decide (q'.membership.toList = q.membership.toList)
 
-/-- Decides confinement of a step's per-core writes to core `c₀`.
+/-- The six observable slots, at one core.
 
 Covers **all six** fields of `observableSlotsConfinedToCore` — the five
 scheduler slots and the register bank.  The register clause was missing until
@@ -2203,19 +2229,28 @@ PR #861 review: without it every runtime assertion here would still pass if a
 transition corrupted another core's registers, which is precisely the class of
 regression the cancellation machine-frame work exists to exclude.  The
 run-queue clause was widened from `toList` to every operational field in the
-round after that, for the same reason — see `runQueueAgreeOn`. -/
+round after that, for the same reason — see `runQueueAgreeOn`.
+
+Factored out of `confinedCheck` in review round 35 so the set-of-cores checker
+below cannot drift from the single-core one — the shape of defect this PR fixed
+twice in the kernel. -/
+private def slotsAgreeCheck (st st' : SystemState) (c : CoreId) : Bool :=
+  runQueueAgreeOn st st' c &&
+  decide (st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c) &&
+  decide (st'.scheduler.activeDomainOnCore c = st.scheduler.activeDomainOnCore c) &&
+  decide (st'.scheduler.domainTimeRemainingOnCore c
+    = st.scheduler.domainTimeRemainingOnCore c) &&
+  decide (st'.scheduler.domainScheduleIndexOnCore c
+    = st.scheduler.domainScheduleIndexOnCore c) &&
+  regsAgreeOn st st' c
+
 private def confinedCheck (st st' : SystemState) (c₀ : CoreId) : Bool :=
-  allCores.all (fun c =>
-    if c = c₀ then true
-    else
-      runQueueAgreeOn st st' c &&
-      decide (st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c) &&
-      decide (st'.scheduler.activeDomainOnCore c = st.scheduler.activeDomainOnCore c) &&
-      decide (st'.scheduler.domainTimeRemainingOnCore c
-        = st.scheduler.domainTimeRemainingOnCore c) &&
-      decide (st'.scheduler.domainScheduleIndexOnCore c
-        = st.scheduler.domainScheduleIndexOnCore c) &&
-      regsAgreeOn st st' c)
+  allCores.all (fun c => if c = c₀ then true else slotsAgreeCheck st st' c)
+
+/-- The set-of-cores form, for the write sets that are not singletons — the
+retype's occupancy set, and the empty set the two VSpace arms carry. -/
+private def confinedToSetCheck (st st' : SystemState) (cs : List CoreId) : Bool :=
+  allCores.all (fun c => if cs.contains c then true else slotsAgreeCheck st st' c)
 
 -- ============================================================================
 -- §5 fixtures — a thread homed on a *remote* core
@@ -2602,16 +2637,42 @@ private def runRunQueueComparisonChecks : IO Unit := do
 /-- §5.3  The set-of-cores algebra and its coverage record. -/
 private def runCoreSetAlgebraChecks : IO Unit := do
   IO.println "--- §5.3 the set-of-cores confinement algebra ---"
-  assertBool "twenty-two cross-core transitions are covered"
-    (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 22))
-  assertBool "twenty-one of the twenty-two can name a core other than the executing one"
+  assertBool "twenty-five cross-core transitions are covered"
+    (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 25))
+  assertBool "twenty-two of the twenty-five can name a core other than the executing one"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
-      SeLe4n.Kernel.crossCoreTransitionWritesRemote).length = 21))
-  assertBool "…and the wait is the one that cannot"
-    (decide (SeLe4n.Kernel.crossCoreTransitionWritesRemote .notificationWait = false))
-  assertBool "fifteen of the twenty-two are the arms the live syscall dispatch reaches"
+      SeLe4n.Kernel.crossCoreTransitionWritesRemote).length = 22))
+  assertBool "…and the wait and the two VSpace arms are the three that cannot"
+    ([SeLe4n.Kernel.CrossCoreTransition.notificationWait,
+      .vspaceMapDispatch, .vspaceUnmapDispatch].all (fun t =>
+        decide (SeLe4n.Kernel.crossCoreTransitionWritesRemote t = false)))
+  assertBool "eighteen of the twenty-five are the arms the live syscall dispatch reaches"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
-      SeLe4n.Kernel.crossCoreTransitionIsLiveArm).length = 15))
+      SeLe4n.Kernel.crossCoreTransitionIsLiveArm).length = 18))
+  -- Round 35: the three entries that emptied the per-core routing allowlist.
+  -- All three are live arms, all three arrive delegation-backed, and two of them
+  -- carry an EMPTY write set — the shape the inventory could not express before,
+  -- which is the whole reason those two arms held waivers.
+  assertBool "the three allowlist-closing arms are live and delegation-backed"
+    ([SeLe4n.Kernel.CrossCoreTransition.vspaceMapDispatch,
+      .vspaceUnmapDispatch, .lifecycleRetypeDispatch].all (fun t =>
+        decide (t ∈ SeLe4n.Kernel.CrossCoreTransition.all)
+          && SeLe4n.Kernel.crossCoreTransitionIsLiveArm t
+          && (SeLe4n.Kernel.crossCoreLiveArmEvidence t).isDelegationBacked))
+  assertBool "…each naming its own syscall"
+    (decide (SeLe4n.Kernel.crossCoreLiveArmSyscall .vspaceMapDispatch
+               = some SeLe4n.Model.SyscallId.vspaceMap
+             ∧ SeLe4n.Kernel.crossCoreLiveArmSyscall .vspaceUnmapDispatch
+               = some SeLe4n.Model.SyscallId.vspaceUnmap
+             ∧ SeLe4n.Kernel.crossCoreLiveArmSyscall .lifecycleRetypeDispatch
+               = some SeLe4n.Model.SyscallId.lifecycleRetype))
+  -- NEGATIVE — the distinction the two VSpace entries exist to record: they are
+  -- live arms that take an executing core, and they still write no core.  An
+  -- inventory that could only say "writes remote" would have had to lie either
+  -- way round.
+  assertBool "NEGATIVE: the retype writes remote while its two VSpace siblings do not"
+    (decide (SeLe4n.Kernel.crossCoreTransitionWritesRemote .lifecycleRetypeDispatch = true)
+      && !SeLe4n.Kernel.crossCoreTransitionWritesRemote .vspaceMapDispatch)
   -- Round 14: routing the SchedContext arms through `determineTargetCore` made
   -- them remote writers.  `.schedContextUnbind` is audited; the other two are a
   -- COUNTED gap rather than a silent one, and deliberately not in the inventory,
@@ -2638,8 +2699,8 @@ private def runCoreSetAlgebraChecks : IO Unit := do
              ∧ SeLe4n.Kernel.crossCoreTransitionIsLiveArm .endpointSendDispatch = true
              ∧ (SeLe4n.Kernel.crossCoreLiveArmEvidence .endpointSendDispatch).syscall?
                  = some SeLe4n.Model.SyscallId.send))
-  assertBool "seven live arms are mechanically tied to the dispatch"
-    (decide (SeLe4n.Kernel.crossCoreLiveArmDelegationBacked.length = 7))
+  assertBool "ten live arms are mechanically tied to the dispatch"
+    (decide (SeLe4n.Kernel.crossCoreLiveArmDelegationBacked.length = 10))
   -- The fourth review round's finding, as a checked fact: the three arms it
   -- named are in the inventory and are all classified as live.
   assertBool "the bound signal, the receive dual and replyRecv are all covered"
@@ -2674,7 +2735,7 @@ private def runCoreSetAlgebraChecks : IO Unit := do
         n == "endpointReceiveDualOnCore"))
   assertBool "the covered-transition theorem names are pairwise distinct"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.map
-      SeLe4n.Kernel.crossCoreNiTheorem).eraseDups.length = 22))
+      SeLe4n.Kernel.crossCoreNiTheorem).eraseDups.length = 25))
   -- The load-bearing negative: the write set is *state-dependent*, so it is not
   -- a constant the theorem could be satisfying vacuously.  With no receiver the
   -- call writes one core; with a remote receiver waiting it writes two — and
@@ -2893,6 +2954,81 @@ private def runReplenishHomeCoreChecks : IO Unit := do
   assertBool "NEGATIVE: an unbound SC resolves to the boot core, not core 2"
     (decide (SeLe4n.Kernel.SchedContextOps.schedContextReplenishHome
       replenishState { replenishScValue with boundThread := none } = c0))
+
+-- ============================================================================
+-- §5.7 fixtures — the destroy sweep, and the occupancy that bounds it
+-- ============================================================================
+
+/-- The state where the remote-homed thread is genuinely **queued on core 2**.
+`crossCoreState` only holds its TCB; the wake is what puts it somewhere, and
+without that the occupancy set is empty and every §5.7 assertion below would be
+vacuously satisfied. -/
+private def retypeVictimState : SystemState := remoteWakePost
+
+/-- The same state, with the victim additionally **current** on core 3 — so the
+occupancy set has two elements and the two disjuncts of `threadOccupiesCore`
+are both exercised. -/
+private def retypeVictimTwoCoreState : SystemState :=
+  { retypeVictimState with
+      scheduler := retypeVictimState.scheduler.setCurrentOnCore c3
+        (some remoteHomedThread) }
+
+/-- §5.7  The retype's write set: a sweep over every core, bounded by the two
+the victim actually occupies.
+
+The point of the group is the *sharpness*.  `removeRunnableFromAllCores` folds
+over `allCores`, so `observableSlotsConfinedToCores st st' allCores` is true and
+carries no information; what round 17's guarded step buys is the pre-state
+occupancy bound, and the negatives here are what distinguish the two. -/
+private def runRetypeWriteSetChecks : IO Unit := do
+  IO.println "--- §5.7 the destroy sweep, bounded by pre-state occupancy ---"
+  -- the fixture is not vacuous: the victim is somewhere
+  assertBool "the victim is queued on core 2 in the fixture"
+    (decide ((retypeVictimState.scheduler.runQueueOnCore c2).contains remoteHomedThread = true))
+  assertBool "the occupancy set is exactly [core 2]"
+    (decide (SeLe4n.Kernel.threadOccupiedCores retypeVictimState remoteHomedThread = [c2]))
+  -- NEGATIVE — the whole point.  The naive `allCores` bound would also pass
+  -- the confinement check, so a test that only checked `allCores` would prove
+  -- nothing.  This says the set really is smaller.
+  assertBool "NEGATIVE: the occupancy set is NOT all four cores"
+    (decide (SeLe4n.Kernel.threadOccupiedCores retypeVictimState remoteHomedThread ≠ allCores))
+  -- the real sweep, on the real state, checked against the declared set
+  assertBool "the sweep is confined to the occupancy set"
+    (confinedToSetCheck retypeVictimState
+      (SeLe4n.Kernel.cleanupTcbReferences retypeVictimState remoteHomedThread) [c2])
+  -- NEGATIVE — the sweep is not inert.  Without this the line above holds
+  -- because nothing happened.
+  assertBool "NEGATIVE: the sweep is NOT confined to the empty set (it does real work)"
+    (!confinedToSetCheck retypeVictimState
+      (SeLe4n.Kernel.cleanupTcbReferences retypeVictimState remoteHomedThread) [])
+  assertBool "…and core 2's run queue no longer holds the victim"
+    (decide (((SeLe4n.Kernel.cleanupTcbReferences retypeVictimState
+      remoteHomedThread).scheduler.runQueueOnCore c2).contains remoteHomedThread = false))
+  -- both disjuncts of the guard: queued on core 2, current on core 3
+  assertBool "a victim queued on core 2 AND current on core 3 occupies both"
+    (decide (SeLe4n.Kernel.threadOccupiedCores retypeVictimTwoCoreState remoteHomedThread
+      = [c2, c3]))
+  assertBool "the sweep is confined to that two-core set"
+    (confinedToSetCheck retypeVictimTwoCoreState
+      (SeLe4n.Kernel.cleanupTcbReferences retypeVictimTwoCoreState remoteHomedThread) [c2, c3])
+  assertBool "NEGATIVE: it is NOT confined to core 2 alone — core 3's current slot moves"
+    (!confinedToSetCheck retypeVictimTwoCoreState
+      (SeLe4n.Kernel.cleanupTcbReferences retypeVictimTwoCoreState remoteHomedThread) [c2])
+  -- a victim nobody holds: the empty set, which is the common case for a
+  -- suspended thread and the strongest statement available
+  assertBool "a victim no core holds has an EMPTY write set"
+    (decide (SeLe4n.Kernel.threadOccupiedCores crossCoreState remoteHomedThread = []))
+  assertBool "…and destroying it is invisible on every core"
+    (confinedToSetCheck crossCoreState
+      (SeLe4n.Kernel.cleanupTcbReferences crossCoreState remoteHomedThread) [])
+  -- resolved through the object store, which is how the live arm reads it
+  assertBool "the store-resolved write set agrees with the occupancy set"
+    (decide (SeLe4n.Kernel.lifecycleRetypeWriteSet retypeVictimState
+      remoteHomedThread.toObjId = [c2]))
+  assertBool "retyping a NON-TCB writes no core at all"
+    (decide (SeLe4n.Kernel.lifecycleRetypeWriteSet retypeVictimState lowEndpoint = []))
+  assertBool "retyping an absent object writes no core"
+    (decide (SeLe4n.Kernel.lifecycleRetypeWriteSet retypeVictimState ⟨999999⟩ = []))
 
 /-- §4.1  Cross-core non-interference (plan Theorem 3.3.1). -/
 private def runCrossCoreNonInterferenceChecks : IO Unit := do
@@ -3323,6 +3459,7 @@ def runSmpInformationFlowChecks : IO Unit := do
   runResolvedFlowGateChecks
   runVacatedCoreChecks
   runReplenishHomeCoreChecks
+  runRetypeWriteSetChecks
   IO.println "===================================="
   IO.println "All SM8.A per-core observable-state and SM8.B non-interference checks PASS."
 

@@ -3667,6 +3667,44 @@ def syscallDelegates : SyscallId → Prop
                   (determineExecutingCore st tid) st with
            | .ok (st', _) => .ok ((), st')
            | .error e => .error e)
+  | .lifecycleRetype =>
+      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
+        (cap : Capability) (objId : SeLe4n.ObjId)
+        (args : Architecture.SyscallArgDecode.LifecycleRetypeArgs),
+        decoded.syscallId = .lifecycleRetype →
+        cap.target = .object objId →
+        decodeLifecycleRetypeArgs decoded = .ok args →
+        dispatchWithCap decoded tid gate cap =
+          fun st => lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache
+            (determineExecutingCore st tid) cap args.targetObj
+            (objectOfKernelType args.newType args.size) st
+  | .vspaceMap =>
+      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
+        (cap : Capability) (objId : SeLe4n.ObjId)
+        (args : Architecture.SyscallArgDecode.VSpaceMapArgs) (st : SystemState),
+        decoded.syscallId = .vspaceMap →
+        cap.target = .object objId →
+        decodeVSpaceMapArgsChecked decoded st.machine.maxASID
+          (2^st.machine.physicalAddressWidth) = .ok args →
+        vspaceCapAuthorizesAsid cap args.asid st = true →
+        dispatchWithCap decoded tid gate cap st =
+          (match validateVSpaceMapPermsForMemoryKind args st.machine.memoryMap with
+            | .error e => .error e
+            | .ok validatedArgs =>
+                Architecture.vspaceMapPageCheckedWithShootdownFromStatePerCore
+                  (determineExecutingCore st tid) validatedArgs.asid
+                  validatedArgs.vaddr validatedArgs.paddr validatedArgs.perms st)
+  | .vspaceUnmap =>
+      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
+        (cap : Capability) (objId : SeLe4n.ObjId)
+        (args : Architecture.SyscallArgDecode.VSpaceUnmapArgs) (st : SystemState),
+        decoded.syscallId = .vspaceUnmap →
+        cap.target = .object objId →
+        decodeVSpaceUnmapArgs decoded st.machine.maxASID = .ok args →
+        vspaceCapAuthorizesAsid cap args.asid st = true →
+        dispatchWithCap decoded tid gate cap st =
+          Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast
+            (determineExecutingCore st tid) args.asid args.vaddr st
   -- Every other syscall: no delegation theorem exists yet.  `False` rather than
   -- `True` so the absence is unforgeable — an inventory entry claiming
   -- delegation evidence for one of these cannot be constructed.
@@ -3689,6 +3727,29 @@ theorem syscallDelegates_tcbSuspend : syscallDelegates .tcbSuspend := by
   intro decoded tid gate cap objId vtid st hSyscall hTarget hDecode hValid
   exact dispatchWithCap_tcbSuspend_delegates decoded tid gate cap objId vtid st
     hSyscall hTarget hDecode hValid
+
+/-- WS-SM SM8.B (PR #861 review round 35): the `.lifecycleRetype` obligation,
+discharged.
+
+Added with the arm's cross-core inventory entry, so the entry rests on a
+machine-checked tie to the dispatch rather than on a human reading of the arm —
+the class of error three separate review rounds found. -/
+theorem syscallDelegates_lifecycleRetype : syscallDelegates .lifecycleRetype := by
+  intro decoded tid gate cap objId args hSyscall hTarget hDecode
+  exact dispatchWithCap_lifecycleRetype_delegates decoded tid gate cap objId args
+    hSyscall hTarget hDecode
+
+/-- WS-SM SM8.B: the `.vspaceMap` obligation, discharged. -/
+theorem syscallDelegates_vspaceMap : syscallDelegates .vspaceMap := by
+  intro decoded tid gate cap objId args st hSyscall hTarget hDecode hAuth
+  exact dispatchWithCap_vspaceMap_delegates decoded tid gate cap objId args st
+    hSyscall hTarget hDecode hAuth
+
+/-- WS-SM SM8.B: the `.vspaceUnmap` obligation, discharged. -/
+theorem syscallDelegates_vspaceUnmap : syscallDelegates .vspaceUnmap := by
+  intro decoded tid gate cap objId args st hSyscall hTarget hDecode hAuth
+  exact dispatchWithCap_vspaceUnmap_delegates decoded tid gate cap objId args st
+    hSyscall hTarget hDecode hAuth
 
 /-- The `.send` obligation, discharged. -/
 theorem syscallDelegates_send : syscallDelegates .send := by

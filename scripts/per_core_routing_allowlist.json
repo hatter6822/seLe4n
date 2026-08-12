@@ -1,17 +1,1 @@
-[
-  {
-    "syscall": "vspaceMap",
-    "symbol": "cross-core-inventory",
-    "reason": "The mapping wrapper takes a core, but every field it writes past the object store is outside the per-core observer's read set, and that is now proven rather than asserted: vspaceMapPageCheckedWithShootdownFromStatePerCore_confinedToCores gives it an EMPTY write set. It is listed here only because the inventory keys entries by live-arm syscall and this arm writes no core at all, so it has no write set to name. Closure target: an inventory entry carrying the empty set explicitly."
-  },
-  {
-    "syscall": "vspaceUnmap",
-    "symbol": "cross-core-inventory",
-    "reason": "Same as vspaceMap, and proven the same way: vspaceUnmapPageWithShootdownAndIcacheBroadcast_confinedToCores gives the unmap seam an EMPTY write set. Page tables, the scalar TLB, the shootdown round, the initiator's own per-core view and the instruction-cache ledger are none of them a scheduler slot or a register bank on any core. Closure target: an inventory entry carrying the empty set explicitly."
-  },
-  {
-    "syscall": "lifecycleRetype",
-    "symbol": "cross-core-inventory",
-    "reason": "TRACKED DEBT. Unlike its two siblings this one genuinely writes scheduler state: the destroy path sweeps every core's run queue and current slot through removeRunnableFromAllCores, so its honest write set is the set of cores the destroyed thread occupied. That set is computable from the pre-state and the proof is owed. Closure target: a confinement theorem over the occupied-core set, sharper than the trivially true all-cores bound."
-  }
-]
+[]

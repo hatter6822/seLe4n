@@ -89,6 +89,17 @@ theorem removeDependenciesOf_tlbShootdown_eq
     (removeDependenciesOf st sid).tlbShootdown = st.tlbShootdown := by
   unfold removeDependenciesOf; rfl
 
+/-- WS-SM SM8.B.2: removeDependenciesOf writes no register bank.
+
+The `machine` sibling of the frames above, owed because the per-core observable
+slots include each core's register bank: the endpoint arm of the retype's
+pre-cleanup runs this fold, and a write set is only as sharp as the frames that
+let the surrounding pipeline compose. -/
+theorem removeDependenciesOf_machine_eq
+    (st : SystemState) (sid : ServiceId) :
+    (removeDependenciesOf st sid).machine = st.machine := by
+  unfold removeDependenciesOf; rfl
+
 -- ============================================================================
 -- F-07: Service dependency registration with cycle detection (WS-D4)
 -- ============================================================================
