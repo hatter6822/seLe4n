@@ -209,27 +209,35 @@ syntactic.
 or `⟨0, h⟩` is the same value carrying a different proof term — a different
 `Expr`, invisible to a `.const` test (PR #861 review round 33).  Loose bvars are
 excluded: an open term cannot be compared soundly. -/
-private partial def routeBootHits (prims boot : Std.HashSet Name) (e : Expr) :
+private partial def routeBootHits (boot : Std.HashSet Name) (e : Expr) :
     Array (Name × Expr) := Id.run do
   let mut hits : Array (Name × Expr) := #[]
   -- Beta-reduce the head for the same reason: `(fun c => removeRunnableOnCore
   -- st tid c) bootCoreId` is an application of a lambda, not of the primitive.
   let e := e.headBeta
+  -- No head filter (PR #861 review round 37).  This used to admit only heads on
+  -- a hand-written primitive list, which omitted every *composite* per-core
+  -- scheduler operation -- `scheduleEffectiveOnCore`, `scheduleOrIdleOnCore`,
+  -- `saveOutgoingContextOnCore` -- so `scheduleEffectiveOnCore st bootCoreId`
+  -- produced no finding despite mutating the boot core's scheduler state.
+  -- Every head is collected here and the *decision* moved downstream, where a
+  -- head is reported iff it transitively reaches a scheduler-slot setter.  That
+  -- test is derived from `SchedulerState`'s own fields, so a composite added
+  -- tomorrow is covered the day it lands.
   if let .const p _ := e.getAppFn then
-    if prims.contains p then
-      for a in e.getAppArgs do
-        let a := a.consumeMData
-        if let .const c _ := a then
-          if boot.contains c then hits := hits.push (p, a)
-        else if !a.hasLooseBVars then
-          hits := hits.push (p, a)
+    for a in e.getAppArgs do
+      let a := a.consumeMData
+      if let .const c _ := a then
+        if boot.contains c then hits := hits.push (p, a)
+      else if !a.hasLooseBVars then
+        hits := hits.push (p, a)
   match e with
-  | .app f a         => return hits ++ routeBootHits prims boot f
-                                 ++ routeBootHits prims boot a
-  | .lam _ t b _     => return hits ++ routeBootHits prims boot t
-                                 ++ routeBootHits prims boot b
-  | .forallE _ t b _ => return hits ++ routeBootHits prims boot t
-                                 ++ routeBootHits prims boot b
+  | .app f a         => return hits ++ routeBootHits boot f
+                                 ++ routeBootHits boot a
+  | .lam _ t b _     => return hits ++ routeBootHits boot t
+                                 ++ routeBootHits boot b
+  | .forallE _ t b _ => return hits ++ routeBootHits boot t
+                                 ++ routeBootHits boot b
   -- Zeta-reduce.  `let c := bootCoreId; removeRunnableOnCore st tid c` passes a
   -- *bound variable*, not the constant, so matching the body as written misses
   -- it -- the spelling dimension reappearing one level down, at the term rather
@@ -237,12 +245,53 @@ private partial def routeBootHits (prims boot : Std.HashSet Name) (e : Expr) :
   -- alias back into the constant.  The value is still walked on its own, in
   -- case it contains an unrelated application; findings are a `HashSet`, so the
   -- overlap costs nothing.
-  | .letE _ t v b _  => return hits ++ routeBootHits prims boot t
-                                 ++ routeBootHits prims boot v
-                                 ++ routeBootHits prims boot (b.instantiate1 v)
-  | .mdata _ b       => return hits ++ routeBootHits prims boot b
-  | .proj _ _ b      => return hits ++ routeBootHits prims boot b
+  | .letE _ t v b _  => return hits ++ routeBootHits boot t
+                                 ++ routeBootHits boot v
+                                 ++ routeBootHits boot (b.instantiate1 v)
+  | .mdata _ b       => return hits ++ routeBootHits boot b
+  | .proj _ _ b      => return hits ++ routeBootHits boot b
   | _                => return hits
+
+/-- **Does this constant touch a per-core scheduler slot?**  (PR #861 review
+round 37.)
+
+Derived, not listed.  The seed is the field-level accessor/setter pair that
+`probe_stems` builds from `SchedulerState`'s own `Vector … numCores` fields, so
+the base set closes over the struct by construction.  Everything else that
+touches a slot must call one of them, and this is that transitive question.
+
+Reads count as well as writes: `schedContextUnbind` checking
+`currentOnCore bootCoreId` for its preemption guard was one of the round-15
+defects, and it wrote nothing.
+
+Bounded depth because the answer only has to be right for heads that were
+actually passed the boot core, and an unbounded walk over a 126 700-constant
+environment is not worth paying for a predicate with a two-hop caller.
+
+Fails **closed** in the sense that matters: an unresolvable or value-less
+constant answers `false`, but such a constant has no body to write a slot with.
+-/
+private partial def routeReachesPerCoreSlot (env : Environment)
+    (setters : Std.HashSet Name) (fuel : Nat) (n : Name) : Bool :=
+  if setters.contains n then true
+  else match fuel with
+    | 0 => false
+    | fuel + 1 =>
+      match env.find? n with
+      | none => false
+      | some ci =>
+        match ci.value? with
+        | none => false
+        | some v =>
+          v.getUsedConstants.any (routeReachesPerCoreSlot env setters fuel)
+
+/-- The **composite** witness (PR #861 review round 37): a helper that reaches
+the scheduler through `scheduleEffectiveOnCore` rather than through a field
+setter directly.  Detected only if the reach test above is live, so the fix for
+round 37 cannot silently regress into the hand-list it replaced. -/
+def routeSelfTestComposite (st : SeLe4n.Model.SystemState) :
+    Except SeLe4n.Model.KernelError SeLe4n.Model.SystemState :=
+  SeLe4n.Kernel.scheduleEffectiveOnCore st SeLe4n.Kernel.Concurrency.bootCoreId
 
 /-- A witness with the `let`-alias shape, so the traversal is checked against
 the form that motivated zeta-reduction rather than only against whatever the
@@ -299,11 +348,12 @@ run_cmd do
   logInfo m!"ROUTE_SIZES prims={prims.size} pinned={pinned.size} boot={boot.size}"
   -- The alias witness must be detected, here, every run.  Without it the
   -- zeta-reduction above is a claim rather than a checked fact.
-  for (wit, tag) in [(`routeSelfTestAlias, "ALIAS"), (`routeSelfTestLiteralZero, "ZERO")] do
+  for (wit, tag) in [(`routeSelfTestAlias, "ALIAS"), (`routeSelfTestLiteralZero, "ZERO"),
+                     (`routeSelfTestComposite, "COMPOSITE")] do
     let mut ok := false
     if let some ci := env.find? wit then
       if let some v := ci.value? then
-        for (_, a) in routeBootHits prims boot v do
+        for (_, a) in routeBootHits boot v do
           if let .const c _ := a then
             if boot.contains c then ok := true
           if !ok then
@@ -375,11 +425,24 @@ run_cmd do
               for u in v.getUsedConstants do nxt := nxt.push u
         frontier := nxt
       let mut findings : Std.HashSet Name := {}
+      let mut slotMemo : Std.HashMap Name Bool := {}
       for m in seen do
         if pinned.contains m then findings := findings.insert m
         if let some ci := env.find? m then
           if let some v := ci.value? then
-            for (p, a) in routeBootHits prims boot v do
+            for (p, a) in routeBootHits boot v do
+              -- Report a head only if it actually touches a per-core scheduler
+              -- slot.  Passing `bootCoreId` to something else is ordinary.
+              -- Memoised: the traversal now collects every application head, so
+              -- this predicate is the hot path.
+              let verdict ←
+                match slotMemo.get? p with
+                | some b => pure b
+                | none =>
+                  let b := routeReachesPerCoreSlot env prims 6 p
+                  slotMemo := slotMemo.insert p b
+                  pure b
+              if !verdict then continue
               if let .const c _ := a then
                 if boot.contains c then
                   findings := findings.insert p

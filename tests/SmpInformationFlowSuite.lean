@@ -748,7 +748,7 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @syscallIdToEnforcementNamePerCore
 #check @enforcementBoundaryPerCoreCompleteCrossCore
 #check @enforcementBoundaryPerCore_is_complete_crossCore
-#check @syscallIdToEnforcementNamePerCore_differs_at_fourteen
+#check @syscallIdToEnforcementNamePerCore_differs_at_fifteen
 #check @enforcementBoundaryPerCore_crossCore_classes_match
 #check @endpointPolicyRestricted_perCore
 #check @endpointPolicyRestricted_perCore_iff
@@ -3217,18 +3217,26 @@ private def runPerCoreCoverageChecks : IO Unit := do
 /-- §4.7  The per-core enforcement boundary (SM8.B.6 / SM8.B.7). -/
 private def runEnforcementBoundaryChecks : IO Unit := do
   IO.println "--- §4.7 the per-core enforcement boundary ---"
-  assertBool "53 entries: 38 canonical + the 2PL bracket + 14 live cross-core wrappers"
-    (decide (enforcementBoundaryPerCore.length = 53) &&
+  assertBool "54 entries: 38 canonical + the 2PL bracket + 15 live cross-core wrappers"
+    (decide (enforcementBoundaryPerCore.length = 54) &&
      decide (enforcementBoundaryExtended.length = 38) &&
-     decide (crossCoreEnforcementEntries.length = 14))
+     decide (crossCoreEnforcementEntries.length = 15))
   assertBool "every SyscallId is still covered by the extended boundary (single-core half)"
     (enforcementBoundaryPerCoreComplete)
   assertBool "every SyscallId's LIVE cross-core operation is covered (SMP half)"
     (enforcementBoundaryPerCoreCompleteCrossCore)
-  assertBool "the per-core mapping re-routes exactly fourteen syscalls"
+  assertBool "the per-core mapping re-routes exactly fifteen syscalls"
     (decide ((SyscallId.all.filter (fun sid =>
       decide (syscallIdToEnforcementNamePerCore sid
-        ≠ syscallIdToEnforcementName sid))).length = 14))
+        ≠ syscallIdToEnforcementName sid))).length = 15))
+  -- Round 37: `.tcbSetAffinity` is the fifteenth, and the first found by the
+  -- routing gate rather than by a review round.  Its op hardcoded `bootCoreId`
+  -- as the executing core and discarded the SGI that argument determined.
+  assertBool "the affinity arm re-routes to the per-core form"
+    (decide (syscallIdToEnforcementNamePerCore .tcbSetAffinity
+               = "setThreadCpuAffinityOnCore")
+      && decide (syscallIdToEnforcementNamePerCore .tcbSetAffinity
+                   ≠ syscallIdToEnforcementName .tcbSetAffinity))
   -- Round 10 and round 12 additions, as checked facts: `.send` and `.tcbResume`
   -- were rerouted off boot-pinned operations, and the three SM7.D/SM7.F
   -- architecture wrappers had been live per-core arms without appearing here.

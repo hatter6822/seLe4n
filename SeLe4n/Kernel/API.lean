@@ -1343,8 +1343,15 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
             match decodeAffinity args.affinityRaw with
             | .error e => .error e
             | .ok affinity =>
-                match setThreadCpuAffinityOp st vtid affinity with
-                | .ok st' => .ok ((), st')
+                -- WS-SM SM8.B (round 37): the per-core form.  The committed
+                -- state is identical at every executing core
+                -- (`setThreadCpuAffinityOnCore_state_core_independent`), so this
+                -- is trace-safe; what changes is that the migration's SGI is
+                -- computed against the caller's real core instead of the boot
+                -- core, and is no longer discarded before the diff seam sees it.
+                match setThreadCpuAffinityOnCore st vtid affinity
+                        (determineExecutingCore st tid) with
+                | .ok (st', _) => .ok ((), st')
                 | .error e => .error e
     | _ => fun _ => .error .invalidCapability
   | _ => none

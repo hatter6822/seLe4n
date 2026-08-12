@@ -124,11 +124,18 @@ def crossCoreEnforcementEntries : List EnforcementClass :=
   -- (a silent no-op for a thread queued anywhere else, so a demotion never took
   -- effect) and the preemption check read the boot core's current thread.
   , .capabilityOnly "setPriorityOnCore"
-  , .capabilityOnly "setMCPriorityOnCore" ]
+  , .capabilityOnly "setMCPriorityOnCore"
+  -- PR #861 review round 37, and the first arm found by the *gate* rather than
+  -- by a review round: `setThreadCpuAffinityOp` hardcoded `bootCoreId` as the
+  -- executing core and then discarded the SGI the migration computed.  Inert
+  -- live (the committed state does not depend on that argument, and the diff
+  -- seam re-derives the poke keyed on the real core), but a value computed
+  -- against the wrong core and thrown away is a defect waiting for a consumer.
+  , .capabilityOnly "setThreadCpuAffinityOnCore" ]
 
 /-- SM8.B.6: the SMP enforcement boundary — the canonical classification, the
 two-phase-locking bracket the per-object lock discipline introduces, and the
-fourteen live cross-core wrappers.
+fifteen live cross-core wrappers.
 
 The canonical entries are **kept**, not replaced: the boot-pinned
 `syscallDispatchInner` still reaches the single-core wrappers, so both surfaces
@@ -141,7 +148,7 @@ def enforcementBoundaryPerCore : List EnforcementClass :=
 in the fourth review round, and again in rounds 10 and 12 as the `.send`, resume
 and architecture arms joined the cross-core surface;
 `enforcementBoundaryExtended_count` is the authority for the base figure. -/
-theorem enforcementBoundaryPerCore_count : enforcementBoundaryPerCore.length = 53 := by rfl
+theorem enforcementBoundaryPerCore_count : enforcementBoundaryPerCore.length = 54 := by rfl
 
 /-- SM8.B.7 (completeness, part 1): the per-core boundary **extends** the
 canonical one — it is the canonical list followed by the 2PL bracket and the
@@ -211,6 +218,7 @@ def syscallIdToEnforcementNamePerCore : SyscallId → String
   | .lifecycleRetype     => "lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache"
   | .tcbSetPriority      => "setPriorityOnCore"
   | .tcbSetMCPriority    => "setMCPriorityOnCore"
+  | .tcbSetAffinity      => "setThreadCpuAffinityOnCore"
   | sid                  => syscallIdToEnforcementName sid
 
 /-- SM8.B.7 (completeness, part 2b — **the SMP half**): every `SyscallId` maps,
@@ -231,7 +239,7 @@ def enforcementBoundaryPerCoreCompleteCrossCore : Bool :=
 theorem enforcementBoundaryPerCore_is_complete_crossCore :
     enforcementBoundaryPerCoreCompleteCrossCore = true := by decide
 
-/-- SM8.B.7: the fourteen re-routed arms are genuinely re-routed — the per-core
+/-- SM8.B.7: the fifteen re-routed arms are genuinely re-routed — the per-core
 mapping differs from the canonical one at exactly those syscalls, and nowhere
 else.  A syscall silently added to (or dropped from) the cross-core surface
 moves this count.
@@ -239,11 +247,11 @@ moves this count.
 Was seven until PR #861 review round 10 rerouted `.send` and `.tcbResume` off
 their boot-pinned operations, and round 12 observed that the three SM7.D/SM7.F
 architecture wrappers had been live per-core arms all along without appearing
-here. -/
-theorem syscallIdToEnforcementNamePerCore_differs_at_fourteen :
+here.  Round 37 added `.tcbSetAffinity`, found by the widened routing gate. -/
+theorem syscallIdToEnforcementNamePerCore_differs_at_fifteen :
     (SyscallId.all.filter (fun sid =>
       decide (syscallIdToEnforcementNamePerCore sid ≠ syscallIdToEnforcementName sid))).length
-      = 14 := by decide
+      = 15 := by decide
 
 /-- SM8.B.7: **a cross-core wrapper carries the same enforcement class as the
 single-core operation it replaced.**  Re-routing a transition to another core

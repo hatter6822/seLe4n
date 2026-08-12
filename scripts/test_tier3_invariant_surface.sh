@@ -2087,7 +2087,7 @@ run_check "INVARIANT" rg -n '^def crossCoreEnforcementEntries' SeLe4n/Kernel/Inf
 run_check "INVARIANT" rg -n '^def syscallIdToEnforcementNamePerCore' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_is_complete_crossCore' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_crossCore_classes_match' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem syscallIdToEnforcementNamePerCore_differs_at_fourteen' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem syscallIdToEnforcementNamePerCore_differs_at_fifteen' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 
 
 # WS-H12d IPC message payload bounds anchors — predicate definitions + enforcement + theorems.

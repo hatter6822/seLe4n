@@ -28,9 +28,22 @@ seam live?**
 
 `false` until SM9.E, and the single source of truth for that fact — the
 `contextRestoreWired` register (`Scheduler/PriorityInheritance/PerCore.lean`)
-reads it rather than carrying its own literals, as do the two live guards
-`scheduleLocalSuccessorLive` and the `.schedContextUnbind` local reschedule, so
-none of them can drift and the flip is one constant.
+reads it rather than carrying its own literals, as do the **three** live
+guards, so none of them can drift and the flip is one constant:
+
+* `scheduleLocalSuccessorLive` — the vacated-core successor;
+* `resumeThreadOnCoreLive` — the local `.tcbResume` dispatch;
+* `priorityRescheduleOnCoreLive` — the local preemption point behind
+  `.tcbSetPriority` / `.tcbSetMCPriority`.
+
+The `.schedContextUnbind` reschedule is **deliberately ungated**, and was
+briefly listed here in error (PR #861 review round 37).  Round 28 asked for the
+gate and round 33 showed it recreates the round-15 defect: `schedContextUnbind`
+clears the executing core's `current` slot *in order to* force a reschedule, so
+suppressing the tail leaves a core with no successor and nothing to resolve it.
+A gate is only sound where the state it leaves behind is coherent — a gated
+resume leaves the thread `.Ready` and queued, which the next tick resolves; a
+gated unbind leaves half a transaction.
 
 Three things must land together before it becomes `true`, and none of them fits
 a non-interference cut: a `VSpaceRoot → TTBR0` binding (the model carries an

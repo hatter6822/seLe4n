@@ -4046,7 +4046,7 @@ theorem setThreadCpuAffinityOp_preserves_projection
     (hObjInv : st.objects.invExt)
     (hStep : setThreadCpuAffinityOp st vTargetTid affinity = .ok st') :
     projectState ctx observer st' = projectState ctx observer st := by
-  unfold setThreadCpuAffinityOp at hStep
+  unfold setThreadCpuAffinityOp setThreadCpuAffinityOnCore at hStep
   cases hWith : setThreadCpuAffinityWithMigration st vTargetTid.val affinity bootCoreId with
   | error e => rw [hWith] at hStep; simp at hStep
   | ok pair =>

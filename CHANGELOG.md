@@ -1,5 +1,42 @@
 ## v0.33.5 — SM8.B: per-core non-interference, at the transitions that really run
 
+**Review round 37 — the gate finds the eighth boot-pinned live arm.**  The
+routing gate's primitive list was hand-written, and omitted every *composite*
+per-core scheduler operation — `scheduleEffectiveOnCore`, `scheduleOrIdleOnCore`,
+`saveOutgoingContextOnCore` — so a live helper could pass `bootCoreId` to one and
+produce no finding.  The head filter is gone: the traversal now collects every
+application head and the decision moves downstream to a **derived** test, "does
+this constant transitively touch a per-core scheduler slot", seeded from the
+field-level accessor/setter pair that already comes from `SchedulerState`'s own
+`Vector … numCores` fields.  Reads count as well as writes — the round-15
+`currentOnCore bootCoreId` preemption guard wrote nothing.  A composite witness
+in the self-test must be detected on every run, so the fix cannot regress into
+the hand list it replaced.
+
+Running the widened gate found `setThreadCpuAffinityOp`, which hardcoded
+`bootCoreId` as the executing core and then discarded the SGI that argument
+determines.  **Inert on the live path**, and the reason is worth stating rather
+than assuming: the committed state does not depend on that argument
+(`setThreadCpuAffinityOnCore_state_core_independent`), and the dispatch entry
+re-derives cross-core pokes from the `(pre, post)` diff keyed on the caller's
+real core, which fires here because a migration leaves the thread newly queued
+on a home core it was not queued on before.  So no poke was lost — but a value
+computed against the wrong core and thrown away is a defect waiting for its
+first consumer.  New `setThreadCpuAffinityOnCore` threads the real core and
+returns the SGI; the live arm routes through it; the old name is retained as its
+boot-core instance so every existing theorem and test stands unchanged.
+Per-core enforcement boundary 53 → 54, re-routed arms 14 → 15.
+
+Also from this round, three documentation corrections of the same kind this PR
+keeps producing.  The context-restore seam docstring — the flip checklist for
+SM9.E — still named the `.schedContextUnbind` reschedule as a gated site after
+round 33 removed that gate; it now names the three real guards and records why
+unbind is deliberately ungated.  `docs/CLAIM_EVIDENCE_INDEX.md` still cited
+`endpointFlowCheck_state_independent` as evidence, a symbol this same release
+removes and Tier 3 forbids.  And the SM8.B status row opened by calling the
+axiom sweep "map-driven" and then described the elaborated-environment sweep
+that replaced it, two accounts of the same gate in one sentence.
+
 **Review round 35 — the per-core routing allowlist reaches zero.**
 `scripts/check_live_arm_per_core_routing.py` walks two hops out from each live
 syscall arm and fails on any boot-pinned scheduler primitive it reaches; it

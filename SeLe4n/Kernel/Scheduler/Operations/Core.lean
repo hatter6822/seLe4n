@@ -1689,18 +1689,70 @@ def decodeAffinity (v : Nat) : Except KernelError (Option CoreId) :=
   else if v = affinityUnbindMarker then .ok none
   else .error .invalidArgument
 
-/-- WS-SM SM5.H.4 (the `tcbSetAffinity` syscall operation): set a thread's CPU
-affinity and migrate it to its new home core (the state effect of
-`setThreadCpuAffinityWithMigration`).  Reached from the kernel dispatch
-(`dispatchCapabilityOnly .tcbSetAffinity`) past the `.write`-on-target-TCB
-capability gate.  The executing core is the boot core in the single-core dispatch
-model (SM5.I passes the live core); the cross-core SGI is recomputed and fired by
-the SM5.I FFI seam, so the syscall commits only the state. -/
+/-- **WS-SM SM8.B (PR #861 review round 37): the per-core affinity op.**
+
+The eighth boot-pinned live arm, and the first found by the *widened* routing
+gate rather than by a review round: `setThreadCpuAffinityOp` below hardcoded
+`bootCoreId` as the executing core and then discarded the SGI the migration
+computed.  The old gate could not see it because its primitive list was
+hand-written and omitted composite per-core operations; the derived reach test
+finds it.
+
+Inert on the live path today, and the reason is worth stating rather than
+assuming: `executingCore` feeds **only** the returned SGI (the committed state
+`st2` does not depend on it), the op dropped that SGI, and the dispatch entry
+re-derives cross-core pokes from the `(pre, post)` diff keyed on the *real*
+executing core — a migration leaves the thread newly queued on a home core it
+was not queued on before, so `crossCoreSgiBody`'s queue rule fires.  So no poke
+was lost.  What was wrong is that the value was computed against the wrong core
+and then thrown away, which is a defect waiting for its first consumer.
+
+This form threads the real core and returns the SGI. -/
+def setThreadCpuAffinityOnCore (st : SystemState) (vTargetTid : ValidThreadId)
+    (affinity : Option CoreId) (executingCore : CoreId) :
+    Except KernelError (SystemState × Option (CoreId × SgiKind)) :=
+  setThreadCpuAffinityWithMigration st vTargetTid.val affinity executingCore
+
+/-- WS-SM SM5.H.4 (the `tcbSetAffinity` state effect): set a thread's CPU
+affinity and migrate it to its new home core, the state effect of
+`setThreadCpuAffinityWithMigration`.
+
+The **boot-core instance** of `setThreadCpuAffinityOnCore`, retained under its
+original name and signature so every theorem and test about it stands unchanged.
+No longer on the live path: round 37 rerouted `dispatchCapabilityOnly
+.tcbSetAffinity` through the per-core form, since the old body's claim that "the
+executing core is the boot core in the single-core dispatch model" stopped being
+true when the dispatch learned its real core. -/
 def setThreadCpuAffinityOp (st : SystemState) (vTargetTid : ValidThreadId)
     (affinity : Option CoreId) : Except KernelError SystemState :=
-  match setThreadCpuAffinityWithMigration st vTargetTid.val affinity bootCoreId with
+  match setThreadCpuAffinityOnCore st vTargetTid affinity bootCoreId with
   | .ok (st', _) => .ok st'
   | .error e => .error e
+
+/-- WS-SM SM8.B: the committed state does not depend on the executing core —
+`executingCore` reaches only the returned SGI.  This is what makes rerouting the
+live arm trace-safe, and it is a theorem rather than a reading of the body. -/
+theorem setThreadCpuAffinityOnCore_state_core_independent (st : SystemState)
+    (vTargetTid : ValidThreadId) (affinity : Option CoreId) (c₁ c₂ : CoreId) :
+    (setThreadCpuAffinityOnCore st vTargetTid affinity c₁).map Prod.fst
+      = (setThreadCpuAffinityOnCore st vTargetTid affinity c₂).map Prod.fst := by
+  unfold setThreadCpuAffinityOnCore setThreadCpuAffinityWithMigration
+  split
+  · split
+    · rfl
+    · split <;> rfl
+  · rfl
+
+/-- WS-SM SM8.B: and hence the retained boot-core op agrees with the per-core
+form on the state, at **every** executing core. -/
+theorem setThreadCpuAffinityOp_eq_onCore_state (st : SystemState)
+    (vTargetTid : ValidThreadId) (affinity : Option CoreId) (executingCore : CoreId) :
+    setThreadCpuAffinityOp st vTargetTid affinity
+      = (setThreadCpuAffinityOnCore st vTargetTid affinity executingCore).map Prod.fst := by
+  unfold setThreadCpuAffinityOp
+  rw [← setThreadCpuAffinityOnCore_state_core_independent st vTargetTid affinity
+        bootCoreId executingCore]
+  cases setThreadCpuAffinityOnCore st vTargetTid affinity bootCoreId <;> rfl
 
 end SeLe4n.Kernel
 
