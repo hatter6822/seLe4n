@@ -2181,6 +2181,39 @@ theorem migrateSchedContextReplenishment_confinedToCores (st : SystemState)
   all_goals intro c _
   all_goals (unfold migrateSchedContextReplenishment; split <;> simp)
 
+/-- SM8.B.2 (**the missing frame**): a run-queue migration writes the two cores
+it names and nothing else.
+
+`migrateRunQueueOnAffinityChange` had frames for `machine`, `objects`,
+`getTcb`, `getSchedContext`, `replenishQueueOnCore` and `determineTargetCore`,
+and a projection-preservation lemma — but nothing saying *which cores it leaves
+alone*, which is exactly what confinement needs.  Its absence is why
+`.tcbSetAffinity` sat in the routing allowlist instead of carrying a proof.
+
+Every arm but one returns the pre-state outright; the migrating arm is two
+`setRunQueueOnCore` writes at `fromCore` and `toCore`, so a core outside the
+pair sees neither, and the five non-run-queue slots are untouched on every
+arm. -/
+theorem migrateRunQueueOnAffinityChange_confinedToCores (st : SystemState)
+    (tid : SeLe4n.ThreadId) (fromCore toCore : CoreId) :
+    observableSlotsConfinedToCores st
+      (migrateRunQueueOnAffinityChange st tid fromCore toCore) [fromCore, toCore] := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+  · intro c hc
+    simp only [List.mem_cons, List.not_mem_nil, or_false, not_or] at hc
+    obtain ⟨hf, ht⟩ := hc
+    unfold migrateRunQueueOnAffinityChange
+    split
+    · rfl
+    · split
+      · rfl
+      · split
+        · simp [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne, Ne.symm hf, Ne.symm ht]
+        · rfl
+  all_goals intro c _
+  all_goals (unfold migrateRunQueueOnAffinityChange; repeat' split)
+  all_goals simp
+
 /-- SM8.B.2: the donated-SchedContext cancellation arm is per-core silent for
 the same reason — the SC returns to its owner in the object store and its
 replenishments migrate between two cores' replenishment queues, neither of
@@ -2894,6 +2927,149 @@ theorem schedContextBind_confinedToCores (vScId : SeLe4n.ValidObjId)
           · exact absurd hStep (by simp)
       · exact absurd hStep (by simp)
   · exact absurd hStep (by simp)
+
+/-- SM8.B.2: **where a `.tcbSetAffinity` writes.**
+
+The old home core and the new one.  Unlike bind and configure, the second core
+needs no state at all: `setThreadCpuAffinity` inserts the TCB with
+`cpuAffinity := affinity` and `determineTargetCore` reads exactly that field, so
+the post-migration home is a function of the *argument*.  That is what
+`setThreadCpuAffinity_determineTargetCore_eq` says, and it is why this write set
+avoids the mid-state bridge its two SchedContext siblings needed. -/
+def setThreadCpuAffinityWriteSet (st : SystemState) (tid : SeLe4n.ThreadId)
+    (affinity : Option CoreId) : List CoreId :=
+  [determineTargetCore st tid, affinity.getD Concurrency.bootCoreId]
+
+/-- SM8.B.2: the affinity write touches the object store only. -/
+theorem setThreadCpuAffinity_scheduler_machine_eq (st stSet : SystemState)
+    (tid : SeLe4n.ThreadId) (affinity : Option CoreId)
+    (hSet : setThreadCpuAffinity st tid affinity = .ok stSet) :
+    stSet.scheduler = st.scheduler ∧ stSet.machine = st.machine := by
+  unfold setThreadCpuAffinity at hSet
+  split at hSet
+  · rw [Except.ok.injEq] at hSet; subst hSet; exact ⟨rfl, rfl⟩
+  · exact absurd hSet (by simp)
+
+/-- SM8.B.2: after the affinity write the thread's home core IS the requested
+affinity (boot when unbound) — the bridge that lets the write set name the new
+core without mentioning the mid-state. -/
+theorem setThreadCpuAffinity_determineTargetCore_eq (st stSet : SystemState)
+    (tid : SeLe4n.ThreadId) (affinity : Option CoreId) (hInv : st.objects.invExt)
+    (hSet : setThreadCpuAffinity st tid affinity = .ok stSet) :
+    determineTargetCore stSet tid = affinity.getD Concurrency.bootCoreId := by
+  unfold setThreadCpuAffinity at hSet
+  split at hSet
+  · next tcb hTcb =>
+    rw [Except.ok.injEq] at hSet
+    subst hSet
+    unfold determineTargetCore SystemState.getTcb?
+    simp only [RHTable_getElem?_eq_get?]
+    rw [RHTable_getElem?_insert st.objects tid.toObjId
+      (.tcb { tcb with cpuAffinity := affinity }) hInv tid.toObjId]
+    simp only [beq_self_eq_true, if_pos]
+    cases affinity <;> rfl
+  · exact absurd hSet (by simp)
+
+/-- SM8.B.2 (**the live `.tcbSetAffinity` bound**): a migration writes no core
+outside the pair it moves the thread between.
+
+Three effects, one of them confined-relevant.  The `setThreadCpuAffinity` write
+touches the object store only (`setThreadCpuAffinity_scheduler_machine_eq`); the
+replenishment migration is per-core silent even on the cores it names
+(`migrateSchedContextReplenishment_confinedToCores`, against the *empty* set,
+because the replenish queue is outside the six observable slots); and the
+run-queue migration is bounded by
+`migrateRunQueueOnAffinityChange_confinedToCores`, new in this cut and the
+reason `.tcbSetAffinity` could not carry a proof before it.
+
+Read as a chain: `st` and the post-affinity state share every observable slot,
+the replenishment stage preserves all of them, and the run-queue stage moves
+only the two cores the write set names — the second of which is the *argument*,
+via the bridge above. -/
+theorem setThreadCpuAffinityWithMigration_confinedToCores
+    (st st' : SystemState) (targetTid : SeLe4n.ThreadId)
+    (affinity : Option CoreId) (executingCore : CoreId)
+    (sgi : Option (CoreId × Concurrency.SgiKind)) (hInv : st.objects.invExt)
+    (hStep : setThreadCpuAffinityWithMigration st targetTid affinity executingCore
+      = .ok (st', sgi)) :
+    observableSlotsConfinedToCores st st'
+      (setThreadCpuAffinityWriteSet st targetTid affinity) := by
+  unfold setThreadCpuAffinityWithMigration at hStep
+  split at hStep
+  · next tcb hTcb =>
+    split at hStep
+    · exact absurd hStep (by simp)
+    · split at hStep
+      · next stSet hSet =>
+        rw [Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨hs, -⟩ := hStep
+        subst hs
+        obtain ⟨hSched, hMach⟩ :=
+          setThreadCpuAffinity_scheduler_machine_eq st stSet targetTid affinity hSet
+        have hNew := setThreadCpuAffinity_determineTargetCore_eq st stSet targetTid affinity
+          hInv hSet
+        -- The mid-state after the (optional) replenishment migration.  Written
+        -- out rather than named: `set` cannot bind a `match` body here.
+        have hRepl : observableSlotsConfinedToCores stSet
+            (match tcb.schedContextBinding.scId? with
+              | some scId => migrateSchedContextReplenishment stSet scId
+                  (determineTargetCore st targetTid) (determineTargetCore stSet targetTid)
+              | none => stSet) [] := by
+          cases tcb.schedContextBinding.scId? with
+          | none => exact ⟨fun _ _ => rfl, fun _ _ => rfl, fun _ _ => rfl,
+                           fun _ _ => rfl, fun _ _ => rfl, fun _ _ => rfl⟩
+          | some scId => exact migrateSchedContextReplenishment_confinedToCores _ _ _ _
+        have hRun := migrateRunQueueOnAffinityChange_confinedToCores
+          (match tcb.schedContextBinding.scId? with
+            | some scId => migrateSchedContextReplenishment stSet scId
+                (determineTargetCore st targetTid) (determineTargetCore stSet targetTid)
+            | none => stSet) targetTid
+          (determineTargetCore st targetTid) (determineTargetCore stSet targetTid)
+        have key : ∀ c, c ∉ setThreadCpuAffinityWriteSet st targetTid affinity →
+            c ∉ [determineTargetCore st targetTid, determineTargetCore stSet targetTid] := by
+          intro c hc
+          simp only [setThreadCpuAffinityWriteSet, List.mem_cons, List.not_mem_nil,
+            or_false, not_or] at hc ⊢
+          rw [hNew]
+          exact hc
+        refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+        all_goals intro c hc
+        all_goals have hcPair := key c hc
+        · exact ((hRun.runQueue c hcPair).trans (hRepl.runQueue c (by simp))).trans
+            (by rw [hSched])
+        · exact ((hRun.current c hcPair).trans (hRepl.current c (by simp))).trans
+            (by rw [hSched])
+        · exact ((hRun.activeDomain c hcPair).trans (hRepl.activeDomain c (by simp))).trans
+            (by rw [hSched])
+        · exact ((hRun.domainTimeRemaining c hcPair).trans
+            (hRepl.domainTimeRemaining c (by simp))).trans (by rw [hSched])
+        · exact ((hRun.domainScheduleIndex c hcPair).trans
+            (hRepl.domainScheduleIndex c (by simp))).trans (by rw [hSched])
+        · exact ((hRun.regs c hcPair).trans (hRepl.regs c (by simp))).trans (by rw [hMach])
+      · exact absurd hStep (by simp)
+  · exact absurd hStep (by simp)
+
+/-- SM8.B.2 (**the live `.tcbSetAffinity` non-interference**): a migration is
+invisible on every core outside the pair it moves the thread between, with no
+hypothesis on that thread's clearance.
+
+The strongest of the cross-core instantiations in the sense that matters here:
+the operation genuinely writes *two* remote cores, and the bound is exact — a
+core that is neither the old home nor the new one sees nothing. -/
+theorem setThreadCpuAffinityWithMigration_crossCoreNonInterference
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st st' : SystemState) (targetTid : SeLe4n.ThreadId)
+    (affinity : Option CoreId) (executingCore : CoreId)
+    (sgi : Option (CoreId × Concurrency.SgiKind)) (c : CoreId)
+    (hInv : st.objects.invExt)
+    (hStep : setThreadCpuAffinityWithMigration st targetTid affinity executingCore
+      = .ok (st', sgi))
+    (hne : c ∉ setThreadCpuAffinityWriteSet st targetTid affinity)
+    (hShared : sharedViewUnchanged ctx observer st st') :
+    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
+  crossCoreNonInterference_ofCores ctx observer hne
+    (setThreadCpuAffinityWithMigration_confinedToCores st st' targetTid affinity
+      executingCore sgi hInv hStep) hShared
 
 /-- SM8.B.2 (**the live `.schedContextBind` non-interference**): binding is
 invisible on every core outside the bound thread's home core, with no hypothesis
@@ -3827,6 +4003,11 @@ inductive CrossCoreTransition where
   thread's home core.  Its write set reads the thread from the *argument*, not
   from the SC — bind rejects an already-bound SC. -/
   | schedContextBindDispatch
+  /-- SM8.B — the **live** `.tcbSetAffinity` arm: migrate a thread between two
+  home cores.  The only entry whose write set names *two* remote cores, and the
+  one that finally replaced this arm's routing-allowlist exception with a
+  proof. -/
+  | setThreadCpuAffinityDispatch
   /-- SM8.B — the **live** `.schedContextConfigure` arm: re-bucket the bound
   thread on its home core when a reconfigure changes its priority. -/
   | schedContextConfigureDispatch
@@ -3863,6 +4044,7 @@ inductive CrossCoreTransition where
 def CrossCoreTransition.all : List CrossCoreTransition :=
   [.wake, .endpointCall, .endpointCallDispatch, .endpointSendDispatch,
    .schedContextUnbindDispatch, .schedContextBindDispatch, .schedContextConfigureDispatch,
+   .setThreadCpuAffinityDispatch,
    .notificationSignal, .notificationSignalBound,
    .notificationWait, .endpointReply, .endpointReplyDispatch, .endpointReceiveDual,
    .endpointReplyRecv, .replyRecvBodyDispatch, .deschedule, .cancelIpcBlocking,
@@ -3901,6 +4083,8 @@ def crossCoreNiTheorem : CrossCoreTransition → String
       niName! schedContextUnbindOnCore_crossCoreNonInterference
   | .schedContextBindDispatch =>
       niName! schedContextBind_crossCoreNonInterference
+  | .setThreadCpuAffinityDispatch =>
+      niName! setThreadCpuAffinityWithMigration_crossCoreNonInterference
   | .schedContextConfigureDispatch =>
       niName! schedContextConfigure_crossCoreNonInterference
   | .notificationSignal => niName! notificationSignalOnCore_crossCoreNonInterference
@@ -3919,7 +4103,7 @@ def crossCoreNiTheorem : CrossCoreTransition → String
   | .setPriorityDispatch => niName! setPriorityOnCore_crossCoreNonInterference
   | .setMCPriorityDispatch => niName! setMCPriorityOnCore_crossCoreNonInterference
 
-theorem crossCoreNiTheorem_count : CrossCoreTransition.all.length = 21 := by rfl
+theorem crossCoreNiTheorem_count : CrossCoreTransition.all.length = 22 := by rfl
 
 /-- SM8.B.2: **which entries are the arms the live syscall dispatch actually
 reaches**, as opposed to the below-API transitions they are built from.
@@ -3961,6 +4145,7 @@ def crossCoreTransitionIsLiveArm : CrossCoreTransition → Bool
   | .schedContextUnbindDispatch => true
   | .schedContextBindDispatch => true
   | .schedContextConfigureDispatch => true
+  | .setThreadCpuAffinityDispatch => true
   | .notificationSignal => false
   | .notificationSignalBound => true
   | .notificationWait => true
@@ -3977,7 +4162,7 @@ def crossCoreTransitionIsLiveArm : CrossCoreTransition → Bool
   | .setMCPriorityDispatch => true
 
 theorem crossCoreTransitionIsLiveArm_count :
-    (CrossCoreTransition.all.filter crossCoreTransitionIsLiveArm).length = 14 := by decide
+    (CrossCoreTransition.all.filter crossCoreTransitionIsLiveArm).length = 15 := by decide
 
 theorem crossCoreNiTheorem_injective :
     ∀ t₁ t₂ : CrossCoreTransition, crossCoreNiTheorem t₁ = crossCoreNiTheorem t₂ → t₁ = t₂ := by
@@ -4041,6 +4226,7 @@ def crossCoreLiveArmSyscall : CrossCoreTransition → Option SyscallId
   | .endpointSendDispatch => some .send
   | .schedContextUnbindDispatch => some .schedContextUnbind
   | .schedContextBindDispatch => some .schedContextBind
+  | .setThreadCpuAffinityDispatch => some .tcbSetAffinity
   | .schedContextConfigureDispatch => some .schedContextConfigure
   | .notificationSignal => none
   | .notificationSignalBound => some .notificationSignal
@@ -4068,6 +4254,8 @@ def crossCoreLiveArmEvidence : CrossCoreTransition → LiveArmEvidence
       .delegationProof .schedContextUnbind syscallDelegates_schedContextUnbind
   | .schedContextBindDispatch =>
       .readOffTheArm "capability-only `.schedContextBind` arm; delegation theorem pending"
+  | .setThreadCpuAffinityDispatch =>
+      .readOffTheArm "capability-only `.tcbSetAffinity` arm; delegation theorem pending"
   | .schedContextConfigureDispatch =>
       .readOffTheArm "capability-only `.schedContextConfigure` arm; delegation theorem pending"
   | .notificationSignal => .readOffTheArm "below-API transition; live arm is .notificationSignalBound"
@@ -4123,7 +4311,7 @@ of `API.lean`, which is the state every one of the three drifts occurred in. -/
 theorem crossCoreLiveArm_readOffTheArm_count :
     (CrossCoreTransition.all.filter (fun t =>
       crossCoreTransitionIsLiveArm t
-        && !(crossCoreLiveArmEvidence t).isDelegationBacked)).length = 7 := by decide
+        && !(crossCoreLiveArmEvidence t).isDelegationBacked)).length = 8 := by decide
 
 /-- SM8.B.2: **which transitions can write a core other than the executing
 one.**  Named for remote *writes*, not for wakes: a reply, a deschedule and a
@@ -4139,6 +4327,7 @@ def crossCoreTransitionWritesRemote : CrossCoreTransition → Bool
   | .schedContextUnbindDispatch => true
   | .schedContextBindDispatch => true
   | .schedContextConfigureDispatch => true
+  | .setThreadCpuAffinityDispatch => true
   | .notificationSignal => true
   | .notificationSignalBound => true
   | .notificationWait => false
@@ -4155,6 +4344,6 @@ def crossCoreTransitionWritesRemote : CrossCoreTransition → Bool
   | .setMCPriorityDispatch => true
 
 theorem crossCoreTransitionWritesRemote_count :
-    (CrossCoreTransition.all.filter crossCoreTransitionWritesRemote).length = 20 := by decide
+    (CrossCoreTransition.all.filter crossCoreTransitionWritesRemote).length = 21 := by decide
 
 end SeLe4n.Kernel

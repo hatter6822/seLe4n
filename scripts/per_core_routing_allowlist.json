@@ -13,10 +13,5 @@
     "syscall": "lifecycleRetype",
     "symbol": "cross-core-inventory",
     "reason": "TRACKED DEBT. Unlike its two siblings this one genuinely writes scheduler state: the destroy path sweeps every core's run queue and current slot through removeRunnableFromAllCores, so its honest write set is the set of cores the destroyed thread occupied. That set is computable from the pre-state and the proof is owed. Closure target: a confinement theorem over the occupied-core set, sharper than the trivially true all-cores bound."
-  },
-  {
-    "syscall": "tcbSetAffinity",
-    "symbol": "cross-core-inventory",
-    "reason": "TRACKED DEBT, not an unobservable write. setThreadCpuAffinityWithMigration writes TWO cores' run queues (migrateRunQueueOnAffinityChange over the old and new home), so it owes a real write set and confinement proof. It is allowlisted rather than proven only because it has been per-core since long before this change and the gap is pre-existing. The boot core that setThreadCpuAffinityOp passes as the executing core is separately inert: it selects only the returned interrupt, which the op discards, and the real poke is re-derived by the dispatch entry's diff seam. Closure target: setThreadCpuAffinityWithMigration_confinedToCores over [oldCore, newCore], with the new core expressed from the affinity argument rather than from the mid-state."
   }
 ]

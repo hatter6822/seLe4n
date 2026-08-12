@@ -563,6 +563,15 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @SeLe4n.Kernel.schedContextBindWriteSet
 #check @SeLe4n.Kernel.schedContextBind_confinedToCores
 #check @SeLe4n.Kernel.schedContextBind_crossCoreNonInterference
+-- SM8.B.2 (PR #861 review round 25): the `.tcbSetAffinity` migration — the one
+-- entry whose write set names TWO remote cores, and the missing run-queue frame
+-- lemma that let it be proven instead of allowlisted.
+#check @SeLe4n.Kernel.migrateRunQueueOnAffinityChange_confinedToCores
+#check @SeLe4n.Kernel.setThreadCpuAffinityWriteSet
+#check @SeLe4n.Kernel.setThreadCpuAffinity_scheduler_machine_eq
+#check @SeLe4n.Kernel.setThreadCpuAffinity_determineTargetCore_eq
+#check @SeLe4n.Kernel.setThreadCpuAffinityWithMigration_confinedToCores
+#check @SeLe4n.Kernel.setThreadCpuAffinityWithMigration_crossCoreNonInterference
 #check @SeLe4n.Kernel.schedContextConfigure_confinedToCores
 #check @SeLe4n.Kernel.schedContextConfigure_crossCoreNonInterference
 #check @CovertChannelId.mem_all
