@@ -121,8 +121,13 @@ run_check "HYGIENE" "${SCRIPT_DIR}/check_version_sync.sh"
 # that no review round had reached.  The self-test runs first: it re-walks the
 # pre-SMP operations and fails if the gate no longer detects them, so a gate
 # that has lost its reach fails loudly instead of passing everything.
-run_check "HYGIENE" "${SCRIPT_DIR}/check_live_arm_per_core_routing.py" --self-test
-run_check "HYGIENE" "${SCRIPT_DIR}/check_live_arm_per_core_routing.py"
+# MOVED TO TIER 1 (PR #861 review round 29).  This gate now detects against
+# Lean's *elaborated environment* rather than the source text, which means it
+# needs a built toolchain — and Tier 0 is deliberately build-free and
+# toolchain-free, so the ARM64 Fast Gate lane (which runs Tier 0 alone, with no
+# elan) died on `FileNotFoundError: 'lake'`.  A gate's tier has to match its
+# dependencies.  Tier 1 runs on every PR through `test_fast.sh`, so enforcement
+# is unchanged; see `test_tier1_build.sh`, after the builds.
 
 # Internal-first naming: no workstream IDs, audit IDs, or phase codes in
 # identifiers (CLAUDE.md).  Scans every identifier token — any visibility,

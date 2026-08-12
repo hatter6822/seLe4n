@@ -206,6 +206,9 @@ can hide it. -/
 private partial def routeBootHits (prims boot : Std.HashSet Name) (e : Expr) :
     Array Name := Id.run do
   let mut hits : Array Name := #[]
+  -- Beta-reduce the head for the same reason: `(fun c => removeRunnableOnCore
+  -- st tid c) bootCoreId` is an application of a lambda, not of the primitive.
+  let e := e.headBeta
   if let .const p _ := e.getAppFn then
     if prims.contains p then
       for a in e.getAppArgs do
@@ -218,12 +221,30 @@ private partial def routeBootHits (prims boot : Std.HashSet Name) (e : Expr) :
                                  ++ routeBootHits prims boot b
   | .forallE _ t b _ => return hits ++ routeBootHits prims boot t
                                  ++ routeBootHits prims boot b
+  -- Zeta-reduce.  `let c := bootCoreId; removeRunnableOnCore st tid c` passes a
+  -- *bound variable*, not the constant, so matching the body as written misses
+  -- it -- the spelling dimension reappearing one level down, at the term rather
+  -- than the syntax.  Substituting the bound value into the body turns the
+  -- alias back into the constant.  The value is still walked on its own, in
+  -- case it contains an unrelated application; findings are a `HashSet`, so the
+  -- overlap costs nothing.
   | .letE _ t v b _  => return hits ++ routeBootHits prims boot t
                                  ++ routeBootHits prims boot v
-                                 ++ routeBootHits prims boot b
+                                 ++ routeBootHits prims boot (b.instantiate1 v)
   | .mdata _ b       => return hits ++ routeBootHits prims boot b
   | .proj _ _ b      => return hits ++ routeBootHits prims boot b
   | _                => return hits
+
+/-- A witness with the `let`-alias shape, so the traversal is checked against
+the form that motivated zeta-reduction rather than only against whatever the
+kernel happens to contain today. -/
+-- NOT `private`: a private definition is mangled to `_private.…`, so
+-- `env.find? \`routeSelfTestAlias` would return none and the witness would
+-- report itself missing.  That is the same trap as the dispatch seeds above,
+-- hit twice in one sitting -- which is the argument for the witness existing.
+def routeSelfTestAlias st tid :=
+  let c := SeLe4n.Kernel.Concurrency.bootCoreId
+  SeLe4n.Kernel.removeRunnableOnCore st tid c
 
 run_cmd do
   let env ← getEnv
@@ -260,6 +281,17 @@ run_cmd do
     if (byStem.getD x #[]).isEmpty then
       logInfo m!"ROUTE_STEM_UNRESOLVED {x}"
   logInfo m!"ROUTE_SIZES prims={prims.size} pinned={pinned.size} boot={boot.size}"
+  -- The alias witness must be detected, here, every run.  Without it the
+  -- zeta-reduction above is a claim rather than a checked fact.
+  match env.find? `routeSelfTestAlias with
+  | some ci =>
+    match ci.value? with
+    | some v =>
+      if (routeBootHits prims boot v).isEmpty then
+        logInfo m!"ROUTE_ALIAS_WITNESS_MISSED"
+      else logInfo m!"ROUTE_ALIAS_WITNESS ok"
+    | none => logInfo m!"ROUTE_ALIAS_WITNESS_MISSED"
+  | none => logInfo m!"ROUTE_ALIAS_WITNESS_MISSED"
   -- Everything the syscall dispatch can reach, computed once and used only to
   -- disambiguate colliding short names.
   let mut dispatchReach : Std.HashSet Name := {}
@@ -372,6 +404,20 @@ def run_probe(roots: list[str], hops: int) -> tuple[dict, str]:
     try:
         proc = subprocess.run(["lake", "env", "lean", path],
                               cwd=REPO, capture_output=True, text=True)
+    except FileNotFoundError:
+        # Detection needs a built Lean environment, so this gate belongs in a
+        # tier that has one.  It shipped in Tier 0 for one commit and took the
+        # toolchain-free ARM64 lane red with a bare traceback; it now runs in
+        # Tier 1 after `lake build`.  Say which, so a future misplacement is
+        # diagnosed rather than debugged.
+        raise RuntimeError(
+            "`lake` is not on PATH, so the routing probe cannot elaborate.\n"
+            "      This gate detects against Lean's elaborated environment and "
+            "must run in\n"
+            "      a tier that has a built toolchain — it is wired into "
+            "test_tier1_build.sh,\n"
+            "      after the builds.  Tier 0 is deliberately build-free and "
+            "cannot host it.") from None
     finally:
         os.unlink(path)
     out = proc.stdout + proc.stderr
@@ -383,6 +429,11 @@ def run_probe(roots: list[str], hops: int) -> tuple[dict, str]:
     diag = re.compile(r"^.*\.lean:\d+:\d+: error")
     if any(diag.match(ln) for ln in out.splitlines()):
         raise RuntimeError(f"the routing probe did not elaborate\n{out[-3000:]}")
+    if "ROUTE_ALIAS_WITNESS_MISSED" in out:
+        raise RuntimeError(
+            "the probe's own `let`-alias witness was NOT detected, so the "
+            "traversal no longer\n      sees a core passed through a local "
+            "binding (`let c := bootCoreId; f … c`).")
     for tag in ("ROUTE_STEM_UNRESOLVED", "ROUTE_UNRESOLVED",
                 "ROUTE_DISPATCH_UNRESOLVED", "ROUTE_UNNARROWABLE"):
         bad = re.findall(rf"{tag} (\S+)", out)
