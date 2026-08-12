@@ -761,8 +761,16 @@ observation alphabet on core `c` injects into
 `Fin (|domainSchedule| × (quantumBound + 1))`.
 
 So an observer learns **at most `log₂(|domainSchedule| × (quantumBound + 1))`
-bits per observation**, and at switch frequency `F` at most that many times `F`
-bits per second.  This is the figure the deployment guidance quotes.
+bits per observation**, and at **tick** frequency `F` at most that many times
+`F` bits per second.  This is the figure the deployment guidance quotes.
+
+The rate factor is the tick rate, not the domain-*switch* rate (round 42
+corrected this docstring, which was the last site still quoting the lower
+figure).  `domainTimeRemaining` is an observed component and an ordinary tick
+decrements it, so a fresh observation is available every tick rather than every
+switch — `schedulingObservation_changes_on_domain_tick` is that fact as a
+theorem, and it is what takes the canonical 1 kHz deployment to ≤ 12 000
+bits/second rather than the switch-paced figure this once quoted.
 
 The two hypotheses are exactly what the fourth review round showed to be
 necessary rather than decorative: `schedulingChannel_not_bounded_by_scheduleLength`

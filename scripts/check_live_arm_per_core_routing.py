@@ -119,13 +119,40 @@ def per_core_scheduler_fields() -> list[str]:
 
     Fails closed: a parse that finds nothing raises rather than returning an
     empty inventory, which would silently disable every pattern below.
+
+    Round 43 made the parse independent of two things a regex over raw text was
+    silently sensitive to.  **Line wrapping**: the old pattern required the
+    field name, `Vector` and `numCores` on one physical line, so a slot
+    formatted across two lines would be absent from the inventory, its
+    `fooOnCore`/`setFooOnCore` stems absent from `routePrims`, and a live
+    helper could hardcode the boot core through it while the gate reported
+    PASS.  Field declarations are accumulated to their next sibling instead, so
+    wrapping is irrelevant.  **Comments**: the structure body is read through
+    the code view, so a docstring inside it that mentions `Vector … numCores`
+    cannot inject a field that does not exist.
     """
-    src = open(STATE, encoding="utf-8").read()
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import lean_code_view
+
+    src = lean_code_view.strip(open(STATE, encoding="utf-8").read())
     m = re.search(r"^structure SchedulerState where$(.*?)^\S", src, re.M | re.S)
     if not m:
         raise SystemExit("[per-core-routing] cannot locate `structure SchedulerState`")
-    fields = re.findall(r"^\s{2}([a-z][A-Za-z0-9_']*)\s*:\s*Vector\b[^\n]*\bnumCores\b",
-                        m.group(1), re.M)
+
+    # Accumulate each declaration up to the next one, so a field wrapped over
+    # several lines is one unit.  A new field starts at the structure's own
+    # indent with `name :`; anything more indented continues the current one.
+    decls: list[tuple[str, list[str]]] = []
+    for line in m.group(1).splitlines():
+        head = re.match(r"^\s{2}([a-z][A-Za-z0-9_']*)\s*:", line)
+        if head:
+            decls.append((head.group(1), [line]))
+        elif decls and line.strip():
+            decls[-1][1].append(line)
+
+    fields = [name for name, body in decls
+              if re.search(r"\bVector\b", " ".join(body))
+              and re.search(r"\bnumCores\b", " ".join(body))]
     if not fields:
         raise SystemExit("[per-core-routing] no per-core Vector fields parsed from "
                          "SchedulerState -- the gate would check nothing")
@@ -848,6 +875,41 @@ def main() -> int:
                   f"{sorted(PER_CORE_FIELDS)}, expected {sorted(want_fields)}.  If a field "
                   f"was added to SchedulerState, extend this set in the same commit.")
             return 1
+        # Round 43: the set above is a hard-coded expectation, so it agrees with
+        # a parser that has stopped parsing as readily as with one that works —
+        # it pins today's answer, not the mechanism.  These two witnesses pin
+        # the mechanism, over shapes the old single-line regex got wrong: a
+        # field wrapped across lines must be FOUND, and a comment inside the
+        # structure that mentions the pattern must NOT invent one.
+        witness = (
+            "structure SchedulerState where\n"
+            "  runQueue :\n"
+            "    Vector RunQueue\n"
+            "      numCores\n"
+            "  /-- A doc mentioning phantomField : Vector Nat numCores. -/\n"
+            "  scalarField : Nat\n"
+            "def after := 1\n"
+        )
+        import lean_code_view as _lcv
+        _body = re.search(r"^structure SchedulerState where$(.*?)^\S",
+                          _lcv.strip(witness), re.M | re.S)
+        _decls: list[tuple[str, list[str]]] = []
+        for _line in (_body.group(1).splitlines() if _body else []):
+            _h = re.match(r"^\s{2}([a-z][A-Za-z0-9_']*)\s*:", _line)
+            if _h:
+                _decls.append((_h.group(1), [_line]))
+            elif _decls and _line.strip():
+                _decls[-1][1].append(_line)
+        _got = {n for n, b in _decls
+                if re.search(r"\bVector\b", " ".join(b))
+                and re.search(r"\bnumCores\b", " ".join(b))}
+        if _got != {"runQueue"}:
+            print(f"[per-core-routing] SELF-TEST FAIL: the field parse gives {sorted(_got)} on "
+                  f"the wrapped/commented witness, expected ['runQueue'] — a wrapped field "
+                  f"must be found and a commented one must not be invented.")
+            return 1
+        print("[per-core-routing] SELF-TEST PASS: the per-core field parse survives line "
+              "wrapping and ignores comments.")
         # Round 29 (the rewrite): the checks below are about the ENGINE the
         # gate now runs.  The pattern probes they replace tested regexes that
         # no longer exist; six review rounds of them is what motivated moving

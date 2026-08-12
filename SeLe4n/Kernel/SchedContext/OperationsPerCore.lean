@@ -30,12 +30,19 @@ missing.  Neither is a scheduling point:
   because a local reschedule is supposed to have run inline.
 
 So a thread that unbound its own SchedContext returned to userspace still
-executing while the model said its core had no current thread.  On its next
-syscall `determineExecutingCore` scans for a core whose `current` is that
-thread, finds none, and falls back to `bootCoreId` (`EndpointCallDispatch.lean`
-— `determineExecutingCore_sound` states exactly this disjunction), so every
-subsequent blocking or scheduling effect targets the wrong core.  Found by
+executing while the model said its core had no current thread.  Found by
 PR #861 review round 15.
+
+The consequence is a **fail-closed rejection**, not misrouting (round 43
+corrected this note, which claimed the latter).  `determineExecutingCore`'s
+`bootCoreId` fallback is real but unreachable here: it is only consulted once a
+caller id is in hand, and resolution runs first — `syscallDispatchFromAbi`
+reads `currentOnCore` for the *issuing* core and returns `.illegalState` with
+the state unmodified when it is empty
+(`Platform.FFI.syscallDispatchFromAbi_illegalState_when_no_current`, mounted at
+the entry as `SyscallDispatchEntry.vacatedCore_next_syscall_rejected`).  So the
+defect is that the core is stranded and its thread's next syscall is refused,
+which is bad enough on its own terms and needs no overstating.
 
 `schedContextUnbindOnCore` is the per-core form, built like its siblings
 `suspendThreadOnCore` (SM6.E) and `setPriorityOnCore`: it resolves the core

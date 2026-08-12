@@ -36,6 +36,27 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
+# WS-SM SM8.B (PR #861 review round 43): count CODE, not the prose about it.
+#
+# Every metric below is a line-oriented `grep` over Lean sources, so a
+# docstring *quoting* the pattern it discusses moved the number: a comment
+# reading "opens by matching `post.objects[oid]?`" counted as a raw
+# object-store match and pushed `RAW_MATCH_TOTAL` above its floor.  The tree
+# carried the scar — that docstring had been split across two lines on purpose
+# so the counter would not see it — and a metric that makes writing about the
+# code regress a hygiene floor is measuring the wrong text.  Worse in the other
+# direction: `SORRY_COUNT` greps `\bsorry\b` over the kernel behind a
+# `grep -v '^…--'` heuristic that a block comment or a trailing comment walks
+# straight past, so a docstring could break the project's most load-bearing
+# gate.
+#
+# Counting instead against the comment-free overlay, whose `.lean` files are
+# byte-aligned with the originals, so every count means what it says and prose
+# may be written plainly.
+CODE_VIEW="${REPO_ROOT}/.lake/build/leancodeview"
+python3 "${REPO_ROOT}/scripts/lean_code_view.py" --overlay "${CODE_VIEW}" >/dev/null
+cd "$CODE_VIEW"
+
 # Build the list of kernel proof-surface files exactly once (excluding the
 # helper definition file `Model/State.lean`).
 KERNEL_FILES=()

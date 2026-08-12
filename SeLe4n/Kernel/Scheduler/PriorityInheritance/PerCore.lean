@@ -1459,12 +1459,9 @@ def crossCoreSgiBody (pre post : SystemState) (execCore : CoreId) (oid : ObjId)
 /-- WS-SM SM8.B (PR #861 review round 16): the cross-core `.reschedule` SGIs
 warranted by a **changed `current` slot**, independent of any object.
 
-`crossCoreSgiBody` is indexed by `post.objectIndex` and opens by matching
-`post.objects[oid]?` against `some (.tcb tpost)`, falling through to `none`
+`crossCoreSgiBody` is indexed by `post.objectIndex` and opens by matching `post.objects[oid]?` against `some (.tcb tpost)`, falling through to `none`
 otherwise — so a change whose subject no longer *exists* in the post-state is
-structurally invisible to it.  (Written across two lines deliberately: the AK7
-cascade gate greps line-wise for a raw object-store match, and does not exempt
-prose that quotes one.)  Destroying a TCB that is current on a remote core is exactly that case: the
+structurally invisible to it.  Destroying a TCB that is current on a remote core is exactly that case: the
 retype scrubs and repurposes the object, the sweep clears that core's `current`,
 and the object rule then finds no TCB to reason about — so the remote core was
 left executing a thread whose storage had already been reused, with no poke.

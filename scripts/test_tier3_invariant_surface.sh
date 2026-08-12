@@ -115,9 +115,9 @@ run_check "INVARIANT" rg -n '^def vspaceMapPage' SeLe4n/Kernel/Architecture/VSpa
 run_check "INVARIANT" rg -n '^def vspaceUnmapPage' SeLe4n/Kernel/Architecture/VSpace.lean
 run_check "INVARIANT" rg -n '^def vspaceLookup' SeLe4n/Kernel/Architecture/VSpace.lean
 run_check "INVARIANT" bash -lc "! rg -n '^theorem vspaceLookup_deterministic' SeLe4n/Kernel/Architecture/VSpace.lean"
-run_check "INVARIANT" rg -n 'WS-C3 proof-surface note:' SeLe4n/Kernel/Architecture/VSpace.lean
+run_prose_check "INVARIANT" rg -n 'WS-C3 proof-surface note:' SeLe4n/Kernel/Architecture/VSpace.lean
 run_check "INVARIANT" bash -lc "! rg -n '^theorem projectState_deterministic' SeLe4n/Kernel/InformationFlow/Projection.lean"
-run_check "INVARIANT" rg -n 'WS-C3 proof-surface note:' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_prose_check "INVARIANT" rg -n 'WS-C3 proof-surface note:' SeLe4n/Kernel/InformationFlow/Projection.lean
 run_check "INVARIANT" rg -n '^def vspaceInvariantBundle' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
 # WS-B4 closure anchors: wrapper structures must remain explicit.
 run_check "INVARIANT" rg -n '^structure DomainId' SeLe4n/Prelude.lean
@@ -532,13 +532,13 @@ run_check "INVARIANT" rg -n '^theorem allocate_preserves_childrenNonOverlap' SeL
 run_check "INVARIANT" rg -n '^theorem allocate_preserves_childrenUniqueIds' SeLe4n/Model/Object/Types.lean
 
 # WS-D3 F-16 module docstring classification anchors must remain present.
-run_check "INVARIANT" rg -n '^/-!' SeLe4n/Kernel/Scheduler/Invariant.lean
-run_check "INVARIANT" rg -n '^/-!' SeLe4n/Kernel/IPC/Invariant.lean
-run_check "INVARIANT" rg -n '^/-!' SeLe4n/Kernel/Capability/Invariant.lean
-run_check "INVARIANT" rg -n '^/-!' SeLe4n/Kernel/Lifecycle/Invariant.lean
-run_check "INVARIANT" rg -n '^/-!' SeLe4n/Kernel/InformationFlow/Invariant.lean
-run_check "INVARIANT" rg -n '^/-!' SeLe4n/Kernel/Service/Invariant.lean
-run_check "INVARIANT" rg -n '^/-!' SeLe4n/Kernel/Architecture/Invariant.lean
+run_prose_check "INVARIANT" rg -n '^/-!' SeLe4n/Kernel/Scheduler/Invariant.lean
+run_prose_check "INVARIANT" rg -n '^/-!' SeLe4n/Kernel/IPC/Invariant.lean
+run_prose_check "INVARIANT" rg -n '^/-!' SeLe4n/Kernel/Capability/Invariant.lean
+run_prose_check "INVARIANT" rg -n '^/-!' SeLe4n/Kernel/Lifecycle/Invariant.lean
+run_prose_check "INVARIANT" rg -n '^/-!' SeLe4n/Kernel/InformationFlow/Invariant.lean
+run_prose_check "INVARIANT" rg -n '^/-!' SeLe4n/Kernel/Service/Invariant.lean
+run_prose_check "INVARIANT" rg -n '^/-!' SeLe4n/Kernel/Architecture/Invariant.lean
 
 # M3.5 step-7 executable demonstration closure anchors.
 run_check "TRACE" rg -n 'adapter timer success path value' SeLe4n/Testing/MainTraceHarness.lean
@@ -683,7 +683,7 @@ run_check "INVARIANT" rg -n '^theorem composedNonInterference_trace' SeLe4n/Kern
 run_check "TRACE" rg -n 'activeDomain visible' tests/InformationFlowSuite.lean
 run_check "TRACE" rg -n 'IRQ handler' tests/InformationFlowSuite.lean
 run_check "TRACE" rg -n 'CNode slot filtering' tests/InformationFlowSuite.lean
-run_check "TRACE" rg -n 'Service registry projection' tests/InformationFlowSuite.lean
+run_prose_check "TRACE" rg -n 'Service registry projection' tests/InformationFlowSuite.lean
 run_check "TRACE" rg -n '7-field low-equivalence' tests/InformationFlowSuite.lean
 
 # WS-F4 proof gap closure anchors — timerTick, cspaceMutate, cspaceRevoke, notification preservation.
@@ -930,7 +930,7 @@ run_check "INVARIANT" rg -n '^structure ShootdownQueueLockId' SeLe4n/Kernel/Arch
 run_check "INVARIANT" rg -n '^structure ShootdownRoundLockId' SeLe4n/Kernel/Architecture/TlbShootdown.lean
 run_check "INVARIANT" rg -n '^theorem ShootdownRoundLockId\.singleton' SeLe4n/Kernel/Architecture/TlbShootdown.lean
 run_check "INVARIANT" rg -n '^theorem enqueueShootdownOrCoalesce_pending_covered' SeLe4n/Kernel/Architecture/TlbShootdown.lean
-run_check "INVARIANT" rg -n 'Round serialisation contract' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_prose_check "INVARIANT" rg -n 'Round serialisation contract' SeLe4n/Kernel/Architecture/TlbShootdown.lean
 # SM7.A PR #838 review P1 — offline-core-aware round open: the Rust
 # online-masked WAIT (SM7.F.3 turned the masked reset into a masked wait, which
 # is where the mask belongs once acknowledgments carry the round generation)
@@ -1025,7 +1025,13 @@ run_check "INVARIANT" rg -n '^theorem shootdownRoundPerCore_invalidates_perCore'
 run_check "INVARIANT" rg -n '^theorem shootdownRoundPerCore_tlb_eq' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
 run_check "INVARIANT" rg -n '^theorem tlbInvalidationConsistentCheck_perCore_iff' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
 run_check "INVARIANT" rg -n 'tlbInvalidationConsistent_perCore st' SeLe4n/Kernel/Architecture/Invariant.lean
-run_check "INVARIANT" rg -n 'handleTlbShootdownReqOnCorePerCore' SeLe4n/Kernel/SyscallDispatchEntry.lean
+# Round 43: this pinned `handleTlbShootdownReqOnCorePerCore`, which has
+# appeared in this file only inside comments since the live catch-up was
+# restricted to the round window — so the anchor asserted the live per-core
+# wiring while checking three docstrings.  Re-pointed at the call the seam
+# actually makes; the code view is what exposed it.
+run_check "INVARIANT" rg -n 'Architecture.shootdownCatchUpPerCoreInWindow' \
+  SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^private def runPerCoreTlbOperationalChecks' tests/SmpTlbShootdownSuite.lean
 # WS-SM SM7.F.4: live fill + initiator-atomic VSpace seams (the live `.vspaceMap`
 # / `.vspaceUnmap` dispatch routes through the per-core wrappers).
@@ -1320,7 +1326,7 @@ run_check "INVARIANT" rg -n 'paddr.toNat % pageBytes' SeLe4n/Kernel/Architecture
 run_check "INVARIANT" rg -n 'alignmentError' SeLe4n/Kernel/Architecture/VSpace.lean
 # PR #845 review (P2) — the legacy syscall entry documents WHY it cannot drain
 # the ledger (the @[extern] link-gating policy) rather than silently skipping it.
-run_check "INVARIANT" rg -n 'deferred, never lost' SeLe4n/Platform/FFI.lean
+run_prose_check "INVARIANT" rg -n 'deferred, never lost' SeLe4n/Platform/FFI.lean
 # PR #845 review (P2) — the syscall is reachable from the safe Rust API.
 run_check "INVARIANT" rg -n '^pub fn vspace_unify_instruction' rust/sele4n-sys/src/vspace.rs
 run_check "INVARIANT" rg -n '^pub type VSpaceUnifyInstructionArgs' rust/sele4n-abi/src/args/vspace.rs
@@ -1681,7 +1687,7 @@ run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_count' SeLe4n/K
 # repeating a `decide` drifted from it.  Anchoring the PAIR couples them: bump
 # the theorem without the sentence and this fails, which is the only mechanism
 # that has actually held.
-run_check "INVARIANT" rg -n 'per-core boundary has 54 entries' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_prose_check "INVARIANT" rg -n 'per-core boundary has 54 entries' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore\.length = 54' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_extends_canonical' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^def enforcementBoundaryPerCoreComplete' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
@@ -1797,7 +1803,11 @@ run_negative_check "INVARIANT" rg -n 'else \.ok \(st3, none\)' \
 # prose's word for it.
 run_check "INVARIANT" rg -n '^theorem vacatedCore_next_syscall_rejected' \
   SeLe4n/Kernel/SyscallDispatchEntry.lean
-run_check "INVARIANT" rg -n 'vacatedCore_next_syscall_rejected' \
+# The citation lives in a docstring, so this one genuinely reads prose and says
+# so — it is the exception `run_prose_check` exists for, and round 43's whole
+# point is that the exception must be declared rather than indistinguishable
+# from a code anchor.
+run_prose_check "INVARIANT" rg -n 'vacatedCore_next_syscall_rejected' \
   SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
 # ... and the wrappers that replaced it must exist.
 run_check "INVARIANT" rg -n '^def resumeThreadOnCoreLive' SeLe4n/Kernel/Lifecycle/Suspend.lean
@@ -1916,7 +1926,7 @@ run_check "INVARIANT" rg -n '^def schedulingCapacityComparable' SeLe4n/Kernel/In
 run_check "INVARIANT" rg -n 'schedulingCapacityPreconditions' docs/SECURITY_ADVISORY.md docs/DEPLOYMENT_GUIDE.md
 # (b) The unsupported "sub-bit-per-second" figure must not come back: it
 # contradicted the upper bound by three orders of magnitude for one config.
-run_negative_check "INVARIANT" rg -n 'Sub-bit-per-second' docs/SECURITY_ADVISORY.md docs/DEPLOYMENT_GUIDE.md SeLe4n/
+run_prose_negative_check "INVARIANT" rg -n 'Sub-bit-per-second' docs/SECURITY_ADVISORY.md docs/DEPLOYMENT_GUIDE.md SeLe4n/
 # (c) The unchanged-schedule premise holds because nothing writes the field.
 # If a reconfiguration setter ever lands, this anchor fails and the capacity
 # figure must be restated before it can pass again.
@@ -1990,7 +2000,7 @@ run_negative_check "INVARIANT" rg -n 'delegationTheorem \(theoremName : String\)
 run_check "INVARIANT" rg -n '^theorem CrossCoreTransition.mem_all' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # CC-1's mitigation must state the PROVEN bound, not disclaim one: retracting a
 # claim to match weaker code is the direction the project forbids.
-run_negative_check "INVARIANT" rg -n 'No capacity bound is claimed' SeLe4n/
+run_prose_negative_check "INVARIANT" rg -n 'No capacity bound is claimed' SeLe4n/
 run_check "INVARIANT" rg -n 'log2\(\|domainSchedule\| \* \(quantumBound \+ 1\)\)' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n 'env.constants.toList' scripts/check_module_axioms.py
 run_check "INVARIANT" rg -n 'getModuleIdxFor\?' scripts/check_module_axioms.py
@@ -2118,7 +2128,12 @@ run_check "INVARIANT" rg -n '\(covertChannelEntry \.machineTimer\)\.modelVisible
 # come back — `schedulingCovertChannel_bounded_width` proves transparency only.
 run_check "INVARIANT" rg -n '^theorem schedulingChannelIndex_alphabet_bounded' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem schedulingChannel_not_bounded_by_scheduleLength' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_negative_check "INVARIANT" rg -n 'bits per domain switch' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_prose_negative_check "INVARIANT" rg -n 'bits per domain switch' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+# Round 42: the CC-1 docstring quoted the retracted rate as "at switch
+# frequency", which the single-spelling ban above did not cover.  Both
+# spellings are forbidden now — the figure is paced by ticks, not switches.
+run_prose_negative_check "INVARIANT" rg -n 'at switch frequency' \
+  SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 
 # PR #861 review round 2 (P2) / round 4 (P2): the per-core enforcement boundary
 # audits the LIVE cross-core wrappers, not only the single-core table.

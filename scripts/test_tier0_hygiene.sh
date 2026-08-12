@@ -143,6 +143,20 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_identifier_naming.py"
 # provably fails against the version that lacked it.
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/test_identifier_naming_gate.py"
 
+# WS-SM SM8.B (PR #861 review round 43): the code view every source-scanning
+# gate now reads.  Pinned here for the same reason as the gate above — a
+# stripper that quietly stopped stripping would hand 1500 surface anchors and
+# the AK7 counters raw text again, with nothing failing.  The suite checks the
+# lexical cases and re-verifies over the whole tree that stripping moves no
+# byte, which is what keeps `rg -n` line numbers pointing at real lines.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/lean_code_view.py" --self-test
+
+# ... and the wiring, which fails differently: a `test_lib.sh` refactor that
+# dropped the routing would leave every anchor green while 1500 of them went
+# back to reading prose.  This drives `run_check` itself over a fixture whose
+# symbol exists only in a comment.
+run_check "HYGIENE" "${SCRIPT_DIR}/test_code_view_wiring.sh"
+
 # AN10-D: AK7 cascade monotonicity gate. Reads docs/dev_history/audits/AL0_baseline.txt
 # and rejects regressions on any AK7 cascade metric (raw-match site count,
 # typed-helper adoption, storeObjectKindChecked adoption, sentinel guard

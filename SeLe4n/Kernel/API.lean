@@ -1147,8 +1147,10 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
               -- locally, and `crossCoreSgiBody` deliberately emits nothing for
               -- the executing core — so a thread that unbound its own
               -- SchedContext kept running while the model said its core had no
-              -- current thread, and its next syscall resolved
-              -- `determineExecutingCore` to the boot-core fallback.
+              -- current thread, so its next syscall is refused outright
+              -- (`vacatedCore_next_syscall_rejected`; round 43 corrected this
+              -- note, which claimed a boot-core misroute — that fallback sits
+              -- behind caller resolution and is never reached).
               match SchedContextOps.schedContextUnbindOnCore vScId
                   (determineExecutingCore st tid) st with
               | .ok (st', _) => .ok ((), st')
@@ -3524,8 +3526,9 @@ Round 15 of the PR #861 review found the arm calling the single-core
 there.  No scheduling point follows it — `syscallDispatchCrossCoreEntry` only
 commits and fires the diff-recovered SGIs, and `crossCoreSgiBody` emits nothing
 for the executing core — so the thread returned to userspace still running while
-the model recorded its core as having no current thread, and its next syscall
-resolved `determineExecutingCore` to the boot-core fallback. -/
+the model recorded its core as having no current thread, and its next syscall is
+refused (`vacatedCore_next_syscall_rejected`; round 43 corrected the earlier
+claim of a boot-core misroute, which caller resolution rules out). -/
 theorem dispatchWithCap_schedContextUnbind_delegates
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
     (cap : Capability) (scId : SeLe4n.ObjId) (vScId : SeLe4n.ValidObjId)

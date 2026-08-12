@@ -8,33 +8,33 @@
 
 ## Reader-side raw patterns (should-drop)
 
-raw_match_tcb            = 54
-raw_match_schedcontext   = 24
+raw_match_tcb            = 53
+raw_match_schedcontext   = 23
 raw_match_endpoint       = 9
 raw_match_notification   = 2
 raw_match_untyped        = 2
 raw_match_cnode          = 7
 raw_match_vspaceroot     = 15
-raw_match_total          = 136
-raw_lookup_tid           = 1318
+raw_match_total          = 130
+raw_lookup_tid           = 1286
 
 ## Typed-helper adoption (should-grow)
 
-gettcb_adoption          = 2181
-getschedctx_adoption     = 287
-getendpoint_adoption     = 128
-getnotification_adoption = 72
-getuntyped_adoption      = 14
-getcnode_adoption        = 79
-getvspaceroot_adoption   = 46
+gettcb_adoption          = 2021
+getschedctx_adoption     = 243
+getendpoint_adoption     = 127
+getnotification_adoption = 65
+getuntyped_adoption      = 12
+getcnode_adoption        = 52
+getvspaceroot_adoption   = 36
 
 ## Writer-side wrapper adoption (should-grow)
 
-storeobjectchecked_adoption = 62
+storeobjectchecked_adoption = 34
 
 ## Dispatch-boundary sentinel guards (should-grow)
 
-sentinel_check_dispatch  = 18
+sentinel_check_dispatch  = 29
 
 ## Regression test counts (should-grow)
 
@@ -48,24 +48,24 @@ axiom_count              = 0
 
 ## Machine-diffable block
 
-RAW_MATCH_TCB=54
-RAW_MATCH_SCHEDCONTEXT=24
+RAW_MATCH_TCB=53
+RAW_MATCH_SCHEDCONTEXT=23
 RAW_MATCH_ENDPOINT=9
 RAW_MATCH_NOTIFICATION=2
 RAW_MATCH_UNTYPED=2
 RAW_MATCH_CNODE=7
 RAW_MATCH_VSPACEROOT=15
-RAW_MATCH_TOTAL=136
-RAW_LOOKUP_TID=1318
-GETTCB_ADOPTION=2181
-GETSCHEDCTX_ADOPTION=287
-GETENDPOINT_ADOPTION=128
-GETNOTIFICATION_ADOPTION=72
-GETUNTYPED_ADOPTION=14
-GETCNODE_ADOPTION=79
-GETVSPACEROOT_ADOPTION=46
-STOREOBJECTCHECKED_ADOPTION=62
-SENTINEL_CHECK_DISPATCH=18
+RAW_MATCH_TOTAL=130
+RAW_LOOKUP_TID=1286
+GETTCB_ADOPTION=2021
+GETSCHEDCTX_ADOPTION=243
+GETENDPOINT_ADOPTION=127
+GETNOTIFICATION_ADOPTION=65
+GETUNTYPED_ADOPTION=12
+GETCNODE_ADOPTION=52
+GETVSPACEROOT_ADOPTION=36
+STOREOBJECTCHECKED_ADOPTION=34
+SENTINEL_CHECK_DISPATCH=29
 TEST_COUNT_AK7=45
 KERRORMATRIX_ROWS=47
 SORRY_COUNT=0

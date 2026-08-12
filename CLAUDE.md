@@ -496,6 +496,34 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
 
 ## Key conventions
 
+- **Gates read code, prose reads prose.** No comment or docstring may
+  decide whether a check passes. Every source-scanning gate matches
+  against the *code view* — `scripts/lean_code_view.py --overlay`, a
+  whole-repo overlay whose `.lean` files are comment-free and
+  byte-aligned with the originals — so a docstring can neither satisfy
+  an anchor (a symbol that survives only in a comment after its
+  definition is deleted) nor trip one (a negative anchor firing on the
+  sentence that explains what it forbids), and the AK7 counters measure
+  code rather than the text discussing it. This is wired at the helper,
+  not at the call site: `run_check` / `run_negative_check` route through
+  the view automatically, because requiring an opt-in would mean the
+  obvious way to write a new anchor is the wrong one. When a check's
+  subject genuinely *is* the text — a module docstring must exist, a
+  contract sentence must be present, a retracted figure must not come
+  back — declare it with **`run_prose_check`** / **`run_prose_negative_check`**,
+  which read the real tree. Both mechanisms are pinned by witnesses in
+  Tier 0 (`lean_code_view.py --self-test` for the stripper,
+  `test_code_view_wiring.sh` for the routing), since a stripper that
+  stops stripping and a helper that stops routing both fail silently.
+  Never contort prose to satisfy a scanner — if a comment cannot say
+  something plainly, the scanner is reading the wrong text.
+  *Known duplication, tracked*: `generate_codebase_map.py` and
+  `check_identifier_naming.py` each carry their own Lean comment
+  stripper and were already doing the right thing — which is why the
+  anchors and AK7 counters reading raw text was an oversight rather
+  than a design choice. Three strippers is two too many; consolidating
+  them onto `lean_code_view.strip` is a follow-up, deliberately not
+  done in the same cut as the mechanism they would depend on.
 - **Invariant/Operations split**: each kernel subsystem has
   `Operations.lean` (transitions) and `Invariant.lean` (proofs). Keep
   this separation.

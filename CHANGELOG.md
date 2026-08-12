@@ -1,5 +1,56 @@
 ## v0.33.5 — SM8.B: per-core non-interference, at the transitions that really run
 
+**Review round 43 — gates read code, prose reads prose.**  Every
+source-scanning gate in this repository matched raw file text, so a docstring
+could decide a check in both directions: a positive anchor
+`rg 'fooTheorem' F.lean` passed when the theorem had been deleted and a comment
+still named it, a negative anchor fired on the sentence explaining what it
+forbids, `RAW_MATCH_TOTAL` counted a docstring that *quoted* the pattern it
+discussed, and `SORRY_COUNT` — the project's most load-bearing floor — was
+guarded only by a `grep -v '^…--'` heuristic that a block comment or a trailing
+comment walks straight past.  The mitigations were conventions, and the tree
+carried the scar: one docstring had been deliberately broken across two lines so
+a line-oriented counter would not see the pattern it was describing.
+
+`scripts/lean_code_view.py` supplies the text a gate should actually read — a
+whole-repo overlay whose `.lean` files are comment-free and byte-aligned with
+the originals, so `rg -n` line numbers still point at real lines.  `test_lib.sh`
+routes `run_check` / `run_negative_check` through it **by default**, since
+requiring an opt-in would mean the obvious way to write a new anchor is the
+wrong one; checks whose subject genuinely is the text declare themselves with
+the new `run_prose_check` / `run_prose_negative_check`.  The AK7 counters read
+the overlay too, so the contorted docstring is written plainly again and the
+counter does not move.
+
+Turning it on found **fourteen anchors that were checking nothing** — twelve
+genuinely about prose (module docstring headers, contract sentences, a
+documented count) and now declared as such, and one that had silently stopped
+being a code anchor: it pinned `handleTlbShootdownReqOnCorePerCore` in the live
+seam, a name that has appeared there only inside comments since the catch-up was
+restricted to the round window.  Re-pointed at the call the seam makes.
+
+Both halves are pinned in Tier 0, because they fail differently and neither is
+visible: `lean_code_view.py --self-test` for the stripper (lexical cases plus a
+whole-tree check that stripping moves no byte) and `test_code_view_wiring.sh`
+for the routing, which drives `run_check` over a fixture whose symbol exists
+only in a comment.  Both were mutation-checked — disabling the reach predicate
+or removing the routing makes them fail.
+
+The AK7 baseline is re-anchored as a **unit change**: the metrics were measuring
+code *plus* prose, and 186 of 1980 counted `getTcb?` "adoptions" were docstring
+mentions.  Every delta line is a comment by construction of the stripper, which
+the witness suite pins.
+
+Also this round: the routing gate's `SchedulerState` field parse no longer
+depends on line wrapping or on comments (a wrapped slot would have been absent
+from the inventory, and a live helper could then hardcode the boot core through
+it while the gate reported PASS), with a witness over both shapes; a direct
+`setThreadCpuAffinityOnCore_preserves_projection` for the live wrapper, replacing
+a discharge-table row that still named the boot-core one round 37 rerouted away
+from; and three docstrings corrected — the vacated-core rationale (which claimed
+a boot-core misroute that caller resolution rules out), the CC-1 capacity bound's
+rate factor (ticks, not domain switches), and `schedContextUnbind`'s footprint.
+
 **Review rounds 39/40 — the unbind guard and its scheduling point now read one
 core.**  `schedContextUnbind`'s preemption guard cleared
 `currentOnCore (determineTargetCore …)` — the affinity *home* — while
