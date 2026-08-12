@@ -669,6 +669,20 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @SeLe4n.Kernel.PriorityInheritance.contextRestoreSeamLive
 #check @SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessorLive
 #check @SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessorLive_inert
+-- PR #861 review round 34: the gate moved OUT of the two transitions and into
+-- wrappers, so each base transition keeps its unconditional theorems and each
+-- gated path is stated in both settings of the seam.
+#check @SeLe4n.Kernel.Lifecycle.Suspend.resumeThreadEnqueueOnly
+#check @SeLe4n.Kernel.Lifecycle.Suspend.resumeThreadOnCoreLive
+#check @SeLe4n.Kernel.Lifecycle.Suspend.resumeThreadOnCoreLive_inert
+#check @SeLe4n.Kernel.Lifecycle.Suspend.resumeThreadOnCoreLive_eq_of_seam_live
+#check @SeLe4n.Kernel.Lifecycle.Suspend.resumeThreadOnCoreLive_remote_agrees
+#check @SeLe4n.Kernel.SchedContext.PriorityManagement.priorityRescheduleEnqueueOnly
+#check @SeLe4n.Kernel.SchedContext.PriorityManagement.priorityRescheduleOnCoreLive
+#check @SeLe4n.Kernel.SchedContext.PriorityManagement.priorityRescheduleOnCoreLive_inert
+#check @SeLe4n.Kernel.SchedContext.PriorityManagement.priorityRescheduleOnCoreLive_eq_of_seam_live
+#check @SeLe4n.Kernel.SchedContext.PriorityManagement.priorityRescheduleOnCoreLive_remote_agrees
+#check @SeLe4n.Kernel.priorityRescheduleOnCoreLive_preserves_projection
 #check @SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessorLive_eq_of_seam_live
 #check @SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessorLive_guard_eq_register
 #check @SeLe4n.Kernel.PriorityInheritance.suspendReschedule_guard_eq_register

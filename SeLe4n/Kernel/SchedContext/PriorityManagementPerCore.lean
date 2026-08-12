@@ -64,29 +64,86 @@ def priorityRescheduleOnCore (st : SystemState) (running? : Option CoreId)
     match running? with
     | some rc =>
         if rc == executingCore then
-          -- PR #861 review rounds 23/28/32: the LOCAL arm is gated on the hardware
-        -- context-restore seam.  It records a successor in `currentOnCore`, but
-        -- with `contextRestoreSeamLive` still `false` the SVC path returns
-        -- through the *caller's* frame, so the next syscall from this core is
-        -- attributed to a thread that never started running.
-        --
-        -- This PR made that reachable here: before it, the arm was boot-pinned,
-        -- so executing on a secondary core poked the boot core rather than
-        -- switching this one.  Rerouting per-core is the right fix and it is
-        -- what newly enables the local switch, which puts this on the
-        -- "created here" side of the rule in `contextSwitchSites_restore_pending`.
-        --
-        -- The REMOTE arm below is deliberately ungated: a cross-core
-        -- `.reschedule` SGI is a real poke at another processor and has nothing
-        -- to do with the missing restore.
-        if SeLe4n.Kernel.PriorityInheritance.contextRestoreSeamLive then
-            match handleRescheduleSgiOnCore st executingCore with
-            | .ok st' => .ok (st', none)
-            | .error e => .error e
-          else .ok (st, none)
+          match handleRescheduleSgiOnCore st executingCore with
+          | .ok st' => .ok (st', none)
+          | .error e => .error e
         else .ok (st, some (rc, SgiKind.reschedule))
     | none => .ok (st, none)
   else .ok (st, none)
+
+/-- WS-SM SM8.B (PR #861 review round 34): **the preemption seam while the
+context-restore seam is dark** — the remote arm unchanged, the local arm a no-op.
+
+A named function rather than an inline `else`, so both sides of
+`priorityRescheduleOnCoreLive` are separately stated and separately verified.
+The local arm returns the pre-state because a preemption that is not taken
+changes nothing — a coherent state, which is what makes gating this path
+sound. -/
+def priorityRescheduleEnqueueOnly (st : SystemState) (running? : Option CoreId)
+    (executingCore : CoreId) (shouldPreempt : Bool) :
+    Except KernelError (SystemState × Option (CoreId × SgiKind)) :=
+  if shouldPreempt then
+    match running? with
+    | some rc =>
+        if rc == executingCore then .ok (st, none)
+        else .ok (st, some (rc, SgiKind.reschedule))
+    | none => .ok (st, none)
+  else .ok (st, none)
+
+/-- WS-SM SM8.B: the enqueue-only form never changes the state. -/
+theorem priorityRescheduleEnqueueOnly_state (st st' : SystemState)
+    (running? : Option CoreId) (ec : CoreId) (sp : Bool)
+    (sgi : Option (CoreId × SgiKind))
+    (h : priorityRescheduleEnqueueOnly st running? ec sp = .ok (st', sgi)) :
+    st' = st := by
+  unfold priorityRescheduleEnqueueOnly at h
+  repeat' split at h
+  all_goals simp_all
+
+/-- WS-SM SM8.B (PR #861 review round 34): **the preemption seam as the live
+`.tcbSetPriority` / `.tcbSetMCPriority` arms run it** — gated on the restore seam
+it depends on.
+
+`priorityRescheduleOnCore` is correct at the model level and its theorems say so;
+this wrapper chooses between it and the enqueue-only form.  Deliberately a
+*wrapper*: folding the guard into the transition would make every theorem about
+it conditional, and those theorems are what SM9.E enables rather than has to
+re-prove.  An earlier cut of this PR did exactly that and had to be undone. -/
+def priorityRescheduleOnCoreLive (st : SystemState) (running? : Option CoreId)
+    (executingCore : CoreId) (shouldPreempt : Bool) :
+    Except KernelError (SystemState × Option (CoreId × SgiKind)) :=
+  if SeLe4n.Kernel.PriorityInheritance.contextRestoreSeamLive then
+    priorityRescheduleOnCore st running? executingCore shouldPreempt
+  else priorityRescheduleEnqueueOnly st running? executingCore shouldPreempt
+
+/-- WS-SM SM8.B: what the kernel does **today**.  Deliberately NOT `@[simp]` —
+an automatic rewrite would silently turn every downstream statement about the
+wrapper into one about the enqueue-only form, which is the same collapse this
+rework exists to remove, one level up. -/
+theorem priorityRescheduleOnCoreLive_inert (st : SystemState) (running? : Option CoreId)
+    (executingCore : CoreId) (shouldPreempt : Bool) :
+    priorityRescheduleOnCoreLive st running? executingCore shouldPreempt
+      = priorityRescheduleEnqueueOnly st running? executingCore shouldPreempt := rfl
+
+/-- WS-SM SM8.B: and what it does once the seam is live — the full seam, so the
+flip loses nothing. -/
+theorem priorityRescheduleOnCoreLive_eq_of_seam_live (st : SystemState)
+    (running? : Option CoreId) (executingCore : CoreId) (shouldPreempt : Bool)
+    (h : SeLe4n.Kernel.PriorityInheritance.contextRestoreSeamLive = true) :
+    priorityRescheduleOnCoreLive st running? executingCore shouldPreempt
+      = priorityRescheduleOnCore st running? executingCore shouldPreempt := by
+  unfold priorityRescheduleOnCoreLive
+  rw [h]
+  rfl
+
+/-- WS-SM SM8.B: the gate touches **only** the local arm — for a remote target
+both branches agree, which is the property the docstrings claim. -/
+theorem priorityRescheduleOnCoreLive_remote_agrees (st : SystemState)
+    (rc executingCore : CoreId) (hne : ¬ (rc == executingCore) = true) :
+    priorityRescheduleOnCoreLive st (some rc) executingCore true
+      = priorityRescheduleOnCore st (some rc) executingCore true := by
+  unfold priorityRescheduleOnCoreLive priorityRescheduleEnqueueOnly priorityRescheduleOnCore
+  split <;> simp [hne]
 
 /-- WS-SM SM8.B: every SGI this seam surfaces is a `.reschedule` for a core other
 than the executing one — a local preemption is applied, never posted. -/
@@ -132,7 +189,7 @@ one write-set obligation to discharge instead of two copies of it. -/
 def applyPriorityChangeOnCore (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (newPriority : SeLe4n.Priority) (executingCore : CoreId) (shouldPreempt : Bool) :
     Except KernelError (SystemState × Option (CoreId × SgiKind)) :=
-  priorityRescheduleOnCore
+  priorityRescheduleOnCoreLive
     (migrateRunQueueBucketOnCore (updatePrioritySource st tid tcb newPriority) tid newPriority
       (determineTargetCore st tid))
     (Lifecycle.Suspend.runningCoreOf? st tid) executingCore shouldPreempt
@@ -144,7 +201,8 @@ theorem applyPriorityChangeOnCore_no_preempt (st : SystemState) (tid : SeLe4n.Th
     applyPriorityChangeOnCore st tid tcb newPriority executingCore false
       = .ok (migrateRunQueueBucketOnCore (updatePrioritySource st tid tcb newPriority) tid
               newPriority (determineTargetCore st tid), none) := by
-  simp [applyPriorityChangeOnCore, priorityRescheduleOnCore]
+  simp [applyPriorityChangeOnCore, priorityRescheduleOnCoreLive,
+    priorityRescheduleOnCore, priorityRescheduleEnqueueOnly]
 
 /-- WS-SM SM8.B (operation): **set a thread's priority, across cores.**
 

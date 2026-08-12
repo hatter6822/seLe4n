@@ -1,5 +1,38 @@
 ## v0.33.5 — SM8.B: per-core non-interference, at the transitions that really run
 
+**Review round 34 — the context-restore gate moved into wrappers.**  An earlier
+cut of this release gated two transitions by folding `if contextRestoreSeamLive`
+*inside* them (`resumeThreadOnCore`, `priorityRescheduleOnCore`).  The flag is a
+literal, so Lean reduced the `if` and collapsed three proofs onto the dead
+branch — they kept their names and lost their content — and it broke
+`SmpPipSuite`'s P2-5 assertion, which tests exactly the behaviour the guard
+removed.  Collapsing a theorem *about the gate* is honest; collapsing one
+*about a transition's semantics* is not.
+
+The gate now sits in wrappers, following `scheduleLocalSuccessorLive`:
+`resumeThreadOnCoreLive` and `priorityRescheduleOnCoreLive`, each choosing
+between its base transition and a named `…EnqueueOnly` sibling, and each
+carrying `_inert` / `_eq_of_seam_live` / `_remote_agrees`.  Both base
+transitions keep every unconditional theorem they had; both branches of each
+wrapper are stated and verified; the wrapper's projection and confinement
+lemmas are proved by cases on the flag, so neither branch is dead.  `_inert` is
+deliberately **not** `@[simp]` (and the attribute is dropped from
+`scheduleLocalSuccessorLive_inert`): an automatic rewrite would reintroduce the
+same collapse one level up.
+
+**`.schedContextUnbind` is no longer gated.**  Round 28 gated it; round 33
+showed that was wrong — `schedContextUnbind` clears the executing core's
+`current` precisely *in order to* force a reschedule, so suppressing the tail
+leaves a core with nothing current, which is the round-15 defect that
+scheduling point was added to fix.  A gate is only sound where the state it
+leaves behind is coherent: true for resume (queued, merely undispatched), false
+here.
+
+Also: the two Tier 3 anchors pinning `CrossCoreTransition.all.length = 21` are
+now 22 (they had been failing every `test_full.sh` since the `.tcbSetAffinity`
+entry landed), and a Tier 3 negative anchor forbids the in-transition gate from
+returning.
+
 WS-SM **SM8.B — per-core NI proofs** (plan
 `docs/planning/SMP_INFORMATION_FLOW_PLAN.md` §3.3), landed as one release per
 the every-PR-ships-one-version policy.  The automated review rounds are folded

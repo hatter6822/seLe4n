@@ -4170,19 +4170,12 @@ theorem priorityRescheduleOnCore_preserves_projection
   split at hStep
   · split at hStep
     · split at hStep
-      · -- PR #861 review round 32: the local arm is gated on the context-restore
-        -- seam, so there is one more `split` here than before — the gated branch
-        -- leaves the state at `stMid`, which `hMid` already covers.
-        split at hStep
-        · split at hStep
-          · next stOut hResched =>
-            rw [Except.ok.injEq, Prod.mk.injEq] at hStep
-            obtain ⟨hs, -⟩ := hStep
-            exact hs ▸ hReschedProj _ stOut _ hMid hResched
-          · exact absurd hStep (by simp)
-        · rw [Except.ok.injEq, Prod.mk.injEq] at hStep
+      · split at hStep
+        · next stOut hResched =>
+          rw [Except.ok.injEq, Prod.mk.injEq] at hStep
           obtain ⟨hs, -⟩ := hStep
-          exact hs ▸ hMid
+          exact hs ▸ hReschedProj _ stOut _ hMid hResched
+        · exact absurd hStep (by simp)
       · rw [Except.ok.injEq, Prod.mk.injEq] at hStep
         obtain ⟨hs, -⟩ := hStep
         exact hs ▸ hMid
@@ -4192,6 +4185,36 @@ theorem priorityRescheduleOnCore_preserves_projection
   · rw [Except.ok.injEq, Prod.mk.injEq] at hStep
     obtain ⟨hs, -⟩ := hStep
     exact hs ▸ hMid
+
+/-- WS-SM SM8.B (PR #861 review round 34): the **wrapper** preserves the
+projection, in *both* settings of the restore seam.
+
+The point of the wrapper form: this is proved by cases on the flag, so neither
+branch is dead.  The live branch defers to the base theorem below; the gated
+branch changes no state at all (`priorityRescheduleEnqueueOnly_state`), so the
+projection is `hMid` unchanged.  The `hReschedProj` witness is still required —
+it is what the live branch consumes, and dropping it would make the theorem
+weaker the moment SM9.E flips the constant. -/
+theorem priorityRescheduleOnCoreLive_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st stMid stFinal : SystemState) (running? : Option SeLe4n.Kernel.Concurrency.CoreId)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (shouldPreempt : Bool)
+    (sgi : Option (SeLe4n.Kernel.Concurrency.CoreId × SeLe4n.Kernel.Concurrency.SgiKind))
+    (hMid : projectState ctx observer stMid = projectState ctx observer st)
+    (hReschedProj : ∀ stIn stOut c,
+                      projectState ctx observer stIn = projectState ctx observer st →
+                      handleRescheduleSgiOnCore stIn c = .ok stOut →
+                      projectState ctx observer stOut = projectState ctx observer st)
+    (hStep : SchedContext.PriorityManagement.priorityRescheduleOnCoreLive stMid running?
+              executingCore shouldPreempt = .ok (stFinal, sgi)) :
+    projectState ctx observer stFinal = projectState ctx observer st := by
+  unfold SchedContext.PriorityManagement.priorityRescheduleOnCoreLive at hStep
+  split at hStep
+  · exact priorityRescheduleOnCore_preserves_projection ctx observer st stMid stFinal
+      running? executingCore shouldPreempt sgi hMid hReschedProj hStep
+  · rw [SchedContext.PriorityManagement.priorityRescheduleEnqueueOnly_state
+      stMid stFinal running? executingCore shouldPreempt sgi hStep]
+    exact hMid
 
 /-- WS-SM SM8.B: `setPriorityOnCore` preserves the projection under exactly the
 hypotheses `setPriorityOp_preserves_projection` takes, with the preemption
@@ -4242,7 +4265,7 @@ theorem setPriorityOnCore_preserves_projection
                newPriority _ hTargetThreadHigh]
           exact hProj1
         simp only [] at hStep
-        exact priorityRescheduleOnCore_preserves_projection ctx observer st _ st' _
+        exact priorityRescheduleOnCoreLive_preserves_projection ctx observer st _ st' _
           executingCore _ sgi hProj2 hReschedProj hStep
       · exact absurd hStep (by simp)
   · exact absurd hStep (by simp)
@@ -4395,7 +4418,7 @@ theorem setMCPriorityOnCore_preserves_projection
             rw [migrateRunQueueBucketOnCore_preserves_projection ctx observer _ vTargetTid.val
                  newMCP _ hTargetThreadHigh]
             exact hProj1
-          exact priorityRescheduleOnCore_preserves_projection ctx observer st _ st' _
+          exact priorityRescheduleOnCoreLive_preserves_projection ctx observer st _ st' _
             executingCore true sgi hProj2 hReschedProj hStep
         · rw [Except.ok.injEq, Prod.mk.injEq] at hStep
           obtain ⟨hs, -⟩ := hStep

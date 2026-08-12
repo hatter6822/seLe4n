@@ -1250,7 +1250,7 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
         match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
         | .error e => .error e
         | .ok vtid =>
-            match Lifecycle.Suspend.resumeThreadOnCore st vtid
+            match Lifecycle.Suspend.resumeThreadOnCoreLive st vtid
                 (determineExecutingCore st tid) with
             | .ok (st', _) => .ok ((), st')
             | .error e => .error e
@@ -3409,7 +3409,7 @@ theorem dispatchWithCap_tcbResume_delegates
     (hDecode : ∃ a, Architecture.SyscallArgDecode.decodeResumeArgs decoded = .ok a)
     (hValid : validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vtid) :
     dispatchWithCap decoded tid gate cap st =
-      (match Lifecycle.Suspend.resumeThreadOnCore st vtid
+      (match Lifecycle.Suspend.resumeThreadOnCoreLive st vtid
               (determineExecutingCore st tid) with
        | .ok (st', _) => .ok ((), st')
        | .error e => .error e) := by
@@ -3650,7 +3650,7 @@ def syscallDelegates : SyscallId → Prop
         (∃ a, Architecture.SyscallArgDecode.decodeResumeArgs decoded = .ok a) →
         validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vtid →
         dispatchWithCap decoded tid gate cap st =
-          (match Lifecycle.Suspend.resumeThreadOnCore st vtid
+          (match Lifecycle.Suspend.resumeThreadOnCoreLive st vtid
                   (determineExecutingCore st tid) with
            | .ok (st', _) => .ok ((), st')
            | .error e => .error e)

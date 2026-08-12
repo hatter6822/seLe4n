@@ -293,30 +293,93 @@ def resumeThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThreadId) (executi
         -- LOCAL: run the per-core reschedule handler inline on the executing core
         -- (the exact handler the remote core would run on the SGI) — preemption-gated
         -- and switch-based (no inversion, no drop).  No SGI is returned.
-        -- PR #861 review rounds 23/28/32: the LOCAL arm is gated on the hardware
-        -- context-restore seam.  It records a successor in `currentOnCore`, but
-        -- with `contextRestoreSeamLive` still `false` the SVC path returns
-        -- through the *caller's* frame, so the next syscall from this core is
-        -- attributed to a thread that never started running.
-        --
-        -- This PR made that reachable here: before it, the arm was boot-pinned,
-        -- so executing on a secondary core poked the boot core rather than
-        -- switching this one.  Rerouting per-core is the right fix and it is
-        -- what newly enables the local switch, which puts this on the
-        -- "created here" side of the rule in `contextSwitchSites_restore_pending`.
-        --
-        -- The REMOTE arm below is deliberately ungated: a cross-core
-        -- `.reschedule` SGI is a real poke at another processor and has nothing
-        -- to do with the missing restore.
-        if SeLe4n.Kernel.PriorityInheritance.contextRestoreSeamLive then
-          match handleRescheduleSgiOnCore st3 executingCore with
-          | .ok st4 => .ok (st4, none)
-          | .error e => .error e
-        else .ok (st3, none)
+        match handleRescheduleSgiOnCore st3 executingCore with
+        | .ok st4 => .ok (st4, none)
+        | .error e => .error e
       else
         -- REMOTE: hand the home core a `.reschedule` SGI so it runs the same handler.
         .ok (st3, some (target, SgiKind.reschedule))
   | none => .error .invalidArgument
+
+/-- WS-SM SM8.B (PR #861 review round 34): **the resume the kernel runs while the
+context-restore seam is dark** — everything `resumeThreadOnCore` does except the
+inline local dispatch.
+
+The resumed thread is `.Ready` and queued on its home core; it simply is not made
+`current` until that core's next scheduling point.  That state is *coherent*,
+which is what makes gating this path sound: nothing is left dangling, the thread
+is merely undispatched.  (Contrast the unbind path, whose head clears `current`
+in order to force a reschedule — suppressing its tail there leaves a core with no
+current thread at all, which is why that path is deliberately ungated.)
+
+A named function rather than an inline `else`, so both sides of
+`resumeThreadOnCoreLive` are separately stated and separately verified.  The
+REMOTE arm is byte-identical to the base transition's: a cross-core
+`.reschedule` SGI is a real poke at another processor and has nothing to do with
+the missing restore. -/
+def resumeThreadEnqueueOnly (st : SystemState) (vtid : SeLe4n.ValidThreadId)
+    (executingCore : CoreId)
+    : Except KernelError (SystemState × Option (CoreId × SgiKind)) :=
+  let tid : SeLe4n.ThreadId := vtid.val
+  match st.getTcb? tid with
+  | some tcb =>
+    if tcb.threadState != .Inactive then .error .illegalState
+    else
+      let target := determineTargetCore st tid
+      let st2 := resumeReadyMidState st tid
+      let st3 := enqueueRunnableOnCore st2 target tid
+      if target == executingCore then
+        -- LOCAL, ungated form: enqueue and stop.  No inline dispatch.
+        .ok (st3, none)
+      else
+        .ok (st3, some (target, SgiKind.reschedule))
+  | none => .error .invalidArgument
+
+/-- WS-SM SM8.B (PR #861 review round 34): **the resume as the live `.tcbResume`
+arm runs it** — gated on the restore seam it depends on.
+
+`resumeThreadOnCore` is correct at the model level and its theorems say so; this
+wrapper chooses between it and `resumeThreadEnqueueOnly`.  Deliberately a
+*wrapper*, for the same reason `scheduleLocalSuccessorLive` is one: folding the
+guard into the transition makes every theorem about it conditional, and those
+theorems are what SM9.E enables rather than has to re-prove.  An earlier cut of
+this PR folded it in, collapsed three proofs onto the dead branch and broke
+`SmpPipSuite`'s P2-5 assertion; this is the undo. -/
+def resumeThreadOnCoreLive (st : SystemState) (vtid : SeLe4n.ValidThreadId)
+    (executingCore : CoreId) : Except KernelError (SystemState × Option (CoreId × SgiKind)) :=
+  if SeLe4n.Kernel.PriorityInheritance.contextRestoreSeamLive then resumeThreadOnCore st vtid executingCore
+  else resumeThreadEnqueueOnly st vtid executingCore
+
+/-- WS-SM SM8.B: what the kernel does **today**.  Deliberately NOT `@[simp]` —
+an automatic rewrite would silently restate every downstream fact about the
+wrapper in terms of the enqueue-only form, which is the collapse this rework
+exists to remove, one level up. -/
+theorem resumeThreadOnCoreLive_inert (st : SystemState) (vtid : SeLe4n.ValidThreadId)
+    (executingCore : CoreId) :
+    resumeThreadOnCoreLive st vtid executingCore
+      = resumeThreadEnqueueOnly st vtid executingCore := rfl
+
+/-- WS-SM SM8.B: and what it does once the seam is live — the full resume, so
+the flip loses nothing. -/
+theorem resumeThreadOnCoreLive_eq_of_seam_live (st : SystemState)
+    (vtid : SeLe4n.ValidThreadId) (executingCore : CoreId)
+    (h : SeLe4n.Kernel.PriorityInheritance.contextRestoreSeamLive = true) :
+    resumeThreadOnCoreLive st vtid executingCore
+      = resumeThreadOnCore st vtid executingCore := by
+  unfold resumeThreadOnCoreLive
+  rw [h]
+  rfl
+
+/-- WS-SM SM8.B: the gate touches **only** the local arm — when the resumed
+thread's home core is remote, both branches agree. -/
+theorem resumeThreadOnCoreLive_remote_agrees (st : SystemState)
+    (vtid : SeLe4n.ValidThreadId) (executingCore : CoreId)
+    (hRemote : ¬ (determineTargetCore st vtid.val == executingCore) = true) :
+    resumeThreadOnCoreLive st vtid executingCore
+      = resumeThreadOnCore st vtid executingCore := by
+  unfold resumeThreadOnCoreLive resumeThreadEnqueueOnly
+    resumeThreadOnCore
+  split <;> simp [hRemote]
 
 /-- WS-SM SM6.D (PR #822 review, Reply objects): sever a caller→Reply link as
 part of lifecycle teardown.  When `tcb.replyObject = some rid` (the seL4

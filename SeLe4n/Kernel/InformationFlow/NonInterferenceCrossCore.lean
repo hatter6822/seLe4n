@@ -2138,6 +2138,25 @@ theorem priorityRescheduleOnCore_confinedToCores (st st' : SystemState)
          | exact observableSlotsConfinedToCores_refl _ _)
     | exact absurd h (by simp)
 
+/-- SM8.B.2 (PR #861 review round 34): the **wrapper** is confined to the
+executing core, in *both* settings of the restore seam.
+
+Proved by cases on the flag, so neither branch is dead: the live branch defers
+to the base theorem above, and the gated branch changes no state at all. -/
+theorem priorityRescheduleOnCoreLive_confinedToCores (st st' : SystemState)
+    (running? : Option CoreId) (executingCore : CoreId) (shouldPreempt : Bool)
+    (sgi : Option (CoreId × Concurrency.SgiKind))
+    (h : SchedContext.PriorityManagement.priorityRescheduleOnCoreLive st running?
+      executingCore shouldPreempt = .ok (st', sgi)) :
+    observableSlotsConfinedToCores st st' [executingCore] := by
+  unfold SchedContext.PriorityManagement.priorityRescheduleOnCoreLive at h
+  split at h
+  · exact priorityRescheduleOnCore_confinedToCores st st' running? executingCore
+      shouldPreempt sgi h
+  · rw [SchedContext.PriorityManagement.priorityRescheduleEnqueueOnly_state
+      st st' running? executingCore shouldPreempt sgi h]
+    exact observableSlotsConfinedToCores_refl _ _
+
 /-- SM8.B.2: clearing a suspended thread's transient fields is per-core silent —
 it rewrites one TCB and touches neither the scheduler nor a register bank. -/
 theorem clearPendingState_confinedToCores (st : SystemState) (tid : SeLe4n.ThreadId) :
@@ -2456,26 +2475,16 @@ theorem resumeThreadOnCore_confinedToCores (st st' : SystemState)
           (resumeReadyMidState_confinedToCores st vtid.val)
           (enqueueRunnableOnCore_confinedToCores _ (determineTargetCore st vtid.val) vtid.val)
       split at hStep
-      · -- LOCAL: PR #861 review round 32 gated the inline reschedule on the
-        -- context-restore seam, so there is one more `split` than before.  With
-        -- the seam dark the state is the enqueued mid-state and the prefix
-        -- bound is already the whole story; when SM9.E flips the flag the
-        -- `handleRescheduleSgiOnCore_confinedToCores` step below carries it.
+      · -- LOCAL: the home core is the executing core, reschedule runs inline.
+        -- `[target] ++ [executingCore]` *is* the declared set, definitionally.
         split at hStep
-        · split at hStep
-          · next st4 hResched =>
-            rw [Except.ok.injEq, Prod.mk.injEq] at hStep
-            obtain ⟨hs, -⟩ := hStep
-            subst hs
-            exact observableSlotsConfinedToCores_trans hPre
-              (handleRescheduleSgiOnCore_confinedToCores _ st4 executingCore hResched)
-          · exact absurd hStep (by simp)
-        · rw [Except.ok.injEq, Prod.mk.injEq] at hStep
+        · next st4 hResched =>
+          rw [Except.ok.injEq, Prod.mk.injEq] at hStep
           obtain ⟨hs, -⟩ := hStep
           subst hs
-          exact observableSlotsConfinedToCores_mono
-            (fun _ hm => by simp only [resumeThreadOnCoreWriteSet, List.mem_cons,
-              List.not_mem_nil, or_false] at hm ⊢; simp_all) hPre
+          exact observableSlotsConfinedToCores_trans hPre
+            (handleRescheduleSgiOnCore_confinedToCores _ st4 executingCore hResched)
+        · exact absurd hStep (by simp)
       · -- REMOTE: the SGI is returned, not applied, so only the home core moves.
         rw [Except.ok.injEq, Prod.mk.injEq] at hStep
         obtain ⟨hs, -⟩ := hStep
@@ -3388,7 +3397,7 @@ theorem applyPriorityChangeOnCore_confinedToCores (base st' : SystemState)
     observableSlotsConfinedToCores base st' [determineTargetCore base tid, executingCore] :=
   observableSlotsConfinedToCores_trans
     (priorityUpdateAndMigrate_confinedToCores base tid tcb p (determineTargetCore base tid))
-    (priorityRescheduleOnCore_confinedToCores _ st' _ executingCore shouldPreempt sgi hStep)
+    (priorityRescheduleOnCoreLive_confinedToCores _ st' _ executingCore shouldPreempt sgi hStep)
 
 /-- SM8.B.2: **the cores the live `.tcbSetPriority` / `.tcbSetMCPriority` may
 write** — the target's home core, where its run-queue bucket migrates, and the

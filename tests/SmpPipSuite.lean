@@ -614,6 +614,23 @@ private def runP5LocalRescheduleChecks : IO Unit := do
       (st4.scheduler.currentOnCore core1 == some srv)
   | .error _ =>
     assertBool "P2-5 local resume must succeed on the well-formed fixture" false
+  -- PR #861 review round 34: the LIVE arm runs the *wrapper*, which is gated on
+  -- the context-restore seam.  On the same fixture it must be inert — the thread
+  -- is queued but NOT dispatched.  This is the load-bearing negative: it is what
+  -- makes the assertion above a statement about the base transition rather than
+  -- about whatever the live path happens to do, and it fails the moment the
+  -- wrapper stops gating.
+  match SeLe4n.Kernel.Lifecycle.Suspend.resumeThreadOnCoreLive stNoRq
+      ((ThreadId.ofNat 200).toValid (by decide)) core1 with
+  | .ok (stLive, sgiLive) =>
+    assertBool "the LIVE local resume posts no SGI (same as the base transition)"
+      (sgiLive == none)
+    assertBool "the LIVE local resume still readies the thread"
+      ((stLive.getTcb? srv).map (·.threadState) == some ThreadState.Ready)
+    assertBool "but the LIVE local resume does NOT dispatch it — the seam is dark"
+      (stLive.scheduler.currentOnCore core1 == none)
+  | .error _ =>
+    assertBool "the LIVE local resume must succeed on the well-formed fixture" false
   -- REMOTE contrast: resuming from a different executing core returns the SGI instead.
   match resumeThreadOnCore stNoRq ((ThreadId.ofNat 200).toValid (by decide)) core0 with
   | .ok (_, sgi) =>

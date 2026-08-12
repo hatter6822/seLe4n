@@ -1767,7 +1767,27 @@ run_check "INVARIANT" rg -n '^theorem notificationSignalWriteSet_eq_lockSet_wait
 run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem wakeThread_crossCoreNonInterference_of_visible_thread' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n 'CrossCoreTransition.all.length = 21' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n 'CrossCoreTransition.all.length = 22' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+
+# PR #861 review round 34: the context-restore gate lives in WRAPPERS, never
+# inside the transitions.  An in-transition `if contextRestoreSeamLive` reduces
+# (the flag is a literal), which collapses every proof about that transition
+# onto the dead branch — it kept three theorem names while deleting their
+# content and broke SmpPipSuite's P2-5 assertion.  These are NEGATIVE anchors:
+# the two transition bodies must not name the flag at all.
+# A file-level negative would be wrong: the wrappers live in these same files
+# and legitimately name the flag.  Anchor instead on the distinguishing text the
+# in-transition form left behind — `resumeThreadOnCore`'s gated local arm ended
+# `else .ok (st3, none)`, a shape the un-gated body and the enqueue-only sibling
+# both lack.
+run_negative_check "INVARIANT" \
+  'in-transition context-restore gate in resumeThreadOnCore' \
+  rg -n 'else \.ok \(st3, none\)' SeLe4n/Kernel/Lifecycle/Suspend.lean
+# ... and the wrappers that replaced it must exist.
+run_check "INVARIANT" rg -n '^def resumeThreadOnCoreLive' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n '^def resumeThreadEnqueueOnly' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n '^def priorityRescheduleOnCoreLive' SeLe4n/Kernel/SchedContext/PriorityManagementPerCore.lean
+run_check "INVARIANT" rg -n '^def priorityRescheduleEnqueueOnly' SeLe4n/Kernel/SchedContext/PriorityManagementPerCore.lean
 # Review round 5: a LIVE inventory entry must name the function the syscall
 # dispatch calls.  Three entries named a below-API transition their wrapper does
 # strictly more than, so the wrappers get entries — and bounds — of their own.
@@ -1985,7 +2005,7 @@ run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_crossCoreNonInte
 run_check "INVARIANT" rg -n '^def endpointReplyRecvWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count : CrossCoreTransition\.all\.length = 21' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count : CrossCoreTransition\.all\.length = 22' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # Round 14: all three SchedContext arms this cut made remote writers are audited.
 # The negative is the point — `crossCoreRemoteWriterPendingAudit` was the counted
 # gap while two were unproven, and it must not come back as an empty list, which
