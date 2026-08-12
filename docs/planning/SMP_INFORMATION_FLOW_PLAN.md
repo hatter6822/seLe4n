@@ -420,7 +420,7 @@ SM8.B; the lock-contention channel CC-5 is SM8.B.8; the
 | SM8.B.3 | Per-core NI for each of the 35 `kernelOperationNi` constructors (re-anchored at SM8.A — see note above) | 35 theorems | L | LANDED |
 | SM8.B.4 | NI under per-object lock-set | Theorem | L | LANDED |
 | SM8.B.5 | `niStepCoverage_perCore` | Theorem | M | LANDED |
-| SM8.B.6 | `enforcementBoundaryPerCore` (53 entries — re-anchored) | Definition + theorem | M | LANDED |
+| SM8.B.6 | `enforcementBoundaryPerCore` (54 entries — re-anchored) | Definition + theorem | M | LANDED |
 | SM8.B.7 | Boundary completeness witness | Theorem | M | LANDED |
 | SM8.B.8 | `acceptedCovertChannel_lockContention` | Definition | M | LANDED |
 | SM8.B.9 | Mitigation note (WS-W partitioning) | Documentation | S | LANDED |
@@ -573,7 +573,8 @@ claim.
 
 The per-core enforcement mapping was also five arms short: besides these four it
 had never listed the three SM7.D/SM7.F architecture wrappers, live per-core arms
-since v0.32.94.  Re-routed arms 7 → 14, boundary 46 → 53.
+since v0.32.94.  Re-routed arms 7 → 14, boundary 46 → 53 (round 37's
+`.tcbSetAffinity` re-route then takes them to 15 and 54).
 
 Round 12 additionally found CC-1's rate factor wrong (see the class-C note
 above) and the axiom sweep failing open on a nonzero exit with no Lean
@@ -1119,8 +1120,9 @@ golden trace is byte-identical.
   block used under an already-capability-guarded context, consulting no
   information-flow policy).  **Re-anchored**: the plan's "23 entries" figure was
   written against the `v0.31.2` cut, and the live canonical count is 38, so the
-  per-core boundary starts at 39 and grew to **53** as SM8.B added the 2PL
-  bracket and the cross-core wrappers (`enforcementBoundaryPerCore_count`).  A *separate* list rather than an edit to the
+  per-core boundary starts at 39 and grew to **54** as SM8.B added the 2PL
+  bracket and the cross-core wrappers, the last of them round 37's
+  `.tcbSetAffinity` re-route (`enforcementBoundaryPerCore_count`).  A *separate* list rather than an edit to the
   canonical one, because promoting the entry is SM8.E.3's sub-task and moving
   the base count here would leave SM8.E a figure to reconcile.  Completeness in
   three parts: the per-core list extends the canonical one (`rfl`), every
@@ -1456,7 +1458,7 @@ contention scenarios are timing scenarios.
 - [x] Lock-contention channel documented; boundary expanded (SM8.B, v0.33.5 —
       CC-5 registered with `withLockSet_preserves_projection` as its witness,
       which required erasing the per-object `lock` from the projection;
-      `enforcementBoundaryPerCore` at **53** entries —
+      `enforcementBoundaryPerCore` at **54** entries —
       `enforcementBoundaryPerCore_count` is the authority, so read the figure
       there rather than here; the *canonical* list's separate promotion 38 → 39
       remains SM8.E.3.  This item said 39 until PR #861 review round 30, which
