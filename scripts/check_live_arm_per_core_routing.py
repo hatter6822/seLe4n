@@ -32,6 +32,24 @@ was the deepest).  `--self-test` is the check that this reach is not vacuous: it
 re-runs the walk over the *canonical* pre-SMP map, which still names the
 boot-pinned operations, and fails if the gate does not flag them.
 
+Detection runs against **Lean's elaborated environment**, not the source text
+(PR #861 review round 29).  Rounds 15, 23, 24, 26, 27 and 29 were six findings
+against this gate and none against the kernel it checks -- truncated bodies,
+reads-but-not-writes, single-line-only, dot-notation-only,
+identifier-receivers-only, a character budget -- each one a regex under-reaching
+some spelling while the gate reported PASS, and each fix local to the spelling
+reported.  A term has no spelling: `sched.currentOnCore bootCoreId`,
+`currentOnCore st.scheduler bootCoreId`, `currentOnCore (prepare st).scheduler
+bootCoreId` and the same call wrapped over four lines are one `Expr`.  So the
+question is now "is this application's argument the `bootCoreId` constant",
+which no formatting can hide, and `determineExecutingCore`'s `find?…getD`
+fallback is excluded structurally rather than by tuning.
+
+Source text is still read for *root resolution* -- which definition a mapped
+enforcement label names, and whether the dispatch arm calls it.  That is a
+question about the data tables and the dispatch source, which text answers
+correctly.
+
 Usage:  scripts/check_live_arm_per_core_routing.py [--depth N] [--list] [--self-test]
 """
 
@@ -40,7 +58,9 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import sys
+import tempfile
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(REPO, "SeLe4n")
@@ -61,7 +81,15 @@ BOOT_PINNED = {
     "migrateRunQueueBucket":     "re-buckets runQueueOnCore bootCoreId; per-core form is migrateRunQueueBucketOnCore",
     "propagatePriorityInheritance": "boot-core chain walk; per-core form is propagatePipChainCrossCore",
     "updatePipBoost":            "boot-core re-bucket; per-core form is updatePipBoostOnCore",
-    "handleRescheduleSgi":       "boot-core reschedule; per-core form is handleRescheduleSgiOnCore",
+    # NOTE (round 29): `handleRescheduleSgi` used to sit here.  The
+    # elaborated-environment engine fails closed on a watched name it cannot
+    # resolve, and that is how we learned there is no such constant — only
+    # `handleRescheduleSgiOnCore`.  The regex engine had been "checking" for a
+    # symbol that does not exist, matching nothing, for as long as the entry
+    # existed.  A hand-written list of names nothing verifies is exactly the
+    # class of defect this rewrite removes, so the entry is gone rather than
+    # renamed: the per-core form is a *primitive*, watched for a literal
+    # `bootCoreId` argument, not a boot-pinned form to be banned outright.
 }
 # A raw read of the boot core's scheduler slots inside a live operation.
 #
@@ -106,93 +134,264 @@ def per_core_scheduler_fields() -> list[str]:
 
 PER_CORE_FIELDS = per_core_scheduler_fields()
 
-# PR #861 review round 26: these first shipped as `<accessor>\s+bootCoreId`,
-# which matches only the dot-notation spelling (`st.scheduler.currentOnCore
-# bootCoreId`), because there the receiver precedes the name.  The accessors
-# take the scheduler state explicitly, so `currentOnCore st.scheduler
-# bootCoreId` is an equally ordinary Lean call and went unmatched -- half the
-# spellings of every boot-pinned read.  The literal defects this gate caught
-# earlier all happened to be written the first way, which is why the gap
-# survived.  Reads now use the same bounded-gap shape as the writes below,
-# against the same normalized body, so the two halves cannot drift apart.
-# The core is the accessor's LAST argument, so at most one argument may sit
-# between the two: none in dot notation (`sched.currentOnCore bootCoreId`), one
-# under explicit application (`currentOnCore st.scheduler bootCoreId`).  A
-# bounded any-character gap was tried first and over-matched
-# `determineExecutingCore`, where `currentOnCore c` is a read of the *searched*
-# core and `bootCoreId` is the `find?.getD` fallback one line later -- a
-# legitimate default, not a pinned read.  Matching the argument shape rather
-# than a character budget tells the two apart.
-# One argument: a (dotted) identifier, or a parenthesized expression with an
-# optional field selection after it -- `(prepare st).scheduler`.  Round 27:
-# the identifier-only form missed every computed receiver, which is the same
-# under-reach as the dot-notation-only form it replaced, one spelling further
-# out.  Nesting is bounded at two levels, which covers the receivers a call of
-# this shape actually has; a deeper one would need a real parser, and the
-# self-test's negatives are what keep the bound from silently widening.
-_PAREN = r"\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)"
-_ARG = rf"(?:\s+(?:{_PAREN}|[A-Za-z_][A-Za-z0-9_.']*)(?:\.[A-Za-z_][A-Za-z0-9_.']*)?)?"
-_BOOT = r"(?:[A-Za-z_][A-Za-z0-9_.']*\.)?bootCoreId"
-BOOT_READS = [
-    re.compile(rf"\b{f}OnCore\b{_ARG}\s+{_BOOT}\b")
-    for f in PER_CORE_FIELDS
-]
-
-# PR #861 review round 23: the three patterns above are *accessor reads*, and a
-# gate that sees only reads is half a gate.  The per-core scheduler *mutators*
-# take their core as a positional argument, so `removeRunnableOnCore st tid
-# bootCoreId` pins the write to the boot core just as surely as
-# `runQueueOnCore bootCoreId` pinned the read — and recreates precisely the
-# secondary-core defect this gate exists to close, while staying green.  The
-# asymmetry was invisible because every defect found so far happened to be
-# spelled as a read.
-#
-# The core argument is not adjacent to the callee, so each pattern spans the
-# intervening arguments on one line.  Over-matching is the safe direction here:
-# a false positive is one allowlist line, a false negative is a wedged core.
-BOOT_WRITE_CALLEES = [
-    # Per-core operations that are not plain field setters.
-    "removeRunnableOnCore",
-    "enqueueRunnableOnCore",
-    "handleRescheduleSgiOnCore",
-    "migrateRunQueueBucketOnCore",
-    "switchToThreadOnCore",
-    "preemptCurrentOnCore",
-    "removeReplenishmentsOnCore",
-    "advanceDomainOnCore",
-    "decrementDomainTimeOnCore",
-] + [
-    # ... plus one setter per per-core field, derived for the reason above:
-    # `setActiveDomainOnCore bootCoreId` pins a secondary core's domain
-    # selection to the boot core's just as surely as `setCurrentOnCore` pins
-    # its current thread.
-    f"set{f[0].upper()}{f[1:]}OnCore" for f in PER_CORE_FIELDS
-]
-# Round 28: the character budget is gone.  Whitespace normalization fixed the
-# wrapped-argument case but left the gap measured in characters, so a call
-# whose state argument is a long composed expression pushed `bootCoreId` past
-# 100 characters and out of reach -- the same under-reach one spelling further
-# out, for the fourth time on this gate.
-#
-# The budget is now in ARGUMENTS, not characters: a parenthesized expression is
-# one argument however long it is.  Unlike the accessors, a mutator's core is
-# not always last (`setCurrentOnCore bootCoreId none` puts it first), so
-# `bootCoreId` is accepted as any of the first six arguments and the match does
-# not anchor what follows.  Keeping each intervening token a well-formed
-# argument is what still rejects an unrelated `bootCoreId` further down the
-# body -- `==` or `)).getD` between them breaks the chain, which is how the
-# `determineExecutingCore` false positive stays excluded.
-_ARG_ONE = rf"\s+(?:{_PAREN}|[A-Za-z_][A-Za-z0-9_.']*)(?:\.[A-Za-z_][A-Za-z0-9_.']*)?"
-BOOT_WRITES = [
-    re.compile(rf"\b{callee}\b(?:{_ARG_ONE}){{0,6}}\s+{_BOOT}\b")
-    for callee in BOOT_WRITE_CALLEES
-]
-
 DECL = re.compile(r"^(?:@\[[^\]]*\]\s*)?(?:private\s+|protected\s+|partial\s+|noncomputable\s+)*"
                   r"(?:def|abbrev)\s+([A-Za-z_][A-Za-z0-9_.'?!]*)", re.M)
 TOP = re.compile(r"^(?:@\[|/--|/-!|private\s|protected\s|partial\s|noncomputable\s|def\s|abbrev\s|"
                  r"theorem\s|lemma\s|instance\s|structure\s|inductive\s|end\s|namespace\s|section\s|"
                  r"open\s|import\s|example\s|macro\s|syntax\s|deriving\s)", re.M)
+
+
+# ---------------------------------------------------------------------------
+# The detection engine: Lean's elaborated environment, not the source text.
+#
+# PR #861 review rounds 15, 23, 24, 26, 27 and 29 were six findings against
+# this gate and none against the kernel it checks: truncated bodies,
+# reads-but-not-writes, single-line-only, dot-notation-only,
+# identifier-receivers-only, and a character budget.  Every one was the same
+# defect -- a regex under-reaching some spelling while the gate reported PASS
+# -- and every fix was local to the spelling reported, which is why there was
+# another one each round.
+#
+# A regex over source has a spelling dimension.  An elaborated `Expr` does not:
+# `sched.currentOnCore bootCoreId`, `currentOnCore st.scheduler bootCoreId`,
+# `currentOnCore (prepare st).scheduler bootCoreId` and the same call wrapped
+# across four lines are the SAME TERM by the time Lean is done.  So the
+# question moves from "does this text match" to "is this application's
+# argument the `bootCoreId` constant", which no formatting can hide.
+#
+# It also gets last round's precision for free.  `determineExecutingCore`
+# reads `currentOnCore c` for a *searched* core and uses `bootCoreId` as a
+# `find?.getD` fallback; as a term the primitive's arguments simply are not
+# `bootCoreId`, so no tuning is needed to exclude it.
+# ---------------------------------------------------------------------------
+
+PROBE_TEMPLATE = """-- Both roots: `SeLe4n` is the production library; `Platform.Staged` pulls the
+-- staged modules in.  Without the second, a per-core primitive defined in a
+-- staged module (`advanceDomainOnCore`, in
+-- `Scheduler/Operations/PerCoreDomain.lean`) is not a constant in this
+-- environment and the fail-closed stem resolution rejects the run — which is
+-- how the split was noticed.  Watching the whole tree is the point.
+import SeLe4n
+import SeLe4n.Platform.Staged
+import Lean.Elab.Command
+
+open Lean Elab Command
+
+/-- Total.  `Name.getString!` *panics* on a numeric or anonymous component,
+and this environment has ~126 700 constants -- more than enough to contain
+some.  The first draft of this probe used it and died with no output. -/
+private def routeLastComponent (n : Name) : String :=
+  match n with
+  | .str _ s => s
+  | _        => ""
+
+private def routeRoots : List String :=
+  [@ROOTS@]
+
+private def routePrims : List String :=
+  [@PRIMS@]
+
+/-- The syscall dispatch entry points, used only to disambiguate colliding
+short names.  All three are `private`, so they are found by stem, not by full
+name. -/
+private def routeDispatch : List String :=
+  ["dispatchCapabilityOnly", "dispatchWithCap", "dispatchWithCapChecked"]
+
+private def routePinned : List String :=
+  [@PINNED@]
+
+/-- Applications of a per-core primitive one of whose arguments IS the
+`bootCoreId` constant.  A statement about the term, so no spelling of the call
+can hide it. -/
+private partial def routeBootHits (prims boot : Std.HashSet Name) (e : Expr) :
+    Array Name := Id.run do
+  let mut hits : Array Name := #[]
+  if let .const p _ := e.getAppFn then
+    if prims.contains p then
+      for a in e.getAppArgs do
+        if let .const c _ := a.consumeMData then
+          if boot.contains c then hits := hits.push p
+  match e with
+  | .app f a         => return hits ++ routeBootHits prims boot f
+                                 ++ routeBootHits prims boot a
+  | .lam _ t b _     => return hits ++ routeBootHits prims boot t
+                                 ++ routeBootHits prims boot b
+  | .forallE _ t b _ => return hits ++ routeBootHits prims boot t
+                                 ++ routeBootHits prims boot b
+  | .letE _ t v b _  => return hits ++ routeBootHits prims boot t
+                                 ++ routeBootHits prims boot v
+                                 ++ routeBootHits prims boot b
+  | .mdata _ b       => return hits ++ routeBootHits prims boot b
+  | .proj _ _ b      => return hits ++ routeBootHits prims boot b
+  | _                => return hits
+
+run_cmd do
+  let env ← getEnv
+  let wanted : Std.HashSet String :=
+    Std.HashSet.emptyWithCapacity.insertMany
+      (routeRoots ++ routePrims ++ routePinned ++ routeDispatch ++ ["bootCoreId"])
+  -- Two indexes.  `byStem` skips internal names, which is right for roots and
+  -- primitives.  `byStemAll` keeps them, because the dispatch entry points are
+  -- `private` and Lean mangles a private definition to
+  -- `_private.SeLe4n.Kernel.API.0.SeLe4n.Kernel.dispatchCapabilityOnly` --
+  -- which `Name.isInternal` rejects.  Seeding the dispatch walk by full name
+  -- therefore resolved NOTHING (`ROUTE_DISPATCH_REACH 3`, the three unresolved
+  -- seeds themselves) and the disambiguation it was supposed to drive silently
+  -- did nothing.  The last component survives the mangling, so stem lookup
+  -- finds them.
+  let mut byStem : Std.HashMap String (Array Name) := {}
+  let mut byStemAll : Std.HashMap String (Array Name) := {}
+  for (n, _) in env.constants.toList do
+    let c := routeLastComponent n
+    if wanted.contains c then
+      byStemAll := byStemAll.insert c ((byStemAll.getD c #[]).push n)
+      if !n.isInternal then
+        byStem := byStem.insert c ((byStem.getD c #[]).push n)
+  let gather (ss : List String) : Std.HashSet Name := Id.run do
+    let mut h : Std.HashSet Name := {}
+    for x in ss do
+      for n in byStem.getD x #[] do h := h.insert n
+    return h
+  let prims := gather routePrims
+  let pinned := gather routePinned
+  let boot := gather ["bootCoreId"]
+  -- Fail closed on a primitive this gate claims to watch but cannot resolve.
+  for x in routePrims ++ routePinned ++ ["bootCoreId"] do
+    if (byStem.getD x #[]).isEmpty then
+      logInfo m!"ROUTE_STEM_UNRESOLVED {x}"
+  logInfo m!"ROUTE_SIZES prims={prims.size} pinned={pinned.size} boot={boot.size}"
+  -- Everything the syscall dispatch can reach, computed once and used only to
+  -- disambiguate colliding short names.
+  let mut dispatchReach : Std.HashSet Name := {}
+  let mut dFrontier : Array Name := Id.run do
+    let mut a : Array Name := #[]
+    for d in routeDispatch do
+      for n in byStemAll.getD d #[] do a := a.push n
+    return a
+  for d in routeDispatch do
+    if (byStemAll.getD d #[]).isEmpty then
+      logInfo m!"ROUTE_DISPATCH_UNRESOLVED {d}"
+  for _ in [0:6] do
+    let mut nxt : Array Name := #[]
+    for m in dFrontier do
+      if dispatchReach.contains m then continue
+      dispatchReach := dispatchReach.insert m
+      if let some ci := env.find? m then
+        if let some v := ci.value? then
+          for u in v.getUsedConstants do nxt := nxt.push u
+    dFrontier := nxt
+  logInfo m!"ROUTE_DISPATCH_REACH {dispatchReach.size}"
+  for r in routeRoots do
+    let cands := byStem.getD r #[]
+    if cands.isEmpty then
+      logInfo m!"ROUTE_UNRESOLVED {r}"
+    else
+      -- A short name can occur in several namespaces (a production operation
+      -- and its staged sibling, an operation and a same-named lock-set
+      -- definition).  Rather than pick one and risk walking the wrong
+      -- constant, walk ALL of them: the union over-approximates the arm's
+      -- reach, so the gate can report a finding the arm does not really have
+      -- but never miss one it does.  Over-approximation is the safe direction
+      -- for a gate, and the count is logged so an unexpected collision is
+      -- visible rather than silent.
+      -- Disambiguate by DISPATCH REACHABILITY, not by name shape.  A short
+      -- name can occur in several namespaces, and the collision that matters
+      -- here is real: `registerService` is both the syscall operation and a
+      -- *boot builder* (`Model.Builder`) that legitimately populates the boot
+      -- core's run queue, because at boot there is no other core.  Unioning
+      -- both reported the builder's correct `runQueueOnCore bootCoreId` as a
+      -- finding against `.serviceRegister`.  Keeping only candidates the API
+      -- dispatch can actually reach removes the builder without an ad-hoc
+      -- namespace exclusion.
+      let narrowed :=
+        if cands.size > 1 then cands.filter dispatchReach.contains else cands
+      -- Fail closed.  Silently falling back to the unnarrowed candidates is
+      -- how the first attempt at this hid its own broken seeds.
+      if narrowed.isEmpty then
+        logInfo m!"ROUTE_UNNARROWABLE {r}"
+      let cands := if narrowed.isEmpty then cands else narrowed
+      if cands.size > 1 then
+        logInfo m!"ROUTE_MULTI {r} {cands.size}"
+      let mut seen : Std.HashSet Name := {}
+      let mut frontier : Array Name := cands
+      for _ in [0:@HOPS@] do
+        let mut nxt : Array Name := #[]
+        for m in frontier do
+          if seen.contains m then continue
+          seen := seen.insert m
+          if let some ci := env.find? m then
+            if let some v := ci.value? then
+              for u in v.getUsedConstants do nxt := nxt.push u
+        frontier := nxt
+      let mut findings : Std.HashSet Name := {}
+      for m in seen do
+        if pinned.contains m then findings := findings.insert m
+        if let some ci := env.find? m then
+          if let some v := ci.value? then
+            for h in routeBootHits prims boot v do findings := findings.insert h
+      for f in findings do
+        logInfo m!"ROUTE_FINDING {r} {f}"
+      logInfo m!"ROUTE_ROOT {r} {seen.size}"
+"""
+
+
+def probe_stems() -> tuple[list[str], list[str]]:
+    """(per-core primitives, boot-pinned single-core forms), by short name.
+
+    The per-core half is still derived from `SchedulerState`'s own `Vector …
+    numCores` fields (round 25), so a field added there is watched the day it
+    lands; the probe resolves each stem to whatever full names the environment
+    actually has.
+    """
+    prims = []
+    for f in PER_CORE_FIELDS:
+        prims.append(f"{f}OnCore")
+        prims.append(f"set{f[0].upper()}{f[1:]}OnCore")
+    # `removeReplenishmentsOnCore` was in the regex list and is NOT a constant
+    # in this environment — the probe's fail-closed stem resolution is what
+    # surfaced that, after the pattern had sat there matching nothing.
+    prims += ["removeRunnableOnCore", "enqueueRunnableOnCore",
+              "handleRescheduleSgiOnCore", "migrateRunQueueBucketOnCore",
+              "switchToThreadOnCore", "preemptCurrentOnCore",
+              "advanceDomainOnCore", "decrementDomainTimeOnCore"]
+    return sorted(set(prims)), sorted(BOOT_PINNED)
+
+
+def run_probe(roots: list[str], hops: int) -> tuple[dict, str]:
+    """Elaborate the probe and return {root: [findings]} plus raw output."""
+    prims, pinned = probe_stems()
+    quoted = lambda xs: ", ".join(f'"{x}"' for x in xs)
+    src = (PROBE_TEMPLATE
+           .replace("@ROOTS@", quoted(sorted(set(roots))))
+           .replace("@PRIMS@", quoted(prims))
+           .replace("@PINNED@", quoted(pinned))
+           .replace("@HOPS@", str(hops + 1)))
+    with tempfile.NamedTemporaryFile("w", suffix=".lean", delete=False) as fh:
+        fh.write(src)
+        path = fh.name
+    try:
+        proc = subprocess.run(["lake", "env", "lean", path],
+                              cwd=REPO, capture_output=True, text=True)
+    finally:
+        os.unlink(path)
+    out = proc.stdout + proc.stderr
+    # Any nonzero exit is rejected before the output is read: the probe can
+    # print findings and then die, and a partial walk proves nothing about the
+    # constants it never reached.  Same rule as the axiom sweep.
+    if proc.returncode != 0:
+        raise RuntimeError(f"the routing probe exited {proc.returncode}\n{out[-3000:]}")
+    diag = re.compile(r"^.*\.lean:\d+:\d+: error")
+    if any(diag.match(ln) for ln in out.splitlines()):
+        raise RuntimeError(f"the routing probe did not elaborate\n{out[-3000:]}")
+    for tag in ("ROUTE_STEM_UNRESOLVED", "ROUTE_UNRESOLVED",
+                "ROUTE_DISPATCH_UNRESOLVED", "ROUTE_UNNARROWABLE"):
+        bad = re.findall(rf"{tag} (\S+)", out)
+        if bad:
+            raise RuntimeError(f"{tag}: {sorted(set(bad))}")
+    found: dict = {r: [] for r in roots}
+    for r, f in re.findall(r"ROUTE_FINDING (\S+) (\S+)", out):
+        found.setdefault(r, []).append(f)
+    return found, out
 
 
 def lean_files() -> list[str]:
@@ -380,59 +579,37 @@ def strip_comments(body: str) -> str:
     return "\n".join(l for l in body.split("\n") if not l.strip().startswith("--"))
 
 
-def collapse_whitespace(body: str) -> str:
-    """Collapse every whitespace run to one space.
-
-    PR #861 review round 24: the boot-*write* patterns first shipped with
-    `[^\\n]{0,100}`, so a call whose arguments wrap — which in Lean is simply a
-    call longer than the line budget — slipped past them, and the self-test's
-    probes were all single-line so it passed with the gap.  Matching against a
-    normalized body makes the `{0,100}` budget a distance in tokens rather than
-    in source characters, so indentation and line breaks cannot hide a literal
-    boot core.  The `BOOT_READS` patterns were never affected (`\\s` matches a
-    newline); this is the newer patterns' own regression.
-    """
-    return re.sub(r"\s+", " ", body)
-
-
 def called_names(body: str) -> set[str]:
     return set(re.findall(r"[A-Za-z_][A-Za-z0-9_']*", body))
 
 
 def scan(percore: dict[str, str], bodies: dict[str, str], depth: int,
          allow: dict[tuple[str, str], str]) -> list[tuple[str, str, str, str]]:
+    """Findings per syscall, from the elaborated environment.
+
+    `bodies` is accepted and ignored — it is the source index the previous
+    engine walked, kept in the signature only so the two self-test call sites
+    read unchanged.  The walk itself now happens inside Lean: `run_probe`
+    resolves each root to a constant, follows `getUsedConstants` for `depth`
+    hops, and reports both a reference to a boot-pinned single-core form and an
+    application of a per-core primitive whose argument IS `bootCoreId`.
+    """
+    del bodies
+    roots = sorted(set(percore.values()))
+    found, _out = run_probe(roots, depth)
+    by_root: dict[str, list[str]] = {}
+    for r, fs in found.items():
+        by_root[r] = fs
     findings: list[tuple[str, str, str, str]] = []
     for sid, op in sorted(percore.items()):
-        seen: set[str] = set()
-        frontier = [op]
-        for _ in range(depth):
-            nxt: list[str] = []
-            for name in frontier:
-                if name in seen or name not in bodies:
-                    continue
-                seen.add(name)
-                body = strip_comments(bodies[name])
-                for sym, why in BOOT_PINNED.items():
-                    if re.search(rf"(?<![A-Za-z0-9_']){sym}(?![A-Za-z0-9_'])", body):
-                        if (sid, sym) in allow:
-                            continue
-                        findings.append((sid, name, sym, why))
-                flat = collapse_whitespace(body)
-                for pat in BOOT_READS:
-                    if pat.search(flat):
-                        if (sid, pat.pattern) in allow:
-                            continue
-                        findings.append((sid, name, pat.pattern,
-                                         "reads the boot core's scheduler slot directly"))
-                for pat in BOOT_WRITES:
-                    if pat.search(flat):
-                        if (sid, pat.pattern) in allow:
-                            continue
-                        findings.append((sid, name, pat.pattern,
-                                         "writes a per-core scheduler slot at a literal "
-                                         "bootCoreId; pass the operation's own core"))
-                nxt.extend(called_names(body) & bodies.keys())
-            frontier = nxt
+        for full in sorted(set(by_root.get(op, []))):
+            short = full.rsplit(".", 1)[-1]
+            if (sid, short) in allow or (sid, full) in allow:
+                continue
+            why = (BOOT_PINNED.get(short)
+                   or "per-core primitive applied at a literal bootCoreId; "
+                      "pass the operation's own core")
+            findings.append((sid, op, short, why))
     return findings
 
 
@@ -442,6 +619,11 @@ def main() -> int:
     if "--depth" in sys.argv:
         depth = int(sys.argv[sys.argv.index("--depth") + 1])
 
+    # Source index, still used for *root resolution* — verifying that a mapped
+    # label names a definition the dispatch arm actually calls.  Detection no
+    # longer uses it: that happens in `run_probe`, against Lean's elaborated
+    # environment.  Resolution is a question about the data tables and the
+    # dispatch source, which text answers correctly.
     bodies = index_definitions()
     canonical = parse_map(CANON, "syscallIdToEnforcementName")
     percore = dict(canonical)
@@ -487,37 +669,6 @@ def main() -> int:
         # two, and the last one pins that a genuine per-core call (core taken
         # from `determineTargetCore`, not a literal) is NOT flagged, so the
         # patterns cannot be "fixed" into rejecting correct code.
-        write_probes = [
-            ("removeRunnableOnCore st tid bootCoreId", True),
-            ("setCurrentOnCore bootCoreId none", True),
-            ("handleRescheduleSgiOnCore st bootCoreId", True),
-            ("let st2 := enqueueRunnableOnCore st1 tid bootCoreId", True),
-            ("switchToThreadOnCore st tid (determineTargetCore st tid)", False),
-            # Round 24: the same violations with their arguments wrapped, which
-            # is how a real call of this length is written.  These are the
-            # probes whose absence let the single-line gap ship.
-            ("removeRunnableOnCore st tid\n            bootCoreId", True),
-            ("let st2 :=\n  setCurrentOnCore\n    bootCoreId\n    none", True),
-            ("switchToThreadOnCore st tid\n  (determineTargetCore st tid)", False),
-            # Round 25: the derived slots.  Each of these passed the gate
-            # before the inventory came from `SchedulerState` itself.
-            ("setActiveDomainOnCore bootCoreId d", True),
-            ("setDomainScheduleIndexOnCore bootCoreId 0", True),
-            ("setDomainTimeRemainingOnCore bootCoreId n", True),
-            ("setLastTimeoutErrorsOnCore bootCoreId []", True),
-            # Round 28: a long composed argument.  Under the old 100-character
-            # budget this was invisible; as one parenthesized argument it is
-            # caught regardless of length.
-            ("removeRunnableOnCore (rebuild (merge alphaState betaState) "
-             "(collate gammaQueue deltaQueue epsilonQueue) "
-             "(resolve zetaBinding etaBinding thetaBinding iotaBinding) "
-             "(finalize kappaSnapshot lambdaSnapshot muSnapshot)) "
-             "targetThreadId bootCoreId", True),
-            ("setCurrentOnCore (project (compose one two three four five six "
-             "seven eight nine ten eleven twelve)).scheduler bootCoreId", True),
-            # ... and a distant, unrelated mention still is not a finding.
-            ("removeRunnableOnCore st tid c\n  let other := lookup bootCoreId", False),
-        ]
         # Round 25: the derivation must see every per-core slot.  A parse that
         # silently returns a subset is the failure mode the hand-written list
         # already demonstrated, so the count is pinned rather than trusted.
@@ -528,68 +679,48 @@ def main() -> int:
                   f"{sorted(PER_CORE_FIELDS)}, expected {sorted(want_fields)}.  If a field "
                   f"was added to SchedulerState, extend this set in the same commit.")
             return 1
-        # Round 26: probe BOTH spellings per field -- dot-notation (receiver
-        # before the name) and explicit application (receiver between the name
-        # and the core), wrapped as well.  Probing only the first is what let
-        # the explicit form go unmatched for every field.
-        for f in PER_CORE_FIELDS:
-            for spelling in (f"{f}OnCore bootCoreId",
-                             f"{f}OnCore st.scheduler bootCoreId",
-                             f"{f}OnCore\n  sched\n  bootCoreId",
-                             # Round 27: computed receivers.
-                             f"{f}OnCore (prepare st).scheduler bootCoreId",
-                             f"{f}OnCore (mk (f x) y).scheduler Concurrency.bootCoreId"):
-                if not any(pat.search(collapse_whitespace(spelling))
-                           for pat in BOOT_READS):
-                    print(f"[per-core-routing] SELF-TEST FAIL: no read pattern covers "
-                          f"{spelling!r}")
-                    return 1
-        # Two negatives, both real: a read at a computed core, and the
-        # `find?`-with-boot-fallback shape in `determineExecutingCore`, which a
-        # bounded any-character gap did flag.
-        for benign in ("currentOnCore st.scheduler (determineTargetCore st tid)",
-                       "(Concurrency.allCores.find? (fun c => "
-                       "st.scheduler.currentOnCore c == some tid)).getD\n"
-                       "    Concurrency.bootCoreId"):
-            if any(pat.search(collapse_whitespace(benign)) for pat in BOOT_READS):
-                print(f"[per-core-routing] SELF-TEST FAIL: read patterns flag a "
-                      f"genuine per-core read: {benign!r}")
-                return 1
-        for probe, want in write_probes:
-            got = any(pat.search(collapse_whitespace(probe)) for pat in BOOT_WRITES)
-            if got != want:
-                verb = "missed" if want else "false-positived on"
-                print(f"[per-core-routing] SELF-TEST FAIL: boot-write patterns "
-                      f"{verb}: {probe!r}")
-                return 1
-        # Round 15: the `@[attribute]` / `def` form must index its real body.
-        # Checked structurally rather than by naming one definition, so a rename
-        # cannot quietly retire the check: no indexed body may consist solely of
-        # attribute lines.  Before the fix EVERY attributed declaration in the
-        # tree indexed that way — `suspendThreadInner` came out as the single
-        # line `@[export suspend_thread_inner]` — so a boot-pinned call inside
-        # any of them was invisible and the gate passed vacuously.
-        # A correctly indexed body always contains its own `def`/`abbrev`
-        # keyword; a truncated one stops above it.  That is the exact test —
-        # "consists only of attribute lines" would misread the same-line
-        # `@[inline] def foo := bar` form, whose one line is the whole body.
-        attributed = [n for n, b in bodies.items()
-                      if any(ln.lstrip().startswith("@[") for ln in b.split("\n"))]
-        attr_only = sorted(n for n in attributed
-                           if not re.search(r"(?<![A-Za-z0-9_'])(?:def|abbrev)"
-                                            r"(?![A-Za-z0-9_'])", bodies[n]))
-        if attr_only:
-            print("[per-core-routing] SELF-TEST FAIL: these declarations indexed to "
-                  "their attribute line alone, so their bodies are never scanned:")
-            for n in attr_only[:10]:
-                print(f"  {n}")
+        # Round 29 (the rewrite): the checks below are about the ENGINE the
+        # gate now runs.  The pattern probes they replace tested regexes that
+        # no longer exist; six review rounds of them is what motivated moving
+        # detection into the elaborated environment.
+        #
+        # (1) The dispatch reach must be substantial.  This is the exact
+        # fail-open that shipped in the first attempt: the disambiguation seeds
+        # are `private` definitions, Lean mangles those to `_private.…`, the
+        # full-name lookup resolved none of them, and the narrowing it drives
+        # silently did nothing while the gate still printed a verdict.  The
+        # observable symptom was `ROUTE_DISPATCH_REACH 3` — the three
+        # unresolved seeds.  A floor of 500 is far below the real figure
+        # (~2200) and far above the broken one.
+        _f, probe_out = run_probe(["schedContextUnbindOnCore"], depth)
+        m = re.search(r"ROUTE_DISPATCH_REACH (\d+)", probe_out)
+        if not m:
+            print("[per-core-routing] SELF-TEST FAIL: the probe reported no dispatch "
+                  "reach at all.")
             return 1
-        if not attributed:
-            print("[per-core-routing] SELF-TEST FAIL: no attributed declaration found "
-                  "at all — the attribute-form probe is vacuous.")
+        if int(m.group(1)) < 500:
+            print(f"[per-core-routing] SELF-TEST FAIL: dispatch reach is "
+                  f"{m.group(1)}, so short-name disambiguation is not working. "
+                  f"The usual cause is a seed in `routeDispatch` that no longer "
+                  f"resolves — they are `private`, so they are found by stem.")
             return 1
-        print(f"[per-core-routing] SELF-TEST PASS: {len(attributed)} attributed "
-              f"declaration(s) index a body beyond their attribute line.")
+
+        # (2) The collision that disambiguation exists for must still be
+        # disambiguated.  `registerService` is both the syscall operation and a
+        # boot builder that legitimately writes `runQueueOnCore bootCoreId`
+        # (at boot there is no other core).  Walking both reported the builder
+        # against `.serviceRegister`; this is that regression as a witness.
+        print(f"[per-core-routing] SELF-TEST PASS: dispatch reach {m.group(1)} "
+              f"constants, so short-name disambiguation is live.")
+        svc, _ = run_probe(["registerServiceChecked"], depth)
+        if svc.get("registerServiceChecked"):
+            print("[per-core-routing] SELF-TEST FAIL: `registerServiceChecked` picked "
+                  "up findings from a same-named constant outside the dispatch reach "
+                  f"({svc['registerServiceChecked']}).")
+            return 1
+        print("[per-core-routing] SELF-TEST PASS: the `registerService` "
+              "builder/operation collision stays disambiguated.")
+
         print(f"[per-core-routing] SELF-TEST PASS: reach {depth} detects all of "
               f"{sorted(expected)} in the pre-SMP map "
               f"({len(detected)} arm(s) flagged there in total).")
