@@ -2588,16 +2588,16 @@ private def runRunQueueComparisonChecks : IO Unit := do
 /-- §5.3  The set-of-cores algebra and its coverage record. -/
 private def runCoreSetAlgebraChecks : IO Unit := do
   IO.println "--- §5.3 the set-of-cores confinement algebra ---"
-  assertBool "twenty-one cross-core transitions are covered"
-    (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 21))
-  assertBool "twenty of the twenty-one can name a core other than the executing one"
+  assertBool "twenty-two cross-core transitions are covered"
+    (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 22))
+  assertBool "twenty-one of the twenty-two can name a core other than the executing one"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
-      SeLe4n.Kernel.crossCoreTransitionWritesRemote).length = 20))
+      SeLe4n.Kernel.crossCoreTransitionWritesRemote).length = 21))
   assertBool "…and the wait is the one that cannot"
     (decide (SeLe4n.Kernel.crossCoreTransitionWritesRemote .notificationWait = false))
-  assertBool "fourteen of the twenty-one are the arms the live syscall dispatch reaches"
+  assertBool "fifteen of the twenty-two are the arms the live syscall dispatch reaches"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
-      SeLe4n.Kernel.crossCoreTransitionIsLiveArm).length = 14))
+      SeLe4n.Kernel.crossCoreTransitionIsLiveArm).length = 15))
   -- Round 14: routing the SchedContext arms through `determineTargetCore` made
   -- them remote writers.  `.schedContextUnbind` is audited; the other two are a
   -- COUNTED gap rather than a silent one, and deliberately not in the inventory,
@@ -2660,7 +2660,7 @@ private def runCoreSetAlgebraChecks : IO Unit := do
         n == "endpointReceiveDualOnCore"))
   assertBool "the covered-transition theorem names are pairwise distinct"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.map
-      SeLe4n.Kernel.crossCoreNiTheorem).eraseDups.length = 21))
+      SeLe4n.Kernel.crossCoreNiTheorem).eraseDups.length = 22))
   -- The load-bearing negative: the write set is *state-dependent*, so it is not
   -- a constant the theorem could be satisfying vacuously.  With no receiver the
   -- call writes one core; with a remote receiver waiting it writes two — and
