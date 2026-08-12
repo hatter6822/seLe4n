@@ -1119,7 +1119,8 @@ golden trace is byte-identical.
   block used under an already-capability-guarded context, consulting no
   information-flow policy).  **Re-anchored**: the plan's "23 entries" figure was
   written against the `v0.31.2` cut, and the live canonical count is 38, so the
-  per-core boundary is 39.  A *separate* list rather than an edit to the
+  per-core boundary starts at 39 and grew to **53** as SM8.B added the 2PL
+  bracket and the cross-core wrappers (`enforcementBoundaryPerCore_count`).  A *separate* list rather than an edit to the
   canonical one, because promoting the entry is SM8.E.3's sub-task and moving
   the base count here would leave SM8.E a figure to reconcile.  Completeness in
   three parts: the per-core list extends the canonical one (`rfl`), every
@@ -1314,8 +1315,13 @@ contention scenarios are timing scenarios.
 - [x] Lock-contention channel documented; boundary expanded (SM8.B, v0.33.5 —
       CC-5 registered with `withLockSet_preserves_projection` as its witness,
       which required erasing the per-object `lock` from the projection;
-      `enforcementBoundaryPerCore` at 39 entries, the canonical list's promotion
-      to 39 remaining as SM8.E.3).
+      `enforcementBoundaryPerCore` at **53** entries —
+      `enforcementBoundaryPerCore_count` is the authority, so read the figure
+      there rather than here; the *canonical* list's separate promotion 38 → 39
+      remains SM8.E.3.  This item said 39 until PR #861 review round 30, which
+      conflated the two lists: 39 is the canonical boundary after SM8.E.3, not
+      the per-core one, which is the canonical 38 plus the 2PL bracket plus the
+      cross-core wrappers.)
 - [ ] `DeclassificationEvent.originatingCore` field; audit trail updated.
 - [ ] Tier 0..3 green.
 
