@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/sm8b-per-core-ni-proofs-3ogvws",
-      "commit_sha": "c65030b085108366fe814302d7912725a22fe2ed",
-      "tree_sha": "80526fa50ad332a8c4dfaf1e0cfb7015aba4c2b7",
-      "committed_at_utc": "2026-08-12T20:49:26+00:00"
+      "commit_sha": "7838899013f163872748cd470530864f78d29f56",
+      "tree_sha": "1113e1812438d802ca03b8f3f46d54a3be5bea57",
+      "committed_at_utc": "2026-08-12T22:38:13+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "9371db4061e0aadc9e4b4f01dc761a0b9782d81aef3decb12fe49536d05bd668"
+    "source_digest": "d95a0e8438465b575b79076ce680394267fc7d60ec34debf7e9708d2372542a0"
   },
   "summary": {
     "module_count": 342,
-    "declaration_count": 15046
+    "declaration_count": 15039
   },
   "readme_sync": {
     "version": "0.33.5",
     "lean_toolchain": "v4.28.0",
     "production_files": 274,
-    "production_loc": 255112,
+    "production_loc": 255085,
     "test_files": 68,
     "test_loc": 52301,
-    "proved_theorem_lemma_decls": 8489,
+    "proved_theorem_lemma_decls": 8482,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -107006,7 +107006,7 @@
     {
       "module": "SeLe4n.Kernel.Lifecycle.Operations.Cleanup",
       "path": "SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean",
-      "declaration_count": 23,
+      "declaration_count": 16,
       "declarations": [
         {
           "kind": "namespace",
@@ -107039,7 +107039,7 @@
         {
           "kind": "def",
           "name": "retypeRunningTargetRejected",
-          "line": 75,
+          "line": 80,
           "called": [
             "KernelObject",
             "SystemState",
@@ -107050,7 +107050,7 @@
         {
           "kind": "theorem",
           "name": "retypeRunningTargetRejected_tcb",
-          "line": 80,
+          "line": 85,
           "called": [
             "SystemState",
             "TCB",
@@ -107061,85 +107061,8 @@
         },
         {
           "kind": "theorem",
-          "name": "retypeRunningTargetRejected_cnode",
-          "line": 83,
-          "called": [
-            "CNode",
-            "SystemState",
-            "retypeRunningTargetRejected",
-            "st"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "retypeRunningTargetRejected_endpoint",
-          "line": 86,
-          "called": [
-            "Endpoint",
-            "SystemState",
-            "retypeRunningTargetRejected",
-            "st"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "retypeRunningTargetRejected_notification",
-          "line": 89,
-          "called": [
-            "Notification",
-            "SystemState",
-            "retypeRunningTargetRejected",
-            "st"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "retypeRunningTargetRejected_reply",
-          "line": 92,
-          "called": [
-            "Reply",
-            "SystemState",
-            "retypeRunningTargetRejected",
-            "st"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "retypeRunningTargetRejected_vspaceRoot",
-          "line": 95,
-          "called": [
-            "SystemState",
-            "VSpaceRoot",
-            "retypeRunningTargetRejected",
-            "st"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "retypeRunningTargetRejected_untyped",
-          "line": 98,
-          "called": [
-            "SystemState",
-            "UntypedObject",
-            "retypeRunningTargetRejected",
-            "st"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "retypeRunningTargetRejected_schedContext",
-          "line": 101,
-          "called": [
-            "SchedContext",
-            "SystemState",
-            "retypeRunningTargetRejected",
-            "st"
-          ]
-        },
-        {
-          "kind": "theorem",
           "name": "threadCurrentOnSomeCore_iff",
-          "line": 105,
+          "line": 89,
           "called": [
             "SystemState",
             "ThreadId",
@@ -107152,7 +107075,7 @@
         {
           "kind": "def",
           "name": "removeThreadFromQueue",
-          "line": 149,
+          "line": 133,
           "called": [
             "IntrusiveQueue",
             "SystemState",
@@ -107167,7 +107090,7 @@
         {
           "kind": "theorem",
           "name": "removeThreadFromQueue_tcb_present",
-          "line": 162,
+          "line": 146,
           "called": [
             "IntrusiveQueue",
             "SystemState",
@@ -107183,7 +107106,7 @@
         {
           "kind": "def",
           "name": "spliceOutMidQueueNode",
-          "line": 177,
+          "line": 161,
           "called": [
             "SystemState",
             "ThreadId",
@@ -107199,7 +107122,7 @@
         {
           "kind": "def",
           "name": "removeFromAllEndpointQueues",
-          "line": 212,
+          "line": 196,
           "called": [
             "Endpoint",
             "SystemState",
@@ -107216,7 +107139,7 @@
         {
           "kind": "def",
           "name": "removeFromAllNotificationWaitLists",
-          "line": 250,
+          "line": 234,
           "called": [
             "Notification",
             "SystemState",
@@ -107232,7 +107155,7 @@
         {
           "kind": "def",
           "name": "cleanupDonatedSchedContext",
-          "line": 276,
+          "line": 260,
           "called": [
             "KernelError",
             "SystemState",
@@ -107247,7 +107170,7 @@
         {
           "kind": "theorem",
           "name": "cleanupDonatedSchedContext_scheduler_eq",
-          "line": 288,
+          "line": 272,
           "called": [
             "SystemState",
             "ThreadId",
@@ -107259,7 +107182,7 @@
         {
           "kind": "theorem",
           "name": "cleanupDonatedSchedContext_machine_eq",
-          "line": 305,
+          "line": 289,
           "called": [
             "SystemState",
             "ThreadId",
@@ -107271,7 +107194,7 @@
         {
           "kind": "theorem",
           "name": "cleanupDonatedSchedContext_tlbShootdown_eq",
-          "line": 320,
+          "line": 304,
           "called": [
             "SystemState",
             "ThreadId",
@@ -107283,7 +107206,7 @@
         {
           "kind": "def",
           "name": "cleanupTcbReferences",
-          "line": 342,
+          "line": 326,
           "called": [
             "Kernel",
             "SystemState",
@@ -108013,7 +107936,7 @@
         {
           "kind": "def",
           "name": "lifecycleCleanupPipeline",
-          "line": 1063,
+          "line": 1052,
           "called": [
             "KernelError",
             "KernelObject",
@@ -108026,7 +107949,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleCleanupPipeline_eq",
-          "line": 1070,
+          "line": 1059,
           "called": [
             "KernelObject",
             "ObjId",
@@ -108039,7 +107962,7 @@
         {
           "kind": "theorem",
           "name": "cleanupTcbReferences_flat_subset",
-          "line": 1076,
+          "line": 1065,
           "called": [
             "SystemState",
             "ThreadId",
@@ -108055,7 +107978,7 @@
         {
           "kind": "theorem",
           "name": "detachCNodeSlots_scheduler_eq",
-          "line": 1086,
+          "line": 1075,
           "called": [
             "CNode",
             "ObjId",
@@ -108071,7 +107994,7 @@
         {
           "kind": "theorem",
           "name": "detachCNodeSlots_machine_eq",
-          "line": 1101,
+          "line": 1090,
           "called": [
             "CNode",
             "ObjId",
@@ -108087,7 +108010,7 @@
         {
           "kind": "theorem",
           "name": "detachCNodeSlots_tlbShootdown_eq",
-          "line": 1114,
+          "line": 1103,
           "called": [
             "CNode",
             "ObjId",
@@ -108103,7 +108026,7 @@
         {
           "kind": "theorem",
           "name": "cleanupTcbReferences_scheduler_eq_removeRunnableFromAllCores",
-          "line": 1125,
+          "line": 1114,
           "called": [
             "SystemState",
             "ThreadId",
@@ -108117,7 +108040,7 @@
         {
           "kind": "theorem",
           "name": "lifecyclePreRetypeCleanup_rejects_current_anywhere",
-          "line": 1147,
+          "line": 1136,
           "called": [
             "CoreId",
             "KernelObject",
@@ -108133,7 +108056,7 @@
         {
           "kind": "theorem",
           "name": "cleanupTcbReferences_machine_eq",
-          "line": 1163,
+          "line": 1152,
           "called": [
             "SystemState",
             "ThreadId",
@@ -108147,7 +108070,7 @@
         {
           "kind": "theorem",
           "name": "lifecyclePreRetypeCleanup_flat_subset",
-          "line": 1172,
+          "line": 1161,
           "called": [
             "KernelObject",
             "ObjId",
@@ -108171,7 +108094,7 @@
         {
           "kind": "theorem",
           "name": "lifecyclePreRetypeCleanup_tlbShootdown_eq",
-          "line": 1249,
+          "line": 1238,
           "called": [
             "KernelObject",
             "ObjId",
@@ -108190,13 +108113,13 @@
         {
           "kind": "namespace",
           "name": "Internal",
-          "line": 1301,
+          "line": 1290,
           "called": []
         },
         {
           "kind": "def",
           "name": "lifecycleRetypeObject",
-          "line": 1337,
+          "line": 1326,
           "called": [
             "CSpaceAddr",
             "Kernel",
@@ -108213,7 +108136,7 @@
         {
           "kind": "theorem",
           "name": "cspaceLookupSlot_pair_state_eq",
-          "line": 1365,
+          "line": 1354,
           "called": [
             "CSpaceAddr",
             "Capability",
@@ -108225,7 +108148,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_tlbShootdown_eq",
-          "line": 1379,
+          "line": 1368,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -108242,7 +108165,7 @@
         {
           "kind": "def",
           "name": "lifecycleRevokeDeleteRetype",
-          "line": 1445,
+          "line": 1434,
           "called": [
             "CSpaceAddr",
             "Kernel",

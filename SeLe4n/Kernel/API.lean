@@ -111,10 +111,10 @@ completed before implementation.
 
 | Operation | seL4 Reference | Rationale | Prerequisite |
 |-----------|---------------|-----------|--------------|
-| `setPriority` | `seL4_TCB_SetPriority` | **IMPLEMENTED** (D2, v0.24.1). `setPriorityOp` in `SchedContext/PriorityManagement.lean`, wired as `SyscallId.tcbSetPriority`. | Complete |
-| `setMCPriority` | `seL4_TCB_SetMCPriority` | **IMPLEMENTED** (D2, v0.24.1). `setMCPriorityOp` in `SchedContext/PriorityManagement.lean`, wired as `SyscallId.tcbSetMCPriority`. | Complete |
-| `suspend` | `seL4_TCB_Suspend` | **IMPLEMENTED** (D1, v0.24.0). `suspendThread` in `Lifecycle/Suspend.lean`, wired as `SyscallId.tcbSuspend`. | Complete |
-| `resume` | `seL4_TCB_Resume` | **IMPLEMENTED** (D1, v0.24.0). `resumeThread` in `Lifecycle/Suspend.lean`, wired as `SyscallId.tcbResume`. | Complete |
+| `setPriority` | `seL4_TCB_SetPriority` | **IMPLEMENTED** (D2, v0.24.1; per-core reroute WS-SM SM8.B). Wired as `SyscallId.tcbSetPriority` to `setPriorityOnCore` in `SchedContext/PriorityManagementPerCore.lean` (`setPriorityOp` remains its boot-core instance). | Complete |
+| `setMCPriority` | `seL4_TCB_SetMCPriority` | **IMPLEMENTED** (D2, v0.24.1; per-core reroute WS-SM SM8.B). Wired as `SyscallId.tcbSetMCPriority` to `setMCPriorityOnCore` in `SchedContext/PriorityManagementPerCore.lean`. | Complete |
+| `suspend` | `seL4_TCB_Suspend` | **IMPLEMENTED** (D1, v0.24.0; per-core reroute WS-SM SM6.E). Wired as `SyscallId.tcbSuspend` to `suspendThreadOnCore` in `Lifecycle/Suspend.lean` (`suspendThread` remains its boot-core form). | Complete |
+| `resume` | `seL4_TCB_Resume` | **IMPLEMENTED** (D1, v0.24.0; per-core reroute WS-SM SM8.B, PR #861 round 10). Wired as `SyscallId.tcbResume` to `resumeThreadOnCoreLive` in `Lifecycle/Suspend.lean` (`resumeThread` remains its boot-core form). | Complete |
 | `setIPCBuffer` | `seL4_TCB_SetIPCBuffer` | **IMPLEMENTED** (D3, v0.24.2). `setIPCBufferOp` in `Architecture/IpcBufferValidation.lean`, wired as `SyscallId.tcbSetIPCBuffer`. | Complete |
 -/
 

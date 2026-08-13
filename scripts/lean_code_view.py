@@ -38,13 +38,14 @@ to match.
 
 Usage:
   lean_code_view.py FILE...            strip to stdout (single file)
-  lean_code_view.py --mirror DIR PATH... build/refresh a stripped mirror
+  lean_code_view.py --overlay DIR      build/refresh the whole-repo overlay
   lean_code_view.py --self-test        run the witness suite
 """
 
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 
 _IDENT_TAIL = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_'?!")
@@ -248,11 +249,49 @@ def _self_test() -> int:
         failures += 1
         print(f"[lean-code-view] FAIL: only {checked} files walked; the tree scan is not running")
 
+    # The overlay lifecycle, on a throwaway source tree (never the real repo):
+    # build mirrors a .lean, refresh PRUNES a deleted source's mirror — file
+    # and directory both.  Without the prune, a deleted file's stale mirror
+    # keeps satisfying positive anchors locally while a fresh CI checkout
+    # fails them; a witness that only checked the build half would attest to
+    # nothing about that.
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        srcdir = os.path.join(tmp, "repo")
+        os.makedirs(os.path.join(srcdir, "Sub"))
+        keep = os.path.join(srcdir, "Keep.lean")
+        gone = os.path.join(srcdir, "Sub", "Gone.lean")
+        with open(keep, "w", encoding="utf-8") as fh:
+            fh.write("def keep := 1 -- comment\n")
+        with open(gone, "w", encoding="utf-8") as fh:
+            fh.write("def gone := 2\n")
+        out = os.path.join(tmp, "view")
+        overlay(out, repo=srcdir)
+        mirror_keep = os.path.join(out, "Keep.lean")
+        mirror_gone = os.path.join(out, "Sub", "Gone.lean")
+        if not (os.path.isfile(mirror_keep) and os.path.isfile(mirror_gone)):
+            failures += 1
+            print("[lean-code-view] FAIL: overlay did not mirror the throwaway tree")
+        elif "comment" in open(mirror_keep, encoding="utf-8").read():
+            failures += 1
+            print("[lean-code-view] FAIL: overlay mirror kept a comment")
+        os.unlink(gone)
+        os.rmdir(os.path.dirname(gone))
+        overlay(out, repo=srcdir)
+        if os.path.exists(mirror_gone) or os.path.isdir(os.path.dirname(mirror_gone)):
+            failures += 1
+            print("[lean-code-view] FAIL: a deleted source's stale mirror survived the "
+                  "refresh — the prune is not running, and a positive anchor for a "
+                  "deleted symbol would still pass locally")
+        if not os.path.isfile(mirror_keep):
+            failures += 1
+            print("[lean-code-view] FAIL: the prune removed a mirror whose source exists")
+
     if failures:
         print(f"[lean-code-view] SELF-TEST FAILED ({failures})")
         return 1
     print(f"[lean-code-view] SELF-TEST PASS ({len(_CASES) + len(_PRESERVED)} cases, "
-          f"{checked} tree files)")
+          f"{checked} tree files, overlay prune witnessed)")
     return 0
 
 
@@ -272,28 +311,7 @@ def _lean_files(roots: list[str]) -> list[str]:
     return sorted(found)
 
 
-def _mirror(outdir: str, paths: list[str]) -> int:
-    """Materialise a stripped mirror, refreshing only what changed.
-
-    Mirrored under the repo-relative path so a gate can rewrite
-    `SeLe4n/Foo.lean` to `<outdir>/SeLe4n/Foo.lean` and leave every other
-    argument — patterns, flags, non-Lean paths — exactly as written.
-    """
-    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    written = 0
-    for path in _lean_files(paths):
-        rel = os.path.relpath(path, repo)
-        dest = os.path.join(outdir, rel)
-        if os.path.exists(dest) and os.path.getmtime(dest) >= os.path.getmtime(path):
-            continue
-        os.makedirs(os.path.dirname(dest), exist_ok=True)
-        with open(dest, "w", encoding="utf-8") as fh:
-            fh.write(strip(open(path, encoding="utf-8").read()))
-        written += 1
-    return written
-
-
-def overlay(outdir: str) -> str:
+def overlay(outdir: str, repo: str | None = None) -> str:
     """Build a whole-repo overlay whose `.lean` files are comment-free.
 
     Every `.lean` file is a real, stripped file; everything else — fixtures,
@@ -310,9 +328,41 @@ def overlay(outdir: str) -> str:
 
     `.git` and `.lake` are linked whole rather than walked: they are large, and
     neither holds a `.lean` file any gate reads.
+
+    Refreshing also **prunes**: an overlay entry whose source file no longer
+    exists is removed, directories included.  Without this the overlay only
+    ever grows, and a `.lean` file deleted from the repo leaves a stale
+    stripped mirror behind — which a positive anchor for a deleted symbol
+    would still match, locally, while a fresh CI checkout (empty overlay)
+    failed it.  Local-green-CI-red divergence is the exact failure shape the
+    shellcheck gap produced twice in this PR, so the overlay must not be able
+    to manufacture a third instance.
+
+    `repo` defaults to this repository; the parameter exists so the self-test
+    can exercise build/refresh/prune against a throwaway source tree without
+    touching the real one.
     """
-    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if repo is None:
+        repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     os.makedirs(outdir, exist_ok=True)
+
+    def prune(dirpath: str) -> None:
+        rel = os.path.relpath(dirpath, outdir)
+        src_dir = repo if rel == "." else os.path.join(repo, rel)
+        for entry in os.scandir(dirpath):
+            src = os.path.join(src_dir, entry.name)
+            if entry.is_symlink() or entry.is_file(follow_symlinks=False):
+                # lexists, not exists: a symlink whose target moved still has a
+                # live source entry and is repaired by link(), not pruned.
+                if not os.path.lexists(src):
+                    os.unlink(entry.path)
+            elif entry.is_dir(follow_symlinks=False):
+                if not os.path.isdir(src):
+                    shutil.rmtree(entry.path)
+                else:
+                    prune(entry.path)
+
+    prune(outdir)
 
     def link(src: str, dest: str) -> None:
         if os.path.islink(dest):
@@ -365,12 +415,6 @@ def main(argv: list[str]) -> int:
             print("usage: lean_code_view.py --overlay DIR", file=sys.stderr)
             return 2
         print(overlay(argv[1]))
-        return 0
-    if argv[0] == "--mirror":
-        if len(argv) < 3:
-            print("usage: lean_code_view.py --mirror DIR PATH...", file=sys.stderr)
-            return 2
-        _mirror(argv[1], argv[2:])
         return 0
     for path in argv:
         sys.stdout.write(strip(open(path, encoding="utf-8").read()))

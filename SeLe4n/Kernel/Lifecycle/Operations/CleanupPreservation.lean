@@ -955,17 +955,6 @@ theorem detachCNodeSlots_lifecycle_eq
       CDT slot mappings to prevent orphaned derivation tree references. -/
 def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     (currentObj newObj : KernelObject) : Except KernelError SystemState :=
-  -- WS-SM SM8.B (PR #861 review round 39): **refuse to destroy a running
-  -- thread.**  See `threadCurrentOnSomeCore` for why: the sweep below clears
-  -- the current slot of whichever core runs the target, the executing core
-  -- included, and nothing schedules a successor there.  `.revocationRequired`
-  -- is the error this path already uses for "clear this precondition first"
-  -- (an in-use Reply, a TCB still holding a reply link), and it reads correctly
-  -- here as "suspend or switch away from this thread before destroying it".
-  --
-  -- Placed **first**, before every `let` that shadows `st`: the check has to
-  -- read the pre-state, and by the time the final `.tcb` arm runs the sweep has
-  -- already cleared the very slot it would test.
   -- Z7-P / AJ1-A (M-14): Return donated SchedContext before destroying TCB.
   -- Error propagated — failed cleanup would leave dangling SchedContext refs.
   match (match currentObj with

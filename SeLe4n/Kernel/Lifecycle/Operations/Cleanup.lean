@@ -68,10 +68,15 @@ def threadCurrentOnSomeCore (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
 /-- **WS-SM SM8.B (PR #861 review round 39): the retype's running-target
 rejection**, as a named predicate on the object being destroyed.
 
-Only a TCB can be running, so every other object kind is admitted outright —
-and stating that as `@[simp]` lemmas below is what lets the six non-TCB arms of
-`lifecyclePreRetypeCleanup`'s existing proofs reduce the guard away instead of
-each growing a `split`. -/
+The **named form** of the guard, for statements *about* the pipeline: the
+security tests assert it (a non-running victim is admitted, a running one is
+not) and the documentation cites it.  `lifecyclePreRetypeCleanup` itself tests
+`threadCurrentOnSomeCore` directly inside its `.tcb` arm — the arm has already
+matched on the object, so routing the Bool through this per-object match there
+would only make the existing proofs' reductions longer.  Only a TCB can be
+running, so every other object kind is admitted outright
+(`retypeRunningTargetRejected_tcb` is the one reduction consumers need; the
+non-TCB arms reduce by `rfl`). -/
 def retypeRunningTargetRejected (st : SystemState) (currentObj : KernelObject) : Bool :=
   match currentObj with
   | .tcb tcb => threadCurrentOnSomeCore st tcb.tid
@@ -79,27 +84,6 @@ def retypeRunningTargetRejected (st : SystemState) (currentObj : KernelObject) :
 
 @[simp] theorem retypeRunningTargetRejected_tcb (st : SystemState) (tcb : TCB) :
     retypeRunningTargetRejected st (.tcb tcb) = threadCurrentOnSomeCore st tcb.tid := rfl
-
-@[simp] theorem retypeRunningTargetRejected_cnode (st : SystemState) (cn : CNode) :
-    retypeRunningTargetRejected st (.cnode cn) = false := rfl
-
-@[simp] theorem retypeRunningTargetRejected_endpoint (st : SystemState) (ep : Endpoint) :
-    retypeRunningTargetRejected st (.endpoint ep) = false := rfl
-
-@[simp] theorem retypeRunningTargetRejected_notification (st : SystemState) (n : Notification) :
-    retypeRunningTargetRejected st (.notification n) = false := rfl
-
-@[simp] theorem retypeRunningTargetRejected_reply (st : SystemState) (r : SeLe4n.Kernel.Reply) :
-    retypeRunningTargetRejected st (.reply r) = false := rfl
-
-@[simp] theorem retypeRunningTargetRejected_vspaceRoot (st : SystemState) (v : VSpaceRoot) :
-    retypeRunningTargetRejected st (.vspaceRoot v) = false := rfl
-
-@[simp] theorem retypeRunningTargetRejected_untyped (st : SystemState) (u : UntypedObject) :
-    retypeRunningTargetRejected st (.untyped u) = false := rfl
-
-@[simp] theorem retypeRunningTargetRejected_schedContext (st : SystemState) (sc : SeLe4n.Kernel.SchedContext) :
-    retypeRunningTargetRejected st (.schedContext sc) = false := rfl
 
 /-- WS-SM SM8.B: the guard is exactly "some core has this thread current". -/
 theorem threadCurrentOnSomeCore_iff (st : SystemState) (tid : SeLe4n.ThreadId) :
