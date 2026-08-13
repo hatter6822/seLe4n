@@ -48,7 +48,11 @@ fallback is excluded structurally rather than by tuning.
 Source text is still read for *root resolution* -- which definition a mapped
 enforcement label names, and whether the dispatch arm calls it.  That is a
 question about the data tables and the dispatch source, which text answers
-correctly.
+correctly -- and, from round 44, the text read is the **code view**
+(`lean_code_view.strip` at every read), so a trailing comment cannot satisfy
+root verification, a block-comment code sample cannot inject a dispatch arm
+or override a mapping arm, and docstring prose cannot register a cross-core
+inventory entry.
 
 Usage:  scripts/check_live_arm_per_core_routing.py [--depth N] [--list] [--self-test]
 """
@@ -70,6 +74,32 @@ NIFILE = os.path.join(SRC, "Kernel", "InformationFlow", "NonInterferenceCrossCor
 CANON = os.path.join(SRC, "Kernel", "InformationFlow", "Enforcement", "Wrappers.lean")
 ALLOWLIST = os.path.join(REPO, "scripts", "per_core_routing_allowlist.json")
 ALIASES = os.path.join(REPO, "scripts", "per_core_routing_aliases.json")
+
+sys.path.insert(0, os.path.join(REPO, "scripts"))
+import lean_code_view  # noqa: E402  (needs the path insert above)
+
+
+def read_code(path: str) -> str:
+    """Read a Lean source through the code view: comments blanked in place.
+
+    PR #861 review round 44: the gate's raw reads were the last comment-blind
+    scans on this surface.  `strip_comments` dropped whole `--` lines but kept
+    *trailing* comments, so `replacement st  -- oldMappedRoot` fed
+    `oldMappedRoot` to `called_names` and a retired root surviving only in
+    prose verified as called — the fail-open class this gate exists to close,
+    reproduced inside it.  The same raw reads let a block-comment code sample
+    inject a phantom dispatch arm (`dispatch_arm_bodies`), *override* a
+    mapping arm (`parse_map`, where the later regex match wins the dict
+    write), or register a phantom cross-core inventory entry
+    (`parse_live_arm_syscalls`, whose `=> some .<syscall>` pattern matched
+    docstring prose and thereby suppressed a missing-inventory finding).
+    Stripping at the read closes all four at the helper, the way `test_lib.sh`
+    routes `run_check` — and the way the `SchedulerState` field parse already
+    did (round 43).  `lean_code_view.strip` preserves length, line count and
+    column offsets, so every line-arithmetic consumer is unaffected.
+    """
+    return lean_code_view.strip(open(path, encoding="utf-8").read())
+
 
 # Scheduler effects that name the boot core rather than a supplied `CoreId`.
 # Each is the *single-core* member of a per-core pair; its sibling takes a core.
@@ -131,10 +161,7 @@ def per_core_scheduler_fields() -> list[str]:
     the code view, so a docstring inside it that mentions `Vector … numCores`
     cannot inject a field that does not exist.
     """
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    import lean_code_view
-
-    src = lean_code_view.strip(open(STATE, encoding="utf-8").read())
+    src = read_code(STATE)
     m = re.search(r"^structure SchedulerState where$(.*?)^\S", src, re.M | re.S)
     if not m:
         raise SystemExit("[per-core-routing] cannot locate `structure SchedulerState`")
@@ -614,10 +641,14 @@ def index_definitions() -> dict[str, str]:
     `@[export suspend_thread_inner]`.  A boot-pinned primitive inside any such
     body was invisible and the gate reported PASS — the fail-open mode this
     gate exists to eliminate, in the gate itself.
+
+    Round 44: read through the code view, so a `def` inside a block-comment
+    code sample is not indexed as a resolvable definition and a comment's
+    `:=` cannot truncate the signature `takes_a_core` inspects.
     """
     bodies: dict[str, str] = {}
     for path in lean_files():
-        text = open(path).read()
+        text = read_code(path)
         lines = text.split("\n")
         starts = []
         for m in DECL.finditer(text):
@@ -670,8 +701,14 @@ def dispatch_arm_bodies(path: str) -> dict[str, list[str]]:
     An arm runs to the next `| .ctor =>` at the same or shallower indent, or to
     the next column-0 top-level, whichever comes first.  Arms for one
     constructor across several dispatch functions are concatenated.
+
+    Round 44: read through the code view.  The arm text this returns is
+    comment-free, so a retired root surviving only in a trailing comment
+    cannot satisfy root verification, and a block-comment code sample cannot
+    inject a phantom arm (`ARM` matches `| .ctor =>` at any indent, which a
+    comment can otherwise contain verbatim).
     """
-    text = open(path).read()
+    text = read_code(path)
     lines = text.split("\n")
     marks = [(text[:m.start()].count("\n"), len(m.group(1)), m.group(2))
              for m in ARM.finditer(text)]
@@ -711,7 +748,10 @@ def dispatch_arm_bodies(path: str) -> dict[str, list[str]]:
 
 
 def parse_map(path: str, fn: str) -> dict[str, str]:
-    text = open(path).read()
+    """Read `fn`'s `| .ctor => "label"` arms (through the code view — a
+    block-comment sample below the real arm would otherwise *override* it,
+    since the later regex match wins the dict write; round 44)."""
+    text = read_code(path)
     i = text.index(f"def {fn} : SyscallId → String")
     j = TOP.search(text, text.index("\n", i) + 1)
     seg = text[i: j.start() if j else len(text)]
@@ -724,9 +764,12 @@ def parse_map(path: str, fn: str) -> dict[str, str]:
 def parse_live_arm_syscalls(path: str) -> set[str]:
     """The `SyscallId`s the cross-core NI inventory claims as live arms.
 
-    Read from `crossCoreLiveArmSyscall`'s `=> some .<syscall>` arms.
+    Read from `crossCoreLiveArmSyscall`'s `=> some .<syscall>` arms — through
+    the code view, because the pattern matches *anywhere* in the segment and a
+    docstring citing an arm shape would otherwise register a phantom entry,
+    suppressing the missing-inventory finding for that syscall (round 44).
     """
-    text = open(path).read()
+    text = read_code(path)
     i = text.index("def crossCoreLiveArmSyscall : CrossCoreTransition → Option SyscallId")
     j = TOP.search(text, text.index("\n", i) + 1)
     seg = text[i: j.start() if j else len(text)]
@@ -768,11 +811,6 @@ def strip_arm_patterns(body: str) -> str:
     boundary that actually separates the two is the *leading dot*.
     """
     return LEADING_DOT_CTOR.sub(" ", body)
-
-
-def strip_comments(body: str) -> str:
-    body = re.sub(r"/-.*?-/", " ", body, flags=re.S)
-    return "\n".join(l for l in body.split("\n") if not l.strip().startswith("--"))
 
 
 def called_names(body: str) -> set[str]:
@@ -890,9 +928,8 @@ def main() -> int:
             "  scalarField : Nat\n"
             "def after := 1\n"
         )
-        import lean_code_view as _lcv
         _body = re.search(r"^structure SchedulerState where$(.*?)^\S",
-                          _lcv.strip(witness), re.M | re.S)
+                          lean_code_view.strip(witness), re.M | re.S)
         _decls: list[tuple[str, list[str]]] = []
         for _line in (_body.group(1).splitlines() if _body else []):
             _h = re.match(r"^\s{2}([a-z][A-Za-z0-9_']*)\s*:", _line)
@@ -910,6 +947,67 @@ def main() -> int:
             return 1
         print("[per-core-routing] SELF-TEST PASS: the per-core field parse survives line "
               "wrapping and ignores comments.")
+        # Round 44: every source read is through the code view, and these
+        # witnesses pin the four closures over shapes the raw reads got wrong.
+        # A retired root surviving only in a *trailing* comment must not
+        # satisfy root verification (`strip_comments` kept those lines whole);
+        # a block-comment code sample must inject neither a dispatch arm nor
+        # a `parse_map` override (the later regex match wins the dict write);
+        # and prose citing `=> some .<syscall>` must not register a cross-core
+        # inventory entry.  The raw-text assert keeps the fixture honest: the
+        # traps must really be present in the bytes on disk, so the witness
+        # cannot drift vacuous by losing them.
+        fixture = (
+            "def dispatchWithCapWitness (st : Nat) : SyscallId → Nat\n"
+            "  | .tcbResume =>\n"
+            "    resumeThreadOnCoreLive st  -- resumeThread\n"
+            "  /- a retired sample:\n"
+            "| .phantomArm =>\n"
+            "    phantomArmRoot st\n"
+            "  -/\n"
+            "  | .send => endpointSendWitnessRoot st\n"
+            "def syscallMapWitness : SyscallId → String\n"
+            "  | .send => \"realLabel\"\n"
+            "/- an old sample:\n"
+            "  | .send => \"phantomLabel\"\n"
+            "-/\n"
+            "def crossCoreLiveArmSyscall : CrossCoreTransition → Option SyscallId\n"
+            "  /- prose citing the arm shape `| .x => some .phantomSyscall` -/\n"
+            "  | .realTransition => some .realSyscall\n"
+            "def after := 1\n"
+        )
+        with tempfile.NamedTemporaryFile("w", suffix=".lean", delete=False,
+                                         encoding="utf-8") as _tf:
+            _tf.write(fixture)
+            _fx = _tf.name
+        try:
+            _raw = open(_fx, encoding="utf-8").read()
+            _arms = dispatch_arm_bodies(_fx)
+            _called: set[str] = set()
+            for _a in _arms.get("tcbResume", []):
+                _called |= called_names(strip_arm_patterns(_a))
+            _bad = []
+            if "resumeThreadOnCoreLive" not in _called:
+                _bad.append("the real call disappeared from the arm")
+            if "resumeThread" in _called:
+                _bad.append("a trailing comment reached called_names")
+            if "phantomArm" in _arms:
+                _bad.append("a block-comment sample injected a dispatch arm")
+            if parse_map(_fx, "syscallMapWitness") != {"send": "realLabel"}:
+                _bad.append("a block-comment sample overrode a parse_map arm")
+            if parse_live_arm_syscalls(_fx) != {"realSyscall"}:
+                _bad.append("comment prose registered an inventory entry")
+            if ("-- resumeThread" not in _raw or "phantomLabel" not in _raw
+                    or "phantomSyscall" not in _raw or "phantomArm" not in _raw):
+                _bad.append("the fixture lost its traps (witness gone vacuous)")
+            if _bad:
+                print("[per-core-routing] SELF-TEST FAIL: comment-blind source "
+                      "reads — " + "; ".join(_bad) + ".")
+                return 1
+        finally:
+            os.unlink(_fx)
+        print("[per-core-routing] SELF-TEST PASS: root verification, arm "
+              "splitting, map parsing and the inventory read see code only.")
         # Round 29 (the rewrite): the checks below are about the ENGINE the
         # gate now runs.  The pattern probes they replace tested regexes that
         # no longer exist; six review rounds of them is what motivated moving
@@ -986,7 +1084,10 @@ def main() -> int:
         if not armlist:
             unverified.append((sid, root, "no `| .<syscall> =>` arm in API.lean"))
             continue
-        called_per_arm = [called_names(strip_arm_patterns(strip_comments(a))) for a in armlist]
+        # The arm text is comment-free at the read (round 44), so tokenizing
+        # it here sees code alone — `strip_comments`, which kept trailing
+        # `--` comments, is retired rather than repaired.
+        called_per_arm = [called_names(strip_arm_patterns(a)) for a in armlist]
         # Every root this syscall is declared to have: the mapped one, plus any
         # siblings named in the aliases file under `<label>#alt`.  Declared
         # rather than inferred — taking each arm's callees as roots would walk
