@@ -1238,10 +1238,14 @@ def runInformationFlowChecks : IO Unit := do
   IO.println "enforcement boundary completeness verified"
 
   -- V6-H: DeclassificationEvent audit trail
+  -- WS-SM SM8.C: the record now carries the originating core and a typed
+  -- authorization basis.  Timestamps are log positions (0, 1), which is what
+  -- the SM8.C producer computes; the pre-SM8.C fixture used 1 and 2, a
+  -- numbering nothing maintained.
   let event : SeLe4n.Kernel.DeclassificationEvent :=
     { srcDomain := ⟨2⟩, dstDomain := ⟨0⟩, targetObject := ⟨902⟩,
-      authorizationBasis := "DeclassificationPolicy.canDeclassify",
-      timestamp := 1 }
+      authorizationBasis := .policyRule,
+      timestamp := 0, originatingCore := bootCoreId }
   let emptyLog : SeLe4n.Kernel.DeclassificationAuditLog := []
   let log1 := SeLe4n.Kernel.recordDeclassification emptyLog event
   expect "recording to empty log yields length 1"
@@ -1250,8 +1254,8 @@ def runInformationFlowChecks : IO Unit := do
     (log1.contains event)
   let event2 : SeLe4n.Kernel.DeclassificationEvent :=
     { srcDomain := ⟨3⟩, dstDomain := ⟨1⟩, targetObject := ⟨903⟩,
-      authorizationBasis := "system-integrator-override",
-      timestamp := 2 }
+      authorizationBasis := .integratorOverride "system-integrator-override",
+      timestamp := 1, originatingCore := bootCoreId }
   let log2 := SeLe4n.Kernel.recordDeclassification log1 event2
   expect "second record yields length 2"
     (log2.length = 2)
@@ -1259,8 +1263,21 @@ def runInformationFlowChecks : IO Unit := do
     (log2.contains event)
   expect "second event present"
     (log2.contains event2)
+  -- WS-SM SM8.C.5: the basis is typed, and renders to exactly the string the
+  -- pre-SM8.C `String` field held — an external audit consumer reads the same
+  -- bytes it read before, while the kernel can now check the claim.
   expect "authorizationBasis captured"
-    (event.authorizationBasis == "DeclassificationPolicy.canDeclassify")
+    (event.authorizationBasis.render == "DeclassificationPolicy.canDeclassify")
+  expect "integrator authority renders verbatim"
+    (event2.authorizationBasis.render == "system-integrator-override")
+  expect "the kernel can vouch for its own basis but not for an integrator's"
+    (event.authorizationBasis.kernelVerifiable &&
+      !event2.authorizationBasis.kernelVerifiable)
+  -- WS-SM SM8.C.1/.3: the originating core is recorded and valid by
+  -- construction (`CoreId` is `Fin numCores`).
+  expect "every event names a core in range"
+    (event.originatingCore.val < SeLe4n.Kernel.Concurrency.numCores &&
+      event2.originatingCore.val < SeLe4n.Kernel.Concurrency.numCores)
 
   IO.println "declassification audit trail verified"
 

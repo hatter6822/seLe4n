@@ -1,3 +1,138 @@
+## v0.33.7 — WS-SM SM8.C: the per-core declassification audit, and the endpoint flow policy wired
+
+**SM8.C LANDED** (plan
+[`docs/planning/SMP_INFORMATION_FLOW_PLAN.md`](docs/planning/SMP_INFORMATION_FLOW_PLAN.md)
+§4.3 / §5 SM8.C.1 … SM8.C.7), all seven sub-tasks, plus SM8.B's registered debt
+(a) — whose closure target the plan assigns to this phase.
+
+**The starting position.**  Declassification is the one path allowed to move
+information *down* the lattice, and the tree gated it without recording it.
+`declassifyStore` (`Enforcement/Soundness.lean`) checked its two conditions and
+stored the object; `DeclassificationEvent` (`Policy.lean`) described an audit
+record whose docstring said the enforcement wrappers produced it and the caller
+recorded it.  Neither happened — **nothing in the tree constructed a
+`DeclassificationEvent`**, so the audit trail was a type with no writer.  Under
+SMP it would not have been enough anyway: an event that does not say *where* it
+happened cannot attribute a chain that crosses cores.  Per the
+implement-the-improvement rule the producer was built rather than the claim
+weakened.
+
+**SM8.C.1 — the record and the producer.**  `DeclassificationEvent` gains
+`originatingCore : CoreId`, deliberately **not** defaulted (a default would
+silently attribute every event to the boot core, which is the exact failure the
+field exists to prevent), and its `authorizationBasis` becomes a typed
+`DeclassificationBasis` — `String` admitted any claim, including one naming a
+check that never ran, so "the recorded basis is the check that passed" was a
+convention rather than a fact.  Open-endedness is preserved where it was real:
+`integratorOverride` still carries an arbitrary authority string, and
+`DeclassificationBasis.render` reproduces the pre-SM8.C strings byte for byte, so
+an external audit consumer reads exactly what it read before while the kernel can
+now *check* the claim.  New staged module
+`InformationFlow/DeclassificationPerCore.lean` supplies `declassifyStoreOnCore`:
+the same gate, threading the append-only log, appending exactly one event per
+authorized downgrade (`declassifyStoreOnCore_records_one`), with the state effect
+provably identical to the unaudited gate (`declassifyStoreOnCore_ok_inv`) — so
+every existing theorem about `declassifyStore`, `declassifyStore_NI` included,
+carries over unchanged.  Timestamps are the log position, making V6-H's "monotonic
+counter" structural rather than a producer's promise, and the counter is
+**global**: `declassificationAuditLog_timestamp_identifies_event` is what a
+per-core counter would destroy.
+
+**SM8.C.3 — attribution.**  A record whose subject is whatever the caller wrote
+is a claim, not an audit trail.  `declassifyStoreFromCore` *reads* the source
+domain off the subject the executing core is running (`currentOnCore c`, the same
+per-core read SM8.B's `endpointFlowCheckAtCore` uses) and fails closed on an idle
+core, so `declassifyStoreFromCore_event_attributable` holds **unconditionally** —
+in the post-state, which is the state an auditor inspects.  The load-bearing
+negative `declassifyStoreOnCore_admits_unattributable` shows the unattributed
+entry point really does accept a domain its subject does not hold.  Core validity
+(SM8.C.3's literal ask) is structural: `CoreId` is `Fin numCores`, stated as
+`declassificationEvent_originatingCore_valid` and its `allCores` companion so a
+future widening to a raw `Nat` has to supply a real bound.
+
+**SM8.C.4 / SM8.C.2 — the per-core views, and the chain that needs the global
+log.**  `auditLogOnCore` is a *view* of one global log, not a log per core, and
+`declassificationAuditLog_partitions_by_core` proves the views partition it
+exactly (`allCores_nodup` is what makes it a partition rather than a cover;
+SM8.C.3's membership result is what makes it a cover rather than a partition of a
+subset).  The design is decided by
+`crossCoreChain_not_within_one_view`: **a chain that crosses cores is contained in
+no single core's view** — one log per core, the natural SMP implementation, would
+put each hop in a different buffer with nothing relating them.  Its positive half
+`declassificationChain_recorded_across_cores` composes two audited
+declassifications on two cores into a linked, cross-core, fully recorded chain.
+
+**SM8.C.6 — the rules, as data with dependently-typed evidence.**  Eight rules,
+each supplying a proof of *its own* claim (`declassificationRuleEvidence`), so
+adding a rule without deciding what proves it is a missing-arm error and
+misattributing a proof is a type error.  The substantive ones: **laundering** —
+`declassificationChain_hop_authorization_does_not_compose` exhibits a *well-formed*
+policy in which `2 → 1` and `1 → 0` are both authorized downgrades and `2 → 0` is
+not, so per-hop authorization does not compose and only a reader of the trail can
+detect it (`chainLaunders`, decidable); **the endpoint rule** —
+`endpointOverride_is_not_a_declassification_basis`, the consumer SM8.B built
+`endpointFlowCheck_restricted_subset_perCore` for, stated against the
+state-resolved `endpointFlowCheckAtCore` so the core is load-bearing rather than
+decorative; and **Rule 4** — `declassifyStoreOnCore_state_core_independent`, that
+the core an event names is audit information and never authority.
+
+**SM8.C.5 — `authorizationBasis_perCore`.**  Basis verification is an invariant
+of the audited declassification on whichever core it runs: if every event so far
+passes the kernel's own check then so does every event afterwards, from the
+`auditLogBasesVerified … [] = true` boot witness.  `…_core_independent` is an
+`rfl` worth having — re-attributing an event to another core cannot turn a
+failing basis into a passing one — and it is the tripwire a future per-core
+declassification policy would break.  `auditLog_integratorOverride_not_kernelIssued`
+is the detection result the typed field buys: an audit consumer can now tell that
+some entry did not come from the kernel's own path.
+
+**SM8.B registered debt (a) — CLOSED, and closed with the safe semantics.**
+WS-E5/H-04 introduced `EndpointFlowPolicy` and V6-G proved what a well-formed one
+must satisfy, but no context carried one, so **nothing in the kernel ever read
+it**: the feature was specified and never wired.  `LabelingContext` gains
+`endpointPolicy`, defaulted to "no override anywhere", and the four endpoint-keyed
+gates — the `endpointSendDualChecked` / `endpointReceiveDualChecked` /
+`endpointCallChecked` / `endpointReplyRecvChecked` wrappers, the live cross-core
+`.send` and `.call` dispatches, and the live `.receive` / `.replyRecv` arms — now
+branch on `endpointFlowGate`, which **conjoins** the global lattice check with the
+endpoint's override rather than replacing it.  The conjunction is the point:
+`endpointFlowGate_implies_securityFlowsTo` takes **no hypothesis**, so V6-G's
+`endpointPolicyRestricted` becomes structural instead of a deployment obligation —
+a misconfigured override cannot widen anything.  That in turn strengthens SM8.C's
+Rule 3 to `liveEndpointOverride_is_not_a_declassification_basis`, which needs no
+restriction premise at all.  Every `…_flowDenied` theorem keeps the hypothesis it
+had (a denied global flow denies the gate whatever the override says); the
+`…_when_allowed` and `checkedDispatch_*_eq_unchecked` theorems gain a real
+`hOverride` premise, and the three new gate-level soundness theorems
+(`enforcementSoundness_endpoint{Send,Receive,Call}…_gate`) carry both conjuncts so
+the `securityFlowsTo` forms every pre-SM8.C consumer asked for are derived rather
+than re-proved.  The reply *leg* of `.replyRecv` is deliberately left on the plain
+lattice check — the override governs flows that cross the endpoint, and
+`receiver → prevCaller` does not.  Unconfigured deployments are unchanged
+(`endpointFlowGate_eq_securityFlowsTo_of_no_override`); the trace is byte-identical.
+
+**Scope boundary, recorded rather than left implicit.**  A *refused*
+declassification produces no audit entry: the V6-H record has no outcome field and
+its basis names what *permitted* the downgrade.  The refusal is fail-closed
+(`declassifyStoreOnCore_denied_no_audit_entry` — no state change, no entry), so
+this is a monitoring gap rather than an enforcement one, registered as SM8.C
+follow-on work in the plan.
+
+**Tests.**  `tests/SmpInformationFlowSuite.lean` gains §6.1–§6.8 (316 → 360
+runtime assertions), every group with a load-bearing negative: the unattributed
+entry point really does accept a foreign source domain; no single core's view
+contains the whole chain; authorize the composition and the same chain stops
+laundering; a declassification into an object the observer *can* see is visible;
+and a **widening** endpoint override cannot open a flow the lattice denies.  Every
+public symbol of the new module is `#check`-anchored, `tests/InformationFlowSuite.lean`
+is updated for the record change (with the render round-trip pinned), and Tier-3
+gains anchors for both cuts including negative pins that the core field stays
+undefaulted, the basis stays typed and no gate site returns to a bare
+`securityFlowsTo`.  Zero sorry/axiom — `scripts/check_module_axioms.py` sweeps the
+new module with the other four (2019 environment constants, all clean).
+
+Staged 58 → 59 (`InformationFlow.DeclassificationPerCore`).
+
 ## v0.33.6 — CodeQL: pin parity, and the mask that hid a broken gate
 
 **The failure.**  PRs #858 and #859 could not merge, each reporting `Code

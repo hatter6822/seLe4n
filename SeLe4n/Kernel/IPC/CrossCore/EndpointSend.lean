@@ -382,7 +382,9 @@ def endpointSendCrossCoreDispatchChecked
     SystemState × Except KernelError (CapTransferSummary × Option (CoreId × SgiKind)) :=
   if msg.registers.size > maxMessageRegisters then (st, .error .ipcMessageTooLarge)
   else if msg.caps.size > maxExtraCaps then (st, .error .ipcMessageTooManyCaps)
-  else if securityFlowsTo (ctx.threadLabelOf sender) (ctx.endpointLabelOf endpointId) then
+  -- WS-SM SM8.C: global lattice check AND this endpoint's configured override.
+  else if endpointFlowGate ctx endpointId (ctx.threadLabelOf sender)
+      (ctx.endpointLabelOf endpointId) then
     endpointSendDualWithCapsOnCore endpointId sender msg endpointRights senderCspaceRoot
       receiverSlotBase executingCore st
   else
@@ -401,7 +403,9 @@ theorem endpointSendCrossCoreDispatchChecked_flow_denied
       (ctx.endpointLabelOf endpointId) = false) :
     endpointSendCrossCoreDispatchChecked ctx endpointId sender msg endpointRights
         senderCspaceRoot receiverSlotBase executingCore st = (st, .error .flowDenied) := by
-  simp [endpointSendCrossCoreDispatchChecked, hTooLarge, hTooMany, hDeny]
+  -- WS-SM SM8.C: a denied global flow denies the gate whatever the override says.
+  simp [endpointSendCrossCoreDispatchChecked, hTooLarge, hTooMany,
+    endpointFlowGate_false_of_securityFlowsTo_false ctx endpointId _ _ hDeny]
 
 /-- WS-SM SM6: when the flow is permitted (and the message is within bounds, which
 the unchecked path re-checks itself), the checked cross-core send is exactly the
@@ -414,11 +418,15 @@ theorem endpointSendCrossCoreDispatchChecked_flow_allowed
     (hTooLarge : ¬ (msg.registers.size > maxMessageRegisters))
     (hTooMany : ¬ (msg.caps.size > maxExtraCaps))
     (hAllow : securityFlowsTo (ctx.threadLabelOf sender)
+      (ctx.endpointLabelOf endpointId) = true)
+    -- WS-SM SM8.C: the endpoint's override must admit the flow too.
+    (hOverride : endpointOverrideAllows ctx endpointId (ctx.threadLabelOf sender)
       (ctx.endpointLabelOf endpointId) = true) :
     endpointSendCrossCoreDispatchChecked ctx endpointId sender msg endpointRights
         senderCspaceRoot receiverSlotBase executingCore st
       = endpointSendDualWithCapsOnCore endpointId sender msg endpointRights
           senderCspaceRoot receiverSlotBase executingCore st := by
-  simp [endpointSendCrossCoreDispatchChecked, hTooLarge, hTooMany, hAllow]
+  simp [endpointSendCrossCoreDispatchChecked, hTooLarge, hTooMany,
+    endpointFlowGate_of ctx endpointId _ _ hAllow hOverride]
 
 end SeLe4n.Kernel

@@ -66,6 +66,7 @@ SMP_INFORMATION_FLOW = [
     "SeLe4n.Kernel.InformationFlow.NonInterferencePerCore",
     "SeLe4n.Kernel.InformationFlow.CovertChannelPerCore",
     "SeLe4n.Kernel.InformationFlow.NonInterferenceCrossCore",
+    "SeLe4n.Kernel.InformationFlow.DeclassificationPerCore",
 ]
 
 PROBE_TEMPLATE = """@IMPORTS@

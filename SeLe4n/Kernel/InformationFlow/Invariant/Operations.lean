@@ -328,12 +328,16 @@ theorem endpointSendDualChecked_NI
     (hStep₂ : endpointSendDualChecked ctx endpointId sender msg endpointRights
         senderCspaceRoot receiverSlotBase s₂ = .ok (r₂, s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
-  have hFlow := enforcementSoundness_endpointSendDualChecked ctx endpointId sender msg
+  -- WS-SM SM8.C: the gate the wrapper branched on carries both conjuncts; the
+  -- rewrite below needs the override half as well as the lattice half.
+  have hGate := enforcementSoundness_endpointSendDualChecked_gate ctx endpointId sender msg
     endpointRights senderCspaceRoot receiverSlotBase s₁ r₁ s₁' hStep₁
+  have hFlow := endpointFlowGate_implies_securityFlowsTo ctx endpointId _ _ hGate
+  have hOverride := endpointFlowGate_implies_override ctx endpointId _ _ hGate
   rw [endpointSendDualChecked_eq_endpointSendDualWithCaps_when_allowed ctx endpointId sender msg
-    endpointRights senderCspaceRoot receiverSlotBase s₁ hFlow] at hStep₁
+    endpointRights senderCspaceRoot receiverSlotBase s₁ hFlow hOverride] at hStep₁
   rw [endpointSendDualChecked_eq_endpointSendDualWithCaps_when_allowed ctx endpointId sender msg
-    endpointRights senderCspaceRoot receiverSlotBase s₂ hFlow] at hStep₂
+    endpointRights senderCspaceRoot receiverSlotBase s₂ hFlow hOverride] at hStep₂
   unfold lowEquivalent; rw [hProjection s₁ r₁ s₁' hStep₁, hProjection s₂ r₂ s₂' hStep₂]; exact hLow
 
 /-- WS-H8/H-07: If notificationSignalChecked succeeds, the resulting state
@@ -2642,9 +2646,16 @@ theorem endpointReceiveDualChecked_NI
     (hStep₁ : endpointReceiveDualChecked ctx endpointId receiver replyId s₁ = .ok (r₁, s₁'))
     (hStep₂ : endpointReceiveDualChecked ctx endpointId receiver replyId s₂ = .ok (r₂, s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
-  have hFlow := enforcementSoundness_endpointReceiveDualChecked ctx endpointId receiver replyId s₁ r₁ s₁' hStep₁
-  rw [endpointReceiveDualChecked_eq_endpointReceiveDual_when_allowed ctx endpointId receiver replyId s₁ hFlow] at hStep₁
-  rw [endpointReceiveDualChecked_eq_endpointReceiveDual_when_allowed ctx endpointId receiver replyId s₂ hFlow] at hStep₂
+  -- WS-SM SM8.C: the rewrite needs the endpoint override as well as the lattice
+  -- check, and the gate-level soundness theorem carries both.
+  have hGate := enforcementSoundness_endpointReceiveDualChecked_gate ctx endpointId receiver
+    replyId s₁ r₁ s₁' hStep₁
+  have hFlow := endpointFlowGate_implies_securityFlowsTo ctx endpointId _ _ hGate
+  have hOverride := endpointFlowGate_implies_override ctx endpointId _ _ hGate
+  rw [endpointReceiveDualChecked_eq_endpointReceiveDual_when_allowed ctx endpointId receiver
+    replyId s₁ hFlow hOverride] at hStep₁
+  rw [endpointReceiveDualChecked_eq_endpointReceiveDual_when_allowed ctx endpointId receiver
+    replyId s₂ hFlow hOverride] at hStep₂
   unfold lowEquivalent; rw [hProjection s₁ s₁' r₁ hStep₁, hProjection s₂ s₂' r₂ hStep₂]; exact hLow
 
 /-- R5-A/M-01: endpointReceiveDual NI — projection-based (internalized). -/

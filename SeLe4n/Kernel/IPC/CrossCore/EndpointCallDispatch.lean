@@ -168,7 +168,9 @@ def endpointCallCrossCoreDispatchChecked
     (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState) :
     SystemState × Except KernelError (CapTransferSummary × Option (CoreId × SgiKind)) :=
-  if securityFlowsTo (ctx.threadLabelOf caller) (ctx.endpointLabelOf endpointId) then
+  -- WS-SM SM8.C: global lattice check AND this endpoint's configured override.
+  if endpointFlowGate ctx endpointId (ctx.threadLabelOf caller)
+      (ctx.endpointLabelOf endpointId) then
     endpointCallCrossCoreDispatch endpointId caller msg endpointRights callerCspaceRoot
       receiverSlotBase executingCore st
   else
@@ -184,7 +186,10 @@ theorem endpointCallCrossCoreDispatchChecked_flow_denied
     (hDeny : securityFlowsTo (ctx.threadLabelOf caller) (ctx.endpointLabelOf endpointId) = false) :
     endpointCallCrossCoreDispatchChecked ctx endpointId caller msg endpointRights
         callerCspaceRoot receiverSlotBase executingCore st = (st, .error .flowDenied) := by
-  simp [endpointCallCrossCoreDispatchChecked, hDeny]
+  -- WS-SM SM8.C: a denied global flow denies the gate whatever the override says,
+  -- so the hypothesis is the one this theorem always had.
+  simp [endpointCallCrossCoreDispatchChecked,
+    endpointFlowGate_false_of_securityFlowsTo_false ctx endpointId _ _ hDeny]
 
 /-- WS-SM SM6.A: when the flow is permitted, the checked dispatch is exactly the
 unchecked cross-core dispatch — the guard is a pure precondition. -/
@@ -193,12 +198,16 @@ theorem endpointCallCrossCoreDispatchChecked_flow_allowed
     (msg : IpcMessage) (endpointRights : AccessRightSet)
     (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState)
-    (hAllow : securityFlowsTo (ctx.threadLabelOf caller) (ctx.endpointLabelOf endpointId) = true) :
+    (hAllow : securityFlowsTo (ctx.threadLabelOf caller) (ctx.endpointLabelOf endpointId) = true)
+    -- WS-SM SM8.C: the endpoint's override must admit the flow too.
+    (hOverride : endpointOverrideAllows ctx endpointId (ctx.threadLabelOf caller)
+      (ctx.endpointLabelOf endpointId) = true) :
     endpointCallCrossCoreDispatchChecked ctx endpointId caller msg endpointRights
         callerCspaceRoot receiverSlotBase executingCore st
       = endpointCallCrossCoreDispatch endpointId caller msg endpointRights
           callerCspaceRoot receiverSlotBase executingCore st := by
-  simp [endpointCallCrossCoreDispatchChecked, hAllow]
+  simp [endpointCallCrossCoreDispatchChecked,
+    endpointFlowGate_of ctx endpointId _ _ hAllow hOverride]
 
 -- ============================================================================
 -- §3  Characterisation theorems

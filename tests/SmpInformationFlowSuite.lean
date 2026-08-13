@@ -10,14 +10,15 @@
 import SeLe4n.Kernel.InformationFlow.ObservableStatePerCore
 import SeLe4n.Kernel.InformationFlow.CovertChannelPerCore
 import SeLe4n.Kernel.InformationFlow.NonInterferenceCrossCore
+import SeLe4n.Kernel.InformationFlow.DeclassificationPerCore
 import SeLe4n.Testing.StateBuilder
 
 /-!
-# WS-SM SM8.A / SM8.B — Per-core observable state and non-interference suite
+# WS-SM SM8.A / SM8.B / SM8.C — per-core observable state, non-interference and declassification audit
 
 Tier-2 (runtime) + Tier-3 (surface anchor) coverage for WS-SM Phases SM8.A
-(plan `docs/planning/SMP_INFORMATION_FLOW_PLAN.md` §5, sub-task SM8.A.6) and
-SM8.B (sub-task SM8.B.14).
+(plan `docs/planning/SMP_INFORMATION_FLOW_PLAN.md` §5, sub-task SM8.A.6),
+SM8.B (sub-task SM8.B.14) and SM8.C (sub-task SM8.C.7).
 
 * **§1 Surface anchors** — every public SM8.A symbol resolves at
   elaboration time, so a rename or removal fails the build.
@@ -47,6 +48,20 @@ raw lock field really did change — so the invisibility is the projection's
 doing, not a no-op), and §4.9 (the confinement premise of the four catch-all
 constructors is necessary: a remote-core write preserves the global projection
 and still moves a remote observer's view).
+
+**§6 is the SM8.C half**: the per-core declassification audit, run over a
+three-domain configuration (`linearOrder` base policy, a declassification policy
+authorizing `2 → 1` and `1 → 0` but not `2 → 0`) on the same four-core fixture.
+Every event it reads is produced by the real audited operation.  It exercises
+the producer (§6.1), attribution (§6.2), the per-core partition (§6.3), the
+cross-core chain (§6.4), laundering detection (§6.5), basis verification (§6.6)
+and the declassification's own per-core non-interference (§6.7).  Its
+load-bearing negatives are §6.2 (the *unattributed* entry point really does
+accept a source domain its subject does not hold), §6.4 (no single core's view
+contains the whole chain — the reason the log is global and the core is a
+field), §6.5 (authorize the composition and the same chain stops laundering, so
+the detector is not a constant) and §6.7 (a declassification into an object the
+observer *can* see is visible, as it must be).
 -/
 
 namespace SeLe4n.Testing.SmpInformationFlow
@@ -766,6 +781,151 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @nonInterference_release_of_perCore
 #check @nonInterference_release_of_perCore_observer
 
+-- §1.9  WS-SM SM8.C — the per-core declassification audit
+-- (`Policy.lean`'s extended record + `DeclassificationPerCore.lean`).  Every
+-- public symbol of the new module is pinned; its three `private` helpers
+-- (`sum_auditLogOnCore_lengths_nil` / `…_of_not_mem` / `…_cons` and the generic
+-- `two_le_length_of_distinct_mem`) are deliberately absent, being unreachable
+-- from another module by construction.
+
+-- SM8.C.1 — the extended record and its typed basis (`Policy.lean`)
+#check DeclassificationBasis
+#check @DeclassificationBasis.render
+#check @DeclassificationBasis.kernelVerifiable
+#check @DeclassificationBasis.render_policyRule
+#check @DeclassificationBasis.render_integratorOverride
+#check @DeclassificationBasis.kernelVerifiable_iff_policyRule
+#check @DeclassificationEvent.originatingCore
+#check @declassificationEvent_originatingCore_valid
+#check @declassificationEvent_originatingCore_mem_allCores
+#check @declassificationAuditLog_originatingCores_valid
+
+-- §1 of the module — the audit log as a totally ordered record
+#check @auditTimestampsFrom
+#check @declassificationAuditLogWellFormed
+#check @auditTimestampsFrom_iff
+#check @declassificationAuditLogWellFormed_iff
+#check @declassificationAuditLogWellFormed_nil
+#check @auditTimestampsFrom_append
+#check @recordDeclassification_preserves_wellFormed
+#check @declassificationAuditLog_timestamp_identifies_event
+
+-- SM8.C.1 — the producer
+#check @declassificationEventOnCore
+#check @declassifyStoreOnCore
+#check @declassifyStoreOnCore_of_ok
+#check @declassifyStoreOnCore_of_error
+#check @declassifyStoreOnCore_ok_inv
+#check @declassifyStoreOnCore_records_one
+#check @declassifyStoreOnCore_preserves_existing
+#check @declassifyStoreOnCore_originatingCore
+#check @declassifyStoreOnCore_basis_is_policyRule
+#check @declassifyStoreOnCore_timestamp
+#check @declassifyStoreOnCore_preserves_wellFormed
+#check @declassifyStoreOnCore_authorized
+#check @declassifyStoreOnCore_denied_no_audit_entry
+
+-- SM8.C.3 — attribution
+#check @declassificationSubjectDomainOnCore
+#check @declassificationEventAttributable
+#check @declassifyStoreFromCore
+#check @declassifyStoreFromCore_no_subject
+#check @declassifyStoreFromCore_eq_onCore
+#check @declassifyStore_scheduler_eq
+#check @declassifyStore_machine_eq
+#check @declassifyStoreFromCore_event_attributable
+#check @declassifyStoreOnCore_admits_unattributable
+#check @declassificationEventAttributable_not_state_stable
+
+-- SM8.C.4 — the per-core audit views and the partition
+#check @auditLogOnCore
+#check @mem_auditLogOnCore_iff
+#check @mem_auditLogOnCore_originatingCore
+#check @auditLogOnCore_sublist
+#check @auditLogOnCore_cons_self
+#check @auditLogOnCore_cons_ne
+#check @declassificationAuditLog_partitions_by_core
+#check @DeclassificationEvent_perCore_audit
+#check @auditLogOnCore_timestamp_identifies_event
+#check @declassifyStoreOnCore_recorded_in_own_view
+#check @declassificationEvent_not_in_other_view
+
+-- SM8.C.2 — cross-core chains
+#check @declassificationChainLinked
+#check @chainSourceDomain
+#check @chainTargetDomain
+#check @chainCores
+#check @chainIsCrossCore
+#check @chainRecordedIn
+#check @chainRecordedIn_iff
+#check @chainIsCrossCore_iff
+#check @mem_chainCores_iff
+#check @chainCores_nodup
+#check @chainCores_length_ge_two_of_crossCore
+#check @crossCoreChain_not_within_one_view
+#check @declassificationChain_recorded_across_cores
+
+-- SM8.C.6 — the rules
+#check @chainHopsAuthorized
+#check @chainCompositionAuthorized
+#check @chainLaunders
+#check @chainCompositionAuthorized_sound
+#check @declassificationChain_hop_authorization_does_not_compose
+#check @crossCoreChain_launders_witness
+#check @endpointFlowCheckAtCore_subject_exists
+#check @endpointOverride_is_not_a_declassification_basis
+#check @unrestricted_endpointOverride_is_an_unaudited_downgrade
+#check @declassifyStoreOnCore_state_core_independent
+
+-- SM8.C.5 — `authorizationBasis_perCore`
+#check @declassificationBasisKernelVerified
+#check @auditLogKernelIssued
+#check @auditLogBasesVerified
+#check @declassificationBasisKernelVerified_core_independent
+#check @declassifyStoreOnCore_event_basis_verified
+#check @authorizationBasis_perCore
+#check @auditLogBasesVerified_nil
+#check @declassifyStoreOnCore_preserves_kernelIssued
+#check @auditLog_integratorOverride_not_kernelIssued
+
+-- The declassification's own per-core non-interference
+#check @declassifyStore_confinedToCores_nil
+#check @declassifyStoreOnCore_preserves_projectionOnCore
+#check @declassifyStoreOnCore_perCore_NI
+#check @declassifyStoreOnCore_state_log_independent
+
+-- SM8.C.6 — the live per-endpoint flow gate (SM8.B registered debt (a), closed)
+#check @LabelingContext.endpointPolicy
+#check @endpointOverrideAllows
+#check @endpointFlowGate
+#check @endpointFlowGate_implies_securityFlowsTo
+#check @endpointFlowGate_implies_override
+#check @endpointFlowGate_of
+#check @endpointFlowGate_false_of_override_false
+#check @endpointFlowGate_false_of_securityFlowsTo_false
+#check @endpointFlowGate_eq_securityFlowsTo_of_no_override
+#check @endpointOverrideAllows_default
+#check @endpointFlowGate_is_not_securityFlowsTo
+#check @enforcementSoundness_endpointSendDualChecked_gate
+#check @enforcementSoundness_endpointReceiveDualChecked_gate
+#check @enforcementSoundness_endpointCallChecked_gate
+#check @liveEndpointOverride_is_not_a_declassification_basis
+#check @liveEndpointGate_denied_when_global_denied
+
+-- SM8.C.6 — the rule inventory as data
+#check DeclassificationRuleId
+#check @DeclassificationRuleId.all
+#check @DeclassificationRuleId.mem_all
+#check @DeclassificationRuleId.all_nodup
+#check @DeclassificationRuleId.evidenceProp
+#check @declassificationRuleEvidence
+#check @declassificationRuleEvidenceName
+#check @declassificationRuleStatement
+#check @declassificationRules_count
+#check @declassificationRuleEvidence_nonempty
+#check @declassificationRuleEvidence_distinct
+#check @declassificationRuleStatement_nonempty
+
 -- ============================================================================
 -- §2  Elaboration-time examples: each headline theorem applied
 -- ============================================================================
@@ -954,6 +1114,116 @@ example (ctx : LabelingContext) (c : CoreId) (L₁ L₂ : SecurityLabel)
     ∃ cn₂, (ObservableState.onCore ctx c L₂ s).objects oid = some (.cnode cn₂) ∧
       cn₂.lookup slot = some cap :=
   onCore_objects_cnode_slot_monotone ctx c hFlow s oid cn slot cap hGet hObs hSlot
+
+-- SM8.C.1: a successful audited declassification decomposes into the gate's own
+-- success and exactly one appended event — the transport every SM8.C proof uses.
+example (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy) (c : CoreId)
+    (src dst : SecurityDomain) (targetId : SeLe4n.ObjId) (obj : KernelObject)
+    (log log' : DeclassificationAuditLog) (st st' : SystemState)
+    (h : declassifyStoreOnCore ctx declPolicy c src dst targetId obj log st = .ok (log', st')) :
+    declassifyStore ctx declPolicy src dst targetId obj st = .ok ((), st') ∧
+      log' = recordDeclassification log (declassificationEventOnCore c src dst targetId log) :=
+  declassifyStoreOnCore_ok_inv ctx declPolicy c src dst targetId obj log log' st st' h
+
+-- SM8.C.1: the event a downgrade records names the core that performed it, and
+-- carries the basis the kernel itself issues.
+example (c : CoreId) (src dst : SecurityDomain) (targetId : SeLe4n.ObjId)
+    (log : DeclassificationAuditLog) :
+    (declassificationEventOnCore c src dst targetId log).originatingCore = c ∧
+      (declassificationEventOnCore c src dst targetId log).authorizationBasis = .policyRule :=
+  ⟨declassifyStoreOnCore_originatingCore c src dst targetId log,
+   declassifyStoreOnCore_basis_is_policyRule c src dst targetId log⟩
+
+-- SM8.C.3: every event the attributed entry point records is attributable in the
+-- state an auditor inspects — no hypothesis relating the caller to the state.
+example (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy) (c : CoreId)
+    (dst : SecurityDomain) (targetId : SeLe4n.ObjId) (obj : KernelObject)
+    (log log' : DeclassificationAuditLog) (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (hCur : st.scheduler.currentOnCore c = some tid)
+    (h : declassifyStoreFromCore ctx declPolicy c dst targetId obj log st = .ok (log', st')) :
+    declassificationEventAttributable ctx st'
+      (declassificationEventOnCore c (ctx.threadDomainOf tid) dst targetId log) :=
+  declassifyStoreFromCore_event_attributable ctx declPolicy c dst targetId obj log log' st st'
+    tid hCur h
+
+-- SM8.C.4: the per-core views partition the log — the counting half.
+example (log : DeclassificationAuditLog) :
+    (allCores.map (fun c => (auditLogOnCore log c).length)).sum = log.length :=
+  declassificationAuditLog_partitions_by_core log
+
+-- SM8.C.2: a chain that crosses cores is contained in no single core's view.
+example (log : DeclassificationAuditLog) (chain : List DeclassificationEvent)
+    (hCross : chainIsCrossCore chain = true) (c : CoreId) :
+    ¬ (∀ e ∈ chain, e ∈ auditLogOnCore log c) :=
+  crossCoreChain_not_within_one_view log chain hCross c
+
+-- SM8.C.6: a restricted per-endpoint override can never authorize a downgrade —
+-- the SM8.B `endpointFlowCheck_restricted_subset_perCore` consumer.
+example (ctx : GenericLabelingContext) (epPolicy : EndpointFlowPolicy)
+    (declPolicy : DeclassificationPolicy) (endpointId : SeLe4n.ObjId) (st : SystemState)
+    (c : CoreId) (tid : SeLe4n.ThreadId)
+    (hCur : st.scheduler.currentOnCore c = some tid)
+    (hRestricted : endpointPolicyRestricted_perCore ctx.policy epPolicy)
+    (hAdmitted : endpointFlowCheckAtCore ctx epPolicy endpointId st c = true) :
+    DeclassificationPolicy.isDeclassificationAuthorized ctx.policy declPolicy
+      (ctx.threadDomainOf tid) (ctx.endpointDomainOf endpointId) = false :=
+  endpointOverride_is_not_a_declassification_basis ctx epPolicy declPolicy endpointId st c tid
+    hCur hRestricted hAdmitted
+
+-- SM8.C.5: basis verification is an invariant of the audited declassification,
+-- on an arbitrary core.
+example (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy) (c : CoreId)
+    (src dst : SecurityDomain) (targetId : SeLe4n.ObjId) (obj : KernelObject)
+    (log log' : DeclassificationAuditLog) (st st' : SystemState)
+    (hVerified : auditLogBasesVerified ctx.policy declPolicy log = true)
+    (h : declassifyStoreOnCore ctx declPolicy c src dst targetId obj log st = .ok (log', st')) :
+    auditLogBasesVerified ctx.policy declPolicy log' = true :=
+  authorizationBasis_perCore ctx declPolicy c src dst targetId obj log log' st st' hVerified h
+
+-- SM8.C: the declassification's ∀-core non-interference at a non-observable
+-- target — the SMP-faithful form of `declassifyStore_NI`.
+example (ctx : LabelingContext) (observer : IfObserver) (gctx : GenericLabelingContext)
+    (declPolicy : DeclassificationPolicy) (c₁ c₂ : CoreId) (src dst : SecurityDomain)
+    (targetId : SeLe4n.ObjId) (obj₁ obj₂ : KernelObject)
+    (log₁ log₂ log₁' log₂' : DeclassificationAuditLog) (s₁ s₂ s₁' s₂' : SystemState)
+    (hLow : lowEquivalent_smp ctx observer s₁ s₂)
+    (hHigh : objectObservable ctx observer targetId = false)
+    (hInv₁ : s₁.objects.invExt) (hInv₂ : s₂.objects.invExt)
+    (h₁ : declassifyStoreOnCore gctx declPolicy c₁ src dst targetId obj₁ log₁ s₁ = .ok (log₁', s₁'))
+    (h₂ : declassifyStoreOnCore gctx declPolicy c₂ src dst targetId obj₂ log₂ s₂ = .ok (log₂', s₂')) :
+    lowEquivalent_smp ctx observer s₁' s₂' :=
+  declassifyStoreOnCore_perCore_NI ctx observer gctx declPolicy c₁ c₂ src dst targetId obj₁ obj₂
+    log₁ log₂ log₁' log₂' s₁ s₂ s₁' s₂' hLow hHigh hInv₁ hInv₂ h₁ h₂
+
+-- SM8.C.6 (live gate): the wired per-endpoint override can never authorize a
+-- downgrade, with NO restriction hypothesis — the conjunctive gate makes V6-G's
+-- `endpointPolicyRestricted` structural.
+example (ctx : LabelingContext) (declPolicy : DeclassificationPolicy)
+    (endpointId : SeLe4n.ObjId) (srcLabel dstLabel : SecurityLabel)
+    (h : endpointFlowGate ctx endpointId srcLabel dstLabel = true) :
+    DeclassificationPolicy.isDeclassificationAuthorized (liftLegacyContext ctx).policy declPolicy
+      (embedLegacyLabel srcLabel) (embedLegacyLabel dstLabel) = false :=
+  liveEndpointOverride_is_not_a_declassification_basis ctx declPolicy endpointId srcLabel
+    dstLabel h
+
+-- SM8.C.6: every rule's evidence really proves that rule (the dependently-typed
+-- obligation applied at each id).
+example : DeclassificationRuleId.compositionSoundness.evidenceProp :=
+  declassificationRuleEvidence .compositionSoundness
+example : DeclassificationRuleId.hopAuthorizationDoesNotCompose.evidenceProp :=
+  declassificationRuleEvidence .hopAuthorizationDoesNotCompose
+example : DeclassificationRuleId.endpointOverrideIsNotABasis.evidenceProp :=
+  declassificationRuleEvidence .endpointOverrideIsNotABasis
+example : DeclassificationRuleId.coreDimensionIsAuditOnly.evidenceProp :=
+  declassificationRuleEvidence .coreDimensionIsAuditOnly
+example : DeclassificationRuleId.perCorePartition.evidenceProp :=
+  declassificationRuleEvidence .perCorePartition
+example : DeclassificationRuleId.crossCoreChainNeedsGlobalLog.evidenceProp :=
+  declassificationRuleEvidence .crossCoreChainNeedsGlobalLog
+example : DeclassificationRuleId.attributionFromRunningSubject.evidenceProp :=
+  declassificationRuleEvidence .attributionFromRunningSubject
+example : DeclassificationRuleId.auditIsNotObservable.evidenceProp :=
+  declassificationRuleEvidence .auditIsNotObservable
 
 -- ============================================================================
 -- §3  Runtime assertions (Tier-2): the four-thread / four-core IF fixture
@@ -3541,6 +3811,436 @@ private def runPolicyAndReleaseBridgeChecks : IO Unit := do
       fun st st' h => nonInterference_release_of_perCore niLabeling niLowObserver st st' h
      true)
 
+-- ============================================================================
+-- §6  SM8.C — the per-core declassification audit (SM8.C.7 scenarios)
+-- ============================================================================
+--
+-- A three-domain configuration over the same four-core fixture: `linearOrder`
+-- as the base policy (so every downgrade is genuinely denied by it), a
+-- declassification policy authorizing `2 → 1` and `1 → 0` and *not* `2 → 0`,
+-- and the two cores that are running something as the two hops' subjects.
+-- Every event below is produced by the real audited operation, so the audit
+-- trail these assertions read is the one the kernel would write.
+
+private def declassSecret : SecurityDomain := ⟨2⟩
+private def declassMiddle : SecurityDomain := ⟨1⟩
+private def declassPublic : SecurityDomain := ⟨0⟩
+
+/-- The generic (domain-valued) context the declassification gate reads.
+
+Core 1's subject `highCurrent` is in the secret domain and core 0's subject
+`lowCurrent` in the middle one, so the two hops of the cross-core chain are
+performed by two different subjects on two different cores — and, because both
+enter through `declassifyStoreFromCore`, both source domains are *read off the
+state* rather than supplied. -/
+private def declassContext : GenericLabelingContext :=
+  { policy := .linearOrder
+    objectDomainOf := fun _ => declassPublic
+    threadDomainOf := fun tid =>
+      if tid = highCurrent then declassSecret
+      else if tid = lowCurrent then declassMiddle
+      else declassPublic
+    endpointDomainOf := fun oid => if oid = highEndpoint then declassSecret else declassPublic
+    serviceDomainOf := fun _ => declassPublic }
+
+/-- Authorizes each hop of `2 → 1 → 0` and **not** the composition `2 → 0`. -/
+private def launderingDeclPolicy : DeclassificationPolicy :=
+  { canDeclassify := fun src dst =>
+      (decide (src.id = 2) && decide (dst.id = 1)) ||
+      (decide (src.id = 1) && decide (dst.id = 0)) }
+
+/-- The negative control: the same policy with the composition authorized too,
+so the laundering detector must stay silent. -/
+private def compositeAuthorizedDeclPolicy : DeclassificationPolicy :=
+  { canDeclassify := fun src dst =>
+      (decide (src.id = 2) && decide (dst.id = 1)) ||
+      (decide (src.id = 1) && decide (dst.id = 0)) ||
+      (decide (src.id = 2) && decide (dst.id = 0)) }
+
+private def declassTargetA : SeLe4n.ObjId := ⟨1018⟩
+private def declassTargetB : SeLe4n.ObjId := ⟨1019⟩
+
+private def declassPayload (badge : Nat) : KernelObject :=
+  .notification { state := .active, waitingThreads := SeLe4n.NoDupList.empty,
+                  pendingBadge := some (SeLe4n.Badge.ofNatMasked badge) }
+
+/-- Hop 1 — on **core 1**, whose subject is in the secret domain: a downgrade to
+the middle domain, entered through the attributed wrapper. -/
+private def declassHop1 : Option (DeclassificationAuditLog × SystemState) :=
+  match declassifyStoreFromCore declassContext launderingDeclPolicy c1 declassMiddle
+      declassTargetA (declassPayload 0xA1) [] niState with
+  | .ok pair => some pair
+  | .error _ => none
+
+/-- Hop 2 — on **core 0**, whose subject is in the middle domain: a downgrade of
+what hop 1 produced, to the public domain. -/
+private def declassHop2 : Option (DeclassificationAuditLog × SystemState) :=
+  match declassHop1 with
+  | none => none
+  | some (log₁, st₁) =>
+      match declassifyStoreFromCore declassContext launderingDeclPolicy c0 declassPublic
+          declassTargetB (declassPayload 0xB2) log₁ st₁ with
+      | .ok pair => some pair
+      | .error _ => none
+
+/-- A **forged** attribution: run on core 0, whose subject is in the middle
+domain, but claiming the secret domain as the source.  The unattributed entry
+point accepts it (`2 → 1` is an authorized downgrade), which is what makes
+`declassifyStoreFromCore` load-bearing. -/
+private def declassForged : Option (DeclassificationAuditLog × SystemState) :=
+  match declassifyStoreOnCore declassContext launderingDeclPolicy c0 declassSecret declassMiddle
+      declassTargetA (declassPayload 0xF0) [] niState with
+  | .ok pair => some pair
+  | .error _ => none
+
+/-- Is this event attributable in `st`?  The decidable form of
+`declassificationEventAttributable`, which is a `Prop` over `Option`. -/
+private def attributableCheck (st : SystemState) (e : DeclassificationEvent) : Bool :=
+  decide (declassificationSubjectDomainOnCore declassContext st e.originatingCore =
+    some e.srcDomain)
+
+/-- An event the kernel did not issue: an out-of-band integrator authority. -/
+private def integratorEvent : DeclassificationEvent :=
+  { srcDomain := declassSecret, dstDomain := declassPublic, targetObject := declassTargetB,
+    authorizationBasis := .integratorOverride "site-security-officer",
+    timestamp := 2, originatingCore := c2 }
+
+/-- A declassification **into a high object**, from core 1 — the SM8.C.6 /
+non-interference scenario.  `highNotification` is the one object `niLabeling`
+puts out of the low observer's reach. -/
+private def declassIntoHigh : Option SystemState :=
+  match declassifyStoreFromCore declassContext launderingDeclPolicy c1 declassMiddle
+      highNotification (declassPayload 0xC3) [] niState with
+  | .ok (_, st) => some st
+  | .error _ => none
+
+/-- …and into a **low** object: the negative control, which the low observer
+must see. -/
+private def declassIntoLow : Option SystemState :=
+  match declassifyStoreFromCore declassContext launderingDeclPolicy c1 declassMiddle
+      lowNotification (declassPayload 0xD4) [] niState with
+  | .ok (_, st) => some st
+  | .error _ => none
+
+/-- §6.1  SM8.C.1 — the producer: one event per authorized downgrade, carrying
+the core that performed it. -/
+private def runDeclassificationProducerChecks : IO Unit := do
+  IO.println "--- §6.1 SM8.C.1 the audited declassification records ---"
+  assertBool "the fixture's two subjects sit on two different cores"
+    (decide (niState.scheduler.currentOnCore c1 = some highCurrent) &&
+     decide (niState.scheduler.currentOnCore c0 = some lowCurrent) &&
+     decide (niState.scheduler.currentOnCore c2 = none))
+  assertBool "the base policy really denies both downgrades (so they ARE downgrades)"
+    (decide (declassContext.policy.canFlow declassSecret declassMiddle = false) &&
+     decide (declassContext.policy.canFlow declassMiddle declassPublic = false) &&
+     decide (declassContext.policy.canFlow declassSecret declassPublic = false))
+  assertBool "hop 1 succeeds and appends exactly one event"
+    (match declassHop1 with
+     | none => false
+     | some (log₁, _) => decide (log₁.length = 1))
+  assertBool "the recorded event names core 1, basis .policyRule, timestamp 0"
+    (match declassHop1 with
+     | none => false
+     | some ([e], _) =>
+         decide (e.originatingCore = c1) && decide (e.authorizationBasis = .policyRule) &&
+         decide (e.timestamp = 0) && decide (e.srcDomain = declassSecret) &&
+         decide (e.dstDomain = declassMiddle) && decide (e.targetObject = declassTargetA)
+     | some _ => false)
+  assertBool "the store really happened (the payload is in the post-state)"
+    (match declassHop1 with
+     | none => false
+     | some (_, st₁) =>
+         match st₁.objects[declassTargetA]? with
+         | some (.notification n) => decide (n.pendingBadge = some (SeLe4n.Badge.ofNatMasked 0xA1))
+         | _ => false)
+  -- The load-bearing negative: a downgrade the policy does not authorize is
+  -- refused, and leaves neither a state change nor an audit entry.
+  assertBool "NEGATIVE: an unauthorized downgrade (2 → 0) is refused and unrecorded"
+    (match declassifyStoreFromCore declassContext launderingDeclPolicy c1 declassPublic
+        declassTargetA (declassPayload 0xEE) [] niState with
+     | .ok _ => false
+     | .error e => decide (e = KernelError.declassificationDenied))
+  assertBool "NEGATIVE: a flow the base policy ALLOWS is not a declassification"
+    (match declassifyStoreFromCore declassContext launderingDeclPolicy c0 declassSecret
+        declassTargetA (declassPayload 0xEE) [] niState with
+     | .ok _ => false
+     | .error e => decide (e = KernelError.flowDenied))
+
+/-- §6.2  SM8.C.3 — attribution: the recorded subject is the running subject. -/
+private def runDeclassificationAttributionChecks : IO Unit := do
+  IO.println "--- §6.2 SM8.C.3 attribution ---"
+  assertBool "both recorded events are attributable in the post-state"
+    (match declassHop2 with
+     | none => false
+     | some (log₂, st₂) => log₂.all (fun e => attributableCheck st₂ e))
+  assertBool "each event's source domain IS its core's subject's domain"
+    (match declassHop2 with
+     | none => false
+     | some ([e₁, e₂], _) =>
+         decide (e₁.srcDomain = declassContext.threadDomainOf highCurrent) &&
+         decide (e₂.srcDomain = declassContext.threadDomainOf lowCurrent)
+     | some _ => false)
+  assertBool "an idle core cannot declassify — fail-closed, no subject to attribute"
+    (match declassifyStoreFromCore declassContext launderingDeclPolicy c2 declassMiddle
+        declassTargetA (declassPayload 0x11) [] niState with
+     | .ok _ => false
+     | .error e => decide (e = KernelError.illegalState))
+  -- Attributability is a property of the state AT THE TIME OF RECORDING: clear
+  -- the core's current slot afterwards and the same event stops checking out.
+  -- An auditor validates an event against the state at its own timestamp.
+  assertBool "attributability is not durable — it reads the state at recording time"
+    (match declassHop2 with
+     | none => false
+     | some (log₂, st₂) =>
+         let vacated := { st₂ with
+           scheduler := st₂.scheduler.setCurrentOnCore c1 none }
+         log₂.all (fun e => attributableCheck st₂ e) &&
+         !(log₂.all (fun e => attributableCheck vacated e)))
+  -- The load-bearing negative: the UNATTRIBUTED entry point accepts a source
+  -- domain the running subject does not hold, and the resulting event is not
+  -- attributable.  This is why a live path must enter through
+  -- `declassifyStoreFromCore`.
+  assertBool "NEGATIVE: the unattributed form records a domain its subject does not hold"
+    (match declassForged with
+     | none => false
+     | some ([e], st) =>
+         decide (e.srcDomain = declassSecret) &&
+         decide (declassContext.threadDomainOf lowCurrent = declassMiddle) &&
+         !attributableCheck st e
+     | some _ => false)
+
+/-- §6.3  SM8.C.4 — the per-core audit views partition the log. -/
+private def runDeclassificationPartitionChecks : IO Unit := do
+  IO.println "--- §6.3 SM8.C.4 the per-core audit partition ---"
+  assertBool "core 1's view holds hop 1, core 0's holds hop 2, the idle cores hold nothing"
+    (match declassHop2 with
+     | none => false
+     | some (log₂, _) =>
+         decide ((auditLogOnCore log₂ c1).length = 1) &&
+         decide ((auditLogOnCore log₂ c0).length = 1) &&
+         decide ((auditLogOnCore log₂ c2).length = 0) &&
+         decide ((auditLogOnCore log₂ c3).length = 0))
+  assertBool "the views partition the log exactly — nothing lost, nothing doubled"
+    (match declassHop2 with
+     | none => false
+     | some (log₂, _) =>
+         decide ((allCores.map (fun c => (auditLogOnCore log₂ c).length)).sum = log₂.length))
+  assertBool "every event is in exactly one view"
+    (match declassHop2 with
+     | none => false
+     | some (log₂, _) =>
+         log₂.all (fun e =>
+           allCores.all (fun c =>
+             decide (e ∈ auditLogOnCore log₂ c) == decide (e.originatingCore = c))))
+  assertBool "the log's timestamps are its positions (well-formed by construction)"
+    (match declassHop2 with
+     | none => false
+     | some (log₂, _) => declassificationAuditLogWellFormed log₂)
+
+/-- §6.4  SM8.C.2 — the cross-core chain, and the view that cannot hold it. -/
+private def runDeclassificationChainChecks : IO Unit := do
+  IO.println "--- §6.4 SM8.C.2 cross-core chains ---"
+  assertBool "the trail is a linked chain: hop 1's destination is hop 2's source, in order"
+    (match declassHop2 with
+     | none => false
+     | some (log₂, _) => declassificationChainLinked log₂)
+  assertBool "…it crosses cores, and touches exactly two of them"
+    (match declassHop2 with
+     | none => false
+     | some (log₂, _) =>
+         chainIsCrossCore log₂ && decide ((chainCores log₂).length = 2) &&
+         decide (c0 ∈ chainCores log₂) && decide (c1 ∈ chainCores log₂) &&
+         decide (c2 ∉ chainCores log₂))
+  assertBool "…and every hop of it is in the global log"
+    (match declassHop2 with
+     | none => false
+     | some (log₂, _) => chainRecordedIn log₂ log₂)
+  assertBool "the chain runs from the secret domain to the public one"
+    (match declassHop2 with
+     | none => false
+     | some (log₂, _) =>
+         decide (chainSourceDomain log₂ = some declassSecret) &&
+         decide (chainTargetDomain log₂ = some declassPublic))
+  -- The load-bearing negative, and the reason `originatingCore` is a field of a
+  -- global log rather than one log per core: NO per-core view contains the
+  -- whole chain, so a per-core audit cannot see the composed downgrade.
+  assertBool "NEGATIVE: no single core's view contains the whole chain"
+    (match declassHop2 with
+     | none => false
+     | some (log₂, _) => allCores.all (fun c => !chainRecordedIn (auditLogOnCore log₂ c) log₂))
+
+/-- §6.5  SM8.C.6 — laundering detection and the endpoint rule. -/
+private def runDeclassificationRuleChecks : IO Unit := do
+  IO.println "--- §6.5 SM8.C.6 the cross-core declassification rules ---"
+  assertBool "every hop was individually authorized"
+    (match declassHop2 with
+     | none => false
+     | some (log₂, _) => chainHopsAuthorized declassContext.policy launderingDeclPolicy log₂)
+  assertBool "…and the composition was NOT — so the chain launders"
+    (match declassHop2 with
+     | none => false
+     | some (log₂, _) =>
+         !chainCompositionAuthorized declassContext.policy launderingDeclPolicy log₂ &&
+         chainLaunders declassContext.policy launderingDeclPolicy log₂)
+  -- The load-bearing negative: the detector is not a constant.  Authorize the
+  -- composition and the very same chain stops being laundering.
+  assertBool "NEGATIVE: authorize 2 → 0 too and the same chain no longer launders"
+    (match declassHop2 with
+     | none => false
+     | some (log₂, _) =>
+         chainHopsAuthorized declassContext.policy compositeAuthorizedDeclPolicy log₂ &&
+         chainCompositionAuthorized declassContext.policy compositeAuthorizedDeclPolicy log₂ &&
+         !chainLaunders declassContext.policy compositeAuthorizedDeclPolicy log₂)
+  assertBool "a single authorized hop is not laundering either"
+    (match declassHop1 with
+     | none => false
+     | some (log₁, _) => !chainLaunders declassContext.policy launderingDeclPolicy log₁)
+  assertBool "eight cross-core declassification rules, each with its own witness"
+    (decide (DeclassificationRuleId.all.length = 8) &&
+     DeclassificationRuleId.all.all (fun id =>
+       decide ((declassificationRuleEvidenceName id).length > 0) &&
+       decide ((declassificationRuleStatement id).length > 0)))
+
+/-- §6.6  SM8.C.5 — `authorizationBasis_perCore`. -/
+private def runDeclassificationBasisChecks : IO Unit := do
+  IO.println "--- §6.6 SM8.C.5 authorizationBasis_perCore ---"
+  assertBool "every recorded basis passes the kernel's own check"
+    (match declassHop2 with
+     | none => false
+     | some (log₂, _) => auditLogBasesVerified declassContext.policy launderingDeclPolicy log₂)
+  assertBool "…and every one of them is a basis the kernel issued"
+    (match declassHop2 with
+     | none => false
+     | some (log₂, _) => auditLogKernelIssued log₂)
+  assertBool "re-attributing an event to another core does not change the verdict"
+    (match declassHop2 with
+     | none => false
+     | some (log₂, _) =>
+         log₂.all (fun e =>
+           allCores.all (fun c =>
+             declassificationBasisKernelVerified declassContext.policy launderingDeclPolicy
+                 { e with originatingCore := c } ==
+               declassificationBasisKernelVerified declassContext.policy launderingDeclPolicy e)))
+  -- The load-bearing negative: an event the kernel did not issue is detectable.
+  assertBool "NEGATIVE: an integrator-override entry makes the log not kernel-issued"
+    (match declassHop2 with
+     | none => false
+     | some (log₂, _) =>
+         let tampered := recordDeclassification log₂ integratorEvent
+         !auditLogKernelIssued tampered &&
+         !auditLogBasesVerified declassContext.policy launderingDeclPolicy tampered &&
+         !integratorEvent.authorizationBasis.kernelVerifiable &&
+         decide (integratorEvent.authorizationBasis.render = "site-security-officer"))
+
+/-- §6.7  The declassification's own non-interference, per core. -/
+private def runDeclassificationNonInterferenceChecks : IO Unit := do
+  IO.println "--- §6.7 the declassification's per-core non-interference ---"
+  assertBool "the declassification target is one the LOW observer cannot see"
+    (decide (objectObservable niLabeling niLowObserver highNotification = false) &&
+     decide (objectObservable niLabeling niLowObserver lowNotification = true))
+  assertBool "declassifying into a high object is invisible to low on EVERY core"
+    (match declassIntoHigh with
+     | none => false
+     | some post => allCores.all (fun c =>
+         decide (projectedBadge c lowLabel post highNotification
+           = projectedBadge c lowLabel niState highNotification)))
+  assertBool "…and writes no core's scheduler slots or register bank"
+    (match declassIntoHigh with
+     | none => false
+     | some post => allCores.all (fun c => confinedCheck niState post c))
+  -- The load-bearing negative: a declassification into an object the observer
+  -- CAN see is visible — as it must be, that being the point of the operation.
+  assertBool "NEGATIVE: declassifying into a low object IS visible to low"
+    (match declassIntoLow with
+     | none => false
+     | some post => decide (projectedBadge c0 lowLabel post lowNotification
+         ≠ projectedBadge c0 lowLabel niState lowNotification))
+  assertBool "the committed state does not depend on the audit trail handed in"
+    (match declassifyStoreOnCore declassContext launderingDeclPolicy c1 declassSecret declassMiddle
+        declassTargetA (declassPayload 0x77) [] niState,
+      declassifyStoreOnCore declassContext launderingDeclPolicy c1 declassSecret declassMiddle
+        declassTargetA (declassPayload 0x77) [integratorEvent] niState with
+     | .ok (_, stA), .ok (_, stB) =>
+         decide (stA.objects[declassTargetA]?.isSome = true) &&
+         decide (stA.scheduler.currentOnCore c1 = stB.scheduler.currentOnCore c1) &&
+         decide (stA.objectIndex = stB.objectIndex)
+     | _, _ => false)
+
+/-- §6.8 fixtures — the live per-endpoint flow policy (SM8.B registered debt (a)).
+
+Three labelings over the same fixture: none configured (the default, which must
+change nothing), a **narrowing** override on the low endpoint, and a **widening**
+one everywhere.  The widening case is the load-bearing one: the gate conjoins, so
+a policy that says "allow everything" cannot open a flow the lattice denies. -/
+private def narrowingOverrideLabeling : LabelingContext :=
+  { niLabeling with
+    endpointPolicy := { endpointPolicy := fun oid =>
+      if oid = lowEndpoint then some { canFlow := fun _ _ => false } else none } }
+
+private def wideningOverrideLabeling : LabelingContext :=
+  { niLabeling with
+    endpointPolicy := { endpointPolicy := fun _ => some { canFlow := fun _ _ => true } } }
+
+/-- The live cross-core checked send, run under a given labeling. -/
+private def crossCoreSendUnder (ctx : LabelingContext) (epId : SeLe4n.ObjId) :
+    SystemState ×
+      Except KernelError (CapTransferSummary ×
+        Option (CoreId × SeLe4n.Kernel.Concurrency.SgiKind)) :=
+  endpointSendCrossCoreDispatchChecked ctx epId lowCurrent IpcMessage.empty
+    (AccessRightSet.ofList [.write]) cnRoot (SeLe4n.Slot.ofNat 0) c0 niState
+
+/-- §6.8  The live per-endpoint flow policy — SM8.B's registered debt (a). -/
+private def runEndpointPolicyGateChecks : IO Unit := do
+  IO.println "--- §6.8 the live per-endpoint flow gate ---"
+  assertBool "the fixture permits low → low endpoint and denies high → low endpoint"
+    (decide (securityFlowsTo (niLabeling.threadLabelOf lowCurrent)
+        (niLabeling.endpointLabelOf lowEndpoint) = true) &&
+     decide (securityFlowsTo (niLabeling.threadLabelOf highCurrent)
+        (niLabeling.endpointLabelOf lowEndpoint) = false))
+  assertBool "with no override configured the gate IS the global check"
+    (decide (endpointFlowGate niLabeling lowEndpoint (niLabeling.threadLabelOf lowCurrent)
+        (niLabeling.endpointLabelOf lowEndpoint) =
+       securityFlowsTo (niLabeling.threadLabelOf lowCurrent)
+        (niLabeling.endpointLabelOf lowEndpoint)))
+  assertBool "a narrowing override denies a flow the lattice permits"
+    (decide (endpointFlowGate narrowingOverrideLabeling lowEndpoint
+        (niLabeling.threadLabelOf lowCurrent) (niLabeling.endpointLabelOf lowEndpoint) = false))
+  assertBool "…and only at the endpoint it names — the high endpoint is untouched"
+    (decide (endpointFlowGate narrowingOverrideLabeling highEndpoint
+        (niLabeling.threadLabelOf lowCurrent) (niLabeling.endpointLabelOf highEndpoint) =
+       securityFlowsTo (niLabeling.threadLabelOf lowCurrent)
+        (niLabeling.endpointLabelOf highEndpoint)))
+  -- The load-bearing negative: a WIDENING override changes nothing.  This is the
+  -- structural restriction — the reason the gate is a conjunction and not a
+  -- replacement, and the reason SM8.C's Rule 3 needs no deployment obligation.
+  assertBool "NEGATIVE: a widening override cannot open a flow the lattice denies"
+    (decide (endpointFlowGate wideningOverrideLabeling lowEndpoint
+        (niLabeling.threadLabelOf highCurrent) (niLabeling.endpointLabelOf lowEndpoint) = false))
+  assertBool "the live cross-core send is refused under the narrowing override"
+    (match crossCoreSendUnder narrowingOverrideLabeling lowEndpoint with
+     | (st', .error e) => decide (e = KernelError.flowDenied) &&
+         decide (st'.objectIndex = niState.objectIndex)
+     | _ => false)
+  assertBool "…and is NOT refused with no override configured"
+    (match crossCoreSendUnder niLabeling lowEndpoint with
+     | (_, .error e) => decide (e ≠ KernelError.flowDenied)
+     | (_, .ok _) => true)
+  assertBool "the checked receive wrapper is refused under the narrowing override"
+    (match endpointReceiveDualChecked narrowingOverrideLabeling lowEndpoint lowCurrent none
+        niState with
+     | .error e => decide (e = KernelError.flowDenied)
+     | .ok _ => false)
+  assertBool "a gate that admits has a subject, and cannot be a declassification basis"
+    (have _h : ∀ (ctx : LabelingContext) (declPolicy : DeclassificationPolicy)
+        (epId : SeLe4n.ObjId) (srcLabel dstLabel : SecurityLabel),
+        endpointFlowGate ctx epId srcLabel dstLabel = true →
+        DeclassificationPolicy.isDeclassificationAuthorized (liftLegacyContext ctx).policy
+          declPolicy (embedLegacyLabel srcLabel) (embedLegacyLabel dstLabel) = false :=
+      fun ctx declPolicy epId srcLabel dstLabel h =>
+        liveEndpointOverride_is_not_a_declassification_basis ctx declPolicy epId srcLabel
+          dstLabel h
+     true)
+
 def runSmpInformationFlowChecks : IO Unit := do
   IO.println "WS-SM SM8.A / SM8.B — Per-core observable state + non-interference suite"
   IO.println "===================================="
@@ -3581,8 +4281,17 @@ def runSmpInformationFlowChecks : IO Unit := do
   runReplenishHomeCoreChecks
   runRetypeWriteSetChecks
   runUnbindCoreAgreementChecks
+  runDeclassificationProducerChecks
+  runDeclassificationAttributionChecks
+  runDeclassificationPartitionChecks
+  runDeclassificationChainChecks
+  runDeclassificationRuleChecks
+  runDeclassificationBasisChecks
+  runDeclassificationNonInterferenceChecks
+  runEndpointPolicyGateChecks
   IO.println "===================================="
-  IO.println "All SM8.A per-core observable-state and SM8.B non-interference checks PASS."
+  IO.println ("All SM8.A per-core observable-state, SM8.B non-interference and " ++
+    "SM8.C declassification-audit checks PASS.")
 
 end SeLe4n.Testing.SmpInformationFlow
 

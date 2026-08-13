@@ -7,7 +7,8 @@
 > **Calendar estimate**: 5-8 weeks
 > **Sub-task count**: 40-55 across ~15-22 PRs
 > **Status**: SM8.A COMPLETE at v0.33.3, review cut v0.33.4 (landed
-> v0.33.2); SM8.B LANDED at v0.33.5; SM8.C–SM8.E pending
+> v0.33.2); SM8.B LANDED at v0.33.5; SM8.C LANDED at v0.33.7 (with SM8.B's
+> registered debt (a) closed in the same cut); SM8.D–SM8.E pending
 
 ## 1. Phase goal
 
@@ -21,11 +22,13 @@ channel; per-core declassification audit.
    (c) (L) (s)` — projection at (core, label).
 2. **Per-core NI proofs** (SM8.B): existing NI proofs generalized;
    `crossCoreNonInterference` theorem.
-3. **Lock-contention covert channel** (SM8.C): documented as a
-   5th accepted channel (existing 4 + this one).
-4. **Per-core declassification audit** (SM8.D):
+3. **Lock-contention covert channel**: documented as a
+   5th accepted channel (existing 4 + this one).  *Delivered by SM8.B* as CC-5
+   of the seven-entry inventory — this list said SM8.C, which §5's sub-task
+   table (the authority) has always assigned to the declassification audit.
+4. **Per-core declassification audit** (SM8.C):
    `DeclassificationEvent` extended with `originatingCore`.
-5. **Information flow under fine locks** (SM8.D extension).
+5. **Information flow under fine locks** (SM8.D).
 6. **Tests + closure** (SM8.E).
 
 ## 2. Dependencies
@@ -1308,9 +1311,13 @@ Neither of these is documented away: both are owed work with a named closure
 phase, per the implement-the-improvement rule.
 
 **(a) The configured endpoint flow policy is not enforced — closure target
-SM8.C.**  `endpointFlowCheck` has no live consumer, so the runtime is strictly
+SM8.C.  CLOSED at v0.33.7; see §5 SM8.C's "Registered debt (a), CLOSED".**
+`endpointFlowCheck` had no live consumer, so the runtime was strictly
 more permissive than the configured policy (`endpointPolicyRestricted` in
-`Policy.lean` pins overrides as narrowing-only).
+`Policy.lean` pins overrides as narrowing-only).  The record below is the design
+as SM8.B surveyed it; the closure differs in one respect worth reading before the
+list — SM8.C conjoins at a named gate (`endpointFlowGate`), which makes
+`endpointPolicyRestricted` *structural* rather than a deployment obligation.
 
 *Not a security advisory, for a specific reason*: `LabelingContext` (in
 `Policy.lean`) has no `endpointPolicy` field at all, so no operator can
@@ -1351,17 +1358,186 @@ single-core transition, so that instance rewrites to the existing single-core
 preservation theorem.  This joins the bound-delivery and `withLockSet` conjuncts
 already tracked there.
 
-### SM8.C — Per-core declassification audit (7 sub-tasks)
+### SM8.C — Per-core declassification audit (7 sub-tasks) — **LANDED v0.33.7**
 
-| Sub | Description | Theorem | Est |
-|-----|-------------|---------|-----|
-| SM8.C.1 | `DeclassificationEvent.originatingCore : CoreId` extension | Structure | M |
-| SM8.C.2 | Cross-core declassification chains in audit trail | Theorem | M |
-| SM8.C.3 | Every declass event has valid originatingCore | Theorem | S |
-| SM8.C.4 | `DeclassificationEvent_perCore_audit` | Theorem | M |
-| SM8.C.5 | `authorizationBasis_perCore` extending V6-H | Theorem | M |
-| SM8.C.6 | Cross-core declass rules | Theorem | M |
-| SM8.C.7 | Per-core declass test scenarios | M |
+| Sub | Description | Theorem | Est | Status |
+|-----|-------------|---------|-----|--------|
+| SM8.C.1 | `DeclassificationEvent.originatingCore : CoreId` extension | Structure | M | LANDED |
+| SM8.C.2 | Cross-core declassification chains in audit trail | Theorem | M | LANDED |
+| SM8.C.3 | Every declass event has valid originatingCore | Theorem | S | LANDED |
+| SM8.C.4 | `DeclassificationEvent_perCore_audit` | Theorem | M | LANDED |
+| SM8.C.5 | `authorizationBasis_perCore` extending V6-H | Theorem | M | LANDED |
+| SM8.C.6 | Cross-core declass rules | Theorem | M | LANDED |
+| SM8.C.7 | Per-core declass test scenarios | M | LANDED |
+
+**Landing record (v0.33.7).**  One PR; new staged module
+`SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean` (staged 58 → 59)
+plus the record extension in the production `Policy.lean`.
+
+**What was actually there.**  The plan reads as though the audit trail existed
+and needed a core added to it.  It did not.  `declassifyStore`
+(`Enforcement/Soundness.lean`) gated and stored; `DeclassificationEvent`
+(`Policy.lean`) carried a docstring saying the enforcement wrappers produced it
+and the caller recorded it; **nothing in the tree constructed one**.  So SM8.C.1
+is not a field addition but a producer, and the field is what makes the producer
+SMP-honest.  Per the implement-the-improvement rule the producer was built.
+
+**SM8.C.1.**  `originatingCore : CoreId`, **undefaulted** — a default would
+attribute every event to the boot core while compiling everywhere, which is the
+exact failure the field exists to prevent.  `authorizationBasis` becomes a typed
+`DeclassificationBasis`: as a `String` it admitted any claim including one naming
+a check that never ran, so SM8.C.5 had nothing to state.  Open-endedness is kept
+where it was real (`integratorOverride` carries an arbitrary authority string)
+and `DeclassificationBasis.render` reproduces the pre-SM8.C strings byte for
+byte, so an external consumer is unaffected.  `declassifyStoreOnCore` is the
+producer: the same gate, threading the append-only log, appending exactly one
+event per authorized downgrade, with the state effect *provably identical* to the
+unaudited gate (`declassifyStoreOnCore_ok_inv`) — auditing adds a record, not a
+transition, so `declassifyStore_NI` and the enforcement soundness theorems carry
+over untouched.  Timestamps are the log position
+(`declassificationAuditLogWellFormed`), which makes V6-H's "monotonic counter"
+structural, and the counter is **global**:
+`declassificationAuditLog_timestamp_identifies_event` is exactly what a per-core
+counter would destroy.
+
+**SM8.C.3.**  The literal ask — "every declass event has valid
+`originatingCore`" — is structural: `CoreId` is `Fin numCores`, so
+`declassificationEvent_originatingCore_valid` is `.isLt` and the honest thing is
+to say so, with `…_mem_allCores` as the enumeration half the partition proof
+needs.  The substantive content is **attribution**: a record whose subject is
+whatever the caller wrote is a claim, not an audit trail.
+`declassifyStoreFromCore` *reads* the source domain off the subject the executing
+core is running (`currentOnCore c` — the same per-core read SM8.B's
+`endpointFlowCheckAtCore` uses) and fails closed on an idle core, so
+`declassifyStoreFromCore_event_attributable` holds **unconditionally**, in the
+post-state an auditor inspects.  `declassifyStoreOnCore_admits_unattributable` is
+the load-bearing negative: the unattributed entry point genuinely accepts a
+domain its subject does not hold, which is why a live path must enter through the
+wrapper.
+
+**SM8.C.4.**  `auditLogOnCore` is a *view* of one global log rather than a log
+per core, and `declassificationAuditLog_partitions_by_core` proves the views
+partition it exactly — `allCores_nodup` makes it a partition rather than a cover,
+SM8.C.3's membership result makes it a cover rather than a partition of a subset.
+`DeclassificationEvent_perCore_audit` carries the membership half (each event in
+exactly one view) and `declassificationEvent_not_in_other_view` its dual, which is
+what makes a per-core audit report trustworthy.
+
+**SM8.C.2.**  Two theorems that pull in opposite directions, which is why both
+are stated.  `declassificationChain_recorded_across_cores`: two audited
+declassifications on two cores, the second downgrading what the first produced,
+leave a linked cross-core chain in the trail — both hops recorded, composing, in
+order, each attributed.  `crossCoreChain_not_within_one_view`: **a chain that
+crosses cores is contained in no single core's view.**  The second decides the
+design.  One log per core — the natural SMP implementation, one counter and one
+buffer per CPU — would put each hop in a different buffer with nothing relating
+them, and the composed downgrade would be invisible to every reader.
+
+**SM8.C.6.**  Eight rules as data, each supplying a proof of *its own* claim
+through the dependently-typed `declassificationRuleEvidence`, so adding a rule
+without deciding what proves it is a missing-arm error and misattributing a proof
+is a type error (the device `CovertChannelPerCore` uses for CC-1…CC-7).  The
+substantive ones: **laundering** —
+`declassificationChain_hop_authorization_does_not_compose` exhibits a *well-formed*
+base policy in which `2 → 1` and `1 → 0` are both authorized downgrades and
+`2 → 0` is not, so nothing the kernel checks at a hop can see the composition
+(it does not exist until the second hop runs, possibly on another core), and only
+a reader of the trail can detect it — `chainLaunders`, decidable; **the endpoint
+rule** — `endpointOverride_is_not_a_declassification_basis`, the consumer SM8.B
+built `endpointFlowCheck_restricted_subset_perCore` for, stated against the
+state-resolved `endpointFlowCheckAtCore` rather than the core-free
+`endpointFlowCheck` so the core is load-bearing rather than decorative; and
+**Rule 4** — `declassifyStoreOnCore_state_core_independent`, that the core an
+event names is audit information and never authority (there is no per-core
+declassification policy; if a future cut adds one, this is where it breaks).
+
+**SM8.C.5.**  `authorizationBasis_perCore` is basis verification as an
+*invariant* of the audited declassification, on whichever core it runs: if every
+event so far passes the kernel's own check then so does every event afterwards,
+from the `auditLogBasesVerified … [] = true` boot witness.
+`declassificationBasisKernelVerified_core_independent` is an `rfl` worth having —
+re-attributing an event to another core cannot turn a failing basis into a
+passing one — and it is the tripwire a per-core policy would break.
+`auditLog_integratorOverride_not_kernelIssued` is what the typed field buys: an
+audit consumer can conclude that some entry did not come from the kernel's own
+path, which a free `String` could never support.
+
+**Also delivered: the declassification's own per-core non-interference.**  A
+declassification writes no core's scheduler slots or register bank
+(`declassifyStore_confinedToCores_nil`), so SM8.B's cross-core machinery applies
+with an empty write set; `declassifyStoreOnCore_perCore_NI` is the ∀-core form of
+`declassifyStore_NI`, which covered the boot core only.  And
+`declassifyStoreOnCore_state_log_independent` is the statement that auditing opens
+no channel of its own: the log is threaded through the operation rather than
+mounted in `SystemState`, so two runs differing only in audit history commit the
+same state.  If a future cut mounts the log (to survive a reboot, say), that is
+the theorem that stops holding and the projection owes a decision about who may
+read the trail.
+
+**SM8.C.7.**  `tests/SmpInformationFlowSuite.lean` §6.1–§6.8, 316 → 360 runtime
+assertions over a three-domain configuration (`linearOrder` base policy; a
+declassification policy authorizing `2 → 1` and `1 → 0` and not `2 → 0`) on the
+existing four-core fixture, with both hops entering through the *attributed*
+wrapper so the chain is fully attributed.  Every group carries a load-bearing
+negative: the unattributed entry point accepts a foreign source domain (§6.2), no
+single core's view contains the whole chain (§6.4), authorizing the composition
+stops the same chain laundering (§6.5), an integrator-override entry is detectable
+(§6.6), a declassification into an object the observer *can* see is visible
+(§6.7), and a widening endpoint override cannot open a flow the lattice denies
+(§6.8).  Every public symbol of the new module is `#check`-anchored;
+`tests/InformationFlowSuite.lean` is updated for the record change with the render
+round-trip pinned; Tier 3 gains anchors for both cuts, including negative pins
+that the core field stays undefaulted and the basis stays typed.  Axiom-clean —
+`scripts/check_module_axioms.py` sweeps the new module with the other four.
+
+#### Registered debt (a), CLOSED in the same cut — the endpoint flow policy
+
+SM8.B registered the configured endpoint flow policy as unenforced with closure
+target SM8.C.  Closed here, and closed with the *safe* semantics.
+
+`LabelingContext` gains `endpointPolicy : EndpointFlowPolicy`, defaulted to "no
+override anywhere", and the four endpoint-keyed gates — the
+`endpointSendDualChecked` / `endpointReceiveDualChecked` / `endpointCallChecked` /
+`endpointReplyRecvChecked` wrappers, the live cross-core `.send` and `.call`
+dispatches, and the live `.receive` / `.replyRecv` arms — branch on
+`endpointFlowGate`, which **conjoins** the global lattice check with the
+endpoint's override instead of replacing it (WS-E5/H-04's `endpointFlowCheck` is
+the replacement form; it stays, and is now the thing
+`unrestricted_endpointOverride_is_an_unaudited_downgrade` warns about).
+
+The conjunction is the point: `endpointFlowGate_implies_securityFlowsTo` takes
+**no hypothesis**, so V6-G's `endpointPolicyRestricted` becomes structural rather
+than a deployment obligation — a misconfigured override cannot widen anything.
+That strengthens SM8.C's Rule 3 to
+`liveEndpointOverride_is_not_a_declassification_basis`, which needs no restriction
+premise at all: the only way down the lattice remains the explicit
+`DeclassificationPolicy`, which produces an audit event every time it is taken.
+
+Mechanics: every `…_flowDenied` theorem keeps the hypothesis it had (a denied
+global flow denies the gate whatever the override says); the `…_when_allowed` and
+`checkedDispatch_*_eq_unchecked` theorems gain a real `hOverride` premise —
+verified load-bearing, since dropping it leaves the gate `ite` unreduced; and
+three gate-level soundness theorems
+(`enforcementSoundness_endpoint{SendDual,ReceiveDual,Call}Checked_gate`) carry both
+conjuncts, so the `securityFlowsTo` forms every pre-SM8.C consumer asked for are
+*derived* rather than re-proved.  The reply *leg* of `.replyRecv` deliberately
+stays on the plain lattice check: the override governs flows that cross the
+endpoint, and `receiver → prevCaller` does not.  The plan's design note called for
+reordering `SecurityDomain` / `DomainFlowPolicy` / `EndpointFlowPolicy` above
+`LabelingContext`; that was done and was clean, as predicted.  Unconfigured
+deployments are unchanged (`endpointFlowGate_eq_securityFlowsTo_of_no_override`)
+and the trace is byte-identical.
+
+#### Registered follow-on (SM8.C)
+
+**Refused declassifications are not audited.**  The V6-H record has no outcome
+field and its `authorizationBasis` names what *permitted* a downgrade, so a
+refusal has nothing to record; `declassifyStoreOnCore_denied_no_audit_entry`
+pins that the refusal is fail-closed (no state change, no entry).  This is a
+monitoring gap, not an enforcement one — an intrusion detector cannot count
+rejected attempts.  Closing it means an outcome-carrying record, which is a
+change to the V6-H structure and to every consumer of it; scoped to SM8.E rather
+than taken here, and recorded in the plan rather than in a source comment.
 
 ### SM8.D — Information flow under fine locks (6 sub-tasks)
 
@@ -1436,7 +1612,7 @@ contention scenarios are timing scenarios.
 | 32 per-NI-constructor variants tedious | HIGH | LOW | Mechanical migration like SM4.C |
 | `crossCoreNonInterference` proof has hole | LOW | HIGH | Theorem proved by direct application of Cor 2.1.11 |
 | Lock-contention channel mitigation unclear | KNOWN | MED | Deferred to WS-W; documented |
-| Cross-core declass audit trail gaps | LOW | MED | Field added to DeclassificationEvent; all writers updated |
+| Cross-core declass audit trail gaps | LOW | MED | DISCHARGED at SM8.C (v0.33.7).  The risk was understated: there were no writers to update — nothing constructed a `DeclassificationEvent`.  Closed by building the producer (`declassifyStoreOnCore`) and the attributed entry point (`declassifyStoreFromCore`), with `crossCoreChain_not_within_one_view` the theorem that decides one global log over per-core logs |
 
 ## 8. Acceptance gate
 
@@ -1465,8 +1641,12 @@ contention scenarios are timing scenarios.
       conflated the two lists: 39 is the canonical boundary after SM8.E.3, not
       the per-core one, which is the canonical 38 plus the 2PL bracket plus the
       cross-core wrappers.)
-- [ ] `DeclassificationEvent.originatingCore` field; audit trail updated.
-- [ ] Tier 0..3 green.
+- [x] `DeclassificationEvent.originatingCore` field; audit trail updated
+      (SM8.C, v0.33.7 — the field is *undefaulted*, and the audit trail was not
+      merely "updated": before this cut nothing in the tree constructed a
+      `DeclassificationEvent` at all, so the producer `declassifyStoreOnCore`
+      and the attributed entry point `declassifyStoreFromCore` are the closure).
+- [x] Tier 0..3 green.
 
 ## 9. Cross-references
 
@@ -1483,7 +1663,23 @@ theorems (§5 SM8.A landing record) and SM8.B's `crossCoreNonInterference`,
 `enforcementBoundaryPerCore` + its completeness witness,
 `acceptedCovertChannel_lockContention` (CC-5) with the seven-entry inventory,
 `endpointPolicyRestricted_perCore`, the release bridge, and
-`crossCoreLeakage_bounded`.
+`crossCoreLeakage_bounded`.  SM8.C adds `declassifyStoreOnCore` +
+`declassifyStoreOnCore_ok_inv` / `…_records_one`, `declassifyStoreFromCore` +
+`declassifyStoreFromCore_event_attributable` (with the negative
+`declassifyStoreOnCore_admits_unattributable`),
+`declassificationAuditLog_partitions_by_core` +
+`DeclassificationEvent_perCore_audit`,
+`declassificationChain_recorded_across_cores` +
+`crossCoreChain_not_within_one_view`,
+`declassificationChain_hop_authorization_does_not_compose` + `chainLaunders`,
+`endpointOverride_is_not_a_declassification_basis` and its live, hypothesis-free
+form `liveEndpointOverride_is_not_a_declassification_basis`,
+`authorizationBasis_perCore`, `declassifyStoreOnCore_perCore_NI`,
+`declassifyStoreOnCore_state_log_independent`, and the eight-rule inventory with
+its dependently-typed `declassificationRuleEvidence`; plus, from the debt (a)
+closure, `endpointFlowGate` with `endpointFlowGate_implies_securityFlowsTo`,
+`endpointFlowGate_eq_securityFlowsTo_of_no_override` and the non-vacuity witness
+`endpointFlowGate_is_not_securityFlowsTo`.
 
 ## Appendix A — Verification commands
 

@@ -1715,7 +1715,11 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
         -- predicate `endpointReceiveDualChecked` applies internally, so a *permitted*
         -- receive is behaviourally unchanged; a denied receive now returns
         -- `.flowDenied` without ever probing reply state.
-        if !securityFlowsTo (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) then
+        -- WS-SM SM8.C: the gate is the global lattice check AND this endpoint's
+        -- configured override (`endpointFlowGate`).  A conjunction, so an
+        -- override can only narrow, and an unconfigured deployment is unchanged
+        -- (`endpointFlowGate_eq_securityFlowsTo_of_no_override`).
+        if !endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) then
           .error .flowDenied
         else
           -- PR #822 review: an explicit (length ≥ 1) bad reply cap fails before the
@@ -1912,7 +1916,10 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
       -- failure returns, rather than leaking via `.flowDenied` that the reply *is*
       -- linked to an outstanding caller the receiver may not flow to.
       fun st =>
-        if !securityFlowsTo (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) then
+        -- WS-SM SM8.C: the receive leg carries the endpoint override too; the
+        -- reply leg below deliberately does not (the override governs flows that
+        -- cross this endpoint, and `receiver → prevCaller` does not).
+        if !endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) then
           .error .flowDenied
         else
           match resolveReplyRecvReply gate decoded st with
@@ -2269,9 +2276,14 @@ theorem checkedDispatch_replyRecv_eq_unchecked_when_allowed
     (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (replyBadge : Option SeLe4n.Badge)
     (hResolve : resolveReplyRecvReply gate decoded st = .ok (rid, prevCaller, replyBadge))
     (hFlowReply : securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf prevCaller) = true)
-    (hFlowRecv : securityFlowsTo (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true) :
+    (hFlowRecv : securityFlowsTo (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true)
+    -- WS-SM SM8.C: the receive leg also consults this endpoint's configured
+    -- override, so the two arms coincide only when that admits the flow too.
+    (hOverrideRecv : endpointOverrideAllows ctx epId (ctx.endpointLabelOf epId)
+      (ctx.threadLabelOf tid) = true) :
     dispatchWithCapChecked ctx decoded tid gate cap st =
     dispatchWithCap decoded tid gate cap st := by
+  have hGate := endpointFlowGate_of ctx epId _ _ hFlowRecv hOverrideRecv
   simp only [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly,
     hSyscall, hCap, hResolve]
   -- The checked arm now gates in two nested steps: the receive leg (`!flowRecv →
@@ -2279,7 +2291,7 @@ theorem checkedDispatch_replyRecv_eq_unchecked_when_allowed
   -- else `.replyCapInvalid`).  With both flows `true` the outer `!true` is `false`
   -- (else branch) and the inner `if true` selects the same `replyRecvBody` the
   -- unchecked arm runs.
-  simp [hFlowRecv, hFlowReply]
+  simp [hGate, hFlowReply]
 
 /-- WS-SM SM6.D (PR #822 review, IF-ordering): a checked `.reply` whose replier→caller
 flow is **denied** returns `.replyCapInvalid` — the *same* error the `none`/unlinked
@@ -2317,7 +2329,10 @@ theorem checkedDispatch_receive_flow_denied
     (st : SystemState)
     (hDenied : securityFlowsTo (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = false) :
     dispatchWithCapChecked ctx decoded tid gate cap st = .error .flowDenied := by
-  simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hCap, hDenied]
+  -- WS-SM SM8.C: a denied global flow denies the gate whatever the endpoint's
+  -- override says, so this theorem keeps the hypothesis it always had.
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hCap,
+    endpointFlowGate_false_of_securityFlowsTo_false ctx epId _ _ hDenied]
 
 /-- WS-SM SM6.D (PR #822 review, IF-ordering): a checked `.replyRecv` whose receive-leg
 (endpoint→receiver) flow is **denied** returns `.flowDenied` *for every state and decode*
@@ -2334,7 +2349,8 @@ theorem checkedDispatch_replyRecv_recv_flow_denied
     (st : SystemState)
     (hDenied : securityFlowsTo (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = false) :
     dispatchWithCapChecked ctx decoded tid gate cap st = .error .flowDenied := by
-  simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hCap, hDenied]
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hCap,
+    endpointFlowGate_false_of_securityFlowsTo_false ctx epId _ _ hDenied]
 
 -- ============================================================================
 -- W2-C (MED-04): dispatchWithCap wildcard arm unreachability
@@ -3439,13 +3455,17 @@ theorem dispatchWithCapChecked_receive_delegates
     (hSyscall : decoded.syscallId = .receive)
     (hTarget : cap.target = .object epId)
     (hFlow : securityFlowsTo (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true)
+    -- WS-SM SM8.C: the arm's gate is the global check AND the endpoint override.
+    (hOverride : endpointOverrideAllows ctx epId (ctx.endpointLabelOf epId)
+      (ctx.threadLabelOf tid) = true)
     (hReply : resolveRecvReplyId gate decoded st = .ok replyIdOpt) :
     dispatchWithCapChecked ctx decoded tid gate cap st =
       (match endpointReceiveDualOnCore epId tid replyIdOpt
               (determineExecutingCore st tid) st with
        | (st', .ok (_, _)) => .ok ((), st')
        | (_, .error e) => .error e) := by
-  simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget, hFlow, hReply]
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget,
+    endpointFlowGate_of ctx epId _ _ hFlow hOverride, hReply]
 
 /-- **The live unchecked `.send` arm routes to `endpointSendDualWithCapsOnCore`.**
 
@@ -3632,6 +3652,10 @@ def syscallDelegates : SyscallId → Prop
         decoded.syscallId = .receive →
         cap.target = .object epId →
         securityFlowsTo (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true →
+        -- WS-SM SM8.C: the arm's gate is the global lattice check AND this
+        -- endpoint's configured override, so the obligation carries both.
+        endpointOverrideAllows ctx epId (ctx.endpointLabelOf epId)
+          (ctx.threadLabelOf tid) = true →
         resolveRecvReplyId gate decoded st = .ok replyIdOpt →
         dispatchWithCapChecked ctx decoded tid gate cap st =
           (match endpointReceiveDualOnCore epId tid replyIdOpt
@@ -3722,9 +3746,9 @@ def syscallDelegates : SyscallId → Prop
 
 /-- The `.receive` obligation, discharged. -/
 theorem syscallDelegates_receive : syscallDelegates .receive := by
-  intro ctx decoded tid gate cap epId replyIdOpt st hSyscall hTarget hFlow hReply
+  intro ctx decoded tid gate cap epId replyIdOpt st hSyscall hTarget hFlow hOverride hReply
   exact dispatchWithCapChecked_receive_delegates ctx decoded tid gate cap epId replyIdOpt st
-    hSyscall hTarget hFlow hReply
+    hSyscall hTarget hFlow hOverride hReply
 
 /-- The `.tcbResume` obligation, discharged. -/
 theorem syscallDelegates_tcbResume : syscallDelegates .tcbResume := by

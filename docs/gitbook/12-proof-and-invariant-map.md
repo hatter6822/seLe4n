@@ -2615,8 +2615,59 @@ observer alone.
   fragment does — six of thirteen components carry no cross-core flow.
 
 Runtime coverage: the same suite grows to 167 assertions across 24 groups
-(ten new SM8.B groups) with 188 `#check` anchors.  Per-core declassification
-audit is WS-SM SM8.C.
+(ten new SM8.B groups) with 188 `#check` anchors.
+
+### Layer 3 under SMP — the declassification audit (WS-SM SM8.C)
+
+`InformationFlow/DeclassificationPerCore.lean` (WS-SM SM8.C, v0.33.7; staged,
+`Platform.Staged` closure) covers the one path allowed to move information
+*down* the lattice.
+
+* **The producer.**  Before this cut nothing constructed a
+  `DeclassificationEvent`: `declassifyStore` gated and stored, and the record's
+  own docstring described a writer that did not exist.  `declassifyStoreOnCore`
+  is the producer — the same gate, threading an append-only log, appending
+  exactly one event per authorized downgrade, with the state effect *provably
+  identical* to the unaudited gate (`declassifyStoreOnCore_ok_inv`), so auditing
+  adds a record and not a transition.
+* **The record.**  `originatingCore : CoreId` is undefaulted (a default would
+  attribute every event to the boot core) and `authorizationBasis` is typed, so
+  the kernel can check its own records while `DeclassificationBasis.render`
+  keeps the strings an external consumer reads byte-identical.  Timestamps are
+  the log position and the counter is **global**, which is what
+  `declassificationAuditLog_timestamp_identifies_event` rests on.
+* **Attribution.**  `declassifyStoreFromCore` reads the source domain off the
+  subject the executing core is running and fails closed on an idle core, so
+  `declassifyStoreFromCore_event_attributable` is unconditional;
+  `declassifyStoreOnCore_admits_unattributable` is the negative that makes the
+  wrapper load-bearing.
+* **The per-core views.**  `auditLogOnCore` is a view of one global log;
+  `declassificationAuditLog_partitions_by_core` proves the views partition it
+  exactly, and `DeclassificationEvent_perCore_audit` puts each event in exactly
+  one.
+* **Cross-core chains.**  `declassificationChain_recorded_across_cores` (two
+  audited hops on two cores leave a linked, attributed chain) and
+  `crossCoreChain_not_within_one_view` — **a chain that crosses cores is in no
+  single core's view**, the theorem that decides one global log over the natural
+  per-CPU buffers.
+* **The rules, as data.**  Eight, each supplying a proof of its own claim
+  through the dependently-typed `declassificationRuleEvidence`: laundering
+  (`declassificationChain_hop_authorization_does_not_compose` over a
+  *well-formed* policy, with the decidable `chainLaunders`), the endpoint rule
+  (`endpointOverride_is_not_a_declassification_basis`, consuming SM8.B's
+  `endpointFlowCheck_restricted_subset_perCore`),
+  `authorizationBasis_perCore`, and that the core an event names is audit
+  information rather than authority.
+* **The endpoint flow policy, wired.**  WS-E5/H-04 specified
+  `EndpointFlowPolicy` and nothing carried one.  `LabelingContext.endpointPolicy`
+  is now read by the four endpoint-keyed gates through `endpointFlowGate`, which
+  **conjoins** the global lattice check with the endpoint's override:
+  `endpointFlowGate_implies_securityFlowsTo` takes no hypothesis, so V6-G's
+  `endpointPolicyRestricted` is structural and a misconfigured override cannot
+  widen anything.
+
+Runtime coverage: §6.1–§6.8 of the same suite (316 → 360 assertions), every
+group with a load-bearing negative.
 
 ## 32. WS-Q3 IntermediateState formalization (v0.17.9)
 

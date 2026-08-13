@@ -198,6 +198,175 @@ theorem securityFlowsTo_prevents_label_escalation :
     securityFlowsTo SecurityLabel.publicLabel SecurityLabel.kernelTrusted = true := by
   decide
 
+-- ============================================================================
+-- WS-E5/H-04: Parameterized security domain lattice
+-- ============================================================================
+
+/-! ## H-04 — Parameterized Security Domains
+
+The original `{low, high} × {untrusted, trusted}` lattice is retained for
+backward compatibility. This section introduces a parameterized domain model
+that supports ≥3 security domains with explicit flow policies.
+
+Design:
+- `SecurityDomain` wraps a `Nat` domain identifier (0..n-1).
+- `DomainFlowPolicy` defines an explicit flow-authorization function between domains.
+- Lattice properties (reflexivity, transitivity, antisymmetry) are proved generically
+  under policy constraints.
+- `EndpointFlowPolicy` adds per-endpoint flow overrides for fine-grained IPC policy.
+- An embedding function maps the legacy 2-level lattice into a 4-domain generic lattice,
+  proving that the generic system strictly subsumes the original. -/
+
+/-- WS-E5/H-04: Nat-indexed security domain identifier.
+
+Each domain is identified by a natural number. Domain 0 is conventionally the
+lowest (most public) domain. -/
+structure SecurityDomain where
+  id : Nat
+  deriving Repr, DecidableEq, Inhabited
+
+/-- WS-G1: Hash instance for HashMap/HashSet keying. -/
+@[inline] instance : Hashable SecurityDomain where
+  hash a := hash a.id
+
+namespace SecurityDomain
+
+/-- The public (lowest) domain. -/
+def lowest : SecurityDomain := ⟨0⟩
+
+/-- WS-H14d: Construct a SecurityDomain from a Nat. -/
+@[inline] def ofNat (n : Nat) : SecurityDomain := ⟨n⟩
+
+/-- WS-H14d: Project a SecurityDomain to its underlying Nat. -/
+@[inline] def toNat (d : SecurityDomain) : Nat := d.id
+
+instance : ToString SecurityDomain where
+  toString d := s!"domain({d.id})"
+
+/-- WS-H14d: SecurityDomain roundtrip — construct then project. -/
+theorem toNat_ofNat (n : Nat) : (SecurityDomain.ofNat n).toNat = n := rfl
+/-- WS-H14d: SecurityDomain roundtrip — project then reconstruct. -/
+theorem ofNat_toNat (d : SecurityDomain) : SecurityDomain.ofNat d.toNat = d := rfl
+/-- WS-H14d: SecurityDomain injectivity. -/
+theorem ofNat_injective {n₁ n₂ : Nat} (h : SecurityDomain.ofNat n₁ = SecurityDomain.ofNat n₂) : n₁ = n₂ := by
+  cases h; rfl
+/-- WS-H14d: SecurityDomain extensionality. -/
+theorem ext {a b : SecurityDomain} (h : a.id = b.id) : a = b := by
+  cases a; cases b; simp_all
+
+end SecurityDomain
+
+/-- WS-H14a: EquivBEq for SecurityDomain. -/
+instance : EquivBEq SecurityDomain := ⟨⟩
+/-- WS-H14a: LawfulBEq for SecurityDomain. -/
+instance : LawfulBEq SecurityDomain where
+  eq_of_beq h := eq_of_beq h
+  rfl := beq_self_eq_true _
+/-- WS-H14a: LawfulHashable for SecurityDomain. -/
+instance : LawfulHashable SecurityDomain where
+  hash_eq _ _ h := by cases eq_of_beq h; rfl
+
+/-- WS-E5/H-04: Explicit flow-authorization policy between security domains.
+
+`canFlow src dst` returns `true` iff information may flow from domain `src`
+to domain `dst`. The policy must be reflexive (self-flows always permitted)
+and transitive (if a→b and b→c then a→c) to form a valid pre-order. -/
+structure DomainFlowPolicy where
+  canFlow : SecurityDomain → SecurityDomain → Bool
+
+namespace DomainFlowPolicy
+
+/-- A policy is reflexive: every domain can flow to itself. -/
+def isReflexive (p : DomainFlowPolicy) : Prop :=
+  ∀ d : SecurityDomain, p.canFlow d d = true
+
+/-- A policy is transitive: flow composes. -/
+def isTransitive (p : DomainFlowPolicy) : Prop :=
+  ∀ a b c : SecurityDomain,
+    p.canFlow a b = true → p.canFlow b c = true → p.canFlow a c = true
+
+/-- A well-formed flow policy is reflexive and transitive. -/
+def wellFormed (p : DomainFlowPolicy) : Prop :=
+  p.isReflexive ∧ p.isTransitive
+
+/-- Trivial policy: all flows allowed (flat lattice). -/
+def allowAll : DomainFlowPolicy :=
+  { canFlow := fun _ _ => true }
+
+/-- Strict linear policy for `n` domains: domain `a` can flow to domain `b`
+iff `a.id ≤ b.id`. This creates a total order 0 ≤ 1 ≤ ... ≤ n-1. -/
+def linearOrder : DomainFlowPolicy :=
+  { canFlow := fun src dst => decide (src.id ≤ dst.id) }
+
+end DomainFlowPolicy
+
+-- ============================================================================
+-- Generic lattice property proofs
+-- ============================================================================
+
+theorem DomainFlowPolicy.allowAll_reflexive :
+    DomainFlowPolicy.allowAll.isReflexive := by
+  intro _; rfl
+
+theorem DomainFlowPolicy.allowAll_transitive :
+    DomainFlowPolicy.allowAll.isTransitive := by
+  intro _ _ _ _ _; rfl
+
+theorem DomainFlowPolicy.allowAll_wellFormed :
+    DomainFlowPolicy.allowAll.wellFormed :=
+  ⟨allowAll_reflexive, allowAll_transitive⟩
+
+theorem DomainFlowPolicy.linearOrder_reflexive :
+    DomainFlowPolicy.linearOrder.isReflexive := by
+  intro d; simp [linearOrder]
+
+theorem DomainFlowPolicy.linearOrder_transitive :
+    DomainFlowPolicy.linearOrder.isTransitive := by
+  intro a b c h₁ h₂
+  simp [linearOrder] at h₁ h₂ ⊢
+  exact Nat.le_trans h₁ h₂
+
+theorem DomainFlowPolicy.linearOrder_wellFormed :
+    DomainFlowPolicy.linearOrder.wellFormed :=
+  ⟨linearOrder_reflexive, linearOrder_transitive⟩
+
+/-- WS-E5/H-04: Generic flow check using a domain flow policy.
+
+This is the parameterized replacement for `securityFlowsTo` that supports
+arbitrary domain counts and flow topologies. -/
+def domainFlowsTo (policy : DomainFlowPolicy) (src dst : SecurityDomain) : Bool :=
+  policy.canFlow src dst
+
+theorem domainFlowsTo_refl
+    (policy : DomainFlowPolicy) (d : SecurityDomain)
+    (hRefl : policy.isReflexive) :
+    domainFlowsTo policy d d = true :=
+  hRefl d
+
+theorem domainFlowsTo_trans
+    (policy : DomainFlowPolicy) (a b c : SecurityDomain)
+    (hTrans : policy.isTransitive)
+    (h₁ : domainFlowsTo policy a b = true)
+    (h₂ : domainFlowsTo policy b c = true) :
+    domainFlowsTo policy a c = true :=
+  hTrans a b c h₁ h₂
+
+-- ============================================================================
+-- WS-E5/H-04: Per-endpoint flow policy overrides
+-- ============================================================================
+
+/-- WS-E5/H-04: Per-endpoint flow policy allowing fine-grained overrides.
+
+Each endpoint may optionally specify a custom flow policy that restricts which
+domains can send/receive through it, independent of the global domain policy.
+When `endpointPolicy` returns `none`, the global policy applies. -/
+structure EndpointFlowPolicy where
+  endpointPolicy : SeLe4n.ObjId → Option DomainFlowPolicy
+
+-- ============================================================================
+-- IF-M1: legacy labeling context
+-- ============================================================================
+
 /-- WS-I2/R-16: Ownership metadata for optional memory projection. -/
 structure MemoryDomainOwnership where
   regionOwner : SeLe4n.PAddr → Option SeLe4n.DomainId
@@ -210,6 +379,23 @@ structure LabelingContext where
   endpointLabelOf : SeLe4n.ObjId → SecurityLabel
   serviceLabelOf : ServiceId → SecurityLabel
   memoryOwnership : Option MemoryDomainOwnership := none
+  /-- WS-SM SM8.C: the **per-endpoint flow policy** the live IPC gates consult.
+
+      WS-E5/H-04 introduced `EndpointFlowPolicy` and V6-G proved the properties a
+      well-formed one must have, but no context carried one, so nothing in the
+      kernel ever read it: the feature was specified and never wired.  The field
+      is that wiring; `endpointFlowGate` is where it is read.
+
+      Defaulted to "no override anywhere", which makes the gate's second conjunct
+      vacuously `true` (`endpointFlowGate_eq_securityFlowsTo_of_no_override`), so
+      every existing construction site and every existing behaviour is unchanged
+      until an operator configures one.
+
+      The policy is stated over `SecurityDomain`; the live gates carry
+      `SecurityLabel`s, and the total embedding `embedLegacyLabel` bridges them —
+      so an override is written against domains 0–3, one per point of the legacy
+      2×2 lattice. -/
+  endpointPolicy : EndpointFlowPolicy := { endpointPolicy := fun _ => none }
 
 /-- Minimal default labeling: everything is publicly observable and untrusted.
 
@@ -479,158 +665,6 @@ theorem securityFlowsTo_lattice_verified :
     securityFlowsTo SecurityLabel.kernelTrusted SecurityLabel.publicLabel = false := by
   decide
 
--- ============================================================================
--- WS-E5/H-04: Parameterized security domain lattice
--- ============================================================================
-
-/-! ## H-04 — Parameterized Security Domains
-
-The original `{low, high} × {untrusted, trusted}` lattice is retained for
-backward compatibility. This section introduces a parameterized domain model
-that supports ≥3 security domains with explicit flow policies.
-
-Design:
-- `SecurityDomain` wraps a `Nat` domain identifier (0..n-1).
-- `DomainFlowPolicy` defines an explicit flow-authorization function between domains.
-- Lattice properties (reflexivity, transitivity, antisymmetry) are proved generically
-  under policy constraints.
-- `EndpointFlowPolicy` adds per-endpoint flow overrides for fine-grained IPC policy.
-- An embedding function maps the legacy 2-level lattice into a 4-domain generic lattice,
-  proving that the generic system strictly subsumes the original. -/
-
-/-- WS-E5/H-04: Nat-indexed security domain identifier.
-
-Each domain is identified by a natural number. Domain 0 is conventionally the
-lowest (most public) domain. -/
-structure SecurityDomain where
-  id : Nat
-  deriving Repr, DecidableEq, Inhabited
-
-/-- WS-G1: Hash instance for HashMap/HashSet keying. -/
-@[inline] instance : Hashable SecurityDomain where
-  hash a := hash a.id
-
-namespace SecurityDomain
-
-/-- The public (lowest) domain. -/
-def lowest : SecurityDomain := ⟨0⟩
-
-/-- WS-H14d: Construct a SecurityDomain from a Nat. -/
-@[inline] def ofNat (n : Nat) : SecurityDomain := ⟨n⟩
-
-/-- WS-H14d: Project a SecurityDomain to its underlying Nat. -/
-@[inline] def toNat (d : SecurityDomain) : Nat := d.id
-
-instance : ToString SecurityDomain where
-  toString d := s!"domain({d.id})"
-
-/-- WS-H14d: SecurityDomain roundtrip — construct then project. -/
-theorem toNat_ofNat (n : Nat) : (SecurityDomain.ofNat n).toNat = n := rfl
-/-- WS-H14d: SecurityDomain roundtrip — project then reconstruct. -/
-theorem ofNat_toNat (d : SecurityDomain) : SecurityDomain.ofNat d.toNat = d := rfl
-/-- WS-H14d: SecurityDomain injectivity. -/
-theorem ofNat_injective {n₁ n₂ : Nat} (h : SecurityDomain.ofNat n₁ = SecurityDomain.ofNat n₂) : n₁ = n₂ := by
-  cases h; rfl
-/-- WS-H14d: SecurityDomain extensionality. -/
-theorem ext {a b : SecurityDomain} (h : a.id = b.id) : a = b := by
-  cases a; cases b; simp_all
-
-end SecurityDomain
-
-/-- WS-H14a: EquivBEq for SecurityDomain. -/
-instance : EquivBEq SecurityDomain := ⟨⟩
-/-- WS-H14a: LawfulBEq for SecurityDomain. -/
-instance : LawfulBEq SecurityDomain where
-  eq_of_beq h := eq_of_beq h
-  rfl := beq_self_eq_true _
-/-- WS-H14a: LawfulHashable for SecurityDomain. -/
-instance : LawfulHashable SecurityDomain where
-  hash_eq _ _ h := by cases eq_of_beq h; rfl
-
-/-- WS-E5/H-04: Explicit flow-authorization policy between security domains.
-
-`canFlow src dst` returns `true` iff information may flow from domain `src`
-to domain `dst`. The policy must be reflexive (self-flows always permitted)
-and transitive (if a→b and b→c then a→c) to form a valid pre-order. -/
-structure DomainFlowPolicy where
-  canFlow : SecurityDomain → SecurityDomain → Bool
-
-namespace DomainFlowPolicy
-
-/-- A policy is reflexive: every domain can flow to itself. -/
-def isReflexive (p : DomainFlowPolicy) : Prop :=
-  ∀ d : SecurityDomain, p.canFlow d d = true
-
-/-- A policy is transitive: flow composes. -/
-def isTransitive (p : DomainFlowPolicy) : Prop :=
-  ∀ a b c : SecurityDomain,
-    p.canFlow a b = true → p.canFlow b c = true → p.canFlow a c = true
-
-/-- A well-formed flow policy is reflexive and transitive. -/
-def wellFormed (p : DomainFlowPolicy) : Prop :=
-  p.isReflexive ∧ p.isTransitive
-
-/-- Trivial policy: all flows allowed (flat lattice). -/
-def allowAll : DomainFlowPolicy :=
-  { canFlow := fun _ _ => true }
-
-/-- Strict linear policy for `n` domains: domain `a` can flow to domain `b`
-iff `a.id ≤ b.id`. This creates a total order 0 ≤ 1 ≤ ... ≤ n-1. -/
-def linearOrder : DomainFlowPolicy :=
-  { canFlow := fun src dst => decide (src.id ≤ dst.id) }
-
-end DomainFlowPolicy
-
--- ============================================================================
--- Generic lattice property proofs
--- ============================================================================
-
-theorem DomainFlowPolicy.allowAll_reflexive :
-    DomainFlowPolicy.allowAll.isReflexive := by
-  intro _; rfl
-
-theorem DomainFlowPolicy.allowAll_transitive :
-    DomainFlowPolicy.allowAll.isTransitive := by
-  intro _ _ _ _ _; rfl
-
-theorem DomainFlowPolicy.allowAll_wellFormed :
-    DomainFlowPolicy.allowAll.wellFormed :=
-  ⟨allowAll_reflexive, allowAll_transitive⟩
-
-theorem DomainFlowPolicy.linearOrder_reflexive :
-    DomainFlowPolicy.linearOrder.isReflexive := by
-  intro d; simp [linearOrder]
-
-theorem DomainFlowPolicy.linearOrder_transitive :
-    DomainFlowPolicy.linearOrder.isTransitive := by
-  intro a b c h₁ h₂
-  simp [linearOrder] at h₁ h₂ ⊢
-  exact Nat.le_trans h₁ h₂
-
-theorem DomainFlowPolicy.linearOrder_wellFormed :
-    DomainFlowPolicy.linearOrder.wellFormed :=
-  ⟨linearOrder_reflexive, linearOrder_transitive⟩
-
-/-- WS-E5/H-04: Generic flow check using a domain flow policy.
-
-This is the parameterized replacement for `securityFlowsTo` that supports
-arbitrary domain counts and flow topologies. -/
-def domainFlowsTo (policy : DomainFlowPolicy) (src dst : SecurityDomain) : Bool :=
-  policy.canFlow src dst
-
-theorem domainFlowsTo_refl
-    (policy : DomainFlowPolicy) (d : SecurityDomain)
-    (hRefl : policy.isReflexive) :
-    domainFlowsTo policy d d = true :=
-  hRefl d
-
-theorem domainFlowsTo_trans
-    (policy : DomainFlowPolicy) (a b c : SecurityDomain)
-    (hTrans : policy.isTransitive)
-    (h₁ : domainFlowsTo policy a b = true)
-    (h₂ : domainFlowsTo policy b c = true) :
-    domainFlowsTo policy a c = true :=
-  hTrans a b c h₁ h₂
 
 -- ============================================================================
 -- WS-E5/H-04: Generic labeling context
@@ -651,17 +685,6 @@ def genericFlowCheck (ctx : GenericLabelingContext)
     (srcDomain dstDomain : SecurityDomain) : Bool :=
   domainFlowsTo ctx.policy srcDomain dstDomain
 
--- ============================================================================
--- WS-E5/H-04: Per-endpoint flow policy overrides
--- ============================================================================
-
-/-- WS-E5/H-04: Per-endpoint flow policy allowing fine-grained overrides.
-
-Each endpoint may optionally specify a custom flow policy that restricts which
-domains can send/receive through it, independent of the global domain policy.
-When `endpointPolicy` returns `none`, the global policy applies. -/
-structure EndpointFlowPolicy where
-  endpointPolicy : SeLe4n.ObjId → Option DomainFlowPolicy
 
 /-- Check flow with per-endpoint override: if the endpoint has a custom policy,
 use it; otherwise fall back to the global context policy. -/
@@ -740,8 +763,126 @@ theorem embedLegacyLabel_preserves_flow
         simp [securityFlowsTo, confidentialityFlowsTo, integrityFlowsTo] at hFlow <;>
         simp [embedLegacyLabel, DomainFlowPolicy.linearOrder]
 
+-- ============================================================================
+-- WS-SM SM8.C: the live per-endpoint flow gate
+-- ============================================================================
+
+/-- WS-SM SM8.C: **the configured per-endpoint override, evaluated on labels.**
+
+`true` when the endpoint carries no override — that is the whole content of the
+"endpoints without an override inherit the global policy" rule, stated so the
+gate below can conjoin unconditionally instead of branching. -/
+def endpointOverrideAllows (ctx : LabelingContext) (endpointId : SeLe4n.ObjId)
+    (srcLabel dstLabel : SecurityLabel) : Bool :=
+  match ctx.endpointPolicy.endpointPolicy endpointId with
+  | none => true
+  | some customPolicy =>
+      customPolicy.canFlow (embedLegacyLabel srcLabel) (embedLegacyLabel dstLabel)
+
+/-- WS-SM SM8.C: **the flow gate every endpoint-keyed IPC check runs.**
+
+The global lattice check **and** the endpoint's own override — a conjunction,
+never a replacement.
+
+Conjoining rather than overriding is what makes V6-G's `endpointPolicyRestricted`
+structural instead of a deployment obligation: a misconfigured override cannot
+widen anything, because the global check still has to pass
+(`endpointFlowGate_implies_securityFlowsTo`, which takes no hypothesis at all).
+An override can only ever deny more, which is the only direction a per-endpoint
+restriction should be able to move.
+
+Read by the four endpoint-keyed gate sites: the `endpointSendDualChecked` /
+`endpointReceiveDualChecked` / `endpointCallChecked` / `endpointReplyRecvChecked`
+enforcement wrappers, the live cross-core `.send` and `.call` dispatches, and the
+live `.receive` / `.replyRecv` arms. -/
+def endpointFlowGate (ctx : LabelingContext) (endpointId : SeLe4n.ObjId)
+    (srcLabel dstLabel : SecurityLabel) : Bool :=
+  securityFlowsTo srcLabel dstLabel && endpointOverrideAllows ctx endpointId srcLabel dstLabel
+
+/-- WS-SM SM8.C: **the gate never admits a flow the global lattice denies.**
+
+No hypothesis: the restriction is a property of the gate's shape, so no
+deployment obligation and no well-formedness precondition stands between a
+misconfigured endpoint policy and the guarantee. -/
+theorem endpointFlowGate_implies_securityFlowsTo (ctx : LabelingContext)
+    (endpointId : SeLe4n.ObjId) (srcLabel dstLabel : SecurityLabel)
+    (h : endpointFlowGate ctx endpointId srcLabel dstLabel = true) :
+    securityFlowsTo srcLabel dstLabel = true :=
+  (Bool.and_eq_true _ _ ▸ h).1
+
+/-- WS-SM SM8.C: …and it admits nothing the endpoint's own policy denies. -/
+theorem endpointFlowGate_implies_override (ctx : LabelingContext)
+    (endpointId : SeLe4n.ObjId) (srcLabel dstLabel : SecurityLabel)
+    (h : endpointFlowGate ctx endpointId srcLabel dstLabel = true) :
+    endpointOverrideAllows ctx endpointId srcLabel dstLabel = true :=
+  (Bool.and_eq_true _ _ ▸ h).2
+
+/-- WS-SM SM8.C: the gate's introduction rule — both conjuncts, named
+separately, which is how the enforcement wrappers' `…_when_allowed` theorems
+carry them. -/
+theorem endpointFlowGate_of (ctx : LabelingContext) (endpointId : SeLe4n.ObjId)
+    (srcLabel dstLabel : SecurityLabel)
+    (hFlow : securityFlowsTo srcLabel dstLabel = true)
+    (hOverride : endpointOverrideAllows ctx endpointId srcLabel dstLabel = true) :
+    endpointFlowGate ctx endpointId srcLabel dstLabel = true := by
+  simp [endpointFlowGate, hFlow, hOverride]
+
+/-- WS-SM SM8.C: a denied override denies the gate, whatever the global lattice
+says — the dual of `endpointFlowGate_false_of_securityFlowsTo_false`, and the
+form a *configured* deployment's denial proofs need. -/
+theorem endpointFlowGate_false_of_override_false (ctx : LabelingContext)
+    (endpointId : SeLe4n.ObjId) (srcLabel dstLabel : SecurityLabel)
+    (h : endpointOverrideAllows ctx endpointId srcLabel dstLabel = false) :
+    endpointFlowGate ctx endpointId srcLabel dstLabel = false := by
+  simp [endpointFlowGate, h]
+
+/-- WS-SM SM8.C: a denied global flow denies the gate, whatever the override
+says — the form every `…_flowDenied` proof needs, so those keep the hypotheses
+they had before the gate existed. -/
+theorem endpointFlowGate_false_of_securityFlowsTo_false (ctx : LabelingContext)
+    (endpointId : SeLe4n.ObjId) (srcLabel dstLabel : SecurityLabel)
+    (h : securityFlowsTo srcLabel dstLabel = false) :
+    endpointFlowGate ctx endpointId srcLabel dstLabel = false := by
+  simp [endpointFlowGate, h]
+
+/-- WS-SM SM8.C: with no override configured at this endpoint the gate **is**
+the global check — so an unconfigured deployment behaves exactly as it did
+before the field existed. -/
+theorem endpointFlowGate_eq_securityFlowsTo_of_no_override (ctx : LabelingContext)
+    (endpointId : SeLe4n.ObjId) (srcLabel dstLabel : SecurityLabel)
+    (hNone : ctx.endpointPolicy.endpointPolicy endpointId = none) :
+    endpointFlowGate ctx endpointId srcLabel dstLabel = securityFlowsTo srcLabel dstLabel := by
+  simp [endpointFlowGate, endpointOverrideAllows, hNone]
+
+/-- WS-SM SM8.C: and the default context configures no override anywhere, so the
+gate is the global check at every endpoint unless a deployment says otherwise. -/
+theorem endpointOverrideAllows_default (ctx : LabelingContext) (endpointId : SeLe4n.ObjId)
+    (srcLabel dstLabel : SecurityLabel)
+    (hDefault : ctx.endpointPolicy = { endpointPolicy := fun _ => none }) :
+    endpointOverrideAllows ctx endpointId srcLabel dstLabel = true := by
+  simp [endpointOverrideAllows, hDefault]
+
+/-- WS-SM SM8.C (**non-vacuity**): a configured override genuinely denies a flow
+the global lattice permits.  Without this the gate could be a constant `true`
+conjunct and every theorem above would still hold. -/
+theorem endpointFlowGate_is_not_securityFlowsTo :
+    ∃ (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (srcLabel dstLabel : SecurityLabel),
+      securityFlowsTo srcLabel dstLabel = true ∧
+      endpointFlowGate ctx endpointId srcLabel dstLabel = false := by
+  refine ⟨{ objectLabelOf := fun _ => SecurityLabel.publicLabel
+            threadLabelOf := fun _ => SecurityLabel.publicLabel
+            endpointLabelOf := fun _ => SecurityLabel.publicLabel
+            serviceLabelOf := fun _ => SecurityLabel.publicLabel
+            endpointPolicy := { endpointPolicy := fun _ => some { canFlow := fun _ _ => false } } },
+          ⟨0⟩, SecurityLabel.publicLabel, SecurityLabel.publicLabel, by decide, by decide⟩
+
 /-- Lift a legacy `LabelingContext` into a `GenericLabelingContext` using the
-embedding and linearOrder policy. -/
+embedding and linearOrder policy.
+
+WS-SM SM8.C: the lift carries the *global* policy only.  A caller that needs the
+endpoint overrides too reads them through `endpointFlowGate` on the original
+context — `liftLegacyContext` predates the field and has no live consumer, so it
+is left as the domain-lattice bridge it was. -/
 def liftLegacyContext (ctx : LabelingContext) : GenericLabelingContext :=
   {
     policy := .linearOrder
@@ -790,16 +931,93 @@ theorem securityLattice_transitive :
 -- V6-H (M-IF-6): Declassification audit trail
 -- ============================================================================
 
+/-- WS-SM SM8.C.5 (V6-H, typed): the **authorization basis** a declassification
+    event records — *why* the downgrade was permitted.
+
+    This was a bare `String` until WS-SM SM8.C, with the docstring stating that
+    the kernel does not interpret it.  A kernel that cannot interpret its own
+    audit basis cannot prove anything about it: the field admitted any string,
+    including one naming a check that never ran, so "the recorded basis is the
+    check that passed" was a convention rather than a fact.  Typing it makes
+    the claim checkable (`declassificationBasisKernelVerified`, SM8.C.5).
+
+    Open-endedness is preserved where it was real: `integratorOverride` still
+    carries an arbitrary authority string, so a system integrator can record a
+    basis the kernel has never heard of.  What the type adds is that the kernel
+    can tell that basis apart from one it issued itself, which is exactly the
+    distinction an audit consumer needs (`kernelVerifiable`). -/
+inductive DeclassificationBasis where
+  /-- The `DeclassificationPolicy.canDeclassify` gate authorized the downgrade.
+      This is the only basis the kernel itself produces. -/
+  | policyRule
+  /-- An out-of-band system-integrator authority permitted the downgrade.  The
+      kernel neither issues nor verifies these; `authority` is the integrator's
+      own designation, reproduced verbatim in the rendered audit record. -/
+  | integratorOverride (authority : String)
+  deriving Repr, DecidableEq
+
+namespace DeclassificationBasis
+
+/-- WS-SM SM8.C.5: the audit record's external rendering.  External analysis
+    tools consumed the pre-SM8.C `String` field directly, so the two bases the
+    tree ever recorded render to the byte-identical strings they had before
+    (`"DeclassificationPolicy.canDeclassify"` and the integrator's own
+    designation) — typing the field changed what the *kernel* can conclude, not
+    what an audit consumer reads. -/
+def render : DeclassificationBasis → String
+  | .policyRule => "DeclassificationPolicy.canDeclassify"
+  | .integratorOverride authority => authority
+
+/-- WS-SM SM8.C.5: whether the kernel can **check** this basis against its own
+    policy configuration.  True for the gate the kernel runs, false for an
+    out-of-band authority it has no way to evaluate.
+
+    An audit consumer reads this as: a `false` here means the event did not come
+    from the kernel's declassification path — see
+    `auditLogKernelIssued` in `InformationFlow/DeclassificationPerCore.lean`,
+    which turns that into a decidable property of a whole log. -/
+def kernelVerifiable : DeclassificationBasis → Bool
+  | .policyRule => true
+  | .integratorOverride _ => false
+
+/-- WS-SM SM8.C.5: the kernel's own basis renders to the pre-SM8.C literal, so
+    the audit record an external tool sees is unchanged by the typing. -/
+theorem render_policyRule : render .policyRule = "DeclassificationPolicy.canDeclassify" := rfl
+
+/-- WS-SM SM8.C.5: an integrator override renders to its authority verbatim —
+    the kernel neither rewrites nor interprets it. -/
+theorem render_integratorOverride (authority : String) :
+    render (.integratorOverride authority) = authority := rfl
+
+/-- WS-SM SM8.C.5: exactly one basis is kernel-verifiable.  Load-bearing rather
+    than decorative: `authorizationBasis_perCore` concludes that every event the
+    kernel recorded passes its own check, and that conclusion is only meaningful
+    because some basis fails it. -/
+theorem kernelVerifiable_iff_policyRule (b : DeclassificationBasis) :
+    b.kernelVerifiable = true ↔ b = .policyRule := by
+  cases b <;> simp [kernelVerifiable]
+
+end DeclassificationBasis
+
 /-- V6-H (M-IF-6): Record of a declassification event for audit purposes.
 
-    Every declassification operation should produce a `DeclassificationEvent`
+    Every declassification operation produces a `DeclassificationEvent`
     recording the source domain, destination domain, authorization basis,
-    and a monotonic timestamp. The audit trail enables post-hoc analysis of
-    information-flow boundary crossings.
+    the originating core, and a monotonic timestamp. The audit trail enables
+    post-hoc analysis of information-flow boundary crossings.
 
-    **Usage**: The enforcement wrappers in `Enforcement/Soundness.lean`
-    (`declassifyStore`) produce declassification events. The caller is
-    responsible for recording these events in an append-only audit log. -/
+    **Producer**: `declassifyStoreOnCore`
+    (`InformationFlow/DeclassificationPerCore.lean`) — the audited per-core form
+    of the `Enforcement/Soundness.lean` gate `declassifyStore`.  It threads the
+    append-only log through the operation and appends the event itself, so
+    recording is not left to the caller: a successful downgrade and its audit
+    entry are one step (`declassifyStoreOnCore_records_one`).
+
+    Until WS-SM SM8.C this docstring said the enforcement wrappers produced
+    events and the caller was responsible for recording them.  Neither was
+    true — nothing in the tree constructed a `DeclassificationEvent`, so the
+    audit trail was a type with no writer.  Per the implement-the-improvement
+    rule the producer was built rather than the claim weakened. -/
 structure DeclassificationEvent where
   /-- Source domain initiating the declassification. -/
   srcDomain : SecurityDomain
@@ -807,15 +1025,29 @@ structure DeclassificationEvent where
   dstDomain : SecurityDomain
   /-- Object ID of the target being declassified to. -/
   targetObject : SeLe4n.ObjId
-  /-- Authorization basis for this declassification. Records which policy
-      rule or system-integrator authority permitted the downgrade. Examples:
-      `"DeclassificationPolicy.canDeclassify"`, `"system-integrator-override"`.
-      The kernel does not interpret this value — it is stored for audit
-      trail consumption by external analysis tools. -/
-  authorizationBasis : String
+  /-- Authorization basis for this declassification: which policy rule or
+      system-integrator authority permitted the downgrade.  Rendered for
+      external analysis tools by `DeclassificationBasis.render`; checked by the
+      kernel through `DeclassificationBasis.kernelVerifiable`. -/
+  authorizationBasis : DeclassificationBasis
   /-- Monotonic event counter (not wall-clock time — the kernel has no
-      notion of real time). Used for ordering events in the audit log. -/
+      notion of real time). Used for ordering events in the audit log.
+
+      The counter is **global**, not per-core: `declassifyStoreOnCore` derives
+      it from the length of the whole log, so two events recorded on different
+      cores are totally ordered and a cross-core chain can be reconstructed
+      (`declassificationAuditLog_timestamp_identifies_event`).  A per-core
+      counter would collide across cores and lose exactly that ordering. -/
   timestamp : Nat
+  /-- WS-SM SM8.C.1: the core the declassification was performed on.
+
+      Plan `docs/planning/SMP_INFORMATION_FLOW_PLAN.md` §4.3: when a thread on
+      one core declassifies state observed on another (via cross-core IPC), the
+      audit trail must record where the downgrade happened, or a chain spanning
+      cores cannot be attributed.  Deliberately **not** defaulted: a default
+      would silently attribute every event to the boot core, which is the exact
+      failure the field exists to prevent. -/
+  originatingCore : Concurrency.CoreId
   deriving Repr, DecidableEq
 
 /-- V6-H: An audit log is a list of declassification events, ordered by
@@ -846,6 +1078,36 @@ theorem recordDeclassification_length
     (log : DeclassificationAuditLog) (event : DeclassificationEvent) :
     (recordDeclassification log event).length = log.length + 1 := by
   simp [recordDeclassification]
+
+/-- WS-SM SM8.C.3: **every declassification event names a core that exists.**
+
+    `CoreId` is `Fin numCores`, so this holds by construction rather than by a
+    range check — which is the point: the SM0.E typed identifier makes an
+    out-of-range attribution a type error, not a runtime one.  Stated anyway as
+    the checked witness of that design: if a future cut ever widens the field to
+    a raw `Nat` (to carry, say, an affinity slot from a platform that numbers
+    cores sparsely), this theorem stops being provable and the widening has to
+    supply a real bound. -/
+theorem declassificationEvent_originatingCore_valid (e : DeclassificationEvent) :
+    e.originatingCore.val < Concurrency.numCores :=
+  e.originatingCore.isLt
+
+/-- WS-SM SM8.C.3: the enumeration form — every event's core is one the
+    per-core audit partition (`auditLogOnCore`) actually visits.  This is the
+    half `declassificationEvent_originatingCore_valid` does not give: a bound
+    says the index is in range, membership in `allCores` says the sweep that
+    builds the per-core views reaches it. -/
+theorem declassificationEvent_originatingCore_mem_allCores (e : DeclassificationEvent) :
+    e.originatingCore ∈ Concurrency.allCores :=
+  Concurrency.mem_allCores _
+
+/-- WS-SM SM8.C.3: the whole-log form — no audit log, however assembled, can
+    contain an event attributed to a core outside the enumeration.  Consumed by
+    `declassificationAuditLog_partitions_by_core`, whose per-core sum would
+    otherwise have to exclude the possibility of an unreachable slice. -/
+theorem declassificationAuditLog_originatingCores_valid (log : DeclassificationAuditLog) :
+    ∀ e ∈ log, e.originatingCore ∈ Concurrency.allCores :=
+  fun e _ => declassificationEvent_originatingCore_mem_allCores e
 
 -- ============================================================================
 -- WS-H10/A-39: Declassification model
