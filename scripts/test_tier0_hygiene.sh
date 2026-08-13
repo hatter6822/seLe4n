@@ -86,26 +86,19 @@ if command -v rg >/dev/null 2>&1; then
   run_check "HYGIENE" bash -lc 'if rg -n "uses: [a-zA-Z]+/[a-zA-Z-]+@v[0-9]" .github/workflows/ | rg -v "@[0-9a-f]{40}"; then echo "F-14 regression: GitHub Actions must be SHA-pinned (see docs/CI_POLICY.md)." >&2; exit 1; fi'
 fi
 
-# Every `github/codeql-action/*` reference must pin the same commit: `init`
-# stamps its config file with its own action version and `analyze` refuses to
-# load a config stamped with a different one, so a mismatched pair ends the
-# run as a CodeQL configuration error whose "failed run" SARIF code scanning
-# rejects — leaving the code-scanning merge requirement waiting for results
-# that never arrive.  Unconditional (no `command -v` guard): a gate that
-# skips itself when a tool is absent is a gate that fails open.
-run_check "HYGIENE" "${SCRIPT_DIR}/check_codeql_action_pin_parity.sh"
+# The three CodeQL workflow invariants, each of which independently leaves the
+# code-scanning merge requirement waiting for results that never arrive:
+# `init`+`analyze` must both exist; every `github/codeql-action/*` reference
+# must pin the same commit (`init` stamps its config with its own version and
+# `analyze` rejects a config from a different one); and analyze must not be
+# masked by `continue-on-error` at step or job level — masking is why the
+# #858/#859 breakage went unseen.  Unconditional (no `command -v` guard): a
+# gate that skips itself when a tool is absent is a gate that fails open.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_codeql_workflow_policy.py"
 
-# ... and its witness, since a scanner that stops reaching the mismatch it
-# exists to catch would otherwise go silent rather than loud.
-run_check "HYGIENE" "${SCRIPT_DIR}/check_codeql_action_pin_parity.sh" --self-test
-
-# The CodeQL analyze step must stay blocking.  Masking it with
-# `continue-on-error` is why the #858/#859 breakage went unseen: CodeQL died
-# in a configuration error, code scanning received nothing, and the job still
-# reported success.  The flag was removed in v0.33.6 (docs/CI_POLICY.md §8);
-# this keeps it from returning silently.
-run_check "HYGIENE" "${SCRIPT_DIR}/check_codeql_analyze_blocking.sh"
-run_check "HYGIENE" "${SCRIPT_DIR}/check_codeql_analyze_blocking.sh" --self-test
+# ... and its witness, since a scanner that stops reaching the misconfiguration
+# it exists to catch would otherwise go silent rather than loud.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_codeql_workflow_policy.py" --self-test
 
 if command -v shellcheck >/dev/null 2>&1; then
   # AN11-F (LOW): comprehensive shell lint — covers every `.sh` under the

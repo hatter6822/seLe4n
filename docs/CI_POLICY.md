@@ -166,17 +166,33 @@ on the pull request that introduces the mismatch rather than on every one after 
 
 Two mechanisms hold the invariant, at the two points it can break:
 
-1. **Enforcement** — `scripts/check_codeql_action_pin_parity.sh`, run unconditionally
-   by Tier 0 hygiene together with its `--self-test` witness. It fails on disagreeing
+1. **Enforcement** — `scripts/check_codeql_workflow_policy.py`, run unconditionally by
+   Tier 0 hygiene together with its `--self-test` witness. It fails on disagreeing
    pins, on disagreeing version comments, and on any codeql-action reference that is
    not a full 40-character commit SHA. That last check is load-bearing rather than
    redundant: parity over a mutable tag is meaningless, and the §9 F-14 scan does not
    reach sub-path actions such as `github/codeql-action/init`, whose owner/repo
-   segment contains a `/`.
+   segment contains a `/`. Because YAML permits quoted scalars, references are read
+   through a quote-aware scanner — a `uses: "github/codeql-action/init@…"` that a
+   plain grep would miss is exactly the mismatch that would slip through.
 2. **Prevention** — the `codeql-action` group in `.github/dependabot.yml`. Dependabot
    treats `init` and `analyze` as separate dependencies and, ungrouped, opens one PR
    per sub-action; each such PR carries a mismatched pair. Grouping keeps the pair in
    one atomic pull request.
+
+The same gate carries the other two invariants that produce the identical symptom, so
+that no single one of them can be satisfied while another is quietly violated:
+
+- **Presence** — at least one `init` and one `analyze` step must exist. Deleting or
+  renaming the analyze step removes analysis while the merge requirement stays in
+  force, and a gate that only inspects the steps it can find would report "blocking"
+  for a workflow running no CodeQL at all.
+- **Unmasked** — no `continue-on-error` on the analyze step *or* on its job (§8). A
+  masked job is tolerated by the run exactly as a masked step is.
+
+`continue-on-error` is matched as a mapping **key**, never as text: a step named
+`Run CodeQL without continue-on-error masking` must not trip the gate, per the
+project's gates-read-code rule.
 
 Historical instance: PRs #858 and #859 (split `init` / `analyze` bumps from v4.37.4 to
 v4.37.6) were each individually unmergeable for this reason, and merging either alone
