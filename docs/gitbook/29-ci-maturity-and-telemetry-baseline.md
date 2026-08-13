@@ -61,7 +61,7 @@ Flake signals are triaged as reliability incidents. Timing regressions are revie
 - Repeated-lane flake probe with configurable attempt count
 - Telemetry artifact uploads to `.ci-artifacts/telemetry/`
 - Weekly Lean toolchain drift proposals via Dependabot
-- Explicit CodeQL policy rationale (informational/non-blocking) in `docs/CI_POLICY.md`
+- Explicit CodeQL policy rationale in `docs/CI_POLICY.md` (blocking since v0.33.6; the WS-B10 non-blocking decision and its reversal are recorded in §8.1)
 
 ### Related
 

@@ -69,7 +69,7 @@ Security goals:
    - `scripts/setup_lean_env.sh` no longer pipes remote installer content directly to shell.
    - It downloads to a temporary file, verifies `ELAN_INSTALLER_SHA256`, and aborts on mismatch.
 4. **CI/security policy synchronization**
-   - `docs/CI_POLICY.md` records baseline scanner controls and explains CodeQL non-blocking policy.
+   - `docs/CI_POLICY.md` records baseline scanner controls and the CodeQL blocking-gate policy.
    - Tier 3 anchors enforce presence of threat-model and installer-checksum hardening symbols.
 
 ## 6) Residual risk and follow-on work
@@ -78,7 +78,7 @@ Residual risks accepted in this phase:
 
 - pinned installer checksum requires manual rotation when upstream installer changes,
 - no cryptographic signature verification for installer provenance yet,
-- CodeQL remains informational/non-blocking due repository code-scanning availability constraints.
+- CodeQL is a blocking gate: the analyze step carries no `continue-on-error` (see `docs/CI_POLICY.md` §8).
 
 Follow-on work ownership:
 

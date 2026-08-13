@@ -20,10 +20,12 @@
 # commits ..." indefinitely — the pull request becomes permanently
 # unmergeable, and a mismatch landed on `main` blocks every later PR.
 #
-# The failure is invisible in the Actions UI because the analyze step is
-# `continue-on-error` per docs/CI_POLICY.md §8, so the job still reports
-# success.  That is what makes a source-level gate the right enforcement
-# point: it fails at Tier 0, before CodeQL ever runs.
+# When PRs #858/#859 hit this the analyze step was `continue-on-error`, so
+# the job reported success and the breakage was invisible in the Actions UI;
+# that flag is now removed (docs/CI_POLICY.md §8) and the same failure fails
+# the security lane loudly.  This gate remains the primary defence even so:
+# it fails at Tier 0, before CodeQL ever runs, and on the pull request that
+# introduces the mismatch rather than on every one after it.
 #
 # Parity is only meaningful over immutable refs, so each reference must also
 # be a full 40-character lowercase commit SHA.  (The F-14 SHA-pinning scan in

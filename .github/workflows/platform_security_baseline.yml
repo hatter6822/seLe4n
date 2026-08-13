@@ -115,6 +115,14 @@ jobs:
         with:
           languages: actions
 
-      - name: Run CodeQL analysis (informational; see docs/CI_POLICY.md)
+      # Blocking, deliberately: this step carries no `continue-on-error`.  A
+      # masked analyze reports the job green while code scanning receives
+      # nothing, so a broken CodeQL is indistinguishable from a healthy one
+      # and only surfaces as an unmergeable pull request (PRs #858 / #859).
+      # `analyze` does not fail on findings — it fails on configuration and
+      # upload errors, which are exactly the failures worth stopping for.
+      # Fork-origin pull requests never reach here: the job's `if:` skips
+      # them, because `security-events: write` is unavailable in that
+      # context.  See docs/CI_POLICY.md §8.
+      - name: Run CodeQL analysis (blocking; see docs/CI_POLICY.md §8)
         uses: github/codeql-action/analyze@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
-        continue-on-error: true

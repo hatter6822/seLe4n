@@ -1,4 +1,4 @@
-## v0.33.6 — CodeQL action pin parity: the split bump that deadlocks the merge queue
+## v0.33.6 — CodeQL: pin parity, and the mask that hid a broken gate
 
 **The failure.**  PRs #858 and #859 could not merge, each reporting `Code
 scanning is waiting for results from CodeQL for the commits ...`.  Dependabot
@@ -54,11 +54,39 @@ instead of one PR per sub-action.  The gate and the group cover the two
 distinct points at which the invariant can break — a hand edit and an automated
 one — so neither is redundant with the other.
 
-`docs/CI_POLICY.md` §9.1 records the invariant, the failure chain, and both
-mechanisms.  CI configuration and documentation only; no Lean sources, no
-theorems, and no kernel behaviour changed — trace byte-identical.
+**The WS-B10 non-blocking decision is reversed — CodeQL is now a blocking
+gate.**  `continue-on-error` is removed from the analyze step.  WS-B10's own
+recorded re-evaluation trigger was "once Code Scanning availability is
+guaranteed for this repository", and it has fired: code scanning here is not
+merely available but *required* — the repository enforces a code-scanning merge
+requirement naming CodeQL, which is precisely what left #858 and #859 stuck.
+The masked step also inverted its second premise in practice; it was justified
+as protecting CI reliability, and instead it cost reliability, because a green
+job that means "CodeQL may or may not have run" carries no signal and left an
+unmergeable PR with no failing check to point at.  Blocking is narrower than it
+sounds: `analyze` does not fail on findings, only on configuration and upload
+errors — exactly the conditions under which the merge requirement hangs.
+Fork-origin PRs are unaffected (the job's `if:` already skips them, as
+`security-events: write` is unavailable there), and Dependabot PRs upload
+successfully today, as #858's and #859's own accepted diagnostic uploads show.
 
-Refs: docs/CI_POLICY.md §9.1
+Guarded so it cannot silently return: `scripts/check_codeql_analyze_blocking.sh`
+(Tier 0, with its own `--self-test`) fails if any `codeql-action/analyze` step
+carries `continue-on-error`.  It is order-insensitive within the step — a mask
+written *above* the `uses:` line is caught like one written below, since YAML
+mapping order is free — and it strips YAML comments before matching, so the
+sentence explaining the rule cannot trip it.  Verified by re-masking the real
+workflow and confirming the gate fails.
+
+`docs/CI_POLICY.md` §8 now records the original decision, the trigger, and the
+reversal (rather than being rewritten as though the decision never happened);
+§9.1 records the pin-parity invariant, the failure chain, and both mechanisms.
+GitBook chapters 07/28/29 and `docs/THREAT_MODEL.md` are re-synced off the
+stale "informational/non-blocking" claim.  CI configuration and documentation
+only; no Lean sources, no theorems, and no kernel behaviour changed — trace
+byte-identical.
+
+Refs: docs/CI_POLICY.md §8, §9.1
 
 ## v0.33.5 — SM8.B: per-core non-interference, at the transitions that really run
 

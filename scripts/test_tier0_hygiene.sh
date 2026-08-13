@@ -99,6 +99,14 @@ run_check "HYGIENE" "${SCRIPT_DIR}/check_codeql_action_pin_parity.sh"
 # exists to catch would otherwise go silent rather than loud.
 run_check "HYGIENE" "${SCRIPT_DIR}/check_codeql_action_pin_parity.sh" --self-test
 
+# The CodeQL analyze step must stay blocking.  Masking it with
+# `continue-on-error` is why the #858/#859 breakage went unseen: CodeQL died
+# in a configuration error, code scanning received nothing, and the job still
+# reported success.  The flag was removed in v0.33.6 (docs/CI_POLICY.md §8);
+# this keeps it from returning silently.
+run_check "HYGIENE" "${SCRIPT_DIR}/check_codeql_analyze_blocking.sh"
+run_check "HYGIENE" "${SCRIPT_DIR}/check_codeql_analyze_blocking.sh" --self-test
+
 if command -v shellcheck >/dev/null 2>&1; then
   # AN11-F (LOW): comprehensive shell lint — covers every `.sh` under the
   # repo (currently only `scripts/`, but enforced at find-time so any

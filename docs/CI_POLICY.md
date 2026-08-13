@@ -71,7 +71,7 @@ This workflow runs on pull requests, pushes to `main`, weekly schedule, and manu
 For fork-origin pull requests, the security-scan job is conditionally skipped because `security-events: write` permissions are unavailable in that context; architecture-targeted fast-gate coverage still runs.
 The workflow permissions include `pull-requests: read` so the Gitleaks PR commit-diff scan path can read pull request commits without `Resource not accessible by integration` failures.
 The security scan job performs a full-history checkout (`actions/checkout` with `fetch-depth: 0`) so Gitleaks PR commit-range scans do not fail with ambiguous revision errors on shallow clones.
-CodeQL analysis remains in the workflow for baseline static checks, but the analyze upload step is marked `continue-on-error` so repositories without Code Scanning enabled do not hard-fail the entire security lane.
+CodeQL analysis is a hard-fail gate: the analyze step carries no `continue-on-error` (see §8 for the policy and the reversal that made it blocking).
 
 
 ## 7. WS-B9 threat-model baseline linkage
@@ -83,19 +83,48 @@ The setup bootstrap path now requires checksum verification for the downloaded e
 (`scripts/setup_lean_env.sh`: `ELAN_INSTALLER_SHA256`) before execution.
 
 
-## 8. WS-B10 CodeQL policy decision
+## 8. CodeQL policy decision
 
-CodeQL remains **informational/non-blocking** in the security baseline workflow.
+CodeQL is a **blocking** gate in the security baseline workflow. The analyze step
+carries no `continue-on-error`: a CodeQL failure fails the security lane.
 
-Rationale:
+### 8.1 History — the WS-B10 non-blocking decision, and its reversal
 
-1. repository-level Code Scanning enablement is not guaranteed in every execution environment,
-2. failing hard on analyze upload would create false-negative CI reliability without improving code correctness signal,
-3. Gitleaks + Trivy still provide hard-fail security gates for secrets and HIGH/CRITICAL findings.
+WS-B10 originally marked the analyze step `continue-on-error`, on the rationale that
+(1) repository-level Code Scanning enablement was not guaranteed in every execution
+environment, (2) hard-failing on analyze upload would cost CI reliability without
+improving correctness signal, and (3) Gitleaks + Trivy already provided hard-fail
+security gates. It recorded a re-evaluation trigger: *once Code Scanning availability
+is guaranteed for this repository, `continue-on-error` should be removed and CodeQL
+promoted to a required blocking gate.*
 
-Re-evaluation trigger:
+**That trigger has fired, and the flag is removed.** Code Scanning is not merely
+available here — it is *required*: the repository enforces a code-scanning merge
+requirement naming CodeQL, which is what left PRs #858 and #859 unmergeable (§9.1).
+Premise (1) no longer holds.
 
-- Once Code Scanning availability is guaranteed for this repository across required environments, `continue-on-error` should be removed and CodeQL promoted to a required blocking gate.
+The masked step also proved to be the reason that breakage went unnoticed. With
+`continue-on-error`, both PRs' `Security Signal / Secret + Dependency + CodeQL` jobs
+reported **success** while CodeQL had in fact died in a configuration error and code
+scanning had received nothing. A green job that means "CodeQL may or may not have run"
+carries no signal, and the only symptom left was an unmergeable pull request with no
+failing check to point at. Premise (2) inverted in practice: masking the failure cost
+more CI reliability than surfacing it would have.
+
+What blocking does and does not mean:
+
+- `analyze` does **not** fail on findings. Alerts are reported to code scanning; the
+  step fails on configuration errors and upload failures — exactly the conditions
+  under which the code-scanning merge requirement will otherwise hang.
+- Fork-origin pull requests are unaffected: the whole `security-baseline-scan` job is
+  skipped for them by its `if:` guard, because `security-events: write` is not
+  available to fork-origin runs. Architecture-targeted fast-gate coverage still runs.
+- Dependabot pull requests upload successfully today (observed in both #858 and #859,
+  whose diagnostic SARIF uploads were accepted), so blocking does not strand them.
+
+Should a transient upload failure ever become a recurring flake, the correct response
+is a retry or a narrowed conditional — not restoring a blanket mask that also hides
+configuration errors.
 
 ## 9. WS-E1 GitHub Actions SHA-pinning policy (F-14)
 
@@ -125,10 +154,15 @@ error*; the post-step then uploads a diagnostics-only "failed run" SARIF, code
 scanning rejects it (`Error when processing the SARIF file`, check conclusion
 `neutral`), and the repository's code-scanning merge requirement waits for results
 that will never arrive — reporting `Code scanning is waiting for results from CodeQL
-for the commits ...` and leaving the pull request permanently unmergeable. Because
-the analyze step is `continue-on-error` per §8, the job still reports **success**, so
-the breakage is invisible in the Actions UI. A mismatch merged to `main` blocks every
-subsequent pull request, not only the one that introduced it.
+for the commits ...` and leaving the pull request permanently unmergeable. A mismatch
+merged to `main` blocks every subsequent pull request, not only the one that
+introduced it.
+
+When #858 and #859 hit this, the analyze step was still `continue-on-error`, so both
+jobs reported **success** and the breakage was invisible in the Actions UI. That flag
+is now removed (§8), so the same failure would fail the security lane loudly. The
+Tier 0 gate below is still the primary defence: it fails before CodeQL ever runs, and
+on the pull request that introduces the mismatch rather than on every one after it.
 
 Two mechanisms hold the invariant, at the two points it can break:
 
