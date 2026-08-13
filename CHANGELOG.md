@@ -1,3 +1,65 @@
+## v0.33.6 — CodeQL action pin parity: the split bump that deadlocks the merge queue
+
+**The failure.**  PRs #858 and #859 could not merge, each reporting `Code
+scanning is waiting for results from CodeQL for the commits ...`.  Dependabot
+treats `github/codeql-action/init` and `github/codeql-action/analyze` as
+separate dependencies, so the v4.37.4 → v4.37.6 bump arrived as two PRs, each
+bumping one half of a pair that must move together: `init` stamps the
+configuration file it writes with its own action version and `analyze` refuses
+to load a config stamped with a different one.  Both runs died on the
+symmetric error (`Loaded a configuration file for version '4.37.6', but running
+version '4.37.4'` in #858; the mirror in #859), which the CodeQL Action
+classifies as a *configuration error* rather than a findings failure — so its
+post-step uploaded a diagnostics-only "failed run" SARIF, code scanning
+rejected it (`Error when processing the SARIF file`, check conclusion
+`neutral`), and the repository's code-scanning merge requirement was left
+waiting for results that would never arrive.
+
+**Why it was invisible, and why it was a trap.**  The analyze step is
+`continue-on-error` per `docs/CI_POLICY.md` §8, so the
+`Security Signal / Secret + Dependency + CodeQL` job reported **success** in
+both runs; nothing in the Actions UI flagged that CodeQL had not run.  The
+deadlock was also mutual in a way that made the obvious remedy wrong: merging
+either PR on its own would have landed the mismatched pair on `main` and
+blocked *every* subsequent pull request.  The only safe landing is the union of
+the two, which is what this release ships — both references moved to
+`5595ccaf912efad79be6eef63a5619ff05969be3` (v4.37.6) in one commit.
+
+**Enforced structurally, not by convention.**  New
+`scripts/check_codeql_action_pin_parity.sh`, run unconditionally by Tier 0
+hygiene (no `command -v` guard — a gate that skips itself when a tool is absent
+is a gate that fails open), rejects disagreeing pins, disagreeing trailing
+version comments, and any codeql-action reference that is not a full
+40-character commit SHA.  That last check is load-bearing rather than
+redundant: parity over a mutable tag means nothing, and the §9 F-14 SHA-pinning
+scan does not reach sub-path actions such as `github/codeql-action/init`, whose
+owner/repo segment contains a `/` its `[a-zA-Z-]+` pattern cannot match.  The
+scan is anchored to a leading `uses:` so a YAML comment discussing a pin can
+neither satisfy nor trip it, and it ships a `--self-test` witness — also Tier
+0 — that drives the gate over a matched pair, a mismatched pair, a tagged pair,
+a commented-out pin, and a tree carrying no CodeQL at all, since a scanner that
+loses its reach otherwise goes silent rather than loud.  Verified against the
+real defect by reproducing PR #858's exact workflow state and confirming the
+gate fails on it.
+
+That last self-test case is a fix, not decoration: `grep` exits 1 on no match,
+and under `set -o pipefail` that aborted the scan's own assignment, so the
+gate exited 1 with no diagnostic on a workflow tree containing no CodeQL — a
+clean state reported as a violation.  Caught by exercising the gate against a
+synthetic empty tree before landing it.
+
+**Prevented at the source.**  `.github/dependabot.yml` gains a `codeql-action`
+group covering `github/codeql-action*`, so future bumps arrive as one atomic PR
+instead of one PR per sub-action.  The gate and the group cover the two
+distinct points at which the invariant can break — a hand edit and an automated
+one — so neither is redundant with the other.
+
+`docs/CI_POLICY.md` §9.1 records the invariant, the failure chain, and both
+mechanisms.  CI configuration and documentation only; no Lean sources, no
+theorems, and no kernel behaviour changed — trace byte-identical.
+
+Refs: docs/CI_POLICY.md §9.1
+
 ## v0.33.5 — SM8.B: per-core non-interference, at the transitions that really run
 
 **Review round 43 — gates read code, prose reads prose.**  Every

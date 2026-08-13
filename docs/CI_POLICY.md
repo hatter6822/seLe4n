@@ -112,6 +112,42 @@ Covered workflows:
 Tier 0 hygiene (`test_tier0_hygiene.sh`) includes a regression guard that fails if
 any workflow action reference is not SHA-pinned.
 
+### 9.1 CodeQL action pin parity
+
+Every `github/codeql-action/*` reference across `.github/workflows/` must pin the
+**same** commit. `codeql-action/init` stamps the configuration file it writes with
+its own action version, and `codeql-action/analyze` refuses to load a configuration
+stamped with a different one (`Loaded a configuration file for version 'X', but
+running version 'Y'`).
+
+A mismatched pair is not a soft failure. The run ends as a CodeQL *configuration
+error*; the post-step then uploads a diagnostics-only "failed run" SARIF, code
+scanning rejects it (`Error when processing the SARIF file`, check conclusion
+`neutral`), and the repository's code-scanning merge requirement waits for results
+that will never arrive — reporting `Code scanning is waiting for results from CodeQL
+for the commits ...` and leaving the pull request permanently unmergeable. Because
+the analyze step is `continue-on-error` per §8, the job still reports **success**, so
+the breakage is invisible in the Actions UI. A mismatch merged to `main` blocks every
+subsequent pull request, not only the one that introduced it.
+
+Two mechanisms hold the invariant, at the two points it can break:
+
+1. **Enforcement** — `scripts/check_codeql_action_pin_parity.sh`, run unconditionally
+   by Tier 0 hygiene together with its `--self-test` witness. It fails on disagreeing
+   pins, on disagreeing version comments, and on any codeql-action reference that is
+   not a full 40-character commit SHA. That last check is load-bearing rather than
+   redundant: parity over a mutable tag is meaningless, and the §9 F-14 scan does not
+   reach sub-path actions such as `github/codeql-action/init`, whose owner/repo
+   segment contains a `/`.
+2. **Prevention** — the `codeql-action` group in `.github/dependabot.yml`. Dependabot
+   treats `init` and `analyze` as separate dependencies and, ungrouped, opens one PR
+   per sub-action; each such PR carries a mismatched pair. Grouping keeps the pair in
+   one atomic pull request.
+
+Historical instance: PRs #858 and #859 (split `init` / `analyze` bumps from v4.37.4 to
+v4.37.6) were each individually unmergeable for this reason, and merging either alone
+would have landed the mismatch on `main`.
+
 ## 10. WS-B10 toolchain update automation
 
 Toolchain-update cadence is automated through:

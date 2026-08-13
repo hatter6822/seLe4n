@@ -99,11 +99,22 @@ jobs:
           ignore-unfixed: true
           exit-code: '1'
 
+      # The `init` and `analyze` pins below MUST name the same commit.  `init`
+      # stamps the config file it writes with its own action version and
+      # `analyze` refuses to load a config stamped with a different one
+      # ("Loaded a configuration file for version 'X', but running version
+      # 'Y'"), which ends the run as a CodeQL *configuration error*: the
+      # post-step then uploads a diagnostics-only "failed run" SARIF, code
+      # scanning rejects it, and the repository's code-scanning merge
+      # requirement waits for results that will never arrive.  Enforced by
+      # `scripts/check_codeql_action_pin_parity.sh` (Tier 0) and kept
+      # un-split by the `codeql-action` Dependabot group; see
+      # docs/CI_POLICY.md §9.1.
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4
+        uses: github/codeql-action/init@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
         with:
           languages: actions
 
       - name: Run CodeQL analysis (informational; see docs/CI_POLICY.md)
-        uses: github/codeql-action/analyze@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4
+        uses: github/codeql-action/analyze@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
         continue-on-error: true

@@ -18,4 +18,19 @@ updates:
       - ws-b10
     commit-message:
       prefix: "ci"
+    groups:
+      # `github/codeql-action/init` and `github/codeql-action/analyze` are
+      # distinct Dependabot dependencies but a single shipped unit: `init`
+      # stamps its config file with its own action version and `analyze`
+      # refuses to load a config stamped with a different one.  Ungrouped,
+      # Dependabot opens one PR per sub-action, and each PR then carries a
+      # mismatched pair whose CodeQL run ends in a configuration error —
+      # uploading a "failed run" SARIF that code scanning rejects, so the
+      # code-scanning merge requirement waits forever and the PR is
+      # permanently unmergeable (PRs #858 / #859).  Worse, merging either
+      # one alone would land the mismatch on `main` and block every
+      # subsequent PR.  Grouping keeps the pair in one atomic PR.
+      codeql-action:
+        patterns:
+          - "github/codeql-action*"
 
