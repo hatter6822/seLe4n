@@ -20,6 +20,7 @@ Prior stage: **WS-AK Phase AK10 COMPLETE — PORTFOLIO CLOSED (v0.30.6). Testing
   - wrapper-structure regression guard (scalar wrappers must remain structure-based),
   - theorem-body semantic depth check (L-08: Python analyzer flags `sorry` and trivial/single-tactic `preserves` proofs, with regex fallback),
   - SHA-pinning regression guard (F-14: all GitHub Actions must be SHA-pinned),
+  - CodeQL workflow policy (`check_codeql_workflow_policy.py` + its `--self-test`): the three configurations that each leave the code-scanning merge requirement waiting forever — a missing `init`/`analyze` step, `github/codeql-action/*` references pinning different commits, and an analyze step masked by `continue-on-error` at step or job level — see [`docs/CI_POLICY.md`](../CI_POLICY.md) §8 and §9.1,
   - optional shell-quality checks.
 - **Tier 1 (build/proof compile)**
   - full `lake build` to verify definitions, theorem scripts, and module integration.

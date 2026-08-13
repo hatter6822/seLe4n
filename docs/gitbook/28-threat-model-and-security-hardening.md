@@ -51,7 +51,7 @@ Out of scope for the current phase: hardware runtime exploit mitigation and cryp
 
 - Pinned installer checksum requires manual rotation when upstream changes.
 - No cryptographic signature verification for installer provenance yet.
-- CodeQL remains informational/non-blocking due to repository code-scanning constraints.
+- CodeQL is a blocking gate (the WS-B10 non-blocking flag was removed in v0.33.6; see `docs/CI_POLICY.md` §8).
 
 ## 7) Validation hooks
 

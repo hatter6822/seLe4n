@@ -99,11 +99,31 @@ jobs:
           ignore-unfixed: true
           exit-code: '1'
 
+      # The `init` and `analyze` pins below MUST name the same commit.  `init`
+      # stamps the config file it writes with its own action version and
+      # `analyze` refuses to load a config stamped with a different one
+      # ("Loaded a configuration file for version 'X', but running version
+      # 'Y'"), which ends the run as a CodeQL *configuration error*: the
+      # post-step then uploads a diagnostics-only "failed run" SARIF, code
+      # scanning rejects it, and the repository's code-scanning merge
+      # requirement waits for results that will never arrive.  Enforced by
+      # `scripts/check_codeql_workflow_policy.py` (Tier 0) and kept
+      # un-split by the `codeql-action` Dependabot group; see
+      # docs/CI_POLICY.md §9.1.
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4
+        uses: github/codeql-action/init@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
         with:
           languages: actions
 
-      - name: Run CodeQL analysis (informational; see docs/CI_POLICY.md)
-        uses: github/codeql-action/analyze@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4
-        continue-on-error: true
+      # Blocking, deliberately: neither this step nor its job carries a
+      # `continue-on-error`.  A masked analyze reports the job green while
+      # code scanning receives nothing, so a broken CodeQL is
+      # indistinguishable from a healthy one and only surfaces as an
+      # unmergeable pull request (PRs #858 / #859).
+      # `analyze` does not fail on findings — it fails on configuration and
+      # upload errors, which are exactly the failures worth stopping for.
+      # Fork-origin pull requests never reach here: the job's `if:` skips
+      # them, because `security-events: write` is unavailable in that
+      # context.  See docs/CI_POLICY.md §8.
+      - name: Run CodeQL analysis (blocking; see docs/CI_POLICY.md §8)
+        uses: github/codeql-action/analyze@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6

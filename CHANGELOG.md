@@ -1,3 +1,116 @@
+## v0.33.6 — CodeQL: pin parity, and the mask that hid a broken gate
+
+**The failure.**  PRs #858 and #859 could not merge, each reporting `Code
+scanning is waiting for results from CodeQL for the commits ...`.  Dependabot
+treats `github/codeql-action/init` and `github/codeql-action/analyze` as
+separate dependencies, so the v4.37.4 → v4.37.6 bump arrived as two PRs, each
+bumping one half of a pair that must move together: `init` stamps the
+configuration file it writes with its own action version and `analyze` refuses
+to load a config stamped with a different one.  Both runs died on the
+symmetric error (`Loaded a configuration file for version '4.37.6', but running
+version '4.37.4'` in #858; the mirror in #859), which the CodeQL Action
+classifies as a *configuration error* rather than a findings failure — so its
+post-step uploaded a diagnostics-only "failed run" SARIF, code scanning
+rejected it (`Error when processing the SARIF file`, check conclusion
+`neutral`), and the repository's code-scanning merge requirement was left
+waiting for results that would never arrive.
+
+**Why it was invisible, and why it was a trap.**  The analyze step is
+`continue-on-error` per `docs/CI_POLICY.md` §8, so the
+`Security Signal / Secret + Dependency + CodeQL` job reported **success** in
+both runs; nothing in the Actions UI flagged that CodeQL had not run.  The
+deadlock was also mutual in a way that made the obvious remedy wrong: merging
+either PR on its own would have landed the mismatched pair on `main` and
+blocked *every* subsequent pull request.  The only safe landing is the union of
+the two, which is what this release ships — both references moved to
+`5595ccaf912efad79be6eef63a5619ff05969be3` (v4.37.6) in one commit.
+
+**Enforced structurally, not by convention.**  New
+`scripts/check_codeql_workflow_policy.py`, run unconditionally by Tier 0
+hygiene (no `command -v` guard — a gate that skips itself when a tool is absent
+is a gate that fails open), carries all three configurations that produce the
+identical symptom, so no one of them can be satisfied while another is quietly
+violated: **presence** (an `init` and an `analyze` step must exist — deleting or
+renaming analyze removes analysis while the merge requirement stays in force),
+**parity** (disagreeing pins, disagreeing trailing version comments, or any
+reference that is not a full 40-character commit SHA), and **unmasked** (no
+`continue-on-error` on the analyze step or its job).  The SHA check is
+load-bearing rather than redundant: parity over a mutable tag means nothing, and
+the §9 F-14 SHA-pinning scan does not reach sub-path actions such as
+`github/codeql-action/init`, whose owner/repo segment contains a `/` its
+`[a-zA-Z-]+` pattern cannot match.  Its `--self-test` witness — also Tier 0 —
+drives eleven cases, since a scanner that loses its reach goes silent rather
+than loud.  Verified against the real defect by reproducing PR #858's exact
+workflow state and confirming the gate fails on it.
+
+**Review round 1 (PR #862) — four findings, all valid, all in the new gate.**
+The first cut shipped this as two shell scripts, and a review found four ways
+they failed open or fired wrongly — each reproduced against the scripts before
+being fixed, and each now a self-test case: (1) YAML permits **quoted scalars**,
+and a grep anchored on a bare `github/` skipped `uses: "github/codeql-action/…"`
+entirely, so a quoted mismatched pair passed — and with both refs quoted the
+gate reported the workflows contained *no CodeQL references at all*; (2) with
+the analyze step **deleted or renamed**, both scripts passed and Tier 0 asserted
+a blocking CodeQL gate for a workflow that runs no analysis; (3) the mask check
+was a substring test over the step block, so a step *named* `Run CodeQL without
+continue-on-error masking` **failed** the gate — prose deciding a gate, the
+precise thing this project's gates-read-code rule forbids; (4) a **job-level**
+`continue-on-error` was invisible, though a tolerated job swallows the analyze
+failure exactly as a masked step does.  All four are the same class of defect
+this release is about, which is why the fix is structural rather than four
+patches: the two shell scans are replaced by one stdlib-only Python gate that
+reads the workflow's actual shape — quote-aware comment stripping and scalar
+normalisation, `continue-on-error` matched as a mapping **key** rather than as
+text, and step blocks resolved within their job so step- and job-level masking
+are both reachable.  Consolidating also avoids adding a second copy of the
+reference scanner, which `CLAUDE.md` already names as standing debt in the
+comment-stripper case.
+
+An earlier latent bug in the first cut is preserved as a case too: `grep` exits
+1 on no match, and under `set -o pipefail` that aborted the scan's own
+assignment, so the gate exited 1 with no diagnostic on a workflow tree
+containing no CodeQL.  Under the presence invariant that tree is now a genuine
+failure — with a diagnostic that says so.
+
+**Prevented at the source.**  `.github/dependabot.yml` gains a `codeql-action`
+group covering `github/codeql-action*`, so future bumps arrive as one atomic PR
+instead of one PR per sub-action.  The gate and the group cover the two
+distinct points at which the invariant can break — a hand edit and an automated
+one — so neither is redundant with the other.
+
+**The WS-B10 non-blocking decision is reversed — CodeQL is now a blocking
+gate.**  `continue-on-error` is removed from the analyze step.  WS-B10's own
+recorded re-evaluation trigger was "once Code Scanning availability is
+guaranteed for this repository", and it has fired: code scanning here is not
+merely available but *required* — the repository enforces a code-scanning merge
+requirement naming CodeQL, which is precisely what left #858 and #859 stuck.
+The masked step also inverted its second premise in practice; it was justified
+as protecting CI reliability, and instead it cost reliability, because a green
+job that means "CodeQL may or may not have run" carries no signal and left an
+unmergeable PR with no failing check to point at.  Blocking is narrower than it
+sounds: `analyze` does not fail on findings, only on configuration and upload
+errors — exactly the conditions under which the merge requirement hangs.
+Fork-origin PRs are unaffected (the job's `if:` already skips them, as
+`security-events: write` is unavailable there), and Dependabot PRs upload
+successfully today, as #858's and #859's own accepted diagnostic uploads show.
+
+Guarded so it cannot silently return: the same Tier 0 gate fails if any
+`codeql-action/analyze` step carries `continue-on-error`, at the step level or
+on its containing job.  It is order-insensitive within the step — a mask written
+*above* the `uses:` line is caught like one written below, since YAML mapping
+order is free.  Verified by re-masking the real workflow and confirming the gate
+fails.
+
+`docs/CI_POLICY.md` §8 now records the original decision, the trigger, and the
+reversal (rather than being rewritten as though the decision never happened);
+§9.1 records the pin-parity invariant, the failure chain, and both mechanisms.
+GitBook chapters 07/28/29 and `docs/THREAT_MODEL.md` are re-synced off the
+stale "informational/non-blocking" claim.  CI configuration and documentation
+only; no Lean sources, no theorems, and no kernel behaviour changed — trace
+byte-identical.
+
+Refs: docs/CI_POLICY.md §8, §9.1
+
 ## v0.33.5 — SM8.B: per-core non-interference, at the transitions that really run
 
 **Review round 43 — gates read code, prose reads prose.**  Every

@@ -86,6 +86,20 @@ if command -v rg >/dev/null 2>&1; then
   run_check "HYGIENE" bash -lc 'if rg -n "uses: [a-zA-Z]+/[a-zA-Z-]+@v[0-9]" .github/workflows/ | rg -v "@[0-9a-f]{40}"; then echo "F-14 regression: GitHub Actions must be SHA-pinned (see docs/CI_POLICY.md)." >&2; exit 1; fi'
 fi
 
+# The three CodeQL workflow invariants, each of which independently leaves the
+# code-scanning merge requirement waiting for results that never arrive:
+# `init`+`analyze` must both exist; every `github/codeql-action/*` reference
+# must pin the same commit (`init` stamps its config with its own version and
+# `analyze` rejects a config from a different one); and analyze must not be
+# masked by `continue-on-error` at step or job level — masking is why the
+# #858/#859 breakage went unseen.  Unconditional (no `command -v` guard): a
+# gate that skips itself when a tool is absent is a gate that fails open.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_codeql_workflow_policy.py"
+
+# ... and its witness, since a scanner that stops reaching the misconfiguration
+# it exists to catch would otherwise go silent rather than loud.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_codeql_workflow_policy.py" --self-test
+
 if command -v shellcheck >/dev/null 2>&1; then
   # AN11-F (LOW): comprehensive shell lint — covers every `.sh` under the
   # repo (currently only `scripts/`, but enforced at find-time so any

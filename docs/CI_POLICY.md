@@ -71,7 +71,7 @@ This workflow runs on pull requests, pushes to `main`, weekly schedule, and manu
 For fork-origin pull requests, the security-scan job is conditionally skipped because `security-events: write` permissions are unavailable in that context; architecture-targeted fast-gate coverage still runs.
 The workflow permissions include `pull-requests: read` so the Gitleaks PR commit-diff scan path can read pull request commits without `Resource not accessible by integration` failures.
 The security scan job performs a full-history checkout (`actions/checkout` with `fetch-depth: 0`) so Gitleaks PR commit-range scans do not fail with ambiguous revision errors on shallow clones.
-CodeQL analysis remains in the workflow for baseline static checks, but the analyze upload step is marked `continue-on-error` so repositories without Code Scanning enabled do not hard-fail the entire security lane.
+CodeQL analysis is a hard-fail gate: the analyze step carries no `continue-on-error` (see §8 for the policy and the reversal that made it blocking).
 
 
 ## 7. WS-B9 threat-model baseline linkage
@@ -83,19 +83,48 @@ The setup bootstrap path now requires checksum verification for the downloaded e
 (`scripts/setup_lean_env.sh`: `ELAN_INSTALLER_SHA256`) before execution.
 
 
-## 8. WS-B10 CodeQL policy decision
+## 8. CodeQL policy decision
 
-CodeQL remains **informational/non-blocking** in the security baseline workflow.
+CodeQL is a **blocking** gate in the security baseline workflow. The analyze step
+carries no `continue-on-error`: a CodeQL failure fails the security lane.
 
-Rationale:
+### 8.1 History — the WS-B10 non-blocking decision, and its reversal
 
-1. repository-level Code Scanning enablement is not guaranteed in every execution environment,
-2. failing hard on analyze upload would create false-negative CI reliability without improving code correctness signal,
-3. Gitleaks + Trivy still provide hard-fail security gates for secrets and HIGH/CRITICAL findings.
+WS-B10 originally marked the analyze step `continue-on-error`, on the rationale that
+(1) repository-level Code Scanning enablement was not guaranteed in every execution
+environment, (2) hard-failing on analyze upload would cost CI reliability without
+improving correctness signal, and (3) Gitleaks + Trivy already provided hard-fail
+security gates. It recorded a re-evaluation trigger: *once Code Scanning availability
+is guaranteed for this repository, `continue-on-error` should be removed and CodeQL
+promoted to a required blocking gate.*
 
-Re-evaluation trigger:
+**That trigger has fired, and the flag is removed.** Code Scanning is not merely
+available here — it is *required*: the repository enforces a code-scanning merge
+requirement naming CodeQL, which is what left PRs #858 and #859 unmergeable (§9.1).
+Premise (1) no longer holds.
 
-- Once Code Scanning availability is guaranteed for this repository across required environments, `continue-on-error` should be removed and CodeQL promoted to a required blocking gate.
+The masked step also proved to be the reason that breakage went unnoticed. With
+`continue-on-error`, both PRs' `Security Signal / Secret + Dependency + CodeQL` jobs
+reported **success** while CodeQL had in fact died in a configuration error and code
+scanning had received nothing. A green job that means "CodeQL may or may not have run"
+carries no signal, and the only symptom left was an unmergeable pull request with no
+failing check to point at. Premise (2) inverted in practice: masking the failure cost
+more CI reliability than surfacing it would have.
+
+What blocking does and does not mean:
+
+- `analyze` does **not** fail on findings. Alerts are reported to code scanning; the
+  step fails on configuration errors and upload failures — exactly the conditions
+  under which the code-scanning merge requirement will otherwise hang.
+- Fork-origin pull requests are unaffected: the whole `security-baseline-scan` job is
+  skipped for them by its `if:` guard, because `security-events: write` is not
+  available to fork-origin runs. Architecture-targeted fast-gate coverage still runs.
+- Dependabot pull requests upload successfully today (observed in both #858 and #859,
+  whose diagnostic SARIF uploads were accepted), so blocking does not strand them.
+
+Should a transient upload failure ever become a recurring flake, the correct response
+is a retry or a narrowed conditional — not restoring a blanket mask that also hides
+configuration errors.
 
 ## 9. WS-E1 GitHub Actions SHA-pinning policy (F-14)
 
@@ -111,6 +140,63 @@ Covered workflows:
 
 Tier 0 hygiene (`test_tier0_hygiene.sh`) includes a regression guard that fails if
 any workflow action reference is not SHA-pinned.
+
+### 9.1 CodeQL action pin parity
+
+Every `github/codeql-action/*` reference across `.github/workflows/` must pin the
+**same** commit. `codeql-action/init` stamps the configuration file it writes with
+its own action version, and `codeql-action/analyze` refuses to load a configuration
+stamped with a different one (`Loaded a configuration file for version 'X', but
+running version 'Y'`).
+
+A mismatched pair is not a soft failure. The run ends as a CodeQL *configuration
+error*; the post-step then uploads a diagnostics-only "failed run" SARIF, code
+scanning rejects it (`Error when processing the SARIF file`, check conclusion
+`neutral`), and the repository's code-scanning merge requirement waits for results
+that will never arrive — reporting `Code scanning is waiting for results from CodeQL
+for the commits ...` and leaving the pull request permanently unmergeable. A mismatch
+merged to `main` blocks every subsequent pull request, not only the one that
+introduced it.
+
+When #858 and #859 hit this, the analyze step was still `continue-on-error`, so both
+jobs reported **success** and the breakage was invisible in the Actions UI. That flag
+is now removed (§8), so the same failure would fail the security lane loudly. The
+Tier 0 gate below is still the primary defence: it fails before CodeQL ever runs, and
+on the pull request that introduces the mismatch rather than on every one after it.
+
+Two mechanisms hold the invariant, at the two points it can break:
+
+1. **Enforcement** — `scripts/check_codeql_workflow_policy.py`, run unconditionally by
+   Tier 0 hygiene together with its `--self-test` witness. It fails on disagreeing
+   pins, on disagreeing version comments, and on any codeql-action reference that is
+   not a full 40-character commit SHA. That last check is load-bearing rather than
+   redundant: parity over a mutable tag is meaningless, and the §9 F-14 scan does not
+   reach sub-path actions such as `github/codeql-action/init`, whose owner/repo
+   segment contains a `/`. Because YAML permits quoted scalars, references are read
+   through a quote-aware scanner — a `uses: "github/codeql-action/init@…"` that a
+   plain grep would miss is exactly the mismatch that would slip through.
+2. **Prevention** — the `codeql-action` group in `.github/dependabot.yml`. Dependabot
+   treats `init` and `analyze` as separate dependencies and, ungrouped, opens one PR
+   per sub-action; each such PR carries a mismatched pair. Grouping keeps the pair in
+   one atomic pull request.
+
+The same gate carries the other two invariants that produce the identical symptom, so
+that no single one of them can be satisfied while another is quietly violated:
+
+- **Presence** — at least one `init` and one `analyze` step must exist. Deleting or
+  renaming the analyze step removes analysis while the merge requirement stays in
+  force, and a gate that only inspects the steps it can find would report "blocking"
+  for a workflow running no CodeQL at all.
+- **Unmasked** — no `continue-on-error` on the analyze step *or* on its job (§8). A
+  masked job is tolerated by the run exactly as a masked step is.
+
+`continue-on-error` is matched as a mapping **key**, never as text: a step named
+`Run CodeQL without continue-on-error masking` must not trip the gate, per the
+project's gates-read-code rule.
+
+Historical instance: PRs #858 and #859 (split `init` / `analyze` bumps from v4.37.4 to
+v4.37.6) were each individually unmergeable for this reason, and merging either alone
+would have landed the mismatch on `main`.
 
 ## 10. WS-B10 toolchain update automation
 
