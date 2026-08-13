@@ -53,17 +53,17 @@ theorem updatePrioritySource_lifecycle_eq
 theorem migrateRunQueueBucket_objects_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) (newPrio : SeLe4n.Priority) :
     (migrateRunQueueBucket st tid newPrio).objects = st.objects := by
-  unfold migrateRunQueueBucket; split <;> rfl
+  unfold migrateRunQueueBucket migrateRunQueueBucketOnCore; split <;> rfl
 
 theorem migrateRunQueueBucket_serviceRegistry_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) (newPrio : SeLe4n.Priority) :
     (migrateRunQueueBucket st tid newPrio).serviceRegistry = st.serviceRegistry := by
-  unfold migrateRunQueueBucket; split <;> rfl
+  unfold migrateRunQueueBucket migrateRunQueueBucketOnCore; split <;> rfl
 
 theorem migrateRunQueueBucket_lifecycle_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) (newPrio : SeLe4n.Priority) :
     (migrateRunQueueBucket st tid newPrio).lifecycle = st.lifecycle := by
-  unfold migrateRunQueueBucket; split <;> rfl
+  unfold migrateRunQueueBucket migrateRunQueueBucketOnCore; split <;> rfl
 
 -- ============================================================================
 -- Transport lemmas — updatePrioritySource (additional fields)
@@ -97,12 +97,12 @@ theorem updatePrioritySource_objectIndex_eq
 theorem migrateRunQueueBucket_irqHandlers_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) (newPrio : SeLe4n.Priority) :
     (migrateRunQueueBucket st tid newPrio).irqHandlers = st.irqHandlers := by
-  unfold migrateRunQueueBucket; split <;> rfl
+  unfold migrateRunQueueBucket migrateRunQueueBucketOnCore; split <;> rfl
 
 theorem migrateRunQueueBucket_machine_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) (newPrio : SeLe4n.Priority) :
     (migrateRunQueueBucket st tid newPrio).machine = st.machine := by
-  unfold migrateRunQueueBucket; split <;> rfl
+  unfold migrateRunQueueBucket migrateRunQueueBucketOnCore; split <;> rfl
 
 -- ============================================================================
 -- D2-J: Authority non-escalation theorems

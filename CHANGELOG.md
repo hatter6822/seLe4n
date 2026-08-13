@@ -1,3 +1,821 @@
+## v0.33.5 — SM8.B: per-core non-interference, at the transitions that really run
+
+**Review round 43 — gates read code, prose reads prose.**  Every
+source-scanning gate in this repository matched raw file text, so a docstring
+could decide a check in both directions: a positive anchor
+`rg 'fooTheorem' F.lean` passed when the theorem had been deleted and a comment
+still named it, a negative anchor fired on the sentence explaining what it
+forbids, `RAW_MATCH_TOTAL` counted a docstring that *quoted* the pattern it
+discussed, and `SORRY_COUNT` — the project's most load-bearing floor — was
+guarded only by a `grep -v '^…--'` heuristic that a block comment or a trailing
+comment walks straight past.  The mitigations were conventions, and the tree
+carried the scar: one docstring had been deliberately broken across two lines so
+a line-oriented counter would not see the pattern it was describing.
+
+`scripts/lean_code_view.py` supplies the text a gate should actually read — a
+whole-repo overlay whose `.lean` files are comment-free and byte-aligned with
+the originals, so `rg -n` line numbers still point at real lines.  `test_lib.sh`
+routes `run_check` / `run_negative_check` through it **by default**, since
+requiring an opt-in would mean the obvious way to write a new anchor is the
+wrong one; checks whose subject genuinely is the text declare themselves with
+the new `run_prose_check` / `run_prose_negative_check`.  The AK7 counters read
+the overlay too, so the contorted docstring is written plainly again and the
+counter does not move.
+
+Turning it on found **fourteen anchors that were checking nothing** — twelve
+genuinely about prose (module docstring headers, contract sentences, a
+documented count) and now declared as such, and one that had silently stopped
+being a code anchor: it pinned `handleTlbShootdownReqOnCorePerCore` in the live
+seam, a name that has appeared there only inside comments since the catch-up was
+restricted to the round window.  Re-pointed at the call the seam makes.
+
+Both halves are pinned in Tier 0, because they fail differently and neither is
+visible: `lean_code_view.py --self-test` for the stripper (lexical cases plus a
+whole-tree check that stripping moves no byte) and `test_code_view_wiring.sh`
+for the routing, which drives `run_check` over a fixture whose symbol exists
+only in a comment.  Both were mutation-checked — disabling the reach predicate
+or removing the routing makes them fail.
+
+The AK7 baseline is re-anchored as a **unit change**: the metrics were measuring
+code *plus* prose, and 186 of 1980 counted `getTcb?` "adoptions" were docstring
+mentions.  Every delta line is a comment by construction of the stripper, which
+the witness suite pins.
+
+Also this round: the routing gate's `SchedulerState` field parse no longer
+depends on line wrapping or on comments (a wrapped slot would have been absent
+from the inventory, and a live helper could then hardcode the boot core through
+it while the gate reported PASS), with a witness over both shapes; a direct
+`setThreadCpuAffinityOnCore_preserves_projection` for the live wrapper, replacing
+a discharge-table row that still named the boot-core one round 37 rerouted away
+from; and three docstrings corrected — the vacated-core rationale (which claimed
+a boot-core misroute that caller resolution rules out), the CC-1 capacity bound's
+rate factor (ticks, not domain switches), and `schedContextUnbind`'s footprint.
+
+**Review rounds 39/40 — the unbind guard and its scheduling point now read one
+core.**  `schedContextUnbind`'s preemption guard cleared
+`currentOnCore (determineTargetCore …)` — the affinity *home* — while
+`schedContextUnbindOnCore` resolves its reschedule through `runningCoreOf?` —
+the core actually executing the thread.  Those agree whenever affinity is set,
+because a thread is only dispatched on a core its affinity admits.  They diverge
+for an **unbound-affinity thread running on a secondary core**, which is
+admitted: home is boot, the guard therefore fired on a slot that never held the
+thread, and the thread was left current on the secondary core *and* absent from
+every run queue — the round-13 defect one field over.  I found this while
+verifying a round-39 review comment that turned out not to hold; round 40's
+reviewer reached the same divergence independently.
+
+Both halves now read `runningCoreOf?`.  The *queue* side deliberately stays on
+the home core: an unbound thread belongs on its home core's run queue, which is
+where the next selection looks.  To make that possible the predicate moved from
+`Lifecycle/Suspend.lean` down to `Scheduler/Operations/Core.lean` — the lowest
+module both the suspend and unbind paths can see, and where a "which core runs
+this thread" query belongs anyway — with an `export` keeping
+`Lifecycle.Suspend.runningCoreOf?` resolving for every existing reference.
+
+The confinement proof caught the widened footprint, which is what it is for:
+`schedContextUnbindWriteSet` is now its own set naming both cores, split out
+from `schedContextWriteSet` so `.schedContextConfigure`'s bound stays sharp —
+configure only re-buckets, so the running core is not in its footprint.
+
+Two contracts corrected in the same round, both describing behaviour earlier
+fixes had already replaced: `schedContextUnbind`'s said the queued thread is
+merely removed and re-enqueued by a later scheduling call (round 38 made the
+re-bucket immediate, because nothing re-enqueues), and `chooseThreadOnCore`'s
+said a malformed queue entry surfaces `.schedulerInvariantViolation` (round 15
+made both scans skip it, because surfacing it wedged the core permanently).
+
+Trace byte-identical; `SmpInformationFlowSuite` §5.8 adds seven assertions on
+the divergence fixture, including the load-bearing negative that boot's current
+slot never held the thread — so a home-keyed guard was a no-op there.
+
+**Review round 39 — SECURITY: the retype refuses to destroy a running thread.**
+`cleanupTcbReferences` sweeps every core and its step clears `currentOnCore c`
+wherever it finds the thread, the **executing** core included — where the caller
+itself runs.  Nothing on the retype path guarded against that, so a thread
+holding a `.retype`-capable capability to its own TCB could destroy itself: the
+core's current slot cleared, no successor scheduled (`scheduleLocalSuccessorLive`
+is inert until SM9.E), execution returning through a frame whose TCB the retype
+has scrubbed and re-purposed, and every later syscall from that core resolving
+`determineExecutingCore` to `bootCoreId`.  A denial of service against every
+thread on the core, not only the caller.  Medium now, High once bootable.
+
+Partly pre-existing rather than introduced here: the pre-SMP `removeRunnable`
+clears `currentOnCore bootCoreId` identically, so the boot-core instance predates
+this cut and round 15's all-cores sweep widened it.
+
+Closed by `threadCurrentOnSomeCore` / `retypeRunningTargetRejected`, rejecting in
+`lifecyclePreRetypeCleanup`'s `.tcb` arm with `.revocationRequired` — the error
+that path already uses for "clear this precondition first", reading here as
+"suspend or switch away from this thread before destroying it".  The guard scans
+**every** core, matching `setThreadCpuAffinityWithMigration`'s precedent, and
+reads the **pre-state**: every later `let` shadows it with the swept state in
+which the tested slot is already clear.  Trace byte-identical, so nothing in the
+tree was relying on the defect.
+
+Also this round: the enforcement-class equivalence theorem now quantifies over
+the **computed** mapping-difference list instead of a hand-written enumeration
+that had drifted twice, so a new re-route enters the check the moment the mapping
+changes.
+
+Two findings verified and closed without code changes, and one registered.  The
+send bridge is covered on both success paths (`…_bootCore_block_eq_single`,
+`…_bootCore_rendezvous_eq_single`); the attributed-definition scan was fixed in
+round 15 and boot-pinned detection has since moved to the elaborated-environment
+probe entirely.  The request for a local reschedule after unbind is already
+satisfied — but verifying it surfaced a real key mismatch between the inner
+guard (`determineTargetCore`) and the wrapper's reschedule (`runningCoreOf?`),
+which diverge for an unbound-affinity thread on a secondary core; registered
+against SM8.C rather than rushed, since the clean fix moves `runningCoreOf?`
+down the import graph.
+
+**Review round 38 — the boundary count, one commit later.**  Round 37 moved
+`enforcementBoundaryPerCore_count` to 54 and updated one neighbouring paragraph;
+three other sites kept saying 53 and "fourteen", including the docstring
+directly above the theorem and the status row in `CLAUDE.md` / `AGENTS.md`.
+Corrected — and this time coupled: a Tier-3 anchor pins the docstring's number
+and the theorem's together, so bumping one without the other fails the gate.
+That is the third instance in this PR of prose restating a `decide` and drifting
+from it, and the first with a mechanism rather than a promise behind the fix.
+
+**Review round 37 — the gate finds the eighth boot-pinned live arm.**  The
+routing gate's primitive list was hand-written, and omitted every *composite*
+per-core scheduler operation — `scheduleEffectiveOnCore`, `scheduleOrIdleOnCore`,
+`saveOutgoingContextOnCore` — so a live helper could pass `bootCoreId` to one and
+produce no finding.  The head filter is gone: the traversal now collects every
+application head and the decision moves downstream to a **derived** test, "does
+this constant transitively touch a per-core scheduler slot", seeded from the
+field-level accessor/setter pair that already comes from `SchedulerState`'s own
+`Vector … numCores` fields.  Reads count as well as writes — the round-15
+`currentOnCore bootCoreId` preemption guard wrote nothing.  A composite witness
+in the self-test must be detected on every run, so the fix cannot regress into
+the hand list it replaced.
+
+Running the widened gate found `setThreadCpuAffinityOp`, which hardcoded
+`bootCoreId` as the executing core and then discarded the SGI that argument
+determines.  **Inert on the live path**, and the reason is worth stating rather
+than assuming: the committed state does not depend on that argument
+(`setThreadCpuAffinityOnCore_state_core_independent`), and the dispatch entry
+re-derives cross-core pokes from the `(pre, post)` diff keyed on the caller's
+real core, which fires here because a migration leaves the thread newly queued
+on a home core it was not queued on before.  So no poke was lost — but a value
+computed against the wrong core and thrown away is a defect waiting for its
+first consumer.  New `setThreadCpuAffinityOnCore` threads the real core and
+returns the SGI; the live arm routes through it; the old name is retained as its
+boot-core instance so every existing theorem and test stands unchanged.
+Per-core enforcement boundary 53 → 54, re-routed arms 14 → 15.
+
+Also from this round, three documentation corrections of the same kind this PR
+keeps producing.  The context-restore seam docstring — the flip checklist for
+SM9.E — still named the `.schedContextUnbind` reschedule as a gated site after
+round 33 removed that gate; it now names the three real guards and records why
+unbind is deliberately ungated.  `docs/CLAIM_EVIDENCE_INDEX.md` still cited
+`endpointFlowCheck_state_independent` as evidence, a symbol this same release
+removes and Tier 3 forbids.  And the SM8.B status row opened by calling the
+axiom sweep "map-driven" and then described the elaborated-environment sweep
+that replaced it, two accounts of the same gate in one sentence.
+
+**Review round 35 — the per-core routing allowlist reaches zero.**
+`scripts/check_live_arm_per_core_routing.py` walks two hops out from each live
+syscall arm and fails on any boot-pinned scheduler primitive it reaches; it
+found seven live-arm defects this PR, and thereafter passed only because three
+syscalls held waivers.  An allowlist that never empties is a gate that has
+stopped being one, so the three become inventory entries and the file becomes
+`[]` — pinned negatively by a Tier 3 anchor, so a waiver cannot quietly return.
+
+`.vspaceMap` and `.vspaceUnmap` carry an **empty** write set, which their
+confinement theorems already proved; they held waivers only because the
+inventory had no way to *say* "takes an executing core, writes no core".
+`.lifecycleRetype` genuinely writes scheduler state — destroying a TCB sweeps it
+out of every core's run queue and current slot, since a destroy has no home core
+to key on.  The naive bound `allCores` is true and carries no information; the
+honest one is the set of cores the victim occupied in the **pre-state** (the
+only state that still has it), available because review round 17 made the
+sweep's step *guarded*, so an unoccupied core is left literally untouched rather
+than rewritten with equal values.  Confinement composes up five layers — cleanup,
+scrub and store, ASID rounds, initiator drain, I-cache broadcast — with every
+layer but the cleanup discharged by a frame.
+
+All three arrive **delegation-backed** rather than read off the arm
+(`syscallDelegates_{lifecycleRetype,vspaceMap,vspaceUnmap}`), so the ratio
+improves as well as grows: 10 of 18 live arms mechanically tied to the dispatch,
+where it was 7 of 15.  Counts: 22 → 25 transitions, 21 → 22 remote writers.  New
+reusable algebra: `observableSlotsConfinedToCores_of_framed_{prefix,suffix}` (a
+framed step must not widen the declared set, where composition alone leaves
+`[] ++ cs`) and a `_suffix_regs` variant keyed on the register banks, needed
+because the retype's memory scrub writes `machine.memory` and the whole-machine
+form is false of it.  `SmpInformationFlowSuite` §5.7 adds 14 assertions with
+four load-bearing negatives.
+
+Also corrected: the paragraph above `crossCoreLiveArmDelegationBacked` warned
+that "prose that repeats a `decide` is prose that goes stale", and had itself
+gone stale — it read "seven of fourteen" while the count theorem beside it
+already read 15.
+
+**Registered debt, deferred out of this release and scheduled to be fixed** (see
+`docs/planning/SMP_INFORMATION_FLOW_PLAN.md` §SM8.B): the configured endpoint
+flow policy is still unenforced — `endpointFlowCheck` has no live consumer, so
+the runtime is strictly more permissive than the configured policy.  Not a
+security advisory, for a specific reason: `LabelingContext` has no
+`endpointPolicy` field at all, so no operator can configure a policy that is
+then ignored — the feature was never wired rather than bypassed.  The design and
+the chosen cut (conjoin rather than replace; `embedLegacyLabel` is total so no
+context lift is needed; reorder the three policy structures above
+`LabelingContext`; take the consistent cut so no `enforcementSoundness_*`
+theorem concludes less than the live gate enforces) are recorded there with
+SM8.C as the closure phase.  Separately, the live `.send` has no
+`ipcInvariantFull` preservation theorem, tracked against SM6.D's open
+bundle-carriage list with the boot-core instance as the first slice.
+
+**Review round 34 — the context-restore gate moved into wrappers.**  An earlier
+cut of this release gated two transitions by folding `if contextRestoreSeamLive`
+*inside* them (`resumeThreadOnCore`, `priorityRescheduleOnCore`).  The flag is a
+literal, so Lean reduced the `if` and collapsed three proofs onto the dead
+branch — they kept their names and lost their content — and it broke
+`SmpPipSuite`'s P2-5 assertion, which tests exactly the behaviour the guard
+removed.  Collapsing a theorem *about the gate* is honest; collapsing one
+*about a transition's semantics* is not.
+
+The gate now sits in wrappers, following `scheduleLocalSuccessorLive`:
+`resumeThreadOnCoreLive` and `priorityRescheduleOnCoreLive`, each choosing
+between its base transition and a named `…EnqueueOnly` sibling, and each
+carrying `_inert` / `_eq_of_seam_live` / `_remote_agrees`.  Both base
+transitions keep every unconditional theorem they had; both branches of each
+wrapper are stated and verified; the wrapper's projection and confinement
+lemmas are proved by cases on the flag, so neither branch is dead.  `_inert` is
+deliberately **not** `@[simp]` (and the attribute is dropped from
+`scheduleLocalSuccessorLive_inert`): an automatic rewrite would reintroduce the
+same collapse one level up.
+
+**`.schedContextUnbind` is no longer gated.**  Round 28 gated it; round 33
+showed that was wrong — `schedContextUnbind` clears the executing core's
+`current` precisely *in order to* force a reschedule, so suppressing the tail
+leaves a core with nothing current, which is the round-15 defect that
+scheduling point was added to fix.  A gate is only sound where the state it
+leaves behind is coherent: true for resume (queued, merely undispatched), false
+here.
+
+Also: the two Tier 3 anchors pinning `CrossCoreTransition.all.length = 21` are
+now 22 (they had been failing every `test_full.sh` since the `.tcbSetAffinity`
+entry landed), and a Tier 3 negative anchor forbids the in-transition gate from
+returning.
+
+WS-SM **SM8.B — per-core NI proofs** (plan
+`docs/planning/SMP_INFORMATION_FLOW_PLAN.md` §3.3), landed as one release per
+the every-PR-ships-one-version policy.  The automated review rounds are folded
+in below rather than shipped as separate patch versions — they were review
+iterations on this change, not releases.
+
+### Review round 16 — the diff seam could not see a destroyed thread
+
+**A P1 in round 15's own fix.**  Round 15 made the retype destroy path sweep
+every core, which clears a remote core's `current` slot when the thread being
+destroyed was running there.  But the SGI re-derivation is **object-indexed**:
+`computeCrossCoreSgis` folds `crossCoreSgiBody` over `post.objectIndex`, and that
+body opens by matching the post-state object against `some (.tcb tpost)`.  A
+retype replaces the TCB, so the body finds no thread to reason about and emits
+nothing — leaving the remote processor executing a thread whose storage had
+already been scrubbed and repurposed, with no poke.
+
+The hazard predates the sweep (before it, the remote `current` was not even
+cleared), but the sweep is what made the *model* record the change while the
+runtime still fired no interrupt, so it is fixed here.  Fixed at the class
+rather than the instance: the new `currentSlotChangeSgis` derives a
+`.reschedule` from a **changed `current` slot**, independent of any object, and
+`computeCrossCoreSgis` now folds the object-indexed rules together with it.  A
+remote core whose current thread changed must re-run its scheduler whether the
+outgoing thread was descheduled, deboosted, or destroyed — and only the first
+two are visible to an object-indexed rule.  The executing core is excluded by
+construction, so single-core builds stay inert; `computeCrossCoreSgis_nil_single_core`
+and its two callers gained the post-state twin of the premise they already
+carried for the pre-state, which is the same single-core fact.  Supporting
+closed form: `removeRunnableFromAllCores_currentOnCore`.
+
+**The gate's root verification was defeated by the arm header.**  Round 15 added
+a check that each mapped operation is the one its dispatch arm calls, but it
+tokenized the whole arm — so `| .schedContextUnbind =>` made the *label* look
+like a call and the check passed while the walk started from the single-core
+body, never reaching the wrapper's preemption seam.  Stripping only
+`|`-prefixed patterns was not enough (the `syscallDelegates` guard
+`decoded.syscallId = .schedContextUnbind` reintroduced the bare name with no `|`
+in sight); the boundary that actually separates a constructor from a call is the
+**leading dot**, and that is what is stripped now.  With it, the gate correctly
+rejected `.schedContextUnbind`'s stale root and the verified alias was added.
+
+**`endpointSendDualOnCore_bootCore_state` proved nothing it claimed.**  Its
+docstring said the per-core send "agrees with the single-core `endpointSendDual`
+on the resulting state"; its hypotheses pinned it to the `.objectNotFound` arm,
+where the transition trivially returns the pre-state, and the statement never
+mentioned `endpointSendDual`.  Renamed to `…_absent_endpoint`, which is what it
+checks, and joined by the real bridge: `endpointSendDualOnCore_bootCore_block_eq_single`
+proves **full state equality** with the single-core transition on the blocking
+path, unconditionally at the boot core — the two run the same enqueue and the
+same TCB store and differ only in a deschedule that `removeRunnableOnCore_bootCoreId`
+makes definitionally equal.  The bounds guards are derived from the single-core
+success rather than demanded again of the caller.
+
+### Review round 15 — the destroy path, and two gates that failed open
+
+**Seventh live boot-pinning defect, found by the round-14 gate's own reach and
+fixed here.** `cleanupTcbReferences` (the retype destroy path, reached from the
+live `.lifecycleRetype` arm through `lifecyclePreRetypeCleanup`) removed the
+target TCB from the **boot** core's run queue only.  Retyping a TCB queued on
+any other core therefore left a run-queue entry whose object no longer resolves
+to a `.tcb`, and `chooseBestRunnableBy` returned `.error
+.schedulerInvariantViolation` for the *entire* scan — max-priority bucket and
+full-list fallback alike — on every subsequent call, with nothing on the failure
+path to remove the entry.  One stale entry stopped that core scheduling
+anything, permanently.  Availability, fail-closed, High once SMP is bootable
+(SM9.E); unreachable today.  Closed by `removeRunnableFromAllCores`, which
+sweeps `allCores` rather than resolving one — a destroy has no home core, and
+sweeping also covers the SM6.E review-4 case where a thread is current on a core
+`determineTargetCore` does not name.  Supported by `mem_allCores` (the
+completeness half of the enumeration, beside `allCores_length`/`_nodup`) and a
+closed-form/frame family proved by induction over the core list.
+
+**Selection hardened so one bad entry costs one thread, not one core.** Both
+scans — `chooseBestRunnableBy` and the budget-aware
+`chooseBestRunnableEffective` the live SGI handler reaches — now **skip** a
+non-TCB run-queue entry instead of failing.  `runnableThreadsAreTCBs` is
+unchanged and still carried; what changed is that the scheduler's *liveness* no
+longer rests on it, which `chooseBestRunnableBy_always_ok` /
+`chooseBestRunnableEffective_always_ok` state outright (selection is now total
+for **any** list).  Three suite cases asserted the old fail-closed contract and
+are re-pointed at the stronger one, each keeping a load-bearing negative that
+the entry is skipped rather than dispatched.
+
+**`.schedContextUnbind` had no scheduling point (round 15 P1).** Revoking a
+SchedContext demotes its bound thread to the legacy priority, and the
+single-core form cleared that thread's `current` slot with nothing following:
+`syscallDispatchCrossCoreEntry` does no local scheduling and `crossCoreSgiBody`
+deliberately emits nothing for the executing core, so a thread that unbound its
+own SchedContext returned to userspace still running while the model recorded
+its core as idle — after which `determineExecutingCore` resolved to the
+boot-core fallback.  New production `SchedContext/OperationsPerCore.lean`
+(`schedContextUnbindOnCore`) resolves the core **actually** running the thread
+(`runningCoreOf?`, not the queue home) and runs the shared preemption seam,
+inline when local and as a `.reschedule` SGI when remote.  Live behind
+`.schedContextUnbind` with a delegation theorem and `syscallDelegates`
+obligation.
+
+**Two gates were themselves failing open** — the same defect class the axiom
+sweep had.  `check_live_arm_per_core_routing.py` (a) truncated every
+`@[attribute]` / `def` declaration to its attribute line, so 11 definitions
+(`suspendThreadInner` among them) were indexed as empty and anything inside them
+was invisible; and (b) accepted an enforcement label that coincidentally named
+*some* Lean definition even when the live arm called a different one —
+`.tcbSetAffinity` resolved to `setThreadCpuAffinity` while the arm calls
+`setThreadCpuAffinityOp`, bypassing the scheduling-relevant body.  Both closed;
+every label→definition alias is now **verified against the dispatch arm**, and
+the self-test gained a structural probe for the attribute form.
+
+**The other half of the per-core obligation, now checked.** Re-routing an arm to
+a per-core operation is only half the work: it can then write a core it is not
+executing on, which the cross-core NI inventory exists to bound.  Rounds 12 and
+14 rerouted five arms and gave three of them entries; nothing checked the
+pairing, so a reviewer found each miss one at a time.  The gate now fails when a
+live arm whose operation takes a `CoreId` has no `crossCoreLiveArmSyscall` entry.
+Running it closed the gap for `.tcbSetPriority` / `.tcbSetMCPriority`
+(inventory 19 → 21 entries, 12 → 14 live arms, 18 → 20 remote writers, 4 → 7
+delegation-backed) and produced empty-write-set proofs for the memory-subsystem
+arms `.vspaceMap` / `.vspaceUnmap`, which write no scheduler slot or register
+bank on any core.  Both priority ops now share one named effect
+(`applyPriorityChangeOnCore`), removing a four-line duplicate and giving the
+information-flow layer one obligation instead of two copies of it.
+
+### The theorems
+
+Three staged modules (`InformationFlow/NonInterferencePerCore.lean`,
+`InformationFlow/CovertChannelPerCore.lean`,
+`InformationFlow/NonInterferenceCrossCore.lean`; staged 55 → 58), zero
+sorry/axiom, trace byte-identical.
+
+* **`crossCoreNonInterference`** (plan Thm 3.3.1) rests on SM8.A's field
+  partition being a bijection: its premises are
+  `observableSlotsConfinedToCore st st' c'` (every per-core slot outside core
+  `c'` framed, register banks included) and `sharedViewUnchanged`.  The plan's
+  serializability sketch is not available (SM3.C.9 still defers `withLockSet`
+  at the `@[export]` bodies), so it is proven from the frame premises —
+  strictly weaker assumption, strictly stronger result — with
+  `crossCoreNonInterference_of_disjoint_lockSet` the bridge that makes the
+  plan's argument a corollary once fine locks go live.
+* **`nonInterference_perCore`** follows: at `bootCoreId` the per-core view *is*
+  `projectState`, elsewhere it is Thm 3.3.1 at `c' = bootCoreId`.
+* **All 35 per-operation lifts** take exactly their `NonInterferenceStep`
+  constructor's hypotheses, and **31 of them derive** the confinement premise
+  from the operation's own semantics — which discharges the SM4.C/SM4.D
+  `hOtherIdle` obligation for those operations rather than restating it.  The
+  four catch-all constructors genuinely range over remote-core writes and take
+  the premise explicitly (`perCoreConfinementDerived_count` pins the 31/4 split).
+* **`enforcementBoundaryPerCore`** = the canonical 38 + the 2PL bracket + the
+  cross-core wrappers, with a completeness witness; the accepted covert
+  channels ship as data (CC-1…CC-7), each carrying the theorem that fixes its
+  model-visible status.
+* **`crossCoreLeakage_bounded`** is an `↔`: a `c'`-confined transition freezes
+  core `c`'s per-core fragment outright, so the view moves iff the shared
+  fragment moves.
+
+### SECURITY: the per-object lock was observable
+
+`RwLockState` carries `writerHeld` / `readers` / `waiters`, all `CoreId`s, and
+`projectKernelObject` passed each object's `lock` straight through — its
+`.reply` arm even claimed it carried "no cross-domain identity".  An observer
+that could see an object would read off which cores were operating on it,
+re-opening through another field the placement channel SM5.B closed on
+`TCB.cpuAffinity`.  Medium today (unreachable — SM3.C.9 defers `withLockSet` at
+the live entries), High once fine locks land.  `lock` is now erased
+structurally on every projected arm, per SM5.B's own discipline rather than on
+a "no live operation sets it yet" witness.  With the erasure
+`withLockSet_preserves_projection` holds **unconditionally** — no hypothesis on
+the lock set, none on contention — so CC-5 is a hardware timing channel only,
+as plan Def 3.4.1 says.
+
+### The cross-core direction, instantiated
+
+`NonInterferenceCrossCore.lean` instantiates `crossCoreNonInterference` at the
+transitions that genuinely write a *remote* core, over set-of-cores write sets
+computed from the pre-state — the endpoint call needs two — on a reusable
+home-core frame layer.  Strictly stronger than SM6's per-core NI on the
+per-core half, which requires the woken thread to be non-observable while this
+holds for a fully visible one.
+
+**Every live entry names the function the syscall dispatch calls**, not a
+transition it is built from — the discipline the review rounds converged on:
+
+* `.call` → `endpointCallCrossCoreDispatch` (call + donation + PIP chain walk),
+  with the chain keyed on the **resolved receiver** at the **post-donation**
+  state, which is where the dispatch keys it;
+* `.reply` → `endpointReplyCrossCoreDispatch` (reply + donation return + PIP
+  reversion);
+* `.replyRecv` → `replyRecvBody` (both legs + `replyRecvReturnDonation`);
+* `.tcbSuspend` → `suspendThreadOnCore` (teardown + chain reversion + both
+  dequeues + the G7 scheduling point);
+* `.signal` / `.wait` keep the `…OnCore` citation, because their dispatch
+  wrappers are definitionally `…OnCore … (determineExecutingCore st …) st` —
+  the same function at a resolved core, adding no step.
+
+Supporting leaf frames, new because per-core confinement reads the domain slots
+and the register banks and the context switch had frames for neither:
+`preemptCurrentOnCore` and `switchToThreadOnCore` domain frames,
+`switchToThreadOnCore_confinedToCores`,
+`handleRescheduleSgiOnCore_confinedToCores`,
+`suspendRescheduleOnCore_confinedToCores`, both donation-cancellation arms,
+`migrateSchedContextReplenishment_confinedToCores`,
+`clearPendingState_confinedToCores`, and
+`cleanupDonatedSchedContext_machine_eq` (added beside its scheduler sibling in
+`Cleanup.lean`).
+
+The composed SM6.E cancellation needed one missing frame rather than a hard
+proof: `cancelIpcBlocking_machine_eq`, now beside the long-standing
+`cancelIpcBlocking_scheduler_eq`, on a new leaf layer
+(`restoreToReady_machine_eq`, `clearTcbIpcFields_machine_eq`, the reply-link
+legs, and both queue sweeps by the `RHTable.fold_preserves` argument SM7.B used
+for `tlbShootdown`, seeded from `spliceOutMidQueueNode_machine_eq`).
+
+### Claims corrected rather than restated
+
+* `endpointFlowCheck_state_independent` was `X = X` by `rfl` and was cited in
+  five prose sites; replaced by the genuinely state-and-core-dependent
+  `endpointFlowCheckAtCore` + `_depends_only_on_subject` +
+  `_stable_under_confined_transition` + `_is_not_constant`, with a Tier-3
+  negative anchor forbidding the old symbol's return.
+* `crossCoreTransitionWakesRemote` → `…WritesRemote`: reply, deschedule and
+  cancellation all name a remote core without waking anything.
+* The CC-3 witness asserted only `(onCore …).objects = projectObjects …` — a
+  component identity that never selects a TCB, so erasing `priority` from the
+  projection would have left it green.  It now concludes that the *projected*
+  TCB carries the same `priority` and `ipcState`, both by `rfl`, so stripping
+  either field stops the build.
+* CC-1's mitigation cited a `log2(|domainSchedule|)` capacity figure that no
+  theorem established; replaced with what is true — one component has a bounded
+  alphabet, the others do not.
+
+### Gates that failed open
+
+* `run_negative_check` treated every nonzero status as "pattern absent"; only
+  ripgrep's documented no-match code counts now, anything else is an
+  infrastructure failure.
+* The axiom sweep was a regex over source text that silently skipped
+  `@[simp] theorem` declarations and `private` ones (justified by an
+  unused-declaration lint that does not exist in this repository).  Replaced by
+  the map-driven `scripts/check_module_axioms.py`, which fails closed on an
+  unrecognised declaration kind and probes private declarations by
+  re-elaborating their defining module.
+* `confinedCheck` compared five of the six confinement fields, omitting the
+  register banks — so a foreign-core register corruption would have passed
+  every assertion built on it.  It then compared run queues by
+  `RunQueue.toList`, which is `flat`: a re-bucketing write (what the PIP-chain
+  leg of the live `.call` / `.reply` / `.tcbSuspend` arms does on a remote
+  core) leaves `flat` untouched while `byPriority`, `threadPriority` and
+  `maxPriority` all move.  Both closed, each with a load-bearing negative.
+
+
+### Two gates that described more than they did
+
+PR #861 review round 6.  Both findings are the failure mode the whole review
+cycle kept surfacing: a mechanism whose description outran what it checked.
+
+**The axiom sweep was not exhaustive, and said it was.**  It enumerated
+declarations from `docs/codebase_map.json`, described as "generated from the
+elaborated source" and therefore "exhaustive by construction".
+`generate_codebase_map.py` builds that map with a line-oriented `DECL_HEAD_RE`
+over source text — it never consults Lean's environment.  So the map records the
+syntax a file contains, not the constants it produces: a `macro_rules` / `elab`
+command contributes only its invocation, and the generated constant is absent
+from both the probe and the total while able to reach an imported non-standard
+axiom without the textual `axiom` keyword appearing anywhere.
+
+`scripts/check_module_axioms.py` now walks **Lean's environment**: every
+constant whose defining module (`Environment.getModuleIdxFor?`) is a target gets
+`Lean.collectAxioms`, with no filtering by declaration kind, name shape or
+privacy.  The map lists 462 declarations for the four SM8 information-flow
+modules; the environment holds **1359** constants for the same modules, and all
+1359 are axiom-clean.  Fail-closed verified by narrowing the allowed set.  The
+map is still read, but only to print the source count beside the environment
+count so the difference stays visible.
+
+**CC-1's capacity bound is now proven rather than retracted.**  The
+`log₂(|domainSchedule|) × switchFreq` figure was replaced last round by an
+explicit "No capacity bound is claimed", because `domainTimeRemaining` is an
+unrestricted `Nat` carried unfiltered — a correct observation and the wrong
+remedy, which also left `Projection.lean` advertising the original figure while
+the inventory disclaimed it.
+
+`schedulingObservationOnCore` names what the receiver reads, and
+`schedulingChannel_alphabet_bounded` injects that alphabet into
+`Fin (|domainSchedule| × (quantumBound + 1))` under the scheduler's index-bounds
+invariant plus a deployment cap on the countdown;
+`schedulingObservationCode_injective` is what makes it a bound on the channel
+rather than on an arbitrary function.  Capacity is therefore
+`log₂(N × (Q + 1))` bits per observation, `× F` per second — strictly more
+informative than the figure it replaces.  The quantum cap is a required
+hypothesis, not a formality, and
+`schedulingChannel_not_bounded_by_scheduleLength` stands as the proof that `N`
+alone bounds nothing.  Both sites now state the same proven figure.
+
+Theorems, gates and documentation only; trace byte-identical.
+
+**The bound covers the whole channel.**  A further round found that the
+encoding's omission of `activeDomain` rested on the wrong invariant:
+`domainScheduleIndexInBoundsOnCore` constrains the index alone, and the tie to
+`domainSchedule[index]` is the separate `domainConsistentOnCore`.  Two states
+could otherwise share a schedule, index and countdown — hence a code — while
+exposing different active domains.  `schedulingObservation_activeDomain_determined`
+and `schedulingChannel_full_observation_determined` now prove the omission under
+the invariant that actually licenses it.
+
+
+**Two inventories, one syscall path.**  `endpointReceiveDualOnCore` was
+classified a below-API leg while `crossCoreEnforcementEntries` listed it among
+the live cross-core operations — and the live `.receive` arm calls it directly,
+after applying its own flow gate.  Live-arm count 6 → 7, and the suite now
+asserts the two inventories agree rather than checking each alone.
+
+**The corrected capacity bound reached the operators.**  `SECURITY_ADVISORY.md`
+§SA-3 and `DEPLOYMENT_GUIDE.md` still quoted the Q-free figure the kernel proves
+false; the guide additionally still carried the intermediate "no bound is
+claimed" retraction.  Both now state `log₂(N × (Q + 1)) × F`, that Q is
+deployment-supplied and that without it there is no bound, cite the three
+theorems, and note the channel exists once per core.  Tier 3 pins both.
+
+
+**CC-1's guidance says what it can support.**  The advisory claimed
+sub-bit-per-second beside a table costing the same configuration at ≤ 1200
+bits/second, with no derivation for the smaller figure; it is removed, and only
+the proven upper bound is offered.  The bound's premises — non-empty schedule,
+countdown cap, index bounds, domain consistency, and an unchanged schedule
+across observations — are bundled as `schedulingCapacityPreconditions` /
+`schedulingCapacityComparable`, cited by name from both operator documents, with
+§SA-3 tabulating who discharges each.  The unchanged-schedule premise is a
+kernel fact rather than a deployment promise: there is no `setDomainSchedule`,
+and a Tier-3 anchor fails if one lands.
+
+**The covert-channel enumeration cannot fail open.**  `CovertChannelId.all` is
+hand-written while every count and inventory check quantifies over it, so a new
+constructor omitted from the list would go unaudited with all gates green.
+`CovertChannelId.mem_all` makes that a compile error.
+
+
+**A root-cause pass, not another patch.**  Twenty-six review findings across
+nine rounds are four classes, and the largest — twelve of them — is "a claim
+about the code held only by prose".  The diagnostic is sharp: `API.lean`'s eight
+`dispatchWithCap_…_delegates` theorems tie those arms to the dispatch, and not
+one of the eight drifted; the seven cross-core arms had no such theorem and
+drifted three times.  `LiveArmEvidence` now records, as a *proof*, whether a live-arm
+claim is backed by a delegation theorem or merely read off the arm, with both
+counts as theorems so the residual is tracked rather than invisible.  The first
+cut recorded a theorem name, which review round 11 rightly rejected as the same
+defect one level up — a name check does not say the declaration is about the arm
+citing it; the obligation `syscallDelegates sid` is now a proposition computed
+from the syscall, so proofs cannot be borrowed between arms and undelegated
+syscalls map to `False`;
+`dispatchWithCap_tcbSuspend_delegates` and
+`dispatchWithCapChecked_receive_delegates` are the first two, the latter being
+the arm round 8 found misclassified.  `CovertChannelId.mem_all` and `CrossCoreTransition.mem_all` close the same
+shape of hole in two enumerations (the second was missed in the commit that
+fixed the first), and the "match a definition, not a
+mention" convention for negative anchors is recorded at `run_negative_check`
+after three of this PR's anchors fired on the comment explaining what they
+forbid.
+
+
+### Three live arms were still boot-pinned — kernel defects, fixed
+
+Review rounds 10 and 12 found the last syscall arms whose *scheduling* effects
+still targeted `bootCoreId` unconditionally.  None is a proof failure — the
+theorems say what the functions compute — but each is a real multi-core
+scheduling defect, so the fix is the reroute, not a caveat.
+
+* **`.tcbResume`** called `resumeThread`, which enqueues on `bootCoreId`
+  regardless of `cpuAffinity`, so resuming a thread homed on a secondary core
+  put it on a run queue its own core never dispatches from.  Rerouted to
+  `resumeThreadOnCore`.
+* **`.send`** called `endpointSendDualWithCaps`, whose two scheduling effects
+  are both boot-pinned: a rendezvous receiver is woken with `ensureRunnable`
+  (wrong queue when the receiver is homed elsewhere) and a sender with nobody
+  waiting is descheduled with `removeRunnable` (so a sender blocking on a
+  secondary core stays current and runnable there).  New production module
+  `SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean` supplies
+  `endpointSendDualOnCore` / `endpointSendDualWithCapsOnCore` /
+  `endpointSendCrossCoreDispatchChecked`, built exactly like their SM6.A/SM6.C
+  siblings, and both the checked and unchecked arms route through them.
+* **`.tcbSetPriority` / `.tcbSetMCPriority`** were boot-pinned *twice*:
+  `migrateRunQueueBucket` tested membership in `runQueueOnCore bootCoreId`, so
+  for a target queued on any other core the re-bucket was a silent no-op — the
+  priority field moved while the run queue kept the old band, leaving the
+  scheduler dispatching the thread at its **old** priority indefinitely (the
+  priority-inversion case that function exists to prevent, one core over) — and
+  the preemption check read `currentOnCore bootCoreId`.  `migrateRunQueueBucket`
+  is now the `bootCoreId` instance of `migrateRunQueueBucketOnCore`, and the new
+  `SeLe4n/Kernel/SchedContext/PriorityManagementPerCore.lean` supplies
+  `setPriorityOnCore` / `setMCPriorityOnCore`, which re-bucket on the target's
+  home core and preempt the core `runningCoreOf?` says is actually running it.
+
+Each reroute ships its delegation theorem and its `syscallDelegates` obligation,
+so the inventory's live-arm claim is type-checked rather than read off
+`API.lean`: `dispatchWithCap{,Checked}_send_delegates`,
+`dispatchWithCap_tcbSetPriority_delegates`,
+`dispatchWithCap_tcbSetMCPriority_delegates`.  Delegation-backed live arms go
+2 → 4 (`.send` joins `.receive`, `.tcbSuspend`, `.tcbResume`).  `.send` also
+gets its per-core write set, confinement and non-interference
+(`endpointSendWriteSet` — *sharper* than `.call`'s, because a send has one
+scheduling effect where a call has two), and the priority ops get
+`setPriorityOnCore_preserves_projection` /
+`setMCPriorityOnCore_preserves_projection` over the generalised
+`migrateRunQueueBucketOnCore_preserves_projection` (free on a remote core: the
+projection reads the boot core's queue only).  Trace byte-identical throughout.
+
+### The class, closed by a gate rather than by another round
+
+Three review rounds found the same defect three times, one syscall each, and a
+grep over the dispatch arms would have caught none of them: every one was a hop
+down (`.tcbSetPriority` named `setPriorityOp`; `setPriorityOp` called
+`migrateRunQueueBucket`).  `scripts/check_live_arm_per_core_routing.py` checks
+the transitive property instead.  It starts from
+`syscallIdToEnforcementNamePerCore` — the total map recording which operation
+each syscall reaches under SMP — walks two hops of the call graph, and fails on
+any boot-pinned scheduler primitive found along the way.  Registered as a Tier 0
+hygiene gate, so it runs on every PR and push.
+
+**Running it found three more that no review round had reached**:
+`schedContextBind` re-bucketed the bound thread on `runQueueOnCore bootCoreId`
+(a silent no-op for a thread queued elsewhere — the same shape as
+`migrateRunQueueBucket`), `schedContextConfigure` did the same on a priority
+change, and `schedContextUnbind` both checked `currentOnCore bootCoreId` for its
+preemption guard (so a thread current on a secondary core kept running at its
+now-revoked SC priority) and removed from the boot queue.  All four sites now
+resolve the target's home core with `determineTargetCore`; no signature changed,
+so the existing invariant proofs carry, and on the boot core the behaviour is
+definitionally what it was.
+
+Two properties keep the gate from becoming decoration.  It **fails closed on an
+unresolvable operation name** — a mapped label that is not a Lean definition
+means the walk starts nowhere and the syscall is unchecked rather than clean,
+which is how `.tcbSetIPCBuffer` was passing; boundary labels that differ from
+their definition names now go through an explicit alias table, and a missing
+alias is an error.  And `--self-test` re-walks the *pre-SMP* operations and
+fails if the gate no longer detects them, so a gate that loses its reach fails
+loudly instead of passing everything — that self-test is what exposed the
+unresolvable-name hole in the first place.
+
+### Review round 14: the unbind stranded the thread it unbound
+
+A **pre-existing, single-core-reachable** defect the home-core routing above put
+under a spotlight.  `schedContextUnbind` removed a runnable thread from the run
+queue and relied on "the next schedule call will re-enqueue it correctly if
+still runnable".  Nothing does: `chooseThreadOnCore` selects exclusively from
+the run queue and never scans ready TCBs, and an unbound thread is fully
+schedulable in this model — `resolveEffectivePrioDeadline`'s `.unbound` arm
+returns the legacy TCB priority rather than making the thread passive.  A
+successful syscall therefore left a runnable thread ready and permanently
+unschedulable.  Both entry shapes strand it, so both are repaired: a thread that
+was **current** is not in the queue (dequeue-on-dispatch) and is enqueued after
+`current` is cleared; a thread that was **queued** is re-bucketed at its legacy
+priority, which is the behaviour the docstring always described.
+
+This is the one fixture change in the cut, and the old line was asserting the
+defect: `[SCO-015] … removed=true`.  The probe now checks what the transition
+must guarantee — `queued=true legacyPrio=true`.
+
+Routing the three SchedContext arms through `determineTargetCore` also made them
+remote writers, which owes the cross-core inventory an entry — **all three now
+have one**, so `CrossCoreTransition` goes 16 → 19 entries, 9 → 12 live arms and
+15 → 18 remote writers.
+
+The first cut proved only `.schedContextUnbind` and recorded the other two as
+`crossCoreRemoteWriterPendingAudit`, a counted gap; that list is now **deleted**
+rather than emptied, since an empty tracked-debt list with a vacuously-true
+disjointness theorem reads as coverage.  A Tier-3 negative anchor forbids its
+return.
+
+What made bind and configure resist was not proof budget.  Unbind computes its
+home core at the **pre-state**, so the declared write set is already the one the
+transition writes; bind and configure compute theirs at a **mid-state** — two
+object inserts later for bind, and behind a replenish-queue write plus a
+SchedContext store plus a TCB priority insert for configure — and no tactic can
+bridge that without affinity-stability frames.  The §1a home-core frame layer
+gains `storeObject_schedContext_determineTargetCore_eq` (the endpoint lemma's
+argument verbatim: at a different key the TCB lookup is framed, at the same key
+it fails on both sides because a SchedContext is not a TCB, so no disjointness
+hypothesis is needed), and the raw-`objects.insert` frames turned out to exist
+already as SM5.I atoms — `determineTargetCore_insert_tcb` and
+`getTcb?_insert_schedContext_eq` in `Scheduler/Operations/PerCoreTickCbsAffinity`
+— so that module is imported rather than its lemmas re-proved.  Two structural
+helpers (`setRunQueueOnCore_confinedToCores`,
+`setReplenishQueueOnCore_confinedToCores`) carry the six-field obligation, which
+is what a `simp_all` was papering over on the first attempt.
+
+Because the post-states are structure literals far too large to restate, the
+bridge is transported **into the disequality** (`hHome ▸ hne`) rather than
+rewritten into the goal.
+
+One claim was corrected rather than restated: `schedContextWriteSet`'s docstring
+said it gave "the cores a SchedContext operation may write" for *every* one of
+them.  False for bind, which resolves its thread from an argument — and since
+bind rejects an already-bound SC, that set is empty on exactly the paths where
+bind does write a run queue.  `schedContextBindWriteSet` is its own write set and
+the docstring now says which operations it covers.
+
+### The per-core enforcement mapping was five arms short — now fourteen
+
+`syscallIdToEnforcementNamePerCore` claimed to differ from the canonical mapping
+at "exactly the seven arms SM6 re-routed".  It missed the three SM7.D/SM7.F
+architecture wrappers, which have been live per-core arms since v0.32.94
+(`vspaceMapPageCheckedWithShootdownFromStatePerCore`,
+`vspaceUnmapPageWithShootdownAndIcacheBroadcast`,
+`lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache`), and now also carries
+the four arms this cut reroutes.  Boundary 46 → 53 entries, differs-at 7 → 14,
+with `enforcementBoundaryPerCore_crossCore_classes_match` extended so each new
+entry's enforcement class is checked against its canonical sibling rather than
+assumed.
+
+### CC-1's bandwidth was costed at the wrong rate
+
+The capacity figure multiplied `log₂(N × (Q+1))` by the domain-**switch**
+frequency.  `domainTimeRemaining` is one of the three observed components and
+every ordinary timer tick decrements it, so consecutive observations differ
+*between* switches: the observer is paced by **ticks**, three orders of
+magnitude faster on the canonical 1 ms configuration.  The advisory's ≤ 1200
+bits/second at F ≤ 100 Hz becomes ≤ 12 bits per observation and ≤ 12 000
+bits/second at a 1 kHz tick.  Proven rather than restated:
+`schedulingObservation_changes_on_domain_tick` is the pacing fact, and
+`schedulingChannel_trace_capacity` is the run-length form — an n-observation
+trace is one element of `boundedCodeTraces alphabet n`, whose length is exactly
+`alphabet ^ n` (`boundedCodeTraces_length`), with `mem_boundedCodeTraces` fixing
+that the enumeration is the right set and not a convenient superset.  CC-1's
+inventory severity was `.low` while `docs/SECURITY_ADVISORY.md` §SA-3 headed it
+MEDIUM; the advisory is right and the inventory now agrees.
+
+Round 13 then found that the trace bound quantified only the *pointwise*
+preconditions while its docstring claimed the run shared one schedule.  The
+membership conclusion was true either way, but the capacity *reading* was not:
+the observer also sees `domainSchedule` and the `activeDomain` it determines, so
+two same-length but different schedules in one run make the code trace
+distinguish less than the observer does.  `schedulingCapacityRun` is the
+run-level premise (per-state bundle + one schedule) and
+`schedulingChannel_trace_determines_observations` is what turns the count into a
+capacity claim: under it, equal code traces mean equal **complete** observation
+traces.  The suite's negative is two same-length schedules with the same code
+and different observed schedules.
+
+`scripts/check_module_axioms.py` also failed open on a nonzero exit: it filtered
+for position-formatted Lean diagnostics, so a probe that printed
+`AXIOMSWEEP_BADCOUNT 0` and then died — a kill signal, a later driver failure, a
+`lake` that never reached Lean — was parsed as a clean sweep.  Any nonzero exit
+is now rejected *before* the summary is read, since a partial run proves nothing
+about the constants it never reached.
+
+### Tests
+
+`tests/SmpInformationFlowSuite.lean` — **260 runtime assertions** across the
+SM8.A and SM8.B groups, every group carrying a load-bearing negative, plus
+`#check` anchors for every module symbol and Tier-3 pins.  Two fixtures were
+themselves vacuous and are fixed: the cancellation victim was left out of every
+run queue (making the removal a no-op, caught by its own negative), and four
+TCBs named VSpace roots the builder never inserted.  The reroutes add positive
+Tier-3 anchors for each per-core operation and *negative* ones for each
+boot-pinned call site, matching the call site rather than the mention — the
+single-core operations stay in the tree as the pre-SMP surface.
+
 ## v0.33.4 — SM8.A review cut: the visibility order says what it claimed
 
 Three findings from the automated review of the SM8.A pull request, all

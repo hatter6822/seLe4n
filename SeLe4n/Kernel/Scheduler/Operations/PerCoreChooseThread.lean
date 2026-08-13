@@ -634,7 +634,9 @@ private theorem chooseBestRunnableBy_some_ne_ok_none
     obtain ⟨xt, xp, xd⟩ := x
     unfold chooseBestRunnableBy at h
     cases hObj : objects hd.toObjId with
-    | none => rw [hObj] at h; simp at h
+    -- Round 15: a non-TCB entry is skipped, so the incumbent `some x` is carried
+    -- into the tail unchanged and the inductive hypothesis still applies.
+    | none => rw [hObj] at h; exact ih _ h
     | some obj =>
       cases obj with
       | tcb tcb =>
@@ -645,7 +647,7 @@ private theorem chooseBestRunnableBy_some_ne_ok_none
           · simp only [hElig, hBetter, if_true] at h; exact ih _ h
         · simp only [hElig] at h; exact ih _ h
       | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ => rw [hObj] at h; simp at h
+      | schedContext _ | reply _ => rw [hObj] at h; exact ih _ h
 
 /-- SM5.A.4 helper: a fold starting from `none` that returns `.ok none`
 witnesses that **every** scanned TCB was ineligible.  (A non-TCB entry
@@ -675,7 +677,11 @@ theorem chooseBestRunnableBy_none_no_eligible
       · exact eq_false_of_ne_true (by simpa using hElig)
     · -- tid ∈ tl: peel hd off and apply the induction hypothesis
       cases hHdObj : objects hd.toObjId with
-      | none => rw [hHdObj] at hHdReduce; simp at hHdReduce
+      -- Round 15: a non-TCB head is skipped, so the tail fold is the same fold
+      -- from `none` and the induction hypothesis applies directly.
+      | none =>
+        rw [hHdObj] at hHdReduce
+        exact ih hHdReduce tid hMemTl tcb hObjTid
       | some obj =>
         cases obj with
         | tcb hdTcb =>
@@ -687,7 +693,9 @@ theorem chooseBestRunnableBy_none_no_eligible
           · simp only [hHdElig] at hHdReduce
             exact ih hHdReduce tid hMemTl tcb hObjTid
         | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-        | schedContext _ | reply _ => rw [hHdObj] at hHdReduce; simp at hHdReduce
+        | schedContext _ | reply _ =>
+          rw [hHdObj] at hHdReduce
+          exact ih hHdReduce tid hMemTl tcb hObjTid
 
 /-- SM5.A.4 helper: a fold over a list whose every entry resolves to a TCB
 never errors — it returns `.ok _`.  This is the "no `schedulerInvariant`
@@ -711,6 +719,51 @@ theorem chooseBestRunnableBy_ok_of_allTcb
     rw [hHdObj]
     exact ih _ hAllTl
 
+/-- WS-SM SM8.B (PR #861 review round 15): **the scan never errors, for any
+list at all.**
+
+This is what the skip arm buys, stated rather than left implicit.  Before it,
+selection was total only under `runnableThreadsAreTCBs`
+(`chooseBestRunnableBy_ok_of_allTcb`, directly above) — and when that invariant
+was broken the failure was not local: the scan returned `.error`, so the core
+could select *nothing*, for ever, since nothing on the error path removes the
+offending entry.  The invariant is unchanged and still carried; what changed is
+that the scheduler's liveness no longer rests on it.
+
+`chooseBestRunnableBy_ok_of_allTcb` is kept because its callers pass the
+hypothesis anyway, but it is now a corollary of this. -/
+theorem chooseBestRunnableBy_always_ok
+    (objects : SeLe4n.ObjId → Option KernelObject) (eligible : TCB → Bool) :
+    ∀ (list : List SeLe4n.ThreadId)
+      (best : Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline)),
+      ∃ r, chooseBestRunnableBy objects eligible list best = .ok r := by
+  intro list
+  induction list with
+  | nil => intro best; exact ⟨best, rfl⟩
+  | cons hd tl ih =>
+    intro best
+    unfold chooseBestRunnableBy
+    cases objects hd.toObjId with
+    | none => exact ih _
+    | some obj => cases obj <;> exact ih _
+
+/-- WS-SM SM8.B: the same, for the budget-aware scan the live SGI handler
+reaches (`chooseThreadEffectiveOnCore` → `handleRescheduleSgiOnCore`). -/
+theorem chooseBestRunnableEffective_always_ok
+    (st : SystemState) (eligible : TCB → Bool) :
+    ∀ (list : List SeLe4n.ThreadId)
+      (best : Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline)),
+      ∃ r, chooseBestRunnableEffective st eligible list best = .ok r := by
+  intro list
+  induction list with
+  | nil => intro best; exact ⟨best, rfl⟩
+  | cons hd tl ih =>
+    intro best
+    unfold chooseBestRunnableEffective
+    cases st.objects.get? hd.toObjId with
+    | none => exact ih _
+    | some obj => cases obj <;> exact ih _
+
 /-- SM5.A.4 helper: the result of a fold (from any `best`) over a list of
 genuine TCBs whose recorded candidate is `some (rt, _, _)` has `rt ∈ list`
 or `rt` was already the recorded `best`.  Specialised to `best = none`
@@ -732,7 +785,13 @@ private theorem chooseBestRunnableBy_result_mem_aux
     intro best rt rp rd h
     unfold chooseBestRunnableBy at h
     cases hObj : objects hd.toObjId with
-    | none => rw [hObj] at h; simp at h
+    -- Round 15: a non-TCB head is skipped, so the fold continues on `tl` with
+    -- `best` untouched and the two outcomes carry over unchanged.
+    | none =>
+      rw [hObj] at h
+      rcases ih _ rt rp rd h with hTl | hb
+      · exact Or.inl (List.mem_cons_of_mem _ hTl)
+      · exact Or.inr hb
     | some obj =>
       cases obj with
       | tcb tcb =>
@@ -763,7 +822,11 @@ private theorem chooseBestRunnableBy_result_mem_aux
           · exact Or.inl (List.mem_cons_of_mem _ hTl)
           · exact Or.inr hb
       | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ => rw [hObj] at h; simp at h
+      | schedContext _ | reply _ =>
+        rw [hObj] at h
+        rcases ih _ rt rp rd h with hTl | hb
+        · exact Or.inl (List.mem_cons_of_mem _ hTl)
+        · exact Or.inr hb
 
 /-- SM5.A.4 / SM5.A.6 helper: selection soundness for a `none`-seeded
 fold — a recorded candidate is a member of the scanned list. -/
@@ -1257,7 +1320,10 @@ theorem chooseBestRunnableEffective_objects_congr (s₁ s₂ : SystemState)
     cases hObj : s₁.objects.get? hd.toObjId with
     | none =>
       have hObj2 : s₂.objects.get? hd.toObjId = none := by rw [h']; exact hObj
-      unfold chooseBestRunnableEffective; simp only [hObj, hObj2]
+      -- Round 15: both sides skip the entry, so both reduce to the tail fold.
+      unfold chooseBestRunnableEffective
+      simp only [hObj, hObj2]
+      exact ih _
     | some obj =>
       have hObj2 : s₂.objects.get? hd.toObjId = some obj := by rw [h']; exact hObj
       cases obj with
@@ -1268,7 +1334,9 @@ theorem chooseBestRunnableEffective_objects_congr (s₁ s₂ : SystemState)
         exact ih _
       | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
       | schedContext _ | reply _ =>
-        unfold chooseBestRunnableEffective; simp only [hObj, hObj2]
+        unfold chooseBestRunnableEffective
+        simp only [hObj, hObj2]
+        exact ih _
 
 /-- SM5.A budget helper: the bucket-first effective selector is objects-only
 dependent. -/
@@ -1341,7 +1409,13 @@ private theorem chooseBestRunnableEffective_result_props_aux
     intro best rt rp rd h
     unfold chooseBestRunnableEffective at h
     cases hObj : st.objects.get? hd.toObjId with
-    | none => rw [hObj] at h; simp at h
+    -- Round 15: a non-TCB head is skipped with `best` untouched, so both
+    -- outcomes carry over from the tail unchanged.
+    | none =>
+      rw [hObj] at h
+      rcases ih _ rt rp rd h with hprops | hb
+      · exact Or.inl ⟨List.mem_cons_of_mem _ hprops.1, hprops.2⟩
+      · exact Or.inr hb
     | some obj =>
       cases obj with
       | tcb tcb =>
@@ -1379,7 +1453,11 @@ private theorem chooseBestRunnableEffective_result_props_aux
           · exact Or.inl ⟨List.mem_cons_of_mem _ hprops.1, hprops.2⟩
           · exact Or.inr hb
       | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ => rw [hObj] at h; simp at h
+      | schedContext _ | reply _ =>
+        rw [hObj] at h
+        rcases ih _ rt rp rd h with hprops | hb
+        · exact Or.inl ⟨List.mem_cons_of_mem _ hprops.1, hprops.2⟩
+        · exact Or.inr hb
 
 /-- SM5.A budget helper: a `none`-seeded effective scan that selects `rt`
 witnesses that `rt` is a member of the scanned list, resolves to a TCB, and
@@ -1422,7 +1500,8 @@ theorem chooseBestRunnableEffective_result_fields
   | cons hd tl ih =>
       unfold chooseBestRunnableEffective at hOk
       cases hHdObj : st.objects.get? hd.toObjId with
-      | none => rw [hHdObj] at hOk; simp at hOk
+      -- Round 15: a non-TCB head is skipped with `init` untouched.
+      | none => rw [hHdObj] at hOk; exact ih init hOk hInit
       | some obj =>
           cases obj with
           | tcb hdTcb =>
@@ -1455,7 +1534,7 @@ theorem chooseBestRunnableEffective_result_fields
                 simp only [hCond, Bool.false_eq_true, if_false] at hOk
                 exact ih init hOk hInit
           | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
-              rw [hHdObj] at hOk; simp at hOk
+              rw [hHdObj] at hOk; exact ih init hOk hInit
 
 /-- WS-SM SM5.I (PR-B): the effective analogue of `chooseBestRunnableBy_optimal_combined`.
 The budget-aware `none`-or-`init`-seeded effective scan's result is not
@@ -1732,7 +1811,8 @@ theorem chooseBestRunnableEffective_some_ne_ok_none
     obtain ⟨xt, xp, xd⟩ := x
     unfold chooseBestRunnableEffective at h
     cases hObj : st.objects.get? hd.toObjId with
-    | none => rw [hObj] at h; simp at h
+    -- Round 15: skipped, so the incumbent carries into the tail.
+    | none => rw [hObj] at h; exact ih _ h
     | some obj =>
       cases obj with
       | tcb tcb =>
@@ -1743,7 +1823,7 @@ theorem chooseBestRunnableEffective_some_ne_ok_none
         · simp only [Bool.not_eq_true] at hCond
           simp only [hCond] at h; exact ih _ h
       | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ => rw [hObj] at h; simp at h
+      | schedContext _ | reply _ => rw [hObj] at h; exact ih _ h
 
 /-- SM5.A budget helper: a `none`-seeded effective scan returning `.ok none`
 witnesses that **no** scanned TCB was both domain-eligible and had sufficient
@@ -1771,7 +1851,9 @@ theorem chooseBestRunnableEffective_none_no_eligible
         exact chooseBestRunnableEffective_some_ne_ok_none st eligible tl _ hHdReduce
       · simpa using hCond
     · cases hHdObj : st.objects.get? hd.toObjId with
-      | none => rw [hHdObj] at hHdReduce; simp at hHdReduce
+      -- Round 15: a non-TCB head is skipped, leaving the same `none`-seeded fold
+      -- over the tail, so the inductive hypothesis applies directly.
+      | none => rw [hHdObj] at hHdReduce; exact ih hHdReduce tid hMemTl tcb hObjTid
       | some obj =>
         cases obj with
         | tcb hdTcb =>
@@ -1784,7 +1866,9 @@ theorem chooseBestRunnableEffective_none_no_eligible
             simp only [hHdCond] at hHdReduce
             exact ih hHdReduce tid hMemTl tcb hObjTid
         | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-        | schedContext _ | reply _ => rw [hHdObj] at hHdReduce; simp at hHdReduce
+        | schedContext _ | reply _ =>
+          rw [hHdObj] at hHdReduce
+          exact ih hHdReduce tid hMemTl tcb hObjTid
 
 /-- WS-SM SM5.I (PR-B capstone): the budget-aware analogue of
 `chooseThreadOnCore_selects_highest`.  The thread the *effective* (CBS-budget-

@@ -442,7 +442,13 @@ private theorem chooseBestRunnableBy_result_eligible_aux
     intro best rt rp rd h
     unfold chooseBestRunnableBy at h
     cases hObj : objects hd.toObjId with
-    | none => rw [hObj] at h; simp at h
+    -- Round 15: a non-TCB head is skipped with `best` untouched, so both
+    -- disjuncts carry over from the tail.
+    | none =>
+      rw [hObj] at h
+      rcases ih _ rt rp rd h with hprops | hb
+      · exact Or.inl hprops
+      · exact Or.inr hb
     | some obj =>
       cases obj with
       | tcb tcb =>
@@ -472,7 +478,11 @@ private theorem chooseBestRunnableBy_result_eligible_aux
           · exact Or.inl hprops
           · exact Or.inr hb
       | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ => rw [hObj] at h; simp at h
+      | schedContext _ | reply _ =>
+        rw [hObj] at h
+        rcases ih _ rt rp rd h with hprops | hb
+        · exact Or.inl hprops
+        · exact Or.inr hb
 
 /-- SM5.G.4 helper: a `none`-seeded `chooseBestRunnableBy` fold that selects `rt`
 witnesses that `rt` resolves to a TCB satisfying `eligible`. -/

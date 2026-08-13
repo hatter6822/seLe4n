@@ -1587,6 +1587,11 @@ private theorem ensureCdtNodeForSlot_services_eq (st : SystemState) (ref : SlotR
   unfold SystemState.ensureCdtNodeForSlot
   split <;> simp
 
+private theorem ensureCdtNodeForSlot_machine_eq (st : SystemState) (ref : SlotRef) :
+    (SystemState.ensureCdtNodeForSlot st ref).2.machine = st.machine := by
+  unfold SystemState.ensureCdtNodeForSlot
+  split <;> simp
+
 theorem ipcTransferSingleCap_preserves_scheduler
     (cap : Capability) (senderSlot : CSpaceAddr)
     (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
@@ -1613,6 +1618,42 @@ theorem ipcTransferSingleCap_preserves_scheduler
           have h1 := cspaceInsertSlot_preserves_scheduler st pair.2 _ cap (by rw [show pair = (pair.1, pair.2) from by simp]; exact hIns)
           have h2 := ensureCdtNodeForSlot_scheduler_eq pair.2 senderSlot
           have h3 := ensureCdtNodeForSlot_scheduler_eq
+            (SystemState.ensureCdtNodeForSlot pair.2 senderSlot).2
+            { cnode := receiverRoot, slot := emptySlot }
+          simp_all
+
+/-- WS-SM SM8.B.2: capability transfer never touches the machine, and therefore
+never touches any core's banked `RegisterFile` (SM5.I banks every core's
+registers inside the one `MachineState`).  The scheduler companion above frames
+the run queues; together they are what makes an IPC capability transfer
+*per-core silent* — the second half of `observableSlotsConfinedToCores … []`,
+which reads register banks as well as scheduler slots. -/
+theorem ipcTransferSingleCap_preserves_machine
+    (cap : Capability) (senderSlot : CSpaceAddr)
+    (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
+    (scanLimit : Nat) (st st' : SystemState)
+    (result : CapTransferResult)
+    (hStep : ipcTransferSingleCap cap senderSlot receiverRoot slotBase scanLimit st
+             = .ok (result, st')) :
+    st'.machine = st.machine := by
+  simp only [ipcTransferSingleCap] at hStep
+  cases hCn : st.getCNode? receiverRoot with
+  | none => simp [hCn] at hStep
+  | some cn =>
+    simp [hCn] at hStep
+    cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
+    | none => simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
+    | some emptySlot =>
+        simp [hSlot] at hStep
+        cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap st with
+        | error e => simp [hIns] at hStep
+        | ok pair =>
+          simp [hIns] at hStep
+          obtain ⟨_, rfl⟩ := hStep
+          have h1 := cspaceInsertSlot_preserves_machine st pair.2 _ cap
+            (by rw [show pair = (pair.1, pair.2) from by simp]; exact hIns)
+          have h2 := ensureCdtNodeForSlot_machine_eq pair.2 senderSlot
+          have h3 := ensureCdtNodeForSlot_machine_eq
             (SystemState.ensureCdtNodeForSlot pair.2 senderSlot).2
             { cnode := receiverRoot, slot := emptySlot }
           simp_all

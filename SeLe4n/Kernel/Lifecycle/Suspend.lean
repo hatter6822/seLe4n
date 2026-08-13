@@ -11,6 +11,7 @@ import SeLe4n.Kernel.Lifecycle.Operations
 import SeLe4n.Kernel.Scheduler.Operations
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.Propagate
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.Compute
+import SeLe4n.Kernel.Concurrency.ContextRestoreSeam
 
 /-! # D1: Thread Suspension & Resumption
 
@@ -101,6 +102,15 @@ theorem restoreToReady_scheduler_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
     (restoreToReady st tid).scheduler = st.scheduler := by
   unfold restoreToReady; split <;> rfl
 
+/-- WS-SM SM8.B: `restoreToReady` only writes `objects` — the machine, and hence
+every core's register bank, is framed.  The information-flow counterpart of
+`restoreToReady_scheduler_eq`: per-core confinement reads the register banks as
+well as the scheduler slots, so a scheduler frame alone does not bound a step's
+observable writes. -/
+theorem restoreToReady_machine_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (restoreToReady st tid).machine = st.machine := by
+  unfold restoreToReady; split <;> rfl
+
 /-- Helper: restoreToReady preserves the serviceRegistry. -/
 theorem restoreToReady_serviceRegistry_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
     (restoreToReady st tid).serviceRegistry = st.serviceRegistry := by
@@ -120,6 +130,14 @@ theorem restoreToReady_lifecycle_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
 theorem clearTcbIpcFields_scheduler_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
     (clearTcbIpcFields st tid).scheduler = st.scheduler :=
   restoreToReady_scheduler_eq st tid
+
+/-- WS-SM SM8.B: the machine companion of `clearTcbIpcFields_scheduler_eq`.
+Stated here rather than at the consumer because `clearTcbIpcFields` is
+`private`, so only this file can name it — the same reason its scheduler frame
+lives here. -/
+theorem clearTcbIpcFields_machine_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (clearTcbIpcFields st tid).machine = st.machine :=
+  restoreToReady_machine_eq st tid
 
 /-- Helper: clearTcbIpcFields preserves the serviceRegistry (back-compat). -/
 theorem clearTcbIpcFields_serviceRegistry_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
@@ -283,6 +301,86 @@ def resumeThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThreadId) (executi
         .ok (st3, some (target, SgiKind.reschedule))
   | none => .error .invalidArgument
 
+/-- WS-SM SM8.B (PR #861 review round 34): **the resume the kernel runs while the
+context-restore seam is dark** — everything `resumeThreadOnCore` does except the
+inline local dispatch.
+
+The resumed thread is `.Ready` and queued on its home core; it simply is not made
+`current` until that core's next scheduling point.  That state is *coherent*,
+which is what makes gating this path sound: nothing is left dangling, the thread
+is merely undispatched.  (Contrast the unbind path, whose head clears `current`
+in order to force a reschedule — suppressing its tail there leaves a core with no
+current thread at all, which is why that path is deliberately ungated.)
+
+A named function rather than an inline `else`, so both sides of
+`resumeThreadOnCoreLive` are separately stated and separately verified.  The
+REMOTE arm is byte-identical to the base transition's: a cross-core
+`.reschedule` SGI is a real poke at another processor and has nothing to do with
+the missing restore. -/
+def resumeThreadEnqueueOnly (st : SystemState) (vtid : SeLe4n.ValidThreadId)
+    (executingCore : CoreId)
+    : Except KernelError (SystemState × Option (CoreId × SgiKind)) :=
+  let tid : SeLe4n.ThreadId := vtid.val
+  match st.getTcb? tid with
+  | some tcb =>
+    if tcb.threadState != .Inactive then .error .illegalState
+    else
+      let target := determineTargetCore st tid
+      let st2 := resumeReadyMidState st tid
+      let st3 := enqueueRunnableOnCore st2 target tid
+      if target == executingCore then
+        -- LOCAL, ungated form: enqueue and stop.  No inline dispatch.
+        .ok (st3, none)
+      else
+        .ok (st3, some (target, SgiKind.reschedule))
+  | none => .error .invalidArgument
+
+/-- WS-SM SM8.B (PR #861 review round 34): **the resume as the live `.tcbResume`
+arm runs it** — gated on the restore seam it depends on.
+
+`resumeThreadOnCore` is correct at the model level and its theorems say so; this
+wrapper chooses between it and `resumeThreadEnqueueOnly`.  Deliberately a
+*wrapper*, for the same reason `scheduleLocalSuccessorLive` is one: folding the
+guard into the transition makes every theorem about it conditional, and those
+theorems are what SM9.E enables rather than has to re-prove.  An earlier cut of
+this PR folded it in, collapsed three proofs onto the dead branch and broke
+`SmpPipSuite`'s P2-5 assertion; this is the undo. -/
+def resumeThreadOnCoreLive (st : SystemState) (vtid : SeLe4n.ValidThreadId)
+    (executingCore : CoreId) : Except KernelError (SystemState × Option (CoreId × SgiKind)) :=
+  if SeLe4n.Kernel.PriorityInheritance.contextRestoreSeamLive then resumeThreadOnCore st vtid executingCore
+  else resumeThreadEnqueueOnly st vtid executingCore
+
+/-- WS-SM SM8.B: what the kernel does **today**.  Deliberately NOT `@[simp]` —
+an automatic rewrite would silently restate every downstream fact about the
+wrapper in terms of the enqueue-only form, which is the collapse this rework
+exists to remove, one level up. -/
+theorem resumeThreadOnCoreLive_inert (st : SystemState) (vtid : SeLe4n.ValidThreadId)
+    (executingCore : CoreId) :
+    resumeThreadOnCoreLive st vtid executingCore
+      = resumeThreadEnqueueOnly st vtid executingCore := rfl
+
+/-- WS-SM SM8.B: and what it does once the seam is live — the full resume, so
+the flip loses nothing. -/
+theorem resumeThreadOnCoreLive_eq_of_seam_live (st : SystemState)
+    (vtid : SeLe4n.ValidThreadId) (executingCore : CoreId)
+    (h : SeLe4n.Kernel.PriorityInheritance.contextRestoreSeamLive = true) :
+    resumeThreadOnCoreLive st vtid executingCore
+      = resumeThreadOnCore st vtid executingCore := by
+  unfold resumeThreadOnCoreLive
+  rw [h]
+  rfl
+
+/-- WS-SM SM8.B: the gate touches **only** the local arm — when the resumed
+thread's home core is remote, both branches agree. -/
+theorem resumeThreadOnCoreLive_remote_agrees (st : SystemState)
+    (vtid : SeLe4n.ValidThreadId) (executingCore : CoreId)
+    (hRemote : ¬ (determineTargetCore st vtid.val == executingCore) = true) :
+    resumeThreadOnCoreLive st vtid executingCore
+      = resumeThreadOnCore st vtid executingCore := by
+  unfold resumeThreadOnCoreLive resumeThreadEnqueueOnly
+    resumeThreadOnCore
+  split <;> simp [hRemote]
+
 /-- WS-SM SM6.D (PR #822 review, Reply objects): sever a caller→Reply link as
 part of lifecycle teardown.  When `tcb.replyObject = some rid` (the seL4
 `tcb->tcbReply` forward link of a caller blocked awaiting a reply), clear the
@@ -360,6 +458,24 @@ theorem consumeReplyLink_scheduler_eq (st : SystemState) (tid : SeLe4n.ThreadId)
   unfold consumeReplyLink; split
   · rfl
   · rw [clearReplyObjectCaller_scheduler_eq, clearTcbReplyObject_scheduler_eq]
+
+/-- WS-SM SM8.B: `clearReplyObjectCaller` only writes `objects` — machine framed. -/
+theorem clearReplyObjectCaller_machine_eq (st : SystemState) (rid : SeLe4n.ReplyId) :
+    (clearReplyObjectCaller st rid).machine = st.machine := by
+  unfold clearReplyObjectCaller; split <;> rfl
+
+/-- WS-SM SM8.B: `clearTcbReplyObject` only writes `objects` — machine framed. -/
+theorem clearTcbReplyObject_machine_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (clearTcbReplyObject st tid).machine = st.machine := by
+  unfold clearTcbReplyObject; split <;> rfl
+
+/-- WS-SM SM8.B: `consumeReplyLink` preserves the machine (both legs only write
+`objects`). -/
+theorem consumeReplyLink_machine_eq (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) :
+    (consumeReplyLink st tid tcb).machine = st.machine := by
+  unfold consumeReplyLink; split
+  · rfl
+  · rw [clearReplyObjectCaller_machine_eq, clearTcbReplyObject_machine_eq]
 
 /-- `consumeReplyLink` preserves the serviceRegistry. -/
 theorem consumeReplyLink_serviceRegistry_eq (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) :
@@ -553,22 +669,12 @@ def clearPendingState (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :
 -- D1-G: suspendThread (composite)
 -- ============================================================================
 
-/-- WS-SM SM6.E (PR #831 review 4, P1): the core **actually running** `tid` —
-the first core whose current slot holds it (`none` when not current anywhere).
-`determineTargetCore` is the wake/queue *home* (affinity defaulting to boot),
-but the two can diverge: unbinding a thread running on a secondary core is
-admitted (`setThreadCpuAffinityWithMigration`'s reject gate fires only when
-the NEW affinity forbids the running core, and `cpuAffinity = none` admits
-every core), leaving the thread current on that core while its home reverts
-to `bootCoreId`.  A suspend must deschedule and poke the running core, not
-the home — descheduling only the home would mark the victim `.Inactive`
-while the secondary core keeps executing it.  Completeness of the
-first-match scan rests on `currentThreadUniqueAcrossCores`
-(`Scheduler/Invariant/PerCore.lean`, audit closure): a thread is current on
-at most one core. -/
-def runningCoreOf? (st : SystemState) (tid : SeLe4n.ThreadId) : Option CoreId :=
-  SeLe4n.Kernel.Concurrency.allCores.find? (fun c =>
-    st.scheduler.currentOnCore c == some tid)
+-- WS-SM SM8.B (PR #861 review round 39): `runningCoreOf?` moved down to
+-- `Scheduler/Operations/Core.lean` so the unbind path can key its preemption
+-- guard on it (see the definition's docstring).  Re-exported here so
+-- `Lifecycle.Suspend.runningCoreOf?` keeps resolving for every existing
+-- qualified reference.
+export SeLe4n.Kernel (runningCoreOf?)
 
 /-- WS-SM SM6.E (PR #831 review 2): snapshot of core `ec`'s current thread and
 its *effective* run-queue priority (`resolveEffectivePrioDeadline`), taken at

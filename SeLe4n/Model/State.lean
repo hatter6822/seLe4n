@@ -2589,6 +2589,27 @@ def getVSpaceRoot? (st : SystemState) (id : SeLe4n.ObjId) : Option VSpaceRoot :=
   | some (.vspaceRoot root) => some root
   | _                       => none
 
+/-- **WS-SM SM8.B**: read a stored object from the global object store without
+discriminating its variant — the most general member of the AL2-A / AN10-B
+typed-accessor family.
+
+The sibling of `getObjectType?` below, for callers that need the object itself
+rather than only what its identity implies.  The re-type's per-core write set is
+the motivating consumer: it must case on the destroyed object's *variant* (only
+a TCB occupies a core), so the type alone is not enough, and reading the store
+raw would put a live-path raw match back into a subsystem that has spent several
+cuts removing them.
+
+Definitionally the raw read, so it costs nothing and every existing rewrite
+about `objects[id]?` still applies — the value is that the store's
+representation is named in one place. -/
+def getObject? (st : SystemState) (id : SeLe4n.ObjId) : Option KernelObject :=
+  st.objects[id]?
+
+/-- **WS-SM SM8.B**: `getObject?` is the store read, definitionally. -/
+@[simp] theorem getObject?_eq_getElem (st : SystemState) (id : SeLe4n.ObjId) :
+    st.getObject? id = st.objects[id]? := rfl
+
 /-- **WS-SM SM7.D**: read a stored object's *type* from the global object store,
 without discriminating its variant.
 

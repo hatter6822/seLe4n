@@ -209,6 +209,30 @@ theorem cleanupEndpointServiceRegistrations_scheduler_eq
   unfold cleanupEndpointServiceRegistrations
   exact foldl_removeDependenciesOf_scheduler_eq _ _
 
+/-- WS-SM SM8.B.2 helper: folding `removeDependenciesOf` preserves machine. -/
+private theorem foldl_removeDependenciesOf_machine_eq
+    (sids : List ServiceId) (st : SystemState) :
+    (sids.foldl (fun s sid => removeDependenciesOf s sid) st).machine = st.machine := by
+  induction sids generalizing st with
+  | nil => rfl
+  | cons hd tl ih =>
+    simp only [List.foldl_cons]
+    rw [ih]
+    exact removeDependenciesOf_machine_eq st hd
+
+/-- WS-SM SM8.B.2: cleaning up an endpoint's service registrations writes no
+register bank.
+
+The `machine` companion of `cleanupEndpointServiceRegistrations_scheduler_eq`.
+Together the two say the endpoint arm of `lifecyclePreRetypeCleanup` is confined
+to the **empty** set of cores, which is what lets the retype's write set name
+only the cores the destroyed *thread* occupied. -/
+theorem cleanupEndpointServiceRegistrations_machine_eq
+    (st : SystemState) (epId : SeLe4n.ObjId) :
+    (cleanupEndpointServiceRegistrations st epId).machine = st.machine := by
+  unfold cleanupEndpointServiceRegistrations
+  exact foldl_removeDependenciesOf_machine_eq _ _
+
 /-- R4-B.1 + T5-F: cleanupEndpointServiceRegistrations preserves lifecycle. -/
 theorem cleanupEndpointServiceRegistrations_lifecycle_eq
     (st : SystemState) (epId : SeLe4n.ObjId) :

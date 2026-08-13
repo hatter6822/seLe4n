@@ -127,17 +127,211 @@ record_failure() {
   log_section "${category}" "FAIL: ${message}"
 }
 
+# ---------------------------------------------------------------------------
+# The code view: a gate reads code, never the prose that describes it.
+#
+# WS-SM SM8.B (PR #861 review round 43).  Surface anchors matched raw file
+# text, so a docstring could decide a gate in both directions — satisfying a
+# positive anchor for a theorem that had been deleted, and firing a negative
+# anchor by explaining the thing it forbids.  The AK7 counters had the same
+# exposure, and one docstring in the tree had already been broken across two
+# lines to stop a line-oriented counter seeing the pattern it was discussing.
+#
+# `scripts/lean_code_view.py --overlay` builds a whole-repo overlay whose
+# `.lean` files are comment-free and byte-aligned with the originals (every
+# other path is a symlink).  A text scan run with that directory as its working
+# directory therefore resolves every path exactly as written and sees code
+# only, with `rg -n` line numbers still pointing at real lines.
+#
+# The default is the code view, deliberately.  Requiring an opt-in would mean a
+# future anchor written the obvious way silently regains the defect, which is
+# the failure mode this closes; prose checks opt *out*, via `run_prose_check`.
+lean_code_view_dir() {
+  if [[ -n "${LEAN_CODE_VIEW_DIR:-}" ]]; then
+    printf '%s' "${LEAN_CODE_VIEW_DIR}"
+    return 0
+  fi
+  local repo view
+  repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  view="${repo}/.lake/build/leancodeview"
+  python3 "${repo}/scripts/lean_code_view.py" --overlay "${view}" >/dev/null || return 1
+  LEAN_CODE_VIEW_DIR="${view}"
+  printf '%s' "${view}"
+}
+
+# Does this command read Lean source as text?
+#
+# Total over the shapes this repository uses, which was checked rather than
+# assumed: every `bash -lc` anchor either invokes a tool (`lake`, a script, an
+# environment source) or is a pure `rg`/`grep` scan, and none mixes the two.
+# `_run_with_view` fails closed if that ever stops holding.
+_scans_lean_source() {
+  case "$1" in
+    rg|grep) return 0 ;;
+    bash)
+      local script="$*"
+      case "${script}" in
+        *lake*|*scripts/*|*"source "*) return 1 ;;
+        *.lean*) return 0 ;;
+      esac
+      return 1
+      ;;
+  esac
+  return 1
+}
+
+# Run a command, in the code view when it scans Lean source.
+_run_with_view() {
+  if _scans_lean_source "$@"; then
+    local view
+    if ! view="$(lean_code_view_dir)"; then
+      echo "error: could not build the Lean code view" >&2
+      return 125
+    fi
+    ( cd "${view}" && "$@" )
+    return $?
+  fi
+  # Fail closed on the shape the classifier cannot place: a tool invocation
+  # that also greps Lean source would run against raw text and quietly reopen
+  # the hole.  Split it into a tool check and a scan check instead.
+  if [[ "$1" == "bash" ]]; then
+    local script="$*"
+    if [[ "${script}" == *.lean* && ( "${script}" == *"rg "* || "${script}" == *"grep "* ) ]]; then
+      echo "error: this check both invokes a tool and scans Lean source, so it" >&2
+      echo "       cannot run in the code view; split it into two checks." >&2
+      return 125
+    fi
+  fi
+  "$@"
+}
+
 run_check() {
   local category="$1"
   shift
 
   log_section "${category}" "RUN: $*"
-  if "$@"; then
+  if _run_with_view "$@"; then
     log_section "${category}" "PASS"
     return 0
   fi
 
   record_failure "${category}" "Command failed: $*"
+  if [[ "${CONTINUE_MODE}" -eq 0 ]]; then
+    finalize_report
+  fi
+  return 1
+}
+
+# The opt-out: a check whose subject really is the prose — a documentation
+# citation, a comment that must name the theorem it argues from, a status line.
+# Runs against the real tree.  Rare by construction; if a new one is not
+# obviously about documentation, it is probably a code check written wrongly.
+run_prose_check() {
+  local category="$1"
+  shift
+
+  log_section "${category}" "RUN (prose): $*"
+  if "$@"; then
+    log_section "${category}" "PASS"
+    return 0
+  fi
+
+  record_failure "${category}" "Prose check failed: $*"
+  if [[ "${CONTINUE_MODE}" -eq 0 ]]; then
+    finalize_report
+  fi
+  return 1
+}
+
+# WS-SM SM8.B (v0.33.5): the dual of `run_check` — the command MUST fail.
+#
+# This used to carry a CONVENTION — "match a definition, not a mention" —
+# because a negative anchor over a prose-bearing tree fires on the comment that
+# *explains* the forbidden thing.  It misfired three times in PR #861 anyway,
+# which is what a convention gets you: it holds until someone writes an
+# ordinary sentence.  Round 43 replaced it with a mechanism.  Lean scans now
+# run against the comment-free code view (see `_run_with_view` above), so a
+# docstring saying "there is no `setDomainSchedule`" is invisible to an anchor
+# banning `setDomainSchedule`, and the pattern may be written plainly.
+#
+# The convention survives only where it is still load-bearing: a check over
+# `docs/`, or one routed through `run_prose_check`, reads real text and must
+# still distinguish a use from an explanation by construction.
+#
+# Surface anchors so far could only pin that something *is* present.  Several
+# SM8.B findings were the opposite shape: a tautology that must not come back, a
+# wildcard match arm that must not be reintroduced.  Grepping for absence needs
+# an inverted check, and writing `! rg …` inline does not route through
+# `record_failure`, so a regression would print nothing and pass.
+#
+# Usage:
+#   run_negative_check "INVARIANT" rg -n 'forbidden_symbol' SeLe4n/
+# PR #861 review (P2): only ripgrep's documented *no-match* status counts as
+# absence.  `rg` exits 0 on a match, 1 on a clean no-match, and 2 on an error —
+# an unrecognized flag, an unreadable path, a malformed pattern.  Treating every
+# nonzero status as "absent" made those errors silent PASSes, i.e. a gate that
+# fails open exactly when it is misconfigured, which is when it is least likely
+# to be noticed.  Status 2 (and anything else) is now an infrastructure failure.
+# The prose dual of `run_negative_check`: a forbidden *wording*, not a forbidden
+# construct.  Reads the real text.
+#
+# Needed because routing negative checks through the code view would otherwise
+# make three of them vacuous overnight: an anchor forbidding "bits per domain
+# switch" inside a Lean docstring can never fire against a view with no
+# docstrings in it, so it would pass forever and report a retracted figure as
+# absent.  A mechanism that silently disarms an existing check is not an
+# improvement on the convention it replaced, so the split is explicit on both
+# sides — `run_negative_check` for constructs, this for wording.
+run_prose_negative_check() {
+  local category="$1"
+  shift
+
+  log_section "${category}" "RUN (prose, must not match): $*"
+  local status=0
+  "$@" >/dev/null 2>&1 || status=$?
+
+  case "${status}" in
+    0)
+      record_failure "${category}" "Forbidden wording present: $*"
+      ;;
+    1)
+      log_section "${category}" "PASS"
+      return 0
+      ;;
+    *)
+      record_failure "${category}" \
+        "Prose negative check errored (status ${status}), which is not absence: $*"
+      ;;
+  esac
+
+  if [[ "${CONTINUE_MODE}" -eq 0 ]]; then
+    finalize_report
+  fi
+  return 1
+}
+
+run_negative_check() {
+  local category="$1"
+  shift
+
+  log_section "${category}" "RUN (must not match): $*"
+  local status=0
+  _run_with_view "$@" >/dev/null 2>&1 || status=$?
+
+  case "${status}" in
+    0)
+      record_failure "${category}" "Forbidden pattern present: $*"
+      ;;
+    1)
+      log_section "${category}" "PASS"
+      return 0
+      ;;
+    *)
+      record_failure "${category}" \
+        "Negative check could not run (exit ${status}, not a clean no-match): $*"
+      ;;
+  esac
+
   if [[ "${CONTINUE_MODE}" -eq 0 ]]; then
     finalize_report
   fi

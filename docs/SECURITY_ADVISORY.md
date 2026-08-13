@@ -108,17 +108,73 @@ This is formally witnessed by `acceptedCovertChannel_scheduling`
 
 ### Bandwidth Analysis
 
-- **Channel capacity**: Bounded by domain schedule length × switch frequency
-- **Practical bandwidth**: Sub-bit-per-second under normal scheduling
-  configurations (domain switches at 1–100 Hz, 4 scalar values per observation)
-- **Theoretical maximum**: ≤ log₂(|domainSchedule|) × switchFreq bits/second
+- **Channel capacity**: ≤ log₂(N × (Q + 1)) × **tickFreq** bits/second, where
+  N = |domainSchedule| and **Q is a deployment-supplied bound on
+  `domainTimeRemaining`**
+- **Upper bound**: for N ≤ 16, Q ≤ 255 each observation is ≤ 12 bits, and at
+  the canonical RPi5 1 ms tick (F = 1000 Hz) that is ≤ **12 000 bits/second**
+- **Realizable rate**: **not bounded by this analysis** — see below
+
+**The rate factor is the tick rate, not the switch rate.**  This advisory
+previously quoted ≤ 1200 bits/second at a ≤ 100 Hz *domain-switch* rate.  That
+understates the channel by an order of magnitude on the canonical
+configuration: `domainTimeRemaining` is one of the observed components and an
+ordinary timer tick decrements it, so consecutive observations differ between
+switches and the observer is paced by **ticks**
+(`schedulingObservation_changes_on_domain_tick`, PR #861 review round 12).  The
+run-length form is `schedulingChannel_trace_capacity`: over n observations the
+observer's whole trace is one element of `boundedCodeTraces alphabet n`, a set
+whose size is exactly `alphabet ^ n`.
+
+**There is no "practical bandwidth" figure.**  Earlier revisions of this
+advisory claimed "sub-bit-per-second under normal scheduling configurations" at
+the *same* configurations the table now costs at thousands of bits/second —
+two numbers orders of magnitude apart for one configuration, and the
+smaller one had no derivation behind it (PR #861 review round 9).  It has been
+removed rather than re-justified: deriving a realizable rate needs a model of how
+much of the alphabet a sender can actually control and a receiver actually
+resolve, and this kernel model has neither.  **Budget against the upper bound.**
+
+**Operators must supply Q.**  This advisory previously quoted
+≤ log₂(|domainSchedule|) × switchFreq, omitting the Q factor.  That figure is
+**false as stated** and the kernel now proves it so:
+`schedulingChannel_not_bounded_by_scheduleLength` shows that schedule length
+alone bounds nothing, because `domainTimeRemaining` is projected unfiltered and
+ranges over all of `Nat`.  A deployment that does not cap the domain countdown
+has **no** capacity bound from this analysis.
+
+**Every condition the bound rests on**, bundled as
+`schedulingCapacityPreconditions` (per state) and `schedulingCapacityComparable`
+(across two states) so they can be cited by name rather than reconstructed from
+three theorem signatures:
+
+| Condition | Who discharges it |
+|-----------|-------------------|
+| `domainSchedule` non-empty | **Deployment.** Single-domain mode (empty schedule) makes the index-bounds invariant vacuous, so the observed index is unbounded and this analysis yields no figure. |
+| `domainTimeRemaining ≤ Q` | **Deployment.** No cap, no bound. |
+| `domainScheduleIndexInBoundsOnCore` | Kernel — maintained by the domain transitions. |
+| `domainConsistentOnCore` | Kernel — what makes `activeDomain` a function of the schedule and index rather than a fourth independent value. |
+| `domainSchedule` unchanged between observations | Kernel **today**: there is no `setDomainSchedule`, and the only assignments in the tree are the boot builder and the freeze copy. A Tier-3 anchor pins that absence. Adding a schedule-reconfiguration syscall would invalidate this figure — the schedule is projected unfiltered, so a mutable schedule is its own channel and fixing N bounds nothing about its contents. |
+
+The corrected figure is proven rather than asserted:
+`schedulingChannel_alphabet_bounded` injects the per-core observation alphabet
+into `Fin (N × (Q + 1))`, `schedulingObservationCode_injective` is why that
+injection loses nothing, and `schedulingChannel_full_observation_determined`
+extends it to the third observable component (`activeDomain`) under
+`domainConsistentOnCore`.  All three are in
+`SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean`.
+
+Under SMP the channel exists **once per core** — each core carries its own
+`activeDomain`, `domainTimeRemaining` and `domainScheduleIndex` — so a
+deployment budgeting total leakage should multiply by the core count.
 
 ### Mitigation
 
 Temporal partitioning via domain scheduling (already present) bounds the channel
-bandwidth. This covert channel is accepted per seL4 design precedent (Murray et
-al., CCS 2013). Hardware-level isolation (partitioned caches, separate timer
-domains) would further reduce bandwidth but is beyond the kernel model's scope.
+bandwidth, **given a countdown cap Q**. This covert channel is accepted per seL4
+design precedent (Murray et al., CCS 2013). Hardware-level isolation (partitioned
+caches, separate timer domains) would further reduce bandwidth but is beyond the
+kernel model's scope.
 
 ---
 

@@ -493,6 +493,32 @@ import SeLe4n.Kernel.IPC.CrossCore.CancellationNI
 -- `onCore_label_monotone`.  Reachability: staged at SM8.A; SM8.B's
 -- `crossCoreNonInterference` is the first consumer.
 import SeLe4n.Kernel.InformationFlow.ObservableStatePerCore
+-- WS-SM SM8.B: per-core non-interference — `crossCoreNonInterference` (plan
+-- Theorem 3.3.1), `nonInterference_perCore` (the single-core NI surface
+-- generalised to every core), the thirty-five per-operation lifts with their
+-- boot-core confinement lemmas *derived* rather than assumed (which discharges
+-- the SM4.C / SM4.D `hOtherIdle` obligation for those operations),
+-- `niStepCoverage_perCore`, non-interference under the SM3 two-phase-locking
+-- bracket, and `crossCoreLeakage_bounded`.  Reachability: staged at SM8.B;
+-- SM8.C's per-core declassification audit is the next consumer.
+import SeLe4n.Kernel.InformationFlow.NonInterferencePerCore
+-- WS-SM SM8.B: the SMP enforcement boundary (`enforcementBoundaryPerCore`, the
+-- canonical 38 entries plus the 2PL bracket) with its completeness witness, the
+-- seven-entry accepted covert-channel inventory as data (CC-1 … CC-7, each
+-- carrying the theorem that fixes its model-visible status), the per-core
+-- endpoint-policy restriction, and the bridge from the release-grade
+-- single-core dispatch non-interference witnesses to the per-core statement.
+import SeLe4n.Kernel.InformationFlow.CovertChannelPerCore
+-- WS-SM SM8.B: non-interference at the transitions that genuinely write a
+-- *remote* core.  `NonInterferencePerCore`'s thirty-five lifts are all confined
+-- to the boot core, so `crossCoreNonInterference`'s interesting direction had no
+-- instantiation at a real cross-core transition; this module supplies nineteen, over
+-- pre-state-computed write sets (`observableSlotsConfinedToCores`, including the
+-- two-element set an endpoint call needs) and a reusable home-core frame layer.
+-- Strictly stronger than the SM6 per-core NI results on the per-core half: those
+-- require the woken thread to be non-observable, these hold for a fully visible
+-- one.  Reachability: staged at SM8.B; SM8.C is the next consumer.
+import SeLe4n.Kernel.InformationFlow.NonInterferenceCrossCore
 -- WS-SM SM6.A: the cross-core-aware syscall dispatch entry —
 -- `syscallDispatchCrossCoreEntry` (`@[export lean_syscall_dispatch_cross_core]`).
 -- Runs the verified `syscallDispatchFromAbi` atomically via `modifyGetKernelState`,

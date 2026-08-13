@@ -208,7 +208,8 @@ WS-G5: Uses `HashMap.filter` for O(m) filtering on HashMap-backed CNode slots. -
 def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : KernelObject) : KernelObject :=
   match obj with
   | .cnode cn =>
-      .cnode { cn with slots := cn.slots.filter (fun _ cap =>
+      .cnode { cn with lock := SeLe4n.Kernel.Concurrency.RwLockState.unheld,
+                       slots := cn.slots.filter (fun _ cap =>
         capTargetObservable ctx observer cap.target) }
   | .tcb tcb =>
       -- WS-H12c: Strip registerContext from projected TCBs. Register context
@@ -280,12 +281,14 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
       .tcb { tcb with registerContext := default, schedContextBinding := .unbound,
                        pipBoost := none, pendingMessage := none, timedOut := false,
                        cpuAffinity := none, replyObject := none,
-                       pendingReceiveReply := none }
+                       pendingReceiveReply := none,
+                       lock := SeLe4n.Kernel.Concurrency.RwLockState.unheld }
   | .schedContext sc =>
       -- AI4-A: Strip boundThread — internal scheduling plumbing binding a
       -- SchedContext to its owning thread. Donation chain changes modify only
       -- this field and must not leak through the NI projection.
-      .schedContext { sc with boundThread := none }
+      .schedContext { sc with boundThread := none,
+                              lock := SeLe4n.Kernel.Concurrency.RwLockState.unheld }
   | .reply r =>
       -- WS-SM SM6.D (PR #822 review, Reply objects): Strip the Reply object's
       -- cross-domain linkage — `caller` (the back-link to the blocked caller
@@ -303,11 +306,36 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
       -- `replyId` field need not equal that key (`wellFormed` does not enforce it,
       -- and a retyped Reply is built with `ReplyId.sentinel`), so an un-normalized
       -- internal id would leak a hidden ReplyId through a low-visible Reply object.
-      -- Erasing it to the canonical sentinel removes the channel; only `lock`
-      -- survives (an `RwLockState` carrying no cross-domain identity).
+      -- Erasing it to the canonical sentinel removes the channel.
       .reply { r with replyId := SeLe4n.ReplyId.sentinel,
-                      caller := none, donatedSc := none, prev := none }
-  | other => other
+                      caller := none, donatedSc := none, prev := none,
+                      lock := SeLe4n.Kernel.Concurrency.RwLockState.unheld }
+  -- WS-SM SM8.B.4: strip the per-object `lock`.  `RwLockState` carries
+  -- `writerHeld : Option CoreId`, `readers : List CoreId` and
+  -- `waiters : List (CoreId × AccessMode)` — every field a **core identity**.
+  -- Leaving it in the projection would hand any observer that can see an object
+  -- the set of cores currently operating on it, which is exactly the per-thread
+  -- placement channel WS-SM SM5.B closed by stripping `TCB.cpuAffinity`,
+  -- re-opened through a different field and on every object kind rather than
+  -- just TCBs.  Stripped structurally, per the same discipline SM5.B states:
+  -- not justified by "no live operation sets it yet" (true today only because
+  -- SM3.C.9 still defers wrapping the `@[export]` bodies in `withLockSet`), but
+  -- by the field being concurrency-control plumbing rather than part of the
+  -- object's observable logical identity — the same class as `pipBoost`,
+  -- `schedContextBinding` and `registerContext` above.
+  --
+  -- With the field erased, the SM3 two-phase-locking bracket is *unconditionally*
+  -- invisible (`withLockSet_preserves_projection`), so the lock-contention
+  -- channel CC-5 is a hardware **timing** channel only, exactly as the SM8 plan's
+  -- Definition 3.4.1 describes it — there is no model-level state flow left.
+  | .endpoint e =>
+      .endpoint { e with lock := SeLe4n.Kernel.Concurrency.RwLockState.unheld }
+  | .notification n =>
+      .notification { n with lock := SeLe4n.Kernel.Concurrency.RwLockState.unheld }
+  | .vspaceRoot v =>
+      .vspaceRoot { v with lock := SeLe4n.Kernel.Concurrency.RwLockState.unheld }
+  | .untyped u =>
+      .untyped { u with lock := SeLe4n.Kernel.Concurrency.RwLockState.unheld }
 
 /-- WS-F3/F-22: `projectKernelObject` is idempotent — filtering twice yields
 observationally equivalent results to filtering once.
@@ -654,14 +682,56 @@ theorem acceptedCovertChannel_scheduling
     **Channel characteristics**:
     - **Source**: 4 scheduling scalar values (`activeDomain`, `domainSchedule`,
       `domainScheduleIndex`, `domainTimeRemaining`)
-    - **Capacity**: ≤ log₂(|domainSchedule|) × switchFreq bits/second
-    - **Practical bandwidth**: Sub-bit-per-second under normal scheduling
-      configurations (domain switches at 1–100 Hz)
-    - **Theoretical maximum**: With |domainSchedule| = N entries and switch
-      frequency F Hz, an observer can extract at most log₂(N) × F bits/second
-      by measuring domain transitions. For typical configurations (N ≤ 16,
-      F ≤ 100 Hz), this is ≤ 400 bits/second — well below practical exploitation
-      thresholds for most security policies.
+    - **Capacity**: ≤ log₂(N × (Q + 1)) × tickFreq bits/second, where N =
+      |domainSchedule| and Q bounds `domainTimeRemaining`.  The second factor
+      is the **timer-tick** rate, not the domain-switch rate — see below.
+    - **Realizable rate**: not bounded by this analysis.  Earlier revisions
+      claimed "sub-bit per second" at the same configurations costed below at
+      thousands of bits/second — two figures orders of magnitude apart for one
+      configuration, the smaller with no derivation.  Removed rather than
+      re-justified: a realizable rate needs a model of how much of the alphabet
+      a sender controls and a receiver resolves, and this model has neither.
+    - **Theoretical maximum**: With |domainSchedule| = N entries, a countdown
+      capped at Q, and **tick** frequency F Hz, an observer can extract at most
+      log₂(N × (Q + 1)) × F bits/second. For typical configurations (N ≤ 16,
+      Q ≤ 255) each observation is ≤ 12 bits, and at the canonical RPi5 1 ms
+      tick (F = 1000 Hz) that is ≤ 12 000 bits/second — the figure a deployment
+      should compare against its own policy.
+
+      **The rate factor is the tick rate, and earlier revisions used the
+      domain-switch rate** (WS-SM SM8.B, PR #861 review round 12), quoting
+      ≤ 1200 bits/second at F ≤ 100 Hz.  That understates the channel by an
+      order of magnitude on the canonical configuration, because
+      `domainTimeRemaining` is one of the observed components and an ordinary
+      tick decrements it: consecutive observations differ *between* switches, so
+      the observer is paced by ticks.  `schedulingObservation_changes_on_domain_tick`
+      is that fact as a theorem, and `schedulingChannel_trace_capacity` states
+      the run-length bound per observation — over n observations the whole trace
+      is one of `alphabet ^ n` possibilities (`boundedCodeTraces`, whose length
+      is exactly that) — so the two factors cannot drift apart again.
+
+      **The Q factor is load-bearing, and the earlier form of this note omitted
+      it** (WS-SM SM8.B, PR #861 review): the claim used to read log₂(N) × F,
+      which is false as stated, because `domainTimeRemaining` is projected
+      unfiltered and ranges over all of `Nat` — `schedulingChannel_not_bounded_by_scheduleLength`
+      proves exactly that N alone bounds nothing.  The corrected figure is
+      **proven**, not asserted: `schedulingChannel_alphabet_bounded` injects the
+      per-core observation alphabet into `Fin (N × (Q + 1))`, and
+      `schedulingObservationCode_injective` is why that injection loses nothing.
+      The third observable component, `activeDomain`, is covered rather than
+      ignored: `schedulingChannel_full_observation_determined` shows two states
+      the encoding identifies expose the same active domain — under
+      `domainConsistentOnCore`, the invariant that actually ties it to
+      `domainSchedule[index]`.  A deployment that does not cap the countdown —
+      or that runs the empty single-domain schedule, which makes the
+      index-bounds invariant vacuous and so leaves the observed index unbounded
+      — does not get this bound.  The complete premise list is
+      `schedulingCapacityPreconditions` (per state) and
+      `schedulingCapacityComparable` (across two states, adding that
+      `domainSchedule` is itself unchanged: it is projected unfiltered, so a
+      mutable schedule is its own channel).  `docs/SECURITY_ADVISORY.md` §SA-3
+      tabulates which premises the kernel discharges and which the deployment
+      must.
 
     **Mitigation status**: Temporal partitioning via domain scheduling bounds
     the channel bandwidth. Each domain receives guaranteed time quanta regardless
@@ -676,8 +746,21 @@ theorem acceptedCovertChannel_scheduling
     channel's existence and confirms it is not accidentally introduced by the
     information-flow enforcement layer.
 
-    This theorem witnesses that the scheduling state is bounded to exactly
-    4 observable values, confirming the bandwidth analysis upper bound. -/
+    **What this theorem proves, precisely** (corrected WS-SM SM8.B, PR #861
+    review): that the three scheduling projections are the raw scheduler reads —
+    the channel is transparent, and the information-flow layer does not
+    accidentally add to it. It is *not* a capacity result: there is no
+    cardinality, frequency or bandwidth argument here, and the "4" below counts
+    projected **components**, not values (`domainTimeRemaining` alone ranges
+    over all of `Nat`). An earlier form of this docstring read the count as a
+    value bound and cited it as an upper bound on the channel; that reading was
+    wrong.
+
+    For the part that genuinely is bounded — the schedule-index alphabet, under
+    the scheduler's index-bounds invariant — see
+    `schedulingChannelIndex_alphabet_bounded`, and for the statement that
+    schedule length does *not* bound the rest, its companion
+    `schedulingChannel_not_bounded_by_scheduleLength`. -/
 theorem schedulingCovertChannel_bounded_width
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) :
     -- The scheduling covert channel consists of exactly 4 scalar projections:

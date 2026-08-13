@@ -180,7 +180,7 @@
 [SCO-012] admission without-exclude=true with-exclude=true
 [SCO-013] schedContextBind runqueue-reinsert: inQueue=true prio=200
 [SCO-014] schedContextUnbind current-thread: current_cleared=true
-[SCO-015] schedContextUnbind runqueue-removal: removed=true
+[SCO-015] schedContextUnbind runqueue-rebucket: queued=true legacyPrio=true
 [SCO-016] schedContextYieldTo starved-enqueue: enqueued=true budget=100
 [SCO-017] admission-failure: admitted=false
 [SCO-018] schedContextBind tcb-already-bound: SeLe4n.Model.KernelError.illegalState

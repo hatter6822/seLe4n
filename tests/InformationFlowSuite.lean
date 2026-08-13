@@ -239,6 +239,10 @@ def test_schedContext_yield_self_returns_state_unchanged : IO Bool := do
 -- the filtered projectRunnable for a high thread; the replenish migration is never
 -- projected) — these discharge `hArmProj` for the `.tcbSetAffinity` dispatch arm.
 #check @SeLe4n.Kernel.setThreadCpuAffinityOp_preserves_projection
+-- PR #861 review round 42: the LIVE wrapper's own preservation theorem.  Round
+-- 37 rerouted the arm to `setThreadCpuAffinityOnCore`, so the boot-core theorem
+-- above is now its `bootCoreId` instance rather than the arm's discharge.
+#check @SeLe4n.Kernel.setThreadCpuAffinityOnCore_preserves_projection
 #check @SeLe4n.Kernel.setThreadCpuAffinityWithMigration_preserves_projection
 #check @SeLe4n.Kernel.migrateRunQueueOnAffinityChange_preserves_projection
 #check @SeLe4n.Kernel.migrateSchedContextReplenishment_preserves_projection

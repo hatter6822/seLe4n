@@ -618,8 +618,12 @@ theorem notificationSignalOnCore_wakes_head
 objects**: a store at the waiter's TCB after the notification was written would
 have failed (`lookupTcb` would find a notification, not a TCB) had they
 coincided.  Derived from the *success* of the waiter store — no separate
-well-formedness hypothesis is needed. -/
-private theorem notification_ne_waiter_of_store
+well-formedness hypothesis is needed.
+
+De-privatised at SM8.B (v0.33.6): `NonInterferenceCrossCore` needs exactly this
+disjointness to push a wake target back to the pre-state through the
+notification store, and re-deriving it there would leave two copies to drift. -/
+theorem notification_ne_waiter_of_store
     (st' st'' : SystemState) (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
     (ntfn' : Notification) (ipc : ThreadIpcState) (msg : Option IpcMessage)
     (hNtfn : st'.objects[notificationId]? = some (.notification ntfn'))

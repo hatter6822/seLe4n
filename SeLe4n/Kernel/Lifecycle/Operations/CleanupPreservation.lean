@@ -68,6 +68,16 @@ theorem spliceOutMidQueueNode_tlbShootdown_eq
     (spliceOutMidQueueNode st tid).tlbShootdown = st.tlbShootdown := by
   unfold spliceOutMidQueueNode; split <;> rfl
 
+/-- WS-SM SM8.B: spliceOutMidQueueNode only modifies `objects` — the machine
+(and hence every core's register bank) is framed.  The information-flow
+counterpart of `spliceOutMidQueueNode_scheduler_eq`: per-core confinement reads
+the register banks as well as the scheduler slots, so the scheduler frame alone
+does not bound a step's observable writes. -/
+theorem spliceOutMidQueueNode_machine_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (spliceOutMidQueueNode st tid).machine = st.machine := by
+  unfold spliceOutMidQueueNode; split <;> rfl
+
 /-- W6-B: removeFromAllEndpointQueues only modifies `objects`, preserving
     scheduler, lifecycle, and serviceRegistry simultaneously. Reduces
     redundancy from 3 near-identical proofs to a single bundled theorem. -/
@@ -125,6 +135,20 @@ theorem removeFromAllEndpointQueues_tlbShootdown_eq
     hSplice
     (fun acc _ _ hAcc => by split <;> first | exact hAcc | (split <;> exact hAcc))
 
+/-- WS-SM SM8.B: removeFromAllEndpointQueues only modifies `objects` — the
+machine is framed.  Same fold-preservation argument as
+`removeFromAllEndpointQueues_tlbShootdown_eq`, seeded from the splice frame. -/
+theorem removeFromAllEndpointQueues_machine_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (removeFromAllEndpointQueues st tid).machine = st.machine := by
+  have hSplice := spliceOutMidQueueNode_machine_eq st tid
+  unfold removeFromAllEndpointQueues
+  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves
+    (spliceOutMidQueueNode st tid).objects (spliceOutMidQueueNode st tid) _
+    (fun acc => acc.machine = st.machine)
+    hSplice
+    (fun acc _ _ hAcc => by split <;> first | exact hAcc | (split <;> exact hAcc))
+
 /-- W6-B: removeFromAllNotificationWaitLists only modifies `objects`, preserving
     scheduler, lifecycle, and serviceRegistry simultaneously. -/
 theorem removeFromAllNotificationWaitLists_preserves
@@ -137,6 +161,17 @@ theorem removeFromAllNotificationWaitLists_preserves
     (fun acc => acc.scheduler = st.scheduler ∧ acc.lifecycle = st.lifecycle ∧
                 acc.serviceRegistry = st.serviceRegistry)
     ⟨rfl, rfl, rfl⟩
+    (fun acc _ _ hAcc => by split <;> first | exact hAcc | (split <;> exact hAcc))
+
+/-- WS-SM SM8.B: removeFromAllNotificationWaitLists only modifies `objects` —
+the machine is framed. -/
+theorem removeFromAllNotificationWaitLists_machine_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (removeFromAllNotificationWaitLists st tid).machine = st.machine := by
+  unfold removeFromAllNotificationWaitLists
+  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves st.objects st _
+    (fun acc => acc.machine = st.machine)
+    rfl
     (fun acc _ _ hAcc => by split <;> first | exact hAcc | (split <;> exact hAcc))
 
 /-- R4-A.2: removeFromAllNotificationWaitLists preserves the scheduler. -/
@@ -176,7 +211,9 @@ theorem cleanupTcbReferences_tlbShootdown_eq
   unfold cleanupTcbReferences
   rw [removeFromAllNotificationWaitLists_tlbShootdown_eq,
       removeFromAllEndpointQueues_tlbShootdown_eq]
-  exact removeRunnable_tlbShootdown_eq st tid
+  -- Via the sweep's own frame.  Reducing through `removeRunnableFromAllCores`
+  -- here would have to whnf the per-core guard at every core.
+  exact removeRunnableFromAllCores_tlbShootdown st tid
 
 -- ============================================================================
 -- WS-SM SM6.E: cleanup primitives preserve `objects.invExt`
@@ -855,18 +892,16 @@ theorem cleanupTcbReferences_removes_from_runnable
   unfold cleanupTcbReferences
   rw [removeFromAllNotificationWaitLists_scheduler_eq]
   rw [removeFromAllEndpointQueues_scheduler_eq]
-  unfold removeRunnable
-  simp only [SchedulerState.setCurrentOnCore_runQueueOnCore,
-    SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-  exact RunQueue.not_mem_remove_self _ _
+  exact removeRunnableFromAllCores_not_mem st tid bootCoreId
 
 /-- Cleanup preserves lifecycle metadata. -/
 theorem cleanupTcbReferences_lifecycle_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (cleanupTcbReferences st tid).lifecycle = st.lifecycle := by
   unfold cleanupTcbReferences
-  rw [removeFromAllNotificationWaitLists_lifecycle_eq]
-  exact removeFromAllEndpointQueues_lifecycle_eq (removeRunnable st tid) tid
+  rw [removeFromAllNotificationWaitLists_lifecycle_eq,
+    removeFromAllEndpointQueues_lifecycle_eq (removeRunnableFromAllCores st tid) tid]
+  exact removeRunnableFromAllCores_lifecycle st tid
 
 /-- CDT detach preserves the objects store. -/
 theorem detachSlotFromCdt_objects_eq (st : SystemState) (ref : SlotRef) :
@@ -923,7 +958,22 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
   -- Z7-P / AJ1-A (M-14): Return donated SchedContext before destroying TCB.
   -- Error propagated — failed cleanup would leave dangling SchedContext refs.
   match (match currentObj with
-    | .tcb tcb => cleanupDonatedSchedContext st tcb.tid
+    | .tcb tcb =>
+        -- WS-SM SM8.B (PR #861 review round 39): **refuse to destroy a running
+        -- thread.**  The sweep below clears the current slot of whichever core
+        -- runs the target — the executing core included, which is where the
+        -- caller itself runs — and nothing schedules a successor there.  See
+        -- `threadCurrentOnSomeCore`.  `.revocationRequired` is the error this
+        -- path already uses for "clear this precondition first" (an in-use
+        -- Reply, a TCB still holding a reply link), and reads correctly here as
+        -- "suspend or switch away from this thread before destroying it".
+        --
+        -- Placed inside the arm that already cases on `currentObj`, and reading
+        -- the **pre-state** `st`: every later `let` shadows `st` with the swept
+        -- state, in which the slot this tests has already been cleared.
+        if threadCurrentOnSomeCore st tcb.tid then
+          (.error .revocationRequired : Except KernelError SystemState)
+        else cleanupDonatedSchedContext st tcb.tid
     | _ => .ok st) with
   | .error e => .error e
   | .ok st =>
@@ -1019,10 +1069,7 @@ theorem cleanupTcbReferences_flat_subset
   unfold cleanupTcbReferences at h
   rw [removeFromAllNotificationWaitLists_scheduler_eq] at h
   rw [removeFromAllEndpointQueues_scheduler_eq] at h
-  unfold removeRunnable at h
-  simp only [SchedulerState.setCurrentOnCore_runQueueOnCore,
-    SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at h
-  exact (List.mem_filter.mp h).1
+  exact removeRunnableFromAllCores_flat_subset st tid x bootCoreId h
 
 /-- CDT cleanup preserves the scheduler. -/
 theorem detachCNodeSlots_scheduler_eq
@@ -1033,6 +1080,22 @@ theorem detachCNodeSlots_scheduler_eq
     rfl (fun acc slot _cap hAcc => by
       have : (SystemState.detachSlotFromCdt acc { cnode := cnodeId, slot := slot }).scheduler
           = acc.scheduler := by unfold SystemState.detachSlotFromCdt; split <;> rfl
+      exact this.trans hAcc)
+
+/-- WS-SM SM8.B.2: CDT cleanup writes no register bank.
+
+The `machine` companion of `detachCNodeSlots_scheduler_eq`, by the same
+`RHTable.fold_preserves` argument: `detachSlotFromCdt` rewrites the CDT map and
+nothing else, in both of its branches. -/
+theorem detachCNodeSlots_machine_eq
+    (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) :
+    (detachCNodeSlots st cnodeId cn).machine = st.machine := by
+  simp only [detachCNodeSlots]
+  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots.table st _
+    (fun acc => acc.machine = st.machine)
+    rfl (fun acc slot _cap hAcc => by
+      have : (SystemState.detachSlotFromCdt acc { cnode := cnodeId, slot := slot }).machine
+          = acc.machine := by unfold SystemState.detachSlotFromCdt; split <;> rfl
       exact this.trans hAcc)
 
 /-- WS-SM SM7.B: CDT cleanup is CDT-only — the TLB-shootdown state is
@@ -1048,12 +1111,50 @@ theorem detachCNodeSlots_tlbShootdown_eq
         { cnode := cnodeId, slot := slot }).trans hAcc)
 
 /-- Cleanup preserves the scheduler state. -/
-theorem cleanupTcbReferences_scheduler_eq_removeRunnable
+theorem cleanupTcbReferences_scheduler_eq_removeRunnableFromAllCores
     (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (cleanupTcbReferences st tid).scheduler = (removeRunnable st tid).scheduler := by
+    (cleanupTcbReferences st tid).scheduler
+      = (removeRunnableFromAllCores st tid).scheduler := by
   unfold cleanupTcbReferences
   rw [removeFromAllNotificationWaitLists_scheduler_eq]
-  exact removeFromAllEndpointQueues_scheduler_eq (removeRunnable st tid) tid
+  exact removeFromAllEndpointQueues_scheduler_eq (removeRunnableFromAllCores st tid) tid
+
+/-- **WS-SM SM8.B (PR #861 review round 40): the destroyed-remote-current case
+is unreachable.**
+
+A separate finding asked for a `.reschedule` SGI when a retype destroys a TCB
+that is current on a **remote** core: the sweep clears that core's slot, the
+object then stops being a TCB, and `crossCoreSgiBody` — which opens by matching
+the post-state object against a TCB — re-derives nothing, leaving the remote
+processor running scrubbed storage.
+
+The round-39 guard closes it by construction rather than by adding a rule: the
+cleanup rejects a target current on **any** core, so no retype ever reaches a
+state in which a remote core's current slot held the destroyed thread.  Stated
+as a theorem because "unreachable" is exactly the kind of claim that rots — if
+the guard is ever narrowed to the executing core, this stops compiling. -/
+theorem lifecyclePreRetypeCleanup_rejects_current_anywhere
+    (st : SystemState) (target : SeLe4n.ObjId) (tcb : TCB) (newObj : KernelObject)
+    (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (hCur : st.scheduler.currentOnCore c = some tcb.tid) :
+    lifecyclePreRetypeCleanup st target (.tcb tcb) newObj = .error .revocationRequired := by
+  unfold lifecyclePreRetypeCleanup
+  simp only []
+  rw [if_pos (threadCurrentOnSomeCore_iff st tcb.tid |>.mpr ⟨c, hCur⟩)]
+
+/-- WS-SM SM8.B.2: the TCB reference scrub writes no register bank.
+
+The `machine` companion of `cleanupTcbReferences_scheduler_eq_removeRunnableFromAllCores`.
+Note the asymmetry, which is the whole point of the pair: the sweep *does* write
+scheduler slots (on the cores the thread occupied) and writes `machine` on none,
+so the retype's write set is bounded by the former while the latter contributes
+nothing. -/
+theorem cleanupTcbReferences_machine_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (cleanupTcbReferences st tid).machine = st.machine := by
+  unfold cleanupTcbReferences
+  rw [removeFromAllNotificationWaitLists_machine_eq,
+      removeFromAllEndpointQueues_machine_eq, removeRunnableFromAllCores_machine]
 
 /-- Pre-retype cleanup flat list subset: any element in the post-cleanup flat
     list was in the pre-cleanup flat list. AJ1-A (M-14): conditional on `.ok`. -/
@@ -1067,6 +1168,11 @@ theorem lifecyclePreRetypeCleanup_flat_subset
   | tcb tcb =>
     -- Unfold with known currentObj = .tcb tcb
     simp only [lifecyclePreRetypeCleanup] at hOk
+    -- Round 39: the running-target rejection is vacuous on the `.ok` path.
+    rw [if_neg (by
+      intro hRun
+      rw [if_pos hRun] at hOk
+      exact absurd hOk (by simp))] at hOk
     -- Inner match reduces to cleanupDonatedSchedContext st tcb.tid
     -- Outer match dispatches on the result
     cases hDon : cleanupDonatedSchedContext st tcb.tid with
@@ -1091,11 +1197,13 @@ theorem lifecyclePreRetypeCleanup_flat_subset
             (scThreadIndexRemove stDon.scThreadIndex scId tcb.tid) }
         | _ => stDon).scheduler = stDon.scheduler := by
         cases tcb.schedContextBinding <;> rfl
-      rw [cleanupTcbReferences_scheduler_eq_removeRunnable] at h
-      unfold removeRunnable at h; rw [hScIdxSched, hDonSched] at h
-      simp only [SchedulerState.setCurrentOnCore_runQueueOnCore,
-        SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at h
-      exact (List.mem_filter.mp h).1
+      rw [cleanupTcbReferences_scheduler_eq_removeRunnableFromAllCores] at h
+      -- Take the sweep off first (it handles its own per-core guard), then
+      -- collapse the scheduler-preserving prefix.  The other order leaves the
+      -- rewrites looking for a pattern under the guard's condition.
+      have hSub := removeRunnableFromAllCores_flat_subset _ tcb.tid x bootCoreId h
+      rw [hScIdxSched, hDonSched] at hSub
+      exact hSub
   | cnode cn =>
     simp only [lifecyclePreRetypeCleanup] at hOk
     cases newObj <;> (simp only [] at hOk; first
@@ -1135,6 +1243,11 @@ theorem lifecyclePreRetypeCleanup_tlbShootdown_eq
   cases currentObj with
   | tcb tcb =>
     simp only [lifecyclePreRetypeCleanup] at hOk
+    -- Round 39: the running-target rejection is vacuous on the `.ok` path.
+    rw [if_neg (by
+      intro hRun
+      rw [if_pos hRun] at hOk
+      exact absurd hOk (by simp))] at hOk
     cases hDon : cleanupDonatedSchedContext st tcb.tid with
     | error e => rw [hDon] at hOk; contradiction
     | ok stDon =>

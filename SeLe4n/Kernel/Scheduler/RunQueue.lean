@@ -63,13 +63,31 @@ structure RunQueue where
   byPrio_invExtK : byPriority.invExtK
   /-- RHTable kernel-level invariant bundle for threadPriority. -/
   threadPrio_invExtK : threadPriority.invExtK
-  /- WS-G4: Implicit invariant (maintained structurally by `insert`/`remove` API):
-     Every thread in `membership` has a corresponding entry in `threadPriority`,
-     and vice versa. This is NOT enforced as a proof obligation in the structure
-     because it would complicate the API without adding formal value — the only
-     mutations go through `insert` (adds both) and `remove` (erases both).
-     Violation would require direct structure construction bypassing the API.
-     Runtime verification: `InvariantChecks.runQueueThreadPriorityConsistentB`. -/
+  /-- WS-SM SM8.B (PR #861 review round 17): every thread in `membership` has an
+      entry in `threadPriority`, and vice versa.
+
+      This was a *comment* until round 17 — "maintained structurally by
+      `insert`/`remove`", with the note that enforcing it "would complicate the
+      API without adding formal value" and runtime verification via
+      `InvariantChecks.runQueueThreadPriorityConsistentB`.  Both halves of that
+      note turned out to be wrong.  The API did not complicate: `insert` and
+      `remove` add the two keys together and drop them together, so each
+      discharge is a two-case split with no new hypothesis.  And the formal
+      value is immediate, because `remove` branches on
+      `threadPriority.get? tid` rather than on membership — so *every*
+      statement about removing a non-member has to cross this bridge, and
+      without the field none of them can.  `remove_content_of_not_mem` below is
+      the first; it is what makes the destroy path's per-core sweep analysable
+      at a core the thread does not occupy.
+
+      The structure already carried three `invExtK` proof fields, so a fourth
+      is the established shape rather than a new burden, and the runtime
+      checker `runQueueThreadPriorityConsistentB` becomes a decidable
+      restatement of a proven fact rather than the only thing standing behind
+      it. -/
+  mem_iff_threadPrio : ∀ tid,
+    membership.contains tid = true ↔ (threadPriority.get? tid).isSome
+
 namespace RunQueue
 
 @[inline] def empty : RunQueue where
@@ -83,6 +101,13 @@ namespace RunQueue
   mem_invExtK := RHSet.empty_invExtK
   byPrio_invExtK := RHTable.empty_invExtK 16 (by omega)
   threadPrio_invExtK := RHTable.empty_invExtK 16 (by omega)
+  mem_iff_threadPrio := by
+    intro tid
+    -- Both sides are false on the empty structure.
+    rw [show ({} : RHSet ThreadId) = RHSet.empty from rfl, RHSet.contains_empty,
+      show ({} : RHTable ThreadId Priority) = RHTable.empty 16 (by omega) from rfl,
+      RHTable.getElem?_empty]
+    simp
 instance : Inhabited RunQueue where default := empty
 instance : EmptyCollection RunQueue where emptyCollection := empty
 instance : Repr RunQueue where reprPrec rq _ := repr rq.flat
@@ -156,7 +181,22 @@ def insert (rq : RunQueue) (tid : ThreadId) (prio : Priority) : RunQueue :=
       byPrio_invExtK := rq.byPriority.insert_preserves_invExtK prio
           ((rq.byPriority[prio]?).getD [] ++ [tid]) rq.byPrio_invExtK
       threadPrio_invExtK := rq.threadPriority.insert_preserves_invExtK tid prio
-          rq.threadPrio_invExtK }
+          rq.threadPrio_invExtK
+      -- WS-SM SM8.B: the two maps gain the key together.  At `tid` both sides
+      -- become true; away from it both are the pre-state's, so the equivalence
+      -- transports.  This is where "insert adds both" stops being a comment.
+      mem_iff_threadPrio := by
+        intro x
+        by_cases hEq : (tid == x) = true
+        · have hTidEqX := eq_of_beq hEq
+          subst hTidEqX
+          rw [RHSet.contains_insert_self rq.membership tid rq.mem_invExtK.1,
+            RHTable.getElem?_insert_self rq.threadPriority tid prio rq.threadPrio_invExtK.1]
+          simp
+        · rw [RHSet.contains_insert_ne rq.membership tid x hEq rq.mem_invExtK.1,
+            RHTable.getElem?_insert_ne rq.threadPriority tid x prio hEq
+              rq.threadPrio_invExtK.1]
+          exact rq.mem_iff_threadPrio x }
 
 /-- S5-J: Complexity is O(k + n) where k = priority bucket size for the
     removed thread, and n = flat list length. The bucket filter is O(k) and
@@ -221,7 +261,20 @@ def remove (rq : RunQueue) (tid : ThreadId) : RunQueue :=
         split
         · exact rq.byPriority.erase_preserves_invExtK p rq.byPrio_invExtK
         · exact rq.byPriority.insert_preserves_invExtK p _ rq.byPrio_invExtK
-    threadPrio_invExtK := rq.threadPriority.erase_preserves_invExtK tid rq.threadPrio_invExtK }
+    threadPrio_invExtK := rq.threadPriority.erase_preserves_invExtK tid rq.threadPrio_invExtK
+    -- WS-SM SM8.B: and the two maps lose the key together.  At `tid` both sides
+    -- become false; away from it both are the pre-state's.
+    mem_iff_threadPrio := by
+      intro x
+      by_cases hEq : (tid == x) = true
+      · have hTidEqX := eq_of_beq hEq
+        subst hTidEqX
+        rw [RHSet.contains_erase_self rq.membership tid rq.mem_invExtK.1,
+          RHTable.getElem?_erase_self rq.threadPriority tid rq.threadPrio_invExtK.1]
+        simp
+      · rw [RHSet.contains_erase_ne_K rq.membership tid x hEq rq.mem_invExtK,
+          RHTable.getElem?_erase_ne_K rq.threadPriority tid x hEq rq.threadPrio_invExtK]
+        exact rq.mem_iff_threadPrio x }
 
 /-- R5.F (DEEP-SCH-05): Helper that extracts a thread's recorded priority,
     surfacing the impossible "missing priority" branch with an explicit
@@ -503,6 +556,71 @@ theorem remove_preserves_toList_nodup (rq : RunQueue) (tid : ThreadId)
   simp only [toList]
   unfold remove
   exact hNodup.sublist List.filter_sublist
+
+/-- WS-SM SM8.B (PR #861 review round 17): a non-member has no recorded
+priority.  The `←` direction of the structure's `mem_iff_threadPrio` field, in
+the form every `remove` proof needs — `remove` branches on
+`threadPriority.get? tid`, so this is the bridge from "not in the queue" to
+"takes the `none` branch". -/
+theorem threadPriority_none_of_not_mem (rq : RunQueue) (tid : ThreadId)
+    (h : tid ∉ rq) : rq.threadPriority.get? tid = none := by
+  have hContains : rq.membership.contains tid ≠ true := h
+  cases hGet : rq.threadPriority.get? tid with
+  | none => rfl
+  | some p =>
+      exact absurd ((rq.mem_iff_threadPrio tid).mpr (by rw [hGet]; rfl)) hContains
+
+/-- WS-SM SM8.B: **removing a thread that is not in the queue changes nothing
+observable.**
+
+The three fields scheduling actually reads — the flat list, the priority
+buckets, and the cached maximum — are all unchanged.  `byPriority` and
+`maxPriority` take `remove`'s `none` branch definitionally once
+`threadPriority_none_of_not_mem` fires, and `flat` is filtered by a predicate
+the absent thread satisfies everywhere.
+
+Deliberately stated on the *content* rather than as `rq.remove tid = rq`.
+Structural equality would additionally require that erasing an absent key from
+a Robin Hood table is the identity, which is a real theorem about backward-shift
+deletion and not on file; and no caller needs it, because the per-core sweep is
+guarded on occupancy (`removeRunnableStepOnCore`) rather than relying on
+`remove` to be inert. -/
+theorem remove_content_of_not_mem (rq : RunQueue) (tid : ThreadId) (h : tid ∉ rq) :
+    (rq.remove tid).flat = rq.flat
+      ∧ (rq.remove tid).byPriority = rq.byPriority
+      ∧ (rq.remove tid).maxPriority = rq.maxPriority := by
+  have hNone := threadPriority_none_of_not_mem rq tid h
+  refine ⟨?_, ?_, ?_⟩
+  · -- `flat.filter (· ≠ tid) = flat`: every member differs from `tid`, since a
+    -- flat-list entry is a member (`flat_wf`) and `tid` is not.
+    show rq.flat.filter (· ≠ tid) = rq.flat
+    apply List.filter_eq_self.mpr
+    intro x hx
+    have hxMem : rq.membership.contains x = true := rq.flat_wf x hx
+    have : x ≠ tid := by
+      intro hEq; subst hEq; exact h hxMem
+    simpa using this
+  · show (match rq.threadPriority.get? tid with
+      | none => rq.byPriority
+      | some p =>
+          let bucket := ((rq.byPriority[p]?).getD []).filter (· ≠ tid)
+          if bucket.isEmpty then rq.byPriority.erase p
+          else rq.byPriority.insert p bucket) = rq.byPriority
+    rw [hNone]
+  · show (match rq.threadPriority.get? tid with
+      | none => rq.maxPriority
+      | some p =>
+          if rq.maxPriority == some p
+              && (((rq.byPriority[p]?).getD []).filter (· ≠ tid)).isEmpty then
+            recomputeMaxPriority _
+          else rq.maxPriority) = rq.maxPriority
+    rw [hNone]
+
+/-- WS-SM SM8.B: the `toList` corollary — the scheduler's dispatch order is
+untouched by removing a thread that was not queued. -/
+theorem remove_toList_of_not_mem (rq : RunQueue) (tid : ThreadId) (h : tid ∉ rq) :
+    (rq.remove tid).toList = rq.toList :=
+  (remove_content_of_not_mem rq tid h).1
 
 /-- WS-SM SM5.I: `RunQueue.insert` preserves `toList.Nodup`.  `insert` is
 idempotent (`if contains tid then rq`), so the already-member case is the

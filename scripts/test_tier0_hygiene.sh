@@ -113,6 +113,22 @@ run_check "HYGIENE" "${SCRIPT_DIR}/check_website_links.sh"
 # AH4-F: Version sync — validate all version-bearing files match lakefile.toml.
 run_check "HYGIENE" "${SCRIPT_DIR}/check_version_sync.sh"
 
+# WS-SM SM8.B: no live syscall arm may reach a boot-pinned scheduler primitive.
+# PR #861 review rounds 10 and 12 found this defect three times, one syscall per
+# round — `.tcbResume`, `.send`, `.tcbSetPriority`/`.tcbSetMCPriority` — each
+# fixed on discovery, none found by a gate.  Running the check here found three
+# more (`.schedContextBind`, `.schedContextConfigure`, `.schedContextUnbind`)
+# that no review round had reached.  The self-test runs first: it re-walks the
+# pre-SMP operations and fails if the gate no longer detects them, so a gate
+# that has lost its reach fails loudly instead of passing everything.
+# MOVED TO TIER 1 (PR #861 review round 29).  This gate now detects against
+# Lean's *elaborated environment* rather than the source text, which means it
+# needs a built toolchain — and Tier 0 is deliberately build-free and
+# toolchain-free, so the ARM64 Fast Gate lane (which runs Tier 0 alone, with no
+# elan) died on `FileNotFoundError: 'lake'`.  A gate's tier has to match its
+# dependencies.  Tier 1 runs on every PR through `test_fast.sh`, so enforcement
+# is unchanged; see `test_tier1_build.sh`, after the builds.
+
 # Internal-first naming: no workstream IDs, audit IDs, or phase codes in
 # identifiers (CLAUDE.md).  Scans every identifier token — any visibility,
 # fields, params, locals — rather than enumerating declaration forms, so
@@ -126,6 +142,20 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_identifier_naming.py"
 # failure mode is silence.  This pins each mechanism with a check that
 # provably fails against the version that lacked it.
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/test_identifier_naming_gate.py"
+
+# WS-SM SM8.B (PR #861 review round 43): the code view every source-scanning
+# gate now reads.  Pinned here for the same reason as the gate above — a
+# stripper that quietly stopped stripping would hand 1500 surface anchors and
+# the AK7 counters raw text again, with nothing failing.  The suite checks the
+# lexical cases and re-verifies over the whole tree that stripping moves no
+# byte, which is what keeps `rg -n` line numbers pointing at real lines.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/lean_code_view.py" --self-test
+
+# ... and the wiring, which fails differently: a `test_lib.sh` refactor that
+# dropped the routing would leave every anchor green while 1500 of them went
+# back to reading prose.  This drives `run_check` itself over a fixture whose
+# symbol exists only in a comment.
+run_check "HYGIENE" "${SCRIPT_DIR}/test_code_view_wiring.sh"
 
 # AN10-D: AK7 cascade monotonicity gate. Reads docs/dev_history/audits/AL0_baseline.txt
 # and rejects regressions on any AK7 cascade metric (raw-match site count,

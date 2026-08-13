@@ -1041,15 +1041,41 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
       |>.withRunnable [SeLe4n.ThreadId.ofNat 77]
       |>.withCurrent none
       |>.build)
-  expectErr "schedule malformed runnable target"
+  -- WS-SM SM8.B (PR #861 review round 15): these two used to assert
+  -- `.schedulerInvariantViolation`.  They now assert the **stronger** property
+  -- that replaced it: a run-queue entry whose object is not a TCB is *skipped*,
+  -- so the scheduler still runs.
+  --
+  -- The old contract was not merely weaker, it was a denial of service.  The
+  -- error aborted the entire selection scan — max-priority bucket and full-list
+  -- fallback alike — and nothing on the failure path removes the offending
+  -- entry, so one malformed entry stopped that core scheduling *anything*, for
+  -- ever.  The retype destroy path could produce one (it swept only the boot
+  -- core; see `removeRunnableFromAllCores`).  The invariant that no such entry
+  -- exists is unchanged and still carried by `runnableThreadsAreTCBs`; the
+  -- scheduler simply no longer depends on it to make progress.
+  -- `expectOkVal`, not `expectOkSt`: the fixture is *deliberately* invariant-
+  -- violating (that is the whole point of the case), so the post-state must not
+  -- be run through `assertStateInvariantsFor` — it would fail on the very
+  -- `runnableThreadsAreTCBs` breach the case constructs.
+  let (_, stMalformed) ← expectOkVal "schedule skips a malformed runnable target"
     (SeLe4n.Kernel.schedule malformedSched)
-    .schedulerInvariantViolation
+  -- The load-bearing part: skipping is not silently dispatching it.  There is no
+  -- TCB to switch to, so the core must come back idle rather than current on 77.
+  if (stMalformed.scheduler.currentOnCore bootCoreId) = none then
+    IO.println "positive check passed [malformed entry skipped, core left idle]"
+  else
+    throw <| IO.userError s!"malformed runnable target must not be dispatched, got current = {toString (stMalformed.scheduler.currentOnCore bootCoreId)}"
 
   let malformedOffDomain : SystemState :=
     { malformedSched with scheduler := malformedSched.scheduler.setActiveDomainOnCore bootCoreId ⟨1⟩ }
-  expectErr "schedule malformed runnable target in non-active domain still rejected"
+  let (_, stMalformedOff) ← expectOkVal
+    "schedule skips a malformed runnable target in a non-active domain too"
     (SeLe4n.Kernel.schedule malformedOffDomain)
-    .schedulerInvariantViolation
+  if (stMalformedOff.scheduler.currentOnCore bootCoreId) = none then
+    IO.println "positive check passed [off-domain malformed entry skipped, core left idle]"
+  else
+    throw <| IO.userError s!"off-domain malformed runnable target must not be dispatched, got current = {toString (stMalformedOff.scheduler.currentOnCore bootCoreId)}"
 
 /-- WS-D4 F-07: Service dependency cycle detection.
     Extracted from `runNegativeChecks` (Phase 1; was lines 1045-1091). -/
@@ -3635,17 +3661,27 @@ private def runX2RuntimeInvariantTests : IO Unit := do
   | .error e =>
     throw <| IO.userError s!"expected ok for PA just below 44-bit bound, got {repr e}"
 
-  -- X2-I: scheduleChecked on malformed state returns schedulerInvariantViolation
-  -- Uses .build intentionally: runnable [tid 77] references non-existent TCB
-  -- (check 3 would reject). Tests scheduleChecked handling of malformed state.
+  -- X2-I / WS-SM SM8.B (PR #861 review round 15): `scheduleChecked` on a
+  -- malformed run queue now *skips* the entry instead of returning
+  -- `.schedulerInvariantViolation`, for the reason recorded at the sibling case
+  -- in `runSchedulerNegativeChecks`: the error was not local — it aborted the
+  -- whole selection scan on every future call, and nothing removes the entry,
+  -- so one malformed entry wedged the core permanently.
+  -- Uses .build intentionally: runnable [tid 77] references non-existent TCB.
   let malformedSt : SystemState :=
     (BootstrapBuilder.empty
       |>.withRunnable [SeLe4n.ThreadId.ofNat 77]
       |>.withCurrent none
       |>.build)
-  expectErr "scheduleChecked on malformed runnable"
-    (SeLe4n.Kernel.scheduleChecked malformedSt)
-    .schedulerInvariantViolation
+  match SeLe4n.Kernel.scheduleChecked malformedSt with
+  | .error e =>
+    throw <| IO.userError s!"scheduleChecked must skip a malformed runnable entry rather than fail, got {repr e}"
+  | .ok (_, stChecked) =>
+    -- Skipping, not dispatching: there is no TCB behind tid 77 to switch to.
+    if (stChecked.scheduler.currentOnCore bootCoreId) = none then
+      IO.println "positive check passed [scheduleChecked skips a malformed runnable entry]"
+    else
+      throw <| IO.userError s!"scheduleChecked must not dispatch a malformed runnable entry, got current = {toString (stChecked.scheduler.currentOnCore bootCoreId)}"
 
   -- X2-I: handleYieldChecked on default state (no current thread) returns invalidArgument
   -- (not schedulerInvariantViolation — the saveOutgoingContextChecked guard passes

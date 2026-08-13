@@ -37,6 +37,29 @@ def storeTcbQueueLinks
       | .error e => .error e
       | .ok ((), st') => .ok st'
 
+
+/-- WS-SM SM8.B.2: `storeTcbQueueLinks` leaves the machine registers untouched,
+so no core's banked `RegisterFile` moves.  Lives beside its subject rather than
+in an information-flow module: the `endpointQueueRemoveDual` machine frame in
+`DualQueue/Transport.lean` needs it, and that layer sits below the SM8 modules.
+The scheduler companion is `storeTcbQueueLinks_scheduler_eq`. -/
+theorem storeTcbQueueLinks_machine_eq
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev) (next : Option SeLe4n.ThreadId)
+    (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
+    st'.machine = st.machine := by
+  unfold storeTcbQueueLinks at hStep
+  cases hTcb : lookupTcb st tid with
+  | none => simp [hTcb] at hStep
+  | some tcb =>
+    simp only [hTcb] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb (tcbWithQueueLinks tcb prev pprev next)) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore] at hStep
+      have hEq := Except.ok.inj hStep; subst hEq
+      exact storeObject_machine_eq st pair.2 tid.toObjId _ hStore
+
 /-- WS-F1: storeTcbQueueLinks preserves objects at IDs other than tid.toObjId. -/
 theorem storeTcbQueueLinks_preserves_objects_ne
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
@@ -179,6 +202,38 @@ theorem storeTcbQueueLinks_tcb_ipcState_backward
     ∃ tcb, st.objects[anyTid.toObjId]? = some (.tcb tcb) ∧ tcb.ipcState = tcb'.ipcState := by
   by_cases hEq : anyTid.toObjId = tid.toObjId
   · -- Target: queue links changed but ipcState preserved
+    unfold storeTcbQueueLinks at hStep
+    cases hLookup : lookupTcb st tid with
+    | none => simp [hLookup] at hStep
+    | some origTcb =>
+      simp only [hLookup] at hStep
+      cases hStore : storeObject tid.toObjId (.tcb (tcbWithQueueLinks origTcb prev pprev next)) st with
+      | error e => simp [hStore] at hStep
+      | ok pair =>
+        simp only [hStore] at hStep
+        have := Except.ok.inj hStep; subst this
+        rw [hEq, storeObject_objects_eq' st tid.toObjId _ pair hObjInv hStore] at hTcb'
+        simp at hTcb'; subst hTcb'
+        exact ⟨origTcb, hEq ▸ lookupTcb_some_objects st tid origTcb hLookup, rfl⟩
+  · -- Non-target: object unchanged
+    rw [storeTcbQueueLinks_preserves_objects_ne st st' tid prev pprev next anyTid.toObjId hEq hObjInv hStep] at hTcb'
+    exact ⟨tcb', hTcb', rfl⟩
+
+
+/-- WS-SM SM8.B.2: a queue-link store is not a migration -- it preserves every
+thread's `cpuAffinity`, and hence its home core.  Mirror of the `ipcState`
+companion above; `endpointQueueRemoveDual`'s own affinity frame composes this
+one step per store. -/
+theorem storeTcbQueueLinks_tcb_cpuAffinity_backward
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev) (next : Option SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st')
+    (anyTid : SeLe4n.ThreadId) (tcb' : TCB)
+    (hTcb' : st'.objects[anyTid.toObjId]? = some (.tcb tcb')) :
+    ∃ tcb, st.objects[anyTid.toObjId]? = some (.tcb tcb) ∧ tcb.cpuAffinity = tcb'.cpuAffinity := by
+  by_cases hEq : anyTid.toObjId = tid.toObjId
+  · -- Target: queue links changed but cpuAffinity preserved
     unfold storeTcbQueueLinks at hStep
     cases hLookup : lookupTcb st tid with
     | none => simp [hLookup] at hStep

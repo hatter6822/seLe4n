@@ -17,6 +17,7 @@ import SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement
 import SeLe4n.Kernel.Concurrency.LockSet
 import SeLe4n.Platform.FFI
 import SeLe4n.Kernel.InformationFlow.ObservableStatePerCore
+import SeLe4n.Kernel.InformationFlow.CovertChannelPerCore
 
 /-!
 # WS-SM SM2.D.6 — Verified-lock-primitive surface anchors
@@ -464,9 +465,35 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      have _s := @SeLe4n.Kernel.onCore_label_monotone_smp
      have _p := @SeLe4n.Kernel.onCore_isProjection_of_globalProjection
      true)
+  assertBool "cross-core non-interference + per-core lift headlines resolve"
+    (have _x := @SeLe4n.Kernel.crossCoreNonInterference
+     have _n := @SeLe4n.Kernel.nonInterference_perCore
+     have _c := @SeLe4n.Kernel.observableSlotsConfinedToCore
+     have _s := @SeLe4n.Kernel.sharedViewUnchanged
+     have _v := @SeLe4n.Kernel.niStepCoverage_perCore
+     have _b := @SeLe4n.Kernel.crossCoreLeakage_bounded
+     true)
+  assertBool "lock-set non-interference + the covert-channel inventory resolve"
+    (have _w := @SeLe4n.Kernel.withLockSet_preserves_projection
+     have _u := @SeLe4n.Kernel.nonInterference_perCore_underLockSet
+     have _e : SeLe4n.Kernel.enforcementBoundaryPerCore.length = 54 :=
+       SeLe4n.Kernel.enforcementBoundaryPerCore_count
+     -- PR #861 review round 4: the boundary now also classifies the live
+     -- cross-core wrappers, and the SMP completeness half audits them.  Rounds
+     -- 10 and 12 took that set from seven to fourteen — the two priority arms
+     -- and `.send`/`.tcbResume` were rerouted off boot-pinned operations, and
+     -- the three SM7.D/SM7.F architecture wrappers had been live all along.
+     -- Round 37's widened routing gate found the fifteenth, `.tcbSetAffinity`.
+     have _x := @SeLe4n.Kernel.syscallIdToEnforcementNamePerCore
+     have _c := SeLe4n.Kernel.enforcementBoundaryPerCore_is_complete_crossCore
+     have _i : SeLe4n.Kernel.acceptedCovertChannelsPerCore.length = 7 :=
+       SeLe4n.Kernel.acceptedCovertChannel_perCoreCount
+     have _l := SeLe4n.Kernel.acceptedCovertChannel_lockContention
+     have _r := @SeLe4n.Kernel.endpointPolicyRestricted_perCore
+     true)
 
   IO.println "============================================================"
-  IO.println "All SM2.D + SM3.E.8 + SM8.A surface anchor checks PASS."
+  IO.println "All SM2.D + SM3.E.8 + SM8.A + SM8.B surface anchor checks PASS."
 
 end SeLe4n.Testing.SmpSurfaceAnchors
 

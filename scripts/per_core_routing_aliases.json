@@ -1,0 +1,19 @@
+{
+  "_comment": "Enforcement-boundary labels are not always Lean definition names. This maps a label to the definition the arm reaches, so scripts/check_live_arm_per_core_routing.py can walk it. Missing alias = hard failure, never a silent skip. Every entry here is VERIFIED against the live dispatch arm in SeLe4n/Kernel/API.lean (PR #861 review round 15): the gate rejects an alias the arm does not call, so a coincidental name match can no longer stand in for the real operation. Round 16: the verification now strips leading-dot constructor references before looking for the root, so an arm header (`| .schedContextUnbind =>`) or a decode guard (`decoded.syscallId = .schedContextUnbind`) can no longer stand in for a call — which is what let the schedContextUnbind label pass while the arm called the OnCore wrapper.",
+  "setIPCBuffer": "setIPCBufferOp",
+  "setPriority": "setPriorityOnCore",
+  "setMCPriority": "setMCPriorityOnCore",
+  "lookupService": "lookupServiceByCap",
+  "setThreadCpuAffinity": "setThreadCpuAffinityOp",
+  "schedContextUnbind": "schedContextUnbindOnCore",
+  "_alt_note": "Round 20: a `<label>#alt` entry names the OTHER production root of a syscall that has two dispatch arms — the unchecked arm alongside the information-flow-checked one.  Both are walked.  Before this the arms were concatenated and only the mapped root was scanned, so a boot-pinned regression confined to the unchecked arm left the gate green.",
+  "endpointCallCrossCoreDispatchChecked#alt": "endpointCallCrossCoreDispatch",
+  "cspaceCopyChecked#alt": "cspaceCopy",
+  "cspaceMintChecked#alt": "cspaceMintWithCdt",
+  "cspaceMoveChecked#alt": "cspaceMove",
+  "notificationSignalBoundCrossCoreDispatchChecked#alt": "notificationSignalBoundCrossCoreDispatch",
+  "notificationWaitCrossCoreDispatchChecked#alt": "notificationWaitCrossCoreDispatch",
+  "endpointReplyCrossCoreDispatchChecked#alt": "endpointReplyCrossCoreDispatch",
+  "endpointSendCrossCoreDispatchChecked#alt": "endpointSendDualWithCapsOnCore",
+  "registerServiceChecked#alt": "registerService"
+}

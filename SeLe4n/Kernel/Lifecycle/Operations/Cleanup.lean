@@ -37,6 +37,67 @@ callers with `.retype` but not `.write` were incorrectly rejected. -/
 def lifecycleRetypeAuthority (cap : Capability) (target : SeLe4n.ObjId) : Bool :=
   decide (cap.target = .object target) && Capability.hasRight cap .retype
 
+/-- **WS-SM SM8.B (PR #861 review round 39): is this thread the current thread
+of some core?**
+
+The destroy path's precondition.  `cleanupTcbReferences` sweeps every core and
+its step clears `currentOnCore c` wherever it finds the thread — including the
+**executing** core, which is where the caller itself runs.  A thread holding a
+`.retype`-capable capability to its own TCB could therefore destroy itself: the
+core's `current` slot is cleared, no successor is scheduled
+(`scheduleLocalSuccessorLive` is inert until SM9.E), and execution returns
+through a frame whose TCB the retype has scrubbed and re-purposed.  Subsequent
+syscalls from that core resolve `determineExecutingCore` to `bootCoreId`, so
+their scheduling effects land on the wrong core — a denial of service against
+every thread on that core, not only the caller.
+
+Partly pre-existing rather than introduced by the per-core sweep: the pre-SMP
+`removeRunnable` clears `currentOnCore bootCoreId` in exactly the same way, so
+the boot-core instance predates this cut and the all-cores sweep widened it.
+
+Scans **every** core rather than the executing one alone, matching
+`setThreadCpuAffinityWithMigration`'s guard against rebinding a running thread:
+dequeue-on-dispatch means a running thread is in no run queue, so the sweep
+cannot repair it wherever it runs.  Held as a `Bool` here because the predicate
+sits below `runningCoreOf?` in the import DAG; the two agree
+(`runningCoreOf?_isSome_iff_threadCurrentOnSomeCore`). -/
+def threadCurrentOnSomeCore (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
+  SeLe4n.Kernel.Concurrency.allCores.any (fun c =>
+    st.scheduler.currentOnCore c == some tid)
+
+/-- **WS-SM SM8.B (PR #861 review round 39): the retype's running-target
+rejection**, as a named predicate on the object being destroyed.
+
+The **named form** of the guard, for statements *about* the pipeline: the
+security tests assert it (a non-running victim is admitted, a running one is
+not) and the documentation cites it.  `lifecyclePreRetypeCleanup` itself tests
+`threadCurrentOnSomeCore` directly inside its `.tcb` arm — the arm has already
+matched on the object, so routing the Bool through this per-object match there
+would only make the existing proofs' reductions longer.  Only a TCB can be
+running, so every other object kind is admitted outright
+(`retypeRunningTargetRejected_tcb` is the one reduction consumers need; the
+non-TCB arms reduce by `rfl`). -/
+def retypeRunningTargetRejected (st : SystemState) (currentObj : KernelObject) : Bool :=
+  match currentObj with
+  | .tcb tcb => threadCurrentOnSomeCore st tcb.tid
+  | _ => false
+
+@[simp] theorem retypeRunningTargetRejected_tcb (st : SystemState) (tcb : TCB) :
+    retypeRunningTargetRejected st (.tcb tcb) = threadCurrentOnSomeCore st tcb.tid := rfl
+
+/-- WS-SM SM8.B: the guard is exactly "some core has this thread current". -/
+theorem threadCurrentOnSomeCore_iff (st : SystemState) (tid : SeLe4n.ThreadId) :
+    threadCurrentOnSomeCore st tid = true
+      ↔ ∃ c, st.scheduler.currentOnCore c = some tid := by
+  unfold threadCurrentOnSomeCore
+  constructor
+  · intro h
+    obtain ⟨c, -, hc⟩ := List.any_eq_true.mp h
+    exact ⟨c, by simpa using hc⟩
+  · intro ⟨c, hc⟩
+    exact List.any_eq_true.mpr
+      ⟨c, SeLe4n.Kernel.Concurrency.mem_allCores c, by simp [hc]⟩
+
 
 -- ============================================================================
 -- WS-H2: Lifecycle Safety Guards
@@ -219,6 +280,23 @@ theorem cleanupDonatedSchedContext_scheduler_eq
       | (injection h with h; subst h; rfl)
       | exact returnDonatedSchedContext_scheduler_eq st st' tid _ _ h
 
+/-- WS-SM SM8.B: `cleanupDonatedSchedContext` never touches the machine state
+either — the register banks included.  Added beside the scheduler frame for the
+SM8.B per-core confinement consumer: per-core confinement reads each core's
+register bank as well as its scheduler slots (SM5.I banks every core's
+`RegisterFile` inside one `MachineState`), so a scheduler frame alone never
+bounded this step's observable writes. -/
+theorem cleanupDonatedSchedContext_machine_eq
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (h : cleanupDonatedSchedContext st tid = .ok st') :
+    st'.machine = st.machine := by
+  simp only [cleanupDonatedSchedContext] at h
+  split at h
+  · injection h with h; subst h; rfl
+  · split at h <;> first
+      | (injection h with h; subst h; rfl)
+      | exact returnDonatedSchedContext_machine_eq st st' tid _ _ h
+
 /-- WS-SM SM7.B: `cleanupDonatedSchedContext` never touches the
 TLB-shootdown state (mirrors `cleanupDonatedSchedContext_scheduler_eq`;
 `pendingBounded` bundle-carriage link through the retype cleanup
@@ -246,7 +324,12 @@ theorem cleanupDonatedSchedContext_tlbShootdown_eq
     must preserve lifecycle for its proofs.
     This prevents dangling-reference scenarios after a TCB is retyped. -/
 def cleanupTcbReferences (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
-  let st := removeRunnable st tid
+  -- WS-SM SM8.B (PR #861 review round 15): sweep **every** core, not the boot
+  -- core alone.  This runs on the destroy path (`lifecyclePreRetypeCleanup`),
+  -- and a retype of a TCB queued on a secondary core used to leave that queue
+  -- holding an ObjId that no longer resolves to a `.tcb` — after which
+  -- `chooseBestRunnableBy` failed that core's entire selection scan forever.
+  let st := removeRunnableFromAllCores st tid
   let st := removeFromAllEndpointQueues st tid
   removeFromAllNotificationWaitLists st tid
 

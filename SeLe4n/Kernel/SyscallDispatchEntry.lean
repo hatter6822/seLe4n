@@ -519,7 +519,38 @@ shootdown round(s) the commit posted (`completeShootdownRounds`, recovered from
 the `tlbShootdown` diff; inert for every non-shootdown syscall).  Returns the
 ABI-encoded result word
 (every kernel rejection is encoded into the success word with bit 63 set, so the
-pure dispatch never takes the `.error` arm; the arm is discharged inertly). -/
+pure dispatch never takes the `.error` arm; the arm is discharged inertly).
+
+**WS-SM SM8.B (PR #861 review round 17): the local half of the reschedule.**
+`PriorityInheritance.scheduleLocalSuccessorLive` runs *inside* the atomic step,
+before the diffs are taken, and dispatches a successor when the transition
+vacated this core (`localSuccessorNeeded`).  It is the inline dual of
+`currentSlotChangeSgis`, which pokes every *remote* core whose `current` slot
+changed and excludes the executing core by construction — correctly, since a
+core does not interrupt itself, it runs the handler inline.  That inline half
+did not exist: every blocking IPC leg cleared the caller's slot and nothing
+selected a successor, and the periodic tick provably cannot cover for it
+(`timerTickOnCore_cannot_dispatch_vacated_core`).
+
+**Gated (round 20).**  The wrapper is `scheduleLocalSuccessorLive`, which is
+the identity until `contextRestoreSeamLive` is true.  Dispatching a successor
+whose context the runtime cannot install into the trap frame would be worse than
+dispatching none: hardware returns through the blocked caller's frame either
+way, but `currentOnCore = none` makes the caller's next syscall fail *closed*
+(`.illegalState` — `vacatedCore_next_syscall_rejected` below, over the state
+this entry commits) whereas a named successor **misattributes** it.  The switch
+therefore turns on with the seam it depends on, not before.
+
+Two properties of the placement are load-bearing.  It is **inside** the
+`modifyGetKernelState` closure, so the successor is dispatched in the same
+atomic step that commits the transition — a second `modifyGetKernelState` would
+be a separate read-modify-write another core could interleave with.  And the
+SGI, shootdown and I-cache diffs are taken against the **final** state `st''`
+rather than the pre-reschedule `st'`, so what the hardware is told to do
+describes the state that was actually committed;
+`handleRescheduleSgiOnCore` writes the executing core's register bank as well as
+its scheduler slots.  Inert (`st'' = st'`) for every syscall that left a thread
+running on this core — including every arm of a single-core build. -/
 @[export lean_syscall_dispatch_cross_core]
 def syscallDispatchCrossCoreEntry
     (syscallId : UInt32) (msgInfo : UInt64)
@@ -531,12 +562,13 @@ def syscallDispatchCrossCoreEntry
     match Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
         ipcBufferAddr st with
     | Except.ok (encoded, st') =>
-        ((encoded, PriorityInheritance.computeCrossCoreSgis st st' execCore,
-          Architecture.shootdownChangedTargets st st',
-          Architecture.shootdownPostedOps st st',
-          Architecture.shootdownRoundWindow st st',
-          st'.pendingIcacheMaintenance),
-         Architecture.clearIcacheMaintenance st')
+        let st'' := PriorityInheritance.scheduleLocalSuccessorLive st st' execCore
+        ((encoded, PriorityInheritance.computeCrossCoreSgis st st'' execCore,
+          Architecture.shootdownChangedTargets st st'',
+          Architecture.shootdownPostedOps st st'',
+          Architecture.shootdownRoundWindow st st'',
+          st''.pendingIcacheMaintenance),
+         Architecture.clearIcacheMaintenance st'')
     | Except.error e =>
         ((Platform.FFI.encodeError e, ([] : List (CoreId × SgiKind)),
           ([] : List CoreId),
@@ -574,12 +606,13 @@ theorem syscallDispatchCrossCoreEntry_def
           match Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
               ipcBufferAddr st with
           | Except.ok (encoded, st') =>
-              ((encoded, PriorityInheritance.computeCrossCoreSgis st st' execCore,
-                Architecture.shootdownChangedTargets st st',
-                Architecture.shootdownPostedOps st st',
-                Architecture.shootdownRoundWindow st st',
-                st'.pendingIcacheMaintenance),
-               Architecture.clearIcacheMaintenance st')
+              let st'' := PriorityInheritance.scheduleLocalSuccessorLive st st' execCore
+              ((encoded, PriorityInheritance.computeCrossCoreSgis st st'' execCore,
+                Architecture.shootdownChangedTargets st st'',
+                Architecture.shootdownPostedOps st st'',
+                Architecture.shootdownRoundWindow st st'',
+                st''.pendingIcacheMaintenance),
+               Architecture.clearIcacheMaintenance st'')
           | Except.error e =>
               ((Platform.FFI.encodeError e, ([] : List (CoreId × SgiKind)),
                 ([] : List CoreId),
@@ -590,6 +623,40 @@ theorem syscallDispatchCrossCoreEntry_def
         completeShootdownRounds result.2.2.1 result.2.2.2.1 result.2.2.2.2.1 execCore
         completeIcacheMaintenance result.2.2.2.2.2
         pure result.1) := rfl
+
+/-- **WS-SM SM8.B** (PR #861 review rounds 39/41): the gating argument's
+"rejection, not misattribution" half, as a theorem rather than as prose.
+
+The gate above (`scheduleLocalSuccessorLive`, inert until the restore seam is
+live) is justified by a claim about what happens *next*: a blocking transition
+leaves `currentOnCore execCore = none`, and the caller's next syscall is then
+**rejected** rather than attributed to some other thread.  That claim has been
+challenged twice on the review — both times asserting the opposite, that the
+next syscall silently falls back to `bootCoreId` — so it is stated here at the
+entry, over the state the entry actually commits (the *gated* wrapper's output,
+so the theorem tracks whichever side of the seam is live).
+
+The fallback the challenge describes is real but belongs to
+`determineExecutingCore`, which is reached only with a caller id already in
+hand.  Resolution happens first, in `syscallDispatchFromAbi`, and it has no
+fallback: no current thread on the issuing core means `.illegalState` with the
+state returned unmodified.  A change that gave the entry a fallback core — the
+outcome the challenge fears — breaks this theorem. -/
+theorem vacatedCore_next_syscall_rejected
+    (ctx : LabelingContext) (execCore : CoreId)
+    (pre post : SystemState)
+    (syscallId : UInt32) (msgInfo : UInt64)
+    (x0 x1 x2 x3 x4 x5 ipcBufferAddr : UInt64)
+    (hMsg : msgInfo = x1)
+    (hVacated :
+      (PriorityInheritance.scheduleLocalSuccessorLive pre post execCore).scheduler.currentOnCore
+        execCore = none) :
+    Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+        ipcBufferAddr (PriorityInheritance.scheduleLocalSuccessorLive pre post execCore)
+      = Except.ok (Platform.FFI.encodeError .illegalState,
+                   PriorityInheritance.scheduleLocalSuccessorLive pre post execCore) :=
+  Platform.FFI.syscallDispatchFromAbi_illegalState_when_no_current ctx execCore syscallId msgInfo
+    x0 x1 x2 x3 x4 x5 ipcBufferAddr _ hMsg hVacated
 
 /-- **WS-SM SM6.A** trace-safety witness: on the boot core, when every thread's
 home core is the boot core (the single-core configuration), the diff-recovered
@@ -603,9 +670,12 @@ theorem syscallDispatchCrossCoreEntry_sgis_nil_single_core
     (hAllBoot : ∀ t : SeLe4n.ThreadId,
       determineTargetCore post t = Concurrency.bootCoreId)
     (hNoRemoteCur : ∀ c : Concurrency.CoreId, c ≠ Concurrency.bootCoreId →
-      pre.scheduler.currentOnCore c = none) :
+      pre.scheduler.currentOnCore c = none)
+    (hNoRemoteCurPost : ∀ c : Concurrency.CoreId, c ≠ Concurrency.bootCoreId →
+      post.scheduler.currentOnCore c = none) :
     PriorityInheritance.computeCrossCoreSgis pre post Concurrency.bootCoreId = [] :=
   PriorityInheritance.computeCrossCoreSgis_nil_single_core pre post hAllBoot hNoRemoteCur
+    hNoRemoteCurPost
 
 /-- **WS-SM SM6.E**: the cross-core-aware suspend entry — the per-core seam the
 Rust `sele4n_suspend_thread` atomicity bracket resolves against (the suspend
@@ -669,12 +739,23 @@ def suspendThreadCrossCoreEntry (tid : UInt64) : BaseIO UInt32 := do
         -- before under the SM5.I kernel-entry lock.  Falling back is
         -- always sound; claiming a footprint that does not cover a write
         -- would not be.
+        --
+        -- **WS-SM SM8.B (review round 17)**: the local reschedule applies here
+        -- too, and is *self-disabling* on this path —
+        -- `suspendThreadOnCore` runs its own scheduling point
+        -- (`suspendRescheduleOnCore`), so where it dispatched a successor the
+        -- post-state slot is populated and `localSuccessorNeeded` is false
+        -- (`scheduleLocalSuccessor_of_post_running`).  The two mechanisms
+        -- cannot both dispatch.  It is applied anyway rather than reasoned
+        -- away, so that the entry seams do not disagree about who is
+        -- responsible for a vacated core.
         let action : SystemState →
             SystemState × (UInt32 × List (CoreId × SgiKind)) := fun s =>
           match Lifecycle.Suspend.suspendThreadOnCore s vtid execCore with
           | Except.ok (s', _) =>
-              (s', ((0 : UInt32),
-                    PriorityInheritance.computeCrossCoreSgis s s' execCore))
+              let s'' := PriorityInheritance.scheduleLocalSuccessorLive s s' execCore
+              (s'', ((0 : UInt32),
+                    PriorityInheritance.computeCrossCoreSgis s s'' execCore))
           | Except.error e =>
               (s, (Platform.FFI.KernelError.toUInt32 e,
                    ([] : List (CoreId × SgiKind))))

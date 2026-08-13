@@ -64,6 +64,30 @@ theorem cancelIpcBlocking_scheduler_eq
   | blockedOnNotification _ =>
     rw [clearTcbIpcFields_scheduler_eq, removeFromAllNotificationWaitLists_scheduler_eq]
 
+/-- WS-SM SM8.B: **the IPC-blocking teardown never touches the machine** — and
+hence never touches any core's register bank.
+
+The companion of `cancelIpcBlocking_scheduler_eq`, over the same five
+`ipcState` arms.  It exists because per-core confinement
+(`observableSlotsConfinedToCores`) reads the register banks *as well as* the
+scheduler slots: under SM5.I each core banks its own `RegisterFile` inside one
+`MachineState`, so "this step wrote no other core's registers" is a genuine
+obligation, and a scheduler frame alone does not discharge it.  Without this,
+the composed cross-core cancellation `cancelIpcBlockingOnCore` had no
+information-flow write set. -/
+theorem cancelIpcBlocking_machine_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) :
+    (cancelIpcBlocking st tid tcb).machine = st.machine := by
+  unfold cancelIpcBlocking
+  cases tcb.ipcState with
+  | ready => rfl
+  | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
+    rw [clearTcbIpcFields_machine_eq, removeFromAllEndpointQueues_machine_eq]
+  | blockedOnReply _ _ =>
+    rw [consumeReplyLink_machine_eq, clearTcbIpcFields_machine_eq]
+  | blockedOnNotification _ =>
+    rw [clearTcbIpcFields_machine_eq, removeFromAllNotificationWaitLists_machine_eq]
+
 /-- D1-I/AE3-C/R5.A: `cancelBoundDonation` preserves `runQueue` and
 `current`. The bound arm rewrites the SchedContext, drops it from the
 replenish queue, and patches the TCB binding — none of these touch
