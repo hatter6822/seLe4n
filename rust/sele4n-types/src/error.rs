@@ -2,8 +2,9 @@
 //! Kernel error enumeration — mirrors `SeLe4n.Model.KernelError`.
 //!
 //! Lean source: `SeLe4n/Model/State.lean` lines 19–97.
-//! Discriminants 0–53 are a 1:1 mapping from the Lean inductive (54 variants
-//! after WS-SM SM5.B's `ThreadOnDifferentCore` at 53, extending R5.E's
+//! Discriminants 0–54 are a 1:1 mapping from the Lean inductive (55 variants
+//! after WS-SM SM8.C.9's `AuditLogCapacityExceeded` at 54 and WS-SM SM5.B's
+//! `ThreadOnDifferentCore` at 53, extending R5.E's
 //! `MissingSchedContext` at 52 and AN7-E's `PartialResolution` at 51).
 //! `UnknownKernelError` (255) is a Rust-only sentinel for forward compatibility.
 
@@ -120,8 +121,14 @@ pub enum KernelError {
     /// scheduler and userspace can tell a genuine wrong-core dispatch from an
     /// unrelated scheduler fault.
     ThreadOnDifferentCore = 53,
+    /// WS-SM SM8.C.9: the declassification audit trail is at
+    /// `maxDeclassificationAuditEntries`, so the downgrade was refused rather
+    /// than performed unrecorded.  Distinct from `DeclassificationDenied`
+    /// (policy refused) and `ResourceExhausted` (an unrelated resource): only
+    /// this one means "drain the audit trail".
+    AuditLogCapacityExceeded = 54,
     /// AF6-A: Kernel returned an error code not recognized by this ABI version.
-    /// Discriminant 255 is a reserved sentinel outside the kernel range 0–53.
+    /// Discriminant 255 is a reserved sentinel outside the kernel range 0–54.
     UnknownKernelError = 255,
 }
 
@@ -183,6 +190,7 @@ impl KernelError {
             51 => Some(Self::PartialResolution),
             52 => Some(Self::MissingSchedContext),
             53 => Some(Self::ThreadOnDifferentCore),
+            54 => Some(Self::AuditLogCapacityExceeded),
             255 => Some(Self::UnknownKernelError),
             _ => None,
         }
@@ -247,6 +255,7 @@ impl std::fmt::Display for KernelError {
             Self::PartialResolution => write!(f, "partial capability resolution (noisy-resolution debug mode)"),
             Self::MissingSchedContext => write!(f, "scheduler bound thread references missing SchedContext (cross-subsystem invariant drift)"),
             Self::ThreadOnDifferentCore => write!(f, "thread bound to a different core (context switch never migrates)"),
+            Self::AuditLogCapacityExceeded => write!(f, "declassification audit trail full (downgrade refused rather than left unrecorded)"),
             Self::UnknownKernelError => write!(f, "unknown kernel error"),
         }
     }
@@ -264,7 +273,8 @@ mod tests {
         // AN7-E (API-M01): variants 0-51 added through prior workstreams.
         // R5.E (DEEP-SCH-04): MissingSchedContext added at discriminant 52.
         // WS-SM SM5.B.4: ThreadOnDifferentCore added at discriminant 53.
-        for i in 0..=53u32 {
+        // WS-SM SM8.C.9: AuditLogCapacityExceeded added at discriminant 54.
+        for i in 0..=54u32 {
             let e = KernelError::from_u32(i).unwrap();
             assert_eq!(e as u32, i);
         }
@@ -273,7 +283,7 @@ mod tests {
     #[test]
     fn from_u32_out_of_range() {
         // T1-G: Discriminants in gaps and beyond range must return None
-        assert!(KernelError::from_u32(54).is_none());
+        assert!(KernelError::from_u32(55).is_none());
         assert!(KernelError::from_u32(254).is_none());
         // 255 is now UnknownKernelError (AF6-A sentinel)
         assert_eq!(
@@ -323,23 +333,23 @@ mod tests {
     ///   | allocationMisaligned    (37)
     #[test]
     fn lean_rust_correspondence() {
-        // WS-SM SM5.B.4: 54 variants (0-53) — verify total
-        // variant count matches Lean (extends R5.E's range of 0..=52).
-        let max_valid = 53u32;
+        // WS-SM SM8.C.9: 55 variants (0-54) — verify total variant count
+        // matches Lean (extends SM5.B.4's range of 0..=53).
+        let max_valid = 54u32;
         assert!(KernelError::from_u32(max_valid).is_some());
         assert!(KernelError::from_u32(max_valid + 1).is_none());
 
-        // Verify from_u32: unknown discriminants in the gap (54–254) return None
+        // Verify from_u32: unknown discriminants in the gap (55–254) return None
         assert!(KernelError::from_u32(100).is_none());
     }
 
-    /// T1-H: Discriminant ordering — kernel variants 0–53 are sequential.
-    /// WS-SM SM5.B.4 extended the range with ThreadOnDifferentCore at 53;
-    /// R5.E (DEEP-SCH-04) previously extended it with MissingSchedContext at 52.
+    /// T1-H: Discriminant ordering — kernel variants 0–54 are sequential.
+    /// WS-SM SM8.C.9 extended the range with AuditLogCapacityExceeded at 54;
+    /// WS-SM SM5.B.4 previously extended it with ThreadOnDifferentCore at 53.
     #[test]
     fn discriminant_ordering() {
         let mut prev = None;
-        for i in 0..=53u32 {
+        for i in 0..=54u32 {
             let e = KernelError::from_u32(i);
             assert!(e.is_some(), "gap at discriminant {i}");
             if let Some(p) = prev {
@@ -358,8 +368,8 @@ mod tests {
             KernelError::from_u32(255),
             Some(KernelError::UnknownKernelError)
         );
-        // Gap between 53 and 255 is all None
-        for i in 54..255u32 {
+        // Gap between 54 and 255 is all None
+        for i in 55..255u32 {
             assert!(
                 KernelError::from_u32(i).is_none(),
                 "unexpected variant at {i}"

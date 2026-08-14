@@ -3718,6 +3718,36 @@ theorem pendingIcacheMaintenance_write_preserves_projection
     projectState ctx observer { st with pendingIcacheMaintenance := m } =
       projectState ctx observer st := rfl
 
+/-- WS-SM SM8.C.8 (non-interference): a write to the mounted declassification
+audit trail is invisible to the information-flow projection.
+
+The exclusion is a **security** decision, not a convenience one, and it points
+the opposite way to the others on this list.  `perCoreTlb`, `perCoreICache` and
+the maintenance ledger stay out of `ObservableState` because projecting them
+would open a timing channel.  The audit trail stays out because projecting it
+would open a *content* channel out of exactly the boundary it exists to police:
+each entry names `(srcDomain, dstDomain, targetObject)`, so a low observer that
+could read the trail would learn that a high→low downgrade occurred and which
+object it targeted — from a subject that, by construction, the base policy
+forbids it to hear from (a declassification only happens where
+`ctx.policy.canFlow src dst = false`).
+
+This is the NI witness for the SM8.C.8 mount: the live `.declassify` syscall and
+every audited transition built on `declassifyStoreOnCore` preserve
+`projectState`, and hence `lowEquivalent`, on the trail component.
+
+The consequence is that **nothing in the kernel can read the trail today**.  A
+privileged read interface is SM8.E scope and owes its own flow argument — it
+must either be confined to a domain that already dominates every recorded
+`srcDomain`, or return entries filtered by the reader's clearance.  Neither is
+in this cut, and shipping a reader without that argument would give away the
+channel this theorem records as closed. -/
+theorem declassificationAuditLog_write_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (log : SeLe4n.Kernel.DeclassificationAuditLog) :
+    projectState ctx observer { st with declassificationAuditLog := log } =
+      projectState ctx observer st := rfl
+
 -- ============================================================================
 -- AK6-F Step 1: RunQueue modification frame lemmas (at high thread)
 -- ============================================================================

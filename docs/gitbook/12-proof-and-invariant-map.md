@@ -2621,7 +2621,12 @@ Runtime coverage: the same suite grows to 167 assertions across 24 groups
 
 `InformationFlow/DeclassificationPerCore.lean` (WS-SM SM8.C, v0.33.7; staged,
 `Platform.Staged` closure) covers the one path allowed to move information
-*down* the lattice.
+*down* the lattice.  Its **completion cut (v0.33.8)** adds two **production**
+modules — `InformationFlow/AuditRecord.lean` (the pure record, below
+`Model/State` so `SystemState` can mount the trail) and
+`InformationFlow/Declassification.lean` (the live transition, deliberately not in
+the staged module whose SM8.A/SM8.B closure the live syscall path must not
+pull in).
 
 * **The producer.**  Before this cut nothing constructed a
   `DeclassificationEvent`: `declassifyStore` gated and stored, and the record's
@@ -2657,7 +2662,41 @@ Runtime coverage: the same suite grows to 167 assertions across 24 groups
   (`endpointOverride_is_not_a_declassification_basis`, consuming SM8.B's
   `endpointFlowCheck_restricted_subset_perCore`),
   `authorizationBasis_perCore`, and that the core an event names is audit
-  information rather than authority.
+  information rather than authority.  The completion cut takes the rule set to
+  **twelve**, so each of the phase's scope statements is a rule carrying its own
+  witness rather than a paragraph.
+* **The trail is mounted, bounded and fail-closed (SM8.C.8, v0.33.8).**
+  `SystemState.declassificationAuditLog` is durable kernel state — with a
+  threaded log a chain could only be reasoned about *within* one call, and the
+  live `.declassify` makes each hop a separate kernel entry.  Capacity is
+  `maxDeclassificationAuditEntries = 256` and the behaviour at the bound is
+  **fail-closed**: the downgrade is refused with
+  `KernelError.auditLogCapacityExceeded` rather than an entry dropped, because a
+  downgrade the kernel authorized and did not record is the failure the audit
+  exists to prevent.  `auditLogBounded` is the **16th**
+  `proofLayerInvariantBundle` conjunct, carried for any writer by
+  `proofLayerInvariantBundle_setDeclassificationAuditLog`.  The trail is
+  deliberately outside `ObservableState`, and for the opposite reason to the SM7
+  exclusions — those are timing channels, this would be a *content* channel out
+  of the boundary the audit polices
+  (`declassificationAuditLog_write_preserves_projection`).
+* **The live syscall (SM8.C.9, v0.33.8).**  `SyscallId.declassify = 30`.  The
+  transition runs the *decision* `declassifyStore` runs
+  (`declassificationDecision`, shared rather than restated —
+  `declassifyStore_eq_decision_bind`) and records it; it does not perform that
+  gate's store, which is the model's simulation of a transfer and would let a
+  caller install a chosen `KernelObject` at a chosen id.  Its only state effect
+  is one attributed entry (`authorizeDeclassificationOnCore_frame`), so fifteen
+  bundle conjuncts ride the frame and the sixteenth the capacity guard.  Neither
+  security domain is a caller argument, there is no unchecked declassification
+  (`dispatchWithCap_declassify_denied`), and the policy defaults to deny-all.
+  Headline: `authorizeDeclassificationOnCore_never_unaudited` — *an authorized
+  downgrade is either recorded or does not happen.*
+* **Run-level completeness.**  `declassifyRun` folds the live entry point over a
+  request list: `declassifyRun_records_each` (exactly `n` entries for `n`
+  authorized downgrades), `_preserves_existing`, `_preserves_wellFormed`,
+  `_preserves_auditLogBounded`, `_frame` (only the trail is written) and
+  `_preserves_projectionOnCore`.
 * **The endpoint flow policy, wired.**  WS-E5/H-04 specified
   `EndpointFlowPolicy` and nothing carried one.  `LabelingContext.endpointPolicy`
   is now read by the four endpoint-keyed gates through `endpointFlowGate`, which

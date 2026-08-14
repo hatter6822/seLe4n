@@ -8,7 +8,9 @@
 > **Sub-task count**: 40-55 across ~15-22 PRs
 > **Status**: SM8.A COMPLETE at v0.33.3, review cut v0.33.4 (landed
 > v0.33.2); SM8.B LANDED at v0.33.5; SM8.C LANDED at v0.33.7 (with SM8.B's
-> registered debt (a) closed in the same cut); SM8.D–SM8.E pending
+> registered debt (a) closed in the same cut), completion cut v0.33.8
+> (SM8.C.8 the mounted audit trail + SM8.C.9 the live `.declassify` syscall);
+> SM8.D–SM8.E pending
 
 ## 1. Phase goal
 
@@ -1358,7 +1360,7 @@ single-core transition, so that instance rewrites to the existing single-core
 preservation theorem.  This joins the bound-delivery and `withLockSet` conjuncts
 already tracked there.
 
-### SM8.C — Per-core declassification audit (7 sub-tasks) — **LANDED v0.33.7**
+### SM8.C — Per-core declassification audit (7 sub-tasks, + 2 added) — **LANDED v0.33.7; COMPLETE v0.33.8**
 
 | Sub | Description | Theorem | Est | Status |
 |-----|-------------|---------|-----|--------|
@@ -1369,6 +1371,16 @@ already tracked there.
 | SM8.C.5 | `authorizationBasis_perCore` extending V6-H | Theorem | M | LANDED |
 | SM8.C.6 | Cross-core declass rules | Theorem | M | LANDED |
 | SM8.C.7 | Per-core declass test scenarios | M | LANDED |
+| SM8.C.8 | Mount the audit trail in `SystemState`, bounded and fail-closed | Structure | M | LANDED v0.33.8 |
+| SM8.C.9 | The live `.declassify` syscall | ABI + Theorem | L | LANDED v0.33.8 |
+
+**SM8.C.8 and SM8.C.9 are additions to the plan's original seven**, made because
+the seven as written land on a surface nothing can reach: the plan's audit trail
+is a value threaded through a call, and no syscall in the tree performs a
+declassification.  A phase whose deliverable is an *audit* of an operation
+userspace cannot invoke audits nothing.  Per the implement-the-improvement rule
+the two sub-tasks were added rather than the phase closed against the narrower
+reading.
 
 **Landing record (v0.33.7).**  One PR; new staged module
 `SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean` (staged 58 → 59)
@@ -1538,6 +1550,54 @@ monitoring gap, not an enforcement one — an intrusion detector cannot count
 rejected attempts.  Closing it means an outcome-carrying record, which is a
 change to the V6-H structure and to every consumer of it; scoped to SM8.E rather
 than taken here, and recorded in the plan rather than in a source comment.
+
+#### SM8.C.8 / SM8.C.9 completion cut (v0.33.8) — what landed, and what it left
+
+**SM8.C.8 — the trail is mounted, bounded, fail-closed.**
+`SystemState.declassificationAuditLog` is durable kernel state; the record types
+were extracted to a production module below `Model/State`
+(`InformationFlow/AuditRecord.lean`) exactly as SM7.A extracted
+`TlbInvalidation`.  Capacity is `maxDeclassificationAuditEntries = 256` and the
+behaviour at the bound is **fail-closed** — the downgrade is refused with
+`KernelError.auditLogCapacityExceeded` rather than an entry dropped, because a
+downgrade the kernel authorized and did not record is the exact failure this
+phase exists to exclude.  `auditLogBounded` is the 16th
+`proofLayerInvariantBundle` conjunct, carried by
+`proofLayerInvariantBundle_setDeclassificationAuditLog`.  The trail is
+deliberately **outside** `ObservableState`, and for a different reason from the
+SM7 exclusions: those are timing channels, this would be a *content* channel out
+of the very boundary the audit polices.
+
+**SM8.C.9 — the live `.declassify` syscall.**  `SyscallId.declassify = 30`,
+threaded through both Rust mirrors, ABI conformance, the enforcement registry,
+the lock-set inventory and `sele4n-sys`.  The transition runs the *decision*
+`declassifyStore` runs (shared, not restated) and records it; it does **not**
+perform that gate's store, because the store is the model's simulation of a
+transfer and simulating one from userspace would let a caller install a chosen
+`KernelObject` at a chosen id.  Neither security domain is a caller argument.
+There is no unchecked declassification — the unchecked dispatch fails closed —
+and `LabelingContext.declassificationPolicy` defaults to deny-all.
+
+**Registered follow-on (SM8.E), stated plainly rather than implied:**
+
+1. **No interface reads the trail.**  The projection decision that keeps the
+   trail out of `ObservableState` is what makes the whole surface
+   non-interference-safe, and it means nothing in the kernel can read the trail
+   today.  A privileged reader owes its own flow argument: it must either be
+   confined to a domain dominating every recorded `srcDomain`, or return entries
+   filtered by the reader's clearance.  **Until it lands, a deployment that
+   declassifies more than 256 times per boot stops being able to declassify** —
+   the honest consequence of choosing fail-closed, recorded here rather than
+   softened.
+2. **Refused declassifications remain unaudited** (the pre-existing item above).
+3. **`.declassify` moves no data.**  A data-carrying declassification (a badge
+   into a notification, say) would ride the SM6.B signal path and its whole
+   invariant surface; that is a phase, not a fold-in.
+4. **Chain linkage is syntactic.**  `declassificationChainLinked` matches domains
+   and increasing timestamps; it has no data-dependency relation behind it, so
+   the laundering detector over-approximates (safe for a detector, unsafe for a
+   gate — which is why nothing enforces on it).  Closing it needs a provenance
+   relation on the object store.
 
 ### SM8.D — Information flow under fine locks (6 sub-tasks)
 

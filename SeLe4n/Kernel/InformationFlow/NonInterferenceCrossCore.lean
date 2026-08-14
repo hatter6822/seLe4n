@@ -4564,6 +4564,55 @@ theorem wakeThread_crossCoreNonInterference_of_visible_thread (ctx : LabelingCon
 -- §7  Coverage
 -- ============================================================================
 
+/-- SM8.C.9 (**the live `.declassify` bound**): the declassification writes
+**no core**.
+
+Its entire state effect is one entry appended to
+`SystemState.declassificationAuditLog` — not a scheduler slot, not a register
+bank, not any per-core field.  The sharpest bound the inventory can express, and
+an honest one: `authorizeDeclassificationOnCore_frame` says the post-state is the
+pre-state with that one field replaced. -/
+theorem declassifyObjectFromCore_confinedToCores
+    (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
+    (c : CoreId) (targetId : SeLe4n.ObjId) (st st' : SystemState)
+    (hStep : declassifyObjectFromCore ctx declPolicy c targetId st = .ok ((), st')) :
+    observableSlotsConfinedToCores st st' [] := by
+  refine observableSlotsConfinedToCores_nil_of_framed ?_
+  unfold declassifyObjectFromCore at hStep
+  obtain ⟨cur, hCur⟩ : ∃ x, st.scheduler.currentOnCore c = x := ⟨_, rfl⟩
+  rw [hCur] at hStep
+  cases cur with
+  | none => exact absurd hStep (by simp)
+  | some tid =>
+    obtain ⟨ty, hTy⟩ : ∃ t, st.getObjectType? targetId = t := ⟨_, rfl⟩
+    rw [hTy] at hStep
+    cases ty with
+    | none => exact absurd hStep (by simp)
+    | some _ =>
+      obtain ⟨hSt', -, -⟩ := authorizeDeclassificationOnCore_frame ctx declPolicy c
+        (ctx.threadDomainOf tid) (ctx.objectDomainOf targetId) targetId st st' hStep
+      subst hSt'
+      exact ⟨rfl, rfl⟩
+
+/-- SM8.C.9 (**the live `.declassify` arm, cross-core**): a declassification is
+invisible on every core.
+
+The audit trail is deliberately outside `ObservableState`
+(`declassificationAuditLog_write_preserves_projection`), so this is not merely
+"writes no scheduler slot" — it is that the one field it does write is one no
+observer reads.  See the field's docstring for why projecting it would open a
+channel out of exactly the boundary the audit exists to police. -/
+theorem declassifyObjectFromCore_crossCoreNonInterference
+    (ctx : LabelingContext) (observer : IfObserver) (gctx : GenericLabelingContext)
+    (declPolicy : DeclassificationPolicy) (executingCore : CoreId)
+    (targetId : SeLe4n.ObjId) (st st' : SystemState) (c : CoreId)
+    (hStep : declassifyObjectFromCore gctx declPolicy executingCore targetId st = .ok ((), st'))
+    (hShared : sharedViewUnchanged ctx observer st st') :
+    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
+  crossCoreNonInterference_ofCores ctx observer (by simp)
+    (declassifyObjectFromCore_confinedToCores gctx declPolicy executingCore targetId st st'
+      hStep) hShared
+
 /-- SM8.B.2: the cross-core transitions this module instantiates
 `crossCoreNonInterference` at, one per SM6 sub-phase that has one.
 
@@ -4644,6 +4693,11 @@ inductive CrossCoreTransition where
   *occupied* — sharp rather than the trivially-true `allCores`, and available
   only because review round 17 made the sweep's step guarded. -/
   | lifecycleRetypeDispatch
+  /-- SM8.C.9 — the **live** `.declassify` arm.  Takes an executing core (to
+  resolve the running subject whose domain the downgrade is attributed to) and
+  writes **no** core: its whole state effect is one entry appended to the
+  declassification audit trail, which is not a per-core field at all. -/
+  | declassifyDispatch
   deriving DecidableEq, Repr
 
 def CrossCoreTransition.all : List CrossCoreTransition :=
@@ -4655,7 +4709,8 @@ def CrossCoreTransition.all : List CrossCoreTransition :=
    .endpointReplyRecv, .replyRecvBodyDispatch, .deschedule, .cancelIpcBlocking,
    .suspendThreadDispatch, .resumeThreadDispatch,
    .setPriorityDispatch, .setMCPriorityDispatch,
-   .vspaceMapDispatch, .vspaceUnmapDispatch, .lifecycleRetypeDispatch]
+   .vspaceMapDispatch, .vspaceUnmapDispatch, .lifecycleRetypeDispatch,
+   .declassifyDispatch]
 
 /-- SM8.B.2: **`all` really is all of them.**
 
@@ -4714,8 +4769,10 @@ def crossCoreNiTheorem : CrossCoreTransition → String
       niName! vspaceUnmapPageWithShootdownAndIcacheBroadcast_crossCoreNonInterference
   | .lifecycleRetypeDispatch =>
       niName! lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_crossCoreNonInterference
+  | .declassifyDispatch =>
+      niName! declassifyObjectFromCore_crossCoreNonInterference
 
-theorem crossCoreNiTheorem_count : CrossCoreTransition.all.length = 25 := by rfl
+theorem crossCoreNiTheorem_count : CrossCoreTransition.all.length = 26 := by rfl
 
 /-- SM8.B.2: **which entries are the arms the live syscall dispatch actually
 reaches**, as opposed to the below-API transitions they are built from.
@@ -4774,10 +4831,11 @@ def crossCoreTransitionIsLiveArm : CrossCoreTransition → Bool
   | .setMCPriorityDispatch => true
   | .vspaceMapDispatch => true
   | .vspaceUnmapDispatch => true
+  | .declassifyDispatch => true
   | .lifecycleRetypeDispatch => true
 
 theorem crossCoreTransitionIsLiveArm_count :
-    (CrossCoreTransition.all.filter crossCoreTransitionIsLiveArm).length = 18 := by decide
+    (CrossCoreTransition.all.filter crossCoreTransitionIsLiveArm).length = 19 := by decide
 
 -- The check is quadratic in the inventory and linear in each theorem name, and
 -- round 35's three entries (one of them 76 characters) pushed it past the
@@ -4866,6 +4924,7 @@ def crossCoreLiveArmSyscall : CrossCoreTransition → Option SyscallId
   | .setMCPriorityDispatch => some .tcbSetMCPriority
   | .vspaceMapDispatch => some .vspaceMap
   | .vspaceUnmapDispatch => some .vspaceUnmap
+  | .declassifyDispatch => some .declassify
   | .lifecycleRetypeDispatch => some .lifecycleRetype
 
 /-- SM8.B.2: the evidence backing each live-arm classification. -/
@@ -4905,6 +4964,7 @@ def crossCoreLiveArmEvidence : CrossCoreTransition → LiveArmEvidence
       .delegationProof .tcbSetMCPriority syscallDelegates_tcbSetMCPriority
   | .vspaceMapDispatch => .delegationProof .vspaceMap syscallDelegates_vspaceMap
   | .vspaceUnmapDispatch => .delegationProof .vspaceUnmap syscallDelegates_vspaceUnmap
+  | .declassifyDispatch => .delegationProof .declassify syscallDelegates_declassify
   | .lifecycleRetypeDispatch =>
       .delegationProof .lifecycleRetype syscallDelegates_lifecycleRetype
 
@@ -4941,7 +5001,7 @@ def crossCoreLiveArmDelegationBacked : List CrossCoreTransition :=
     crossCoreTransitionIsLiveArm t && (crossCoreLiveArmEvidence t).isDelegationBacked)
 
 theorem crossCoreLiveArmDelegationBacked_count :
-    crossCoreLiveArmDelegationBacked.length = 10 := by decide
+    crossCoreLiveArmDelegationBacked.length = 11 := by decide
 
 /-- SM8.B.2: and the residual — the live arms still resting on a human reading
 of `API.lean`, which is the state every one of the three drifts occurred in. -/
@@ -4983,6 +5043,9 @@ def crossCoreTransitionWritesRemote : CrossCoreTransition → Bool
   | .vspaceMapDispatch => false
   | .vspaceUnmapDispatch => false
   | .lifecycleRetypeDispatch => true
+  -- SM8.C.9: and the declassification, for a different reason — the only field
+  -- it writes is not per-core at all
+  | .declassifyDispatch => false
 
 theorem crossCoreTransitionWritesRemote_count :
     (CrossCoreTransition.all.filter crossCoreTransitionWritesRemote).length = 22 := by decide

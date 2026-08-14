@@ -127,7 +127,8 @@ def lockSetForSyscall (sid : SyscallId) (callerTid targetTid : ThreadId)
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind
   | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
   | .tcbSetIPCBuffer | .tcbSetAffinity
-  | .tcbBindNotification | .tcbUnbindNotification => none
+  | .tcbBindNotification | .tcbUnbindNotification
+  | .declassify => none
 
 /-- **WS-SM SM3.C.9**: the `tcbSuspend` arm is wired to the resolver.
 

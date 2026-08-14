@@ -51,6 +51,7 @@ extern crate std;
 
 pub mod cap;
 pub mod cspace;
+pub mod declassify;
 pub mod ipc;
 pub mod lifecycle;
 pub mod sched_context;

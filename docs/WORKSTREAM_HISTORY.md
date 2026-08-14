@@ -24,7 +24,27 @@ Plan:
 SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
-**Current sub-phase: SM8.C per-core declassification audit LANDED (v0.33.7).**
+**Current sub-phase: SM8.C per-core declassification audit COMPLETE — landed
+v0.33.7, completion cut v0.33.8.**
+
+The v0.33.8 cut adds the two sub-tasks the plan's original seven did not
+contain, because the seven as written land on a surface nothing can reach.
+**SM8.C.8** mounts the audit trail in `SystemState`, bounded at 256 entries and
+**fail-closed** at the bound (the downgrade is refused with
+`KernelError.auditLogCapacityExceeded` rather than an entry dropped — an
+authorized downgrade the kernel did not record is the exact failure the phase
+excludes), carried as the 16th `proofLayerInvariantBundle` conjunct and kept
+outside `ObservableState` because projecting `(srcDomain, dstDomain,
+targetObject)` triples would be a content channel out of the very boundary the
+audit polices.  **SM8.C.9** makes `.declassify` a live syscall (`SyscallId` 30,
+count 31, both Rust mirrors, ABI conformance, enforcement registry, lock set,
+`sele4n-sys`): it runs the decision `declassifyStore` runs and records it, does
+**not** perform that gate's simulated store, resolves both security domains
+kernel-side, fails closed on the unchecked dispatch, and defaults to deny-all.
+Headline: *an authorized downgrade is either recorded or does not happen.*
+Registered follow-on (SM8.E): no interface reads the trail, so a deployment
+declassifying more than 256 times per boot stops being able to declassify — the
+honest consequence of choosing fail-closed.
 The plan reads as though the audit trail existed and needed a core added to it.
 It did not.  `declassifyStore` gated and stored; `DeclassificationEvent`'s
 docstring said the enforcement wrappers produced it and the caller recorded it;

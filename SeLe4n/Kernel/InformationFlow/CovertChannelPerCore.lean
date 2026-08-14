@@ -65,7 +65,7 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId)
 --
 -- The plan's SM8.B.6 figure ("23 entries") was written against the `v0.31.2`
 -- audited cut.  The live canonical boundary is 38 entries
--- (`enforcementBoundaryExtended_count`), so the per-core boundary is 39 —
+-- (`enforcementBoundaryExtended_count`), so the per-core boundary is one more —
 -- re-anchored against the theorem, exactly as the plan's own SM8.A note
 -- directs.  This module deliberately introduces a *separate* list rather than
 -- editing the canonical one: SM8.E.3 is the sub-task that promotes the entry
@@ -143,7 +143,7 @@ are live and both must be classified. -/
 def enforcementBoundaryPerCore : List EnforcementClass :=
   enforcementBoundaryExtended ++ [.capabilityOnly "withLockSet"] ++ crossCoreEnforcementEntries
 
-/-- SM8.B.6: the per-core boundary has 54 entries — the live canonical 38, the
+/-- SM8.B.6: the per-core boundary has 55 entries — the live canonical 39, the
 2PL bracket, and the fifteen cross-core wrappers.  Re-anchored at the SM8.A cut,
 in the fourth review round, again in rounds 10 and 12 as the `.send`, resume and
 architecture arms joined the cross-core surface, and in round 37 as the routing
@@ -151,7 +151,7 @@ gate found `.tcbSetAffinity`.  `enforcementBoundaryExtended_count` is the
 authority for the base figure and this theorem for the total; the sentence above
 is worth what they are worth, and round 38 caught it stale at 53 one commit
 after the theorem moved. -/
-theorem enforcementBoundaryPerCore_count : enforcementBoundaryPerCore.length = 54 := by rfl
+theorem enforcementBoundaryPerCore_count : enforcementBoundaryPerCore.length = 55 := by rfl
 
 /-- SM8.B.7 (completeness, part 1): the per-core boundary **extends** the
 canonical one — it is the canonical list followed by the 2PL bracket and the

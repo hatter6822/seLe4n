@@ -278,6 +278,13 @@ def enforcementBoundary : List EnforcementClass :=
   , .capabilityOnly "vspaceUnifyInstructionPage"
   -- AC4-D: Service revocation (capability-only; operates on serviceRegistry)
   , .capabilityOnly "revokeService"
+  -- WS-SM SM8.C.9: the live declassification.  **Policy-gated**, and it is the
+  -- one entry whose gate is not `securityFlowsTo`: it runs the two-check
+  -- `declassificationDecision` (base policy must *deny*, declassification policy
+  -- must permit), which is the only way a flow the lattice forbids is ever
+  -- admitted.  Classifying it capability-only would say the capability alone
+  -- authorizes the downgrade, which is exactly what it does not.
+  , .policyGated "declassifyObjectFromCore"
   ]
 
 -- ============================================================================
@@ -319,6 +326,7 @@ def syscallIdToEnforcementName : SyscallId → String
   | .tcbUnbindNotification => "unbindNotification"
   | .mintReplyCap          => "mintReplyCapWithCdt"
   | .vspaceUnifyInstruction => "vspaceUnifyInstructionPage"
+  | .declassify            => "declassifyObjectFromCore"
 
 /-- AC4-D: Check whether every SyscallId maps to an operation name present in
     the enforcement boundary list. Returns `true` iff every syscall is covered. -/
@@ -640,6 +648,67 @@ def notificationWaitChecked
       notificationWait notificationId waiter st
     else
       .error .flowDenied
+
+/-! ### WS-SM SM8.C — the gates the endpoint policy does *not* govern
+
+`endpointPolicy` is per-**endpoint**, so it governs flows crossing an endpoint.
+Three live gates are deliberately outside it: both notification gates (a
+notification is not an endpoint) and the reply *leg* of `replyRecv` (which
+carries `replier → prevCaller`, a thread-to-thread flow that crosses no
+endpoint).
+
+Left as prose in the SM8.C landing cut, which made the boundary a reading of the
+code rather than a checked fact.  These three theorems state it: each gate's
+verdict is independent of the context's `endpointPolicy` field, so an operator
+cannot configure one and expect it to reach these paths, and a future cut that
+routes one of them through `endpointFlowGate` breaks the corresponding theorem
+rather than silently changing what an override means. -/
+
+/-- WS-SM SM8.C: the notification **signal** gate ignores `endpointPolicy` — a
+notification is not an endpoint, so no per-endpoint override governs it. -/
+theorem notificationSignalChecked_endpointPolicy_independent
+    (ctx : LabelingContext) (epPolicy : EndpointFlowPolicy)
+    (notificationId : SeLe4n.ObjId) (signaler : SeLe4n.ThreadId) (badge : SeLe4n.Badge) :
+    notificationSignalChecked { ctx with endpointPolicy := epPolicy } notificationId
+        signaler badge =
+      notificationSignalChecked ctx notificationId signaler badge := rfl
+
+/-- WS-SM SM8.C: and the notification **wait** gate, for the same reason. -/
+theorem notificationWaitChecked_endpointPolicy_independent
+    (ctx : LabelingContext) (epPolicy : EndpointFlowPolicy)
+    (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId) :
+    notificationWaitChecked { ctx with endpointPolicy := epPolicy } notificationId waiter =
+      notificationWaitChecked ctx notificationId waiter := rfl
+
+/-- WS-SM SM8.C: the **reply** gate ignores `endpointPolicy` — a reply carries
+`replier → target`, a thread-to-thread flow that crosses no endpoint.
+
+This is the theorem behind the `endpointReplyRecvChecked` comment that says the
+override governs the receive leg and not the reply leg: the reply leg's gate is
+this one, and it cannot see the field. -/
+theorem endpointReplyChecked_endpointPolicy_independent
+    (ctx : LabelingContext) (epPolicy : EndpointFlowPolicy)
+    (replier target : SeLe4n.ThreadId) (msg : IpcMessage) :
+    endpointReplyChecked { ctx with endpointPolicy := epPolicy } replier target msg =
+      endpointReplyChecked ctx replier target msg := rfl
+
+/-- WS-SM SM8.C (**the load-bearing contrast**): the send gate is *not*
+independent of `endpointPolicy`.
+
+Without this the three theorems above would be consistent with a wiring in which
+no gate reads the field at all — which is the state the SM8.B debt described. -/
+theorem endpointSendDualChecked_endpointPolicy_dependent :
+    ∃ (ctx : LabelingContext) (epPolicy : EndpointFlowPolicy) (endpointId : SeLe4n.ObjId)
+      (senderLabel endpointLabel : SecurityLabel),
+      endpointFlowGate { ctx with endpointPolicy := epPolicy } endpointId senderLabel
+          endpointLabel ≠
+        endpointFlowGate ctx endpointId senderLabel endpointLabel := by
+  refine ⟨{ objectLabelOf := fun _ => SecurityLabel.publicLabel
+            threadLabelOf := fun _ => SecurityLabel.publicLabel
+            endpointLabelOf := fun _ => SecurityLabel.publicLabel
+            serviceLabelOf := fun _ => SecurityLabel.publicLabel },
+          { endpointPolicy := fun _ => some { canFlow := fun _ _ => false } },
+          ⟨0⟩, SecurityLabel.publicLabel, SecurityLabel.publicLabel, by decide⟩
 
 /-- V2-C: Policy-checked endpointReplyRecv: verifies that information may flow
 from the replier's domain to the reply target's domain (for the reply leg),

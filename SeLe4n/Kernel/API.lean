@@ -30,6 +30,10 @@ import SeLe4n.Kernel.InformationFlow.Policy
 import SeLe4n.Kernel.InformationFlow.Projection
 import SeLe4n.Kernel.InformationFlow.Invariant
 import SeLe4n.Kernel.InformationFlow.Enforcement.Wrappers
+-- WS-SM SM8.C.9: the live `.declassify` transition.  Deliberately the small
+-- production module, not the staged `DeclassificationPerCore` that carries the
+-- per-core audit theory on top of the SM8.A/SM8.B non-interference layer.
+import SeLe4n.Kernel.InformationFlow.Declassification
 
 import SeLe4n.Kernel.Architecture.Assumptions
 import SeLe4n.Kernel.Architecture.RegisterDecode
@@ -649,6 +653,12 @@ def syscallRequiredRight : SyscallId → AccessRight
   -- Point of Unification, so the subject that needs it is by construction one
   -- that could write the page.  A read-only holder gains nothing by unifying.
   | .vspaceUnifyInstruction => .write
+  -- WS-SM SM8.C.9: declassifying releases the caller's information *into* the
+  -- target object's domain, so the flow direction is subject → object and the
+  -- authority is the **write** right on the target's capability.  A read-only
+  -- holder can observe the object; it cannot make the kernel record that its
+  -- own domain was downgraded into that object's.
+  | .declassify         => .write
   | .serviceRegister    => .write
   | .serviceRevoke      => .write
   | .serviceQuery       => .read
@@ -1630,6 +1640,19 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
             let executingCore := determineExecutingCore st tid
             replyRecvBody epId tid rid prevCaller msg executingCore st
     | _ => fun _ => .error .invalidCapability
+  -- WS-SM SM8.C.9: **there is no unchecked declassification.**
+  --
+  -- Every other arm here is the unchecked twin of a policy-gated one: it derives
+  -- authority from the capability and skips a `securityFlowsTo` guard the caller
+  -- has opted out of.  Declassification cannot work that way — its authority
+  -- *is* a policy (the base lattice must deny the flow and the declassification
+  -- policy must permit it), so "unchecked" would mean "every downgrade is
+  -- authorized", which is the opposite of what the operation exists to control.
+  --
+  -- So this path fails closed with the error a denied downgrade produces.  A
+  -- deployment that wants declassification enters through `dispatchSyscallChecked`
+  -- with a configured `LabelingContext.declassificationPolicy`.
+  | .declassify => fun _ => .error .declassificationDenied
   -- AE1-A/AE1-B: tcbSetPriority, tcbSetMCPriority, tcbSetIPCBuffer are now handled
   -- by dispatchCapabilityOnly above. Together with cspaceDelete, lifecycleRetype,
   -- vspaceMap, vspaceUnmap, serviceRevoke, serviceQuery, schedContextConfigure,
@@ -1936,6 +1959,26 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
               if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf prevCaller) then
                 replyRecvBody epId tid rid prevCaller msg executingCore st
               else .error .replyCapInvalid
+    | _ => fun _ => .error .invalidCapability
+  -- WS-SM SM8.C.9: **the live declassification.**
+  --
+  -- The capability names the target object, so there is no confused deputy: the
+  -- operand is the capability, not a caller-supplied id.  Neither domain comes
+  -- from the caller either — `declassifyObjectFromCore` reads the source off the
+  -- subject the executing core is running and the destination off the target
+  -- object — so both endpoints of the recorded downgrade are facts about the
+  -- state.
+  --
+  -- The base policy is the embedded legacy lattice (`liftLegacyContext`) and the
+  -- declassification policy is the context's, which defaults to deny-all: an
+  -- operator who has not configured one gets `.declassificationDenied` on every
+  -- call, exactly as on the unchecked path.
+  | .declassify =>
+    match cap.target with
+    | .object targetId =>
+        fun st =>
+          declassifyObjectFromCore (liftLegacyContext ctx) ctx.declassificationPolicy
+            (determineExecutingCore st tid) targetId st
     | _ => fun _ => .error .invalidCapability
   -- AE1-A/AE1-B/AE1-C: All remaining capability-only arms (tcbSetPriority,
   -- tcbSetMCPriority, tcbSetIPCBuffer, cspaceDelete, lifecycleRetype, vspaceMap,
@@ -2383,7 +2426,7 @@ theorem dispatchWithCap_wildcard_unreachable (sid : SyscallId) :
             .tcbSetPriority, .tcbSetMCPriority,
             .tcbSetIPCBuffer, .tcbSetAffinity,
             .tcbBindNotification, .tcbUnbindNotification, .mintReplyCap,
-            .vspaceUnifyInstruction] : List SyscallId) := by
+            .vspaceUnifyInstruction, .declassify] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- AE1-D: Every `SyscallId` variant is handled by either `dispatchCapabilityOnly`
@@ -2403,7 +2446,7 @@ theorem dispatchWithCapChecked_wildcard_unreachable (sid : SyscallId) :
             .tcbSetPriority, .tcbSetMCPriority,
             .tcbSetIPCBuffer, .tcbSetAffinity,
             .tcbBindNotification, .tcbUnbindNotification, .mintReplyCap,
-            .vspaceUnifyInstruction] : List SyscallId) := by
+            .vspaceUnifyInstruction, .declassify] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- WS-J1-C: Route decoded syscall arguments to the appropriate capability-gated
@@ -3399,6 +3442,70 @@ theorem dispatchSyscallChecked_preserves_projection
 -- that it says anything about the arm citing it.
 -- ============================================================================
 
+/-- **WS-SM SM8.C.9: the live `.declassify` arm routes to
+`declassifyObjectFromCore`.**
+
+Checked dispatch only — `.declassify` is the one syscall with no unchecked twin
+(`dispatchWithCap_declassify_denied` is its dual), because "unchecked
+declassification" would mean "every downgrade authorized". -/
+theorem dispatchWithCapChecked_declassify_delegates
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (cap : Capability) (targetId : SeLe4n.ObjId) (st : SystemState)
+    (hSyscall : decoded.syscallId = .declassify)
+    (hTarget : cap.target = .object targetId) :
+    dispatchWithCapChecked ctx decoded tid gate cap st =
+      declassifyObjectFromCore (liftLegacyContext ctx) ctx.declassificationPolicy
+        (determineExecutingCore st tid) targetId st := by
+  unfold dispatchWithCapChecked dispatchCapabilityOnly
+  rw [hSyscall]
+  simp only [hTarget]
+
+/-- **WS-SM SM8.C.9: there is no unchecked declassification.**
+
+The unchecked dispatch fails closed with the error a denied downgrade produces.
+Stated as a theorem rather than left to the reader of the arm, because "the
+unchecked path skips the flow check" is the pattern every *other* arm follows,
+and following it here would authorize every downgrade. -/
+theorem dispatchWithCap_declassify_denied
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (cap : Capability) (st : SystemState)
+    (hSyscall : decoded.syscallId = .declassify) :
+    dispatchWithCap decoded tid gate cap st = .error .declassificationDenied := by
+  unfold dispatchWithCap dispatchCapabilityOnly
+  rw [hSyscall]
+
+/-- **WS-SM SM8.C.9**: an unconfigured deployment cannot declassify.
+
+`LabelingContext.declassificationPolicy` defaults to deny-all, so the checked
+arm refuses too — the fail-closed default, stated where an operator reading the
+dispatch would look for it. -/
+theorem dispatchWithCapChecked_declassify_default_denied
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (cap : Capability) (targetId : SeLe4n.ObjId) (st : SystemState)
+    (hSyscall : decoded.syscallId = .declassify)
+    (hTarget : cap.target = .object targetId)
+    (hDefault : ctx.declassificationPolicy.canDeclassify = fun _ _ => false) :
+    ¬ ∃ st', dispatchWithCapChecked ctx decoded tid gate cap st = .ok ((), st') := by
+  rintro ⟨st', hStep⟩
+  rw [dispatchWithCapChecked_declassify_delegates ctx decoded tid gate cap targetId st
+    hSyscall hTarget] at hStep
+  obtain ⟨cur, hCur⟩ : ∃ x, st.scheduler.currentOnCore (determineExecutingCore st tid) = x :=
+    ⟨_, rfl⟩
+  cases cur with
+  | none =>
+    rw [declassifyObjectFromCore_no_subject _ _ _ _ _ hCur] at hStep
+    simp at hStep
+  | some tid' =>
+    obtain ⟨ty, hTy⟩ : ∃ t, st.getObjectType? targetId = t := ⟨_, rfl⟩
+    cases ty with
+    | none =>
+      rw [declassifyObjectFromCore_absent_target _ _ _ _ _ _ hCur hTy] at hStep
+      simp at hStep
+    | some t =>
+      obtain ⟨_, hDecl⟩ := declassifyObjectFromCore_authorized _ _ _ _ _ _ _ t hCur hTy hStep
+      rw [hDefault] at hDecl
+      exact Bool.noConfusion hDecl
+
 /-- **The live `.tcbSuspend` arm routes to `suspendThreadOnCore`.**  Capability-only,
 so this covers both `dispatchWithCap` and `dispatchWithCapChecked` (the latter
 consults `dispatchCapabilityOnly` first). -/
@@ -3742,6 +3849,17 @@ def syscallDelegates : SyscallId → Prop
   -- Every other syscall: no delegation theorem exists yet.  `False` rather than
   -- `True` so the absence is unforgeable — an inventory entry claiming
   -- delegation evidence for one of these cannot be constructed.
+  -- WS-SM SM8.C.9: the live `.declassify` arm.  Stated over the *checked*
+  -- dispatch, like `.receive`, because that is the only path it has: the
+  -- unchecked one fails closed (`dispatchWithCap_declassify_denied`).
+  | .declassify =>
+      ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+        (gate : SyscallGate) (cap : Capability) (targetId : SeLe4n.ObjId) (st : SystemState),
+        decoded.syscallId = .declassify →
+        cap.target = .object targetId →
+        dispatchWithCapChecked ctx decoded tid gate cap st =
+          declassifyObjectFromCore (liftLegacyContext ctx) ctx.declassificationPolicy
+            (determineExecutingCore st tid) targetId st
   | _ => False
 
 /-- The `.receive` obligation, discharged. -/
@@ -3778,6 +3896,12 @@ theorem syscallDelegates_vspaceMap : syscallDelegates .vspaceMap := by
   intro decoded tid gate cap objId args st hSyscall hTarget hDecode hAuth
   exact dispatchWithCap_vspaceMap_delegates decoded tid gate cap objId args st
     hSyscall hTarget hDecode hAuth
+
+/-- WS-SM SM8.C.9: the `.declassify` obligation, discharged. -/
+theorem syscallDelegates_declassify : syscallDelegates .declassify := by
+  intro ctx decoded tid gate cap targetId st hSyscall hTarget
+  exact dispatchWithCapChecked_declassify_delegates ctx decoded tid gate cap targetId st
+    hSyscall hTarget
 
 /-- WS-SM SM8.B: the `.vspaceUnmap` obligation, discharged. -/
 theorem syscallDelegates_vspaceUnmap : syscallDelegates .vspaceUnmap := by

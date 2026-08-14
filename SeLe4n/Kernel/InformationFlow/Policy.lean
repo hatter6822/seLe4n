@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Model.State
+import SeLe4n.Kernel.InformationFlow.AuditRecord
 
 namespace SeLe4n.Kernel
 
@@ -217,54 +218,11 @@ Design:
 - An embedding function maps the legacy 2-level lattice into a 4-domain generic lattice,
   proving that the generic system strictly subsumes the original. -/
 
-/-- WS-E5/H-04: Nat-indexed security domain identifier.
-
-Each domain is identified by a natural number. Domain 0 is conventionally the
-lowest (most public) domain. -/
-structure SecurityDomain where
-  id : Nat
-  deriving Repr, DecidableEq, Inhabited
-
-/-- WS-G1: Hash instance for HashMap/HashSet keying. -/
-@[inline] instance : Hashable SecurityDomain where
-  hash a := hash a.id
-
-namespace SecurityDomain
-
-/-- The public (lowest) domain. -/
-def lowest : SecurityDomain := ⟨0⟩
-
-/-- WS-H14d: Construct a SecurityDomain from a Nat. -/
-@[inline] def ofNat (n : Nat) : SecurityDomain := ⟨n⟩
-
-/-- WS-H14d: Project a SecurityDomain to its underlying Nat. -/
-@[inline] def toNat (d : SecurityDomain) : Nat := d.id
-
-instance : ToString SecurityDomain where
-  toString d := s!"domain({d.id})"
-
-/-- WS-H14d: SecurityDomain roundtrip — construct then project. -/
-theorem toNat_ofNat (n : Nat) : (SecurityDomain.ofNat n).toNat = n := rfl
-/-- WS-H14d: SecurityDomain roundtrip — project then reconstruct. -/
-theorem ofNat_toNat (d : SecurityDomain) : SecurityDomain.ofNat d.toNat = d := rfl
-/-- WS-H14d: SecurityDomain injectivity. -/
-theorem ofNat_injective {n₁ n₂ : Nat} (h : SecurityDomain.ofNat n₁ = SecurityDomain.ofNat n₂) : n₁ = n₂ := by
-  cases h; rfl
-/-- WS-H14d: SecurityDomain extensionality. -/
-theorem ext {a b : SecurityDomain} (h : a.id = b.id) : a = b := by
-  cases a; cases b; simp_all
-
-end SecurityDomain
-
-/-- WS-H14a: EquivBEq for SecurityDomain. -/
-instance : EquivBEq SecurityDomain := ⟨⟩
-/-- WS-H14a: LawfulBEq for SecurityDomain. -/
-instance : LawfulBEq SecurityDomain where
-  eq_of_beq h := eq_of_beq h
-  rfl := beq_self_eq_true _
-/-- WS-H14a: LawfulHashable for SecurityDomain. -/
-instance : LawfulHashable SecurityDomain where
-  hash_eq _ _ h := by cases eq_of_beq h; rfl
+-- `SecurityDomain` and its instances live in
+-- `SeLe4n.Kernel.InformationFlow.AuditRecord`, below `Model.State`, because
+-- `SystemState` mounts a log of `DeclassificationEvent`s keyed by domain
+-- (WS-SM SM8.C.8) and this module imports `Model.State`.  Same namespace, so
+-- every reference below resolves unchanged.
 
 /-- WS-E5/H-04: Explicit flow-authorization policy between security domains.
 
@@ -355,6 +313,46 @@ theorem domainFlowsTo_trans
 -- WS-E5/H-04: Per-endpoint flow policy overrides
 -- ============================================================================
 
+/-- WS-H10/A-39: Declassification policy specifying authorized downgrade paths.
+
+`canDeclassify src dst` returns `true` iff domain `src` is authorized to
+declassify (downgrade) information to domain `dst`. This is distinct from
+the normal flow policy: declassification explicitly permits flows that the
+base lattice would deny.
+
+**Well-formedness:** A declassification policy should never authorize
+declassification along paths that the base policy already allows (that
+would be redundant, not declassification). -/
+structure DeclassificationPolicy where
+  canDeclassify : SecurityDomain → SecurityDomain → Bool
+
+namespace DeclassificationPolicy
+
+/-- No declassification allowed (strictest policy). -/
+def none : DeclassificationPolicy :=
+  { canDeclassify := fun _ _ => false }
+
+/-- Declassification is authorized iff: the base policy does NOT allow the
+flow (otherwise it's not declassification) AND the declassification policy
+explicitly permits it. -/
+def isDeclassificationAuthorized
+    (basePolicy : DomainFlowPolicy)
+    (declPolicy : DeclassificationPolicy)
+    (src dst : SecurityDomain) : Bool :=
+  !basePolicy.canFlow src dst && declPolicy.canDeclassify src dst
+
+/-- Declassification from domain `a` to itself is never a true declassification
+(the base policy is always reflexive for well-formed policies). -/
+theorem isDeclassificationAuthorized_not_reflexive
+    (basePolicy : DomainFlowPolicy)
+    (declPolicy : DeclassificationPolicy)
+    (d : SecurityDomain)
+    (hRefl : basePolicy.isReflexive) :
+    isDeclassificationAuthorized basePolicy declPolicy d d = false := by
+  simp [isDeclassificationAuthorized, hRefl d]
+
+end DeclassificationPolicy
+
 /-- WS-E5/H-04: Per-endpoint flow policy allowing fine-grained overrides.
 
 Each endpoint may optionally specify a custom flow policy that restricts which
@@ -396,6 +394,19 @@ structure LabelingContext where
       so an override is written against domains 0–3, one per point of the legacy
       2×2 lattice. -/
   endpointPolicy : EndpointFlowPolicy := { endpointPolicy := fun _ => none }
+  /-- WS-SM SM8.C.9: the **declassification policy** the live `.declassify`
+      syscall consults — which domain pairs may be downgraded along.
+
+      Defaulted to **deny everything**, which is the fail-closed default and not
+      merely a compatibility one: without a configured policy there is no such
+      thing as an authorized downgrade, so an unconfigured deployment cannot
+      declassify at all and `.declassify` returns `.declassificationDenied` on
+      every call (`declassificationDecision_default_denies`).
+
+      Stated over `SecurityDomain`, like `endpointPolicy`, and reached from the
+      live path through `liftLegacyContext` — so a policy is written against
+      domains 0–3, one per point of the legacy 2×2 lattice. -/
+  declassificationPolicy : DeclassificationPolicy := { canDeclassify := fun _ _ => false }
 
 /-- Minimal default labeling: everything is publicly observable and untrusted.
 
@@ -876,13 +887,68 @@ theorem endpointFlowGate_is_not_securityFlowsTo :
             endpointPolicy := { endpointPolicy := fun _ => some { canFlow := fun _ _ => false } } },
           ⟨0⟩, SecurityLabel.publicLabel, SecurityLabel.publicLabel, by decide, by decide⟩
 
+/-- WS-SM SM8.C (**V6-G at the label level**): the live gate's restriction
+property — an endpoint override can only ever *narrow*.
+
+V6-G's `endpointPolicyRestricted` is a well-formedness requirement on a
+*configuration*: it says an operator must not write an override that widens the
+global policy.  This is the same property one level down, at the gate the kernel
+actually runs, and stated over the labels the live IPC paths carry rather than
+over domains. -/
+def endpointGateRestricted (ctx : LabelingContext) : Prop :=
+  ∀ (endpointId : SeLe4n.ObjId) (srcLabel dstLabel : SecurityLabel),
+    endpointFlowGate ctx endpointId srcLabel dstLabel = true →
+    securityFlowsTo srcLabel dstLabel = true
+
+/-- WS-SM SM8.C (**the reconciliation**): the live gate is restricted for
+**every** context, with no well-formedness hypothesis at all.
+
+This is what the conjunctive design buys, and it is strictly stronger than
+V6-G's conditional form: V6-G says a *well-formed* configuration cannot widen,
+and leaves a misconfigured one able to.  Conjoining makes widening structurally
+impossible, so an operator cannot open a downgrade path by writing a bad
+override — the worst a misconfiguration can do is deny traffic that the lattice
+would have allowed. -/
+theorem endpointGateRestricted_always (ctx : LabelingContext) :
+    endpointGateRestricted ctx :=
+  fun endpointId srcLabel dstLabel h =>
+    endpointFlowGate_implies_securityFlowsTo ctx endpointId srcLabel dstLabel h
+
+/-- WS-SM SM8.C (**the load-bearing negative**): a configuration that *violates*
+V6-G still cannot widen the live gate.
+
+The witness is a widening override — an endpoint policy that permits every
+domain pair, on a context whose labels make the flow globally denied.  V6-G's
+`endpointPolicyRestricted` is false of it; the gate refuses the flow anyway.
+Without this the previous theorem could be read as restating V6-G, when what it
+says is that V6-G's hypothesis is not needed. -/
+theorem endpointGateRestricted_survives_widening_override :
+    ∃ (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (srcLabel dstLabel : SecurityLabel),
+      endpointOverrideAllows ctx endpointId srcLabel dstLabel = true ∧
+      securityFlowsTo srcLabel dstLabel = false ∧
+      endpointFlowGate ctx endpointId srcLabel dstLabel = false := by
+  refine ⟨{ objectLabelOf := fun _ => SecurityLabel.publicLabel
+            threadLabelOf := fun _ => SecurityLabel.publicLabel
+            endpointLabelOf := fun _ => SecurityLabel.publicLabel
+            serviceLabelOf := fun _ => SecurityLabel.publicLabel
+            endpointPolicy := { endpointPolicy := fun _ => some { canFlow := fun _ _ => true } } },
+          ⟨0⟩, SecurityLabel.kernelTrusted, SecurityLabel.publicLabel,
+          by decide, by decide, by decide⟩
+
 /-- Lift a legacy `LabelingContext` into a `GenericLabelingContext` using the
 embedding and linearOrder policy.
 
 WS-SM SM8.C: the lift carries the *global* policy only.  A caller that needs the
 endpoint overrides too reads them through `endpointFlowGate` on the original
-context — `liftLegacyContext` predates the field and has no live consumer, so it
-is left as the domain-lattice bridge it was. -/
+context, which is what the live IPC arms do.
+
+WS-SM SM8.C.9: the lift **does** have a live consumer now — the `.declassify`
+arm builds the `GenericLabelingContext` the declassification gate needs from the
+`LabelingContext` the checked dispatch already carries, so an operator writes one
+labeling and gets both.  What the arm supplies separately is the
+`DeclassificationPolicy`, which is its own `LabelingContext` field: the lift's
+`policy` is the *base* lattice (the one that must deny), not the downgrade
+policy. -/
 def liftLegacyContext (ctx : LabelingContext) : GenericLabelingContext :=
   {
     policy := .linearOrder
@@ -927,187 +993,11 @@ theorem securityLattice_transitive :
       securityFlowsTo a c = true :=
   securityFlowsTo_trans
 
--- ============================================================================
--- V6-H (M-IF-6): Declassification audit trail
--- ============================================================================
-
-/-- WS-SM SM8.C.5 (V6-H, typed): the **authorization basis** a declassification
-    event records — *why* the downgrade was permitted.
-
-    This was a bare `String` until WS-SM SM8.C, with the docstring stating that
-    the kernel does not interpret it.  A kernel that cannot interpret its own
-    audit basis cannot prove anything about it: the field admitted any string,
-    including one naming a check that never ran, so "the recorded basis is the
-    check that passed" was a convention rather than a fact.  Typing it makes
-    the claim checkable (`declassificationBasisKernelVerified`, SM8.C.5).
-
-    Open-endedness is preserved where it was real: `integratorOverride` still
-    carries an arbitrary authority string, so a system integrator can record a
-    basis the kernel has never heard of.  What the type adds is that the kernel
-    can tell that basis apart from one it issued itself, which is exactly the
-    distinction an audit consumer needs (`kernelVerifiable`). -/
-inductive DeclassificationBasis where
-  /-- The `DeclassificationPolicy.canDeclassify` gate authorized the downgrade.
-      This is the only basis the kernel itself produces. -/
-  | policyRule
-  /-- An out-of-band system-integrator authority permitted the downgrade.  The
-      kernel neither issues nor verifies these; `authority` is the integrator's
-      own designation, reproduced verbatim in the rendered audit record. -/
-  | integratorOverride (authority : String)
-  deriving Repr, DecidableEq
-
-namespace DeclassificationBasis
-
-/-- WS-SM SM8.C.5: the audit record's external rendering.  External analysis
-    tools consumed the pre-SM8.C `String` field directly, so the two bases the
-    tree ever recorded render to the byte-identical strings they had before
-    (`"DeclassificationPolicy.canDeclassify"` and the integrator's own
-    designation) — typing the field changed what the *kernel* can conclude, not
-    what an audit consumer reads. -/
-def render : DeclassificationBasis → String
-  | .policyRule => "DeclassificationPolicy.canDeclassify"
-  | .integratorOverride authority => authority
-
-/-- WS-SM SM8.C.5: whether the kernel can **check** this basis against its own
-    policy configuration.  True for the gate the kernel runs, false for an
-    out-of-band authority it has no way to evaluate.
-
-    An audit consumer reads this as: a `false` here means the event did not come
-    from the kernel's declassification path — see
-    `auditLogKernelIssued` in `InformationFlow/DeclassificationPerCore.lean`,
-    which turns that into a decidable property of a whole log. -/
-def kernelVerifiable : DeclassificationBasis → Bool
-  | .policyRule => true
-  | .integratorOverride _ => false
-
-/-- WS-SM SM8.C.5: the kernel's own basis renders to the pre-SM8.C literal, so
-    the audit record an external tool sees is unchanged by the typing. -/
-theorem render_policyRule : render .policyRule = "DeclassificationPolicy.canDeclassify" := rfl
-
-/-- WS-SM SM8.C.5: an integrator override renders to its authority verbatim —
-    the kernel neither rewrites nor interprets it. -/
-theorem render_integratorOverride (authority : String) :
-    render (.integratorOverride authority) = authority := rfl
-
-/-- WS-SM SM8.C.5: exactly one basis is kernel-verifiable.  Load-bearing rather
-    than decorative: `authorizationBasis_perCore` concludes that every event the
-    kernel recorded passes its own check, and that conclusion is only meaningful
-    because some basis fails it. -/
-theorem kernelVerifiable_iff_policyRule (b : DeclassificationBasis) :
-    b.kernelVerifiable = true ↔ b = .policyRule := by
-  cases b <;> simp [kernelVerifiable]
-
-end DeclassificationBasis
-
-/-- V6-H (M-IF-6): Record of a declassification event for audit purposes.
-
-    Every declassification operation produces a `DeclassificationEvent`
-    recording the source domain, destination domain, authorization basis,
-    the originating core, and a monotonic timestamp. The audit trail enables
-    post-hoc analysis of information-flow boundary crossings.
-
-    **Producer**: `declassifyStoreOnCore`
-    (`InformationFlow/DeclassificationPerCore.lean`) — the audited per-core form
-    of the `Enforcement/Soundness.lean` gate `declassifyStore`.  It threads the
-    append-only log through the operation and appends the event itself, so
-    recording is not left to the caller: a successful downgrade and its audit
-    entry are one step (`declassifyStoreOnCore_records_one`).
-
-    Until WS-SM SM8.C this docstring said the enforcement wrappers produced
-    events and the caller was responsible for recording them.  Neither was
-    true — nothing in the tree constructed a `DeclassificationEvent`, so the
-    audit trail was a type with no writer.  Per the implement-the-improvement
-    rule the producer was built rather than the claim weakened. -/
-structure DeclassificationEvent where
-  /-- Source domain initiating the declassification. -/
-  srcDomain : SecurityDomain
-  /-- Destination domain receiving the declassified information. -/
-  dstDomain : SecurityDomain
-  /-- Object ID of the target being declassified to. -/
-  targetObject : SeLe4n.ObjId
-  /-- Authorization basis for this declassification: which policy rule or
-      system-integrator authority permitted the downgrade.  Rendered for
-      external analysis tools by `DeclassificationBasis.render`; checked by the
-      kernel through `DeclassificationBasis.kernelVerifiable`. -/
-  authorizationBasis : DeclassificationBasis
-  /-- Monotonic event counter (not wall-clock time — the kernel has no
-      notion of real time). Used for ordering events in the audit log.
-
-      The counter is **global**, not per-core: `declassifyStoreOnCore` derives
-      it from the length of the whole log, so two events recorded on different
-      cores are totally ordered and a cross-core chain can be reconstructed
-      (`declassificationAuditLog_timestamp_identifies_event`).  A per-core
-      counter would collide across cores and lose exactly that ordering. -/
-  timestamp : Nat
-  /-- WS-SM SM8.C.1: the core the declassification was performed on.
-
-      Plan `docs/planning/SMP_INFORMATION_FLOW_PLAN.md` §4.3: when a thread on
-      one core declassifies state observed on another (via cross-core IPC), the
-      audit trail must record where the downgrade happened, or a chain spanning
-      cores cannot be attributed.  Deliberately **not** defaulted: a default
-      would silently attribute every event to the boot core, which is the exact
-      failure the field exists to prevent. -/
-  originatingCore : Concurrency.CoreId
-  deriving Repr, DecidableEq
-
-/-- V6-H: An audit log is a list of declassification events, ordered by
-    timestamp (most recent last). -/
-abbrev DeclassificationAuditLog := List DeclassificationEvent
-
-/-- V6-H: Record a declassification event in the audit log. -/
-def recordDeclassification
-    (log : DeclassificationAuditLog)
-    (event : DeclassificationEvent) : DeclassificationAuditLog :=
-  log ++ [event]
-
-/-- V6-H: The audit log is append-only — recording preserves existing entries. -/
-theorem recordDeclassification_preserves_existing
-    (log : DeclassificationAuditLog) (event : DeclassificationEvent) :
-    ∀ e ∈ log, e ∈ recordDeclassification log event := by
-  intro e hMem
-  exact List.mem_append_left _ hMem
-
-/-- V6-H: A recorded event is always in the resulting log. -/
-theorem recordDeclassification_contains_new
-    (log : DeclassificationAuditLog) (event : DeclassificationEvent) :
-    event ∈ recordDeclassification log event := by
-  simp [recordDeclassification]
-
-/-- V6-H: Audit log length increases by exactly 1 on each record. -/
-theorem recordDeclassification_length
-    (log : DeclassificationAuditLog) (event : DeclassificationEvent) :
-    (recordDeclassification log event).length = log.length + 1 := by
-  simp [recordDeclassification]
-
-/-- WS-SM SM8.C.3: **every declassification event names a core that exists.**
-
-    `CoreId` is `Fin numCores`, so this holds by construction rather than by a
-    range check — which is the point: the SM0.E typed identifier makes an
-    out-of-range attribution a type error, not a runtime one.  Stated anyway as
-    the checked witness of that design: if a future cut ever widens the field to
-    a raw `Nat` (to carry, say, an affinity slot from a platform that numbers
-    cores sparsely), this theorem stops being provable and the widening has to
-    supply a real bound. -/
-theorem declassificationEvent_originatingCore_valid (e : DeclassificationEvent) :
-    e.originatingCore.val < Concurrency.numCores :=
-  e.originatingCore.isLt
-
-/-- WS-SM SM8.C.3: the enumeration form — every event's core is one the
-    per-core audit partition (`auditLogOnCore`) actually visits.  This is the
-    half `declassificationEvent_originatingCore_valid` does not give: a bound
-    says the index is in range, membership in `allCores` says the sweep that
-    builds the per-core views reaches it. -/
-theorem declassificationEvent_originatingCore_mem_allCores (e : DeclassificationEvent) :
-    e.originatingCore ∈ Concurrency.allCores :=
-  Concurrency.mem_allCores _
-
-/-- WS-SM SM8.C.3: the whole-log form — no audit log, however assembled, can
-    contain an event attributed to a core outside the enumeration.  Consumed by
-    `declassificationAuditLog_partitions_by_core`, whose per-core sum would
-    otherwise have to exclude the possibility of an unreachable slice. -/
-theorem declassificationAuditLog_originatingCores_valid (log : DeclassificationAuditLog) :
-    ∀ e ∈ log, e.originatingCore ∈ Concurrency.allCores :=
-  fun e _ => declassificationEvent_originatingCore_mem_allCores e
+-- `DeclassificationBasis`, `DeclassificationEvent`, `DeclassificationAuditLog`,
+-- `recordDeclassification` and the SM8.C.8 capacity bound live in
+-- `SeLe4n.Kernel.InformationFlow.AuditRecord`, below `Model.State`, because
+-- `SystemState` mounts the audit trail and this module imports `Model.State`.
+-- Same namespace, so every reference below resolves unchanged.
 
 -- ============================================================================
 -- WS-H10/A-39: Declassification model
@@ -1128,45 +1018,6 @@ blocked. In practice, controlled declassification is needed for:
 The model uses a `DeclassificationPolicy` that explicitly authorizes which
 domain pairs may declassify, preventing unrestricted downgrade. -/
 
-/-- WS-H10/A-39: Declassification policy specifying authorized downgrade paths.
-
-`canDeclassify src dst` returns `true` iff domain `src` is authorized to
-declassify (downgrade) information to domain `dst`. This is distinct from
-the normal flow policy: declassification explicitly permits flows that the
-base lattice would deny.
-
-**Well-formedness:** A declassification policy should never authorize
-declassification along paths that the base policy already allows (that
-would be redundant, not declassification). -/
-structure DeclassificationPolicy where
-  canDeclassify : SecurityDomain → SecurityDomain → Bool
-
-namespace DeclassificationPolicy
-
-/-- No declassification allowed (strictest policy). -/
-def none : DeclassificationPolicy :=
-  { canDeclassify := fun _ _ => false }
-
-/-- Declassification is authorized iff: the base policy does NOT allow the
-flow (otherwise it's not declassification) AND the declassification policy
-explicitly permits it. -/
-def isDeclassificationAuthorized
-    (basePolicy : DomainFlowPolicy)
-    (declPolicy : DeclassificationPolicy)
-    (src dst : SecurityDomain) : Bool :=
-  !basePolicy.canFlow src dst && declPolicy.canDeclassify src dst
-
-/-- Declassification from domain `a` to itself is never a true declassification
-(the base policy is always reflexive for well-formed policies). -/
-theorem isDeclassificationAuthorized_not_reflexive
-    (basePolicy : DomainFlowPolicy)
-    (declPolicy : DeclassificationPolicy)
-    (d : SecurityDomain)
-    (hRefl : basePolicy.isReflexive) :
-    isDeclassificationAuthorized basePolicy declPolicy d d = false := by
-  simp [isDeclassificationAuthorized, hRefl d]
-
-end DeclassificationPolicy
 
 -- ============================================================================
 -- WS-H10/M-16: Endpoint flow policy well-formedness

@@ -342,7 +342,7 @@ abbrev enforcementBoundaryExtended : List EnforcementClass := enforcementBoundar
 /-- V6-L/Z8-M/D2/D3/AC4-D (L-IF-3): Completeness assertion — `enforcementBoundaryExtended`
     has exactly 38 entries, matching the canonical `enforcementBoundary`. -/
 theorem enforcementBoundaryExtended_count :
-    enforcementBoundaryExtended.length = 38 := by rfl
+    enforcementBoundaryExtended.length = 39 := by rfl
 
 /-- W2-G (M-3): Element-wise correspondence — `enforcementBoundaryExtended` and
     `enforcementBoundary` are definitionally equal. This closes the M-3 finding
@@ -584,6 +584,31 @@ at the target location (simulating the information transfer) after verifying
 authorization. The key security property is that declassification is observable
 ONLY to the authorized target domain — all other domains see no change. -/
 
+/-- WS-SM SM8.C.9: **the declassification decision, on its own** — the two
+authorization checks `declassifyStore` runs, factored out of the store it gates.
+
+Factored because the live `.declassify` syscall (SM8.C.9) runs exactly these
+checks and records the result, but does **not** perform the store: that store is
+the model's *simulation* of an information transfer (the docstring above says
+so), and simulating a transfer by overwriting an arbitrary object is not
+something a syscall may do — it would let a caller install a chosen
+`KernelObject` at a chosen id and break every object-store invariant at once.
+
+Sharing the decision rather than restating it is what makes
+`authorizeDeclassificationOnCore_agrees_with_gate` an equality of the *same*
+computation instead of a claim that two copies happen to match. -/
+def declassificationDecision
+    (ctx : GenericLabelingContext)
+    (declPolicy : DeclassificationPolicy)
+    (srcDomain dstDomain : SecurityDomain) : Except KernelError Unit :=
+  if ctx.policy.canFlow srcDomain dstDomain then
+    -- Normal flow allowed — this is not a declassification scenario
+    .error .flowDenied
+  else if declPolicy.canDeclassify srcDomain dstDomain then
+    .ok ()
+  else
+    .error .declassificationDenied
+
 /-- WS-H10/A-39: Declassification-checked object store: authorizes a controlled
 information downgrade from `srcDomain` to `dstDomain` before storing an object.
 
@@ -607,6 +632,53 @@ def declassifyStore
       storeObject targetId obj st
     else
       .error .declassificationDenied
+
+/-- WS-SM SM8.C.9: the gate **is** the decision followed by the store.  The
+correspondence that keeps `declassificationDecision` honest: it is not a second
+implementation of the checks, it is the checks `declassifyStore` performs. -/
+theorem declassifyStore_eq_decision_bind
+    (ctx : GenericLabelingContext)
+    (declPolicy : DeclassificationPolicy)
+    (srcDomain dstDomain : SecurityDomain)
+    (targetId : SeLe4n.ObjId) (obj : KernelObject) (st : SystemState) :
+    declassifyStore ctx declPolicy srcDomain dstDomain targetId obj st =
+      (declassificationDecision ctx declPolicy srcDomain dstDomain).bind
+        (fun _ => storeObject targetId obj st) := by
+  unfold declassifyStore declassificationDecision
+  split
+  · rfl
+  · split <;> rfl
+
+/-- WS-SM SM8.C.9: the decision succeeds exactly when the downgrade is
+authorized — base policy denies and the declassification policy permits.  The
+decision-level form of `enforcementSoundness_declassifyStore`. -/
+theorem declassificationDecision_ok_iff
+    (ctx : GenericLabelingContext)
+    (declPolicy : DeclassificationPolicy)
+    (srcDomain dstDomain : SecurityDomain) :
+    declassificationDecision ctx declPolicy srcDomain dstDomain = .ok () ↔
+      (ctx.policy.canFlow srcDomain dstDomain = false ∧
+        declPolicy.canDeclassify srcDomain dstDomain = true) := by
+  unfold declassificationDecision
+  cases hNormal : ctx.policy.canFlow srcDomain dstDomain with
+  | true => simp
+  | false =>
+    cases hDecl : declPolicy.canDeclassify srcDomain dstDomain with
+    | true => simp
+    | false => simp
+
+/-- WS-SM SM8.C.9: the decision agrees with the `DeclassificationPolicy`
+predicate the rest of the information-flow layer reasons with. -/
+theorem declassificationDecision_ok_iff_isDeclassificationAuthorized
+    (ctx : GenericLabelingContext)
+    (declPolicy : DeclassificationPolicy)
+    (srcDomain dstDomain : SecurityDomain) :
+    declassificationDecision ctx declPolicy srcDomain dstDomain = .ok () ↔
+      DeclassificationPolicy.isDeclassificationAuthorized ctx.policy declPolicy
+        srcDomain dstDomain = true := by
+  rw [declassificationDecision_ok_iff]
+  unfold DeclassificationPolicy.isDeclassificationAuthorized
+  simp
 
 /-- WS-H10/A-39: When declassification is authorized, the operation delegates
 to storeObject. -/

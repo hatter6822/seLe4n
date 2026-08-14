@@ -791,6 +791,14 @@ theorem lockSet_vspaceUnifyInstruction_size_le (a : ThreadId) (b c : ObjId) :
   unfold lockSet_vspaceUnifyInstruction maxLockSetSize
   exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
 
+/-- **WS-SM SM8.C.9**: `.declassify` is within the deadlock bound.  Two read
+locks, the smallest declared footprint in the inventory — its only write is a
+`SystemState` field, not an object. -/
+theorem lockSet_declassify_size_le (a : ThreadId) (b : ObjId) :
+    (lockSet_declassify a b).size ≤ maxLockSetSize := by
+  unfold lockSet_declassify maxLockSetSize
+  exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
+
 theorem lockSet_serviceRegister_size_le (a : ThreadId) (b c : ObjId) :
     (lockSet_serviceRegister a b c).size ≤ maxLockSetSize := by
   unfold lockSet_serviceRegister maxLockSetSize
@@ -854,7 +862,7 @@ theorem lockSet_tcbSetIPCBuffer_size_le (a : ThreadId) (b : ObjId) (c : ThreadId
   unfold lockSet_tcbSetIPCBuffer maxLockSetSize
   exact Nat.le_trans (size_le_1 _ _) (by size_bound)
 
-/-- WS-SM SM3.D.6b (aggregate): **every** one of the 25 SM3.B per-transition
+/-- WS-SM SM3.D.6b (aggregate): **every** one of the 26 SM3.B per-transition
 `lockSet_<τ>` declarations has size `≤ maxLockSetSize`, for all arguments.
 This discharges, once and for all, the size premise of
 `boundedWait_under_2pl` / the `KernelOperation` invariant for the real
@@ -875,6 +883,7 @@ theorem lockSetTransitions_within_bound :
     (∀ a b c, (lockSet_vspaceMap a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_vspaceUnmap a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_vspaceUnifyInstruction a b c).size ≤ maxLockSetSize) ∧
+    (∀ a b, (lockSet_declassify a b).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_serviceRegister a b c).size ≤ maxLockSetSize) ∧
     (∀ a b, (lockSet_serviceRevoke a b).size ≤ maxLockSetSize) ∧
     (∀ a b, (lockSet_serviceQuery a b).size ≤ maxLockSetSize) ∧
@@ -893,7 +902,7 @@ theorem lockSetTransitions_within_bound :
    lockSet_cspaceCopy_size_le, lockSet_cspaceMove_size_le,
    lockSet_cspaceDelete_size_le, lockSet_lifecycleRetype_size_le,
    lockSet_vspaceMap_size_le, lockSet_vspaceUnmap_size_le,
-   lockSet_vspaceUnifyInstruction_size_le,
+   lockSet_vspaceUnifyInstruction_size_le, lockSet_declassify_size_le,
    lockSet_serviceRegister_size_le, lockSet_serviceRevoke_size_le,
    lockSet_serviceQuery_size_le, lockSet_schedContextConfigure_size_le,
    lockSet_schedContextBind_size_le, lockSet_schedContextUnbind_size_le,

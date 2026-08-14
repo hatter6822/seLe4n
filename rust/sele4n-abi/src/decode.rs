@@ -114,9 +114,10 @@ mod tests {
 
     #[test]
     fn decode_unknown_error_code() {
-        // WS-SM SM5.B.4: 53 is ThreadOnDifferentCore.  The first unrecognized
-        // code is now 54 (R5.E previously stood at 52 with MissingSchedContext).
-        let regs = [54, 0, 0, 0, 0, 0, 0];
+        // WS-SM SM8.C.9: 54 is AuditLogCapacityExceeded.  The first
+        // unrecognized code is now 55 (SM5.B.4 previously stood at 53 with
+        // ThreadOnDifferentCore).
+        let regs = [55, 0, 0, 0, 0, 0, 0];
         assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
     }
 

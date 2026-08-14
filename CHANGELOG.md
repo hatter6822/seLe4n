@@ -1,3 +1,204 @@
+## v0.33.8 — WS-SM SM8.C.8/SM8.C.9: the audit trail mounted, and the `.declassify` syscall live
+
+**The completion cut for SM8.C.**  v0.33.7 built the declassification audit —
+the producer, the attribution, the per-core views, the cross-core chains, the
+rules as data — on a surface *nothing could reach*: the log was a value threaded
+through a call, and no syscall performed a declassification.  This cut makes the
+whole thing live end to end.
+
+### SM8.C.8 — the audit trail is mounted, bounded, and fail-closed
+
+`SystemState.declassificationAuditLog` is durable kernel state.  The trail had
+to outlive the syscall that writes it: with the log threaded through a call, a
+chain of downgrades could only be reasoned about *within* one call, and the live
+`.declassify` makes each hop a separate kernel entry.
+
+* **Extraction.**  `SecurityDomain`, `DeclassificationBasis`,
+  `DeclassificationEvent`, `DeclassificationAuditLog` and
+  `recordDeclassification` move to a new production module
+  `InformationFlow/AuditRecord.lean`, below `Model/State`.  The same extraction
+  SM7.A performed for `TlbInvalidation` and SM7.D for `CacheInvalidation`, and
+  for the same reason: `Policy.lean` imports `Model.State`, so the record could
+  not stay there without a cycle.  Names and namespace unchanged.
+* **Capacity is a security decision, not a convenience one.**
+  `maxDeclassificationAuditEntries = 256`, and the behaviour *at* the bound is
+  **fail-closed**: `recordDeclassificationChecked` returns `none` and the
+  declassification is refused with the new `KernelError.auditLogCapacityExceeded`
+  (Rust discriminant 54).  The alternative — drop an entry, let the downgrade
+  through — produces a state in which the kernel authorized a cross-domain flow
+  and no record of it exists, which is the exact failure the phase exists to
+  exclude.  A distinct discriminant, not `resourceExhausted` or
+  `declassificationDenied`, because only this one means "drain the trail".
+  The availability cost is real and **not** mitigated here: the only sound
+  mitigation is a consumer that drains the trail, and no read interface exists
+  (registered as SM8.E scope).
+* **The headline**: `declassifyStoreOnCore_never_unaudited` /
+  `authorizeDeclassificationOnCore_never_unaudited` — *an authorized downgrade is
+  either recorded or does not happen.*  With a threaded log this could only be
+  stated per call; with a dropping ring buffer it would be false.
+* **Carriage.**  `auditLogBounded st.declassificationAuditLog` is the **16th**
+  `proofLayerInvariantBundle` conjunct, with boot witness, the `bootFromPlatform`
+  bridge, and the reusable writer layer
+  `proofLayerInvariantBundle_setDeclassificationAuditLog` (deliberately carriage,
+  not an `iff`: the writer supplies the bound).  Freeze carries it as a
+  **required** `FrozenSystemState` field (a snapshot that silently dropped the
+  trail would report a system with no recorded downgrades, which is what a system
+  with *unrecorded* downgrades looks like); `OffSchedulerAgrees` gains the
+  matching field; `storeObject` frames it.
+* **Information flow**: the trail is deliberately **outside** `ObservableState`,
+  and the exclusion points the opposite way to the SM7 ones.  `perCoreTlb` and
+  friends are excluded because projecting them opens a *timing* channel; the
+  trail is excluded because projecting it opens a *content* channel out of
+  exactly the boundary it polices — each entry names `(srcDomain, dstDomain,
+  targetObject)`, so a low observer could learn that a high→low downgrade
+  happened and which object it targeted, from a subject the base policy forbids
+  it to hear from.  `declassificationAuditLog_write_preserves_projection` (and
+  its per-core companion) is the witness.  The consequence is that nothing in
+  the kernel can read the trail today; a privileged reader owes its own flow
+  argument and is SM8.E scope.
+
+### SM8.C.9 — the live `.declassify` syscall
+
+`SyscallId.declassify = 30` (count 30 → 31), threaded through the Lean
+encodings, both Rust mirrors, the ABI conformance suite, the frozen-ops
+classifier, the enforcement registry (canonical 38 → 39, per-core 54 → 55), the
+lock-set inventory and `sele4n-sys`'s safe wrapper.
+
+**What it does, and what it does not.**  `declassifyStore` models a
+declassification as a gated *store*, and its own docstring calls that store a
+simulation of the transfer.  Simulating a transfer is not something a syscall may
+do — the object would have to come from the caller, so a `.declassify` built that
+way would let userspace install a chosen `KernelObject` at a chosen id and break
+every object-store invariant at once.  So the live transition runs the
+**decision** the gate runs (`declassificationDecision`, *shared* with
+`declassifyStore` rather than restated — `declassifyStore_eq_decision_bind`) and
+records the result.  Its only state effect is one appended audit entry
+(`authorizeDeclassificationOnCore_frame`), which is why fifteen of the sixteen
+bundle conjuncts are carried by the frame and the sixteenth by the capacity
+guard.  Read positively, that is the MLS trusted-downgrader primitive: the kernel
+is the arbiter of which downgrades its policy permits and the durable attributed
+trail is the evidence.  Read negatively, `.declassify` moves no bytes; a
+data-carrying declassification would ride the SM6.B signal path and its whole
+invariant surface, and is SM8.D/SM8.E scope.
+
+* **Neither domain comes from the caller.**  `declassifyObjectFromCore` reads the
+  source off the subject the executing core is running and the destination off
+  the target object's own labeling, so both endpoints of every recorded downgrade
+  are facts about the state
+  (`declassifyObjectFromCore_event_attributable`,
+  `declassifyObjectFromCore_destination_is_target_domain`).  That also collapses
+  the ABI to a single operand — the capability naming the target — so the
+  syscall takes **no** inline argument registers.
+* **The policy decision runs before the capacity check** (see the section
+  below) — both orderings admit the same successes, and only one keeps trail
+  occupancy out of a refused caller's reach.
+* **There is no unchecked declassification.**  Every other arm's unchecked twin
+  skips a flow check the caller opted out of; declassification's authority *is* a
+  policy, so "unchecked" would mean "every downgrade authorized".
+  `dispatchWithCap` fails closed with `.declassificationDenied`
+  (`dispatchWithCap_declassify_denied`), and the live arm is on the checked
+  dispatch only, delegation-backed (`syscallDelegates_declassify`).
+* **The default is deny-all.**  `LabelingContext.declassificationPolicy` defaults
+  to refusing every pair, so an unconfigured deployment cannot declassify at all
+  (`dispatchWithCapChecked_declassify_default_denied`).
+* Authority is the **write** right (the flow direction is subject → object); the
+  lock set is the two universal reads (`lockSet_declassify`), the smallest
+  declared footprint in the inventory, because the only write is a `SystemState`
+  field rather than an object.
+* Cross-core inventory: `.declassifyDispatch` joins `CrossCoreTransition`
+  (25 → 26 entries, live arms 18 → 19, delegation-backed 10 → 11) with an
+  **empty** write set — it takes an executing core and writes no core.  The
+  per-core routing gate passes with **zero** allowlisted exceptions, and gained
+  a verified `<label>#inert` exemption for a dispatch arm that provably performs
+  no operation (the fail-closed unchecked arm), checked rather than asserted.
+
+### The check ordering — a covert channel closed on re-reading
+
+The first cut checked capacity *before* the policy decision, so a caller whose
+downgrade the policy refuses learned that the trail was full.  Trail occupancy is
+a function of how many **authorized** downgrades other subjects performed, so
+that is a channel from every declassifying subject to every subject that can call
+`.declassify` at all.
+
+Both orderings admit the same successes; only one is safe.  The decision now runs
+first, capacity second, and capacity is still checked before any commit — so
+`never_unaudited` is unaffected.  Stated as a theorem rather than left to the
+reader of the arm: `authorizeDeclassificationOnCore_denied_before_capacity` says
+a refused caller's result is *identical on two arbitrary states*, so no amount of
+trail difference is visible to it, and `…_audit_log_full` gained the
+`hAuthorized` premise that makes the confinement explicit.
+
+### Self-audit closure
+
+Fourteen findings from this workstream's own review, all closed:
+
+1. **The flat audit rendering is not injective** — an integrator could name its
+   authority with the kernel's own literal and the rendered record would be
+   indistinguishable.  Stated as a theorem (`render_not_injective`) rather than a
+   caution, and fixed by shipping the trust bit as *data*:
+   `RenderedDeclassificationBasis` pairs the designation with the kernel's own
+   verdict, and `renderTagged_injective` is the property `render` does not have.
+   The designation is unchanged, so nothing an audit tool displays moves.
+2. **The attributed entry point is now enforced**, not conventional: a Tier-3
+   negative anchor forbids `API.lean` from naming the unattributed forms.
+3. **The cross-core chain theorem is restated over the attributed entry point**
+   (`declassificationChain_recorded_across_cores_attributed`), where the middle
+   domain is a fact about which subject was running rather than what two callers
+   wrote.
+4. **The "structural timestamp" claim was an overstatement** — the V6-H
+   primitive `recordDeclassification` accepts an arbitrary event, so
+   well-formedness is a *checkable predicate*, not a type invariant.  Corrected
+   at the definition site and witnessed by `recordDeclassification_admits_ill_formed`.
+5. **The laundering detector's conservatism is stated**
+   (`declassificationChainLinked_is_syntactic`): linkage is matching domains and
+   increasing timestamps, with no data-dependency relation behind it — safe for a
+   detector, unsafe for a gate, which is why nothing enforces on it.
+6. **Run-level completeness** (§12): `declassifyRun` folds the live entry point
+   over a request list, and a run of `n` authorized downgrades records exactly
+   `n` attributed entries, loses none, stays well-formed and within capacity,
+   writes only the trail, and is invisible on every core.
+7. **`authorizationBasis_perCore`'s scope** is stated: the *verdict* is
+   core-uniform; what the core selects is the recorded **subject**
+   (`declassificationSubjectDomain_is_core_selected`).
+9. **The rule set grew with the phase** — 8 → 12 rules, each with dependently
+   typed evidence, so every scope statement is a rule rather than a paragraph.
+10/11. **The gates the endpoint policy deliberately does not govern** are checked
+   facts now: both notification gates and the reply leg are proven independent of
+   `endpointPolicy`, with the send gate's *dependence* as the load-bearing
+   contrast.
+13. **V6-G reconciled at the label level**: `endpointGateRestricted_always` holds
+   for **every** context with no well-formedness hypothesis — strictly stronger
+   than V6-G's conditional form, because conjoining makes widening structurally
+   impossible.  `endpointGateRestricted_survives_widening_override` is the
+   witness that the hypothesis really is unnecessary.
+14. **A golden fixture** (`tests/fixtures/smp_declassification_audit.expected`
+   + `.sha256`, 18 lines) computed from the live transition and verified
+   byte-for-byte in-suite.
+15/16. Elaboration examples for the theorems that were anchored but never
+   applied, and chain topologies beyond the two-hop case (three-hop across three
+   cores, two hops on one core, four cores one hop each, and the out-of-order
+   negative).
+
+Also corrected: `liftLegacyContext`'s docstring said it had no live consumer,
+which the `.declassify` arm makes false.
+
+**Tests**: `SmpInformationFlowSuite` 360 → 391 runtime assertions / 19 scenario
+groups (§6.9 the live syscall, §6.10 the fail-closed capacity bound, §6.11
+run-level completeness, §6.12 the tagged rendering and the collision it exists
+for, §6.13 chain topologies, §6.14 the golden trace), every group with a
+load-bearing negative.  Rust 812 → 819 HAL tests.  Trace fixture `[XVAL-002]`
+30 → 31 variants; everything else byte-identical.
+
+**AK7 anchor**: every counter **unchanged** against
+`docs/dev_history/audits/AL0_baseline.txt` (`RAW_MATCH_TOTAL` 130,
+`RAW_LOOKUP_TID` 1286, `GETTCB_ADOPTION` 2021, `GETVSPACEROOT_ADOPTION` 36,
+sorry/axiom 0).  Expected: the cut adds no object-store read at all — the live
+transition's only state access is `getObjectType?` (the AL2-A/AN10-B accessor)
+and a `SystemState` field, so it introduces neither a raw match nor a raw
+`tid.toObjId` lookup.
+
+Refs: docs/planning/SMP_INFORMATION_FLOW_PLAN.md §5 SM8.C
+
 ## v0.33.7 — WS-SM SM8.C: the per-core declassification audit, and the endpoint flow policy wired
 
 **SM8.C LANDED** (plan

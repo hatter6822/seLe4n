@@ -598,6 +598,34 @@ def lockSet_vspaceUnifyInstruction (callerTid : ThreadId)
      (cnodeLock cnodeRootObjId, .read),
      (vspaceRootLock vspaceRootObjId, .read)]
 
+/-! ## Declassification (1 transition)
+
+The one syscall whose entire state effect is on a `SystemState` field rather
+than on an object: `.declassify` appends to `declassificationAuditLog`.  That
+field is no more a per-object lock subject than `tlbShootdown` is (SM7.B gave
+that one its own cross-domain `TlbShootdownLockId`), so the per-object footprint
+here covers only the two universal reads. -/
+
+/-- WS-SM SM8.C.9: `lockSet` for `declassify`.
+
+Both locks are **read** mode: the caller TCB is read to resolve the running
+subject's domain, the CNode to resolve the target capability, and neither is
+written.  The audit-trail append is the transition's only write and is not an
+object.
+
+The target object is read once, for its kind tag, with no field access — that
+read rides the table-level `objStoreLock` (SM3.A.10), the same way the service
+syscalls' registry reads do.  Either direction of a concurrent race on it is
+benign: a target created concurrently makes the check fail and the syscall
+return `.objectNotFound`, and a target destroyed concurrently leaves an audit
+entry naming an id that no longer resolves — a fidelity artefact, not an
+authority one, since the authority came from the capability.  (Under the SM5.I
+kernel-entry lock there is no such race today.) -/
+def lockSet_declassify (callerTid : ThreadId) (cnodeRootObjId : ObjId) : LockSet :=
+  lockSetOfList
+    [(tcbLock callerTid, .read),
+     (cnodeLock cnodeRootObjId, .read)]
+
 /-! ## Service syscalls (3 transitions)
 
 Services are tracked at the SystemState level (not as per-object
@@ -1094,6 +1122,16 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- VSpaceRoot in read mode: it modifies no page table, only cache state.
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction =>
       [.tcb, .cnode, .vspaceRoot]
+  -- WS-SM SM8.C.9: `.declassify` reads the caller TCB (to resolve the running
+  -- subject's domain) and the caller's CNode (capability resolution), and its
+  -- only write is `SystemState.declassificationAuditLog` — a state-level field,
+  -- not a per-object lock subject, exactly as `tlbShootdown` is.  The target
+  -- object is touched by a single kind-tag lookup with no field access, which
+  -- rides the table-level `objStoreLock` (SM3.A.10) the way the service-registry
+  -- reads do; `.serviceRegister` takes an `.endpoint` lock because it inspects
+  -- the object's *contents*, which this does not.
+  | .declassify =>
+      [.tcb, .cnode]
   -- Service syscalls.  `.serviceRegister` reads `st.objects[epId]?`
   -- (audit-pass-6 extension); the other two only touch `serviceRegistry`.
   | .serviceRegister =>
@@ -1747,6 +1785,19 @@ theorem lockSet_consistent_serviceQuery (callerTid : ThreadId)
     (cnRoot : ObjId) :
     ∀ p ∈ (lockSet_serviceQuery callerTid cnRoot).pairs,
       p.fst.kind ∈ permittedKinds .serviceQuery :=
+  lockSet_consistent_of_extended_base _ _
+    (by intro p hMem
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        exact absurd hMem (by intro h; cases h))
+
+/-- WS-SM SM3.B.4 for `.declassify` (SM8.C.9). -/
+theorem lockSet_consistent_declassify (callerTid : ThreadId)
+    (cnRoot : ObjId) :
+    ∀ p ∈ (lockSet_declassify callerTid cnRoot).pairs,
+      p.fst.kind ∈ permittedKinds .declassify :=
   lockSet_consistent_of_extended_base _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem

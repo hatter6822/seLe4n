@@ -1099,8 +1099,26 @@ def main() -> int:
             declared.add(alt)
         elif isinstance(alt, list):
             declared.update(alt)
+        # An arm that performs *no operation at all* has no root to walk and
+        # cannot be boot-pinned — `.declassify`'s unchecked arm is the first
+        # (`fun _ => .error .declassificationDenied`: there is no unchecked
+        # declassification, because "unchecked" would mean "every downgrade
+        # authorized").  The exemption is **declared** in the aliases file under
+        # `<label>#inert` AND **verified** here: the arm must call nothing and
+        # must produce an error.  A future edit that gives it a call stops
+        # matching and the gate demands a root, so this cannot fail open.
+        inert_declared = bool(aliases.get(labels[sid] + "#inert"))
+        def arm_is_inert(i: int) -> bool:
+            # "Calls nothing" means no callee token resolves to a definition —
+            # the token set always retains keywords and binders (`fun`, `_`,
+            # `match`), so an empty set is the wrong test.  The `.error` witness
+            # is read off the RAW arm text, because `strip_arm_patterns` removes
+            # leading dots and would erase it.
+            return (inert_declared
+                    and not (called_per_arm[i] & bodies.keys())
+                    and ".error" in armlist[i])
         uncovered = [i for i, c in enumerate(called_per_arm)
-                     if not (declared & c)]
+                     if not (declared & c) and not arm_is_inert(i)]
         if uncovered:
             unverified.append((sid, root,
                                f"dispatch arm #{uncovered[0]} calls none of "

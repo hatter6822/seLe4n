@@ -96,7 +96,9 @@ Deliverables:
   - scheduler yield/choose,
   - endpoint send/receive/await,
   - one capability mutation path,
-- classify explicit declassification points (if any).
+- classify explicit declassification points (if any).  **Answered by WS-SM
+  SM8.C**: there is exactly one, the `.declassify` syscall, and every downgrade
+  it authorizes is recorded in an attributed, bounded, fail-closed audit trail.
 
 Exit evidence:
 
@@ -245,6 +247,11 @@ Delivered (WS-F3 closeout):
   `bibaPolicy` with reflexivity/transitivity proofs.
 - `DeclassificationPolicy` with `declassifyStore` enforcement operation
   (5 theorems) and `declassifyStore_NI` non-interference proof.
+  **Superseded in reach by WS-SM SM8.C** (v0.33.7 → v0.33.8): the gate is now
+  audited (`declassifyStoreOnCore`), the trail is mounted in `SystemState`
+  bounded and fail-closed, and `.declassify` is a live syscall.  `declassifyStore`
+  itself is unchanged and remains the model primitive both paths share their
+  decision with (`declassificationDecision`).
 - `endpointFlowPolicyWellFormed` predicate with reflexivity/transitivity
   inheritance proofs.
 - `InformationFlowConfigInvariant` bundle.
