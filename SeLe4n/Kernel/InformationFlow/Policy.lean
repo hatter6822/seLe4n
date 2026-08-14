@@ -743,8 +743,12 @@ Mapping:
 - `{high, untrusted}` → domain 2
 - `{high, trusted}`   → domain 3 (kernel, highest)
 
-This embedding preserves `securityFlowsTo` semantics under the `linearOrder`
-policy, proving that the generic system strictly subsumes the original. -/
+The embedding is injective, so nothing about the legacy lattice is lost in the
+*labels*.  What a lifted context does with them is a separate question: see
+`DomainFlowPolicy.legacyLattice` below, which is the policy that reproduces
+`securityFlowsTo` exactly.  `linearOrder` does **not** — it is a strict
+over-approximation, and `linearOrder_is_not_faithful_to_legacy` names the single
+pair where it differs. -/
 def embedLegacyLabel (l : SecurityLabel) : SecurityDomain :=
   match l.confidentiality, l.integrity with
   | .low,  .untrusted => ⟨0⟩
@@ -761,7 +765,12 @@ theorem embedLegacyLabel_kernelTrusted :
     embedLegacyLabel SecurityLabel.kernelTrusted = ⟨3⟩ := rfl
 
 /-- Legacy flow semantics are preserved by the embedding under linearOrder:
-if `securityFlowsTo src dst = true`, then `linearOrder.canFlow (embed src) (embed dst) = true`. -/
+if `securityFlowsTo src dst = true`, then `linearOrder.canFlow (embed src) (embed dst) = true`.
+
+**One direction only**, and deliberately so — the converse is false, which is
+exactly what `linearOrder_is_not_faithful_to_legacy` witnesses.  A reader who
+takes this lemma for "the embedding preserves the lattice" will be wrong about
+the denied flows, which is the half a security policy exists to enforce. -/
 theorem embedLegacyLabel_preserves_flow
     (src dst : SecurityLabel)
     (hFlow : securityFlowsTo src dst = true) :
@@ -773,6 +782,134 @@ theorem embedLegacyLabel_preserves_flow
       cases sc <;> cases si <;> cases dc <;> cases di <;>
         simp [securityFlowsTo, confidentialityFlowsTo, integrityFlowsTo] at hFlow <;>
         simp [embedLegacyLabel, DomainFlowPolicy.linearOrder]
+
+/-! ### WS-SM SM8.C: the faithful lift of the legacy lattice (PR #863 review)
+
+`liftLegacyContext` used to carry `.linearOrder`, and the review observed that
+this is an *over-approximation* of the legacy 2×2 relation.  It is: over the
+sixteen label pairs the two agree on fifteen and differ on exactly one —
+
+    {low, trusted} → {high, untrusted}     (domain 1 → domain 2)
+
+which `securityFlowsTo` **denies** (the integrity dimension: `integrityFlowsTo
+.untrusted .trusted = false`) and `1 ≤ 2` allows.  There is no pair in the other
+direction, so `linearOrder` is a strict over-approximation.
+
+Why that mattered on the live path: `declassificationDecision` reads a *true*
+base-policy verdict as "this flow is already permitted, so it is not a
+declassification" and returns `.flowDenied` before the declassification policy is
+ever consulted.  On that one pair a deployment could therefore configure an
+authorized downgrade and never be able to use it.  **Fail-closed** — the error
+refuses a legitimate downgrade rather than authorizing an illegitimate one, so
+this was a completeness defect and not a vulnerability — but a lift that does not
+reproduce the relation it lifts is the wrong foundation for a policy decision.
+
+`legacyLattice` is that relation, exactly. -/
+
+/-- WS-SM SM8.C: decode an embedded domain back to its legacy label.
+
+Total, and `none` outside the embedding's image — the four domains `0..3` are the
+only ones `embedLegacyLabel` produces, and a lifted context can name no other. -/
+def unembedLegacyDomain (d : SecurityDomain) : Option SecurityLabel :=
+  match d.id with
+  | 0 => some { confidentiality := .low,  integrity := .untrusted }
+  | 1 => some { confidentiality := .low,  integrity := .trusted }
+  | 2 => some { confidentiality := .high, integrity := .untrusted }
+  | 3 => some { confidentiality := .high, integrity := .trusted }
+  | _ => none
+
+/-- WS-SM SM8.C: the decoder inverts the embedding. -/
+@[simp] theorem unembedLegacyDomain_embed (l : SecurityLabel) :
+    unembedLegacyDomain (embedLegacyLabel l) = some l := by
+  cases l with
+  | mk c i => cases c <;> cases i <;> rfl
+
+/-- WS-SM SM8.C: **the legacy lattice as a domain policy** — `securityFlowsTo`
+transported along the embedding, rather than approximated by a linear order.
+
+The diagonal is admitted separately so the policy is reflexive on *every*
+`SecurityDomain`, including ids outside the embedding's image; that costs nothing
+on embedded domains, since `securityFlowsTo l l` is already `true`.  A domain
+outside the image flows only to itself — fail-closed, and unreachable from a
+lifted context anyway. -/
+def legacyDomainFlows : Option SecurityLabel → Option SecurityLabel → Bool
+  | some s, some d => securityFlowsTo s d
+  | _, _ => false
+
+@[simp] theorem legacyDomainFlows_some (s d : SecurityLabel) :
+    legacyDomainFlows (some s) (some d) = securityFlowsTo s d := rfl
+
+@[simp] theorem legacyDomainFlows_none_left (d : Option SecurityLabel) :
+    legacyDomainFlows none d = false := by cases d <;> rfl
+
+@[simp] theorem legacyDomainFlows_none_right (s : Option SecurityLabel) :
+    legacyDomainFlows s none = false := by cases s <;> rfl
+
+def DomainFlowPolicy.legacyLattice : DomainFlowPolicy :=
+  { canFlow := fun src dst =>
+      decide (src = dst) ||
+        legacyDomainFlows (unembedLegacyDomain src) (unembedLegacyDomain dst) }
+
+/-- WS-SM SM8.C (**the faithfulness theorem**): on embedded labels the policy
+*is* `securityFlowsTo` — an equality, so both the admitted and the denied flows
+carry, which is what `embedLegacyLabel_preserves_flow` gives only half of. -/
+@[simp] theorem legacyLattice_canFlow_embed (src dst : SecurityLabel) :
+    DomainFlowPolicy.legacyLattice.canFlow (embedLegacyLabel src) (embedLegacyLabel dst)
+      = securityFlowsTo src dst := by
+  cases src with
+  | mk sc si =>
+    cases dst with
+    | mk dc di =>
+      cases sc <;> cases si <;> cases dc <;> cases di <;> rfl
+
+/-- WS-SM SM8.C: the load-bearing negative — `linearOrder` does **not** have the
+property above, and this is the single pair that breaks it.  Keeping the
+counterexample as a theorem means a future edit that "simplifies"
+`liftLegacyContext` back to a linear order fails to build rather than silently
+reopening the gap. -/
+theorem linearOrder_is_not_faithful_to_legacy :
+    DomainFlowPolicy.linearOrder.canFlow
+        (embedLegacyLabel { confidentiality := .low, integrity := .trusted })
+        (embedLegacyLabel { confidentiality := .high, integrity := .untrusted }) = true ∧
+      securityFlowsTo { confidentiality := .low, integrity := .trusted }
+        { confidentiality := .high, integrity := .untrusted } = false := by
+  constructor <;> rfl
+
+/-- WS-SM SM8.C: `legacyLattice` is reflexive — the diagonal disjunct. -/
+theorem DomainFlowPolicy.legacyLattice_reflexive :
+    DomainFlowPolicy.legacyLattice.isReflexive := by
+  intro d; simp [DomainFlowPolicy.legacyLattice]
+
+/-- WS-SM SM8.C: `legacyLattice` is transitive, because `securityFlowsTo` is
+(both dimensions are partial orders, and the reversed integrity comparison is
+still a partial order). -/
+theorem DomainFlowPolicy.legacyLattice_transitive :
+    DomainFlowPolicy.legacyLattice.isTransitive := by
+  intro a b c hab hbc
+  simp only [DomainFlowPolicy.legacyLattice, Bool.or_eq_true, decide_eq_true_eq] at hab hbc ⊢
+  rcases hab with rfl | hab
+  · exact hbc
+  rcases hbc with rfl | hbc
+  · exact Or.inr hab
+  refine Or.inr ?_
+  cases ha : unembedLegacyDomain a with
+  | none => rw [ha] at hab; simp at hab
+  | some la =>
+    cases hb : unembedLegacyDomain b with
+    | none => rw [ha, hb] at hab; simp at hab
+    | some lb =>
+      cases hc : unembedLegacyDomain c with
+      | none => rw [hb, hc] at hbc; simp at hbc
+      | some lc =>
+        rw [ha, hb] at hab
+        rw [hb, hc] at hbc
+        exact securityFlowsTo_trans la lb lc hab hbc
+
+/-- WS-SM SM8.C: hence well-formed, so it is a drop-in for `linearOrder`
+everywhere a lifted context is required to carry a well-formed policy. -/
+theorem DomainFlowPolicy.legacyLattice_wellFormed :
+    DomainFlowPolicy.legacyLattice.wellFormed :=
+  ⟨legacyLattice_reflexive, legacyLattice_transitive⟩
 
 -- ============================================================================
 -- WS-SM SM8.C: the live per-endpoint flow gate
@@ -951,7 +1088,16 @@ labeling and gets both.  What the arm supplies separately is the
 policy. -/
 def liftLegacyContext (ctx : LabelingContext) : GenericLabelingContext :=
   {
-    policy := .linearOrder
+    -- WS-SM SM8.C (PR #863 review): the **faithful** legacy relation, not the
+    -- `linearOrder` over-approximation this used to carry.  The two differ on
+    -- exactly one pair ({low,trusted} → {high,untrusted}), and on the live
+    -- `.declassify` path that difference made a configurable downgrade
+    -- unreachable: `declassificationDecision` reads a `true` base verdict as
+    -- "already permitted, not a declassification" and returns `.flowDenied`
+    -- before the declassification policy is consulted.  See
+    -- `legacyLattice_canFlow_embed` (the equality) and
+    -- `linearOrder_is_not_faithful_to_legacy` (the counterexample).
+    policy := .legacyLattice
     objectDomainOf := fun oid => embedLegacyLabel (ctx.objectLabelOf oid)
     threadDomainOf := fun tid => embedLegacyLabel (ctx.threadLabelOf tid)
     endpointDomainOf := fun oid => embedLegacyLabel (ctx.endpointLabelOf oid)

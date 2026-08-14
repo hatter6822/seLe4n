@@ -1649,6 +1649,29 @@ trichotomy — a fail-closed audit-capacity refusal is a third outcome — and i
 third arm returns the decision's error verbatim so a future arm cannot be
 remapped onto an existing discriminant.
 
+#### PR #863 review — the legacy lattice is lifted faithfully
+
+`liftLegacyContext` carried `DomainFlowPolicy.linearOrder`, a strict
+over-approximation of the legacy 2×2 relation. Over the sixteen label pairs the
+two agree on fifteen and differ on exactly one — `{low, trusted} → {high,
+untrusted}` — which `securityFlowsTo` denies and `1 ≤ 2` allows; there is no pair
+in the other direction.
+
+On the live `.declassify` path that difference made a configurable downgrade
+unreachable: `declassificationDecision` reads a `true` base verdict as "already
+permitted, so not a declassification" and returns `.flowDenied` before the
+declassification policy is consulted. Fail-closed, so a completeness defect
+rather than a vulnerability — but the wrong foundation for a policy decision, and
+the `embedLegacyLabel` docstring claimed the embedding "preserves
+`securityFlowsTo` semantics" when the supporting lemma was one-directional.
+
+Closed by `DomainFlowPolicy.legacyLattice`: `securityFlowsTo` transported along
+the embedding via the total decoder `unembedLegacyDomain`, with the diagonal
+admitted separately so the policy is reflexive on every `SecurityDomain`. The
+property is an **equality** (`legacyLattice_canFlow_embed`), the counterexample is
+retained as a theorem (`linearOrder_is_not_faithful_to_legacy`) so a regression
+fails to build, and `legacyLattice_wellFormed` makes it a drop-in.
+
 ### SM8.D — Information flow under fine locks (6 sub-tasks)
 
 | Sub | Description | Theorem | Est |

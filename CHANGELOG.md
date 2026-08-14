@@ -197,6 +197,57 @@ transition's only state access is `getObjectType?` (the AL2-A/AN10-B accessor)
 and a `SystemState` field, so it introduces neither a raw match nor a raw
 `tid.toObjId` lookup.
 
+### PR #863 review — the legacy lattice is now lifted faithfully
+
+A P2 review finding, verified valid and fixed. `liftLegacyContext` carried
+`DomainFlowPolicy.linearOrder`, which is a strict **over-approximation** of the
+legacy 2×2 relation rather than a reproduction of it. Enumerated over all sixteen
+label pairs the two agree on fifteen and differ on exactly one:
+
+    {low, trusted} → {high, untrusted}      (domain 1 → domain 2)
+
+`securityFlowsTo` **denies** it — the reversed integrity comparison gives
+`integrityFlowsTo .untrusted .trusted = false` — while `1 ≤ 2` allows it. There
+is no pair in the other direction, so the linear order never denied anything the
+lattice allowed.
+
+**Why it mattered on the live path.** `declassificationDecision` reads a `true`
+base-policy verdict as "this flow is already permitted, so it is not a
+declassification" and returns `.flowDenied` before the declassification policy is
+consulted. On that one pair a deployment could configure an authorized downgrade
+and never be able to use it. **Fail-closed** — the error refuses a legitimate
+downgrade rather than authorizing an illegitimate one, so this was a completeness
+defect and not a vulnerability. But a lift that does not reproduce the relation it
+lifts is the wrong foundation for a policy decision, and the codebase's own
+lemma (`embedLegacyLabel_preserves_flow`) was only ever one-directional while the
+`embedLegacyLabel` docstring claimed the embedding "preserves `securityFlowsTo`
+semantics".
+
+**The fix is the exact relation, not a wider approximation.**
+`DomainFlowPolicy.legacyLattice` transports `securityFlowsTo` along the embedding
+via a total decoder `unembedLegacyDomain`, with the diagonal admitted separately
+so the policy is reflexive on every `SecurityDomain` (a domain outside the
+embedding's image flows only to itself — fail-closed, and unreachable from a
+lifted context). `liftLegacyContext` now carries it.
+
+The property is an **equality**, `legacyLattice_canFlow_embed`, so both the
+admitted *and* the denied flows carry — which is the half
+`embedLegacyLabel_preserves_flow` never gave. `linearOrder_is_not_faithful_to_legacy`
+keeps the counterexample as a theorem, so a future edit that "simplifies" the
+lift back to a linear order fails to build. `legacyLattice_wellFormed` (reflexive
+∧ transitive, the latter riding the existing `securityFlowsTo_trans`) makes it a
+drop-in wherever a lifted context must carry a well-formed policy.
+
+`liveEndpointOverride_is_not_a_declassification_basis` now rides the equality
+rather than the one-directional lemma — a strengthening, not a repair.
+
+Tests: `SmpInformationFlowSuite` §6.15 (393 → 403 assertions), including
+agreement with `securityFlowsTo` across **all sixteen** pairs, the load-bearing
+negative that `linearOrder` disagrees on exactly one, and the end-to-end
+consequence — the same request that returned `.flowDenied` under the old policy
+now reaches the declassification policy and is authorized. Tier-3 anchors pin the
+new symbols and forbid `policy := .linearOrder` returning to `liftLegacyContext`.
+
 ### Follow-up within v0.33.8 — every suite run, and the enforcement families completed
 
 The landing cut was verified against the SMP information-flow suite, the Rust

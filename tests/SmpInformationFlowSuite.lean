@@ -977,6 +977,20 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @declassifyObjectFromCore_crossCoreNonInterference
 #check @dispatchWithCapChecked_declassify_delegates
 #check @dispatchWithCap_declassify_denied
+-- PR #863 review: the faithful lift of the legacy 2x2 lattice.  `liftLegacyContext`
+-- carried `.linearOrder`, a strict over-approximation; these are the exact policy,
+-- its faithfulness equality, and the counterexample that keeps a regression to the
+-- linear order from building.
+#check @unembedLegacyDomain
+#check @unembedLegacyDomain_embed
+#check @legacyDomainFlows
+#check @legacyDomainFlows_some
+#check @DomainFlowPolicy.legacyLattice
+#check @legacyLattice_canFlow_embed
+#check @linearOrder_is_not_faithful_to_legacy
+#check @DomainFlowPolicy.legacyLattice_reflexive
+#check @DomainFlowPolicy.legacyLattice_transitive
+#check @DomainFlowPolicy.legacyLattice_wellFormed
 #check @dispatchWithCapChecked_declassify_default_denied
 #check @syscallDelegates_declassify
 #check @LabelingContext.declassificationPolicy
@@ -4747,6 +4761,99 @@ cross-core {chainIsCrossCore log}"
   | .error e => toString e
   | .ok _ => "ADMITTED"}" ]
 
+/-! ### §6.15 — the faithful lift of the legacy lattice (PR #863 review)
+
+`liftLegacyContext` carried `.linearOrder`, a strict **over-approximation** of
+the legacy 2×2 relation.  Over the sixteen label pairs the two agree on fifteen
+and differ on exactly one — `{low, trusted} → {high, untrusted}` — which
+`securityFlowsTo` denies (reversed integrity) and `1 ≤ 2` allows.
+
+On the live path that mattered: `declassificationDecision` reads a `true` base
+verdict as "already permitted, so not a declassification" and returns
+`.flowDenied` before the declassification policy is consulted, so a deployment
+could configure an authorized downgrade along that pair and never reach it.
+Fail-closed, hence a completeness defect rather than a vulnerability — but a lift
+that does not reproduce the relation it lifts is the wrong basis for the
+decision.
+
+Every check below is on the pair that used to be unreachable. -/
+
+private def legacySrcLabel : SecurityLabel :=
+  { confidentiality := .low, integrity := .trusted }
+
+private def legacyDstLabel : SecurityLabel :=
+  { confidentiality := .high, integrity := .untrusted }
+
+/-- A declassification policy authorizing exactly the disputed pair. -/
+private def legacyPairDeclPolicy : DeclassificationPolicy :=
+  { canDeclassify := fun s d =>
+      decide (s = embedLegacyLabel legacySrcLabel ∧ d = embedLegacyLabel legacyDstLabel) }
+
+private def legacyPairLabeling : LabelingContext :=
+  { objectLabelOf := fun _ => legacyDstLabel
+    threadLabelOf := fun _ => legacySrcLabel
+    endpointLabelOf := fun _ => legacyDstLabel
+    serviceLabelOf := fun _ => legacyDstLabel }
+
+private def runFaithfulLegacyLiftChecks : IO Unit := do
+  IO.println "--- §6.15 the faithful lift of the legacy lattice ---"
+
+  -- The pair is a genuine declassification: the legacy lattice denies it.
+  assertBool "the legacy lattice DENIES {low,trusted} -> {high,untrusted}"
+    (securityFlowsTo legacySrcLabel legacyDstLabel == false)
+
+  -- NEGATIVE (the defect, kept as a witness): linearOrder allowed it.
+  assertBool "NEGATIVE: linearOrder ALLOWS the pair - the over-approximation"
+    (DomainFlowPolicy.linearOrder.canFlow
+      (embedLegacyLabel legacySrcLabel) (embedLegacyLabel legacyDstLabel) == true)
+
+  -- The fix: the faithful policy agrees with the lattice.
+  assertBool "legacyLattice denies the pair, matching securityFlowsTo"
+    (DomainFlowPolicy.legacyLattice.canFlow
+      (embedLegacyLabel legacySrcLabel) (embedLegacyLabel legacyDstLabel) == false)
+
+  -- Faithfulness is not just this pair: agreement on ALL sixteen.
+  let allLabels : List SecurityLabel :=
+    [ { confidentiality := .low,  integrity := .untrusted }
+    , { confidentiality := .low,  integrity := .trusted }
+    , { confidentiality := .high, integrity := .untrusted }
+    , { confidentiality := .high, integrity := .trusted } ]
+  assertBool "legacyLattice agrees with securityFlowsTo on all 16 pairs"
+    (allLabels.all (fun s => allLabels.all (fun d =>
+      DomainFlowPolicy.legacyLattice.canFlow (embedLegacyLabel s) (embedLegacyLabel d)
+        == securityFlowsTo s d)))
+  -- NEGATIVE: linearOrder does NOT, and misses exactly one.
+  assertBool "NEGATIVE: linearOrder disagrees on exactly one of the 16 pairs"
+    ((allLabels.flatMap (fun s => allLabels.filterMap (fun d =>
+       if DomainFlowPolicy.linearOrder.canFlow (embedLegacyLabel s) (embedLegacyLabel d)
+            == securityFlowsTo s d then none else some (s, d)))).length == 1)
+
+  -- The consequence on the live decision: it now reaches the policy.
+  assertBool "the decision reaches the declassification policy and authorizes"
+    (match declassificationDecision (liftLegacyContext legacyPairLabeling)
+        legacyPairDeclPolicy (embedLegacyLabel legacySrcLabel)
+        (embedLegacyLabel legacyDstLabel) with
+      | .ok () => true | _ => false)
+
+  -- NEGATIVE: under the old policy the same call was refused as `.flowDenied`.
+  assertBool "NEGATIVE: with linearOrder the same request is refused .flowDenied"
+    (match declassificationDecision
+        { liftLegacyContext legacyPairLabeling with policy := .linearOrder }
+        legacyPairDeclPolicy (embedLegacyLabel legacySrcLabel)
+        (embedLegacyLabel legacyDstLabel) with
+      | .error .flowDenied => true | _ => false)
+
+  -- The faithful policy is still well-formed, so it is a drop-in.
+  assertBool "legacyLattice is reflexive on an embedded domain"
+    (DomainFlowPolicy.legacyLattice.canFlow
+      (embedLegacyLabel legacySrcLabel) (embedLegacyLabel legacySrcLabel) == true)
+  assertBool "legacyLattice is reflexive on a domain outside the embedding"
+    (DomainFlowPolicy.legacyLattice.canFlow ⟨99⟩ ⟨99⟩ == true)
+  assertBool "NEGATIVE: an unembedded domain flows nowhere else (fail-closed)"
+    (DomainFlowPolicy.legacyLattice.canFlow ⟨99⟩ ⟨0⟩ == false)
+
+  IO.println "  §6.15 PASS: the lifted policy reproduces the legacy lattice exactly"
+
 private def declassTraceFixturePath : String :=
   "tests/fixtures/smp_declassification_audit.expected"
 
@@ -4828,6 +4935,7 @@ def runSmpInformationFlowChecks : IO Unit := do
   runDeclassifyRunChecks
   runDeclassifyRenderingChecks
   runDeclassifyChainTopologyChecks
+  runFaithfulLegacyLiftChecks
   runDeclassTraceFixtureCheck
   runEndpointPolicyGateChecks
   IO.println "===================================="

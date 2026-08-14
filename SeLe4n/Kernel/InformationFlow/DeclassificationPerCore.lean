@@ -1319,8 +1319,11 @@ theorem liveEndpointOverride_is_not_a_declassification_basis
     DeclassificationPolicy.isDeclassificationAuthorized (liftLegacyContext ctx).policy declPolicy
       (embedLegacyLabel srcLabel) (embedLegacyLabel dstLabel) = false := by
   have hFlow := endpointFlowGate_implies_securityFlowsTo ctx endpointId srcLabel dstLabel hAdmitted
-  have hDomain := embedLegacyLabel_preserves_flow srcLabel dstLabel hFlow
-  simp [DeclassificationPolicy.isDeclassificationAuthorized, liftLegacyContext, hDomain]
+  -- PR #863 review: `liftLegacyContext` now carries the faithful
+  -- `legacyLattice`, so this rides the *equality* `legacyLattice_canFlow_embed`
+  -- rather than the one-directional `embedLegacyLabel_preserves_flow`.
+  simp [DeclassificationPolicy.isDeclassificationAuthorized, liftLegacyContext,
+    legacyLattice_canFlow_embed, hFlow]
 
 /-- WS-SM SM8.C.6 (Rule 3, live, **the fail-closed direction**): whatever an
 override admits, the live gate still demands the global check — so a deployment

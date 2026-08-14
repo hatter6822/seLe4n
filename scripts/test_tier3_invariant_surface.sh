@@ -2345,6 +2345,19 @@ run_check "INVARIANT" rg -n '^theorem enforcement_sufficiency_endpointReplyRecv'
 run_check "INVARIANT" rg -n '^theorem declassifyObjectFromCore_denied_preserves_state' SeLe4n/Kernel/InformationFlow/Declassification.lean
 run_check "INVARIANT" rg -n '^theorem authorizeDeclassificationOnCore_denied_preserves_state' SeLe4n/Kernel/InformationFlow/Declassification.lean
 run_check "INVARIANT" rg -n '^theorem enforcement_sufficiency_declassify' SeLe4n/Kernel/InformationFlow/Declassification.lean
+
+# SM8.C (PR #863 review): `liftLegacyContext` must lift the legacy lattice
+# FAITHFULLY, not as the `linearOrder` over-approximation it used to carry.  The
+# equality is the property; the counterexample is what stops a regression to the
+# linear order from building; and the NEGATIVE anchor forbids the old wiring.
+run_check "INVARIANT" rg -n '^def DomainFlowPolicy.legacyLattice' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem legacyLattice_canFlow_embed' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n '^theorem linearOrder_is_not_faithful_to_legacy' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n '^theorem DomainFlowPolicy.legacyLattice_wellFormed' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n 'policy := .legacyLattice' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_negative_check "INVARIANT" rg -n 'policy := .linearOrder' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n '^  runFaithfulLegacyLiftChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: linearOrder disagrees on exactly one of the 16 pairs' tests/SmpInformationFlowSuite.lean
 # The boundary count is pinned by a theorem; `enforcementBoundary`'s own
 # docstring must NOT restate it, which is how it came to read "33 entries"
 # across six expansions.
