@@ -182,11 +182,11 @@ Fourteen findings from this workstream's own review, all closed:
 Also corrected: `liftLegacyContext`'s docstring said it had no live consumer,
 which the `.declassify` arm makes false.
 
-**Tests**: `SmpInformationFlowSuite` 360 → 391 runtime assertions / 19 scenario
-groups (§6.9 the live syscall, §6.10 the fail-closed capacity bound, §6.11
-run-level completeness, §6.12 the tagged rendering and the collision it exists
-for, §6.13 chain topologies, §6.14 the golden trace), every group with a
-load-bearing negative.  Rust 812 → 819 HAL tests.  Trace fixture `[XVAL-002]`
+**Tests**: `SmpInformationFlowSuite` 360 → 393 runtime assertions, with six new
+scenario groups (§6.9 the live syscall, §6.10 the fail-closed capacity bound,
+§6.11 run-level completeness, §6.12 the tagged rendering and the collision it
+exists for, §6.13 chain topologies, §6.14 the golden trace) on top of SM8.C's
+§6.1–§6.8, every group with a load-bearing negative.  Rust 812 → 819 HAL tests.  Trace fixture `[XVAL-002]`
 30 → 31 variants; everything else byte-identical.
 
 **AK7 anchor**: every counter **unchanged** against
@@ -196,6 +196,80 @@ sorry/axiom 0).  Expected: the cut adds no object-store read at all — the live
 transition's only state access is `getObjectType?` (the AL2-A/AN10-B accessor)
 and a `SystemState` field, so it introduces neither a raw match nor a raw
 `tid.toObjId` lookup.
+
+### Follow-up within v0.33.8 — every suite run, and the enforcement families completed
+
+The landing cut was verified against the SMP information-flow suite, the Rust
+workspace and Tiers 0–1; it had **not** been run against the whole Lean suite
+surface.  Doing so — in parallel, which matters, because Tier 2 registers
+every suite but runs them sequentially and aborts at the first failure, so nine
+independent breakages surface one per run — found nine suites red, in four
+classes, none of them a kernel defect but every one a claim the tree was making
+and no longer keeping:
+
+* **Stale boundary counts.**  `enforcementBoundary` grew to 39 entries with the
+  live declassification, and `tests/InformationFlowSuite.lean` pinned 38 total
+  and 11 policy-gated at five separate sites.  Corrected to 39 / 12, and — the
+  actual fix — `enforcementBoundary`'s docstring no longer restates the count at
+  all.  It had read "(33 entries)" through six subsequent expansions, which is
+  what a number repeated in prose does; `enforcementBoundaryExtended_count` is
+  the authority and a Tier-3 negative anchor now forbids the docstring form that
+  went stale.  The same 33/11/18 figures were mirrored in `DEVELOPMENT.md`, the
+  spec, and two GitBook chapters; all corrected to 39 / 12 / 23 / 4.
+* **Stale lock-set inventory counts.**  `tests/LockSetSuite.lean` pinned the
+  totals in two places — runtime assertions *and* `decide` examples — and only
+  the runtime pair was reachable from a grep for the assertion text.  103 / 31 / 31.
+* **The syscall-decoder boundary.**  `.declassify` is `SyscallId` 30, so 30 is
+  now valid and the first invalid is 31; `tests/DecodingSuite.lean` pinned the
+  old boundary twice and additionally gains a positive round-trip for the new id.
+* **`FrozenSystemState` literals.**  The trail is a **required** frozen field —
+  deliberately, so a silent drop is a compile error — and six test files build
+  the structure literally.  The landing cut updated the one in the SMP suite and
+  missed five.  The field being required is what turned that into nine red
+  suites rather than five silently-empty trails, which is the design working.
+
+Also corrected: `tests/SmpSurfaceAnchors.lean` pinned the per-core boundary at
+54 (now 55).
+
+**The enforcement families, completed.**  Fixing the counts surfaced a claim
+that was false in the direction that matters: `denied_preserves_state_*` and
+`enforcement_sufficiency_*` were documented as covering "all 11 policy-gated
+operations" and covered **seven**.  `endpointCallChecked` (U5-B),
+`endpointReplyChecked` (U5-C), `notificationWaitChecked` (V2-A) and
+`endpointReplyRecvChecked` (V2-C) landed after the families were written and
+never joined them, so a reader asking whether *every* gate fails closed, and
+whether any gate has a third behaviour beyond delegate-or-deny, had no theorem
+for a third of them.  Per the implement-the-improvement rule the remedy is the
+theorems, not a smaller claim: eight new members in
+`Enforcement/Soundness.lean`, plus the declassification's own in
+`Declassification.lean`, take both families to cover all **12** policy-gated
+entries.  (`enforcement_sufficiency_*` has exactly twelve declarations;
+`*_denied_preserves_state` has thirteen, because the declassification
+contributes both `declassifyObjectFromCore` — the boundary's named entry,
+covering all three of its refusal modes: an idle core, an absent target, and a
+declined decision — and `authorizeDeclassificationOnCore`, the gate it wraps.)  `enforcement_sufficiency_declassify` is stated as a **trichotomy**,
+since a fail-closed audit-capacity refusal is a third outcome, and its third arm
+returns the decision's error *verbatim* so a future arm cannot be silently
+remapped onto an existing discriminant.
+`endpointReplyRecvChecked_denied_preserves_state` takes a disjunction: either
+leg refusing sinks the whole operation, so there is no partial commit.
+
+The four wrappers are exercised at runtime as well as anchored, and that found
+the direction trap the anchors would not have: the notification gate runs
+**object → waiter**, the reverse of the send/call gates, so the fixture that
+denies a send *allows* a wait.  The suite now carries both directions, with the
+upward read (public notification → secret waiter) as the load-bearing negative.
+
+Two of this release's own figures were wrong and are corrected here: the suite
+reports **393** PASS assertions, not 391, and SM8.C's scenario groups are the
+fourteen of §6.1–§6.14 (six of them new in the completion cut), not "19 groups".
+Both were counted by hand and neither was re-counted after the last edits — the
+same failure mode as the boundary docstring, one directory over.
+
+Zero sorry/axiom across all three modified Lean modules (245 environment
+constants swept by `check_module_axioms.py`, which enumerates Lean's elaborated
+environment rather than scanning source).
+No behavioural change: theorems, test expectations and prose only.
 
 Refs: docs/planning/SMP_INFORMATION_FLOW_PLAN.md §5 SM8.C
 

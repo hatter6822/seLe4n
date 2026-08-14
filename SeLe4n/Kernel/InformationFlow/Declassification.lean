@@ -607,4 +607,111 @@ theorem declassifyObjectFromCore_audit_log_full
   exact authorizeDeclassificationOnCore_audit_log_full ctx declPolicy c (ctx.threadDomainOf tid)
     (ctx.objectDomainOf targetId) targetId st hAuthorized hFull
 
+-- ============================================================================
+-- WS-SM SM8.C: the declassification's members of the enforcement families
+-- ============================================================================
+
+/-! `enforcementBoundary` classifies `declassifyObjectFromCore` as policy-gated,
+and the two families every other policy-gated entry belongs to state that a
+denied operation changes nothing and that a gate has no behaviour beyond
+delegate-or-deny.  The declassification is the one entry for which
+"delegate-or-deny" is a *trichotomy* rather than a dichotomy — a fail-closed
+capacity refusal is a third outcome — so the sufficiency theorem below is
+stated with three arms, and the point of stating it is that there is no fourth. -/
+
+/-- WS-SM SM8.C: a refused declassification changes no state.
+
+Stronger than it looks, because the refusal is the *only* thing that can happen
+when the gate says no: `authorizeDeclassificationOnCore` consults the decision
+before it reads the trail's occupancy, so a refused caller neither writes an
+entry nor consumes capacity. -/
+theorem authorizeDeclassificationOnCore_denied_preserves_state
+    (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
+    (c : CoreId) (srcDomain dstDomain : SecurityDomain)
+    (targetId : SeLe4n.ObjId) (st : SystemState) (err : KernelError)
+    (hDeny : declassificationDecision ctx declPolicy srcDomain dstDomain = .error err) :
+    ¬∃ st', authorizeDeclassificationOnCore ctx declPolicy c srcDomain dstDomain targetId st
+      = .ok ((), st') := by
+  rintro ⟨st', h⟩
+  obtain ⟨_, hDec⟩ :=
+    (authorizeDeclassificationOnCore_ok_iff ctx declPolicy c srcDomain dstDomain
+      targetId st).mp ⟨st', h⟩
+  rw [hDeny] at hDec
+  simp at hDec
+
+/-- WS-SM SM8.C: **enforcement sufficiency for the declassification** — the live
+transition does exactly one of three things, and nothing else.
+
+1. The policy authorizes it and the trail has room: it records exactly one event
+   and writes no other field.
+2. The policy authorizes it and the trail is full: it refuses with
+   `.auditLogCapacityExceeded`, leaving the state untouched — the fail-closed
+   arm, which is why a downgrade the kernel authorized is never unrecorded.
+3. The policy refuses: the decision's own error is returned verbatim, so the
+   caller sees `.flowDenied` (the flow was allowed outright, so no
+   declassification was needed) or `.declassificationDenied` (no rule permits
+   it) rather than a code that conflates the two.
+
+Arm 3 is stated as "the decision's error, verbatim" rather than enumerating the
+two discriminants, so that a future decision arm cannot be silently remapped
+onto an existing code. -/
+theorem enforcement_sufficiency_declassify
+    (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
+    (c : CoreId) (srcDomain dstDomain : SecurityDomain)
+    (targetId : SeLe4n.ObjId) (st : SystemState) :
+    (declassificationDecision ctx declPolicy srcDomain dstDomain = .ok () ∧
+       st.declassificationAuditLog.length < maxDeclassificationAuditEntries ∧
+       authorizeDeclassificationOnCore ctx declPolicy c srcDomain dstDomain targetId st =
+         .ok ((), { st with declassificationAuditLog :=
+           declassifyStoreTrail c srcDomain dstDomain targetId st })) ∨
+    (declassificationDecision ctx declPolicy srcDomain dstDomain = .ok () ∧
+       maxDeclassificationAuditEntries ≤ st.declassificationAuditLog.length ∧
+       authorizeDeclassificationOnCore ctx declPolicy c srcDomain dstDomain targetId st =
+         .error .auditLogCapacityExceeded) ∨
+    (∃ err, declassificationDecision ctx declPolicy srcDomain dstDomain = .error err ∧
+       authorizeDeclassificationOnCore ctx declPolicy c srcDomain dstDomain targetId st =
+         .error err) := by
+  cases hDec : declassificationDecision ctx declPolicy srcDomain dstDomain with
+  | error err =>
+    refine Or.inr (Or.inr ⟨err, rfl, ?_⟩)
+    unfold authorizeDeclassificationOnCore
+    rw [hDec]
+  | ok u =>
+    cases u
+    by_cases hRoom : st.declassificationAuditLog.length < maxDeclassificationAuditEntries
+    · refine Or.inl ⟨rfl, hRoom, ?_⟩
+      unfold authorizeDeclassificationOnCore
+      rw [hDec, recordDeclassificationChecked_eq_record _ _ hRoom]
+    · have hFull : maxDeclassificationAuditEntries ≤ st.declassificationAuditLog.length :=
+        Nat.not_lt.mp hRoom
+      refine Or.inr (Or.inl ⟨rfl, hFull, ?_⟩)
+      unfold authorizeDeclassificationOnCore
+      rw [hDec, recordDeclassificationChecked_eq_none _ _ hFull]
+
+/-- WS-SM SM8.C: the family's member for the **boundary's named entry**.
+
+`enforcementBoundary` classifies `declassifyObjectFromCore`, not the inner gate,
+so the family owes a theorem about that name.  It is the entry point's own
+denial-preservation, and it covers all three ways the entry point refuses: an
+idle core, an absent target, and a decision the policy declines — none of which
+writes a field.
+
+The hypothesis is stated against the *resolved* subject, which is the only form
+available: the entry point reads the source domain off whichever thread the core
+is running, so a caller cannot name a pair for which to assume denial. -/
+theorem declassifyObjectFromCore_denied_preserves_state
+    (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
+    (c : CoreId) (targetId : SeLe4n.ObjId) (st : SystemState)
+    (hDeny : ∀ tid, st.scheduler.currentOnCore c = some tid →
+      ∃ err, declassificationDecision ctx declPolicy (ctx.threadDomainOf tid)
+        (ctx.objectDomainOf targetId) = .error err) :
+    ¬∃ st', declassifyObjectFromCore ctx declPolicy c targetId st = .ok ((), st') := by
+  rintro ⟨st', hStep⟩
+  obtain ⟨⟨tid, hCur⟩, ⟨ty, hTy⟩⟩ :=
+    declassifyObjectFromCore_ok_resolved ctx declPolicy c targetId st st' hStep
+  obtain ⟨err, hErr⟩ := hDeny tid hCur
+  rw [declassifyObjectFromCore_eq_onCore ctx declPolicy c targetId st tid ty hCur hTy] at hStep
+  exact authorizeDeclassificationOnCore_denied_preserves_state ctx declPolicy c
+    (ctx.threadDomainOf tid) (ctx.objectDomainOf targetId) targetId st err hErr ⟨st', hStep⟩
+
 end SeLe4n.Kernel

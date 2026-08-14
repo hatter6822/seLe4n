@@ -589,7 +589,6 @@
  "h12": {
   "SeLe4n/Kernel/Architecture/Invariant.lean": 6,
   "SeLe4n/Kernel/CrossSubsystemPerCore.lean": 2,
-  "SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean": 21,
   "SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean": 2,
   "SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean": 15,
   "SeLe4n/Kernel/Scheduler/Operations/Preservation.lean": 4,
@@ -676,7 +675,6 @@
   "SeLe4n/Kernel/Architecture/Invariant.lean": 6
  },
  "h23": {
-  "SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean": 21,
   "SeLe4n/Kernel/Scheduler/Operations/Preservation.lean": 4,
   "SeLe4n/Kernel/Scheduler/Operations/Selection.lean": 5
  },

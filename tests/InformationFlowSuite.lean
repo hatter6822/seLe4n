@@ -254,6 +254,27 @@ def test_schedContext_yield_self_returns_state_unchanged : IO Bool := do
 #check @SeLe4n.Kernel.objects_insert_preserves_projection_of_proj_eq
 #check @SeLe4n.Kernel.setThreadCpuAffinity_preserves_projection_unconditional
 
+-- WS-SM SM8.C: the two enforcement families, completed.  Both were documented
+-- as covering "all policy-gated operations" while covering seven of twelve —
+-- `endpointCallChecked` (U5-B), `endpointReplyChecked` (U5-C),
+-- `notificationWaitChecked` (V2-A) and `endpointReplyRecvChecked` (V2-C) landed
+-- after the families were written and never joined them, and SM8.C's own
+-- `declassifyObjectFromCore` would have been the sixth omission.  Anchored here
+-- rather than only counted, so that deleting one breaks this file's elaboration.
+#check @SeLe4n.Kernel.endpointCallChecked_denied_preserves_state
+#check @SeLe4n.Kernel.enforcement_sufficiency_endpointCall
+#check @SeLe4n.Kernel.endpointReplyChecked_denied_preserves_state
+#check @SeLe4n.Kernel.enforcement_sufficiency_endpointReply
+#check @SeLe4n.Kernel.notificationWaitChecked_denied_preserves_state
+#check @SeLe4n.Kernel.enforcement_sufficiency_notificationWait
+#check @SeLe4n.Kernel.endpointReplyRecvChecked_denied_preserves_state
+#check @SeLe4n.Kernel.enforcement_sufficiency_endpointReplyRecv
+-- The declassification's members: its sufficiency is a *trichotomy*, because a
+-- fail-closed audit-capacity refusal is a third outcome beyond delegate-or-deny.
+#check @SeLe4n.Kernel.declassifyObjectFromCore_denied_preserves_state
+#check @SeLe4n.Kernel.authorizeDeclassificationOnCore_denied_preserves_state
+#check @SeLe4n.Kernel.enforcement_sufficiency_declassify
+
 /-- AK6-E (NI-H01): `niStepConstructorCoverage` is the constructor-level
 discoverability index for `KernelOperation`.  Beyond the compile-time
 `#check` above, this runtime test exercises the theorem on a concrete
@@ -706,10 +727,14 @@ def runInformationFlowChecks : IO Unit := do
   -- WS-E5/M-07: Enforcement boundary classification checks
   -- =========================================================================
 
-  -- 11 policy-gated ops: 9 original + notificationWaitChecked + endpointReplyRecvChecked
-  expect "enforcement boundary: 11 policy-gated operations defined"
+  -- 12 policy-gated ops: 9 original + notificationWaitChecked + endpointReplyRecvChecked
+  -- + declassifyObjectFromCore (WS-SM SM8.C — the live declassification entry
+  -- point; policy-gated because it consults the declassification policy after
+  -- the ordinary flow check refuses, which is the only path that may lower a
+  -- label).
+  expect "enforcement boundary: 12 policy-gated operations defined"
     ((SeLe4n.Kernel.enforcementBoundary.filter (fun c =>
-      match c with | .policyGated _ => true | _ => false)).length == 11)
+      match c with | .policyGated _ => true | _ => false)).length == 12)
 
   expect "enforcement boundary: capability-only operations defined"
     ((SeLe4n.Kernel.enforcementBoundary.filter (fun c =>
@@ -719,12 +744,14 @@ def runInformationFlowChecks : IO Unit := do
     ((SeLe4n.Kernel.enforcementBoundary.filter (fun c =>
       match c with | .readOnly _ => true | _ => false)).length > 0)
 
-  -- 38 classified ops: 37 prior + vspaceUnifyInstructionPage (WS-SM SM7.D — the
-  -- user-facing code-publication path, capability-only), on top of
-  -- mintReplyCapWithCdt (WS-SM SM6.D / PR #822 Phase H,
-  -- capability-only — derives a reply cap from an object cap to a retyped Reply).
-  expect "enforcement boundary: total 38 classified operations"
-    (SeLe4n.Kernel.enforcementBoundary.length == 38)
+  -- 39 classified ops: 38 prior + declassifyObjectFromCore (WS-SM SM8.C — the
+  -- live declassification entry point, policy-gated), on top of
+  -- vspaceUnifyInstructionPage (WS-SM SM7.D — the user-facing code-publication
+  -- path, capability-only) and mintReplyCapWithCdt (WS-SM SM6.D / PR #822
+  -- Phase H, capability-only — derives a reply cap from an object cap to a
+  -- retyped Reply).
+  expect "enforcement boundary: total 39 classified operations"
+    (SeLe4n.Kernel.enforcementBoundary.length == 39)
 
   -- Verify enforcement boundary: denied flows produce errors
   let deniedSendResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx ⟨10⟩ ⟨1⟩ testMsg default default default publicEndpointState
@@ -741,6 +768,61 @@ def runInformationFlowChecks : IO Unit := do
       | .ok (_, s₁), .ok ((), s₂) => s₁.objects[(⟨10⟩ : SeLe4n.ObjId)]? == s₂.objects[(⟨10⟩ : SeLe4n.ObjId)]?
       | .error e₁, .error e₂ => e₁ = e₂
       | _, _ => false)
+
+  -- WS-SM SM8.C: the four wrappers that joined the `_denied_preserves_state` /
+  -- `enforcement_sufficiency_*` families in this cut, exercised on concrete
+  -- values.  The theorems are anchored by `#check` at module scope; these
+  -- checks are the runtime half — a wrapper that stopped denying, or started
+  -- denying with a different discriminant, fails here rather than only in a
+  -- proof a reader has to go find.
+  let deniedCall :=
+    SeLe4n.Kernel.endpointCallChecked secretSenderCtx ⟨10⟩ ⟨1⟩ testMsg default default default
+      publicEndpointState
+  expect "SM8.C: endpointCallChecked denies a cross-domain call"
+    (match deniedCall with | .error .flowDenied => true | _ => false)
+  expect "SM8.C: the denied call left the endpoint untouched"
+    (match deniedCall with
+      | .error _ => true
+      | .ok (_, st') => st'.objects[(⟨10⟩ : SeLe4n.ObjId)]? ==
+          publicEndpointState.objects[(⟨10⟩ : SeLe4n.ObjId)]?)
+
+  let deniedReply := SeLe4n.Kernel.endpointReplyChecked secretSenderCtx ⟨1⟩ ⟨2⟩ testMsg
+    publicEndpointState
+  expect "SM8.C: endpointReplyChecked denies a cross-domain reply"
+    (match deniedReply with | .error .flowDenied => true | _ => false)
+
+  -- The notification gate runs **object → waiter**, the opposite direction to
+  -- the send/call gates, so `secretSenderCtx` (a secret *thread*) allows it —
+  -- denying it needs a secret *notification*.  Getting this wrong is exactly
+  -- how a direction-reversed gate would slip through a suite that reused one
+  -- fixture for every wrapper.
+  let secretNotificationCtx : SeLe4n.Kernel.LabelingContext :=
+    { objectLabelOf := fun oid => if oid = ⟨10⟩ then secretLabel else publicLabel
+      threadLabelOf := fun _ => publicLabel
+      endpointLabelOf := fun _ => publicLabel
+      serviceLabelOf := fun _ => publicLabel }
+  let deniedWait := SeLe4n.Kernel.notificationWaitChecked secretNotificationCtx ⟨10⟩ ⟨1⟩
+    publicEndpointState
+  expect "SM8.C: notificationWaitChecked denies a cross-domain wait"
+    (match deniedWait with | .error .flowDenied => true | _ => false)
+  -- and the direction is load-bearing: a secret *thread* waiting on a public
+  -- notification is an upward read, which the gate must allow.
+  let allowedUpwardWait := SeLe4n.Kernel.notificationWaitChecked secretSenderCtx ⟨10⟩ ⟨1⟩
+    publicEndpointState
+  expect "SM8.C: notificationWaitChecked allows a public notification → secret waiter"
+    (match allowedUpwardWait with | .error .flowDenied => false | _ => true)
+
+  let deniedReplyRecv := SeLe4n.Kernel.endpointReplyRecvChecked secretSenderCtx ⟨10⟩ ⟨1⟩ ⟨2⟩
+    testMsg none publicEndpointState
+  expect "SM8.C: endpointReplyRecvChecked denies when a leg refuses"
+    (match deniedReplyRecv with | .error .flowDenied => true | _ => false)
+
+  -- The load-bearing negative: the same wrappers do **not** deny under a
+  -- same-domain context, so the four checks above are testing the gate rather
+  -- than a fixture that refuses everything.
+  let allowedWait := SeLe4n.Kernel.notificationWaitChecked publicCtx ⟨10⟩ ⟨1⟩ publicEndpointState
+  expect "SM8.C: notificationWaitChecked does not deny a same-domain wait"
+    (match allowedWait with | .error .flowDenied => false | _ => true)
 
   IO.println "enforcement boundary checks passed"
   IO.println "all WS-E5 information-flow maturity checks passed"
@@ -1090,8 +1172,8 @@ def runInformationFlowChecks : IO Unit := do
   let extendedBoundary := SeLe4n.Kernel.enforcementBoundaryExtended
   let policyGatedCount := extendedBoundary.filter (fun e => match e with
     | .policyGated _ => true | _ => false) |>.length
-  expect "enforcement boundary has 11 policy-gated ops"
-    (policyGatedCount = 11)
+  expect "enforcement boundary has 12 policy-gated ops"
+    (policyGatedCount = 12)
 
   IO.println "enforcement boundary classification verified"
 
@@ -1226,14 +1308,14 @@ def runInformationFlowChecks : IO Unit := do
   let pgCount := boundary.filter (fun c => match c with | .policyGated _ => true | _ => false) |>.length
   let coCount := boundary.filter (fun c => match c with | .capabilityOnly _ => true | _ => false) |>.length
   let roCount := boundary.filter (fun c => match c with | .readOnly _ => true | _ => false) |>.length
-  expect "enforcement boundary has 11 policy-gated"
-    (pgCount = 11)
+  expect "enforcement boundary has 12 policy-gated"
+    (pgCount = 12)
   expect "enforcement boundary has 23 capability-only"
     (coCount = 23)
   expect "enforcement boundary has 4 read-only"
     (roCount = 4)
-  expect "enforcement boundary total is 38"
-    (boundary.length = 38)
+  expect "enforcement boundary total is 39"
+    (boundary.length = 39)
 
   IO.println "enforcement boundary completeness verified"
 
@@ -1310,8 +1392,8 @@ def runInformationFlowChecks : IO Unit := do
   IO.println "default labeling context insecurity verified"
 
   -- V6-L: Extended boundary matches canonical
-  expect "enforcementBoundaryExtended has 38 entries"
-    (SeLe4n.Kernel.enforcementBoundaryExtended.length = 38)
+  expect "enforcementBoundaryExtended has 39 entries"
+    (SeLe4n.Kernel.enforcementBoundaryExtended.length = 39)
   expect "extended boundary matches canonical length"
     (SeLe4n.Kernel.enforcementBoundaryExtended.length = SeLe4n.Kernel.enforcementBoundary.length)
 

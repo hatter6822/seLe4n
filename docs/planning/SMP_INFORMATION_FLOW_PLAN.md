@@ -1212,7 +1212,8 @@ the reader-multiplicity / writer-exclusion theorems are SM8.D (whose D.1–D.3
 this cut partly pre-empts and partly falsifies — see the note under that
 table, since the erasure means there is no lock state left to be visible);
 promoting the
-`withLockSet` boundary entry into the canonical `enforcementBoundary` (38 → 39)
+`withLockSet` boundary entry into the canonical `enforcementBoundary` (39 → 40
+now that SM8.C's completion cut took 39 for `declassifyObjectFromCore`)
 and the `smp_information_flow.expected` fixture are SM8.E.
 
 #### Round 35 — the per-core routing allowlist reaches zero
@@ -1599,6 +1600,45 @@ and `LabelingContext.declassificationPolicy` defaults to deny-all.
    gate — which is why nothing enforces on it).  Closing it needs a provenance
    relation on the object store.
 
+#### Follow-up within v0.33.8 — the whole suite surface, and the enforcement families
+
+The completion cut above was verified against `smp_information_flow_suite`, the
+Rust workspace and Tiers 0–1.  It was **not** run against every Lean suite, and
+doing so found nine red in four classes — stale `enforcementBoundary` counts,
+stale lock-set inventory counts (pinned twice per figure, as runtime assertions
+*and* `decide` examples), the syscall-decoder boundary, and five
+`FrozenSystemState` literals missing the now-required trail field.  None was a
+kernel defect; each was a claim the tree had stopped keeping.
+
+The lesson is recorded here rather than only fixed: **a cut that changes a count
+must run the whole suite surface, in parallel**.  Tier 2 does register every
+suite, but it runs them sequentially and **aborts at the first failure**, so a
+cut with nine independent breakages surfaces exactly one per run — nine
+sequential runs to learn what one parallel sweep reports at once.  The counts
+are also pinned in more places than a grep for one assertion's text will find:
+`LockSetSuite` pinned each figure twice, as a runtime assertion *and* a `decide`
+example, and only the first shape matched the obvious search.
+
+Note that a parallel `lake env lean --run` sweep is not a strict superset of
+Tier 2, which builds most suites as executables: the interpreted path does not
+exercise the C-codegen bracket-depth limit described in `CLAUDE.md`.  Run both.
+
+`enforcementBoundary`'s docstring no longer restates its own count — it had read
+"(33 entries)" through six expansions.  `enforcementBoundaryExtended_count` is
+the authority and a Tier-3 negative anchor forbids the stale form.
+
+**The enforcement families are now complete.**  `denied_preserves_state_*` and
+`enforcement_sufficiency_*` were documented as covering "all 11 policy-gated
+operations" while covering seven: `endpointCallChecked` (U5-B),
+`endpointReplyChecked` (U5-C), `notificationWaitChecked` (V2-A) and
+`endpointReplyRecvChecked` (V2-C) landed after the families were written and
+never joined.  Per the implement-the-improvement rule the remedy is the
+theorems; with the declassification's own, both families now cover all twelve
+policy-gated entries.  `enforcement_sufficiency_declassify` is a
+trichotomy — a fail-closed audit-capacity refusal is a third outcome — and its
+third arm returns the decision's error verbatim so a future arm cannot be
+remapped onto an existing discriminant.
+
 ### SM8.D — Information flow under fine locks (6 sub-tasks)
 
 | Sub | Description | Theorem | Est |
@@ -1644,7 +1684,7 @@ contention scenarios are timing scenarios.
 |-----|-------------|-------|-----|
 | SM8.E.1 | Surface anchors for ~18 SM8 theorems | `tests/SmpSurfaceAnchors.lean` | S |
 | SM8.E.2 | `smp_information_flow.expected` fixture | M |
-| SM8.E.3 | Update `enforcementBoundaryExtended` count 38 → 39 (re-anchored at SM8.A) | Theorem | T |
+| SM8.E.3 | Update `enforcementBoundaryExtended` count 39 → 40 for the `withLockSet` bracket (SM8.C's completion cut already took 38 → 39 for `declassifyObjectFromCore`, so this row is now the lock-bracket entry alone) | Theorem | T |
 
 ## 6. Verification strategy
 

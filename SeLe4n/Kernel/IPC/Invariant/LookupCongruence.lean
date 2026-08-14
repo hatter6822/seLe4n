@@ -484,20 +484,20 @@ theorem symm {s1 s2 : SystemState} (h : OffSchedulerAgrees s1 s2) :
 
 /-- Transitivity. -/
 theorem trans {s1 s2 s3 : SystemState}
-    (h12 : OffSchedulerAgrees s1 s2) (h23 : OffSchedulerAgrees s2 s3) :
+    (hFirst : OffSchedulerAgrees s1 s2) (hSecond : OffSchedulerAgrees s2 s3) :
     OffSchedulerAgrees s1 s3 :=
-  ⟨fun oid => (h23.objects oid).trans (h12.objects oid), h23.machine.trans h12.machine,
-   h23.objectIndex.trans h12.objectIndex, h23.objectIndexSet.trans h12.objectIndexSet,
-   h23.services.trans h12.services, h23.irqHandlers.trans h12.irqHandlers,
-   h23.lifecycle.trans h12.lifecycle, h23.asidTable.trans h12.asidTable,
-   h23.interfaceRegistry.trans h12.interfaceRegistry,
-   h23.serviceRegistry.trans h12.serviceRegistry, h23.cdt.trans h12.cdt,
-   h23.cdtSlotNode.trans h12.cdtSlotNode, h23.cdtNodeSlot.trans h12.cdtNodeSlot,
-   h23.cdtNextNode.trans h12.cdtNextNode, h23.scThreadIndex.trans h12.scThreadIndex,
-   h23.tlb.trans h12.tlb, h23.objStoreLock.trans h12.objStoreLock,
-   h23.perCoreTlb.trans h12.perCoreTlb, h23.perCoreICache.trans h12.perCoreICache,
-   h23.pendingIcacheMaintenance.trans h12.pendingIcacheMaintenance,
-   h23.declassificationAuditLog.trans h12.declassificationAuditLog⟩
+  ⟨fun oid => (hSecond.objects oid).trans (hFirst.objects oid), hSecond.machine.trans hFirst.machine,
+   hSecond.objectIndex.trans hFirst.objectIndex, hSecond.objectIndexSet.trans hFirst.objectIndexSet,
+   hSecond.services.trans hFirst.services, hSecond.irqHandlers.trans hFirst.irqHandlers,
+   hSecond.lifecycle.trans hFirst.lifecycle, hSecond.asidTable.trans hFirst.asidTable,
+   hSecond.interfaceRegistry.trans hFirst.interfaceRegistry,
+   hSecond.serviceRegistry.trans hFirst.serviceRegistry, hSecond.cdt.trans hFirst.cdt,
+   hSecond.cdtSlotNode.trans hFirst.cdtSlotNode, hSecond.cdtNodeSlot.trans hFirst.cdtNodeSlot,
+   hSecond.cdtNextNode.trans hFirst.cdtNextNode, hSecond.scThreadIndex.trans hFirst.scThreadIndex,
+   hSecond.tlb.trans hFirst.tlb, hSecond.objStoreLock.trans hFirst.objStoreLock,
+   hSecond.perCoreTlb.trans hFirst.perCoreTlb, hSecond.perCoreICache.trans hFirst.perCoreICache,
+   hSecond.pendingIcacheMaintenance.trans hFirst.pendingIcacheMaintenance,
+   hSecond.declassificationAuditLog.trans hFirst.declassificationAuditLog⟩
 
 end OffSchedulerAgrees
 

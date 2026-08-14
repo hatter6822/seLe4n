@@ -64,10 +64,16 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId)
 -- lock-contention timing channel §2 registers as CC-5.
 --
 -- The plan's SM8.B.6 figure ("23 entries") was written against the `v0.31.2`
--- audited cut.  The live canonical boundary is 38 entries
--- (`enforcementBoundaryExtended_count`), so the per-core boundary is one more —
--- re-anchored against the theorem, exactly as the plan's own SM8.A note
--- directs.  This module deliberately introduces a *separate* list rather than
+-- audited cut.  The live canonical boundary's size is **not restated here** —
+-- read `enforcementBoundaryExtended_count`, and this list's own size
+-- `enforcementBoundaryPerCore_count` — because a figure repeated in a comment
+-- goes stale the first time the boundary grows without a comment edit, which is
+-- what happened to this sentence (it read "38 entries" through the WS-SM SM8.C
+-- expansion) and to `enforcementBoundary`'s own docstring before it.  The
+-- per-core list is the canonical one plus the 2PL bracket and the cross-core
+-- wrappers; `enforcementBoundaryPerCore_is_complete_crossCore` is what pins the
+-- relationship, rather than a pair of numbers a reader must compare.
+-- This module deliberately introduces a *separate* list rather than
 -- editing the canonical one: SM8.E.3 is the sub-task that promotes the entry
 -- into `enforcementBoundary` itself, and doing it here would move a count that
 -- SM8.E has still to reconcile.

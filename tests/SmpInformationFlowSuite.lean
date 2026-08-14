@@ -959,6 +959,15 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @declassifyObjectFromCore_never_unaudited
 #check @declassifyObjectFromCore_authorized
 #check @declassifyObjectFromCore_audit_log_full
+-- The declassification's members of the two enforcement families.  Its
+-- sufficiency is a *trichotomy* — a fail-closed audit-capacity refusal is a
+-- third outcome beyond delegate-or-deny — and the denial-preservation is
+-- stated twice on purpose: once at `declassifyObjectFromCore`, the name
+-- `enforcementBoundary` classifies (covering all three of its refusal modes),
+-- and once at the gate that entry wraps.
+#check @declassifyObjectFromCore_denied_preserves_state
+#check @authorizeDeclassificationOnCore_denied_preserves_state
+#check @enforcement_sufficiency_declassify
 #check @authorizeDeclassificationOnCore_preserves_projectionOnCore
 #check @authorizeDeclassificationOnCore_perCore_NI
 #check @declassifyObjectFromCore_recorded_in_own_view

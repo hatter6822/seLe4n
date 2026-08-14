@@ -72,8 +72,10 @@ in Projection.lean) is intentionally retained.
 
 **WS-T/T6 additions (v0.20.5) — Architecture & Hardware:**
 
-- `checkedDispatch_flowDenied_preserves_state` — proves all 3 policy-gated
-  wrappers preserve state on flow denial (M-IF-1).
+- `checkedDispatch_flowDenied_preserves_state` — proves that the 3 wrappers it
+  names preserve state on flow denial (M-IF-1).  The per-wrapper family
+  `*_denied_preserves_state` is the exhaustive one, and since WS-SM SM8.C it
+  covers all 12 policy-gated entries.
 - `mmioRead`/`mmioWrite` with 4 correctness theorems (M-NEW-7/8).
 - `mmioWrite32`/`mmioWrite64`/`mmioWrite32W1C` with full byte-range validation (AF3-B); `_rejects_range_overflow` theorems for end-of-range rejection.
 - `MmioReadOutcome` inductive encoding volatile/ram/w1c/fifo read-kind constraints (X1-D).
@@ -1425,7 +1427,7 @@ v0.13.5 gap closure (3 theorems + 1 bridge):
 **M-07 — Enforcement boundary specification:**
 
 - `EnforcementClass` inductive (`policyGated`/`capabilityOnly`/`readOnly`),
-- `enforcementBoundary` — exhaustive 33-entry classification table (11 policy-gated, 18 capability-only, 4 read-only; Z8-M added 3 SchedContext, D1 added 2 thread lifecycle, D2 added 2 priority management, D3 added 1 IPC buffer, AC4-D added 3 VSpace/service capability-only operations),
+- `enforcementBoundary` — exhaustive 39-entry classification table (12 policy-gated, 23 capability-only, 4 read-only; count pinned by `enforcementBoundaryExtended_count`; Z8-M added 3 SchedContext, D1 added 2 thread lifecycle, D2 added 2 priority management, D3 added 1 IPC buffer, AC4-D added 3 VSpace/service capability-only operations),
 - `enforcementBoundaryExtended` — definitional alias of `enforcementBoundary` (W2-G, previously duplicate list),
 - `enforcementBoundaryExtended_eq_canonical` — element-wise equality proof (W2-G),
 - `enforcementBoundaryComplete_counts` — compile-time count witness (11+18+4=33, V6-F/Z8-M/D1/D2/D3/AC4-D),
@@ -1436,8 +1438,8 @@ v0.13.5 gap closure (3 theorems + 1 bridge):
 - `syscallIdToEnforcementName` — SyscallId → String bridge mapping to enforcement boundary names (AC4-D),
 - `enforcementBoundaryComplete` — Bool check that every SyscallId maps to a boundary entry (AC4-D),
 - `enforcementBoundary_is_complete` — `decide` compile-time completeness theorem (AC4-D/IF-01; AF4-A: upgraded from `native_decide` to kernel-checked `decide`),
-- `denied_preserves_state_*` — denial preservation for all 11 policy-gated operations,
-- `enforcement_sufficiency_*` — complete-disjunction coverage proofs for all 11 policy-gated operations.
+- `*_denied_preserves_state` — denial preservation for all 12 policy-gated operations, in 13 declarations (the declassification contributes two: `declassifyObjectFromCore`, the boundary's named entry, and `authorizeDeclassificationOnCore`, the gate it wraps).  WS-SM SM8.C completed the family: it had covered 7 while the text claimed all of them, so the four IPC/notification wrappers that landed after it was written joined it, together with the declassification,
+- `enforcement_sufficiency_*` — complete-disjunction coverage proofs for the same 12 operations; the declassification's arm (`enforcement_sufficiency_declassify`) is a *trichotomy*, since a fail-closed audit-capacity refusal is a third outcome beyond delegate-or-deny.
 
 **WS-H8/A-36 — Projection hardening:**
 
