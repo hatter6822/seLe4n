@@ -260,6 +260,22 @@ the direction trap the anchors would not have: the notification gate runs
 denies a send *allows* a wait.  The suite now carries both directions, with the
 upward read (public notification → secret waiter) as the load-bearing negative.
 
+Three Tier-3 anchors and two identifier-naming violations, all left by the
+landing cut, were caught in the same pass.  The anchors pinned the per-core
+enforcement boundary at 54 and `CrossCoreTransition.all.length` at 25, both of
+which this release had already moved; the naming gate — which reads the **git
+index**, not the working tree, so it only sees what is actually staged —
+rejected a workstream ID in `scripts/per_core_routing_aliases.json` and two
+hypothesis names shaped like phase codes.  `OffSchedulerAgrees.trans`'s
+`h12`/`h23` become `hFirst`/`hSecond`, better names on their own terms, retiring
+42 grandfathered occurrences (baseline 1017 → 975).
+
+That the anchors survived one clean `test_full.sh` is worth recording with the
+rest: Tier 3 runs *after* the Rust suite and the docs-sync check, so a stale
+`codebase_map.json` aborted the run before the anchor surface was ever read.
+Fail-fast composes badly with a long tier list — the first green-looking run
+proved less than it appeared to.
+
 Two of this release's own figures were wrong and are corrected here: the suite
 reports **393** PASS assertions, not 391, and SM8.C's scenario groups are the
 fourteen of §6.1–§6.14 (six of them new in the completion cut), not "19 groups".

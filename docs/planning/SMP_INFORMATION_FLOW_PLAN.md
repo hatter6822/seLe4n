@@ -1611,10 +1611,20 @@ stale lock-set inventory counts (pinned twice per figure, as runtime assertions
 kernel defect; each was a claim the tree had stopped keeping.
 
 The lesson is recorded here rather than only fixed: **a cut that changes a count
-must run the whole suite surface, in parallel**.  Tier 2 does register every
-suite, but it runs them sequentially and **aborts at the first failure**, so a
-cut with nine independent breakages surfaces exactly one per run — nine
-sequential runs to learn what one parallel sweep reports at once.  The counts
+must run the whole suite surface, in parallel, against the git index**.  Three
+distinct fail-fast layers hid work in this cut:
+
+1. Tier 2 registers every suite but runs them sequentially and **aborts at the
+   first failure**, so nine independent breakages surface one per run — nine
+   sequential runs to learn what one parallel sweep reports at once.
+2. `test_full.sh` runs Tier 3 *after* the Rust suite and the docs-sync check, so
+   a stale `codebase_map.json` aborted the run before the anchor surface was
+   read at all.  Two Tier-3 anchors left stale by the landing cut (the per-core
+   boundary at 54, `CrossCoreTransition.all.length` at 25) survived a run that
+   looked green up to that point.
+3. `check_identifier_naming.py` reads the **git index**, not the working tree.
+   Running it against unstaged edits checks the previous commit, not the change
+   under test — which is why two violations reached a pushed commit.  The counts
 are also pinned in more places than a grep for one assertion's text will find:
 `LockSetSuite` pinned each figure twice, as a runtime assertion *and* a `decide`
 example, and only the first shape matched the obvious search.
