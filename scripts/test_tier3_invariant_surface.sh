@@ -2437,12 +2437,36 @@ run_check "INVARIANT" rg -n '^theorem lockContentionAlphabet_at_release_budget' 
 # figure from being read as a measured deployment property.
 run_prose_check "INVARIANT" rg -n 'placeholder, not a measured deployment figure' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The blocked READER, which is the plan's D.3 row's own subject: the structural
-# depth cap and the operational admission fact.
+# depth cap, the operational admission fact, and — after SM2.C-defer D-3.10 —
+# the TEMPORAL bound, which the writer-only liveness chain could not supply.
 run_check "INVARIANT" rg -n '^theorem queueWaitDepth_bounded' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
 run_check "INVARIANT" rg -n '^theorem readerWaitDepth_bounded' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
 run_check "INVARIANT" rg -n '^theorem reader_at_head_admitted_by_writer_release' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
 run_check "INVARIANT" rg -n '^theorem readerContentionDepth_bounded' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^theorem blockedReader_admitted_by_writer_release' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# The mode-generic liveness chain: the keystone, its `.write` instance (which
+# checks the generalisation against the theorem it generalises), the mode-exact
+# admission that makes a reader's admission an admission AS A READER, and the
+# two bounds SM8.D consumes.
+run_check "INVARIANT" rg -n '^theorem queueWaitDepth_monotone_under_effective_release' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem queueWaitDepth_monotone_under_effective_release_write' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem queueWaitDepth_non_increase_step_queued' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem fair_progress_one_step_mode' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem rwLock_queued_liveness' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem rwLock_reader_liveness' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem rwLock_queued_admissionStepAfter_bounded' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem rwLock_reader_admissionStepAfter_bounded' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem queued_reader_not_write_holder_after_step' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem queued_writer_not_reader_after_step' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem queued_persists_or_admitted_at_mode' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem blockedReaderContention_delay_bounded' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem writerContention_delay_bounded' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# The CC-5 bound and its two claim entries take the access mode as a parameter;
+# the NEGATIVE forbids a regression that re-pins the *claim* to a queued writer,
+# which would silently drop the blocked reader — the plan's D.3 subject — back
+# out of the bound while leaving the writer instance passing every anchor above.
+run_check "INVARIANT" rg -n '\(c : CoreId\) \(m : AccessMode\) \(kEnq : Nat\)' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_negative_check "INVARIANT" rg -n 'AccessMode.write\) ∈ \(e.stateAt kEnq\).waiters →' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The severity is a judgement; what it is a judgement *about* is pinned.
 run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_lockContention_severity_basis' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The declared-footprint entry CONSUMES the resolver, and fails closed for every
@@ -2516,8 +2540,13 @@ run_check "INVARIANT" rg -n 'NEGATIVE: it is never admitted, so the observation 
 run_check "INVARIANT" rg -n 'NEGATIVE: the alphabet tracks the budget' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: the HIGH observer' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'is undeclared, so the bracketed entry is' tests/SmpInformationFlowSuite.lean
-# The golden fine-lock contention trace and its hash companion.
+run_check "INVARIANT" rg -n 'NEGATIVE: the reader is not queued as a writer' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'the blocked READER.s delay is bounded in time' tests/SmpInformationFlowSuite.lean
+# The golden fine-lock contention trace and its hash companion; the trace
+# carries the reader's temporal figures, so a regression to the writer-only
+# bound changes the fixture rather than passing silently.
 run_check "INVARIANT" rg -n '^\[smp-fine-lock\]' tests/fixtures/smp_fine_lock_contention.expected
+run_check "INVARIANT" rg -n 'blocked reader in time' tests/fixtures/smp_fine_lock_contention.expected
 run_check "INVARIANT" rg -n 'smp_fine_lock_contention\.expected' tests/fixtures/smp_fine_lock_contention.expected.sha256
 
 

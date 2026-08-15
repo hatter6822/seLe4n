@@ -2779,18 +2779,26 @@ D.1–D.3 are restated here rather than ticked off.
   (`admissionStepAfter`, not the execution's first admission), so a core meeting
   the same lock twice has its second wait reported rather than truncated to
   zero — `lockContentionObservation_is_own_acquisition` is that property.
-* **The reader — D.3's own subject — has what generalises.**  `queueWaitDepth`
-  with `writerWaitDepth` its `.write` instance, the mode-generic tight cap
-  `readerWaitDepth_bounded`, and `reader_at_head_admitted_by_writer_release`:
-  the blocked reader becomes a holder at the very step the writer releases, with
-  no fairness assumption.  The reader-mode *temporal* bound remains SM2.C-sized
-  work, registered with its cost.
+* **The reader — D.3's own subject — has the same bound the writer has.**
+  `queueWaitDepth` (with `writerWaitDepth` its `.write` instance), the
+  mode-generic tight cap `readerWaitDepth_bounded`, the operational
+  `reader_at_head_admitted_by_writer_release` (the blocked reader becomes a
+  holder at the very step the writer releases, no fairness assumption), and — from
+  v0.33.11's mode-generic SM2.C-defer D-3.10 liveness chain — the **temporal**
+  bound `blockedReaderContention_delay_bounded`.  The chain generalises rather
+  than duplicating: the writer proof's mode argument is replaced by the wait
+  queue's own `Nodup` (`not_mem_takeWhile_of_mem_dropWhile`), and
+  `queueWaitDepth_monotone_under_effective_release_write` checks the
+  generalisation against the theorem it generalises.  `RwLockState.admits` keeps
+  the two admission shapes apart, so a blocked reader is proven admitted **as a
+  reader** (`queued_reader_not_write_holder_after_step` and its dual).
 
-Runtime coverage: §7.1–§7.10 of the same suite (403 → 508 assertions across
-fourteen groups), every group with a load-bearing negative, including a real
-nine-step contended execution on which the delay, the wait depth and the CC-5
-code are computed and the bound theorem is applied, a bracketed live syscall
-that *succeeds*, and a golden contention trace verified byte-for-byte.
+Runtime coverage: §7.1–§7.10 of the same suite (403 → 516 assertions across
+sixteen groups), every group with a load-bearing negative, including real
+nine-step contended executions — one writer-queued, one reader-queued — on which
+the delay, the wait depth and the CC-5 code are computed and the bound theorems
+are applied, a bracketed live syscall that *succeeds*, and a golden contention
+trace verified byte-for-byte.
 
 ## 32. WS-Q3 IntermediateState formalization (v0.17.9)
 

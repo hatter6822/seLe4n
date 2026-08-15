@@ -113,7 +113,12 @@ Deliverables:
   `lockContentionAlphabet_at_least_two` is the standing negative — and
   **conditional**: the bound rests on the SM2.C release-delay assumption, with
   `lockContention_unbounded_without_fairness` the execution that makes the
-  premise load-bearing.
+  premise load-bearing.  Completed at **v0.33.11**: the bound is mode-generic,
+  so it covers a blocked *reader* as well as a contending writer
+  (`blockedReaderContention_delay_bounded`), resting on the mode-generic SM2.C
+  liveness chain `RwLock.lean` §D-3.10 — which generalises the writer chain
+  rather than duplicating it, the writer proof's `.write ≠ .read` argument being
+  replaced by the wait queue's own `Nodup`.
 
 Exit evidence:
 

@@ -73,8 +73,8 @@ multiplicity (§7.2), writer exclusion and the blocked acquirer (§7.3), the CC-
 contention delay computed on a real nine-step contended execution and bounded
 (§7.4), the acquisition a first-admission reading would have swallowed (§7.4b),
 the fairness premise (§7.4c), the observation-rate and capacity bounds (§7.4d),
-what a blocked *reader* has (§7.4e), the shipped core count versus the
-placeholder delay budget (§7.4f), Biba integrity under per-core locks in both
+what a blocked *reader* has structurally (§7.4e) and in **time** (§7.4g), the
+shipped core count versus the placeholder delay budget (§7.4f), Biba integrity under per-core locks in both
 integrity directions (§7.5), the 2PL-bracketed live syscall entry refused
 (§7.6) and **succeeding** (§7.8), the declared footprint and its fail-closed
 default (§7.9), the phase's claim inventory (§7.7) and the golden contention
@@ -89,7 +89,8 @@ does not claim the channel is closed), §7.4b (keyed to the *first* admission th
 same wait would read as zero), §7.4c (without fairness the queued core is never
 admitted at all), §7.4d (a repeated enqueue step is not a run of distinct
 acquisitions), §7.4e (before the release the reader is a waiter and not a
-holder), §7.4f (the alphabet tracks the budget, so 3077 is not a constant of the
+holder), §7.4g (the contending core is queued at `.read` and not at `.write`, so
+the writer instance of the bound has nothing to say about it), §7.4f (the alphabet tracks the budget, so 3077 is not a constant of the
 model), §7.5 (the acquire really did write the trusted object), §7.6 (the plain
 fixture labelling trips the insecure-default heuristic, so the adjustment that
 gets the entry past its first gate is load-bearing), §7.8 (the *high* observer's
@@ -1147,6 +1148,8 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @lockContentionCode
 #check @lockContentionCode_injective
 #check @lockContention_delay_bounded
+#check @writerContention_delay_bounded
+#check @blockedReaderContention_delay_bounded
 #check @lockContentionChannel_alphabet_bounded
 #check @lockContentionCode_eq_zero_iff
 #check @lockContentionAlphabet_at_least_two
@@ -1638,15 +1641,28 @@ example (e : SeLe4n.Kernel.Concurrency.RwLockExecution) (c : CoreId) (kEnq delay
       kEnq < admitStep ∧ delay = admitStep - kEnq ∧ e.holderAt admitStep c :=
   lockContentionObservation_is_own_acquisition e c kEnq delay h
 
--- SM8.D.3: the delay bound, under the SM2.C fairness assumption.
+-- SM8.D.3: the delay bound, under the SM2.C fairness assumption — at whichever
+-- access mode the contending core queued at.
 example (e : SeLe4n.Kernel.Concurrency.RwLockExecution) (maxDelay : Nat)
     (hFair : SeLe4n.Kernel.Concurrency.FairTrace e maxDelay)
-    (hInit : e.initial = SeLe4n.Kernel.Concurrency.RwLockState.unheld) (c : CoreId) (kEnq : Nat)
-    (hQueued : (c, SeLe4n.Kernel.Concurrency.AccessMode.write) ∈ (e.stateAt kEnq).waiters)
+    (hInit : e.initial = SeLe4n.Kernel.Concurrency.RwLockState.unheld) (c : CoreId)
+    (m : SeLe4n.Kernel.Concurrency.AccessMode) (kEnq : Nat)
+    (hQueued : (c, m) ∈ (e.stateAt kEnq).waiters)
     (hWithin : kEnq + lockContentionDelayBound maxDelay < e.ops.length) :
     ∃ delay, lockContentionObservation e c kEnq = some delay ∧
       delay ≤ lockContentionDelayBound maxDelay :=
-  lockContention_delay_bounded e maxDelay hFair hInit c kEnq hQueued hWithin
+  lockContention_delay_bounded e maxDelay hFair hInit c m kEnq hQueued hWithin
+
+-- SM8.D.3: and its blocked-reader instance — the temporal figure D.3's own
+-- subject was missing until SM2.C-defer D-3.10 generalised the liveness chain.
+example (e : SeLe4n.Kernel.Concurrency.RwLockExecution) (maxDelay : Nat)
+    (hFair : SeLe4n.Kernel.Concurrency.FairTrace e maxDelay)
+    (hInit : e.initial = SeLe4n.Kernel.Concurrency.RwLockState.unheld) (c : CoreId) (kEnq : Nat)
+    (hQueued : (c, SeLe4n.Kernel.Concurrency.AccessMode.read) ∈ (e.stateAt kEnq).waiters)
+    (hWithin : kEnq + lockContentionDelayBound maxDelay < e.ops.length) :
+    ∃ delay, lockContentionObservation e c kEnq = some delay ∧
+      delay ≤ lockContentionDelayBound maxDelay :=
+  blockedReaderContention_delay_bounded e maxDelay hFair hInit c kEnq hQueued hWithin
 
 -- SM8.D.3: the blocked reader's structural bound — at most `numCores - 1` cores
 -- ahead of it, whatever the fairness budget.
@@ -5372,11 +5388,13 @@ private def runLockContentionBoundChecks : IO Unit := do
     (decide (1 ≤ lockContentionDelayBound contendedMaxDelay))
   assertBool "lockContention_delay_bounded applies to this execution (theorem)"
     (have _h := lockContention_delay_bounded contendedExecution contendedMaxDelay
-        contendedExecution_fair rfl c1 2 contendedExecution_queued contendedExecution_within
+        contendedExecution_fair rfl c1 .write 2 contendedExecution_queued
+        contendedExecution_within
      true)
   assertBool "…and so does the alphabet bound"
     (have _h := lockContentionChannel_alphabet_bounded contendedExecution contendedMaxDelay
-        contendedExecution_fair rfl c1 2 contendedExecution_queued contendedExecution_within
+        contendedExecution_fair rfl c1 .write 2 contendedExecution_queued
+        contendedExecution_within
      true)
   -- The RPi5 figures.
   assertBool "at RPi5 (4 cores) with the SM2.C release budget: bound 3075, alphabet 3077"
@@ -5508,6 +5526,71 @@ private def runBlockedReaderChecks : IO Unit := do
     (have _h := blockedReader_admitted_by_writer_release c0 c1 blockedReaderLock (by decide)
         (by decide)
      true)
+
+/-! ### §7.4g fixtures — a real contended READER acquisition
+
+The reader-side twin of `contendedExecution`: core 0 takes the write lock, core
+1 asks for the read lock and is enqueued behind it, and the release batch-promotes
+it.  The same nine-step shape, so the bound's `hWithin` premise holds and the
+theorem can be **applied** rather than merely stated. -/
+private def readerContendedExecution : SeLe4n.Kernel.Concurrency.RwLockExecution :=
+  { initial := SeLe4n.Kernel.Concurrency.RwLockState.unheld
+    ops := [ .tryAcquireWrite c0, .tryAcquireRead c1, .releaseWrite c0, .releaseRead c1
+           , .releaseRead c2, .releaseRead c2, .releaseRead c2, .releaseRead c2
+           , .releaseRead c2 ]
+    initial_reachable := .base }
+
+private theorem readerContendedExecution_fair :
+    SeLe4n.Kernel.Concurrency.FairTrace readerContendedExecution contendedMaxDelay :=
+  (SeLe4n.Kernel.Concurrency.fairTrace_iff_bounded readerContendedExecution contendedMaxDelay).mpr
+    (by decide)
+
+private theorem readerContendedExecution_queued :
+    (c1, SeLe4n.Kernel.Concurrency.AccessMode.read)
+      ∈ (readerContendedExecution.stateAt 2).waiters := by decide
+
+private theorem readerContendedExecution_within :
+    2 + lockContentionDelayBound contendedMaxDelay < readerContendedExecution.ops.length := by
+  decide
+
+/-- §7.4g  SM8.D.3 — the blocked reader's **temporal** bound, computed and
+applied.  This is the group that the writer-only bound could not have. -/
+private def runBlockedReaderTemporalChecks : IO Unit := do
+  IO.println "--- §7.4g the blocked READER's delay is bounded in time (SM8.D.3) ---"
+  assertBool "core 1 is enqueued as a READER at step 2, behind the write holder"
+    (decide (readerContendedExecution.enqueueStep c1 .read = some 2) &&
+     decide ((readerContendedExecution.stateAt 2).writerHeld = some c0))
+  assertBool "the release admits it at step 3 — a one-step delay, code 2"
+    (decide (readerContendedExecution.admissionStepAfter c1 2 = some 3) &&
+     decide (lockContentionObservation readerContendedExecution c1 2 = some 1) &&
+     decide (lockContentionCode readerContendedExecution c1 2 = 2))
+  assertBool "it is admitted AS A READER, not as the writer"
+    (decide (c1 ∈ (readerContendedExecution.stateAt 3).readers) &&
+     decide ((readerContendedExecution.stateAt 3).writerHeld ≠ some c1))
+  assertBool "the reader wait depth is 1, within the numCores - 1 cap"
+    (decide (SeLe4n.Kernel.Concurrency.readerWaitDepth
+       (readerContendedExecution.stateAt 2) c1 = 1) &&
+     decide (SeLe4n.Kernel.Concurrency.readerWaitDepth
+       (readerContendedExecution.stateAt 2) c1 ≤ SeLe4n.Kernel.Concurrency.numCores - 1))
+  assertBool "the measured delay is within the CC-5 bound"
+    (decide (1 ≤ lockContentionDelayBound contendedMaxDelay))
+  assertBool "blockedReaderContention_delay_bounded applies to this execution (theorem)"
+    (have _h := blockedReaderContention_delay_bounded readerContendedExecution contendedMaxDelay
+        readerContendedExecution_fair rfl c1 2 readerContendedExecution_queued
+        readerContendedExecution_within
+     true)
+  assertBool "…and so does the alphabet bound, at read mode (theorem)"
+    (have _h := lockContentionChannel_alphabet_bounded readerContendedExecution contendedMaxDelay
+        readerContendedExecution_fair rfl c1 .read 2 readerContendedExecution_queued
+        readerContendedExecution_within
+     true)
+  -- NEGATIVE: the mode-generic bound is not the writer bound in disguise — this
+  -- core is queued at `.read` and is NOT queued at `.write`, so the writer
+  -- instance has nothing to say about it.
+  assertBool "NEGATIVE: the reader is not queued as a writer, so the writer bound does not apply"
+    (decide ((c1, SeLe4n.Kernel.Concurrency.AccessMode.write)
+       ∉ (readerContendedExecution.stateAt 2).waiters) &&
+     decide (readerContendedExecution.enqueueStep c1 .write = none))
 
 /-- §7.4f  SM8.D.3 — the RPi5 figure, split into what is grounded and what is a
 placeholder. -/
@@ -5967,6 +6050,11 @@ code={lockContentionCode starvingExecution hi 2} (reserved)"
 depth={SeLe4n.Kernel.Concurrency.readerWaitDepth traceBlockedReaderLock c0} \
 admittedByRelease=\
 {decide (c0 ∈ (traceBlockedReaderLock.applyOp (.releaseWrite c1)).readers)}"
+  , s!"[smp-fine-lock] blocked reader in time: \
+enqueue={toString (readerContendedExecution.enqueueStep c1 .read)} \
+admissionAfter={toString (readerContendedExecution.admissionStepAfter c1 2)} \
+delay={toString (lockContentionObservation readerContendedExecution c1 2)} \
+asReader={decide (c1 ∈ (readerContendedExecution.stateAt 3).readers)}"
   , s!"[smp-fine-lock] integrity rules at a trusted object with an untrusted subject: \
 biba={bibaWritePermitted fineLockLabeling untrustedSubject lowEndpoint} \
 authority={authorityWritePermitted fineLockLabeling untrustedSubject lowEndpoint}"
@@ -6077,6 +6165,7 @@ non-interference, declassification audit and fine-lock information flow"
   runContentionRateChecks
   runBlockedReaderChecks
   runContentionFigureChecks
+  runBlockedReaderTemporalChecks
   runFineLockIntegrityChecks
   runFineLockEntryChecks
   runFineLockSuccessPathChecks

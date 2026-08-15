@@ -11,6 +11,7 @@
 [smp-fine-lock] alphabet at budget 0/1/1024: 5/8/3077 (coreFactor 3 real, delay factor a placeholder)
 [smp-fine-lock] observation rate: at most ops+1 = 10 observations per execution
 [smp-fine-lock] blocked reader depth=1 admittedByRelease=true
+[smp-fine-lock] blocked reader in time: enqueue=(some 2) admissionAfter=(some 3) delay=(some 1) asReader=true
 [smp-fine-lock] integrity rules at a trusted object with an untrusted subject: biba=false authority=true
 [smp-fine-lock] bracketed entry refused: SeLe4n.Model.KernelError.illegalState lockOnly=true
 [smp-fine-lock] bracketed entry succeeded: ok lowInvisible=true

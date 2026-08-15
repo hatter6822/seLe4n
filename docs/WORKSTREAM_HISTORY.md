@@ -90,11 +90,16 @@ layer, the setter/erasure moved beside `objectLockOf`, a decidable refuter, a
 severity basis, an eighth inventory claim, eleven elaboration examples and a
 golden CC-5 trace.
 
-Suite 403 → **508 assertions**, §7.1–§7.10 new across fourteen groups, every
-group with a load-bearing negative; staged 59 → **60**.  Registered debt: the CC-5 temporal bound is the
-*writer*-mode one, since `rwLock_writer_liveness` has no reader analogue — a
-completeness gap in a bound on an already-accepted channel, scoped to the SM2.C
-liveness surface.
+Suite 403 → **516 assertions**, §7.1–§7.10 new across sixteen groups, every
+group with a load-bearing negative; staged 59 → **60**.  **No debt remains.**
+The v0.33.10 cut registered one residual — the CC-5 temporal bound was the
+*writer*-mode one, since `rwLock_writer_liveness` had no reader analogue — and
+the **v0.33.11 completion cut closed it**: SM2.C-defer §D-3.10 generalises the
+whole liveness chain, keystone included, to an arbitrary access mode (the writer
+proof's mode argument becomes the wait queue's own `Nodup`), so
+`blockedReaderContention_delay_bounded` gives a blocked reader the same figure a
+blocked writer has, and `RwLockState.admits` proves it is admitted **as a
+reader**.
 
 **Prior sub-phase: SM8.C per-core declassification audit COMPLETE — landed
 v0.33.7, completion cut v0.33.8.**

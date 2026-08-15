@@ -1,3 +1,100 @@
+## v0.33.11 — WS-SM SM8.D: the reader-mode temporal bound, closed rather than registered
+
+v0.33.10 left one item open: the CC-5 delay bound was the *writer*-mode one,
+because the SM2.C liveness chain is stated for a queued writer.  The residual
+was registered with a cost estimate — "~800–1000 lines mirroring the
+`writerWaitDepth_*` family, an SM2.C-sized development" — on the reading that
+generalising it meant duplicating that family.
+
+**That reading was wrong, and carrying it out is what showed why.**  The
+mode-generic statements are not a second family but a *generalisation* of the
+same one, and two steps of the writer proof get **shorter** once the waiting
+core's access mode stops being known.  The whole chain — keystone included —
+lands in a new `RwLock.lean` section D-3.10, and the writer theorems are
+re-derived from it as instances.
+
+### The keystone, generalised
+
+`writerWaitDepth_monotone_under_effective_release` discharges "the waiting core
+is not in the promoted reader prefix" from the fact that the prefix holds only
+`.read` entries — true for a queued writer, and **false** for a queued reader,
+which can sit in that prefix.  But a core in the promoted prefix is exactly a
+core that is no longer queued, which is what the theorem's own `h_still_queued`
+hypothesis denies: `takeWhile p l` and `dropWhile p l` partition a `Nodup` list,
+so membership in the post-state queue *is* absence from the prefix
+(`not_mem_takeWhile_of_mem_dropWhile`).  That argument is mode-blind, and it
+subsumes the head-of-queue case split the writer proof needed in the same
+sub-cases.
+
+`queueWaitDepth_monotone_under_effective_release` is the result;
+`queueWaitDepth_monotone_under_effective_release_write` checks the
+generalisation against the theorem it generalises, so a drift between the two
+chains stops elaborating rather than going unnoticed.
+
+### The chain above it
+
+Every remaining lemma between the keystone and `rwLock_writer_liveness` mentions
+`(c, AccessMode.write)` only as the element whose `idxOf` is tracked, so the
+generalisation is positional: `queueWaitDepth_unchanged_under_acquire_queued`
+(the two acquire lemmas, now one), `queueWaitDepth_unchanged_under_noneffective_release`,
+`queueWaitDepth_non_increase_step_queued`, `queued_persists_across_window_mode`,
+`queueWaitDepth_non_increase_across_offset`,
+`fair_release_witness_in_window_mode` (whose two witness shapes collapse to
+"an effective release fires at `k_rel`", the only thing the argument uses),
+`fair_progress_one_step_mode`, and `rwLock_queued_liveness`.
+
+### Admission at the mode the core queued at
+
+A liveness theorem about a blocked reader that concluded only "becomes some kind
+of holder" would be weaker than the truth, so the cross-mode admissions are
+excluded rather than left open.  `queued_reader_not_write_holder_after_step` and
+its dual `queued_writer_not_reader_after_step` rule them out from INV-R3 (a core
+appears in the wait queue at most once, hence at exactly one mode —
+`waiters_mode_unique`), INV-R4 (a waiter is not already a holder) and
+`coreInvolved` (a queued core cannot take an uncontended direct-acquire branch);
+`mem_promoted_reader_prefix` supplies the fact that a batch promote admits only
+`.read`-mode waiters.  `RwLockState.admits` keeps the two shapes apart,
+`RwLockExecution.admittedAt` is its trace form, and
+`holderAt_of_admittedAt` bridges to the union that `admissionStep` /
+`admissionStepAfter` read.
+
+### What SM8.D now claims
+
+`lockContention_delay_bounded` takes the access mode as a parameter and is proven
+through `rwLock_queued_admissionStepAfter_bounded`, with
+`writerContention_delay_bounded` and **`blockedReaderContention_delay_bounded`**
+its instances.  `lockContentionChannel_alphabet_bounded`,
+`acceptedCovertChannel_lockContention_bounded` and both `FineLockClaimId`
+evidence arms are mode-generic to match, and `lockContentionRun` carries the mode
+existentially **per step** — one core's successive contended acquisitions need not
+all be writes, and after D-3.10 the bound does not care which they are.  So CC-5's
+alphabet figure now covers every contending core rather than the writers only,
+which is what a bandwidth claim about an accepted channel has to do.
+
+Corrected with it: the D-3.9 section header, which said the trace-level bound
+"does not generalise here" and named the cost of making it; the
+`readerContentionDepth_bounded` docstring, which said the per-unit cost "is where
+the SM2.C chain is writer-specific"; and the plan, CLAUDE.md/AGENTS.md, the
+claim-evidence index, the spec, the GitBook proof map and the workstream history,
+each of which recorded the residual as scoped debt.
+
+### Tests and gates
+
+`tests/SmpInformationFlowSuite.lean` §7.4g (508 → **516** assertions, 67 → 68
+groups): a real nine-step execution in which core 1 enqueues as a **reader**
+behind a write holder and is batch-promoted by the release, with the delay, the
+code and the reader wait depth computed and both `blockedReaderContention_delay_bounded`
+and the read-mode alphabet bound **applied**; the load-bearing negative is that
+this core is not queued at `.write`, so the writer instance has nothing to say
+about it.  The golden fixture `tests/fixtures/smp_fine_lock_contention.expected`
+gains the reader's temporal line (hash companion regenerated), so a regression to
+the writer-only bound changes the fixture rather than passing quietly.  New
+surface anchors in `tests/SmpSurfaceAnchors.lean`, thirteen new Tier-3 positive
+anchors and a negative one forbidding a re-pinning of the *claim* to a queued
+writer.  Axiom-clean (2536 environment constants across the SM8 information-flow
+surface; 807 across `RwLock.lean`).  Theorems, tests and prose only — no
+transition changed, and the kernel trace is byte-identical.
+
 ## v0.33.10 — WS-SM SM8.D review cut: the sixteen self-audit findings, closed
 
 A self-audit of the v0.33.9 cut against the code (rather than against the prose
@@ -89,7 +186,9 @@ distinct cores and never mentions the waiter's mode), mode-generic persistence
 `reader_at_head_admitted_by_writer_release`: the blocked reader becomes a holder
 at the very step the writer releases, with no fairness assumption.  The residual
 (a reader-mode *temporal* bound) is registered against the SM2.C liveness
-surface with its cost stated, in the module and in the plan.
+surface with its cost stated, in the module and in the plan.  *(**Closed at
+v0.33.11** — the cost estimate was wrong: the chain generalises rather than
+needing a second family.  See that entry.)*
 
 ### Ten smaller closures
 
@@ -187,7 +286,8 @@ symbol currently yields and not a measured property of the shipped kernel.
 `lockContentionAlphabet_at_least_two` is the load-bearing negative: the bound
 never claims the channel is closed.
 
-**Registered, not claimed**: the temporal bound is the *writer*-mode one, which
+**Registered, not claimed** *(**closed at v0.33.11**, see that entry)*: the
+temporal bound is the *writer*-mode one, which
 is what the SM2.C liveness surface supports (`rwLock_writer_liveness` has no
 reader analogue).  A blocked reader's structural bound rides
 `rwLock_bounded_wait_read`'s occupancy cap; its temporal bound is scoped to the
