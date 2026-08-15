@@ -2612,6 +2612,21 @@ run_check "INVARIANT" rg -n '^def declaredLockSetForEntry' SeLe4n/Kernel/Informa
 run_check "INVARIANT" rg -n '^theorem declaredLockSetForEntry_binds_decode' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^theorem declaredLockSetForEntry_is_suspend_footprint' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^theorem entryDecode_none_entry_error' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# The anti-drift tie runs on BOTH sides.  The failing side alone stays true and
+# silent if the duplicated prefix diverges while the helper still succeeds, so
+# the success side pins the live entry to the helper's exact tid and decode.
+run_check "INVARIANT" rg -n '^theorem entryDecode_some_entry_dispatches' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n 'dispatchSyscallChecked ctx decoded tid' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# The revalidation refusal is attributable to the resolution change rather than
+# to a lost grant, and the fixture witnessing it has genuine acquire lineage.
+run_check "INVARIANT" rg -n '^theorem syscallEntryUnderRevalidatedLockSet_refuses_on_change_while_held' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n 'private def suspendAcquiredState' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'the observed state still HOLDS the declared footprint' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: the pre-acquire state does not hold the footprint' tests/SmpInformationFlowSuite.lean
+# NEGATIVE: the foreign-commit fixture must not go back to being built straight
+# from the pre-acquire state, which holds none of the declared locks and so
+# refuses for the wrong reason.
+run_negative_check "INVARIANT" rg -n '\{ suspendEntryState with' tests/SmpInformationFlowSuite.lean
 run_negative_check "INVARIANT" rg -n 'syscallEntryUnderDeclaredLockSet ctx sid callerTid targetTid' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The 2PL bracket's grant condition is a checked fact in BOTH directions: the
 # growing phase grants an uncontended footprint and provably does not grant a

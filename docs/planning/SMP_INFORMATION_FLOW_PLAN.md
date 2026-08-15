@@ -2201,6 +2201,24 @@ Suite stays at **533** assertions.
 
 Suite 533 → **536** assertions.
 
+#### v0.33.22 review cut — the twelfth round: one-sided checks
+
+1. **The anti-drift tie ran only on the failing side.**
+   `entryDecode_none_entry_error` proves helper-failure implies entry-failure and
+   is silent if the duplicated prefix diverges while the helper still succeeds.
+   `entryDecode_some_entry_dispatches` closes it in a stronger form than a shared
+   prefix would: the live entry **is** `dispatchSyscallChecked` at the helper's
+   exact `tid` and `decoded`.
+2. **The revalidation-refusal witness had no acquire lineage.** The fixture was
+   built straight from the pre-acquire state, so it held none of the declared
+   locks and refused via the `lockSetHeld` guard rather than the resolution
+   change it was presented as demonstrating. It is now `lockSetAcquiredState`'s
+   output with a lock-preserving capability replacement on top, and
+   `syscallEntryUnderRevalidatedLockSet_refuses_on_change_while_held` states
+   which refusal cause is meant.
+
+Suite 536 → **538** assertions.
+
 #### v0.33.19 review cut — the ninth round, and the rate that was a tautology
 
 1. **The pacing bound was in lock operations, not time**, and its docstring used

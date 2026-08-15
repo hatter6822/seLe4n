@@ -90,7 +90,7 @@ layer, the setter/erasure moved beside `objectLockOf`, a decidable refuter, a
 severity basis, an eighth inventory claim, eleven elaboration examples and a
 golden CC-5 trace.
 
-Suite 403 → **536 assertions**, §7.1–§7.10 new across sixteen groups, every
+Suite 403 → **538 assertions**, §7.1–§7.10 new across sixteen groups, every
 group with a load-bearing negative; staged 59 → **60**.  **No debt remains.**
 The v0.33.10 cut registered one residual — the CC-5 temporal bound was the
 *writer*-mode one, since `rwLock_writer_liveness` had no reader analogue — and

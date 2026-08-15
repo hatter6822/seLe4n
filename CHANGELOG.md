@@ -1,3 +1,54 @@
+## v0.33.22 — WS-SM SM8.D: both sides of the anti-drift tie, and a witness with acquire lineage
+
+Two **P2** findings from the twelfth review round of PR #864.  Both are cases of
+a check that holds on one side of a boundary while saying nothing about the
+other, which is the shape this series keeps surfacing.
+
+**(1) The anti-drift tie ran only on the failing side.**  `entryDecode`
+duplicates `syscallEntryChecked`'s prefix — reject the insecure context, read the
+executing core's current thread, read its registers, decode — and
+`entryDecode_none_entry_error` proves every `none` the helper returns is a state
+on which the real entry errors.  That is silent about divergence in the other
+direction: if a new validation step or a decode normalisation were added to the
+live entry while the helper still returned `some`, the theorem would remain true
+and `declaredLockSetForEntry` would go on assembling a footprint from a caller
+and a decode the entry does not use.
+
+Closed by `entryDecode_some_entry_dispatches`, which pins more than the prefix:
+whenever the helper yields `(tid, decoded)`, the live entry **is**
+`dispatchSyscallChecked ctx decoded tid (tlbFillIpcBufferOnCore …)` at those same
+values.  Preferred over factoring the shared prefix into one function — that
+would reshape a production entry point to suit a staged module, and it would pin
+*less*, since a common prefix says nothing about what the entry does with its
+result.
+
+**(2) The revalidation-refusal witness had no acquire lineage.**
+`revalidationRefusalReachable` quantifies over arbitrary `s` and `observed` whose
+resolutions differ, which is the right generality for the theorem; the problem
+was the fixture standing behind it.  `suspendObservedReplaced` was built directly
+from `suspendEntryState`, never ran `lockSetAcquiredState`, and replaced the
+whole CNode object including its lock word — so it held **none** of the declared
+locks.  The bracket refuses on either a resolution change or a failed
+`lockSetHeld`, so that fixture demonstrated the second condition while the
+comment above it claimed the first.  The refusal was real; its attribution was
+not.
+
+Closed on both sides.  The fixture is now `lockSetAcquiredState`'s own output
+with a **lock-preserving** capability replacement applied on top (only the CNode's
+slot moves; its lock word is carried over), so core 1 still holds every declared
+lock and the only thing that changed is what the resolution selects.  Two new
+assertions pin that: the observed state holds the footprint, and — the
+load-bearing negative — the pre-acquire state does not, so the first is not
+vacuous.  `syscallEntryUnderRevalidatedLockSet_refuses_on_change_while_held`
+carries `lockSetHeld` in the statement so the theorem says which of the two
+refusal causes it is about; the hypothesis is deliberately unused in the proof
+(the guard is a conjunction), which is what the underscore records.
+
+Suite 536 → **538** assertions.  Twelve new Tier-3 anchors, including a negative
+forbidding the fixture's return to a pre-acquire construction.  Axiom-clean
+(2737 environment constants).  Theorems, tests and prose only; no transition
+changed and the kernel trace is byte-identical.
+
 ## v0.33.21 — WS-SM SM8.D: authorization is not exclusion, and the severity basis carries its premises
 
 Two **P2** findings from the eleventh review round of PR #864.  Both valid; the

@@ -2354,6 +2354,62 @@ theorem entryDecode_none_entry_error (ctx : LabelingContext)
           rw [hDec] at h
           exact absurd h (by simp)
 
+/-- SM8.D.5 (**the anti-drift tie, success side**): where the replayed prefix
+succeeds, the real entry dispatches on **exactly** those values.
+
+`entryDecode_none_entry_error` covers only the failing side, which leaves a real
+hole: if the two prefixes diverged while the helper still returned `some`, that
+theorem stays true and silent, and `declaredLockSetForEntry` would go on
+assembling a footprint from a caller and a decode the live entry does not use.
+A new validation step added to `syscallEntryChecked`, or a normalisation applied
+to its decode, would do exactly that.
+
+This closes it in the strongest available form: the entry's whole behaviour is
+pinned to the helper's outputs, not merely its prefix.  Whenever
+`entryDecode` yields `(tid, decoded)`, the live entry **is**
+`dispatchSyscallChecked` at that same `tid` and that same `decoded` — so a
+divergence in either value stops this elaborating.
+
+Preferred over factoring the shared prefix into one function: that would mean
+reshaping a production entry point to suit a staged module, and it would pin
+less, since a common prefix says nothing about what the entry does with its
+result. -/
+theorem entryDecode_some_entry_dispatches (ctx : LabelingContext)
+    (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
+    (s : SystemState) (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult)
+    (h : entryDecode ctx layout executingCore regCount s = some (tid, decoded)) :
+    syscallEntryChecked ctx layout executingCore regCount s
+      = dispatchSyscallChecked ctx decoded tid
+          (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore s executingCore tid
+            decoded.overflowCount) := by
+  unfold entryDecode at h
+  unfold syscallEntryChecked
+  cases hIns : isInsecureDefaultContext ctx with
+  | true => rw [hIns] at h; exact absurd h (by simp)
+  | false =>
+    rw [hIns] at h
+    simp only [Bool.false_eq_true, if_false] at h
+    cases hCur : s.scheduler.currentOnCore executingCore with
+    | none => rw [hCur] at h; exact absurd h (by simp)
+    | some tid' =>
+      rw [hCur] at h
+      simp only at h
+      cases hRegs : lookupThreadRegisterContext tid' s with
+      | error e => rw [hRegs] at h; exact absurd h (by simp)
+      | ok regsPair =>
+        obtain ⟨regs, stAfter⟩ := regsPair
+        rw [hRegs] at h
+        simp only at h
+        cases hDec : SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
+            s tid' layout regs regCount with
+        | error e => rw [hDec] at h; exact absurd h (by simp)
+        | ok decoded' =>
+          rw [hDec] at h
+          simp only [Option.some.injEq, Prod.mk.injEq] at h
+          obtain ⟨hTid, hDecoded⟩ := h
+          subst hTid; subst hDecoded
+          simp [hRegs, hDec]
+
 /-- SM8.D.5: the target a capability-addressed syscall names, read the way the
 live `dispatchWithCapChecked` arms read it.
 
@@ -3117,6 +3173,40 @@ theorem revalidationRefusalReachable (ctx : LabelingContext) (lockCore : CoreId)
       executingCore regCount s observed S hRes ?_⟩
     rw [hRes] at hDiffers
     exact hDiffers
+
+/-- SM8.D.5 (**the refusal is the resolution change, not a lost grant**).
+
+`syscallEntryUnderRevalidatedLockSet` refuses on two different conditions — the
+resolution moved, or `observed` does not hold the declared footprint — and a
+witness that does not distinguish them is weak evidence for the race being
+modelled.  A state assembled without ever running the growing phase holds none of
+the locks, so it refuses for the *second* reason and says nothing about the
+first.
+
+This carries `lockSetHeld` as a hypothesis, so the conclusion is about a state
+that really could be a post-growing-phase one: every declared lock is still held
+in `lockCore`'s name, and the refusal is attributable to the foreign commit
+alone.  That is the shape the suite's fixture is now built to satisfy — the
+observed state is `lockSetAcquiredState`'s output with a lock-preserving
+capability replacement applied on top. -/
+theorem syscallEntryUnderRevalidatedLockSet_refuses_on_change_while_held
+    (ctx : LabelingContext) (lockCore : CoreId)
+    (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
+    (s observed : SystemState) (S : LockSet)
+    (hRes : declaredLockSetForEntry ctx layout executingCore regCount s = some S)
+    (_hHeld : SeLe4n.Kernel.Concurrency.lockSetHeld lockCore S observed)
+    (hDiffers : declaredLockSetForEntry ctx layout executingCore regCount observed ≠ some S) :
+    syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore regCount s
+        observed
+      = .refused (SeLe4n.Kernel.Concurrency.releaseAll lockCore
+          S.lockAcquireSequence.reverse observed) :=
+  -- The held hypothesis is deliberately unused in the *proof*: the guard is a
+  -- conjunction, so the resolution change alone already forces the refusal.
+  -- Carrying it in the *statement* is the point — it pins which of the two
+  -- refusal causes this theorem is about, hence the underscore rather than a
+  -- weaker statement that omits it.
+  syscallEntryUnderRevalidatedLockSet_refuses_on_change ctx lockCore layout
+    executingCore regCount s observed S hRes hDiffers
 
 /-- SM8.D.5: **the revalidated bracket does not refine the plain one in general —
 and must not.**

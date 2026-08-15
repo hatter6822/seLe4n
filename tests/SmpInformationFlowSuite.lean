@@ -1204,6 +1204,7 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @syscallEntryUnderDeclaredLockSet
 #check @entryDecode
 #check @entryDecode_none_entry_error
+#check @entryDecode_some_entry_dispatches
 #check @entryCapTarget
 #check @entryCapTarget_rejects_sentinel
 #check @entryCapTarget_single_level
@@ -1232,6 +1233,7 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @syscallEntryUnderRevalidatedLockSetModel
 #check @syscallEntryUnderRevalidatedLockSetModel_refines
 #check @revalidationRefusalReachable
+#check @syscallEntryUnderRevalidatedLockSet_refuses_on_change_while_held
 #check @suspendUnderDeclaredLockSet_preserves_projectionOnCore_atCore
 #check UncoveredLockDomain
 #check @declaredFootprintUncoveredDomains
@@ -6185,12 +6187,39 @@ private def suspendEntryState : SystemState :=
       objects := (niState.objects.insert suspendCNode (.cnode suspendCNodeValue)).insert
                    highCurrent.toObjId (.tcb suspendCallerTcb) }
 
+/-- The footprint the growing phase declares for this entry. -/
+private def suspendDeclaredFootprint : Option Concurrency.LockSet :=
+  declaredLockSetForEntry fineLockEntryLabeling SeLe4n.arm64DefaultLayout c1 32
+    suspendEntryState
+
+/-- The state the growing phase actually ends in: the declared footprint
+**acquired** in core 1's name.
+
+This is the lineage the observed state needs.  An earlier cut built the
+foreign-commit fixture directly from `suspendEntryState`, so the state
+witnessing the refusal was not one any growing phase could produce — it held
+none of the declared locks, which meant the refusal could have been the
+`lockSetHeld` guard firing rather than the resolution change. -/
+private def suspendAcquiredState : SystemState :=
+  match suspendDeclaredFootprint with
+  | some S => lockSetAcquiredState S c1 suspendEntryState
+  | none => suspendEntryState
+
 /-- The state the growing phase ends in when **another core committed** during
-it: the caller's capability now names a different victim. -/
+it: the caller's capability now names a different victim.
+
+Built on `suspendAcquiredState`, and **lock-preserving** — only the CNode's
+capability slot moves, its lock word is carried over from the acquired state.
+So this really is a possible post-growing-phase state: core 1 still holds every
+declared lock, and the *only* thing that changed is what the resolution
+selects. -/
 private def suspendObservedReplaced : SystemState :=
-  { suspendEntryState with
-      objects := suspendEntryState.objects.insert suspendCNode
-        (.cnode suspendCNodeValueReplaced) }
+  match suspendAcquiredState.getCNode? suspendCNode with
+  | some acquiredCn =>
+      { suspendAcquiredState with
+          objects := suspendAcquiredState.objects.insert suspendCNode
+            (.cnode { suspendCNodeValueReplaced with lock := acquiredCn.lock }) }
+  | none => suspendAcquiredState
 
 private def distinctRootState : SystemState :=
   { niState with
@@ -6295,6 +6324,23 @@ private def runDeclaredFootprintChecks : IO Unit := do
              SeLe4n.arm64DefaultLayout c1 32 suspendEntryState suspendObservedReplaced with
      | .refused _ => true
      | _ => false)
+  -- LINEAGE: the observed state is the growing phase's own output with a
+  -- lock-PRESERVING foreign commit on top, so core 1 still holds every declared
+  -- lock there.  Without this the refusal above would be ambiguous — the guard
+  -- refuses on a resolution change OR on a lost grant, and a state assembled
+  -- without ever acquiring refuses for the second reason while proving nothing
+  -- about the first.
+  assertBool "the observed state still HOLDS the declared footprint (acquire lineage)"
+    (match suspendDeclaredFootprint with
+     | some S => decide (Concurrency.lockSetHeld c1 S suspendObservedReplaced)
+     | none => false)
+  -- LOAD-BEARING NEGATIVE: and it is genuinely the acquired state underneath —
+  -- the pre-acquire state does NOT hold the footprint, so the two are distinct
+  -- and the assertion above is not vacuous.
+  assertBool "NEGATIVE: the pre-acquire state does not hold the footprint"
+    (match suspendDeclaredFootprint with
+     | some S => decide (¬ Concurrency.lockSetHeld c1 S suspendEntryState)
+     | none => false)
   -- …and with nothing foreign committed, the same bracket commits.  On this
   -- fixture the acquire genuinely grants (the objects are uncontended), which is
   -- what the new `lockSetHeld` half of the guard requires.
@@ -6314,6 +6360,7 @@ private def runDeclaredFootprintChecks : IO Unit := do
   assertBool "…and the stability, refusal, reachability, release and refinement properties"
     (have _s := @syscallEntryUnderRevalidatedLockSet_footprint_stable
      have _r := @syscallEntryUnderRevalidatedLockSet_refuses_on_change
+     have _q := @syscallEntryUnderRevalidatedLockSet_refuses_on_change_while_held
      have _w := @revalidationRefusalReachable
      have _u := @syscallEntryUnderRevalidatedLockSet_refused_releases
      have _f := @syscallEntryUnderRevalidatedLockSet_not_refines_in_general
@@ -6371,6 +6418,10 @@ private def runDeclaredFootprintChecks : IO Unit := do
      have _s := @declaredLockSetForEntry_is_suspend_footprint
      have _d := @declaredLockSetForEntry_undeclared
      have _e := @entryDecode_none_entry_error
+     -- The anti-drift tie on BOTH sides: the failing side above, and the success
+     -- side here, which pins the live entry to the helper's exact `tid` and
+     -- `decoded` rather than only to its refusals.
+     have _p := @entryDecode_some_entry_dispatches
      have _h := @suspendUnderDeclaredLockSet_preserves_projectionOnCore
      have _f := @suspendUnderDeclaredLockSet_failClosed_invisible
      have _u := @syscallEntryUnderDeclaredLockSet_undeclared
