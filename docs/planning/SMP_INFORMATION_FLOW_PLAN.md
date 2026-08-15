@@ -2033,7 +2033,9 @@ Three findings, all against the SM8.D.5 declared-footprint bracket.
    uncovered domain named against its owning workstream.  **Composing the three
    domains is SM3.C work**: it needs a `withLockSet` over `SchedLockId` plus a
    fold that extends the held set mid-transition, and neither affects the §5
-   results, which never mention which objects a set names.
+   results, which never mention which objects a set names.  (A **third**
+   uncovered domain — the queue-ownership protocol for splice neighbours, owner
+   SM3.B — was registered later, in the v0.33.21 cut below.)
 
 Suite 521 → **525** assertions.
 
@@ -2162,6 +2164,42 @@ Suite stays at **533** assertions.
    carry it.
 
 Suite stays at **533** assertions.
+
+#### v0.33.21 review cut — the eleventh round: authorization is not exclusion
+
+1. **The queue-owning-object umbrella authorizes the splice's neighbour writes;
+   it excludes nothing.**  `suspendFootprint_splice_neighbors_under_endpoint_lock`
+   is true and unchanged — a spliced neighbour really is a TCB in the queue the
+   endpoint owns.  But exclusion needs **every** writer of a queued TCB to hold
+   that endpoint's lock, and `lockSet_tcbSetPriority` holds none (caller TCB
+   read, CNode read, target TCB write, optional SchedContext write), while
+   `storeObject` replaces the target object whole.  A suspend splicing an
+   interior victim and a reprioritisation of that victim's predecessor therefore
+   share no lock on the neighbour and both write it.  The docstring's "there is
+   no hole to close" is retracted; the hole is in the **SM3.B inventory**, not in
+   the theorem.  Now evidence rather than prose: `queueOwnershipRespected`,
+   `suspendFootprint_respects_queueOwnership` (the positive half), and
+   `lockSet_tcbSetPriority_omits_endpointLock` /
+   `queueOwnership_violated_by_tcbSetPriority` stating the violation as a `¬`.
+   Registered as the third `UncoveredLockDomain` (`.queueOwnershipProtocol`,
+   owner **SM3.B**), which `mem_all`'s `cases` forces into the list.
+
+   **Not live** (SM3.C.9 defers `withLockSet` at the `@[export]` bodies; SM5.I
+   serialises kernel entry), and **deliberately not repaired here** — the two
+   repairs are alternatives and both are SM3.B design calls: widen the ~10
+   TCB-writing footprints that can target a queued thread with a conditional
+   endpoint lock (fits the size cap, but serialises reprioritisation against all
+   IPC on that endpoint and adds `.endpoint` to those `permittedKinds`), or
+   raise `maxLockSetSize` so the suspend can name the neighbours
+   (`lockSet_tcbSuspend` is at 8 exactly, and that constant is the WCRT
+   headline).
+2. **The severity basis consumed a conclusion without its premises** — its
+   non-closure conjunct took the bare code inequality while
+   `contentionWitnesses_fair` and `contentionWitnesses_in_premises` sat proven
+   and unconsumed.  Both are now conjuncts.  Fourth occurrence of the
+   proven-but-unwired class (rounds 6, 8, 10).
+
+Suite 533 → **536** assertions.
 
 #### v0.33.19 review cut — the ninth round, and the rate that was a tautology
 

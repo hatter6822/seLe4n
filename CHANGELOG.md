@@ -1,3 +1,74 @@
+## v0.33.21 — WS-SM SM8.D: authorization is not exclusion, and the severity basis carries its premises
+
+Two **P2** findings from the eleventh review round of PR #864.  Both valid; the
+first is the sharpest structural finding of the series, because it does not
+dispute a theorem — it shows that a theorem the previous rounds worked hard to
+make non-tautological still does not establish what the surrounding prose
+claimed for it.
+
+**(1) The queue-owning-object umbrella authorizes; it does not exclude.**
+`suspendFootprint_splice_neighbors_under_endpoint_lock` (v0.33.16) proves that a
+spliced neighbour is a real TCB in the queue the endpoint owns, so the splice's
+link writes fall under a lock the suspend holds.  That is an *authorization*
+statement.  Exclusion additionally requires that **every** writer of a queued TCB
+hold that endpoint's lock, and it does not: `lockSet_tcbSetPriority` is a caller
+TCB read, a CNode read, a target TCB write and an optional SchedContext write —
+no endpoint lock — while the model's `storeObject` replaces the target object
+whole.  So a suspend splicing an interior victim and a reprioritisation of that
+victim's predecessor hold **no lock in common on the neighbour**, and both write
+it.  The docstring's closing sentence read "there is no hole to close"; there is
+one, it lives in the SM3.B *inventory* rather than in the theorem, and the
+theorem itself remains true and unchanged.
+
+Closed as evidence plus a costed registration rather than a silent narrowing:
+`queueOwnershipRespected` states the protocol as a predicate on a footprint;
+`suspendFootprint_respects_queueOwnership` is the positive half (a suspend does
+respect it for its own victim, which is why the discipline looked complete);
+`lockSet_tcbSetPriority_omits_endpointLock` and
+`queueOwnership_violated_by_tcbSetPriority` state the violation as a `¬`, so a
+cut that closes the gap deletes a theorem instead of leaving prose that has
+quietly become false — the failure mode this PR hit twice already
+(`retypeIcacheOp_cleans_scrub_extent` at v0.32.101, the splice arm itself at
+v0.33.16).  `UncoveredLockDomain` gains a third constructor
+(`.queueOwnershipProtocol`, owner SM3.B), which
+`UncoveredLockDomain.mem_all`'s `cases` forces into the registration — the
+round-9 change that made completeness quantify over the constructors is what
+makes the new entry mandatory rather than optional.
+
+**Not live, and not narrowed to make it so.**  SM3.C.9 still defers
+`withLockSet` at the `@[export]` bodies and SM5.I serialises kernel entry behind
+one global ticket lock, so neither footprint takes a runtime lock today.  It is a
+defect in the *declared* discipline, which is exactly what a declared footprint
+exists to get right.  **Deliberately not implemented**, because both repairs are
+SM3.B design decisions rather than SM8.D edits, and they are alternatives: widen
+the ~10 TCB-writing footprints that can target a queued thread with a conditional
+endpoint lock (feasible — `lockSet_tcbSetPriority` is 4 members against a cap of
+8 — but it serialises reprioritisation against all IPC on that endpoint and adds
+`.endpoint` to those syscalls' `permittedKinds`), or raise `maxLockSetSize` so
+the suspend can name the neighbours (`lockSet_tcbSuspend` is at 8 exactly, and
+the constant is the WCRT headline `maxLockSetSize · (numCores − 1) · tCs`).  Both
+costs are recorded at the registration.
+
+**(2) The severity basis consumed a conclusion without its premises.**
+`acceptedCovertChannel_lockContention_severity_basis`'s non-closure conjunct took
+`lockContentionChannel_two_codes_reachable.2.2` — the bare code inequality —
+while `contentionWitnesses_fair` and `contentionWitnesses_in_premises` sat beside
+it, proven and unconsumed.  Two distinct codes read off executions that had
+stopped being fair, stopped being genuine enqueue edges, or become too short for
+the delay bound would say nothing about *accepted* runs, and the theorem would
+have kept elaborating.  The conjunct now carries the fairness and enqueue-edge
+premises themselves.  This is the same class as the round-6, round-8 and
+round-10 inventory findings — a fact proven but not wired into the structure
+meant to police it — which is now four occurrences and worth reading as a
+pattern rather than four accidents.
+
+Suite 533 → **536** assertions (three new in §7.9, two of them load-bearing
+negatives: the reprioritisation counterexample, and that every uncovered-domain
+constructor is registered).  Fifteen new Tier-3 anchors, including a prose
+negative forbidding the retracted "no hole to close" sentence.  Axiom-clean
+(2735 environment constants across the SM8 surface).  Theorems, tests and prose
+only; no transition changed and the kernel trace is byte-identical.
+
 ## v0.33.20 — WS-SM SM8.D: the tenth review round, and an off-by-one in yesterday's fix
 
 Two **P1** findings, the first of the series, and both on the elapsed-time rate

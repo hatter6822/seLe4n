@@ -1240,6 +1240,10 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @lockAcquisition_modifies_trusted_object_and_is_not_counted
 #check @victimBlockedOnEndpoint
 #check @suspendFootprint_splice_neighbors_under_endpoint_lock
+#check @queueOwnershipRespected
+#check @suspendFootprint_respects_queueOwnership
+#check @lockSet_tcbSetPriority_omits_endpointLock
+#check @queueOwnership_violated_by_tcbSetPriority
 #check @lockContentionChannel_run_capacity
 #check @lockContentionRun_rejects_repeated_step
 #check @lockContentionRun_rejects_still_queued_step
@@ -6331,13 +6335,34 @@ private def runDeclaredFootprintChecks : IO Unit := do
   assertBool "the splice's neighbours ride a declared lock (theorem)"
     (have _n := @suspendFootprint_splice_neighbors_under_endpoint_lock
      true)
-  -- The bracket covers the OBJECT domain only; the scheduler domain and the
-  -- dynamic PIP chain are named as data with owners rather than left implicit.
-  assertBool "the two uncovered lock domains are registered, each with an owner"
-    (decide (declaredFootprintUncoveredDomains.length = 2) &&
+  -- ...but authorization is not exclusion.  The endpoint lock authorizes the
+  -- splice's neighbour writes; it excludes nothing, because a *different*
+  -- operation writes the same neighbour TCB holding no lock in common.
+  assertBool "the suspend footprint respects the queue-ownership protocol (theorem)"
+    (have _r := @suspendFootprint_respects_queueOwnership
+     true)
+  -- LOAD-BEARING NEGATIVE: `tcbSetPriority` writes a queued neighbour's TCB and
+  -- declares no endpoint lock, so the protocol the umbrella rests on is
+  -- violated — the reason the gap is registered rather than claimed closed.
+  assertBool "NEGATIVE: tcbSetPriority writes a queued neighbour with no endpoint lock"
+    (have _v := @queueOwnership_violated_by_tcbSetPriority
+     have _o := @lockSet_tcbSetPriority_omits_endpointLock
+     true)
+  -- The bracket covers the OBJECT domain only; the scheduler domain, the
+  -- dynamic PIP chain and the queue-ownership protocol are named as data with
+  -- owners rather than left implicit.
+  assertBool "the three uncovered lock domains are registered, each with an owner"
+    (decide (declaredFootprintUncoveredDomains.length = 3) &&
      decide (declaredFootprintUncoveredDomains.map Prod.fst
-       = [UncoveredLockDomain.schedulerDomain, UncoveredLockDomain.dynamicPipChain]) &&
+       = [UncoveredLockDomain.schedulerDomain, UncoveredLockDomain.dynamicPipChain,
+          UncoveredLockDomain.queueOwnershipProtocol]) &&
      declaredFootprintUncoveredDomains.all (fun d => !d.2.isEmpty))
+  -- LOAD-BEARING NEGATIVE: completeness is quantified over the *constructors*,
+  -- so a domain added without a registration cannot pass.
+  assertBool "NEGATIVE: every uncovered-domain constructor is registered"
+    (UncoveredLockDomain.all.all
+       (fun d => declaredFootprintUncoveredDomains.map Prod.fst |>.contains d) &&
+     decide (UncoveredLockDomain.all.length = 3))
   assertBool "the confinement core is carried through the declared-footprint witness (theorem)"
     (have _a := @suspendUnderDeclaredLockSet_preserves_projectionOnCore_atCore
      true)

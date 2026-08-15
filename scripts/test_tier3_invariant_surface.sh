@@ -2585,6 +2585,24 @@ run_check "INVARIANT" rg -n '^theorem lockAcquisition_modifies_trusted_object_an
 # list against a literal, which a third constructor would leave elaborating.
 run_negative_check "INVARIANT" rg -n 'Prod.fst\) = \[.schedulerDomain, .dynamicPipChain\]' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: an observed state that does not hold the footprint is refused' tests/SmpInformationFlowSuite.lean
+# The queue-owning-object umbrella is an AUTHORIZATION statement, not an
+# exclusion one.  The protocol it would need is violated today by a footprint
+# that writes a queued neighbour without the endpoint lock, and that gap is a
+# theorem plus a registered domain rather than prose.
+run_check "INVARIANT" rg -n '^def queueOwnershipRespected' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem suspendFootprint_respects_queueOwnership' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_tcbSetPriority_omits_endpointLock' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem queueOwnership_violated_by_tcbSetPriority' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '\.queueOwnershipProtocol, "' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: tcbSetPriority writes a queued neighbour with no endpoint lock' tests/SmpInformationFlowSuite.lean
+# NEGATIVE: the splice docstring must not go back to claiming the umbrella
+# closes the gap — exclusion needs every writer of a queued TCB to hold the
+# endpoint lock, which `queueOwnership_violated_by_tcbSetPriority` refutes.
+run_negative_check "INVARIANT" rg -n 'there is no hole to close' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# The severity basis carries the fairness and enqueue-edge premises themselves,
+# not merely the code inequality they make meaningful.
+run_check "INVARIANT" rg -n 'contentionWitnesses_fair.1, contentionWitnesses_fair.2' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n 'contentionWitnesses_in_premises.1, contentionWitnesses_in_premises.2' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The multi-reader witness carries REACHABILITY, not merely well-formedness: a
 # wf-only existential could be satisfied by a lock word no execution produces,
 # which is the opposite of the non-vacuity the theorem claims.

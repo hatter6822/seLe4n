@@ -1438,7 +1438,13 @@ future re-grading is a re-reading of *these* rather than of prose:
   producible one: under the premises an accepted run carries, the two codes the
   floor counts are precisely the two such a run cannot produce
   (`acceptedContentionCode_ge_two`).  So the grading rests on two fair,
-  in-premise executions whose contending cores read *different* codes;
+  in-premise executions whose contending cores read *different* codes — and it
+  carries **the fairness and enqueue-edge premises themselves**, not merely the
+  resulting inequality.  Two distinct codes read off executions that are no
+  longer fair, no longer genuine enqueue edges, or no longer long enough for the
+  delay bound would say nothing about *accepted* runs; with the premises inlined
+  here, a fixture drifting out of them breaks this theorem rather than quietly
+  leaving the grading resting on observations no run can make;
 * the alphabet is `(numCores - 1) × (maxDelay + 1) + 2`, so it grows with the
   core count and the critical-section budget and with nothing else;
 * the channel has **one instance per core**, so a deployment's exposure scales
@@ -1452,6 +1458,20 @@ theorem acceptedCovertChannel_lockContention_severity_basis (maxDelay : Nat) :
       acceptedCovertChannel_lockContention.perCoreInstance = true ∧
       2 ≤ lockContentionAlphabet maxDelay ∧
       lockContentionAlphabet maxDelay = (numCores - 1) * (maxDelay + 1) + 2 ∧
+      -- The **non-closure** half of the grading, carrying the premises that make
+      -- the two observations accepted ones.  The raw code inequality alone is
+      -- not enough: a fixture that stopped being fair, stopped being a genuine
+      -- enqueue edge, or became too short for the delay bound would still have
+      -- distinct codes, and this theorem would keep elaborating while the
+      -- executions behind it no longer satisfied anything a run imposes.
+      SeLe4n.Kernel.Concurrency.FairTrace singleWaiterExecution 2 ∧
+      SeLe4n.Kernel.Concurrency.FairTrace twoWaiterExecution 2 ∧
+      ((waiterCore, AccessMode.write) ∈ (singleWaiterExecution.stateAt 2).waiters ∧
+        (waiterCore, AccessMode.write) ∉ (singleWaiterExecution.stateAt 1).waiters ∧
+        2 + lockContentionDelayBound 2 < singleWaiterExecution.ops.length) ∧
+      ((waiterCore, AccessMode.write) ∈ (twoWaiterExecution.stateAt 3).waiters ∧
+        (waiterCore, AccessMode.write) ∉ (twoWaiterExecution.stateAt 2).waiters ∧
+        3 + lockContentionDelayBound 2 < twoWaiterExecution.ops.length) ∧
       lockContentionCode singleWaiterExecution waiterCore 2
         ≠ lockContentionCode twoWaiterExecution waiterCore 3 ∧
       -- The **rate** half of the grading, in elapsed time rather than lock
@@ -1464,6 +1484,8 @@ theorem acceptedCovertChannel_lockContention_severity_basis (maxDelay : Nat) :
         (∀ k ∈ steps, k ≤ e.ops.length) → (∀ k ∈ steps, 1 ≤ k) →
         steps.length * tMin ≤ elapsedBetween cost 0 e.ops.length) :=
   ⟨rfl, rfl, lockContentionAlphabet_at_least_two maxDelay, rfl,
+   contentionWitnesses_fair.1, contentionWitnesses_fair.2,
+   contentionWitnesses_in_premises.1, contentionWitnesses_in_premises.2,
    lockContentionChannel_two_codes_reachable.2.2,
    fun e cost tMin hCost steps hNodup hRange hPos =>
      lockContentionChannel_rate_per_elapsed_time e cost tMin hCost steps hNodup hRange hPos⟩
@@ -2575,8 +2597,17 @@ endpoint lock in isolation.
 **Why the footprint is not simply widened instead**: `lockSet_tcbSuspend` is
 already `maxLockSetSize` (8) at full resolution, and that constant is the WCRT
 headline (`maxLockSetSize · (numCores − 1) · tCs`, the figure the 1 ms tick fit
-rests on).  Adding two neighbour locks would break a bound rather than close a
-hole — and there is no hole to close. -/
+rests on).  Adding two neighbour locks would break a bound.
+
+**What this theorem does *not* establish — and an earlier version of this
+docstring wrongly claimed it did.**  This is an *authorization* statement: the
+splice's neighbour writes fall under a lock the suspend holds.  Authorization is
+not exclusion.  Exclusion additionally requires that **every** writer of a queued
+TCB hold that endpoint's lock, and that is false today —
+`queueOwnership_violated_by_tcbSetPriority` below exhibits the counterexample as
+a theorem.  The sentence this replaces read "there is no hole to close"; there
+is one, it is in the *inventory* rather than in this theorem, and it is
+registered as `UncoveredLockDomain.queueOwnershipProtocol`. -/
 theorem suspendFootprint_splice_neighbors_under_endpoint_lock (st : SystemState)
     (callerTid targetTid : SeLe4n.ThreadId) (S : LockSet) (victim : TCB)
     (ep : SeLe4n.ObjId)
@@ -2624,6 +2655,108 @@ theorem suspendFootprint_splice_neighbors_under_endpoint_lock (st : SystemState)
     obtain ⟨tcbN, hMemN, hPrevN⟩ := hLinks.1 targetTid victim hVictimRaw n hNext
     exact ⟨tcbN, (SystemState.getTcb?_eq_some_iff st n tcbN).mpr hMemN, hPrevN⟩
 
+/-- SM8.D.5: the **queue-owning-object protocol**, as a predicate on a footprint.
+
+A footprint that writes TCB `t` respects the protocol for endpoint `ep` when it
+also holds `ep`'s write lock.  The discipline
+`IPC/CrossCore/Cancellation.lean` states in prose is that this holds of *every*
+footprint whose target is queued on `ep` — which is what would make the endpoint
+lock an exclusion mechanism for queue-link writes rather than merely an
+authorization for them. -/
+def queueOwnershipRespected (S : LockSet) (t : SeLe4n.ThreadId)
+    (ep : SeLe4n.ObjId) : Prop :=
+  (SeLe4n.Kernel.Concurrency.tcbLock t, AccessMode.write) ∈ S.pairs →
+    (SeLe4n.Kernel.Concurrency.endpointLock ep, AccessMode.write) ∈ S.pairs
+
+/-- SM8.D.5: the suspend footprint **does** respect the protocol for its victim.
+
+The positive half, and the reason the discipline looked complete: a suspend that
+splices a victim out of `ep`'s queue holds `ep`'s write lock, so its own
+queue-link writes are both authorized and mutually excluded against other
+suspends on the same endpoint. -/
+theorem suspendFootprint_respects_queueOwnership (st : SystemState)
+    (callerTid targetTid : SeLe4n.ThreadId) (S : LockSet) (victim : TCB)
+    (ep : SeLe4n.ObjId)
+    (hFp : SeLe4n.Kernel.Concurrency.suspendFootprintOf st callerTid targetTid = some S)
+    (hVictim : st.getTcb? targetTid = some victim)
+    (hBlocked : victimBlockedOnEndpoint victim ep)
+    (hLinks : tcbQueueLinkIntegrity st) :
+    queueOwnershipRespected S targetTid ep :=
+  fun _ => (suspendFootprint_splice_neighbors_under_endpoint_lock st callerTid targetTid
+    S victim ep hFp hVictim hBlocked hLinks).1
+
+/-- SM8.D.5: `lockSet_tcbSetPriority` never holds an endpoint lock.
+
+Its four possible members are a caller TCB read, a CNode read, a target TCB write
+and an optional SchedContext write — four `LockKind`s, none of them
+`.endpoint`. -/
+theorem lockSet_tcbSetPriority_omits_endpointLock (callerTid : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) (targetTcbTid : SeLe4n.ThreadId)
+    (boundSchedContextId : Option SeLe4n.SchedContextId) (ep : SeLe4n.ObjId) :
+    (SeLe4n.Kernel.Concurrency.endpointLock ep, AccessMode.write) ∉
+      (SeLe4n.Kernel.Concurrency.lockSet_tcbSetPriority callerTid cnodeRootObjId
+        targetTcbTid boundSchedContextId).pairs := by
+  -- Every member's key carries a `LockKind` other than `.endpoint`, so the
+  -- three-way `insertOrMerge_mem` inversion closes on the kind at each layer.
+  have step : ∀ (S : LockSet) (l : SeLe4n.Kernel.Concurrency.LockId) (m : AccessMode),
+      l.kind ≠ SeLe4n.Kernel.Concurrency.LockKind.endpoint →
+      (SeLe4n.Kernel.Concurrency.endpointLock ep, AccessMode.write) ∉ S.pairs →
+      (SeLe4n.Kernel.Concurrency.endpointLock ep, AccessMode.write) ∉
+        (S.insertOrMerge l m).pairs := by
+    intro S l m hKind hS hMem
+    rcases LockSet.insertOrMerge_mem S l m _ hMem with h | h | h
+    · have hl : l = SeLe4n.Kernel.Concurrency.endpointLock ep := (congrArg Prod.fst h).symm
+      exact hKind (by rw [hl]; rfl)
+    · exact hKind (by rw [← h]; rfl)
+    · exact hS h
+  cases boundSchedContextId <;>
+    simp only [SeLe4n.Kernel.Concurrency.lockSet_tcbSetPriority,
+      SeLe4n.Kernel.Concurrency.lockSetExtendOpt,
+      SeLe4n.Kernel.Concurrency.lockSetOfList,
+      Option.map_some, Option.map_none] <;>
+    repeat' apply step
+  all_goals
+    simp [SeLe4n.Kernel.Concurrency.tcbLock, SeLe4n.Kernel.Concurrency.cnodeLock,
+      SeLe4n.Kernel.Concurrency.schedContextLock, LockSet.empty]
+
+/-- SM8.D.5 (**the protocol is violated — the gap, as a theorem**).
+
+`tcbSetPriority` writes its target TCB whole (the model's `storeObject` replaces
+the object), and its footprint carries no endpoint lock.  So when the target is a
+queued neighbour of a suspend victim, the two footprints hold **no lock in
+common on that TCB**: the suspend holds `endpointLock ep .write` and the victim's
+`tcbLock`, the reprioritisation holds the neighbour's `tcbLock`.  Neither
+excludes the other, and both write the neighbour object.
+
+This is what distinguishes authorization from exclusion, and it is why
+`suspendFootprint_splice_neighbors_under_endpoint_lock` — which is true — does
+not by itself make the splice safe under fine locks.
+
+**Not live**: SM3.C.9 still defers `withLockSet` at the `@[export]` bodies and
+SM5.I serialises kernel entry behind one global ticket lock, so no runtime lock
+is taken from either footprint today.  It is a defect in the *declared*
+discipline, which is precisely what a declared footprint exists to get right.
+
+Stated as a `¬` rather than described, so a cut that closes it deletes this
+theorem instead of leaving prose that has quietly become false — the failure
+mode this PR hit twice already. -/
+theorem queueOwnership_violated_by_tcbSetPriority (callerTid : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) (neighbourTid : SeLe4n.ThreadId)
+    (boundSchedContextId : Option SeLe4n.SchedContextId) (ep : SeLe4n.ObjId) :
+    ¬ queueOwnershipRespected
+        (SeLe4n.Kernel.Concurrency.lockSet_tcbSetPriority callerTid cnodeRootObjId
+          neighbourTid boundSchedContextId) neighbourTid ep := by
+  intro hResp
+  refine lockSet_tcbSetPriority_omits_endpointLock callerTid cnodeRootObjId
+    neighbourTid boundSchedContextId ep (hResp ?_)
+  -- The target TCB write lock *is* declared — which is what makes the omission a
+  -- gap rather than an operation that simply does not touch the neighbour.
+  unfold SeLe4n.Kernel.Concurrency.lockSet_tcbSetPriority
+  refine SeLe4n.Kernel.Concurrency.mem_write_lockSetExtendOpt _ _ _ ?_
+  simp only [SeLe4n.Kernel.Concurrency.lockSetOfList]
+  exact SeLe4n.Kernel.self_write_mem_insertOrMerge _
+    (SeLe4n.Kernel.Concurrency.tcbLock neighbourTid)
+
 /-- SM8.D.5 (**fail-closed**): a footprint is declared only where the **decoded**
 syscall is `.tcbSuspend`.
 
@@ -2659,18 +2792,31 @@ inductive UncoveredLockDomain where
   discovered as the walk proceeds (SM3.C.11) and so not resolvable from the
   pre-state at all. -/
   | dynamicPipChain
+  /-- The queue-owning-object protocol for splice neighbours.  A suspend's
+  neighbour link writes are *authorized* by the endpoint write lock
+  (`suspendFootprint_splice_neighbors_under_endpoint_lock`) but not *excluded*
+  against other writers of the same TCB: `lockSet_tcbSetPriority` writes a queued
+  neighbour holding neither the endpoint lock nor a lock the suspend takes
+  (`queueOwnership_violated_by_tcbSetPriority`).  Closing it is an SM3.B
+  inventory decision between two options, both costed in that theorem's
+  neighbourhood — widen the ~10 TCB-writing footprints that can target a queued
+  thread with a conditional endpoint lock, or raise `maxLockSetSize` (8, and
+  `lockSet_tcbSuspend` is at it exactly) so the suspend can name the neighbours,
+  which moves the WCRT headline. -/
+  | queueOwnershipProtocol
   deriving DecidableEq, Repr
 
 /-- SM8.D.5: the domains this bracket does **not** cover, and the workstream that
 owns composing them. -/
 def declaredFootprintUncoveredDomains : List (UncoveredLockDomain × String) :=
-  [(.schedulerDomain, "SM3.C.9"), (.dynamicPipChain, "SM3.C.11")]
+  [(.schedulerDomain, "SM3.C.9"), (.dynamicPipChain, "SM3.C.11"),
+   (.queueOwnershipProtocol, "SM3.B")]
 
 /-- SM8.D.5: the exhaustive list of uncovered domains, in the shape the claim
 inventory uses — so completeness can be quantified over the *constructors*
 rather than compared against a literal. -/
 def UncoveredLockDomain.all : List UncoveredLockDomain :=
-  [.schedulerDomain, .dynamicPipChain]
+  [.schedulerDomain, .dynamicPipChain, .queueOwnershipProtocol]
 
 /-- SM8.D.5: every constructor is listed.  This is the clause a literal
 comparison cannot supply: adding a third domain makes `cases d` non-exhaustive
@@ -2680,7 +2826,7 @@ theorem UncoveredLockDomain.mem_all (d : UncoveredLockDomain) : d ∈ UncoveredL
 
 theorem UncoveredLockDomain.all_nodup : UncoveredLockDomain.all.Nodup := by decide
 
-/-- SM8.D.5: both uncovered domains are registered, each against an owner — the
+/-- SM8.D.5: every uncovered domain is registered, each against an owner — the
 completeness check on the list above.
 
 **Quantified over the type, not against a literal.**  An earlier cut compared
