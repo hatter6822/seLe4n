@@ -195,9 +195,12 @@ than the execution has steps) and a run capacity: the same three-part shape §5
 SM8.B.9 gave CC-1.  The bound is **conditional on the SM2.C `FairTrace`
 assumption**, which nothing in the kernel establishes —
 `lockContention_unbounded_without_fairness` is the execution that makes the
-premise load-bearing.  `lockContentionAlphabet_at_least_two`
-is the standing negative — the bound never claims the channel is closed, which is
-why it stays *accepted* rather than discharged.
+premise load-bearing.  `lockContentionChannel_two_codes_reachable`
+is the standing negative — two fair, in-premise executions in which the *same*
+contending core reads different codes, so the bound never claims the channel is
+closed, which is why it stays *accepted* rather than discharged.  The ceiling is
+in **lock operations**; `lockContention_wallClock_bounded` is the timing reading
+and carries a per-critical-section bound as an explicit hypothesis.
 
 ### 4.3 Why `DeclassificationEvent.originatingCore`
 
@@ -1768,8 +1771,10 @@ consumer.
   (injective; `0` reserved for "not admitted", which is why the alphabet is
   `+ 2`), `lockContentionChannel_alphabet_bounded` and
   `lockContentionChannel_trace_capacity` give CC-5 the treatment §5 SM8.B.9 gave
-  CC-1.  `lockContentionAlphabet_at_least_two` is the load-bearing negative: the
-  bound never claims the channel is closed.  `numCores - 1 = 3` is the shipped
+  CC-1.  `lockContentionChannel_two_codes_reachable` is the load-bearing
+  negative: the bound never claims the channel is closed, and the two codes it
+  exhibits are read by the *same* core, so they are one observer's two
+  situations rather than a difference between observers.  `numCores - 1 = 3` is the shipped
   hardware's real factor; `MAX_RELEASE_DELAY` is SM2.C-defer D-3.7's
   **placeholder** pending SM3 tuning, so `lockContentionAlphabet
   MAX_RELEASE_DELAY = 3077` is what that symbol currently yields rather than a
@@ -2122,6 +2127,28 @@ phase landed.
 
 Suite 532 → **533** assertions.
 
+#### v0.33.18 review cut — the eighth round, and what "released" does not mean
+
+Three findings: one a limit of the SM2.C lock API, two evidence-citation
+defects.
+
+1. **A refusal releases what was granted; it cannot cancel what was queued.**
+   `releaseAll` applies `releaseRead`/`releaseWrite`, both of which guard on
+   holdership, so for a merely queued core they are the identity — and under
+   contention `lockCore` is queued rather than holding.  `RwLockOp` has no
+   cancel constructor, so the unwind is necessarily partial; the gap is now a
+   checked fact (`rwLock_release_by_nonholder_preserves_waiters`) and the
+   docstring no longer implies otherwise.  **Registered as SM2.C debt**: a new
+   `RwLockOp` constructor changes `applyOp`, all five INV-R invariants and every
+   `cases op` across the liveness surface.
+2. **The claim inventory did not track the revalidated path** — its D.5 arms
+   cited the plain pre-state bracket, so the revalidated path could regress in
+   the concurrent case without breaking a claim.  Two new arms, 9 → 11 claims.
+3. **Four documentation sites cited the wrong non-closure witness** — the
+   allocated-alphabet floor rather than `lockContentionChannel_two_codes_reachable`.
+
+Suite stays at **533** assertions.
+
 ### SM8.E — Tests + closure (3 sub-tasks)
 
 | Sub | Description | Files | Est |
@@ -2159,7 +2186,7 @@ Suite 532 → **533** assertions.
 | Per-core projection missing a field | LOW | HIGH | Field-by-field migration; SM8.A.4 independence test |
 | 32 per-NI-constructor variants tedious | HIGH | LOW | Mechanical migration like SM4.C |
 | `crossCoreNonInterference` proof has hole | LOW | HIGH | Theorem proved by direct application of Cor 2.1.11 |
-| Lock-contention channel mitigation unclear | KNOWN | MED | Mitigation still deferred to WS-W, but the channel is no longer merely *documented*: SM8.D (v0.33.9) proves it carries no model-level flow (`onCore_lock_indistinguishable`) and **bounds** the timing it does carry (`lockContention_delay_bounded` → `lockContentionChannel_alphabet_bounded` → `lockContentionChannel_trace_capacity`), with `lockContentionAlphabet_at_least_two` the standing negative that it is bounded rather than closed |
+| Lock-contention channel mitigation unclear | KNOWN | MED | Mitigation still deferred to WS-W, but the channel is no longer merely *documented*: SM8.D (v0.33.9) proves it carries no model-level flow (`onCore_lock_indistinguishable`) and **bounds** the timing it does carry (`lockContention_delay_bounded` → `lockContentionChannel_alphabet_bounded` → `lockContentionChannel_trace_capacity`), with `lockContentionChannel_two_codes_reachable` the standing negative that it is bounded rather than closed, and the bound denominated in lock operations (`lockContention_wallClock_bounded` for the timing reading) |
 | Cross-core declass audit trail gaps | LOW | MED | DISCHARGED at SM8.C (v0.33.7).  The risk was understated: there were no writers to update — nothing constructed a `DeclassificationEvent`.  Closed by building the producer (`declassifyStoreOnCore`) and the attributed entry point (`declassifyStoreFromCore`), with `crossCoreChain_not_within_one_view` the theorem that decides one global log over per-core logs |
 
 ## 8. Acceptance gate

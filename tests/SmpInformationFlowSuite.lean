@@ -1219,6 +1219,7 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @syscallEntryUnderRevalidatedLockSet_not_refines_in_general
 #check @RevalidatedEntryOutcome
 #check @syscallEntryUnderRevalidatedLockSet_refused_releases
+#check @rwLock_release_by_nonholder_preserves_waiters
 #check @elapsedBetween
 #check @elapsedBetween_le
 #check @lockContention_wallClock_bounded
@@ -5997,12 +5998,12 @@ private def runFineLockSuccessPathChecks : IO Unit := do
 /-- §7.7  SM8.D — the phase's claim inventory, and its evidence. -/
 private def runFineLockClaimInventoryChecks : IO Unit := do
   IO.println "--- §7.7 the SM8.D claim inventory (SM8.D.1 … SM8.D.5) ---"
-  assertBool "nine claims, listed once each"
-    (decide (FineLockClaimId.all.length = 9) && decide FineLockClaimId.all.Nodup)
+  assertBool "eleven claims, listed once each"
+    (decide (FineLockClaimId.all.length = 11) && decide FineLockClaimId.all.Nodup)
   assertBool "they cover D.1, D.2, D.3 (three times), D.4 (twice) and D.5 (twice)"
     (decide (FineLockClaimId.all.map FineLockClaimId.subTask
       = ["SM8.D.1", "SM8.D.2", "SM8.D.3", "SM8.D.3", "SM8.D.4", "SM8.D.4", "SM8.D.5",
-         "SM8.D.5", "SM8.D.3"]))
+         "SM8.D.5", "SM8.D.3", "SM8.D.5", "SM8.D.5"]))
   -- D.4 carries TWO claims because `writeRules_differ` says the two integrity
   -- orders are two results: a deployment configured with one gets nothing from a
   -- theorem about the other.

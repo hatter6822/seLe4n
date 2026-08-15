@@ -1,3 +1,59 @@
+## v0.33.18 — WS-SM SM8.D: the eighth review round, and what "released" does not mean
+
+Three P2 findings, all valid. One is a limit of the SM2.C lock API that the
+previous round's fix could not have closed and should not have implied it did;
+the other two are evidence-citation defects — documentation and a claim
+inventory pointing at theorems that do not establish what the citation says.
+Theorems, tests and prose only; trace byte-identical.
+
+### A refusal releases what was granted; it cannot cancel what was queued
+
+v0.33.17 made the refusal path carry the released state so the footprint could
+not be stranded. That is right as far as it goes, and the docstring then went
+further than the code: it said a refusal hands back "the state in which the
+locks are gone". Under contention that is false. `releaseAll` applies
+`releaseRead` / `releaseWrite`, and both **guard on holdership** — `releaseRead`
+on membership in `readers`, `releaseWrite` on `writerHeld = some core` — so for
+a core that is merely *queued* they are the identity. When the growing phase
+found a member contended, `lockCore` is queued on it, and the unwind leaves that
+request in place to be promoted later.
+
+`RwLockOp` has no cancel constructor, so this is not fixable inside SM8.D. The
+gap is now a checked fact rather than a silent overclaim —
+`rwLock_release_by_nonholder_preserves_waiters` proves both release arms leave
+`waiters` untouched for a non-holder — and the docstring says plainly what
+"released" covers. **Registered as SM2.C debt**: a new `RwLockOp` constructor
+changes `applyOp`, all five INV-R invariants and every `cases op` across the
+SM2.C liveness surface, so it is that phase's datatype to extend.
+
+### The claim inventory did not track the revalidated path
+
+`.secureFlowUnderFineLocks` and `.failClosedUnderFineLocks` cite the plain
+pre-state bracket, and `syscallEntryUnderRevalidatedLockSetModel_refines` bridges
+only the no-interleaving model instance — so the revalidated path could regress
+in the concurrent case, which is the case it exists for, without breaking a
+claim. Two new arms fix that: `.revalidatedCommitTracked` (a committed outcome
+ran from the state the guard checked, holding the footprint it declared there —
+quantified over an *arbitrary* `observed`, so foreign commits are in scope) and
+`.revalidatedRefusalUnwinds` (a refused outcome carries the released state).
+Nine claims become **eleven**, D.5 now carrying four.
+
+### The specification cited the wrong non-closure witness
+
+Four documentation sites attributed CC-5's "bounded is not closed" to
+`lockContentionAlphabet_at_least_two` — whose own contract, since v0.33.16, says
+it counts only the *allocated* alphabet and that the two codes it counts are
+exactly the two an accepted acquisition cannot produce. The witness is
+`lockContentionChannel_two_codes_reachable`. All four now cite it
+(`docs/spec/SELE4N_SPEC.md`, `docs/gitbook/12-proof-and-invariant-map.md`, and
+two in the plan), with the weaker theorem's role stated rather than removed, and
+the spec's ceiling re-denominated in lock operations per v0.33.17.
+
+`SmpInformationFlowSuite` stays at **533** assertions; the golden fixture moves
+by one line (the claim count).
+
+Refs: docs/planning/SMP_INFORMATION_FLOW_PLAN.md section 5 SM8.D
+
 ## v0.33.17 — WS-SM SM8.D: the seventh review round, and what the CC-5 bound is measured in
 
 Four P2 findings, all valid. Three are on the SM8.D.5 bracket; the fourth is a

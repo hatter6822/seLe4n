@@ -2604,7 +2604,7 @@ run_check "INVARIANT" rg -n '^theorem secureInformationFlow_underFineLocks_atCor
 # BOTH integrity orders are pinned by the dependent claim inventory: a single arm
 # would keep elaborating if the authority-order result were weakened.
 run_check "INVARIANT" rg -n 'authorityIntegrityUnderLocks' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n 'FineLockClaimId.all.length = 9' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n 'FineLockClaimId.all.length = 11' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The declared suspend footprint locks the CALLER's CSpace root — the CNode the
 # capability resolution reads — not the victim's.  The negative forbids a return
 # to the victim-root form.

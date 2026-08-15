@@ -2748,8 +2748,12 @@ D.1–D.3 are restated here rather than ticked off.
   construction.  The `numCores - 1 = 3` factor is the shipped hardware's; the
   delay factor is SM2.C-defer D-3.7's **placeholder** `MAX_RELEASE_DELAY`, so
   the 3077-code alphabet is what that symbol currently yields rather than a
-  measured deployment figure.  `lockContentionAlphabet_at_least_two` is the
-  standing negative that the bound never claims the channel closed.
+  measured deployment figure.  `lockContentionChannel_two_codes_reachable` is
+  the standing negative that the bound never claims the channel closed — two
+  fair, in-premise executions in which the *same* contending core reads
+  different codes.  (`lockContentionAlphabet_at_least_two` counts only the
+  *allocated* alphabet, and the two codes it counts are exactly the two an
+  accepted acquisition cannot produce, so it is not the witness.)
 * **Biba integrity under per-core locks (D.4), in both directions.**  Stated
   over an arbitrary write rule (`noUnpermittedWrite`,
   `withLockSet_noUnpermittedWrite`) and instantiated at both

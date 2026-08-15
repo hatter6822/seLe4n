@@ -2584,6 +2584,26 @@ theorem syscallEntryUnderLockSet_eq_fromAcquired (ctx : LabelingContext) (S : Lo
       = syscallEntryFromAcquired ctx S lockCore layout executingCore regCount
           (lockSetAcquiredState S lockCore s) := rfl
 
+/-- SM8.D.5 (**why a refusal's unwind is release-only**): a release by a core
+that is not a holder is the identity, so it cannot remove that core's *queued*
+request.
+
+Both release arms of `applyOp` guard on holdership — `releaseRead` on membership
+in `readers`, `releaseWrite` on `writerHeld = some core` — and return the state
+unchanged otherwise.  A queued acquisition is therefore untouched by the whole
+shrinking phase, which is what makes the refusal path's unwind partial under
+contention.  `RwLockOp` has no cancel constructor to fix that with; see the
+`syscallEntryUnderRevalidatedLockSet` docstring for the SM2.C registration. -/
+theorem rwLock_release_by_nonholder_preserves_waiters (l : RwLockState) (c : CoreId)
+    (hNotReader : c ∉ l.readers) (hNotWriter : l.writerHeld ≠ some c) :
+    (l.applyOp (.releaseRead c)).waiters = l.waiters ∧
+      (l.applyOp (.releaseWrite c)).waiters = l.waiters := by
+  constructor
+  · show (if c ∉ l.readers then l else _).waiters = l.waiters
+    rw [if_pos hNotReader]
+  · show (if l.writerHeld ≠ some c then l else _).waiters = l.waiters
+    rw [if_pos hNotWriter]
+
 /-- SM8.D.5 (**the resolve/acquire race, closed by revalidation**): the bracket
 that re-resolves the footprint **after** the growing phase and refuses if it
 moved.
@@ -2622,7 +2642,20 @@ branch returned `none` without running the shrinking phase, so a caller taking
 the documented fallback walked away still holding the abandoned footprint and
 blocked every later user of those objects.  Lock unwinding is now part of the
 result: `.refused` carries the **released** state, so there is no way to observe
-a refusal without also receiving the state in which the locks are gone. -/
+a refusal without also receiving the state the shrinking phase produced.
+
+**What "released" does and does not mean.**  `releaseAll` applies
+`releaseRead` / `releaseWrite`, and both are the *identity* for a core that is
+not a holder (`rwLock_release_by_nonholder_preserves_waiters`).  So when the
+growing phase found a member contended, `lockCore` is **queued** on it rather
+than holding it, and the unwind cannot remove that request — `RwLockOp` has no
+cancel operation.  The refusal therefore releases what was granted and leaves
+what was merely requested, which can still be promoted later and strand the
+lock.  Adding a cancel is registered as **SM2.C debt**: a new `RwLockOp`
+constructor changes `applyOp`, all five INV-R invariants and every `cases op` in
+the SM2.C liveness surface, so it is that phase's datatype to extend.  Stated
+here rather than left implicit, because a reader who takes "released" to mean
+"the footprint is fully unwound" would be wrong under contention. -/
 inductive RevalidatedEntryOutcome where
   /-- No footprint is declared for the operation the entry runs, so nothing was
   acquired and nothing needs releasing — the caller keeps its coarser
@@ -2990,20 +3023,30 @@ inductive FineLockClaimId where
   | failClosedUnderFineLocks
   /-- SM8.D.3 — CC-5's inventory entry is backed by the bound, not by prose. -/
   | contentionChannelRegistered
+  /-- SM8.D.5 — a **committed** revalidated entry ran from the state the guard
+  checked, holding the footprint it declared.  Separate from
+  `.secureFlowUnderFineLocks`, which is about the plain pre-state bracket: the
+  revalidated path runs `syscallEntryFromAcquired` from `observed`, so an arm
+  citing only the plain bracket would keep elaborating if that path regressed. -/
+  | revalidatedCommitTracked
+  /-- SM8.D.5 — a **refused** revalidated entry unwinds: the outcome carries the
+  released state rather than the observed one. -/
+  | revalidatedRefusalUnwinds
   deriving DecidableEq, Repr
 
 def FineLockClaimId.all : List FineLockClaimId :=
   [ .lockStateInvisible, .readerMultiplicityHidden, .writerExclusionHidden
   , .contentionDelayBounded, .integrityUnderLocks, .authorityIntegrityUnderLocks
   , .secureFlowUnderFineLocks, .failClosedUnderFineLocks
-  , .contentionChannelRegistered ]
+  , .contentionChannelRegistered
+  , .revalidatedCommitTracked, .revalidatedRefusalUnwinds ]
 
 theorem FineLockClaimId.mem_all (id : FineLockClaimId) : id ∈ FineLockClaimId.all := by
   cases id <;> decide
 
 theorem FineLockClaimId.all_nodup : FineLockClaimId.all.Nodup := by decide
 
-theorem fineLockClaims_count : FineLockClaimId.all.length = 9 := by rfl
+theorem fineLockClaims_count : FineLockClaimId.all.length = 11 := by rfl
 
 /-- SM8.D: the plan sub-task each claim discharges. -/
 def FineLockClaimId.subTask : FineLockClaimId → String
@@ -3016,6 +3059,8 @@ def FineLockClaimId.subTask : FineLockClaimId → String
   | .secureFlowUnderFineLocks => "SM8.D.5"
   | .failClosedUnderFineLocks => "SM8.D.5"
   | .contentionChannelRegistered => "SM8.D.3"
+  | .revalidatedCommitTracked => "SM8.D.5"
+  | .revalidatedRefusalUnwinds => "SM8.D.5"
 
 /-- SM8.D: **every proof-carrying sub-task of the phase is claimed.**  D.6 is
 the scenario suite (`tests/SmpInformationFlowSuite.lean` §7), which is a Tier-2
@@ -3023,7 +3068,7 @@ runner rather than a theorem, so it is deliberately absent. -/
 theorem fineLockClaims_cover_subTasks :
     FineLockClaimId.all.map FineLockClaimId.subTask
       = ["SM8.D.1", "SM8.D.2", "SM8.D.3", "SM8.D.3", "SM8.D.4", "SM8.D.4", "SM8.D.5",
-         "SM8.D.5", "SM8.D.3"] := by
+         "SM8.D.5", "SM8.D.3", "SM8.D.5", "SM8.D.5"] := by
   rfl
 
 /-- SM8.D: the name of the theorem that discharges each claim, compile-time
@@ -3038,6 +3083,8 @@ def fineLockClaimTheorem : FineLockClaimId → String
   | .secureFlowUnderFineLocks => niName! syscallEntryUnderLockSet_preserves_projectionOnCore_atCore
   | .failClosedUnderFineLocks => niName! syscallEntryUnderLockSet_failClosed_invisible
   | .contentionChannelRegistered => niName! acceptedCovertChannel_lockContention_bounded
+  | .revalidatedCommitTracked => niName! syscallEntryUnderRevalidatedLockSet_footprint_stable
+  | .revalidatedRefusalUnwinds => niName! syscallEntryUnderRevalidatedLockSet_refused_releases
 
 theorem fineLockClaimTheorem_nodup :
     (FineLockClaimId.all.map fineLockClaimTheorem).Nodup := by decide
@@ -3131,6 +3178,28 @@ def FineLockClaimId.evidenceProp : FineLockClaimId → Prop
           acceptedCovertChannel_lockContention.modelVisible = false ∧
             acceptedCovertChannel_lockContention.severity = CovertChannelSeverity.medium ∧
             lockContentionCode e c kEnq < lockContentionAlphabet maxDelay
+  | .revalidatedCommitTracked =>
+      -- Over an ARBITRARY `observed`, so a concurrent kernel's foreign commits
+      -- are in scope: a committed outcome ran from the state the guard checked
+      -- and held the footprint it declared there.
+      ∀ (ctx : LabelingContext) (lockCore : CoreId)
+        (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
+        (s observed : SystemState) (r : SystemState × Except KernelError Unit),
+        syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore regCount s
+            observed = .committed r →
+        ∃ S, declaredLockSetForEntry ctx layout executingCore regCount s = some S ∧
+          declaredLockSetForEntry ctx layout executingCore regCount observed = some S ∧
+          SeLe4n.Kernel.Concurrency.lockSetHeld lockCore S observed ∧
+          r = syscallEntryFromAcquired ctx S lockCore layout executingCore regCount observed
+  | .revalidatedRefusalUnwinds =>
+      ∀ (ctx : LabelingContext) (lockCore : CoreId)
+        (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
+        (s observed released : SystemState),
+        syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore regCount s
+            observed = .refused released →
+        ∃ S, declaredLockSetForEntry ctx layout executingCore regCount s = some S ∧
+          released = SeLe4n.Kernel.Concurrency.releaseAll lockCore
+            S.lockAcquireSequence.reverse observed
 
 /-- SM8.D: **the evidence** — every claim discharged by citation.  This
 definition is the phase's completeness check: it elaborates only if every claim
@@ -3165,6 +3234,14 @@ def fineLockClaimEvidence : (id : FineLockClaimId) → id.evidenceProp
       fun maxDelay e hFair hInit c m kEnq hQueued hWithin =>
         acceptedCovertChannel_lockContention_bounded maxDelay e hFair hInit c m kEnq hQueued
           hWithin
+  | .revalidatedCommitTracked =>
+      fun ctx lockCore layout executingCore regCount s observed r h =>
+        syscallEntryUnderRevalidatedLockSet_footprint_stable ctx lockCore layout executingCore
+          regCount s observed r h
+  | .revalidatedRefusalUnwinds =>
+      fun ctx lockCore layout executingCore regCount s observed released h =>
+        syscallEntryUnderRevalidatedLockSet_refused_releases ctx lockCore layout executingCore
+          regCount s observed released h
 
 /-- SM8.D: the evidence is non-empty at every claim — the sanity check that the
 table is inhabited rather than a family of vacuous `True`s. -/

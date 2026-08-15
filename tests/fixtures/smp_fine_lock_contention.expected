@@ -16,4 +16,4 @@
 [smp-fine-lock] bracketed entry refused: SeLe4n.Model.KernelError.illegalState lockOnly=true
 [smp-fine-lock] bracketed entry succeeded: ok lowInvisible=true
 [smp-fine-lock] declared footprints: tcbSuspend=true send=false
-[smp-fine-lock] claims: 9 over 5 distinct proof-carrying sub-tasks
+[smp-fine-lock] claims: 11 over 5 distinct proof-carrying sub-tasks
