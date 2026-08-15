@@ -519,6 +519,16 @@ import SeLe4n.Kernel.InformationFlow.CovertChannelPerCore
 -- require the woken thread to be non-observable, these hold for a fully visible
 -- one.  Reachability: staged at SM8.B; SM8.C is the next consumer.
 import SeLe4n.Kernel.InformationFlow.NonInterferenceCrossCore
+-- WS-SM SM8.C: the per-core declassification audit.  The one path allowed to
+-- move information *down* the lattice, made SMP-faithful: the audited producer
+-- `declassifyStoreOnCore` (the pre-SM8.C `DeclassificationEvent` had no writer
+-- at all), the attributed entry point `declassifyStoreFromCore` (source domain
+-- read off the executing core's running subject, not accepted from the caller),
+-- the per-core audit views with their exact partition, cross-core chains with a
+-- decidable laundering detector, `authorizationBasis_perCore`, and the eight
+-- cross-core declassification rules as data with dependently-typed evidence.
+-- Reachability: staged at SM8.C; SM8.D / SM8.E closure is the next consumer.
+import SeLe4n.Kernel.InformationFlow.DeclassificationPerCore
 -- WS-SM SM6.A: the cross-core-aware syscall dispatch entry —
 -- `syscallDispatchCrossCoreEntry` (`@[export lean_syscall_dispatch_cross_core]`).
 -- Runs the verified `syscallDispatchFromAbi` atomically via `modifyGetKernelState`,

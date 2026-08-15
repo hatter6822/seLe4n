@@ -106,11 +106,14 @@ theorem endpointReceiveDualChecked_eq_endpointReceiveDual_when_allowed
     (replyId : Option SeLe4n.ReplyId)
     (st : SystemState)
     (hFlow : securityFlowsTo (ctx.endpointLabelOf endpointId)
+               (ctx.threadLabelOf receiver) = true)
+    -- WS-SM SM8.C: the endpoint's own override must admit the flow too.
+    (hOverride : endpointOverrideAllows ctx endpointId (ctx.endpointLabelOf endpointId)
                (ctx.threadLabelOf receiver) = true) :
     endpointReceiveDualChecked ctx endpointId receiver replyId st =
       endpointReceiveDual endpointId receiver replyId st := by
   unfold endpointReceiveDualChecked
-  simp [hFlow]
+  simp [endpointFlowGate_of ctx endpointId _ _ hFlow hOverride]
 
 /-- WS-H8: When the policy denies flow, endpointReceiveDualChecked returns
 `flowDenied`. -/
@@ -125,7 +128,7 @@ theorem endpointReceiveDualChecked_flowDenied
     endpointReceiveDualChecked ctx endpointId receiver replyId st =
       .error .flowDenied := by
   unfold endpointReceiveDualChecked
-  simp [hDeny]
+  simp [endpointFlowGate_false_of_securityFlowsTo_false ctx endpointId _ _ hDeny]
 
 -- ============================================================================
 -- WS-H8: Denied-preserves-state theorems for new wrappers
@@ -173,7 +176,8 @@ theorem endpointReceiveDualChecked_denied_preserves_state
     ¬∃ (r : SeLe4n.ThreadId) (st' : SystemState),
       endpointReceiveDualChecked ctx endpointId receiver replyId st = .ok (r, st') := by
   intro ⟨r, st', h⟩
-  simp [endpointReceiveDualChecked, hDeny] at h
+  simp [endpointReceiveDualChecked,
+    endpointFlowGate_false_of_securityFlowsTo_false ctx endpointId _ _ hDeny] at h
 
 -- ============================================================================
 -- WS-H8: Enforcement sufficiency theorems for new wrappers
@@ -224,13 +228,18 @@ theorem enforcement_sufficiency_endpointReceiveDual
     (receiver : SeLe4n.ThreadId)
     (replyId : Option SeLe4n.ReplyId)
     (st : SystemState) :
-    (securityFlowsTo (ctx.endpointLabelOf endpointId) (ctx.threadLabelOf receiver) = true ∧
+    -- WS-SM SM8.C: stated against `endpointFlowGate`, the predicate the wrapper
+    -- branches on (see `enforcement_sufficiency_endpointSendDual`).
+    (endpointFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
+        (ctx.threadLabelOf receiver) = true ∧
        endpointReceiveDualChecked ctx endpointId receiver replyId st =
          endpointReceiveDual endpointId receiver replyId st) ∨
-    (securityFlowsTo (ctx.endpointLabelOf endpointId) (ctx.threadLabelOf receiver) = false ∧
+    (endpointFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
+        (ctx.threadLabelOf receiver) = false ∧
        endpointReceiveDualChecked ctx endpointId receiver replyId st =
          .error .flowDenied) := by
-  cases hFlow : securityFlowsTo (ctx.endpointLabelOf endpointId) (ctx.threadLabelOf receiver) with
+  cases hFlow : endpointFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
+      (ctx.threadLabelOf receiver) with
   | true => left; exact ⟨rfl, by simp [endpointReceiveDualChecked, hFlow]⟩
   | false => right; exact ⟨rfl, by simp [endpointReceiveDualChecked, hFlow]⟩
 
@@ -327,13 +336,21 @@ theorem enforcementSoundness_registerServiceChecked
     unification of one mapped page (vspaceUnifyInstructionPage — seL4's
     Page_Unify_Instruction; capability-only, gated by the `.write` right on the
     page's capability, with no information-flow policy to consult because no
-    data crosses a label boundary). -/
+    data crosses a label boundary).
+    WS-SM SM8.C expanded from 38 to 39 entries with the live declassification
+    entry point (declassifyObjectFromCore — **policy-gated**, and the only
+    policy-gated entry that may complete when `securityFlowsTo` says no: it
+    consults the configured `DeclassificationPolicy` after the ordinary flow
+    check refuses, and records the downgrade in the audit trail). -/
 abbrev enforcementBoundaryExtended : List EnforcementClass := enforcementBoundary
 
 /-- V6-L/Z8-M/D2/D3/AC4-D (L-IF-3): Completeness assertion — `enforcementBoundaryExtended`
-    has exactly 38 entries, matching the canonical `enforcementBoundary`. -/
+    has exactly 39 entries, matching the canonical `enforcementBoundary`.
+
+    This theorem is the authority for the entry count; `enforcementBoundary`'s
+    own docstring deliberately does not restate it. -/
 theorem enforcementBoundaryExtended_count :
-    enforcementBoundaryExtended.length = 38 := by rfl
+    enforcementBoundaryExtended.length = 39 := by rfl
 
 /-- W2-G (M-3): Element-wise correspondence — `enforcementBoundaryExtended` and
     `enforcementBoundary` are definitionally equal. This closes the M-3 finding
@@ -349,6 +366,35 @@ theorem enforcementBoundaryExtended_matches_canonical :
 -- ============================================================================
 -- WS-H8/A-35: Enforcement soundness meta-theorem
 -- ============================================================================
+
+/-- WS-SM SM8.C: **enforcement soundness at the gate** — a successful checked
+send implies the whole `endpointFlowGate` passed: global check *and* endpoint
+override.
+
+Stated separately from the `securityFlowsTo` form below because the two now say
+different things: this is what the wrapper branched on, and that one is the half
+every pre-SM8.C consumer asked for.  Deriving the second from the first keeps
+one proof of the branch rather than two. -/
+theorem enforcementSoundness_endpointSendDualChecked_gate
+    (ctx : LabelingContext)
+    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (st : SystemState) (r : CapTransferSummary) (st' : SystemState)
+    (hStep : endpointSendDualChecked ctx endpointId sender msg endpointRights
+              senderCspaceRoot receiverSlotBase st = .ok (r, st')) :
+    endpointFlowGate ctx endpointId (ctx.threadLabelOf sender)
+      (ctx.endpointLabelOf endpointId) = true := by
+  unfold endpointSendDualChecked at hStep
+  -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep)
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  cases h : endpointFlowGate ctx endpointId (ctx.threadLabelOf sender)
+      (ctx.endpointLabelOf endpointId) with
+  | true => rfl
+  | false => simp [h] at hStep
 
 /-- WS-H8/A-35: Enforcement soundness — a checked operation that succeeds
 implies the flow check passed. This is the foundational bridge connecting
@@ -366,15 +412,9 @@ theorem enforcementSoundness_endpointSendDualChecked
     (hStep : endpointSendDualChecked ctx endpointId sender msg endpointRights
               senderCspaceRoot receiverSlotBase st = .ok (r, st')) :
     securityFlowsTo (ctx.threadLabelOf sender) (ctx.endpointLabelOf endpointId) = true := by
-  unfold endpointSendDualChecked at hStep
-  -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
-  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  cases h : securityFlowsTo (ctx.threadLabelOf sender) (ctx.endpointLabelOf endpointId) with
-  | true => rfl
-  | false => simp [h] at hStep
+  exact endpointFlowGate_implies_securityFlowsTo ctx endpointId _ _
+    (enforcementSoundness_endpointSendDualChecked_gate ctx endpointId sender msg endpointRights
+      senderCspaceRoot receiverSlotBase st r st' hStep)
 
 /-- WS-H8/A-35: Enforcement soundness for notificationSignalChecked. -/
 theorem enforcementSoundness_notificationSignalChecked
@@ -413,6 +453,21 @@ theorem enforcementSoundness_cspaceMoveChecked
     have := cspaceMoveChecked_flowDenied ctx src dst st h
     rw [this] at hStep; simp at hStep
 
+/-- WS-SM SM8.C: enforcement soundness at the gate for the checked receive. -/
+theorem enforcementSoundness_endpointReceiveDualChecked_gate
+    (ctx : LabelingContext)
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId)
+    (st : SystemState) (r : SeLe4n.ThreadId) (st' : SystemState)
+    (hStep : endpointReceiveDualChecked ctx endpointId receiver replyId st = .ok (r, st')) :
+    endpointFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
+      (ctx.threadLabelOf receiver) = true := by
+  unfold endpointReceiveDualChecked at hStep
+  cases h : endpointFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
+      (ctx.threadLabelOf receiver) with
+  | true => rfl
+  | false => simp [h] at hStep
+
 /-- WS-H8/A-35: Enforcement soundness for endpointReceiveDualChecked. -/
 theorem enforcementSoundness_endpointReceiveDualChecked
     (ctx : LabelingContext)
@@ -420,16 +475,31 @@ theorem enforcementSoundness_endpointReceiveDualChecked
     (replyId : Option SeLe4n.ReplyId)
     (st : SystemState) (r : SeLe4n.ThreadId) (st' : SystemState)
     (hStep : endpointReceiveDualChecked ctx endpointId receiver replyId st = .ok (r, st')) :
-    securityFlowsTo (ctx.endpointLabelOf endpointId) (ctx.threadLabelOf receiver) = true := by
-  cases h : securityFlowsTo (ctx.endpointLabelOf endpointId) (ctx.threadLabelOf receiver) with
-  | true => rfl
-  | false =>
-    have := endpointReceiveDualChecked_flowDenied ctx endpointId receiver replyId st h
-    rw [this] at hStep; simp at hStep
+    securityFlowsTo (ctx.endpointLabelOf endpointId) (ctx.threadLabelOf receiver) = true :=
+  endpointFlowGate_implies_securityFlowsTo ctx endpointId _ _
+    (enforcementSoundness_endpointReceiveDualChecked_gate ctx endpointId receiver replyId
+      st r st' hStep)
 
 -- ============================================================================
 -- Y2-E: Enforcement soundness for the remaining 5 checked wrappers
 -- ============================================================================
+
+/-- WS-SM SM8.C: enforcement soundness at the gate for the checked call. -/
+theorem enforcementSoundness_endpointCallChecked_gate
+    (ctx : LabelingContext)
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
+    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (st : SystemState) (r : CapTransferSummary) (st' : SystemState)
+    (hStep : endpointCallChecked ctx endpointId caller msg endpointRights
+              callerCspaceRoot receiverSlotBase st = .ok (r, st')) :
+    endpointFlowGate ctx endpointId (ctx.threadLabelOf caller)
+      (ctx.endpointLabelOf endpointId) = true := by
+  unfold endpointCallChecked at hStep
+  cases h : endpointFlowGate ctx endpointId (ctx.threadLabelOf caller)
+      (ctx.endpointLabelOf endpointId) with
+  | true => rfl
+  | false => simp [h] at hStep
 
 /-- Y2-E: Enforcement soundness for endpointCallChecked.
 Success implies caller→endpoint flow is allowed. -/
@@ -442,10 +512,9 @@ theorem enforcementSoundness_endpointCallChecked
     (hStep : endpointCallChecked ctx endpointId caller msg endpointRights
               callerCspaceRoot receiverSlotBase st = .ok (r, st')) :
     securityFlowsTo (ctx.threadLabelOf caller) (ctx.endpointLabelOf endpointId) = true := by
-  unfold endpointCallChecked at hStep
-  cases h : securityFlowsTo (ctx.threadLabelOf caller) (ctx.endpointLabelOf endpointId) with
-  | true => rfl
-  | false => simp [h] at hStep
+  exact endpointFlowGate_implies_securityFlowsTo ctx endpointId _ _
+    (enforcementSoundness_endpointCallChecked_gate ctx endpointId caller msg endpointRights
+      callerCspaceRoot receiverSlotBase st r st' hStep)
 
 /-- Y2-E: Enforcement soundness for endpointReplyChecked.
 Success implies replier→target flow is allowed. -/
@@ -499,9 +568,12 @@ theorem enforcementSoundness_endpointReplyRecvChecked
   cases h1 : securityFlowsTo (ctx.threadLabelOf receiver) (ctx.threadLabelOf replyTarget) with
   | false => simp [h1] at hStep
   | true =>
-    cases h2 : securityFlowsTo (ctx.endpointLabelOf endpointId) (ctx.threadLabelOf receiver) with
+    -- WS-SM SM8.C: the receive leg branches on the gate; the reply leg does not
+    -- (the endpoint override governs flows crossing the endpoint).
+    cases h2 : endpointFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
+        (ctx.threadLabelOf receiver) with
     | false => simp [h1, h2] at hStep
-    | true => exact ⟨rfl, rfl⟩
+    | true => exact ⟨rfl, endpointFlowGate_implies_securityFlowsTo ctx endpointId _ _ h2⟩
 
 -- ============================================================================
 -- WS-H10/A-39: Declassification enforcement
@@ -519,6 +591,31 @@ The operation is modeled as a state-transparent write: it stores an object
 at the target location (simulating the information transfer) after verifying
 authorization. The key security property is that declassification is observable
 ONLY to the authorized target domain — all other domains see no change. -/
+
+/-- WS-SM SM8.C.9: **the declassification decision, on its own** — the two
+authorization checks `declassifyStore` runs, factored out of the store it gates.
+
+Factored because the live `.declassify` syscall (SM8.C.9) runs exactly these
+checks and records the result, but does **not** perform the store: that store is
+the model's *simulation* of an information transfer (the docstring above says
+so), and simulating a transfer by overwriting an arbitrary object is not
+something a syscall may do — it would let a caller install a chosen
+`KernelObject` at a chosen id and break every object-store invariant at once.
+
+Sharing the decision rather than restating it is what makes
+`authorizeDeclassificationOnCore_agrees_with_gate` an equality of the *same*
+computation instead of a claim that two copies happen to match. -/
+def declassificationDecision
+    (ctx : GenericLabelingContext)
+    (declPolicy : DeclassificationPolicy)
+    (srcDomain dstDomain : SecurityDomain) : Except KernelError Unit :=
+  if ctx.policy.canFlow srcDomain dstDomain then
+    -- Normal flow allowed — this is not a declassification scenario
+    .error .flowDenied
+  else if declPolicy.canDeclassify srcDomain dstDomain then
+    .ok ()
+  else
+    .error .declassificationDenied
 
 /-- WS-H10/A-39: Declassification-checked object store: authorizes a controlled
 information downgrade from `srcDomain` to `dstDomain` before storing an object.
@@ -543,6 +640,53 @@ def declassifyStore
       storeObject targetId obj st
     else
       .error .declassificationDenied
+
+/-- WS-SM SM8.C.9: the gate **is** the decision followed by the store.  The
+correspondence that keeps `declassificationDecision` honest: it is not a second
+implementation of the checks, it is the checks `declassifyStore` performs. -/
+theorem declassifyStore_eq_decision_bind
+    (ctx : GenericLabelingContext)
+    (declPolicy : DeclassificationPolicy)
+    (srcDomain dstDomain : SecurityDomain)
+    (targetId : SeLe4n.ObjId) (obj : KernelObject) (st : SystemState) :
+    declassifyStore ctx declPolicy srcDomain dstDomain targetId obj st =
+      (declassificationDecision ctx declPolicy srcDomain dstDomain).bind
+        (fun _ => storeObject targetId obj st) := by
+  unfold declassifyStore declassificationDecision
+  split
+  · rfl
+  · split <;> rfl
+
+/-- WS-SM SM8.C.9: the decision succeeds exactly when the downgrade is
+authorized — base policy denies and the declassification policy permits.  The
+decision-level form of `enforcementSoundness_declassifyStore`. -/
+theorem declassificationDecision_ok_iff
+    (ctx : GenericLabelingContext)
+    (declPolicy : DeclassificationPolicy)
+    (srcDomain dstDomain : SecurityDomain) :
+    declassificationDecision ctx declPolicy srcDomain dstDomain = .ok () ↔
+      (ctx.policy.canFlow srcDomain dstDomain = false ∧
+        declPolicy.canDeclassify srcDomain dstDomain = true) := by
+  unfold declassificationDecision
+  cases hNormal : ctx.policy.canFlow srcDomain dstDomain with
+  | true => simp
+  | false =>
+    cases hDecl : declPolicy.canDeclassify srcDomain dstDomain with
+    | true => simp
+    | false => simp
+
+/-- WS-SM SM8.C.9: the decision agrees with the `DeclassificationPolicy`
+predicate the rest of the information-flow layer reasons with. -/
+theorem declassificationDecision_ok_iff_isDeclassificationAuthorized
+    (ctx : GenericLabelingContext)
+    (declPolicy : DeclassificationPolicy)
+    (srcDomain dstDomain : SecurityDomain) :
+    declassificationDecision ctx declPolicy srcDomain dstDomain = .ok () ↔
+      DeclassificationPolicy.isDeclassificationAuthorized ctx.policy declPolicy
+        srcDomain dstDomain = true := by
+  rw [declassificationDecision_ok_iff]
+  unfold DeclassificationPolicy.isDeclassificationAuthorized
+  simp
 
 /-- WS-H10/A-39: When declassification is authorized, the operation delegates
 to storeObject. -/
@@ -839,5 +983,167 @@ theorem enforcementBridge_to_NonInterferenceStep
       enforcementSoundness_notificationWaitChecked ctx ntfnId waiter st r st' hStep,
     fun eid receiver replyTarget msg replyId hStep =>
       enforcementSoundness_endpointReplyRecvChecked ctx eid receiver replyTarget msg replyId st st' hStep⟩
+
+
+-- ============================================================================
+-- WS-SM SM8.C: completing the `_denied_preserves_state` / `enforcement_sufficiency_`
+-- families over every policy-gated boundary entry
+-- ============================================================================
+
+/-! Both families were documented as covering "all policy-gated operations" while
+covering seven of them.  Four wrappers landed after the families were written and
+never joined them — `endpointCallChecked` (U5-B), `endpointReplyChecked` (U5-C),
+`notificationWaitChecked` (V2-A) and `endpointReplyRecvChecked` (V2-C) — so the
+claim was false in the direction that matters: a reader checking whether *every*
+gate fails closed, and whether any gate has a third behaviour beyond
+delegate-or-deny, had no theorem for a third of them.
+
+Per the implement-the-improvement rule the remedy is the theorems, not a smaller
+claim.  With these eight and the three in
+`InformationFlow/Declassification.lean`, the families cover all twelve
+policy-gated entries of `enforcementBoundary`.  The declassification contributes
+three rather than two because its denial-preservation is stated at both levels:
+`declassifyObjectFromCore`, the name `enforcementBoundary` classifies (covering
+all three of its refusal modes — an idle core, an absent target, and a declined
+decision), and `authorizeDeclassificationOnCore`, the gate that entry wraps. -/
+
+/-- WS-SM SM8.C: `endpointCallChecked` denied → no state change.
+
+Stated on the **global** check rather than on `endpointFlowGate`, which is the
+usable form: `endpointFlowGate` is the conjunction of the lattice check with the
+endpoint's override, so a failing lattice check sinks the gate regardless of how
+the endpoint is configured (`endpointFlowGate_false_of_securityFlowsTo_false`),
+and an operator cannot open this path by installing an override. -/
+theorem endpointCallChecked_denied_preserves_state
+    (ctx : LabelingContext) (endpointId : SeLe4n.ObjId)
+    (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointRights : AccessRightSet)
+    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (st : SystemState)
+    (hDeny : securityFlowsTo (ctx.threadLabelOf caller)
+               (ctx.endpointLabelOf endpointId) = false) :
+    ¬∃ (r : CapTransferSummary) (st' : SystemState),
+      endpointCallChecked ctx endpointId caller msg endpointRights
+        callerCspaceRoot receiverSlotBase st = .ok (r, st') := by
+  intro ⟨r, st', h⟩
+  simp [endpointCallChecked,
+    endpointFlowGate_false_of_securityFlowsTo_false ctx endpointId _ _ hDeny] at h
+
+/-- WS-SM SM8.C: `endpointCallChecked` either delegates or returns `flowDenied`. -/
+theorem enforcement_sufficiency_endpointCall
+    (ctx : LabelingContext) (endpointId : SeLe4n.ObjId)
+    (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointRights : AccessRightSet)
+    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (st : SystemState) :
+    (endpointFlowGate ctx endpointId (ctx.threadLabelOf caller)
+        (ctx.endpointLabelOf endpointId) = true ∧
+       endpointCallChecked ctx endpointId caller msg endpointRights
+           callerCspaceRoot receiverSlotBase st =
+         endpointCallWithCaps endpointId caller msg endpointRights
+           callerCspaceRoot receiverSlotBase st) ∨
+    (endpointFlowGate ctx endpointId (ctx.threadLabelOf caller)
+        (ctx.endpointLabelOf endpointId) = false ∧
+       endpointCallChecked ctx endpointId caller msg endpointRights
+           callerCspaceRoot receiverSlotBase st = .error .flowDenied) := by
+  cases hFlow : endpointFlowGate ctx endpointId (ctx.threadLabelOf caller)
+      (ctx.endpointLabelOf endpointId) with
+  | true => left; exact ⟨rfl, by simp [endpointCallChecked, hFlow]⟩
+  | false => right; exact ⟨rfl, by simp [endpointCallChecked, hFlow]⟩
+
+/-- WS-SM SM8.C: `endpointReplyChecked` denied → no state change. -/
+theorem endpointReplyChecked_denied_preserves_state
+    (ctx : LabelingContext) (replier target : SeLe4n.ThreadId)
+    (msg : IpcMessage) (st : SystemState)
+    (hDeny : securityFlowsTo (ctx.threadLabelOf replier)
+               (ctx.threadLabelOf target) = false) :
+    ¬∃ st', endpointReplyChecked ctx replier target msg st = .ok ((), st') := by
+  intro ⟨st', h⟩
+  simp [endpointReplyChecked, hDeny] at h
+
+/-- WS-SM SM8.C: `endpointReplyChecked` either delegates or returns `flowDenied`. -/
+theorem enforcement_sufficiency_endpointReply
+    (ctx : LabelingContext) (replier target : SeLe4n.ThreadId)
+    (msg : IpcMessage) (st : SystemState) :
+    (securityFlowsTo (ctx.threadLabelOf replier) (ctx.threadLabelOf target) = true ∧
+       endpointReplyChecked ctx replier target msg st =
+         endpointReply replier target msg st) ∨
+    (securityFlowsTo (ctx.threadLabelOf replier) (ctx.threadLabelOf target) = false ∧
+       endpointReplyChecked ctx replier target msg st = .error .flowDenied) := by
+  cases hFlow : securityFlowsTo (ctx.threadLabelOf replier) (ctx.threadLabelOf target) with
+  | true => left; exact ⟨rfl, by simp [endpointReplyChecked, hFlow]⟩
+  | false => right; exact ⟨rfl, by simp [endpointReplyChecked, hFlow]⟩
+
+/-- WS-SM SM8.C: `notificationWaitChecked` denied → no state change. -/
+theorem notificationWaitChecked_denied_preserves_state
+    (ctx : LabelingContext) (notificationId : SeLe4n.ObjId)
+    (waiter : SeLe4n.ThreadId) (st : SystemState)
+    (hDeny : securityFlowsTo (ctx.objectLabelOf notificationId)
+               (ctx.threadLabelOf waiter) = false) :
+    ¬∃ (r : Option SeLe4n.Badge) (st' : SystemState),
+      notificationWaitChecked ctx notificationId waiter st = .ok (r, st') := by
+  intro ⟨r, st', h⟩
+  simp [notificationWaitChecked, hDeny] at h
+
+/-- WS-SM SM8.C: `notificationWaitChecked` either delegates or returns `flowDenied`. -/
+theorem enforcement_sufficiency_notificationWait
+    (ctx : LabelingContext) (notificationId : SeLe4n.ObjId)
+    (waiter : SeLe4n.ThreadId) (st : SystemState) :
+    (securityFlowsTo (ctx.objectLabelOf notificationId) (ctx.threadLabelOf waiter) = true ∧
+       notificationWaitChecked ctx notificationId waiter st =
+         notificationWait notificationId waiter st) ∨
+    (securityFlowsTo (ctx.objectLabelOf notificationId) (ctx.threadLabelOf waiter) = false ∧
+       notificationWaitChecked ctx notificationId waiter st = .error .flowDenied) := by
+  cases hFlow : securityFlowsTo (ctx.objectLabelOf notificationId)
+      (ctx.threadLabelOf waiter) with
+  | true => left; exact ⟨rfl, by simp [notificationWaitChecked, hFlow]⟩
+  | false => right; exact ⟨rfl, by simp [notificationWaitChecked, hFlow]⟩
+
+/-- WS-SM SM8.C: `endpointReplyRecvChecked` denied → no state change.
+
+The compound wrapper has two legs, so the hypothesis is a disjunction: **either**
+leg refusing sinks the whole operation.  That is the property a caller needs —
+there is no partial commit in which the reply lands and the receive does not. -/
+theorem endpointReplyRecvChecked_denied_preserves_state
+    (ctx : LabelingContext) (endpointId : SeLe4n.ObjId)
+    (receiver replyTarget : SeLe4n.ThreadId) (msg : IpcMessage)
+    (replyId : Option SeLe4n.ReplyId) (st : SystemState)
+    (hDeny : securityFlowsTo (ctx.threadLabelOf receiver)
+               (ctx.threadLabelOf replyTarget) = false ∨
+             securityFlowsTo (ctx.endpointLabelOf endpointId)
+               (ctx.threadLabelOf receiver) = false) :
+    ¬∃ st', endpointReplyRecvChecked ctx endpointId receiver replyTarget msg replyId st
+      = .ok ((), st') := by
+  intro ⟨st', h⟩
+  rcases hDeny with hReply | hRecv
+  · simp [endpointReplyRecvChecked, hReply] at h
+  · simp [endpointReplyRecvChecked,
+      endpointFlowGate_false_of_securityFlowsTo_false ctx endpointId _ _ hRecv] at h
+
+/-- WS-SM SM8.C: `endpointReplyRecvChecked` either delegates (both legs allowed)
+or returns `flowDenied`.  There is no third behaviour, and in particular no arm
+that runs one leg. -/
+theorem enforcement_sufficiency_endpointReplyRecv
+    (ctx : LabelingContext) (endpointId : SeLe4n.ObjId)
+    (receiver replyTarget : SeLe4n.ThreadId) (msg : IpcMessage)
+    (replyId : Option SeLe4n.ReplyId) (st : SystemState) :
+    (securityFlowsTo (ctx.threadLabelOf receiver) (ctx.threadLabelOf replyTarget) = true ∧
+       endpointFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
+         (ctx.threadLabelOf receiver) = true ∧
+       endpointReplyRecvChecked ctx endpointId receiver replyTarget msg replyId st =
+         endpointReplyRecv endpointId receiver replyTarget msg replyId st) ∨
+    ((securityFlowsTo (ctx.threadLabelOf receiver) (ctx.threadLabelOf replyTarget) = false ∨
+        endpointFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
+          (ctx.threadLabelOf receiver) = false) ∧
+       endpointReplyRecvChecked ctx endpointId receiver replyTarget msg replyId st =
+         .error .flowDenied) := by
+  cases hReply : securityFlowsTo (ctx.threadLabelOf receiver) (ctx.threadLabelOf replyTarget) with
+  | false => right; exact ⟨Or.inl rfl, by simp [endpointReplyRecvChecked, hReply]⟩
+  | true =>
+    cases hRecv : endpointFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
+        (ctx.threadLabelOf receiver) with
+    | true => left; exact ⟨rfl, rfl, by simp [endpointReplyRecvChecked, hReply, hRecv]⟩
+    | false =>
+      right; exact ⟨Or.inr rfl, by simp [endpointReplyRecvChecked, hReply, hRecv]⟩
 
 end SeLe4n.Kernel

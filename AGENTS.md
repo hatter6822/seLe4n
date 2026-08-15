@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.33.6.
+Lean 4.28.0 toolchain, Lake build system, version 0.33.8.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -182,24 +182,24 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~37585 lines)
+- `CHANGELOG.md` (~38349 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~20449 lines)
-- `docs/WORKSTREAM_HISTORY.md` (~10558 lines)
+- `docs/WORKSTREAM_HISTORY.md` (~10645 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~6631 lines)
-- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~4867 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~4829 lines)
+- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5053 lines)
+- `tests/SmpInformationFlowSuite.lean` (~4948 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~4900 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4764 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
+- `SeLe4n/Model/State.lean` (~4364 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~4351 lines)
-- `SeLe4n/Model/State.lean` (~4257 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
-- `tests/NegativeStateSuite.lean` (~4093 lines)
-- `docs/spec/SELE4N_SPEC.md` (~4043 lines)
+- `tests/NegativeStateSuite.lean` (~4094 lines)
+- `docs/spec/SELE4N_SPEC.md` (~4073 lines)
+- `SeLe4n/Kernel/API.lean` (~3938 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3919 lines)
-- `SeLe4n/Kernel/API.lean` (~3780 lines)
-- `docs/gitbook/12-proof-and-invariant-map.md` (~3636 lines)
-- `SeLe4n/Platform/Boot.lean` (~3476 lines)
-- `tests/SmpInformationFlowSuite.lean` (~3469 lines)
+- `docs/gitbook/12-proof-and-invariant-map.md` (~3730 lines)
+- `SeLe4n/Platform/Boot.lean` (~3518 lines)
 - `SeLe4n/Kernel/CrossSubsystem.lean` (~3394 lines)
 - `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
 - `tests/SmpTlbShootdownSuite.lean` (~3354 lines)
@@ -223,6 +223,7 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md` (~2472 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_WORKSTREAM_PLAN.md` (~2340 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md` (~2339 lines)
+- `SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean` (~2329 lines)
 - `docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md` (~2325 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~2287 lines)
 - `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` (~2285 lines)
@@ -236,47 +237,47 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` (~2083 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~2070 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2067 lines)
-- `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~2054 lines)
+- `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~2059 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~2041 lines)
 - `SeLe4n/Kernel/Capability/Operations.lean` (~2030 lines)
 - `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~2022 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2019 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~1990 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~1989 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean` (~1967 lines)
+- `SeLe4n/Model/Object/Types.lean` (~1967 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
-- `SeLe4n/Model/Object/Types.lean` (~1963 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.1_WORKSTREAM_PLAN.md` (~1917 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/TicketLock.lean` (~1901 lines)
 - `docs/dev_history/planning/V3E_IPC_UNWRAP_CAPS_LOOP_COMPOSITION_PLAN.md` (~1891 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md` (~1889 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1854 lines)
-- `SeLe4n/Model/FreezeProofs.lean` (~1806 lines)
+- `SeLe4n/Kernel/Architecture/Invariant.lean` (~1852 lines)
+- `docs/planning/SMP_INFORMATION_FLOW_PLAN.md` (~1830 lines)
+- `SeLe4n/Model/FreezeProofs.lean` (~1811 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.6_WORKSTREAM_PLAN.md` (~1801 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.21_WORKSTREAM_PLAN.md` (~1800 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~1785 lines)
 - `SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean` (~1782 lines)
 - `docs/dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md` (~1776 lines)
-- `SeLe4n/Kernel/Architecture/Invariant.lean` (~1764 lines)
+- `tests/InformationFlowSuite.lean` (~1742 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_COMPREHENSIVE.md` (~1739 lines)
 - `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` (~1725 lines)
 - `docs/dev_history/audits/WORKSTREAM_PLAN_WS_O_SYSCALL_RUST_WRAPPERS.md` (~1725 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~1706 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean` (~1706 lines)
-- `SeLe4n/Platform/FFI.lean` (~1699 lines)
+- `SeLe4n/Platform/FFI.lean` (~1700 lines)
+- `SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean` (~1680 lines)
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
 - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~1670 lines)
 - `SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean` (~1668 lines)
 - `docs/planning/SMP_FOUNDATIONS_PLAN.md` (~1665 lines)
-- `SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean` (~1647 lines)
-- `tests/InformationFlowSuite.lean` (~1639 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~1488 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
-- `docs/planning/SMP_INFORMATION_FLOW_PLAN.md` (~1455 lines)
+- `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~1455 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
 - `docs/dev_history/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` (~1414 lines)
 - `docs/dev_history/AUDIT_v0.23.21_WORKSTREAM_PLAN.md` (~1411 lines)
-- `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~1407 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1390 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1398 lines)
 - `docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md` (~1382 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (~1357 lines)
 - `tests/SmpIpcSuite.lean` (~1350 lines)
@@ -285,14 +286,15 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean` (~1337 lines)
 - `tests/LockSetSuite.lean` (~1335 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1316 lines)
+- `SeLe4n/Kernel/InformationFlow/Policy.lean` (~1282 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreDomain.lean` (~1277 lines)
 - `docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md` (~1252 lines)
 - `tests/SmpCancellationSuite.lean` (~1246 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean` (~1244 lines)
 - `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` (~1237 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1233 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~1222 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1216 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~1213 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean` (~1200 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean` (~1186 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1184 lines)
@@ -304,19 +306,19 @@ To find files that need pagination today, run:
 - `SeLe4n/Platform/DeviceTree.lean` (~1154 lines)
 - `SeLe4n/Platform/RPi5/MmioAdapter.lean` (~1153 lines)
 - `docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md` (~1151 lines)
+- `SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean` (~1149 lines)
 - `SeLe4n/Kernel/Architecture/VSpace.lean` (~1142 lines)
 - `tests/KernelErrorMatrixSuite.lean` (~1139 lines)
 - `docs/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md` (~1111 lines)
 - `SeLe4n/Machine.lean` (~1105 lines)
 - `tests/PerObjectLockSuite.lean` (~1097 lines)
-- `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~1086 lines)
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1085 lines)
+- `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~1076 lines)
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
 - `tests/SyscallDispatchSuite.lean` (~1047 lines)
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
-- `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1037 lines)
+- `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1039 lines)
 - `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~1027 lines)
-- `SeLe4n/Kernel/InformationFlow/Policy.lean` (~1023 lines)
 - `SeLe4n/Kernel/InformationFlow/Projection.lean` (~1023 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~1002 lines)
 - `docs/planning/SMP_CROSS_CORE_IPC_PLAN.md` (~988 lines)
@@ -337,13 +339,12 @@ To find files that need pagination today, run:
 - `docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md` (~884 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean` (~882 lines)
 - `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
-- `SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean` (~843 lines)
-- `SeLe4n/Model/FrozenState.lean` (~834 lines)
+- `SeLe4n/Model/FrozenState.lean` (~853 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Preservation/BadgeIpcCapsAndCdtMaps.lean` (~831 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean` (~824 lines)
-- `tests/TwoPhaseArchSuite.lean` (~819 lines)
+- `tests/TwoPhaseArchSuite.lean` (~820 lines)
 - `docs/dev_history/audits/WS_RC_R4_CLOSEOUT_PLAN.md` (~818 lines)
-- `tests/DecodingSuite.lean` (~814 lines)
+- `tests/DecodingSuite.lean` (~817 lines)
 - `tests/WithLockSetSuite.lean` (~809 lines)
 - `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` (~808 lines)
 - `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` (~806 lines)
@@ -760,7 +761,10 @@ documentation lives under `docs/` and `docs/gitbook/`.
   **Round 39 — SECURITY: the retype refuses to destroy a running thread.**  `cleanupTcbReferences` sweeps every core and its step clears `currentOnCore c` wherever it finds the thread, the **executing** core included — where the caller itself runs — and nothing on the retype path guarded against that.  A thread holding a `.retype`-capable capability to its own TCB could destroy itself: the core's current slot cleared, no successor scheduled (`scheduleLocalSuccessorLive` inert until SM9.E), execution returning through a frame whose TCB the retype has scrubbed and re-purposed, and every later syscall from that core resolving `determineExecutingCore` to `bootCoreId` — a denial of service against every thread on the core, not only the caller.  Medium now, High once bootable.  **Partly pre-existing**: the pre-SMP `removeRunnable` clears `currentOnCore bootCoreId` identically, so the boot-core instance predates this cut and round 15's all-cores sweep widened it.  Closed by `threadCurrentOnSomeCore` / `retypeRunningTargetRejected`, rejecting in `lifecyclePreRetypeCleanup`'s `.tcb` arm with `.revocationRequired` (the error that path already uses for "clear this precondition first"); the guard scans **every** core, matching `setThreadCpuAffinityWithMigration`'s precedent, and reads the **pre-state** because every later `let` shadows it with the swept state in which the tested slot is already clear.  Trace byte-identical, so nothing was relying on the defect.  Also: `enforcementBoundaryPerCore_crossCore_classes_match` now quantifies over the **computed** mapping-difference list rather than a hand-written enumeration that had drifted twice, so a new re-route enters the check the moment the mapping changes.  Two findings verified and closed without code changes (the send bridge is covered on both success paths by `…_bootCore_block_eq_single` / `…_bootCore_rendezvous_eq_single`; the attributed-definition scan was fixed in round 15 and boot-pinned detection has since moved to the elaborated-environment probe).  One registered: the request for a local reschedule after unbind is already satisfied — `schedContextUnbindOnCore` calls the **ungated** `priorityRescheduleOnCore` keyed on `runningCoreOf?` — but verifying it surfaced a real key mismatch, the inner guard clearing `currentOnCore (determineTargetCore …)` while the wrapper reschedules at `runningCoreOf?`; those diverge for an unbound-affinity thread running on a secondary core, and the finding is registered against SM8.C rather than rushed because the clean fix moves `runningCoreOf?` down the import graph.
   **Rounds 39/40 — the unbind guard and its scheduling point now read one core.**  `schedContextUnbind`'s preemption guard cleared `currentOnCore (determineTargetCore …)` — the affinity *home* — while `schedContextUnbindOnCore` resolves its reschedule through `runningCoreOf?`, the core actually executing the thread.  Those agree whenever affinity is set (a thread is only dispatched on a core its affinity admits) and diverge for an **unbound-affinity thread running on a secondary core**, which is admitted: home is boot, the guard fired on a slot that never held the thread, and the thread was left current on the secondary core *and* absent from every run queue — the round-13 defect one field over.  Found while verifying a round-39 comment that turned out not to hold; round 40's reviewer reached the same divergence independently.  Both halves now read `runningCoreOf?`; the **queue** side deliberately stays on the home core, since an unbound thread belongs on its home run queue where the next selection looks.  `runningCoreOf?` moved from `Lifecycle/Suspend.lean` down to `Scheduler/Operations/Core.lean` — the lowest module both paths can see, and where a "which core runs this thread" query belongs — with an `export` keeping `Lifecycle.Suspend.runningCoreOf?` resolving for every existing reference.  The confinement proof caught the widened footprint, which is what it is for: `schedContextUnbindWriteSet` is now its own set naming both cores, split from `schedContextWriteSet` so `.schedContextConfigure`'s bound stays sharp (configure only re-buckets, so the running core is not in its footprint).  Two contracts corrected alongside, both describing behaviour earlier fixes had replaced: `schedContextUnbind`'s claimed the queued thread is merely removed and re-enqueued by a later scheduling call (round 38 made the re-bucket immediate, because nothing re-enqueues), and `chooseThreadOnCore`'s claimed a malformed queue entry surfaces `.schedulerInvariantViolation` (round 15 made both scans skip it, because surfacing it wedged the core permanently).  Trace byte-identical; `SmpInformationFlowSuite` §5.8 adds seven assertions on the divergence fixture, including the load-bearing negative that boot's current slot never held the thread, so a home-keyed guard was a no-op there.
   **Rounds 41/42 — the arguments the reviews rest on become checked facts, and one more gate stops failing open.**  Round 41: the gate's own justification — "a vacated core's next syscall is *rejected*, not misattributed" — had been challenged twice, both times asserting the opposite (a silent fall back to `bootCoreId`).  The claim is true and was already proven, in `Platform.FFI.syscallDispatchFromAbi_illegalState_when_no_current`: resolution runs *before* any core is inferred, and no current thread on the issuing core yields `.illegalState` with the state unmodified — the `determineExecutingCore` fallback the challenges describe is reached only once a caller id is in hand.  What was missing is that neither docstring arguing from it cited it, so `vacatedCore_next_syscall_rejected` now states it at the entry over the state the entry *commits* (the gated wrapper's output, so it tracks whichever side of the seam is live) and two Tier-3 anchors keep the citation in place; a change giving the entry a fallback core breaks it.  Round 42 then found three consequences of this PR's own later cuts: (1) **the composite routing witness could not fail** — round 37 replaced the gate's hand-written primitive list with a *derived* transitive-reach predicate and added `routeSelfTestComposite` to guard it, but the witness loop discarded the application head and passed on the argument alone, so with `routeReachesPerCoreSlot` regressed to a constant `false` the production scan would go silent while COMPOSITE still reported ok — the fail-open shape this gate exists to close, reproduced inside the gate; every witness now runs the full head-and-argument verdict, mutation-checked (disabling the predicate makes all three miss and the gate raise).  (2) **`.tcbSetAffinity`'s discharge named a retired wrapper** — round 37 rerouted the arm to `setThreadCpuAffinityOnCore` while `API.lean`'s table still cited `setThreadCpuAffinityOp_preserves_projection` and described a boot-core run-queue write; rather than documenting the transport through `setThreadCpuAffinityOp_eq_onCore_state`, the live wrapper gets its own `setThreadCpuAffinityOnCore_preserves_projection` (the boot-core proof with the core generalised — the migration lemma already took it as an argument, which is what `setThreadCpuAffinityOnCore_state_core_independent` records operationally).  (3) **`schedContextUnbind_confinedToCores`'s docstring** still said both setters target the home core, which round 40 had just made false; the write set was right, the security-bound prose was not.  Counts refreshed across five sites at the same time (25 / 18 / 22, boundary 54), with each round's own figure left as written and the current ones attributed to the count theorems. |
-  | SM8.C–SM8.E | PENDING | — | Per-core declassification audit (`DeclassificationEvent.originatingCore`), information flow under fine locks, closure |
+  | SM8.C | LANDED | v0.33.7; completion cut v0.33.8 | Per-core declassification audit — **and the producer that did not exist**.  The plan reads as though the audit trail were there and needed a core added; nothing in the tree constructed a `DeclassificationEvent` at all, so `declassifyStore` gated and stored while `Policy.lean`'s docstring described a writer that was never written.  Per the implement-the-improvement rule the producer was built.  New staged module `InformationFlow/DeclassificationPerCore.lean` (staged 58 → 59).  **C.1**: `originatingCore : CoreId` — **undefaulted**, since a default attributes every event to the boot core while compiling everywhere — and `authorizationBasis` typed (`DeclassificationBasis`), because as a `String` it admitted a claim naming a check that never ran, leaving C.5 nothing to state; open-endedness kept (`integratorOverride` carries an arbitrary authority) and `render` reproduces the pre-SM8.C strings byte for byte.  `declassifyStoreOnCore` is the producer: the same gate, threading the append-only log, exactly one event per authorized downgrade, with the state effect *provably identical* to the unaudited gate (`declassifyStoreOnCore_ok_inv`) so `declassifyStore_NI` and the enforcement soundness theorems carry over untouched.  Timestamps are the log position, so V6-H's "monotonic counter" is structural, and the counter is **global** — `declassificationAuditLog_timestamp_identifies_event` is what a per-core counter would destroy.  **C.3**: validity is structural (`CoreId` is `Fin numCores`); the content is **attribution** — `declassifyStoreFromCore` *reads* the source domain off the subject the executing core runs and fails closed on an idle core, so `declassifyStoreFromCore_event_attributable` is unconditional, with `declassifyStoreOnCore_admits_unattributable` the negative that makes the wrapper load-bearing.  **C.4**: `auditLogOnCore` is a *view* of one global log; `declassificationAuditLog_partitions_by_core` proves the views partition it exactly.  **C.2**: `declassificationChain_recorded_across_cores` (two audited hops on two cores leave a linked, attributed chain) and `crossCoreChain_not_within_one_view` — **a cross-core chain is in no single core's view**, which is what decides one global log over the natural per-CPU buffers.  **C.6**: eight rules as data, each supplying a proof of its own claim (`declassificationRuleEvidence`); the substantive ones are laundering (`declassificationChain_hop_authorization_does_not_compose` over a *well-formed* policy, with the decidable `chainLaunders`), the endpoint rule `endpointOverride_is_not_a_declassification_basis` (the consumer SM8.B built `endpointFlowCheck_restricted_subset_perCore` for, stated against the state-resolved `endpointFlowCheckAtCore` so the core is not decorative), and `declassifyStoreOnCore_state_core_independent` — the core is audit information, never authority.  **C.5**: `authorizationBasis_perCore` as an invariant on any core, with `declassificationBasisKernelVerified_core_independent` the tripwire a per-core policy would break and `auditLog_integratorOverride_not_kernelIssued` the detection result the typed field buys.  Also: the declassification's own ∀-core NI (`declassifyStoreOnCore_perCore_NI`; it writes no core's slots, `declassifyStore_confinedToCores_nil`) and `declassifyStoreOnCore_state_log_independent` — auditing opens no channel, the log being threaded rather than mounted in `SystemState`.  **SM8.B registered debt (a) CLOSED in the same cut**: WS-E5/H-04's `EndpointFlowPolicy` had no carrier, so nothing ever read a configured policy; `LabelingContext.endpointPolicy` is that carrier (defaulted to no override) and the four endpoint-keyed gates — the send/receive/call/replyRecv wrappers, the live cross-core `.send` and `.call`, the live `.receive` / `.replyRecv` arms — branch on `endpointFlowGate`, which **conjoins** rather than replaces.  The conjunction is the point: `endpointFlowGate_implies_securityFlowsTo` takes no hypothesis, so V6-G's `endpointPolicyRestricted` is structural, and SM8.C's Rule 3 strengthens to the premise-free `liveEndpointOverride_is_not_a_declassification_basis`.  `…_flowDenied` theorems keep their hypotheses; `…_when_allowed` gain a verified-load-bearing `hOverride`; three gate-level soundness theorems carry both conjuncts so the `securityFlowsTo` forms are derived.  The `.replyRecv` reply *leg* deliberately stays on the plain check (the override governs flows crossing the endpoint).  Trace byte-identical; unconfigured deployments unchanged.  Registered follow-on: refused declassifications are not audited (the V6-H record has no outcome field) — fail-closed, so a monitoring gap rather than an enforcement one, scoped to SM8.E.  `tests/SmpInformationFlowSuite.lean` §6.1–§6.8 (316 → 360 assertions, every group with a load-bearing negative).
+
+  **v0.33.8 — SM8.C.8/SM8.C.9, the completion cut: the trail mounted and the syscall live.**  v0.33.7 built the audit on a surface *nothing could reach* — the log was a value threaded through a call, and no syscall performed a declassification.  **SM8.C.8**: `SystemState.declassificationAuditLog` is durable kernel state (the trail must outlive the syscall that writes it; with a threaded log a chain could only be reasoned about *within* one call, and the live `.declassify` makes each hop a separate entry).  The record types move to a new **production** module `InformationFlow/AuditRecord.lean` below `Model/State` — the extraction SM7.A performed for `TlbInvalidation` and SM7.D for `CacheInvalidation`, for the same cycle reason.  Capacity is a **security** decision: `maxDeclassificationAuditEntries = 256` and the behaviour at the bound is **fail-closed** (`recordDeclassificationChecked` returns `none`; the downgrade is refused with the new `KernelError.auditLogCapacityExceeded`, Rust discriminant 54, a distinct discriminant because only it means "drain the trail"), since dropping an entry would leave an authorized downgrade with no record — the exact failure the phase excludes.  Headline: `declassifyStoreOnCore_never_unaudited` / `authorizeDeclassificationOnCore_never_unaudited` — *an authorized downgrade is either recorded or does not happen*, a statement a threaded log could only make per call and a dropping ring buffer would make false.  `auditLogBounded` is the **16th** `proofLayerInvariantBundle` conjunct (boot witness, `bootFromPlatform` bridge, and the reusable writer layer `proofLayerInvariantBundle_setDeclassificationAuditLog` — carriage, not an `iff`); freeze carries it as a **required** field; `OffSchedulerAgrees` gains it; `storeObject` frames it.  Information flow: the trail is **outside** `ObservableState`, and the exclusion points the opposite way to SM7's — those are timing channels, this would be a *content* channel out of exactly the boundary it polices (each entry names `(srcDomain, dstDomain, targetObject)`), so `declassificationAuditLog_write_preserves_projection` is the witness and nothing in the kernel can read the trail today (a privileged reader owes its own flow argument, SM8.E).  **SM8.C.9**: `SyscallId.declassify = 30` (count 30 → 31) threaded through the Lean encodings, both Rust mirrors, ABI conformance, the frozen-ops classifier, the enforcement registry (canonical 38 → 39, per-core 54 → 55), the lock-set inventory and `sele4n-sys`.  The live transition runs the **decision** `declassifyStore` runs (`declassificationDecision`, *shared* — `declassifyStore_eq_decision_bind`) and records it; it does **not** perform the gate's store, because that store is the model's *simulation* of a transfer and simulating one from userspace would let a caller install a chosen `KernelObject` at a chosen id.  Its only state effect is one appended entry (`authorizeDeclassificationOnCore_frame`), which is why fifteen bundle conjuncts ride the frame and the sixteenth the capacity guard.  **Neither domain comes from the caller** — source read off the running subject, destination off the target object (`declassifyObjectFromCore_destination_is_target_domain`) — so the ABI is a single operand and the syscall takes no inline argument registers.  **There is no unchecked declassification**: `dispatchWithCap` fails closed with `.declassificationDenied`, the live arm is checked-only and delegation-backed (`syscallDelegates_declassify`), and `LabelingContext.declassificationPolicy` defaults to deny-all so an unconfigured deployment cannot declassify at all.  Authority is `.write`; `lockSet_declassify` is the two universal reads (the smallest declared footprint — the only write is a `SystemState` field).  `.declassifyDispatch` joins `CrossCoreTransition` (25 → 26, live arms 18 → 19, delegation-backed 10 → 11) with an **empty** write set; the per-core routing gate passes with **zero** allowlisted exceptions and gained a verified `<label>#inert` exemption for a provably operation-free arm.  **A covert channel closed on re-reading**: the first cut checked capacity *before* the policy decision, so a caller the policy refuses learned the trail was full — and occupancy is a function of how many *authorized* downgrades other subjects performed, making it a channel from every declassifying subject to every caller.  Both orderings admit the same successes; the decision now runs first and capacity still gates the commit, so `never_unaudited` is unaffected.  `authorizeDeclassificationOnCore_denied_before_capacity` states the confinement (a refused caller's result is identical on two arbitrary states).  **Self-audit closure** (fourteen findings): the flat rendering's non-injectivity stated as a theorem (`render_not_injective`) and fixed by shipping the trust bit as data (`RenderedDeclassificationBasis`, `renderTagged_injective`); the attributed entry point enforced by a Tier-3 negative anchor rather than convention; the chain theorem restated over the attributed form; the "structural timestamp" overstatement corrected (`recordDeclassification_admits_ill_formed`); the laundering detector's syntactic scope stated (`declassificationChainLinked_is_syntactic`); **run-level completeness** (`declassifyRun` + `_records_each` / `_preserves_wellFormed` / `_preserves_auditLogBounded` / `_frame` / `_preserves_projectionOnCore`); `authorizationBasis_perCore`'s scope (`declassificationSubjectDomain_is_core_selected`); the rule set 8 → 12 so every scope statement is a rule with evidence; the gates `endpointPolicy` does **not** govern proven independent of it with the send gate's dependence as the contrast; **V6-G reconciled at the label level** (`endpointGateRestricted_always` — unconditional, strictly stronger than V6-G's conditional form, with `endpointGateRestricted_survives_widening_override` the witness the hypothesis is unnecessary); a golden fixture (`tests/fixtures/smp_declassification_audit.expected` + `.sha256`) verified byte-for-byte in-suite; elaboration examples for the anchored-but-unapplied theorems; and chain topologies beyond two hops.  Also corrected: `liftLegacyContext`'s "no live consumer" docstring, which the `.declassify` arm makes false.  Suite 360 → **393** assertions (the executable's own PASS tally — believe it over this sentence), of which §6.1–§6.14 are SM8.C's fourteen groups; Rust 812 → 819 HAL tests; trace `[XVAL-002]` 30 → 31 variants, everything else byte-identical.  **Follow-up within v0.33.8 — the whole suite surface run, and the enforcement families completed.**  The landing cut was verified against the SMP information-flow suite, the Rust workspace and Tiers 0–1, but **not** against every Lean suite; running all 68 found nine red, in four classes, none a kernel defect and every one a claim the tree had stopped keeping — stale `enforcementBoundary` counts (38/11 pinned at five sites in `InformationFlowSuite`), stale lock-set inventory counts (`LockSetSuite` pinned them **twice**, as runtime assertions *and* `decide` examples, so a grep for the assertion text found only half), the syscall-decoder boundary (30 is now valid; the suite also gains a positive round-trip for it), and five `FrozenSystemState` literals missing the now-**required** trail field — which is the design working, since a required field turns a silent empty trail into a compile error.  The counts are corrected, and `enforcementBoundary`'s docstring **no longer restates its count at all**: it had read "(33 entries)" through six expansions, so `enforcementBoundaryExtended_count` is now the sole authority and a Tier-3 negative anchor forbids the form that went stale (the same 33/11/18 figures were mirrored in `DEVELOPMENT.md`, the spec and two GitBook chapters; all corrected).  Fixing them surfaced a claim false in the direction that matters: `denied_preserves_state_*` and `enforcement_sufficiency_*` were documented as covering "all 11 policy-gated operations" and covered **seven** — `endpointCallChecked`, `endpointReplyChecked`, `notificationWaitChecked` and `endpointReplyRecvChecked` landed after the families were written and never joined them.  Per the implement-the-improvement rule the remedy is the theorems: eight new members plus the declassification's own take both families to cover all **12** policy-gated entries (`enforcement_sufficiency_*` has twelve declarations; `*_denied_preserves_state` thirteen, the declassification contributing both its named boundary entry — which covers all three of its refusal modes — and the gate that entry wraps).  `enforcement_sufficiency_declassify` is a **trichotomy** (a fail-closed capacity refusal is a third outcome) whose third arm returns the decision's error *verbatim*, so a future arm cannot be silently remapped onto an existing discriminant; `endpointReplyRecvChecked_denied_preserves_state` takes a disjunction, so there is no partial commit.  Exercising the four at runtime found the trap the anchors would not have: the notification gate runs **object → waiter**, the reverse of send/call, so the fixture that denies a send *allows* a wait — both directions are now pinned, with the upward read as the load-bearing negative.  Three Tier-3 anchors and two identifier-naming violations left by the landing cut were caught in the same pass (the anchors pinned the per-core boundary at 54 and `CrossCoreTransition.all.length` at 25; the naming gate reads the **git index**, so running it against unstaged edits checks the previous commit — which is how a workstream ID in a non-`docs/` JSON and two phase-code-shaped hypothesis names reached a pushed commit).  Recorded with them: `test_full.sh` runs Tier 3 *after* the Rust suite and docs-sync, so a stale codebase map aborted a run before the anchor surface was ever read — fail-fast composes badly with a long tier list, and the first green-looking run proved less than it appeared to.  Axiom-clean (245 environment constants swept across the three modified modules); theorems, expectations and prose only.  **PR #863 review — the legacy lattice is now lifted faithfully.**  `liftLegacyContext` carried `DomainFlowPolicy.linearOrder`, a strict **over-approximation** of the legacy 2×2 relation: over the sixteen label pairs the two agree on fifteen and differ on exactly one — `{low, trusted} → {high, untrusted}`, which `securityFlowsTo` denies (reversed integrity) and `1 ≤ 2` allows; there is no pair in the other direction.  On the live path `declassificationDecision` reads a `true` base verdict as "already permitted, so not a declassification" and returns `.flowDenied` before the declassification policy is consulted, so a deployment could configure an authorized downgrade along that pair and never reach it — **fail-closed**, hence a completeness defect rather than a vulnerability, but a lift that does not reproduce the relation it lifts is the wrong basis for a policy decision (and the `embedLegacyLabel` docstring claimed the embedding "preserves `securityFlowsTo` semantics" while the supporting lemma was only ever one-directional).  Closed by `DomainFlowPolicy.legacyLattice` — `securityFlowsTo` transported along the embedding through a total decoder `unembedLegacyDomain`, with the diagonal admitted separately so it is reflexive on every `SecurityDomain` (an unembedded domain flows only to itself, fail-closed).  The property is an **equality** (`legacyLattice_canFlow_embed`), so the denied flows carry too; `linearOrder_is_not_faithful_to_legacy` keeps the counterexample as a theorem so a regression to the linear order fails to build; `legacyLattice_wellFormed` (transitivity riding the existing `securityFlowsTo_trans`) makes it a drop-in.  `liveEndpointOverride_is_not_a_declassification_basis` now rides the equality — a strengthening, not a repair.  Suite §6.15 (393 → 403 assertions): agreement across all sixteen pairs, the load-bearing negative that `linearOrder` disagrees on exactly one, and the end-to-end consequence that the request which returned `.flowDenied` now reaches the policy and is authorized; Tier-3 forbids `policy := .linearOrder` returning. |
+  | SM8.D–SM8.E | PENDING | — | Information flow under fine locks, closure |
   | SM9 | PENDING | — | Release closure (→ v1.0.0) |
 
   **Plans**: master overview at
@@ -819,7 +823,7 @@ documentation lives under `docs/` and `docs/gitbook/`.
   **Rust HAL at v0.32.120**: 812 tests, zero clippy warnings,
   zero `#[ignore]`'d.
 
-  **Staged modules**: 58 staged-only (via `Platform/Staged.lean` +
+  **Staged modules**: 59 staged-only (via `Platform/Staged.lean` +
   `scripts/staged_module_allowlist.txt`); production/staged partition
   gate enforced by `scripts/check_production_staging_partition.sh`.  (SM6.C
   added `EndpointReplyNI` staged and promoted the cross-core reply transition /
@@ -863,7 +867,21 @@ documentation lives under `docs/` and `docs/gitbook/`.
   (SM8.B's cross-core cut added the staged module
   `InformationFlow.NonInterferenceCrossCore` — non-interference at the
   transitions that genuinely write a *remote* core, over set-of-cores write
-  sets; staged 57 → 58.)
+  sets; staged 57 → 58.)  (SM8.C added the staged module
+  `InformationFlow.DeclassificationPerCore` — the per-core declassification
+  audit: the producer `declassifyStoreOnCore` (the pre-SM8.C
+  `DeclassificationEvent` had no writer), the attributed entry point
+  `declassifyStoreFromCore`, the per-core audit views with their exact
+  partition, cross-core chains with the decidable laundering detector,
+  `authorizationBasis_perCore`, and the eight cross-core declassification rules
+  as data with dependently-typed evidence; staged 58 → 59.  SM8.D / SM8.E
+  closure is the next consumer.  SM8.C.8/SM8.C.9 (v0.33.8) added **two
+  production** modules rather than staged ones — `InformationFlow.AuditRecord`
+  (the pure declassification record, extracted below `Model/State` so
+  `SystemState` can mount the trail) and `InformationFlow.Declassification` (the
+  live `.declassify` transition, deliberately *not* in the staged module, whose
+  SM8.A/SM8.B non-interference closure the live syscall path must not pull in);
+  staged count unchanged at 59.)
 
   **SM3.C.9 deferral**: migrating every `@[export]` body to wrap its
   transition in `withLockSet` requires the per-core kernel-state seam

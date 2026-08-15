@@ -43,7 +43,9 @@ def endpointSendDualChecked
     else
     let senderLabel := ctx.threadLabelOf sender
     let endpointLabel := ctx.endpointLabelOf endpointId
-    if securityFlowsTo senderLabel endpointLabel then
+    -- WS-SM SM8.C: the global lattice check AND this endpoint's configured
+    -- override.  A conjunction, so the override can only narrow.
+    if endpointFlowGate ctx endpointId senderLabel endpointLabel then
       endpointSendDualWithCaps endpointId sender msg endpointRights
         senderCspaceRoot receiverSlotBase st
     else
@@ -84,14 +86,20 @@ theorem endpointSendDualChecked_eq_endpointSendDualWithCaps_when_allowed
     (receiverSlotBase : SeLe4n.Slot)
     (st : SystemState)
     (hFlow : securityFlowsTo (ctx.threadLabelOf sender)
+               (ctx.endpointLabelOf endpointId) = true)
+    -- WS-SM SM8.C: the endpoint's own override must admit the flow too.  Not a
+    -- free premise: it is exactly what a configured deployment can deny, and
+    -- `endpointOverrideAllows_default` discharges it where none is configured.
+    (hOverride : endpointOverrideAllows ctx endpointId (ctx.threadLabelOf sender)
                (ctx.endpointLabelOf endpointId) = true) :
     endpointSendDualChecked ctx endpointId sender msg endpointRights
         senderCspaceRoot receiverSlotBase st =
       endpointSendDualWithCaps endpointId sender msg endpointRights
         senderCspaceRoot receiverSlotBase st := by
+  have hGate := endpointFlowGate_of ctx endpointId _ _ hFlow hOverride
   unfold endpointSendDualChecked
-  -- WS-H12d: Bounds checks are first; when both fail, we reach the flow check
-  -- which succeeds (hFlow), delegating to endpointSendDualWithCaps unchanged
+  -- WS-H12d: Bounds checks are first; when both fail, we reach the flow gate
+  -- which succeeds (hGate), delegating to endpointSendDualWithCaps unchanged
   simp only []
   split
   · -- bounds1 fails: LHS = .error .ipcMessageTooLarge
@@ -99,7 +107,11 @@ theorem endpointSendDualChecked_eq_endpointSendDualWithCaps_when_allowed
     unfold endpointSendDualWithCaps endpointSendDual; simp [*]
   · split
     · unfold endpointSendDualWithCaps endpointSendDual; simp [*]
-    · simp
+    · -- The gate branch: `hGate` in context already reduced the `ite` above, so
+      -- what remains is a reflexivity.  Verified load-bearing: dropping `hGate`
+      -- leaves the `if endpointFlowGate … then … else .flowDenied` unreduced and
+      -- `rfl` fails, so `hOverride` is a real premise rather than decoration.
+      rfl
 
 /-- WS-G7/WS-H12d/AH1-C-2: When the policy denies flow and the message is
 within bounds, the dual-queue checked send returns `flowDenied` without
@@ -125,7 +137,9 @@ theorem endpointSendDualChecked_flowDenied
   have ⟨hR, hC⟩ := (IpcMessage.checkBounds_iff_bounded msg).mp hBounds
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from Nat.not_lt.mpr hR, ite_false]
   simp only [show ¬(maxExtraCaps < msg.caps.size) from Nat.not_lt.mpr hC, ite_false]
-  simp [hDeny]
+  -- WS-SM SM8.C: a denied global flow denies the gate whatever the override
+  -- says, so this theorem keeps the hypothesis it had before the gate existed.
+  simp [endpointFlowGate_false_of_securityFlowsTo_false ctx endpointId _ _ hDeny]
 
 /-- When the policy allows flow, the checked mint behaves identically to the
 CDT-tracked mint. -/
@@ -193,10 +207,14 @@ inductive EnforcementClass where
   deriving Repr
 
 /-- WS-E5/M-07/Q1-D/U5-B/U5-C/V2-B/C/Z8-M/D1/D2: Canonical enforcement boundary
-classification table (33 entries). V2-B/C added `notificationWaitChecked` and
-`endpointReplyRecvChecked`. Z8-M added 3 SchedContext capability-only operations.
-D1 added 2 thread lifecycle capability-only operations.
-D2 added 2 priority management capability-only operations.
+classification table.
+
+The entry count is **not** restated here: it is pinned by
+`enforcementBoundaryExtended_count` (`Enforcement/Soundness.lean`), which is the
+authority, and a number repeated in prose goes stale the first time an entry
+lands without a docstring edit — as this one did, having read "33 entries"
+across six subsequent expansions.  Read the theorem.
+
 Operations with both policy-gated and capability-only variants are classified
 under their policy-gated variant here (the checked dispatch path uses the
 policy-gated variant; the unchecked dispatch path uses the capability-only
@@ -264,6 +282,13 @@ def enforcementBoundary : List EnforcementClass :=
   , .capabilityOnly "vspaceUnifyInstructionPage"
   -- AC4-D: Service revocation (capability-only; operates on serviceRegistry)
   , .capabilityOnly "revokeService"
+  -- WS-SM SM8.C.9: the live declassification.  **Policy-gated**, and it is the
+  -- one entry whose gate is not `securityFlowsTo`: it runs the two-check
+  -- `declassificationDecision` (base policy must *deny*, declassification policy
+  -- must permit), which is the only way a flow the lattice forbids is ever
+  -- admitted.  Classifying it capability-only would say the capability alone
+  -- authorizes the downgrade, which is exactly what it does not.
+  , .policyGated "declassifyObjectFromCore"
   ]
 
 -- ============================================================================
@@ -305,6 +330,7 @@ def syscallIdToEnforcementName : SyscallId → String
   | .tcbUnbindNotification => "unbindNotification"
   | .mintReplyCap          => "mintReplyCapWithCdt"
   | .vspaceUnifyInstruction => "vspaceUnifyInstructionPage"
+  | .declassify            => "declassifyObjectFromCore"
 
 /-- AC4-D: Check whether every SyscallId maps to an operation name present in
     the enforcement boundary list. Returns `true` iff every syscall is covered. -/
@@ -357,7 +383,7 @@ theorem endpointSendDualChecked_denied_preserves_state
     intro hc; simp [hc] at h, ↓reduceIte] at h
   simp only [show ¬(maxExtraCaps < msg.caps.size) from by
     intro hc; simp [hc] at h, ↓reduceIte] at h
-  simp [hDeny] at h
+  simp [endpointFlowGate_false_of_securityFlowsTo_false ctx endpointId _ _ hDeny] at h
 
 /-- When the policy denies flow, `cspaceMintChecked` produces no state change. -/
 theorem cspaceMintChecked_denied_preserves_state
@@ -391,12 +417,19 @@ theorem enforcement_sufficiency_endpointSendDual
     (msg.caps.size > maxExtraCaps ∧
        endpointSendDualChecked ctx endpointId sender msg endpointRights
          senderCspaceRoot receiverSlotBase st = .error .ipcMessageTooManyCaps) ∨
-    (securityFlowsTo (ctx.threadLabelOf sender) (ctx.endpointLabelOf endpointId) = true ∧
+    -- WS-SM SM8.C: the two flow disjuncts are stated against `endpointFlowGate`,
+    -- the predicate the wrapper actually branches on.  Leaving them on
+    -- `securityFlowsTo` would make this theorem describe a check the code no
+    -- longer runs, and its "flow allowed ⇒ delegates" arm would be false for a
+    -- configured override.
+    (endpointFlowGate ctx endpointId (ctx.threadLabelOf sender)
+        (ctx.endpointLabelOf endpointId) = true ∧
        endpointSendDualChecked ctx endpointId sender msg endpointRights
          senderCspaceRoot receiverSlotBase st =
        endpointSendDualWithCaps endpointId sender msg endpointRights
          senderCspaceRoot receiverSlotBase st) ∨
-    (securityFlowsTo (ctx.threadLabelOf sender) (ctx.endpointLabelOf endpointId) = false ∧
+    (endpointFlowGate ctx endpointId (ctx.threadLabelOf sender)
+        (ctx.endpointLabelOf endpointId) = false ∧
        endpointSendDualChecked ctx endpointId sender msg endpointRights
          senderCspaceRoot receiverSlotBase st = .error .flowDenied) := by
   unfold endpointSendDualChecked endpointSendDualWithCaps
@@ -404,7 +437,8 @@ theorem enforcement_sufficiency_endpointSendDual
   · left; exact ⟨hR, by simp [hR]⟩
   · by_cases hC : maxExtraCaps < msg.caps.size
     · right; left; exact ⟨hC, by simp [hR, hC]⟩
-    · cases hFlow : securityFlowsTo (ctx.threadLabelOf sender) (ctx.endpointLabelOf endpointId) with
+    · cases hFlow : endpointFlowGate ctx endpointId (ctx.threadLabelOf sender)
+          (ctx.endpointLabelOf endpointId) with
       | true => right; right; left; exact ⟨rfl, by simp [hR, hC, hFlow]⟩
       | false => right; right; right; exact ⟨rfl, by simp [hR, hC, hFlow]⟩
 
@@ -509,7 +543,8 @@ def endpointReceiveDualChecked
   fun st =>
     let endpointLabel := ctx.endpointLabelOf endpointId
     let receiverLabel := ctx.threadLabelOf receiver
-    if securityFlowsTo endpointLabel receiverLabel then
+    -- WS-SM SM8.C: global check ∧ this endpoint's override.
+    if endpointFlowGate ctx endpointId endpointLabel receiverLabel then
       endpointReceiveDual endpointId receiver replyId st
     else
       .error .flowDenied
@@ -563,7 +598,8 @@ def endpointCallChecked
   fun st =>
     let callerLabel := ctx.threadLabelOf caller
     let endpointLabel := ctx.endpointLabelOf endpointId
-    if securityFlowsTo callerLabel endpointLabel then
+    -- WS-SM SM8.C: global check ∧ this endpoint's override.
+    if endpointFlowGate ctx endpointId callerLabel endpointLabel then
       endpointCallWithCaps endpointId caller msg endpointRights
         callerCspaceRoot receiverSlotBase st
     else
@@ -617,6 +653,67 @@ def notificationWaitChecked
     else
       .error .flowDenied
 
+/-! ### WS-SM SM8.C — the gates the endpoint policy does *not* govern
+
+`endpointPolicy` is per-**endpoint**, so it governs flows crossing an endpoint.
+Three live gates are deliberately outside it: both notification gates (a
+notification is not an endpoint) and the reply *leg* of `replyRecv` (which
+carries `replier → prevCaller`, a thread-to-thread flow that crosses no
+endpoint).
+
+Left as prose in the SM8.C landing cut, which made the boundary a reading of the
+code rather than a checked fact.  These three theorems state it: each gate's
+verdict is independent of the context's `endpointPolicy` field, so an operator
+cannot configure one and expect it to reach these paths, and a future cut that
+routes one of them through `endpointFlowGate` breaks the corresponding theorem
+rather than silently changing what an override means. -/
+
+/-- WS-SM SM8.C: the notification **signal** gate ignores `endpointPolicy` — a
+notification is not an endpoint, so no per-endpoint override governs it. -/
+theorem notificationSignalChecked_endpointPolicy_independent
+    (ctx : LabelingContext) (epPolicy : EndpointFlowPolicy)
+    (notificationId : SeLe4n.ObjId) (signaler : SeLe4n.ThreadId) (badge : SeLe4n.Badge) :
+    notificationSignalChecked { ctx with endpointPolicy := epPolicy } notificationId
+        signaler badge =
+      notificationSignalChecked ctx notificationId signaler badge := rfl
+
+/-- WS-SM SM8.C: and the notification **wait** gate, for the same reason. -/
+theorem notificationWaitChecked_endpointPolicy_independent
+    (ctx : LabelingContext) (epPolicy : EndpointFlowPolicy)
+    (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId) :
+    notificationWaitChecked { ctx with endpointPolicy := epPolicy } notificationId waiter =
+      notificationWaitChecked ctx notificationId waiter := rfl
+
+/-- WS-SM SM8.C: the **reply** gate ignores `endpointPolicy` — a reply carries
+`replier → target`, a thread-to-thread flow that crosses no endpoint.
+
+This is the theorem behind the `endpointReplyRecvChecked` comment that says the
+override governs the receive leg and not the reply leg: the reply leg's gate is
+this one, and it cannot see the field. -/
+theorem endpointReplyChecked_endpointPolicy_independent
+    (ctx : LabelingContext) (epPolicy : EndpointFlowPolicy)
+    (replier target : SeLe4n.ThreadId) (msg : IpcMessage) :
+    endpointReplyChecked { ctx with endpointPolicy := epPolicy } replier target msg =
+      endpointReplyChecked ctx replier target msg := rfl
+
+/-- WS-SM SM8.C (**the load-bearing contrast**): the send gate is *not*
+independent of `endpointPolicy`.
+
+Without this the three theorems above would be consistent with a wiring in which
+no gate reads the field at all — which is the state the SM8.B debt described. -/
+theorem endpointSendDualChecked_endpointPolicy_dependent :
+    ∃ (ctx : LabelingContext) (epPolicy : EndpointFlowPolicy) (endpointId : SeLe4n.ObjId)
+      (senderLabel endpointLabel : SecurityLabel),
+      endpointFlowGate { ctx with endpointPolicy := epPolicy } endpointId senderLabel
+          endpointLabel ≠
+        endpointFlowGate ctx endpointId senderLabel endpointLabel := by
+  refine ⟨{ objectLabelOf := fun _ => SecurityLabel.publicLabel
+            threadLabelOf := fun _ => SecurityLabel.publicLabel
+            endpointLabelOf := fun _ => SecurityLabel.publicLabel
+            serviceLabelOf := fun _ => SecurityLabel.publicLabel },
+          { endpointPolicy := fun _ => some { canFlow := fun _ _ => false } },
+          ⟨0⟩, SecurityLabel.publicLabel, SecurityLabel.publicLabel, by decide⟩
+
 /-- V2-C: Policy-checked endpointReplyRecv: verifies that information may flow
 from the replier's domain to the reply target's domain (for the reply leg),
 and from the endpoint's domain to the receiver's domain (for the receive leg).
@@ -636,10 +733,15 @@ def endpointReplyRecvChecked
     let receiverLabel := ctx.threadLabelOf receiver
     let targetLabel := ctx.threadLabelOf replyTarget
     let endpointLabel := ctx.endpointLabelOf endpointId
-    -- Reply leg: receiver → replyTarget
+    -- Reply leg: receiver → replyTarget.
+    -- WS-SM SM8.C: the endpoint override is deliberately **not** consulted here.
+    -- It governs flows that cross this endpoint, and the reply leg's pair names
+    -- neither the endpoint's own label nor a flow through it — the reply travels
+    -- to the caller the endpoint already admitted on the way in, which the
+    -- receive leg below gates.
     if securityFlowsTo receiverLabel targetLabel then
-      -- Receive leg: endpoint → receiver
-      if securityFlowsTo endpointLabel receiverLabel then
+      -- Receive leg: endpoint → receiver.  WS-SM SM8.C: global check ∧ override.
+      if endpointFlowGate ctx endpointId endpointLabel receiverLabel then
         endpointReplyRecv endpointId receiver replyTarget msg replyId st
       else
         .error .flowDenied

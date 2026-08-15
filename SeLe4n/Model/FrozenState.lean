@@ -449,6 +449,14 @@ structure FrozenSystemState where
       snapshot) owes no maintenance. -/
   pendingIcacheMaintenance :
       List SeLe4n.Kernel.Architecture.ICacheInvalidation
+  /-- WS-SM SM8.C.8: the declassification audit trail, transferred from
+      `SystemState.declassificationAuditLog` during freeze.  **Required** (no
+      default), for the same reason as the three fields above and with more at
+      stake: a frozen snapshot that silently dropped the trail would report a
+      system with no recorded downgrades, which is exactly what a system with
+      *unrecorded* downgrades looks like.  Complemented by the
+      `freeze_preserves_declassificationAuditLog := rfl` value-level guard. -/
+  declassificationAuditLog : SeLe4n.Kernel.DeclassificationAuditLog
 
 -- ============================================================================
 -- Q5-C: Freeze Functions
@@ -585,7 +593,10 @@ def freeze (ist : IntermediateState) : FrozenSystemState :=
     -- (the instruction-side twin; no silent per-core drop).
     perCoreICache := st.perCoreICache
     -- WS-SM SM7.D.1: forward the instruction-cache emission ledger unchanged.
-    pendingIcacheMaintenance := st.pendingIcacheMaintenance }
+    pendingIcacheMaintenance := st.pendingIcacheMaintenance
+    -- WS-SM SM8.C.8: forward the declassification audit trail unchanged — a
+    -- frozen snapshot records every downgrade the running system recorded.
+    declassificationAuditLog := st.declassificationAuditLog }
 
 -- ============================================================================
 -- Q5-C Proofs
@@ -630,6 +641,14 @@ theorem freeze_preserves_perCoreICache (ist : IntermediateState) :
 /-- WS-SM SM7.D.1: `freeze` preserves the instruction-cache emission ledger. -/
 theorem freeze_preserves_pendingIcacheMaintenance (ist : IntermediateState) :
     (freeze ist).pendingIcacheMaintenance = ist.state.pendingIcacheMaintenance := rfl
+
+/-- WS-SM SM8.C.8: freeze carries the declassification audit trail intact — the
+frozen `declassificationAuditLog` is identical to the pre-freeze
+`SystemState.declassificationAuditLog`.  The value-level guard complementing the
+required field: an audit trail that a snapshot silently truncated would be
+indistinguishable from one the kernel never wrote. -/
+theorem freeze_preserves_declassificationAuditLog (ist : IntermediateState) :
+    (freeze ist).declassificationAuditLog = ist.state.declassificationAuditLog := rfl
 
 /-- Q5-C: `freeze` preserves the scheduler current thread. -/
 theorem freeze_preserves_current (ist : IntermediateState) :

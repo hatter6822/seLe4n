@@ -1687,8 +1687,8 @@ run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_count' SeLe4n/K
 # repeating a `decide` drifted from it.  Anchoring the PAIR couples them: bump
 # the theorem without the sentence and this fails, which is the only mechanism
 # that has actually held.
-run_prose_check "INVARIANT" rg -n 'per-core boundary has 54 entries' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore\.length = 54' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_prose_check "INVARIANT" rg -n 'per-core boundary has 55 entries' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore\.length = 55' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_extends_canonical' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^def enforcementBoundaryPerCoreComplete' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_is_complete' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
@@ -1780,7 +1780,7 @@ run_check "INVARIANT" rg -n '^theorem notificationSignalWriteSet_eq_lockSet_wait
 run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem wakeThread_crossCoreNonInterference_of_visible_thread' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n 'CrossCoreTransition.all.length = 25' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n 'CrossCoreTransition.all.length = 26' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 
 # PR #861 review round 34: the context-restore gate lives in WRAPPERS, never
 # inside the transitions.  An in-transition `if contextRestoreSeamLive` reduces
@@ -2073,7 +2073,7 @@ run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_crossCoreNonInte
 run_check "INVARIANT" rg -n '^def endpointReplyRecvWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count : CrossCoreTransition\.all\.length = 25' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count : CrossCoreTransition\.all\.length = 26' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # Round 14: all three SchedContext arms this cut made remote writers are audited.
 # The negative is the point — `crossCoreRemoteWriterPendingAudit` was the counted
 # gap while two were unproven, and it must not come back as an empty list, which
@@ -2142,6 +2142,229 @@ run_check "INVARIANT" rg -n '^def syscallIdToEnforcementNamePerCore' SeLe4n/Kern
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_is_complete_crossCore' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_crossCore_classes_match' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem syscallIdToEnforcementNamePerCore_differs_at_fifteen' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+
+# ---------------------------------------------------------------------------
+# WS-SM SM8.C — the per-core declassification audit
+# (plan SMP_INFORMATION_FLOW_PLAN.md §4.3 / §5 SM8.C.1 … SM8.C.7).
+# ---------------------------------------------------------------------------
+# SM8.C.1: the record carries the originating core and a TYPED basis.  Both are
+# pinned negatively as well: a default on the core field would silently
+# attribute every event to the boot core, and reverting the basis to a bare
+# `String` would take `authorizationBasis_perCore` with it.
+run_check "INVARIANT" rg -n '^  originatingCore : Concurrency.CoreId' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+run_check "INVARIANT" rg -n '^  authorizationBasis : DeclassificationBasis' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+run_check "INVARIANT" rg -n '^inductive DeclassificationBasis' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+run_negative_check "INVARIANT" rg -n 'originatingCore : Concurrency.CoreId :=' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+run_negative_check "INVARIANT" rg -n 'authorizationBasis : String' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+# The external rendering must stay byte-identical to the pre-SM8.C string field.
+run_check "INVARIANT" rg -n 'DeclassificationPolicy.canDeclassify"' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+run_check "INVARIANT" rg -n '^theorem declassificationEvent_originatingCore_valid' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+run_check "INVARIANT" rg -n '^theorem declassificationAuditLog_originatingCores_valid' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+# SM8.C.1: the producer.  Before this cut `DeclassificationEvent` had no writer
+# at all, so the audit trail was a type nothing constructed.
+run_check "INVARIANT" rg -n '^def declassifyStoreOnCore' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassifyStoreOnCore_records_one' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassifyStoreOnCore_denied_no_audit_entry' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+# SM8.C.3: attribution — the source domain is READ from the executing core's
+# running subject.  The negative witness is what makes the wrapper load-bearing.
+run_check "INVARIANT" rg -n '^def declassifyStoreFromCore' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassifyStoreFromCore_event_attributable' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassifyStoreOnCore_admits_unattributable' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+# SM8.C.4: the per-core views partition the log exactly.
+run_check "INVARIANT" rg -n '^def auditLogOnCore' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassificationAuditLog_partitions_by_core' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem DeclassificationEvent_perCore_audit' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+# SM8.C.2: the cross-core chain, and the theorem that decides the design — a
+# per-core log would have lost it.
+run_check "INVARIANT" rg -n '^theorem crossCoreChain_not_within_one_view' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassificationChain_recorded_across_cores' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassificationAuditLog_timestamp_identifies_event' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+# SM8.C.6: the rules, including the SM8.B consumer.  The endpoint rule must be
+# stated against the STATE-RESOLVED gate: `endpointFlowCheck` takes neither a
+# state nor a core, so a per-core claim about it would carry a decorative `c`.
+run_check "INVARIANT" rg -n '^theorem endpointOverride_is_not_a_declassification_basis' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n 'endpointFlowCheckAtCore ctx epPolicy endpointId st c = true' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n 'endpointFlowCheck_restricted_subset_perCore' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassificationChain_hop_authorization_does_not_compose' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^def chainLaunders' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+# SM8.C.5: `authorizationBasis_perCore`, and the dependently-typed rule evidence
+# that makes a misattributed proof a type error rather than a stale string.
+run_check "INVARIANT" rg -n '^theorem authorizationBasis_perCore' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^def DeclassificationRuleId.evidenceProp' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^def declassificationRuleEvidence : \(id : DeclassificationRuleId\) → id\.evidenceProp' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n 'niName! chainCompositionAuthorized_sound' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassificationRules_count' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+# The declassification's own per-core non-interference, plus the statement that
+# auditing adds no observable state.
+run_check "INVARIANT" rg -n '^theorem declassifyStoreOnCore_perCore_NI' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassifyStoreOnCore_state_trail_independent' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+# SM8.C.7: the runtime scenarios and their load-bearing negatives.
+run_check "INVARIANT" rg -n '^  runDeclassificationProducerChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runDeclassificationAttributionChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runDeclassificationPartitionChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runDeclassificationChainChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runDeclassificationRuleChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runDeclassificationBasisChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runDeclassificationNonInterferenceChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: no single core.s view contains the whole chain' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: the unattributed form records a domain its subject does not hold' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: authorize 2 . 0 too and the same chain no longer launders' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.InformationFlow\.DeclassificationPerCore' tests/SmpInformationFlowSuite.lean
+# The staged module must stay in the build graph and on the allowlist.
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.InformationFlow\.DeclassificationPerCore' SeLe4n/Platform/Staged.lean
+run_check "INVARIANT" rg -n '^SeLe4n\.Kernel\.InformationFlow\.DeclassificationPerCore' scripts/staged_module_allowlist.txt
+run_check "INVARIANT" rg -n 'SeLe4n\.Kernel\.InformationFlow\.DeclassificationPerCore' scripts/check_module_axioms.py
+# SM8.B registered debt (a), CLOSED: the configured per-endpoint flow policy is
+# now carried by `LabelingContext` and read by the four endpoint-keyed gates.
+# The gate CONJOINS rather than replaces, which is what makes V6-G's
+# `endpointPolicyRestricted` structural — pinned positively (the definition) and
+# negatively (no gate site may go back to a bare `securityFlowsTo`).
+run_check "INVARIANT" rg -n '^  endpointPolicy : EndpointFlowPolicy' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n '^def endpointOverrideAllows' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n '^def endpointFlowGate' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n 'securityFlowsTo srcLabel dstLabel && endpointOverrideAllows' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n '^theorem endpointFlowGate_implies_securityFlowsTo' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n '^theorem endpointFlowGate_is_not_securityFlowsTo' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n 'endpointFlowGate ctx endpointId senderLabel endpointLabel' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
+run_check "INVARIANT" rg -n 'endpointFlowGate ctx endpointId endpointLabel receiverLabel' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
+run_check "INVARIANT" rg -n 'endpointFlowGate ctx endpointId callerLabel endpointLabel' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
+run_check "INVARIANT" rg -n 'endpointFlowGate ctx epId' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n 'endpointFlowGate ctx endpointId' SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean
+run_check "INVARIANT" rg -n 'endpointFlowGate ctx endpointId' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean
+run_negative_check "INVARIANT" rg -n 'if !securityFlowsTo \(ctx\.endpointLabelOf epId\)' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem liveEndpointOverride_is_not_a_declassification_basis' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+
+# ---------------------------------------------------------------------------
+# WS-SM SM8.C.8 / SM8.C.9 — the mounted audit trail and the live `.declassify`
+# syscall.
+# ---------------------------------------------------------------------------
+# SM8.C.8: the trail is durable kernel state with a FAIL-CLOSED capacity bound.
+# The negative pin is the load-bearing one: a ring buffer that drops an entry
+# would leave an authorized downgrade with no record, which is the exact failure
+# the phase exists to exclude, so `recordDeclassificationChecked` must have no
+# arm that returns a truncated log.
+run_check "INVARIANT" rg -n '^  declassificationAuditLog : SeLe4n.Kernel.DeclassificationAuditLog' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^  declassificationAuditLog : SeLe4n.Kernel.DeclassificationAuditLog$' SeLe4n/Model/FrozenState.lean
+run_check "INVARIANT" rg -n '^def maxDeclassificationAuditEntries' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+run_check "INVARIANT" rg -n '^def auditLogBounded' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+run_check "INVARIANT" rg -n '^def recordDeclassificationChecked' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+run_check "INVARIANT" rg -n 'auditLogBounded st.declassificationAuditLog' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle_setDeclassificationAuditLog' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem declassificationAuditLog_write_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+run_check "INVARIANT" rg -n '^theorem freeze_preserves_declassificationAuditLog' SeLe4n/Model/FrozenState.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatform_declassificationAuditLog_eq' SeLe4n/Platform/Boot.lean
+run_negative_check "INVARIANT" rg -n 'declassificationAuditLog := log.drop|declassificationAuditLog := log.tail' SeLe4n
+# SM8.C.5: the flat rendering is NOT injective, so the trust bit ships as data.
+run_check "INVARIANT" rg -n '^structure RenderedDeclassificationBasis' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+run_check "INVARIANT" rg -n '^theorem render_not_injective' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+run_check "INVARIANT" rg -n '^theorem renderTagged_injective' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+# SM8.C.9: the live syscall.  The unchecked dispatch must FAIL CLOSED — there is
+# no unchecked declassification, because "unchecked" would authorize every
+# downgrade — and the default policy must deny.
+run_check "INVARIANT" rg -n '^  \| declassify' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^def declassificationDecision' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+run_check "INVARIANT" rg -n '^theorem declassifyStore_eq_decision_bind' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+run_check "INVARIANT" rg -n '^def authorizeDeclassificationOnCore' SeLe4n/Kernel/InformationFlow/Declassification.lean
+run_check "INVARIANT" rg -n '^theorem authorizeDeclassificationOnCore_frame' SeLe4n/Kernel/InformationFlow/Declassification.lean
+run_check "INVARIANT" rg -n '^theorem authorizeDeclassificationOnCore_never_unaudited' SeLe4n/Kernel/InformationFlow/Declassification.lean
+# The decision runs BEFORE the capacity check, so a caller the policy refuses
+# learns nothing about trail occupancy — which is a function of how many
+# authorized downgrades other subjects performed.  Checking capacity first would
+# make that a channel from every declassifying subject to every caller.
+run_check "INVARIANT" rg -n '^theorem authorizeDeclassificationOnCore_denied_before_capacity' SeLe4n/Kernel/InformationFlow/Declassification.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: a policy-refused caller learns nothing about trail occupancy' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^def declassifyObjectFromCore' SeLe4n/Kernel/InformationFlow/Declassification.lean
+run_check "INVARIANT" rg -n '^theorem declassifyObjectFromCore_destination_is_target_domain' SeLe4n/Kernel/InformationFlow/Declassification.lean
+run_check "INVARIANT" rg -n '^theorem declassifyObjectFromCore_preserves_proofLayerInvariantBundle' SeLe4n/Kernel/InformationFlow/Declassification.lean
+run_check "INVARIANT" rg -n '\| \.declassify => fun _ => \.error \.declassificationDenied' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_declassify_denied' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_declassify_delegates' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallDelegates_declassify' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n 'declassificationPolicy : DeclassificationPolicy := \{ canDeclassify := fun _ _ => false \}' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n '^def lockSet_declassify' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_declassify_size_le' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+run_check "INVARIANT" rg -n 'policyGated "declassifyObjectFromCore"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
+run_check "INVARIANT" rg -n '\| declassifyDispatch' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n 'Declassify = 30' rust/sele4n-types/src/syscall.rs
+run_check "INVARIANT" rg -n 'Declassify = 30' rust/sele4n-hal/src/svc_dispatch.rs
+run_check "INVARIANT" rg -n 'AuditLogCapacityExceeded = 54' rust/sele4n-types/src/error.rs
+run_check "INVARIANT" rg -n '^pub fn declassify' rust/sele4n-sys/src/declassify.rs
+# SM8.C.3 (**enforcement, not convention**): a production or live module must
+# not call the UNATTRIBUTED forms directly — the attributed wrappers
+# (`declassifyStoreFromCore`, `declassifyObjectFromCore`) are the only doors,
+# because §3's negative witness shows the unattributed form records a source
+# domain no state supports.  `API.lean` is the live dispatch and must name only
+# the attributed entry point.
+run_negative_check "INVARIANT" rg -n 'declassifyStoreOnCore|authorizeDeclassificationOnCore' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n 'declassifyObjectFromCore \(liftLegacyContext ctx\)' SeLe4n/Kernel/API.lean
+# SM8.C §11/§12: scope witnesses and run-level completeness.
+run_check "INVARIANT" rg -n '^theorem recordDeclassification_admits_ill_formed' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassificationChainLinked_is_syntactic' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassificationSubjectDomain_is_core_selected' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassification_refusal_is_unrecorded' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^def declassifyRun' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassifyRun_records_each' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassifyRun_frame' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+# SM8.C: V6-G at the label level — the gate is restricted for EVERY context.
+run_check "INVARIANT" rg -n '^theorem endpointGateRestricted_always' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n '^theorem endpointGateRestricted_survives_widening_override' SeLe4n/Kernel/InformationFlow/Policy.lean
+# SM8.C: the gates the endpoint policy deliberately does NOT govern, as checked
+# facts rather than prose.
+run_check "INVARIANT" rg -n '^theorem notificationSignalChecked_endpointPolicy_independent' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyChecked_endpointPolicy_independent' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
+run_check "INVARIANT" rg -n '^theorem endpointSendDualChecked_endpointPolicy_dependent' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
+# SM8.C.7: the new runtime scenario groups and the golden fixture.
+run_check "INVARIANT" rg -n '^  runLiveDeclassifyChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runDeclassifyCapacityChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runDeclassifyRunChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runDeclassifyRenderingChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runDeclassifyChainTopologyChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runDeclassTraceFixtureCheck' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: an unconfigured deployment cannot declassify' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'at capacity the live syscall REFUSES the downgrade rather than dropping the record' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: the flat rendering collides' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^\[smp-declassification\]' tests/fixtures/smp_declassification_audit.expected
+run_check "INVARIANT" rg -n 'smp_declassification_audit\.expected' tests/fixtures/smp_declassification_audit.expected.sha256
+# The new production module must stay OUT of the staged allowlist — the live
+# `.declassify` arm imports it, so staging it would break the partition gate.
+run_negative_check "INVARIANT" rg -n 'SeLe4n\.Kernel\.InformationFlow\.(AuditRecord|Declassification)$' scripts/staged_module_allowlist.txt
+
+# SM8.C: the two enforcement families, completed.  Both were documented as
+# covering "all policy-gated operations" while covering seven of twelve; the
+# four IPC/notification wrappers that landed after the families were written
+# now belong to them, as does the declassification.  Anchored per member,
+# because a count alone cannot say WHICH entry lost its theorem.
+run_check "INVARIANT" rg -n '^theorem endpointCallChecked_denied_preserves_state' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+run_check "INVARIANT" rg -n '^theorem enforcement_sufficiency_endpointCall' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyChecked_denied_preserves_state' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+run_check "INVARIANT" rg -n '^theorem enforcement_sufficiency_endpointReply' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+run_check "INVARIANT" rg -n '^theorem notificationWaitChecked_denied_preserves_state' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+run_check "INVARIANT" rg -n '^theorem enforcement_sufficiency_notificationWait' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyRecvChecked_denied_preserves_state' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+run_check "INVARIANT" rg -n '^theorem enforcement_sufficiency_endpointReplyRecv' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+run_check "INVARIANT" rg -n '^theorem declassifyObjectFromCore_denied_preserves_state' SeLe4n/Kernel/InformationFlow/Declassification.lean
+run_check "INVARIANT" rg -n '^theorem authorizeDeclassificationOnCore_denied_preserves_state' SeLe4n/Kernel/InformationFlow/Declassification.lean
+run_check "INVARIANT" rg -n '^theorem enforcement_sufficiency_declassify' SeLe4n/Kernel/InformationFlow/Declassification.lean
+
+# SM8.C (PR #863 review): `liftLegacyContext` must lift the legacy lattice
+# FAITHFULLY, not as the `linearOrder` over-approximation it used to carry.  The
+# equality is the property; the counterexample is what stops a regression to the
+# linear order from building; and the NEGATIVE anchor forbids the old wiring.
+run_check "INVARIANT" rg -n '^def DomainFlowPolicy.legacyLattice' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem legacyLattice_canFlow_embed' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n '^theorem linearOrder_is_not_faithful_to_legacy' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n '^theorem DomainFlowPolicy.legacyLattice_wellFormed' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n 'policy := .legacyLattice' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_negative_check "INVARIANT" rg -n 'policy := .linearOrder' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n '^  runFaithfulLegacyLiftChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: linearOrder disagrees on exactly one of the 16 pairs' tests/SmpInformationFlowSuite.lean
+# The boundary count is pinned by a theorem; `enforcementBoundary`'s own
+# docstring must NOT restate it, which is how it came to read "33 entries"
+# across six expansions.
+run_prose_negative_check "INVARIANT" rg -n 'classification table \([0-9]+ entries\)' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryExtended.length = 39' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+run_check "INVARIANT" rg -n '^  runEndpointPolicyGateChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: a widening override cannot open a flow the lattice denies' tests/SmpInformationFlowSuite.lean
 
 
 # WS-H12d IPC message payload bounds anchors — predicate definitions + enforcement + theorems.

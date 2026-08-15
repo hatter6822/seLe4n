@@ -1008,14 +1008,16 @@ def frozenOpCoverage : SyscallId → Bool
   | .tcbUnbindNotification => false  -- WS-SM SM6.B: ditto
   | .mintReplyCap => false           -- PR #822 Phase H: structural cap insertion (like cspaceCopy); builder-only, no frozen-phase variant
   | .vspaceUnifyInstruction => false -- WS-SM SM7.D: cache maintenance over a live mapping; the frozen phase has no VSpace/cache model
+  | .declassify => false             -- WS-SM SM8.C.9: writes the mounted declassification audit trail, which the frozen phase carries but never grows (a frozen snapshot is a record, not a running system)
 
 /-- S3-L/Z8-H/D1/D2/D3: Exactly 20 SyscallId arms have frozen operation coverage.
-    The 10 uncovered arms are builder-only / structural operations (cspaceCopy, cspaceMove,
+    The 11 uncovered arms are builder-only / structural operations (cspaceCopy, cspaceMove,
     lifecycleRetype, serviceRegister, serviceRevoke, mintReplyCap) plus the
     runtime-scheduler `tcbSetAffinity` (WS-SM SM5.H.4), the production-only
-    notification-binding ops (tcbBind/UnbindNotification, WS-SM SM6.B), and the
+    notification-binding ops (tcbBind/UnbindNotification, WS-SM SM6.B), the
     cache-maintenance `vspaceUnifyInstruction` (WS-SM SM7.D — the frozen phase
-    models no VSpace or cache state). -/
+    models no VSpace or cache state), and `declassify` (WS-SM SM8.C.9 — a frozen
+    snapshot carries the audit trail but never appends to it). -/
 theorem frozenOpCoverage_count :
     (([SyscallId.send, .receive, .call, .reply, .cspaceMint, .cspaceCopy,
        .cspaceMove, .cspaceDelete, .lifecycleRetype, .vspaceMap,
@@ -1025,11 +1027,11 @@ theorem frozenOpCoverage_count :
        .tcbSuspend, .tcbResume, .tcbSetPriority, .tcbSetMCPriority,
        .tcbSetIPCBuffer, .tcbSetAffinity,
        .tcbBindNotification, .tcbUnbindNotification, .mintReplyCap,
-       .vspaceUnifyInstruction].filter
+       .vspaceUnifyInstruction, .declassify].filter
          frozenOpCoverage).length = 20) := by
   decide
 
-/-- S3-L/D1/D2/D3: All 30 SyscallId arms are accounted for (either covered or documented as builder-only). -/
+/-- S3-L/D1/D2/D3: All 31 SyscallId arms are accounted for (either covered or documented as builder-only). -/
 theorem frozenOpCoverage_exhaustive :
     ∀ (s : SyscallId), frozenOpCoverage s = true ∨ frozenOpCoverage s = false := by
   intro s; cases s <;> simp [frozenOpCoverage]

@@ -24,7 +24,94 @@ Plan:
 SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
-**Current sub-phase: SM8.B cancellation cut LANDED (v0.33.5).**  Closes the one
+**Current sub-phase: SM8.C per-core declassification audit COMPLETE — landed
+v0.33.7, completion cut v0.33.8.**
+
+The v0.33.8 cut adds the two sub-tasks the plan's original seven did not
+contain, because the seven as written land on a surface nothing can reach.
+**SM8.C.8** mounts the audit trail in `SystemState`, bounded at 256 entries and
+**fail-closed** at the bound (the downgrade is refused with
+`KernelError.auditLogCapacityExceeded` rather than an entry dropped — an
+authorized downgrade the kernel did not record is the exact failure the phase
+excludes), carried as the 16th `proofLayerInvariantBundle` conjunct and kept
+outside `ObservableState` because projecting `(srcDomain, dstDomain,
+targetObject)` triples would be a content channel out of the very boundary the
+audit polices.  **SM8.C.9** makes `.declassify` a live syscall (`SyscallId` 30,
+count 31, both Rust mirrors, ABI conformance, enforcement registry, lock set,
+`sele4n-sys`): it runs the decision `declassifyStore` runs and records it, does
+**not** perform that gate's simulated store, resolves both security domains
+kernel-side, fails closed on the unchecked dispatch, and defaults to deny-all.
+Headline: *an authorized downgrade is either recorded or does not happen.*
+Registered follow-on (SM8.E): no interface reads the trail, so a deployment
+declassifying more than 256 times per boot stops being able to declassify — the
+honest consequence of choosing fail-closed.
+The plan reads as though the audit trail existed and needed a core added to it.
+It did not.  `declassifyStore` gated and stored; `DeclassificationEvent`'s
+docstring said the enforcement wrappers produced it and the caller recorded it;
+**nothing in the tree constructed one**, so the audit trail was a type with no
+writer.  Per the implement-the-improvement rule the producer was built rather
+than the claim weakened.
+
+`declassifyStoreOnCore` runs the same gate, threads the append-only log, and
+appends exactly one event per authorized downgrade — with the state effect
+*provably identical* to the unaudited gate (`declassifyStoreOnCore_ok_inv`), so
+`declassifyStore_NI` and the enforcement soundness theorems carry over untouched.
+Auditing adds a record, not a transition.  `originatingCore : CoreId` is
+**undefaulted** (a default would attribute every event to the boot core while
+compiling everywhere) and `authorizationBasis` is typed — as a `String` it
+admitted a claim naming a check that never ran, so "the recorded basis is the
+check that passed" was a convention; `DeclassificationBasis.render` keeps what an
+external consumer reads byte-identical.  Timestamps are the log position, and the
+counter is **global**: `declassificationAuditLog_timestamp_identifies_event` is
+what a per-core counter would destroy.
+
+Attribution is the substantive half of SM8.C.3 (core *validity* is structural —
+`CoreId` is `Fin numCores`).  `declassifyStoreFromCore` reads the source domain
+off the subject the executing core is running and fails closed on an idle core,
+so `declassifyStoreFromCore_event_attributable` is unconditional in the
+post-state an auditor inspects, with `declassifyStoreOnCore_admits_unattributable`
+the load-bearing negative that makes the wrapper worth having.
+
+The design decision is `crossCoreChain_not_within_one_view`: a declassification
+chain that crosses cores is contained in **no** single core's view.  One log per
+core — the natural SMP implementation, one counter and one buffer per CPU —
+would put each hop in a different buffer with nothing relating them.  Hence one
+global log with the core as a field, whose per-core views
+`declassificationAuditLog_partitions_by_core` proves an exact partition, and
+whose positive half `declassificationChain_recorded_across_cores` composes two
+audited hops on two cores into a linked, attributed chain.
+
+Eight cross-core rules ship as data, each supplying a proof of its own claim
+through the dependently-typed `declassificationRuleEvidence` (the device
+`CovertChannelPerCore` uses for CC-1…CC-7): laundering
+(`declassificationChain_hop_authorization_does_not_compose` over a *well-formed*
+base policy, with the decidable `chainLaunders` as the only check a reader of the
+trail can make), the endpoint rule
+(`endpointOverride_is_not_a_declassification_basis`, the consumer SM8.B built
+`endpointFlowCheck_restricted_subset_perCore` for), `authorizationBasis_perCore`,
+and that the core an event names is audit information rather than authority.
+
+The same cut closes **SM8.B's registered debt (a)**.  WS-E5/H-04 specified
+`EndpointFlowPolicy` and V6-G proved what a well-formed one must satisfy, but no
+context carried one, so nothing in the kernel ever read it.
+`LabelingContext.endpointPolicy` is that carrier, and the four endpoint-keyed
+gates branch on `endpointFlowGate`, which **conjoins** the global lattice check
+with the endpoint's override instead of replacing it.  The conjunction is the
+point: `endpointFlowGate_implies_securityFlowsTo` takes no hypothesis, so V6-G's
+`endpointPolicyRestricted` becomes structural rather than a deployment obligation
+— a misconfigured override cannot widen anything — and SM8.C's Rule 3 strengthens
+to the premise-free `liveEndpointOverride_is_not_a_declassification_basis`.
+Unconfigured deployments are unchanged; the trace is byte-identical.
+
+Registered follow-on: a *refused* declassification produces no audit entry (the
+V6-H record has no outcome field and its basis names what permitted a downgrade).
+The refusal is fail-closed, so this is a monitoring gap rather than an
+enforcement one; closing it means an outcome-carrying record, scoped to SM8.E.
+
+Suite 316 → **360 assertions**, §6.1–§6.8 new, every group with a load-bearing
+negative; staged 58 → 59.
+
+**Prior sub-phase: SM8.B cancellation cut LANDED (v0.33.5).**  Closes the one
 item the v0.33.5 audit left registered rather than proven: the composed
 cross-core cancellation `cancelIpcBlockingOnCore`.
 

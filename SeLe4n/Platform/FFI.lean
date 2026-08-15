@@ -820,7 +820,7 @@ opaque ffiRwLockReleaseWriteCount : (handle : UInt64) → BaseIO UInt64
 
 /-- WS-RC R2.B.0: Map a `KernelError` to its `u32` FFI discriminant.
 
-The discriminants 0..53 mirror `rust/sele4n-types/src/error.rs` exactly.
+The discriminants 0..54 mirror `rust/sele4n-types/src/error.rs` exactly.
 A regression that adds a Lean variant without updating the Rust enum (or
 vice versa) is caught by `tests/SyscallDispatchSuite.lean`'s round-trip
 check (`KernelError.toUInt32` ∘ `SyscallId.toNat` matches the documented
@@ -884,6 +884,7 @@ def KernelError.toUInt32 : KernelError → UInt32
   | .partialResolution             => 51
   | .missingSchedContext           => 52
   | .threadOnDifferentCore         => 53
+  | .auditLogCapacityExceeded      => 54
 
 /-- WS-RC R2.B.0: Encode a `KernelError` into the FFI return contract.
 

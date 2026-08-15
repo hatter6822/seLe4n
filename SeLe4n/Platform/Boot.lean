@@ -342,6 +342,13 @@ theorem applyMachineConfig_pendingIcacheMaintenance_eq (ist : IntermediateState)
     (applyMachineConfig ist config).state.pendingIcacheMaintenance =
       ist.state.pendingIcacheMaintenance := rfl
 
+/-- WS-SM SM8.C.8: `applyMachineConfig` preserves the declassification audit
+trail — boot configures hardware, it never declassifies. -/
+theorem applyMachineConfig_declassificationAuditLog_eq (ist : IntermediateState)
+    (config : MachineConfig) :
+    (applyMachineConfig ist config).state.declassificationAuditLog =
+      ist.state.declassificationAuditLog := rfl
+
 /-- AH2-F: `applyMachineConfig` preserves lifecycle metadata. -/
 theorem applyMachineConfig_lifecycle_eq (ist : IntermediateState) (config : MachineConfig) :
     (applyMachineConfig ist config).state.lifecycle = ist.state.lifecycle := rfl
@@ -1671,6 +1678,14 @@ private theorem foldIrqs_pendingIcacheMaintenance (irqs : List IrqEntry)
   | nil => rfl
   | cons _ _ ih => simp [foldIrqs, List.foldl] at ih ⊢; exact ih _
 
+private theorem foldIrqs_declassificationAuditLog (irqs : List IrqEntry)
+    (ist : IntermediateState) :
+    (foldIrqs irqs ist).state.declassificationAuditLog =
+      ist.state.declassificationAuditLog := by
+  induction irqs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldIrqs, List.foldl] at ih ⊢; exact ih _
+
 private theorem foldIrqs_machine (irqs : List IrqEntry) (ist : IntermediateState) :
     (foldIrqs irqs ist).state.machine = ist.state.machine := by
   induction irqs generalizing ist with
@@ -1766,6 +1781,14 @@ private theorem foldObjects_pendingIcacheMaintenance (objs : List ObjectEntry)
     (ist : IntermediateState) :
     (foldObjects objs ist).state.pendingIcacheMaintenance =
       ist.state.pendingIcacheMaintenance := by
+  induction objs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
+
+private theorem foldObjects_declassificationAuditLog (objs : List ObjectEntry)
+    (ist : IntermediateState) :
+    (foldObjects objs ist).state.declassificationAuditLog =
+      ist.state.declassificationAuditLog := by
   induction objs generalizing ist with
   | nil => rfl
   | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
@@ -2400,6 +2423,18 @@ theorem bootFromPlatform_pendingIcacheMaintenance_eq (config : PlatformConfig) :
   show _ = _; unfold bootFromPlatform
   rw [applyMachineConfig_pendingIcacheMaintenance_eq,
       foldObjects_pendingIcacheMaintenance, foldIrqs_pendingIcacheMaintenance,
+      mkEmpty_state_eq_default]
+
+/-- WS-SM SM8.C.8: boot declassifies nothing, so the audit trail after boot is
+the empty default.  The general bridge carrying `default_auditLogBounded` (the
+16th `proofLayerInvariantBundle` conjunct) from the default state to any
+platform-booted one. -/
+theorem bootFromPlatform_declassificationAuditLog_eq (config : PlatformConfig) :
+    (bootFromPlatform config).state.declassificationAuditLog =
+    (default : SystemState).declassificationAuditLog := by
+  show _ = _; unfold bootFromPlatform
+  rw [applyMachineConfig_declassificationAuditLog_eq,
+      foldObjects_declassificationAuditLog, foldIrqs_declassificationAuditLog,
       mkEmpty_state_eq_default]
 
 /-- AH2-F: After boot, machine config-set fields come from `config.machineConfig`.
@@ -3431,10 +3466,17 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
   have hAckBounded : SeLe4n.Kernel.Architecture.ackBounded
       (bootFromPlatform config).state.tlbShootdown := by
     rw [hShoot]; exact SeLe4n.Model.default_tlbShootdown_ackBounded
-  -- Compose all 15 components
+  -- 16. auditLogBounded (WS-SM SM8.C.8): boot declassifies nothing, so the
+  -- post-boot audit trail is the empty default — trivially within capacity.
+  have hAuditBounded : SeLe4n.Kernel.auditLogBounded
+      (bootFromPlatform config).state.declassificationAuditLog := by
+    rw [bootFromPlatform_declassificationAuditLog_eq]
+    exact SeLe4n.Model.default_auditLogBounded
+  -- Compose all 16 components
   exact ⟨h1, hCapBundle, ⟨h1.1, hCapBundle, hIpcFull⟩, hCouplingBundle,
          hLifeBundle, hServiceBundle, hVspaceBundle, hCrossBundle, hTlbBundle, hExtBundle,
-         hNtfnWaiter, hPBBundle, hPerCoreTlbBundle, hPerCoreICacheBundle, hAckBounded⟩
+         hNtfnWaiter, hPBBundle, hPerCoreTlbBundle, hPerCoreICacheBundle, hAckBounded,
+         hAuditBounded⟩
 
 -- ============================================================================
 -- V4-A9: End-to-end bridge for general configs

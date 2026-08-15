@@ -96,7 +96,9 @@ Deliverables:
   - scheduler yield/choose,
   - endpoint send/receive/await,
   - one capability mutation path,
-- classify explicit declassification points (if any).
+- classify explicit declassification points (if any).  **Answered by WS-SM
+  SM8.C**: there is exactly one, the `.declassify` syscall, and every downgrade
+  it authorizes is recorded in an attributed, bounded, fail-closed audit trail.
 
 Exit evidence:
 
@@ -160,8 +162,12 @@ Delivered anchors (WS-E5 closeout):
 **M-07 — Enforcement boundary specification** (`Enforcement.lean`):
 
 - `EnforcementClass` — canonical classification (policyGated / capabilityOnly / readOnly),
-- `enforcementBoundary` — 17-entry canonical operation classification table (3 policy-gated),
+- `enforcementBoundary` — canonical operation classification table, 17 entries
+  (3 policy-gated) **as M-07 delivered it**; it has grown with every later
+  phase and the live count is pinned by `enforcementBoundaryExtended_count`
+  (39 entries / 12 policy-gated at WS-SM SM8.C),
 - denial-preserves-state theorems for all 3 base checked operations (7 in extended boundary),
+  since completed to all 12 policy-gated entries by WS-SM SM8.C,
 - `enforcement_sufficiency_*` — gateway equivalence theorems for all checked operations.
 
 ## WS-F3 closeout — Information-flow completeness ✅ completed
@@ -245,6 +251,11 @@ Delivered (WS-F3 closeout):
   `bibaPolicy` with reflexivity/transitivity proofs.
 - `DeclassificationPolicy` with `declassifyStore` enforcement operation
   (5 theorems) and `declassifyStore_NI` non-interference proof.
+  **Superseded in reach by WS-SM SM8.C** (v0.33.7 → v0.33.8): the gate is now
+  audited (`declassifyStoreOnCore`), the trail is mounted in `SystemState`
+  bounded and fail-closed, and `.declassify` is a live syscall.  `declassifyStore`
+  itself is unchanged and remains the model primitive both paths share their
+  decision with (`declassificationDecision`).
 - `endpointFlowPolicyWellFormed` predicate with reflexivity/transitivity
   inheritance proofs.
 - `InformationFlowConfigInvariant` bundle.

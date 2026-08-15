@@ -60,11 +60,17 @@ pub enum SyscallId {
     // code — an instruction fetch reads at the Point of Unification, so stores
     // that are still only in the data cache must be cleaned there first.
     VSpaceUnifyInstruction = 29,
+    // Declassification (WS-SM, SM8.C.9): authorize and audit a cross-domain
+    // downgrade.  The one syscall whose authority is a *policy* rather than a
+    // capability alone — the base lattice must deny the flow and the configured
+    // declassification policy must permit it — and whose entire state effect is
+    // one entry appended to the kernel's declassification audit trail.
+    Declassify = 30,
 }
 
 impl SyscallId {
     /// Total number of modeled syscalls.
-    pub const COUNT: usize = 30;
+    pub const COUNT: usize = 31;
 
     /// Convert from a raw `u64` value. Returns `None` for out-of-range.
     /// Lean: `SyscallId.ofNat?`
@@ -100,6 +106,7 @@ impl SyscallId {
             27 => Some(Self::TcbUnbindNotification),
             28 => Some(Self::MintReplyCap),
             29 => Some(Self::VSpaceUnifyInstruction),
+            30 => Some(Self::Declassify),
             _ => None,
         }
     }
@@ -141,6 +148,10 @@ impl SyscallId {
             // the operation publishes the caller's own stores, so the subject
             // that needs it could by construction write the page.
             Self::VSpaceUnifyInstruction => AccessRight::Write,
+            // WS-SM SM8.C.9: declassifying releases the caller's information
+            // *into* the target object's domain, so the flow direction is
+            // subject -> object and the authority is the write right.
+            Self::Declassify => AccessRight::Write,
         }
     }
 }

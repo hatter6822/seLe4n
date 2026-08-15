@@ -476,7 +476,7 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
   assertBool "lock-set non-interference + the covert-channel inventory resolve"
     (have _w := @SeLe4n.Kernel.withLockSet_preserves_projection
      have _u := @SeLe4n.Kernel.nonInterference_perCore_underLockSet
-     have _e : SeLe4n.Kernel.enforcementBoundaryPerCore.length = 54 :=
+     have _e : SeLe4n.Kernel.enforcementBoundaryPerCore.length = 55 :=
        SeLe4n.Kernel.enforcementBoundaryPerCore_count
      -- PR #861 review round 4: the boundary now also classifies the live
      -- cross-core wrappers, and the SMP completeness half audits them.  Rounds
@@ -484,6 +484,9 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      -- and `.send`/`.tcbResume` were rerouted off boot-pinned operations, and
      -- the three SM7.D/SM7.F architecture wrappers had been live all along.
      -- Round 37's widened routing gate found the fifteenth, `.tcbSetAffinity`.
+     -- WS-SM SM8.C then took the boundary itself from 54 to 55 with the live
+     -- declassification entry point (`.declassify`), which is policy-gated in
+     -- the canonical list and re-routed per-core like the rest.
      have _x := @SeLe4n.Kernel.syscallIdToEnforcementNamePerCore
      have _c := SeLe4n.Kernel.enforcementBoundaryPerCore_is_complete_crossCore
      have _i : SeLe4n.Kernel.acceptedCovertChannelsPerCore.length = 7 :=

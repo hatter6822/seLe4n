@@ -102,6 +102,18 @@ itself just introduced.  Carried here alongside its sibling
 non-shootdown transition frames, so it transports definitionally through
 the adapter preservation proofs below.
 
+WS-SM SM8.C.8: `auditLogBounded st.declassificationAuditLog` added as the
+16th component — the mounted declassification audit trail is within
+capacity.  Carried for the same reason `pendingBounded` is: the trail is
+durable kernel state a userspace caller can grow (one entry per authorized
+`.declassify`), so an unbounded list would be a caller-controlled
+allocation.  The bound is maintained by construction rather than by a
+counting argument — `recordDeclassificationChecked` is fail-closed, so the
+only writer refuses at capacity and the post-state bound follows from the
+guard alone.  It reads exactly one field, `declassificationAuditLog`, which
+every non-declassifying transition frames, so it transports definitionally
+through the adapter preservation proofs below.
+
 WS-SM SM7.C / SM7.F.2: `tlbInvalidationConsistent_perCore st` added as the
 13th component — the per-core TLB consistency invariant.  SM7.F.2 states it
 in its **honest, pending-aware** form: on every core, every cached entry is
@@ -150,7 +162,8 @@ def proofLayerInvariantBundle (st : SystemState) : Prop :=
     pendingBounded st.tlbShootdown ∧
     tlbInvalidationConsistent_perCore st ∧
     icacheCoherent_perCore st ∧
-    ackBounded st.tlbShootdown
+    ackBounded st.tlbShootdown ∧
+    auditLogBounded st.declassificationAuditLog
 
 /-- Proof-carrying local preservation hooks required to compose adapter paths with invariant bundles. -/
 structure AdapterProofHooks (contract : RuntimeBoundaryContract) where
@@ -594,7 +607,7 @@ private theorem default_schedulerInvariantBundleFull :
 
 theorem default_system_state_proofLayerInvariantBundle :
     proofLayerInvariantBundle (default : SystemState) := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   -- 1. schedulerInvariantBundleFull (WS-H12e: now uses full bundle)
   · exact default_schedulerInvariantBundleFull
   -- 2. capabilityInvariantBundle (6-tuple: unique, sound, bounded, completeness, acyclicity, depth)
@@ -653,6 +666,9 @@ theorem default_system_state_proofLayerInvariantBundle :
   -- 15. ackBounded (WS-SM SM7.F.3 PR #854 review: boot slots and the round
   --     counter are all `0`)
   · exact default_tlbShootdown_ackBounded
+  -- 16. auditLogBounded (WS-SM SM8.C.8: boot declassifies nothing, so the
+  --     audit trail is empty and trivially within capacity)
+  · exact default_auditLogBounded
 
 -- ============================================================================
 -- M-08/WS-E6: Architecture assumption consumption bridge theorems
@@ -973,6 +989,78 @@ private theorem ipcSchedulerCouplingInvariantBundle_setPerCoreTlb {st : SystemSt
     (h : ipcSchedulerCouplingInvariantBundle st) :
     ipcSchedulerCouplingInvariantBundle { st with perCoreTlb := t } :=
   ⟨coreIpcInvariantBundle_setPerCoreTlb h.1, h.2.1, h.2.2.1, h.2.2.2⟩
+
+/-! ### WS-SM SM8.C.8 — `proofLayerInvariantBundle` carriage across an audit-trail write
+
+The same five-lemma shape as the `perCoreTlb` layer above, and for the same
+reason: twelve of the sixteen conjuncts transport definitionally, but three do
+not — `dualQueueSystemInvariant` recurses on a fuel that stays symbolic,
+`serviceNontrivialPath` is an inductive family *parameterised by the state*, and
+`blockingChain` has the same stuck-fuel shape.  None of those is about proof
+budget; each needs its own congruence, which the tree already has. -/
+
+private theorem ipcInvariantFull_setDeclassificationAuditLog {st : SystemState}
+    {log : SeLe4n.Kernel.DeclassificationAuditLog} (h : ipcInvariantFull st) :
+    ipcInvariantFull { st with declassificationAuditLog := log } := by
+  obtain ⟨c1, c2, c3, c4, c5, c6, c7, c8, c9, c10,
+          c11, c12, c13, c14, c15, c16, c17, c18, c19, c20⟩ := h
+  exact ⟨c1, dualQueueSystemInvariant_of_getElem_eq (s1 := st)
+           (s2 := { st with declassificationAuditLog := log }) (fun _ => rfl) c2,
+         c3, c4, c5, c6, c7, c8, c9, c10,
+         c11, c12, c13, c14, c15, c16, c17, c18, c19, c20⟩
+
+private theorem serviceGraphInvariant_setDeclassificationAuditLog {st : SystemState}
+    {log : SeLe4n.Kernel.DeclassificationAuditLog} (h : serviceGraphInvariant st) :
+    serviceGraphInvariant { st with declassificationAuditLog := log } :=
+  ⟨fun sid hp =>
+     h.1 sid (serviceNontrivialPath_of_services_eq (st := st)
+                (st' := { st with declassificationAuditLog := log }) rfl hp), h.2⟩
+
+private theorem crossSubsystemInvariant_setDeclassificationAuditLog {st : SystemState}
+    {log : SeLe4n.Kernel.DeclassificationAuditLog} (h : crossSubsystemInvariant st) :
+    crossSubsystemInvariant { st with declassificationAuditLog := log } := by
+  obtain ⟨d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12⟩ := h
+  exact ⟨d1, d2, d3, d4, d5, serviceGraphInvariant_setDeclassificationAuditLog d6, d7, d8, d9,
+         PriorityInheritance.blockingAcyclic_frame st _ d10
+           (fun tid => PriorityInheritance.blockingServer_congr_objects _ _ tid rfl) rfl,
+         d11, d12⟩
+
+private theorem coreIpcInvariantBundle_setDeclassificationAuditLog {st : SystemState}
+    {log : SeLe4n.Kernel.DeclassificationAuditLog} (h : coreIpcInvariantBundle st) :
+    coreIpcInvariantBundle { st with declassificationAuditLog := log } :=
+  ⟨h.1, h.2.1, ipcInvariantFull_setDeclassificationAuditLog h.2.2⟩
+
+private theorem ipcSchedulerCouplingInvariantBundle_setDeclassificationAuditLog
+    {st : SystemState} {log : SeLe4n.Kernel.DeclassificationAuditLog}
+    (h : ipcSchedulerCouplingInvariantBundle st) :
+    ipcSchedulerCouplingInvariantBundle { st with declassificationAuditLog := log } :=
+  ⟨coreIpcInvariantBundle_setDeclassificationAuditLog h.1, h.2.1, h.2.2.1, h.2.2.2⟩
+
+/-- **WS-SM SM8.C.8**: `proofLayerInvariantBundle` carriage across a write to
+`declassificationAuditLog`.
+
+Every conjunct but the sixteenth is carried here; the sixteenth reads the field
+being written and is therefore the writer's obligation.  Deliberately
+**carriage, not an `iff`**: the capacity bound is a genuine property of the new
+trail, so the writer has to supply it — and that obligation is load-bearing,
+since substituting the pre-state's own bound does not typecheck.
+
+Stated once for *any* trail writer, so the live `.declassify` syscall and the
+model primitive discharge it the same way. -/
+theorem proofLayerInvariantBundle_setDeclassificationAuditLog (st : SystemState)
+    (log : SeLe4n.Kernel.DeclassificationAuditLog)
+    (h : proofLayerInvariantBundle st)
+    (hBounded : SeLe4n.Kernel.auditLogBounded log) :
+    proofLayerInvariantBundle { st with declassificationAuditLog := log } := by
+  obtain ⟨bSched, bCap, bCoreIpc, bCoupling, bLifecycle, bService, bVSpace,
+          bCross, bTlb, bSchedExt, bNtfn, bPending, bPerCoreTlb,
+          bIcache, bAck, _bAuditPre⟩ := h
+  exact ⟨bSched, bCap, coreIpcInvariantBundle_setDeclassificationAuditLog bCoreIpc,
+         ipcSchedulerCouplingInvariantBundle_setDeclassificationAuditLog bCoupling,
+         bLifecycle, bService, bVSpace,
+         crossSubsystemInvariant_setDeclassificationAuditLog bCross,
+         bTlb, bSchedExt, bNtfn, bPending, bPerCoreTlb,
+         bIcache, bAck, hBounded⟩
 
 /-- **WS-SM SM7.F.5**: `proofLayerInvariantBundle` carriage across a write to
 `perCoreTlb`.

@@ -1,0 +1,18 @@
+[smp-declassification] boot trail: 0 entries, bounded true
+[smp-declassification] capacity: 256 entries, fail-closed (no drop arm)
+[smp-declassification] run of 2 authorized downgrades: 2 entries recorded
+[smp-declassification] trail well-formed: true, bounded true
+[smp-declassification] kernel-issued: true, bases verified true
+[smp-declassification] entry ts=0 core=1 src=3 dst=0 target=1017 basis=DeclassificationPolicy.canDeclassify kernelIssued=true
+[smp-declassification] entry ts=1 core=1 src=3 dst=0 target=1002 basis=DeclassificationPolicy.canDeclassify kernelIssued=true
+[smp-declassification] core 0 view: 0 entries
+[smp-declassification] core 1 view: 2 entries
+[smp-declassification] core 2 view: 0 entries
+[smp-declassification] core 3 view: 0 entries
+[smp-declassification] partition exact: true
+[smp-declassification] chain linked: false, cross-core false
+[smp-declassification] object store unchanged: true, scheduler unchanged true
+[smp-declassification] invisible on every core: true
+[smp-declassification] unconfigured policy refuses: SeLe4n.Model.KernelError.declassificationDenied
+[smp-declassification] idle core refuses: SeLe4n.Model.KernelError.illegalState
+[smp-declassification] absent target refuses: SeLe4n.Model.KernelError.objectNotFound

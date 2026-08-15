@@ -15,5 +15,7 @@
   "notificationWaitCrossCoreDispatchChecked#alt": "notificationWaitCrossCoreDispatch",
   "endpointReplyCrossCoreDispatchChecked#alt": "endpointReplyCrossCoreDispatch",
   "endpointSendCrossCoreDispatchChecked#alt": "endpointSendDualWithCapsOnCore",
-  "registerServiceChecked#alt": "registerService"
+  "registerServiceChecked#alt": "registerService",
+  "_inert_note": "A `<label>#inert` entry declares that one of this syscall's dispatch arms performs NO operation, so there is no body to walk for boot-pinned scheduler reads.  Declared rather than inferred, and VERIFIED by the gate (the arm must call nothing and must produce an error), so an edit that gives the arm a call turns the exemption back into a demand for a root.  `.declassify`'s unchecked arm is the first: there is no unchecked declassification, because 'unchecked' would mean 'every downgrade authorized', so `dispatchWithCap` fails closed with `.declassificationDenied` (dispatchWithCap_declassify_denied).",
+  "declassifyObjectFromCore#inert": true
 }

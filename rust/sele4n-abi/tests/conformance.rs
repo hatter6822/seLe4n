@@ -534,7 +534,8 @@ fn message_info_exhaustive_bounds() {
 
 /// Verify SyscallId roundtrip for all variants (D6: +D1/D2/D3 TCB ops;
 /// WS-SM SM5.H.4: +TcbSetAffinity; SM6.B: +Tcb{Bind,Unbind}Notification;
-/// PR #822 Phase H: +MintReplyCap; WS-SM SM7.D: +VSpaceUnifyInstruction).
+/// PR #822 Phase H: +MintReplyCap; WS-SM SM7.D: +VSpaceUnifyInstruction;
+/// WS-SM SM8.C.9: +Declassify).
 #[test]
 fn syscall_id_exhaustive_roundtrip() {
     for i in 0..(SyscallId::COUNT as u64) {
@@ -544,17 +545,17 @@ fn syscall_id_exhaustive_roundtrip() {
     assert!(SyscallId::from_u64(SyscallId::COUNT as u64).is_none());
 }
 
-/// Verify KernelError roundtrip for all 54 variants.
-/// WS-SM SM5.B.4: ThreadOnDifferentCore at 53 extends R5.E's range of 0..=52
-/// (which extended AN7-E's range of 0..=51).
+/// Verify KernelError roundtrip for all 55 variants.
+/// WS-SM SM8.C.9: AuditLogCapacityExceeded at 54 extends SM5.B.4's range of
+/// 0..=53 (which extended R5.E's range of 0..=52).
 #[test]
 fn kernel_error_exhaustive_roundtrip() {
-    for i in 0..=53u32 {
+    for i in 0..=54u32 {
         let err =
             KernelError::from_u32(i).unwrap_or_else(|| panic!("valid error for discriminant {i}"));
         assert_eq!(err as u32, i);
     }
-    assert!(KernelError::from_u32(54).is_none());
+    assert!(KernelError::from_u32(55).is_none());
 }
 
 /// Verify TypeTag roundtrip for all 8 variants (0–7, including SchedContext + Reply).
@@ -854,14 +855,14 @@ fn access_rights_ops_preserve_validity() {
 /// and that unknown discriminants return None (forward-compatible).
 #[test]
 fn kernel_error_non_exhaustive() {
-    // WS-SM SM5.B.4: 54 variants (0–53) roundtrip
-    // (R5.E previously stood at 52 with MissingSchedContext).
-    for i in 0..=53u32 {
+    // WS-SM SM8.C.9: 55 variants (0–54) roundtrip
+    // (SM5.B.4 previously stood at 53 with ThreadOnDifferentCore).
+    for i in 0..=54u32 {
         let e = KernelError::from_u32(i).unwrap();
         assert_eq!(e as u32, i);
     }
     // Future discriminants return None
-    assert!(KernelError::from_u32(54).is_none());
+    assert!(KernelError::from_u32(55).is_none());
     assert!(KernelError::from_u32(100).is_none());
     assert!(KernelError::from_u32(u32::MAX).is_none());
 }
@@ -924,15 +925,15 @@ fn decode_response_u64_overflow() {
     );
 }
 
-/// AF6-A + WS-SM SM5.B.4: Unrecognized kernel error codes (≥54 after SM5.B
-/// added ThreadOnDifferentCore at 53; R5.E previously added MissingSchedContext
-/// at 52) map to UnknownKernelError.
+/// AF6-A + WS-SM SM8.C.9: Unrecognized kernel error codes (≥55 after SM8.C.9
+/// added AuditLogCapacityExceeded at 54; SM5.B.4 previously added
+/// ThreadOnDifferentCore at 53) map to UnknownKernelError.
 #[test]
 fn unknown_kernel_error_fallback() {
     use sele4n_abi::decode_response;
 
-    // Error code 54 — first unrecognized code after ThreadOnDifferentCore (53).
-    let regs = [54, 0, 0, 0, 0, 0, 0];
+    // Error code 55 — first unrecognized code after AuditLogCapacityExceeded (54).
+    let regs = [55, 0, 0, 0, 0, 0, 0];
     assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
 
     // Error code 100 — arbitrary unrecognized code
@@ -1098,12 +1099,13 @@ fn identifier_validation() {
 // ============================================================================
 
 /// W1-H / AA1 / AG3 / AL6 / AL1b / AN7-E / R5.E / WS-SM SM5.B: KernelError
-/// variant count matches Lean (54 variants, 0-53 after SM5.B added
-/// ThreadOnDifferentCore at 53; R5.E previously added MissingSchedContext at 52).
-/// Detects Lean-Rust enum divergence automatically.
+/// variant count matches Lean (55 variants, 0-54 after SM8.C.9 added
+/// AuditLogCapacityExceeded at 54; SM5.B.4 previously added
+/// ThreadOnDifferentCore at 53).  Detects Lean-Rust enum divergence
+/// automatically.
 #[test]
 fn kernel_error_variant_count() {
-    const KERNEL_ERROR_COUNT: u32 = 54;
+    const KERNEL_ERROR_COUNT: u32 = 55;
     // All expected variants exist
     for i in 0..KERNEL_ERROR_COUNT {
         assert!(
@@ -1118,12 +1120,13 @@ fn kernel_error_variant_count() {
     );
 }
 
-/// W1-H / AA1 / D6: SyscallId variant count matches Lean (30 variants, 0-29;
+/// W1-H / AA1 / D6: SyscallId variant count matches Lean (31 variants, 0-30;
 /// WS-SM SM6.B added Tcb{Bind,Unbind}Notification at 26/27; PR #822 Phase H added
-/// MintReplyCap at 28; WS-SM SM7.D added VSpaceUnifyInstruction at 29).
+/// MintReplyCap at 28; WS-SM SM7.D added VSpaceUnifyInstruction at 29; WS-SM
+/// SM8.C.9 added Declassify at 30).
 #[test]
 fn syscall_id_variant_count() {
-    const SYSCALL_COUNT: u64 = 30;
+    const SYSCALL_COUNT: u64 = 31;
     assert_eq!(SyscallId::COUNT, SYSCALL_COUNT as usize);
     for i in 0..SYSCALL_COUNT {
         assert!(
@@ -1268,12 +1271,12 @@ fn sched_context_boundary() {
     assert_eq!(SyscallId::from_u64(20).unwrap(), SyscallId::TcbSuspend);
 }
 
-/// AA1-B-5: COUNT is updated to 30 (WS-SM SM7.D added VSpaceUnifyInstruction, on
-/// top of PR #822 Phase H's MintReplyCap and WS-SM SM6.B's
-/// Tcb{Bind,Unbind}Notification).
+/// AA1-B-5: COUNT is updated to 31 (WS-SM SM8.C.9 added Declassify, on top of
+/// WS-SM SM7.D's VSpaceUnifyInstruction, PR #822 Phase H's MintReplyCap and
+/// WS-SM SM6.B's Tcb{Bind,Unbind}Notification).
 #[test]
 fn syscall_count_updated() {
-    assert_eq!(SyscallId::COUNT, 30);
+    assert_eq!(SyscallId::COUNT, 31);
 }
 
 /// AA1-B-6: SchedContext syscalls require Write access (API.lean:381-383).
@@ -1469,10 +1472,10 @@ fn ipc_timeout_result() {
     assert_eq!(result, Err(KernelError::IpcTimeout));
 }
 
-/// AA1-H-4/AG3 + AL1b/WS-AL + AN7-E + R5.E + WS-SM SM5.B: Boundary —
-/// discriminant 54 is out of range (InvalidIrq at 48, InvalidObjectType at 49,
+/// AA1-H-4/AG3 + AL1b/WS-AL + AN7-E + R5.E + WS-SM SM5.B + SM8.C.9: Boundary —
+/// discriminant 55 is out of range (InvalidIrq at 48, InvalidObjectType at 49,
 /// NullCapability at 50, PartialResolution at 51, MissingSchedContext at 52,
-/// ThreadOnDifferentCore at 53).
+/// ThreadOnDifferentCore at 53, AuditLogCapacityExceeded at 54).
 #[test]
 fn error_boundary_after_invalid_irq() {
     assert!(KernelError::from_u32(48).is_some()); // InvalidIrq
@@ -1481,7 +1484,8 @@ fn error_boundary_after_invalid_irq() {
     assert!(KernelError::from_u32(51).is_some()); // PartialResolution (AN7-E)
     assert!(KernelError::from_u32(52).is_some()); // MissingSchedContext (R5.E)
     assert!(KernelError::from_u32(53).is_some()); // ThreadOnDifferentCore (SM5.B)
-    assert!(KernelError::from_u32(54).is_none());
+    assert!(KernelError::from_u32(54).is_some()); // AuditLogCapacityExceeded (SM8.C.9)
+    assert!(KernelError::from_u32(55).is_none());
 }
 
 // --- D6: TCB operation conformance ---
@@ -1577,13 +1581,29 @@ fn vspace_unify_instruction_roundtrip() {
     assert_eq!(sid.required_right(), AccessRight::Write);
 }
 
-/// D6-D5: Boundary — discriminant 30 is out of range for SyscallId
-/// (WS-SM SM7.D added vspaceUnifyInstruction, moving the boundary from 28 to 29).
+/// WS-SM SM8.C.9: Declassify roundtrip (discriminant 30).
+///
+/// Authorize and audit a cross-domain downgrade.  Requires the **write** right:
+/// the flow direction is subject -> object (the caller releases its information
+/// into the target object's domain), matching API.lean
+/// `syscallRequiredRight .declassify = .write`.  It takes no inline argument
+/// registers — the capability names the target and both domains are resolved
+/// kernel-side.
+#[test]
+fn declassify_roundtrip() {
+    let sid = SyscallId::from_u64(30).expect("Declassify must exist");
+    assert_eq!(sid, SyscallId::Declassify);
+    assert_eq!(sid.to_u64(), 30);
+    assert_eq!(sid.required_right(), AccessRight::Write);
+}
+
+/// D6-D5: Boundary — discriminant 31 is out of range for SyscallId
+/// (WS-SM SM8.C.9 added declassify, moving the boundary from 29 to 30).
 #[test]
 fn syscall_boundary() {
-    assert!(SyscallId::from_u64(29).is_some()); // Last valid
-    assert!(SyscallId::from_u64(30).is_none()); // First invalid
-    assert_eq!(SyscallId::COUNT, 30);
+    assert!(SyscallId::from_u64(30).is_some()); // Last valid
+    assert!(SyscallId::from_u64(31).is_none()); // First invalid
+    assert_eq!(SyscallId::COUNT, 31);
 }
 
 /// D6-D6: All TCB operations require Write access (API.lean:387-392).

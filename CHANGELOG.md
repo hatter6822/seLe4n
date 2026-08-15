@@ -1,3 +1,480 @@
+## v0.33.8 — WS-SM SM8.C.8/SM8.C.9: the audit trail mounted, and the `.declassify` syscall live
+
+**The completion cut for SM8.C.**  v0.33.7 built the declassification audit —
+the producer, the attribution, the per-core views, the cross-core chains, the
+rules as data — on a surface *nothing could reach*: the log was a value threaded
+through a call, and no syscall performed a declassification.  This cut makes the
+whole thing live end to end.
+
+### SM8.C.8 — the audit trail is mounted, bounded, and fail-closed
+
+`SystemState.declassificationAuditLog` is durable kernel state.  The trail had
+to outlive the syscall that writes it: with the log threaded through a call, a
+chain of downgrades could only be reasoned about *within* one call, and the live
+`.declassify` makes each hop a separate kernel entry.
+
+* **Extraction.**  `SecurityDomain`, `DeclassificationBasis`,
+  `DeclassificationEvent`, `DeclassificationAuditLog` and
+  `recordDeclassification` move to a new production module
+  `InformationFlow/AuditRecord.lean`, below `Model/State`.  The same extraction
+  SM7.A performed for `TlbInvalidation` and SM7.D for `CacheInvalidation`, and
+  for the same reason: `Policy.lean` imports `Model.State`, so the record could
+  not stay there without a cycle.  Names and namespace unchanged.
+* **Capacity is a security decision, not a convenience one.**
+  `maxDeclassificationAuditEntries = 256`, and the behaviour *at* the bound is
+  **fail-closed**: `recordDeclassificationChecked` returns `none` and the
+  declassification is refused with the new `KernelError.auditLogCapacityExceeded`
+  (Rust discriminant 54).  The alternative — drop an entry, let the downgrade
+  through — produces a state in which the kernel authorized a cross-domain flow
+  and no record of it exists, which is the exact failure the phase exists to
+  exclude.  A distinct discriminant, not `resourceExhausted` or
+  `declassificationDenied`, because only this one means "drain the trail".
+  The availability cost is real and **not** mitigated here: the only sound
+  mitigation is a consumer that drains the trail, and no read interface exists
+  (registered as SM8.E scope).
+* **The headline**: `declassifyStoreOnCore_never_unaudited` /
+  `authorizeDeclassificationOnCore_never_unaudited` — *an authorized downgrade is
+  either recorded or does not happen.*  With a threaded log this could only be
+  stated per call; with a dropping ring buffer it would be false.
+* **Carriage.**  `auditLogBounded st.declassificationAuditLog` is the **16th**
+  `proofLayerInvariantBundle` conjunct, with boot witness, the `bootFromPlatform`
+  bridge, and the reusable writer layer
+  `proofLayerInvariantBundle_setDeclassificationAuditLog` (deliberately carriage,
+  not an `iff`: the writer supplies the bound).  Freeze carries it as a
+  **required** `FrozenSystemState` field (a snapshot that silently dropped the
+  trail would report a system with no recorded downgrades, which is what a system
+  with *unrecorded* downgrades looks like); `OffSchedulerAgrees` gains the
+  matching field; `storeObject` frames it.
+* **Information flow**: the trail is deliberately **outside** `ObservableState`,
+  and the exclusion points the opposite way to the SM7 ones.  `perCoreTlb` and
+  friends are excluded because projecting them opens a *timing* channel; the
+  trail is excluded because projecting it opens a *content* channel out of
+  exactly the boundary it polices — each entry names `(srcDomain, dstDomain,
+  targetObject)`, so a low observer could learn that a high→low downgrade
+  happened and which object it targeted, from a subject the base policy forbids
+  it to hear from.  `declassificationAuditLog_write_preserves_projection` (and
+  its per-core companion) is the witness.  The consequence is that nothing in
+  the kernel can read the trail today; a privileged reader owes its own flow
+  argument and is SM8.E scope.
+
+### SM8.C.9 — the live `.declassify` syscall
+
+`SyscallId.declassify = 30` (count 30 → 31), threaded through the Lean
+encodings, both Rust mirrors, the ABI conformance suite, the frozen-ops
+classifier, the enforcement registry (canonical 38 → 39, per-core 54 → 55), the
+lock-set inventory and `sele4n-sys`'s safe wrapper.
+
+**What it does, and what it does not.**  `declassifyStore` models a
+declassification as a gated *store*, and its own docstring calls that store a
+simulation of the transfer.  Simulating a transfer is not something a syscall may
+do — the object would have to come from the caller, so a `.declassify` built that
+way would let userspace install a chosen `KernelObject` at a chosen id and break
+every object-store invariant at once.  So the live transition runs the
+**decision** the gate runs (`declassificationDecision`, *shared* with
+`declassifyStore` rather than restated — `declassifyStore_eq_decision_bind`) and
+records the result.  Its only state effect is one appended audit entry
+(`authorizeDeclassificationOnCore_frame`), which is why fifteen of the sixteen
+bundle conjuncts are carried by the frame and the sixteenth by the capacity
+guard.  Read positively, that is the MLS trusted-downgrader primitive: the kernel
+is the arbiter of which downgrades its policy permits and the durable attributed
+trail is the evidence.  Read negatively, `.declassify` moves no bytes; a
+data-carrying declassification would ride the SM6.B signal path and its whole
+invariant surface, and is SM8.D/SM8.E scope.
+
+* **Neither domain comes from the caller.**  `declassifyObjectFromCore` reads the
+  source off the subject the executing core is running and the destination off
+  the target object's own labeling, so both endpoints of every recorded downgrade
+  are facts about the state
+  (`declassifyObjectFromCore_event_attributable`,
+  `declassifyObjectFromCore_destination_is_target_domain`).  That also collapses
+  the ABI to a single operand — the capability naming the target — so the
+  syscall takes **no** inline argument registers.
+* **The policy decision runs before the capacity check** (see the section
+  below) — both orderings admit the same successes, and only one keeps trail
+  occupancy out of a refused caller's reach.
+* **There is no unchecked declassification.**  Every other arm's unchecked twin
+  skips a flow check the caller opted out of; declassification's authority *is* a
+  policy, so "unchecked" would mean "every downgrade authorized".
+  `dispatchWithCap` fails closed with `.declassificationDenied`
+  (`dispatchWithCap_declassify_denied`), and the live arm is on the checked
+  dispatch only, delegation-backed (`syscallDelegates_declassify`).
+* **The default is deny-all.**  `LabelingContext.declassificationPolicy` defaults
+  to refusing every pair, so an unconfigured deployment cannot declassify at all
+  (`dispatchWithCapChecked_declassify_default_denied`).
+* Authority is the **write** right (the flow direction is subject → object); the
+  lock set is the two universal reads (`lockSet_declassify`), the smallest
+  declared footprint in the inventory, because the only write is a `SystemState`
+  field rather than an object.
+* Cross-core inventory: `.declassifyDispatch` joins `CrossCoreTransition`
+  (25 → 26 entries, live arms 18 → 19, delegation-backed 10 → 11) with an
+  **empty** write set — it takes an executing core and writes no core.  The
+  per-core routing gate passes with **zero** allowlisted exceptions, and gained
+  a verified `<label>#inert` exemption for a dispatch arm that provably performs
+  no operation (the fail-closed unchecked arm), checked rather than asserted.
+
+### The check ordering — a covert channel closed on re-reading
+
+The first cut checked capacity *before* the policy decision, so a caller whose
+downgrade the policy refuses learned that the trail was full.  Trail occupancy is
+a function of how many **authorized** downgrades other subjects performed, so
+that is a channel from every declassifying subject to every subject that can call
+`.declassify` at all.
+
+Both orderings admit the same successes; only one is safe.  The decision now runs
+first, capacity second, and capacity is still checked before any commit — so
+`never_unaudited` is unaffected.  Stated as a theorem rather than left to the
+reader of the arm: `authorizeDeclassificationOnCore_denied_before_capacity` says
+a refused caller's result is *identical on two arbitrary states*, so no amount of
+trail difference is visible to it, and `…_audit_log_full` gained the
+`hAuthorized` premise that makes the confinement explicit.
+
+### Self-audit closure
+
+Fourteen findings from this workstream's own review, all closed:
+
+1. **The flat audit rendering is not injective** — an integrator could name its
+   authority with the kernel's own literal and the rendered record would be
+   indistinguishable.  Stated as a theorem (`render_not_injective`) rather than a
+   caution, and fixed by shipping the trust bit as *data*:
+   `RenderedDeclassificationBasis` pairs the designation with the kernel's own
+   verdict, and `renderTagged_injective` is the property `render` does not have.
+   The designation is unchanged, so nothing an audit tool displays moves.
+2. **The attributed entry point is now enforced**, not conventional: a Tier-3
+   negative anchor forbids `API.lean` from naming the unattributed forms.
+3. **The cross-core chain theorem is restated over the attributed entry point**
+   (`declassificationChain_recorded_across_cores_attributed`), where the middle
+   domain is a fact about which subject was running rather than what two callers
+   wrote.
+4. **The "structural timestamp" claim was an overstatement** — the V6-H
+   primitive `recordDeclassification` accepts an arbitrary event, so
+   well-formedness is a *checkable predicate*, not a type invariant.  Corrected
+   at the definition site and witnessed by `recordDeclassification_admits_ill_formed`.
+5. **The laundering detector's conservatism is stated**
+   (`declassificationChainLinked_is_syntactic`): linkage is matching domains and
+   increasing timestamps, with no data-dependency relation behind it — safe for a
+   detector, unsafe for a gate, which is why nothing enforces on it.
+6. **Run-level completeness** (§12): `declassifyRun` folds the live entry point
+   over a request list, and a run of `n` authorized downgrades records exactly
+   `n` attributed entries, loses none, stays well-formed and within capacity,
+   writes only the trail, and is invisible on every core.
+7. **`authorizationBasis_perCore`'s scope** is stated: the *verdict* is
+   core-uniform; what the core selects is the recorded **subject**
+   (`declassificationSubjectDomain_is_core_selected`).
+9. **The rule set grew with the phase** — 8 → 12 rules, each with dependently
+   typed evidence, so every scope statement is a rule rather than a paragraph.
+10/11. **The gates the endpoint policy deliberately does not govern** are checked
+   facts now: both notification gates and the reply leg are proven independent of
+   `endpointPolicy`, with the send gate's *dependence* as the load-bearing
+   contrast.
+13. **V6-G reconciled at the label level**: `endpointGateRestricted_always` holds
+   for **every** context with no well-formedness hypothesis — strictly stronger
+   than V6-G's conditional form, because conjoining makes widening structurally
+   impossible.  `endpointGateRestricted_survives_widening_override` is the
+   witness that the hypothesis really is unnecessary.
+14. **A golden fixture** (`tests/fixtures/smp_declassification_audit.expected`
+   + `.sha256`, 18 lines) computed from the live transition and verified
+   byte-for-byte in-suite.
+15/16. Elaboration examples for the theorems that were anchored but never
+   applied, and chain topologies beyond the two-hop case (three-hop across three
+   cores, two hops on one core, four cores one hop each, and the out-of-order
+   negative).
+
+Also corrected: `liftLegacyContext`'s docstring said it had no live consumer,
+which the `.declassify` arm makes false.
+
+**Tests**: `SmpInformationFlowSuite` 360 → 393 runtime assertions, with six new
+scenario groups (§6.9 the live syscall, §6.10 the fail-closed capacity bound,
+§6.11 run-level completeness, §6.12 the tagged rendering and the collision it
+exists for, §6.13 chain topologies, §6.14 the golden trace) on top of SM8.C's
+§6.1–§6.8, every group with a load-bearing negative.  Rust 812 → 819 HAL tests.  Trace fixture `[XVAL-002]`
+30 → 31 variants; everything else byte-identical.
+
+**AK7 anchor**: every counter **unchanged** against
+`docs/dev_history/audits/AL0_baseline.txt` (`RAW_MATCH_TOTAL` 130,
+`RAW_LOOKUP_TID` 1286, `GETTCB_ADOPTION` 2021, `GETVSPACEROOT_ADOPTION` 36,
+sorry/axiom 0).  Expected: the cut adds no object-store read at all — the live
+transition's only state access is `getObjectType?` (the AL2-A/AN10-B accessor)
+and a `SystemState` field, so it introduces neither a raw match nor a raw
+`tid.toObjId` lookup.
+
+### PR #863 review — the legacy lattice is now lifted faithfully
+
+A P2 review finding, verified valid and fixed. `liftLegacyContext` carried
+`DomainFlowPolicy.linearOrder`, which is a strict **over-approximation** of the
+legacy 2×2 relation rather than a reproduction of it. Enumerated over all sixteen
+label pairs the two agree on fifteen and differ on exactly one:
+
+    {low, trusted} → {high, untrusted}      (domain 1 → domain 2)
+
+`securityFlowsTo` **denies** it — the reversed integrity comparison gives
+`integrityFlowsTo .untrusted .trusted = false` — while `1 ≤ 2` allows it. There
+is no pair in the other direction, so the linear order never denied anything the
+lattice allowed.
+
+**Why it mattered on the live path.** `declassificationDecision` reads a `true`
+base-policy verdict as "this flow is already permitted, so it is not a
+declassification" and returns `.flowDenied` before the declassification policy is
+consulted. On that one pair a deployment could configure an authorized downgrade
+and never be able to use it. **Fail-closed** — the error refuses a legitimate
+downgrade rather than authorizing an illegitimate one, so this was a completeness
+defect and not a vulnerability. But a lift that does not reproduce the relation it
+lifts is the wrong foundation for a policy decision, and the codebase's own
+lemma (`embedLegacyLabel_preserves_flow`) was only ever one-directional while the
+`embedLegacyLabel` docstring claimed the embedding "preserves `securityFlowsTo`
+semantics".
+
+**The fix is the exact relation, not a wider approximation.**
+`DomainFlowPolicy.legacyLattice` transports `securityFlowsTo` along the embedding
+via a total decoder `unembedLegacyDomain`, with the diagonal admitted separately
+so the policy is reflexive on every `SecurityDomain` (a domain outside the
+embedding's image flows only to itself — fail-closed, and unreachable from a
+lifted context). `liftLegacyContext` now carries it.
+
+The property is an **equality**, `legacyLattice_canFlow_embed`, so both the
+admitted *and* the denied flows carry — which is the half
+`embedLegacyLabel_preserves_flow` never gave. `linearOrder_is_not_faithful_to_legacy`
+keeps the counterexample as a theorem, so a future edit that "simplifies" the
+lift back to a linear order fails to build. `legacyLattice_wellFormed` (reflexive
+∧ transitive, the latter riding the existing `securityFlowsTo_trans`) makes it a
+drop-in wherever a lifted context must carry a well-formed policy.
+
+`liveEndpointOverride_is_not_a_declassification_basis` now rides the equality
+rather than the one-directional lemma — a strengthening, not a repair.
+
+Tests: `SmpInformationFlowSuite` §6.15 (393 → 403 assertions), including
+agreement with `securityFlowsTo` across **all sixteen** pairs, the load-bearing
+negative that `linearOrder` disagrees on exactly one, and the end-to-end
+consequence — the same request that returned `.flowDenied` under the old policy
+now reaches the declassification policy and is authorized. Tier-3 anchors pin the
+new symbols and forbid `policy := .linearOrder` returning to `liftLegacyContext`.
+
+### Follow-up within v0.33.8 — every suite run, and the enforcement families completed
+
+The landing cut was verified against the SMP information-flow suite, the Rust
+workspace and Tiers 0–1; it had **not** been run against the whole Lean suite
+surface.  Doing so — in parallel, which matters, because Tier 2 registers
+every suite but runs them sequentially and aborts at the first failure, so nine
+independent breakages surface one per run — found nine suites red, in four
+classes, none of them a kernel defect but every one a claim the tree was making
+and no longer keeping:
+
+* **Stale boundary counts.**  `enforcementBoundary` grew to 39 entries with the
+  live declassification, and `tests/InformationFlowSuite.lean` pinned 38 total
+  and 11 policy-gated at five separate sites.  Corrected to 39 / 12, and — the
+  actual fix — `enforcementBoundary`'s docstring no longer restates the count at
+  all.  It had read "(33 entries)" through six subsequent expansions, which is
+  what a number repeated in prose does; `enforcementBoundaryExtended_count` is
+  the authority and a Tier-3 negative anchor now forbids the docstring form that
+  went stale.  The same 33/11/18 figures were mirrored in `DEVELOPMENT.md`, the
+  spec, and two GitBook chapters; all corrected to 39 / 12 / 23 / 4.
+* **Stale lock-set inventory counts.**  `tests/LockSetSuite.lean` pinned the
+  totals in two places — runtime assertions *and* `decide` examples — and only
+  the runtime pair was reachable from a grep for the assertion text.  103 / 31 / 31.
+* **The syscall-decoder boundary.**  `.declassify` is `SyscallId` 30, so 30 is
+  now valid and the first invalid is 31; `tests/DecodingSuite.lean` pinned the
+  old boundary twice and additionally gains a positive round-trip for the new id.
+* **`FrozenSystemState` literals.**  The trail is a **required** frozen field —
+  deliberately, so a silent drop is a compile error — and six test files build
+  the structure literally.  The landing cut updated the one in the SMP suite and
+  missed five.  The field being required is what turned that into nine red
+  suites rather than five silently-empty trails, which is the design working.
+
+Also corrected: `tests/SmpSurfaceAnchors.lean` pinned the per-core boundary at
+54 (now 55).
+
+**The enforcement families, completed.**  Fixing the counts surfaced a claim
+that was false in the direction that matters: `denied_preserves_state_*` and
+`enforcement_sufficiency_*` were documented as covering "all 11 policy-gated
+operations" and covered **seven**.  `endpointCallChecked` (U5-B),
+`endpointReplyChecked` (U5-C), `notificationWaitChecked` (V2-A) and
+`endpointReplyRecvChecked` (V2-C) landed after the families were written and
+never joined them, so a reader asking whether *every* gate fails closed, and
+whether any gate has a third behaviour beyond delegate-or-deny, had no theorem
+for a third of them.  Per the implement-the-improvement rule the remedy is the
+theorems, not a smaller claim: eight new members in
+`Enforcement/Soundness.lean`, plus the declassification's own in
+`Declassification.lean`, take both families to cover all **12** policy-gated
+entries.  (`enforcement_sufficiency_*` has exactly twelve declarations;
+`*_denied_preserves_state` has thirteen, because the declassification
+contributes both `declassifyObjectFromCore` — the boundary's named entry,
+covering all three of its refusal modes: an idle core, an absent target, and a
+declined decision — and `authorizeDeclassificationOnCore`, the gate it wraps.)  `enforcement_sufficiency_declassify` is stated as a **trichotomy**,
+since a fail-closed audit-capacity refusal is a third outcome, and its third arm
+returns the decision's error *verbatim* so a future arm cannot be silently
+remapped onto an existing discriminant.
+`endpointReplyRecvChecked_denied_preserves_state` takes a disjunction: either
+leg refusing sinks the whole operation, so there is no partial commit.
+
+The four wrappers are exercised at runtime as well as anchored, and that found
+the direction trap the anchors would not have: the notification gate runs
+**object → waiter**, the reverse of the send/call gates, so the fixture that
+denies a send *allows* a wait.  The suite now carries both directions, with the
+upward read (public notification → secret waiter) as the load-bearing negative.
+
+Three Tier-3 anchors and two identifier-naming violations, all left by the
+landing cut, were caught in the same pass.  The anchors pinned the per-core
+enforcement boundary at 54 and `CrossCoreTransition.all.length` at 25, both of
+which this release had already moved; the naming gate — which reads the **git
+index**, not the working tree, so it only sees what is actually staged —
+rejected a workstream ID in `scripts/per_core_routing_aliases.json` and two
+hypothesis names shaped like phase codes.  `OffSchedulerAgrees.trans`'s
+`h12`/`h23` become `hFirst`/`hSecond`, better names on their own terms, retiring
+42 grandfathered occurrences (baseline 1017 → 975).
+
+That the anchors survived one clean `test_full.sh` is worth recording with the
+rest: Tier 3 runs *after* the Rust suite and the docs-sync check, so a stale
+`codebase_map.json` aborted the run before the anchor surface was ever read.
+Fail-fast composes badly with a long tier list — the first green-looking run
+proved less than it appeared to.
+
+Two of this release's own figures were wrong and are corrected here: the suite
+reports **393** PASS assertions, not 391, and SM8.C's scenario groups are the
+fourteen of §6.1–§6.14 (six of them new in the completion cut), not "19 groups".
+Both were counted by hand and neither was re-counted after the last edits — the
+same failure mode as the boundary docstring, one directory over.
+
+Zero sorry/axiom across all three modified Lean modules (245 environment
+constants swept by `check_module_axioms.py`, which enumerates Lean's elaborated
+environment rather than scanning source).
+No behavioural change: theorems, test expectations and prose only.
+
+Refs: docs/planning/SMP_INFORMATION_FLOW_PLAN.md §5 SM8.C
+
+## v0.33.7 — WS-SM SM8.C: the per-core declassification audit, and the endpoint flow policy wired
+
+**SM8.C LANDED** (plan
+[`docs/planning/SMP_INFORMATION_FLOW_PLAN.md`](docs/planning/SMP_INFORMATION_FLOW_PLAN.md)
+§4.3 / §5 SM8.C.1 … SM8.C.7), all seven sub-tasks, plus SM8.B's registered debt
+(a) — whose closure target the plan assigns to this phase.
+
+**The starting position.**  Declassification is the one path allowed to move
+information *down* the lattice, and the tree gated it without recording it.
+`declassifyStore` (`Enforcement/Soundness.lean`) checked its two conditions and
+stored the object; `DeclassificationEvent` (`Policy.lean`) described an audit
+record whose docstring said the enforcement wrappers produced it and the caller
+recorded it.  Neither happened — **nothing in the tree constructed a
+`DeclassificationEvent`**, so the audit trail was a type with no writer.  Under
+SMP it would not have been enough anyway: an event that does not say *where* it
+happened cannot attribute a chain that crosses cores.  Per the
+implement-the-improvement rule the producer was built rather than the claim
+weakened.
+
+**SM8.C.1 — the record and the producer.**  `DeclassificationEvent` gains
+`originatingCore : CoreId`, deliberately **not** defaulted (a default would
+silently attribute every event to the boot core, which is the exact failure the
+field exists to prevent), and its `authorizationBasis` becomes a typed
+`DeclassificationBasis` — `String` admitted any claim, including one naming a
+check that never ran, so "the recorded basis is the check that passed" was a
+convention rather than a fact.  Open-endedness is preserved where it was real:
+`integratorOverride` still carries an arbitrary authority string, and
+`DeclassificationBasis.render` reproduces the pre-SM8.C strings byte for byte, so
+an external audit consumer reads exactly what it read before while the kernel can
+now *check* the claim.  New staged module
+`InformationFlow/DeclassificationPerCore.lean` supplies `declassifyStoreOnCore`:
+the same gate, threading the append-only log, appending exactly one event per
+authorized downgrade (`declassifyStoreOnCore_records_one`), with the state effect
+provably identical to the unaudited gate (`declassifyStoreOnCore_ok_inv`) — so
+every existing theorem about `declassifyStore`, `declassifyStore_NI` included,
+carries over unchanged.  Timestamps are the log position, making V6-H's "monotonic
+counter" structural rather than a producer's promise, and the counter is
+**global**: `declassificationAuditLog_timestamp_identifies_event` is what a
+per-core counter would destroy.
+
+**SM8.C.3 — attribution.**  A record whose subject is whatever the caller wrote
+is a claim, not an audit trail.  `declassifyStoreFromCore` *reads* the source
+domain off the subject the executing core is running (`currentOnCore c`, the same
+per-core read SM8.B's `endpointFlowCheckAtCore` uses) and fails closed on an idle
+core, so `declassifyStoreFromCore_event_attributable` holds **unconditionally** —
+in the post-state, which is the state an auditor inspects.  The load-bearing
+negative `declassifyStoreOnCore_admits_unattributable` shows the unattributed
+entry point really does accept a domain its subject does not hold.  Core validity
+(SM8.C.3's literal ask) is structural: `CoreId` is `Fin numCores`, stated as
+`declassificationEvent_originatingCore_valid` and its `allCores` companion so a
+future widening to a raw `Nat` has to supply a real bound.
+
+**SM8.C.4 / SM8.C.2 — the per-core views, and the chain that needs the global
+log.**  `auditLogOnCore` is a *view* of one global log, not a log per core, and
+`declassificationAuditLog_partitions_by_core` proves the views partition it
+exactly (`allCores_nodup` is what makes it a partition rather than a cover;
+SM8.C.3's membership result is what makes it a cover rather than a partition of a
+subset).  The design is decided by
+`crossCoreChain_not_within_one_view`: **a chain that crosses cores is contained in
+no single core's view** — one log per core, the natural SMP implementation, would
+put each hop in a different buffer with nothing relating them.  Its positive half
+`declassificationChain_recorded_across_cores` composes two audited
+declassifications on two cores into a linked, cross-core, fully recorded chain.
+
+**SM8.C.6 — the rules, as data with dependently-typed evidence.**  Eight rules,
+each supplying a proof of *its own* claim (`declassificationRuleEvidence`), so
+adding a rule without deciding what proves it is a missing-arm error and
+misattributing a proof is a type error.  The substantive ones: **laundering** —
+`declassificationChain_hop_authorization_does_not_compose` exhibits a *well-formed*
+policy in which `2 → 1` and `1 → 0` are both authorized downgrades and `2 → 0` is
+not, so per-hop authorization does not compose and only a reader of the trail can
+detect it (`chainLaunders`, decidable); **the endpoint rule** —
+`endpointOverride_is_not_a_declassification_basis`, the consumer SM8.B built
+`endpointFlowCheck_restricted_subset_perCore` for, stated against the
+state-resolved `endpointFlowCheckAtCore` so the core is load-bearing rather than
+decorative; and **Rule 4** — `declassifyStoreOnCore_state_core_independent`, that
+the core an event names is audit information and never authority.
+
+**SM8.C.5 — `authorizationBasis_perCore`.**  Basis verification is an invariant
+of the audited declassification on whichever core it runs: if every event so far
+passes the kernel's own check then so does every event afterwards, from the
+`auditLogBasesVerified … [] = true` boot witness.  `…_core_independent` is an
+`rfl` worth having — re-attributing an event to another core cannot turn a
+failing basis into a passing one — and it is the tripwire a future per-core
+declassification policy would break.  `auditLog_integratorOverride_not_kernelIssued`
+is the detection result the typed field buys: an audit consumer can now tell that
+some entry did not come from the kernel's own path.
+
+**SM8.B registered debt (a) — CLOSED, and closed with the safe semantics.**
+WS-E5/H-04 introduced `EndpointFlowPolicy` and V6-G proved what a well-formed one
+must satisfy, but no context carried one, so **nothing in the kernel ever read
+it**: the feature was specified and never wired.  `LabelingContext` gains
+`endpointPolicy`, defaulted to "no override anywhere", and the four endpoint-keyed
+gates — the `endpointSendDualChecked` / `endpointReceiveDualChecked` /
+`endpointCallChecked` / `endpointReplyRecvChecked` wrappers, the live cross-core
+`.send` and `.call` dispatches, and the live `.receive` / `.replyRecv` arms — now
+branch on `endpointFlowGate`, which **conjoins** the global lattice check with the
+endpoint's override rather than replacing it.  The conjunction is the point:
+`endpointFlowGate_implies_securityFlowsTo` takes **no hypothesis**, so V6-G's
+`endpointPolicyRestricted` becomes structural instead of a deployment obligation —
+a misconfigured override cannot widen anything.  That in turn strengthens SM8.C's
+Rule 3 to `liveEndpointOverride_is_not_a_declassification_basis`, which needs no
+restriction premise at all.  Every `…_flowDenied` theorem keeps the hypothesis it
+had (a denied global flow denies the gate whatever the override says); the
+`…_when_allowed` and `checkedDispatch_*_eq_unchecked` theorems gain a real
+`hOverride` premise, and the three new gate-level soundness theorems
+(`enforcementSoundness_endpoint{Send,Receive,Call}…_gate`) carry both conjuncts so
+the `securityFlowsTo` forms every pre-SM8.C consumer asked for are derived rather
+than re-proved.  The reply *leg* of `.replyRecv` is deliberately left on the plain
+lattice check — the override governs flows that cross the endpoint, and
+`receiver → prevCaller` does not.  Unconfigured deployments are unchanged
+(`endpointFlowGate_eq_securityFlowsTo_of_no_override`); the trace is byte-identical.
+
+**Scope boundary, recorded rather than left implicit.**  A *refused*
+declassification produces no audit entry: the V6-H record has no outcome field and
+its basis names what *permitted* the downgrade.  The refusal is fail-closed
+(`declassifyStoreOnCore_denied_no_audit_entry` — no state change, no entry), so
+this is a monitoring gap rather than an enforcement one, registered as SM8.C
+follow-on work in the plan.
+
+**Tests.**  `tests/SmpInformationFlowSuite.lean` gains §6.1–§6.8 (316 → 360
+runtime assertions), every group with a load-bearing negative: the unattributed
+entry point really does accept a foreign source domain; no single core's view
+contains the whole chain; authorize the composition and the same chain stops
+laundering; a declassification into an object the observer *can* see is visible;
+and a **widening** endpoint override cannot open a flow the lattice denies.  Every
+public symbol of the new module is `#check`-anchored, `tests/InformationFlowSuite.lean`
+is updated for the record change (with the render round-trip pinned), and Tier-3
+gains anchors for both cuts including negative pins that the core field stays
+undefaulted, the basis stays typed and no gate site returns to a bare
+`securityFlowsTo`.  Zero sorry/axiom — `scripts/check_module_axioms.py` sweeps the
+new module with the other four (2019 environment constants, all clean).
+
+Staged 58 → 59 (`InformationFlow.DeclassificationPerCore`).
+
 ## v0.33.6 — CodeQL: pin parity, and the mask that hid a broken gate
 
 **The failure.**  PRs #858 and #859 could not merge, each reporting `Code

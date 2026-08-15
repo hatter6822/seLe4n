@@ -19,6 +19,12 @@ import SeLe4n.Kernel.Architecture.TlbShootdown
 -- for exactly the reason `TlbInvalidation` was (SM7.A): a state-layer field
 -- must not pull the architecture layer's import closure.
 import SeLe4n.Kernel.Architecture.CacheInvalidation
+-- WS-SM SM8.C.8: the pure declassification audit record — the payload of the
+-- `declassificationAuditLog` trail mounted below.  Extracted for exactly the
+-- reason `TlbInvalidation` and `CacheInvalidation` were: a state-layer field
+-- must not pull the information-flow policy layer's import closure (which
+-- imports this module).
+import SeLe4n.Kernel.InformationFlow.AuditRecord
 
 namespace SeLe4n.Model
 
@@ -132,6 +138,18 @@ inductive KernelError where
                            -- scheduler (SM5.C+) and userspace distinguish a
                            -- genuine wrong-core dispatch from an unrelated
                            -- scheduler fault (`schedulerInvariantViolation`).
+  | auditLogCapacityExceeded -- WS-SM SM8.C.8: the declassification audit trail
+                           -- is at `maxDeclassificationAuditEntries`, so the
+                           -- downgrade was refused rather than performed
+                           -- unrecorded.  A distinct discriminant, not
+                           -- `resourceExhausted` or `declassificationDenied`,
+                           -- because the three mean different things to an
+                           -- operator: policy refused the downgrade / the
+                           -- kernel ran out of an unrelated resource / the
+                           -- kernel could not *audit* the downgrade.  Only the
+                           -- last one says "drain the trail"; collapsing it
+                           -- into either sibling would hide a system that has
+                           -- stopped being able to declassify at all.
   deriving Repr, DecidableEq
 
 /-- S2-A: Low-priority blanket `ToString` from `Repr`. Enables standard
@@ -985,6 +1003,41 @@ structure SystemState where
   pendingIcacheMaintenance :
       List SeLe4n.Kernel.Architecture.ICacheInvalidation := []
 
+  /-- WS-SM SM8.C.8: the **declassification audit trail** — the append-only
+      record of every authorized cross-domain downgrade the kernel performed.
+
+      Mounted because the trail has to outlive the syscall that writes it.  Up
+      to SM8.C the log was a value threaded through `declassifyStoreOnCore`, so
+      a chain of downgrades could only be reasoned about *within* one call; the
+      live `.declassify` syscall (SM8.C.9) makes each hop a separate kernel
+      entry, and a trail that resets between them records nothing.
+
+      **Ordering**: entries are appended in occurrence order and the
+      `timestamp` of an entry is its index, so the trail is totally ordered
+      across cores and a cross-core chain can be reconstructed
+      (`declassificationAuditLog_timestamp_identifies_event`).  A per-core
+      buffer cannot do this — see `crossCoreChain_not_within_one_view`, which
+      is why the trail is global and the per-core views
+      (`auditLogOnCore`) are *derived* from it rather than the other way round.
+
+      **Capacity**: bounded by `maxDeclassificationAuditEntries`, and the bound
+      is **fail-closed** — at capacity the declassification itself is refused
+      (`recordDeclassificationChecked` returns `none`) rather than an entry
+      dropped, because a downgrade the kernel authorized and did not record is
+      the exact failure SM8.C exists to prevent.  Carried as the 16th
+      `proofLayerInvariantBundle` conjunct (`auditLogBounded`).
+
+      **Information flow**: like `perCoreTlb`, `perCoreICache` and
+      `tlbShootdown`, deliberately **not** part of the IF projection surface.
+      The trail records `(srcDomain, dstDomain, targetObject)` triples, so
+      projecting it would tell a low observer that a high→low downgrade
+      happened and which object it targeted — a channel out of exactly the
+      boundary the audit exists to police
+      (`declassificationAuditLog_write_preserves_projection`).  Nothing in the
+      kernel reads it today; a privileged read interface is SM8.E scope and
+      owes its own flow argument. -/
+  declassificationAuditLog : SeLe4n.Kernel.DeclassificationAuditLog := []
+
 /-- Abstract owner identity for a slot in this model: the containing CNode object id. -/
 abbrev CSpaceOwner := SeLe4n.ObjId
 
@@ -1056,6 +1109,11 @@ instance : Inhabited SystemState where
     -- WS-SM SM7.D.1: nothing is owed to the instruction caches at boot.
     -- Explicit listing pins `default_pendingIcacheMaintenance`.
     pendingIcacheMaintenance := []
+    -- WS-SM SM8.C.8: no declassification has occurred at boot, so the audit
+    -- trail is empty.  Explicit listing pins `default_declassificationAuditLog`
+    -- and, through it, the boot witness for the 16th bundle conjunct
+    -- (`default_auditLogBounded`).
+    declassificationAuditLog := []
   }
 
 /-- X2-B/H-2: Checked domain schedule setter — validates that all entries have
@@ -1275,6 +1333,18 @@ maintenance is owed before the first transition runs.  The `none`-at-every-
 syscall-boundary property the runtime seam maintains starts here. -/
 @[simp] theorem default_pendingIcacheMaintenance :
     (default : SystemState).pendingIcacheMaintenance = [] := rfl
+
+/-- WS-SM SM8.C.8: at boot no declassification has occurred, so the audit trail
+is empty.  The `.declassify` syscall is the only writer, so this is the trail's
+whole content until userspace runs. -/
+@[simp] theorem default_declassificationAuditLog :
+    (default : SystemState).declassificationAuditLog = [] := rfl
+
+/-- WS-SM SM8.C.8: boot witness for the 16th `proofLayerInvariantBundle`
+conjunct — the empty trail is within capacity. -/
+theorem default_auditLogBounded :
+    SeLe4n.Kernel.auditLogBounded (default : SystemState).declassificationAuditLog :=
+  SeLe4n.Kernel.auditLogBounded_nil
 
 -- ============================================================================
 -- WS-SM SM3.A audit-pass-5 — Non-vacuous lock-state invariant + preservation
@@ -2289,6 +2359,22 @@ theorem storeObject_pendingIcacheMaintenance_eq
     (pair : Unit × SystemState)
     (hStore : storeObject id obj st = .ok pair) :
     pair.2.pendingIcacheMaintenance = st.pendingIcacheMaintenance := by
+  unfold storeObject at hStore; cases hStore; rfl
+
+/-- WS-SM SM8.C.8: `storeObject` frames the declassification audit trail.
+
+Load-bearing rather than routine: `declassifyStore` *is* a `storeObject` under
+two authorization checks, so without this frame the audited form could not
+establish that the trail it appends to is the one the pre-state carried — the
+store would be free to have rewritten it.  The gate and the record are then
+composed by `declassifyStoreOnCore`, never by the store itself. -/
+theorem storeObject_declassificationAuditLog_eq
+    (st : SystemState)
+    (id : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (pair : Unit × SystemState)
+    (hStore : storeObject id obj st = .ok pair) :
+    pair.2.declassificationAuditLog = st.declassificationAuditLog := by
   unfold storeObject at hStore; cases hStore; rfl
 
 theorem storeObject_objects_eq

@@ -72,8 +72,10 @@ in Projection.lean) is intentionally retained.
 
 **WS-T/T6 additions (v0.20.5) — Architecture & Hardware:**
 
-- `checkedDispatch_flowDenied_preserves_state` — proves all 3 policy-gated
-  wrappers preserve state on flow denial (M-IF-1).
+- `checkedDispatch_flowDenied_preserves_state` — proves that the 3 wrappers it
+  names preserve state on flow denial (M-IF-1).  The per-wrapper family
+  `*_denied_preserves_state` is the exhaustive one, and since WS-SM SM8.C it
+  covers all 12 policy-gated entries.
 - `mmioRead`/`mmioWrite` with 4 correctness theorems (M-NEW-7/8).
 - `mmioWrite32`/`mmioWrite64`/`mmioWrite32W1C` with full byte-range validation (AF3-B); `_rejects_range_overflow` theorems for end-of-range rejection.
 - `MmioReadOutcome` inductive encoding volatile/ram/w1c/fifo read-kind constraints (X1-D).
@@ -1425,7 +1427,7 @@ v0.13.5 gap closure (3 theorems + 1 bridge):
 **M-07 — Enforcement boundary specification:**
 
 - `EnforcementClass` inductive (`policyGated`/`capabilityOnly`/`readOnly`),
-- `enforcementBoundary` — exhaustive 33-entry classification table (11 policy-gated, 18 capability-only, 4 read-only; Z8-M added 3 SchedContext, D1 added 2 thread lifecycle, D2 added 2 priority management, D3 added 1 IPC buffer, AC4-D added 3 VSpace/service capability-only operations),
+- `enforcementBoundary` — exhaustive 39-entry classification table (12 policy-gated, 23 capability-only, 4 read-only; count pinned by `enforcementBoundaryExtended_count`; Z8-M added 3 SchedContext, D1 added 2 thread lifecycle, D2 added 2 priority management, D3 added 1 IPC buffer, AC4-D added 3 VSpace/service capability-only operations),
 - `enforcementBoundaryExtended` — definitional alias of `enforcementBoundary` (W2-G, previously duplicate list),
 - `enforcementBoundaryExtended_eq_canonical` — element-wise equality proof (W2-G),
 - `enforcementBoundaryComplete_counts` — compile-time count witness (11+18+4=33, V6-F/Z8-M/D1/D2/D3/AC4-D),
@@ -1436,8 +1438,8 @@ v0.13.5 gap closure (3 theorems + 1 bridge):
 - `syscallIdToEnforcementName` — SyscallId → String bridge mapping to enforcement boundary names (AC4-D),
 - `enforcementBoundaryComplete` — Bool check that every SyscallId maps to a boundary entry (AC4-D),
 - `enforcementBoundary_is_complete` — `decide` compile-time completeness theorem (AC4-D/IF-01; AF4-A: upgraded from `native_decide` to kernel-checked `decide`),
-- `denied_preserves_state_*` — denial preservation for all 11 policy-gated operations,
-- `enforcement_sufficiency_*` — complete-disjunction coverage proofs for all 11 policy-gated operations.
+- `*_denied_preserves_state` — denial preservation for all 12 policy-gated operations, in 13 declarations (the declassification contributes two: `declassifyObjectFromCore`, the boundary's named entry, and `authorizeDeclassificationOnCore`, the gate it wraps).  WS-SM SM8.C completed the family: it had covered 7 while the text claimed all of them, so the four IPC/notification wrappers that landed after it was written joined it, together with the declassification,
+- `enforcement_sufficiency_*` — complete-disjunction coverage proofs for the same 12 operations; the declassification's arm (`enforcement_sufficiency_declassify`) is a *trichotomy*, since a fail-closed audit-capacity refusal is a third outcome beyond delegate-or-deny.
 
 **WS-H8/A-36 — Projection hardening:**
 
@@ -2615,8 +2617,98 @@ observer alone.
   fragment does — six of thirteen components carry no cross-core flow.
 
 Runtime coverage: the same suite grows to 167 assertions across 24 groups
-(ten new SM8.B groups) with 188 `#check` anchors.  Per-core declassification
-audit is WS-SM SM8.C.
+(ten new SM8.B groups) with 188 `#check` anchors.
+
+### Layer 3 under SMP — the declassification audit (WS-SM SM8.C)
+
+`InformationFlow/DeclassificationPerCore.lean` (WS-SM SM8.C, v0.33.7; staged,
+`Platform.Staged` closure) covers the one path allowed to move information
+*down* the lattice.  Its **completion cut (v0.33.8)** adds two **production**
+modules — `InformationFlow/AuditRecord.lean` (the pure record, below
+`Model/State` so `SystemState` can mount the trail) and
+`InformationFlow/Declassification.lean` (the live transition, deliberately not in
+the staged module whose SM8.A/SM8.B closure the live syscall path must not
+pull in).
+
+* **The producer.**  Before this cut nothing constructed a
+  `DeclassificationEvent`: `declassifyStore` gated and stored, and the record's
+  own docstring described a writer that did not exist.  `declassifyStoreOnCore`
+  is the producer — the same gate, threading an append-only log, appending
+  exactly one event per authorized downgrade, with the state effect *provably
+  identical* to the unaudited gate (`declassifyStoreOnCore_ok_inv`), so auditing
+  adds a record and not a transition.
+* **The record.**  `originatingCore : CoreId` is undefaulted (a default would
+  attribute every event to the boot core) and `authorizationBasis` is typed, so
+  the kernel can check its own records while `DeclassificationBasis.render`
+  keeps the strings an external consumer reads byte-identical.  Timestamps are
+  the log position and the counter is **global**, which is what
+  `declassificationAuditLog_timestamp_identifies_event` rests on.
+* **Attribution.**  `declassifyStoreFromCore` reads the source domain off the
+  subject the executing core is running and fails closed on an idle core, so
+  `declassifyStoreFromCore_event_attributable` is unconditional;
+  `declassifyStoreOnCore_admits_unattributable` is the negative that makes the
+  wrapper load-bearing.
+* **The per-core views.**  `auditLogOnCore` is a view of one global log;
+  `declassificationAuditLog_partitions_by_core` proves the views partition it
+  exactly, and `DeclassificationEvent_perCore_audit` puts each event in exactly
+  one.
+* **Cross-core chains.**  `declassificationChain_recorded_across_cores` (two
+  audited hops on two cores leave a linked, attributed chain) and
+  `crossCoreChain_not_within_one_view` — **a chain that crosses cores is in no
+  single core's view**, the theorem that decides one global log over the natural
+  per-CPU buffers.
+* **The rules, as data.**  Eight, each supplying a proof of its own claim
+  through the dependently-typed `declassificationRuleEvidence`: laundering
+  (`declassificationChain_hop_authorization_does_not_compose` over a
+  *well-formed* policy, with the decidable `chainLaunders`), the endpoint rule
+  (`endpointOverride_is_not_a_declassification_basis`, consuming SM8.B's
+  `endpointFlowCheck_restricted_subset_perCore`),
+  `authorizationBasis_perCore`, and that the core an event names is audit
+  information rather than authority.  The completion cut takes the rule set to
+  **twelve**, so each of the phase's scope statements is a rule carrying its own
+  witness rather than a paragraph.
+* **The trail is mounted, bounded and fail-closed (SM8.C.8, v0.33.8).**
+  `SystemState.declassificationAuditLog` is durable kernel state — with a
+  threaded log a chain could only be reasoned about *within* one call, and the
+  live `.declassify` makes each hop a separate kernel entry.  Capacity is
+  `maxDeclassificationAuditEntries = 256` and the behaviour at the bound is
+  **fail-closed**: the downgrade is refused with
+  `KernelError.auditLogCapacityExceeded` rather than an entry dropped, because a
+  downgrade the kernel authorized and did not record is the failure the audit
+  exists to prevent.  `auditLogBounded` is the **16th**
+  `proofLayerInvariantBundle` conjunct, carried for any writer by
+  `proofLayerInvariantBundle_setDeclassificationAuditLog`.  The trail is
+  deliberately outside `ObservableState`, and for the opposite reason to the SM7
+  exclusions — those are timing channels, this would be a *content* channel out
+  of the boundary the audit polices
+  (`declassificationAuditLog_write_preserves_projection`).
+* **The live syscall (SM8.C.9, v0.33.8).**  `SyscallId.declassify = 30`.  The
+  transition runs the *decision* `declassifyStore` runs
+  (`declassificationDecision`, shared rather than restated —
+  `declassifyStore_eq_decision_bind`) and records it; it does not perform that
+  gate's store, which is the model's simulation of a transfer and would let a
+  caller install a chosen `KernelObject` at a chosen id.  Its only state effect
+  is one attributed entry (`authorizeDeclassificationOnCore_frame`), so fifteen
+  bundle conjuncts ride the frame and the sixteenth the capacity guard.  Neither
+  security domain is a caller argument, there is no unchecked declassification
+  (`dispatchWithCap_declassify_denied`), and the policy defaults to deny-all.
+  Headline: `authorizeDeclassificationOnCore_never_unaudited` — *an authorized
+  downgrade is either recorded or does not happen.*
+* **Run-level completeness.**  `declassifyRun` folds the live entry point over a
+  request list: `declassifyRun_records_each` (exactly `n` entries for `n`
+  authorized downgrades), `_preserves_existing`, `_preserves_wellFormed`,
+  `_preserves_auditLogBounded`, `_frame` (only the trail is written) and
+  `_preserves_projectionOnCore`.
+* **The endpoint flow policy, wired.**  WS-E5/H-04 specified
+  `EndpointFlowPolicy` and nothing carried one.  `LabelingContext.endpointPolicy`
+  is now read by the four endpoint-keyed gates through `endpointFlowGate`, which
+  **conjoins** the global lattice check with the endpoint's override:
+  `endpointFlowGate_implies_securityFlowsTo` takes no hypothesis, so V6-G's
+  `endpointPolicyRestricted` is structural and a misconfigured override cannot
+  widen anything.
+
+Runtime coverage: §6.1–§6.8 of the same suite (316 → 360 assertions), every
+group with a load-bearing negative.
 
 ## 32. WS-Q3 IntermediateState formalization (v0.17.9)
 

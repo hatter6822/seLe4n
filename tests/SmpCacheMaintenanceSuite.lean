@@ -828,7 +828,7 @@ private def runUnifyInstructionChecks : IO Unit := do
     (SyscallId.vspaceUnifyInstruction.toNat == 29 &&
       SyscallId.ofNat? 29 == some .vspaceUnifyInstruction)
   assertBool "the modeled syscall count is 30"
-    (SyscallId.count == 30)
+    (SyscallId.count == 31)
   assertBool "unify requires the write right"
     (syscallRequiredRight .vspaceUnifyInstruction == .write)
   -- The operand encodes to FFI tag 2 (the full D→I sequence), distinct from a

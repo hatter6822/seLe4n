@@ -328,12 +328,16 @@ theorem endpointSendDualChecked_NI
     (hStep₂ : endpointSendDualChecked ctx endpointId sender msg endpointRights
         senderCspaceRoot receiverSlotBase s₂ = .ok (r₂, s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
-  have hFlow := enforcementSoundness_endpointSendDualChecked ctx endpointId sender msg
+  -- WS-SM SM8.C: the gate the wrapper branched on carries both conjuncts; the
+  -- rewrite below needs the override half as well as the lattice half.
+  have hGate := enforcementSoundness_endpointSendDualChecked_gate ctx endpointId sender msg
     endpointRights senderCspaceRoot receiverSlotBase s₁ r₁ s₁' hStep₁
+  have hFlow := endpointFlowGate_implies_securityFlowsTo ctx endpointId _ _ hGate
+  have hOverride := endpointFlowGate_implies_override ctx endpointId _ _ hGate
   rw [endpointSendDualChecked_eq_endpointSendDualWithCaps_when_allowed ctx endpointId sender msg
-    endpointRights senderCspaceRoot receiverSlotBase s₁ hFlow] at hStep₁
+    endpointRights senderCspaceRoot receiverSlotBase s₁ hFlow hOverride] at hStep₁
   rw [endpointSendDualChecked_eq_endpointSendDualWithCaps_when_allowed ctx endpointId sender msg
-    endpointRights senderCspaceRoot receiverSlotBase s₂ hFlow] at hStep₂
+    endpointRights senderCspaceRoot receiverSlotBase s₂ hFlow hOverride] at hStep₂
   unfold lowEquivalent; rw [hProjection s₁ r₁ s₁' hStep₁, hProjection s₂ r₂ s₂' hStep₂]; exact hLow
 
 /-- WS-H8/H-07: If notificationSignalChecked succeeds, the resulting state
@@ -2642,9 +2646,16 @@ theorem endpointReceiveDualChecked_NI
     (hStep₁ : endpointReceiveDualChecked ctx endpointId receiver replyId s₁ = .ok (r₁, s₁'))
     (hStep₂ : endpointReceiveDualChecked ctx endpointId receiver replyId s₂ = .ok (r₂, s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
-  have hFlow := enforcementSoundness_endpointReceiveDualChecked ctx endpointId receiver replyId s₁ r₁ s₁' hStep₁
-  rw [endpointReceiveDualChecked_eq_endpointReceiveDual_when_allowed ctx endpointId receiver replyId s₁ hFlow] at hStep₁
-  rw [endpointReceiveDualChecked_eq_endpointReceiveDual_when_allowed ctx endpointId receiver replyId s₂ hFlow] at hStep₂
+  -- WS-SM SM8.C: the rewrite needs the endpoint override as well as the lattice
+  -- check, and the gate-level soundness theorem carries both.
+  have hGate := enforcementSoundness_endpointReceiveDualChecked_gate ctx endpointId receiver
+    replyId s₁ r₁ s₁' hStep₁
+  have hFlow := endpointFlowGate_implies_securityFlowsTo ctx endpointId _ _ hGate
+  have hOverride := endpointFlowGate_implies_override ctx endpointId _ _ hGate
+  rw [endpointReceiveDualChecked_eq_endpointReceiveDual_when_allowed ctx endpointId receiver
+    replyId s₁ hFlow hOverride] at hStep₁
+  rw [endpointReceiveDualChecked_eq_endpointReceiveDual_when_allowed ctx endpointId receiver
+    replyId s₂ hFlow hOverride] at hStep₂
   unfold lowEquivalent; rw [hProjection s₁ s₁' r₁ hStep₁, hProjection s₂ s₂' r₂ hStep₂]; exact hLow
 
 /-- R5-A/M-01: endpointReceiveDual NI — projection-based (internalized). -/
@@ -3705,6 +3716,36 @@ theorem pendingIcacheMaintenance_write_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
     (m : List SeLe4n.Kernel.Architecture.ICacheInvalidation) :
     projectState ctx observer { st with pendingIcacheMaintenance := m } =
+      projectState ctx observer st := rfl
+
+/-- WS-SM SM8.C.8 (non-interference): a write to the mounted declassification
+audit trail is invisible to the information-flow projection.
+
+The exclusion is a **security** decision, not a convenience one, and it points
+the opposite way to the others on this list.  `perCoreTlb`, `perCoreICache` and
+the maintenance ledger stay out of `ObservableState` because projecting them
+would open a timing channel.  The audit trail stays out because projecting it
+would open a *content* channel out of exactly the boundary it exists to police:
+each entry names `(srcDomain, dstDomain, targetObject)`, so a low observer that
+could read the trail would learn that a high→low downgrade occurred and which
+object it targeted — from a subject that, by construction, the base policy
+forbids it to hear from (a declassification only happens where
+`ctx.policy.canFlow src dst = false`).
+
+This is the NI witness for the SM8.C.8 mount: the live `.declassify` syscall and
+every audited transition built on `declassifyStoreOnCore` preserve
+`projectState`, and hence `lowEquivalent`, on the trail component.
+
+The consequence is that **nothing in the kernel can read the trail today**.  A
+privileged read interface is SM8.E scope and owes its own flow argument — it
+must either be confined to a domain that already dominates every recorded
+`srcDomain`, or return entries filtered by the reader's clearance.  Neither is
+in this cut, and shipping a reader without that argument would give away the
+channel this theorem records as closed. -/
+theorem declassificationAuditLog_write_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (log : SeLe4n.Kernel.DeclassificationAuditLog) :
+    projectState ctx observer { st with declassificationAuditLog := log } =
       projectState ctx observer st := rfl
 
 -- ============================================================================

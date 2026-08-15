@@ -193,6 +193,7 @@ private def emptyFrozenState : FrozenSystemState :=
     scThreadIndex := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
     tlb := TlbState.empty
     perCoreTlb := _root_.Vector.replicate SeLe4n.Kernel.Concurrency.numCores TlbState.empty
+    declassificationAuditLog := []
     -- WS-SM SM7.D.1: the per-core instruction caches are a required frozen
     -- field (no default), so a silent drop is a compile error here.
     perCoreICache :=

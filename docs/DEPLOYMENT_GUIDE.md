@@ -199,6 +199,83 @@ The simulation platform (`SeLe4n/Platform/Sim/`) provides permissive contracts
 for testing. Production deployments must use hardware-specific contracts (e.g.,
 `SeLe4n/Platform/RPi5/Contract.lean` for Raspberry Pi 5).
 
+### 2.3 Endpoint flow overrides and the declassification policy (WS-SM SM8.C)
+
+Two `LabelingContext` fields govern flows the base lattice would otherwise
+decide on its own.  **Both default to the safe value, so a deployment that
+configures neither behaves exactly as it did before they existed.**
+
+#### `endpointPolicy` — per-endpoint flow overrides
+
+`LabelingContext.endpointPolicy` maps an endpoint's `ObjId` to an optional
+`DomainFlowPolicy`.  The live IPC gates read it through `endpointFlowGate`,
+which **conjoins** the override with the global lattice check:
+
+```
+endpointFlowGate ctx ep src dst  =  securityFlowsTo src dst  &&  override ep src dst
+```
+
+The conjunction is the security property, not an implementation detail.  It
+means an override can only ever **narrow**:
+
+* A *narrowing* override refuses traffic the lattice would have allowed — the
+  intended use (an endpoint that only two of five permitted domains may use).
+* A *widening* override — one that permits a pair the lattice denies — has **no
+  effect**.  `endpointGateRestricted_always` proves the gate is restricted for
+  every context with no well-formedness hypothesis, and
+  `endpointGateRestricted_survives_widening_override` is the witness that a
+  misconfigured, V6-G-violating policy still cannot open a flow.
+
+So a misconfiguration here can cause a **denial of service** (traffic refused
+that policy intended to allow); it cannot cause a **leak**.  Review overrides
+for availability, not for isolation.
+
+**Scope**: `endpointPolicy` governs flows *crossing an endpoint*.  It does not
+reach the notification gates (a notification is not an endpoint) or the reply
+leg of `replyRecv` (a thread-to-thread flow crossing no endpoint) — checked
+facts, not conventions: `notificationSignalChecked_endpointPolicy_independent`,
+`notificationWaitChecked_endpointPolicy_independent`,
+`endpointReplyChecked_endpointPolicy_independent`.
+
+#### `declassificationPolicy` — authorized downgrade paths
+
+`LabelingContext.declassificationPolicy` names the domain pairs the
+`.declassify` syscall may downgrade along.  **It defaults to deny-all**, so an
+unconfigured deployment cannot declassify at all: every `.declassify` returns
+`.declassificationDenied`.
+
+Configure it only if your deployment has a *trusted downgrader* — a component
+whose job is to release sanitized information across a boundary the lattice
+forbids.  What the kernel does when it is configured:
+
+1. Verifies the base lattice **denies** the flow (otherwise it is not a
+   declassification, and the syscall returns `.flowDenied`).
+2. Verifies `declassificationPolicy` **permits** the pair.
+3. Appends one attributed entry to `SystemState.declassificationAuditLog`.
+
+Neither security domain is a caller argument: the source is read off the thread
+the executing core is running, the destination off the target object's own
+labeling.  A caller cannot record a downgrade between two domains it has nothing
+to do with.
+
+**`.declassify` moves no data.**  Its entire state effect is the audit entry
+(`authorizeDeclassificationOnCore_frame`).  It is a kernel-arbitrated,
+kernel-recorded *authorization*, not a transfer; the transfer is whatever the
+downgrader does next.
+
+**Operational consequence — the trail is bounded and fail-closed.**  The audit
+trail holds at most `maxDeclassificationAuditEntries` (256) entries.  At
+capacity, `.declassify` **refuses the downgrade** with
+`.auditLogCapacityExceeded` rather than dropping a record: an authorized
+downgrade the kernel did not record is precisely the failure the audit exists to
+prevent.  A deployment that declassifies routinely must therefore treat
+`.auditLogCapacityExceeded` as an operational alert — and note that **this
+release ships no interface for reading or draining the trail** (the trail is
+deliberately outside the information-flow projection; a privileged reader owes
+its own flow argument and is SM8.E scope).  Until that lands, a deployment
+either declassifies fewer than 256 times per boot or accepts that
+`.declassify` stops working after that.
+
 ---
 
 ## 3. NI Boundary Scope (F-05)
@@ -251,6 +328,14 @@ The kernel NI guarantees do not extend to service orchestration semantics.
   isolation is required
 - [ ] **Platform binding validated** -- use hardware-specific `PlatformBinding`
   instance (not simulation contracts) for target hardware
+- [ ] **Endpoint overrides reviewed for availability** (SM8.C) -- a widening
+  `endpointPolicy` override cannot leak (the gate conjoins), but a narrowing one
+  can refuse traffic policy intended to allow; review §2.x
+- [ ] **Declassification policy decided** (SM8.C) -- the default is deny-all and
+  `.declassify` is refused outright; if a trusted downgrader is configured, size
+  the 256-entry audit trail against the expected downgrade rate and treat
+  `.auditLogCapacityExceeded` as an alert (no trail-reading interface ships in
+  this release)
 - [ ] **Security advisory reviewed** -- read `docs/SECURITY_ADVISORY.md`
   (SA-1: starvation, SA-2: labeling, SA-3: covert channel)
 - [ ] **Test suite passed** -- run `./scripts/test_full.sh` with production

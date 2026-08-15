@@ -148,14 +148,16 @@ pub enum SyscallId {
     MintReplyCap = 28,
     /// WS-SM SM7.D: instruction/data unification of one mapped page.
     VSpaceUnifyInstruction = 29,
+    /// WS-SM SM8.C.9: authorize and audit a cross-domain downgrade.
+    Declassify = 30,
 }
 
 impl SyscallId {
     /// Total number of modelled syscalls (must match `sele4n-types`).
-    pub const COUNT: u32 = 30;
+    pub const COUNT: u32 = 31;
 
     /// AN9-F.1.b: decode a raw `u32` syscall id, rejecting values
-    /// outside the valid 0..=29 range with `None`.
+    /// outside the valid 0..=30 range with `None`.
     pub const fn from_u32(v: u32) -> Option<Self> {
         match v {
             0 => Some(Self::Send),
@@ -188,6 +190,7 @@ impl SyscallId {
             27 => Some(Self::TcbUnbindNotification),
             28 => Some(Self::MintReplyCap),
             29 => Some(Self::VSpaceUnifyInstruction),
+            30 => Some(Self::Declassify),
             _ => None,
         }
     }
@@ -249,6 +252,13 @@ impl SyscallId {
             // WS-SM SM7.D: unify takes the same two registers as unmap
             // (asid in x2, vaddr in x3) — it names an address space and a page.
             Self::VSpaceUnifyInstruction => 2,
+            // WS-SM SM8.C.9: declassify takes **no** inline argument registers.
+            // The operand is the capability itself (which names the target
+            // object), and both security domains are resolved kernel-side — the
+            // source from the subject the executing core is running, the
+            // destination from the target object.  A caller that could supply
+            // either would be writing its own audit record.
+            Self::Declassify => 0,
         }
     }
 }
