@@ -2484,6 +2484,19 @@ run_check "INVARIANT" rg -n '^def entryCapTarget' SeLe4n/Kernel/InformationFlow/
 # The resolved target passes the same AL7-A sentinel guard the live `.tcbSuspend`
 # arm applies, so no footprint is declared for a call the dispatch will reject.
 run_check "INVARIANT" rg -n '^theorem entryCapTarget_rejects_sentinel' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# The footprint is resolved before its own CNode read lock is held, so the
+# revalidating bracket re-resolves after the growing phase and fails closed on a
+# change — the resolve/acquire race, closed rather than assumed away.
+run_check "INVARIANT" rg -n '^def syscallEntryUnderRevalidatedLockSet' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryUnderRevalidatedLockSet_footprint_stable' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryUnderRevalidatedLockSet_refuses_on_change' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryUnderRevalidatedLockSet_refines' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# The bracket's scope is the OBJECT domain; the two domains it cannot express are
+# registered as data with owners rather than left to a comment.
+run_check "INVARIANT" rg -n '^inductive UncoveredLockDomain' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem declaredFootprintUncoveredDomains_complete' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# The declared-footprint witness carries the confinement core too.
+run_check "INVARIANT" rg -n '^theorem suspendUnderDeclaredLockSet_preserves_projectionOnCore_atCore' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n 'toValid\?' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The multi-reader witness carries REACHABILITY, not merely well-formedness: a
 # wf-only existential could be satisfied by a lock word no execution produces,

@@ -2008,6 +2008,30 @@ evidence supported.
 
 Suite 517 → **521** assertions.
 
+#### v0.33.14 review cut — the fourth round, and the bracket's real scope
+
+Three findings, all against the SM8.D.5 declared-footprint bracket.
+
+1. **The resolve/acquire race.**  The footprint is resolved by reading the
+   caller's CNode, and the CNode read lock protecting that read is in the set
+   *returned* — acquired after the read it should protect.  Not live under the
+   SM5.I global entry lock, but the helper models the post-SM3.C.9 shape.
+   `syscallEntryUnderRevalidatedLockSet` re-resolves after the growing phase and
+   refuses on change; `…_footprint_stable` / `…_refuses_on_change` / `…_refines`.
+2. **The declared-footprint witness was still boot-pinned** —
+   `suspendUnderDeclaredLockSet_preserves_projectionOnCore_atCore`.
+3. **The bracket covers the object domain only.**  `LockSet` ranges over
+   `LockId`; a live `.tcbSuspend` also takes scheduler-domain locks
+   (`SchedLockId`) and the dynamic PIP chain's per-member locks, which SM3.C.11
+   discovers as the walk proceeds.  The scope is now data —
+   `UncoveredLockDomain` / `declaredFootprintUncoveredDomains` — with each
+   uncovered domain named against its owning workstream.  **Composing the three
+   domains is SM3.C work**: it needs a `withLockSet` over `SchedLockId` plus a
+   fold that extends the held set mid-transition, and neither affects the §5
+   results, which never mention which objects a set names.
+
+Suite 521 → **525** assertions.
+
 ### SM8.E — Tests + closure (3 sub-tasks)
 
 | Sub | Description | Files | Est |

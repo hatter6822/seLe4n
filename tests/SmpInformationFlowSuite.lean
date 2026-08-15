@@ -1212,6 +1212,14 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @declaredLockSetForEntry_is_suspend_footprint
 #check @syscallEntryUnderDeclaredLockSet_undeclared
 #check @syscallEntryUnderDeclaredLockSet_no_decode
+#check @syscallEntryUnderRevalidatedLockSet
+#check @syscallEntryUnderRevalidatedLockSet_footprint_stable
+#check @syscallEntryUnderRevalidatedLockSet_refuses_on_change
+#check @syscallEntryUnderRevalidatedLockSet_refines
+#check @suspendUnderDeclaredLockSet_preserves_projectionOnCore_atCore
+#check UncoveredLockDomain
+#check @declaredFootprintUncoveredDomains
+#check @declaredFootprintUncoveredDomains_complete
 #check @lockContentionChannel_run_capacity
 #check @lockContentionRun_rejects_repeated_step
 #check @lockContentionRun_rejects_still_queued_step
@@ -6160,6 +6168,34 @@ private def runDeclaredFootprintChecks : IO Unit := do
   assertBool "NEGATIVE: an unresolvable caller yields no footprint"
     (decide ((SeLe4n.Kernel.Concurrency.suspendFootprintOf niState ⟨999999⟩
         highCurrent) = none))
+  -- The resolve/acquire race: the footprint is resolved before its own CNode
+  -- read lock is held, so the revalidating bracket re-resolves after the growing
+  -- phase and refuses on any change.  On THIS fixture both forms are `none` for
+  -- the same prior reason — the decode is `.receive`, which is undeclared — so
+  -- the runtime check here is only that the two agree; the race behaviour itself
+  -- is carried by the theorems, since exhibiting a mid-bracket capability
+  -- replacement needs a second core committing, which this pure model has no way
+  -- to interleave.
+  assertBool "the revalidating bracket agrees with the plain one on this state"
+    (decide ((syscallEntryUnderRevalidatedLockSet fineLockEntryLabeling c1
+        SeLe4n.arm64DefaultLayout c1 32 successEntryState).isNone) &&
+     decide ((syscallEntryUnderDeclaredLockSet fineLockEntryLabeling c1
+        SeLe4n.arm64DefaultLayout c1 32 successEntryState).isNone))
+  assertBool "…and the stability, refusal and refinement properties, as theorems"
+    (have _s := @syscallEntryUnderRevalidatedLockSet_footprint_stable
+     have _r := @syscallEntryUnderRevalidatedLockSet_refuses_on_change
+     have _f := @syscallEntryUnderRevalidatedLockSet_refines
+     true)
+  -- The bracket covers the OBJECT domain only; the scheduler domain and the
+  -- dynamic PIP chain are named as data with owners rather than left implicit.
+  assertBool "the two uncovered lock domains are registered, each with an owner"
+    (decide (declaredFootprintUncoveredDomains.length = 2) &&
+     decide (declaredFootprintUncoveredDomains.map Prod.fst
+       = [UncoveredLockDomain.schedulerDomain, UncoveredLockDomain.dynamicPipChain]) &&
+     declaredFootprintUncoveredDomains.all (fun d => !d.2.isEmpty))
+  assertBool "the confinement core is carried through the declared-footprint witness (theorem)"
+    (have _a := @suspendUnderDeclaredLockSet_preserves_projectionOnCore_atCore
+     true)
   assertBool "the decode binding and the fail-closed defaults, as theorems"
     (have _b := @declaredLockSetForEntry_binds_decode
      have _s := @declaredLockSetForEntry_is_suspend_footprint

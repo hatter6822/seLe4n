@@ -1991,6 +1991,29 @@ theorem syscallEntryUnderLockSet_preserves_projectionOnCore_of_entry (ctx : Labe
 -- not take — a declared lock set that does not cover a write is a *false*
 -- footprint, and the 2PL argument would then rest on exclusion the runtime never
 -- established.
+--
+-- ## Scope: this bracket is the OBJECT domain only
+--
+-- `LockSet` ranges over `LockId`, which is the SM0.I object domain — the
+-- `objStore` table lock and the per-object locks.  A live `.tcbSuspend` also
+-- takes locks in two domains this type cannot name:
+--
+-- * the **scheduler domain** — `suspendThreadOnCoreSchedLockSet` over
+--   `SchedLockId` (run queues of the victim's home core, the executing core and
+--   the core actually running it, plus replenish queues), and
+-- * the **dynamic PIP chain** — SM3.C.11's contract requires each chain member's
+--   TCB write lock *and* its home-core run-queue write lock, discovered as the
+--   walk proceeds rather than resolvable from the pre-state at all.
+--
+-- So `syscallEntryUnderLockSet` is a witness that the *object*-domain bracket is
+-- information-flow transparent, not a complete migration harness.  Composing the
+-- three domains needs a `withLockSet` over `SchedLockId` (which strictly
+-- contains `LockId` via its `.object` constructor) plus a fold that extends the
+-- held set mid-transition — both SM3.C work, tracked there, and neither
+-- affecting the §5 results, which never mention which objects a set names.
+--
+-- `declaredFootprintUncoveredDomains` below states that scope as data rather
+-- than leaving it to this comment.
 
 /-- SM8.D.5: the caller and decode a bracketed entry will actually run.
 
@@ -2184,6 +2207,34 @@ theorem declaredLockSetForEntry_undeclared (ctx : LabelingContext)
     exact SeLe4n.Kernel.Concurrency.lockSetForSyscall_undeclared_none decoded.syscallId tid
       targetTid s hSid
 
+/-- SM8.D.5: the lock domains a live `.tcbSuspend` needs that the object-domain
+`LockSet` cannot express.
+
+Data rather than prose, so the scope of `syscallEntryUnderDeclaredLockSet` is
+checkable and a future cut that composes a domain has to delete an entry here
+rather than quietly leave a stale comment. -/
+inductive UncoveredLockDomain where
+  /-- Per-core run-queue and replenish-queue locks — `SchedLockId`, taken by
+  `suspendThreadOnCoreSchedLockSet`. -/
+  | schedulerDomain
+  /-- The PIP chain walk's per-member TCB and home-core run-queue write locks,
+  discovered as the walk proceeds (SM3.C.11) and so not resolvable from the
+  pre-state at all. -/
+  | dynamicPipChain
+  deriving DecidableEq, Repr
+
+/-- SM8.D.5: the domains this bracket does **not** cover, and the workstream that
+owns composing them. -/
+def declaredFootprintUncoveredDomains : List (UncoveredLockDomain × String) :=
+  [(.schedulerDomain, "SM3.C.9"), (.dynamicPipChain, "SM3.C.11")]
+
+/-- SM8.D.5: both uncovered domains are registered, each against an owner — the
+completeness check on the list above. -/
+theorem declaredFootprintUncoveredDomains_complete :
+    (declaredFootprintUncoveredDomains.map Prod.fst) = [.schedulerDomain, .dynamicPipChain] ∧
+      declaredFootprintUncoveredDomains.all (fun d => !d.2.isEmpty) := by
+  constructor <;> rfl
+
 /-- SM8.D.5: the 2PL-bracketed live entry **over the declared footprint** —
 `declaredLockSetForEntry`'s output, bracketed, or `none` where no footprint is
 declared for the operation the entry will run. -/
@@ -2192,6 +2243,96 @@ def syscallEntryUnderDeclaredLockSet (ctx : LabelingContext) (lockCore : CoreId)
     (s : SystemState) : Option (SystemState × Except KernelError Unit) :=
   (declaredLockSetForEntry ctx layout executingCore regCount s).map
     (fun S => syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s)
+
+/-- SM8.D.5 (**the resolve/acquire race, closed by revalidation**): the bracket
+that re-resolves the footprint **after** the growing phase and refuses if it
+moved.
+
+`declaredLockSetForEntry` reads the caller's CNode to resolve the target, and the
+CNode read lock that protects that read is in the set it *returns* — so it is
+acquired strictly after the read it should have been protecting.  Under the
+SM5.I global kernel-entry lock no other core can commit in between, which is why
+this is not a live defect; but this helper exists to model the shape SM3.C.9
+installs once that lock is gone, and there another core could replace the
+caller's capability between resolution and acquisition.  The guarded entry would
+then resolve a *different* target while holding locks for the first.
+
+The fix is the standard one for a footprint resolved before its own locks are
+held: re-resolve at the post-acquire state and fail closed on any change.
+Retrying is the alternative; refusing is what a total, deterministic transition
+can express, and a refused syscall here is invisible anyway
+(`syscallEntryUnderLockSet_failClosed_invisible`).
+
+`none` means either that no footprint is declared or that the resolution moved
+under the acquire — deliberately the same outcome, since a caller must fall back
+to its coarser serialisation in both cases. -/
+def syscallEntryUnderRevalidatedLockSet (ctx : LabelingContext) (lockCore : CoreId)
+    (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
+    (s : SystemState) : Option (SystemState × Except KernelError Unit) :=
+  match declaredLockSetForEntry ctx layout executingCore regCount s with
+  | none => none
+  | some S =>
+    if declaredLockSetForEntry ctx layout executingCore regCount
+        (lockSetAcquiredState S lockCore s) = some S then
+      some (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s)
+    else
+      none
+
+/-- SM8.D.5: when the revalidated bracket runs, the footprint it holds **is** the
+footprint the guarded entry's own decode resolves at the state that entry sees.
+
+This is the property the un-revalidated form cannot state: there, the returned
+set is the one resolved at the *pre*-acquire state, and nothing ties it to what
+the entry decodes once the locks are in hand. -/
+theorem syscallEntryUnderRevalidatedLockSet_footprint_stable (ctx : LabelingContext)
+    (lockCore : CoreId) (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId)
+    (regCount : Nat) (s : SystemState) (r : SystemState × Except KernelError Unit)
+    (h : syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore regCount s
+      = some r) :
+    ∃ S, declaredLockSetForEntry ctx layout executingCore regCount s = some S ∧
+      declaredLockSetForEntry ctx layout executingCore regCount
+        (lockSetAcquiredState S lockCore s) = some S ∧
+      r = syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s := by
+  unfold syscallEntryUnderRevalidatedLockSet at h
+  cases hRes : declaredLockSetForEntry ctx layout executingCore regCount s with
+  | none => rw [hRes] at h; exact absurd h (by simp)
+  | some S =>
+    rw [hRes] at h
+    simp only at h
+    split at h
+    · next hStable => exact ⟨S, rfl, hStable, by simpa using h.symm⟩
+    · exact absurd h (by simp)
+
+/-- SM8.D.5 (**fail-closed under the race**): if the resolution moves under the
+growing phase, nothing is bracketed and nothing is run. -/
+theorem syscallEntryUnderRevalidatedLockSet_refuses_on_change (ctx : LabelingContext)
+    (lockCore : CoreId) (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId)
+    (regCount : Nat) (s : SystemState) (S : LockSet)
+    (hRes : declaredLockSetForEntry ctx layout executingCore regCount s = some S)
+    (hMoved : declaredLockSetForEntry ctx layout executingCore regCount
+      (lockSetAcquiredState S lockCore s) ≠ some S) :
+    syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore regCount s = none := by
+  unfold syscallEntryUnderRevalidatedLockSet
+  rw [hRes]
+  simp only
+  rw [if_neg hMoved]
+
+/-- SM8.D.5: the revalidated bracket refines the plain one — whenever it runs, it
+runs exactly the same transition.  So every §5 result about
+`syscallEntryUnderDeclaredLockSet` transfers, and revalidation costs nothing in
+the information-flow argument. -/
+theorem syscallEntryUnderRevalidatedLockSet_refines (ctx : LabelingContext)
+    (lockCore : CoreId) (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId)
+    (regCount : Nat) (s : SystemState) (r : SystemState × Except KernelError Unit)
+    (h : syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore regCount s
+      = some r) :
+    syscallEntryUnderDeclaredLockSet ctx lockCore layout executingCore regCount s = some r := by
+  obtain ⟨S, hRes, _, hEq⟩ :=
+    syscallEntryUnderRevalidatedLockSet_footprint_stable ctx lockCore layout executingCore
+      regCount s r h
+  unfold syscallEntryUnderDeclaredLockSet
+  rw [hRes, hEq]
+  rfl
 
 /-- SM8.D.5 (**fail-closed**): every syscall other than `.tcbSuspend` is
 undeclared, so no footprint is bracketed and the caller keeps its existing
@@ -2227,6 +2368,33 @@ The resolution hypothesis is *consumed*, not decorative: it is what turns the
 cut stated this over an arbitrary `LockSet` with the resolver equation hanging
 off it unused, which asserted nothing about the footprint the migration will
 actually install. -/
+theorem suspendUnderDeclaredLockSet_preserves_projectionOnCore_atCore (ctx : LabelingContext)
+    (observer : IfObserver) (S : LockSet) (lockCore : CoreId)
+    (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId)
+    (regCount : Nat) (s st' : SystemState) (c' : CoreId) (hInv : s.objects.invExt)
+    (hOutInv : st'.objects.invExt)
+    (hFootprint : declaredLockSetForEntry ctx layout executingCore regCount s = some S)
+    (hOk : syscallEntryChecked ctx layout executingCore regCount
+        (lockSetAcquiredState S lockCore s) = .ok ((), st'))
+    (hProjOn : projectStateOnCore ctx observer st' c'
+        = projectStateOnCore ctx observer (lockSetAcquiredState S lockCore s) c')
+    (hConfined : observableSlotsConfinedToCore (lockSetAcquiredState S lockCore s) st' c') :
+    ∃ r, syscallEntryUnderDeclaredLockSet ctx lockCore layout executingCore regCount s = some r ∧
+      lowEquivalent_smp ctx observer r.1 s := by
+  refine ⟨syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s, ?_, ?_⟩
+  · unfold syscallEntryUnderDeclaredLockSet
+    rw [hFootprint]
+    rfl
+  · exact syscallEntryUnderLockSet_preserves_projectionOnCore_atCore ctx observer S lockCore
+      layout executingCore regCount s st' c' hInv hOutInv hOk hProjOn hConfined
+
+/-- SM8.D.5: the boot-core instance of the declared-footprint headline.
+
+`.tcbSuspend` executing on a secondary core writes that core's scheduler slots,
+so boot-core confinement is false for it and this form says nothing about the
+case the migration cares about — `…_atCore` is the one to reach for.  Kept
+because a caller holding the boot-pinned whole-projection fact can discharge its
+premise directly. -/
 theorem suspendUnderDeclaredLockSet_preserves_projectionOnCore (ctx : LabelingContext)
     (observer : IfObserver) (S : LockSet) (lockCore : CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId)
@@ -2241,12 +2409,10 @@ theorem suspendUnderDeclaredLockSet_preserves_projectionOnCore (ctx : LabelingCo
         bootCoreId) :
     ∃ r, syscallEntryUnderDeclaredLockSet ctx lockCore layout executingCore regCount s = some r ∧
       lowEquivalent_smp ctx observer r.1 s := by
-  refine ⟨syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s, ?_, ?_⟩
-  · unfold syscallEntryUnderDeclaredLockSet
-    rw [hFootprint]
-    rfl
-  · exact syscallEntryUnderLockSet_preserves_projectionOnCore_of_entry ctx observer S lockCore
-      layout executingCore regCount s st' hInv hOutInv hOk hProj hConfined
+  refine suspendUnderDeclaredLockSet_preserves_projectionOnCore_atCore ctx observer S lockCore
+    layout executingCore regCount s st' bootCoreId hInv hOutInv hFootprint hOk ?_ hConfined
+  rw [projectStateOnCore_bootCore, projectStateOnCore_bootCore]
+  exact hProj
 
 /-- SM8.D.5: the fail-closed half at the declared footprint — a refused suspend
 moves lock words and nothing else, and is invisible on every core. -/

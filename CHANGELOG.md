@@ -1,3 +1,77 @@
+## v0.33.14 — WS-SM SM8.D: the fourth review round, and the bracket's real scope
+
+Three further P2 findings, all valid, all against the SM8.D.5 declared-footprint
+bracket.  Two are closed outright; the third is a genuine scope limit that is now
+stated as data rather than implied by a docstring.  Theorems, tests and prose
+only; the kernel trace is byte-identical.
+
+### The resolve/acquire race, closed by revalidation
+
+`declaredLockSetForEntry` reads the caller's CNode to resolve the target, and the
+CNode **read lock that protects that read is in the set it returns** — acquired
+strictly after the read it should have been protecting.  Under the SM5.I global
+kernel-entry lock no other core can commit in between, which is why this is not a
+live defect; but the helper exists to model the shape SM3.C.9 installs once that
+lock is gone, and there another core could replace the caller's capability
+between resolution and acquisition, leaving the guarded entry to resolve a
+*different* target while holding locks for the first.
+
+`syscallEntryUnderRevalidatedLockSet` re-resolves the footprint at the
+post-acquire state and refuses if it moved.  `…_footprint_stable` is the property
+the un-revalidated form cannot state — the set held **is** the one the guarded
+entry's own decode resolves at the state that entry sees; `…_refuses_on_change`
+is the fail-closed half; `…_refines` shows it runs exactly the plain bracket's
+transition whenever it runs, so every §5 result transfers and revalidation costs
+nothing in the information-flow argument.
+
+Refusing rather than retrying is what a total, deterministic transition can
+express, and a refused syscall here is invisible anyway
+(`syscallEntryUnderLockSet_failClosed_invisible`).
+
+### The declared-footprint witness now carries the confinement core
+
+v0.33.12 parameterized `syscallEntryUnderLockSet_preserves_projectionOnCore` and
+v0.33.13 the combined witness, but the declared-footprint wrapper still called the
+boot-only form — so the one path the migration actually cares about,
+`.tcbSuspend` on a secondary core writing that core's scheduler slots, was still
+excluded.  `suspendUnderDeclaredLockSet_preserves_projectionOnCore_atCore` takes
+the core; the boot form is re-derived from it.
+
+### The bracket covers the object domain only, and now says so
+
+`LockSet` ranges over `LockId`, the SM0.I **object** domain.  A live
+`.tcbSuspend` also takes locks in two domains that type cannot name: the
+scheduler domain (`suspendThreadOnCoreSchedLockSet` over `SchedLockId` — run
+queues of the victim's home core, the executing core and the core actually
+running it, plus replenish queues), and the **dynamic** PIP chain, whose members
+SM3.C.11 requires to be locked as the walk discovers them, so they are not
+resolvable from the pre-state at all.
+
+`syscallEntryUnderLockSet` is therefore a witness that the *object*-domain
+bracket is information-flow transparent, not a complete migration harness — and
+the module said "the shape SM3.C.9 installs at the `@[export]` bodies", which
+claimed more.  The scope is now explicit in the section note and, more usefully,
+as data: `UncoveredLockDomain` with `declaredFootprintUncoveredDomains` naming
+each uncovered domain against its owning workstream, and
+`declaredFootprintUncoveredDomains_complete` the check on that list.  A future cut
+that composes a domain deletes an entry rather than leaving a stale comment.
+
+**Not implemented here, and why**: composing the three domains needs a
+`withLockSet` over `SchedLockId` (which strictly contains `LockId` through its
+`.object` constructor) plus a fold that extends the held set mid-transition, for
+the chain walk.  Both are SM3.C work with the SM3/SM6.E atomicity surface behind
+them, and neither affects the §5 results, which never mention which objects a set
+names.
+
+### Tests and gates
+
+Suite 521 → **525** assertions.  The revalidation group's runtime check is
+deliberately modest and says so: on the fixture both bracket forms are `none` for
+the same prior reason (the decode is `.receive`, undeclared), so the assertion
+checks they agree and the race behaviour is carried by the theorems — exhibiting
+a mid-bracket capability replacement would need a second core committing, which
+this pure model has no way to interleave.  Nine new Tier-3 anchors.
+
 ## v0.33.13 — WS-SM SM8.D: the second and third automated-review rounds, closed
 
 Seven further P2 findings against the SM8.D surface across two review rounds.
