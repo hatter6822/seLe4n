@@ -2710,6 +2710,100 @@ pull in).
 Runtime coverage: §6.1–§6.8 of the same suite (316 → 360 assertions), every
 group with a load-bearing negative.
 
+### Layer 3 under SMP — information flow under fine locks (WS-SM SM8.D)
+
+`InformationFlow/FineLockFlow.lean` (WS-SM SM8.D, v0.33.9, review cut v0.33.10; staged,
+`Platform.Staged` closure) is about the **lock words themselves** — the
+per-object `RwLockState` the SM3 two-phase-locking bracket writes on every
+acquire and every release once SM3.C.9 wraps the `@[export]` bodies.  The plan's
+own SM8.D table was written before SM8.B.4 erased `lock` from the projection, so
+D.1–D.3 are restated here rather than ticked off.
+
+* **The observer sees *nothing* of a lock word (D.1).**  Not a docstring: the
+  observer's view **factors through** lock erasure.  `KernelObject.setLock` /
+  `KernelObject.eraseLock` give an object's lock-erased content and
+  `projectKernelObject_setLock` proves that overwriting the lock with an
+  *arbitrary* `RwLockState` leaves the projected object literally identical — a
+  statement about the field, which an operation-by-operation argument could not
+  make.  `lockWritesOnly` lifts it to states: its first clause reconstructs the
+  post-state from the pre-state plus `objects` and `objStoreLock`, so every
+  other `SystemState` field is pinned without enumerating them.  It is
+  deliberately **not** "the state is unchanged" — that is false under fine locks
+  (`KernelObject.updateLock_not_identity`).
+* **Reader multiplicity and writer exclusion (D.2 / D.3).**
+  `readerMultiplicity_not_observable` over arbitrary reader lists, instantiated
+  at the *reachable* two-reader state SM2.C.6 constructs.  The plan's D.3 row —
+  "writer-exclusion observable to blocked readers" — is **false at the model
+  level** and is refuted rather than reinstated:
+  `blockedAcquirer_observes_nothing` makes the observer the very core sitting in
+  the wait queue, and its view is unchanged.
+* **CC-5 is bounded, not merely accepted.**  What a blocked acquirer observes is
+  delay.  `lockContention_delay_bounded` composes the SM2.C-defer D-2.3 *tight*
+  wait-depth cap with the D-3.6 admission bound to give
+  `delay ≤ (numCores - 1) × (maxDelay + 1)`; `lockContentionCode` (injective,
+  with `0` reserved for "not admitted in this execution", which is why the
+  alphabet is `+ 2`), `lockContentionChannel_alphabet_bounded` and
+  `lockContentionChannel_trace_capacity` then give CC-5 the treatment SM8.B.9
+  gave CC-1, so the SMP kernel's two accepted timing channels are costed by one
+  construction.  The `numCores - 1 = 3` factor is the shipped hardware's; the
+  delay factor is SM2.C-defer D-3.7's **placeholder** `MAX_RELEASE_DELAY`, so
+  the 3077-code alphabet is what that symbol currently yields rather than a
+  measured deployment figure.  `lockContentionChannel_two_codes_reachable` is
+  the standing negative that the bound never claims the channel closed — two
+  fair, in-premise executions in which the *same* contending core reads
+  different codes.  (`lockContentionAlphabet_at_least_two` counts only the
+  *allocated* alphabet, and the two codes it counts are exactly the two an
+  accepted acquisition cannot produce, so it is not the witness.)
+* **Biba integrity under per-core locks (D.4), in both directions.**  Stated
+  over an arbitrary write rule (`noUnpermittedWrite`,
+  `withLockSet_noUnpermittedWrite`) and instantiated at both
+  `bibaWritePermitted` (standard BIBA) and `authorityWritePermitted` (seLe4n's
+  deliberate U6-I reversal), because a result about one says nothing about a
+  deployment configured with the other — `writeRules_differ` records that those
+  are two claims.  `lockWrite_carries_no_subject_data` is why erasing the lock
+  word is an abstraction rather than a way of defining the write away: two
+  objects with wildly different content but the same lock word get the same lock
+  word out.
+* **The witness (D.5), and fail-closed sharpened.**
+  `syscallEntryUnderLockSet` is the shape SM3.C.9 installs;
+  `syscallEntryUnderLockSet_preserves_projectionOnCore` takes exactly the
+  hypotheses the unbracketed per-core statement takes, with **no hypothesis
+  about the lock set at all**.  `syscallEntryUnderLockSet_failClosed` concludes
+  `lockWritesOnly` rather than state equality — the literal equality the
+  unbracketed `…_denied_preserves_state` family asserts does not survive the
+  bracket — and `…_failClosed_invisible` recovers the guarantee it stood in for.
+  Closed on the way past: `syscallEntryChecked_preserves_projection`, the
+  per-core live-entry witness SM8.B.12 lacked.
+
+* **The bound's premises are stated, not implied.**  It holds under the SM2.C
+  release-delay assumption, which nothing in the kernel establishes;
+  `lockContention_unbounded_without_fairness` is the execution in which the
+  queued core is never admitted, so the premise is load-bearing.  And the
+  observation is keyed to the acquisition that made it
+  (`admissionStepAfter`, not the execution's first admission), so a core meeting
+  the same lock twice has its second wait reported rather than truncated to
+  zero — `lockContentionObservation_is_own_acquisition` is that property.
+* **The reader — D.3's own subject — has the same bound the writer has.**
+  `queueWaitDepth` (with `writerWaitDepth` its `.write` instance), the
+  mode-generic tight cap `readerWaitDepth_bounded`, the operational
+  `reader_at_head_admitted_by_writer_release` (the blocked reader becomes a
+  holder at the very step the writer releases, no fairness assumption), and — from
+  v0.33.11's mode-generic SM2.C-defer D-3.10 liveness chain — the **temporal**
+  bound `blockedReaderContention_delay_bounded`.  The chain generalises rather
+  than duplicating: the writer proof's mode argument is replaced by the wait
+  queue's own `Nodup` (`not_mem_takeWhile_of_mem_dropWhile`), and
+  `queueWaitDepth_monotone_under_effective_release_write` checks the
+  generalisation against the theorem it generalises.  `RwLockState.admits` keeps
+  the two admission shapes apart, so a blocked reader is proven admitted **as a
+  reader** (`queued_reader_not_write_holder_after_step` and its dual).
+
+Runtime coverage: §7.1–§7.10 of the same suite (403 → 538 assertions across
+sixteen groups), every group with a load-bearing negative, including real
+nine-step contended executions — one writer-queued, one reader-queued — on which
+the delay, the wait depth and the CC-5 code are computed and the bound theorems
+are applied, a bracketed live syscall that *succeeds*, and a golden contention
+trace verified byte-for-byte.
+
 ## 32. WS-Q3 IntermediateState formalization (v0.17.9)
 
 WS-Q3 introduces the builder-phase state model: a dependently-typed wrapper

@@ -69,6 +69,7 @@ SMP_INFORMATION_FLOW = [
     "SeLe4n.Kernel.InformationFlow.AuditRecord",
     "SeLe4n.Kernel.InformationFlow.Declassification",
     "SeLe4n.Kernel.InformationFlow.DeclassificationPerCore",
+    "SeLe4n.Kernel.InformationFlow.FineLockFlow",
 ]
 
 PROBE_TEMPLATE = """@IMPORTS@

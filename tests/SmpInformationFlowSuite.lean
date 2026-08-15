@@ -11,14 +11,16 @@ import SeLe4n.Kernel.InformationFlow.ObservableStatePerCore
 import SeLe4n.Kernel.InformationFlow.CovertChannelPerCore
 import SeLe4n.Kernel.InformationFlow.NonInterferenceCrossCore
 import SeLe4n.Kernel.InformationFlow.DeclassificationPerCore
+import SeLe4n.Kernel.InformationFlow.FineLockFlow
 import SeLe4n.Testing.StateBuilder
 
 /-!
-# WS-SM SM8.A / SM8.B / SM8.C — per-core observable state, non-interference and declassification audit
+# WS-SM SM8.A / SM8.B / SM8.C / SM8.D — per-core observable state, non-interference, declassification audit and fine-lock information flow
 
 Tier-2 (runtime) + Tier-3 (surface anchor) coverage for WS-SM Phases SM8.A
 (plan `docs/planning/SMP_INFORMATION_FLOW_PLAN.md` §5, sub-task SM8.A.6),
-SM8.B (sub-task SM8.B.14) and SM8.C (sub-task SM8.C.7).
+SM8.B (sub-task SM8.B.14), SM8.C (sub-task SM8.C.7) and SM8.D (sub-task
+SM8.D.6).
 
 * **§1 Surface anchors** — every public SM8.A symbol resolves at
   elaboration time, so a rename or removal fails the build.
@@ -62,6 +64,39 @@ contains the whole chain — the reason the log is global and the core is a
 field), §6.5 (authorize the composition and the same chain stops laundering, so
 the detector is not a constant) and §6.7 (a declassification into an object the
 observer *can* see is visible, as it must be).
+
+**§7 is the SM8.D half** (sub-task SM8.D.6): information flow under fine locks,
+run on the same fixture with the lock scenarios applied to `lowEndpoint` — an
+object the low observer **can** see, which is where the SM8.B.4 lock erasure
+has content.  Fourteen groups: lock-word invisibility (§7.1), reader
+multiplicity (§7.2), writer exclusion and the blocked acquirer (§7.3), the CC-5
+contention delay computed on a real nine-step contended execution and bounded
+(§7.4), the acquisition a first-admission reading would have swallowed (§7.4b),
+the fairness premise (§7.4c), the observation-rate and capacity bounds (§7.4d),
+what a blocked *reader* has structurally (§7.4e) and in **time** (§7.4g), the
+shipped core count versus the placeholder delay budget (§7.4f), Biba integrity under per-core locks in both
+integrity directions (§7.5), the 2PL-bracketed live syscall entry refused
+(§7.6) and **succeeding** (§7.8), the declared footprint and its fail-closed
+default (§7.9), the phase's claim inventory (§7.7) and the golden contention
+trace (§7.10).
+
+Load-bearing negatives: §7.1 (the four probe lock words are pairwise distinct in
+the raw store, so the agreement is the projection's doing), §7.2 (the raw reader
+counts really are 0, 1 and 3), §7.3 (the raw lock really does record the holder
+*and* the observer's own core queued behind it), §7.4 (an uncontended acquirer
+never enqueues, so it has no sample — and the alphabet is never 1, so the bound
+does not claim the channel is closed), §7.4b (keyed to the *first* admission the
+same wait would read as zero), §7.4c (without fairness the queued core is never
+admitted at all), §7.4d (a repeated enqueue step is not a run of distinct
+acquisitions), §7.4e (before the release the reader is a waiter and not a
+holder), §7.4g (the contending core is queued at `.read` and not at `.write`, so
+the writer instance of the bound has nothing to say about it), §7.4f (the alphabet tracks the budget, so 3077 is not a constant of the
+model), §7.5 (the acquire really did write the trusted object), §7.6 (the plain
+fixture labelling trips the insecure-default heuristic, so the adjustment that
+gets the entry past its first gate is load-bearing), §7.8 (the *high* observer's
+view of the caller did move, so the low observer's blindness is the label
+filter's doing), §7.9 (`.send` is undeclared, so nothing is bracketed) and §7.7
+(the scenario sub-task carries no Lean claim, because it is this suite).
 -/
 
 namespace SeLe4n.Testing.SmpInformationFlow
@@ -1051,6 +1086,198 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @declassificationRuleEvidence_distinct
 #check @declassificationRuleStatement_nonempty
 
+-- §1.10  WS-SM SM8.D — information flow under fine locks (FineLockFlow.lean)
+
+-- SM8.D.1 — the lock-erased content, and the projection factoring through it
+#check @SeLe4n.Model.KernelObject.setLock
+#check @SeLe4n.Model.KernelObject.eraseLock
+#check @SeLe4n.Model.KernelObject.setLock_objectLockOf
+#check @SeLe4n.Model.KernelObject.eraseLock_objectLockOf
+#check @SeLe4n.Model.KernelObject.eraseLock_setLock
+#check @SeLe4n.Model.KernelObject.eraseLock_idempotent
+#check @SeLe4n.Model.KernelObject.setLock_objectLockOf_self
+#check @SeLe4n.Model.KernelObject.eq_of_eraseLock_eq_of_lock_eq
+#check @SeLe4n.Model.KernelObject.eraseLock_updateLock
+#check @SeLe4n.Model.KernelObject.eraseLock_objectType
+#check @SeLe4n.Model.KernelObject.eraseLock_lockKind
+#check @SeLe4n.Model.KernelObject.eraseLock_wellFormed
+#check @SeLe4n.Model.KernelObject.updateLock_not_identity
+#check @projectKernelObject_setLock
+#check @projectKernelObject_eq_eraseLock
+#check @projectKernelObject_congr_of_eraseLock
+#check @lockWritesOnly
+#check @lockWritesOnly_refl
+#check @lockWritesOnly_trans
+#check @lockWritesOnly_scheduler
+#check @lockWritesOnly_machine
+#check @lockWritesOnly_objectIndex
+#check @lockWritesOnly_services
+#check @lockWritesOnly_irqHandlers
+#check @lockWritesOnly_preserves_projectObjects
+#check @lockWritesOnly_preserves_projection
+#check @lockWritesOnly_preserves_onCore
+#check @lockWritesOnly_lowEquivalent_smp
+#check @updateObjectAt_lockWritesOnly
+#check @setObjectLockAt
+#check @setObjectLockAt_lockWritesOnly
+#check @onCore_lock_invisible
+#check @onCore_lock_indistinguishable
+#check @onCore_objStoreLock
+#check @objStoreLock_write_lockWritesOnly
+#check @updateObjectLockAt_lockWritesOnly
+#check @acquireLockOnObject_lockWritesOnly
+#check @releaseLockOnObject_lockWritesOnly
+#check @acquireAll_lockWritesOnly
+#check @releaseAll_lockWritesOnly
+#check @withLockSet_lockWritesOnly
+#check @lockWritesOnlyCheck
+#check @lockWritesOnly_lockWritesOnlyCheck
+
+-- SM8.D.2 — reader multiplicity
+#check @SeLe4n.Model.KernelObject.setLock_readers
+#check @readerMultiplicity_not_observable
+#check @readerMultiplicity_not_observable_at_reachable_witness
+#check @readerMultiplicity_is_timing_only
+
+-- SM8.D.3 — writer exclusion, and the bounded delay that replaces it
+#check @writerExclusion_not_observable
+#check @blockedAcquirer_observes_nothing
+#check @lockContentionDelayBound
+#check @lockContentionAlphabet
+#check @lockContentionObservation
+#check @lockContentionCode
+#check @lockContentionCode_injective
+#check @lockContention_delay_bounded
+#check @writerContention_delay_bounded
+#check @blockedReaderContention_delay_bounded
+#check @lockContentionChannel_alphabet_bounded
+#check @lockContentionCode_eq_zero_iff
+#check @lockContentionAlphabet_at_least_two
+#check @lockContentionDelayBound_rpi5_coreFactor
+#check @lockContentionAlphabet_at_release_budget
+#check @lockContentionObservation_is_own_acquisition
+#check @blockedReader_admitted_by_writer_release
+#check @readerContentionDepth_bounded
+#check @starvingExecution
+#check @starvingExecution_queued
+#check @lockContention_unbounded_without_fairness
+#check @starvingExecution_writer_never_releases
+#check @lockContentionRun
+#check @lockContentionTrace
+#check @lockContentionChannel_observation_rate_bounded
+#check @lockContentionChannel_trace_capacity
+#check @lockContentionChannel_trace_count
+#check @acceptedCovertChannel_lockContention_severity_basis
+
+-- SM8.D.4 — Biba integrity under per-core locks
+#check @bibaWritePermitted
+#check @authorityWritePermitted
+#check @writeRulesWitnessContext
+#check @writeRulesWitnessContext_nontrivial
+#check @writeRules_differ
+#check @noUnpermittedWrite
+#check @noUnpermittedWrite_refl
+#check @noUnpermittedWrite_trans
+#check @lockWritesOnly_noUnpermittedWrite
+#check @lockWrite_carries_no_subject_data
+#check @withLockSet_noUnpermittedWrite
+#check @bibaIntegrity_underLockSet
+#check @authorityIntegrity_underLockSet
+#check @lockPhases_integrity_clean_on_every_core
+
+-- SM8.D.5 — the secure-information-flow witness under fine locks
+#check @commitKernelAction
+#check @commitKernelAction_ok
+#check @commitKernelAction_error
+#check @commitKernelAction_lockWritesOnly_of_error
+#check @syscallEntryChecked_preserves_projection
+#check @lockSetAcquiredState
+#check @lockSetAcquiredState_grants_when_free
+#check @lockSetAcquiredState_does_not_grant_when_contended
+#check @syscallEntryUnderLockSet
+#check @syscallEntryUnderLockSet_fst
+#check @syscallEntryUnderLockSet_preserves_projectionOnCore
+#check @syscallEntryUnderLockSet_preserves_projectionOnCore_of_entry
+#check @syscallEntryUnderLockSet_failClosed
+#check @syscallEntryUnderLockSet_failClosed_invisible
+#check @secureInformationFlow_underFineLocks
+#check @syscallEntryUnderDeclaredLockSet
+#check @entryDecode
+#check @entryDecode_none_entry_error
+#check @entryDecode_some_entry_dispatches
+#check @entryCapTarget
+#check @entryCapTarget_rejects_sentinel
+#check @entryCapTarget_single_level
+#check @declaredLockSetForEntry
+#check @declaredLockSetForEntry_binds_decode
+#check @declaredLockSetForEntry_undeclared
+#check @declaredLockSetForEntry_is_suspend_footprint
+#check @syscallEntryUnderDeclaredLockSet_undeclared
+#check @syscallEntryUnderDeclaredLockSet_no_decode
+#check @syscallEntryUnderRevalidatedLockSet
+#check @syscallEntryUnderRevalidatedLockSet_footprint_stable
+#check @syscallEntryUnderRevalidatedLockSet_refuses_on_change
+#check @syscallEntryUnderRevalidatedLockSet_not_refines_in_general
+#check @RevalidatedEntryOutcome
+#check @syscallEntryUnderRevalidatedLockSet_refused_releases
+#check @rwLock_release_by_nonholder_preserves_waiters
+#check @elapsedBetween
+#check @elapsedBetween_le
+#check @elapsedBetween_ge
+#check @lockContentionChannel_rate_per_elapsed_time
+#check @lockContention_wallClock_bounded
+#check @continueFromAcquired
+#check @withLockSet_eq_continueFromAcquired
+#check @syscallEntryFromAcquired
+#check @syscallEntryUnderLockSet_eq_fromAcquired
+#check @syscallEntryUnderRevalidatedLockSetModel
+#check @syscallEntryUnderRevalidatedLockSetModel_refines
+#check @revalidationRefusalReachable
+#check @syscallEntryUnderRevalidatedLockSet_refuses_on_change_while_held
+#check @suspendUnderDeclaredLockSet_preserves_projectionOnCore_atCore
+#check UncoveredLockDomain
+#check @declaredFootprintUncoveredDomains
+#check @declaredFootprintUncoveredDomains_complete
+#check @UncoveredLockDomain.mem_all
+#check @lockAcquisition_modifies_trusted_object_and_is_not_counted
+#check @victimBlockedOnEndpoint
+#check @suspendFootprint_splice_neighbors_under_endpoint_lock
+#check @queueOwnershipRespected
+#check @suspendFootprint_respects_queueOwnership
+#check @lockSet_tcbSetPriority_omits_endpointLock
+#check @queueOwnership_violated_by_tcbSetPriority
+#check @lockContentionChannel_run_capacity
+#check @lockContentionRun_rejects_repeated_step
+#check @lockContentionRun_rejects_still_queued_step
+#check @lockContentionRun_steps_are_edges
+#check @singleWaiterExecution
+#check @twoWaiterExecution
+#check @contentionWitnesses_fair
+#check @contentionWitnesses_in_premises
+#check @lockContentionChannel_two_codes_reachable
+#check @contentionWitnesses_delays
+#check @acceptedContentionCode_ge_two
+#check @secureInformationFlow_underFineLocks_atCore
+#check @lockWritesOnly_preserves_projectionOnCore
+#check @syscallEntryUnderLockSet_preserves_projectionOnCore_atCore
+#check @suspendUnderDeclaredLockSet_preserves_projectionOnCore
+#check @suspendUnderDeclaredLockSet_failClosed_invisible
+
+-- SM8.D — the phase's claims as data
+#check FineLockClaimId
+#check @FineLockClaimId.all
+#check @FineLockClaimId.mem_all
+#check @FineLockClaimId.all_nodup
+#check @FineLockClaimId.subTask
+#check @FineLockClaimId.evidenceProp
+#check @fineLockClaims_count
+#check @fineLockClaims_cover_subTasks
+#check @fineLockClaimTheorem
+#check @fineLockClaimTheorem_nodup
+#check @fineLockClaimEvidence
+#check @fineLockClaimEvidence_nonempty
+#check @acceptedCovertChannel_lockContention_bounded
+
 -- ============================================================================
 -- §2  Elaboration-time examples: each headline theorem applied
 -- ============================================================================
@@ -1428,6 +1655,136 @@ example : DeclassificationRuleId.liveDeclassificationWritesOnlyTheTrail.evidence
   declassificationRuleEvidence .liveDeclassificationWritesOnlyTheTrail
 example : DeclassificationRuleId.auditIsNotObservable.evidenceProp :=
   declassificationRuleEvidence .auditIsNotObservable
+
+
+-- SM8.D.1: the observer's view of an object is a function of its lock-erased
+-- content — the factoring that makes "the lock is invisible" a statement about
+-- the *field* rather than about one operation.
+example (ctx : LabelingContext) (observer : IfObserver) (obj : KernelObject)
+    (l : SeLe4n.Kernel.Concurrency.RwLockState) :
+    projectKernelObject ctx observer (obj.setLock l) = projectKernelObject ctx observer obj :=
+  projectKernelObject_setLock ctx observer obj l
+
+-- SM8.D.1: and therefore a lock-only step is invisible to the observer `(c, L)`
+-- on every core.
+example (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel) (s s' : SystemState)
+    (h : lockWritesOnly s s') :
+    ObservableState.onCore ctx c L s' = ObservableState.onCore ctx c L s :=
+  lockWritesOnly_preserves_onCore ctx c L h
+
+-- SM8.D.1: the 2PL bracket is a lock-only step whenever its guarded action is.
+example (S : SeLe4n.Kernel.Concurrency.LockSet) (core : CoreId)
+    (action : SystemState → SystemState × Unit) (s : SystemState) (hInv : s.objects.invExt)
+    (hActionInv : ∀ s', s'.objects.invExt → ((action s').1).objects.invExt)
+    (hActionLock : ∀ s', s'.objects.invExt → lockWritesOnly s' (action s').1) :
+    lockWritesOnly s (SeLe4n.Kernel.Concurrency.withLockSet S core action s).1 :=
+  withLockSet_lockWritesOnly S core action s hInv hActionInv hActionLock
+
+-- SM8.D.2: reader multiplicity is not a coordinate of anything the observer sees.
+example (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel) (s : SystemState)
+    (oid : SeLe4n.ObjId) (r₁ r₂ : List CoreId) (hInv : s.objects.invExt) :
+    ObservableState.onCore ctx c L
+        (setObjectLockAt s oid
+          { SeLe4n.Kernel.Concurrency.RwLockState.unheld with readers := r₁ })
+      = ObservableState.onCore ctx c L
+        (setObjectLockAt s oid
+          { SeLe4n.Kernel.Concurrency.RwLockState.unheld with readers := r₂ }) :=
+  readerMultiplicity_not_observable ctx c L s oid r₁ r₂ hInv
+
+-- SM8.D.3: the CC-5 observation belongs to the acquisition it is keyed to — the
+-- admission it measures from strictly follows that enqueue.
+example (e : SeLe4n.Kernel.Concurrency.RwLockExecution) (c : CoreId) (kEnq delay : Nat)
+    (h : lockContentionObservation e c kEnq = some delay) :
+    ∃ admitStep, e.admissionStepAfter c kEnq = some admitStep ∧
+      kEnq < admitStep ∧ delay = admitStep - kEnq ∧ e.holderAt admitStep c :=
+  lockContentionObservation_is_own_acquisition e c kEnq delay h
+
+-- SM8.D.3: the delay bound, under the SM2.C fairness assumption — at whichever
+-- access mode the contending core queued at.
+example (e : SeLe4n.Kernel.Concurrency.RwLockExecution) (maxDelay : Nat)
+    (hFair : SeLe4n.Kernel.Concurrency.FairTrace e maxDelay)
+    (hInit : e.initial = SeLe4n.Kernel.Concurrency.RwLockState.unheld) (c : CoreId)
+    (m : SeLe4n.Kernel.Concurrency.AccessMode) (kEnq : Nat)
+    (hQueued : (c, m) ∈ (e.stateAt kEnq).waiters)
+    (hWithin : kEnq + lockContentionDelayBound maxDelay < e.ops.length) :
+    ∃ delay, lockContentionObservation e c kEnq = some delay ∧
+      delay ≤ lockContentionDelayBound maxDelay :=
+  lockContention_delay_bounded e maxDelay hFair hInit c m kEnq hQueued hWithin
+
+-- SM8.D.3: and its blocked-reader instance — the temporal figure D.3's own
+-- subject was missing until SM2.C-defer D-3.10 generalised the liveness chain.
+example (e : SeLe4n.Kernel.Concurrency.RwLockExecution) (maxDelay : Nat)
+    (hFair : SeLe4n.Kernel.Concurrency.FairTrace e maxDelay)
+    (hInit : e.initial = SeLe4n.Kernel.Concurrency.RwLockState.unheld) (c : CoreId) (kEnq : Nat)
+    (hQueued : (c, SeLe4n.Kernel.Concurrency.AccessMode.read) ∈ (e.stateAt kEnq).waiters)
+    (hWithin : kEnq + lockContentionDelayBound maxDelay < e.ops.length) :
+    ∃ delay, lockContentionObservation e c kEnq = some delay ∧
+      delay ≤ lockContentionDelayBound maxDelay :=
+  blockedReaderContention_delay_bounded e maxDelay hFair hInit c kEnq hQueued hWithin
+
+-- SM8.D.3: the blocked reader's structural bound — at most `numCores - 1` cores
+-- ahead of it, whatever the fairness budget.
+example (l : SeLe4n.Kernel.Concurrency.RwLockState) (hWf : l.wf) (c : CoreId)
+    (hQueued : (c, SeLe4n.Kernel.Concurrency.AccessMode.read) ∈ l.waiters) :
+    SeLe4n.Kernel.Concurrency.readerWaitDepth l c ≤ SeLe4n.Kernel.Concurrency.numCores - 1 :=
+  readerContentionDepth_bounded l hWf c hQueued
+
+-- SM8.D.4: the 2PL bracket makes no write standard BIBA forbids, whenever its
+-- guarded action makes none.
+example (ctx : LabelingContext) (subject : SecurityLabel)
+    (S : SeLe4n.Kernel.Concurrency.LockSet) (core : CoreId)
+    (action : SystemState → SystemState × Unit) (s : SystemState) (hInv : s.objects.invExt)
+    (hActionInv : ∀ s', s'.objects.invExt → ((action s').1).objects.invExt)
+    (hAction : ∀ s', s'.objects.invExt →
+      noUnpermittedWrite (bibaWritePermitted ctx subject) s' (action s').1) :
+    noUnpermittedWrite (bibaWritePermitted ctx subject) s
+      (SeLe4n.Kernel.Concurrency.withLockSet S core action s).1 :=
+  bibaIntegrity_underLockSet ctx subject S core action s hInv hActionInv hAction
+
+-- SM8.D.4: and none the authority direction forbids either — the same result
+-- under the integrity order the kernel ships with.
+example (ctx : LabelingContext) (subject : SecurityLabel)
+    (S : SeLe4n.Kernel.Concurrency.LockSet) (core : CoreId)
+    (action : SystemState → SystemState × Unit) (s : SystemState) (hInv : s.objects.invExt)
+    (hActionInv : ∀ s', s'.objects.invExt → ((action s').1).objects.invExt)
+    (hAction : ∀ s', s'.objects.invExt →
+      noUnpermittedWrite (authorityWritePermitted ctx subject) s' (action s').1) :
+    noUnpermittedWrite (authorityWritePermitted ctx subject) s
+      (SeLe4n.Kernel.Concurrency.withLockSet S core action s).1 :=
+  authorityIntegrity_underLockSet ctx subject S core action s hInv hActionInv hAction
+
+-- SM8.D.5: a refused bracketed syscall writes lock words and nothing else — the
+-- sharpened fail-closed statement.
+example (ctx : LabelingContext) (S : SeLe4n.Kernel.Concurrency.LockSet) (lockCore : CoreId)
+    (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
+    (s : SystemState) (e : KernelError) (hInv : s.objects.invExt)
+    (hDenied : syscallEntryChecked ctx layout executingCore regCount
+        (lockSetAcquiredState S lockCore s) = .error e) :
+    lockWritesOnly s
+      (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1 :=
+  (syscallEntryUnderLockSet_failClosed ctx S lockCore layout executingCore regCount s e hInv
+    hDenied).1
+
+-- SM8.D.5: the declared-footprint entry is `none` for every undeclared syscall,
+-- so a caller cannot bracket a footprint whose coverage proof does not exist —
+-- and "undeclared" is a property of the syscall the entry's own registers
+-- **decode to**, not of an argument supplied alongside them.
+example (ctx : LabelingContext) (lockCore : CoreId) (layout : SeLe4n.SyscallRegisterLayout)
+    (executingCore : CoreId) (regCount : Nat) (s : SystemState) (tid : SeLe4n.ThreadId)
+    (decoded : SyscallDecodeResult)
+    (hDec : entryDecode ctx layout executingCore regCount s = some (tid, decoded))
+    (h : decoded.syscallId ≠ .tcbSuspend) :
+    syscallEntryUnderDeclaredLockSet ctx lockCore layout executingCore regCount s = none :=
+  syscallEntryUnderDeclaredLockSet_undeclared ctx lockCore layout executingCore regCount s
+    tid decoded hDec h
+
+-- SM8.D.5: and where the entry would refuse before decoding at all, nothing is
+-- bracketed — the bracket never runs ahead of a decode that does not exist.
+example (ctx : LabelingContext) (lockCore : CoreId) (layout : SeLe4n.SyscallRegisterLayout)
+    (executingCore : CoreId) (regCount : Nat) (s : SystemState)
+    (h : entryDecode ctx layout executingCore regCount s = none) :
+    syscallEntryUnderDeclaredLockSet ctx lockCore layout executingCore regCount s = none :=
+  syscallEntryUnderDeclaredLockSet_no_decode ctx lockCore layout executingCore regCount s h
 
 -- ============================================================================
 -- §3  Runtime assertions (Tier-2): the four-thread / four-core IF fixture
@@ -4854,6 +5211,7 @@ private def runFaithfulLegacyLiftChecks : IO Unit := do
 
   IO.println "  §6.15 PASS: the lifted policy reproduces the legacy lattice exactly"
 
+
 private def declassTraceFixturePath : String :=
   "tests/fixtures/smp_declassification_audit.expected"
 
@@ -4883,8 +5241,1227 @@ grep '^\\[smp-declassification\\]' > {declassTraceFixturePath}"
     IO.println s!"          (then refresh {declassTraceFixturePath}.sha256)"
     throw (IO.userError "declassification trace fixture mismatch")
 
+-- ============================================================================
+-- §7  SM8.D.6 — lock-contention information-flow scenarios
+-- ============================================================================
+--
+-- Seven groups, each with a load-bearing negative.  The fixture is the same
+-- four-thread / four-core state §4 uses, and the object every lock scenario
+-- names is `lowEndpoint` — one the **low observer can see**, because that is
+-- where the SM8.B.4 erasure and the SM8.D results have content.
+
+/-- §7 fixtures: three lock words that differ in every coordinate
+`RwLockState` carries — the writer, the reader set, the wait queue. -/
+private def freeLock : SeLe4n.Kernel.Concurrency.RwLockState :=
+  SeLe4n.Kernel.Concurrency.RwLockState.unheld
+
+private def sharedLock : SeLe4n.Kernel.Concurrency.RwLockState :=
+  { writerHeld := none, readers := [c0, c1, c2], waiters := [] }
+
+private def singleReaderLock : SeLe4n.Kernel.Concurrency.RwLockState :=
+  { writerHeld := none, readers := [c1], waiters := [] }
+
+/-- Write-held by core 1 with the **observer's own core** (core 0) queued
+behind it — the state the plan's D.3 row is about. -/
+private def blockedObserverLock : SeLe4n.Kernel.Concurrency.RwLockState :=
+  { writerHeld := some c1, readers := [], waiters := [(c0, .read)] }
+
+private def lockProbeStates : List SeLe4n.Kernel.Concurrency.RwLockState :=
+  [freeLock, sharedLock, singleReaderLock, blockedObserverLock]
+
+/-- The projected object at `lowEndpoint`, as the observer `(c, L)` sees it.
+`BEq KernelObject` compares every field, so this is a whole-object read rather
+than the `projectedLock` slice §4.4 uses. -/
+private def projectedEndpoint (c : CoreId) (L : SecurityLabel) (st : SystemState) :
+    Option KernelObject :=
+  (ObservableState.onCore niLabeling c L st).objects lowEndpoint
+
+/-- §7.1  SM8.D.1 — the observer sees nothing of a lock word. -/
+private def runFineLockInvisibilityChecks : IO Unit := do
+  IO.println "--- §7.1 the observer sees nothing of a lock word (SM8.D.1) ---"
+  assertBool "the probed object is one the LOW observer can see"
+    (decide (objectObservable niLabeling niLowObserver lowEndpoint = true))
+  -- NEGATIVE FIRST: the four probe lock words are pairwise distinct in the RAW
+  -- store, so the agreement below is the projection's doing and not a no-op.
+  assertBool "NEGATIVE: the four raw lock words are pairwise distinct"
+    (decide ((lockProbeStates.map (fun l => rawLock (setObjectLockAt niState lowEndpoint l)
+        lowEndpoint)).Nodup))
+  assertBool "…and each is installed verbatim (the setter really writes)"
+    (lockProbeStates.all (fun l =>
+      decide (rawLock (setObjectLockAt niState lowEndpoint l) lowEndpoint = l)))
+  -- The whole projected OBJECT — not just its lock slice — is identical across
+  -- every probe, on every core, at both clearances.
+  assertBool "the projected object is identical across every lock word, every core"
+    (lockProbeStates.all (fun l => allCores.all (fun c =>
+      (projectedEndpoint c lowLabel (setObjectLockAt niState lowEndpoint l)
+        == projectedEndpoint c lowLabel niState) &&
+      (projectedEndpoint c highLabel (setObjectLockAt niState lowEndpoint l)
+        == projectedEndpoint c highLabel niState))))
+  assertBool "…and the whole observable slice agrees, on every core"
+    (lockProbeStates.all (fun l => allCores.all (fun c =>
+      lowEquivalentSliceOnCoreCheckWithRegs niLabeling c lowLabel
+        (setObjectLockAt niState lowEndpoint l) niState)))
+  assertBool "the projected lock is `unheld` whatever the raw lock says"
+    (lockProbeStates.all (fun l => allCores.all (fun c =>
+      decide (projectedLock c lowLabel (setObjectLockAt niState lowEndpoint l) lowEndpoint
+        = SeLe4n.Kernel.Concurrency.RwLockState.unheld))))
+  -- The table-level lock (hierarchy level 0) is outside the observable state too.
+  assertBool "the table-level objStoreLock is invisible (theorem)"
+    (have _h : ∀ (c : CoreId) (lk : SeLe4n.Kernel.Concurrency.RwLockState),
+        ObservableState.onCore niLabeling c lowLabel { niState with objStoreLock := lk }
+          = ObservableState.onCore niLabeling c lowLabel niState :=
+      fun c lk => onCore_objStoreLock niLabeling c lowLabel niState lk
+     true)
+  -- The theorems, applied.  `RHTable.invExt` is ∀-quantified and not decidable,
+  -- so the suite carries it as a hypothesis exactly as §4.4 does.
+  assertBool "onCore_lock_indistinguishable applies at the fixture (theorem)"
+    (have _h : ∀ (st : SystemState), st.objects.invExt → ∀ (c : CoreId)
+        (l₁ l₂ : SeLe4n.Kernel.Concurrency.RwLockState),
+        ObservableState.onCore niLabeling c lowLabel (setObjectLockAt st lowEndpoint l₁)
+          = ObservableState.onCore niLabeling c lowLabel (setObjectLockAt st lowEndpoint l₂) :=
+      fun st hInv c l₁ l₂ => onCore_lock_indistinguishable niLabeling c lowLabel st lowEndpoint
+        l₁ l₂ hInv
+     true)
+  assertBool "the acquire is a lock-only write (theorem)"
+    (have _h : ∀ (st : SystemState), st.objects.invExt →
+        lockWritesOnly st (SeLe4n.Kernel.Concurrency.acquireLockOnObject st c1
+          lowEndpointLock .write) :=
+      fun st hInv => acquireLockOnObject_lockWritesOnly st c1 lowEndpointLock .write hInv
+     true)
+
+/-- §7.2  SM8.D.2 — reader multiplicity is not directly observable. -/
+private def runReaderMultiplicityChecks : IO Unit := do
+  IO.println "--- §7.2 reader multiplicity is not observable (SM8.D.2) ---"
+  -- NEGATIVE FIRST: the three multiplicities are genuinely different raw states.
+  assertBool "NEGATIVE: the raw reader counts are 0, 1 and 3"
+    (decide ((rawLock (setObjectLockAt niState lowEndpoint freeLock) lowEndpoint).readers.length
+        = 0) &&
+     decide ((rawLock (setObjectLockAt niState lowEndpoint singleReaderLock)
+        lowEndpoint).readers.length = 1) &&
+     decide ((rawLock (setObjectLockAt niState lowEndpoint sharedLock)
+        lowEndpoint).readers.length = 3))
+  assertBool "…and the reader SETS differ, not just their sizes"
+    (decide ((rawLock (setObjectLockAt niState lowEndpoint sharedLock) lowEndpoint).readers
+        = [c0, c1, c2]))
+  assertBool "yet all three project identically, on every core"
+    ([freeLock, singleReaderLock, sharedLock].all (fun l => allCores.all (fun c =>
+      projectedEndpoint c lowLabel (setObjectLockAt niState lowEndpoint l)
+        == projectedEndpoint c lowLabel (setObjectLockAt niState lowEndpoint freeLock))))
+  -- The SM2.C reachable witness: a wf state with at least two readers exists,
+  -- so the multiplicities above are not lock words the protocol cannot produce.
+  assertBool "the SM2.C reachable multi-reader witness has ≥ 2 readers and is wf"
+    (have _h := SeLe4n.Kernel.Concurrency.rwLock_reader_multiplicity
+     true)
+  assertBool "…and the fixture's own 3-reader word is wf (so it is reachable-shaped)"
+    (decide sharedLock.wf)
+  assertBool "readerMultiplicity_not_observable applies at the fixture (theorem)"
+    (have _h : ∀ (st : SystemState), st.objects.invExt → ∀ (c : CoreId)
+        (r₁ r₂ : List CoreId),
+        ObservableState.onCore niLabeling c lowLabel
+            (setObjectLockAt st lowEndpoint
+              { SeLe4n.Kernel.Concurrency.RwLockState.unheld with readers := r₁ })
+          = ObservableState.onCore niLabeling c lowLabel
+            (setObjectLockAt st lowEndpoint
+              { SeLe4n.Kernel.Concurrency.RwLockState.unheld with readers := r₂ }) :=
+      fun st hInv c r₁ r₂ => readerMultiplicity_not_observable niLabeling c lowLabel st
+        lowEndpoint r₁ r₂ hInv
+     true)
+
+/-- §7.3  SM8.D.3 (model half) — writer exclusion, and the blocked acquirer. -/
+private def runWriterExclusionChecks : IO Unit := do
+  IO.println "--- §7.3 writer exclusion is not observable either (SM8.D.3) ---"
+  -- NEGATIVE FIRST: the raw state really does record the exclusion AND the
+  -- observer's own core sitting in the queue behind it.
+  assertBool "NEGATIVE: the raw lock records core 1 holding and core 0 queued"
+    (decide ((rawLock (setObjectLockAt niState lowEndpoint blockedObserverLock)
+        lowEndpoint).writerHeld = some c1) &&
+     decide ((rawLock (setObjectLockAt niState lowEndpoint blockedObserverLock)
+        lowEndpoint).waiters = [(c0, SeLe4n.Kernel.Concurrency.AccessMode.read)]))
+  assertBool "the blocked observer on core 0 sees a free lock — the D.3 refutation"
+    (projectedEndpoint c0 lowLabel (setObjectLockAt niState lowEndpoint blockedObserverLock)
+      == projectedEndpoint c0 lowLabel (setObjectLockAt niState lowEndpoint freeLock))
+  assertBool "…and so does every other core, at both clearances"
+    (allCores.all (fun c =>
+      (projectedEndpoint c lowLabel (setObjectLockAt niState lowEndpoint blockedObserverLock)
+        == projectedEndpoint c lowLabel (setObjectLockAt niState lowEndpoint freeLock)) &&
+      (projectedEndpoint c highLabel (setObjectLockAt niState lowEndpoint blockedObserverLock)
+        == projectedEndpoint c highLabel (setObjectLockAt niState lowEndpoint freeLock))))
+  assertBool "blockedAcquirer_observes_nothing applies at the fixture (theorem)"
+    (have _h : ∀ (st : SystemState), st.objects.invExt → ∀ (c : CoreId),
+        ObservableState.onCore niLabeling c lowLabel
+            (setObjectLockAt st lowEndpoint
+              { SeLe4n.Kernel.Concurrency.RwLockState.unheld with
+                  writerHeld := some c1, waiters := [(c, .read)] })
+          = ObservableState.onCore niLabeling c lowLabel
+            (setObjectLockAt st lowEndpoint SeLe4n.Kernel.Concurrency.RwLockState.unheld) :=
+      fun st hInv c => blockedAcquirer_observes_nothing niLabeling c lowLabel st lowEndpoint
+        c1 .read hInv
+     true)
+
+/-! ### §7.4 fixtures — a real contended writer acquisition
+
+A nine-step execution in which core 1 asks for the write lock while core 0
+holds it, waits, and is admitted.  Every quantity §7.4 reports is computed from
+it: the queue depth, the admission step, the delay, the CC-5 code.
+
+The five trailing no-ops (`releaseRead c2` on a lock core 2 never read-held)
+are what make the execution long enough for the bound's own `hWithin` premise —
+"the recording did not end mid-wait" — so the theorem can be **applied**, not
+merely stated.  Without them the instance would be vacuous. -/
+private def contendedExecution : SeLe4n.Kernel.Concurrency.RwLockExecution :=
+  { initial := SeLe4n.Kernel.Concurrency.RwLockState.unheld
+    ops := [ .tryAcquireWrite c0, .tryAcquireWrite c1, .releaseWrite c0, .releaseWrite c1
+           , .releaseRead c2, .releaseRead c2, .releaseRead c2, .releaseRead c2
+           , .releaseRead c2 ]
+    initial_reachable := .base }
+
+/-- The fairness parameter the execution satisfies: every critical section it
+contains is released within one step of being entered. -/
+private def contendedMaxDelay : Nat := 1
+
+private theorem contendedExecution_fair :
+    SeLe4n.Kernel.Concurrency.FairTrace contendedExecution contendedMaxDelay :=
+  (SeLe4n.Kernel.Concurrency.fairTrace_iff_bounded contendedExecution contendedMaxDelay).mpr
+    (by decide)
+
+private theorem contendedExecution_queued :
+    (c1, SeLe4n.Kernel.Concurrency.AccessMode.write)
+      ∈ (contendedExecution.stateAt 2).waiters := by decide
+
+private theorem contendedExecution_within :
+    2 + lockContentionDelayBound contendedMaxDelay < contendedExecution.ops.length := by decide
+
+/-- §7.4  SM8.D.3 (timing half) — the CC-5 delay, computed and bounded. -/
+private def runLockContentionBoundChecks : IO Unit := do
+  IO.println "--- §7.4 the CC-5 contention delay is bounded (SM8.D.3) ---"
+  -- The scenario is real: core 1 is queued behind core 0, then admitted.
+  assertBool "core 1 enqueues at step 2 and is admitted at step 3"
+    (decide (contendedExecution.enqueueStep c1 .write = some 2) &&
+     decide (contendedExecution.admissionStep c1 = some 3))
+  assertBool "…so its observation is a delay of one step, coded as 2"
+    (decide (lockContentionObservation contendedExecution c1 2 = some 1) &&
+     decide (lockContentionCode contendedExecution c1 2 = 2))
+  -- NEGATIVE: an UNCONTENDED acquirer observes nothing at all — it never
+  -- enqueued, so the channel has no sample to carry.
+  assertBool "NEGATIVE: core 0 acquired uncontended, so it never enqueued"
+    (decide (contendedExecution.enqueueStep c0 .write = none) &&
+     decide (contendedExecution.admissionStep c0 = some 1))
+  -- The wait depth, and the SM2.C-defer D-2.3 cap it obeys.
+  assertBool "the wait depth at the enqueue step is 1, within numCores - 1"
+    (decide (SeLe4n.Kernel.Concurrency.writerWaitDepth (contendedExecution.stateAt 2) c1 = 1) &&
+     decide (SeLe4n.Kernel.Concurrency.writerWaitDepth (contendedExecution.stateAt 2) c1
+       ≤ SeLe4n.Kernel.Concurrency.numCores - 1))
+  -- The bound, at this execution's fairness parameter — and the theorem
+  -- **applied**, so the premises are demonstrably satisfiable.
+  assertBool "the observed delay is within the bound"
+    (decide (1 ≤ lockContentionDelayBound contendedMaxDelay))
+  assertBool "lockContention_delay_bounded applies to this execution (theorem)"
+    (have _h := lockContention_delay_bounded contendedExecution contendedMaxDelay
+        contendedExecution_fair rfl c1 .write 2 contendedExecution_queued
+        contendedExecution_within
+     true)
+  assertBool "…and so does the alphabet bound"
+    (have _h := lockContentionChannel_alphabet_bounded contendedExecution contendedMaxDelay
+        contendedExecution_fair rfl c1 .write 2 contendedExecution_queued
+        contendedExecution_within
+     true)
+  -- The RPi5 figures.
+  assertBool "at RPi5 (4 cores) with the SM2.C release budget: bound 3075, alphabet 3077"
+    (decide (lockContentionDelayBound SeLe4n.Kernel.Concurrency.MAX_RELEASE_DELAY = 3075) &&
+     decide (lockContentionAlphabet SeLe4n.Kernel.Concurrency.MAX_RELEASE_DELAY = 3077))
+  -- NEGATIVE: the bound does not claim the channel is closed.
+  assertBool "NEGATIVE: the alphabet is never 1 — CC-5 carries at least one bit"
+    (decide (2 ≤ lockContentionAlphabet SeLe4n.Kernel.Concurrency.MAX_RELEASE_DELAY) &&
+     decide (2 ≤ lockContentionAlphabet 0))
+  -- The trace capacity, in the shape SM8.B.9 gave CC-1.
+  assertBool "a run of 2 observations over the alphabet 8 has exactly 64 code traces"
+    (decide (lockContentionAlphabet 1 = 8) &&
+     decide ((boundedCodeTraces (lockContentionAlphabet 1) 2).length = 64))
+  assertBool "…which is the alphabet raised to the run length (theorem)"
+    (have _h := lockContentionChannel_trace_count 1 2
+     true)
+  -- The reserved code, so `+ 2` is used rather than slack.
+  assertBool "an un-admitted acquisition codes as 0, distinct from a zero delay"
+    (decide (lockContentionCode contendedExecution c3 2 = 0) &&
+     decide (contendedExecution.admissionStep c3 = none))
+
+
+/-! ### §7.4b fixtures — the acquisition that would have been swallowed
+
+Core 1 takes the lock uncontended, releases it, and *then* queues behind core 0.
+Its **first** admission is at step 1, before the second enqueue at step 4 — so
+an observation keyed to `admissionStep` computes `1 - 4`, which truncates to `0`
+in `Nat` and reports no wait for an acquisition that genuinely waited one step.
+`admissionStepAfter` reports `5`, and the delay `1`. -/
+private def repeatAcquirerExecution : SeLe4n.Kernel.Concurrency.RwLockExecution :=
+  { initial := SeLe4n.Kernel.Concurrency.RwLockState.unheld
+    ops := [ .tryAcquireWrite c1, .releaseWrite c1, .tryAcquireWrite c0
+           , .tryAcquireWrite c1, .releaseWrite c0 ]
+    initial_reachable := .base }
+
+/-- §7.4b  SM8.D.3 — the observation belongs to *this* acquisition. -/
+private def runRepeatAcquirerChecks : IO Unit := do
+  IO.println "--- §7.4b the observation is keyed to the enqueue, not to the first admission ---"
+  assertBool "core 1 acquires uncontended at step 1, then re-queues at step 4"
+    (decide (repeatAcquirerExecution.admissionStep c1 = some 1) &&
+     decide (repeatAcquirerExecution.enqueueStep c1 .write = some 4))
+  -- NEGATIVE FIRST: keyed to the *first* admission, the delay would read as
+  -- zero — a genuine wait reported as none.
+  assertBool "NEGATIVE: the first-admission reading would report a delay of 0"
+    (decide ((repeatAcquirerExecution.admissionStep c1).map (fun a => a - 4) = some 0))
+  assertBool "…whereas the enqueue-keyed admission is step 5"
+    (decide (repeatAcquirerExecution.admissionStepAfter c1 4 = some 5))
+  assertBool "…so the observation is a delay of 1, coded as 2"
+    (decide (lockContentionObservation repeatAcquirerExecution c1 4 = some 1) &&
+     decide (lockContentionCode repeatAcquirerExecution c1 4 = 2))
+  assertBool "and the admission it measures from strictly follows the enqueue (theorem)"
+    (have _h := lockContentionObservation_is_own_acquisition repeatAcquirerExecution c1 4 1
+     true)
+
+/-- §7.4c  SM8.D.3 — the fairness premise is load-bearing. -/
+private def runFairnessPremiseChecks : IO Unit := do
+  IO.println "--- §7.4c without fairness there is no bound at all (SM8.D.3) ---"
+  assertBool "core 1 is queued behind a writer that never releases"
+    (have _h := starvingExecution_queued
+     decide (starvingExecution.enqueueStep ⟨1, by decide⟩ .write = some 2))
+  -- NEGATIVE: no admission, so no delay — the bound's premise is not decorative.
+  assertBool "NEGATIVE: it is never admitted, so the observation is the reserved code"
+    (decide (starvingExecution.admissionStepAfter ⟨1, by decide⟩ 2 = none) &&
+     decide (lockContentionObservation starvingExecution ⟨1, by decide⟩ 2 = none) &&
+     decide (lockContentionCode starvingExecution ⟨1, by decide⟩ 2 = 0))
+  assertBool "…and the holder still holds at every step, so no budget makes it fair"
+    (decide ((starvingExecution.stateAt 1).writerHeld = some c0) &&
+     decide ((starvingExecution.stateAt 2).writerHeld = some c0) &&
+     decide ((starvingExecution.stateAt 7).writerHeld = some c0))
+  assertBool "the unboundedness witness, as a theorem"
+    (have _h := lockContention_unbounded_without_fairness
+     have _w := starvingExecution_writer_never_releases
+     true)
+
+/-- §7.4d  SM8.D.3 — the pacing bound, and the two-factor capacity it enables. -/
+private def runContentionRateChecks : IO Unit := do
+  IO.println "--- §7.4d the CC-5 observation rate is bounded (SM8.D.3) ---"
+  assertBool "distinct enqueue steps in a 9-step execution are at most 10"
+    (decide ((contendedExecution.ops.length + 1) = 10) &&
+     decide ((lockContentionTrace contendedExecution c1 [2]).length = 1))
+  assertBool "the pacing bound applies to a run of distinct enqueue steps (theorem)"
+    (have _h : ∀ steps : List Nat, steps.Nodup →
+        (∀ k ∈ steps, k ≤ contendedExecution.ops.length) →
+        (lockContentionTrace contendedExecution c1 steps).length
+          ≤ contendedExecution.ops.length + 1 :=
+      fun steps hNodup hRange =>
+        lockContentionChannel_observation_rate_bounded contendedExecution c1 steps hNodup hRange
+     true)
+  -- NEGATIVE: a run with a repeated enqueue step is not a run of distinct
+  -- acquisitions, and the pacing bound does not apply to it.
+  assertBool "NEGATIVE: a repeated enqueue step is not Nodup, so it is not a run"
+    (!(decide ([2, 2].Nodup)))
+  assertBool "the capacity is the alphabet raised to the run length"
+    (decide (lockContentionAlphabet 1 = 8) &&
+     decide ((boundedCodeTraces (lockContentionAlphabet 1) 2).length = 64))
+  assertBool "the trace-capacity theorem applies over one execution (theorem)"
+    (have _h : ∀ steps : List Nat,
+        lockContentionRun 1 contendedExecution c1 steps →
+        lockContentionTrace contendedExecution c1 steps
+          ∈ boundedCodeTraces (lockContentionAlphabet 1) steps.length :=
+      fun steps hRun =>
+        lockContentionChannel_trace_capacity 1 contendedExecution c1 steps hRun
+     true)
+
+/-- §7.4e  SM8.D.3 — the reader side: structural bound and head-of-queue
+admission. -/
+private def runBlockedReaderChecks : IO Unit := do
+  IO.println "--- §7.4e what a blocked READER has (SM8.D.3) ---"
+  -- A wf lock word with a writer holding and a reader queued behind it.
+  let blockedReaderLock : SeLe4n.Kernel.Concurrency.RwLockState :=
+    { writerHeld := some c1, readers := [], waiters := [(c0, .read)] }
+  assertBool "the fixture lock word is well-formed (so the bound applies)"
+    (decide blockedReaderLock.wf)
+  assertBool "the blocked reader's structural depth is within numCores - 1"
+    (decide (SeLe4n.Kernel.Concurrency.readerWaitDepth blockedReaderLock c0 = 1) &&
+     decide (SeLe4n.Kernel.Concurrency.readerWaitDepth blockedReaderLock c0
+       ≤ SeLe4n.Kernel.Concurrency.numCores - 1))
+  assertBool "…and the bound is the theorem, not the fixture (theorem)"
+    (have _h := readerContentionDepth_bounded blockedReaderLock (by decide) c0 (by decide)
+     true)
+  -- The operational content of D.3: the release admits it immediately.
+  assertBool "the release that ends the exclusion admits the reader at once"
+    (decide (c0 ∈ (blockedReaderLock.applyOp (.releaseWrite c1)).readers))
+  -- NEGATIVE: while the writer holds, the reader is NOT a holder.
+  assertBool "NEGATIVE: before the release it is a waiter and not a holder"
+    (decide (c0 ∉ blockedReaderLock.readers) &&
+     decide (blockedReaderLock.writerHeld ≠ some c0))
+  assertBool "the admission fact, as a theorem"
+    (have _h := blockedReader_admitted_by_writer_release c0 c1 blockedReaderLock (by decide)
+        (by decide)
+     true)
+
+/-! ### §7.4g fixtures — a real contended READER acquisition
+
+The reader-side twin of `contendedExecution`: core 0 takes the write lock, core
+1 asks for the read lock and is enqueued behind it, and the release batch-promotes
+it.  The same nine-step shape, so the bound's `hWithin` premise holds and the
+theorem can be **applied** rather than merely stated. -/
+private def readerContendedExecution : SeLe4n.Kernel.Concurrency.RwLockExecution :=
+  { initial := SeLe4n.Kernel.Concurrency.RwLockState.unheld
+    ops := [ .tryAcquireWrite c0, .tryAcquireRead c1, .releaseWrite c0, .releaseRead c1
+           , .releaseRead c2, .releaseRead c2, .releaseRead c2, .releaseRead c2
+           , .releaseRead c2 ]
+    initial_reachable := .base }
+
+private theorem readerContendedExecution_fair :
+    SeLe4n.Kernel.Concurrency.FairTrace readerContendedExecution contendedMaxDelay :=
+  (SeLe4n.Kernel.Concurrency.fairTrace_iff_bounded readerContendedExecution contendedMaxDelay).mpr
+    (by decide)
+
+private theorem readerContendedExecution_queued :
+    (c1, SeLe4n.Kernel.Concurrency.AccessMode.read)
+      ∈ (readerContendedExecution.stateAt 2).waiters := by decide
+
+private theorem readerContendedExecution_within :
+    2 + lockContentionDelayBound contendedMaxDelay < readerContendedExecution.ops.length := by
+  decide
+
+/-- §7.4g  SM8.D.3 — the blocked reader's **temporal** bound, computed and
+applied.  This is the group that the writer-only bound could not have. -/
+private def runBlockedReaderTemporalChecks : IO Unit := do
+  IO.println "--- §7.4g the blocked READER's delay is bounded in time (SM8.D.3) ---"
+  assertBool "core 1 is enqueued as a READER at step 2, behind the write holder"
+    (decide (readerContendedExecution.enqueueStep c1 .read = some 2) &&
+     decide ((readerContendedExecution.stateAt 2).writerHeld = some c0))
+  assertBool "the release admits it at step 3 — a one-step delay, code 2"
+    (decide (readerContendedExecution.admissionStepAfter c1 2 = some 3) &&
+     decide (lockContentionObservation readerContendedExecution c1 2 = some 1) &&
+     decide (lockContentionCode readerContendedExecution c1 2 = 2))
+  assertBool "it is admitted AS A READER, not as the writer"
+    (decide (c1 ∈ (readerContendedExecution.stateAt 3).readers) &&
+     decide ((readerContendedExecution.stateAt 3).writerHeld ≠ some c1))
+  assertBool "the reader wait depth is 1, within the numCores - 1 cap"
+    (decide (SeLe4n.Kernel.Concurrency.readerWaitDepth
+       (readerContendedExecution.stateAt 2) c1 = 1) &&
+     decide (SeLe4n.Kernel.Concurrency.readerWaitDepth
+       (readerContendedExecution.stateAt 2) c1 ≤ SeLe4n.Kernel.Concurrency.numCores - 1))
+  assertBool "the measured delay is within the CC-5 bound"
+    (decide (1 ≤ lockContentionDelayBound contendedMaxDelay))
+  assertBool "blockedReaderContention_delay_bounded applies to this execution (theorem)"
+    (have _h := blockedReaderContention_delay_bounded readerContendedExecution contendedMaxDelay
+        readerContendedExecution_fair rfl c1 2 readerContendedExecution_queued
+        readerContendedExecution_within
+     true)
+  assertBool "…and so does the alphabet bound, at read mode (theorem)"
+    (have _h := lockContentionChannel_alphabet_bounded readerContendedExecution contendedMaxDelay
+        readerContendedExecution_fair rfl c1 .read 2 readerContendedExecution_queued
+        readerContendedExecution_within
+     true)
+  -- NEGATIVE: the mode-generic bound is not the writer bound in disguise — this
+  -- core is queued at `.read` and is NOT queued at `.write`, so the writer
+  -- instance has nothing to say about it.
+  assertBool "NEGATIVE: the reader is not queued as a writer, so the writer bound does not apply"
+    (decide ((c1, SeLe4n.Kernel.Concurrency.AccessMode.write)
+       ∉ (readerContendedExecution.stateAt 2).waiters) &&
+     decide (readerContendedExecution.enqueueStep c1 .write = none))
+
+/-- §7.4f  SM8.D.3 — the RPi5 figure, split into what is grounded and what is a
+placeholder. -/
+private def runContentionFigureChecks : IO Unit := do
+  IO.println "--- §7.4f the shipped core count, and the placeholder budget ---"
+  assertBool "the core-count factor is the platform's real one: numCores - 1 = 3"
+    (decide (SeLe4n.Kernel.Concurrency.numCores = 4) &&
+     decide (lockContentionDelayBound 0 = 3) &&
+     decide (lockContentionDelayBound 7 = 24))
+  assertBool "the delay factor is SM2.C-defer D-3.7's PLACEHOLDER, not a measurement"
+    (decide (SeLe4n.Kernel.Concurrency.MAX_RELEASE_DELAY = 1024) &&
+     decide (lockContentionAlphabet SeLe4n.Kernel.Concurrency.MAX_RELEASE_DELAY = 3077))
+  -- NEGATIVE: the figure moves with the budget, which is why the bound is
+  -- parametric in it and the theorem is not stated at 3077.
+  assertBool "NEGATIVE: the alphabet tracks the budget, so 3077 is not a constant of the model"
+    (decide (lockContentionAlphabet 0 = 5) &&
+     decide (lockContentionAlphabet 1 = 8) &&
+     decide (lockContentionAlphabet 1 ≠ lockContentionAlphabet 2))
+  assertBool "the severity basis, as a theorem"
+    (have _h := acceptedCovertChannel_lockContention_severity_basis
+     true)
+  -- The non-closure witness must hold the OBSERVING core fixed.  Two codes read
+  -- by two different cores would only show that the code depends on which core
+  -- you are, which is not a channel anyone can receive on; a per-core channel
+  -- carries a bit when ONE observer can be in two distinguishable situations.
+  -- Both readings below are `waiterCore`'s; the second trace queues `aheadCore`
+  -- in front of it rather than observing a different waiter.
+  assertBool "the two reachable codes are read by the SAME core"
+    (decide (lockContentionCode singleWaiterExecution waiterCore 2 = 2) &&
+     decide (lockContentionCode twoWaiterExecution waiterCore 3 = 3))
+  -- NEGATIVE, and the reason a cross-observer pair is not merely weaker but
+  -- ill-formed: `aheadCore` never contends in the FIRST trace, so it has no
+  -- observation there to pair with its reading in the second — it reads the
+  -- reserved never-admitted code `0`.  Two codes gathered from two different
+  -- cores are therefore not one observer's two situations, which is what a
+  -- per-core channel carrying a bit requires.
+  assertBool "NEGATIVE: the ahead core does not contend in the first trace at all"
+    (decide (aheadCore ≠ waiterCore) &&
+     decide (lockContentionCode singleWaiterExecution aheadCore 2 = 0) &&
+     decide (lockContentionObservation singleWaiterExecution aheadCore 2 = none))
+
+/-! ### §7.5 fixtures — an untrusted subject and a trusted object -/
+
+/-- A labelling under which `lowEndpoint` is **trusted** and everything else is
+public, so an untrusted subject writing it is exactly the standard-BIBA
+write-up the D.4 row asks about. -/
+private def fineLockLabeling : LabelingContext :=
+  { niLabeling with
+    objectLabelOf := fun oid =>
+      if oid = lowEndpoint then SecurityLabel.kernelTrusted else niLabeling.objectLabelOf oid }
+
+/-- The untrusted subject. -/
+private def untrustedSubject : SecurityLabel := SecurityLabel.publicLabel
+
+/-- §7.5  SM8.D.4 — Biba integrity under per-core locks. -/
+private def runFineLockIntegrityChecks : IO Unit := do
+  IO.println "--- §7.5 Biba integrity under per-core locks (SM8.D.4) ---"
+  -- The two write rules disagree at exactly this pair — so proving the bracket
+  -- clean under both is two results, not one restated.
+  assertBool "standard BIBA FORBIDS the untrusted subject writing the trusted object"
+    (decide (bibaWritePermitted fineLockLabeling untrustedSubject lowEndpoint = false))
+  assertBool "seLe4n's authority direction PERMITS it (the U6-I reversal)"
+    (decide (authorityWritePermitted fineLockLabeling untrustedSubject lowEndpoint = true))
+  assertBool "…so the two rules genuinely differ here (matching writeRules_differ)"
+    (decide (bibaWritePermitted fineLockLabeling untrustedSubject lowEndpoint
+      ≠ authorityWritePermitted fineLockLabeling untrustedSubject lowEndpoint))
+  -- NEGATIVE FIRST: the acquire is a REAL write — the raw object moved.
+  assertBool "NEGATIVE: the acquire really did write the trusted object"
+    (decide (rawLock lockedState lowEndpoint ≠ rawLock niState lowEndpoint))
+  -- …and yet the object's integrity-relevant content is untouched.
+  assertBool "the lock-erased content of every object is unchanged by the acquire"
+    (niState.objectIndex.all (fun oid =>
+      (lockedState.objects[oid]?).map KernelObject.eraseLock
+        == (niState.objects[oid]?).map KernelObject.eraseLock))
+  assertBool "…including the trusted object the untrusted core just locked"
+    ((lockedState.objects[lowEndpoint]?).map KernelObject.eraseLock
+      == (niState.objects[lowEndpoint]?).map KernelObject.eraseLock)
+  assertBool "…and the whole two-lock 2PL fold is the same"
+    (niState.objectIndex.all (fun oid =>
+      (foldedLockState.objects[oid]?).map KernelObject.eraseLock
+        == (niState.objects[oid]?).map KernelObject.eraseLock))
+  -- Two objects of different *kinds* with wildly different content — the
+  -- fixture's endpoint and its capability-bearing CNode — but the same lock
+  -- word in, and therefore the same lock word out.  Nothing about an object
+  -- reaches its lock.
+  assertBool "the lock word carries no subject data — same lock in, same lock out"
+    (match niState.objects[lowEndpoint]?, niState.objects[probeCNode]? with
+     | some endpointObj, some cnodeObj =>
+         decide (KernelObject.objectLockOf endpointObj = KernelObject.objectLockOf cnodeObj) &&
+         decide (KernelObject.objectLockOf (endpointObj.updateLock (.tryAcquireWrite c1))
+           = KernelObject.objectLockOf (cnodeObj.updateLock (.tryAcquireWrite c1))) &&
+         -- …and the two objects really are different objects.
+         !(endpointObj == cnodeObj)
+     | _, _ => false)
+  assertBool "bibaIntegrity_underLockSet applies at the fixture (theorem)"
+    (have _h : ∀ (S : SeLe4n.Kernel.Concurrency.LockSet) (core : CoreId)
+        (action : SystemState → SystemState × Unit) (st : SystemState), st.objects.invExt →
+        (∀ s', s'.objects.invExt → ((action s').1).objects.invExt) →
+        (∀ s', s'.objects.invExt →
+          noUnpermittedWrite (bibaWritePermitted fineLockLabeling untrustedSubject) s'
+            (action s').1) →
+        noUnpermittedWrite (bibaWritePermitted fineLockLabeling untrustedSubject) st
+          (SeLe4n.Kernel.Concurrency.withLockSet S core action st).1 :=
+      fun S core action st hInv hActionInv hAction =>
+        bibaIntegrity_underLockSet fineLockLabeling untrustedSubject S core action st hInv
+          hActionInv hAction
+     true)
+  assertBool "…and so does the authority-direction twin, on every core"
+    (have _h : ∀ (S : SeLe4n.Kernel.Concurrency.LockSet) (st : SystemState), st.objects.invExt →
+        ∀ core : CoreId,
+          noUnpermittedWrite (authorityWritePermitted fineLockLabeling untrustedSubject) st
+            (SeLe4n.Kernel.Concurrency.acquireAll core S.lockAcquireSequence st) :=
+      fun S st hInv core =>
+        (lockPhases_integrity_clean_on_every_core fineLockLabeling untrustedSubject S st
+          hInv core).2.1
+     true)
+
+/-! ### §7.6 fixtures — the 2PL-bracketed live syscall entry
+
+The lock set is the §4.4 two-lock declaration promoted to a `LockSet`, so the
+bracket takes a write lock on an object the low observer **can** see and a read
+lock on the CNode the redaction probe uses.  The entry is refused (core 2 is
+idle, so there is no caller to decode), which is the case that makes the
+sharpened fail-closed statement observable: the bracket still wrote lock
+words. -/
+private def fineLockSet : SeLe4n.Kernel.Concurrency.LockSet :=
+  { pairs := lockPairs, hUniqueKeys := by decide }
+
+/-- The §7.6 labelling.  `niLabeling` labels only its own OID band (1000+), so
+it agrees with `defaultLabelingContext` at the three sentinel ids the AJ2-C
+heuristic probes (0, 1, 42) and `isInsecureDefaultContext` flags it — which
+would make `syscallEntryChecked` refuse at its *first* gate and leave the rest
+of the entry unexercised.  Labelling sentinel id 0 non-public is exactly the
+`testLabelingContext` evasion the heuristic documents as sufficient evidence of
+non-default labelling, and it moves nothing in the fixture's own band. -/
+private def fineLockEntryLabeling : LabelingContext :=
+  { niLabeling with
+    objectLabelOf := fun oid =>
+      if oid = (⟨0⟩ : SeLe4n.ObjId) then SecurityLabel.kernelTrusted
+      else niLabeling.objectLabelOf oid }
+
+private def bracketAcquiredState : SystemState :=
+  lockSetAcquiredState fineLockSet c1 niState
+
+private def bracketedEntryResult : SystemState × Except KernelError Unit :=
+  syscallEntryUnderLockSet fineLockEntryLabeling fineLockSet c1 SeLe4n.arm64DefaultLayout c2 32
+    niState
+
+/-- The §7.6 projected endpoint, under the entry labelling. -/
+private def entryProjectedEndpoint (c : CoreId) (L : SecurityLabel) (st : SystemState) :
+    Option KernelObject :=
+  (ObservableState.onCore fineLockEntryLabeling c L st).objects lowEndpoint
+
+/-- §7.6  SM8.D.5 — the bracketed live entry, and fail-closed sharpened. -/
+private def runFineLockEntryChecks : IO Unit := do
+  IO.println "--- §7.6 the 2PL-bracketed live syscall entry (SM8.D.5) ---"
+  -- NEGATIVE: the *unadjusted* fixture labelling IS flagged, so the adjustment
+  -- below is load-bearing — without it the entry never reaches its second gate.
+  assertBool "NEGATIVE: the plain fixture labelling trips the insecure-default heuristic"
+    (decide (isInsecureDefaultContext niLabeling = true))
+  assertBool "the entry labelling does NOT (so that gate is not what refuses)"
+    (decide (isInsecureDefaultContext fineLockEntryLabeling = false))
+  assertBool "core 2 is idle, so the entry has no caller to decode"
+    (decide (niState.scheduler.currentOnCore c2 = none) &&
+     decide (bracketAcquiredState.scheduler.currentOnCore c2 = none))
+  -- NEGATIVE FIRST: mid-bracket, the lock words really are held.
+  assertBool "NEGATIVE: mid-bracket the endpoint is write-held and the CNode read-held"
+    (decide ((rawLock bracketAcquiredState lowEndpoint).writerHeld = some c1) &&
+     decide ((rawLock bracketAcquiredState probeCNode).readers = [c1]))
+  assertBool "…yet mid-bracket every object's lock-erased content is unchanged"
+    (niState.objectIndex.all (fun oid =>
+      (bracketAcquiredState.objects[oid]?).map KernelObject.eraseLock
+        == (niState.objects[oid]?).map KernelObject.eraseLock))
+  -- The entry is refused, and the refusal is reported unchanged through the bracket.
+  assertBool "the bracketed entry is refused"
+    (match bracketedEntryResult.2 with | .error _ => true | .ok _ => false)
+  assertBool "…with `.illegalState` — the idle core's own error, not the bracket's"
+    (match bracketedEntryResult.2 with
+     | .error e => decide (e = KernelError.illegalState)
+     | .ok _ => false)
+  -- The sharpened fail-closed conclusion, computed: lock words only.
+  assertBool "the refused syscall left every object's lock-erased content untouched"
+    (niState.objectIndex.all (fun oid =>
+      (bracketedEntryResult.1.objects[oid]?).map KernelObject.eraseLock
+        == (niState.objects[oid]?).map KernelObject.eraseLock))
+  assertBool "…and every non-object field with it"
+    (decide (bracketedEntryResult.1.objectIndex = niState.objectIndex) &&
+     decide (bracketedEntryResult.1.scheduler.currentOnCore c0
+       = niState.scheduler.currentOnCore c0) &&
+     decide (bracketedEntryResult.1.machine.timer = niState.machine.timer))
+  -- …which is exactly enough: the observer's view is unchanged on every core.
+  assertBool "the refused syscall is invisible on every core, at both clearances"
+    (allCores.all (fun c =>
+      lowEquivalentSliceOnCoreCheckWithRegs fineLockEntryLabeling c lowLabel
+        bracketedEntryResult.1 niState &&
+      lowEquivalentSliceOnCoreCheckWithRegs fineLockEntryLabeling c highLabel
+        bracketedEntryResult.1 niState))
+  assertBool "…and the projected object at the LOCKED endpoint is identical"
+    (allCores.all (fun c =>
+      entryProjectedEndpoint c lowLabel bracketedEntryResult.1
+        == entryProjectedEndpoint c lowLabel niState))
+  assertBool "syscallEntryUnderLockSet_failClosed_invisible applies (theorem)"
+    (have _h : ∀ (st : SystemState) (e : KernelError), st.objects.invExt →
+        syscallEntryChecked fineLockEntryLabeling SeLe4n.arm64DefaultLayout c2 32
+            (lockSetAcquiredState fineLockSet c1 st) = .error e →
+        ∀ c : CoreId,
+          ObservableState.onCore fineLockEntryLabeling c lowLabel
+              (syscallEntryUnderLockSet fineLockEntryLabeling fineLockSet c1
+                SeLe4n.arm64DefaultLayout c2 32 st).1
+            = ObservableState.onCore fineLockEntryLabeling c lowLabel st :=
+      fun st e hInv hDenied => syscallEntryUnderLockSet_failClosed_invisible
+        fineLockEntryLabeling fineLockSet c1 SeLe4n.arm64DefaultLayout c2 32 st e lowLabel hInv
+        hDenied
+     true)
+  assertBool "…and so does the success-path headline (theorem)"
+    (have _h : ∀ (st st' : SystemState), st.objects.invExt → st'.objects.invExt →
+        syscallEntryChecked fineLockEntryLabeling SeLe4n.arm64DefaultLayout c2 32
+            (lockSetAcquiredState fineLockSet c1 st) = .ok ((), st') →
+        projectState fineLockEntryLabeling niLowObserver st'
+          = projectState fineLockEntryLabeling niLowObserver
+              (lockSetAcquiredState fineLockSet c1 st) →
+        observableSlotsConfinedToCore (lockSetAcquiredState fineLockSet c1 st) st' bootCoreId →
+        lowEquivalent_smp fineLockEntryLabeling niLowObserver
+          (syscallEntryUnderLockSet fineLockEntryLabeling fineLockSet c1
+            SeLe4n.arm64DefaultLayout c2 32 st).1 st :=
+      fun st st' hInv hOutInv hOk hProj hConfined =>
+        syscallEntryUnderLockSet_preserves_projectionOnCore_of_entry fineLockEntryLabeling
+          niLowObserver fineLockSet c1 SeLe4n.arm64DefaultLayout c2 32 st st' hInv hOutInv hOk
+          hProj hConfined
+     true)
+
+
+/-! ### §7.8 fixtures — a bracketed live syscall that **succeeds**
+
+§7.6 exercises the refused path.  This group exercises the other one, which is
+where the D.5 headline lives: a *successful* bracketed entry whose guarded
+dispatch really mutates the state, and which the low observer still cannot see.
+
+The caller is the fixture's **high** thread on core 1, given a CSpace that holds
+a read capability to the **high** endpoint and registers encoding `.receive`
+(`x0` = the capability pointer, `x7` = the syscall id).  The receive finds no
+sender and blocks it — so the object store, the endpoint queue and core 1's
+scheduler slots all move, and every one of those movements is high. -/
+private def hiCallerTcb : TCB :=
+  { mkTcb 1011 50 (some c1) with
+      cspaceRoot := probeCNode
+      registerContext :=
+        { pc := ⟨0x1000⟩, sp := ⟨0x8000⟩,
+          gpr := fun r => if r.val == 0 then ⟨2⟩ else if r.val == 7 then ⟨1⟩ else ⟨0⟩ } }
+
+private def successEntryState : SystemState :=
+  { niState with
+      objects := niState.objects.insert highCurrent.toObjId (.tcb hiCallerTcb) }
+
+/-- The state the guarded entry is actually run in — after the 2PL growing
+phase.  Every §7.8 hypothesis is stated against this, because that is what the
+bracket hands the entry. -/
+private def successAcquiredState : SystemState :=
+  lockSetAcquiredState fineLockSet c1 successEntryState
+
+private def successEntryResult : SystemState × Except KernelError Unit :=
+  syscallEntryUnderLockSet fineLockEntryLabeling fineLockSet c1 SeLe4n.arm64DefaultLayout c1 32
+    successEntryState
+
+/-- The guarded entry's own outcome, so §7.8 can report the dispatch result
+separately from the bracket's. -/
+private def successGuardedOutcome : Except KernelError (Unit × SystemState) :=
+  syscallEntryChecked fineLockEntryLabeling SeLe4n.arm64DefaultLayout c1 32 successAcquiredState
+
+/-- §7.8  SM8.D.5 — the **success** path, end to end. -/
+private def runFineLockSuccessPathChecks : IO Unit := do
+  IO.println "--- §7.8 a bracketed live syscall that SUCCEEDS (SM8.D.5) ---"
+  assertBool "the caller is the fixture's HIGH thread, current on core 1"
+    (decide (successEntryState.scheduler.currentOnCore c1 = some highCurrent) &&
+     decide (threadObservable fineLockEntryLabeling niLowObserver highCurrent = false))
+  assertBool "…and it holds a read capability to the HIGH endpoint"
+    (decide (objectObservable fineLockEntryLabeling niLowObserver highEndpoint = false) &&
+     decide ((probeCNodeValue.lookup highSlot).map (·.target)
+       = some (CapTarget.object highEndpoint)))
+  -- The guarded entry, at the state the bracket hands it, SUCCEEDS.
+  assertBool "the guarded entry succeeds at the post-acquire state"
+    (match successGuardedOutcome with | .ok _ => true | .error _ => false)
+  assertBool "…and so does the bracketed entry"
+    (match successEntryResult.2 with | .ok _ => true | .error _ => false)
+  -- NEGATIVE: the successful syscall really did mutate the state — otherwise
+  -- the invisibility below would be a no-op rather than a projection result.
+  assertBool "NEGATIVE: the caller is now blocked on the high endpoint"
+    (match successEntryResult.1.getTcb? highCurrent with
+     | some tcb => decide (tcb.ipcState = .blockedOnReceive highEndpoint)
+     | none => false)
+  assertBool "NEGATIVE: …and it was `.ready` before, so the transition is real"
+    (match successEntryState.getTcb? highCurrent with
+     | some tcb => decide (tcb.ipcState = .ready)
+     | none => false)
+  assertBool "NEGATIVE: the high endpoint's receive queue grew"
+    (match successEntryResult.1.objects[highEndpoint]? with
+     | some (.endpoint ep) => decide (ep.receiveQ.head = some highCurrent)
+     | _ => false)
+  -- …yet the LOW observer sees nothing of it, on every core.
+  assertBool "the low observer's view is unchanged on every core"
+    (allCores.all (fun c =>
+      lowEquivalentSliceOnCoreCheckWithRegs fineLockEntryLabeling c lowLabel
+        successEntryResult.1 successEntryState))
+  assertBool "…including the projected objects at the locked endpoint and CNode"
+    (allCores.all (fun c =>
+      (entryProjectedEndpoint c lowLabel successEntryResult.1
+        == entryProjectedEndpoint c lowLabel successEntryState) &&
+      ((ObservableState.onCore fineLockEntryLabeling c lowLabel successEntryResult.1).objects
+          probeCNode
+        == (ObservableState.onCore fineLockEntryLabeling c lowLabel successEntryState).objects
+          probeCNode)))
+  -- NEGATIVE: the HIGH observer *does* see the difference, so the low
+  -- observer's blindness is the label filter's doing and not a no-op.
+  assertBool "NEGATIVE: the HIGH observer's view of the caller DID move"
+    (!((ObservableState.onCore fineLockEntryLabeling c1 highLabel successEntryResult.1).objects
+         highCurrent.toObjId
+       == (ObservableState.onCore fineLockEntryLabeling c1 highLabel successEntryState).objects
+         highCurrent.toObjId))
+  -- The bracket's own contribution: lock words only, and the refuter agrees.
+  assertBool "the acquire phase passes the lock-only refuter"
+    (lockWritesOnlyCheck successEntryState successAcquiredState)
+  -- The refuter is index+kind level by construction (`KernelObject` has no
+  -- `DecidableEq`), so a same-kind mutation passes it.  Saying so is the point:
+  -- the load-bearing negatives for "the syscall moved something" are the raw
+  -- `ipcState` and endpoint-queue assertions above, not this.
+  assertBool "the refuter is index+kind level, so the syscall passes it as well"
+    (lockWritesOnlyCheck successAcquiredState successEntryResult.1)
+  assertBool "NEGATIVE: …but it genuinely refutes an index change"
+    (!(lockWritesOnlyCheck successEntryState { successEntryState with objectIndex := [] }))
+  -- The theorem, applied at this very fixture: its hypotheses are satisfiable.
+  assertBool "the success-path headline applies here (theorem)"
+    (have _h : ∀ st' : SystemState, successEntryState.objects.invExt → st'.objects.invExt →
+        syscallEntryChecked fineLockEntryLabeling SeLe4n.arm64DefaultLayout c1 32
+            successAcquiredState = .ok ((), st') →
+        projectState fineLockEntryLabeling niLowObserver st'
+          = projectState fineLockEntryLabeling niLowObserver successAcquiredState →
+        observableSlotsConfinedToCore successAcquiredState st' bootCoreId →
+        lowEquivalent_smp fineLockEntryLabeling niLowObserver successEntryResult.1
+          successEntryState :=
+      fun st' hInv hOutInv hOk hProj hConfined =>
+        syscallEntryUnderLockSet_preserves_projectionOnCore_of_entry fineLockEntryLabeling
+          niLowObserver fineLockSet c1 SeLe4n.arm64DefaultLayout c1 32 successEntryState st'
+          hInv hOutInv hOk hProj hConfined
+     true)
+
+/-- §7.7  SM8.D — the phase's claim inventory, and its evidence. -/
+private def runFineLockClaimInventoryChecks : IO Unit := do
+  IO.println "--- §7.7 the SM8.D claim inventory (SM8.D.1 … SM8.D.5) ---"
+  assertBool "eleven claims, listed once each"
+    (decide (FineLockClaimId.all.length = 11) && decide FineLockClaimId.all.Nodup)
+  assertBool "they cover D.1, D.2, D.3 (three times), D.4 (twice) and D.5 (twice)"
+    (decide (FineLockClaimId.all.map FineLockClaimId.subTask
+      = ["SM8.D.1", "SM8.D.2", "SM8.D.3", "SM8.D.3", "SM8.D.4", "SM8.D.4", "SM8.D.5",
+         "SM8.D.5", "SM8.D.3", "SM8.D.5", "SM8.D.5"]))
+  -- D.4 carries TWO claims because `writeRules_differ` says the two integrity
+  -- orders are two results: a deployment configured with one gets nothing from a
+  -- theorem about the other.
+  assertBool "D.4's two arms name the two integrity orders' theorems, and they differ"
+    (decide (fineLockClaimTheorem .integrityUnderLocks
+       ≠ fineLockClaimTheorem .authorityIntegrityUnderLocks))
+  assertBool "…so every proof-carrying sub-task of the phase is claimed"
+    (decide (["SM8.D.1", "SM8.D.2", "SM8.D.3", "SM8.D.4", "SM8.D.5"].all (fun t =>
+      (FineLockClaimId.all.map FineLockClaimId.subTask).contains t)))
+  assertBool "each claim names a distinct, non-empty theorem"
+    (decide ((FineLockClaimId.all.map fineLockClaimTheorem).Nodup) &&
+     (FineLockClaimId.all.all (fun id => !(fineLockClaimTheorem id).isEmpty)))
+  -- NEGATIVE: the scenario sub-task is this suite, not a Lean claim — it is
+  -- deliberately absent from the inventory, and this is what says so.  The
+  -- label names the semantics rather than the phase code: the Tier-3 companion
+  -- greps it from a shell string, where the identifier-naming gate reads a
+  -- phase code as code rather than as prose.
+  assertBool "NEGATIVE: the scenario sub-task carries no Lean claim (it is this suite)"
+    (decide (!(FineLockClaimId.all.map FineLockClaimId.subTask).contains "SM8.D.6"))
+  assertBool "every claim's evidence is inhabited (theorem)"
+    (have _h := fineLockClaimEvidence_nonempty
+     true)
+  assertBool "CC-5 stays `modelVisible := false` at severity medium, now with a bound"
+    (decide (acceptedCovertChannel_lockContention.modelVisible = false) &&
+     decide (acceptedCovertChannel_lockContention.severity = CovertChannelSeverity.medium) &&
+     decide (lockContentionCode contendedExecution c1 2
+       < lockContentionAlphabet contendedMaxDelay))
+
+/-! ### §7.10  The golden fine-lock contention trace (SM8.D.6)
+
+Every line below is computed from the live SM8.D definitions — the projected
+lock words, the contended execution's own admission arithmetic, the reserved
+code an unfair execution yields, the reader-side figures, and the bracketed
+entry's two outcomes.  Verified byte-for-byte against a checked-in fixture, so a
+change to what the model reports about lock contention is a diff a reviewer
+reads rather than a behaviour that slips through because the assertions still
+pass. -/
+/-- The blocked-reader probe the §7.10 trace reports on: a writer holds and a
+reader is queued behind it. -/
+private def traceBlockedReaderLock : SeLe4n.Kernel.Concurrency.RwLockState :=
+  { writerHeld := some c1, readers := [], waiters := [(c0, .read)] }
+
+/-- How many distinct proof-carrying sub-tasks the claim inventory covers.
+
+Reported as a **count** rather than as the sub-task strings: a golden fixture
+outside `docs/` is code as far as the identifier-naming gate is concerned, and
+the strings are phase codes.  The count is the property worth pinning anyway —
+that every proof-carrying sub-task of the phase is claimed is checked against
+the strings themselves in §7.7. -/
+private def traceClaimSubTaskCount : Nat :=
+  (FineLockClaimId.all.map FineLockClaimId.subTask).eraseDups.length
+
+/-- The refused / successful bracketed entries, rendered. -/
+private def traceRefusedOutcome : String :=
+  match bracketedEntryResult.2 with
+  | .error e => toString e
+  | .ok _ => "ADMITTED"
+
+private def traceSuccessOutcome : String :=
+  match successEntryResult.2 with
+  | .ok _ => "ok"
+  | .error e => toString e
+
+private def fineLockTraceLines : List String :=
+  let hi : CoreId := ⟨1, by decide⟩
+  [ s!"[smp-fine-lock] probe object {lowEndpoint.toNat}: observable to low \
+{objectObservable niLabeling niLowObserver lowEndpoint}" ] ++
+  (lockProbeStates.map (fun l =>
+    s!"[smp-fine-lock] raw lock writer={l.writerHeld.isSome} readers={l.readers.length} \
+waiters={l.waiters.length} -> projected unheld on every core \
+{allCores.all (fun c => decide (projectedLock c lowLabel (setObjectLockAt niState lowEndpoint l)
+  lowEndpoint = SeLe4n.Kernel.Concurrency.RwLockState.unheld))}")) ++
+  [ s!"[smp-fine-lock] contended execution: ops={contendedExecution.ops.length} \
+enqueue={toString (contendedExecution.enqueueStep c1 .write)} \
+admissionAfter={toString (contendedExecution.admissionStepAfter c1 2)}"
+  , s!"[smp-fine-lock] contended observation: \
+delay={toString (lockContentionObservation contendedExecution c1 2)} \
+code={lockContentionCode contendedExecution c1 2} \
+waitDepth={SeLe4n.Kernel.Concurrency.writerWaitDepth (contendedExecution.stateAt 2) c1}"
+  , s!"[smp-fine-lock] repeat acquirer: \
+firstAdmission={toString (repeatAcquirerExecution.admissionStep c1)} \
+enqueue={toString (repeatAcquirerExecution.enqueueStep c1 .write)} \
+admissionAfter={toString (repeatAcquirerExecution.admissionStepAfter c1 4)} \
+delay={toString (lockContentionObservation repeatAcquirerExecution c1 4)}"
+  , s!"[smp-fine-lock] unfair execution: \
+admissionAfter={toString (starvingExecution.admissionStepAfter hi 2)} \
+code={lockContentionCode starvingExecution hi 2} (reserved)"
+  , s!"[smp-fine-lock] bound at budget 0/1/{SeLe4n.Kernel.Concurrency.MAX_RELEASE_DELAY}: \
+{lockContentionDelayBound 0}/{lockContentionDelayBound 1}/\
+{lockContentionDelayBound SeLe4n.Kernel.Concurrency.MAX_RELEASE_DELAY}"
+  , s!"[smp-fine-lock] alphabet at budget 0/1/{SeLe4n.Kernel.Concurrency.MAX_RELEASE_DELAY}: \
+{lockContentionAlphabet 0}/{lockContentionAlphabet 1}/\
+{lockContentionAlphabet SeLe4n.Kernel.Concurrency.MAX_RELEASE_DELAY} \
+(coreFactor {SeLe4n.Kernel.Concurrency.numCores - 1} real, delay factor a placeholder)"
+  , s!"[smp-fine-lock] observation rate: at most ops+1 = \
+{contendedExecution.ops.length + 1} observations per execution"
+  , s!"[smp-fine-lock] blocked reader \
+depth={SeLe4n.Kernel.Concurrency.readerWaitDepth traceBlockedReaderLock c0} \
+admittedByRelease=\
+{decide (c0 ∈ (traceBlockedReaderLock.applyOp (.releaseWrite c1)).readers)}"
+  , s!"[smp-fine-lock] blocked reader in time: \
+enqueue={toString (readerContendedExecution.enqueueStep c1 .read)} \
+admissionAfter={toString (readerContendedExecution.admissionStepAfter c1 2)} \
+delay={toString (lockContentionObservation readerContendedExecution c1 2)} \
+asReader={decide (c1 ∈ (readerContendedExecution.stateAt 3).readers)}"
+  , s!"[smp-fine-lock] integrity rules at a trusted object with an untrusted subject: \
+biba={bibaWritePermitted fineLockLabeling untrustedSubject lowEndpoint} \
+authority={authorityWritePermitted fineLockLabeling untrustedSubject lowEndpoint}"
+  , s!"[smp-fine-lock] bracketed entry refused: {traceRefusedOutcome} \
+lockOnly={lockWritesOnlyCheck niState bracketedEntryResult.1}"
+  , s!"[smp-fine-lock] bracketed entry succeeded: {traceSuccessOutcome} \
+lowInvisible={allCores.all (fun c => lowEquivalentSliceOnCoreCheckWithRegs
+  fineLockEntryLabeling c lowLabel successEntryResult.1 successEntryState)}"
+  , s!"[smp-fine-lock] declared footprints: \
+tcbSuspend={(SeLe4n.Kernel.Concurrency.lockSetForSyscall .tcbSuspend lowCurrent highCurrent
+  niState).isSome} \
+send={(SeLe4n.Kernel.Concurrency.lockSetForSyscall .send lowCurrent highCurrent niState).isSome}"
+  , s!"[smp-fine-lock] claims: {FineLockClaimId.all.length} over \
+{traceClaimSubTaskCount} distinct proof-carrying sub-tasks" ]
+
+/-- §7.9 fixture: a victim whose CSpace root differs from the caller's, so the
+footprint's CNode member can be attributed to one of them. -/
+private def distinctRootVictim : TCB :=
+  { (mkTcb 1011 50 (some c1)) with cspaceRoot := probeCNode }
+
+-- ---------------------------------------------------------------------------
+-- §7.9 fixture: an entry whose registers really decode to `.tcbSuspend`.
+--
+-- Every other §7.9 state decodes to `.receive`, which is undeclared — so until
+-- this fixture existed the group could only ever observe the resolver saying
+-- `none`, and the *declared* path was never exercised at all.  A caller with
+-- `x7 = 20` (`.tcbSuspend`) and `x0 = 1` (a slot holding a **write** capability
+-- to a real TCB) resolves a genuine footprint, which is what lets the
+-- revalidation refusal below be a demonstration rather than a restatement.
+-- ---------------------------------------------------------------------------
+
+private def suspendCNode : SeLe4n.ObjId := ⟨1031⟩
+private def suspendSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 1
+
+/-- A write capability to `highQueued` — `.tcbSuspend` requires `.write`. -/
+private def suspendSlotCap : Capability :=
+  { target := .object highQueued.toObjId,
+    rights := AccessRightSet.ofList [.read, .write] }
+
+/-- The **foreign commit**: the same slot, re-targeted at a different TCB.  This
+is a `cspaceMove`/`cspaceMint` another core could perform between the caller's
+resolution and the end of its growing phase. -/
+private def suspendSlotCapReplaced : Capability :=
+  { target := .object lowQueued.toObjId,
+    rights := AccessRightSet.ofList [.read, .write] }
+
+/-- Depth 4 = `radixWidth`, so resolution consumes every bit in one step and the
+leaf **is** this root — the single-level resolution `entryCapTarget` requires. -/
+private def suspendCNodeValue : CNode :=
+  { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+    slots := SeLe4n.UniqueSlotMap.ofListWF [(suspendSlot, suspendSlotCap)] }
+
+private def suspendCNodeValueReplaced : CNode :=
+  { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+    slots := SeLe4n.UniqueSlotMap.ofListWF [(suspendSlot, suspendSlotCapReplaced)] }
+
+private def suspendCallerTcb : TCB :=
+  { mkTcb 1011 50 (some c1) with
+      cspaceRoot := suspendCNode
+      registerContext :=
+        { pc := ⟨0x1000⟩, sp := ⟨0x8000⟩,
+          gpr := fun r => if r.val == 0 then ⟨1⟩ else if r.val == 7 then ⟨20⟩ else ⟨0⟩ } }
+
+private def suspendEntryState : SystemState :=
+  { niState with
+      objects := (niState.objects.insert suspendCNode (.cnode suspendCNodeValue)).insert
+                   highCurrent.toObjId (.tcb suspendCallerTcb) }
+
+/-- The footprint the growing phase declares for this entry. -/
+private def suspendDeclaredFootprint : Option Concurrency.LockSet :=
+  declaredLockSetForEntry fineLockEntryLabeling SeLe4n.arm64DefaultLayout c1 32
+    suspendEntryState
+
+/-- The state the growing phase actually ends in: the declared footprint
+**acquired** in core 1's name.
+
+This is the lineage the observed state needs.  An earlier cut built the
+foreign-commit fixture directly from `suspendEntryState`, so the state
+witnessing the refusal was not one any growing phase could produce — it held
+none of the declared locks, which meant the refusal could have been the
+`lockSetHeld` guard firing rather than the resolution change. -/
+private def suspendAcquiredState : SystemState :=
+  match suspendDeclaredFootprint with
+  | some S => lockSetAcquiredState S c1 suspendEntryState
+  | none => suspendEntryState
+
+/-- The state the growing phase ends in when **another core committed** during
+it: the caller's capability now names a different victim.
+
+Built on `suspendAcquiredState`, and **lock-preserving** — only the CNode's
+capability slot moves, its lock word is carried over from the acquired state.
+So this really is a possible post-growing-phase state: core 1 still holds every
+declared lock, and the *only* thing that changed is what the resolution
+selects. -/
+private def suspendObservedReplaced : SystemState :=
+  match suspendAcquiredState.getCNode? suspendCNode with
+  | some acquiredCn =>
+      { suspendAcquiredState with
+          objects := suspendAcquiredState.objects.insert suspendCNode
+            (.cnode { suspendCNodeValueReplaced with lock := acquiredCn.lock }) }
+  | none => suspendAcquiredState
+
+private def distinctRootState : SystemState :=
+  { niState with
+      objects := niState.objects.insert highCurrent.toObjId (.tcb distinctRootVictim) }
+
+/-- §7.9  SM8.D.5 — the declared footprint, bound to the decode, and the
+fail-closed default.
+
+The group runs on §7.8's success fixture, whose current thread on core 1 really
+does carry registers the entry decodes — so the resolver is exercised against a
+decode rather than against arguments the test supplies. -/
+private def runDeclaredFootprintChecks : IO Unit := do
+  IO.println "--- §7.9 the bracket over SM3.C.9's declared footprint (SM8.D.5) ---"
+  assertBool "`.tcbSuspend` is the one declared arm, and it resolves for a real TCB"
+    (decide ((SeLe4n.Kernel.Concurrency.lockSetForSyscall .tcbSuspend lowCurrent highCurrent
+      niState).isSome))
+  -- The resolver reads the entry's own decode: caller from the executing core's
+  -- current thread, syscall id from that thread's registers.
+  assertBool "the resolver decodes the fixture's caller and its registers"
+    (match entryDecode fineLockEntryLabeling SeLe4n.arm64DefaultLayout c1 32
+             successEntryState with
+     | some (tid, decoded) => decide (tid = highCurrent) && decide (decoded.syscallId = .receive)
+     | none => false)
+  -- NEGATIVE, and the review finding this group exists to close: a suspend
+  -- footprint IS resolvable in this state, but the entry is NOT bracketed with
+  -- it, because the operation the registers decode to is `.receive`.  Under the
+  -- old free-parameter form a caller could pass `.tcbSuspend` alongside these
+  -- very registers and bracket an unrelated operation in the suspend footprint.
+  assertBool "NEGATIVE: a resolvable suspend footprint does not bracket a `.receive` decode"
+    (decide ((SeLe4n.Kernel.Concurrency.lockSetForSyscall .tcbSuspend lowCurrent highCurrent
+        niState).isSome) &&
+     decide ((declaredLockSetForEntry fineLockEntryLabeling SeLe4n.arm64DefaultLayout c1 32
+        successEntryState) = none) &&
+     decide ((syscallEntryUnderDeclaredLockSet fineLockEntryLabeling c1
+        SeLe4n.arm64DefaultLayout c1 32 successEntryState).isNone))
+  -- NEGATIVE: where the entry itself would refuse, nothing is bracketed at all.
+  -- Core 3 runs no thread in the fixture, so the decode never happens.
+  assertBool "NEGATIVE: no current thread on the core means no decode and no bracket"
+    (decide (successEntryState.scheduler.currentOnCore c3 = none) &&
+     decide ((entryDecode fineLockEntryLabeling SeLe4n.arm64DefaultLayout c3 32
+        successEntryState) = none) &&
+     decide ((syscallEntryUnderDeclaredLockSet fineLockEntryLabeling c1
+        SeLe4n.arm64DefaultLayout c3 32 successEntryState).isNone))
+  -- The growing phase grants only when the footprint is uncontended.  The
+  -- negative is the review finding: `withLockSet` runs its action either way, so
+  -- "the action sees every lock held" is a claim with a precondition, not a
+  -- property of the bracket.
+  assertBool "the acquire phase grants an uncontended footprint, and NOT a contended one"
+    (have _g := @lockSetAcquiredState_grants_when_free
+     have _n := @lockSetAcquiredState_does_not_grant_when_contended
+     true)
+  -- The CNode member of the footprint is the CALLER's CSpace root — the one
+  -- capability resolution reads — not the victim's.  The fixture gives the two
+  -- threads *different* roots so the assertion can tell them apart.
+  assertBool "the suspend footprint locks the CALLER's CSpace root"
+    (match SeLe4n.Kernel.Concurrency.suspendFootprintOf distinctRootState lowCurrent
+             highCurrent with
+     | some fp =>
+       decide ((SeLe4n.Kernel.Concurrency.cnodeLock cnRoot,
+                SeLe4n.Kernel.Concurrency.AccessMode.read) ∈ fp.pairs)
+     | none => false)
+  -- NEGATIVE: and it does NOT lock the victim's, which the syscall never reads.
+  assertBool "NEGATIVE: the victim's CSpace root is not in the footprint"
+    (decide (distinctRootVictim.cspaceRoot ≠ cnRoot) &&
+     (match SeLe4n.Kernel.Concurrency.suspendFootprintOf distinctRootState lowCurrent
+              highCurrent with
+      | some fp =>
+        decide ((SeLe4n.Kernel.Concurrency.cnodeLock probeCNode,
+                 SeLe4n.Kernel.Concurrency.AccessMode.read) ∉ fp.pairs)
+      | none => false))
+  -- ...and the resolver now needs BOTH threads, since a missing caller has no
+  -- CSpace root to name.
+  assertBool "NEGATIVE: an unresolvable caller yields no footprint"
+    (decide ((SeLe4n.Kernel.Concurrency.suspendFootprintOf niState ⟨999999⟩
+        highCurrent) = none))
+  -- The declared path, exercised POSITIVELY: registers decoding `.tcbSuspend`
+  -- through a write capability to a real TCB resolve a genuine footprint.  Every
+  -- other state in this group yields `none`, so without this the resolver's
+  -- success branch was never run.
+  assertBool "a `.tcbSuspend` decode through a write cap resolves a real footprint"
+    (decide ((declaredLockSetForEntry fineLockEntryLabeling SeLe4n.arm64DefaultLayout c1 32
+        suspendEntryState).isSome))
+  -- The resolve/acquire race: the footprint is resolved before its own CNode
+  -- read lock is held, so the revalidating bracket re-resolves at the state the
+  -- growing phase actually ended in and refuses on any change.  The observed
+  -- state is an INPUT, which is what lets the model express a foreign commit:
+  -- `suspendObservedReplaced` is the caller's capability re-targeted at a
+  -- different victim, exactly the `cspaceMove` another core could land in the
+  -- window.  An earlier cut re-derived the observed state from `s` itself, so
+  -- the only writer it could see was the acquire — and the acquire writes
+  -- nothing the resolver reads, making the refusal branch unreachable.
+  assertBool "the foreign commit really does move the resolution"
+    (decide (declaredLockSetForEntry fineLockEntryLabeling SeLe4n.arm64DefaultLayout c1 32
+        suspendObservedReplaced
+      ≠ declaredLockSetForEntry fineLockEntryLabeling SeLe4n.arm64DefaultLayout c1 32
+        suspendEntryState))
+  -- THE REFUSAL, demonstrated rather than asserted — and it carries the
+  -- unwinding: a refusal hands back the state with the footprint released, so
+  -- a caller taking the fallback cannot be left holding the abandoned locks.
+  assertBool "NEGATIVE: a capability replaced under the growing phase is refused, with release"
+    (match syscallEntryUnderRevalidatedLockSet fineLockEntryLabeling c1
+             SeLe4n.arm64DefaultLayout c1 32 suspendEntryState suspendObservedReplaced with
+     | .refused _ => true
+     | _ => false)
+  -- LINEAGE: the observed state is the growing phase's own output with a
+  -- lock-PRESERVING foreign commit on top, so core 1 still holds every declared
+  -- lock there.  Without this the refusal above would be ambiguous — the guard
+  -- refuses on a resolution change OR on a lost grant, and a state assembled
+  -- without ever acquiring refuses for the second reason while proving nothing
+  -- about the first.
+  assertBool "the observed state still HOLDS the declared footprint (acquire lineage)"
+    (match suspendDeclaredFootprint with
+     | some S => decide (Concurrency.lockSetHeld c1 S suspendObservedReplaced)
+     | none => false)
+  -- LOAD-BEARING NEGATIVE: and it is genuinely the acquired state underneath —
+  -- the pre-acquire state does NOT hold the footprint, so the two are distinct
+  -- and the assertion above is not vacuous.
+  assertBool "NEGATIVE: the pre-acquire state does not hold the footprint"
+    (match suspendDeclaredFootprint with
+     | some S => decide (¬ Concurrency.lockSetHeld c1 S suspendEntryState)
+     | none => false)
+  -- …and with nothing foreign committed, the same bracket commits.  On this
+  -- fixture the acquire genuinely grants (the objects are uncontended), which is
+  -- what the new `lockSetHeld` half of the guard requires.
+  assertBool "…while an undisturbed growing phase commits"
+    (match syscallEntryUnderRevalidatedLockSetModel fineLockEntryLabeling c1
+             SeLe4n.arm64DefaultLayout c1 32 suspendEntryState with
+     | .committed _ => true
+     | _ => false)
+  -- NEGATIVE: a state that resolves the same footprint but does NOT hold it is
+  -- refused too — the continuation skips acquisition, so running there would
+  -- execute and release with no exclusion at all.
+  assertBool "NEGATIVE: an observed state that does not hold the footprint is refused"
+    (match syscallEntryUnderRevalidatedLockSet fineLockEntryLabeling c1
+             SeLe4n.arm64DefaultLayout c1 32 suspendEntryState suspendEntryState with
+     | .refused _ => true
+     | _ => false)
+  assertBool "…and the stability, refusal, reachability, release and refinement properties"
+    (have _s := @syscallEntryUnderRevalidatedLockSet_footprint_stable
+     have _r := @syscallEntryUnderRevalidatedLockSet_refuses_on_change
+     have _q := @syscallEntryUnderRevalidatedLockSet_refuses_on_change_while_held
+     have _w := @revalidationRefusalReachable
+     have _u := @syscallEntryUnderRevalidatedLockSet_refused_releases
+     have _f := @syscallEntryUnderRevalidatedLockSet_not_refines_in_general
+     have _c := @withLockSet_eq_continueFromAcquired
+     have _a := @syscallEntryUnderLockSet_eq_fromAcquired
+     have _m := @syscallEntryUnderRevalidatedLockSetModel_refines
+     true)
+  -- The multi-level CSpace guard: the footprint read-locks the caller's ROOT
+  -- CNode only, so a resolution that descends into child CNodes would select the
+  -- target through CNodes no declared lock covers.  Rejected, and the fixture
+  -- root is single-level (depth = radixWidth) so the declared path above is not
+  -- passing by accident.
+  assertBool "the resolved capability lives in the caller's own root CNode"
+    (decide (suspendCNodeValue.depth = suspendCNodeValue.radixWidth) &&
+     (have _t := @entryCapTarget_single_level
+      true))
+  -- The splice's neighbour-TCB writes ride the ENDPOINT write lock (the
+  -- queue-owning-object umbrella), which the resolved footprint declares.
+  assertBool "the splice's neighbours ride a declared lock (theorem)"
+    (have _n := @suspendFootprint_splice_neighbors_under_endpoint_lock
+     true)
+  -- ...but authorization is not exclusion.  The endpoint lock authorizes the
+  -- splice's neighbour writes; it excludes nothing, because a *different*
+  -- operation writes the same neighbour TCB holding no lock in common.
+  assertBool "the suspend footprint respects the queue-ownership protocol (theorem)"
+    (have _r := @suspendFootprint_respects_queueOwnership
+     true)
+  -- LOAD-BEARING NEGATIVE: `tcbSetPriority` writes a queued neighbour's TCB and
+  -- declares no endpoint lock, so the protocol the umbrella rests on is
+  -- violated — the reason the gap is registered rather than claimed closed.
+  assertBool "NEGATIVE: tcbSetPriority writes a queued neighbour with no endpoint lock"
+    (have _v := @queueOwnership_violated_by_tcbSetPriority
+     have _o := @lockSet_tcbSetPriority_omits_endpointLock
+     true)
+  -- The bracket covers the OBJECT domain only; the scheduler domain, the
+  -- dynamic PIP chain and the queue-ownership protocol are named as data with
+  -- owners rather than left implicit.
+  assertBool "the three uncovered lock domains are registered, each with an owner"
+    (decide (declaredFootprintUncoveredDomains.length = 3) &&
+     decide (declaredFootprintUncoveredDomains.map Prod.fst
+       = [UncoveredLockDomain.schedulerDomain, UncoveredLockDomain.dynamicPipChain,
+          UncoveredLockDomain.queueOwnershipProtocol]) &&
+     declaredFootprintUncoveredDomains.all (fun d => !d.2.isEmpty))
+  -- LOAD-BEARING NEGATIVE: completeness is quantified over the *constructors*,
+  -- so a domain added without a registration cannot pass.
+  assertBool "NEGATIVE: every uncovered-domain constructor is registered"
+    (UncoveredLockDomain.all.all
+       (fun d => declaredFootprintUncoveredDomains.map Prod.fst |>.contains d) &&
+     decide (UncoveredLockDomain.all.length = 3))
+  assertBool "the confinement core is carried through the declared-footprint witness (theorem)"
+    (have _a := @suspendUnderDeclaredLockSet_preserves_projectionOnCore_atCore
+     true)
+  assertBool "the decode binding and the fail-closed defaults, as theorems"
+    (have _b := @declaredLockSetForEntry_binds_decode
+     have _s := @declaredLockSetForEntry_is_suspend_footprint
+     have _d := @declaredLockSetForEntry_undeclared
+     have _e := @entryDecode_none_entry_error
+     -- The anti-drift tie on BOTH sides: the failing side above, and the success
+     -- side here, which pins the live entry to the helper's exact `tid` and
+     -- `decoded` rather than only to its refusals.
+     have _p := @entryDecode_some_entry_dispatches
+     have _h := @suspendUnderDeclaredLockSet_preserves_projectionOnCore
+     have _f := @suspendUnderDeclaredLockSet_failClosed_invisible
+     have _u := @syscallEntryUnderDeclaredLockSet_undeclared
+     have _n := @syscallEntryUnderDeclaredLockSet_no_decode
+     true)
+
+
+private def fineLockTraceFixturePath : String :=
+  "tests/fixtures/smp_fine_lock_contention.expected"
+
+/-- §7.10: print the deterministic fine-lock contention trace and verify it
+byte-for-byte against the golden fixture.  The lines print before the (strict)
+verification, so the fixture is regenerable via
+`lake exe smp_information_flow_suite | grep '^\[smp-fine-lock\]'` (the brackets
+MUST be escaped — unescaped they form a regex character class). -/
+private def runFineLockTraceFixtureCheck : IO Unit := do
+  IO.println "--- §7.10 deterministic fine-lock contention trace (golden fixture)"
+  for l in fineLockTraceLines do
+    IO.println l
+  let expectedContent := String.intercalate "\n" fineLockTraceLines ++ "\n"
+  let fixtureExists ← System.FilePath.pathExists fineLockTraceFixturePath
+  if !fixtureExists then
+    IO.println s!"  FAIL: golden fixture {fineLockTraceFixturePath} not found"
+    throw (IO.userError s!"missing fixture {fineLockTraceFixturePath}")
+  let actual ← IO.FS.readFile fineLockTraceFixturePath
+  if actual == expectedContent then
+    IO.println s!"  PASS: fine-lock trace matches golden fixture {fineLockTraceFixturePath}"
+  else
+    IO.println s!"  FAIL: fine-lock trace differs from golden fixture \
+{fineLockTraceFixturePath}"
+    IO.println "        the live trace is printed above; regenerate with:"
+    IO.println s!"          lake exe smp_information_flow_suite | \
+grep '^\\[smp-fine-lock\\]' > {fineLockTraceFixturePath}"
+    IO.println s!"          (then refresh {fineLockTraceFixturePath}.sha256)"
+    throw (IO.userError "fine-lock trace fixture mismatch")
+
+
 def runSmpInformationFlowChecks : IO Unit := do
-  IO.println "WS-SM SM8.A / SM8.B — Per-core observable state + non-interference suite"
+  IO.println "WS-SM SM8.A / SM8.B / SM8.C / SM8.D — per-core observable state, \
+non-interference, declassification audit and fine-lock information flow"
   IO.println "===================================="
   runFixtureChecks
   runObserverChecks
@@ -4938,9 +6515,25 @@ def runSmpInformationFlowChecks : IO Unit := do
   runFaithfulLegacyLiftChecks
   runDeclassTraceFixtureCheck
   runEndpointPolicyGateChecks
+  runFineLockInvisibilityChecks
+  runReaderMultiplicityChecks
+  runWriterExclusionChecks
+  runLockContentionBoundChecks
+  runRepeatAcquirerChecks
+  runFairnessPremiseChecks
+  runContentionRateChecks
+  runBlockedReaderChecks
+  runContentionFigureChecks
+  runBlockedReaderTemporalChecks
+  runFineLockIntegrityChecks
+  runFineLockEntryChecks
+  runFineLockSuccessPathChecks
+  runDeclaredFootprintChecks
+  runFineLockClaimInventoryChecks
+  runFineLockTraceFixtureCheck
   IO.println "===================================="
-  IO.println ("All SM8.A per-core observable-state, SM8.B non-interference and " ++
-    "SM8.C declassification-audit checks PASS.")
+  IO.println ("All SM8.A per-core observable-state, SM8.B non-interference, " ++
+    "SM8.C declassification-audit and SM8.D fine-lock information-flow checks PASS.")
 
 end SeLe4n.Testing.SmpInformationFlow
 

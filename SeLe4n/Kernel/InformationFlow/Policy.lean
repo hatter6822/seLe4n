@@ -72,8 +72,12 @@ def confidentialityFlowsTo : Confidentiality → Confidentiality → Bool
        than the source. This prevents privilege escalation while allowing
        delegation.
 
-    A standard BIBA alternative is provided as `bibaIntegrityFlowsTo` below
-    for comparison and potential future use. -/
+    A standard BIBA alternative is provided as `bibaIntegrityFlowsTo` below.
+    It is no longer only a comparison: WS-SM SM8.D states Biba integrity under
+    per-core locks over an arbitrary write rule and instantiates it at **both**
+    orders (`bibaWritePermitted` / `authorityWritePermitted`,
+    `InformationFlow/FineLockFlow.lean`), because a result about one says
+    nothing about a deployment configured with the other. -/
 def integrityFlowsTo : Integrity → Integrity → Bool
   | .trusted, .trusted => true
   | .trusted, .untrusted => true
@@ -95,7 +99,14 @@ def integrityFlowsTo : Integrity → Integrity → Bool
 
     **Standalone semantics**: `bibaIntegrityFlowsTo a b = true` iff `b ≥ a`
     in the trust ordering (i.e., the second argument is at least as trusted
-    as the first). -/
+    as the first).
+
+    **Live consumer** (WS-SM SM8.D): `bibaWritePermitted` in
+    `InformationFlow/FineLockFlow.lean` reads it in exactly this drop-in
+    position — `bibaIntegrityFlowsTo (objectLabel).integrity subject.integrity`
+    — so `bibaIntegrity_underLockSet` is a statement about standard BIBA and
+    `authorityIntegrity_underLockSet` its twin about the order above.
+    `writeRules_differ` is the witness that those are two claims. -/
 def bibaIntegrityFlowsTo : Integrity → Integrity → Bool
   | .trusted, .trusted => true
   | .trusted, .untrusted => false

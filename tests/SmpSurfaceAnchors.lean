@@ -18,6 +18,7 @@ import SeLe4n.Kernel.Concurrency.LockSet
 import SeLe4n.Platform.FFI
 import SeLe4n.Kernel.InformationFlow.ObservableStatePerCore
 import SeLe4n.Kernel.InformationFlow.CovertChannelPerCore
+import SeLe4n.Kernel.InformationFlow.FineLockFlow
 
 /-!
 # WS-SM SM2.D.6 — Verified-lock-primitive surface anchors
@@ -494,9 +495,42 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      have _l := SeLe4n.Kernel.acceptedCovertChannel_lockContention
      have _r := @SeLe4n.Kernel.endpointPolicyRestricted_perCore
      true)
+  -- WS-SM SM8.D: information flow under fine locks.  The headline is the
+  -- *factoring* — an observer's view is a function of an object's lock-erased
+  -- content — because that is what makes "the lock is invisible" a statement
+  -- about the field rather than about one operation.  The bound is the other
+  -- half: CC-5 is accepted, not closed, and SM8.D says how much it carries.
+  assertBool "fine-lock invisibility, the contention bound and the integrity twins resolve"
+    (have _p := @SeLe4n.Kernel.projectKernelObject_setLock
+     have _i := @SeLe4n.Kernel.onCore_lock_indistinguishable
+     have _l := @SeLe4n.Kernel.lockWritesOnly_preserves_onCore
+     have _r := @SeLe4n.Kernel.readerMultiplicity_not_observable
+     have _a := @SeLe4n.Kernel.blockedAcquirer_observes_nothing
+     have _d := @SeLe4n.Kernel.lockContention_delay_bounded
+     have _o := @SeLe4n.Kernel.lockContentionObservation_is_own_acquisition
+     have _t := @SeLe4n.Kernel.lockContentionChannel_observation_rate_bounded
+     have _f := @SeLe4n.Kernel.lockContention_unbounded_without_fairness
+     have _k := @SeLe4n.Kernel.readerContentionDepth_bounded
+     have _h := @SeLe4n.Kernel.blockedReader_admitted_by_writer_release
+     have _rt := @SeLe4n.Kernel.blockedReaderContention_delay_bounded
+     have _wt := @SeLe4n.Kernel.writerContention_delay_bounded
+     have _ml := @SeLe4n.Kernel.Concurrency.rwLock_queued_liveness
+     have _ma := @SeLe4n.Kernel.Concurrency.rwLock_queued_admissionStepAfter_bounded
+     have _n := @SeLe4n.Kernel.syscallEntryUnderDeclaredLockSet_undeclared
+     have _b := @SeLe4n.Kernel.bibaIntegrity_underLockSet
+     have _u := @SeLe4n.Kernel.authorityIntegrity_underLockSet
+     have _w := @SeLe4n.Kernel.secureInformationFlow_underFineLocks
+     have _2c := @SeLe4n.Kernel.lockContentionChannel_two_codes_reachable
+     have _ge := @SeLe4n.Kernel.acceptedContentionCode_ge_two
+     have _ac := @SeLe4n.Kernel.secureInformationFlow_underFineLocks_atCore
+     have _ai := @SeLe4n.Kernel.authorityIntegrity_underLockSet
+     have _c : SeLe4n.Kernel.FineLockClaimId.all.length = 11 :=
+       SeLe4n.Kernel.fineLockClaims_count
+     have _e := SeLe4n.Kernel.fineLockClaimEvidence
+     true)
 
   IO.println "============================================================"
-  IO.println "All SM2.D + SM3.E.8 + SM8.A + SM8.B surface anchor checks PASS."
+  IO.println "All SM2.D + SM3.E.8 + SM8.A + SM8.B + SM8.D surface anchor checks PASS."
 
 end SeLe4n.Testing.SmpSurfaceAnchors
 

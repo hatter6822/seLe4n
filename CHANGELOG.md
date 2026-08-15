@@ -1,3 +1,1165 @@
+## v0.33.22 — WS-SM SM8.D: both sides of the anti-drift tie, and a witness with acquire lineage
+
+Two **P2** findings from the twelfth review round of PR #864.  Both are cases of
+a check that holds on one side of a boundary while saying nothing about the
+other, which is the shape this series keeps surfacing.
+
+**(1) The anti-drift tie ran only on the failing side.**  `entryDecode`
+duplicates `syscallEntryChecked`'s prefix — reject the insecure context, read the
+executing core's current thread, read its registers, decode — and
+`entryDecode_none_entry_error` proves every `none` the helper returns is a state
+on which the real entry errors.  That is silent about divergence in the other
+direction: if a new validation step or a decode normalisation were added to the
+live entry while the helper still returned `some`, the theorem would remain true
+and `declaredLockSetForEntry` would go on assembling a footprint from a caller
+and a decode the entry does not use.
+
+Closed by `entryDecode_some_entry_dispatches`, which pins more than the prefix:
+whenever the helper yields `(tid, decoded)`, the live entry **is**
+`dispatchSyscallChecked ctx decoded tid (tlbFillIpcBufferOnCore …)` at those same
+values.  Preferred over factoring the shared prefix into one function — that
+would reshape a production entry point to suit a staged module, and it would pin
+*less*, since a common prefix says nothing about what the entry does with its
+result.
+
+**(2) The revalidation-refusal witness had no acquire lineage.**
+`revalidationRefusalReachable` quantifies over arbitrary `s` and `observed` whose
+resolutions differ, which is the right generality for the theorem; the problem
+was the fixture standing behind it.  `suspendObservedReplaced` was built directly
+from `suspendEntryState`, never ran `lockSetAcquiredState`, and replaced the
+whole CNode object including its lock word — so it held **none** of the declared
+locks.  The bracket refuses on either a resolution change or a failed
+`lockSetHeld`, so that fixture demonstrated the second condition while the
+comment above it claimed the first.  The refusal was real; its attribution was
+not.
+
+Closed on both sides.  The fixture is now `lockSetAcquiredState`'s own output
+with a **lock-preserving** capability replacement applied on top (only the CNode's
+slot moves; its lock word is carried over), so core 1 still holds every declared
+lock and the only thing that changed is what the resolution selects.  Two new
+assertions pin that: the observed state holds the footprint, and — the
+load-bearing negative — the pre-acquire state does not, so the first is not
+vacuous.  `syscallEntryUnderRevalidatedLockSet_refuses_on_change_while_held`
+carries `lockSetHeld` in the statement so the theorem says which of the two
+refusal causes it is about; the hypothesis is deliberately unused in the proof
+(the guard is a conjunction), which is what the underscore records.
+
+Suite 536 → **538** assertions.  Twelve new Tier-3 anchors, including a negative
+forbidding the fixture's return to a pre-acquire construction.  Axiom-clean
+(2737 environment constants).  Theorems, tests and prose only; no transition
+changed and the kernel trace is byte-identical.
+
+## v0.33.21 — WS-SM SM8.D: authorization is not exclusion, and the severity basis carries its premises
+
+Two **P2** findings from the eleventh review round of PR #864.  Both valid; the
+first is the sharpest structural finding of the series, because it does not
+dispute a theorem — it shows that a theorem the previous rounds worked hard to
+make non-tautological still does not establish what the surrounding prose
+claimed for it.
+
+**(1) The queue-owning-object umbrella authorizes; it does not exclude.**
+`suspendFootprint_splice_neighbors_under_endpoint_lock` (v0.33.16) proves that a
+spliced neighbour is a real TCB in the queue the endpoint owns, so the splice's
+link writes fall under a lock the suspend holds.  That is an *authorization*
+statement.  Exclusion additionally requires that **every** writer of a queued TCB
+hold that endpoint's lock, and it does not: `lockSet_tcbSetPriority` is a caller
+TCB read, a CNode read, a target TCB write and an optional SchedContext write —
+no endpoint lock — while the model's `storeObject` replaces the target object
+whole.  So a suspend splicing an interior victim and a reprioritisation of that
+victim's predecessor hold **no lock in common on the neighbour**, and both write
+it.  The docstring's closing sentence read "there is no hole to close"; there is
+one, it lives in the SM3.B *inventory* rather than in the theorem, and the
+theorem itself remains true and unchanged.
+
+Closed as evidence plus a costed registration rather than a silent narrowing:
+`queueOwnershipRespected` states the protocol as a predicate on a footprint;
+`suspendFootprint_respects_queueOwnership` is the positive half (a suspend does
+respect it for its own victim, which is why the discipline looked complete);
+`lockSet_tcbSetPriority_omits_endpointLock` and
+`queueOwnership_violated_by_tcbSetPriority` state the violation as a `¬`, so a
+cut that closes the gap deletes a theorem instead of leaving prose that has
+quietly become false — the failure mode this PR hit twice already
+(`retypeIcacheOp_cleans_scrub_extent` at v0.32.101, the splice arm itself at
+v0.33.16).  `UncoveredLockDomain` gains a third constructor
+(`.queueOwnershipProtocol`, owner SM3.B), which
+`UncoveredLockDomain.mem_all`'s `cases` forces into the registration — the
+round-9 change that made completeness quantify over the constructors is what
+makes the new entry mandatory rather than optional.
+
+**Not live, and not narrowed to make it so.**  SM3.C.9 still defers
+`withLockSet` at the `@[export]` bodies and SM5.I serialises kernel entry behind
+one global ticket lock, so neither footprint takes a runtime lock today.  It is a
+defect in the *declared* discipline, which is exactly what a declared footprint
+exists to get right.  **Deliberately not implemented**, because both repairs are
+SM3.B design decisions rather than SM8.D edits, and they are alternatives: widen
+the ~10 TCB-writing footprints that can target a queued thread with a conditional
+endpoint lock (feasible — `lockSet_tcbSetPriority` is 4 members against a cap of
+8 — but it serialises reprioritisation against all IPC on that endpoint and adds
+`.endpoint` to those syscalls' `permittedKinds`), or raise `maxLockSetSize` so
+the suspend can name the neighbours (`lockSet_tcbSuspend` is at 8 exactly, and
+the constant is the WCRT headline `maxLockSetSize · (numCores − 1) · tCs`).  Both
+costs are recorded at the registration.
+
+**(2) The severity basis consumed a conclusion without its premises.**
+`acceptedCovertChannel_lockContention_severity_basis`'s non-closure conjunct took
+`lockContentionChannel_two_codes_reachable.2.2` — the bare code inequality —
+while `contentionWitnesses_fair` and `contentionWitnesses_in_premises` sat beside
+it, proven and unconsumed.  Two distinct codes read off executions that had
+stopped being fair, stopped being genuine enqueue edges, or become too short for
+the delay bound would say nothing about *accepted* runs, and the theorem would
+have kept elaborating.  The conjunct now carries the fairness and enqueue-edge
+premises themselves.  This is the same class as the round-6, round-8 and
+round-10 inventory findings — a fact proven but not wired into the structure
+meant to police it — which is now four occurrences and worth reading as a
+pattern rather than four accidents.
+
+Suite 533 → **536** assertions (three new in §7.9, two of them load-bearing
+negatives: the reprioritisation counterexample, and that every uncovered-domain
+constructor is registered).  Fifteen new Tier-3 anchors, including a prose
+negative forbidding the retracted "no hole to close" sentence.  Axiom-clean
+(2735 environment constants across the SM8 surface).  Theorems, tests and prose
+only; no transition changed and the kernel trace is byte-identical.
+
+## v0.33.20 — WS-SM SM8.D: the tenth review round, and an off-by-one in yesterday's fix
+
+Two **P1** findings, the first of the series, and both on the elapsed-time rate
+theorem added one round earlier. Theorems, tests and prose only; trace
+byte-identical.
+
+### The rate was measured over a window one interval too long
+
+`lockContentionChannel_rate_per_elapsed_time` concluded over
+`elapsedBetween cost 0 (e.ops.length + 1)`. An execution of `n` operations spans
+states `0 … n`, which is `n` intervals; measuring through `n + 1` sums a
+`cost n` the execution does not occupy. The theorem could therefore "pay" for an
+observation with time after the recorded execution ended — which is precisely the
+kind of slack the round-9 fix existed to remove, reintroduced in the fix itself.
+
+The enqueue-edge premise supplies the correction: observations are keyed to steps
+with `1 ≤ k`, so none is at step `0`, and prepending `0` to the step list gives a
+`Nodup` list in `[0, n]` one longer than the original — bounding the observation
+count by `n` rather than `n + 1`. The conclusion is now over
+`elapsedBetween cost 0 e.ops.length`, and a Tier-3 negative forbids the
+`+ 1` window returning.
+
+### The elapsed-time rate was proven but not consumed
+
+`acceptedCovertChannel_lockContention_severity_basis` and the
+`.contentionChannelRegistered` claim arm both still cited the operation-count
+bound, whose own contract says it is not comparable to CC-1's tick-paced rate. So
+the new elapsed-time result could have been deleted while the severity
+justification — which reads as a bandwidth argument — and the inventory kept
+elaborating on the weaker bound alone.
+
+Both now carry the cost-conditioned rate as a conjunct. This is the same defect
+as the round-6 and round-8 inventory findings: adding a theorem without wiring it
+into the structure that is supposed to police it.
+
+`SmpInformationFlowSuite` stays at **533** assertions.
+
+Refs: docs/planning/SMP_INFORMATION_FLOW_PLAN.md section 5 SM8.D
+
+## v0.33.19 — WS-SM SM8.D: the ninth review round, and the rate that was a tautology
+
+Three P2 findings. Two are the round-7 unit error recurring in dimensions I did
+not check when I fixed it; the third is a scope question about what the Biba
+result claims. Theorems, tests and prose only; trace byte-identical.
+
+### The pacing bound was in the wrong currency, like the delay bound before it
+
+`lockContentionChannel_observation_rate_bounded` concludes that a core cannot
+observe more often than the execution has steps — which is close to a tautology
+(distinct acquisitions have distinct enqueue steps) and, more importantly, is a
+bound per **lock operation**. The docstring then used it to claim CC-5's capacity
+is "comparable with CC-1's per-tick figure". CC-1's pacing is per timer tick;
+many lock operations may fall between two ticks, so the comparison does not hold.
+
+This is round 7's finding in the rate dimension: I corrected the *delay* bound's
+unit and left the *rate* bound's claim standing. Both halves of a bandwidth
+figure — how much one observation carries, how often one can be made — are
+conditional on a cost model, and only the alphabet is unconditional.
+
+`elapsedBetween_ge` is the dual of round 7's `elapsedBetween_le`: given a
+**floor** `tMin` on any inter-operation interval, `n` steps take at least
+`n * tMin`. `lockContentionChannel_rate_per_elapsed_time` composes it with the
+execution's own pigeonhole (`distinct_steps_length_le`) to give the statement the
+comparability claim needed: `n` observations require at least `n * tMin` of
+elapsed time, i.e. at most one observation per `tMin`.
+
+### The uncovered-domain inventory compared against a literal
+
+`declaredFootprintUncoveredDomains_complete` checked the registered list against
+a two-element literal, so a third `UncoveredLockDomain` constructor would have
+left it elaborating unchanged — the debt inventory could omit a newly discovered
+lock domain while every migration check kept passing. It now quantifies over the
+type (`UncoveredLockDomain.all` / `mem_all` / `all_nodup`, the shape the claim
+inventory already used), so the proof stops being exhaustive the moment a domain
+is added.
+
+### The Biba result is integrity modulo lock words, and now says so
+
+`noUnpermittedWrite` erases the lock before comparing states, so an untrusted
+subject acquiring a lock embedded in a **trusted** object is not counted as a
+forbidden write — even though the object really is modified. The predicate was
+right; describing its consequence as standard BIBA no-write-up was not.
+
+The scope is now stated, with the uncounted case exhibited rather than left to a
+reader of the definition
+(`lockAcquisition_modifies_trusted_object_and_is_not_counted`: the modification
+is real, and it is invisible to the predicate by construction). The modelling
+decision behind the erasure is recorded: lock acquisition is kernel-mediated —
+the subject names an operation, the kernel chooses the lock set and supplies
+every written bit — and permission-checking it would make an untrusted thread
+unable to send to a trusted endpoint at all, since the rendezvous necessarily
+touches that endpoint's lock. What the uncounted write can affect is availability
+and ordering, which is outside the Biba model and is registered, and bounded, as
+CC-5.
+
+`SmpInformationFlowSuite` stays at **533** assertions.
+
+Refs: docs/planning/SMP_INFORMATION_FLOW_PLAN.md section 5 SM8.D
+
+## v0.33.18 — WS-SM SM8.D: the eighth review round, and what "released" does not mean
+
+Three P2 findings, all valid. One is a limit of the SM2.C lock API that the
+previous round's fix could not have closed and should not have implied it did;
+the other two are evidence-citation defects — documentation and a claim
+inventory pointing at theorems that do not establish what the citation says.
+Theorems, tests and prose only; trace byte-identical.
+
+### A refusal releases what was granted; it cannot cancel what was queued
+
+v0.33.17 made the refusal path carry the released state so the footprint could
+not be stranded. That is right as far as it goes, and the docstring then went
+further than the code: it said a refusal hands back "the state in which the
+locks are gone". Under contention that is false. `releaseAll` applies
+`releaseRead` / `releaseWrite`, and both **guard on holdership** — `releaseRead`
+on membership in `readers`, `releaseWrite` on `writerHeld = some core` — so for
+a core that is merely *queued* they are the identity. When the growing phase
+found a member contended, `lockCore` is queued on it, and the unwind leaves that
+request in place to be promoted later.
+
+`RwLockOp` has no cancel constructor, so this is not fixable inside SM8.D. The
+gap is now a checked fact rather than a silent overclaim —
+`rwLock_release_by_nonholder_preserves_waiters` proves both release arms leave
+`waiters` untouched for a non-holder — and the docstring says plainly what
+"released" covers. **Registered as SM2.C debt**: a new `RwLockOp` constructor
+changes `applyOp`, all five INV-R invariants and every `cases op` across the
+SM2.C liveness surface, so it is that phase's datatype to extend.
+
+### The claim inventory did not track the revalidated path
+
+`.secureFlowUnderFineLocks` and `.failClosedUnderFineLocks` cite the plain
+pre-state bracket, and `syscallEntryUnderRevalidatedLockSetModel_refines` bridges
+only the no-interleaving model instance — so the revalidated path could regress
+in the concurrent case, which is the case it exists for, without breaking a
+claim. Two new arms fix that: `.revalidatedCommitTracked` (a committed outcome
+ran from the state the guard checked, holding the footprint it declared there —
+quantified over an *arbitrary* `observed`, so foreign commits are in scope) and
+`.revalidatedRefusalUnwinds` (a refused outcome carries the released state).
+Nine claims become **eleven**, D.5 now carrying four.
+
+### The specification cited the wrong non-closure witness
+
+Four documentation sites attributed CC-5's "bounded is not closed" to
+`lockContentionAlphabet_at_least_two` — whose own contract, since v0.33.16, says
+it counts only the *allocated* alphabet and that the two codes it counts are
+exactly the two an accepted acquisition cannot produce. The witness is
+`lockContentionChannel_two_codes_reachable`. All four now cite it
+(`docs/spec/SELE4N_SPEC.md`, `docs/gitbook/12-proof-and-invariant-map.md`, and
+two in the plan), with the weaker theorem's role stated rather than removed, and
+the spec's ceiling re-denominated in lock operations per v0.33.17.
+
+`SmpInformationFlowSuite` stays at **533** assertions; the golden fixture moves
+by one line (the claim count).
+
+Refs: docs/planning/SMP_INFORMATION_FLOW_PLAN.md section 5 SM8.D
+
+## v0.33.17 — WS-SM SM8.D: the seventh review round, and what the CC-5 bound is measured in
+
+Four P2 findings, all valid. Three are on the SM8.D.5 bracket; the fourth is a
+unit error in the CC-5 claim that had been present since the phase landed.
+Theorems, tests and prose only; no transition changed and the golden kernel
+trace is byte-identical.
+
+### CC-5's bound counts lock operations, not elapsed time
+
+`lockContentionObservation` subtracts two indices into `RwLockExecution.ops`, so
+the figure it produces counts **operations on the lock** — the critical sections
+a waiter queues behind — and not time. A holder may occupy its critical section
+for an arbitrarily long real interval without any operation on that lock being
+recorded, so a step-delay of one can correspond to an unbounded wall-clock wait.
+Every downstream result (`lockContention_delay_bounded`, the alphabet, the trace
+capacity) inherits that unit, and the phase had been describing them as bounding
+a *timing* channel.
+
+No theorem was false; the description was. The unit is now explicit at every
+site, and reading CC-5 as a timing channel is a separate, conditional result:
+`elapsedBetween` models per-step cost, `elapsedBetween_le` bounds an interval by
+`(steps × tCs)` given a ceiling `tCs` on any single interval, and
+`lockContention_wallClock_bounded` composes that with the step bound. The
+ceiling is a hypothesis rather than something derived, because the SM2.C
+execution model carries no notion of duration — which is exactly the gap being
+made visible. It is kept as its own theorem rather than folded into the step
+bound, since the step bound is unconditional given fairness and the time bound is
+not; merging them would hide which assumption carries which half.
+
+**Tracked debt (SM2.C):** timestamps on `RwLockExecution` itself, with
+`MAX_RELEASE_DELAY` denominated in ticks. That changes the core execution
+datatype every SM2.C liveness theorem quantifies over, so it is that phase's
+foundation to move.
+
+### The CSpace guard checked the endpoint, not the path
+
+v0.33.15 rejected multi-level resolution by testing the final `ref.cnode`. A path
+that descends into a child CNode and cycles back to the root passes that test
+while having read the unlocked child, and nothing in `cspaceDepthConsistent`
+excludes such capability cycles. The guard is now structural: `resolveCapAddress`
+consumes `guardWidth + radixWidth` bits per hop and recurses whenever any remain,
+so requiring `depth = guardWidth + radixWidth` at the root means it **cannot
+descend at all**. `entryCapTarget_single_level` carries that equation, so the
+non-recursion is pinned rather than inferred from where the walk happened to
+stop.
+
+### The continuation assumed the locks without requiring them
+
+`continueFromAcquired` skips the growing phase by construction, but accepted an
+arbitrary `SystemState` — so a state that merely *resolved* the same footprint,
+without ever having acquired it (or with a grant stripped by an intervening
+replacement), would have the syscall run and release with no exclusion at all.
+The revalidation guard now requires `lockSetHeld lockCore S observed` alongside
+the resolution equality, and `…_footprint_stable` carries it as a conjunct.
+
+### A refusal stranded the acquired footprint
+
+The refusal branch returned `none` without running the shrinking phase, so a
+caller following the documented fallback walked away still holding every lock it
+had acquired — blocking every later user of those objects. The result type now
+distinguishes the three cases that oblige the caller differently
+(`RevalidatedEntryOutcome`: `.undeclared` / `.refused` / `.committed`), and
+`.refused` carries the **released** state, so a refusal cannot be observed
+without the unwinding. `syscallEntryUnderRevalidatedLockSet_refused_releases`
+pins that the payload is the released state and not the observed one.
+
+`SmpInformationFlowSuite` 532 → **533** assertions, including the load-bearing
+negative that a state resolving the same footprint but not holding it is refused.
+
+Refs: docs/planning/SMP_INFORMATION_FLOW_PLAN.md section 5 SM8.D
+
+## v0.33.16 — WS-SM SM8.D: the sixth review round, and a theorem that proved nothing
+
+Four P2 findings. Two are cases of this PR's own earlier fixes not going far
+enough — a coverage theorem that turned out tautological, and a guard that
+checked one state and acted on another. Theorems, tests and prose only; no
+transition changed and the golden kernel trace is byte-identical.
+
+### The splice-coverage theorem was tautological
+
+v0.33.15 added `suspendFootprint_splice_neighbors_under_endpoint_lock` as the
+seventh member of the `lockSet_tcbSuspend_*_write_mem` family. Its neighbour arm
+was discharged by `fun _ _ _ => hMem` — a constant function that ignores the
+neighbour, its membership, and whether it exists at all. It therefore proved only
+that the endpoint write lock is *present*, which
+`lockSet_tcbSuspend_blocked_endpoint_write_mem` already said, and it would have
+kept elaborating had the splice rewritten arbitrary unrelated TCBs. That is the
+same defect this project caught in `retypeIcacheOp_cleans_scrub_extent` at
+v0.32.101: a theorem restating its own premise.
+
+The umbrella's actual content is that each neighbour **is in the queue the
+endpoint owns**, so the conclusion now says so structurally. Under
+`tcbQueueLinkIntegrity`, a spliced neighbour is a real TCB whose own link points
+back at the victim — `queueNext = targetTid` for the predecessor, `queuePrev =
+targetTid` for the successor. An unrelated TCB cannot satisfy that, which is
+exactly the discrimination the first cut lacked.
+
+### The revalidated entry ran from the wrong state
+
+`syscallEntryUnderRevalidatedLockSet` revalidated the footprint at `observed` and
+then ran `syscallEntryUnderLockSet … s` — the *original* state. When `observed`
+carried foreign commits that left the footprint unchanged, the guard passed and
+the transition discarded exactly those commits, so the entry never saw the state
+that was revalidated. A guard that accepts one state and acts on another has
+checked nothing.
+
+The action and shrinking phases are now a named continuation
+(`continueFromAcquired` / `syscallEntryFromAcquired`) run from `observed`, with
+the locks already held there rather than re-acquired.
+`withLockSet_eq_continueFromAcquired` and
+`syscallEntryUnderLockSet_eq_fromAcquired` are the decompositions that tie the
+continuation back to the plain bracket, both definitional.
+
+The general `_refines` is **retracted**, and deliberately: it held only because
+the action was being run from `s`. The two forms agree exactly when `observed` is
+what the plain bracket's own growing phase produces, which is
+`syscallEntryUnderRevalidatedLockSetModel_refines`; for any other `observed` they
+*should* differ, since the difference is the foreign commits being carried into
+the transition instead of dropped.
+`syscallEntryUnderRevalidatedLockSet_not_refines_in_general` records what does
+hold, and a Tier-3 negative forbids the retracted form returning.
+
+### The CC-5 non-closure witness compared two observers
+
+`lockContentionChannel_two_codes_reachable` read `waiterCore`'s code in the
+one-waiter trace and a *second waiter's* in the two-waiter trace. Two codes read
+by two different cores show only that the code depends on which core you are,
+which is not a channel anyone can receive on; a per-core channel carries a bit
+when **one** observer can be in two distinguishable situations.
+
+The second trace now queues `aheadCore` **in front of** `waiterCore`, so both
+readings are `waiterCore`'s — delay 1 and delay 2, codes 2 and 3. The load-bearing
+negative is that `aheadCore` does not contend in the first trace at all (it reads
+the reserved never-admitted code `0`), so the cross-observer pair is not merely
+weaker but ill-formed.
+
+### The claim inventory's secure-flow arm was boot-pinned
+
+`.secureFlowUnderFineLocks`'s `evidenceProp` required whole-state projection
+equality and confinement to `bootCoreId`, so it would have kept elaborating even
+if `syscallEntryUnderLockSet_preserves_projectionOnCore_atCore` regressed — which
+is the one thing a claim inventory exists to prevent. The arm is now quantified
+over the confinement core and consumes the generalized theorem.
+
+### A stale Tier-3 anchor, and a repeat of the codebase-map ordering trap
+
+Renaming `_refines` left a positive Tier-3 anchor pointing at a symbol that no
+longer exists; it is re-pointed at the model form. Separately, v0.33.15's
+docstring commit touched a `.lean` file *after* `sync_documentation_metrics.sh`
+had regenerated `docs/codebase_map.json`, so CI's Tier-2 docs-sync failed on a
+stale map — the same ordering trap recorded earlier in this workstream. The map
+regeneration is now the last step before commit.
+
+`SmpInformationFlowSuite` 530 → **532** assertions.
+
+Refs: docs/planning/SMP_INFORMATION_FLOW_PLAN.md section 5 SM8.D
+
+## v0.33.15 — WS-SM SM8.D: the fifth review round, and the guard that could not fire
+
+Three further P2 findings on the declared-footprint bracket.  Two are real
+coverage defects and are fixed; the third was a defect in this PR's own previous
+cut — a guard whose refusal branch was unreachable — and closing it is what
+finally makes the race expressible in the model.  Theorems, tests and prose
+only; no transition changed and the golden kernel trace is byte-identical.
+
+### The revalidation guard now takes the observed state as an input
+
+v0.33.14 re-resolved the footprint at `lockSetAcquiredState S lockCore s`, which
+is derived from the same immutable `s`.  The only writer it could therefore see
+was the acquire itself — and the acquire writes nothing the resolver reads, so
+the refusal branch could not fire.  A guard whose refusal cannot happen does not
+model the race it was added for, and the suite comment saying the model "has no
+way to interleave the replacement" was describing that gap rather than an
+inherent limit.
+
+`syscallEntryUnderRevalidatedLockSet` now takes `observed` — the state the
+growing phase actually ended in.  A caller in this pure model passes
+`lockSetAcquiredState` (`syscallEntryUnderRevalidatedLockSetModel`); a caller
+modelling a concurrent kernel passes that plus whatever other cores committed,
+which is exactly the interleaving a single-state transition cannot manufacture
+for itself.  `revalidationRefusalReachable` states the refusal over the
+*difference* between the two resolutions, so it covers every way a concurrent
+kernel can move the target rather than one hand-built example, and
+`syscallEntryUnderRevalidatedLockSetModel_refines` keeps the model instance tied
+to the plain bracket.
+
+The suite now demonstrates it: `suspendObservedReplaced` is the caller's
+capability re-targeted at a different victim — the `cspaceMove` another core
+could land in the window — and the bracket refuses on it, while an undisturbed
+growing phase commits.
+
+### Multi-level CSpace resolution is refused
+
+`resolveCapAddress` walks a multi-level CSpace, reading every intermediate and
+leaf CNode on the path, while the footprint declares a read lock on the **root**
+only.  A deeper path would therefore have its target selected by CNodes no
+declared lock covers.  Locking the path is not expressible — a `LockSet` is
+capped at `maxLockSetSize` and a CSpace path is not — so `entryCapTarget` now
+requires the resolution to land in the caller's own root and fails closed
+otherwise, with `entryCapTarget_single_level` stating the property over
+`resolveCapAddress`'s own output rather than over the guard's syntax.
+
+### The splice's neighbour writes ride a declared lock, and now say so
+
+Suspending a victim inside an endpoint queue patches its neighbours' queue
+links — TCBs the footprint carries no `tcbLock` for.  Those writes are covered,
+under the **endpoint** write lock, by the queue-owning-object discipline
+`IPC/CrossCore/Cancellation.lean` documents; the sub-operation footprint names
+the neighbours explicitly because it is the finer-grained authority.  Widening
+`lockSet_tcbSuspend` is not the fix and would not be sound as one: it is already
+`maxLockSetSize` (8) at full resolution, and that constant is the WCRT headline
+the 1 ms tick fit rests on.  But the discipline was prose while the
+`lockSet_tcbSuspend_*_write_mem` family stopped at six members, exactly where
+the umbrella began — so this adds the seventh,
+`suspendFootprint_splice_neighbors_under_endpoint_lock`, stated over the
+**resolved** footprint and mentioning the neighbours via the same
+`cancelSpliceNeighbors?` the sub-operation footprint reads.
+
+### The declared path is finally exercised positively
+
+Every §7.9 state decoded to `.receive`, which is undeclared, so the resolver's
+success branch had never run: the group could only ever observe `none`.  A new
+fixture whose registers decode to `.tcbSuspend` through a write capability to a
+real TCB resolves a genuine footprint, which is also what lets the refusal above
+be a demonstration rather than a restatement.
+
+### A stale Tier-3 anchor, red since v0.33.13
+
+The §7.9 rebuild retired an assertion label a Tier-3 anchor still pinned, so the
+invariant-surface tier had been failing since v0.33.13 and CI caught it on
+v0.33.14.  The anchor is re-pointed at the current, stronger assertion rather
+than deleted — the property it protected survives, keyed on the real decode.
+
+`SmpInformationFlowSuite` 525 → **530** assertions.
+
+Refs: docs/planning/SMP_INFORMATION_FLOW_PLAN.md section 5 SM8.D
+
+## v0.33.14 — WS-SM SM8.D: the fourth review round, and the bracket's real scope
+
+Three further P2 findings, all valid, all against the SM8.D.5 declared-footprint
+bracket.  Two are closed outright; the third is a genuine scope limit that is now
+stated as data rather than implied by a docstring.  Theorems, tests and prose
+only; the kernel trace is byte-identical.
+
+### The resolve/acquire race, closed by revalidation
+
+`declaredLockSetForEntry` reads the caller's CNode to resolve the target, and the
+CNode **read lock that protects that read is in the set it returns** — acquired
+strictly after the read it should have been protecting.  Under the SM5.I global
+kernel-entry lock no other core can commit in between, which is why this is not a
+live defect; but the helper exists to model the shape SM3.C.9 installs once that
+lock is gone, and there another core could replace the caller's capability
+between resolution and acquisition, leaving the guarded entry to resolve a
+*different* target while holding locks for the first.
+
+`syscallEntryUnderRevalidatedLockSet` re-resolves the footprint at the
+post-acquire state and refuses if it moved.  `…_footprint_stable` is the property
+the un-revalidated form cannot state — the set held **is** the one the guarded
+entry's own decode resolves at the state that entry sees; `…_refuses_on_change`
+is the fail-closed half; `…_refines` shows it runs exactly the plain bracket's
+transition whenever it runs, so every §5 result transfers and revalidation costs
+nothing in the information-flow argument.
+
+Refusing rather than retrying is what a total, deterministic transition can
+express, and a refused syscall here is invisible anyway
+(`syscallEntryUnderLockSet_failClosed_invisible`).
+
+### The declared-footprint witness now carries the confinement core
+
+v0.33.12 parameterized `syscallEntryUnderLockSet_preserves_projectionOnCore` and
+v0.33.13 the combined witness, but the declared-footprint wrapper still called the
+boot-only form — so the one path the migration actually cares about,
+`.tcbSuspend` on a secondary core writing that core's scheduler slots, was still
+excluded.  `suspendUnderDeclaredLockSet_preserves_projectionOnCore_atCore` takes
+the core; the boot form is re-derived from it.
+
+### The bracket covers the object domain only, and now says so
+
+`LockSet` ranges over `LockId`, the SM0.I **object** domain.  A live
+`.tcbSuspend` also takes locks in two domains that type cannot name: the
+scheduler domain (`suspendThreadOnCoreSchedLockSet` over `SchedLockId` — run
+queues of the victim's home core, the executing core and the core actually
+running it, plus replenish queues), and the **dynamic** PIP chain, whose members
+SM3.C.11 requires to be locked as the walk discovers them, so they are not
+resolvable from the pre-state at all.
+
+`syscallEntryUnderLockSet` is therefore a witness that the *object*-domain
+bracket is information-flow transparent, not a complete migration harness — and
+the module said "the shape SM3.C.9 installs at the `@[export]` bodies", which
+claimed more.  The scope is now explicit in the section note and, more usefully,
+as data: `UncoveredLockDomain` with `declaredFootprintUncoveredDomains` naming
+each uncovered domain against its owning workstream, and
+`declaredFootprintUncoveredDomains_complete` the check on that list.  A future cut
+that composes a domain deletes an entry rather than leaving a stale comment.
+
+**Not implemented here, and why**: composing the three domains needs a
+`withLockSet` over `SchedLockId` (which strictly contains `LockId` through its
+`.object` constructor) plus a fold that extends the held set mid-transition, for
+the chain walk.  Both are SM3.C work with the SM3/SM6.E atomicity surface behind
+them, and neither affects the §5 results, which never mention which objects a set
+names.
+
+### Tests and gates
+
+Suite 521 → **525** assertions.  The revalidation group's runtime check is
+deliberately modest and says so: on the fixture both bracket forms are `none` for
+the same prior reason (the decode is `.receive`, undeclared), so the assertion
+checks they agree and the race behaviour is carried by the theorems — exhibiting
+a mid-bracket capability replacement would need a second core committing, which
+this pure model has no way to interleave.  Nine new Tier-3 anchors.
+
+## v0.33.13 — WS-SM SM8.D: the second and third automated-review rounds, closed
+
+Seven further P2 findings against the SM8.D surface across two review rounds.
+All seven are valid.  One is a genuine footprint-coverage defect in SM3.C.9's
+resolver; the rest are claims stated more strongly than their evidence
+supported.  None is a live security defect — SM3.C.9 still defers `withLockSet`
+at the `@[export]` bodies, and kernel entry is serialised by the SM5.I global
+ticket lock.  Theorems, tests and prose only; the kernel trace is byte-identical.
+
+### The declared suspend footprint locked the wrong CNode
+
+`lockSet_tcbSuspend`'s `cnodeRootObjId` is the **cap-resolution** root — the
+CNode a syscall reads to turn the caller's capability pointer into the target
+capability — which is why every `lockSet_*` that has one pairs it with the
+*caller's* TCB read, and `lockSet_tcbBindNotification`'s docstring says so in as
+many words.  `syscallLookupCap` builds its gate from the caller's
+`tcb.cspaceRoot`.  But `suspendFootprintOf` passed `victim.cspaceRoot`, so
+whenever caller and victim held different CSpace roots the declared set locked a
+CNode the syscall never touches **and** omitted the one it reads.
+
+That is a coverage hole in exactly the direction a declared footprint exists to
+prevent, so the fix is the footprint, not its documentation: the resolver now
+resolves the caller's TCB as well and passes `caller.cspaceRoot`.
+`suspendFootprintOf_isSome_iff` becomes a conjunction — an unresolvable *caller*
+now yields `none`, since there is no CSpace root to name.  The set's size is
+unchanged (8 = `maxLockSetSize`), so no bound moves.
+
+### A run could count one acquisition many times
+
+v0.33.12 added `enqueueSteps.Nodup`, which is necessary and not sufficient.
+Queue *membership* holds at every step a core remains queued, so an acquisition
+waiting from step 2 to step 5 admitted the run `[2, 3, 4]` — three distinct
+steps, three delays, three codes, one acquisition.  The run length was therefore
+not the number of acquisitions, and the capacity figure counted the same
+behaviour repeatedly.
+
+The per-step clause is now a transition **edge**: queued at `k`, not queued at
+`k - 1`, at the same mode — bound inside the edge so a core switching modes
+between acquisitions is two edges rather than one.
+`lockContentionRun_rejects_still_queued_step` and
+`lockContentionRun_steps_are_edges` keep it a checked property.
+
+### The non-closure claim counted codes it could not produce
+
+`lockContentionAlphabet_at_least_two` is arithmetic over the *allocated* code
+space, and the two codes it counts are precisely the two an accepted acquisition
+cannot produce: `0` is the reserved never-admitted code, and `1` would need a
+zero delay, which `admissionStepAfter` being strictly later than the enqueue
+excludes.  `acceptedContentionCode_ge_two` now states that exclusion outright.
+
+The claim rests on executions instead: `singleWaiterExecution` (one waiter behind
+a holder — delay 1, code 2) and `twoWaiterExecution` (a waiter behind a holder
+*and* another waiter — delay 2, code 3), both fair at the same budget with
+`contentionWitnesses_fair` and `contentionWitnesses_in_premises` discharging
+fairness and the enqueue-edge premises by `decide`, so neither observation is
+obtained by relaxing anything.  `lockContentionChannel_two_codes_reachable` is
+the witness; `acceptedCovertChannel_lockContention_severity_basis` now carries it
+rather than the arithmetic floor, since that theorem is what the `.medium`
+grading rests on.
+
+### The multi-reader witness proved well-formedness, not reachability
+
+`readerMultiplicity_not_observable_at_reachable_witness` is advertised as being
+about a state the protocol *reaches*, but its existential carried only `wf` — and
+a well-formed lock word need not be one any execution produces, so a consumer
+could discharge it with a state that refutes the non-vacuity being claimed.  New
+`rwLock_reader_multiplicity_reachable` carries `RwLockReachable`, discharged by
+the two `tryAcquireRead` steps the original construction already took; the SM8.D
+witness now threads it.
+
+### The entry-bound resolver accepted a target the dispatch rejects
+
+`entryCapTarget` returned the raw `ThreadId.ofNat` of the capability's object,
+while the live `.tcbSuspend` arm rejects sentinel thread ids through
+`validateThreadIdArg` before the handler runs.  So the resolver could declare a
+footprint for a syscall that cannot execute — and under contention the bracket
+would enqueue `lockCore` on locks for a call destined to fail.  It now applies
+the same `toValid?` guard, with `entryCapTarget_rejects_sentinel` the theorem.
+
+### Two smaller closures
+
+* **The combined flow witness was still boot-pinned.**  v0.33.12 generalised
+  `syscallEntryUnderLockSet_preserves_projectionOnCore` but not
+  `secureInformationFlow_underFineLocks`, which invoked the boot wrapper — so the
+  bundled any-pairing witness stayed unusable for ordinary SMP success paths.
+  `secureInformationFlow_underFineLocks_atCore` takes the confinement core as a
+  parameter and the boot form is re-derived from it.
+* **The claim inventory pinned one integrity order.**  `integrityUnderLocks`
+  mapped only to `bibaIntegrity_underLockSet`, so the authority-order result was
+  not held by the dependent inventory even though `writeRules_differ` says the
+  two orders are two claims.  `authorityIntegrityUnderLocks` is a separate arm
+  with its own `evidenceProp` and evidence; the inventory goes 8 → **9** claims
+  over the same five proof-carrying sub-tasks.
+
+### Tests and gates
+
+Suite 517 → **521** assertions.  §7.9 gains a fixture whose caller and victim
+hold *different* CSpace roots — without which the footprint assertion could not
+tell them apart — with the load-bearing negative that the victim's root is
+absent, plus the unresolvable-caller case.  Fourteen new Tier-3 anchors,
+including a negative forbidding a return to the victim-root footprint.
+Axiom-clean (2610 environment constants across the SM8 information-flow surface).
+
+## v0.33.12 — WS-SM SM8.D: the four automated-review findings, closed
+
+An automated review of PR #864 returned four P2 findings against the SM8.D
+surface.  All four are valid, none is a live security defect (the module is
+staged, and kernel entry is serialised by the SM5.I global ticket lock), and all
+four are closed here.  Theorems, tests and prose only; the kernel trace is
+byte-identical.
+
+### A contention run could repeat an acquisition
+
+`lockContentionRun` checked each step's queue membership and range but not that
+the steps were **distinct**, so a caller could repeat one queued step
+arbitrarily.  `enqueueSteps.length` was then unbounded, and
+`lockContentionChannel_trace_capacity`'s docstring claim — "and by the pacing
+bound above, `n` is itself bounded by the execution's length" — held for
+well-behaved runs rather than for every accepted one.  The pacing theorem takes
+`Nodup` as its own hypothesis, so the composition simply did not typecheck from
+a run alone.
+
+`enqueueSteps.Nodup` is now a conjunct of the predicate — the project's
+enforce-it-structurally case, since "a run is a list of distinct acquisitions"
+was an invariant held only by the caller's good manners.
+`lockContentionChannel_run_capacity` states the composed per-execution bound as
+one theorem so the two halves cannot drift apart again, and
+`lockContentionRun_rejects_repeated_step` is the load-bearing negative.  Fixed
+alongside: `lockContentionChannel_observation_rate_bounded` was stated at a
+hardcoded core `⟨0, _⟩` and now takes the run's core.
+
+### The declared footprint was not bound to the decoded syscall
+
+`syscallEntryUnderDeclaredLockSet` took `sid`, `callerTid` and `targetTid` as
+free parameters and resolved `lockSetForSyscall` from them, while the entry it
+brackets — `syscallEntryChecked` — decodes the operation from the **executing
+thread's registers**.  Nothing tied the two, so a caller could bracket
+`.tcbSuspend`'s footprint around whatever the registers decoded to.  The module's
+own section note says a declared lock set that does not cover a write is a
+*false* footprint and that the 2PL argument would then rest on exclusion nobody
+established — and then left exactly that hole open in the type.
+
+Every input is now derived from the entry's own resolution.  `entryDecode`
+replays the prefix `syscallEntryChecked` runs (reject the insecure default
+context, read the executing core's current thread, read its registers, decode
+them); `entryCapTarget` resolves the target through `syscallLookupCap` the way
+the live `dispatchWithCapChecked` arms do, failing closed on a capability that
+names no object; `declaredLockSetForEntry` composes them.  The syscall id, the
+caller and the target are no longer expressible as independent arguments.
+
+Because the replay duplicates a computation, it ships with its own anti-drift
+check: `entryDecode_none_entry_error` proves that every state on which the helper
+gives up is one on which the real entry errors, so a footprint is never resolved
+for an entry that will not run.  `declaredLockSetForEntry_binds_decode` states
+where the inputs come from and `declaredLockSetForEntry_is_suspend_footprint`
+what the output then is, so the whole resolution is pinned rather than only its
+shape.
+
+### The bracket's non-interference was pinned to the boot core
+
+`syscallEntryUnderLockSet_preserves_projectionOnCore` required
+`observableSlotsConfinedToCore … bootCoreId`.  For an ordinary SMP syscall — one
+executing on a secondary core and writing that core's scheduler slots — that
+premise is false, so the theorem's every-core conclusion covered transitions the
+live SMP path does not take.
+
+The confinement core is now a parameter.  SM8.B gains
+`lowEquivalent_smp_of_projectionOnCore_and_confinement` (the boot-pinned bridge
+generalised) and `sharedViewUnchanged_of_projectionOnCore` (the shared half of a
+view is core-independent, so a per-core projection fact at any single core
+already pins it), with
+`lowEquivalent_smp_of_projection_and_confinement_eq_atCore` checking the
+generalisation against the theorem it generalises.  SM8.D gains
+`syscallEntryUnderLockSet_preserves_projectionOnCore_atCore`, and the boot form
+is re-derived from it as the instance a whole-projection hypothesis can feed —
+`projectState` being the boot core's view and nothing else's.  Supporting:
+`lockWritesOnly_preserves_projectionOnCore`, the observer-level companion of the
+label-level `…_preserves_onCore`.
+
+### The acquire phase's grant condition was an unstated precondition
+
+SM3's `withLockSet` docstring said the action "sees a state where every lock in
+`S` has been acquired in the core's name".  That is false under contention:
+`acquireLockOnObject` applies SM2.C's `tryAcquire*`, which **enqueues** a core
+when the lock is held rather than granting it, and `withLockSet` invokes the
+action either way.
+
+The claim is now a checked fact with its precondition stated, in both directions:
+`lockSetAcquiredState_grants_when_free` and the load-bearing negative
+`lockSetAcquiredState_does_not_grant_when_contended`.  Both docstrings are
+corrected, and a Tier-3 prose negative forbids the old sentence returning.
+
+**Not implemented, and why**: making `withLockSet` block or retry is not
+expressible here.  It is a pure, total `SystemState → SystemState × α`; waiting
+is a *trace*-level notion in this model (a queued core's admission is
+`rwLock_queued_liveness`, not something one state transition can express), and
+changing the bracket's semantics is SM3.C scope with a large theorem surface
+behind it.  Nothing in SM8.D rests on exclusion — the §5 results are frame
+arguments about lock writes being invisible, which hold whether the acquisition
+granted or queued — and live exclusion today comes from the SM5.I global
+kernel-entry ticket lock.  That reasoning is now recorded at both sites rather
+than left implicit.
+
+### Tests and gates
+
+Suite 516 → **517** assertions across 68 groups.  §7.9 is rebuilt on §7.8's
+success fixture, so the resolver is exercised against a **real decode**: its
+load-bearing negative is that a suspend footprint *is* resolvable in that state
+and yet does not bracket a `.receive` decode — the confused deputy, demonstrated
+closed.  A second negative covers the no-current-thread core.  Sixteen new
+Tier-3 anchors, including negatives forbidding the free-parameter entry shape and
+the retracted `withLockSet` sentence.  Axiom-clean (2576 environment constants
+across the SM8 information-flow surface).
+
+## v0.33.11 — WS-SM SM8.D: the reader-mode temporal bound, closed rather than registered
+
+v0.33.10 left one item open: the CC-5 delay bound was the *writer*-mode one,
+because the SM2.C liveness chain is stated for a queued writer.  The residual
+was registered with a cost estimate — "~800–1000 lines mirroring the
+`writerWaitDepth_*` family, an SM2.C-sized development" — on the reading that
+generalising it meant duplicating that family.
+
+**That reading was wrong, and carrying it out is what showed why.**  The
+mode-generic statements are not a second family but a *generalisation* of the
+same one, and two steps of the writer proof get **shorter** once the waiting
+core's access mode stops being known.  The whole chain — keystone included —
+lands in a new `RwLock.lean` section D-3.10, and the writer theorems are
+re-derived from it as instances.
+
+### The keystone, generalised
+
+`writerWaitDepth_monotone_under_effective_release` discharges "the waiting core
+is not in the promoted reader prefix" from the fact that the prefix holds only
+`.read` entries — true for a queued writer, and **false** for a queued reader,
+which can sit in that prefix.  But a core in the promoted prefix is exactly a
+core that is no longer queued, which is what the theorem's own `h_still_queued`
+hypothesis denies: `takeWhile p l` and `dropWhile p l` partition a `Nodup` list,
+so membership in the post-state queue *is* absence from the prefix
+(`not_mem_takeWhile_of_mem_dropWhile`).  That argument is mode-blind, and it
+subsumes the head-of-queue case split the writer proof needed in the same
+sub-cases.
+
+`queueWaitDepth_monotone_under_effective_release` is the result;
+`queueWaitDepth_monotone_under_effective_release_write` checks the
+generalisation against the theorem it generalises, so a drift between the two
+chains stops elaborating rather than going unnoticed.
+
+### The chain above it
+
+Every remaining lemma between the keystone and `rwLock_writer_liveness` mentions
+`(c, AccessMode.write)` only as the element whose `idxOf` is tracked, so the
+generalisation is positional: `queueWaitDepth_unchanged_under_acquire_queued`
+(the two acquire lemmas, now one), `queueWaitDepth_unchanged_under_noneffective_release`,
+`queueWaitDepth_non_increase_step_queued`, `queued_persists_across_window_mode`,
+`queueWaitDepth_non_increase_across_offset`,
+`fair_release_witness_in_window_mode` (whose two witness shapes collapse to
+"an effective release fires at `k_rel`", the only thing the argument uses),
+`fair_progress_one_step_mode`, and `rwLock_queued_liveness`.
+
+### Admission at the mode the core queued at
+
+A liveness theorem about a blocked reader that concluded only "becomes some kind
+of holder" would be weaker than the truth, so the cross-mode admissions are
+excluded rather than left open.  `queued_reader_not_write_holder_after_step` and
+its dual `queued_writer_not_reader_after_step` rule them out from INV-R3 (a core
+appears in the wait queue at most once, hence at exactly one mode —
+`waiters_mode_unique`), INV-R4 (a waiter is not already a holder) and
+`coreInvolved` (a queued core cannot take an uncontended direct-acquire branch);
+`mem_promoted_reader_prefix` supplies the fact that a batch promote admits only
+`.read`-mode waiters.  `RwLockState.admits` keeps the two shapes apart,
+`RwLockExecution.admittedAt` is its trace form, and
+`holderAt_of_admittedAt` bridges to the union that `admissionStep` /
+`admissionStepAfter` read.
+
+### What SM8.D now claims
+
+`lockContention_delay_bounded` takes the access mode as a parameter and is proven
+through `rwLock_queued_admissionStepAfter_bounded`, with
+`writerContention_delay_bounded` and **`blockedReaderContention_delay_bounded`**
+its instances.  `lockContentionChannel_alphabet_bounded`,
+`acceptedCovertChannel_lockContention_bounded` and both `FineLockClaimId`
+evidence arms are mode-generic to match, and `lockContentionRun` carries the mode
+existentially **per step** — one core's successive contended acquisitions need not
+all be writes, and after D-3.10 the bound does not care which they are.  So CC-5's
+alphabet figure now covers every contending core rather than the writers only,
+which is what a bandwidth claim about an accepted channel has to do.
+
+Corrected with it: the D-3.9 section header, which said the trace-level bound
+"does not generalise here" and named the cost of making it; the
+`readerContentionDepth_bounded` docstring, which said the per-unit cost "is where
+the SM2.C chain is writer-specific"; and the plan, CLAUDE.md/AGENTS.md, the
+claim-evidence index, the spec, the GitBook proof map and the workstream history,
+each of which recorded the residual as scoped debt.
+
+### Tests and gates
+
+`tests/SmpInformationFlowSuite.lean` §7.4g (508 → **516** assertions, 67 → 68
+groups): a real nine-step execution in which core 1 enqueues as a **reader**
+behind a write holder and is batch-promoted by the release, with the delay, the
+code and the reader wait depth computed and both `blockedReaderContention_delay_bounded`
+and the read-mode alphabet bound **applied**; the load-bearing negative is that
+this core is not queued at `.write`, so the writer instance has nothing to say
+about it.  The golden fixture `tests/fixtures/smp_fine_lock_contention.expected`
+gains the reader's temporal line (hash companion regenerated), so a regression to
+the writer-only bound changes the fixture rather than passing quietly.  New
+surface anchors in `tests/SmpSurfaceAnchors.lean`, thirteen new Tier-3 positive
+anchors and a negative one forbidding a re-pinning of the *claim* to a queued
+writer.  Axiom-clean (2536 environment constants across the SM8 information-flow
+surface; 807 across `RwLock.lean`).  Theorems, tests and prose only — no
+transition changed, and the kernel trace is byte-identical.
+
+## v0.33.10 — WS-SM SM8.D review cut: the sixteen self-audit findings, closed
+
+A self-audit of the v0.33.9 cut against the code (rather than against the prose
+describing it) returned sixteen findings.  None made a theorem false; six were
+substantive and the rest were accuracy or completeness gaps.  All are closed
+here.  No transition changed, so the golden trace is byte-identical.
+
+### The observation was keyed to the wrong admission (substantive)
+
+`lockContentionObservation` read `RwLockExecution.admissionStep`, which returns
+a core's **first** admission in the whole execution.  For a core that acquires,
+releases and re-acquires, that step precedes the second enqueue, so the
+difference truncated to `0` in `Nat` and reported **no wait for an acquisition
+that genuinely waited**.  The theorem stayed true (`0 ≤ bound`); the *model* did
+not say what its docstring said.
+
+Closed at the SM2.C surface, where the gap actually lives: new
+`RwLockExecution.admissionStepAfter` (the smallest step *after* a given enqueue
+at which the core holds — no transition-edge conjunct needed, since a queued core
+is not a holder by INV-R4, which `RwLockExecution.queued_not_holder` records),
+`admissionStepAfter_characterization`, and
+`rwLock_writer_admissionStepAfter_bounded` derived from the substantive
+`rwLock_writer_liveness` rather than from its `admissionStep` corollary.
+`lockContentionObservation` now reads it, and
+`lockContentionObservation_is_own_acquisition` is the property that rules the
+old reading out.  Suite §7.4b runs the exact execution that would have been
+swallowed, with the load-bearing negative that the first-admission reading
+reports a delay of zero where the true one is one.
+
+### CC-5 had no pacing, so the CC-1 parity claim was an overstatement
+
+CC-1's capacity figure has three parts — alphabet, **pacing**, trace capacity —
+and v0.33.9 gave CC-5 the first and third.  Worse, its run was a list of
+*unrelated executions*, so "n observations" corresponded to no wall-clock window
+at all.
+
+Closed: `lockContentionRun` is now a list of enqueue steps **within one
+execution** (the shared time base CC-1's run has), and
+`RwLockExecution.distinct_steps_length_le` → `lockContentionChannel_observation_rate_bounded`
+is the pacing fact — distinct acquisitions have distinct enqueue steps, so a core
+cannot observe more often than the execution has steps.  The parity claim is now
+true and the docs say the three parts explicitly.
+
+### The bound read as unconditional, and 3077 read as a deployment figure
+
+`lockContention_delay_bounded` holds under the SM2.C `FairTrace` assumption,
+which **nothing in the kernel establishes**.  `starvingExecution` +
+`lockContention_unbounded_without_fairness` +
+`starvingExecution_writer_never_releases` make the premise load-bearing: drop
+fairness and the queued core is never admitted at all.
+
+And `MAX_RELEASE_DELAY`'s own docstring calls it "a placeholder value of `1024`
+(steps); SM3 will tune this" — so calling 3077 "the shipped configuration" was
+wrong.  `lockContentionDelayBound_rpi5_coreFactor` isolates the factor that *is*
+grounded (`numCores - 1 = 3`), `lockContentionAlphabet_at_release_budget` carries
+the placeholder caveat in its own docstring, and every doc site is corrected.
+
+### The declared-footprint theorem's hypothesis was decorative
+
+`suspendUnderDeclaredLockSet_preserves_projectionOnCore` took the
+`lockSetForSyscall … = some S` equation and never used it — the general headline
+with a narrative hypothesis attached.  Replaced by
+`syscallEntryUnderDeclaredLockSet`, the bracket **over the resolver's output**,
+where the equation is what turns the `Option` into the `some` the conclusion
+names.  With it come `syscallEntryUnderDeclaredLockSet_undeclared` (every
+undeclared syscall brackets nothing and the caller keeps its coarse
+serialisation — the SM3.C.9 fail-closed property) and
+`…_tcbSuspend_isSome_iff`.  A Tier-3 negative anchor forbids the old shape.
+
+### The success path was never discharged
+
+Every D.5 headline was conditional and only the *refused* path had a closed
+instance.  Suite §7.8 now runs a bracketed live syscall that **succeeds**: the
+fixture's high thread on core 1, given a CSpace holding a read capability to the
+high endpoint and registers encoding `.receive`, blocks on it — so the object
+store, the endpoint queue and core 1's scheduler slots all move, the low
+observer's view is unchanged on every core, and the **high** observer's view of
+the caller does move (the load-bearing negative that makes the low observer's
+blindness the label filter's doing).
+
+### The reader — D.3's own subject — had no figures
+
+The temporal bound is writer-mode, because the SM2.C liveness chain is.  What
+*does* generalise is now proven: `queueWaitDepth` (with `writerWaitDepth` its
+`.write` instance definitionally), the mode-generic tight cap
+`queueWaitDepth_bounded` / `readerWaitDepth_bounded` (the pigeonhole counts
+distinct cores and never mentions the waiter's mode), mode-generic persistence
+`queued_persists_or_admitted`, and — the operational content of D.3's row —
+`reader_at_head_admitted_by_writer_release`: the blocked reader becomes a holder
+at the very step the writer releases, with no fairness assumption.  The residual
+(a reader-mode *temporal* bound) is registered against the SM2.C liveness
+surface with its cost stated, in the module and in the plan.  *(**Closed at
+v0.33.11** — the cost estimate was wrong: the chain generalises rather than
+needing a second family.  See that entry.)*
+
+### Ten smaller closures
+
+* `KernelObject.setLock` / `eraseLock` **moved to `Model/Object/Structures.lean`**,
+  beside the `objectLockOf` getter they complete.  A `KernelObject` setter
+  reachable only through a staged information-flow module was the wrong layering;
+  Tier 3 pins the placement in both directions.
+* `KernelObject.eraseLock_wellFormed` — the predicate `lifecycleRetype` validates
+  cannot tell an erased object from its original, which is what makes `eraseLock`
+  an abstraction over concurrency plumbing rather than over object content.
+* `lockWritesOnlyCheck` + `lockWritesOnly_lockWritesOnlyCheck` — a decidable
+  **sound refuter** (index + kind level, because `KernelObject` has no
+  `DecidableEq` by WS-G5's deliberate choice), with the suite stating its
+  granularity rather than implying more.
+* `acceptedCovertChannel_lockContention_severity_basis` — the severity stays a
+  judgement, but what it is a judgement *about* is now pinned.
+* The CC-5 bound joins the phase's dependently-typed inventory as an eighth
+  claim (`.contentionChannelRegistered`), which is the anti-drift mechanism SM8.B's
+  `covertChannelEvidence` provides for the other channels and that the import
+  direction prevents reusing here.
+* `FineLockClaimId.evidenceProp`'s integrity arm is polymorphic in the action's
+  result type, matching the theorem.
+* `writeRulesWitnessContext` differentiates two thread labels, so the
+  BIBA-vs-authority disagreement is exhibited on a labelling a deployment could
+  hold rather than on the degenerate one AK6-H's `labelNonTriviality` rejects.
+* §2 gains eleven elaboration-time examples, matching the suite's own structure
+  rather than hiding theorem applications inside `assertBool`.
+* The §7.5 fixture labelling delegates to the fixture's own object labeller
+  instead of silently flattening it.
+* `tests/fixtures/smp_fine_lock_contention.expected` (+ `.sha256`) — an
+  eighteen-line golden CC-5 trace verified byte-for-byte in-suite.
+
+Suite 464 → **508** assertions (§7 alone 61 → 105 across fourteen groups);
+`tests/SmpSurfaceAnchors.lean` extended; Tier 0–3 green.
+
+## v0.33.9 — WS-SM SM8.D: information flow under fine locks
+
+**SM8.D closes, and the plan's own table needed correcting to close it.**  The
+SM8.D rows were written while `projectKernelObject` still carried each object's
+`lock : RwLockState` into the observable state, which is what made "lock state
+visibility" something to document and "reader multiplicity" something to prove
+unobservable.  SM8.B.4 erased the field — three lists of `CoreId`s on every
+object kind re-opened the SM5.B placement channel — so D.1–D.3 had to be
+restated rather than ticked off.  New staged module
+`SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (staged 59 → 60), 100
+declarations, axiom-clean, trace byte-identical (no transition changed).
+
+### SM8.D.1 — the observer sees *nothing* of a lock word
+
+Not a docstring: `KernelObject.setLock` / `KernelObject.eraseLock` give the
+lock-erased content of an object, and `projectKernelObject_setLock` proves the
+observer's view **factors through** it — overwriting the lock with an
+*arbitrary* `RwLockState` leaves the projected object literally identical.  An
+operation-by-operation argument could not say that; it would leave open whether
+some other way of writing the field is visible.  `lockWritesOnly` lifts it to
+states: its first clause reconstructs the post-state from the pre-state plus
+`objects` and `objStoreLock`, so every other `SystemState` field is pinned
+without enumerating them (a field added tomorrow is covered the day it lands),
+and its second says the object store moved only in lock words.  Instances for
+`updateObjectLockAt`, `acquireLockOnObject`, `releaseLockOnObject`,
+`acquireAll`, `releaseAll` and `withLockSet`; consequences
+`lockWritesOnly_preserves_projection` / `…_preserves_onCore` /
+`…_lowEquivalent_smp`, plus `onCore_lock_invisible`,
+`onCore_lock_indistinguishable` and `onCore_objStoreLock` (the hierarchy-level-0
+table lock, outside the observable state as well).
+
+`lockWritesOnly` is deliberately **not** "the state is unchanged".  That claim
+is false under fine locks — the bracket writes real lock words, which
+`KernelObject.updateLock_not_identity` records — and stating it would be the
+shortcut this phase exists to avoid.
+
+### SM8.D.2 / SM8.D.3 — reader multiplicity, writer exclusion, and the timing that is left
+
+`readerMultiplicity_not_observable` over arbitrary reader lists, instantiated at
+the **reachable** two-reader state SM2.C.6 constructs
+(`…_at_reachable_witness`), so it is not a statement about lock words the
+protocol cannot produce.  `writerExclusion_not_observable` and
+`blockedAcquirer_observes_nothing` are the D.3 row's refutation: the plan's
+"writer-exclusion observable to blocked readers" is **false at the model level**,
+and the second theorem makes the observer the very core sitting in the queue.
+
+What is left is wall-clock delay — CC-5 — and SM8.D bounds it.
+`lockContention_delay_bounded` composes the SM2.C-defer D-2.3 wait-depth cap
+(`writerWaitDepth ≤ numCores - 1`, the *tight* bound) with the D-3.6 admission
+bound to give `delay ≤ (numCores - 1) × (maxDelay + 1)`; `lockContentionCode`
+(injective, with `0` reserved for "not admitted in this execution", which is why
+the alphabet is `+ 2` and not `+ 1`), `lockContentionChannel_alphabet_bounded`
+and `lockContentionChannel_trace_capacity` then give CC-5 the treatment SM8.B.9
+gave CC-1, so the SMP kernel's two accepted timing channels are costed by the
+same construction.  The core-count factor of that bound is the platform's real
+one (`numCores - 1 = 3`); the delay factor is SM2.C-defer D-3.7's
+`MAX_RELEASE_DELAY`, whose own docstring calls it a placeholder pending SM3
+tuning, so `lockContentionAlphabet MAX_RELEASE_DELAY = 3077` is the figure that
+symbol currently yields and not a measured property of the shipped kernel.
+`lockContentionAlphabet_at_least_two` is the load-bearing negative: the bound
+never claims the channel is closed.
+
+**Registered, not claimed** *(**closed at v0.33.11**, see that entry)*: the
+temporal bound is the *writer*-mode one, which
+is what the SM2.C liveness surface supports (`rwLock_writer_liveness` has no
+reader analogue).  A blocked reader's structural bound rides
+`rwLock_bounded_wait_read`'s occupancy cap; its temporal bound is scoped to the
+SM2.C liveness surface and recorded in the plan's SM8.D section.
+
+### SM8.D.4 — Biba integrity under per-core locks, in *both* directions
+
+Fine-grained locking makes every core a writer of every object it touches, so
+the question is real: does the 2PL bracket let an untrusted core write a trusted
+object?  It does write it.  What §4 proves is that the write is not one an
+integrity policy governs — and it proves it over an arbitrary write rule
+(`noUnpermittedWrite`, `withLockSet_noUnpermittedWrite`) instantiated at
+**both** `bibaWritePermitted` (standard BIBA) and `authorityWritePermitted`
+(seLe4n's deliberately reversed U6-I direction), because a result about one says
+nothing about a deployment configured with the other.  `writeRules_differ` is
+the witness that those are two claims and not one restated;
+`lockWrite_carries_no_subject_data` is why erasing the lock word is an
+abstraction rather than a way of defining the write away — two objects with
+wildly different content but the same lock word get the same lock word out, so
+nothing the writing subject holds reaches it.
+
+### SM8.D.5 — the secure-information-flow witness, and fail-closed sharpened
+
+`syscallEntryUnderLockSet` is the shape SM3.C.9 installs at the `@[export]`
+bodies (`commitKernelAction` adapts the partial kernel entry to the total state
+transformer the bracket takes, committing the pre-state on failure — what the
+runtime does).  `syscallEntryUnderLockSet_preserves_projectionOnCore` takes
+exactly the hypotheses the *unbracketed* per-core statement takes, relocated to
+the state the entry is run in: **no hypothesis about the lock set at all**, which
+is the result — SM3.C.9's migration is a change of concurrency control, not of
+the security argument.  `secureInformationFlow_underFineLocks` bundles
+confidentiality on every core with both integrity directions, and
+`suspendUnderDeclaredLockSet_preserves_projectionOnCore` instantiates it at
+`.tcbSuspend`, the one syscall whose footprint `lockSetForSyscall` declares.
+
+**The fail-closed statement weakens, and §1 is what makes the weaker form
+sufficient.**  Unbracketed, a denied syscall leaves the state *identical*
+(`…_denied_preserves_state`).  Bracketed it cannot — the growing and shrinking
+phases wrote lock words.  `syscallEntryUnderLockSet_failClosed` concludes
+`lockWritesOnly`, and `…_failClosed_invisible` recovers the guarantee the state
+equality was standing in for, with no extra hypothesis.  Recording the weakening
+explicitly matters: a reader who assumed the literal equality still held after
+SM3.C.9 would be assuming something false.
+
+**Closed on the way past**: `syscallEntryChecked_preserves_projection`.  SM8.B.12
+stated the entry-level witness for `syscallEntry`, the boot-pinned pre-SMP entry,
+because that is where the release-grade theorem lived; the entry the SMP dispatch
+seam actually calls is `syscallEntryChecked`, and it had none.
+
+### Inventory, tests and gates
+
+The phase's claims ship as data with dependently-typed evidence
+(`FineLockClaimId` / `evidenceProp` / `fineLockClaimEvidence`): seven claims over
+the five proof-carrying sub-tasks, a claim mapped at the wrong theorem is a type
+error, and `fineLockClaims_cover_subTasks` is the completeness check.
+`acceptedCovertChannel_lockContention_bounded` ties CC-5's inventory literals to
+the new bound so a reclassification cannot drift from it.
+
+`tests/SmpInformationFlowSuite.lean` §7.1–§7.7 (403 → **464** runtime
+assertions), every group with a load-bearing negative, including a real
+nine-step contended execution on which the delay, the wait depth and the CC-5
+code are *computed* and the bound theorem is **applied** — so its premises are
+demonstrably satisfiable rather than vacuous.  §7.6 runs the bracketed live
+entry end to end and finds that the fixture labelling itself trips the AJ2-C
+insecure-default heuristic, which is why the group carries its own labelling.
+`#check` anchors for all 99 module symbols, headline anchors in
+`tests/SmpSurfaceAnchors.lean`, and a Tier-3 block pinning the module, the
+staged registration, the axiom-sweep registration, the `+ 2` alphabet, both
+integrity directions and the suite's six negatives.
+
 ## v0.33.8 — WS-SM SM8.C.8/SM8.C.9: the audit trail mounted, and the `.declassify` syscall live
 
 **The completion cut for SM8.C.**  v0.33.7 built the declassification audit —

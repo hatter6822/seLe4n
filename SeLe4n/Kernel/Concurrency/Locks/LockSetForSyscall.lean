@@ -67,16 +67,30 @@ same field the transition branches on:
 * its bound or donated SchedContext — the donation teardown writes it;
 * the original owner a donated SchedContext returns to.
 
-`none` for the whole set when the victim does not resolve to a TCB:
-there is no transition to bound, so there is no footprint to declare. -/
+The CNode member is the **caller's** CSpace root, not the victim's.
+`cnodeRootObjId` is the cap-resolution root — the CNode the syscall
+actually reads to turn the caller's capability pointer into the target
+capability (`syscallLookupCap` builds its gate from the *caller's*
+`tcb.cspaceRoot`), which is why it is paired with the caller's TCB read
+in every `lockSet_*` that has one.  An earlier cut passed
+`victim.cspaceRoot`, so whenever caller and victim held different
+CSpace roots the declared set locked a CNode the syscall never touches
+and omitted the one it reads — a coverage hole in exactly the direction
+a declared footprint exists to prevent.  Not a live defect (SM3.C.9
+still defers `withLockSet` at the `@[export]` bodies), but the whole
+value of the declaration is that it covers the operation's accesses.
+
+`none` for the whole set when **either** thread fails to resolve to a
+TCB: with no victim there is no transition to bound, and with no caller
+there is no CSpace root to name. -/
 def suspendFootprintOf (st : SystemState) (callerTid targetTid : ThreadId) :
     Option LockSet :=
   -- Read through the AL2-A typed accessor, not a raw `objects[...]?`
   -- match: the footprint is a statement ABOUT the object store, so it
   -- has no business reading it in a way the AK7 cascade counts as an
   -- un-migrated raw access.
-  match st.getTcb? targetTid with
-  | some victim =>
+  match st.getTcb? callerTid, st.getTcb? targetTid with
+  | some caller, some victim =>
       let blockedEndpoint : Option ObjId :=
         match victim.ipcState with
         | .blockedOnSend ep => some ep
@@ -98,10 +112,10 @@ def suspendFootprintOf (st : SystemState) (callerTid targetTid : ThreadId) :
         match victim.schedContextBinding with
         | .donated _ owner => some owner
         | _ => none
-      some (lockSet_tcbSuspend callerTid victim.cspaceRoot targetTid
+      some (lockSet_tcbSuspend callerTid caller.cspaceRoot targetTid
               blockedEndpoint blockedNotification bindingSc
               donatedOwner consumedReply)
-  | _ => none
+  | _, _ => none
 
 /-- **WS-SM SM3.C.9**: the declared lock-set footprint of a syscall, or
 `none` where one has not been established yet.
@@ -164,15 +178,16 @@ caller correctly falls back. -/
 theorem suspendFootprintOf_isSome_iff
     (st : SystemState) (callerTid targetTid : ThreadId) :
     (suspendFootprintOf st callerTid targetTid).isSome
-      ↔ ∃ victim, st.getTcb? targetTid = some victim := by
+      ↔ (∃ caller, st.getTcb? callerTid = some caller) ∧
+        ∃ victim, st.getTcb? targetTid = some victim := by
   unfold suspendFootprintOf
   constructor
   · intro h
     split at h
-    · next victim hv => exact ⟨victim, hv⟩
+    · next caller victim hc hv => exact ⟨⟨caller, hc⟩, victim, hv⟩
     · simp at h
-  · rintro ⟨victim, hv⟩
-    rw [hv]
+  · rintro ⟨⟨caller, hc⟩, victim, hv⟩
+    rw [hc, hv]
     simp
 
 end SeLe4n.Kernel.Concurrency
