@@ -1205,6 +1205,7 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @entryDecode
 #check @entryDecode_none_entry_error
 #check @entryCapTarget
+#check @entryCapTarget_rejects_sentinel
 #check @declaredLockSetForEntry
 #check @declaredLockSetForEntry_binds_decode
 #check @declaredLockSetForEntry_undeclared
@@ -1213,6 +1214,16 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @syscallEntryUnderDeclaredLockSet_no_decode
 #check @lockContentionChannel_run_capacity
 #check @lockContentionRun_rejects_repeated_step
+#check @lockContentionRun_rejects_still_queued_step
+#check @lockContentionRun_steps_are_edges
+#check @singleWaiterExecution
+#check @twoWaiterExecution
+#check @contentionWitnesses_fair
+#check @contentionWitnesses_in_premises
+#check @lockContentionChannel_two_codes_reachable
+#check @contentionWitnesses_delays
+#check @acceptedContentionCode_ge_two
+#check @secureInformationFlow_underFineLocks_atCore
 #check @lockWritesOnly_preserves_projectionOnCore
 #check @syscallEntryUnderLockSet_preserves_projectionOnCore_atCore
 #check @suspendUnderDeclaredLockSet_preserves_projectionOnCore
@@ -5944,12 +5955,18 @@ private def runFineLockSuccessPathChecks : IO Unit := do
 /-- §7.7  SM8.D — the phase's claim inventory, and its evidence. -/
 private def runFineLockClaimInventoryChecks : IO Unit := do
   IO.println "--- §7.7 the SM8.D claim inventory (SM8.D.1 … SM8.D.5) ---"
-  assertBool "eight claims, listed once each"
-    (decide (FineLockClaimId.all.length = 8) && decide FineLockClaimId.all.Nodup)
-  assertBool "they cover D.1, D.2, D.3 (three times), D.4 and D.5 (twice)"
+  assertBool "nine claims, listed once each"
+    (decide (FineLockClaimId.all.length = 9) && decide FineLockClaimId.all.Nodup)
+  assertBool "they cover D.1, D.2, D.3 (three times), D.4 (twice) and D.5 (twice)"
     (decide (FineLockClaimId.all.map FineLockClaimId.subTask
-      = ["SM8.D.1", "SM8.D.2", "SM8.D.3", "SM8.D.3", "SM8.D.4", "SM8.D.5", "SM8.D.5",
-         "SM8.D.3"]))
+      = ["SM8.D.1", "SM8.D.2", "SM8.D.3", "SM8.D.3", "SM8.D.4", "SM8.D.4", "SM8.D.5",
+         "SM8.D.5", "SM8.D.3"]))
+  -- D.4 carries TWO claims because `writeRules_differ` says the two integrity
+  -- orders are two results: a deployment configured with one gets nothing from a
+  -- theorem about the other.
+  assertBool "D.4's two arms name the two integrity orders' theorems, and they differ"
+    (decide (fineLockClaimTheorem .integrityUnderLocks
+       ≠ fineLockClaimTheorem .authorityIntegrityUnderLocks))
   assertBool "…so every proof-carrying sub-task of the phase is claimed"
     (decide (["SM8.D.1", "SM8.D.2", "SM8.D.3", "SM8.D.4", "SM8.D.5"].all (fun t =>
       (FineLockClaimId.all.map FineLockClaimId.subTask).contains t)))
@@ -6064,6 +6081,15 @@ send={(SeLe4n.Kernel.Concurrency.lockSetForSyscall .send lowCurrent highCurrent 
   , s!"[smp-fine-lock] claims: {FineLockClaimId.all.length} over \
 {traceClaimSubTaskCount} distinct proof-carrying sub-tasks" ]
 
+/-- §7.9 fixture: a victim whose CSpace root differs from the caller's, so the
+footprint's CNode member can be attributed to one of them. -/
+private def distinctRootVictim : TCB :=
+  { (mkTcb 1011 50 (some c1)) with cspaceRoot := probeCNode }
+
+private def distinctRootState : SystemState :=
+  { niState with
+      objects := niState.objects.insert highCurrent.toObjId (.tcb distinctRootVictim) }
+
 /-- §7.9  SM8.D.5 — the declared footprint, bound to the decode, and the
 fail-closed default.
 
@@ -6110,6 +6136,30 @@ private def runDeclaredFootprintChecks : IO Unit := do
     (have _g := @lockSetAcquiredState_grants_when_free
      have _n := @lockSetAcquiredState_does_not_grant_when_contended
      true)
+  -- The CNode member of the footprint is the CALLER's CSpace root — the one
+  -- capability resolution reads — not the victim's.  The fixture gives the two
+  -- threads *different* roots so the assertion can tell them apart.
+  assertBool "the suspend footprint locks the CALLER's CSpace root"
+    (match SeLe4n.Kernel.Concurrency.suspendFootprintOf distinctRootState lowCurrent
+             highCurrent with
+     | some fp =>
+       decide ((SeLe4n.Kernel.Concurrency.cnodeLock cnRoot,
+                SeLe4n.Kernel.Concurrency.AccessMode.read) ∈ fp.pairs)
+     | none => false)
+  -- NEGATIVE: and it does NOT lock the victim's, which the syscall never reads.
+  assertBool "NEGATIVE: the victim's CSpace root is not in the footprint"
+    (decide (distinctRootVictim.cspaceRoot ≠ cnRoot) &&
+     (match SeLe4n.Kernel.Concurrency.suspendFootprintOf distinctRootState lowCurrent
+              highCurrent with
+      | some fp =>
+        decide ((SeLe4n.Kernel.Concurrency.cnodeLock probeCNode,
+                 SeLe4n.Kernel.Concurrency.AccessMode.read) ∉ fp.pairs)
+      | none => false))
+  -- ...and the resolver now needs BOTH threads, since a missing caller has no
+  -- CSpace root to name.
+  assertBool "NEGATIVE: an unresolvable caller yields no footprint"
+    (decide ((SeLe4n.Kernel.Concurrency.suspendFootprintOf niState ⟨999999⟩
+        highCurrent) = none))
   assertBool "the decode binding and the fail-closed defaults, as theorems"
     (have _b := @declaredLockSetForEntry_binds_decode
      have _s := @declaredLockSetForEntry_is_suspend_footprint

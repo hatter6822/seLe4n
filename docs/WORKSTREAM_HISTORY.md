@@ -90,7 +90,7 @@ layer, the setter/erasure moved beside `objectLockOf`, a decidable refuter, a
 severity basis, an eighth inventory claim, eleven elaboration examples and a
 golden CC-5 trace.
 
-Suite 403 → **517 assertions**, §7.1–§7.10 new across sixteen groups, every
+Suite 403 → **521 assertions**, §7.1–§7.10 new across sixteen groups, every
 group with a load-bearing negative; staged 59 → **60**.  **No debt remains.**
 The v0.33.10 cut registered one residual — the CC-5 temporal bound was the
 *writer*-mode one, since `rwLock_writer_liveness` had no reader analogue — and
@@ -105,7 +105,13 @@ lock-set footprint is derived from the entry's own register decode rather than
 from free arguments, the bracket's non-interference is parameterized by the core
 it runs on instead of pinned to the boot core, and the 2PL acquire phase's grant
 condition is a checked fact in both directions with SM3's `withLockSet` contract
-corrected.
+corrected.  The **v0.33.13 review cut** closed seven further findings across two
+more rounds — among them a genuine coverage defect in SM3.C.9's own resolver (the
+declared suspend footprint locked the victim's CSpace root where the syscall
+reads the caller's), a run predicate that counted one acquisition many times, a
+non-closure claim resting on codes an accepted acquisition cannot produce, a
+multi-reader witness carrying well-formedness where it claimed reachability, and
+a resolver accepting a sentinel target the live dispatch rejects.
 
 **Prior sub-phase: SM8.C per-core declassification audit COMPLETE — landed
 v0.33.7, completion cut v0.33.8.**

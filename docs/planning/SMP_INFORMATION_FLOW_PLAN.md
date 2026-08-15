@@ -1980,6 +1980,34 @@ kernel entry is serialised by the SM5.I global ticket lock).
 
 Suite 516 → **517** assertions; §7.9 rebuilt against a real decode.
 
+#### v0.33.13 review cut — the second and third review rounds
+
+Seven further P2 findings, all valid.  One is a genuine coverage defect in
+SM3.C.9's own resolver; the rest are claims stated more strongly than their
+evidence supported.
+
+1. **The declared suspend footprint locked the wrong CNode.**  `cnodeRootObjId`
+   is the cap-resolution root, which `syscallLookupCap` takes from the *caller's*
+   `tcb.cspaceRoot`; `suspendFootprintOf` passed `victim.cspaceRoot`, so with
+   different roots the set locked a CNode the syscall never touches and omitted
+   the one it reads.  The resolver now resolves the caller's TCB too.
+2. **A run could count one acquisition many times.**  `Nodup` is necessary but
+   not sufficient — queue membership holds at every waiting step — so the
+   per-step clause is now a transition edge.
+3. **The non-closure claim counted codes it cannot produce.**  Replaced by two
+   fair executions realizing different codes, with `acceptedContentionCode_ge_two`
+   stating why the counted codes were unreachable.
+4. **The multi-reader witness proved `wf`, not reachability.**
+   `rwLock_reader_multiplicity_reachable` carries `RwLockReachable`.
+5. **The entry-bound resolver accepted a sentinel target** the live dispatch
+   rejects; the same `toValid?` guard now applies.
+6. **The combined flow witness was still boot-pinned** —
+   `secureInformationFlow_underFineLocks_atCore`.
+7. **The claim inventory pinned one integrity order** — the authority order gets
+   its own arm, 8 → 9 claims.
+
+Suite 517 → **521** assertions.
+
 ### SM8.E — Tests + closure (3 sub-tasks)
 
 | Sub | Description | Files | Est |

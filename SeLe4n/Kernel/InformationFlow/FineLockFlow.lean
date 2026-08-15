@@ -534,16 +534,24 @@ theorem readerMultiplicity_not_observable (ctx : LabelingContext) (c : CoreId)
 
 /-- SM8.D.2: the same statement against the **reachable** multi-reader state
 SM2.C.6 exhibits, so the theorem is not about lock words the protocol can never
-produce.  `rwLock_reader_multiplicity` gives a `wf` state with at least two
-readers; the observer cannot tell it from a free lock. -/
+produce.
+
+The existential carries `RwLockReachable` and not merely `wf`, which is the
+difference between a non-vacuity witness and a well-formedness one: a `wf` state
+need not be a state any execution produces, so a consumer holding only `wf` could
+discharge this with a lock word the protocol never reaches — and the claim being
+made here is precisely that the invisible multiplicity is one the protocol *does*
+reach.  `rwLock_reader_multiplicity_reachable` supplies the derivation. -/
 theorem readerMultiplicity_not_observable_at_reachable_witness (ctx : LabelingContext)
     (c : CoreId) (L : SecurityLabel) (s : SystemState) (oid : SeLe4n.ObjId)
     (hInv : s.objects.invExt) :
-    ∃ shared : RwLockState, shared.wf ∧ 2 ≤ shared.readers.length ∧
+    ∃ shared : RwLockState, SeLe4n.Kernel.Concurrency.RwLockReachable shared ∧
+      shared.wf ∧ 2 ≤ shared.readers.length ∧
       ObservableState.onCore ctx c L (setObjectLockAt s oid shared)
         = ObservableState.onCore ctx c L (setObjectLockAt s oid RwLockState.unheld) := by
-  obtain ⟨shared, hWf, hLen⟩ := SeLe4n.Kernel.Concurrency.rwLock_reader_multiplicity
-  exact ⟨shared, hWf, hLen, onCore_lock_indistinguishable ctx c L s oid _ _ hInv⟩
+  obtain ⟨shared, hReach, hWf, hLen⟩ :=
+    SeLe4n.Kernel.Concurrency.rwLock_reader_multiplicity_reachable
+  exact ⟨shared, hReach, hWf, hLen, onCore_lock_indistinguishable ctx c L s oid _ _ hInv⟩
 
 /-- SM8.D.2 (the CC-5 restatement, which is the only open form): reader
 multiplicity is invisible in the model, and the channel that remains is the
@@ -828,10 +836,18 @@ theorem lockContentionCode_eq_zero_iff (e : SeLe4n.Kernel.Concurrency.RwLockExec
   unfold lockContentionCode lockContentionObservation
   cases e.admissionStepAfter c kEnq <;> simp
 
-/-- SM8.D.3 (**the load-bearing negative**): the bound never claims the channel
-is *closed*.  Whatever the fairness parameter, the alphabet has at least two
-codes, so CC-5 carries at least one bit per contended acquisition — which is
-why it is registered as accepted rather than discharged. -/
+/-- SM8.D.3: the *allocated* alphabet never collapses to one code, whatever the
+fairness parameter.
+
+**What this does not establish.**  It is an arithmetic fact about the code
+space's size, and a code being allocated is not a code being reachable — under
+the premises an accepted run carries, `0` (never admitted) is excluded by the
+delay bound and `1` (zero delay) by `acceptedContentionCode_ge_two`, so the two
+codes counted here are exactly the two such a run cannot produce.  The claim that
+CC-5 is *open* — that it distinguishes at least two behaviours, and so carries at
+least one bit — is `lockContentionChannel_two_codes_reachable`, which exhibits
+two fair, in-premise executions with different codes.  This theorem remains
+useful as the alphabet's floor; it is simply not the non-closure witness. -/
 theorem lockContentionAlphabet_at_least_two (maxDelay : Nat) :
     2 ≤ lockContentionAlphabet maxDelay := by
   unfold lockContentionAlphabet; omega
@@ -907,6 +923,105 @@ theorem starvingExecution_writer_never_releases (k : Nat) (hk : 1 ≤ k) :
     decide
 
 -- ----------------------------------------------------------------------------
+-- SM8.D.3 — two observations that are actually reachable
+-- ----------------------------------------------------------------------------
+--
+-- `lockContentionAlphabet_at_least_two` counts *allocated* codes, and counting
+-- allocated codes cannot show a channel is open: under the premises an accepted
+-- run carries, code `0` (never admitted) is excluded by the delay bound itself,
+-- and code `1` (zero delay) is excluded because `admissionStepAfter` is strictly
+-- later than the enqueue.  So the two codes it counts are precisely the two that
+-- a fair, in-premise acquisition cannot produce.
+--
+-- The non-closure claim therefore needs *executions*, not arithmetic: two fair
+-- traces, each satisfying the bound's own premises, on which a contending core
+-- reads different codes.  These two supply them — one waiter behind a holder
+-- (delay 1), and one waiter behind a holder *and* another waiter (delay 2).
+
+private def waiterCore : CoreId := ⟨1, by decide⟩
+private def secondWaiterCore : CoreId := ⟨2, by decide⟩
+private def padCore : CoreId := ⟨3, by decide⟩
+
+/-- SM8.D.3: core 1 asks for the write lock while core 0 holds it, and is
+admitted by core 0's release — a delay of one step.  The trailing no-ops
+(`releaseRead` on a core that never read-held) make the trace long enough for the
+bound's own `hWithin` premise. -/
+def singleWaiterExecution : SeLe4n.Kernel.Concurrency.RwLockExecution :=
+  { initial := RwLockState.unheld
+    ops := [ .tryAcquireWrite bootCoreId, .tryAcquireWrite waiterCore
+           , .releaseWrite bootCoreId, .releaseWrite waiterCore
+           , .releaseRead padCore, .releaseRead padCore, .releaseRead padCore
+           , .releaseRead padCore, .releaseRead padCore, .releaseRead padCore
+           , .releaseRead padCore, .releaseRead padCore ]
+    initial_reachable := .base }
+
+/-- SM8.D.3: and the same with a *second* waiter queued ahead of core 2, so its
+admission waits for two releases — a delay of two steps. -/
+def twoWaiterExecution : SeLe4n.Kernel.Concurrency.RwLockExecution :=
+  { initial := RwLockState.unheld
+    ops := [ .tryAcquireWrite bootCoreId, .tryAcquireWrite waiterCore
+           , .tryAcquireWrite secondWaiterCore
+           , .releaseWrite bootCoreId, .releaseWrite waiterCore
+           , .releaseWrite secondWaiterCore
+           , .releaseRead padCore, .releaseRead padCore, .releaseRead padCore
+           , .releaseRead padCore, .releaseRead padCore, .releaseRead padCore
+           , .releaseRead padCore ]
+    initial_reachable := .base }
+
+/-- SM8.D.3: both traces are fair at the same budget, so the two observations are
+comparable and neither is obtained by relaxing the premises. -/
+theorem contentionWitnesses_fair :
+    SeLe4n.Kernel.Concurrency.FairTrace singleWaiterExecution 2 ∧
+    SeLe4n.Kernel.Concurrency.FairTrace twoWaiterExecution 2 :=
+  ⟨(SeLe4n.Kernel.Concurrency.fairTrace_iff_bounded singleWaiterExecution 2).mpr (by decide),
+   (SeLe4n.Kernel.Concurrency.fairTrace_iff_bounded twoWaiterExecution 2).mpr (by decide)⟩
+
+/-- SM8.D.3: each witness's listed step is a genuine enqueue **edge** at the
+mode claimed, and each trace is long enough for the bound — the two premises an
+accepted run imposes. -/
+theorem contentionWitnesses_in_premises :
+    ((waiterCore, AccessMode.write) ∈ (singleWaiterExecution.stateAt 2).waiters ∧
+      (waiterCore, AccessMode.write) ∉ (singleWaiterExecution.stateAt 1).waiters ∧
+      2 + lockContentionDelayBound 2 < singleWaiterExecution.ops.length) ∧
+    ((secondWaiterCore, AccessMode.write) ∈ (twoWaiterExecution.stateAt 3).waiters ∧
+      (secondWaiterCore, AccessMode.write) ∉ (twoWaiterExecution.stateAt 2).waiters ∧
+      3 + lockContentionDelayBound 2 < twoWaiterExecution.ops.length) := by decide
+
+/-- SM8.D.3 (**the non-closure witness**): a contending core reads **different**
+codes on two fair, in-premise acquisitions — so CC-5 distinguishes at least two
+behaviours and carries at least one bit.
+
+This is what `lockContentionAlphabet_at_least_two` was doing duty for and could
+not establish: an arithmetic lower bound on the *allocated* alphabet says nothing
+about which codes an execution can actually produce, and the two it counts are
+exactly the two an accepted run never produces. -/
+theorem lockContentionChannel_two_codes_reachable :
+    lockContentionCode singleWaiterExecution waiterCore 2 = 2 ∧
+    lockContentionCode twoWaiterExecution secondWaiterCore 3 = 3 ∧
+    lockContentionCode singleWaiterExecution waiterCore 2
+      ≠ lockContentionCode twoWaiterExecution secondWaiterCore 3 := by decide
+
+/-- SM8.D.3: and the delays behind those codes, so the figures are readable
+rather than only distinct. -/
+theorem contentionWitnesses_delays :
+    lockContentionObservation singleWaiterExecution waiterCore 2 = some 1 ∧
+    lockContentionObservation twoWaiterExecution secondWaiterCore 3 = some 2 := by decide
+
+/-- SM8.D.3 (**why codes 0 and 1 are not the witnesses**): an accepted
+acquisition is admitted strictly after its enqueue, so its delay is at least one
+and its code at least two.  The reserved `0` and the "zero delay" `1` are
+allocated but unreachable under the bound's premises — which is the whole reason
+the reachability witness above is stated over executions. -/
+theorem acceptedContentionCode_ge_two (e : SeLe4n.Kernel.Concurrency.RwLockExecution)
+    (c : CoreId) (kEnq a : Nat) (h : e.admissionStepAfter c kEnq = some a) :
+    2 ≤ lockContentionCode e c kEnq := by
+  have hGt : kEnq < a := (e.admissionStepAfter_characterization c kEnq a h).1
+  unfold lockContentionCode lockContentionObservation
+  rw [h]
+  simp only [Option.map_some]
+  omega
+
+-- ----------------------------------------------------------------------------
 -- SM8.D.3 — from one observation to a run, with a pacing bound
 -- ----------------------------------------------------------------------------
 
@@ -923,19 +1038,32 @@ The access mode is existential **per step**: one core's successive contended
 acquisitions need not all be writes, and after SM2.C-defer D-3.10 the delay bound
 does not care which they are.
 
-The steps are required **`Nodup`**, and that conjunct is load-bearing rather than
-tidiness.  A run is a list of *distinct acquisitions*; without it a caller could
-repeat one queued step arbitrarily, `enqueueSteps.length` would be unbounded, and
-`lockContentionChannel_run_capacity`'s per-execution figure — the whole point of
-pacing the channel — would not follow for every accepted run.  The predicate
-enforces it structurally instead of leaving it to the caller's good manners. -/
+Each listed step must be a genuine **enqueue edge** — queued at `k`, *not*
+queued at `k - 1`, at the same access mode — and the steps must be `Nodup`.  Both
+conjuncts are load-bearing, and for different reasons.
+
+`Nodup` alone is not enough, which is the subtler half.  Mere queue *membership*
+holds at every step a core remains queued, so a single physical acquisition that
+waits from step 2 to step 5 would admit the run `[2, 3, 4]`: three distinct steps,
+three different delays, three different codes — from one acquisition.  The run
+length would then not be the number of acquisitions and the capacity figure would
+count the same behaviour repeatedly.  Keying on the transition edge makes each
+listed step an acquisition the core actually *started*, which is what
+`lockContentionObservation` measures from.
+
+The mode is existential **per step**: one core's successive contended
+acquisitions need not all be writes, and after SM2.C-defer D-3.10 the delay bound
+does not care which they are.  It is bound inside the edge condition rather than
+outside it so the "not queued before" half is about the *same* mode — a core
+switching modes between acquisitions is still two edges, not one. -/
 def lockContentionRun (maxDelay : Nat) (e : SeLe4n.Kernel.Concurrency.RwLockExecution)
     (c : CoreId) (enqueueSteps : List Nat) : Prop :=
   SeLe4n.Kernel.Concurrency.FairTrace e maxDelay ∧
   e.initial = RwLockState.unheld ∧
   enqueueSteps.Nodup ∧
   ∀ k ∈ enqueueSteps,
-    (∃ m : AccessMode, (c, m) ∈ (e.stateAt k).waiters) ∧
+    (1 ≤ k ∧ ∃ m : AccessMode,
+      (c, m) ∈ (e.stateAt k).waiters ∧ (c, m) ∉ (e.stateAt (k - 1)).waiters) ∧
     k + lockContentionDelayBound maxDelay < e.ops.length
 
 /-- SM8.D.3: the sequence of codes a contending core reads off a run. -/
@@ -984,7 +1112,7 @@ theorem lockContentionChannel_trace_capacity (maxDelay : Nat)
   intro x hx
   simp only [lockContentionTrace, List.mem_map] at hx
   obtain ⟨k, hk, rfl⟩ := hx
-  obtain ⟨⟨m, hQueued⟩, hWithin⟩ := hSteps k hk
+  obtain ⟨⟨_, m, hQueued, _⟩, hWithin⟩ := hSteps k hk
   exact lockContentionChannel_alphabet_bounded e maxDelay hFair hInit c m k hQueued hWithin
 
 /-- SM8.D.3 (**the composed per-execution bound**): from a run alone — no extra
@@ -1024,6 +1152,36 @@ theorem lockContentionRun_rejects_repeated_step (maxDelay : Nat)
     ¬ lockContentionRun maxDelay e c (k :: rest) := by
   rintro ⟨_, _, hNodup, _⟩
   exact (List.nodup_cons.mp hNodup).1 hMem
+
+/-- SM8.D.3 (**the second load-bearing negative**): a step at which the core was
+*already* queued is not an accepted run entry, even though it is a step at which
+the core is queued.
+
+This is the shape `Nodup` alone could not exclude: a single acquisition that
+waits across several steps would otherwise contribute one entry per step, each
+with a different delay and therefore a different code, inflating the run length
+without the core having started a second acquisition. -/
+theorem lockContentionRun_rejects_still_queued_step (maxDelay : Nat)
+    (e : SeLe4n.Kernel.Concurrency.RwLockExecution) (c : CoreId) (k : Nat)
+    (rest : List Nat)
+    (hStill : ∀ m : AccessMode, (c, m) ∈ (e.stateAt k).waiters →
+      (c, m) ∈ (e.stateAt (k - 1)).waiters) :
+    ¬ lockContentionRun maxDelay e c (k :: rest) := by
+  rintro ⟨_, _, _, hSteps⟩
+  obtain ⟨⟨_, m, hIn, hOut⟩, _⟩ := hSteps k List.mem_cons_self
+  exact hOut (hStill m hIn)
+
+/-- SM8.D.3: and the run's entries really are acquisitions the core *started* —
+each names a step at which it was not queued a moment earlier. -/
+theorem lockContentionRun_steps_are_edges (maxDelay : Nat)
+    (e : SeLe4n.Kernel.Concurrency.RwLockExecution) (c : CoreId) (enqueueSteps : List Nat)
+    (hRun : lockContentionRun maxDelay e c enqueueSteps) :
+    ∀ k ∈ enqueueSteps, ∃ m : AccessMode,
+      (c, m) ∈ (e.stateAt k).waiters ∧ (c, m) ∉ (e.stateAt (k - 1)).waiters := by
+  obtain ⟨_, _, _, hSteps⟩ := hRun
+  intro k hk
+  obtain ⟨⟨_, m, hIn, hOut⟩, _⟩ := hSteps k hk
+  exact ⟨m, hIn, hOut⟩
 
 /-- SM8.D.3: and the count itself. -/
 theorem lockContentionChannel_trace_count (maxDelay n : Nat) :
@@ -1072,7 +1230,12 @@ set of quantitative facts the judgement now rests on, pinned here so that a
 future re-grading is a re-reading of *these* rather than of prose:
 
 * the per-observation alphabet is **bounded** — the channel is not unbounded;
-* it is **at least two** — the channel is not closed;
+* the channel is **not closed** — and that conjunct is the *reachability*
+  witness, not the alphabet's arithmetic floor.  An allocated code is not a
+  producible one: under the premises an accepted run carries, the two codes the
+  floor counts are precisely the two such a run cannot produce
+  (`acceptedContentionCode_ge_two`).  So the grading rests on two fair,
+  in-premise executions whose contending cores read *different* codes;
 * the alphabet is `(numCores - 1) × (maxDelay + 1) + 2`, so it grows with the
   core count and the critical-section budget and with nothing else;
 * the channel has **one instance per core**, so a deployment's exposure scales
@@ -1085,8 +1248,11 @@ theorem acceptedCovertChannel_lockContention_severity_basis (maxDelay : Nat) :
     acceptedCovertChannel_lockContention.severity = .medium ∧
       acceptedCovertChannel_lockContention.perCoreInstance = true ∧
       2 ≤ lockContentionAlphabet maxDelay ∧
-      lockContentionAlphabet maxDelay = (numCores - 1) * (maxDelay + 1) + 2 :=
-  ⟨rfl, rfl, lockContentionAlphabet_at_least_two maxDelay, rfl⟩
+      lockContentionAlphabet maxDelay = (numCores - 1) * (maxDelay + 1) + 2 ∧
+      lockContentionCode singleWaiterExecution waiterCore 2
+        ≠ lockContentionCode twoWaiterExecution secondWaiterCore 3 :=
+  ⟨rfl, rfl, lockContentionAlphabet_at_least_two maxDelay, rfl,
+   lockContentionChannel_two_codes_reachable.2.2⟩
 
 -- ============================================================================
 -- §4  SM8.D.4 — Biba integrity under per-core locks
@@ -1688,6 +1854,54 @@ names, not about whether those objects are observable, not about contention —
 and that absence is the result: fine-grained locking is information-flow
 transparent, so SM3.C.9's migration is a change of concurrency control and not
 of the security argument. -/
+theorem secureInformationFlow_underFineLocks_atCore (ctx : LabelingContext) (L : SecurityLabel)
+    (subject : SecurityLabel) (S : LockSet) (lockCore : CoreId)
+    (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
+    (s st' : SystemState) (c' : CoreId) (hInv : s.objects.invExt) (hOutInv : st'.objects.invExt)
+    (hOk : syscallEntryChecked ctx layout executingCore regCount
+        (lockSetAcquiredState S lockCore s) = .ok ((), st'))
+    (hProjOn : projectStateOnCore ctx (IfObserver.ofLabel L) st' c'
+        = projectStateOnCore ctx (IfObserver.ofLabel L)
+            (lockSetAcquiredState S lockCore s) c')
+    (hConfined : observableSlotsConfinedToCore (lockSetAcquiredState S lockCore s) st' c')
+    (hBiba : noUnpermittedWrite (bibaWritePermitted ctx subject)
+        (lockSetAcquiredState S lockCore s) st')
+    (hAuthority : noUnpermittedWrite (authorityWritePermitted ctx subject)
+        (lockSetAcquiredState S lockCore s) st') :
+    (∀ c : CoreId,
+        ObservableState.onCore ctx c L
+            (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1
+          = ObservableState.onCore ctx c L s) ∧
+      noUnpermittedWrite (bibaWritePermitted ctx subject) s
+        (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1 ∧
+      noUnpermittedWrite (authorityWritePermitted ctx subject) s
+        (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1 := by
+  have hCommit : (commitKernelAction (syscallEntryChecked ctx layout executingCore regCount)
+      (lockSetAcquiredState S lockCore s)) = (st', .ok ()) :=
+    commitKernelAction_ok _ _ _ _ hOk
+  refine ⟨syscallEntryUnderLockSet_preserves_projectionOnCore_atCore ctx (IfObserver.ofLabel L) S
+    lockCore layout executingCore regCount s st' c' hInv hOutInv hOk hProjOn hConfined, ?_, ?_⟩
+  <;> rw [syscallEntryUnderLockSet_fst, hCommit]
+  · exact noUnpermittedWrite_trans
+      (lockWritesOnly_noUnpermittedWrite _
+        (acquireAll_lockWritesOnly lockCore S.lockAcquireSequence s hInv))
+      (noUnpermittedWrite_trans hBiba
+        (lockWritesOnly_noUnpermittedWrite _
+          (releaseAll_lockWritesOnly lockCore _ st' hOutInv)))
+  · exact noUnpermittedWrite_trans
+      (lockWritesOnly_noUnpermittedWrite _
+        (acquireAll_lockWritesOnly lockCore S.lockAcquireSequence s hInv))
+      (noUnpermittedWrite_trans hAuthority
+        (lockWritesOnly_noUnpermittedWrite _
+          (releaseAll_lockWritesOnly lockCore _ st' hOutInv)))
+
+/-- SM8.D.5: the boot-core instance of the combined witness.
+
+Kept because a caller holding the boot-pinned whole-projection fact
+(`syscallEntryChecked_preserves_projection`) can discharge its premise directly;
+`…_atCore` is the form an ordinary SMP success path needs, since a syscall
+executing on a secondary core writes that core's slots and cannot satisfy
+boot-core confinement. -/
 theorem secureInformationFlow_underFineLocks (ctx : LabelingContext) (L : SecurityLabel)
     (subject : SecurityLabel) (S : LockSet) (lockCore : CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
@@ -1717,26 +1931,11 @@ theorem secureInformationFlow_underFineLocks (ctx : LabelingContext) (L : Securi
         (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1 ∧
       noUnpermittedWrite (authorityWritePermitted ctx subject) s
         (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1 := by
-  have hAcqInv : (lockSetAcquiredState S lockCore s).objects.invExt :=
-    acquireAll_preserves_objects_invExt lockCore S.lockAcquireSequence s hInv
-  have hCommit : (commitKernelAction (syscallEntryChecked ctx layout executingCore regCount)
-      (lockSetAcquiredState S lockCore s)) = (st', .ok ()) :=
-    commitKernelAction_ok _ _ _ _ hOk
-  refine ⟨syscallEntryUnderLockSet_preserves_projectionOnCore ctx (IfObserver.ofLabel L) S
-    lockCore layout executingCore regCount s st' hInv hOutInv hOk hDispatchProj hConfined, ?_, ?_⟩
-  <;> rw [syscallEntryUnderLockSet_fst, hCommit]
-  · exact noUnpermittedWrite_trans
-      (lockWritesOnly_noUnpermittedWrite _
-        (acquireAll_lockWritesOnly lockCore S.lockAcquireSequence s hInv))
-      (noUnpermittedWrite_trans hBiba
-        (lockWritesOnly_noUnpermittedWrite _
-          (releaseAll_lockWritesOnly lockCore _ st' hOutInv)))
-  · exact noUnpermittedWrite_trans
-      (lockWritesOnly_noUnpermittedWrite _
-        (acquireAll_lockWritesOnly lockCore S.lockAcquireSequence s hInv))
-      (noUnpermittedWrite_trans hAuthority
-        (lockWritesOnly_noUnpermittedWrite _
-          (releaseAll_lockWritesOnly lockCore _ st' hOutInv)))
+  refine secureInformationFlow_underFineLocks_atCore ctx L subject S lockCore layout
+    executingCore regCount s st' bootCoreId hInv hOutInv hOk ?_ hConfined hBiba hAuthority
+  rw [projectStateOnCore_bootCore, projectStateOnCore_bootCore]
+  exact syscallEntryChecked_preserves_projection ctx (IfObserver.ofLabel L) layout executingCore
+    regCount _ st' hOk hDispatchProj
 
 /-- SM8.D.5: the headline with the projection hypothesis stated at the **entry**
 rather than at the dispatch — the form a caller in possession of a whole-entry
@@ -1857,8 +2056,12 @@ theorem entryDecode_none_entry_error (ctx : LabelingContext)
 /-- SM8.D.5: the target a capability-addressed syscall names, read the way the
 live `dispatchWithCapChecked` arms read it.
 
-Fail-closed: a capability that does not name an object has no thread target, so
-no footprint is declared for it. -/
+Fail-closed twice over: a capability that does not name an object has no thread
+target, and a target that fails `ThreadId.toValid?` — the AL7-A sentinel guard the
+live `.tcbSuspend` arm applies through `validateThreadIdArg` before it invokes the
+handler — has none either.  Without the second check the resolver would declare a
+footprint for a syscall the dispatch is going to reject, and under contention the
+bracket would enqueue `lockCore` on locks for a call that cannot execute. -/
 def entryCapTarget (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (s : SystemState) :
     Option SeLe4n.ThreadId :=
   match s.getTcb? tid with
@@ -1873,8 +2076,41 @@ def entryCapTarget (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (s : 
       | .error _ => none
       | .ok (cap, _) =>
         match cap.target with
-        | .object objId => some (SeLe4n.ThreadId.ofNat objId.toNat)
+        | .object objId =>
+          match (SeLe4n.ThreadId.ofNat objId.toNat).toValid? with
+          | none => none
+          | some valid => some valid.val
         | _ => none
+
+/-- SM8.D.5 (**the sentinel guard, as a theorem**): a capability naming the
+sentinel thread yields no target, so no footprint is declared for it.
+
+`ThreadId.sentinel` is the AL7-A rejected value; the live `.tcbSuspend` arm turns
+it into `.invalidArgument` before the handler runs, so a footprint declared for it
+would bracket a call that cannot execute. -/
+theorem entryCapTarget_rejects_sentinel (decoded : SyscallDecodeResult)
+    (tid : SeLe4n.ThreadId) (s : SystemState) (t : SeLe4n.ThreadId)
+    (h : entryCapTarget decoded tid s = some t) : t ≠ SeLe4n.ThreadId.sentinel := by
+  unfold entryCapTarget at h
+  split at h
+  · exact absurd h (by simp)
+  · next tcb _ =>
+    split at h
+    · exact absurd h (by simp)
+    · next rootCn _ =>
+      split at h
+      · exact absurd h (by simp)
+      · next capPair _ =>
+        obtain ⟨cap, _⟩ := capPair
+        split at h
+        · next objId _ =>
+          split at h
+          · exact absurd h (by simp)
+          · next valid hValid =>
+            have : t = valid.val := by simpa using h.symm
+            rw [this]
+            exact valid.property
+        · exact absurd h (by simp)
 
 /-- SM8.D.5: SM3.C.9's declared footprint **for the operation the entry will
 actually execute**.
@@ -2085,8 +2321,16 @@ inductive FineLockClaimId where
   | writerExclusionHidden
   /-- SM8.D.3 — what the blocked acquirer *does* observe is bounded. -/
   | contentionDelayBounded
-  /-- SM8.D.4 — the 2PL bracket makes no integrity-forbidden write. -/
+  /-- SM8.D.4 — the 2PL bracket makes no write standard BIBA forbids. -/
   | integrityUnderLocks
+  /-- SM8.D.4 — nor any write seLe4n's *authority* order forbids.
+
+  A separate id rather than a second reading of the one above, because
+  `writeRules_differ` says these are two claims: a deployment configured with one
+  order gets nothing from a result about the other.  With a single arm the
+  dependent inventory would keep elaborating if the authority-order theorem were
+  weakened or stopped proving the advertised property. -/
+  | authorityIntegrityUnderLocks
   /-- SM8.D.5 — a bracketed live entry is non-interfering when its dispatch is. -/
   | secureFlowUnderFineLocks
   /-- SM8.D.5 — and a refused one is invisible outright. -/
@@ -2097,15 +2341,16 @@ inductive FineLockClaimId where
 
 def FineLockClaimId.all : List FineLockClaimId :=
   [ .lockStateInvisible, .readerMultiplicityHidden, .writerExclusionHidden
-  , .contentionDelayBounded, .integrityUnderLocks, .secureFlowUnderFineLocks
-  , .failClosedUnderFineLocks, .contentionChannelRegistered ]
+  , .contentionDelayBounded, .integrityUnderLocks, .authorityIntegrityUnderLocks
+  , .secureFlowUnderFineLocks, .failClosedUnderFineLocks
+  , .contentionChannelRegistered ]
 
 theorem FineLockClaimId.mem_all (id : FineLockClaimId) : id ∈ FineLockClaimId.all := by
   cases id <;> decide
 
 theorem FineLockClaimId.all_nodup : FineLockClaimId.all.Nodup := by decide
 
-theorem fineLockClaims_count : FineLockClaimId.all.length = 8 := by rfl
+theorem fineLockClaims_count : FineLockClaimId.all.length = 9 := by rfl
 
 /-- SM8.D: the plan sub-task each claim discharges. -/
 def FineLockClaimId.subTask : FineLockClaimId → String
@@ -2114,6 +2359,7 @@ def FineLockClaimId.subTask : FineLockClaimId → String
   | .writerExclusionHidden => "SM8.D.3"
   | .contentionDelayBounded => "SM8.D.3"
   | .integrityUnderLocks => "SM8.D.4"
+  | .authorityIntegrityUnderLocks => "SM8.D.4"
   | .secureFlowUnderFineLocks => "SM8.D.5"
   | .failClosedUnderFineLocks => "SM8.D.5"
   | .contentionChannelRegistered => "SM8.D.3"
@@ -2123,8 +2369,8 @@ the scenario suite (`tests/SmpInformationFlowSuite.lean` §7), which is a Tier-2
 runner rather than a theorem, so it is deliberately absent. -/
 theorem fineLockClaims_cover_subTasks :
     FineLockClaimId.all.map FineLockClaimId.subTask
-      = ["SM8.D.1", "SM8.D.2", "SM8.D.3", "SM8.D.3", "SM8.D.4", "SM8.D.5", "SM8.D.5",
-         "SM8.D.3"] := by
+      = ["SM8.D.1", "SM8.D.2", "SM8.D.3", "SM8.D.3", "SM8.D.4", "SM8.D.4", "SM8.D.5",
+         "SM8.D.5", "SM8.D.3"] := by
   rfl
 
 /-- SM8.D: the name of the theorem that discharges each claim, compile-time
@@ -2135,6 +2381,7 @@ def fineLockClaimTheorem : FineLockClaimId → String
   | .writerExclusionHidden => niName! blockedAcquirer_observes_nothing
   | .contentionDelayBounded => niName! lockContention_delay_bounded
   | .integrityUnderLocks => niName! bibaIntegrity_underLockSet
+  | .authorityIntegrityUnderLocks => niName! authorityIntegrity_underLockSet
   | .secureFlowUnderFineLocks => niName! syscallEntryUnderLockSet_preserves_projectionOnCore_of_entry
   | .failClosedUnderFineLocks => niName! syscallEntryUnderLockSet_failClosed_invisible
   | .contentionChannelRegistered => niName! acceptedCovertChannel_lockContention_bounded
@@ -2186,6 +2433,14 @@ def FineLockClaimId.evidenceProp : FineLockClaimId → Prop
           noUnpermittedWrite (bibaWritePermitted ctx subject) s' (action s').1) →
         noUnpermittedWrite (bibaWritePermitted ctx subject) s
           (SeLe4n.Kernel.Concurrency.withLockSet S core action s).1
+  | .authorityIntegrityUnderLocks =>
+      ∀ (α : Type) (ctx : LabelingContext) (subject : SecurityLabel) (S : LockSet) (core : CoreId)
+        (action : SystemState → SystemState × α) (s : SystemState), s.objects.invExt →
+        (∀ s', s'.objects.invExt → ((action s').1).objects.invExt) →
+        (∀ s', s'.objects.invExt →
+          noUnpermittedWrite (authorityWritePermitted ctx subject) s' (action s').1) →
+        noUnpermittedWrite (authorityWritePermitted ctx subject) s
+          (SeLe4n.Kernel.Concurrency.withLockSet S core action s).1
   | .secureFlowUnderFineLocks =>
       ∀ (ctx : LabelingContext) (observer : IfObserver) (S : LockSet) (lockCore : CoreId)
         (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
@@ -2235,6 +2490,9 @@ def fineLockClaimEvidence : (id : FineLockClaimId) → id.evidenceProp
   | .integrityUnderLocks =>
       fun _α ctx subject S core action s hInv hActionInv hAction =>
         bibaIntegrity_underLockSet ctx subject S core action s hInv hActionInv hAction
+  | .authorityIntegrityUnderLocks =>
+      fun _α ctx subject S core action s hInv hActionInv hAction =>
+        authorityIntegrity_underLockSet ctx subject S core action s hInv hActionInv hAction
   | .secureFlowUnderFineLocks =>
       fun ctx observer S lockCore layout executingCore regCount s st' hInv hOutInv hOk hProj
         hConfined =>

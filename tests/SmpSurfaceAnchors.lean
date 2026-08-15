@@ -520,7 +520,11 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      have _b := @SeLe4n.Kernel.bibaIntegrity_underLockSet
      have _u := @SeLe4n.Kernel.authorityIntegrity_underLockSet
      have _w := @SeLe4n.Kernel.secureInformationFlow_underFineLocks
-     have _c : SeLe4n.Kernel.FineLockClaimId.all.length = 8 :=
+     have _2c := @SeLe4n.Kernel.lockContentionChannel_two_codes_reachable
+     have _ge := @SeLe4n.Kernel.acceptedContentionCode_ge_two
+     have _ac := @SeLe4n.Kernel.secureInformationFlow_underFineLocks_atCore
+     have _ai := @SeLe4n.Kernel.authorityIntegrity_underLockSet
+     have _c : SeLe4n.Kernel.FineLockClaimId.all.length = 9 :=
        SeLe4n.Kernel.fineLockClaims_count
      have _e := SeLe4n.Kernel.fineLockClaimEvidence
      true)

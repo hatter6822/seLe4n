@@ -2481,6 +2481,15 @@ run_negative_check "INVARIANT" rg -n '_hFootprint' SeLe4n/Kernel/InformationFlow
 # whatever the caller's registers happened to decode to.
 run_check "INVARIANT" rg -n '^def entryDecode' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^def entryCapTarget' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# The resolved target passes the same AL7-A sentinel guard the live `.tcbSuspend`
+# arm applies, so no footprint is declared for a call the dispatch will reject.
+run_check "INVARIANT" rg -n '^theorem entryCapTarget_rejects_sentinel' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n 'toValid\?' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# The multi-reader witness carries REACHABILITY, not merely well-formedness: a
+# wf-only existential could be satisfied by a lock word no execution produces,
+# which is the opposite of the non-vacuity the theorem claims.
+run_check "INVARIANT" rg -n '^theorem rwLock_reader_multiplicity_reachable' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n 'RwLockReachable shared' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^def declaredLockSetForEntry' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^theorem declaredLockSetForEntry_binds_decode' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^theorem declaredLockSetForEntry_is_suspend_footprint' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
@@ -2497,6 +2506,29 @@ run_prose_negative_check "INVARIANT" rg -n 'state where every lock in .S. has be
 run_check "INVARIANT" rg -n 'enqueueSteps.Nodup' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^theorem lockContentionChannel_run_capacity' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^theorem lockContentionRun_rejects_repeated_step' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# A run entry must be a genuine enqueue EDGE, not merely a step at which the core
+# happens to be queued — otherwise one acquisition contributes one entry per
+# waiting step and the capacity figure counts the same behaviour repeatedly.
+run_check "INVARIANT" rg -n '^theorem lockContentionRun_rejects_still_queued_step' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockContentionRun_steps_are_edges' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# The non-closure claim rests on REACHABLE codes, not on the allocated
+# alphabet's arithmetic floor: an accepted acquisition's code is at least two, so
+# the two codes the floor counts are exactly the two it cannot produce.
+run_check "INVARIANT" rg -n '^theorem lockContentionChannel_two_codes_reachable' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem acceptedContentionCode_ge_two' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem contentionWitnesses_fair' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem contentionWitnesses_in_premises' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# The combined flow witness carries the executing core, not only the boot core.
+run_check "INVARIANT" rg -n '^theorem secureInformationFlow_underFineLocks_atCore' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# BOTH integrity orders are pinned by the dependent claim inventory: a single arm
+# would keep elaborating if the authority-order result were weakened.
+run_check "INVARIANT" rg -n 'authorityIntegrityUnderLocks' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n 'FineLockClaimId.all.length = 9' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# The declared suspend footprint locks the CALLER's CSpace root — the CNode the
+# capability resolution reads — not the victim's.  The negative forbids a return
+# to the victim-root form.
+run_check "INVARIANT" rg -n 'caller.cspaceRoot' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+run_negative_check "INVARIANT" rg -n 'lockSet_tcbSuspend callerTid victim.cspaceRoot' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
 # The bracket's non-interference is parameterized by the core it runs on; the
 # boot form is an instance, not the statement.
 run_check "INVARIANT" rg -n '^theorem syscallEntryUnderLockSet_preserves_projectionOnCore_atCore' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean

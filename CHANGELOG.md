@@ -1,3 +1,106 @@
+## v0.33.13 — WS-SM SM8.D: the second and third automated-review rounds, closed
+
+Seven further P2 findings against the SM8.D surface across two review rounds.
+All seven are valid.  One is a genuine footprint-coverage defect in SM3.C.9's
+resolver; the rest are claims stated more strongly than their evidence
+supported.  None is a live security defect — SM3.C.9 still defers `withLockSet`
+at the `@[export]` bodies, and kernel entry is serialised by the SM5.I global
+ticket lock.  Theorems, tests and prose only; the kernel trace is byte-identical.
+
+### The declared suspend footprint locked the wrong CNode
+
+`lockSet_tcbSuspend`'s `cnodeRootObjId` is the **cap-resolution** root — the
+CNode a syscall reads to turn the caller's capability pointer into the target
+capability — which is why every `lockSet_*` that has one pairs it with the
+*caller's* TCB read, and `lockSet_tcbBindNotification`'s docstring says so in as
+many words.  `syscallLookupCap` builds its gate from the caller's
+`tcb.cspaceRoot`.  But `suspendFootprintOf` passed `victim.cspaceRoot`, so
+whenever caller and victim held different CSpace roots the declared set locked a
+CNode the syscall never touches **and** omitted the one it reads.
+
+That is a coverage hole in exactly the direction a declared footprint exists to
+prevent, so the fix is the footprint, not its documentation: the resolver now
+resolves the caller's TCB as well and passes `caller.cspaceRoot`.
+`suspendFootprintOf_isSome_iff` becomes a conjunction — an unresolvable *caller*
+now yields `none`, since there is no CSpace root to name.  The set's size is
+unchanged (8 = `maxLockSetSize`), so no bound moves.
+
+### A run could count one acquisition many times
+
+v0.33.12 added `enqueueSteps.Nodup`, which is necessary and not sufficient.
+Queue *membership* holds at every step a core remains queued, so an acquisition
+waiting from step 2 to step 5 admitted the run `[2, 3, 4]` — three distinct
+steps, three delays, three codes, one acquisition.  The run length was therefore
+not the number of acquisitions, and the capacity figure counted the same
+behaviour repeatedly.
+
+The per-step clause is now a transition **edge**: queued at `k`, not queued at
+`k - 1`, at the same mode — bound inside the edge so a core switching modes
+between acquisitions is two edges rather than one.
+`lockContentionRun_rejects_still_queued_step` and
+`lockContentionRun_steps_are_edges` keep it a checked property.
+
+### The non-closure claim counted codes it could not produce
+
+`lockContentionAlphabet_at_least_two` is arithmetic over the *allocated* code
+space, and the two codes it counts are precisely the two an accepted acquisition
+cannot produce: `0` is the reserved never-admitted code, and `1` would need a
+zero delay, which `admissionStepAfter` being strictly later than the enqueue
+excludes.  `acceptedContentionCode_ge_two` now states that exclusion outright.
+
+The claim rests on executions instead: `singleWaiterExecution` (one waiter behind
+a holder — delay 1, code 2) and `twoWaiterExecution` (a waiter behind a holder
+*and* another waiter — delay 2, code 3), both fair at the same budget with
+`contentionWitnesses_fair` and `contentionWitnesses_in_premises` discharging
+fairness and the enqueue-edge premises by `decide`, so neither observation is
+obtained by relaxing anything.  `lockContentionChannel_two_codes_reachable` is
+the witness; `acceptedCovertChannel_lockContention_severity_basis` now carries it
+rather than the arithmetic floor, since that theorem is what the `.medium`
+grading rests on.
+
+### The multi-reader witness proved well-formedness, not reachability
+
+`readerMultiplicity_not_observable_at_reachable_witness` is advertised as being
+about a state the protocol *reaches*, but its existential carried only `wf` — and
+a well-formed lock word need not be one any execution produces, so a consumer
+could discharge it with a state that refutes the non-vacuity being claimed.  New
+`rwLock_reader_multiplicity_reachable` carries `RwLockReachable`, discharged by
+the two `tryAcquireRead` steps the original construction already took; the SM8.D
+witness now threads it.
+
+### The entry-bound resolver accepted a target the dispatch rejects
+
+`entryCapTarget` returned the raw `ThreadId.ofNat` of the capability's object,
+while the live `.tcbSuspend` arm rejects sentinel thread ids through
+`validateThreadIdArg` before the handler runs.  So the resolver could declare a
+footprint for a syscall that cannot execute — and under contention the bracket
+would enqueue `lockCore` on locks for a call destined to fail.  It now applies
+the same `toValid?` guard, with `entryCapTarget_rejects_sentinel` the theorem.
+
+### Two smaller closures
+
+* **The combined flow witness was still boot-pinned.**  v0.33.12 generalised
+  `syscallEntryUnderLockSet_preserves_projectionOnCore` but not
+  `secureInformationFlow_underFineLocks`, which invoked the boot wrapper — so the
+  bundled any-pairing witness stayed unusable for ordinary SMP success paths.
+  `secureInformationFlow_underFineLocks_atCore` takes the confinement core as a
+  parameter and the boot form is re-derived from it.
+* **The claim inventory pinned one integrity order.**  `integrityUnderLocks`
+  mapped only to `bibaIntegrity_underLockSet`, so the authority-order result was
+  not held by the dependent inventory even though `writeRules_differ` says the
+  two orders are two claims.  `authorityIntegrityUnderLocks` is a separate arm
+  with its own `evidenceProp` and evidence; the inventory goes 8 → **9** claims
+  over the same five proof-carrying sub-tasks.
+
+### Tests and gates
+
+Suite 517 → **521** assertions.  §7.9 gains a fixture whose caller and victim
+hold *different* CSpace roots — without which the footprint assertion could not
+tell them apart — with the load-bearing negative that the victim's root is
+absent, plus the unresolvable-caller case.  Fourteen new Tier-3 anchors,
+including a negative forbidding a return to the victim-root footprint.
+Axiom-clean (2610 environment constants across the SM8 information-flow surface).
+
 ## v0.33.12 — WS-SM SM8.D: the four automated-review findings, closed
 
 An automated review of PR #864 returned four P2 findings against the SM8.D

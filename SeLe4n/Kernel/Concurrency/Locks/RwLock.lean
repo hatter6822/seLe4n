@@ -2483,6 +2483,26 @@ inductive RwLockReachable : RwLockState → Prop where
   /-- Closure under kernel steps. -/
   | step : ∀ {s s'}, RwLockReachable s → RwLockKernelStep s s' → RwLockReachable s'
 
+/-- **WS-SM SM2.C.6 (reachability-carrying form)**: the multi-reader witness,
+with the derivation that produces it.
+
+`rwLock_reader_multiplicity` exhibits a `wf` state holding two readers, but `wf`
+alone does not say the protocol can *produce* it — a consumer wanting a
+non-vacuity witness could satisfy that existential with a well-formed state no
+execution reaches.  This form carries `RwLockReachable`, discharged by the two
+`tryAcquireRead` steps the original proof already took, so "reachable two-reader
+state" is a machine-checked property rather than a reading of the construction.
+
+Stated here rather than at `rwLock_reader_multiplicity` because
+`RwLockReachable` is not in scope at that point in the file. -/
+theorem rwLock_reader_multiplicity_reachable :
+    ∃ s : RwLockState, RwLockReachable s ∧ s.wf ∧ s.readers.length ≥ 2 := by
+  refine ⟨(RwLockState.unheld.applyOp (.tryAcquireRead bootCoreId)).applyOp
+            (.tryAcquireRead ⟨1, by decide⟩), ?_, ?_, ?_⟩
+  · exact .step (.step .base (.tryAcquireRead _ _)) (.tryAcquireRead _ _)
+  · decide
+  · decide
+
 /-- **WS-SM SM2.C-defer D-1.2**: reachability implies wf.
 
 By induction on the `RwLockReachable` derivation, using the per-op
