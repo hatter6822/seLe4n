@@ -105,9 +105,15 @@ Deliverables:
   `(numCores - 1) × (maxDelay + 1)` steps and
   `lockContentionChannel_alphabet_bounded` /
   `lockContentionChannel_trace_capacity` turn that into a per-acquisition
-  alphabet and a run capacity, in the shape SM8.B.9 gave the scheduling channel
-  CC-1.  Bounded, not closed — `lockContentionAlphabet_at_least_two` is the
-  standing negative.
+  alphabet, a **pacing** bound
+  (`lockContentionChannel_observation_rate_bounded` — distinct acquisitions have
+  distinct enqueue steps, so a core cannot observe more often than the execution
+  has steps) and a run capacity: the same three-part shape SM8.B.9 gave the
+  scheduling channel CC-1.  Bounded, not closed —
+  `lockContentionAlphabet_at_least_two` is the standing negative — and
+  **conditional**: the bound rests on the SM2.C release-delay assumption, with
+  `lockContention_unbounded_without_fairness` the execution that makes the
+  premise load-bearing.
 
 Exit evidence:
 

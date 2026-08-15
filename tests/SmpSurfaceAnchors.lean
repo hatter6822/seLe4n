@@ -507,10 +507,16 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      have _r := @SeLe4n.Kernel.readerMultiplicity_not_observable
      have _a := @SeLe4n.Kernel.blockedAcquirer_observes_nothing
      have _d := @SeLe4n.Kernel.lockContention_delay_bounded
+     have _o := @SeLe4n.Kernel.lockContentionObservation_is_own_acquisition
+     have _t := @SeLe4n.Kernel.lockContentionChannel_observation_rate_bounded
+     have _f := @SeLe4n.Kernel.lockContention_unbounded_without_fairness
+     have _k := @SeLe4n.Kernel.readerContentionDepth_bounded
+     have _h := @SeLe4n.Kernel.blockedReader_admitted_by_writer_release
+     have _n := @SeLe4n.Kernel.syscallEntryUnderDeclaredLockSet_undeclared
      have _b := @SeLe4n.Kernel.bibaIntegrity_underLockSet
      have _u := @SeLe4n.Kernel.authorityIntegrity_underLockSet
      have _w := @SeLe4n.Kernel.secureInformationFlow_underFineLocks
-     have _c : SeLe4n.Kernel.FineLockClaimId.all.length = 7 :=
+     have _c : SeLe4n.Kernel.FineLockClaimId.all.length = 8 :=
        SeLe4n.Kernel.fineLockClaims_count
      have _e := SeLe4n.Kernel.fineLockClaimEvidence
      true)

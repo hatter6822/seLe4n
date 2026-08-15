@@ -2830,6 +2830,90 @@ case-analysis on `KernelObject`. -/
     objectLockOf (.reply r) = r.lock := rfl
 
 -- ============================================================================
+-- WS-SM SM8.D — the lock **setter**, and the lock-erased content
+-- ============================================================================
+--
+-- `objectLockOf` above is the getter.  These are its setter and the quotient
+-- the setter induces.  They live here, beside the getter and below every
+-- consumer, because `KernelObject.updateLock` (SM3.C.2, in
+-- `Concurrency/Locks/WithLockSet.lean`) *advances* a lock by an `RwLockOp`
+-- and cannot express "this field holds an arbitrary value" — which is exactly
+-- what WS-SM SM8.D's information-flow statements quantify over.
+
+/-- WS-SM SM8.D: **set** a kernel object's lock word.
+
+The setter half of the SM3.A.10 `objectLockOf` getter.  Where `updateLock`
+advances a lock by an `RwLockOp`, this replaces it outright, which is what lets
+a caller quantify over *arbitrary* lock contents — the form "an observer cannot
+see the lock" needs, since it is a statement about every value the field could
+hold and not only about the ones a particular operation produces. -/
+def setLock (obj : KernelObject) (l : SeLe4n.Kernel.Concurrency.RwLockState) :
+    KernelObject :=
+  match obj with
+  | .tcb t           => .tcb           { t with lock := l }
+  | .endpoint e      => .endpoint      { e with lock := l }
+  | .notification n  => .notification  { n with lock := l }
+  | .cnode c         => .cnode         { c with lock := l }
+  | .vspaceRoot v    => .vspaceRoot    { v with lock := l }
+  | .untyped u       => .untyped       { u with lock := l }
+  | .schedContext sc => .schedContext  { sc with lock := l }
+  | .reply r         => .reply         { r with lock := l }
+
+/-- WS-SM SM8.D: the **lock-erased content** of a kernel object — everything
+about it except which cores are holding or waiting for it.
+
+This is the quotient WS-SM SM8.D is stated over: two objects with the same
+erasure differ only in their lock word, and that difference is invisible to
+every information-flow observer on every core and to every integrity policy. -/
+def eraseLock (obj : KernelObject) : KernelObject :=
+  obj.setLock SeLe4n.Kernel.Concurrency.RwLockState.unheld
+
+@[simp] theorem setLock_objectLockOf (obj : KernelObject)
+    (l : SeLe4n.Kernel.Concurrency.RwLockState) :
+    objectLockOf (obj.setLock l) = l := by cases obj <;> rfl
+
+@[simp] theorem eraseLock_objectLockOf (obj : KernelObject) :
+    objectLockOf obj.eraseLock = SeLe4n.Kernel.Concurrency.RwLockState.unheld :=
+  obj.setLock_objectLockOf _
+
+/-- WS-SM SM8.D: the number of readers holding an object is a coordinate of the
+lock word, hence of the field `eraseLock` discards. -/
+@[simp] theorem setLock_readers (obj : KernelObject)
+    (l : SeLe4n.Kernel.Concurrency.RwLockState) :
+    (objectLockOf (obj.setLock l)).readers = l.readers := by
+  rw [obj.setLock_objectLockOf]
+
+/-- WS-SM SM8.D: setting a lock does not disturb the erased content — so
+`eraseLock` really is a quotient by the lock word and nothing else. -/
+@[simp] theorem eraseLock_setLock (obj : KernelObject)
+    (l : SeLe4n.Kernel.Concurrency.RwLockState) :
+    (obj.setLock l).eraseLock = obj.eraseLock := by cases obj <;> rfl
+
+@[simp] theorem eraseLock_idempotent (obj : KernelObject) :
+    obj.eraseLock.eraseLock = obj.eraseLock := obj.eraseLock_setLock _
+
+/-- WS-SM SM8.D: the getter/setter round trip — writing back the lock an object
+already holds is the identity.  With `eraseLock_setLock` this says the pair
+`(eraseLock obj, objectLockOf obj)` **determines** `obj`, which is what makes
+the erasure lossless in the direction that matters: nothing outside the lock
+word is discarded. -/
+theorem setLock_objectLockOf_self (obj : KernelObject) :
+    obj.setLock (objectLockOf obj) = obj := by cases obj <;> rfl
+
+/-- WS-SM SM8.D: two objects with the same erased content and the same lock word
+are equal — the reconstruction half of the previous theorem. -/
+theorem eq_of_eraseLock_eq_of_lock_eq {o₁ o₂ : KernelObject}
+    (hErase : o₁.eraseLock = o₂.eraseLock) (hLock : objectLockOf o₁ = objectLockOf o₂) :
+    o₁ = o₂ := by
+  rw [← o₁.setLock_objectLockOf_self, ← o₂.setLock_objectLockOf_self, hLock]
+  cases o₁ <;> cases o₂ <;> simp_all [KernelObject.eraseLock, KernelObject.setLock]
+
+/-- WS-SM SM8.D: erasure preserves the object kind, so nothing that dispatches
+on `objectType` can tell an erased object from its original. -/
+@[simp] theorem eraseLock_objectType (obj : KernelObject) :
+    obj.eraseLock.objectType = obj.objectType := by cases obj <;> rfl
+
+-- ============================================================================
 -- WS-SM SM3.A audit-pass-5 — `objectLockOf` consistency theorems
 -- ============================================================================
 
@@ -2975,6 +3059,17 @@ instance (obj : KernelObject)
   | .endpoint _ | .notification _ | .vspaceRoot _ | .untyped _
   | .schedContext _ =>
     exact instDecidableTrue
+
+/-- WS-SM SM8.D: well-formedness does not read the lock word, so the lock-erased
+content of an object is well-formed exactly when the object is.
+
+This is what makes `eraseLock` an abstraction over *concurrency-control
+plumbing* rather than over object content: the predicate the kernel validates
+before installing an object (`lifecycleRetype`) cannot tell the two apart. -/
+@[simp] theorem eraseLock_wellFormed (obj : KernelObject)
+    (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject) :
+    obj.eraseLock.wellFormed objects ↔ obj.wellFormed objects := by
+  cases obj <;> simp [wellFormed, eraseLock, setLock, CNode.guardBounded]
 
 end KernelObject
 

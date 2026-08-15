@@ -2374,8 +2374,14 @@ run_check "INVARIANT" rg -n 'NEGATIVE: a widening override cannot open a flow th
 # sees nothing of the lock" a statement about the field rather than about a
 # particular write.  `projectKernelObject_setLock` is the load-bearing one: it
 # quantifies over every value the field could hold.
-run_check "INVARIANT" rg -n '^def KernelObject.setLock' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^def KernelObject.eraseLock' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# The setter and the erased content live beside the SM3.A.10 `objectLockOf`
+# getter, not in the staged information-flow module: they are model vocabulary,
+# and a `KernelObject` setter reachable only through a staged module would be
+# the wrong layering.  Pinned in both directions.
+run_check "INVARIANT" rg -n '^def setLock' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n '^def eraseLock' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem eraseLock_wellFormed' SeLe4n/Model/Object/Structures.lean
+run_negative_check "INVARIANT" rg -n '^def KernelObject.setLock' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem projectKernelObject_setLock' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^theorem projectKernelObject_eq_eraseLock' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^theorem onCore_lock_invisible' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
@@ -2404,6 +2410,52 @@ run_check "INVARIANT" rg -n 'lockContentionDelayBound maxDelay \+ 2' SeLe4n/Kern
 run_check "INVARIANT" rg -n '^theorem lockContentionCode_injective' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^theorem lockContentionAlphabet_at_least_two' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_lockContention_bounded' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# The observation is keyed to the acquisition it measures.  `admissionStep` is
+# the core's FIRST admission in the whole execution, so an observation built on
+# it truncates a repeat acquirer's genuine wait to zero; `admissionStepAfter` is
+# the enqueue-relative form the channel needs, and the negative anchor forbids a
+# regression to the first-admission reading.
+run_check "INVARIANT" rg -n '^def RwLockExecution.admissionStepAfter' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem rwLock_writer_admissionStepAfter_bounded' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n 'e.admissionStepAfter c enqueueStep' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockContentionObservation_is_own_acquisition' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_negative_check "INVARIANT" rg -n 'e\.admissionStep c\)\.map' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# The CC-5 treatment has all three parts CC-1 has: alphabet, PACING, capacity.
+# Without the pacing bound the run capacity would count observations with no
+# wall-clock window attached, which is what an earlier cut did by modelling a
+# run as a list of unrelated executions.
+run_check "INVARIANT" rg -n '^theorem RwLockExecution.distinct_steps_length_le' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem lockContentionChannel_observation_rate_bounded' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n 'enqueueSteps : List Nat' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# The fairness premise is load-bearing, and the RPi5 figure is split into the
+# grounded core count and SM2.C-defer D-3.7's PLACEHOLDER release budget.
+run_check "INVARIANT" rg -n '^theorem lockContention_unbounded_without_fairness' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem starvingExecution_writer_never_releases' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockContentionDelayBound_rpi5_coreFactor' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockContentionAlphabet_at_release_budget' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# A prose check: the subject IS the docstring sentence that keeps the 3077
+# figure from being read as a measured deployment property.
+run_prose_check "INVARIANT" rg -n 'placeholder, not a measured deployment figure' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# The blocked READER, which is the plan's D.3 row's own subject: the structural
+# depth cap and the operational admission fact.
+run_check "INVARIANT" rg -n '^theorem queueWaitDepth_bounded' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem readerWaitDepth_bounded' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem reader_at_head_admitted_by_writer_release' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem readerContentionDepth_bounded' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem blockedReader_admitted_by_writer_release' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# The severity is a judgement; what it is a judgement *about* is pinned.
+run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_lockContention_severity_basis' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# The declared-footprint entry CONSUMES the resolver, and fails closed for every
+# syscall SM3.C.9 has not declared.  The negative forbids a return to the form
+# whose resolution hypothesis was unused.
+run_check "INVARIANT" rg -n '^def syscallEntryUnderDeclaredLockSet' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryUnderDeclaredLockSet_undeclared' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_negative_check "INVARIANT" rg -n '_hFootprint' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# The decidable refuter, and the non-degenerate witness context for the two
+# integrity write rules.
+run_check "INVARIANT" rg -n '^def lockWritesOnlyCheck' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockWritesOnly_lockWritesOnlyCheck' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem writeRulesWitnessContext_nontrivial' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # SM8.D.4: BOTH integrity directions.  seLe4n's `integrityFlowsTo` deliberately
 # reverses standard BIBA, so a result about only one of them would say nothing
 # about a deployment configured with the other — and `writeRules_differ` is what
@@ -2451,6 +2503,22 @@ run_check "INVARIANT" rg -n 'NEGATIVE: core 0 acquired uncontended, so it never 
 run_check "INVARIANT" rg -n 'NEGATIVE: the alphabet is never 1' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: the acquire really did write the trusted object' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: the scenario sub-task carries no Lean claim' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runRepeatAcquirerChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runFairnessPremiseChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runContentionRateChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runBlockedReaderChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runContentionFigureChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runDeclaredFootprintChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runFineLockSuccessPathChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runFineLockTraceFixtureCheck' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: the first-admission reading would report a delay of 0' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: it is never admitted, so the observation is the reserved code' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: the alphabet tracks the budget' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: the HIGH observer' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'is undeclared, so the bracketed entry is' tests/SmpInformationFlowSuite.lean
+# The golden fine-lock contention trace and its hash companion.
+run_check "INVARIANT" rg -n '^\[smp-fine-lock\]' tests/fixtures/smp_fine_lock_contention.expected
+run_check "INVARIANT" rg -n 'smp_fine_lock_contention\.expected' tests/fixtures/smp_fine_lock_contention.expected.sha256
 
 
 # WS-H12d IPC message payload bounds anchors — predicate definitions + enforcement + theorems.

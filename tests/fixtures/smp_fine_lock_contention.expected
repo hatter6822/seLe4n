@@ -1,0 +1,18 @@
+[smp-fine-lock] probe object 1002: observable to low true
+[smp-fine-lock] raw lock writer=false readers=0 waiters=0 -> projected unheld on every core true
+[smp-fine-lock] raw lock writer=false readers=3 waiters=0 -> projected unheld on every core true
+[smp-fine-lock] raw lock writer=false readers=1 waiters=0 -> projected unheld on every core true
+[smp-fine-lock] raw lock writer=true readers=0 waiters=1 -> projected unheld on every core true
+[smp-fine-lock] contended execution: ops=9 enqueue=(some 2) admissionAfter=(some 3)
+[smp-fine-lock] contended observation: delay=(some 1) code=2 waitDepth=1
+[smp-fine-lock] repeat acquirer: firstAdmission=(some 1) enqueue=(some 4) admissionAfter=(some 5) delay=(some 1)
+[smp-fine-lock] unfair execution: admissionAfter=none code=0 (reserved)
+[smp-fine-lock] bound at budget 0/1/1024: 3/6/3075
+[smp-fine-lock] alphabet at budget 0/1/1024: 5/8/3077 (coreFactor 3 real, delay factor a placeholder)
+[smp-fine-lock] observation rate: at most ops+1 = 10 observations per execution
+[smp-fine-lock] blocked reader depth=1 admittedByRelease=true
+[smp-fine-lock] integrity rules at a trusted object with an untrusted subject: biba=false authority=true
+[smp-fine-lock] bracketed entry refused: SeLe4n.Model.KernelError.illegalState lockOnly=true
+[smp-fine-lock] bracketed entry succeeded: ok lowInvisible=true
+[smp-fine-lock] declared footprints: tcbSuspend=true send=false
+[smp-fine-lock] claims: 8 over 5 distinct proof-carrying sub-tasks

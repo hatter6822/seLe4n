@@ -25,7 +25,7 @@ SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
 **Current sub-phase: SM8.D information flow under fine locks LANDED
-(v0.33.9).**
+(v0.33.9; review cut v0.33.10).**
 
 SM8.D is about the **lock words themselves** — the per-object `RwLockState` the
 SM3 two-phase-locking bracket writes on every acquire and release once SM3.C.9
@@ -73,8 +73,25 @@ Closed on the way past: `syscallEntryChecked_preserves_projection` — SM8.B.12
 stated the entry-level witness for the boot-pinned `syscallEntry`, and the entry
 the SMP dispatch seam actually calls had none.
 
-Suite 403 → **464 assertions**, §7.1–§7.7 new, every group with a load-bearing
-negative; staged 59 → **60**.  Registered debt: the CC-5 temporal bound is the
+**Review cut (v0.33.10).**  A self-audit *against the code* returned sixteen
+findings, six substantive, none making a theorem false.  The observation was
+keyed to `admissionStep` — a core's *first* admission in the whole execution —
+so a core that acquires, releases and re-acquires had its second wait truncate
+to zero; it is now keyed to the new `RwLockExecution.admissionStepAfter`,
+derived from the substantive liveness theorem rather than its corollary.  CC-5
+had no pacing (CC-1 has alphabet + pacing + capacity) and its run was a list of
+*unrelated* executions; both closed.  The bound read as unconditional, though it
+rests on the SM2.C `FairTrace` assumption nothing in the kernel establishes, and
+3077 read as a deployment figure though `MAX_RELEASE_DELAY` is an explicit
+placeholder; both now stated.  The declared-footprint theorem's resolution
+hypothesis was decorative and is now consumed.  The success path had no
+discharged instance and now runs end to end.  Plus the reader-side mode-generic
+layer, the setter/erasure moved beside `objectLockOf`, a decidable refuter, a
+severity basis, an eighth inventory claim, eleven elaboration examples and a
+golden CC-5 trace.
+
+Suite 403 → **508 assertions**, §7.1–§7.10 new across fourteen groups, every
+group with a load-bearing negative; staged 59 → **60**.  Registered debt: the CC-5 temporal bound is the
 *writer*-mode one, since `rwLock_writer_liveness` has no reader analogue — a
 completeness gap in a bound on an already-accepted channel, scoped to the SM2.C
 liveness surface.

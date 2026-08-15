@@ -10,7 +10,7 @@
 > v0.33.2); SM8.B LANDED at v0.33.5; SM8.C LANDED at v0.33.7 (with SM8.B's
 > registered debt (a) closed in the same cut), completion cut v0.33.8
 > (SM8.C.8 the mounted audit trail + SM8.C.9 the live `.declassify` syscall);
-> SM8.D LANDED at v0.33.9; SM8.E pending
+> SM8.D LANDED at v0.33.9 (review cut v0.33.10); SM8.E pending
 
 ## 1. Phase goal
 
@@ -189,8 +189,13 @@ composes the SM2.C wait-depth cap with the admission-step bound to give a
 contending core's observation a ceiling of `(numCores - 1) × (maxDelay + 1)`
 steps, and `lockContentionChannel_alphabet_bounded` /
 `lockContentionChannel_trace_capacity` turn that into a per-acquisition alphabet
-and a run capacity, in the same shape §5 SM8.B.9 gave CC-1.  At the shipped
-configuration the alphabet is 3077 codes.  `lockContentionAlphabet_at_least_two`
+a pacing bound (`lockContentionChannel_observation_rate_bounded` — distinct
+acquisitions have distinct enqueue steps, so a core cannot observe more often
+than the execution has steps) and a run capacity: the same three-part shape §5
+SM8.B.9 gave CC-1.  The bound is **conditional on the SM2.C `FairTrace`
+assumption**, which nothing in the kernel establishes —
+`lockContention_unbounded_without_fairness` is the execution that makes the
+premise load-bearing.  `lockContentionAlphabet_at_least_two`
 is the standing negative — the bound never claims the channel is closed, which is
 why it stays *accepted* rather than discharged.
 
@@ -1682,7 +1687,7 @@ property is an **equality** (`legacyLattice_canFlow_embed`), the counterexample 
 retained as a theorem (`linearOrder_is_not_faithful_to_legacy`) so a regression
 fails to build, and `legacyLattice_wellFormed` makes it a drop-in.
 
-### SM8.D — Information flow under fine locks (6 sub-tasks) — **LANDED v0.33.9**
+### SM8.D — Information flow under fine locks (6 sub-tasks) — **LANDED v0.33.9, review cut v0.33.10**
 
 | Sub | Description | Theorem | Est | Status |
 |-----|-------------|---------|-----|--------|
@@ -1764,8 +1769,11 @@ consumer.
   `+ 2`), `lockContentionChannel_alphabet_bounded` and
   `lockContentionChannel_trace_capacity` give CC-5 the treatment §5 SM8.B.9 gave
   CC-1.  `lockContentionAlphabet_at_least_two` is the load-bearing negative: the
-  bound never claims the channel is closed.  At the shipped configuration,
-  `lockContentionAlphabet MAX_RELEASE_DELAY = 3077`.
+  bound never claims the channel is closed.  `numCores - 1 = 3` is the shipped
+  hardware's real factor; `MAX_RELEASE_DELAY` is SM2.C-defer D-3.7's
+  **placeholder** pending SM3 tuning, so `lockContentionAlphabet
+  MAX_RELEASE_DELAY = 3077` is what that symbol currently yields rather than a
+  measured deployment figure.
 * **SM8.D.4** — stated over an arbitrary write rule (`noUnpermittedWrite`,
   `withLockSet_noUnpermittedWrite`) and instantiated at **both**
   `bibaWritePermitted` (standard BIBA) and `authorityWritePermitted` (seLe4n's
@@ -1810,17 +1818,95 @@ The phase's claims ship as data with dependently-typed evidence
 over the five proof-carrying sub-tasks, with `fineLockClaims_cover_subTasks` the
 completeness check and a wrong mapping a type error rather than a stale string.
 
-**Registered debt (deferred, scoped).**  The CC-5 temporal bound is the
-*writer*-mode one, because that is what the SM2.C liveness surface supports:
-`rwLock_writer_liveness` / `rwLock_writer_admissionStep_bounded` have no reader
-analogue.  A blocked *reader*'s structural bound rides
-`rwLock_bounded_wait_read`'s occupancy cap (at most `numCores - 1` cores ahead
-of it), and its temporal bound needs a reader-side liveness theorem mirroring
-the writer one.  This is a completeness gap in a bound on an **already accepted**
-channel, not a security hole — CC-5 is registered accepted either way, and no
-claim anywhere asserts a reader-side temporal figure.  Closure target: the SM2.C
-liveness surface (`Concurrency/Locks/RwLock.lean` §D-3), whose writer proof is
-the template.
+
+#### Review cut (v0.33.10) — the sixteen self-audit findings
+
+A self-audit of the v0.33.9 cut *against the code* returned sixteen findings.
+None made a theorem false; six were substantive.  All are closed.
+
+1. **The observation was keyed to the wrong admission.**
+   `lockContentionObservation` read `admissionStep`, a core's **first**
+   admission in the whole execution, so a repeat acquirer's genuine wait
+   truncated to zero in `Nat`.  Closed at the SM2.C surface where the gap lives:
+   `RwLockExecution.admissionStepAfter` (+ characterization, +
+   `queued_not_holder` — INV-R4 in trace form, which is why no transition-edge
+   conjunct is needed) and `rwLock_writer_admissionStepAfter_bounded`, derived
+   from the substantive `rwLock_writer_liveness` rather than from its
+   `admissionStep` corollary.  `lockContentionObservation_is_own_acquisition` is
+   the property that rules the old reading out; suite §7.4b runs the execution
+   that would have been swallowed.
+2. **CC-5 had no pacing**, so "the treatment SM8.B.9 gave CC-1" overstated: CC-1
+   has alphabet + pacing + capacity, CC-5 had two of three.  Worse, the run was
+   a list of *unrelated executions*, so `n` observations corresponded to no
+   wall-clock window.  Closed: `lockContentionRun` is now enqueue steps within
+   **one** execution, and `RwLockExecution.distinct_steps_length_le` →
+   `lockContentionChannel_observation_rate_bounded` is the pacing fact.
+3. **The bound read as unconditional.**  It holds under the SM2.C `FairTrace`
+   assumption, which nothing in the kernel establishes.
+   `lockContention_unbounded_without_fairness` (+ `starvingExecution`,
+   `starvingExecution_writer_never_releases`) makes the premise load-bearing.
+4. **3077 read as a deployment figure.**  `MAX_RELEASE_DELAY` is SM2.C-defer
+   D-3.7's explicit *placeholder*.  `lockContentionDelayBound_rpi5_coreFactor`
+   isolates the grounded factor; `lockContentionAlphabet_at_release_budget`
+   carries the caveat; every doc site is corrected.
+5. **A decorative hypothesis.**  `suspendUnderDeclaredLockSet_…` took the
+   resolver equation and never used it.  Replaced by
+   `syscallEntryUnderDeclaredLockSet` — the bracket over the resolver's output,
+   where the equation is what produces the `some` — with
+   `…_undeclared` (the SM3.C.9 fail-closed property) and `…_tcbSuspend_isSome_iff`.
+   A Tier-3 negative anchor forbids the old shape.
+6. **The success path was never discharged.**  Suite §7.8 now runs a bracketed
+   live syscall that *succeeds* (the high thread blocking on a `.receive`), with
+   the low observer unchanged on every core and the **high** observer's view of
+   the caller moving — the negative that makes the low observer's blindness the
+   label filter's doing.
+7. **The reader had no figures**, though it is D.3's own subject.  The
+   mode-generic half is now proven: `queueWaitDepth` (with `writerWaitDepth` its
+   `.write` instance), `queueWaitDepth_bounded` / `readerWaitDepth_bounded`,
+   `queued_persists_or_admitted`, and — the operational content of the row —
+   `reader_at_head_admitted_by_writer_release`.  The residual is a reader-mode
+   *temporal* bound; see the debt note below, now with its cost stated.
+8. **Layering**: `KernelObject.setLock` / `eraseLock` moved to
+   `Model/Object/Structures.lean` beside the `objectLockOf` getter, with
+   `eraseLock_wellFormed` added there.  Tier 3 pins the placement both ways.
+9. **Nine smaller closures**: the decidable refuter `lockWritesOnlyCheck` (+
+   soundness), `acceptedCovertChannel_lockContention_severity_basis`, the CC-5
+   bound as an eighth `FineLockClaimId` claim (the anti-drift mechanism the
+   import direction prevents reusing from SM8.B), a polymorphic integrity
+   `evidenceProp`, a non-degenerate `writeRulesWitnessContext`, eleven §2
+   elaboration examples, the §7.5 fixture labelling delegation, and the golden
+   trace `tests/fixtures/smp_fine_lock_contention.expected` (+ `.sha256`).
+
+Suite 464 → **508** assertions; §7 alone 61 → 105 across fourteen groups.
+
+**Registered debt (deferred, scoped), with its cost stated.**  The CC-5
+temporal bound is the *writer*-mode one, because that is what the SM2.C liveness
+surface supports.  What the v0.33.10 review cut established is exactly how far
+the generalisation is cheap and where it stops:
+
+* **Cheap and now landed** — `queueWaitDepth` with `writerWaitDepth` its
+  `.write` instance definitionally, the mode-generic tight cap
+  `queueWaitDepth_bounded` / `readerWaitDepth_bounded` (the pigeonhole counts
+  distinct cores and never mentions the waiter's own mode), mode-generic
+  persistence `queued_persists_or_admitted` (from the already mode-generic
+  `leave_waiters_implies_holder`), and the head-of-queue admission fact
+  `reader_at_head_admitted_by_writer_release`, which is the operational content
+  of the D.3 row: the blocked reader becomes a holder at the very step the writer
+  releases, with no fairness assumption.
+* **Not cheap** — the trace-level bound.  Its keystone is
+  `writerWaitDepth_monotone_under_effective_release`, whose ~500-line case
+  analysis is positional (it reasons about the queue *head*'s mode, never the
+  waiting core's) and would therefore mirror mechanically — but mirroring it
+  means mirroring the whole `writerWaitDepth_*` family and its promote/`idxOf`
+  helper layer, realistically 800–1000 lines inside a production module.  That
+  is an SM2.C-sized development, recorded as such rather than half-done inside
+  SM8.D.
+
+This is a completeness gap in a bound on an **already accepted** channel, not a
+security hole — CC-5 is registered accepted either way, and no claim anywhere
+asserts a reader-side temporal figure.  Closure target: the SM2.C liveness
+surface (`Concurrency/Locks/RwLock.lean` §D-3.9, where the mode-generic layer
+now sits), whose writer proof is the template.
 
 ### SM8.E — Tests + closure (3 sub-tasks)
 

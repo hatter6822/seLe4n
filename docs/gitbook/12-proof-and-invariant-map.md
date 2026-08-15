@@ -2712,7 +2712,7 @@ group with a load-bearing negative.
 
 ### Layer 3 under SMP — information flow under fine locks (WS-SM SM8.D)
 
-`InformationFlow/FineLockFlow.lean` (WS-SM SM8.D, v0.33.9; staged,
+`InformationFlow/FineLockFlow.lean` (WS-SM SM8.D, v0.33.9, review cut v0.33.10; staged,
 `Platform.Staged` closure) is about the **lock words themselves** — the
 per-object `RwLockState` the SM3 two-phase-locking bracket writes on every
 acquire and every release once SM3.C.9 wraps the `@[export]` bodies.  The plan's
@@ -2745,9 +2745,11 @@ D.1–D.3 are restated here rather than ticked off.
   alphabet is `+ 2`), `lockContentionChannel_alphabet_bounded` and
   `lockContentionChannel_trace_capacity` then give CC-5 the treatment SM8.B.9
   gave CC-1, so the SMP kernel's two accepted timing channels are costed by one
-  construction.  At the shipped configuration the alphabet is 3077 codes;
-  `lockContentionAlphabet_at_least_two` is the standing negative that the bound
-  never claims the channel closed.
+  construction.  The `numCores - 1 = 3` factor is the shipped hardware's; the
+  delay factor is SM2.C-defer D-3.7's **placeholder** `MAX_RELEASE_DELAY`, so
+  the 3077-code alphabet is what that symbol currently yields rather than a
+  measured deployment figure.  `lockContentionAlphabet_at_least_two` is the
+  standing negative that the bound never claims the channel closed.
 * **Biba integrity under per-core locks (D.4), in both directions.**  Stated
   over an arbitrary write rule (`noUnpermittedWrite`,
   `withLockSet_noUnpermittedWrite`) and instantiated at both
@@ -2769,10 +2771,26 @@ D.1–D.3 are restated here rather than ticked off.
   Closed on the way past: `syscallEntryChecked_preserves_projection`, the
   per-core live-entry witness SM8.B.12 lacked.
 
-Runtime coverage: §7.1–§7.7 of the same suite (403 → 464 assertions), every
-group with a load-bearing negative, including a real nine-step contended
-execution on which the delay, the wait depth and the CC-5 code are computed and
-the bound theorem is applied.
+* **The bound's premises are stated, not implied.**  It holds under the SM2.C
+  release-delay assumption, which nothing in the kernel establishes;
+  `lockContention_unbounded_without_fairness` is the execution in which the
+  queued core is never admitted, so the premise is load-bearing.  And the
+  observation is keyed to the acquisition that made it
+  (`admissionStepAfter`, not the execution's first admission), so a core meeting
+  the same lock twice has its second wait reported rather than truncated to
+  zero — `lockContentionObservation_is_own_acquisition` is that property.
+* **The reader — D.3's own subject — has what generalises.**  `queueWaitDepth`
+  with `writerWaitDepth` its `.write` instance, the mode-generic tight cap
+  `readerWaitDepth_bounded`, and `reader_at_head_admitted_by_writer_release`:
+  the blocked reader becomes a holder at the very step the writer releases, with
+  no fairness assumption.  The reader-mode *temporal* bound remains SM2.C-sized
+  work, registered with its cost.
+
+Runtime coverage: §7.1–§7.10 of the same suite (403 → 508 assertions across
+fourteen groups), every group with a load-bearing negative, including a real
+nine-step contended execution on which the delay, the wait depth and the CC-5
+code are computed and the bound theorem is applied, a bracketed live syscall
+that *succeeds*, and a golden contention trace verified byte-for-byte.
 
 ## 32. WS-Q3 IntermediateState formalization (v0.17.9)
 
