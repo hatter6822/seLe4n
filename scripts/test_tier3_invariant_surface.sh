@@ -2366,6 +2366,92 @@ run_check "INVARIANT" rg -n 'enforcementBoundaryExtended.length = 39' SeLe4n/Ker
 run_check "INVARIANT" rg -n '^  runEndpointPolicyGateChecks' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: a widening override cannot open a flow the lattice denies' tests/SmpInformationFlowSuite.lean
 
+# ---------------------------------------------------------------------------
+# WS-SM SM8.D — information flow under fine locks
+# (plan SMP_INFORMATION_FLOW_PLAN.md §5 SM8.D.1 … SM8.D.6).
+# ---------------------------------------------------------------------------
+# SM8.D.1: the lock-erased content, and the FACTORING that makes "an observer
+# sees nothing of the lock" a statement about the field rather than about a
+# particular write.  `projectKernelObject_setLock` is the load-bearing one: it
+# quantifies over every value the field could hold.
+run_check "INVARIANT" rg -n '^def KernelObject.setLock' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^def KernelObject.eraseLock' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem projectKernelObject_setLock' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem projectKernelObject_eq_eraseLock' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem onCore_lock_invisible' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem onCore_lock_indistinguishable' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^def lockWritesOnly' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockWritesOnly_preserves_onCore' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem withLockSet_lockWritesOnly' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# The non-vacuity witness: a lock write is a REAL write, so `eraseLock` is an
+# abstraction over content that moves.  Without it every §1..§5 result would be
+# indistinguishable from "the bracket does nothing".
+run_check "INVARIANT" rg -n '^theorem KernelObject.updateLock_not_identity' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# SM8.D.2 / SM8.D.3 (model half): reader multiplicity and writer exclusion, the
+# latter stated for the BLOCKED acquirer itself — which is the plan D.3 row's
+# refutation rather than a restatement of it.
+run_check "INVARIANT" rg -n '^theorem readerMultiplicity_not_observable' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem readerMultiplicity_not_observable_at_reachable_witness' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem writerExclusion_not_observable' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem blockedAcquirer_observes_nothing' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# SM8.D.3 (timing half): the CC-5 bound.  The alphabet must reserve a code for
+# the un-admitted case (`+ 2`, not `+ 1`) or a zero-step delay and "no sample"
+# collapse onto each other and `lockContentionCode_injective` stops holding.
+run_check "INVARIANT" rg -n '^theorem lockContention_delay_bounded' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockContentionChannel_alphabet_bounded' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockContentionChannel_trace_capacity' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n 'lockContentionDelayBound maxDelay \+ 2' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockContentionCode_injective' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockContentionAlphabet_at_least_two' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_lockContention_bounded' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# SM8.D.4: BOTH integrity directions.  seLe4n's `integrityFlowsTo` deliberately
+# reverses standard BIBA, so a result about only one of them would say nothing
+# about a deployment configured with the other — and `writeRules_differ` is what
+# records that the two are not the same claim twice.
+run_check "INVARIANT" rg -n '^theorem bibaIntegrity_underLockSet' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem authorityIntegrity_underLockSet' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem writeRules_differ' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockWrite_carries_no_subject_data' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockPhases_integrity_clean_on_every_core' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# SM8.D.5: the witness, and the per-core live-entry preservation theorem SM8.B.12
+# lacked (`syscallEntry_preserves_projection` covers the boot-pinned entry; the
+# SMP dispatch seam calls the checked one).
+run_check "INVARIANT" rg -n '^theorem syscallEntryChecked_preserves_projection' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^def syscallEntryUnderLockSet' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryUnderLockSet_preserves_projectionOnCore' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryUnderLockSet_failClosed' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem secureInformationFlow_underFineLocks' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem suspendUnderDeclaredLockSet_preserves_projectionOnCore' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# The fail-closed conclusion is `lockWritesOnly`, NOT state equality: under fine
+# locks the literal `st' = st` claim the unbracketed `…_denied_preserves_state`
+# family makes is false, and restoring it would be a claim the bracket cannot
+# support.  Pinned negatively.
+run_negative_check "INVARIANT" rg -n 'syscallEntryUnderLockSet .*\)\.1 = s$' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# SM8.D: the claim inventory with dependently-typed evidence — a claim mapped at
+# the wrong theorem is a type error, not a stale string.
+run_check "INVARIANT" rg -n '^def FineLockClaimId.evidenceProp' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^def fineLockClaimEvidence : \(id : FineLockClaimId\) → id\.evidenceProp' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem fineLockClaims_cover_subTasks' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n 'niName! syscallEntryUnderLockSet_failClosed_invisible' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# The module is staged, and registered as such in both places.
+run_check "INVARIANT" rg -n '^import SeLe4n.Kernel.InformationFlow.FineLockFlow' SeLe4n/Platform/Staged.lean
+run_check "INVARIANT" rg -n '^SeLe4n.Kernel.InformationFlow.FineLockFlow' scripts/staged_module_allowlist.txt
+run_check "INVARIANT" rg -n 'SeLe4n.Kernel.InformationFlow.FineLockFlow' scripts/check_module_axioms.py
+# SM8.D.6: the runtime scenarios and their load-bearing negatives.
+run_check "INVARIANT" rg -n '^  runFineLockInvisibilityChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runReaderMultiplicityChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runWriterExclusionChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runLockContentionBoundChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runFineLockIntegrityChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runFineLockEntryChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runFineLockClaimInventoryChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: the four raw lock words are pairwise distinct' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: the raw lock records core 1 holding and core 0 queued' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: core 0 acquired uncontended, so it never enqueued' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: the alphabet is never 1' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: the acquire really did write the trusted object' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: the scenario sub-task carries no Lean claim' tests/SmpInformationFlowSuite.lean
+
 
 # WS-H12d IPC message payload bounds anchors — predicate definitions + enforcement + theorems.
 run_check "INVARIANT" rg -n '^def maxMessageRegisters' SeLe4n/Model/Object/Types.lean

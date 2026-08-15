@@ -99,6 +99,15 @@ Deliverables:
 - classify explicit declassification points (if any).  **Answered by WS-SM
   SM8.C**: there is exactly one, the `.declassify` syscall, and every downgrade
   it authorizes is recorded in an attributed, bounded, fail-closed audit trail.
+- bound the accepted timing channels rather than only registering them.
+  **Answered for the lock-contention channel (CC-5) by WS-SM SM8.D** (v0.33.9):
+  `lockContention_delay_bounded` caps a contending core's observation at
+  `(numCores - 1) × (maxDelay + 1)` steps and
+  `lockContentionChannel_alphabet_bounded` /
+  `lockContentionChannel_trace_capacity` turn that into a per-acquisition
+  alphabet and a run capacity, in the shape SM8.B.9 gave the scheduling channel
+  CC-1.  Bounded, not closed — `lockContentionAlphabet_at_least_two` is the
+  standing negative.
 
 Exit evidence:
 
@@ -249,6 +258,13 @@ Delivered (WS-F3 closeout):
   (`machineRegs`); machine timer excluded as covert timing channel.
 - BIBA lattice alternatives: `bibaIntegrityFlowsTo`, `bibaSecurityFlowsTo`,
   `bibaPolicy` with reflexivity/transitivity proofs.
+  **Given a live consumer by WS-SM SM8.D** (v0.33.9): `bibaIntegrityFlowsTo` was
+  provided "for comparison and potential future use" and nothing read it.
+  SM8.D's `bibaWritePermitted` reads it in the drop-in position its docstring
+  describes, so `bibaIntegrity_underLockSet` is a statement about *standard*
+  BIBA and `authorityIntegrity_underLockSet` its twin about seLe4n's reversed
+  order — a result about only one would say nothing about a deployment
+  configured with the other, which `writeRules_differ` records.
 - `DeclassificationPolicy` with `declassifyStore` enforcement operation
   (5 theorems) and `declassifyStore_NI` non-interference proof.
   **Superseded in reach by WS-SM SM8.C** (v0.33.7 → v0.33.8): the gate is now

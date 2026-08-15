@@ -1,3 +1,133 @@
+## v0.33.9 — WS-SM SM8.D: information flow under fine locks
+
+**SM8.D closes, and the plan's own table needed correcting to close it.**  The
+SM8.D rows were written while `projectKernelObject` still carried each object's
+`lock : RwLockState` into the observable state, which is what made "lock state
+visibility" something to document and "reader multiplicity" something to prove
+unobservable.  SM8.B.4 erased the field — three lists of `CoreId`s on every
+object kind re-opened the SM5.B placement channel — so D.1–D.3 had to be
+restated rather than ticked off.  New staged module
+`SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (staged 59 → 60), 100
+declarations, axiom-clean, trace byte-identical (no transition changed).
+
+### SM8.D.1 — the observer sees *nothing* of a lock word
+
+Not a docstring: `KernelObject.setLock` / `KernelObject.eraseLock` give the
+lock-erased content of an object, and `projectKernelObject_setLock` proves the
+observer's view **factors through** it — overwriting the lock with an
+*arbitrary* `RwLockState` leaves the projected object literally identical.  An
+operation-by-operation argument could not say that; it would leave open whether
+some other way of writing the field is visible.  `lockWritesOnly` lifts it to
+states: its first clause reconstructs the post-state from the pre-state plus
+`objects` and `objStoreLock`, so every other `SystemState` field is pinned
+without enumerating them (a field added tomorrow is covered the day it lands),
+and its second says the object store moved only in lock words.  Instances for
+`updateObjectLockAt`, `acquireLockOnObject`, `releaseLockOnObject`,
+`acquireAll`, `releaseAll` and `withLockSet`; consequences
+`lockWritesOnly_preserves_projection` / `…_preserves_onCore` /
+`…_lowEquivalent_smp`, plus `onCore_lock_invisible`,
+`onCore_lock_indistinguishable` and `onCore_objStoreLock` (the hierarchy-level-0
+table lock, outside the observable state as well).
+
+`lockWritesOnly` is deliberately **not** "the state is unchanged".  That claim
+is false under fine locks — the bracket writes real lock words, which
+`KernelObject.updateLock_not_identity` records — and stating it would be the
+shortcut this phase exists to avoid.
+
+### SM8.D.2 / SM8.D.3 — reader multiplicity, writer exclusion, and the timing that is left
+
+`readerMultiplicity_not_observable` over arbitrary reader lists, instantiated at
+the **reachable** two-reader state SM2.C.6 constructs
+(`…_at_reachable_witness`), so it is not a statement about lock words the
+protocol cannot produce.  `writerExclusion_not_observable` and
+`blockedAcquirer_observes_nothing` are the D.3 row's refutation: the plan's
+"writer-exclusion observable to blocked readers" is **false at the model level**,
+and the second theorem makes the observer the very core sitting in the queue.
+
+What is left is wall-clock delay — CC-5 — and SM8.D bounds it.
+`lockContention_delay_bounded` composes the SM2.C-defer D-2.3 wait-depth cap
+(`writerWaitDepth ≤ numCores - 1`, the *tight* bound) with the D-3.6 admission
+bound to give `delay ≤ (numCores - 1) × (maxDelay + 1)`; `lockContentionCode`
+(injective, with `0` reserved for "not admitted in this execution", which is why
+the alphabet is `+ 2` and not `+ 1`), `lockContentionChannel_alphabet_bounded`
+and `lockContentionChannel_trace_capacity` then give CC-5 the treatment SM8.B.9
+gave CC-1, so the SMP kernel's two accepted timing channels are costed by the
+same construction.  At the shipped configuration that is
+`lockContentionAlphabet MAX_RELEASE_DELAY = 3077`.
+`lockContentionAlphabet_at_least_two` is the load-bearing negative: the bound
+never claims the channel is closed.
+
+**Registered, not claimed**: the temporal bound is the *writer*-mode one, which
+is what the SM2.C liveness surface supports (`rwLock_writer_liveness` has no
+reader analogue).  A blocked reader's structural bound rides
+`rwLock_bounded_wait_read`'s occupancy cap; its temporal bound is scoped to the
+SM2.C liveness surface and recorded in the plan's SM8.D section.
+
+### SM8.D.4 — Biba integrity under per-core locks, in *both* directions
+
+Fine-grained locking makes every core a writer of every object it touches, so
+the question is real: does the 2PL bracket let an untrusted core write a trusted
+object?  It does write it.  What §4 proves is that the write is not one an
+integrity policy governs — and it proves it over an arbitrary write rule
+(`noUnpermittedWrite`, `withLockSet_noUnpermittedWrite`) instantiated at
+**both** `bibaWritePermitted` (standard BIBA) and `authorityWritePermitted`
+(seLe4n's deliberately reversed U6-I direction), because a result about one says
+nothing about a deployment configured with the other.  `writeRules_differ` is
+the witness that those are two claims and not one restated;
+`lockWrite_carries_no_subject_data` is why erasing the lock word is an
+abstraction rather than a way of defining the write away — two objects with
+wildly different content but the same lock word get the same lock word out, so
+nothing the writing subject holds reaches it.
+
+### SM8.D.5 — the secure-information-flow witness, and fail-closed sharpened
+
+`syscallEntryUnderLockSet` is the shape SM3.C.9 installs at the `@[export]`
+bodies (`commitKernelAction` adapts the partial kernel entry to the total state
+transformer the bracket takes, committing the pre-state on failure — what the
+runtime does).  `syscallEntryUnderLockSet_preserves_projectionOnCore` takes
+exactly the hypotheses the *unbracketed* per-core statement takes, relocated to
+the state the entry is run in: **no hypothesis about the lock set at all**, which
+is the result — SM3.C.9's migration is a change of concurrency control, not of
+the security argument.  `secureInformationFlow_underFineLocks` bundles
+confidentiality on every core with both integrity directions, and
+`suspendUnderDeclaredLockSet_preserves_projectionOnCore` instantiates it at
+`.tcbSuspend`, the one syscall whose footprint `lockSetForSyscall` declares.
+
+**The fail-closed statement weakens, and §1 is what makes the weaker form
+sufficient.**  Unbracketed, a denied syscall leaves the state *identical*
+(`…_denied_preserves_state`).  Bracketed it cannot — the growing and shrinking
+phases wrote lock words.  `syscallEntryUnderLockSet_failClosed` concludes
+`lockWritesOnly`, and `…_failClosed_invisible` recovers the guarantee the state
+equality was standing in for, with no extra hypothesis.  Recording the weakening
+explicitly matters: a reader who assumed the literal equality still held after
+SM3.C.9 would be assuming something false.
+
+**Closed on the way past**: `syscallEntryChecked_preserves_projection`.  SM8.B.12
+stated the entry-level witness for `syscallEntry`, the boot-pinned pre-SMP entry,
+because that is where the release-grade theorem lived; the entry the SMP dispatch
+seam actually calls is `syscallEntryChecked`, and it had none.
+
+### Inventory, tests and gates
+
+The phase's claims ship as data with dependently-typed evidence
+(`FineLockClaimId` / `evidenceProp` / `fineLockClaimEvidence`): seven claims over
+the five proof-carrying sub-tasks, a claim mapped at the wrong theorem is a type
+error, and `fineLockClaims_cover_subTasks` is the completeness check.
+`acceptedCovertChannel_lockContention_bounded` ties CC-5's inventory literals to
+the new bound so a reclassification cannot drift from it.
+
+`tests/SmpInformationFlowSuite.lean` §7.1–§7.7 (403 → **464** runtime
+assertions), every group with a load-bearing negative, including a real
+nine-step contended execution on which the delay, the wait depth and the CC-5
+code are *computed* and the bound theorem is **applied** — so its premises are
+demonstrably satisfiable rather than vacuous.  §7.6 runs the bracketed live
+entry end to end and finds that the fixture labelling itself trips the AJ2-C
+insecure-default heuristic, which is why the group carries its own labelling.
+`#check` anchors for all 99 module symbols, headline anchors in
+`tests/SmpSurfaceAnchors.lean`, and a Tier-3 block pinning the module, the
+staged registration, the axiom-sweep registration, the `+ 2` alphabet, both
+integrity directions and the suite's six negatives.
+
 ## v0.33.8 — WS-SM SM8.C.8/SM8.C.9: the audit trail mounted, and the `.declassify` syscall live
 
 **The completion cut for SM8.C.**  v0.33.7 built the declassification audit —

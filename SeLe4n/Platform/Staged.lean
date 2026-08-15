@@ -529,6 +529,22 @@ import SeLe4n.Kernel.InformationFlow.NonInterferenceCrossCore
 -- cross-core declassification rules as data with dependently-typed evidence.
 -- Reachability: staged at SM8.C; SM8.D / SM8.E closure is the next consumer.
 import SeLe4n.Kernel.InformationFlow.DeclassificationPerCore
+-- WS-SM SM8.D: information flow under fine locks.  What an observer, and what
+-- an integrity policy, can learn from the per-object lock words the SM3
+-- two-phase-locking bracket writes.  `KernelObject.eraseLock` and the factoring
+-- `projectKernelObject_setLock` (the observer's view is a function of an
+-- object's lock-*erased* content, so no part of any observer's view on any core
+-- reads the field); `lockWritesOnly` and its acquire / release / fold / bracket
+-- instances; reader multiplicity and writer exclusion unobservable, at the
+-- SM2.C reachable witnesses; the CC-5 timing channel bounded
+-- (`lockContention_delay_bounded` composing the SM2.C wait-depth and
+-- admission-step bounds, then an alphabet and a trace capacity in the shape
+-- SM8.B.9 gave CC-1); Biba integrity under per-core locks in both integrity
+-- directions; and the secure-information-flow witness for a 2PL-bracketed live
+-- syscall entry, with the fail-closed statement sharpened to `lockWritesOnly`.
+-- Reachability: staged at SM8.D; SM3.C.9's `withLockSet` migration at the
+-- `@[export]` bodies is the runtime exerciser, SM8.E the next consumer.
+import SeLe4n.Kernel.InformationFlow.FineLockFlow
 -- WS-SM SM6.A: the cross-core-aware syscall dispatch entry —
 -- `syscallDispatchCrossCoreEntry` (`@[export lean_syscall_dispatch_cross_core]`).
 -- Runs the verified `syscallDispatchFromAbi` atomically via `modifyGetKernelState`,

@@ -10,7 +10,7 @@
 > v0.33.2); SM8.B LANDED at v0.33.5; SM8.C LANDED at v0.33.7 (with SM8.B's
 > registered debt (a) closed in the same cut), completion cut v0.33.8
 > (SM8.C.8 the mounted audit trail + SM8.C.9 the live `.declassify` syscall);
-> SM8.D–SM8.E pending
+> SM8.D LANDED at v0.33.9; SM8.E pending
 
 ## 1. Phase goal
 
@@ -183,6 +183,16 @@ Eliminating the lock-contention channel would require:
 
 For v1.0.0, the channel is **documented and accepted** as a
 known covert channel. Mitigation is deferred to WS-W (post-1.0).
+
+**Accepted is not unbounded** (SM8.D, v0.33.9).  `lockContention_delay_bounded`
+composes the SM2.C wait-depth cap with the admission-step bound to give a
+contending core's observation a ceiling of `(numCores - 1) × (maxDelay + 1)`
+steps, and `lockContentionChannel_alphabet_bounded` /
+`lockContentionChannel_trace_capacity` turn that into a per-acquisition alphabet
+and a run capacity, in the same shape §5 SM8.B.9 gave CC-1.  At the shipped
+configuration the alphabet is 3077 codes.  `lockContentionAlphabet_at_least_two`
+is the standing negative — the bound never claims the channel is closed, which is
+why it stays *accepted* rather than discharged.
 
 ### 4.3 Why `DeclassificationEvent.originatingCore`
 
@@ -1672,16 +1682,16 @@ property is an **equality** (`legacyLattice_canFlow_embed`), the counterexample 
 retained as a theorem (`linearOrder_is_not_faithful_to_legacy`) so a regression
 fails to build, and `legacyLattice_wellFormed` makes it a drop-in.
 
-### SM8.D — Information flow under fine locks (6 sub-tasks)
+### SM8.D — Information flow under fine locks (6 sub-tasks) — **LANDED v0.33.9**
 
-| Sub | Description | Theorem | Est |
-|-----|-------------|---------|-----|
-| SM8.D.1 | Lock state visibility documented | docstring | M |
-| SM8.D.2 | Reader-multiplicity not directly observable | Theorem | M |
-| SM8.D.3 | Writer-exclusion observable to blocked readers | docstring | T |
-| SM8.D.4 | Biba-integrity under per-core locks | Theorem | M |
-| SM8.D.5 | Secure-information-flow witness under fine locks | Theorem | M |
-| SM8.D.6 | Lock-contention IF scenarios (5 tests) | M |
+| Sub | Description | Theorem | Est | Status |
+|-----|-------------|---------|-----|--------|
+| SM8.D.1 | Lock state visibility documented | docstring → **Theorem** | M | LANDED |
+| SM8.D.2 | Reader-multiplicity not directly observable | Theorem | M | LANDED |
+| SM8.D.3 | Writer-exclusion observable to blocked readers | docstring → **refuted + bounded** | T | LANDED |
+| SM8.D.4 | Biba-integrity under per-core locks | Theorem | M | LANDED |
+| SM8.D.5 | Secure-information-flow witness under fine locks | Theorem | M | LANDED |
+| SM8.D.6 | Lock-contention IF scenarios (5 tests) | M | LANDED (7 groups) |
 
 **Note — SM8.B moved the ground under D.1–D.3.**  This table was written
 while `projectKernelObject` carried each object's `lock : RwLockState` into
@@ -1711,6 +1721,107 @@ D.4–D.6 are unaffected: Biba integrity and the secure-flow witness are about
 which subjects may write which objects, not about the lock word, and the
 contention scenarios are timing scenarios.
 
+#### Landing record (v0.33.9)
+
+New staged module `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (staged
+59 → 60; 99 declarations; axiom-clean, checked by
+`scripts/check_module_axioms.py --all-smp-information-flow`).  No transition
+changed, so the golden trace is byte-identical.  SM3.C.9's `withLockSet`
+migration at the `@[export]` bodies is the runtime exerciser; SM8.E is the next
+consumer.
+
+* **SM8.D.1** — delivered as a theorem, not a docstring, and in the strongest
+  form available: `KernelObject.setLock` / `KernelObject.eraseLock` name the
+  lock-erased content and `projectKernelObject_setLock` proves the observer's
+  view **factors through** it.  Quantifying over every value the field could
+  hold is what makes this a statement about the *field* rather than about a
+  particular write; an operation-by-operation argument would leave open whether
+  some other way of writing it is visible.  `lockWritesOnly` lifts it to states
+  — its first clause reconstructs the post-state from the pre-state plus
+  `objects` and `objStoreLock`, pinning every other `SystemState` field without
+  enumerating them — with instances for `updateObjectLockAt`,
+  `acquireLockOnObject`, `releaseLockOnObject`, `acquireAll`, `releaseAll` and
+  `withLockSet`, and consequences `lockWritesOnly_preserves_projection` /
+  `…_preserves_onCore` / `…_lowEquivalent_smp`.  Plus `onCore_lock_invisible`,
+  `onCore_lock_indistinguishable`, and `onCore_objStoreLock` for the
+  hierarchy-level-0 table lock.  **`lockWritesOnly` is deliberately not "the
+  state is unchanged"** — that is false under fine locks
+  (`KernelObject.updateLock_not_identity`), and asserting it would be the
+  shortcut this phase exists to avoid.
+* **SM8.D.2** — `readerMultiplicity_not_observable` over arbitrary reader
+  lists, instantiated at the **reachable** two-reader state SM2.C.6 constructs
+  (`…_at_reachable_witness`), so the statement is not about lock words the
+  protocol cannot produce.  `readerMultiplicity_is_timing_only` is the CC-5
+  restatement, tied to the inventory entry's own literals.
+* **SM8.D.3** — the row is **refuted** at the model level rather than
+  reinstated: `writerExclusion_not_observable` and, decisively,
+  `blockedAcquirer_observes_nothing`, whose observer is the very core sitting
+  in the queue.  What replaces it is the timing claim, and SM8.D **bounds** it:
+  `lockContention_delay_bounded` composes the SM2.C-defer D-2.3 tight wait-depth
+  cap with the D-3.6 admission bound to give
+  `delay ≤ (numCores - 1) × (maxDelay + 1)`, then `lockContentionCode`
+  (injective; `0` reserved for "not admitted", which is why the alphabet is
+  `+ 2`), `lockContentionChannel_alphabet_bounded` and
+  `lockContentionChannel_trace_capacity` give CC-5 the treatment §5 SM8.B.9 gave
+  CC-1.  `lockContentionAlphabet_at_least_two` is the load-bearing negative: the
+  bound never claims the channel is closed.  At the shipped configuration,
+  `lockContentionAlphabet MAX_RELEASE_DELAY = 3077`.
+* **SM8.D.4** — stated over an arbitrary write rule (`noUnpermittedWrite`,
+  `withLockSet_noUnpermittedWrite`) and instantiated at **both**
+  `bibaWritePermitted` (standard BIBA) and `authorityWritePermitted` (seLe4n's
+  U6-I reversal), because a result about one says nothing about a deployment
+  configured with the other; `writeRules_differ` records that those are two
+  claims.  `lockWrite_carries_no_subject_data` is why erasing the lock word is
+  an abstraction and not a way of defining the write away — two objects with
+  wildly different content but the same lock word get the same lock word out.
+  `lockPhases_integrity_clean_on_every_core` is the `∀ core` form that makes
+  "under per-core locks" checkable.
+* **SM8.D.5** — `syscallEntryUnderLockSet` is the shape SM3.C.9 installs
+  (`commitKernelAction` adapts the partial entry to the total transformer the
+  bracket takes, committing the pre-state on failure).
+  `syscallEntryUnderLockSet_preserves_projectionOnCore` takes exactly the
+  hypotheses the unbracketed per-core statement takes, relocated to the state
+  the entry is run in — **no hypothesis about the lock set at all**, which is
+  the result.  `secureInformationFlow_underFineLocks` bundles confidentiality on
+  every core with both integrity directions;
+  `suspendUnderDeclaredLockSet_preserves_projectionOnCore` instantiates at
+  `.tcbSuspend`, the one syscall whose footprint `lockSetForSyscall` declares.
+  **Fail-closed weakens and §1 makes the weaker form sufficient**:
+  `syscallEntryUnderLockSet_failClosed` concludes `lockWritesOnly` rather than
+  state equality (which the bracket cannot support), and
+  `…_failClosed_invisible` recovers the guarantee the equality stood in for.
+  Closed on the way past: `syscallEntryChecked_preserves_projection` — SM8.B.12
+  stated the entry-level witness for the boot-pinned `syscallEntry`, and the
+  entry the SMP dispatch seam calls had none.
+* **SM8.D.6** — `tests/SmpInformationFlowSuite.lean` §7.1–§7.7 (403 → **464**
+  runtime assertions), seven groups, each with a load-bearing negative, plus a
+  real nine-step contended execution on which the delay, the wait depth and the
+  CC-5 code are computed and the bound theorem is **applied**, so its premises
+  are demonstrably satisfiable.  §7.6 runs the bracketed live entry end to end
+  (and found that the fixture labelling itself trips the AJ2-C insecure-default
+  heuristic, which is why that group carries its own labelling).  `#check`
+  anchors for all 99 module symbols, headline anchors in
+  `tests/SmpSurfaceAnchors.lean`, and a Tier-3 block pinning the module, both
+  registrations, the `+ 2` alphabet, both integrity directions and the six
+  negatives.
+
+The phase's claims ship as data with dependently-typed evidence
+(`FineLockClaimId` / `evidenceProp` / `fineLockClaimEvidence`) — seven claims
+over the five proof-carrying sub-tasks, with `fineLockClaims_cover_subTasks` the
+completeness check and a wrong mapping a type error rather than a stale string.
+
+**Registered debt (deferred, scoped).**  The CC-5 temporal bound is the
+*writer*-mode one, because that is what the SM2.C liveness surface supports:
+`rwLock_writer_liveness` / `rwLock_writer_admissionStep_bounded` have no reader
+analogue.  A blocked *reader*'s structural bound rides
+`rwLock_bounded_wait_read`'s occupancy cap (at most `numCores - 1` cores ahead
+of it), and its temporal bound needs a reader-side liveness theorem mirroring
+the writer one.  This is a completeness gap in a bound on an **already accepted**
+channel, not a security hole — CC-5 is registered accepted either way, and no
+claim anywhere asserts a reader-side temporal figure.  Closure target: the SM2.C
+liveness surface (`Concurrency/Locks/RwLock.lean` §D-3), whose writer proof is
+the template.
+
 ### SM8.E — Tests + closure (3 sub-tasks)
 
 | Sub | Description | Files | Est |
@@ -1730,6 +1841,10 @@ contention scenarios are timing scenarios.
 - `enforcementBoundaryExtended_perCore`
 - `acceptedCovertChannel_lockContention`
 - 35 per-NI-constructor variants (re-anchored — see §5 SM8.B)
+- `projectKernelObject_setLock` + `lockWritesOnly_preserves_onCore` (SM8.D.1)
+- `lockContention_delay_bounded` + `lockContentionChannel_alphabet_bounded` (SM8.D.3)
+- `bibaIntegrity_underLockSet` + `authorityIntegrity_underLockSet` (SM8.D.4)
+- `secureInformationFlow_underFineLocks` (SM8.D.5)
 
 ### 6.2 What SM8 assumes
 
@@ -1744,7 +1859,7 @@ contention scenarios are timing scenarios.
 | Per-core projection missing a field | LOW | HIGH | Field-by-field migration; SM8.A.4 independence test |
 | 32 per-NI-constructor variants tedious | HIGH | LOW | Mechanical migration like SM4.C |
 | `crossCoreNonInterference` proof has hole | LOW | HIGH | Theorem proved by direct application of Cor 2.1.11 |
-| Lock-contention channel mitigation unclear | KNOWN | MED | Deferred to WS-W; documented |
+| Lock-contention channel mitigation unclear | KNOWN | MED | Mitigation still deferred to WS-W, but the channel is no longer merely *documented*: SM8.D (v0.33.9) proves it carries no model-level flow (`onCore_lock_indistinguishable`) and **bounds** the timing it does carry (`lockContention_delay_bounded` → `lockContentionChannel_alphabet_bounded` → `lockContentionChannel_trace_capacity`), with `lockContentionAlphabet_at_least_two` the standing negative that it is bounded rather than closed |
 | Cross-core declass audit trail gaps | LOW | MED | DISCHARGED at SM8.C (v0.33.7).  The risk was understated: there were no writers to update — nothing constructed a `DeclassificationEvent`.  Closed by building the producer (`declassifyStoreOnCore`) and the attributed entry point (`declassifyStoreFromCore`), with `crossCoreChain_not_within_one_view` the theorem that decides one global log over per-core logs |
 
 ## 8. Acceptance gate
@@ -1779,6 +1894,21 @@ contention scenarios are timing scenarios.
       merely "updated": before this cut nothing in the tree constructed a
       `DeclassificationEvent` at all, so the producer `declassifyStoreOnCore`
       and the attributed entry point `declassifyStoreFromCore` are the closure).
+- [x] Lock-state visibility settled as a **theorem** rather than a docstring, and
+      the plan's D.3 row refuted at the model level rather than reinstated
+      (SM8.D, v0.33.9 — `projectKernelObject_setLock` is the factoring,
+      `blockedAcquirer_observes_nothing` the refutation).
+- [x] The lock-contention channel **bounded**, not only registered (SM8.D,
+      v0.33.9 — `lockContention_delay_bounded` /
+      `lockContentionChannel_alphabet_bounded` /
+      `lockContentionChannel_trace_capacity`, with the reader-mode temporal
+      bound registered against the SM2.C liveness surface).
+- [x] Biba integrity under per-core locks proven in **both** integrity
+      directions (SM8.D, v0.33.9 — `writeRules_differ` is why that is two
+      results and not one restated).
+- [x] Secure-information-flow witness for a 2PL-bracketed live syscall entry,
+      with the fail-closed statement sharpened from state equality to
+      `lockWritesOnly` (SM8.D, v0.33.9).
 - [x] Tier 0..3 green.
 
 ## 9. Cross-references
@@ -1812,7 +1942,23 @@ form `liveEndpointOverride_is_not_a_declassification_basis`,
 its dependently-typed `declassificationRuleEvidence`; plus, from the debt (a)
 closure, `endpointFlowGate` with `endpointFlowGate_implies_securityFlowsTo`,
 `endpointFlowGate_eq_securityFlowsTo_of_no_override` and the non-vacuity witness
-`endpointFlowGate_is_not_securityFlowsTo`.
+`endpointFlowGate_is_not_securityFlowsTo`.  SM8.D adds
+`KernelObject.setLock` / `eraseLock` with the factoring `projectKernelObject_setLock`,
+`lockWritesOnly` + `lockWritesOnly_preserves_onCore` and the acquire / release /
+fold / bracket instances, `onCore_lock_indistinguishable`,
+`readerMultiplicity_not_observable` (+ the reachable-witness form),
+`writerExclusion_not_observable` and `blockedAcquirer_observes_nothing`,
+`lockContention_delay_bounded` + `lockContentionChannel_alphabet_bounded` +
+`lockContentionChannel_trace_capacity` + `lockContentionCode_injective`,
+`writeRules_differ` + `lockWrite_carries_no_subject_data` +
+`bibaIntegrity_underLockSet` / `authorityIntegrity_underLockSet` +
+`lockPhases_integrity_clean_on_every_core`, and
+`syscallEntryChecked_preserves_projection` +
+`syscallEntryUnderLockSet_preserves_projectionOnCore` +
+`syscallEntryUnderLockSet_failClosed{,_invisible}` +
+`secureInformationFlow_underFineLocks` +
+`suspendUnderDeclaredLockSet_preserves_projectionOnCore`, with the seven-claim
+`FineLockClaimId` inventory and its dependently-typed evidence.
 
 ## Appendix A — Verification commands
 

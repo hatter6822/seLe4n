@@ -24,7 +24,62 @@ Plan:
 SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
-**Current sub-phase: SM8.C per-core declassification audit COMPLETE — landed
+**Current sub-phase: SM8.D information flow under fine locks LANDED
+(v0.33.9).**
+
+SM8.D is about the **lock words themselves** — the per-object `RwLockState` the
+SM3 two-phase-locking bracket writes on every acquire and release once SM3.C.9
+wraps the `@[export]` bodies.  The plan's own SM8.D table was written before
+SM8.B.4 erased `lock` from the projection, so D.1–D.3 had to be **restated**
+rather than ticked off, and the restatement is the phase's substance.
+
+**D.1 is a theorem, not a docstring**, and in the strongest available form: the
+observer's view **factors through** lock erasure.  `KernelObject.setLock` /
+`KernelObject.eraseLock` name an object's lock-erased content and
+`projectKernelObject_setLock` proves that overwriting the lock with an
+*arbitrary* `RwLockState` leaves the projected object literally identical — a
+statement about the field, which an operation-by-operation argument could not
+make.  `lockWritesOnly` lifts it to states; its first clause reconstructs the
+post-state from the pre-state plus `objects` and `objStoreLock`, so every other
+`SystemState` field is pinned without enumerating them.  It is deliberately
+**not** "the state is unchanged": that is false under fine locks, which
+`KernelObject.updateLock_not_identity` records.
+
+**D.3 is refuted, then replaced.**  `blockedAcquirer_observes_nothing` makes the
+observer the very core sitting in the wait queue, so the plan's
+"writer-exclusion observable to blocked readers" is false at the model level.
+What remains is wall-clock delay — CC-5 — and SM8.D **bounds** it:
+`lockContention_delay_bounded` composes the SM2.C-defer D-2.3 tight wait-depth
+cap with the D-3.6 admission bound to give `delay ≤ (numCores − 1) ×
+(maxDelay + 1)`, and `lockContentionChannel_alphabet_bounded` /
+`lockContentionChannel_trace_capacity` give CC-5 the treatment SM8.B.9 gave
+CC-1, so the SMP kernel's two accepted timing channels are costed by one
+construction.  Bounded, not closed: `lockContentionAlphabet_at_least_two` is
+the standing negative.
+
+**D.4 is proven in both integrity directions**, over an arbitrary write rule
+instantiated at `bibaWritePermitted` and `authorityWritePermitted`, because a
+result about one says nothing about a deployment configured with the other —
+`writeRules_differ` records that those are two claims, and
+`lockWrite_carries_no_subject_data` is why erasing the lock word is an
+abstraction rather than a way of defining the write away.
+
+**D.5's fail-closed statement weakens, and D.1 makes the weaker form
+sufficient.**  Unbracketed, a denied syscall leaves the state identical;
+bracketed it cannot, because the growing and shrinking phases wrote lock words.
+`syscallEntryUnderLockSet_failClosed` concludes `lockWritesOnly` and
+`…_failClosed_invisible` recovers the guarantee the equality stood in for.
+Closed on the way past: `syscallEntryChecked_preserves_projection` — SM8.B.12
+stated the entry-level witness for the boot-pinned `syscallEntry`, and the entry
+the SMP dispatch seam actually calls had none.
+
+Suite 403 → **464 assertions**, §7.1–§7.7 new, every group with a load-bearing
+negative; staged 59 → **60**.  Registered debt: the CC-5 temporal bound is the
+*writer*-mode one, since `rwLock_writer_liveness` has no reader analogue — a
+completeness gap in a bound on an already-accepted channel, scoped to the SM2.C
+liveness surface.
+
+**Prior sub-phase: SM8.C per-core declassification audit COMPLETE — landed
 v0.33.7, completion cut v0.33.8.**
 
 The v0.33.8 cut adds the two sub-tasks the plan's original seven did not
@@ -111,7 +166,7 @@ enforcement one; closing it means an outcome-carrying record, scoped to SM8.E.
 Suite 316 → **360 assertions**, §6.1–§6.8 new, every group with a load-bearing
 negative; staged 58 → 59.
 
-**Prior sub-phase: SM8.B cancellation cut LANDED (v0.33.5).**  Closes the one
+**Earlier sub-phase: SM8.B cancellation cut LANDED (v0.33.5).**  Closes the one
 item the v0.33.5 audit left registered rather than proven: the composed
 cross-core cancellation `cancelIpcBlockingOnCore`.
 
