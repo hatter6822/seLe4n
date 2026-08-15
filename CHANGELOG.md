@@ -1,3 +1,74 @@
+## v0.33.17 — WS-SM SM8.D: the seventh review round, and what the CC-5 bound is measured in
+
+Four P2 findings, all valid. Three are on the SM8.D.5 bracket; the fourth is a
+unit error in the CC-5 claim that had been present since the phase landed.
+Theorems, tests and prose only; no transition changed and the golden kernel
+trace is byte-identical.
+
+### CC-5's bound counts lock operations, not elapsed time
+
+`lockContentionObservation` subtracts two indices into `RwLockExecution.ops`, so
+the figure it produces counts **operations on the lock** — the critical sections
+a waiter queues behind — and not time. A holder may occupy its critical section
+for an arbitrarily long real interval without any operation on that lock being
+recorded, so a step-delay of one can correspond to an unbounded wall-clock wait.
+Every downstream result (`lockContention_delay_bounded`, the alphabet, the trace
+capacity) inherits that unit, and the phase had been describing them as bounding
+a *timing* channel.
+
+No theorem was false; the description was. The unit is now explicit at every
+site, and reading CC-5 as a timing channel is a separate, conditional result:
+`elapsedBetween` models per-step cost, `elapsedBetween_le` bounds an interval by
+`(steps × tCs)` given a ceiling `tCs` on any single interval, and
+`lockContention_wallClock_bounded` composes that with the step bound. The
+ceiling is a hypothesis rather than something derived, because the SM2.C
+execution model carries no notion of duration — which is exactly the gap being
+made visible. It is kept as its own theorem rather than folded into the step
+bound, since the step bound is unconditional given fairness and the time bound is
+not; merging them would hide which assumption carries which half.
+
+**Tracked debt (SM2.C):** timestamps on `RwLockExecution` itself, with
+`MAX_RELEASE_DELAY` denominated in ticks. That changes the core execution
+datatype every SM2.C liveness theorem quantifies over, so it is that phase's
+foundation to move.
+
+### The CSpace guard checked the endpoint, not the path
+
+v0.33.15 rejected multi-level resolution by testing the final `ref.cnode`. A path
+that descends into a child CNode and cycles back to the root passes that test
+while having read the unlocked child, and nothing in `cspaceDepthConsistent`
+excludes such capability cycles. The guard is now structural: `resolveCapAddress`
+consumes `guardWidth + radixWidth` bits per hop and recurses whenever any remain,
+so requiring `depth = guardWidth + radixWidth` at the root means it **cannot
+descend at all**. `entryCapTarget_single_level` carries that equation, so the
+non-recursion is pinned rather than inferred from where the walk happened to
+stop.
+
+### The continuation assumed the locks without requiring them
+
+`continueFromAcquired` skips the growing phase by construction, but accepted an
+arbitrary `SystemState` — so a state that merely *resolved* the same footprint,
+without ever having acquired it (or with a grant stripped by an intervening
+replacement), would have the syscall run and release with no exclusion at all.
+The revalidation guard now requires `lockSetHeld lockCore S observed` alongside
+the resolution equality, and `…_footprint_stable` carries it as a conjunct.
+
+### A refusal stranded the acquired footprint
+
+The refusal branch returned `none` without running the shrinking phase, so a
+caller following the documented fallback walked away still holding every lock it
+had acquired — blocking every later user of those objects. The result type now
+distinguishes the three cases that oblige the caller differently
+(`RevalidatedEntryOutcome`: `.undeclared` / `.refused` / `.committed`), and
+`.refused` carries the **released** state, so a refusal cannot be observed
+without the unwinding. `syscallEntryUnderRevalidatedLockSet_refused_releases`
+pins that the payload is the released state and not the observed one.
+
+`SmpInformationFlowSuite` 532 → **533** assertions, including the load-bearing
+negative that a state resolving the same footprint but not holding it is refused.
+
+Refs: docs/planning/SMP_INFORMATION_FLOW_PLAN.md section 5 SM8.D
+
 ## v0.33.16 — WS-SM SM8.D: the sixth review round, and a theorem that proved nothing
 
 Four P2 findings. Two are cases of this PR's own earlier fixes not going far

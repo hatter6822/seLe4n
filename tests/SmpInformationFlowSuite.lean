@@ -1217,6 +1217,11 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @syscallEntryUnderRevalidatedLockSet_footprint_stable
 #check @syscallEntryUnderRevalidatedLockSet_refuses_on_change
 #check @syscallEntryUnderRevalidatedLockSet_not_refines_in_general
+#check @RevalidatedEntryOutcome
+#check @syscallEntryUnderRevalidatedLockSet_refused_releases
+#check @elapsedBetween
+#check @elapsedBetween_le
+#check @lockContention_wallClock_bounded
 #check @continueFromAcquired
 #check @withLockSet_eq_continueFromAcquired
 #check @syscallEntryFromAcquired
@@ -6273,18 +6278,35 @@ private def runDeclaredFootprintChecks : IO Unit := do
         suspendObservedReplaced
       ≠ declaredLockSetForEntry fineLockEntryLabeling SeLe4n.arm64DefaultLayout c1 32
         suspendEntryState))
-  -- THE REFUSAL, demonstrated rather than asserted.
-  assertBool "NEGATIVE: a capability replaced under the growing phase is refused"
-    (decide ((syscallEntryUnderRevalidatedLockSet fineLockEntryLabeling c1
-        SeLe4n.arm64DefaultLayout c1 32 suspendEntryState suspendObservedReplaced) = none))
-  -- …and with nothing foreign committed, the same bracket commits.
+  -- THE REFUSAL, demonstrated rather than asserted — and it carries the
+  -- unwinding: a refusal hands back the state with the footprint released, so
+  -- a caller taking the fallback cannot be left holding the abandoned locks.
+  assertBool "NEGATIVE: a capability replaced under the growing phase is refused, with release"
+    (match syscallEntryUnderRevalidatedLockSet fineLockEntryLabeling c1
+             SeLe4n.arm64DefaultLayout c1 32 suspendEntryState suspendObservedReplaced with
+     | .refused _ => true
+     | _ => false)
+  -- …and with nothing foreign committed, the same bracket commits.  On this
+  -- fixture the acquire genuinely grants (the objects are uncontended), which is
+  -- what the new `lockSetHeld` half of the guard requires.
   assertBool "…while an undisturbed growing phase commits"
-    (decide ((syscallEntryUnderRevalidatedLockSetModel fineLockEntryLabeling c1
-        SeLe4n.arm64DefaultLayout c1 32 suspendEntryState).isSome))
-  assertBool "…and the stability, refusal, reachability and refinement properties, as theorems"
+    (match syscallEntryUnderRevalidatedLockSetModel fineLockEntryLabeling c1
+             SeLe4n.arm64DefaultLayout c1 32 suspendEntryState with
+     | .committed _ => true
+     | _ => false)
+  -- NEGATIVE: a state that resolves the same footprint but does NOT hold it is
+  -- refused too — the continuation skips acquisition, so running there would
+  -- execute and release with no exclusion at all.
+  assertBool "NEGATIVE: an observed state that does not hold the footprint is refused"
+    (match syscallEntryUnderRevalidatedLockSet fineLockEntryLabeling c1
+             SeLe4n.arm64DefaultLayout c1 32 suspendEntryState suspendEntryState with
+     | .refused _ => true
+     | _ => false)
+  assertBool "…and the stability, refusal, reachability, release and refinement properties"
     (have _s := @syscallEntryUnderRevalidatedLockSet_footprint_stable
      have _r := @syscallEntryUnderRevalidatedLockSet_refuses_on_change
      have _w := @revalidationRefusalReachable
+     have _u := @syscallEntryUnderRevalidatedLockSet_refused_releases
      have _f := @syscallEntryUnderRevalidatedLockSet_not_refines_in_general
      have _c := @withLockSet_eq_continueFromAcquired
      have _a := @syscallEntryUnderLockSet_eq_fromAcquired

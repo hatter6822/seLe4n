@@ -42,9 +42,12 @@ moves D.1 … D.3 rather than discharging them:
   erased field (§2), and what is left of it is the CC-5 *timing* claim.
 * **D.3** is **false as written** at the model level — a blocked reader sees
   nothing of writer exclusion in the projection — and §3 states the true form:
-  what a blocked acquirer observes is wall-clock delay, that delay is CC-5, and
-  under the SM2.C fairness assumption it is **bounded**, so the channel has a
-  bounded per-acquisition alphabet exactly as CC-1 does.
+  what a blocked acquirer observes is *delay*, that delay is CC-5, and under the
+  SM2.C fairness assumption it is **bounded**, so the channel has a bounded
+  per-acquisition alphabet exactly as CC-1 does.  The bound is denominated in
+  **lock operations**, not seconds — `lockContention_wallClock_bounded` is the
+  timing statement, and it carries the per-critical-section ceiling that
+  conversion needs as an explicit hypothesis.
 * **D.4** (§4) and **D.5** (§5) are unaffected by the erasure: integrity is
   about which subjects may write which objects, and the secure-flow witness is
   about the live path.
@@ -695,6 +698,66 @@ theorem lockContentionObservation_is_own_acquisition
   obtain ⟨hGt, hHolder⟩ := e.admissionStepAfter_characterization c kEnq admitStep hStep
   exact ⟨admitStep, hStep, hGt, hDelay.symm, hHolder⟩
 
+-- ----------------------------------------------------------------------------
+-- SM8.D.3 — what unit the bound is in, and what it takes to read it as time
+-- ----------------------------------------------------------------------------
+--
+-- `lockContentionObservation` subtracts two indices into `RwLockExecution.ops`,
+-- so the figure it produces counts **operations on this lock** — equivalently,
+-- the critical sections the waiter queues behind — and not elapsed time.  A
+-- holder may occupy its critical section for an arbitrarily long real interval
+-- without any operation on the lock being recorded, so a step-delay of one can
+-- correspond to an unbounded wall-clock wait.  Every result downstream
+-- (`lockContention_delay_bounded`, the alphabet, the trace capacity) inherits
+-- that unit.
+--
+-- Reading CC-5 as a *timing* channel therefore needs one more assumption the
+-- SM2.C model does not carry: a ceiling on how long a single critical section
+-- can run.  Rather than leave that implicit in prose — which is what made the
+-- earlier "wall-clock delay" wording overclaim — it is a parameter here, and the
+-- bridge theorem below is stated with it as an explicit hypothesis.
+--
+-- The stronger result (timestamps on `RwLockExecution` itself, with `maxDelay`
+-- denominated in ticks) is **tracked debt against SM2.C**: it changes the core
+-- execution datatype every SM2.C liveness theorem quantifies over, so it is that
+-- phase's foundation to move, not this one's.  Registered in
+-- `docs/planning/SMP_INFORMATION_FLOW_PLAN.md` §SM8.D.
+
+/-- SM8.D.3: elapsed time across a step interval, under a per-step cost model.
+
+`cost k` is the real time the execution spends between step `k` and step `k+1` —
+the critical section, when step `k` is a lock acquisition.  The SM2.C execution
+model has no such notion, which is exactly the gap this makes visible. -/
+def elapsedBetween (cost : Nat → Nat) (a b : Nat) : Nat :=
+  ((List.range (b - a)).map (fun i => cost (a + i))).sum
+
+/-- SM8.D.3 (**the step bound reads as a time bound only under a cost ceiling**).
+
+Given that no single interval costs more than `tCs`, a delay of `n` steps costs
+at most `n * tCs`.  The hypothesis is the whole point: without it the left side
+is unbounded while the right side is fixed, which is why the step figure alone
+does not bound a timing channel. -/
+theorem elapsedBetween_le (cost : Nat → Nat) (tCs : Nat) (hCost : ∀ k, cost k ≤ tCs)
+    (a b : Nat) : elapsedBetween cost a b ≤ (b - a) * tCs := by
+  unfold elapsedBetween
+  -- Induction on the interval width, bounding one summand at a time.
+  suffices h : ∀ (n a : Nat), ((List.range n).map (fun i => cost (a + i))).sum ≤ n * tCs by
+    exact h (b - a) a
+  intro n
+  induction n with
+  | zero => intro a; simp
+  | succ m ih =>
+    intro a
+    rw [List.range_succ_eq_map]
+    simp only [List.map_cons, List.map_map, List.sum_cons, Function.comp_def]
+    have hTail : ((List.range m).map (fun i => cost (a + (i + 1)))).sum ≤ m * tCs := by
+      have := ih (a + 1)
+      simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using this
+    have hHead : cost (a + 0) ≤ tCs := hCost _
+    calc cost (a + 0) + ((List.range m).map (fun i => cost (a + (i + 1)))).sum
+        ≤ tCs + m * tCs := Nat.add_le_add hHead hTail
+      _ = (m + 1) * tCs := by rw [Nat.succ_mul]; omega
+
 /-- SM8.D.3: the observation as a single natural number, with `0` reserved for
 "no admission in this execution". -/
 def lockContentionCode (e : SeLe4n.Kernel.Concurrency.RwLockExecution) (c : CoreId)
@@ -765,6 +828,37 @@ theorem lockContention_delay_bounded (e : SeLe4n.Kernel.Concurrency.RwLockExecut
   unfold lockContentionObservation
   rw [hStep]
   rfl
+
+
+/-- SM8.D.3 (**CC-5 as a wall-clock bound — and what that costs in assumptions**).
+
+`lockContention_delay_bounded` bounds the wait in *lock operations*.  This is the
+timing statement, and it needs a ceiling `tCs` on how long any single interval
+between operations runs — which the SM2.C execution model does not supply, so it
+is a hypothesis rather than something derived.
+
+The composition is deliberately kept as its own theorem rather than folded into
+the bound above: the step bound is unconditional given fairness, while the time
+bound is not, and merging them would hide which assumption carries which half. -/
+theorem lockContention_wallClock_bounded (e : SeLe4n.Kernel.Concurrency.RwLockExecution)
+    (maxDelay : Nat) (hFair : SeLe4n.Kernel.Concurrency.FairTrace e maxDelay)
+    (hInit : e.initial = RwLockState.unheld) (c : CoreId) (m : AccessMode) (kEnq : Nat)
+    (hQueued : (c, m) ∈ (e.stateAt kEnq).waiters)
+    (hWithin : kEnq + lockContentionDelayBound maxDelay < e.ops.length)
+    (cost : Nat → Nat) (tCs : Nat) (hCost : ∀ k, cost k ≤ tCs) :
+    ∃ delay admitStep, lockContentionObservation e c kEnq = some delay ∧
+      e.admissionStepAfter c kEnq = some admitStep ∧
+      delay ≤ lockContentionDelayBound maxDelay ∧
+      elapsedBetween cost kEnq admitStep ≤ lockContentionDelayBound maxDelay * tCs := by
+  obtain ⟨delay, hObs, hLe⟩ :=
+    lockContention_delay_bounded e maxDelay hFair hInit c m kEnq hQueued hWithin
+  obtain ⟨admitStep, hStep, _, hDelay, _⟩ :=
+    lockContentionObservation_is_own_acquisition e c kEnq delay hObs
+  refine ⟨delay, admitStep, hObs, hStep, hLe, ?_⟩
+  calc elapsedBetween cost kEnq admitStep
+      ≤ (admitStep - kEnq) * tCs := elapsedBetween_le cost tCs hCost kEnq admitStep
+    _ ≤ lockContentionDelayBound maxDelay * tCs := by
+        exact Nat.mul_le_mul_right tCs (hDelay ▸ hLe)
 
 /-- SM8.D.3: the writer instance of the delay bound. -/
 theorem writerContention_delay_bounded (e : SeLe4n.Kernel.Concurrency.RwLockExecution)
@@ -1052,7 +1146,7 @@ the capacity bound to apply, bundled so the trace theorem states them once.
 A run is a list of **enqueue steps within one execution** — the same shared time
 base CC-1's `schedulingCapacityRun` has over a list of states.  An earlier cut
 modelled it as a list of unrelated executions, which made "n observations"
-correspond to no wall-clock window at all and left the count uncomparable with
+correspond to no shared window at all and left the count uncomparable with
 CC-1's.
 
 The access mode is existential **per step**: one core's successive contended
@@ -2133,6 +2227,15 @@ def entryCapTarget (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (s : 
     match s.getCNode? tcb.cspaceRoot with
     | none => none
     | some rootCn =>
+      -- Non-recursive **by construction**, not by inspecting the endpoint.
+      -- `resolveCapAddress` consumes `guardWidth + radixWidth` bits per hop and
+      -- recurses whenever any remain, so a root that consumes them all cannot
+      -- descend at all.  Checking the final `ref.cnode` instead would accept a
+      -- path that leaves the root and cycles back to it — the lookup would still
+      -- have read an unlocked child CNode on the way, and a concurrent writer
+      -- could redirect it without touching the declared footprint.
+      if rootCn.depth ≠ rootCn.guardWidth + rootCn.radixWidth then none
+      else
       match resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth s with
       | .error _ => none
       | .ok ref =>
@@ -2168,12 +2271,14 @@ theorem entryCapTarget_rejects_sentinel (decoded : SyscallDecodeResult)
     · next rootCn _ =>
       split at h
       · exact absurd h (by simp)
-      · next ref _ =>
-        split at h
+      · split at h
         · exact absurd h (by simp)
-        · split at h
+        · next ref _ =>
+          split at h
           · exact absurd h (by simp)
-          · next capPair _ =>
+          · split at h
+            · exact absurd h (by simp)
+            · next capPair _ =>
             obtain ⟨cap, _⟩ := capPair
             split at h
             · next objId _ =>
@@ -2202,6 +2307,10 @@ theorem entryCapTarget_single_level (decoded : SyscallDecodeResult)
     (h : entryCapTarget decoded tid s = some t) :
     ∃ tcb rootCn ref, s.getTcb? tid = some tcb ∧
       s.getCNode? tcb.cspaceRoot = some rootCn ∧
+      -- The root consumes every bit, so the resolution takes exactly one hop:
+      -- it cannot descend into a child CNode, and therefore cannot leave and
+      -- re-enter the root either.
+      rootCn.depth = rootCn.guardWidth + rootCn.radixWidth ∧
       resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth s = .ok ref ∧
       ref.cnode = tcb.cspaceRoot := by
   unfold entryCapTarget at h
@@ -2215,15 +2324,19 @@ theorem entryCapTarget_single_level (decoded : SyscallDecodeResult)
     | some rootCn =>
       rw [hCn] at h
       simp only at h
-      cases hRes : resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth s with
-      | error e => rw [hRes] at h; exact absurd h (by simp)
-      | ok ref =>
-        rw [hRes] at h
-        simp only at h
-        by_cases hSame : ref.cnode = tcb.cspaceRoot
-        · exact ⟨tcb, rootCn, ref, by rfl, hCn, hRes, hSame⟩
-        · rw [if_pos hSame] at h
-          exact absurd h (by simp)
+      by_cases hDepth : rootCn.depth = rootCn.guardWidth + rootCn.radixWidth
+      · rw [if_neg (by exact fun hne => hne hDepth)] at h
+        cases hRes : resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth s with
+        | error e => rw [hRes] at h; exact absurd h (by simp)
+        | ok ref =>
+          rw [hRes] at h
+          simp only at h
+          by_cases hSame : ref.cnode = tcb.cspaceRoot
+          · exact ⟨tcb, rootCn, ref, by rfl, hCn, hDepth, hRes, hSame⟩
+          · rw [if_pos hSame] at h
+            exact absurd h (by simp)
+      · rw [if_pos hDepth] at h
+        exact absurd h (by simp)
 
 /-- SM8.D.5: SM3.C.9's declared footprint **for the operation the entry will
 actually execute**.
@@ -2502,26 +2615,51 @@ concurrent kernel passes that state plus whatever other cores committed —
 which is exactly the interleaving a single-state transition cannot manufacture
 for itself.  `revalidationRefusalReachable` exhibits a refusal.
 
-`none` means either that no footprint is declared or that the resolution moved
-under the acquire — deliberately the same outcome, since a caller must fall back
-to its coarser serialisation in both cases. -/
+**The outcome distinguishes the three cases, because they oblige the caller
+differently.**  An earlier cut returned `Option`, collapsing "no footprint was
+declared" with "a footprint was acquired and then refused" — and the refusal
+branch returned `none` without running the shrinking phase, so a caller taking
+the documented fallback walked away still holding the abandoned footprint and
+blocked every later user of those objects.  Lock unwinding is now part of the
+result: `.refused` carries the **released** state, so there is no way to observe
+a refusal without also receiving the state in which the locks are gone. -/
+inductive RevalidatedEntryOutcome where
+  /-- No footprint is declared for the operation the entry runs, so nothing was
+  acquired and nothing needs releasing — the caller keeps its coarser
+  serialisation. -/
+  | undeclared
+  /-- A footprint was declared and acquired, and then the resolution moved (or
+  the observed state does not hold it).  Carries the state with the footprint
+  **released**, so a refusal cannot be observed without the unwinding. -/
+  | refused (released : SystemState)
+  /-- The guard passed: the transition ran from the observed state and the
+  footprint was released after it. -/
+  | committed (result : SystemState × Except KernelError Unit)
+
 def syscallEntryUnderRevalidatedLockSet (ctx : LabelingContext) (lockCore : CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
-    (s : SystemState) (observed : SystemState) :
-    Option (SystemState × Except KernelError Unit) :=
+    (s : SystemState) (observed : SystemState) : RevalidatedEntryOutcome :=
   match declaredLockSetForEntry ctx layout executingCore regCount s with
-  | none => none
+  | none => .undeclared
   | some S =>
-    if declaredLockSetForEntry ctx layout executingCore regCount observed = some S then
+    -- Two conditions, both necessary.  The resolution must not have moved, and
+    -- `observed` must actually **hold** the footprint: the continuation skips
+    -- the growing phase, so a state that merely resolves the same set — one
+    -- never produced by a successful acquisition, or one an intervening
+    -- replacement stripped a grant from — would have the syscall run and
+    -- release with no exclusion at all.
+    if declaredLockSetForEntry ctx layout executingCore regCount observed = some S
+        ∧ SeLe4n.Kernel.Concurrency.lockSetHeld lockCore S observed then
       -- Continue from `observed`, NOT from `s`.  `observed` is the state the
       -- growing phase actually ended in — the one the guard just revalidated —
       -- so re-running the whole bracket from `s` would discard exactly the
-      -- intervening commits the revalidation accepted, and the entry would never
-      -- see the state that was checked.  The locks are already held in
-      -- `observed`, so the continuation must not re-acquire them.
-      some (syscallEntryFromAcquired ctx S lockCore layout executingCore regCount observed)
+      -- intervening commits the revalidation accepted.
+      .committed (syscallEntryFromAcquired ctx S lockCore layout executingCore regCount observed)
     else
-      none
+      -- Refusing still has to unwind: the footprint was acquired before the
+      -- guard ran, so returning without releasing strands it on `lockCore`.
+      .refused (SeLe4n.Kernel.Concurrency.releaseAll lockCore
+        S.lockAcquireSequence.reverse observed)
 
 /-- SM8.D.5: the instance this pure model can run — the growing phase ends at
 `lockSetAcquiredState`, because no other core can commit in between.
@@ -2531,9 +2669,9 @@ rather than the only shape the bracket has.  `revalidationRefusalReachable` is t
 other reading, and it is the one SM3.C.9's concurrent kernel lives in. -/
 def syscallEntryUnderRevalidatedLockSetModel (ctx : LabelingContext) (lockCore : CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
-    (s : SystemState) : Option (SystemState × Except KernelError Unit) :=
+    (s : SystemState) : RevalidatedEntryOutcome :=
   match declaredLockSetForEntry ctx layout executingCore regCount s with
-  | none => none
+  | none => .undeclared
   | some S =>
     syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore regCount s
       (lockSetAcquiredState S lockCore s)
@@ -2549,9 +2687,10 @@ theorem syscallEntryUnderRevalidatedLockSet_footprint_stable (ctx : LabelingCont
     (regCount : Nat) (s observed : SystemState)
     (r : SystemState × Except KernelError Unit)
     (h : syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore regCount s
-      observed = some r) :
+      observed = .committed r) :
     ∃ S, declaredLockSetForEntry ctx layout executingCore regCount s = some S ∧
       declaredLockSetForEntry ctx layout executingCore regCount observed = some S ∧
+      SeLe4n.Kernel.Concurrency.lockSetHeld lockCore S observed ∧
       r = syscallEntryFromAcquired ctx S lockCore layout executingCore regCount observed := by
   unfold syscallEntryUnderRevalidatedLockSet at h
   cases hRes : declaredLockSetForEntry ctx layout executingCore regCount s with
@@ -2560,7 +2699,7 @@ theorem syscallEntryUnderRevalidatedLockSet_footprint_stable (ctx : LabelingCont
     rw [hRes] at h
     simp only at h
     split at h
-    · next hStable => exact ⟨S, rfl, hStable, by simpa using h.symm⟩
+    · next hGuard => exact ⟨S, rfl, hGuard.1, hGuard.2, by simpa using h.symm⟩
     · exact absurd h (by simp)
 
 /-- SM8.D.5 (**fail-closed under the race**): if the resolution moved by the time
@@ -2575,11 +2714,38 @@ theorem syscallEntryUnderRevalidatedLockSet_refuses_on_change (ctx : LabelingCon
     (hRes : declaredLockSetForEntry ctx layout executingCore regCount s = some S)
     (hMoved : declaredLockSetForEntry ctx layout executingCore regCount observed ≠ some S) :
     syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore regCount s
-      observed = none := by
+      observed = .refused (SeLe4n.Kernel.Concurrency.releaseAll lockCore
+        S.lockAcquireSequence.reverse observed) := by
   unfold syscallEntryUnderRevalidatedLockSet
   rw [hRes]
   simp only
-  rw [if_neg hMoved]
+  rw [if_neg (fun hG => hMoved hG.1)]
+
+/-- SM8.D.5 (**a refusal always carries the unwinding**): the state a `.refused`
+outcome hands back is the observed state with the declared footprint released —
+never the observed state itself.
+
+This is the property whose absence stranded the footprint: with an `Option`
+result there was no payload to carry the release, so the shrinking phase simply
+did not run on the refusal path and a caller taking the documented fallback kept
+holding every lock it had acquired. -/
+theorem syscallEntryUnderRevalidatedLockSet_refused_releases (ctx : LabelingContext)
+    (lockCore : CoreId) (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId)
+    (regCount : Nat) (s observed released : SystemState)
+    (h : syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore regCount s
+      observed = .refused released) :
+    ∃ S, declaredLockSetForEntry ctx layout executingCore regCount s = some S ∧
+      released = SeLe4n.Kernel.Concurrency.releaseAll lockCore
+        S.lockAcquireSequence.reverse observed := by
+  unfold syscallEntryUnderRevalidatedLockSet at h
+  cases hRes : declaredLockSetForEntry ctx layout executingCore regCount s with
+  | none => rw [hRes] at h; exact absurd h (by simp)
+  | some S =>
+    rw [hRes] at h
+    simp only at h
+    split at h
+    · exact absurd h (by simp)
+    · exact ⟨S, rfl, by simpa using h.symm⟩
 
 /-- SM8.D.5 (**the refusal is reachable**): a state on which the guard fires.
 
@@ -2595,13 +2761,13 @@ theorem revalidationRefusalReachable (ctx : LabelingContext) (lockCore : CoreId)
     (hDeclared : (declaredLockSetForEntry ctx layout executingCore regCount s).isSome)
     (hDiffers : declaredLockSetForEntry ctx layout executingCore regCount observed
       ≠ declaredLockSetForEntry ctx layout executingCore regCount s) :
-    syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore regCount s
-      observed = none := by
+    ∃ released, syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore
+      regCount s observed = .refused released := by
   cases hRes : declaredLockSetForEntry ctx layout executingCore regCount s with
   | none => rw [hRes] at hDeclared; exact absurd hDeclared (by simp)
   | some S =>
-    refine syscallEntryUnderRevalidatedLockSet_refuses_on_change ctx lockCore layout
-      executingCore regCount s observed S hRes ?_
+    refine ⟨_, syscallEntryUnderRevalidatedLockSet_refuses_on_change ctx lockCore layout
+      executingCore regCount s observed S hRes ?_⟩
     rw [hRes] at hDiffers
     exact hDiffers
 
@@ -2622,11 +2788,11 @@ general refinement here would therefore re-assert the bug. -/
 theorem syscallEntryUnderRevalidatedLockSet_not_refines_in_general :
     ∀ ctx lockCore layout executingCore regCount s observed r,
       syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore regCount s
-        observed = some r →
+        observed = .committed r →
       ∃ S, declaredLockSetForEntry ctx layout executingCore regCount s = some S ∧
         r = syscallEntryFromAcquired ctx S lockCore layout executingCore regCount observed := by
   intro ctx lockCore layout executingCore regCount s observed r h
-  obtain ⟨S, hRes, _, hEq⟩ :=
+  obtain ⟨S, hRes, _, _, hEq⟩ :=
     syscallEntryUnderRevalidatedLockSet_footprint_stable ctx lockCore layout executingCore
       regCount s observed r h
   exact ⟨S, hRes, hEq⟩
@@ -2637,7 +2803,7 @@ theorem syscallEntryUnderRevalidatedLockSetModel_refines (ctx : LabelingContext)
     (lockCore : CoreId) (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId)
     (regCount : Nat) (s : SystemState) (r : SystemState × Except KernelError Unit)
     (h : syscallEntryUnderRevalidatedLockSetModel ctx lockCore layout executingCore regCount s
-      = some r) :
+      = .committed r) :
     syscallEntryUnderDeclaredLockSet ctx lockCore layout executingCore regCount s = some r := by
   unfold syscallEntryUnderRevalidatedLockSetModel at h
   cases hRes : declaredLockSetForEntry ctx layout executingCore regCount s with
@@ -2645,7 +2811,7 @@ theorem syscallEntryUnderRevalidatedLockSetModel_refines (ctx : LabelingContext)
   | some S =>
     rw [hRes] at h
     simp only at h
-    obtain ⟨S', hRes', _, hEq⟩ :=
+    obtain ⟨S', hRes', _, _, hEq⟩ :=
       syscallEntryUnderRevalidatedLockSet_footprint_stable ctx lockCore layout executingCore
         regCount s _ r h
     rw [hRes] at hRes'

@@ -2548,6 +2548,24 @@ run_negative_check "INVARIANT" rg -n 'lockContentionCode twoWaiterExecution ahea
 # The claim inventory's secure-flow arm is quantified over the confinement core,
 # so an `…_atCore` regression breaks it instead of elaborating anyway.
 run_check "INVARIANT" rg -n 'niName! syscallEntryUnderLockSet_preserves_projectionOnCore_atCore' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# PR #864 review round 7.  The CSpace guard is structural: the root consumes
+# every bit, so the resolution cannot recurse — checking only the final
+# `ref.cnode` would accept a path that leaves the root and cycles back to it.
+run_check "INVARIANT" rg -n 'rootCn.depth . rootCn.guardWidth . rootCn.radixWidth' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# The revalidated bracket distinguishes three outcomes, requires the observed
+# state to HOLD the footprint, and releases it on refusal.
+run_check "INVARIANT" rg -n '^inductive RevalidatedEntryOutcome' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n 'lockSetHeld lockCore S observed' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryUnderRevalidatedLockSet_refused_releases' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# NEGATIVE: the refusal branch must not go back to returning `none`, which is
+# what stranded the acquired footprint on the caller.
+run_negative_check "INVARIANT" rg -n 'observed = none := by' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# CC-5's bound is denominated in LOCK OPERATIONS; reading it as time needs an
+# explicit per-critical-section ceiling.
+run_check "INVARIANT" rg -n '^def elapsedBetween' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem elapsedBetween_le' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockContention_wallClock_bounded' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: an observed state that does not hold the footprint is refused' tests/SmpInformationFlowSuite.lean
 # The multi-reader witness carries REACHABILITY, not merely well-formedness: a
 # wf-only existential could be satisfied by a lock word no execution produces,
 # which is the opposite of the non-vacuity the theorem claims.

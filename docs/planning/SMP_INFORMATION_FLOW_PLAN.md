@@ -2095,6 +2095,33 @@ Four findings; two are cases of the previous cuts not going far enough.
 
 Suite 530 → **532** assertions.
 
+#### v0.33.17 review cut — the seventh round, and the CC-5 unit error
+
+Four findings; three on the SM8.D.5 bracket, one a unit error present since the
+phase landed.
+
+1. **CC-5's bound counts lock operations, not elapsed time.**  The observation
+   subtracts indices into `RwLockExecution.ops`, and a holder may occupy its
+   critical section for an arbitrarily long real interval without any operation
+   on the lock being recorded — so a step-delay of one can be an unbounded
+   wall-clock wait.  No theorem was false; the description was.  The unit is now
+   explicit, and the timing reading is a separate conditional result
+   (`elapsedBetween` / `elapsedBetween_le` / `lockContention_wallClock_bounded`)
+   carrying a per-critical-section ceiling as an explicit hypothesis.
+   **Registered debt against SM2.C**: timestamps on `RwLockExecution` itself,
+   with `MAX_RELEASE_DELAY` denominated in ticks.  That changes the core
+   execution datatype every SM2.C liveness theorem quantifies over, so it is that
+   phase's foundation to move rather than SM8.D's.
+2. **The CSpace guard checked the endpoint, not the path** — a resolution that
+   descends into a child CNode and cycles back to the root passed it.  The guard
+   is now structural: the root consumes every bit, so the walk cannot descend.
+3. **The continuation assumed the locks without requiring them** — it now
+   requires `lockSetHeld lockCore S observed`.
+4. **A refusal stranded the acquired footprint** — the outcome type now carries
+   the released state, so a refusal cannot be observed without the unwinding.
+
+Suite 532 → **533** assertions.
+
 ### SM8.E — Tests + closure (3 sub-tasks)
 
 | Sub | Description | Files | Est |
