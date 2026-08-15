@@ -90,7 +90,7 @@ layer, the setter/erasure moved beside `objectLockOf`, a decidable refuter, a
 severity basis, an eighth inventory claim, eleven elaboration examples and a
 golden CC-5 trace.
 
-Suite 403 → **516 assertions**, §7.1–§7.10 new across sixteen groups, every
+Suite 403 → **517 assertions**, §7.1–§7.10 new across sixteen groups, every
 group with a load-bearing negative; staged 59 → **60**.  **No debt remains.**
 The v0.33.10 cut registered one residual — the CC-5 temporal bound was the
 *writer*-mode one, since `rwLock_writer_liveness` had no reader analogue — and
@@ -99,7 +99,13 @@ whole liveness chain, keystone included, to an arbitrary access mode (the writer
 proof's mode argument becomes the wait queue's own `Nodup`), so
 `blockedReaderContention_delay_bounded` gives a blocked reader the same figure a
 blocked writer has, and `RwLockState.admits` proves it is admitted **as a
-reader**.
+reader**.  The **v0.33.12 review cut** then closed PR #864's four automated P2
+findings: the contention run now requires distinct enqueue steps, the declared
+lock-set footprint is derived from the entry's own register decode rather than
+from free arguments, the bracket's non-interference is parameterized by the core
+it runs on instead of pinned to the boot core, and the 2PL acquire phase's grant
+condition is a checked fact in both directions with SM3's `withLockSet` contract
+corrected.
 
 **Prior sub-phase: SM8.C per-core declassification audit COMPLETE — landed
 v0.33.7, completion cut v0.33.8.**

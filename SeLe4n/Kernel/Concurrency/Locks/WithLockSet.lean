@@ -601,8 +601,26 @@ SystemState × α`, and a pre-state `s`:
    (sorted ascending by `LockId`).  Fold `acquireLockOnObject`
    over `ordered`, threading the state through each step.
 2. **Action phase**: invoke `action` on the post-acquire state.
-   The action sees a state where every lock in `S` has been
-   acquired in the core's name.
+
+   The action sees the state the growing phase produced.  Whether
+   every lock in `S` is then *held* in the core's name depends on
+   the pre-state: `acquireLockOnObject` applies SM2.C's
+   `tryAcquire*`, which **enqueues** a core when the lock is
+   already held rather than granting it, and this function invokes
+   the action either way — a pure, total state transformer has no
+   way to block, and modelling the wait is SM2.C's job (a queued
+   core's admission is a *trace*-level fact, `rwLock_queued_liveness`,
+   not something a single state transition can express).
+
+   So the growing phase declares a footprint and advances the lock
+   words; it does not by itself establish mutual exclusion.  WS-SM
+   SM8.D pins both directions —
+   `lockSetAcquiredState_grants_when_free` and the load-bearing
+   negative `lockSetAcquiredState_does_not_grant_when_contended`.
+   Results that genuinely need exclusion take `lockSetHeld` as a
+   hypothesis; the SM8.D information-flow results deliberately do
+   not, being frame arguments over lock writes.  Live exclusion
+   today comes from the SM5.I global kernel-entry ticket lock.
 3. **Shrinking phase**: fold `releaseLockOnObject` over
    `ordered.reverse` (sorted descending by `LockId`), starting
    from the post-action state.

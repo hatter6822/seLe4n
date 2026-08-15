@@ -2475,6 +2475,33 @@ run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_lockContention_sever
 run_check "INVARIANT" rg -n '^def syscallEntryUnderDeclaredLockSet' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^theorem syscallEntryUnderDeclaredLockSet_undeclared' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_negative_check "INVARIANT" rg -n '_hFootprint' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# ...and the footprint's inputs come from the entry's OWN decode, not from
+# arguments supplied alongside it.  The negative forbids the free-parameter
+# shape, under which a caller could bracket `.tcbSuspend`'s footprint around
+# whatever the caller's registers happened to decode to.
+run_check "INVARIANT" rg -n '^def entryDecode' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^def entryCapTarget' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^def declaredLockSetForEntry' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem declaredLockSetForEntry_binds_decode' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem declaredLockSetForEntry_is_suspend_footprint' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem entryDecode_none_entry_error' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_negative_check "INVARIANT" rg -n 'syscallEntryUnderDeclaredLockSet ctx sid callerTid targetTid' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# The 2PL bracket's grant condition is a checked fact in BOTH directions: the
+# growing phase grants an uncontended footprint and provably does not grant a
+# contended one, so the contract cannot silently claim mutual exclusion again.
+run_check "INVARIANT" rg -n '^theorem lockSetAcquiredState_grants_when_free' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockSetAcquiredState_does_not_grant_when_contended' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_prose_negative_check "INVARIANT" rg -n 'state where every lock in .S. has been' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
+# The CC-5 run requires DISTINCT enqueue steps, so the per-execution capacity
+# figure follows for every accepted run rather than for well-behaved ones.
+run_check "INVARIANT" rg -n 'enqueueSteps.Nodup' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockContentionChannel_run_capacity' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockContentionRun_rejects_repeated_step' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# The bracket's non-interference is parameterized by the core it runs on; the
+# boot form is an instance, not the statement.
+run_check "INVARIANT" rg -n '^theorem syscallEntryUnderLockSet_preserves_projectionOnCore_atCore' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lowEquivalent_smp_of_projectionOnCore_and_confinement' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem sharedViewUnchanged_of_projectionOnCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 # The decidable refuter, and the non-degenerate witness context for the two
 # integrity write rules.
 run_check "INVARIANT" rg -n '^def lockWritesOnlyCheck' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean

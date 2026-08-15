@@ -1945,6 +1945,41 @@ re-derived from it as instances.
 
 **No SM8.D debt remains.**
 
+#### v0.33.12 review cut — the four automated-review findings
+
+PR #864's automated review returned four P2 findings against the SM8.D surface.
+All four are valid; none is a live security defect (the module is staged, and
+kernel entry is serialised by the SM5.I global ticket lock).
+
+1. **A contention run could repeat an acquisition.**  `lockContentionRun` did not
+   require the enqueue steps to be distinct, so the per-execution capacity figure
+   did not follow for every accepted run.  `enqueueSteps.Nodup` is now a conjunct
+   (enforce-it-structurally, rather than leaving it to the caller), with
+   `lockContentionChannel_run_capacity` composing alphabet and pacing into one
+   theorem and `lockContentionRun_rejects_repeated_step` the negative.
+2. **The declared footprint was not bound to the decoded syscall.**  The entry
+   took `sid` / `callerTid` / `targetTid` free while `syscallEntryChecked`
+   decodes the operation from registers — the *false footprint* this section's
+   own note says must never be assembled.  All three now come from the entry's
+   own resolution (`entryDecode`, `entryCapTarget`, `declaredLockSetForEntry`),
+   with `entryDecode_none_entry_error` as the anti-drift tie to the real entry.
+3. **The bracket's non-interference was boot-pinned.**  Confinement to
+   `bootCoreId` is false for an ordinary SMP syscall writing its own core's
+   scheduler slots.  The core is now a parameter, via SM8.B's new
+   `lowEquivalent_smp_of_projectionOnCore_and_confinement` /
+   `sharedViewUnchanged_of_projectionOnCore`, with the boot form as an instance.
+4. **The acquire phase's grant condition was an unstated precondition.**  SM3's
+   `withLockSet` contract claimed the action sees every lock held, which is false
+   under contention.  Now a checked fact both ways
+   (`lockSetAcquiredState_grants_when_free` /
+   `lockSetAcquiredState_does_not_grant_when_contended`), with both docstrings
+   corrected.  Making `withLockSet` *block* is deliberately not done: it is a
+   pure total state transformer, waiting is a trace-level notion in this model,
+   and the bracket's semantics are SM3.C scope — nothing in SM8.D rests on
+   exclusion.
+
+Suite 516 → **517** assertions; §7.9 rebuilt against a real decode.
+
 ### SM8.E — Tests + closure (3 sub-tasks)
 
 | Sub | Description | Files | Est |

@@ -581,6 +581,61 @@ theorem lowEquivalent_smp_of_projection_and_confinement (ctx : LabelingContext)
   · exact crossCoreNonInterference ctx observer hc hConfined
       (sharedViewUnchanged_of_globalProjection ctx observer hProj)
 
+/-- SM8.B.2: the shared half of a view is **core-independent**, so per-core
+projection equality at *any* single core already pins it.
+
+`sharedViewUnchanged_of_globalProjection` is the `c = bootCoreId` instance.  This
+is what lets a transition that only has a per-core projection fact — because it
+runs on a secondary core — still supply the shared premise
+`crossCoreNonInterference` needs. -/
+theorem sharedViewUnchanged_of_projectionOnCore (ctx : LabelingContext)
+    (observer : IfObserver) {st st' : SystemState} {c : CoreId}
+    (h : projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c) :
+    sharedViewUnchanged ctx observer st st' := by
+  have hFrag : (projectStateOnCore ctx observer st' c).sharedFragment
+      = (projectStateOnCore ctx observer st c).sharedFragment := congrArg _ h
+  simp only [projectStateOnCore_sharedFragment, SharedObservableFragment.mk.injEq] at hFrag
+  exact ⟨hFrag.1, hFrag.2.1, hFrag.2.2.1, hFrag.2.2.2.1, hFrag.2.2.2.2.1,
+    hFrag.2.2.2.2.2.1, hFrag.2.2.2.2.2.2⟩
+
+/-- SM8.B.1 (**the same bridge at an arbitrary core**): per-core preservation on
+the one core a transition writes, plus confinement to that core, gives
+preservation on **every** core.
+
+`lowEquivalent_smp_of_projection_and_confinement` is the `c' = bootCoreId`
+instance, and it is the *only* instance that can be fed by a whole-projection
+hypothesis, because `projectState` **is** the boot core's view
+(`projectStateOnCore_bootCore`).  For a transition that runs on a secondary core
+and writes that core's scheduler slots, boot-core confinement is simply false —
+so a statement pinned to it says nothing about ordinary SMP execution, however
+general its conclusion looks.  This form takes the executing core as a
+parameter, which is what the SM3 lock bracket needs once the bracketed entry is
+allowed to run somewhere other than the boot core. -/
+theorem lowEquivalent_smp_of_projectionOnCore_and_confinement (ctx : LabelingContext)
+    (observer : IfObserver) {st st' : SystemState} {c' : CoreId}
+    (hProjOn : projectStateOnCore ctx observer st' c' = projectStateOnCore ctx observer st c')
+    (hConfined : observableSlotsConfinedToCore st st' c') :
+    lowEquivalent_smp ctx observer st' st := by
+  intro c
+  show projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c
+  by_cases hc : c = c'
+  · cases hc
+    exact hProjOn
+  · exact crossCoreNonInterference ctx observer hc hConfined
+      (sharedViewUnchanged_of_projectionOnCore ctx observer hProjOn)
+
+/-- SM8.B.1: the boot-core bridge is the general one at `c' = bootCoreId`.
+
+Stated so the generalisation is checked against the theorem it generalises rather
+than asserted — if the two ever diverge this stops elaborating. -/
+theorem lowEquivalent_smp_of_projection_and_confinement_eq_atCore (ctx : LabelingContext)
+    (observer : IfObserver) {st st' : SystemState}
+    (hProj : projectState ctx observer st' = projectState ctx observer st)
+    (hConfined : observableSlotsConfinedToCore st st' bootCoreId) :
+    lowEquivalent_smp ctx observer st' st :=
+  lowEquivalent_smp_of_projectionOnCore_and_confinement ctx observer
+    (c' := bootCoreId) hProj hConfined
+
 /-- SM8.B.1 (headline): **every `NonInterferenceStep` whose per-core writes stay
 on the boot core preserves the observer's view on *every* core.**
 

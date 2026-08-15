@@ -2793,7 +2793,7 @@ D.1–D.3 are restated here rather than ticked off.
   the two admission shapes apart, so a blocked reader is proven admitted **as a
   reader** (`queued_reader_not_write_holder_after_step` and its dual).
 
-Runtime coverage: §7.1–§7.10 of the same suite (403 → 516 assertions across
+Runtime coverage: §7.1–§7.10 of the same suite (403 → 517 assertions across
 sixteen groups), every group with a load-bearing negative, including real
 nine-step contended executions — one writer-queued, one reader-queued — on which
 the delay, the wait depth and the CC-5 code are computed and the bound theorems

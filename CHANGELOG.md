@@ -1,3 +1,114 @@
+## v0.33.12 — WS-SM SM8.D: the four automated-review findings, closed
+
+An automated review of PR #864 returned four P2 findings against the SM8.D
+surface.  All four are valid, none is a live security defect (the module is
+staged, and kernel entry is serialised by the SM5.I global ticket lock), and all
+four are closed here.  Theorems, tests and prose only; the kernel trace is
+byte-identical.
+
+### A contention run could repeat an acquisition
+
+`lockContentionRun` checked each step's queue membership and range but not that
+the steps were **distinct**, so a caller could repeat one queued step
+arbitrarily.  `enqueueSteps.length` was then unbounded, and
+`lockContentionChannel_trace_capacity`'s docstring claim — "and by the pacing
+bound above, `n` is itself bounded by the execution's length" — held for
+well-behaved runs rather than for every accepted one.  The pacing theorem takes
+`Nodup` as its own hypothesis, so the composition simply did not typecheck from
+a run alone.
+
+`enqueueSteps.Nodup` is now a conjunct of the predicate — the project's
+enforce-it-structurally case, since "a run is a list of distinct acquisitions"
+was an invariant held only by the caller's good manners.
+`lockContentionChannel_run_capacity` states the composed per-execution bound as
+one theorem so the two halves cannot drift apart again, and
+`lockContentionRun_rejects_repeated_step` is the load-bearing negative.  Fixed
+alongside: `lockContentionChannel_observation_rate_bounded` was stated at a
+hardcoded core `⟨0, _⟩` and now takes the run's core.
+
+### The declared footprint was not bound to the decoded syscall
+
+`syscallEntryUnderDeclaredLockSet` took `sid`, `callerTid` and `targetTid` as
+free parameters and resolved `lockSetForSyscall` from them, while the entry it
+brackets — `syscallEntryChecked` — decodes the operation from the **executing
+thread's registers**.  Nothing tied the two, so a caller could bracket
+`.tcbSuspend`'s footprint around whatever the registers decoded to.  The module's
+own section note says a declared lock set that does not cover a write is a
+*false* footprint and that the 2PL argument would then rest on exclusion nobody
+established — and then left exactly that hole open in the type.
+
+Every input is now derived from the entry's own resolution.  `entryDecode`
+replays the prefix `syscallEntryChecked` runs (reject the insecure default
+context, read the executing core's current thread, read its registers, decode
+them); `entryCapTarget` resolves the target through `syscallLookupCap` the way
+the live `dispatchWithCapChecked` arms do, failing closed on a capability that
+names no object; `declaredLockSetForEntry` composes them.  The syscall id, the
+caller and the target are no longer expressible as independent arguments.
+
+Because the replay duplicates a computation, it ships with its own anti-drift
+check: `entryDecode_none_entry_error` proves that every state on which the helper
+gives up is one on which the real entry errors, so a footprint is never resolved
+for an entry that will not run.  `declaredLockSetForEntry_binds_decode` states
+where the inputs come from and `declaredLockSetForEntry_is_suspend_footprint`
+what the output then is, so the whole resolution is pinned rather than only its
+shape.
+
+### The bracket's non-interference was pinned to the boot core
+
+`syscallEntryUnderLockSet_preserves_projectionOnCore` required
+`observableSlotsConfinedToCore … bootCoreId`.  For an ordinary SMP syscall — one
+executing on a secondary core and writing that core's scheduler slots — that
+premise is false, so the theorem's every-core conclusion covered transitions the
+live SMP path does not take.
+
+The confinement core is now a parameter.  SM8.B gains
+`lowEquivalent_smp_of_projectionOnCore_and_confinement` (the boot-pinned bridge
+generalised) and `sharedViewUnchanged_of_projectionOnCore` (the shared half of a
+view is core-independent, so a per-core projection fact at any single core
+already pins it), with
+`lowEquivalent_smp_of_projection_and_confinement_eq_atCore` checking the
+generalisation against the theorem it generalises.  SM8.D gains
+`syscallEntryUnderLockSet_preserves_projectionOnCore_atCore`, and the boot form
+is re-derived from it as the instance a whole-projection hypothesis can feed —
+`projectState` being the boot core's view and nothing else's.  Supporting:
+`lockWritesOnly_preserves_projectionOnCore`, the observer-level companion of the
+label-level `…_preserves_onCore`.
+
+### The acquire phase's grant condition was an unstated precondition
+
+SM3's `withLockSet` docstring said the action "sees a state where every lock in
+`S` has been acquired in the core's name".  That is false under contention:
+`acquireLockOnObject` applies SM2.C's `tryAcquire*`, which **enqueues** a core
+when the lock is held rather than granting it, and `withLockSet` invokes the
+action either way.
+
+The claim is now a checked fact with its precondition stated, in both directions:
+`lockSetAcquiredState_grants_when_free` and the load-bearing negative
+`lockSetAcquiredState_does_not_grant_when_contended`.  Both docstrings are
+corrected, and a Tier-3 prose negative forbids the old sentence returning.
+
+**Not implemented, and why**: making `withLockSet` block or retry is not
+expressible here.  It is a pure, total `SystemState → SystemState × α`; waiting
+is a *trace*-level notion in this model (a queued core's admission is
+`rwLock_queued_liveness`, not something one state transition can express), and
+changing the bracket's semantics is SM3.C scope with a large theorem surface
+behind it.  Nothing in SM8.D rests on exclusion — the §5 results are frame
+arguments about lock writes being invisible, which hold whether the acquisition
+granted or queued — and live exclusion today comes from the SM5.I global
+kernel-entry ticket lock.  That reasoning is now recorded at both sites rather
+than left implicit.
+
+### Tests and gates
+
+Suite 516 → **517** assertions across 68 groups.  §7.9 is rebuilt on §7.8's
+success fixture, so the resolver is exercised against a **real decode**: its
+load-bearing negative is that a suspend footprint *is* resolvable in that state
+and yet does not bracket a `.receive` decode — the confused deputy, demonstrated
+closed.  A second negative covers the no-current-thread core.  Sixteen new
+Tier-3 anchors, including negatives forbidding the free-parameter entry shape and
+the retracted `withLockSet` sentence.  Axiom-clean (2576 environment constants
+across the SM8 information-flow surface).
+
 ## v0.33.11 — WS-SM SM8.D: the reader-mode temporal bound, closed rather than registered
 
 v0.33.10 left one item open: the CC-5 delay bound was the *writer*-mode one,

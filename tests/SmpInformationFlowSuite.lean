@@ -1192,6 +1192,8 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @commitKernelAction_lockWritesOnly_of_error
 #check @syscallEntryChecked_preserves_projection
 #check @lockSetAcquiredState
+#check @lockSetAcquiredState_grants_when_free
+#check @lockSetAcquiredState_does_not_grant_when_contended
 #check @syscallEntryUnderLockSet
 #check @syscallEntryUnderLockSet_fst
 #check @syscallEntryUnderLockSet_preserves_projectionOnCore
@@ -1200,8 +1202,19 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @syscallEntryUnderLockSet_failClosed_invisible
 #check @secureInformationFlow_underFineLocks
 #check @syscallEntryUnderDeclaredLockSet
+#check @entryDecode
+#check @entryDecode_none_entry_error
+#check @entryCapTarget
+#check @declaredLockSetForEntry
+#check @declaredLockSetForEntry_binds_decode
+#check @declaredLockSetForEntry_undeclared
+#check @declaredLockSetForEntry_is_suspend_footprint
 #check @syscallEntryUnderDeclaredLockSet_undeclared
-#check @syscallEntryUnderDeclaredLockSet_tcbSuspend_isSome_iff
+#check @syscallEntryUnderDeclaredLockSet_no_decode
+#check @lockContentionChannel_run_capacity
+#check @lockContentionRun_rejects_repeated_step
+#check @lockWritesOnly_preserves_projectionOnCore
+#check @syscallEntryUnderLockSet_preserves_projectionOnCore_atCore
 #check @suspendUnderDeclaredLockSet_preserves_projectionOnCore
 #check @suspendUnderDeclaredLockSet_failClosed_invisible
 
@@ -1708,14 +1721,25 @@ example (ctx : LabelingContext) (S : SeLe4n.Kernel.Concurrency.LockSet) (lockCor
     hDenied).1
 
 -- SM8.D.5: the declared-footprint entry is `none` for every undeclared syscall,
--- so a caller cannot bracket a footprint whose coverage proof does not exist.
-example (ctx : LabelingContext) (sid : SyscallId) (callerTid targetTid : SeLe4n.ThreadId)
-    (lockCore : CoreId) (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId)
-    (regCount : Nat) (s : SystemState) (h : sid ≠ .tcbSuspend) :
-    syscallEntryUnderDeclaredLockSet ctx sid callerTid targetTid lockCore layout executingCore
-        regCount s = none :=
-  syscallEntryUnderDeclaredLockSet_undeclared ctx sid callerTid targetTid lockCore layout
-    executingCore regCount s h
+-- so a caller cannot bracket a footprint whose coverage proof does not exist —
+-- and "undeclared" is a property of the syscall the entry's own registers
+-- **decode to**, not of an argument supplied alongside them.
+example (ctx : LabelingContext) (lockCore : CoreId) (layout : SeLe4n.SyscallRegisterLayout)
+    (executingCore : CoreId) (regCount : Nat) (s : SystemState) (tid : SeLe4n.ThreadId)
+    (decoded : SyscallDecodeResult)
+    (hDec : entryDecode ctx layout executingCore regCount s = some (tid, decoded))
+    (h : decoded.syscallId ≠ .tcbSuspend) :
+    syscallEntryUnderDeclaredLockSet ctx lockCore layout executingCore regCount s = none :=
+  syscallEntryUnderDeclaredLockSet_undeclared ctx lockCore layout executingCore regCount s
+    tid decoded hDec h
+
+-- SM8.D.5: and where the entry would refuse before decoding at all, nothing is
+-- bracketed — the bracket never runs ahead of a decode that does not exist.
+example (ctx : LabelingContext) (lockCore : CoreId) (layout : SeLe4n.SyscallRegisterLayout)
+    (executingCore : CoreId) (regCount : Nat) (s : SystemState)
+    (h : entryDecode ctx layout executingCore regCount s = none) :
+    syscallEntryUnderDeclaredLockSet ctx lockCore layout executingCore regCount s = none :=
+  syscallEntryUnderDeclaredLockSet_no_decode ctx lockCore layout executingCore regCount s h
 
 -- ============================================================================
 -- §3  Runtime assertions (Tier-2): the four-thread / four-core IF fixture
@@ -5478,10 +5502,10 @@ private def runContentionRateChecks : IO Unit := do
   assertBool "the pacing bound applies to a run of distinct enqueue steps (theorem)"
     (have _h : ∀ steps : List Nat, steps.Nodup →
         (∀ k ∈ steps, k ≤ contendedExecution.ops.length) →
-        (lockContentionTrace contendedExecution ⟨0, by decide⟩ steps).length
+        (lockContentionTrace contendedExecution c1 steps).length
           ≤ contendedExecution.ops.length + 1 :=
       fun steps hNodup hRange =>
-        lockContentionChannel_observation_rate_bounded contendedExecution steps hNodup hRange
+        lockContentionChannel_observation_rate_bounded contendedExecution c1 steps hNodup hRange
      true)
   -- NEGATIVE: a run with a repeated enqueue step is not a run of distinct
   -- acquisitions, and the pacing bound does not apply to it.
@@ -5804,36 +5828,6 @@ private def runFineLockEntryChecks : IO Unit := do
      true)
 
 
-/-- §7.9  SM8.D.5 — the declared footprint, and the fail-closed default. -/
-private def runDeclaredFootprintChecks : IO Unit := do
-  IO.println "--- §7.9 the bracket over SM3.C.9's declared footprint (SM8.D.5) ---"
-  assertBool "`.tcbSuspend` is the one declared arm, and it resolves for a real TCB"
-    (decide ((SeLe4n.Kernel.Concurrency.lockSetForSyscall .tcbSuspend lowCurrent highCurrent
-      niState).isSome))
-  -- NEGATIVE: every other syscall is undeclared, so nothing is bracketed and the
-  -- caller keeps its existing serialisation.
-  assertBool "NEGATIVE: `.send` is undeclared, so the bracketed entry is `none`"
-    (decide ((SeLe4n.Kernel.Concurrency.lockSetForSyscall .send lowCurrent highCurrent
-        niState) = none) &&
-     decide ((syscallEntryUnderDeclaredLockSet fineLockEntryLabeling .send lowCurrent
-        highCurrent c1 SeLe4n.arm64DefaultLayout c2 32 niState).isNone))
-  assertBool "…and the declared arm does produce a bracketed entry"
-    (decide ((syscallEntryUnderDeclaredLockSet fineLockEntryLabeling .tcbSuspend lowCurrent
-      highCurrent c1 SeLe4n.arm64DefaultLayout c2 32 niState).isSome))
-  -- NEGATIVE: an absent target has no footprint, so the resolver fails closed.
-  assertBool "NEGATIVE: a target that is not a TCB has no footprint to declare"
-    (decide ((SeLe4n.Kernel.Concurrency.lockSetForSyscall .tcbSuspend lowCurrent ⟨999999⟩
-        niState) = none) &&
-     decide ((syscallEntryUnderDeclaredLockSet fineLockEntryLabeling .tcbSuspend lowCurrent
-        ⟨999999⟩ c1 SeLe4n.arm64DefaultLayout c2 32 niState).isNone))
-  assertBool "the resolution hypothesis is CONSUMED by the headline (theorem)"
-    (have _h := @suspendUnderDeclaredLockSet_preserves_projectionOnCore
-     have _f := @suspendUnderDeclaredLockSet_failClosed_invisible
-     have _u := @syscallEntryUnderDeclaredLockSet_undeclared
-     have _i := @syscallEntryUnderDeclaredLockSet_tcbSuspend_isSome_iff
-     true)
-
-
 /-! ### §7.8 fixtures — a bracketed live syscall that **succeeds**
 
 §7.6 exercises the refused path.  This group exercises the other one, which is
@@ -6069,6 +6063,64 @@ tcbSuspend={(SeLe4n.Kernel.Concurrency.lockSetForSyscall .tcbSuspend lowCurrent 
 send={(SeLe4n.Kernel.Concurrency.lockSetForSyscall .send lowCurrent highCurrent niState).isSome}"
   , s!"[smp-fine-lock] claims: {FineLockClaimId.all.length} over \
 {traceClaimSubTaskCount} distinct proof-carrying sub-tasks" ]
+
+/-- §7.9  SM8.D.5 — the declared footprint, bound to the decode, and the
+fail-closed default.
+
+The group runs on §7.8's success fixture, whose current thread on core 1 really
+does carry registers the entry decodes — so the resolver is exercised against a
+decode rather than against arguments the test supplies. -/
+private def runDeclaredFootprintChecks : IO Unit := do
+  IO.println "--- §7.9 the bracket over SM3.C.9's declared footprint (SM8.D.5) ---"
+  assertBool "`.tcbSuspend` is the one declared arm, and it resolves for a real TCB"
+    (decide ((SeLe4n.Kernel.Concurrency.lockSetForSyscall .tcbSuspend lowCurrent highCurrent
+      niState).isSome))
+  -- The resolver reads the entry's own decode: caller from the executing core's
+  -- current thread, syscall id from that thread's registers.
+  assertBool "the resolver decodes the fixture's caller and its registers"
+    (match entryDecode fineLockEntryLabeling SeLe4n.arm64DefaultLayout c1 32
+             successEntryState with
+     | some (tid, decoded) => decide (tid = highCurrent) && decide (decoded.syscallId = .receive)
+     | none => false)
+  -- NEGATIVE, and the review finding this group exists to close: a suspend
+  -- footprint IS resolvable in this state, but the entry is NOT bracketed with
+  -- it, because the operation the registers decode to is `.receive`.  Under the
+  -- old free-parameter form a caller could pass `.tcbSuspend` alongside these
+  -- very registers and bracket an unrelated operation in the suspend footprint.
+  assertBool "NEGATIVE: a resolvable suspend footprint does not bracket a `.receive` decode"
+    (decide ((SeLe4n.Kernel.Concurrency.lockSetForSyscall .tcbSuspend lowCurrent highCurrent
+        niState).isSome) &&
+     decide ((declaredLockSetForEntry fineLockEntryLabeling SeLe4n.arm64DefaultLayout c1 32
+        successEntryState) = none) &&
+     decide ((syscallEntryUnderDeclaredLockSet fineLockEntryLabeling c1
+        SeLe4n.arm64DefaultLayout c1 32 successEntryState).isNone))
+  -- NEGATIVE: where the entry itself would refuse, nothing is bracketed at all.
+  -- Core 3 runs no thread in the fixture, so the decode never happens.
+  assertBool "NEGATIVE: no current thread on the core means no decode and no bracket"
+    (decide (successEntryState.scheduler.currentOnCore c3 = none) &&
+     decide ((entryDecode fineLockEntryLabeling SeLe4n.arm64DefaultLayout c3 32
+        successEntryState) = none) &&
+     decide ((syscallEntryUnderDeclaredLockSet fineLockEntryLabeling c1
+        SeLe4n.arm64DefaultLayout c3 32 successEntryState).isNone))
+  -- The growing phase grants only when the footprint is uncontended.  The
+  -- negative is the review finding: `withLockSet` runs its action either way, so
+  -- "the action sees every lock held" is a claim with a precondition, not a
+  -- property of the bracket.
+  assertBool "the acquire phase grants an uncontended footprint, and NOT a contended one"
+    (have _g := @lockSetAcquiredState_grants_when_free
+     have _n := @lockSetAcquiredState_does_not_grant_when_contended
+     true)
+  assertBool "the decode binding and the fail-closed defaults, as theorems"
+    (have _b := @declaredLockSetForEntry_binds_decode
+     have _s := @declaredLockSetForEntry_is_suspend_footprint
+     have _d := @declaredLockSetForEntry_undeclared
+     have _e := @entryDecode_none_entry_error
+     have _h := @suspendUnderDeclaredLockSet_preserves_projectionOnCore
+     have _f := @suspendUnderDeclaredLockSet_failClosed_invisible
+     have _u := @syscallEntryUnderDeclaredLockSet_undeclared
+     have _n := @syscallEntryUnderDeclaredLockSet_no_decode
+     true)
+
 
 private def fineLockTraceFixturePath : String :=
   "tests/fixtures/smp_fine_lock_contention.expected"

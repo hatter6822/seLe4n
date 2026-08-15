@@ -273,6 +273,20 @@ theorem lockWritesOnly_preserves_onCore (ctx : LabelingContext) (c : CoreId) (L 
     (by rw [lockWritesOnly_scheduler h]) (by rw [lockWritesOnly_scheduler h])
     (by rw [lockWritesOnly_scheduler h]) (by rw [lockWritesOnly_machine h])
 
+/-- SM8.D.1: the same at an arbitrary `IfObserver` rather than a clearance label.
+
+`lockWritesOnly_preserves_onCore` is the `IfObserver.ofLabel` instance.  This form
+is what the §5 bracket needs, because the SM8.B non-interference surface is stated
+over observers. -/
+theorem lockWritesOnly_preserves_projectionOnCore (ctx : LabelingContext)
+    (observer : IfObserver) (c : CoreId) {s s' : SystemState} (h : lockWritesOnly s s') :
+    projectStateOnCore ctx observer s' c = projectStateOnCore ctx observer s c :=
+  projectStateOnCore_congr ctx observer
+    (lockWritesOnly_preserves_projection ctx observer h)
+    (by rw [lockWritesOnly_scheduler h]) (by rw [lockWritesOnly_scheduler h])
+    (by rw [lockWritesOnly_scheduler h]) (by rw [lockWritesOnly_scheduler h])
+    (by rw [lockWritesOnly_scheduler h]) (by rw [lockWritesOnly_machine h])
+
 /-- SM8.D.1: a **decidable refuter** for `lockWritesOnly`.
 
 Not an `iff`, and deliberately so: `lockWritesOnly`'s object clause quantifies
@@ -907,11 +921,19 @@ CC-1's.
 
 The access mode is existential **per step**: one core's successive contended
 acquisitions need not all be writes, and after SM2.C-defer D-3.10 the delay bound
-does not care which they are. -/
+does not care which they are.
+
+The steps are required **`Nodup`**, and that conjunct is load-bearing rather than
+tidiness.  A run is a list of *distinct acquisitions*; without it a caller could
+repeat one queued step arbitrarily, `enqueueSteps.length` would be unbounded, and
+`lockContentionChannel_run_capacity`'s per-execution figure — the whole point of
+pacing the channel — would not follow for every accepted run.  The predicate
+enforces it structurally instead of leaving it to the caller's good manners. -/
 def lockContentionRun (maxDelay : Nat) (e : SeLe4n.Kernel.Concurrency.RwLockExecution)
     (c : CoreId) (enqueueSteps : List Nat) : Prop :=
   SeLe4n.Kernel.Concurrency.FairTrace e maxDelay ∧
   e.initial = RwLockState.unheld ∧
+  enqueueSteps.Nodup ∧
   ∀ k ∈ enqueueSteps,
     (∃ m : AccessMode, (c, m) ∈ (e.stateAt k).waiters) ∧
     k + lockContentionDelayBound maxDelay < e.ops.length
@@ -933,9 +955,9 @@ distinct enqueue steps, and an execution of `n` operations has `n + 1` steps.
 So the run capacity below is a bound *per execution*, not merely per
 observation, which is what makes it comparable with CC-1's per-tick figure. -/
 theorem lockContentionChannel_observation_rate_bounded
-    (e : SeLe4n.Kernel.Concurrency.RwLockExecution) (enqueueSteps : List Nat)
+    (e : SeLe4n.Kernel.Concurrency.RwLockExecution) (c : CoreId) (enqueueSteps : List Nat)
     (hNodup : enqueueSteps.Nodup) (hRange : ∀ k ∈ enqueueSteps, k ≤ e.ops.length) :
-    (lockContentionTrace e ⟨0, by decide⟩ enqueueSteps).length ≤ e.ops.length + 1 := by
+    (lockContentionTrace e c enqueueSteps).length ≤ e.ops.length + 1 := by
   simp only [lockContentionTrace, List.length_map]
   exact e.distinct_steps_length_le enqueueSteps hNodup hRange
 
@@ -957,13 +979,51 @@ theorem lockContentionChannel_trace_capacity (maxDelay : Nat)
     (hRun : lockContentionRun maxDelay e c enqueueSteps) :
     lockContentionTrace e c enqueueSteps
       ∈ boundedCodeTraces (lockContentionAlphabet maxDelay) enqueueSteps.length := by
-  obtain ⟨hFair, hInit, hSteps⟩ := hRun
+  obtain ⟨hFair, hInit, _, hSteps⟩ := hRun
   refine (mem_boundedCodeTraces _ _ _).mpr ⟨by simp [lockContentionTrace], ?_⟩
   intro x hx
   simp only [lockContentionTrace, List.mem_map] at hx
   obtain ⟨k, hk, rfl⟩ := hx
   obtain ⟨⟨m, hQueued⟩, hWithin⟩ := hSteps k hk
   exact lockContentionChannel_alphabet_bounded e maxDelay hFair hInit c m k hQueued hWithin
+
+/-- SM8.D.3 (**the composed per-execution bound**): from a run alone — no extra
+hypotheses — the core's trace is one of `alphabet ^ n` **and** `n` is at most the
+execution's length.
+
+`lockContentionChannel_trace_capacity` bounds the alphabet per position and
+`lockContentionChannel_observation_rate_bounded` bounds the number of positions,
+but the second needs the steps to be distinct.  Before that conjunct lived in
+`lockContentionRun`, this composition did not typecheck from a run alone, and the
+capacity docstring's "and by the pacing bound above, `n` is itself bounded by the
+execution's length" was a claim about *some* runs rather than every accepted one.
+Stating it as one theorem is what keeps the two halves from drifting apart
+again. -/
+theorem lockContentionChannel_run_capacity (maxDelay : Nat)
+    (e : SeLe4n.Kernel.Concurrency.RwLockExecution) (c : CoreId) (enqueueSteps : List Nat)
+    (hRun : lockContentionRun maxDelay e c enqueueSteps) :
+    lockContentionTrace e c enqueueSteps
+        ∈ boundedCodeTraces (lockContentionAlphabet maxDelay) enqueueSteps.length ∧
+      (lockContentionTrace e c enqueueSteps).length ≤ e.ops.length + 1 := by
+  refine ⟨lockContentionChannel_trace_capacity maxDelay e c enqueueSteps hRun, ?_⟩
+  obtain ⟨_, _, hNodup, hSteps⟩ := hRun
+  refine lockContentionChannel_observation_rate_bounded e c enqueueSteps hNodup ?_
+  intro k hk
+  exact Nat.le_of_lt (Nat.lt_of_le_of_lt (Nat.le_add_right k _) (hSteps k hk).2)
+
+/-- SM8.D.3 (**the load-bearing negative**): a list that repeats a queued step is
+**not** an accepted run, however well-behaved the execution is.
+
+This is the shape the `Nodup` conjunct exists to exclude: repeating one
+acquisition inflates `enqueueSteps.length` without the core making any further
+observation, so a capacity figure computed from it would count the same
+behaviour twice. -/
+theorem lockContentionRun_rejects_repeated_step (maxDelay : Nat)
+    (e : SeLe4n.Kernel.Concurrency.RwLockExecution) (c : CoreId) (k : Nat)
+    (rest : List Nat) (hMem : k ∈ rest) :
+    ¬ lockContentionRun maxDelay e c (k :: rest) := by
+  rintro ⟨_, _, hNodup, _⟩
+  exact (List.nodup_cons.mp hNodup).1 hMem
 
 /-- SM8.D.3: and the count itself. -/
 theorem lockContentionChannel_trace_count (maxDelay n : Nat) :
@@ -1350,9 +1410,101 @@ against it: the entry does not see `s`, it sees this. -/
 def lockSetAcquiredState (S : LockSet) (lockCore : CoreId) (s : SystemState) : SystemState :=
   SeLe4n.Kernel.Concurrency.acquireAll lockCore S.lockAcquireSequence s
 
+/-- SM8.D.5: the object-store lock set, the one `LockSet` whose grant condition
+is a single field read.  Used by the two grant lemmas below as the smallest
+witness that says something about `acquireAll` rather than about one primitive. -/
+private def objStoreLockSet : LockSet :=
+  LockSet.singleton { kind := .objStore, objId := SeLe4n.ObjId.ofNat 0 } .write
+
+/-- SM8.D.5 (**the acquire phase grants when the lock is free**): on a state
+whose object-store lock is unheld, the growing phase really does leave the
+footprint held in the acquiring core's name.
+
+This is the half of SM3's `withLockSet` contract that is true unconditionally of
+nothing — it needs the pre-state to be uncontended, and saying so is the point. -/
+theorem lockSetAcquiredState_grants_when_free (s : SystemState) (lockCore : CoreId)
+    (hFree : s.objStoreLock = SeLe4n.Kernel.Concurrency.RwLockState.unheld) :
+    SeLe4n.Kernel.Concurrency.lockSetHeld lockCore objStoreLockSet
+      (lockSetAcquiredState objStoreLockSet lockCore s) := by
+  intro p hp
+  unfold objStoreLockSet at hp
+  rw [LockSet.singleton_pairs] at hp
+  simp only [List.mem_singleton] at hp
+  subst hp
+  show SeLe4n.Kernel.Concurrency.lockHeld lockCore
+    { kind := .objStore, objId := SeLe4n.ObjId.ofNat 0 } .write _
+  unfold SeLe4n.Kernel.Concurrency.lockHeld
+  simp only
+  show (SeLe4n.Kernel.Concurrency.acquireAll lockCore objStoreLockSet.lockAcquireSequence
+    s).objStoreLock.coreHolds lockCore .write
+  unfold objStoreLockSet
+  rw [LockSet.lockAcquireSequence_singleton]
+  show (SeLe4n.Kernel.Concurrency.acquireLockOnObject s lockCore
+    { kind := .objStore, objId := SeLe4n.ObjId.ofNat 0 } .write).objStoreLock.coreHolds
+      lockCore .write
+  unfold SeLe4n.Kernel.Concurrency.acquireLockOnObject
+  simp only
+  show (s.objStoreLock.applyOp (AccessMode.write.toAcquireOp lockCore)).coreHolds lockCore .write
+  rw [hFree]
+  show (SeLe4n.Kernel.Concurrency.RwLockState.unheld.applyOp
+    (.tryAcquireWrite lockCore)).writerHeld = some lockCore
+  rfl
+
+/-- SM8.D.5 (**the load-bearing negative**): and it does **not** grant when the
+lock is already write-held by another core — the acquirer is *queued*, and
+`withLockSet` runs its action anyway.
+
+This is the fact SM3's `withLockSet` docstring elided when it said the action
+"sees a state where every lock in `S` has been acquired in the core's name".  It
+is not a defect in the security argument — §5 never uses exclusion — but a
+contract that is false under contention is worth stating as a theorem rather
+than leaving for a reader to discover. -/
+theorem lockSetAcquiredState_does_not_grant_when_contended (s : SystemState)
+    (lockCore holder : CoreId) (hNe : holder ≠ lockCore)
+    (hHeld : s.objStoreLock = { writerHeld := some holder, readers := [], waiters := [] }) :
+    ¬ SeLe4n.Kernel.Concurrency.lockSetHeld lockCore objStoreLockSet
+        (lockSetAcquiredState objStoreLockSet lockCore s) := by
+  intro hAll
+  have hOne := hAll ({ kind := .objStore, objId := SeLe4n.ObjId.ofNat 0 }, .write)
+    (by unfold objStoreLockSet; rw [LockSet.singleton_pairs]; simp)
+  unfold SeLe4n.Kernel.Concurrency.lockHeld at hOne
+  simp only at hOne
+  rw [show (lockSetAcquiredState objStoreLockSet lockCore s).objStoreLock
+        = s.objStoreLock.applyOp (AccessMode.write.toAcquireOp lockCore) from by
+      unfold lockSetAcquiredState objStoreLockSet
+      rw [LockSet.lockAcquireSequence_singleton]
+      rfl] at hOne
+  rw [hHeld] at hOne
+  -- The acquire enqueues rather than granting, so the writer is still `holder`.
+  have hW : (({ writerHeld := some holder, readers := [], waiters := [] } :
+      SeLe4n.Kernel.Concurrency.RwLockState).applyOp
+        (AccessMode.write.toAcquireOp lockCore)).writerHeld = some lockCore := hOne
+  rw [show (AccessMode.write.toAcquireOp lockCore)
+        = SeLe4n.Kernel.Concurrency.RwLockOp.tryAcquireWrite lockCore from rfl] at hW
+  unfold SeLe4n.Kernel.Concurrency.RwLockState.applyOp at hW
+  simp only [SeLe4n.Kernel.Concurrency.RwLockState.coreInvolved, List.not_mem_nil,
+    List.map_nil, false_or, or_false, Option.some.injEq, Option.isSome_some, ne_eq,
+    not_true_eq_false, or_self] at hW
+  rw [if_neg hNe] at hW
+  exact hNe (Option.some.inj hW)
+
 /-- SM8.D.5: **the 2PL-bracketed live syscall entry** — the shape SM3.C.9
-installs at the `@[export]` bodies: acquire the declared footprint in the
-executing core's name, run the information-flow-checked entry, release.
+installs at the `@[export]` bodies: take the declared footprint in the executing
+core's name, run the information-flow-checked entry, release.
+
+**What the bracket does and does not provide.**  `acquireAll` folds SM2.C's
+`tryAcquire*`, which *enqueues* a core when the lock is already held rather than
+granting it, and `withLockSet` runs its action regardless — a pure total state
+transformer has no way to block.  So the growing phase declares a footprint and
+advances the lock words; it does **not** by itself establish mutual exclusion.
+`lockSetAcquiredState_grants_when_free` and its load-bearing negative
+`lockSetAcquiredState_does_not_grant_when_contended` pin both directions.
+
+The §5 results do not rest on exclusion: they are frame arguments about lock
+writes being invisible, so they hold whether the acquisition granted or queued —
+which is precisely why the SM3.C.9 migration is a change of concurrency control
+and not of the security argument.  Live exclusion today comes from the SM5.I
+global kernel-entry ticket lock, not from this bracket.
 
 `lockCore` and `executingCore` are separate parameters on purpose.  They are
 the same core on the live path (the trapping core takes the locks its own
@@ -1376,15 +1528,68 @@ theorem syscallEntryUnderLockSet_fst (ctx : LabelingContext) (S : LockSet) (lock
             (lockSetAcquiredState S lockCore s)).1 :=
   SeLe4n.Kernel.Concurrency.withLockSet_fst _ _ _ _
 
+/-- SM8.D.5 (**the headline, at the core the entry runs on**): a 2PL-bracketed
+live syscall entry is non-interfering on **every core** exactly when the
+operation it dispatches is confined to the core it runs on.
+
+The confinement core is a **parameter**, and that matters rather than being
+generality for its own sake.  The boot-core form below is the instance a
+whole-projection hypothesis can feed, because `projectState` *is* the boot core's
+view — but an ordinary SMP syscall executes on a secondary core and writes *that*
+core's scheduler slots, which makes boot-core confinement false and the boot form
+vacuous for it.  Pinned there, "non-interfering on every core" would be a
+conclusion about transitions the live SMP path does not take.
+
+The bracket itself contributes nothing at any core: its growing and shrinking
+phases are lock writes, invisible by §1 (`lockWritesOnly_preserves_onCore`), and
+their confinement rides through by SM8.B.4's `acquireAll_confinedToCore` /
+`releaseAll_confinedToCore`.  So the SM3.C.9 migration does not weaken the
+information-flow guarantee — the hypotheses are exactly the ones the
+*unbracketed* per-core statement takes, relocated to the state the entry is run
+in. -/
+theorem syscallEntryUnderLockSet_preserves_projectionOnCore_atCore (ctx : LabelingContext)
+    (observer : IfObserver) (S : LockSet) (lockCore : CoreId)
+    (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
+    (s st' : SystemState) (c' : CoreId) (hInv : s.objects.invExt) (hOutInv : st'.objects.invExt)
+    (hOk : syscallEntryChecked ctx layout executingCore regCount
+        (lockSetAcquiredState S lockCore s) = .ok ((), st'))
+    (hProjOn : projectStateOnCore ctx observer st' c'
+        = projectStateOnCore ctx observer (lockSetAcquiredState S lockCore s) c')
+    (hConfined : observableSlotsConfinedToCore (lockSetAcquiredState S lockCore s) st' c') :
+    lowEquivalent_smp ctx observer
+      (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1 s := by
+  have hAcqInv : (lockSetAcquiredState S lockCore s).objects.invExt :=
+    acquireAll_preserves_objects_invExt lockCore S.lockAcquireSequence s hInv
+  have hCommit : (commitKernelAction (syscallEntryChecked ctx layout executingCore regCount)
+      (lockSetAcquiredState S lockCore s)) = (st', .ok ()) :=
+    commitKernelAction_ok _ _ _ _ hOk
+  rw [syscallEntryUnderLockSet_fst, hCommit]
+  refine lowEquivalent_smp_of_projectionOnCore_and_confinement ctx observer
+    (c' := c') ?_ ?_
+  · -- The release phase and the acquire phase are lock writes, so both are
+    -- invisible on *every* core by §1 — which is why generalising the core costs
+    -- nothing here that the boot form was not already paying.
+    calc projectStateOnCore ctx observer
+          (SeLe4n.Kernel.Concurrency.releaseAll lockCore S.lockAcquireSequence.reverse st') c'
+        = projectStateOnCore ctx observer st' c' :=
+          lockWritesOnly_preserves_projectionOnCore ctx observer c'
+            (releaseAll_lockWritesOnly lockCore S.lockAcquireSequence.reverse st' hOutInv)
+      _ = projectStateOnCore ctx observer (lockSetAcquiredState S lockCore s) c' := hProjOn
+      _ = projectStateOnCore ctx observer s c' :=
+          lockWritesOnly_preserves_projectionOnCore ctx observer c'
+            (acquireAll_lockWritesOnly lockCore S.lockAcquireSequence s hInv)
+  · exact observableSlotsConfinedToCore_trans
+      (acquireAll_confinedToCore lockCore S.lockAcquireSequence s c')
+      (observableSlotsConfinedToCore_trans hConfined
+        (releaseAll_confinedToCore lockCore _ st' c'))
+
 /-- SM8.D.5 (**the headline**): a 2PL-bracketed live syscall entry is
 non-interfering on **every core** exactly when the operation it dispatches is.
 
-The bracket contributes nothing: its growing and shrinking phases are lock
-writes, invisible by §1, and its confinement rides through by SM8.B.4's
-`acquireAll_confinedToCore` / `releaseAll_confinedToCore`.  So the SM3.C.9
-migration does not weaken the information-flow guarantee — the hypotheses here
-are exactly the ones the *unbracketed* per-core statement takes, relocated to
-the state the entry is run in. -/
+The boot-core instance of `…_atCore`: `projectState` is the boot core's view, so
+a whole-projection hypothesis discharges the per-core premise there and nowhere
+else.  Kept as its own statement because it is the form the boot-pinned
+`syscallEntryChecked_preserves_projection` feeds directly. -/
 theorem syscallEntryUnderLockSet_preserves_projectionOnCore (ctx : LabelingContext)
     (observer : IfObserver) (S : LockSet) (lockCore : CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
@@ -1404,26 +1609,11 @@ theorem syscallEntryUnderLockSet_preserves_projectionOnCore (ctx : LabelingConte
         bootCoreId) :
     lowEquivalent_smp ctx observer
       (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1 s := by
-  have hAcqInv : (lockSetAcquiredState S lockCore s).objects.invExt :=
-    acquireAll_preserves_objects_invExt lockCore S.lockAcquireSequence s hInv
-  have hCommit : (commitKernelAction (syscallEntryChecked ctx layout executingCore regCount)
-      (lockSetAcquiredState S lockCore s)) = (st', .ok ()) :=
-    commitKernelAction_ok _ _ _ _ hOk
-  rw [syscallEntryUnderLockSet_fst, hCommit]
-  refine lowEquivalent_smp_of_projection_and_confinement ctx observer ?_ ?_
-  · calc projectState ctx observer
-          (SeLe4n.Kernel.Concurrency.releaseAll lockCore S.lockAcquireSequence.reverse st')
-        = projectState ctx observer st' :=
-          releaseAll_preserves_projection ctx observer lockCore _ st' hOutInv
-      _ = projectState ctx observer (lockSetAcquiredState S lockCore s) :=
-          syscallEntryChecked_preserves_projection ctx observer layout executingCore regCount
-            _ st' hOk hDispatchProj
-      _ = projectState ctx observer s :=
-          acquireAll_preserves_projection ctx observer lockCore S.lockAcquireSequence s hInv
-  · exact observableSlotsConfinedToCore_trans
-      (acquireAll_confinedToCore lockCore S.lockAcquireSequence s bootCoreId)
-      (observableSlotsConfinedToCore_trans hConfined
-        (releaseAll_confinedToCore lockCore _ st' bootCoreId))
+  refine syscallEntryUnderLockSet_preserves_projectionOnCore_atCore ctx observer S lockCore
+    layout executingCore regCount s st' bootCoreId hInv hOutInv hOk ?_ hConfined
+  rw [projectStateOnCore_bootCore, projectStateOnCore_bootCore]
+  exact syscallEntryChecked_preserves_projection ctx observer layout executingCore regCount
+    _ st' hOk hDispatchProj
 
 /-- SM8.D.5 (**fail-closed, sharpened**): a refused syscall under fine locks
 moves lock words and **nothing else**.
@@ -1603,43 +1793,194 @@ theorem syscallEntryUnderLockSet_preserves_projectionOnCore_of_entry (ctx : Labe
 -- footprint, and the 2PL argument would then rest on exclusion the runtime never
 -- established.
 
+/-- SM8.D.5: the caller and decode a bracketed entry will actually run.
+
+This replays exactly the prefix `syscallEntryChecked` runs before it dispatches —
+reject the insecure default context, read the current thread **of the executing
+core**, read that thread's registers, decode them against the layout — and
+returns `none` wherever the entry itself would fail.  It exists so the declared
+footprint can be resolved from the *same* decode the entry executes, rather than
+from arguments a caller supplies alongside it. -/
+def entryDecode (ctx : LabelingContext) (layout : SeLe4n.SyscallRegisterLayout)
+    (executingCore : CoreId) (regCount : Nat) (s : SystemState) :
+    Option (SeLe4n.ThreadId × SyscallDecodeResult) :=
+  if isInsecureDefaultContext ctx then none
+  else
+    match s.scheduler.currentOnCore executingCore with
+    | none => none
+    | some tid =>
+      match lookupThreadRegisterContext tid s with
+      | .error _ => none
+      | .ok (regs, _) =>
+        match SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
+                s tid layout regs regCount with
+        | .error _ => none
+        | .ok decoded => some (tid, decoded)
+
+/-- SM8.D.5 (**the anti-drift tie**): where the replayed prefix gives up, the
+real entry errors.
+
+`entryDecode` duplicates `syscallEntryChecked`'s prefix, and a duplicated
+computation is a drift risk unless something checks it against the original.
+This is that check on the failing side: every `none` the helper returns is a
+state on which the entry refuses, so a footprint is never resolved for an entry
+that will not run. -/
+theorem entryDecode_none_entry_error (ctx : LabelingContext)
+    (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
+    (s : SystemState) (h : entryDecode ctx layout executingCore regCount s = none) :
+    ∃ e, syscallEntryChecked ctx layout executingCore regCount s = .error e := by
+  unfold entryDecode at h
+  unfold syscallEntryChecked
+  cases hIns : isInsecureDefaultContext ctx with
+  | true => exact ⟨.policyDenied, by simp⟩
+  | false =>
+    rw [hIns] at h
+    simp only [Bool.false_eq_true, if_false] at h
+    cases hCur : s.scheduler.currentOnCore executingCore with
+    | none => exact ⟨.illegalState, by simp⟩
+    | some tid =>
+      rw [hCur] at h
+      simp only at h
+      cases hRegs : lookupThreadRegisterContext tid s with
+      | error e => exact ⟨e, by simp [hRegs]⟩
+      | ok regsPair =>
+        obtain ⟨regs, stAfter⟩ := regsPair
+        rw [hRegs] at h
+        simp only at h
+        cases hDec : SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
+            s tid layout regs regCount with
+        | error e => exact ⟨e, by simp [hRegs, hDec]⟩
+        | ok decoded =>
+          rw [hDec] at h
+          exact absurd h (by simp)
+
+/-- SM8.D.5: the target a capability-addressed syscall names, read the way the
+live `dispatchWithCapChecked` arms read it.
+
+Fail-closed: a capability that does not name an object has no thread target, so
+no footprint is declared for it. -/
+def entryCapTarget (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (s : SystemState) :
+    Option SeLe4n.ThreadId :=
+  match s.getTcb? tid with
+  | none => none
+  | some tcb =>
+    match s.getCNode? tcb.cspaceRoot with
+    | none => none
+    | some rootCn =>
+      match syscallLookupCap { callerId := tid, cspaceRoot := tcb.cspaceRoot,
+                               capAddr := decoded.capAddr, capDepth := rootCn.depth,
+                               requiredRight := syscallRequiredRight decoded.syscallId } s with
+      | .error _ => none
+      | .ok (cap, _) =>
+        match cap.target with
+        | .object objId => some (SeLe4n.ThreadId.ofNat objId.toNat)
+        | _ => none
+
+/-- SM8.D.5: SM3.C.9's declared footprint **for the operation the entry will
+actually execute**.
+
+Every input `lockSetForSyscall` takes is derived here from the entry's own
+resolution rather than supplied alongside it: the syscall id from the register
+decode, the caller from the executing core's current thread, the target from the
+capability that decode addresses.  An earlier cut took all three as free
+parameters, which let a caller bracket `.tcbSuspend`'s footprint around whatever
+the registers happened to decode to — a *false* footprint of exactly the kind the
+section note above says must never be assembled, since the 2PL argument would
+then rest on coverage nobody established. -/
+def declaredLockSetForEntry (ctx : LabelingContext) (layout : SeLe4n.SyscallRegisterLayout)
+    (executingCore : CoreId) (regCount : Nat) (s : SystemState) : Option LockSet :=
+  match entryDecode ctx layout executingCore regCount s with
+  | none => none
+  | some (tid, decoded) =>
+    match entryCapTarget decoded tid s with
+    | none => none
+    | some targetTid =>
+      SeLe4n.Kernel.Concurrency.lockSetForSyscall decoded.syscallId tid targetTid s
+
+/-- SM8.D.5 (**the binding, as a theorem**): a resolved footprint is
+`lockSetForSyscall`'s output at the **decoded** syscall id, the **executing
+core's** caller, and the target that caller's capability names.
+
+This is the property whose absence let the free-parameter form bracket an
+unrelated operation.  It is stated rather than left to the reader of the
+definition, so a future cut that reintroduces an independent argument has to
+break a proof to do it. -/
+theorem declaredLockSetForEntry_binds_decode (ctx : LabelingContext)
+    (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
+    (s : SystemState) (S : LockSet)
+    (h : declaredLockSetForEntry ctx layout executingCore regCount s = some S) :
+    ∃ tid decoded targetTid,
+      entryDecode ctx layout executingCore regCount s = some (tid, decoded) ∧
+      entryCapTarget decoded tid s = some targetTid ∧
+      SeLe4n.Kernel.Concurrency.lockSetForSyscall decoded.syscallId tid targetTid s = some S := by
+  unfold declaredLockSetForEntry at h
+  cases hDec : entryDecode ctx layout executingCore regCount s with
+  | none => rw [hDec] at h; exact absurd h (by simp)
+  | some pair =>
+    obtain ⟨tid, decoded⟩ := pair
+    rw [hDec] at h
+    simp only at h
+    cases hTgt : entryCapTarget decoded tid s with
+    | none => rw [hTgt] at h; exact absurd h (by simp)
+    | some targetTid =>
+      rw [hTgt] at h
+      simp only at h
+      exact ⟨tid, decoded, targetTid, rfl, hTgt, h⟩
+
+/-- SM8.D.5 (**fail-closed**): a footprint is declared only where the **decoded**
+syscall is `.tcbSuspend`.
+
+The undeclared property, restated over the operation the entry runs.  Under the
+free-parameter form this could only be said about the caller's `sid` argument,
+which is not what gets executed. -/
+theorem declaredLockSetForEntry_undeclared (ctx : LabelingContext)
+    (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
+    (s : SystemState) (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult)
+    (hDec : entryDecode ctx layout executingCore regCount s = some (tid, decoded))
+    (hSid : decoded.syscallId ≠ .tcbSuspend) :
+    declaredLockSetForEntry ctx layout executingCore regCount s = none := by
+  unfold declaredLockSetForEntry
+  rw [hDec]
+  simp only
+  cases hTgt : entryCapTarget decoded tid s with
+  | none => rfl
+  | some targetTid =>
+    exact SeLe4n.Kernel.Concurrency.lockSetForSyscall_undeclared_none decoded.syscallId tid
+      targetTid s hSid
+
 /-- SM8.D.5: the 2PL-bracketed live entry **over the declared footprint** —
-`lockSetForSyscall`'s output, bracketed, or `none` where no footprint is
-declared. -/
-def syscallEntryUnderDeclaredLockSet (ctx : LabelingContext) (sid : SyscallId)
-    (callerTid targetTid : SeLe4n.ThreadId) (lockCore : CoreId)
+`declaredLockSetForEntry`'s output, bracketed, or `none` where no footprint is
+declared for the operation the entry will run. -/
+def syscallEntryUnderDeclaredLockSet (ctx : LabelingContext) (lockCore : CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
     (s : SystemState) : Option (SystemState × Except KernelError Unit) :=
-  (SeLe4n.Kernel.Concurrency.lockSetForSyscall sid callerTid targetTid s).map
+  (declaredLockSetForEntry ctx layout executingCore regCount s).map
     (fun S => syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s)
 
 /-- SM8.D.5 (**fail-closed**): every syscall other than `.tcbSuspend` is
 undeclared, so no footprint is bracketed and the caller keeps its existing
-serialisation.  This is `lockSetForSyscall_undeclared_none` lifted to the
+serialisation.  This is `declaredLockSetForEntry_undeclared` lifted to the
 bracketed entry — the property that stops a future cut from silently bracketing
 an operation whose coverage proof does not exist yet. -/
-theorem syscallEntryUnderDeclaredLockSet_undeclared (ctx : LabelingContext) (sid : SyscallId)
-    (callerTid targetTid : SeLe4n.ThreadId) (lockCore : CoreId)
+theorem syscallEntryUnderDeclaredLockSet_undeclared (ctx : LabelingContext) (lockCore : CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
-    (s : SystemState) (h : sid ≠ .tcbSuspend) :
-    syscallEntryUnderDeclaredLockSet ctx sid callerTid targetTid lockCore layout executingCore
-        regCount s = none := by
+    (s : SystemState) (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult)
+    (hDec : entryDecode ctx layout executingCore regCount s = some (tid, decoded))
+    (hSid : decoded.syscallId ≠ .tcbSuspend) :
+    syscallEntryUnderDeclaredLockSet ctx lockCore layout executingCore regCount s = none := by
   unfold syscallEntryUnderDeclaredLockSet
-  rw [SeLe4n.Kernel.Concurrency.lockSetForSyscall_undeclared_none sid callerTid targetTid s h]
+  rw [declaredLockSetForEntry_undeclared ctx layout executingCore regCount s tid decoded hDec hSid]
   rfl
 
-/-- SM8.D.5: and the declared arm resolves exactly when the target names a TCB —
-the condition `suspendFootprintOf` imposes, lifted through the bracket. -/
-theorem syscallEntryUnderDeclaredLockSet_tcbSuspend_isSome_iff (ctx : LabelingContext)
-    (callerTid targetTid : SeLe4n.ThreadId) (lockCore : CoreId)
+/-- SM8.D.5: and nothing is bracketed where the entry itself would refuse —
+the bracket never runs ahead of a decode that does not exist. -/
+theorem syscallEntryUnderDeclaredLockSet_no_decode (ctx : LabelingContext) (lockCore : CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
-    (s : SystemState) :
-    (syscallEntryUnderDeclaredLockSet ctx .tcbSuspend callerTid targetTid lockCore layout
-      executingCore regCount s).isSome ↔ ∃ victim, s.getTcb? targetTid = some victim := by
-  unfold syscallEntryUnderDeclaredLockSet
-  rw [SeLe4n.Kernel.Concurrency.lockSetForSyscall_tcbSuspend]
-  rw [← SeLe4n.Kernel.Concurrency.suspendFootprintOf_isSome_iff s callerTid targetTid]
-  cases SeLe4n.Kernel.Concurrency.suspendFootprintOf s callerTid targetTid <;> simp
+    (s : SystemState) (h : entryDecode ctx layout executingCore regCount s = none) :
+    syscallEntryUnderDeclaredLockSet ctx lockCore layout executingCore regCount s = none := by
+  unfold syscallEntryUnderDeclaredLockSet declaredLockSetForEntry
+  rw [h]
+  rfl
 
 /-- SM8.D.5 (**the headline at the declared footprint**): when SM3.C.9's
 resolver yields a footprint for `.tcbSuspend`, the entry bracketed in **that**
@@ -1651,20 +1992,18 @@ cut stated this over an arbitrary `LockSet` with the resolver equation hanging
 off it unused, which asserted nothing about the footprint the migration will
 actually install. -/
 theorem suspendUnderDeclaredLockSet_preserves_projectionOnCore (ctx : LabelingContext)
-    (observer : IfObserver) (S : LockSet) (callerTid targetTid : SeLe4n.ThreadId)
-    (lockCore : CoreId) (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId)
+    (observer : IfObserver) (S : LockSet) (lockCore : CoreId)
+    (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId)
     (regCount : Nat) (s st' : SystemState) (hInv : s.objects.invExt)
     (hOutInv : st'.objects.invExt)
-    (hFootprint : SeLe4n.Kernel.Concurrency.lockSetForSyscall .tcbSuspend callerTid targetTid s
-        = some S)
+    (hFootprint : declaredLockSetForEntry ctx layout executingCore regCount s = some S)
     (hOk : syscallEntryChecked ctx layout executingCore regCount
         (lockSetAcquiredState S lockCore s) = .ok ((), st'))
     (hProj : projectState ctx observer st'
         = projectState ctx observer (lockSetAcquiredState S lockCore s))
     (hConfined : observableSlotsConfinedToCore (lockSetAcquiredState S lockCore s) st'
         bootCoreId) :
-    ∃ r, syscallEntryUnderDeclaredLockSet ctx .tcbSuspend callerTid targetTid lockCore layout
-          executingCore regCount s = some r ∧
+    ∃ r, syscallEntryUnderDeclaredLockSet ctx lockCore layout executingCore regCount s = some r ∧
       lowEquivalent_smp ctx observer r.1 s := by
   refine ⟨syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s, ?_, ?_⟩
   · unfold syscallEntryUnderDeclaredLockSet
@@ -1676,15 +2015,13 @@ theorem suspendUnderDeclaredLockSet_preserves_projectionOnCore (ctx : LabelingCo
 /-- SM8.D.5: the fail-closed half at the declared footprint — a refused suspend
 moves lock words and nothing else, and is invisible on every core. -/
 theorem suspendUnderDeclaredLockSet_failClosed_invisible (ctx : LabelingContext) (S : LockSet)
-    (callerTid targetTid : SeLe4n.ThreadId) (lockCore : CoreId)
+    (lockCore : CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
     (s : SystemState) (e : KernelError) (L : SecurityLabel) (hInv : s.objects.invExt)
-    (hFootprint : SeLe4n.Kernel.Concurrency.lockSetForSyscall .tcbSuspend callerTid targetTid s
-        = some S)
+    (hFootprint : declaredLockSetForEntry ctx layout executingCore regCount s = some S)
     (hDenied : syscallEntryChecked ctx layout executingCore regCount
         (lockSetAcquiredState S lockCore s) = .error e) :
-    ∃ r, syscallEntryUnderDeclaredLockSet ctx .tcbSuspend callerTid targetTid lockCore layout
-          executingCore regCount s = some r ∧
+    ∃ r, syscallEntryUnderDeclaredLockSet ctx lockCore layout executingCore regCount s = some r ∧
       lockWritesOnly s r.1 ∧
       ∀ c : CoreId, ObservableState.onCore ctx c L r.1 = ObservableState.onCore ctx c L s := by
   refine ⟨syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s, ?_, ?_, ?_⟩
@@ -1695,6 +2032,33 @@ theorem suspendUnderDeclaredLockSet_failClosed_invisible (ctx : LabelingContext)
       hInv hDenied).1
   · exact syscallEntryUnderLockSet_failClosed_invisible ctx S lockCore layout executingCore
       regCount s e L hInv hDenied
+
+/-- SM8.D.5 (**the resolved footprint is the suspend footprint**): a declared
+footprint resolves only through `suspendFootprintOf`, at the caller and target the
+entry's own decode names.
+
+`declaredLockSetForEntry_binds_decode` says the inputs come from the decode;
+this says what the output then is, so the two together pin the whole resolution
+rather than only its shape. -/
+theorem declaredLockSetForEntry_is_suspend_footprint (ctx : LabelingContext)
+    (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
+    (s : SystemState) (S : LockSet)
+    (h : declaredLockSetForEntry ctx layout executingCore regCount s = some S) :
+    ∃ tid decoded targetTid,
+      entryDecode ctx layout executingCore regCount s = some (tid, decoded) ∧
+      decoded.syscallId = .tcbSuspend ∧
+      entryCapTarget decoded tid s = some targetTid ∧
+      SeLe4n.Kernel.Concurrency.suspendFootprintOf s tid targetTid = some S := by
+  obtain ⟨tid, decoded, targetTid, hDec, hTgt, hLock⟩ :=
+    declaredLockSetForEntry_binds_decode ctx layout executingCore regCount s S h
+  by_cases hSid : decoded.syscallId = .tcbSuspend
+  · refine ⟨tid, decoded, targetTid, hDec, hSid, hTgt, ?_⟩
+    rw [hSid, SeLe4n.Kernel.Concurrency.lockSetForSyscall_tcbSuspend] at hLock
+    exact hLock
+  · exact absurd hLock (by
+      rw [SeLe4n.Kernel.Concurrency.lockSetForSyscall_undeclared_none decoded.syscallId tid
+        targetTid s hSid]
+      simp)
 
 -- ============================================================================
 -- §6  SM8.D — the phase's claims as data, each carrying its own proof
