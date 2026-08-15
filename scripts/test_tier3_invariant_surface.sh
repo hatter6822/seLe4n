@@ -2498,6 +2498,30 @@ run_check "INVARIANT" rg -n '^theorem declaredFootprintUncoveredDomains_complete
 # The declared-footprint witness carries the confinement core too.
 run_check "INVARIANT" rg -n '^theorem suspendUnderDeclaredLockSet_preserves_projectionOnCore_atCore' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n 'toValid\?' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# PR #864 review round 5.  The revalidation guard takes the observed post-acquire
+# state as an INPUT: derived from `s` alone it could only ever see the acquire,
+# which writes nothing the resolver reads, so the refusal branch was unreachable.
+run_check "INVARIANT" rg -n '\(s observed : SystemState\)' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^def syscallEntryUnderRevalidatedLockSetModel' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryUnderRevalidatedLockSetModel_refines' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem revalidationRefusalReachable' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# NEGATIVE: the guard must not go back to re-deriving the observed state from `s`,
+# which is what made its refusal unreachable.
+run_negative_check "INVARIANT" rg -n '\(lockSetAcquiredState S lockCore s\) = some S' \
+  SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# The resolution may not leave the CNode the footprint read-locks: a `LockSet` is
+# capped at `maxLockSetSize`, a CSpace path is not, so deeper paths fail closed.
+run_check "INVARIANT" rg -n '^theorem entryCapTarget_single_level' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n 'ref\.cnode' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# The splice's neighbour-TCB writes ride the endpoint write lock (the
+# queue-owning-object umbrella) — the seventh member of a coverage family that
+# stopped at six, exactly where the umbrella began.
+run_check "INVARIANT" rg -n '^theorem suspendFootprint_splice_neighbors_under_endpoint_lock' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n 'cancelSpliceNeighbors\?' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# The suite exercises the declared path POSITIVELY and demonstrates the refusal;
+# before round 5 every declared-footprint result in the group was `none`.
+run_check "INVARIANT" rg -n 'NEGATIVE: a capability replaced under the growing phase is refused' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'decode through a write cap resolves a real footprint' tests/SmpInformationFlowSuite.lean
 # The multi-reader witness carries REACHABILITY, not merely well-formedness: a
 # wf-only existential could be satisfied by a lock word no execution produces,
 # which is the opposite of the non-vacuity the theorem claims.
@@ -2611,7 +2635,7 @@ run_check "INVARIANT" rg -n 'NEGATIVE: the first-admission reading would report 
 run_check "INVARIANT" rg -n 'NEGATIVE: it is never admitted, so the observation is the reserved code' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: the alphabet tracks the budget' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: the HIGH observer' tests/SmpInformationFlowSuite.lean
-run_check "INVARIANT" rg -n 'is undeclared, so the bracketed entry is' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: a resolvable suspend footprint does not bracket a' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: the reader is not queued as a writer' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'the blocked READER.s delay is bounded in time' tests/SmpInformationFlowSuite.lean
 # The golden fine-lock contention trace and its hash companion; the trace

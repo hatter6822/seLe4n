@@ -2032,6 +2032,44 @@ Three findings, all against the SM8.D.5 declared-footprint bracket.
 
 Suite 521 → **525** assertions.
 
+#### v0.33.15 review cut — the fifth round, and the guard that could not fire
+
+Three findings: two real coverage defects, and one defect in the previous cut's
+own fix.
+
+1. **The revalidation guard could not fire.**  v0.33.14 re-resolved at
+   `lockSetAcquiredState S lockCore s`, derived from the same immutable `s` — so
+   the only writer it could see was the acquire, which writes nothing the
+   resolver reads.  The refusal branch was unreachable, and the suite comment
+   saying the model "has no way to interleave the replacement" was describing
+   that gap rather than an inherent limit.  `observed` is now an **input**: this
+   model passes `lockSetAcquiredState`
+   (`syscallEntryUnderRevalidatedLockSetModel`), a concurrent kernel passes that
+   plus foreign commits.  `revalidationRefusalReachable` states the refusal over
+   the *difference* between the two resolutions, so it covers every way a
+   concurrent kernel can move the target rather than one example, and the suite
+   demonstrates it with a capability re-targeted mid-window.
+2. **Multi-level CSpace resolution is refused.**  `resolveCapAddress` reads
+   every intermediate and leaf CNode on the path while the footprint read-locks
+   the **root** only.  Locking the path is not expressible — a `LockSet` is
+   capped at `maxLockSetSize`, a CSpace path is not — so `entryCapTarget`
+   requires the resolution to land in the caller's own root and fails closed
+   otherwise (`entryCapTarget_single_level`).
+3. **The splice's neighbour writes ride the endpoint lock, and now say so.**
+   The writes are covered by the queue-owning-object discipline, and widening
+   `lockSet_tcbSuspend` would break the `maxLockSetSize` bound the WCRT headline
+   rests on rather than close a hole — but the discipline was prose while the
+   `lockSet_tcbSuspend_*_write_mem` family stopped at six members, exactly where
+   the umbrella began.  `suspendFootprint_splice_neighbors_under_endpoint_lock`
+   is the seventh, over the **resolved** footprint.
+
+Also: the declared path is exercised **positively** for the first time (every
+§7.9 state decoded to `.receive`, so the resolver's success branch had never
+run), and a stale Tier-3 anchor red since v0.33.13 is re-pointed at the current,
+stronger assertion.
+
+Suite 525 → **530** assertions.
+
 ### SM8.E — Tests + closure (3 sub-tasks)
 
 | Sub | Description | Files | Est |

@@ -1,3 +1,83 @@
+## v0.33.15 — WS-SM SM8.D: the fifth review round, and the guard that could not fire
+
+Three further P2 findings on the declared-footprint bracket.  Two are real
+coverage defects and are fixed; the third was a defect in this PR's own previous
+cut — a guard whose refusal branch was unreachable — and closing it is what
+finally makes the race expressible in the model.  Theorems, tests and prose
+only; no transition changed and the golden kernel trace is byte-identical.
+
+### The revalidation guard now takes the observed state as an input
+
+v0.33.14 re-resolved the footprint at `lockSetAcquiredState S lockCore s`, which
+is derived from the same immutable `s`.  The only writer it could therefore see
+was the acquire itself — and the acquire writes nothing the resolver reads, so
+the refusal branch could not fire.  A guard whose refusal cannot happen does not
+model the race it was added for, and the suite comment saying the model "has no
+way to interleave the replacement" was describing that gap rather than an
+inherent limit.
+
+`syscallEntryUnderRevalidatedLockSet` now takes `observed` — the state the
+growing phase actually ended in.  A caller in this pure model passes
+`lockSetAcquiredState` (`syscallEntryUnderRevalidatedLockSetModel`); a caller
+modelling a concurrent kernel passes that plus whatever other cores committed,
+which is exactly the interleaving a single-state transition cannot manufacture
+for itself.  `revalidationRefusalReachable` states the refusal over the
+*difference* between the two resolutions, so it covers every way a concurrent
+kernel can move the target rather than one hand-built example, and
+`syscallEntryUnderRevalidatedLockSetModel_refines` keeps the model instance tied
+to the plain bracket.
+
+The suite now demonstrates it: `suspendObservedReplaced` is the caller's
+capability re-targeted at a different victim — the `cspaceMove` another core
+could land in the window — and the bracket refuses on it, while an undisturbed
+growing phase commits.
+
+### Multi-level CSpace resolution is refused
+
+`resolveCapAddress` walks a multi-level CSpace, reading every intermediate and
+leaf CNode on the path, while the footprint declares a read lock on the **root**
+only.  A deeper path would therefore have its target selected by CNodes no
+declared lock covers.  Locking the path is not expressible — a `LockSet` is
+capped at `maxLockSetSize` and a CSpace path is not — so `entryCapTarget` now
+requires the resolution to land in the caller's own root and fails closed
+otherwise, with `entryCapTarget_single_level` stating the property over
+`resolveCapAddress`'s own output rather than over the guard's syntax.
+
+### The splice's neighbour writes ride a declared lock, and now say so
+
+Suspending a victim inside an endpoint queue patches its neighbours' queue
+links — TCBs the footprint carries no `tcbLock` for.  Those writes are covered,
+under the **endpoint** write lock, by the queue-owning-object discipline
+`IPC/CrossCore/Cancellation.lean` documents; the sub-operation footprint names
+the neighbours explicitly because it is the finer-grained authority.  Widening
+`lockSet_tcbSuspend` is not the fix and would not be sound as one: it is already
+`maxLockSetSize` (8) at full resolution, and that constant is the WCRT headline
+the 1 ms tick fit rests on.  But the discipline was prose while the
+`lockSet_tcbSuspend_*_write_mem` family stopped at six members, exactly where
+the umbrella began — so this adds the seventh,
+`suspendFootprint_splice_neighbors_under_endpoint_lock`, stated over the
+**resolved** footprint and mentioning the neighbours via the same
+`cancelSpliceNeighbors?` the sub-operation footprint reads.
+
+### The declared path is finally exercised positively
+
+Every §7.9 state decoded to `.receive`, which is undeclared, so the resolver's
+success branch had never run: the group could only ever observe `none`.  A new
+fixture whose registers decode to `.tcbSuspend` through a write capability to a
+real TCB resolves a genuine footprint, which is also what lets the refusal above
+be a demonstration rather than a restatement.
+
+### A stale Tier-3 anchor, red since v0.33.13
+
+The §7.9 rebuild retired an assertion label a Tier-3 anchor still pinned, so the
+invariant-surface tier had been failing since v0.33.13 and CI caught it on
+v0.33.14.  The anchor is re-pointed at the current, stronger assertion rather
+than deleted — the property it protected survives, keyed on the real decode.
+
+`SmpInformationFlowSuite` 525 → **530** assertions.
+
+Refs: docs/planning/SMP_INFORMATION_FLOW_PLAN.md section 5 SM8.D
+
 ## v0.33.14 — WS-SM SM8.D: the fourth review round, and the bracket's real scope
 
 Three further P2 findings, all valid, all against the SM8.D.5 declared-footprint

@@ -2079,12 +2079,31 @@ theorem entryDecode_none_entry_error (ctx : LabelingContext)
 /-- SM8.D.5: the target a capability-addressed syscall names, read the way the
 live `dispatchWithCapChecked` arms read it.
 
-Fail-closed twice over: a capability that does not name an object has no thread
-target, and a target that fails `ThreadId.toValid?` — the AL7-A sentinel guard the
-live `.tcbSuspend` arm applies through `validateThreadIdArg` before it invokes the
-handler — has none either.  Without the second check the resolver would declare a
-footprint for a syscall the dispatch is going to reject, and under contention the
-bracket would enqueue `lockCore` on locks for a call that cannot execute. -/
+Fail-closed three times over.
+
+*The capability must name an object* — one that does not has no thread target.
+
+*The target must pass `ThreadId.toValid?`* — the AL7-A sentinel guard the live
+`.tcbSuspend` arm applies through `validateThreadIdArg` before it invokes the
+handler.  Without it the resolver would declare a footprint for a syscall the
+dispatch is going to reject, and under contention the bracket would enqueue
+`lockCore` on locks for a call that cannot execute.
+
+*The resolution must not leave the caller's root CNode.*  `resolveCapAddress`
+walks a multi-level CSpace, reading each intermediate and leaf CNode on the
+path; the footprint declares a read lock on the **root** only
+(`lockSet_tcbSuspend`'s `cnodeRootObjId`), so a deeper path would have the
+target selected by CNodes no declared lock covers — a concurrent writer could
+redirect the resolution without conflicting with the footprint.  Locking the
+whole path is not expressible: a `LockSet` is bounded by `maxLockSetSize` (8)
+while a CSpace path is bounded only by the address width, so the set cannot
+name the path in general.  Rejecting is therefore the fail-closed option, and
+it is the one the reviewer's own second alternative names.  A rejected entry
+declares nothing and the caller keeps its coarser serialisation.
+
+`resolveCapAddress` is run for the *guard* only; the capability itself still
+comes from `syscallLookupCap`, so the target stays the one the live arm reads
+rather than something this module computes for itself. -/
 def entryCapTarget (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (s : SystemState) :
     Option SeLe4n.ThreadId :=
   match s.getTcb? tid with
@@ -2093,17 +2112,22 @@ def entryCapTarget (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (s : 
     match s.getCNode? tcb.cspaceRoot with
     | none => none
     | some rootCn =>
-      match syscallLookupCap { callerId := tid, cspaceRoot := tcb.cspaceRoot,
-                               capAddr := decoded.capAddr, capDepth := rootCn.depth,
-                               requiredRight := syscallRequiredRight decoded.syscallId } s with
+      match resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth s with
       | .error _ => none
-      | .ok (cap, _) =>
-        match cap.target with
-        | .object objId =>
-          match (SeLe4n.ThreadId.ofNat objId.toNat).toValid? with
-          | none => none
-          | some valid => some valid.val
-        | _ => none
+      | .ok ref =>
+        if ref.cnode ≠ tcb.cspaceRoot then none
+        else
+        match syscallLookupCap { callerId := tid, cspaceRoot := tcb.cspaceRoot,
+                                 capAddr := decoded.capAddr, capDepth := rootCn.depth,
+                                 requiredRight := syscallRequiredRight decoded.syscallId } s with
+        | .error _ => none
+        | .ok (cap, _) =>
+          match cap.target with
+          | .object objId =>
+            match (SeLe4n.ThreadId.ofNat objId.toNat).toValid? with
+            | none => none
+            | some valid => some valid.val
+          | _ => none
 
 /-- SM8.D.5 (**the sentinel guard, as a theorem**): a capability naming the
 sentinel thread yields no target, so no footprint is declared for it.
@@ -2123,17 +2147,62 @@ theorem entryCapTarget_rejects_sentinel (decoded : SyscallDecodeResult)
     · next rootCn _ =>
       split at h
       · exact absurd h (by simp)
-      · next capPair _ =>
-        obtain ⟨cap, _⟩ := capPair
+      · next ref _ =>
         split at h
-        · next objId _ =>
-          split at h
-          · exact absurd h (by simp)
-          · next valid hValid =>
-            have : t = valid.val := by simpa using h.symm
-            rw [this]
-            exact valid.property
         · exact absurd h (by simp)
+        · split at h
+          · exact absurd h (by simp)
+          · next capPair _ =>
+            obtain ⟨cap, _⟩ := capPair
+            split at h
+            · next objId _ =>
+              split at h
+              · exact absurd h (by simp)
+              · next valid hValid =>
+                have : t = valid.val := by simpa using h.symm
+                rw [this]
+                exact valid.property
+            · exact absurd h (by simp)
+
+/-- SM8.D.5 (**the resolution stays inside the locked CNode**): whenever a target
+is resolved, the capability that named it lives in the caller's **root** CNode —
+the one, and the only one, the declared footprint read-locks.
+
+This is the property whose absence let a multi-level CSpace path select the target
+through intermediate CNodes no declared lock covers.  It is stated over
+`resolveCapAddress`'s own output rather than over the guard's syntax, so deleting
+the `if` breaks this proof rather than silently widening the resolver again.
+
+A `LockSet` cannot name a whole CSpace path — it is capped at `maxLockSetSize`,
+a path is not — so single-level is the widest resolution this footprint can
+honestly cover, and deeper ones are refused. -/
+theorem entryCapTarget_single_level (decoded : SyscallDecodeResult)
+    (tid : SeLe4n.ThreadId) (s : SystemState) (t : SeLe4n.ThreadId)
+    (h : entryCapTarget decoded tid s = some t) :
+    ∃ tcb rootCn ref, s.getTcb? tid = some tcb ∧
+      s.getCNode? tcb.cspaceRoot = some rootCn ∧
+      resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth s = .ok ref ∧
+      ref.cnode = tcb.cspaceRoot := by
+  unfold entryCapTarget at h
+  cases hTcb : s.getTcb? tid with
+  | none => rw [hTcb] at h; exact absurd h (by simp)
+  | some tcb =>
+    rw [hTcb] at h
+    simp only at h
+    cases hCn : s.getCNode? tcb.cspaceRoot with
+    | none => rw [hCn] at h; exact absurd h (by simp)
+    | some rootCn =>
+      rw [hCn] at h
+      simp only at h
+      cases hRes : resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth s with
+      | error e => rw [hRes] at h; exact absurd h (by simp)
+      | ok ref =>
+        rw [hRes] at h
+        simp only at h
+        by_cases hSame : ref.cnode = tcb.cspaceRoot
+        · exact ⟨tcb, rootCn, ref, by rfl, hCn, hRes, hSame⟩
+        · rw [if_pos hSame] at h
+          exact absurd h (by simp)
 
 /-- SM8.D.5: SM3.C.9's declared footprint **for the operation the entry will
 actually execute**.
@@ -2185,6 +2254,70 @@ theorem declaredLockSetForEntry_binds_decode (ctx : LabelingContext)
       rw [hTgt] at h
       simp only at h
       exact ⟨tid, decoded, targetTid, rfl, hTgt, h⟩
+
+/-- SM8.D.5: the victim is an interior node of endpoint `ep`'s queue — the
+situation in which suspending it splices it out and patches its neighbours. -/
+def victimBlockedOnEndpoint (victim : TCB) (ep : SeLe4n.ObjId) : Prop :=
+  victim.ipcState = .blockedOnSend ep ∨ victim.ipcState = .blockedOnReceive ep ∨
+    victim.ipcState = .blockedOnCall ep ∨ ∃ r, victim.ipcState = .blockedOnReply ep r
+
+/-- SM8.D.5 (**the splice's neighbour writes are covered — the queue-owning-object
+umbrella, as a theorem**).
+
+Suspending a victim that sits *inside* an endpoint queue runs
+`spliceOutMidQueueNode`, which patches the predecessor's `queueNext` and the
+successor's `queuePrev` — writes to TCBs that are **not** the victim, and for
+which the footprint carries no `tcbLock`.  Read on its own that is an uncovered
+write, and it is what a comparison against `lockSet_cancelIpcBlockingOnCore` (which
+does name both neighbours) suggests.
+
+The reconciliation is the discipline `IPC/CrossCore/Cancellation.lean` states in
+prose: an endpoint **owns** its queue, so the endpoint's write lock authorizes the
+link writes of every TCB in that queue.  The sub-operation footprint names the
+neighbours explicitly because it is the finer-grained authority; the syscall
+footprint sits under the coarser umbrella.  Both are sound — but only one of them
+was checked, and the `lockSet_tcbSuspend_*_write_mem` family stopped at six
+members, exactly where the umbrella began.  This is the seventh.
+
+It is stated over the **resolved** footprint (`suspendFootprintOf`, what the SM8.D
+resolver actually returns) rather than the parametric `lockSet_tcbSuspend`, since
+the parametric form's endpoint membership is already
+`lockSet_tcbSuspend_blocked_endpoint_write_mem` and restating it would prove
+nothing new.  The neighbours appear in the statement — via the same
+`cancelSpliceNeighbors?` the sub-operation footprint reads — so the theorem is
+about the splice rather than about the endpoint lock in isolation.
+
+**Why the footprint is not simply widened instead**: `lockSet_tcbSuspend` is
+already `maxLockSetSize` (8) at full resolution, and that constant is the WCRT
+headline (`maxLockSetSize · (numCores − 1) · tCs`, the figure the 1 ms tick fit
+rests on).  Adding two neighbour locks would break a bound rather than close a
+hole — and there is no hole to close. -/
+theorem suspendFootprint_splice_neighbors_under_endpoint_lock (st : SystemState)
+    (callerTid targetTid : SeLe4n.ThreadId) (S : LockSet) (victim : TCB)
+    (ep : SeLe4n.ObjId)
+    (hFp : SeLe4n.Kernel.Concurrency.suspendFootprintOf st callerTid targetTid = some S)
+    (hVictim : st.getTcb? targetTid = some victim)
+    (hBlocked : victimBlockedOnEndpoint victim ep) :
+    (SeLe4n.Kernel.Concurrency.endpointLock ep, AccessMode.write) ∈ S.pairs ∧
+      ∀ n, n ∈ [(SeLe4n.Kernel.cancelSpliceNeighbors? victim).1,
+                (SeLe4n.Kernel.cancelSpliceNeighbors? victim).2] →
+        n.isSome → (SeLe4n.Kernel.Concurrency.endpointLock ep, AccessMode.write) ∈ S.pairs := by
+  have hMem : (SeLe4n.Kernel.Concurrency.endpointLock ep, AccessMode.write) ∈ S.pairs := by
+    unfold SeLe4n.Kernel.Concurrency.suspendFootprintOf at hFp
+    cases hCaller : st.getTcb? callerTid with
+    | none => rw [hCaller] at hFp; simp at hFp
+    | some caller =>
+      rw [hCaller, hVictim] at hFp
+      simp only at hFp
+      -- Every endpoint-blocked arm resolves `blockedEndpoint` to `some ep`; the
+      -- other components differ per arm, so each arm applies the SM6.E
+      -- parametric membership at its own instantiation.
+      rcases hBlocked with h | h | h | ⟨r, h⟩ <;>
+        · rw [h] at hFp
+          simp only at hFp
+          rw [← Option.some.inj hFp]
+          exact SeLe4n.Kernel.lockSet_tcbSuspend_blocked_endpoint_write_mem _ _ _ _ _ _ _ _
+  exact ⟨hMem, fun _ _ _ => hMem⟩
 
 /-- SM8.D.5 (**fail-closed**): a footprint is declared only where the **decoded**
 syscall is `.tcbSuspend`.
@@ -2258,25 +2391,52 @@ caller's capability between resolution and acquisition.  The guarded entry would
 then resolve a *different* target while holding locks for the first.
 
 The fix is the standard one for a footprint resolved before its own locks are
-held: re-resolve at the post-acquire state and fail closed on any change.
-Retrying is the alternative; refusing is what a total, deterministic transition
-can express, and a refused syscall here is invisible anyway
-(`syscallEntryUnderLockSet_failClosed_invisible`).
+held: re-resolve at the state the growing phase actually ended in and fail closed
+on any change.  Retrying is the alternative; refusing is what a total,
+deterministic transition can express, and a refused syscall here is invisible
+anyway (`syscallEntryUnderLockSet_failClosed_invisible`).
+
+**The observed state is an input, not a computation.**  An earlier cut
+re-resolved at `lockSetAcquiredState S lockCore s`, which is derived from the
+very same immutable `s` — so the only writer it could see was the acquire
+itself, and the acquire writes nothing the resolver reads.  The refusal branch
+was therefore unreachable, and a guard whose refusal cannot happen does not
+model the race it was added for.  `observed` is now supplied: in this pure model
+a caller passes `lockSetAcquiredState S lockCore s`
+(`syscallEntryUnderRevalidatedLockSet_model`), and a caller modelling a
+concurrent kernel passes that state plus whatever other cores committed —
+which is exactly the interleaving a single-state transition cannot manufacture
+for itself.  `revalidationRefusalReachable` exhibits a refusal.
 
 `none` means either that no footprint is declared or that the resolution moved
 under the acquire — deliberately the same outcome, since a caller must fall back
 to its coarser serialisation in both cases. -/
 def syscallEntryUnderRevalidatedLockSet (ctx : LabelingContext) (lockCore : CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
+    (s : SystemState) (observed : SystemState) :
+    Option (SystemState × Except KernelError Unit) :=
+  match declaredLockSetForEntry ctx layout executingCore regCount s with
+  | none => none
+  | some S =>
+    if declaredLockSetForEntry ctx layout executingCore regCount observed = some S then
+      some (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s)
+    else
+      none
+
+/-- SM8.D.5: the instance this pure model can run — the growing phase ends at
+`lockSetAcquiredState`, because no other core can commit in between.
+
+Kept as a named definition so the model's own reading is a *choice of `observed`*
+rather than the only shape the bracket has.  `revalidationRefusalReachable` is the
+other reading, and it is the one SM3.C.9's concurrent kernel lives in. -/
+def syscallEntryUnderRevalidatedLockSetModel (ctx : LabelingContext) (lockCore : CoreId)
+    (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
     (s : SystemState) : Option (SystemState × Except KernelError Unit) :=
   match declaredLockSetForEntry ctx layout executingCore regCount s with
   | none => none
   | some S =>
-    if declaredLockSetForEntry ctx layout executingCore regCount
-        (lockSetAcquiredState S lockCore s) = some S then
-      some (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s)
-    else
-      none
+    syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore regCount s
+      (lockSetAcquiredState S lockCore s)
 
 /-- SM8.D.5: when the revalidated bracket runs, the footprint it holds **is** the
 footprint the guarded entry's own decode resolves at the state that entry sees.
@@ -2286,12 +2446,12 @@ set is the one resolved at the *pre*-acquire state, and nothing ties it to what
 the entry decodes once the locks are in hand. -/
 theorem syscallEntryUnderRevalidatedLockSet_footprint_stable (ctx : LabelingContext)
     (lockCore : CoreId) (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId)
-    (regCount : Nat) (s : SystemState) (r : SystemState × Except KernelError Unit)
+    (regCount : Nat) (s observed : SystemState)
+    (r : SystemState × Except KernelError Unit)
     (h : syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore regCount s
-      = some r) :
+      observed = some r) :
     ∃ S, declaredLockSetForEntry ctx layout executingCore regCount s = some S ∧
-      declaredLockSetForEntry ctx layout executingCore regCount
-        (lockSetAcquiredState S lockCore s) = some S ∧
+      declaredLockSetForEntry ctx layout executingCore regCount observed = some S ∧
       r = syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s := by
   unfold syscallEntryUnderRevalidatedLockSet at h
   cases hRes : declaredLockSetForEntry ctx layout executingCore regCount s with
@@ -2303,19 +2463,47 @@ theorem syscallEntryUnderRevalidatedLockSet_footprint_stable (ctx : LabelingCont
     · next hStable => exact ⟨S, rfl, hStable, by simpa using h.symm⟩
     · exact absurd h (by simp)
 
-/-- SM8.D.5 (**fail-closed under the race**): if the resolution moves under the
-growing phase, nothing is bracketed and nothing is run. -/
+/-- SM8.D.5 (**fail-closed under the race**): if the resolution moved by the time
+the growing phase ended, nothing is bracketed and nothing is run.
+
+Stated over an arbitrary `observed`, so the hypothesis is satisfiable: it is the
+foreign commit the earlier `lockSetAcquiredState`-derived form could not express.
+`revalidationRefusalReachable` discharges it on concrete states. -/
 theorem syscallEntryUnderRevalidatedLockSet_refuses_on_change (ctx : LabelingContext)
     (lockCore : CoreId) (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId)
-    (regCount : Nat) (s : SystemState) (S : LockSet)
+    (regCount : Nat) (s observed : SystemState) (S : LockSet)
     (hRes : declaredLockSetForEntry ctx layout executingCore regCount s = some S)
-    (hMoved : declaredLockSetForEntry ctx layout executingCore regCount
-      (lockSetAcquiredState S lockCore s) ≠ some S) :
-    syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore regCount s = none := by
+    (hMoved : declaredLockSetForEntry ctx layout executingCore regCount observed ≠ some S) :
+    syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore regCount s
+      observed = none := by
   unfold syscallEntryUnderRevalidatedLockSet
   rw [hRes]
   simp only
   rw [if_neg hMoved]
+
+/-- SM8.D.5 (**the refusal is reachable**): a state on which the guard fires.
+
+The point the previous cut could not make.  Take any two states whose declared
+footprints differ and at least one is `some` — the resolver reads the caller's
+CNode, so a foreign commit that replaces the capability is exactly such a pair —
+and the bracket refuses.  The witness is stated over the *difference*, not over a
+particular fixture, so it holds for every way a concurrent kernel can move the
+resolution rather than for one hand-built example. -/
+theorem revalidationRefusalReachable (ctx : LabelingContext) (lockCore : CoreId)
+    (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
+    (s observed : SystemState)
+    (hDeclared : (declaredLockSetForEntry ctx layout executingCore regCount s).isSome)
+    (hDiffers : declaredLockSetForEntry ctx layout executingCore regCount observed
+      ≠ declaredLockSetForEntry ctx layout executingCore regCount s) :
+    syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore regCount s
+      observed = none := by
+  cases hRes : declaredLockSetForEntry ctx layout executingCore regCount s with
+  | none => rw [hRes] at hDeclared; exact absurd hDeclared (by simp)
+  | some S =>
+    refine syscallEntryUnderRevalidatedLockSet_refuses_on_change ctx lockCore layout
+      executingCore regCount s observed S hRes ?_
+    rw [hRes] at hDiffers
+    exact hDiffers
 
 /-- SM8.D.5: the revalidated bracket refines the plain one — whenever it runs, it
 runs exactly the same transition.  So every §5 result about
@@ -2323,16 +2511,34 @@ runs exactly the same transition.  So every §5 result about
 the information-flow argument. -/
 theorem syscallEntryUnderRevalidatedLockSet_refines (ctx : LabelingContext)
     (lockCore : CoreId) (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId)
-    (regCount : Nat) (s : SystemState) (r : SystemState × Except KernelError Unit)
+    (regCount : Nat) (s observed : SystemState)
+    (r : SystemState × Except KernelError Unit)
     (h : syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore regCount s
-      = some r) :
+      observed = some r) :
     syscallEntryUnderDeclaredLockSet ctx lockCore layout executingCore regCount s = some r := by
   obtain ⟨S, hRes, _, hEq⟩ :=
     syscallEntryUnderRevalidatedLockSet_footprint_stable ctx lockCore layout executingCore
-      regCount s r h
+      regCount s observed r h
   unfold syscallEntryUnderDeclaredLockSet
   rw [hRes, hEq]
   rfl
+
+/-- SM8.D.5: the model instance refines the plain bracket too, so choosing
+`observed` does not change what a committed entry runs. -/
+theorem syscallEntryUnderRevalidatedLockSetModel_refines (ctx : LabelingContext)
+    (lockCore : CoreId) (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId)
+    (regCount : Nat) (s : SystemState) (r : SystemState × Except KernelError Unit)
+    (h : syscallEntryUnderRevalidatedLockSetModel ctx lockCore layout executingCore regCount s
+      = some r) :
+    syscallEntryUnderDeclaredLockSet ctx lockCore layout executingCore regCount s = some r := by
+  unfold syscallEntryUnderRevalidatedLockSetModel at h
+  cases hRes : declaredLockSetForEntry ctx layout executingCore regCount s with
+  | none => rw [hRes] at h; exact absurd h (by simp)
+  | some S =>
+    rw [hRes] at h
+    simp only at h
+    exact syscallEntryUnderRevalidatedLockSet_refines ctx lockCore layout executingCore
+      regCount s _ r h
 
 /-- SM8.D.5 (**fail-closed**): every syscall other than `.tcbSuspend` is
 undeclared, so no footprint is bracketed and the caller keeps its existing

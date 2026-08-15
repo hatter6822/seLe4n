@@ -1206,6 +1206,7 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @entryDecode_none_entry_error
 #check @entryCapTarget
 #check @entryCapTarget_rejects_sentinel
+#check @entryCapTarget_single_level
 #check @declaredLockSetForEntry
 #check @declaredLockSetForEntry_binds_decode
 #check @declaredLockSetForEntry_undeclared
@@ -1216,10 +1217,15 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @syscallEntryUnderRevalidatedLockSet_footprint_stable
 #check @syscallEntryUnderRevalidatedLockSet_refuses_on_change
 #check @syscallEntryUnderRevalidatedLockSet_refines
+#check @syscallEntryUnderRevalidatedLockSetModel
+#check @syscallEntryUnderRevalidatedLockSetModel_refines
+#check @revalidationRefusalReachable
 #check @suspendUnderDeclaredLockSet_preserves_projectionOnCore_atCore
 #check UncoveredLockDomain
 #check @declaredFootprintUncoveredDomains
 #check @declaredFootprintUncoveredDomains_complete
+#check @victimBlockedOnEndpoint
+#check @suspendFootprint_splice_neighbors_under_endpoint_lock
 #check @lockContentionChannel_run_capacity
 #check @lockContentionRun_rejects_repeated_step
 #check @lockContentionRun_rejects_still_queued_step
@@ -6094,6 +6100,61 @@ footprint's CNode member can be attributed to one of them. -/
 private def distinctRootVictim : TCB :=
   { (mkTcb 1011 50 (some c1)) with cspaceRoot := probeCNode }
 
+-- ---------------------------------------------------------------------------
+-- §7.9 fixture: an entry whose registers really decode to `.tcbSuspend`.
+--
+-- Every other §7.9 state decodes to `.receive`, which is undeclared — so until
+-- this fixture existed the group could only ever observe the resolver saying
+-- `none`, and the *declared* path was never exercised at all.  A caller with
+-- `x7 = 20` (`.tcbSuspend`) and `x0 = 1` (a slot holding a **write** capability
+-- to a real TCB) resolves a genuine footprint, which is what lets the
+-- revalidation refusal below be a demonstration rather than a restatement.
+-- ---------------------------------------------------------------------------
+
+private def suspendCNode : SeLe4n.ObjId := ⟨1031⟩
+private def suspendSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 1
+
+/-- A write capability to `highQueued` — `.tcbSuspend` requires `.write`. -/
+private def suspendSlotCap : Capability :=
+  { target := .object highQueued.toObjId,
+    rights := AccessRightSet.ofList [.read, .write] }
+
+/-- The **foreign commit**: the same slot, re-targeted at a different TCB.  This
+is a `cspaceMove`/`cspaceMint` another core could perform between the caller's
+resolution and the end of its growing phase. -/
+private def suspendSlotCapReplaced : Capability :=
+  { target := .object lowQueued.toObjId,
+    rights := AccessRightSet.ofList [.read, .write] }
+
+/-- Depth 4 = `radixWidth`, so resolution consumes every bit in one step and the
+leaf **is** this root — the single-level resolution `entryCapTarget` requires. -/
+private def suspendCNodeValue : CNode :=
+  { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+    slots := SeLe4n.UniqueSlotMap.ofListWF [(suspendSlot, suspendSlotCap)] }
+
+private def suspendCNodeValueReplaced : CNode :=
+  { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+    slots := SeLe4n.UniqueSlotMap.ofListWF [(suspendSlot, suspendSlotCapReplaced)] }
+
+private def suspendCallerTcb : TCB :=
+  { mkTcb 1011 50 (some c1) with
+      cspaceRoot := suspendCNode
+      registerContext :=
+        { pc := ⟨0x1000⟩, sp := ⟨0x8000⟩,
+          gpr := fun r => if r.val == 0 then ⟨1⟩ else if r.val == 7 then ⟨20⟩ else ⟨0⟩ } }
+
+private def suspendEntryState : SystemState :=
+  { niState with
+      objects := (niState.objects.insert suspendCNode (.cnode suspendCNodeValue)).insert
+                   highCurrent.toObjId (.tcb suspendCallerTcb) }
+
+/-- The state the growing phase ends in when **another core committed** during
+it: the caller's capability now names a different victim. -/
+private def suspendObservedReplaced : SystemState :=
+  { suspendEntryState with
+      objects := suspendEntryState.objects.insert suspendCNode
+        (.cnode suspendCNodeValueReplaced) }
+
 private def distinctRootState : SystemState :=
   { niState with
       objects := niState.objects.insert highCurrent.toObjId (.tcb distinctRootVictim) }
@@ -6168,23 +6229,55 @@ private def runDeclaredFootprintChecks : IO Unit := do
   assertBool "NEGATIVE: an unresolvable caller yields no footprint"
     (decide ((SeLe4n.Kernel.Concurrency.suspendFootprintOf niState ⟨999999⟩
         highCurrent) = none))
+  -- The declared path, exercised POSITIVELY: registers decoding `.tcbSuspend`
+  -- through a write capability to a real TCB resolve a genuine footprint.  Every
+  -- other state in this group yields `none`, so without this the resolver's
+  -- success branch was never run.
+  assertBool "a `.tcbSuspend` decode through a write cap resolves a real footprint"
+    (decide ((declaredLockSetForEntry fineLockEntryLabeling SeLe4n.arm64DefaultLayout c1 32
+        suspendEntryState).isSome))
   -- The resolve/acquire race: the footprint is resolved before its own CNode
-  -- read lock is held, so the revalidating bracket re-resolves after the growing
-  -- phase and refuses on any change.  On THIS fixture both forms are `none` for
-  -- the same prior reason — the decode is `.receive`, which is undeclared — so
-  -- the runtime check here is only that the two agree; the race behaviour itself
-  -- is carried by the theorems, since exhibiting a mid-bracket capability
-  -- replacement needs a second core committing, which this pure model has no way
-  -- to interleave.
-  assertBool "the revalidating bracket agrees with the plain one on this state"
+  -- read lock is held, so the revalidating bracket re-resolves at the state the
+  -- growing phase actually ended in and refuses on any change.  The observed
+  -- state is an INPUT, which is what lets the model express a foreign commit:
+  -- `suspendObservedReplaced` is the caller's capability re-targeted at a
+  -- different victim, exactly the `cspaceMove` another core could land in the
+  -- window.  An earlier cut re-derived the observed state from `s` itself, so
+  -- the only writer it could see was the acquire — and the acquire writes
+  -- nothing the resolver reads, making the refusal branch unreachable.
+  assertBool "the foreign commit really does move the resolution"
+    (decide (declaredLockSetForEntry fineLockEntryLabeling SeLe4n.arm64DefaultLayout c1 32
+        suspendObservedReplaced
+      ≠ declaredLockSetForEntry fineLockEntryLabeling SeLe4n.arm64DefaultLayout c1 32
+        suspendEntryState))
+  -- THE REFUSAL, demonstrated rather than asserted.
+  assertBool "NEGATIVE: a capability replaced under the growing phase is refused"
     (decide ((syscallEntryUnderRevalidatedLockSet fineLockEntryLabeling c1
-        SeLe4n.arm64DefaultLayout c1 32 successEntryState).isNone) &&
-     decide ((syscallEntryUnderDeclaredLockSet fineLockEntryLabeling c1
-        SeLe4n.arm64DefaultLayout c1 32 successEntryState).isNone))
-  assertBool "…and the stability, refusal and refinement properties, as theorems"
+        SeLe4n.arm64DefaultLayout c1 32 suspendEntryState suspendObservedReplaced) = none))
+  -- …and with nothing foreign committed, the same bracket commits.
+  assertBool "…while an undisturbed growing phase commits"
+    (decide ((syscallEntryUnderRevalidatedLockSetModel fineLockEntryLabeling c1
+        SeLe4n.arm64DefaultLayout c1 32 suspendEntryState).isSome))
+  assertBool "…and the stability, refusal, reachability and refinement properties, as theorems"
     (have _s := @syscallEntryUnderRevalidatedLockSet_footprint_stable
      have _r := @syscallEntryUnderRevalidatedLockSet_refuses_on_change
+     have _w := @revalidationRefusalReachable
      have _f := @syscallEntryUnderRevalidatedLockSet_refines
+     have _m := @syscallEntryUnderRevalidatedLockSetModel_refines
+     true)
+  -- The multi-level CSpace guard: the footprint read-locks the caller's ROOT
+  -- CNode only, so a resolution that descends into child CNodes would select the
+  -- target through CNodes no declared lock covers.  Rejected, and the fixture
+  -- root is single-level (depth = radixWidth) so the declared path above is not
+  -- passing by accident.
+  assertBool "the resolved capability lives in the caller's own root CNode"
+    (decide (suspendCNodeValue.depth = suspendCNodeValue.radixWidth) &&
+     (have _t := @entryCapTarget_single_level
+      true))
+  -- The splice's neighbour-TCB writes ride the ENDPOINT write lock (the
+  -- queue-owning-object umbrella), which the resolved footprint declares.
+  assertBool "the splice's neighbours ride a declared lock (theorem)"
+    (have _n := @suspendFootprint_splice_neighbors_under_endpoint_lock
      true)
   -- The bracket covers the OBJECT domain only; the scheduler domain and the
   -- dynamic PIP chain are named as data with owners rather than left implicit.
