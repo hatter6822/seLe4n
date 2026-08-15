@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/sm8d-information-flow-xuzcsj",
-      "commit_sha": "42b0636cd02fc061008cd7ed47a0cb539e669e8a",
-      "tree_sha": "1089a9deeaac39f5efacfd96d1779105efa781c7",
-      "committed_at_utc": "2026-08-15T05:37:09+00:00"
+      "commit_sha": "25b533cf20e2a4c4d93614a6f98195de15482d94",
+      "tree_sha": "3beadd5e4f0d24e00acb2bd42caf357ebc69eb4f",
+      "committed_at_utc": "2026-08-15T06:32:55+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "cf18cc801a35f7a157ea8d83fa7ac3ab75d1dad654a0c37f2e03cce924d8f5dc"
+    "source_digest": "5111304962bf8aa7376c8a1d127d5b746710a6508420d98313db32abc0334cbb"
   },
   "summary": {
     "module_count": 346,
@@ -95923,12 +95923,13 @@
             "SyscallDecodeResult",
             "SystemState",
             "ThreadId",
+            "getCNode",
+            "getTcb",
             "none",
             "ofNat",
             "syscallLookupCap",
             "syscallRequiredRight",
-            "toNat",
-            "toObjId"
+            "toNat"
           ]
         },
         {
