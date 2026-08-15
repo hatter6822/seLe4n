@@ -744,14 +744,16 @@ def runInformationFlowChecks : IO Unit := do
     ((SeLe4n.Kernel.enforcementBoundary.filter (fun c =>
       match c with | .readOnly _ => true | _ => false)).length > 0)
 
-  -- 39 classified ops: 38 prior + declassifyObjectFromCore (WS-SM SM8.C — the
-  -- live declassification entry point, policy-gated), on top of
+  -- 40 classified ops: 39 prior + withLockSet (WS-SM SM8.E.3 — the SM3
+  -- two-phase-locking bracket, capability-only, promoted here from the separate
+  -- per-core list SM8.B introduced), on top of declassifyObjectFromCore (WS-SM
+  -- SM8.C — the live declassification entry point, policy-gated),
   -- vspaceUnifyInstructionPage (WS-SM SM7.D — the user-facing code-publication
   -- path, capability-only) and mintReplyCapWithCdt (WS-SM SM6.D / PR #822
   -- Phase H, capability-only — derives a reply cap from an object cap to a
   -- retyped Reply).
-  expect "enforcement boundary: total 39 classified operations"
-    (SeLe4n.Kernel.enforcementBoundary.length == 39)
+  expect "enforcement boundary: total 40 classified operations"
+    (SeLe4n.Kernel.enforcementBoundary.length == 40)
 
   -- Verify enforcement boundary: denied flows produce errors
   let deniedSendResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx ⟨10⟩ ⟨1⟩ testMsg default default default publicEndpointState
@@ -1310,12 +1312,16 @@ def runInformationFlowChecks : IO Unit := do
   let roCount := boundary.filter (fun c => match c with | .readOnly _ => true | _ => false) |>.length
   expect "enforcement boundary has 12 policy-gated"
     (pgCount = 12)
-  expect "enforcement boundary has 23 capability-only"
-    (coCount = 23)
+  -- WS-SM SM8.E.3: 23 → 24 with the 2PL bracket (`withLockSet`), classified
+  -- capability-only for the same reason as `storeObject` — an internal building
+  -- block used under an already-capability-guarded context, consulting no
+  -- information-flow policy.
+  expect "enforcement boundary has 24 capability-only"
+    (coCount = 24)
   expect "enforcement boundary has 4 read-only"
     (roCount = 4)
-  expect "enforcement boundary total is 39"
-    (boundary.length = 39)
+  expect "enforcement boundary total is 40"
+    (boundary.length = 40)
 
   IO.println "enforcement boundary completeness verified"
 
@@ -1392,8 +1398,8 @@ def runInformationFlowChecks : IO Unit := do
   IO.println "default labeling context insecurity verified"
 
   -- V6-L: Extended boundary matches canonical
-  expect "enforcementBoundaryExtended has 39 entries"
-    (SeLe4n.Kernel.enforcementBoundaryExtended.length = 39)
+  expect "enforcementBoundaryExtended has 40 entries"
+    (SeLe4n.Kernel.enforcementBoundaryExtended.length = 40)
   expect "extended boundary matches canonical length"
     (SeLe4n.Kernel.enforcementBoundaryExtended.length = SeLe4n.Kernel.enforcementBoundary.length)
 

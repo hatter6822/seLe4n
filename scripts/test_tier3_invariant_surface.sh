@@ -1692,7 +1692,18 @@ run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore\.length = 55' SeLe4n/Ker
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_extends_canonical' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^def enforcementBoundaryPerCoreComplete' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_is_complete' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_entry_is_new' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+# WS-SM SM8.E.3 retired `enforcementBoundaryPerCore_entry_is_new` (it asserted
+# the canonical list did NOT carry the bracket, true only until the promotion)
+# in favour of the three theorems that survive it: the canonical list classifies
+# the bracket capability-only, it is classified exactly once across the per-core
+# list, and the wrappers do not carry a second copy.  The negative anchor is
+# what stops the retired form coming back beside them.
+run_check "INVARIANT" rg -n '^theorem enforcementBoundary_classifies_withLockSet' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_classifies_withLockSet_once' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreEnforcementEntries_omits_withLockSet' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_negative_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_entry_is_new' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+# …and the per-core list must not re-append the bracket it now inherits.
+run_negative_check "INVARIANT" rg -n 'enforcementBoundaryExtended \+\+ \[\.capabilityOnly "withLockSet"\]' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^inductive CovertChannelSeverity' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^structure CovertChannel' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^def acceptedCovertChannel_scheduling_perCore' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
@@ -2362,7 +2373,8 @@ run_check "INVARIANT" rg -n 'NEGATIVE: linearOrder disagrees on exactly one of t
 # docstring must NOT restate it, which is how it came to read "33 entries"
 # across six expansions.
 run_prose_negative_check "INVARIANT" rg -n 'classification table \([0-9]+ entries\)' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
-run_check "INVARIANT" rg -n 'enforcementBoundaryExtended.length = 39' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+# WS-SM SM8.E.3 took the canonical boundary 39 -> 40 with the 2PL bracket.
+run_check "INVARIANT" rg -n 'enforcementBoundaryExtended.length = 40' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
 run_check "INVARIANT" rg -n '^  runEndpointPolicyGateChecks' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: a widening override cannot open a flow the lattice denies' tests/SmpInformationFlowSuite.lean
 
@@ -2740,6 +2752,59 @@ run_check "INVARIANT" rg -n 'the blocked READER.s delay is bounded in time' test
 run_check "INVARIANT" rg -n '^\[smp-fine-lock\]' tests/fixtures/smp_fine_lock_contention.expected
 run_check "INVARIANT" rg -n 'blocked reader in time' tests/fixtures/smp_fine_lock_contention.expected
 run_check "INVARIANT" rg -n 'smp_fine_lock_contention\.expected' tests/fixtures/smp_fine_lock_contention.expected.sha256
+
+# ---------------------------------------------------------------------------
+# WS-SM SM8.E — tests + closure
+# (plan SMP_INFORMATION_FLOW_PLAN.md §5 SM8.E.1 … SM8.E.3).
+# ---------------------------------------------------------------------------
+# SM8.E.1: the SM8 headline surface in the anchor file the plan names, across
+# all five sub-phases.  The import is pinned as well as the labels, because a
+# dropped import removes every anchor below it in one edit.
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.InformationFlow\.DeclassificationPerCore' tests/SmpSurfaceAnchors.lean
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.InformationFlow\.FineLockFlow' tests/SmpSurfaceAnchors.lean
+run_check "INVARIANT" rg -n 'the declassification producer, its attribution and its partition resolve' tests/SmpSurfaceAnchors.lean
+run_check "INVARIANT" rg -n 'cross-core chains, the laundering detector and the basis check resolve' tests/SmpSurfaceAnchors.lean
+run_check "INVARIANT" rg -n 'the mounted trail, the live syscall and its fail-closed bound resolve' tests/SmpSurfaceAnchors.lean
+run_check "INVARIANT" rg -n 'fine-lock invisibility, the contention bound and the integrity twins resolve' tests/SmpSurfaceAnchors.lean
+run_check "INVARIANT" rg -n 'the canonical enforcement boundary carries the two-phase-locking bracket' tests/SmpSurfaceAnchors.lean
+# The two channel-capacity theorems the plan's own "what SM8 proves" list names
+# and the SM8.D landing left unanchored here.  A bound on the per-acquisition
+# delay is not a bound on the channel; the alphabet and the run-length capacity
+# are what turn it into one.
+run_check "INVARIANT" rg -n 'lockContentionChannel_alphabet_bounded' tests/SmpSurfaceAnchors.lean
+run_check "INVARIANT" rg -n 'lockContentionChannel_trace_capacity' tests/SmpSurfaceAnchors.lean
+
+# SM8.E.2: the phase-level golden trace, its runner, its hash companion, and the
+# runtime group whose load-bearing negatives make the fixture meaningful.
+run_check "INVARIANT" rg -n '^  runPhaseSurfaceChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runInformationFlowTraceFixtureCheck' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^private def informationFlowTraceLines' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: the same signal on a LOW notification IS visible' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: it IS visible at the core it landed on' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: the remote wake is not confined to the EXECUTING core' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'SCOPE: the decidable slice cannot see a badge write' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^\[smp-information-flow\]' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'enforcement boundary: canonical 40' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'smp_information_flow\.expected' tests/fixtures/smp_information_flow.expected.sha256
+# The FIXTURE's independence probe must land on a core whose current thread the
+# low observer can SEE, or the reported set is `allCores` and the line is
+# vacuous.  Pinned in both directions on the trace line's own wording ("at
+# cores:", which is what distinguishes it from §4.1's proof-carrying assertion
+# "…is invisible on cores 0, 2 and 3" — that group instantiates
+# `crossCoreNonInterference` at named theorems and is correct as written).
+run_check "INVARIANT" rg -n "a write to core 0's current slot is invisible at cores" tests/fixtures/smp_information_flow.expected
+run_negative_check "INVARIANT" rg -n "a write to core 1's current slot is invisible at cores" tests/SmpInformationFlowSuite.lean
+
+# SM8.E.2 substrate: the operation taxonomy enumerated ONCE, and tied to the
+# type.  The counts that read it were 35-element literals, which could not
+# notice a thirty-sixth constructor however loudly their docstrings claimed to.
+run_check "INVARIANT" rg -n '^def KernelOperation.all' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+run_check "INVARIANT" rg -n '^theorem KernelOperation.mem_all' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+run_check "INVARIANT" rg -n '^theorem KernelOperation.all_nodup' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+run_check "INVARIANT" rg -n 'KernelOperation.all.length = 35' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+run_check "INVARIANT" rg -n 'KernelOperation.all.filter perCoreConfinementDerived' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem perCoreConfinementNotDerived_count' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n 'KernelOperation.all.map kernelOperationPerCoreNiTheorem' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 
 
 # WS-H12d IPC message payload bounds anchors — predicate definitions + enforcement + theorems.

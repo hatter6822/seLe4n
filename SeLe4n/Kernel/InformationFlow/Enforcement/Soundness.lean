@@ -341,16 +341,22 @@ theorem enforcementSoundness_registerServiceChecked
     entry point (declassifyObjectFromCore — **policy-gated**, and the only
     policy-gated entry that may complete when `securityFlowsTo` says no: it
     consults the configured `DeclassificationPolicy` after the ordinary flow
-    check refuses, and records the downgrade in the audit trail). -/
+    check refuses, and records the downgrade in the audit trail).
+    WS-SM SM8.E.3 expanded from 39 to 40 entries with the SM3 two-phase-locking
+    bracket (withLockSet — capability-only, an internal building block used
+    under an already-capability-guarded context).  SM8.B classified it in a
+    separate per-core list and deferred the promotion here precisely so the
+    canonical count moved exactly once, in the phase that owns the
+    reconciliation. -/
 abbrev enforcementBoundaryExtended : List EnforcementClass := enforcementBoundary
 
 /-- V6-L/Z8-M/D2/D3/AC4-D (L-IF-3): Completeness assertion — `enforcementBoundaryExtended`
-    has exactly 39 entries, matching the canonical `enforcementBoundary`.
+    has exactly 40 entries, matching the canonical `enforcementBoundary`.
 
     This theorem is the authority for the entry count; `enforcementBoundary`'s
     own docstring deliberately does not restate it. -/
 theorem enforcementBoundaryExtended_count :
-    enforcementBoundaryExtended.length = 39 := by rfl
+    enforcementBoundaryExtended.length = 40 := by rfl
 
 /-- W2-G (M-3): Element-wise correspondence — `enforcementBoundaryExtended` and
     `enforcementBoundary` are definitionally equal. This closes the M-3 finding

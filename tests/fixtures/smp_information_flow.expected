@@ -1,0 +1,26 @@
+[smp-information-flow] fixture: 4 cores, 10 objects, 3 clearances
+[smp-information-flow] visible objects at low/mid/high: 6/7/10
+[smp-information-flow] core 0 low view: current=(some 1010) runnable=[1012] activeDomain=0 timeRemaining=5 scheduleIndex=0 regsVisible=true
+[smp-information-flow] core 1 low view: current=none runnable=[] activeDomain=0 timeRemaining=5 scheduleIndex=0 regsVisible=false
+[smp-information-flow] core 2 low view: current=none runnable=[] activeDomain=0 timeRemaining=5 scheduleIndex=0 regsVisible=false
+[smp-information-flow] core 3 low view: current=none runnable=[] activeDomain=0 timeRemaining=5 scheduleIndex=0 regsVisible=false
+[smp-information-flow] shared fragment is core-independent: true, per-core fragment differs across cores: true
+[smp-information-flow] CNode low-target slot visible at low/mid/high: true/true/true; high-target slot: false/false/true
+[smp-information-flow] a write to core 0's current slot is invisible at cores: [1, 2, 3]
+[smp-information-flow] signal on a high notification: low reads the same badge on every core true, per-core slots unchanged true
+[smp-information-flow] signal on a low notification: low reads the same badge on every core false (expected false)
+[smp-information-flow] remote wake of a visible thread: home core 2, confined there true, deschedule dual confined true
+[smp-information-flow] rendezvous call write set: [2, 0], send write set: [2]
+[smp-information-flow] lock acquired on an object low can see: raw writer true, projected unheld on every core true
+[smp-information-flow] non-interference coverage: 35 per-core lifts, 31 with derived confinement, 4 catch-all
+[smp-information-flow] cross-core inventory: 26 transitions, 19 live arms, 22 remote writers
+[smp-information-flow] enforcement boundary: canonical 40 = 12 policy-gated + 24 capability-only + 4 read-only
+[smp-information-flow] enforcement boundary: per-core 55 = canonical + 15 cross-core wrappers; re-routed syscalls 15
+[smp-information-flow] channel 1 (scheduling state): severity=medium modelVisible=true perCoreInstance=true
+[smp-information-flow] channel 2 (machine timer): severity=medium modelVisible=false perCoreInstance=true
+[smp-information-flow] channel 3 (TCB metadata): severity=low modelVisible=true perCoreInstance=false
+[smp-information-flow] channel 4 (object store metadata): severity=low modelVisible=true perCoreInstance=false
+[smp-information-flow] channel 5 (lock-contention timing): severity=medium modelVisible=false perCoreInstance=true
+[smp-information-flow] channel 6 (per-core TLB residency): severity=medium modelVisible=false perCoreInstance=true
+[smp-information-flow] channel 7 (per-core instruction-cache residency): severity=medium modelVisible=false perCoreInstance=true
+[smp-information-flow] channels: 7 accepted, 3 model-visible, 5 per-core

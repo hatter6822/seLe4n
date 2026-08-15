@@ -1837,14 +1837,36 @@ theorem declassificationSubjectDomain_is_core_selected :
     SeLe4n.ThreadId.toNat, SecurityDomain.mk.injEq]
 
 /-- WS-SM SM8.C (**the outcome gap**): a *refused* declassification leaves no
-trace.
+trace, and **cannot** leave one without changing the transition's shape.
 
 The V6-H record has no outcome field, so the trail records authorized downgrades
 and nothing else.  A monitoring system therefore cannot distinguish "no attempts"
 from "many attempts, all denied" — a detection gap, not an enforcement one, since
 every refusal is already fail-closed
-(`declassifyStoreOnCore_denied_no_audit_entry`).  Closing it needs an outcome
-field on the record and a producer on the error arms, scoped to SM8.E. -/
+(`declassifyStoreOnCore_denied_no_audit_entry`).
+
+**The closure recipe this docstring used to give was wrong**, and the second
+conjunct is where that shows.  It read
+`st.declassificationAuditLog = st.declassificationAuditLog` — a `rfl` that holds
+of any two syntactically equal terms and therefore says nothing at all — beside
+a sentence promising the gap could be closed with "an outcome field on the
+record and a producer on the error arms".  It cannot: `Kernel α` is
+`SystemState → Except KernelError (α × SystemState)`, so the error arm carries
+**no post-state**, and there is no state for a producer on it to write into.
+The conjunct now says that: the refusal has no success arm, over an arbitrary
+post-state, which is the fact a would-be producer runs into.
+
+Closing the gap therefore needs one of two things, both larger than a field:
+a total transformer (`SystemState → SystemState × Except KernelError α`) for
+this transition, with the dispatch entry committing its state on the error path
+as well; or a separate structure the entry writes by re-deriving the refusal
+from the decoded syscall and the returned discriminant, the way
+`computeCrossCoreSgis` re-derives pokes from the diff.  Either way it is the
+kernel's error discipline that moves, not the audit record — and neither may
+write refusals into *this* trail, whose capacity is fail-closed: an unprivileged
+caller able to append on refusal could exhaust the 256 entries and deny every
+subsequent authorized downgrade.  Re-registered against SM9 with that analysis
+rather than the recipe that does not typecheck. -/
 theorem declassification_refusal_is_unrecorded
     (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
     (c : CoreId) (srcDomain dstDomain : SecurityDomain)
@@ -1853,13 +1875,19 @@ theorem declassification_refusal_is_unrecorded
     (hNotFlow : ctx.policy.canFlow srcDomain dstDomain = false) :
     declassifyStoreOnCore ctx declPolicy c srcDomain dstDomain targetId targetObj st =
       .error .declassificationDenied ∧
-    st.declassificationAuditLog = st.declassificationAuditLog := by
-  refine ⟨?_, rfl⟩
+    ¬ ∃ st', declassifyStoreOnCore ctx declPolicy c srcDomain dstDomain targetId targetObj st =
+      .ok ((), st') := by
   have hDec : declassificationDecision ctx declPolicy srcDomain dstDomain =
       .error .declassificationDenied := by
     unfold declassificationDecision; simp [hNotFlow, hDenied]
-  unfold declassifyStoreOnCore
-  rw [hDec]
+  have hErr : declassifyStoreOnCore ctx declPolicy c srcDomain dstDomain targetId targetObj st =
+      .error .declassificationDenied := by
+    unfold declassifyStoreOnCore
+    rw [hDec]
+  refine ⟨hErr, ?_⟩
+  rintro ⟨st', hOk⟩
+  rw [hErr] at hOk
+  simp at hOk
 
 -- ============================================================================
 -- §12  SM8.C — run-level completeness
@@ -2112,7 +2140,8 @@ inductive DeclassificationRuleId where
   increasing timestamps, with no data-dependency relation behind them. -/
   | chainLinkageIsSyntactic
   /-- WS-SM SM8.C (§11): a **refused** declassification leaves no trace, so the
-  trail cannot distinguish "no attempts" from "all denied". -/
+  trail cannot distinguish "no attempts" from "all denied" — and the refusal has
+  no success arm, so no producer *on* the error arm could leave one. -/
   | refusalIsUnrecorded
   /-- WS-SM SM8.C.9: the live declassification writes **only** the audit trail —
   it authorizes and records, and moves no data. -/
@@ -2205,7 +2234,8 @@ def DeclassificationRuleId.evidenceProp : DeclassificationRuleId → Prop
         ctx.policy.canFlow srcDomain dstDomain = false →
         declassifyStoreOnCore ctx declPolicy c srcDomain dstDomain targetId targetObj st =
           .error .declassificationDenied ∧
-        st.declassificationAuditLog = st.declassificationAuditLog
+        ¬ ∃ st', declassifyStoreOnCore ctx declPolicy c srcDomain dstDomain targetId targetObj st =
+          .ok ((), st')
   | .liveDeclassificationWritesOnlyTheTrail =>
       ∀ (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy) (c : CoreId)
         (srcDomain dstDomain : SecurityDomain) (targetId : SeLe4n.ObjId)
@@ -2297,7 +2327,7 @@ def declassificationRuleStatement : DeclassificationRuleId → String
   | .chainLinkageIsSyntactic =>
       "chain linkage is syntactic: matching domains and increasing timestamps"
   | .refusalIsUnrecorded =>
-      "a refused declassification leaves no trace in the trail"
+      "a refused declassification leaves no trace, and has no post-state to leave one in"
   | .liveDeclassificationWritesOnlyTheTrail =>
       "the live declassification writes only the audit trail; it moves no data"
 

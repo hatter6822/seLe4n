@@ -18,6 +18,9 @@ explicit hash refresh in the same commit.
 | `smp_4core_scheduler.expected` | `smp_4core_scheduler.expected.sha256` | `tests/SmpSchedulerSuite.lean` (WS-SM SM5.K.4 — the deterministic 4-thread/4-core per-core scheduler trace + the multi-step cross-core wake→SGI→handler round-trip, verified byte-for-byte against the live `chooseThreadOnCore` / `determineTargetCore` / `wakeThread` / `switchToThreadOnCore` / `handleRescheduleSgiOnCore` decisions) |
 | `smp_ipc_4core.expected` | `smp_ipc_4core.expected.sha256` | `tests/SmpIpcSuite.lean` (WS-SM SM6.F.4 — the deterministic 4-thread/4-core cross-core IPC trace: both client/server call→SGI→handler-dispatch→reply→SGI→handler-dispatch round trips plus the cross-core send/receive rendezvous, verified byte-for-byte against the live `endpointReceiveDualOnCore` / `endpointCallOnCore` / `endpointReplyOnCore` / `endpointSendDual` / `handleRescheduleSgiOnCore` decisions) |
 | `smp_tlb_shootdown.expected` | `smp_tlb_shootdown.expected.sha256` | `tests/SmpTlbShootdownSuite.lean` (WS-SM SM7.E.6 — the deterministic 4-core TLB shootdown trace: a live map + translation-walk fill on core 1, a cross-core unmap from core 0 posting a covering round, and the deferred catch-up draining every target, plus the four-core concurrent-unmap storm and the cross-cluster domain identity, verified byte-for-byte against the live `vspaceMapPageCheckedWithShootdownFromStatePerCore` / `vspaceUnmapPageWithShootdownPerCore` / `shootdownCatchUpPerCore` / `handleTlbShootdownReqOnCorePerCore` decisions.  Each line reports per-core observables — cached entries, pending descriptors, ack flags, and the pending-aware invariant verdict — so any change in the shootdown semantics diverges the fixture) |
+| `smp_declassification_audit.expected` | `smp_declassification_audit.expected.sha256` | `tests/SmpInformationFlowSuite.lean` (WS-SM SM8.C.7 — the deterministic declassification-audit trace: a run of authorized downgrades through the live `.declassify` transition and the mounted trail, reporting each recorded entry's core, domains, target and basis, the per-core partition of the log, and the three fail-closed refusals — unconfigured policy, idle core, absent target) |
+| `smp_fine_lock_contention.expected` | `smp_fine_lock_contention.expected.sha256` | `tests/SmpInformationFlowSuite.lean` (WS-SM SM8.D.6 — the deterministic lock-contention trace: the per-object lock erased from every core's projection, a real contended execution with its delay, wait depth and channel code, the blocked reader's temporal figures, both integrity directions, and the two bracketed live syscall entries) |
+| `smp_information_flow.expected` | `smp_information_flow.expected.sha256` | `tests/SmpInformationFlowSuite.lean` (WS-SM SM8.E.2 — the phase-level information-flow trace: what an observer at `(core, label)` sees of the four-thread/four-core fixture, per-core independence, CNode slot redaction across three clearances, a live high-object signal and its low-object negative control, the cross-core write sets, and the sizes of the enforcement boundary, the non-interference coverage and the accepted covert-channel inventory) |
 
 The Tier 2 trace gate (`scripts/test_tier2_trace.sh`) walks every
 `*.expected.sha256` file in this directory and runs `sha256sum -c` on
@@ -68,6 +71,19 @@ fixture fails CI with a uniform remediation message.
      > tests/fixtures/smp_tlb_shootdown.expected
    ```
 
+   The information-flow suite emits **three** fixtures, one per tag, and
+   the same escaping rule applies to each (WS-SM SM8.C.7 / SM8.D.6 /
+   SM8.E.2):
+
+   ```bash
+   lake exe smp_information_flow_suite | grep '^\[smp-declassification\]' \
+     > tests/fixtures/smp_declassification_audit.expected
+   lake exe smp_information_flow_suite | grep '^\[smp-fine-lock\]' \
+     > tests/fixtures/smp_fine_lock_contention.expected
+   lake exe smp_information_flow_suite | grep '^\[smp-information-flow\]' \
+     > tests/fixtures/smp_information_flow.expected
+   ```
+
 2. Recompute the SHA-256 companion in the format `sha256sum` writes by
    default (`<hash>  <basename>`):
 
@@ -79,6 +95,11 @@ fixture fails CI with a uniform remediation message.
    sha256sum smp_4core_scheduler.expected   > smp_4core_scheduler.expected.sha256
    sha256sum smp_ipc_4core.expected         > smp_ipc_4core.expected.sha256
    sha256sum smp_tlb_shootdown.expected     > smp_tlb_shootdown.expected.sha256
+   sha256sum smp_declassification_audit.expected \
+     > smp_declassification_audit.expected.sha256
+   sha256sum smp_fine_lock_contention.expected \
+     > smp_fine_lock_contention.expected.sha256
+   sha256sum smp_information_flow.expected  > smp_information_flow.expected.sha256
    ```
 
 3. Verify both files agree:

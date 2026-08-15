@@ -18,13 +18,19 @@ import SeLe4n.Kernel.Concurrency.LockSet
 import SeLe4n.Platform.FFI
 import SeLe4n.Kernel.InformationFlow.ObservableStatePerCore
 import SeLe4n.Kernel.InformationFlow.CovertChannelPerCore
+import SeLe4n.Kernel.InformationFlow.DeclassificationPerCore
 import SeLe4n.Kernel.InformationFlow.FineLockFlow
 
 /-!
-# WS-SM SM2.D.6 — Verified-lock-primitive surface anchors
+# WS-SM SM2.D.6 / SM8.E.1 — Verified-lock-primitive and information-flow anchors
 
 Tier-3 surface anchors covering every public symbol exported by the
-SM2.D FFI bridge and the SM2.D.7 theorem aggregator.
+SM2.D FFI bridge and the SM2.D.7 theorem aggregator, plus (§8) the
+headline theorem surface of WS-SM SM8 — the plan's §6.1 "what SM8
+proves" enumeration, across SM8.A per-core observable state, SM8.B
+per-core non-interference, SM8.C the declassification audit, SM8.D
+information flow under fine locks, and SM8.E's promotion of the
+two-phase-locking bracket into the canonical enforcement boundary.
 
 Each `#check` is an elaboration-time gate: if the underlying symbol
 is renamed, removed, or has its signature changed, the surface anchor
@@ -441,13 +447,16 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
   assertBool "SM3.E inventory has 111 entries"
     (decide (SeLe4n.Kernel.Concurrency.serializabilityTheorems.length = 111))
 
-  IO.println "--- §8 WS-SM SM8.A — per-core observable-state headline surface ---"
-  -- The plan (§5 SM8.E.1) names this file as the SM8 anchor home.  The SM8.A
-  -- *exhaustive* per-symbol anchors live in `tests/SmpInformationFlowSuite.lean`
-  -- next to the runtime groups that exercise them; what is pinned here is the
-  -- phase's headline surface, so a rename that slipped past the dedicated suite
-  -- still fails this file.  Elaboration-time only — the checks above are the
-  -- runtime part of this suite.
+  IO.println "--- §8 WS-SM SM8 — the information-flow headline surface ---"
+  -- The plan (§5 SM8.E.1) names this file as the SM8 anchor home, and SM8.E.1
+  -- is where the list is completed: every theorem the plan's §6.1 "what SM8
+  -- proves" enumeration names now resolves here, across all five sub-phases.
+  -- The *exhaustive* per-symbol anchors live in
+  -- `tests/SmpInformationFlowSuite.lean` next to the runtime groups that
+  -- exercise them; what is pinned here is the phase's headline surface, so a
+  -- rename that slipped past the dedicated suite still fails this file.
+  -- Elaboration-time only — the checks above are the runtime part of this
+  -- suite.
   -- Assertion labels below name the *semantics*, not the phase: the Tier-3
   -- companion greps them from a shell string, where the identifier-naming
   -- gate reads a phase code as code rather than as prose.  The phase is
@@ -495,6 +504,71 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      have _l := SeLe4n.Kernel.acceptedCovertChannel_lockContention
      have _r := @SeLe4n.Kernel.endpointPolicyRestricted_perCore
      true)
+  -- WS-SM SM8.C: the per-core declassification audit.  The headline is the
+  -- *producer* — before SM8.C nothing in the tree constructed a
+  -- `DeclassificationEvent`, so the audit trail was a type with no writer — and
+  -- the attributed entry point, which reads the source domain off the subject
+  -- the executing core is running rather than taking it from the caller.
+  assertBool "the declassification producer, its attribution and its partition resolve"
+    (have _p := @SeLe4n.Kernel.declassifyStoreOnCore
+     have _i := @SeLe4n.Kernel.declassifyStoreOnCore_ok_inv
+     have _o := @SeLe4n.Kernel.declassifyStoreOnCore_records_one
+     have _f := @SeLe4n.Kernel.declassifyStoreFromCore
+     have _a := @SeLe4n.Kernel.declassifyStoreFromCore_event_attributable
+     have _u := @SeLe4n.Kernel.declassifyStoreOnCore_admits_unattributable
+     have _v := @SeLe4n.Kernel.auditLogOnCore
+     have _q := @SeLe4n.Kernel.declassificationAuditLog_partitions_by_core
+     have _m := @SeLe4n.Kernel.DeclassificationEvent_perCore_audit
+     true)
+  -- Cross-core chains are what decide ONE global log over the per-CPU buffers a
+  -- kernel would naturally reach for: a chain spanning cores is in no single
+  -- core's view, so a per-core log could not reconstruct it.  The laundering
+  -- detector is the other half — per-hop authorization does not compose.
+  assertBool "cross-core chains, the laundering detector and the basis check resolve"
+    (have _r := @SeLe4n.Kernel.declassificationChain_recorded_across_cores
+     have _n := @SeLe4n.Kernel.crossCoreChain_not_within_one_view
+     have _t := @SeLe4n.Kernel.declassificationAuditLog_timestamp_identifies_event
+     have _c := @SeLe4n.Kernel.declassificationChain_hop_authorization_does_not_compose
+     have _l := @SeLe4n.Kernel.chainLaunders
+     have _e := @SeLe4n.Kernel.endpointOverride_is_not_a_declassification_basis
+     have _v := @SeLe4n.Kernel.liveEndpointOverride_is_not_a_declassification_basis
+     have _b := @SeLe4n.Kernel.authorizationBasis_perCore
+     have _g := @SeLe4n.Kernel.endpointFlowGate
+     have _s := @SeLe4n.Kernel.endpointFlowGate_implies_securityFlowsTo
+     have _d := @SeLe4n.Kernel.declassificationRuleEvidence
+     have _k : SeLe4n.Kernel.DeclassificationRuleId.all.length = 12 :=
+       SeLe4n.Kernel.declassificationRules_count
+     true)
+  -- SM8.C.8 / SM8.C.9: the trail mounted in `SystemState` and the live
+  -- `.declassify` syscall.  The load-bearing pair is *never unaudited* (an
+  -- authorized downgrade is either recorded or does not happen — which is what
+  -- the fail-closed capacity bound buys) and *denied before capacity* (a caller
+  -- the policy refuses learns nothing about the trail's occupancy, so trail
+  -- length is not a channel from every declassifying subject to every caller).
+  assertBool "the mounted trail, the live syscall and its fail-closed bound resolve"
+    (have _c : SeLe4n.Kernel.maxDeclassificationAuditEntries = 256 := rfl
+     have _b := @SeLe4n.Kernel.auditLogBounded
+     have _r := @SeLe4n.Kernel.recordDeclassificationChecked
+     have _o := @SeLe4n.Kernel.declassifyObjectFromCore
+     have _d := @SeLe4n.Kernel.declassifyObjectFromCore_destination_is_target_domain
+     have _u := @SeLe4n.Kernel.authorizeDeclassificationOnCore_never_unaudited
+     have _s := @SeLe4n.Kernel.declassifyStoreOnCore_never_unaudited
+     have _p := @SeLe4n.Kernel.authorizeDeclassificationOnCore_denied_before_capacity
+     have _n := @SeLe4n.Kernel.declassifyStoreOnCore_perCore_NI
+     have _t := @SeLe4n.Kernel.declassifyStoreOnCore_state_trail_independent
+     have _e := @SeLe4n.Kernel.declassifyRun_records_each
+     -- The registered gap, as a theorem rather than a caveat: a *refused*
+     -- declassification leaves no trace (fail-closed, so a detection gap and
+     -- not an enforcement one).
+     have _g := @SeLe4n.Kernel.declassification_refusal_is_unrecorded
+     have _z := @SeLe4n.Kernel.declassifyStoreOnCore_denied_no_audit_entry
+     -- …and the faithful lift of the legacy 2x2 lattice, which is what lets a
+     -- deployment configure a downgrade along the one pair `linearOrder`
+     -- over-approximated and actually reach the declassification policy.
+     have _y := @SeLe4n.Kernel.DomainFlowPolicy.legacyLattice
+     have _q := @SeLe4n.Kernel.legacyLattice_canFlow_embed
+     have _w := @SeLe4n.Kernel.linearOrder_is_not_faithful_to_legacy
+     true)
   -- WS-SM SM8.D: information flow under fine locks.  The headline is the
   -- *factoring* — an observer's view is a function of an object's lock-erased
   -- content — because that is what makes "the lock is invisible" a statement
@@ -507,6 +581,16 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      have _r := @SeLe4n.Kernel.readerMultiplicity_not_observable
      have _a := @SeLe4n.Kernel.blockedAcquirer_observes_nothing
      have _d := @SeLe4n.Kernel.lockContention_delay_bounded
+     -- The two §6.1 headline names the SM8.D landing left unanchored here: the
+     -- per-observation alphabet and the run-length capacity built on it.  A
+     -- bound on the delay alone is not a bound on the channel.
+     have _ab := @SeLe4n.Kernel.lockContentionChannel_alphabet_bounded
+     have _tc := @SeLe4n.Kernel.lockContentionChannel_trace_capacity
+     have _rc := @SeLe4n.Kernel.lockContentionChannel_run_capacity
+     -- …and the unit the bound is denominated in: lock OPERATIONS, with the
+     -- wall-clock reading conditional on a cost model.
+     have _wc := @SeLe4n.Kernel.lockContention_wallClock_bounded
+     have _re := @SeLe4n.Kernel.lockContentionChannel_rate_per_elapsed_time
      have _o := @SeLe4n.Kernel.lockContentionObservation_is_own_acquisition
      have _t := @SeLe4n.Kernel.lockContentionChannel_observation_rate_bounded
      have _f := @SeLe4n.Kernel.lockContention_unbounded_without_fairness
@@ -528,9 +612,27 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
        SeLe4n.Kernel.fineLockClaims_count
      have _e := SeLe4n.Kernel.fineLockClaimEvidence
      true)
+  -- WS-SM SM8.E.3: the 2PL bracket promoted into the CANONICAL enforcement
+  -- boundary, which is the count SM8.B deliberately left for this phase to
+  -- move.  Pinned here as the equation rather than as a name, so a promotion
+  -- that silently reverted — or a second entry added without reconciling the
+  -- per-core list — fails the anchor file too, not only the dedicated suite.
+  assertBool "the canonical enforcement boundary carries the two-phase-locking bracket"
+    (have _e : SeLe4n.Kernel.enforcementBoundaryExtended.length = 40 :=
+       SeLe4n.Kernel.enforcementBoundaryExtended_count
+     have _c := SeLe4n.Kernel.enforcementBoundary_classifies_withLockSet
+     have _o := SeLe4n.Kernel.enforcementBoundaryPerCore_classifies_withLockSet_once
+     have _x := SeLe4n.Kernel.crossCoreEnforcementEntries_omits_withLockSet
+     have _p := @SeLe4n.Kernel.enforcementBoundary_prefix_of_perCore
+     -- The promotion is count-neutral for the per-core list, which is the whole
+     -- reason the entry was appended last: 40 + 15 is the 55 it already was.
+     decide (SeLe4n.Kernel.enforcementBoundaryPerCore.length
+       = SeLe4n.Kernel.enforcementBoundaryExtended.length
+         + SeLe4n.Kernel.crossCoreEnforcementEntries.length))
 
   IO.println "============================================================"
-  IO.println "All SM2.D + SM3.E.8 + SM8.A + SM8.B + SM8.D surface anchor checks PASS."
+  IO.println "All SM2.D + SM3.E.8 + SM8.A + SM8.B + SM8.C + SM8.D + SM8.E \
+surface anchor checks PASS."
 
 end SeLe4n.Testing.SmpSurfaceAnchors
 

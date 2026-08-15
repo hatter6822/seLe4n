@@ -289,6 +289,25 @@ def enforcementBoundary : List EnforcementClass :=
   -- admitted.  Classifying it capability-only would say the capability alone
   -- authorizes the downgrade, which is exactly what it does not.
   , .policyGated "declassifyObjectFromCore"
+  -- WS-SM SM8.E.3: the SM3 two-phase-locking bracket, promoted here from the
+  -- separate per-core list SM8.B introduced.  **Capability-only**, and for the
+  -- same reason as `storeObject`'s and `lifecycleRetypeObject`'s: it is an
+  -- internal building block invoked under an already-capability-guarded
+  -- context, and it consults no information-flow policy — the bracket cannot
+  -- admit a flow the guarded transition would not admit, because it carries no
+  -- data across a label boundary at all (`withLockSet_preserves_projection`,
+  -- which holds *unconditionally* once SM8.B.4 erased the per-object `lock`
+  -- from the projection).  What it does add is the lock-contention timing
+  -- channel the covert-channel inventory registers as CC-5, bounded rather
+  -- than closed by SM8.D (`lockContention_delay_bounded`).
+  --
+  -- Appended **last** deliberately: it makes the per-core boundary
+  -- (`enforcementBoundaryPerCore`, which was this list plus the bracket plus
+  -- the cross-core wrappers) the identical list it already was, so the
+  -- promotion moves one entry between two definitions and changes no third
+  -- thing.  `enforcementBoundary_classifies_withLockSet` is where that is
+  -- checked rather than argued.
+  , .capabilityOnly "withLockSet"
   ]
 
 -- ============================================================================
