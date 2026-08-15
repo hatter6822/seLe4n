@@ -1,3 +1,89 @@
+## v0.33.16 — WS-SM SM8.D: the sixth review round, and a theorem that proved nothing
+
+Four P2 findings. Two are cases of this PR's own earlier fixes not going far
+enough — a coverage theorem that turned out tautological, and a guard that
+checked one state and acted on another. Theorems, tests and prose only; no
+transition changed and the golden kernel trace is byte-identical.
+
+### The splice-coverage theorem was tautological
+
+v0.33.15 added `suspendFootprint_splice_neighbors_under_endpoint_lock` as the
+seventh member of the `lockSet_tcbSuspend_*_write_mem` family. Its neighbour arm
+was discharged by `fun _ _ _ => hMem` — a constant function that ignores the
+neighbour, its membership, and whether it exists at all. It therefore proved only
+that the endpoint write lock is *present*, which
+`lockSet_tcbSuspend_blocked_endpoint_write_mem` already said, and it would have
+kept elaborating had the splice rewritten arbitrary unrelated TCBs. That is the
+same defect this project caught in `retypeIcacheOp_cleans_scrub_extent` at
+v0.32.101: a theorem restating its own premise.
+
+The umbrella's actual content is that each neighbour **is in the queue the
+endpoint owns**, so the conclusion now says so structurally. Under
+`tcbQueueLinkIntegrity`, a spliced neighbour is a real TCB whose own link points
+back at the victim — `queueNext = targetTid` for the predecessor, `queuePrev =
+targetTid` for the successor. An unrelated TCB cannot satisfy that, which is
+exactly the discrimination the first cut lacked.
+
+### The revalidated entry ran from the wrong state
+
+`syscallEntryUnderRevalidatedLockSet` revalidated the footprint at `observed` and
+then ran `syscallEntryUnderLockSet … s` — the *original* state. When `observed`
+carried foreign commits that left the footprint unchanged, the guard passed and
+the transition discarded exactly those commits, so the entry never saw the state
+that was revalidated. A guard that accepts one state and acts on another has
+checked nothing.
+
+The action and shrinking phases are now a named continuation
+(`continueFromAcquired` / `syscallEntryFromAcquired`) run from `observed`, with
+the locks already held there rather than re-acquired.
+`withLockSet_eq_continueFromAcquired` and
+`syscallEntryUnderLockSet_eq_fromAcquired` are the decompositions that tie the
+continuation back to the plain bracket, both definitional.
+
+The general `_refines` is **retracted**, and deliberately: it held only because
+the action was being run from `s`. The two forms agree exactly when `observed` is
+what the plain bracket's own growing phase produces, which is
+`syscallEntryUnderRevalidatedLockSetModel_refines`; for any other `observed` they
+*should* differ, since the difference is the foreign commits being carried into
+the transition instead of dropped.
+`syscallEntryUnderRevalidatedLockSet_not_refines_in_general` records what does
+hold, and a Tier-3 negative forbids the retracted form returning.
+
+### The CC-5 non-closure witness compared two observers
+
+`lockContentionChannel_two_codes_reachable` read `waiterCore`'s code in the
+one-waiter trace and a *second waiter's* in the two-waiter trace. Two codes read
+by two different cores show only that the code depends on which core you are,
+which is not a channel anyone can receive on; a per-core channel carries a bit
+when **one** observer can be in two distinguishable situations.
+
+The second trace now queues `aheadCore` **in front of** `waiterCore`, so both
+readings are `waiterCore`'s — delay 1 and delay 2, codes 2 and 3. The load-bearing
+negative is that `aheadCore` does not contend in the first trace at all (it reads
+the reserved never-admitted code `0`), so the cross-observer pair is not merely
+weaker but ill-formed.
+
+### The claim inventory's secure-flow arm was boot-pinned
+
+`.secureFlowUnderFineLocks`'s `evidenceProp` required whole-state projection
+equality and confinement to `bootCoreId`, so it would have kept elaborating even
+if `syscallEntryUnderLockSet_preserves_projectionOnCore_atCore` regressed — which
+is the one thing a claim inventory exists to prevent. The arm is now quantified
+over the confinement core and consumes the generalized theorem.
+
+### A stale Tier-3 anchor, and a repeat of the codebase-map ordering trap
+
+Renaming `_refines` left a positive Tier-3 anchor pointing at a symbol that no
+longer exists; it is re-pointed at the model form. Separately, v0.33.15's
+docstring commit touched a `.lean` file *after* `sync_documentation_metrics.sh`
+had regenerated `docs/codebase_map.json`, so CI's Tier-2 docs-sync failed on a
+stale map — the same ordering trap recorded earlier in this workstream. The map
+regeneration is now the last step before commit.
+
+`SmpInformationFlowSuite` 530 → **532** assertions.
+
+Refs: docs/planning/SMP_INFORMATION_FLOW_PLAN.md section 5 SM8.D
+
 ## v0.33.15 — WS-SM SM8.D: the fifth review round, and the guard that could not fire
 
 Three further P2 findings on the declared-footprint bracket.  Two are real

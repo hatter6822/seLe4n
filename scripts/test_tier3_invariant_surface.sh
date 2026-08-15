@@ -2490,7 +2490,7 @@ run_check "INVARIANT" rg -n '^theorem entryCapTarget_rejects_sentinel' SeLe4n/Ke
 run_check "INVARIANT" rg -n '^def syscallEntryUnderRevalidatedLockSet' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^theorem syscallEntryUnderRevalidatedLockSet_footprint_stable' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^theorem syscallEntryUnderRevalidatedLockSet_refuses_on_change' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem syscallEntryUnderRevalidatedLockSet_refines' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryUnderRevalidatedLockSetModel_refines' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The bracket's scope is the OBJECT domain; the two domains it cannot express are
 # registered as data with owners rather than left to a comment.
 run_check "INVARIANT" rg -n '^inductive UncoveredLockDomain' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
@@ -2522,6 +2522,32 @@ run_check "INVARIANT" rg -n 'cancelSpliceNeighbors\?' SeLe4n/Kernel/InformationF
 # before round 5 every declared-footprint result in the group was `none`.
 run_check "INVARIANT" rg -n 'NEGATIVE: a capability replaced under the growing phase is refused' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'decode through a write cap resolves a real footprint' tests/SmpInformationFlowSuite.lean
+# PR #864 review round 6.  The revalidated entry continues from `observed` — the
+# state the guard checked — not from `s`; running from `s` would discard exactly
+# the intervening commits the revalidation just accepted.
+run_check "INVARIANT" rg -n '^def continueFromAcquired' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem withLockSet_eq_continueFromAcquired' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^def syscallEntryFromAcquired' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryUnderLockSet_eq_fromAcquired' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryUnderRevalidatedLockSet_not_refines_in_general' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# NEGATIVE: a general refinement against the plain bracket would re-assert the
+# defect — it held only while the action was being run from `s`.
+run_negative_check "INVARIANT" rg -n '^theorem syscallEntryUnderRevalidatedLockSet_refines' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# The splice-coverage theorem must discriminate: its neighbour clauses name the
+# neighbour and its link back to the victim, so an unrelated TCB cannot satisfy
+# them.  A constant-function arm proved only that the endpoint lock is present.
+run_check "INVARIANT" rg -n 'tcbQueueLinkIntegrity' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n 'queueNext = some targetTid' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n 'queuePrev = some targetTid' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# The CC-5 non-closure witness holds the OBSERVING core fixed; `aheadCore` is
+# queued in front of it and is never the core read.
+run_check "INVARIANT" rg -n '^def aheadCore' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n 'the two reachable codes are read by the SAME core' tests/SmpInformationFlowSuite.lean
+# NEGATIVE: the witness must not go back to comparing two different waiters.
+run_negative_check "INVARIANT" rg -n 'lockContentionCode twoWaiterExecution aheadCore' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# The claim inventory's secure-flow arm is quantified over the confinement core,
+# so an `…_atCore` regression breaks it instead of elaborating anyway.
+run_check "INVARIANT" rg -n 'niName! syscallEntryUnderLockSet_preserves_projectionOnCore_atCore' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The multi-reader witness carries REACHABILITY, not merely well-formedness: a
 # wf-only existential could be satisfied by a lock word no execution produces,
 # which is the opposite of the non-vacuity the theorem claims.

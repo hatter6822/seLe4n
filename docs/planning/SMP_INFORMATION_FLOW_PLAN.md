@@ -2070,6 +2070,31 @@ stronger assertion.
 
 Suite 525 → **530** assertions.
 
+#### v0.33.16 review cut — the sixth round, and a theorem that proved nothing
+
+Four findings; two are cases of the previous cuts not going far enough.
+
+1. **The splice-coverage theorem was tautological.**  Its neighbour arm was a
+   constant function ignoring the neighbour, so it proved only that the endpoint
+   lock is present — the restatement the v0.32.101 precedent warns about.  The
+   conclusion now carries the umbrella's actual content: under
+   `tcbQueueLinkIntegrity` each spliced neighbour is a real TCB whose own link
+   points back at the victim, which an unrelated TCB cannot satisfy.
+2. **The revalidated entry ran from `s`, not `observed`** — so foreign commits
+   that left the footprint unchanged were discarded and the entry never saw the
+   state the guard checked.  The action and shrinking phases are now a named
+   continuation run from `observed`; the general `_refines` is retracted, since
+   it held only because the action ran from `s`.
+3. **The CC-5 witness compared two observers.**  Two codes read by two different
+   cores show only that the code depends on which core you are.  The second trace
+   now queues `aheadCore` in front of `waiterCore`, so both readings are the same
+   core's.
+4. **The claim inventory's secure-flow arm was boot-pinned**, so an `…_atCore`
+   regression would not have broken it; it is now quantified over the confinement
+   core.
+
+Suite 530 → **532** assertions.
+
 ### SM8.E — Tests + closure (3 sub-tasks)
 
 | Sub | Description | Files | Est |

@@ -1216,7 +1216,11 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @syscallEntryUnderRevalidatedLockSet
 #check @syscallEntryUnderRevalidatedLockSet_footprint_stable
 #check @syscallEntryUnderRevalidatedLockSet_refuses_on_change
-#check @syscallEntryUnderRevalidatedLockSet_refines
+#check @syscallEntryUnderRevalidatedLockSet_not_refines_in_general
+#check @continueFromAcquired
+#check @withLockSet_eq_continueFromAcquired
+#check @syscallEntryFromAcquired
+#check @syscallEntryUnderLockSet_eq_fromAcquired
 #check @syscallEntryUnderRevalidatedLockSetModel
 #check @syscallEntryUnderRevalidatedLockSetModel_refines
 #check @revalidationRefusalReachable
@@ -5661,6 +5665,25 @@ private def runContentionFigureChecks : IO Unit := do
   assertBool "the severity basis, as a theorem"
     (have _h := acceptedCovertChannel_lockContention_severity_basis
      true)
+  -- The non-closure witness must hold the OBSERVING core fixed.  Two codes read
+  -- by two different cores would only show that the code depends on which core
+  -- you are, which is not a channel anyone can receive on; a per-core channel
+  -- carries a bit when ONE observer can be in two distinguishable situations.
+  -- Both readings below are `waiterCore`'s; the second trace queues `aheadCore`
+  -- in front of it rather than observing a different waiter.
+  assertBool "the two reachable codes are read by the SAME core"
+    (decide (lockContentionCode singleWaiterExecution waiterCore 2 = 2) &&
+     decide (lockContentionCode twoWaiterExecution waiterCore 3 = 3))
+  -- NEGATIVE, and the reason a cross-observer pair is not merely weaker but
+  -- ill-formed: `aheadCore` never contends in the FIRST trace, so it has no
+  -- observation there to pair with its reading in the second — it reads the
+  -- reserved never-admitted code `0`.  Two codes gathered from two different
+  -- cores are therefore not one observer's two situations, which is what a
+  -- per-core channel carrying a bit requires.
+  assertBool "NEGATIVE: the ahead core does not contend in the first trace at all"
+    (decide (aheadCore ≠ waiterCore) &&
+     decide (lockContentionCode singleWaiterExecution aheadCore 2 = 0) &&
+     decide (lockContentionObservation singleWaiterExecution aheadCore 2 = none))
 
 /-! ### §7.5 fixtures — an untrusted subject and a trusted object -/
 
@@ -6262,7 +6285,9 @@ private def runDeclaredFootprintChecks : IO Unit := do
     (have _s := @syscallEntryUnderRevalidatedLockSet_footprint_stable
      have _r := @syscallEntryUnderRevalidatedLockSet_refuses_on_change
      have _w := @revalidationRefusalReachable
-     have _f := @syscallEntryUnderRevalidatedLockSet_refines
+     have _f := @syscallEntryUnderRevalidatedLockSet_not_refines_in_general
+     have _c := @withLockSet_eq_continueFromAcquired
+     have _a := @syscallEntryUnderLockSet_eq_fromAcquired
      have _m := @syscallEntryUnderRevalidatedLockSetModel_refines
      true)
   -- The multi-level CSpace guard: the footprint read-locks the caller's ROOT

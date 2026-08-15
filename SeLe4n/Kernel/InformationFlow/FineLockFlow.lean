@@ -935,11 +935,27 @@ theorem starvingExecution_writer_never_releases (k : Nat) (hk : 1 ≤ k) :
 --
 -- The non-closure claim therefore needs *executions*, not arithmetic: two fair
 -- traces, each satisfying the bound's own premises, on which a contending core
--- reads different codes.  These two supply them — one waiter behind a holder
--- (delay 1), and one waiter behind a holder *and* another waiter (delay 2).
+-- reads different codes.  These two supply them — `waiterCore` behind a holder
+-- (delay 1), and the *same* `waiterCore` behind a holder **and** a core queued
+-- ahead of it (delay 2).
+--
+-- **The observing core is held fixed on purpose.**  A per-core channel carries a
+-- bit when *one* observer can be in two distinguishable situations; two codes
+-- read by two different cores would only show that the code depends on which
+-- core you are, which is not a channel anyone can receive on.  An earlier cut
+-- compared `waiterCore` in the first trace against a second waiter in the
+-- second, and so proved the weaker thing.  `aheadCore` is therefore the core
+-- placed *ahead* of the waiter in the second trace, never the one observed.
 
-private def waiterCore : CoreId := ⟨1, by decide⟩
-private def secondWaiterCore : CoreId := ⟨2, by decide⟩
+/-- The contending core the non-closure witness OBSERVES, in both traces.
+Not private: the claim rests on both readings being this core's, and the suite
+checks that rather than taking it on trust. -/
+def waiterCore : CoreId := ⟨1, by decide⟩
+
+/-- The core queued **ahead** of `waiterCore` in the two-waiter trace — never the
+one observed. -/
+def aheadCore : CoreId := ⟨2, by decide⟩
+
 private def padCore : CoreId := ⟨3, by decide⟩
 
 /-- SM8.D.3: core 1 asks for the write lock while core 0 holds it, and is
@@ -955,14 +971,19 @@ def singleWaiterExecution : SeLe4n.Kernel.Concurrency.RwLockExecution :=
            , .releaseRead padCore, .releaseRead padCore ]
     initial_reachable := .base }
 
-/-- SM8.D.3: and the same with a *second* waiter queued ahead of core 2, so its
-admission waits for two releases — a delay of two steps. -/
+/-- SM8.D.3: and the same waiter with `aheadCore` queued **ahead** of it, so its
+admission waits for two releases — a delay of two steps.
+
+The enqueue order is what carries the finding: `aheadCore` goes in first, so the
+core observed in both traces is `waiterCore` in both.  Reading a second waiter's
+code here instead would compare two observers and show only that the code depends
+on which core you are. -/
 def twoWaiterExecution : SeLe4n.Kernel.Concurrency.RwLockExecution :=
   { initial := RwLockState.unheld
-    ops := [ .tryAcquireWrite bootCoreId, .tryAcquireWrite waiterCore
-           , .tryAcquireWrite secondWaiterCore
-           , .releaseWrite bootCoreId, .releaseWrite waiterCore
-           , .releaseWrite secondWaiterCore
+    ops := [ .tryAcquireWrite bootCoreId, .tryAcquireWrite aheadCore
+           , .tryAcquireWrite waiterCore
+           , .releaseWrite bootCoreId, .releaseWrite aheadCore
+           , .releaseWrite waiterCore
            , .releaseRead padCore, .releaseRead padCore, .releaseRead padCore
            , .releaseRead padCore, .releaseRead padCore, .releaseRead padCore
            , .releaseRead padCore ]
@@ -983,8 +1004,8 @@ theorem contentionWitnesses_in_premises :
     ((waiterCore, AccessMode.write) ∈ (singleWaiterExecution.stateAt 2).waiters ∧
       (waiterCore, AccessMode.write) ∉ (singleWaiterExecution.stateAt 1).waiters ∧
       2 + lockContentionDelayBound 2 < singleWaiterExecution.ops.length) ∧
-    ((secondWaiterCore, AccessMode.write) ∈ (twoWaiterExecution.stateAt 3).waiters ∧
-      (secondWaiterCore, AccessMode.write) ∉ (twoWaiterExecution.stateAt 2).waiters ∧
+    ((waiterCore, AccessMode.write) ∈ (twoWaiterExecution.stateAt 3).waiters ∧
+      (waiterCore, AccessMode.write) ∉ (twoWaiterExecution.stateAt 2).waiters ∧
       3 + lockContentionDelayBound 2 < twoWaiterExecution.ops.length) := by decide
 
 /-- SM8.D.3 (**the non-closure witness**): a contending core reads **different**
@@ -997,15 +1018,15 @@ about which codes an execution can actually produce, and the two it counts are
 exactly the two an accepted run never produces. -/
 theorem lockContentionChannel_two_codes_reachable :
     lockContentionCode singleWaiterExecution waiterCore 2 = 2 ∧
-    lockContentionCode twoWaiterExecution secondWaiterCore 3 = 3 ∧
+    lockContentionCode twoWaiterExecution waiterCore 3 = 3 ∧
     lockContentionCode singleWaiterExecution waiterCore 2
-      ≠ lockContentionCode twoWaiterExecution secondWaiterCore 3 := by decide
+      ≠ lockContentionCode twoWaiterExecution waiterCore 3 := by decide
 
 /-- SM8.D.3: and the delays behind those codes, so the figures are readable
 rather than only distinct. -/
 theorem contentionWitnesses_delays :
     lockContentionObservation singleWaiterExecution waiterCore 2 = some 1 ∧
-    lockContentionObservation twoWaiterExecution secondWaiterCore 3 = some 2 := by decide
+    lockContentionObservation twoWaiterExecution waiterCore 3 = some 2 := by decide
 
 /-- SM8.D.3 (**why codes 0 and 1 are not the witnesses**): an accepted
 acquisition is admitted strictly after its enqueue, so its delay is at least one
@@ -1250,7 +1271,7 @@ theorem acceptedCovertChannel_lockContention_severity_basis (maxDelay : Nat) :
       2 ≤ lockContentionAlphabet maxDelay ∧
       lockContentionAlphabet maxDelay = (numCores - 1) * (maxDelay + 1) + 2 ∧
       lockContentionCode singleWaiterExecution waiterCore 2
-        ≠ lockContentionCode twoWaiterExecution secondWaiterCore 3 :=
+        ≠ lockContentionCode twoWaiterExecution waiterCore 3 :=
   ⟨rfl, rfl, lockContentionAlphabet_at_least_two maxDelay, rfl,
    lockContentionChannel_two_codes_reachable.2.2⟩
 
@@ -2268,8 +2289,8 @@ Suspending a victim that sits *inside* an endpoint queue runs
 `spliceOutMidQueueNode`, which patches the predecessor's `queueNext` and the
 successor's `queuePrev` — writes to TCBs that are **not** the victim, and for
 which the footprint carries no `tcbLock`.  Read on its own that is an uncovered
-write, and it is what a comparison against `lockSet_cancelIpcBlockingOnCore` (which
-does name both neighbours) suggests.
+write, and it is what a comparison against `lockSet_cancelIpcBlockingOnCore`
+(which does name both neighbours) suggests.
 
 The reconciliation is the discipline `IPC/CrossCore/Cancellation.lean` states in
 prose: an endpoint **owns** its queue, so the endpoint's write lock authorizes the
@@ -2279,13 +2300,23 @@ footprint sits under the coarser umbrella.  Both are sound — but only one of t
 was checked, and the `lockSet_tcbSuspend_*_write_mem` family stopped at six
 members, exactly where the umbrella began.  This is the seventh.
 
+**Why the conclusion has three parts, not one.**  A first cut concluded only
+`(endpointLock ep, .write) ∈ S.pairs`, with the neighbour clause discharged by a
+constant function that ignored its arguments.  That proved the endpoint lock is
+*present*, which `lockSet_tcbSuspend_blocked_endpoint_write_mem` already says —
+and it would have kept elaborating had the splice rewritten arbitrary unrelated
+TCBs, so it established nothing about coverage.  The umbrella's actual content is
+that each neighbour **is in the queue the endpoint owns**, so the second and third
+clauses say so structurally: under `tcbQueueLinkIntegrity`, a spliced neighbour is
+a real TCB whose own link points back at the victim (`queueNext = targetTid` for
+the predecessor, `queuePrev = targetTid` for the successor).  An unrelated TCB
+cannot satisfy that, which is exactly the discrimination the first cut lacked.
+
 It is stated over the **resolved** footprint (`suspendFootprintOf`, what the SM8.D
-resolver actually returns) rather than the parametric `lockSet_tcbSuspend`, since
-the parametric form's endpoint membership is already
-`lockSet_tcbSuspend_blocked_endpoint_write_mem` and restating it would prove
-nothing new.  The neighbours appear in the statement — via the same
-`cancelSpliceNeighbors?` the sub-operation footprint reads — so the theorem is
-about the splice rather than about the endpoint lock in isolation.
+resolver actually returns) rather than the parametric `lockSet_tcbSuspend`, and it
+names the neighbours through the same `cancelSpliceNeighbors?` the sub-operation
+footprint reads, so it is a theorem about the splice rather than about the
+endpoint lock in isolation.
 
 **Why the footprint is not simply widened instead**: `lockSet_tcbSuspend` is
 already `maxLockSetSize` (8) at full resolution, and that constant is the WCRT
@@ -2297,27 +2328,47 @@ theorem suspendFootprint_splice_neighbors_under_endpoint_lock (st : SystemState)
     (ep : SeLe4n.ObjId)
     (hFp : SeLe4n.Kernel.Concurrency.suspendFootprintOf st callerTid targetTid = some S)
     (hVictim : st.getTcb? targetTid = some victim)
-    (hBlocked : victimBlockedOnEndpoint victim ep) :
+    (hBlocked : victimBlockedOnEndpoint victim ep)
+    (hLinks : tcbQueueLinkIntegrity st) :
     (SeLe4n.Kernel.Concurrency.endpointLock ep, AccessMode.write) ∈ S.pairs ∧
-      ∀ n, n ∈ [(SeLe4n.Kernel.cancelSpliceNeighbors? victim).1,
-                (SeLe4n.Kernel.cancelSpliceNeighbors? victim).2] →
-        n.isSome → (SeLe4n.Kernel.Concurrency.endpointLock ep, AccessMode.write) ∈ S.pairs := by
-  have hMem : (SeLe4n.Kernel.Concurrency.endpointLock ep, AccessMode.write) ∈ S.pairs := by
+      (∀ p, (SeLe4n.Kernel.cancelSpliceNeighbors? victim).1 = some p →
+        ∃ tcbP, st.getTcb? p = some tcbP ∧ tcbP.queueNext = some targetTid) ∧
+      (∀ n, (SeLe4n.Kernel.cancelSpliceNeighbors? victim).2 = some n →
+        ∃ tcbN, st.getTcb? n = some tcbN ∧ tcbN.queuePrev = some targetTid) := by
+  -- The SM6.E link invariant is phrased over the raw store, so the victim's
+  -- membership is transported through the AL2-A accessor bridge rather than
+  -- read raw here: the resolver itself reads through `getTcb?`, and a raw read
+  -- in a theorem *about* it would be counted as an un-migrated access.
+  have hVictimRaw := (SystemState.getTcb?_eq_some_iff st targetTid victim).mp hVictim
+  refine ⟨?_, ?_, ?_⟩
+  · -- The endpoint write lock is declared: every endpoint-blocked arm resolves
+    -- `blockedEndpoint` to `some ep`, so the SM6.E parametric membership applies
+    -- to the resolved set.  The other components differ per arm, so each arm
+    -- applies it at its own instantiation.
     unfold SeLe4n.Kernel.Concurrency.suspendFootprintOf at hFp
     cases hCaller : st.getTcb? callerTid with
     | none => rw [hCaller] at hFp; simp at hFp
     | some caller =>
       rw [hCaller, hVictim] at hFp
       simp only at hFp
-      -- Every endpoint-blocked arm resolves `blockedEndpoint` to `some ep`; the
-      -- other components differ per arm, so each arm applies the SM6.E
-      -- parametric membership at its own instantiation.
       rcases hBlocked with h | h | h | ⟨r, h⟩ <;>
         · rw [h] at hFp
           simp only at hFp
           rw [← Option.some.inj hFp]
           exact SeLe4n.Kernel.lockSet_tcbSuspend_blocked_endpoint_write_mem _ _ _ _ _ _ _ _
-  exact ⟨hMem, fun _ _ _ => hMem⟩
+  · -- The predecessor is a real TCB whose `queueNext` is the victim — so it is
+    -- the victim's neighbour in the queue `ep` owns, not an arbitrary thread.
+    intro p hp
+    have hPrev : victim.queuePrev = some p := by
+      simpa [SeLe4n.Kernel.cancelSpliceNeighbors?] using hp
+    obtain ⟨tcbP, hMemP, hNextP⟩ := hLinks.2 targetTid victim hVictimRaw p hPrev
+    exact ⟨tcbP, (SystemState.getTcb?_eq_some_iff st p tcbP).mpr hMemP, hNextP⟩
+  · -- …and symmetrically for the successor.
+    intro n hn
+    have hNext : victim.queueNext = some n := by
+      simpa [SeLe4n.Kernel.cancelSpliceNeighbors?] using hn
+    obtain ⟨tcbN, hMemN, hPrevN⟩ := hLinks.1 targetTid victim hVictimRaw n hNext
+    exact ⟨tcbN, (SystemState.getTcb?_eq_some_iff st n tcbN).mpr hMemN, hPrevN⟩
 
 /-- SM8.D.5 (**fail-closed**): a footprint is declared only where the **decoded**
 syscall is `.tcbSuspend`.
@@ -2377,6 +2428,49 @@ def syscallEntryUnderDeclaredLockSet (ctx : LabelingContext) (lockCore : CoreId)
   (declaredLockSetForEntry ctx layout executingCore regCount s).map
     (fun S => syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s)
 
+/-- SM8.D.5: the bracket's **action and shrinking phases**, run from a state in
+which the growing phase has already happened.
+
+`withLockSet` is acquire → action → release from a pre-acquire state.  A
+revalidating bracket has already acquired, and then *looked* at the state it
+ended up in; re-running the whole bracket from the original `s` would throw that
+state away and act on a snapshot the revalidation did not check.  This is the
+continuation: it runs the action on the acquired state it is handed and releases,
+without re-acquiring.
+
+`withLockSet_eq_continueFromAcquired` is the decomposition that ties it back — a
+full bracket **is** this continuation applied to `acquireAll`'s output — so the
+two forms cannot drift. -/
+def continueFromAcquired {α : Type} (S : LockSet) (lockCore : CoreId)
+    (action : SystemState → SystemState × α) (acquired : SystemState) : SystemState × α :=
+  let (postAction, result) := action acquired
+  (SeLe4n.Kernel.Concurrency.releaseAll lockCore S.lockAcquireSequence.reverse postAction, result)
+
+/-- SM8.D.5: the decomposition — the bracket is its growing phase followed by the
+continuation.  Definitional, so it is a naming of `withLockSet`'s own structure
+rather than a new fact; it exists so that a proof about the revalidated form can
+be transported to the plain one without unfolding either. -/
+theorem withLockSet_eq_continueFromAcquired {α : Type} (S : LockSet) (lockCore : CoreId)
+    (action : SystemState → SystemState × α) (s : SystemState) :
+    SeLe4n.Kernel.Concurrency.withLockSet S lockCore action s
+      = continueFromAcquired S lockCore action (lockSetAcquiredState S lockCore s) := rfl
+
+/-- SM8.D.5: the guarded entry, continued from the state the growing phase ended
+in. -/
+def syscallEntryFromAcquired (ctx : LabelingContext) (S : LockSet) (lockCore : CoreId)
+    (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
+    (acquired : SystemState) : SystemState × Except KernelError Unit :=
+  continueFromAcquired S lockCore
+    (commitKernelAction (syscallEntryChecked ctx layout executingCore regCount)) acquired
+
+/-- SM8.D.5: and the same decomposition at the entry. -/
+theorem syscallEntryUnderLockSet_eq_fromAcquired (ctx : LabelingContext) (S : LockSet)
+    (lockCore : CoreId) (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId)
+    (regCount : Nat) (s : SystemState) :
+    syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s
+      = syscallEntryFromAcquired ctx S lockCore layout executingCore regCount
+          (lockSetAcquiredState S lockCore s) := rfl
+
 /-- SM8.D.5 (**the resolve/acquire race, closed by revalidation**): the bracket
 that re-resolves the footprint **after** the growing phase and refuses if it
 moved.
@@ -2419,7 +2513,13 @@ def syscallEntryUnderRevalidatedLockSet (ctx : LabelingContext) (lockCore : Core
   | none => none
   | some S =>
     if declaredLockSetForEntry ctx layout executingCore regCount observed = some S then
-      some (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s)
+      -- Continue from `observed`, NOT from `s`.  `observed` is the state the
+      -- growing phase actually ended in — the one the guard just revalidated —
+      -- so re-running the whole bracket from `s` would discard exactly the
+      -- intervening commits the revalidation accepted, and the entry would never
+      -- see the state that was checked.  The locks are already held in
+      -- `observed`, so the continuation must not re-acquire them.
+      some (syscallEntryFromAcquired ctx S lockCore layout executingCore regCount observed)
     else
       none
 
@@ -2452,7 +2552,7 @@ theorem syscallEntryUnderRevalidatedLockSet_footprint_stable (ctx : LabelingCont
       observed = some r) :
     ∃ S, declaredLockSetForEntry ctx layout executingCore regCount s = some S ∧
       declaredLockSetForEntry ctx layout executingCore regCount observed = some S ∧
-      r = syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s := by
+      r = syscallEntryFromAcquired ctx S lockCore layout executingCore regCount observed := by
   unfold syscallEntryUnderRevalidatedLockSet at h
   cases hRes : declaredLockSetForEntry ctx layout executingCore regCount s with
   | none => rw [hRes] at h; exact absurd h (by simp)
@@ -2505,23 +2605,31 @@ theorem revalidationRefusalReachable (ctx : LabelingContext) (lockCore : CoreId)
     rw [hRes] at hDiffers
     exact hDiffers
 
-/-- SM8.D.5: the revalidated bracket refines the plain one — whenever it runs, it
-runs exactly the same transition.  So every §5 result about
-`syscallEntryUnderDeclaredLockSet` transfers, and revalidation costs nothing in
-the information-flow argument. -/
-theorem syscallEntryUnderRevalidatedLockSet_refines (ctx : LabelingContext)
-    (lockCore : CoreId) (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId)
-    (regCount : Nat) (s observed : SystemState)
-    (r : SystemState × Except KernelError Unit)
-    (h : syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore regCount s
-      observed = some r) :
-    syscallEntryUnderDeclaredLockSet ctx lockCore layout executingCore regCount s = some r := by
+/-- SM8.D.5: **the revalidated bracket does not refine the plain one in general —
+and must not.**
+
+An earlier cut stated `…_refines` for an arbitrary `observed`: whenever the
+revalidated form ran, it ran exactly `syscallEntryUnderDeclaredLockSet`'s
+transition.  That was only true because the action was being run from `s`, which
+is the defect — a guard that accepts a state and then acts on a different one has
+checked nothing.  With the action continued from `observed`, the two forms agree
+exactly when `observed` is the state the plain bracket's own growing phase
+produces, and that is `syscallEntryUnderRevalidatedLockSetModel_refines` below.
+
+For any other `observed` they *should* differ: that difference is the foreign
+commits being carried into the transition instead of discarded.  Stating a
+general refinement here would therefore re-assert the bug. -/
+theorem syscallEntryUnderRevalidatedLockSet_not_refines_in_general :
+    ∀ ctx lockCore layout executingCore regCount s observed r,
+      syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore regCount s
+        observed = some r →
+      ∃ S, declaredLockSetForEntry ctx layout executingCore regCount s = some S ∧
+        r = syscallEntryFromAcquired ctx S lockCore layout executingCore regCount observed := by
+  intro ctx lockCore layout executingCore regCount s observed r h
   obtain ⟨S, hRes, _, hEq⟩ :=
     syscallEntryUnderRevalidatedLockSet_footprint_stable ctx lockCore layout executingCore
       regCount s observed r h
-  unfold syscallEntryUnderDeclaredLockSet
-  rw [hRes, hEq]
-  rfl
+  exact ⟨S, hRes, hEq⟩
 
 /-- SM8.D.5: the model instance refines the plain bracket too, so choosing
 `observed` does not change what a committed entry runs. -/
@@ -2537,8 +2645,15 @@ theorem syscallEntryUnderRevalidatedLockSetModel_refines (ctx : LabelingContext)
   | some S =>
     rw [hRes] at h
     simp only at h
-    exact syscallEntryUnderRevalidatedLockSet_refines ctx lockCore layout executingCore
-      regCount s _ r h
+    obtain ⟨S', hRes', _, hEq⟩ :=
+      syscallEntryUnderRevalidatedLockSet_footprint_stable ctx lockCore layout executingCore
+        regCount s _ r h
+    rw [hRes] at hRes'
+    cases Option.some.inj hRes'
+    unfold syscallEntryUnderDeclaredLockSet
+    rw [hRes, hEq]
+    exact congrArg some
+      (syscallEntryUnderLockSet_eq_fromAcquired ctx S lockCore layout executingCore regCount s).symm
 
 /-- SM8.D.5 (**fail-closed**): every syscall other than `.tcbSuspend` is
 undeclared, so no footprint is bracketed and the caller keeps its existing
@@ -2754,7 +2869,7 @@ def fineLockClaimTheorem : FineLockClaimId → String
   | .contentionDelayBounded => niName! lockContention_delay_bounded
   | .integrityUnderLocks => niName! bibaIntegrity_underLockSet
   | .authorityIntegrityUnderLocks => niName! authorityIntegrity_underLockSet
-  | .secureFlowUnderFineLocks => niName! syscallEntryUnderLockSet_preserves_projectionOnCore_of_entry
+  | .secureFlowUnderFineLocks => niName! syscallEntryUnderLockSet_preserves_projectionOnCore_atCore
   | .failClosedUnderFineLocks => niName! syscallEntryUnderLockSet_failClosed_invisible
   | .contentionChannelRegistered => niName! acceptedCovertChannel_lockContention_bounded
 
@@ -2814,14 +2929,20 @@ def FineLockClaimId.evidenceProp : FineLockClaimId → Prop
         noUnpermittedWrite (authorityWritePermitted ctx subject) s
           (SeLe4n.Kernel.Concurrency.withLockSet S core action s).1
   | .secureFlowUnderFineLocks =>
+      -- Quantified over the confinement core `c'`, NOT pinned at `bootCoreId`:
+      -- an ordinary syscall on a secondary core writes that core's scheduler
+      -- slots, so the boot-core premise is false exactly where the SM3.C.9
+      -- migration cares.  A boot-pinned arm here would keep elaborating if
+      -- `…_atCore` regressed to the boot form, which is what a claim inventory
+      -- exists to prevent.
       ∀ (ctx : LabelingContext) (observer : IfObserver) (S : LockSet) (lockCore : CoreId)
         (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
-        (s st' : SystemState), s.objects.invExt → st'.objects.invExt →
+        (s st' : SystemState) (c' : CoreId), s.objects.invExt → st'.objects.invExt →
         syscallEntryChecked ctx layout executingCore regCount
             (lockSetAcquiredState S lockCore s) = .ok ((), st') →
-        projectState ctx observer st'
-          = projectState ctx observer (lockSetAcquiredState S lockCore s) →
-        observableSlotsConfinedToCore (lockSetAcquiredState S lockCore s) st' bootCoreId →
+        projectStateOnCore ctx observer st' c'
+          = projectStateOnCore ctx observer (lockSetAcquiredState S lockCore s) c' →
+        observableSlotsConfinedToCore (lockSetAcquiredState S lockCore s) st' c' →
         lowEquivalent_smp ctx observer
           (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1 s
   | .failClosedUnderFineLocks =>
@@ -2866,10 +2987,10 @@ def fineLockClaimEvidence : (id : FineLockClaimId) → id.evidenceProp
       fun _α ctx subject S core action s hInv hActionInv hAction =>
         authorityIntegrity_underLockSet ctx subject S core action s hInv hActionInv hAction
   | .secureFlowUnderFineLocks =>
-      fun ctx observer S lockCore layout executingCore regCount s st' hInv hOutInv hOk hProj
+      fun ctx observer S lockCore layout executingCore regCount s st' c' hInv hOutInv hOk hProjOn
         hConfined =>
-        syscallEntryUnderLockSet_preserves_projectionOnCore_of_entry ctx observer S lockCore
-          layout executingCore regCount s st' hInv hOutInv hOk hProj hConfined
+        syscallEntryUnderLockSet_preserves_projectionOnCore_atCore ctx observer S lockCore
+          layout executingCore regCount s st' c' hInv hOutInv hOk hProjOn hConfined
   | .failClosedUnderFineLocks =>
       fun ctx S lockCore layout executingCore regCount s e L hInv hDenied =>
         syscallEntryUnderLockSet_failClosed_invisible ctx S lockCore layout executingCore
