@@ -1,3 +1,42 @@
+## v0.33.20 — WS-SM SM8.D: the tenth review round, and an off-by-one in yesterday's fix
+
+Two **P1** findings, the first of the series, and both on the elapsed-time rate
+theorem added one round earlier. Theorems, tests and prose only; trace
+byte-identical.
+
+### The rate was measured over a window one interval too long
+
+`lockContentionChannel_rate_per_elapsed_time` concluded over
+`elapsedBetween cost 0 (e.ops.length + 1)`. An execution of `n` operations spans
+states `0 … n`, which is `n` intervals; measuring through `n + 1` sums a
+`cost n` the execution does not occupy. The theorem could therefore "pay" for an
+observation with time after the recorded execution ended — which is precisely the
+kind of slack the round-9 fix existed to remove, reintroduced in the fix itself.
+
+The enqueue-edge premise supplies the correction: observations are keyed to steps
+with `1 ≤ k`, so none is at step `0`, and prepending `0` to the step list gives a
+`Nodup` list in `[0, n]` one longer than the original — bounding the observation
+count by `n` rather than `n + 1`. The conclusion is now over
+`elapsedBetween cost 0 e.ops.length`, and a Tier-3 negative forbids the
+`+ 1` window returning.
+
+### The elapsed-time rate was proven but not consumed
+
+`acceptedCovertChannel_lockContention_severity_basis` and the
+`.contentionChannelRegistered` claim arm both still cited the operation-count
+bound, whose own contract says it is not comparable to CC-1's tick-paced rate. So
+the new elapsed-time result could have been deleted while the severity
+justification — which reads as a bandwidth argument — and the inventory kept
+elaborating on the weaker bound alone.
+
+Both now carry the cost-conditioned rate as a conjunct. This is the same defect
+as the round-6 and round-8 inventory findings: adding a theorem without wiring it
+into the structure that is supposed to police it.
+
+`SmpInformationFlowSuite` stays at **533** assertions.
+
+Refs: docs/planning/SMP_INFORMATION_FLOW_PLAN.md section 5 SM8.D
+
 ## v0.33.19 — WS-SM SM8.D: the ninth review round, and the rate that was a tautology
 
 Three P2 findings. Two are the round-7 unit error recurring in dimensions I did

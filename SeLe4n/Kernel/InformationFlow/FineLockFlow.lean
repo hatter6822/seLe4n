@@ -1253,8 +1253,9 @@ bandwidth figure — many lock operations may fall between two timer ticks, so i
 does not limit how much a channel carries per second.
 
 This does: given a floor `tMin` on how long any inter-operation interval takes,
-`n` observations inside a window `[a, b)` require at least `n * tMin` of elapsed
-time in that window.  Read as a rate, at most one observation per `tMin`.
+`n` observations require at least `n * tMin` of elapsed time **within the
+execution's own window** — states `0 … ops.length`, which is `ops.length`
+intervals, not one more.  Read as a rate, at most one observation per `tMin`.
 
 The floor is a hypothesis, exactly as the ceiling is in
 `lockContention_wallClock_bounded`, and for the same reason: the SM2.C execution
@@ -1265,12 +1266,31 @@ half. -/
 theorem lockContentionChannel_rate_per_elapsed_time
     (e : SeLe4n.Kernel.Concurrency.RwLockExecution) (cost : Nat → Nat) (tMin : Nat)
     (hCost : ∀ k, tMin ≤ cost k) (steps : List Nat)
-    (hNodup : steps.Nodup) (hRange : ∀ k ∈ steps, k ≤ e.ops.length) :
-    steps.length * tMin ≤ elapsedBetween cost 0 (e.ops.length + 1) := by
-  have hLen := e.distinct_steps_length_le steps hNodup hRange
-  calc steps.length * tMin ≤ (e.ops.length + 1) * tMin := Nat.mul_le_mul_right tMin hLen
-    _ ≤ elapsedBetween cost 0 (e.ops.length + 1) := by
-        simpa using elapsedBetween_ge cost tMin hCost 0 (e.ops.length + 1)
+    (hNodup : steps.Nodup) (hRange : ∀ k ∈ steps, k ≤ e.ops.length)
+    (hPos : ∀ k ∈ steps, 1 ≤ k) :
+    steps.length * tMin ≤ elapsedBetween cost 0 e.ops.length := by
+  -- An execution of `n` operations spans states `0 … n`, so it has exactly `n`
+  -- intervals — measuring through `n + 1` would sum a `cost n` that no step of
+  -- the execution occupies, and let an observation be paid for with time after
+  -- the recorded execution ended.
+  --
+  -- The enqueue-edge premise `1 ≤ k` is what makes the counting come out at `n`
+  -- rather than `n + 1`: no observation is keyed to step `0`, so prepending it
+  -- gives a `Nodup` list in `[0, n]` one longer than `steps`.
+  have hZero : 0 ∉ steps := fun h => absurd (hPos 0 h) (by omega)
+  have hCons : (0 :: steps).Nodup := List.nodup_cons.mpr ⟨hZero, hNodup⟩
+  have hConsRange : ∀ k ∈ (0 :: steps), k ≤ e.ops.length := by
+    intro k hk
+    rcases List.mem_cons.mp hk with rfl | hk'
+    · exact Nat.zero_le _
+    · exact hRange k hk'
+  have hLen : steps.length ≤ e.ops.length := by
+    have := e.distinct_steps_length_le (0 :: steps) hCons hConsRange
+    simp only [List.length_cons] at this
+    omega
+  calc steps.length * tMin ≤ e.ops.length * tMin := Nat.mul_le_mul_right tMin hLen
+    _ ≤ elapsedBetween cost 0 e.ops.length := by
+        simpa using elapsedBetween_ge cost tMin hCost 0 e.ops.length
 
 /-- SM8.D.3 (**the CC-5 capacity bound**): over a run of `n` contended
 acquisitions the core's whole trace is one element of
@@ -1433,9 +1453,20 @@ theorem acceptedCovertChannel_lockContention_severity_basis (maxDelay : Nat) :
       2 ≤ lockContentionAlphabet maxDelay ∧
       lockContentionAlphabet maxDelay = (numCores - 1) * (maxDelay + 1) + 2 ∧
       lockContentionCode singleWaiterExecution waiterCore 2
-        ≠ lockContentionCode twoWaiterExecution waiterCore 3 :=
+        ≠ lockContentionCode twoWaiterExecution waiterCore 3 ∧
+      -- The **rate** half of the grading, in elapsed time rather than lock
+      -- operations.  Consumed here rather than merely proven nearby: without
+      -- this conjunct the elapsed-time result could be deleted while the
+      -- severity justification — which reads as a bandwidth argument — kept
+      -- elaborating on the operation-count bound alone.
+      (∀ (e : SeLe4n.Kernel.Concurrency.RwLockExecution) (cost : Nat → Nat) (tMin : Nat),
+        (∀ k, tMin ≤ cost k) → ∀ steps : List Nat, steps.Nodup →
+        (∀ k ∈ steps, k ≤ e.ops.length) → (∀ k ∈ steps, 1 ≤ k) →
+        steps.length * tMin ≤ elapsedBetween cost 0 e.ops.length) :=
   ⟨rfl, rfl, lockContentionAlphabet_at_least_two maxDelay, rfl,
-   lockContentionChannel_two_codes_reachable.2.2⟩
+   lockContentionChannel_two_codes_reachable.2.2,
+   fun e cost tMin hCost steps hNodup hRange hPos =>
+     lockContentionChannel_rate_per_elapsed_time e cost tMin hCost steps hNodup hRange hPos⟩
 
 -- ============================================================================
 -- §4  SM8.D.4 — Biba integrity under per-core locks
@@ -3314,7 +3345,13 @@ def FineLockClaimId.evidenceProp : FineLockClaimId → Prop
           kEnq + lockContentionDelayBound maxDelay < e.ops.length →
           acceptedCovertChannel_lockContention.modelVisible = false ∧
             acceptedCovertChannel_lockContention.severity = CovertChannelSeverity.medium ∧
-            lockContentionCode e c kEnq < lockContentionAlphabet maxDelay
+            lockContentionCode e c kEnq < lockContentionAlphabet maxDelay ∧
+              -- The rate half, in elapsed time.  CC-5's registration is a
+              -- bandwidth claim, so the inventory must consume both halves.
+              (∀ (steps : List Nat), steps.Nodup → (∀ k ∈ steps, k ≤ e.ops.length) →
+                (∀ k ∈ steps, 1 ≤ k) →
+                ∀ (cost : Nat → Nat) (tMin : Nat), (∀ k, tMin ≤ cost k) →
+                  steps.length * tMin ≤ elapsedBetween cost 0 e.ops.length)
   | .revalidatedCommitTracked =>
       -- Over an ARBITRARY `observed`, so a concurrent kernel's foreign commits
       -- are in scope: a committed outcome ran from the state the guard checked
@@ -3369,8 +3406,15 @@ def fineLockClaimEvidence : (id : FineLockClaimId) → id.evidenceProp
           regCount s e L hInv hDenied
   | .contentionChannelRegistered =>
       fun maxDelay e hFair hInit c m kEnq hQueued hWithin =>
-        acceptedCovertChannel_lockContention_bounded maxDelay e hFair hInit c m kEnq hQueued
-          hWithin
+        ⟨(acceptedCovertChannel_lockContention_bounded maxDelay e hFair hInit c m kEnq hQueued
+            hWithin).1,
+         (acceptedCovertChannel_lockContention_bounded maxDelay e hFair hInit c m kEnq hQueued
+            hWithin).2.1,
+         (acceptedCovertChannel_lockContention_bounded maxDelay e hFair hInit c m kEnq hQueued
+            hWithin).2.2,
+         fun steps hNodup hRange hPos cost tMin hCost =>
+           lockContentionChannel_rate_per_elapsed_time e cost tMin hCost steps hNodup hRange
+             hPos⟩
   | .revalidatedCommitTracked =>
       fun ctx lockCore layout executingCore regCount s observed r h =>
         syscallEntryUnderRevalidatedLockSet_footprint_stable ctx lockCore layout executingCore

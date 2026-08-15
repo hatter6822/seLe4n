@@ -2149,6 +2149,20 @@ defects.
 
 Suite stays at **533** assertions.
 
+#### v0.33.20 review cut — the tenth round, two P1s in the previous fix
+
+1. **The rate window was one interval too long** — `elapsedBetween cost 0
+   (ops.length + 1)` sums an interval the execution does not occupy, so an
+   observation could be paid for with time after it ended.  The enqueue-edge
+   premise (`1 ≤ k`) bounds the count by `ops.length`, and the conclusion now
+   measures the execution's own window.
+2. **The elapsed-time rate was proven but not consumed** — the severity basis
+   and the `.contentionChannelRegistered` arm still cited the operation-count
+   bound, so the new result could vanish while both kept elaborating.  Both now
+   carry it.
+
+Suite stays at **533** assertions.
+
 #### v0.33.19 review cut — the ninth round, and the rate that was a tautology
 
 1. **The pacing bound was in lock operations, not time**, and its docstring used

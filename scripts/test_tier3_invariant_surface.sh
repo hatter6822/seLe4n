@@ -2570,6 +2570,15 @@ run_check "INVARIANT" rg -n '^theorem lockContention_wallClock_bounded' SeLe4n/K
 # Biba predicate's lock erasure is a stated scope, not an unnoticed gap.
 run_check "INVARIANT" rg -n '^theorem elapsedBetween_ge' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^theorem lockContentionChannel_rate_per_elapsed_time' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# PR #864 review round 10 (both P1).  The rate must be measured over the
+# execution's OWN window — `ops.length` intervals, not one more — and the
+# elapsed-time rate must be CONSUMED by the severity basis and the claim
+# inventory, not merely proven nearby.
+run_check "INVARIANT" rg -n 'elapsedBetween cost 0 e.ops.length' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n 'hPos : ∀ k ∈ steps, 1 ≤ k' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# NEGATIVE: measuring through `ops.length + 1` sums an interval the execution
+# does not occupy, letting an observation be paid for after it ended.
+run_negative_check "INVARIANT" rg -n 'elapsedBetween cost 0 \(e.ops.length \+ 1\)' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^theorem UncoveredLockDomain.mem_all' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^theorem lockAcquisition_modifies_trusted_object_and_is_not_counted' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # NEGATIVE: the completeness theorem must not go back to comparing the domain
