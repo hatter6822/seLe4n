@@ -2149,6 +2149,22 @@ defects.
 
 Suite stays at **533** assertions.
 
+#### v0.33.19 review cut — the ninth round, and the rate that was a tautology
+
+1. **The pacing bound was in lock operations, not time**, and its docstring used
+   that to claim comparability with CC-1's per-tick rate.  `elapsedBetween_ge`
+   (a floor, dual to v0.33.17's ceiling) and
+   `lockContentionChannel_rate_per_elapsed_time` supply the statement that claim
+   needed.  Both halves of CC-5's bandwidth figure are conditional on a cost
+   model; only the alphabet is unconditional.
+2. **The uncovered-domain completeness theorem compared against a literal** —
+   now quantified over the constructors.
+3. **The Biba result is integrity modulo lock words**, and the scope is stated
+   with the uncounted case exhibited.  Lock acquisition is kernel-mediated; the
+   availability effect it can cause is CC-5's subject, not Biba's.
+
+Suite stays at **533** assertions.
+
 ### SM8.E — Tests + closure (3 sub-tasks)
 
 | Sub | Description | Files | Est |

@@ -758,6 +758,31 @@ theorem elapsedBetween_le (cost : Nat → Nat) (tCs : Nat) (hCost : ∀ k, cost 
         ≤ tCs + m * tCs := Nat.add_le_add hHead hTail
       _ = (m + 1) * tCs := by rw [Nat.succ_mul]; omega
 
+
+/-- SM8.D.3 (**the dual — a floor on elapsed time**): if no interval costs less
+than `tMin`, then `n` steps take at least `n * tMin`.
+
+`elapsedBetween_le` bounds how long one wait can be; this bounds how many waits
+can fit in a window, which is what a *rate* needs. -/
+theorem elapsedBetween_ge (cost : Nat → Nat) (tMin : Nat) (hCost : ∀ k, tMin ≤ cost k)
+    (a b : Nat) : (b - a) * tMin ≤ elapsedBetween cost a b := by
+  unfold elapsedBetween
+  suffices h : ∀ (n a : Nat), n * tMin ≤ ((List.range n).map (fun i => cost (a + i))).sum by
+    exact h (b - a) a
+  intro n
+  induction n with
+  | zero => intro a; simp
+  | succ m ih =>
+    intro a
+    rw [List.range_succ_eq_map]
+    simp only [List.map_cons, List.map_map, List.sum_cons, Function.comp_def]
+    have hTail : m * tMin ≤ ((List.range m).map (fun i => cost (a + (i + 1)))).sum := by
+      have := ih (a + 1)
+      simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using this
+    calc (m + 1) * tMin = tMin + m * tMin := by rw [Nat.succ_mul]; omega
+      _ ≤ cost (a + 0) + ((List.range m).map (fun i => cost (a + (i + 1)))).sum :=
+          Nat.add_le_add (hCost _) hTail
+
 /-- SM8.D.3: the observation as a single natural number, with `0` reserved for
 "no admission in this execution". -/
 def lockContentionCode (e : SeLe4n.Kernel.Concurrency.RwLockExecution) (c : CoreId)
@@ -1186,8 +1211,22 @@ def lockContentionTrace (e : SeLe4n.Kernel.Concurrency.RwLockExecution) (c : Cor
     (enqueueSteps : List Nat) : List Nat :=
   enqueueSteps.map (lockContentionCode e c)
 
-/-- SM8.D.3 (**the CC-5 pacing bound**): a core cannot make more observations
-than the execution has steps.
+/-- SM8.D.3 (**the CC-5 pacing bound, in lock operations**): a core cannot make
+more observations than the execution has steps.
+
+**This is a bound per lock operation, not per unit time**, and on its own it is
+close to a tautology: distinct acquisitions have distinct enqueue steps, and an
+execution of `n` operations has `n + 1` steps.  It does *not* by itself make
+CC-5's capacity comparable with CC-1's, whose pacing
+(`schedulingObservation_changes_on_domain_tick`) is per **timer tick** — real
+time — because `RwLockExecution` carries no ticks and many lock operations may
+fall between two ticks.
+
+`lockContentionChannel_rate_per_elapsed_time` is the statement that does bound
+observations per unit time, and like the delay bound it needs a cost model: a
+*floor* on how long an inter-operation interval takes.  The two are duals —
+`elapsedBetween_le` needs a ceiling to bound one wait, this needs a floor to
+bound how many waits fit in a window.
 
 CC-1's capacity figure needs two factors — how much one observation carries and
 how often one can be made — and `schedulingObservation_changes_on_domain_tick`
@@ -1196,13 +1235,42 @@ acquisition is identified by its own enqueue step, distinct acquisitions have
 distinct enqueue steps, and an execution of `n` operations has `n + 1` steps.
 
 So the run capacity below is a bound *per execution*, not merely per
-observation, which is what makes it comparable with CC-1's per-tick figure. -/
+observation — but "per execution" is a count of lock operations, and turning it
+into a rate needs the theorem below. -/
 theorem lockContentionChannel_observation_rate_bounded
     (e : SeLe4n.Kernel.Concurrency.RwLockExecution) (c : CoreId) (enqueueSteps : List Nat)
     (hNodup : enqueueSteps.Nodup) (hRange : ∀ k ∈ enqueueSteps, k ≤ e.ops.length) :
     (lockContentionTrace e c enqueueSteps).length ≤ e.ops.length + 1 := by
   simp only [lockContentionTrace, List.length_map]
   exact e.distinct_steps_length_le enqueueSteps hNodup hRange
+
+/-- SM8.D.3 (**the rate CC-1 comparability actually needs**): observations per
+unit of *elapsed time*, not per lock operation.
+
+`lockContentionChannel_observation_rate_bounded` says a core cannot observe more
+often than the lock is operated on, which is a bound in the wrong currency for a
+bandwidth figure — many lock operations may fall between two timer ticks, so it
+does not limit how much a channel carries per second.
+
+This does: given a floor `tMin` on how long any inter-operation interval takes,
+`n` observations inside a window `[a, b)` require at least `n * tMin` of elapsed
+time in that window.  Read as a rate, at most one observation per `tMin`.
+
+The floor is a hypothesis, exactly as the ceiling is in
+`lockContention_wallClock_bounded`, and for the same reason: the SM2.C execution
+model has no notion of duration.  Both halves of CC-5's bandwidth figure —
+how much one observation carries, and how often one can be made — are therefore
+conditional on a cost model, and the alphabet result is the only unconditional
+half. -/
+theorem lockContentionChannel_rate_per_elapsed_time
+    (e : SeLe4n.Kernel.Concurrency.RwLockExecution) (cost : Nat → Nat) (tMin : Nat)
+    (hCost : ∀ k, tMin ≤ cost k) (steps : List Nat)
+    (hNodup : steps.Nodup) (hRange : ∀ k ∈ steps, k ≤ e.ops.length) :
+    steps.length * tMin ≤ elapsedBetween cost 0 (e.ops.length + 1) := by
+  have hLen := e.distinct_steps_length_le steps hNodup hRange
+  calc steps.length * tMin ≤ (e.ops.length + 1) * tMin := Nat.mul_le_mul_right tMin hLen
+    _ ≤ elapsedBetween cost 0 (e.ops.length + 1) := by
+        simpa using elapsedBetween_ge cost tMin hCost 0 (e.ops.length + 1)
 
 /-- SM8.D.3 (**the CC-5 capacity bound**): over a run of `n` contended
 acquisitions the core's whole trace is one element of
@@ -1459,7 +1527,30 @@ Stated over the lock-erased content, which is what makes the whole section
 work: the objects an untrusted core may not modify come out of the step with
 their content intact, lock words excepted.  §1 proves those lock words reach no
 observer; `lockWrite_carries_no_subject_data` below proves the writing subject
-does not choose them. -/
+does not choose them.
+
+**The erasure is a modelling decision, and it is exactly the scope of the
+claim.**  An untrusted subject acquiring a lock embedded in a trusted object
+*does* modify that object — `KernelObject.updateLock_not_identity` says a lock
+write is real, and
+`lockAcquisition_modifies_trusted_object_and_is_not_counted` exhibits the case
+this predicate declines to count.  What is claimed is therefore integrity
+**modulo lock words**, not standard BIBA no-write-up over raw object equality.
+
+Two reasons that is the right predicate here rather than a weakening.  First,
+lock acquisition is *kernel-mediated*: the subject names an operation, the
+kernel chooses the lock set (`lockSetForSyscall`) and performs the writes, and
+the subject supplies no part of the written value — which is what
+`lockWrite_carries_no_subject_data` states.  Permission-checking it would make
+an untrusted thread unable to send to a trusted endpoint at all, since the
+rendezvous necessarily touches that endpoint's lock.  Second, what the
+uncounted write can affect is *availability and ordering* — the trusted object's
+holder and waiter state — and availability is outside the Biba model, which
+governs the integrity of data rather than of scheduling.  The contention that
+mutation causes is registered separately, and bounded, as CC-5.
+
+What is **not** claimed: that lock acquisition cannot be used to delay a trusted
+subject.  It can, and that is CC-5's subject. -/
 def noUnpermittedWrite (permitted : SeLe4n.ObjId → Bool) (s s' : SystemState) : Prop :=
   ∀ oid : SeLe4n.ObjId, permitted oid = false →
     (s'.objects[oid]?).map KernelObject.eraseLock
@@ -1503,6 +1594,25 @@ theorem lockWrite_carries_no_subject_data (o₁ o₂ : KernelObject) (op : RwLoc
 -- ----------------------------------------------------------------------------
 -- SM8.D.4 — the bracket, under an arbitrary write rule and then at both
 -- ----------------------------------------------------------------------------
+
+
+/-- SM8.D.4 (**the scope of `noUnpermittedWrite`, exhibited**): an untrusted
+subject's acquire really does modify a trusted object, and the predicate does not
+count it.
+
+Stated rather than left to a reader of the definition, because the gap between
+"no forbidden write" and "no forbidden write *to lock-erased content*" is exactly
+where a reader could take the Biba results to say more than they do.  The
+modification is real (the lock word changes); it is uncounted by construction;
+and the justification is the modelling decision recorded at `noUnpermittedWrite`
+— kernel mediation, with the availability consequence carried by CC-5 rather
+than by the integrity predicate. -/
+theorem lockAcquisition_modifies_trusted_object_and_is_not_counted
+    (obj : KernelObject) (c : CoreId)
+    (hFree : KernelObject.objectLockOf obj = RwLockState.unheld) :
+    obj.updateLock (.tryAcquireWrite c) ≠ obj ∧
+      (obj.updateLock (.tryAcquireWrite c)).eraseLock = obj.eraseLock :=
+  ⟨obj.updateLock_not_identity hFree c, obj.eraseLock_updateLock _⟩
 
 /-- SM8.D.4 (**the generic result**): a 2PL bracket performs no write the rule
 forbids, whenever its guarded action performs none — for *any* write rule, and
@@ -2525,12 +2635,39 @@ owns composing them. -/
 def declaredFootprintUncoveredDomains : List (UncoveredLockDomain × String) :=
   [(.schedulerDomain, "SM3.C.9"), (.dynamicPipChain, "SM3.C.11")]
 
+/-- SM8.D.5: the exhaustive list of uncovered domains, in the shape the claim
+inventory uses — so completeness can be quantified over the *constructors*
+rather than compared against a literal. -/
+def UncoveredLockDomain.all : List UncoveredLockDomain :=
+  [.schedulerDomain, .dynamicPipChain]
+
+/-- SM8.D.5: every constructor is listed.  This is the clause a literal
+comparison cannot supply: adding a third domain makes `cases d` non-exhaustive
+here, so the registration has to be amended in the same cut. -/
+theorem UncoveredLockDomain.mem_all (d : UncoveredLockDomain) : d ∈ UncoveredLockDomain.all := by
+  cases d <;> decide
+
+theorem UncoveredLockDomain.all_nodup : UncoveredLockDomain.all.Nodup := by decide
+
 /-- SM8.D.5: both uncovered domains are registered, each against an owner — the
-completeness check on the list above. -/
+completeness check on the list above.
+
+**Quantified over the type, not against a literal.**  An earlier cut compared
+`declaredFootprintUncoveredDomains.map Prod.fst` to a two-element literal, which
+a third constructor would leave elaborating unchanged: the debt inventory could
+then omit a newly discovered domain while every migration check kept passing,
+and the object-only bracket would be treated as covering more of the syscall
+than it does.  The first conjunct now says every *constructor* is registered, via
+`UncoveredLockDomain.mem_all`, whose proof is a `cases` that stops being
+exhaustive the moment a domain is added. -/
 theorem declaredFootprintUncoveredDomains_complete :
-    (declaredFootprintUncoveredDomains.map Prod.fst) = [.schedulerDomain, .dynamicPipChain] ∧
+    (∀ d : UncoveredLockDomain, d ∈ declaredFootprintUncoveredDomains.map Prod.fst) ∧
+      (declaredFootprintUncoveredDomains.map Prod.fst).Nodup ∧
       declaredFootprintUncoveredDomains.all (fun d => !d.2.isEmpty) := by
-  constructor <;> rfl
+  refine ⟨fun d => ?_, ?_, ?_⟩
+  · cases d <;> decide
+  · decide
+  · rfl
 
 /-- SM8.D.5: the 2PL-bracketed live entry **over the declared footprint** —
 `declaredLockSetForEntry`'s output, bracketed, or `none` where no footprint is

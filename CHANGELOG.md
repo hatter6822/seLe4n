@@ -1,3 +1,63 @@
+## v0.33.19 — WS-SM SM8.D: the ninth review round, and the rate that was a tautology
+
+Three P2 findings. Two are the round-7 unit error recurring in dimensions I did
+not check when I fixed it; the third is a scope question about what the Biba
+result claims. Theorems, tests and prose only; trace byte-identical.
+
+### The pacing bound was in the wrong currency, like the delay bound before it
+
+`lockContentionChannel_observation_rate_bounded` concludes that a core cannot
+observe more often than the execution has steps — which is close to a tautology
+(distinct acquisitions have distinct enqueue steps) and, more importantly, is a
+bound per **lock operation**. The docstring then used it to claim CC-5's capacity
+is "comparable with CC-1's per-tick figure". CC-1's pacing is per timer tick;
+many lock operations may fall between two ticks, so the comparison does not hold.
+
+This is round 7's finding in the rate dimension: I corrected the *delay* bound's
+unit and left the *rate* bound's claim standing. Both halves of a bandwidth
+figure — how much one observation carries, how often one can be made — are
+conditional on a cost model, and only the alphabet is unconditional.
+
+`elapsedBetween_ge` is the dual of round 7's `elapsedBetween_le`: given a
+**floor** `tMin` on any inter-operation interval, `n` steps take at least
+`n * tMin`. `lockContentionChannel_rate_per_elapsed_time` composes it with the
+execution's own pigeonhole (`distinct_steps_length_le`) to give the statement the
+comparability claim needed: `n` observations require at least `n * tMin` of
+elapsed time, i.e. at most one observation per `tMin`.
+
+### The uncovered-domain inventory compared against a literal
+
+`declaredFootprintUncoveredDomains_complete` checked the registered list against
+a two-element literal, so a third `UncoveredLockDomain` constructor would have
+left it elaborating unchanged — the debt inventory could omit a newly discovered
+lock domain while every migration check kept passing. It now quantifies over the
+type (`UncoveredLockDomain.all` / `mem_all` / `all_nodup`, the shape the claim
+inventory already used), so the proof stops being exhaustive the moment a domain
+is added.
+
+### The Biba result is integrity modulo lock words, and now says so
+
+`noUnpermittedWrite` erases the lock before comparing states, so an untrusted
+subject acquiring a lock embedded in a **trusted** object is not counted as a
+forbidden write — even though the object really is modified. The predicate was
+right; describing its consequence as standard BIBA no-write-up was not.
+
+The scope is now stated, with the uncounted case exhibited rather than left to a
+reader of the definition
+(`lockAcquisition_modifies_trusted_object_and_is_not_counted`: the modification
+is real, and it is invisible to the predicate by construction). The modelling
+decision behind the erasure is recorded: lock acquisition is kernel-mediated —
+the subject names an operation, the kernel chooses the lock set and supplies
+every written bit — and permission-checking it would make an untrusted thread
+unable to send to a trusted endpoint at all, since the rendezvous necessarily
+touches that endpoint's lock. What the uncounted write can affect is availability
+and ordering, which is outside the Biba model and is registered, and bounded, as
+CC-5.
+
+`SmpInformationFlowSuite` stays at **533** assertions.
+
+Refs: docs/planning/SMP_INFORMATION_FLOW_PLAN.md section 5 SM8.D
+
 ## v0.33.18 — WS-SM SM8.D: the eighth review round, and what "released" does not mean
 
 Three P2 findings, all valid. One is a limit of the SM2.C lock API that the

@@ -2565,6 +2565,16 @@ run_negative_check "INVARIANT" rg -n 'observed = none := by' SeLe4n/Kernel/Infor
 run_check "INVARIANT" rg -n '^def elapsedBetween' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^theorem elapsedBetween_le' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^theorem lockContention_wallClock_bounded' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# PR #864 review round 9.  The rate bound must be in elapsed time, not lock
+# operations; the domain inventory must quantify over constructors; and the
+# Biba predicate's lock erasure is a stated scope, not an unnoticed gap.
+run_check "INVARIANT" rg -n '^theorem elapsedBetween_ge' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockContentionChannel_rate_per_elapsed_time' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem UncoveredLockDomain.mem_all' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockAcquisition_modifies_trusted_object_and_is_not_counted' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# NEGATIVE: the completeness theorem must not go back to comparing the domain
+# list against a literal, which a third constructor would leave elaborating.
+run_negative_check "INVARIANT" rg -n 'Prod.fst\) = \[.schedulerDomain, .dynamicPipChain\]' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: an observed state that does not hold the footprint is refused' tests/SmpInformationFlowSuite.lean
 # The multi-reader witness carries REACHABILITY, not merely well-formedness: a
 # wf-only existential could be satisfied by a lock word no execution produces,

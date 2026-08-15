@@ -1222,6 +1222,8 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @rwLock_release_by_nonholder_preserves_waiters
 #check @elapsedBetween
 #check @elapsedBetween_le
+#check @elapsedBetween_ge
+#check @lockContentionChannel_rate_per_elapsed_time
 #check @lockContention_wallClock_bounded
 #check @continueFromAcquired
 #check @withLockSet_eq_continueFromAcquired
@@ -1234,6 +1236,8 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check UncoveredLockDomain
 #check @declaredFootprintUncoveredDomains
 #check @declaredFootprintUncoveredDomains_complete
+#check @UncoveredLockDomain.mem_all
+#check @lockAcquisition_modifies_trusted_object_and_is_not_counted
 #check @victimBlockedOnEndpoint
 #check @suspendFootprint_splice_neighbors_under_endpoint_lock
 #check @lockContentionChannel_run_capacity
