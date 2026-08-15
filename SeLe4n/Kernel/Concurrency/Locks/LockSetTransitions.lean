@@ -766,7 +766,35 @@ an optional **reply write lock**.  The caller pre-resolves
 `consumedReplyId` from the target TCB (`.blockedOnReply` ∧
 `replyObject = some rid` → `some rid`); the parameter defaults to
 `none` so pre-SM6.E call sites (no reply-blocked target) are
-unchanged. -/
+unchanged.
+
+**Size, and why this set cannot grow (PR #864 review round 5).**  Three
+base members plus five optional ones is 8 at full resolution, and
+`maxLockSetSize` is 8 — this set sits at the cap exactly.  That constant
+is the WCRT headline (`maxLockSetSize · (numCores − 1) · tCs`, the figure
+the 1 ms tick fit rests on), so a new member does not cost a slot, it
+breaks `lockSetTransitions_within_bound` and re-opens SM3.D's timing
+numbers.
+
+The question comes up because suspending a victim that sits *inside* an
+endpoint queue splices it out and patches its **neighbours'** queue links,
+and this set carries no `tcbLock` for either neighbour — whereas the
+sub-operation footprint `lockSet_cancelIpcBlockingOnCore` names both
+(via `cancelSpliceNeighbors?`).  The two are reconciled by the
+queue-owning-object discipline, not by a missing member: an endpoint owns
+its queue, so its **write** lock — which this set does declare whenever
+the victim is endpoint-blocked — authorizes the link writes of every TCB
+in that queue.  The sub-operation form names the neighbours because it is
+the finer-grained authority the runtime bracket acquires; this one sits
+under the coarser umbrella.  Both are sound at their own granularity.
+
+That is a checked fact rather than a convention:
+`suspendFootprint_splice_neighbors_under_endpoint_lock` (SM8.D) proves it
+over the *resolved* footprint and names the neighbours through the same
+`cancelSpliceNeighbors?`, extending the `lockSet_tcbSuspend_*_write_mem`
+family past the six members that stopped exactly where the umbrella
+began.  See `IPC/CrossCore/Cancellation.lean` §"Neighbour-lock convention
+bridge". -/
 def lockSet_tcbSuspend (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (targetTcbTid : ThreadId)
     (blockedEndpointObjId : Option ObjId)
