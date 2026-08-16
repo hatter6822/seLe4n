@@ -1,3 +1,59 @@
+## v0.33.36 — the four registered SM9 findings, fixed rather than deferred
+
+v0.33.34 registered four review findings in an SM9 §9a rather than fixing them,
+on the reasoning that SM9 is blocked on WS-RA.  Per maintainer direction an
+unfixed review comment is investigated and fixed, so all four are closed here and
+§9a is removed.
+
+**Totality over the wrong domain proves nothing about the right one.**  The
+content-flow gate had been moved from a list, to `mem_all` over a hand-maintained
+type, to a **total function** `KernelOperation → ContentFlowClass` — and was
+still not exhaustive of what it polices: `KernelOperation` has **no
+`ipcUnwrapCaps` constructor** while SM9.D.11 names that live transition as a
+propagation site, so the function is total and the propagation is missing.  The
+honest diagnosis is that propagation sites are **sub-transitions** reachable from
+live dispatch arms, and no type in the tree enumerates those — `SyscallId` is
+exhaustive of arms, `KernelOperation` of NI steps, neither of the call graph
+beneath them.  So completeness is established by **reach**: a call-graph gate in
+the idiom `check_live_arm_per_core_routing.py` already set for this exact shape,
+Tier 1, with a `--self-test` that plants a known content-moving callee and
+requires the gate to find it.  §3.7 gains the sharper lesson — *name the set the
+gate is about, check the domain is exhaustive of that set, and where no type is,
+use a reach-based gate rather than a totality claim that cannot reach*.
+
+**An event's actor and its flow source are two identities.**  SM8.C's
+`attributionFromRunningSubject` defines an event's source domain as the running
+subject's domain, which is right while one event describes one subject's
+downgrade.  Per-hop events break it: on `high → mid` then `mid → low` both events
+are performed by the same **high** subject, so recording the second's source as
+`mid` under that rule asserts the high subject *is* mid — a false attribution
+written into the trail by the fix meant to make it honest.  The event now carries
+`actorSubject`/`actorDomain` (who performed it) separately from
+`srcDomain`/`dstDomain` (the flow's endpoints), and the rule is restated over the
+actor, becoming true of every event rather than only single-hop ones.  They
+coincide for a single-hop downgrade, which is why the conflation went unnoticed.
+
+**A refused second hop named the wrong thing.**  When caller → notification is
+authorized and notification → receiver is refused, the record carried only the
+original capability operand and a generic reason — so a monitor could not
+identify the bound waiter the attempted downgrade actually targeted, while the
+*success* path is required to audit exactly that destination.  The record now
+carries the failed hop and, for the second, the resolved receiver.
+
+**The ledger's reads need a version, for the same reason the trail's do.**  A
+refusal record takes several `.auditRead` calls — more under the chunk protocol —
+and any denied syscall in between can overwrite the selected ring slot.  The
+trail's `status` token does not help: it moves on trail *drains*, not on ledger
+writes, so a monitor could assemble a hybrid record from two attempts and never
+detect it.  `RefusalLedger` gains a `version` advanced by every `recordRefusal`,
+bracketing reads exactly as the drain generation brackets trail reads.
+
+Counts: theorems ~76 → ~82; sub-task count unchanged at 61.  All 47 review
+threads on PR #865 are now addressed.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §3.2, §3.5, §3.6, §3.7
+Refs: #865
+
 ## v0.33.35 — WS-RA start condition recorded
 
 The syscall-return-ABI plan records when it begins: once PR #865 (SM8.E closure

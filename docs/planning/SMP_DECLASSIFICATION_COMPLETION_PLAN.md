@@ -100,6 +100,7 @@ every field a refusal record needs is already an argument there:
 |---|---|
 | executing core | `executingCore` parameter |
 | subject thread | `st.scheduler.currentOnCore executingCore` (already matched on) |
+| **failed hop** | which authorization was refused — `callerToNotification` or `notificationToReceiver` (§3.5) — plus the **resolved receiver** when it is the second.  Without it a refusal reduces to the original capability operand and a generic reason, so a monitor cannot identify the bound waiter an attempted downgrade actually targeted — while the *success* path is required to audit exactly that destination.  `refusalRecord_names_failed_hop` |
 | **source domain** | `ctx.threadLabelOf` of that subject, **resolved at the seam** — `LabelingContext` is an *argument* to `syscallDispatchFromAbi`, not persistent state, so a later reader cannot reconstruct the domain from the subject id (the context may differ, or the id may have been reused).  The authorized-event trail already stores its domains for the same reason |
 | syscall | `syscallId : UInt32`, via the pure total `SyscallId.ofNat?` |
 | refusal reason | `ke : KernelError` |
@@ -174,6 +175,20 @@ type's, so `recordRefusal` *cannot* overflow it and no theorem is needed to say
 so — the structural-enforcement argument now covers the whole record rather than
 one field of it.  Cost: saturating increment is `min (n + 1) maxRefusalCount`
 lifted into `Fin`, one helper with two lemmas (saturates, monotone).
+
+**Reads of the ledger need a version, for the same reason the trail's do.**  A
+refusal record takes several `.auditRead` calls — more with the §3.3 chunk
+protocol — and any denied syscall in between can overwrite the selected ring
+slot.  The trail's `status` token does not help: it moves on trail *drains*, not
+on ledger writes, so a monitor can assemble a **hybrid record** whose fields came
+from two different attempts and never detect it.  So `RefusalLedger` carries a
+`version` advanced by **every** `recordRefusal`, and a read is bracketed by it
+exactly as a trail read is bracketed by the drain generation
+(`refusalLedger_version_advances_on_record`,
+`refusalRead_bracketed_detects_overwrite`).  This is §3.3's atomicity argument
+applied to the second readable structure — the §3.7 discipline says a readable
+structure owes both obligations, and consistency-under-concurrent-write is part
+of what a reader is owed.
 
 **The ledger is readable only under full dominance** (§3.7 obligation (b)).  A
 single global ring evicts: once a low-visible refusal occupies a slot, enough
@@ -575,6 +590,28 @@ and the causal detector inherits the misrepresentation.  So the transition emits
 `declassifiedSignal_audits_each_hop` and `declassifiedSignal_no_invented_edge`
 (no recorded event names a domain pair no decision returned).
 
+**And the second hop's `srcDomain` is not its actor's domain.**  SM8.C's
+`attributionFromRunningSubject` rule defines an event's source domain as the
+*running subject's* domain, which is exactly right while one event describes one
+subject's downgrade.  Per-hop events break that: on `high → mid` then
+`mid → low` both events are performed by the same **high** executing subject, so
+recording the second event's source as `mid` under that rule would assert the
+high subject *is* mid — a false attribution written into the audit trail by the
+fix meant to make it honest.
+
+So the event separates the two identities it had conflated:
+
+- **`actorSubject` / `actorDomain`** — who performed the downgrade, read off the
+  running subject.  `attributionFromRunningSubject` is restated over *this*, and
+  becomes true of every event rather than only of single-hop ones.
+- **`srcDomain` / `dstDomain`** — the endpoints of the *flow* this hop
+  authorized, which for hop 2 are the notification's and the receiver's.
+
+For a single-hop downgrade the two coincide (`actorDomain = srcDomain`), which is
+why the conflation went unnoticed; `secondHop_actor_differs_from_flowSource` is
+the witness that they genuinely separate, and
+`attributionFromRunningSubject_over_actor` the restated rule.
+
 **They cannot share one tag snapshot, though** — and a first draft said they
 should, which is self-defeating.  Hop 2 is causally downstream of hop 1 *within
 the same transition*, but a snapshot taken before the transition cannot contain
@@ -632,20 +669,34 @@ detector that is *sound* rather than one that looks causal and is not.
 - It lives in a **side table** `SystemState.declassificationTaint`, not a field
   on all seven object kinds: the audit trail's own precedent, and it leaves
   object well-formedness and the frozen mirror untouched.
-- Propagation sites are **classified from an independently exhaustive taxonomy**,
-  not enumerated in a fresh one.  This is the soundness keystone — propagation
-  that misses a content-moving transition is a detector that misses real
-  laundering — and a hand-maintained `ContentFlowSite.all` with `mem_all` cannot
-  carry it, for exactly the reason §3.7 gives for `ReadableStructure`: `mem_all`
-  proves every constructor of the new type is listed, while a content-moving
-  transition can simply never acquire a constructor.  (That the same defect
-  appeared in two sibling taxonomies, one of them fixed a commit earlier, is the
-  argument for stating the pattern once rather than per site.)  The classification
-  is therefore a **total function** `KernelOperation → ContentFlowClass`
-  (propagates / frames) over the enumeration SM8.E already made exhaustive
-  (`KernelOperation.all` + `mem_all`), so a new live operation is a missing case
-  at elaboration.  `contentFlowClass_total` and
-  `contentFlowSite_list_gate_insufficient` are the pair.
+- Propagation sites are policed by a gate **whose domain is exhaustive of what it
+  polices** — and getting there took three attempts, each of which is worth
+  recording because the first two look right.
+
+  A hand-maintained `ContentFlowSite.all` with `mem_all` fails for the reason
+  §3.7 gives for `ReadableStructure`: `mem_all` proves the new type's own
+  constructors are listed, while a content-moving transition can simply never
+  acquire one.  Replacing it with a **total function**
+  `KernelOperation → ContentFlowClass` looks like the §3.7 fix applied — but it
+  is not, because `KernelOperation` **has no `ipcUnwrapCaps` constructor**, and
+  SM9.D.11 names that live transition as a propagation site.  The function is
+  total and the propagation is still missing.  *Totality over the wrong domain
+  proves nothing about the right one*, which is the sharper form of the lesson
+  and the one §3.7 now states.
+
+  The honest diagnosis: propagation sites are **sub-transitions** reachable from
+  live dispatch arms, and no type in the tree enumerates those.  `SyscallId` is
+  exhaustive of *arms*, `KernelOperation` of *NI steps*; neither is exhaustive of
+  the call graph beneath them.  So the gate is a **call-graph gate**, in the
+  idiom `scripts/check_live_arm_per_core_routing.py` already established for
+  exactly this shape of obligation: start from the live arms, walk the
+  transitive callees, and fail on any that touches the object store's content
+  channels without a propagation or frame classification.  `ContentFlowClass`
+  stays as the *classification*; what changes is that its completeness is
+  established by reach rather than asserted by totality over a convenient type.
+  Tier 1, like its sibling, since it needs a built environment — and with a
+  `--self-test` that plants a known content-moving callee and requires the gate
+  to find it, because a gate that loses its reach fails silently.
 - Overflow **saturates upward** to "tainted by everything".  For a detector the
   safe direction is over-approximation — more false positives, never a missed
   chain — and `taintSaturate_over_approximates` states that direction rather than
@@ -769,6 +820,17 @@ The third row is load-bearing rather than filler: SM9.D mounts a taint table and
 deliberately exposes no reader for it, so the discipline records *why* it owes
 nothing yet and what a future reader would owe.
 
+**And the sharper form, which cost a third.**  "Use a total function instead of a
+list" is not the lesson.  The content-flow gate was moved from a list, to
+`mem_all` over a hand-maintained type, to a **total function** over
+`KernelOperation` — and was *still* not exhaustive of what it polices, because
+`KernelOperation` has no `ipcUnwrapCaps` constructor while that transition is a
+propagation site.  **Totality over the wrong domain proves nothing about the
+right one.**  So the obligation is: name the set the gate is *about*, check that
+the domain quantified over is exhaustive of that set, and where no type is —
+propagation sites are sub-transitions, and nothing enumerates those — use a
+reach-based gate (§3.6) rather than a totality claim that cannot reach.
+
 **A corollary that cost two rounds to learn.**  Adding a field to an *already
 readable* record is adding a read channel, and inherits both obligations exactly
 as a new structure does.  `predecessorTags` (§3.6) is the case: a field added to
@@ -880,7 +942,7 @@ and its consequences (D.14–D.18).
 | SM9.D.4 | The `FrozenSystemState` test literals (the same six SM9.B.5 touches) | `tests/*Suite.lean` | S |
 | SM9.D.5 | `OffSchedulerAgrees` clause + **all six** builders; boot frames ×4 | `IPC/Invariant/LookupCongruence.lean`, `Platform/Boot.lean` | M |
 | SM9.D.6 | Information flow: `declassificationTaint_write_preserves_projection := rfl`; `onCore_declassificationTaint`; the §3.7 inventory row recording that it is **not readable** and therefore owes no equivalence clause yet | `InformationFlow/Invariant/Operations.lean`, `ObservableStatePerCore.lean` | M |
-| SM9.D.7 | **The content-flow classification** — a *total function* `KernelOperation → ContentFlowClass` over SM8.E's exhaustive `KernelOperation.all`, not a fresh hand-maintained taxonomy: `mem_all` on a new type proves its constructors are listed while a content-moving transition can simply never acquire one (§3.6, the same defect §3.7 fixes for `ReadableStructure`).  `contentFlowClass_total` + `contentFlowSite_list_gate_insufficient`.  The soundness keystone: a missed site is a detector that misses real laundering | `InformationFlow/Taint.lean` | XL |
+| SM9.D.7 | **The content-flow gate** (§3.6) — `ContentFlowClass` as the classification, with completeness established by a **call-graph gate** (`scripts/check_content_flow_coverage.py`, Tier 1, `--self-test` planting a known content-moving callee) rather than by totality over a type that is not exhaustive of the propagation sites: `KernelOperation` has no `ipcUnwrapCaps` constructor while SM9.D.11 names that transition as one, so the total function would be total and the propagation still missing.  The soundness keystone: a missed site is a detector that misses real laundering | `InformationFlow/Taint.lean`, `scripts/check_content_flow_coverage.py` | XL |
 | SM9.D.8 | Propagation at IPC send/receive (message registers → receiver TCB), single-core and `…OnCore` | `IPC/Operations/Endpoint.lean`, `IPC/CrossCore/EndpointSend.lean` | L |
 | SM9.D.9 | Propagation at call / reply / replyRecv, including the cross-core dispatch wrappers | `IPC/CrossCore/{EndpointCall,EndpointReply}*.lean` | L |
 | SM9.D.10 | Propagation at notification signal — **where SM9.C's downgrade originates a tag** — plus the bound-TCB delivery path **and `notificationWaitOnCore`'s pending-badge arm**.  The last is not optional: in the signal-before-wait ordering the tag sits on the notification and the *wait* is what moves the badge to the waiter, so omitting it means the waiter's later downgrade carries no hop 1 and the detector misses §3.6's own downgrade → ordinary delivery → downgrade scenario in one of its two orderings | `IPC/CrossCore/NotificationSignal.lean` | XL |
@@ -1087,6 +1149,15 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
       by its own detector.
 - [ ] Taint propagates on **both** notification orderings, so the causal
       scenario holds whether the signal or the wait comes first.
+- [ ] Every content-moving sub-transition reachable from a live arm is
+      classified, established by **reach** (the call-graph gate) and not by
+      totality over a type that does not enumerate them.
+- [ ] An event's **actor** and its **flow source** are separate fields, so a
+      second-hop record never asserts that a high subject is mid.
+- [ ] A refused second hop names the **resolved receiver**, not the original
+      capability operand.
+- [ ] A refusal read that races a `recordRefusal` is **detected**, not silently
+      assembled from two attempts.
 - [ ] `.auditRead` and `.auditDrain` return their computed word to the caller —
       verified end to end through `syscallDispatchFromAbi`, not just at the
       transition — which requires WS-RA to have landed.
@@ -1108,29 +1179,6 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
       green including every new module.
 - [ ] Tier 0..3 green; trace fixture diffs explained.
 
-## 9a. Open review items, registered rather than closed
-
-Four findings arrived on the review round after SM9's last remediation cut.  All
-four were verified and are valid; they are **registered here rather than fixed**,
-because SM9 is now blocked on WS-RA (§2) and will be re-opened for
-implementation after it.  Fixing them into a plan that cannot start yet would
-churn a document nobody is executing.
-
-| # | Finding | Where it lands |
-|---|---|---|
-| 1 | **Attribution vs. flow source on the second hop.**  Both per-hop events (§3.5) share the executing subject, but the second records `mid → low` — conflicting with `attributionFromRunningSubject`, which defines an event's source domain as the *running subject's* domain.  The per-hop revision makes the mismatch unavoidable | Separate **actor** and **flow-source** identities on `DeclassificationEvent`, or revise the attribution rule.  SM9.D.13a |
-| 2 | **A denied receiver hop is attributed to the wrong operand.**  When the caller → notification hop is authorized and notification → receiver is refused, the refusal record carries only the raw notification `CPtr` and a generic reason, so a monitor cannot identify the bound waiter the downgrade actually targeted — while the *success* path is required to audit exactly that destination | Carry the failed hop and resolved receiver in the refusal record.  SM9.B.1 |
-| 3 | **Refusal-ring reads are not versioned.**  A record needs several `.auditRead` calls including chunked fields, and any intervening denied syscall can overwrite the selected slot; the trail's status token moves only on trail *drains*, so a monitor can assemble a hybrid record from two attempts undetected | A ledger version that changes on every `recordRefusal`, bracketing reads — the `status`-token argument of §3.3 applied to the ledger.  SM9.B.2 |
-| 4 | **`KernelOperation` is not exhaustive of the propagation sites.**  §3.6's fix classified content flow by a total `KernelOperation → ContentFlowClass`, but `KernelOperation` has **no `ipcUnwrapCaps` constructor** — the very transition SM9.D.11 names as a propagation site.  So the function can be total while cap-transfer propagation is omitted, which is the hole the totality was meant to close | Extend the taxonomy to cover the live transition surface, or derive propagation structurally from the dispatch.  SM9.D.7 |
-
-Finding 4 is the sharpest and worth reading as a pattern: three rounds of
-work moved this gate from a list, to a `mem_all` over a hand-maintained type, to
-a total function over `KernelOperation` — and it is *still* not exhaustive of
-what it polices, because totality over the wrong domain proves nothing about the
-right one.  The lesson is not "use a total function" but **"check that the domain
-is exhaustive of the thing the gate is about"**, which SM9.D.7 must establish
-before it claims the keystone.
-
 ## 10. Cross-references
 
 - **Previous**: [`SMP_INFORMATION_FLOW_PLAN.md`](SMP_INFORMATION_FLOW_PLAN.md) (SM8)
@@ -1141,7 +1189,7 @@ before it claims the keystone.
 
 ## 11. Theorem catalogue for SM9
 
-~76 substantive theorems.  Headline set:
+~82 substantive theorems.  Headline set:
 
 - `auditLogVisibleTo_sublist` + the clearance-determines-view theorem (SM9.A.1)
 - `auditTimestampsFrom_epoch_preserved` + `auditDrain_monotone_epoch` — the
@@ -1199,6 +1247,14 @@ before it claims the keystone.
   (SM9.D.13a, SM9.D.14)
 - `predecessorTags_dominating_only` + `partialReader_gets_opaque_causality` — a
   field added to a readable record is a read channel (SM9.D.13a, §3.7)
+- `attributionFromRunningSubject_over_actor` +
+  `secondHop_actor_differs_from_flowSource` — who performed a downgrade and
+  where the flow came from are two identities (§3.5)
+- `refusalRecord_names_failed_hop` — a denied second hop names the resolved
+  receiver, not the original operand (SM9.B.1)
+- `refusalLedger_version_advances_on_record` +
+  `refusalRead_bracketed_detects_overwrite` — the ledger's reads need a version
+  for the same reason the trail's do (SM9.B.2, §3.2)
 - `declassifiedSignal_gates_resolved_receiver` +
   `declassifiedSignal_audits_actual_destination` + `footprint_does_not_authorize`
   — naming a sink in the footprint does not permit it (SM9.C.1)
