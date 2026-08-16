@@ -1872,6 +1872,15 @@ fn return_shape_matches_wrapper_signatures() {
         sele4n_sys::service::service_query;
     let _receive: fn(CPtr) -> KernelResult<(Badge, SyscallResponse)> =
         sele4n_sys::ipc::endpoint_receive;
+    // PR #866 round-3 review: the shape table classifies `.call` as
+    // `.message`, so `endpoint_call` must carry the badge tuple like its
+    // siblings — this pin was missing, and the contract could not reach
+    // the one member someone forgot to list.  The receive-with-reply
+    // variant joins for the same reason.
+    let _call: fn(CPtr, &sele4n_sys::ipc::IpcMessage) -> KernelResult<(Badge, SyscallResponse)> =
+        sele4n_sys::ipc::endpoint_call;
+    let _receive_with_reply: fn(CPtr, CPtr) -> KernelResult<(Badge, SyscallResponse)> =
+        sele4n_sys::ipc::endpoint_receive_with_reply;
     let _reply_recv: fn(
         CPtr,
         CPtr,
@@ -1910,41 +1919,157 @@ fn return_frame_roundtrip_per_shape() {
     assert_eq!(msg.msg_regs[..3], [100, 200, 300]);
 }
 
-/// WS-RA RA.D.1: every `sele4n-sys` wrapper's `msg_info.length` clears the
-/// HAL's `min_inline_args` gate — the pin that keeps the prefilter table
-/// and the wrappers from drifting apart again (four wrappers were
-/// unreachable on hardware when the table demanded more registers than
-/// the wrapper sent: `cspace_mint` 4-vs-5, `cspace_copy` / `cspace_move`
-/// 2-vs-4, `lifecycle_retype` 3-vs-4).  The HAL table itself is not
-/// linkable from this test crate; the authoritative per-variant minimums
-/// are mirrored here and pinned against the wrappers' encoded lengths.
+/// WS-RA RA.D.1, rebuilt by the PR #866 round-3 review: every
+/// `sele4n-sys` wrapper's **real** encoded `msg_info.length` clears the
+/// **real** HAL `min_inline_args` gate.
+///
+/// The prior table hand-duplicated both columns and drifted twice over:
+/// it recorded length 1 for `TcbSuspend`/`TcbResume` whose wrappers send
+/// 0, and omitted `SchedContextBind`/`SchedContextUnbind` entirely — so
+/// it stayed green while four real wrappers were rejected at the
+/// prefilter before ever reaching the kernel (the exact
+/// unreachable-wrapper class RA.D.1 had already fixed five instances
+/// of).  Now neither column is a literal: each REAL wrapper is driven
+/// through the host-capture mock trap and its exact encoded registers
+/// read back, and the minimum is the REAL
+/// `sele4n_hal::svc_dispatch::SyscallId::min_inline_args()` via the
+/// test-only `sele4n-hal` dev-dependency.  A wrapper or table change
+/// that re-opens the gap fails here the day it lands.
+///
+/// Dynamic-length IPC wrappers (`endpoint_send` / `endpoint_call` /
+/// `endpoint_reply` / `endpoint_reply_recv`) are driven at their
+/// MINIMUM payload (an empty message), which is the binding case for a
+/// lower-bound gate.
+///
+/// Coverage is EVERY canonical syscall with a `sele4n-sys` wrapper —
+/// which, as of the PR #866 round-3 cut, is all of them
+/// (`tcb_bind_notification` / `tcb_unbind_notification` /
+/// `mint_reply_cap` were implemented for exactly this sweep; they had
+/// been callable only via hand-encoded requests).
 #[test]
 fn wrapper_lengths_clear_prefilter_minimums() {
-    // (syscall, wrapper msg_info length, HAL min_inline_args mirror)
-    let table: &[(SyscallId, u64, u64)] = &[
-        (SyscallId::CSpaceMint, 4, 4),
-        (SyscallId::CSpaceCopy, 2, 2),
-        (SyscallId::CSpaceMove, 2, 2),
-        (SyscallId::CSpaceDelete, 1, 1),
-        (SyscallId::LifecycleRetype, 3, 3),
-        (SyscallId::VSpaceMap, 4, 4),
-        (SyscallId::VSpaceUnmap, 2, 2),
-        (SyscallId::VSpaceUnifyInstruction, 2, 2),
-        (SyscallId::ServiceRegister, 5, 4),
-        (SyscallId::ServiceRevoke, 1, 1),
-        (SyscallId::ServiceQuery, 0, 0),
-        (SyscallId::NotificationSignal, 1, 1),
-        (SyscallId::TcbSetPriority, 1, 1),
-        (SyscallId::TcbSetMCPriority, 1, 1),
-        (SyscallId::TcbSetIPCBuffer, 1, 1),
-        (SyscallId::TcbSetAffinity, 1, 1),
-        (SyscallId::TcbSuspend, 1, 1),
-        (SyscallId::TcbResume, 1, 1),
-    ];
-    for &(sid, wrapper_len, min_args) in table {
+    use sele4n_abi::trap::host_capture;
+
+    // Sequential call-then-read pairs on one thread; the capture slots
+    // are process-global, and no other test in this binary invokes a
+    // wrapper (the xval tests encode requests without invoking).
+    fn assert_clears(name: &str, sid: SyscallId) {
+        let regs = host_capture::last_request();
+        assert_eq!(
+            regs[6],
+            sid.to_u64(),
+            "{name}: captured x7 must be the wrapper's own syscall id"
+        );
+        let mi = MessageInfo::decode(regs[1])
+            .unwrap_or_else(|_| panic!("{name}: wrapper x1 must decode as MessageInfo"));
+        let hal_sid = sele4n_hal::svc_dispatch::SyscallId::from_u32(sid.to_u64() as u32)
+            .unwrap_or_else(|| panic!("{name}: HAL mirror must cover id {}", sid.to_u64()));
+        let min = hal_sid.min_inline_args() as u64;
         assert!(
-            wrapper_len >= min_args,
-            "{sid:?}: wrapper sends length {wrapper_len} below prefilter minimum {min_args}"
+            (mi.length() as u64) >= min,
+            "{name}: the REAL wrapper sends length {} below the REAL prefilter \
+             minimum {min} — the wrapper is unreachable on hardware",
+            mi.length()
         );
     }
+
+    let cap = CPtr::from(1u64);
+    let empty = sele4n_sys::ipc::IpcMessage::empty(0);
+    let mut buf = IpcBuffer::default();
+
+    let _ = sele4n_sys::ipc::endpoint_send(cap, &empty);
+    assert_clears("endpoint_send", SyscallId::Send);
+    let _ = sele4n_sys::ipc::endpoint_receive(cap);
+    assert_clears("endpoint_receive", SyscallId::Receive);
+    let _ = sele4n_sys::ipc::endpoint_receive_with_reply(cap, cap);
+    assert_clears("endpoint_receive_with_reply", SyscallId::Receive);
+    let _ = sele4n_sys::ipc::endpoint_call(cap, &empty);
+    assert_clears("endpoint_call", SyscallId::Call);
+    let _ = sele4n_sys::ipc::endpoint_reply(cap, &empty);
+    assert_clears("endpoint_reply", SyscallId::Reply);
+    let _ = sele4n_sys::ipc::endpoint_reply_recv(cap, cap, &empty);
+    assert_clears("endpoint_reply_recv", SyscallId::ReplyRecv);
+    let _ = sele4n_sys::ipc::notification_signal(cap, Badge::from(1u64));
+    assert_clears("notification_signal", SyscallId::NotificationSignal);
+    let _ = sele4n_sys::ipc::notification_wait(cap);
+    assert_clears("notification_wait", SyscallId::NotificationWait);
+
+    let _ = sele4n_sys::cspace::cspace_mint(
+        cap,
+        Slot::from(0u64),
+        Slot::from(1u64),
+        AccessRights::ALL,
+        Badge::from(1u64),
+    );
+    assert_clears("cspace_mint", SyscallId::CSpaceMint);
+    let _ = sele4n_sys::cspace::cspace_copy(cap, Slot::from(0u64), Slot::from(1u64));
+    assert_clears("cspace_copy", SyscallId::CSpaceCopy);
+    let _ = sele4n_sys::cspace::cspace_move(cap, Slot::from(0u64), Slot::from(1u64));
+    assert_clears("cspace_move", SyscallId::CSpaceMove);
+    let _ = sele4n_sys::cspace::cspace_delete(cap, Slot::from(0u64));
+    assert_clears("cspace_delete", SyscallId::CSpaceDelete);
+
+    let _ = sele4n_sys::lifecycle::retype_tcb(cap, ObjId::from(1u64));
+    assert_clears("lifecycle_retype (retype_tcb)", SyscallId::LifecycleRetype);
+
+    let _ = sele4n_sys::vspace::vspace_map_read_only(
+        cap,
+        Asid::from(1u64),
+        VAddr::from(0x1000u64),
+        PAddr::from(0x2000u64),
+    );
+    assert_clears("vspace_map", SyscallId::VSpaceMap);
+    let _ = sele4n_sys::vspace::vspace_unmap(cap, Asid::from(1u64), VAddr::from(0x1000u64));
+    assert_clears("vspace_unmap", SyscallId::VSpaceUnmap);
+    let _ =
+        sele4n_sys::vspace::vspace_unify_instruction(cap, Asid::from(1u64), VAddr::from(0x1000u64));
+    assert_clears(
+        "vspace_unify_instruction",
+        SyscallId::VSpaceUnifyInstruction,
+    );
+
+    let _ = sele4n_sys::service::service_register(
+        cap,
+        InterfaceId::from(1u64),
+        1,
+        64,
+        64,
+        false,
+        &mut buf,
+    );
+    assert_clears("service_register", SyscallId::ServiceRegister);
+    let _ = sele4n_sys::service::service_revoke(cap, ServiceId::from(1u64));
+    assert_clears("service_revoke", SyscallId::ServiceRevoke);
+    let _ = sele4n_sys::service::service_query(cap);
+    assert_clears("service_query", SyscallId::ServiceQuery);
+
+    let _ = sele4n_sys::sched_context::sched_context_configure(cap, 1, 1, 1, 1, 1, &mut buf);
+    assert_clears("sched_context_configure", SyscallId::SchedContextConfigure);
+    let _ = sele4n_sys::sched_context::sched_context_bind(cap, ThreadId::from(1u64));
+    assert_clears("sched_context_bind", SyscallId::SchedContextBind);
+    let _ = sele4n_sys::sched_context::sched_context_unbind(cap);
+    assert_clears("sched_context_unbind", SyscallId::SchedContextUnbind);
+
+    let _ = sele4n_sys::tcb::tcb_suspend(cap);
+    assert_clears("tcb_suspend", SyscallId::TcbSuspend);
+    let _ = sele4n_sys::tcb::tcb_resume(cap);
+    assert_clears("tcb_resume", SyscallId::TcbResume);
+    let _ = sele4n_sys::tcb::tcb_set_priority(cap, 1);
+    assert_clears("tcb_set_priority", SyscallId::TcbSetPriority);
+    let _ = sele4n_sys::tcb::tcb_set_mcp(cap, 1);
+    assert_clears("tcb_set_mcp", SyscallId::TcbSetMCPriority);
+    let _ = sele4n_sys::tcb::tcb_set_ipc_buffer(cap, 0x4000);
+    assert_clears("tcb_set_ipc_buffer", SyscallId::TcbSetIPCBuffer);
+    let _ = sele4n_sys::tcb::tcb_set_affinity(cap, 1);
+    assert_clears("tcb_set_affinity", SyscallId::TcbSetAffinity);
+    let _ = sele4n_sys::tcb::tcb_bind_notification(cap, cap);
+    assert_clears("tcb_bind_notification", SyscallId::TcbBindNotification);
+    let _ = sele4n_sys::tcb::tcb_unbind_notification(cap);
+    assert_clears("tcb_unbind_notification", SyscallId::TcbUnbindNotification);
+
+    let _ = sele4n_sys::cspace::mint_reply_cap(cap, Slot::from(0u64), Slot::from(1u64));
+    assert_clears("mint_reply_cap", SyscallId::MintReplyCap);
+
+    let _ = sele4n_sys::declassify::declassify(cap);
+    assert_clears("declassify", SyscallId::Declassify);
 }

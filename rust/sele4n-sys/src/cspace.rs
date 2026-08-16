@@ -89,3 +89,29 @@ pub fn cspace_delete(cnode_cap: CPtr, target_slot: Slot) -> KernelResult<Syscall
         syscall_id: SyscallId::CSpaceDelete,
     })
 }
+
+/// Mint a delegable copy of a reply capability from `src_slot` into
+/// `dst_slot` of the same CNode (PR #866 round-3 review: the wrapper the
+/// ABI documented but never had).
+///
+/// Lean: the `.mintReplyCap` arm (API.lean, PR #822 Phase H) — requires
+/// `.grant` on `cnode_cap`, and reuses the `cspaceCopy` register shape
+/// (`decodeCSpaceCopyArgs`: srcSlot MR\[0\], dstSlot MR\[1\]).  Distinct
+/// from `cspace_copy` because the kernel routes it through
+/// `mintReplyCapWithCdt`, which validates that the source holds a reply
+/// capability and records the CDT derivation.
+#[inline]
+pub fn mint_reply_cap(
+    cnode_cap: CPtr,
+    src_slot: Slot,
+    dst_slot: Slot,
+) -> KernelResult<SyscallResponse> {
+    let args = CSpaceCopyArgs { src_slot, dst_slot };
+    let encoded = args.encode();
+    invoke_syscall(SyscallRequest {
+        cap_addr: cnode_cap,
+        msg_info: MessageInfo::new_const(2, 0, 0),
+        msg_regs: [encoded[0], encoded[1], 0, 0],
+        syscall_id: SyscallId::MintReplyCap,
+    })
+}

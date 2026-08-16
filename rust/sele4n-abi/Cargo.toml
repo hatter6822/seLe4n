@@ -15,3 +15,11 @@ sele4n-types = { path = "../sele4n-types" }
 
 [dev-dependencies]
 sele4n-sys = { path = "../sele4n-sys" }
+# PR #866 round-3 review: the prefilter conformance sweep compares the REAL
+# wrappers (driven via the host-capture mock trap) against the REAL HAL
+# `min_inline_args` table, instead of hand-duplicated literals — the drift
+# that let four unreachable wrappers pass a green table.  Test-only edge;
+# `sele4n-hal` has no runtime deps, and its own `sele4n-abi` dev-dep is
+# likewise test-only, so no build-graph cycle exists (cargo dev-dependency
+# edges do not participate in library dependency resolution).
+sele4n-hal = { path = "../sele4n-hal" }

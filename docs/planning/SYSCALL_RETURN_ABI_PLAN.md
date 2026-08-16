@@ -262,6 +262,95 @@ stands, re-grounded on the index the rest of the per-core state
 `KernelResult<ServiceId>`, so the query→revoke composition typechecks
 without an untyped detour.
 
+**PR #866 review round 3 (v0.33.41)** — five further findings; two are
+code defects (fixed, with the architectural cause removed), three
+challenge deliberate designs or registered deferrals (answered with the
+rationale; one adds new tracked debt).  **(1) Four more unreachable
+wrappers + the table that could not see them (P2, valid — the RA.D.1
+class again, and its root cause).**  The HAL prefilter minima for
+`tcbSuspend` / `tcbResume` / `schedContextUnbind` (1/1/1) and
+`schedContextBind` (2) exceeded what the Lean decoders — the authority —
+require (0/0/0/1: suspend, resume and unbind are `pure {}`
+capability-only decodes; bind reads exactly one register), so all four
+real wrappers were rejected with `InvalidArgument` before reaching the
+kernel.  The conformance table that existed to prevent exactly this
+stayed green because **both of its columns were hand-duplicated
+literals**: it recorded length 1 for suspend/resume (the wrappers send
+0) and omitted the schedContext pair entirely.  The minima are
+corrected, and the table is rebuilt so neither column can drift again:
+the mock trap (`sele4n-abi`, host builds) now records the request
+registers it is handed (`trap::host_capture`), and
+`wrapper_lengths_clear_prefilter_minimums` drives **every real
+wrapper**, reads back the exact registers its encode produced, and
+compares the decoded length against the **real**
+`sele4n_hal::svc_dispatch::SyscallId::min_inline_args()` through a
+test-only `sele4n-hal` dev-dependency (dev-edges both ways between the
+two crates; no build-graph cycle — dev-dependencies do not participate
+in library resolution).  Run against the old minima the rebuilt sweep
+fails on exactly the four; against the fix it is green.  Coverage is
+the whole canonical surface: the three syscalls that had **no**
+`sele4n-sys` wrapper at all (`tcbBindNotification` /
+`tcbUnbindNotification` / `mintReplyCap` — callable only via
+hand-encoded requests) got their wrappers implemented in the same cut
+(bind resolves the notification through a capability in the caller's
+CSpace, MR0, per the SM6.B v0.31.74 arm; unbind is capability-only;
+mint reuses the `cspaceCopy` register shape against `.grant`), so the
+sweep pins all 31.  **(2) `endpoint_call` joins the `.message`
+signature contract (P2, valid).**  The shape table classifies `.call`
+as `.message` and the signature pin says message-shaped wrappers return
+`(Badge, SyscallResponse)` — but the pin listed only receive and
+reply-recv, and `endpoint_call` returned a bare `SyscallResponse`.  The
+wrapper now returns the badge tuple (a call's reply-delivered frame
+carries the badge in `x0` exactly as a receive's does), and the pin
+covers `endpoint_call` and `endpoint_receive_with_reply`.  **(3)
+Self-suspend outcome (P1, challenged — the design stands).**  The
+review asked that a self-suspended caller's outcome account for
+scheduler state and its unit frame be delivered "only after an actual
+resume".  The outcome deliberately classifies *whether the caller has a
+return value*, and a self-suspend has one — the constructed unit
+success frame, which is true (the suspend committed) and is exactly
+what the thread must observe when later resumed; under SM10.E the
+restore seam writes it to the trap frame, saves that frame into the
+descheduled TCB, and installs a successor, so delivery-at-resume falls
+out of the seam.  Classifying it `.blocks` instead would be wrong
+twice: nothing ever wakes-and-stages a suspended thread (resume
+re-enqueues; it delivers no payload), so the frame would never exist,
+and the interim sentinel would then hand the resumed thread
+`UnknownKernelError` for a syscall that succeeded.  The interim
+keeps-running gap is the universal absence of hardware context
+switching (every scheduling decision, not this arm), and the vacated
+core fails closed meanwhile (`vacatedCore_next_syscall_rejected`).
+§9g pins the value half at runtime.  **(4) Application IPC labels (P1,
+valid observation — pre-existing model gap, now TRACKED DEBT with the
+design constraint recorded).**  The sender-side API accepts a
+`MessageInfo.label` that the kernel model drops at decode
+(`IpcMessage` carries no label — pre-WS-RA the model never delivered
+one), and WS-RA's return convention makes `x1`'s label the **status**
+channel, so a delivered sender label cannot simply ride `x1`: label
+`L` would alias error discriminant `L − 1`, the exact aliasing the
+offset encoding exists to prevent.  Closure therefore needs an ABI
+design decision, not a patch: candidate designs are (a) shape-aware
+decode — message-shaped successes carry the sender's label and errors
+for those syscalls move off the label channel (closest to seL4, whose
+receive path has no kernel-error channel at all), or (b) delivering
+the sender's label out of band (a reserved message register or IPC
+buffer field).  Either changes `IpcMessage`, the delivery sites, the
+synthesis, `decode_response` and the conformance surface together —
+registered here as WS-RA follow-on debt, owner the ABI surface, to be
+cut as one coherent slice.  **(5) Timeout error frames (P1 — the
+registered §9 deferral, restated).**  The review re-derives that
+`timeoutThread` wakes a timed-out caller without staging
+`errorFrame .ipcTimeout`; that is precisely the
+"cancellation/timeout error-frame staging" this plan's §9 already owes
+to SM10.E, deliberately deferred WITH the delivery seam because the
+involuntary-unblock family (timeout, suspend-of-blocked,
+`cancelIpcBlocking`) lives inside scheduler transitions whose staging
+lands with the restore seam that makes any staged frame reachable;
+until that seam exists the interim hardware outcome is governed by the
+blocked-resume sentinel either way.  No claim is weakened: the RA.B.5b
+guarantee is stated over the IPC unblocking arms, and §9 names the
+involuntary family as owed.
+
 ## 1. Phase goal
 
 **The kernel has no syscall return path.**  It writes exactly one register on

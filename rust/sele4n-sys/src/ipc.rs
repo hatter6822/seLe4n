@@ -160,16 +160,25 @@ pub fn endpoint_receive_with_reply(
 /// Call an endpoint (send + blocking receive in one syscall).
 ///
 /// Lean: `apiEndpointCall` (API.lean) — requires `.write` right.
+///
+/// PR #866 round-3 review: returns `(Badge, SyscallResponse)` like its
+/// `.message`-shaped siblings `endpoint_receive` / `endpoint_reply_recv`
+/// — a call's reply-delivered frame carries the badge in `x0` exactly as
+/// a receive's does (the kernel stages `.call`'s frame through the reply
+/// path, plan §3.5), and the bare `SyscallResponse` return left the
+/// shape-to-signature contract unenforceable for one of its three
+/// members.
 #[inline]
-pub fn endpoint_call(dest: CPtr, msg: &IpcMessage) -> KernelResult<SyscallResponse> {
+pub fn endpoint_call(dest: CPtr, msg: &IpcMessage) -> KernelResult<(Badge, SyscallResponse)> {
     let msg_info = MessageInfo::new(msg.length(), 0, msg.label)
         .map_err(|_| sele4n_types::KernelError::InvalidMessageInfo)?;
-    invoke_syscall(SyscallRequest {
+    let resp = invoke_syscall(SyscallRequest {
         cap_addr: dest,
         msg_info,
         msg_regs: msg.regs,
         syscall_id: SyscallId::Call,
-    })
+    })?;
+    Ok((resp.badge(), resp))
 }
 
 /// Reply to a caller (one-shot reply capability).

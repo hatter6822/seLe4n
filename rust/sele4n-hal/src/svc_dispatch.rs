@@ -217,10 +217,22 @@ impl SyscallId {
             Self::NotificationWait => 0,
             Self::ReplyRecv => 0,
             Self::SchedContextConfigure => 5,
-            Self::SchedContextBind => 2,
-            Self::SchedContextUnbind => 1,
-            Self::TcbSuspend => 1,
-            Self::TcbResume => 1,
+            // PR #866 round-3 review (the RA.D.1 unreachable-wrapper class,
+            // four MORE instances): reconciled with the Lean decoders, the
+            // authority.  `decodeSchedContextBindArgs` reads exactly ONE
+            // register (`requireMsgReg msgRegs 0`, the thread id);
+            // `decodeSchedContextUnbindArgs`, `decodeSuspendArgs` and
+            // `decodeResumeArgs` read NONE (`pure {}` — the target comes
+            // from the capability).  The previous minimums (2 / 1 / 1 / 1)
+            // exceeded what the wrappers send (1 / 0 / 0 / 0), so this gate
+            // rejected every one of those calls with `InvalidArgument`
+            // before the kernel.  Caught by the rebuilt
+            // `wrapper_lengths_clear_prefilter_minimums` sweep, which now
+            // drives the REAL wrappers against THIS real table.
+            Self::SchedContextBind => 1,
+            Self::SchedContextUnbind => 0,
+            Self::TcbSuspend => 0,
+            Self::TcbResume => 0,
             // Each of these reads exactly ONE inline register (`requireMsgReg
             // decoded.msgRegs 0` in `decodeSet{Priority,MCPriority,IPCBuffer}Args`,
             // whose docstrings state "Requires 1 message register").  The matching
@@ -931,7 +943,16 @@ mod tests {
         assert_eq!(SyscallId::CSpaceMove.min_inline_args(), 2);
         assert_eq!(SyscallId::LifecycleRetype.min_inline_args(), 3);
         assert_eq!(SyscallId::ServiceRegister.min_inline_args(), 4);
-        assert_eq!(SyscallId::TcbSuspend.min_inline_args(), 1);
+        // PR #866 round-3 review: suspend / resume / unbind read NO message
+        // registers (`decodeSuspendArgs` / `decodeResumeArgs` /
+        // `decodeSchedContextUnbindArgs` are `pure {}` — the target comes
+        // from the capability), and bind reads exactly ONE (the thread id).
+        // The previous minimums (1 / 1 / 1 / 2) rejected every real wrapper
+        // call at this gate — the RA.D.1 unreachable-wrapper class again.
+        assert_eq!(SyscallId::TcbSuspend.min_inline_args(), 0);
+        assert_eq!(SyscallId::TcbResume.min_inline_args(), 0);
+        assert_eq!(SyscallId::SchedContextUnbind.min_inline_args(), 0);
+        assert_eq!(SyscallId::SchedContextBind.min_inline_args(), 1);
         assert_eq!(SyscallId::Send.min_inline_args(), 0);
         // The four single-register TCB-management syscalls each read exactly ONE
         // inline register (`requireMsgReg decoded.msgRegs 0` in their decoders;

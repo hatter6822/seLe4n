@@ -107,3 +107,41 @@ pub fn tcb_set_affinity(tcb_cap: CPtr, affinity_raw: u64) -> KernelResult<Syscal
         syscall_id: SyscallId::TcbSetAffinity,
     })
 }
+
+/// Bind a notification object to a TCB (PR #866 round-3 review: the
+/// wrapper the ABI documented but never had — the syscall was callable
+/// only via hand-encoded requests, leaving it outside the prefilter
+/// conformance sweep).
+///
+/// Lean: the `.tcbBindNotification` arm (API.lean, WS-SM SM6.B) —
+/// requires `.write` on the target TCB capability, and the notification
+/// is resolved through a **capability** in the caller's own CSpace
+/// (`notification_cap`, MR\[0\]), not a raw object id: a TCB-cap holder
+/// must also hold `.write` on the notification to redirect its signals.
+#[inline]
+pub fn tcb_bind_notification(
+    tcb_cap: CPtr,
+    notification_cap: CPtr,
+) -> KernelResult<SyscallResponse> {
+    invoke_syscall(SyscallRequest {
+        cap_addr: tcb_cap,
+        msg_info: MessageInfo::new_const(1, 0, 0),
+        msg_regs: [notification_cap.into(), 0, 0, 0],
+        syscall_id: SyscallId::TcbBindNotification,
+    })
+}
+
+/// Unbind the target TCB's bound notification (no-op error if none).
+///
+/// Lean: the `.tcbUnbindNotification` arm (API.lean, WS-SM SM6.B) —
+/// requires `.write` on the target TCB capability; no message registers
+/// (`decodeTcbUnbindNotificationArgs` reads none).
+#[inline]
+pub fn tcb_unbind_notification(tcb_cap: CPtr) -> KernelResult<SyscallResponse> {
+    invoke_syscall(SyscallRequest {
+        cap_addr: tcb_cap,
+        msg_info: MessageInfo::new_const(0, 0, 0),
+        msg_regs: [0; 4],
+        syscall_id: SyscallId::TcbUnbindNotification,
+    })
+}

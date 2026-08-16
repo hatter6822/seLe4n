@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/syscall-return-abi-plan-yuy13t",
-      "commit_sha": "1bec01f23f68ead6ad5041157a5ce6f4551d86eb",
-      "tree_sha": "238c9bb1d26a957a56ba39341e4ee08d83940531",
-      "committed_at_utc": "2026-08-16T19:31:10+00:00"
+      "commit_sha": "6b0fb3c9abb82bac6ddc2a6c83193c518be07b92",
+      "tree_sha": "17af70778d81d63219cc4443a0a55b1f990970b0",
+      "committed_at_utc": "2026-08-16T20:37:36+00:00"
     }
   },
   "source_sync": {
@@ -24,7 +24,7 @@
     "declaration_count": 15850
   },
   "readme_sync": {
-    "version": "0.33.40",
+    "version": "0.33.41",
     "lean_toolchain": "v4.28.0",
     "production_files": 279,
     "production_loc": 266713,

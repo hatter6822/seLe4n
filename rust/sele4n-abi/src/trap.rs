@@ -58,11 +58,55 @@ pub unsafe fn raw_syscall(regs: &mut [u64; 7]) {
     );
 }
 
+/// Host-testing capture of the last request the mock trap saw (PR #866
+/// round-3 review).  The conformance suite calls the **real** `sele4n-sys`
+/// wrappers and reads back the exact registers their encode produced, so
+/// wrapper-shape pins exercise the genuine definitions instead of
+/// hand-duplicated literals — the drift that let two wrong lengths and
+/// two missing syscalls pass a green table while four real wrappers were
+/// rejected at the HAL prefilter.
+///
+/// `core::sync::atomic` (no_std-compatible); tests that read the capture
+/// must serialise around the wrapper call (parallel test threads share
+/// these slots).
+#[cfg(not(target_arch = "aarch64"))]
+pub mod host_capture {
+    use core::sync::atomic::{AtomicU64, Ordering};
+
+    /// The last request's raw registers `[x0, x1, x2, x3, x4, x5, x7]`,
+    /// exactly as `encode_syscall` produced them.
+    pub static LAST_REQUEST: [AtomicU64; 7] = [
+        AtomicU64::new(0),
+        AtomicU64::new(0),
+        AtomicU64::new(0),
+        AtomicU64::new(0),
+        AtomicU64::new(0),
+        AtomicU64::new(0),
+        AtomicU64::new(0),
+    ];
+
+    /// Snapshot the captured registers.
+    pub fn last_request() -> [u64; 7] {
+        let mut out = [0u64; 7];
+        for (slot, value) in LAST_REQUEST.iter().zip(out.iter_mut()) {
+            *value = slot.load(Ordering::Relaxed);
+        }
+        out
+    }
+
+    pub(super) fn record(regs: &[u64; 7]) {
+        for (slot, value) in LAST_REQUEST.iter().zip(regs.iter()) {
+            slot.store(*value, Ordering::Relaxed);
+        }
+    }
+}
+
 /// Mock raw_syscall for non-AArch64 targets (host testing).
 ///
-/// Returns an error response (InvalidSyscallNumber) since there is no
-/// kernel to handle the syscall. Tests should use the mock infrastructure
-/// in the `std` feature instead.
+/// Records the request registers into [`host_capture`] (so conformance
+/// tests can drive the real wrappers and inspect what they encoded), then
+/// returns an error response (InvalidSyscallNumber) since there is no
+/// kernel to handle the syscall.
 ///
 /// # Safety
 ///
@@ -72,6 +116,7 @@ pub unsafe fn raw_syscall(regs: &mut [u64; 7]) {
 #[inline(always)]
 #[allow(unsafe_code)]
 pub unsafe fn raw_syscall(regs: &mut [u64; 7]) {
+    host_capture::record(regs);
     // Mock (WS-RA shape): an error rides the x1 label, offset by one
     // (label d + 1 = discriminant d), with x0 = 0 — exactly the frame the
     // kernel's `errorFrame` would publish for InvalidSyscallNumber.

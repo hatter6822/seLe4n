@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.33.40.
+Lean 4.28.0 toolchain, Lake build system, version 0.33.41.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -838,6 +838,22 @@ documentation lives under `docs/` and `docs/gitbook/`.
   self-service; (3) `service_query` returns the typed `ServiceId`.
   Rust 1126 tests; four new Tier-3 anchors pin the logical-index sites
   and forbid the packed value's return.
+  **PR #866 review round 3 (v0.33.41)**: five further findings — four MORE
+  RA.D.1-class unreachable wrappers fixed at the root (the HAL minima for
+  suspend/resume/schedContextUnbind/Bind drifted from the Lean decoders'
+  0/0/0/1, and the conformance table's hand-duplicated columns could not
+  see it; the rebuilt sweep drives EVERY real wrapper through the new
+  host-capture mock trap against the REAL `min_inline_args()` via a
+  test-only `sele4n-hal` dev-dep — all 31 syscalls, with the three
+  missing wrappers `tcb_bind_notification`/`tcb_unbind_notification`/
+  `mint_reply_cap` implemented for the purpose); `endpoint_call` returns
+  `(Badge, SyscallResponse)` like its `.message` siblings, pin extended;
+  the self-suspend outcome design defended on the thread (the unit frame
+  IS the resume value; `.blocks` would strand it); application IPC labels
+  registered as tracked debt (a delivered label cannot ride `x1` without
+  aliasing the status channel — needs a shape-aware or out-of-band ABI
+  design); the timeout error frame restated as the plan §9 SM10.E
+  deferral.
   Plan: [`docs/planning/SYSCALL_RETURN_ABI_PLAN.md`](docs/planning/SYSCALL_RETURN_ABI_PLAN.md).
 
 - **WS-SM SMP multi-core completion workstream IN FLIGHT (v0.31.2 → v1.0.0)**:

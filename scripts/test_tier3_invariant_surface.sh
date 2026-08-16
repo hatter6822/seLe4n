@@ -3159,6 +3159,20 @@ run_check "INVARIANT" rg -n '^theorem returnMessageInfo_extraCaps_le_installed' 
 run_negative_check "INVARIANT" rg -n 'extraCaps := min msg.caps.size' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 # PR #866 round-2: the query wrapper returns the typed ServiceId.
 run_check "INVARIANT" rg -n 'pub fn service_query\(endpoint_cap: CPtr\) -> KernelResult<ServiceId>' rust/sele4n-sys/src/service.rs
+# PR #866 round-3: the prefilter conformance sweep drives the REAL wrappers
+# (host-capture mock trap) against the REAL HAL minima (dev-dep) — the
+# hand-duplicated table that drifted twice must not come back, and the
+# `.message`-shaped call wrapper carries the badge tuple like its siblings.
+run_check "INVARIANT" rg -n 'pub mod host_capture' rust/sele4n-abi/src/trap.rs
+run_check "INVARIANT" rg -n 'fn wrapper_lengths_clear_prefilter_minimums' rust/sele4n-abi/tests/conformance.rs
+run_check "INVARIANT" rg -n 'host_capture::last_request' rust/sele4n-abi/tests/conformance.rs
+run_check "INVARIANT" rg -n 'min_inline_args' rust/sele4n-abi/tests/conformance.rs
+run_check "INVARIANT" rg -n 'pub fn endpoint_call\(dest: CPtr, msg: &IpcMessage\) -> KernelResult<\(Badge, SyscallResponse\)>' rust/sele4n-sys/src/ipc.rs
+# PR #866 round-3: the three wrappers the ABI documented but never had —
+# implemented so the sweep covers the whole canonical syscall surface.
+run_check "INVARIANT" rg -n 'pub fn tcb_bind_notification' rust/sele4n-sys/src/tcb.rs
+run_check "INVARIANT" rg -n 'pub fn tcb_unbind_notification' rust/sele4n-sys/src/tcb.rs
+run_check "INVARIANT" rg -n 'pub fn mint_reply_cap' rust/sele4n-sys/src/cspace.rs
 # The retired bit-63 theorems must not come back either.
 run_negative_check "INVARIANT" rg -n 'theorem encodeError_high_bit_set' SeLe4n/Platform/FFI.lean
 run_negative_check "INVARIANT" rg -n 'theorem encodeOk_high_bit_clear' SeLe4n/Platform/FFI.lean

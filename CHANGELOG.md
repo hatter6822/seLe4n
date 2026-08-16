@@ -1,3 +1,64 @@
+## v0.33.41 — WS-RA review round 3: four more unreachable wrappers, the sweep that drives real definitions, the full wrapper surface
+
+Five Codex findings on the v0.33.40 head.  Two were code defects — fixed
+with their architectural cause removed; three challenged deliberate
+designs or registered deferrals — answered with the rationale on the
+threads, one adding new tracked debt.
+
+**Four more unreachable wrappers, and the table that could not see them
+(P2).**  The HAL prefilter minima for tcbSuspend / tcbResume /
+schedContextUnbind / schedContextBind (1/1/1/2) exceeded what the Lean
+decoders — the authority — require (0/0/0/1: suspend, resume and unbind
+are capability-only `pure {}` decodes; bind reads one register), so all
+four real wrappers were rejected with InvalidArgument before reaching
+the kernel — the exact RA.D.1 unreachable-wrapper class, four more
+instances.  The conformance table that existed to prevent this stayed
+green because BOTH its columns were hand-duplicated literals (it
+recorded length 1 for suspend/resume whose wrappers send 0, and omitted
+the schedContext pair).  Root cause removed: the host mock trap now
+records the exact request registers it is handed
+(`sele4n_abi::trap::host_capture`), and the rebuilt
+`wrapper_lengths_clear_prefilter_minimums` drives EVERY real wrapper
+end to end, reading back what its encode actually produced and
+comparing against the REAL `min_inline_args()` through a test-only
+`sele4n-hal` dev-dependency — run against the old minima it fails on
+exactly the four; neither column can drift again.
+
+**The full wrapper surface.**  The three syscalls with no `sele4n-sys`
+wrapper at all (tcbBindNotification / tcbUnbindNotification /
+mintReplyCap — callable only via hand-encoded requests) got their
+wrappers implemented so the sweep covers all 31 canonical syscalls:
+bind resolves the notification through a capability in the caller's own
+CSpace (MR0, the SM6.B v0.31.74 authority design), unbind is
+capability-only, mint reuses the cspaceCopy register shape under
+`.grant`.
+
+**`endpoint_call` joins the `.message` signature contract (P2).**  The
+shape table classifies `.call` as `.message`, but the signature pin
+listed only receive/reply-recv and `endpoint_call` returned a bare
+`SyscallResponse`.  It now returns `(Badge, SyscallResponse)` like its
+siblings (a call's reply-delivered frame carries the badge in `x0`
+exactly as a receive's), and the pin covers `endpoint_call` and
+`endpoint_receive_with_reply`.
+
+**Answered on the threads, no code change**: the self-suspend outcome
+design stands (the constructed unit frame IS the value the thread must
+observe at resume; classifying it `.blocks` would strand a frame nothing
+ever stages and poison a successful syscall; the keeps-running interim
+is the universal absence of context switching, with the vacated core
+failing closed — `vacatedCore_next_syscall_rejected`); application IPC
+labels are a pre-existing model gap now registered as tracked debt with
+the design constraint recorded (a delivered label cannot ride `x1`
+without aliasing the status channel — closure needs a shape-aware or
+out-of-band ABI design, one coherent slice); and the timeout error
+frame is the plan §9 deferral restated (the involuntary-unblock staging
+family lands with the SM10.E restore seam that makes staged frames
+reachable at all).
+
+Rust 1126 tests, clippy-clean, fmt-clean; Tiers 0–3 green.
+
+Refs: docs/planning/SYSCALL_RETURN_ABI_PLAN.md (review round 3)
+
 ## v0.33.40 — WS-RA review round 2: installed-caps honesty, the logical core index, the typed query
 
 Three Codex findings on PR #866's v0.33.39 head — two P1, one P2 — every
