@@ -1,3 +1,95 @@
+## v0.33.38 — WS-RA complete: the blocked orderings stage, the arms match their shapes
+
+RA.B.5b and RA.B.8, the two pieces the v0.33.37 core landing registered as
+remaining — with this cut the workstream's own scope is complete, and what
+survives in §9 is owed to SM10.E (frame *delivery* at the context restore;
+the cancellation/timeout error-frame staging).
+
+**RA.B.5b — the blocked-waiter half, landed at the arms.**  A syscall that
+blocks has no return value when it blocks; its frame must be staged by the
+syscall that *unblocks* it, or the waiter resumes reading its stale staged
+arguments as a return value (§3.5's hazard, now pinned by the suite's
+negative controls).  The plan drafted this as store-sibling surgery inside
+the transitions — `storeTcbReadyWithFrame`-shaped one-call swaps with the
+per-site invariant re-proofs as "the honest bulk of the XL".  Verifying the
+delivery shape against the tree dissolved that cost: **every wake in the
+tree delivers through `.ready` + `pendingMessage := msg`**
+(`storeTcbIpcStateAndMessage` / `storeTcbReceiveComplete` — the badge wake
+included, as a badge-only `IpcMessage`), so the payload is recoverable at
+the arm post-state and the RA.B.6 sharpening (stage at the arms, touch no
+transition) applies to the blocked half verbatim.  Two Option-lifted
+stagers in `SyscallReturn.lean`:
+
+- `stageWokenDelivery` — `stageDeliveredMessage` over the arm's
+  pre-resolved wake target (receive-queue head, wait-queue head, bound
+  target, resolved reply caller); the `.ready` + `pendingMessage` guards
+  make it the identity whenever the wake did not happen.
+- `stageWokenSendCompletion` — the **zero frame** (unit success) for a
+  woken *plain* sender whose send completed at a rendezvous, guarded
+  `.ready` ∧ delivery-consumed so a consumed `Call` sender (which lands
+  `.blockedOnReply`, its frame owed by the reply path) and a payload wake
+  (owed `returnFrameOfMessage`) are both skipped — the case the plan's
+  first draft missed, staged at the `.receive` arms and inside
+  `replyRecvBody`.
+
+Composed at **eleven arm sites**: `.send` ×2 and `.call` ×2 (the blocked
+receiver), `.reply` ×2 (the woken caller — `.call`'s `.message` frame,
+delivered entirely through this path), `.receive` ×2 (the completed plain
+sender, beside the existing caller staging), `.notificationSignal` ×2 (the
+plain head waiter and the bound target, mutually exclusive), and
+`replyRecvBody` ×1 (both legs, shared by both `.replyRecv` arms — so the
+checked/unchecked equivalence survives untouched).  Zero IPC transitions
+changed; none of the ~1900-reference invariant surface moved.
+
+**The theorems**: `blockedReturn_staged_in_waiter_frame` (the plan-named
+result — a payload wake's staged frame is exactly `returnFrameOfMessage
+msg`, recovered bit-for-bit by the boundary read) and its unit dual
+`blockedUnitReturn_staged_in_sender_frame`; guard characterisations
+(`_stages_zero`, `_id_when_not_ready`, `_id_when_pending`);
+scheduler/machine frame lemmas for both stagers; every-observer projection
+preservation via RA.B.10's blanket (`stageWokenDelivery/-SendCompletion_preserves_projection`).
+Theorem fallout, all in lockstep: eight delegation RHS
+(`dispatchWithCap{,Checked}_send_delegates`, `_receive_delegates`,
+`_send_uses_withCaps`, `_call_uses_crossCoreDispatch`,
+`_reply_populates_msg`, both `syscallDelegates` arms); SM8.B's
+`replyRecvBody_confinedToCores` re-proven by transporting the donation
+leg's confinement across the staging via
+`observableSlotsConfinedToCores_of_framed_suffix` (the framed-transport
+trio relocated above its new first consumer).
+
+**RA.B.8 — the shape-coherence family.**  The draft's phrasing — "a
+`.unit` arm leaves the caller's staged frame untouched" — is deliberately
+NOT the theorem: it is false of any arm that context-switches
+(`saveOutgoingContext` writes `registerContext`) and unnecessary, because
+`frameForShape_unit` makes the boundary **construct** unit frames without
+reading staged registers — a `.unit` misclassification is structurally
+inert.  The value half is per-arm over the live dispatch:
+`dispatchArm_notificationWait_matches_returnShape` (`.badge`),
+`dispatchArm_serviceQuery_matches_returnShape` (`.word`),
+`dispatchArm_receive_matches_returnShape` /
+`dispatchArm_replyRecv_matches_returnShape` (`.message`), and
+`dispatchArm_call_frame_delivered_by_reply` — §3.5's cross-arm form: the
+`.reply` dispatch stages the *caller's* frame and the boundary read at the
+caller recovers it.  `syscallReturnShape_value_returning` pins the value
+surface at exactly those five syscalls, so the family covers it.
+
+**Evidence**: `SyscallReturnAbiSuite` §9 — five end-to-end scenarios
+through the live per-core dispatch on a two-thread/two-core fixture
+(caller current on the boot core, peer on core 1, so both legs run the
+real `currentOnCore` resolution): 9a wait-before-signal (with the
+pre-signal stale-args negative control — the staged `x0` IS the caller's
+own cap pointer until the signal replaces it), 9b the blocked receiver's
+message frame, 9c the completed plain sender's zero frame (plus its own
+stale-x0 control and the receiver's immediate-half outcome), 9d the reply
+delivering `.call`'s frame into a hand-built `.blockedOnReply` caller, 9e
+`replyRecvBody`'s own staging composition.  Three new golden-fixture lines
+computed from the staged frames (fixture + `.sha256` regenerated — the
+blocked orderings' staging is now a fixture observable); `#check` anchors
+and Tier-3 positive anchors for the whole new surface.  Main trace
+byte-identical; zero sorry/axiom.
+
+Refs: docs/planning/SYSCALL_RETURN_ABI_PLAN.md (completion record)
+
 ## v0.33.37 — WS-RA core: the kernel returns the seL4 frame, end to end
 
 The syscall return ABI, landed.  Before this cut the kernel wrote exactly one

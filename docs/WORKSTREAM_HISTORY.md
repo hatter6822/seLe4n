@@ -52,10 +52,13 @@ Landing the flip found and fixed five unreachable-wrapper prefilter defects
 54-variant error enumeration.  RA.E.1 landed first and **failed on the
 pre-migration tree**; the golden fixture
 `tests/fixtures/syscall_return_abi.expected` byte-verifies the live decisions;
-the main trace is byte-identical.  **Remaining scope** (plan's landing
-record): RA.B.5b — staging the *blocked* waiter's frame at the unblocking
-transitions, consumable only at SM10.E's context restore — and RA.B.8, the
-per-arm `dispatchArm_matches_returnShape` coherence family.  Plan:
+the main trace is byte-identical.  **Completed at v0.33.38**: RA.B.5b
+landed at the arms (two Option-lifted stagers composing at eleven sites, the
+blocked orderings staged end to end with `blockedReturn_staged_in_waiter_frame`
++ its unit dual, five two-core suite scenarios) and RA.B.8 landed as the
+five-theorem value-half family with the unit half structural
+(`frameForShape_unit`).  SM10.E owes only frame *delivery* (the context
+restore) and the cancellation/timeout error-frame staging.  Plan:
 [`docs/planning/SYSCALL_RETURN_ABI_PLAN.md`](planning/SYSCALL_RETURN_ABI_PLAN.md).
 
 **WS-SM SMP multi-core completion workstream IN FLIGHT (v0.31.2 →

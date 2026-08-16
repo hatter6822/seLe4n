@@ -681,6 +681,39 @@ theorem stageDeliveredMessage_preserves_projection
             exact writeReturnFrameToTcb_preserves_projection ctx observer st tid _ hObjInv
       · simp [hReady]
 
+/-- WS-RA RA.B.5b: the woken-counterparty delivery stager is
+projection-invisible for every observer — the Option lift of the blanket
+above, so every unblocking arm's staging carries its preservation via one
+instance. -/
+theorem stageWokenDelivery_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (woken? : Option SeLe4n.ThreadId) (hObjInv : st.objects.invExt) :
+    projectState ctx observer (Architecture.stageWokenDelivery st woken?)
+      = projectState ctx observer st := by
+  cases woken? with
+  | none => rfl
+  | some tid => exact stageDeliveredMessage_preserves_projection ctx observer st tid hObjInv
+
+/-- WS-RA RA.B.5b: the completion stager (a woken plain sender's unit
+frame) is projection-invisible for every observer — its only write is
+`writeReturnFrameToTcb`, covered by the blanket. -/
+theorem stageWokenSendCompletion_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (woken? : Option SeLe4n.ThreadId) (hObjInv : st.objects.invExt) :
+    projectState ctx observer (Architecture.stageWokenSendCompletion st woken?)
+      = projectState ctx observer st := by
+  cases woken? with
+  | none => rfl
+  | some tid =>
+      simp only [Architecture.stageWokenSendCompletion]
+      cases st.getTcb? tid with
+      | none => rfl
+      | some tcb =>
+          by_cases hGuard : tcb.ipcState = .ready ∧ tcb.pendingMessage = none
+          · simp only [hGuard]
+            exact writeReturnFrameToTcb_preserves_projection ctx observer st tid _ hObjInv
+          · simp [hGuard]
+
 /-- WS-H12c: restoreIncomingContext preserves the information-flow projection
 when the current thread is non-observable. -/
 private theorem restoreIncomingContext_preserves_projection

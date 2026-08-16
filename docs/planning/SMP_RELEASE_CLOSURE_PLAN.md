@@ -43,16 +43,16 @@ suites, bumps the version, and records WS-SM closure.
   **before SM9** and its core landed at v0.33.37 (the immediate-return
   convention is live end to end), but it is listed here because SM10.E is the
   gate that would otherwise have exposed it.  **SM10.E inherits two named
-  obligations from WS-RA**: (1) **RA.B.5b, the blocked-waiter staging half**,
-  still open at the WS-RA core landing — a syscall that *blocks* has no
-  return value when it blocks, so the unblocking transitions must stage the
-  woken waiter's frame (`blockedReturn_staged_in_waiter_frame`) and
-  **SM10.E's context restore is what delivers it** (WS-RA §3.5); the
-  wait-before-signal badge ordering is not complete until both halves land.
-  (2) The cancellation/timeout error-frame staging (WS-RA §9 registered
-  debt): before `contextRestoreSeamLive` flips, `cancelIpcBlocking` and
-  `timeoutThread` must stage an error frame, or a cancelled waiter resumes
-  reading its stale staged arguments as a return value.
+  obligations from WS-RA**: (1) **frame delivery** — RA.B.5b's staging half
+  landed at v0.33.38 (the unblocking arms stage the woken waiter's frame;
+  `blockedReturn_staged_in_waiter_frame`), so what remains is exactly
+  **SM10.E's context restore delivering the staged frame** (WS-RA §3.5); the
+  wait-before-signal badge ordering is staged end to end and completes when
+  the restore seam goes live.  (2) The cancellation/timeout error-frame
+  staging (WS-RA §9 registered debt): before `contextRestoreSeamLive` flips,
+  `cancelIpcBlocking` and `timeoutThread` must stage an error frame, or a
+  cancelled waiter resumes reading its stale staged arguments as a return
+  value.
 - Tier 0..5 tests green at HEAD.
 
 ## 3. Sub-tasks

@@ -71,6 +71,18 @@ open SeLe4n.Platform.FFI
 #check @SeLe4n.Kernel.Architecture.writeReturnFrameToTcb
 #check @SeLe4n.Kernel.Architecture.readReturnFrame_writeReturnFrame
 #check @SeLe4n.Kernel.Architecture.bit63Encoding_not_injective_on_badges
+-- RA.B.5b — the blocked-waiter staging seam
+#check @SeLe4n.Kernel.Architecture.stageWokenDelivery
+#check @SeLe4n.Kernel.Architecture.stageWokenSendCompletion
+#check @SeLe4n.Kernel.Architecture.stageWokenSendCompletion_stages_zero
+#check @SeLe4n.Kernel.Architecture.blockedReturn_staged_in_waiter_frame
+#check @SeLe4n.Kernel.Architecture.blockedUnitReturn_staged_in_sender_frame
+-- RA.B.8 — the per-arm shape-coherence family (over the live dispatch arms)
+#check @SeLe4n.Kernel.dispatchArm_notificationWait_matches_returnShape
+#check @SeLe4n.Kernel.dispatchArm_serviceQuery_matches_returnShape
+#check @SeLe4n.Kernel.dispatchArm_receive_matches_returnShape
+#check @SeLe4n.Kernel.dispatchArm_replyRecv_matches_returnShape
+#check @SeLe4n.Kernel.dispatchArm_call_frame_delivered_by_reply
 
 private def assertBool (label : String) (b : Bool) : IO Unit :=
   if b then IO.println s!"  PASS: {label}"
@@ -169,6 +181,105 @@ private def dispatchFromAbi (syscallId : Nat) (msgInfoRaw : UInt64)
     SeLe4n.Kernel.Concurrency.bootCoreId
     syscallId.toUInt32 msgInfoRaw
     capPtrValue.toUInt64 msgInfoRaw x2 0 0 0
+    0 st
+
+-- ============================================================================
+-- §3b  Two-thread fixture — the RA.B.5b blocked orderings (wait-before-signal,
+--       blocked receiver, blocked sender, reply delivery)
+-- ============================================================================
+
+private def peerTid  : SeLe4n.ThreadId := ⟨904⟩
+private def epId     : SeLe4n.ObjId    := ⟨905⟩
+private def replyRid : SeLe4n.ReplyId  := ⟨906⟩
+
+private def epCapPtr    : Nat := 6
+private def replyCapPtr : Nat := 7
+private def epBadgeVal  : Nat := 9
+private def replyBadgeVal : Nat := 3
+
+private def epCap : Capability :=
+  { target := .object epId,
+    rights := AccessRightSet.ofList [.read, .write, .grant],
+    badge := some (Badge.ofNatMasked epBadgeVal) }
+
+private def replyCapability : Capability :=
+  { target := .replyCap replyRid,
+    rights := AccessRightSet.ofList [.read, .write, .grant],
+    badge := some (Badge.ofNatMasked replyBadgeVal) }
+
+private def core1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
+
+/-- The shared CNode with all three capabilities (the §3 notification cap
+plus the endpoint and reply caps the blocked orderings need). -/
+private def sharedCn : SeLe4n.Model.CNode :=
+  { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+    slots := SeLe4n.UniqueSlotMap.ofListWF
+      [(SeLe4n.Slot.ofNat capPtrValue, ntfnCap),
+       (SeLe4n.Slot.ofNat epCapPtr, epCap),
+       (SeLe4n.Slot.ofNat replyCapPtr, replyCapability)] }
+
+/-- Two threads on two cores: `callerTid` current on the boot core (the
+thread that blocks), `peerTid` current on core 1 (the thread whose
+syscall unblocks it) — so both legs run through the live per-core
+dispatch with no scheduler surgery between them. -/
+private def twoThreadState : SystemState :=
+  let base := BootstrapBuilder.empty
+    |>.withObject callerVsp (.vspaceRoot { asid := SeLe4n.ASID.ofNat 7, mappings := {} })
+    |>.withObject callerCn (.cnode sharedCn)
+    |>.withObject ntfnId (.notification
+        { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+          pendingBadge := none, boundTCB := none })
+    |>.withObject epId (.endpoint {})
+    |>.withObject callerTid.toObjId (.tcb
+        { tid := callerTid, priority := ⟨40⟩, domain := ⟨0⟩,
+          cspaceRoot := callerCn, vspaceRoot := callerVsp,
+          ipcBuffer := SeLe4n.VAddr.ofNat 4096, ipcState := .ready })
+    |>.withObject peerTid.toObjId (.tcb
+        { tid := peerTid, priority := ⟨40⟩, domain := ⟨0⟩,
+          cspaceRoot := callerCn, vspaceRoot := callerVsp,
+          ipcBuffer := SeLe4n.VAddr.ofNat 8192, ipcState := .ready })
+    |>.withRunnable [callerTid]
+    |>.withCurrent (some callerTid)
+    |>.build
+  { base with scheduler := base.scheduler.setCurrentOnCore core1 (some peerTid) }
+
+/-- The reply-delivery fixture: `callerTid` already `.blockedOnReply` (a
+completed `.call` rendezvous) linked to the reply object `peerTid` holds
+the capability for — the state from which `.reply` / `.replyRecv` deliver
+`.call`'s `.message` frame (§3.5: a call never returns at its own
+boundary). -/
+private def replyPendingState : SystemState :=
+  let base := BootstrapBuilder.empty
+    |>.withObject callerVsp (.vspaceRoot { asid := SeLe4n.ASID.ofNat 7, mappings := {} })
+    |>.withObject callerCn (.cnode sharedCn)
+    |>.withObject ntfnId (.notification
+        { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+          pendingBadge := none, boundTCB := none })
+    |>.withObject epId (.endpoint {})
+    |>.withObject callerTid.toObjId (.tcb
+        { tid := callerTid, priority := ⟨40⟩, domain := ⟨0⟩,
+          cspaceRoot := callerCn, vspaceRoot := callerVsp,
+          ipcBuffer := SeLe4n.VAddr.ofNat 4096,
+          ipcState := .blockedOnReply epId (some peerTid),
+          replyObject := some replyRid })
+    |>.withObject peerTid.toObjId (.tcb
+        { tid := peerTid, priority := ⟨40⟩, domain := ⟨0⟩,
+          cspaceRoot := callerCn, vspaceRoot := callerVsp,
+          ipcBuffer := SeLe4n.VAddr.ofNat 8192, ipcState := .ready })
+    |>.withObject replyRid.toObjId (.reply
+        { replyId := replyRid, caller := some callerTid })
+    |>.build
+  { base with scheduler := base.scheduler.setCurrentOnCore core1 (some peerTid) }
+
+/-- The `dispatchFromAbi` driver generalised to an executing core and the
+full inline register window — the RA.B.5b scenarios interleave syscalls
+from two cores. -/
+private def dispatchFromAbiOn (core : SeLe4n.Kernel.Concurrency.CoreId)
+    (syscallId : Nat) (msgInfoRaw : UInt64) (capPtr : UInt64)
+    (x2 x3 x4 : UInt64) (st : SystemState) :
+    Except KernelError (Kernel.Architecture.SyscallOutcome × SystemState) :=
+  SeLe4n.Platform.FFI.syscallDispatchFromAbi trustedLabeling core
+    syscallId.toUInt32 msgInfoRaw capPtr msgInfoRaw x2 x3 x4 0
     0 st
 
 -- ============================================================================
@@ -291,6 +402,83 @@ private def runBlockedOutcomeWitness : IO Unit := do
         (outcome == .blocks)
 
 -- ============================================================================
+-- §7b  RA.B.5b pure scenarios (shared by the §9 assertions and the §8 fixture)
+-- ============================================================================
+
+/-- Read a thread's staged frame out of a scenario state. -/
+private def stagedFrame (st : SystemState) (tid : SeLe4n.ThreadId) :
+    Kernel.Architecture.SyscallReturnFrame :=
+  Kernel.Architecture.readReturnFrame st tid
+
+/-- 9a: wait-before-signal.  The caller blocks on the idle notification
+(core 0); the peer signals badge 42 (core 1); the caller's staged frame is
+the badge frame.  Returns (pre-signal staged x0, post-signal frame). -/
+private def waitThenSignalScenario :
+    Except KernelError (UInt64 × Kernel.Architecture.SyscallReturnFrame) := do
+  let (out1, st1) ← dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
+    SyscallId.notificationWait.toNat 0 capPtrValue.toUInt64 0 0 0 twoThreadState
+  if out1 != .blocks then throw .illegalState
+  let preStagedX0 := (stagedFrame st1 callerTid).x0
+  let (_, st2) ← dispatchFromAbiOn core1
+    SyscallId.notificationSignal.toNat 1 capPtrValue.toUInt64
+    signalledBadge.toUInt64 0 0 st1
+  pure (preStagedX0, stagedFrame st2 callerTid)
+
+/-- 9b: blocked receiver.  The caller blocks in `.receive` on the empty
+endpoint (core 0); the peer sends `[7, 8]` under the badge-9 endpoint cap
+(core 1); the caller's staged frame is the message frame. -/
+private def receiveThenSendScenario :
+    Except KernelError (Kernel.Architecture.SyscallReturnFrame) := do
+  let (out1, st1) ← dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
+    SyscallId.receive.toNat 0 epCapPtr.toUInt64 0 0 0 twoThreadState
+  if out1 != .blocks then throw .illegalState
+  let (_, st2) ← dispatchFromAbiOn core1
+    SyscallId.send.toNat 2 epCapPtr.toUInt64 7 8 0 st1
+  pure (stagedFrame st2 callerTid)
+
+/-- 9c: blocked plain sender.  The peer's send parks (no receiver, core 1);
+the caller's `.receive` consumes it (core 0) — the caller's own outcome is
+the message frame (the immediate half), and the completed **sender**'s
+staged frame is the zero frame (unit success).  Returns (pre-receive
+sender staged x0, the receive outcome, post-receive sender frame). -/
+private def sendThenReceiveScenario :
+    Except KernelError (UInt64 × Kernel.Architecture.SyscallOutcome ×
+      Kernel.Architecture.SyscallReturnFrame) := do
+  let (out1, st1) ← dispatchFromAbiOn core1
+    SyscallId.send.toNat 2 epCapPtr.toUInt64 7 8 0 twoThreadState
+  if out1 != .blocks then throw .illegalState
+  let preStagedX0 := (stagedFrame st1 peerTid).x0
+  let (out2, st2) ← dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
+    SyscallId.receive.toNat 0 epCapPtr.toUInt64 0 0 0 st1
+  pure (preStagedX0, out2, stagedFrame st2 peerTid)
+
+/-- 9d: the reply delivery — `.call`'s `.message` frame.  The caller is
+already `.blockedOnReply` linked to the reply object; the peer replies
+`[21, 22]` through the badge-3 reply cap (core 1); the caller's staged
+frame is the reply message frame.  Returns (the caller's post ipcState is
+`.ready`, its staged frame). -/
+private def replyDeliveryScenario :
+    Except KernelError (Bool × Kernel.Architecture.SyscallReturnFrame) := do
+  let (_, st1) ← dispatchFromAbiOn core1
+    SyscallId.reply.toNat 2 replyCapPtr.toUInt64 21 22 0 replyPendingState
+  let ready := match st1.getTcb? callerTid with
+    | some tcb => tcb.ipcState == .ready
+    | none => false
+  pure (ready, stagedFrame st1 callerTid)
+
+/-- 9e: `.replyRecv` — the compound arm's reply leg stages the previous
+caller's frame through `replyRecvBody`'s own composition (a distinct call
+site from 9d's `.reply` arm); the receive leg blocks the server (empty
+endpoint), so the server's own outcome is `.blocks`. -/
+private def replyRecvDeliveryScenario :
+    Except KernelError (Kernel.Architecture.SyscallOutcome ×
+      Kernel.Architecture.SyscallReturnFrame) := do
+  let (out1, st1) ← dispatchFromAbiOn core1
+    SyscallId.replyRecv.toNat 3 epCapPtr.toUInt64
+    replyCapPtr.toUInt64 31 32 replyPendingState
+  pure (out1, stagedFrame st1 callerTid)
+
+-- ============================================================================
 -- §8  Golden fixture — the deterministic return-ABI trace (RA.E.4)
 -- ============================================================================
 
@@ -345,6 +533,18 @@ private def returnAbiTraceLines : List String :=
   , s!"[ret-abi] full-width badge frame: " ++
       frameCells (Kernel.Architecture.returnFrameOfBadge
         (Badge.ofNatMasked 0x8000000000000042))
+  -- RA.B.5b: the blocked orderings' staged frames, computed from the live
+  -- two-core scenarios (§7b) — the unblocking syscall's staging is now an
+  -- observable of the fixture.
+  , (match waitThenSignalScenario with
+     | .ok (_, f) => s!"[ret-abi] staged wait-before-signal badge frame: {frameCells f}"
+     | .error e => s!"[ret-abi] staged wait-before-signal badge frame: dispatch-error {reprStr e}")
+  , (match receiveThenSendScenario with
+     | .ok f => s!"[ret-abi] staged blocked-receiver message frame: {frameCells f}"
+     | .error e => s!"[ret-abi] staged blocked-receiver message frame: dispatch-error {reprStr e}")
+  , (match sendThenReceiveScenario with
+     | .ok (_, _, f) => s!"[ret-abi] staged completed-sender unit frame: {frameCells f}"
+     | .error e => s!"[ret-abi] staged completed-sender unit frame: dispatch-error {reprStr e}")
   ]
 
 private def fixturePath : String := "tests/fixtures/syscall_return_abi.expected"
@@ -374,6 +574,63 @@ private def runTraceFixtureCheck : IO Unit := do
     throw (IO.userError "return-ABI trace fixture mismatch")
 
 -- ============================================================================
+-- §9  RA.B.5b — the blocked orderings: the unblocking syscall stages the
+--      woken thread's frame (delivery is the SM10.E context restore)
+-- ============================================================================
+
+private def runBlockedWaiterStagingWitnesses : IO Unit := do
+  IO.println "-- §9 RA.B.5b: the unblocking syscall stages the blocked waiter's frame"
+  -- 9a — wait-before-signal (the acceptance-gate split's staged half)
+  match waitThenSignalScenario with
+  | .error e => assertBool s!"9a dispatches (got .error {reprStr e})" false
+  | .ok (preX0, frame) => do
+      assertBool "9a control: pre-signal the blocked waiter's staged x0 is its own cap ptr (stale args — the §3.5 hazard)"
+        (preX0 == capPtrValue.toUInt64)
+      assertBool "9a: the signal staged the badge frame into the waiter (x0 = 42)"
+        (frame.x0 == signalledBadge.toUInt64)
+      assertBool "9a: the staged x1 is the success label"
+        (frame.x1 == 0)
+      assertBool "9a: the staged frame decodes as the badge, end to end"
+        (rustDecodeResponse (postTrapRegs frame) == .ok signalledBadge.toUInt64 #[0, 0, 0, 0])
+  -- 9b — blocked receiver woken by a send
+  match receiveThenSendScenario with
+  | .error e => assertBool s!"9b dispatches (got .error {reprStr e})" false
+  | .ok frame => do
+      assertBool "9b: the send staged the message frame into the blocked receiver (x0 = badge 9)"
+        (frame.x0 == epBadgeVal.toUInt64)
+      assertBool "9b: the staged message registers are the sent payload (x2 = 7, x3 = 8)"
+        (frame.x2 == 7 && frame.x3 == 8)
+  -- 9c — blocked plain sender completed by a receive
+  match sendThenReceiveScenario with
+  | .error e => assertBool s!"9c dispatches (got .error {reprStr e})" false
+  | .ok (preX0, out2, senderFrame) => do
+      assertBool "9c control: pre-receive the parked sender's staged x0 is its own cap ptr"
+        (preX0 == epCapPtr.toUInt64)
+      assertBool "9c: the receive's own outcome is the consumed message (immediate half)"
+        (match out2 with
+          | .returns f => f.x0 == epBadgeVal.toUInt64 && f.x2 == 7 && f.x3 == 8
+          | .blocks => false)
+      assertBool "9c: the completed sender's staged frame is the unit zero frame"
+        (senderFrame == .zero)
+  -- 9d — the reply delivers `.call`'s frame
+  match replyDeliveryScenario with
+  | .error e => assertBool s!"9d dispatches (got .error {reprStr e})" false
+  | .ok (ready, frame) => do
+      assertBool "9d control: the reply woke the blocked caller (.ready)" ready
+      assertBool "9d: the caller's staged frame is the reply message (x0 = reply-cap badge 3)"
+        (frame.x0 == replyBadgeVal.toUInt64)
+      assertBool "9d: the staged payload is the reply body (x2 = 21, x3 = 22)"
+        (frame.x2 == 21 && frame.x3 == 22)
+  -- 9e — replyRecv's own staging composition
+  match replyRecvDeliveryScenario with
+  | .error e => assertBool s!"9e dispatches (got .error {reprStr e})" false
+  | .ok (out1, frame) => do
+      assertBool "9e: the server's receive leg blocks (empty endpoint)"
+        (out1 == .blocks)
+      assertBool "9e: replyRecv staged the previous caller's frame (x2 = 31, x3 = 32, badge 3)"
+        (frame.x0 == replyBadgeVal.toUInt64 && frame.x2 == 31 && frame.x3 == 32)
+
+-- ============================================================================
 -- Runner
 -- ============================================================================
 
@@ -389,6 +646,7 @@ def runSyscallReturnAbiChecks : IO Unit := do
   runBadgeDeliveryWitness
   runFullWidthBadgeWitness
   runBlockedOutcomeWitness
+  runBlockedWaiterStagingWitnesses
   runTraceFixtureCheck
   IO.println "===================================================="
   IO.println "All syscall-return-ABI checks PASS (post-flip convention holds)."

@@ -11,11 +11,15 @@
 > **Sub-task count**: 41 across ~12-15 PRs (the plan's estimate; the landing
 > collapsed to 6 commits because the flip is one atomic cut — see the landing
 > record below)
-> **Status**: **CORE LANDED at v0.33.37** — the immediate-return convention is
-> live end to end.  §1 below records the **pre-flip** state the workstream
-> removed; the remaining scope is in the landing record.
+> **Status**: **COMPLETE — core LANDED at v0.33.37; RA.B.5b + RA.B.8 LANDED
+> at v0.33.38.**  Both return orderings are staged end to end (the immediate
+> half returned at the boundary, the blocked half staged by the unblocking
+> arm), and the per-arm shape-coherence family is proven.  What remains is
+> owed to SM10.E, not to this workstream: frame *delivery* at the context
+> restore, and the cancellation/timeout error-frame staging (§9).  §1 below
+> records the **pre-flip** state the workstream removed.
 
-## Landing record — core landed at v0.33.37
+## Landing record — core landed at v0.33.37; completed at v0.33.38
 
 Six commits, sequenced as §5 prescribed: the RA.E.1 witness suite landed
 first and **failed on the pre-migration tree** (its assertions then inverted
@@ -42,21 +46,71 @@ Validated at the flip: full Lean library, all 68 suites, main trace
 byte-identical, Rust workspace green + clippy-clean, routing gate at zero
 exceptions, partition + axiom sweeps + Tier 3 green.
 
-**Remaining scope, tracked here and in §9:**
+**Completion record — RA.B.5b and RA.B.8 landed at v0.33.38.**
 
-- **RA.B.5b — the blocked-waiter half** (§3.5): the unblocking transitions
-  (`notificationSignal`'s wake of an already-blocked waiter, the endpoint
-  send/reply rendezvous delivery into a blocked receiver) do not yet stage
-  the woken thread's return frame; delivery is consumable only at SM10.E's
-  context restore (`contextRestoreSeamLive = false`), and the cancellation /
-  timeout error-frame staging is registered debt with owner SM10.E (§9).
-  The immediate orderings — signal-before-wait, sender-already-waiting — are
-  live and tested.
-- **RA.B.8 — `dispatchArm_matches_returnShape`**: the per-arm coherence
-  theorems tying each dispatch arm's staging behaviour to its declared
-  `ReturnShape`.  The classification and the arms agree today (RA.E.2's
-  end-to-end assertions exercise every value shape); the theorem family
-  makes that agreement structural.
+**RA.B.5b** landed at the **arms**, not at the transitions — the same design
+sharpening RA.B.6 recorded for the immediate half, applied to the blocked
+half once the delivery shape was verified against the tree: every wake in
+the tree delivers through `.ready` + `pendingMessage := msg`
+(`storeTcbIpcStateAndMessage` / `storeTcbReceiveComplete`), so the payload
+is recoverable at the arm post-state and the plan's drafted store-sibling
+mechanism (`storeTcbReadyWithFrame`, one-call swaps inside the transitions,
+the per-site invariant re-proof bulk of the XL) was **not needed** — zero
+IPC transitions changed, zero of the ~1900-reference invariant surface
+moved.  Two Option-lifted stagers (`Architecture.stageWokenDelivery` over
+`stageDeliveredMessage`; `stageWokenSendCompletion` staging the zero frame
+for a completed **plain sender**, guarded `.ready` ∧ consumed so a `Call`
+sender and a payload wake are skipped) compose at eleven sites: the
+`.send`/`.call` arms (×2 each — pre-resolved receive-queue head), the
+`.reply` arms (×2 — the resolved caller), the `.receive` arms (×2 — the
+send-queue head's unit frame beside the existing caller staging), the
+`.notificationSignal` arms (×2 — plain head waiter + bound target, mutually
+exclusive), and `replyRecvBody` (×1, both legs, shared by both `.replyRecv`
+arms).  The plan-named theorems: `blockedReturn_staged_in_waiter_frame` (a
+payload wake's staged frame is exactly `returnFrameOfMessage msg`,
+recovered bit-for-bit by the boundary read) and its unit dual
+`blockedUnitReturn_staged_in_sender_frame`; both stagers carry
+scheduler/machine frames and every-observer projection preservation via
+RA.B.10's blanket.  Theorem fallout: eight delegation RHS
+(`dispatchWithCap{,Checked}_send_delegates`, `_receive_delegates`,
+`_send_uses_withCaps`, `_call_uses_crossCoreDispatch`,
+`_reply_populates_msg`, the two `syscallDelegates` arms) updated in
+lockstep; the `checkedDispatch_{reply,replyRecv}_eq_unchecked_when_allowed`
+equivalences survived unchanged (both sides move together; `replyRecvBody`
+is shared); SM8.B's `replyRecvBody_confinedToCores` re-proven by
+transporting the donation leg's confinement across the staging steps
+(`observableSlotsConfinedToCores_of_framed_suffix` — the stagers frame
+scheduler and machine).  Evidence: `SyscallReturnAbiSuite` §9 (five
+end-to-end two-core scenarios through the live per-core dispatch —
+wait-before-signal with the stale-args negative control, blocked receiver,
+completed plain sender incl. its pre-receive stale-x0 control, the reply
+delivering `.call`'s frame, and `replyRecvBody`'s own composition) plus
+three new golden-fixture lines computed from the staged frames.
+
+**RA.B.8** landed as the five-theorem value-half family plus the structural
+unit half.  The draft's phrasing — "a `.unit` arm leaves the caller's
+staged frame untouched" — is deliberately **not** the theorem: it is false
+of any arm that context-switches (`saveOutgoingContext` writes
+`registerContext`) and unnecessary, because `frameForShape_unit` makes the
+boundary **construct** unit frames without reading staged registers, so no
+arm can disagree with a `.unit` classification structurally.  The value
+half is per-arm over the live dispatch:
+`dispatchArm_notificationWait_matches_returnShape` (`.badge`),
+`dispatchArm_serviceQuery_matches_returnShape` (`.word`),
+`dispatchArm_receive_matches_returnShape` and
+`dispatchArm_replyRecv_matches_returnShape` (`.message`), and
+`dispatchArm_call_frame_delivered_by_reply` — the cross-arm form of §3.5's
+"a call never returns at its own boundary": the `.reply` dispatch stages
+the *caller's* `.message` frame and the boundary read at the caller
+recovers it.  With `syscallReturnShape_value_returning` pinning the value
+surface at exactly those five syscalls, the family covers it.
+
+**Still owed elsewhere (registered in §9, owner SM10.E)**: frame *delivery*
+(the context restore — `contextRestoreSeamLive = false` until SM10.E) and
+the cancellation/timeout **error-frame** staging (`cancelIpcBlocking` /
+`timeoutThread` stage nothing; before the restore seam flips they must
+stage an error frame).  Neither is WS-RA scope: the workstream's staging
+obligations are complete.
 
 ## 1. Phase goal
 
@@ -486,10 +540,10 @@ both sit above it without a cycle.  (The first draft said
 | RA.B.4 | The "an error changes nothing" proofs — **verified to survive, not re-proven**.  `syscallEntry_error_perCore_NI` and `syscallEntry_error_preserves_proofLayerInvariantBundle` are trivial (`rfl` / `hInv`) precisely because the error path returns the pre-state unchanged, and RA.B.3's design keeps it so (error frames are *computed at the boundary*, never staged into the TCB).  The work here is the negative that pins the design: `syscallDispatchFromAbi_error_stages_no_frame` — on every error arm the returned state carries no return-frame write | `Platform/FFI.lean` | S |
 | RA.B.5 | **`.notificationWait`** returns its badge — the SM9.C.0 defect, closed here.  The pending-badge arm of `notificationWaitOnCore` (which today runs `storeTcbIpcState` and delivers *nothing*) stages the badge frame into the caller's `registerContext`; both live arms (`dispatchWithCap` / `dispatchWithCapChecked` in `API.lean`) keep their `Kernel Unit` shape per §3.7 | `IPC/CrossCore/NotificationSignal.lean` | M |
 | RA.B.5a | Outcome classification at the boundary: `syscallOutcomeOf` decides `blocks` from the caller's post-state IPC state (§3.5 — outcome is state-dependent, not id-dependent); `blockingArm_returns_no_frame`; `frameForShape` wired so a `.unit` syscall's frame is constructed, never read (§3.3) | `Platform/FFI.lean`, `Kernel/Architecture/SyscallReturn.lean` | M |
-| RA.B.5b | The **unblocking transitions stage the blocked waiter's frame** — scoped, after the implementation split below, to the *blocked-waiter* half only: `notificationSignalOnCore` waiter arm, `notificationSignalBoundOnCore` bound arm, `endpointSendDual`(+`OnCore`) rendezvous arm (the blocked receiver), `endpointReceiveDual`(+`OnCore`)'s unblocked plain **sender**'s unit frame, `endpointCallOnCore` receiver arm, `endpointReplyOnCore` woken-caller arm.  Mechanism: new store siblings (`storeTcbReadyWithFrame`-shaped) that write `ipcState` + `pendingMessage` + `registerContext := stage (returnFrameOfMessage msg)` in **one** object write, so each site is a one-call swap and the frame-lemma family (`_objects_ne`, `_scheduler_eq`, `_ipcState_eq`, `_preserves_ipcInvariant`, …) is proven once per sibling, not once per site.  The per-site invariant-preservation re-proofs (the `Signal.lean` / `EndpointReply.lean` / `Transport.lean` families that unfold the old helpers) are the honest bulk of the XL.  **Rides with its consumer**: a blocked waiter's staged frame is delivered only by the SM10.E context restore (§3.5), so this half lands with the restore seam's workstream slice rather than blocking the flip — recorded as the same named obligation §9 already carries | `IPC/Operations/Endpoint.lean` (the siblings), `IPC/CrossCore/{NotificationSignal,NotificationBind,EndpointSend,EndpointReply,EndpointCall}.lean`, `IPC/DualQueue/Transport.lean` | XL |
+| RA.B.5b | **LANDED v0.33.38 — at the arms, not the transitions (see the landing record; the store-sibling mechanism below was not needed).**  The **unblocking transitions stage the blocked waiter's frame** — scoped, after the implementation split below, to the *blocked-waiter* half only: `notificationSignalOnCore` waiter arm, `notificationSignalBoundOnCore` bound arm, `endpointSendDual`(+`OnCore`) rendezvous arm (the blocked receiver), `endpointReceiveDual`(+`OnCore`)'s unblocked plain **sender**'s unit frame, `endpointCallOnCore` receiver arm, `endpointReplyOnCore` woken-caller arm.  Mechanism: new store siblings (`storeTcbReadyWithFrame`-shaped) that write `ipcState` + `pendingMessage` + `registerContext := stage (returnFrameOfMessage msg)` in **one** object write, so each site is a one-call swap and the frame-lemma family (`_objects_ne`, `_scheduler_eq`, `_ipcState_eq`, `_preserves_ipcInvariant`, …) is proven once per sibling, not once per site.  The per-site invariant-preservation re-proofs (the `Signal.lean` / `EndpointReply.lean` / `Transport.lean` families that unfold the old helpers) are the honest bulk of the XL.  **Rides with its consumer**: a blocked waiter's staged frame is delivered only by the SM10.E context restore (§3.5), so this half lands with the restore seam's workstream slice rather than blocking the flip — recorded as the same named obligation §9 already carries | `IPC/Operations/Endpoint.lean` (the siblings), `IPC/CrossCore/{NotificationSignal,NotificationBind,EndpointSend,EndpointReply,EndpointCall}.lean`, `IPC/DualQueue/Transport.lean` | XL |
 | RA.B.6 | **`.receive` / `.replyRecv` / the immediate half generally — staged at the ARMS** (implemented; a design sharpening over the first draft, which routed everything through RA.B.5b's delivery sites): every immediate value is already in the arm's hands (`notificationWaitCrossCoreDispatch` returns `.ok (some badge)` and the arm was discarding it) or in the caller's own `pendingMessage` (the receive/replyRecv consume paths deliver there), so `stageDeliveredMessage` — guarded on the caller's post-state being `.ready`, since a blocked caller's `pendingMessage` may be stale — closes the immediate half while touching **zero** IPC transitions and zero of the ~1900-reference invariant surface.  Theorem fallout was exactly two: `dispatchWithCapChecked_receive_delegates` and the `syscallDelegates` `.receive` obligation gain the staging in their pinned RHS; the checked/unchecked equivalence family survives because both arms change in lockstep | `API.lean` | M |
 | RA.B.7 | **`.serviceQuery`** returns its resolved service — `x0` = the `ServiceRegistration.sid` the arm currently discards (the `.serviceQuery` arm of `dispatchCapabilityOnly` in `API.lean`); staged in the arm via `writeReturnFrameToTcb`.  (`.cspaceMint`, `.cspaceCopy` and the retype family are deliberately **not** here: their decoded arguments already carry the destination slot, the kernel allocates no slot of its own, and inventing a result for them would be adding an ABI value rather than repairing a missing one — §3.7's boundary) | `API.lean` | M |
-| RA.B.8 | The classification and the arms cannot disagree: `dispatchArm_matches_returnShape` — for every `.unit`-shaped syscall the dispatch arm leaves the caller's staged frame untouched (so the constructed zero frame is honest), and for every value-shaped syscall the success path staged (so the read is of fresh data, not the caller's arguments).  Driven per-variant by `syscallReturnShape` | `API.lean` | L |
+| RA.B.8 | **LANDED v0.33.38 (see the landing record — the unit half is structural via `frameForShape_unit`, the value half per-arm).**  The classification and the arms cannot disagree: `dispatchArm_matches_returnShape` — for every `.unit`-shaped syscall the dispatch arm leaves the caller's staged frame untouched (so the constructed zero frame is honest), and for every value-shaped syscall the success path staged (so the read is of fresh data, not the caller's arguments).  Driven per-variant by `syscallReturnShape` | `API.lean` | L |
 | RA.B.9 | `syscallDispatchCrossCoreEntry` threads the outcome: mailbox write via the new link-gated `@[extern]` (§3.3), outcome tag as the export's scalar return; `syscallDispatchCrossCoreEntry_def` and `vacatedCore_next_syscall_rejected` restated | `Kernel/SyscallDispatchEntry.lean`, `Platform/FFI.lean` (extern decl) | M |
 | RA.B.10 | Information flow — **the premise checked against the tree first**: `projectKernelObject` already strips `registerContext` from every projected TCB (WS-H12c, `projectKernelObject` in `InformationFlow/Projection.lean`), so the first draft's "an observer that can see the caller sees its register context" was wrong and the **blanket theorem is provable**: `writeReturnFrameToTcb_preserves_projection` (and `_preserves_projectionOnCore` / `lowEquivalent_smp`), for *every* observer.  What remains and is stated honestly: (a) the caller-visible content channel is the hardware `TrapFrame` write at the boundary — outside `ObservableState`, the same class as the registered covert channels, and by construction data the caller's own syscall produced; (b) the *authority* for each returned value is each receive/wait arm's existing flow gate (`endpointFlowGate`, the SM6.B notification→waiter gate), and per-value theorems name that: a staged badge reaches only a thread the gate admitted.  RA.B.5b's staging sites each carry their projection-preservation lemma via (a)'s blanket | `InformationFlow/Invariant/Operations.lean`, `Platform/FFI.lean` | M |
 
@@ -614,15 +668,18 @@ diff caught.
 - [x] `notification_wait` returns the badge that was signalled in the
       **signal-before-wait** ordering — delivered end to end (suite §5;
       full-width badge in §6).
-- [ ] In the **wait-before-signal** ordering the badge is **staged** into the
+- [x] In the **wait-before-signal** ordering the badge is **staged** into the
       waiter's saved frame by the unblocking transition
       (`blockedReturn_staged_in_waiter_frame`), with delivery completing at the
       SM10.E context restore.  Stated as a split rather than claimed as one
       result, because the context-restore seam is not live (§3.5).
-      **Remaining — RA.B.5b** (landing record).
+      **Landed at v0.33.38** — `SyscallReturnAbiSuite` §9a runs the ordering
+      end to end through the live two-core dispatch, with the pre-signal
+      stale-args negative control.
 - [x] `endpoint_receive` returns real message registers, not the caller's own —
-      in the immediate rendezvous ordering (`stageDeliveredMessage` at the
-      arm); the blocked-receiver ordering is the RA.B.5b half above.
+      both orderings: the immediate rendezvous (`stageDeliveredMessage` at the
+      arm) and the blocked receiver (staged by the unblocking `.send`/`.call`
+      arm, §9b).
 - [x] Every `SyscallId` has a `ReturnShape` by construction, and a new syscall
       cannot be added without one (`syscallReturnShape` is a total match;
       `returnShape_list_gate_insufficient` records why a list gate was

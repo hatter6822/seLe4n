@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.33.37.
+Lean 4.28.0 toolchain, Lake build system, version 0.33.38.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -182,21 +182,21 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~40312 lines)
+- `CHANGELOG.md` (~40713 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~20449 lines)
-- `docs/WORKSTREAM_HISTORY.md` (~10832 lines)
+- `docs/WORKSTREAM_HISTORY.md` (~10878 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~7902 lines)
 - `tests/SmpInformationFlowSuite.lean` (~6863 lines)
-- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5053 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~4900 lines)
+- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5083 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5006 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4764 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
 - `SeLe4n/Model/State.lean` (~4364 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~4351 lines)
-- `docs/spec/SELE4N_SPEC.md` (~4137 lines)
+- `SeLe4n/Kernel/API.lean` (~4250 lines)
+- `docs/spec/SELE4N_SPEC.md` (~4161 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
 - `tests/NegativeStateSuite.lean` (~4094 lines)
-- `SeLe4n/Kernel/API.lean` (~3938 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3919 lines)
 - `docs/gitbook/12-proof-and-invariant-map.md` (~3879 lines)
 - `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~3668 lines)
@@ -262,15 +262,15 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md` (~1776 lines)
 - `tests/InformationFlowSuite.lean` (~1748 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_COMPREHENSIVE.md` (~1739 lines)
+- `SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean` (~1726 lines)
 - `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` (~1725 lines)
-- `SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean` (~1725 lines)
 - `docs/dev_history/audits/WORKSTREAM_PLAN_WS_O_SYSCALL_RUST_WRAPPERS.md` (~1725 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean` (~1706 lines)
-- `SeLe4n/Platform/FFI.lean` (~1700 lines)
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
 - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~1670 lines)
 - `SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean` (~1668 lines)
 - `docs/planning/SMP_FOUNDATIONS_PLAN.md` (~1665 lines)
+- `SeLe4n/Platform/FFI.lean` (~1645 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~1488 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
@@ -287,6 +287,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean` (~1337 lines)
 - `tests/LockSetSuite.lean` (~1335 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1316 lines)
+- `docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md` (~1313 lines)
 - `SeLe4n/Kernel/InformationFlow/Policy.lean` (~1293 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreDomain.lean` (~1277 lines)
 - `docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md` (~1252 lines)
@@ -297,7 +298,6 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~1222 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1219 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1216 lines)
-- `docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md` (~1214 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean` (~1200 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean` (~1186 lines)
 - `docs/dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md` (~1178 lines)
@@ -317,11 +317,12 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1085 lines)
 - `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~1076 lines)
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
-- `tests/SyscallDispatchSuite.lean` (~1047 lines)
+- `tests/SyscallDispatchSuite.lean` (~1046 lines)
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
 - `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1039 lines)
 - `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~1027 lines)
 - `SeLe4n/Kernel/InformationFlow/Projection.lean` (~1023 lines)
+- `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1011 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~1002 lines)
 - `docs/planning/SMP_CROSS_CORE_IPC_PLAN.md` (~988 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~986 lines)
@@ -350,7 +351,6 @@ To find files that need pagination today, run:
 - `tests/WithLockSetSuite.lean` (~809 lines)
 - `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` (~808 lines)
 - `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` (~806 lines)
-
 This bullet block is a **curated snapshot**, not a static enumeration.
 `scripts/find_large_lean_files.sh --check` (called from
 `scripts/sync_documentation_metrics.sh`) compares it against the live
@@ -718,8 +718,8 @@ documentation lives under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
-- **WS-RA Syscall Return ABI — core LANDED (v0.33.37); the immediate-return
-  convention is live end to end**.  The kernel returns seL4's ARM64 frame
+- **WS-RA Syscall Return ABI — COMPLETE (core v0.33.37; RA.B.5b + RA.B.8
+  v0.33.38); both return orderings staged end to end**.  The kernel returns seL4's ARM64 frame
   exactly: `x0` = badge / primary result at full 64-bit width, `x1` =
   `MessageInfo` whose **offset** label carries the error (`0` = success,
   `d + 1` = discriminant `d` — offset because discriminant 0,
@@ -771,12 +771,23 @@ documentation lives under `docs/` and `docs/gitbook/`.
   golden fixture `tests/fixtures/syscall_return_abi.expected` computed from
   the live dispatch decisions; per-shape + all-55-label conformance both
   sides; `main_trace_smoke` byte-identical (the harness prints no register
-  content — as the refined plan §6.2 predicts).  **Remaining WS-RA scope**
-  (registered, ~2-3 PRs): RA.B.5b blocked-waiter staging at the unblocking
-  transitions (`blockedReturn_staged_in_waiter_frame`; delivery rides the
-  SM10.E context restore, and cancellation/timeout staging is a named
-  obligation before `contextRestoreSeamLive` flips) and RA.B.8's full
-  per-arm `dispatchArm_matches_returnShape`.
+  content — as the refined plan §6.2 predicts).  **Completed at v0.33.38 — WS-RA
+  CLOSED on the staging side**: RA.B.5b landed **at the arms** (the RA.B.6
+  sharpening applied to the blocked half — every wake delivers `.ready` +
+  `pendingMessage`, so two Option-lifted stagers `stageWokenDelivery` /
+  `stageWokenSendCompletion` compose at eleven arm sites with zero IPC
+  transitions touched; `blockedReturn_staged_in_waiter_frame` + the unit dual
+  `blockedUnitReturn_staged_in_sender_frame`; eight delegation RHS updated in
+  lockstep; SM8.B's `replyRecvBody_confinedToCores` re-proven by framed-suffix
+  transport; `SyscallReturnAbiSuite` §9's five end-to-end two-core scenarios +
+  three golden-fixture lines) and RA.B.8 landed as the five-theorem value-half
+  family (`dispatchArm_{notificationWait,serviceQuery,receive,replyRecv}_matches_returnShape`
+  + `dispatchArm_call_frame_delivered_by_reply` — §3.5's cross-arm form) with
+  the unit half structural (`frameForShape_unit` constructs, never reads; the
+  draft's "unit arms leave the staged frame untouched" is deliberately not the
+  theorem — false under context switches, unnecessary under construction).
+  What remains is owed to SM10.E: frame *delivery* at the context restore, and
+  the cancellation/timeout error-frame staging (plan §9).
   Plan: [`docs/planning/SYSCALL_RETURN_ABI_PLAN.md`](docs/planning/SYSCALL_RETURN_ABI_PLAN.md).
 
 - **WS-SM SMP multi-core completion workstream IN FLIGHT (v0.31.2 → v1.0.0)**:

@@ -3112,6 +3112,22 @@ run_check "INVARIANT" rg -n '^def writeReturnFrameToTcb' SeLe4n/Kernel/Architect
 run_check "INVARIANT" rg -n '^def readReturnFrame' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '^theorem readReturnFrame_writeReturnFrame' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '^def stageDeliveredMessage' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+# WS-RA RA.B.5b: the blocked-waiter staging seam — the Option-lifted stagers
+# the unblocking arms compose, the plan-named theorem, and its unit dual.
+run_check "INVARIANT" rg -n '^def stageWokenDelivery' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^def stageWokenSendCompletion' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem stageWokenSendCompletion_stages_zero' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem blockedReturn_staged_in_waiter_frame' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem blockedUnitReturn_staged_in_sender_frame' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem stageWokenDelivery_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+run_check "INVARIANT" rg -n '^theorem stageWokenSendCompletion_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+# WS-RA RA.B.8: the per-arm shape-coherence family — the classification and
+# the live dispatch arms cannot disagree (`.call` through the reply arm, §3.5).
+run_check "INVARIANT" rg -n '^theorem dispatchArm_notificationWait_matches_returnShape' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchArm_serviceQuery_matches_returnShape' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchArm_receive_matches_returnShape' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchArm_replyRecv_matches_returnShape' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchArm_call_frame_delivered_by_reply' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^def syscallReturnOutcome' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem readReturnValue_eq_readReturnFrame_x0' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem writeReturnFrameToTcb_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean

@@ -512,7 +512,7 @@ WS-RC and WS-SM are merged. Opens immediately at v0.31.2 boundary.
 | SM5 | v0.71.0 → v0.82.x | 12-16 weeks |
 | SM6 | v0.83.0 → v0.90.x | 8-12 weeks |
 | SM7 ‖ SM8 | v0.91.0 → v0.97.x | 6-10 weeks (parallel) |
-| **WS-RA** | v0.33.36 → v0.33.37 | **core LANDED** (estimate was 5-8 weeks; the flip collapsed to one atomic cut.  Remaining: RA.B.5b blocked-waiter staging, owned with SM10.E) |
+| **WS-RA** | v0.33.36 → v0.33.38 | **COMPLETE** (estimate was 5-8 weeks; the flip collapsed to one atomic cut, RA.B.5b + RA.B.8 followed at v0.33.38.  SM10.E owes delivery + cancellation error frames) |
 | SM9 | after WS-RA — **now unblocked** | 12-16 weeks |
 | SM10 | v0.98.0 → **v1.0.0** | 4-6 weeks |
 | **Total** | | **84-119 weeks (~19-28 months)** |
