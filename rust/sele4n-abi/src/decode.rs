@@ -1,22 +1,39 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Syscall response decoding — unpacks ARM64 registers into typed results.
+//!
+//! WS-RA: this is **the single decode point** for the seL4 return
+//! convention (plan §3.2) — every `sele4n-sys` wrapper funnels through
+//! [`decode_response`] via `invoke_syscall`:
+//!
+//! * `x0` — the primary return value: a full-width badge, a queried word,
+//!   or `0` for `Unit`-returning syscalls.
+//! * `x1` — a `MessageInfo` whose **label** carries the error status:
+//!   label `0` = success, label `d + 1` = `KernelError` discriminant `d`
+//!   (the `+ 1` offset exists because discriminant `0` is
+//!   `InvalidCapability`, a real error — a direct-carriage label would
+//!   alias it with success).
+//! * `x2`-`x5` — message registers.
+//!
+//! The pre-WS-RA convention — `regs[0] != 0` *is* the error discriminant,
+//! everything else the caller's own stale registers — is retired.
 
 use crate::MessageInfo;
 use sele4n_types::{Badge, KernelError, KernelResult};
 
-/// A decoded syscall response from the kernel.
+/// A decoded successful syscall response.
 ///
-/// R-M03 fix: the x1 register carries context-dependent data (badge on
-/// receive path, message info on send/call/reply path). Instead of
-/// exposing both interpretations as public fields, a single `x1_raw`
-/// field is stored and typed accessor methods disambiguate the semantics.
+/// Exists only on the success path: an error rides `Err(KernelError)` out
+/// of [`decode_response`], so there is no vestigial error field (the
+/// pre-WS-RA `error: Option<KernelError>` was `None` on every constructed
+/// value).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SyscallResponse {
-    /// Error code from x0. `None` means success (x0 == 0).
-    pub error: Option<KernelError>,
-    /// Raw x1 register value — context-dependent (badge or message info).
-    /// Use `badge()` or `msg_info()` to interpret.
-    x1_raw: u64,
+    /// The primary return value from `x0` — full 64-bit width (the bit-63
+    /// status flag is retired, so a badge may use every bit).
+    x0: u64,
+    /// The decoded `MessageInfo` from `x1`.  Its label is `0` here by
+    /// construction (a nonzero label decoded as an `Err`).
+    msg_info: MessageInfo,
     /// Message registers from x2–x5.
     pub msg_regs: [u64; 4],
 }
@@ -25,48 +42,50 @@ pub struct SyscallResponse {
 ///
 /// Layout: `[x0, x1, x2, x3, x4, x5, x7]`
 ///
-/// - x0: error code (0 = success)
-/// - x1: badge or message info (context-dependent)
-/// - x2–x5: return message registers
+/// Fail-closed twice over (the posture the retired `regs[0] > u32::MAX`
+/// guard had, relocated to the register that now carries status):
+/// an `x1` that does not decode as a well-formed `MessageInfo` (over-wide
+/// label bits, out-of-range length/extraCaps) is `InvalidMessageInfo`,
+/// and an in-range label naming an unknown discriminant collapses to
+/// `UnknownKernelError` — either way an `Err`, never a false success.
 #[inline]
 pub fn decode_response(regs: [u64; 7]) -> KernelResult<SyscallResponse> {
-    if regs[0] != 0 {
-        // V1-A (H-RS-1): Guard against u64 values exceeding u32::MAX before cast.
-        // Without this check, a value like 0x1_0000_0000 would truncate to 0,
-        // causing a false-success interpretation.
-        if regs[0] > u32::MAX as u64 {
-            return Err(KernelError::InvalidSyscallNumber);
+    let msg_info = MessageInfo::decode(regs[1]).map_err(|_| KernelError::InvalidMessageInfo)?;
+    match msg_info.label() {
+        0 => Ok(SyscallResponse {
+            x0: regs[0],
+            msg_info,
+            msg_regs: [regs[2], regs[3], regs[4], regs[5]],
+        }),
+        label => {
+            // The offset carriage: label `d + 1` names discriminant `d`.
+            // The label is ≤ 20 bits by `MessageInfo::decode`, so the cast
+            // cannot truncate a discriminant into a different one.
+            let disc = (label - 1) as u32;
+            Err(KernelError::from_u32(disc).unwrap_or(KernelError::UnknownKernelError))
         }
-        // Kernel error codes are 0–53 (WS-SM SM5.B: +ThreadOnDifferentCore at
-        // 53; R5.E: +MissingSchedContext at 52; AN7-E: +PartialResolution at 51).
-        // AF6-A: Unrecognized codes (≥54, excluding sentinel 255) map to
-        // UnknownKernelError — semantically correct fallback instead of
-        // InvalidSyscallNumber which implies a different kind of protocol error.
-        let err = KernelError::from_u32(regs[0] as u32).unwrap_or(KernelError::UnknownKernelError);
-        return Err(err);
     }
-
-    Ok(SyscallResponse {
-        error: None,
-        x1_raw: regs[1],
-        msg_regs: [regs[2], regs[3], regs[4], regs[5]],
-    })
 }
 
 impl SyscallResponse {
-    /// Interpret x1 as an IPC badge (valid for Receive/ReplyRecv syscalls).
+    /// The returned badge — read from **`x0`** (`.notificationWait`,
+    /// `.receive`, `.call`, `.replyRecv`).  Pre-WS-RA this read `x1`,
+    /// which the kernel never wrote back.
     pub fn badge(&self) -> Badge {
-        Badge::from(self.x1_raw)
+        Badge::from(self.x0)
     }
 
-    /// Interpret x1 as message info (valid for Send/Call/Reply syscalls).
-    pub fn msg_info(&self) -> KernelResult<MessageInfo> {
-        MessageInfo::decode(self.x1_raw).map_err(|_| KernelError::InvalidMessageInfo)
+    /// The primary return value word from `x0` (`.serviceQuery`'s resolved
+    /// `ServiceId`; `0` for `Unit`-returning syscalls).
+    pub const fn value(&self) -> u64 {
+        self.x0
     }
 
-    /// Get the raw x1 register value for direct inspection.
-    pub const fn x1_raw(&self) -> u64 {
-        self.x1_raw
+    /// The returned `MessageInfo` (its `length` is the delivered inline
+    /// message-register count, `extraCaps` the transferred capability
+    /// count; the label is `0` on every constructed response).
+    pub const fn msg_info(&self) -> MessageInfo {
+        self.msg_info
     }
 }
 
@@ -74,64 +93,82 @@ impl SyscallResponse {
 mod tests {
     use super::*;
 
+    /// The offset error label in `x1` position: discriminant → `(d+1) << 9`.
+    fn error_x1(disc: u64) -> u64 {
+        (disc + 1) << 9
+    }
+
     #[test]
-    fn decode_success() {
-        let regs = [0, 42, 1, 2, 3, 4, 0];
+    fn decode_success_full_width_badge() {
+        // WS-RA regression witness: a NONZERO x0 is a VALUE, not an error
+        // — including one with bit 63 set, which the retired protocol
+        // could not represent (encodeOk masked it).
+        let badge = 0x8000_0000_0000_0042u64;
+        let regs = [badge, 0, 1, 2, 3, 4, 0];
         let resp = decode_response(regs).unwrap();
-        assert!(resp.error.is_none());
-        assert_eq!(resp.badge(), Badge::from(42u64));
-        assert_eq!(resp.x1_raw(), 42);
+        assert_eq!(resp.badge(), Badge::from(badge));
+        assert_eq!(resp.value(), badge);
         assert_eq!(resp.msg_regs, [1, 2, 3, 4]);
+        assert_eq!(resp.msg_info().label(), 0);
     }
 
     #[test]
-    fn decode_error() {
-        // error code 1 = ObjectNotFound
-        let regs = [1, 0, 0, 0, 0, 0, 0];
-        let result = decode_response(regs);
-        assert_eq!(result, Err(KernelError::ObjectNotFound));
-    }
-
-    // V1-A: u64 values exceeding u32::MAX must not truncate to false success.
-    #[test]
-    fn decode_u64_overflow_rejected() {
-        // 0x1_0000_0000 would truncate to 0 (false success) without range guard
-        let regs = [0x1_0000_0000u64, 0, 0, 0, 0, 0, 0];
-        assert_eq!(
-            decode_response(regs),
-            Err(KernelError::InvalidSyscallNumber)
-        );
+    fn decode_success_message() {
+        // x1 = MessageInfo { length 4, extraCaps 0, label 0 } = 4.
+        let regs = [7, 4, 10, 20, 30, 40, 0];
+        let resp = decode_response(regs).unwrap();
+        assert_eq!(resp.value(), 7);
+        assert_eq!(resp.msg_info().length(), 4);
+        assert_eq!(resp.msg_regs, [10, 20, 30, 40]);
     }
 
     #[test]
-    fn decode_u64_max_rejected() {
-        let regs = [u64::MAX, 0, 0, 0, 0, 0, 0];
-        assert_eq!(
-            decode_response(regs),
-            Err(KernelError::InvalidSyscallNumber)
-        );
+    fn decode_error_rides_the_label() {
+        // discriminant 1 = ObjectNotFound rides as label 2; x0 is 0 and
+        // ignored.
+        let regs = [0, error_x1(1), 0, 0, 0, 0, 0];
+        assert_eq!(decode_response(regs), Err(KernelError::ObjectNotFound));
     }
 
     #[test]
-    fn decode_unknown_error_code() {
+    fn decode_discriminant_zero_does_not_alias_success() {
+        // The reason the label is OFFSET: discriminant 0 is
+        // InvalidCapability, a real error, and label 0 is success.
+        let regs = [0, error_x1(0), 0, 0, 0, 0, 0];
+        assert_eq!(decode_response(regs), Err(KernelError::InvalidCapability));
+        // ... while a genuinely zero label is a success.
+        assert!(decode_response([0, 0, 0, 0, 0, 0, 0]).is_ok());
+    }
+
+    #[test]
+    fn decode_over_wide_x1_rejected() {
+        // The fail-closed width check that replaced the retired
+        // `regs[0] > u32::MAX` guard (RA.C.7): label bits beyond the
+        // 20-bit field make x1 undecodable, never a silent truncation.
+        let regs = [0, u64::MAX, 0, 0, 0, 0, 0];
+        assert_eq!(decode_response(regs), Err(KernelError::InvalidMessageInfo));
+    }
+
+    #[test]
+    fn decode_unknown_error_label() {
         // WS-SM SM8.C.9: 54 is AuditLogCapacityExceeded.  The first
-        // unrecognized code is now 55 (SM5.B.4 previously stood at 53 with
-        // ThreadOnDifferentCore).
-        let regs = [55, 0, 0, 0, 0, 0, 0];
+        // unrecognized discriminant is 55 (label 56) → UnknownKernelError,
+        // still an Err — fail-closed.
+        let regs = [0, error_x1(55), 0, 0, 0, 0, 0];
         assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
     }
 
     #[test]
     fn decode_missing_sched_context_error() {
-        // R5.E (DEEP-SCH-04): discriminant 52 round-trips to MissingSchedContext.
-        let regs = [52, 0, 0, 0, 0, 0, 0];
+        // R5.E (DEEP-SCH-04): discriminant 52 survives the label round trip.
+        let regs = [0, error_x1(52), 0, 0, 0, 0, 0];
         assert_eq!(decode_response(regs), Err(KernelError::MissingSchedContext));
     }
 
     #[test]
     fn decode_thread_on_different_core_error() {
-        // WS-SM SM5.B.4: discriminant 53 round-trips to ThreadOnDifferentCore.
-        let regs = [53, 0, 0, 0, 0, 0, 0];
+        // WS-SM SM5.B.4: discriminant 53 survives the label round trip.
+        let regs = [0, error_x1(53), 0, 0, 0, 0, 0];
         assert_eq!(
             decode_response(regs),
             Err(KernelError::ThreadOnDifferentCore)
@@ -139,11 +176,23 @@ mod tests {
     }
 
     #[test]
-    fn badge_and_msg_info_from_same_x1() {
-        let regs = [0, 0xBEEF, 0, 0, 0, 0, 0];
+    fn decode_every_discriminant_roundtrips() {
+        // RA.E.3 (Rust half): every KernelError discriminant 0..=54
+        // survives the offset label round trip, by enumeration.
+        for disc in 0..=54u32 {
+            let expected = KernelError::from_u32(disc).expect("0..=54 are all valid");
+            let regs = [0, error_x1(disc as u64), 0, 0, 0, 0, 0];
+            assert_eq!(decode_response(regs), Err(expected), "discriminant {disc}");
+        }
+    }
+
+    #[test]
+    fn badge_and_value_read_x0() {
+        // WS-RA: badge() reads x0 (pre-WS-RA it read x1, which the kernel
+        // never wrote back — the SM9.C.0 defect's userspace half).
+        let regs = [0xBEEF, 0, 0, 0, 0, 0, 0];
         let resp = decode_response(regs).unwrap();
         assert_eq!(resp.badge(), Badge::from(0xBEEFu64));
-        // msg_info() interprets the same x1 differently
-        assert_eq!(resp.x1_raw(), 0xBEEF);
+        assert_eq!(resp.value(), 0xBEEF);
     }
 }

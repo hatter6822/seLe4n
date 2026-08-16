@@ -17,6 +17,14 @@ repository.workspace = true
 # `sele4n-types` is a leaf crate (no path deps), so this introduces no cycle and
 # no runtime dependency.
 sele4n-types = { path = "../sele4n-types" }
+# WS-RA (PR #866 review): the blocked-resume sentinel (svc_dispatch.rs) is a
+# hand-duplicated `MessageInfo` label, same discipline as the SyscallId mirror
+# above.  This dev-dependency is used ONLY under `#[cfg(test)]` to run the
+# canonical `sele4n-abi::decode_response` against the sentinel frame, pinning
+# that it decodes fail-closed (`UnknownKernelError` — never success, never a
+# kernel-emitted error).  `sele4n-abi` depends only on `sele4n-types`, so this
+# introduces no cycle and no runtime dependency.
+sele4n-abi = { path = "../sele4n-abi" }
 
 [features]
 default = []

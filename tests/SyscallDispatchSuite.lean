@@ -21,18 +21,20 @@ WS-RC R2 wires through `syscallEntryChecked`:
 
 - `KernelError → UInt32` discriminant table mirrors
   `rust/sele4n-types/src/error.rs` exactly.
-- `encodeError` always sets bit 63 of the encoded `UInt64`.
-- `encodeOk` always clears bit 63 of the encoded `UInt64`.
+- WS-RA: every discriminant rides the **offset** `x1` label
+  (`errorLabel = discriminant + 1`; label `0` = success), round-tripping
+  through `ofErrorLabel?` — the bit-63 `encodeOk` / `encodeError`
+  protocol is retired.
 - `bootAndInitialiseFromPlatform` installs the post-boot
   `SystemState` into `kernelStateRef`; subsequent
   `getKernelState` reads observe it.
 - `suspendThreadInner` bridges the FFI `tid : UInt64` argument
   through to `Kernel.Lifecycle.Suspend.suspendThread` via the
   IO.Ref and returns the encoded `KernelError` discriminant.
-- `syscallDispatchInner` bridges the FFI register-passing
-  signature through to `syscallDispatchFromAbi` via the IO.Ref
-  and returns the encoded `UInt64` per the high-bit-error
-  contract.
+- The pure `syscallDispatchFromAbi` (driven through the local
+  `dispatchViaRef` bridge, the shape the live export's atomic step has
+  minus the hardware externs) returns a `SyscallOutcome` — the retired
+  `syscall_dispatch_inner` export is gone with the bit-63 protocol.
 
 Each test produces a single `[PASS]` / `[FAIL]` line; the executable
 exits non-zero if any test fails.  Wired into `test_tier2_negative.sh`
@@ -144,88 +146,63 @@ private def sd001_kernelErrorDiscriminants : IO Unit := do
   pin "sd001_52_missingSchedContext"          .missingSchedContext          52
   pin "sd001_53_threadOnDifferentCore"        .threadOnDifferentCore        53
 
-/-- SD-002: `encodeError` sets bit 63 for every variant AND embeds
-    the discriminant in the low 32 bits.
+/-- SD-002 (WS-RA shape): every `KernelError` discriminant 0..54 resolves
+through `ofDiscriminant?`, carries the **offset** label `disc + 1`, and its
+`errorFrame` puts exactly that label — and nothing else — in the `x1`
+MessageInfo position.  Driven by numeric enumeration over the full range
+rather than a hand-maintained variant list: the retired SD-002's list had
+54 entries against the type's 55 (`.auditLogCapacityExceeded` never
+joined it), which is the silent-under-listing this shape cannot repeat —
+the 55 boundary is pinned both ways below. -/
+private def sd002_errorLabelCarriage : IO Unit := do
+  for disc in [0:55] do
+    match SeLe4n.Model.KernelError.ofDiscriminant? disc with
+    | none =>
+        expect s!"sd002a_discriminant_{disc}_resolves" false
+          s!"discriminant {disc} must resolve to a KernelError"
+    | some e => do
+        expect s!"sd002b_label_offset_{disc}"
+          (Kernel.Architecture.errorLabel e == disc + 1)
+          s!"errorLabel must be discriminant + 1 for {disc}"
+        let frame := Kernel.Architecture.errorFrame e
+        expect s!"sd002c_frame_x1_{disc}"
+          (frame.x1 == ((disc + 1) <<< 9).toUInt64)
+          s!"errorFrame x1 must carry label {disc + 1} at bit 9"
+        expect s!"sd002d_frame_rest_zero_{disc}"
+          (frame.x0 == 0 && frame.x2 == 0 && frame.x3 == 0 &&
+           frame.x4 == 0 && frame.x5 == 0)
+          "errorFrame carries nothing outside x1"
+  -- The boundary, both ways: 54 is the last discriminant, 55 is rejected.
+  expect "sd002e_last_discriminant_54"
+    ((SeLe4n.Model.KernelError.ofDiscriminant? 54).isSome)
+    "discriminant 54 (auditLogCapacityExceeded) must resolve"
+  expect "sd002f_boundary_55_rejected"
+    ((SeLe4n.Model.KernelError.ofDiscriminant? 55).isNone)
+    "discriminant 55 must not resolve (fail-closed)"
 
-The runtime check exercises every one of the 54 `KernelError`
-variants exactly once.  The structural witness for "bit 63 set" lives
-at `SeLe4n.Platform.FFI.encodeError_high_bit_set` in `FFI.lean`. -/
-private def sd002_encodeError : IO Unit := do
-  let variants : List KernelError :=
-    [ .invalidCapability, .objectNotFound, .illegalState
-    , .illegalAuthority, .policyDenied, .dependencyViolation
-    , .schedulerInvariantViolation, .endpointStateMismatch
-    , .endpointQueueEmpty, .asidNotBound, .vspaceRootInvalid
-    , .mappingConflict, .translationFault, .flowDenied
-    , .declassificationDenied, .alreadyWaiting, .cyclicDependency
-    , .notImplemented, .targetSlotOccupied, .replyCapInvalid
-    , .untypedRegionExhausted, .untypedTypeMismatch
-    , .untypedDeviceRestriction, .untypedAllocSizeTooSmall
-    , .childIdSelfOverwrite, .childIdCollision, .addressOutOfBounds
-    , .ipcMessageTooLarge, .ipcMessageTooManyCaps
-    , .backingObjectMissing, .invalidRegister, .invalidSyscallNumber
-    , .invalidMessageInfo, .invalidTypeTag, .resourceExhausted
-    , .invalidCapPtr, .objectStoreCapacityExceeded
-    , .allocationMisaligned, .revocationRequired, .invalidArgument
-    , .mmioUnaligned, .invalidSyscallArgument, .ipcTimeout
-    , .alignmentError, .vmFault, .userException, .hardwareFault
-    , .notSupported, .invalidIrq, .invalidObjectType
-    , .nullCapability, .partialResolution, .missingSchedContext
-    , .threadOnDifferentCore ]
-  -- Pin variant count: matches the Lean inductive (54 variants 0..53).
-  -- WS-SM SM5.B.4: added `.threadOnDifferentCore` at discriminant 53
-  -- (R5.E previously added `.missingSchedContext` at 52).
-  expect "sd002_variant_count_is_54"
-    (variants.length == 54)
-    s!"variants list should have 54 entries, got {variants.length}"
-  for v in variants do
-    let encoded := encodeError v
-    -- Phase A: bit 63 is set.
-    let highBitSet := (encoded >>> 63) &&& 1 == 1
-    expect s!"sd002a_high_bit_set_{repr v}"
-      highBitSet
-      s!"encodeError {repr v} must have bit 63 set"
-    -- Phase B: low 32 bits equal the toUInt32 discriminant.
-    let lowDisc : UInt32 := (encoded.toNat % (2 ^ 32)).toUInt32
-    expect s!"sd002b_disc_matches_{repr v}"
-      (lowDisc == KernelError.toUInt32 v)
-      s!"encodeError {repr v}: low 32 bits ({lowDisc}) must equal toUInt32 ({KernelError.toUInt32 v})"
-
-/-- SD-003: `encodeOk` clears bit 63 for representative success
-    values, AND preserves the low 63 bits when bit 63 was already 0.
-
-The masking is the FFI-level implementation of the bit-63=error-flag
-contract: the kernel's "successful return value" must fit in 63 bits.
-For values < 2^63, encoding must be the identity.  For values ≥ 2^63,
-encoding silently strips bit 63 (a documented FFI ABI constraint;
-practical syscalls never return values ≥ 2^63). -/
-private def sd003_encodeOk : IO Unit := do
-  -- Phase A: bit 63 is clear for all inputs.
-  let values : List UInt64 :=
-    [ 0, 1, 42, 0xFFFFFFFF, 0x7FFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF ]
-  for v in values do
-    let encoded := encodeOk v
-    let highBitSet := (encoded >>> 63) &&& 1 == 1
-    expect s!"sd003a_high_bit_clear_{v}"
-      (¬ highBitSet)
-      s!"encodeOk {v} must have bit 63 clear"
-  -- Phase B: identity preservation for inputs whose bit 63 is 0.
-  let inRangeValues : List UInt64 :=
-    [ 0, 1, 42, 0xFFFFFFFF, 0x7FFFFFFFFFFFFFFF ]
-  for v in inRangeValues do
-    expect s!"sd003b_identity_when_high_bit_clear_{v}"
-      (encodeOk v == v)
-      s!"encodeOk {v} must equal {v} when bit 63 is already clear"
-  -- Phase C: bit-63 stripping for inputs whose bit 63 is 1.
-  expect "sd003c_strips_bit_63_for_max"
-    (encodeOk 0xFFFFFFFFFFFFFFFF == 0x7FFFFFFFFFFFFFFF)
-    "encodeOk 0xFFFF...FFFF must equal 0x7FFF...FFFF (bit 63 stripped)"
-  expect "sd003d_strips_bit_63_for_high_only"
-    (encodeOk 0x8000000000000000 == 0)
-    "encodeOk 0x8000...0000 must equal 0 (bit 63 stripped, low bits 0)"
-  expect "sd003e_strips_bit_63_preserves_low"
-    (encodeOk 0x8000000000000042 == 0x42)
-    "encodeOk 0x8000...0042 must equal 0x42 (bit 63 stripped, low bits preserved)"
+/-- SD-003 (WS-RA shape): the label round trip and its non-aliasing — no
+error's label is the success label `0`, every label decodes back to its
+error (`ofErrorLabel?`), and the zero frame (the `Unit` success) carries
+label `0`.  The retired SD-003 pinned `encodeOk`'s bit-63 masking, whose
+badge-aliasing hazard now lives as
+`Architecture.bit63Encoding_not_injective_on_badges`. -/
+private def sd003_errorLabelRoundtrip : IO Unit := do
+  for disc in [0:55] do
+    match SeLe4n.Model.KernelError.ofDiscriminant? disc with
+    | none => expect s!"sd003a_resolve_{disc}" false "must resolve"
+    | some e => do
+        expect s!"sd003b_label_never_zero_{disc}"
+          (Kernel.Architecture.errorLabel e != 0)
+          "no error may alias the success label"
+        expect s!"sd003c_roundtrip_{disc}"
+          (Kernel.Architecture.ofErrorLabel? (Kernel.Architecture.errorLabel e) == some e)
+          "every error must survive the label round trip"
+  expect "sd003d_zero_label_is_success"
+    ((Kernel.Architecture.ofErrorLabel? 0).isNone)
+    "label 0 decodes as success (none)"
+  expect "sd003e_unit_frame_is_all_zero"
+    (Kernel.Architecture.SyscallReturnFrame.zero.toRegs == #[0, 0, 0, 0, 0, 0])
+    "the Unit success frame is all zeroes"
 
 -- ============================================================================
 -- R2.A — Kernel-state IO.Ref bootstrap path
@@ -373,41 +350,69 @@ private def sd023_suspendThreadInner_sentinel : IO Unit := do
   | _ => failLine "sd023_tcb_missing" "test fixture invariant: TCB ⟨6⟩ should still exist"
 
 -- ============================================================================
--- R2.B — syscallDispatchInner integration via IO.Ref
+-- R2.B — dispatch integration via the IO.Ref bridge (WS-RA shape)
 -- ============================================================================
 
-/-- SD-030: `syscallDispatchInner` invoked with no current thread in
-    the scheduler returns the `IllegalState` discriminant in the
-    encoded UInt64 (bit 63 set, low 32 bits = 2). -/
-private def sd030_syscallDispatchInner_noCurrent : IO Unit := do
+/-- WS-RA: the IO.Ref-bridge driver the retired `syscall_dispatch_inner`
+export provided — read the state and context refs, run the pure
+`syscallDispatchFromAbi`, commit the post-state, hand back the outcome.
+This is the live `syscallDispatchCrossCoreEntry`'s atomic-step shape minus
+the hardware externs (SGIs, shootdown rounds, the return-frame mailbox),
+which host binaries must not link.  The `.error` arm is refuted by
+`syscallDispatchFromAbi_total`; it throws rather than fabricating an
+outcome. -/
+private def dispatchViaRef (syscallId : UInt32)
+    (msgInfo x0 x1 x2 x3 x4 x5 ipcBuf : UInt64) :
+    IO Kernel.Architecture.SyscallOutcome := do
+  let st ← getKernelState
+  let ctx ← getKernelLabelingContext
+  match syscallDispatchFromAbi ctx SeLe4n.Kernel.Concurrency.bootCoreId
+      syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBuf st with
+  | Except.ok (outcome, st') =>
+      initialiseKernelState st'
+      pure outcome
+  | Except.error _ =>
+      throw (IO.userError
+        "syscallDispatchFromAbi returned .error — refuted by syscallDispatchFromAbi_total")
+
+/-- Is this outcome the error frame for `e`? -/
+private def isErrorFrameFor (outcome : Kernel.Architecture.SyscallOutcome)
+    (e : KernelError) : Bool :=
+  outcome == .returns (Kernel.Architecture.errorFrame e)
+
+/-- Does this outcome carry *some* error on its x1 label? -/
+private def isSomeErrorFrame (outcome : Kernel.Architecture.SyscallOutcome) : Bool :=
+  match outcome with
+  | .blocks => false
+  | .returns f =>
+      match MessageInfo.decode f.x1.toNat with
+      | some mi => (Kernel.Architecture.ofErrorLabel? mi.label).isSome
+      | none => false
+
+/-- SD-030: dispatch with no current thread yields the `.illegalState`
+    error frame (WS-RA: the offset label on x1, not a bit-63 word). -/
+private def sd030_dispatch_noCurrent : IO Unit := do
   -- Empty scheduler.current = none.
   let st := mkState [] none
   initialiseKernelState st
   initialiseKernelLabelingContext SeLe4n.Kernel.testLabelingContext
-  let raw ← syscallDispatchInner 0 0 0 0 0 0 0 0 0
-  let highBitSet := (raw >>> 63) &&& 1 == 1
-  let disc := raw.toNat % (2 ^ 32)
-  expect "sd030a_high_bit_set" highBitSet
-    "no-current dispatch must set the error flag (bit 63)"
-  expect "sd030b_disc_illegalState"
-    (disc == (KernelError.toUInt32 .illegalState).toNat)
-    s!"discriminant must be IllegalState (2), got {disc}"
+  let outcome ← dispatchViaRef 0 0 0 0 0 0 0 0 0
+  expect "sd030_illegalState_error_frame"
+    (isErrorFrameFor outcome .illegalState)
+    "no-current dispatch must return the illegalState error frame"
 
-/-- SD-031: `syscallDispatchInner` writes register values into the
-    current thread's TCB before invoking `syscallEntryChecked`.  We
-    verify by checking that a syscall failure preserves the spilled
-    registers (per `syscallDispatchFromAbi_error_of_syscallEntryChecked_error`). -/
-private def sd031_syscallDispatchInner_spillsRegs : IO Unit := do
+/-- SD-031: the dispatch writes register values into the current thread's
+    TCB before invoking `syscallEntryChecked`.  We verify by checking that
+    a syscall failure preserves the spilled registers (per
+    `syscallDispatchFromAbi_error_of_syscallEntryChecked_error`). -/
+private def sd031_dispatch_spillsRegs : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨7⟩
   let st := mkState [(⟨7⟩, .tcb (mkTcb 7 .Ready))] (some tid)
   initialiseKernelState st
   initialiseKernelLabelingContext SeLe4n.Kernel.testLabelingContext
-  -- Invoke with a syscallId that's out of the modeled range
-  -- (UInt32 0x80000000 → fails decode → IllegalState/InvalidSyscallNumber).
-  -- The exact failure mode depends on the dispatch path's first
-  -- rejection point; we just need the call to return without
-  -- crashing and preserve the IO.Ref.
-  let _ ← syscallDispatchInner 0xFFFFFFFF 0 0xDEADBEEF 0 0 0 0 0 0
+  -- Invoke with a syscallId that's out of the modeled range; the call
+  -- must return an error frame and preserve the spilled registers.
+  let _ ← dispatchViaRef 0xFFFFFFFF 0 0xDEADBEEF 0 0 0 0 0 0
   let st' ← getKernelState
   match st'.objects[tid.toObjId]? with
   | some (.tcb tcb) =>
@@ -419,23 +424,22 @@ private def sd031_syscallDispatchInner_spillsRegs : IO Unit := do
         s!"x0 must be spilled into TCB (got {tcb.registerContext.gpr ⟨0⟩})"
   | _ => failLine "sd031_tcb_missing" "TCB missing after dispatch"
 
-/-- SD-032: `syscallDispatchInner` rejects an unmodeled syscall id
-    with the appropriate error discriminant in the encoded UInt64. -/
-private def sd032_syscallDispatchInner_invalidSyscall : IO Unit := do
+/-- SD-032: an unmodeled syscall id surfaces as an error frame — some
+    error rides the x1 label; nothing decodes as success. -/
+private def sd032_dispatch_invalidSyscall : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨8⟩
   let st := mkState [(⟨8⟩, .tcb (mkTcb 8 .Ready))] (some tid)
   initialiseKernelState st
   initialiseKernelLabelingContext SeLe4n.Kernel.testLabelingContext
-  -- syscallId 99 is outside the modeled set (0..24).
-  let raw ← syscallDispatchInner 99 0 0 0 0 0 0 0 0
-  let highBitSet := (raw >>> 63) &&& 1 == 1
-  expect "sd032_invalid_syscall_high_bit"
-    highBitSet
-    "unmodeled syscall ID must surface as an error"
+  -- syscallId 99 is outside the modeled set.
+  let outcome ← dispatchViaRef 99 0 0 0 0 0 0 0 0
+  expect "sd032_invalid_syscall_error_frame"
+    (isSomeErrorFrame outcome)
+    "unmodeled syscall ID must surface as an error frame"
 
 /-- SD-033: `syscallDispatchFromAbi_total` — the pure function never
     returns `Except.error`.  Witnessed by direct call: the result is
-    always `.ok (encoded, st')`. -/
+    always `.ok (outcome, st')`. -/
 private def sd033_dispatchFromAbi_total : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨9⟩
   let st := mkState [(⟨9⟩, .tcb (mkTcb 9 .Ready))] (some tid)
@@ -448,35 +452,31 @@ private def sd033_dispatchFromAbi_total : IO Unit := do
         "syscallDispatchFromAbi must never return Except.error"
 
 /-- SD-034: ABI consistency check — when `msgInfo ≠ x1`, the dispatch
-    rejects with `.invalidSyscallArgument` without invoking
-    `syscallEntryChecked`.
+    rejects with the `.invalidSyscallArgument` error frame without
+    invoking `syscallEntryChecked`.
 
 The Rust caller's `SyscallArgs::from_trap_frame` constructs `msg_info`
 and `msg_regs[1]` from the same `frame.x1()` slot, so they should always
 be equal at the ABI boundary.  A divergence indicates either a malformed
 caller or memory corruption — the FFI rejects rather than proceeding. -/
-private def sd034_dispatchInner_abiMismatch : IO Unit := do
+private def sd034_dispatch_abiMismatch : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨10⟩
   let st := mkState [(⟨10⟩, .tcb (mkTcb 10 .Ready))] (some tid)
   initialiseKernelState st
   initialiseKernelLabelingContext SeLe4n.Kernel.testLabelingContext
   -- Pass msgInfo=0xAAAA and x1=0xBBBB (≠ msgInfo).  Per the FFI ABI
   -- contract these must agree; the dispatcher rejects.
-  let raw ← syscallDispatchInner 0 0xAAAA 0 0xBBBB 0 0 0 0 0
-  let highBitSet := (raw >>> 63) &&& 1 == 1
-  let disc := raw.toNat % (2 ^ 32)
-  expect "sd034a_high_bit_set" highBitSet
-    "ABI-mismatched dispatch must surface as an error"
-  expect "sd034b_disc_invalidSyscallArgument"
-    (disc == (KernelError.toUInt32 .invalidSyscallArgument).toNat)
-    s!"ABI-mismatch must yield InvalidSyscallArgument (41), got {disc}"
+  let outcome ← dispatchViaRef 0 0xAAAA 0 0xBBBB 0 0 0 0 0
+  expect "sd034a_invalidSyscallArgument_frame"
+    (isErrorFrameFor outcome .invalidSyscallArgument)
+    "ABI-mismatch must yield the invalidSyscallArgument error frame"
   -- Verify the kernel state is NOT mutated on the ABI-mismatch path.
   let st' ← getKernelState
   match st'.objects[tid.toObjId]? with
   | some (.tcb tcb) =>
       -- TCB.registerContext.gpr ⟨0⟩ should still be the default value (0)
       -- because the dispatch rejected before writeFfiRegistersToTcb was called.
-      expect "sd034c_no_register_spill_on_abi_mismatch"
+      expect "sd034b_no_register_spill_on_abi_mismatch"
         (tcb.registerContext.gpr ⟨0⟩ == ⟨0⟩)
         "ABI-mismatch must reject before spilling registers"
   | _ => failLine "sd034_tcb_missing" "TCB missing after ABI-mismatch dispatch"
@@ -484,16 +484,15 @@ private def sd034_dispatchInner_abiMismatch : IO Unit := do
 /-- SD-035: Sequential dispatches — the IO.Ref state evolves
     correctly across multiple syscall invocations.
 
-This regression-tests that the `kernelStateRef` mutation in
-`syscallDispatchInner` is observable to the next syscall (the
-hardware path's authoritative state update). -/
+This regression-tests that the ref-bridge state commit is observable to
+the next syscall (the hardware path's authoritative state update). -/
 private def sd035_sequentialDispatches : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨11⟩
   let st := mkState [(⟨11⟩, .tcb (mkTcb 11 .Ready))] (some tid)
   initialiseKernelState st
   initialiseKernelLabelingContext SeLe4n.Kernel.testLabelingContext
   -- First dispatch: spills x0=0x111 into the TCB.
-  let _ ← syscallDispatchInner 99 0 0x111 0 0 0 0 0 0
+  let _ ← dispatchViaRef 99 0 0x111 0 0 0 0 0 0
   let st1 ← getKernelState
   match st1.objects[tid.toObjId]? with
   | some (.tcb tcb1) =>
@@ -502,7 +501,7 @@ private def sd035_sequentialDispatches : IO Unit := do
         "first dispatch must spill x0=0x111"
   | _ => failLine "sd035_tcb_missing_1" "TCB missing after first dispatch"
   -- Second dispatch: spills x0=0x222 into the (now-updated) TCB.
-  let _ ← syscallDispatchInner 99 0 0x222 0 0 0 0 0 0
+  let _ ← dispatchViaRef 99 0 0x222 0 0 0 0 0 0
   let st2 ← getKernelState
   match st2.objects[tid.toObjId]? with
   | some (.tcb tcb2) =>
@@ -1014,8 +1013,8 @@ def main : IO Unit := do
   IO.println "=== WS-RC R2.C SyscallDispatch Test Suite ==="
   IO.println "--- R2.B.0: KernelError discriminant + UInt64 encoding ---"
   sd001_kernelErrorDiscriminants
-  sd002_encodeError
-  sd003_encodeOk
+  sd002_errorLabelCarriage
+  sd003_errorLabelRoundtrip
   IO.println "--- R2.A: Kernel-state IO.Ref ---"
   sd010_initialiseAndGet
   sd011_updateKernelState
@@ -1025,12 +1024,12 @@ def main : IO Unit := do
   sd021_suspendThreadInner_inactive
   sd022_suspendThreadInner_missing
   sd023_suspendThreadInner_sentinel
-  IO.println "--- R2.B: syscallDispatchInner integration ---"
-  sd030_syscallDispatchInner_noCurrent
-  sd031_syscallDispatchInner_spillsRegs
-  sd032_syscallDispatchInner_invalidSyscall
+  IO.println "--- R2.B: dispatch integration via the IO.Ref bridge ---"
+  sd030_dispatch_noCurrent
+  sd031_dispatch_spillsRegs
+  sd032_dispatch_invalidSyscall
   sd033_dispatchFromAbi_total
-  sd034_dispatchInner_abiMismatch
+  sd034_dispatch_abiMismatch
   sd035_sequentialDispatches
   IO.println "--- R2.A: bootAndInitialiseFromPlatform integration ---"
   sd040_bootInitialise_emptyConfig_succeeds

@@ -49,14 +49,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.33.36` (`lakefile.toml`) |
+| **Package version** | `0.33.41` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 265,155 across 278 Lean files |
-| **Test LoC** | 55,828 across 68 Lean test suites |
-| **Proved declarations** | 8,869 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 266,713 across 279 Lean files |
+| **Test LoC** | 56,637 across 69 Lean test suites |
+| **Proved declarations** | 8,934 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.27.6_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.27.6_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (5 HIGH, 27 MED, 28 LOW). All actionable findings remediated via WS-AI (7 phases, 37 sub-tasks). |
-| **Next workstream** | **WS-RA (Syscall Return ABI) — implemented ahead of SM9.**  The kernel has no syscall return path: it writes one register on exit and the value it writes is the caller's own capability pointer, which userspace's `decode_response` (`regs[0] != 0` means error) decodes as a `KernelError`.  Five syscalls are value-returning today and return nothing — `.notificationWait`, `.receive`, `.call`, `.replyRecv`, and `.serviceQuery` (which computes `lookupServiceByCap` and discards the answer) — and SM9 adds `.auditRead` / `.auditDrain`.  WS-RA adopts seL4's ARM64 convention exactly (`x0` = badge or primary result, `x1` = `MessageInfo` whose label carries the error, `x2`-`x5` = message registers) and retires the bit-63 status protocol.  38 sub-tasks; blocks SM9 and SM10.E.  Plan: [`SYSCALL_RETURN_ABI_PLAN.md`](../planning/SYSCALL_RETURN_ABI_PLAN.md). |
+| **Current workstream** | **WS-RA (Syscall Return ABI) — COMPLETE; both return orderings staged end to end.**  The kernel returns seL4's ARM64 frame exactly: `x0` = badge or primary result at full 64-bit width, `x1` = `MessageInfo` whose **offset** label carries the error (`0` = success, `d + 1` = `KernelError` discriminant `d` — offset because discriminant `0` is a real error), `x2`-`x5` = message registers.  The bit-63 status protocol (`encodeOk`/`encodeError`) and the vestigial `syscall_dispatch_inner` export are retired; `SYSCALL_ABI_VERSION = 2` is pinned in Lean, `sele4n-types` and the HAL.  `syscallDispatchFromAbi : Kernel SyscallOutcome` decides `returns frame` / `blocks` from the caller's post-state; value arms stage via `Architecture.writeReturnFrameToTcb` (`.notificationWait`'s badge — the SM9.C.0 closure, delivered end to end in the signal-before-wait ordering — `.receive`/`.replyRecv` consume deliveries, `.serviceQuery`'s resolved `ServiceId`); `Unit` frames are constructed, never read from staged registers; the frame crosses the FFI through the per-core return-frame mailbox and the trap layer restores all six registers (a blocked caller has no return frame; until the SM10.E context restore installs a successor, the trap layer poisons its frame with the fail-closed blocked-resume sentinel — label `0xFFFFF`, decoded as `UnknownKernelError`, never success — per the PR #866 review).  Review round 2 (v0.33.40): the synthesized `extraCaps` reports the capabilities **actually installed** by the transfer (never the requested count — a grant-denied transfer reports zero), the mailbox/entry-lock core index is the boot-validated TPIDR logical id, and `service_query` returns the typed `ServiceId`.  **Completed at v0.33.38**: RA.B.5b's blocked-waiter staging landed at the unblocking arms (eleven sites through `stageWokenDelivery`/`stageWokenSendCompletion`, zero IPC transitions touched; `blockedReturn_staged_in_waiter_frame` + `blockedUnitReturn_staged_in_sender_frame`; five end-to-end two-core suite scenarios) and RA.B.8's per-arm `dispatchArm_matches_returnShape` value family with the unit half structural (`frameForShape_unit` constructs, never reads).  SM10.E owes only frame *delivery* at the context restore plus the cancellation/timeout error-frame staging.  Plan: [`SYSCALL_RETURN_ABI_PLAN.md`](../planning/SYSCALL_RETURN_ABI_PLAN.md). |
 | **Active workstream** | **WS-SM (SMP multi-core completion) IN FLIGHT** — closes at v1.0.0 with a bootable verified SMP microkernel on Raspberry Pi 5. Current sub-phase: **SM8.E tests + closure LANDED (v0.33.23) — WS-SM phase SM8 is CLOSED**: the SM8 headline surface anchored across all five sub-phases, the phase-level golden trace `tests/fixtures/smp_information_flow.expected` recording what an observer at `(core, label)` sees, and the SM3 two-phase-locking bracket promoted into the canonical `enforcementBoundary` (39 -> 40; 12 policy-gated, 24 capability-only, 4 read-only) with the per-core boundary unchanged at 55.  Preceded by **SM8.D information flow under fine locks LANDED (v0.33.9, review cuts v0.33.10, v0.33.12–v0.33.22, completion cut v0.33.11 — the observer's view proven to *factor through* lock erasure, the plan's "writer-exclusion observable to blocked readers" row refuted at the model level rather than reinstated, the CC-5 lock-contention timing channel **bounded** at `(numCores − 1) × (maxDelay + 1)` steps with an alphabet and a run capacity — at **every** contending access mode, v0.33.11 having generalised the SM2.C liveness chain rather than duplicating it, so a blocked *reader* carries the same figure and is proven admitted *as a reader* — Biba integrity under per-core locks in *both* integrity directions, and the 2PL-bracketed live syscall entry's witness with the fail-closed statement sharpened from state equality to `lockWritesOnly`)**.  Preceded by **SM8.C per-core declassification audit COMPLETE (landed v0.33.7; completion cut v0.33.8 — SM8.C.8 mounts the audit trail in `SystemState` bounded and fail-closed as the 16th `proofLayerInvariantBundle` conjunct, and SM8.C.9 makes `.declassify` a live syscall, `SyscallId` 30, count 31)**.  Preceded by **SM8.A per-core observable state COMPLETE (v0.33.3, review cut v0.33.4; landed v0.33.2)**: the SMP information-flow *observer* is the pair `(core, clearance)` as a value (`PerCoreObserver`), and the state it sees is `ObservableState.onCore ctx c L s`, *defined as* `projectStateOnCore ctx ⟨L⟩ s c` so the SM8 observer and the SM4.D projection layer cannot drift (`onCore_bootCore` is `rfl`, tying every SM8 theorem at `bootCoreId` to the live single-core `projectState`). The thirteen `ObservableState` components partition into seven shared and six per-core, and the partition is a **bijection** — `ofFragments` reassembles a state from the pair and `ofFragments_eta` proves the round trip — so a fourteenth field registered in neither is a compile error as a checked fact. `onCore_perCore_independence` bounds the read set to six shared components plus the observer core's five scheduler slots and its register bank, without mentioning the boot core (which the SM4.D congruence cannot do), with fifteen corollaries covering the cross-core writes and every excluded component. `onCore_label_monotone` proves visibility monotone in clearance over `ObservableState.visibilityLe`, a structure carrying one clause per component: the two list clauses are `List.Sublist` (order-preserving — a run queue's order is its dispatch order), the four scheduling clauses are equality (those components are unfiltered, accepted covert channel CC-1), and the `objects` clause compares **content** via `objectVisibilityLe` — equality off the CNode arm, slot un-redaction on it. `eq_of_visibilityLe_antisymm` is the completeness check on that clause list. Decidability is partial by necessity and every limitation is proved (`RegisterFile.not_lawfulBEq`; `onCore_decidable` decides a strictly weaker slice, `lowEquivalentSliceOnCoreCheckWithRegs` a finer companion). Channels CC-6 (per-core TLB residency) and CC-7 (per-core instruction-cache residency) registered, one instance per core, on the CC-2 machine-timer precedent. Zero sorry/axiom; theorems and tests only, trace byte-identical. **SM8.B per-core NI proofs LANDED (v0.33.5)**: `crossCoreNonInterference` (plan Thm 3.3.1) proven from the frame premises — the plan's serializability route is unavailable while SM3.C.9 defers the fine locks, so the bridge `crossCoreNonInterference_of_disjoint_lockSet` makes it a corollary once they land; `nonInterference_perCore` as its boot-core corollary; all 35 per-operation lifts, **31 with the confinement premise derived** (discharging the SM4.C/SM4.D `hOtherIdle` obligation for them) and 4 catch-alls taking it explicitly; `withLockSet_preserves_projection` **unconditional**, which required erasing the per-object `lock` from the projection (`RwLockState` is three fields of `CoreId`s — the SM5.B placement channel re-opened through another field), leaving CC-5 a hardware timing channel only; the seven accepted covert channels CC-1…CC-7 as data with per-channel witness theorems; `enforcementBoundaryPerCore` at 53; `endpointPolicyRestricted_perCore`; the release bridge both ways; and `crossCoreLeakage_bounded` as an `↔`. **SM8.B review rounds 2+4 (v0.33.5 → v0.33.5)**: five findings closed — the live `.call` arm gets a bound of its own (`endpointCallCrossCoreDispatch_confinedToCores`, over a write set mirroring the dispatch's own control flow, so the priority-inheritance chain is keyed on the resolved receiver at the post-donation state); the three live cross-core arms that were unaudited (`notificationSignalBoundOnCore`, `endpointReceiveDualOnCore`, `endpointReplyRecvOnCore`) each gain a write set, a confinement lemma and an NI instantiation, taking the cross-core inventory 7 → 21 with `crossCoreTransitionIsLiveArm` marking the 14 arms the dispatch actually reaches; the covert-channel classification becomes evidence-bound (a total `CovertChannelId` table with `niName!`-validated citations, closing a `modelVisible` field that certified itself); CC-1's `log2(|domainSchedule|)` capacity claim — which `schedulingCovertChannel_bounded_width` never proved — is replaced by `schedulingChannelIndex_alphabet_bounded` plus the negative `schedulingChannel_not_bounded_by_scheduleLength`; and `enforcementBoundaryPerCore` (39 → 53) now audits the live cross-core wrappers rather than the single-core name table. 411 declarations axiom-clean.  **Current inventory — the machine-checked counts, which supersede the narrative figures above** (each round's figure is left as written, since it records what that round did): `crossCoreNiTheorem_count` = **25** transitions, `crossCoreTransitionIsLiveArm_count` = **18** live arms, `crossCoreTransitionWritesRemote_count` = **22** remote writers, `crossCoreLiveArmDelegationBacked_count` = **10** delegation-backed, `enforcementBoundaryPerCore_count` = **54**.  The growth from 21/14/… is the later review rounds re-routing boot-pinned live arms and auditing each one as it landed: `.send`, `.tcbSetPriority`/`.tcbSetMCPriority`, `.schedContextUnbind`, `.tcbSetAffinity`, `.lifecycleRetype` and the empty-write-set `.vspaceMap`/`.vspaceUnmap`, the last three of which retired the per-core routing allowlist to empty. **SM8.C per-core declassification audit LANDED (v0.33.7)**: the audit trail had no writer — nothing in the tree constructed a `DeclassificationEvent` — so the phase is the producer, not a field addition.  `declassifyStoreOnCore` records exactly one event per authorized downgrade with a state effect provably identical to the unaudited gate; `originatingCore` is undefaulted and `authorizationBasis` typed (the kernel can now check its own records, while `render` keeps the external strings byte-identical); `declassifyStoreFromCore` reads the source domain off the executing core's running subject, so attribution is a fact about the state and not a caller's claim, with `declassifyStoreOnCore_admits_unattributable` the negative that makes the wrapper load-bearing.  `declassificationAuditLog_partitions_by_core` makes the per-core views an exact partition, and `crossCoreChain_not_within_one_view` is the theorem that decides one global log over per-CPU buffers: a chain crossing cores lives in no single view.  Eight rules ship as data with dependently-typed evidence — laundering (per-hop authorization does not compose, over a *well-formed* policy), the endpoint rule consuming SM8.B's `endpointFlowCheck_restricted_subset_perCore`, and the core-is-audit-not-authority rule.  Same cut closes SM8.B's registered debt (a): `LabelingContext.endpointPolicy` is read by the four endpoint-keyed gates through `endpointFlowGate`, which conjoins rather than replaces, making `endpointPolicyRestricted` structural.  Next: SM8.D information flow under fine locks. |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
@@ -1794,17 +1794,23 @@ Named constants in `trap.rs`
 numeric literals for cross-reference clarity.
 
 **WS-RC R2 (v0.30.11)**: the FFI bridge that the audit tracked under
-`DEF-R-HAL-L14` in `AUDIT_v0.29.0_DEFERRED.md` is now substantively
-wired.  `@[export syscall_dispatch_inner]` (`SeLe4n/Platform/FFI.lean`)
-reads the live `SystemState` from `kernelStateRef`, spills the FFI
-register values into the current TCB via `writeFfiRegistersToTcb`,
-invokes the verified `Kernel.syscallEntryChecked`, encodes the result
-into the bit-63 error-flag UInt64 contract, and writes the post-state
-back to the IO.Ref.  `@[export suspend_thread_inner]` is the analogous
-substantive bridge into `Kernel.Lifecycle.Suspend.suspendThread`.  The
+`DEF-R-HAL-L14` in `AUDIT_v0.29.0_DEFERRED.md` was substantively
+wired: `@[export syscall_dispatch_inner]` read the live `SystemState`
+from `kernelStateRef`, spilled the FFI register values into the
+current TCB via `writeFfiRegistersToTcb`, invoked the verified
+`Kernel.syscallEntryChecked`, encoded the result into a bit-63
+error-flag UInt64, and wrote the post-state back to the IO.Ref.
+`@[export suspend_thread_inner]` is the analogous substantive bridge
+into `Kernel.Lifecycle.Suspend.suspendThread`.  The
 `NotImplemented = 17` discriminant is no longer emitted by either
-bridge on any non-error code path — every error now corresponds to a
-substantive kernel rejection.
+bridge on any non-error code path — every error corresponds to a
+substantive kernel rejection.  **WS-RA (v0.33.37)** retired both the
+bit-63 encoding and the vestigial `syscall_dispatch_inner` export:
+the live SVC bridge is `lean_syscall_dispatch_cross_core` (§6.5.5
+below), and results now cross the boundary as a full seL4 ARM64
+return frame — `x0` = badge/primary result, `x1` = `MessageInfo`
+whose label carries the error, `x2`–`x5` = message registers —
+through a per-core return-frame mailbox.
 
 #### 6.5.0 Panic Discipline (AK5-A)
 
@@ -1920,24 +1926,41 @@ the same set of HAL primitives:
 - **Context switch**: `ffi_context_switch`
 - **Interrupts**: `ffi_interrupts_disable`, `ffi_interrupts_restore`
 
-**Rust → Lean** (`@[export]` declarations, WS-RC R2): the Rust HAL
-calls back into the verified kernel after handling an exception
-bracket.  Two such bridges exist:
+**Rust → Lean** (`@[export]` declarations, WS-RC R2 → WS-SM →
+WS-RA): the Rust HAL calls back into the verified kernel after
+handling an exception bracket.  The live bridges:
 
-- `@[export suspend_thread_inner]` (named `suspend_thread_inner` on
-  the C side) — substantively routes into
+- `@[export lean_syscall_dispatch_cross_core]`
+  (`SeLe4n/Kernel/SyscallDispatchEntry.lean`) — the SVC bridge.  A
+  BaseIO wrapper around the pure typed-ABI entry point
+  `syscallDispatchFromAbi`, which spills the FFI register values
+  into the current TCB and invokes `syscallEntryChecked` with the
+  deployment's `LabelingContext`, `arm64DefaultLayout`, and the
+  executing core read from TPIDR_EL1.  Since WS-RA (v0.33.37) the
+  result crosses the boundary as a full seL4 ARM64 return frame:
+  the entry publishes the frame's six words (`x0` = badge/primary
+  result; `x1` = `MessageInfo` whose label carries the error —
+  label 0 = success, label = discriminant + 1 on error; `x2`–`x5`
+  = message registers) to a per-core mailbox via the
+  `ffi_syscall_return_frame` extern, then returns an outcome tag:
+  `0` = frame published, the trap handler restores it to the trap
+  frame; `1` = caller blocked, no register writeback (the frame is
+  delivered when the blocked thread is resumed — the context
+  restore, SM10.E).  The former `syscall_dispatch_inner` export and
+  its bit-63 error-flag UInt64 contract are retired.
+- `@[export suspend_thread_cross_core]`
+  (`SyscallDispatchEntry.suspendThreadCrossCoreEntry`, SM6.E) — the
+  live `.tcbSuspend` atomicity bracket: commits the verified
+  per-core suspend, then fires the diff-recovered cross-core SGIs.
+- `@[export lean_per_core_timer_tick]`
+  (`SeLe4n/Kernel/PerCoreTimerEntry.lean`, SM5) — the per-core CNTP
+  ISR seam.
+- `@[export suspend_thread_inner]` (`SeLe4n/Platform/FFI.lean`) —
+  the boot-pinned single-core suspend entry retained beside the
+  cross-core form; routes into
   `Kernel.Lifecycle.Suspend.suspendThread` after sentinel rejection
   via `ThreadId.toValid?`.  Returns `0` on success or the
   `KernelError as u32` discriminant on failure.
-- `@[export syscall_dispatch_inner]` (named `syscall_dispatch_inner`
-  on the C side) — a thin BaseIO wrapper around the pure typed-ABI
-  entry point `syscallDispatchFromAbi`, which spills the FFI
-  register values into the current TCB and invokes
-  `syscallEntryChecked` with the deployment's `LabelingContext` and
-  `arm64DefaultLayout`.  Returns a UInt64 per the bit-63 error-flag
-  contract: bit 63 = 1 with the low 32 bits encoding the
-  `KernelError` discriminant on the error path; bit 63 = 0 with the
-  low 63 bits carrying the success return value.
 
 Hardware-mode kernel state lives in two `IO.Ref` cells:
 

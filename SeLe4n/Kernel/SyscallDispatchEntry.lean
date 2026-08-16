@@ -516,10 +516,17 @@ from the hardware (`currentCoreId`), runs the verified
 fires the cross-core `.reschedule` SGIs recovered from the `(pre, post)` diff by
 `PriorityInheritance.computeCrossCoreSgis`, then — WS-SM SM7.B — runs the TLB
 shootdown round(s) the commit posted (`completeShootdownRounds`, recovered from
-the `tlbShootdown` diff; inert for every non-shootdown syscall).  Returns the
-ABI-encoded result word
-(every kernel rejection is encoded into the success word with bit 63 set, so the
-pure dispatch never takes the `.error` arm; the arm is discharged inertly).
+the `tlbShootdown` diff; inert for every non-shootdown syscall).
+
+**WS-RA (the return convention)**: the committed outcome's return frame
+(`x0`-`x5`, errors as the offset label on `x1`) is published into this core's
+return-frame mailbox (`ffiSyscallReturnFrame` — the `ShootdownOpMailbox`
+pattern, since a scalar export return cannot carry six words), and the export's
+scalar return is the **outcome tag**: `0` = the mailbox frame is the caller's
+return, `1` = the caller blocked and no frame exists for it (RA.C.9; the
+staged frame is delivered by the SM10.E context restore).  The pure dispatch
+never takes the `.error` arm (`syscallDispatchFromAbi_total`); the arm is
+discharged inertly with an error frame.
 
 **WS-SM SM8.B (PR #861 review round 17): the local half of the reschedule.**
 `PriorityInheritance.scheduleLocalSuccessorLive` runs *inside* the atomic step,
@@ -561,20 +568,28 @@ def syscallDispatchCrossCoreEntry
   let result ← Platform.FFI.modifyGetKernelState (fun st =>
     match Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
         ipcBufferAddr st with
-    | Except.ok (encoded, st') =>
+    | Except.ok (outcome, st') =>
         let st'' := PriorityInheritance.scheduleLocalSuccessorLive st st' execCore
-        ((encoded, PriorityInheritance.computeCrossCoreSgis st st'' execCore,
+        ((outcome, PriorityInheritance.computeCrossCoreSgis st st'' execCore,
           Architecture.shootdownChangedTargets st st'',
           Architecture.shootdownPostedOps st st'',
           Architecture.shootdownRoundWindow st st'',
           st''.pendingIcacheMaintenance),
          Architecture.clearIcacheMaintenance st'')
     | Except.error e =>
-        ((Platform.FFI.encodeError e, ([] : List (CoreId × SgiKind)),
+        ((Architecture.SyscallOutcome.returns (Architecture.errorFrame e),
+          ([] : List (CoreId × SgiKind)),
           ([] : List CoreId),
           ([] : List Architecture.TlbInvalidation),
           ((0, 0) : Nat × Nat),
           ([] : List Architecture.ICacheInvalidation)), st))
+  -- WS-RA (plan §3.3): publish the return frame into this core's mailbox
+  -- immediately after the commit — `dispatch_svc` reads it back inside the
+  -- same `with_kernel_entry` critical section.  A `blocks` outcome publishes
+  -- the zero frame, which the Rust side never reads (the tag below says no
+  -- frame exists for the caller — RA.C.9).
+  let frame := result.1.mailboxFrame
+  Platform.FFI.ffiSyscallReturnFrame frame.x0 frame.x1 frame.x2 frame.x3 frame.x4 frame.x5
   Concurrency.fireCrossCoreSgis result.2.1
   -- WS-SM SM7.B: run the shootdown round(s) this commit posted (inert
   -- when the syscall touched no pending-shootdown queue).
@@ -586,7 +601,9 @@ def syscallDispatchCrossCoreEntry
   -- cleared in the atomic step above, so it is emitted exactly once and never
   -- stranded into the next syscall.  Inert when nothing was owed.
   completeIcacheMaintenance result.2.2.2.2.2
-  pure result.1
+  -- WS-RA: the export's scalar return is the outcome tag (0 = the mailbox
+  -- frame is the caller's return; 1 = the caller blocked, no frame).
+  pure result.1.tagWord
 
 /-- **WS-SM SM6.A** structural marker: `syscallDispatchCrossCoreEntry` unfolds to
 the read-context / read-core / commit-dispatch / fire-SGIs / return-encoded
@@ -605,24 +622,27 @@ theorem syscallDispatchCrossCoreEntry_def
         let result ← Platform.FFI.modifyGetKernelState (fun st =>
           match Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
               ipcBufferAddr st with
-          | Except.ok (encoded, st') =>
+          | Except.ok (outcome, st') =>
               let st'' := PriorityInheritance.scheduleLocalSuccessorLive st st' execCore
-              ((encoded, PriorityInheritance.computeCrossCoreSgis st st'' execCore,
+              ((outcome, PriorityInheritance.computeCrossCoreSgis st st'' execCore,
                 Architecture.shootdownChangedTargets st st'',
                 Architecture.shootdownPostedOps st st'',
                 Architecture.shootdownRoundWindow st st'',
                 st''.pendingIcacheMaintenance),
                Architecture.clearIcacheMaintenance st'')
           | Except.error e =>
-              ((Platform.FFI.encodeError e, ([] : List (CoreId × SgiKind)),
+              ((Architecture.SyscallOutcome.returns (Architecture.errorFrame e),
+                ([] : List (CoreId × SgiKind)),
                 ([] : List CoreId),
                 ([] : List Architecture.TlbInvalidation),
                 ((0, 0) : Nat × Nat),
                 ([] : List Architecture.ICacheInvalidation)), st))
+        let frame := result.1.mailboxFrame
+        Platform.FFI.ffiSyscallReturnFrame frame.x0 frame.x1 frame.x2 frame.x3 frame.x4 frame.x5
         Concurrency.fireCrossCoreSgis result.2.1
         completeShootdownRounds result.2.2.1 result.2.2.2.1 result.2.2.2.2.1 execCore
         completeIcacheMaintenance result.2.2.2.2.2
-        pure result.1) := rfl
+        pure result.1.tagWord) := rfl
 
 /-- **WS-SM SM8.B** (PR #861 review rounds 39/41): the gating argument's
 "rejection, not misattribution" half, as a theorem rather than as prose.
@@ -653,7 +673,7 @@ theorem vacatedCore_next_syscall_rejected
         execCore = none) :
     Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
         ipcBufferAddr (PriorityInheritance.scheduleLocalSuccessorLive pre post execCore)
-      = Except.ok (Platform.FFI.encodeError .illegalState,
+      = Except.ok (.returns (Architecture.errorFrame .illegalState),
                    PriorityInheritance.scheduleLocalSuccessorLive pre post execCore) :=
   Platform.FFI.syscallDispatchFromAbi_illegalState_when_no_current ctx execCore syscallId msgInfo
     x0 x1 x2 x3 x4 x5 ipcBufferAddr _ hMsg hVacated

@@ -1896,6 +1896,64 @@ theorem replyRecvReturnDonation_confinedToCores (tid recordedServer nextThread :
         exact propagatePipChainCrossCore_confinedToCores serverCore st.objectIndex.length st
           recordedServer
 
+/-- SM8.B.2: a scheduler- and machine-preserving prefix can be dropped from a
+confinement statement.
+
+The composition shape the retype pipeline needs everywhere: only one of its
+steps writes a scheduler slot, and the several around it must be discharged
+without inflating the declared set (which `observableSlotsConfinedToCores_trans`
+alone would do, leaving `[] ++ cs`). -/
+theorem observableSlotsConfinedToCores_of_framed_prefix {st stMid st' : SystemState}
+    {cs : List CoreId}
+    (hSched : stMid.scheduler = st.scheduler) (hMach : stMid.machine = st.machine)
+    (h : observableSlotsConfinedToCores stMid st' cs) :
+    observableSlotsConfinedToCores st st' cs :=
+  ⟨fun c hc => (h.runQueue c hc).trans (by rw [hSched]),
+   fun c hc => (h.current c hc).trans (by rw [hSched]),
+   fun c hc => (h.activeDomain c hc).trans (by rw [hSched]),
+   fun c hc => (h.domainTimeRemaining c hc).trans (by rw [hSched]),
+   fun c hc => (h.domainScheduleIndex c hc).trans (by rw [hSched]),
+   fun c hc => (h.regs c hc).trans (by rw [hMach])⟩
+
+/-- SM8.B.2: and the mirror — a framed **suffix** does not move the set either,
+where "framed" here reaches only as far as the observer does.
+
+The register-bank form rather than the whole-machine one, because the retype's
+memory scrub writes `machine.memory` and the whole-machine version would be
+false of it. -/
+theorem observableSlotsConfinedToCores_of_framed_suffix_regs {st stMid st' : SystemState}
+    {cs : List CoreId}
+    (hSched : st'.scheduler = stMid.scheduler)
+    (hRegs : ∀ c, st'.machine.regsOnCore c = stMid.machine.regsOnCore c)
+    (h : observableSlotsConfinedToCores st stMid cs) :
+    observableSlotsConfinedToCores st st' cs :=
+  ⟨fun c hc => (by rw [hSched] : st'.scheduler.runQueueOnCore c = _).trans (h.runQueue c hc),
+   fun c hc => (by rw [hSched] : st'.scheduler.currentOnCore c = _).trans (h.current c hc),
+   fun c hc => (by rw [hSched] : st'.scheduler.activeDomainOnCore c = _).trans
+     (h.activeDomain c hc),
+   fun c hc => (by rw [hSched] : st'.scheduler.domainTimeRemainingOnCore c = _).trans
+     (h.domainTimeRemaining c hc),
+   fun c hc => (by rw [hSched] : st'.scheduler.domainScheduleIndexOnCore c = _).trans
+     (h.domainScheduleIndex c hc),
+   fun c hc => (hRegs c).trans (h.regs c hc)⟩
+
+/-- SM8.B.2: the whole-machine instance of the suffix rule, for the steps that
+frame `machine` outright. -/
+theorem observableSlotsConfinedToCores_of_framed_suffix {st stMid st' : SystemState}
+    {cs : List CoreId}
+    (hSched : st'.scheduler = stMid.scheduler) (hMach : st'.machine = stMid.machine)
+    (h : observableSlotsConfinedToCores st stMid cs) :
+    observableSlotsConfinedToCores st st' cs :=
+  ⟨fun c hc => (by rw [hSched] : st'.scheduler.runQueueOnCore c = _).trans (h.runQueue c hc),
+   fun c hc => (by rw [hSched] : st'.scheduler.currentOnCore c = _).trans (h.current c hc),
+   fun c hc => (by rw [hSched] : st'.scheduler.activeDomainOnCore c = _).trans
+     (h.activeDomain c hc),
+   fun c hc => (by rw [hSched] : st'.scheduler.domainTimeRemainingOnCore c = _).trans
+     (h.domainTimeRemaining c hc),
+   fun c hc => (by rw [hSched] : st'.scheduler.domainScheduleIndexOnCore c = _).trans
+     (h.domainScheduleIndex c hc),
+   fun c hc => (by rw [hMach] : st'.machine.regsOnCore c = _).trans (h.regs c hc)⟩
+
 /-- SM8.B.2: **the cores the live `.replyRecv` may write** — the answered
 caller's home core, the receive leg's set at the reply's post-state, and the
 donation leg's set at the receive's post-state.  Each leg is read at the state
@@ -1956,9 +2014,39 @@ theorem replyRecvBody_confinedToCores (endpointId : SeLe4n.ObjId)
         | ok pair =>
           rcases pair with ⟨nextThread, recvSgi⟩
           simp only [] at hStep ⊢
-          exact observableSlotsConfinedToCores_trans hReply
-            (observableSlotsConfinedToCores_trans hRecv
-              (replyRecvReturnDonation_confinedToCores receiver _ nextThread _ st2 st' u hStep))
+          -- WS-RA RA.B.5b: the body stages the woken caller's reply frame and
+          -- the completed plain sender's unit frame after the donation; both
+          -- stagers frame the scheduler and the machine, so the donation's
+          -- confinement transports across them unchanged.
+          cases hDon : replyRecvReturnDonation receiver
+              ((recordedReplyServer? st prevCaller).getD receiver) nextThread
+              (determineExecutingCore st ((recordedReplyServer? st prevCaller).getD receiver))
+              st2 with
+          | error e =>
+              rw [hDon] at hStep
+              exact absurd hStep (by simp)
+          | ok pair2 =>
+            rcases pair2 with ⟨u2, st3⟩
+            rw [hDon] at hStep
+            simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+            have hConf := replyRecvReturnDonation_confinedToCores receiver
+              ((recordedReplyServer? st prevCaller).getD receiver) nextThread
+              (determineExecutingCore st ((recordedReplyServer? st prevCaller).getD receiver))
+              st2 st3 u2 hDon
+            have hStaged : observableSlotsConfinedToCores st2 st'
+                (replyRecvReturnDonationWriteSet receiver
+                  ((recordedReplyServer? st prevCaller).getD receiver) nextThread
+                  (determineExecutingCore st
+                    ((recordedReplyServer? st prevCaller).getD receiver)) st2) := by
+              rw [← hStep.2]
+              exact observableSlotsConfinedToCores_of_framed_suffix
+                (by rw [Architecture.stageWokenSendCompletion_scheduler_eq,
+                        Architecture.stageDeliveredMessage_scheduler_eq])
+                (by rw [Architecture.stageWokenSendCompletion_machine_eq,
+                        Architecture.stageDeliveredMessage_machine_eq])
+                hConf
+            exact observableSlotsConfinedToCores_trans hReply
+              (observableSlotsConfinedToCores_trans hRecv hStaged)
 
 /-- SM8.B.2 (**the live `.replyRecv` non-interference**): the syscall arm the
 kernel really runs on a cross-core `ReplyRecv` is invisible to any core outside
@@ -2213,64 +2301,6 @@ theorem threadOccupiedCores_congr {st st' : SystemState} (tid : SeLe4n.ThreadId)
     threadOccupiedCores st' tid = threadOccupiedCores st tid := by
   unfold threadOccupiedCores threadOccupiesCore
   rw [h]
-
-/-- SM8.B.2: a scheduler- and machine-preserving prefix can be dropped from a
-confinement statement.
-
-The composition shape the retype pipeline needs everywhere: only one of its
-steps writes a scheduler slot, and the several around it must be discharged
-without inflating the declared set (which `observableSlotsConfinedToCores_trans`
-alone would do, leaving `[] ++ cs`). -/
-theorem observableSlotsConfinedToCores_of_framed_prefix {st stMid st' : SystemState}
-    {cs : List CoreId}
-    (hSched : stMid.scheduler = st.scheduler) (hMach : stMid.machine = st.machine)
-    (h : observableSlotsConfinedToCores stMid st' cs) :
-    observableSlotsConfinedToCores st st' cs :=
-  ⟨fun c hc => (h.runQueue c hc).trans (by rw [hSched]),
-   fun c hc => (h.current c hc).trans (by rw [hSched]),
-   fun c hc => (h.activeDomain c hc).trans (by rw [hSched]),
-   fun c hc => (h.domainTimeRemaining c hc).trans (by rw [hSched]),
-   fun c hc => (h.domainScheduleIndex c hc).trans (by rw [hSched]),
-   fun c hc => (h.regs c hc).trans (by rw [hMach])⟩
-
-/-- SM8.B.2: and the mirror — a framed **suffix** does not move the set either,
-where "framed" here reaches only as far as the observer does.
-
-The register-bank form rather than the whole-machine one, because the retype's
-memory scrub writes `machine.memory` and the whole-machine version would be
-false of it. -/
-theorem observableSlotsConfinedToCores_of_framed_suffix_regs {st stMid st' : SystemState}
-    {cs : List CoreId}
-    (hSched : st'.scheduler = stMid.scheduler)
-    (hRegs : ∀ c, st'.machine.regsOnCore c = stMid.machine.regsOnCore c)
-    (h : observableSlotsConfinedToCores st stMid cs) :
-    observableSlotsConfinedToCores st st' cs :=
-  ⟨fun c hc => (by rw [hSched] : st'.scheduler.runQueueOnCore c = _).trans (h.runQueue c hc),
-   fun c hc => (by rw [hSched] : st'.scheduler.currentOnCore c = _).trans (h.current c hc),
-   fun c hc => (by rw [hSched] : st'.scheduler.activeDomainOnCore c = _).trans
-     (h.activeDomain c hc),
-   fun c hc => (by rw [hSched] : st'.scheduler.domainTimeRemainingOnCore c = _).trans
-     (h.domainTimeRemaining c hc),
-   fun c hc => (by rw [hSched] : st'.scheduler.domainScheduleIndexOnCore c = _).trans
-     (h.domainScheduleIndex c hc),
-   fun c hc => (hRegs c).trans (h.regs c hc)⟩
-
-/-- SM8.B.2: the whole-machine instance of the suffix rule, for the steps that
-frame `machine` outright. -/
-theorem observableSlotsConfinedToCores_of_framed_suffix {st stMid st' : SystemState}
-    {cs : List CoreId}
-    (hSched : st'.scheduler = stMid.scheduler) (hMach : st'.machine = stMid.machine)
-    (h : observableSlotsConfinedToCores st stMid cs) :
-    observableSlotsConfinedToCores st st' cs :=
-  ⟨fun c hc => (by rw [hSched] : st'.scheduler.runQueueOnCore c = _).trans (h.runQueue c hc),
-   fun c hc => (by rw [hSched] : st'.scheduler.currentOnCore c = _).trans (h.current c hc),
-   fun c hc => (by rw [hSched] : st'.scheduler.activeDomainOnCore c = _).trans
-     (h.activeDomain c hc),
-   fun c hc => (by rw [hSched] : st'.scheduler.domainTimeRemainingOnCore c = _).trans
-     (h.domainTimeRemaining c hc),
-   fun c hc => (by rw [hSched] : st'.scheduler.domainScheduleIndexOnCore c = _).trans
-     (h.domainScheduleIndex c hc),
-   fun c hc => (by rw [hMach] : st'.machine.regsOnCore c = _).trans (h.regs c hc)⟩
 
 /-- SM8.B.2: **the TCB reference scrub's bound** — the destroy sweep, plus two
 object-store sweeps that write no scheduler slot at all. -/

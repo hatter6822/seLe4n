@@ -150,7 +150,8 @@ since SM8.E.3 carries the two-phase-locking bracket the per-object lock
 discipline introduces) and the fifteen live cross-core wrappers.
 
 The canonical entries are **kept**, not replaced: the boot-pinned
-`syscallDispatchInner` still reaches the single-core wrappers, so both surfaces
+`syscallEntry` (`Kernel/API.lean` — driven by the trace harness and every
+single-core suite) still reaches the single-core wrappers, so both surfaces
 are live and both must be classified. -/
 def enforcementBoundaryPerCore : List EnforcementClass :=
   enforcementBoundaryExtended ++ crossCoreEnforcementEntries
@@ -198,7 +199,7 @@ mapping against the extended list, so a future edit that *replaces* rather than
 appends is caught.  The SMP half — that the wrappers the live cross-core
 dispatch reaches are classified — is
 `enforcementBoundaryPerCore_is_complete_crossCore` below.  Both are needed: the
-boot-pinned `syscallDispatchInner` still reaches the single-core wrappers.
+boot-pinned `syscallEntry` still reaches the single-core wrappers.
 
 Decided rather than argued, and with `decide` rather than `native_decide` — the
 Lean runtime evaluator stays out of the trusted computing base (AF4-A). -/

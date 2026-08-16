@@ -1,3 +1,464 @@
+## v0.33.41 — WS-RA review round 3: four more unreachable wrappers, the sweep that drives real definitions, the full wrapper surface
+
+Five Codex findings on the v0.33.40 head.  Two were code defects — fixed
+with their architectural cause removed; three challenged deliberate
+designs or registered deferrals — answered with the rationale on the
+threads, one adding new tracked debt.
+
+**Four more unreachable wrappers, and the table that could not see them
+(P2).**  The HAL prefilter minima for tcbSuspend / tcbResume /
+schedContextUnbind / schedContextBind (1/1/1/2) exceeded what the Lean
+decoders — the authority — require (0/0/0/1: suspend, resume and unbind
+are capability-only `pure {}` decodes; bind reads one register), so all
+four real wrappers were rejected with InvalidArgument before reaching
+the kernel — the exact RA.D.1 unreachable-wrapper class, four more
+instances.  The conformance table that existed to prevent this stayed
+green because BOTH its columns were hand-duplicated literals (it
+recorded length 1 for suspend/resume whose wrappers send 0, and omitted
+the schedContext pair).  Root cause removed: the host mock trap now
+records the exact request registers it is handed
+(`sele4n_abi::trap::host_capture`), and the rebuilt
+`wrapper_lengths_clear_prefilter_minimums` drives EVERY real wrapper
+end to end, reading back what its encode actually produced and
+comparing against the REAL `min_inline_args()` through a test-only
+`sele4n-hal` dev-dependency — run against the old minima it fails on
+exactly the four; neither column can drift again.
+
+**The full wrapper surface.**  The three syscalls with no `sele4n-sys`
+wrapper at all (tcbBindNotification / tcbUnbindNotification /
+mintReplyCap — callable only via hand-encoded requests) got their
+wrappers implemented so the sweep covers all 31 canonical syscalls:
+bind resolves the notification through a capability in the caller's own
+CSpace (MR0, the SM6.B v0.31.74 authority design), unbind is
+capability-only, mint reuses the cspaceCopy register shape under
+`.grant`.
+
+**`endpoint_call` joins the `.message` signature contract (P2).**  The
+shape table classifies `.call` as `.message`, but the signature pin
+listed only receive/reply-recv and `endpoint_call` returned a bare
+`SyscallResponse`.  It now returns `(Badge, SyscallResponse)` like its
+siblings (a call's reply-delivered frame carries the badge in `x0`
+exactly as a receive's), and the pin covers `endpoint_call` and
+`endpoint_receive_with_reply`.
+
+**Answered on the threads, no code change**: the self-suspend outcome
+design stands (the constructed unit frame IS the value the thread must
+observe at resume; classifying it `.blocks` would strand a frame nothing
+ever stages and poison a successful syscall; the keeps-running interim
+is the universal absence of context switching, with the vacated core
+failing closed — `vacatedCore_next_syscall_rejected`); application IPC
+labels are a pre-existing model gap now registered as tracked debt with
+the design constraint recorded (a delivered label cannot ride `x1`
+without aliasing the status channel — closure needs a shape-aware or
+out-of-band ABI design, one coherent slice); and the timeout error
+frame is the plan §9 deferral restated (the involuntary-unblock staging
+family lands with the SM10.E restore seam that makes staged frames
+reachable at all).
+
+Rust 1126 tests, clippy-clean, fmt-clean; Tiers 0–3 green.
+
+Refs: docs/planning/SYSCALL_RETURN_ABI_PLAN.md (review round 3)
+
+## v0.33.40 — WS-RA review round 2: installed-caps honesty, the logical core index, the typed query
+
+Three Codex findings on PR #866's v0.33.39 head — two P1, one P2 — every
+one verified against the code and closed; the P2 corrects the direction
+of the v0.33.39 audit's own mailbox fix.
+
+**The return frame reports capabilities actually installed (P1).**
+`returnMessageInfo` synthesized `extraCaps` from the delivered message's
+`caps.size` — the count the sender *requested* — while `ipcUnwrapCaps`
+succeeds with zero installs when the endpoint lacks `Grant` or the
+receiver's CNode has no free slot, and the delivered `pendingMessage`
+keeps the requested caps either way.  A receiver was therefore told
+capabilities arrived when none did, and would read whatever its receive
+slots already held as freshly delivered authority.  The synthesis now
+takes an explicit **`installedCaps`** parameter (deliberately not
+defaulted — a site that cannot name its installed count has no business
+synthesizing a frame): the send/call arms destructure the transfer
+summary their dispatch already returns (and previously **discarded**)
+and pass `CapTransferSummary.installedCount` (new, with the
+`installedCount_empty` simp lemma and the honesty bound
+`returnMessageInfo_extraCaps_le_installed`); the reply arms pass `0`
+(reply messages are built `caps := #[]`); the notification arms pass `0`
+(badge-only).  **Verifying the finding surfaced a wider, pre-existing
+gap**: the live receive paths (`.receive` and `.replyRecv`'s receive
+leg, via `endpointReceiveDualOnCore`) run **no capability unwrap at
+all** — `endpointReceiveDualWithCaps` has never had a live caller — so a
+sender that parks with caps has them installed never, in any ordering
+where the receiver arrives second.  Those arms pass `0`, the honest
+count for a path that installs nothing (fail-closed: caps are *not*
+installed without authority; the sender retains the originals), and the
+receive-side unwrap is registered as tracked debt in the plan with the
+closure design (an OnCore WithCaps composition mirroring the send
+side's).  Suite §9h drives both halves through the live dispatch: a
+grant-denied transfer stages `extraCaps = 0` while the delivered message
+still carries the requested cap (the load-bearing negative — the
+pre-fix frame read `1 + (1 << 7)`), and the granted twin stages
+`extraCaps = 1` with the cap landed in receive slot 0; the golden
+fixture gains the denied ordering's staged frame as its 13th line.
+Eight delegation-theorem RHS, two `syscallDelegates` arms and the three
+message-shaped RA.B.8 conclusions updated in lockstep.
+
+**The mailbox and entry-lock core index is the TPIDR logical id (P2).**
+The v0.33.39 audit unified the return-frame mailbox's writer and reader
+on ONE core-id source — the right principle, the wrong source:
+`cpu::current_core_id()` is the *packed* MPIDR affinity (Aff1:Aff0),
+whose own contract says "do not index arrays by it directly", and on the
+BCM2712's two-cluster topology a second-cluster core reads e.g. `0x100`
+— out of range for the four-slot mailbox (`return_frame_publish_in`'s
+bounds assert aborts every syscall on that core) and for the kernel-entry
+spin's shootdown self-service, whose out-of-range guard **fails closed to
+"no self-service"**, silently recreating the ack deadlock it exists to
+prevent.  All three packed-index sites (`ffi_syscall_return_frame`,
+`dispatch_svc`'s bracket-key + mailbox read, and the pre-existing
+`sele4n_suspend_thread` bracket key) now read
+`per_cpu::current_core_id_from_tpidr()` — the boot-validated logical
+index (`core_id < coreCount`, `check_per_cpu_invariants`) and the same
+space as the `executingCore : Fin numCores` the Lean dispatch identifies
+the caller by (`ffi_current_core_id` reads it), so writer, reader,
+bracket and kernel agree by construction.  Four Tier-3 anchors pin the
+sites positively and forbid the packed value's return.
+
+**`service_query` returns the typed `ServiceId` (P1).**  The wrapper
+returned a bare `u64` while its sibling `service_revoke` *takes* a
+`ServiceId` — the two halves of the service API did not compose without
+an untyped detour, against the project's typed-identifier convention.
+Now `KernelResult<ServiceId>` (constructed from `resp.value()`), with the
+conformance signature pin updated.
+
+Rust 1126 tests (HAL 823), clippy-clean, fmt-clean; the full suite
+battery and Tiers 0–3 green; trace `main_trace_smoke` byte-identical.
+
+Refs: docs/planning/SYSCALL_RETURN_ABI_PLAN.md (review round 2)
+
+## v0.33.39 — WS-RA audit cut: five findings, closed against the code
+
+A post-completion audit of the whole PR, checked against the code rather
+than the documentation describing it.  No false theorem and no live
+vulnerability; five findings, all closed in this cut.
+
+**`ipcStateBlocksReturn` carried a wildcard** — the exact pattern the
+plan's §3.4 forbids for `syscallReturnShape`, and here the failure mode is
+sharper: a future `ThreadIpcState` constructor would silently classify as
+"blocks", and a returning caller misclassified as blocked gets NO
+writeback — it resumes with its spilled arguments under the *request's*
+`MessageInfo`, which decodes as a **false success** carrying the
+capability pointer.  Now an exhaustive six-arm match: a seventh
+constructor is a missing case at elaboration.
+
+**The return-frame mailbox's writer and reader keyed on different core-id
+sources.**  `ffi_syscall_return_frame` published under the
+software-initialized TPIDR-derived id while `dispatch_svc` reads the slot
+(and keys its kernel-entry lock) under the MPIDR-derived hardware id.
+Correct under the boot invariant that ties the two — but one mis-set
+`TPIDR_EL1` and a return frame lands in another core's slot, to be handed
+to a *different* thread's next syscall as its return value: an
+information-leak shape resting on two independent sources agreeing.  Both
+sides now read `cpu::current_core_id()`; the pairing carries no agreement
+obligation.
+
+**`.serviceQuery` had no runtime staging witness** — the one value shape
+the §9 blocked orderings do not pass through.  §9f registers a service on
+the fixture endpoint, dispatches the query end to end through the live
+per-core path, and pins the staged word, the outcome frame's `x0` and the
+fail-closed decode; a `word query` golden-fixture line completes the
+fixture's coverage of all four value shapes.
+
+**The `.serviceQuery` RA.B.8 theorem's `hLookup` was decorative** — the
+defect class SM8.D's own review history names: the first form concluded
+only the arm's state-generic function equality, which elaborates without
+the hypothesis (and Lean said so: the tree's one unused-variable warning).
+Restated like its four siblings — over the live dispatch at the given
+state, where the lookup equation drives the match — so the hypothesis is
+load-bearing.
+
+**The suite's fixtures were lifecycle-inconsistent.**  `TCB.threadState`
+defaults to `.Inactive` and the fixtures never set it; the IPC scenarios
+masked the gap because the IPC transitions read `ipcState` only.  The new
+§9g self-suspend witness surfaced it when `suspendThread`'s guard
+(correctly) refused to suspend an `.Inactive` thread — the guard working,
+on a fixture that was wrong.  All three fixtures now carry `.Running` /
+`.BlockedReply`, and §9g pins plan §3.5's parenthetical at runtime: a
+self-`.tcbSuspend` deschedules the caller (current cleared), does not
+IPC-block (`ipcState` stays `.ready`), and **returns** the constructed
+unit frame — the value the thread should observe when later resumed.
+
+**Verified sound, no change needed**: staging creates no new information
+flow (every stager copies a payload the gated transition already
+delivered, into the *same* thread's projection-stripped
+`registerContext`); each arm's pre-resolved counterparty agrees with what
+its transition wakes, and the `.ready`/`pendingMessage` guards make every
+divergence case inert; the bound and plain signal targets are structurally
+exclusive (`boundDeliveryTarget?` requires an empty wait queue); the error
+arms commit exactly the argument-spill state, keeping the SM8 error-NI
+theorems' premise; a unit syscall's constructed frame survives the
+context-switch `registerContext` clobber precisely because it is
+constructed; Rust `error_frame_regs` matches `Architecture.errorFrame`
+label for label; `returnMessageInfo` is clamped inside the 7/2/20-bit
+fields; the whole surface is axiom-clean (2,025 elaborated constants).
+
+Also: the suite's `String.mk` deprecation fixed (`String.ofList`) — with
+the unused-hypothesis warning gone, the build is **warning-free**.
+
+**PR #866 review (Codex P1, same cut) — the blocked-resume sentinel.**
+With `contextRestoreSeamLive = false` the trap layer cannot install a
+successor, so `trap.S` restores and `eret`s through a *blocked* caller's
+own saved frame — and its request registers (an `x1` whose label is
+typically `0`) decoded as a **false success** whose `x0` "badge" is the
+caller's own capability pointer: the fail-open class WS-RA exists to
+close, live for every genuine block rather than only the audit's
+misclassification case.  The demanded successor-install is the SM10.E
+context-restore seam (tracked; pulling a scheduled phase into a review
+fix would be the wrong cut), but the observable-harm half is closed now:
+the `Blocked` arm poisons the frame with `blocked_resume_sentinel_regs()`
+— `x1` label `BLOCKED_RESUME_SENTINEL_LABEL = 0xFFFFF`, the maximum
+in-field `MessageInfo` label, compile-time-asserted outside the
+kernel-emittable set `{0} ∪ {1..=55}` — which `decode_response` collapses
+to `UnknownKernelError`: fail-closed, never success, and never a real
+kernel error (an error verdict would lie twice — the syscall did not
+fail, and on `.call` the request was already sent, so a userspace retry
+would double-send).  Interim HAL artifact only: the verified convention
+is unchanged (`SyscallOutcome.mailboxFrame .blocks = .zero`; the model
+stages real frames only) and the SM10.E flip replaces the write with the
+successor's install.  Pinned by `blocked_resume_sentinel_shape` (raw
+shape; hand-duplicated label equals `sele4n-abi`'s `MAX_LABEL`; in-field;
+collides with no discriminant's error frame) and
+`blocked_resume_sentinel_decodes_fail_closed` (the canonical decoder
+reads it as `UnknownKernelError`, with the load-bearing negative that an
+unpoisoned stale request frame decodes as exactly the false success the
+review describes), via a new test-only `sele4n-abi` dev-dependency
+following the `sele4n-types` cross-check precedent.  HAL 821 → 823
+tests; clippy-clean; the `> 55` bound is a `const` assert at the
+constant's definition.
+
+Refs: docs/planning/SYSCALL_RETURN_ABI_PLAN.md (audit cut)
+
+## v0.33.38 — WS-RA complete: the blocked orderings stage, the arms match their shapes
+
+RA.B.5b and RA.B.8, the two pieces the v0.33.37 core landing registered as
+remaining — with this cut the workstream's own scope is complete, and what
+survives in §9 is owed to SM10.E (frame *delivery* at the context restore;
+the cancellation/timeout error-frame staging).
+
+**RA.B.5b — the blocked-waiter half, landed at the arms.**  A syscall that
+blocks has no return value when it blocks; its frame must be staged by the
+syscall that *unblocks* it, or the waiter resumes reading its stale staged
+arguments as a return value (§3.5's hazard, now pinned by the suite's
+negative controls).  The plan drafted this as store-sibling surgery inside
+the transitions — `storeTcbReadyWithFrame`-shaped one-call swaps with the
+per-site invariant re-proofs as "the honest bulk of the XL".  Verifying the
+delivery shape against the tree dissolved that cost: **every wake in the
+tree delivers through `.ready` + `pendingMessage := msg`**
+(`storeTcbIpcStateAndMessage` / `storeTcbReceiveComplete` — the badge wake
+included, as a badge-only `IpcMessage`), so the payload is recoverable at
+the arm post-state and the RA.B.6 sharpening (stage at the arms, touch no
+transition) applies to the blocked half verbatim.  Two Option-lifted
+stagers in `SyscallReturn.lean`:
+
+- `stageWokenDelivery` — `stageDeliveredMessage` over the arm's
+  pre-resolved wake target (receive-queue head, wait-queue head, bound
+  target, resolved reply caller); the `.ready` + `pendingMessage` guards
+  make it the identity whenever the wake did not happen.
+- `stageWokenSendCompletion` — the **zero frame** (unit success) for a
+  woken *plain* sender whose send completed at a rendezvous, guarded
+  `.ready` ∧ delivery-consumed so a consumed `Call` sender (which lands
+  `.blockedOnReply`, its frame owed by the reply path) and a payload wake
+  (owed `returnFrameOfMessage`) are both skipped — the case the plan's
+  first draft missed, staged at the `.receive` arms and inside
+  `replyRecvBody`.
+
+Composed at **eleven arm sites**: `.send` ×2 and `.call` ×2 (the blocked
+receiver), `.reply` ×2 (the woken caller — `.call`'s `.message` frame,
+delivered entirely through this path), `.receive` ×2 (the completed plain
+sender, beside the existing caller staging), `.notificationSignal` ×2 (the
+plain head waiter and the bound target, mutually exclusive), and
+`replyRecvBody` ×1 (both legs, shared by both `.replyRecv` arms — so the
+checked/unchecked equivalence survives untouched).  Zero IPC transitions
+changed; none of the ~1900-reference invariant surface moved.
+
+**The theorems**: `blockedReturn_staged_in_waiter_frame` (the plan-named
+result — a payload wake's staged frame is exactly `returnFrameOfMessage
+msg`, recovered bit-for-bit by the boundary read) and its unit dual
+`blockedUnitReturn_staged_in_sender_frame`; guard characterisations
+(`_stages_zero`, `_id_when_not_ready`, `_id_when_pending`);
+scheduler/machine frame lemmas for both stagers; every-observer projection
+preservation via RA.B.10's blanket (`stageWokenDelivery/-SendCompletion_preserves_projection`).
+Theorem fallout, all in lockstep: eight delegation RHS
+(`dispatchWithCap{,Checked}_send_delegates`, `_receive_delegates`,
+`_send_uses_withCaps`, `_call_uses_crossCoreDispatch`,
+`_reply_populates_msg`, both `syscallDelegates` arms); SM8.B's
+`replyRecvBody_confinedToCores` re-proven by transporting the donation
+leg's confinement across the staging via
+`observableSlotsConfinedToCores_of_framed_suffix` (the framed-transport
+trio relocated above its new first consumer).
+
+**RA.B.8 — the shape-coherence family.**  The draft's phrasing — "a
+`.unit` arm leaves the caller's staged frame untouched" — is deliberately
+NOT the theorem: it is false of any arm that context-switches
+(`saveOutgoingContext` writes `registerContext`) and unnecessary, because
+`frameForShape_unit` makes the boundary **construct** unit frames without
+reading staged registers — a `.unit` misclassification is structurally
+inert.  The value half is per-arm over the live dispatch:
+`dispatchArm_notificationWait_matches_returnShape` (`.badge`),
+`dispatchArm_serviceQuery_matches_returnShape` (`.word`),
+`dispatchArm_receive_matches_returnShape` /
+`dispatchArm_replyRecv_matches_returnShape` (`.message`), and
+`dispatchArm_call_frame_delivered_by_reply` — §3.5's cross-arm form: the
+`.reply` dispatch stages the *caller's* frame and the boundary read at the
+caller recovers it.  `syscallReturnShape_value_returning` pins the value
+surface at exactly those five syscalls, so the family covers it.
+
+**Evidence**: `SyscallReturnAbiSuite` §9 — five end-to-end scenarios
+through the live per-core dispatch on a two-thread/two-core fixture
+(caller current on the boot core, peer on core 1, so both legs run the
+real `currentOnCore` resolution): 9a wait-before-signal (with the
+pre-signal stale-args negative control — the staged `x0` IS the caller's
+own cap pointer until the signal replaces it), 9b the blocked receiver's
+message frame, 9c the completed plain sender's zero frame (plus its own
+stale-x0 control and the receiver's immediate-half outcome), 9d the reply
+delivering `.call`'s frame into a hand-built `.blockedOnReply` caller, 9e
+`replyRecvBody`'s own staging composition.  Three new golden-fixture lines
+computed from the staged frames (fixture + `.sha256` regenerated — the
+blocked orderings' staging is now a fixture observable); `#check` anchors
+and Tier-3 positive anchors for the whole new surface.  Main trace
+byte-identical; zero sorry/axiom.
+
+Refs: docs/planning/SYSCALL_RETURN_ABI_PLAN.md (completion record)
+
+## v0.33.37 — WS-RA core: the kernel returns the seL4 frame, end to end
+
+The syscall return ABI, landed.  Before this cut the kernel wrote exactly one
+register on syscall exit — `x0` — and the value it wrote was the caller's own
+capability pointer, which userspace's `decode_response` (`regs[0] != 0` means
+error) decoded as a `KernelError`: a **successful** syscall reported a spurious
+error for any nonzero cap pointer, and the five value-returning syscalls
+returned nothing.  The kernel now returns seL4's ARM64 convention exactly.
+
+**The convention.**  `x0` = badge/primary result at full 64-bit width; `x1` =
+`MessageInfo` whose **label** carries the error at `discriminant + 1` — label 0
+is success, and the offset exists because `KernelError` discriminant 0 is
+`.invalidCapability`, so direct carriage would alias the first error with
+success (the plan's own draft defect, caught in the pre-implementation
+refinement pass and pinned by `errorLabel_never_zero` /
+`errorLabel_zero_iff_success`); `x2`–`x5` = message registers.  All 55
+discriminants round-trip through the offset label by enumeration
+(`errorLabel_roundtrip`, `kernelErrorFitsLabel`, `errorFrame_x1_decodes`), and
+over-wide labels fail closed.  The bit-63 `encodeOk`/`encodeError` protocol is
+**retired** — deleted, Tier-3 negative anchors preventing its return,
+`bit63Encoding_not_injective_on_badges` retaining the badge-aliasing hazard it
+carried (two valid badges differing only at bit 63 collided under the old
+encoding).
+
+**The model** (`SeLe4n/Kernel/Architecture/SyscallReturn.lean`, production,
+~800 lines): `KernelError.toDiscriminant`/`ofDiscriminant?` with round trips;
+`ReturnShape` (`unit`/`badge`/`word`/`message`) and `syscallReturnShape` as a
+**total function** over `SyscallId` — a new syscall cannot be added without
+declaring its return shape, and `returnShape_list_gate_insufficient` records
+why a list-plus-completeness-theorem gate was rejected; the
+`SyscallReturnFrame` codec with `decodeReturnFrame_encodeReturnFrame`
+losslessness at full width; `SyscallOutcome` (`returns frame | blocks`)
+decided from the caller's **post-state** IPC state (`ipcStateBlocksReturn`) —
+`.call` always blocks, `.receive`/`.send`/`.notificationWait` conditionally;
+`frameForShape` constructing `.unit` frames rather than reading staged
+registers (reading them back would reproduce the defect); and the staging seam
+`writeReturnFrameToTcb`/`readReturnFrame` with
+`writeReturnFrameToTcb_preserves_projection` for **every** observer — WS-H12c
+already strips `registerContext` from projected TCBs, so the plan's premise
+that the theorem needed a high-observer hypothesis was wrong in its own
+favour.
+
+**The staging is arm-level**, a design sharpening over the plan's
+delivery-site draft: an immediate value is already in the dispatch arm's hands
+(`.ok (some badge)`) or the caller's own `pendingMessage`, so staging at the
+`API.lean` arms touches zero IPC transitions and none of the ~1900-reference
+invariant surface.  `.notificationWait` (both arms) stages the signalled badge
+via `returnFrameOfBadge`; `.receive` and `.replyRecv` (both arms each) stage
+the delivered message via `stageDeliveredMessage` (guarded on `.ready`, the
+identity for a blocked caller); `.serviceQuery` stages the resolved service id
+via `returnFrameOfWord` — it previously computed `lookupServiceByCap` and
+threw the answer away.
+
+**The boundary.**  `syscallDispatchFromAbi` returns `Kernel
+Architecture.SyscallOutcome`; its error arms return
+`.returns (Architecture.errorFrame ke)` with the state committed, so
+`syscallEntry_error_perCore_NI` and
+`syscallEntry_error_preserves_proofLayerInvariantBundle` stand untouched
+(error frames are computed at the boundary, never staged —
+`syscallDispatchFromAbi_error_stages_no_frame`).  The entry
+(`lean_syscall_dispatch_cross_core`) publishes the frame's six words to a
+per-core mailbox via the new `ffi_syscall_return_frame` extern — the
+`ShootdownOpMailbox` pattern, trivially race-free here since slot `c` is
+written and read by core `c`'s own entry inside the same `with_kernel_entry`
+critical section — and returns an outcome tag; `trap.rs` gains
+`set_x2`..`set_x5` + `set_return_frame` and restores all six registers on
+`Frame`, writes nothing on `Blocked` (the SM10.E context-restore hook), and
+writes `error_frame_regs` on dispatch errors.  The vestigial
+`syscall_dispatch_inner` export and `syscallDispatchInner` body are
+**deleted** — closing the TLB shootdown plan's deferred item #3 by its own
+recorded route (b) — and `SyscallDispatchSuite` drives the pure
+`syscallDispatchFromAbi` directly.  `SYSCALL_ABI_VERSION = 2` is pinned three
+ways: a Lean `decide` theorem, a HAL test-compile-time `const` assertion
+(the strongest form under the HAL's zero-runtime-deps mirror discipline), and
+the abi-crate conformance pin.
+
+**Userspace.**  `decode_response` rewritten to the label convention,
+fail-closed both ways (malformed `x1` → `InvalidMessageInfo`; unknown nonzero
+label → `UnknownKernelError`); `badge()` reads `x0`; `service_query` returns
+`KernelResult<u64>`; the non-aarch64 mock re-encoded.  Conformance grows a
+Lean-side mirror of the new decoder, a Rust-side `ReturnShape` mirror with
+compile-time wrapper-signature pins, per-shape frame round trips, and a
+wrapper-length prefilter gate.
+
+**Defects found while landing, all fixed**: five unreachable wrappers —
+`dispatch_svc`'s `min_inline_args` prefilter demanded more inline registers
+than the authoritative Lean decoders require, so `cspace_mint` (4-vs-5),
+`cspace_copy`/`cspace_move` (2-vs-4), `lifecycle_retype` (3-vs-4) and
+`service_query` (0-vs-1, caught by the new conformance pin) could never
+succeed through the typed path; `message_length` masked `0x0FFF` under a
+MessageInfo layout nothing else in the tree used; a stale 54-variant error
+enumeration (`KernelError` has 55); and `DispatchError`'s dead variants
+reduced to the two the prefilter can still produce, with
+`kernel_error_discriminant()` mapping them onto the canonical discriminants.
+All fail-closed behind the authoritative Lean decode — fidelity defects, not
+vulnerabilities.
+
+**Sequencing as the plan prescribed**: `tests/SyscallReturnAbiSuite.lean`
+landed first and **failed on the pre-migration tree** (the spurious-error
+composition made observable before it was made correct), then inverted to
+post-flip assertions — §1 the RA.E.1 witnesses, §2 the decoder mirror, §4 the
+unit zero-frame, §5/§6 badge delivery incl. full 64-bit width, §7 the blocked
+outcome, §8 the golden fixture `tests/fixtures/syscall_return_abi.expected`
+(+ `.sha256`, Tier-2 walked) byte-verified against the live decisions.  The
+main trace is **byte-identical**: return frames live in `registerContext` and
+the mailbox, neither of which the trace projects.
+
+**Docs**: spec §6.5.5 rewritten to the live four-export bridge surface;
+GitBook chapters 10/15 + handbook README; `WORKSTREAM_HISTORY`,
+`CLAIM_EVIDENCE_INDEX`, `DEVELOPMENT.md`; the SM9 plan re-anchored off the
+dissolved 63-bit payload premise (`auditReadWord_fits_payload` retired before
+it was built; the chunk protocol survives for the unbounded-`Nat` reason);
+the master plan and release-closure plan updated (SM9 unblocked; SM10.E
+inherits RA.B.5b delivery + the cancellation error-frame debt);
+`CLAUDE.md`/`AGENTS.md` in lockstep.
+
+**AK7 discipline**: every live WS-RA read goes through
+`SystemState.getTcb?` (`writeReturnFrameToTcb`, `readReturnFrame`,
+`stageDeliveredMessage`, `syscallReturnOutcome`; `GETTCB_ADOPTION`
+2021 → 2048), and the baseline is re-anchored for a single
+characterisation-proof occurrence — `readReturnValue_eq_readReturnFrame_x0`
+cases on the same raw scrutinee its baselined subject matches on, no new
+live raw read (`RAW_LOOKUP_TID` 1286 → 1287).
+
+**Remaining WS-RA scope, registered**: RA.B.5b — the blocked-waiter half
+(unblocking transitions staging the woken thread's frame; delivery is
+SM10.E's context restore, and the cancellation/timeout error-frame staging is
+§9 registered debt with owner SM10.E) — and RA.B.8, the per-arm
+`dispatchArm_matches_returnShape` coherence family.  Zero sorry/axiom; all 68
+Lean suites green; Rust workspace 1124 tests, zero ignored, clippy-clean.
+
+Refs: docs/planning/SYSCALL_RETURN_ABI_PLAN.md (landing record)
+
 ## v0.33.36 — the four registered SM9 findings, fixed rather than deferred
 
 v0.33.34 registered four review findings in an SM9 §9a rather than fixing them,

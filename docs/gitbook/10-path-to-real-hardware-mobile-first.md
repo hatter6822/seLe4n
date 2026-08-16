@@ -43,12 +43,17 @@ WS-AN Phase AN9 closes every hardware-binding deferred item from
   routes into `Kernel.Lifecycle.Suspend.suspendThread` via the
   `kernelStateRef` IO.Ref instead of returning a stub.
 - **SVC FFI dispatch** (AN9-F / DEF-R-HAL-L14): typed
-  `SyscallArgs` + `SyscallId` + `dispatch_svc`.  WS-RC R2.B closes
-  the Lean side: `@[export syscall_dispatch_inner]` is a thin
-  BaseIO wrapper around the new pure `syscallDispatchFromAbi`
-  entry point, which spills the FFI register values into the
-  current TCB and invokes the verified `syscallEntryChecked`
-  instead of returning the historical `NotImplemented = 17` stub.
+  `SyscallArgs` + `SyscallId` + `dispatch_svc`.  WS-RC R2.B closed
+  the Lean side with a thin BaseIO wrapper around the new pure
+  `syscallDispatchFromAbi` entry point, which spills the FFI
+  register values into the current TCB and invokes the verified
+  `syscallEntryChecked` instead of returning the historical
+  `NotImplemented = 17` stub.  The live seam is now
+  `@[export lean_syscall_dispatch_cross_core]` (WS-SM SM6.A), and
+  since WS-RA (v0.33.37) it returns the full seL4 ARM64 frame —
+  `x0` = badge/result, `x1` = `MessageInfo` error label, `x2`–`x5`
+  = message registers — via a per-core return-frame mailbox,
+  retiring the interim bit-63 error-flag encoding.
 - **Bounded WFE** (AN9-G / DEF-R-HAL-L17): `wfe_bounded` with
   10 ms default at 54 MHz.
 - **SMP scaffolding** (AN9-J / DEF-R-HAL-L20): PSCI `cpu_on` +

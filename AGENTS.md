@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.33.36.
+Lean 4.28.0 toolchain, Lake build system, version 0.33.41.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -182,21 +182,21 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~40312 lines)
+- `CHANGELOG.md` (~40888 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~20449 lines)
-- `docs/WORKSTREAM_HISTORY.md` (~10832 lines)
+- `docs/WORKSTREAM_HISTORY.md` (~10878 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~7902 lines)
 - `tests/SmpInformationFlowSuite.lean` (~6863 lines)
-- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5053 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~4900 lines)
+- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5083 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5009 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4764 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
 - `SeLe4n/Model/State.lean` (~4364 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~4351 lines)
-- `docs/spec/SELE4N_SPEC.md` (~4137 lines)
+- `SeLe4n/Kernel/API.lean` (~4297 lines)
+- `docs/spec/SELE4N_SPEC.md` (~4161 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
 - `tests/NegativeStateSuite.lean` (~4094 lines)
-- `SeLe4n/Kernel/API.lean` (~3938 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3919 lines)
 - `docs/gitbook/12-proof-and-invariant-map.md` (~3879 lines)
 - `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~3668 lines)
@@ -245,8 +245,8 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~2022 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2019 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~1989 lines)
+- `SeLe4n/Model/Object/Types.lean` (~1986 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean` (~1967 lines)
-- `SeLe4n/Model/Object/Types.lean` (~1967 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.1_WORKSTREAM_PLAN.md` (~1917 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/TicketLock.lean` (~1901 lines)
@@ -262,15 +262,15 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md` (~1776 lines)
 - `tests/InformationFlowSuite.lean` (~1748 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_COMPREHENSIVE.md` (~1739 lines)
+- `SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean` (~1726 lines)
 - `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` (~1725 lines)
-- `SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean` (~1725 lines)
 - `docs/dev_history/audits/WORKSTREAM_PLAN_WS_O_SYSCALL_RUST_WRAPPERS.md` (~1725 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean` (~1706 lines)
-- `SeLe4n/Platform/FFI.lean` (~1700 lines)
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
 - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~1670 lines)
 - `SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean` (~1668 lines)
 - `docs/planning/SMP_FOUNDATIONS_PLAN.md` (~1665 lines)
+- `SeLe4n/Platform/FFI.lean` (~1645 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~1488 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
@@ -287,6 +287,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean` (~1337 lines)
 - `tests/LockSetSuite.lean` (~1335 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1316 lines)
+- `docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md` (~1313 lines)
 - `SeLe4n/Kernel/InformationFlow/Policy.lean` (~1293 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreDomain.lean` (~1277 lines)
 - `docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md` (~1252 lines)
@@ -297,7 +298,6 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~1222 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1219 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1216 lines)
-- `docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md` (~1214 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean` (~1200 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean` (~1186 lines)
 - `docs/dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md` (~1178 lines)
@@ -316,8 +316,9 @@ To find files that need pagination today, run:
 - `tests/PerObjectLockSuite.lean` (~1097 lines)
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1085 lines)
 - `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~1076 lines)
+- `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1075 lines)
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
-- `tests/SyscallDispatchSuite.lean` (~1047 lines)
+- `tests/SyscallDispatchSuite.lean` (~1046 lines)
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
 - `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1039 lines)
 - `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~1027 lines)
@@ -332,6 +333,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Concurrency/MemoryModel.lean` (~935 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md` (~930 lines)
 - `tests/SmpFoundationsSuite.lean` (~928 lines)
+- `docs/planning/SYSCALL_RETURN_ABI_PLAN.md` (~923 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_COMPREHENSIVE.md` (~921 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_v0.25.27.md` (~911 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
@@ -347,10 +349,10 @@ To find files that need pagination today, run:
 - `tests/TwoPhaseArchSuite.lean` (~820 lines)
 - `docs/dev_history/audits/WS_RC_R4_CLOSEOUT_PLAN.md` (~818 lines)
 - `tests/DecodingSuite.lean` (~817 lines)
+- `tests/SyscallReturnAbiSuite.lean` (~810 lines)
 - `tests/WithLockSetSuite.lean` (~809 lines)
 - `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` (~808 lines)
 - `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` (~806 lines)
-
 This bullet block is a **curated snapshot**, not a static enumeration.
 `scripts/find_large_lean_files.sh --check` (called from
 `scripts/sync_documentation_metrics.sh`) compares it against the live
@@ -718,36 +720,141 @@ documentation lives under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
-- **WS-RA Syscall Return ABI — NEXT WORKSTREAM, implemented ahead of SM9**:
-  the kernel has **no syscall return path**.  `writeFfiRegistersToTcb` stages
-  the *incoming* `x0..x5` into `tcb.registerContext` (`x0 ← capPtrReg`),
-  `syscallDispatchFromAbi` returns `encodeOk (readReturnValue st' tid)` reading
-  `gpr ⟨0⟩` back out — and **no transition anywhere writes a return value into
-  that register**.  `trap.rs` writes `set_x0` and nothing else: `set_x1` is
-  called only in a unit test and `x2`-`x5` are never written back.  Compose that
-  with userspace's `decode_response`, where `regs[0] != 0` *means error*, and a
-  **successful** syscall returns the caller's capability pointer for userspace to
-  decode as a `KernelError`.  `FFI.lean` documents the middle of this and defers
-  "full seL4-ABI x0 compliance".  Five syscalls are value-returning today and
-  return nothing — `.notificationWait` (discards `.ok (some badge)`), `.receive`
-  / `.call` / `.replyRecv` (deliver into `tcb.pendingMessage`, which has no
-  register path), and `.serviceQuery` (computes `lookupServiceByCap` and throws
-  the answer away with `.ok (_, st')`) — and SM9 adds `.auditRead` /
-  `.auditDrain`.  **Target**: seL4's ARM64 convention exactly — `x0` = badge or
-  primary result, `x1` = `MessageInfo` whose **label** carries the error,
-  `x2`-`x5` = message registers — with `encodeOk` / `encodeError` and the bit-63
-  protocol **retired**, since bit 63 was only ever a workaround for multiplexing
-  status into the value register.  Three decisions: return values stage in
-  `tcb.registerContext` rather than widening the FFI return type (so no dispatch
-  arm grows a six-tuple and the trap boundary is an ordinary context restore);
-  `syscallReturnShape : SyscallId → ReturnShape` is a **total function**, not a
-  list with a completeness theorem; and the flip is guarded by a
-  `SYSCALL_ABI_VERSION` pinned in both mirrors, because a half-migrated tree
-  reinterprets registers silently rather than failing.  No end-to-end test can
-  exist until SM10.E boots, so **RA.E.1 lands first and must fail on the
-  pre-migration tree**.  38 sub-tasks across ~12-15 PRs; blocks SM9 (both
-  value-returning sub-phases) and SM10.E.  Plan:
-  [`docs/planning/SYSCALL_RETURN_ABI_PLAN.md`](docs/planning/SYSCALL_RETURN_ABI_PLAN.md).
+- **WS-RA Syscall Return ABI — COMPLETE (core v0.33.37; RA.B.5b + RA.B.8
+  v0.33.38); both return orderings staged end to end**.  The kernel returns seL4's ARM64 frame
+  exactly: `x0` = badge / primary result at full 64-bit width, `x1` =
+  `MessageInfo` whose **offset** label carries the error (`0` = success,
+  `d + 1` = discriminant `d` — offset because discriminant 0,
+  `.invalidCapability`, is a real error and direct carriage would alias it
+  with success), `x2`-`x5` = message registers.  **Landed**: the convention
+  model `Kernel/Architecture/SyscallReturn.lean` (`ReturnShape` — `unit` /
+  `badge` / `word` / `message`, no wildcard so a new syscall is a missing
+  case at elaboration; `SyscallReturnFrame` + lossless round trip;
+  `SyscallOutcome`; the canonical `KernelError.toDiscriminant` /
+  `ofDiscriminant?` pair with `Platform.FFI.toUInt32` its instance;
+  `errorLabel_never_zero` / `errorLabel_roundtrip` / `kernelErrorFitsLabel`);
+  the staging seam (`writeReturnFrameToTcb` / `readReturnFrame` /
+  `TCB.withReturnFrame`, projection-invisible for EVERY observer since
+  WS-H12c already strips `registerContext` —
+  `writeReturnFrameToTcb_preserves_projection`); **arm-level staging for the
+  whole immediate-return surface** (a design sharpening over the plan's
+  delivery-site draft — every immediate value is already in the arm's hands
+  or the caller's own `pendingMessage`, so `.notificationWait`'s badge (the
+  SM9.C.0 closure, delivered end to end signal-before-wait),
+  `.receive`/`.replyRecv`'s consumed deliveries (`stageDeliveredMessage`,
+  guarded on the caller's post-state `.ready`) and `.serviceQuery`'s resolved
+  `ServiceId` stage while touching zero IPC transitions and zero of the
+  ~1900-reference invariant surface); `syscallDispatchFromAbi : Kernel
+  SyscallOutcome` (outcome decided from the caller's post-state; `Unit`
+  frames CONSTRUCTED, never read from staged registers; error frames
+  computed at the boundary, never staged — the error path stays
+  state-preserving and the SM8 error-NI theorems stand untouched); the
+  per-core return-frame mailbox (`ffi_syscall_return_frame`, the
+  ShootdownOpMailbox pattern; export returns the outcome tag); the trap
+  layer's six-register restore (`set_x2`-`set_x5` added; a blocked caller
+  gets no *return* frame — the RA.C.9 SM10.E hook, its frame poisoned with
+  the fail-closed blocked-resume sentinel until the seam flips, see the
+  v0.33.39 review note below); `decode_response` reading
+  the label (fail-closed on undecodable `x1`); `SYSCALL_ABI_VERSION = 2`
+  pinned in Lean + `sele4n-types` + the HAL.  **Cleanup**: `encodeOk` /
+  `encodeError` + bit-63 theorems DELETED (hazard retained as
+  `bit63Encoding_not_injective_on_badges`; Tier-3 negative anchors);
+  vestigial `syscall_dispatch_inner` export DELETED; `message_length`'s
+  contradictory 14-bit MessageInfo reading fixed (`0x7F`);
+  `min_inline_args` reconciled with the Lean decoders — **five wrappers
+  were unreachable on hardware** (`cspace_mint` 4-vs-5, `cspace_copy` /
+  `cspace_move` 2-vs-4, `lifecycle_retype` 3-vs-4, `service_query` 0-vs-1,
+  the fifth found by the new wrapper-length conformance pin);
+  `DispatchError::Kernel` retired with the raw-7/6 x0 discriminant
+  collision (prefilter rejections ride the label as
+  `InvalidSyscallNumber` / `InvalidSyscallArgument`).  **Evidence**:
+  `tests/SyscallReturnAbiSuite.lean` landed FIRST asserting the defect
+  (a successful syscall's cap pointer decoding as `KernelError` 5; the
+  signal-before-wait badge provably nowhere in the register file) and the
+  flip INVERTED every witness in the commit that changed the behaviour;
+  golden fixture `tests/fixtures/syscall_return_abi.expected` computed from
+  the live dispatch decisions; per-shape + all-55-label conformance both
+  sides; `main_trace_smoke` byte-identical (the harness prints no register
+  content — as the refined plan §6.2 predicts).  **Completed at v0.33.38 — WS-RA
+  CLOSED on the staging side**: RA.B.5b landed **at the arms** (the RA.B.6
+  sharpening applied to the blocked half — every wake delivers `.ready` +
+  `pendingMessage`, so two Option-lifted stagers `stageWokenDelivery` /
+  `stageWokenSendCompletion` compose at eleven arm sites with zero IPC
+  transitions touched; `blockedReturn_staged_in_waiter_frame` + the unit dual
+  `blockedUnitReturn_staged_in_sender_frame`; eight delegation RHS updated in
+  lockstep; SM8.B's `replyRecvBody_confinedToCores` re-proven by framed-suffix
+  transport; `SyscallReturnAbiSuite` §9's five end-to-end two-core scenarios +
+  three golden-fixture lines) and RA.B.8 landed as the five-theorem value-half
+  family (`dispatchArm_{notificationWait,serviceQuery,receive,replyRecv}_matches_returnShape`
+  + `dispatchArm_call_frame_delivered_by_reply` — §3.5's cross-arm form) with
+  the unit half structural (`frameForShape_unit` constructs, never reads; the
+  draft's "unit arms leave the staged frame untouched" is deliberately not the
+  theorem — false under context switches, unnecessary under construction).
+  What remains is owed to SM10.E: frame *delivery* at the context restore, and
+  the cancellation/timeout error-frame staging (plan §9).  **v0.33.39 audit
+  cut** — a code-first audit of the whole PR: no false theorem, no live
+  vulnerability; five findings closed (`ipcStateBlocksReturn`'s wildcard →
+  six-arm match, the §3.4 discipline; the return-frame mailbox's
+  writer/reader unified on ONE core-id source — TPIDR-vs-MPIDR divergence
+  would land a frame in another core's slot as a different thread's return
+  value; `.serviceQuery` gains its end-to-end staging witness §9f + the
+  `word` fixture line; the `.serviceQuery` RA.B.8 theorem's decorative
+  `hLookup` restated load-bearing; the suite fixtures made
+  lifecycle-consistent — `threadState` defaults `.Inactive`, surfaced by the
+  new §9g self-suspend witness, which now pins §3.5's parenthetical at
+  runtime: deschedules, does not IPC-block, returns the constructed unit
+  frame).  Build warning-free; axiom-clean (2,025 constants swept).
+  **PR #866 review (same cut)**: with `contextRestoreSeamLive = false` the
+  hardware resumes a blocked caller anyway, and its stale request registers
+  (label-0 `x1`) decoded as a false success — the fail-open class WS-RA
+  exists to close, live for every genuine block; the `Blocked` trap arm now
+  poisons the frame with `blocked_resume_sentinel_regs()` (`x1` label
+  `0xFFFFF`, max in-field, compile-time-asserted outside the
+  kernel-emittable set `{0} ∪ {1..=55}`), which `decode_response` collapses
+  to `UnknownKernelError` — fail-closed, never success, never a real
+  kernel error (an error verdict would drive a retry into a double-send
+  on `.call`).  Interim HAL artifact only (`mailboxFrame .blocks = .zero`
+  unchanged; the SM10.E successor-install replaces the write); pinned by
+  two HAL tests via a test-only `sele4n-abi` dev-dep (HAL 821 → 823).
+  The demanded successor-install itself stays SM10.E scope.
+  **PR #866 review round 2 (v0.33.40)**: three further findings closed —
+  (1) the staged frame's `extraCaps` now reports the transfer summary's
+  **installed** count (`CapTransferSummary.installedCount`, threaded as an
+  undefaulted `installedCaps` parameter through `returnMessageInfo` /
+  `returnFrameOfMessage` / both stagers; the send/call arms destructure
+  the summary they previously discarded, reply/notification arms pass 0),
+  never the requested `msg.caps.size` — a grant-denied or slot-exhausted
+  transfer no longer tells the receiver capabilities arrived (suite §9h,
+  13th fixture line); verifying it surfaced pre-existing tracked debt:
+  the live receive paths run NO unwrap (`endpointReceiveDualWithCaps` has
+  no live caller), so receiver-second cap transfer installs nothing —
+  honestly reported as 0 now, closure design in the plan; (2) the
+  v0.33.39 mailbox unification kept its one-source principle but flips to
+  the RIGHT source — all three packed-MPIDR index sites (mailbox writer,
+  `dispatch_svc`, the suspend bracket) now read the boot-validated
+  TPIDR logical id (`per_cpu::current_core_id_from_tpidr`), since the
+  packed value (`0x100` on a second-cluster core) aborts the mailbox
+  bounds assert and silently disables the entry-spin's shootdown
+  self-service; (3) `service_query` returns the typed `ServiceId`.
+  Rust 1126 tests; four new Tier-3 anchors pin the logical-index sites
+  and forbid the packed value's return.
+  **PR #866 review round 3 (v0.33.41)**: five further findings — four MORE
+  RA.D.1-class unreachable wrappers fixed at the root (the HAL minima for
+  suspend/resume/schedContextUnbind/Bind drifted from the Lean decoders'
+  0/0/0/1, and the conformance table's hand-duplicated columns could not
+  see it; the rebuilt sweep drives EVERY real wrapper through the new
+  host-capture mock trap against the REAL `min_inline_args()` via a
+  test-only `sele4n-hal` dev-dep — all 31 syscalls, with the three
+  missing wrappers `tcb_bind_notification`/`tcb_unbind_notification`/
+  `mint_reply_cap` implemented for the purpose); `endpoint_call` returns
+  `(Badge, SyscallResponse)` like its `.message` siblings, pin extended;
+  the self-suspend outcome design defended on the thread (the unit frame
+  IS the resume value; `.blocks` would strand it); application IPC labels
+  registered as tracked debt (a delivered label cannot ride `x1` without
+  aliasing the status channel — needs a shape-aware or out-of-band ABI
+  design); the timeout error frame restated as the plan §9 SM10.E
+  deferral.
+  Plan: [`docs/planning/SYSCALL_RETURN_ABI_PLAN.md`](docs/planning/SYSCALL_RETURN_ABI_PLAN.md).
 
 - **WS-SM SMP multi-core completion workstream IN FLIGHT (v0.31.2 → v1.0.0)**:
   Unified workstream merging WS-RC's remaining R6..R14 phases with the
@@ -817,6 +924,17 @@ documentation lives under `docs/` and `docs/gitbook/`.
   **Plans**: master overview at
   [`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`](docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md);
   per-phase plans at `docs/planning/SMP_*.md`.
+
+  **AK7 re-anchor at v0.33.37 (WS-RA)**: `RAW_LOOKUP_TID` 1286 → 1287.
+  The single increment is the retained-instance proof
+  `readReturnValue_eq_readReturnFrame_x0` (`Platform/FFI.lean`), which
+  cases on the same `objects[tid.toObjId]?` scrutinee its subject
+  `readReturnValue` (baselined, pre-WS-RA) matches on — a raw-store
+  *characterisation* proof relating the legacy raw reader to the typed
+  `readReturnFrame`, no new live raw read.  Every live WS-RA read goes
+  through `SystemState.getTcb?` (`writeReturnFrameToTcb`,
+  `readReturnFrame`, `stageDeliveredMessage`, `syscallReturnOutcome`),
+  which is what moved `GETTCB_ADOPTION` 2021 → 2048.
 
   **Key AK7 metrics at v0.32.89**: `RAW_MATCH_TOTAL` 135
   (`RAW_MATCH_VSPACEROOT` 13 → 14),

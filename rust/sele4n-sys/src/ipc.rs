@@ -106,7 +106,12 @@ pub fn endpoint_send(dest: CPtr, msg: &IpcMessage) -> KernelResult<SyscallRespon
 ///
 /// Lean: `apiEndpointReceive` (API.lean) — requires `.read` right.
 ///
-/// Returns the received badge and response registers.
+/// Returns the received badge and response registers.  WS-RA: these are
+/// **real** — the badge from `x0`, the delivered inline message registers
+/// from `x2`-`x5` with their count in the returned `MessageInfo` — staged
+/// by the kernel's `.receive` arm (`stageDeliveredMessage`).  Before the
+/// flip the kernel wrote no register back and this function returned the
+/// caller's own values.
 #[inline]
 pub fn endpoint_receive(src: CPtr) -> KernelResult<(Badge, SyscallResponse)> {
     // V1-D: new_const() is compile-time validated — infallible for valid constants.
@@ -155,16 +160,25 @@ pub fn endpoint_receive_with_reply(
 /// Call an endpoint (send + blocking receive in one syscall).
 ///
 /// Lean: `apiEndpointCall` (API.lean) — requires `.write` right.
+///
+/// PR #866 round-3 review: returns `(Badge, SyscallResponse)` like its
+/// `.message`-shaped siblings `endpoint_receive` / `endpoint_reply_recv`
+/// — a call's reply-delivered frame carries the badge in `x0` exactly as
+/// a receive's does (the kernel stages `.call`'s frame through the reply
+/// path, plan §3.5), and the bare `SyscallResponse` return left the
+/// shape-to-signature contract unenforceable for one of its three
+/// members.
 #[inline]
-pub fn endpoint_call(dest: CPtr, msg: &IpcMessage) -> KernelResult<SyscallResponse> {
+pub fn endpoint_call(dest: CPtr, msg: &IpcMessage) -> KernelResult<(Badge, SyscallResponse)> {
     let msg_info = MessageInfo::new(msg.length(), 0, msg.label)
         .map_err(|_| sele4n_types::KernelError::InvalidMessageInfo)?;
-    invoke_syscall(SyscallRequest {
+    let resp = invoke_syscall(SyscallRequest {
         cap_addr: dest,
         msg_info,
         msg_regs: msg.regs,
         syscall_id: SyscallId::Call,
-    })
+    })?;
+    Ok((resp.badge(), resp))
 }
 
 /// Reply to a caller (one-shot reply capability).
@@ -208,8 +222,13 @@ pub fn notification_signal(ntfn: CPtr, badge: Badge) -> KernelResult<SyscallResp
 
 /// Wait on a notification object. Blocks until signaled.
 ///
-/// Returns the accumulated badge value from the notification object.
-/// Lean: `notificationWait` (API.lean) — returns accumulated badge.
+/// Returns the accumulated badge value from the notification object —
+/// **really** (WS-RA closed SM9.C.0): the kernel's `.notificationWait`
+/// arm stages the consumed badge into `x0` (`returnFrameOfBadge`), and
+/// `badge()` reads `x0`.  Before the flip this doc claimed a badge the
+/// ABI never delivered — the kernel wrote no register back, and the old
+/// `badge()` read `x1`, handing back the caller's own msgInfo word.
+/// Lean: `notificationWait` (API.lean).
 #[inline]
 pub fn notification_wait(ntfn: CPtr) -> KernelResult<Badge> {
     let msg_info = MessageInfo::new_const(0, 0, 0);

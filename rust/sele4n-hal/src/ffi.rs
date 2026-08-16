@@ -679,6 +679,47 @@ pub extern "C" fn ffi_shootdown_publish_commit(len: u64, gen: u64) {
 }
 
 // ============================================================================
+// WS-RA: syscall return-frame mailbox FFI export
+// ============================================================================
+
+/// **WS-RA** (plan §3.3): publish the syscall return frame (`x0`-`x5`)
+/// into the calling core's slot of
+/// [`crate::svc_dispatch::RETURN_FRAMES`].
+///
+/// Called by `syscallDispatchCrossCoreEntry` immediately after its atomic
+/// commit; `dispatch_svc` reads the slot back inside the same
+/// `with_kernel_entry` critical section and hands the frame to the trap
+/// layer for the `x0`-`x5` writeback.  Same-core writer and reader, so
+/// the slot needs no cross-core ordering (see `ReturnFrameMailbox`).
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiSyscallReturnFrame`
+#[no_mangle]
+pub extern "C" fn ffi_syscall_return_frame(x0: u64, x1: u64, x2: u64, x3: u64, x4: u64, x5: u64) {
+    // Deliberately the SAME core-id source as the mailbox's reader
+    // (`dispatch_svc` keys both its entry-lock bracket and its
+    // `return_frame_read_in` on `per_cpu::current_core_id_from_tpidr()`).
+    // One source, no two-sources-agree obligation — the v0.33.39 audit's
+    // unification, with the source corrected by the PR #866 round-2
+    // review: `cpu::current_core_id()` is the *packed* MPIDR affinity
+    // (Aff1:Aff0), whose own contract forbids array indexing — on a
+    // second-cluster core it reads e.g. `0x100`, which
+    // `return_frame_publish_in`'s bounds assert turns into an abort on
+    // every syscall from that core.  The TPIDR-derived id is the
+    // validated logical index (`core_id < coreCount`, checked at boot by
+    // `check_per_cpu_invariants`) and is the SAME space as the
+    // `executingCore : Fin numCores` the Lean dispatch identifies the
+    // caller by (`ffi_current_core_id` below reads it), so writer,
+    // reader, and the kernel's own caller identification agree by
+    // construction.
+    let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
+    crate::svc_dispatch::return_frame_publish_in(
+        &crate::svc_dispatch::RETURN_FRAMES,
+        core,
+        [x0, x1, x2, x3, x4, x5],
+    );
+}
+
+// ============================================================================
 // WS-SM SM1.B.5 (closes SMP-M4): per-CPU core-id FFI export
 // ============================================================================
 
@@ -1151,18 +1192,30 @@ pub extern "C" fn sele4n_suspend_thread(tid: u64) -> u32 {
         //
         // Interrupt disabling (outside) is per-core and orthogonal: it
         // stops this core re-entering, not another core committing.
-        crate::kernel_entry::with_kernel_entry(crate::cpu::current_core_id() as usize, || {
-            // SAFETY: in production builds `suspend_thread_cross_core` is a
-            // Lean-emitted `extern "C"` symbol; calling an extern "C"
-            // function is unsafe.  In test builds it is a Rust-side
-            // safe stub.  We use `unsafe` unconditionally so the
-            // production path is correct; the `#[allow(unused_unsafe)]`
-            // suppresses the test-only warning.
-            #[allow(unused_unsafe)]
-            unsafe {
-                suspend_thread_cross_core(tid)
-            }
-        })
+        //
+        // PR #866 round-2 review: the bracket key must be the TPIDR-derived
+        // *logical* core index, not the packed MPIDR value — the entry
+        // lock's contended spin passes it to `shootdown::self_service_round`,
+        // whose out-of-range guard fails closed to "no self-service", so a
+        // packed id (e.g. `0x100` on a second-cluster core) silently stops
+        // that core discharging its own shootdown obligation while it
+        // spins — recreating the ack deadlock the self-service exists to
+        // prevent.
+        crate::kernel_entry::with_kernel_entry(
+            crate::per_cpu::current_core_id_from_tpidr() as usize,
+            || {
+                // SAFETY: in production builds `suspend_thread_cross_core` is a
+                // Lean-emitted `extern "C"` symbol; calling an extern "C"
+                // function is unsafe.  In test builds it is a Rust-side
+                // safe stub.  We use `unsafe` unconditionally so the
+                // production path is correct; the `#[allow(unused_unsafe)]`
+                // suppresses the test-only warning.
+                #[allow(unused_unsafe)]
+                unsafe {
+                    suspend_thread_cross_core(tid)
+                }
+            },
+        )
     })
 }
 

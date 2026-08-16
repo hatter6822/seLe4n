@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.Scheduler.Invariant
+import SeLe4n.Kernel.Architecture.SyscallReturn
 import SeLe4n.Kernel.Capability.Operations
 import SeLe4n.Kernel.IPC.DualQueue
 import SeLe4n.Kernel.IPC.Invariant
@@ -520,6 +521,11 @@ def replyRecvBody (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.Re
     match endpointReplyOnCore tid prevCaller msg executingCore st with
     | (_, .error e) => .error e
     | (st1, .ok _replySgi) =>
+        -- WS-RA RA.B.5b: capture the send-queue head the receive leg will
+        -- dequeue (from `st1`, the state that leg runs on) — a *plain* sender
+        -- completing there is owed the unit success frame; a `Call` sender
+        -- lands `.blockedOnReply` and the completion stager's guard skips it.
+        let wokenSender? := (st1.getEndpoint? epId).bind (·.sendQ.head)
         -- WS-SM SM6.D (#7.2 fold): the receive leg links the *same* reply object
         -- `rid` (freed by the reply leg's folded consume — PR #827 review #3) to
         -- the next `Call` caller atomically — faithful one-object reuse, formerly
@@ -527,7 +533,20 @@ def replyRecvBody (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.Re
         match endpointReceiveDualOnCore epId tid (some rid) executingCore st1 with
         | (_, .error e) => .error e
         | (st2, .ok (nextThread, _)) =>
-            replyRecvReturnDonation tid recordedServer nextThread serverCore st2
+            match replyRecvReturnDonation tid recordedServer nextThread serverCore st2 with
+            | .error e => .error e
+            | .ok ((), st3) =>
+                -- WS-RA RA.B.5b: stage the reply leg's woken caller
+                -- (`prevCaller`, `.ready` with the reply in `pendingMessage` —
+                -- `.call`'s frame, delivered entirely through this path) and
+                -- the receive leg's completed plain sender (unit frame).  Both
+                -- stagers are guard-inert when their target was not woken.
+                -- Installed count 0: the reply message is built `caps := #[]`
+                -- by both `.reply`-shaped arms and the reply path runs no
+                -- unwrap (PR #866 round-2).
+                .ok ((), Architecture.stageWokenSendCompletion
+                          (Architecture.stageDeliveredMessage st3 prevCaller 0)
+                          wokenSender?)
 
 -- ============================================================================
 -- Syscall soundness theorems
@@ -1099,7 +1118,13 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
     | .object epId =>
       fun st =>
         match lookupServiceByCap epId st with
-        | .ok (_, st') => .ok ((), st')
+        | .ok (reg, st') =>
+            -- WS-RA RA.B.7: the query answers — the resolved registration's
+            -- `ServiceId` is staged as the caller's return word instead of
+            -- being discarded (`x0` = sid, success `x1`, no message
+            -- registers).  The lookup itself is read-only (`st' = st`).
+            .ok ((), Architecture.writeReturnFrameToTcb st' tid
+              (Architecture.returnFrameOfWord reg.sid.val.toUInt64))
         | .error e => .error e
     | _ => fun _ => .error .invalidCapability
   -- Z5-J: SchedContext configure — decode args, validate, configure
@@ -1424,7 +1449,19 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
         match endpointSendDualWithCapsOnCore epId tid msg cap.rights gate.cspaceRoot
             decoded.capRecvSlot executingCore st with
         | (_, .error e) => .error e
-        | (st', .ok _) => clearWokenReceiverStash wokenReceiver? st'
+        | (st', .ok (summary, _)) =>
+            match clearWokenReceiverStash wokenReceiver? st' with
+            | .error e => .error e
+            | .ok ((), st'') =>
+                -- WS-RA RA.B.5b: a rendezvous woke the blocked receiver with the
+                -- message in its `pendingMessage`; stage its return frame now
+                -- (its own boundary crossing ended `.blocks` — delivery is the
+                -- SM10.E context restore).  Inert when the send parked instead.
+                -- PR #866 round-2: the frame's `extraCaps` is the transfer
+                -- summary's INSTALLED count — a grant-denied or slot-exhausted
+                -- transfer reports zero, never the requested `msg.caps.size`.
+                .ok ((), Architecture.stageWokenDelivery st'' wokenReceiver?
+                          summary.installedCount)
     | _ => fun _ => .error .invalidCapability
   | .receive =>
     match cap.target with
@@ -1454,8 +1491,26 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
           -- WS-SM SM6.D (#7.2 fold): the resolved reply object is threaded into the
           -- per-core receive transition, which links a dequeued `Call` caller to it
           -- atomically (the former post-receive `linkReceivedCaller` step).
+          -- WS-RA RA.B.5b: capture the send-queue head the consume will dequeue —
+          -- a *plain* sender's send completes at the rendezvous (woken `.ready`,
+          -- payload consumed) and is owed the unit success frame; a `Call` sender
+          -- lands `.blockedOnReply` and the completion stager's guard skips it.
+          let wokenSender? := (st.getEndpoint? epId).bind (·.sendQ.head)
           match endpointReceiveDualOnCore epId tid replyIdOpt executingCore st with
-          | (st', .ok (_, _sgi)) => .ok ((), st')
+          | (st', .ok (_, _sgi)) =>
+              -- WS-RA RA.B.6: a non-blocking consume delivered into the caller's
+              -- own `pendingMessage`; stage it as the return frame (badge → x0,
+              -- synthesized MessageInfo → x1, inline window → x2-x5).  A caller
+              -- that blocked stages nothing (the `.ready` guard inside) — its
+              -- frame is owed by the unblocking transition per plan §3.5.
+              -- PR #866 round-2: installed count 0 — the live receive path runs
+              -- NO capability unwrap (`endpointReceiveDualOnCore` delivers the
+              -- dequeued sender's message wholesale; `endpointReceiveDualWithCaps`
+              -- has no live caller — tracked debt, plan §9), so the honest
+              -- `extraCaps` is zero however many caps the parked sender's
+              -- message still carries.
+              .ok ((), Architecture.stageDeliveredMessage
+                        (Architecture.stageWokenSendCompletion st' wokenSender?) tid 0)
           | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- WS-K-E/M-D01: IPC call — message body + extra caps from decoded message registers.
@@ -1477,9 +1532,18 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
         -- with the rendezvous — `endpointCallOnCore` itself links the caller to the
         -- server's stashed reply object (`linkServerStashedReply`) at the moment the
         -- caller lands `.blockedOnReply`, so there is no separate post-dispatch step.
+        -- WS-RA RA.B.5b: a rendezvous woke the blocked receiver with the call
+        -- message in its `pendingMessage`; stage its return frame (the CALLER
+        -- itself always blocks — §3.5 — and is owed its frame by the reply path).
+        let wokenReceiver? := (st.getEndpoint? epId).bind (·.receiveQ.head)
         match endpointCallCrossCoreDispatch epId tid msg cap.rights gate.cspaceRoot
             decoded.capRecvSlot executingCore st with
-        | (st', .ok _) => .ok ((), st')
+        -- PR #866 round-2: the woken receiver's `extraCaps` is the transfer
+        -- summary's INSTALLED count (zero on grant-denied / slot-exhausted
+        -- transfers), never the requested `msg.caps.size`.
+        | (st', .ok (summary, _)) =>
+            .ok ((), Architecture.stageWokenDelivery st' wokenReceiver?
+                      summary.installedCount)
         | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- WS-K-E: IPC reply — message body populated from decoded message registers.
@@ -1507,7 +1571,14 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
             let executingCore := determineExecutingCore st tid
             match endpointReplyCrossCoreDispatch tid callerTid
                 { registers := body, caps := #[], badge := cap.badge } executingCore st with
-            | (st', .ok _) => .ok ((), st')
+            | (st', .ok _) =>
+                -- WS-RA RA.B.5b: the reply woke the `blockedOnReply` caller with
+                -- the payload in its `pendingMessage`; stage its return frame —
+                -- this is `.call`'s `.message` frame, delivered entirely through
+                -- the reply path (§3.5: a call never returns at its own boundary).
+                -- Installed count 0: the reply message is built with
+                -- `caps := #[]` above and the reply path runs no unwrap.
+                .ok ((), Architecture.stageDeliveredMessage st' callerTid 0)
             | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- WS-K-C: CSpace operations — cap targets a CNode, message registers
@@ -1597,8 +1668,26 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
           -- plain-Send wake (`clearWokenReceiverStash`).  No-op when no bound receiver
           -- is woken or it carries no stash, so the trace is byte-identical.
           let woken? := (boundDeliveryTarget? st notifId).map (·.1)
+          -- WS-RA RA.B.5b: the wait-before-signal ordering — a signal waking a
+          -- blocked plain waiter (the head of the wait queue) or a bound
+          -- `.blockedOnReceive` TCB delivers the badge into its
+          -- `pendingMessage`; stage the woken thread's return frame (its own
+          -- wait blocked with no frame — §3.5's split, now closed on the
+          -- staging side; delivery is the SM10.E context restore).  The two
+          -- targets are mutually exclusive (the bound path requires an empty
+          -- wait queue), and each stager is inert when its target was not
+          -- woken.
+          let plainWaiter? := notificationSignalWaiter? st notifId
           match notificationSignalBoundCrossCoreDispatch notifId args.badge tid st with
-          | (st', .ok _) => clearWokenReceiverStash woken? st'
+          | (st', .ok _) =>
+              match clearWokenReceiverStash woken? st' with
+              | .error e => .error e
+              | .ok ((), st'') =>
+                  -- Installed count 0 for both stagers: a notification wake
+                  -- delivers a badge-only message (no caps, no unwrap).
+                  .ok ((), Architecture.stageWokenDelivery
+                            (Architecture.stageWokenDelivery st'' woken? 0)
+                            plainWaiter? 0)
           | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- V2-A: Notification wait — consume pending badge or block.
@@ -1610,7 +1699,15 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
         -- WS-SM SM6.B: route through the per-core cross-core wait so the blocked
         -- caller is descheduled on *its own* core (not the boot core).
         match notificationWaitCrossCoreDispatch notifId tid st with
-        | (st', .ok _) => .ok ((), st')
+        | (st', .ok (some badge)) =>
+            -- WS-RA RA.B.5 (the SM9.C.0 closure, signal-before-wait ordering):
+            -- the consumed pending badge is staged into the caller's return
+            -- frame instead of being discarded.  The blocking arm (`.ok none`)
+            -- stages nothing — the badge does not exist yet, and the signal
+            -- path owes the waiter's frame per plan §3.5.
+            .ok ((), Architecture.writeReturnFrameToTcb st' tid
+              (Architecture.returnFrameOfBadge badge))
+        | (st', .ok none) => .ok ((), st')
         | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- V2-C: ReplyRecv — compound reply + receive in one transition.
@@ -1638,7 +1735,15 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
             let body := full.extract 1 full.size
             let msg : IpcMessage := { registers := body, caps := #[], badge := replyBadge }
             let executingCore := determineExecutingCore st tid
-            replyRecvBody epId tid rid prevCaller msg executingCore st
+            -- WS-RA RA.B.6: the receive leg may have consumed a queued sender
+            -- into the caller's `pendingMessage`; stage it as the return frame.
+            -- A caller that blocked on the receive leg stages nothing (the
+            -- `.ready` guard inside `stageDeliveredMessage`).
+            match replyRecvBody epId tid rid prevCaller msg executingCore st with
+            -- PR #866 round-2: installed count 0 — the receive leg runs no
+            -- capability unwrap (see the `.receive` arm; tracked debt, plan §9).
+            | .ok ((), st') => .ok ((), Architecture.stageDeliveredMessage st' tid 0)
+            | .error e => .error e
     | _ => fun _ => .error .invalidCapability
   -- WS-SM SM8.C.9: **there is no unchecked declassification.**
   --
@@ -1717,7 +1822,17 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
         match endpointSendCrossCoreDispatchChecked ctx epId tid msg cap.rights
             gate.cspaceRoot decoded.capRecvSlot executingCore st with
         | (_, .error e) => .error e
-        | (st', .ok _) => clearWokenReceiverStash wokenReceiver? st'
+        | (st', .ok (summary, _)) =>
+            match clearWokenReceiverStash wokenReceiver? st' with
+            | .error e => .error e
+            | .ok ((), st'') =>
+                -- WS-RA RA.B.5b: the checked twin of the unchecked arm's
+                -- woken-receiver staging (the send's own flow gate ran inside
+                -- the checked dispatch, before the wake).  PR #866 round-2:
+                -- `extraCaps` = the summary's INSTALLED count, like the
+                -- unchecked arm.
+                .ok ((), Architecture.stageWokenDelivery st'' wokenReceiver?
+                          summary.installedCount)
     | _ => fun _ => .error .invalidCapability
   -- T6-I: IPC receive — checked for endpoint→receiver flow
   | .receive =>
@@ -1759,8 +1874,17 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
             -- WS-SM SM6.D (#7.2 fold): reply object threaded into the per-core receive
             -- transition (the endpoint→receiver flow is gated above); the dequeued
             -- `Call` caller is linked atomically (former `linkReceivedCaller` step).
+            -- WS-RA RA.B.5b: the woken plain sender's unit frame (checked twin).
+            let wokenSender? := (st.getEndpoint? epId).bind (·.sendQ.head)
             match endpointReceiveDualOnCore epId tid replyIdOpt executingCore st with
-            | (st', .ok (_, _sgi)) => .ok ((), st')
+            | (st', .ok (_, _sgi)) =>
+                -- WS-RA RA.B.6: stage the non-blocking consume's delivery (the
+                -- checked twin of the unchecked arm's staging; the endpoint
+                -- flow gate above governs the consumed message).  Installed
+                -- count 0 — no unwrap on the live receive path (see the
+                -- unchecked arm; tracked debt, plan §9).
+                .ok ((), Architecture.stageDeliveredMessage
+                          (Architecture.stageWokenSendCompletion st' wokenSender?) tid 0)
             | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- U5-B/U-M01: IPC call — routed through enforcement wrapper (previously inline check).
@@ -1787,9 +1911,16 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
         -- WS-SM SM6.D (#7.3b fold): the server-first reply linkage is now atomic
         -- with the rendezvous inside `endpointCallOnCore` (`linkServerStashedReply`);
         -- mirror the unchecked arm — no separate post-dispatch link step.
+        -- WS-RA RA.B.5b: the woken receiver's staged frame (checked twin; the
+        -- call's own flow gate ran inside the checked dispatch, before the wake).
+        let wokenReceiver? := (st.getEndpoint? epId).bind (·.receiveQ.head)
         match endpointCallCrossCoreDispatchChecked ctx epId tid msg cap.rights
             gate.cspaceRoot decoded.capRecvSlot executingCore st with
-        | (st', .ok _) => .ok ((), st')
+        -- PR #866 round-2: `extraCaps` = the summary's INSTALLED count, like
+        -- the unchecked arm.
+        | (st', .ok (summary, _)) =>
+            .ok ((), Architecture.stageWokenDelivery st' wokenReceiver?
+                      summary.installedCount)
         | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- U5-C/U-M04: Reply — routed through enforcement wrapper for defense-in-depth.
@@ -1828,7 +1959,11 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
               let executingCore := determineExecutingCore st tid
               match endpointReplyCrossCoreDispatchChecked ctx tid callerTid
                   { registers := body, caps := #[], badge := cap.badge } executingCore st with
-              | (st', .ok _) => .ok ((), st')
+              | (st', .ok _) =>
+                  -- WS-RA RA.B.5b: the woken caller's staged reply frame (checked
+                  -- twin; the replier→caller flow gate above admitted the value).
+                  -- Installed count 0: reply messages are built `caps := #[]`.
+                  .ok ((), Architecture.stageDeliveredMessage st' callerTid 0)
               | (_, .error e) => .error e
             else .error .replyCapInvalid
     | _ => fun _ => .error .invalidCapability
@@ -1908,8 +2043,19 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
           -- WS-SM SM6.D (PR #822 review): clear a woken bound receiver's server-first
           -- reply stash (mirrors the unchecked arm + the plain-Send wake).
           let woken? := (boundDeliveryTarget? st notifId).map (·.1)
+          -- WS-RA RA.B.5b: the woken waiter's staged badge frame (checked twin;
+          -- the checked dispatch's notification→receiver gate ran before the
+          -- wake, so a denied delivery errors and stages nothing).
+          let plainWaiter? := notificationSignalWaiter? st notifId
           match notificationSignalBoundCrossCoreDispatchChecked ctx notifId tid args.badge st with
-          | (st', .ok _) => clearWokenReceiverStash woken? st'
+          | (st', .ok _) =>
+              match clearWokenReceiverStash woken? st' with
+              | .error e => .error e
+              | .ok ((), st'') =>
+                  -- Installed count 0 for both stagers: badge-only deliveries.
+                  .ok ((), Architecture.stageWokenDelivery
+                            (Architecture.stageWokenDelivery st'' woken? 0)
+                            plainWaiter? 0)
           | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- V2-A/T6-I: Notification wait — checked for notification→waiter flow
@@ -1920,7 +2066,13 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
         -- WS-SM SM6.B: per-core checked cross-core wait (gates notification→waiter
         -- flow, then deschedules the caller on its own core).
         match notificationWaitCrossCoreDispatchChecked ctx notifId tid st with
-        | (st', .ok _) => .ok ((), st')
+        | (st', .ok (some badge)) =>
+            -- WS-RA RA.B.5: stage the consumed badge (the checked twin of the
+            -- unchecked arm's staging; the flow gate already admitted
+            -- notification → waiter, which is the authority for the value).
+            .ok ((), Architecture.writeReturnFrameToTcb st' tid
+              (Architecture.returnFrameOfBadge badge))
+        | (st', .ok none) => .ok ((), st')
         | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- V2-C/T6-I: ReplyRecv — checked for both reply and receive legs
@@ -1957,7 +2109,14 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
               let msg : IpcMessage := { registers := body, caps := #[], badge := replyBadge }
               let executingCore := determineExecutingCore st tid
               if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf prevCaller) then
-                replyRecvBody epId tid rid prevCaller msg executingCore st
+                -- WS-RA RA.B.6: stage the receive leg's delivery (the checked
+                -- twin of the unchecked arm's staging; the receive leg's own
+                -- flow gate governs the consumed message).
+                match replyRecvBody epId tid rid prevCaller msg executingCore st with
+                -- Installed count 0 — no unwrap on the live receive path
+                -- (mirrors the unchecked arm; tracked debt, plan §9).
+                | .ok ((), st') => .ok ((), Architecture.stageDeliveredMessage st' tid 0)
+                | .error e => .error e
               else .error .replyCapInvalid
     | _ => fun _ => .error .invalidCapability
   -- WS-SM SM8.C.9: **the live declassification.**
@@ -2917,7 +3076,12 @@ theorem dispatchWithCap_send_uses_withCaps
         match endpointSendDualWithCapsOnCore epId tid msg cap.rights gate.cspaceRoot
             decoded.capRecvSlot executingCore st with
         | (_, .error e) => .error e
-        | (st', .ok _) => clearWokenReceiverStash wokenReceiver? st' := by
+        | (st', .ok (summary, _)) =>
+            match clearWokenReceiverStash wokenReceiver? st' with
+            | .error e => .error e
+            | .ok ((), st'') =>
+                .ok ((), Architecture.stageWokenDelivery st'' wokenReceiver?
+                          summary.installedCount) := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
 
 /-- WS-K-E/M-D01 / WS-SM SM6.A: When call dispatch is invoked, the IPC message
@@ -2940,9 +3104,13 @@ theorem dispatchWithCap_call_uses_crossCoreDispatch
         -- WS-SM SM6.D (#7.3b fold): server-first reply linkage is atomic with the
         -- rendezvous inside `endpointCallOnCore` (`linkServerStashedReply`); no
         -- separate post-dispatch link step.
+        -- WS-RA RA.B.5b: the woken receiver's staged frame rides in the RHS.
+        let wokenReceiver? := (st.getEndpoint? epId).bind (·.receiveQ.head)
         match endpointCallCrossCoreDispatch epId tid msg cap.rights gate.cspaceRoot
             decoded.capRecvSlot executingCore st with
-        | (st', .ok _) => .ok ((), st')
+        | (st', .ok (summary, _)) =>
+            .ok ((), Architecture.stageWokenDelivery st' wokenReceiver?
+                      summary.installedCount)
         | (_, .error e) => .error e := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
 
@@ -2972,9 +3140,177 @@ theorem dispatchWithCap_reply_populates_msg
             let executingCore := determineExecutingCore st tid
             match endpointReplyCrossCoreDispatch tid callerTid
                 { registers := body, caps := #[], badge := cap.badge } executingCore st with
-            | (st', .ok _) => .ok ((), st')
+            | (st', .ok _) =>
+                -- WS-RA RA.B.5b: the woken caller's staged reply frame
+                -- (installed count 0: reply messages are built `caps := #[]`).
+                .ok ((), Architecture.stageDeliveredMessage st' callerTid 0)
             | (_, .error e) => .error e := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
+
+-- ============================================================================
+-- WS-RA RA.B.8 — the arms and the return-shape classification cannot disagree
+-- ============================================================================
+--
+-- `syscallReturnShape` (RA.A.2) classifies the frame each syscall returns and
+-- the boundary composes frames by it (`frameForShape`).  The `.unit` half is
+-- **structural**: the boundary CONSTRUCTS unit frames (`frameForShape_unit`),
+-- never reading the staged registers, so no arm can leak stale content
+-- through a unit shape — the plan's draft phrasing ("a unit arm leaves the
+-- caller's staged frame untouched") is deliberately NOT the theorem, because
+-- it is false of any arm that context-switches (`saveOutgoingContext` writes
+-- `registerContext`) and unnecessary once the read is constructed.  What
+-- needs per-arm proof is the VALUE half: each value-shaped syscall's success
+-- path stages exactly the value its shape declares, so the boundary's
+-- pass-through read is of fresh data, never the caller's staged arguments.
+-- `syscallReturnShape_value_returning` pins the value surface at exactly
+-- {.receive, .call, .serviceQuery, .notificationWait, .replyRecv}; the five
+-- theorems below cover it (`.call` through the reply arm, per §3.5: a call
+-- never returns at its own boundary).
+
+/-- RA.B.8, `.notificationWait` (`.badge`): the arm's badge-consume path
+stages exactly the consumed badge, and the boundary read recovers it. -/
+theorem dispatchArm_notificationWait_matches_returnShape
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
+    (cap : Capability) (notifId : SeLe4n.ObjId) (st st1 : SystemState)
+    (badge : SeLe4n.Badge) (tcb : TCB)
+    (hSyscall : decoded.syscallId = .notificationWait)
+    (hTarget : cap.target = .object notifId)
+    (hDispatch : notificationWaitCrossCoreDispatch notifId tid st = (st1, .ok (some badge)))
+    (hTcb : st1.getTcb? tid = some tcb)
+    (hObjInv : st1.objects.invExt) :
+    Architecture.syscallReturnShape .notificationWait = .badge ∧
+    ∃ stPost, dispatchWithCap decoded tid gate cap st = .ok ((), stPost) ∧
+      Architecture.readReturnFrame stPost tid
+        = Architecture.returnFrameOfBadge badge := by
+  refine ⟨rfl,
+    Architecture.writeReturnFrameToTcb st1 tid (Architecture.returnFrameOfBadge badge),
+    ?_, ?_⟩
+  · simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDispatch]
+  · exact Architecture.readReturnFrame_writeReturnFrame st1 tid _ tcb hTcb hObjInv
+
+/-- RA.B.8, `.serviceQuery` (`.word`): the arm stages the resolved
+registration's `ServiceId` — the answer it used to discard — and the
+boundary read recovers it.  Stated like its four siblings, over the live
+dispatch at the given state, so the lookup hypothesis is load-bearing (a
+first draft concluded only the arm's generic function equality and never
+consumed `hLookup` — the decorative-hypothesis defect class SM8.D's
+review history records). -/
+theorem dispatchArm_serviceQuery_matches_returnShape
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
+    (cap : Capability) (epId : SeLe4n.ObjId) (st st' : SystemState)
+    (reg : ServiceRegistration) (tcb : TCB)
+    (hSyscall : decoded.syscallId = .serviceQuery)
+    (hTarget : cap.target = .object epId)
+    (hLookup : lookupServiceByCap epId st = .ok (reg, st'))
+    (hTcb : st'.getTcb? tid = some tcb)
+    (hObjInv : st'.objects.invExt) :
+    Architecture.syscallReturnShape .serviceQuery = .word ∧
+    ∃ stPost, dispatchWithCap decoded tid gate cap st = .ok ((), stPost) ∧
+      Architecture.readReturnFrame stPost tid
+        = Architecture.returnFrameOfWord reg.sid.val.toUInt64 := by
+  refine ⟨rfl,
+    Architecture.writeReturnFrameToTcb st' tid
+      (Architecture.returnFrameOfWord reg.sid.val.toUInt64),
+    ?_, ?_⟩
+  · simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hLookup]
+  · exact Architecture.readReturnFrame_writeReturnFrame st' tid _ tcb hTcb hObjInv
+
+/-- RA.B.8, `.receive` (`.message`): the arm's non-blocking consume stages
+the delivered message — the boundary read is of the fresh delivery, not the
+caller's staged arguments.  The delivery hypotheses are read at the state
+the caller-staging runs from (post the sender-completion staging, which
+writes only the *sender's* saved context). -/
+theorem dispatchArm_receive_matches_returnShape
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
+    (cap : Capability) (epId : SeLe4n.ObjId)
+    (replyIdOpt : Option SeLe4n.ReplyId) (st st' : SystemState)
+    (next : SeLe4n.ThreadId) (sgi : Option (Concurrency.CoreId × Concurrency.SgiKind))
+    (msg : IpcMessage) (tcb : TCB)
+    (hSyscall : decoded.syscallId = .receive)
+    (hTarget : cap.target = .object epId)
+    (hReply : resolveRecvReplyId gate decoded st = .ok replyIdOpt)
+    (hDispatch : endpointReceiveDualOnCore epId tid replyIdOpt
+        (determineExecutingCore st tid) st = (st', .ok (next, sgi)))
+    (hTcb : (Architecture.stageWokenSendCompletion st'
+        ((st.getEndpoint? epId).bind (·.sendQ.head))).getTcb? tid = some tcb)
+    (hReady : tcb.ipcState = .ready)
+    (hMsg : tcb.pendingMessage = some msg)
+    (hObjInv : (Architecture.stageWokenSendCompletion st'
+        ((st.getEndpoint? epId).bind (·.sendQ.head))).objects.invExt) :
+    Architecture.syscallReturnShape .receive = .message ∧
+    ∃ stPost, dispatchWithCap decoded tid gate cap st = .ok ((), stPost) ∧
+      Architecture.readReturnFrame stPost tid
+        = Architecture.returnFrameOfMessage msg 0 := by
+  refine ⟨rfl,
+    Architecture.stageDeliveredMessage
+      (Architecture.stageWokenSendCompletion st'
+        ((st.getEndpoint? epId).bind (·.sendQ.head))) tid 0,
+    ?_, ?_⟩
+  · simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hReply, hDispatch]
+  · exact Architecture.blockedReturn_staged_in_waiter_frame _ tid tcb msg 0
+      hTcb hReady hMsg hObjInv
+
+/-- RA.B.8, `.replyRecv` (`.message`): the compound arm's receive leg stages
+the delivered message for the server exactly as `.receive` does. -/
+theorem dispatchArm_replyRecv_matches_returnShape
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
+    (cap : Capability) (epId : SeLe4n.ObjId)
+    (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (replyBadge : Option SeLe4n.Badge)
+    (st stB : SystemState) (msg : IpcMessage) (tcb : TCB)
+    (hSyscall : decoded.syscallId = .replyRecv)
+    (hTarget : cap.target = .object epId)
+    (hResolve : resolveReplyRecvReply gate decoded st = .ok (rid, prevCaller, replyBadge))
+    (hBody : replyRecvBody epId tid rid prevCaller
+        { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract 1
+            (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
+          caps := #[], badge := replyBadge }
+        (determineExecutingCore st tid) st = .ok ((), stB))
+    (hTcb : stB.getTcb? tid = some tcb)
+    (hReady : tcb.ipcState = .ready)
+    (hMsg : tcb.pendingMessage = some msg)
+    (hObjInv : stB.objects.invExt) :
+    Architecture.syscallReturnShape .replyRecv = .message ∧
+    ∃ stPost, dispatchWithCap decoded tid gate cap st = .ok ((), stPost) ∧
+      Architecture.readReturnFrame stPost tid
+        = Architecture.returnFrameOfMessage msg 0 := by
+  refine ⟨rfl, Architecture.stageDeliveredMessage stB tid 0, ?_, ?_⟩
+  · simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hResolve, hBody]
+  · exact Architecture.blockedReturn_staged_in_waiter_frame stB tid tcb msg 0
+      hTcb hReady hMsg hObjInv
+
+/-- RA.B.8, `.call` (`.message`) — **through the reply arm**, per §3.5: a
+successful call leaves the caller `blockedOnReply` in every ordering, so
+its `.message` frame is delivered entirely by the reply path's RA.B.5b
+staging.  The theorem is therefore the cross-arm statement: a `.reply`
+dispatched at the server stages the *caller's* frame, and the boundary
+read at the caller recovers the delivered reply. -/
+theorem dispatchArm_call_frame_delivered_by_reply
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
+    (cap : Capability) (rid : SeLe4n.ReplyId) (reply : Reply)
+    (callerTid : SeLe4n.ThreadId) (st st1 : SystemState)
+    (sgi : Option (Concurrency.CoreId × Concurrency.SgiKind))
+    (msg : IpcMessage) (tcb : TCB)
+    (hSyscall : decoded.syscallId = .reply)
+    (hTarget : cap.target = .replyCap rid)
+    (hReply : st.getReply? rid = some reply)
+    (hCaller : reply.caller = some callerTid)
+    (hDispatch : endpointReplyCrossCoreDispatch tid callerTid
+        { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
+          caps := #[], badge := cap.badge }
+        (determineExecutingCore st tid) st = (st1, .ok sgi))
+    (hTcb : st1.getTcb? callerTid = some tcb)
+    (hReady : tcb.ipcState = .ready)
+    (hMsg : tcb.pendingMessage = some msg)
+    (hObjInv : st1.objects.invExt) :
+    Architecture.syscallReturnShape .call = .message ∧
+    ∃ stPost, dispatchWithCap decoded tid gate cap st = .ok ((), stPost) ∧
+      Architecture.readReturnFrame stPost callerTid
+        = Architecture.returnFrameOfMessage msg 0 := by
+  refine ⟨rfl, Architecture.stageDeliveredMessage st1 callerTid 0, ?_, ?_⟩
+  · simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hReply,
+      hCaller, hDispatch]
+  · exact Architecture.blockedReturn_staged_in_waiter_frame st1 callerTid tcb msg 0
+      hTcb hReady hMsg hObjInv
 
 -- ============================================================================
 -- WS-J1-D: Invariant preservation for syscall entry
@@ -3569,7 +3905,10 @@ theorem dispatchWithCapChecked_receive_delegates
     dispatchWithCapChecked ctx decoded tid gate cap st =
       (match endpointReceiveDualOnCore epId tid replyIdOpt
               (determineExecutingCore st tid) st with
-       | (st', .ok (_, _)) => .ok ((), st')
+       | (st', .ok (_, _)) =>
+           .ok ((), Architecture.stageDeliveredMessage
+                     (Architecture.stageWokenSendCompletion st'
+                       ((st.getEndpoint? epId).bind (·.sendQ.head))) tid 0)
        | (_, .error e) => .error e) := by
   simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget,
     endpointFlowGate_of ctx epId _ _ hFlow hOverride, hReply]
@@ -3597,8 +3936,13 @@ theorem dispatchWithCap_send_delegates
               cap.rights gate.cspaceRoot decoded.capRecvSlot
               (determineExecutingCore st tid) st with
        | (_, .error e) => .error e
-       | (st', .ok _) =>
-           clearWokenReceiverStash ((st.getEndpoint? epId).bind (·.receiveQ.head)) st') := by
+       | (st', .ok (summary, _)) =>
+           match clearWokenReceiverStash ((st.getEndpoint? epId).bind (·.receiveQ.head)) st' with
+           | .error e => .error e
+           | .ok ((), st'') =>
+               .ok ((), Architecture.stageWokenDelivery st''
+                         ((st.getEndpoint? epId).bind (·.receiveQ.head))
+                         summary.installedCount)) := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
 
 /-- **The live checked `.send` arm routes to `endpointSendCrossCoreDispatchChecked`.**
@@ -3619,8 +3963,13 @@ theorem dispatchWithCapChecked_send_delegates
               cap.rights gate.cspaceRoot decoded.capRecvSlot
               (determineExecutingCore st tid) st with
        | (_, .error e) => .error e
-       | (st', .ok _) =>
-           clearWokenReceiverStash ((st.getEndpoint? epId).bind (·.receiveQ.head)) st') := by
+       | (st', .ok (summary, _)) =>
+           match clearWokenReceiverStash ((st.getEndpoint? epId).bind (·.receiveQ.head)) st' with
+           | .error e => .error e
+           | .ok ((), st'') =>
+               .ok ((), Architecture.stageWokenDelivery st''
+                         ((st.getEndpoint? epId).bind (·.receiveQ.head))
+                         summary.installedCount)) := by
   simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget]
 
 /-- **The live `.tcbSetPriority` arm routes to `setPriorityOnCore`.**
@@ -3720,8 +4069,13 @@ def syscallDelegates : SyscallId → Prop
                   cap.rights gate.cspaceRoot decoded.capRecvSlot
                   (determineExecutingCore st tid) st with
            | (_, .error e) => .error e
-           | (st', .ok _) =>
-               clearWokenReceiverStash ((st.getEndpoint? epId).bind (·.receiveQ.head)) st')
+           | (st', .ok (summary, _)) =>
+               match clearWokenReceiverStash ((st.getEndpoint? epId).bind (·.receiveQ.head)) st' with
+               | .error e => .error e
+               | .ok ((), st'') =>
+                   .ok ((), Architecture.stageWokenDelivery st''
+                             ((st.getEndpoint? epId).bind (·.receiveQ.head))
+                             summary.installedCount))
   | .tcbSetPriority =>
       ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
         (cap : Capability) (objId : SeLe4n.ObjId)
@@ -3767,7 +4121,12 @@ def syscallDelegates : SyscallId → Prop
         dispatchWithCapChecked ctx decoded tid gate cap st =
           (match endpointReceiveDualOnCore epId tid replyIdOpt
                   (determineExecutingCore st tid) st with
-           | (st', .ok (_, _)) => .ok ((), st')
+           -- WS-RA RA.B.6: the arm stages the non-blocking consume's delivery
+           -- into the caller's return frame.
+           | (st', .ok (_, _)) =>
+               .ok ((), Architecture.stageDeliveredMessage
+                         (Architecture.stageWokenSendCompletion st'
+                           ((st.getEndpoint? epId).bind (·.sendQ.head))) tid 0)
            | (_, .error e) => .error e)
   | .tcbSuspend =>
       ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)

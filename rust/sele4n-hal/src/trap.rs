@@ -100,16 +100,51 @@ impl TrapFrame {
         self.gprs[7]
     }
 
-    /// Set x0 (return value / error code).
+    /// Set x0 (the primary return value: badge / queried word / `0`).
     #[inline(always)]
     pub fn set_x0(&mut self, val: u64) {
         self.gprs[0] = val;
     }
 
-    /// Set x1 (return message info).
+    /// Set x1 (the returned `MessageInfo` word — its label carries the
+    /// error status: `0` = success, `d + 1` = `KernelError` discriminant
+    /// `d`).
     #[inline(always)]
     pub fn set_x1(&mut self, val: u64) {
         self.gprs[1] = val;
+    }
+
+    /// Set x2 (message register 0).  WS-RA: added with the return
+    /// convention — before the flip nothing wrote any register but `x0`
+    /// back, which is the defect the workstream exists to fix.
+    #[inline(always)]
+    pub fn set_x2(&mut self, val: u64) {
+        self.gprs[2] = val;
+    }
+
+    /// Set x3 (message register 1).
+    #[inline(always)]
+    pub fn set_x3(&mut self, val: u64) {
+        self.gprs[3] = val;
+    }
+
+    /// Set x4 (message register 2).
+    #[inline(always)]
+    pub fn set_x4(&mut self, val: u64) {
+        self.gprs[4] = val;
+    }
+
+    /// Set x5 (message register 3).
+    #[inline(always)]
+    pub fn set_x5(&mut self, val: u64) {
+        self.gprs[5] = val;
+    }
+
+    /// WS-RA (plan §3.3): restore a full six-register return frame —
+    /// the context-restore shape the SVC return path uses.
+    #[inline(always)]
+    pub fn set_return_frame(&mut self, regs: [u64; 6]) {
+        self.gprs[..6].copy_from_slice(&regs);
     }
 }
 
@@ -211,9 +246,34 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
             let _ = crate::per_cpu_stats::record_syscall();
             let syscall_id = frame.x7() as u32;
             let args = crate::svc_dispatch::SyscallArgs::from_trap_frame(frame);
+            // WS-RA (plan §3.1/§3.3): the writeback is a six-register
+            // context restore — `x0` the value, the offset error label on
+            // `x1`, `x2`-`x5` message registers.  A blocked caller has NO
+            // return frame (its stale registers are not a return value;
+            // the staged frame is delivered by the SM10.E context restore
+            // — RA.C.9's hook is the `Blocked` arm).  Prefilter rejections
+            // surface as label-encoded error frames like every kernel
+            // rejection, retiring the raw-discriminant `x0` write and its
+            // documented collision.
             match crate::svc_dispatch::dispatch_svc(syscall_id, &args) {
-                Ok(retval) => frame.set_x0(retval),
-                Err(e) => frame.set_x0(e.to_u32() as u64),
+                Ok(crate::svc_dispatch::SvcOutcome::Frame(regs)) => frame.set_return_frame(regs),
+                Ok(crate::svc_dispatch::SvcOutcome::Blocked) => {
+                    // SM10.E context-restore hook: the successor's frame
+                    // install lands here when `contextRestoreSeamLive`
+                    // flips.  Until then `trap.S` restores and `eret`s
+                    // through the blocked caller's own saved frame, so
+                    // poison it: left untouched, the caller's request
+                    // registers (an `x1` label of `0`) decode as a false
+                    // success carrying the caller's own capability
+                    // pointer as the "badge" (PR #866 review).  The
+                    // sentinel makes the premature resume fail closed —
+                    // its label decodes as `UnknownKernelError`, never as
+                    // success and never as a kernel-emitted error.
+                    frame.set_return_frame(crate::svc_dispatch::blocked_resume_sentinel_regs());
+                }
+                Err(e) => frame.set_return_frame(crate::svc_dispatch::error_frame_regs(
+                    e.kernel_error_discriminant(),
+                )),
             }
         }
         ec::DABT_LOWER | ec::DABT_CURRENT => {
@@ -590,12 +650,19 @@ mod tests {
     #[test]
     fn handle_sync_reads_esr_from_frame() {
         // AK5-F.3: handler uses `frame.esr_el1` not `mrs esr_el1`. Put an
-        // SVC ESR into the frame and verify the SVC-arm is taken (x0 ends
-        // up = NOT_IMPLEMENTED).
+        // SVC ESR into the frame and verify the SVC-arm is taken.
+        //
+        // WS-RA: the stub kernel publishes the label-encoded
+        // `NotImplemented` (discriminant 17 → label 18) error frame, and
+        // the SVC arm's writeback is the full six-register restore —
+        // `x0 = 0`, the offset label on `x1`, `x2`-`x5` zero.  Under the
+        // retired bit-63 convention this test asserted `x0 == 17`.
         let mut frame = zero_frame();
         frame.esr_el1 = (ec::SVC_AARCH64 << 26) | 0x42; // lower bits ignored
         handle_synchronous_exception(&mut frame);
-        assert_eq!(frame.x0(), error_code::NOT_IMPLEMENTED);
+        assert_eq!(frame.x0(), 0);
+        assert_eq!(frame.x1(), (error_code::NOT_IMPLEMENTED + 1) << 9);
+        assert_eq!([frame.x2(), frame.x3(), frame.x4(), frame.x5()], [0; 4]);
     }
 
     #[test]

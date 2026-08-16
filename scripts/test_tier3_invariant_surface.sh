@@ -1324,9 +1324,12 @@ run_check "INVARIANT" rg -n '^name = "vspace_capability_binding_suite"' lakefile
 # would let the model record an operand naming an address hardware never touches.
 run_check "INVARIANT" rg -n 'paddr.toNat % pageBytes' SeLe4n/Kernel/Architecture/VSpace.lean
 run_check "INVARIANT" rg -n 'alignmentError' SeLe4n/Kernel/Architecture/VSpace.lean
-# PR #845 review (P2) — the legacy syscall entry documents WHY it cannot drain
-# the ledger (the @[extern] link-gating policy) rather than silently skipping it.
-run_prose_check "INVARIANT" rg -n 'deferred, never lost' SeLe4n/Platform/FFI.lean
+# PR #845 review (P2), closed by removal (WS-RA): the legacy syscall entry
+# that could not drain the ledger (`syscallDispatchInner`) is deleted with the
+# bit-63 protocol, so the deferral concern it documented no longer exists —
+# the removal note that replaced it must say so, and the export must not
+# return (the negative anchor above).
+run_prose_check "INVARIANT" rg -n 'vestigial .syscall_dispatch_inner. export is REMOVED' SeLe4n/Platform/FFI.lean
 # PR #845 review (P2) — the syscall is reachable from the safe Rust API.
 run_check "INVARIANT" rg -n '^pub fn vspace_unify_instruction' rust/sele4n-sys/src/vspace.rs
 run_check "INVARIANT" rg -n '^pub type VSpaceUnifyInstructionArgs' rust/sele4n-abi/src/args/vspace.rs
@@ -3064,8 +3067,13 @@ run_check "INVARIANT" rg -n 'cspaceRevoke_preserves_projection' SeLe4n/Kernel/In
 # routing or renames the bridge symbols fails Tier 3 instead of silently
 # downgrading to a stub return.
 run_check "INVARIANT" rg -n '^def KernelError.toUInt32' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n 'def encodeError' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n 'def encodeOk' SeLe4n/Platform/FFI.lean
+# WS-RA (RA.E.5): the bit-63 protocol is RETIRED — `encodeOk` / `encodeError`
+# must not come back as definitions anywhere in the production tree (the
+# retained hazard statement is `bit63Encoding_not_injective_on_badges`, which
+# names them only in prose).  Errors ride the offset x1 label
+# (`Architecture.errorFrame`); the value channel is full-width x0.
+run_negative_check "INVARIANT" rg -n 'def encodeError' SeLe4n/Platform/FFI.lean
+run_negative_check "INVARIANT" rg -n 'def encodeOk' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^initialize kernelStateRef' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^initialize kernelLabelingContextRef' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^def initialiseKernelState' SeLe4n/Platform/FFI.lean
@@ -3078,19 +3086,96 @@ run_check "INVARIANT" rg -n '^def writeFfiRegistersToTcb' SeLe4n/Platform/FFI.le
 run_check "INVARIANT" rg -n '^def readReturnValue' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^def syscallDispatchFromAbi' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^@\[export suspend_thread_inner\]' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^@\[export syscall_dispatch_inner\]' SeLe4n/Platform/FFI.lean
+# WS-RA: the vestigial `syscall_dispatch_inner` export is REMOVED (it was the
+# last other speaker of the retired bit-63 protocol; no Rust source declared
+# the symbol since v0.31.67).  Negative anchor so a dead export cannot return.
+run_negative_check "INVARIANT" rg -n '@\[export syscall_dispatch_inner\]' SeLe4n/Platform/FFI.lean
 # WS-SM SM6.A (v0.31.67): the cross-core SGI-firing dispatch entry
 # `lean_syscall_dispatch_cross_core` (`SyscallDispatchEntry`) is PROMOTED to the
 # production library (`SeLe4n.lean`) with its `PriorityInheritance.PerCore` +
 # `Concurrency.Runtime` closure, and the Rust extern is flipped to it (line 993):
-# the live syscall fires the diff-recovered cross-core `.reschedule` SGIs.  The
-# boot-pinned `syscall_dispatch_inner` (line 966) remains in `Platform.FFI` as the
-# single-core entry.
+# the live syscall fires the diff-recovered cross-core `.reschedule` SGIs.
+# (WS-RA removed the vestigial boot-pinned `syscall_dispatch_inner`.)
 run_check "INVARIANT" rg -n '^@\[export lean_syscall_dispatch_cross_core\]' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^def suspendThreadInner' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^def syscallDispatchInner' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^theorem encodeError_high_bit_set' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^theorem encodeOk_high_bit_clear' SeLe4n/Platform/FFI.lean
+run_negative_check "INVARIANT" rg -n '^def syscallDispatchInner' SeLe4n/Platform/FFI.lean
+# WS-RA: the convention model + the staging seam (RA.A / RA.B.1-B.2 / RA.B.5a).
+run_check "INVARIANT" rg -n '^def syscallReturnShape' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem syscallReturnShape_value_returning' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem returnShape_list_gate_insufficient' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem errorLabel_never_zero' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem errorLabel_roundtrip' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem kernelErrorFitsLabel' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem bit63Encoding_not_injective_on_badges' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^def syscallAbiVersion : Nat := 2' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^def writeReturnFrameToTcb' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^def readReturnFrame' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem readReturnFrame_writeReturnFrame' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^def stageDeliveredMessage' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+# WS-RA RA.B.5b: the blocked-waiter staging seam — the Option-lifted stagers
+# the unblocking arms compose, the plan-named theorem, and its unit dual.
+run_check "INVARIANT" rg -n '^def stageWokenDelivery' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^def stageWokenSendCompletion' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem stageWokenSendCompletion_stages_zero' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem blockedReturn_staged_in_waiter_frame' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem blockedUnitReturn_staged_in_sender_frame' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem stageWokenDelivery_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+run_check "INVARIANT" rg -n '^theorem stageWokenSendCompletion_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+# WS-RA RA.B.8: the per-arm shape-coherence family — the classification and
+# the live dispatch arms cannot disagree (`.call` through the reply arm, §3.5).
+run_check "INVARIANT" rg -n '^theorem dispatchArm_notificationWait_matches_returnShape' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchArm_serviceQuery_matches_returnShape' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchArm_receive_matches_returnShape' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchArm_replyRecv_matches_returnShape' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchArm_call_frame_delivered_by_reply' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def syscallReturnOutcome' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem readReturnValue_eq_readReturnFrame_x0' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem writeReturnFrameToTcb_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+run_check "INVARIANT" rg -n '^theorem stageDeliveredMessage_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_error_stages_no_frame' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n 'ffi_syscall_return_frame' rust/sele4n-hal/src/ffi.rs
+run_check "INVARIANT" rg -n 'pub const SYSCALL_ABI_VERSION: u64 = 2' rust/sele4n-types/src/lib.rs
+# PR #866 review: the Blocked trap arm must poison the frame with the
+# fail-closed blocked-resume sentinel until the context-restore seam
+# installs a successor — a silent revert to the no-op arm re-opens the
+# false-success decode of the caller's own stale request registers.
+run_check "INVARIANT" rg -n 'pub const BLOCKED_RESUME_SENTINEL_LABEL' rust/sele4n-hal/src/svc_dispatch.rs
+run_check "INVARIANT" rg -n 'pub fn blocked_resume_sentinel_regs' rust/sele4n-hal/src/svc_dispatch.rs
+run_check "INVARIANT" rg -n 'blocked_resume_sentinel_regs' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n 'fn blocked_resume_sentinel_decodes_fail_closed' rust/sele4n-hal/src/svc_dispatch.rs
+# PR #866 round-2: the return-frame mailbox and the kernel-entry bracket key
+# on the TPIDR-derived LOGICAL core index (the boot-validated slot space the
+# Lean dispatch's executingCore lives in) — the packed MPIDR value must not
+# come back as an index (out-of-range on a second-cluster core: mailbox
+# bounds abort + silently disabled shootdown self-service).
+run_check "INVARIANT" rg -n 'per_cpu::current_core_id_from_tpidr' rust/sele4n-hal/src/svc_dispatch.rs
+run_check "INVARIANT" rg -n 'per_cpu::current_core_id_from_tpidr' rust/sele4n-hal/src/ffi.rs
+run_negative_check "INVARIANT" rg -n 'crate::cpu::current_core_id' rust/sele4n-hal/src/svc_dispatch.rs
+run_negative_check "INVARIANT" rg -n 'crate::cpu::current_core_id' rust/sele4n-hal/src/ffi.rs
+# PR #866 round-2: the staged extraCaps is the transfer summary's INSTALLED
+# count, never the requested msg.caps.size.
+run_check "INVARIANT" rg -n '^def installedCount' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^theorem returnMessageInfo_extraCaps_le_installed' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_negative_check "INVARIANT" rg -n 'extraCaps := min msg.caps.size' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+# PR #866 round-2: the query wrapper returns the typed ServiceId.
+run_check "INVARIANT" rg -n 'pub fn service_query\(endpoint_cap: CPtr\) -> KernelResult<ServiceId>' rust/sele4n-sys/src/service.rs
+# PR #866 round-3: the prefilter conformance sweep drives the REAL wrappers
+# (host-capture mock trap) against the REAL HAL minima (dev-dep) — the
+# hand-duplicated table that drifted twice must not come back, and the
+# `.message`-shaped call wrapper carries the badge tuple like its siblings.
+run_check "INVARIANT" rg -n 'pub mod host_capture' rust/sele4n-abi/src/trap.rs
+run_check "INVARIANT" rg -n 'fn wrapper_lengths_clear_prefilter_minimums' rust/sele4n-abi/tests/conformance.rs
+run_check "INVARIANT" rg -n 'host_capture::last_request' rust/sele4n-abi/tests/conformance.rs
+run_check "INVARIANT" rg -n 'min_inline_args' rust/sele4n-abi/tests/conformance.rs
+run_check "INVARIANT" rg -n 'pub fn endpoint_call\(dest: CPtr, msg: &IpcMessage\) -> KernelResult<\(Badge, SyscallResponse\)>' rust/sele4n-sys/src/ipc.rs
+# PR #866 round-3: the three wrappers the ABI documented but never had —
+# implemented so the sweep covers the whole canonical syscall surface.
+run_check "INVARIANT" rg -n 'pub fn tcb_bind_notification' rust/sele4n-sys/src/tcb.rs
+run_check "INVARIANT" rg -n 'pub fn tcb_unbind_notification' rust/sele4n-sys/src/tcb.rs
+run_check "INVARIANT" rg -n 'pub fn mint_reply_cap' rust/sele4n-sys/src/cspace.rs
+# The retired bit-63 theorems must not come back either.
+run_negative_check "INVARIANT" rg -n 'theorem encodeError_high_bit_set' SeLe4n/Platform/FFI.lean
+run_negative_check "INVARIANT" rg -n 'theorem encodeOk_high_bit_clear' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_total' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_error_of_syscallEntryChecked_error' SeLe4n/Platform/FFI.lean
@@ -3103,8 +3188,7 @@ run_check "INVARIANT" rg -n '^theorem readReturnValue_zero_when_not_tcb' SeLe4n/
 # production closure.  Post-v0.31.67 the live entry is the cross-core
 # `lean_syscall_dispatch_cross_core` (`@[export]` in `SyscallDispatchEntry`, now
 # promoted into the `SeLe4n.lean` production library), so the Rust extern names
-# it; the boot-pinned `syscall_dispatch_inner` (`@[export]` in `Platform.FFI`,
-# line 966) stays as the single-core entry.
+# it.  (WS-RA removed the vestigial boot-pinned `syscall_dispatch_inner`.)
 run_check "INVARIANT" rg -n 'fn lean_syscall_dispatch_cross_core' rust/sele4n-hal/src/svc_dispatch.rs
 # WS-SM SM6.E: the suspend atomicity bracket is flipped to the cross-core
 # entry `suspend_thread_cross_core` (`@[export]` in `SyscallDispatchEntry`,

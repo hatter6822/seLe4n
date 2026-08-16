@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.InformationFlow.Invariant.Helpers
+import SeLe4n.Kernel.Architecture.SyscallReturn
 import SeLe4n.Kernel.IPC.Operations.Donation
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.Propagate
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.Preservation
@@ -607,6 +608,114 @@ private theorem saveOutgoingContext_preserves_projection
           | vspaceRoot _ => simp_all
           | untyped _ => simp_all
           | schedContext _ | reply _ => simp_all
+
+/-- WS-RA RA.B.10 — **the blanket return-frame projection preservation, for
+every observer.**
+
+Staging a syscall return frame into a thread's saved register context is
+invisible to the information-flow projection: `writeReturnFrameToTcb`
+touches exactly one TCB's `registerContext`, and `projectKernelObject`
+strips that field from every projected TCB (WS-H12c — the same fact that
+makes `saveOutgoingContext_preserves_projection` above go through).  The
+first draft of the WS-RA plan assumed this theorem was false ("an observer
+that can see the caller sees its register context"); the tree says
+otherwise, and this is the checked fact.
+
+What the blanket does **not** claim, stated so it cannot be over-read: the
+caller itself still receives the value — through the hardware `TrapFrame`
+writeback at the FFI boundary, which is outside `ObservableState` (the
+same class as the registered covert channels, and by construction data the
+caller's own syscall produced).  The *authority* for each staged value is
+the arm's own flow gate (`endpointFlowGate`, the notification→waiter
+gate), which runs before the arm stages. -/
+theorem writeReturnFrameToTcb_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (frame : Architecture.SyscallReturnFrame)
+    (hObjInv : st.objects.invExt) :
+    projectState ctx observer (Architecture.writeReturnFrameToTcb st tid frame)
+      = projectState ctx observer st := by
+  simp only [Architecture.writeReturnFrameToTcb]
+  cases hTcb : st.getTcb? tid with
+  | none => rfl
+  | some tcb =>
+      have hRaw : st.objects[tid.toObjId]? = some (.tcb tcb) :=
+        (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb
+      simp only [projectState]
+      congr 1
+      · exact funext (fun oid => by
+          simp only [projectObjects]
+          split
+          · simp only [Option.map]
+            simp only [RHTable_getElem?_eq_get?]
+            rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
+            by_cases hEq : tid.toObjId == oid
+            · simp only [hEq, ↓reduceIte, projectKernelObject]
+              have hEq' := beq_iff_eq.mp hEq
+              subst hEq'
+              rw [← RHTable_getElem?_eq_get?]
+              simp only [hRaw]
+              -- The two projected TCBs differ only in `registerContext`,
+              -- which both sides override with `default` — definitionally
+              -- equal field for field.
+              rfl
+            · simp [hEq]
+          · rfl)
+
+/-- WS-RA RA.B.6: the arm-level delivery staging is projection-invisible —
+`stageDeliveredMessage` either stages via `writeReturnFrameToTcb` (covered
+by the blanket above) or is the identity. -/
+theorem stageDeliveredMessage_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (installedCaps : Nat) (hObjInv : st.objects.invExt) :
+    projectState ctx observer (Architecture.stageDeliveredMessage st tid installedCaps)
+      = projectState ctx observer st := by
+  unfold Architecture.stageDeliveredMessage
+  cases hTcb : st.getTcb? tid with
+  | none => rfl
+  | some tcb =>
+      by_cases hReady : tcb.ipcState = .ready
+      · simp only [hReady, ↓reduceIte]
+        cases tcb.pendingMessage with
+        | none => rfl
+        | some msg =>
+            exact writeReturnFrameToTcb_preserves_projection ctx observer st tid _ hObjInv
+      · simp [hReady]
+
+/-- WS-RA RA.B.5b: the woken-counterparty delivery stager is
+projection-invisible for every observer — the Option lift of the blanket
+above, so every unblocking arm's staging carries its preservation via one
+instance. -/
+theorem stageWokenDelivery_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (woken? : Option SeLe4n.ThreadId) (installedCaps : Nat)
+    (hObjInv : st.objects.invExt) :
+    projectState ctx observer (Architecture.stageWokenDelivery st woken? installedCaps)
+      = projectState ctx observer st := by
+  cases woken? with
+  | none => rfl
+  | some tid =>
+      exact stageDeliveredMessage_preserves_projection ctx observer st tid
+        installedCaps hObjInv
+
+/-- WS-RA RA.B.5b: the completion stager (a woken plain sender's unit
+frame) is projection-invisible for every observer — its only write is
+`writeReturnFrameToTcb`, covered by the blanket. -/
+theorem stageWokenSendCompletion_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (woken? : Option SeLe4n.ThreadId) (hObjInv : st.objects.invExt) :
+    projectState ctx observer (Architecture.stageWokenSendCompletion st woken?)
+      = projectState ctx observer st := by
+  cases woken? with
+  | none => rfl
+  | some tid =>
+      simp only [Architecture.stageWokenSendCompletion]
+      cases st.getTcb? tid with
+      | none => rfl
+      | some tcb =>
+          by_cases hGuard : tcb.ipcState = .ready ∧ tcb.pendingMessage = none
+          · simp only [hGuard]
+            exact writeReturnFrameToTcb_preserves_projection ctx observer st tid _ hObjInv
+          · simp [hGuard]
 
 /-- WS-H12c: restoreIncomingContext preserves the information-flow projection
 when the current thread is non-observable. -/

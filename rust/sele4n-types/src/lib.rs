@@ -48,6 +48,22 @@ pub mod syscall;
 pub use error::{KernelError, KernelResult};
 pub use identifiers::*;
 pub use rights::{AccessRight, AccessRights, AccessRightsError};
+
+/// WS-RA: the syscall **return** ABI version — the canonical Rust-side
+/// pin (plan §3.6).
+///
+/// * Version **1** — the retired bit-63 protocol: one status word in
+///   `x0`, bit 63 the error flag, values masked to 63 bits.
+/// * Version **2** — the seL4 frame convention: `x0` the full-width
+///   value, `x1` a `MessageInfo` whose **offset** label carries the
+///   error (`0` = success, `d + 1` = `KernelError` discriminant `d`),
+///   `x2`-`x5` message registers.
+///
+/// Mirrored by Lean's `Architecture.syscallAbiVersion` and the HAL's
+/// `svc_dispatch::SYSCALL_ABI_VERSION`; each side's conformance suite
+/// pins its own constant to the same literal, so a half-bumped tree
+/// fails its own suite rather than mis-decoding at runtime.
+pub const SYSCALL_ABI_VERSION: u64 = 2;
 pub use syscall::SyscallId;
 
 // AN8-E (R-HAL-L2): The 52-line AK4-H audit-notes block previously inlined

@@ -116,8 +116,8 @@ theorem schedContextUnbindOnCore_error (vScId : SeLe4n.ValidObjId)
 /-- WS-SM SM8.B: a SchedContext whose bound thread is running **nowhere** needs
 no scheduling point, and the wrapper is then exactly the single-core transition:
 same state, no SGI.  This is also the single-core bridge — on one core a thread
-is current on `bootCoreId` or nowhere, so the boot-pinned
-`syscallDispatchInner` path sees no change of behaviour. -/
+is current on `bootCoreId` or nowhere, so the boot-pinned `syscallEntry`
+path sees no change of behaviour. -/
 theorem schedContextUnbindOnCore_no_running_core (vScId : SeLe4n.ValidObjId)
     (executingCore : CoreId) (st st' : SystemState)
     (hRunning : schedContextRunningCore? st vScId.val = none)

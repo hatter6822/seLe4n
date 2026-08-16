@@ -15,18 +15,50 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 ## What's next
 
-**WS-RA Syscall Return ABI — NEXT, implemented ahead of SM9.**  The kernel
-has no syscall return path: it writes one register on exit and the value it
-writes is the caller's own capability pointer, which userspace's
-`decode_response` (`regs[0] != 0` means error) decodes as a `KernelError`.
-Five syscalls are value-returning today and return nothing —
-`.notificationWait`, `.receive`, `.call`, `.replyRecv` and `.serviceQuery`,
-the last computing `lookupServiceByCap` and discarding the answer — and SM9
-adds two more.  WS-RA adopts seL4's ARM64 convention exactly (`x0` = badge or
-primary result, `x1` = `MessageInfo` whose label carries the error, `x2`-`x5` =
-message registers) and retires the bit-63 status protocol.  38 sub-tasks across
-~12-15 PRs.  It blocks SM9 (both its value-returning sub-phases) and SM10.E (a
-bootable image whose syscalls all report spurious errors).  Plan:
+**WS-RA Syscall Return ABI — core LANDED (v0.33.37); SM9 unblocked.**  The
+kernel had no syscall return path: it wrote one register on exit and the value
+it wrote was the caller's own capability pointer, which userspace's
+`decode_response` (`regs[0] != 0` meant error) decoded as a `KernelError` —
+so a **successful** syscall reported a spurious error for any nonzero cap
+pointer.  Five syscalls were value-returning and returned nothing.  WS-RA
+adopted seL4's ARM64 convention exactly and it is live end to end: `x0` =
+badge/primary result (full 64-bit width — the bit-63 status protocol is
+retired, `bit63Encoding_not_injective_on_badges` retains the hazard it
+removed); `x1` = `MessageInfo` whose **label** carries the error at
+`discriminant + 1` (label 0 = success; direct carriage would alias
+`.invalidCapability = 0` with success — the plan's own draft defect, caught in
+the refinement pass), all 55 discriminants round-tripped by enumeration;
+`x2`–`x5` = message registers.  The model
+(`SeLe4n/Kernel/Architecture/SyscallReturn.lean`): `syscallReturnShape` a
+**total** function (a new syscall cannot omit its shape), the frame codec with
+losslessness, `SyscallOutcome` (`returns`/`blocks`, decided from the caller's
+post-state IPC state), and the staging seam `writeReturnFrameToTcb` with
+projection preservation for **every** observer (WS-H12c already strips
+`registerContext`).  The five value arms stage at the arm — badge via
+`returnFrameOfBadge`, delivered message via `stageDeliveredMessage`,
+`.serviceQuery`'s answer via `returnFrameOfWord` — touching zero IPC
+transitions and none of the ~1900-reference invariant surface.  The boundary:
+`syscallDispatchFromAbi : … → Kernel SyscallOutcome`; the entry publishes the
+frame to a per-core mailbox (`ffi_syscall_return_frame`, the
+`ShootdownOpMailbox` pattern) and returns an outcome tag; `trap.rs` restores
+all six registers (`set_return_frame`) or, for a blocked caller, writes
+nothing.  `decode_response` rewritten fail-closed on the label;
+`syscallDispatchInner` deleted (closing the TLB plan's deferred item #3 by its
+own intended route); `SYSCALL_ABI_VERSION = 2` pinned on all three sides.
+Landing the flip found and fixed five unreachable-wrapper prefilter defects
+(`min_inline_args` drift vs the authoritative Lean decoders — `cspace_mint`,
+`cspace_copy`, `cspace_move`, `lifecycle_retype`, `service_query`), a
+`message_length` mask reading a layout nothing else used, and a stale
+54-variant error enumeration.  RA.E.1 landed first and **failed on the
+pre-migration tree**; the golden fixture
+`tests/fixtures/syscall_return_abi.expected` byte-verifies the live decisions;
+the main trace is byte-identical.  **Completed at v0.33.38**: RA.B.5b
+landed at the arms (two Option-lifted stagers composing at eleven sites, the
+blocked orderings staged end to end with `blockedReturn_staged_in_waiter_frame`
++ its unit dual, five two-core suite scenarios) and RA.B.8 landed as the
+five-theorem value-half family with the unit half structural
+(`frameForShape_unit`).  SM10.E owes only frame *delivery* (the context
+restore) and the cancellation/timeout error-frame staging.  Plan:
 [`docs/planning/SYSCALL_RETURN_ABI_PLAN.md`](planning/SYSCALL_RETURN_ABI_PLAN.md).
 
 **WS-SM SMP multi-core completion workstream IN FLIGHT (v0.31.2 →

@@ -63,15 +63,24 @@ v1.0.0 must not claim declassification.
   growth safe (a 36th operation either fails `mem_all` or moves all three
   counts).
 - **WS-RA** ([`SYSCALL_RETURN_ABI_PLAN.md`](SYSCALL_RETURN_ABI_PLAN.md)) —
-  **blocking for SM9.A and SM9.C.**  The audit reader is a *value-returning*
-  syscall: returning a word is its entire purpose.  But `dispatchWithCapChecked`
-  is `Kernel Unit` and `syscallDispatchFromAbi` takes its success value from
-  `readReturnValue` on the post-state TCB, which no transition writes — so
-  `.auditRead` would gate correctly, compute correctly, and hand back the
-  caller's own preloaded `x0` capability argument.  This is the same
-  output-plumbing gap as SM9.C.0, and it means **§3.3's whole reader interface
-  presupposes a return path that does not exist**.  WS-RA builds it; SM9.A.10
-  consumes it.
+  **was blocking for SM9.A and SM9.C; the core landed at v0.33.37.**  The
+  audit reader is a *value-returning* syscall: returning a word is its entire
+  purpose.  Before WS-RA, `dispatchWithCapChecked` was `Kernel Unit` and
+  `syscallDispatchFromAbi` took its success value from `readReturnValue` on
+  the post-state TCB, which no transition wrote — so `.auditRead` would have
+  gated correctly, computed correctly, and handed back the caller's own
+  preloaded `x0` capability argument.  WS-RA built the missing path: value
+  syscalls stage a seL4 ARM64 return frame
+  (`Architecture.writeReturnFrameToTcb` + `returnFrameOfBadge` /
+  `returnFrameOfWord` / `returnFrameOfMessage`) into the caller's
+  `registerContext` at their dispatch arms, and the boundary reads it back
+  shape-driven (`syscallReturnShape` — a **total** function whose `.auditRead`
+  / `.auditDrain` arms SM9 must add, so forgetting one is a compile error,
+  never a silent `.unit`).  SM9.A.10 declares those two `ReturnShape` arms and
+  stages with `returnFrameOfWord`.  **§3.3's payload arithmetic predates the
+  flip and is updated in place below**: the bit-63 `encodeOk` encoding is
+  retired, a returned word is a full 64 bits, and a frame additionally
+  carries `x2`–`x5` as message registers.
 
 ## 3. Architectural choices
 
@@ -92,8 +101,10 @@ already carries a recorded argument against exactly this refactor.
 It is also unnecessary.  `Kernel α = SystemState → Except KernelError (α × SystemState)`
 does give an `.error` arm no post-state — but one layer up,
 `syscallDispatchFromAbi` (`Platform/FFI.lean`) already converts every kernel
-error into `.ok (encodeError ke, stRegs)`, and `syscallDispatchCrossCoreEntry`
-commits that state.  **A refused syscall already commits a post-state.**  And
+error into `.ok (.returns (Architecture.errorFrame ke), stRegs)` (the WS-RA
+error frame, whose `x1` label carries `discriminant + 1`), and
+`syscallDispatchCrossCoreEntry` commits that state.  **A refused syscall
+already commits a post-state.**  And
 every field a refusal record needs is already an argument there:
 
 | Field | Source at the seam |
@@ -231,20 +242,27 @@ monitoring wants one fully-cleared monitor, named in configuration.
 
 ### 3.3 Reader interface: indexed read, no new kernel→user write path
 
-A syscall returns exactly one word: `rust/sele4n-hal/src/trap.rs` is
-`frame.set_x0(retval)` and nothing else in the trap frame is written back.  So a
-reader either returns one word per call, or the kernel writes into the caller's
-IPC buffer.
-
-**The payload is 63 bits, not 64.**  `Platform/FFI.lean`'s
-`encodeOk v := v &&& 0x7FFFFFFFFFFFFFFF` reserves **bit 63** as the error flag,
-which `encodeError` sets — so a return value with bit 63 set is
-indistinguishable from an error code, and a naive 64-bit field would alias
-silently rather than fail closed.  Consequences for SM9.A.2, all of them design
+**Updated for WS-RA (v0.33.37).**  This section was drafted against the
+pre-WS-RA boundary, where a syscall returned exactly one word
+(`frame.set_x0(retval)`) whose bit 63 was reserved as the `encodeOk` /
+`encodeError` error flag.  Both premises are retired: the trap handler now
+restores a full seL4 ARM64 return frame (`set_return_frame` writes `x0`–`x5`;
+the error travels in `x1`'s `MessageInfo` label, offset by one), so **a
+returned word is a full 64 bits**, and one call can additionally carry up to
+four message-register words in `x2`–`x5` (`returnFrameOfMessage`).  The reader
+below stays at one *value* word per call (`x0`, staged via
+`returnFrameOfWord`) — the conservative shape; 64-bit chunks halve the call
+count relative to the old arithmetic, and packing four chunks per call
+through the message registers is an SM9.A optimisation the frame permits but
+this design does not require.  What does **not** survive is the bit-63
+aliasing constraint and the `auditReadWord_fits_payload` theorem built on it:
+a full-width word cannot alias the error channel, because value and error now
+travel in separate registers.  The chunking itself survives for the deeper
+reason in the bullets.  Consequences for SM9.A.2, all of them design
 constraints rather than notes:
 
-- `core ⊕ kernelIssued` is packed into the **low** bits and must not touch
-  bit 63 — but the trust bit is **not** the whole of `authorizationBasis`.
+- `core ⊕ kernelIssued` packs comfortably into one word — but the trust bit
+  is **not** the whole of `authorizationBasis`.
   `AuditRecord.lean` defines the basis as a designation *paired with* that bit
   (`renderTagged` ships both, and `renderTagged_injective` is why), so exporting
   the bit alone collapses every `integratorOverride` to one externally-readable
@@ -260,9 +278,8 @@ constraints rather than notes:
   so each is read through a 32-bit chunk protocol: `AuditReadOp.field w
   chunkIndex` plus `fieldChunkCount w`.
 - **The chunk coordinates are themselves single words, so "total for any `Nat`"
-  was false** — a value needing 2^63 chunks cannot have its own count returned
-  through `encodeOk`, and one needing 2^64 chunks cannot have every index named
-  through the `UInt64` ABI.  Chasing that with a cursor protocol would need
+  was false** — a value needing 2^64 chunks cannot have its own count returned
+  in one word, nor every chunk index named through the `UInt64` ABI.  Chasing that with a cursor protocol would need
   per-caller state, which §3.3's other half has just finished showing is not
   constructible.  So the export is **structurally bounded** instead:
   `maxAuditFieldChunks` caps the exported width and the reader **fails closed**
@@ -285,21 +302,22 @@ A fixed two-chunk (low/high) design was drafted and is **wrong**: two 32-bit
 chunks bound a field at 2^64, so values differing above bit 63 produce identical
 chunks — it moves the truncation point rather than removing it — and it left the
 two domain fields as single words while the surrounding prose called the design
-lossless.  `auditReadWord_fits_payload` is retained, but its role is now stated
-precisely: it is the **ABI-safety** half (every returned word is `< 2^63`, so
-`encodeOk` is the identity on it) and is *not* the losslessness claim.  Proving
-each fragment survives the encoding says nothing about whether the record can be
-reconstructed from the fragments; conflating the two is what made the two-chunk
-design look adequate.
+lossless.  `auditReadWord_fits_payload` was the **ABI-safety** half of that draft (every
+returned word `< 2^63`, so the old `encodeOk` was the identity on it); WS-RA
+retires the encoding and the theorem with it — a 32-bit chunk fits any word
+trivially now — but the lesson stands: proving each fragment survives the
+boundary says nothing about whether the record can be reconstructed from the
+fragments, and conflating the two is what made the two-chunk design look
+adequate.
 
 **`status` is chunked too, for the same reason one field over.**  A draft fixed
 the record fields and left `status` packing the visible length *and* the drain
-generation into one 63-bit word, which aliases once the monotone generation
-wraps.  The obvious repair — chunk `status` too — was drafted and is **worse**,
-and the reason is instructive: a multi-call read is not atomic, so a drain
-landing between two chunk calls yields a reconstructed generation assembled from
-two different states, corresponding to no generation that ever existed.  Chunking
-traded *aliasing after 2^54 drains* for *tearing on the very first one*.
+generation into one word, which aliases once the monotone generation wraps.
+The obvious repair — chunk `status` too — was drafted and is **worse**, and
+the reason is instructive: a multi-call read is not atomic, so a drain landing
+between two chunk calls yields a reconstructed generation assembled from two
+different states, corresponding to no generation that ever existed.  Chunking
+traded *aliasing after ~2^55 drains* for *tearing on the very first one*.
 
 `status` therefore returns in **one call**, with both components structurally
 bounded: the visible length is bounded by `maxDeclassificationAuditEntries`
@@ -854,7 +872,7 @@ their registries).  SM9.A.4a alone is a relation with congruence lemmas — see
 |-----|-------------|-------|-----|
 | SM9.A.1 | `auditLogVisibleTo ctx L` + `_sublist` / `_reindexed` / `_length_le`; the no-gap-leak theorem (the visible view is a function of the reader's clearance alone) | new production leaf `InformationFlow/AuditRead.lean` | M |
 | SM9.A.1a | **The persistent timestamp epoch** (§3.4) — `SystemState.declassificationAuditEpoch`, `timestamp := epoch + log.length`, well-formedness generalised to `auditTimestampsFrom epoch log` (the `start`-parameterised lemma already exists) with the 0-anchored form as the boot instance; both identification theorems generalised; the three `_preserves_wellFormed` theorems restated; full §6 mount carriage (freeze required field, `OffSchedulerAgrees`, four boot frames, `storeObject` frame, `…_write_preserves_projection`); the corrected "well-formed throughout" contract.  **Sequenced before SM9.A.3 — drain is unsound without it** | `Model/State.lean`, `Model/{FrozenState,FreezeProofs}.lean`, `Platform/Boot.lean`, `InformationFlow/{Declassification,DeclassificationPerCore}.lean` | L |
-| SM9.A.2 | `AuditReadOp` — **fused with `ReadableStructure`** (§3.7: each operation names the structure it reads) + `all` / `mem_all` / `all_nodup` + `auditReadOp_structure_total`; the §3.3 **arbitrary-length chunk protocol** (`fieldChunkCount w`, `field w chunkIndex`) over all four unbounded fields **and over the basis designation** (exporting the trust bit alone collapses every `integratorOverride`); `maxAuditFieldChunks` with fail-closed `.auditFieldTooLarge`, since the chunk *coordinates* are themselves single words and "total for any `Nat`" was false; `auditReadField_reconstructs` (unconditional on the accepted domain) + `auditReadBasis_reconstructs_designation` + `auditReadWord_fits_payload` (the ABI-safety half, explicitly *not* losslessness); **single-call `status`** with both components structurally bounded + `auditReadStatus_atomic` (chunking `status` traded aliasing for tearing on the first interleaved drain); the **two reader classes** — `auditReadIndex_is_view_local` and `auditRead_hides_global_position` for a partial reader, `dominatingReader_sees_global_identity` so a monitor can still correlate across drains, plus `observerScopedGeneration_not_mountable` | same | XL |
+| SM9.A.2 | `AuditReadOp` — **fused with `ReadableStructure`** (§3.7: each operation names the structure it reads) + `all` / `mem_all` / `all_nodup` + `auditReadOp_structure_total`; the §3.3 **arbitrary-length chunk protocol** (`fieldChunkCount w`, `field w chunkIndex`) over all four unbounded fields **and over the basis designation** (exporting the trust bit alone collapses every `integratorOverride`); `maxAuditFieldChunks` with fail-closed `.auditFieldTooLarge`, since the chunk *coordinates* are themselves single words and "total for any `Nat`" was false; `auditReadField_reconstructs` (unconditional on the accepted domain) + `auditReadBasis_reconstructs_designation` (`auditReadWord_fits_payload` retired with the bit-63 encoding — WS-RA v0.33.37, §3.3); **single-call `status`** with both components structurally bounded + `auditReadStatus_atomic` (chunking `status` traded aliasing for tearing on the first interleaved drain); the **two reader classes** — `auditReadIndex_is_view_local` and `auditRead_hides_global_position` for a partial reader, `dominatingReader_sees_global_identity` so a monitor can still correlate across drains, plus `observerScopedGeneration_not_mountable` | same | XL |
 | SM9.A.3 | `auditDrainVisiblePrefix` under the §3.4 dominance gate, advancing the SM9.A.1a epoch; `auditDrain_requires_full_dominance`, `_preserves_auditLogBounded`, `_preserves_wellFormed_at_epoch`, `_monotone_generation`, `_monotone_epoch`, `_fully_clears_for_dominating_reader`, and the negative that a partially-cleared caller drains nothing | same | M |
 | SM9.A.4a | **`auditObservationalEquivalence ctx L`** (§3.4a option b, §3.7 discipline): the clause set is a **total function on `ReadableStructure`**, not a list — a `mem_all` over a hand-maintained type cannot force a new structure to join it (`readableStructure_list_gate_insufficient` refutes that design), whereas a missing case in a total function is a compile error; `auditObservationalEquivalence_clause_total`; clauses for the trail **and** the refusal ledger; reflexivity / symmetry / transitivity; the congruence lemmas carrying it through every writer of a readable structure; the negative that plain `lowEquivalent` does **not** imply equal visible views | `InformationFlow/DeclassificationPerCore.lean` (staged) | XL |
 | SM9.A.4b | The flow argument over that relation: the reader is a function of the visible view alone, so it opens no channel; the **not-CC-8** argument stated once | same | L |
@@ -1093,7 +1111,7 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
 | The reader leaks hidden-entry counts through index gaps | LOW | HIGH | Re-indexed filtered view, not sparse global indices; the visible view is a function of the reader's clearance alone; **drain requires full dominance** so there is no partial-visibility prefix to probe (§3.4) |
 | A global drain generation signals a dominating monitor's drains to every reader | MED | HIGH | `drainGeneration` is observer-scoped (§3.3), with the negative that a global counter is refutable |
 | The reader's flow argument is stated over a relation that cannot see the trail | MED | HIGH | `lowEquivalent` does not imply equal visible views once a reader exists — the naive lemma is **false** (§3.4a).  `auditObservationalEquivalence` is the relation SM9.A.4a/.4b are stated over |
-| A read word aliases the ABI error flag | MED | MED | The payload is **63** bits (`encodeOk` masks bit 63); unbounded fields are chunked; `auditReadWord_fits_payload` (§3.3) |
+| A read word aliases the ABI error flag | — | — | Structurally impossible since WS-RA (v0.33.37): value and error travel in separate registers (`x0` vs `x1`'s `MessageInfo` label), so no returned word can alias the error channel.  Unbounded fields are still chunked (§3.3) — that constraint was never about the flag |
 | A retired rule leaves stale inventory counts | MED | MED | Both retirements (SM9.B.10, SM9.D.15) follow the SM8.E pattern: retire, move counts, add a negative anchor |
 | SM9.C.3's invariant surface is larger than estimated | MED | MED | The transition is `notificationSignal` + an audit write; if preservation does not ride the existing family, split SM9.C.3 into per-conjunct PRs |
 | Scope creep into a general syscall-failure audit | MED | LOW | The seam filters to the `declassificationSyscalls` list (§3.1) — narrow, but *derived*, so SM9.C's second declassifying syscall joins it automatically; generalisation beyond declassification recorded as future work |
@@ -1124,9 +1142,9 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
       collides with no surviving entry, and the well-formedness contract names
       the epoch rather than claiming index-anchoring.
 - [ ] Every value the reader exports — record fields **and** `status` — is
-      reconstructible from its chunks, not merely small enough to survive
-      `encodeOk`; and a partial reader cannot infer hidden-entry counts from an
-      exported index.
+      reconstructible from its chunks, not merely small enough to fit one
+      return word; and a partial reader cannot infer hidden-entry counts from
+      an exported index.
 - [ ] Every visibility gate is computed from something that does not age out
       from under it: the refusal ledger's gate is configuration, not the ring's
       surviving rows.
@@ -1213,9 +1231,11 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
   the gate is configuration and not current records (SM9.B.10)
 - `retypeClearsTaint` + `retypedObject_taint_empty` +
   `staleTaint_is_not_saturation` — taint must not outlive its object (SM9.D.12)
-- `auditReadWord_fits_payload` — every returned word is `< 2^63`, so `encodeOk`
-  is the identity on it; the **ABI-safety** half, explicitly not losslessness
-  (SM9.A.2)
+- ~~`auditReadWord_fits_payload`~~ — **retired by WS-RA (v0.33.37)** before it
+  was ever built: the bit-63 `encodeOk` encoding it guarded against is gone,
+  and a full-width word cannot alias the error channel (§3.3).  The
+  losslessness half it was explicitly *not* — `auditReadField_reconstructs` —
+  is unaffected (SM9.A.2)
 - `auditReadStatus_generation_observer_scoped` + the negative that a global
   drain counter is refutable (SM9.A.2)
 - `auditDrain_requires_full_dominance` (SM9.A.3)
