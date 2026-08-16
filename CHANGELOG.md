@@ -1,3 +1,60 @@
+## v0.33.31 — WS-RA opens: the syscall return path was never implemented
+
+Investigating where a notification badge should be delivered found that the
+question was smaller than the defect.  **The kernel has no syscall return path.**
+It writes exactly one register on exit, and the value it writes is not a return
+value.
+
+Verified end to end.  `writeFfiRegistersToTcb` stages the *incoming* `x0..x5`
+into `tcb.registerContext`, with `x0 ← capPtrReg`.  `syscallDispatchFromAbi`
+returns `encodeOk (readReturnValue st' tid)`, which reads `gpr ⟨0⟩` back out —
+and **no transition anywhere writes a return value into that register**
+(exhaustive grep).  `trap.rs` writes `frame.set_x0(retval)` and nothing else:
+`set_x1` exists and is called only in a unit test, and `x2`-`x5` are never
+written back.  `FFI.lean` documents the middle of this honestly — *"x0
+post-syscall therefore equals the caller's own pre-syscall x0"* — and defers
+"full seL4-ABI x0 compliance" as a known gap.
+
+**The consequence follows from two documented facts.**  On success the kernel
+returns the caller's own `x0`, the capability pointer; userspace's
+`decode_response` tests `regs[0] != 0` to mean error.  For any capability pointer
+other than `0`, a *successful* syscall decodes as a `KernelError` with the cap
+pointer as its discriminant.  No end-to-end test can exist until SM10.E produces
+a bootable image, so nothing has ever executed this path — which is why RA.E.1
+lands first and must **fail** on the pre-migration tree.
+
+Three corollaries fall out of the same gap: `notification_wait` returns the
+caller's own pre-syscall `x1` presented as a `Badge`, so badge-based sender
+discrimination is entirely non-functional; `endpoint_receive` returns the
+caller's own registers as message registers; and `cspace_mint` and the retype
+family cannot report an allocated slot.  The first of these is the defect
+registered as SM9.C.0 — **and the fix recommended for it in round 4 would not
+have worked**, because `tcb.pendingMessage`, where the signal path stores the
+badge, has no register path either.  SM9.C.0 is re-pointed at WS-RA accordingly.
+
+New plan: [`docs/planning/SYSCALL_RETURN_ABI_PLAN.md`](docs/planning/SYSCALL_RETURN_ABI_PLAN.md)
+— 38 sub-tasks across ~12-15 PRs in five sub-phases.  The target is seL4's ARM64
+convention exactly: `x0` = badge or primary result, `x1` = `MessageInfo` whose
+**label** carries the error, `x2`-`x5` = message registers.  Errors move to the
+label because that is how seL4 hands back a full-width badge without an aliasing
+question — and `MessageInfo.label` already exists as a 20-bit field documented as
+"seL4 convention", with 54 `KernelError` discriminants to carry.  `encodeOk` /
+`encodeError` and the bit-63 protocol are retired: bit 63 was a workaround for
+multiplexing status into the value register, and with the channels separated
+there is nothing to multiplex.
+
+Three design decisions worth recording.  Return values stage in
+`tcb.registerContext` rather than widening the FFI return type, so no dispatch
+arm grows a six-tuple and the trap boundary becomes an ordinary context restore.
+`syscallReturnShape : SyscallId → ReturnShape` is a **total function**, not a
+list with a completeness theorem — the lesson six SM9 review rounds taught three
+times over.  And the flip is guarded by a `SYSCALL_ABI_VERSION` pinned in both
+mirrors, because a half-migrated tree does not fail loudly, it silently
+reinterprets registers.
+
+Refs: docs/planning/SYSCALL_RETURN_ABI_PLAN.md
+Refs: #865
+
 ## v0.33.30 — SM9 plan, review round 6: fixing the class instead of the instances
 
 A sixth review left seven findings.  All valid — and three are inconsistencies
