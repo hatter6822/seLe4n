@@ -7,7 +7,9 @@
 > **Target releases**: v0.34.x
 > **Calendar estimate**: 5-8 weeks
 > **Sub-task count**: 41 across ~12-15 PRs
-> **Status**: **NEXT** — the next workstream implemented, ahead of SM9
+> **Status**: **NEXT** — the next workstream implemented, ahead of SM9.
+> Implementation begins once PR #865 (SM8.E closure + the SM9 plan) merges; the
+> designated branch restarts from `main` at that point and WS-RA lands there.
 
 ## 1. Phase goal
 

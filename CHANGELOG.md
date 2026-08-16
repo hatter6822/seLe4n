@@ -1,3 +1,13 @@
+## v0.33.35 — WS-RA start condition recorded
+
+The syscall-return-ABI plan records when it begins: once PR #865 (SM8.E closure
+plus the SM9 plan and its review rounds) merges, the designated branch restarts
+from `main` and WS-RA lands there.  Plan header only — the workstream's content,
+sequencing and dependencies are unchanged from v0.33.34.
+
+Refs: docs/planning/SYSCALL_RETURN_ABI_PLAN.md
+Refs: #865
+
 ## v0.33.34 — WS-RA completed: a blocking syscall has no return value yet
 
 A review round landed on the WS-RA plan itself, with **two P1s against the plan
