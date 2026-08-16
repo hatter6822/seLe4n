@@ -7,6 +7,7 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 import SeLe4n.Kernel.API
+import SeLe4n.Kernel.Architecture.SyscallReturn
 import SeLe4n.Kernel.Lifecycle.Suspend
 import SeLe4n.Platform.Boot
 -- WS-RC R2 audit: `bv_decide` for `encodeOk_high_bit_clear`.  The
@@ -828,63 +829,21 @@ table in `rust/sele4n-types/src/error.rs`).
 
 Discriminant 17 (`notImplemented`) is the historical "stub" return; per
 WS-RC R2 the FFI no longer emits it from the dispatch path — every error
-now corresponds to a substantive kernel rejection. -/
-def KernelError.toUInt32 : KernelError → UInt32
-  | .invalidCapability             => 0
-  | .objectNotFound                => 1
-  | .illegalState                  => 2
-  | .illegalAuthority              => 3
-  | .policyDenied                  => 4
-  | .dependencyViolation           => 5
-  | .schedulerInvariantViolation   => 6
-  | .endpointStateMismatch         => 7
-  | .endpointQueueEmpty            => 8
-  | .asidNotBound                  => 9
-  | .vspaceRootInvalid             => 10
-  | .mappingConflict               => 11
-  | .translationFault              => 12
-  | .flowDenied                    => 13
-  | .declassificationDenied        => 14
-  | .alreadyWaiting                => 15
-  | .cyclicDependency              => 16
-  | .notImplemented                => 17
-  | .targetSlotOccupied            => 18
-  | .replyCapInvalid               => 19
-  | .untypedRegionExhausted        => 20
-  | .untypedTypeMismatch           => 21
-  | .untypedDeviceRestriction      => 22
-  | .untypedAllocSizeTooSmall      => 23
-  | .childIdSelfOverwrite          => 24
-  | .childIdCollision              => 25
-  | .addressOutOfBounds            => 26
-  | .ipcMessageTooLarge            => 27
-  | .ipcMessageTooManyCaps         => 28
-  | .backingObjectMissing          => 29
-  | .invalidRegister               => 30
-  | .invalidSyscallNumber          => 31
-  | .invalidMessageInfo            => 32
-  | .invalidTypeTag                => 33
-  | .resourceExhausted             => 34
-  | .invalidCapPtr                 => 35
-  | .objectStoreCapacityExceeded   => 36
-  | .allocationMisaligned          => 37
-  | .revocationRequired            => 38
-  | .invalidArgument               => 39
-  | .mmioUnaligned                 => 40
-  | .invalidSyscallArgument        => 41
-  | .ipcTimeout                    => 42
-  | .alignmentError                => 43
-  | .vmFault                       => 44
-  | .userException                 => 45
-  | .hardwareFault                 => 46
-  | .notSupported                  => 47
-  | .invalidIrq                    => 48
-  | .invalidObjectType             => 49
-  | .nullCapability                => 50
-  | .partialResolution             => 51
-  | .missingSchedContext           => 52
-  | .threadOnDifferentCore         => 53
-  | .auditLogCapacityExceeded      => 54
+now corresponds to a substantive kernel rejection.
+
+WS-RA (RA.A.5): the 55-arm table moved to the canonical
+`SeLe4n.Model.KernelError.toDiscriminant`
+(`Kernel/Architecture/SyscallReturn.lean`), which also carries the inverse
+`ofDiscriminant?` and the round-trip proofs; this function is its `UInt32`
+instance so the discriminant table exists exactly once. -/
+def KernelError.toUInt32 (e : KernelError) : UInt32 :=
+  (SeLe4n.Model.KernelError.toDiscriminant e).toUInt32
+
+/-- WS-RA (RA.A.5): the instance relationship, pinned — this `UInt32` map
+and the canonical `Nat` table agree on every variant. -/
+theorem KernelError.toUInt32_eq_toDiscriminant (e : KernelError) :
+    (KernelError.toUInt32 e).toNat = SeLe4n.Model.KernelError.toDiscriminant e := by
+  cases e <;> decide
 
 /-- WS-RC R2.B.0: Encode a `KernelError` into the FFI return contract.
 
@@ -907,6 +866,18 @@ caller reads it. -/
   -- flag.  Practical syscalls return small values; this only matters
   -- as a defensive correctness gate.
   v &&& 0x7FFFFFFFFFFFFFFF
+
+/-- WS-RA (RA.A.8): **the theorem that motivates retiring this protocol.**
+`Badge` is 64-bit-valid (`Badge.valid` admits every value below `2^64`),
+but `encodeOk` masks bit 63 to keep success words disjoint from the error
+flag — so two *distinct* valid badges collide under the old encoding, and
+a badge with bit 63 set is silently truncated.  The WS-RA flip separates
+the value and status channels (`x0` full-width, errors on the `x1` label),
+which removes the collision structurally; this negative stays so the
+bit-63 protocol cannot quietly return. -/
+theorem encodeOk_not_injective_on_badges :
+    ∃ a b : UInt64, a ≠ b ∧ encodeOk a = encodeOk b := by
+  exact ⟨0x42, 0x8000000000000042, by decide, by decide⟩
 
 /-- WS-RC R2.B.0: Round-trip of `encodeError` — every `KernelError`
     variant emits a value whose high bit is set.
