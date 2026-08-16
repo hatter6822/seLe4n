@@ -1,3 +1,71 @@
+## v0.33.30 — SM9 plan, review round 6: fixing the class instead of the instances
+
+A sixth review left seven findings.  All valid — and three are inconsistencies
+this plan introduced by fixing a principle in one place and not carrying it to
+the others, so this cut audits **every** gate and **every** completeness
+mechanism in the document rather than patching the ones the review happened to
+reach.  That sweep found five further stale citations the review did not flag.
+
+**One privileged-reader gate, configuration-derived.**  Round 3 established for
+the refusal ledger that a gate must not be computed from data that ages out; the
+trail had the same defect through a different door and I left it, in a paragraph
+that even noted the surviving quantity.  Drain a trail to `[]` and a
+current-record dominance predicate is **vacuously true**, so a low
+audit-capability holder is classified as a fully dominating monitor and reads the
+global epoch — which counts precisely the entries the drain removed.  A predicate
+over rows that drains delete cannot gate a quantity drains preserve.  There is now
+one gate, `LabelingContext.auditMonitorClearance`, and drain, the ledger,
+global-identity access and `predecessorTags` all key off it
+(`auditMonitorGate_is_configuration_derived`,
+`auditMonitorGate_records_derived_unsound`).
+
+**The third hand-maintained taxonomy.**  `declassificationSyscalls` was a list
+plus a completeness theorem over a hand-maintained "consults
+`declassificationDecision`" classification — which stays true when a new dispatch
+arm consults it and joins neither.  Exactly the shape already refuted for
+`ReadableStructure` (round 3) and `ContentFlowSite` (round 4).  Now a **total**
+`SyscallId → RefusalSeamClass` over the enumeration the ABI already forces to be
+complete, so SM9.C.8 classifies `.declassifySignal` as part of adding it because
+it cannot compile otherwise.
+
+**Two authorizations need two records.**  Round 5 added the second gate on the
+resolved receiver and kept one audit event.  On a `high → mid` notification and a
+`mid → low` receiver, a single event naming the final destination must drop the
+first downgrade or collapse two domain pairs — and two authorization bases — into
+a direct `high → low` edge **no policy authorized**, which the causal detector
+then inherits.  One event per authorized hop, in hop order, sharing the subject
+and tag snapshot (`declassifiedSignal_audits_each_hop`,
+`declassifiedSignal_no_invented_edge`).
+
+**Three smaller, each a real gap.**  The refusal record stored a subject id but
+not its domain, while `LabelingContext` is an *argument* to
+`syscallDispatchFromAbi` rather than persistent state — so a later reader cannot
+reconstruct the domain if the context changed or the id was reused; the domain is
+now resolved and stored at the seam, as the authorized trail already does.  The
+capacity reason was being suppressed from refusal records to close an occupancy
+channel, which discarded the only durable evidence that an authorized downgrade
+hit the 256-entry cliff — the channel is closed by the *read gate*, so the reason
+is recorded and the caller-facing error ordering is untouched.  And
+`auditFieldBound_unreachable_in_kernel` could not hold for timestamps, since the
+epoch is unbounded and every drain advances it: the bound is now stated as
+concrete arithmetic (`maxAuditFieldChunks = 4` is 128 bits; 2^128 drains at one
+per nanosecond is ~10^22 years) with the reader failing closed above it, rather
+than as a claim about typical use.
+
+**And five stale citations the review did not reach**, all pointing at designs
+this plan had already refuted: the acceptance gate still required completeness
+"checked by `mem_all`", the theorem catalogue still stated the equivalence over
+`ReadableStructure.all`, two risk rows still cited `mem_all` designs, and the
+sub-operation prose still described the pre-fusion enumeration.  A document that
+refutes a design in §3.7 and keeps recommending it in §9 is worse than one that
+never refuted it, because a reader implementing from §9 gets the weaker mechanism
+with the stronger one's authority behind it.
+
+Counts: theorems ~65 → ~72; sub-task count unchanged at 61.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §3.1, §3.4, §3.5, §3.7, §9
+Refs: #865
+
 ## v0.33.29 — SM9 plan, review round 5: a footprint is not an authorization
 
 A fifth review of PR #865 left two findings — a **P1** and a P2 — both against

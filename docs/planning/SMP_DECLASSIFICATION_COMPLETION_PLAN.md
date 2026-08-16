@@ -90,6 +90,7 @@ every field a refusal record needs is already an argument there:
 |---|---|
 | executing core | `executingCore` parameter |
 | subject thread | `st.scheduler.currentOnCore executingCore` (already matched on) |
+| **source domain** | `ctx.threadLabelOf` of that subject, **resolved at the seam** — `LabelingContext` is an *argument* to `syscallDispatchFromAbi`, not persistent state, so a later reader cannot reconstruct the domain from the subject id (the context may differ, or the id may have been reused).  The authorized-event trail already stores its domains for the same reason |
 | syscall | `syscallId : UInt32`, via the pure total `SyscallId.ofNat?` |
 | refusal reason | `ke : KernelError` |
 | requested target | `x0` — the raw `CPtr` the caller supplied |
@@ -113,12 +114,19 @@ filtered on the literal `.declassify`, which SM9.C then silently defeats: it add
 a *second* declassifying syscall, `.declassifySignal`, whose refusals would
 bypass `recordRefusal` entirely — leaving a monitor unable to distinguish "no
 data-carrying downgrade attempts" from "many, all denied", which is the exact gap
-SM9.B exists to close.  So the filter reads a **`declassificationSyscalls` list**
-with a `declassificationSyscalls_complete` theorem (every `SyscallId` whose
-transition consults `declassificationDecision` is a member), and SM9.C.8 extends
-that list rather than a second copy of the predicate.  A third declassifying
-syscall then cannot be added without joining the seam, because the completeness
-theorem stops elaborating.  SM9.E carries a denied-`.declassifySignal` acceptance
+SM9.B exists to close.  A **list plus a completeness theorem does not achieve that**, and this is the
+third time the same shape has been tried in this plan (after `ReadableStructure`
+and `ContentFlowSite`, both §3.7): a theorem quantified over a hand-maintained
+"consults `declassificationDecision`" classification stays true when a new
+dispatch arm consults it and joins neither the list nor the classification.  The
+gate has to be keyed to something exhaustive *independently* of the gate.
+
+So the seam reads a **total function** `SyscallId → RefusalSeamClass`
+(`records` / `exempt`) over the `SyscallId` enumeration the ABI already forces to
+be complete — every arm must be classified or the function does not elaborate —
+with `refusalSeamClass_total` and `refusalSeam_list_gate_insufficient`.  SM9.C.8
+then classifies `.declassifySignal` as part of adding it, because it cannot
+compile otherwise.  SM9.E carries a denied-`.declassifySignal` acceptance
 case so the wiring is exercised rather than merely declared.
 
 ### 3.2 Refusal state: structural bounds, not an invariant conjunct
@@ -182,8 +190,9 @@ records-derived gate admits it — and reads counters that still carry the hidde
 history.  The gate would be computed from a set that shrinks while the data it
 guards does not.
 
-So the ledger is gated on a **configured system-wide audit clearance**
-(`LabelingContext.auditClearance`), not on the ring's contents: a fixed
+So the ledger is gated on the **configured system-wide audit clearance**
+(`LabelingContext.auditMonitorClearance`, the single privileged-reader gate
+§3.4 names), not on the ring's contents: a fixed
 deployment parameter, deny-by-default when unset, that cannot be lowered by
 eviction.  `refusalLedger_gate_is_configuration_derived` is the theorem, and
 `refusalLedger_records_gate_unsound` keeps the counterexample above as a
@@ -235,10 +244,15 @@ constraints rather than notes:
   with `.auditFieldTooLarge` above it.  `auditReadField_reconstructs` then holds
   unconditionally on the values the reader accepts, which is the honest shape —
   a total theorem about a bounded domain rather than a false theorem about an
-  unbounded one.  In a running kernel nothing approaches the cap (object ids come
-  from a bounded store, timestamps from the epoch plus at most 256 live entries,
-  domains from a configured labeling), and `auditFieldBound_unreachable_in_kernel`
-  records that as a checked observation rather than a hope.
+  unbounded one.  The cap is **arithmetic, not a hope**, which matters because
+  the SM9.A.1a epoch is an unbounded monotone `Nat` that every drain advances —
+  so "bounded in practice" is not available for timestamps the way it is for
+  object ids.  `maxAuditFieldChunks = 4` gives 128 bits: reaching it needs 2^128
+  drains, and at one drain per nanosecond that is ~10^22 years.
+  `auditFieldBound_unreachable_in_kernel` states that as the concrete inequality
+  (`maxDeclassificationAuditEntries` + total drains < 2^128) rather than as a
+  claim about typical use, and the reader still **fails closed** above it, so the
+  worst case is a refused read and never a silently truncated one.
 - `auditReadField_reconstructs` (§11) is the losslessness theorem: folding a
   field's chunks recovers the value exactly.
 
@@ -291,7 +305,7 @@ So the protocol distinguishes the two readers explicitly:
 | | Partial reader | Fully-dominating monitor |
 |---|---|---|
 | Entry identity | **view-local index** — reveals nothing about hidden entries | **global timestamp** — stable across drains, so archived predecessors correlate |
-| `status` generation | none; a view change is detected from the visible length, fail-closed | the **global epoch**, which it may see because it dominates everything |
+| `status` generation | none; a view change is detected from the visible length, fail-closed | the **global epoch**, which it may see because it holds the configured monitor clearance (§3.4) — *not* because it dominates the rows that happen to survive |
 | Retry guarantee | none promised | `auditRead_stable_under_append` under `noGenerationWrap` |
 
 `auditReadIndex_is_view_local`, `auditRead_hides_global_position` and
@@ -303,7 +317,7 @@ is a monitoring convenience and the trail's consumer of record is the monitor.
 generation was specified with no state to hold it — and per-label state is not
 constructible, since `SecurityDomain.id` is an unbounded `Nat`, so there is no
 finite family of readers to key a `Vector` by.  With the generation exposed only
-to the dominating monitor it *is* the global epoch, already mounted by SM9.A.1a,
+to the configured monitor it *is* the global epoch, already mounted by SM9.A.1a,
 and no per-observer structure is needed.  `observerScopedGeneration_not_mountable`
 records why the earlier design was not merely unbuilt but unbuildable.
 
@@ -351,9 +365,8 @@ deny-by-default posture `LabelingContext.declassificationPolicy` already has.
 Registered in §8 as a risk row naming the bug class, so a later cut cannot
 quietly re-introduce a rights-only gate.
 
-`.auditRead` sub-operations are enumerated **as data** with a `mem_all`
-completeness theorem, in the idiom `CovertChannelId.all` / `KernelOperation.all`
-already use: `status` (visible length + the observer-scoped drain generation),
+`.auditRead` sub-operations are enumerated **as data**, each naming the
+`ReadableStructure` it reads (§3.7's fusion, not a bare `mem_all` list): `status` (visible length + the observer-scoped drain generation),
 `fieldChunkCount w`, and `field w chunkIndex` for w ∈ {srcDomain, dstDomain,
 targetObject, timestamp, core⊕kernelIssued} — the four unbounded fields read
 through the chunk protocol above, `core⊕kernelIssued` in one word because both
@@ -400,7 +413,25 @@ dominance removes the case entirely: either the caller sees the whole trail and
 drains all of it, or it drains nothing.  This is also the shape SM8's own
 registered follow-on described — *"confined to a domain dominating every recorded
 `srcDomain`"* — so it is a return to the registered design rather than a new
-restriction.  `auditDrain_requires_full_dominance` (§11) is the theorem.
+restriction.
+
+**But "dominates every recorded domain" must not be computed from the records.**
+§3.2 established this for the refusal ledger, where the ring evicts while its
+counters do not; the trail has the same defect through a different door.  Drain a
+trail to `[]` and the current-record dominance predicate becomes **vacuously
+true** — so a low audit-capability holder is then classified as a fully
+dominating monitor and reads the global epoch, which counts the very entries the
+drain removed.  A predicate over rows that drains delete cannot gate access to a
+quantity that drains preserve.
+
+So there is **one privileged-reader gate in this phase**, not two: the configured
+`LabelingContext.auditMonitorClearance`.  Drain, the refusal ledger (§3.2),
+global-identity access (§3.3) and `predecessorTags` (§3.6) all key off it, and
+none of them off the trail's or the ledger's current contents.
+`auditMonitorGate_is_configuration_derived` and
+`auditMonitorGate_records_derived_unsound` (the drained-to-empty counterexample)
+are the pair, stated once and cited by all four consumers rather than
+re-established at each.
 
 **Drain needs a persistent timestamp epoch, and this is a change to landed SM8
 code.**  `declassifyStoreOnCore` assigns `timestamp := log.length`
@@ -521,7 +552,21 @@ downgrade, or by its own `declassificationDecision` when it is — and the audit
 event records the **actual destination**, not merely the notification.
 `declassifiedSignal_gates_resolved_receiver` and
 `declassifiedSignal_audits_actual_destination` are the two, with
-`footprint_does_not_authorize` keeping the distinction on the record.  Both are
+`footprint_does_not_authorize` keeping the distinction on the record.
+
+**Two authorizations need two records.**  Gating both hops immediately raises
+what a single event can honestly say.  On a `high → mid` notification followed by
+a `mid → low` receiver, one event naming only the final destination must either
+drop the first downgrade or collapse two different domain pairs — and two
+potentially different authorization bases — into a direct `high → low` edge that
+no policy actually authorized.  Either way the trail misrepresents what happened,
+and the causal detector inherits the misrepresentation.  So the transition emits
+**one event per authorized downgrade**, in hop order, sharing the subject and the
+`predecessorTags` snapshot: `declassifiedSignal_audits_each_hop` and
+`declassifiedSignal_no_invented_edge` (no recorded event names a domain pair no
+decision returned).  A composite single record was the alternative and is worse —
+it invents a fourth record shape for the detector, the reader's chunk protocol and
+the fixtures, where per-hop events are the shape all three already handle.  Both are
 SM9.C.1 obligations, not SM9.C.5 ones: the footprint work stays where it is and
 does not grow to cover them.
 
@@ -640,9 +685,10 @@ partial reader *can* see, and the tags ride out through the reader's chunk
 protocol carrying the hidden event's global position.  That defeats both §3.3's
 view-local identities and §3.7(b) in one step — the round-4 fix for the mutable
 table created an export surface the round-3 index fix had just closed.  So the
-tags follow the same two-class rule as identity (§3.3): a **fully-dominating
-monitor** reads them, and a partial reader gets at most an *opaque* causality
-verdict — a `Bool` computed by the kernel, carrying no timestamps —
+tags follow the same two-class rule as identity (§3.3), keyed on the configured
+monitor clearance of §3.4: a **monitor** reads them, and every other reader gets
+at most an *opaque* causality verdict — a `Bool` computed by the kernel, carrying
+no timestamps —
 (`predecessorTags_dominating_only`, `partialReader_gets_opaque_causality`).  The
 general lesson is now explicit in §3.7: adding a field to a *readable* record is
 adding a read channel, and inherits both obligations.
@@ -696,8 +742,8 @@ design refuted, so it cannot come back as a simplification.
 
 | Structure | (a) inclusion | (b) hidden-write non-interference |
 |---|---|---|
-| `declassificationAuditLog` | `auditLogVisibleTo ctx L` clause | drain requires full dominance (§3.4); generation observer-scoped (§3.3) |
-| `declassificationRefusals` | ledger view clause, gated | readable only under full dominance (§3.2) |
+| `declassificationAuditLog` | `auditLogVisibleTo ctx L` clause | drain and global identity gated on the configured monitor clearance (§3.4), never on surviving rows |
+| `declassificationRefusals` | ledger view clause, gated | readable only under the configured monitor clearance (§3.2, §3.4) |
 | `declassificationTaint` (SM9.D) | **not readable** — no clause owed | vacuous while unreadable; a reader added later owes both |
 
 The third row is load-bearing rather than filler: SM9.D mounts a taint table and
@@ -748,7 +794,7 @@ trail; the 256-entry cliff is gone.
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| SM9.B.1 | `DeclassificationRefusal` record (core, subject, syscall, reason class, raw `CPtr`) + `Repr`/`DecidableEq` | new leaf `InformationFlow/RefusalRecord.lean` | S |
+| SM9.B.1 | `DeclassificationRefusal` record (core, subject, **source domain resolved at the seam**, syscall, reason class incl. `.auditLogCapacityExceeded`, raw `CPtr`) + `Repr`/`DecidableEq`; `refusalRecord_domain_is_seam_resolved` (the context is an argument, not state, so a later reader cannot reconstruct it) | new leaf `InformationFlow/RefusalRecord.lean` | M |
 | SM9.B.2 | `RefusalLedger` (§3.2 shape) + `recordRefusal`; saturation, no-loss, drop-count and ring-wrap theorems; `maxRefusalCount` / `refusalRingSize` constants | same | M |
 | SM9.B.3 | Mount `SystemState.declassificationRefusals`: field, `Inhabited` listing, `default_*`, `storeObject_*_eq` | `Model/State.lean` | S |
 | SM9.B.4 | Freeze carriage: required `FrozenSystemState` field, `freeze` forwarding, `freeze_preserves_*`, the `apiInvariantBundle_frozenDirectFull` conjunct + bullet | `Model/FrozenState.lean`, `Model/FreezeProofs.lean` | M |
@@ -756,7 +802,7 @@ trail; the 256-entry cliff is gone.
 | SM9.B.6 | `OffSchedulerAgrees` clause + **all six** builders | `IPC/Invariant/LookupCongruence.lean` | M |
 | SM9.B.7 | Boot frames ×4 (`applyMachineConfig`, `foldIrqs`, `foldObjects`, `bootFromPlatform`) | `Platform/Boot.lean` | S |
 | SM9.B.8 | Information flow: `declassificationRefusals_write_preserves_projection := rfl` **and** `onCore_declassificationRefusals` as the tenth read-set corollary | `InformationFlow/Invariant/Operations.lean`, `ObservableStatePerCore.lean` | S |
-| SM9.B.9 | Write at the seam, filtered by the **derived** `declassificationSyscalls` list (§3.1) rather than a hardcoded `.declassify`; `declassificationSyscalls_complete`; re-shape `syscallDispatchFromAbi_error_of_syscallEntryChecked_error`; re-prove `_total`; the three security theorems (below) | `Platform/FFI.lean` | L |
+| SM9.B.9 | Write at the seam, filtered by the **total** `SyscallId → RefusalSeamClass` classification (§3.1) rather than a hardcoded `.declassify` or a hand-maintained list; `refusalSeamClass_total` + `refusalSeam_list_gate_insufficient`; re-shape `syscallDispatchFromAbi_error_of_syscallEntryChecked_error`; re-prove `_total`; the three security theorems (below) | `Platform/FFI.lean` | L |
 | SM9.B.10 | Extend `.auditRead` with refusal sub-operations, gated on the **configured** `LabelingContext.auditClearance` (§3.2) — ring *and* counters, and deliberately **not** on the domains present in the current records, since the ring evicts while the counters are cumulative (`refusalLedger_gate_is_configuration_derived`, with `refusalLedger_records_gate_unsound` keeping the eviction counterexample refuted); the `ReadableStructure` clause + congruences this adds to SM9.A.4a's relation; the negative that an under-cleared caller reads nothing of the ledger; **retire `DeclassificationRuleId.refusalIsUnrecorded`** | `InformationFlow/AuditRead.lean`, `DeclassificationPerCore.lean`, `InformationFlow/Policy.lean` | XL |
 
 **SM9.B.10 retires a registered claim, and must do so properly.**
@@ -789,14 +835,14 @@ cannot displace an authorized-downgrade entry*.
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
 | SM9.C.0 | **Prerequisite — the wait path drops the badge.**  `notificationWaitOnCore`'s pending-badge arm clears `pendingBadge`, marks the waiter `.ready` with plain `storeTcbIpcState` (no message), and returns `.ok (some badge)`; both live `.notificationWait` arms in `API.lean` match `(st', .ok _)` and discard it, and the wrapper's type is `Kernel Unit`.  So in the ordinary signal-before-wait ordering the badge is consumed and delivered nowhere — while the waiter-present path delivers via `storeTcbIpcStateAndMessage`.  `FFI.lean`'s own ABI note says `x0` carries *"a badge for `notificationWait`"*, so this is a documented contract the code does not meet.  **SM9.C cannot ship a data-carrying declassification over a path that loses data in one of its two orderings.**  Reported separately as a live defect; the remediation (mirror the signal path, and/or thread the value to `x0`) is an ABI decision and is not assumed here | `IPC/CrossCore/NotificationSignal.lean`, `Kernel/API.lean` | L |
-| SM9.C.1 | `notificationSignalDeclassified` — the SM6.B signal gated by `declassificationDecision` **and by the resolved destination's own authorization** (§3.5): the live `notificationSignalBoundCrossCoreDispatchChecked` gates `signaler → notification` *and* `notification → receiver`, the second added at v0.31.73 to stop a badge leak into a low bound TCB, so a declassifying variant gated only on the notification would re-open it with stronger authority behind it.  `declassifiedSignal_gates_resolved_receiver` + `declassifiedSignal_audits_actual_destination` + `footprint_does_not_authorize`; badge delivered, event recording the **actual destination**; error arms fail closed | `IPC/CrossCore/NotificationSignal.lean` | XL |
+| SM9.C.1 | `notificationSignalDeclassified` — the SM6.B signal gated by `declassificationDecision` **and by the resolved destination's own authorization**, emitting **one event per authorized hop** (`declassifiedSignal_audits_each_hop`, `declassifiedSignal_no_invented_edge` — a single record would collapse two domain pairs into a direct edge no policy authorized) (§3.5): the live `notificationSignalBoundCrossCoreDispatchChecked` gates `signaler → notification` *and* `notification → receiver`, the second added at v0.31.73 to stop a badge leak into a low bound TCB, so a declassifying variant gated only on the notification would re-open it with stronger authority behind it.  `declassifiedSignal_gates_resolved_receiver` + `declassifiedSignal_audits_actual_destination` + `footprint_does_not_authorize`; badge delivered, event recording the **actual destination**; error arms fail closed | `IPC/CrossCore/NotificationSignal.lean` | XL |
 | SM9.C.2 | Per-core + cross-core forms (`…OnCore`, `…CrossCoreDispatchChecked`), SGI emission, home-core wake | same | L |
 | SM9.C.3 | `ipcInvariantFull{,_perCore}` preservation — rides `notificationSignal_preserves_*` plus the audit frame | `IPC/Invariant/PerCoreBundlePreservation.lean` | L |
 | SM9.C.4 | `proofLayerInvariantBundle` preservation + `auditLogBounded` carriage | `InformationFlow/Declassification.lean` | M |
 | SM9.C.5 | **`declassificationEffectFootprint`** (§3.5: notification ⊕ waiter TCB ⊕ waiter home-core scheduler slots) defined **once** and read by both consumers; lock set + write set + `observableSlotsConfinedToCores`; inventory counts | `Concurrency/Locks/*`, `InformationFlow/NonInterferenceCrossCore.lean` | L |
 | SM9.C.6 | **`declassificationRelativeNonInterference`** — both halves (§3.5) over the SM9.C.5 footprint, with two load-bearing negatives: an *unrecorded* difference is refutable, and a difference **outside** the footprint is refutable | `InformationFlow/NonInterferencePerCore.lean` | XL |
 | SM9.C.7 | NI inventory growth: `KernelOperation.all` 35→36, `niStepConstructorCoverage` arm, `perCoreConfinementDerived` arm, all three counts + the complement | `InformationFlow/Invariant/Composition.lean`, `NonInterferencePerCore.lean` | M |
-| SM9.C.8 | Live arm + ABI: `SyscallId.declassifySignal`, count 33→34, both Rust mirrors, conformance, `sele4n-sys`, enforcement boundary 42→43 / 57→58, lock-set inventory; **and the `declassificationSyscalls` list (§3.1) extended**, so this syscall's refusals reach the SM9.B seam rather than bypassing it | ~14 files (§5) | L |
+| SM9.C.8 | Live arm + ABI: `SyscallId.declassifySignal`, count 33→34, both Rust mirrors, conformance, `sele4n-sys`, enforcement boundary 42→43 / 57→58, lock-set inventory; **and its `RefusalSeamClass` arm (§3.1) supplied**, which the total classification forces as part of adding the syscall, so its refusals reach the SM9.B seam rather than bypassing it | ~14 files (§5) | L |
 | SM9.C.9 | `syscallDelegates_declassifySignal`; per-core routing gate; cross-core NI inventory entry | `Kernel/API.lean`, `NonInterferenceCrossCore.lean` | M |
 
 ### SM9.D — Causal declassification provenance (6-9 PRs, 19 sub-tasks)
@@ -947,10 +993,12 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
 |------|------------|--------|------------|
 | **An audit syscall gated on a right rather than a target** | MED | HIGH | The **v0.32.97 confused-deputy class**: `syscallLookupCap` never constrains `cap.target`, so a `.read`-gated reader is reachable by any thread holding its own TCB.  `CapTarget.auditTrail` + `extractAuditAuthority` (§3.3), with a negative that a non-`.auditTrail` capability carrying `.read` is rejected |
 | SM9.C.6's NI statement is wrong in a way that looks right | MED | HIGH | State both halves — the confined difference **and** the trail entry recording it — over a footprint defined once (§3.5), with two load-bearing negatives: an *unrecorded* difference and a difference *outside the footprint* must both be refutable |
-| The refusal ledger becomes a channel | LOW | HIGH | No distinguishable capacity reason; outside `ObservableState`; **readable only under full dominance** (§3.2), so a hidden write cannot evict a partial reader's entry or move its counters; `_denied_before_capacity` re-verified as an SM9.B acceptance item |
-| A readable structure is added with no equivalence clause | MED | HIGH | §3.7's `ReadableStructure.all` + `mem_all` — a structure without a clause fails completeness rather than passing silently.  Three findings so far were the same violation seen at three sites |
+| The refusal ledger becomes a channel | LOW | HIGH | Outside `ObservableState`; the capacity reason is **recorded** (see below) but readable only under the monitor gate, so the occupancy channel is closed by the gate rather than by discarding evidence; **readable only under full dominance** (§3.2), so a hidden write cannot evict a partial reader's entry or move its counters; `_denied_before_capacity` re-verified as an SM9.B acceptance item |
+| A readable structure is added with no equivalence clause | MED | HIGH | §3.7's fused `AuditReadOp`/`ReadableStructure` + a **total** clause function — a `mem_all` list cannot force a new structure to join it |
 | Drain breaks the trail's timestamp discipline | HIGH | HIGH | **Realised, not hypothetical**: `timestamp := log.length` reuses a timestamp after any prefix removal.  Closed by the SM9.A.1a epoch, sequenced before drain exists, with the reuse as a load-bearing negative (§3.4) |
-| Taint propagation misses a content-moving transition | MED | HIGH | `ContentFlowSite.all` + `mem_all` + non-content frames (SM9.D.7/.12) — a missed site is a detector that misses real laundering, so the enumeration is checked, not asserted |
+| Taint propagation misses a content-moving transition | MED | HIGH | A **total** `KernelOperation → ContentFlowClass` over SM8.E's exhaustive enumeration (SM9.D.7) + non-content frames (SM9.D.12) — a missed site is a detector that misses real laundering |
+| A privileged gate computed from rows a drain removes | MED | **HIGH** | Drain a trail to `[]` and a rows-derived dominance predicate is vacuously true, admitting a low reader to the global epoch that counts the drained entries.  One configured `auditMonitorClearance` gates drain, the ledger, global identity and `predecessorTags` (§3.4) |
+| An audit trail that reports an edge no policy authorized | MED | **HIGH** | Two gated hops emit two events (§3.5); one record would collapse `high → mid` and `mid → low` into a direct `high → low` edge |
 | A downgrade authorized to one sink reaching a second | MED | **HIGH** | The live bound-signal path gates `notification → receiver` as well as `signaler → notification` (v0.31.73), and a footprint is not an authorization.  SM9.C.1 gates the resolved destination and audits it (§3.5) |
 | A field added to a readable record becoming a channel | MED | HIGH | §3.7's inventory is keyed by **field**, not structure: `predecessorTags` carries global timestamps and is dominating-reader-only, with an opaque verdict for partial readers |
 | A historical verdict that moves with current state | MED | HIGH | The causal predicate reads `predecessorTags` snapshotted into the event, not the mutable taint table — otherwise a tag acquired late invents a link and a retype-cleared TCB loses a real one (§3.6) |
@@ -982,8 +1030,11 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
       by a negative rather than merely avoided.
 - [ ] Refusals are counted and attributed, and provably cannot displace an
       authorized-downgrade entry.
-- [ ] `authorizeDeclassificationOnCore_denied_before_capacity` still holds, and
-      the suite's trail-occupancy negative still passes.
+- [ ] `authorizeDeclassificationOnCore_denied_before_capacity` still holds for the
+      **caller-facing** error, and the refusal record still carries
+      `.auditLogCapacityExceeded` for the monitor — the occupancy channel is
+      closed by the read gate, not by discarding the only durable evidence that
+      an authorized downgrade hit the 256-entry cliff.
 - [ ] A data-carrying declassification exists, with
       `declassificationRelativeNonInterference` in both halves.
 - [ ] Timestamps survive drains: after a drain, a fresh event's timestamp
@@ -1013,11 +1064,11 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
 - [ ] No field derived from hidden state reaches a partial reader, including
       fields added to fix something else.
 - [ ] Every readable structure has an equivalence clause and a hidden-write
-      non-interference argument (§3.7), checked by `mem_all` rather than by
-      review.
-- [ ] Both declassifying syscalls reach the refusal seam, proven by
-      `declassificationSyscalls_complete` and exercised by a denied
-      `.declassifySignal`.
+      non-interference argument (§3.7), enforced by `auditReadOp_structure_total`
+      and `auditObservationalEquivalence_clause_total` — **not** by a `mem_all`
+      list, which §3.7 refutes.
+- [ ] Both declassifying syscalls reach the refusal seam, enforced by the total
+      `refusalSeamClass_total` and exercised by a denied `.declassifySignal`.
 - [ ] The laundering detector is **causal**: the §3.6 chain (downgrade →
       ordinary delivery → downgrade) is detected, the syntactic-scope theorem is
       retired rather than weakened, and the residual saturation-induced
@@ -1038,7 +1089,7 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
 
 ## 11. Theorem catalogue for SM9
 
-~65 substantive theorems.  Headline set:
+~72 substantive theorems.  Headline set:
 
 - `auditLogVisibleTo_sublist` + the clearance-determines-view theorem (SM9.A.1)
 - `auditTimestampsFrom_epoch_preserved` + `auditDrain_monotone_epoch` — the
@@ -1071,7 +1122,7 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
 - `auditDrainVisiblePrefix_preserves_auditLogBounded` +
   `_preserves_wellFormed_at_epoch` + `_fully_clears_for_dominating_reader`
   (SM9.A.3)
-- `auditObservationalEquivalence` over `ReadableStructure.all` + `mem_all` + its
+- `auditObservationalEquivalence` over a **total** clause function + its
   congruences, and the negative that plain `lowEquivalent` does **not** imply
   equal visible views (SM9.A.4a, §3.7)
 - `auditRead_no_channel` — the reader's flow argument, over that relation
@@ -1081,8 +1132,8 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
 - `recordRefusal_saturates` / `_no_loss` / `_ring_wraps_counted` (SM9.B.2)
 - `refusalLedger_requires_full_dominance` + the negative that a partially-cleared
   caller reads nothing of it (SM9.B.10, §3.7)
-- `declassificationSyscalls_complete` — every syscall consulting
-  `declassificationDecision` reaches the refusal seam (SM9.B.9)
+- `refusalSeamClass_total` + `refusalSeam_list_gate_insufficient` — every
+  syscall arm is classified for the refusal seam or does not elaborate (SM9.B.9)
 - `refusalWrite_declassificationAuditLog_eq` (SM9.B.9)
 - `declassificationRefusals_write_preserves_projection` +
   `onCore_declassificationRefusals` (SM9.B.8)
@@ -1099,6 +1150,15 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
 - `declassifiedSignal_gates_resolved_receiver` +
   `declassifiedSignal_audits_actual_destination` + `footprint_does_not_authorize`
   — naming a sink in the footprint does not permit it (SM9.C.1)
+- `declassifiedSignal_audits_each_hop` + `declassifiedSignal_no_invented_edge` —
+  two authorizations need two records, or the trail reports a direct edge no
+  decision returned (SM9.C.1)
+- `auditMonitorGate_is_configuration_derived` +
+  `auditMonitorGate_records_derived_unsound` — the single privileged-reader gate,
+  and why a rows-derived one goes vacuous on a drained-empty trail (§3.4)
+- `refusalSeamClass_total` + `refusalSeam_list_gate_insufficient` — the third
+  taxonomy fixed the same way as the first two (§3.1, §3.7)
+- `refusalRecord_domain_is_seam_resolved` (SM9.B.1)
 - `taintPropagation_*` per content-flow site + the non-content frames (SM9.D.8–.12)
 - `taintSaturate_over_approximates` — overflow errs toward false positives,
   never a missed chain (SM9.D.13)
