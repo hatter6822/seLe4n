@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.33.39.
+Lean 4.28.0 toolchain, Lake build system, version 0.33.40.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -182,18 +182,18 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~40784 lines)
+- `CHANGELOG.md` (~40888 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~20449 lines)
 - `docs/WORKSTREAM_HISTORY.md` (~10878 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~7902 lines)
 - `tests/SmpInformationFlowSuite.lean` (~6863 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5083 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5006 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5009 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4764 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
 - `SeLe4n/Model/State.lean` (~4364 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~4351 lines)
-- `SeLe4n/Kernel/API.lean` (~4251 lines)
+- `SeLe4n/Kernel/API.lean` (~4297 lines)
 - `docs/spec/SELE4N_SPEC.md` (~4161 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
 - `tests/NegativeStateSuite.lean` (~4094 lines)
@@ -245,8 +245,8 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~2022 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2019 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~1989 lines)
+- `SeLe4n/Model/Object/Types.lean` (~1986 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean` (~1967 lines)
-- `SeLe4n/Model/Object/Types.lean` (~1967 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.1_WORKSTREAM_PLAN.md` (~1917 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/TicketLock.lean` (~1901 lines)
@@ -316,12 +316,12 @@ To find files that need pagination today, run:
 - `tests/PerObjectLockSuite.lean` (~1097 lines)
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1085 lines)
 - `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~1076 lines)
+- `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1075 lines)
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
 - `tests/SyscallDispatchSuite.lean` (~1046 lines)
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
 - `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1039 lines)
 - `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~1027 lines)
-- `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1023 lines)
 - `SeLe4n/Kernel/InformationFlow/Projection.lean` (~1023 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~1002 lines)
 - `docs/planning/SMP_CROSS_CORE_IPC_PLAN.md` (~988 lines)
@@ -333,6 +333,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Concurrency/MemoryModel.lean` (~935 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md` (~930 lines)
 - `tests/SmpFoundationsSuite.lean` (~928 lines)
+- `docs/planning/SYSCALL_RETURN_ABI_PLAN.md` (~923 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_COMPREHENSIVE.md` (~921 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_v0.25.27.md` (~911 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
@@ -343,12 +344,12 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean` (~882 lines)
 - `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
 - `SeLe4n/Model/FrozenState.lean` (~853 lines)
-- `docs/planning/SYSCALL_RETURN_ABI_PLAN.md` (~834 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Preservation/BadgeIpcCapsAndCdtMaps.lean` (~831 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean` (~824 lines)
 - `tests/TwoPhaseArchSuite.lean` (~820 lines)
 - `docs/dev_history/audits/WS_RC_R4_CLOSEOUT_PLAN.md` (~818 lines)
 - `tests/DecodingSuite.lean` (~817 lines)
+- `tests/SyscallReturnAbiSuite.lean` (~810 lines)
 - `tests/WithLockSetSuite.lean` (~809 lines)
 - `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` (~808 lines)
 - `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` (~806 lines)
@@ -816,6 +817,27 @@ documentation lives under `docs/` and `docs/gitbook/`.
   unchanged; the SM10.E successor-install replaces the write); pinned by
   two HAL tests via a test-only `sele4n-abi` dev-dep (HAL 821 → 823).
   The demanded successor-install itself stays SM10.E scope.
+  **PR #866 review round 2 (v0.33.40)**: three further findings closed —
+  (1) the staged frame's `extraCaps` now reports the transfer summary's
+  **installed** count (`CapTransferSummary.installedCount`, threaded as an
+  undefaulted `installedCaps` parameter through `returnMessageInfo` /
+  `returnFrameOfMessage` / both stagers; the send/call arms destructure
+  the summary they previously discarded, reply/notification arms pass 0),
+  never the requested `msg.caps.size` — a grant-denied or slot-exhausted
+  transfer no longer tells the receiver capabilities arrived (suite §9h,
+  13th fixture line); verifying it surfaced pre-existing tracked debt:
+  the live receive paths run NO unwrap (`endpointReceiveDualWithCaps` has
+  no live caller), so receiver-second cap transfer installs nothing —
+  honestly reported as 0 now, closure design in the plan; (2) the
+  v0.33.39 mailbox unification kept its one-source principle but flips to
+  the RIGHT source — all three packed-MPIDR index sites (mailbox writer,
+  `dispatch_svc`, the suspend bracket) now read the boot-validated
+  TPIDR logical id (`per_cpu::current_core_id_from_tpidr`), since the
+  packed value (`0x100` on a second-cluster core) aborts the mailbox
+  bounds assert and silently disables the entry-spin's shootdown
+  self-service; (3) `service_query` returns the typed `ServiceId`.
+  Rust 1126 tests; four new Tier-3 anchors pin the logical-index sites
+  and forbid the packed value's return.
   Plan: [`docs/planning/SYSCALL_RETURN_ABI_PLAN.md`](docs/planning/SYSCALL_RETURN_ABI_PLAN.md).
 
 - **WS-SM SMP multi-core completion workstream IN FLIGHT (v0.31.2 → v1.0.0)**:

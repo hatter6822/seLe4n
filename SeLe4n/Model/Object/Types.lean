@@ -587,6 +587,25 @@ structure CapTransferSummary where
   results : Array CapTransferResult := #[]
   deriving Repr, DecidableEq
 
+namespace CapTransferSummary
+
+/-- The number of capabilities **actually installed** in the receiver's
+CSpace — the `.installed` entries only.  `.noSlot` and `.grantDenied`
+entries record caps the transfer did *not* deliver, so they must not be
+counted toward anything the receiver is told arrived (PR #866 round-2
+review: the return frame's `extraCaps` reads this, never the requested
+`msg.caps.size`). -/
+def installedCount (s : CapTransferSummary) : Nat :=
+  s.results.foldl
+    (fun n r => match r with
+      | .installed _ _ => n + 1
+      | _ => n) 0
+
+@[simp] theorem installedCount_empty :
+    installedCount { results := #[] } = 0 := rfl
+
+end CapTransferSummary
+
 /-- WS-Z/Z6-H: Result of a timeout-aware IPC operation.
 Distinguishes successful message delivery from budget-driven timeout.
 Used by `timeoutAwareReceive` and related timeout-aware IPC wrappers. -/

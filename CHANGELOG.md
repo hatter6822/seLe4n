@@ -1,3 +1,76 @@
+## v0.33.40 — WS-RA review round 2: installed-caps honesty, the logical core index, the typed query
+
+Three Codex findings on PR #866's v0.33.39 head — two P1, one P2 — every
+one verified against the code and closed; the P2 corrects the direction
+of the v0.33.39 audit's own mailbox fix.
+
+**The return frame reports capabilities actually installed (P1).**
+`returnMessageInfo` synthesized `extraCaps` from the delivered message's
+`caps.size` — the count the sender *requested* — while `ipcUnwrapCaps`
+succeeds with zero installs when the endpoint lacks `Grant` or the
+receiver's CNode has no free slot, and the delivered `pendingMessage`
+keeps the requested caps either way.  A receiver was therefore told
+capabilities arrived when none did, and would read whatever its receive
+slots already held as freshly delivered authority.  The synthesis now
+takes an explicit **`installedCaps`** parameter (deliberately not
+defaulted — a site that cannot name its installed count has no business
+synthesizing a frame): the send/call arms destructure the transfer
+summary their dispatch already returns (and previously **discarded**)
+and pass `CapTransferSummary.installedCount` (new, with the
+`installedCount_empty` simp lemma and the honesty bound
+`returnMessageInfo_extraCaps_le_installed`); the reply arms pass `0`
+(reply messages are built `caps := #[]`); the notification arms pass `0`
+(badge-only).  **Verifying the finding surfaced a wider, pre-existing
+gap**: the live receive paths (`.receive` and `.replyRecv`'s receive
+leg, via `endpointReceiveDualOnCore`) run **no capability unwrap at
+all** — `endpointReceiveDualWithCaps` has never had a live caller — so a
+sender that parks with caps has them installed never, in any ordering
+where the receiver arrives second.  Those arms pass `0`, the honest
+count for a path that installs nothing (fail-closed: caps are *not*
+installed without authority; the sender retains the originals), and the
+receive-side unwrap is registered as tracked debt in the plan with the
+closure design (an OnCore WithCaps composition mirroring the send
+side's).  Suite §9h drives both halves through the live dispatch: a
+grant-denied transfer stages `extraCaps = 0` while the delivered message
+still carries the requested cap (the load-bearing negative — the
+pre-fix frame read `1 + (1 << 7)`), and the granted twin stages
+`extraCaps = 1` with the cap landed in receive slot 0; the golden
+fixture gains the denied ordering's staged frame as its 13th line.
+Eight delegation-theorem RHS, two `syscallDelegates` arms and the three
+message-shaped RA.B.8 conclusions updated in lockstep.
+
+**The mailbox and entry-lock core index is the TPIDR logical id (P2).**
+The v0.33.39 audit unified the return-frame mailbox's writer and reader
+on ONE core-id source — the right principle, the wrong source:
+`cpu::current_core_id()` is the *packed* MPIDR affinity (Aff1:Aff0),
+whose own contract says "do not index arrays by it directly", and on the
+BCM2712's two-cluster topology a second-cluster core reads e.g. `0x100`
+— out of range for the four-slot mailbox (`return_frame_publish_in`'s
+bounds assert aborts every syscall on that core) and for the kernel-entry
+spin's shootdown self-service, whose out-of-range guard **fails closed to
+"no self-service"**, silently recreating the ack deadlock it exists to
+prevent.  All three packed-index sites (`ffi_syscall_return_frame`,
+`dispatch_svc`'s bracket-key + mailbox read, and the pre-existing
+`sele4n_suspend_thread` bracket key) now read
+`per_cpu::current_core_id_from_tpidr()` — the boot-validated logical
+index (`core_id < coreCount`, `check_per_cpu_invariants`) and the same
+space as the `executingCore : Fin numCores` the Lean dispatch identifies
+the caller by (`ffi_current_core_id` reads it), so writer, reader,
+bracket and kernel agree by construction.  Four Tier-3 anchors pin the
+sites positively and forbid the packed value's return.
+
+**`service_query` returns the typed `ServiceId` (P1).**  The wrapper
+returned a bare `u64` while its sibling `service_revoke` *takes* a
+`ServiceId` — the two halves of the service API did not compose without
+an untyped detour, against the project's typed-identifier convention.
+Now `KernelResult<ServiceId>` (constructed from `resp.value()`), with the
+conformance signature pin updated.
+
+Rust 1126 tests (HAL 823), clippy-clean, fmt-clean; the full suite
+battery and Tiers 0–3 green; trace `main_trace_smoke` byte-identical.
+
+Refs: docs/planning/SYSCALL_RETURN_ABI_PLAN.md (review round 2)
+
 ## v0.33.39 — WS-RA audit cut: five findings, closed against the code
 
 A post-completion audit of the whole PR, checked against the code rather

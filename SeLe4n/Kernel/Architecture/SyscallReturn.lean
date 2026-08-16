@@ -338,34 +338,64 @@ end SyscallReturnFrame
 /-- The `MessageInfo` a delivered message returns in `x1`.  `IpcMessage`
 carries no `MessageInfo` (it is discarded at decode time), so the return
 word is synthesized — here, once, for every delivery site: `length` is the
-inline window actually delivered in `x2`-`x5`, `extraCaps` the transferred
-capability count clamped to the protocol bound, `label` `0` (success). -/
-def returnMessageInfo (msg : IpcMessage) : MessageInfo :=
+inline window actually delivered in `x2`-`x5`, `extraCaps` the number of
+capabilities **actually installed** in the receiver's CSpace, clamped to
+the protocol bound, `label` `0` (success).
+
+**`installedCaps` is the transfer summary's `installedCount`, never the
+requested `msg.caps.size`** (PR #866 round-2 review): `ipcUnwrapCaps`
+succeeds with zero installs when the endpoint lacks `Grant` or the
+receiver's CNode has no free slot, and the delivered message's `caps`
+array keeps the *requested* caps either way — so a count read off the
+message tells the receiver capabilities arrived when none did, and it
+would interpret whatever its receive slots already held as freshly
+delivered authority.  The parameter is deliberately **not defaulted**: a
+site that cannot name its installed count has no business synthesizing a
+message frame.  Arms whose path runs no unwrap at all (the receive legs
+— tracked debt, see the plan — the reply delivery, and badge-only
+notification wakes) pass `0`, the honest count for a path that installs
+nothing. -/
+def returnMessageInfo (msg : IpcMessage) (installedCaps : Nat) : MessageInfo :=
   { length    := min msg.registers.size 4
-    extraCaps := min msg.caps.size Model.maxExtraCaps
+    extraCaps := min installedCaps Model.maxExtraCaps
     label     := 0 }
 
 /-- The §3.7 window bound, stated: the returned length never exceeds the
 four inline message registers. -/
-theorem returnFrame_message_window (msg : IpcMessage) :
-    (returnMessageInfo msg).length ≤ 4 :=
+theorem returnFrame_message_window (msg : IpcMessage) (installedCaps : Nat) :
+    (returnMessageInfo msg installedCaps).length ≤ 4 :=
   Nat.min_le_right _ _
 
 /-- The synthesized word is well-formed for the 20-bit-label encoding:
 length ≤ 120, extraCaps ≤ 3, label 0. -/
-theorem returnMessageInfo_wellFormed (msg : IpcMessage) :
-    (returnMessageInfo msg).wellFormed := by
+theorem returnMessageInfo_wellFormed (msg : IpcMessage) (installedCaps : Nat) :
+    (returnMessageInfo msg installedCaps).wellFormed := by
   refine ⟨Nat.le_trans (Nat.min_le_right _ _) (by decide), ?_, ?_⟩
   · exact Nat.min_le_right _ _
   · exact Nat.zero_le _
 
+/-- The honesty bound (PR #866 round-2): the returned `extraCaps` never
+exceeds the installed count — in particular, a path that installed
+nothing reports zero, whatever the delivered message's `caps` array
+still carries. -/
+theorem returnMessageInfo_extraCaps_le_installed
+    (msg : IpcMessage) (installedCaps : Nat) :
+    (returnMessageInfo msg installedCaps).extraCaps ≤ installedCaps :=
+  Nat.min_le_left _ _
+
+@[simp] theorem returnMessageInfo_extraCaps_zero (msg : IpcMessage) :
+    (returnMessageInfo msg 0).extraCaps = 0 := rfl
+
 /-- A delivered `IpcMessage` as a return frame — badge to `x0`, synthesized
 `MessageInfo` to `x1`, the inline register window to `x2`-`x5` (RA.A.3).
 The **single** place a message becomes a frame, used by every RA.B.5b
-staging site, so the synthesis cannot drift between sites. -/
-def returnFrameOfMessage (msg : IpcMessage) : SyscallReturnFrame :=
+staging site, so the synthesis cannot drift between sites.
+`installedCaps` per `returnMessageInfo`: the count of caps actually
+installed by this delivery's transfer, `0` for paths that run none. -/
+def returnFrameOfMessage (msg : IpcMessage) (installedCaps : Nat) :
+    SyscallReturnFrame :=
   { x0 := ((msg.badge.map Badge.val).getD 0).toUInt64
-    x1 := (returnMessageInfo msg).encode.toUInt64
+    x1 := (returnMessageInfo msg installedCaps).encode.toUInt64
     x2 := ((msg.registers[0]?.map RegValue.val).getD 0).toUInt64
     x3 := ((msg.registers[1]?.map RegValue.val).getD 0).toUInt64
     x4 := ((msg.registers[2]?.map RegValue.val).getD 0).toUInt64
@@ -580,14 +610,21 @@ restore.  A `.ready` caller with no `pendingMessage` (a zero-length
 delivery is still `some` with an empty register array) stages nothing —
 the boundary's shape-driven read then sees whatever the arm staged, so
 receive arms pair this with the shape theorem rather than relying on
-incidental register content. -/
-def stageDeliveredMessage (st : SystemState) (tid : SeLe4n.ThreadId) :
-    SystemState :=
+incidental register content.
+
+`installedCaps` (PR #866 round-2 review) is the count of capabilities the
+delivering transfer **actually installed** — the arm's transfer-summary
+`installedCount`, or `0` on a path that runs no unwrap.  It is never the
+delivered message's own `caps.size`, which records what the sender
+*requested*. -/
+def stageDeliveredMessage (st : SystemState) (tid : SeLe4n.ThreadId)
+    (installedCaps : Nat) : SystemState :=
   match st.getTcb? tid with
   | some tcb =>
       if tcb.ipcState = .ready then
         match tcb.pendingMessage with
-        | some msg => writeReturnFrameToTcb st tid (returnFrameOfMessage msg)
+        | some msg =>
+            writeReturnFrameToTcb st tid (returnFrameOfMessage msg installedCaps)
         | none => st
       else st
   | none => st
@@ -596,8 +633,8 @@ def stageDeliveredMessage (st : SystemState) (tid : SeLe4n.ThreadId) :
 every arm is either `writeReturnFrameToTcb` (whose `_scheduler_eq` this
 lifts) or the identity. -/
 theorem stageDeliveredMessage_scheduler_eq
-    (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (stageDeliveredMessage st tid).scheduler = st.scheduler := by
+    (st : SystemState) (tid : SeLe4n.ThreadId) (installedCaps : Nat) :
+    (stageDeliveredMessage st tid installedCaps).scheduler = st.scheduler := by
   unfold stageDeliveredMessage
   cases st.getTcb? tid with
   | none => rfl
@@ -612,8 +649,8 @@ theorem stageDeliveredMessage_scheduler_eq
 /-- RA.B.5b frame lemma: delivery staging never touches the machine — the
 staging writes the TCB's saved context only, never the machine mirror. -/
 theorem stageDeliveredMessage_machine_eq
-    (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (stageDeliveredMessage st tid).machine = st.machine := by
+    (st : SystemState) (tid : SeLe4n.ThreadId) (installedCaps : Nat) :
+    (stageDeliveredMessage st tid installedCaps).machine = st.machine := by
   unfold stageDeliveredMessage
   cases st.getTcb? tid with
   | none => rfl
@@ -628,10 +665,10 @@ theorem stageDeliveredMessage_machine_eq
 /-- A blocked caller stages nothing — `stageDeliveredMessage` is the
 identity whenever the caller's post-state is not `.ready`. -/
 theorem stageDeliveredMessage_id_when_blocked
-    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (installedCaps : Nat) (tcb : TCB)
     (hTcb : st.getTcb? tid = some tcb)
     (hBlocked : tcb.ipcState ≠ .ready) :
-    stageDeliveredMessage st tid = st := by
+    stageDeliveredMessage st tid installedCaps = st := by
   unfold stageDeliveredMessage
   rw [hTcb]
   simp [hBlocked]
@@ -670,19 +707,23 @@ counterparty — `stageDeliveredMessage` lifted over the dispatch arm's
 pre-resolved wake target (`none` when no counterparty was blocked).  The
 inner `.ready` + `pendingMessage` guards make this the identity whenever
 the wake did not actually happen (the transition errored short of the
-wake, the counterparty vanished, or it is still blocked). -/
-def stageWokenDelivery (st : SystemState) (woken? : Option SeLe4n.ThreadId) :
-    SystemState :=
+wake, the counterparty vanished, or it is still blocked).
+`installedCaps` per `stageDeliveredMessage` (PR #866 round-2): the
+delivering transfer's `installedCount`, `0` on unwrap-free paths. -/
+def stageWokenDelivery (st : SystemState) (woken? : Option SeLe4n.ThreadId)
+    (installedCaps : Nat) : SystemState :=
   match woken? with
-  | some tid => stageDeliveredMessage st tid
+  | some tid => stageDeliveredMessage st tid installedCaps
   | none => st
 
-@[simp] theorem stageWokenDelivery_none (st : SystemState) :
-    stageWokenDelivery st none = st := rfl
+@[simp] theorem stageWokenDelivery_none (st : SystemState)
+    (installedCaps : Nat) :
+    stageWokenDelivery st none installedCaps = st := rfl
 
 @[simp] theorem stageWokenDelivery_some (st : SystemState)
-    (tid : SeLe4n.ThreadId) :
-    stageWokenDelivery st (some tid) = stageDeliveredMessage st tid := rfl
+    (tid : SeLe4n.ThreadId) (installedCaps : Nat) :
+    stageWokenDelivery st (some tid) installedCaps
+      = stageDeliveredMessage st tid installedCaps := rfl
 
 /-- WS-RA RA.B.5b: stage the **unit success frame** for a woken plain
 sender whose send completed at a rendezvous.  Guarded on the
@@ -745,19 +786,19 @@ theorem stageWokenSendCompletion_stages_zero
 
 /-- RA.B.5b frame lemma: neither stager touches the scheduler. -/
 theorem stageWokenDelivery_scheduler_eq (st : SystemState)
-    (woken? : Option SeLe4n.ThreadId) :
-    (stageWokenDelivery st woken?).scheduler = st.scheduler := by
+    (woken? : Option SeLe4n.ThreadId) (installedCaps : Nat) :
+    (stageWokenDelivery st woken? installedCaps).scheduler = st.scheduler := by
   cases woken? with
   | none => rfl
-  | some tid => exact stageDeliveredMessage_scheduler_eq st tid
+  | some tid => exact stageDeliveredMessage_scheduler_eq st tid installedCaps
 
 /-- RA.B.5b frame lemma: neither stager touches the machine. -/
 theorem stageWokenDelivery_machine_eq (st : SystemState)
-    (woken? : Option SeLe4n.ThreadId) :
-    (stageWokenDelivery st woken?).machine = st.machine := by
+    (woken? : Option SeLe4n.ThreadId) (installedCaps : Nat) :
+    (stageWokenDelivery st woken? installedCaps).machine = st.machine := by
   cases woken? with
   | none => rfl
-  | some tid => exact stageDeliveredMessage_machine_eq st tid
+  | some tid => exact stageDeliveredMessage_machine_eq st tid installedCaps
 
 /-- RA.B.5b frame lemma: the completion stager never touches the
 scheduler. -/
@@ -803,17 +844,20 @@ boundary read recovers it bit for bit.  Delivery is the SM10.E context
 restore's; what this pins is that the frame is *there* to deliver. -/
 theorem blockedReturn_staged_in_waiter_frame
     (st : SystemState) (w : SeLe4n.ThreadId) (tcb : TCB) (msg : IpcMessage)
+    (installedCaps : Nat)
     (hTcb : st.getTcb? w = some tcb)
     (hReady : tcb.ipcState = .ready)
     (hMsg : tcb.pendingMessage = some msg)
     (hObjInv : st.objects.invExt) :
-    readReturnFrame (stageWokenDelivery st (some w)) w
-      = returnFrameOfMessage msg := by
-  show readReturnFrame (stageDeliveredMessage st w) w = returnFrameOfMessage msg
+    readReturnFrame (stageWokenDelivery st (some w) installedCaps) w
+      = returnFrameOfMessage msg installedCaps := by
+  show readReturnFrame (stageDeliveredMessage st w installedCaps) w
+    = returnFrameOfMessage msg installedCaps
   unfold stageDeliveredMessage
   rw [hTcb]
   simp only [hReady, hMsg]
-  exact readReturnFrame_writeReturnFrame st w (returnFrameOfMessage msg) tcb hTcb hObjInv
+  exact readReturnFrame_writeReturnFrame st w
+    (returnFrameOfMessage msg installedCaps) tcb hTcb hObjInv
 
 /-- WS-RA RA.B.5b — the completion dual: a woken plain sender's staged
 frame is the zero frame (unit success), recovered by the boundary read. -/

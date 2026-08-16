@@ -666,8 +666,8 @@ theorem writeReturnFrameToTcb_preserves_projection
 by the blanket above) or is the identity. -/
 theorem stageDeliveredMessage_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
-    (tid : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) :
-    projectState ctx observer (Architecture.stageDeliveredMessage st tid)
+    (tid : SeLe4n.ThreadId) (installedCaps : Nat) (hObjInv : st.objects.invExt) :
+    projectState ctx observer (Architecture.stageDeliveredMessage st tid installedCaps)
       = projectState ctx observer st := by
   unfold Architecture.stageDeliveredMessage
   cases hTcb : st.getTcb? tid with
@@ -687,12 +687,15 @@ above, so every unblocking arm's staging carries its preservation via one
 instance. -/
 theorem stageWokenDelivery_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
-    (woken? : Option SeLe4n.ThreadId) (hObjInv : st.objects.invExt) :
-    projectState ctx observer (Architecture.stageWokenDelivery st woken?)
+    (woken? : Option SeLe4n.ThreadId) (installedCaps : Nat)
+    (hObjInv : st.objects.invExt) :
+    projectState ctx observer (Architecture.stageWokenDelivery st woken? installedCaps)
       = projectState ctx observer st := by
   cases woken? with
   | none => rfl
-  | some tid => exact stageDeliveredMessage_preserves_projection ctx observer st tid hObjInv
+  | some tid =>
+      exact stageDeliveredMessage_preserves_projection ctx observer st tid
+        installedCaps hObjInv
 
 /-- WS-RA RA.B.5b: the completion stager (a woken plain sender's unit
 frame) is projection-invisible for every observer — its only write is

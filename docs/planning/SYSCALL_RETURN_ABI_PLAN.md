@@ -199,6 +199,69 @@ the false success the review describes — the fail-open path the sentinel
 closes), via a new test-only `sele4n-abi` dev-dependency following the
 `sele4n-types` cross-check precedent.  HAL 821 → 823 tests.
 
+**PR #866 review round 2 (v0.33.40)** — three further Codex findings,
+each verified against the code; one corrects the v0.33.39 audit's own
+fix.  **(1) Installed-caps honesty (P1, valid).**  `returnMessageInfo`
+read `extraCaps` off the delivered message's `caps.size` — the
+*requested* count — while `ipcUnwrapCaps` succeeds with zero installs
+(grant denied, no free slot) and the delivered `pendingMessage` keeps
+the requested caps either way, so a receiver was told capabilities
+arrived when none did and would interpret its receive slots' existing
+contents as fresh authority.  The synthesis now takes an explicit,
+deliberately-undefaulted `installedCaps`; the send/call arms pass the
+transfer summary's new `CapTransferSummary.installedCount` (the summary
+those dispatches already returned and the arms **discarded** — the
+computed-but-unconsumed case), reply and notification arms pass `0`
+(`caps := #[]` by construction / badge-only), and
+`returnMessageInfo_extraCaps_le_installed` is the honesty bound.  Suite
+§9h drives a grant-denied and a granted transfer through the live
+dispatch (staged `extraCaps` 0 vs 1, the delivered message still
+carrying the requested cap as the load-bearing negative; 13th golden
+fixture line).  **Tracked debt registered (receive-side unwrap)**:
+verifying the finding found that the live receive paths (`.receive`,
+`.replyRecv`'s receive leg → `endpointReceiveDualOnCore`) run **no
+unwrap at all** — `endpointReceiveDualWithCaps` has never had a live
+caller — so a sender that parks with caps never has them installed when
+the receiver arrives second.  Fail-closed (no authority is installed
+without the transfer machinery; the sender retains the originals) and
+now *honestly reported* (those arms pass installed = 0), but a
+completeness gap: closure is an OnCore WithCaps composition mirroring
+`endpointSendDualWithCapsOnCore` (the receive rendezvous, then
+`ipcUnwrapCaps` keyed on the dequeued sender's CSpace root, with the
+delegation/equivalence family updated in lockstep) — **and it is a
+design cut, not a wiring one**: the unwired single-core
+`endpointReceiveDualWithCaps` gates the transfer on the **receiver's**
+endpoint-cap `.grant` right (its `endpointRights` parameter is the
+caller's gate), while seL4's transfer gate is the **sender's** grant —
+and at receive-time dequeue the parked sender's cap rights were consumed
+when it parked and are recorded nowhere, so a faithful closure must
+first capture the sender's grant at park time (a parked-message or TCB
+field, with its freeze/projection carriage).  Wiring the existing form
+verbatim would install caps under the wrong subject's authority — worse
+than the honest zero.  Owner: the IPC subsystem, alongside SM6.D's
+WithCaps carriage items; until then the one live transfer ordering is
+receiver-first.  **(2) The core index is
+the TPIDR logical id (P2, valid — and it reverses the v0.33.39 fix's
+direction).**  The audit unified the mailbox's writer and reader on ONE
+source, but chose the packed MPIDR value, whose own contract forbids
+array indexing: on the BCM2712's two-cluster topology a second-cluster
+core reads `0x100`, which aborts every syscall at the mailbox bounds
+assert AND silently disables the kernel-entry spin's shootdown
+self-service (its out-of-range guard fails closed to "no self-service"
+— the ack deadlock it exists to prevent, restored).  All three
+packed-index sites — `ffi_syscall_return_frame`, `dispatch_svc`, and
+the pre-existing `sele4n_suspend_thread` bracket key — now read
+`per_cpu::current_core_id_from_tpidr()`: the boot-validated logical
+index (`core_id < coreCount` via `check_per_cpu_invariants`) and the
+space the Lean dispatch's own `executingCore : Fin numCores` lives in
+(`ffi_current_core_id`).  One source still — the audit's principle
+stands, re-grounded on the index the rest of the per-core state
+(timer, trap-IRQ, shootdown, stats) already uses.  **(3) Typed
+`ServiceId` (P1, valid).**  `service_query` returned a bare `u64` while
+`service_revoke` takes a `ServiceId`; the wrapper now returns
+`KernelResult<ServiceId>`, so the query→revoke composition typechecks
+without an untyped detour.
+
 ## 1. Phase goal
 
 **The kernel has no syscall return path.**  It writes exactly one register on

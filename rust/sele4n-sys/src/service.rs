@@ -74,19 +74,26 @@ pub fn service_revoke(
 /// No additional message registers — the endpoint object ID comes from
 /// the capability target.
 ///
-/// WS-RA (RA.D.3): returns the resolved registration's `ServiceId` word
-/// from `x0` — the answer the kernel computed and, before the flip,
-/// discarded (`lookupServiceByCap`'s result was thrown away and this
-/// wrapper handed back an opaque `SyscallResponse` of the caller's own
-/// registers).  Staged by the `.serviceQuery` arm via
-/// `returnFrameOfWord`.
+/// WS-RA (RA.D.3): returns the resolved registration's **typed**
+/// [`ServiceId`], constructed from the `x0` word — the answer the kernel
+/// computed and, before the flip, discarded (`lookupServiceByCap`'s
+/// result was thrown away and this wrapper handed back an opaque
+/// `SyscallResponse` of the caller's own registers).  Staged by the
+/// `.serviceQuery` arm via `returnFrameOfWord`.
+///
+/// PR #866 round-2 review: typed, not a bare `u64` — `service_revoke`
+/// already *takes* a `ServiceId`, so the raw word made the two halves of
+/// the service API asymmetric and let callers mix the result with
+/// unrelated words (the project's typed-identifier convention).  The
+/// intended composition now typechecks end to end:
+/// `service_query(cap)` → `service_revoke(cap, sid)`.
 #[inline]
-pub fn service_query(endpoint_cap: CPtr) -> KernelResult<u64> {
+pub fn service_query(endpoint_cap: CPtr) -> KernelResult<ServiceId> {
     let resp = invoke_syscall(SyscallRequest {
         cap_addr: endpoint_cap,
         msg_info: MessageInfo::new_const(0, 0, 0),
         msg_regs: [0; 4],
         syscall_id: SyscallId::ServiceQuery,
     })?;
-    Ok(resp.value())
+    Ok(ServiceId::from(resp.value()))
 }

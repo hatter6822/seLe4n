@@ -3143,6 +3143,22 @@ run_check "INVARIANT" rg -n 'pub const BLOCKED_RESUME_SENTINEL_LABEL' rust/sele4
 run_check "INVARIANT" rg -n 'pub fn blocked_resume_sentinel_regs' rust/sele4n-hal/src/svc_dispatch.rs
 run_check "INVARIANT" rg -n 'blocked_resume_sentinel_regs' rust/sele4n-hal/src/trap.rs
 run_check "INVARIANT" rg -n 'fn blocked_resume_sentinel_decodes_fail_closed' rust/sele4n-hal/src/svc_dispatch.rs
+# PR #866 round-2: the return-frame mailbox and the kernel-entry bracket key
+# on the TPIDR-derived LOGICAL core index (the boot-validated slot space the
+# Lean dispatch's executingCore lives in) — the packed MPIDR value must not
+# come back as an index (out-of-range on a second-cluster core: mailbox
+# bounds abort + silently disabled shootdown self-service).
+run_check "INVARIANT" rg -n 'per_cpu::current_core_id_from_tpidr' rust/sele4n-hal/src/svc_dispatch.rs
+run_check "INVARIANT" rg -n 'per_cpu::current_core_id_from_tpidr' rust/sele4n-hal/src/ffi.rs
+run_negative_check "INVARIANT" rg -n 'crate::cpu::current_core_id' rust/sele4n-hal/src/svc_dispatch.rs
+run_negative_check "INVARIANT" rg -n 'crate::cpu::current_core_id' rust/sele4n-hal/src/ffi.rs
+# PR #866 round-2: the staged extraCaps is the transfer summary's INSTALLED
+# count, never the requested msg.caps.size.
+run_check "INVARIANT" rg -n '^def installedCount' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^theorem returnMessageInfo_extraCaps_le_installed' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_negative_check "INVARIANT" rg -n 'extraCaps := min msg.caps.size' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+# PR #866 round-2: the query wrapper returns the typed ServiceId.
+run_check "INVARIANT" rg -n 'pub fn service_query\(endpoint_cap: CPtr\) -> KernelResult<ServiceId>' rust/sele4n-sys/src/service.rs
 # The retired bit-63 theorems must not come back either.
 run_negative_check "INVARIANT" rg -n 'theorem encodeError_high_bit_set' SeLe4n/Platform/FFI.lean
 run_negative_check "INVARIANT" rg -n 'theorem encodeOk_high_bit_clear' SeLe4n/Platform/FFI.lean

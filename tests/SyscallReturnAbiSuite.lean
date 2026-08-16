@@ -77,6 +77,10 @@ open SeLe4n.Platform.FFI
 #check @SeLe4n.Kernel.Architecture.stageWokenSendCompletion_stages_zero
 #check @SeLe4n.Kernel.Architecture.blockedReturn_staged_in_waiter_frame
 #check @SeLe4n.Kernel.Architecture.blockedUnitReturn_staged_in_sender_frame
+-- PR #866 round-2 — the transfer-honesty surface (installed, never requested)
+#check @SeLe4n.Model.CapTransferSummary.installedCount
+#check @SeLe4n.Kernel.Architecture.returnMessageInfo_extraCaps_le_installed
+#check @SeLe4n.Kernel.Architecture.returnMessageInfo_extraCaps_zero
 -- RA.B.8 — the per-arm shape-coherence family (over the live dispatch arms)
 #check @SeLe4n.Kernel.dispatchArm_notificationWait_matches_returnShape
 #check @SeLe4n.Kernel.dispatchArm_serviceQuery_matches_returnShape
@@ -218,17 +222,39 @@ private def selfTcbCap : Capability :=
   { target := .object callerTid.toObjId,
     rights := AccessRightSet.ofList [.read, .write] }
 
+private def epCapNoGrantPtr : Nat := 9
+private def payloadCapPtr   : Nat := 10
+
+/-- The same endpoint WITHOUT `.grant` — the 9h honesty witness's send cap:
+a transfer through it is grant-denied while the message itself delivers. -/
+private def epCapNoGrant : Capability :=
+  { target := .object epId,
+    rights := AccessRightSet.ofList [.read, .write],
+    badge := some (Badge.ofNatMasked epBadgeVal) }
+
+/-- The capability the 9h send carries as its ONE extra cap — a read cap on
+the notification object (distinctive and harmless), resolved from the
+sender's CSpace at `payloadCapPtr`. -/
+private def payloadCapability : Capability :=
+  { target := .object ntfnId,
+    rights := AccessRightSet.ofList [.read] }
+
 private def core1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
 
-/-- The shared CNode with all three capabilities (the §3 notification cap
-plus the endpoint and reply caps the blocked orderings need). -/
+/-- The shared CNode with all the capabilities (the §3 notification cap,
+the endpoint and reply caps the blocked orderings need, and the 9h
+transfer pair: the no-grant endpoint cap + the payload cap).  Slot 0 is
+deliberately free — it is the default `capRecvSlot` the granted transfer
+installs into. -/
 private def sharedCn : SeLe4n.Model.CNode :=
   { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
     slots := SeLe4n.UniqueSlotMap.ofListWF
       [(SeLe4n.Slot.ofNat capPtrValue, ntfnCap),
        (SeLe4n.Slot.ofNat epCapPtr, epCap),
        (SeLe4n.Slot.ofNat replyCapPtr, replyCapability),
-       (SeLe4n.Slot.ofNat selfTcbCapPtr, selfTcbCap)] }
+       (SeLe4n.Slot.ofNat selfTcbCapPtr, selfTcbCap),
+       (SeLe4n.Slot.ofNat epCapNoGrantPtr, epCapNoGrant),
+       (SeLe4n.Slot.ofNat payloadCapPtr, payloadCapability)] }
 
 /-- Two threads on two cores: `callerTid` current on the boot core (the
 thread that blocks), `peerTid` current on core 1 (the thread whose
@@ -521,6 +547,34 @@ private def selfSuspendScenario :
   dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
     SyscallId.tcbSuspend.toNat 0 selfTcbCapPtr.toUInt64 0 0 0 twoThreadState
 
+/-- 9h: capability-transfer honesty (PR #866 round-2).  The caller blocks
+in `.receive`; the peer sends body `[7]` plus ONE extra capability
+(`payloadCapPtr`, resolved through the sender's own CSpace) under the
+endpoint cap at `epPtr`.  The woken receiver's staged `x1` must report
+the **installed** count — `0` when the transfer was grant-denied (however
+many caps the delivered message still carries), `1` when it landed in the
+receive slot.  Returns (staged frame, delivered `pendingMessage` cap
+count, receive-slot-0 occupied?). -/
+private def capsSendScenario (epPtr : Nat) :
+    Except KernelError
+      (Kernel.Architecture.SyscallReturnFrame × Nat × Bool) := do
+  let (out1, st1) ← dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
+    SyscallId.receive.toNat 0 epCapPtr.toUInt64 0 0 0 twoThreadState
+  if out1 != .blocks then throw .illegalState
+  -- msgInfo {length := 1, extraCaps := 1}: MR0 (x2) is the body word 7,
+  -- MR1 (x3) the extra-cap address (`decodeExtraCapAddrs` reads
+  -- `msgRegs[length + i]`).
+  let msgInfoRaw : UInt64 := (1 + (1 <<< 7) : Nat).toUInt64
+  let (_, st2) ← dispatchFromAbiOn core1
+    SyscallId.send.toNat msgInfoRaw epPtr.toUInt64 7 payloadCapPtr.toUInt64 0 st1
+  let deliveredCaps := match st2.getTcb? callerTid with
+    | some tcb => (tcb.pendingMessage.map (·.caps.size)).getD 0
+    | none => 0
+  let slot0Occupied := match st2.objects[callerCn]? with
+    | some (.cnode c) => (c.slots[SeLe4n.Slot.ofNat 0]?).isSome
+    | _ => false
+  pure (stagedFrame st2 callerTid, deliveredCaps, slot0Occupied)
+
 -- ============================================================================
 -- §8  Golden fixture — the deterministic return-ABI trace (RA.E.4)
 -- ============================================================================
@@ -591,6 +645,12 @@ private def returnAbiTraceLines : List String :=
   -- RA.B.8: the `.word` shape's live outcome (the fourth value shape,
   -- completing the fixture's coverage of the value surface).
   , outcomeLine "word query (registered service 77)" serviceQueryScenario
+  -- PR #866 round-2: the transfer-honesty observable — a grant-denied
+  -- transfer's staged frame reports extraCaps 0 (x1 = 1, length only),
+  -- however many caps the delivered message still carries.
+  , (match capsSendScenario epCapNoGrantPtr with
+     | .ok (f, _, _) => s!"[ret-abi] staged grant-denied transfer frame (installed extraCaps 0): {frameCells f}"
+     | .error e => s!"[ret-abi] staged grant-denied transfer frame (installed extraCaps 0): dispatch-error {reprStr e}")
   ]
 
 private def fixturePath : String := "tests/fixtures/syscall_return_abi.expected"
@@ -702,6 +762,26 @@ private def runBlockedWaiterStagingWitnesses : IO Unit := do
           | none => false)
       assertBool "9g: a self-suspend RETURNS the constructed unit frame (not .blocks)"
         (out == .returns .zero)
+  -- 9h — capability-transfer honesty (PR #866 round-2): the staged
+  -- extraCaps is the INSTALLED count, never the requested one
+  match capsSendScenario epCapNoGrantPtr with
+  | .error e => assertBool s!"9h dispatches (got .error {reprStr e})" false
+  | .ok (frame, deliveredCaps, slot0) => do
+      assertBool "9h control: the delivered message still CARRIES the requested cap (caps.size = 1)"
+        (deliveredCaps == 1)
+      assertBool "9h: a grant-denied transfer stages extraCaps = 0 (x1 = length 1 only — the pre-fix frame read 1 + (1<<7))"
+        (frame.x1 == 1)
+      assertBool "9h: nothing landed in the receive slot"
+        (!slot0)
+      assertBool "9h: the message itself still delivers (x0 = badge 9, x2 = 7)"
+        (frame.x0 == epBadgeVal.toUInt64 && frame.x2 == 7)
+  match capsSendScenario epCapPtr with
+  | .error e => assertBool s!"9h+ dispatches (got .error {reprStr e})" false
+  | .ok (frame, _, slot0) => do
+      assertBool "9h positive control: a granted transfer stages extraCaps = 1 (x1 = 1 + (1<<7))"
+        (frame.x1 == (1 + (1 <<< 7) : Nat).toUInt64)
+      assertBool "9h positive control: the transferred cap landed in receive slot 0"
+        slot0
 
 -- ============================================================================
 -- Runner

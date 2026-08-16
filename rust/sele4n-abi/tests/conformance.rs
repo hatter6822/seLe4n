@@ -1859,13 +1859,17 @@ fn return_shape_value_returning_surface() {
 }
 
 /// WS-RA RA.D.4: the wrapper signatures agree with the shape table —
-/// badge-shaped syscalls return `Badge`, the word-shaped query returns a
-/// word, message-shaped wrappers return `(Badge, SyscallResponse)`.
-/// A wrapper whose signature drifts from the table stops compiling here.
+/// badge-shaped syscalls return `Badge`, the word-shaped query returns
+/// the **typed** `ServiceId` its word carries (PR #866 round-2 review:
+/// `service_revoke` takes a `ServiceId`, so the query's result composes
+/// into it without an untyped detour), message-shaped wrappers return
+/// `(Badge, SyscallResponse)`.  A wrapper whose signature drifts from
+/// the table stops compiling here.
 #[test]
 fn return_shape_matches_wrapper_signatures() {
     let _wait: fn(CPtr) -> KernelResult<Badge> = sele4n_sys::ipc::notification_wait;
-    let _query: fn(CPtr) -> KernelResult<u64> = sele4n_sys::service::service_query;
+    let _query: fn(CPtr) -> KernelResult<sele4n_types::ServiceId> =
+        sele4n_sys::service::service_query;
     let _receive: fn(CPtr) -> KernelResult<(Badge, SyscallResponse)> =
         sele4n_sys::ipc::endpoint_receive;
     let _reply_recv: fn(

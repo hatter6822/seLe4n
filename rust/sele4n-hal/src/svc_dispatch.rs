@@ -533,7 +533,19 @@ pub fn dispatch_svc(syscall_id: u32, args: &SyscallArgs) -> Result<SvcOutcome, D
     //
     // WS-RA: the mailbox read happens INSIDE the critical section, so the
     // frame this call returns is the frame this call's commit published.
-    let core = crate::cpu::current_core_id() as usize;
+    //
+    // PR #866 round-2 review: the core index is the TPIDR-derived
+    // *logical* id — the same source `ffi_syscall_return_frame` (the
+    // mailbox writer) and `ffi_current_core_id` (the Lean dispatch's own
+    // `executingCore`) read, and the only per-core index the boot-time
+    // `check_per_cpu_invariants` gate validates (`core_id < coreCount`).
+    // The packed MPIDR value (`cpu::current_core_id()`) is documented
+    // opaque and non-contiguous: on a second-cluster core it reads e.g.
+    // `0x100`, which (a) trips the mailbox bounds assert — aborting every
+    // syscall on that core — and (b) silently disables the entry-lock
+    // spin's shootdown self-service (its out-of-range guard fails closed),
+    // recreating the ack deadlock the self-service exists to prevent.
+    let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
     let (tag, regs) = crate::kernel_entry::with_kernel_entry(core, || {
         // SAFETY (production): `lean_syscall_dispatch_cross_core` is a
         // Lean-emitted extern "C" symbol resolved at link time.  The

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/syscall-return-abi-plan-yuy13t",
-      "commit_sha": "054b64dc3f8aecc408286a773f56cb2953b6f53d",
-      "tree_sha": "540f5f36a9c9bd5f8f938c74788bddf554821472",
-      "committed_at_utc": "2026-08-16T13:20:06+00:00"
+      "commit_sha": "1bec01f23f68ead6ad5041157a5ce6f4551d86eb",
+      "tree_sha": "238c9bb1d26a957a56ba39341e4ee08d83940531",
+      "committed_at_utc": "2026-08-16T19:31:10+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "cf0de45695fb07b0826259248a48d0771a99ba48a88626ab5a60a158017ed0ba"
+    "source_digest": "89cc5e1acf7c3aacd99e0754c939874a8ff0c10be80f84d06157c7dfa48d1a18"
   },
   "summary": {
     "module_count": 348,
-    "declaration_count": 15840
+    "declaration_count": 15850
   },
   "readme_sync": {
-    "version": "0.33.39",
+    "version": "0.33.40",
     "lean_toolchain": "v4.28.0",
     "production_files": 279,
-    "production_loc": 266601,
+    "production_loc": 266713,
     "test_files": 69,
-    "test_loc": 56557,
-    "proved_theorem_lemma_decls": 8931,
+    "test_loc": 56637,
+    "proved_theorem_lemma_decls": 8934,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -283,7 +283,7 @@
         {
           "kind": "theorem",
           "name": "syscallLookupCap_implies_capability_held",
-          "line": 555,
+          "line": 558,
           "called": [
             "Capability",
             "SyscallGate",
@@ -299,7 +299,7 @@
         {
           "kind": "theorem",
           "name": "syscallInvoke_requires_right",
-          "line": 578,
+          "line": 581,
           "called": [
             "Capability",
             "Kernel",
@@ -316,7 +316,7 @@
         {
           "kind": "theorem",
           "name": "resolveCapAddress_callers_check_rights",
-          "line": 599,
+          "line": 602,
           "called": [
             "Capability",
             "Kernel",
@@ -333,7 +333,7 @@
         {
           "kind": "def",
           "name": "lookupThreadRegisterContext",
-          "line": 644,
+          "line": 647,
           "called": [
             "Kernel",
             "RegisterFile",
@@ -346,7 +346,7 @@
         {
           "kind": "def",
           "name": "syscallRequiredRight",
-          "line": 653,
+          "line": 656,
           "called": [
             "AccessRight",
             "SyscallId",
@@ -364,7 +364,7 @@
         {
           "kind": "def",
           "name": "resolveExtraCaps",
-          "line": 727,
+          "line": 730,
           "called": [
             "CPtr",
             "Capability",
@@ -379,7 +379,7 @@
         {
           "kind": "def",
           "name": "resolveExtraCapsDetailed",
-          "line": 757,
+          "line": 760,
           "called": [
             "CPtr",
             "Capability",
@@ -394,7 +394,7 @@
         {
           "kind": "theorem",
           "name": "resolveExtraCapsDetailed_empty",
-          "line": 785,
+          "line": 788,
           "called": [
             "ObjId",
             "SystemState",
@@ -405,7 +405,7 @@
         {
           "kind": "theorem",
           "name": "resolveExtraCaps_empty",
-          "line": 793,
+          "line": 796,
           "called": [
             "ObjId",
             "SystemState",
@@ -416,7 +416,7 @@
         {
           "kind": "def",
           "name": "resolveExtraCapsGated",
-          "line": 805,
+          "line": 808,
           "called": [
             "CPtr",
             "Capability",
@@ -430,7 +430,7 @@
         {
           "kind": "theorem",
           "name": "resolveExtraCapsGated_empty",
-          "line": 814,
+          "line": 817,
           "called": [
             "ObjId",
             "SystemState",
@@ -442,7 +442,7 @@
         {
           "kind": "def",
           "name": "validateThreadIdArg",
-          "line": 833,
+          "line": 836,
           "called": [
             "KernelError",
             "ThreadId",
@@ -454,7 +454,7 @@
         {
           "kind": "def",
           "name": "validateSchedContextIdArg",
-          "line": 842,
+          "line": 845,
           "called": [
             "KernelError",
             "SchedContextId",
@@ -467,7 +467,7 @@
         {
           "kind": "def",
           "name": "validateObjIdArg",
-          "line": 852,
+          "line": 855,
           "called": [
             "KernelError",
             "ObjId",
@@ -479,7 +479,7 @@
         {
           "kind": "def",
           "name": "vspaceCapAuthorizesAsid",
-          "line": 881,
+          "line": 884,
           "called": [
             "ASID",
             "Capability",
@@ -491,7 +491,7 @@
         {
           "kind": "theorem",
           "name": "vspaceCapAuthorizesAsid_iff",
-          "line": 889,
+          "line": 892,
           "called": [
             "ASID",
             "Capability",
@@ -505,7 +505,7 @@
         {
           "kind": "theorem",
           "name": "vspaceCapAuthorizesAsid_false_of_ne",
-          "line": 908,
+          "line": 911,
           "called": [
             "ASID",
             "Capability",
@@ -520,7 +520,7 @@
         {
           "kind": "theorem",
           "name": "vspaceCapAuthorizesAsid_false_of_unbound",
-          "line": 917,
+          "line": 920,
           "called": [
             "ASID",
             "Capability",
@@ -534,7 +534,7 @@
         {
           "kind": "theorem",
           "name": "vspaceCapAuthorizesAsid_false_of_not_object",
-          "line": 926,
+          "line": 929,
           "called": [
             "ASID",
             "Capability",
@@ -547,7 +547,7 @@
         {
           "kind": "def",
           "name": "dispatchCapabilityOnly",
-          "line": 945,
+          "line": 948,
           "called": [
             "CSpaceAddr",
             "Capability",
@@ -619,7 +619,7 @@
         {
           "kind": "def",
           "name": "dispatchWithCap",
-          "line": 1416,
+          "line": 1419,
           "called": [
             "Badge",
             "CSpaceAddr",
@@ -658,6 +658,7 @@
             "getEndpoint",
             "getReply",
             "head",
+            "installedCount",
             "none",
             "notificationSignal",
             "notificationSignalBoundCrossCoreDispatch",
@@ -683,7 +684,7 @@
         {
           "kind": "def",
           "name": "dispatchWithCapChecked",
-          "line": 1772,
+          "line": 1797,
           "called": [
             "Badge",
             "CSpaceAddr",
@@ -727,6 +728,7 @@
             "getEndpoint",
             "getReply",
             "head",
+            "installedCount",
             "liftLegacyContext",
             "none",
             "notificationSignal",
@@ -754,7 +756,7 @@
         {
           "kind": "def",
           "name": "dispatchSyscallChecked",
-          "line": 2113,
+          "line": 2152,
           "called": [
             "Kernel",
             "LabelingContext",
@@ -772,7 +774,7 @@
         {
           "kind": "def",
           "name": "syscallEntryChecked",
-          "line": 2146,
+          "line": 2185,
           "called": [
             "CoreId",
             "Kernel",
@@ -792,7 +794,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_cspaceDelete_eq_unchecked",
-          "line": 2197,
+          "line": 2236,
           "called": [
             "Capability",
             "LabelingContext",
@@ -807,7 +809,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_lifecycleRetype_eq_unchecked",
-          "line": 2206,
+          "line": 2245,
           "called": [
             "Capability",
             "LabelingContext",
@@ -822,7 +824,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_vspaceMap_eq_unchecked",
-          "line": 2215,
+          "line": 2254,
           "called": [
             "Capability",
             "LabelingContext",
@@ -837,7 +839,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_vspaceUnmap_eq_unchecked",
-          "line": 2224,
+          "line": 2263,
           "called": [
             "Capability",
             "LabelingContext",
@@ -852,7 +854,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_serviceRevoke_eq_unchecked",
-          "line": 2233,
+          "line": 2272,
           "called": [
             "Capability",
             "LabelingContext",
@@ -867,7 +869,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_serviceQuery_eq_unchecked",
-          "line": 2242,
+          "line": 2281,
           "called": [
             "Capability",
             "LabelingContext",
@@ -882,7 +884,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_schedContextConfigure_eq_unchecked",
-          "line": 2251,
+          "line": 2290,
           "called": [
             "Capability",
             "LabelingContext",
@@ -898,7 +900,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_schedContextBind_eq_unchecked",
-          "line": 2260,
+          "line": 2299,
           "called": [
             "Capability",
             "LabelingContext",
@@ -914,7 +916,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_schedContextUnbind_eq_unchecked",
-          "line": 2269,
+          "line": 2308,
           "called": [
             "Capability",
             "LabelingContext",
@@ -930,7 +932,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_tcbSuspend_eq_unchecked",
-          "line": 2278,
+          "line": 2317,
           "called": [
             "Capability",
             "LabelingContext",
@@ -945,7 +947,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_tcbResume_eq_unchecked",
-          "line": 2287,
+          "line": 2326,
           "called": [
             "Capability",
             "LabelingContext",
@@ -960,7 +962,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_tcbSetPriority_eq_unchecked",
-          "line": 2296,
+          "line": 2335,
           "called": [
             "Capability",
             "LabelingContext",
@@ -975,7 +977,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_tcbSetMCPriority_eq_unchecked",
-          "line": 2305,
+          "line": 2344,
           "called": [
             "Capability",
             "LabelingContext",
@@ -990,7 +992,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_tcbSetIPCBuffer_eq_unchecked",
-          "line": 2314,
+          "line": 2353,
           "called": [
             "Capability",
             "LabelingContext",
@@ -1005,7 +1007,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_vspaceUnifyInstruction_eq_unchecked",
-          "line": 2325,
+          "line": 2364,
           "called": [
             "Capability",
             "LabelingContext",
@@ -1020,7 +1022,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_mintReplyCap_eq_unchecked",
-          "line": 2336,
+          "line": 2375,
           "called": [
             "Capability",
             "LabelingContext",
@@ -1036,7 +1038,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_capabilityOnly_eq_unchecked",
-          "line": 2358,
+          "line": 2397,
           "called": [
             "Capability",
             "LabelingContext",
@@ -1055,7 +1057,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_reply_eq_unchecked_when_allowed",
-          "line": 2403,
+          "line": 2442,
           "called": [
             "Capability",
             "LabelingContext",
@@ -1078,7 +1080,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_replyRecv_eq_unchecked_when_allowed",
-          "line": 2432,
+          "line": 2471,
           "called": [
             "Badge",
             "Capability",
@@ -1103,7 +1105,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_reply_flow_denied_collapses",
-          "line": 2466,
+          "line": 2505,
           "called": [
             "Capability",
             "LabelingContext",
@@ -1124,7 +1126,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_receive_flow_denied",
-          "line": 2486,
+          "line": 2525,
           "called": [
             "Capability",
             "LabelingContext",
@@ -1144,7 +1146,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_replyRecv_recv_flow_denied",
-          "line": 2506,
+          "line": 2545,
           "called": [
             "Capability",
             "LabelingContext",
@@ -1164,7 +1166,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_wildcard_unreachable",
-          "line": 2539,
+          "line": 2578,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -1181,7 +1183,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCapChecked_wildcard_unreachable",
-          "line": 2559,
+          "line": 2598,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -1198,7 +1200,7 @@
         {
           "kind": "def",
           "name": "dispatchSyscall",
-          "line": 2583,
+          "line": 2622,
           "called": [
             "Kernel",
             "SyscallDecodeResult",
@@ -1215,7 +1217,7 @@
         {
           "kind": "def",
           "name": "syscallEntry",
-          "line": 2615,
+          "line": 2654,
           "called": [
             "Kernel",
             "SyscallRegisterLayout",
@@ -1232,7 +1234,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_requires_valid_decode",
-          "line": 2644,
+          "line": 2683,
           "called": [
             "SyscallRegisterLayout",
             "SystemState",
@@ -1249,7 +1251,7 @@
         {
           "kind": "theorem",
           "name": "dispatchSyscall_requires_right",
-          "line": 2673,
+          "line": 2712,
           "called": [
             "SyscallDecodeResult",
             "SystemState",
@@ -1268,7 +1270,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_implies_capability_held",
-          "line": 2712,
+          "line": 2751,
           "called": [
             "SyscallRegisterLayout",
             "SystemState",
@@ -1291,7 +1293,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_state_unchanged",
-          "line": 2748,
+          "line": 2787,
           "called": [
             "RegisterFile",
             "SystemState",
@@ -1305,7 +1307,7 @@
         {
           "kind": "theorem",
           "name": "syscallRequiredRight_total",
-          "line": 2758,
+          "line": 2797,
           "called": [
             "SyscallId",
             "syscallRequiredRight"
@@ -1314,7 +1316,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_cspaceMint_delegates",
-          "line": 2768,
+          "line": 2807,
           "called": [
             "Badge",
             "CSpaceAddr",
@@ -1337,7 +1339,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_cspaceCopy_delegates",
-          "line": 2785,
+          "line": 2824,
           "called": [
             "CSpaceAddr",
             "CSpaceCopyArgs",
@@ -1356,7 +1358,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_cspaceMove_delegates",
-          "line": 2800,
+          "line": 2839,
           "called": [
             "CSpaceAddr",
             "CSpaceMoveArgs",
@@ -1375,7 +1377,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_cspaceDelete_delegates",
-          "line": 2815,
+          "line": 2854,
           "called": [
             "CSpaceAddr",
             "CSpaceDeleteArgs",
@@ -1394,7 +1396,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_lifecycleRetype_delegates",
-          "line": 2845,
+          "line": 2884,
           "called": [
             "Capability",
             "LifecycleRetypeArgs",
@@ -1415,7 +1417,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_vspaceMap_delegates",
-          "line": 2872,
+          "line": 2911,
           "called": [
             "Capability",
             "ObjId",
@@ -1437,7 +1439,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_vspaceUnifyInstruction_delegates",
-          "line": 2908,
+          "line": 2947,
           "called": [
             "Capability",
             "ObjId",
@@ -1457,7 +1459,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_vspaceUnmap_delegates",
-          "line": 2940,
+          "line": 2979,
           "called": [
             "Capability",
             "ObjId",
@@ -1478,7 +1480,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_vspaceMap_unauthorized",
-          "line": 2970,
+          "line": 3009,
           "called": [
             "Capability",
             "ObjId",
@@ -1497,7 +1499,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_vspaceUnmap_unauthorized",
-          "line": 2988,
+          "line": 3027,
           "called": [
             "Capability",
             "ObjId",
@@ -1516,7 +1518,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_vspaceUnifyInstruction_unauthorized",
-          "line": 3003,
+          "line": 3042,
           "called": [
             "Capability",
             "ObjId",
@@ -1535,7 +1537,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_send_uses_withCaps",
-          "line": 3024,
+          "line": 3063,
           "called": [
             "Capability",
             "IpcMessage",
@@ -1555,6 +1557,7 @@
             "extractMessageRegisters",
             "getEndpoint",
             "head",
+            "installedCount",
             "resolveExtraCaps",
             "st",
             "stageWokenDelivery"
@@ -1563,7 +1566,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_call_uses_crossCoreDispatch",
-          "line": 3052,
+          "line": 3092,
           "called": [
             "Capability",
             "IpcMessage",
@@ -1582,6 +1585,7 @@
             "extractMessageRegisters",
             "getEndpoint",
             "head",
+            "installedCount",
             "resolveExtraCaps",
             "st",
             "stageWokenDelivery"
@@ -1590,7 +1594,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_reply_populates_msg",
-          "line": 3084,
+          "line": 3126,
           "called": [
             "Capability",
             "ReplyId",
@@ -1613,7 +1617,7 @@
         {
           "kind": "theorem",
           "name": "dispatchArm_notificationWait_matches_returnShape",
-          "line": 3129,
+          "line": 3172,
           "called": [
             "Badge",
             "Capability",
@@ -1641,7 +1645,7 @@
         {
           "kind": "theorem",
           "name": "dispatchArm_serviceQuery_matches_returnShape",
-          "line": 3155,
+          "line": 3198,
           "called": [
             "Capability",
             "ObjId",
@@ -1668,7 +1672,7 @@
         {
           "kind": "theorem",
           "name": "dispatchArm_receive_matches_returnShape",
-          "line": 3180,
+          "line": 3223,
           "called": [
             "Capability",
             "CoreId",
@@ -1704,7 +1708,7 @@
         {
           "kind": "theorem",
           "name": "dispatchArm_replyRecv_matches_returnShape",
-          "line": 3212,
+          "line": 3255,
           "called": [
             "Badge",
             "Capability",
@@ -1738,7 +1742,7 @@
         {
           "kind": "theorem",
           "name": "dispatchArm_call_frame_delivered_by_reply",
-          "line": 3244,
+          "line": 3287,
           "called": [
             "Capability",
             "CoreId",
@@ -1772,7 +1776,7 @@
         {
           "kind": "theorem",
           "name": "syscallLookupCap_preserves_state",
-          "line": 3277,
+          "line": 3320,
           "called": [
             "Capability",
             "SyscallGate",
@@ -1785,7 +1789,7 @@
         {
           "kind": "theorem",
           "name": "syscallLookupReplyId_preserves_state",
-          "line": 3286,
+          "line": 3329,
           "called": [
             "ReplyId",
             "SyscallGate",
@@ -1798,7 +1802,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_error_preserves_proofLayerInvariantBundle",
-          "line": 3302,
+          "line": 3345,
           "called": [
             "KernelError",
             "SyscallRegisterLayout",
@@ -1811,7 +1815,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_preserves_proofLayerInvariantBundle",
-          "line": 3312,
+          "line": 3355,
           "called": [
             "RegisterFile",
             "SystemState",
@@ -1826,7 +1830,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_preserves_proofLayerInvariantBundle",
-          "line": 3329,
+          "line": 3372,
           "called": [
             "SyscallRegisterLayout",
             "SystemState",
@@ -1841,7 +1845,7 @@
         {
           "kind": "theorem",
           "name": "decodeSyscallArgs_preserves_lowEquivalent",
-          "line": 3359,
+          "line": 3402,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -1852,7 +1856,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_preserves_projection",
-          "line": 3368,
+          "line": 3411,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -1869,7 +1873,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_preserves_lowEquivalent",
-          "line": 3379,
+          "line": 3422,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -1885,7 +1889,7 @@
         {
           "kind": "theorem",
           "name": "syscallLookupCap_preserves_projection",
-          "line": 3394,
+          "line": 3437,
           "called": [
             "Capability",
             "IfObserver",
@@ -1901,7 +1905,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_preserves_projection",
-          "line": 3409,
+          "line": 3452,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -1918,7 +1922,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_error_yields_NI_step",
-          "line": 3432,
+          "line": 3475,
           "called": [
             "IfObserver",
             "KernelError",
@@ -1933,7 +1937,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_success_yields_NI_step",
-          "line": 3447,
+          "line": 3490,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -1953,7 +1957,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_layer2_decode_pure",
-          "line": 3475,
+          "line": 3518,
           "called": [
             "SyscallDecodeResult",
             "decodeCSpaceCopyArgs",
@@ -1969,7 +1973,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_preservation_composition_witness",
-          "line": 3503,
+          "line": 3546,
           "called": [
             "dispatchSyscall",
             "proofLayerInvariantBundle",
@@ -1981,7 +1985,7 @@
         {
           "kind": "theorem",
           "name": "dispatchCapabilityOnly_preserves_projection",
-          "line": 3633,
+          "line": 3676,
           "called": [
             "Capability",
             "IfObserver",
@@ -1997,7 +2001,7 @@
         {
           "kind": "theorem",
           "name": "dispatchSyscallChecked_preserves_projection",
-          "line": 3672,
+          "line": 3715,
           "called": [
             "Capability",
             "IfObserver",
@@ -2019,7 +2023,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCapChecked_declassify_delegates",
-          "line": 3744,
+          "line": 3787,
           "called": [
             "Capability",
             "LabelingContext",
@@ -2039,7 +2043,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_declassify_denied",
-          "line": 3762,
+          "line": 3805,
           "called": [
             "Capability",
             "SyscallDecodeResult",
@@ -2054,7 +2058,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCapChecked_declassify_default_denied",
-          "line": 3775,
+          "line": 3818,
           "called": [
             "Capability",
             "LabelingContext",
@@ -2078,7 +2082,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_tcbSuspend_delegates",
-          "line": 3805,
+          "line": 3848,
           "called": [
             "Capability",
             "ObjId",
@@ -2101,7 +2105,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_tcbResume_delegates",
-          "line": 3828,
+          "line": 3871,
           "called": [
             "Capability",
             "ObjId",
@@ -2124,7 +2128,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCapChecked_receive_delegates",
-          "line": 3851,
+          "line": 3894,
           "called": [
             "Capability",
             "LabelingContext",
@@ -2154,7 +2158,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_send_delegates",
-          "line": 3882,
+          "line": 3925,
           "called": [
             "Capability",
             "ObjId",
@@ -2174,6 +2178,7 @@
             "extractMessageRegisters",
             "getEndpoint",
             "head",
+            "installedCount",
             "resolveExtraCaps",
             "st",
             "stageWokenDelivery"
@@ -2182,7 +2187,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCapChecked_send_delegates",
-          "line": 3908,
+          "line": 3952,
           "called": [
             "Capability",
             "LabelingContext",
@@ -2203,6 +2208,7 @@
             "extractMessageRegisters",
             "getEndpoint",
             "head",
+            "installedCount",
             "resolveExtraCaps",
             "st",
             "stageWokenDelivery"
@@ -2211,7 +2217,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_tcbSetPriority_delegates",
-          "line": 3937,
+          "line": 3982,
           "called": [
             "Capability",
             "ObjId",
@@ -2235,7 +2241,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_schedContextUnbind_delegates",
-          "line": 3963,
+          "line": 4008,
           "called": [
             "Capability",
             "ObjId",
@@ -2258,7 +2264,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_tcbSetMCPriority_delegates",
-          "line": 3981,
+          "line": 4026,
           "called": [
             "Capability",
             "ObjId",
@@ -2282,7 +2288,7 @@
         {
           "kind": "def",
           "name": "syscallDelegates",
-          "line": 4012,
+          "line": 4057,
           "called": [
             "Capability",
             "LabelingContext",
@@ -2323,6 +2329,7 @@
             "extractMessageRegisters",
             "getEndpoint",
             "head",
+            "installedCount",
             "lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache",
             "liftLegacyContext",
             "objectOfKernelType",
@@ -2354,7 +2361,7 @@
         {
           "kind": "theorem",
           "name": "syscallDelegates_receive",
-          "line": 4179,
+          "line": 4225,
           "called": [
             "dispatchWithCapChecked_receive_delegates",
             "epId",
@@ -2365,7 +2372,7 @@
         {
           "kind": "theorem",
           "name": "syscallDelegates_tcbResume",
-          "line": 4185,
+          "line": 4231,
           "called": [
             "dispatchWithCap_tcbResume_delegates",
             "st",
@@ -2375,7 +2382,7 @@
         {
           "kind": "theorem",
           "name": "syscallDelegates_tcbSuspend",
-          "line": 4191,
+          "line": 4237,
           "called": [
             "dispatchWithCap_tcbSuspend_delegates",
             "st",
@@ -2385,7 +2392,7 @@
         {
           "kind": "theorem",
           "name": "syscallDelegates_lifecycleRetype",
-          "line": 4202,
+          "line": 4248,
           "called": [
             "dispatchWithCap_lifecycleRetype_delegates",
             "syscallDelegates"
@@ -2394,7 +2401,7 @@
         {
           "kind": "theorem",
           "name": "syscallDelegates_vspaceMap",
-          "line": 4208,
+          "line": 4254,
           "called": [
             "dispatchWithCap_vspaceMap_delegates",
             "st",
@@ -2404,7 +2411,7 @@
         {
           "kind": "theorem",
           "name": "syscallDelegates_declassify",
-          "line": 4214,
+          "line": 4260,
           "called": [
             "dispatchWithCapChecked_declassify_delegates",
             "st",
@@ -2414,7 +2421,7 @@
         {
           "kind": "theorem",
           "name": "syscallDelegates_vspaceUnmap",
-          "line": 4220,
+          "line": 4266,
           "called": [
             "dispatchWithCap_vspaceUnmap_delegates",
             "st",
@@ -2424,7 +2431,7 @@
         {
           "kind": "theorem",
           "name": "syscallDelegates_send",
-          "line": 4226,
+          "line": 4272,
           "called": [
             "dispatchWithCap_send_delegates",
             "epId",
@@ -2435,7 +2442,7 @@
         {
           "kind": "theorem",
           "name": "syscallDelegates_tcbSetPriority",
-          "line": 4231,
+          "line": 4277,
           "called": [
             "dispatchWithCap_tcbSetPriority_delegates",
             "st",
@@ -2445,7 +2452,7 @@
         {
           "kind": "theorem",
           "name": "syscallDelegates_tcbSetMCPriority",
-          "line": 4238,
+          "line": 4284,
           "called": [
             "dispatchWithCap_tcbSetMCPriority_delegates",
             "st",
@@ -2455,7 +2462,7 @@
         {
           "kind": "theorem",
           "name": "syscallDelegates_schedContextUnbind",
-          "line": 4245,
+          "line": 4291,
           "called": [
             "Kernel",
             "dispatchWithCap_schedContextUnbind_delegates",
@@ -14011,7 +14018,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.SyscallReturn",
       "path": "SeLe4n/Kernel/Architecture/SyscallReturn.lean",
-      "declaration_count": 83,
+      "declaration_count": 85,
       "declarations": [
         {
           "kind": "namespace",
@@ -14184,7 +14191,7 @@
         {
           "kind": "def",
           "name": "returnMessageInfo",
-          "line": 343,
+          "line": 358,
           "called": [
             "IpcMessage",
             "MessageInfo",
@@ -14196,7 +14203,7 @@
         {
           "kind": "theorem",
           "name": "returnFrame_message_window",
-          "line": 350,
+          "line": 365,
           "called": [
             "IpcMessage",
             "length",
@@ -14206,7 +14213,7 @@
         {
           "kind": "theorem",
           "name": "returnMessageInfo_wellFormed",
-          "line": 356,
+          "line": 371,
           "called": [
             "IpcMessage",
             "le_trans",
@@ -14215,9 +14222,27 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "returnMessageInfo_extraCaps_le_installed",
+          "line": 381,
+          "called": [
+            "IpcMessage",
+            "returnMessageInfo"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "returnMessageInfo_extraCaps_zero",
+          "line": 386,
+          "called": [
+            "IpcMessage",
+            "returnMessageInfo"
+          ]
+        },
+        {
           "kind": "def",
           "name": "returnFrameOfMessage",
-          "line": 366,
+          "line": 395,
           "called": [
             "IpcMessage",
             "SyscallReturnFrame",
@@ -14227,7 +14252,7 @@
         {
           "kind": "def",
           "name": "returnFrameOfBadge",
-          "line": 376,
+          "line": 406,
           "called": [
             "Badge",
             "SyscallReturnFrame"
@@ -14236,7 +14261,7 @@
         {
           "kind": "def",
           "name": "_root_.SeLe4n.RegisterFile.stageReturnFrame",
-          "line": 386,
+          "line": 416,
           "called": [
             "RegisterFile",
             "SyscallReturnFrame",
@@ -14247,7 +14272,7 @@
         {
           "kind": "theorem",
           "name": "_root_.SeLe4n.RegisterFile.stageReturnFrame_pc",
-          "line": 396,
+          "line": 426,
           "called": [
             "RegisterFile",
             "SyscallReturnFrame",
@@ -14257,7 +14282,7 @@
         {
           "kind": "theorem",
           "name": "_root_.SeLe4n.RegisterFile.stageReturnFrame_sp",
-          "line": 400,
+          "line": 430,
           "called": [
             "RegisterFile",
             "SyscallReturnFrame",
@@ -14267,7 +14292,7 @@
         {
           "kind": "theorem",
           "name": "_root_.SeLe4n.RegisterFile.stageReturnFrame_gpr_high",
-          "line": 406,
+          "line": 436,
           "called": [
             "RegName",
             "RegisterFile",
@@ -14280,7 +14305,7 @@
         {
           "kind": "theorem",
           "name": "_root_.SeLe4n.RegisterFile.stageReturnFrame_reads_back",
-          "line": 421,
+          "line": 451,
           "called": [
             "RegisterFile",
             "SeLe4n.RegisterFile.stageReturnFrame",
@@ -14293,7 +14318,7 @@
         {
           "kind": "def",
           "name": "_root_.SeLe4n.Model.TCB.withReturnFrame",
-          "line": 435,
+          "line": 465,
           "called": [
             "SyscallReturnFrame",
             "TCB",
@@ -14303,7 +14328,7 @@
         {
           "kind": "theorem",
           "name": "_root_.SeLe4n.Model.TCB.withReturnFrame_ipcState",
-          "line": 441,
+          "line": 471,
           "called": [
             "SyscallReturnFrame",
             "TCB",
@@ -14313,7 +14338,7 @@
         {
           "kind": "theorem",
           "name": "_root_.SeLe4n.Model.TCB.withReturnFrame_tid",
-          "line": 445,
+          "line": 475,
           "called": [
             "SyscallReturnFrame",
             "TCB",
@@ -14323,7 +14348,7 @@
         {
           "kind": "theorem",
           "name": "_root_.SeLe4n.Model.TCB.withReturnFrame_pendingMessage",
-          "line": 449,
+          "line": 479,
           "called": [
             "SyscallReturnFrame",
             "TCB",
@@ -14333,7 +14358,7 @@
         {
           "kind": "theorem",
           "name": "_root_.SeLe4n.Model.TCB.withReturnFrame_registerContext",
-          "line": 453,
+          "line": 483,
           "called": [
             "SyscallReturnFrame",
             "TCB",
@@ -14344,7 +14369,7 @@
         {
           "kind": "def",
           "name": "writeReturnFrameToTcb",
-          "line": 477,
+          "line": 507,
           "called": [
             "SyscallReturnFrame",
             "SystemState",
@@ -14360,7 +14385,7 @@
         {
           "kind": "def",
           "name": "readReturnFrame",
-          "line": 488,
+          "line": 518,
           "called": [
             "SyscallReturnFrame",
             "SystemState",
@@ -14374,7 +14399,7 @@
         {
           "kind": "theorem",
           "name": "readReturnFrame_writeReturnFrame",
-          "line": 503,
+          "line": 533,
           "called": [
             "RHTable.getElem",
             "RHTable_getElem",
@@ -14397,7 +14422,7 @@
         {
           "kind": "theorem",
           "name": "writeReturnFrameToTcb_objects_ne",
-          "line": 523,
+          "line": 553,
           "called": [
             "ObjId",
             "RHTable.getElem",
@@ -14416,7 +14441,7 @@
         {
           "kind": "theorem",
           "name": "writeReturnFrameToTcb_scheduler_eq",
-          "line": 540,
+          "line": 570,
           "called": [
             "SyscallReturnFrame",
             "SystemState",
@@ -14430,7 +14455,7 @@
         {
           "kind": "theorem",
           "name": "writeReturnFrameToTcb_machine_eq",
-          "line": 551,
+          "line": 581,
           "called": [
             "SyscallReturnFrame",
             "SystemState",
@@ -14444,7 +14469,7 @@
         {
           "kind": "theorem",
           "name": "writeReturnFrameToTcb_id_when_not_tcb",
-          "line": 563,
+          "line": 593,
           "called": [
             "SyscallReturnFrame",
             "SystemState",
@@ -14458,7 +14483,7 @@
         {
           "kind": "def",
           "name": "stageDeliveredMessage",
-          "line": 584,
+          "line": 620,
           "called": [
             "SystemState",
             "ThreadId",
@@ -14472,7 +14497,7 @@
         {
           "kind": "theorem",
           "name": "stageDeliveredMessage_scheduler_eq",
-          "line": 598,
+          "line": 635,
           "called": [
             "SystemState",
             "ThreadId",
@@ -14486,7 +14511,7 @@
         {
           "kind": "theorem",
           "name": "stageDeliveredMessage_machine_eq",
-          "line": 614,
+          "line": 651,
           "called": [
             "SystemState",
             "ThreadId",
@@ -14500,7 +14525,7 @@
         {
           "kind": "theorem",
           "name": "stageDeliveredMessage_id_when_blocked",
-          "line": 630,
+          "line": 667,
           "called": [
             "SystemState",
             "TCB",
@@ -14513,7 +14538,7 @@
         {
           "kind": "def",
           "name": "returnFrameOfWord",
-          "line": 641,
+          "line": 678,
           "called": [
             "SyscallReturnFrame"
           ]
@@ -14521,7 +14546,7 @@
         {
           "kind": "def",
           "name": "stageWokenDelivery",
-          "line": 674,
+          "line": 713,
           "called": [
             "SystemState",
             "ThreadId",
@@ -14533,7 +14558,7 @@
         {
           "kind": "theorem",
           "name": "stageWokenDelivery_none",
-          "line": 680,
+          "line": 719,
           "called": [
             "SystemState",
             "none",
@@ -14544,7 +14569,7 @@
         {
           "kind": "theorem",
           "name": "stageWokenDelivery_some",
-          "line": 683,
+          "line": 723,
           "called": [
             "SystemState",
             "ThreadId",
@@ -14556,7 +14581,7 @@
         {
           "kind": "def",
           "name": "stageWokenSendCompletion",
-          "line": 694,
+          "line": 735,
           "called": [
             "SystemState",
             "ThreadId",
@@ -14570,7 +14595,7 @@
         {
           "kind": "theorem",
           "name": "stageWokenSendCompletion_none",
-          "line": 706,
+          "line": 747,
           "called": [
             "SystemState",
             "none",
@@ -14581,7 +14606,7 @@
         {
           "kind": "theorem",
           "name": "stageWokenSendCompletion_id_when_not_ready",
-          "line": 712,
+          "line": 753,
           "called": [
             "SystemState",
             "TCB",
@@ -14594,7 +14619,7 @@
         {
           "kind": "theorem",
           "name": "stageWokenSendCompletion_id_when_pending",
-          "line": 724,
+          "line": 765,
           "called": [
             "IpcMessage",
             "SystemState",
@@ -14608,7 +14633,7 @@
         {
           "kind": "theorem",
           "name": "stageWokenSendCompletion_stages_zero",
-          "line": 735,
+          "line": 776,
           "called": [
             "SystemState",
             "TCB",
@@ -14624,7 +14649,7 @@
         {
           "kind": "theorem",
           "name": "stageWokenDelivery_scheduler_eq",
-          "line": 747,
+          "line": 788,
           "called": [
             "SystemState",
             "ThreadId",
@@ -14637,7 +14662,7 @@
         {
           "kind": "theorem",
           "name": "stageWokenDelivery_machine_eq",
-          "line": 755,
+          "line": 796,
           "called": [
             "SystemState",
             "ThreadId",
@@ -14650,7 +14675,7 @@
         {
           "kind": "theorem",
           "name": "stageWokenSendCompletion_scheduler_eq",
-          "line": 764,
+          "line": 805,
           "called": [
             "SystemState",
             "ThreadId",
@@ -14664,7 +14689,7 @@
         {
           "kind": "theorem",
           "name": "stageWokenSendCompletion_machine_eq",
-          "line": 781,
+          "line": 822,
           "called": [
             "SystemState",
             "ThreadId",
@@ -14678,7 +14703,7 @@
         {
           "kind": "theorem",
           "name": "blockedReturn_staged_in_waiter_frame",
-          "line": 804,
+          "line": 845,
           "called": [
             "IpcMessage",
             "SystemState",
@@ -14697,7 +14722,7 @@
         {
           "kind": "theorem",
           "name": "blockedUnitReturn_staged_in_sender_frame",
-          "line": 820,
+          "line": 864,
           "called": [
             "SystemState",
             "TCB",
@@ -14716,7 +14741,7 @@
         {
           "kind": "def",
           "name": "errorLabel",
-          "line": 839,
+          "line": 883,
           "called": [
             "KernelError",
             "toDiscriminant"
@@ -14725,7 +14750,7 @@
         {
           "kind": "def",
           "name": "ofErrorLabel",
-          "line": 844,
+          "line": 888,
           "called": [
             "KernelError",
             "none",
@@ -14735,7 +14760,7 @@
         {
           "kind": "theorem",
           "name": "errorLabel_never_zero",
-          "line": 849,
+          "line": 893,
           "called": [
             "KernelError",
             "errorLabel"
@@ -14744,7 +14769,7 @@
         {
           "kind": "theorem",
           "name": "ofErrorLabel",
-          "line": 853,
+          "line": 897,
           "called": [
             "none"
           ]
@@ -14752,7 +14777,7 @@
         {
           "kind": "theorem",
           "name": "errorLabel_roundtrip",
-          "line": 856,
+          "line": 900,
           "called": [
             "KernelError",
             "errorLabel",
@@ -14763,7 +14788,7 @@
         {
           "kind": "theorem",
           "name": "errorLabel_zero_iff_success",
-          "line": 864,
+          "line": 908,
           "called": [
             "errorLabel",
             "none",
@@ -14773,7 +14798,7 @@
         {
           "kind": "theorem",
           "name": "kernelErrorFitsLabel",
-          "line": 874,
+          "line": 918,
           "called": [
             "KernelError",
             "errorLabel",
@@ -14784,7 +14809,7 @@
         {
           "kind": "theorem",
           "name": "overWideLabel_rejected",
-          "line": 884,
+          "line": 928,
           "called": [
             "decode",
             "maxLabel",
@@ -14794,7 +14819,7 @@
         {
           "kind": "def",
           "name": "errorFrame",
-          "line": 892,
+          "line": 936,
           "called": [
             "KernelError",
             "SyscallReturnFrame",
@@ -14806,7 +14831,7 @@
         {
           "kind": "theorem",
           "name": "errorFrame_x1_decodes",
-          "line": 900,
+          "line": 944,
           "called": [
             "KernelError",
             "decode",
@@ -14819,7 +14844,7 @@
         {
           "kind": "inductive",
           "name": "SyscallOutcome",
-          "line": 915,
+          "line": 959,
           "called": [
             "SyscallReturnFrame"
           ]
@@ -14827,13 +14852,13 @@
         {
           "kind": "namespace",
           "name": "SyscallOutcome",
-          "line": 920,
+          "line": 964,
           "called": []
         },
         {
           "kind": "def",
           "name": "tagWord",
-          "line": 925,
+          "line": 969,
           "called": [
             "SyscallOutcome"
           ]
@@ -14841,7 +14866,7 @@
         {
           "kind": "theorem",
           "name": "tagWord_blocks_ne_returns",
-          "line": 931,
+          "line": 975,
           "called": [
             "SyscallReturnFrame",
             "tagWord"
@@ -14850,7 +14875,7 @@
         {
           "kind": "def",
           "name": "mailboxFrame",
-          "line": 942,
+          "line": 986,
           "called": [
             "SyscallOutcome",
             "SyscallReturnFrame",
@@ -14860,7 +14885,7 @@
         {
           "kind": "def",
           "name": "ipcStateBlocksReturn",
-          "line": 964,
+          "line": 1008,
           "called": [
             "ThreadIpcState"
           ]
@@ -14868,7 +14893,7 @@
         {
           "kind": "theorem",
           "name": "ipcStateBlocksReturn_ready",
-          "line": 972,
+          "line": 1016,
           "called": [
             "ipcStateBlocksReturn"
           ]
@@ -14876,7 +14901,7 @@
         {
           "kind": "def",
           "name": "frameForShape",
-          "line": 980,
+          "line": 1024,
           "called": [
             "ReturnShape",
             "SyscallReturnFrame",
@@ -14886,7 +14911,7 @@
         {
           "kind": "theorem",
           "name": "frameForShape_unit",
-          "line": 989,
+          "line": 1033,
           "called": [
             "SyscallReturnFrame",
             "frameForShape",
@@ -14896,7 +14921,7 @@
         {
           "kind": "theorem",
           "name": "frameForShape_value",
-          "line": 993,
+          "line": 1037,
           "called": [
             "ReturnShape",
             "SyscallReturnFrame",
@@ -14906,19 +14931,19 @@
         {
           "kind": "theorem",
           "name": "bit63Encoding_not_injective_on_badges",
-          "line": 1008,
+          "line": 1052,
           "called": []
         },
         {
           "kind": "def",
           "name": "syscallAbiVersion",
-          "line": 1025,
+          "line": 1069,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "syscallAbiVersion_pinned",
-          "line": 1029,
+          "line": 1073,
           "called": [
             "syscallAbiVersion"
           ]
@@ -99949,7 +99974,7 @@
         {
           "kind": "theorem",
           "name": "stageWokenSendCompletion_preserves_projection",
-          "line": 700,
+          "line": 703,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -99967,7 +99992,7 @@
         {
           "kind": "theorem",
           "name": "restoreIncomingContext_preserves_projection",
-          "line": 719,
+          "line": 722,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -99987,7 +100012,7 @@
         {
           "kind": "theorem",
           "name": "projectObjects_ext_objects",
-          "line": 747,
+          "line": 750,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -99999,7 +100024,7 @@
         {
           "kind": "theorem",
           "name": "saveOutgoingContext_with_sched_preserves_projection",
-          "line": 756,
+          "line": 759,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -100021,7 +100046,7 @@
         {
           "kind": "theorem",
           "name": "schedule_preserves_projection",
-          "line": 799,
+          "line": 802,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -100058,7 +100083,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_preserves_lowEquivalent",
-          "line": 869,
+          "line": 872,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -100102,7 +100127,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPage_preserves_projection",
-          "line": 964,
+          "line": 967,
           "called": [
             "ASID",
             "IfObserver",
@@ -100129,7 +100154,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPage_preserves_lowEquivalent",
-          "line": 996,
+          "line": 999,
           "called": [
             "ASID",
             "IfObserver",
@@ -100149,7 +100174,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPage_preserves_projection",
-          "line": 1016,
+          "line": 1019,
           "called": [
             "ASID",
             "IfObserver",
@@ -100170,7 +100195,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPage_preserves_lowEquivalent",
-          "line": 1039,
+          "line": 1042,
           "called": [
             "ASID",
             "IfObserver",
@@ -100188,7 +100213,7 @@
         {
           "kind": "theorem",
           "name": "vspaceLookup_preserves_state",
-          "line": 1059,
+          "line": 1062,
           "called": [
             "ASID",
             "PAddr",
@@ -100205,7 +100230,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPage_preserves_lowEquivalent_memoryOwnedHigh",
-          "line": 1081,
+          "line": 1084,
           "called": [
             "ASID",
             "IfObserver",
@@ -100226,7 +100251,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPage_preserves_lowEquivalent_memoryOwnedHigh",
-          "line": 1104,
+          "line": 1107,
           "called": [
             "ASID",
             "IfObserver",
@@ -100245,7 +100270,7 @@
         {
           "kind": "theorem",
           "name": "vspaceLookup_preserves_lowEquivalent",
-          "line": 1125,
+          "line": 1128,
           "called": [
             "ASID",
             "IfObserver",
@@ -100261,7 +100286,7 @@
         {
           "kind": "theorem",
           "name": "storeCapabilityRef_preserves_projection",
-          "line": 1142,
+          "line": 1145,
           "called": [
             "CapTarget",
             "IfObserver",
@@ -100277,7 +100302,7 @@
         {
           "kind": "theorem",
           "name": "cspaceDeleteSlotCore_preserves_projection",
-          "line": 1153,
+          "line": 1156,
           "called": [
             "CSpaceAddr",
             "IfObserver",
@@ -100300,7 +100325,7 @@
         {
           "kind": "theorem",
           "name": "cspaceDeleteSlot_preserves_projection",
-          "line": 1188,
+          "line": 1191,
           "called": [
             "CSpaceAddr",
             "IfObserver",
@@ -100317,7 +100342,7 @@
         {
           "kind": "theorem",
           "name": "cspaceDeleteSlot_preserves_lowEquivalent",
-          "line": 1201,
+          "line": 1204,
           "called": [
             "CSpaceAddr",
             "IfObserver",
@@ -100333,7 +100358,7 @@
         {
           "kind": "theorem",
           "name": "cspaceRevoke_preserves_projection",
-          "line": 1219,
+          "line": 1222,
           "called": [
             "CSpaceAddr",
             "IfObserver",
@@ -100358,7 +100383,7 @@
         {
           "kind": "theorem",
           "name": "attachSlotToCdtNode_preserves_projection",
-          "line": 1259,
+          "line": 1262,
           "called": [
             "CdtNodeId",
             "IfObserver",
@@ -100375,7 +100400,7 @@
         {
           "kind": "theorem",
           "name": "cspaceInsertSlot_preserves_projection",
-          "line": 1268,
+          "line": 1271,
           "called": [
             "CSpaceAddr",
             "Capability",
@@ -100412,7 +100437,7 @@
         {
           "kind": "theorem",
           "name": "cspaceCopy_preserves_projection",
-          "line": 1307,
+          "line": 1310,
           "called": [
             "CSpaceAddr",
             "Capability.toNonNull",
@@ -100437,7 +100462,7 @@
         {
           "kind": "theorem",
           "name": "cspaceCopy_preserves_lowEquivalent",
-          "line": 1346,
+          "line": 1349,
           "called": [
             "CSpaceAddr",
             "IfObserver",
@@ -100453,7 +100478,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMove_preserves_projection",
-          "line": 1363,
+          "line": 1366,
           "called": [
             "CSpaceAddr",
             "Capability.toNonNull",
@@ -100480,7 +100505,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMove_preserves_lowEquivalent",
-          "line": 1422,
+          "line": 1425,
           "called": [
             "CSpaceAddr",
             "IfObserver",
@@ -100496,7 +100521,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbQueueLinks_preserves_projection",
-          "line": 1444,
+          "line": 1447,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -100519,7 +100544,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueuePopHead_preserves_projection",
-          "line": 1472,
+          "line": 1475,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -100549,7 +100574,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueEnqueue_preserves_projection",
-          "line": 1546,
+          "line": 1549,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -100577,7 +100602,7 @@
         {
           "kind": "theorem",
           "name": "endpointSendDual_preserves_projection",
-          "line": 1628,
+          "line": 1631,
           "called": [
             "IfObserver",
             "IpcMessage",
@@ -100619,7 +100644,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_preserves_projection",
-          "line": 1728,
+          "line": 1731,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -100669,7 +100694,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbQueueLinks_preserves_objectIndexSetComplete",
-          "line": 1865,
+          "line": 1868,
           "called": [
             "QueuePPrev",
             "SystemState",
@@ -100689,7 +100714,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbQueueLinks_preserves_objectIndexSet_invExt",
-          "line": 1891,
+          "line": 1894,
           "called": [
             "QueuePPrev",
             "SystemState",
@@ -100708,7 +100733,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueuePopHead_preserves_objectIndexSetComplete_and_invExt",
-          "line": 1918,
+          "line": 1921,
           "called": [
             "ObjId",
             "SystemState",
@@ -100736,7 +100761,7 @@
         {
           "kind": "theorem",
           "name": "endpointReceiveDual_preserves_projection",
-          "line": 1994,
+          "line": 1997,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -100801,7 +100826,7 @@
         {
           "kind": "theorem",
           "name": "endpointReply_preserves_projection",
-          "line": 2234,
+          "line": 2237,
           "called": [
             "IfObserver",
             "IpcMessage",
@@ -100836,7 +100861,7 @@
         {
           "kind": "theorem",
           "name": "endpointReply_preserves_lowEquivalent",
-          "line": 2302,
+          "line": 2305,
           "called": [
             "IfObserver",
             "IpcMessage",
@@ -100857,7 +100882,7 @@
         {
           "kind": "theorem",
           "name": "endpointCall_preserves_projection",
-          "line": 2338,
+          "line": 2341,
           "called": [
             "IfObserver",
             "IpcMessage",
@@ -100908,7 +100933,7 @@
         {
           "kind": "theorem",
           "name": "consumeCallerReply_preserves_objectIndexSetComplete_and_invExt",
-          "line": 2485,
+          "line": 2488,
           "called": [
             "ReplyId",
             "SystemState",
@@ -100930,7 +100955,7 @@
         {
           "kind": "theorem",
           "name": "endpointReplyRecv_preserves_projection",
-          "line": 2525,
+          "line": 2528,
           "called": [
             "IfObserver",
             "IpcMessage",
@@ -100987,7 +101012,7 @@
         {
           "kind": "theorem",
           "name": "endpointReceiveDualChecked_NI",
-          "line": 2742,
+          "line": 2745,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -101010,7 +101035,7 @@
         {
           "kind": "theorem",
           "name": "endpointReceiveDual_preserves_lowEquivalent",
-          "line": 2768,
+          "line": 2771,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -101028,7 +101053,7 @@
         {
           "kind": "theorem",
           "name": "endpointCall_preserves_lowEquivalent",
-          "line": 2784,
+          "line": 2787,
           "called": [
             "IfObserver",
             "IpcMessage",
@@ -101045,7 +101070,7 @@
         {
           "kind": "theorem",
           "name": "endpointReplyRecv_preserves_lowEquivalent",
-          "line": 2798,
+          "line": 2801,
           "called": [
             "IfObserver",
             "IpcMessage",
@@ -101065,7 +101090,7 @@
         {
           "kind": "theorem",
           "name": "rotateToBack_preserves_projection",
-          "line": 2820,
+          "line": 2823,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -101096,7 +101121,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_projection",
-          "line": 2838,
+          "line": 2841,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -101141,7 +101166,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_lowEquivalent",
-          "line": 2893,
+          "line": 2896,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -101159,7 +101184,7 @@
         {
           "kind": "theorem",
           "name": "insert_tick_preserves_projection",
-          "line": 2917,
+          "line": 2920,
           "called": [
             "IfObserver",
             "KernelObject",
@@ -101180,7 +101205,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_projection",
-          "line": 2937,
+          "line": 2940,
           "called": [
             "IfObserver",
             "KernelObject",
@@ -101226,7 +101251,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_lowEquivalent",
-          "line": 3007,
+          "line": 3010,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -101246,7 +101271,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_preserves_lowEquivalent",
-          "line": 3042,
+          "line": 3045,
           "called": [
             "CSpaceAddr",
             "IfObserver",
@@ -101267,7 +101292,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRevokeDeleteRetype_preserves_projection",
-          "line": 3088,
+          "line": 3091,
           "called": [
             "CSpaceAddr",
             "IfObserver",
@@ -101304,7 +101329,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRevokeDeleteRetype_preserves_lowEquivalent",
-          "line": 3156,
+          "line": 3159,
           "called": [
             "CSpaceAddr",
             "IfObserver",
@@ -101322,7 +101347,7 @@
         {
           "kind": "theorem",
           "name": "registerService_preserves_projection",
-          "line": 3185,
+          "line": 3188,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -101336,7 +101361,7 @@
         {
           "kind": "theorem",
           "name": "registerServiceChecked_NI",
-          "line": 3209,
+          "line": 3212,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -101353,7 +101378,7 @@
         {
           "kind": "theorem",
           "name": "scrubObjectMemory_preserves_projection",
-          "line": 3246,
+          "line": 3249,
           "called": [
             "IfObserver",
             "KernelObjectType",
@@ -101375,7 +101400,7 @@
         {
           "kind": "theorem",
           "name": "scrubObjectMemory_preserves_lowEquivalent",
-          "line": 3283,
+          "line": 3286,
           "called": [
             "IfObserver",
             "KernelObjectType",
@@ -101394,7 +101419,7 @@
         {
           "kind": "theorem",
           "name": "applyCallDonation_preserves_projection",
-          "line": 3312,
+          "line": 3315,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -101422,7 +101447,7 @@
         {
           "kind": "theorem",
           "name": "updatePipBoost_preserves_projection",
-          "line": 3424,
+          "line": 3427,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -101467,7 +101492,7 @@
         {
           "kind": "theorem",
           "name": "propagatePIP_preserves_projection",
-          "line": 3488,
+          "line": 3491,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -101490,7 +101515,7 @@
         {
           "kind": "theorem",
           "name": "revertPIP_preserves_projection",
-          "line": 3524,
+          "line": 3527,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -101511,7 +101536,7 @@
         {
           "kind": "theorem",
           "name": "endpointCallWithDonation_preserves_lowEquivalent",
-          "line": 3554,
+          "line": 3557,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -101523,7 +101548,7 @@
         {
           "kind": "theorem",
           "name": "endpointReplyWithReversion_preserves_lowEquivalent",
-          "line": 3564,
+          "line": 3567,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -101535,7 +101560,7 @@
         {
           "kind": "theorem",
           "name": "setIPCBufferOp_preserves_projection",
-          "line": 3585,
+          "line": 3588,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -101558,7 +101583,7 @@
         {
           "kind": "theorem",
           "name": "objects_insert_preserves_projection_high",
-          "line": 3628,
+          "line": 3631,
           "called": [
             "IfObserver",
             "KernelObject",
@@ -101578,7 +101603,7 @@
         {
           "kind": "theorem",
           "name": "updatePrioritySource_preserves_projection",
-          "line": 3671,
+          "line": 3674,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -101599,7 +101624,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPageCheckedWithFlushFromState_preserves_projection",
-          "line": 3716,
+          "line": 3719,
           "called": [
             "ASID",
             "IfObserver",
@@ -101623,7 +101648,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPageWithFlush_preserves_projection",
-          "line": 3759,
+          "line": 3762,
           "called": [
             "ASID",
             "IfObserver",
@@ -101643,7 +101668,7 @@
         {
           "kind": "theorem",
           "name": "perCoreTlb_write_preserves_projection",
-          "line": 3792,
+          "line": 3795,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -101657,7 +101682,7 @@
         {
           "kind": "theorem",
           "name": "perCoreICache_write_preserves_projection",
-          "line": 3807,
+          "line": 3810,
           "called": [
             "ICacheState",
             "IfObserver",
@@ -101671,7 +101696,7 @@
         {
           "kind": "theorem",
           "name": "pendingIcacheMaintenance_write_preserves_projection",
-          "line": 3821,
+          "line": 3824,
           "called": [
             "ICacheInvalidation",
             "IfObserver",
@@ -101684,7 +101709,7 @@
         {
           "kind": "theorem",
           "name": "declassificationAuditLog_write_preserves_projection",
-          "line": 3851,
+          "line": 3854,
           "called": [
             "DeclassificationAuditLog",
             "IfObserver",
@@ -101697,7 +101722,7 @@
         {
           "kind": "theorem",
           "name": "runQueue_remove_preserves_projection_at_high",
-          "line": 3867,
+          "line": 3870,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -101728,7 +101753,7 @@
         {
           "kind": "theorem",
           "name": "runQueue_insert_preserves_projection_at_high",
-          "line": 3887,
+          "line": 3890,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -101760,7 +101785,7 @@
         {
           "kind": "theorem",
           "name": "runQueue_remove_insert_preserves_projection_at_high",
-          "line": 3906,
+          "line": 3909,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -101794,7 +101819,7 @@
         {
           "kind": "theorem",
           "name": "migrateRunQueueBucketOnCore_preserves_projection",
-          "line": 3935,
+          "line": 3938,
           "called": [
             "CoreId",
             "IfObserver",
@@ -101825,7 +101850,7 @@
         {
           "kind": "theorem",
           "name": "migrateRunQueueBucket_preserves_projection",
-          "line": 3965,
+          "line": 3968,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -101843,7 +101868,7 @@
         {
           "kind": "theorem",
           "name": "migrateSchedContextReplenishment_preserves_projection",
-          "line": 3988,
+          "line": 3991,
           "called": [
             "CoreId",
             "IfObserver",
@@ -101872,7 +101897,7 @@
         {
           "kind": "theorem",
           "name": "migrateRunQueueOnAffinityChange_preserves_projection",
-          "line": 4015,
+          "line": 4018,
           "called": [
             "CoreId",
             "IfObserver",
@@ -101906,7 +101931,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinity_preserves_projection",
-          "line": 4057,
+          "line": 4060,
           "called": [
             "CoreId",
             "IfObserver",
@@ -101925,7 +101950,7 @@
         {
           "kind": "theorem",
           "name": "projectKernelObject_tcb_cpuAffinity_irrelevant",
-          "line": 4076,
+          "line": 4079,
           "called": [
             "CoreId",
             "IfObserver",
@@ -101937,7 +101962,7 @@
         {
           "kind": "theorem",
           "name": "objects_insert_preserves_projection_of_proj_eq",
-          "line": 4089,
+          "line": 4092,
           "called": [
             "IfObserver",
             "KernelObject",
@@ -101959,7 +101984,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinity_preserves_projection_unconditional",
-          "line": 4126,
+          "line": 4129,
           "called": [
             "CoreId",
             "IfObserver",
@@ -101979,7 +102004,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinityWithMigration_preserves_projection",
-          "line": 4153,
+          "line": 4156,
           "called": [
             "CoreId",
             "IfObserver",
@@ -102002,7 +102027,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinityOp_preserves_projection",
-          "line": 4187,
+          "line": 4190,
           "called": [
             "CoreId",
             "IfObserver",
@@ -102025,7 +102050,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinityOnCore_preserves_projection",
-          "line": 4222,
+          "line": 4225,
           "called": [
             "CoreId",
             "IfObserver",
@@ -102046,7 +102071,7 @@
         {
           "kind": "theorem",
           "name": "setPriorityOp_preserves_projection",
-          "line": 4249,
+          "line": 4252,
           "called": [
             "IfObserver",
             "KernelObject",
@@ -102076,7 +102101,7 @@
         {
           "kind": "theorem",
           "name": "priorityRescheduleOnCore_preserves_projection",
-          "line": 4333,
+          "line": 4336,
           "called": [
             "CoreId",
             "IfObserver",
@@ -102092,7 +102117,7 @@
         {
           "kind": "theorem",
           "name": "priorityRescheduleOnCoreLive_preserves_projection",
-          "line": 4375,
+          "line": 4378,
           "called": [
             "CoreId",
             "IfObserver",
@@ -102110,7 +102135,7 @@
         {
           "kind": "theorem",
           "name": "setPriorityOnCore_preserves_projection",
-          "line": 4403,
+          "line": 4406,
           "called": [
             "CoreId",
             "IfObserver",
@@ -102140,7 +102165,7 @@
         {
           "kind": "theorem",
           "name": "setMCPriorityOp_preserves_projection",
-          "line": 4457,
+          "line": 4460,
           "called": [
             "IfObserver",
             "KernelObject",
@@ -102171,7 +102196,7 @@
         {
           "kind": "theorem",
           "name": "setMCPriorityOnCore_preserves_projection",
-          "line": 4543,
+          "line": 4546,
           "called": [
             "CoreId",
             "IfObserver",
@@ -102205,7 +102230,7 @@
         {
           "kind": "theorem",
           "name": "lookupServiceByCap_preserves_state",
-          "line": 4614,
+          "line": 4617,
           "called": [
             "ObjId",
             "ServiceRegistration",
@@ -102221,7 +102246,7 @@
         {
           "kind": "theorem",
           "name": "lookupServiceByCap_preserves_projection",
-          "line": 4632,
+          "line": 4635,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -102238,7 +102263,7 @@
         {
           "kind": "theorem",
           "name": "revokeService_preserves_projection",
-          "line": 4661,
+          "line": 4664,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -102267,7 +102292,7 @@
         {
           "kind": "theorem",
           "name": "schedContextConfigure_preserves_projection",
-          "line": 4715,
+          "line": 4718,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -102281,7 +102306,7 @@
         {
           "kind": "theorem",
           "name": "schedContextBind_frame_runQueue_rebucket",
-          "line": 4736,
+          "line": 4739,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -102302,7 +102327,7 @@
         {
           "kind": "theorem",
           "name": "schedContextBind_preserves_projection",
-          "line": 4753,
+          "line": 4756,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -102317,7 +102342,7 @@
         {
           "kind": "theorem",
           "name": "schedContextUnbind_preserves_projection",
-          "line": 4779,
+          "line": 4782,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -102331,7 +102356,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirectWithCleanup_preserves_projection",
-          "line": 4809,
+          "line": 4812,
           "called": [
             "Capability",
             "IfObserver",
@@ -102347,7 +102372,7 @@
         {
           "kind": "theorem",
           "name": "cancelDonation_preserves_projection",
-          "line": 4837,
+          "line": 4840,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -102362,7 +102387,7 @@
         {
           "kind": "theorem",
           "name": "cancelBoundDonation_preserves_projection",
-          "line": 4862,
+          "line": 4865,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -102377,7 +102402,7 @@
         {
           "kind": "theorem",
           "name": "cancelDonatedDonation_preserves_projection",
-          "line": 4884,
+          "line": 4887,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -102392,7 +102417,7 @@
         {
           "kind": "theorem",
           "name": "suspendThread_preserves_projection",
-          "line": 4937,
+          "line": 4940,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -102406,7 +102431,7 @@
         {
           "kind": "theorem",
           "name": "resumeThread_frame_insert",
-          "line": 4956,
+          "line": 4959,
           "called": [
             "IfObserver",
             "KernelObject",
@@ -102425,7 +102450,7 @@
         {
           "kind": "theorem",
           "name": "resumeThread_frame_ensureRunnable",
-          "line": 4970,
+          "line": 4973,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -102441,7 +102466,7 @@
         {
           "kind": "theorem",
           "name": "resumeThread_preserves_projection",
-          "line": 4995,
+          "line": 4998,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -168489,7 +168514,7 @@
     {
       "module": "SeLe4n.Model.Object.Types",
       "path": "SeLe4n/Model/Object/Types.lean",
-      "declaration_count": 164,
+      "declaration_count": 167,
       "declarations": [
         {
           "kind": "namespace",
@@ -169217,9 +169242,32 @@
           ]
         },
         {
+          "kind": "namespace",
+          "name": "CapTransferSummary",
+          "line": 590,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "installedCount",
+          "line": 598,
+          "called": [
+            "CapTransferSummary"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "installedCount_empty",
+          "line": 604,
+          "called": [
+            "CapTransferSummary",
+            "installedCount"
+          ]
+        },
+        {
           "kind": "inductive",
           "name": "IpcTimeoutResult",
-          "line": 593,
+          "line": 612,
           "called": [
             "IpcMessage"
           ]
@@ -169227,7 +169275,7 @@
         {
           "kind": "inductive",
           "name": "ThreadIpcState",
-          "line": 611,
+          "line": 630,
           "called": [
             "ObjId",
             "ThreadId",
@@ -169237,13 +169285,13 @@
         {
           "kind": "inductive",
           "name": "ThreadState",
-          "line": 634,
+          "line": 653,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "QueuePPrev",
-          "line": 650,
+          "line": 669,
           "called": [
             "ThreadId"
           ]
@@ -169251,7 +169299,7 @@
         {
           "kind": "structure",
           "name": "TCB",
-          "line": 655,
+          "line": 674,
           "called": [
             "CPtr",
             "CoreId",
@@ -169277,8 +169325,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:817>",
-          "line": 817,
+          "name": "<anonymous:instance:836>",
+          "line": 836,
           "called": [
             "TCB"
           ]
@@ -169286,7 +169334,7 @@
         {
           "kind": "def",
           "name": "TCB.isUnconfigured",
-          "line": 851,
+          "line": 870,
           "called": [
             "TCB",
             "isReserved"
@@ -169295,7 +169343,7 @@
         {
           "kind": "theorem",
           "name": "TCB.not_lawfulBEq",
-          "line": 859,
+          "line": 878,
           "called": [
             "ObjId",
             "RegName",
@@ -169309,7 +169357,7 @@
         {
           "kind": "theorem",
           "name": "TCB.ext",
-          "line": 892,
+          "line": 911,
           "called": [
             "TCB"
           ]
@@ -169317,7 +169365,7 @@
         {
           "kind": "structure",
           "name": "IntrusiveQueue",
-          "line": 925,
+          "line": 944,
           "called": [
             "ThreadId",
             "head",
@@ -169328,7 +169376,7 @@
         {
           "kind": "structure",
           "name": "Endpoint",
-          "line": 942,
+          "line": 961,
           "called": [
             "IntrusiveQueue",
             "RwLockState",
@@ -169338,13 +169386,13 @@
         {
           "kind": "inductive",
           "name": "NotificationState",
-          "line": 953,
+          "line": 972,
           "called": []
         },
         {
           "kind": "structure",
           "name": "Notification",
-          "line": 988,
+          "line": 1007,
           "called": [
             "Badge",
             "NoDupList",
@@ -169358,7 +169406,7 @@
         {
           "kind": "structure",
           "name": "CNode",
-          "line": 1056,
+          "line": 1075,
           "called": [
             "Capability",
             "RwLockState",
@@ -169369,13 +169417,13 @@
         {
           "kind": "def",
           "name": "maxCSpaceDepth",
-          "line": 1074,
+          "line": 1093,
           "called": []
         },
         {
           "kind": "structure",
           "name": "UntypedChild",
-          "line": 1079,
+          "line": 1098,
           "called": [
             "ObjId",
             "size"
@@ -169384,7 +169432,7 @@
         {
           "kind": "structure",
           "name": "UntypedObject",
-          "line": 1094,
+          "line": 1113,
           "called": [
             "ObjId",
             "PAddr",
@@ -169397,13 +169445,13 @@
         {
           "kind": "namespace",
           "name": "UntypedObject",
-          "line": 1135,
+          "line": 1154,
           "called": []
         },
         {
           "kind": "def",
           "name": "freeSpace",
-          "line": 1138,
+          "line": 1157,
           "called": [
             "UntypedObject"
           ]
@@ -169411,7 +169459,7 @@
         {
           "kind": "def",
           "name": "canAllocate",
-          "line": 1142,
+          "line": 1161,
           "called": [
             "UntypedObject",
             "size"
@@ -169420,7 +169468,7 @@
         {
           "kind": "def",
           "name": "allocate",
-          "line": 1153,
+          "line": 1172,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -169432,7 +169480,7 @@
         {
           "kind": "def",
           "name": "allocateChecked",
-          "line": 1175,
+          "line": 1194,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -169443,7 +169491,7 @@
         {
           "kind": "theorem",
           "name": "allocateChecked_eq_allocate",
-          "line": 1182,
+          "line": 1201,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -169455,7 +169503,7 @@
         {
           "kind": "def",
           "name": "reset",
-          "line": 1187,
+          "line": 1206,
           "called": [
             "UntypedObject"
           ]
@@ -169463,7 +169511,7 @@
         {
           "kind": "def",
           "name": "watermarkValid",
-          "line": 1191,
+          "line": 1210,
           "called": [
             "UntypedObject"
           ]
@@ -169471,7 +169519,7 @@
         {
           "kind": "def",
           "name": "childrenWithinWatermark",
-          "line": 1195,
+          "line": 1214,
           "called": [
             "UntypedObject",
             "size"
@@ -169480,7 +169528,7 @@
         {
           "kind": "def",
           "name": "childrenNonOverlap",
-          "line": 1199,
+          "line": 1218,
           "called": [
             "UntypedObject",
             "size"
@@ -169489,7 +169537,7 @@
         {
           "kind": "def",
           "name": "childrenUniqueIds",
-          "line": 1204,
+          "line": 1223,
           "called": [
             "UntypedObject"
           ]
@@ -169497,7 +169545,7 @@
         {
           "kind": "def",
           "name": "wellFormed",
-          "line": 1209,
+          "line": 1228,
           "called": [
             "UntypedObject",
             "childrenNonOverlap",
@@ -169509,7 +169557,7 @@
         {
           "kind": "theorem",
           "name": "empty_watermarkValid",
-          "line": 1213,
+          "line": 1232,
           "called": [
             "PAddr",
             "UntypedObject",
@@ -169521,7 +169569,7 @@
         {
           "kind": "theorem",
           "name": "empty_childrenWithinWatermark",
-          "line": 1218,
+          "line": 1237,
           "called": [
             "PAddr",
             "UntypedObject",
@@ -169533,7 +169581,7 @@
         {
           "kind": "theorem",
           "name": "empty_childrenNonOverlap",
-          "line": 1224,
+          "line": 1243,
           "called": [
             "PAddr",
             "UntypedObject",
@@ -169545,7 +169593,7 @@
         {
           "kind": "theorem",
           "name": "empty_childrenUniqueIds",
-          "line": 1230,
+          "line": 1249,
           "called": [
             "PAddr",
             "UntypedObject",
@@ -169557,7 +169605,7 @@
         {
           "kind": "theorem",
           "name": "empty_wellFormed",
-          "line": 1236,
+          "line": 1255,
           "called": [
             "PAddr",
             "UntypedObject",
@@ -169573,7 +169621,7 @@
         {
           "kind": "theorem",
           "name": "canAllocate_implies_fits",
-          "line": 1251,
+          "line": 1270,
           "called": [
             "UntypedObject",
             "canAllocate",
@@ -169583,7 +169631,7 @@
         {
           "kind": "theorem",
           "name": "allocate_some_iff",
-          "line": 1258,
+          "line": 1277,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -169596,7 +169644,7 @@
         {
           "kind": "theorem",
           "name": "allocate_watermark_advance",
-          "line": 1277,
+          "line": 1296,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -169608,7 +169656,7 @@
         {
           "kind": "theorem",
           "name": "allocate_offset_eq_watermark",
-          "line": 1286,
+          "line": 1305,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -169620,7 +169668,7 @@
         {
           "kind": "theorem",
           "name": "allocate_watermark_monotone",
-          "line": 1293,
+          "line": 1312,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -169632,7 +169680,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_watermarkValid",
-          "line": 1300,
+          "line": 1319,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -169646,7 +169694,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_region",
-          "line": 1311,
+          "line": 1330,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -169658,7 +169706,7 @@
         {
           "kind": "theorem",
           "name": "allocate_children_extends",
-          "line": 1323,
+          "line": 1342,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -169670,7 +169718,7 @@
         {
           "kind": "theorem",
           "name": "allocate_children_new",
-          "line": 1337,
+          "line": 1356,
           "called": [
             "ObjId",
             "UntypedChild",
@@ -169683,7 +169731,7 @@
         {
           "kind": "theorem",
           "name": "allocate_children_eq",
-          "line": 1351,
+          "line": 1370,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -169695,7 +169743,7 @@
         {
           "kind": "theorem",
           "name": "allocate_child_fits_parent",
-          "line": 1365,
+          "line": 1384,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -169708,7 +169756,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_childrenWithinWatermark",
-          "line": 1378,
+          "line": 1397,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -169721,7 +169769,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_childrenNonOverlap",
-          "line": 1396,
+          "line": 1415,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -169735,7 +169783,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_childrenUniqueIds",
-          "line": 1418,
+          "line": 1437,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -169749,7 +169797,7 @@
         {
           "kind": "theorem",
           "name": "reset_watermarkValid",
-          "line": 1437,
+          "line": 1456,
           "called": [
             "UntypedObject",
             "reset",
@@ -169759,7 +169807,7 @@
         {
           "kind": "theorem",
           "name": "reset_wellFormed",
-          "line": 1441,
+          "line": 1460,
           "called": [
             "UntypedObject",
             "reset",
@@ -169770,7 +169818,7 @@
         {
           "kind": "def",
           "name": "UntypedObjectValid",
-          "line": 1465,
+          "line": 1484,
           "called": [
             "UntypedObject",
             "wellFormed"
@@ -169779,13 +169827,13 @@
         {
           "kind": "namespace",
           "name": "UntypedObjectValid",
-          "line": 1467,
+          "line": 1486,
           "called": []
         },
         {
           "kind": "def",
           "name": "toUntyped",
-          "line": 1470,
+          "line": 1489,
           "called": [
             "UntypedObject",
             "UntypedObjectValid"
@@ -169794,7 +169842,7 @@
         {
           "kind": "def",
           "name": "wf",
-          "line": 1473,
+          "line": 1492,
           "called": [
             "UntypedObjectValid",
             "wellFormed"
@@ -169803,7 +169851,7 @@
         {
           "kind": "def",
           "name": "empty",
-          "line": 1477,
+          "line": 1496,
           "called": [
             "PAddr",
             "UntypedObject",
@@ -169815,8 +169863,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:1484>",
-          "line": 1484,
+          "name": "<anonymous:instance:1503>",
+          "line": 1503,
           "called": [
             "UntypedObject",
             "UntypedObjectValid",
@@ -169826,7 +169874,7 @@
         {
           "kind": "inductive",
           "name": "SyscallId",
-          "line": 1493,
+          "line": 1512,
           "called": [
             "cspaceCopy",
             "cspaceMint",
@@ -169842,13 +169890,13 @@
         {
           "kind": "namespace",
           "name": "SyscallId",
-          "line": 1527,
+          "line": 1546,
           "called": []
         },
         {
           "kind": "def",
           "name": "toNat",
-          "line": 1531,
+          "line": 1550,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -169865,13 +169913,13 @@
         {
           "kind": "def",
           "name": "count",
-          "line": 1565,
+          "line": 1584,
           "called": []
         },
         {
           "kind": "def",
           "name": "ofNat",
-          "line": 1569,
+          "line": 1588,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -169888,8 +169936,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:1603>",
-          "line": 1603,
+          "name": "<anonymous:instance:1622>",
+          "line": 1622,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -169906,7 +169954,7 @@
         {
           "kind": "def",
           "name": "all",
-          "line": 1641,
+          "line": 1660,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -169923,7 +169971,7 @@
         {
           "kind": "theorem",
           "name": "all_length",
-          "line": 1655,
+          "line": 1674,
           "called": [
             "count",
             "length"
@@ -169932,7 +169980,7 @@
         {
           "kind": "theorem",
           "name": "all_complete",
-          "line": 1658,
+          "line": 1677,
           "called": [
             "SyscallId",
             "all"
@@ -169941,7 +169989,7 @@
         {
           "kind": "theorem",
           "name": "ofNat_toNat",
-          "line": 1662,
+          "line": 1681,
           "called": [
             "SyscallId",
             "ofNat",
@@ -169951,7 +169999,7 @@
         {
           "kind": "theorem",
           "name": "toNat_ofNat",
-          "line": 1674,
+          "line": 1693,
           "called": [
             "SyscallId",
             "ofNat",
@@ -169961,7 +170009,7 @@
         {
           "kind": "theorem",
           "name": "toNat_injective",
-          "line": 1687,
+          "line": 1706,
           "called": [
             "SyscallId",
             "ofNat_toNat",
@@ -169971,7 +170019,7 @@
         {
           "kind": "structure",
           "name": "MessageInfo",
-          "line": 1708,
+          "line": 1727,
           "called": [
             "length"
           ]
@@ -169979,19 +170027,19 @@
         {
           "kind": "namespace",
           "name": "MessageInfo",
-          "line": 1714,
+          "line": 1733,
           "called": []
         },
         {
           "kind": "def",
           "name": "maxLabel",
-          "line": 1719,
+          "line": 1738,
           "called": []
         },
         {
           "kind": "def",
           "name": "mkChecked",
-          "line": 1733,
+          "line": 1752,
           "called": [
             "MessageInfo",
             "length",
@@ -170004,7 +170052,7 @@
         {
           "kind": "theorem",
           "name": "mkChecked_isSome_iff",
-          "line": 1741,
+          "line": 1760,
           "called": [
             "length",
             "maxExtraCaps",
@@ -170016,7 +170064,7 @@
         {
           "kind": "theorem",
           "name": "mkChecked_bounded",
-          "line": 1750,
+          "line": 1769,
           "called": [
             "MessageInfo",
             "length",
@@ -170029,7 +170077,7 @@
         {
           "kind": "def",
           "name": "wellFormed",
-          "line": 1773,
+          "line": 1792,
           "called": [
             "MessageInfo",
             "length",
@@ -170040,8 +170088,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:1778>",
-          "line": 1778,
+          "name": "<anonymous:instance:1797>",
+          "line": 1797,
           "called": [
             "MessageInfo",
             "wellFormed"
@@ -170050,7 +170098,7 @@
         {
           "kind": "theorem",
           "name": "mkChecked_wellFormed",
-          "line": 1782,
+          "line": 1801,
           "called": [
             "MessageInfo",
             "length",
@@ -170062,7 +170110,7 @@
         {
           "kind": "def",
           "name": "encode",
-          "line": 1792,
+          "line": 1811,
           "called": [
             "MessageInfo",
             "length"
@@ -170071,7 +170119,7 @@
         {
           "kind": "def",
           "name": "decode",
-          "line": 1798,
+          "line": 1817,
           "called": [
             "MessageInfo",
             "length",
@@ -170083,8 +170131,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:1807>",
-          "line": 1807,
+          "name": "<anonymous:instance:1826>",
+          "line": 1826,
           "called": [
             "MessageInfo",
             "length"
@@ -170093,7 +170141,7 @@
         {
           "kind": "theorem",
           "name": "decode_wellFormed",
-          "line": 1813,
+          "line": 1832,
           "called": [
             "MessageInfo",
             "decode",
@@ -170104,7 +170152,7 @@
         {
           "kind": "theorem",
           "name": "and_mask_127",
-          "line": 1832,
+          "line": 1851,
           "called": [
             "symm"
           ]
@@ -170112,7 +170160,7 @@
         {
           "kind": "theorem",
           "name": "shift7_and_mask_3",
-          "line": 1857,
+          "line": 1876,
           "called": [
             "symm"
           ]
@@ -170120,13 +170168,13 @@
         {
           "kind": "theorem",
           "name": "shift9_extracts_label",
-          "line": 1889,
+          "line": 1908,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "encode_decode_roundtrip",
-          "line": 1918,
+          "line": 1937,
           "called": [
             "MessageInfo",
             "and_mask_127",
@@ -170143,7 +170191,7 @@
         {
           "kind": "structure",
           "name": "SyscallDecodeResult",
-          "line": 1943,
+          "line": 1962,
           "called": [
             "CPtr",
             "MessageInfo",
@@ -232565,7 +232613,7 @@
     {
       "module": "tests.SyscallReturnAbiSuite",
       "path": "tests/SyscallReturnAbiSuite.lean",
-      "declaration_count": 54,
+      "declaration_count": 59,
       "declarations": [
         {
           "kind": "namespace",
@@ -232583,9 +232631,12 @@
             "dispatchArm_serviceQuery_matches_returnShape",
             "errorFrame",
             "errorLabel_never_zero",
+            "installedCount",
             "readReturnFrame_writeReturnFrame",
             "readReturnValue",
             "readReturnValue_eq_readReturnFrame_x0",
+            "returnMessageInfo_extraCaps_le_installed",
+            "returnMessageInfo_extraCaps_zero",
             "stageWokenDelivery",
             "stageWokenSendCompletion",
             "stageWokenSendCompletion_stages_zero",
@@ -232597,7 +232648,7 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 87,
+          "line": 91,
           "called": [
             "throw"
           ]
@@ -232605,13 +232656,13 @@
         {
           "kind": "inductive",
           "name": "RustDecoded",
-          "line": 104,
+          "line": 108,
           "called": []
         },
         {
           "kind": "def",
           "name": "rustDecodeResponse",
-          "line": 110,
+          "line": 114,
           "called": [
             "RustDecoded",
             "decode",
@@ -232623,7 +232674,7 @@
         {
           "kind": "def",
           "name": "postTrapRegs",
-          "line": 121,
+          "line": 125,
           "called": [
             "SyscallReturnFrame"
           ]
@@ -232631,7 +232682,7 @@
         {
           "kind": "def",
           "name": "callerTid",
-          "line": 129,
+          "line": 133,
           "called": [
             "ThreadId"
           ]
@@ -232639,7 +232690,7 @@
         {
           "kind": "def",
           "name": "callerCn",
-          "line": 130,
+          "line": 134,
           "called": [
             "ObjId"
           ]
@@ -232647,7 +232698,7 @@
         {
           "kind": "def",
           "name": "callerVsp",
-          "line": 131,
+          "line": 135,
           "called": [
             "ObjId"
           ]
@@ -232655,7 +232706,7 @@
         {
           "kind": "def",
           "name": "ntfnId",
-          "line": 132,
+          "line": 136,
           "called": [
             "ObjId"
           ]
@@ -232663,19 +232714,19 @@
         {
           "kind": "def",
           "name": "capPtrValue",
-          "line": 138,
+          "line": 142,
           "called": []
         },
         {
           "kind": "def",
           "name": "signalledBadge",
-          "line": 140,
+          "line": 144,
           "called": []
         },
         {
           "kind": "def",
           "name": "ntfnCap",
-          "line": 142,
+          "line": 146,
           "called": [
             "Capability",
             "ntfnId",
@@ -232685,7 +232736,7 @@
         {
           "kind": "def",
           "name": "trustedLabeling",
-          "line": 150,
+          "line": 154,
           "called": [
             "LabelingContext",
             "kernelTrusted"
@@ -232694,7 +232745,7 @@
         {
           "kind": "def",
           "name": "witnessState",
-          "line": 156,
+          "line": 160,
           "called": [
             "SystemState",
             "build",
@@ -232717,7 +232768,7 @@
         {
           "kind": "def",
           "name": "dispatchFromAbi",
-          "line": 178,
+          "line": 182,
           "called": [
             "KernelError",
             "SyscallOutcome",
@@ -232732,7 +232783,7 @@
         {
           "kind": "def",
           "name": "peerTid",
-          "line": 192,
+          "line": 196,
           "called": [
             "ThreadId"
           ]
@@ -232740,7 +232791,7 @@
         {
           "kind": "def",
           "name": "epId",
-          "line": 193,
+          "line": 197,
           "called": [
             "ObjId"
           ]
@@ -232748,7 +232799,7 @@
         {
           "kind": "def",
           "name": "replyRid",
-          "line": 194,
+          "line": 198,
           "called": [
             "ReplyId"
           ]
@@ -232756,31 +232807,31 @@
         {
           "kind": "def",
           "name": "epCapPtr",
-          "line": 196,
+          "line": 200,
           "called": []
         },
         {
           "kind": "def",
           "name": "replyCapPtr",
-          "line": 197,
+          "line": 201,
           "called": []
         },
         {
           "kind": "def",
           "name": "epBadgeVal",
-          "line": 198,
+          "line": 202,
           "called": []
         },
         {
           "kind": "def",
           "name": "replyBadgeVal",
-          "line": 199,
+          "line": 203,
           "called": []
         },
         {
           "kind": "def",
           "name": "epCap",
-          "line": 201,
+          "line": 205,
           "called": [
             "Capability",
             "badge",
@@ -232793,7 +232844,7 @@
         {
           "kind": "def",
           "name": "replyCapability",
-          "line": 206,
+          "line": 210,
           "called": [
             "Capability",
             "badge",
@@ -232806,13 +232857,13 @@
         {
           "kind": "def",
           "name": "selfTcbCapPtr",
-          "line": 211,
+          "line": 215,
           "called": []
         },
         {
           "kind": "def",
           "name": "selfTcbCap",
-          "line": 217,
+          "line": 221,
           "called": [
             "Capability",
             "ofList",
@@ -232821,8 +232872,43 @@
         },
         {
           "kind": "def",
+          "name": "epCapNoGrantPtr",
+          "line": 225,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "payloadCapPtr",
+          "line": 226,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "epCapNoGrant",
+          "line": 230,
+          "called": [
+            "Capability",
+            "badge",
+            "epBadgeVal",
+            "epId",
+            "ofList",
+            "ofNatMasked"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "payloadCapability",
+          "line": 238,
+          "called": [
+            "Capability",
+            "ntfnId",
+            "ofList"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "core1",
-          "line": 221,
+          "line": 242,
           "called": [
             "CoreId"
           ]
@@ -232830,15 +232916,19 @@
         {
           "kind": "def",
           "name": "sharedCn",
-          "line": 225,
+          "line": 249,
           "called": [
             "CNode",
             "capPtrValue",
             "epCap",
+            "epCapNoGrant",
+            "epCapNoGrantPtr",
             "epCapPtr",
             "ntfnCap",
             "ofListWF",
             "ofNat",
+            "payloadCapPtr",
+            "payloadCapability",
             "replyCapPtr",
             "replyCapability",
             "selfTcbCap",
@@ -232848,7 +232938,7 @@
         {
           "kind": "def",
           "name": "twoThreadState",
-          "line": 237,
+          "line": 263,
           "called": [
             "SystemState",
             "build",
@@ -232873,7 +232963,7 @@
         {
           "kind": "def",
           "name": "replyPendingState",
-          "line": 265,
+          "line": 291,
           "called": [
             "SystemState",
             "build",
@@ -232898,7 +232988,7 @@
         {
           "kind": "def",
           "name": "dispatchFromAbiOn",
-          "line": 293,
+          "line": 319,
           "called": [
             "CoreId",
             "KernelError",
@@ -232913,7 +233003,7 @@
         {
           "kind": "def",
           "name": "runUnitReturnWitness",
-          "line": 311,
+          "line": 337,
           "called": [
             "assertBool",
             "dispatchFromAbi",
@@ -232932,7 +233022,7 @@
         {
           "kind": "def",
           "name": "runBadgeDeliveryWitness",
-          "line": 344,
+          "line": 370,
           "called": [
             "assertBool",
             "dispatchFromAbi",
@@ -232948,7 +233038,7 @@
         {
           "kind": "def",
           "name": "runFullWidthBadgeWitness",
-          "line": 385,
+          "line": 411,
           "called": [
             "assertBool",
             "ofNatMasked",
@@ -232961,7 +233051,7 @@
         {
           "kind": "def",
           "name": "runBlockedOutcomeWitness",
-          "line": 407,
+          "line": 433,
           "called": [
             "assertBool",
             "dispatchFromAbi",
@@ -232974,7 +233064,7 @@
         {
           "kind": "def",
           "name": "stagedFrame",
-          "line": 425,
+          "line": 451,
           "called": [
             "SyscallReturnFrame",
             "SystemState",
@@ -232986,7 +233076,7 @@
         {
           "kind": "def",
           "name": "waitThenSignalScenario",
-          "line": 432,
+          "line": 458,
           "called": [
             "KernelError",
             "SyscallReturnFrame",
@@ -233004,7 +233094,7 @@
         {
           "kind": "def",
           "name": "receiveThenSendScenario",
-          "line": 446,
+          "line": 472,
           "called": [
             "KernelError",
             "SyscallReturnFrame",
@@ -233022,7 +233112,7 @@
         {
           "kind": "def",
           "name": "sendThenReceiveScenario",
-          "line": 460,
+          "line": 486,
           "called": [
             "KernelError",
             "SyscallOutcome",
@@ -233041,7 +233131,7 @@
         {
           "kind": "def",
           "name": "replyDeliveryScenario",
-          "line": 476,
+          "line": 502,
           "called": [
             "KernelError",
             "SyscallReturnFrame",
@@ -233059,7 +233149,7 @@
         {
           "kind": "def",
           "name": "replyRecvDeliveryScenario",
-          "line": 489,
+          "line": 515,
           "called": [
             "KernelError",
             "SyscallOutcome",
@@ -233076,13 +233166,13 @@
         {
           "kind": "def",
           "name": "queriedSid",
-          "line": 502,
+          "line": 528,
           "called": []
         },
         {
           "kind": "def",
           "name": "serviceQueryScenario",
-          "line": 504,
+          "line": 530,
           "called": [
             "InterfaceSpec",
             "KernelError",
@@ -233101,7 +233191,7 @@
         {
           "kind": "def",
           "name": "selfSuspendScenario",
-          "line": 519,
+          "line": 545,
           "called": [
             "KernelError",
             "SyscallOutcome",
@@ -233114,8 +233204,31 @@
         },
         {
           "kind": "def",
+          "name": "capsSendScenario",
+          "line": 558,
+          "called": [
+            "KernelError",
+            "SyscallReturnFrame",
+            "bootCoreId",
+            "callerCn",
+            "callerTid",
+            "core1",
+            "dispatchFromAbiOn",
+            "getTcb",
+            "none",
+            "ofNat",
+            "pure",
+            "size",
+            "stagedFrame",
+            "throw",
+            "toNat",
+            "twoThreadState"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "hex",
-          "line": 528,
+          "line": 582,
           "called": [
             "ofList",
             "toNat"
@@ -233124,7 +233237,7 @@
         {
           "kind": "def",
           "name": "frameCells",
-          "line": 531,
+          "line": 585,
           "called": [
             "SyscallReturnFrame",
             "hex"
@@ -233133,7 +233246,7 @@
         {
           "kind": "def",
           "name": "decodeCell",
-          "line": 534,
+          "line": 588,
           "called": [
             "SyscallReturnFrame",
             "decode",
@@ -233145,7 +233258,7 @@
         {
           "kind": "def",
           "name": "outcomeLine",
-          "line": 540,
+          "line": 594,
           "called": [
             "KernelError",
             "SyscallOutcome",
@@ -233158,12 +233271,14 @@
         {
           "kind": "def",
           "name": "returnAbiTraceLines",
-          "line": 551,
+          "line": 605,
           "called": [
             "all",
             "badge",
             "bootCoreId",
+            "capsSendScenario",
             "dispatchFromAbi",
+            "epCapNoGrantPtr",
             "errorLabel",
             "frameCells",
             "none",
@@ -233188,13 +233303,13 @@
         {
           "kind": "def",
           "name": "fixturePath",
-          "line": 596,
+          "line": 656,
           "called": []
         },
         {
           "kind": "def",
           "name": "runTraceFixtureCheck",
-          "line": 603,
+          "line": 663,
           "called": [
             "fixturePath",
             "returnAbiTraceLines",
@@ -233204,12 +233319,15 @@
         {
           "kind": "def",
           "name": "runBlockedWaiterStagingWitnesses",
-          "line": 627,
+          "line": 687,
           "called": [
             "assertBool",
             "bootCoreId",
             "callerTid",
+            "capsSendScenario",
             "currentOnCore",
+            "epCapNoGrantPtr",
+            "epCapPtr",
             "getTcb",
             "none",
             "postTrapRegs",
@@ -233220,6 +233338,7 @@
             "selfSuspendScenario",
             "sendThenReceiveScenario",
             "serviceQueryScenario",
+            "slot0",
             "stagedFrame",
             "waitThenSignalScenario",
             "zero"
@@ -233228,7 +233347,7 @@
         {
           "kind": "def",
           "name": "runSyscallReturnAbiChecks",
-          "line": 710,
+          "line": 790,
           "called": [
             "runBadgeDeliveryWitness",
             "runBlockedOutcomeWitness",
@@ -233241,7 +233360,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 729,
+          "line": 809,
           "called": [
             "runSyscallReturnAbiChecks"
           ]
