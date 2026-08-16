@@ -1,3 +1,136 @@
+## v0.33.37 — WS-RA core: the kernel returns the seL4 frame, end to end
+
+The syscall return ABI, landed.  Before this cut the kernel wrote exactly one
+register on syscall exit — `x0` — and the value it wrote was the caller's own
+capability pointer, which userspace's `decode_response` (`regs[0] != 0` means
+error) decoded as a `KernelError`: a **successful** syscall reported a spurious
+error for any nonzero cap pointer, and the five value-returning syscalls
+returned nothing.  The kernel now returns seL4's ARM64 convention exactly.
+
+**The convention.**  `x0` = badge/primary result at full 64-bit width; `x1` =
+`MessageInfo` whose **label** carries the error at `discriminant + 1` — label 0
+is success, and the offset exists because `KernelError` discriminant 0 is
+`.invalidCapability`, so direct carriage would alias the first error with
+success (the plan's own draft defect, caught in the pre-implementation
+refinement pass and pinned by `errorLabel_never_zero` /
+`errorLabel_zero_iff_success`); `x2`–`x5` = message registers.  All 55
+discriminants round-trip through the offset label by enumeration
+(`errorLabel_roundtrip`, `kernelErrorFitsLabel`, `errorFrame_x1_decodes`), and
+over-wide labels fail closed.  The bit-63 `encodeOk`/`encodeError` protocol is
+**retired** — deleted, Tier-3 negative anchors preventing its return,
+`bit63Encoding_not_injective_on_badges` retaining the badge-aliasing hazard it
+carried (two valid badges differing only at bit 63 collided under the old
+encoding).
+
+**The model** (`SeLe4n/Kernel/Architecture/SyscallReturn.lean`, production,
+~800 lines): `KernelError.toDiscriminant`/`ofDiscriminant?` with round trips;
+`ReturnShape` (`unit`/`badge`/`word`/`message`) and `syscallReturnShape` as a
+**total function** over `SyscallId` — a new syscall cannot be added without
+declaring its return shape, and `returnShape_list_gate_insufficient` records
+why a list-plus-completeness-theorem gate was rejected; the
+`SyscallReturnFrame` codec with `decodeReturnFrame_encodeReturnFrame`
+losslessness at full width; `SyscallOutcome` (`returns frame | blocks`)
+decided from the caller's **post-state** IPC state (`ipcStateBlocksReturn`) —
+`.call` always blocks, `.receive`/`.send`/`.notificationWait` conditionally;
+`frameForShape` constructing `.unit` frames rather than reading staged
+registers (reading them back would reproduce the defect); and the staging seam
+`writeReturnFrameToTcb`/`readReturnFrame` with
+`writeReturnFrameToTcb_preserves_projection` for **every** observer — WS-H12c
+already strips `registerContext` from projected TCBs, so the plan's premise
+that the theorem needed a high-observer hypothesis was wrong in its own
+favour.
+
+**The staging is arm-level**, a design sharpening over the plan's
+delivery-site draft: an immediate value is already in the dispatch arm's hands
+(`.ok (some badge)`) or the caller's own `pendingMessage`, so staging at the
+`API.lean` arms touches zero IPC transitions and none of the ~1900-reference
+invariant surface.  `.notificationWait` (both arms) stages the signalled badge
+via `returnFrameOfBadge`; `.receive` and `.replyRecv` (both arms each) stage
+the delivered message via `stageDeliveredMessage` (guarded on `.ready`, the
+identity for a blocked caller); `.serviceQuery` stages the resolved service id
+via `returnFrameOfWord` — it previously computed `lookupServiceByCap` and
+threw the answer away.
+
+**The boundary.**  `syscallDispatchFromAbi` returns `Kernel
+Architecture.SyscallOutcome`; its error arms return
+`.returns (Architecture.errorFrame ke)` with the state committed, so
+`syscallEntry_error_perCore_NI` and
+`syscallEntry_error_preserves_proofLayerInvariantBundle` stand untouched
+(error frames are computed at the boundary, never staged —
+`syscallDispatchFromAbi_error_stages_no_frame`).  The entry
+(`lean_syscall_dispatch_cross_core`) publishes the frame's six words to a
+per-core mailbox via the new `ffi_syscall_return_frame` extern — the
+`ShootdownOpMailbox` pattern, trivially race-free here since slot `c` is
+written and read by core `c`'s own entry inside the same `with_kernel_entry`
+critical section — and returns an outcome tag; `trap.rs` gains
+`set_x2`..`set_x5` + `set_return_frame` and restores all six registers on
+`Frame`, writes nothing on `Blocked` (the SM10.E context-restore hook), and
+writes `error_frame_regs` on dispatch errors.  The vestigial
+`syscall_dispatch_inner` export and `syscallDispatchInner` body are
+**deleted** — closing the TLB shootdown plan's deferred item #3 by its own
+recorded route (b) — and `SyscallDispatchSuite` drives the pure
+`syscallDispatchFromAbi` directly.  `SYSCALL_ABI_VERSION = 2` is pinned three
+ways: a Lean `decide` theorem, a HAL test-compile-time `const` assertion
+(the strongest form under the HAL's zero-runtime-deps mirror discipline), and
+the abi-crate conformance pin.
+
+**Userspace.**  `decode_response` rewritten to the label convention,
+fail-closed both ways (malformed `x1` → `InvalidMessageInfo`; unknown nonzero
+label → `UnknownKernelError`); `badge()` reads `x0`; `service_query` returns
+`KernelResult<u64>`; the non-aarch64 mock re-encoded.  Conformance grows a
+Lean-side mirror of the new decoder, a Rust-side `ReturnShape` mirror with
+compile-time wrapper-signature pins, per-shape frame round trips, and a
+wrapper-length prefilter gate.
+
+**Defects found while landing, all fixed**: five unreachable wrappers —
+`dispatch_svc`'s `min_inline_args` prefilter demanded more inline registers
+than the authoritative Lean decoders require, so `cspace_mint` (4-vs-5),
+`cspace_copy`/`cspace_move` (2-vs-4), `lifecycle_retype` (3-vs-4) and
+`service_query` (0-vs-1, caught by the new conformance pin) could never
+succeed through the typed path; `message_length` masked `0x0FFF` under a
+MessageInfo layout nothing else in the tree used; a stale 54-variant error
+enumeration (`KernelError` has 55); and `DispatchError`'s dead variants
+reduced to the two the prefilter can still produce, with
+`kernel_error_discriminant()` mapping them onto the canonical discriminants.
+All fail-closed behind the authoritative Lean decode — fidelity defects, not
+vulnerabilities.
+
+**Sequencing as the plan prescribed**: `tests/SyscallReturnAbiSuite.lean`
+landed first and **failed on the pre-migration tree** (the spurious-error
+composition made observable before it was made correct), then inverted to
+post-flip assertions — §1 the RA.E.1 witnesses, §2 the decoder mirror, §4 the
+unit zero-frame, §5/§6 badge delivery incl. full 64-bit width, §7 the blocked
+outcome, §8 the golden fixture `tests/fixtures/syscall_return_abi.expected`
+(+ `.sha256`, Tier-2 walked) byte-verified against the live decisions.  The
+main trace is **byte-identical**: return frames live in `registerContext` and
+the mailbox, neither of which the trace projects.
+
+**Docs**: spec §6.5.5 rewritten to the live four-export bridge surface;
+GitBook chapters 10/15 + handbook README; `WORKSTREAM_HISTORY`,
+`CLAIM_EVIDENCE_INDEX`, `DEVELOPMENT.md`; the SM9 plan re-anchored off the
+dissolved 63-bit payload premise (`auditReadWord_fits_payload` retired before
+it was built; the chunk protocol survives for the unbounded-`Nat` reason);
+the master plan and release-closure plan updated (SM9 unblocked; SM10.E
+inherits RA.B.5b delivery + the cancellation error-frame debt);
+`CLAUDE.md`/`AGENTS.md` in lockstep.
+
+**AK7 discipline**: every live WS-RA read goes through
+`SystemState.getTcb?` (`writeReturnFrameToTcb`, `readReturnFrame`,
+`stageDeliveredMessage`, `syscallReturnOutcome`; `GETTCB_ADOPTION`
+2021 → 2048), and the baseline is re-anchored for a single
+characterisation-proof occurrence — `readReturnValue_eq_readReturnFrame_x0`
+cases on the same raw scrutinee its baselined subject matches on, no new
+live raw read (`RAW_LOOKUP_TID` 1286 → 1287).
+
+**Remaining WS-RA scope, registered**: RA.B.5b — the blocked-waiter half
+(unblocking transitions staging the woken thread's frame; delivery is
+SM10.E's context restore, and the cancellation/timeout error-frame staging is
+§9 registered debt with owner SM10.E) — and RA.B.8, the per-arm
+`dispatchArm_matches_returnShape` coherence family.  Zero sorry/axiom; all 68
+Lean suites green; Rust workspace 1124 tests, zero ignored, clippy-clean.
+
+Refs: docs/planning/SYSCALL_RETURN_ABI_PLAN.md (landing record)
+
 ## v0.33.36 — the four registered SM9 findings, fixed rather than deferred
 
 v0.33.34 registered four review findings in an SM9 §9a rather than fixing them,

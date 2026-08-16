@@ -320,9 +320,15 @@ impl SyscallArgs {
 /// convention (`x0` value, offset error label on `x1`, `x2`-`x5` message
 /// registers).  Version 1 was the retired bit-63 protocol.  Mirrors
 /// `sele4n-types::SYSCALL_ABI_VERSION` and Lean's
-/// `Architecture.syscallAbiVersion`; the `#[cfg(test)]` mirror test and
-/// the abi-crate conformance suite pin all three to the same literal, so
-/// a half-bumped tree fails its own suite (plan §3.6).
+/// `Architecture.syscallAbiVersion`.  The HAL carries zero runtime
+/// dependencies by design (the mirror discipline documented in
+/// `Cargo.toml`), so the cross-crate agreement is pinned where
+/// `sele4n-types` is visible: a `#[cfg(test)]` `const` assertion makes
+/// any drift fail **test compilation** (not merely a test run), and the
+/// abi-crate conformance suite pins the same literal from the userspace
+/// side — so a half-bumped tree cannot build its own test lane, let
+/// alone pass it (plan §3.6).  The Lean side is a `decide` theorem
+/// (`syscallAbiVersion_pinned`), failing the kernel build itself.
 pub const SYSCALL_ABI_VERSION: u64 = 2;
 
 /// WS-RA: number of return-frame mailbox slots — one per core.
@@ -367,7 +373,10 @@ pub static RETURN_FRAMES: ReturnFrameMailbox = ReturnFrameMailbox::new();
 /// Fail-closed on an out-of-range core id, like every FFI-facing bound in
 /// this crate.
 pub fn return_frame_publish_in(mb: &ReturnFrameMailbox, core: usize, regs: [u64; 6]) {
-    assert!(core < RETURN_FRAME_CORES, "return_frame_publish: core {core} out of range");
+    assert!(
+        core < RETURN_FRAME_CORES,
+        "return_frame_publish: core {core} out of range"
+    );
     for (slot, value) in mb.regs[core].iter().zip(regs.iter()) {
         slot.store(*value, core::sync::atomic::Ordering::Relaxed);
     }
@@ -375,7 +384,10 @@ pub fn return_frame_publish_in(mb: &ReturnFrameMailbox, core: usize, regs: [u64;
 
 /// WS-RA (testable inner form): read `core`'s published return frame.
 pub fn return_frame_read_in(mb: &ReturnFrameMailbox, core: usize) -> [u64; 6] {
-    assert!(core < RETURN_FRAME_CORES, "return_frame_read: core {core} out of range");
+    assert!(
+        core < RETURN_FRAME_CORES,
+        "return_frame_read: core {core} out of range"
+    );
     let mut out = [0u64; 6];
     for (value, slot) in out.iter_mut().zip(mb.regs[core].iter()) {
         *value = slot.load(core::sync::atomic::Ordering::Relaxed);
@@ -718,8 +730,14 @@ mod tests {
         // InvalidSyscallArgument = 41 — retiring the legacy raw 7 / 6
         // x0 writes and their documented collision with
         // EndpointStateMismatch / SchedulerInvariantViolation.
-        assert_eq!(DispatchError::InvalidSyscallId.kernel_error_discriminant(), 31);
-        assert_eq!(DispatchError::InvalidArgument.kernel_error_discriminant(), 41);
+        assert_eq!(
+            DispatchError::InvalidSyscallId.kernel_error_discriminant(),
+            31
+        );
+        assert_eq!(
+            DispatchError::InvalidArgument.kernel_error_discriminant(),
+            41
+        );
         // Pinned against the canonical enum, not just literals.
         assert_eq!(
             DispatchError::InvalidSyscallId.kernel_error_discriminant(),
@@ -731,14 +749,20 @@ mod tests {
         );
     }
 
+    // WS-RA (plan 3.6): the HAL mirror and the sele4n-types canonical
+    // constant must agree, and the agreement must fail at test
+    // *compilation* — a `const` assertion, not a runtime `assert_eq!` —
+    // so a half-bumped tree cannot even build the test lane.  Lean pins
+    // the same literal via `syscallAbiVersion_pinned` (a `decide`
+    // theorem, failing the kernel build), and the abi-crate conformance
+    // suite pins its own read of the canonical constant.
+    const _: () = assert!(SYSCALL_ABI_VERSION == sele4n_types::SYSCALL_ABI_VERSION);
+
     #[test]
     fn syscall_abi_version_matches_canonical_pin() {
-        // WS-RA (plan 3.6): the HAL mirror and the sele4n-types canonical
-        // constant must agree; Lean pins the same literal via
-        // `syscallAbiVersion_pinned`, and the abi-crate conformance suite
-        // pins its own read of the canonical constant.
+        // The literal itself, pinned at runtime so a coordinated bump of
+        // both mirrors without a protocol change still surfaces here.
         assert_eq!(SYSCALL_ABI_VERSION, 2);
-        assert_eq!(SYSCALL_ABI_VERSION, sele4n_types::SYSCALL_ABI_VERSION);
     }
 
     #[test]

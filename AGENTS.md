@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.33.36.
+Lean 4.28.0 toolchain, Lake build system, version 0.33.37.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -718,36 +718,66 @@ documentation lives under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
-- **WS-RA Syscall Return ABI — NEXT WORKSTREAM, implemented ahead of SM9**:
-  the kernel has **no syscall return path**.  `writeFfiRegistersToTcb` stages
-  the *incoming* `x0..x5` into `tcb.registerContext` (`x0 ← capPtrReg`),
-  `syscallDispatchFromAbi` returns `encodeOk (readReturnValue st' tid)` reading
-  `gpr ⟨0⟩` back out — and **no transition anywhere writes a return value into
-  that register**.  `trap.rs` writes `set_x0` and nothing else: `set_x1` is
-  called only in a unit test and `x2`-`x5` are never written back.  Compose that
-  with userspace's `decode_response`, where `regs[0] != 0` *means error*, and a
-  **successful** syscall returns the caller's capability pointer for userspace to
-  decode as a `KernelError`.  `FFI.lean` documents the middle of this and defers
-  "full seL4-ABI x0 compliance".  Five syscalls are value-returning today and
-  return nothing — `.notificationWait` (discards `.ok (some badge)`), `.receive`
-  / `.call` / `.replyRecv` (deliver into `tcb.pendingMessage`, which has no
-  register path), and `.serviceQuery` (computes `lookupServiceByCap` and throws
-  the answer away with `.ok (_, st')`) — and SM9 adds `.auditRead` /
-  `.auditDrain`.  **Target**: seL4's ARM64 convention exactly — `x0` = badge or
-  primary result, `x1` = `MessageInfo` whose **label** carries the error,
-  `x2`-`x5` = message registers — with `encodeOk` / `encodeError` and the bit-63
-  protocol **retired**, since bit 63 was only ever a workaround for multiplexing
-  status into the value register.  Three decisions: return values stage in
-  `tcb.registerContext` rather than widening the FFI return type (so no dispatch
-  arm grows a six-tuple and the trap boundary is an ordinary context restore);
-  `syscallReturnShape : SyscallId → ReturnShape` is a **total function**, not a
-  list with a completeness theorem; and the flip is guarded by a
-  `SYSCALL_ABI_VERSION` pinned in both mirrors, because a half-migrated tree
-  reinterprets registers silently rather than failing.  No end-to-end test can
-  exist until SM10.E boots, so **RA.E.1 lands first and must fail on the
-  pre-migration tree**.  38 sub-tasks across ~12-15 PRs; blocks SM9 (both
-  value-returning sub-phases) and SM10.E.  Plan:
-  [`docs/planning/SYSCALL_RETURN_ABI_PLAN.md`](docs/planning/SYSCALL_RETURN_ABI_PLAN.md).
+- **WS-RA Syscall Return ABI — core LANDED (v0.33.37); the immediate-return
+  convention is live end to end**.  The kernel returns seL4's ARM64 frame
+  exactly: `x0` = badge / primary result at full 64-bit width, `x1` =
+  `MessageInfo` whose **offset** label carries the error (`0` = success,
+  `d + 1` = discriminant `d` — offset because discriminant 0,
+  `.invalidCapability`, is a real error and direct carriage would alias it
+  with success), `x2`-`x5` = message registers.  **Landed**: the convention
+  model `Kernel/Architecture/SyscallReturn.lean` (`ReturnShape` — `unit` /
+  `badge` / `word` / `message`, no wildcard so a new syscall is a missing
+  case at elaboration; `SyscallReturnFrame` + lossless round trip;
+  `SyscallOutcome`; the canonical `KernelError.toDiscriminant` /
+  `ofDiscriminant?` pair with `Platform.FFI.toUInt32` its instance;
+  `errorLabel_never_zero` / `errorLabel_roundtrip` / `kernelErrorFitsLabel`);
+  the staging seam (`writeReturnFrameToTcb` / `readReturnFrame` /
+  `TCB.withReturnFrame`, projection-invisible for EVERY observer since
+  WS-H12c already strips `registerContext` —
+  `writeReturnFrameToTcb_preserves_projection`); **arm-level staging for the
+  whole immediate-return surface** (a design sharpening over the plan's
+  delivery-site draft — every immediate value is already in the arm's hands
+  or the caller's own `pendingMessage`, so `.notificationWait`'s badge (the
+  SM9.C.0 closure, delivered end to end signal-before-wait),
+  `.receive`/`.replyRecv`'s consumed deliveries (`stageDeliveredMessage`,
+  guarded on the caller's post-state `.ready`) and `.serviceQuery`'s resolved
+  `ServiceId` stage while touching zero IPC transitions and zero of the
+  ~1900-reference invariant surface); `syscallDispatchFromAbi : Kernel
+  SyscallOutcome` (outcome decided from the caller's post-state; `Unit`
+  frames CONSTRUCTED, never read from staged registers; error frames
+  computed at the boundary, never staged — the error path stays
+  state-preserving and the SM8 error-NI theorems stand untouched); the
+  per-core return-frame mailbox (`ffi_syscall_return_frame`, the
+  ShootdownOpMailbox pattern; export returns the outcome tag); the trap
+  layer's six-register restore (`set_x2`-`set_x5` added; a blocked caller
+  gets NO writeback — the RA.C.9 SM10.E hook); `decode_response` reading
+  the label (fail-closed on undecodable `x1`); `SYSCALL_ABI_VERSION = 2`
+  pinned in Lean + `sele4n-types` + the HAL.  **Cleanup**: `encodeOk` /
+  `encodeError` + bit-63 theorems DELETED (hazard retained as
+  `bit63Encoding_not_injective_on_badges`; Tier-3 negative anchors);
+  vestigial `syscall_dispatch_inner` export DELETED; `message_length`'s
+  contradictory 14-bit MessageInfo reading fixed (`0x7F`);
+  `min_inline_args` reconciled with the Lean decoders — **five wrappers
+  were unreachable on hardware** (`cspace_mint` 4-vs-5, `cspace_copy` /
+  `cspace_move` 2-vs-4, `lifecycle_retype` 3-vs-4, `service_query` 0-vs-1,
+  the fifth found by the new wrapper-length conformance pin);
+  `DispatchError::Kernel` retired with the raw-7/6 x0 discriminant
+  collision (prefilter rejections ride the label as
+  `InvalidSyscallNumber` / `InvalidSyscallArgument`).  **Evidence**:
+  `tests/SyscallReturnAbiSuite.lean` landed FIRST asserting the defect
+  (a successful syscall's cap pointer decoding as `KernelError` 5; the
+  signal-before-wait badge provably nowhere in the register file) and the
+  flip INVERTED every witness in the commit that changed the behaviour;
+  golden fixture `tests/fixtures/syscall_return_abi.expected` computed from
+  the live dispatch decisions; per-shape + all-55-label conformance both
+  sides; `main_trace_smoke` byte-identical (the harness prints no register
+  content — as the refined plan §6.2 predicts).  **Remaining WS-RA scope**
+  (registered, ~2-3 PRs): RA.B.5b blocked-waiter staging at the unblocking
+  transitions (`blockedReturn_staged_in_waiter_frame`; delivery rides the
+  SM10.E context restore, and cancellation/timeout staging is a named
+  obligation before `contextRestoreSeamLive` flips) and RA.B.8's full
+  per-arm `dispatchArm_matches_returnShape`.
+  Plan: [`docs/planning/SYSCALL_RETURN_ABI_PLAN.md`](docs/planning/SYSCALL_RETURN_ABI_PLAN.md).
 
 - **WS-SM SMP multi-core completion workstream IN FLIGHT (v0.31.2 → v1.0.0)**:
   Unified workstream merging WS-RC's remaining R6..R14 phases with the
@@ -817,6 +847,17 @@ documentation lives under `docs/` and `docs/gitbook/`.
   **Plans**: master overview at
   [`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`](docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md);
   per-phase plans at `docs/planning/SMP_*.md`.
+
+  **AK7 re-anchor at v0.33.37 (WS-RA)**: `RAW_LOOKUP_TID` 1286 → 1287.
+  The single increment is the retained-instance proof
+  `readReturnValue_eq_readReturnFrame_x0` (`Platform/FFI.lean`), which
+  cases on the same `objects[tid.toObjId]?` scrutinee its subject
+  `readReturnValue` (baselined, pre-WS-RA) matches on — a raw-store
+  *characterisation* proof relating the legacy raw reader to the typed
+  `readReturnFrame`, no new live raw read.  Every live WS-RA read goes
+  through `SystemState.getTcb?` (`writeReturnFrameToTcb`,
+  `readReturnFrame`, `stageDeliveredMessage`, `syscallReturnOutcome`),
+  which is what moved `GETTCB_ADOPTION` 2021 → 2048.
 
   **Key AK7 metrics at v0.32.89**: `RAW_MATCH_TOTAL` 135
   (`RAW_MATCH_VSPACEROOT` 13 → 14),

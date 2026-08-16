@@ -57,17 +57,18 @@ ARM64 register ABI layer with exactly one `unsafe` block:
 
 ### sele4n-sys
 
-Safe high-level wrappers for all 25 syscalls:
+Safe high-level wrappers across the syscall surface:
 
 | Subsystem | Operations |
 |-----------|-----------|
-| IPC | `endpoint_send`, `endpoint_receive`, `endpoint_call`, `endpoint_reply`, `notification_signal`, `notification_wait`, `endpoint_reply_recv` |
+| IPC | `endpoint_send`, `endpoint_receive`, `endpoint_receive_with_reply`, `endpoint_call`, `endpoint_reply`, `notification_signal`, `notification_wait` (returns the signalled badge since WS-RA v0.33.37), `endpoint_reply_recv` (+ `_checked`) |
 | CSpace | `cspace_mint`, `cspace_copy`, `cspace_move`, `cspace_delete` |
 | Lifecycle | `lifecycle_retype`, `retype_tcb`, `retype_endpoint`, `retype_notification`, `retype_cnode`, `retype_vspace_root` |
-| VSpace | `vspace_map` (W^X pre-check), `vspace_unmap` |
-| Service | `service_register`, `service_revoke`, `service_query` |
+| VSpace | `vspace_map` (W^X pre-check; + `_read_only` / `_read_write` / `_read_execute` presets), `vspace_unmap`, `vspace_unify_instruction` |
+| Service | `service_register`, `service_revoke`, `service_query` (returns the resolved service id since WS-RA v0.33.37) |
 | SchedContext | `sched_context_configure`, `sched_context_bind`, `sched_context_unbind` |
 | TCB | `tcb_suspend`, `tcb_resume`, `tcb_set_priority`, `tcb_set_mcp`, `tcb_set_ipc_buffer`, `tcb_set_affinity` |
+| Information flow | `declassify` |
 
 ### Phantom-Typed Capabilities
 
@@ -98,6 +99,22 @@ x2–x5 → Message registers [0..3]
 x7  → Syscall number (SyscallId)
 ```
 
+**Return direction (WS-RA, v0.33.37)** — the kernel restores the full seL4
+frame on syscall exit:
+
+```
+x0  ← badge / primary result (full 64-bit width)
+x1  ← MessageInfo; label 0 = success, label = KernelError discriminant + 1
+x2–x5 ← Message registers [0..3] of a delivered message
+```
+
+`decode_response` decodes the label fail-closed (a malformed `x1` is
+`InvalidMessageInfo`; an unknown nonzero label is `UnknownKernelError`),
+`badge()` reads `x0`, and the retired bit-63 status protocol no longer
+exists — `SYSCALL_ABI_VERSION = 2` is pinned on both sides of the boundary
+(and as a Lean `decide` theorem), so a half-migrated tree fails its own
+build rather than reinterpreting registers silently.
+
 Syscalls requiring more than 4 message registers (e.g., `service_register`,
 `sched_context_configure`) write the 5th+ values to the IPC buffer overflow
 slots via `buf.set_mr(index, value)`. The kernel reads these via
@@ -107,7 +124,10 @@ parameter.
 
 ## Testing
 
-- **367 unit tests** across 4 crates (91 abi + 93 conformance + 121 hal + 13 sys + 49 types)
+- **1124 tests** across 4 crates, zero failed, zero ignored (sele4n-abi:
+  104 unit + 106 conformance + 1 doctest; sele4n-hal: 821 unit + 14
+  `rw_lock_oracle` + 7 doctests; sele4n-sys: 13 + 1 doctest;
+  sele4n-types: 56 + 1 doctest — counts as of WS-RA v0.33.37)
 - **93 conformance tests** (RUST-XVAL-001..019 + property tests + W1 ABI tests + AA1 SchedContext/IpcTimeout tests + D6 TCB/AlignmentError tests + AG2-A domain boundary tests + AG2-B wrapper export tests)
 - **4 Lean cross-validation vectors** (XVAL-001..004 in MainTraceHarness)
 - CI: `scripts/test_rust.sh` integrated into `test_smoke.sh` (Tier 2).

@@ -1109,7 +1109,7 @@ theorem over `readReturnValue` keeps meaning what it meant. -/
 theorem readReturnValue_eq_readReturnFrame_x0
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     readReturnValue st tid = (Architecture.readReturnFrame st tid).x0 := by
-  unfold readReturnValue Architecture.readReturnFrame
+  unfold readReturnValue Architecture.readReturnFrame SystemState.getTcb?
   cases h : st.objects[tid.toObjId]? with
   | none => rfl
   | some obj => cases obj <;> rfl
@@ -1125,9 +1125,9 @@ frame. -/
 def syscallReturnOutcome (syscallId : UInt32) (st : SystemState)
     (tid : SeLe4n.ThreadId) : Architecture.SyscallOutcome :=
   let blocked :=
-    match st.objects[tid.toObjId]? with
-    | some (.tcb tcb) => Architecture.ipcStateBlocksReturn tcb.ipcState
-    | _ => false
+    match st.getTcb? tid with
+    | some tcb => Architecture.ipcStateBlocksReturn tcb.ipcState
+    | none => false
   if blocked then
     .blocks
   else

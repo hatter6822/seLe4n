@@ -50,8 +50,7 @@ pub struct SyscallResponse {
 /// `UnknownKernelError` — either way an `Err`, never a false success.
 #[inline]
 pub fn decode_response(regs: [u64; 7]) -> KernelResult<SyscallResponse> {
-    let msg_info =
-        MessageInfo::decode(regs[1]).map_err(|_| KernelError::InvalidMessageInfo)?;
+    let msg_info = MessageInfo::decode(regs[1]).map_err(|_| KernelError::InvalidMessageInfo)?;
     match msg_info.label() {
         0 => Ok(SyscallResponse {
             x0: regs[0],

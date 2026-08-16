@@ -1868,8 +1868,11 @@ fn return_shape_matches_wrapper_signatures() {
     let _query: fn(CPtr) -> KernelResult<u64> = sele4n_sys::service::service_query;
     let _receive: fn(CPtr) -> KernelResult<(Badge, SyscallResponse)> =
         sele4n_sys::ipc::endpoint_receive;
-    let _reply_recv: fn(CPtr, CPtr, &sele4n_sys::ipc::IpcMessage)
-        -> KernelResult<(Badge, SyscallResponse)> = sele4n_sys::ipc::endpoint_reply_recv;
+    let _reply_recv: fn(
+        CPtr,
+        CPtr,
+        &sele4n_sys::ipc::IpcMessage,
+    ) -> KernelResult<(Badge, SyscallResponse)> = sele4n_sys::ipc::endpoint_reply_recv;
 }
 
 /// WS-RA RA.D.5: the response-side register layout, round-tripped — a

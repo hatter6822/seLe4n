@@ -256,17 +256,15 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
             // rejection, retiring the raw-discriminant `x0` write and its
             // documented collision.
             match crate::svc_dispatch::dispatch_svc(syscall_id, &args) {
-                Ok(crate::svc_dispatch::SvcOutcome::Frame(regs)) => {
-                    frame.set_return_frame(regs)
-                }
+                Ok(crate::svc_dispatch::SvcOutcome::Frame(regs)) => frame.set_return_frame(regs),
                 Ok(crate::svc_dispatch::SvcOutcome::Blocked) => {
                     // SM10.E context-restore hook: nothing to write for
                     // the blocked caller; the successor's frame install
                     // lands here when `contextRestoreSeamLive` flips.
                 }
-                Err(e) => frame.set_return_frame(
-                    crate::svc_dispatch::error_frame_regs(e.kernel_error_discriminant()),
-                ),
+                Err(e) => frame.set_return_frame(crate::svc_dispatch::error_frame_regs(
+                    e.kernel_error_discriminant(),
+                )),
             }
         }
         ec::DABT_LOWER | ec::DABT_CURRENT => {

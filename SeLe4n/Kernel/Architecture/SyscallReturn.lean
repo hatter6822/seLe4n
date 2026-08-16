@@ -476,10 +476,10 @@ Total: a non-TCB target returns the state unchanged, mirroring
 `writeFfiRegistersToTcb`'s posture (the caller surfaces the error). -/
 def writeReturnFrameToTcb (st : SystemState) (tid : SeLe4n.ThreadId)
     (frame : SyscallReturnFrame) : SystemState :=
-  match st.objects[tid.toObjId]? with
-  | some (.tcb tcb) =>
+  match st.getTcb? tid with
+  | some tcb =>
       { st with objects := st.objects.insert tid.toObjId (.tcb (tcb.withReturnFrame frame)) }
-  | _ => st
+  | none => st
 
 /-- WS-RA RA.B.2: read the staged return frame back out of a thread's
 register context — `Platform.FFI.readReturnValue` generalised to the
@@ -487,15 +487,15 @@ register context — `Platform.FFI.readReturnValue` generalised to the
 non-TCB target reads as the zero frame, the same totality posture. -/
 def readReturnFrame (st : SystemState) (tid : SeLe4n.ThreadId) :
     SyscallReturnFrame :=
-  match st.objects[tid.toObjId]? with
-  | some (.tcb tcb) =>
+  match st.getTcb? tid with
+  | some tcb =>
       { x0 := (tcb.registerContext.gpr ⟨0⟩).val.toUInt64
         x1 := (tcb.registerContext.gpr ⟨1⟩).val.toUInt64
         x2 := (tcb.registerContext.gpr ⟨2⟩).val.toUInt64
         x3 := (tcb.registerContext.gpr ⟨3⟩).val.toUInt64
         x4 := (tcb.registerContext.gpr ⟨4⟩).val.toUInt64
         x5 := (tcb.registerContext.gpr ⟨5⟩).val.toUInt64 }
-  | _ => .zero
+  | none => .zero
 
 /-- WS-RA RA.B.2: the staging round trip — what `writeReturnFrameToTcb`
 stages, `readReturnFrame` reads back exactly, at full 64-bit width in
@@ -503,17 +503,16 @@ every register (`RegValue` truncates nothing below `2^64`). -/
 theorem readReturnFrame_writeReturnFrame
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (frame : SyscallReturnFrame)
-    (tcb : TCB) (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (tcb : TCB) (hTcb : st.getTcb? tid = some tcb)
     (hObjInv : st.objects.invExt) :
     readReturnFrame (writeReturnFrameToTcb st tid frame) tid = frame := by
   unfold writeReturnFrameToTcb readReturnFrame
   rw [hTcb]
   simp only
-  have hLook : (st.objects.insert tid.toObjId
-        (KernelObject.tcb (tcb.withReturnFrame frame)))[tid.toObjId]?
-      = some (KernelObject.tcb (tcb.withReturnFrame frame)) :=
-    SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hObjInv
-  rw [hLook]
+  unfold SystemState.getTcb?
+  rw [RHTable_getElem?_eq_get?,
+      SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId
+        (KernelObject.tcb (tcb.withReturnFrame frame)) hObjInv]
   have hReads := (tcb.registerContext).stageReturnFrame_reads_back frame
   obtain ⟨h0, h1, h2, h3, h4, h5⟩ := hReads
   simp only [SeLe4n.Model.TCB.withReturnFrame_registerContext, h0, h1, h2, h3, h4, h5]
@@ -531,13 +530,11 @@ theorem writeReturnFrameToTcb_objects_ne
     simp only [beq_iff_eq]
     exact fun h => hNe h.symm
   unfold writeReturnFrameToTcb
-  cases h : st.objects[tid.toObjId]? with
+  cases h : st.getTcb? tid with
   | none => rfl
-  | some obj =>
-    cases obj <;> first
-      | rfl
-      | exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne
-          st.objects tid.toObjId oid _ hNe' hObjInv
+  | some tcb =>
+    exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne
+        st.objects tid.toObjId oid _ hNe' hObjInv
 
 /-- WS-RA RA.B.1 frame lemma: the scheduler is untouched. -/
 theorem writeReturnFrameToTcb_scheduler_eq
@@ -545,9 +542,9 @@ theorem writeReturnFrameToTcb_scheduler_eq
     (frame : SyscallReturnFrame) :
     (writeReturnFrameToTcb st tid frame).scheduler = st.scheduler := by
   unfold writeReturnFrameToTcb
-  cases h : st.objects[tid.toObjId]? with
+  cases h : st.getTcb? tid with
   | none => rfl
-  | some obj => cases obj <;> rfl
+  | some tcb => rfl
 
 /-- WS-RA RA.B.1 frame lemma: the machine is untouched — the staging
 writes the TCB's saved context only, never the machine mirror. -/
@@ -556,9 +553,9 @@ theorem writeReturnFrameToTcb_machine_eq
     (frame : SyscallReturnFrame) :
     (writeReturnFrameToTcb st tid frame).machine = st.machine := by
   unfold writeReturnFrameToTcb
-  cases h : st.objects[tid.toObjId]? with
+  cases h : st.getTcb? tid with
   | none => rfl
-  | some obj => cases obj <;> rfl
+  | some tcb => rfl
 
 /-- WS-RA RA.B.1: staging a frame for a target that is not a TCB is the
 identity — the totality witness, mirroring
@@ -566,15 +563,10 @@ identity — the totality witness, mirroring
 theorem writeReturnFrameToTcb_id_when_not_tcb
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (frame : SyscallReturnFrame)
-    (hNot : ∀ tcb, st.objects[tid.toObjId]? ≠ some (.tcb tcb)) :
+    (hNot : st.getTcb? tid = none) :
     writeReturnFrameToTcb st tid frame = st := by
   unfold writeReturnFrameToTcb
-  cases h : st.objects[tid.toObjId]? with
-  | none => rfl
-  | some obj =>
-    cases obj with
-    | tcb tcb => exact absurd h (hNot tcb)
-    | _ => rfl
+  rw [hNot]
 
 /-- WS-RA RA.B.6: stage the message a completed receive-shaped syscall
 delivered into the **caller's own** `pendingMessage` — the arm-level
@@ -591,20 +583,20 @@ receive arms pair this with the shape theorem rather than relying on
 incidental register content. -/
 def stageDeliveredMessage (st : SystemState) (tid : SeLe4n.ThreadId) :
     SystemState :=
-  match st.objects[tid.toObjId]? with
-  | some (.tcb tcb) =>
+  match st.getTcb? tid with
+  | some tcb =>
       if tcb.ipcState = .ready then
         match tcb.pendingMessage with
         | some msg => writeReturnFrameToTcb st tid (returnFrameOfMessage msg)
         | none => st
       else st
-  | _ => st
+  | none => st
 
 /-- A blocked caller stages nothing — `stageDeliveredMessage` is the
 identity whenever the caller's post-state is not `.ready`. -/
 theorem stageDeliveredMessage_id_when_blocked
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hTcb : st.getTcb? tid = some tcb)
     (hBlocked : tcb.ipcState ≠ .ready) :
     stageDeliveredMessage st tid = st := by
   unfold stageDeliveredMessage

@@ -635,38 +635,31 @@ theorem writeReturnFrameToTcb_preserves_projection
     projectState ctx observer (Architecture.writeReturnFrameToTcb st tid frame)
       = projectState ctx observer st := by
   simp only [Architecture.writeReturnFrameToTcb]
-  cases hTcb : st.objects[tid.toObjId]? with
+  cases hTcb : st.getTcb? tid with
   | none => rfl
-  | some obj =>
-      cases obj with
-      | tcb tcb =>
-          simp only [projectState]
-          congr 1
-          · exact funext (fun oid => by
-              simp only [projectObjects]
-              split
-              · simp only [Option.map]
-                simp only [RHTable_getElem?_eq_get?]
-                rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
-                by_cases hEq : tid.toObjId == oid
-                · simp only [hEq, ↓reduceIte, projectKernelObject]
-                  have hEq' := beq_iff_eq.mp hEq
-                  subst hEq'
-                  rw [← RHTable_getElem?_eq_get?]
-                  simp only [hTcb]
-                  -- The two projected TCBs differ only in `registerContext`,
-                  -- which both sides override with `default` — definitionally
-                  -- equal field for field.
-                  rfl
-                · simp [hEq]
-              · rfl)
-      | endpoint _ => rfl
-      | notification _ => rfl
-      | cnode _ => rfl
-      | vspaceRoot _ => rfl
-      | untyped _ => rfl
-      | schedContext _ => rfl
-      | reply _ => rfl
+  | some tcb =>
+      have hRaw : st.objects[tid.toObjId]? = some (.tcb tcb) :=
+        (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb
+      simp only [projectState]
+      congr 1
+      · exact funext (fun oid => by
+          simp only [projectObjects]
+          split
+          · simp only [Option.map]
+            simp only [RHTable_getElem?_eq_get?]
+            rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
+            by_cases hEq : tid.toObjId == oid
+            · simp only [hEq, ↓reduceIte, projectKernelObject]
+              have hEq' := beq_iff_eq.mp hEq
+              subst hEq'
+              rw [← RHTable_getElem?_eq_get?]
+              simp only [hRaw]
+              -- The two projected TCBs differ only in `registerContext`,
+              -- which both sides override with `default` — definitionally
+              -- equal field for field.
+              rfl
+            · simp [hEq]
+          · rfl)
 
 /-- WS-RA RA.B.6: the arm-level delivery staging is projection-invisible —
 `stageDeliveredMessage` either stages via `writeReturnFrameToTcb` (covered
@@ -677,25 +670,16 @@ theorem stageDeliveredMessage_preserves_projection
     projectState ctx observer (Architecture.stageDeliveredMessage st tid)
       = projectState ctx observer st := by
   unfold Architecture.stageDeliveredMessage
-  cases hTcb : st.objects[tid.toObjId]? with
+  cases hTcb : st.getTcb? tid with
   | none => rfl
-  | some obj =>
-      cases obj with
-      | tcb tcb =>
-          by_cases hReady : tcb.ipcState = .ready
-          · simp only [hReady, ↓reduceIte]
-            cases tcb.pendingMessage with
-            | none => rfl
-            | some msg =>
-                exact writeReturnFrameToTcb_preserves_projection ctx observer st tid _ hObjInv
-          · simp [hReady]
-      | endpoint _ => rfl
-      | notification _ => rfl
-      | cnode _ => rfl
-      | vspaceRoot _ => rfl
-      | untyped _ => rfl
-      | schedContext _ => rfl
-      | reply _ => rfl
+  | some tcb =>
+      by_cases hReady : tcb.ipcState = .ready
+      · simp only [hReady, ↓reduceIte]
+        cases tcb.pendingMessage with
+        | none => rfl
+        | some msg =>
+            exact writeReturnFrameToTcb_preserves_projection ctx observer st tid _ hObjInv
+      · simp [hReady]
 
 /-- WS-H12c: restoreIncomingContext preserves the information-flow projection
 when the current thread is non-observable. -/

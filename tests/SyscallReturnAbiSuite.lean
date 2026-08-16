@@ -291,6 +291,89 @@ private def runBlockedOutcomeWitness : IO Unit := do
         (outcome == .blocks)
 
 -- ============================================================================
+-- §8  Golden fixture — the deterministic return-ABI trace (RA.E.4)
+-- ============================================================================
+
+private def hex (v : UInt64) : String :=
+  s!"0x{String.mk (Nat.toDigits 16 v.toNat)}"
+
+private def frameCells (f : Kernel.Architecture.SyscallReturnFrame) : String :=
+  s!"x0={hex f.x0} x1={hex f.x1} x2={hex f.x2} x3={hex f.x3} x4={hex f.x4} x5={hex f.x5}"
+
+private def decodeCell (f : Kernel.Architecture.SyscallReturnFrame) : String :=
+  match rustDecodeResponse (postTrapRegs f) with
+  | .ok x0 _ => s!"decode=ok value={hex x0}"
+  | .err d => s!"decode=err disc={d}"
+  | .errUndecodableX1 => "decode=invalidMessageInfo"
+
+private def outcomeLine (tag : String)
+    (r : Except KernelError (Kernel.Architecture.SyscallOutcome × SystemState)) : String :=
+  match r with
+  | .error e => s!"[ret-abi] {tag}: dispatch-error {reprStr e}"
+  | .ok (.blocks, _) => s!"[ret-abi] {tag}: outcome=blocks tag=1 (no frame for the caller)"
+  | .ok (.returns f, _) =>
+      s!"[ret-abi] {tag}: outcome=returns tag=0 {frameCells f} {decodeCell f}"
+
+/-- The trace, computed from the live dispatch decisions — every line an
+observable of the §4-§7 scenarios plus the error carriage and the version
+pin, so any change in the return convention diverges the fixture. -/
+private def returnAbiTraceLines : List String :=
+  let signalMsgInfo : UInt64 := 1
+  let signalled :=
+    dispatchFromAbi SyscallId.notificationSignal.toNat signalMsgInfo
+      signalledBadge.toUInt64 witnessState
+  let waitAfterSignal :=
+    match signalled with
+    | .ok (_, st) => dispatchFromAbi SyscallId.notificationWait.toNat 0 0 st
+    | e => e
+  let labelRoundtrips :=
+    (List.range 55).all fun d =>
+      match SeLe4n.Model.KernelError.ofDiscriminant? d with
+      | some e => Kernel.Architecture.ofErrorLabel? (Kernel.Architecture.errorLabel e) == some e
+      | none => false
+  [ s!"[ret-abi] abi-version: {Kernel.Architecture.syscallAbiVersion}"
+  , outcomeLine "unit signal (cap ptr 5)" signalled
+  , outcomeLine "badge wait after signal 42" waitAfterSignal
+  , outcomeLine "blocking wait (idle notification)"
+      (dispatchFromAbi SyscallId.notificationWait.toNat 0 0 witnessState)
+  , outcomeLine "abi mismatch (msgInfo 0xAAAA, x1 = msgInfo forced unequal)"
+      (SeLe4n.Platform.FFI.syscallDispatchFromAbi trustedLabeling
+        SeLe4n.Kernel.Concurrency.bootCoreId
+        SyscallId.notificationSignal.toNat.toUInt32 0xAAAA
+        capPtrValue.toUInt64 0xBBBB 0 0 0 0 0 witnessState)
+  , s!"[ret-abi] error labels: all 55 discriminants round-trip = {labelRoundtrips}"
+  , s!"[ret-abi] full-width badge frame: " ++
+      frameCells (Kernel.Architecture.returnFrameOfBadge
+        (Badge.ofNatMasked 0x8000000000000042))
+  ]
+
+private def fixturePath : String := "tests/fixtures/syscall_return_abi.expected"
+
+/-- §8: print the deterministic return-ABI trace and verify it byte-for-byte
+against the golden fixture.  The lines print before the (strict)
+verification, so the fixture is regenerable via
+`lake exe syscall_return_abi_suite | grep '^\[ret-abi\]'` (brackets escaped —
+see the SmpIpcSuite note). -/
+private def runTraceFixtureCheck : IO Unit := do
+  IO.println "-- §8 deterministic return-ABI trace (RA.E.4 fixture)"
+  for l in returnAbiTraceLines do
+    IO.println l
+  let expectedContent := String.intercalate "\n" returnAbiTraceLines ++ "\n"
+  let fixtureExists ← System.FilePath.pathExists fixturePath
+  if !fixtureExists then
+    IO.println s!"  FAIL: golden fixture {fixturePath} not found"
+    IO.println s!"        regenerate: lake exe syscall_return_abi_suite | grep '^\\[ret-abi\\]' > {fixturePath}"
+    throw (IO.userError s!"missing fixture {fixturePath}")
+  let actual ← IO.FS.readFile fixturePath
+  if actual == expectedContent then
+    IO.println s!"  PASS: return-ABI trace matches golden fixture {fixturePath}"
+  else
+    IO.println s!"  FAIL: return-ABI trace differs from golden fixture {fixturePath}"
+    IO.println s!"        regenerate: lake exe syscall_return_abi_suite | grep '^\\[ret-abi\\]' > {fixturePath}"
+    IO.println s!"        (then refresh {fixturePath}.sha256 — see tests/fixtures/README.md)"
+    throw (IO.userError "return-ABI trace fixture mismatch")
+
+-- ============================================================================
 -- Runner
 -- ============================================================================
 
@@ -306,6 +389,7 @@ def runSyscallReturnAbiChecks : IO Unit := do
   runBadgeDeliveryWitness
   runFullWidthBadgeWitness
   runBlockedOutcomeWitness
+  runTraceFixtureCheck
   IO.println "===================================================="
   IO.println "All syscall-return-ABI checks PASS (post-flip convention holds)."
 

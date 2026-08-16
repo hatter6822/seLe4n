@@ -378,13 +378,17 @@ documentation; per-core declassification audit.
 
 Document: [`SMP_DECLASSIFICATION_COMPLETION_PLAN.md`](SMP_DECLASSIFICATION_COMPLETION_PLAN.md).
 
-**Blocked on WS-RA** ([`SYSCALL_RETURN_ABI_PLAN.md`](SYSCALL_RETURN_ABI_PLAN.md)),
-which is implemented first.  SM9.A's audit reader and SM9.C's data-carrying
-declassification are both *value-returning* syscalls, and the kernel has no
-syscall return path: `dispatchWithCapChecked` is `Kernel Unit` over a return
-register no transition writes, so both would compute the right answer and hand
-the caller back its own preloaded `x0`.  Neither sub-phase can be demonstrated,
-let alone accepted, until WS-RA lands.
+**Was blocked on WS-RA** ([`SYSCALL_RETURN_ABI_PLAN.md`](SYSCALL_RETURN_ABI_PLAN.md)),
+which was implemented first — **core landed at v0.33.37, so SM9 is
+unblocked**.  SM9.A's audit reader and SM9.C's data-carrying declassification
+are both *value-returning* syscalls, and before WS-RA the kernel had no
+syscall return path: `dispatchWithCapChecked` was `Kernel Unit` over a return
+register no transition wrote, so both would have computed the right answer
+and handed the caller back its own preloaded `x0`.  The return path now
+exists (arm-level staging via `writeReturnFrameToTcb`, the total
+`syscallReturnShape` both SM9 syscalls must extend, the full seL4 frame at
+the boundary); WS-RA's remaining blocked-waiter half (RA.B.5b) rides SM10.E's
+context restore and does not gate SM9's immediate value returns.
 
 61 sub-tasks across ~21-26 PRs.  Closes the four follow-ons SM8
 registered and could not take: a privileged clearance-filtered reader
@@ -508,8 +512,8 @@ WS-RC and WS-SM are merged. Opens immediately at v0.31.2 boundary.
 | SM5 | v0.71.0 → v0.82.x | 12-16 weeks |
 | SM6 | v0.83.0 → v0.90.x | 8-12 weeks |
 | SM7 ‖ SM8 | v0.91.0 → v0.97.x | 6-10 weeks (parallel) |
-| **WS-RA** | v0.33.32 → v0.34.x | **5-8 weeks** |
-| SM9 | after WS-RA | 12-16 weeks |
+| **WS-RA** | v0.33.36 → v0.33.37 | **core LANDED** (estimate was 5-8 weeks; the flip collapsed to one atomic cut.  Remaining: RA.B.5b blocked-waiter staging, owned with SM10.E) |
+| SM9 | after WS-RA — **now unblocked** | 12-16 weeks |
 | SM10 | v0.98.0 → **v1.0.0** | 4-6 weeks |
 | **Total** | | **84-119 weeks (~19-28 months)** |
 
