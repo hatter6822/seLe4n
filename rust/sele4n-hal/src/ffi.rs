@@ -679,6 +679,31 @@ pub extern "C" fn ffi_shootdown_publish_commit(len: u64, gen: u64) {
 }
 
 // ============================================================================
+// WS-RA: syscall return-frame mailbox FFI export
+// ============================================================================
+
+/// **WS-RA** (plan §3.3): publish the syscall return frame (`x0`-`x5`)
+/// into the calling core's slot of
+/// [`crate::svc_dispatch::RETURN_FRAMES`].
+///
+/// Called by `syscallDispatchCrossCoreEntry` immediately after its atomic
+/// commit; `dispatch_svc` reads the slot back inside the same
+/// `with_kernel_entry` critical section and hands the frame to the trap
+/// layer for the `x0`-`x5` writeback.  Same-core writer and reader, so
+/// the slot needs no cross-core ordering (see `ReturnFrameMailbox`).
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiSyscallReturnFrame`
+#[no_mangle]
+pub extern "C" fn ffi_syscall_return_frame(x0: u64, x1: u64, x2: u64, x3: u64, x4: u64, x5: u64) {
+    let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
+    crate::svc_dispatch::return_frame_publish_in(
+        &crate::svc_dispatch::RETURN_FRAMES,
+        core,
+        [x0, x1, x2, x3, x4, x5],
+    );
+}
+
+// ============================================================================
 // WS-SM SM1.B.5 (closes SMP-M4): per-CPU core-id FFI export
 // ============================================================================
 

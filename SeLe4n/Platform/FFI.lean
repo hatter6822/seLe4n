@@ -10,10 +10,6 @@ import SeLe4n.Kernel.API
 import SeLe4n.Kernel.Architecture.SyscallReturn
 import SeLe4n.Kernel.Lifecycle.Suspend
 import SeLe4n.Platform.Boot
--- WS-RC R2 audit: `bv_decide` for `encodeOk_high_bit_clear`.  The
--- tactic discharges closed `BitVec` propositions arising from
--- `UInt64`'s bitwise operations.
-import Std.Tactic.BVDecide
 
 /-!
 # FFI Bridge: Lean Kernel ↔ Rust HAL
@@ -54,7 +50,9 @@ declarations from compilation, so the "gating" is **link-time**:
   the `@[extern]` symbols resolve to the corresponding
   `#[no_mangle] pub extern "C"` functions in
   `rust/sele4n-hal/src/{ffi,svc_dispatch}.rs`, and the `@[export]`
-  symbols (`suspend_thread_inner`, `syscall_dispatch_inner`) are
+  symbols (`suspend_thread_inner`; the syscall entry itself is
+  `lean_syscall_dispatch_cross_core` in `Kernel/SyscallDispatchEntry.lean` —
+  WS-RA removed the vestigial `syscall_dispatch_inner`) are
   reachable from the Rust caller via `extern "C" { fn ... }` blocks.
 - On a simulation build (host development, CI smoke/full test runs)
   the Rust HAL is **not** linked.  Test paths consume the pure-model
@@ -462,6 +460,27 @@ opaque ffiShootdownPublishSlot :
 opaque ffiShootdownPublishCommit : (len : UInt64) → (gen : UInt64) → BaseIO Unit
 
 -- ============================================================================
+-- WS-RA RA.C.1: the per-core syscall return-frame mailbox
+-- ============================================================================
+
+/-- WS-RA (plan §3.3): publish the syscall return frame (`x0`-`x5`) into the
+    executing core's return-frame mailbox, read back by `dispatch_svc`
+    inside the same `with_kernel_entry` critical section — the
+    `ShootdownOpMailbox` publish pattern, for the same reason (a scalar
+    export return cannot carry six words, and the FFI deliberately carries
+    no `lean_object*`).
+
+    **Link-gating**: called ONLY from `syscallDispatchCrossCoreEntry`
+    (`Kernel/SyscallDispatchEntry.lean`), never from the pure
+    `syscallDispatchFromAbi` — host executables link this module's object
+    and the suites drive the pure function, which must stay extern-free.
+
+    Rust: `ffi_syscall_return_frame` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_syscall_return_frame"]
+opaque ffiSyscallReturnFrame :
+    (x0 x1 x2 x3 x4 x5 : UInt64) → BaseIO Unit
+
+-- ============================================================================
 -- AG7-A-iii: MMIO FFI declarations
 -- ============================================================================
 
@@ -811,8 +830,8 @@ opaque ffiRwLockReleaseWriteCount : (handle : UInt64) → BaseIO UInt64
 -- entry points.  See the file header for the design rationale.
 --
 -- Subsections:
---   R2.B.0  — KernelError → UInt32 mapping (mirrors `rust/sele4n-types/src/error.rs`)
---   R2.B.0  — encodeError / encodeOk / decodeFfi (return-value encoding)
+--   R2.B.0  — KernelError → UInt32 mapping (mirrors `rust/sele4n-types/src/error.rs`;
+--              the bit-63 encodeError / encodeOk pair is RETIRED — WS-RA)
 --   R2.A.1  — `kernelStateRef`, `kernelLabelingContextRef` (IO.Refs)
 --   R2.A.2  — `initialiseKernelState`, `getKernelState`, `updateKernelState`
 --   R2.A.3  — `bootAndInitialiseFromPlatform` (boot wrapper)
@@ -845,73 +864,20 @@ theorem KernelError.toUInt32_eq_toDiscriminant (e : KernelError) :
     (KernelError.toUInt32 e).toNat = SeLe4n.Model.KernelError.toDiscriminant e := by
   cases e <;> decide
 
-/-- WS-RC R2.B.0: Encode a `KernelError` into the FFI return contract.
-
-Sets bit 63 (the error flag) and packs the discriminant into the low 32
-bits.  The Rust dispatcher (`rust/sele4n-hal/src/svc_dispatch.rs::dispatch_svc`)
-extracts both: `(raw >> 63) & 1` checks the flag, `raw as u32` extracts
-the discriminant. -/
-@[inline] def encodeError (e : KernelError) : UInt64 :=
-  ((1 : UInt64) <<< 63) ||| (KernelError.toUInt32 e).toUInt64
-
-/-- WS-RC R2.B.0: Encode a successful return value.
-
-Bit 63 must be `0` (clear error flag); the low 63 bits carry the
-return value.  Most syscalls return `Unit` and the FFI emits 0; some
-syscalls (e.g., `cspaceMint` returning the new slot index) put the
-result in the current thread's `x0` register, from which the FFI
-caller reads it. -/
-@[inline] def encodeOk (v : UInt64) : UInt64 :=
-  -- Mask bit 63 to ensure success values cannot collide with the error
-  -- flag.  Practical syscalls return small values; this only matters
-  -- as a defensive correctness gate.
-  v &&& 0x7FFFFFFFFFFFFFFF
-
-/-- WS-RA (RA.A.8): **the theorem that motivates retiring this protocol.**
-`Badge` is 64-bit-valid (`Badge.valid` admits every value below `2^64`),
-but `encodeOk` masks bit 63 to keep success words disjoint from the error
-flag — so two *distinct* valid badges collide under the old encoding, and
-a badge with bit 63 set is silently truncated.  The WS-RA flip separates
-the value and status channels (`x0` full-width, errors on the `x1` label),
-which removes the collision structurally; this negative stays so the
-bit-63 protocol cannot quietly return. -/
-theorem encodeOk_not_injective_on_badges :
-    ∃ a b : UInt64, a ≠ b ∧ encodeOk a = encodeOk b := by
-  exact ⟨0x42, 0x8000000000000042, by decide, by decide⟩
-
-/-- WS-RC R2.B.0: Round-trip of `encodeError` — every `KernelError`
-    variant emits a value whose high bit is set.
-
-The OR with `(1 <<< 63)` forces bit 63 to `1` regardless of the low
-bits contributed by `KernelError.toUInt32`; case-splitting on `e`
-reduces every variant to a concrete `UInt64` whose bit 63 is `1` by
-direct computation.  This is the structural witness that the Rust
-side's error-flag check (`(raw >> 63) & 1 == 1`) succeeds for every
-encoded error. -/
-theorem encodeError_high_bit_set (e : KernelError) :
-    (encodeError e >>> 63) &&& 1 = 1 := by
-  unfold encodeError KernelError.toUInt32
-  cases e <;> decide
-
-/-- WS-RC R2.B.0: Round-trip of `encodeOk` — the encoded value's
-    bit 63 is clear for every `UInt64` argument.
-
-The mask `0x7FFFFFFFFFFFFFFF` zeroes bit 63 unconditionally; the
-underlying `UInt64` AND/SHR semantics propagate via `BitVec`.  This
-is the structural witness that the Rust side's success-vs-error
-disambiguation (`(raw >> 63) & 1 == 0`) succeeds for every encoded
-success value, complementing `encodeError_high_bit_set`.
-
-The proof reduces to a closed BitVec proposition that `decide`
-solves via the `UInt64.toBitVec` lemmas. -/
-theorem encodeOk_high_bit_clear (v : UInt64) :
-    (encodeOk v >>> 63) &&& 1 = 0 := by
-  unfold encodeOk
-  -- Reduce to BitVec arithmetic via UInt64.toBitVec; the mask
-  -- `0x7FFF...FF` clears bit 63 of every input, so the SHR(63) AND 1
-  -- result is always 0.
-  apply UInt64.eq_of_toBitVec_eq
-  bv_decide
+-- ============================================================================
+-- WS-RA: the bit-63 protocol is RETIRED
+-- ============================================================================
+--
+-- `encodeError` / `encodeOk` and their theorems (`encodeError_high_bit_set`,
+-- `encodeOk_high_bit_clear`) are deleted with the WS-RA flip.  Bit 63 was a
+-- workaround for multiplexing status into the value register: with the
+-- channels separated — `x0` the full-width value, the offset error label on
+-- `x1` (`Architecture.errorFrame`) — there is nothing to multiplex, and a
+-- badge may use all 64 bits.  The hazard the protocol carried is retained as
+-- the negative `Architecture.bit63Encoding_not_injective_on_badges`
+-- (`Kernel/Architecture/SyscallReturn.lean`), stated over the retired mask
+-- literal so it survives the functions' deletion, and Tier-3 negative
+-- anchors keep `encodeOk` / `encodeError` from returning.
 
 /-- WS-RC R2.A.1: The kernel-state holder used by the `@[export]`
     bodies on hardware.
@@ -1100,19 +1066,16 @@ slot) from the post-syscall TCB and converts to a `UInt64`.  The
 conversion truncates to the low 64 bits (the abstract model uses
 `Nat` but the hardware register is 64-bit).
 
-**Semantic note**: per the seL4 ABI, `x0` holds the syscall return
-value on exit (e.g., a badge for `notificationWait`, a slot for
-`cspaceMint`, or `0` for `Unit`-returning syscalls).  The verified
-Lean syscall handlers that produce a return value are expected to
-write it to the current thread's `x0` before returning.  Handlers
-that return `Unit` (the majority) leave `x0` unchanged; in our
-post-WS-RC R2 dispatch path, `x0` post-syscall therefore equals the
-caller's own pre-syscall `x0` (since `writeFfiRegistersToTcb`
-populates `pos[0]` with the FFI-passed `x0` argument before
-`syscallEntryChecked` is invoked).  This is the documented current
-behaviour — full seL4-ABI x0 compliance for value-returning syscalls
-is tracked as a future refinement when each verified handler's
-return-value semantics are formalised.
+**WS-RA**: since the flip this is `Architecture.readReturnFrame`'s `x0`
+projection (`readReturnValue_eq_readReturnFrame_x0`), retained so the
+existing theorem surface keeps meaning what it meant.  The slot it reads
+is now genuinely written: value-returning dispatch arms stage their
+results via `Architecture.writeReturnFrameToTcb` (RA.B.5-B.7), and the
+boundary composes `.unit` frames rather than reading stale registers
+(`syscallReturnOutcome`'s shape-driven read).  The pre-WS-RA note that
+stood here — "x0 post-syscall equals the caller's own pre-syscall x0
+… documented current behaviour" — described the missing return path and
+is gone with it.
 
 If the target object is not a TCB (or the lookup fails) the function
 returns `0` — `syscallEntryChecked` should never produce a `.ok`
@@ -1172,14 +1135,9 @@ def syscallReturnOutcome (syscallId : UInt32) (st : SystemState)
       ((SyscallId.ofNat? syscallId.toNat).map Architecture.syscallReturnShape).getD .unit
     .returns (Architecture.frameForShape shape (Architecture.readReturnFrame st tid))
 
-/-- WS-RC R2.B.1: Pure typed-ABI entry point invoked by the
-    `syscall_dispatch_inner` `@[export]` wrapper.
-
-The function name appears verbatim in `rust/sele4n-hal/src/svc_dispatch.rs:308`
-as documentation for what the C-callable `syscall_dispatch_inner` symbol
-ultimately routes into.  After WS-RC R2.B that documentation is
-substantively true: the symbol's body is the BaseIO wrapper around
-this function.
+/-- WS-RC R2.B.1 (restated at the WS-RA type): the pure typed-ABI entry
+    point behind the `lean_syscall_dispatch_cross_core` export
+    (`Kernel/SyscallDispatchEntry.lean`).
 
 Pipeline:
   1. Verify the FFI ABI invariant `msgInfo == x1` (both come from
@@ -1192,8 +1150,13 @@ Pipeline:
      `registerContext` (matches the ARM64 trap handler's spill).
   4. Invoke `syscallEntryChecked` with the deployment's labeling
      context and the canonical `arm64DefaultLayout`.
-  5. Encode the result as `UInt64`: `encodeOk x0` on success,
-     `encodeError ke` on failure.
+  5. Hand back a `SyscallOutcome` (WS-RA, plan §3.1/§3.5): on success
+     `syscallReturnOutcome` decides `blocks` from the caller's post-state
+     or composes the shape-driven return frame; on failure a **computed**
+     error frame carries the offset label on `x1`
+     (`Architecture.errorFrame`), with the state exactly as the error
+     arm left it — never a staged write
+     (`syscallDispatchFromAbi_error_stages_no_frame`).
 
 `ipcBufferAddr` is passed for parity with the seL4 ABI; the verified
 kernel reads the IPC buffer from `tcb.ipcBuffer` (set by
@@ -1205,29 +1168,31 @@ def syscallDispatchFromAbi
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32) (msgInfo : UInt64)
     (x0 x1 x2 x3 x4 x5 : UInt64)
-    (_ipcBufferAddr : UInt64) : Kernel UInt64 :=
+    (_ipcBufferAddr : UInt64) : Kernel Architecture.SyscallOutcome :=
   fun st =>
     -- ABI consistency check: the Rust caller guarantees
     -- `msg_info == msg_regs[1] == frame.x1()` when constructing the
     -- `SyscallArgs` struct.  If the Lean side observes a mismatch,
     -- the FFI boundary has been violated and we reject before
-    -- touching kernel state.
+    -- touching kernel state.  Errors ride the x1 label as frames computed
+    -- HERE, never staged into any TCB — which is what keeps every error
+    -- arm state-preserving (WS-RA RA.B.4,
+    -- `syscallDispatchFromAbi_error_stages_no_frame`).
     if msgInfo != x1 then
-      .ok (encodeError .invalidSyscallArgument, st)
+      .ok (.returns (Architecture.errorFrame .invalidSyscallArgument), st)
     else
       -- WS-SM SM6.A: resolve the caller on the *executing* (trapping) core, not
       -- the boot core, so a secondary-core syscall acts on that core's current
       -- thread; the cross-core dispatch seam reads `executingCore` from the
-      -- hardware (`currentCoreId`).  `syscallDispatchInner` (single-core) passes
-      -- `bootCoreId`, preserving the boot-pinned behaviour.
+      -- hardware (`currentCoreId`).
       match (st.scheduler.currentOnCore executingCore) with
-      | none => .ok (encodeError .illegalState, st)
+      | none => .ok (.returns (Architecture.errorFrame .illegalState), st)
       | some tid =>
         let stRegs := writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5
         let layout := SeLe4n.arm64DefaultLayout
         match syscallEntryChecked ctx layout executingCore 32 stRegs with
-        | .error ke => .ok (encodeError ke, stRegs)
-        | .ok ((), st') => .ok (encodeOk (readReturnValue st' tid), st')
+        | .error ke => .ok (.returns (Architecture.errorFrame ke), stRegs)
+        | .ok ((), st') => .ok (syscallReturnOutcome syscallId st' tid, st')
 
 -- ============================================================================
 -- AN9-D (DEF-C-M04): suspendThread atomicity bracket
@@ -1417,81 +1382,20 @@ theorem icMaintenanceBroadcast_cleanRangeIallu_encoding
   ⟨rfl, rfl, rfl⟩
 
 
-/-- AN9-F: Lean-side SVC dispatch routine called BY Rust through the
-    `syscall_dispatch_inner` `extern "C"` symbol.  This is the
-    Rust-→-Lean direction (opposite of every other declaration in
-    this module): `@[export]` instructs the Lean compiler to emit a
-    C-callable wrapper named `syscall_dispatch_inner` that resolves
-    the Rust-side `extern "C" { fn syscall_dispatch_inner(...) }`
-    declaration in `rust/sele4n-hal/src/svc_dispatch.rs`.
-
-    Encoding of the return value (matching
-    `rust/sele4n-hal/src/svc_dispatch.rs::dispatch_svc`):
-    - bit 63 = 1  → low 32 bits = `KernelError` discriminant
-    - bit 63 = 0  → low 63 bits = success return value (typically the
-      callee-saved `x0` of the post-syscall TCB)
-
-    **WS-RC R2.B (substantive)**: this body is now a thin BaseIO
-    wrapper around the pure `syscallDispatchFromAbi` function.  It:
-
-    1. Reads the live `SystemState` and `LabelingContext` from the
-       kernel-state IO.Refs.
-    2. Calls `syscallDispatchFromAbi` with the FFI register values.
-    3. Writes the post-state back to `kernelStateRef`.
-    4. Returns the encoded `UInt64` result.
-
-    The "encoded as `UInt64`" contract makes the function total: the
-    Lean side never raises an exception across the FFI boundary;
-    every kernel rejection becomes an error-flagged `UInt64` value
-    that the Rust caller decodes back into a `Result`. -/
-@[export syscall_dispatch_inner]
-def syscallDispatchInner
-    (syscallId : UInt32) (msgInfo : UInt64)
-    (x0 x1 x2 x3 x4 x5 : UInt64)
-    (ipcBufferAddr : UInt64) : BaseIO UInt64 := do
-  let st  ← getKernelState
-  let ctx ← getKernelLabelingContext
-  -- WS-SM SM6.A: the boot-pinned single-core entry resolves the caller on the
-  -- boot core (`bootCoreId`).  The cross-core entry `syscallDispatchCrossCoreEntry`
-  -- threads the hardware `currentCoreId` instead, identifying a secondary-core
-  -- caller on its own core.
-  match syscallDispatchFromAbi ctx bootCoreId syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st with
-  | Except.ok (encoded, st') =>
-      -- PR #845 review (P2): this entry does **not** drain the SM7.D
-      -- instruction-cache emission ledger, and deliberately cannot.
-      --
-      -- Draining would mean calling `icMaintenanceBroadcast`, whose
-      -- `@[extern "cache_ic_maintenance"]` symbol is provided by the Rust HAL.
-      -- Per the link-time gating policy documented at the head of this module,
-      -- simulation builds do **not** link the HAL, and any path that reaches an
-      -- `@[extern]` symbol is required to fail at link time rather than be
-      -- papered over with a stub.  `syscallDispatchInner` is called directly by
-      -- `tests/SyscallDispatchSuite.lean`, so putting the emission here breaks
-      -- every host test binary that exercises the bridge — and the only ways to
-      -- "fix" that are a silent stub (forbidden) or linking the HAL into the
-      -- test binaries (defeats the gating).
-      --
-      -- This is safe rather than merely tolerated, for two reasons.  The entry
-      -- is **vestigial**: the Rust `svc_dispatch` extern was flipped to
-      -- `lean_syscall_dispatch_cross_core` at v0.31.67 (SM6.A), so no shipping
-      -- configuration reaches it.  And since v0.32.96 replaced the operand
-      -- *join* with an append-only list, an operand committed here is
-      -- **deferred, never lost** — it stays in `pendingIcacheMaintenance` and is
-      -- drained wholesale by the next syscall through the cross-core entry
-      -- (`recordIcacheMaintenanceList_mem_of_mem` is the no-loss property).
-      --
-      -- Closure is removal, not draining: SM10.E should delete this export and
-      -- repoint `SyscallDispatchSuite` at the cross-core entry.  Registered in
-      -- `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` §"SM7.D deferred items".
-      initialiseKernelState st'
-      pure encoded
-  | Except.error e =>
-      -- syscallDispatchFromAbi never returns `.error` — every kernel
-      -- rejection is encoded into the success path with bit 63 set.
-      -- This branch is therefore vacuous, but we discharge it
-      -- defensively rather than relying on a `match`-exhaustiveness
-      -- claim that future refactors might invalidate.
-      pure (encodeError e)
+-- ============================================================================
+-- WS-RA: the vestigial `syscall_dispatch_inner` export is REMOVED
+-- ============================================================================
+--
+-- `syscallDispatchInner` was the boot-pinned single-core BaseIO wrapper
+-- around `syscallDispatchFromAbi`, exported as `syscall_dispatch_inner`.
+-- The Rust `svc_dispatch` extern was flipped to
+-- `lean_syscall_dispatch_cross_core` at v0.31.67 (SM6.A), no Rust source
+-- declared the symbol since, and it was the last production consumer of the
+-- retired bit-63 protocol (`encodeOk` / `encodeError`).  Its planned SM10.E
+-- removal moved into the WS-RA flip: a dead export still speaking a retired
+-- protocol is a half-migrated artifact (plan §3.7).
+-- `tests/SyscallDispatchSuite.lean`'s bridge coverage now drives the pure
+-- `syscallDispatchFromAbi` plus the IO.Ref bootstrap directly.
 
 -- ============================================================================
 -- AN9-A (DEF-A-M04): TLB+Cache composition witnesses
@@ -1522,11 +1426,11 @@ opaque ffiIcIallu : BaseIO Unit
 -- WS-RC R2.B.5 — Correctness theorems for the syscall-dispatch bridge
 -- ============================================================================
 
-/-- WS-RC R2.B.5: The pure typed-ABI entry point never returns
-    `Except.error` — every kernel rejection is encoded as a
-    success-shaped `(encodedUInt64, state)` pair with bit 63 of the
-    encoding set.  This is the structural witness that the FFI-side
-    `syscallDispatchInner` BaseIO wrapper's `Except.error` arm is
+/-- WS-RC R2.B.5 (restated at the WS-RA type): The pure typed-ABI entry
+    point never returns `Except.error` — every kernel rejection is a
+    success-shaped `(SyscallOutcome, state)` pair whose outcome carries
+    the error on the `x1` label (`Architecture.errorFrame`).  This is the
+    structural witness that the export wrapper's `Except.error` arm is
     vacuous.
 
 The proof unfolds `syscallDispatchFromAbi` and case-splits on the
@@ -1538,44 +1442,42 @@ theorem syscallDispatchFromAbi_total
     (syscallId : UInt32) (msgInfo : UInt64)
     (x0 x1 x2 x3 x4 x5 ipcBufferAddr : UInt64)
     (st : SystemState) :
-    ∃ (encoded : UInt64) (st' : SystemState),
+    ∃ (outcome : Architecture.SyscallOutcome) (st' : SystemState),
       syscallDispatchFromAbi ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st
-        = Except.ok (encoded, st') := by
+        = Except.ok (outcome, st') := by
   unfold syscallDispatchFromAbi
   -- The function first checks the ABI invariant `msgInfo == x1`,
   -- then case-splits on `(st.scheduler.currentOnCore executingCore)`, then on the
   -- `syscallEntryChecked` result.  Every branch produces `.ok`.
   by_cases hMsg : msgInfo != x1
-  · -- ABI mismatch path: returns `.ok (encodeError .invalidSyscallArgument, st)`.
-    exact ⟨encodeError .invalidSyscallArgument, st, by simp [hMsg]⟩
+  · -- ABI mismatch path: an error frame on the pre-state.
+    exact ⟨.returns (Architecture.errorFrame .invalidSyscallArgument), st, by simp [hMsg]⟩
   · -- ABI consistency holds: drive the if-then-else into the else branch
     -- using `hMsg` so the goal exposes the next match.
     cases (st.scheduler.currentOnCore executingCore) with
     | none =>
-        exact ⟨encodeError .illegalState, st, by simp [hMsg]⟩
+        exact ⟨.returns (Architecture.errorFrame .illegalState), st, by simp [hMsg]⟩
     | some tid =>
         cases hSyscall : syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
                 (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) with
         | error ke =>
-            exact ⟨encodeError ke,
+            exact ⟨.returns (Architecture.errorFrame ke),
                    writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5,
                    by simp [hMsg, hSyscall]⟩
         | ok r =>
             obtain ⟨_, st'⟩ := r
-            exact ⟨encodeOk (readReturnValue st' tid), st',
+            exact ⟨syscallReturnOutcome syscallId st' tid, st',
                    by simp [hMsg, hSyscall]⟩
 
-/-- WS-RC R2.B.5: When `syscallEntryChecked` succeeds on the
-    register-spilled state, `syscallDispatchFromAbi` returns the
-    success-encoded `(encodeOk (readReturnValue st' tid), st')` pair
-    where `st'` is the post-syscall state.
+/-- WS-RC R2.B.5 (restated at the WS-RA type): When `syscallEntryChecked`
+    succeeds on the register-spilled state, `syscallDispatchFromAbi`
+    returns `(syscallReturnOutcome syscallId st' tid, st')` — the outcome
+    decided from the caller's post-state (blocked ⇒ `.blocks`; returning
+    ⇒ the shape-driven frame composition).
 
-This is the substantive forward direction of the
-`syscallDispatchFromAbi_ok_iff_syscallEntryChecked_ok` theorem
-named in the WS-RC R2 plan.  Together with the `total` theorem
-above, it pins the bridge's behaviour: no bypass, no shortcut,
-the verified `syscallEntryChecked` is the sole source of `.ok`
-results. -/
+Together with the `total` theorem above, it pins the bridge's behaviour:
+no bypass, no shortcut, the verified `syscallEntryChecked` is the sole
+source of success outcomes. -/
 theorem syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok
     (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
@@ -1589,15 +1491,19 @@ theorem syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok
           (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
         = Except.ok ((), st')) :
     syscallDispatchFromAbi ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st
-      = Except.ok (encodeOk (readReturnValue st' tid), st') := by
+      = Except.ok (syscallReturnOutcome syscallId st' tid, st') := by
   unfold syscallDispatchFromAbi
   simp [hMsg, hCur, hSyscall]
 
-/-- WS-RC R2.B.5: When `syscallEntryChecked` rejects on the
-    register-spilled state, `syscallDispatchFromAbi` propagates the
-    error via `encodeError` while preserving the post-spill
-    `SystemState` (so the trap-handler-spilled registers are visible
-    to any subsequent inspection of the kernel state). -/
+/-- WS-RC R2.B.5 (restated at the WS-RA type): When `syscallEntryChecked`
+    rejects on the register-spilled state, `syscallDispatchFromAbi`
+    propagates the error as a **computed** error frame — the offset label
+    on `x1` — while returning exactly the post-spill `SystemState`.  The
+    state identity in the conclusion is WS-RA RA.B.4's content: an error
+    stages nothing into any TCB, which is what keeps
+    `syscallEntry_error_perCore_NI` and
+    `syscallEntry_error_preserves_proofLayerInvariantBundle` trivially
+    true. -/
 theorem syscallDispatchFromAbi_error_of_syscallEntryChecked_error
     (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
@@ -1611,10 +1517,35 @@ theorem syscallDispatchFromAbi_error_of_syscallEntryChecked_error
           (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
         = Except.error ke) :
     syscallDispatchFromAbi ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st
-      = Except.ok (encodeError ke,
+      = Except.ok (.returns (Architecture.errorFrame ke),
                    writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) := by
   unfold syscallDispatchFromAbi
   simp [hMsg, hCur, hSyscall]
+
+/-- WS-RA RA.B.4 (`syscallDispatchFromAbi_error_stages_no_frame`): on
+every error arm the returned state carries **no return-frame write** —
+the two pre-dispatch rejections return the pre-state itself, and an
+entry rejection returns exactly the argument-spilled state.  The error
+frame exists only in the returned *outcome*, computed at the boundary
+from the `KernelError` (`Architecture.errorFrame`), never staged. -/
+theorem syscallDispatchFromAbi_error_stages_no_frame
+    (ctx : LabelingContext)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (syscallId : UInt32) (msgInfo : UInt64)
+    (x0 x1 x2 x3 x4 x5 ipcBufferAddr : UInt64)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (ke : KernelError)
+    (hMsg : msgInfo = x1)
+    (hCur : (st.scheduler.currentOnCore executingCore) = some tid)
+    (hSyscall :
+      syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
+          (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+        = Except.error ke) :
+    (syscallDispatchFromAbi ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+        ipcBufferAddr st).map (·.2)
+      = Except.ok (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) := by
+  rw [syscallDispatchFromAbi_error_of_syscallEntryChecked_error ctx executingCore
+    syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st tid ke hMsg hCur hSyscall]
+  rfl
 
 /-- WS-RC R2.B.5: When the scheduler has no current thread, the FFI
     surfaces `.illegalState` without invoking `syscallEntryChecked`.
@@ -1631,7 +1562,7 @@ theorem syscallDispatchFromAbi_illegalState_when_no_current
     (hMsg : msgInfo = x1)
     (hCur : (st.scheduler.currentOnCore executingCore) = none) :
     syscallDispatchFromAbi ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st
-      = Except.ok (encodeError .illegalState, st) := by
+      = Except.ok (.returns (Architecture.errorFrame .illegalState), st) := by
   unfold syscallDispatchFromAbi
   simp [hMsg, hCur]
 
@@ -1653,7 +1584,7 @@ theorem syscallDispatchFromAbi_abiMismatch_rejected
     (st : SystemState)
     (hMsg : msgInfo ≠ x1) :
     syscallDispatchFromAbi ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st
-      = Except.ok (encodeError .invalidSyscallArgument, st) := by
+      = Except.ok (.returns (Architecture.errorFrame .invalidSyscallArgument), st) := by
   unfold syscallDispatchFromAbi
   -- `msgInfo ≠ x1` ⟹ `msgInfo != x1 = true` ⟹ the if-branch is taken.
   have : (msgInfo != x1) = true := by

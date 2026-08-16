@@ -38,70 +38,46 @@
 
 use crate::trap::TrapFrame;
 
-/// AN9-F + WS-RC R2: kernel-error discriminant returned by
-/// [`dispatch_svc`].
+/// AN9-F + WS-RA: the dispatcher's **prefilter** rejections.
 ///
-/// The shape carries dispatcher-internal rejections (
-/// [`InvalidSyscallId`], [`InvalidArgument`]) plus a wrapper variant
-/// [`Kernel`] that forwards the raw `u32` discriminant emitted by the
-/// Lean kernel via the bit-63-error-flag UInt64 contract.  The
-/// wrapper variant is required because, post-WS-RC R2, the Lean
-/// kernel can emit any of 52 `KernelError` discriminants; without
-/// wrapping, the pre-WS-RC R2 enum (which had 3 fixed-discriminant
-/// variants `= 6 / = 7 / = 17`) silently coarsened 49 of them to
-/// `NotImplemented`, losing user-mode-visible error information.
+/// Post-WS-RA this type carries only the two rejections `dispatch_svc`
+/// itself makes before reaching the Lean kernel.  The former
+/// `Kernel(u32)` wrapper — which forwarded a discriminant decoded from
+/// the retired bit-63 word — is gone: a Lean rejection now arrives as an
+/// ordinary return frame whose `x1` label carries the error (the frame
+/// passes through [`SvcOutcome::Frame`] undecoded; userspace's
+/// `decode_response` is the single decode point, plan §3.2).
 ///
-/// The dispatcher-internal variants [`InvalidSyscallId`] (= 7) and
-/// [`InvalidArgument`] (= 6) keep their historical discriminants for
-/// backward-compatible test coverage and trap-frame reporting.  In
-/// practice they collide with the Lean `KernelError` discriminants
-/// `EndpointStateMismatch = 7` and `SchedulerInvariantViolation = 6`,
-/// so user-mode cannot distinguish "dispatch arg-count error" from
-/// "kernel scheduler invariant violation".  This is a legacy
-/// constraint of the AN9-F design tracked in the deferred file as a
-/// post-1.0 ABI cleanup; the Lean `KernelError` discriminant set is
-/// authoritative on the wire.
-///
-/// `to_u32` returns the wire-level `u32` that the trap handler sets
-/// in `x0`; for [`Kernel(disc)`] that is `disc` directly so the
-/// post-WS-RC R2 substantive routing preserves error fidelity all
-/// the way to user-mode.
+/// This also retires the documented discriminant collision (the legacy
+/// raw `7` / `6` written into `x0` collided with
+/// `KernelError::EndpointStateMismatch` / `SchedulerInvariantViolation`
+/// on the wire — the "post-1.0 ABI cleanup" this workstream is): the
+/// trap layer now maps these to label-encoded
+/// `KernelError::InvalidSyscallNumber` / `InvalidSyscallArgument` frames
+/// ([`error_frame_regs`]), so a prefilter rejection is indistinguishable
+/// in *shape* from a kernel rejection and collides with nothing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DispatchError {
-    /// Caller passed a syscall id outside the valid `0..SyscallId::COUNT` range.
-    /// `to_u32` returns 7 (legacy AN9-F discriminant; collides with
-    /// `KernelError::EndpointStateMismatch` on the wire).
+    /// Caller passed a syscall id outside the valid `0..SyscallId::COUNT`
+    /// range.  Surfaced to userspace as `KernelError::InvalidSyscallNumber`
+    /// on the `x1` label.
     InvalidSyscallId,
-    /// Caller passed an argument count that did not match the syscall's
-    /// expected count (validated against `MessageInfo.length`).
-    /// `to_u32` returns 6 (legacy AN9-F discriminant; collides with
-    /// `KernelError::SchedulerInvariantViolation` on the wire).
+    /// Caller passed an argument count below the syscall's minimum
+    /// (validated against `MessageInfo.length`).  Surfaced to userspace as
+    /// `KernelError::InvalidSyscallArgument` on the `x1` label.
     InvalidArgument,
-    /// The Lean kernel rejected the syscall with the given raw
-    /// `KernelError` discriminant (per `sele4n-types::KernelError`,
-    /// 0..=51 with reserved sentinel 255).  `to_u32` forwards the
-    /// raw discriminant unchanged so user-mode sees the same value
-    /// the Lean kernel emitted.
-    ///
-    /// Post-WS-RC R2 this is the variant returned for every Lean
-    /// kernel rejection — the previous "narrowing" mapping (which
-    /// silently coarsened 49 KernelError variants to `NotImplemented`)
-    /// is removed.
-    Kernel(u32),
 }
 
 impl DispatchError {
-    /// Raw `u32` representation matching the FFI return convention.
-    ///
-    /// For the dispatcher-internal variants this returns the legacy
-    /// AN9-F discriminant; for [`Kernel(disc)`] it forwards `disc`
-    /// directly.
+    /// The `KernelError` discriminant this prefilter rejection surfaces
+    /// as (mirrors `sele4n-types::KernelError`:
+    /// `InvalidSyscallNumber = 31`, `InvalidSyscallArgument = 41`; pinned
+    /// against the canonical enum by the `#[cfg(test)]` mirror test).
     #[inline]
-    pub const fn to_u32(self) -> u32 {
+    pub const fn kernel_error_discriminant(self) -> u32 {
         match self {
-            DispatchError::InvalidSyscallId => 7,
-            DispatchError::InvalidArgument => 6,
-            DispatchError::Kernel(disc) => disc,
+            DispatchError::InvalidSyscallId => 31,
+            DispatchError::InvalidArgument => 41,
         }
     }
 }
@@ -212,16 +188,31 @@ impl SyscallId {
         match self {
             Self::Send | Self::Receive | Self::Reply => 0,
             Self::Call => 0,
-            Self::CSpaceMint => 5,
-            Self::CSpaceCopy => 4,
-            Self::CSpaceMove => 4,
+            // WS-RA (RA.D.1): reconciled with the Lean decoders, which are
+            // the authority — `decodeCSpaceMintArgs` reads exactly FOUR
+            // registers (srcSlot, dstSlot, rights, badge), `decodeCSpaceCopyArgs`
+            // (shared by move) exactly TWO, and `decodeLifecycleRetypeArgs`
+            // exactly THREE.  The previous minimums (5 / 4 / 4 / 4) exceeded
+            // what the wrappers send (`cspace_mint` length 4, `cspace_copy` /
+            // `cspace_move` 2, `lifecycle_retype` 3), so this gate rejected
+            // every one of those calls with `InvalidArgument` before the
+            // kernel — four wrappers unreachable on hardware, the same
+            // off-by-N class the `TcbSetPriority` note below records.
+            Self::CSpaceMint => 4,
+            Self::CSpaceCopy => 2,
+            Self::CSpaceMove => 2,
             Self::CSpaceDelete => 1,
-            Self::LifecycleRetype => 4,
+            Self::LifecycleRetype => 3,
             Self::VSpaceMap => 4,
             Self::VSpaceUnmap => 2,
             Self::ServiceRegister => 4,
             Self::ServiceRevoke => 1,
-            Self::ServiceQuery => 1,
+            // WS-RA (RA.D.1, found by the wrapper-length conformance pin):
+            // the `.serviceQuery` arm reads NO message registers — the
+            // endpoint comes from the capability target — and the wrapper
+            // sends length 0.  The previous minimum of 1 rejected every
+            // call, the fifth unreachable-wrapper instance of this class.
+            Self::ServiceQuery => 0,
             Self::NotificationSignal => 1,
             Self::NotificationWait => 0,
             Self::ReplyRecv => 0,
@@ -305,19 +296,119 @@ impl SyscallArgs {
         }
     }
 
-    /// AN9-F.1.c: extract the `length` field from `msg_info`.
-    /// Per AK4-D, `msg_info` is packed as
-    ///   bits  [11: 0] = length      (≤ 4095, capped at MAX_MESSAGE_REGISTERS)
-    ///   bits  [13:12] = extraCaps   (≤ 3)
-    ///   bits  [63:14] = label
-    /// We extract the low 12 bits.
+    /// AN9-F.1.c (layout corrected by WS-RA RA.C.3): extract the `length`
+    /// field from `msg_info`.  The MessageInfo layout — one layout, three
+    /// mirrors (`SeLe4n.Model.MessageInfo.encode`,
+    /// `sele4n-abi/src/message_info.rs`, and this reader) — is
+    ///   bits  [ 6: 0] = length      (≤ 120)
+    ///   bits  [ 8: 7] = extraCaps   (≤ 3)
+    ///   bits  [28: 9] = label       (20 bits)
+    /// The previous reader here masked `0x0FFF` under a doc comment
+    /// claiming a `length[11:0] / extraCaps[13:12] / label[63:14]` packing
+    /// that nothing else in the tree used — so any request with a nonzero
+    /// extraCaps or label over-read its length (harmless only because the
+    /// authoritative Lean decode re-validates fail-closed downstream;
+    /// load-bearing now that WS-RA makes `x1` layouts carry the return
+    /// convention in both directions).
     #[inline]
     pub fn message_length(&self) -> u32 {
-        (self.msg_info & 0x0FFF) as u32
+        (self.msg_info & 0x7F) as u32
     }
 }
 
-/// AN9-F.2 / AN9-F.3: top-level SVC dispatcher.
+/// WS-RA: the syscall ABI version this HAL speaks — the seL4 frame
+/// convention (`x0` value, offset error label on `x1`, `x2`-`x5` message
+/// registers).  Version 1 was the retired bit-63 protocol.  Mirrors
+/// `sele4n-types::SYSCALL_ABI_VERSION` and Lean's
+/// `Architecture.syscallAbiVersion`; the `#[cfg(test)]` mirror test and
+/// the abi-crate conformance suite pin all three to the same literal, so
+/// a half-bumped tree fails its own suite (plan §3.6).
+pub const SYSCALL_ABI_VERSION: u64 = 2;
+
+/// WS-RA: number of return-frame mailbox slots — one per core.
+pub const RETURN_FRAME_CORES: usize = crate::smp::MAX_SECONDARY_CORES + 1;
+
+/// WS-RA (plan §3.3): the per-core syscall **return-frame mailbox**.
+///
+/// `lean_syscall_dispatch_cross_core` returns one scalar (the outcome
+/// tag) and the FFI deliberately carries no `lean_object*`, so the six
+/// return registers cross through this mailbox instead — the
+/// `ShootdownOpMailbox` pattern.  Concurrency is trivial by construction,
+/// unlike the shootdown mailbox's: slot `c` is written by core `c`'s own
+/// syscall entry (via [`ffi_syscall_return_frame`], inside the Lean
+/// export) and read by the same core's [`dispatch_svc`] inside the same
+/// `with_kernel_entry` critical section, so accesses to a slot are
+/// same-core program-ordered and `Relaxed` suffices.
+pub struct ReturnFrameMailbox {
+    regs: [[core::sync::atomic::AtomicU64; 6]; RETURN_FRAME_CORES],
+}
+
+impl ReturnFrameMailbox {
+    /// A zeroed mailbox — the frame a slot yields before any syscall is
+    /// the `Unit`-success frame (`x0 = 0`, label `0`).
+    pub const fn new() -> Self {
+        ReturnFrameMailbox {
+            regs: [const { [const { core::sync::atomic::AtomicU64::new(0) }; 6] };
+                RETURN_FRAME_CORES],
+        }
+    }
+}
+
+impl Default for ReturnFrameMailbox {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// WS-RA: the global per-core return-frame mailbox.
+pub static RETURN_FRAMES: ReturnFrameMailbox = ReturnFrameMailbox::new();
+
+/// WS-RA (testable inner form): publish a return frame into `core`'s slot.
+/// Fail-closed on an out-of-range core id, like every FFI-facing bound in
+/// this crate.
+pub fn return_frame_publish_in(mb: &ReturnFrameMailbox, core: usize, regs: [u64; 6]) {
+    assert!(core < RETURN_FRAME_CORES, "return_frame_publish: core {core} out of range");
+    for (slot, value) in mb.regs[core].iter().zip(regs.iter()) {
+        slot.store(*value, core::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// WS-RA (testable inner form): read `core`'s published return frame.
+pub fn return_frame_read_in(mb: &ReturnFrameMailbox, core: usize) -> [u64; 6] {
+    assert!(core < RETURN_FRAME_CORES, "return_frame_read: core {core} out of range");
+    let mut out = [0u64; 6];
+    for (value, slot) in out.iter_mut().zip(mb.regs[core].iter()) {
+        *value = slot.load(core::sync::atomic::Ordering::Relaxed);
+    }
+    out
+}
+
+/// WS-RA RA.C.9: what a completed dispatch hands the trap layer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SvcOutcome {
+    /// The syscall returned: write `x0`-`x5` back into the caller's trap
+    /// frame (the context restore, plan §3.3).  Errors are ordinary
+    /// frames whose `x1` label carries the discriminant — this layer
+    /// never decodes them (userspace's `decode_response` is the single
+    /// decode point, plan §3.2).
+    Frame([u64; 6]),
+    /// The caller blocked: **no** frame exists for it and nothing may be
+    /// written back (its stale registers are not a return value).  The
+    /// staged frame is delivered by the SM10.E context restore; this
+    /// variant is that seam's trap-layer hook.
+    Blocked,
+}
+
+/// WS-RA: the label-encoded error frame for a prefilter rejection —
+/// `x0 = 0`, `x1` = `MessageInfo {length 0, extraCaps 0, label disc + 1}`
+/// = `(disc + 1) << 9`, no message registers.  Mirrors Lean's
+/// `Architecture.errorFrame` (the `+ 1` is the §3.1 offset: label `0`
+/// means success, and discriminant `0` is a real error).
+pub fn error_frame_regs(kernel_error_discriminant: u32) -> [u64; 6] {
+    [0, ((kernel_error_discriminant as u64) + 1) << 9, 0, 0, 0, 0]
+}
+
+/// AN9-F.2 / AN9-F.3 (restated by WS-RA): top-level SVC dispatcher.
 ///
 /// Routes the trap through [`SyscallId::from_u32`] and validates the
 /// inline-argument count against [`SyscallId::min_inline_args`] before
@@ -328,19 +419,22 @@ impl SyscallArgs {
 /// `Kernel.syscallEntryChecked` — with the executing core threaded for per-core
 /// caller identification — and fires the diff-recovered cross-core SGIs).
 ///
-/// In test builds the inner symbol is a Rust-side stub returning the
-/// encoded `KernelError::NotImplemented = 17` value so the
-/// bracketing logic can be exercised on host without pulling in the
-/// Lean kernel build.  Post-WS-RC R2 this surfaces as
-/// `DispatchError::Kernel(17)`.
+/// **WS-RA (the return convention)**: the export returns the outcome
+/// **tag** (`0` = the caller's return frame is in this core's
+/// [`RETURN_FRAMES`] slot, `1` = the caller blocked) and the frame itself
+/// crosses through the mailbox, read back *inside* the same
+/// `with_kernel_entry` critical section as the dispatch.  The retired
+/// bit-63 word is gone: this layer passes frames through undecoded.
 ///
 /// Returns:
-///   `Ok(value)`     — successful dispatch; `value` is the kernel
-///                     return code (zero on success).
-///   `Err(error)`    — argument count mismatch, invalid syscall id,
-///                     or Lean-side rejection.
-pub fn dispatch_svc(syscall_id: u32, args: &SyscallArgs) -> Result<u64, DispatchError> {
-    // AN9-F.1.b: reject ids outside 0..=25
+///   `Ok(SvcOutcome::Frame(regs))` — write `regs` into the trap frame.
+///   `Ok(SvcOutcome::Blocked)`     — the caller blocked; write nothing.
+///   `Err(error)`                  — prefilter rejection (invalid syscall
+///                                   id / argument count); the trap layer
+///                                   surfaces it as a label-encoded error
+///                                   frame ([`error_frame_regs`]).
+pub fn dispatch_svc(syscall_id: u32, args: &SyscallArgs) -> Result<SvcOutcome, DispatchError> {
+    // AN9-F.1.b: reject ids outside the mirror enum's range.
     let sid = match SyscallId::from_u32(syscall_id) {
         Some(sid) => sid,
         None => return Err(DispatchError::InvalidSyscallId),
@@ -354,21 +448,6 @@ pub fn dispatch_svc(syscall_id: u32, args: &SyscallArgs) -> Result<u64, Dispatch
 
     // AN9-F.2: forward to the Lean-emitted dispatcher.
     //
-    // The Lean side returns a 64-bit value where (matching
-    // `SeLe4n.Platform.FFI.encodeError` / `encodeOk`):
-    //   bit 63       — error flag (1 = error, 0 = success)
-    //   bits [31: 0] — KernelError discriminant on error path
-    //                  (high bits [62:32] are zero on this path)
-    //   bits [62: 0] — return value on success path
-    //                  (Lean side masks bit 63 via `encodeOk`)
-    //
-    // We decode this into the Result here so callers consume a clean
-    // Rust shape.
-    //
-    // SAFETY (production): `lean_syscall_dispatch_cross_core` is a Lean-emitted
-    // extern "C" symbol resolved at link time.  The arguments cross
-    // the FFI boundary as `u32 + 8 × u64` which the Lean side reads
-    // via the @[extern] declaration in `SeLe4n/Platform/FFI.lean`.
     // WS-SM SM5.I: serialise kernel entry.  The Lean side commits its
     // post-state through `modifyGetKernelState`, an `IO.Ref.modifyGet`
     // — a read then a write, not a cross-core atomic — so two cores
@@ -383,42 +462,40 @@ pub fn dispatch_svc(syscall_id: u32, args: &SyscallArgs) -> Result<u64, Dispatch
     // obligation — without that a holder blocked on our acknowledgment
     // would deadlock against us, since IRQs are masked on this path and
     // the `.tlbShootdownReq` SGI cannot preempt the spin.
-    let raw =
-        crate::kernel_entry::with_kernel_entry(crate::cpu::current_core_id() as usize, || {
-            // SAFETY (production): `lean_syscall_dispatch_cross_core` is a
-            // Lean-emitted extern "C" symbol resolved at link time.  The
-            // arguments cross the FFI boundary as `u32 + 8 × u64` which the
-            // Lean side reads via the @[extern] declaration in
-            // `SeLe4n/Platform/FFI.lean`.
-            #[allow(unused_unsafe)]
-            unsafe {
-                lean_syscall_dispatch_cross_core(
-                    sid.to_u32(),
-                    args.msg_info,
-                    args.msg_regs[0],
-                    args.msg_regs[1],
-                    args.msg_regs[2],
-                    args.msg_regs[3],
-                    args.msg_regs[4],
-                    args.msg_regs[5],
-                    args.ipc_buffer_addr.unwrap_or(0),
-                )
-            }
-        });
+    //
+    // WS-RA: the mailbox read happens INSIDE the critical section, so the
+    // frame this call returns is the frame this call's commit published.
+    let core = crate::cpu::current_core_id() as usize;
+    let (tag, regs) = crate::kernel_entry::with_kernel_entry(core, || {
+        // SAFETY (production): `lean_syscall_dispatch_cross_core` is a
+        // Lean-emitted extern "C" symbol resolved at link time.  The
+        // arguments cross the FFI boundary as `u32 + 8 × u64` which the
+        // Lean side reads via the @[extern] declaration in
+        // `SeLe4n/Kernel/SyscallDispatchEntry.lean`.
+        #[allow(unused_unsafe)]
+        let tag = unsafe {
+            lean_syscall_dispatch_cross_core(
+                sid.to_u32(),
+                args.msg_info,
+                args.msg_regs[0],
+                args.msg_regs[1],
+                args.msg_regs[2],
+                args.msg_regs[3],
+                args.msg_regs[4],
+                args.msg_regs[5],
+                args.ipc_buffer_addr.unwrap_or(0),
+            )
+        };
+        (tag, return_frame_read_in(&RETURN_FRAMES, core))
+    });
 
-    if (raw >> 63) & 1 == 1 {
-        // Error path: low 32 bits hold the raw `KernelError`
-        // discriminant.  Forward it verbatim via
-        // `DispatchError::Kernel(disc)` so user-mode sees the
-        // KernelError value the Lean kernel emitted (52 distinct
-        // variants post-WS-RC R2; pre-WS-RC R2 always 17).
-        let disc = raw as u32;
-        Err(DispatchError::Kernel(disc))
-    } else {
-        // Success path: bit 63 is clear; return the full u64
-        // (the Lean side `encodeOk` masks bit 63 so this is always
-        // < 2^63).
-        Ok(raw)
+    match tag {
+        0 => Ok(SvcOutcome::Frame(regs)),
+        1 => Ok(SvcOutcome::Blocked),
+        // `SyscallOutcome.tagWord` is total over {0, 1}; anything else
+        // means the FFI boundary itself is broken.  Fail closed and loud,
+        // like every impossible-input arm in this crate.
+        other => panic!("lean_syscall_dispatch_cross_core returned unknown outcome tag {other}"),
     }
 }
 
@@ -433,10 +510,16 @@ pub fn dispatch_svc(syscall_id: u32, args: &SyscallArgs) -> Result<u64, Dispatch
 // `SeLe4n/Kernel/SyscallDispatchEntry.lean`.  The Lean wrapper reads the live
 // `SystemState` from the kernel-state IO.Ref and dispatches into the
 // verified `syscallEntryChecked` entry point.
-// In test builds (`#[cfg(test)]`) a Rust-side stub returns the error
-// flag set with the encoded `KernelError::NotImplemented = 17` so
-// dispatch logic can be exercised on host.  Post-WS-RC R2 the
-// outer dispatcher decodes this as `DispatchError::Kernel(17)`.
+//
+// WS-RA: the scalar return is the OUTCOME TAG (0 = the caller's return
+// frame was published into this core's `RETURN_FRAMES` slot via
+// `ffi_syscall_return_frame`; 1 = the caller blocked, no frame).  The
+// retired bit-63 word is gone.
+//
+// In test builds (`#[cfg(test)]`) a Rust-side stub publishes the
+// label-encoded `KernelError::NotImplemented` error frame and returns
+// tag 0, so dispatch logic — including the mailbox read — can be
+// exercised on host.
 //
 // WS-SM SM6.A (LANDED): the live entry is the cross-core-aware
 // `lean_syscall_dispatch_cross_core` (`syscallDispatchCrossCoreEntry` in
@@ -446,9 +529,7 @@ pub fn dispatch_svc(syscall_id: u32, args: &SyscallArgs) -> Result<u64, Dispatch
 // its *own* core — and, after committing the post-state, fires the diff-recovered
 // cross-core `.reschedule` SGIs (`computeCrossCoreSgis` + `fireCrossCoreSgis`),
 // the syscall analogue of `lean_per_core_timer_tick`.  Single-core-inert (the SGI
-// list is empty at the boot core), so the switchover from the boot-pinned
-// `syscall_dispatch_inner` is behaviour-preserving on single-core and fires the
-// correct cross-core IPIs (and uses the correct per-core caller) on multi-core.
+// list is empty at the boot core).
 #[cfg(not(test))]
 extern "C" {
     fn lean_syscall_dispatch_cross_core(
@@ -464,8 +545,11 @@ extern "C" {
     ) -> u64;
 }
 
-/// AN9-F.4 test stub: returns the high-bit-set error code for
-/// `NotImplemented` so dispatch tests exercise the error decoding.
+/// AN9-F.4 test stub (WS-RA shape): publishes the label-encoded
+/// `KernelError::NotImplemented` (discriminant 17 → label 18) error frame
+/// into core 0's mailbox slot and returns outcome tag 0, mirroring what
+/// the live export does for a kernel rejection — so host tests exercise
+/// the tag/mailbox protocol end to end.
 #[cfg(test)]
 #[no_mangle]
 extern "C" fn lean_syscall_dispatch_cross_core(
@@ -479,8 +563,8 @@ extern "C" fn lean_syscall_dispatch_cross_core(
     _x5: u64,
     _ipc_buffer_addr: u64,
 ) -> u64 {
-    // High bit set + low 32 bits = NotImplemented (17)
-    (1u64 << 63) | 17
+    return_frame_publish_in(&RETURN_FRAMES, 0, error_frame_regs(17));
+    0
 }
 
 // ============================================================================
@@ -583,10 +667,13 @@ mod tests {
     }
 
     #[test]
-    fn syscall_args_message_length_extracts_low_12_bits() {
+    fn syscall_args_message_length_extracts_length_field() {
+        // WS-RA RA.C.3: the real MessageInfo layout — length[6:0],
+        // extraCaps[8:7], label[28:9].  A nonzero label and extraCaps must
+        // NOT bleed into the length (the pre-fix 0x0FFF mask read label
+        // bits 9-11 as length).
         let mut frame = zero_frame();
-        // length = 4 (within MAX_MESSAGE_REGISTERS), label = 0xCAFE
-        frame.gprs[1] = (0xCAFE_u64 << 14) | 0x004;
+        frame.gprs[1] = (0xCAFE_u64 << 9) | (0x3 << 7) | 0x04;
         let args = SyscallArgs::from_trap_frame(&frame);
         assert_eq!(args.message_length(), 4);
     }
@@ -601,7 +688,7 @@ mod tests {
 
     #[test]
     fn dispatch_svc_rejects_argument_count_below_minimum() {
-        // CSpaceMint requires 5 inline args; supplying length=0 must
+        // CSpaceMint requires 4 inline args; supplying length=0 must
         // be rejected before the inner dispatcher is called.
         let frame = zero_frame();
         let args = SyscallArgs::from_trap_frame(&frame); // length=0
@@ -612,46 +699,86 @@ mod tests {
     #[test]
     fn dispatch_svc_routes_to_inner_dispatcher() {
         // Send takes 0 inline args so any frame is accepted; the inner
-        // stub returns the encoded `NotImplemented = 17` error under
-        // `#[cfg(test)]`.  Post-WS-RC R2 the dispatcher forwards the
-        // raw discriminant via `DispatchError::Kernel(17)`.
+        // stub publishes the label-encoded `NotImplemented` (discriminant
+        // 17 -> label 18) error frame into core 0's mailbox slot and
+        // returns outcome tag 0.  WS-RA: a kernel rejection arrives as an
+        // ordinary FRAME whose x1 label carries the error, undecoded here.
         let frame = zero_frame();
         let args = SyscallArgs::from_trap_frame(&frame);
         let result = dispatch_svc(SyscallId::Send.to_u32(), &args);
-        assert_eq!(result, Err(DispatchError::Kernel(17)));
+        assert_eq!(result, Ok(SvcOutcome::Frame(error_frame_regs(17))));
+        // The frame's x1 word is the offset label in MessageInfo position.
+        assert_eq!(error_frame_regs(17)[1], 18u64 << 9);
     }
 
     #[test]
-    fn dispatch_error_to_u32_is_stable() {
-        assert_eq!(DispatchError::InvalidArgument.to_u32(), 6);
-        assert_eq!(DispatchError::InvalidSyscallId.to_u32(), 7);
-        // Post-WS-RC R2: KernelError discriminants are forwarded
-        // verbatim through `DispatchError::Kernel(disc)`.
-        assert_eq!(DispatchError::Kernel(17).to_u32(), 17);
-        assert_eq!(DispatchError::Kernel(0).to_u32(), 0);
-        assert_eq!(DispatchError::Kernel(51).to_u32(), 51);
-        assert_eq!(DispatchError::Kernel(44).to_u32(), 44); // VmFault
-        assert_eq!(DispatchError::Kernel(45).to_u32(), 45); // UserException
+    fn dispatch_error_surfaces_as_kernel_error_discriminants() {
+        // WS-RA: the prefilter rejections surface as real KernelError
+        // discriminants on the x1 label — InvalidSyscallNumber = 31,
+        // InvalidSyscallArgument = 41 — retiring the legacy raw 7 / 6
+        // x0 writes and their documented collision with
+        // EndpointStateMismatch / SchedulerInvariantViolation.
+        assert_eq!(DispatchError::InvalidSyscallId.kernel_error_discriminant(), 31);
+        assert_eq!(DispatchError::InvalidArgument.kernel_error_discriminant(), 41);
+        // Pinned against the canonical enum, not just literals.
+        assert_eq!(
+            DispatchError::InvalidSyscallId.kernel_error_discriminant(),
+            sele4n_types::KernelError::InvalidSyscallNumber as u32
+        );
+        assert_eq!(
+            DispatchError::InvalidArgument.kernel_error_discriminant(),
+            sele4n_types::KernelError::InvalidSyscallArgument as u32
+        );
     }
 
     #[test]
-    fn dispatch_error_kernel_variant_preserves_all_kernel_error_discriminants() {
-        // WS-RC R2: Verify that every raw `KernelError` discriminant
-        // 0..=51 and the `UnknownKernelError = 255` sentinel is
-        // forwarded verbatim by `DispatchError::Kernel(disc).to_u32()`.
-        // This is the cross-language pin against
-        // `rust/sele4n-types/src/error.rs::KernelError` and
-        // `SeLe4n.Platform.FFI.KernelError.toUInt32` on the Lean side.
-        for disc in 0..=51u32 {
-            assert_eq!(DispatchError::Kernel(disc).to_u32(), disc);
+    fn syscall_abi_version_matches_canonical_pin() {
+        // WS-RA (plan 3.6): the HAL mirror and the sele4n-types canonical
+        // constant must agree; Lean pins the same literal via
+        // `syscallAbiVersion_pinned`, and the abi-crate conformance suite
+        // pins its own read of the canonical constant.
+        assert_eq!(SYSCALL_ABI_VERSION, 2);
+        assert_eq!(SYSCALL_ABI_VERSION, sele4n_types::SYSCALL_ABI_VERSION);
+    }
+
+    #[test]
+    fn return_frame_mailbox_roundtrip() {
+        // WS-RA: the per-core mailbox round-trips a frame per slot and
+        // slots are independent.
+        let mb = ReturnFrameMailbox::new();
+        return_frame_publish_in(&mb, 0, [1, 2, 3, 4, 5, 6]);
+        return_frame_publish_in(&mb, 1, [7, 8, 9, 10, 11, 12]);
+        assert_eq!(return_frame_read_in(&mb, 0), [1, 2, 3, 4, 5, 6]);
+        assert_eq!(return_frame_read_in(&mb, 1), [7, 8, 9, 10, 11, 12]);
+        // A fresh slot reads as the Unit-success frame (all zero).
+        assert_eq!(return_frame_read_in(&mb, 2), [0; 6]);
+    }
+
+    #[test]
+    fn error_frame_regs_offsets_every_discriminant() {
+        // WS-RA: every KernelError discriminant 0..=54 rides the x1 label
+        // offset by one (label 0 is success; discriminant 0 is a real
+        // error — the aliasing the offset exists to prevent), and no
+        // other register carries anything.  This replaces the retired
+        // `DispatchError::Kernel(disc).to_u32()` loop, whose 0..=51 bound
+        // had also gone stale against the real 0..=54 range.
+        for disc in 0..=54u32 {
+            let regs = error_frame_regs(disc);
+            assert_eq!(regs[1] >> 9, (disc as u64) + 1, "label must be disc + 1");
+            assert_ne!(regs[1] >> 9, 0, "no error may alias the success label");
+            assert_eq!(regs[1] & 0x1FF, 0, "length/extraCaps must be zero");
+            assert_eq!([regs[0], regs[2], regs[3], regs[4], regs[5]], [0; 5]);
         }
-        assert_eq!(DispatchError::Kernel(255).to_u32(), 255);
     }
 
     #[test]
     fn syscall_id_min_inline_args_match_abi_contract() {
-        // Spot-check the canonical ABI values against AK4 documentation.
-        assert_eq!(SyscallId::CSpaceMint.min_inline_args(), 5);
+        // Spot-check the canonical ABI values against the Lean decoders
+        // (the authority — WS-RA RA.D.1 reconciled the drifted entries).
+        assert_eq!(SyscallId::CSpaceMint.min_inline_args(), 4);
+        assert_eq!(SyscallId::CSpaceCopy.min_inline_args(), 2);
+        assert_eq!(SyscallId::CSpaceMove.min_inline_args(), 2);
+        assert_eq!(SyscallId::LifecycleRetype.min_inline_args(), 3);
         assert_eq!(SyscallId::ServiceRegister.min_inline_args(), 4);
         assert_eq!(SyscallId::TcbSuspend.min_inline_args(), 1);
         assert_eq!(SyscallId::Send.min_inline_args(), 0);

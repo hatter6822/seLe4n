@@ -106,7 +106,12 @@ pub fn endpoint_send(dest: CPtr, msg: &IpcMessage) -> KernelResult<SyscallRespon
 ///
 /// Lean: `apiEndpointReceive` (API.lean) — requires `.read` right.
 ///
-/// Returns the received badge and response registers.
+/// Returns the received badge and response registers.  WS-RA: these are
+/// **real** — the badge from `x0`, the delivered inline message registers
+/// from `x2`-`x5` with their count in the returned `MessageInfo` — staged
+/// by the kernel's `.receive` arm (`stageDeliveredMessage`).  Before the
+/// flip the kernel wrote no register back and this function returned the
+/// caller's own values.
 #[inline]
 pub fn endpoint_receive(src: CPtr) -> KernelResult<(Badge, SyscallResponse)> {
     // V1-D: new_const() is compile-time validated — infallible for valid constants.
@@ -208,8 +213,13 @@ pub fn notification_signal(ntfn: CPtr, badge: Badge) -> KernelResult<SyscallResp
 
 /// Wait on a notification object. Blocks until signaled.
 ///
-/// Returns the accumulated badge value from the notification object.
-/// Lean: `notificationWait` (API.lean) — returns accumulated badge.
+/// Returns the accumulated badge value from the notification object —
+/// **really** (WS-RA closed SM9.C.0): the kernel's `.notificationWait`
+/// arm stages the consumed badge into `x0` (`returnFrameOfBadge`), and
+/// `badge()` reads `x0`.  Before the flip this doc claimed a badge the
+/// ABI never delivered — the kernel wrote no register back, and the old
+/// `badge()` read `x1`, handing back the caller's own msgInfo word.
+/// Lean: `notificationWait` (API.lean).
 #[inline]
 pub fn notification_wait(ntfn: CPtr) -> KernelResult<Badge> {
     let msg_info = MessageInfo::new_const(0, 0, 0);

@@ -73,12 +73,20 @@ pub fn service_revoke(
 /// Lean: `apiServiceQuery` (API.lean) — requires `.read` right.
 /// No additional message registers — the endpoint object ID comes from
 /// the capability target.
+///
+/// WS-RA (RA.D.3): returns the resolved registration's `ServiceId` word
+/// from `x0` — the answer the kernel computed and, before the flip,
+/// discarded (`lookupServiceByCap`'s result was thrown away and this
+/// wrapper handed back an opaque `SyscallResponse` of the caller's own
+/// registers).  Staged by the `.serviceQuery` arm via
+/// `returnFrameOfWord`.
 #[inline]
-pub fn service_query(endpoint_cap: CPtr) -> KernelResult<SyscallResponse> {
-    invoke_syscall(SyscallRequest {
+pub fn service_query(endpoint_cap: CPtr) -> KernelResult<u64> {
+    let resp = invoke_syscall(SyscallRequest {
         cap_addr: endpoint_cap,
         msg_info: MessageInfo::new_const(0, 0, 0),
         msg_regs: [0; 4],
         syscall_id: SyscallId::ServiceQuery,
-    })
+    })?;
+    Ok(resp.value())
 }

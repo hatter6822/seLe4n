@@ -409,9 +409,9 @@ fn xval_015_notification_signal() {
 
 /// RUST-XVAL-016: Notification wait register layout.
 ///
-/// Badge is returned in x1 (context-dependent: badge for notification wait,
-/// MessageInfo for endpoint receive).
-/// Lean: `notificationWait` (Endpoint.lean) — returns accumulated badge.
+/// WS-RA: the badge is returned in **x0** (the seL4 convention), with the
+/// returned MessageInfo — success label 0 — in x1.
+/// Lean: `notificationWait` staging via `returnFrameOfBadge` (RA.B.5).
 #[test]
 fn xval_016_notification_wait() {
     let req = SyscallRequest {
@@ -428,10 +428,11 @@ fn xval_016_notification_wait() {
         "x7=SyscallId::NotificationWait"
     );
 
-    // Simulate kernel response: badge=0xBEEF in x1
-    let response_regs: [u64; 7] = [0, 0xBEEF, 0, 0, 0, 0, 0];
+    // Simulate kernel response (WS-RA): badge = 0xBEEF in x0, success
+    // label (0) in x1 — the seL4 convention this workstream adopted.
+    let response_regs: [u64; 7] = [0xBEEF, 0, 0, 0, 0, 0, 0];
     let resp = decode_response(response_regs).unwrap();
-    assert_eq!(resp.badge(), Badge::from(0xBEEFu64), "Badge from x1");
+    assert_eq!(resp.badge(), Badge::from(0xBEEFu64), "Badge from x0");
 }
 
 // ============================================================================
@@ -897,32 +898,28 @@ fn ipc_buffer_layout() {
 // V1 — Rust ABI Hardening conformance tests (Phase V1, WS-V)
 // ============================================================================
 
-/// V1-A (H-RS-1): decode_response must reject u64 values exceeding u32::MAX.
-/// Without the range guard, 0x1_0000_0000 truncates to 0 (false success).
+/// V1-A (H-RS-1), relocated by WS-RA RA.C.7: the fail-closed width guard
+/// moved with the status channel.  x0 is a full-width VALUE now (any u64
+/// is a success value, never a truncation hazard); the register that must
+/// not silently truncate is x1, and `MessageInfo::decode` rejects any
+/// word with bits beyond the 20-bit label field.
 #[test]
 fn decode_response_u64_overflow() {
     use sele4n_abi::decode_response;
 
-    // Value that would truncate to 0 (success) without guard
+    // A huge x0 is a legitimate full-width value under the new convention.
     let regs = [0x1_0000_0000u64, 0, 0, 0, 0, 0, 0];
-    assert_eq!(
-        decode_response(regs),
-        Err(KernelError::InvalidSyscallNumber)
-    );
+    assert_eq!(decode_response(regs).unwrap().value(), 0x1_0000_0000u64);
 
-    // u64::MAX
-    let regs = [u64::MAX, 0, 0, 0, 0, 0, 0];
-    assert_eq!(
-        decode_response(regs),
-        Err(KernelError::InvalidSyscallNumber)
-    );
+    // A huge x1 is an undecodable MessageInfo — fail-closed, never a
+    // truncated wrong error.
+    let regs = [0, u64::MAX, 0, 0, 0, 0, 0];
+    assert_eq!(decode_response(regs), Err(KernelError::InvalidMessageInfo));
 
-    // Just above u32::MAX
-    let regs = [u32::MAX as u64 + 1, 0, 0, 0, 0, 0, 0];
-    assert_eq!(
-        decode_response(regs),
-        Err(KernelError::InvalidSyscallNumber)
-    );
+    // The first over-wide x1 word: one bit past the 20-bit label field
+    // (bit 29 of the raw word) — rejected, not truncated to label 0.
+    let regs = [0, 1u64 << 29, 0, 0, 0, 0, 0];
+    assert_eq!(decode_response(regs), Err(KernelError::InvalidMessageInfo));
 }
 
 /// AF6-A + WS-SM SM8.C.9: Unrecognized kernel error codes (≥55 after SM8.C.9
@@ -932,38 +929,42 @@ fn decode_response_u64_overflow() {
 fn unknown_kernel_error_fallback() {
     use sele4n_abi::decode_response;
 
-    // Error code 55 — first unrecognized code after AuditLogCapacityExceeded (54).
-    let regs = [55, 0, 0, 0, 0, 0, 0];
+    // WS-RA: errors ride the x1 label offset by one — label d+1 names
+    // discriminant d.  Discriminant 55 — first unrecognized after
+    // AuditLogCapacityExceeded (54).
+    let regs = [0, 56u64 << 9, 0, 0, 0, 0, 0];
     assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
 
-    // Error code 100 — arbitrary unrecognized code
-    let regs = [100, 0, 0, 0, 0, 0, 0];
+    // Discriminant 100 — arbitrary unrecognized code
+    let regs = [0, 101u64 << 9, 0, 0, 0, 0, 0];
     assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
 
-    // Error code 254 — just below sentinel
-    let regs = [254, 0, 0, 0, 0, 0, 0];
+    // Discriminant 254 — just below sentinel
+    let regs = [0, 255u64 << 9, 0, 0, 0, 0, 0];
     assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
 
-    // Error code 255 — sentinel value resolves to UnknownKernelError directly
-    let regs = [255, 0, 0, 0, 0, 0, 0];
+    // Discriminant 255 — sentinel value resolves to UnknownKernelError directly
+    let regs = [0, 256u64 << 9, 0, 0, 0, 0, 0];
     assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
 }
 
-/// R5.E (DEEP-SCH-04): Discriminant 52 round-trips to MissingSchedContext.
+/// R5.E (DEEP-SCH-04): Discriminant 52 round-trips to MissingSchedContext
+/// (WS-RA: as label 53 on x1).
 #[test]
 fn missing_sched_context_decode() {
     use sele4n_abi::decode_response;
 
-    let regs = [52, 0, 0, 0, 0, 0, 0];
+    let regs = [0, 53u64 << 9, 0, 0, 0, 0, 0];
     assert_eq!(decode_response(regs), Err(KernelError::MissingSchedContext));
 }
 
-/// WS-SM SM5.B.4: Discriminant 53 round-trips to ThreadOnDifferentCore.
+/// WS-SM SM5.B.4: Discriminant 53 round-trips to ThreadOnDifferentCore
+/// (WS-RA: as label 54 on x1).
 #[test]
 fn thread_on_different_core_decode() {
     use sele4n_abi::decode_response;
 
-    let regs = [53, 0, 0, 0, 0, 0, 0];
+    let regs = [0, 54u64 << 9, 0, 0, 0, 0, 0];
     assert_eq!(
         decode_response(regs),
         Err(KernelError::ThreadOnDifferentCore)
@@ -1790,4 +1791,153 @@ fn sys_sched_context_module_exports() {
         sele4n_sys::sched_context::sched_context_bind;
     let _unbind: fn(CPtr) -> KernelResult<SyscallResponse> =
         sele4n_sys::sched_context::sched_context_unbind;
+}
+
+// ============================================================================
+// WS-RA: syscall return ABI conformance (RA.D.4 / RA.D.5)
+// ============================================================================
+
+/// WS-RA (plan §3.6): the ABI version pin — the canonical constant is the
+/// frame convention.  Lean pins the same literal
+/// (`Architecture.syscallAbiVersion_pinned`), the HAL mirrors it
+/// (`svc_dispatch::SYSCALL_ABI_VERSION`, pinned by its own mirror test),
+/// and a half-bumped tree fails whichever suite still reads the old value.
+#[test]
+fn syscall_abi_version_pinned() {
+    assert_eq!(sele4n_types::SYSCALL_ABI_VERSION, 2);
+}
+
+/// WS-RA RA.D.4: the return shape of every syscall, mirrored per-variant
+/// from Lean's total `Architecture.syscallReturnShape` — the same
+/// hand-mirrored-enum idiom `SyscallId` conformance uses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReturnShape {
+    /// `x0 = 0`, no message.
+    Unit,
+    /// `x0` = full-width badge, no message registers.
+    Badge,
+    /// `x0` = a queried scalar word.
+    Word,
+    /// `x0` = badge, `x1` = MessageInfo, `x2`-`x5` = message registers.
+    Message,
+}
+
+/// The mirror of `Architecture.syscallReturnShape` — total over the same
+/// 31 variants (`SyscallId` here is `sele4n-types`', whose count pin is
+/// `syscall_id_variant_count`).
+fn syscall_return_shape(sid: SyscallId) -> ReturnShape {
+    match sid {
+        SyscallId::Receive | SyscallId::Call | SyscallId::ReplyRecv => ReturnShape::Message,
+        SyscallId::NotificationWait => ReturnShape::Badge,
+        SyscallId::ServiceQuery => ReturnShape::Word,
+        _ => ReturnShape::Unit,
+    }
+}
+
+/// WS-RA RA.D.4: exactly five syscalls are value-returning, and they are
+/// the five the plan §1.3 enumerates — pinned by iteration over every
+/// variant, mirroring Lean's `syscallReturnShape_value_returning`.
+#[test]
+fn return_shape_value_returning_surface() {
+    let mut value_returning = std::vec::Vec::new();
+    for raw in 0..SyscallId::COUNT as u64 {
+        let sid = SyscallId::from_u64(raw).expect("count-pinned range");
+        if syscall_return_shape(sid) != ReturnShape::Unit {
+            value_returning.push(sid);
+        }
+    }
+    assert_eq!(
+        value_returning,
+        [
+            SyscallId::Receive,
+            SyscallId::Call,
+            SyscallId::ServiceQuery,
+            SyscallId::NotificationWait,
+            SyscallId::ReplyRecv,
+        ]
+    );
+}
+
+/// WS-RA RA.D.4: the wrapper signatures agree with the shape table —
+/// badge-shaped syscalls return `Badge`, the word-shaped query returns a
+/// word, message-shaped wrappers return `(Badge, SyscallResponse)`.
+/// A wrapper whose signature drifts from the table stops compiling here.
+#[test]
+fn return_shape_matches_wrapper_signatures() {
+    let _wait: fn(CPtr) -> KernelResult<Badge> = sele4n_sys::ipc::notification_wait;
+    let _query: fn(CPtr) -> KernelResult<u64> = sele4n_sys::service::service_query;
+    let _receive: fn(CPtr) -> KernelResult<(Badge, SyscallResponse)> =
+        sele4n_sys::ipc::endpoint_receive;
+    let _reply_recv: fn(CPtr, CPtr, &sele4n_sys::ipc::IpcMessage)
+        -> KernelResult<(Badge, SyscallResponse)> = sele4n_sys::ipc::endpoint_reply_recv;
+}
+
+/// WS-RA RA.D.5: the response-side register layout, round-tripped — a
+/// frame encoded under the Lean layout rules (`returnFrameOfMessage`'s
+/// synthesis: badge → x0, `MessageInfo {length, extraCaps, 0}` → x1,
+/// inline window → x2-x5) decodes through the real `decode_response` to
+/// the same values, for each shape.
+#[test]
+fn return_frame_roundtrip_per_shape() {
+    // Unit: the zero frame decodes as success with value 0.
+    let unit = decode_response([0, 0, 0, 0, 0, 0, 0]).unwrap();
+    assert_eq!(unit.value(), 0);
+    assert_eq!(unit.msg_info().length(), 0);
+
+    // Badge: full-width x0, empty MessageInfo.
+    let badge_val = 0xFFFF_FFFF_FFFF_FFFFu64;
+    let badge = decode_response([badge_val, 0, 0, 0, 0, 0, 0]).unwrap();
+    assert_eq!(badge.badge(), Badge::from(badge_val));
+
+    // Word: x0 carries the queried scalar.
+    let word = decode_response([12345, 0, 0, 0, 0, 0, 0]).unwrap();
+    assert_eq!(word.value(), 12345);
+
+    // Message: badge + MessageInfo{length 3, extraCaps 1, label 0} + MRs.
+    let mi = MessageInfo::new(3, 1, 0).unwrap();
+    let x1 = mi.encode().unwrap();
+    let msg = decode_response([7, x1, 100, 200, 300, 0, 0]).unwrap();
+    assert_eq!(msg.badge(), Badge::from(7u64));
+    assert_eq!(msg.msg_info().length(), 3);
+    assert_eq!(msg.msg_info().extra_caps(), 1);
+    assert_eq!(msg.msg_regs[..3], [100, 200, 300]);
+}
+
+/// WS-RA RA.D.1: every `sele4n-sys` wrapper's `msg_info.length` clears the
+/// HAL's `min_inline_args` gate — the pin that keeps the prefilter table
+/// and the wrappers from drifting apart again (four wrappers were
+/// unreachable on hardware when the table demanded more registers than
+/// the wrapper sent: `cspace_mint` 4-vs-5, `cspace_copy` / `cspace_move`
+/// 2-vs-4, `lifecycle_retype` 3-vs-4).  The HAL table itself is not
+/// linkable from this test crate; the authoritative per-variant minimums
+/// are mirrored here and pinned against the wrappers' encoded lengths.
+#[test]
+fn wrapper_lengths_clear_prefilter_minimums() {
+    // (syscall, wrapper msg_info length, HAL min_inline_args mirror)
+    let table: &[(SyscallId, u64, u64)] = &[
+        (SyscallId::CSpaceMint, 4, 4),
+        (SyscallId::CSpaceCopy, 2, 2),
+        (SyscallId::CSpaceMove, 2, 2),
+        (SyscallId::CSpaceDelete, 1, 1),
+        (SyscallId::LifecycleRetype, 3, 3),
+        (SyscallId::VSpaceMap, 4, 4),
+        (SyscallId::VSpaceUnmap, 2, 2),
+        (SyscallId::VSpaceUnifyInstruction, 2, 2),
+        (SyscallId::ServiceRegister, 5, 4),
+        (SyscallId::ServiceRevoke, 1, 1),
+        (SyscallId::ServiceQuery, 0, 0),
+        (SyscallId::NotificationSignal, 1, 1),
+        (SyscallId::TcbSetPriority, 1, 1),
+        (SyscallId::TcbSetMCPriority, 1, 1),
+        (SyscallId::TcbSetIPCBuffer, 1, 1),
+        (SyscallId::TcbSetAffinity, 1, 1),
+        (SyscallId::TcbSuspend, 1, 1),
+        (SyscallId::TcbResume, 1, 1),
+    ];
+    for &(sid, wrapper_len, min_args) in table {
+        assert!(
+            wrapper_len >= min_args,
+            "{sid:?}: wrapper sends length {wrapper_len} below prefilter minimum {min_args}"
+        );
+    }
 }

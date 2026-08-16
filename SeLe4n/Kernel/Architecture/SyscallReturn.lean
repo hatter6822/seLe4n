@@ -320,7 +320,7 @@ def ofRegs (a : Array UInt64) : SyscallReturnFrame :=
 
 /-- RA.A.4 — the round trip is lossless at full 64-bit width in every
 register.  Under the retired bit-63 protocol this was false for `x0`
-(`encodeOk` masked bit 63; `encodeOk_not_injective_on_badges`); the
+(`encodeOk` masked bit 63; `bit63Encoding_not_injective_on_badges`); the
 separation of the value and status channels is what makes it provable. -/
 theorem decodeReturnFrame_encodeReturnFrame (f : SyscallReturnFrame) :
     ofRegs (toRegs f) = f := rfl
@@ -765,6 +765,18 @@ theorem frameForShape_value (shape : ReturnShape) (staged : SyscallReturnFrame)
 -- ============================================================================
 -- §7  The ABI version pin (RA.A.7, plan §3.6)
 -- ============================================================================
+
+/-- WS-RA RA.A.8 — **the retired bit-63 protocol's hazard, kept on the
+record.**  Under the pre-WS-RA convention the success encoder masked bit 63
+(`encodeOk v = v &&& 0x7FFFFFFFFFFFFFFF`) to keep success words disjoint
+from the error flag, so two *distinct* valid badges (`Badge.valid` admits
+everything below `2^64`) collided.  The functions are deleted with the
+flip; the statement survives over the mask literal itself, so the protocol
+cannot quietly return with its hazard forgotten. -/
+theorem bit63Encoding_not_injective_on_badges :
+    ∃ a b : UInt64, a ≠ b ∧
+      (a &&& 0x7FFFFFFFFFFFFFFF) = (b &&& 0x7FFFFFFFFFFFFFFF) := by
+  exact ⟨0x42, 0x8000000000000042, by decide, by decide⟩
 
 /-- The syscall return-ABI version this module defines.
 
