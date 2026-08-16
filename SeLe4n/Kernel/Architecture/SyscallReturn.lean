@@ -376,6 +376,85 @@ success `MessageInfo` (all-zero word) in `x1`, no message registers. -/
 def returnFrameOfBadge (b : Badge) : SyscallReturnFrame :=
   { x0 := b.val.toUInt64 }
 
+-- ============================================================================
+-- §4b  Staging a frame into a register context (RA.B.1's pure core)
+-- ============================================================================
+
+/-- Stage a return frame into a register file: `x0`-`x5` overwritten with
+the frame, every other register (including `x7`, `pc`, `sp`) untouched.
+The dual of the argument spill's register writes. -/
+def _root_.SeLe4n.RegisterFile.stageReturnFrame
+    (rf : SeLe4n.RegisterFile) (f : SyscallReturnFrame) : SeLe4n.RegisterFile :=
+  let rf := SeLe4n.writeReg rf ⟨0⟩ ⟨f.x0.toNat⟩
+  let rf := SeLe4n.writeReg rf ⟨1⟩ ⟨f.x1.toNat⟩
+  let rf := SeLe4n.writeReg rf ⟨2⟩ ⟨f.x2.toNat⟩
+  let rf := SeLe4n.writeReg rf ⟨3⟩ ⟨f.x3.toNat⟩
+  let rf := SeLe4n.writeReg rf ⟨4⟩ ⟨f.x4.toNat⟩
+  SeLe4n.writeReg rf ⟨5⟩ ⟨f.x5.toNat⟩
+
+/-- Staging touches `gpr` only — `pc` and `sp` survive. -/
+@[simp] theorem _root_.SeLe4n.RegisterFile.stageReturnFrame_pc
+    (rf : SeLe4n.RegisterFile) (f : SyscallReturnFrame) :
+    (rf.stageReturnFrame f).pc = rf.pc := rfl
+
+@[simp] theorem _root_.SeLe4n.RegisterFile.stageReturnFrame_sp
+    (rf : SeLe4n.RegisterFile) (f : SyscallReturnFrame) :
+    (rf.stageReturnFrame f).sp = rf.sp := rfl
+
+/-- Registers outside the frame window are untouched — in particular `x7`
+(the staged syscall number) and the callee-saved range. -/
+theorem _root_.SeLe4n.RegisterFile.stageReturnFrame_gpr_high
+    (rf : SeLe4n.RegisterFile) (f : SyscallReturnFrame) (r : SeLe4n.RegName)
+    (h : 5 < r.val) : (rf.stageReturnFrame f).gpr r = rf.gpr r := by
+  unfold SeLe4n.RegisterFile.stageReturnFrame SeLe4n.writeReg
+  simp only
+  have h0 : r.val ≠ 0 := by omega
+  have h1 : r.val ≠ 1 := by omega
+  have h2 : r.val ≠ 2 := by omega
+  have h3 : r.val ≠ 3 := by omega
+  have h4 : r.val ≠ 4 := by omega
+  have h5 : r.val ≠ 5 := by omega
+  simp [h0, h1, h2, h3, h4, h5]
+
+/-- The staged registers read back as the frame, register for register —
+the pure core of RA.B.2's `readReturnFrame_writeReturnFrame` round trip. -/
+theorem _root_.SeLe4n.RegisterFile.stageReturnFrame_reads_back
+    (rf : SeLe4n.RegisterFile) (f : SyscallReturnFrame) :
+    (rf.stageReturnFrame f).gpr ⟨0⟩ = ⟨f.x0.toNat⟩ ∧
+    (rf.stageReturnFrame f).gpr ⟨1⟩ = ⟨f.x1.toNat⟩ ∧
+    (rf.stageReturnFrame f).gpr ⟨2⟩ = ⟨f.x2.toNat⟩ ∧
+    (rf.stageReturnFrame f).gpr ⟨3⟩ = ⟨f.x3.toNat⟩ ∧
+    (rf.stageReturnFrame f).gpr ⟨4⟩ = ⟨f.x4.toNat⟩ ∧
+    (rf.stageReturnFrame f).gpr ⟨5⟩ = ⟨f.x5.toNat⟩ := by
+  unfold SeLe4n.RegisterFile.stageReturnFrame SeLe4n.writeReg
+  refine ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+/-- Stage a return frame into a TCB's saved register context — the single
+record update every staging site goes through (`registerContext` moves,
+all 25 other TCB fields definitionally unchanged). -/
+def _root_.SeLe4n.Model.TCB.withReturnFrame (tcb : TCB) (f : SyscallReturnFrame) : TCB :=
+  { tcb with registerContext := tcb.registerContext.stageReturnFrame f }
+
+/-- The fields the IPC and scheduler invariants read, pinned unchanged.
+Each is `rfl` — the update touches `registerContext` only — but naming
+them keeps downstream `simp` sets one identifier long. -/
+@[simp] theorem _root_.SeLe4n.Model.TCB.withReturnFrame_ipcState
+    (tcb : TCB) (f : SyscallReturnFrame) :
+    (tcb.withReturnFrame f).ipcState = tcb.ipcState := rfl
+
+@[simp] theorem _root_.SeLe4n.Model.TCB.withReturnFrame_tid
+    (tcb : TCB) (f : SyscallReturnFrame) :
+    (tcb.withReturnFrame f).tid = tcb.tid := rfl
+
+@[simp] theorem _root_.SeLe4n.Model.TCB.withReturnFrame_pendingMessage
+    (tcb : TCB) (f : SyscallReturnFrame) :
+    (tcb.withReturnFrame f).pendingMessage = tcb.pendingMessage := rfl
+
+@[simp] theorem _root_.SeLe4n.Model.TCB.withReturnFrame_registerContext
+    (tcb : TCB) (f : SyscallReturnFrame) :
+    (tcb.withReturnFrame f).registerContext
+      = tcb.registerContext.stageReturnFrame f := rfl
+
 /-- A queried-word frame — `.serviceQuery`'s shape (and SM9.A's audit
 reads): the word in `x0`, success `x1`, no message registers. -/
 def returnFrameOfWord (w : UInt64) : SyscallReturnFrame :=
