@@ -1,3 +1,45 @@
+## v0.33.32 — SM9 plan, review round 7: WS-RA's gap reaches SM9.A too
+
+Three findings, one P1.  All valid, and the P1 lands on the plan section I wrote
+before understanding the return-path gap.
+
+**The audit reader is a value-returning syscall, and SM9 never said how the value
+gets out.**  `.auditRead`'s entire purpose is to return a word — but
+`dispatchWithCapChecked` is `Kernel Unit`, and `syscallDispatchFromAbi` takes its
+success value from `readReturnValue` on the post-state TCB, which no transition
+writes.  So the reader would resolve its capability, pass its clearance gate,
+compute the right word, and hand the caller back its own preloaded `x0`
+capability argument.  That is the SM9.C.0 class exactly, at a second site, and it
+means §3.3's whole reader interface presupposes a return path this kernel does
+not have.  **WS-RA is now a blocking dependency of SM9.A**, not only of SM9.C,
+and SM9.A.10 gains the obligation to write its result plus an end-to-end
+assertion through `syscallDispatchFromAbi` — a transition-level test cannot see
+this defect, which is why it survived seven rounds.
+
+**A detector that rejects the scenario it was built for.**  Round 6 had the two
+per-hop events share one `predecessorTags` snapshot.  That is self-defeating: hop
+2 is causally downstream of hop 1 *within the same transition*, but a snapshot
+taken before the transition cannot contain hop 1's timestamp, because recording
+hop 1 is what allocates it.  D.14 would therefore reject the exact two-hop chain
+the per-hop design exists to record.  The second event's tags are now the
+pre-transition snapshot **extended with hop 1's freshly allocated timestamp**
+(`secondHopEvent_names_firstHop`).
+
+**A propagation hole at the ordering that matters.**  SM9.D.10 covered the
+notification signal and the bound-TCB delivery and omitted
+`notificationWaitOnCore`'s pending-badge arm — where, in the signal-before-wait
+ordering, the *wait* is what moves the badge to the waiter.  Without it the
+waiter's later downgrade carries no hop 1, so the causal detector misses §3.6's
+own downgrade → ordinary delivery → downgrade scenario in one of its two
+orderings.  The arm joins the propagation surface and SM9.E.2a covers both
+orderings.
+
+Counts: theorems ~72 → ~76; sub-task count unchanged at 61.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §2, §3.5, §3.6
+Refs: docs/planning/SYSCALL_RETURN_ABI_PLAN.md
+Refs: #865
+
 ## v0.33.31 — WS-RA opens: the syscall return path was never implemented
 
 Investigating where a notification badge should be delivered found that the

@@ -62,6 +62,16 @@ v1.0.0 must not claim declassification.
 - **SM8.E**: `KernelOperation.all` + `mem_all` — what makes SM9.C.7's inventory
   growth safe (a 36th operation either fails `mem_all` or moves all three
   counts).
+- **WS-RA** ([`SYSCALL_RETURN_ABI_PLAN.md`](SYSCALL_RETURN_ABI_PLAN.md)) —
+  **blocking for SM9.A and SM9.C.**  The audit reader is a *value-returning*
+  syscall: returning a word is its entire purpose.  But `dispatchWithCapChecked`
+  is `Kernel Unit` and `syscallDispatchFromAbi` takes its success value from
+  `readReturnValue` on the post-state TCB, which no transition writes — so
+  `.auditRead` would gate correctly, compute correctly, and hand back the
+  caller's own preloaded `x0` capability argument.  This is the same
+  output-plumbing gap as SM9.C.0, and it means **§3.3's whole reader interface
+  presupposes a return path that does not exist**.  WS-RA builds it; SM9.A.10
+  consumes it.
 
 ## 3. Architectural choices
 
@@ -561,10 +571,19 @@ drop the first downgrade or collapse two different domain pairs — and two
 potentially different authorization bases — into a direct `high → low` edge that
 no policy actually authorized.  Either way the trail misrepresents what happened,
 and the causal detector inherits the misrepresentation.  So the transition emits
-**one event per authorized downgrade**, in hop order, sharing the subject and the
-`predecessorTags` snapshot: `declassifiedSignal_audits_each_hop` and
-`declassifiedSignal_no_invented_edge` (no recorded event names a domain pair no
-decision returned).  A composite single record was the alternative and is worse —
+**one event per authorized downgrade**, in hop order, sharing the subject:
+`declassifiedSignal_audits_each_hop` and `declassifiedSignal_no_invented_edge`
+(no recorded event names a domain pair no decision returned).
+
+**They cannot share one tag snapshot, though** — and a first draft said they
+should, which is self-defeating.  Hop 2 is causally downstream of hop 1 *within
+the same transition*, but a snapshot taken before the transition cannot contain
+hop 1's timestamp, because that timestamp is allocated by recording hop 1.  So
+D.14 would reject the very two-hop chain this design exists to record.  The
+second event's `predecessorTags` are therefore the pre-transition snapshot
+**extended with hop 1's freshly allocated timestamp**
+(`secondHopEvent_names_firstHop`), and SM9.E.2a covers a two-downgrade delivery
+as its own case rather than only the cross-transition chain.  A composite single record was the alternative and is worse —
 it invents a fourth record shape for the detector, the reader's chunk protocol and
 the fixtures, where per-hop events are the shape all three already handle.  Both are
 SM9.C.1 obligations, not SM9.C.5 ones: the footprint work stays where it is and
@@ -782,7 +801,7 @@ their registries).  SM9.A.4a alone is a relation with congruence lemmas — see
 | SM9.A.7 | ABI, Rust half: both mirrors + conformance roundtrips + boundary test | `rust/sele4n-types/src/syscall.rs`, `rust/sele4n-hal/src/svc_dispatch.rs`, `rust/sele4n-abi/tests/conformance.rs` | M |
 | SM9.A.8 | `sele4n-sys` safe wrappers | `rust/sele4n-sys/src/audit.rs`, `lib.rs` | S |
 | SM9.A.9 | **`CapTarget.auditTrail`** constructor + `extractAuditAuthority` (§3.3): the total-match consequences across `Capability`'s `Repr`/`DecidableEq`/well-formedness, the frozen mirror, and every existing `CapTarget` match; the mint path (which boot/CSpace layer creates one); the negative that a non-`.auditTrail` capability carrying `.read` is rejected, and the acceptance witness that an unconfigured deployment has **no** audit reader | `Model/Object/{Types,Structures}.lean`, `Model/FrozenState.lean`, `Platform/Boot.lean` | XL |
-| SM9.A.10 | Live arms in `dispatchWithCapChecked` gated on `extractAuditAuthority` **then** `syscallRequiredRight`; unchecked arms fail closed; `syscallDelegates_auditRead` / `_auditDrain` | `Kernel/API.lean` | L |
+| SM9.A.10 | Live arms in `dispatchWithCapChecked` gated on `extractAuditAuthority` **then** `syscallRequiredRight`; **each arm writes its result into the caller's return register** (the selected word for `.auditRead`, the new visible length for `.auditDrain`) via WS-RA's `writeReturnFrameToTcb` — without which the reader computes correctly and hands back the caller's own preloaded `x0`; unchecked arms fail closed; `syscallDelegates_auditRead` / `_auditDrain` + an end-to-end `syscallDispatchFromAbi` assertion that the returned word is the *selected* one | `Kernel/API.lean` | XL |
 | SM9.A.11 | Enforcement boundary 40→42 canonical, 55→57 per-core; `syscallIdToEnforcementName{,PerCore}`; completeness + class-match re-decided | `Enforcement/Wrappers.lean`, `CovertChannelPerCore.lean` | M |
 | SM9.A.12 | Lock sets: `lockSet_auditRead` (universal reads), `lockSet_auditDrain`; `permittedKinds`; inventory counts 103→105; `_size_le` + deadlock aggregate | `Concurrency/Locks/{LockSetTransitions,LockSetForSyscall,LockSetInventory,Deadlock,DeadlockInventory}.lean` | M |
 | SM9.A.13 | Frozen-ops classifier arm + count; per-core routing gate registration | `Kernel/FrozenOps/Operations.lean`, `scripts/per_core_routing_aliases.json` | S |
@@ -864,7 +883,7 @@ and its consequences (D.14–D.18).
 | SM9.D.7 | **The content-flow classification** — a *total function* `KernelOperation → ContentFlowClass` over SM8.E's exhaustive `KernelOperation.all`, not a fresh hand-maintained taxonomy: `mem_all` on a new type proves its constructors are listed while a content-moving transition can simply never acquire one (§3.6, the same defect §3.7 fixes for `ReadableStructure`).  `contentFlowClass_total` + `contentFlowSite_list_gate_insufficient`.  The soundness keystone: a missed site is a detector that misses real laundering | `InformationFlow/Taint.lean` | XL |
 | SM9.D.8 | Propagation at IPC send/receive (message registers → receiver TCB), single-core and `…OnCore` | `IPC/Operations/Endpoint.lean`, `IPC/CrossCore/EndpointSend.lean` | L |
 | SM9.D.9 | Propagation at call / reply / replyRecv, including the cross-core dispatch wrappers | `IPC/CrossCore/{EndpointCall,EndpointReply}*.lean` | L |
-| SM9.D.10 | Propagation at notification signal — **where SM9.C's downgrade originates a tag** — plus the bound-TCB delivery path | `IPC/CrossCore/NotificationSignal.lean` | L |
+| SM9.D.10 | Propagation at notification signal — **where SM9.C's downgrade originates a tag** — plus the bound-TCB delivery path **and `notificationWaitOnCore`'s pending-badge arm**.  The last is not optional: in the signal-before-wait ordering the tag sits on the notification and the *wait* is what moves the badge to the waiter, so omitting it means the waiter's later downgrade carries no hop 1 and the detector misses §3.6's own downgrade → ordinary delivery → downgrade scenario in one of its two orderings | `IPC/CrossCore/NotificationSignal.lean` | XL |
 | SM9.D.11 | Propagation at capability transfer (`ipcUnwrapCaps`) | `IPC/Operations/CapTransfer.lean` | M |
 | SM9.D.12 | Taint **frames** for every non-content transition (scheduler, VSpace, cache/TLB), so D.7's completeness is checkable rather than declared — **except retype, which clears** (§3.6): `lifecycleRetypeObject` commits `storeObject target newObj` at the same id, so a framed retype leaves a destroyed object's tags on its replacement.  `retypeClearsTaint` at the two production wrappers (the entry points SM7.D's initiator drain already enumerates) + `retypedObject_taint_empty` + `staleTaint_is_not_saturation`, which keeps D.15's residual-imprecision claim true | ~12 files | XL |
 | SM9.D.13 | Saturation: the structural bound, upward-saturating overflow, `taintSaturate_over_approximates` (the safe direction for a detector, stated as a theorem) | `InformationFlow/Taint.lean` | M |
@@ -998,6 +1017,8 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
 | Drain breaks the trail's timestamp discipline | HIGH | HIGH | **Realised, not hypothetical**: `timestamp := log.length` reuses a timestamp after any prefix removal.  Closed by the SM9.A.1a epoch, sequenced before drain exists, with the reuse as a load-bearing negative (§3.4) |
 | Taint propagation misses a content-moving transition | MED | HIGH | A **total** `KernelOperation → ContentFlowClass` over SM8.E's exhaustive enumeration (SM9.D.7) + non-content frames (SM9.D.12) — a missed site is a detector that misses real laundering |
 | A privileged gate computed from rows a drain removes | MED | **HIGH** | Drain a trail to `[]` and a rows-derived dominance predicate is vacuously true, admitting a low reader to the global epoch that counts the drained entries.  One configured `auditMonitorClearance` gates drain, the ledger, global identity and `predecessorTags` (§3.4) |
+| A reader that computes correctly and returns garbage | **HIGH** | **HIGH** | `dispatchWithCapChecked` is `Kernel Unit` and nothing writes the TCB return register, so `.auditRead` would hand back the caller's own `x0`.  Blocked on WS-RA (§2); SM9.A.10 writes the result and asserts it end to end |
+| A detector that rejects the scenario it was built for | MED | HIGH | The second per-hop event extends the snapshot with hop 1's timestamp (§3.5); taint propagates on the wait arm as well as the signal arm (SM9.D.10) |
 | An audit trail that reports an edge no policy authorized | MED | **HIGH** | Two gated hops emit two events (§3.5); one record would collapse `high → mid` and `mid → low` into a direct `high → low` edge |
 | A downgrade authorized to one sink reaching a second | MED | **HIGH** | The live bound-signal path gates `notification → receiver` as well as `signaler → notification` (v0.31.73), and a footprint is not an authorization.  SM9.C.1 gates the resolved destination and audits it (§3.5) |
 | A field added to a readable record becoming a channel | MED | HIGH | §3.7's inventory is keyed by **field**, not structure: `predecessorTags` carries global timestamps and is dominating-reader-only, with an opaque verdict for partial readers |
@@ -1061,6 +1082,14 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
 - [ ] The declassifying signal authorizes its **resolved destination**, not only
       its notification, and the audit event names that destination — the
       v0.31.73 leak is not re-opened under declassification authority.
+- [ ] A two-hop delivery within one transition is **detected as a chain**: the
+      second event names the first, so the design's own scenario is not rejected
+      by its own detector.
+- [ ] Taint propagates on **both** notification orderings, so the causal
+      scenario holds whether the signal or the wait comes first.
+- [ ] `.auditRead` and `.auditDrain` return their computed word to the caller —
+      verified end to end through `syscallDispatchFromAbi`, not just at the
+      transition — which requires WS-RA to have landed.
 - [ ] No field derived from hidden state reaches a partial reader, including
       fields added to fix something else.
 - [ ] Every readable structure has an equivalence clause and a hidden-write
@@ -1089,7 +1118,7 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
 
 ## 11. Theorem catalogue for SM9
 
-~72 substantive theorems.  Headline set:
+~76 substantive theorems.  Headline set:
 
 - `auditLogVisibleTo_sublist` + the clearance-determines-view theorem (SM9.A.1)
 - `auditTimestampsFrom_epoch_preserved` + `auditDrain_monotone_epoch` — the
@@ -1150,9 +1179,10 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
 - `declassifiedSignal_gates_resolved_receiver` +
   `declassifiedSignal_audits_actual_destination` + `footprint_does_not_authorize`
   — naming a sink in the footprint does not permit it (SM9.C.1)
-- `declassifiedSignal_audits_each_hop` + `declassifiedSignal_no_invented_edge` —
-  two authorizations need two records, or the trail reports a direct edge no
-  decision returned (SM9.C.1)
+- `declassifiedSignal_audits_each_hop` + `declassifiedSignal_no_invented_edge` +
+  `secondHopEvent_names_firstHop` — two authorizations need two records, and the
+  second must name the first or the detector rejects the chain the design exists
+  to record (SM9.C.1, §3.5)
 - `auditMonitorGate_is_configuration_derived` +
   `auditMonitorGate_records_derived_unsound` — the single privileged-reader gate,
   and why a rows-derived one goes vacuous on a drained-empty trail (§3.4)
