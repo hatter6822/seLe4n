@@ -614,7 +614,7 @@ grep -n "smpLatentInventory_count" SeLe4n/Kernel/Concurrency/Assumptions.lean
 
 ## Appendix C — Theorem-catalogue index
 
-WS-SM introduces ~270 new substantive theorems. Per-phase
+WS-SM introduces ~275 new substantive theorems. Per-phase
 breakdown:
 
 | Phase | Theorems | Document section |
@@ -628,9 +628,9 @@ breakdown:
 | SM6 Cross-core IPC | ~25 | [SMP_CROSS_CORE_IPC_PLAN §10](SMP_CROSS_CORE_IPC_PLAN.md) |
 | SM7 TLB shootdown | ~14 | [SMP_TLB_SHOOTDOWN_PLAN §10](SMP_TLB_SHOOTDOWN_PLAN.md) |
 | SM8 Information flow | ~18 | [SMP_INFORMATION_FLOW_PLAN §10](SMP_INFORMATION_FLOW_PLAN.md) |
-| SM9 Declassification | ~60 | [SMP_DECLASSIFICATION_COMPLETION_PLAN §11](SMP_DECLASSIFICATION_COMPLETION_PLAN.md) |
+| SM9 Declassification | ~65 | [SMP_DECLASSIFICATION_COMPLETION_PLAN §11](SMP_DECLASSIFICATION_COMPLETION_PLAN.md) |
 | SM10 Closure | ~5 | [SMP_RELEASE_CLOSURE_PLAN §10](SMP_RELEASE_CLOSURE_PLAN.md) |
-| **Total** | **~270** | |
+| **Total** | **~275** | |
 
 The canonical authoritative list will be maintained in
 `docs/audits/SMP_THEOREM_INDEX.md` once WS-SM opens (created in

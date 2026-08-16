@@ -503,6 +503,28 @@ transition it is about, so the footprint is:
 2. the delivered waiter's TCB, and
 3. the waiter's home-core scheduler slots.
 
+**A footprint is not an authorization, and conflating them re-opens a closed
+leak.**  Naming the waiter TCB in the effect footprint says *where the writes
+land*; it says nothing about whether that second sink is *permitted*.  The live
+`notificationSignalBoundCrossCoreDispatchChecked` already gates **two** flows —
+`signaler → notification` and then `notification → receiver` — and the second was
+added at **v0.31.73 (review #3)** for exactly this reason: without it a signal
+authorized to the notification delivers the badge onward into a low bound TCB.
+A declassifying signal gated only by `declassificationDecision` on the
+notification would re-introduce that leak in the declassifying variant, with a
+*stronger* authority behind it.
+
+So SM9.C gates the **resolved destination** as well: the receiver (bound TCB or
+head waiter, whichever the transition actually delivers to) must be authorized to
+receive from the notification — by the ordinary flow check when that hop is not a
+downgrade, or by its own `declassificationDecision` when it is — and the audit
+event records the **actual destination**, not merely the notification.
+`declassifiedSignal_gates_resolved_receiver` and
+`declassifiedSignal_audits_actual_destination` are the two, with
+`footprint_does_not_authorize` keeping the distinction on the record.  Both are
+SM9.C.1 obligations, not SM9.C.5 ones: the footprint work stays where it is and
+does not grow to cover them.
+
 Stated as `declassificationEffectFootprint` in SM9.C.5, alongside the write set
 and `observableSlotsConfinedToCores` that already have to name the same cores —
 so the footprint is defined once and the NI theorem and the confinement proof
@@ -611,6 +633,20 @@ rather than of the current store — `chainCausal_is_history_local` states exact
 that, and `chainCausal_not_table_derived` keeps the refuted design refuted.  Both
 fields change landed SM8 code and ride the §6 mount checklist.
 
+**And the snapshot must not become an export channel.**  `predecessorTags` are
+*global* timestamps, including those of events a partial reader cannot see: a
+hidden high-source event tags a subject, that subject later produces an event the
+partial reader *can* see, and the tags ride out through the reader's chunk
+protocol carrying the hidden event's global position.  That defeats both §3.3's
+view-local identities and §3.7(b) in one step — the round-4 fix for the mutable
+table created an export surface the round-3 index fix had just closed.  So the
+tags follow the same two-class rule as identity (§3.3): a **fully-dominating
+monitor** reads them, and a partial reader gets at most an *opaque* causality
+verdict — a `Bool` computed by the kernel, carrying no timestamps —
+(`predecessorTags_dominating_only`, `partialReader_gets_opaque_causality`).  The
+general lesson is now explicit in §3.7: adding a field to a *readable* record is
+adding a read channel, and inherits both obligations.
+
 ### 3.7 The reader-visibility discipline
 
 §3.4a found that adding a reader changes what is observable, and fixed it *for
@@ -667,6 +703,14 @@ design refuted, so it cannot come back as a simplification.
 The third row is load-bearing rather than filler: SM9.D mounts a taint table and
 deliberately exposes no reader for it, so the discipline records *why* it owes
 nothing yet and what a future reader would owe.
+
+**A corollary that cost two rounds to learn.**  Adding a field to an *already
+readable* record is adding a read channel, and inherits both obligations exactly
+as a new structure does.  `predecessorTags` (§3.6) is the case: a field added to
+fix a causality defect carried hidden events' global timestamps straight through
+the reader that §3.3 had just been narrowed to hide them from.  So the inventory
+is keyed by **field**, not by structure, and a field whose content is derived
+from hidden state is dominating-reader-only or exported opaquely.
 
 ## 4. Detailed sub-task breakdown
 
@@ -745,7 +789,7 @@ cannot displace an authorized-downgrade entry*.
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
 | SM9.C.0 | **Prerequisite — the wait path drops the badge.**  `notificationWaitOnCore`'s pending-badge arm clears `pendingBadge`, marks the waiter `.ready` with plain `storeTcbIpcState` (no message), and returns `.ok (some badge)`; both live `.notificationWait` arms in `API.lean` match `(st', .ok _)` and discard it, and the wrapper's type is `Kernel Unit`.  So in the ordinary signal-before-wait ordering the badge is consumed and delivered nowhere — while the waiter-present path delivers via `storeTcbIpcStateAndMessage`.  `FFI.lean`'s own ABI note says `x0` carries *"a badge for `notificationWait`"*, so this is a documented contract the code does not meet.  **SM9.C cannot ship a data-carrying declassification over a path that loses data in one of its two orderings.**  Reported separately as a live defect; the remediation (mirror the signal path, and/or thread the value to `x0`) is an ABI decision and is not assumed here | `IPC/CrossCore/NotificationSignal.lean`, `Kernel/API.lean` | L |
-| SM9.C.1 | `notificationSignalDeclassified` — the SM6.B signal gated by `declassificationDecision`, badge delivered, event recorded; error arms fail closed | `IPC/CrossCore/NotificationSignal.lean` | L |
+| SM9.C.1 | `notificationSignalDeclassified` — the SM6.B signal gated by `declassificationDecision` **and by the resolved destination's own authorization** (§3.5): the live `notificationSignalBoundCrossCoreDispatchChecked` gates `signaler → notification` *and* `notification → receiver`, the second added at v0.31.73 to stop a badge leak into a low bound TCB, so a declassifying variant gated only on the notification would re-open it with stronger authority behind it.  `declassifiedSignal_gates_resolved_receiver` + `declassifiedSignal_audits_actual_destination` + `footprint_does_not_authorize`; badge delivered, event recording the **actual destination**; error arms fail closed | `IPC/CrossCore/NotificationSignal.lean` | XL |
 | SM9.C.2 | Per-core + cross-core forms (`…OnCore`, `…CrossCoreDispatchChecked`), SGI emission, home-core wake | same | L |
 | SM9.C.3 | `ipcInvariantFull{,_perCore}` preservation — rides `notificationSignal_preserves_*` plus the audit frame | `IPC/Invariant/PerCoreBundlePreservation.lean` | L |
 | SM9.C.4 | `proofLayerInvariantBundle` preservation + `auditLogBounded` carriage | `InformationFlow/Declassification.lean` | M |
@@ -778,7 +822,7 @@ and its consequences (D.14–D.18).
 | SM9.D.11 | Propagation at capability transfer (`ipcUnwrapCaps`) | `IPC/Operations/CapTransfer.lean` | M |
 | SM9.D.12 | Taint **frames** for every non-content transition (scheduler, VSpace, cache/TLB), so D.7's completeness is checkable rather than declared — **except retype, which clears** (§3.6): `lifecycleRetypeObject` commits `storeObject target newObj` at the same id, so a framed retype leaves a destroyed object's tags on its replacement.  `retypeClearsTaint` at the two production wrappers (the entry points SM7.D's initiator drain already enumerates) + `retypedObject_taint_empty` + `staleTaint_is_not_saturation`, which keeps D.15's residual-imprecision claim true | ~12 files | XL |
 | SM9.D.13 | Saturation: the structural bound, upward-saturating overflow, `taintSaturate_over_approximates` (the safe direction for a detector, stated as a theorem) | `InformationFlow/Taint.lean` | M |
-| SM9.D.13a | **`DeclassificationEvent.sourceSubject : ObjId` + `predecessorTags`** (§3.6) — the declassifying thread's TCB *and* a bounded snapshot of its taint at production time.  The subject alone is insufficient: the taint it names lives in a mutable side table, so re-evaluating a historical event against current taint invents links (tag acquired after the fact) and loses real ones (retype clears it).  `chainCausal_is_history_local` + `chainCausal_not_table_derived`.  A change to landed SM8 code, riding the §6 mount checklist (record type, producer, well-formedness, the reader's chunk protocol, the golden fixtures) | `InformationFlow/AuditRecord.lean`, `Declassification.lean`, `AuditRead.lean` | XL |
+| SM9.D.13a | **`DeclassificationEvent.sourceSubject : ObjId` + `predecessorTags`** (§3.6) — the declassifying thread's TCB *and* a bounded snapshot of its taint at production time, the tags **dominating-reader-only** with an opaque causality verdict for partial readers (`predecessorTags_dominating_only`, `partialReader_gets_opaque_causality`), since the tags are global timestamps of events a partial reader may not see.  The subject alone is insufficient: the taint it names lives in a mutable side table, so re-evaluating a historical event against current taint invents links (tag acquired after the fact) and loses real ones (retype clears it).  `chainCausal_is_history_local` + `chainCausal_not_table_derived`.  A change to landed SM8 code, riding the §6 mount checklist (record type, producer, well-formedness, the reader's chunk protocol, the golden fixtures) | `InformationFlow/AuditRecord.lean`, `Declassification.lean`, `AuditRead.lean` | XL |
 | SM9.D.14 | `declassificationChainCausal` — hop 2's **recorded `predecessorTags`** contain hop 1's timestamp — conjoined into `declassificationChainLinked`, read from the event list rather than from the live taint table, so the verdict on a fixed pair of events cannot change with later unrelated activity | `InformationFlow/DeclassificationPerCore.lean` | L |
 | SM9.D.15 | **Retire `declassificationChainLinked_is_syntactic`** (now genuinely false) for a soundness theorem on the causal detector; a negative pinning the residual saturation-induced over-approximation, so the remaining imprecision is stated rather than implied absent | same | M |
 | SM9.D.16 | `chainLaunders` consumes it; the rule-inventory `evidenceProp` moves with the theorem; counts + Tier-3 anchors incl. the retirement negative | same | M |
@@ -907,6 +951,8 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
 | A readable structure is added with no equivalence clause | MED | HIGH | §3.7's `ReadableStructure.all` + `mem_all` — a structure without a clause fails completeness rather than passing silently.  Three findings so far were the same violation seen at three sites |
 | Drain breaks the trail's timestamp discipline | HIGH | HIGH | **Realised, not hypothetical**: `timestamp := log.length` reuses a timestamp after any prefix removal.  Closed by the SM9.A.1a epoch, sequenced before drain exists, with the reuse as a load-bearing negative (§3.4) |
 | Taint propagation misses a content-moving transition | MED | HIGH | `ContentFlowSite.all` + `mem_all` + non-content frames (SM9.D.7/.12) — a missed site is a detector that misses real laundering, so the enumeration is checked, not asserted |
+| A downgrade authorized to one sink reaching a second | MED | **HIGH** | The live bound-signal path gates `notification → receiver` as well as `signaler → notification` (v0.31.73), and a footprint is not an authorization.  SM9.C.1 gates the resolved destination and audits it (§3.5) |
+| A field added to a readable record becoming a channel | MED | HIGH | §3.7's inventory is keyed by **field**, not structure: `predecessorTags` carries global timestamps and is dominating-reader-only, with an opaque verdict for partial readers |
 | A historical verdict that moves with current state | MED | HIGH | The causal predicate reads `predecessorTags` snapshotted into the event, not the mutable taint table — otherwise a tag acquired late invents a link and a retype-cleared TCB loses a real one (§3.6) |
 | A multi-call read that tears | MED | MED | `status` is one call with bounded components (§3.3); the chunked design it replaces could assemble a generation from two states |
 | A completeness gate a new structure can decline to join | MED | HIGH | `mem_all` over a hand-maintained type cannot force a new readable field to add a constructor.  `AuditReadOp` is fused with `ReadableStructure` and the clause set is a total function (§3.7), so the gate fails at elaboration rather than passing silently |
@@ -961,6 +1007,11 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
 - [ ] SM9.C.0 is closed: the notification wait path delivers the badge, so a
       data-carrying declassification is not built over a path that loses data in
       one of its two orderings.
+- [ ] The declassifying signal authorizes its **resolved destination**, not only
+      its notification, and the audit event names that destination — the
+      v0.31.73 leak is not re-opened under declassification authority.
+- [ ] No field derived from hidden state reaches a partial reader, including
+      fields added to fix something else.
 - [ ] Every readable structure has an equivalence clause and a hidden-write
       non-interference argument (§3.7), checked by `mem_all` rather than by
       review.
@@ -987,7 +1038,7 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
 
 ## 11. Theorem catalogue for SM9
 
-~60 substantive theorems.  Headline set:
+~65 substantive theorems.  Headline set:
 
 - `auditLogVisibleTo_sublist` + the clearance-determines-view theorem (SM9.A.1)
 - `auditTimestampsFrom_epoch_preserved` + `auditDrain_monotone_epoch` — the
@@ -1043,6 +1094,11 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
 - `chainCausal_is_history_local` + `chainCausal_not_table_derived` — the verdict
   on a fixed pair of events cannot change with later unrelated activity
   (SM9.D.13a, SM9.D.14)
+- `predecessorTags_dominating_only` + `partialReader_gets_opaque_causality` — a
+  field added to a readable record is a read channel (SM9.D.13a, §3.7)
+- `declassifiedSignal_gates_resolved_receiver` +
+  `declassifiedSignal_audits_actual_destination` + `footprint_does_not_authorize`
+  — naming a sink in the footprint does not permit it (SM9.C.1)
 - `taintPropagation_*` per content-flow site + the non-content frames (SM9.D.8–.12)
 - `taintSaturate_over_approximates` — overflow errs toward false positives,
   never a missed chain (SM9.D.13)

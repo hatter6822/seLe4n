@@ -1,3 +1,55 @@
+## v0.33.29 — SM9 plan, review round 5: a footprint is not an authorization
+
+A fifth review of PR #865 left two findings — a **P1** and a P2 — both against
+the plan, both consequences of earlier fixes in this same series, both valid.
+
+**The P1: a downgrade authorized to one sink could reach a second.**  SM9.C.1
+gated the declassifying signal with `declassificationDecision` on the
+*notification*, and round 2 had added the delivered waiter's TCB to the
+**effect footprint**.  Those are different things, and treating the second as
+covering the first re-opens a leak this project already closed.  The live
+`notificationSignalBoundCrossCoreDispatchChecked` gates **two** flows —
+`signaler → notification`, then `notification → receiver` — and the second exists
+because of **v0.31.73 review #3**, whose whole point was that a signal authorized
+to a notification must not deliver the badge onward into a low bound TCB.  A
+declassifying variant gated only on the notification would reproduce that leak
+with a *stronger* authority behind it: a downgrade the policy permits to the
+notification, silently forwarded to a receiver the policy rejects.
+
+Naming a sink in the footprint records *where writes land*; it does not make them
+permitted.  SM9.C.1 now gates the **resolved destination** — bound TCB or head
+waiter, whichever the transition actually delivers to — by the ordinary flow
+check where that hop is not a downgrade and by its own `declassificationDecision`
+where it is, and the audit event records the **actual destination** rather than
+the notification alone.  `declassifiedSignal_gates_resolved_receiver`,
+`declassifiedSignal_audits_actual_destination` and `footprint_does_not_authorize`
+are the three, the last so the conflation cannot recur as a simplification.
+
+**The P2: the round-4 fix built an export channel the round-3 fix had closed.**
+`predecessorTags` — the taint snapshot added last round so the causal verdict
+would stop depending on mutable state — are *global* timestamps, and they include
+events a partial reader cannot see.  A hidden high-source event tags a subject,
+that subject later produces an event the partial reader *can* see, and the tags
+ride out through the reader's chunk protocol carrying the hidden event's global
+position: precisely what §3.3's view-local indices were narrowed to hide, one
+round earlier.  The tags now follow the same two-class rule as identity — a
+fully-dominating monitor reads them, a partial reader gets an **opaque** causality
+verdict carrying no timestamps (`predecessorTags_dominating_only`,
+`partialReader_gets_opaque_causality`).
+
+**The corollary, now stated once.**  §3.7's inventory is keyed by **field**, not
+by structure: adding a field to an already-readable record is adding a read
+channel and inherits both obligations exactly as a new structure does.  That is
+the third distinct shape this discipline has had to absorb — a new structure
+(round 2), a sibling taxonomy (round 4), and now a new field on an existing one —
+and the pattern is worth more than any of the individual fixes.
+
+Counts: theorems ~60 → ~65; sub-task count unchanged at 61 (both fixes land
+inside existing sub-tasks, SM9.C.1 growing L → XL).
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §3.5, §3.6, §3.7
+Refs: #865
+
 ## v0.33.28 — SM9 plan, review round 4: a live defect found, and the same gate weakness in a sibling taxonomy
 
 A fourth review of PR #865 left eight findings — the first **P1** of the series,
