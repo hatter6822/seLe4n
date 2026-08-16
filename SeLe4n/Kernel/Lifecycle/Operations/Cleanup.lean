@@ -45,7 +45,7 @@ its step clears `currentOnCore c` wherever it finds the thread — including the
 **executing** core, which is where the caller itself runs.  A thread holding a
 `.retype`-capable capability to its own TCB could therefore destroy itself: the
 core's `current` slot is cleared, no successor is scheduled
-(`scheduleLocalSuccessorLive` is inert until SM9.E), and execution returns
+(`scheduleLocalSuccessorLive` is inert until SM10.E), and execution returns
 through a frame whose TCB the retype has scrubbed and re-purposed.  Subsequent
 syscalls from that core resolve `determineExecutingCore` to `bootCoreId`, so
 their scheduling effects land on the wrong core — a denial of service against

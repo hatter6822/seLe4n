@@ -530,7 +530,11 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @enforcementBoundaryPerCore_extends_canonical
 #check @enforcementBoundaryPerCoreComplete
 #check @enforcementBoundaryPerCore_is_complete
-#check @enforcementBoundaryPerCore_entry_is_new
+-- SM8.E.3 retired `enforcementBoundaryPerCore_entry_is_new` (the canonical list
+-- now carries the bracket, so its claim is false) for these three.
+#check @enforcementBoundary_classifies_withLockSet
+#check @enforcementBoundaryPerCore_classifies_withLockSet_once
+#check @crossCoreEnforcementEntries_omits_withLockSet
 #check CovertChannelSeverity
 #check CovertChannel
 #check @acceptedCovertChannel_scheduling_perCore
@@ -735,7 +739,7 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 -- Round 17: the third per-core scheduler slot.  The gate checked `current` and
 -- the run queues; the replenish queue is the one it could not see.
 -- Round 18: the model switches threads; the runtime has no restore seam yet.
--- Registered as a checked partition so SM9.E cannot wire one silently.
+-- Registered as a checked partition so SM10.E cannot wire one silently.
 #check @SeLe4n.Kernel.PriorityInheritance.ContextSwitchSite
 #check @SeLe4n.Kernel.PriorityInheritance.contextSwitchSites
 #check @SeLe4n.Kernel.PriorityInheritance.contextSwitchSites_complete
@@ -3696,7 +3700,7 @@ private def runVacatedCoreChecks : IO Unit := do
   -- Review round 18: the model dispatches a successor; hardware does not yet
   -- know.  No context-switch site restores the incoming context before
   -- exception return, so the register is the whole list — and stays so until
-  -- SM9.E wires the first one, at which point this assertion fails.
+  -- SM10.E wires the first one, at which point this assertion fails.
   assertBool "the context-restore obligation is registered for all four sites"
     (decide (SeLe4n.Kernel.PriorityInheritance.contextSwitchSites.length = 4) &&
      SeLe4n.Kernel.PriorityInheritance.contextSwitchSites.all
@@ -4152,9 +4156,9 @@ private def runPerCoreCoverageChecks : IO Unit := do
 /-- §4.7  The per-core enforcement boundary (SM8.B.6 / SM8.B.7). -/
 private def runEnforcementBoundaryChecks : IO Unit := do
   IO.println "--- §4.7 the per-core enforcement boundary ---"
-  assertBool "55 entries: 39 canonical + the 2PL bracket + 15 live cross-core wrappers"
+  assertBool "55 entries: 40 canonical (the 2PL bracket promoted in) + 15 cross-core wrappers"
     (decide (enforcementBoundaryPerCore.length = 55) &&
-     decide (enforcementBoundaryExtended.length = 39) &&
+     decide (enforcementBoundaryExtended.length = 40) &&
      decide (crossCoreEnforcementEntries.length = 15))
   assertBool "every SyscallId is still covered by the extended boundary (single-core half)"
     (enforcementBoundaryPerCoreComplete)
@@ -4205,10 +4209,35 @@ private def runEnforcementBoundaryChecks : IO Unit := do
       enforcementBoundary.any (fun ec =>
         match ec with
         | .policyGated n | .capabilityOnly n | .readOnly n => n == name))))
-  assertBool "NEGATIVE: the added 2PL entry is genuinely new (not already classified)"
-    (!enforcementBoundary.any (fun ec =>
+  -- SM8.E.3: the 2PL bracket is now classified in the CANONICAL list.  Its
+  -- predecessor here asserted the opposite (that the canonical boundary did not
+  -- carry it), which held only while the promotion was outstanding.
+  assertBool "the canonical boundary classifies the 2PL bracket, capability-only"
+    (enforcementBoundary.any (fun ec =>
+      match ec with
+      | .capabilityOnly n => n == "withLockSet"
+      | _ => false))
+  -- LOAD-BEARING NEGATIVE: promoted, not duplicated.  Had the promotion left
+  -- the per-core list's own append in place, the bracket would be classified
+  -- twice and a later edit could reclassify one copy with nothing noticing.
+  assertBool "NEGATIVE: the bracket is classified exactly ONCE across the per-core list"
+    (decide ((enforcementBoundaryPerCore.filter (fun ec =>
+      match ec with
+      | .policyGated n | .capabilityOnly n | .readOnly n => n == "withLockSet")).length = 1) &&
+     !crossCoreEnforcementEntries.any (fun ec =>
       match ec with
       | .policyGated n | .capabilityOnly n | .readOnly n => n == "withLockSet"))
+  -- …and the promotion left the per-core list byte-identical: appending the
+  -- bracket LAST in the canonical list is what makes the extension the plain
+  -- `canonical ++ crossCore` it now is, with no third thing moved.
+  assertBool "the per-core boundary is exactly the canonical list followed by the wrappers"
+    (have _e := @enforcementBoundaryPerCore_extends_canonical
+     have _p := @enforcementBoundary_prefix_of_perCore
+     have _o := @enforcementBoundaryPerCore_classifies_withLockSet_once
+     have _c := @enforcementBoundary_classifies_withLockSet
+     have _x := @crossCoreEnforcementEntries_omits_withLockSet
+     decide (enforcementBoundaryPerCore.length
+       = enforcementBoundaryExtended.length + crossCoreEnforcementEntries.length))
 
 /-- §4.8  The accepted covert-channel inventory (SM8.B.8 / SM8.B.9 / SM8.B.10). -/
 private def runCovertChannelInventoryChecks : IO Unit := do
@@ -6458,10 +6487,300 @@ grep '^\\[smp-fine-lock\\]' > {fineLockTraceFixturePath}"
     IO.println s!"          (then refresh {fineLockTraceFixturePath}.sha256)"
     throw (IO.userError "fine-lock trace fixture mismatch")
 
+-- ============================================================================
+-- §8  SM8.E.2 — the phase-level golden information-flow trace
+-- ============================================================================
+--
+-- The declassification audit (§6.14) and the lock-contention scenarios (§7.10)
+-- ship golden fixtures of their own.  What had none is the phase's own subject:
+-- **what an observer at `(core, label)` sees**, and what the enforcement
+-- surface around it is sized at.  Those are the numbers a reader of the
+-- information-flow claims wants to check, and until this fixture they existed
+-- only as assertion labels that pass or fail — never as a value a reviewer
+-- reads in a diff.
+--
+-- Every line is computed from the **live** projection, the live transitions and
+-- the live inventories on the four-thread / four-core fixture, so a change to
+-- what an observer sees, to which cores a transition writes, or to the size of
+-- the enforcement boundary is a fixture diff rather than a silent pass.
+--
+-- Contents are deliberately *counts and verdicts* rather than identifiers: a
+-- golden fixture outside `docs/` is code as far as the identifier-naming gate
+-- is concerned.  The channel names are the inventory's own prose.
+
+private def informationFlowTraceFixturePath : String :=
+  "tests/fixtures/smp_information_flow.expected"
+
+/-- The severity a channel carries, rendered.  `CovertChannelSeverity` derives
+`Repr` but not `ToString`, and spelling the three arms here keeps the fixture's
+vocabulary fixed rather than tied to how `Repr` chooses to print. -/
+private def covertChannelSeverityName : CovertChannelSeverity → String
+  | .low => "low"
+  | .medium => "medium"
+  | .high => "high"
+
+/-- The low observer's view at a given core — named once so the per-core lines
+below cannot accidentally read two different projections. -/
+private def lowViewOnCore (c : CoreId) : ObservableState :=
+  ObservableState.onCore niLabeling c lowLabel niState
+
+/-- How many objects an observer at `L` can see, on the fixture.  The shared
+half of the partition, so the core is irrelevant and `c0` is not a choice. -/
+private def visibleObjectCount (L : SecurityLabel) : Nat :=
+  (ObservableState.onCore niLabeling c0 L niState).objectIndex.length
+
+/-- Are the post-state's **per-core slots** invisible to the low observer on
+every core?  The decidable slice plus the register comparison — the finer of the
+two checks, so a register difference is not silently accepted.
+
+Deliberately *not* used for the notification scenarios below: the slice covers
+the decidable components only, and `objects` is a function, so a badge write is
+outside its reach by construction (`perCoreSlice_erases_shared_content`).  That
+is what `lowBadgeUnchangedEverywhere` is for. -/
+private def lowSlotsInvisibleEverywhere (st' : SystemState) : Bool :=
+  allCores.all (fun c =>
+    lowEquivalentSliceOnCoreCheckWithRegs niLabeling c lowLabel niState st')
+
+/-- Does the low observer read the **same badge** on `oid` at every core after
+the transition?  Read through the observable state's `objects` function, so this
+is the end-to-end check the slice cannot make. -/
+private def lowBadgeUnchangedEverywhere (st' : SystemState) (oid : SeLe4n.ObjId) : Bool :=
+  allCores.all (fun c =>
+    decide (projectedBadge c lowLabel st' oid = projectedBadge c lowLabel niState oid))
+
+/-- A write to **core 0's** current slot — the per-core independence probe.
+
+Deliberately core 0 and not core 1: core 1 runs `highCurrent`, which the low
+observer cannot see, so the low view of core 1's `current` is already `none` and
+clearing it moves nothing at all.  A probe like that would report "invisible on
+every core" and prove exactly nothing about *independence*, which is a claim
+about the cores the write did **not** touch.  Core 0 runs `lowCurrent`, so the
+write is genuinely visible where it lands. -/
+private def visibleCoreWriteState : SystemState :=
+  { niState with scheduler := niState.scheduler.setCurrentOnCore c0 none }
+
+/-- The cores at which the low observer cannot tell `visibleCoreWriteState` from
+the fixture — the independence set. -/
+private def independenceInvisibleCores : List CoreId :=
+  allCores.filter (fun c =>
+    lowEquivalentSliceOnCoreCheckWithRegs niLabeling c lowLabel niState visibleCoreWriteState)
+
+/-- The SM8.A half of the trace: what an observer at `(core, label)` sees. -/
+private def observerTraceLines : List String :=
+  [ s!"[smp-information-flow] fixture: {Concurrency.numCores} cores, \
+{niState.objectIndex.length} objects, 3 clearances"
+  , s!"[smp-information-flow] visible objects at low/mid/high: \
+{visibleObjectCount lowLabel}/{visibleObjectCount midLabel}/{visibleObjectCount highLabel}" ] ++
+  (allCores.map (fun c =>
+    s!"[smp-information-flow] core {c.val} low view: \
+current={(lowViewOnCore c).current.map (·.toNat)} \
+runnable={(lowViewOnCore c).runnable.map (·.toNat)} \
+activeDomain={(lowViewOnCore c).activeDomain.toNat} \
+timeRemaining={(lowViewOnCore c).domainTimeRemaining} \
+scheduleIndex={(lowViewOnCore c).domainScheduleIndex} \
+regsVisible={(lowViewOnCore c).machineRegs.isSome}")) ++
+  [ -- The partition, computed: the shared half does not read the core, the
+    -- per-core half does.  Both directions matter — a projection whose per-core
+    -- half was constant would satisfy the first line and make the phase moot.
+    s!"[smp-information-flow] shared fragment is core-independent: \
+{allCores.all (fun c => decide ((lowViewOnCore c).objectIndex = (lowViewOnCore c0).objectIndex))}, \
+per-core fragment differs across cores: \
+{decide ((lowViewOnCore c0).current ≠ (lowViewOnCore c1).current)}"
+    -- CNode slot redaction is the only observer-dependent part of object
+    -- projection, so it is the one place a clearance change moves an object's
+    -- *content* rather than its presence.
+  , s!"[smp-information-flow] CNode low-target slot visible at low/mid/high: \
+{(cnodeSlotThroughView c0 lowLabel lowSlot).isSome}/\
+{(cnodeSlotThroughView c0 midLabel lowSlot).isSome}/\
+{(cnodeSlotThroughView c0 highLabel lowSlot).isSome}; high-target slot: \
+{(cnodeSlotThroughView c0 lowLabel highSlot).isSome}/\
+{(cnodeSlotThroughView c0 midLabel highSlot).isSome}/\
+{(cnodeSlotThroughView c0 highLabel highSlot).isSome}"
+    -- Per-core independence (SM8.A.4): a write to ONE core's slot is invisible
+    -- on the others — and visible on the one it landed on, which is what makes
+    -- the set below a statement about independence rather than about a write
+    -- nobody could see in the first place.
+  , s!"[smp-information-flow] a write to core 0's current slot is invisible at cores: \
+{independenceInvisibleCores.map (fun c => c.val)}" ]
+
+/-- The SM8.B half: what the kernel's own transitions do to that view, and how
+big the enforcement surface around them is. -/
+private def nonInterferenceTraceLines : List String :=
+  [ -- A real transition on a HIGH object, run for effect, checked at every
+    -- core: the headline non-interference claim on a live signal.  Read through
+    -- the projected badge, which is what the transition actually writes.
+    s!"[smp-information-flow] signal on a high notification: low reads the same badge on \
+every core {match highSignalPost with
+              | some st => lowBadgeUnchangedEverywhere st highNotification
+              | none => false}, per-core slots unchanged \
+{match highSignalPost with | some st => lowSlotsInvisibleEverywhere st | none => false}"
+    -- The load-bearing negative.  The same transition on a LOW object moves the
+    -- low observer's view, so the line above is not reporting a projection that
+    -- hides everything.
+  , s!"[smp-information-flow] signal on a low notification: low reads the same badge on \
+every core {match lowSignalPost with
+             | some st => lowBadgeUnchangedEverywhere st lowNotification
+             | none => false} (expected false)"
+    -- The cross-core direction: a wake of a *visible* thread onto its remote
+    -- home core writes that core's slots and nothing else.
+  , s!"[smp-information-flow] remote wake of a visible thread: home core \
+{(SeLe4n.Kernel.determineTargetCore crossCoreState remoteHomedThread).val}, \
+confined there {confinedCheck crossCoreState remoteWakePost c2}, \
+deschedule dual confined {confinedCheck crossCoreState remoteDeschedulePost c2}"
+    -- Two cores in one write set — the case no single-core confinement
+    -- statement can express.
+  , s!"[smp-information-flow] rendezvous call write set: \
+{(SeLe4n.Kernel.endpointCallWriteSet rendezvousState crossCoreEndpoint c0).map (fun c => c.val)}, \
+send write set: \
+{(SeLe4n.Kernel.endpointSendWriteSet rendezvousState crossCoreEndpoint c0).map (fun c => c.val)}"
+    -- The per-object lock is erased from the projection (SM8.B.4), so the 2PL
+    -- bracket cannot be read off an object an observer can otherwise see.
+  , s!"[smp-information-flow] lock acquired on an object low can see: raw writer \
+{(rawLock lockedState lowEndpoint).writerHeld.isSome}, projected unheld on every core \
+{allCores.all (fun c =>
+  decide (projectedLock c lowLabel lockedState lowEndpoint
+    = SeLe4n.Kernel.Concurrency.RwLockState.unheld))}"
+  , s!"[smp-information-flow] non-interference coverage: \
+{(KernelOperation.all.map kernelOperationPerCoreNiTheorem).eraseDups.length} per-core lifts, \
+{(KernelOperation.all.filter perCoreConfinementDerived).length} with derived confinement, \
+{(KernelOperation.all.filter (fun op => !perCoreConfinementDerived op)).length} catch-all"
+  , s!"[smp-information-flow] cross-core inventory: {CrossCoreTransition.all.length} transitions, \
+{(CrossCoreTransition.all.filter crossCoreTransitionIsLiveArm).length} live arms, \
+{(CrossCoreTransition.all.filter crossCoreTransitionWritesRemote).length} remote writers"
+  , s!"[smp-information-flow] enforcement boundary: canonical {enforcementBoundaryExtended.length} = \
+{(enforcementBoundaryExtended.filter (fun e =>
+    match e with | .policyGated _ => true | _ => false)).length} policy-gated + \
+{(enforcementBoundaryExtended.filter (fun e =>
+    match e with | .capabilityOnly _ => true | _ => false)).length} capability-only + \
+{(enforcementBoundaryExtended.filter (fun e =>
+    match e with | .readOnly _ => true | _ => false)).length} read-only"
+  , s!"[smp-information-flow] enforcement boundary: per-core {enforcementBoundaryPerCore.length} = \
+canonical + {crossCoreEnforcementEntries.length} cross-core wrappers; re-routed syscalls \
+{(SyscallId.all.filter (fun sid =>
+    decide (syscallIdToEnforcementNamePerCore sid ≠ syscallIdToEnforcementName sid))).length}" ] ++
+  (CovertChannelId.all.map (fun id =>
+    let ch := covertChannelEntry id
+    s!"[smp-information-flow] channel {ch.channelId} ({ch.name}): \
+severity={covertChannelSeverityName ch.severity} modelVisible={ch.modelVisible} \
+perCoreInstance={ch.perCoreInstance}")) ++
+  [ s!"[smp-information-flow] channels: {acceptedCovertChannelsPerCore.length} accepted, \
+{(acceptedCovertChannelsPerCore.filter CovertChannel.modelVisible).length} model-visible, \
+{(acceptedCovertChannelsPerCore.filter CovertChannel.perCoreInstance).length} per-core" ]
+
+private def informationFlowTraceLines : List String :=
+  observerTraceLines ++ nonInterferenceTraceLines
+
+/-- §8.1: the SM8 phase-level surface as runtime assertions.
+
+The fixture below is the record; these are the properties that make it a
+*meaningful* record rather than a snapshot of arbitrary numbers.  Each has a
+load-bearing negative, and the two that matter most are the pair on the same
+transition shape: a signal on a high object is invisible to low on every core,
+and the same signal on a low object is not. -/
+private def runPhaseSurfaceChecks : IO Unit := do
+  IO.println "--- §8.1 the SM8 phase surface, computed ---"
+  -- The fixture is non-degenerate: the three clearances see strictly different
+  -- amounts, so every count line below is discriminating.
+  assertBool "low sees strictly fewer objects than mid, and mid than high"
+    (decide (visibleObjectCount lowLabel < visibleObjectCount midLabel) &&
+     decide (visibleObjectCount midLabel < visibleObjectCount highLabel))
+  -- The partition (SM8.A.2): shared components do not read the core; per-core
+  -- ones do.  Both halves, because a projection with a constant per-core half
+  -- would satisfy the first and make the phase vacuous.
+  assertBool "the shared fragment is core-independent"
+    (allCores.all (fun c =>
+      decide ((lowViewOnCore c).objectIndex = (lowViewOnCore c0).objectIndex)))
+  assertBool "NEGATIVE: the per-core fragment is NOT core-independent"
+    (decide ((lowViewOnCore c0).current ≠ (lowViewOnCore c1).current))
+  -- Per-core independence, with both halves.  The write lands on core 0 and is
+  -- visible there, so the three cores that cannot see it are a real quotient.
+  assertBool "a write to one core's slot is invisible at the other three"
+    (decide (independenceInvisibleCores.length = 3) &&
+     allCores.all (fun c => decide (c = c0 ∨ independenceInvisibleCores.contains c)))
+  assertBool "NEGATIVE: it IS visible at the core it landed on"
+    (!independenceInvisibleCores.contains c0)
+  -- The headline, on a live transition.  Two instruments, because they measure
+  -- different halves: the badge is in `objects` (a function, outside the
+  -- decidable slice), the scheduler slots are in the slice.
+  assertBool "a signal on a HIGH notification is invisible to low on every core"
+    (match highSignalPost with
+     | some st => lowBadgeUnchangedEverywhere st highNotification &&
+                  lowSlotsInvisibleEverywhere st
+     | none => false)
+  assertBool "NEGATIVE: the same signal on a LOW notification IS visible"
+    (match lowSignalPost with
+     | some st => !lowBadgeUnchangedEverywhere st lowNotification
+     | none => false)
+  -- …and the instrument itself is honest about its reach: the slice does NOT
+  -- see the low signal, so a phase-surface claim built on the slice alone would
+  -- have reported the visible transition as invisible.
+  assertBool "SCOPE: the decidable slice cannot see a badge write, on either object"
+    (match lowSignalPost with | some st => lowSlotsInvisibleEverywhere st | none => false)
+  -- The cross-core direction, on the same fixture.
+  assertBool "a remote wake writes its target's home core and no other"
+    (confinedCheck crossCoreState remoteWakePost c2 &&
+     confinedCheck crossCoreState remoteDeschedulePost c2)
+  assertBool "NEGATIVE: the remote wake is not confined to the EXECUTING core"
+    (!confinedCheck crossCoreState remoteWakePost c0)
+  -- The enforcement surface the phase sizes, read through the same expressions
+  -- the fixture prints, so a fixture that drifts from the theorems fails here.
+  assertBool "the boundary counts partition: policy-gated + capability-only + read-only"
+    (decide ((enforcementBoundaryExtended.filter (fun e =>
+        match e with | .policyGated _ => true | _ => false)).length
+      + (enforcementBoundaryExtended.filter (fun e =>
+        match e with | .capabilityOnly _ => true | _ => false)).length
+      + (enforcementBoundaryExtended.filter (fun e =>
+        match e with | .readOnly _ => true | _ => false)).length
+      = enforcementBoundaryExtended.length))
+  -- The NI coverage split, over the enumeration rather than over a literal.
+  assertBool "the confinement split is total over the operation enumeration"
+    (decide ((KernelOperation.all.filter perCoreConfinementDerived).length
+      + (KernelOperation.all.filter (fun op => !perCoreConfinementDerived op)).length
+      = KernelOperation.all.length) &&
+     decide (KernelOperation.all.length = 35))
+  -- LOAD-BEARING NEGATIVE for the enumeration itself: `all` is checked against
+  -- the *type*, so a constructor omitted from it cannot pass unnoticed — which
+  -- is what the thirty-five-element literals it replaced could not say.
+  assertBool "the operation enumeration is complete and duplicate-free (theorems)"
+    (have _m := @KernelOperation.mem_all
+     have _n := KernelOperation.all_nodup
+     have _c := kernelOperation_count
+     have _d := perCoreConfinementDerived_count
+     have _e := perCoreConfinementNotDerived_count
+     have _s := niStepCoverage_perCore_count
+     decide (KernelOperation.all.eraseDups.length = KernelOperation.all.length))
+
+/-- §8.2: print the deterministic phase-level information-flow trace and verify
+it byte-for-byte against the golden fixture.  The lines print before the
+(strict) verification, so the fixture is regenerable via
+`lake exe smp_information_flow_suite | grep '^\[smp-information-flow\]'` (the
+brackets MUST be escaped — unescaped they form a regex character class). -/
+private def runInformationFlowTraceFixtureCheck : IO Unit := do
+  IO.println "--- §8.2 deterministic per-core information-flow trace (golden fixture)"
+  for l in informationFlowTraceLines do
+    IO.println l
+  let expectedContent := String.intercalate "\n" informationFlowTraceLines ++ "\n"
+  let fixtureExists ← System.FilePath.pathExists informationFlowTraceFixturePath
+  if !fixtureExists then
+    IO.println s!"  FAIL: golden fixture {informationFlowTraceFixturePath} not found"
+    throw (IO.userError s!"missing fixture {informationFlowTraceFixturePath}")
+  let actual ← IO.FS.readFile informationFlowTraceFixturePath
+  if actual == expectedContent then
+    IO.println s!"  PASS: information-flow trace matches golden fixture \
+{informationFlowTraceFixturePath}"
+  else
+    IO.println s!"  FAIL: information-flow trace differs from golden fixture \
+{informationFlowTraceFixturePath}"
+    IO.println "        the live trace is printed above; regenerate with:"
+    IO.println s!"          lake exe smp_information_flow_suite | \
+grep '^\\[smp-information-flow\\]' > {informationFlowTraceFixturePath}"
+    IO.println s!"          (then refresh {informationFlowTraceFixturePath}.sha256)"
+    throw (IO.userError "information-flow trace fixture mismatch")
+
 
 def runSmpInformationFlowChecks : IO Unit := do
-  IO.println "WS-SM SM8.A / SM8.B / SM8.C / SM8.D — per-core observable state, \
-non-interference, declassification audit and fine-lock information flow"
+  IO.println "WS-SM SM8.A / SM8.B / SM8.C / SM8.D / SM8.E — per-core observable state, \
+non-interference, declassification audit, fine-lock information flow and phase closure"
   IO.println "===================================="
   runFixtureChecks
   runObserverChecks
@@ -6531,9 +6850,12 @@ non-interference, declassification audit and fine-lock information flow"
   runDeclaredFootprintChecks
   runFineLockClaimInventoryChecks
   runFineLockTraceFixtureCheck
+  runPhaseSurfaceChecks
+  runInformationFlowTraceFixtureCheck
   IO.println "===================================="
   IO.println ("All SM8.A per-core observable-state, SM8.B non-interference, " ++
-    "SM8.C declassification-audit and SM8.D fine-lock information-flow checks PASS.")
+    "SM8.C declassification-audit, SM8.D fine-lock information-flow and " ++
+    "SM8.E phase-closure checks PASS.")
 
 end SeLe4n.Testing.SmpInformationFlow
 

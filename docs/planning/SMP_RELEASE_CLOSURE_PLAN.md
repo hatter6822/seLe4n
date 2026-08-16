@@ -1,6 +1,6 @@
-# SM9 — Documentation, Tests, Version Closure (WS-SM Phase 9)
+# SM10 — Documentation, Tests, Version Closure (WS-SM Phase 10)
 
-> **Phase**: SM9 of WS-SM
+> **Phase**: SM10 of WS-SM
 > **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
 > **Audited cut**: `v0.31.2`
 > **Target releases**: v0.98.0 → **v1.0.0**
@@ -9,98 +9,109 @@
 
 ## 1. Phase goal
 
-SM9 is the v1.0.0 release-cut phase. All substantive SMP work
-is complete; SM9 synchronizes documentation, completes the test
+SM10 is the v1.0.0 release-cut phase. All substantive SMP work
+is complete; SM10 synchronizes documentation, completes the test
 suites, bumps the version, and records WS-SM closure.
 
 **Concrete deliverables**:
 
-1. **Specification update** (SM9.A.1): spec §6.4 rewritten for
+1. **Specification update** (SM10.A.1): spec §6.4 rewritten for
    SMP with 5 new subsections.
-2. **GitBook chapters** (SM9.A.2, .A.3): new chapter 16 (SMP
+2. **GitBook chapters** (SM10.A.2, .A.3): new chapter 16 (SMP
    architecture), chapter 17 (verified lock primitives).
-3. **README sync** (SM9.A.4): metrics, capability claim, 10
+3. **README sync** (SM10.A.4): metrics, capability claim, 10
    i18n.
-4. **DEVELOPMENT.md + CLAIM_EVIDENCE_INDEX.md** (SM9.A.5, .A.6).
-5. **WORKSTREAM_HISTORY.md** WS-SM closure (SM9.A.7).
-6. **codebase_map.json regeneration** (SM9.A.8).
-7. **website manifest** (SM9.A.9).
-8. **Full SMP test suites** (SM9.B): 6 new test files,
+4. **DEVELOPMENT.md + CLAIM_EVIDENCE_INDEX.md** (SM10.A.5, .A.6).
+5. **WORKSTREAM_HISTORY.md** WS-SM closure (SM10.A.7).
+6. **codebase_map.json regeneration** (SM10.A.8).
+7. **website manifest** (SM10.A.9).
+8. **Full SMP test suites** (SM10.B): 6 new test files,
    fixtures, tier-4 + tier-5 scripts.
-9. **Version bump to v1.0.0** (SM9.C.1): ~25 files synchronized.
-10. **CHANGELOG closure** (SM9.C.2).
-11. **Archive WS-RC artefacts** (SM9.C.3, .C.4).
-12. **Tag v1.0.0** (SM9.C.5).
+9. **Version bump to v1.0.0** (SM10.C.1): ~25 files synchronized.
+10. **CHANGELOG closure** (SM10.C.2).
+11. **Archive WS-RC artefacts** (SM10.C.3, .C.4).
+12. **Tag v1.0.0** (SM10.C.5).
 
 ## 2. Dependencies
 
-- All of SM0..SM8 complete.
-- Acceptance gates for SM0..SM8 green.
+- All of SM0..SM9 complete.
+- Acceptance gates for SM0..SM9 green.
+- **WS-RA complete** ([`SYSCALL_RETURN_ABI_PLAN.md`](SYSCALL_RETURN_ABI_PLAN.md)).
+  SM10.E ships a bootable image, and a kernel whose every successful syscall
+  returns the caller's own capability pointer — which userspace decodes as a
+  `KernelError` — is not bootable in any useful sense.  WS-RA is sequenced
+  **before SM9**, so it is complete well before this phase opens, but it is
+  listed here because SM10.E is the gate that would otherwise expose it.
+  **SM10.E also inherits one obligation from WS-RA**: a syscall that *blocks*
+  has no return value when it blocks, so WS-RA stages the waiter's frame at the
+  unblocking transition and **SM10.E's context restore is what delivers it**
+  (WS-RA §3.5).  The wait-before-signal badge ordering is not complete until
+  that seam is live.
 - Tier 0..5 tests green at HEAD.
 
 ## 3. Sub-tasks
 
-### SM9.A — Documentation sync (3-4 PRs, 9 sub-tasks)
+### SM10.A — Documentation sync (3-4 PRs, 9 sub-tasks)
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| SM9.A.1 | Spec §6.4 rewrite (5 subsections) | `docs/spec/SELE4N_SPEC.md` | L |
-| SM9.A.2 | New GitBook chapter 16 (SMP architecture, ~300 LoC) | `docs/gitbook/16-smp-architecture.md` | L |
-| SM9.A.3 | New GitBook chapter 17 (verified lock primitives) | `docs/gitbook/17-verified-lock-primitives.md` | L |
-| SM9.A.4 | README metrics + capability claim; 10 i18n | (11 files) | M |
-| SM9.A.5 | DEVELOPMENT.md updates | (1 file) | S |
-| SM9.A.6 | CLAIM_EVIDENCE_INDEX.md entries | (1 file) | M |
-| SM9.A.7 | WORKSTREAM_HISTORY.md WS-SM closure summary | (1 file) | L |
-| SM9.A.8 | Regenerate codebase_map.json | (1 file) | T |
-| SM9.A.9 | Update website_link_manifest.txt | (1 file) | S |
+| SM10.A.1 | Spec §6.4 rewrite (5 subsections) | `docs/spec/SELE4N_SPEC.md` | L |
+| SM10.A.2 | New GitBook chapter 16 (SMP architecture, ~300 LoC) | `docs/gitbook/16-smp-architecture.md` | L |
+| SM10.A.3 | New GitBook chapter 17 (verified lock primitives) | `docs/gitbook/17-verified-lock-primitives.md` | L |
+| SM10.A.4 | README metrics + capability claim; 10 i18n | (11 files) | M |
+| SM10.A.5 | DEVELOPMENT.md updates | (1 file) | S |
+| SM10.A.6 | CLAIM_EVIDENCE_INDEX.md entries | (1 file) | M |
+| SM10.A.7 | WORKSTREAM_HISTORY.md WS-SM closure summary | (1 file) | L |
+| SM10.A.8 | Regenerate codebase_map.json | (1 file) | T |
+| SM10.A.9 | Update website_link_manifest.txt | (1 file) | S |
 
-### SM9.B — Test suite completion (2-4 PRs, 13 sub-tasks)
-
-| Sub | Description | Files | Est |
-|-----|-------------|-------|-----|
-| SM9.B.1 | `tests/SmpSchedulerSuite.lean` (~600 LoC) | (1 file) | XL |
-| SM9.B.2 | `tests/SmpIpcSuite.lean` (~500 LoC) | (1 file) | XL |
-| SM9.B.3 | `tests/SmpCapabilitySuite.lean` (~400 LoC) | (1 file) | L |
-| SM9.B.4 | `tests/SmpTlbShootdownSuite.lean` (~400 LoC) | (1 file) | L |
-| SM9.B.5 | `tests/SmpInformationFlowSuite.lean` (~400 LoC) | (1 file) | L |
-| SM9.B.6 | `tests/SmpFoundationsSuite.lean` (~250 LoC; from SM0.S) | (1 file) | M |
-| SM9.B.7 | `tests/fixtures/smp_4core_boot.expected` | (1 file) | M |
-| SM9.B.8 | `tests/fixtures/smp_ipc_4core.expected` | (1 file) | M |
-| SM9.B.9 | `tests/fixtures/smp_tlb_shootdown.expected` | (1 file) | M |
-| SM9.B.10 | `scripts/test_tier4_smp.sh` (replaces stub) | (1 file) | M |
-| SM9.B.11 | `scripts/test_tier5_lock_correspondence.sh` (new tier) | (1 file) | M |
-| SM9.B.12 | Wire all tier-4/5 into `test_nightly.sh` | (1 file) | S |
-| SM9.B.13 | Verify all 210 SM theorems land at HEAD | tier-5 manifest | M |
-
-### SM9.C — Version bump + closure (1-2 PRs, 5 sub-tasks)
+### SM10.B — Test suite completion (2-4 PRs, 13 sub-tasks)
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| SM9.C.1 | Version bump to v1.0.0 (~25 files synchronized) | M |
-| SM9.C.2 | CHANGELOG v1.0.0 closure entry | `CHANGELOG.md` | M |
-| SM9.C.3 | Move WS-RC artefacts to dev_history/audits/ | (file moves) | S |
-| SM9.C.4 | Move WS-SM plan + per-phase docs to dev_history/planning/ | (11 file moves) | T |
-| SM9.C.5 | Tag v1.0.0 (maintainer-cut) | git tag | T |
+| SM10.B.1 | `tests/SmpSchedulerSuite.lean` (~600 LoC) | (1 file) | XL |
+| SM10.B.2 | `tests/SmpIpcSuite.lean` (~500 LoC) | (1 file) | XL |
+| SM10.B.3 | `tests/SmpCapabilitySuite.lean` (~400 LoC) | (1 file) | L |
+| SM10.B.4 | `tests/SmpTlbShootdownSuite.lean` (~400 LoC) | (1 file) | L |
+| SM10.B.5 | `tests/SmpInformationFlowSuite.lean` (~400 LoC) | (1 file) | L |
+| SM10.B.6 | `tests/SmpFoundationsSuite.lean` (~250 LoC; from SM0.S) | (1 file) | M |
+| SM10.B.7 | `tests/fixtures/smp_4core_boot.expected` | (1 file) | M |
+| SM10.B.8 | `tests/fixtures/smp_ipc_4core.expected` | (1 file) | M |
+| SM10.B.9 | `tests/fixtures/smp_tlb_shootdown.expected` | (1 file) | M |
+| SM10.B.10 | `scripts/test_tier4_smp.sh` (replaces stub) | (1 file) | M |
+| SM10.B.11 | `scripts/test_tier5_lock_correspondence.sh` (new tier) | (1 file) | M |
+| SM10.B.12 | Wire all tier-4/5 into `test_nightly.sh` | (1 file) | S |
+| SM10.B.13 | Verify all 210 SM theorems land at HEAD | tier-5 manifest | M |
 
-### SM9.D — AN12-B inventory closure (1 PR, 3 sub-tasks)
+### SM10.C — Version bump + closure (1-2 PRs, 5 sub-tasks)
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| SM9.D.1 | Each `smpLatentInventory` entry's `smpDischarge` updated to "SMP-implemented in WS-SM" | `Concurrency/Assumptions.lean` | M |
-| SM9.D.2 | Rename `smpLatentInventory` to `smpDischargedInventory` (or retire entirely) | (refactor) | M |
-| SM9.D.3 | 8-entry size witness retained | Theorem | T |
+| SM10.C.1 | Version bump to v1.0.0 (~25 files synchronized) | M |
+| SM10.C.2 | CHANGELOG v1.0.0 closure entry | `CHANGELOG.md` | M |
+| SM10.C.3 | Move WS-RC artefacts to dev_history/audits/ | (file moves) | S |
+| SM10.C.4 | Move WS-SM plan + per-phase docs to dev_history/planning/ | (11 file moves) | T |
+| SM10.C.5 | Tag v1.0.0 (maintainer-cut) | git tag | T |
 
-### SM9.E — Final QEMU validation (1 PR, 3 sub-tasks)
+### SM10.D — AN12-B inventory closure (1 PR, 3 sub-tasks)
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| SM9.E.1 | Full QEMU `-smp 4` boot + workload run | `scripts/test_v1_0_0_release_validation.sh` | L |
-| SM9.E.2 | All 5 tiers green on the release candidate | (verification) | M |
-| SM9.E.3 | Release-candidate trace fixture commit | (1 file) | S |
+| SM10.D.1 | Each `smpLatentInventory` entry's `smpDischarge` updated to "SMP-implemented in WS-SM" | `Concurrency/Assumptions.lean` | M |
+| SM10.D.2 | Rename `smpLatentInventory` to `smpDischargedInventory` (or retire entirely) | (refactor) | M |
+| SM10.D.3 | 8-entry size witness retained | Theorem | T |
+
+### SM10.E — Final QEMU validation (1 PR, 3 sub-tasks)
+
+| Sub | Description | Files | Est |
+|-----|-------------|-------|-----|
+| SM10.E.1 | Full QEMU `-smp 4` boot + workload run | `scripts/test_v1_0_0_release_validation.sh` | L |
+| SM10.E.2 | All 5 tiers green on the release candidate | (verification) | M |
+| SM10.E.3 | Release-candidate trace fixture commit | (1 file) | S |
 
 ## 4. Version-bump file list
 
-The 25 files synchronized in SM9.C.1:
+The 25 files synchronized in SM10.C.1:
 
 ```
 lakefile.toml              :: version = "1.0.0"
@@ -151,9 +162,9 @@ Closures (from the WS-SM audit):
 - SMP-H4: verified TicketLock + RwLock primitives.
 - 7 MEDIUM + 5 LOW findings closed.
 
-New theorem count: ~210 substantive theorems across SM0..SM9
+New theorem count: ~210 substantive theorems across SM0..SM10
 (16 SM0 + 1 SM1 + 22 SM2 + 28 SM3 + ~50 SM4 + 30 SM5 + 25 SM6
-+ 14 SM7 + 18 SM8 + 5 SM9 marker theorems = 209 ≈ 210).
++ 14 SM7 + 18 SM8 + 5 SM10 marker theorems = 209 ≈ 210).
 Zero Lean axioms.  Zero sorry/native_decide.  Tier 0..5 all
 green.
 
@@ -171,12 +182,12 @@ Plan: docs/dev_history/planning/SMP_MULTICORE_COMPLETION_PLAN.md
        docs/dev_history/planning/SMP_CROSS_CORE_IPC_PLAN.md (SM6)
        docs/dev_history/planning/SMP_TLB_SHOOTDOWN_PLAN.md (SM7)
        docs/dev_history/planning/SMP_INFORMATION_FLOW_PLAN.md (SM8)
-       docs/dev_history/planning/SMP_RELEASE_CLOSURE_PLAN.md (SM9)
+       docs/dev_history/planning/SMP_RELEASE_CLOSURE_PLAN.md (SM10)
 ```
 
 ## 6. Verification strategy
 
-### 6.1 What SM9 proves
+### 6.1 What SM10 proves
 
 5 marker theorems:
 - `smpRetiredInventory_complete` (all 8 entries discharged)
@@ -185,7 +196,7 @@ Plan: docs/dev_history/planning/SMP_MULTICORE_COMPLETION_PLAN.md
 - `wsm_theorem_count` (~210 substantive theorems)
 - `v1_0_0_release_witness`
 
-### 6.2 What SM9 validates
+### 6.2 What SM10 validates
 
 - Tier 0..5 green at HEAD.
 - All v1.0.0 acceptance-gate items checked.
@@ -195,10 +206,10 @@ Plan: docs/dev_history/planning/SMP_MULTICORE_COMPLETION_PLAN.md
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|------------|--------|------------|
-| Documentation drift between phase plans and live tree | MED | LOW | SM9.A audits each cross-reference |
+| Documentation drift between phase plans and live tree | MED | LOW | SM10.A audits each cross-reference |
 | Version bump misses a file | LOW | MED | `scripts/check_version_sync.sh` gate |
 | CHANGELOG entry incomplete | LOW | LOW | Template above lists all SM-phase closures |
-| Archive move breaks website manifest | LOW | LOW | SM9.A.9 updates manifest in same PR |
+| Archive move breaks website manifest | LOW | LOW | SM10.A.9 updates manifest in same PR |
 | QEMU release-validation script fails | MED | HIGH | Iterate on test infrastructure as needed |
 | Tier-5 (lock correspondence) misses a divergence | LOW | HIGH | Cross-language stress test catches |
 | Maintainer signs off on release without all gates green | LOW | CRIT | Explicit acceptance-gate checklist |
@@ -223,9 +234,9 @@ Plan: docs/dev_history/planning/SMP_MULTICORE_COMPLETION_PLAN.md
 ## 9. Cross-references
 
 - **Previous**: [`SMP_TLB_SHOOTDOWN_PLAN.md`](SMP_TLB_SHOOTDOWN_PLAN.md), [`SMP_INFORMATION_FLOW_PLAN.md`](SMP_INFORMATION_FLOW_PLAN.md)
-- **None next** — SM9 is the closure phase; v1.0.0 ships.
+- **None next** — SM10 is the closure phase; v1.0.0 ships.
 
-## 10. Theorem catalogue for SM9
+## 10. Theorem catalogue for SM10
 
 5 marker theorems (§6.1).
 
@@ -254,7 +265,7 @@ NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh
 
 ---
 
-*SM9 is the v1.0.0 ribbon-cutting. All substantive SMP work
-landed in SM0..SM8; SM9 ensures the documentation, tests, and
+*SM10 is the v1.0.0 ribbon-cutting. All substantive SMP work
+landed in SM0..SM9; SM10 ensures the documentation, tests, and
 metadata reflect the new reality. The v1.0.0 tag closes
 WS-SM and ships the bootable verified SMP microkernel.*

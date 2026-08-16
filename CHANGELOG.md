@@ -1,3 +1,980 @@
+## v0.33.36 — the four registered SM9 findings, fixed rather than deferred
+
+v0.33.34 registered four review findings in an SM9 §9a rather than fixing them,
+on the reasoning that SM9 is blocked on WS-RA.  Per maintainer direction an
+unfixed review comment is investigated and fixed, so all four are closed here and
+§9a is removed.
+
+**Totality over the wrong domain proves nothing about the right one.**  The
+content-flow gate had been moved from a list, to `mem_all` over a hand-maintained
+type, to a **total function** `KernelOperation → ContentFlowClass` — and was
+still not exhaustive of what it polices: `KernelOperation` has **no
+`ipcUnwrapCaps` constructor** while SM9.D.11 names that live transition as a
+propagation site, so the function is total and the propagation is missing.  The
+honest diagnosis is that propagation sites are **sub-transitions** reachable from
+live dispatch arms, and no type in the tree enumerates those — `SyscallId` is
+exhaustive of arms, `KernelOperation` of NI steps, neither of the call graph
+beneath them.  So completeness is established by **reach**: a call-graph gate in
+the idiom `check_live_arm_per_core_routing.py` already set for this exact shape,
+Tier 1, with a `--self-test` that plants a known content-moving callee and
+requires the gate to find it.  §3.7 gains the sharper lesson — *name the set the
+gate is about, check the domain is exhaustive of that set, and where no type is,
+use a reach-based gate rather than a totality claim that cannot reach*.
+
+**An event's actor and its flow source are two identities.**  SM8.C's
+`attributionFromRunningSubject` defines an event's source domain as the running
+subject's domain, which is right while one event describes one subject's
+downgrade.  Per-hop events break it: on `high → mid` then `mid → low` both events
+are performed by the same **high** subject, so recording the second's source as
+`mid` under that rule asserts the high subject *is* mid — a false attribution
+written into the trail by the fix meant to make it honest.  The event now carries
+`actorSubject`/`actorDomain` (who performed it) separately from
+`srcDomain`/`dstDomain` (the flow's endpoints), and the rule is restated over the
+actor, becoming true of every event rather than only single-hop ones.  They
+coincide for a single-hop downgrade, which is why the conflation went unnoticed.
+
+**A refused second hop named the wrong thing.**  When caller → notification is
+authorized and notification → receiver is refused, the record carried only the
+original capability operand and a generic reason — so a monitor could not
+identify the bound waiter the attempted downgrade actually targeted, while the
+*success* path is required to audit exactly that destination.  The record now
+carries the failed hop and, for the second, the resolved receiver.
+
+**The ledger's reads need a version, for the same reason the trail's do.**  A
+refusal record takes several `.auditRead` calls — more under the chunk protocol —
+and any denied syscall in between can overwrite the selected ring slot.  The
+trail's `status` token does not help: it moves on trail *drains*, not on ledger
+writes, so a monitor could assemble a hybrid record from two attempts and never
+detect it.  `RefusalLedger` gains a `version` advanced by every `recordRefusal`,
+bracketing reads exactly as the drain generation brackets trail reads.
+
+Counts: theorems ~76 → ~82; sub-task count unchanged at 61.  All 47 review
+threads on PR #865 are now addressed.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §3.2, §3.5, §3.6, §3.7
+Refs: #865
+
+## v0.33.35 — WS-RA start condition recorded
+
+The syscall-return-ABI plan records when it begins: once PR #865 (SM8.E closure
+plus the SM9 plan and its review rounds) merges, the designated branch restarts
+from `main` and WS-RA lands there.  Plan header only — the workstream's content,
+sequencing and dependencies are unchanged from v0.33.34.
+
+Refs: docs/planning/SYSCALL_RETURN_ABI_PLAN.md
+Refs: #865
+
+## v0.33.34 — WS-RA completed: a blocking syscall has no return value yet
+
+A review round landed on the WS-RA plan itself, with **two P1s against the plan
+authored two commits earlier**.  Both are real design defects and both are fixed
+here; the four findings against SM9 are **registered rather than fixed**, since
+SM9 is blocked on WS-RA and churning a plan nobody is executing helps no one.
+
+**A blocking syscall has no return frame yet — the plan's own acceptance gate
+was unachievable.**  WS-RA read a return frame at the FFI boundary for the thread
+that made the call.  That is wrong the moment the call blocks, and
+`.notificationWait` is exactly that case: in the wait-before-signal ordering the
+arm blocks the caller, deschedules it, and returns `.ok none` — the badge does
+not exist yet, and by the time it does the caller is no longer current.  No
+plumbing at the entry can return a value that has not been produced, so the gate
+item "returns the badge in **both** orderings" could not have been met.
+
+New §3.5: a syscall's outcome is `returns frame` or **`blocks`**, the boundary
+writes a frame only in the first case, and for the second the **unblocking**
+transition stages the frame into the blocked thread's `registerContext` — which
+is where `storeTcbIpcStateAndMessage`'s badge should have been going all along.
+Delivery then happens at context restore, which is **not live** (`restore_context`
+exists in the assembly macros with a recorded dead-code note) and is SM10.E work.
+So WS-RA's reach splits honestly: non-blocking orderings complete end to end,
+blocking orderings **staged** with `blockedReturn_staged_in_waiter_frame`, and
+the acceptance gate states the split instead of claiming both.  Claiming
+otherwise would be the same shape of overstatement this workstream exists to
+remove.  SM10.E inherits the named obligation rather than discovering it.
+
+**The flip PR omitted the decoder — the plan scheduled the state it forbids.**
+§3.6 says a half-migrated tree must never exist because it reinterprets registers
+silently; §5 then put `decode_response` and the `sele4n-sys` consumers in a
+*following* PR, leaving a tree with the kernel on the new convention and
+userspace still testing `regs[0] != 0`, decoding every nonzero badge as an error.
+The version pin cannot catch that — both constants would be bumped while the
+decoder still implements the old semantics.  The flip now carries RA.C.5-C.9 and
+RA.D.1-D.3; it is large by necessity, and the alternative (a version-selected
+compatibility decoder) is more surface than the single flip it would avoid.
+
+**Two smaller corrections.**  RA.B.7 classified `.cspaceMint` / `.cspaceCopy` /
+retype as slot-returning — contradicting the plan's **own** §1.3 table, and wrong
+on the merits: `cspace_mint` takes `dst_slot` as an argument, so the kernel
+allocates no slot and returning one would *add* an ABI value rather than repair a
+missing one.  Replaced by `.serviceQuery`, which genuinely computes an answer and
+discards it.  And `writeReturnFrameToTcb_preserves_projection` is **false** as
+stated — an observer that can see the caller sees its register context, and
+changing `x0`-`x5` changes it — so it becomes an invisibility theorem for
+observers that cannot see the caller **plus** per-operation authorized-output
+theorems, since owning the destination TCB does not authorize the *source* of a
+returned badge.
+
+Counts: WS-RA 38 → 41 sub-tasks (the blocking continuation), theorems ~24 → ~30.
+
+**Registered against SM9** (§9a, four findings): actor vs. flow-source identity
+on the second per-hop event; a denied receiver hop attributed to the original
+capability rather than the resolved sink; unversioned refusal-ring reads that let
+a monitor assemble a hybrid record from two attempts; and — the sharpest —
+`KernelOperation` **not being exhaustive of the propagation sites it polices**,
+since it has no `ipcUnwrapCaps` constructor while SM9.D.11 names that transition
+as one.  Three rounds moved that gate from a list, to `mem_all` over a
+hand-maintained type, to a total function, and it is still not exhaustive: the
+lesson is not "use a total function" but "check the domain is exhaustive of what
+the gate is about".
+
+Refs: docs/planning/SYSCALL_RETURN_ABI_PLAN.md §3.5, §5
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §9a
+Refs: #865
+
+## v0.33.33 — WS-RA sequenced as the next workstream, ahead of SM9
+
+The syscall-return-ABI plan authored at v0.33.31 becomes the **next workstream
+implemented**, and every document that describes workstream ordering is updated
+to match.  Plan work and documentation only; no Lean or Rust source changes.
+
+**The plan completed.**  A new §1.3 enumerates the value-returning surface
+against the dispatch arms rather than against syscall names.  `SyscallId` has 31
+variants; **five are value-returning today and return nothing**:
+`.notificationWait` (its arm returns `.ok (some badge)` and both live callers
+discard it), `.receive` / `.call` / `.replyRecv` (delivery lands in
+`tcb.pendingMessage`, which no code moves to a register), and — the one nobody
+had reason to look at — **`.serviceQuery`, a query syscall that calls
+`lookupServiceByCap` and throws the answer away with `.ok (_, st')`**.  SM9 adds
+`.auditRead` and `.auditDrain`.  The remaining 26 are genuinely `Unit`-returning
+and need only `x0 = 0`, which they do not produce either, since they return the
+caller's cap pointer like everything else.  `.serviceQuery` is the argument for
+fixing the convention rather than the two syscalls someone noticed.
+
+**Why it goes first.**  SM9 cannot be demonstrated without it.  Both of SM9's
+value-returning sub-phases — SM9.A's audit reader and SM9.C's data-carrying
+declassification — would gate correctly, compute correctly, and hand the caller
+back its own preloaded `x0`, because `dispatchWithCapChecked` is `Kernel Unit`
+over a return register no transition writes.  And SM10.E ships a bootable image,
+which a kernel whose every successful syscall decodes as a `KernelError` is not
+in any useful sense.
+
+**Re-sequenced across the documentation set**: the master plan's SM9 section
+carries the blocking dependency and its timeline gains a WS-RA row ahead of SM9;
+`SMP_RELEASE_CLOSURE_PLAN.md` adds WS-RA to SM10's prerequisites with the
+reasoning rather than a bare entry; `WORKSTREAM_HISTORY.md`'s "What's next"
+opens with WS-RA; `CLAUDE.md` / `AGENTS.md` gain a full active-workstream entry
+carrying the verified evidence chain, the target convention, and the three
+design decisions (staging in `tcb.registerContext` rather than widening the FFI
+return type; `syscallReturnShape` as a **total function**; the
+`SYSCALL_ABI_VERSION` pin, because a half-migrated tree reinterprets registers
+silently rather than failing); and the spec and GitBook manifest gain a **Next
+workstream** row above the active one, with the GitBook README regenerated from
+the manifest.
+
+Refs: docs/planning/SYSCALL_RETURN_ABI_PLAN.md §1.3
+Refs: #865
+
+## v0.33.32 — SM9 plan, review round 7: WS-RA's gap reaches SM9.A too
+
+Three findings, one P1.  All valid, and the P1 lands on the plan section I wrote
+before understanding the return-path gap.
+
+**The audit reader is a value-returning syscall, and SM9 never said how the value
+gets out.**  `.auditRead`'s entire purpose is to return a word — but
+`dispatchWithCapChecked` is `Kernel Unit`, and `syscallDispatchFromAbi` takes its
+success value from `readReturnValue` on the post-state TCB, which no transition
+writes.  So the reader would resolve its capability, pass its clearance gate,
+compute the right word, and hand the caller back its own preloaded `x0`
+capability argument.  That is the SM9.C.0 class exactly, at a second site, and it
+means §3.3's whole reader interface presupposes a return path this kernel does
+not have.  **WS-RA is now a blocking dependency of SM9.A**, not only of SM9.C,
+and SM9.A.10 gains the obligation to write its result plus an end-to-end
+assertion through `syscallDispatchFromAbi` — a transition-level test cannot see
+this defect, which is why it survived seven rounds.
+
+**A detector that rejects the scenario it was built for.**  Round 6 had the two
+per-hop events share one `predecessorTags` snapshot.  That is self-defeating: hop
+2 is causally downstream of hop 1 *within the same transition*, but a snapshot
+taken before the transition cannot contain hop 1's timestamp, because recording
+hop 1 is what allocates it.  D.14 would therefore reject the exact two-hop chain
+the per-hop design exists to record.  The second event's tags are now the
+pre-transition snapshot **extended with hop 1's freshly allocated timestamp**
+(`secondHopEvent_names_firstHop`).
+
+**A propagation hole at the ordering that matters.**  SM9.D.10 covered the
+notification signal and the bound-TCB delivery and omitted
+`notificationWaitOnCore`'s pending-badge arm — where, in the signal-before-wait
+ordering, the *wait* is what moves the badge to the waiter.  Without it the
+waiter's later downgrade carries no hop 1, so the causal detector misses §3.6's
+own downgrade → ordinary delivery → downgrade scenario in one of its two
+orderings.  The arm joins the propagation surface and SM9.E.2a covers both
+orderings.
+
+Counts: theorems ~72 → ~76; sub-task count unchanged at 61.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §2, §3.5, §3.6
+Refs: docs/planning/SYSCALL_RETURN_ABI_PLAN.md
+Refs: #865
+
+## v0.33.31 — WS-RA opens: the syscall return path was never implemented
+
+Investigating where a notification badge should be delivered found that the
+question was smaller than the defect.  **The kernel has no syscall return path.**
+It writes exactly one register on exit, and the value it writes is not a return
+value.
+
+Verified end to end.  `writeFfiRegistersToTcb` stages the *incoming* `x0..x5`
+into `tcb.registerContext`, with `x0 ← capPtrReg`.  `syscallDispatchFromAbi`
+returns `encodeOk (readReturnValue st' tid)`, which reads `gpr ⟨0⟩` back out —
+and **no transition anywhere writes a return value into that register**
+(exhaustive grep).  `trap.rs` writes `frame.set_x0(retval)` and nothing else:
+`set_x1` exists and is called only in a unit test, and `x2`-`x5` are never
+written back.  `FFI.lean` documents the middle of this honestly — *"x0
+post-syscall therefore equals the caller's own pre-syscall x0"* — and defers
+"full seL4-ABI x0 compliance" as a known gap.
+
+**The consequence follows from two documented facts.**  On success the kernel
+returns the caller's own `x0`, the capability pointer; userspace's
+`decode_response` tests `regs[0] != 0` to mean error.  For any capability pointer
+other than `0`, a *successful* syscall decodes as a `KernelError` with the cap
+pointer as its discriminant.  No end-to-end test can exist until SM10.E produces
+a bootable image, so nothing has ever executed this path — which is why RA.E.1
+lands first and must **fail** on the pre-migration tree.
+
+Three corollaries fall out of the same gap: `notification_wait` returns the
+caller's own pre-syscall `x1` presented as a `Badge`, so badge-based sender
+discrimination is entirely non-functional; `endpoint_receive` returns the
+caller's own registers as message registers; and `cspace_mint` and the retype
+family cannot report an allocated slot.  The first of these is the defect
+registered as SM9.C.0 — **and the fix recommended for it in round 4 would not
+have worked**, because `tcb.pendingMessage`, where the signal path stores the
+badge, has no register path either.  SM9.C.0 is re-pointed at WS-RA accordingly.
+
+New plan: [`docs/planning/SYSCALL_RETURN_ABI_PLAN.md`](docs/planning/SYSCALL_RETURN_ABI_PLAN.md)
+— 38 sub-tasks across ~12-15 PRs in five sub-phases.  The target is seL4's ARM64
+convention exactly: `x0` = badge or primary result, `x1` = `MessageInfo` whose
+**label** carries the error, `x2`-`x5` = message registers.  Errors move to the
+label because that is how seL4 hands back a full-width badge without an aliasing
+question — and `MessageInfo.label` already exists as a 20-bit field documented as
+"seL4 convention", with 54 `KernelError` discriminants to carry.  `encodeOk` /
+`encodeError` and the bit-63 protocol are retired: bit 63 was a workaround for
+multiplexing status into the value register, and with the channels separated
+there is nothing to multiplex.
+
+Three design decisions worth recording.  Return values stage in
+`tcb.registerContext` rather than widening the FFI return type, so no dispatch
+arm grows a six-tuple and the trap boundary becomes an ordinary context restore.
+`syscallReturnShape : SyscallId → ReturnShape` is a **total function**, not a
+list with a completeness theorem — the lesson six SM9 review rounds taught three
+times over.  And the flip is guarded by a `SYSCALL_ABI_VERSION` pinned in both
+mirrors, because a half-migrated tree does not fail loudly, it silently
+reinterprets registers.
+
+Refs: docs/planning/SYSCALL_RETURN_ABI_PLAN.md
+Refs: #865
+
+## v0.33.30 — SM9 plan, review round 6: fixing the class instead of the instances
+
+A sixth review left seven findings.  All valid — and three are inconsistencies
+this plan introduced by fixing a principle in one place and not carrying it to
+the others, so this cut audits **every** gate and **every** completeness
+mechanism in the document rather than patching the ones the review happened to
+reach.  That sweep found five further stale citations the review did not flag.
+
+**One privileged-reader gate, configuration-derived.**  Round 3 established for
+the refusal ledger that a gate must not be computed from data that ages out; the
+trail had the same defect through a different door and I left it, in a paragraph
+that even noted the surviving quantity.  Drain a trail to `[]` and a
+current-record dominance predicate is **vacuously true**, so a low
+audit-capability holder is classified as a fully dominating monitor and reads the
+global epoch — which counts precisely the entries the drain removed.  A predicate
+over rows that drains delete cannot gate a quantity drains preserve.  There is now
+one gate, `LabelingContext.auditMonitorClearance`, and drain, the ledger,
+global-identity access and `predecessorTags` all key off it
+(`auditMonitorGate_is_configuration_derived`,
+`auditMonitorGate_records_derived_unsound`).
+
+**The third hand-maintained taxonomy.**  `declassificationSyscalls` was a list
+plus a completeness theorem over a hand-maintained "consults
+`declassificationDecision`" classification — which stays true when a new dispatch
+arm consults it and joins neither.  Exactly the shape already refuted for
+`ReadableStructure` (round 3) and `ContentFlowSite` (round 4).  Now a **total**
+`SyscallId → RefusalSeamClass` over the enumeration the ABI already forces to be
+complete, so SM9.C.8 classifies `.declassifySignal` as part of adding it because
+it cannot compile otherwise.
+
+**Two authorizations need two records.**  Round 5 added the second gate on the
+resolved receiver and kept one audit event.  On a `high → mid` notification and a
+`mid → low` receiver, a single event naming the final destination must drop the
+first downgrade or collapse two domain pairs — and two authorization bases — into
+a direct `high → low` edge **no policy authorized**, which the causal detector
+then inherits.  One event per authorized hop, in hop order, sharing the subject
+and tag snapshot (`declassifiedSignal_audits_each_hop`,
+`declassifiedSignal_no_invented_edge`).
+
+**Three smaller, each a real gap.**  The refusal record stored a subject id but
+not its domain, while `LabelingContext` is an *argument* to
+`syscallDispatchFromAbi` rather than persistent state — so a later reader cannot
+reconstruct the domain if the context changed or the id was reused; the domain is
+now resolved and stored at the seam, as the authorized trail already does.  The
+capacity reason was being suppressed from refusal records to close an occupancy
+channel, which discarded the only durable evidence that an authorized downgrade
+hit the 256-entry cliff — the channel is closed by the *read gate*, so the reason
+is recorded and the caller-facing error ordering is untouched.  And
+`auditFieldBound_unreachable_in_kernel` could not hold for timestamps, since the
+epoch is unbounded and every drain advances it: the bound is now stated as
+concrete arithmetic (`maxAuditFieldChunks = 4` is 128 bits; 2^128 drains at one
+per nanosecond is ~10^22 years) with the reader failing closed above it, rather
+than as a claim about typical use.
+
+**And five stale citations the review did not reach**, all pointing at designs
+this plan had already refuted: the acceptance gate still required completeness
+"checked by `mem_all`", the theorem catalogue still stated the equivalence over
+`ReadableStructure.all`, two risk rows still cited `mem_all` designs, and the
+sub-operation prose still described the pre-fusion enumeration.  A document that
+refutes a design in §3.7 and keeps recommending it in §9 is worse than one that
+never refuted it, because a reader implementing from §9 gets the weaker mechanism
+with the stronger one's authority behind it.
+
+Counts: theorems ~65 → ~72; sub-task count unchanged at 61.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §3.1, §3.4, §3.5, §3.7, §9
+Refs: #865
+
+## v0.33.29 — SM9 plan, review round 5: a footprint is not an authorization
+
+A fifth review of PR #865 left two findings — a **P1** and a P2 — both against
+the plan, both consequences of earlier fixes in this same series, both valid.
+
+**The P1: a downgrade authorized to one sink could reach a second.**  SM9.C.1
+gated the declassifying signal with `declassificationDecision` on the
+*notification*, and round 2 had added the delivered waiter's TCB to the
+**effect footprint**.  Those are different things, and treating the second as
+covering the first re-opens a leak this project already closed.  The live
+`notificationSignalBoundCrossCoreDispatchChecked` gates **two** flows —
+`signaler → notification`, then `notification → receiver` — and the second exists
+because of **v0.31.73 review #3**, whose whole point was that a signal authorized
+to a notification must not deliver the badge onward into a low bound TCB.  A
+declassifying variant gated only on the notification would reproduce that leak
+with a *stronger* authority behind it: a downgrade the policy permits to the
+notification, silently forwarded to a receiver the policy rejects.
+
+Naming a sink in the footprint records *where writes land*; it does not make them
+permitted.  SM9.C.1 now gates the **resolved destination** — bound TCB or head
+waiter, whichever the transition actually delivers to — by the ordinary flow
+check where that hop is not a downgrade and by its own `declassificationDecision`
+where it is, and the audit event records the **actual destination** rather than
+the notification alone.  `declassifiedSignal_gates_resolved_receiver`,
+`declassifiedSignal_audits_actual_destination` and `footprint_does_not_authorize`
+are the three, the last so the conflation cannot recur as a simplification.
+
+**The P2: the round-4 fix built an export channel the round-3 fix had closed.**
+`predecessorTags` — the taint snapshot added last round so the causal verdict
+would stop depending on mutable state — are *global* timestamps, and they include
+events a partial reader cannot see.  A hidden high-source event tags a subject,
+that subject later produces an event the partial reader *can* see, and the tags
+ride out through the reader's chunk protocol carrying the hidden event's global
+position: precisely what §3.3's view-local indices were narrowed to hide, one
+round earlier.  The tags now follow the same two-class rule as identity — a
+fully-dominating monitor reads them, a partial reader gets an **opaque** causality
+verdict carrying no timestamps (`predecessorTags_dominating_only`,
+`partialReader_gets_opaque_causality`).
+
+**The corollary, now stated once.**  §3.7's inventory is keyed by **field**, not
+by structure: adding a field to an already-readable record is adding a read
+channel and inherits both obligations exactly as a new structure does.  That is
+the third distinct shape this discipline has had to absorb — a new structure
+(round 2), a sibling taxonomy (round 4), and now a new field on an existing one —
+and the pattern is worth more than any of the individual fixes.
+
+Counts: theorems ~60 → ~65; sub-task count unchanged at 61 (both fixes land
+inside existing sub-tasks, SM9.C.1 growing L → XL).
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §3.5, §3.6, §3.7
+Refs: #865
+
+## v0.33.28 — SM9 plan, review round 4: a live defect found, and the same gate weakness in a sibling taxonomy
+
+A fourth review of PR #865 left eight findings — the first **P1** of the series,
+and it is against **live code** rather than the plan.  All eight verified against
+the tree, all valid.
+
+**The P1 is a real kernel defect and is reported, not fixed here.**
+`notificationWaitOnCore`'s pending-badge arm clears `pendingBadge`, marks the
+waiter `.ready` through plain `storeTcbIpcState` (no message), and returns
+`.ok (some badge)` — and both live `.notificationWait` arms in `API.lean` match
+`(st', .ok _)` and discard it, the wrapper being `Kernel Unit`.  So in the
+ordinary **signal-before-wait** ordering the badge is consumed from the
+notification and delivered nowhere, while the waiter-present path delivers it via
+`storeTcbIpcStateAndMessage`.  The two orderings of one protocol disagree, and
+one loses the data.  `Platform/FFI.lean`'s own ABI note says `x0` carries *"a
+badge for `notificationWait`"* and that handlers producing a return value "are
+expected to write it" — so this is a documented contract the code does not meet,
+which is the project's implement-the-improvement case rather than a design
+choice.  Severity Medium: not memory-unsafe and not a leak (it fails closed on
+confidentiality), but badges carry sender identity, so a receiver making
+authorization decisions on badge value sees every signal in this ordering as
+indistinguishable; reachable by ordinary use, pre-hardware.  Per the project's
+vulnerability rule it is surfaced rather than silently closed, and the
+remediation touches the syscall return convention, so it is left as a decision.
+Registered as **SM9.C.0**, a prerequisite: SM9 cannot ship a data-carrying
+declassification over a path that loses data in one of its two orderings.
+
+**The same gate weakness, in the sibling taxonomy.**  Round 3 fixed
+`ReadableStructure` — `mem_all` proves the constructors of a hand-maintained type
+are listed, and cannot force a new readable field to acquire one — and did not
+carry the lesson to `ContentFlowSite`, which had the identical shape one section
+away.  A content-moving transition could simply never acquire a constructor while
+all three checks passed, which is the missed propagation the row calls its
+soundness keystone.  Now a **total function** `KernelOperation → ContentFlowClass`
+over the enumeration SM8.E already made exhaustive, so a new live operation is a
+missing case at elaboration.  Two sibling taxonomies with one defect is the
+argument for stating the pattern once, which §3.7 now does.
+
+**A historical verdict that moved with current state.**  Round 3 added
+`sourceSubject` so the causal predicate could select a taint — but that taint
+lives in a *mutable* side table while the events are a historical record.  A tag
+acquired after hop 2 would invent a link on re-evaluation; a retype of the
+subject — which §3.6 now requires to clear taint — would silently erase a real
+one.  A detector whose verdict on a fixed pair of events changes with unrelated
+later activity is not a detector.  The event now carries `predecessorTags`, a
+bounded snapshot taken in the step that records it, so the predicate reads the
+event list alone (`chainCausal_is_history_local`).
+
+**Chunking `status` was the wrong repair.**  Round 3 chunked it to stop the
+monotone generation aliasing at fixed width; but a multi-call read is not atomic,
+so a drain between two chunk calls reconstructs a generation that never existed —
+trading aliasing after 2^54 drains for tearing on the first one.  `status` is one
+call again, both components structurally bounded, with `noGenerationWrap` stated
+as a premise rather than assumed and `auditReadStatus_atomic` as the property
+chunking cannot have.
+
+**Two reader classes, because one fix broke the other reader.**  Round 3's
+view-local indices stopped a partial reader counting hidden entries — and broke a
+fully-dominating monitor's ability to correlate an event with an archived
+predecessor, since the taint table identifies predecessors by global identifier.
+"Nothing is lost because a monitor dominates" was wrong.  The protocol now
+distinguishes them explicitly: partial readers get view-local indices and no
+retry promise; the dominating monitor gets global identities and the epoch.  That
+also **removes a mount that could not exist** — the per-observer drain token had
+no state to hold it and none is constructible, `SecurityDomain.id` being an
+unbounded `Nat` with no finite family to key a `Vector` by
+(`observerScopedGeneration_not_mountable`).
+
+**Two smaller ones.**  The chunk *coordinates* were themselves single words, so
+"total for any `Nat`" was false — a value needing 2^63 chunks cannot have its
+count returned through `encodeOk`; the export is now structurally bounded by
+`maxAuditFieldChunks` with `.auditFieldTooLarge` fail-closed, giving a total
+theorem over a bounded domain instead of a false one over an unbounded domain.
+And the reader exported only the trust bit of `authorizationBasis`, collapsing
+every `integratorOverride` to one value and leaving a monitor unable to say which
+out-of-band authority permitted an event; the designation is now a chunked field.
+
+Counts: phase 60 → 61 (SM9.C gains the prerequisite), theorems ~52 → ~60.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §3.3, §3.6, §3.7
+Refs: #865
+
+## v0.33.27 — SM9 plan, review round 3: two gates that could not gate, and a predicate that was not well-defined
+
+A third automated review of PR #865, on the round-2 remediation, left five
+findings.  All verified against the tree, all valid.  Three are defects in
+round-2's own fixes; two are defects in the SM9.D design that cut introduced.
+One further finding is raised here rather than in review, because applying §3.7
+honestly to the trail's own timestamps turns one up.
+
+**A gate computed from data that ages out.**  Round 2 made the refusal ledger
+readable "only under full dominance" and reused drain's gate, which quantifies
+over the domains present in the *current records*.  The ledger's two halves age
+differently: the ring evicts, the counters are cumulative.  So hidden high-domain
+refusals can bump `attemptCount`/`droppedCount`, a ringful of low-domain refusals
+can overwrite every high row, and a low reader then dominates every *survivor*
+— admitted by a records-derived gate — while reading counters that still carry
+the hidden history.  The gate shrank while the data it guards did not.  Fixed by
+gating on a **configured** `LabelingContext.auditClearance`, a deployment
+parameter eviction cannot lower, with the counterexample kept as
+`refusalLedger_records_gate_unsound` so the cheaper gate cannot return.  Drain's
+own gate is left alone — the trail has no cumulative counter — but see the
+self-raised finding below, because one quantity there does survive.
+
+**A completeness gate a new structure can decline to join.**  §3.7 stated
+`auditObservationalEquivalence` over `ReadableStructure.all` with `mem_all`, in
+the idiom SM8.E installed.  That mechanism is weaker than it looks in exactly the
+way SM8.E's own finding was: `mem_all` proves every constructor of a
+**hand-maintained** type appears in `all`, and nothing forces a newly mounted
+readable field — or a new `AuditReadOp` — to add a constructor.  With the read
+operations kept as a separate taxonomy, a future structure could be mounted,
+exposed, and given neither constructor nor clause while `mem_all` kept compiling.
+Fixed by **fusing** the taxonomies: `AuditReadOp` carries the `ReadableStructure`
+it reads, and the clause set is a **total function** rather than a list, so a new
+structure is a missing case — a compile error.  `readableStructure_list_gate_insufficient`
+refutes the weaker design so it cannot come back as a simplification.
+
+**A status word that aliases.**  Round 2 chunked the record fields and left
+`status` packing the visible length and the drain generation into one 63-bit
+word.  The generation is monotone over unbounded append/drain cycles, so any
+fixed-width encoding must eventually wrap — and once two generations alias, the
+bracket-and-retry protocol accepts a read whose indices shifted underneath it,
+which is the one thing the generation exists to prevent.  `status` now takes the
+same arbitrary-length protocol, with `auditReadStatus_reconstructs` beside the
+field-level theorem.  Same class as round 2's finding, one field over.
+
+**Taint outliving its object.**  SM9.D keyed taint by `ObjId` and framed it
+through `storeObject`, while `lifecycleRetypeObject` commits
+`storeObject target newObj` at the *same* id (verified in `RetypeWrappers.lean`).
+A destroyed and re-created object would therefore keep its predecessor's tags,
+and a later downgrade from the unrelated replacement would read as causally
+linked — a false positive with **nothing to do with saturation**, which would
+have made D.15's "the residual imprecision is saturation" claim false the day it
+was written.  Retype now clears (`retypeClearsTaint` at the two production
+wrappers, the entry points SM7.D's initiator drain already enumerates), with
+`staleTaint_is_not_saturation` keeping the distinction on the record.  Framing
+`storeObject` in general stays right — ordinary object writes are precisely where
+propagation *sets* taint.
+
+**A predicate that was not well-defined from its own data.**  D.14 checked
+whether hop 2's *source object's* taint contains hop 1's timestamp — but the
+detector runs on the event list, and `DeclassificationEvent` records only
+`targetObject`, the two domains, the basis, the timestamp and the core.  Two
+same-domain subjects where only one received hop 1's data produce
+indistinguishable events, so the predicate must accept both or reject both: as
+drafted it could not select a taint at all.  The event gains a recorded
+`sourceSubject` (new SM9.D.13a), which like the epoch is a change to landed SM8
+code riding the §6 mount checklist.
+
+**Raised here, not in review: the exported timestamp leaks hidden counts.**  A
+`DeclassificationEvent`'s timestamp is its global position, so a partial reader
+seeing entry X learns how many entries preceded X — including ones it cannot
+see.  That is the §3.7(b) violation the review found on the refusal counters,
+sitting on the trail; it is **pre-existing in SM8's design** (the old
+`log.length` producer counted hidden entries just as well) and the epoch neither
+introduced nor worsened it, but §3.7 makes it an obligation to discharge rather
+than inherit.  The reader now exports a visible entry's index in the reader's
+**own view**; the global value stays internal, where chain ordering and the
+causal detector need it, and nothing is lost because chain reconstruction is a
+monitor concern and a monitor dominates by §3.4.
+
+Counts: phase 59 → 60 (SM9.D 18 → 19), PRs ~20-24 → ~20-25, theorems ~45 → ~52.
+Master plan Appendix A/C and the `CLAUDE.md` / `AGENTS.md` SM9 row updated.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §3.2, §3.3, §3.6, §3.7
+Refs: #865
+
+## v0.33.26 — SM9 plan, review round 2: one defect reaches landed code, and one scope decision reverses
+
+A second automated review of PR #865, on the round-1 remediation itself, left six
+findings.  Each was checked against the tree before acting; **all six hold**.  Two
+are round 1's own fixes recurring one structure over, one breaks a landed SM8
+theorem, and one reverses a scoping decision — the reviewer was right that SM8's
+registered wording had been narrowed, and the narrowing does not work.
+
+**The one that reaches landed code.**  `declassifyStoreOnCore` assigns
+`timestamp := log.length`, and `declassificationAuditLogWellFormed_iff` says a
+well-formed trail's timestamps are *exactly its indices*, anchored at 0.  The
+drain SM9.A specified removes a prefix, which breaks both halves — and the
+sharper half is not the predicate but the producer: the shortened log's `length`
+falls, so **the next append reuses a timestamp still in the trail** (drain 1 from
+`[0,1,2]`, append, and the new entry collides with the surviving `2`).  That
+falsifies `declassificationAuditLog_timestamp_identifies_event` in substance
+rather than merely stranding its hypothesis, and takes
+`declassificationChainLinked`'s strictly-increasing conjunct with it; the
+contract claiming *"a running system's trail is well-formed throughout"* becomes
+false the first time anyone drains.  Closed by a new SM9.A.1a — a persistent
+`declassificationAuditEpoch` with `timestamp := epoch + log.length`, drain
+advancing the epoch, sequenced **before** drain exists.  Cheaper than it looks
+because the general lemma is already in the tree: `auditTimestampsFrom` takes a
+`start` and `auditTimestampsFrom_iff` is stated over it, so the 0-anchored form
+becomes the boot instance and the identification theorems generalise rather than
+move.
+
+**Two findings, one clause, third sighting.**  Round 1 established that adding a
+reader changes what is observable and fixed it *for the audit trail*.  The
+refusal ledger is a second readable-but-unprojected structure and inherited both
+halves: absent from the equivalence (so `auditRead_no_channel` would not cover
+the API that exposes it), and evicting a low reader's visible entry once enough
+hidden refusals wrap the global ring — with the counters leaking the same bit
+independently.  Rather than patch the second site, the new **§3.7** states the
+obligation once: every readable structure owes (a) a clause in the observation
+relation and (b) an argument that hidden writes do not change what a reader sees.
+Read that way, three findings absorbed so far — prefix drain, the global drain
+generation, the refusal ring — are one violation of (b) seen at three sites.
+`auditObservationalEquivalence` is now stated over `ReadableStructure.all` with
+`mem_all`, so a structure added without a clause fails completeness instead of
+passing silently, and the ledger becomes readable only under **full dominance**
+(per-domain partitioning does not type — `SecurityDomain.id` is an unbounded
+`Nat`), which is the gate drain already takes.
+
+**Round 1's chunking fix was arithmetically wrong.**  Two 32-bit chunks bound a
+field at 2^64, so values differing above bit 63 still produce identical chunks —
+it moved the truncation point rather than removing it — and it left `srcDomain`
+and `dstDomain` as single words while the surrounding prose called the design
+lossless.  All four exported fields are unbounded `Nat`
+(`SecurityDomain.id`, `ObjId.val`, `timestamp`), so each is now read through an
+arbitrary-length 32-bit chunk protocol with a `fieldChunkCount` sub-operation,
+and the theorem becomes **reconstruction** (`auditReadField_reconstructs`).
+`auditReadWord_fits_payload` is retained with its role stated precisely: it is
+the ABI-safety half and is *not* losslessness — proving each fragment survives
+`encodeOk` says nothing about recovering the record, and conflating the two is
+what made the two-chunk design look adequate.
+
+**A filter that a later sub-phase silently defeats.**  The refusal seam matched
+the literal `.declassify`, while SM9.C adds a second declassifying syscall,
+`.declassifySignal`, whose refusals would bypass `recordRefusal` — the exact gap
+SM9.B exists to close, reintroduced inside the same plan.  The filter now reads a
+derived `declassificationSyscalls` list with a completeness theorem, so a third
+declassifying syscall cannot be added without joining the seam.
+
+**The scoping decision reverses: SM9.D becomes causal provenance.**  §3.6 had
+called SM8's registered "provenance relation on the object store" over-scoped and
+narrowed SM9.D to declassification *edges*.  That narrowing cannot work, and the
+counterexample lives on the very path SM9.C builds: a downgrade writes a badge
+into a notification, an **ordinary** delivery moves it to a waiter TCB, and that
+thread downgrades again — hop 2's input is related to hop 1's target by no
+declassification edge at all.  An edge-only detector can then only keep matching
+domains (the false positives the sub-phase exists to remove) or require object
+adjacency (a false *negative* on that very chain — strictly worse than the honest
+over-approximation SM8 shipped).  Causality follows content, so taint propagates
+through ordinary IPC delivery: a bounded set of event timestamps (which the new
+epoch makes stable across drains) in a side table, propagation sites enumerated
+as data with a completeness theorem — a missed site is a detector that misses
+real laundering — and overflow saturating *upward*, because for a detector
+over-approximation is the safe direction.  SM9.D 5 → 18 sub-tasks.
+
+**Counts, honestly.**  Phase total 44 → 59 (SM9.A 14 → 15, SM9.D 5 → 18,
+SM9.E 6 → 7); PRs ~14-17 → ~20-24; calendar 6-9 → **12-16 weeks**; theorems
+~26 → ~45.  The estimate moved because the work did, not because the sizing was
+re-tuned: master plan Appendix A and C, the §9 timeline and the
+`CLAUDE.md` / `AGENTS.md` SM9 row all carry the new figures.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §3.1, §3.3, §3.4, §3.6, §3.7
+Refs: #865
+
+## v0.33.25 — SM9 plan: eight review findings, all verified against the code before acting
+
+An automated review of PR #865 left eight findings, every one against the SM9
+declassification plan authored at v0.33.24.  Each was checked against the tree
+rather than taken on the reviewer's word; **all eight are valid**, and two change
+the design rather than the wording.  Nothing shipped was wrong — the PR carries a
+plan document and a comment-only renumbering — which is the argument for finding
+these in a plan.
+
+**The one that would have cost a phase.**  SM9.A.4 read "two states
+low-equivalent at `L` give identical visible views".  That is **false**:
+`lowEquivalent` compares `ObservableState`, and the audit trail is deliberately
+outside it (`declassificationAuditLog_write_preserves_projection` is `rfl`), so
+two low-equivalent states can differ by an entry whose `srcDomain` flows to `L`
+and their visible views then differ.  The lemma is unprovable because it is not
+true.  The root cause is more general than one mis-stated sub-task: **adding a
+reader changes what is observable.**  SM8 could keep the trail out of
+`ObservableState` precisely because nothing could read it; SM9.A makes it
+readable, so the observation relation has to grow or the phase proves
+non-interference for a projection that no longer describes what a subject can
+see.  New §3.4a records the two ways to fix it and picks one —
+`auditObservationalEquivalence` (`lowEquivalent` ∧ agreement on the visible
+view), leaving `ObservableState` a thirteen-component partition so SM8.A's
+`ofFragments_eta` tripwire keeps working and no SM8.B theorem moves.  Extending
+the partition becomes right only if a later phase adds a *second*
+readable-but-unprojected structure, which is now written down rather than
+rediscovered.  SM9.A.4 splits into `.4a` (the relation and its congruences) and
+`.4b` (the flow argument over it), re-sized L → XL.
+
+**The one that repeats a bug the tree already has a named fix for.**  The reader
+was gated on the `.read`/`.write` right alone.  `syscallLookupCap` checks
+`cap.hasRight` and **nothing about `cap.target`**, so that gate is satisfied by
+any thread holding any readable capability — its own TCB suffices.  This is
+exactly the confused deputy closed at **v0.32.97**, where the same gap let a
+thread holding only a writable capability to its own TCB unmap a page in a
+different address space.  §3.3 now specifies a dedicated `CapTarget.auditTrail`
+variant plus `extractAuditAuthority` in the shape `extractReplyId` already uses,
+with rights kept as a *second* gate so a monitoring deployment can hold a
+read-only audit capability that cannot drain.  An unconfigured deployment gets no
+audit reader at all — the deny-by-default posture
+`LabelingContext.declassificationPolicy` already has.  SM9.A.9 owns the
+constructor, its total-match consequences, its mint path and the negative that a
+non-`.auditTrail` capability carrying `.read` is rejected; §8 gains a risk row
+naming the bug class so a later cut cannot quietly revert to a rights-only gate.
+
+**Two leaks in the reader's own design, with one joint fix.**  Prefix drain
+("remove the longest prefix the caller can see") leaks the *positions* of hidden
+entries: on `[A, H, B]` a reader seeing `A` and `B` drains one entry and learns
+entry 2 is invisible, and repeated drains enumerate the hidden layout — which is
+precisely what re-indexing exists to prevent.  Separately, a global
+`drainGeneration` signals a dominating monitor's drains to every reader, one bit
+per drain out of the boundary this phase polices.  §3.4 now authorizes drain only
+for a caller dominating **every** recorded `srcDomain` (so there is no
+partial-visibility prefix to probe — and this is the shape SM8's own registered
+follow-on described), and §3.3 makes the generation observer-scoped with the
+negative that a global counter is refutable.  The cost is recorded in the
+acceptance gate rather than buried: a deployment whose monitor does not dominate
+every recorded domain cannot drain, and the 256-entry cliff returns for it.  That
+is the correct conservative default, and it is the operator's to know about.
+
+**An ABI arithmetic error.**  §3.3 said "one 64-bit word".  `encodeOk` is
+`v &&& 0x7FFFFFFFFFFFFFFF` — bit 63 is the error flag — so the payload is **63**
+bits and a naive 64-bit field would alias an error code silently rather than fail
+closed.  `timestamp` and `targetObject` are unbounded `Nat` in the model, so
+`auditReadWord` selects them in 32-bit chunks, `core ⊕ kernelIssued` packs low,
+and `auditReadWord_fits_payload` is the theorem that every returned value is
+`< 2^63`.
+
+**A structural bound applied to three fields out of four.**  §3.2 argues for
+`Vector`-bounded refusal state over an invariant conjunct, citing CLAUDE.md's
+preference for structural enforcement — and then made `attemptCount` and
+`droppedCount` plain `Nat` with "saturating" as a convention of the updater,
+which is the very shape the section rejects.  A `Nat` bounded only by its updater
+leaves every other constructor unconstrained: the freeze layer, the six test
+literals of SM9.B.5, a future boot path.  Both become
+`Fin (maxRefusalCount + 1)`, so saturation is the type's and no theorem is needed
+to say `recordRefusal` cannot overflow it.
+
+**A footprint that names one write where the transition makes three.**  §3.5 said
+a declassification's low-observable difference is "confined to the declassified
+target".  `notificationSignalOnCore`'s waiter path writes the notification, the
+delivered waiter's TCB (`storeTcbIpcStateAndMessage`) **and** the waiter's
+home-core scheduler slots (`wakeThread`), so a confinement theorem naming only
+the target would be false of the transition it is about.  The headline is
+restated over an authorized effect footprint of all three, defined **once** in
+SM9.C.5 and read by both the NI theorem and the confinement proof rather than
+copied — the drift `retypeIcacheOp_cleans_scrub_extent` hit at v0.32.101 and the
+splice arm hit again at v0.33.16 — with a second load-bearing negative that a
+difference *outside* the footprint is refutable, so the theorem cannot be
+satisfied by a footprint that swallows the state.
+
+**The renumbering miss.**  `docs/gitbook/navigation_manifest.json`,
+`05-specification-and-roadmap.md` and `WORKSTREAM_HISTORY.md` still described the
+workstream as SM-phases `SM0..SM9`; the GitBook README is generated from the
+manifest and inherited it.  The v0.33.24 pass grepped for `SM9.` sub-phase
+citations and bare `SM9`, and these are `SM0..SM9` / `SM4..SM9` **ranges**.  Now
+`SM0..SM10`, with the manifest naming both new phases and the README regenerated
+via `scripts/generate_doc_navigation.py`.  The three historical citations left
+alone are correct as written: the SM0.Q.1 absorption mapping distributed R6..R14
+across the phase list *as it stood then*, and SM10's dependency really is
+`SM0..SM9`.
+
+**Counts.**  SM9.A 12 → 14 (the audit-capability target; SM9.A.4 splits), phase
+total 42 → 44, theorem estimate ~22 → ~26; master plan Appendix A and C and the
+`CLAUDE.md` / `AGENTS.md` SM9 row updated to match.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §3.3, §3.4, §3.4a, §3.5
+Refs: #865
+
+## v0.33.24 — WS-SM SM9 opens: declassification completion, and release closure renumbered to SM10
+
+SM8 closed at v0.33.23 having registered four follow-ons it did not take, all
+provisionally scoped to "SM9".  At the time SM9 meant **release closure** —
+documentation sync, test completion, the version bump and QEMU validation.  That
+phase has no room for kernel work, and all four follow-ons are kernel work.
+
+This cut resolves that: **SM9 is now declassification completion**, and release
+closure moved to **SM10**.  No code behaviour changes; the whole cut is the new
+plan document plus the renumbering it implies.
+
+**New phase plan** —
+`docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md`, 42 sub-tasks across
+~13-16 PRs in five sub-phases:
+
+* **SM9.A** (12 sub-tasks) — a privileged, clearance-filtered **reader and drain**
+  for the mounted audit trail.  Today the trail is write-only and fail-closed at
+  256 entries, so a deployment that performs 256 authorized downgrades stops
+  being able to declassify at all until reboot.  Indexed read rather than a new
+  kernel→user IPC-buffer write path: a syscall returns exactly one 64-bit word
+  (`frame.set_x0` is the whole return channel), and a write path would expand the
+  trusted computing base for throughput a 256-entry trail does not need.  The
+  visible view is a **re-indexed** filtered sublist, so hidden-entry counts
+  cannot leak through index gaps; drain removes the longest prefix the caller can
+  see, so a monitor cleared for every recorded `srcDomain` can always clear it.
+* **SM9.B** (10) — **refusal auditing**: a saturating attempt counter plus a
+  `Vector`-bounded ring of attributed refusals.  Written at
+  `syscallDispatchFromAbi`'s error arm, which already commits a post-state
+  (`.ok (encodeError ke, stRegs)`) — so no change to the kernel's error
+  discipline is needed, and every field the record wants (core, subject, syscall
+  via the pure `SyscallId.ofNat?`, reason, raw `CPtr`) is already an argument
+  there.  Bounded by its *type* rather than by a 17th `proofLayerInvariantBundle`
+  conjunct, which also sidesteps the silent-under-listing hazard in the bundle's
+  right-nested destructurings.  Retires `DeclassificationRuleId.refusalIsUnrecorded`,
+  whose statement it falsifies.
+* **SM9.C** (9) — a **data-carrying declassification** on the SM6.B notification
+  path.  The first deliberately *visible* flow in the tree, so its real content
+  is declassification-relative (intransitive) non-interference in both halves:
+  the difference is confined to the declassified target **and** every such
+  difference is recorded.
+* **SM9.D** (5) — **provenance** behind the laundering detector, scoped to
+  declassification edges rather than the whole-object-store relation the
+  follow-on's wording implied; SM9.C is the first transition to produce a real
+  data dependency for it to record.
+* **SM9.E** (6) — tests + closure, including the acceptance scenario that fills
+  the trail, observes `.auditLogCapacityExceeded`, drains, and observes
+  declassification working again.
+
+**Renumbering.**  `SMP_RELEASE_CLOSURE_PLAN.md` becomes SM10 (title, phase
+header, `SM10.A`–`SM10.E`, dependencies now `SM0..SM9`).  All 178 `SM9.A`–`SM9.E`
+citations across the live tree move to `SM10.x` — planning docs, `CLAUDE.md` /
+`AGENTS.md`, 13 Lean files, 4 Rust files, 5 scripts, the spec, GitBook and the
+active debt register — as do bare `SM9` references meaning release closure and
+the `SMn..SM9` phase ranges.  Every one is prose or a comment: the
+identifier-naming gate forbids workstream IDs in identifiers, so the renumbering
+carries no semantic risk.
+
+`CHANGELOG.md` and `docs/dev_history/` are deliberately **not** rewritten, per
+the project's policy on historical prose.  Entries there predating this cut
+continue to say "SM9.E" for what is now SM10.E; that is the historical record,
+not an error.
+
+SM8's own follow-on registrations still point at **SM9** — which is now correct,
+since SM9 is the phase created to close them — with the `(release closure)`
+parentheticals corrected to `(declassification completion)`.
+
+Documentation only: no `.lean` transition changed, no theorem moved, trace
+fixtures byte-identical.
+
+## v0.33.23 — WS-SM SM8.E: tests + closure, and the counts that could not count
+
+SM8.E is the SM8 closure phase — three sub-tasks, no new transition and no new
+module.  Its subject is whether the phase's own claims are *anchored*,
+*recorded* and *counted* where a reader can check them.  On all three, they
+partly were not.
+
+**SM8.E.1 — the anchor list completed.**  `tests/SmpSurfaceAnchors.lean` §8 is
+the file the plan names as the SM8 anchor home, and it pinned SM8.A, SM8.B and
+SM8.D.  **SM8.C had no anchors there at all**, and two of the theorems the
+plan's own §6.1 "what SM8 proves" enumeration names —
+`lockContentionChannel_alphabet_bounded` and the run-length capacity built on it
+— were unanchored, so the bound on a single acquisition's delay was pinned while
+the bound on the *channel* was not.  A third name on that list,
+`enforcementBoundaryExtended_perCore`, never existed at all.
+
+All closed.  Three new blocks pin the declassification producer with its
+attribution and per-core partition; the cross-core chain results with the
+laundering detector and the basis check; and the mounted trail with the live
+`.declassify` syscall — including the two properties the fail-closed capacity
+bound exists for, `authorizeDeclassificationOnCore_never_unaudited` and
+`…_denied_before_capacity` (the reason the policy decision runs before the
+capacity check: trail occupancy is a function of other subjects' authorized
+downgrades, so surfacing it to a refused caller would be a channel).  The SM8.D
+block gains the alphabet, the trace and run capacities, and the two theorems
+that denominate the bound in lock operations rather than seconds.
+
+**SM8.E.2 — the phase-level golden trace.**
+`tests/fixtures/smp_information_flow.expected` (26 lines + `.sha256`, verified
+byte-for-byte in-suite and hash-gated by the Tier-2 walk).  SM8.C and SM8.D
+shipped fixtures of their own; what had none was the phase's own subject —
+*what an observer at `(core, label)` sees*.  Every line is computed from the
+live projection, the live transitions and the live inventories on the
+four-thread / four-core fixture: the per-core view at each core, the
+visible-object counts at three clearances, both halves of the field partition,
+CNode slot redaction, per-core independence, a live signal on a high object with
+its low-object negative control, the remote wake and its deschedule dual, the
+two-core rendezvous write set, the erased per-object lock, the non-interference
+coverage split, the cross-core inventory, both enforcement-boundary sizes and
+the seven-entry covert-channel inventory.
+
+Two constructions were forced by building it, and they are the substantive
+content rather than incidental detail:
+
+* **The independence probe has to land on a core the observer can see.**
+  Writing core 1's `current` slot proves nothing — core 1 runs a *high* thread,
+  so the low view of that slot is already `none` and clearing it changes
+  nothing.  Such a probe reports "invisible on every core" while saying nothing
+  about independence, which is a claim about the cores a write did **not**
+  touch.  The probe writes core 0, the load-bearing negative is that the write
+  *is* visible there, and a Tier-3 negative anchor forbids the core-1 form
+  coming back.
+* **The decidable slice cannot see a badge write.**  `objects` is a function and
+  is outside `lowEquivalentSliceOnCore` by construction (SM8.A.3).  A
+  phase-surface claim built on the slice alone would have reported the *visible*
+  low-object signal as invisible.  Both instruments are used, and the slice's
+  reach is recorded as a `SCOPE:` assertion rather than left to be rediscovered.
+
+**The substrate the fixture needed did not exist — and the count it would have
+read was not a count.**  The coverage figures must be *computed*, and
+`kernelOperation_count`, `perCoreConfinementDerived_count` and
+`niStepCoverage_perCore_count` each carried their own 35-element literal.  The
+first claimed in its docstring to be a compile-time assertion that "if a new
+variant is added to `KernelOperation`, this count must be updated, forcing a
+review of `niStepConstructorCoverage`".  **That is false**:
+`[…35 literals…].length = 35` stays true however many constructors the type
+gains, so the theorem would sail past a thirty-sixth operation untouched.  The
+exhaustiveness tripwires were always `niStepConstructorCoverage`'s match and
+`perCoreConfinementDerived`'s spelled-out arms; the counts were never tied to
+the type at all.
+
+Closed with `KernelOperation.all` + `KernelOperation.mem_all` — proved by
+`cases` over the *type*, so a constructor left out of the enumeration fails
+there — plus `all_nodup`, the three counts restated against it, and the
+complement `perCoreConfinementNotDerived_count` so 31 and 4 are checked against
+one enumeration rather than against each other's arithmetic.  This is the shape
+`CovertChannelId.mem_all` and `UncoveredLockDomain.mem_all` already carry, for
+the reason PR #861 review round 9 established.
+
+Restating them found a **second** instance of the same class.
+`niStepCoverage_perCore_count`'s docstring reads "thirty-five *distinct*
+per-core theorem names", and its statement was
+`[kernelOperationPerCoreNiTheorem .chooseThread, … ].length = 35` — thirty-five
+applications of a function, whose length is thirty-five by `rfl` whatever the
+function returns, so the word "distinct" was carried entirely by a separate
+injectivity theorem and not by this one at all.  It is now
+`(KernelOperation.all.map kernelOperationPerCoreNiTheorem).eraseDups.length = 35`,
+which fails if any two operations map to the same name.
+
+**SM8.E.3 — the two-phase-locking bracket promoted.**  `.capabilityOnly
+"withLockSet"` joins the canonical `enforcementBoundary` (39 → 40: 12
+policy-gated, 24 capability-only, 4 read-only) and `enforcementBoundaryPerCore`
+drops the append it carried instead.  Capability-only for the same reason
+`storeObject` is: an internal building block invoked under an
+already-capability-guarded context, consulting no information-flow policy —
+`withLockSet_preserves_projection` holds *unconditionally* since SM8.B.4 erased
+the per-object `lock` from the projection.  What it does add is CC-5, which
+SM8.D bounds rather than closes.
+
+Appended **last** deliberately: the per-core list becomes the plain
+`canonical ++ crossCoreEnforcementEntries` and is the identical 55-element list
+it already was, so the entry moved between two definitions and nothing third
+moved with it.  `enforcementBoundaryPerCore_entry_is_new` — which asserted the
+canonical list did *not* carry the bracket — is **retired**, since its claim is
+now false; the property it stood for survives as
+`enforcementBoundaryPerCore_classifies_withLockSet_once` (the bracket is
+classified exactly once across the per-core list, which is what a duplicate
+would break), with `enforcementBoundary_classifies_withLockSet` (present *and*
+capability-only, so a promotion that filed it policy-gated fails) and
+`crossCoreEnforcementEntries_omits_withLockSet`.  Tier-3 negatives stop both the
+retired theorem and the retired append returning.
+
+**One claim corrected, no behaviour changed.**  §11's
+`declassification_refusal_is_unrecorded` carried the conjunct
+`st.declassificationAuditLog = st.declassificationAuditLog` — a `rfl` between
+two syntactically equal terms, saying nothing — beside a docstring promising the
+audit gap could be closed with "an outcome field on the record and a producer on
+the error arms".  It cannot: `Kernel α` is
+`SystemState → Except KernelError (α × SystemState)`, so the error arm carries
+**no post-state** and there is nowhere for such a producer to write.  The
+conjunct now states that (`¬ ∃ st', … = .ok ((), st')`), the rule inventory's
+`evidenceProp` moves with it, and the four SM8.C follow-ons are re-scoped to SM9
+with the two designs that would actually work — a total transformer with the
+dispatch entry committing on the error path, or entry-level re-derivation from
+the decoded syscall and the returned discriminant, the way `computeCrossCoreSgis`
+re-derives pokes from the diff.
+
+Recorded with them: **neither may write refusals into the declassification trail
+itself.**  That trail is bounded at `maxDeclassificationAuditEntries` and
+fail-closed by design, so a caller able to append on refusal could exhaust the
+256 entries with denied attempts and thereby deny every subsequent **authorized**
+downgrade — turning a monitoring improvement into an availability attack on the
+security-critical half.  A refusal record must be a separate, non-displacing
+structure.
+
+`tests/fixtures/README.md` also gains the three entries it was missing: the
+SM8.C and SM8.D fixtures shipped without a row, and the regeneration workflow
+did not mention that the information-flow suite emits three tagged traces.
+
+Suite 538 → **554 assertions across 70 groups** (§8.1 the phase-surface group,
+thirteen assertions of which five are load-bearing negatives; §8.2 the golden
+trace).  Axiom-clean: 2741 environment constants across the eight
+information-flow modules and 305 across `Invariant/Composition`, checked by
+`scripts/check_module_axioms.py`.  Theorems, tests and documentation only —
+the main trace fixture is byte-identical.
+
+**WS-SM phase SM8 (information flow under SMP) is CLOSED.**
+
 ## v0.33.22 — WS-SM SM8.D: both sides of the anti-drift tie, and a witness with acquire lineage
 
 Two **P2** findings from the twelfth review round of PR #864.  Both are cases of

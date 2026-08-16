@@ -575,7 +575,7 @@ pub(crate) const fn validate_secondary_context_id(context_id: u64) -> Option<usi
 /// was opt-in (v0.32.136–141) and before SM1 wired PSCI at all.  The
 /// host test suite exercises the function signature and the per-helper
 /// call sites; QEMU `-smp 4` (SM1.H) is the first runtime exerciser of
-/// the full path, and nothing here runs on hardware before SM9.E.
+/// the full path, and nothing here runs on hardware before SM10.E.
 #[no_mangle]
 pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
     let core_id = context_id;

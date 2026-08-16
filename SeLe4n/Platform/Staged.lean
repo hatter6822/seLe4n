@@ -27,7 +27,7 @@ import SeLe4n.Kernel.Concurrency.Assumptions
 import SeLe4n.Kernel.Concurrency.Anchors
 -- WS-SM SM0.E/SM0.F/SM0.H/SM0.I: foundational typed-identifier modules
 -- pulled into Staged so the SM0 build closure is one unit.  No runtime
--- behavior change at SM0; SM1..SM9 wire these into kernel transitions.
+-- behavior change at SM0; SM1..SM10 wire these into kernel transitions.
 import SeLe4n.Kernel.Concurrency.Types
 import SeLe4n.Kernel.Concurrency.Locks
 import SeLe4n.Kernel.Concurrency.Locks.Kind

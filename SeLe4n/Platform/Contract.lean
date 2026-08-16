@@ -112,7 +112,7 @@ class PlatformBinding (platform : Type) where
   bootVSpaceRoot : Option BootVSpaceRootEntry := none
   /-- **WS-SM SM0.G**: number of cores the platform exposes.
 
-      Multi-core (SMP) coordination in WS-SM phases SM1..SM9
+      Multi-core (SMP) coordination in WS-SM phases SM1..SM10
       derives every per-core enumeration / iteration loop / lock
       partition from this single value.  Bindings supply the
       numeric value here; the SM0.E `Concurrency.Types.numCores`

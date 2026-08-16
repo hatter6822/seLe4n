@@ -15,17 +15,123 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 ## What's next
 
+**WS-RA Syscall Return ABI — NEXT, implemented ahead of SM9.**  The kernel
+has no syscall return path: it writes one register on exit and the value it
+writes is the caller's own capability pointer, which userspace's
+`decode_response` (`regs[0] != 0` means error) decodes as a `KernelError`.
+Five syscalls are value-returning today and return nothing —
+`.notificationWait`, `.receive`, `.call`, `.replyRecv` and `.serviceQuery`,
+the last computing `lookupServiceByCap` and discarding the answer — and SM9
+adds two more.  WS-RA adopts seL4's ARM64 convention exactly (`x0` = badge or
+primary result, `x1` = `MessageInfo` whose label carries the error, `x2`-`x5` =
+message registers) and retires the bit-63 status protocol.  38 sub-tasks across
+~12-15 PRs.  It blocks SM9 (both its value-returning sub-phases) and SM10.E (a
+bootable image whose syscalls all report spurious errors).  Plan:
+[`docs/planning/SYSCALL_RETURN_ABI_PLAN.md`](planning/SYSCALL_RETURN_ABI_PLAN.md).
+
 **WS-SM SMP multi-core completion workstream IN FLIGHT (v0.31.2 →
 v0.31.3 → v0.32.x → v1.0.0).** Unified workstream merging WS-RC's remaining
-R6..R14 phases with the SMP-specific SM-phases (SM0..SM9).  Closes
+R6..R14 phases with the SMP-specific SM-phases (SM0..SM10).  Closes
 at v1.0.0 with a bootable verified SMP microkernel on Raspberry Pi 5.
 Plan:
 [`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`](planning/SMP_MULTICORE_COMPLETION_PLAN.md).
 SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
-**Current sub-phase: SM8.D information flow under fine locks LANDED
-(v0.33.9; review cut v0.33.10).**
+**Current sub-phase: SM8.E tests + closure LANDED (v0.33.23) — WS-SM phase
+SM8 is CLOSED.**
+
+SM8.E adds no transition and no module; its subject is whether the phase's own
+claims are *anchored*, *recorded* and *counted* where a reader can check them —
+and building it found that on all three counts they partly were not.
+
+**SM8.E.1 — the anchor list completed.**  `tests/SmpSurfaceAnchors.lean` §8 is
+the file the plan names as the SM8 anchor home, and it pinned SM8.A, SM8.B and
+SM8.D.  **SM8.C had no anchors there at all**, and two of the theorems the
+plan's own §6.1 "what SM8 proves" list names — `lockContentionChannel_alphabet_bounded`
+and the run-length capacity built on it — were unanchored, so a bound on the
+per-acquisition delay was pinned while the bound on the *channel* was not.  A
+third name on that list, `enforcementBoundaryExtended_perCore`, never existed.
+All closed: three new blocks pin the declassification producer and its
+attribution, the cross-core chain results with the laundering detector, and the
+mounted trail with the live `.declassify` syscall — including the two properties
+the fail-closed capacity bound exists for (`…_never_unaudited` and
+`…_denied_before_capacity`, the latter being why the policy decision runs before
+the capacity check).
+
+**SM8.E.2 — the phase-level golden trace.**
+`tests/fixtures/smp_information_flow.expected` (26 lines + `.sha256`, verified
+byte-for-byte in-suite, hash-gated by the Tier-2 walk).  SM8.C and SM8.D shipped
+fixtures; what had none was the phase's own subject — *what an observer at
+`(core, label)` sees*.  Every line is computed from the live projection, the
+live transitions and the live inventories.  Two constructions were forced by
+building it, and they are the substantive content rather than incidental:
+
+* **The independence probe must land on a core the observer can see.**  Writing
+  core 1's `current` slot proves nothing — core 1 runs a *high* thread, so the
+  low view of that slot is already `none` and clearing it changes nothing.  Such
+  a probe reports "invisible on every core" while saying nothing about
+  independence, which is a claim about the cores a write did **not** touch.  The
+  probe writes core 0, the load-bearing negative is that the write *is* visible
+  there, and a Tier-3 negative anchor forbids the core-1 form returning.
+* **The decidable slice cannot see a badge write.**  `objects` is a function and
+  is outside the slice by construction (SM8.A.3).  A phase-surface claim built
+  on the slice alone would have reported the *visible* low-object signal as
+  invisible; both instruments are used, and the slice's reach is recorded as a
+  `SCOPE:` assertion rather than left to be rediscovered.
+
+**The substrate the fixture needed did not exist.**  Its coverage figures must be
+computed, and `kernelOperation_count`, `perCoreConfinementDerived_count` and
+`niStepCoverage_perCore_count` each carried their own 35-element literal.  The
+first claimed in its docstring to be a compile-time assertion that adding a
+`KernelOperation` variant forces the count to be updated — **which is false**:
+`[…35 literals…].length = 35` stays true however many constructors the type
+gains, and the exhaustiveness tripwires were always
+`niStepConstructorCoverage`'s match and `perCoreConfinementDerived`'s arms.
+Closed with `KernelOperation.all` + `KernelOperation.mem_all` (proved by `cases`
+over the *type*, so a constructor left out of the enumeration fails there) +
+`all_nodup`, the three counts restated against it, and the complement
+`perCoreConfinementNotDerived_count` so 31 and 4 are checked against one
+enumeration rather than each other's arithmetic.
+
+Restating them found a **second** instance of the same class:
+`niStepCoverage_perCore_count` reads "thirty-five *distinct* per-core theorem
+names" while its statement was thirty-five applications of a function in a list
+whose length is thirty-five by `rfl` whatever the function returns, so
+"distinct" was carried entirely by a separate injectivity theorem.  It is now
+stated over `eraseDups`, which fails if any two operations map to one name.
+
+**SM8.E.3 — the two-phase-locking bracket promoted.**  `.capabilityOnly
+"withLockSet"` joins the canonical `enforcementBoundary` (39 → 40: 12
+policy-gated, 24 capability-only, 4 read-only) and `enforcementBoundaryPerCore`
+drops the append it carried instead.  Appended **last** deliberately: the
+per-core list becomes the plain `canonical ++ crossCoreEnforcementEntries` and
+is the identical 55-element list it already was, so the entry moved between two
+definitions and nothing third moved with it.
+`enforcementBoundaryPerCore_entry_is_new` — which asserted the canonical list did
+*not* carry the bracket — is retired, since its claim is now false; the property
+survives as `enforcementBoundaryPerCore_classifies_withLockSet_once`, which is
+what a duplicate would break.
+
+**One claim corrected, not one behaviour.**
+`declassification_refusal_is_unrecorded` carried the conjunct
+`st.declassificationAuditLog = st.declassificationAuditLog` — a `rfl` between two
+syntactically equal terms — beside a docstring promising the audit gap could be
+closed with "an outcome field on the record and a producer on the error arms".
+It cannot: `Kernel α` is `SystemState → Except KernelError (α × SystemState)`, so
+the error arm carries **no post-state**.  The conjunct now states that, and the
+four SM8.C follow-ons are re-scoped to SM9 with the two designs that would work
+(a total transformer with the entry committing on the error path, or entry-level
+re-derivation from the decoded syscall and discriminant) — plus the reason
+neither may write refusals into *this* trail: it is bounded and fail-closed, so
+an unprivileged caller appending on refusal could exhaust the 256 entries and
+deny every subsequent **authorized** downgrade.
+
+Suite 538 → 554 assertions across 70 groups; axiom-clean (2741 environment
+constants across the eight information-flow modules); trace byte-identical.
+
+**Prior sub-phase: SM8.D information flow under fine locks LANDED
+(v0.33.9; review cuts v0.33.10, v0.33.12–v0.33.22; completion cut v0.33.11).**
 
 SM8.D is about the **lock words themselves** — the per-object `RwLockState` the
 SM3 two-phase-locking bracket writes on every acquire and release once SM3.C.9
@@ -131,9 +237,11 @@ count 31, both Rust mirrors, ABI conformance, enforcement registry, lock set,
 **not** perform that gate's simulated store, resolves both security domains
 kernel-side, fails closed on the unchecked dispatch, and defaults to deny-all.
 Headline: *an authorized downgrade is either recorded or does not happen.*
-Registered follow-on (SM8.E): no interface reads the trail, so a deployment
-declassifying more than 256 times per boot stops being able to declassify — the
-honest consequence of choosing fail-closed.
+Registered follow-on (filed against SM8.E, re-scoped to SM9 at the SM8.E cut):
+no interface reads the trail, so a deployment declassifying more than 256 times
+per boot stops being able to declassify — the honest consequence of choosing
+fail-closed.  A privileged reader owes its own flow argument, which is a slice of
+its own rather than a fold-in to a closure phase.
 The plan reads as though the audit trail existed and needed a core added to it.
 It did not.  `declassifyStore` gated and stored; `DeclassificationEvent`'s
 docstring said the enforcement wrappers produced it and the caller recorded it;
@@ -195,7 +303,10 @@ Unconfigured deployments are unchanged; the trace is byte-identical.
 Registered follow-on: a *refused* declassification produces no audit entry (the
 V6-H record has no outcome field and its basis names what permitted a downgrade).
 The refusal is fail-closed, so this is a monitoring gap rather than an
-enforcement one; closing it means an outcome-carrying record, scoped to SM8.E.
+enforcement one.  The closure recipe recorded here — "an outcome-carrying record,
+scoped to SM8.E" — was **corrected at the SM8.E cut**: `Kernel`'s error arm
+carries no post-state, so no producer on it can write anything, and the fix moves
+the kernel's error discipline rather than the record.  Re-scoped to SM9.
 
 Suite 316 → **360 assertions**, §6.1–§6.8 new, every group with a load-bearing
 negative; staged 58 → 59.
@@ -386,7 +497,8 @@ Also landed: `niStepCoverage_perCore` with an injective 35-name theorem mapping;
 `enforcementBoundaryPerCore` — the canonical 38-entry boundary plus the one
 operation SMP adds, the 2PL bracket — at **39**, re-anchored from the plan's
 `v0.31.2`-era "23 entries" and kept as a separate list because promoting the
-entry is SM8.E.3's sub-task; the accepted covert channels as **data**, seven
+entry is SM8.E.3's sub-task (done at v0.33.23: the canonical boundary went
+39 → 40 and the per-core list dropped the append, staying at 55); the accepted covert channels as **data**, seven
 entries CC-1 … CC-7 (`acceptedCovertChannel_perCoreCount = 7`, re-anchored from
 the plan's pre-CC-6/CC-7 "= 5"), split three model-visible / four hardware-only
 / five per-core with each entry paired to the theorem fixing its status;
@@ -632,7 +744,7 @@ state LANDED (v0.32.72); completion cut (v0.32.73); audit cut
 **SM7.E tests + fixtures (v0.32.103) — the SM7 closure phase (plan §5
 SM7.E).**  SM7.E.1 and SM7.E.2 had already landed alongside SM7.A/SM7.B
 (the aggregate `tests/SmpTlbShootdownSuite.lean`; the Tier-4-registered
-`scripts/test_qemu_smp_shootdown.sh`, which SKIPs until the SM9.E bootable
+`scripts/test_qemu_smp_shootdown.sh`, which SKIPs until the SM10.E bootable
 image).  This cut lands E.3–E.6.
 
 **The model gap the test work surfaced — and closed rather than
@@ -679,7 +791,7 @@ retirement in flight together — each core's drain retires exactly *its*
 queue, so the ASID round's initiator keeps the three translations it never
 queued (a blanket-flush regression in the handler fails right there).
 Hardware tier: `scripts/test_qemu_smp_shootdown_stress.sh`
-(Tier-4-registered, SKIPs until SM9.E) drives what the pure model cannot —
+(Tier-4-registered, SKIPs until SM10.E) drives what the pure model cannot —
 the real interleaving of the global round lock, the SGI delivery order and
 the `SHOOTDOWN_ACK` handshake under contention — hunting the two plan §7
 risks by name (a round-serialisation break; a round-lock deadlock) with a
@@ -744,7 +856,7 @@ is later torn down stays hittable through *any* later executable mapping of
 the same frame, in *any* address space — the instruction-side twin of the
 SMP-C4 stale-TLB hazard, and one the TLB shootdown cannot close (it retires
 translations, not cache lines).  Latent rather than exploitable today (no
-bootable image until SM9.E), but a real gap in the model and in the HAL
+bootable image until SM10.E), but a real gap in the model and in the HAL
 surface, so the plan's "documentation" framing for D.1–D.3 was superseded per
 the implement-the-improvement rule.
 
@@ -859,7 +971,7 @@ and its failure mode is under-invalidation.
 *Data-side dual.*  Nothing cleans the D-cache to the Point of Unification
 after the kernel writes memory a subject may later execute (`scrubObjectMemory`
 during a re-type, the boot image load).  The emission needs object physical
-extents, which the model does not carry, so it is scoped to SM9.E; what lands
+extents, which the model does not carry, so it is scoped to SM10.E; what lands
 is the obligation as a checked object — `KernelCodeWriteSite` +
 `kernelCodeWriteSites_owe_pou_clean` + the `…_complete` tripwire.
 `Architecture.TlbCacheComposition` promoted staged → production as its
@@ -913,7 +1025,7 @@ of the frame, in any address space.  seL4's `clearMemory` is `memzero` followed
 by `cleanCacheRange_PoU` for exactly this reason.
 
 Severity **High** once the kernel boots on hardware; not exploitable at
-v0.32.99, since there is no bootable image until SM9.E.  No Lean theorem was
+v0.32.99, since there is no bootable image until SM10.E.  No Lean theorem was
 false — `ICacheState` models no data-cache content, so the model could not see
 the omission.  What was incomplete was the emitted hardware sequence.
 
@@ -1031,7 +1143,7 @@ extent is the untyped allocator's `regionBase + offset`, so on hardware the
 
 *Narrower*: this is not a defect the cache operand introduced.  The operand
 deliberately mirrors the scrub, and the scrub's own hardware gap is
-pre-existing, registered as **AN4-G.3 / LIF-M03**, and owned by AN9/SM9.E.
+pre-existing, registered as **AN4-G.3 / LIF-M03**, and owned by AN9/SM10.E.
 Retargeting the operand on its own would be strictly worse — the clean would
 then name an extent `scrubObjectMemory` does not zero.  They have to move
 together.
@@ -1040,7 +1152,7 @@ together.
 to its new owner still holding the previous owner's **data**, not merely stale
 instruction lines.  That is the more serious half; it lives in the scrub bridge
 rather than the cache seam, and AN4-G.3 is re-labelled High-severity-once-
-bootable with an explicit SM9.E closure target.
+bootable with an explicit SM10.E closure target.
 
 **The genuine weakness in what v0.32.100 shipped.**
 `retypeIcacheOp_cleans_scrub_extent` was described as "an equality between the
@@ -1363,7 +1475,7 @@ Rust mailbox + `publish_*`/`snapshot_*`/`retire_round_ops_in` +
 unit tests (HAL 772 → 780); trace byte-identical.  **(2) Formal
 refinement (NARROWED)**: the handler refines the Lean TLB effect
 operand-for-operand (op-tag decode pinned identical both sides); the
-residual is only the SM9.E linked-runtime proof.  **(3) B.10
+residual is only the SM10.E linked-runtime proof.  **(3) B.10
 (deferred, NO safety gap)**: `asidAllocateWithShootdown` is complete
 and proven but user-unreachable — audit confirms no runtime
 ASID-reuse path exists (`lifecycleRetype` creates fresh ASID-0 roots;
@@ -1449,7 +1561,7 @@ assertions vacuous), `round_lock_try_acquire_in`/`_release_in` + an
 `dispatchSyscall`: CSpace resolution + authority gate + posting +
 fail-closed no-cap / read-only-cap) — 22 groups / 160 runtime
 assertions; SM7.E.2 seeded (`scripts/test_qemu_smp_shootdown.sh`,
-Tier-4-registered, SKIPs until the SM9.E image); the legacy Rust
+Tier-4-registered, SKIPs until the SM10.E image); the legacy Rust
 `dispatch_irq` deprecated (masked-EOI form, tests annotated).
 Golden trace byte-identical; zero sorry/axiom.  Tracked debt
 registered in plan §SM7.B completion cut.  Record: plan §5 SM7.B.
@@ -1547,7 +1659,7 @@ the new-descriptor-only theorem.  Suite 73 → **75 assertions**;
 Tier-3 anchors extended; Rust 750 / clippy / rustfmt green; golden
 trace byte-identical.  Follow-up registered (pre-existing, not
 SM7.A-specific): crate-wide `@[extern] … BaseIO` ↔ `extern "C"` ABI
-conformance audit once a linked runtime path exists (SM9.E).
+conformance audit once a linked runtime path exists (SM10.E).
 
 **PR #838 review P1 (v0.32.75) — offline cores stay acknowledged.**
 The Codex review caught a liveness defect the audit's serialised-regime
@@ -1702,7 +1814,7 @@ decisions, verified byte-for-byte in-suite and auto-gated by
 `test_tier2_trace.sh`'s companion walk.  **SM6.F.5**
 `scripts/test_qemu_smp_ipc.sh`: the Tier-4 QEMU `-smp 4` cross-core IPC
 handshake exerciser (registered in `test_tier4_smp_bootcheck.sh`; SKIPs
-with the formal-coverage banner until the SM9.E bootable kernel-image
+with the formal-coverage banner until the SM10.E bootable kernel-image
 target exists, the SM5-sibling discipline).  **SM6.F.6** surface
 anchors: in-suite `#check` blocks + Tier-3 grep anchors (runner defs,
 Tier-2 wiring, pipeline/trace emitters, fixture + sha256 presence,
@@ -2286,7 +2398,7 @@ Sub-portfolio close-out plans archived to
 - `v0.34.x` (planned) — SM3 (per-object locks) + SM4 (per-core state).
 - `v0.35.x` (planned) — SM5 (per-core scheduler) + SM6 (cross-core IPC).
 - `v0.36.x` (planned) — SM7 (TLB shootdown) + SM8 (info flow under SMP).
-- `v1.0.0` "bootable verified SMP microkernel" — SM9 closure cut.
+- `v1.0.0` "bootable verified SMP microkernel" — SM10 closure cut.
 
 **WS-SM SM1.A LANDED on branch
 `claude/implement-psci-completion-TUW1u`** (v0.31.3 +): PSCI
@@ -4425,7 +4537,7 @@ trace fixture byte-identical (227/227), zero new axioms.
   the disposition partition `_pathARetired_count = 2` /
   `_perCoreBracketGated_count = 6` (only the scheduler-state shape + boot-core
   current are genuinely path-a-retired; the other six are
-  `perCoreBracketGated` pending SM5+).  SM9 adds `smpRetiredInventory_complete`.
+  `perCoreBracketGated` pending SM5+).  SM10 adds `smpRetiredInventory_complete`.
 
 Build-anchored in `Concurrency.Anchors` (SMP-H3) + tier-3 surface +
 `SmpFoundationsSuite` / `ModelIntegritySuite` (both green, 0 fails).  Items

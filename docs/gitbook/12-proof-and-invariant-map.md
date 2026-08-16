@@ -872,7 +872,7 @@ the executing PE, so the kernel must issue the broadcast variant:
   `dischargesPoUClean`, which is expressed through `covers` so the question is
   answered by the ledger's own preorder); `.bootImageLoad` is not, and the
   theorem pins it as the only remaining site — flipping it breaks the `decide`,
-  so the SM9.E closure cannot land silently
+  so the SM10.E closure cannot land silently
 - `icFetchOnCore` (SM7.D.1) — the hardware instruction fetch filling one core's
   view; an *environment* step, not a kernel transition
 - `icInvalidateOnCore` (SM7.D.1) — `IC IALLU`, whose
@@ -1427,7 +1427,7 @@ v0.13.5 gap closure (3 theorems + 1 bridge):
 **M-07 — Enforcement boundary specification:**
 
 - `EnforcementClass` inductive (`policyGated`/`capabilityOnly`/`readOnly`),
-- `enforcementBoundary` — exhaustive 39-entry classification table (12 policy-gated, 23 capability-only, 4 read-only; count pinned by `enforcementBoundaryExtended_count`; Z8-M added 3 SchedContext, D1 added 2 thread lifecycle, D2 added 2 priority management, D3 added 1 IPC buffer, AC4-D added 3 VSpace/service capability-only operations),
+- `enforcementBoundary` — exhaustive 40-entry classification table (12 policy-gated, 24 capability-only, 4 read-only; count pinned by `enforcementBoundaryExtended_count`; Z8-M added 3 SchedContext, D1 added 2 thread lifecycle, D2 added 2 priority management, D3 added 1 IPC buffer, AC4-D added 3 VSpace/service capability-only operations, WS-SM SM8.C added the live declassification entry point (policy-gated), WS-SM SM8.E.3 added the SM3 two-phase-locking bracket `withLockSet` (capability-only)),
 - `enforcementBoundaryExtended` — definitional alias of `enforcementBoundary` (W2-G, previously duplicate list),
 - `enforcementBoundaryExtended_eq_canonical` — element-wise equality proof (W2-G),
 - `enforcementBoundaryComplete_counts` — compile-time count witness (11+18+4=33, V6-F/Z8-M/D1/D2/D3/AC4-D),
@@ -2611,7 +2611,10 @@ observer alone.
   the severity, model-visibility and per-core multiplicity, each paired with
   the theorem that fixes its status; three model-visible, four
   hardware-only, five per-core.  `enforcementBoundaryPerCore` is the
-  canonical 38 plus the 2PL bracket = 39, `SyscallId` coverage re-checked.
+  canonical list plus the live cross-core wrappers, `SyscallId` coverage
+  re-checked (the figure at this cut was 39; read
+  `enforcementBoundaryPerCore_count` for the live one — SM8.E.3 later moved
+  the 2PL bracket into the canonical half without changing the total).
 * **`crossCoreLeakage_bounded`** is an `↔`: a `c'`-confined transition
   freezes core `c`'s per-core fragment, so the view moves iff the shared
   fragment does — six of thirteen components carry no cross-core flow.
@@ -2803,6 +2806,58 @@ nine-step contended executions — one writer-queued, one reader-queued — on w
 the delay, the wait depth and the CC-5 code are computed and the bound theorems
 are applied, a bracketed live syscall that *succeeds*, and a golden contention
 trace verified byte-for-byte.
+
+### Layer 3 under SMP — tests and closure (WS-SM SM8.E)
+
+SM8.E (v0.33.23) closes the phase.  It adds no transition and no new module; its
+subject is whether the phase's own claims are *anchored*, *recorded* and
+*counted* where a reader can check them.
+
+* **The headline surface, anchored across all five sub-phases** (SM8.E.1).
+  `tests/SmpSurfaceAnchors.lean` §8 pinned SM8.A, SM8.B and SM8.D; SM8.C had no
+  anchors there at all, and two of the theorems the plan's own "what SM8 proves"
+  list names — `lockContentionChannel_alphabet_bounded` and the run-length
+  capacity built on it — were unanchored.  Both closed, and one name on that
+  list (`enforcementBoundaryExtended_perCore`) turned out never to have existed.
+* **The phase-level golden trace** (SM8.E.2),
+  `tests/fixtures/smp_information_flow.expected` — *what an observer at
+  `(core, label)` sees*, which the SM8.C and SM8.D fixtures do not cover.  Every
+  line is computed from the live projection, transitions and inventories.  Two
+  constructions were forced by the attempt and are the substantive content: the
+  per-core independence probe must land on a core whose current thread the
+  observer can **see** (probing the core that runs a *high* thread reports
+  "invisible everywhere" while saying nothing about independence), and the
+  decidable slice **cannot see a badge write** — `objects` is a function and is
+  outside it by construction — so both instruments are used rather than the
+  cheaper one alone.
+* **The operation taxonomy tied to its type.**  `kernelOperation_count`,
+  `perCoreConfinementDerived_count` and `niStepCoverage_perCore_count` each
+  carried a 35-element literal, and the first claimed to be a compile-time
+  assertion that a new `KernelOperation` variant forces an update — which a
+  literal cannot be.  `KernelOperation.all` + `mem_all` (proved by `cases` over
+  the type) + `all_nodup` replace all three literals, with the complement
+  `perCoreConfinementNotDerived_count` so 31 and 4 are checked against one
+  enumeration rather than each other's arithmetic.
+* **The 2PL bracket promoted** (SM8.E.3): `enforcementBoundary` 39 → 40
+  (12 policy-gated, 24 capability-only, 4 read-only), appended last so the
+  per-core boundary is the identical 55-element list it already was.
+  `enforcementBoundaryPerCore_entry_is_new` is retired — it asserted the
+  canonical list did *not* carry the bracket — and replaced by
+  `enforcementBoundaryPerCore_classifies_withLockSet_once`, which is the
+  property a duplicate would actually break.
+* **A claim corrected.**  `declassification_refusal_is_unrecorded` carried a
+  `rfl` conjunct between two identical terms beside a docstring promising the
+  audit gap could be closed with "a producer on the error arms".  `Kernel α` is
+  `SystemState → Except KernelError (α × SystemState)`: the error arm carries no
+  post-state, so no such producer can exist.  The conjunct now states that, and
+  the follow-on is re-scoped with the two designs that would work — neither of
+  which may write refusals into the fail-closed trail, since an unprivileged
+  caller appending on refusal could exhaust it and deny every subsequent
+  *authorized* downgrade.
+
+Runtime coverage: §8.1–§8.2 of the same suite (538 → 554 assertions across
+seventy groups), thirteen assertions of which five are load-bearing negatives,
+plus the golden trace verified byte-for-byte.
 
 ## 32. WS-Q3 IntermediateState formalization (v0.17.9)
 
@@ -3817,7 +3872,7 @@ ledger** `smpRetiredInventory` (an 8-entry `SmpRetiredAssumption` list
 mirroring `smpLatentInventory` one-to-one by `identifier`, status
 `.pathARetired` for the 2 path-a-retired entries and
 `.perCoreBracketGated` for the 6 gated on SM5+; `_count = 8`,
-`_pathARetired_count = 2`, `_perCoreBracketGated_count = 6`). SM9
+`_pathARetired_count = 2`, `_perCoreBracketGated_count = 6`). SM10
 (release closure) adds `smpRetiredInventory_complete` once all 8 are
 discharged.
 

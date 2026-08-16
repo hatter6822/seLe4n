@@ -3026,4 +3026,4 @@ the SM5 follow-on is a wiring change, not a redesign.
 runs in parallel with SM2 (verified lock primitives), the two
 phases having no direct dependencies (SM2's outputs are consumed
 starting in SM3). Together SM1 + SM2 lay the foundation that
-SM3..SM9 build atop.*
+SM3..SM10 build atop.*

@@ -7,7 +7,7 @@
 //! every wrapper but only [`cpu_on`] is invoked by the default boot path
 //! (single-core).  When `smp_enabled=true` is on the command line the
 //! [`cpu_on`] entry brings up the BCM2712 secondaries; the remaining
-//! wrappers are reachable through future SM5..SM9 phases or via direct
+//! wrappers are reachable through future SM5..SM10 phases or via direct
 //! kernel-API invocation for graceful shutdown / power-cycling
 //! sequences.
 //!

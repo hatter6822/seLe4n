@@ -979,11 +979,23 @@ inductive KernelOperation where
   | handleInterrupt  -- AG5-F: Interrupt dispatch (timer + device)
   deriving Repr, DecidableEq
 
-/-- U4-E: Compile-time assertion on the operation count. If a new variant is
-    added to `KernelOperation`, this count must be updated, forcing a review
-    of `niStepConstructorCoverage` below. -/
-theorem kernelOperation_count : (List.length
-  [KernelOperation.chooseThread, .endpointSendDual, .cspaceMint,
+/-- U4-E: the operation taxonomy, enumerated.
+
+    Every count and every filter over `KernelOperation` reads this list, so
+    there is one enumeration rather than one per consumer.  It is a
+    hand-written list — Lean derives no `Fintype` here — which is exactly why
+    `mem_all` below is stated: a constructor missing from the list would leave
+    every count over it true and every filter over it silent.
+
+    WS-SM SM8.E.2 introduced it.  Before that each consumer carried its own
+    35-element copy, and `kernelOperation_count` was written against one of
+    them — with a docstring claiming that adding a variant would force the
+    count to be updated.  It would not: `[…35 literals…].length = 35` stays
+    true however many constructors the type gains.  The exhaustiveness
+    tripwires were `niStepConstructorCoverage`'s match and
+    `perCoreConfinementDerived`'s arms, never the counts. -/
+def KernelOperation.all : List KernelOperation :=
+  [.chooseThread, .endpointSendDual, .cspaceMint,
    .cspaceRevoke, .lifecycleRetype, .lifecycleRevokeDeleteRetype,
    .notificationSignal, .notificationWait, .cspaceInsertSlot,
    .schedule, .vspaceMapPage, .vspaceUnmapPage, .vspaceLookup,
@@ -996,7 +1008,30 @@ theorem kernelOperation_count : (List.length
    .syscallDecodeError, .syscallDispatchHigh,
    .registerServiceChecked,
    .endpointCallWithDonationHigh, .endpointReplyWithReversionHigh,
-   .handleInterrupt]) = 35 := by rfl
+   .handleInterrupt]
+
+/-- U4-E: **`all` really is all of them** — the property the count cannot
+    supply.  Proved by `cases` over the *type*, so a new constructor left out
+    of the list fails here rather than sailing past every consumer.
+
+    This is the same shape `CovertChannelId.mem_all` and
+    `UncoveredLockDomain.mem_all` carry, and for the same reason: a
+    hand-written enumeration that nothing checks against the type is an
+    inventory that can quietly stop being one. -/
+theorem KernelOperation.mem_all (op : KernelOperation) : op ∈ KernelOperation.all := by
+  cases op <;> decide
+
+/-- U4-E: and no operation is counted twice, so a filter's length is a count of
+    operations rather than of list positions. -/
+theorem KernelOperation.all_nodup : KernelOperation.all.Nodup := by decide
+
+/-- U4-E: Compile-time assertion on the operation count.
+
+    Stated against `KernelOperation.all`, so together with
+    `KernelOperation.mem_all` it *is* the assertion its predecessor's docstring
+    claimed to be: a new variant either fails `mem_all` (if the enumeration was
+    not extended) or moves this count (if it was). -/
+theorem kernelOperation_count : KernelOperation.all.length = 35 := by rfl
 
 -- ============================================================================
 -- U4-F / U-H10: NI step coverage theorem

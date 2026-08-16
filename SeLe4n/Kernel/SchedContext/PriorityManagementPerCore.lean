@@ -107,7 +107,7 @@ it depends on.
 `priorityRescheduleOnCore` is correct at the model level and its theorems say so;
 this wrapper chooses between it and the enqueue-only form.  Deliberately a
 *wrapper*: folding the guard into the transition would make every theorem about
-it conditional, and those theorems are what SM9.E enables rather than has to
+it conditional, and those theorems are what SM10.E enables rather than has to
 re-prove.  An earlier cut of this PR did exactly that and had to be undone. -/
 def priorityRescheduleOnCoreLive (st : SystemState) (running? : Option CoreId)
     (executingCore : CoreId) (shouldPreempt : Bool) :

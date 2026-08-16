@@ -2491,44 +2491,17 @@ theorem niStepCoverage_perCore_injective :
 
 /-- SM8.B.5: thirty-five distinct per-core theorem names — the count the plan
 re-anchored at the SM8.A cut (`kernelOperation_count` /
-`niStepCoverage_count` are the authority). -/
+`niStepCoverage_count` are the authority).
+
+**Stated over `KernelOperation.all`** (WS-SM SM8.E.2), so it counts operations
+rather than list positions: its predecessor spelled the thirty-five applications
+out, which meant a new `KernelOperation` variant left it true and unedited.
+Paired with `KernelOperation.mem_all` the enumeration is now tied to the type,
+and `eraseDups` makes the "distinct" in the sentence above a checked word rather
+than a claim resting on `kernelOperationPerCoreNiTheorem_injective` alone. -/
 theorem niStepCoverage_perCore_count :
-    ([ kernelOperationPerCoreNiTheorem .chooseThread
-     , kernelOperationPerCoreNiTheorem .endpointSendDual
-     , kernelOperationPerCoreNiTheorem .cspaceMint
-     , kernelOperationPerCoreNiTheorem .cspaceRevoke
-     , kernelOperationPerCoreNiTheorem .lifecycleRetype
-     , kernelOperationPerCoreNiTheorem .lifecycleRevokeDeleteRetype
-     , kernelOperationPerCoreNiTheorem .notificationSignal
-     , kernelOperationPerCoreNiTheorem .notificationWait
-     , kernelOperationPerCoreNiTheorem .cspaceInsertSlot
-     , kernelOperationPerCoreNiTheorem .schedule
-     , kernelOperationPerCoreNiTheorem .vspaceMapPage
-     , kernelOperationPerCoreNiTheorem .vspaceUnmapPage
-     , kernelOperationPerCoreNiTheorem .vspaceLookup
-     , kernelOperationPerCoreNiTheorem .cspaceCopy
-     , kernelOperationPerCoreNiTheorem .cspaceMove
-     , kernelOperationPerCoreNiTheorem .cspaceDeleteSlot
-     , kernelOperationPerCoreNiTheorem .endpointReply
-     , kernelOperationPerCoreNiTheorem .endpointReceiveDualHigh
-     , kernelOperationPerCoreNiTheorem .endpointCallHigh
-     , kernelOperationPerCoreNiTheorem .endpointReplyRecvHigh
-     , kernelOperationPerCoreNiTheorem .storeObjectHigh
-     , kernelOperationPerCoreNiTheorem .setCurrentThread
-     , kernelOperationPerCoreNiTheorem .ensureRunnableHigh
-     , kernelOperationPerCoreNiTheorem .removeRunnableHigh
-     , kernelOperationPerCoreNiTheorem .storeTcbIpcStateAndMessageHigh
-     , kernelOperationPerCoreNiTheorem .storeTcbQueueLinksHigh
-     , kernelOperationPerCoreNiTheorem .cspaceMutateHigh
-     , kernelOperationPerCoreNiTheorem .handleYield
-     , kernelOperationPerCoreNiTheorem .timerTick
-     , kernelOperationPerCoreNiTheorem .syscallDecodeError
-     , kernelOperationPerCoreNiTheorem .syscallDispatchHigh
-     , kernelOperationPerCoreNiTheorem .registerServiceChecked
-     , kernelOperationPerCoreNiTheorem .endpointCallWithDonationHigh
-     , kernelOperationPerCoreNiTheorem .endpointReplyWithReversionHigh
-     , kernelOperationPerCoreNiTheorem .handleInterrupt
-     ]).length = 35 := by rfl
+    (KernelOperation.all.map kernelOperationPerCoreNiTheorem).eraseDups.length = 35 := by
+  decide
 
 /-- SM8.B.5: **whether the operation's own semantics establish the confinement
 premise**, or whether the caller must supply it.
@@ -2557,22 +2530,23 @@ def perCoreConfinementDerived : KernelOperation → Bool
   | .registerServiceChecked => true
 
 /-- SM8.B.5: thirty-one of the thirty-five operations discharge the confinement
-premise from their own semantics; exactly four — the catch-alls — do not. -/
+premise from their own semantics; exactly four — the catch-alls — do not.
+
+**Stated over `KernelOperation.all`** (WS-SM SM8.E.2) for the reason
+`niStepCoverage_perCore_count` is: the thirty-five-element literal this
+replaced could not notice a thirty-sixth operation.  The complement is stated
+too, so the two numbers are checked against the same enumeration rather than
+against each other's arithmetic. -/
 theorem perCoreConfinementDerived_count :
-    (([ KernelOperation.chooseThread, .endpointSendDual, .cspaceMint,
-        .cspaceRevoke, .lifecycleRetype, .lifecycleRevokeDeleteRetype,
-        .notificationSignal, .notificationWait, .cspaceInsertSlot,
-        .schedule, .vspaceMapPage, .vspaceUnmapPage, .vspaceLookup,
-        .cspaceCopy, .cspaceMove, .cspaceDeleteSlot,
-        .endpointReply, .endpointReceiveDualHigh, .endpointCallHigh,
-        .endpointReplyRecvHigh, .storeObjectHigh, .setCurrentThread,
-        .ensureRunnableHigh, .removeRunnableHigh,
-        .storeTcbIpcStateAndMessageHigh, .storeTcbQueueLinksHigh,
-        .cspaceMutateHigh, .handleYield, .timerTick,
-        .syscallDecodeError, .syscallDispatchHigh,
-        .registerServiceChecked,
-        .endpointCallWithDonationHigh, .endpointReplyWithReversionHigh,
-        .handleInterrupt ]).filter perCoreConfinementDerived).length = 31 := by decide
+    (KernelOperation.all.filter perCoreConfinementDerived).length = 31 := by decide
+
+/-- SM8.B.5: …and exactly four do not, so the split is total over the
+enumeration.  A future operation added to `KernelOperation.all` without a
+`perCoreConfinementDerived` arm cannot compile; one added *with* an arm moves
+one of these two counts. -/
+theorem perCoreConfinementNotDerived_count :
+    (KernelOperation.all.filter (fun op => !perCoreConfinementDerived op)).length = 4 := by
+  decide
 
 /-- SM8.B.5 (per-core coverage): every `KernelOperation` has a witnessing
 per-core non-interference step — one that is boot-core-confined **and** whose

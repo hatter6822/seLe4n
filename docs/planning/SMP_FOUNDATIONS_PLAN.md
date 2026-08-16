@@ -10,7 +10,7 @@
 ## 1. Phase goal
 
 SM0 lays the **foundational types, build-time anchors, and
-documentation-honesty patches** that the larger phases (SM1..SM9)
+documentation-honesty patches** that the larger phases (SM1..SM10)
 depend on. No runtime behavioral change yet; no SMP activation;
 the v0.31.3 release boots single-core just as v0.31.2
 does today.
@@ -543,7 +543,7 @@ the IN-FLIGHT status with WS-SM:
 
 - **WS-SM SMP multi-core completion (v0.31.3 [SM0 LANDED] → v1.0.0)**:
   Unified workstream merging WS-RC's remaining R6..R14 phases
-  with the SMP-specific SM-phases (SM0..SM9). Closes at v1.0.0
+  with the SMP-specific SM-phases (SM0..SM10). Closes at v1.0.0
   with a bootable verified SMP microkernel on Raspberry Pi 5.
   Plan: docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md.
   Decisions (binding): per-object RW fine locks; path-a Vector
@@ -616,8 +616,8 @@ is reviewed):**
 | R10 | (To be reviewed) | SM6 |
 | R11 | (To be reviewed) | SM6 / SM7 |
 | R12 | (To be reviewed) | SM8 |
-| R13 | (To be reviewed) | SM9 |
-| R14 | (To be reviewed) | SM9 |
+| R13 | (To be reviewed) | SM10 |
+| R14 | (To be reviewed) | SM10 |
 
 **Process**: SM0.Q.1 is to OPEN the absorption mapping work.
 The detailed per-phase mapping happens during SM0.Q.1's PR,

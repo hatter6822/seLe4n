@@ -63,6 +63,15 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId)
 -- (`withLockSet_preserves_projection`).  What it *does* add is the
 -- lock-contention timing channel §2 registers as CC-5.
 --
+-- **WS-SM SM8.E.3 promoted that entry into the canonical list**, which is why
+-- the per-core boundary below no longer appends it: it is the canonical
+-- boundary followed by the live cross-core wrappers, and `withLockSet` reaches
+-- it through the canonical prefix.  The promotion was deliberately deferred to
+-- SM8.E so the canonical count moved exactly once — see
+-- `enforcementBoundary_classifies_withLockSet` and
+-- `enforcementBoundaryPerCore_classifies_withLockSet_once`, which are what
+-- keep "promoted, not duplicated" a checked fact rather than a comment.
+--
 -- The plan's SM8.B.6 figure ("23 entries") was written against the `v0.31.2`
 -- audited cut.  The live canonical boundary's size is **not restated here** —
 -- read `enforcementBoundaryExtended_count`, and this list's own size
@@ -70,13 +79,10 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId)
 -- goes stale the first time the boundary grows without a comment edit, which is
 -- what happened to this sentence (it read "38 entries" through the WS-SM SM8.C
 -- expansion) and to `enforcementBoundary`'s own docstring before it.  The
--- per-core list is the canonical one plus the 2PL bracket and the cross-core
--- wrappers; `enforcementBoundaryPerCore_is_complete_crossCore` is what pins the
--- relationship, rather than a pair of numbers a reader must compare.
--- This module deliberately introduces a *separate* list rather than
--- editing the canonical one: SM8.E.3 is the sub-task that promotes the entry
--- into `enforcementBoundary` itself, and doing it here would move a count that
--- SM8.E has still to reconcile.
+-- per-core list is the canonical one (which now carries the 2PL bracket) plus
+-- the cross-core wrappers; `enforcementBoundaryPerCore_is_complete_crossCore`
+-- is what pins the relationship, rather than a pair of numbers a reader must
+-- compare.
 
 /-- SM8.B.6: **the operations the live SMP dispatch actually reaches**, for the
 syscalls whose arm SM6 re-routed through a cross-core wrapper.
@@ -139,41 +145,44 @@ def crossCoreEnforcementEntries : List EnforcementClass :=
   -- against the wrong core and thrown away is a defect waiting for a consumer.
   , .capabilityOnly "setThreadCpuAffinityOnCore" ]
 
-/-- SM8.B.6: the SMP enforcement boundary — the canonical classification, the
-two-phase-locking bracket the per-object lock discipline introduces, and the
-fifteen live cross-core wrappers.
+/-- SM8.B.6: the SMP enforcement boundary — the canonical classification (which
+since SM8.E.3 carries the two-phase-locking bracket the per-object lock
+discipline introduces) and the fifteen live cross-core wrappers.
 
 The canonical entries are **kept**, not replaced: the boot-pinned
 `syscallDispatchInner` still reaches the single-core wrappers, so both surfaces
 are live and both must be classified. -/
 def enforcementBoundaryPerCore : List EnforcementClass :=
-  enforcementBoundaryExtended ++ [.capabilityOnly "withLockSet"] ++ crossCoreEnforcementEntries
+  enforcementBoundaryExtended ++ crossCoreEnforcementEntries
 
-/-- SM8.B.6: the per-core boundary has 55 entries — the live canonical 39, the
-2PL bracket, and the fifteen cross-core wrappers.  Re-anchored at the SM8.A cut,
-in the fourth review round, again in rounds 10 and 12 as the `.send`, resume and
-architecture arms joined the cross-core surface, and in round 37 as the routing
-gate found `.tcbSetAffinity`.  `enforcementBoundaryExtended_count` is the
-authority for the base figure and this theorem for the total; the sentence above
-is worth what they are worth, and round 38 caught it stale at 53 one commit
-after the theorem moved. -/
+/-- SM8.B.6: the per-core boundary has 55 entries — the live canonical 40 (39
+plus the 2PL bracket SM8.E.3 promoted into it) and the fifteen cross-core
+wrappers.  Re-anchored at the SM8.A cut, in the fourth review round, again in
+rounds 10 and 12 as the `.send`, resume and architecture arms joined the
+cross-core surface, and in round 37 as the routing gate found `.tcbSetAffinity`.
+`enforcementBoundaryExtended_count` is the authority for the base figure and
+this theorem for the total; the sentence above is worth what they are worth, and
+round 38 caught it stale at 53 one commit after the theorem moved.
+
+The total is **unchanged** by the SM8.E.3 promotion, which is the point of
+appending the bracket last in the canonical list: the entry moved between two
+definitions and this list is the identical 55 it already was. -/
 theorem enforcementBoundaryPerCore_count : enforcementBoundaryPerCore.length = 55 := by rfl
 
 /-- SM8.B.7 (completeness, part 1): the per-core boundary **extends** the
-canonical one — it is the canonical list followed by the 2PL bracket and the
-fifteen live cross-core wrappers, so no existing classification was dropped or
-reclassified in the lift.  Additive by construction: `List.IsPrefix` is the
-statement that the canonical list survives unmodified as a prefix. -/
+canonical one — it is the canonical list followed by the fifteen live cross-core
+wrappers, so no existing classification was dropped or reclassified in the lift.
+Additive by construction: `List.IsPrefix` is the statement that the canonical
+list survives unmodified as a prefix. -/
 theorem enforcementBoundaryPerCore_extends_canonical :
-    enforcementBoundaryPerCore
-      = enforcementBoundary ++ ([.capabilityOnly "withLockSet"] ++ crossCoreEnforcementEntries) :=
+    enforcementBoundaryPerCore = enforcementBoundary ++ crossCoreEnforcementEntries :=
   rfl
 
 /-- SM8.B.7: and the canonical list is a genuine prefix, so nothing in it moved
 position either — the form a reader can use without unfolding the append. -/
 theorem enforcementBoundary_prefix_of_perCore :
     enforcementBoundary <+: enforcementBoundaryPerCore :=
-  ⟨[.capabilityOnly "withLockSet"] ++ crossCoreEnforcementEntries, rfl⟩
+  ⟨crossCoreEnforcementEntries, rfl⟩
 
 /-- SM8.B.7 (completeness, part 2): every `SyscallId` still maps to an entry
 present in the per-core boundary.
@@ -293,11 +302,47 @@ theorem enforcementBoundaryPerCore_crossCore_classes_match :
         | some (.readOnly _), some (.readOnly _) => true
         | _, _ => false)) = true := by decide
 
-/-- SM8.B.7 (completeness, part 3): the entry SMP adds is genuinely new — the
-canonical boundary does not already classify `withLockSet`, so the count really
-does go up by one and the extension is not a silent duplicate. -/
-theorem enforcementBoundaryPerCore_entry_is_new :
+/-- SM8.E.3 (completeness, part 3 — **the promoted entry**): the canonical
+boundary now classifies the 2PL bracket, and classifies it capability-only.
+
+Replaces `enforcementBoundaryPerCore_entry_is_new`, which asserted the opposite
+(that the canonical list did *not* carry `withLockSet`) and was true only for as
+long as the promotion was outstanding.  Retiring it rather than weakening it is
+the point: the negative said "the extension is not a silent duplicate", and
+after SM8.E.3 that property is carried by
+`enforcementBoundaryPerCore_classifies_withLockSet_once` below, which is the
+statement a duplicate would actually break.
+
+The `.capabilityOnly` pattern is written into the check rather than tested
+separately, so a promotion that filed the bracket policy-gated — asserting the
+bracket consults a flow policy, which it does not — fails here. -/
+theorem enforcementBoundary_classifies_withLockSet :
     enforcementBoundary.any (fun ec =>
+      match ec with
+      | .capabilityOnly n => n == "withLockSet"
+      | _ => false) = true := by decide
+
+/-- SM8.E.3 (completeness, part 3b — **promoted, not duplicated**): the bracket
+is classified exactly **once** across the whole per-core boundary.
+
+The load-bearing half of the promotion.  `enforcementBoundaryPerCore` used to
+append the entry itself; had SM8.E.3 added it to the canonical list without
+removing that append, the per-core list would carry it twice — two entries a
+future edit could reclassify inconsistently, with no gate noticing.  Counting
+occurrences is the check that a membership test cannot make. -/
+theorem enforcementBoundaryPerCore_classifies_withLockSet_once :
+    (enforcementBoundaryPerCore.filter (fun ec =>
+      match ec with
+      | .policyGated n | .capabilityOnly n | .readOnly n => n == "withLockSet")).length
+      = 1 := by decide
+
+/-- SM8.E.3 (completeness, part 3c): and the single occurrence lives in the
+**canonical prefix**, not among the cross-core wrappers — so a consumer that
+reads only `enforcementBoundary` (the boot-pinned single-core surface) sees the
+bracket too.  Stated as a `¬`-conjunct rather than by position, because a later
+append to `crossCoreEnforcementEntries` must not be able to satisfy it. -/
+theorem crossCoreEnforcementEntries_omits_withLockSet :
+    crossCoreEnforcementEntries.any (fun ec =>
       match ec with
       | .policyGated n | .capabilityOnly n | .readOnly n => n == "withLockSet") = false := by
   decide

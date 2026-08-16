@@ -4265,7 +4265,7 @@ branch is dead.  The live branch defers to the base theorem below; the gated
 branch changes no state at all (`priorityRescheduleEnqueueOnly_state`), so the
 projection is `hMid` unchanged.  The `hReschedProj` witness is still required —
 it is what the live branch consumes, and dropping it would make the theorem
-weaker the moment SM9.E flips the constant. -/
+weaker the moment SM10.E flips the constant. -/
 theorem priorityRescheduleOnCoreLive_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st stMid stFinal : SystemState) (running? : Option SeLe4n.Kernel.Concurrency.CoreId)

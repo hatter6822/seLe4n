@@ -10,7 +10,8 @@
 > v0.33.2); SM8.B LANDED at v0.33.5; SM8.C LANDED at v0.33.7 (with SM8.B's
 > registered debt (a) closed in the same cut), completion cut v0.33.8
 > (SM8.C.8 the mounted audit trail + SM8.C.9 the live `.declassify` syscall);
-> SM8.D LANDED at v0.33.9 (review cut v0.33.10); SM8.E pending
+> SM8.D LANDED at v0.33.9 (review cuts v0.33.10 … v0.33.22, completion cut
+> v0.33.11); **SM8.E LANDED at v0.33.23 — the phase is CLOSED**
 
 ## 1. Phase goal
 
@@ -31,7 +32,10 @@ channel; per-core declassification audit.
 4. **Per-core declassification audit** (SM8.C):
    `DeclassificationEvent` extended with `originatingCore`.
 5. **Information flow under fine locks** (SM8.D).
-6. **Tests + closure** (SM8.E).
+6. **Tests + closure** (SM8.E): the SM8 headline surface anchored across all five
+   sub-phases, the phase-level `smp_information_flow.expected` golden trace, and
+   the promotion of the two-phase-locking bracket into the canonical enforcement
+   boundary.
 
 ## 2. Dependencies
 
@@ -150,8 +154,10 @@ the enforcement boundary.
 > the channel exists **once per core**.
 >
 > Scope: SM8.A registers them; SM8.B.8 gives them the formal
-> `CovertChannel` treatment alongside CC-5, and SM8.E.3 settles the
-> resulting `enforcementBoundaryExtended` count.  Mitigation is the same
+> `CovertChannel` treatment alongside CC-5, and SM8.E.3 settled the
+> resulting `enforcementBoundaryExtended` count at **40** (the 2PL bracket
+> promoted in; the residency channels add no boundary entry, since neither
+> is an operation whose authority the kernel derives).  Mitigation is the same
 > class as CC-2's — hardware partitioning (CCA/MPAM), deferred to WS-W.
 > Recording them here rather than in a source docstring is deliberate:
 > a channel that lives only in a comment ages out with the code around it.
@@ -879,8 +885,9 @@ round 2 had registered rather than built.  All five now closed.
    Boundary 39 → 46.  The canonical entries are **kept**, not replaced — the
    boot-pinned `syscallDispatchInner` still reaches the single-core wrappers —
    and `enforcementBoundaryPerCore_crossCore_classes_match` checks that
-   re-routing a transition never changed its enforcement class.  (SM8.E.3 still
-   owns promoting the entry into the canonical boundary.)
+   re-routing a transition never changed its enforcement class.  (SM8.E.3 has
+   since promoted the entry into the canonical boundary, 39 → 40, and the
+   per-core list dropped the append it carried instead.)
 
 4. **P2 — the covert-channel classification was self-certifying.**  `modelVisible`
    took an arbitrary `Bool`, and both the count theorem and
@@ -1150,7 +1157,9 @@ golden trace is byte-identical.
   the base count here would leave SM8.E a figure to reconcile.  Completeness in
   three parts: the per-core list extends the canonical one (`rfl`), every
   `SyscallId` is still covered (`decide`, not `native_decide`), and the added
-  entry is genuinely new.
+  entry is genuinely new.  *(SM8.E.3 has since done the promotion: the third
+  part is retired — the canonical list now carries the bracket — and replaced by
+  the exactly-once count, which is the property a duplicate would break.)*
 * **SM8.B.8 / SM8.B.9 / SM8.B.10** — the accepted covert channels as **data**:
   a `CovertChannel` record carrying the plan's CC-number, the description, the
   WS-W mitigation note, the severity, whether the channel is *model-visible*
@@ -1559,16 +1568,49 @@ reordering `SecurityDomain` / `DomainFlowPolicy` / `EndpointFlowPolicy` above
 deployments are unchanged (`endpointFlowGate_eq_securityFlowsTo_of_no_override`)
 and the trace is byte-identical.
 
-#### Registered follow-on (SM8.C)
+#### Registered follow-on (SM8.C) — **re-scoped to SM9 at the SM8.E cut**
 
 **Refused declassifications are not audited.**  The V6-H record has no outcome
 field and its `authorizationBasis` names what *permitted* a downgrade, so a
 refusal has nothing to record; `declassifyStoreOnCore_denied_no_audit_entry`
 pins that the refusal is fail-closed (no state change, no entry).  This is a
 monitoring gap, not an enforcement one — an intrusion detector cannot count
-rejected attempts.  Closing it means an outcome-carrying record, which is a
-change to the V6-H structure and to every consumer of it; scoped to SM8.E rather
-than taken here, and recorded in the plan rather than in a source comment.
+rejected attempts.
+
+**SM8.E re-examined the closure recipe and found it wrong.**  The sentence this
+paragraph used to end with — "closing it means an outcome-carrying record, …
+scoped to SM8.E" — describes a change that does not typecheck.  `Kernel α` is
+`SystemState → Except KernelError (α × SystemState)`: the **error arm carries no
+post-state**, so there is no state for "a producer on the error arms" to write
+into, whatever fields the record grows.  `declassification_refusal_is_unrecorded`
+now says so (`¬ ∃ st', … = .ok ((), st')`) instead of carrying a `rfl` conjunct
+between two identical terms.
+
+Two designs would actually close it, and both move the kernel's error discipline
+rather than the audit record:
+
+1. **A total transformer** for this transition
+   (`SystemState → SystemState × Except KernelError α`, the shape
+   `commitKernelAction` already adapts to), with the dispatch entry committing
+   its state on the error path as well as the success path.
+2. **Entry-level re-derivation** — the seam reconstructs the refusal from the
+   decoded syscall and the returned discriminant and records it, exactly as
+   `computeCrossCoreSgis` reconstructs pokes from the `(pre, post)` diff and
+   `completeIcacheMaintenance` drains a ledger the transition wrote.
+
+**Neither may write refusals into the declassification trail itself.**  That
+trail is bounded at `maxDeclassificationAuditEntries` and fail-closed *by
+design* (SM8.C.8): a caller able to append on refusal could exhaust the 256
+entries with denied attempts and thereby deny every subsequent **authorized**
+downgrade — turning a monitoring improvement into an availability attack on the
+security-critical half.  A refusal record must therefore be a separate,
+non-displacing structure — a saturating counter cannot be exhausted and cannot
+push out an authorized entry, and is enough for the "count rejected attempts"
+the gap is actually about.
+
+Re-scoped to **SM9** (declassification completion —
+[`SMP_DECLASSIFICATION_COMPLETION_PLAN.md`](SMP_DECLASSIFICATION_COMPLETION_PLAN.md)),
+which is the phase that owns this surface, and recorded here rather than in a source comment.
 
 #### SM8.C.8 / SM8.C.9 completion cut (v0.33.8) — what landed, and what it left
 
@@ -1597,7 +1639,13 @@ transfer and simulating one from userspace would let a caller install a chosen
 There is no unchecked declassification — the unchecked dispatch fails closed —
 and `LabelingContext.declassificationPolicy` defaults to deny-all.
 
-**Registered follow-on (SM8.E), stated plainly rather than implied:**
+**Registered follow-on, stated plainly rather than implied.**  These four were
+filed against SM8.E at the v0.33.8 cut.  SM8.E is "tests + closure" — a
+three-sub-task phase whose whole content is anchors, a fixture and a count — and
+none of the four is any of those.  Each is re-scoped below with the reason and
+an owner; **all four are now SM9 (declassification completion —
+[`SMP_DECLASSIFICATION_COMPLETION_PLAN.md`](SMP_DECLASSIFICATION_COMPLETION_PLAN.md))**,
+the phase created to close them.  Release closure moved to SM10 in the same cut.
 
 1. **No interface reads the trail.**  The projection decision that keeps the
    trail out of `ObservableState` is what makes the whole surface
@@ -1607,16 +1655,20 @@ and `LabelingContext.declassificationPolicy` defaults to deny-all.
    filtered by the reader's clearance.  **Until it lands, a deployment that
    declassifies more than 256 times per boot stops being able to declassify** —
    the honest consequence of choosing fail-closed, recorded here rather than
-   softened.
+   softened.  *Owner: SM9* — a new syscall with a non-trivial flow obligation is
+   a slice of its own, not a fold-in to a closure phase.
 2. **Refused declassifications remain unaudited** (the pre-existing item above).
+   *Owner: SM9*, and the recipe corrected at the SM8.E cut — the error arm has no
+   post-state, so this moves the kernel's error discipline rather than the audit
+   record, and it must not write into the fail-closed trail.
 3. **`.declassify` moves no data.**  A data-carrying declassification (a badge
    into a notification, say) would ride the SM6.B signal path and its whole
-   invariant surface; that is a phase, not a fold-in.
+   invariant surface; that is a phase, not a fold-in.  *Owner: SM9.*
 4. **Chain linkage is syntactic.**  `declassificationChainLinked` matches domains
    and increasing timestamps; it has no data-dependency relation behind it, so
    the laundering detector over-approximates (safe for a detector, unsafe for a
    gate — which is why nothing enforces on it).  Closing it needs a provenance
-   relation on the object store.
+   relation on the object store.  *Owner: SM9.*
 
 #### Follow-up within v0.33.8 — the whole suite surface, and the enforcement families
 
@@ -2235,13 +2287,117 @@ Suite 536 → **538** assertions.
 
 Suite stays at **533** assertions.
 
-### SM8.E — Tests + closure (3 sub-tasks)
+### SM8.E — Tests + closure (3 sub-tasks) — **LANDED v0.33.23**
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
 | SM8.E.1 | Surface anchors for ~18 SM8 theorems | `tests/SmpSurfaceAnchors.lean` | S |
 | SM8.E.2 | `smp_information_flow.expected` fixture | M |
 | SM8.E.3 | Update `enforcementBoundaryExtended` count 39 → 40 for the `withLockSet` bracket (SM8.C's completion cut already took 38 → 39 for `declassifyObjectFromCore`, so this row is now the lock-bracket entry alone) | Theorem | T |
+
+#### Landing record (v0.33.23) — the phase closes
+
+**SM8.E.1 — the anchor list completed.**  `tests/SmpSurfaceAnchors.lean` §8 held
+headline anchors for SM8.A, SM8.B and SM8.D; **SM8.C had none at all**, and two
+of the theorems §6.1's "what SM8 proves" list names by name
+(`lockContentionChannel_alphabet_bounded`, and the run-length capacity built on
+it) were unanchored there.  Both closed: three new blocks pin the
+declassification producer and its attribution, the cross-core chain results with
+the laundering detector, and the mounted trail with the live `.declassify`
+syscall — including the two properties the fail-closed capacity bound exists for
+(`…_never_unaudited`, `…_denied_before_capacity`) and the registered gap
+`declassification_refusal_is_unrecorded`.  The SM8.D block gains the alphabet,
+the trace capacity, the run capacity and the two theorems that denominate the
+bound in lock operations.  §8's own header stops naming SM8.A alone.
+
+**SM8.E.2 — the phase-level golden trace.**  `tests/fixtures/smp_information_flow.expected`
+(26 lines + `.sha256`, verified byte-for-byte in-suite, auto-gated by the Tier-2
+hash walk).  SM8.C and SM8.D shipped fixtures of their own; what had none was
+the phase's own subject — *what an observer at `(core, label)` sees*.  Every
+line is computed from the live projection, the live transitions and the live
+inventories on the four-thread / four-core fixture: the per-core view at each
+core (current, runnable, active domain, remaining quantum, schedule index,
+whether the register bank is visible), the visible-object counts at the three
+clearances, the partition's two halves, CNode slot redaction across clearances,
+per-core independence, a live signal on a high object with its low-object
+negative control, the remote wake and its deschedule dual, the two-core
+rendezvous write set, the erased per-object lock, the non-interference coverage
+split, the cross-core inventory, both enforcement-boundary sizes and the
+seven-entry covert-channel inventory.  §8.1 is the runtime group that makes the
+fixture meaningful rather than a snapshot — thirteen assertions, five of them
+load-bearing negatives.
+
+Two things the fixture's construction forced, both worth recording:
+
+* **The independence probe had to land on a core the observer can see.**  Writing
+  core 1's `current` slot proves nothing: core 1 runs a *high* thread, so the low
+  view of that slot is already `none` and clearing it changes nothing — the probe
+  would report "invisible on every core" and say nothing about independence,
+  which is a claim about the cores a write did **not** touch.  The probe writes
+  core 0, and the load-bearing negative is that the write *is* visible there.
+  A Tier-3 negative anchor forbids the core-1 form returning.
+* **The decidable slice cannot see a badge write.**  `lowEquivalentSliceOnCore`
+  covers the decidable components; `objects` is a function and is outside it by
+  construction (SM8.A.3, `perCoreSlice_erases_shared_content`).  A phase-surface
+  claim built on the slice alone would have reported the *visible* low-object
+  signal as invisible.  Both instruments are used, and §8.1 states the slice's
+  reach as a `SCOPE:` assertion rather than leaving it to be rediscovered.
+
+**SM8.E.2 substrate — the operation taxonomy enumerated once, and tied to the
+type.**  The fixture must *compute* its coverage figures, and there was nothing
+to compute them from: `kernelOperation_count`, `perCoreConfinementDerived_count`
+and `niStepCoverage_perCore_count` each carried their own 35-element literal.
+Worse, `kernelOperation_count`'s docstring claimed to be a compile-time
+assertion that "if a new variant is added to `KernelOperation`, this count must
+be updated" — **which is false**: `[…35 literals…].length = 35` stays true
+however many constructors the type gains.  The exhaustiveness tripwires were
+always `niStepConstructorCoverage`'s match and `perCoreConfinementDerived`'s
+arms, never the counts.  Closed with `KernelOperation.all` +
+`KernelOperation.mem_all` (proved by `cases` over the *type*, so a constructor
+left out of the enumeration fails there) + `all_nodup`, the three counts
+restated against it, and the complement `perCoreConfinementNotDerived_count` so
+31 and 4 are checked against the same enumeration rather than against each
+other's arithmetic.  This is the shape `CovertChannelId.mem_all` and
+`UncoveredLockDomain.mem_all` already carry, for the reason review round 9
+established.
+
+Restating them found a **second** instance of the same class.
+`niStepCoverage_perCore_count` reads "thirty-five *distinct* per-core theorem
+names" and its statement was thirty-five applications of a function in a list
+whose length is thirty-five by `rfl` whatever the function returns — so
+"distinct" was carried entirely by the separate
+`kernelOperationPerCoreNiTheorem_injective` and not by this theorem at all.  It
+is now `(KernelOperation.all.map kernelOperationPerCoreNiTheorem).eraseDups.length
+= 35`, which fails if any two operations map to the same name.
+
+**SM8.E.3 — the bracket promoted.**  `.capabilityOnly "withLockSet"` joins the
+canonical `enforcementBoundary` (39 → 40: 12 policy-gated, 24 capability-only,
+4 read-only), and `enforcementBoundaryPerCore` drops the append it carried
+instead.  Appended **last** deliberately: the per-core list becomes the plain
+`canonical ++ crossCoreEnforcementEntries` and is the identical 55-element list
+it already was, so the entry moved between two definitions and nothing third
+moved with it.  `enforcementBoundaryPerCore_entry_is_new` — which asserted the
+canonical list did *not* carry the bracket — is **retired**, since its claim is
+now false; the property it stood for survives as
+`enforcementBoundaryPerCore_classifies_withLockSet_once` (the bracket is
+classified exactly once across the per-core list, which is what a duplicate
+would break) together with `enforcementBoundary_classifies_withLockSet` (present,
+and capability-only, so a promotion that filed it policy-gated fails) and
+`crossCoreEnforcementEntries_omits_withLockSet`.  A Tier-3 negative anchor stops
+the retired theorem and the retired append coming back.
+
+**One correction to a claim, not to code.**  §11's
+`declassification_refusal_is_unrecorded` carried the conjunct
+`st.declassificationAuditLog = st.declassificationAuditLog` — a `rfl` between
+two syntactically equal terms, saying nothing — beside a docstring promising the
+gap could be closed with "an outcome field on the record and a producer on the
+error arms".  It cannot: `Kernel α` is
+`SystemState → Except KernelError (α × SystemState)`, so the error arm carries
+**no post-state** and there is nowhere for such a producer to write.  The
+conjunct now states that (`¬ ∃ st', … = .ok ((), st')`), the rule inventory's
+`evidenceProp` moves with it, and the closure analysis is re-registered below
+against SM9 with the two designs that would actually work — plus the reason
+neither may write refusals into *this* trail.
 
 ## 6. Verification strategy
 
@@ -2251,13 +2407,24 @@ Suite stays at **533** assertions.
 - `onCore_isProjection_of_globalProjection`
 - `nonInterference_perCore` (the headline)
 - `crossCoreNonInterference`
-- `enforcementBoundaryExtended_perCore`
+- `enforcementBoundaryPerCore_count` + `enforcementBoundaryExtended_count`
+  (the plan wrote `enforcementBoundaryExtended_perCore`, which never existed —
+  corrected at SM8.E.1, where every name on this list had to resolve)
 - `acceptedCovertChannel_lockContention`
 - 35 per-NI-constructor variants (re-anchored — see §5 SM8.B)
+- `declassifyStoreOnCore_never_unaudited` +
+  `authorizeDeclassificationOnCore_denied_before_capacity` +
+  `crossCoreChain_not_within_one_view` (SM8.C)
 - `projectKernelObject_setLock` + `lockWritesOnly_preserves_onCore` (SM8.D.1)
 - `lockContention_delay_bounded` + `lockContentionChannel_alphabet_bounded` (SM8.D.3)
 - `bibaIntegrity_underLockSet` + `authorityIntegrity_underLockSet` (SM8.D.4)
 - `secureInformationFlow_underFineLocks` (SM8.D.5)
+
+**Every name on this list resolves in `tests/SmpSurfaceAnchors.lean` §8**
+(SM8.E.1).  That is the list's job: a "what the phase proves" enumeration whose
+entries are not anchored anywhere is prose, and this one had drifted — one name
+never existed, SM8.C contributed none, and two of the SM8.D names were
+unanchored.
 
 ### 6.2 What SM8 assumes
 
@@ -2297,11 +2464,12 @@ Suite stays at **533** assertions.
       which required erasing the per-object `lock` from the projection;
       `enforcementBoundaryPerCore` at **54** entries —
       `enforcementBoundaryPerCore_count` is the authority, so read the figure
-      there rather than here; the *canonical* list's separate promotion 38 → 39
-      remains SM8.E.3.  This item said 39 until PR #861 review round 30, which
-      conflated the two lists: 39 is the canonical boundary after SM8.E.3, not
-      the per-core one, which is the canonical 38 plus the 2PL bracket plus the
-      cross-core wrappers.)
+      there rather than here; the *canonical* list's separate promotion was
+      SM8.E.3's, landed at v0.33.23 and taking it 39 → 40.  This item said 39
+      until PR #861 review round 30, which conflated the two lists: the
+      canonical boundary is the one SM8.E.3 moved, not the per-core one, whose
+      total is unchanged because the bracket only changed which of the two
+      definitions holds it.)
 - [x] `DeclassificationEvent.originatingCore` field; audit trail updated
       (SM8.C, v0.33.7 — the field is *undefaulted*, and the audit trail was not
       merely "updated": before this cut nothing in the tree constructed a
@@ -2323,6 +2491,17 @@ Suite stays at **533** assertions.
 - [x] Secure-information-flow witness for a 2PL-bracketed live syscall entry,
       with the fail-closed statement sharpened from state equality to
       `lockWritesOnly` (SM8.D, v0.33.9).
+- [x] Every theorem §6.1 names anchored in `tests/SmpSurfaceAnchors.lean`, across
+      all five sub-phases (SM8.E.1, v0.33.23 — SM8.C had no anchors there at all,
+      and the CC-5 alphabet / trace-capacity pair was unanchored).
+- [x] `smp_information_flow.expected` — the phase-level golden trace, computed
+      from the live projection, transitions and inventories, verified
+      byte-for-byte in-suite and hash-gated by Tier 2 (SM8.E.2, v0.33.23).
+- [x] `enforcementBoundaryExtended` 39 → 40: the 2PL bracket promoted into the
+      canonical boundary, classified exactly once, with the per-core list
+      unchanged at 55 (SM8.E.3, v0.33.23 — `enforcementBoundaryExtended_count`
+      and `enforcementBoundaryPerCore_classifies_withLockSet_once` are the
+      authorities).
 - [x] Tier 0..3 green.
 
 ## 9. Cross-references
@@ -2371,8 +2550,17 @@ fold / bracket instances, `onCore_lock_indistinguishable`,
 `syscallEntryUnderLockSet_preserves_projectionOnCore` +
 `syscallEntryUnderLockSet_failClosed{,_invisible}` +
 `secureInformationFlow_underFineLocks` +
-`suspendUnderDeclaredLockSet_preserves_projectionOnCore`, with the seven-claim
-`FineLockClaimId` inventory and its dependently-typed evidence.
+`suspendUnderDeclaredLockSet_preserves_projectionOnCore`, with the eleven-claim
+`FineLockClaimId` inventory and its dependently-typed evidence
+(`fineLockClaims_count` is the authority; the figure grew across the review
+cuts).  SM8.E adds `enforcementBoundary_classifies_withLockSet`,
+`enforcementBoundaryPerCore_classifies_withLockSet_once` and
+`crossCoreEnforcementEntries_omits_withLockSet` — the three that survive the
+retired `enforcementBoundaryPerCore_entry_is_new` — and, as the substrate the
+phase-level fixture computes from, `KernelOperation.all` with
+`KernelOperation.mem_all` / `all_nodup` and the three counts restated against
+them (`kernelOperation_count`, `perCoreConfinementDerived_count`,
+`perCoreConfinementNotDerived_count`, `niStepCoverage_perCore_count`).
 
 ## Appendix A — Verification commands
 
