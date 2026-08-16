@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/sm8e-tests-closure-uvrjam",
-      "commit_sha": "63fdb85aa118f28ff84ee98bb347c9f13eacd937",
-      "tree_sha": "b528256713fd79a5b2c8e2c514ca7cc5d9d7153b",
-      "committed_at_utc": "2026-08-15T13:24:00-04:00"
+      "commit_sha": "dc34ee1127e816e605943365e392497e8eff7a14",
+      "tree_sha": "dbfbde11950a755845c36ba0f29b1c291f21fa42",
+      "committed_at_utc": "2026-08-15T18:54:19+00:00"
     }
   },
   "source_sync": {
@@ -17,14 +17,14 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "cf5c7674e3d4baa5e5cbbfcfcdc15b7429ea97ab693b9af947ca01f4d062eb06"
+    "source_digest": "e48c93640d6d89949c2fe7161769991018381ab12e4c2e1d9166a651dda45e07"
   },
   "summary": {
     "module_count": 346,
     "declaration_count": 15691
   },
   "readme_sync": {
-    "version": "0.33.23",
+    "version": "0.33.24",
     "lean_toolchain": "v4.28.0",
     "production_files": 278,
     "production_loc": 265155,

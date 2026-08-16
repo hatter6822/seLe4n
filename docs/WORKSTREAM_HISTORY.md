@@ -730,7 +730,7 @@ state LANDED (v0.32.72); completion cut (v0.32.73); audit cut
 **SM7.E tests + fixtures (v0.32.103) — the SM7 closure phase (plan §5
 SM7.E).**  SM7.E.1 and SM7.E.2 had already landed alongside SM7.A/SM7.B
 (the aggregate `tests/SmpTlbShootdownSuite.lean`; the Tier-4-registered
-`scripts/test_qemu_smp_shootdown.sh`, which SKIPs until the SM9.E bootable
+`scripts/test_qemu_smp_shootdown.sh`, which SKIPs until the SM10.E bootable
 image).  This cut lands E.3–E.6.
 
 **The model gap the test work surfaced — and closed rather than
@@ -777,7 +777,7 @@ retirement in flight together — each core's drain retires exactly *its*
 queue, so the ASID round's initiator keeps the three translations it never
 queued (a blanket-flush regression in the handler fails right there).
 Hardware tier: `scripts/test_qemu_smp_shootdown_stress.sh`
-(Tier-4-registered, SKIPs until SM9.E) drives what the pure model cannot —
+(Tier-4-registered, SKIPs until SM10.E) drives what the pure model cannot —
 the real interleaving of the global round lock, the SGI delivery order and
 the `SHOOTDOWN_ACK` handshake under contention — hunting the two plan §7
 risks by name (a round-serialisation break; a round-lock deadlock) with a
@@ -842,7 +842,7 @@ is later torn down stays hittable through *any* later executable mapping of
 the same frame, in *any* address space — the instruction-side twin of the
 SMP-C4 stale-TLB hazard, and one the TLB shootdown cannot close (it retires
 translations, not cache lines).  Latent rather than exploitable today (no
-bootable image until SM9.E), but a real gap in the model and in the HAL
+bootable image until SM10.E), but a real gap in the model and in the HAL
 surface, so the plan's "documentation" framing for D.1–D.3 was superseded per
 the implement-the-improvement rule.
 
@@ -957,7 +957,7 @@ and its failure mode is under-invalidation.
 *Data-side dual.*  Nothing cleans the D-cache to the Point of Unification
 after the kernel writes memory a subject may later execute (`scrubObjectMemory`
 during a re-type, the boot image load).  The emission needs object physical
-extents, which the model does not carry, so it is scoped to SM9.E; what lands
+extents, which the model does not carry, so it is scoped to SM10.E; what lands
 is the obligation as a checked object — `KernelCodeWriteSite` +
 `kernelCodeWriteSites_owe_pou_clean` + the `…_complete` tripwire.
 `Architecture.TlbCacheComposition` promoted staged → production as its
@@ -1011,7 +1011,7 @@ of the frame, in any address space.  seL4's `clearMemory` is `memzero` followed
 by `cleanCacheRange_PoU` for exactly this reason.
 
 Severity **High** once the kernel boots on hardware; not exploitable at
-v0.32.99, since there is no bootable image until SM9.E.  No Lean theorem was
+v0.32.99, since there is no bootable image until SM10.E.  No Lean theorem was
 false — `ICacheState` models no data-cache content, so the model could not see
 the omission.  What was incomplete was the emitted hardware sequence.
 
@@ -1129,7 +1129,7 @@ extent is the untyped allocator's `regionBase + offset`, so on hardware the
 
 *Narrower*: this is not a defect the cache operand introduced.  The operand
 deliberately mirrors the scrub, and the scrub's own hardware gap is
-pre-existing, registered as **AN4-G.3 / LIF-M03**, and owned by AN9/SM9.E.
+pre-existing, registered as **AN4-G.3 / LIF-M03**, and owned by AN9/SM10.E.
 Retargeting the operand on its own would be strictly worse — the clean would
 then name an extent `scrubObjectMemory` does not zero.  They have to move
 together.
@@ -1138,7 +1138,7 @@ together.
 to its new owner still holding the previous owner's **data**, not merely stale
 instruction lines.  That is the more serious half; it lives in the scrub bridge
 rather than the cache seam, and AN4-G.3 is re-labelled High-severity-once-
-bootable with an explicit SM9.E closure target.
+bootable with an explicit SM10.E closure target.
 
 **The genuine weakness in what v0.32.100 shipped.**
 `retypeIcacheOp_cleans_scrub_extent` was described as "an equality between the
@@ -1461,7 +1461,7 @@ Rust mailbox + `publish_*`/`snapshot_*`/`retire_round_ops_in` +
 unit tests (HAL 772 → 780); trace byte-identical.  **(2) Formal
 refinement (NARROWED)**: the handler refines the Lean TLB effect
 operand-for-operand (op-tag decode pinned identical both sides); the
-residual is only the SM9.E linked-runtime proof.  **(3) B.10
+residual is only the SM10.E linked-runtime proof.  **(3) B.10
 (deferred, NO safety gap)**: `asidAllocateWithShootdown` is complete
 and proven but user-unreachable — audit confirms no runtime
 ASID-reuse path exists (`lifecycleRetype` creates fresh ASID-0 roots;
@@ -1547,7 +1547,7 @@ assertions vacuous), `round_lock_try_acquire_in`/`_release_in` + an
 `dispatchSyscall`: CSpace resolution + authority gate + posting +
 fail-closed no-cap / read-only-cap) — 22 groups / 160 runtime
 assertions; SM7.E.2 seeded (`scripts/test_qemu_smp_shootdown.sh`,
-Tier-4-registered, SKIPs until the SM9.E image); the legacy Rust
+Tier-4-registered, SKIPs until the SM10.E image); the legacy Rust
 `dispatch_irq` deprecated (masked-EOI form, tests annotated).
 Golden trace byte-identical; zero sorry/axiom.  Tracked debt
 registered in plan §SM7.B completion cut.  Record: plan §5 SM7.B.
@@ -1645,7 +1645,7 @@ the new-descriptor-only theorem.  Suite 73 → **75 assertions**;
 Tier-3 anchors extended; Rust 750 / clippy / rustfmt green; golden
 trace byte-identical.  Follow-up registered (pre-existing, not
 SM7.A-specific): crate-wide `@[extern] … BaseIO` ↔ `extern "C"` ABI
-conformance audit once a linked runtime path exists (SM9.E).
+conformance audit once a linked runtime path exists (SM10.E).
 
 **PR #838 review P1 (v0.32.75) — offline cores stay acknowledged.**
 The Codex review caught a liveness defect the audit's serialised-regime
@@ -1800,7 +1800,7 @@ decisions, verified byte-for-byte in-suite and auto-gated by
 `test_tier2_trace.sh`'s companion walk.  **SM6.F.5**
 `scripts/test_qemu_smp_ipc.sh`: the Tier-4 QEMU `-smp 4` cross-core IPC
 handshake exerciser (registered in `test_tier4_smp_bootcheck.sh`; SKIPs
-with the formal-coverage banner until the SM9.E bootable kernel-image
+with the formal-coverage banner until the SM10.E bootable kernel-image
 target exists, the SM5-sibling discipline).  **SM6.F.6** surface
 anchors: in-suite `#check` blocks + Tier-3 grep anchors (runner defs,
 Tier-2 wiring, pipeline/trace emitters, fixture + sha256 presence,
@@ -2384,7 +2384,7 @@ Sub-portfolio close-out plans archived to
 - `v0.34.x` (planned) — SM3 (per-object locks) + SM4 (per-core state).
 - `v0.35.x` (planned) — SM5 (per-core scheduler) + SM6 (cross-core IPC).
 - `v0.36.x` (planned) — SM7 (TLB shootdown) + SM8 (info flow under SMP).
-- `v1.0.0` "bootable verified SMP microkernel" — SM9 closure cut.
+- `v1.0.0` "bootable verified SMP microkernel" — SM10 closure cut.
 
 **WS-SM SM1.A LANDED on branch
 `claude/implement-psci-completion-TUW1u`** (v0.31.3 +): PSCI
@@ -4523,7 +4523,7 @@ trace fixture byte-identical (227/227), zero new axioms.
   the disposition partition `_pathARetired_count = 2` /
   `_perCoreBracketGated_count = 6` (only the scheduler-state shape + boot-core
   current are genuinely path-a-retired; the other six are
-  `perCoreBracketGated` pending SM5+).  SM9 adds `smpRetiredInventory_complete`.
+  `perCoreBracketGated` pending SM5+).  SM10 adds `smpRetiredInventory_complete`.
 
 Build-anchored in `Concurrency.Anchors` (SMP-H3) + tier-3 surface +
 `SmpFoundationsSuite` / `ModelIntegritySuite` (both green, 0 fails).  Items

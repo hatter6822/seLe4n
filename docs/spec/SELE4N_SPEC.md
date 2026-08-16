@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.33.23` (`lakefile.toml`) |
+| **Package version** | `0.33.24` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 265,155 across 278 Lean files |
 | **Test LoC** | 55,828 across 68 Lean test suites |
@@ -536,7 +536,7 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
      [`SMP_INFORMATION_FLOW_PLAN.md`](../planning/SMP_INFORMATION_FLOW_PLAN.md)
    WS-SM Phase SM0 (foundations & honesty patches) closes the type-level
    scaffolding (CoreId, LockKind, LockId, SgiKind, SharingDomain,
-   BklState) at v0.31.3; SM1..SM9 wire those types into runtime state.
+   BklState) at v0.31.3; SM1..SM10 wire those types into runtime state.
 
    WS-SM Phase SM1.A (PSCI completion) extends the Rust HAL's PSCI
    surface to the full ARM DEN0022D §5 subset (`cpu_off`,
@@ -2124,7 +2124,7 @@ per-core by the FFI interrupt-disabled dispatch bracket (full cross-core
 retirement gated on SM5+). The honest current disposition is pinned by the
 full partition `smpRetiredInventory_pathARetired_count` (= 2 at SM4.E) /
 `smpRetiredInventory_perCoreBracketGated_count` (= 6) and the size by
-`smpRetiredInventory_count` (= 8); WS-SM SM9 (release closure) flips the
+`smpRetiredInventory_count` (= 8); WS-SM SM10 (release closure) flips the
 gated entries and proves `smpRetiredInventory_complete` once SM5..SM8 land.
 The ledger's per-entry names are build-anchored in `Concurrency.Anchors`
 alongside the latent inventory (closing SMP-H3).
@@ -2653,11 +2653,11 @@ memory is retyped for a different purpose.
 
 **AN4-G.3 (LIF-M03) — Lifecycle: model-vs-hardware scrub bridge.**
 
-> **Severity: High once bootable (SM9.E); not exploitable today.** This is a
+> **Severity: High once bootable (SM10.E); not exploitable today.** This is a
 > *data*-disclosure gap, not merely a stale-cache one. If the scrub does not
 > reach the memory the allocator actually handed out, a re-typed object is
 > handed to its new owner still holding the previous owner's bytes — which is
-> the exact leak `scrubObjectMemory` exists to prevent. Closure target: SM9.E,
+> the exact leak `scrubObjectMemory` exists to prevent. Closure target: SM10.E,
 > with the hardware bridge below. No bootable image exists before then, so
 > there is no reachable exploit at present.
 

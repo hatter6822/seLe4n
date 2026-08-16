@@ -342,7 +342,7 @@ arm runs it** — gated on the restore seam it depends on.
 wrapper chooses between it and `resumeThreadEnqueueOnly`.  Deliberately a
 *wrapper*, for the same reason `scheduleLocalSuccessorLive` is one: folding the
 guard into the transition makes every theorem about it conditional, and those
-theorems are what SM9.E enables rather than has to re-prove.  An earlier cut of
+theorems are what SM10.E enables rather than has to re-prove.  An earlier cut of
 this PR folded it in, collapsed three proofs onto the dead branch and broke
 `SmpPipSuite`'s P2-5 assertion; this is the undo. -/
 def resumeThreadOnCoreLive (st : SystemState) (vtid : SeLe4n.ValidThreadId)

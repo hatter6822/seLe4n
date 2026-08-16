@@ -660,7 +660,7 @@ migrations.
 >   `_perCoreBracketGated_count = 6`.  "All retired" is the ledger's
 >   *purpose* (tracking the retirement of all 8 latent assumptions); per the
 >   honesty corollary only the 2 path-a-genuine entries are
->   `.pathARetired`, the other 6 are `.perCoreBracketGated` pending SM5+.  SM9
+>   `.pathARetired`, the other 6 are `.perCoreBracketGated` pending SM5+.  SM10
 >   adds `smpRetiredInventory_complete` once all are discharged.
 >
 > Build-anchored in `Concurrency.Anchors` (SMP-H3) + tier-3 surface +

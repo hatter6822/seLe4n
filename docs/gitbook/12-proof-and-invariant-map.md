@@ -872,7 +872,7 @@ the executing PE, so the kernel must issue the broadcast variant:
   `dischargesPoUClean`, which is expressed through `covers` so the question is
   answered by the ledger's own preorder); `.bootImageLoad` is not, and the
   theorem pins it as the only remaining site — flipping it breaks the `decide`,
-  so the SM9.E closure cannot land silently
+  so the SM10.E closure cannot land silently
 - `icFetchOnCore` (SM7.D.1) — the hardware instruction fetch filling one core's
   view; an *environment* step, not a kernel transition
 - `icInvalidateOnCore` (SM7.D.1) — `IC IALLU`, whose
@@ -3872,7 +3872,7 @@ ledger** `smpRetiredInventory` (an 8-entry `SmpRetiredAssumption` list
 mirroring `smpLatentInventory` one-to-one by `identifier`, status
 `.pathARetired` for the 2 path-a-retired entries and
 `.perCoreBracketGated` for the 6 gated on SM5+; `_count = 8`,
-`_pathARetired_count = 2`, `_perCoreBracketGated_count = 6`). SM9
+`_pathARetired_count = 2`, `_perCoreBracketGated_count = 6`). SM10
 (release closure) adds `smpRetiredInventory_complete` once all 8 are
 discharged.
 

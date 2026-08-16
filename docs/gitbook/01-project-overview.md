@@ -133,7 +133,7 @@ for per-core attributed boot tracing.  SM1.H wires three QEMU SMP
 integration tests (full `-smp 4` bringup, minimal `-smp 2` smoke
 test, cross-core SGI round-trip) into the tier-4 nightly slot,
 replacing the SM0.T SKIP-only stub.
-SM2..SM9 wire those types and primitives into verified ticket / RW
+SM2..SM10 wire those types and primitives into verified ticket / RW
 lock primitives, per-core scheduler state, cross-core IPC, TLB
 shootdown, info-flow non-interference under SMP, and the v1.0.0
 release closure.  Full plan in

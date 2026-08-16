@@ -1,3 +1,72 @@
+## v0.33.24 — WS-SM SM9 opens: declassification completion, and release closure renumbered to SM10
+
+SM8 closed at v0.33.23 having registered four follow-ons it did not take, all
+provisionally scoped to "SM9".  At the time SM9 meant **release closure** —
+documentation sync, test completion, the version bump and QEMU validation.  That
+phase has no room for kernel work, and all four follow-ons are kernel work.
+
+This cut resolves that: **SM9 is now declassification completion**, and release
+closure moved to **SM10**.  No code behaviour changes; the whole cut is the new
+plan document plus the renumbering it implies.
+
+**New phase plan** —
+`docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md`, 42 sub-tasks across
+~13-16 PRs in five sub-phases:
+
+* **SM9.A** (12 sub-tasks) — a privileged, clearance-filtered **reader and drain**
+  for the mounted audit trail.  Today the trail is write-only and fail-closed at
+  256 entries, so a deployment that performs 256 authorized downgrades stops
+  being able to declassify at all until reboot.  Indexed read rather than a new
+  kernel→user IPC-buffer write path: a syscall returns exactly one 64-bit word
+  (`frame.set_x0` is the whole return channel), and a write path would expand the
+  trusted computing base for throughput a 256-entry trail does not need.  The
+  visible view is a **re-indexed** filtered sublist, so hidden-entry counts
+  cannot leak through index gaps; drain removes the longest prefix the caller can
+  see, so a monitor cleared for every recorded `srcDomain` can always clear it.
+* **SM9.B** (10) — **refusal auditing**: a saturating attempt counter plus a
+  `Vector`-bounded ring of attributed refusals.  Written at
+  `syscallDispatchFromAbi`'s error arm, which already commits a post-state
+  (`.ok (encodeError ke, stRegs)`) — so no change to the kernel's error
+  discipline is needed, and every field the record wants (core, subject, syscall
+  via the pure `SyscallId.ofNat?`, reason, raw `CPtr`) is already an argument
+  there.  Bounded by its *type* rather than by a 17th `proofLayerInvariantBundle`
+  conjunct, which also sidesteps the silent-under-listing hazard in the bundle's
+  right-nested destructurings.  Retires `DeclassificationRuleId.refusalIsUnrecorded`,
+  whose statement it falsifies.
+* **SM9.C** (9) — a **data-carrying declassification** on the SM6.B notification
+  path.  The first deliberately *visible* flow in the tree, so its real content
+  is declassification-relative (intransitive) non-interference in both halves:
+  the difference is confined to the declassified target **and** every such
+  difference is recorded.
+* **SM9.D** (5) — **provenance** behind the laundering detector, scoped to
+  declassification edges rather than the whole-object-store relation the
+  follow-on's wording implied; SM9.C is the first transition to produce a real
+  data dependency for it to record.
+* **SM9.E** (6) — tests + closure, including the acceptance scenario that fills
+  the trail, observes `.auditLogCapacityExceeded`, drains, and observes
+  declassification working again.
+
+**Renumbering.**  `SMP_RELEASE_CLOSURE_PLAN.md` becomes SM10 (title, phase
+header, `SM10.A`–`SM10.E`, dependencies now `SM0..SM9`).  All 178 `SM9.A`–`SM9.E`
+citations across the live tree move to `SM10.x` — planning docs, `CLAUDE.md` /
+`AGENTS.md`, 13 Lean files, 4 Rust files, 5 scripts, the spec, GitBook and the
+active debt register — as do bare `SM9` references meaning release closure and
+the `SMn..SM9` phase ranges.  Every one is prose or a comment: the
+identifier-naming gate forbids workstream IDs in identifiers, so the renumbering
+carries no semantic risk.
+
+`CHANGELOG.md` and `docs/dev_history/` are deliberately **not** rewritten, per
+the project's policy on historical prose.  Entries there predating this cut
+continue to say "SM9.E" for what is now SM10.E; that is the historical record,
+not an error.
+
+SM8's own follow-on registrations still point at **SM9** — which is now correct,
+since SM9 is the phase created to close them — with the `(release closure)`
+parentheticals corrected to `(declassification completion)`.
+
+Documentation only: no `.lean` transition changed, no theorem moved, trace
+fixtures byte-identical.
+
 ## v0.33.23 — WS-SM SM8.E: tests + closure, and the counts that could not count
 
 SM8.E is the SM8 closure phase — three sub-tasks, no new transition and no new

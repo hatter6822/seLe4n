@@ -1608,8 +1608,9 @@ non-displacing structure — a saturating counter cannot be exhausted and cannot
 push out an authorized entry, and is enough for the "count rejected attempts"
 the gap is actually about.
 
-Re-scoped to **SM9** (release closure), which is where the entry's error
-discipline is in scope, and recorded here rather than in a source comment.
+Re-scoped to **SM9** (declassification completion —
+[`SMP_DECLASSIFICATION_COMPLETION_PLAN.md`](SMP_DECLASSIFICATION_COMPLETION_PLAN.md)),
+which is the phase that owns this surface, and recorded here rather than in a source comment.
 
 #### SM8.C.8 / SM8.C.9 completion cut (v0.33.8) — what landed, and what it left
 
@@ -1642,8 +1643,9 @@ and `LabelingContext.declassificationPolicy` defaults to deny-all.
 filed against SM8.E at the v0.33.8 cut.  SM8.E is "tests + closure" — a
 three-sub-task phase whose whole content is anchors, a fixture and a count — and
 none of the four is any of those.  Each is re-scoped below with the reason and
-an owner; **all four are now SM9 (release closure)**, which is where the
-syscall-entry surface they touch is in scope.
+an owner; **all four are now SM9 (declassification completion —
+[`SMP_DECLASSIFICATION_COMPLETION_PLAN.md`](SMP_DECLASSIFICATION_COMPLETION_PLAN.md))**,
+the phase created to close them.  Release closure moved to SM10 in the same cut.
 
 1. **No interface reads the trail.**  The projection decision that keeps the
    trail out of `ObservableState` is what makes the whole surface

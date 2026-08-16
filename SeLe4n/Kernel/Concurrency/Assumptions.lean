@@ -294,7 +294,7 @@ The other six remain `perCoreBracketGated`: their single-core property is
 preserved per-core by the FFI interrupt-disabled dispatch bracket, with
 full cross-core retirement tracked against later WS-SM phases (SM5 per-core
 scheduler / SM6 cross-core IPC).  This honest disposition is pinned by
-`smpRetiredInventory_pathARetired_count` (= 2 at SM4.E); WS-SM SM9 (release
+`smpRetiredInventory_pathARetired_count` (= 2 at SM4.E); WS-SM SM10 (release
 closure) adds `smpRetiredInventory_complete` once every entry is
 discharged. -/
 
@@ -492,7 +492,7 @@ are genuinely retired by path-a (the scheduler-state shape and the boot-core
 current-thread shape); the other six are `perCoreBracketGated` (single-core
 property preserved per-core by the FFI bracket, full retirement gated on
 SM5+).  This count is the honest current state per the implement-the-improvement
-rule — it deliberately does NOT claim all 8 are retired.  WS-SM SM9 (release
+rule — it deliberately does NOT claim all 8 are retired.  WS-SM SM10 (release
 closure) flips the gated entries to retired as SM5..SM8 land and proves
 `smpRetiredInventory_complete`. -/
 theorem smpRetiredInventory_pathARetired_count :

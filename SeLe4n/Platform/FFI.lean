@@ -1466,7 +1466,7 @@ def syscallDispatchInner
       -- drained wholesale by the next syscall through the cross-core entry
       -- (`recordIcacheMaintenanceList_mem_of_mem` is the no-loss property).
       --
-      -- Closure is removal, not draining: SM9.E should delete this export and
+      -- Closure is removal, not draining: SM10.E should delete this export and
       -- repoint `SyscallDispatchSuite` at the cross-core entry.  Registered in
       -- `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` §"SM7.D deferred items".
       initialiseKernelState st'

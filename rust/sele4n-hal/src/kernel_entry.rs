@@ -351,7 +351,7 @@ mod tests {
     //
     // Host scope, as for the SM7.F.3 witnesses: no SGIs, no per-PE TLB, a
     // different memory model. What is pinned is the mutual exclusion and
-    // the fairness, not anything about TLBs. Hardware waits for SM9.E.
+    // the fairness, not anything about TLBs. Hardware waits for SM10.E.
     // ========================================================================
 
     /// Contenders, capped at the host's real parallelism (min 2, so the

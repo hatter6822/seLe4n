@@ -804,7 +804,7 @@ run_check "INVARIANT" rg -n '^name = "smp_ipc_suite"' lakefile.toml
 run_check "INVARIANT" rg -n '^name = "smp_notification_suite"' lakefile.toml
 run_check "INVARIANT" rg -n 'test_qemu_smp_ipc\.sh' scripts/test_tier4_smp_bootcheck.sh
 # The QEMU exerciser's driver-detection guard and its pass gate must agree on the
-# `cross-core-ipc` banner tag (the contract the future SM9.E kernel-image driver
+# `cross-core-ipc` banner tag (the contract the future SM10.E kernel-image driver
 # emits); anchoring the exact pass phrase catches a silent drift between the two.
 run_check "INVARIANT" rg -n 'cross-core-ipc: reply delivered across cores' scripts/test_qemu_smp_ipc.sh
 # The new aggregate scenario groups (donation / caps / info-flow / live-API /
@@ -1129,7 +1129,7 @@ run_check "INVARIANT" rg -n '^\[smp-tlb-shootdown\]' tests/fixtures/smp_tlb_shoo
 run_check "INVARIANT" rg -n 'smp_tlb_shootdown\.expected' tests/fixtures/smp_tlb_shootdown.expected.sha256
 run_check "INVARIANT" rg -n 'test_qemu_smp_shootdown_stress\.sh' scripts/test_tier4_smp_bootcheck.sh
 # The Tier-4 stress exerciser's driver-detection guard and its pass gate must
-# agree on the `tlb-shootdown-stress` banner tag (the contract the future SM9.E
+# agree on the `tlb-shootdown-stress` banner tag (the contract the future SM10.E
 # in-image driver emits); anchoring the exact pass phrase catches silent drift.
 run_check "INVARIANT" rg -n 'tlb-shootdown-stress: all cores completed' scripts/test_qemu_smp_shootdown_stress.sh
 # ============================================================================
@@ -2115,7 +2115,7 @@ run_check "INVARIANT" rg -n 'niName! acceptedCovertChannel_machineTimer_excluded
 # PR #861 review round 18: the model's context switches have no hardware
 # restore seam yet (the SVC path returns into the original caller's frame, the
 # timer ISR discards the result, and SGI INTID 0 has no registered handler).
-# Registered as a checked partition so SM9.E cannot wire the first restore
+# Registered as a checked partition so SM10.E cannot wire the first restore
 # without updating it.  The `_restore_pending` theorem is the load-bearing one:
 # it says the gap is TOTAL, so any wiring breaks it.
 run_check "INVARIANT" rg -n '^inductive ContextSwitchSite' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
