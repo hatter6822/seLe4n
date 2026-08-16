@@ -42,6 +42,11 @@ suites, bumps the version, and records WS-SM closure.
   `KernelError` — is not bootable in any useful sense.  WS-RA is sequenced
   **before SM9**, so it is complete well before this phase opens, but it is
   listed here because SM10.E is the gate that would otherwise expose it.
+  **SM10.E also inherits one obligation from WS-RA**: a syscall that *blocks*
+  has no return value when it blocks, so WS-RA stages the waiter's frame at the
+  unblocking transition and **SM10.E's context restore is what delivers it**
+  (WS-RA §3.5).  The wait-before-signal badge ordering is not complete until
+  that seam is live.
 - Tier 0..5 tests green at HEAD.
 
 ## 3. Sub-tasks

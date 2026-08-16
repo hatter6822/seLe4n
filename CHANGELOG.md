@@ -1,3 +1,70 @@
+## v0.33.34 — WS-RA completed: a blocking syscall has no return value yet
+
+A review round landed on the WS-RA plan itself, with **two P1s against the plan
+authored two commits earlier**.  Both are real design defects and both are fixed
+here; the four findings against SM9 are **registered rather than fixed**, since
+SM9 is blocked on WS-RA and churning a plan nobody is executing helps no one.
+
+**A blocking syscall has no return frame yet — the plan's own acceptance gate
+was unachievable.**  WS-RA read a return frame at the FFI boundary for the thread
+that made the call.  That is wrong the moment the call blocks, and
+`.notificationWait` is exactly that case: in the wait-before-signal ordering the
+arm blocks the caller, deschedules it, and returns `.ok none` — the badge does
+not exist yet, and by the time it does the caller is no longer current.  No
+plumbing at the entry can return a value that has not been produced, so the gate
+item "returns the badge in **both** orderings" could not have been met.
+
+New §3.5: a syscall's outcome is `returns frame` or **`blocks`**, the boundary
+writes a frame only in the first case, and for the second the **unblocking**
+transition stages the frame into the blocked thread's `registerContext` — which
+is where `storeTcbIpcStateAndMessage`'s badge should have been going all along.
+Delivery then happens at context restore, which is **not live** (`restore_context`
+exists in the assembly macros with a recorded dead-code note) and is SM10.E work.
+So WS-RA's reach splits honestly: non-blocking orderings complete end to end,
+blocking orderings **staged** with `blockedReturn_staged_in_waiter_frame`, and
+the acceptance gate states the split instead of claiming both.  Claiming
+otherwise would be the same shape of overstatement this workstream exists to
+remove.  SM10.E inherits the named obligation rather than discovering it.
+
+**The flip PR omitted the decoder — the plan scheduled the state it forbids.**
+§3.6 says a half-migrated tree must never exist because it reinterprets registers
+silently; §5 then put `decode_response` and the `sele4n-sys` consumers in a
+*following* PR, leaving a tree with the kernel on the new convention and
+userspace still testing `regs[0] != 0`, decoding every nonzero badge as an error.
+The version pin cannot catch that — both constants would be bumped while the
+decoder still implements the old semantics.  The flip now carries RA.C.5-C.9 and
+RA.D.1-D.3; it is large by necessity, and the alternative (a version-selected
+compatibility decoder) is more surface than the single flip it would avoid.
+
+**Two smaller corrections.**  RA.B.7 classified `.cspaceMint` / `.cspaceCopy` /
+retype as slot-returning — contradicting the plan's **own** §1.3 table, and wrong
+on the merits: `cspace_mint` takes `dst_slot` as an argument, so the kernel
+allocates no slot and returning one would *add* an ABI value rather than repair a
+missing one.  Replaced by `.serviceQuery`, which genuinely computes an answer and
+discards it.  And `writeReturnFrameToTcb_preserves_projection` is **false** as
+stated — an observer that can see the caller sees its register context, and
+changing `x0`-`x5` changes it — so it becomes an invisibility theorem for
+observers that cannot see the caller **plus** per-operation authorized-output
+theorems, since owning the destination TCB does not authorize the *source* of a
+returned badge.
+
+Counts: WS-RA 38 → 41 sub-tasks (the blocking continuation), theorems ~24 → ~30.
+
+**Registered against SM9** (§9a, four findings): actor vs. flow-source identity
+on the second per-hop event; a denied receiver hop attributed to the original
+capability rather than the resolved sink; unversioned refusal-ring reads that let
+a monitor assemble a hybrid record from two attempts; and — the sharpest —
+`KernelOperation` **not being exhaustive of the propagation sites it polices**,
+since it has no `ipcUnwrapCaps` constructor while SM9.D.11 names that transition
+as one.  Three rounds moved that gate from a list, to `mem_all` over a
+hand-maintained type, to a total function, and it is still not exhaustive: the
+lesson is not "use a total function" but "check the domain is exhaustive of what
+the gate is about".
+
+Refs: docs/planning/SYSCALL_RETURN_ABI_PLAN.md §3.5, §5
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §9a
+Refs: #865
+
 ## v0.33.33 — WS-RA sequenced as the next workstream, ahead of SM9
 
 The syscall-return-ABI plan authored at v0.33.31 becomes the **next workstream

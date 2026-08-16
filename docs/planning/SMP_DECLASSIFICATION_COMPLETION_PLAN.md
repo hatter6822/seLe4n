@@ -1108,6 +1108,29 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
       green including every new module.
 - [ ] Tier 0..3 green; trace fixture diffs explained.
 
+## 9a. Open review items, registered rather than closed
+
+Four findings arrived on the review round after SM9's last remediation cut.  All
+four were verified and are valid; they are **registered here rather than fixed**,
+because SM9 is now blocked on WS-RA (§2) and will be re-opened for
+implementation after it.  Fixing them into a plan that cannot start yet would
+churn a document nobody is executing.
+
+| # | Finding | Where it lands |
+|---|---|---|
+| 1 | **Attribution vs. flow source on the second hop.**  Both per-hop events (§3.5) share the executing subject, but the second records `mid → low` — conflicting with `attributionFromRunningSubject`, which defines an event's source domain as the *running subject's* domain.  The per-hop revision makes the mismatch unavoidable | Separate **actor** and **flow-source** identities on `DeclassificationEvent`, or revise the attribution rule.  SM9.D.13a |
+| 2 | **A denied receiver hop is attributed to the wrong operand.**  When the caller → notification hop is authorized and notification → receiver is refused, the refusal record carries only the raw notification `CPtr` and a generic reason, so a monitor cannot identify the bound waiter the downgrade actually targeted — while the *success* path is required to audit exactly that destination | Carry the failed hop and resolved receiver in the refusal record.  SM9.B.1 |
+| 3 | **Refusal-ring reads are not versioned.**  A record needs several `.auditRead` calls including chunked fields, and any intervening denied syscall can overwrite the selected slot; the trail's status token moves only on trail *drains*, so a monitor can assemble a hybrid record from two attempts undetected | A ledger version that changes on every `recordRefusal`, bracketing reads — the `status`-token argument of §3.3 applied to the ledger.  SM9.B.2 |
+| 4 | **`KernelOperation` is not exhaustive of the propagation sites.**  §3.6's fix classified content flow by a total `KernelOperation → ContentFlowClass`, but `KernelOperation` has **no `ipcUnwrapCaps` constructor** — the very transition SM9.D.11 names as a propagation site.  So the function can be total while cap-transfer propagation is omitted, which is the hole the totality was meant to close | Extend the taxonomy to cover the live transition surface, or derive propagation structurally from the dispatch.  SM9.D.7 |
+
+Finding 4 is the sharpest and worth reading as a pattern: three rounds of
+work moved this gate from a list, to a `mem_all` over a hand-maintained type, to
+a total function over `KernelOperation` — and it is *still* not exhaustive of
+what it polices, because totality over the wrong domain proves nothing about the
+right one.  The lesson is not "use a total function" but **"check that the domain
+is exhaustive of the thing the gate is about"**, which SM9.D.7 must establish
+before it claims the keystone.
+
 ## 10. Cross-references
 
 - **Previous**: [`SMP_INFORMATION_FLOW_PLAN.md`](SMP_INFORMATION_FLOW_PLAN.md) (SM8)

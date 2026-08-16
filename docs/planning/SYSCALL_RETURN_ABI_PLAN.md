@@ -6,7 +6,7 @@
 > **Audited cut**: `v0.33.30`
 > **Target releases**: v0.34.x
 > **Calendar estimate**: 5-8 weeks
-> **Sub-task count**: 38 across ~12-15 PRs
+> **Sub-task count**: 41 across ~12-15 PRs
 > **Status**: **NEXT** — the next workstream implemented, ahead of SM9
 
 ## 1. Phase goal
@@ -200,7 +200,43 @@ refuted.
 The conformance layer then checks the Rust mirror against it per-variant, in the
 idiom `SyscallId` conformance already uses.
 
-### 3.5 An ABI break needs a structural guard, not a changelog note
+### 3.5 A blocking syscall has no return frame yet
+
+The design above reads a return frame at the FFI boundary, for the thread that
+made the call.  **That is wrong for a syscall that blocks**, and
+`.notificationWait` is the case that matters: in the wait-before-signal ordering
+`notificationWaitOnCore` blocks the caller, deschedules it
+(`removeRunnableOnCore`) and returns `.ok none` — the badge does not exist yet,
+and by the time it does the caller is not the current thread.  No amount of
+return-frame plumbing at the entry can conjure a value that has not been produced.
+
+**Decision.**  A syscall's outcome is `SyscallOutcome`, either
+**`returns frame`** or **`blocks`**, and the FFI boundary writes a frame only in
+the first case.  For the second:
+
+- the **unblocking** transition writes the return frame into the blocked
+  thread's `registerContext` — which is where `storeTcbIpcStateAndMessage`'s
+  badge should have been going all along, and is exactly the staging seam §3.3
+  already establishes;
+- delivery happens when the scheduler **restores that thread's context**.
+
+This costs an honest sequencing statement rather than a hidden assumption.  The
+context-restore seam is not live — `restore_context` exists in the assembly
+macros and the trap layer has a recorded dead-code note about it, and it is
+SM10.E work.  So WS-RA's reach splits, and the acceptance gate (§8) splits with
+it:
+
+| Ordering | WS-RA delivers |
+|---|---|
+| Non-blocking (signal-before-wait; every query; every `Unit` return) | **Complete** — value produced, staged and returned at the boundary |
+| Blocking (wait-before-signal, `.receive` / `.call` on an empty endpoint) | **Staged** — the unblocking transition writes the waiter's frame, and `blockedReturn_staged_in_waiter_frame` proves it; the final hop is the SM10.E context restore |
+
+Claiming "both orderings" without this split would be the same shape of
+overstatement this workstream exists to remove: a documented behaviour that the
+code does not have.  RA.B.5a and RA.C.9 carry the work; the SM10.E dependency is
+recorded in §9 rather than discovered during SM10.
+
+### 3.6 An ABI break needs a structural guard, not a changelog note
 
 Kernel and userspace ship from one tree, so an atomic flip is available and no
 compatibility shim is warranted.  But a **half-migrated** system does not fail
@@ -212,7 +248,7 @@ and Rust and checked by the existing conformance suite, so a half-migrated tree
 fails the build rather than mis-decoding at runtime.  This is the same mechanism
 `SyscallId` conformance already uses, extended to the return convention.
 
-### 3.6 What this workstream does *not* change
+### 3.7 What this workstream does *not* change
 
 Recorded so scope cannot drift:
 
@@ -241,10 +277,10 @@ Pure model work.  Nothing live changes; the old path keeps running until RA.C.
 | RA.A.4 | `encodeReturnFrame` / `decodeReturnFrame` against the §3.1 layout, and the **round-trip** theorem `decodeReturnFrame_encodeReturnFrame` — losslessness, since `x0` now carries a full 64-bit badge | same | M |
 | RA.A.5 | Error carriage: `MessageInfo.label` ⇄ `KernelError`, `errorLabel_roundtrip` both ways, and `errorLabel_zero_iff_success` (label 0 ⇔ no error) | `Platform/SyscallReturn.lean` | M |
 | RA.A.6 | `kernelErrorFitsLabel` — all 54 discriminants inside 20 bits, by `decide`; the negative that a 21-bit discriminant is rejected, so the bound is load-bearing | same | S |
-| RA.A.7 | `SYSCALL_ABI_VERSION` (§3.5) + the Lean half of the conformance pin | same | T |
+| RA.A.7 | `SYSCALL_ABI_VERSION` (§3.6) + the Lean half of the conformance pin | same | T |
 | RA.A.8 | **Retirement of the bit-63 protocol, stated**: `encodeOk_not_injective_on_badges` (the theorem that motivates the change — a badge ≥ 2^63 aliases an error under the old encoding), kept as a negative so the protocol cannot return | same | S |
 
-### RA.B — The Lean return path (3-4 PRs, 10 sub-tasks)
+### RA.B — The Lean return path (3-4 PRs, 12 sub-tasks)
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
@@ -253,24 +289,27 @@ Pure model work.  Nothing live changes; the old path keeps running until RA.C.
 | RA.B.3 | `syscallDispatchFromAbi : Kernel SyscallReturnFrame` — the signature change, and the **6 theorems that name it** re-stated: `_total`, `_error_of_syscallEntryChecked_error`, `_illegalState_when_no_current`, and the three bridges | same | L |
 | RA.B.4 | The "an error changes nothing" proofs, re-checked against the new shape — `syscallEntry_error_perCore_NI` and `syscallEntry_error_preserves_proofLayerInvariantBundle` both bake in the old encoding | `API.lean`, `CovertChannelPerCore.lean` | L |
 | RA.B.5 | **`.notificationWait`** returns its badge — the SM9.C.0 defect, closed here; both live arms and the pending-badge arm of `notificationWaitOnCore` | `API.lean`, `IPC/CrossCore/NotificationSignal.lean` | M |
-| RA.B.6 | **`.receive` / `.replyRecv`** return badge + message registers | `API.lean` | L |
-| RA.B.7 | **`.cspaceMint` / `.cspaceCopy` / the retype family** return their allocated slot | `API.lean` | M |
+| RA.B.5a | **`SyscallOutcome`** (§3.5) — `returns frame` / `blocks`; every dispatch arm classified, driven by `syscallReturnShape` so a blocking arm cannot claim a frame; `blockingArm_returns_no_frame` | `API.lean`, `Platform/SyscallReturn.lean` | L |
+| RA.B.5b | The **unblocking** transitions stage the waiter's frame: `notificationSignalOnCore`'s waiter and bound-TCB arms, and the endpoint rendezvous paths, write into the blocked thread's `registerContext` rather than only `pendingMessage`; `blockedReturn_staged_in_waiter_frame` | `IPC/CrossCore/NotificationSignal.lean`, `IPC/Operations/Endpoint.lean` | XL |
+| RA.B.6 | **`.receive` / `.replyRecv`** return badge + message registers on the rendezvous (non-blocking) path, and stage them via RA.B.5b on the blocking path | `API.lean` | L |
+| RA.B.7 | **`.serviceQuery`** returns its resolved service — the query that computes `lookupServiceByCap` and discards it.  (`.cspaceMint`, `.cspaceCopy` and the retype family are deliberately **not** here: their decoded arguments already carry the destination slot, the kernel allocates no slot of its own, and inventing a result for them would be adding an ABI value rather than repairing a missing one — §3.7's boundary) | `API.lean` | M |
 | RA.B.8 | Every remaining arm returns `SyscallReturnFrame.default`, driven by `syscallReturnShape` so the classification and the arms cannot disagree; `dispatchArm_matches_returnShape` | `API.lean` | L |
 | RA.B.9 | `syscallDispatchCrossCoreEntry` threads the frame; the `@[export]` seam and its Rust-visible signature | `Kernel/SyscallDispatchEntry.lean` | M |
-| RA.B.10 | Information flow: the return frame is written into a TCB the caller already owns, so `writeReturnFrameToTcb_preserves_projection` is owed — a return value is *by construction* data the caller may see, but the theorem is what says so | `InformationFlow/Invariant/Operations.lean` | M |
+| RA.B.10 | Information flow — **two theorems, not one blanket preservation**.  `writeReturnFrameToTcb_preserves_projection` is *false* as stated: an observer that can see the caller sees its register context, and changing `x0`-`x5` changes it.  So (a) `writeReturnFrame_invisible_to_non_observers` for observers that cannot see the caller, and (b) a **per-operation authorized-output** theorem for the visible case — owning the destination TCB does not authorize the *source* of a returned badge; that authority comes from each receive/wait flow gate, so each value-returning arm carries its own | `InformationFlow/Invariant/Operations.lean` | L |
 
-### RA.C — The Rust boundary (2-3 PRs, 8 sub-tasks)
+### RA.C — The Rust boundary (2-3 PRs, 9 sub-tasks)
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
 | RA.C.1 | `lean_syscall_dispatch_cross_core`'s new signature; `dispatch_svc` returns the frame rather than a bit-63 word | `rust/sele4n-hal/src/svc_dispatch.rs` | M |
 | RA.C.2 | **Trap-frame writeback** — `set_x0`…`set_x5` from the returned frame, as a context restore (§3.3).  `set_x1` stops being dead code | `rust/sele4n-hal/src/trap.rs` | M |
 | RA.C.3 | Retire the bit-63 decode in `dispatch_svc`; `DispatchError::Kernel` now sourced from the label | same | S |
-| RA.C.4 | `SYSCALL_ABI_VERSION` Rust mirror + the conformance pin that fails the build on a half-migrated tree (§3.5) | `rust/sele4n-abi/src/lib.rs` | S |
+| RA.C.4 | `SYSCALL_ABI_VERSION` Rust mirror + the conformance pin that fails the build on a half-migrated tree (§3.6) | `rust/sele4n-abi/src/lib.rs` | S |
 | RA.C.5 | `decode_response` rewritten to the §3.1 layout: error from the **label**, `x0` a full-width value, `x2`-`x5` real message registers | `rust/sele4n-abi/src/decode.rs` | L |
 | RA.C.6 | `SyscallResponse` reshaped — `x1_raw`'s context-dependent dual meaning (badge *or* msg_info) collapses, since the badge moves to `x0`; `badge()` reads `x0`, `msg_info()` reads `x1` | same | M |
 | RA.C.7 | The `regs[0] > u32::MAX` guard is retired with the convention that motivated it, and its replacement — a label-width check — takes its place with the same fail-closed posture | same | S |
 | RA.C.8 | Rust-side unit tests for the new decode, including the **regression witness** that a nonzero `x0` is a value and not an error | same | M |
+| RA.C.9 | The blocked-return handoff at the boundary: a `blocks` outcome writes **no** frame for the caller, and the SM10.E context-restore seam is where the staged frame is delivered — documented as the dependency it is, with the trap-layer hook shaped now so SM10.E wires rather than redesigns | `rust/sele4n-hal/src/{trap,svc_dispatch}.rs` | M |
 
 ### RA.D — Wrappers and conformance (2 PRs, 6 sub-tasks)
 
@@ -278,7 +317,7 @@ Pure model work.  Nothing live changes; the old path keeps running until RA.C.
 |-----|-------------|-------|-----|
 | RA.D.1 | Every `sele4n-sys` wrapper's error handling, through the single `decode_response` funnel (§3.2) | `rust/sele4n-sys/src/*.rs` | L |
 | RA.D.2 | `notification_wait` returns a **real** badge; `endpoint_receive` / `reply_recv` return real badges and message registers | `rust/sele4n-sys/src/ipc.rs` | M |
-| RA.D.3 | `cspace_mint` and the retype family return their slot instead of an opaque `SyscallResponse` | `rust/sele4n-sys/src/{cspace,lifecycle}.rs` | M |
+| RA.D.3 | `service_query` returns its resolved service instead of an opaque `SyscallResponse`; `cspace_mint` and the retype family keep their `Unit` shape, since they select their own destination slot | `rust/sele4n-sys/src/{service,cspace,lifecycle}.rs` | M |
 | RA.D.4 | Per-variant conformance: every `SyscallId`'s `ReturnShape` checked against the Rust mirror, driven by RA.A.2's total function | `rust/sele4n-abi/tests/conformance.rs` | M |
 | RA.D.5 | Round-trip conformance: encode in Lean, decode in Rust, for each shape | same | M |
 | RA.D.6 | Doc comments corrected across the wrapper surface — several currently describe returns the ABI never delivered (`notification_wait`'s "returns the accumulated badge" being the one that started this) | `rust/sele4n-sys/src/*.rs` | S |
@@ -303,10 +342,18 @@ silently rather than failing.
 1. **RA.A** — model only; nothing live reads it.  Safe to land alone.
 2. **RA.B** — Lean writes return frames, but `syscallDispatchFromAbi` still
    encodes the old way at its outermost edge.  Safe to land alone.
-3. **RA.C.1-C.4 + RA.B.9 in one PR** — the flip.  This is the only PR that must
-   change both languages atomically, which is why RA.A.7/RA.C.4's version pin
-   exists: a partial flip fails the build.
-4. **RA.C.5-C.8, RA.D** — userspace catches up behind the flip.
+3. **RA.B.9 + RA.C.1-C.9 + RA.D.1-D.3 in one PR** — the flip, and it must
+   include the **decoder**.  A first draft left `decode_response` and the
+   `sele4n-sys` consumers to a following PR; that intermediate tree has the
+   kernel on the new convention and userspace still testing `regs[0] != 0`,
+   which silently decodes every nonzero badge as an error — precisely the
+   half-migrated state §3.6 says must never exist.  The version pin cannot catch
+   it either, since both constants would be bumped while the decoder still
+   implements the old semantics.  The PR is large by necessity; the alternative
+   is a version-selected compatibility decoder, which is more code and more
+   surface than the single flip it exists to avoid.
+4. **RA.D.4-D.6** — conformance and doc comments, behind the flip, since they
+   describe rather than implement the convention.
 5. **RA.E** — except RA.E.1, which lands **first**, before RA.A (§1.2: the
    failure must be observable before it is fixed).
 
@@ -338,7 +385,8 @@ return path is still unexercised.
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|------------|--------|------------|
-| A half-migrated tree mis-decodes silently | HIGH | **HIGH** | `SYSCALL_ABI_VERSION` pinned in both mirrors and checked by conformance (§3.5); the flip is one PR (§5) |
+| A half-migrated tree mis-decodes silently | HIGH | **HIGH** | `SYSCALL_ABI_VERSION` pinned in both mirrors and checked by conformance (§3.6); the flip is one PR (§5) |
+| A blocking syscall's return claimed as delivered | MED | **HIGH** | The badge does not exist when a blocking wait returns, and the context-restore seam is SM10.E work.  §3.5 splits the orderings and the acceptance gate states the split rather than claiming both |
 | The fix is unobservable because nothing boots | HIGH | MED | RA.E.1 lands **first** and must fail pre-migration; a workstream that cannot demonstrate the failure cannot demonstrate the fix |
 | A new syscall omits its return shape | MED | HIGH | `syscallReturnShape` is a **total function** over the ABI's own enumeration (§3.4), not a list — the lesson from six SM9 review rounds |
 | Badge ≥ 2^63 aliases an error | — | — | Structurally impossible after the flip: the channels separate, which is the point.  `encodeOk_not_injective_on_badges` (RA.A.8) keeps the old hazard on the record |
@@ -350,8 +398,13 @@ return path is still unexercised.
 
 - [ ] A successful syscall returns a value userspace decodes **as a value**, and
       RA.E.1 — which failed on the pre-migration tree — passes.
-- [ ] `notification_wait` returns the badge that was signalled, in **both**
-      orderings (signal-before-wait and wait-before-signal), closing SM9.C.0.
+- [ ] `notification_wait` returns the badge that was signalled in the
+      **signal-before-wait** ordering — delivered end to end.
+- [ ] In the **wait-before-signal** ordering the badge is **staged** into the
+      waiter's saved frame by the unblocking transition
+      (`blockedReturn_staged_in_waiter_frame`), with delivery completing at the
+      SM10.E context restore.  Stated as a split rather than claimed as one
+      result, because the context-restore seam is not live (§3.5).
 - [ ] `endpoint_receive` returns real message registers, not the caller's own.
 - [ ] Every `SyscallId` has a `ReturnShape` by construction, and a new syscall
       cannot be added without one.
@@ -370,6 +423,10 @@ return path is still unexercised.
 - **Blocks**: [`SMP_DECLASSIFICATION_COMPLETION_PLAN.md`](SMP_DECLASSIFICATION_COMPLETION_PLAN.md)
   SM9.C.0 (the badge defect this closes), and
   [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) SM10.E.
+- **Depends on, for one half of one result**: SM10.E's context-restore seam.
+  §3.5 splits the blocking orderings out for this reason — WS-RA stages the
+  waiter's frame and SM10.E delivers it.  Recorded here so SM10 inherits a named
+  obligation rather than discovering one.
 - **Reference**: seL4 ARM64 syscall convention, libsel4
   `arch/arm/arch64/sel4/sel4_arch/syscalls.h`.
 - **The note this workstream removes**: `SeLe4n/Platform/FFI.lean`, the
@@ -377,7 +434,7 @@ return path is still unexercised.
 
 ## 10. Theorem catalogue
 
-~24 substantive theorems.  Headline set:
+~30 substantive theorems.  Headline set:
 
 - `syscallReturnShape_total` + `returnShape_list_gate_insufficient` (RA.A.2)
 - `decodeReturnFrame_encodeReturnFrame` — losslessness at full 64-bit width
@@ -391,8 +448,13 @@ return path is still unexercised.
 - `dispatchArm_matches_returnShape` — the arms and the classification cannot
   disagree (RA.B.8)
 - `writeReturnFrameToTcb_preserves_projection` (RA.B.10)
-- `notificationWait_delivers_badge_both_orderings` — the SM9.C.0 closure
-  (RA.B.5, RA.E.2)
+- `blockingArm_returns_no_frame` + `blockedReturn_staged_in_waiter_frame` — a
+  blocking syscall has no frame yet, and the unblocking transition stages it
+  (RA.B.5a, RA.B.5b, §3.5)
+- `writeReturnFrame_invisible_to_non_observers` + the per-operation
+  authorized-output theorems (RA.B.10)
+- `notificationWait_delivers_badge_signal_first` — the SM9.C.0 closure on the
+  non-blocking ordering (RA.B.5, RA.E.2)
 
 ## Appendix A — Verification commands
 
