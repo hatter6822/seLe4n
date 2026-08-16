@@ -378,6 +378,14 @@ documentation; per-core declassification audit.
 
 Document: [`SMP_DECLASSIFICATION_COMPLETION_PLAN.md`](SMP_DECLASSIFICATION_COMPLETION_PLAN.md).
 
+**Blocked on WS-RA** ([`SYSCALL_RETURN_ABI_PLAN.md`](SYSCALL_RETURN_ABI_PLAN.md)),
+which is implemented first.  SM9.A's audit reader and SM9.C's data-carrying
+declassification are both *value-returning* syscalls, and the kernel has no
+syscall return path: `dispatchWithCapChecked` is `Kernel Unit` over a return
+register no transition writes, so both would compute the right answer and hand
+the caller back its own preloaded `x0`.  Neither sub-phase can be demonstrated,
+let alone accepted, until WS-RA lands.
+
 61 sub-tasks across ~21-26 PRs.  Closes the four follow-ons SM8
 registered and could not take: a privileged clearance-filtered reader
 and drain for the audit trail (without which a deployment that performs
@@ -500,7 +508,8 @@ WS-RC and WS-SM are merged. Opens immediately at v0.31.2 boundary.
 | SM5 | v0.71.0 → v0.82.x | 12-16 weeks |
 | SM6 | v0.83.0 → v0.90.x | 8-12 weeks |
 | SM7 ‖ SM8 | v0.91.0 → v0.97.x | 6-10 weeks (parallel) |
-| SM9 | v0.33.24 → v0.34.x | 12-16 weeks |
+| **WS-RA** | v0.33.32 → v0.34.x | **5-8 weeks** |
+| SM9 | after WS-RA | 12-16 weeks |
 | SM10 | v0.98.0 → **v1.0.0** | 4-6 weeks |
 | **Total** | | **84-119 weeks (~19-28 months)** |
 

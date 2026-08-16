@@ -1,3 +1,46 @@
+## v0.33.33 — WS-RA sequenced as the next workstream, ahead of SM9
+
+The syscall-return-ABI plan authored at v0.33.31 becomes the **next workstream
+implemented**, and every document that describes workstream ordering is updated
+to match.  Plan work and documentation only; no Lean or Rust source changes.
+
+**The plan completed.**  A new §1.3 enumerates the value-returning surface
+against the dispatch arms rather than against syscall names.  `SyscallId` has 31
+variants; **five are value-returning today and return nothing**:
+`.notificationWait` (its arm returns `.ok (some badge)` and both live callers
+discard it), `.receive` / `.call` / `.replyRecv` (delivery lands in
+`tcb.pendingMessage`, which no code moves to a register), and — the one nobody
+had reason to look at — **`.serviceQuery`, a query syscall that calls
+`lookupServiceByCap` and throws the answer away with `.ok (_, st')`**.  SM9 adds
+`.auditRead` and `.auditDrain`.  The remaining 26 are genuinely `Unit`-returning
+and need only `x0 = 0`, which they do not produce either, since they return the
+caller's cap pointer like everything else.  `.serviceQuery` is the argument for
+fixing the convention rather than the two syscalls someone noticed.
+
+**Why it goes first.**  SM9 cannot be demonstrated without it.  Both of SM9's
+value-returning sub-phases — SM9.A's audit reader and SM9.C's data-carrying
+declassification — would gate correctly, compute correctly, and hand the caller
+back its own preloaded `x0`, because `dispatchWithCapChecked` is `Kernel Unit`
+over a return register no transition writes.  And SM10.E ships a bootable image,
+which a kernel whose every successful syscall decodes as a `KernelError` is not
+in any useful sense.
+
+**Re-sequenced across the documentation set**: the master plan's SM9 section
+carries the blocking dependency and its timeline gains a WS-RA row ahead of SM9;
+`SMP_RELEASE_CLOSURE_PLAN.md` adds WS-RA to SM10's prerequisites with the
+reasoning rather than a bare entry; `WORKSTREAM_HISTORY.md`'s "What's next"
+opens with WS-RA; `CLAUDE.md` / `AGENTS.md` gain a full active-workstream entry
+carrying the verified evidence chain, the target convention, and the three
+design decisions (staging in `tcb.registerContext` rather than widening the FFI
+return type; `syscallReturnShape` as a **total function**; the
+`SYSCALL_ABI_VERSION` pin, because a half-migrated tree reinterprets registers
+silently rather than failing); and the spec and GitBook manifest gain a **Next
+workstream** row above the active one, with the GitBook README regenerated from
+the manifest.
+
+Refs: docs/planning/SYSCALL_RETURN_ABI_PLAN.md §1.3
+Refs: #865
+
 ## v0.33.32 — SM9 plan, review round 7: WS-RA's gap reaches SM9.A too
 
 Three findings, one P1.  All valid, and the P1 lands on the plan section I wrote

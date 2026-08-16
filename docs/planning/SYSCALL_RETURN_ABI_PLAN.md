@@ -7,7 +7,7 @@
 > **Target releases**: v0.34.x
 > **Calendar estimate**: 5-8 weeks
 > **Sub-task count**: 38 across ~12-15 PRs
-> **Status**: PENDING
+> **Status**: **NEXT** — the next workstream implemented, ahead of SM9
 
 ## 1. Phase goal
 
@@ -49,7 +49,35 @@ failure: no end-to-end test can exist until SM10.E produces a bootable image, so
 nothing has ever executed this path.  RA.E.1 makes it observable before it makes
 it correct.
 
-Three further consequences fall out of the same gap:
+### 1.3 The value-returning surface, enumerated
+
+`SyscallId` has 31 variants.  Five of them are **value-returning today and
+return nothing**; SM9 adds two more.  Each row below is verified against the
+dispatch arm, not inferred from the name:
+
+| Syscall | Should return | What the arm does today |
+|---|---|---|
+| `.notificationWait` | badge | `notificationWaitOnCore` returns `.ok (some badge)`; both live arms match `(st', .ok _)` and discard it |
+| `.receive` | badge + message registers | delivery lands in `tcb.pendingMessage`, which no code moves to a register |
+| `.call` | badge + message registers | same |
+| `.replyRecv` | badge + message registers | same |
+| `.serviceQuery` | the resolved service | `lookupServiceByCap` is called and its result **discarded**: `.ok (_, st')` |
+| `.auditRead` (SM9.A) | the selected audit word | blocked on this workstream — `dispatchWithCapChecked` is `Kernel Unit` |
+| `.auditDrain` (SM9.A) | the new visible length | same |
+
+The remaining 26 are genuinely `Unit`-returning and need only `x0 = 0`, which
+they do not produce today either — they return the caller's cap pointer like
+everything else.
+
+`.serviceQuery` is worth singling out: it is a **query** whose entire purpose is
+to answer, and it computes the answer and throws it away.  That is the same
+shape as `.notificationWait`, at a syscall nobody had reason to look at, which is
+the argument for fixing the convention rather than the two syscalls someone
+noticed.
+
+### 1.4 Three further consequences
+
+Beyond the enumerated surface, the same gap produces:
 
 - `sele4n-sys::notification_wait` returns `KernelResult<Badge>` and reads
   `resp.badge()` = **x1**, which the kernel never writes — so it returns the
@@ -63,7 +91,7 @@ Three further consequences fall out of the same gap:
 - `cspace_mint` and the retype family return a `SyscallResponse` whose only real
   content is the error field, so an allocated slot cannot be reported.
 
-### 1.3 Why "x0 compliance" and not "write x1"
+### 1.5 Why "x0 compliance" and not "write x1"
 
 Writing `x1` would close SM9.C.0 with a much smaller diff, because
 `decode.rs::badge()` already reads x1.  It was considered and **rejected by the
@@ -118,7 +146,7 @@ new structure.
 ### 3.2 Why the label, and what it costs
 
 The alternative — keep `x0` as status and put values in `x1` — is the x1 route
-§1.3 rejects.  The alternative *within* x0 compliance is a dedicated error
+§1.5 rejects.  The alternative *within* x0 compliance is a dedicated error
 register (say `x6`), which is simpler to implement but is not seL4 and buys
 nothing: the label is already decoded on every receive path.
 

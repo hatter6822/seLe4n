@@ -15,6 +15,20 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 ## What's next
 
+**WS-RA Syscall Return ABI — NEXT, implemented ahead of SM9.**  The kernel
+has no syscall return path: it writes one register on exit and the value it
+writes is the caller's own capability pointer, which userspace's
+`decode_response` (`regs[0] != 0` means error) decodes as a `KernelError`.
+Five syscalls are value-returning today and return nothing —
+`.notificationWait`, `.receive`, `.call`, `.replyRecv` and `.serviceQuery`,
+the last computing `lookupServiceByCap` and discarding the answer — and SM9
+adds two more.  WS-RA adopts seL4's ARM64 convention exactly (`x0` = badge or
+primary result, `x1` = `MessageInfo` whose label carries the error, `x2`-`x5` =
+message registers) and retires the bit-63 status protocol.  38 sub-tasks across
+~12-15 PRs.  It blocks SM9 (both its value-returning sub-phases) and SM10.E (a
+bootable image whose syscalls all report spurious errors).  Plan:
+[`docs/planning/SYSCALL_RETURN_ABI_PLAN.md`](planning/SYSCALL_RETURN_ABI_PLAN.md).
+
 **WS-SM SMP multi-core completion workstream IN FLIGHT (v0.31.2 →
 v0.31.3 → v0.32.x → v1.0.0).** Unified workstream merging WS-RC's remaining
 R6..R14 phases with the SMP-specific SM-phases (SM0..SM10).  Closes

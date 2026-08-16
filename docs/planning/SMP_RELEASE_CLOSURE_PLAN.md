@@ -36,6 +36,12 @@ suites, bumps the version, and records WS-SM closure.
 
 - All of SM0..SM9 complete.
 - Acceptance gates for SM0..SM9 green.
+- **WS-RA complete** ([`SYSCALL_RETURN_ABI_PLAN.md`](SYSCALL_RETURN_ABI_PLAN.md)).
+  SM10.E ships a bootable image, and a kernel whose every successful syscall
+  returns the caller's own capability pointer — which userspace decodes as a
+  `KernelError` — is not bootable in any useful sense.  WS-RA is sequenced
+  **before SM9**, so it is complete well before this phase opens, but it is
+  listed here because SM10.E is the gate that would otherwise expose it.
 - Tier 0..5 tests green at HEAD.
 
 ## 3. Sub-tasks

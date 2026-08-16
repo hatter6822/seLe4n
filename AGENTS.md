@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.33.32.
+Lean 4.28.0 toolchain, Lake build system, version 0.33.33.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -717,6 +717,37 @@ files in `docs/dev_history/` unless explicitly instructed.** All active
 documentation lives under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
+
+- **WS-RA Syscall Return ABI — NEXT WORKSTREAM, implemented ahead of SM9**:
+  the kernel has **no syscall return path**.  `writeFfiRegistersToTcb` stages
+  the *incoming* `x0..x5` into `tcb.registerContext` (`x0 ← capPtrReg`),
+  `syscallDispatchFromAbi` returns `encodeOk (readReturnValue st' tid)` reading
+  `gpr ⟨0⟩` back out — and **no transition anywhere writes a return value into
+  that register**.  `trap.rs` writes `set_x0` and nothing else: `set_x1` is
+  called only in a unit test and `x2`-`x5` are never written back.  Compose that
+  with userspace's `decode_response`, where `regs[0] != 0` *means error*, and a
+  **successful** syscall returns the caller's capability pointer for userspace to
+  decode as a `KernelError`.  `FFI.lean` documents the middle of this and defers
+  "full seL4-ABI x0 compliance".  Five syscalls are value-returning today and
+  return nothing — `.notificationWait` (discards `.ok (some badge)`), `.receive`
+  / `.call` / `.replyRecv` (deliver into `tcb.pendingMessage`, which has no
+  register path), and `.serviceQuery` (computes `lookupServiceByCap` and throws
+  the answer away with `.ok (_, st')`) — and SM9 adds `.auditRead` /
+  `.auditDrain`.  **Target**: seL4's ARM64 convention exactly — `x0` = badge or
+  primary result, `x1` = `MessageInfo` whose **label** carries the error,
+  `x2`-`x5` = message registers — with `encodeOk` / `encodeError` and the bit-63
+  protocol **retired**, since bit 63 was only ever a workaround for multiplexing
+  status into the value register.  Three decisions: return values stage in
+  `tcb.registerContext` rather than widening the FFI return type (so no dispatch
+  arm grows a six-tuple and the trap boundary is an ordinary context restore);
+  `syscallReturnShape : SyscallId → ReturnShape` is a **total function**, not a
+  list with a completeness theorem; and the flip is guarded by a
+  `SYSCALL_ABI_VERSION` pinned in both mirrors, because a half-migrated tree
+  reinterprets registers silently rather than failing.  No end-to-end test can
+  exist until SM10.E boots, so **RA.E.1 lands first and must fail on the
+  pre-migration tree**.  38 sub-tasks across ~12-15 PRs; blocks SM9 (both
+  value-returning sub-phases) and SM10.E.  Plan:
+  [`docs/planning/SYSCALL_RETURN_ABI_PLAN.md`](docs/planning/SYSCALL_RETURN_ABI_PLAN.md).
 
 - **WS-SM SMP multi-core completion workstream IN FLIGHT (v0.31.2 → v1.0.0)**:
   Unified workstream merging WS-RC's remaining R6..R14 phases with the
