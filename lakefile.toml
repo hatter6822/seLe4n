@@ -601,6 +601,14 @@ root = "tests.SmpCacheMaintenanceSuite"
 name = "vspace_capability_binding_suite"
 root = "tests.VSpaceCapabilityBindingSuite"
 
+# WS-RA: syscall return ABI suite — RA.E.1's observable-failure witnesses
+# (a successful syscall's cap pointer decoding as a KernelError, the
+# signal-before-wait badge loss, the encodeOk bit-63 aliasing), inverted to
+# correct-convention assertions by the flip PR.
+[[lean_exe]]
+name = "syscall_return_abi_suite"
+root = "tests.SyscallReturnAbiSuite"
+
 # WS-SM SM8.A: per-core observable state suite — the SMP information-flow
 # observer `(core, label)` and the state it observes.  Runs a four-thread /
 # four-core fixture under a non-trivial labeling (core 0 low, core 1 high) and

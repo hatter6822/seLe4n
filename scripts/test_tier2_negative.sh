@@ -81,6 +81,12 @@ run_check_with_timeout "TRACE" lake exe ak8_coverage_suite
 # `KernelError → UInt32`, encoded-UInt64 contract, and the kernel-state
 # IO.Ref bootstrap.  See `tests/SyscallDispatchSuite.lean`.
 run_check_with_timeout "TRACE" lake exe syscall_dispatch_suite
+# WS-RA RA.E.1 — syscall return ABI suite: the observable-failure witnesses
+# (a successful syscall's cap pointer decoding as a KernelError, the
+# signal-before-wait badge loss, the encodeOk bit-63 aliasing).  The
+# PRE-MIGRATION assertions pin the defect and are inverted by the flip PR.
+# See `tests/SyscallReturnAbiSuite.lean`.
+run_check_with_timeout "TRACE" lake exe syscall_return_abi_suite
 # WS-SM SM0.S — Foundations test suite for the SM0 typed identifiers
 # (CoreId, SharingDomain, SgiKind, LockKind, LockId, BklState) plus the
 # AN12-B inventory hardening + ArchAssumption 6-way machinery.  Runtime
