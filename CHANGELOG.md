@@ -1,3 +1,85 @@
+## v0.33.28 — SM9 plan, review round 4: a live defect found, and the same gate weakness in a sibling taxonomy
+
+A fourth review of PR #865 left eight findings — the first **P1** of the series,
+and it is against **live code** rather than the plan.  All eight verified against
+the tree, all valid.
+
+**The P1 is a real kernel defect and is reported, not fixed here.**
+`notificationWaitOnCore`'s pending-badge arm clears `pendingBadge`, marks the
+waiter `.ready` through plain `storeTcbIpcState` (no message), and returns
+`.ok (some badge)` — and both live `.notificationWait` arms in `API.lean` match
+`(st', .ok _)` and discard it, the wrapper being `Kernel Unit`.  So in the
+ordinary **signal-before-wait** ordering the badge is consumed from the
+notification and delivered nowhere, while the waiter-present path delivers it via
+`storeTcbIpcStateAndMessage`.  The two orderings of one protocol disagree, and
+one loses the data.  `Platform/FFI.lean`'s own ABI note says `x0` carries *"a
+badge for `notificationWait`"* and that handlers producing a return value "are
+expected to write it" — so this is a documented contract the code does not meet,
+which is the project's implement-the-improvement case rather than a design
+choice.  Severity Medium: not memory-unsafe and not a leak (it fails closed on
+confidentiality), but badges carry sender identity, so a receiver making
+authorization decisions on badge value sees every signal in this ordering as
+indistinguishable; reachable by ordinary use, pre-hardware.  Per the project's
+vulnerability rule it is surfaced rather than silently closed, and the
+remediation touches the syscall return convention, so it is left as a decision.
+Registered as **SM9.C.0**, a prerequisite: SM9 cannot ship a data-carrying
+declassification over a path that loses data in one of its two orderings.
+
+**The same gate weakness, in the sibling taxonomy.**  Round 3 fixed
+`ReadableStructure` — `mem_all` proves the constructors of a hand-maintained type
+are listed, and cannot force a new readable field to acquire one — and did not
+carry the lesson to `ContentFlowSite`, which had the identical shape one section
+away.  A content-moving transition could simply never acquire a constructor while
+all three checks passed, which is the missed propagation the row calls its
+soundness keystone.  Now a **total function** `KernelOperation → ContentFlowClass`
+over the enumeration SM8.E already made exhaustive, so a new live operation is a
+missing case at elaboration.  Two sibling taxonomies with one defect is the
+argument for stating the pattern once, which §3.7 now does.
+
+**A historical verdict that moved with current state.**  Round 3 added
+`sourceSubject` so the causal predicate could select a taint — but that taint
+lives in a *mutable* side table while the events are a historical record.  A tag
+acquired after hop 2 would invent a link on re-evaluation; a retype of the
+subject — which §3.6 now requires to clear taint — would silently erase a real
+one.  A detector whose verdict on a fixed pair of events changes with unrelated
+later activity is not a detector.  The event now carries `predecessorTags`, a
+bounded snapshot taken in the step that records it, so the predicate reads the
+event list alone (`chainCausal_is_history_local`).
+
+**Chunking `status` was the wrong repair.**  Round 3 chunked it to stop the
+monotone generation aliasing at fixed width; but a multi-call read is not atomic,
+so a drain between two chunk calls reconstructs a generation that never existed —
+trading aliasing after 2^54 drains for tearing on the first one.  `status` is one
+call again, both components structurally bounded, with `noGenerationWrap` stated
+as a premise rather than assumed and `auditReadStatus_atomic` as the property
+chunking cannot have.
+
+**Two reader classes, because one fix broke the other reader.**  Round 3's
+view-local indices stopped a partial reader counting hidden entries — and broke a
+fully-dominating monitor's ability to correlate an event with an archived
+predecessor, since the taint table identifies predecessors by global identifier.
+"Nothing is lost because a monitor dominates" was wrong.  The protocol now
+distinguishes them explicitly: partial readers get view-local indices and no
+retry promise; the dominating monitor gets global identities and the epoch.  That
+also **removes a mount that could not exist** — the per-observer drain token had
+no state to hold it and none is constructible, `SecurityDomain.id` being an
+unbounded `Nat` with no finite family to key a `Vector` by
+(`observerScopedGeneration_not_mountable`).
+
+**Two smaller ones.**  The chunk *coordinates* were themselves single words, so
+"total for any `Nat`" was false — a value needing 2^63 chunks cannot have its
+count returned through `encodeOk`; the export is now structurally bounded by
+`maxAuditFieldChunks` with `.auditFieldTooLarge` fail-closed, giving a total
+theorem over a bounded domain instead of a false one over an unbounded domain.
+And the reader exported only the trust bit of `authorizationBasis`, collapsing
+every `integratorOverride` to one value and leaving a monitor unable to say which
+out-of-band authority permitted an event; the designation is now a chunked field.
+
+Counts: phase 60 → 61 (SM9.C gains the prerequisite), theorems ~52 → ~60.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §3.3, §3.6, §3.7
+Refs: #865
+
 ## v0.33.27 — SM9 plan, review round 3: two gates that could not gate, and a predicate that was not well-defined
 
 A third automated review of PR #865, on the round-2 remediation, left five

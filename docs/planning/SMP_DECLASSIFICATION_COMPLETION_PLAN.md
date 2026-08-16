@@ -7,7 +7,7 @@
 > **Audited cut**: `v0.33.23`
 > **Target releases**: v0.33.24 → v0.34.x
 > **Calendar estimate**: 12-16 weeks
-> **Sub-task count**: 60 across ~20-25 PRs
+> **Sub-task count**: 61 across ~21-26 PRs
 > **Status**: PENDING
 
 ## 1. Phase goal
@@ -210,14 +210,35 @@ silently rather than fail closed.  Consequences for SM9.A.2, all of them design
 constraints rather than notes:
 
 - `core ⊕ kernelIssued` is packed into the **low** bits and must not touch
-  bit 63.
-- **All four** value fields — `srcDomain.id`, `dstDomain.id`,
-  `targetObject.val`, `timestamp` — are unbounded `Nat` in the model
-  (`SecurityDomain.id : Nat`, `ObjId.val : Nat`), so each is read through an
-  **arbitrary-length 32-bit chunk protocol**: `AuditReadOp.field w chunkIndex`
-  plus a `fieldChunkCount w` sub-operation telling the reader how many chunks
-  that field occupies.  Total for any `Nat`, and terminating because any
-  particular value is finite.
+  bit 63 — but the trust bit is **not** the whole of `authorizationBasis`.
+  `AuditRecord.lean` defines the basis as a designation *paired with* that bit
+  (`renderTagged` ships both, and `renderTagged_injective` is why), so exporting
+  the bit alone collapses every `integratorOverride` to one externally-readable
+  value and leaves a monitor unable to say *which* out-of-band authority
+  permitted an event — the question that record exists to answer.  The
+  designation is therefore a chunked field like the others, with
+  `auditReadBasis_reconstructs_designation`; structurally excluding
+  integrator-authored entries from readable trails was the alternative and is
+  worse, since those are exactly the entries a monitor most needs to see.
+- The value fields — `srcDomain.id`, `dstDomain.id`, `targetObject.val`,
+  `timestamp`, and (per below) the authorization basis's designation — are
+  unbounded `Nat` in the model (`SecurityDomain.id : Nat`, `ObjId.val : Nat`),
+  so each is read through a 32-bit chunk protocol: `AuditReadOp.field w
+  chunkIndex` plus `fieldChunkCount w`.
+- **The chunk coordinates are themselves single words, so "total for any `Nat`"
+  was false** — a value needing 2^63 chunks cannot have its own count returned
+  through `encodeOk`, and one needing 2^64 chunks cannot have every index named
+  through the `UInt64` ABI.  Chasing that with a cursor protocol would need
+  per-caller state, which §3.3's other half has just finished showing is not
+  constructible.  So the export is **structurally bounded** instead:
+  `maxAuditFieldChunks` caps the exported width and the reader **fails closed**
+  with `.auditFieldTooLarge` above it.  `auditReadField_reconstructs` then holds
+  unconditionally on the values the reader accepts, which is the honest shape —
+  a total theorem about a bounded domain rather than a false theorem about an
+  unbounded one.  In a running kernel nothing approaches the cap (object ids come
+  from a bounded store, timestamps from the epoch plus at most 256 live entries,
+  domains from a configured labeling), and `auditFieldBound_unreachable_in_kernel`
+  records that as a checked observation rather than a hope.
 - `auditReadField_reconstructs` (§11) is the losslessness theorem: folding a
   field's chunks recovers the value exactly.
 
@@ -234,30 +255,57 @@ design look adequate.
 
 **`status` is chunked too, for the same reason one field over.**  A draft fixed
 the record fields and left `status` packing the visible length *and* the drain
-generation into one 63-bit word.  The generation is monotone over unbounded
-append/drain cycles, so a single-word encoding must eventually wrap, saturate or
-truncate — and once two distinct generations alias, the bracket-and-retry
-protocol accepts a read whose indices shifted underneath it, which is the one
-thing the generation exists to prevent.  `status` therefore takes the same
-protocol: `AuditReadOp.status w chunkIndex` with `statusChunkCount w` for
-w ∈ {visibleLength, generation}, and `auditReadStatus_reconstructs` alongside
-the field-level theorem.  Packing two quantities into one word was the whole
-defect; there is no version of it that is safe at a fixed width.
+generation into one 63-bit word, which aliases once the monotone generation
+wraps.  The obvious repair — chunk `status` too — was drafted and is **worse**,
+and the reason is instructive: a multi-call read is not atomic, so a drain
+landing between two chunk calls yields a reconstructed generation assembled from
+two different states, corresponding to no generation that ever existed.  Chunking
+traded *aliasing after 2^54 drains* for *tearing on the very first one*.
 
-**What the exported timestamp leaks, and the fix.**  Raised here rather than in
-review: a `DeclassificationEvent`'s timestamp is its **global** position
-(§3.4's `epoch + index`), so a partial reader that can see entry *X* learns how
-many entries preceded *X* — including the ones it cannot see.  That is a §3.7(b)
-violation on the trail, exactly parallel to the refusal counters above, and it
-is **pre-existing in SM8's design** rather than introduced by the epoch (the old
-`log.length` producer counted hidden entries just as well); what changes is that
-§3.7 now makes it an obligation the plan must discharge rather than inherit
-silently.  So the reader exports a visible entry's **index in the reader's own
-view**, not its global timestamp; the global value stays internal, where chain
-ordering and the causal detector need it.  Nothing is lost, because chain
-reconstruction is a monitor concern and a monitor dominates every recorded
-domain by §3.4 — `auditReadIndex_is_view_local` and
-`auditRead_hides_global_position` are the pair.
+`status` therefore returns in **one call**, with both components structurally
+bounded: the visible length is bounded by `maxDeclassificationAuditEntries`
+(256, so 9 bits) and the generation takes the remaining payload, with a
+**stated** `noGenerationWrap` premise on the retry theorem rather than a silent
+assumption.  `auditReadStatus_atomic` is the property chunking cannot have.  A
+premise that is written down is the honest form of a bound that cannot be made
+unconditional.
+
+**Two classes of reader, and what each is promised.**  Raised partly here and
+partly in review, and they resolve together.  A `DeclassificationEvent`'s
+timestamp is its **global** position (§3.4's `epoch + index`), so exporting it to
+a partial reader tells that reader how many entries preceded the one it can see —
+hidden ones included.  That is §3.7(b) violated on the trail, exactly parallel to
+the refusal counters, and it is **pre-existing in SM8's design** rather than
+introduced by the epoch (the old `log.length` producer counted hidden entries
+just as well); §3.7 is what turns it from an inheritance into an obligation.
+
+But the first fix — export view-local indices to everyone — broke something else:
+the taint table and the causal detector identify predecessors by the *global*
+identifier, so after a drain a **fully-dominating monitor** could no longer
+correlate a later event with an archived predecessor.  "Nothing is lost because a
+monitor dominates" was wrong: the monitor could still see the entries, but not
+their stable identities.
+
+So the protocol distinguishes the two readers explicitly:
+
+| | Partial reader | Fully-dominating monitor |
+|---|---|---|
+| Entry identity | **view-local index** — reveals nothing about hidden entries | **global timestamp** — stable across drains, so archived predecessors correlate |
+| `status` generation | none; a view change is detected from the visible length, fail-closed | the **global epoch**, which it may see because it dominates everything |
+| Retry guarantee | none promised | `auditRead_stable_under_append` under `noGenerationWrap` |
+
+`auditReadIndex_is_view_local`, `auditRead_hides_global_position` and
+`dominatingReader_sees_global_identity` are the three; the partial reader's lack
+of a retry guarantee is stated rather than papered over, because a partial reader
+is a monitoring convenience and the trail's consumer of record is the monitor.
+
+**This also removes a mount that could not exist.**  An observer-scoped drain
+generation was specified with no state to hold it — and per-label state is not
+constructible, since `SecurityDomain.id` is an unbounded `Nat`, so there is no
+finite family of readers to key a `Vector` by.  With the generation exposed only
+to the dominating monitor it *is* the global epoch, already mounted by SM9.A.1a,
+and no per-observer structure is needed.  `observerScopedGeneration_not_mountable`
+records why the earlier design was not merely unbuilt but unbuildable.
 
 **Indexed read.**  `ipcBufferReadMr` (`Architecture/IpcBufferRead.lean`) does
 page-granular translation and a write mirror is feasible (`writeUInt64` in
@@ -498,10 +546,20 @@ detector that is *sound* rather than one that looks causal and is not.
 - It lives in a **side table** `SystemState.declassificationTaint`, not a field
   on all seven object kinds: the audit trail's own precedent, and it leaves
   object well-formedness and the frozen mirror untouched.
-- Propagation sites are enumerated **as data** with a completeness theorem.  This
-  is the soundness keystone: propagation that misses a content-moving transition
-  is a detector that misses real laundering, so the enumeration is checked rather
-  than asserted, in the `KernelOperation.all` idiom.
+- Propagation sites are **classified from an independently exhaustive taxonomy**,
+  not enumerated in a fresh one.  This is the soundness keystone — propagation
+  that misses a content-moving transition is a detector that misses real
+  laundering — and a hand-maintained `ContentFlowSite.all` with `mem_all` cannot
+  carry it, for exactly the reason §3.7 gives for `ReadableStructure`: `mem_all`
+  proves every constructor of the new type is listed, while a content-moving
+  transition can simply never acquire a constructor.  (That the same defect
+  appeared in two sibling taxonomies, one of them fixed a commit earlier, is the
+  argument for stating the pattern once rather than per site.)  The classification
+  is therefore a **total function** `KernelOperation → ContentFlowClass`
+  (propagates / frames) over the enumeration SM8.E already made exhaustive
+  (`KernelOperation.all` + `mem_all`), so a new live operation is a missing case
+  at elaboration.  `contentFlowClass_total` and
+  `contentFlowSite_list_gate_insufficient` are the pair.
 - Overflow **saturates upward** to "tainted by everything".  For a detector the
   safe direction is over-approximation — more false positives, never a missed
   chain — and `taintSaturate_over_approximates` states that direction rather than
@@ -527,17 +585,31 @@ with `retypedObject_taint_empty` as the property and
 propagation *sets* taint, so a blanket clear-on-store would erase what D.8–.11
 exist to record.
 
-*The detector needs an identity the event does not carry.*  D.14 checks whether
-hop 2's **source** object's taint contains hop 1's timestamp — but the detector
-runs on the *event list*, and `DeclassificationEvent` records only
-`targetObject`, the two domains, the basis, the timestamp and the core
-(verified — `AuditRecord.lean`).  Given two same-domain subjects where only one
-received hop 1's data, their events are indistinguishable, so the predicate as
-drafted is not even well-defined from the data the detector has: it must accept
-both or reject both.  The event therefore gains a **subject identity**
-(`sourceSubject : ObjId`, the declassifying thread's TCB), recorded by the
-producer and keyed on by the causal predicate.  Like the epoch, this is a change
-to landed SM8 code and rides the §6 mount checklist.
+*The detector needs data the event does not carry, and a subject identity is not
+enough.*  D.14 checks whether hop 2's **source** object's taint contains hop 1's
+timestamp — but the detector runs on the *event list*, and
+`DeclassificationEvent` records only `targetObject`, the two domains, the basis,
+the timestamp and the core (verified — `AuditRecord.lean`).  Two same-domain
+subjects where only one received hop 1's data produce indistinguishable events,
+so the predicate is not well-defined from the data the detector has: it must
+accept both or reject both.
+
+Adding a `sourceSubject : ObjId` was the first repair and is **insufficient**,
+because the taint it points at lives in a *mutable* side table while the events
+are a historical record.  Evaluating an old event against current taint is wrong
+in both directions: if the subject acquires hop 1's tag *after* hop 2 already
+happened, re-reading the table invents a causal link that never existed; and if
+that TCB is later retyped — which §3.6 now requires to **clear** its taint — a
+genuine historical link silently disappears.  A detector whose verdict on a fixed
+pair of events changes with unrelated later activity is not a detector.
+
+So the event carries the causality itself: a **bounded snapshot of the subject's
+taint at production time** (`predecessorTags`), taken in the same step that
+records the event, plus `sourceSubject` retained for attribution.  The predicate
+then reads only the event list, which is what makes it a property of the trail
+rather than of the current store — `chainCausal_is_history_local` states exactly
+that, and `chainCausal_not_table_derived` keeps the refuted design refuted.  Both
+fields change landed SM8 code and ride the §6 mount checklist.
 
 ### 3.7 The reader-visibility discipline
 
@@ -611,7 +683,7 @@ their registries).  SM9.A.4a alone is a relation with congruence lemmas — see
 |-----|-------------|-------|-----|
 | SM9.A.1 | `auditLogVisibleTo ctx L` + `_sublist` / `_reindexed` / `_length_le`; the no-gap-leak theorem (the visible view is a function of the reader's clearance alone) | new production leaf `InformationFlow/AuditRead.lean` | M |
 | SM9.A.1a | **The persistent timestamp epoch** (§3.4) — `SystemState.declassificationAuditEpoch`, `timestamp := epoch + log.length`, well-formedness generalised to `auditTimestampsFrom epoch log` (the `start`-parameterised lemma already exists) with the 0-anchored form as the boot instance; both identification theorems generalised; the three `_preserves_wellFormed` theorems restated; full §6 mount carriage (freeze required field, `OffSchedulerAgrees`, four boot frames, `storeObject` frame, `…_write_preserves_projection`); the corrected "well-formed throughout" contract.  **Sequenced before SM9.A.3 — drain is unsound without it** | `Model/State.lean`, `Model/{FrozenState,FreezeProofs}.lean`, `Platform/Boot.lean`, `InformationFlow/{Declassification,DeclassificationPerCore}.lean` | L |
-| SM9.A.2 | `AuditReadOp` — **fused with `ReadableStructure`** (§3.7: each operation names the structure it reads) + `all` / `mem_all` / `all_nodup` + `auditReadOp_structure_total`; the §3.3 **arbitrary-length chunk protocol** (`fieldChunkCount w`, `field w chunkIndex`) over all four unbounded fields **and over `status`** (`statusChunkCount`, w ∈ {visibleLength, generation} — a fixed-width status word aliases once the monotone generation wraps); `auditReadField_reconstructs` + `auditReadStatus_reconstructs` (the losslessness claims) and `auditReadWord_fits_payload` (the ABI-safety half, explicitly *not* losslessness); `_generation_observer_scoped` + the negative that a global counter is refutable; **view-local indices** (`auditReadIndex_is_view_local`, `auditRead_hides_global_position`) so a partial reader cannot count hidden entries off a global timestamp | same | XL |
+| SM9.A.2 | `AuditReadOp` — **fused with `ReadableStructure`** (§3.7: each operation names the structure it reads) + `all` / `mem_all` / `all_nodup` + `auditReadOp_structure_total`; the §3.3 **arbitrary-length chunk protocol** (`fieldChunkCount w`, `field w chunkIndex`) over all four unbounded fields **and over the basis designation** (exporting the trust bit alone collapses every `integratorOverride`); `maxAuditFieldChunks` with fail-closed `.auditFieldTooLarge`, since the chunk *coordinates* are themselves single words and "total for any `Nat`" was false; `auditReadField_reconstructs` (unconditional on the accepted domain) + `auditReadBasis_reconstructs_designation` + `auditReadWord_fits_payload` (the ABI-safety half, explicitly *not* losslessness); **single-call `status`** with both components structurally bounded + `auditReadStatus_atomic` (chunking `status` traded aliasing for tearing on the first interleaved drain); the **two reader classes** — `auditReadIndex_is_view_local` and `auditRead_hides_global_position` for a partial reader, `dominatingReader_sees_global_identity` so a monitor can still correlate across drains, plus `observerScopedGeneration_not_mountable` | same | XL |
 | SM9.A.3 | `auditDrainVisiblePrefix` under the §3.4 dominance gate, advancing the SM9.A.1a epoch; `auditDrain_requires_full_dominance`, `_preserves_auditLogBounded`, `_preserves_wellFormed_at_epoch`, `_monotone_generation`, `_monotone_epoch`, `_fully_clears_for_dominating_reader`, and the negative that a partially-cleared caller drains nothing | same | M |
 | SM9.A.4a | **`auditObservationalEquivalence ctx L`** (§3.4a option b, §3.7 discipline): the clause set is a **total function on `ReadableStructure`**, not a list — a `mem_all` over a hand-maintained type cannot force a new structure to join it (`readableStructure_list_gate_insufficient` refutes that design), whereas a missing case in a total function is a compile error; `auditObservationalEquivalence_clause_total`; clauses for the trail **and** the refusal ledger; reflexivity / symmetry / transitivity; the congruence lemmas carrying it through every writer of a readable structure; the negative that plain `lowEquivalent` does **not** imply equal visible views | `InformationFlow/DeclassificationPerCore.lean` (staged) | XL |
 | SM9.A.4b | The flow argument over that relation: the reader is a function of the visible view alone, so it opens no channel; the **not-CC-8** argument stated once | same | L |
@@ -668,10 +740,11 @@ cannot displace an authorized-downgrade entry*.
 - Outside `ObservableState`, with the clearance gate of SM9.A applying to the
   ledger too.
 
-### SM9.C — Data-carrying declassification (3-4 PRs, 9 sub-tasks)
+### SM9.C — Data-carrying declassification (4-5 PRs, 10 sub-tasks)
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
+| SM9.C.0 | **Prerequisite — the wait path drops the badge.**  `notificationWaitOnCore`'s pending-badge arm clears `pendingBadge`, marks the waiter `.ready` with plain `storeTcbIpcState` (no message), and returns `.ok (some badge)`; both live `.notificationWait` arms in `API.lean` match `(st', .ok _)` and discard it, and the wrapper's type is `Kernel Unit`.  So in the ordinary signal-before-wait ordering the badge is consumed and delivered nowhere — while the waiter-present path delivers via `storeTcbIpcStateAndMessage`.  `FFI.lean`'s own ABI note says `x0` carries *"a badge for `notificationWait`"*, so this is a documented contract the code does not meet.  **SM9.C cannot ship a data-carrying declassification over a path that loses data in one of its two orderings.**  Reported separately as a live defect; the remediation (mirror the signal path, and/or thread the value to `x0`) is an ABI decision and is not assumed here | `IPC/CrossCore/NotificationSignal.lean`, `Kernel/API.lean` | L |
 | SM9.C.1 | `notificationSignalDeclassified` — the SM6.B signal gated by `declassificationDecision`, badge delivered, event recorded; error arms fail closed | `IPC/CrossCore/NotificationSignal.lean` | L |
 | SM9.C.2 | Per-core + cross-core forms (`…OnCore`, `…CrossCoreDispatchChecked`), SGI emission, home-core wake | same | L |
 | SM9.C.3 | `ipcInvariantFull{,_perCore}` preservation — rides `notificationSignal_preserves_*` plus the audit frame | `IPC/Invariant/PerCoreBundlePreservation.lean` | L |
@@ -698,15 +771,15 @@ and its consequences (D.14–D.18).
 | SM9.D.4 | The `FrozenSystemState` test literals (the same six SM9.B.5 touches) | `tests/*Suite.lean` | S |
 | SM9.D.5 | `OffSchedulerAgrees` clause + **all six** builders; boot frames ×4 | `IPC/Invariant/LookupCongruence.lean`, `Platform/Boot.lean` | M |
 | SM9.D.6 | Information flow: `declassificationTaint_write_preserves_projection := rfl`; `onCore_declassificationTaint`; the §3.7 inventory row recording that it is **not readable** and therefore owes no equivalence clause yet | `InformationFlow/Invariant/Operations.lean`, `ObservableStatePerCore.lean` | M |
-| SM9.D.7 | **The content-flow inventory** — `ContentFlowSite` as data + `all` / `mem_all` / `all_nodup` + the completeness theorem.  The soundness keystone: propagation that misses a content-moving transition is a detector that misses real laundering | `InformationFlow/Taint.lean` | L |
+| SM9.D.7 | **The content-flow classification** — a *total function* `KernelOperation → ContentFlowClass` over SM8.E's exhaustive `KernelOperation.all`, not a fresh hand-maintained taxonomy: `mem_all` on a new type proves its constructors are listed while a content-moving transition can simply never acquire one (§3.6, the same defect §3.7 fixes for `ReadableStructure`).  `contentFlowClass_total` + `contentFlowSite_list_gate_insufficient`.  The soundness keystone: a missed site is a detector that misses real laundering | `InformationFlow/Taint.lean` | XL |
 | SM9.D.8 | Propagation at IPC send/receive (message registers → receiver TCB), single-core and `…OnCore` | `IPC/Operations/Endpoint.lean`, `IPC/CrossCore/EndpointSend.lean` | L |
 | SM9.D.9 | Propagation at call / reply / replyRecv, including the cross-core dispatch wrappers | `IPC/CrossCore/{EndpointCall,EndpointReply}*.lean` | L |
 | SM9.D.10 | Propagation at notification signal — **where SM9.C's downgrade originates a tag** — plus the bound-TCB delivery path | `IPC/CrossCore/NotificationSignal.lean` | L |
 | SM9.D.11 | Propagation at capability transfer (`ipcUnwrapCaps`) | `IPC/Operations/CapTransfer.lean` | M |
 | SM9.D.12 | Taint **frames** for every non-content transition (scheduler, VSpace, cache/TLB), so D.7's completeness is checkable rather than declared — **except retype, which clears** (§3.6): `lifecycleRetypeObject` commits `storeObject target newObj` at the same id, so a framed retype leaves a destroyed object's tags on its replacement.  `retypeClearsTaint` at the two production wrappers (the entry points SM7.D's initiator drain already enumerates) + `retypedObject_taint_empty` + `staleTaint_is_not_saturation`, which keeps D.15's residual-imprecision claim true | ~12 files | XL |
 | SM9.D.13 | Saturation: the structural bound, upward-saturating overflow, `taintSaturate_over_approximates` (the safe direction for a detector, stated as a theorem) | `InformationFlow/Taint.lean` | M |
-| SM9.D.13a | **`DeclassificationEvent.sourceSubject : ObjId`** (§3.6) — the declassifying thread's TCB, recorded by the producer.  Without it the causal predicate is not well-defined from the event list: two same-domain subjects, only one of which received hop 1's data, produce indistinguishable events.  A change to landed SM8 code, so it rides the §6 mount checklist (record type, producer, well-formedness, the reader's chunk protocol, the golden fixtures) | `InformationFlow/AuditRecord.lean`, `Declassification.lean`, `AuditRead.lean` | L |
-| SM9.D.14 | `declassificationChainCausal` — hop 2's **recorded subject's** taint contains hop 1's timestamp — conjoined into `declassificationChainLinked`, keyed on the D.13a identity rather than on a source object the event never carried | `InformationFlow/DeclassificationPerCore.lean` | L |
+| SM9.D.13a | **`DeclassificationEvent.sourceSubject : ObjId` + `predecessorTags`** (§3.6) — the declassifying thread's TCB *and* a bounded snapshot of its taint at production time.  The subject alone is insufficient: the taint it names lives in a mutable side table, so re-evaluating a historical event against current taint invents links (tag acquired after the fact) and loses real ones (retype clears it).  `chainCausal_is_history_local` + `chainCausal_not_table_derived`.  A change to landed SM8 code, riding the §6 mount checklist (record type, producer, well-formedness, the reader's chunk protocol, the golden fixtures) | `InformationFlow/AuditRecord.lean`, `Declassification.lean`, `AuditRead.lean` | XL |
+| SM9.D.14 | `declassificationChainCausal` — hop 2's **recorded `predecessorTags`** contain hop 1's timestamp — conjoined into `declassificationChainLinked`, read from the event list rather than from the live taint table, so the verdict on a fixed pair of events cannot change with later unrelated activity | `InformationFlow/DeclassificationPerCore.lean` | L |
 | SM9.D.15 | **Retire `declassificationChainLinked_is_syntactic`** (now genuinely false) for a soundness theorem on the causal detector; a negative pinning the residual saturation-induced over-approximation, so the remaining imprecision is stated rather than implied absent | same | M |
 | SM9.D.16 | `chainLaunders` consumes it; the rule-inventory `evidenceProp` moves with the theorem; counts + Tier-3 anchors incl. the retirement negative | same | M |
 | SM9.D.17 | Lock sets and write sets: the propagation writes sit inside existing transitions, so declared footprints and `permittedKinds` grow with them; inventory counts | `Concurrency/Locks/*` | L |
@@ -834,6 +907,8 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
 | A readable structure is added with no equivalence clause | MED | HIGH | §3.7's `ReadableStructure.all` + `mem_all` — a structure without a clause fails completeness rather than passing silently.  Three findings so far were the same violation seen at three sites |
 | Drain breaks the trail's timestamp discipline | HIGH | HIGH | **Realised, not hypothetical**: `timestamp := log.length` reuses a timestamp after any prefix removal.  Closed by the SM9.A.1a epoch, sequenced before drain exists, with the reuse as a load-bearing negative (§3.4) |
 | Taint propagation misses a content-moving transition | MED | HIGH | `ContentFlowSite.all` + `mem_all` + non-content frames (SM9.D.7/.12) — a missed site is a detector that misses real laundering, so the enumeration is checked, not asserted |
+| A historical verdict that moves with current state | MED | HIGH | The causal predicate reads `predecessorTags` snapshotted into the event, not the mutable taint table — otherwise a tag acquired late invents a link and a retype-cleared TCB loses a real one (§3.6) |
+| A multi-call read that tears | MED | MED | `status` is one call with bounded components (§3.3); the chunked design it replaces could assemble a generation from two states |
 | A completeness gate a new structure can decline to join | MED | HIGH | `mem_all` over a hand-maintained type cannot force a new readable field to add a constructor.  `AuditReadOp` is fused with `ReadableStructure` and the clause set is a total function (§3.7), so the gate fails at elaboration rather than passing silently |
 | A visibility gate computed from data that ages | MED | HIGH | The refusal ring evicts while its counters are cumulative, so a records-derived gate shrinks while the guarded data does not.  Gated on configured clearance instead (§3.2), with the eviction counterexample kept as a negative |
 | Taint outliving the object it describes | MED | MED | Retype commits `storeObject` at the same id, so a framed retype leaves a destroyed object's tags on its replacement — a false positive unrelated to saturation.  Retype clears (§3.6, SM9.D.12) |
@@ -877,6 +952,15 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
       surviving rows.
 - [ ] A retyped object carries no taint from its predecessor, with a lifecycle
       test rather than a frame lemma.
+- [ ] The causal verdict on a fixed pair of events is stable under later
+      unrelated activity, including a retype of the subject.
+- [ ] Every completeness gate is keyed to a taxonomy that is exhaustive
+      *independently* of the gate — `KernelOperation.all` for content flow,
+      `ReadableStructure` fused with the reader for visibility — so a new live
+      transition or a new readable field cannot decline to join it.
+- [ ] SM9.C.0 is closed: the notification wait path delivers the badge, so a
+      data-carrying declassification is not built over a path that loses data in
+      one of its two orderings.
 - [ ] Every readable structure has an equivalence clause and a hidden-write
       non-interference argument (§3.7), checked by `mem_all` rather than by
       review.
@@ -903,17 +987,22 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
 
 ## 11. Theorem catalogue for SM9
 
-~52 substantive theorems.  Headline set:
+~60 substantive theorems.  Headline set:
 
 - `auditLogVisibleTo_sublist` + the clearance-determines-view theorem (SM9.A.1)
 - `auditTimestampsFrom_epoch_preserved` + `auditDrain_monotone_epoch` — the
   timestamp epoch, and the negative that the pre-epoch `log.length` producer
   **reuses** a timestamp after a drain (SM9.A.1a)
-- `auditReadField_reconstructs` + `auditReadStatus_reconstructs` — folding the
-  chunks recovers the value; the losslessness claims, `status` included because a
-  fixed-width status word aliases once the monotone generation wraps (SM9.A.2)
-- `auditReadIndex_is_view_local` + `auditRead_hides_global_position` — a partial
-  reader cannot count hidden entries off a global timestamp (SM9.A.2)
+- `auditReadField_reconstructs` + `auditReadBasis_reconstructs_designation` —
+  folding the chunks recovers the value, over the domain `maxAuditFieldChunks`
+  admits, with `.auditFieldTooLarge` fail-closed above it (SM9.A.2)
+- `auditReadStatus_atomic` — `status` is one call, because chunking it traded
+  aliasing for tearing on the first interleaved drain (SM9.A.2)
+- `auditReadIndex_is_view_local` + `auditRead_hides_global_position` +
+  `dominatingReader_sees_global_identity` — a partial reader cannot count hidden
+  entries, and a monitor can still correlate across drains (SM9.A.2)
+- `observerScopedGeneration_not_mountable` — why the per-observer token was not
+  merely unbuilt but unbuildable (SM9.A.2)
 - `auditReadOp_structure_total` + `auditObservationalEquivalence_clause_total` +
   `readableStructure_list_gate_insufficient` — the §3.7 gate a new structure
   cannot decline to join (SM9.A.2, SM9.A.4a)
@@ -948,8 +1037,12 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
   `onCore_declassificationRefusals` (SM9.B.8)
 - `notificationSignalDeclassified_preserves_ipcInvariantFull{,_perCore}` (SM9.C.3)
 - **`declassificationRelativeNonInterference`** (SM9.C.6) — the phase headline
-- `contentFlowSites_complete` — the taint-propagation soundness keystone
-  (SM9.D.7)
+- `contentFlowClass_total` + `contentFlowSite_list_gate_insufficient` — the
+  taint-propagation soundness keystone, classified from an exhaustive taxonomy
+  rather than enumerated in a fresh one (SM9.D.7)
+- `chainCausal_is_history_local` + `chainCausal_not_table_derived` — the verdict
+  on a fixed pair of events cannot change with later unrelated activity
+  (SM9.D.13a, SM9.D.14)
 - `taintPropagation_*` per content-flow site + the non-content frames (SM9.D.8–.12)
 - `taintSaturate_over_approximates` — overflow errs toward false positives,
   never a missed chain (SM9.D.13)
