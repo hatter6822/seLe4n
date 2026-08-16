@@ -78,7 +78,7 @@ SMP binary on a 4-core SoC.
 
 ### 1.3 Workstream shape
 
-**WS-SM**, 11 phases, ~594-769 sub-tasks, ~24-30 months. Each
+**WS-SM**, 11 phases, ~609-784 sub-tasks, ~24-30 months. Each
 phase has its own detailed plan (Appendix A directory).
 
 ```
@@ -378,13 +378,16 @@ documentation; per-core declassification audit.
 
 Document: [`SMP_DECLASSIFICATION_COMPLETION_PLAN.md`](SMP_DECLASSIFICATION_COMPLETION_PLAN.md).
 
-44 sub-tasks across ~14-17 PRs.  Closes the four follow-ons SM8
+59 sub-tasks across ~20-24 PRs.  Closes the four follow-ons SM8
 registered and could not take: a privileged clearance-filtered reader
 and drain for the audit trail (without which a deployment that performs
 256 authorized downgrades can no longer declassify at all); refusal
 auditing; a data-carrying declassification with
-declassification-relative non-interference; and provenance behind the
-laundering detector.  **Added after the SM8 cut** — those follow-ons were
+declassification-relative non-interference; and **causal** provenance
+behind the laundering detector — taint propagated through ordinary IPC
+delivery, since declassification edges alone cannot link consecutive
+hops (plan §3.6).  That last item is the phase's largest sub-phase and
+the reason the estimate is 12-16 weeks rather than 6-9.  **Added after the SM8 cut** — those follow-ons were
 provisionally scoped to the phase then numbered SM9, which was release
 closure; release closure has no room for kernel work, so it moved to
 SM10 and this phase took the slot.
@@ -497,7 +500,7 @@ WS-RC and WS-SM are merged. Opens immediately at v0.31.2 boundary.
 | SM5 | v0.71.0 → v0.82.x | 12-16 weeks |
 | SM6 | v0.83.0 → v0.90.x | 8-12 weeks |
 | SM7 ‖ SM8 | v0.91.0 → v0.97.x | 6-10 weeks (parallel) |
-| SM9 | v0.33.24 → v0.34.x | 6-9 weeks |
+| SM9 | v0.33.24 → v0.34.x | 12-16 weeks |
 | SM10 | v0.98.0 → **v1.0.0** | 4-6 weeks |
 | **Total** | | **84-119 weeks (~19-28 months)** |
 
@@ -565,9 +568,9 @@ WS-SM is complete and v1.0.0 ships when:
 | SM6 | [`SMP_CROSS_CORE_IPC_PLAN.md`](SMP_CROSS_CORE_IPC_PLAN.md) | 60-80 | ~1,800 |
 | SM7 | [`SMP_TLB_SHOOTDOWN_PLAN.md`](SMP_TLB_SHOOTDOWN_PLAN.md) | 40-55 | ~1,200 |
 | SM8 | [`SMP_INFORMATION_FLOW_PLAN.md`](SMP_INFORMATION_FLOW_PLAN.md) | 40-55 | ~1,500 |
-| SM9 | [`SMP_DECLASSIFICATION_COMPLETION_PLAN.md`](SMP_DECLASSIFICATION_COMPLETION_PLAN.md) | 44 | ~2,500 |
+| SM9 | [`SMP_DECLASSIFICATION_COMPLETION_PLAN.md`](SMP_DECLASSIFICATION_COMPLETION_PLAN.md) | 59 | ~4,500 |
 | SM10 | [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) | 25-35 | ~500 |
-| **Total** | | **594-769** | **~27,500 LoC of new code** |
+| **Total** | | **609-784** | **~29,500 LoC of new code** |
 
 ## Appendix B — Verification commands
 
@@ -611,7 +614,7 @@ grep -n "smpLatentInventory_count" SeLe4n/Kernel/Concurrency/Assumptions.lean
 
 ## Appendix C — Theorem-catalogue index
 
-WS-SM introduces ~236 new substantive theorems. Per-phase
+WS-SM introduces ~255 new substantive theorems. Per-phase
 breakdown:
 
 | Phase | Theorems | Document section |
@@ -625,9 +628,9 @@ breakdown:
 | SM6 Cross-core IPC | ~25 | [SMP_CROSS_CORE_IPC_PLAN §10](SMP_CROSS_CORE_IPC_PLAN.md) |
 | SM7 TLB shootdown | ~14 | [SMP_TLB_SHOOTDOWN_PLAN §10](SMP_TLB_SHOOTDOWN_PLAN.md) |
 | SM8 Information flow | ~18 | [SMP_INFORMATION_FLOW_PLAN §10](SMP_INFORMATION_FLOW_PLAN.md) |
-| SM9 Declassification | ~26 | [SMP_DECLASSIFICATION_COMPLETION_PLAN §11](SMP_DECLASSIFICATION_COMPLETION_PLAN.md) |
+| SM9 Declassification | ~45 | [SMP_DECLASSIFICATION_COMPLETION_PLAN §11](SMP_DECLASSIFICATION_COMPLETION_PLAN.md) |
 | SM10 Closure | ~5 | [SMP_RELEASE_CLOSURE_PLAN §10](SMP_RELEASE_CLOSURE_PLAN.md) |
-| **Total** | **~236** | |
+| **Total** | **~255** | |
 
 The canonical authoritative list will be maintained in
 `docs/audits/SMP_THEOREM_INDEX.md` once WS-SM opens (created in

@@ -1,3 +1,92 @@
+## v0.33.26 — SM9 plan, review round 2: one defect reaches landed code, and one scope decision reverses
+
+A second automated review of PR #865, on the round-1 remediation itself, left six
+findings.  Each was checked against the tree before acting; **all six hold**.  Two
+are round 1's own fixes recurring one structure over, one breaks a landed SM8
+theorem, and one reverses a scoping decision — the reviewer was right that SM8's
+registered wording had been narrowed, and the narrowing does not work.
+
+**The one that reaches landed code.**  `declassifyStoreOnCore` assigns
+`timestamp := log.length`, and `declassificationAuditLogWellFormed_iff` says a
+well-formed trail's timestamps are *exactly its indices*, anchored at 0.  The
+drain SM9.A specified removes a prefix, which breaks both halves — and the
+sharper half is not the predicate but the producer: the shortened log's `length`
+falls, so **the next append reuses a timestamp still in the trail** (drain 1 from
+`[0,1,2]`, append, and the new entry collides with the surviving `2`).  That
+falsifies `declassificationAuditLog_timestamp_identifies_event` in substance
+rather than merely stranding its hypothesis, and takes
+`declassificationChainLinked`'s strictly-increasing conjunct with it; the
+contract claiming *"a running system's trail is well-formed throughout"* becomes
+false the first time anyone drains.  Closed by a new SM9.A.1a — a persistent
+`declassificationAuditEpoch` with `timestamp := epoch + log.length`, drain
+advancing the epoch, sequenced **before** drain exists.  Cheaper than it looks
+because the general lemma is already in the tree: `auditTimestampsFrom` takes a
+`start` and `auditTimestampsFrom_iff` is stated over it, so the 0-anchored form
+becomes the boot instance and the identification theorems generalise rather than
+move.
+
+**Two findings, one clause, third sighting.**  Round 1 established that adding a
+reader changes what is observable and fixed it *for the audit trail*.  The
+refusal ledger is a second readable-but-unprojected structure and inherited both
+halves: absent from the equivalence (so `auditRead_no_channel` would not cover
+the API that exposes it), and evicting a low reader's visible entry once enough
+hidden refusals wrap the global ring — with the counters leaking the same bit
+independently.  Rather than patch the second site, the new **§3.7** states the
+obligation once: every readable structure owes (a) a clause in the observation
+relation and (b) an argument that hidden writes do not change what a reader sees.
+Read that way, three findings absorbed so far — prefix drain, the global drain
+generation, the refusal ring — are one violation of (b) seen at three sites.
+`auditObservationalEquivalence` is now stated over `ReadableStructure.all` with
+`mem_all`, so a structure added without a clause fails completeness instead of
+passing silently, and the ledger becomes readable only under **full dominance**
+(per-domain partitioning does not type — `SecurityDomain.id` is an unbounded
+`Nat`), which is the gate drain already takes.
+
+**Round 1's chunking fix was arithmetically wrong.**  Two 32-bit chunks bound a
+field at 2^64, so values differing above bit 63 still produce identical chunks —
+it moved the truncation point rather than removing it — and it left `srcDomain`
+and `dstDomain` as single words while the surrounding prose called the design
+lossless.  All four exported fields are unbounded `Nat`
+(`SecurityDomain.id`, `ObjId.val`, `timestamp`), so each is now read through an
+arbitrary-length 32-bit chunk protocol with a `fieldChunkCount` sub-operation,
+and the theorem becomes **reconstruction** (`auditReadField_reconstructs`).
+`auditReadWord_fits_payload` is retained with its role stated precisely: it is
+the ABI-safety half and is *not* losslessness — proving each fragment survives
+`encodeOk` says nothing about recovering the record, and conflating the two is
+what made the two-chunk design look adequate.
+
+**A filter that a later sub-phase silently defeats.**  The refusal seam matched
+the literal `.declassify`, while SM9.C adds a second declassifying syscall,
+`.declassifySignal`, whose refusals would bypass `recordRefusal` — the exact gap
+SM9.B exists to close, reintroduced inside the same plan.  The filter now reads a
+derived `declassificationSyscalls` list with a completeness theorem, so a third
+declassifying syscall cannot be added without joining the seam.
+
+**The scoping decision reverses: SM9.D becomes causal provenance.**  §3.6 had
+called SM8's registered "provenance relation on the object store" over-scoped and
+narrowed SM9.D to declassification *edges*.  That narrowing cannot work, and the
+counterexample lives on the very path SM9.C builds: a downgrade writes a badge
+into a notification, an **ordinary** delivery moves it to a waiter TCB, and that
+thread downgrades again — hop 2's input is related to hop 1's target by no
+declassification edge at all.  An edge-only detector can then only keep matching
+domains (the false positives the sub-phase exists to remove) or require object
+adjacency (a false *negative* on that very chain — strictly worse than the honest
+over-approximation SM8 shipped).  Causality follows content, so taint propagates
+through ordinary IPC delivery: a bounded set of event timestamps (which the new
+epoch makes stable across drains) in a side table, propagation sites enumerated
+as data with a completeness theorem — a missed site is a detector that misses
+real laundering — and overflow saturating *upward*, because for a detector
+over-approximation is the safe direction.  SM9.D 5 → 18 sub-tasks.
+
+**Counts, honestly.**  Phase total 44 → 59 (SM9.A 14 → 15, SM9.D 5 → 18,
+SM9.E 6 → 7); PRs ~14-17 → ~20-24; calendar 6-9 → **12-16 weeks**; theorems
+~26 → ~45.  The estimate moved because the work did, not because the sizing was
+re-tuned: master plan Appendix A and C, the §9 timeline and the
+`CLAUDE.md` / `AGENTS.md` SM9 row all carry the new figures.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §3.1, §3.3, §3.4, §3.6, §3.7
+Refs: #865
+
 ## v0.33.25 — SM9 plan: eight review findings, all verified against the code before acting
 
 An automated review of PR #865 left eight findings, every one against the SM9
