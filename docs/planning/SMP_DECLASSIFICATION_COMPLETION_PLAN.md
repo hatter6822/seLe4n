@@ -7,7 +7,7 @@
 > **Audited cut**: `v0.33.23`
 > **Target releases**: v0.33.24 → v0.34.x
 > **Calendar estimate**: 12-16 weeks
-> **Sub-task count**: 59 across ~20-24 PRs
+> **Sub-task count**: 60 across ~20-25 PRs
 > **Status**: PENDING
 
 ## 1. Phase goal
@@ -169,10 +169,31 @@ Partitioning by domain does **not** type: `SecurityDomain.id` is an unbounded
 `Nat`, so there is no finite family of domains to give a `Vector` per domain.
 Requiring full dominance discharges the obligation instead of dodging it — a
 partial reader observes *nothing* of the ledger, so no hidden write can move its
-view, and the dominating reader sees every write by definition.  This is the same
-gate drain already takes (§3.4), so the two are one decision rather than two, and
-the operator consequence is the same: refusal monitoring, like drain, wants one
-fully-cleared monitor.
+view, and the dominating reader sees every write by definition.
+
+**Dominance over *what*, though — and the obvious answer is wrong.**  A first
+draft reused drain's gate, which quantifies over the domains *represented in the
+current records*.  That is unsound here, because the ledger's two halves age
+differently: the ring **evicts** while the counters are **cumulative**.  Let a
+run of hidden high-domain refusals bump `attemptCount` and `droppedCount`, then
+let a ringful of low-domain refusals wrap the ring and overwrite every high
+entry.  A low reader now dominates every *surviving* row — so a
+records-derived gate admits it — and reads counters that still carry the hidden
+history.  The gate would be computed from a set that shrinks while the data it
+guards does not.
+
+So the ledger is gated on a **configured system-wide audit clearance**
+(`LabelingContext.auditClearance`), not on the ring's contents: a fixed
+deployment parameter, deny-by-default when unset, that cannot be lowered by
+eviction.  `refusalLedger_gate_is_configuration_derived` is the theorem, and
+`refusalLedger_records_gate_unsound` keeps the counterexample above as a
+negative so a later cut cannot quietly revert to the cheaper gate.  Drain's own
+gate is left as-is: the trail has no cumulative counter, so nothing there
+survives what a drain removes — but see §3.3 on the one quantity that *does*
+survive, and what it leaks.
+
+The operator consequence is unchanged and, if anything, clearer: refusal
+monitoring wants one fully-cleared monitor, named in configuration.
 
 ### 3.3 Reader interface: indexed read, no new kernel→user write path
 
@@ -210,6 +231,33 @@ precisely: it is the **ABI-safety** half (every returned word is `< 2^63`, so
 each fragment survives the encoding says nothing about whether the record can be
 reconstructed from the fragments; conflating the two is what made the two-chunk
 design look adequate.
+
+**`status` is chunked too, for the same reason one field over.**  A draft fixed
+the record fields and left `status` packing the visible length *and* the drain
+generation into one 63-bit word.  The generation is monotone over unbounded
+append/drain cycles, so a single-word encoding must eventually wrap, saturate or
+truncate — and once two distinct generations alias, the bracket-and-retry
+protocol accepts a read whose indices shifted underneath it, which is the one
+thing the generation exists to prevent.  `status` therefore takes the same
+protocol: `AuditReadOp.status w chunkIndex` with `statusChunkCount w` for
+w ∈ {visibleLength, generation}, and `auditReadStatus_reconstructs` alongside
+the field-level theorem.  Packing two quantities into one word was the whole
+defect; there is no version of it that is safe at a fixed width.
+
+**What the exported timestamp leaks, and the fix.**  Raised here rather than in
+review: a `DeclassificationEvent`'s timestamp is its **global** position
+(§3.4's `epoch + index`), so a partial reader that can see entry *X* learns how
+many entries preceded *X* — including the ones it cannot see.  That is a §3.7(b)
+violation on the trail, exactly parallel to the refusal counters above, and it
+is **pre-existing in SM8's design** rather than introduced by the epoch (the old
+`log.length` producer counted hidden entries just as well); what changes is that
+§3.7 now makes it an obligation the plan must discharge rather than inherit
+silently.  So the reader exports a visible entry's **index in the reader's own
+view**, not its global timestamp; the global value stays internal, where chain
+ordering and the causal detector need it.  Nothing is lost, because chain
+reconstruction is a monitor concern and a monitor dominates every recorded
+domain by §3.4 — `auditReadIndex_is_view_local` and
+`auditRead_hides_global_position` are the pair.
 
 **Indexed read.**  `ipcBufferReadMr` (`Architecture/IpcBufferRead.lean`) does
 page-granular translation and a write mirror is feasible (`writeUInt64` in
@@ -461,6 +509,36 @@ detector that is *sound* rather than one that looks causal and is not.
 - The taint table is **not readable** by any SM9 syscall, so §3.7 records that it
   owes no equivalence clause *yet* and what a future reader would owe.
 
+**Two things the first draft of this shape got wrong, both found in review.**
+
+*Taint must not outlive the object it describes.*  Keying by `ObjId` and framing
+through `storeObject` leaves stale provenance attached across a **retype**:
+`lifecycleRetypeObject` commits `storeObject target newObj` at the *same* id
+(verified — `RetypeWrappers.lean`), so an object destroyed and re-created keeps
+its predecessor's tags, and a later downgrade from the unrelated new object reads
+as causally linked to the old one's timestamps.  That is a false positive with
+**nothing to do with saturation**, which would have made D.15's "the residual
+imprecision is saturation" claim false the day it was written.  So retype
+**clears** the target's taint (`retypeClearsTaint`, at the two production
+wrappers — the same entry points SM7.D's initiator drain already enumerates),
+with `retypedObject_taint_empty` as the property and
+`staleTaint_is_not_saturation` keeping the distinction on the record.  Framing
+`storeObject` in general stays right: ordinary object writes are exactly where
+propagation *sets* taint, so a blanket clear-on-store would erase what D.8–.11
+exist to record.
+
+*The detector needs an identity the event does not carry.*  D.14 checks whether
+hop 2's **source** object's taint contains hop 1's timestamp — but the detector
+runs on the *event list*, and `DeclassificationEvent` records only
+`targetObject`, the two domains, the basis, the timestamp and the core
+(verified — `AuditRecord.lean`).  Given two same-domain subjects where only one
+received hop 1's data, their events are indistinguishable, so the predicate as
+drafted is not even well-defined from the data the detector has: it must accept
+both or reject both.  The event therefore gains a **subject identity**
+(`sourceSubject : ObjId`, the declassifying thread's TCB), recorded by the
+producer and keyed on by the causal predicate.  Like the epoch, this is a change
+to landed SM8 code and rides the §6 mount checklist.
+
 ### 3.7 The reader-visibility discipline
 
 §3.4a found that adding a reader changes what is observable, and fixed it *for
@@ -483,13 +561,28 @@ prefix drain revealed the positions of hidden entries, a global `drainGeneration
 signalled hidden drains, and a global refusal ring evicted visible entries on
 hidden writes.  Reading them as one clause is what makes the pattern visible.
 
-**Mechanised, not asserted.**  `auditObservationalEquivalence` is stated over a
-**list** of readable structures rather than one named field, with
-`ReadableStructure.all` / `mem_all` / `all_nodup` in the `CovertChannelId.all`
-and `KernelOperation.all` idiom — so a structure added without an equivalence
-clause fails `mem_all` rather than passing silently.  This is the same
-completeness mechanism SM8.E installed after finding that three separate count
-theorems were counting list literals rather than constructors.
+**Mechanised — and the obvious mechanisation is not enough.**  A draft stated
+`auditObservationalEquivalence` over a `ReadableStructure.all` list with
+`mem_all`, in the `CovertChannelId.all` / `KernelOperation.all` idiom.  That
+mechanism is weaker than it looks, and in precisely the way SM8.E's own finding
+was weaker than it looked: `mem_all` proves every constructor of a
+**hand-maintained** type appears in `all`, and nothing forces a newly mounted
+readable field — or a new `AuditReadOp` — to add a constructor at all.  With the
+reader operations kept as a *separate* taxonomy, a future structure can be
+mounted, exposed through a new read operation, and given neither a
+`ReadableStructure` constructor nor an equivalence clause, while `mem_all` keeps
+compiling.  A gate that a new structure can simply not join is not a gate.
+
+So the two taxonomies are **fused**: `AuditReadOp` carries the
+`ReadableStructure` it reads, so a read operation cannot exist without naming
+one, and the equivalence's clauses are a **total function** on
+`ReadableStructure` rather than a list to append to.  Then a new readable
+structure is a new constructor (forced by the read operation that motivated it),
+and a new constructor is a missing case in a total function — a compile error,
+not a silent pass.  `auditReadOp_structure_total` and
+`auditObservationalEquivalence_clause_total` are the two halves;
+`readableStructure_list_gate_insufficient` keeps the weaker `mem_all`-only
+design refuted, so it cannot come back as a simplification.
 
 **Current inventory** (SM9.A.4a owns it):
 
@@ -518,9 +611,9 @@ their registries).  SM9.A.4a alone is a relation with congruence lemmas — see
 |-----|-------------|-------|-----|
 | SM9.A.1 | `auditLogVisibleTo ctx L` + `_sublist` / `_reindexed` / `_length_le`; the no-gap-leak theorem (the visible view is a function of the reader's clearance alone) | new production leaf `InformationFlow/AuditRead.lean` | M |
 | SM9.A.1a | **The persistent timestamp epoch** (§3.4) — `SystemState.declassificationAuditEpoch`, `timestamp := epoch + log.length`, well-formedness generalised to `auditTimestampsFrom epoch log` (the `start`-parameterised lemma already exists) with the 0-anchored form as the boot instance; both identification theorems generalised; the three `_preserves_wellFormed` theorems restated; full §6 mount carriage (freeze required field, `OffSchedulerAgrees`, four boot frames, `storeObject` frame, `…_write_preserves_projection`); the corrected "well-formed throughout" contract.  **Sequenced before SM9.A.3 — drain is unsound without it** | `Model/State.lean`, `Model/{FrozenState,FreezeProofs}.lean`, `Platform/Boot.lean`, `InformationFlow/{Declassification,DeclassificationPerCore}.lean` | L |
-| SM9.A.2 | `AuditReadOp` sub-operation inductive + `all` / `mem_all` / `all_nodup`; the §3.3 **arbitrary-length chunk protocol** (`fieldChunkCount w`, `field w chunkIndex`) over all four unbounded fields; `auditReadField_reconstructs` (folding a field's chunks recovers the value — the losslessness claim) and `auditReadWord_fits_payload` (the ABI-safety half, explicitly *not* losslessness); `auditReadStatus` (visible length ⊕ observer-scoped drain generation) + `_generation_observer_scoped` and the negative that a global counter is refutable | same | XL |
+| SM9.A.2 | `AuditReadOp` — **fused with `ReadableStructure`** (§3.7: each operation names the structure it reads) + `all` / `mem_all` / `all_nodup` + `auditReadOp_structure_total`; the §3.3 **arbitrary-length chunk protocol** (`fieldChunkCount w`, `field w chunkIndex`) over all four unbounded fields **and over `status`** (`statusChunkCount`, w ∈ {visibleLength, generation} — a fixed-width status word aliases once the monotone generation wraps); `auditReadField_reconstructs` + `auditReadStatus_reconstructs` (the losslessness claims) and `auditReadWord_fits_payload` (the ABI-safety half, explicitly *not* losslessness); `_generation_observer_scoped` + the negative that a global counter is refutable; **view-local indices** (`auditReadIndex_is_view_local`, `auditRead_hides_global_position`) so a partial reader cannot count hidden entries off a global timestamp | same | XL |
 | SM9.A.3 | `auditDrainVisiblePrefix` under the §3.4 dominance gate, advancing the SM9.A.1a epoch; `auditDrain_requires_full_dominance`, `_preserves_auditLogBounded`, `_preserves_wellFormed_at_epoch`, `_monotone_generation`, `_monotone_epoch`, `_fully_clears_for_dominating_reader`, and the negative that a partially-cleared caller drains nothing | same | M |
-| SM9.A.4a | **`auditObservationalEquivalence ctx L`** (§3.4a option b, §3.7 discipline): the relation stated over `ReadableStructure.all` (+ `mem_all` / `all_nodup`) rather than one named field, so a readable structure without a clause fails completeness; clauses for the trail **and** the refusal ledger; reflexivity / symmetry / transitivity; the congruence lemmas carrying it through every writer of a readable structure; the negative that plain `lowEquivalent` does **not** imply equal visible views (which is why the relation exists) | `InformationFlow/DeclassificationPerCore.lean` (staged) | XL |
+| SM9.A.4a | **`auditObservationalEquivalence ctx L`** (§3.4a option b, §3.7 discipline): the clause set is a **total function on `ReadableStructure`**, not a list — a `mem_all` over a hand-maintained type cannot force a new structure to join it (`readableStructure_list_gate_insufficient` refutes that design), whereas a missing case in a total function is a compile error; `auditObservationalEquivalence_clause_total`; clauses for the trail **and** the refusal ledger; reflexivity / symmetry / transitivity; the congruence lemmas carrying it through every writer of a readable structure; the negative that plain `lowEquivalent` does **not** imply equal visible views | `InformationFlow/DeclassificationPerCore.lean` (staged) | XL |
 | SM9.A.4b | The flow argument over that relation: the reader is a function of the visible view alone, so it opens no channel; the **not-CC-8** argument stated once | same | L |
 | SM9.A.5 | `auditRead_stable_under_append` + the reader retry protocol as a theorem | `InformationFlow/AuditRead.lean` | S |
 | SM9.A.6 | ABI, Lean half: `SyscallId.auditRead`/`.auditDrain`, count 31→33, `toNat`/`ofNat?`/`ToString`/`all` + both `toNat_ofNat` match arms | `Model/Object/Types.lean` | M |
@@ -548,7 +641,7 @@ trail; the 256-entry cliff is gone.
 | SM9.B.7 | Boot frames ×4 (`applyMachineConfig`, `foldIrqs`, `foldObjects`, `bootFromPlatform`) | `Platform/Boot.lean` | S |
 | SM9.B.8 | Information flow: `declassificationRefusals_write_preserves_projection := rfl` **and** `onCore_declassificationRefusals` as the tenth read-set corollary | `InformationFlow/Invariant/Operations.lean`, `ObservableStatePerCore.lean` | S |
 | SM9.B.9 | Write at the seam, filtered by the **derived** `declassificationSyscalls` list (§3.1) rather than a hardcoded `.declassify`; `declassificationSyscalls_complete`; re-shape `syscallDispatchFromAbi_error_of_syscallEntryChecked_error`; re-prove `_total`; the three security theorems (below) | `Platform/FFI.lean` | L |
-| SM9.B.10 | Extend `.auditRead` with refusal sub-operations, **gated on full dominance** (§3.2/§3.7) — ring *and* counters, since a saturating global count leaks hidden activity independently of the ring; the `ReadableStructure` clause + congruences this adds to SM9.A.4a's relation; the negative that a partially-cleared caller reads nothing of the ledger; **retire `DeclassificationRuleId.refusalIsUnrecorded`** | `InformationFlow/AuditRead.lean`, `DeclassificationPerCore.lean` | L |
+| SM9.B.10 | Extend `.auditRead` with refusal sub-operations, gated on the **configured** `LabelingContext.auditClearance` (§3.2) — ring *and* counters, and deliberately **not** on the domains present in the current records, since the ring evicts while the counters are cumulative (`refusalLedger_gate_is_configuration_derived`, with `refusalLedger_records_gate_unsound` keeping the eviction counterexample refuted); the `ReadableStructure` clause + congruences this adds to SM9.A.4a's relation; the negative that an under-cleared caller reads nothing of the ledger; **retire `DeclassificationRuleId.refusalIsUnrecorded`** | `InformationFlow/AuditRead.lean`, `DeclassificationPerCore.lean`, `InformationFlow/Policy.lean` | XL |
 
 **SM9.B.10 retires a registered claim, and must do so properly.**
 `DeclassificationRuleId.refusalIsUnrecorded` is data, not prose: arms in `all`,
@@ -589,17 +682,18 @@ cannot displace an authorized-downgrade entry*.
 | SM9.C.8 | Live arm + ABI: `SyscallId.declassifySignal`, count 33→34, both Rust mirrors, conformance, `sele4n-sys`, enforcement boundary 42→43 / 57→58, lock-set inventory; **and the `declassificationSyscalls` list (§3.1) extended**, so this syscall's refusals reach the SM9.B seam rather than bypassing it | ~14 files (§5) | L |
 | SM9.C.9 | `syscallDelegates_declassifySignal`; per-core routing gate; cross-core NI inventory entry | `Kernel/API.lean`, `NonInterferenceCrossCore.lean` | M |
 
-### SM9.D — Causal declassification provenance (6-8 PRs, 18 sub-tasks)
+### SM9.D — Causal declassification provenance (6-9 PRs, 19 sub-tasks)
 
 The phase's largest sub-phase, and the reason the calendar estimate moved.  §3.6
 records why declassification-only edges cannot do this job.  Sequenced in four
 blocks: type and mount (D.1–D.6), the propagation surface (D.7–D.12), the
-saturation policy (D.13), the detector and its consequences (D.14–D.18).
+saturation policy and the event's subject identity (D.13, D.13a), the detector
+and its consequences (D.14–D.18).
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
 | SM9.D.1 | `DeclassificationTaint` — a **bounded** set of event timestamps (SM9.A.1a makes them stable across drains) with a `saturated` top, `join`, and a `covers` preorder; join-semilattice laws; no-loss theorems | new production leaf `InformationFlow/Taint.lean` | M |
-| SM9.D.2 | Mount `SystemState.declassificationTaint` as a **side table** keyed by `ObjId` (not a field on seven object kinds — the audit-trail precedent); `default_*`; `storeObject_declassificationTaint_eq` | `Model/State.lean` | M |
+| SM9.D.2 | Mount `SystemState.declassificationTaint` as a **side table** keyed by `ObjId` (not a field on seven object kinds — the audit-trail precedent); `default_*`; `storeObject_declassificationTaint_eq` (the frame stays right — ordinary object writes are where propagation *sets* taint, so a blanket clear-on-store would erase D.8–.11's work) | `Model/State.lean` | M |
 | SM9.D.3 | Freeze carriage: required `FrozenSystemState` field, `freeze` forwarding, `freeze_preserves_*`, the `apiInvariantBundle_frozenDirectFull` conjunct + bullet | `Model/FrozenState.lean`, `Model/FreezeProofs.lean` | M |
 | SM9.D.4 | The `FrozenSystemState` test literals (the same six SM9.B.5 touches) | `tests/*Suite.lean` | S |
 | SM9.D.5 | `OffSchedulerAgrees` clause + **all six** builders; boot frames ×4 | `IPC/Invariant/LookupCongruence.lean`, `Platform/Boot.lean` | M |
@@ -609,9 +703,10 @@ saturation policy (D.13), the detector and its consequences (D.14–D.18).
 | SM9.D.9 | Propagation at call / reply / replyRecv, including the cross-core dispatch wrappers | `IPC/CrossCore/{EndpointCall,EndpointReply}*.lean` | L |
 | SM9.D.10 | Propagation at notification signal — **where SM9.C's downgrade originates a tag** — plus the bound-TCB delivery path | `IPC/CrossCore/NotificationSignal.lean` | L |
 | SM9.D.11 | Propagation at capability transfer (`ipcUnwrapCaps`) | `IPC/Operations/CapTransfer.lean` | M |
-| SM9.D.12 | Taint **frames** for every non-content transition (scheduler, VSpace, lifecycle, cache/TLB), so D.7's completeness is checkable rather than declared | ~12 files | L |
+| SM9.D.12 | Taint **frames** for every non-content transition (scheduler, VSpace, cache/TLB), so D.7's completeness is checkable rather than declared — **except retype, which clears** (§3.6): `lifecycleRetypeObject` commits `storeObject target newObj` at the same id, so a framed retype leaves a destroyed object's tags on its replacement.  `retypeClearsTaint` at the two production wrappers (the entry points SM7.D's initiator drain already enumerates) + `retypedObject_taint_empty` + `staleTaint_is_not_saturation`, which keeps D.15's residual-imprecision claim true | ~12 files | XL |
 | SM9.D.13 | Saturation: the structural bound, upward-saturating overflow, `taintSaturate_over_approximates` (the safe direction for a detector, stated as a theorem) | `InformationFlow/Taint.lean` | M |
-| SM9.D.14 | `declassificationChainCausal` — hop 2's source object's taint contains hop 1's timestamp — conjoined into `declassificationChainLinked` | `InformationFlow/DeclassificationPerCore.lean` | L |
+| SM9.D.13a | **`DeclassificationEvent.sourceSubject : ObjId`** (§3.6) — the declassifying thread's TCB, recorded by the producer.  Without it the causal predicate is not well-defined from the event list: two same-domain subjects, only one of which received hop 1's data, produce indistinguishable events.  A change to landed SM8 code, so it rides the §6 mount checklist (record type, producer, well-formedness, the reader's chunk protocol, the golden fixtures) | `InformationFlow/AuditRecord.lean`, `Declassification.lean`, `AuditRead.lean` | L |
+| SM9.D.14 | `declassificationChainCausal` — hop 2's **recorded subject's** taint contains hop 1's timestamp — conjoined into `declassificationChainLinked`, keyed on the D.13a identity rather than on a source object the event never carried | `InformationFlow/DeclassificationPerCore.lean` | L |
 | SM9.D.15 | **Retire `declassificationChainLinked_is_syntactic`** (now genuinely false) for a soundness theorem on the causal detector; a negative pinning the residual saturation-induced over-approximation, so the remaining imprecision is stated rather than implied absent | same | M |
 | SM9.D.16 | `chainLaunders` consumes it; the rule-inventory `evidenceProp` moves with the theorem; counts + Tier-3 anchors incl. the retirement negative | same | M |
 | SM9.D.17 | Lock sets and write sets: the propagation writes sit inside existing transitions, so declared footprints and `permittedKinds` grow with them; inventory counts | `Concurrency/Locks/*` | L |
@@ -623,7 +718,7 @@ saturation policy (D.13), the detector and its consequences (D.14–D.18).
 |-----|-------------|-------|-----|
 | SM9.E.1 | Runtime groups §9 (SM9.A), §10 (SM9.B), §11 (SM9.C), §12 (SM9.D) — every group with a load-bearing negative | `tests/SmpInformationFlowSuite.lean` | XL |
 | SM9.E.2 | **The cliff acceptance scenario**: fill the trail to `maxDeclassificationAuditEntries`, observe `.declassify` failing with `.auditLogCapacityExceeded`, drain via `.auditDrain`, observe it succeeding again — and, post-drain, that the next event's timestamp does **not** collide with a surviving entry (the SM9.A.1a epoch, exercised rather than asserted); plus a denied-`.declassifySignal` case proving the §3.1 seam filter covers both declassifying syscalls | same | L |
-| SM9.E.2a | **The causal-detector acceptance scenario** (SM9.D): the §3.6 chain — downgrade writes a badge into a notification, an *ordinary* delivery moves it to a waiter TCB, that thread downgrades again — detected as laundering, with the two load-bearing negatives that a domain-only detector produces a false positive on an unrelated pair and an object-adjacency detector produces a false negative on this very chain | same | L |
+| SM9.E.2a | **The causal-detector acceptance scenario** (SM9.D): the §3.6 chain — downgrade writes a badge into a notification, an *ordinary* delivery moves it to a waiter TCB, that thread downgrades again — detected as laundering, with three load-bearing negatives: a domain-only detector produces a false positive on an unrelated pair, an object-adjacency detector produces a false negative on this very chain, and **two same-domain subjects where only one received hop 1's data are distinguished** (the SM9.D.13a identity doing its job).  Plus the lifecycle case: retype an object that carried taint, downgrade from its replacement, and confirm no causal link is reported | same | XL |
 | SM9.E.3 | Golden fixtures `tests/fixtures/declassification_reader.expected` and `…_taint.expected` + `.sha256`, verified byte-for-byte in-suite; `tests/fixtures/README.md` rows | `tests/fixtures/` | M |
 | SM9.E.4 | Headline anchors in `tests/SmpSurfaceAnchors.lean` §9; Tier-3 anchor block per sub-phase incl. the two retirement negatives and a negative against a hardcoded `.declassify` seam filter | `tests/SmpSurfaceAnchors.lean`, `scripts/test_tier3_invariant_surface.sh` | M |
 | SM9.E.5 | `scripts/check_module_axioms.py` module list += each new module; axiom-clean sweep | `scripts/check_module_axioms.py` | T |
@@ -739,6 +834,9 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
 | A readable structure is added with no equivalence clause | MED | HIGH | §3.7's `ReadableStructure.all` + `mem_all` — a structure without a clause fails completeness rather than passing silently.  Three findings so far were the same violation seen at three sites |
 | Drain breaks the trail's timestamp discipline | HIGH | HIGH | **Realised, not hypothetical**: `timestamp := log.length` reuses a timestamp after any prefix removal.  Closed by the SM9.A.1a epoch, sequenced before drain exists, with the reuse as a load-bearing negative (§3.4) |
 | Taint propagation misses a content-moving transition | MED | HIGH | `ContentFlowSite.all` + `mem_all` + non-content frames (SM9.D.7/.12) — a missed site is a detector that misses real laundering, so the enumeration is checked, not asserted |
+| A completeness gate a new structure can decline to join | MED | HIGH | `mem_all` over a hand-maintained type cannot force a new readable field to add a constructor.  `AuditReadOp` is fused with `ReadableStructure` and the clause set is a total function (§3.7), so the gate fails at elaboration rather than passing silently |
+| A visibility gate computed from data that ages | MED | HIGH | The refusal ring evicts while its counters are cumulative, so a records-derived gate shrinks while the guarded data does not.  Gated on configured clearance instead (§3.2), with the eviction counterexample kept as a negative |
+| Taint outliving the object it describes | MED | MED | Retype commits `storeObject` at the same id, so a framed retype leaves a destroyed object's tags on its replacement — a false positive unrelated to saturation.  Retype clears (§3.6, SM9.D.12) |
 | SM9.D's size swamps the phase | HIGH | MED | Acknowledged in the estimate rather than absorbed: 18 sub-tasks, 6-8 PRs, and the phase moved 6-9 → 12-16 weeks.  Sequenced in four blocks so mount, propagation and detector land separately |
 | The reader leaks hidden-entry counts through index gaps | LOW | HIGH | Re-indexed filtered view, not sparse global indices; the visible view is a function of the reader's clearance alone; **drain requires full dominance** so there is no partial-visibility prefix to probe (§3.4) |
 | A global drain generation signals a dominating monitor's drains to every reader | MED | HIGH | `drainGeneration` is observer-scoped (§3.3), with the negative that a global counter is refutable |
@@ -770,8 +868,15 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
 - [ ] Timestamps survive drains: after a drain, a fresh event's timestamp
       collides with no surviving entry, and the well-formedness contract names
       the epoch rather than claiming index-anchoring.
-- [ ] Every field the reader exports is reconstructible from its chunks, not
-      merely small enough to survive `encodeOk`.
+- [ ] Every value the reader exports — record fields **and** `status` — is
+      reconstructible from its chunks, not merely small enough to survive
+      `encodeOk`; and a partial reader cannot infer hidden-entry counts from an
+      exported index.
+- [ ] Every visibility gate is computed from something that does not age out
+      from under it: the refusal ledger's gate is configuration, not the ring's
+      surviving rows.
+- [ ] A retyped object carries no taint from its predecessor, with a lifecycle
+      test rather than a frame lemma.
 - [ ] Every readable structure has an equivalence clause and a hidden-write
       non-interference argument (§3.7), checked by `mem_all` rather than by
       review.
@@ -798,14 +903,25 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
 
 ## 11. Theorem catalogue for SM9
 
-~45 substantive theorems.  Headline set:
+~52 substantive theorems.  Headline set:
 
 - `auditLogVisibleTo_sublist` + the clearance-determines-view theorem (SM9.A.1)
 - `auditTimestampsFrom_epoch_preserved` + `auditDrain_monotone_epoch` — the
   timestamp epoch, and the negative that the pre-epoch `log.length` producer
   **reuses** a timestamp after a drain (SM9.A.1a)
-- `auditReadField_reconstructs` — folding a field's chunks recovers the value;
-  the losslessness claim (SM9.A.2)
+- `auditReadField_reconstructs` + `auditReadStatus_reconstructs` — folding the
+  chunks recovers the value; the losslessness claims, `status` included because a
+  fixed-width status word aliases once the monotone generation wraps (SM9.A.2)
+- `auditReadIndex_is_view_local` + `auditRead_hides_global_position` — a partial
+  reader cannot count hidden entries off a global timestamp (SM9.A.2)
+- `auditReadOp_structure_total` + `auditObservationalEquivalence_clause_total` +
+  `readableStructure_list_gate_insufficient` — the §3.7 gate a new structure
+  cannot decline to join (SM9.A.2, SM9.A.4a)
+- `refusalLedger_gate_is_configuration_derived` +
+  `refusalLedger_records_gate_unsound` — the ring evicts, the counters do not, so
+  the gate is configuration and not current records (SM9.B.10)
+- `retypeClearsTaint` + `retypedObject_taint_empty` +
+  `staleTaint_is_not_saturation` — taint must not outlive its object (SM9.D.12)
 - `auditReadWord_fits_payload` — every returned word is `< 2^63`, so `encodeOk`
   is the identity on it; the **ABI-safety** half, explicitly not losslessness
   (SM9.A.2)

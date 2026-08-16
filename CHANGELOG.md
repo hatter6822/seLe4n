@@ -1,3 +1,88 @@
+## v0.33.27 — SM9 plan, review round 3: two gates that could not gate, and a predicate that was not well-defined
+
+A third automated review of PR #865, on the round-2 remediation, left five
+findings.  All verified against the tree, all valid.  Three are defects in
+round-2's own fixes; two are defects in the SM9.D design that cut introduced.
+One further finding is raised here rather than in review, because applying §3.7
+honestly to the trail's own timestamps turns one up.
+
+**A gate computed from data that ages out.**  Round 2 made the refusal ledger
+readable "only under full dominance" and reused drain's gate, which quantifies
+over the domains present in the *current records*.  The ledger's two halves age
+differently: the ring evicts, the counters are cumulative.  So hidden high-domain
+refusals can bump `attemptCount`/`droppedCount`, a ringful of low-domain refusals
+can overwrite every high row, and a low reader then dominates every *survivor*
+— admitted by a records-derived gate — while reading counters that still carry
+the hidden history.  The gate shrank while the data it guards did not.  Fixed by
+gating on a **configured** `LabelingContext.auditClearance`, a deployment
+parameter eviction cannot lower, with the counterexample kept as
+`refusalLedger_records_gate_unsound` so the cheaper gate cannot return.  Drain's
+own gate is left alone — the trail has no cumulative counter — but see the
+self-raised finding below, because one quantity there does survive.
+
+**A completeness gate a new structure can decline to join.**  §3.7 stated
+`auditObservationalEquivalence` over `ReadableStructure.all` with `mem_all`, in
+the idiom SM8.E installed.  That mechanism is weaker than it looks in exactly the
+way SM8.E's own finding was: `mem_all` proves every constructor of a
+**hand-maintained** type appears in `all`, and nothing forces a newly mounted
+readable field — or a new `AuditReadOp` — to add a constructor.  With the read
+operations kept as a separate taxonomy, a future structure could be mounted,
+exposed, and given neither constructor nor clause while `mem_all` kept compiling.
+Fixed by **fusing** the taxonomies: `AuditReadOp` carries the `ReadableStructure`
+it reads, and the clause set is a **total function** rather than a list, so a new
+structure is a missing case — a compile error.  `readableStructure_list_gate_insufficient`
+refutes the weaker design so it cannot come back as a simplification.
+
+**A status word that aliases.**  Round 2 chunked the record fields and left
+`status` packing the visible length and the drain generation into one 63-bit
+word.  The generation is monotone over unbounded append/drain cycles, so any
+fixed-width encoding must eventually wrap — and once two generations alias, the
+bracket-and-retry protocol accepts a read whose indices shifted underneath it,
+which is the one thing the generation exists to prevent.  `status` now takes the
+same arbitrary-length protocol, with `auditReadStatus_reconstructs` beside the
+field-level theorem.  Same class as round 2's finding, one field over.
+
+**Taint outliving its object.**  SM9.D keyed taint by `ObjId` and framed it
+through `storeObject`, while `lifecycleRetypeObject` commits
+`storeObject target newObj` at the *same* id (verified in `RetypeWrappers.lean`).
+A destroyed and re-created object would therefore keep its predecessor's tags,
+and a later downgrade from the unrelated replacement would read as causally
+linked — a false positive with **nothing to do with saturation**, which would
+have made D.15's "the residual imprecision is saturation" claim false the day it
+was written.  Retype now clears (`retypeClearsTaint` at the two production
+wrappers, the entry points SM7.D's initiator drain already enumerates), with
+`staleTaint_is_not_saturation` keeping the distinction on the record.  Framing
+`storeObject` in general stays right — ordinary object writes are precisely where
+propagation *sets* taint.
+
+**A predicate that was not well-defined from its own data.**  D.14 checked
+whether hop 2's *source object's* taint contains hop 1's timestamp — but the
+detector runs on the event list, and `DeclassificationEvent` records only
+`targetObject`, the two domains, the basis, the timestamp and the core.  Two
+same-domain subjects where only one received hop 1's data produce
+indistinguishable events, so the predicate must accept both or reject both: as
+drafted it could not select a taint at all.  The event gains a recorded
+`sourceSubject` (new SM9.D.13a), which like the epoch is a change to landed SM8
+code riding the §6 mount checklist.
+
+**Raised here, not in review: the exported timestamp leaks hidden counts.**  A
+`DeclassificationEvent`'s timestamp is its global position, so a partial reader
+seeing entry X learns how many entries preceded X — including ones it cannot
+see.  That is the §3.7(b) violation the review found on the refusal counters,
+sitting on the trail; it is **pre-existing in SM8's design** (the old
+`log.length` producer counted hidden entries just as well) and the epoch neither
+introduced nor worsened it, but §3.7 makes it an obligation to discharge rather
+than inherit.  The reader now exports a visible entry's index in the reader's
+**own view**; the global value stays internal, where chain ordering and the
+causal detector need it, and nothing is lost because chain reconstruction is a
+monitor concern and a monitor dominates by §3.4.
+
+Counts: phase 59 → 60 (SM9.D 18 → 19), PRs ~20-24 → ~20-25, theorems ~45 → ~52.
+Master plan Appendix A/C and the `CLAUDE.md` / `AGENTS.md` SM9 row updated.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §3.2, §3.3, §3.6, §3.7
+Refs: #865
+
 ## v0.33.26 — SM9 plan, review round 2: one defect reaches landed code, and one scope decision reverses
 
 A second automated review of PR #865, on the round-1 remediation itself, left six
