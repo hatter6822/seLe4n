@@ -17,7 +17,7 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 **WS-SM SMP multi-core completion workstream IN FLIGHT (v0.31.2 →
 v0.31.3 → v0.32.x → v1.0.0).** Unified workstream merging WS-RC's remaining
-R6..R14 phases with the SMP-specific SM-phases (SM0..SM9).  Closes
+R6..R14 phases with the SMP-specific SM-phases (SM0..SM10).  Closes
 at v1.0.0 with a bootable verified SMP microkernel on Raspberry Pi 5.
 Plan:
 [`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`](planning/SMP_MULTICORE_COMPLETION_PLAN.md).

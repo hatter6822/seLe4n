@@ -7,7 +7,7 @@
 > **Audited cut**: `v0.33.23`
 > **Target releases**: v0.33.24 → v0.34.x
 > **Calendar estimate**: 6-9 weeks
-> **Sub-task count**: 42 across ~13-16 PRs
+> **Sub-task count**: 44 across ~14-17 PRs
 > **Status**: PENDING
 
 ## 1. Phase goal
@@ -117,10 +117,10 @@ bounded by its type:
 
 ```lean
 structure RefusalLedger where
-  attemptCount : Nat                                    -- saturating at maxRefusalCount
+  attemptCount : Fin (maxRefusalCount + 1)
   recent       : Vector (Option DeclassificationRefusal) refusalRingSize
   nextSlot     : Fin refusalRingSize
-  droppedCount : Nat                                    -- saturating
+  droppedCount : Fin (maxRefusalCount + 1)
 ```
 
 A `Vector` cannot exceed its size, so there is **no 17th bundle conjunct, no
@@ -129,12 +129,45 @@ matters, because those destructurings are right-nested and a trailing
 under-listing elaborates *silently*.  `default_perCoreICache`
 (`Model/State.lean`) is the precedent for the `default_*` discharge shape.
 
+**The two counters are `Fin`, not `Nat`.**  An earlier draft made them `Nat`
+with "saturating" as a convention of `recordRefusal` — which is exactly the
+convention-not-structure shape this section rejects one paragraph above, applied
+inconsistently to two fields of the same record.  A `Nat` bounded only by its
+updater leaves every *other* way of building the structure unconstrained: an
+arbitrary `SystemState` or `FrozenSystemState` literal (the freeze layer, the six
+test literals of SM9.B.5, a future boot path) can carry an out-of-range value and
+nothing rejects it.  With `Fin (maxRefusalCount + 1)` the saturation is the
+type's, so `recordRefusal` *cannot* overflow it and no theorem is needed to say
+so — the structural-enforcement argument now covers the whole record rather than
+one field of it.  Cost: saturating increment is `min (n + 1) maxRefusalCount`
+lifted into `Fin`, one helper with two lemmas (saturates, monotone).
+
 ### 3.3 Reader interface: indexed read, no new kernel→user write path
 
-A syscall returns exactly one 64-bit word: `rust/sele4n-hal/src/trap.rs` is
+A syscall returns exactly one word: `rust/sele4n-hal/src/trap.rs` is
 `frame.set_x0(retval)` and nothing else in the trap frame is written back.  So a
 reader either returns one word per call, or the kernel writes into the caller's
 IPC buffer.
+
+**The payload is 63 bits, not 64.**  `Platform/FFI.lean`'s
+`encodeOk v := v &&& 0x7FFFFFFFFFFFFFFF` reserves **bit 63** as the error flag,
+which `encodeError` sets — so a return value with bit 63 set is
+indistinguishable from an error code, and a naive 64-bit field would alias
+silently rather than fail closed.  Consequences for SM9.A.2, all of them design
+constraints rather than notes:
+
+- `core ⊕ kernelIssued` is packed into the **low** bits and must not touch
+  bit 63.
+- `timestamp` and `targetObject` are `Nat` in the model with no declared upper
+  bound, so `auditReadWord` selects them in **chunks**: the sub-operation
+  enumeration carries `field (timestampLow | timestampHigh | targetLow |
+  targetHigh)` rather than one selector each, each chunk 32 bits wide and
+  therefore comfortably inside the payload.  Two calls per unbounded field is
+  the right trade against a silently-aliasing single call.
+- `auditReadWord_fits_payload` (§11) is the theorem: every value
+  `auditReadWord` can return is `< 2^63`, so `encodeOk` is the identity on it
+  and the read is lossless.  Without it the reader's contract is
+  "usually correct".
 
 **Indexed read.**  `ipcBufferReadMr` (`Architecture/IpcBufferRead.lean`) does
 page-granular translation and a write mirror is feasible (`writeUInt64` in
@@ -147,21 +180,61 @@ deliberate non-goal, revisitable if throughput ever demands it.
 Two new `SyscallId`s, not one, so authority stays per-operation
 (`syscallRequiredRight` is keyed on `SyscallId`):
 
-| Syscall | Right | `msgRegs` | Returns in `x0` |
-|---|---|---|---|
-| `.auditRead` | `.read` | `[op, index, word]` | selected word, or an encoded error |
-| `.auditDrain` | `.write` | `[count]` | new visible length |
+| Syscall | Capability target | Right | `msgRegs` | Returns in `x0` |
+|---|---|---|---|---|
+| `.auditRead` | `.auditTrail` | `.read` | `[op, index, word]` | selected word, or an encoded error |
+| `.auditDrain` | `.auditTrail` | `.write` | `[count]` | new visible length |
+
+**The right is the second gate, never the only one.**  `syscallLookupCap`
+(`API.lean`) checks `cap.hasRight gate.requiredRight` and **nothing about
+`cap.target`** — so "requires `.read`" would make the audit reader available to
+any thread holding any readable capability, which in practice is every thread
+(its own TCB suffices).  That is precisely the confused deputy the project closed
+at **v0.32.97**, where `syscallLookupCap` *"verified only that the caller held a
+capability carrying the required right, never that the capability's target
+matched the operand"* and a thread holding only a writable capability to its own
+TCB unmapped a page in a different address space.  The fix there was
+`vspaceCapAuthorizesAsid`; the fix here is the same shape and cheaper, because
+the trail is a singleton with no operand to bind against:
+
+- A new `CapTarget` variant **`.auditTrail`** (SM9.A.9 owns the constructor and
+  its ABI, lock-set and frozen-ops consequences).
+- `extractAuditAuthority : Capability → Except KernelError Unit`, binding the
+  target in the shape `extractReplyId` already uses for `.replyCap` — so
+  authority comes from *holding an audit capability*, not from holding any
+  readable one.
+- Rights stay as a second gate: `.read` for the reader, `.write` for the drain,
+  so a monitoring deployment can hand out a read-only audit capability that
+  cannot drain.
+
+Because the capability is minted only where the boot/CSpace layer chooses to
+mint it, an unconfigured deployment has no audit reader at all — the same
+deny-by-default posture `LabelingContext.declassificationPolicy` already has.
+Registered in §8 as a risk row naming the bug class, so a later cut cannot
+quietly re-introduce a rights-only gate.
 
 `.auditRead` sub-operations are enumerated **as data** with a `mem_all`
 completeness theorem, in the idiom `CovertChannelId.all` / `KernelOperation.all`
-already use: `status` (visible length + a monotone drain generation) and
-`field w` for w ∈ {srcDomain, dstDomain, targetObject, timestamp,
-core⊕kernelIssued}.
+already use: `status` (visible length + the observer-scoped drain generation) and
+`field w` for w ∈ {srcDomain, dstDomain, targetLow, targetHigh, timestampLow,
+timestampHigh, core⊕kernelIssued} — the two unbounded fields chunked per the
+63-bit payload above.
 
 **Concurrency contract.**  The trail is append-only and drain removes a prefix,
 so an index is stable under concurrent *append* and shifts only under concurrent
-*drain*.  The monotone `drainGeneration` in `status` lets a reader bracket its
-reads and retry.  The kernel stays simple; the protocol gets a theorem.
+*drain*.  The `drainGeneration` in `status` lets a reader bracket its reads and
+retry.  The kernel stays simple; the protocol gets a theorem.
+
+**`drainGeneration` is observer-scoped, not global.**  A single global counter
+incremented by every drain is itself a channel: a monitor cleared for `high`
+drains entries no `low` reader can see, and every low reader's `status` moves in
+response — a one-bit signal per drain from the dominating subject to every
+subject in the system, out of the very boundary this phase polices.  The token
+must therefore change only when *this reader's own visible indexing* changes,
+which by construction is only when an entry the reader can see is removed.
+Stated as `auditReadStatus_generation_observer_scoped` (§11), with the negative
+that a global counter is refutable — otherwise the natural implementation is the
+leaky one and nothing catches it.
 
 ### 3.4 Reader flow argument: a re-indexed, clearance-filtered view
 
@@ -172,30 +245,109 @@ Template in tree: `auditLogOnCore` (`DeclassificationPerCore.lean`) is a
 - The view is **re-indexed** — a filtered sublist, not a sparse global index — so
   the *count* of hidden entries cannot leak through index gaps.
 - Reader clearance is `ctx.threadLabelOf callerTid`; no new policy field.
-- **Drain** removes the longest prefix all of whose entries the caller can see.
-  Fail-closed, and a monitor cleared for every recorded `srcDomain` can always
-  drain everything — the deployment shape that fixes the 256 cliff.
+- **Drain** is authorized only for a caller whose clearance dominates **every**
+  recorded `srcDomain`.  A partially-cleared reader may read its filtered view
+  but may not drain at all.
+
+**Why drain requires full dominance.**  An earlier draft let any reader drain
+"the longest prefix all of whose entries it can see", which leaks: on a trail
+`[A, H, B]` where the reader sees `A` and `B` but not `H`, the drain stops after
+one entry, and the reader learns that entry 2 is invisible — the *position* of a
+hidden entry, which is what re-indexing exists to hide.  Worse, the visible
+length after the drain then depends on how many hidden entries sit between the
+visible ones, so repeated drains enumerate the hidden layout.  Requiring full
+dominance removes the case entirely: either the caller sees the whole trail and
+drains all of it, or it drains nothing.  This is also the shape SM8's own
+registered follow-on described — *"confined to a domain dominating every recorded
+`srcDomain`"* — so it is a return to the registered design rather than a new
+restriction.  `auditDrain_requires_full_dominance` (§11) is the theorem.
+
+**The trade-off, recorded rather than buried.**  A deployment whose monitor does
+not dominate every recorded domain **cannot drain**, and the 256-entry cliff
+returns for it.  That is the correct conservative default — a leaky drain is
+worse than an un-drainable trail, and the deployment shape that fixes the cliff
+(one fully-cleared monitor) is exactly the shape a trail like this is for — but
+it is a real constraint on operators and belongs in the acceptance gate (§9),
+not in a footnote.
 
 **Why this is not an eighth covert channel.**  Registering CC-8 costs nine steps
 (a `CovertChannelId` constructor + `all` + four total-match tables + a witness
 theorem + five numeric theorems + Tier-3 anchors + the
 `smp_information_flow.expected` fixture).  It is not owed: a covert channel is an
 *unauthorized* information path.  The reader is capability-gated, right-gated and
-clearance-filtered — an authorized, audited read.  The trail stays outside
-`ObservableState`; what changes is that a *privileged reader* carries its own
-flow argument, which is exactly what
-`declassificationAuditLog_write_preserves_projection`'s docstring says SM8
-deferred.  Stated once, in SM9.A.4.
+clearance-filtered — an authorized, audited read.  What it *is* owed is an
+observation relation that describes what an audit reader can see, which the next
+subsection supplies.
+
+### 3.4a Adding a reader changes what is observable
+
+SM8 could keep the trail out of `ObservableState` for a reason it stated
+plainly: nothing could read it, so `declassificationAuditLog_write_preserves_projection`
+is `rfl`.  **SM9.A makes it readable, and that changes the observation relation.**
+
+The consequence is concrete and was nearly missed.  An earlier draft of SM9.A.4
+read *"two states low-equivalent at `L` give identical visible views"*.  That
+statement is **false**: `lowEquivalent` compares `ObservableState`, which does
+not contain the trail, so two low-equivalent states can differ by an audit entry
+whose `srcDomain` flows to `L` — and their `auditLogVisibleTo ctx L` results then
+differ.  The lemma cannot be proved because it is not true, and shipping it as a
+sub-task would have surfaced mid-implementation.
+
+Two ways to make the relation match the reader:
+
+- **(a) Extend `ObservableState`** with the clearance-filtered trail as a
+  fourteenth component.  Honest — it *is* now observable — but the SM8.A field
+  partition is a bijection with `ObservableState.ofFragments_eta`, deliberately
+  built so a fourteenth field is a compile error, and every SM8.B NI theorem
+  moves with it.
+- **(b) A separate `auditObservationalEquivalence ctx L s s'`**, conjoining
+  `lowEquivalent` with agreement on `auditLogVisibleTo ctx L`.  Contained; every
+  SM8 theorem stands unchanged; and the flow argument is stated in the relation
+  that actually describes an audit reader's observations rather than in one that
+  describes a subject with no reader.
+
+**Decision: (b).**  `ObservableState` stays a thirteen-component partition and
+its tripwire keeps working.  (a) becomes the right move only if a later phase
+adds a *second* readable-but-unprojected structure — at that point one relation
+per reader stops scaling and the partition should absorb them.  Recorded here so
+that decision is made on evidence rather than rediscovered.
+
+Either way the work is a relation plus its congruence lemmas rather than a single
+theorem, which is why the old SM9.A.4 splits into **SM9.A.4a** (the relation) and
+**SM9.A.4b** (the flow argument over it), why `.4a` is **XL**, and why SM9.A
+ships as two PRs (§4).
 
 ### 3.5 Declassification-relative non-interference
 
 A data-carrying declassification is the first **deliberately visible** flow in
 the tree.  Every existing NI theorem says a high write is invisible to low; this
 one is not, by design.  SM9.C's real content is therefore *intransitive*
-non-interference: the only low-observable difference is confined to the
-declassified target, **and** every such difference is recorded in the trail.
-Both halves are load-bearing — the first alone would permit an unrecorded
-downgrade, the second alone would permit an unbounded one.
+non-interference: every low-observable difference lies inside the **authorized
+effect footprint**, **and** every such difference is recorded in the trail.  Both
+halves are load-bearing — the first alone would permit an unrecorded downgrade,
+the second alone would permit an unbounded one.
+
+**The footprint is three things, not one.**  An earlier draft said the difference
+is "confined to the declassified target", which under-states what the live path
+writes.  `notificationSignalOnCore` (`IPC/CrossCore/NotificationSignal.lean`) on
+the waiter path writes the notification object, **and** the delivered waiter's
+TCB (via `storeTcbIpcStateAndMessage`), **and** the waiter's home-core scheduler
+slots (via `wakeThread` — run queue, and the SGI when the home core is remote).
+A confinement theorem naming only the notification would be false of the
+transition it is about, so the footprint is:
+
+1. the notification object (the badge that crosses the boundary),
+2. the delivered waiter's TCB, and
+3. the waiter's home-core scheduler slots.
+
+Stated as `declassificationEffectFootprint` in SM9.C.5, alongside the write set
+and `observableSlotsConfinedToCores` that already have to name the same cores —
+so the footprint is defined once and the NI theorem and the confinement proof
+read the same definition rather than two copies of it (the failure mode
+`retypeIcacheOp_cleans_scrub_extent` hit at v0.32.101 and the splice arm hit
+again at v0.33.16).  SM9.C.6 then carries the load-bearing negative that a
+difference **outside** the footprint is refutable, which is what stops the
+theorem from being satisfiable by a footprint that swallows the whole state.
 
 ### 3.6 Provenance: the registered wording over-scopes it
 
@@ -211,22 +363,29 @@ transition and consumed by `chainLaunders`.
 
 Sizes: **T** trivial, **S** small, **M** medium, **L** large, **XL** very large.
 
-### SM9.A — The audit trail reader (4-5 PRs, 12 sub-tasks)
+### SM9.A — The audit trail reader (5-6 PRs, 14 sub-tasks)
+
+Ships as **two PRs' worth of work at minimum**: SM9.A.1-.A.5 (the pure reader
+plus its observation relation) and SM9.A.6-.A.14 (the ABI, the live arms and
+their registries).  SM9.A.4a alone is a relation with congruence lemmas — see
+§3.4a — which is why the split is structural rather than a convenience.
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
 | SM9.A.1 | `auditLogVisibleTo ctx L` + `_sublist` / `_reindexed` / `_length_le`; the no-gap-leak theorem (the visible view is a function of the reader's clearance alone) | new production leaf `InformationFlow/AuditRead.lean` | M |
-| SM9.A.2 | `AuditReadOp` sub-operation inductive + `all` / `mem_all` / `all_nodup`; `auditReadWord` pure selector; `auditReadStatus` (visible length ⊕ drain generation) | same | M |
-| SM9.A.3 | `auditDrainVisiblePrefix` — longest visible prefix; `_preserves_auditLogBounded`, `_monotone_generation`, `_fully_clears_for_dominating_reader` | same | M |
-| SM9.A.4 | The flow argument: two states low-equivalent at `L` give identical visible views; the reader opens no channel; the **not-CC-8** argument stated once | `InformationFlow/DeclassificationPerCore.lean` (staged) | L |
+| SM9.A.2 | `AuditReadOp` sub-operation inductive + `all` / `mem_all` / `all_nodup`; `auditReadWord` pure selector with the §3.3 **chunked** unbounded fields; `auditReadWord_fits_payload` (every returned value `< 2^63`); `auditReadStatus` (visible length ⊕ observer-scoped drain generation) + `_generation_observer_scoped` and the negative that a global counter is refutable | same | L |
+| SM9.A.3 | `auditDrainVisiblePrefix` under the §3.4 dominance gate; `auditDrain_requires_full_dominance`, `_preserves_auditLogBounded`, `_monotone_generation`, `_fully_clears_for_dominating_reader`, and the negative that a partially-cleared caller drains nothing | same | M |
+| SM9.A.4a | **`auditObservationalEquivalence ctx L`** (§3.4a option b): the relation conjoining `lowEquivalent` with agreement on `auditLogVisibleTo`; reflexivity / symmetry / transitivity; the congruence lemmas carrying it through the trail-writing transitions; the negative that plain `lowEquivalent` does **not** imply equal visible views (which is why the relation exists) | `InformationFlow/DeclassificationPerCore.lean` (staged) | XL |
+| SM9.A.4b | The flow argument over that relation: the reader is a function of the visible view alone, so it opens no channel; the **not-CC-8** argument stated once | same | L |
 | SM9.A.5 | `auditRead_stable_under_append` + the reader retry protocol as a theorem | `InformationFlow/AuditRead.lean` | S |
 | SM9.A.6 | ABI, Lean half: `SyscallId.auditRead`/`.auditDrain`, count 31→33, `toNat`/`ofNat?`/`ToString`/`all` + both `toNat_ofNat` match arms | `Model/Object/Types.lean` | M |
 | SM9.A.7 | ABI, Rust half: both mirrors + conformance roundtrips + boundary test | `rust/sele4n-types/src/syscall.rs`, `rust/sele4n-hal/src/svc_dispatch.rs`, `rust/sele4n-abi/tests/conformance.rs` | M |
 | SM9.A.8 | `sele4n-sys` safe wrappers | `rust/sele4n-sys/src/audit.rs`, `lib.rs` | S |
-| SM9.A.9 | Live arms in `dispatchWithCapChecked`; `syscallRequiredRight`; unchecked arms fail closed; `syscallDelegates_auditRead` / `_auditDrain` | `Kernel/API.lean` | L |
-| SM9.A.10 | Enforcement boundary 40→42 canonical, 55→57 per-core; `syscallIdToEnforcementName{,PerCore}`; completeness + class-match re-decided | `Enforcement/Wrappers.lean`, `CovertChannelPerCore.lean` | M |
-| SM9.A.11 | Lock sets: `lockSet_auditRead` (universal reads), `lockSet_auditDrain`; `permittedKinds`; inventory counts 103→105; `_size_le` + deadlock aggregate | `Concurrency/Locks/{LockSetTransitions,LockSetForSyscall,LockSetInventory,Deadlock,DeadlockInventory}.lean` | M |
-| SM9.A.12 | Frozen-ops classifier arm + count; per-core routing gate registration | `Kernel/FrozenOps/Operations.lean`, `scripts/per_core_routing_aliases.json` | S |
+| SM9.A.9 | **`CapTarget.auditTrail`** constructor + `extractAuditAuthority` (§3.3): the total-match consequences across `Capability`'s `Repr`/`DecidableEq`/well-formedness, the frozen mirror, and every existing `CapTarget` match; the mint path (which boot/CSpace layer creates one); the negative that a non-`.auditTrail` capability carrying `.read` is rejected, and the acceptance witness that an unconfigured deployment has **no** audit reader | `Model/Object/{Types,Structures}.lean`, `Model/FrozenState.lean`, `Platform/Boot.lean` | XL |
+| SM9.A.10 | Live arms in `dispatchWithCapChecked` gated on `extractAuditAuthority` **then** `syscallRequiredRight`; unchecked arms fail closed; `syscallDelegates_auditRead` / `_auditDrain` | `Kernel/API.lean` | L |
+| SM9.A.11 | Enforcement boundary 40→42 canonical, 55→57 per-core; `syscallIdToEnforcementName{,PerCore}`; completeness + class-match re-decided | `Enforcement/Wrappers.lean`, `CovertChannelPerCore.lean` | M |
+| SM9.A.12 | Lock sets: `lockSet_auditRead` (universal reads), `lockSet_auditDrain`; `permittedKinds`; inventory counts 103→105; `_size_le` + deadlock aggregate | `Concurrency/Locks/{LockSetTransitions,LockSetForSyscall,LockSetInventory,Deadlock,DeadlockInventory}.lean` | M |
+| SM9.A.13 | Frozen-ops classifier arm + count; per-core routing gate registration | `Kernel/FrozenOps/Operations.lean`, `scripts/per_core_routing_aliases.json` | S |
 
 **Acceptance**: a monitor reads every entry it is cleared for and drains the
 trail; the 256-entry cliff is gone.
@@ -279,8 +438,8 @@ cannot displace an authorized-downgrade entry*.
 | SM9.C.2 | Per-core + cross-core forms (`…OnCore`, `…CrossCoreDispatchChecked`), SGI emission, home-core wake | same | L |
 | SM9.C.3 | `ipcInvariantFull{,_perCore}` preservation — rides `notificationSignal_preserves_*` plus the audit frame | `IPC/Invariant/PerCoreBundlePreservation.lean` | L |
 | SM9.C.4 | `proofLayerInvariantBundle` preservation + `auditLogBounded` carriage | `InformationFlow/Declassification.lean` | M |
-| SM9.C.5 | Lock set + write set + `observableSlotsConfinedToCores`; inventory counts | `Concurrency/Locks/*`, `InformationFlow/NonInterferenceCrossCore.lean` | M |
-| SM9.C.6 | **`declassificationRelativeNonInterference`** — both halves (§3.5), with the load-bearing negative that an *unrecorded* difference is refutable | `InformationFlow/NonInterferencePerCore.lean` | XL |
+| SM9.C.5 | **`declassificationEffectFootprint`** (§3.5: notification ⊕ waiter TCB ⊕ waiter home-core scheduler slots) defined **once** and read by both consumers; lock set + write set + `observableSlotsConfinedToCores`; inventory counts | `Concurrency/Locks/*`, `InformationFlow/NonInterferenceCrossCore.lean` | L |
+| SM9.C.6 | **`declassificationRelativeNonInterference`** — both halves (§3.5) over the SM9.C.5 footprint, with two load-bearing negatives: an *unrecorded* difference is refutable, and a difference **outside** the footprint is refutable | `InformationFlow/NonInterferencePerCore.lean` | XL |
 | SM9.C.7 | NI inventory growth: `KernelOperation.all` 35→36, `niStepConstructorCoverage` arm, `perCoreConfinementDerived` arm, all three counts + the complement | `InformationFlow/Invariant/Composition.lean`, `NonInterferencePerCore.lean` | M |
 | SM9.C.8 | Live arm + ABI: `SyscallId.declassifySignal`, count 33→34, both Rust mirrors, conformance, `sele4n-sys`, enforcement boundary 42→43 / 57→58, lock-set inventory | ~14 files (§5) | L |
 | SM9.C.9 | `syscallDelegates_declassifySignal`; per-core routing gate; cross-core NI inventory entry | `Kernel/API.lean`, `NonInterferenceCrossCore.lean` | M |
@@ -401,9 +560,13 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|------------|--------|------------|
-| SM9.C.6's NI statement is wrong in a way that looks right | MED | HIGH | State both halves — the confined difference **and** the trail entry recording it — with a load-bearing negative: an *unrecorded* difference must be refutable |
+| **An audit syscall gated on a right rather than a target** | MED | HIGH | The **v0.32.97 confused-deputy class**: `syscallLookupCap` never constrains `cap.target`, so a `.read`-gated reader is reachable by any thread holding its own TCB.  `CapTarget.auditTrail` + `extractAuditAuthority` (§3.3), with a negative that a non-`.auditTrail` capability carrying `.read` is rejected |
+| SM9.C.6's NI statement is wrong in a way that looks right | MED | HIGH | State both halves — the confined difference **and** the trail entry recording it — over a footprint defined once (§3.5), with two load-bearing negatives: an *unrecorded* difference and a difference *outside the footprint* must both be refutable |
 | The refusal ledger becomes a channel | LOW | HIGH | No distinguishable capacity reason; outside `ObservableState`; clearance-gated in the reader; `_denied_before_capacity` re-verified as an SM9.B acceptance item |
-| The reader leaks hidden-entry counts through index gaps | LOW | HIGH | Re-indexed filtered view, not sparse global indices; the visible view is a function of the reader's clearance alone |
+| The reader leaks hidden-entry counts through index gaps | LOW | HIGH | Re-indexed filtered view, not sparse global indices; the visible view is a function of the reader's clearance alone; **drain requires full dominance** so there is no partial-visibility prefix to probe (§3.4) |
+| A global drain generation signals a dominating monitor's drains to every reader | MED | HIGH | `drainGeneration` is observer-scoped (§3.3), with the negative that a global counter is refutable |
+| The reader's flow argument is stated over a relation that cannot see the trail | MED | HIGH | `lowEquivalent` does not imply equal visible views once a reader exists — the naive lemma is **false** (§3.4a).  `auditObservationalEquivalence` is the relation SM9.A.4a/.4b are stated over |
+| A read word aliases the ABI error flag | MED | MED | The payload is **63** bits (`encodeOk` masks bit 63); unbounded fields are chunked; `auditReadWord_fits_payload` (§3.3) |
 | A retired rule leaves stale inventory counts | MED | MED | Both retirements (SM9.B.10, SM9.D.4) follow the SM8.E pattern: retire, move counts, add a negative anchor |
 | SM9.C.3's invariant surface is larger than estimated | MED | MED | The transition is `notificationSignal` + an audit write; if preservation does not ride the existing family, split SM9.C.3 into per-conjunct PRs |
 | Scope creep into a general syscall-failure audit | MED | LOW | The seam filters to `.declassify`; generalisation recorded as future work |
@@ -412,6 +575,15 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
 
 - [ ] A clearance-filtered reader exists; a dominating monitor can drain the
       trail; the 256-entry cliff is demonstrably gone (SM9.E.2 scenario).
+- [ ] The reader is gated on a **`.auditTrail` capability**, not merely on a
+      right, and an unconfigured deployment has no audit reader at all.
+- [ ] **Drain requires full dominance**, and the operator consequence is stated
+      in the shipped documentation rather than only here: a deployment whose
+      monitor does not dominate every recorded `srcDomain` cannot drain, and
+      the 256-entry cliff returns for it.  That is the conservative default,
+      and it is the operator's to know about.
+- [ ] `drainGeneration` is observer-scoped; the global-counter form is refuted
+      by a negative rather than merely avoided.
 - [ ] Refusals are counted and attributed, and provably cannot displace an
       authorized-downgrade entry.
 - [ ] `authorizeDeclassificationOnCore_denied_before_capacity` still holds, and
@@ -436,12 +608,21 @@ lake exe decoding_suite && lake exe kernel_error_matrix_suite
 
 ## 11. Theorem catalogue for SM9
 
-~22 substantive theorems.  Headline set:
+~26 substantive theorems.  Headline set:
 
 - `auditLogVisibleTo_sublist` + the clearance-determines-view theorem (SM9.A.1)
+- `auditReadWord_fits_payload` — every returned value is `< 2^63`, so `encodeOk`
+  is the identity on it and no read aliases the error flag (SM9.A.2)
+- `auditReadStatus_generation_observer_scoped` + the negative that a global
+  drain counter is refutable (SM9.A.2)
+- `auditDrain_requires_full_dominance` (SM9.A.3)
 - `auditDrainVisiblePrefix_preserves_auditLogBounded` +
   `_fully_clears_for_dominating_reader` (SM9.A.3)
-- `auditRead_no_channel` — the reader's flow argument (SM9.A.4)
+- `auditObservationalEquivalence` + its congruences, and the negative that plain
+  `lowEquivalent` does **not** imply equal visible views (SM9.A.4a)
+- `auditRead_no_channel` — the reader's flow argument, over that relation
+  (SM9.A.4b)
+- `extractAuditAuthority_rejects_non_audit_capability` (SM9.A.9)
 - `auditRead_stable_under_append` (SM9.A.5)
 - `recordRefusal_saturates` / `_no_loss` / `_ring_wraps_counted` (SM9.B.2)
 - `refusalWrite_declassificationAuditLog_eq` (SM9.B.9)

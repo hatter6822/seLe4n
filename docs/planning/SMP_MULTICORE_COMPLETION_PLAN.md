@@ -78,7 +78,7 @@ SMP binary on a 4-core SoC.
 
 ### 1.3 Workstream shape
 
-**WS-SM**, 11 phases, ~592-767 sub-tasks, ~24-30 months. Each
+**WS-SM**, 11 phases, ~594-769 sub-tasks, ~24-30 months. Each
 phase has its own detailed plan (Appendix A directory).
 
 ```
@@ -378,7 +378,7 @@ documentation; per-core declassification audit.
 
 Document: [`SMP_DECLASSIFICATION_COMPLETION_PLAN.md`](SMP_DECLASSIFICATION_COMPLETION_PLAN.md).
 
-42 sub-tasks across ~13-16 PRs.  Closes the four follow-ons SM8
+44 sub-tasks across ~14-17 PRs.  Closes the four follow-ons SM8
 registered and could not take: a privileged clearance-filtered reader
 and drain for the audit trail (without which a deployment that performs
 256 authorized downgrades can no longer declassify at all); refusal
@@ -565,9 +565,9 @@ WS-SM is complete and v1.0.0 ships when:
 | SM6 | [`SMP_CROSS_CORE_IPC_PLAN.md`](SMP_CROSS_CORE_IPC_PLAN.md) | 60-80 | ~1,800 |
 | SM7 | [`SMP_TLB_SHOOTDOWN_PLAN.md`](SMP_TLB_SHOOTDOWN_PLAN.md) | 40-55 | ~1,200 |
 | SM8 | [`SMP_INFORMATION_FLOW_PLAN.md`](SMP_INFORMATION_FLOW_PLAN.md) | 40-55 | ~1,500 |
-| SM9 | [`SMP_DECLASSIFICATION_COMPLETION_PLAN.md`](SMP_DECLASSIFICATION_COMPLETION_PLAN.md) | 42 | ~2,500 |
+| SM9 | [`SMP_DECLASSIFICATION_COMPLETION_PLAN.md`](SMP_DECLASSIFICATION_COMPLETION_PLAN.md) | 44 | ~2,500 |
 | SM10 | [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) | 25-35 | ~500 |
-| **Total** | | **592-767** | **~27,500 LoC of new code** |
+| **Total** | | **594-769** | **~27,500 LoC of new code** |
 
 ## Appendix B — Verification commands
 
@@ -611,7 +611,7 @@ grep -n "smpLatentInventory_count" SeLe4n/Kernel/Concurrency/Assumptions.lean
 
 ## Appendix C — Theorem-catalogue index
 
-WS-SM introduces ~232 new substantive theorems. Per-phase
+WS-SM introduces ~236 new substantive theorems. Per-phase
 breakdown:
 
 | Phase | Theorems | Document section |
@@ -625,9 +625,9 @@ breakdown:
 | SM6 Cross-core IPC | ~25 | [SMP_CROSS_CORE_IPC_PLAN §10](SMP_CROSS_CORE_IPC_PLAN.md) |
 | SM7 TLB shootdown | ~14 | [SMP_TLB_SHOOTDOWN_PLAN §10](SMP_TLB_SHOOTDOWN_PLAN.md) |
 | SM8 Information flow | ~18 | [SMP_INFORMATION_FLOW_PLAN §10](SMP_INFORMATION_FLOW_PLAN.md) |
-| SM9 Declassification | ~22 | [SMP_DECLASSIFICATION_COMPLETION_PLAN §11](SMP_DECLASSIFICATION_COMPLETION_PLAN.md) |
+| SM9 Declassification | ~26 | [SMP_DECLASSIFICATION_COMPLETION_PLAN §11](SMP_DECLASSIFICATION_COMPLETION_PLAN.md) |
 | SM10 Closure | ~5 | [SMP_RELEASE_CLOSURE_PLAN §10](SMP_RELEASE_CLOSURE_PLAN.md) |
-| **Total** | **~232** | |
+| **Total** | **~236** | |
 
 The canonical authoritative list will be maintained in
 `docs/audits/SMP_THEOREM_INDEX.md` once WS-SM opens (created in

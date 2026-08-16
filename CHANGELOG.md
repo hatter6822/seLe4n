@@ -1,3 +1,112 @@
+## v0.33.25 — SM9 plan: eight review findings, all verified against the code before acting
+
+An automated review of PR #865 left eight findings, every one against the SM9
+declassification plan authored at v0.33.24.  Each was checked against the tree
+rather than taken on the reviewer's word; **all eight are valid**, and two change
+the design rather than the wording.  Nothing shipped was wrong — the PR carries a
+plan document and a comment-only renumbering — which is the argument for finding
+these in a plan.
+
+**The one that would have cost a phase.**  SM9.A.4 read "two states
+low-equivalent at `L` give identical visible views".  That is **false**:
+`lowEquivalent` compares `ObservableState`, and the audit trail is deliberately
+outside it (`declassificationAuditLog_write_preserves_projection` is `rfl`), so
+two low-equivalent states can differ by an entry whose `srcDomain` flows to `L`
+and their visible views then differ.  The lemma is unprovable because it is not
+true.  The root cause is more general than one mis-stated sub-task: **adding a
+reader changes what is observable.**  SM8 could keep the trail out of
+`ObservableState` precisely because nothing could read it; SM9.A makes it
+readable, so the observation relation has to grow or the phase proves
+non-interference for a projection that no longer describes what a subject can
+see.  New §3.4a records the two ways to fix it and picks one —
+`auditObservationalEquivalence` (`lowEquivalent` ∧ agreement on the visible
+view), leaving `ObservableState` a thirteen-component partition so SM8.A's
+`ofFragments_eta` tripwire keeps working and no SM8.B theorem moves.  Extending
+the partition becomes right only if a later phase adds a *second*
+readable-but-unprojected structure, which is now written down rather than
+rediscovered.  SM9.A.4 splits into `.4a` (the relation and its congruences) and
+`.4b` (the flow argument over it), re-sized L → XL.
+
+**The one that repeats a bug the tree already has a named fix for.**  The reader
+was gated on the `.read`/`.write` right alone.  `syscallLookupCap` checks
+`cap.hasRight` and **nothing about `cap.target`**, so that gate is satisfied by
+any thread holding any readable capability — its own TCB suffices.  This is
+exactly the confused deputy closed at **v0.32.97**, where the same gap let a
+thread holding only a writable capability to its own TCB unmap a page in a
+different address space.  §3.3 now specifies a dedicated `CapTarget.auditTrail`
+variant plus `extractAuditAuthority` in the shape `extractReplyId` already uses,
+with rights kept as a *second* gate so a monitoring deployment can hold a
+read-only audit capability that cannot drain.  An unconfigured deployment gets no
+audit reader at all — the deny-by-default posture
+`LabelingContext.declassificationPolicy` already has.  SM9.A.9 owns the
+constructor, its total-match consequences, its mint path and the negative that a
+non-`.auditTrail` capability carrying `.read` is rejected; §8 gains a risk row
+naming the bug class so a later cut cannot quietly revert to a rights-only gate.
+
+**Two leaks in the reader's own design, with one joint fix.**  Prefix drain
+("remove the longest prefix the caller can see") leaks the *positions* of hidden
+entries: on `[A, H, B]` a reader seeing `A` and `B` drains one entry and learns
+entry 2 is invisible, and repeated drains enumerate the hidden layout — which is
+precisely what re-indexing exists to prevent.  Separately, a global
+`drainGeneration` signals a dominating monitor's drains to every reader, one bit
+per drain out of the boundary this phase polices.  §3.4 now authorizes drain only
+for a caller dominating **every** recorded `srcDomain` (so there is no
+partial-visibility prefix to probe — and this is the shape SM8's own registered
+follow-on described), and §3.3 makes the generation observer-scoped with the
+negative that a global counter is refutable.  The cost is recorded in the
+acceptance gate rather than buried: a deployment whose monitor does not dominate
+every recorded domain cannot drain, and the 256-entry cliff returns for it.  That
+is the correct conservative default, and it is the operator's to know about.
+
+**An ABI arithmetic error.**  §3.3 said "one 64-bit word".  `encodeOk` is
+`v &&& 0x7FFFFFFFFFFFFFFF` — bit 63 is the error flag — so the payload is **63**
+bits and a naive 64-bit field would alias an error code silently rather than fail
+closed.  `timestamp` and `targetObject` are unbounded `Nat` in the model, so
+`auditReadWord` selects them in 32-bit chunks, `core ⊕ kernelIssued` packs low,
+and `auditReadWord_fits_payload` is the theorem that every returned value is
+`< 2^63`.
+
+**A structural bound applied to three fields out of four.**  §3.2 argues for
+`Vector`-bounded refusal state over an invariant conjunct, citing CLAUDE.md's
+preference for structural enforcement — and then made `attemptCount` and
+`droppedCount` plain `Nat` with "saturating" as a convention of the updater,
+which is the very shape the section rejects.  A `Nat` bounded only by its updater
+leaves every other constructor unconstrained: the freeze layer, the six test
+literals of SM9.B.5, a future boot path.  Both become
+`Fin (maxRefusalCount + 1)`, so saturation is the type's and no theorem is needed
+to say `recordRefusal` cannot overflow it.
+
+**A footprint that names one write where the transition makes three.**  §3.5 said
+a declassification's low-observable difference is "confined to the declassified
+target".  `notificationSignalOnCore`'s waiter path writes the notification, the
+delivered waiter's TCB (`storeTcbIpcStateAndMessage`) **and** the waiter's
+home-core scheduler slots (`wakeThread`), so a confinement theorem naming only
+the target would be false of the transition it is about.  The headline is
+restated over an authorized effect footprint of all three, defined **once** in
+SM9.C.5 and read by both the NI theorem and the confinement proof rather than
+copied — the drift `retypeIcacheOp_cleans_scrub_extent` hit at v0.32.101 and the
+splice arm hit again at v0.33.16 — with a second load-bearing negative that a
+difference *outside* the footprint is refutable, so the theorem cannot be
+satisfied by a footprint that swallows the state.
+
+**The renumbering miss.**  `docs/gitbook/navigation_manifest.json`,
+`05-specification-and-roadmap.md` and `WORKSTREAM_HISTORY.md` still described the
+workstream as SM-phases `SM0..SM9`; the GitBook README is generated from the
+manifest and inherited it.  The v0.33.24 pass grepped for `SM9.` sub-phase
+citations and bare `SM9`, and these are `SM0..SM9` / `SM4..SM9` **ranges**.  Now
+`SM0..SM10`, with the manifest naming both new phases and the README regenerated
+via `scripts/generate_doc_navigation.py`.  The three historical citations left
+alone are correct as written: the SM0.Q.1 absorption mapping distributed R6..R14
+across the phase list *as it stood then*, and SM10's dependency really is
+`SM0..SM9`.
+
+**Counts.**  SM9.A 12 → 14 (the audit-capability target; SM9.A.4 splits), phase
+total 42 → 44, theorem estimate ~22 → ~26; master plan Appendix A and C and the
+`CLAUDE.md` / `AGENTS.md` SM9 row updated to match.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §3.3, §3.4, §3.4a, §3.5
+Refs: #865
+
 ## v0.33.24 — WS-SM SM9 opens: declassification completion, and release closure renumbered to SM10
 
 SM8 closed at v0.33.23 having registered four follow-ons it did not take, all
