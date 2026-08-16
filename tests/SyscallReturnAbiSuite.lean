@@ -214,13 +214,19 @@ private def runUnitReturnWitness : IO Unit := do
 -- ============================================================================
 
 /-- The ordinary badge round trip: signal 42, then `.notificationWait`.  The
-wait **succeeds** and consumes the pending badge — `notificationWaitOnCore`
-returns `.ok (some 42)` — and both live arms discard it, so the register
-file the caller reads back contains no trace of it: `x0` is the cap pointer
-(decoded as an error), and `x1` — where `sele4n-sys::notification_wait`'s
-`resp.badge()` looks — is the caller's own msgInfo word, `0`. -/
+wait **succeeds** and consumes the pending badge.
+
+Since the RA.B.5 arm staging landed, the wait's arm stages the badge into
+the caller's `registerContext`, so the boundary's `readReturnValue` now
+reads the badge back out — the *staging* half is fixed.  What remains
+broken until the flip is the **decode** half: the encoded word still goes
+out under the bit-63 protocol, and userspace's `regs[0] != 0` test reads
+the staged badge as `KernelError` discriminant 42, while `badge()` reads
+`x1`, which the kernel still never writes back.  These witnesses pin that
+intermediate truth (plan §5 step 2: Lean stages, the boundary still
+encodes the old way). -/
 private def runBadgeLossWitness : IO Unit := do
-  IO.println "-- §5 witness B: the signal-before-wait badge round trip loses the badge"
+  IO.println "-- §5 witness B: the badge is staged, and the old decode still reads it as an error"
   let msgInfoRaw : UInt64 := 1
   match dispatchFromAbi SyscallId.notificationSignal.toNat msgInfoRaw
       signalledBadge.toUInt64 witnessState with
@@ -236,22 +242,22 @@ private def runBadgeLossWitness : IO Unit := do
             (match st'.getNotification? ntfnId with
               | some n => n.pendingBadge == none
               | none => false)
-          assertBool "PRE-MIGRATION: the wait's return word is the cap pointer, not the badge"
-            (encoded == capPtrValue.toUInt64 && encoded != signalledBadge.toUInt64)
-          -- What `notification_wait` actually hands back: `badge()` reads x1,
-          -- and the kernel never wrote x1, so the "badge" is the caller's own
-          -- msgInfo word.
+          assertBool "STAGED (RA.B.5): the wait's return word is now the badge, not the cap pointer"
+            (encoded == signalledBadge.toUInt64 && encoded != capPtrValue.toUInt64)
+          -- What `notification_wait` actually hands back pre-flip: the decode
+          -- still tests `regs[0] != 0`, and `badge()` still reads x1, which
+          -- the kernel never wrote back.
           match rustDecodeResponse (postTrapRegs encoded 0 0 0 0 0) with
           | .ok x1 _ =>
               assertBool "unreachable pre-migration: nonzero x0 cannot decode .ok"
                 (x1 == 0 && false)
           | .errOverflow =>
-              assertBool "unreachable: the cap pointer fits u32" false
+              assertBool "unreachable: the badge fits u32" false
           | .err disc => do
-              assertBool "PRE-MIGRATION: the wait decodes as an error, badge unrecoverable"
-                (disc == capPtrValue.toUInt32)
-              assertBool "PRE-MIGRATION: the register file nowhere contains the badge"
-                (!(postTrapRegs encoded 0 0 0 0 0).contains signalledBadge.toUInt64)
+              assertBool "PRE-MIGRATION: the staged badge decodes as KernelError discriminant 42"
+                (disc == signalledBadge.toUInt32)
+              assertBool "PRE-MIGRATION: badge() would read x1 = 0, not the staged badge"
+                ((postTrapRegs encoded 0 0 0 0 0)[1]! != signalledBadge.toUInt64)
 
 -- ============================================================================
 -- §6  PRE-MIGRATION WITNESS C — `encodeOk` aliases distinct badges (RA.A.8)

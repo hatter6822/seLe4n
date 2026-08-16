@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.Scheduler.Invariant
+import SeLe4n.Kernel.Architecture.SyscallReturn
 import SeLe4n.Kernel.Capability.Operations
 import SeLe4n.Kernel.IPC.DualQueue
 import SeLe4n.Kernel.IPC.Invariant
@@ -1099,7 +1100,13 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
     | .object epId =>
       fun st =>
         match lookupServiceByCap epId st with
-        | .ok (_, st') => .ok ((), st')
+        | .ok (reg, st') =>
+            -- WS-RA RA.B.7: the query answers — the resolved registration's
+            -- `ServiceId` is staged as the caller's return word instead of
+            -- being discarded (`x0` = sid, success `x1`, no message
+            -- registers).  The lookup itself is read-only (`st' = st`).
+            .ok ((), Architecture.writeReturnFrameToTcb st' tid
+              (Architecture.returnFrameOfWord reg.sid.val.toUInt64))
         | .error e => .error e
     | _ => fun _ => .error .invalidCapability
   -- Z5-J: SchedContext configure — decode args, validate, configure
@@ -1455,7 +1462,13 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
           -- per-core receive transition, which links a dequeued `Call` caller to it
           -- atomically (the former post-receive `linkReceivedCaller` step).
           match endpointReceiveDualOnCore epId tid replyIdOpt executingCore st with
-          | (st', .ok (_, _sgi)) => .ok ((), st')
+          | (st', .ok (_, _sgi)) =>
+              -- WS-RA RA.B.6: a non-blocking consume delivered into the caller's
+              -- own `pendingMessage`; stage it as the return frame (badge → x0,
+              -- synthesized MessageInfo → x1, inline window → x2-x5).  A caller
+              -- that blocked stages nothing (the `.ready` guard inside) — its
+              -- frame is owed by the unblocking transition per plan §3.5.
+              .ok ((), Architecture.stageDeliveredMessage st' tid)
           | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- WS-K-E/M-D01: IPC call — message body + extra caps from decoded message registers.
@@ -1610,7 +1623,15 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
         -- WS-SM SM6.B: route through the per-core cross-core wait so the blocked
         -- caller is descheduled on *its own* core (not the boot core).
         match notificationWaitCrossCoreDispatch notifId tid st with
-        | (st', .ok _) => .ok ((), st')
+        | (st', .ok (some badge)) =>
+            -- WS-RA RA.B.5 (the SM9.C.0 closure, signal-before-wait ordering):
+            -- the consumed pending badge is staged into the caller's return
+            -- frame instead of being discarded.  The blocking arm (`.ok none`)
+            -- stages nothing — the badge does not exist yet, and the signal
+            -- path owes the waiter's frame per plan §3.5.
+            .ok ((), Architecture.writeReturnFrameToTcb st' tid
+              (Architecture.returnFrameOfBadge badge))
+        | (st', .ok none) => .ok ((), st')
         | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- V2-C: ReplyRecv — compound reply + receive in one transition.
@@ -1638,7 +1659,13 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
             let body := full.extract 1 full.size
             let msg : IpcMessage := { registers := body, caps := #[], badge := replyBadge }
             let executingCore := determineExecutingCore st tid
-            replyRecvBody epId tid rid prevCaller msg executingCore st
+            -- WS-RA RA.B.6: the receive leg may have consumed a queued sender
+            -- into the caller's `pendingMessage`; stage it as the return frame.
+            -- A caller that blocked on the receive leg stages nothing (the
+            -- `.ready` guard inside `stageDeliveredMessage`).
+            match replyRecvBody epId tid rid prevCaller msg executingCore st with
+            | .ok ((), st') => .ok ((), Architecture.stageDeliveredMessage st' tid)
+            | .error e => .error e
     | _ => fun _ => .error .invalidCapability
   -- WS-SM SM8.C.9: **there is no unchecked declassification.**
   --
@@ -1760,7 +1787,11 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
             -- transition (the endpoint→receiver flow is gated above); the dequeued
             -- `Call` caller is linked atomically (former `linkReceivedCaller` step).
             match endpointReceiveDualOnCore epId tid replyIdOpt executingCore st with
-            | (st', .ok (_, _sgi)) => .ok ((), st')
+            | (st', .ok (_, _sgi)) =>
+                -- WS-RA RA.B.6: stage the non-blocking consume's delivery (the
+                -- checked twin of the unchecked arm's staging; the endpoint
+                -- flow gate above governs the consumed message).
+                .ok ((), Architecture.stageDeliveredMessage st' tid)
             | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- U5-B/U-M01: IPC call — routed through enforcement wrapper (previously inline check).
@@ -1920,7 +1951,13 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
         -- WS-SM SM6.B: per-core checked cross-core wait (gates notification→waiter
         -- flow, then deschedules the caller on its own core).
         match notificationWaitCrossCoreDispatchChecked ctx notifId tid st with
-        | (st', .ok _) => .ok ((), st')
+        | (st', .ok (some badge)) =>
+            -- WS-RA RA.B.5: stage the consumed badge (the checked twin of the
+            -- unchecked arm's staging; the flow gate already admitted
+            -- notification → waiter, which is the authority for the value).
+            .ok ((), Architecture.writeReturnFrameToTcb st' tid
+              (Architecture.returnFrameOfBadge badge))
+        | (st', .ok none) => .ok ((), st')
         | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- V2-C/T6-I: ReplyRecv — checked for both reply and receive legs
@@ -1957,7 +1994,12 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
               let msg : IpcMessage := { registers := body, caps := #[], badge := replyBadge }
               let executingCore := determineExecutingCore st tid
               if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf prevCaller) then
-                replyRecvBody epId tid rid prevCaller msg executingCore st
+                -- WS-RA RA.B.6: stage the receive leg's delivery (the checked
+                -- twin of the unchecked arm's staging; the receive leg's own
+                -- flow gate governs the consumed message).
+                match replyRecvBody epId tid rid prevCaller msg executingCore st with
+                | .ok ((), st') => .ok ((), Architecture.stageDeliveredMessage st' tid)
+                | .error e => .error e
               else .error .replyCapInvalid
     | _ => fun _ => .error .invalidCapability
   -- WS-SM SM8.C.9: **the live declassification.**
@@ -3569,7 +3611,7 @@ theorem dispatchWithCapChecked_receive_delegates
     dispatchWithCapChecked ctx decoded tid gate cap st =
       (match endpointReceiveDualOnCore epId tid replyIdOpt
               (determineExecutingCore st tid) st with
-       | (st', .ok (_, _)) => .ok ((), st')
+       | (st', .ok (_, _)) => .ok ((), Architecture.stageDeliveredMessage st' tid)
        | (_, .error e) => .error e) := by
   simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget,
     endpointFlowGate_of ctx epId _ _ hFlow hOverride, hReply]
@@ -3767,7 +3809,9 @@ def syscallDelegates : SyscallId → Prop
         dispatchWithCapChecked ctx decoded tid gate cap st =
           (match endpointReceiveDualOnCore epId tid replyIdOpt
                   (determineExecutingCore st tid) st with
-           | (st', .ok (_, _)) => .ok ((), st')
+           -- WS-RA RA.B.6: the arm stages the non-blocking consume's delivery
+           -- into the caller's return frame.
+           | (st', .ok (_, _)) => .ok ((), Architecture.stageDeliveredMessage st' tid)
            | (_, .error e) => .error e)
   | .tcbSuspend =>
       ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
