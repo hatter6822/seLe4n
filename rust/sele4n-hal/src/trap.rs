@@ -248,19 +248,28 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
             let args = crate::svc_dispatch::SyscallArgs::from_trap_frame(frame);
             // WS-RA (plan §3.1/§3.3): the writeback is a six-register
             // context restore — `x0` the value, the offset error label on
-            // `x1`, `x2`-`x5` message registers.  A blocked caller gets NO
-            // writeback (its stale registers are not a return value; the
-            // staged frame is delivered by the SM10.E context restore —
-            // RA.C.9's hook is the `Blocked` arm).  Prefilter rejections
+            // `x1`, `x2`-`x5` message registers.  A blocked caller has NO
+            // return frame (its stale registers are not a return value;
+            // the staged frame is delivered by the SM10.E context restore
+            // — RA.C.9's hook is the `Blocked` arm).  Prefilter rejections
             // surface as label-encoded error frames like every kernel
             // rejection, retiring the raw-discriminant `x0` write and its
             // documented collision.
             match crate::svc_dispatch::dispatch_svc(syscall_id, &args) {
                 Ok(crate::svc_dispatch::SvcOutcome::Frame(regs)) => frame.set_return_frame(regs),
                 Ok(crate::svc_dispatch::SvcOutcome::Blocked) => {
-                    // SM10.E context-restore hook: nothing to write for
-                    // the blocked caller; the successor's frame install
-                    // lands here when `contextRestoreSeamLive` flips.
+                    // SM10.E context-restore hook: the successor's frame
+                    // install lands here when `contextRestoreSeamLive`
+                    // flips.  Until then `trap.S` restores and `eret`s
+                    // through the blocked caller's own saved frame, so
+                    // poison it: left untouched, the caller's request
+                    // registers (an `x1` label of `0`) decode as a false
+                    // success carrying the caller's own capability
+                    // pointer as the "badge" (PR #866 review).  The
+                    // sentinel makes the premature resume fail closed —
+                    // its label decodes as `UnknownKernelError`, never as
+                    // success and never as a kernel-emitted error.
+                    frame.set_return_frame(crate::svc_dispatch::blocked_resume_sentinel_regs());
                 }
                 Err(e) => frame.set_return_frame(crate::svc_dispatch::error_frame_regs(
                     e.kernel_error_discriminant(),

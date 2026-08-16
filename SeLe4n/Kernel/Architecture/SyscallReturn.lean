@@ -933,7 +933,12 @@ theorem tagWord_blocks_ne_returns (f : SyscallReturnFrame) :
   simp [tagWord]
 
 /-- The mailbox frame for an outcome: a blocked caller's mailbox stays
-zeroed (nothing may be written back for it — RA.C.9). -/
+zeroed (no return value exists for it — RA.C.9; its real frame is staged
+by the unblocking arm and delivered by the SM10.E context restore).
+Until that seam flips, the hardware trap layer substitutes a fail-closed
+poison frame for the premature resume (`blocked_resume_sentinel_regs` in
+`svc_dispatch.rs`) — an interim HAL artifact, deliberately NOT part of
+this model: the model stages real frames only. -/
 def mailboxFrame : SyscallOutcome → SyscallReturnFrame
   | .returns f => f
   | .blocks    => .zero
@@ -944,10 +949,25 @@ end SyscallOutcome
 Everything except `.ready` is an IPC-blocked state; a descheduled but
 IPC-`.ready` caller (a self-`.tcbSuspend`) still counts as returning, since
 the unit frame is exactly what it should observe when later resumed
-(plan §3.5). -/
+(plan §3.5).
+
+**Exhaustive match, no wildcard** — the §3.4 discipline `ReturnShape`
+established, applied here for the same reason: a wildcard would silently
+classify a future `ThreadIpcState` constructor as "blocks", and a
+returning caller misclassified as blocked gets NO staged frame — its
+computed result is silently discarded.  (The trap layer poisons the
+misclassified caller's frame with the fail-closed blocked-resume
+sentinel, so the hardware failure mode is an unmistakable
+`UnknownKernelError`, not the false success the caller's own spilled
+`x0`/`x1` would decode as — but a fail-closed wrong answer is still a
+wrong answer.)  A new constructor must decide its arm at elaboration. -/
 def ipcStateBlocksReturn : ThreadIpcState → Bool
-  | .ready => false
-  | _      => true
+  | .ready                   => false
+  | .blockedOnSend _         => true
+  | .blockedOnReceive _      => true
+  | .blockedOnNotification _ => true
+  | .blockedOnReply _ _      => true
+  | .blockedOnCall _         => true
 
 @[simp] theorem ipcStateBlocksReturn_ready :
     ipcStateBlocksReturn .ready = false := rfl

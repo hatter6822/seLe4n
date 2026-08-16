@@ -3135,6 +3135,14 @@ run_check "INVARIANT" rg -n '^theorem stageDeliveredMessage_preserves_projection
 run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_error_stages_no_frame' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n 'ffi_syscall_return_frame' rust/sele4n-hal/src/ffi.rs
 run_check "INVARIANT" rg -n 'pub const SYSCALL_ABI_VERSION: u64 = 2' rust/sele4n-types/src/lib.rs
+# PR #866 review: the Blocked trap arm must poison the frame with the
+# fail-closed blocked-resume sentinel until the context-restore seam
+# installs a successor — a silent revert to the no-op arm re-opens the
+# false-success decode of the caller's own stale request registers.
+run_check "INVARIANT" rg -n 'pub const BLOCKED_RESUME_SENTINEL_LABEL' rust/sele4n-hal/src/svc_dispatch.rs
+run_check "INVARIANT" rg -n 'pub fn blocked_resume_sentinel_regs' rust/sele4n-hal/src/svc_dispatch.rs
+run_check "INVARIANT" rg -n 'blocked_resume_sentinel_regs' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n 'fn blocked_resume_sentinel_decodes_fail_closed' rust/sele4n-hal/src/svc_dispatch.rs
 # The retired bit-63 theorems must not come back either.
 run_negative_check "INVARIANT" rg -n 'theorem encodeError_high_bit_set' SeLe4n/Platform/FFI.lean
 run_negative_check "INVARIANT" rg -n 'theorem encodeOk_high_bit_clear' SeLe4n/Platform/FFI.lean

@@ -695,7 +695,15 @@ pub extern "C" fn ffi_shootdown_publish_commit(len: u64, gen: u64) {
 /// Lean binding: `SeLe4n.Platform.FFI.ffiSyscallReturnFrame`
 #[no_mangle]
 pub extern "C" fn ffi_syscall_return_frame(x0: u64, x1: u64, x2: u64, x3: u64, x4: u64, x5: u64) {
-    let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
+    // Deliberately the SAME core-id source as the mailbox's reader
+    // (`dispatch_svc` keys both its entry-lock bracket and its
+    // `return_frame_read_in` on `cpu::current_core_id()`, the MPIDR-derived
+    // hardware id).  Keying the writer on the software-initialized
+    // TPIDR-derived id instead would make the publish/read pairing depend on
+    // two independent sources agreeing: one mis-set TPIDR_EL1 and a return
+    // frame lands in another core's slot — handed to a *different* thread's
+    // next syscall as its return value.  One source, no agreement obligation.
+    let core = crate::cpu::current_core_id() as usize;
     crate::svc_dispatch::return_frame_publish_in(
         &crate::svc_dispatch::RETURN_FRAMES,
         core,

@@ -166,7 +166,8 @@ private def witnessState : SystemState :=
     |>.withObject callerTid.toObjId (.tcb
         { tid := callerTid, priority := ⟨40⟩, domain := ⟨0⟩,
           cspaceRoot := callerCn, vspaceRoot := callerVsp,
-          ipcBuffer := SeLe4n.VAddr.ofNat 4096, ipcState := .ready })
+          ipcBuffer := SeLe4n.VAddr.ofNat 4096, ipcState := .ready,
+          threadState := .Running })
     |>.withRunnable [callerTid]
     |>.withCurrent (some callerTid)
     |>.build
@@ -207,6 +208,16 @@ private def replyCapability : Capability :=
     rights := AccessRightSet.ofList [.read, .write, .grant],
     badge := some (Badge.ofNatMasked replyBadgeVal) }
 
+private def selfTcbCapPtr : Nat := 8
+
+/-- A capability to the caller's own TCB — the 9g self-suspend witness for
+plan §3.5's parenthetical: a self-`.tcbSuspend` deschedules without
+IPC-blocking, so its outcome is `returns` with the constructed unit frame
+(the value the thread should observe when later resumed). -/
+private def selfTcbCap : Capability :=
+  { target := .object callerTid.toObjId,
+    rights := AccessRightSet.ofList [.read, .write] }
+
 private def core1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
 
 /-- The shared CNode with all three capabilities (the §3 notification cap
@@ -216,7 +227,8 @@ private def sharedCn : SeLe4n.Model.CNode :=
     slots := SeLe4n.UniqueSlotMap.ofListWF
       [(SeLe4n.Slot.ofNat capPtrValue, ntfnCap),
        (SeLe4n.Slot.ofNat epCapPtr, epCap),
-       (SeLe4n.Slot.ofNat replyCapPtr, replyCapability)] }
+       (SeLe4n.Slot.ofNat replyCapPtr, replyCapability),
+       (SeLe4n.Slot.ofNat selfTcbCapPtr, selfTcbCap)] }
 
 /-- Two threads on two cores: `callerTid` current on the boot core (the
 thread that blocks), `peerTid` current on core 1 (the thread whose
@@ -233,11 +245,13 @@ private def twoThreadState : SystemState :=
     |>.withObject callerTid.toObjId (.tcb
         { tid := callerTid, priority := ⟨40⟩, domain := ⟨0⟩,
           cspaceRoot := callerCn, vspaceRoot := callerVsp,
-          ipcBuffer := SeLe4n.VAddr.ofNat 4096, ipcState := .ready })
+          ipcBuffer := SeLe4n.VAddr.ofNat 4096, ipcState := .ready,
+          threadState := .Running })
     |>.withObject peerTid.toObjId (.tcb
         { tid := peerTid, priority := ⟨40⟩, domain := ⟨0⟩,
           cspaceRoot := callerCn, vspaceRoot := callerVsp,
-          ipcBuffer := SeLe4n.VAddr.ofNat 8192, ipcState := .ready })
+          ipcBuffer := SeLe4n.VAddr.ofNat 8192, ipcState := .ready,
+          threadState := .Running })
     |>.withRunnable [callerTid]
     |>.withCurrent (some callerTid)
     |>.build
@@ -261,11 +275,13 @@ private def replyPendingState : SystemState :=
           cspaceRoot := callerCn, vspaceRoot := callerVsp,
           ipcBuffer := SeLe4n.VAddr.ofNat 4096,
           ipcState := .blockedOnReply epId (some peerTid),
+          threadState := .BlockedReply,
           replyObject := some replyRid })
     |>.withObject peerTid.toObjId (.tcb
         { tid := peerTid, priority := ⟨40⟩, domain := ⟨0⟩,
           cspaceRoot := callerCn, vspaceRoot := callerVsp,
-          ipcBuffer := SeLe4n.VAddr.ofNat 8192, ipcState := .ready })
+          ipcBuffer := SeLe4n.VAddr.ofNat 8192, ipcState := .ready,
+          threadState := .Running })
     |>.withObject replyRid.toObjId (.reply
         { replyId := replyRid, caller := some callerTid })
     |>.build
@@ -478,12 +494,39 @@ private def replyRecvDeliveryScenario :
     replyCapPtr.toUInt64 31 32 replyPendingState
   pure (out1, stagedFrame st1 callerTid)
 
+/-- 9f: `.serviceQuery` — the `.word` shape end to end (the one value
+shape the blocked orderings do not exercise): a service registered on the
+endpoint, resolved through the endpoint capability, its `ServiceId` staged
+as the caller's return word and carried in the outcome frame — the answer
+the pre-WS-RA arm computed and discarded. -/
+private def queriedSid : Nat := 77
+
+private def serviceQueryScenario :
+    Except KernelError (Kernel.Architecture.SyscallOutcome × SystemState) := do
+  let iface : InterfaceSpec :=
+    { ifaceId := ⟨910⟩, methodCount := 1, maxMessageSize := 64,
+      maxResponseSize := 64, requiresGrant := false }
+  let ((), st1) ← Kernel.registerInterface iface twoThreadState
+  let ((), st2) ← Kernel.registerService
+    { sid := ⟨queriedSid⟩, iface := iface, endpointCap := epCap } st1
+  dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
+    SyscallId.serviceQuery.toNat 0 epCapPtr.toUInt64 0 0 0 st2
+
+/-- 9g: a **self**-`.tcbSuspend` — §3.5's parenthetical, witnessed: the
+caller deschedules itself but does not IPC-block (`ipcState` stays
+`.ready`), so the outcome is `returns` with the **constructed** unit
+frame — which is also the value it should observe when later resumed. -/
+private def selfSuspendScenario :
+    Except KernelError (Kernel.Architecture.SyscallOutcome × SystemState) :=
+  dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
+    SyscallId.tcbSuspend.toNat 0 selfTcbCapPtr.toUInt64 0 0 0 twoThreadState
+
 -- ============================================================================
 -- §8  Golden fixture — the deterministic return-ABI trace (RA.E.4)
 -- ============================================================================
 
 private def hex (v : UInt64) : String :=
-  s!"0x{String.mk (Nat.toDigits 16 v.toNat)}"
+  s!"0x{String.ofList (Nat.toDigits 16 v.toNat)}"
 
 private def frameCells (f : Kernel.Architecture.SyscallReturnFrame) : String :=
   s!"x0={hex f.x0} x1={hex f.x1} x2={hex f.x2} x3={hex f.x3} x4={hex f.x4} x5={hex f.x5}"
@@ -545,6 +588,9 @@ private def returnAbiTraceLines : List String :=
   , (match sendThenReceiveScenario with
      | .ok (_, _, f) => s!"[ret-abi] staged completed-sender unit frame: {frameCells f}"
      | .error e => s!"[ret-abi] staged completed-sender unit frame: dispatch-error {reprStr e}")
+  -- RA.B.8: the `.word` shape's live outcome (the fourth value shape,
+  -- completing the fixture's coverage of the value surface).
+  , outcomeLine "word query (registered service 77)" serviceQueryScenario
   ]
 
 private def fixturePath : String := "tests/fixtures/syscall_return_abi.expected"
@@ -629,6 +675,33 @@ private def runBlockedWaiterStagingWitnesses : IO Unit := do
         (out1 == .blocks)
       assertBool "9e: replyRecv staged the previous caller's frame (x2 = 31, x3 = 32, badge 3)"
         (frame.x0 == replyBadgeVal.toUInt64 && frame.x2 == 31 && frame.x3 == 32)
+  -- 9f — the `.word` shape end to end (the value shape §9a-§9e do not cover)
+  match serviceQueryScenario with
+  | .error e => assertBool s!"9f dispatches (got .error {reprStr e})" false
+  | .ok (out, st') => do
+      assertBool "9f: the query's outcome carries the resolved ServiceId in x0"
+        (match out with
+          | .returns f => f.x0 == queriedSid.toUInt64 && f.x1 == 0
+          | .blocks => false)
+      assertBool "9f: the arm staged the word (the boundary read is of fresh data)"
+        ((stagedFrame st' callerTid).x0 == queriedSid.toUInt64)
+      assertBool "9f: the word decodes as a success value, end to end"
+        (match out with
+          | .returns f =>
+              rustDecodeResponse (postTrapRegs f) == .ok queriedSid.toUInt64 #[0, 0, 0, 0]
+          | .blocks => false)
+  -- 9g — the self-suspend returns-unit split (§3.5's parenthetical)
+  match selfSuspendScenario with
+  | .error e => assertBool s!"9g dispatches (got .error {reprStr e})" false
+  | .ok (out, st') => do
+      assertBool "9g control: the self-suspend descheduled the caller (current cleared)"
+        ((st'.scheduler.currentOnCore SeLe4n.Kernel.Concurrency.bootCoreId) == none)
+      assertBool "9g control: the caller did NOT IPC-block (ipcState stays .ready)"
+        (match st'.getTcb? callerTid with
+          | some tcb => tcb.ipcState == .ready
+          | none => false)
+      assertBool "9g: a self-suspend RETURNS the constructed unit frame (not .blocks)"
+        (out == .returns .zero)
 
 -- ============================================================================
 -- Runner

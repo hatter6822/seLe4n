@@ -112,6 +112,93 @@ the cancellation/timeout **error-frame** staging (`cancelIpcBlocking` /
 stage an error frame).  Neither is WS-RA scope: the workstream's staging
 obligations are complete.
 
+**Audit cut (v0.33.39)** — a post-completion audit of the whole PR,
+checked against the code rather than the documentation describing it.  No
+false theorem and no live vulnerability; five findings, all closed:
+(1) **`ipcStateBlocksReturn` carried a wildcard** — the exact pattern
+§3.4 forbids for `syscallReturnShape`, and here the failure mode is
+sharper: a future `ThreadIpcState` constructor would silently classify as
+"blocks", and a returning caller misclassified as blocked gets no
+writeback — it resumes with its spilled arguments under the *request's*
+`MessageInfo`, which decodes as a **false success** carrying the
+capability pointer.  Now an exhaustive six-arm match.  (2) **The
+return-frame mailbox's writer and reader keyed on different core-id
+sources** — `ffi_syscall_return_frame` on the software-initialized
+TPIDR-derived id, `dispatch_svc`'s read (and its entry-lock bracket) on
+the MPIDR-derived hardware id.  Correct under the boot invariant, but one
+mis-set `TPIDR_EL1` and a return frame lands in another core's slot — to
+be handed to a *different* thread's next syscall as its return value.
+Both now read `cpu::current_core_id()`; the pairing carries no
+two-sources-agree obligation.  (3) **`.serviceQuery` had no runtime
+staging witness** — the one value shape §9's blocked orderings do not
+pass through; §9f registers a service, dispatches the query end to end
+and pins the staged word, the outcome frame and the decode, with a
+`word query` golden-fixture line completing the fixture's coverage of
+the value surface.  (4) **The `.serviceQuery` RA.B.8 theorem's `hLookup`
+was decorative** (the defect class SM8.D's review history names): it
+concluded only the arm's state-generic function equality, which holds
+without the hypothesis.  Restated like its four siblings — over the live
+dispatch at the given state, where the lookup equation drives the match.
+(5) **The suite's fixtures were lifecycle-inconsistent** —
+`TCB.threadState` defaults to `.Inactive`, the fixtures never set it, and
+the IPC scenarios masked it because the IPC transitions read `ipcState`
+only; the new §9g self-suspend witness surfaced it when `suspendThread`'s
+guard (correctly) refused to suspend an `.Inactive` thread.  Fixtures now
+carry `.Running` / `.BlockedReply`, and §9g pins §3.5's parenthetical at
+runtime: a self-`.tcbSuspend` deschedules (current cleared), does not
+IPC-block, and **returns** the constructed unit frame.  Verified sound
+along the way: staging creates no new information flow (every stager
+copies a payload the gated transition already delivered into the *same*
+thread's own projection-stripped `registerContext`); the arm-level
+counterparty pre-resolutions agree with what each transition wakes, with
+the `.ready`/`pendingMessage` guards making every divergence case inert;
+the bound/plain signal targets are structurally exclusive
+(`boundDeliveryTarget?` requires an empty wait queue); the error arms
+commit exactly the argument-spill state; a unit syscall's constructed
+frame survives the context-switch `registerContext` clobber
+(`saveOutgoingContext`) precisely because it is constructed; the Rust
+`error_frame_regs` matches `Architecture.errorFrame` label-for-label;
+`returnMessageInfo` is clamped inside the 7/2/20-bit fields; and the
+whole surface is axiom-clean (2,025 elaborated constants swept).  One
+deprecation warning (`String.mk`) and the unused-hypothesis warning were
+the tree's only two; both fixed — the build is warning-free.
+
+**PR #866 review (Codex P1, same cut) — the blocked-resume sentinel.**
+The review observed that a `Blocked` outcome reaches a no-op trap arm
+while `contextRestoreSeamLive = false`, so `trap.S` restores and `eret`s
+through the blocked caller's own saved frame — and the caller's request
+registers (an `x1` whose label is typically `0`) then decode as a
+**false success** whose `x0` "badge" is the caller's own capability
+pointer, the exact fail-open class WS-RA exists to close, live for every
+genuine block rather than only for the audit's misclassification case.
+Valid; two halves.  The demanded successor-install *is* the SM10.E
+context-restore seam (save the outgoing frame, choose a successor,
+restore its `registerContext` — the delivery half §9 already owes to
+SM10.E, tracked in `SMP_RELEASE_CLOSURE_PLAN.md`), and pulling a whole
+scheduled phase into a review fix would be the wrong cut.  The
+observable-harm half is closed **now**: the `Blocked` arm poisons the
+frame with `blocked_resume_sentinel_regs()` — `x1` label
+`BLOCKED_RESUME_SENTINEL_LABEL = 0xFFFFF`, the maximum in-field
+`MessageInfo` label, compile-time-asserted outside the kernel-emittable
+set `{0} ∪ {1..=55}` — which `decode_response` collapses to
+`UnknownKernelError`: an error the verified kernel never emits, so a
+premature resume reads fail-closed, never as success and never as a real
+kernel error (a real `KernelError` would lie twice — the syscall did not
+fail, and for `.call` the request was already *sent*, so an error verdict
+would drive a userspace retry into a double-send).  The sentinel is an
+interim HAL artifact, deliberately **not** part of the verified
+convention (`SyscallOutcome.mailboxFrame .blocks = .zero` is unchanged;
+the model stages real frames only), and the SM10.E flip replaces the
+write with the successor's install.  Pinned by
+`blocked_resume_sentinel_shape` (raw shape; the hand-duplicated label
+equals `sele4n-abi`'s `MAX_LABEL`; in-field; collides with no
+discriminant's error frame) and `blocked_resume_sentinel_decodes_fail_closed`
+(the canonical decoder reads it as `UnknownKernelError`, with the
+load-bearing negative that an *unpoisoned* stale request frame decodes as
+the false success the review describes — the fail-open path the sentinel
+closes), via a new test-only `sele4n-abi` dev-dependency following the
+`sele4n-types` cross-check precedent.  HAL 821 → 823 tests.
+
 ## 1. Phase goal
 
 **The kernel has no syscall return path.**  It writes exactly one register on
@@ -559,7 +646,7 @@ both sit above it without a cycle.  (The first draft said
 | RA.C.6 | `SyscallResponse` reshaped — `x1_raw`'s context-dependent dual meaning (badge *or* msg_info) collapses, since the badge moves to `x0`; `badge()` reads `x0`, `msg_info()` reads the decoded `x1`; the vestigial always-`None` `error` field (errors ride `Err`) dropped rather than carried | `rust/sele4n-abi/src/decode.rs` | M |
 | RA.C.7 | The `regs[0] > u32::MAX` guard is retired with the convention that motivated it, and its replacement — the fail-closed `MessageInfo::decode` width check on `x1` — takes its place with the same posture | same | S |
 | RA.C.8 | Rust-side unit tests for the new decode, including the **regression witness** that a nonzero `x0` is a value and not an error; two stale pins corrected while the files are open (`dispatch_error_kernel_variant_…` iterates `0..=51` against a real max of 54; `test_rust_conformance.sh --dump`'s `KE-003` row cites `from_u32(38) = None` against a live boundary of 55) | `rust/sele4n-hal/src/svc_dispatch.rs`, `rust/sele4n-abi/src/decode.rs`, `scripts/test_rust_conformance.sh` | M |
-| RA.C.9 | The blocked-return handoff at the boundary: a `blocks` outcome writes **no** frame for the caller (a distinct `dispatch_svc` variant, not an error), and the SM10.E context-restore seam is where the staged frame is delivered — documented as the dependency it is, with the trap-layer hook shaped now so SM10.E wires rather than redesigns | `rust/sele4n-hal/src/{trap,svc_dispatch}.rs` | M |
+| RA.C.9 | The blocked-return handoff at the boundary: a `blocks` outcome carries **no return frame** for the caller (a distinct `dispatch_svc` variant, not an error), and the SM10.E context-restore seam is where the staged frame is delivered — documented as the dependency it is, with the trap-layer hook shaped now so SM10.E wires rather than redesigns.  **Sharpened by the PR #866 review** (see the review paragraph above §1): until the seam flips the hardware resumes the blocked caller anyway, so the `Blocked` arm poisons the frame with the fail-closed `blocked_resume_sentinel_regs()` rather than leaving the caller's stale request registers to decode as a false success | `rust/sele4n-hal/src/{trap,svc_dispatch}.rs` | M |
 
 ### RA.D — Wrappers and conformance (2 PRs, 6 sub-tasks)
 

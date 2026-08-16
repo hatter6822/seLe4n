@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/syscall-return-abi-plan-yuy13t",
-      "commit_sha": "e7ef1d828fd7442f02f8a4eff87dc35f4cad9e1e",
-      "tree_sha": "3792de77b370cb962dd217ba7fcee4a4383a5bd3",
-      "committed_at_utc": "2026-08-16T08:13:24+00:00"
+      "commit_sha": "054b64dc3f8aecc408286a773f56cb2953b6f53d",
+      "tree_sha": "540f5f36a9c9bd5f8f938c74788bddf554821472",
+      "committed_at_utc": "2026-08-16T13:20:06+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "8d2d8de0df6c4e92e383f837851ce9d5a0f683d2b16a5d5ac76d189b932f501a"
+    "source_digest": "cf0de45695fb07b0826259248a48d0771a99ba48a88626ab5a60a158017ed0ba"
   },
   "summary": {
     "module_count": 348,
-    "declaration_count": 15835
+    "declaration_count": 15840
   },
   "readme_sync": {
-    "version": "0.33.38",
+    "version": "0.33.39",
     "lean_toolchain": "v4.28.0",
     "production_files": 279,
-    "production_loc": 266580,
+    "production_loc": 266601,
     "test_files": 69,
-    "test_loc": 56484,
+    "test_loc": 56557,
     "proved_theorem_lemma_decls": 8931,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -1641,16 +1641,18 @@
         {
           "kind": "theorem",
           "name": "dispatchArm_serviceQuery_matches_returnShape",
-          "line": 3151,
+          "line": 3155,
           "called": [
             "Capability",
             "ObjId",
             "ServiceRegistration",
             "SyscallDecodeResult",
+            "SyscallGate",
             "SystemState",
             "TCB",
             "ThreadId",
             "dispatchCapabilityOnly",
+            "dispatchWithCap",
             "epId",
             "getTcb",
             "invExt",
@@ -1666,7 +1668,7 @@
         {
           "kind": "theorem",
           "name": "dispatchArm_receive_matches_returnShape",
-          "line": 3179,
+          "line": 3180,
           "called": [
             "Capability",
             "CoreId",
@@ -1702,7 +1704,7 @@
         {
           "kind": "theorem",
           "name": "dispatchArm_replyRecv_matches_returnShape",
-          "line": 3211,
+          "line": 3212,
           "called": [
             "Badge",
             "Capability",
@@ -1736,7 +1738,7 @@
         {
           "kind": "theorem",
           "name": "dispatchArm_call_frame_delivered_by_reply",
-          "line": 3243,
+          "line": 3244,
           "called": [
             "Capability",
             "CoreId",
@@ -1770,7 +1772,7 @@
         {
           "kind": "theorem",
           "name": "syscallLookupCap_preserves_state",
-          "line": 3276,
+          "line": 3277,
           "called": [
             "Capability",
             "SyscallGate",
@@ -1783,7 +1785,7 @@
         {
           "kind": "theorem",
           "name": "syscallLookupReplyId_preserves_state",
-          "line": 3285,
+          "line": 3286,
           "called": [
             "ReplyId",
             "SyscallGate",
@@ -1796,7 +1798,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_error_preserves_proofLayerInvariantBundle",
-          "line": 3301,
+          "line": 3302,
           "called": [
             "KernelError",
             "SyscallRegisterLayout",
@@ -1809,7 +1811,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_preserves_proofLayerInvariantBundle",
-          "line": 3311,
+          "line": 3312,
           "called": [
             "RegisterFile",
             "SystemState",
@@ -1824,7 +1826,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_preserves_proofLayerInvariantBundle",
-          "line": 3328,
+          "line": 3329,
           "called": [
             "SyscallRegisterLayout",
             "SystemState",
@@ -1839,7 +1841,7 @@
         {
           "kind": "theorem",
           "name": "decodeSyscallArgs_preserves_lowEquivalent",
-          "line": 3358,
+          "line": 3359,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -1850,7 +1852,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_preserves_projection",
-          "line": 3367,
+          "line": 3368,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -1867,7 +1869,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_preserves_lowEquivalent",
-          "line": 3378,
+          "line": 3379,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -1883,7 +1885,7 @@
         {
           "kind": "theorem",
           "name": "syscallLookupCap_preserves_projection",
-          "line": 3393,
+          "line": 3394,
           "called": [
             "Capability",
             "IfObserver",
@@ -1899,7 +1901,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_preserves_projection",
-          "line": 3408,
+          "line": 3409,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -1916,7 +1918,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_error_yields_NI_step",
-          "line": 3431,
+          "line": 3432,
           "called": [
             "IfObserver",
             "KernelError",
@@ -1931,7 +1933,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_success_yields_NI_step",
-          "line": 3446,
+          "line": 3447,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -1951,7 +1953,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_layer2_decode_pure",
-          "line": 3474,
+          "line": 3475,
           "called": [
             "SyscallDecodeResult",
             "decodeCSpaceCopyArgs",
@@ -1967,7 +1969,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_preservation_composition_witness",
-          "line": 3502,
+          "line": 3503,
           "called": [
             "dispatchSyscall",
             "proofLayerInvariantBundle",
@@ -1979,7 +1981,7 @@
         {
           "kind": "theorem",
           "name": "dispatchCapabilityOnly_preserves_projection",
-          "line": 3632,
+          "line": 3633,
           "called": [
             "Capability",
             "IfObserver",
@@ -1995,7 +1997,7 @@
         {
           "kind": "theorem",
           "name": "dispatchSyscallChecked_preserves_projection",
-          "line": 3671,
+          "line": 3672,
           "called": [
             "Capability",
             "IfObserver",
@@ -2017,7 +2019,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCapChecked_declassify_delegates",
-          "line": 3743,
+          "line": 3744,
           "called": [
             "Capability",
             "LabelingContext",
@@ -2037,7 +2039,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_declassify_denied",
-          "line": 3761,
+          "line": 3762,
           "called": [
             "Capability",
             "SyscallDecodeResult",
@@ -2052,7 +2054,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCapChecked_declassify_default_denied",
-          "line": 3774,
+          "line": 3775,
           "called": [
             "Capability",
             "LabelingContext",
@@ -2076,7 +2078,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_tcbSuspend_delegates",
-          "line": 3804,
+          "line": 3805,
           "called": [
             "Capability",
             "ObjId",
@@ -2099,7 +2101,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_tcbResume_delegates",
-          "line": 3827,
+          "line": 3828,
           "called": [
             "Capability",
             "ObjId",
@@ -2122,7 +2124,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCapChecked_receive_delegates",
-          "line": 3850,
+          "line": 3851,
           "called": [
             "Capability",
             "LabelingContext",
@@ -2152,7 +2154,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_send_delegates",
-          "line": 3881,
+          "line": 3882,
           "called": [
             "Capability",
             "ObjId",
@@ -2180,7 +2182,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCapChecked_send_delegates",
-          "line": 3907,
+          "line": 3908,
           "called": [
             "Capability",
             "LabelingContext",
@@ -2209,7 +2211,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_tcbSetPriority_delegates",
-          "line": 3936,
+          "line": 3937,
           "called": [
             "Capability",
             "ObjId",
@@ -2233,7 +2235,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_schedContextUnbind_delegates",
-          "line": 3962,
+          "line": 3963,
           "called": [
             "Capability",
             "ObjId",
@@ -2256,7 +2258,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_tcbSetMCPriority_delegates",
-          "line": 3980,
+          "line": 3981,
           "called": [
             "Capability",
             "ObjId",
@@ -2280,7 +2282,7 @@
         {
           "kind": "def",
           "name": "syscallDelegates",
-          "line": 4011,
+          "line": 4012,
           "called": [
             "Capability",
             "LabelingContext",
@@ -2352,7 +2354,7 @@
         {
           "kind": "theorem",
           "name": "syscallDelegates_receive",
-          "line": 4178,
+          "line": 4179,
           "called": [
             "dispatchWithCapChecked_receive_delegates",
             "epId",
@@ -2363,7 +2365,7 @@
         {
           "kind": "theorem",
           "name": "syscallDelegates_tcbResume",
-          "line": 4184,
+          "line": 4185,
           "called": [
             "dispatchWithCap_tcbResume_delegates",
             "st",
@@ -2373,7 +2375,7 @@
         {
           "kind": "theorem",
           "name": "syscallDelegates_tcbSuspend",
-          "line": 4190,
+          "line": 4191,
           "called": [
             "dispatchWithCap_tcbSuspend_delegates",
             "st",
@@ -2383,7 +2385,7 @@
         {
           "kind": "theorem",
           "name": "syscallDelegates_lifecycleRetype",
-          "line": 4201,
+          "line": 4202,
           "called": [
             "dispatchWithCap_lifecycleRetype_delegates",
             "syscallDelegates"
@@ -2392,7 +2394,7 @@
         {
           "kind": "theorem",
           "name": "syscallDelegates_vspaceMap",
-          "line": 4207,
+          "line": 4208,
           "called": [
             "dispatchWithCap_vspaceMap_delegates",
             "st",
@@ -2402,7 +2404,7 @@
         {
           "kind": "theorem",
           "name": "syscallDelegates_declassify",
-          "line": 4213,
+          "line": 4214,
           "called": [
             "dispatchWithCapChecked_declassify_delegates",
             "st",
@@ -2412,7 +2414,7 @@
         {
           "kind": "theorem",
           "name": "syscallDelegates_vspaceUnmap",
-          "line": 4219,
+          "line": 4220,
           "called": [
             "dispatchWithCap_vspaceUnmap_delegates",
             "st",
@@ -2422,7 +2424,7 @@
         {
           "kind": "theorem",
           "name": "syscallDelegates_send",
-          "line": 4225,
+          "line": 4226,
           "called": [
             "dispatchWithCap_send_delegates",
             "epId",
@@ -2433,7 +2435,7 @@
         {
           "kind": "theorem",
           "name": "syscallDelegates_tcbSetPriority",
-          "line": 4230,
+          "line": 4231,
           "called": [
             "dispatchWithCap_tcbSetPriority_delegates",
             "st",
@@ -2443,7 +2445,7 @@
         {
           "kind": "theorem",
           "name": "syscallDelegates_tcbSetMCPriority",
-          "line": 4237,
+          "line": 4238,
           "called": [
             "dispatchWithCap_tcbSetMCPriority_delegates",
             "st",
@@ -2453,7 +2455,7 @@
         {
           "kind": "theorem",
           "name": "syscallDelegates_schedContextUnbind",
-          "line": 4244,
+          "line": 4245,
           "called": [
             "Kernel",
             "dispatchWithCap_schedContextUnbind_delegates",
@@ -14848,7 +14850,7 @@
         {
           "kind": "def",
           "name": "mailboxFrame",
-          "line": 937,
+          "line": 942,
           "called": [
             "SyscallOutcome",
             "SyscallReturnFrame",
@@ -14858,7 +14860,7 @@
         {
           "kind": "def",
           "name": "ipcStateBlocksReturn",
-          "line": 948,
+          "line": 964,
           "called": [
             "ThreadIpcState"
           ]
@@ -14866,7 +14868,7 @@
         {
           "kind": "theorem",
           "name": "ipcStateBlocksReturn_ready",
-          "line": 952,
+          "line": 972,
           "called": [
             "ipcStateBlocksReturn"
           ]
@@ -14874,7 +14876,7 @@
         {
           "kind": "def",
           "name": "frameForShape",
-          "line": 960,
+          "line": 980,
           "called": [
             "ReturnShape",
             "SyscallReturnFrame",
@@ -14884,7 +14886,7 @@
         {
           "kind": "theorem",
           "name": "frameForShape_unit",
-          "line": 969,
+          "line": 989,
           "called": [
             "SyscallReturnFrame",
             "frameForShape",
@@ -14894,7 +14896,7 @@
         {
           "kind": "theorem",
           "name": "frameForShape_value",
-          "line": 973,
+          "line": 993,
           "called": [
             "ReturnShape",
             "SyscallReturnFrame",
@@ -14904,19 +14906,19 @@
         {
           "kind": "theorem",
           "name": "bit63Encoding_not_injective_on_badges",
-          "line": 988,
+          "line": 1008,
           "called": []
         },
         {
           "kind": "def",
           "name": "syscallAbiVersion",
-          "line": 1005,
+          "line": 1025,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "syscallAbiVersion_pinned",
-          "line": 1009,
+          "line": 1029,
           "called": [
             "syscallAbiVersion"
           ]
@@ -232563,7 +232565,7 @@
     {
       "module": "tests.SyscallReturnAbiSuite",
       "path": "tests/SyscallReturnAbiSuite.lean",
-      "declaration_count": 49,
+      "declaration_count": 54,
       "declarations": [
         {
           "kind": "namespace",
@@ -232715,7 +232717,7 @@
         {
           "kind": "def",
           "name": "dispatchFromAbi",
-          "line": 177,
+          "line": 178,
           "called": [
             "KernelError",
             "SyscallOutcome",
@@ -232730,7 +232732,7 @@
         {
           "kind": "def",
           "name": "peerTid",
-          "line": 191,
+          "line": 192,
           "called": [
             "ThreadId"
           ]
@@ -232738,7 +232740,7 @@
         {
           "kind": "def",
           "name": "epId",
-          "line": 192,
+          "line": 193,
           "called": [
             "ObjId"
           ]
@@ -232746,7 +232748,7 @@
         {
           "kind": "def",
           "name": "replyRid",
-          "line": 193,
+          "line": 194,
           "called": [
             "ReplyId"
           ]
@@ -232754,31 +232756,31 @@
         {
           "kind": "def",
           "name": "epCapPtr",
-          "line": 195,
-          "called": []
-        },
-        {
-          "kind": "def",
-          "name": "replyCapPtr",
           "line": 196,
           "called": []
         },
         {
           "kind": "def",
-          "name": "epBadgeVal",
+          "name": "replyCapPtr",
           "line": 197,
           "called": []
         },
         {
           "kind": "def",
-          "name": "replyBadgeVal",
+          "name": "epBadgeVal",
           "line": 198,
           "called": []
         },
         {
           "kind": "def",
+          "name": "replyBadgeVal",
+          "line": 199,
+          "called": []
+        },
+        {
+          "kind": "def",
           "name": "epCap",
-          "line": 200,
+          "line": 201,
           "called": [
             "Capability",
             "badge",
@@ -232791,7 +232793,7 @@
         {
           "kind": "def",
           "name": "replyCapability",
-          "line": 205,
+          "line": 206,
           "called": [
             "Capability",
             "badge",
@@ -232803,8 +232805,24 @@
         },
         {
           "kind": "def",
+          "name": "selfTcbCapPtr",
+          "line": 211,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "selfTcbCap",
+          "line": 217,
+          "called": [
+            "Capability",
+            "ofList",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "core1",
-          "line": 210,
+          "line": 221,
           "called": [
             "CoreId"
           ]
@@ -232812,7 +232830,7 @@
         {
           "kind": "def",
           "name": "sharedCn",
-          "line": 214,
+          "line": 225,
           "called": [
             "CNode",
             "capPtrValue",
@@ -232822,13 +232840,15 @@
             "ofListWF",
             "ofNat",
             "replyCapPtr",
-            "replyCapability"
+            "replyCapability",
+            "selfTcbCap",
+            "selfTcbCapPtr"
           ]
         },
         {
           "kind": "def",
           "name": "twoThreadState",
-          "line": 225,
+          "line": 237,
           "called": [
             "SystemState",
             "build",
@@ -232853,7 +232873,7 @@
         {
           "kind": "def",
           "name": "replyPendingState",
-          "line": 251,
+          "line": 265,
           "called": [
             "SystemState",
             "build",
@@ -232878,7 +232898,7 @@
         {
           "kind": "def",
           "name": "dispatchFromAbiOn",
-          "line": 277,
+          "line": 293,
           "called": [
             "CoreId",
             "KernelError",
@@ -232893,7 +232913,7 @@
         {
           "kind": "def",
           "name": "runUnitReturnWitness",
-          "line": 295,
+          "line": 311,
           "called": [
             "assertBool",
             "dispatchFromAbi",
@@ -232912,7 +232932,7 @@
         {
           "kind": "def",
           "name": "runBadgeDeliveryWitness",
-          "line": 328,
+          "line": 344,
           "called": [
             "assertBool",
             "dispatchFromAbi",
@@ -232928,7 +232948,7 @@
         {
           "kind": "def",
           "name": "runFullWidthBadgeWitness",
-          "line": 369,
+          "line": 385,
           "called": [
             "assertBool",
             "ofNatMasked",
@@ -232941,7 +232961,7 @@
         {
           "kind": "def",
           "name": "runBlockedOutcomeWitness",
-          "line": 391,
+          "line": 407,
           "called": [
             "assertBool",
             "dispatchFromAbi",
@@ -232954,7 +232974,7 @@
         {
           "kind": "def",
           "name": "stagedFrame",
-          "line": 409,
+          "line": 425,
           "called": [
             "SyscallReturnFrame",
             "SystemState",
@@ -232966,7 +232986,7 @@
         {
           "kind": "def",
           "name": "waitThenSignalScenario",
-          "line": 416,
+          "line": 432,
           "called": [
             "KernelError",
             "SyscallReturnFrame",
@@ -232984,7 +233004,7 @@
         {
           "kind": "def",
           "name": "receiveThenSendScenario",
-          "line": 430,
+          "line": 446,
           "called": [
             "KernelError",
             "SyscallReturnFrame",
@@ -233002,7 +233022,7 @@
         {
           "kind": "def",
           "name": "sendThenReceiveScenario",
-          "line": 444,
+          "line": 460,
           "called": [
             "KernelError",
             "SyscallOutcome",
@@ -233021,7 +233041,7 @@
         {
           "kind": "def",
           "name": "replyDeliveryScenario",
-          "line": 460,
+          "line": 476,
           "called": [
             "KernelError",
             "SyscallReturnFrame",
@@ -233039,7 +233059,7 @@
         {
           "kind": "def",
           "name": "replyRecvDeliveryScenario",
-          "line": 473,
+          "line": 489,
           "called": [
             "KernelError",
             "SyscallOutcome",
@@ -233055,16 +233075,56 @@
         },
         {
           "kind": "def",
-          "name": "hex",
-          "line": 485,
+          "name": "queriedSid",
+          "line": 502,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "serviceQueryScenario",
+          "line": 504,
           "called": [
+            "InterfaceSpec",
+            "KernelError",
+            "SyscallOutcome",
+            "SystemState",
+            "bootCoreId",
+            "dispatchFromAbiOn",
+            "epCap",
+            "queriedSid",
+            "registerInterface",
+            "registerService",
+            "toNat",
+            "twoThreadState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "selfSuspendScenario",
+          "line": 519,
+          "called": [
+            "KernelError",
+            "SyscallOutcome",
+            "SystemState",
+            "bootCoreId",
+            "dispatchFromAbiOn",
+            "toNat",
+            "twoThreadState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "hex",
+          "line": 528,
+          "called": [
+            "ofList",
             "toNat"
           ]
         },
         {
           "kind": "def",
           "name": "frameCells",
-          "line": 488,
+          "line": 531,
           "called": [
             "SyscallReturnFrame",
             "hex"
@@ -233073,7 +233133,7 @@
         {
           "kind": "def",
           "name": "decodeCell",
-          "line": 491,
+          "line": 534,
           "called": [
             "SyscallReturnFrame",
             "decode",
@@ -233085,7 +233145,7 @@
         {
           "kind": "def",
           "name": "outcomeLine",
-          "line": 497,
+          "line": 540,
           "called": [
             "KernelError",
             "SyscallOutcome",
@@ -233098,7 +233158,7 @@
         {
           "kind": "def",
           "name": "returnAbiTraceLines",
-          "line": 508,
+          "line": 551,
           "called": [
             "all",
             "badge",
@@ -233114,6 +233174,7 @@
             "receiveThenSendScenario",
             "returnFrameOfBadge",
             "sendThenReceiveScenario",
+            "serviceQueryScenario",
             "st",
             "syscallAbiVersion",
             "syscallDispatchFromAbi",
@@ -233127,13 +233188,13 @@
         {
           "kind": "def",
           "name": "fixturePath",
-          "line": 550,
+          "line": 596,
           "called": []
         },
         {
           "kind": "def",
           "name": "runTraceFixtureCheck",
-          "line": 557,
+          "line": 603,
           "called": [
             "fixturePath",
             "returnAbiTraceLines",
@@ -233143,15 +233204,23 @@
         {
           "kind": "def",
           "name": "runBlockedWaiterStagingWitnesses",
-          "line": 581,
+          "line": 627,
           "called": [
             "assertBool",
+            "bootCoreId",
+            "callerTid",
+            "currentOnCore",
+            "getTcb",
+            "none",
             "postTrapRegs",
             "receiveThenSendScenario",
             "replyDeliveryScenario",
             "replyRecvDeliveryScenario",
             "rustDecodeResponse",
+            "selfSuspendScenario",
             "sendThenReceiveScenario",
+            "serviceQueryScenario",
+            "stagedFrame",
             "waitThenSignalScenario",
             "zero"
           ]
@@ -233159,7 +233228,7 @@
         {
           "kind": "def",
           "name": "runSyscallReturnAbiChecks",
-          "line": 637,
+          "line": 710,
           "called": [
             "runBadgeDeliveryWitness",
             "runBlockedOutcomeWitness",
@@ -233172,7 +233241,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 656,
+          "line": 729,
           "called": [
             "runSyscallReturnAbiChecks"
           ]

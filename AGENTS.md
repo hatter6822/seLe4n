@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.33.38.
+Lean 4.28.0 toolchain, Lake build system, version 0.33.39.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -182,7 +182,7 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~40713 lines)
+- `CHANGELOG.md` (~40784 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~20449 lines)
 - `docs/WORKSTREAM_HISTORY.md` (~10878 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~7902 lines)
@@ -193,7 +193,7 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
 - `SeLe4n/Model/State.lean` (~4364 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~4351 lines)
-- `SeLe4n/Kernel/API.lean` (~4250 lines)
+- `SeLe4n/Kernel/API.lean` (~4251 lines)
 - `docs/spec/SELE4N_SPEC.md` (~4161 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
 - `tests/NegativeStateSuite.lean` (~4094 lines)
@@ -321,8 +321,8 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
 - `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1039 lines)
 - `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~1027 lines)
+- `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1023 lines)
 - `SeLe4n/Kernel/InformationFlow/Projection.lean` (~1023 lines)
-- `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1011 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~1002 lines)
 - `docs/planning/SMP_CROSS_CORE_IPC_PLAN.md` (~988 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~986 lines)
@@ -343,6 +343,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean` (~882 lines)
 - `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
 - `SeLe4n/Model/FrozenState.lean` (~853 lines)
+- `docs/planning/SYSCALL_RETURN_ABI_PLAN.md` (~834 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Preservation/BadgeIpcCapsAndCdtMaps.lean` (~831 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean` (~824 lines)
 - `tests/TwoPhaseArchSuite.lean` (~820 lines)
@@ -750,7 +751,9 @@ documentation lives under `docs/` and `docs/gitbook/`.
   per-core return-frame mailbox (`ffi_syscall_return_frame`, the
   ShootdownOpMailbox pattern; export returns the outcome tag); the trap
   layer's six-register restore (`set_x2`-`set_x5` added; a blocked caller
-  gets NO writeback — the RA.C.9 SM10.E hook); `decode_response` reading
+  gets no *return* frame — the RA.C.9 SM10.E hook, its frame poisoned with
+  the fail-closed blocked-resume sentinel until the seam flips, see the
+  v0.33.39 review note below); `decode_response` reading
   the label (fail-closed on undecodable `x1`); `SYSCALL_ABI_VERSION = 2`
   pinned in Lean + `sele4n-types` + the HAL.  **Cleanup**: `encodeOk` /
   `encodeError` + bit-63 theorems DELETED (hazard retained as
@@ -787,7 +790,32 @@ documentation lives under `docs/` and `docs/gitbook/`.
   draft's "unit arms leave the staged frame untouched" is deliberately not the
   theorem — false under context switches, unnecessary under construction).
   What remains is owed to SM10.E: frame *delivery* at the context restore, and
-  the cancellation/timeout error-frame staging (plan §9).
+  the cancellation/timeout error-frame staging (plan §9).  **v0.33.39 audit
+  cut** — a code-first audit of the whole PR: no false theorem, no live
+  vulnerability; five findings closed (`ipcStateBlocksReturn`'s wildcard →
+  six-arm match, the §3.4 discipline; the return-frame mailbox's
+  writer/reader unified on ONE core-id source — TPIDR-vs-MPIDR divergence
+  would land a frame in another core's slot as a different thread's return
+  value; `.serviceQuery` gains its end-to-end staging witness §9f + the
+  `word` fixture line; the `.serviceQuery` RA.B.8 theorem's decorative
+  `hLookup` restated load-bearing; the suite fixtures made
+  lifecycle-consistent — `threadState` defaults `.Inactive`, surfaced by the
+  new §9g self-suspend witness, which now pins §3.5's parenthetical at
+  runtime: deschedules, does not IPC-block, returns the constructed unit
+  frame).  Build warning-free; axiom-clean (2,025 constants swept).
+  **PR #866 review (same cut)**: with `contextRestoreSeamLive = false` the
+  hardware resumes a blocked caller anyway, and its stale request registers
+  (label-0 `x1`) decoded as a false success — the fail-open class WS-RA
+  exists to close, live for every genuine block; the `Blocked` trap arm now
+  poisons the frame with `blocked_resume_sentinel_regs()` (`x1` label
+  `0xFFFFF`, max in-field, compile-time-asserted outside the
+  kernel-emittable set `{0} ∪ {1..=55}`), which `decode_response` collapses
+  to `UnknownKernelError` — fail-closed, never success, never a real
+  kernel error (an error verdict would drive a retry into a double-send
+  on `.call`).  Interim HAL artifact only (`mailboxFrame .blocks = .zero`
+  unchanged; the SM10.E successor-install replaces the write); pinned by
+  two HAL tests via a test-only `sele4n-abi` dev-dep (HAL 821 → 823).
+  The demanded successor-install itself stays SM10.E scope.
   Plan: [`docs/planning/SYSCALL_RETURN_ABI_PLAN.md`](docs/planning/SYSCALL_RETURN_ABI_PLAN.md).
 
 - **WS-SM SMP multi-core completion workstream IN FLIGHT (v0.31.2 → v1.0.0)**:

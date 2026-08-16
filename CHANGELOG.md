@@ -1,3 +1,105 @@
+## v0.33.39 — WS-RA audit cut: five findings, closed against the code
+
+A post-completion audit of the whole PR, checked against the code rather
+than the documentation describing it.  No false theorem and no live
+vulnerability; five findings, all closed in this cut.
+
+**`ipcStateBlocksReturn` carried a wildcard** — the exact pattern the
+plan's §3.4 forbids for `syscallReturnShape`, and here the failure mode is
+sharper: a future `ThreadIpcState` constructor would silently classify as
+"blocks", and a returning caller misclassified as blocked gets NO
+writeback — it resumes with its spilled arguments under the *request's*
+`MessageInfo`, which decodes as a **false success** carrying the
+capability pointer.  Now an exhaustive six-arm match: a seventh
+constructor is a missing case at elaboration.
+
+**The return-frame mailbox's writer and reader keyed on different core-id
+sources.**  `ffi_syscall_return_frame` published under the
+software-initialized TPIDR-derived id while `dispatch_svc` reads the slot
+(and keys its kernel-entry lock) under the MPIDR-derived hardware id.
+Correct under the boot invariant that ties the two — but one mis-set
+`TPIDR_EL1` and a return frame lands in another core's slot, to be handed
+to a *different* thread's next syscall as its return value: an
+information-leak shape resting on two independent sources agreeing.  Both
+sides now read `cpu::current_core_id()`; the pairing carries no agreement
+obligation.
+
+**`.serviceQuery` had no runtime staging witness** — the one value shape
+the §9 blocked orderings do not pass through.  §9f registers a service on
+the fixture endpoint, dispatches the query end to end through the live
+per-core path, and pins the staged word, the outcome frame's `x0` and the
+fail-closed decode; a `word query` golden-fixture line completes the
+fixture's coverage of all four value shapes.
+
+**The `.serviceQuery` RA.B.8 theorem's `hLookup` was decorative** — the
+defect class SM8.D's own review history names: the first form concluded
+only the arm's state-generic function equality, which elaborates without
+the hypothesis (and Lean said so: the tree's one unused-variable warning).
+Restated like its four siblings — over the live dispatch at the given
+state, where the lookup equation drives the match — so the hypothesis is
+load-bearing.
+
+**The suite's fixtures were lifecycle-inconsistent.**  `TCB.threadState`
+defaults to `.Inactive` and the fixtures never set it; the IPC scenarios
+masked the gap because the IPC transitions read `ipcState` only.  The new
+§9g self-suspend witness surfaced it when `suspendThread`'s guard
+(correctly) refused to suspend an `.Inactive` thread — the guard working,
+on a fixture that was wrong.  All three fixtures now carry `.Running` /
+`.BlockedReply`, and §9g pins plan §3.5's parenthetical at runtime: a
+self-`.tcbSuspend` deschedules the caller (current cleared), does not
+IPC-block (`ipcState` stays `.ready`), and **returns** the constructed
+unit frame — the value the thread should observe when later resumed.
+
+**Verified sound, no change needed**: staging creates no new information
+flow (every stager copies a payload the gated transition already
+delivered, into the *same* thread's projection-stripped
+`registerContext`); each arm's pre-resolved counterparty agrees with what
+its transition wakes, and the `.ready`/`pendingMessage` guards make every
+divergence case inert; the bound and plain signal targets are structurally
+exclusive (`boundDeliveryTarget?` requires an empty wait queue); the error
+arms commit exactly the argument-spill state, keeping the SM8 error-NI
+theorems' premise; a unit syscall's constructed frame survives the
+context-switch `registerContext` clobber precisely because it is
+constructed; Rust `error_frame_regs` matches `Architecture.errorFrame`
+label for label; `returnMessageInfo` is clamped inside the 7/2/20-bit
+fields; the whole surface is axiom-clean (2,025 elaborated constants).
+
+Also: the suite's `String.mk` deprecation fixed (`String.ofList`) — with
+the unused-hypothesis warning gone, the build is **warning-free**.
+
+**PR #866 review (Codex P1, same cut) — the blocked-resume sentinel.**
+With `contextRestoreSeamLive = false` the trap layer cannot install a
+successor, so `trap.S` restores and `eret`s through a *blocked* caller's
+own saved frame — and its request registers (an `x1` whose label is
+typically `0`) decoded as a **false success** whose `x0` "badge" is the
+caller's own capability pointer: the fail-open class WS-RA exists to
+close, live for every genuine block rather than only the audit's
+misclassification case.  The demanded successor-install is the SM10.E
+context-restore seam (tracked; pulling a scheduled phase into a review
+fix would be the wrong cut), but the observable-harm half is closed now:
+the `Blocked` arm poisons the frame with `blocked_resume_sentinel_regs()`
+— `x1` label `BLOCKED_RESUME_SENTINEL_LABEL = 0xFFFFF`, the maximum
+in-field `MessageInfo` label, compile-time-asserted outside the
+kernel-emittable set `{0} ∪ {1..=55}` — which `decode_response` collapses
+to `UnknownKernelError`: fail-closed, never success, and never a real
+kernel error (an error verdict would lie twice — the syscall did not
+fail, and on `.call` the request was already sent, so a userspace retry
+would double-send).  Interim HAL artifact only: the verified convention
+is unchanged (`SyscallOutcome.mailboxFrame .blocks = .zero`; the model
+stages real frames only) and the SM10.E flip replaces the write with the
+successor's install.  Pinned by `blocked_resume_sentinel_shape` (raw
+shape; hand-duplicated label equals `sele4n-abi`'s `MAX_LABEL`; in-field;
+collides with no discriminant's error frame) and
+`blocked_resume_sentinel_decodes_fail_closed` (the canonical decoder
+reads it as `UnknownKernelError`, with the load-bearing negative that an
+unpoisoned stale request frame decodes as exactly the false success the
+review describes), via a new test-only `sele4n-abi` dev-dependency
+following the `sele4n-types` cross-check precedent.  HAL 821 → 823
+tests; clippy-clean; the `> 55` bound is a `const` assert at the
+constant's definition.
+
+Refs: docs/planning/SYSCALL_RETURN_ABI_PLAN.md (audit cut)
+
 ## v0.33.38 — WS-RA complete: the blocked orderings stage, the arms match their shapes
 
 RA.B.5b and RA.B.8, the two pieces the v0.33.37 core landing registered as

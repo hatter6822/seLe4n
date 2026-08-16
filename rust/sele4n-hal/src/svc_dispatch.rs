@@ -404,10 +404,17 @@ pub enum SvcOutcome {
     /// never decodes them (userspace's `decode_response` is the single
     /// decode point, plan §3.2).
     Frame([u64; 6]),
-    /// The caller blocked: **no** frame exists for it and nothing may be
-    /// written back (its stale registers are not a return value).  The
-    /// staged frame is delivered by the SM10.E context restore; this
-    /// variant is that seam's trap-layer hook.
+    /// The caller blocked: **no return frame exists for it** (its stale
+    /// registers are not a return value; the real frame is staged by the
+    /// unblocking arm and delivered by the SM10.E context restore).  This
+    /// variant is that seam's trap-layer hook — when
+    /// `contextRestoreSeamLive` flips, the trap layer installs a runnable
+    /// successor's context here.  Until then the hardware `eret`s back
+    /// INTO the blocked caller, so the trap layer must poison its frame
+    /// with [`blocked_resume_sentinel_regs`]: without the sentinel the
+    /// caller's own request registers (an `x1` whose label is typically
+    /// `0`) decode as a **false success** — the same fail-open class the
+    /// retired pre-WS-RA protocol had (PR #866 review).
     Blocked,
 }
 
@@ -418,6 +425,50 @@ pub enum SvcOutcome {
 /// means success, and discriminant `0` is a real error).
 pub fn error_frame_regs(kernel_error_discriminant: u32) -> [u64; 6] {
     [0, ((kernel_error_discriminant as u64) + 1) << 9, 0, 0, 0, 0]
+}
+
+/// The `x1` label of the blocked-resume sentinel: the maximum value the
+/// 20-bit `MessageInfo` label field can carry (`sele4n-abi`'s
+/// `MAX_LABEL`, hand-duplicated here per this crate's zero-runtime-deps
+/// discipline; the cross-crate agreement is pinned under `#[cfg(test)]`).
+///
+/// Three properties make it the right sentinel, each pinned by a test:
+/// in-field (so `MessageInfo::decode` accepts the word and the failure
+/// surfaces at the error mapping, not as a malformed-word artifact),
+/// nonzero (never a success), and far outside the kernel-emittable label
+/// set `{0} ∪ {1..=55}` (label `d + 1` for discriminant `d ∈ 0..=54`),
+/// so `decode_response` collapses it to `UnknownKernelError` — an error
+/// the verified kernel never emits, hence unambiguously "this is not a
+/// completed syscall's frame".
+pub const BLOCKED_RESUME_SENTINEL_LABEL: u64 = (1 << 20) - 1;
+
+// Compile-time: the sentinel lies outside the kernel-emittable label set
+// `{0} ∪ {1..=55}` (55 = discriminant 54 + the offset; the test suite
+// grounds that bound against the canonical `KernelError` space).
+const _: () = assert!(BLOCKED_RESUME_SENTINEL_LABEL > 55);
+
+/// The poison frame the trap layer writes for a blocked caller that the
+/// hardware is about to resume anyway (PR #866 review).
+///
+/// A blocked caller has **no** return value — its real frame is staged
+/// into its TCB by the unblocking arm (plan §4d) and delivered by the
+/// SM10.E context restore.  Until `contextRestoreSeamLive` flips, the
+/// trap path cannot install a successor, so `trap.S` restores and
+/// `eret`s through the blocked caller's own saved frame; left
+/// untouched, those registers are the caller's request (`x1` typically
+/// a label-`0` `MessageInfo`), which `decode_response` reads as a
+/// **false success** whose `x0` "badge" is the caller's own capability
+/// pointer — the exact fail-open class WS-RA exists to close.  This
+/// frame makes that premature resume fail closed instead: label
+/// [`BLOCKED_RESUME_SENTINEL_LABEL`] decodes as `UnknownKernelError`,
+/// never as success and never as any kernel-emitted error.
+///
+/// The SM10.E context restore REPLACES the write with the successor's
+/// frame install; the sentinel is the interim occupant of that seam,
+/// not part of the verified return convention (the Lean model stages
+/// real frames only — `SyscallOutcome.mailboxFrame .blocks = .zero`).
+pub fn blocked_resume_sentinel_regs() -> [u64; 6] {
+    [0, BLOCKED_RESUME_SENTINEL_LABEL << 9, 0, 0, 0, 0]
 }
 
 /// AN9-F.2 / AN9-F.3 (restated by WS-RA): top-level SVC dispatcher.
@@ -440,7 +491,12 @@ pub fn error_frame_regs(kernel_error_discriminant: u32) -> [u64; 6] {
 ///
 /// Returns:
 ///   `Ok(SvcOutcome::Frame(regs))` — write `regs` into the trap frame.
-///   `Ok(SvcOutcome::Blocked)`     — the caller blocked; write nothing.
+///   `Ok(SvcOutcome::Blocked)`     — the caller blocked; no return frame
+///                                   exists (the trap layer poisons the
+///                                   frame with the fail-closed
+///                                   [`blocked_resume_sentinel_regs`]
+///                                   until the SM10.E context restore
+///                                   installs a successor instead).
 ///   `Err(error)`                  — prefilter rejection (invalid syscall
 ///                                   id / argument count); the trap layer
 ///                                   surfaces it as a label-encoded error
@@ -793,6 +849,65 @@ mod tests {
             assert_eq!(regs[1] & 0x1FF, 0, "length/extraCaps must be zero");
             assert_eq!([regs[0], regs[2], regs[3], regs[4], regs[5]], [0; 5]);
         }
+    }
+
+    /// WS-RA (PR #866 review): the blocked-resume sentinel's raw shape —
+    /// `x0 = 0`, `x1` = the maximum in-field label, no message registers —
+    /// and the three properties that make the label the right sentinel.
+    #[test]
+    fn blocked_resume_sentinel_shape() {
+        let regs = blocked_resume_sentinel_regs();
+        assert_eq!(regs[1] >> 9, BLOCKED_RESUME_SENTINEL_LABEL);
+        assert_eq!(regs[1] & 0x1FF, 0, "length/extraCaps must be zero");
+        assert_eq!([regs[0], regs[2], regs[3], regs[4], regs[5]], [0; 5]);
+        // In-field: the hand-duplicated label equals the canonical
+        // `sele4n-abi` MAX_LABEL, so `MessageInfo::decode` accepts the
+        // word and the failure surfaces at the error mapping — the
+        // sentinel is "no kernel emitted this", not "malformed word".
+        assert_eq!(
+            BLOCKED_RESUME_SENTINEL_LABEL,
+            sele4n_abi::message_info::MAX_LABEL,
+        );
+        let mi = sele4n_abi::MessageInfo::decode(regs[1]).expect("sentinel x1 must be in-field");
+        assert_eq!(mi.label(), BLOCKED_RESUME_SENTINEL_LABEL);
+        // Nonzero (never success) and outside the kernel-emittable label
+        // set {0} ∪ {1..=55}: label d + 1 for discriminant d ∈ 0..=54.
+        // The `> 55` bound itself is a compile-time assert at the
+        // constant's definition; these two GROUND the 55 against the
+        // canonical KernelError space (54 is the last real discriminant,
+        // 55 the first unknown).
+        assert_ne!(BLOCKED_RESUME_SENTINEL_LABEL, 0);
+        assert!(sele4n_types::KernelError::from_u32(54).is_some());
+        assert!(sele4n_types::KernelError::from_u32(55).is_none());
+        for disc in 0..=54u32 {
+            assert_ne!(
+                error_frame_regs(disc)[1],
+                regs[1],
+                "sentinel must not collide with the discriminant-{disc} error frame",
+            );
+        }
+    }
+
+    /// WS-RA (PR #866 review): the cross-crate pin — the canonical
+    /// userspace decoder reads the sentinel as `UnknownKernelError`, an
+    /// error the verified kernel never emits.  This is the property the
+    /// trap-layer write exists for: a blocked caller that the hardware
+    /// resumes prematurely (the SM10.E context restore is not live)
+    /// observes a fail-closed error, never a false success built from its
+    /// own stale request registers.
+    #[test]
+    fn blocked_resume_sentinel_decodes_fail_closed() {
+        let s = blocked_resume_sentinel_regs();
+        let decoded = sele4n_abi::decode_response([s[0], s[1], s[2], s[3], s[4], s[5], 0]);
+        assert_eq!(decoded, Err(sele4n_types::KernelError::UnknownKernelError));
+        // The load-bearing negative: WITHOUT the sentinel the resumed
+        // caller's frame is its own request — x1 a label-0 MessageInfo,
+        // x0 its capability pointer — which decodes as a SUCCESS whose
+        // "badge" is the cap pointer.  This is the fail-open path the
+        // sentinel closes.
+        let stale_request = [7u64, 0, 0, 0, 0, 0, 0];
+        let stale = sele4n_abi::decode_response(stale_request).expect("stale request decodes Ok");
+        assert_eq!(stale.value(), 7, "the false 'badge' is the cap pointer");
     }
 
     #[test]

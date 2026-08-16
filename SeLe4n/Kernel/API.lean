@@ -3147,9 +3147,13 @@ theorem dispatchArm_notificationWait_matches_returnShape
 
 /-- RA.B.8, `.serviceQuery` (`.word`): the arm stages the resolved
 registration's `ServiceId` — the answer it used to discard — and the
-boundary read recovers it. -/
+boundary read recovers it.  Stated like its four siblings, over the live
+dispatch at the given state, so the lookup hypothesis is load-bearing (a
+first draft concluded only the arm's generic function equality and never
+consumed `hLookup` — the decorative-hypothesis defect class SM8.D's
+review history records). -/
 theorem dispatchArm_serviceQuery_matches_returnShape
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
     (cap : Capability) (epId : SeLe4n.ObjId) (st st' : SystemState)
     (reg : ServiceRegistration) (tcb : TCB)
     (hSyscall : decoded.syscallId = .serviceQuery)
@@ -3158,17 +3162,14 @@ theorem dispatchArm_serviceQuery_matches_returnShape
     (hTcb : st'.getTcb? tid = some tcb)
     (hObjInv : st'.objects.invExt) :
     Architecture.syscallReturnShape .serviceQuery = .word ∧
-    ∃ stPost, dispatchCapabilityOnly decoded cap tid
-        = some (fun s => match lookupServiceByCap epId s with
-            | .ok (r, s') => .ok ((), Architecture.writeReturnFrameToTcb s' tid
-                (Architecture.returnFrameOfWord r.sid.val.toUInt64))
-            | .error e => .error e) ∧
-      stPost = Architecture.writeReturnFrameToTcb st' tid
-        (Architecture.returnFrameOfWord reg.sid.val.toUInt64) ∧
+    ∃ stPost, dispatchWithCap decoded tid gate cap st = .ok ((), stPost) ∧
       Architecture.readReturnFrame stPost tid
         = Architecture.returnFrameOfWord reg.sid.val.toUInt64 := by
-  refine ⟨rfl, _, ?_, rfl, ?_⟩
-  · simp [dispatchCapabilityOnly, hSyscall, hTarget]
+  refine ⟨rfl,
+    Architecture.writeReturnFrameToTcb st' tid
+      (Architecture.returnFrameOfWord reg.sid.val.toUInt64),
+    ?_, ?_⟩
+  · simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hLookup]
   · exact Architecture.readReturnFrame_writeReturnFrame st' tid _ tcb hTcb hObjInv
 
 /-- RA.B.8, `.receive` (`.message`): the arm's non-blocking consume stages
