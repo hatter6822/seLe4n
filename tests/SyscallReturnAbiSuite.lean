@@ -576,6 +576,97 @@ private def capsSendScenario (epPtr : Nat) :
   pure (stagedFrame st2 callerTid, deliveredCaps, slot0Occupied)
 
 -- ============================================================================
+-- §10  WS-SM SM9.A.10 — the audit reads return their computed word, end to end
+-- ============================================================================
+--
+-- The reason the audit accessors needed WS-RA to land first.  Before the return
+-- frame existed, `dispatchWithCapChecked` was `Kernel Unit` and the boundary took
+-- its success value from registers no transition wrote — so a reader would have
+-- gated correctly, computed correctly, and handed the caller back its **own**
+-- preloaded `x0` (the capability pointer).  These assertions drive the full FFI
+-- seam and check the value that comes out is the value the kernel selected.
+
+/-- The audit capability's CNode slot — distinct from the notification cap's, so
+the caller holds both and the two are told apart by *target*. -/
+private def auditCapPtr : Nat := 7
+
+private def auditCap : Capability :=
+  { target := .auditTrail, rights := AccessRightSet.ofList [.read, .write] }
+
+/-- A capability with every right, targeting an ordinary object — the shape every
+thread holds to its own TCB.  The confused-deputy negative: it must be rejected
+on the audit syscalls even though it carries `read` and `write`. -/
+private def ordinaryCapPtr : Nat := 8
+
+/-- The deployment that names an audit monitor.  `trustedLabeling` puts every
+subject at `kernelTrusted`, which embeds to domain 3, so the caller dominates the
+configured clearance and qualifies. -/
+private def auditLabeling : LabelingContext :=
+  { trustedLabeling with
+    auditMonitorClearance := some (embedLegacyLabel SecurityLabel.kernelTrusted) }
+
+/-- The same deployment with no monitor named — the fail-closed default. -/
+private def auditUnconfiguredLabeling : LabelingContext := trustedLabeling
+
+/-- Two recorded downgrades, well-formed at epoch 0. -/
+private def auditTrailFixture : SeLe4n.Kernel.DeclassificationAuditLog :=
+  [ { srcDomain := embedLegacyLabel SecurityLabel.kernelTrusted
+      dstDomain := embedLegacyLabel SecurityLabel.publicLabel
+      targetObject := ntfnId, authorizationBasis := .policyRule
+      timestamp := 0, originatingCore := SeLe4n.Kernel.Concurrency.bootCoreId }
+  , { srcDomain := embedLegacyLabel SecurityLabel.kernelTrusted
+      dstDomain := embedLegacyLabel SecurityLabel.publicLabel
+      targetObject := callerVsp, authorizationBasis := .policyRule
+      timestamp := 1, originatingCore := SeLe4n.Kernel.Concurrency.bootCoreId } ]
+
+/-- `witnessState` with the audit capability minted, an ordinary all-rights
+capability alongside it, and a two-entry trail already recorded. -/
+private def auditWitnessState : SystemState :=
+  { (BootstrapBuilder.empty
+      |>.withObject callerVsp (.vspaceRoot { asid := SeLe4n.ASID.ofNat 7, mappings := {} })
+      |>.withObject callerCn (.cnode
+          { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+            slots := SeLe4n.UniqueSlotMap.ofListWF
+              [(SeLe4n.Slot.ofNat capPtrValue, ntfnCap),
+               (SeLe4n.Slot.ofNat auditCapPtr, auditCap),
+               (SeLe4n.Slot.ofNat ordinaryCapPtr,
+                 { target := .object ntfnId,
+                   rights := AccessRightSet.ofList AccessRight.all })] })
+      |>.withObject ntfnId (.notification
+          { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+            pendingBadge := none, boundTCB := none })
+      |>.withObject callerTid.toObjId (.tcb
+          { tid := callerTid, priority := ⟨40⟩, domain := ⟨0⟩,
+            cspaceRoot := callerCn, vspaceRoot := callerVsp,
+            ipcBuffer := SeLe4n.VAddr.ofNat 4096, ipcState := .ready,
+            threadState := .Running })
+      |>.withRunnable [callerTid]
+      |>.withCurrent (some callerTid)
+      |>.build) with declassificationAuditLog := auditTrailFixture }
+
+/-- Drive the FFI seam with three inline message registers and a chosen
+capability pointer — the audit reads' operand shape. -/
+private def dispatchAudit (ctx : LabelingContext) (syscallId : Nat) (capPtr : Nat)
+    (regCount : Nat) (r0 r1 r2 : Nat) (st : SystemState) :
+    Except KernelError (Kernel.Architecture.SyscallOutcome × SystemState) :=
+  -- `MessageInfo {length, extraCaps := 0, label := 0}` encodes to `length`
+  -- (the §4 note pins the same identity for length 1).
+  let msgInfoRaw : UInt64 := regCount.toUInt64
+  SeLe4n.Platform.FFI.syscallDispatchFromAbi ctx
+    SeLe4n.Kernel.Concurrency.bootCoreId
+    syscallId.toUInt32 msgInfoRaw
+    capPtr.toUInt64 msgInfoRaw r0.toUInt64 r1.toUInt64 r2.toUInt64 0
+    0 st
+
+/-- The `x0` a completed dispatch hands back, or `none` if it blocked/errored. -/
+private def auditReturnedWord
+    (r : Except KernelError (Kernel.Architecture.SyscallOutcome × SystemState)) :
+    Option UInt64 :=
+  match r with
+  | .ok (.returns f, _) => some f.x0
+  | _ => none
+
+-- ============================================================================
 -- §8  Golden fixture — the deterministic return-ABI trace (RA.E.4)
 -- ============================================================================
 
@@ -612,7 +703,7 @@ private def returnAbiTraceLines : List String :=
     | .ok (_, st) => dispatchFromAbi SyscallId.notificationWait.toNat 0 0 st
     | e => e
   let labelRoundtrips :=
-    (List.range 55).all fun d =>
+    (List.range 56).all fun d =>
       match SeLe4n.Model.KernelError.ofDiscriminant? d with
       | some e => Kernel.Architecture.ofErrorLabel? (Kernel.Architecture.errorLabel e) == some e
       | none => false
@@ -626,7 +717,7 @@ private def returnAbiTraceLines : List String :=
         SeLe4n.Kernel.Concurrency.bootCoreId
         SyscallId.notificationSignal.toNat.toUInt32 0xAAAA
         capPtrValue.toUInt64 0xBBBB 0 0 0 0 0 witnessState)
-  , s!"[ret-abi] error labels: all 55 discriminants round-trip = {labelRoundtrips}"
+  , s!"[ret-abi] error labels: all 56 discriminants round-trip = {labelRoundtrips}"
   , s!"[ret-abi] full-width badge frame: " ++
       frameCells (Kernel.Architecture.returnFrameOfBadge
         (Badge.ofNatMasked 0x8000000000000042))
@@ -645,6 +736,16 @@ private def returnAbiTraceLines : List String :=
   -- RA.B.8: the `.word` shape's live outcome (the fourth value shape,
   -- completing the fixture's coverage of the value surface).
   , outcomeLine "word query (registered service 77)" serviceQueryScenario
+  -- WS-SM SM9.A.10: the two audit accessors, the sixth and seventh members of
+  -- the value-returning surface.  Recorded here rather than only asserted,
+  -- because "the reader hands back a word it computed rather than the caller's
+  -- own `x0`" is exactly the kind of claim a fixture makes checkable in a diff.
+  , outcomeLine "audit status (visible length 2, monitor)"
+      (dispatchAudit auditLabeling SyscallId.auditRead.toNat auditCapPtr 3
+        (Kernel.encodeAuditReadOp .status).1 0 0 auditWitnessState)
+  , outcomeLine "audit drain of one entry (new visible length 1)"
+      (dispatchAudit auditLabeling SyscallId.auditDrain.toNat auditCapPtr 1
+        1 0 0 auditWitnessState)
   -- PR #866 round-2: the transfer-honesty observable — a grant-denied
   -- transfer's staged frame reports extraCaps 0 (x1 = 1, length only),
   -- however many caps the delivered message still carries.
@@ -784,6 +885,68 @@ private def runBlockedWaiterStagingWitnesses : IO Unit := do
         slot0
 
 -- ============================================================================
+-- §10  WS-SM SM9.A.10 — the audit reads return their computed word, end to end
+--       (fixtures above §8, so the golden trace can record their outcomes)
+-- ============================================================================
+
+private def runAuditReadEndToEnd : IO Unit := do
+  IO.println "-- §10 WS-SM SM9.A.10: the audit reads return their computed word"
+  -- 10a — `status`: the visible length, through the real boundary.  The caller is
+  -- the configured monitor, so its view is the whole two-entry trail.
+  let statusResult := dispatchAudit auditLabeling
+    SyscallId.auditRead.toNat auditCapPtr 3
+    (Kernel.encodeAuditReadOp .status).1 0 0 auditWitnessState
+  assertBool "10a: `status` returns the visible length (2), not the caller's own x0"
+    (match auditReturnedWord statusResult with
+     | none => false
+     | some w =>
+         Kernel.auditStatusVisibleLength w.toNat == 2 &&
+         w != capPtrValue.toUInt64)
+  assertBool "10a: …and the monitor's status carries the global epoch (0 here)"
+    (match auditReturnedWord statusResult with
+     | none => false
+     | some w => Kernel.auditStatusGeneration w.toNat == 0)
+  -- 10b — a record field: entry 1's `targetObject`, chunked.  The value the
+  -- kernel selected, not the operand the caller supplied.
+  let (fieldOp, fieldIdx, fieldChunk) := Kernel.encodeAuditReadOp (.field 1 .targetObject 0)
+  let fieldResult := dispatchAudit auditLabeling
+    SyscallId.auditRead.toNat auditCapPtr 3 fieldOp fieldIdx fieldChunk auditWitnessState
+  assertBool "10b: a field read returns the SELECTED entry's value"
+    (match auditReturnedWord fieldResult with
+     | none => false
+     | some w => w.toNat == callerVsp.val && w != capPtrValue.toUInt64)
+  -- 10c — the confused-deputy gate at the boundary: an ordinary capability
+  -- carrying EVERY right is rejected, because it does not target the trail.
+  assertBool "10c: NEGATIVE — an all-rights capability to an ordinary object is rejected"
+    (match dispatchAudit auditLabeling SyscallId.auditRead.toNat ordinaryCapPtr 3
+        (Kernel.encodeAuditReadOp .status).1 0 0 auditWitnessState with
+     | .ok (.returns f, _) =>
+         -- the boundary reports the error through x1's offset label
+         f.x1 != 0
+     | _ => false)
+  -- 10d — the drain returns the new visible length, and the trail really shrank.
+  let drainResult := dispatchAudit auditLabeling
+    SyscallId.auditDrain.toNat auditCapPtr 1 1 0 0 auditWitnessState
+  assertBool "10d: the drain returns the new visible length (1)"
+    (match auditReturnedWord drainResult with
+     | none => false
+     | some w => w == 1)
+  assertBool "10d: …and the committed state really lost the drained prefix"
+    (match drainResult with
+     | .ok (_, st) =>
+         st.declassificationAuditLog.length == 1 &&
+         st.declassificationAuditEpoch == 1
+     | _ => false)
+  -- 10e — the load-bearing negative on the drain gate: with NO configured
+  -- monitor the same call fails closed, and the trail is untouched.
+  assertBool "10e: NEGATIVE — an unconfigured deployment cannot drain"
+    (match dispatchAudit auditUnconfiguredLabeling
+        SyscallId.auditDrain.toNat auditCapPtr 1 1 0 0 auditWitnessState with
+     | .ok (.returns f, st) =>
+         f.x1 != 0 && st.declassificationAuditLog.length == 2
+     | _ => false)
+
+-- ============================================================================
 -- Runner
 -- ============================================================================
 
@@ -800,6 +963,7 @@ def runSyscallReturnAbiChecks : IO Unit := do
   runFullWidthBadgeWitness
   runBlockedOutcomeWitness
   runBlockedWaiterStagingWitnesses
+  runAuditReadEndToEnd
   runTraceFixtureCheck
   IO.println "===================================================="
   IO.println "All syscall-return-ABI checks PASS (post-flip convention holds)."

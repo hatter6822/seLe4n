@@ -150,6 +150,20 @@ inductive KernelError where
                            -- last one says "drain the trail"; collapsing it
                            -- into either sibling would hide a system that has
                            -- stopped being able to declassify at all.
+  | auditFieldTooLarge     -- WS-SM SM9.A.2: an audit-trail field the reader was
+                           -- asked to export needs more than
+                           -- `maxAuditFieldChunks` chunks, so the kernel
+                           -- **refuses the read** rather than returning a
+                           -- truncated value.  The chunk *coordinates* are
+                           -- themselves single words, so "any `Nat` can be
+                           -- exported" was never true; the honest shape is a
+                           -- bounded domain the reconstruction theorem holds
+                           -- unconditionally on, plus a fail-closed refusal
+                           -- above it.  A distinct discriminant, not
+                           -- `invalidArgument`, because the caller's argument
+                           -- was well-formed — it is the *value* that does not
+                           -- fit, which is a statement about the kernel's
+                           -- export width and not about the request.
   deriving Repr, DecidableEq
 
 /-- S2-A: Low-priority blanket `ToString` from `Repr`. Enables standard
@@ -1038,6 +1052,49 @@ structure SystemState where
       owes its own flow argument. -/
   declassificationAuditLog : SeLe4n.Kernel.DeclassificationAuditLog := []
 
+  /-- WS-SM SM9.A.1a: the **declassification audit epoch** — how many entries
+      have been drained from the trail so far.
+
+      **Algebra**: a monotone counter.  It is the offset that turns a *position
+      in the current trail* into a *global identity*: entry `i` of the trail
+      carries `timestamp = epoch + i`
+      (`declassificationEventOnCore_timestamp`), so a timestamp names an event
+      for the whole lifetime of the system rather than only between drains.
+
+      **Lifecycle**: zero at boot; unchanged by every append (recording moves
+      the trail's length, not its offset); advanced by exactly the number of
+      entries a drain removes (`auditDrainVisiblePrefix`, SM9.A.3).  No other
+      writer exists, and `storeObject` frames it
+      (`storeObject_declassificationAuditEpoch_eq`).
+
+      **Why it is a mount and not a derived quantity.**  Without it the
+      producer's `timestamp := log.length` **reuses** a timestamp after any
+      prefix removal — drain one entry from a three-entry trail, append, and
+      the new entry carries timestamp `2` alongside the surviving entry that
+      already has it (`preEpochTimestamp_reused_after_drain`, the load-bearing
+      negative).  That falsifies
+      `declassificationAuditLog_timestamp_identifies_event` in substance and
+      breaks `declassificationChainLinked`'s strictly-increasing conjunct with
+      it, so drain is unsound *before* the epoch exists, which is why SM9.A.1a
+      is sequenced before SM9.A.3.
+
+      **Capacity**: none, and none is owed — an unbounded monotone counter has
+      nothing to bound, so unlike the trail this field carries no
+      `proofLayerInvariantBundle` conjunct.  The reader exports it through the
+      bounded chunk protocol instead, failing closed above
+      `maxAuditFieldChunks` (`auditFieldBound_unreachable_in_kernel` states the
+      inequality that makes the cap unreachable in practice).
+
+      **Information flow**: not part of the IF projection surface, for the same
+      reason as the trail itself and one step sharper — the epoch **counts**
+      entries, including entries a partially-cleared reader may not see, so
+      exporting it to such a reader would leak exactly what the re-indexed
+      visible view exists to hide.  It reaches only a caller holding the
+      configured audit-monitor clearance
+      (`declassificationAuditEpoch_write_preserves_projection`,
+      `auditReadStatus_partial_hides_generation`). -/
+  declassificationAuditEpoch : Nat := 0
+
 /-- Abstract owner identity for a slot in this model: the containing CNode object id. -/
 abbrev CSpaceOwner := SeLe4n.ObjId
 
@@ -1114,6 +1171,12 @@ instance : Inhabited SystemState where
     -- and, through it, the boot witness for the 16th bundle conjunct
     -- (`default_auditLogBounded`).
     declassificationAuditLog := []
+    -- WS-SM SM9.A.1a: nothing has been drained at boot, so the audit epoch is
+    -- zero and a fresh trail's timestamps are its indices.  Explicit listing
+    -- pins `default_declassificationAuditEpoch`, which is what makes
+    -- `declassificationAuditLogWellFormed` the boot instance of the
+    -- epoch-parameterised predicate.
+    declassificationAuditEpoch := 0
   }
 
 /-- X2-B/H-2: Checked domain schedule setter — validates that all entries have
@@ -1339,6 +1402,13 @@ is empty.  The `.declassify` syscall is the only writer, so this is the trail's
 whole content until userspace runs. -/
 @[simp] theorem default_declassificationAuditLog :
     (default : SystemState).declassificationAuditLog = [] := rfl
+
+/-- WS-SM SM9.A.1a: at boot nothing has been drained, so the audit epoch is
+zero and the trail's timestamps are exactly its indices.  This is what makes
+`declassificationAuditLogWellFormed` (the 0-anchored predicate SM8.C shipped)
+the boot instance of the epoch-parameterised `auditTimestampsFrom`. -/
+@[simp] theorem default_declassificationAuditEpoch :
+    (default : SystemState).declassificationAuditEpoch = 0 := rfl
 
 /-- WS-SM SM8.C.8: boot witness for the 16th `proofLayerInvariantBundle`
 conjunct — the empty trail is within capacity. -/
@@ -2375,6 +2445,23 @@ theorem storeObject_declassificationAuditLog_eq
     (pair : Unit × SystemState)
     (hStore : storeObject id obj st = .ok pair) :
     pair.2.declassificationAuditLog = st.declassificationAuditLog := by
+  unfold storeObject at hStore; cases hStore; rfl
+
+/-- WS-SM SM9.A.1a: `storeObject` frames the declassification audit epoch.
+
+The trail's frame above says a store cannot rewrite *which* events are
+recorded; this one says it cannot rewrite their *identities* either.  Both are
+needed by the audited declassification, whose event carries `epoch + length`
+as its timestamp: without this frame the store composed into
+`declassifyStoreOnCore` would be free to have moved the offset the event was
+stamped from. -/
+theorem storeObject_declassificationAuditEpoch_eq
+    (st : SystemState)
+    (id : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (pair : Unit × SystemState)
+    (hStore : storeObject id obj st = .ok pair) :
+    pair.2.declassificationAuditEpoch = st.declassificationAuditEpoch := by
   unfold storeObject at hStore; cases hStore; rfl
 
 theorem storeObject_objects_eq

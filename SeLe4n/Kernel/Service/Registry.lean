@@ -409,6 +409,9 @@ theorem registerService_preserves_objects
               · simp at hStep; cases hStep; rfl
       | cnodeSlot => simp [hTarget] at hStep
       | replyCap => simp [hTarget] at hStep
+      -- WS-SM SM9.A.9: an audit-trail capability is not an endpoint, so
+      -- registration rejects it exactly as it rejects the other non-object arms.
+      | auditTrail => simp [hTarget] at hStep
 
 /-- Revocation preserves objects. -/
 theorem revokeService_preserves_objects
@@ -446,6 +449,9 @@ theorem registerService_preserves_scheduler
               · simp at hStep; cases hStep; rfl
       | cnodeSlot => simp [hTarget] at hStep
       | replyCap => simp [hTarget] at hStep
+      -- WS-SM SM9.A.9: an audit-trail capability is not an endpoint, so
+      -- registration rejects it exactly as it rejects the other non-object arms.
+      | auditTrail => simp [hTarget] at hStep
 
 /-- Revocation preserves scheduler state. -/
 theorem revokeService_preserves_scheduler

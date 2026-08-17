@@ -126,11 +126,18 @@ pub enum SyscallId {
     VSpaceUnifyInstruction = 29,
     /// WS-SM SM8.C.9: authorize and audit a cross-domain downgrade.
     Declassify = 30,
+    /// WS-SM SM9.A.6: read one word of the declassification audit trail,
+    /// through a view filtered by the caller's own clearance.
+    AuditRead = 31,
+    /// WS-SM SM9.A.6: drain a prefix of the declassification audit trail.
+    /// Gated on the deployment's configured audit-monitor clearance, which is
+    /// what makes the fail-closed 256-entry capacity bound survivable.
+    AuditDrain = 32,
 }
 
 impl SyscallId {
     /// Total number of modelled syscalls (must match `sele4n-types`).
-    pub const COUNT: u32 = 31;
+    pub const COUNT: u32 = 33;
 
     /// AN9-F.1.b: decode a raw `u32` syscall id, rejecting values
     /// outside the valid 0..=30 range with `None`.
@@ -167,6 +174,8 @@ impl SyscallId {
             28 => Some(Self::MintReplyCap),
             29 => Some(Self::VSpaceUnifyInstruction),
             30 => Some(Self::Declassify),
+            31 => Some(Self::AuditRead),
+            32 => Some(Self::AuditDrain),
             _ => None,
         }
     }
@@ -262,6 +271,14 @@ impl SyscallId {
             // destination from the target object.  A caller that could supply
             // either would be writing its own audit record.
             Self::Declassify => 0,
+            // WS-SM SM9.A.10: the reader takes THREE inline registers
+            // (`decodeAuditReadArgs`: opcode, view index, chunk index) and the
+            // drain ONE (`decodeAuditDrainArgs`: the count of entries to
+            // remove).  Reconciled against the Lean decoders, which are the
+            // authority — the RA.D.1 unreachable-wrapper class this table has
+            // now produced nine instances of.
+            Self::AuditRead => 3,
+            Self::AuditDrain => 1,
         }
     }
 }
@@ -448,16 +465,16 @@ pub fn error_frame_regs(kernel_error_discriminant: u32) -> [u64; 6] {
 /// in-field (so `MessageInfo::decode` accepts the word and the failure
 /// surfaces at the error mapping, not as a malformed-word artifact),
 /// nonzero (never a success), and far outside the kernel-emittable label
-/// set `{0} ∪ {1..=55}` (label `d + 1` for discriminant `d ∈ 0..=54`),
+/// set `{0} ∪ {1..=56}` (label `d + 1` for discriminant `d ∈ 0..=55`),
 /// so `decode_response` collapses it to `UnknownKernelError` — an error
 /// the verified kernel never emits, hence unambiguously "this is not a
 /// completed syscall's frame".
 pub const BLOCKED_RESUME_SENTINEL_LABEL: u64 = (1 << 20) - 1;
 
 // Compile-time: the sentinel lies outside the kernel-emittable label set
-// `{0} ∪ {1..=55}` (55 = discriminant 54 + the offset; the test suite
+// `{0} ∪ {1..=56}` (56 = discriminant 55 + the offset; the test suite
 // grounds that bound against the canonical `KernelError` space).
-const _: () = assert!(BLOCKED_RESUME_SENTINEL_LABEL > 55);
+const _: () = assert!(BLOCKED_RESUME_SENTINEL_LABEL > 56);
 
 /// The poison frame the trap layer writes for a blocked caller that the
 /// hardware is about to resume anyway (PR #866 review).
@@ -895,15 +912,15 @@ mod tests {
         let mi = sele4n_abi::MessageInfo::decode(regs[1]).expect("sentinel x1 must be in-field");
         assert_eq!(mi.label(), BLOCKED_RESUME_SENTINEL_LABEL);
         // Nonzero (never success) and outside the kernel-emittable label
-        // set {0} ∪ {1..=55}: label d + 1 for discriminant d ∈ 0..=54.
-        // The `> 55` bound itself is a compile-time assert at the
-        // constant's definition; these two GROUND the 55 against the
-        // canonical KernelError space (54 is the last real discriminant,
-        // 55 the first unknown).
+        // set {0} ∪ {1..=56}: label d + 1 for discriminant d ∈ 0..=55.
+        // The `> 56` bound itself is a compile-time assert at the
+        // constant's definition; these two GROUND the 56 against the
+        // canonical KernelError space (55 is the last real discriminant,
+        // 56 the first unknown).
         assert_ne!(BLOCKED_RESUME_SENTINEL_LABEL, 0);
-        assert!(sele4n_types::KernelError::from_u32(54).is_some());
-        assert!(sele4n_types::KernelError::from_u32(55).is_none());
-        for disc in 0..=54u32 {
+        assert!(sele4n_types::KernelError::from_u32(55).is_some());
+        assert!(sele4n_types::KernelError::from_u32(56).is_none());
+        for disc in 0..=55u32 {
             assert_ne!(
                 error_frame_regs(disc)[1],
                 regs[1],

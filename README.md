@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.33.41-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.33.42-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -72,7 +72,7 @@ architectural improvements enabled by the Lean 4 proof framework:
 
 ### Security and verification
 
-- **N-domain information-flow** — parameterized flow policies generalizing seL4's binary partition. 33-entry enforcement boundary with per-operation non-interference proofs (35-constructor `NonInterferenceStep` inductive)
+- **N-domain information-flow** — parameterized flow policies generalizing seL4's binary partition. 42-entry enforcement boundary with per-operation non-interference proofs (35-constructor `NonInterferenceStep` inductive), and a bounded, fail-closed declassification audit trail with a capability-gated reader
 - **Composed proof layer** — `proofLayerInvariantBundle` composes 11 subsystem invariants (scheduler, capability, IPC, lifecycle, service, VSpace, cross-subsystem, TLB, CBS extensions, and notification-waiter consistency) into a single top-level obligation verified from boot through all operations
 - **Three-phase state architecture** — builder phase with invariant witnesses flows to a frozen immutable representation with proven lookup equivalence. 20 frozen operations mirror the live API
 - **Complete operation set** — all seL4 operations implemented with invariant preservation, including the 5 deferred operations (suspend/resume, setPriority/setMCPriority, setIPCBuffer)
@@ -86,11 +86,11 @@ architectural improvements enabled by the Lean 4 proof framework:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.33.41` |
+| **Version** | `0.33.42` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 266,713 across 279 files |
-| **Test Lean LoC** | 56,637 across 69 test suites |
-| **Proved declarations** | 8,934 theorem/lemma declarations (zero sorry/axiom) |
+| **Production Lean LoC** | 270,177 across 280 files |
+| **Test Lean LoC** | 57,884 across 69 test suites |
+| **Proved declarations** | 9,073 theorem/lemma declarations (zero sorry/axiom) |
 | **Rust crates** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) across 48 source files |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Hardware binding** | **H3 COMPLETE** (WS-AG AG1–AG10): HAL, GIC-400, timer, ARMv8 page tables, FFI bridge, QEMU boot |
@@ -210,7 +210,7 @@ per-file inventory, see [`docs/codebase_map.json`](docs/codebase_map.json).
 | **Scheduling** | C-implemented sporadic server (MCS) | CBS with machine-checked `cbs_bandwidth_bounded` theorem; `SchedContext` as capability-controlled kernel object |
 | **Passive servers** | SchedContext donation via C | Verified donation with `donationChainAcyclic` invariant |
 | **IPC** | Single linked-list endpoint queue | Intrusive dual-queue with O(1) mid-queue removal; budget-driven timeouts |
-| **Information flow** | Binary high/low partition | N-domain configurable policy with 33-entry enforcement boundary and per-operation NI proofs |
+| **Information flow** | Binary high/low partition | N-domain configurable policy with a 42-entry enforcement boundary (count pinned by `enforcementBoundaryExtended_count`), per-operation NI proofs, and a capability-gated audit trail for every authorized declassification |
 | **Priority inheritance** | C-implemented PIP (MCS branch) | Machine-checked transitive PIP with deadlock freedom and parametric WCRT bound |
 | **Bounded latency** | No formal WCRT bound | `WCRT = D × L_max + N × (B + P)` proven across 7 liveness modules |
 | **Object stores** | Linked lists and arrays | Verified Robin Hood hash tables (`RHTable`/`RHSet`) with O(1) hot paths |

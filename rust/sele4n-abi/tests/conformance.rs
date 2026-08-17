@@ -536,7 +536,7 @@ fn message_info_exhaustive_bounds() {
 /// Verify SyscallId roundtrip for all variants (D6: +D1/D2/D3 TCB ops;
 /// WS-SM SM5.H.4: +TcbSetAffinity; SM6.B: +Tcb{Bind,Unbind}Notification;
 /// PR #822 Phase H: +MintReplyCap; WS-SM SM7.D: +VSpaceUnifyInstruction;
-/// WS-SM SM8.C.9: +Declassify).
+/// WS-SM SM8.C.9: +Declassify; WS-SM SM9.A.6: +AuditRead/+AuditDrain).
 #[test]
 fn syscall_id_exhaustive_roundtrip() {
     for i in 0..(SyscallId::COUNT as u64) {
@@ -546,17 +546,17 @@ fn syscall_id_exhaustive_roundtrip() {
     assert!(SyscallId::from_u64(SyscallId::COUNT as u64).is_none());
 }
 
-/// Verify KernelError roundtrip for all 55 variants.
-/// WS-SM SM8.C.9: AuditLogCapacityExceeded at 54 extends SM5.B.4's range of
-/// 0..=53 (which extended R5.E's range of 0..=52).
+/// Verify KernelError roundtrip for all 56 variants.
+/// WS-SM SM9.A.2: AuditFieldTooLarge at 55 extends SM8.C.9's range of 0..=54
+/// (which extended SM5.B.4's range of 0..=53).
 #[test]
 fn kernel_error_exhaustive_roundtrip() {
-    for i in 0..=54u32 {
+    for i in 0..=55u32 {
         let err =
             KernelError::from_u32(i).unwrap_or_else(|| panic!("valid error for discriminant {i}"));
         assert_eq!(err as u32, i);
     }
-    assert!(KernelError::from_u32(55).is_none());
+    assert!(KernelError::from_u32(56).is_none());
 }
 
 /// Verify TypeTag roundtrip for all 8 variants (0–7, including SchedContext + Reply).
@@ -856,14 +856,14 @@ fn access_rights_ops_preserve_validity() {
 /// and that unknown discriminants return None (forward-compatible).
 #[test]
 fn kernel_error_non_exhaustive() {
-    // WS-SM SM8.C.9: 55 variants (0–54) roundtrip
-    // (SM5.B.4 previously stood at 53 with ThreadOnDifferentCore).
-    for i in 0..=54u32 {
+    // WS-SM SM9.A.2: 56 variants (0–55) roundtrip
+    // (SM8.C.9 previously stood at 54 with AuditLogCapacityExceeded).
+    for i in 0..=55u32 {
         let e = KernelError::from_u32(i).unwrap();
         assert_eq!(e as u32, i);
     }
     // Future discriminants return None
-    assert!(KernelError::from_u32(55).is_none());
+    assert!(KernelError::from_u32(56).is_none());
     assert!(KernelError::from_u32(100).is_none());
     assert!(KernelError::from_u32(u32::MAX).is_none());
 }
@@ -930,9 +930,9 @@ fn unknown_kernel_error_fallback() {
     use sele4n_abi::decode_response;
 
     // WS-RA: errors ride the x1 label offset by one — label d+1 names
-    // discriminant d.  Discriminant 55 — first unrecognized after
-    // AuditLogCapacityExceeded (54).
-    let regs = [0, 56u64 << 9, 0, 0, 0, 0, 0];
+    // discriminant d.  Discriminant 56 — first unrecognized after
+    // AuditFieldTooLarge (55).
+    let regs = [0, 57u64 << 9, 0, 0, 0, 0, 0];
     assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
 
     // Discriminant 100 — arbitrary unrecognized code
@@ -1100,13 +1100,13 @@ fn identifier_validation() {
 // ============================================================================
 
 /// W1-H / AA1 / AG3 / AL6 / AL1b / AN7-E / R5.E / WS-SM SM5.B: KernelError
-/// variant count matches Lean (55 variants, 0-54 after SM8.C.9 added
-/// AuditLogCapacityExceeded at 54; SM5.B.4 previously added
-/// ThreadOnDifferentCore at 53).  Detects Lean-Rust enum divergence
+/// variant count matches Lean (56 variants, 0-55 after SM9.A.2 added
+/// AuditFieldTooLarge at 55; SM8.C.9 previously added
+/// AuditLogCapacityExceeded at 54).  Detects Lean-Rust enum divergence
 /// automatically.
 #[test]
 fn kernel_error_variant_count() {
-    const KERNEL_ERROR_COUNT: u32 = 55;
+    const KERNEL_ERROR_COUNT: u32 = 56;
     // All expected variants exist
     for i in 0..KERNEL_ERROR_COUNT {
         assert!(
@@ -1121,13 +1121,14 @@ fn kernel_error_variant_count() {
     );
 }
 
-/// W1-H / AA1 / D6: SyscallId variant count matches Lean (31 variants, 0-30;
+/// W1-H / AA1 / D6: SyscallId variant count matches Lean (33 variants, 0-32;
 /// WS-SM SM6.B added Tcb{Bind,Unbind}Notification at 26/27; PR #822 Phase H added
 /// MintReplyCap at 28; WS-SM SM7.D added VSpaceUnifyInstruction at 29; WS-SM
-/// SM8.C.9 added Declassify at 30).
+/// SM8.C.9 added Declassify at 30; WS-SM SM9.A.6 added AuditRead at 31 and
+/// AuditDrain at 32).
 #[test]
 fn syscall_id_variant_count() {
-    const SYSCALL_COUNT: u64 = 31;
+    const SYSCALL_COUNT: u64 = 33;
     assert_eq!(SyscallId::COUNT, SYSCALL_COUNT as usize);
     for i in 0..SYSCALL_COUNT {
         assert!(
@@ -1272,12 +1273,13 @@ fn sched_context_boundary() {
     assert_eq!(SyscallId::from_u64(20).unwrap(), SyscallId::TcbSuspend);
 }
 
-/// AA1-B-5: COUNT is updated to 31 (WS-SM SM8.C.9 added Declassify, on top of
-/// WS-SM SM7.D's VSpaceUnifyInstruction, PR #822 Phase H's MintReplyCap and
-/// WS-SM SM6.B's Tcb{Bind,Unbind}Notification).
+/// AA1-B-5: COUNT is updated to 33 (WS-SM SM9.A.6 added AuditRead and
+/// AuditDrain, on top of WS-SM SM8.C.9's Declassify, WS-SM SM7.D's
+/// VSpaceUnifyInstruction, PR #822 Phase H's MintReplyCap and WS-SM SM6.B's
+/// Tcb{Bind,Unbind}Notification).
 #[test]
 fn syscall_count_updated() {
-    assert_eq!(SyscallId::COUNT, 31);
+    assert_eq!(SyscallId::COUNT, 33);
 }
 
 /// AA1-B-6: SchedContext syscalls require Write access (API.lean:381-383).
@@ -1486,7 +1488,8 @@ fn error_boundary_after_invalid_irq() {
     assert!(KernelError::from_u32(52).is_some()); // MissingSchedContext (R5.E)
     assert!(KernelError::from_u32(53).is_some()); // ThreadOnDifferentCore (SM5.B)
     assert!(KernelError::from_u32(54).is_some()); // AuditLogCapacityExceeded (SM8.C.9)
-    assert!(KernelError::from_u32(55).is_none());
+    assert!(KernelError::from_u32(55).is_some()); // AuditFieldTooLarge (SM9.A.2)
+    assert!(KernelError::from_u32(56).is_none());
 }
 
 // --- D6: TCB operation conformance ---
@@ -1598,13 +1601,46 @@ fn declassify_roundtrip() {
     assert_eq!(sid.required_right(), AccessRight::Write);
 }
 
-/// D6-D5: Boundary — discriminant 31 is out of range for SyscallId
-/// (WS-SM SM8.C.9 added declassify, moving the boundary from 29 to 30).
+/// D6-D5: Boundary — discriminant 33 is out of range for SyscallId
+/// (WS-SM SM9.A.6 added the two audit accessors, moving the boundary from 30
+/// to 32).
 #[test]
 fn syscall_boundary() {
-    assert!(SyscallId::from_u64(30).is_some()); // Last valid
-    assert!(SyscallId::from_u64(31).is_none()); // First invalid
-    assert_eq!(SyscallId::COUNT, 31);
+    assert!(SyscallId::from_u64(32).is_some()); // Last valid
+    assert!(SyscallId::from_u64(33).is_none()); // First invalid
+    assert_eq!(SyscallId::COUNT, 33);
+}
+
+/// WS-SM SM9.A.6: AuditRead roundtrip (discriminant 31).
+///
+/// Reads one word of the declassification audit trail through a view filtered
+/// by the caller's own clearance.  Requires the **read** right — and, before
+/// that, a capability whose *target* is the audit trail, which is the gate that
+/// keeps the reader from being reachable by any thread holding any readable
+/// capability (the v0.32.97 confused-deputy class).  Three inline argument
+/// registers: opcode, view index, chunk index.
+#[test]
+fn audit_read_roundtrip() {
+    let sid = SyscallId::from_u64(31).expect("AuditRead must exist");
+    assert_eq!(sid, SyscallId::AuditRead);
+    assert_eq!(sid.to_u64(), 31);
+    assert_eq!(sid.required_right(), AccessRight::Read);
+}
+
+/// WS-SM SM9.A.6: AuditDrain roundtrip (discriminant 32).
+///
+/// Removes a prefix of the declassification audit trail, which is what makes
+/// the fail-closed 256-entry capacity bound survivable.  Requires the **write**
+/// right — a different right from the reader's, so a monitoring deployment can
+/// mint a read-only audit capability that provably cannot drain — plus the
+/// deployment's configured audit-monitor clearance, checked inside the kernel.
+/// One inline argument register: the count of entries to remove.
+#[test]
+fn audit_drain_roundtrip() {
+    let sid = SyscallId::from_u64(32).expect("AuditDrain must exist");
+    assert_eq!(sid, SyscallId::AuditDrain);
+    assert_eq!(sid.to_u64(), 32);
+    assert_eq!(sid.required_right(), AccessRight::Write);
 }
 
 /// D6-D6: All TCB operations require Write access (API.lean:387-392).
@@ -1823,20 +1859,23 @@ enum ReturnShape {
 }
 
 /// The mirror of `Architecture.syscallReturnShape` — total over the same
-/// 31 variants (`SyscallId` here is `sele4n-types`', whose count pin is
+/// 33 variants (`SyscallId` here is `sele4n-types`', whose count pin is
 /// `syscall_id_variant_count`).
 fn syscall_return_shape(sid: SyscallId) -> ReturnShape {
     match sid {
         SyscallId::Receive | SyscallId::Call | SyscallId::ReplyRecv => ReturnShape::Message,
         SyscallId::NotificationWait => ReturnShape::Badge,
-        SyscallId::ServiceQuery => ReturnShape::Word,
+        // WS-SM SM9.A.10: the two audit accessors join `ServiceQuery` as
+        // `Word` — a scalar the kernel computed, not a badge a sender chose.
+        SyscallId::ServiceQuery | SyscallId::AuditRead | SyscallId::AuditDrain => ReturnShape::Word,
         _ => ReturnShape::Unit,
     }
 }
 
-/// WS-RA RA.D.4: exactly five syscalls are value-returning, and they are
-/// the five the plan §1.3 enumerates — pinned by iteration over every
-/// variant, mirroring Lean's `syscallReturnShape_value_returning`.
+/// WS-RA RA.D.4: exactly seven syscalls are value-returning — the five the
+/// plan §1.3 enumerates plus WS-SM SM9.A's two audit accessors — pinned by
+/// iteration over every variant, mirroring Lean's
+/// `syscallReturnShape_value_returning`.
 #[test]
 fn return_shape_value_returning_surface() {
     let mut value_returning = std::vec::Vec::new();
@@ -1854,6 +1893,8 @@ fn return_shape_value_returning_surface() {
             SyscallId::ServiceQuery,
             SyscallId::NotificationWait,
             SyscallId::ReplyRecv,
+            SyscallId::AuditRead,
+            SyscallId::AuditDrain,
         ]
     );
 }
@@ -2072,4 +2113,9 @@ fn wrapper_lengths_clear_prefilter_minimums() {
 
     let _ = sele4n_sys::declassify::declassify(cap);
     assert_clears("declassify", SyscallId::Declassify);
+
+    let _ = sele4n_sys::audit::audit_read(cap, sele4n_sys::audit::AuditReadOpcode::Status, 0, 0);
+    assert_clears("audit_read", SyscallId::AuditRead);
+    let _ = sele4n_sys::audit::audit_drain(cap, 1);
+    assert_clears("audit_drain", SyscallId::AuditDrain);
 }

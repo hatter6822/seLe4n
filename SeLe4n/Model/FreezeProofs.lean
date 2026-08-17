@@ -1471,7 +1471,10 @@ def apiInvariantBundle_frozenDirectFull (fst : FrozenSystemState) : Prop :=
     sst.pendingIcacheMaintenance = fst.pendingIcacheMaintenance ∧
     -- WS-SM SM8.C.8: the declassification audit trail is carried bitwise —
     -- a frozen snapshot records exactly the downgrades the live state did.
-    sst.declassificationAuditLog = fst.declassificationAuditLog
+    sst.declassificationAuditLog = fst.declassificationAuditLog ∧
+    -- WS-SM SM9.A.1a: the audit epoch is carried bitwise, so the frozen
+    -- trail's timestamps name the same events the live state's did.
+    sst.declassificationAuditEpoch = fst.declassificationAuditEpoch
 
 /-- AK7-B (F-H02): The full variant implies the objects-only variant. -/
 theorem apiInvariantBundle_frozenDirectFull_implies_objectsOnly
@@ -1491,7 +1494,7 @@ theorem freeze_preserves_direct_invariants_full (ist : IntermediateState)
     apiInvariantBundle_frozenDirectFull (freeze ist) := by
   refine ⟨ist.state, hInv,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
-    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   -- Map fields (17)
   · exact fun oid => lookup_freeze_objects ist oid
   · exact fun irq => lookup_freeze_irqHandlers ist irq
@@ -1510,7 +1513,7 @@ theorem freeze_preserves_direct_invariants_full (ist : IntermediateState)
   · exact fun p => lookup_freeze_byPriority ist p
   · exact fun tid => lookup_freeze_threadPriority ist tid
   · exact fun tid => lookup_freeze_membership ist tid
-  -- Non-map fields (16)
+  -- Non-map fields (17)
   · exact (freeze_preserves_machine ist).symm
   · exact (freeze_preserves_objectIndex ist).symm
   · exact (freeze_preserves_tlb ist).symm
@@ -1532,6 +1535,8 @@ theorem freeze_preserves_direct_invariants_full (ist : IntermediateState)
   · exact (freeze_preserves_pendingIcacheMaintenance ist).symm
   -- WS-SM SM8.C.8: the declassification audit trail carried bitwise
   · exact (freeze_preserves_declassificationAuditLog ist).symm
+  -- WS-SM SM9.A.1a: the audit epoch carried bitwise
+  · exact (freeze_preserves_declassificationAuditEpoch ist).symm
 
 /-- R6-A.3: `FrozenMap.set` preserves the direct frozen invariant when the
     mutated object corresponds to a valid `SystemState` mutation.

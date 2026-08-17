@@ -333,11 +333,34 @@ WS-E4/M-12: Added `replyCap` variant for one-shot reply capabilities.
 WS-SM SM6.D (seL4-MCS Reply objects): `replyCap` references a first-class
 `Reply` *object* by `ReplyId` (the single-use reply authority), not a raw
 sender `ThreadId`.  The reply path resolves the `ReplyId` to its `reply.caller`
-linkage and consumes it (`reply.caller := none`) on use. -/
+linkage and consumes it (`reply.caller := none`) on use.
+
+WS-SM SM9.A.9: added `auditTrail`, the authority to read (and, with `.write`,
+to drain) the declassification audit trail.
+
+It is a **target**, not a right, and that is the whole point.
+`API.syscallLookupCap` checks `cap.hasRight gate.requiredRight` and **nothing
+about `cap.target`**, so an audit reader gated only on `.read` would be
+reachable by any thread holding any readable capability — which in practice is
+every thread, since its own TCB suffices.  That is exactly the confused deputy
+closed at v0.32.97, where a thread holding only a writable capability to its own
+TCB unmapped a page in a different address space; the fix there was
+`vspaceCapAuthorizesAsid`, and the fix here is the same shape and cheaper,
+because the trail is a singleton with no operand to bind against
+(`API.extractAuditAuthority`).
+
+The trail is not an object in the store, so `.object` would be the wrong
+carrier: there is no `ObjId` to name.  Rights stay a second gate — `.read` for
+the reader, `.write` for the drain — so a monitoring deployment can hand out a
+read-only audit capability that cannot drain. -/
 inductive CapTarget where
   | object (id : SeLe4n.ObjId)
   | cnodeSlot (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot)
   | replyCap (replyId : SeLe4n.ReplyId)
+  /-- WS-SM SM9.A.9: the declassification audit trail.  Fieldless — the trail is
+      a singleton `SystemState` component, not an object in the store — so this
+      capability carries authority and nothing else. -/
+  | auditTrail
   deriving Repr, DecidableEq
 
 /-- WS-RC R4.A: `Inhabited CapTarget` for the `Capability` Inhabited
@@ -398,6 +421,46 @@ def null : Capability :=
 /-- AK7-I: The canonical null capability satisfies `isNull`. -/
 theorem null_isNull : (Capability.null).isNull = true := by
   simp [null, isNull, AccessRightSet.empty, ObjId.isReserved, ObjId.sentinel]
+
+/-- WS-SM SM9.A.9: **the read-only audit capability** a monitoring deployment
+mints for a subject that should be able to read the declassification audit trail
+but not to drain it.
+
+Named rather than left to each mint site to assemble, because the distinction
+between this and `auditTrailManage` is the whole reason the two audit syscalls
+require different rights: a deployment that hands out only this one has a reader
+that provably cannot remove evidence. -/
+def auditTrailRead : Capability :=
+  { target := .auditTrail, rights := AccessRightSet.ofList [.read], badge := none }
+
+/-- WS-SM SM9.A.9: **the read-and-drain audit capability**, for the deployment's
+audit monitor.  Draining additionally requires the configured
+`LabelingContext.auditMonitorClearance`, so this right is necessary and not
+sufficient. -/
+def auditTrailManage : Capability :=
+  { target := .auditTrail, rights := AccessRightSet.ofList [.read, .write], badge := none }
+
+/-- WS-SM SM9.A.9 (**the separation, as a theorem**): a read-only audit
+capability grants the reader's right and **not** the drain's.
+
+The property a monitoring deployment relies on when it hands one out. -/
+theorem auditTrailRead_cannot_drain :
+    Capability.auditTrailRead.hasRight .read = true ∧
+    Capability.auditTrailRead.hasRight .write = false := by
+  constructor <;> rfl
+
+/-- WS-SM SM9.A.9: the monitor's capability grants both. -/
+theorem auditTrailManage_can_drain :
+    Capability.auditTrailManage.hasRight .read = true ∧
+    Capability.auditTrailManage.hasRight .write = true := by
+  constructor <;> rfl
+
+/-- WS-SM SM9.A.9: both audit capabilities are non-null, so they survive the
+AK7-I null-capability gate at every entry point that runs it. -/
+theorem auditTrail_capabilities_not_null :
+    Capability.auditTrailRead.isNull = false ∧
+    Capability.auditTrailManage.isNull = false := by
+  constructor <;> rfl
 
 /-- AK7-I (F-M07 / MEDIUM): Fail-closed gate helper for capability-using
 entry points. Returns `some cap` when the capability is non-null, `none`
@@ -1541,6 +1604,8 @@ inductive SyscallId where
   | mintReplyCap           -- WS-SM SM6.D / PR #822 Phase H: derive a `.replyCap` from an `.object` cap to a retyped Reply
   | vspaceUnifyInstruction -- WS-SM SM7.D: publish freshly-written code (seL4 Page_Unify_Instruction)
   | declassify             -- WS-SM SM8.C.9: authorize and audit a cross-domain downgrade
+  | auditRead              -- WS-SM SM9.A.6: read one word of the declassification audit trail
+  | auditDrain             -- WS-SM SM9.A.6: drain a prefix of the declassification audit trail
   deriving Repr, DecidableEq, Inhabited
 
 namespace SyscallId
@@ -1579,9 +1644,11 @@ namespace SyscallId
   | .mintReplyCap          => 28
   | .vspaceUnifyInstruction => 29
   | .declassify            => 30
+  | .auditRead             => 31
+  | .auditDrain            => 32
 
 /-- Total number of modeled syscalls. -/
-def count : Nat := 31
+def count : Nat := 33
 
 /-- Decode a natural number to a syscall identifier.
     Returns `none` for values outside the modeled set. -/
@@ -1617,6 +1684,8 @@ def count : Nat := 31
   | 28 => some .mintReplyCap
   | 29 => some .vspaceUnifyInstruction
   | 30 => some .declassify
+  | 31 => some .auditRead
+  | 32 => some .auditDrain
   | _  => none
 
 instance : ToString SyscallId where
@@ -1652,6 +1721,8 @@ instance : ToString SyscallId where
     | .mintReplyCap          => "mintReplyCap"
     | .vspaceUnifyInstruction => "vspaceUnifyInstruction"
     | .declassify            => "declassify"
+    | .auditRead             => "auditRead"
+    | .auditDrain            => "auditDrain"
 
 /-- AC4-D/IF-01: Exhaustive list of all SyscallId variants. Used by the enforcement
     boundary completeness witness to ensure every syscall is classified. The
@@ -1667,7 +1738,8 @@ def all : List SyscallId :=
   , .tcbSuspend, .tcbResume, .tcbSetPriority, .tcbSetMCPriority
   , .tcbSetIPCBuffer, .tcbSetAffinity
   , .tcbBindNotification, .tcbUnbindNotification
-  , .mintReplyCap, .vspaceUnifyInstruction, .declassify ]
+  , .mintReplyCap, .vspaceUnifyInstruction, .declassify
+  , .auditRead, .auditDrain ]
 
 /-- AC4-D: Compile-time check — `all` has exactly `count` elements.
     Fails at compile time if a variant is added to the inductive but not to `all`. -/
@@ -1698,9 +1770,10 @@ theorem toNat_ofNat {n : Nat} {s : SyscallId} (h : SyscallId.ofNat? n = some s) 
   | 7  | 8  | 9  | 10 | 11 | 12 | 13
   | 14 | 15 | 16 | 17 | 18 | 19
   | 20 | 21 | 22 | 23 | 24 | 25
-  | 26 | 27 | 28 | 29 | 30 =>
+  | 26 | 27 | 28 | 29 | 30
+  | 31 | 32 =>
     intro s h; simp [ofNat?] at h; subst h; rfl
-  | n + 31 => intro s h; simp [ofNat?] at h
+  | n + 33 => intro s h; simp [ofNat?] at h
 
 /-- Injectivity: the toNat encoding is injective. -/
 theorem toNat_injective {a b : SyscallId} (h : a.toNat = b.toNat) : a = b := by

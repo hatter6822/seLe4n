@@ -124,6 +124,11 @@ private def cspaceSlotCoherencyChecks (objectIds : List SeLe4n.ObjId) (st : Syst
             -- merely *some* object sharing that ObjId namespace — `getReply?`
             -- returns `some` only for a `.reply` at `rid.toObjId`.
             | .replyCap rid => (st.getReply? rid).isSome
+            -- WS-SM SM9.A.9: an audit-trail capability names no object, so
+            -- there is nothing in the store for it to be backed by.  Vacuously
+            -- coherent — and deliberately not "check the trail exists", since a
+            -- `SystemState` always has one.
+            | .auditTrail => true
           (s!"cspace slot target backed: oid={oid} slot={slot}", ok) :: inner)
     | _ => acc) []
 

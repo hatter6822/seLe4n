@@ -418,6 +418,34 @@ structure LabelingContext where
       live path through `liftLegacyContext` — so a policy is written against
       domains 0–3, one per point of the legacy 2×2 lattice. -/
   declassificationPolicy : DeclassificationPolicy := { canDeclassify := fun _ _ => false }
+  /-- WS-SM SM9.A: the **audit-monitor clearance** — the deployment's single
+      privileged-reader gate.
+
+      A caller qualifies as the audit monitor iff it dominates this domain
+      (`auditMonitorAuthorized`).  Drain and the export of *global* entry
+      identities key off it, and SM9.B's refusal ledger will too.
+
+      **Configured, never derived from the records.**  The natural-looking
+      alternative — "the caller dominates every `srcDomain` currently
+      recorded" — is unsound in the direction that matters: drain a trail to
+      `[]` and that predicate is *vacuously true*, so a low audit-capability
+      holder would be reclassified as a fully-dominating monitor and handed the
+      global epoch that counts the entries the drain just removed.  A predicate
+      over rows that drains delete cannot gate access to a quantity that drains
+      preserve (`auditMonitorGate_records_derived_unsound`).
+
+      Defaulted to `none`, which **denies every caller** — the same fail-closed
+      posture `declassificationPolicy` has, and it means an unconfigured
+      deployment cannot drain at all.  The operator obligation that makes this a
+      genuine full-dominance gate is `auditMonitorClearanceIsTop`: the
+      configured domain must be one everything flows to.  A deployment that sets
+      it lower has a monitor that cannot see the whole trail, and the 256-entry
+      cliff returns for it — the conservative default, and the operator's to
+      know about.
+
+      Stated over `SecurityDomain`, like the two policy fields above, and
+      reached from the live path through `liftLegacyContext`. -/
+  auditMonitorClearance : Option SecurityDomain := none
 
 /-- Minimal default labeling: everything is publicly observable and untrusted.
 

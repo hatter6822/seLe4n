@@ -990,6 +990,12 @@ theorem capTargetObservable_monotone (ctx : LabelingContext) {L₁ L₂ : Securi
   | object oid => exact objectObservable_monotone ctx hFlow oid h
   | cnodeSlot cnode _ => exact objectObservable_monotone ctx hFlow cnode h
   | replyCap rid => exact objectObservable_monotone ctx hFlow rid.toObjId h
+  -- WS-SM SM9.A.9: an audit-trail capability names no object, so its
+  -- observability is constant `true` and monotonicity is immediate.  The arm is
+  -- listed rather than absorbed by a wildcard because the theorem's content is
+  -- that *every* target arm reduces to an object-observability test or to a
+  -- constant, and a wildcard would stop saying which.
+  | auditTrail => exact h
 
 /-- SM8.A.4: the SM7.D per-core instruction-cache view is invisible to every
 per-core observer — the structural sibling of `perCoreTlb` above, and a timing
@@ -1018,6 +1024,36 @@ theorem onCore_tlbShootdown (ctx : LabelingContext) (L : SecurityLabel)
     (s : SystemState) (c : CoreId)
     (v : SeLe4n.Kernel.Architecture.TlbShootdownState) :
     ObservableState.onCore ctx c L { s with tlbShootdown := v }
+      = ObservableState.onCore ctx c L s :=
+  onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
+
+/-- SM8.C.8 / SM9.A: the mounted declassification audit trail is invisible on
+every core.
+
+The read-set half of `declassificationAuditLog_write_preserves_projection`,
+lifted to the per-core observer.  Once SM9.A ships a reader this stops being
+the whole story and becomes exactly half of it: the trail is outside
+`ObservableState` — so an audited downgrade moves no per-core view — *and* it
+is readable through a capability-gated, clearance-filtered syscall, which is
+why SM9.A.4a states the reader's flow argument over
+`auditObservationalEquivalence` rather than over `lowEquivalent`. -/
+theorem onCore_declassificationAuditLog (ctx : LabelingContext) (L : SecurityLabel)
+    (s : SystemState) (c : CoreId) (v : SeLe4n.Kernel.DeclassificationAuditLog) :
+    ObservableState.onCore ctx c L { s with declassificationAuditLog := v }
+      = ObservableState.onCore ctx c L s :=
+  onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
+
+/-- SM9.A.1a: the declassification audit **epoch** is invisible on every core.
+
+Separate from the trail's own corollary because the argument is different: an
+entry is content, and a cleared reader may see it; the epoch is a count of
+entries the reader may *not* see.  Being outside the read set is what makes a
+drain — the only writer that moves it — invisible to every per-core observer,
+and it is why the epoch reaches only a caller holding the configured
+audit-monitor clearance rather than every reader with an audit capability. -/
+theorem onCore_declassificationAuditEpoch (ctx : LabelingContext) (L : SecurityLabel)
+    (s : SystemState) (c : CoreId) (v : Nat) :
+    ObservableState.onCore ctx c L { s with declassificationAuditEpoch := v }
       = ObservableState.onCore ctx c L s :=
   onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
 

@@ -153,9 +153,11 @@ MessageInfo position.  Driven by numeric enumeration over the full range
 rather than a hand-maintained variant list: the retired SD-002's list had
 54 entries against the type's 55 (`.auditLogCapacityExceeded` never
 joined it), which is the silent-under-listing this shape cannot repeat —
-the 55 boundary is pinned both ways below. -/
+the boundary is pinned both ways below (WS-SM SM9.A.2 added
+`.auditFieldTooLarge` at 55, so the last discriminant is 55 and 56 is the
+first rejected one). -/
 private def sd002_errorLabelCarriage : IO Unit := do
-  for disc in [0:55] do
+  for disc in [0:56] do
     match SeLe4n.Model.KernelError.ofDiscriminant? disc with
     | none =>
         expect s!"sd002a_discriminant_{disc}_resolves" false
@@ -172,13 +174,13 @@ private def sd002_errorLabelCarriage : IO Unit := do
           (frame.x0 == 0 && frame.x2 == 0 && frame.x3 == 0 &&
            frame.x4 == 0 && frame.x5 == 0)
           "errorFrame carries nothing outside x1"
-  -- The boundary, both ways: 54 is the last discriminant, 55 is rejected.
-  expect "sd002e_last_discriminant_54"
-    ((SeLe4n.Model.KernelError.ofDiscriminant? 54).isSome)
-    "discriminant 54 (auditLogCapacityExceeded) must resolve"
-  expect "sd002f_boundary_55_rejected"
-    ((SeLe4n.Model.KernelError.ofDiscriminant? 55).isNone)
-    "discriminant 55 must not resolve (fail-closed)"
+  -- The boundary, both ways: 55 is the last discriminant, 56 is rejected.
+  expect "sd002e_last_discriminant_55"
+    ((SeLe4n.Model.KernelError.ofDiscriminant? 55).isSome)
+    "discriminant 55 (auditFieldTooLarge) must resolve"
+  expect "sd002f_boundary_56_rejected"
+    ((SeLe4n.Model.KernelError.ofDiscriminant? 56).isNone)
+    "discriminant 56 must not resolve (fail-closed)"
 
 /-- SD-003 (WS-RA shape): the label round trip and its non-aliasing — no
 error's label is the success label `0`, every label decodes back to its
@@ -187,7 +189,7 @@ label `0`.  The retired SD-003 pinned `encodeOk`'s bit-63 masking, whose
 badge-aliasing hazard now lives as
 `Architecture.bit63Encoding_not_injective_on_badges`. -/
 private def sd003_errorLabelRoundtrip : IO Unit := do
-  for disc in [0:55] do
+  for disc in [0:56] do
     match SeLe4n.Model.KernelError.ofDiscriminant? disc with
     | none => expect s!"sd003a_resolve_{disc}" false "must resolve"
     | some e => do

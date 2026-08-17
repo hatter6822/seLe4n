@@ -151,11 +151,21 @@ mod tests {
 
     #[test]
     fn decode_unknown_error_label() {
-        // WS-SM SM8.C.9: 54 is AuditLogCapacityExceeded.  The first
-        // unrecognized discriminant is 55 (label 56) → UnknownKernelError,
-        // still an Err — fail-closed.
-        let regs = [0, error_x1(55), 0, 0, 0, 0, 0];
+        // WS-SM SM9.A.2: 55 is AuditFieldTooLarge.  The first unrecognized
+        // discriminant is 56 (label 57) → UnknownKernelError, still an Err —
+        // fail-closed.
+        let regs = [0, error_x1(56), 0, 0, 0, 0, 0];
         assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
+    }
+
+    #[test]
+    fn decode_audit_field_too_large_error() {
+        // WS-SM SM9.A.2: discriminant 55 survives the label round trip.  The
+        // reader **refuses** a value too wide to export rather than truncating
+        // it, so this discriminant is the difference between a monitor knowing
+        // it did not get the value and silently reading a wrong one.
+        let regs = [0, error_x1(55), 0, 0, 0, 0, 0];
+        assert_eq!(decode_response(regs), Err(KernelError::AuditFieldTooLarge));
     }
 
     #[test]

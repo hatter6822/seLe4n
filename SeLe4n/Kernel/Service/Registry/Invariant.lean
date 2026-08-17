@@ -132,6 +132,7 @@ theorem registerService_preserves_registryEndpointValid
                 · exact hObjEq ▸ hInv sid reg (by simp only [RHTable_getElem?_eq_get?]; exact hReg)
       | cnodeSlot => simp [hTarget] at hStep
       | replyCap => simp [hTarget] at hStep
+      | auditTrail => simp [hTarget] at hStep
 
 theorem registerService_preserves_registryInterfaceValid
     (st st' : SystemState) (newReg : ServiceRegistration)
@@ -170,6 +171,7 @@ theorem registerService_preserves_registryInterfaceValid
                 · exact hInv sid reg (by simp only [RHTable_getElem?_eq_get?]; exact hReg)
       | cnodeSlot => simp [hTarget] at hStep
       | replyCap => simp [hTarget] at hStep
+      | auditTrail => simp [hTarget] at hStep
 
 -- ============================================================================
 -- revokeService
@@ -548,6 +550,7 @@ theorem registerService_preserves_registryEndpointUnique
                       ht₁ ht₂
       | cnodeSlot => simp [hTarget] at hStep
       | replyCap => simp [hTarget] at hStep
+      | auditTrail => simp [hTarget] at hStep
 
 /-- AE5-B: `revokeService` preserves `registryEndpointUnique`.
     Removing a registration from the registry preserves uniqueness — if

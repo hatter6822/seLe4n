@@ -1009,15 +1009,19 @@ def frozenOpCoverage : SyscallId → Bool
   | .mintReplyCap => false           -- PR #822 Phase H: structural cap insertion (like cspaceCopy); builder-only, no frozen-phase variant
   | .vspaceUnifyInstruction => false -- WS-SM SM7.D: cache maintenance over a live mapping; the frozen phase has no VSpace/cache model
   | .declassify => false             -- WS-SM SM8.C.9: writes the mounted declassification audit trail, which the frozen phase carries but never grows (a frozen snapshot is a record, not a running system)
+  | .auditRead => false              -- WS-SM SM9.A.13: reads the mounted audit trail through a clearance-filtered view; the frozen phase carries the trail but models no `LabelingContext`, so there is no reader's clearance to filter by
+  | .auditDrain => false             -- WS-SM SM9.A.13: removes a prefix of the mounted audit trail — a *shrinking* write, and the frozen snapshot is a record rather than a running system, so nothing may remove entries from it
 
 /-- S3-L/Z8-H/D1/D2/D3: Exactly 20 SyscallId arms have frozen operation coverage.
-    The 11 uncovered arms are builder-only / structural operations (cspaceCopy, cspaceMove,
+    The 13 uncovered arms are builder-only / structural operations (cspaceCopy, cspaceMove,
     lifecycleRetype, serviceRegister, serviceRevoke, mintReplyCap) plus the
     runtime-scheduler `tcbSetAffinity` (WS-SM SM5.H.4), the production-only
     notification-binding ops (tcbBind/UnbindNotification, WS-SM SM6.B), the
     cache-maintenance `vspaceUnifyInstruction` (WS-SM SM7.D — the frozen phase
-    models no VSpace or cache state), and `declassify` (WS-SM SM8.C.9 — a frozen
-    snapshot carries the audit trail but never appends to it). -/
+    models no VSpace or cache state), `declassify` (WS-SM SM8.C.9 — a frozen
+    snapshot carries the audit trail but never appends to it), and the two audit
+    accessors (WS-SM SM9.A.13 — the reader needs a `LabelingContext` the frozen
+    phase does not model, and the drain would *remove* entries from a record). -/
 theorem frozenOpCoverage_count :
     (([SyscallId.send, .receive, .call, .reply, .cspaceMint, .cspaceCopy,
        .cspaceMove, .cspaceDelete, .lifecycleRetype, .vspaceMap,
@@ -1027,11 +1031,12 @@ theorem frozenOpCoverage_count :
        .tcbSuspend, .tcbResume, .tcbSetPriority, .tcbSetMCPriority,
        .tcbSetIPCBuffer, .tcbSetAffinity,
        .tcbBindNotification, .tcbUnbindNotification, .mintReplyCap,
-       .vspaceUnifyInstruction, .declassify].filter
+       .vspaceUnifyInstruction, .declassify,
+       .auditRead, .auditDrain].filter
          frozenOpCoverage).length = 20) := by
   decide
 
-/-- S3-L/D1/D2/D3: All 31 SyscallId arms are accounted for (either covered or documented as builder-only). -/
+/-- S3-L/D1/D2/D3: All 33 SyscallId arms are accounted for (either covered or documented as builder-only). -/
 theorem frozenOpCoverage_exhaustive :
     ∀ (s : SyscallId), frozenOpCoverage s = true ∨ frozenOpCoverage s = false := by
   intro s; cases s <;> simp [frozenOpCoverage]

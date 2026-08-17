@@ -1283,6 +1283,206 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @acceptedCovertChannel_lockContention_bounded
 
 -- ============================================================================
+-- §1.10  WS-SM SM9.A — the declassification audit trail's READER
+-- ============================================================================
+--
+-- `InformationFlow/AuditRead.lean` (production).  Every one of the module's
+-- 113 declarations is anchored, on SM8.A's set-difference discipline: a symbol
+-- renamed or deleted fails Tier 3 rather than quietly leaving the surface.
+#check @auditLogVisibleTo
+#check @auditLogVisibleTo_nil
+#check @auditLogVisibleTo_sublist
+#check @auditLogVisibleTo_length_le
+#check @mem_auditLogVisibleTo_iff
+#check @auditLogVisibleTo_cleared
+#check @auditLogVisibleTo_append
+#check @auditLogVisibleTo_hidden_insert
+#check @auditLogVisibleTo_determined_by_clearance
+#check @auditLogVisibleTo_idempotent
+#check @auditLogVisibleTo_eq_self
+#check @auditVisibleEntry?
+#check @auditVisibleEntry?_mem
+#check @auditMonitorAuthorized
+#check @auditMonitorAuthorized_unconfigured
+#check @auditMonitorClearanceIsTop
+#check @auditMonitorAuthorized_dominates_all
+#check @auditReaderDomain
+#check @auditMonitorGate
+#check @auditMonitorGate_idle
+#check @auditMonitorGate_is_configuration_derived
+#check @auditMonitorGate_records_derived_unsound
+#check @auditFieldChunkModulus
+#check @maxAuditFieldChunks
+#check @auditFieldExportBound
+#check @auditFieldChunkModulus_gt_one
+#check @auditFieldChunk
+#check @auditChunkCountUpTo
+#check @auditFieldChunkCount?
+#check @auditFoldChunks
+#check @auditChunkCountUpTo_lt
+#check @auditChunkCountUpTo_isSome_iff
+#check @auditFieldChunkCount?_isSome_iff
+#check @auditFieldChunkCount?_none_iff
+#check @auditFoldChunks_auditFieldChunk
+#check @auditReadField_reconstructs
+#check @auditFieldBound_unreachable_in_kernel
+#check @auditBasisBytes
+#check @maxAuditDesignationBytes
+#check @auditDesignationBytesPerChunk
+#check @auditBasisChunkValue
+#check @auditBasisByteOfChunk
+#check @auditBasisChunkCount
+#check @auditReadBasis_reconstructs_designation
+#check @auditStatusLengthSlots
+#check @auditStatusLengthSlots_bounds_capacity
+#check @auditStatusWord
+#check @auditStatusVisibleLength
+#check @auditStatusGeneration
+#check @auditStatusWord_roundtrip
+#check @auditStatusWord_fits
+#check ReadableStructure
+#check @ReadableStructure.all
+#check @ReadableStructure.mem_all
+#check @ReadableStructure.all_nodup
+#check AuditReadField
+#check @AuditReadField.all
+#check @AuditReadField.mem_all
+#check @AuditReadField.all_nodup
+#check AuditReadOp
+#check @AuditReadOp.readsStructure
+#check @auditReadOp_structure_total
+#check @readableStructure_list_gate_insufficient
+#check @auditExportedFieldValue
+#check @auditReadIndex_is_view_local
+#check @dominatingReader_sees_global_identity
+#check @auditCoreAndTrustWord
+#check @auditCoreAndTrustWord_core_fits
+#check @auditCoreAndTrustWord_roundtrip
+#check @auditCoreAndTrustWord_trust_bit
+#check @auditReadWord
+#check @auditRead_determined_by_view
+#check @auditRead_hides_global_position
+#check @auditReadStatus_atomic
+#check @auditReadStatus_partial_hides_generation
+#check @auditReadStatus_global_generation_leaks
+#check @observerScopedGeneration_not_mountable
+#check @auditDrainVisiblePrefix
+#check @auditDrain_denied_for_unauthorized
+#check @auditDrain_unconfigured_denied
+#check @auditDrain_frame
+#check @auditDrain_requires_full_dominance
+#check @auditTrailSourcesFromLabeling
+#check @auditTrailSourcesFromLabeling_drop
+#check @auditTrailSourcesFromLabeling_nil
+#check @declassifyObjectFromCore_preserves_trailSources
+#check @auditMonitorDominatesSubjects
+#check @auditMonitorAuthorized_dominates_subjects
+#check @auditDrain_requires_full_dominance_of_subjects
+#check @auditDrain_preserves_auditLogBounded
+#check @auditDrain_preserves_wellFormed_at_epoch
+#check @auditDrain_monotone_epoch
+#check @auditDrain_next_timestamp_fresh
+#check @auditDrain_fully_clears_for_dominating_reader
+#check @auditDrain_partial_reader_drains_nothing
+#check @auditDrain_preserves_proofLayerInvariantBundle
+#check @auditVisibleEntry?_stable_under_append
+#check @auditRead_stable_under_append
+#check @auditRead_bracketed_detects_drain
+#check @auditStatusSplitRead_tears
+#check @auditReadWord_state_preserving
+#check @decodeAuditReadOp
+#check @auditReadOpcodeCount
+#check @encodeAuditReadOp
+#check @decodeAuditReadOp_encode
+#check @decodeAuditReadOp_out_of_range
+#check @decodeAuditReadOp_isSome_lt
+#check @auditReadFromCore
+#check @auditReadFromCore_no_subject
+#check @auditReadFromCore_frame
+#check @auditReadFromCore_word_fits
+#check @auditReadFromCore_toUInt64_lossless
+#check @auditReadFromCore_value
+
+-- SM9.A.1a — the persistent timestamp epoch (`AuditRecord.lean`, moved down
+-- below `Model/State` so the production drain can state its preservation).
+#check @auditTimestampsFrom
+#check @declassificationAuditLogWellFormed
+#check @auditTimestampsFrom_drop
+#check @recordDeclassification_preserves_timestampsFrom
+#check @declassificationAuditLog_timestamp_identifies_event
+#check @auditTimestampWitness
+#check @preEpochTimestamp_reused_after_drain
+#check @declassificationEventOnCore
+#check @declassificationTrailWellFormed
+#check @declassificationTrail_timestamp_identifies_event
+#check @authorizeDeclassificationOnCore_preserves_trailWellFormed
+#check @declassifyObjectFromCore_preserves_trailWellFormed
+#check @SystemState.declassificationAuditEpoch
+#check @default_declassificationAuditEpoch
+#check @storeObject_declassificationAuditEpoch_eq
+#check @declassifyStoreOnCore_declassificationAuditEpoch_eq
+
+-- SM9.A.4a / SM9.A.4b — the observation relation and the flow argument
+-- (`DeclassificationPerCore.lean`, staged).  The clause set is a TOTAL
+-- function on `ReadableStructure`, which is what a `mem_all` list cannot do.
+#check @readableStructureAgrees
+#check @auditObservationalEquivalence
+#check @auditObservationalEquivalence_refl
+#check @auditObservationalEquivalence_symm
+#check @auditObservationalEquivalence_trans
+#check @auditObservationalEquivalence_of_trailFramed
+#check @authorizeDeclassificationOnCore_preserves_auditObservationalEquivalence
+#check @auditDrain_preserves_auditObservationalEquivalence
+#check @lowEquivalent_does_not_determine_visible_view
+#check @auditRead_no_channel
+#check @auditReadFromCore_no_channel
+#check @auditRead_gates_are_three
+#check @auditDrain_preserves_projectionOnCore
+#check @auditDrain_perCore_NI
+#check @auditReadFromCore_perCore_NI
+
+-- SM9.A.4b — the cross-core inventory entries (`NonInterferenceCrossCore.lean`).
+#check @auditReadFromCore_confinedToCores
+#check @auditReadFromCore_crossCoreNonInterference
+#check @auditDrainVisiblePrefix_confinedToCores
+#check @auditDrainVisiblePrefix_crossCoreNonInterference
+
+-- SM9.A.9 / SM9.A.10 — the dedicated capability target and the live arms.
+#check @extractAuditAuthority
+#check @extractAuditAuthority_eq_ok_iff
+#check @extractAuditAuthority_rejects_non_audit_capability
+#check @Capability.auditTrailRead
+#check @Capability.auditTrailManage
+#check @Capability.auditTrailRead_cannot_drain
+#check @Capability.auditTrailManage_can_drain
+#check @Capability.auditTrail_capabilities_not_null
+#check @dispatchWithCapChecked_auditRead_delegates
+#check @dispatchWithCapChecked_auditDrain_delegates
+#check @dispatchWithCapChecked_audit_rejects_non_audit_capability
+#check @dispatchWithCap_auditRead_denied
+#check @dispatchWithCapChecked_auditDrain_default_denied
+#check @unconfiguredDeployment_has_no_audit_reader
+#check @syscallDelegates_auditRead
+#check @syscallDelegates_auditDrain
+
+-- SM9.A.6 / SM9.A.10 — the ABI: two value-returning syscalls whose staged
+-- frame the boundary reads, rather than a constructed unit frame.
+#check @dispatchArm_auditRead_matches_returnShape
+#check @dispatchArm_auditDrain_matches_returnShape
+#check @Architecture.SyscallArgDecode.decodeAuditReadArgs
+#check @Architecture.SyscallArgDecode.encodeAuditReadArgs
+#check @Architecture.SyscallArgDecode.decodeAuditReadArgs_roundtrip
+#check @Architecture.SyscallArgDecode.decodeAuditDrainArgs
+#check @Architecture.SyscallArgDecode.encodeAuditDrainArgs
+#check @Architecture.SyscallArgDecode.decodeAuditDrainArgs_roundtrip
+
+-- SM9.A.11 / SM9.A.12 — enforcement boundary and lock sets.
+#check @Concurrency.lockSet_auditRead
+#check @Concurrency.lockSet_auditDrain
+#check @Concurrency.lockSet_consistent_auditRead
+#check @Concurrency.lockSet_consistent_auditDrain
+
+-- ============================================================================
 -- §2  Elaboration-time examples: each headline theorem applied
 -- ============================================================================
 
@@ -1555,11 +1755,22 @@ example (ctx : LabelingContext) : endpointGateRestricted ctx :=
 -- SM8.C.1: the event a downgrade records names the core that performed it, and
 -- carries the basis the kernel itself issues.
 example (c : CoreId) (src dst : SecurityDomain) (targetId : SeLe4n.ObjId)
-    (log : DeclassificationAuditLog) :
-    (declassificationEventOnCore c src dst targetId log).originatingCore = c ∧
-      (declassificationEventOnCore c src dst targetId log).authorizationBasis = .policyRule :=
-  ⟨declassificationEventOnCore_originatingCore c src dst targetId log,
-   declassificationEventOnCore_basis_is_policyRule c src dst targetId log⟩
+    (epoch : Nat) (log : DeclassificationAuditLog) :
+    (declassificationEventOnCore c src dst targetId epoch log).originatingCore = c ∧
+      (declassificationEventOnCore c src dst targetId epoch log).authorizationBasis =
+        .policyRule :=
+  ⟨declassificationEventOnCore_originatingCore c src dst targetId epoch log,
+   declassificationEventOnCore_basis_is_policyRule c src dst targetId epoch log⟩
+
+-- WS-SM SM9.A.1a: the recorded timestamp is the event's **global** position —
+-- the epoch (entries drained so far) plus its index in the current trail.  With
+-- the pre-epoch `log.length` rule the next append after a drain collides with a
+-- surviving entry (`preEpochTimestamp_reused_after_drain`).
+example (c : CoreId) (src dst : SecurityDomain) (targetId : SeLe4n.ObjId)
+    (epoch : Nat) (log : DeclassificationAuditLog) :
+    (declassificationEventOnCore c src dst targetId epoch log).timestamp =
+      epoch + log.length :=
+  declassificationEventOnCore_timestamp c src dst targetId epoch log
 
 -- SM8.C.3: every event the attributed entry point records is attributable in the
 -- state an auditor inspects — no hypothesis relating the caller to the state.
@@ -1789,6 +2000,168 @@ example (ctx : LabelingContext) (lockCore : CoreId) (layout : SeLe4n.SyscallRegi
     (h : entryDecode ctx layout executingCore regCount s = none) :
     syscallEntryUnderDeclaredLockSet ctx lockCore layout executingCore regCount s = none :=
   syscallEntryUnderDeclaredLockSet_no_decode ctx lockCore layout executingCore regCount s h
+
+-- ----------------------------------------------------------------------------
+-- WS-SM SM9.A — the audit trail's reader, applied
+-- ----------------------------------------------------------------------------
+
+-- SM9.A.1: the visible view is a genuine sublist of the trail — order preserved,
+-- nothing invented, so a reader cannot be shown an entry that was never recorded.
+example (gctx : GenericLabelingContext) (reader : SecurityDomain)
+    (log : DeclassificationAuditLog) :
+    (auditLogVisibleTo gctx reader log).Sublist log :=
+  auditLogVisibleTo_sublist gctx reader log
+
+-- SM9.A.1: **the no-gap-leak property.**  The view is a function of the
+-- reader's clearance alone, so two trails a reader cannot distinguish give it
+-- literally the same view — hidden entries leave no index gap behind.
+example (gctx : GenericLabelingContext) (reader : SecurityDomain)
+    (pre post : DeclassificationAuditLog) (e : DeclassificationEvent)
+    (hHidden : gctx.policy.canFlow e.srcDomain reader = false) :
+    auditLogVisibleTo gctx reader (pre ++ e :: post)
+      = auditLogVisibleTo gctx reader (pre ++ post) :=
+  auditLogVisibleTo_hidden_insert gctx reader pre post e hHidden
+
+-- SM9.A.2: the chunk protocol reconstructs an arbitrary-length `Nat` field
+-- exactly.  Unconditional on the accepted domain — a fixed low/high pair would
+-- only move the truncation point to `2^64`.
+example (v n : Nat) (hCount : auditFieldChunkCount? v = some n) :
+    auditFoldChunks n (fun i => auditFieldChunk v i) = v :=
+  auditReadField_reconstructs v n hCount
+
+-- SM9.A.2: and the basis designation reconstructs byte for byte, so an
+-- `integratorOverride` naming an authority is exported rather than collapsed to
+-- its trust bit.
+example (bs : List UInt8) (j : Nat) :
+    auditBasisByteOfChunk (auditBasisChunkValue bs (j / 4)) (j % 4) = (bs.getD j 0).toNat :=
+  auditReadBasis_reconstructs_designation bs j
+
+-- SM9.A.2: `status` is ONE read, so a drain cannot land between its two
+-- components.  Chunking it would have traded aliasing for tearing.
+example (gctx : GenericLabelingContext) (monitorClearance : Option SecurityDomain)
+    (reader : SecurityDomain) (st : SystemState)
+    (hBounded : auditLogBounded st.declassificationAuditLog) :
+    ∃ w, auditReadWord gctx monitorClearance reader st .status = .ok w ∧
+      auditStatusVisibleLength w
+        = (auditLogVisibleTo gctx reader st.declassificationAuditLog).length ∧
+      auditStatusGeneration w
+        = (if auditMonitorAuthorized gctx monitorClearance reader then
+            st.declassificationAuditEpoch else 0) :=
+  auditReadStatus_atomic gctx monitorClearance reader st hBounded
+
+-- SM9.A.2: a **partial** reader learns nothing of the global position — its
+-- read is a function of its own view, epoch included, so it cannot count the
+-- entries it cannot see.
+example (gctx : GenericLabelingContext) (monitorClearance : Option SecurityDomain)
+    (reader : SecurityDomain) (st₁ st₂ : SystemState) (op : AuditReadOp)
+    (hPartial : auditMonitorAuthorized gctx monitorClearance reader = false)
+    (hView : auditLogVisibleTo gctx reader st₁.declassificationAuditLog
+      = auditLogVisibleTo gctx reader st₂.declassificationAuditLog) :
+    auditReadWord gctx monitorClearance reader st₁ op
+      = auditReadWord gctx monitorClearance reader st₂ op :=
+  auditRead_hides_global_position gctx monitorClearance reader st₁ st₂ op hPartial hView
+
+-- SM9.A.3: **drain requires full dominance.**  A caller that qualifies sees the
+-- whole trail, so a prefix drain never removes an entry the caller could not
+-- read — which is what would reveal the positions of the hidden ones.
+example (gctx : GenericLabelingContext) (monitorClearance : Option SecurityDomain)
+    (reader : SecurityDomain) (log : DeclassificationAuditLog)
+    (hDom : auditMonitorDominatesSubjects gctx monitorClearance)
+    (hTrans : gctx.policy.isTransitive)
+    (hSources : auditTrailSourcesFromLabeling gctx log)
+    (hGate : auditMonitorAuthorized gctx monitorClearance reader = true) :
+    auditLogVisibleTo gctx reader log = log :=
+  auditDrain_requires_full_dominance_of_subjects gctx monitorClearance reader log
+    hDom hTrans hSources hGate
+
+-- SM9.A.1a / SM9.A.3: **the timestamp a drain leaves free is genuinely free.**
+-- This is why the epoch is a mounted field: under `timestamp := log.length` the
+-- next entry would collide with one the drain removed.
+example (gctx : GenericLabelingContext) (monitorClearance : Option SecurityDomain)
+    (c : CoreId) (count : Nat) (st : SystemState) (n : Nat) (st' : SystemState)
+    (hWF : declassificationTrailWellFormed st = true)
+    (hStep : auditDrainVisiblePrefix gctx monitorClearance c count st = .ok (n, st')) :
+    ∀ e ∈ st'.declassificationAuditLog,
+      e.timestamp ≠ st'.declassificationAuditEpoch + st'.declassificationAuditLog.length :=
+  auditDrain_next_timestamp_fresh gctx monitorClearance c count st n st' hWF hStep
+
+-- SM9.A.1a: and the surviving trail still identifies its events uniquely.
+example (st : SystemState) (hWF : declassificationTrailWellFormed st = true)
+    {e₁ e₂ : DeclassificationEvent}
+    (h₁ : e₁ ∈ st.declassificationAuditLog) (h₂ : e₂ ∈ st.declassificationAuditLog)
+    (hTs : e₁.timestamp = e₂.timestamp) : e₁ = e₂ :=
+  declassificationTrail_timestamp_identifies_event st hWF h₁ h₂ hTs
+
+-- SM9.A.3: the drain carries the 16th `proofLayerInvariantBundle` conjunct —
+-- it shortens the trail, and a prefix of a bounded log is bounded.
+example (gctx : GenericLabelingContext) (monitorClearance : Option SecurityDomain)
+    (c : CoreId) (count : Nat) (st : SystemState) (n : Nat) (st' : SystemState)
+    (hBundle : Architecture.proofLayerInvariantBundle st)
+    (hStep : auditDrainVisiblePrefix gctx monitorClearance c count st = .ok (n, st')) :
+    Architecture.proofLayerInvariantBundle st' :=
+  auditDrain_preserves_proofLayerInvariantBundle gctx monitorClearance c count st n st'
+    hBundle hStep
+
+-- SM9.A.5: the retry protocol.  An append cannot move an index-keyed read, so a
+-- reader walking the trail is not raced by a concurrent producer.
+example (gctx : GenericLabelingContext) (monitorClearance : Option SecurityDomain)
+    (reader : SecurityDomain) (st : SystemState) (extra : DeclassificationAuditLog)
+    (op : AuditReadOp)
+    (hIndex : ∀ i f k, op = .fieldChunkCount i f ∨ op = .field i f k ∨
+      op = .coreAndTrust i ∨ op = .basisByteCount i ∨ op = .basisChunk i k →
+      i < (auditLogVisibleTo gctx reader st.declassificationAuditLog).length)
+    (hNotStatus : op ≠ .status) :
+    auditReadWord gctx monitorClearance reader
+        { st with declassificationAuditLog := st.declassificationAuditLog ++ extra } op
+      = auditReadWord gctx monitorClearance reader st op :=
+  auditRead_stable_under_append gctx monitorClearance reader st extra op hIndex hNotStatus
+
+-- SM9.A.4a: **the discipline, applied.**  A read is a function of the visible
+-- view alone, so two audit-observationally-equivalent states return the same
+-- word — the reader opens no channel.  This is the lemma `lowEquivalent` cannot
+-- supply, because the trail is not in `ObservableState`.
+example (ctx : LabelingContext) (observer : IfObserver)
+    (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
+    (s₁ s₂ : SystemState) (op : AuditReadOp)
+    (h : auditObservationalEquivalence ctx observer monitorClearance reader s₁ s₂) :
+    auditReadWord (liftLegacyContext ctx) monitorClearance reader s₁ op
+      = auditReadWord (liftLegacyContext ctx) monitorClearance reader s₂ op :=
+  auditRead_no_channel ctx observer monitorClearance reader s₁ s₂ op h
+
+-- SM9.A.4b: the drain is invisible to every ordinary observer on every core —
+-- it writes only the trail and the epoch, neither of which is projected.
+example (ctx : LabelingContext) (observer : IfObserver) (gctx : GenericLabelingContext)
+    (monitorClearance : Option SecurityDomain) (c : CoreId) (count : Nat)
+    (st : SystemState) (n : Nat) (st' : SystemState) (viewCore : CoreId)
+    (hStep : auditDrainVisiblePrefix gctx monitorClearance c count st = .ok (n, st')) :
+    projectStateOnCore ctx observer st' viewCore = projectStateOnCore ctx observer st viewCore :=
+  auditDrain_preserves_projectionOnCore ctx observer gctx monitorClearance c count st n st'
+    viewCore hStep
+
+-- SM9.A.9: the confused-deputy gate.  A capability carrying every right to an
+-- ordinary object is refused — authority is a `CapTarget`, not a right, which is
+-- exactly the v0.32.97 class.
+example (oid : SeLe4n.ObjId) :
+    extractAuditAuthority
+        { target := .object oid, rights := AccessRightSet.ofList AccessRight.all,
+          badge := none } = .error .invalidCapability :=
+  extractAuditAuthority_rejects_non_audit_capability oid
+
+-- SM9.A.10: an idle core cannot read the trail — there is no subject whose
+-- clearance would select a view, so the operation fails closed.
+example (gctx : GenericLabelingContext) (monitorClearance : Option SecurityDomain)
+    (c : CoreId) (op : AuditReadOp) (st : SystemState)
+    (hIdle : st.scheduler.currentOnCore c = none) :
+    auditReadFromCore gctx monitorClearance c op st = .error .illegalState :=
+  auditReadFromCore_no_subject gctx monitorClearance c op st hIdle
+
+-- SM9.A.10: the word the live arm hands to `writeReturnFrameToTcb` survives the
+-- `UInt64` narrowing — without which a read could silently return a truncation.
+example (gctx : GenericLabelingContext) (monitorClearance : Option SecurityDomain)
+    (c : CoreId) (op : AuditReadOp) (st : SystemState) (w : Nat) (st' : SystemState)
+    (hStep : auditReadFromCore gctx monitorClearance c op st = .ok (w, st')) :
+    w.toUInt64.toNat = w :=
+  auditReadFromCore_toUInt64_lossless gctx monitorClearance c op st w st' hStep
 
 -- ============================================================================
 -- §3  Runtime assertions (Tier-2): the four-thread / four-core IF fixture
@@ -3472,18 +3845,19 @@ private def runRunQueueComparisonChecks : IO Unit := do
 /-- §5.3  The set-of-cores algebra and its coverage record. -/
 private def runCoreSetAlgebraChecks : IO Unit := do
   IO.println "--- §5.3 the set-of-cores confinement algebra ---"
-  assertBool "twenty-six cross-core transitions are covered"
-    (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 26))
-  assertBool "twenty-two of the twenty-six can name a core other than the executing one"
+  assertBool "twenty-eight cross-core transitions are covered"
+    (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 28))
+  assertBool "twenty-two of the twenty-eight can name a core other than the executing one"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
       SeLe4n.Kernel.crossCoreTransitionWritesRemote).length = 22))
-  assertBool "…and the wait, the two VSpace arms and the declassification are the four that cannot"
+  assertBool "…and the wait, the two VSpace arms, the declassification and the two audit readers are the six that cannot"
     ([SeLe4n.Kernel.CrossCoreTransition.notificationWait,
-      .vspaceMapDispatch, .vspaceUnmapDispatch, .declassifyDispatch].all (fun t =>
+      .vspaceMapDispatch, .vspaceUnmapDispatch, .declassifyDispatch,
+      .auditReadDispatch, .auditDrainDispatch].all (fun t =>
         decide (SeLe4n.Kernel.crossCoreTransitionWritesRemote t = false)))
-  assertBool "nineteen of the twenty-six are the arms the live syscall dispatch reaches"
+  assertBool "twenty-one of the twenty-eight are the arms the live syscall dispatch reaches"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
-      SeLe4n.Kernel.crossCoreTransitionIsLiveArm).length = 19))
+      SeLe4n.Kernel.crossCoreTransitionIsLiveArm).length = 21))
   -- Round 35: the three entries that emptied the per-core routing allowlist.
   -- All three are live arms, all three arrive delegation-backed, and two of them
   -- carry an EMPTY write set — the shape the inventory could not express before,
@@ -3534,8 +3908,8 @@ private def runCoreSetAlgebraChecks : IO Unit := do
              ∧ SeLe4n.Kernel.crossCoreTransitionIsLiveArm .endpointSendDispatch = true
              ∧ (SeLe4n.Kernel.crossCoreLiveArmEvidence .endpointSendDispatch).syscall?
                  = some SeLe4n.Model.SyscallId.send))
-  assertBool "eleven live arms are mechanically tied to the dispatch"
-    (decide (SeLe4n.Kernel.crossCoreLiveArmDelegationBacked.length = 11))
+  assertBool "thirteen live arms are mechanically tied to the dispatch"
+    (decide (SeLe4n.Kernel.crossCoreLiveArmDelegationBacked.length = 13))
   -- The fourth review round's finding, as a checked fact: the three arms it
   -- named are in the inventory and are all classified as live.
   assertBool "the bound signal, the receive dual and replyRecv are all covered"
@@ -3570,7 +3944,7 @@ private def runCoreSetAlgebraChecks : IO Unit := do
         n == "endpointReceiveDualOnCore"))
   assertBool "the covered-transition theorem names are pairwise distinct"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.map
-      SeLe4n.Kernel.crossCoreNiTheorem).eraseDups.length = 26))
+      SeLe4n.Kernel.crossCoreNiTheorem).eraseDups.length = 28))
   -- The load-bearing negative: the write set is *state-dependent*, so it is not
   -- a constant the theorem could be satisfying vacuously.  With no receiver the
   -- call writes one core; with a remote receiver waiting it writes two — and
@@ -4156,9 +4530,9 @@ private def runPerCoreCoverageChecks : IO Unit := do
 /-- §4.7  The per-core enforcement boundary (SM8.B.6 / SM8.B.7). -/
 private def runEnforcementBoundaryChecks : IO Unit := do
   IO.println "--- §4.7 the per-core enforcement boundary ---"
-  assertBool "55 entries: 40 canonical (the 2PL bracket promoted in) + 15 cross-core wrappers"
-    (decide (enforcementBoundaryPerCore.length = 55) &&
-     decide (enforcementBoundaryExtended.length = 40) &&
+  assertBool "57 entries: 42 canonical (the 2PL bracket + the two audit readers) + 15 cross-core wrappers"
+    (decide (enforcementBoundaryPerCore.length = 57) &&
+     decide (enforcementBoundaryExtended.length = 42) &&
      decide (crossCoreEnforcementEntries.length = 15))
   assertBool "every SyscallId is still covered by the extended boundary (single-core half)"
     (enforcementBoundaryPerCoreComplete)
@@ -6667,9 +7041,6 @@ perCoreInstance={ch.perCoreInstance}")) ++
 {(acceptedCovertChannelsPerCore.filter CovertChannel.modelVisible).length} model-visible, \
 {(acceptedCovertChannelsPerCore.filter CovertChannel.perCoreInstance).length} per-core" ]
 
-private def informationFlowTraceLines : List String :=
-  observerTraceLines ++ nonInterferenceTraceLines
-
 /-- §8.1: the SM8 phase-level surface as runtime assertions.
 
 The fixture below is the record; these are the properties that make it a
@@ -6750,6 +7121,129 @@ private def runPhaseSurfaceChecks : IO Unit := do
      have _s := niStepCoverage_perCore_count
      decide (KernelOperation.all.eraseDups.length = KernelOperation.all.length))
 
+
+
+
+
+-- ============================================================================
+-- §9  WS-SM SM9.A — the declassification audit trail's reader
+-- ============================================================================
+--
+-- SM8.C shipped a durable, bounded, fail-closed trail that nothing could read.
+-- The capacity bound is fail-closed, so a deployment performing
+-- `maxDeclassificationAuditEntries` authorized downgrades stops being able to
+-- declassify at all until reboot: a write-only trail with a hard cap is a
+-- feature that disables itself.  §9 is the read side, and every group carries a
+-- load-bearing negative, because most of what the reader is *for* is what it
+-- refuses to return.
+
+/-- §9 fixtures — the audit-monitor clearance.  Domain 3 is `{high, trusted}`
+under the legacy embedding, which every other embedded domain flows to, so a
+caller labelled `kernelTrusted` qualifies and a `publicLabel` one does not. -/
+private def auditMonitorDomain : SecurityDomain := embedLegacyLabel SecurityLabel.kernelTrusted
+
+/-- The deployment that names a monitor: the live-declassification labeling plus
+a configured audit-monitor clearance. -/
+private def auditMonitorLabeling : LabelingContext :=
+  { liveDeclassLabeling with auditMonitorClearance := some auditMonitorDomain }
+
+/-- The same deployment with **no** monitor named — the default, which must deny
+every drain and export no epoch. -/
+private def auditUnmonitoredLabeling : LabelingContext := liveDeclassLabeling
+
+/-- The lifted context the live reader runs in. -/
+private def auditGenericCtx : GenericLabelingContext := liftLegacyContext auditMonitorLabeling
+
+/-- A monitor's clearance: `{high, trusted}` embedded. -/
+private def auditMonitorReader : SecurityDomain := auditMonitorDomain
+
+/-- A partial reader's clearance: `publicLabel` embedded, which dominates only
+the public domain. -/
+private def auditPartialReader : SecurityDomain := embedLegacyLabel SecurityLabel.publicLabel
+
+/-- One recorded entry, sourced at the given domain. -/
+private def auditEntry (src dst : SecurityDomain) (target : SeLe4n.ObjId)
+    (ts : Nat) (c : CoreId) : DeclassificationEvent :=
+  { srcDomain := src, dstDomain := dst, targetObject := target,
+    authorizationBasis := .policyRule, timestamp := ts, originatingCore := c }
+
+/-- The two public-sourced entries and the high-sourced one between them, named
+individually so the re-indexing checks can talk about the hidden entry without
+indexing into the trail (`DeclassificationEvent` carries no `Inhabited`
+instance, deliberately — there is no "default" audit record). -/
+private def auditVisibleEntryFirst : DeclassificationEvent :=
+  auditEntry auditPartialReader auditPartialReader lowNotification 0 c0
+
+private def auditHiddenEntry : DeclassificationEvent :=
+  auditEntry auditMonitorDomain auditPartialReader lowNotification 1 c1
+
+private def auditVisibleEntryLast : DeclassificationEvent :=
+  auditEntry auditPartialReader auditPartialReader lowNotification 2 c0
+
+/-- A three-entry trail: a **high**-sourced entry between two public-sourced
+ones.  The middle entry is what a partial reader cannot see, so it is what makes
+the re-indexing claim substantive rather than vacuous. -/
+private def auditMixedTrail : DeclassificationAuditLog :=
+  [auditVisibleEntryFirst, auditHiddenEntry, auditVisibleEntryLast]
+
+private def auditMixedState : SystemState :=
+  { niState with declassificationAuditLog := auditMixedTrail }
+
+/-- The SM9.A half: what the *reader* returns, and what it refuses.  The trail
+itself is outside `ObservableState` (a content channel out of exactly the
+boundary it polices), so these lines are the only record of the read side. -/
+private def auditReaderTraceLines : List String :=
+  [ -- The clearance filter, computed at both reader classes over the same trail.
+    s!"[smp-information-flow] audit view: trail {auditMixedTrail.length} entries, \
+monitor sees {(auditLogVisibleTo auditGenericCtx auditMonitorReader auditMixedTrail).length}, \
+partial reader sees \
+{(auditLogVisibleTo auditGenericCtx auditPartialReader auditMixedTrail).length}"
+    -- The two reader classes (§3.3): a monitor's `timestamp` is the GLOBAL
+    -- identity, a partial reader's is its own view-local index.  Reading the
+    -- same entry through both is what makes the hiding claim concrete.
+  , s!"[smp-information-flow] audit timestamp of view index 1: \
+monitor={auditExportedFieldValue true 1 auditVisibleEntryLast .timestamp} \
+partial={auditExportedFieldValue false 1 auditVisibleEntryLast .timestamp}"
+    -- The status word: both components in ONE read, so a drain cannot land
+    -- between them (chunking `status` traded aliasing for tearing).
+  , s!"[smp-information-flow] audit status word: \
+monitor={match auditReadWord auditGenericCtx (some auditMonitorReader) auditMonitorReader
+    auditMixedState .status with
+  | .ok w => s!"len={auditStatusVisibleLength w} gen={auditStatusGeneration w}"
+  | .error e => s!"error={reprStr e}"} \
+partial={match auditReadWord auditGenericCtx (some auditMonitorReader) auditPartialReader
+    auditMixedState .status with
+  | .ok w => s!"len={auditStatusVisibleLength w} gen={auditStatusGeneration w}"
+  | .error e => s!"error={reprStr e}"}"
+    -- The chunk protocol: an unbounded `Nat` field is exported through a
+    -- fixed-width word, and the fold reconstructs it exactly.
+  , s!"[smp-information-flow] audit chunk protocol: modulus={auditFieldChunkModulus} \
+maxChunks={maxAuditFieldChunks} chunks(0)={auditFieldChunkCount? 0} \
+chunks(2^96)={auditFieldChunkCount? (2 ^ 96)} chunks(2^128)={auditFieldChunkCount? (2 ^ 128)}"
+    -- The drain, run for effect at both reader classes.  A partial reader is
+    -- refused outright — a prefix drain would reveal the POSITIONS of the
+    -- entries it cannot see.
+  , s!"[smp-information-flow] audit drain by monitor: \
+{match auditDrainVisiblePrefix auditGenericCtx (some auditMonitorReader) c1 3 auditMixedState with
+  | .ok (remaining, st) =>
+      s!"remaining={remaining} epoch={st.declassificationAuditEpoch}"
+  | .error e => s!"error={reprStr e}"}; by partial reader: \
+{match auditDrainVisiblePrefix auditGenericCtx (some auditMonitorReader) c0 3 auditMixedState with
+  | .ok (remaining, _) => s!"remaining={remaining}"
+  | .error e => s!"error={reprStr e}"}"
+    -- The unconfigured deployment: no monitor clearance means no reader at all.
+  , s!"[smp-information-flow] audit gate unconfigured: \
+authorized={auditMonitorAuthorized auditGenericCtx none auditMonitorReader} \
+drain={match auditDrainVisiblePrefix auditGenericCtx none c1 3 auditMixedState with
+  | .ok _ => "ok" | .error e => s!"{reprStr e}"}"
+    -- The ABI surface: two syscalls, both value-returning, both classified.
+  , s!"[smp-information-flow] audit ABI: auditRead={SyscallId.auditRead.toNat} \
+auditDrain={SyscallId.auditDrain.toNat} syscalls={SyscallId.count} \
+opcodes={auditReadOpcodeCount} readableStructures={ReadableStructure.all.length}" ]
+
+private def informationFlowTraceLines : List String :=
+  observerTraceLines ++ nonInterferenceTraceLines ++ auditReaderTraceLines
+
 /-- §8.2: print the deterministic phase-level information-flow trace and verify
 it byte-for-byte against the golden fixture.  The lines print before the
 (strict) verification, so the fixture is regenerable via
@@ -6777,6 +7271,441 @@ grep '^\\[smp-information-flow\\]' > {informationFlowTraceFixturePath}"
     IO.println s!"          (then refresh {informationFlowTraceFixturePath}.sha256)"
     throw (IO.userError "information-flow trace fixture mismatch")
 
+/-- §9.1  SM9.A.1 — the clearance-filtered, re-indexed visible view. -/
+private def runAuditVisibleViewChecks : IO Unit := do
+  IO.println "--- §9.1 SM9.A.1 the clearance-filtered visible view ---"
+  assertBool "a monitor sees the whole trail; a partial reader sees only what it dominates"
+    (decide ((auditLogVisibleTo auditGenericCtx auditMonitorReader auditMixedTrail).length = 3) &&
+     decide ((auditLogVisibleTo auditGenericCtx auditPartialReader auditMixedTrail).length = 2))
+  assertBool "the view is a genuine sublist — order preserved, nothing invented"
+    ((auditLogVisibleTo auditGenericCtx auditPartialReader auditMixedTrail).all
+      (fun e => decide (e ∈ auditMixedTrail)))
+  -- The no-gap-leak property, computed: the hidden entry sits BETWEEN the two
+  -- visible ones, and removing it leaves the partial reader's view identical.
+  -- Under a sparse global index the reader's own indices would shift, telling it
+  -- both that a hidden entry exists and exactly where.
+  assertBool "removing the hidden entry leaves the partial reader's view unchanged"
+    (decide (auditLogVisibleTo auditGenericCtx auditPartialReader auditMixedTrail =
+      auditLogVisibleTo auditGenericCtx auditPartialReader
+        [auditVisibleEntryFirst, auditVisibleEntryLast]))
+  -- The load-bearing negative: the view is NOT the trail for a partial reader,
+  -- so the filter is doing work.  A filter that admitted everything would make
+  -- every claim above vacuous.
+  assertBool "NEGATIVE: a partial reader's view is NOT the whole trail"
+    (decide (auditLogVisibleTo auditGenericCtx auditPartialReader auditMixedTrail
+      ≠ auditMixedTrail))
+  assertBool "…and the entry it cannot see is genuinely absent from its view"
+    (decide (auditHiddenEntry ∈ auditMixedTrail) &&
+     !(decide (auditHiddenEntry ∈
+        auditLogVisibleTo auditGenericCtx auditPartialReader auditMixedTrail)))
+
+/-- §9.2  SM9.A.2 — the chunk protocol, and what it refuses. -/
+private def runAuditChunkProtocolChecks : IO Unit := do
+  IO.println "--- §9.2 SM9.A.2 the chunk protocol ---"
+  -- Folding recovers the value exactly, over three widths: a one-chunk value, a
+  -- two-chunk one, and the largest the reader accepts.
+  let widths : List Nat := [0, 7, 4294967296, 4294967297, 2 ^ 96]
+  assertBool "folding a field's chunks recovers the value exactly"
+    (widths.all (fun v =>
+      match auditFieldChunkCount? v with
+      | none => false
+      | some n => decide (auditFoldChunks n (fun i => auditFieldChunk v i) = v)))
+  assertBool "the chunk count grows with the value, and is minimal at each width"
+    (decide (auditFieldChunkCount? 7 = some 1) &&
+     decide (auditFieldChunkCount? 4294967296 = some 2) &&
+     decide (auditFieldChunkCount? (2 ^ 96) = some 4))
+  -- The fail-closed boundary: at 2^128 the reader REFUSES rather than
+  -- truncating.  A truncating reader would hand a monitor a wrong value it had
+  -- no way to distinguish from a right one.
+  assertBool "the first value at the exported width is accepted; the next is refused"
+    (decide ((auditFieldChunkCount? (2 ^ 128 - 1)).isSome = true) &&
+     decide (auditFieldChunkCount? (2 ^ 128) = none))
+  -- The load-bearing negative: a fixed two-chunk protocol — the design this
+  -- replaced — would accept 2^96 and silently return the wrong value, because
+  -- two 32-bit chunks bound a field at 2^64.
+  assertBool "NEGATIVE: a fixed two-chunk fold does NOT recover a value above 2^64"
+    (decide (auditFoldChunks 2 (fun i => auditFieldChunk (2 ^ 96) i) ≠ 2 ^ 96))
+  -- The designation protocol, on the kernel's own basis string.
+  let bytes := auditBasisBytes (auditEntry auditPartialReader auditPartialReader
+    lowNotification 0 c0)
+  assertBool "the kernel's own basis designation is non-empty and within the exported width"
+    (decide (bytes.length > 0) && decide (bytes.length ≤ maxAuditDesignationBytes))
+  assertBool "every designation byte is recovered from its chunk"
+    ((List.range bytes.length).all (fun j =>
+      decide (auditBasisByteOfChunk (auditBasisChunkValue bytes (j / 4)) (j % 4)
+        = (bytes.getD j 0).toNat)))
+  -- The core and trust bit ride one word, and both decode.
+  let kernelEvent := auditEntry auditPartialReader auditPartialReader lowNotification 0 c1
+  let integratorEvent : DeclassificationEvent :=
+    { kernelEvent with authorizationBasis := .integratorOverride "operator" }
+  assertBool "the core and the kernel-issued trust bit both decode from one word"
+    (decide (auditCoreAndTrustWord kernelEvent % auditFieldChunkModulus = c1.val) &&
+     decide (auditCoreAndTrustWord kernelEvent / auditFieldChunkModulus = 1) &&
+     decide (auditCoreAndTrustWord integratorEvent / auditFieldChunkModulus = 0))
+  -- The load-bearing negative: the DESIGNATION alone is forgeable — an
+  -- integrator may name its authority with the kernel's own literal — which is
+  -- why the trust bit is exported as data rather than inferred from the string.
+  assertBool "NEGATIVE: the designation alone does not distinguish a forged basis"
+    (decide (auditBasisBytes { kernelEvent with
+        authorizationBasis := .integratorOverride "DeclassificationPolicy.canDeclassify" }
+      = auditBasisBytes kernelEvent) &&
+     decide (auditCoreAndTrustWord { kernelEvent with
+        authorizationBasis := .integratorOverride "DeclassificationPolicy.canDeclassify" }
+      ≠ auditCoreAndTrustWord kernelEvent))
+
+/-- §9.3  SM9.A.2 — the status word and the two reader classes. -/
+private def runAuditReaderClassChecks : IO Unit := do
+  IO.println "--- §9.3 SM9.A.2 the two reader classes ---"
+  let drainedState : SystemState :=
+    { auditMixedState with declassificationAuditEpoch := 17 }
+  let monitorStatus := auditReadWord auditGenericCtx
+    auditMonitorLabeling.auditMonitorClearance auditMonitorReader drainedState .status
+  let partialStatus := auditReadWord auditGenericCtx
+    auditMonitorLabeling.auditMonitorClearance auditPartialReader drainedState .status
+  assertBool "a monitor's status carries the visible length AND the global epoch"
+    (match monitorStatus with
+     | .error _ => false
+     | .ok w => decide (auditStatusVisibleLength w = 3) &&
+                decide (auditStatusGeneration w = 17))
+  assertBool "a partial reader's status carries its OWN visible length"
+    (match partialStatus with
+     | .error _ => false
+     | .ok w => decide (auditStatusVisibleLength w = 2))
+  -- The load-bearing negative: the epoch COUNTS entries, including entries the
+  -- partial reader cannot see, so exporting it would tell that reader how much
+  -- history it is missing.  It reads zero, and reads zero at every epoch.
+  assertBool "NEGATIVE: a partial reader is told NOTHING about the drain generation"
+    (match partialStatus,
+       auditReadWord auditGenericCtx auditMonitorLabeling.auditMonitorClearance
+         auditPartialReader auditMixedState .status with
+     | .ok w, .ok w0 =>
+         decide (auditStatusGeneration w = 0) && decide (w = w0)
+     | _, _ => false)
+  -- Entry identity: view-local for a partial reader, global for a monitor.
+  let partialTs := auditReadWord auditGenericCtx auditMonitorLabeling.auditMonitorClearance
+    auditPartialReader drainedState (.field 1 .timestamp 0)
+  let monitorTs := auditReadWord auditGenericCtx auditMonitorLabeling.auditMonitorClearance
+    auditMonitorReader drainedState (.field 1 .timestamp 0)
+  assertBool "a partial reader's entry identity is its own index; a monitor's is the timestamp"
+    (match partialTs, monitorTs with
+     | .ok p, .ok m => decide (p = 1) && decide (m = 1)
+     | _, _ => false)
+  -- The identities genuinely differ where the trail's hidden prefix makes them:
+  -- the partial reader's SECOND visible entry is the trail's THIRD.
+  assertBool "…and they differ exactly where hidden entries sit between visible ones"
+    (match auditReadWord auditGenericCtx auditMonitorLabeling.auditMonitorClearance
+        auditPartialReader drainedState (.field 1 .timestamp 0),
+      auditReadWord auditGenericCtx auditMonitorLabeling.auditMonitorClearance
+        auditMonitorReader drainedState (.field 2 .timestamp 0) with
+     | .ok p, .ok m => decide (p = 1) && decide (m = 2) && decide (p ≠ m)
+     | _, _ => false)
+  -- Fail-closed on an index past the caller's own view.
+  assertBool "NEGATIVE: an index past the caller's own view is refused"
+    (match auditReadWord auditGenericCtx auditMonitorLabeling.auditMonitorClearance
+        auditPartialReader auditMixedState (.coreAndTrust 2) with
+     | .ok _ => false
+     | .error e => decide (e = KernelError.invalidArgument))
+  assertBool "…while the monitor, whose view is longer, reads the same index"
+    (match auditReadWord auditGenericCtx auditMonitorLabeling.auditMonitorClearance
+        auditMonitorReader auditMixedState (.coreAndTrust 2) with
+     | .error _ => false
+     | .ok _ => true)
+
+/-- §9.4  SM9.A / plan §3.4 — the single privileged-reader gate. -/
+private def runAuditMonitorGateChecks : IO Unit := do
+  IO.println "--- §9.4 SM9.A the configured monitor gate ---"
+  assertBool "the configured monitor qualifies; a partial reader does not"
+    (decide (auditMonitorAuthorized auditGenericCtx
+       auditMonitorLabeling.auditMonitorClearance auditMonitorReader = true) &&
+     decide (auditMonitorAuthorized auditGenericCtx
+       auditMonitorLabeling.auditMonitorClearance auditPartialReader = false))
+  assertBool "an unconfigured deployment has no monitor at all"
+    (allCores.all (fun c =>
+      decide (auditMonitorGate (liftLegacyContext auditUnmonitoredLabeling)
+        auditUnmonitoredLabeling.auditMonitorClearance auditMixedState c = false)))
+  -- The gate is computed from configuration: moving the trail and the epoch by
+  -- any amount leaves its verdict where it was.
+  assertBool "the gate does not move when the records move"
+    (allCores.all (fun c =>
+      decide (auditMonitorGate auditGenericCtx auditMonitorLabeling.auditMonitorClearance
+          { niState with declassificationAuditLog := [], declassificationAuditEpoch := 0 } c
+        = auditMonitorGate auditGenericCtx auditMonitorLabeling.auditMonitorClearance
+          { niState with declassificationAuditLog := auditMixedTrail,
+                         declassificationAuditEpoch := 999 } c)))
+  -- The load-bearing negative, and the whole reason the gate is configuration:
+  -- a rows-derived dominance predicate is VACUOUSLY TRUE on a drained-empty
+  -- trail, so it would reclassify a partial reader as a fully-dominating
+  -- monitor and hand it the epoch that counts the entries the drain removed.
+  assertBool "NEGATIVE: a rows-derived gate admits a partial reader once the trail is drained"
+    (-- before the drain the rows-derived predicate refuses it …
+     !(auditMixedTrail.all (fun e =>
+        auditGenericCtx.policy.canFlow e.srcDomain auditPartialReader)) &&
+     -- … after draining every entry it is vacuously true …
+     ([].all (fun e : DeclassificationEvent =>
+        auditGenericCtx.policy.canFlow e.srcDomain auditPartialReader)) &&
+     -- … while the configured gate refuses it throughout.
+     decide (auditMonitorAuthorized auditGenericCtx
+       auditMonitorLabeling.auditMonitorClearance auditPartialReader = false))
+
+/-- §9.5  SM9.A.3 — the drain. -/
+private def runAuditDrainChecks : IO Unit := do
+  IO.println "--- §9.5 SM9.A.3 the drain ---"
+  -- Core 1 runs `highCurrent`, whose embedded domain is the monitor clearance,
+  -- so it is the deployment's monitor; core 0 runs a public subject.
+  let drainOnMonitor := auditDrainVisiblePrefix auditGenericCtx
+    auditMonitorLabeling.auditMonitorClearance c1 1 auditMixedState
+  assertBool "the monitor drains a prefix and the trail shortens by exactly that many"
+    (match drainOnMonitor with
+     | .error _ => false
+     | .ok (n, st) =>
+         decide (n = 2) && decide (st.declassificationAuditLog.length = 2) &&
+         decide (st.declassificationAuditEpoch = 1))
+  assertBool "…the surviving entries are the trail's suffix, unmodified"
+    (match drainOnMonitor with
+     | .error _ => false
+     | .ok (_, st) => decide (st.declassificationAuditLog = auditMixedTrail.drop 1))
+  assertBool "…and a drain naming at least the trail's length clears it"
+    (match auditDrainVisiblePrefix auditGenericCtx
+        auditMonitorLabeling.auditMonitorClearance c1 99 auditMixedState with
+     | .error _ => false
+     | .ok (n, st) =>
+         decide (n = 0) && decide (st.declassificationAuditLog = []) &&
+         decide (st.declassificationAuditEpoch = 3))
+  -- The load-bearing negative: a partially-cleared caller drains NOTHING — not
+  -- a prefix, not one entry.  A partial-visibility prefix drain would reveal the
+  -- positions of hidden entries, and repeated drains would enumerate the layout.
+  assertBool "NEGATIVE: a partially-cleared caller drains nothing at all"
+    (match auditDrainVisiblePrefix auditGenericCtx
+        auditMonitorLabeling.auditMonitorClearance c0 1 auditMixedState with
+     | .ok _ => false
+     | .error e => decide (e = KernelError.illegalAuthority))
+  assertBool "NEGATIVE: an unconfigured deployment cannot drain even from the monitor's core"
+    (match auditDrainVisiblePrefix (liftLegacyContext auditUnmonitoredLabeling)
+        auditUnmonitoredLabeling.auditMonitorClearance c1 1 auditMixedState with
+     | .ok _ => false
+     | .error e => decide (e = KernelError.illegalAuthority))
+  -- The timestamp discipline survives the drain, which is the whole reason the
+  -- epoch is mounted.
+  assertBool "the trail stays well-formed at its new epoch"
+    (decide (declassificationTrailWellFormed auditMixedState = true) &&
+     (match drainOnMonitor with
+      | .error _ => false
+      | .ok (_, st) => decide (declassificationTrailWellFormed st = true)))
+
+/-- §9.6  SM9.A.1a — the epoch, and the timestamp reuse it exists to prevent. -/
+private def runAuditEpochChecks : IO Unit := do
+  IO.println "--- §9.6 SM9.A.1a the timestamp epoch ---"
+  assertBool "boot is the 0-anchored instance: empty trail, zero epoch"
+    (decide ((default : SystemState).declassificationAuditEpoch = 0) &&
+     decide (declassificationTrailWellFormed (default : SystemState) = true))
+  -- The headline: drain, then record, and the new entry's timestamp belongs to
+  -- no surviving entry.
+  let afterDrain := auditDrainVisiblePrefix auditGenericCtx
+    auditMonitorLabeling.auditMonitorClearance c1 1 auditMixedState
+  assertBool "after a drain the next event's timestamp collides with NO surviving entry"
+    (match afterDrain with
+     | .error _ => false
+     | .ok (_, st) =>
+         let next := st.declassificationAuditEpoch + st.declassificationAuditLog.length
+         decide (next = 3) &&
+         st.declassificationAuditLog.all (fun e => decide (e.timestamp ≠ next)))
+  -- The load-bearing negative, and the reason the epoch is a mounted field: the
+  -- PRE-EPOCH rule `timestamp := log.length` stamps the next entry `2`, which
+  -- the surviving third entry already carries.
+  assertBool "NEGATIVE: the pre-epoch producer REUSES a timestamp after a drain"
+    (match afterDrain with
+     | .error _ => false
+     | .ok (_, st) =>
+         let preEpochNext := st.declassificationAuditLog.length
+         st.declassificationAuditLog.any (fun e => decide (e.timestamp = preEpochNext)))
+  assertBool "…and the epoch is monotone: a drain advances it, never rewinds it"
+    (match afterDrain with
+     | .error _ => false
+     | .ok (_, st) =>
+         decide (auditMixedState.declassificationAuditEpoch ≤ st.declassificationAuditEpoch))
+
+/-- §9.7  SM9.A.10 — the live syscall arms. -/
+private def runAuditLiveArmChecks : IO Unit := do
+  IO.println "--- §9.7 SM9.A.10 the live audit syscalls ---"
+  assertBool "both audit syscalls are in the ABI, with different required rights"
+    (decide (SyscallId.auditRead.toNat = 31) &&
+     decide (SyscallId.auditDrain.toNat = 32) &&
+     decide (SyscallId.count = 33) &&
+     decide (syscallRequiredRight .auditRead = AccessRight.read) &&
+     decide (syscallRequiredRight .auditDrain = AccessRight.write))
+  assertBool "both return a WORD, so the boundary reads the staged frame rather than constructing"
+    (decide (Architecture.syscallReturnShape .auditRead = .word) &&
+     decide (Architecture.syscallReturnShape .auditDrain = .word))
+  -- The confused-deputy gate: a fully-rights-bearing capability to an ordinary
+  -- object — the shape every thread holds to its own TCB — is REJECTED.
+  assertBool "NEGATIVE: an ordinary capability carrying every right is rejected"
+    ((match extractAuditAuthority
+        { target := .object lowNotification, rights := AccessRightSet.ofList AccessRight.all,
+          badge := none } with
+      | .error e => decide (e = KernelError.invalidCapability)
+      | .ok _ => false) &&
+     (match extractAuditAuthority Capability.auditTrailRead with
+      | .ok _ => true
+      | .error _ => false))
+  assertBool "a read-only audit capability provably cannot drain"
+    (decide (Capability.auditTrailRead.hasRight .read = true) &&
+     decide (Capability.auditTrailRead.hasRight .write = false) &&
+     decide (Capability.auditTrailManage.hasRight .write = true))
+  -- The operand encoding round-trips, so every sub-operation is reachable.
+  assertBool "every sub-operation round-trips through the three-word operand encoding"
+    (let ops : List AuditReadOp :=
+       [.status, .fieldChunkCount 3 .srcDomain, .fieldChunkCount 3 .dstDomain,
+        .fieldChunkCount 3 .targetObject, .fieldChunkCount 3 .timestamp,
+        .field 3 .srcDomain 1, .field 3 .dstDomain 1, .field 3 .targetObject 1,
+        .field 3 .timestamp 1, .coreAndTrust 3, .basisByteCount 3, .basisChunk 3 2]
+     decide (ops.length = auditReadOpcodeCount) &&
+     ops.all (fun op =>
+       let (a, b, k) := encodeAuditReadOp op
+       decide (decodeAuditReadOp a b k = some op)))
+  assertBool "NEGATIVE: an opcode outside the table is refused, never guessed at"
+    (decide (decodeAuditReadOp auditReadOpcodeCount 0 0 = none) &&
+     decide (decodeAuditReadOp 9999 0 0 = none))
+  -- The live entry point resolves the reader's clearance from the running
+  -- subject, so a caller cannot name its own.
+  assertBool "the live entry reads at the RUNNING subject's clearance"
+    (match auditReadFromCore auditGenericCtx auditMonitorLabeling.auditMonitorClearance c1
+        .status auditMixedState,
+      auditReadFromCore auditGenericCtx auditMonitorLabeling.auditMonitorClearance c0
+        .status auditMixedState with
+     | .ok (wMonitor, _), .ok (wPartial, _) =>
+         decide (auditStatusVisibleLength wMonitor = 3) &&
+         decide (auditStatusVisibleLength wPartial = 2)
+     | _, _ => false)
+  assertBool "NEGATIVE: an idle core cannot read — there is no subject whose clearance selects a view"
+    (match auditReadFromCore auditGenericCtx auditMonitorLabeling.auditMonitorClearance c2
+        .status auditMixedState with
+     | .ok _ => false
+     | .error e => decide (e = KernelError.illegalState))
+  assertBool "a read writes nothing at all"
+    (match auditReadFromCore auditGenericCtx auditMonitorLabeling.auditMonitorClearance c1
+        .status auditMixedState with
+     | .error _ => false
+     | .ok (_, st) => decide (st.declassificationAuditLog = auditMixedTrail) &&
+                      decide (st.declassificationAuditEpoch =
+                        auditMixedState.declassificationAuditEpoch))
+
+
+/-- §9.8  The SM9.A acceptance gate — **the 256-entry cliff, end to end.**
+
+SM8.C's trail is bounded and fail-closed, so a deployment that performs
+`maxDeclassificationAuditEntries` authorized downgrades stops being able to
+declassify at all.  This is the scenario the phase exists to close, run for
+effect on the live transition rather than asserted about its parts: fill →
+refuse → read → drain → declassify again, and the timestamp of the entry
+recorded *after* the drain must not collide with one the drain removed.
+
+The collision is what makes SM9.A.1a load-bearing: under the pre-epoch producer
+(`timestamp := log.length`) the post-drain entry is stamped `0`, which every
+drained entry also carried, so `declassificationAuditLog_timestamp_identifies_event`
+would be false the moment drain existed. -/
+private def runAuditCapacityCliffChecks : IO Unit := do
+  IO.println "--- §9.8 SM9.A acceptance: the 256-entry cliff, end to end ---"
+  let ctx := liftLegacyContext auditMonitorLabeling
+  let policy := auditMonitorLabeling.declassificationPolicy
+  let request : DeclassificationRequest := { core := c1, targetId := lowNotification }
+  -- STEP 1 — fill the trail with `maxDeclassificationAuditEntries` genuine
+  -- authorized downgrades, through the live transition.
+  let filled :=
+    declassifyRun ctx policy (List.replicate maxDeclassificationAuditEntries request) niState
+  assertBool "filling the trail through the LIVE transition reaches capacity exactly"
+    (match filled with
+     | .error _ => false
+     | .ok ((), st) =>
+         decide (st.declassificationAuditLog.length = maxDeclassificationAuditEntries) &&
+         decide (auditLogBounded st.declassificationAuditLog) &&
+         declassificationTrailWellFormed st)
+  match filled with
+  | .error _ => assertBool "the fill run must succeed" false
+  | .ok ((), fullState) => do
+    -- STEP 2 — the cliff: the next authorized downgrade is REFUSED, and with
+    -- its own discriminant, so a monitor can tell "drain the trail" apart from
+    -- "the policy said no".
+    assertBool "STEP 2: at capacity the next authorized downgrade is refused, fail-closed"
+      (match declassifyObjectFromCore ctx policy c1 lowNotification fullState with
+       | .ok _ => false
+       | .error e => decide (e = KernelError.auditLogCapacityExceeded))
+    -- STEP 3 — the monitor reads the trail it is cleared for.  The status word
+    -- carries both components in one read, and the visible length is the whole
+    -- trail because every entry is sourced at a domain the monitor dominates.
+    let statusBefore :=
+      auditReadFromCore ctx auditMonitorLabeling.auditMonitorClearance c1 .status fullState
+    assertBool "STEP 3: the monitor reads the full visible length and the epoch in ONE word"
+      (match statusBefore with
+       | .error _ => false
+       | .ok (w, _) =>
+           decide (auditStatusVisibleLength w = maxDeclassificationAuditEntries) &&
+           decide (auditStatusGeneration w = 0))
+    -- …and it reads a real entry's fields, at global identity (it dominates
+    -- every source, so its `timestamp` is the global one rather than an index).
+    assertBool "…and an entry's exported timestamp is its GLOBAL identity for a monitor"
+      (match auditReadFromCore ctx auditMonitorLabeling.auditMonitorClearance c1
+          (.field 7 .timestamp 0) fullState with
+       | .error _ => false
+       | .ok (w, _) => decide (w = 7))
+    -- STEP 4 — drain.  A monitor drains the whole visible prefix; the epoch
+    -- advances by exactly what was removed.
+    let drained := auditDrainVisiblePrefix ctx auditMonitorLabeling.auditMonitorClearance c1
+      maxDeclassificationAuditEntries fullState
+    assertBool "STEP 4: the monitor drains the trail; the epoch advances by what was removed"
+      (match drained with
+       | .error _ => false
+       | .ok (remaining, st) =>
+           decide (remaining = 0) &&
+           decide (st.declassificationAuditLog = []) &&
+           decide (st.declassificationAuditEpoch = maxDeclassificationAuditEntries) &&
+           declassificationTrailWellFormed st)
+    match drained with
+    | .error _ => assertBool "the drain must succeed for a dominating monitor" false
+    | .ok (_, drainedState) => do
+      -- STEP 5 — the cliff is GONE: the same downgrade that was refused at
+      -- capacity now succeeds.  This is the acceptance criterion.
+      let afterDrain := declassifyObjectFromCore ctx policy c1 lowNotification drainedState
+      assertBool "STEP 5: the downgrade refused at capacity now SUCCEEDS — the cliff is gone"
+        (match afterDrain with
+         | .error _ => false
+         | .ok ((), st) => decide (st.declassificationAuditLog.length = 1))
+      -- STEP 6 — and the record is still uniquely identified.  The new entry is
+      -- stamped `maxDeclassificationAuditEntries`, not `0`.
+      assertBool "STEP 6: the post-drain entry carries a FRESH timestamp, and the trail stays well-formed"
+        (match afterDrain with
+         | .error _ => false
+         | .ok ((), st) =>
+             declassificationTrailWellFormed st &&
+             st.declassificationAuditLog.all (fun e =>
+               decide (e.timestamp = maxDeclassificationAuditEntries)))
+      -- THE LOAD-BEARING NEGATIVE: the pre-epoch producer would have reused a
+      -- timestamp here.  `log.length` after the drain is `0`, and `0` is what
+      -- the first drained entry carried — so the identification theorem would
+      -- have been falsified by the very operation that makes the trail usable.
+      assertBool "NEGATIVE: the PRE-EPOCH rule would have stamped this entry 0 — a reused timestamp"
+        (decide (drainedState.declassificationAuditLog.length = 0) &&
+         decide (fullState.declassificationAuditLog.any (fun e => decide (e.timestamp = 0))))
+      -- A partial reader is refused at every step of this story: it cannot
+      -- drain, and its own view of the drained trail is empty rather than a
+      -- window onto what the monitor removed.
+      assertBool "NEGATIVE: a partial reader could not have performed any of this"
+        ((match auditDrainVisiblePrefix ctx auditMonitorLabeling.auditMonitorClearance c0
+            maxDeclassificationAuditEntries fullState with
+          | .ok _ => false
+          | .error e => decide (e = KernelError.illegalAuthority)) &&
+         (match auditReadFromCore ctx auditMonitorLabeling.auditMonitorClearance c0
+            .status fullState with
+          | .error _ => false
+          | .ok (w, _) => decide (auditStatusVisibleLength w = 0) &&
+                          decide (auditStatusGeneration w = 0)))
+      -- …and an UNCONFIGURED deployment keeps the cliff, which is the
+      -- conservative default rather than an oversight.
+      assertBool "NEGATIVE: an unconfigured deployment still has the cliff — no monitor, no drain"
+        (match auditDrainVisiblePrefix (liftLegacyContext auditUnmonitoredLabeling)
+            auditUnmonitoredLabeling.auditMonitorClearance c1
+            maxDeclassificationAuditEntries fullState with
+         | .ok _ => false
+         | .error e => decide (e = KernelError.illegalAuthority))
 
 def runSmpInformationFlowChecks : IO Unit := do
   IO.println "WS-SM SM8.A / SM8.B / SM8.C / SM8.D / SM8.E — per-core observable state, \
@@ -6851,11 +7780,19 @@ non-interference, declassification audit, fine-lock information flow and phase c
   runFineLockClaimInventoryChecks
   runFineLockTraceFixtureCheck
   runPhaseSurfaceChecks
+  runAuditVisibleViewChecks
+  runAuditChunkProtocolChecks
+  runAuditReaderClassChecks
+  runAuditMonitorGateChecks
+  runAuditDrainChecks
+  runAuditEpochChecks
+  runAuditLiveArmChecks
+  runAuditCapacityCliffChecks
   runInformationFlowTraceFixtureCheck
   IO.println "===================================="
   IO.println ("All SM8.A per-core observable-state, SM8.B non-interference, " ++
-    "SM8.C declassification-audit, SM8.D fine-lock information-flow and " ++
-    "SM8.E phase-closure checks PASS.")
+    "SM8.C declassification-audit, SM8.D fine-lock information-flow, " ++
+    "SM8.E phase-closure and SM9.A audit-reader checks PASS.")
 
 end SeLe4n.Testing.SmpInformationFlow
 

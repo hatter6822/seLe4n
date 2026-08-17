@@ -1690,8 +1690,8 @@ run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_count' SeLe4n/K
 # repeating a `decide` drifted from it.  Anchoring the PAIR couples them: bump
 # the theorem without the sentence and this fails, which is the only mechanism
 # that has actually held.
-run_prose_check "INVARIANT" rg -n 'per-core boundary has 55 entries' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore\.length = 55' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_prose_check "INVARIANT" rg -n 'per-core boundary has 57 entries' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore\.length = 57' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_extends_canonical' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^def enforcementBoundaryPerCoreComplete' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_is_complete' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
@@ -1794,7 +1794,9 @@ run_check "INVARIANT" rg -n '^theorem notificationSignalWriteSet_eq_lockSet_wait
 run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem wakeThread_crossCoreNonInterference_of_visible_thread' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n 'CrossCoreTransition.all.length = 26' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+# SM9.A.4b took the inventory 26 -> 28 with the two audit readers, both of
+# which take an executing core and carry an EMPTY write set.
+run_check "INVARIANT" rg -n 'CrossCoreTransition.all.length = 28' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 
 # PR #861 review round 34: the context-restore gate lives in WRAPPERS, never
 # inside the transitions.  An in-transition `if contextRestoreSeamLive` reduces
@@ -2087,7 +2089,7 @@ run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_crossCoreNonInte
 run_check "INVARIANT" rg -n '^def endpointReplyRecvWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count : CrossCoreTransition\.all\.length = 26' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count : CrossCoreTransition\.all\.length = 28' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # Round 14: all three SchedContext arms this cut made remote writers are audited.
 # The negative is the point — `crossCoreRemoteWriterPendingAudit` was the counted
 # gap while two were unproven, and it must not come back as an empty list, which
@@ -2192,7 +2194,13 @@ run_check "INVARIANT" rg -n '^theorem DeclassificationEvent_perCore_audit' SeLe4
 # per-core log would have lost it.
 run_check "INVARIANT" rg -n '^theorem crossCoreChain_not_within_one_view' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 run_check "INVARIANT" rg -n '^theorem declassificationChain_recorded_across_cores' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^theorem declassificationAuditLog_timestamp_identifies_event' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+# SM9.A.1a moved the timestamp layer DOWN to `AuditRecord.lean`, below
+# `Model/State`, so the production drain can state its preservation — the same
+# extraction SM7.A performed for `TlbInvalidation`.  The per-core consumer is
+# `auditLogOnCore_timestamp_identifies_event`, which is `start`-parameterised
+# because a drained trail no longer begins at 0.
+run_check "INVARIANT" rg -n '^theorem declassificationAuditLog_timestamp_identifies_event' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+run_check "INVARIANT" rg -n '^theorem auditLogOnCore_timestamp_identifies_event' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 # SM8.C.6: the rules, including the SM8.B consumer.  The endpoint rule must be
 # stated against the STATE-RESOLVED gate: `endpointFlowCheck` takes neither a
 # state nor a core, so a per-core claim about it would carry a decorative `c`.
@@ -2376,8 +2384,9 @@ run_check "INVARIANT" rg -n 'NEGATIVE: linearOrder disagrees on exactly one of t
 # docstring must NOT restate it, which is how it came to read "33 entries"
 # across six expansions.
 run_prose_negative_check "INVARIANT" rg -n 'classification table \([0-9]+ entries\)' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
-# WS-SM SM8.E.3 took the canonical boundary 39 -> 40 with the 2PL bracket.
-run_check "INVARIANT" rg -n 'enforcementBoundaryExtended.length = 40' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+# WS-SM SM8.E.3 took the canonical boundary 39 -> 40 with the 2PL bracket;
+# SM9.A.11 took it 40 -> 42 with the two audit readers.
+run_check "INVARIANT" rg -n 'enforcementBoundaryExtended.length = 42' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
 run_check "INVARIANT" rg -n '^  runEndpointPolicyGateChecks' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: a widening override cannot open a flow the lattice denies' tests/SmpInformationFlowSuite.lean
 
@@ -2787,7 +2796,7 @@ run_check "INVARIANT" rg -n 'NEGATIVE: it IS visible at the core it landed on' t
 run_check "INVARIANT" rg -n 'NEGATIVE: the remote wake is not confined to the EXECUTING core' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'SCOPE: the decidable slice cannot see a badge write' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n '^\[smp-information-flow\]' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'enforcement boundary: canonical 40' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'enforcement boundary: canonical 42' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'smp_information_flow\.expected' tests/fixtures/smp_information_flow.expected.sha256
 # The FIXTURE's independence probe must land on a core whose current thread the
 # low observer can SEE, or the reported set is `allCores` and the line is
@@ -2809,6 +2818,209 @@ run_check "INVARIANT" rg -n 'KernelOperation.all.filter perCoreConfinementDerive
 run_check "INVARIANT" rg -n '^theorem perCoreConfinementNotDerived_count' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n 'KernelOperation.all.map kernelOperationPerCoreNiTheorem' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 
+
+# ---------------------------------------------------------------------------
+# WS-SM SM9.A — the declassification audit trail's READER
+# (plan SMP_DECLASSIFICATION_COMPLETION_PLAN.md §4 SM9.A.1 … SM9.A.13).
+# ---------------------------------------------------------------------------
+# SM8.C shipped a durable, bounded, FAIL-CLOSED trail that nothing could read,
+# so a deployment performing `maxDeclassificationAuditEntries` authorized
+# downgrades stopped being able to declassify at all until reboot.  SM9.A is
+# the read side.  The module is production and sits BELOW the projection layer,
+# so it can be consumed by the live syscall arms without pulling the SM8.A/B
+# non-interference closure into the dispatch path.
+# The live `.auditRead` / `.auditDrain` arms are in `Kernel/API.lean`, so the
+# module is production-reachable through the dispatch closure rather than
+# through a staged aggregator — which is why it must NOT appear in the staged
+# allowlist.  Both directions are pinned.
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.InformationFlow\.AuditRead' SeLe4n/Kernel/API.lean
+run_negative_check "INVARIANT" rg -n '^SeLe4n\.Kernel\.InformationFlow\.AuditRead\b' scripts/staged_module_allowlist.txt
+run_check "INVARIANT" rg -n '^def auditLogVisibleTo' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+
+# SM9.A.1: the visible view is a genuine sublist, and — the no-gap-leak
+# property — a function of the reader's clearance ALONE.  Under a sparse global
+# index a partial reader's indices would shift around a hidden entry, telling it
+# both that one exists and exactly where.
+run_check "INVARIANT" rg -n '^theorem auditLogVisibleTo_sublist' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditLogVisibleTo_hidden_insert' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditLogVisibleTo_determined_by_clearance' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+
+# SM9.A.1a: the persistent timestamp epoch.  Sequenced BEFORE drain, because a
+# drain without it reuses timestamps: `timestamp := log.length` after removing a
+# prefix collides with a surviving entry, falsifying the identification theorem.
+run_check "INVARIANT" rg -n 'declassificationAuditEpoch : Nat := 0' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^def auditTimestampsFrom' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+run_check "INVARIANT" rg -n '^def declassificationTrailWellFormed' SeLe4n/Kernel/InformationFlow/Declassification.lean
+run_check "INVARIANT" rg -n 'timestamp := epoch \+ log\.length' SeLe4n/Kernel/InformationFlow/Declassification.lean
+run_check "INVARIANT" rg -n '^theorem declassificationTrail_timestamp_identifies_event' SeLe4n/Kernel/InformationFlow/Declassification.lean
+run_check "INVARIANT" rg -n '^theorem storeObject_declassificationAuditEpoch_eq' SeLe4n/Model/State.lean
+# The witness that the PRE-EPOCH producer is genuinely unsound once drain
+# exists.  Kept as a theorem so a regression to `timestamp := log.length` fails
+# to build rather than quietly reintroducing the collision.
+run_check "INVARIANT" rg -n '^theorem preEpochTimestamp_reused_after_drain' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+# NEGATIVE: the producer must never stamp an entry from the log length alone.
+run_negative_check "INVARIANT" rg -n 'timestamp := log\.length' SeLe4n/Kernel/InformationFlow/Declassification.lean
+
+# SM9.A.2: the arbitrary-length chunk protocol.  All four exported fields are
+# unbounded `Nat`s, so a fixed low/high pair would only move the truncation
+# point to `2^64`; the reader fails closed above the accepted width rather than
+# silently truncating, and the basis DESIGNATION ships too (exporting the trust
+# bit alone collapses every `integratorOverride` to one value).
+run_check "INVARIANT" rg -n '^def auditFieldChunk' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^def maxAuditFieldChunks' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditReadField_reconstructs' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditReadBasis_reconstructs_designation' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditFieldBound_unreachable_in_kernel' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n 'auditFieldTooLarge' SeLe4n/Model/State.lean
+# SM9.A.2: `status` is a SINGLE read.  Chunking it traded aliasing for tearing
+# on the first interleaved drain, which is what the negative witness records.
+run_check "INVARIANT" rg -n '^theorem auditReadStatus_atomic' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditStatusSplitRead_tears' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+
+# SM9.A.2: the two reader classes.  A partial reader gets VIEW-LOCAL indices and
+# learns nothing of the global position; a fully-dominating monitor gets global
+# identities so it can correlate across drains.  The per-observer drain token
+# the first design specified is unbuildable — labels are an unbounded `Nat`, so
+# there is no finite family to key state by.
+run_check "INVARIANT" rg -n '^theorem auditReadIndex_is_view_local' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem dominatingReader_sees_global_identity' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditRead_hides_global_position' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem observerScopedGeneration_not_mountable' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+
+# SM9.A.3: drain under the §3.4 dominance gate.  A partial-visibility prefix
+# drain reveals the POSITIONS of hidden entries and repeated drains enumerate
+# the hidden layout, so drain is authorized only for a caller dominating every
+# recorded source — and the gate is derived from the CONFIGURATION, never from
+# the rows the trail currently holds (drain a trail to `[]` and a rows-derived
+# predicate goes vacuously true exactly where it matters).
+run_check "INVARIANT" rg -n '^def auditDrainVisiblePrefix' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditDrain_requires_full_dominance_of_subjects' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditDrain_partial_reader_drains_nothing' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditMonitorGate_is_configuration_derived' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditMonitorGate_records_derived_unsound' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditDrain_preserves_wellFormed_at_epoch' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditDrain_next_timestamp_fresh' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditDrain_preserves_proofLayerInvariantBundle' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+# The monitor clearance is CONFIGURATION on the labeling context, so an
+# unconfigured deployment has no reader at all and keeps the cliff.
+run_check "INVARIANT" rg -n 'auditMonitorClearance : Option SecurityDomain := none' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n '^theorem auditDrain_unconfigured_denied' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+
+# SM9.A.4a: the reader-visibility discipline.  The clause set is a TOTAL
+# FUNCTION on `ReadableStructure`, not a list — a `mem_all` over a
+# hand-maintained type cannot force a newly mounted readable field to add a
+# constructor, whereas a missing case in a total function is a build error.
+run_check "INVARIANT" rg -n '^def readableStructureAgrees' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^def auditObservationalEquivalence' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem auditReadOp_structure_total' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem readableStructure_list_gate_insufficient' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+# The lemma `lowEquivalent` CANNOT supply: `ObservableState` does not contain
+# the trail, so "low-equivalent states give identical visible views" is false
+# and could not have been the flow argument.
+run_check "INVARIANT" rg -n '^theorem lowEquivalent_does_not_determine_visible_view' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+# SM9.A.4b: the reader is a function of the visible view alone, so it opens no
+# channel — the not-CC-8 argument, stated once.
+run_check "INVARIANT" rg -n '^theorem auditRead_no_channel' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem auditReadFromCore_no_channel' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem auditDrain_preserves_projectionOnCore' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem auditReadFromCore_perCore_NI' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+
+# SM9.A.5: the retry protocol — an append cannot move an index-keyed read.
+run_check "INVARIANT" rg -n '^theorem auditRead_stable_under_append' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditRead_bracketed_detects_drain' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+
+# SM9.A.6 / SM9.A.7: the ABI, both halves.  Two syscalls, count 31 -> 33, and
+# the Rust mirrors that must agree with them.
+run_check "INVARIANT" rg -n '\| \.auditRead\s+=> 31' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '\| \.auditDrain\s+=> 32' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '31 => some \.auditRead' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '32 => some \.auditDrain' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^def count : Nat := 33' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n 'AuditRead = 31' rust/sele4n-types/src/syscall.rs
+run_check "INVARIANT" rg -n 'AuditDrain = 32' rust/sele4n-types/src/syscall.rs
+run_check "INVARIANT" rg -n 'pub const COUNT: usize = 33;' rust/sele4n-types/src/syscall.rs
+run_check "INVARIANT" rg -n 'AuditFieldTooLarge = 55' rust/sele4n-types/src/error.rs
+
+# SM9.A.8: the safe wrappers.  Without them the syscalls are hand-encode-only,
+# which is the gap v0.32.98 closed for `.vspaceUnifyInstruction`.
+run_check "INVARIANT" rg -n 'pub fn audit_read' rust/sele4n-sys/src/audit.rs
+run_check "INVARIANT" rg -n 'pub fn audit_drain' rust/sele4n-sys/src/audit.rs
+run_check "INVARIANT" rg -n '^pub mod audit;' rust/sele4n-sys/src/lib.rs
+
+# SM9.A.9: authority is a dedicated `CapTarget`, NOT the `.read`/`.write` right
+# alone.  `syscallLookupCap` never constrains `cap.target`, so a rights-only
+# gate would repeat the v0.32.97 confused-deputy class exactly — a thread
+# holding a writable capability to its own TCB would drain the audit trail.
+run_check "INVARIANT" rg -n '^  \| auditTrail' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^def extractAuditAuthority' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem extractAuditAuthority_rejects_non_audit_capability' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem auditTrailRead_cannot_drain' SeLe4n/Model/Object/Types.lean
+# NEGATIVE: the audit arms must not be gated on the right alone.  A dispatch arm
+# that inspects `cap.rights` without first extracting the `.auditTrail` target
+# is the confused deputy this sub-task exists to close.
+run_negative_check "INVARIANT" rg -n 'auditRead =>.*hasRight' SeLe4n/Kernel/API.lean
+
+# SM9.A.10: the live arms.  Each writes its result into the caller's return
+# register via WS-RA's `writeReturnFrameToTcb` — without which the reader
+# computes correctly and hands back the caller's own preloaded `x0`.  Both are
+# `.word`-shaped, so the boundary READS the staged frame rather than
+# constructing a unit one.
+run_check "INVARIANT" rg -n '\.auditRead\s+=> \.word' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '\.auditDrain\s+=> \.word' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem dispatchArm_auditRead_matches_returnShape' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchArm_auditDrain_matches_returnShape' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallDelegates_auditRead' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallDelegates_auditDrain' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem auditReadFromCore_toUInt64_lossless' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+# Fail-closed on the UNCHECKED path, and by default: there is no audit read
+# that bypasses the flow gate, and an unconfigured deployment has no reader.
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_auditRead_denied' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem unconfiguredDeployment_has_no_audit_reader' SeLe4n/Kernel/API.lean
+
+# SM9.A.11 / SM9.A.12 / SM9.A.13: the registries.  Enforcement boundary,
+# lock sets, the frozen-ops classifier, and the per-core routing gate — which
+# passes with ZERO allowlisted exceptions.
+run_check "INVARIANT" rg -n 'capabilityOnly "auditReadWord"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
+run_check "INVARIANT" rg -n 'capabilityOnly "auditDrainVisiblePrefix"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore.length = 57' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^def lockSet_auditRead' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^def lockSet_auditDrain' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '"auditReadWord": "auditReadFromCore"' scripts/per_core_routing_aliases.json
+run_check "INVARIANT" rg -n 'SeLe4n\.Kernel\.InformationFlow\.AuditRead' scripts/check_module_axioms.py
+# The two audit readers join the cross-core inventory with an EMPTY write set:
+# they take an executing core (the reader's clearance is resolved from the
+# subject it runs) and write no core's scheduler slots at all.
+run_check "INVARIANT" rg -n 'auditReadDispatch' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n 'auditDrainDispatch' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem auditReadFromCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+
+# SM9.A tests: the anchors, the elaboration examples, the seven runtime groups
+# and the acceptance gate.  §9.8 is the plan's own acceptance criterion run for
+# effect on the live transition: fill -> refuse -> read -> drain -> declassify
+# again, with the post-drain timestamp provably fresh.
+run_check "INVARIANT" rg -n '^  runAuditVisibleViewChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runAuditChunkProtocolChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runAuditReaderClassChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runAuditMonitorGateChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runAuditDrainChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runAuditEpochChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runAuditLiveArmChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^  runAuditCapacityCliffChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'STEP 5: the downgrade refused at capacity now SUCCEEDS' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: the PRE-EPOCH rule would have stamped this entry 0' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: an unconfigured deployment still has the cliff' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^private def auditReaderTraceLines' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'audit view: trail 3 entries' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=33' tests/fixtures/smp_information_flow.expected
+# The end-to-end ABI witness: the returned word is the SELECTED one, not the
+# caller's own preloaded `x0`.  Without the staged frame the assertion below
+# would read back whatever the caller left there.
+run_check "INVARIANT" rg -n "10a: .status. returns the visible length \\(2\\), not the caller's own x0" tests/SyscallReturnAbiSuite.lean
+run_check "INVARIANT" rg -n '10b: a field read returns the SELECTED entry' tests/SyscallReturnAbiSuite.lean
+run_check "INVARIANT" rg -n '10c: NEGATIVE — an all-rights capability to an ordinary object is rejected' tests/SyscallReturnAbiSuite.lean
+run_check "INVARIANT" rg -n '10e: NEGATIVE — an unconfigured deployment cannot drain' tests/SyscallReturnAbiSuite.lean
+run_check "INVARIANT" rg -n 'audit status .visible length 2, monitor.' tests/fixtures/syscall_return_abi.expected
+run_check "INVARIANT" rg -n 'audit drain of one entry .new visible length 1.' tests/fixtures/syscall_return_abi.expected
 
 # WS-H12d IPC message payload bounds anchors — predicate definitions + enforcement + theorems.
 run_check "INVARIANT" rg -n '^def maxMessageRegisters' SeLe4n/Model/Object/Types.lean

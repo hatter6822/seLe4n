@@ -142,7 +142,13 @@ def lockSetForSyscall (sid : SyscallId) (callerTid targetTid : ThreadId)
   | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
   | .tcbSetIPCBuffer | .tcbSetAffinity
   | .tcbBindNotification | .tcbUnbindNotification
-  | .declassify => none
+  | .declassify
+  -- WS-SM SM9.A.12: the audit reader and the drain are undeclared here for the
+  -- same reason as every other arm — the declared-footprint bracket is SM3.C.9
+  -- work, not SM9.A work — and note that declaring them would buy little: their
+  -- per-object footprints (`lockSet_auditRead` / `lockSet_auditDrain`) are two
+  -- *read* locks, since neither transition writes an object at all.
+  | .auditRead | .auditDrain => none
 
 /-- **WS-SM SM3.C.9**: the `tcbSuspend` arm is wired to the resolver.
 

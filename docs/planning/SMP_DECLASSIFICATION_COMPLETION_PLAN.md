@@ -861,12 +861,52 @@ from hidden state is dominating-reader-only or exported opaquely.
 
 Sizes: **T** trivial, **S** small, **M** medium, **L** large, **XL** very large.
 
-### SM9.A — The audit trail reader (15 sub-tasks)
+### SM9.A — The audit trail reader (15 sub-tasks) — **LANDED**
 
 Ships as **two PRs' worth of work at minimum**: SM9.A.1-.A.5 (the pure reader
 plus its observation relation) and SM9.A.6-.A.13 (the ABI, the live arms and
 their registries).  SM9.A.4a alone is a relation with congruence lemmas — see
 §3.4a — which is why the split is structural rather than a convenience.
+
+**Landing record.**  All fifteen sub-tasks landed in one cut.  The pure reader
+is the production leaf `InformationFlow/AuditRead.lean` (113 declarations,
+axiom-clean), placed **below** the projection layer so the live syscall arms
+consume it without pulling the SM8.A/B non-interference closure into the
+dispatch path — which is why `auditDrain_preserves_projection{,OnCore}` and the
+observation relation live in the staged `DeclassificationPerCore.lean` instead.
+Three design points moved during implementation, each because the drafted form
+was not available:
+
+1. **`auditMonitorClearanceIsTop` is unsatisfiable under the live lift.**  The
+   plan's §3.4 gate reads "∀ domain, `canFlow d m`", but `liftLegacyContext`'s
+   `legacyLattice` (PR #863) admits an unembedded `SecurityDomain` only to
+   itself, so no clearance is a top and the gate could never be discharged for
+   a real deployment.  It is kept (it is the right statement where a policy has
+   a top), and the **satisfiable** obligation `auditMonitorDominatesSubjects` —
+   ∀ *thread*, the monitor dominates that thread's domain — is what
+   `auditDrain_requires_full_dominance_of_subjects` consumes, bridged by
+   `auditTrailSourcesFromLabeling` (every recorded source is some thread's
+   domain: established by the producer, preserved by `drop`).  Both remain
+   configuration-derived, and the source predicate becomes *more* true as
+   entries vanish, so unlike a records-derived gate it cannot age.
+2. **The chunk protocol needed a fail-closed width.**  §3.3's "total for any
+   `Nat`" is not available, because the chunk *coordinates* are themselves
+   single words: `maxAuditFieldChunks = 4` with `KernelError.auditFieldTooLarge`
+   is the fail-closed ceiling, and `auditFieldBound_unreachable_in_kernel` is
+   the arithmetic that the ceiling is not reachable in practice.
+3. **The observation relation compares the raw filtered view plus the gated
+   epoch**, per §3.4a option (b), rather than the exported observations — which
+   keeps `auditRead_no_channel` a substantive theorem rather than a definitional
+   one.  The producer congruence needs `hSameEvent`, because a global timestamp
+   differs across states with different hidden histories; that a partial reader
+   still cannot tell is `auditRead_hides_global_position`.
+
+**Acceptance discharged**: `tests/SmpInformationFlowSuite.lean` §9.8 runs the
+gate's own scenario for effect on the live transition — fill the trail to
+`maxDeclassificationAuditEntries` through real authorized downgrades, observe
+`.auditLogCapacityExceeded`, read the status word and a field, drain, declassify
+again — with the post-drain timestamp provably fresh and the pre-epoch collision
+exhibited as the load-bearing negative.  607 assertions / 78 groups overall.
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|

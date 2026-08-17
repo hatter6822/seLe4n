@@ -185,6 +185,10 @@ def lockSetTheorems : List LockSetTheorem :=
       lockSet_vspaceUnifyInstruction .lockSet,
     lkst! "lockSet for declassify"
       lockSet_declassify .lockSet,
+    lkst! "lockSet for auditRead"
+      lockSet_auditRead .lockSet,
+    lkst! "lockSet for auditDrain"
+      lockSet_auditDrain .lockSet,
     lkst! "lockSet for serviceRegister"
       lockSet_serviceRegister .lockSet,
     lkst! "lockSet for serviceRevoke"
@@ -248,6 +252,10 @@ def lockSetTheorems : List LockSetTheorem :=
       lockSet_consistent_vspaceUnifyInstruction .consistency,
     lkst! "lockSet_consistent for declassify"
       lockSet_consistent_declassify .consistency,
+    lkst! "lockSet_consistent for auditRead"
+      lockSet_consistent_auditRead .consistency,
+    lkst! "lockSet_consistent for auditDrain"
+      lockSet_consistent_auditDrain .consistency,
     lkst! "lockSet_consistent for serviceRegister"
       lockSet_consistent_serviceRegister .consistency,
     lkst! "lockSet_consistent for serviceRevoke"
@@ -321,7 +329,10 @@ def lockSetTheorems : List LockSetTheorem :=
     lkst! "pipChainStart for tcbSuspend (revert from the captured blocking server when reply-blocked)"
       pipChainStart_tcbSuspend .chainStart]
 
-/-- WS-SM SM3.B: the inventory has exactly 103 entries (WS-SM SM8.C.9's
+/-- WS-SM SM3.B: the inventory has exactly 107 entries (WS-SM SM9.A.12's
+`auditRead` and `auditDrain` lockSet + consistency pairs — two more of the
+smallest declared footprint, two *read* locks each, because a trail read writes
+nothing at all and a drain writes only `SystemState` fields — on top of WS-SM SM8.C.9's
 `declassify` lockSet + consistency pair — the smallest declared footprint in the
 inventory, two *read* locks, because the transition's only write is a
 `SystemState` field rather than an object — on top of WS-SM SM7.D's
@@ -333,7 +344,7 @@ PR #822 Phase H's `mintReplyCap` pair, and SM6.B's `tcbBindNotification` /
 A regression that adds a new SM3.B theorem without updating the
 inventory fails this count witness at the Tier-3 surface check. -/
 theorem lockSetTheorems_count :
-    lockSetTheorems.length = 103 := by decide
+    lockSetTheorems.length = 107 := by decide
 
 /-- WS-SM SM3.B: 22 entries in the `projection` category
 (lockKind def + 7 per-variant simp lemmas + lockKind_eq_of_objectType
@@ -344,14 +355,14 @@ theorem lockSetTheorems_projection_count :
     (lockSetTheorems.filter (fun t => t.category == .projection)).length = 22 := by
   decide
 
-/-- WS-SM SM3.B: 31 entries in the `lockSet` category (one per SyscallId variant). -/
+/-- WS-SM SM3.B: 33 entries in the `lockSet` category (one per SyscallId variant). -/
 theorem lockSetTheorems_lockSet_count :
-    (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 31 := by
+    (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 33 := by
   decide
 
-/-- WS-SM SM3.B: 31 entries in the `consistency` category (one per SyscallId variant). -/
+/-- WS-SM SM3.B: 33 entries in the `consistency` category (one per SyscallId variant). -/
 theorem lockSetTheorems_consistency_count :
-    (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 31 := by
+    (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 33 := by
   decide
 
 /-- WS-SM SM3.B: 6 entries in the `acquireSort` category

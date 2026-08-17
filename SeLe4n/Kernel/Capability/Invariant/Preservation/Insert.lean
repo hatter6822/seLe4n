@@ -389,6 +389,7 @@ theorem mintReplyCap_preserves_capabilityInvariantBundle
                   simp only [CapTarget.replyCap.injEq] at h; subst h; rw [hRep]; simp) hInsert
       | cnodeSlot a b => simp [hSrc, hTgt] at hStep
       | replyCap rid => simp [hSrc, hTgt] at hStep
+      | auditTrail => simp [hSrc, hTgt] at hStep
 
 
 end SeLe4n.Kernel

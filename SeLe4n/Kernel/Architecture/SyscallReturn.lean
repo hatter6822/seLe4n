@@ -98,6 +98,7 @@ def toDiscriminant : KernelError → Nat
   | .missingSchedContext           => 52
   | .threadOnDifferentCore         => 53
   | .auditLogCapacityExceeded      => 54
+  | .auditFieldTooLarge            => 55
 
 /-- The inverse the tree never had: `Platform.FFI.KernelError.toUInt32` is
 one-directional, and the Rust side decodes with its own
@@ -160,25 +161,26 @@ def ofDiscriminant? : Nat → Option KernelError
   | 52 => some .missingSchedContext
   | 53 => some .threadOnDifferentCore
   | 54 => some .auditLogCapacityExceeded
+  | 55 => some .auditFieldTooLarge
   | _  => none
 
 /-- The discriminant map is a section of its inverse: every `KernelError`
 survives the numeric round trip.  With `toDiscriminant_lt` this pins the
-map as a bijection onto `0..54`. -/
+map as a bijection onto `0..55`. -/
 theorem ofDiscriminant?_toDiscriminant (e : KernelError) :
     ofDiscriminant? (toDiscriminant e) = some e := by
   cases e <;> rfl
 
-/-- Every discriminant is inside the 55-entry table. -/
-theorem toDiscriminant_lt (e : KernelError) : toDiscriminant e < 55 := by
+/-- Every discriminant is inside the 56-entry table. -/
+theorem toDiscriminant_lt (e : KernelError) : toDiscriminant e < 56 := by
   cases e <;> decide
 
 /-- The other direction of the round trip, over the whole in-range domain:
-below 55 the inverse hits and maps back to the same discriminant; 55 itself
+below 56 the inverse hits and maps back to the same discriminant; 56 itself
 (the first out-of-range value) is rejected. -/
 theorem toDiscriminant_ofDiscriminant? :
-    (∀ n, n < 55 → ((ofDiscriminant? n).map toDiscriminant) = some n) ∧
-      ofDiscriminant? 55 = none := by
+    (∀ n, n < 56 → ((ofDiscriminant? n).map toDiscriminant) = some n) ∧
+      ofDiscriminant? 56 = none := by
   constructor
   · decide
   · rfl
@@ -258,6 +260,12 @@ def syscallReturnShape : SyscallId → ReturnShape
   | .mintReplyCap          => .unit
   | .vspaceUnifyInstruction => .unit
   | .declassify            => .unit
+  -- WS-SM SM9.A.10: the audit reads are the second and third `.word` syscalls.
+  -- `.word` rather than `.badge` for the reason the shape exists: the Rust
+  -- conformance layer types a badge and a queried scalar differently, and an
+  -- audit word is a scalar the kernel computed, not a badge a sender chose.
+  | .auditRead             => .word
+  | .auditDrain            => .word
 
 /-- Totality anchor (RA.A.2).  The *mechanism* is the definition itself —
 an exhaustive match with no wildcard, so elaboration rejects a tree where a
@@ -268,10 +276,12 @@ theorem syscallReturnShape_total (sid : SyscallId) :
   ⟨_, rfl⟩
 
 /-- The value-returning surface, pinned by enumeration over the ABI's own
-`SyscallId.all` (plan §1.3): exactly five syscalls return a value today. -/
+`SyscallId.all` (plan §1.3): seven syscalls return a value — the five WS-RA
+classified, plus WS-SM SM9.A's two audit reads. -/
 theorem syscallReturnShape_value_returning :
     SyscallId.all.filter (fun sid => syscallReturnShape sid != .unit) =
-      [.receive, .call, .serviceQuery, .notificationWait, .replyRecv] := by
+      [.receive, .call, .serviceQuery, .notificationWait, .replyRecv,
+       .auditRead, .auditDrain] := by
   decide
 
 /-- The refuted design, kept refuted (plan §3.4): a hand-maintained list of
@@ -902,18 +912,18 @@ theorem errorLabel_roundtrip (e : KernelError) :
   KernelError.ofDiscriminant?_toDiscriminant e
 
 /-- The decode side over the whole in-range domain: label `0` is success,
-labels `1..55` hit their errors and re-encode to themselves, label `56`
+labels `1..56` hit their errors and re-encode to themselves, label `57`
 (the first out-of-range value) is rejected — so label `0` decodes as
 success and *only* label `0` does, on the entire inhabited label space. -/
 theorem errorLabel_zero_iff_success :
     ofErrorLabel? 0 = none ∧
-      (∀ n, n < 55 →
+      (∀ n, n < 56 →
         ((ofErrorLabel? (n + 1)).map errorLabel) = some (n + 1)) ∧
-      ofErrorLabel? 56 = none := by
+      ofErrorLabel? 57 = none := by
   refine ⟨rfl, ?_, rfl⟩
   decide
 
-/-- RA.A.6 — all 55 offset labels (1..55) fit the 20-bit `MessageInfo`
+/-- RA.A.6 — all 56 offset labels (1..56) fit the 20-bit `MessageInfo`
 label field, so the error carriage never needs a wider register. -/
 theorem kernelErrorFitsLabel (e : KernelError) :
     errorLabel e ≤ MessageInfo.maxLabel := by

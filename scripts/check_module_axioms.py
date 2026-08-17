@@ -70,6 +70,11 @@ SMP_INFORMATION_FLOW = [
     "SeLe4n.Kernel.InformationFlow.Declassification",
     "SeLe4n.Kernel.InformationFlow.DeclassificationPerCore",
     "SeLe4n.Kernel.InformationFlow.FineLockFlow",
+    # WS-SM SM9.A: the audit trail's reader.  Registered here as part of
+    # landing it — `--all-smp-information-flow` silently skips a module that
+    # is not in this list, so a new module that forgets the registration is
+    # swept by nothing and reports clean.
+    "SeLe4n.Kernel.InformationFlow.AuditRead",
 ]
 
 PROBE_TEMPLATE = """@IMPORTS@

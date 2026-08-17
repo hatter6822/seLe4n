@@ -250,6 +250,9 @@ private def emptyFrozenState : FrozenSystemState := {
   tlb := TlbState.empty
   perCoreTlb := _root_.Vector.replicate SeLe4n.Kernel.Concurrency.numCores TlbState.empty
   declassificationAuditLog := []
+  -- WS-SM SM9.A.1a: nothing drained, so the audit epoch is zero and the
+  -- (empty) trail's timestamps are its indices.
+  declassificationAuditEpoch := 0
   -- WS-SM SM7.D.1: required frozen field (no default).
   perCoreICache :=
     _root_.Vector.replicate SeLe4n.Kernel.Concurrency.numCores ICacheState.empty

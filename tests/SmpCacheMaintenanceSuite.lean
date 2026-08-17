@@ -827,8 +827,12 @@ private def runUnifyInstructionChecks : IO Unit := do
   assertBool "the syscall encodes to 29 and round-trips"
     (SyscallId.vspaceUnifyInstruction.toNat == 29 &&
       SyscallId.ofNat? 29 == some .vspaceUnifyInstruction)
-  assertBool "the modeled syscall count is 30"
-    (SyscallId.count == 31)
+  -- Stated as a RELATION rather than a literal: the count moves whenever a
+  -- syscall is added (SM8.C took it to 31, SM9.A to 33), and what this group
+  -- needs is that 29 is inside the modeled set — which a literal cannot say and
+  -- which is why the label above it had already drifted to "30".
+  assertBool "…and 29 is inside the modeled set, so the discriminant is in range"
+    (SyscallId.vspaceUnifyInstruction.toNat < SyscallId.count)
   assertBool "unify requires the write right"
     (syscallRequiredRight .vspaceUnifyInstruction == .write)
   -- The operand encodes to FFI tag 2 (the full D→I sequence), distinct from a

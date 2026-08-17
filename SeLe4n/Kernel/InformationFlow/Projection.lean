@@ -199,6 +199,12 @@ def capTargetObservable (ctx : LabelingContext) (observer : IfObserver) (target 
   -- slot reveals that object's identity, so it is observable iff the reply
   -- object is — consistent with the `.object`/`.cnodeSlot` arms above.
   | .replyCap rid => objectObservable ctx observer rid.toObjId
+  -- WS-SM SM9.A.9: an audit-trail capability names no object, so there is no
+  -- entity whose identity a slot holding it could leak.  Observable to every
+  -- observer, exactly as a fieldless authority should be: the *content* it
+  -- unlocks is gated by the reader's clearance at the read
+  -- (`auditLogVisibleTo`), never by whether the capability is visible.
+  | .auditTrail => true
 
 /-- WS-F3/F-22: Filter a KernelObject to redact high-domain information.
 For CNode objects, removes capability slots whose targets are not observable

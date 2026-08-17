@@ -1722,4 +1722,69 @@ theorem decodeSetAffinityArgs_roundtrip (args : SetAffinityArgs) :
   simp [decodeSetAffinityArgs, encodeSetAffinityArgs, stubDecoded, requireMsgReg, Bind.bind,
         Except.bind, Pure.pure, Except.pure]
 
+-- ============================================================================
+-- WS-SM SM9.A.10: audit-trail read and drain arguments
+-- ============================================================================
+
+/-- WS-SM SM9.A.10: `auditRead` arguments.
+    Register mapping: x2=opcode, x3=index, x4=chunk.
+
+    The sub-operation and the field it selects share the **opcode** rather than
+    taking a register each: `AuditReadOp.field` needs three coordinates (index,
+    field, chunk) and a fourth operand register would buy nothing, since the
+    field space is four values and the opcode space is free.  The semantic range
+    check is `decodeAuditReadOp`'s responsibility (fail-closed on an unknown
+    opcode), so the decode itself only extracts the three raw words. -/
+structure AuditReadArgs where
+  opcode : Nat
+  index : Nat
+  chunk : Nat
+  deriving Repr, DecidableEq
+
+/-- WS-SM SM9.A.10: decode `auditRead` arguments from message registers.
+    Requires 3 message registers. -/
+def decodeAuditReadArgs (decoded : SyscallDecodeResult)
+    : Except KernelError AuditReadArgs := do
+  let r0 ← requireMsgReg decoded.msgRegs 0
+  let r1 ← requireMsgReg decoded.msgRegs 1
+  let r2 ← requireMsgReg decoded.msgRegs 2
+  pure { opcode := r0.val, index := r1.val, chunk := r2.val }
+
+/-- WS-SM SM9.A.10: encode `auditRead` arguments into message registers. -/
+@[inline] def encodeAuditReadArgs (args : AuditReadArgs) : Array RegValue :=
+  #[⟨args.opcode⟩, ⟨args.index⟩, ⟨args.chunk⟩]
+
+/-- WS-SM SM9.A.10: AuditReadArgs decode round-trip. -/
+theorem decodeAuditReadArgs_roundtrip (args : AuditReadArgs) :
+    decodeAuditReadArgs (stubDecoded (encodeAuditReadArgs args)) = .ok args := by
+  simp [decodeAuditReadArgs, encodeAuditReadArgs, stubDecoded, requireMsgReg, Bind.bind,
+        Except.bind, Pure.pure, Except.pure]
+
+/-- WS-SM SM9.A.10: `auditDrain` arguments.
+    Register mapping: x2=count (entries to remove).
+
+    A `count` at or above the trail's length clears it, which is the call a
+    monitor recovering from the capacity cliff makes. -/
+structure AuditDrainArgs where
+  count : Nat
+  deriving Repr, DecidableEq
+
+/-- WS-SM SM9.A.10: decode `auditDrain` arguments from message registers.
+    Requires 1 message register. -/
+def decodeAuditDrainArgs (decoded : SyscallDecodeResult)
+    : Except KernelError AuditDrainArgs := do
+  let r0 ← requireMsgReg decoded.msgRegs 0
+  pure { count := r0.val }
+
+/-- WS-SM SM9.A.10: encode `auditDrain` arguments into message registers. -/
+@[inline] def encodeAuditDrainArgs (args : AuditDrainArgs) : Array RegValue :=
+  #[⟨args.count⟩]
+
+/-- WS-SM SM9.A.10: AuditDrainArgs decode round-trip. -/
+theorem decodeAuditDrainArgs_roundtrip (args : AuditDrainArgs) :
+    decodeAuditDrainArgs (stubDecoded (encodeAuditDrainArgs args)) = .ok args := by
+  simp [decodeAuditDrainArgs, encodeAuditDrainArgs, stubDecoded, requireMsgReg, Bind.bind,
+        Except.bind, Pure.pure, Except.pure]
+
+
 end SeLe4n.Kernel.Architecture.SyscallArgDecode

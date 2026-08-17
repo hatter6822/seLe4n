@@ -755,6 +755,38 @@ def mintDerivedCap (parent : NonNullCap) (rights : AccessRightSet)
   else
     .error .invalidCapability
 
+/-- WS-SM SM9.A.9: `mintDerivedCap` **preserves the target** — minting attenuates
+rights and rewrites the badge, never the thing a capability names. -/
+theorem mintDerivedCap_preserves_target
+    (parent : NonNullCap) (rights : AccessRightSet) (badge : Option SeLe4n.Badge)
+    (child : Capability)
+    (hMint : mintDerivedCap parent rights badge = .ok child) :
+    child.target = parent.val.target := by
+  unfold mintDerivedCap at hMint
+  split at hMint
+  · split at hMint
+    · simp at hMint
+    · cases hMint; rfl
+  · simp at hMint
+
+/-- WS-SM SM9.A.9 (**audit authority is unforgeable by minting**): a mint
+produces a capability targeting the audit trail **only** if its parent already
+did.
+
+The property that makes `CapTarget.auditTrail` a real gate rather than a
+label: `cspaceMint` is the kernel's capability-derivation path, and it cannot
+manufacture audit authority from a capability that lacks it.  So an audit
+capability exists in a deployment exactly where the boot/CSpace layer put one —
+which is why an unconfigured deployment has no audit reader at all. -/
+theorem mintDerivedCap_no_audit_forgery
+    (parent : NonNullCap) (rights : AccessRightSet) (badge : Option SeLe4n.Badge)
+    (child : Capability)
+    (hMint : mintDerivedCap parent rights badge = .ok child)
+    (hChild : child.target = .auditTrail) :
+    parent.val.target = .auditTrail := by
+  rw [← mintDerivedCap_preserves_target parent rights badge child hMint]
+  exact hChild
+
 /-- AN4-E (H-06): `mintDerivedCap` always produces a non-null capability.
 Unconditional consequence of the explicit null-guard added to the function
 body — the `.ok` branch is only reached when the constructed child's

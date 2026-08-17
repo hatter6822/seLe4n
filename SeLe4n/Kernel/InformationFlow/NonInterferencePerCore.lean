@@ -1892,6 +1892,7 @@ theorem registerService_confinedToCore (st st' : SystemState) (reg : ServiceRegi
               · simp at hStep; cases hStep; rfl
       | cnodeSlot => simp [hTarget] at hStep
       | replyCap => simp [hTarget] at hStep
+      | auditTrail => simp [hTarget] at hStep
 
 /-- SM8.B.3: the checked service registration is either the unchecked one or a
 denial, so it is confined too. -/

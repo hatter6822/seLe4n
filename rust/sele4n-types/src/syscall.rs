@@ -66,11 +66,23 @@ pub enum SyscallId {
     // declassification policy must permit it — and whose entire state effect is
     // one entry appended to the kernel's declassification audit trail.
     Declassify = 30,
+    // Audit-trail access (WS-SM, SM9.A.6).  Two syscalls rather than one with a
+    // mode operand, so authority stays per-operation: `required_right` is keyed
+    // on the `SyscallId`, and a monitoring deployment can therefore hand out a
+    // read-only audit capability that provably cannot drain.
+    //
+    // Both are gated first on the capability *targeting* the audit trail
+    // (`CapTarget::AuditTrail` in the Lean model), not merely on carrying the
+    // right: `syscallLookupCap` never constrains a capability's target, so a
+    // rights-only gate would be reachable by any thread holding any readable
+    // capability.
+    AuditRead = 31,
+    AuditDrain = 32,
 }
 
 impl SyscallId {
     /// Total number of modeled syscalls.
-    pub const COUNT: usize = 31;
+    pub const COUNT: usize = 33;
 
     /// Convert from a raw `u64` value. Returns `None` for out-of-range.
     /// Lean: `SyscallId.ofNat?`
@@ -107,6 +119,8 @@ impl SyscallId {
             28 => Some(Self::MintReplyCap),
             29 => Some(Self::VSpaceUnifyInstruction),
             30 => Some(Self::Declassify),
+            31 => Some(Self::AuditRead),
+            32 => Some(Self::AuditDrain),
             _ => None,
         }
     }
@@ -152,6 +166,11 @@ impl SyscallId {
             // *into* the target object's domain, so the flow direction is
             // subject -> object and the authority is the write right.
             Self::Declassify => AccessRight::Write,
+            // WS-SM SM9.A.10: the reader needs the read right and the drain the
+            // write right, on an audit capability.  The split is what lets a
+            // deployment mint a reader that cannot remove evidence.
+            Self::AuditRead => AccessRight::Read,
+            Self::AuditDrain => AccessRight::Write,
         }
     }
 }

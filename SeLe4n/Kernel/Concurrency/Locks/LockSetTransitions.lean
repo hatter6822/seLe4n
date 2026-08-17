@@ -626,6 +626,43 @@ def lockSet_declassify (callerTid : ThreadId) (cnodeRootObjId : ObjId) : LockSet
     [(tcbLock callerTid, .read),
      (cnodeLock cnodeRootObjId, .read)]
 
+/-! ## Audit-trail access (2 transitions)
+
+WS-SM SM9.A.12.  The reader's and the drain's whole state effect is on
+`SystemState` fields — the trail and its epoch — exactly like `.declassify`'s,
+so their per-object footprints are the two universal reads and nothing more.
+
+The **read** taking `.read` on the caller's TCB is not a formality: the reader's
+clearance is the running subject's domain, so the TCB is genuinely read.  The
+**drain** takes the same two reads rather than a write anywhere, because the
+object store is untouched: draining a prefix of a `SystemState` list writes no
+object.  That the drain nevertheless requires the `.write` *right* on the audit
+capability is a separate gate (`syscallRequiredRight`) and deliberately so —
+rights bound what a capability holder may do, lock sets bound what the
+transition touches, and conflating them is how a footprint stops being honest. -/
+
+/-- WS-SM SM9.A.12: `lockSet` for `auditRead`.
+
+Both locks are **read** mode: the caller TCB resolves the reader's clearance,
+the CNode resolves the audit capability, and the transition writes nothing at
+all — it is a pure query over `declassificationAuditLog`. -/
+def lockSet_auditRead (callerTid : ThreadId) (cnodeRootObjId : ObjId) : LockSet :=
+  lockSetOfList
+    [(tcbLock callerTid, .read),
+     (cnodeLock cnodeRootObjId, .read)]
+
+/-- WS-SM SM9.A.12: `lockSet` for `auditDrain`.
+
+Identical to the reader's, and identical for a reason worth stating rather than
+leaving to inspection: a drain writes `declassificationAuditLog` and
+`declassificationAuditEpoch`, both `SystemState` fields, and **no object**.  A
+`.write` lock on the caller's TCB would over-declare a footprint the transition
+does not have. -/
+def lockSet_auditDrain (callerTid : ThreadId) (cnodeRootObjId : ObjId) : LockSet :=
+  lockSetOfList
+    [(tcbLock callerTid, .read),
+     (cnodeLock cnodeRootObjId, .read)]
+
 /-! ## Service syscalls (3 transitions)
 
 Services are tracked at the SystemState level (not as per-object
@@ -1159,6 +1196,12 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- reads do; `.serviceRegister` takes an `.endpoint` lock because it inspects
   -- the object's *contents*, which this does not.
   | .declassify =>
+      [.tcb, .cnode]
+  -- WS-SM SM9.A.12: the audit reader and the drain read the caller TCB (for the
+  -- reader's clearance) and the caller's CNode (capability resolution), and
+  -- write only `SystemState` fields — the trail and its epoch.  Neither touches
+  -- an object, so neither needs a third kind.
+  | .auditRead | .auditDrain =>
       [.tcb, .cnode]
   -- Service syscalls.  `.serviceRegister` reads `st.objects[epId]?`
   -- (audit-pass-6 extension); the other two only touch `serviceRegistry`.
@@ -1826,6 +1869,32 @@ theorem lockSet_consistent_declassify (callerTid : ThreadId)
     (cnRoot : ObjId) :
     ∀ p ∈ (lockSet_declassify callerTid cnRoot).pairs,
       p.fst.kind ∈ permittedKinds .declassify :=
+  lockSet_consistent_of_extended_base _ _
+    (by intro p hMem
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        exact absurd hMem (by intro h; cases h))
+
+/-- WS-SM SM3.B.4 for `.auditRead` (SM9.A.12). -/
+theorem lockSet_consistent_auditRead (callerTid : ThreadId)
+    (cnRoot : ObjId) :
+    ∀ p ∈ (lockSet_auditRead callerTid cnRoot).pairs,
+      p.fst.kind ∈ permittedKinds .auditRead :=
+  lockSet_consistent_of_extended_base _ _
+    (by intro p hMem
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        exact absurd hMem (by intro h; cases h))
+
+/-- WS-SM SM3.B.4 for `.auditDrain` (SM9.A.12). -/
+theorem lockSet_consistent_auditDrain (callerTid : ThreadId)
+    (cnRoot : ObjId) :
+    ∀ p ∈ (lockSet_auditDrain callerTid cnRoot).pairs,
+      p.fst.kind ∈ permittedKinds .auditDrain :=
   lockSet_consistent_of_extended_base _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem

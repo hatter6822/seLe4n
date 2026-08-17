@@ -3845,16 +3845,43 @@ This is the NI witness for the SM8.C.8 mount: the live `.declassify` syscall and
 every audited transition built on `declassifyStoreOnCore` preserve
 `projectState`, and hence `lowEquivalent`, on the trail component.
 
-The consequence is that **nothing in the kernel can read the trail today**.  A
-privileged read interface is SM8.E scope and owes its own flow argument — it
-must either be confined to a domain that already dominates every recorded
-`srcDomain`, or return entries filtered by the reader's clearance.  Neither is
-in this cut, and shipping a reader without that argument would give away the
-channel this theorem records as closed. -/
+**WS-SM SM9.A: a reader now exists, and this theorem is exactly as true and
+exactly as insufficient as it was.**  The `.auditRead` syscall returns entries
+filtered by the caller's own clearance, so the trail *is* observable to an
+audit-capability holder — but not through `projectState`, which is why
+`lowEquivalent` no longer describes everything such a caller can see.  SM9.A.4a
+supplies the relation that does (`auditObservationalEquivalence`, conjoining
+this projection with agreement on the reader's visible view), and SM9.A.4b
+states the reader's flow argument over *that* relation.  The naive lemma — "two
+low-equivalent states give identical visible views" — is **false**, and this
+theorem is the reason: the trail is not in the projection, so two states
+low-equivalent at `L` can still differ by an entry `L` is cleared to read
+(`lowEquivalent_does_not_determine_visible_view`). -/
 theorem declassificationAuditLog_write_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
     (log : SeLe4n.Kernel.DeclassificationAuditLog) :
     projectState ctx observer { st with declassificationAuditLog := log } =
+      projectState ctx observer st := rfl
+
+/-- WS-SM SM9.A.1a (non-interference): a write to the mounted declassification
+audit **epoch** is invisible to the information-flow projection.
+
+The epoch's exclusion is sharper than the trail's, and worth separating rather
+than folding into it.  An entry is content a cleared reader may see; the epoch
+is a *count* of entries — including entries a partially-cleared reader may not
+see — so it is derived from hidden state by construction.  Projecting it would
+hand every observer the number of downgrades performed system-wide, which is
+precisely what the re-indexed visible view (`auditLogVisibleTo`) exists to
+hide, and it would do so without any capability being held at all.
+
+The reader therefore exports the epoch only to a caller holding the configured
+audit-monitor clearance (`auditReadStatus_partial_hides_generation`); this
+theorem is the witness that the *drain* which advances it opens no channel of
+its own. -/
+theorem declassificationAuditEpoch_write_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (epoch : Nat) :
+    projectState ctx observer { st with declassificationAuditEpoch := epoch } =
       projectState ctx observer st := rfl
 
 -- ============================================================================

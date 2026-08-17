@@ -119,9 +119,9 @@ Docs-sync checks compare only the stable subset so branch/merge-only churn does 
     activeDomain, irqHandlers, objectIndex, domainSchedule, machineRegs),
     `lowEquivalent` relation scaffold with refl/symm/trans.
 - `SeLe4n/Kernel/InformationFlow/Enforcement.lean` (re-export hub)
-  - `Enforcement/Wrappers.lean` — 40-entry enforcement boundary (12 policy-gated,
-    24 capability-only, 4 read-only) wiring `securityFlowsTo` policy
-    into enforcement boundaries. Includes SchedContext ops (WS-Z8), thread lifecycle (D1), priority management (D2), IPC buffer (D3), VSpace and service ops (AC4-D), the live declassification entry point (WS-SM SM8.C, policy-gated), and the SM3 two-phase-locking bracket `withLockSet` (WS-SM SM8.E.3, capability-only — an internal building block used under an already-capability-guarded context).
+  - `Enforcement/Wrappers.lean` — 42-entry enforcement boundary (12 policy-gated,
+    26 capability-only, 4 read-only) wiring `securityFlowsTo` policy
+    into enforcement boundaries. Includes SchedContext ops (WS-Z8), thread lifecycle (D1), priority management (D2), IPC buffer (D3), VSpace and service ops (AC4-D), the live declassification entry point (WS-SM SM8.C, policy-gated), the SM3 two-phase-locking bracket `withLockSet` (WS-SM SM8.E.3, capability-only — an internal building block used under an already-capability-guarded context), and the two audit-trail readers `auditReadWord` / `auditDrainVisiblePrefix` (WS-SM SM9.A.11, capability-only — authority is the dedicated `CapTarget.auditTrail`, never a right).
     The count is pinned by `enforcementBoundaryExtended_count`; this line is a
     mirror of that theorem, not an independent claim.
     AC4-D: `enforcementBoundary_is_complete` compile-time completeness witness
@@ -133,6 +133,28 @@ Docs-sync checks compare only the stable subset so branch/merge-only churn does 
   - `Invariant/Composition.lean` — 32-constructor `NonInterferenceStep` inductive;
     `composedNonInterference_trace`; `declassifyStore_NI`;
     `InformationFlowConfigInvariant` bundle.
+- `SeLe4n/Kernel/InformationFlow/AuditRecord.lean`
+  - the pure declassification record (`DeclassificationEvent`, `DeclassificationBasis`),
+    extracted below `Model/State` so `SystemState` can mount the trail; carries the
+    `start`-parameterised timestamp layer (`auditTimestampsFrom`,
+    `declassificationAuditLog_timestamp_identifies_event`) that WS-SM SM9.A.1a's
+    persistent epoch and the SM9.A.3 drain both read.
+- `SeLe4n/Kernel/InformationFlow/Declassification.lean`
+  - the live `.declassify` transition (WS-SM SM8.C.9): the shared
+    `declassificationDecision`, the epoch-stamped producer
+    `declassificationEventOnCore`, and `declassificationTrailWellFormed` —
+    the state-level well-formedness the drain preserves.
+- `SeLe4n/Kernel/InformationFlow/AuditRead.lean`
+  - WS-SM SM9.A, the trail's **reader**: the clearance-filtered, re-indexed view
+    `auditLogVisibleTo` (a genuine `Sublist`, and a function of the reader's
+    clearance alone, so hidden entries leave no index gap), the arbitrary-length
+    32-bit chunk protocol with exact reconstruction and a fail-closed width,
+    the single-read `status` word, the two reader classes (view-local indices
+    for a partial reader, global identities for a fully-dominating monitor),
+    `auditDrainVisiblePrefix` under the configuration-derived dominance gate,
+    and the live entry point `auditReadFromCore`.  Production, and below the
+    projection layer so the live syscall arms consume it without pulling the
+    SM8.A/B non-interference closure into the dispatch path.
 
 ### API
 
