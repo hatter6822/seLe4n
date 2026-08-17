@@ -945,6 +945,21 @@ private def runAuditReadEndToEnd : IO Unit := do
      | .ok (.returns f, st) =>
          f.x1 != 0 && st.declassificationAuditLog.length == 2
      | _ => false)
+  -- 10f — PR #870 round 2: the load-bearing negative on the READ gate, at the
+  -- full ABI seam.  The audit capability is provisioned (same CSpace, same
+  -- slot) and the caller is the same trusted subject 10a serves — only the
+  -- configuration differs — and with no monitor named the read fails closed
+  -- instead of serving a partial-reader view.  Before round 2 this exact call
+  -- SUCCEEDED, which is what falsified "an unconfigured deployment has no
+  -- audit reader" in the deployment shape that provisions a capability.
+  assertBool "10f: NEGATIVE — an unconfigured deployment cannot read, even holding the audit capability"
+    (match dispatchAudit auditUnconfiguredLabeling
+        SyscallId.auditRead.toNat auditCapPtr 3
+        (Kernel.encodeAuditReadOp .status).1 0 0 auditWitnessState with
+     | .ok (.returns f, st) =>
+         f.x1 != 0 && st.declassificationAuditLog.length == 2 &&
+         st.declassificationAuditEpoch == 0
+     | _ => false)
 
 -- ============================================================================
 -- Runner

@@ -1287,7 +1287,7 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 -- ============================================================================
 --
 -- `InformationFlow/AuditRead.lean` (production).  Every one of the module's
--- 129 declarations is anchored, on SM8.A's set-difference discipline: a symbol
+-- 131 declarations is anchored, on SM8.A's set-difference discipline: a symbol
 -- renamed or deleted fails Tier 3 rather than quietly leaving the surface.
 #check @auditLogVisibleTo
 #check @auditLogVisibleTo_nil
@@ -1397,6 +1397,8 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @decodeAuditReadOp_out_of_range
 #check @decodeAuditReadOp_isSome_lt
 #check @auditReadFromCore
+#check @auditRead_unconfigured_denied
+#check @misconfiguredDeployment_cannot_read
 #check @auditReadFromCore_no_subject
 #check @auditReadFromCore_frame
 #check @auditReadFromCore_word_fits
@@ -1452,7 +1454,7 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @lowEquivalent_does_not_determine_visible_view
 #check @auditRead_no_channel
 #check @auditReadFromCore_no_channel
-#check @auditRead_gates_are_three
+#check @auditRead_gates_are_four
 #check @auditDrain_preserves_projectionOnCore
 #check @auditDrain_perCore_NI
 #check @auditReadFromCore_perCore_NI
@@ -1477,6 +1479,8 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @dispatchWithCapChecked_audit_rejects_non_audit_capability
 #check @dispatchWithCap_auditRead_denied
 #check @dispatchWithCapChecked_auditDrain_default_denied
+#check @dispatchWithCapChecked_auditRead_default_denied
+#check @unconfiguredDeployment_audit_never_succeeds
 #check @unconfiguredDeployment_has_no_audit_reader
 #check @syscallDelegates_auditRead
 #check @syscallDelegates_auditDrain
@@ -2164,12 +2168,32 @@ example (oid : SeLe4n.ObjId) :
   extractAuditAuthority_rejects_non_audit_capability oid
 
 -- SM9.A.10: an idle core cannot read the trail — there is no subject whose
--- clearance would select a view, so the operation fails closed.
-example (gctx : GenericLabelingContext) (monitorClearance : Option SecurityDomain)
+-- clearance would select a view, so the operation fails closed.  Stated at a
+-- configured clearance: in an unconfigured deployment the configuration gate
+-- refuses first (PR #870 round 2).
+example (gctx : GenericLabelingContext) (m : SecurityDomain)
     (c : CoreId) (op : AuditReadOp) (st : SystemState)
     (hIdle : st.scheduler.currentOnCore c = none) :
-    auditReadFromCore gctx monitorClearance c op st = .error .illegalState :=
-  auditReadFromCore_no_subject gctx monitorClearance c op st hIdle
+    auditReadFromCore gctx (some m) c op st = .error .illegalState :=
+  auditReadFromCore_no_subject gctx m c op st hIdle
+
+-- SM9.A.10 (PR #870 round 2): an unconfigured deployment cannot read at all —
+-- for every caller, every operation, every state.  Capability provisioning is
+-- an axis the labeling context cannot see, so the transition refuses before
+-- resolving a subject; a boot-provisioned audit capability opens nothing.
+example (gctx : GenericLabelingContext) (c : CoreId) (op : AuditReadOp)
+    (st : SystemState) :
+    auditReadFromCore gctx none c op st = .error .illegalAuthority :=
+  auditRead_unconfigured_denied gctx c op st
+
+-- SM9.A.9 (PR #870 round 2): the universal half of the acceptance witness —
+-- in an unconfigured deployment NO capability makes an audit syscall succeed,
+-- quantified over the capability rather than over a particular shape.  The
+-- dispatch it is stated over is `private` to `API.lean` (a suite cannot spell
+-- it), so the theorem is anchored by `#check` here and *applied* where the
+-- name is in scope: it discharges the acceptance witness's first conjunct
+-- (`unconfiguredDeployment_has_no_audit_reader`), and the arm-level runtime
+-- witness runs through the public dispatch in `SyscallReturnAbiSuite` §10.
 
 -- SM9.A.10: the word the live arm hands to `writeReturnFrameToTcb` survives the
 -- `UInt64` narrowing — without which a read could silently return a truncation.
@@ -7247,9 +7271,14 @@ chunks(2^96)={auditFieldChunkCount? (2 ^ 96)} chunks(2^128)={auditFieldChunkCoun
 {match auditDrainVisiblePrefix auditGenericCtx (some auditMonitorReader) c0 3 auditMixedState with
   | .ok (remaining, _) => s!"remaining={remaining}"
   | .error e => s!"error={reprStr e}"}"
-    -- The unconfigured deployment: no monitor clearance means no reader at all.
+    -- The unconfigured deployment: no monitor clearance means no reader at
+    -- all — the read refused by the transition's own configuration gate
+    -- (PR #870 round 2), the drain by the monitor gate.  Before round 2 this
+    -- line could show only the drain, because the read *succeeded*.
   , s!"[smp-information-flow] audit gate unconfigured: \
 authorized={auditMonitorAuthorized auditGenericCtx none auditMonitorReader} \
+read={match auditReadFromCore auditGenericCtx none c1 .status auditMixedState with
+  | .ok _ => "ok" | .error e => s!"{reprStr e}"} \
 drain={match auditDrainVisiblePrefix auditGenericCtx none c1 3 auditMixedState with
   | .ok _ => "ok" | .error e => s!"{reprStr e}"}"
     -- The ABI surface: two syscalls, both value-returning, both classified.
@@ -7713,23 +7742,45 @@ private def runAuditLiveArmChecks : IO Unit := do
      | .ok (_, st) => decide (st.declassificationAuditLog = auditMixedTrail) &&
                       decide (st.declassificationAuditEpoch =
                         auditMixedState.declassificationAuditEpoch))
-  -- PR #870 review (P1): the LIVE arms consume the VALIDATED clearance.  Under
-  -- a misconfigured low clearance even core 1's trusted subject — who passes
-  -- the RAW reflexive gate — is a monitor no longer: its status generation
-  -- reads 0 and its drain is refused, at exactly the inputs the delegation
-  -- theorems prove the dispatch arms supply.
+  -- PR #870 review (P1 + round 2): the LIVE arms consume the VALIDATED
+  -- clearance, and the validated clearance is also the read facility's on/off
+  -- switch.  Under a misconfigured low clearance even core 1's trusted subject
+  -- — who passes the RAW reflexive gate — is refused outright: no status word,
+  -- no entries, no drain, at exactly the inputs the delegation theorems prove
+  -- the dispatch arms supply.
   let misconfigured : LabelingContext :=
     { auditMonitorLabeling with auditMonitorClearance := some auditPartialReader }
   assertBool "NEGATIVE: a misconfigured deployment has no monitor at the live arm's inputs"
     (decide (validatedAuditMonitorClearance misconfigured = none) &&
      (match auditReadFromCore (liftLegacyContext misconfigured)
         (validatedAuditMonitorClearance misconfigured) c1 .status auditMixedState with
-      | .ok (w, _) => decide (auditStatusGeneration w = 0)
-      | .error _ => false) &&
+      | .ok _ => false
+      | .error e => decide (e = KernelError.illegalAuthority)) &&
      (match auditDrainVisiblePrefix (liftLegacyContext misconfigured)
         (validatedAuditMonitorClearance misconfigured) c1 99 auditMixedState with
       | .ok _ => false
       | .error e => decide (e = KernelError.illegalAuthority)))
+  -- PR #870 review round 2: capability provisioning is an axis the labeling
+  -- context cannot see — a boot layer can install a readable `.auditTrail`
+  -- capability with no monitor configured, and before this round the live arm
+  -- served that capability a partial-reader view, falsifying "an unconfigured
+  -- deployment has no audit reader".  The configuration gate is what makes the
+  -- claim true in that deployment shape: the same state, the same running
+  -- trusted subject, the same operation — refused with no clearance
+  -- configured, served once one is.
+  let unconfigured : LabelingContext :=
+    { auditMonitorLabeling with auditMonitorClearance := none }
+  assertBool "an unconfigured deployment refuses the read for EVERY caller — a provisioned capability opens nothing"
+    (decide (validatedAuditMonitorClearance unconfigured = none) &&
+     (match auditReadFromCore (liftLegacyContext unconfigured)
+        (validatedAuditMonitorClearance unconfigured) c1 .status auditMixedState with
+      | .ok _ => false
+      | .error e => decide (e = KernelError.illegalAuthority)))
+  assertBool "NEGATIVE: the refusal is the configuration's doing — the SAME read at the SAME state succeeds once a monitor is configured"
+    (match auditReadFromCore (liftLegacyContext auditMonitorLabeling)
+        (validatedAuditMonitorClearance auditMonitorLabeling) c1 .status auditMixedState with
+     | .ok (w, _) => decide (auditStatusVisibleLength w = 3)
+     | .error _ => false)
 
 
 /-- §9.8  The SM9.A acceptance gate — **the 256-entry cliff, end to end.**

@@ -1959,7 +1959,26 @@ The reader's clearance is not an argument: it is read off whichever thread core
 subject's domain.  A caller that could name its own clearance could read the
 whole trail, which is the reason both entry points resolve it kernel-side.
 
-Fails closed three ways: an idle core has no subject (`.illegalState`), an index
+**The configuration gate comes first** (PR #870 review, round 2): with no
+configured monitor clearance the read refuses outright, before any subject is
+resolved.  Capability provisioning is an axis the labeling context cannot see —
+a boot layer can install a readable `.auditTrail` capability whether or not the
+deployment ever names a monitor — so without this gate "an unconfigured
+deployment has no audit reader" would be false in exactly that deployment
+shape: the capability would admit a partial reader the configuration never
+opted into.  The gate makes the validated clearance the facility's one on/off
+switch (the SM9.B direction: a single *configured* privileged-reader gate), and
+the refusal is `.illegalAuthority` — the same error the drain's monitor gate
+returns — so a probing caller cannot distinguish "feature off" from "not a
+monitor".  Partial readers are unchanged where they belong: in a *configured*
+deployment, a caller below the monitor clearance still gets the view-local
+filtered view (`auditReadWord` keys monitor mode on the caller, not on the
+gate).  The live arm passes `validatedAuditMonitorClearance`, so a
+*misconfigured* deployment — a clearance that fails dominance validation — is
+refused identically (`misconfiguredDeployment_cannot_read`).
+
+Fails closed four ways: an unconfigured deployment has no reader
+(`.illegalAuthority`), an idle core has no subject (`.illegalState`), an index
 outside the caller's own view or a chunk past a field's width is
 `.invalidArgument`, and a value too wide to export is `.auditFieldTooLarge`.
 
@@ -1972,20 +1991,50 @@ def auditReadFromCore (ctx : GenericLabelingContext)
     (monitorClearance : Option SecurityDomain) (c : CoreId)
     (op : AuditReadOp) : Kernel Nat :=
   fun st =>
-    match auditReaderDomain ctx st c with
-    | none => .error .illegalState
-    | some reader =>
-        match auditReadWord ctx monitorClearance reader st op with
-        | .error e => .error e
-        | .ok w => if w < 2 ^ 64 then .ok (w, st) else .error .auditFieldTooLarge
+    match monitorClearance with
+    | none => .error .illegalAuthority
+    | some _ =>
+        match auditReaderDomain ctx st c with
+        | none => .error .illegalState
+        | some reader =>
+            match auditReadWord ctx monitorClearance reader st op with
+            | .error e => .error e
+            | .ok w => if w < 2 ^ 64 then .ok (w, st) else .error .auditFieldTooLarge
+
+/-- WS-SM SM9.A.10 (PR #870 round 2): **an unconfigured deployment cannot read
+at all** — the deny-by-default posture the drain has had since landing
+(`auditDrain_unconfigured_denied`), now on the read side, for *every* caller,
+*every* operation, *every* state.  This is the theorem that makes the
+capability-provisioning axis irrelevant to the "no audit reader by default"
+claim: a boot-provisioned `.auditTrail` capability reaches an arm whose
+transition refuses before resolving a subject. -/
+theorem auditRead_unconfigured_denied (ctx : GenericLabelingContext)
+    (c : CoreId) (op : AuditReadOp) (st : SystemState) :
+    auditReadFromCore ctx none c op st = .error .illegalAuthority := rfl
+
+/-- WS-SM SM9.A.10 (PR #870 round 2): a **misconfigured** deployment — a
+configured clearance that fails the dominance validation — cannot read either,
+because the live arm consumes the VALIDATED clearance and a misconfigured one
+validates to `none`.  The read sibling of `misconfiguredDeployment_cannot_drain`:
+a monitor with blind spots is refused the epoch and the entries alike, not just
+the drain. -/
+theorem misconfiguredDeployment_cannot_read (ctx : LabelingContext)
+    (c : CoreId) (op : AuditReadOp) (st : SystemState)
+    (hMis : validatedAuditMonitorClearance ctx = none) :
+    auditReadFromCore (liftLegacyContext ctx) (validatedAuditMonitorClearance ctx)
+        c op st = .error .illegalAuthority := by
+  rw [hMis]
+  exact auditRead_unconfigured_denied (liftLegacyContext ctx) c op st
 
 /-- WS-SM SM9.A.10: an idle core cannot read the trail — there is no subject
 whose clearance would select a view, so the operation fails closed and the state
-is untouched. -/
+is untouched.  Stated at a configured clearance, because in an unconfigured
+deployment the configuration gate refuses first
+(`auditRead_unconfigured_denied`) and the idle core is never consulted. -/
 theorem auditReadFromCore_no_subject (ctx : GenericLabelingContext)
-    (monitorClearance : Option SecurityDomain) (c : CoreId) (op : AuditReadOp)
+    (m : SecurityDomain) (c : CoreId) (op : AuditReadOp)
     (st : SystemState) (hIdle : st.scheduler.currentOnCore c = none) :
-    auditReadFromCore ctx monitorClearance c op st = .error .illegalState := by
+    auditReadFromCore ctx (some m) c op st = .error .illegalState := by
   simp [auditReadFromCore, auditReaderDomain, hIdle]
 
 /-- WS-SM SM9.A.10 (**the frame**): a read writes **nothing**.  The post-state
@@ -2001,9 +2050,11 @@ theorem auditReadFromCore_frame (ctx : GenericLabelingContext)
   · split at hStep
     · exact absurd hStep (by simp)
     · split at hStep
-      · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-        exact hStep.2.symm
       · exact absurd hStep (by simp)
+      · split at hStep
+        · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          exact hStep.2.symm
+        · exact absurd hStep (by simp)
 
 /-- WS-SM SM9.A.10: **every word the reader returns fits the return register.**
 
@@ -2020,12 +2071,14 @@ theorem auditReadFromCore_word_fits (ctx : GenericLabelingContext)
   · exact absurd hStep (by simp)
   · split at hStep
     · exact absurd hStep (by simp)
-    · rename_i hFits
-      split at hStep
-      · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-        rename_i hLt
-        exact hStep.1 ▸ hLt
+    · split at hStep
       · exact absurd hStep (by simp)
+      · rename_i hFits
+        split at hStep
+        · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          rename_i hLt
+          exact hStep.1 ▸ hLt
+        · exact absurd hStep (by simp)
 
 /-- WS-SM SM9.A.10: the returned word survives the boundary conversion — the
 consumer-facing form of `auditReadFromCore_word_fits`. -/
@@ -2049,14 +2102,17 @@ theorem auditReadFromCore_value (ctx : GenericLabelingContext)
     (hReader : auditReaderDomain ctx st c = some reader)
     (hStep : auditReadFromCore ctx monitorClearance c op st = .ok (w, st')) :
     auditReadWord ctx monitorClearance reader st op = .ok w := by
-  simp only [auditReadFromCore, hReader] at hStep
-  split at hStep
-  · exact absurd hStep (by simp)
-  · rename_i v hRead
+  cases monitorClearance with
+  | none => exact absurd (auditRead_unconfigured_denied ctx c op st ▸ hStep) (by simp)
+  | some m =>
+    simp only [auditReadFromCore, hReader] at hStep
     split at hStep
-    · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-      exact hStep.1 ▸ hRead
     · exact absurd hStep (by simp)
+    · rename_i v hRead
+      split at hStep
+      · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        exact hStep.1 ▸ hRead
+      · exact absurd hStep (by simp)
 
 /-- WS-SM SM9.A.5 (**the bracket, at the words the caller actually holds**): a
 monitor that reads `status` twice through the live entry point and observes the

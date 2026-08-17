@@ -869,7 +869,7 @@ their registries).  SM9.A.4a alone is a relation with congruence lemmas — see
 §3.4a — which is why the split is structural rather than a convenience.
 
 **Landing record.**  All fifteen sub-tasks landed in one cut.  The pure reader
-is the production leaf `InformationFlow/AuditRead.lean` (129 declarations,
+is the production leaf `InformationFlow/AuditRead.lean` (131 declarations,
 axiom-clean), placed **below** the projection layer so the live syscall arms
 consume it without pulling the SM8.A/B non-interference closure into the
 dispatch path — which is why `auditDrain_preserves_projection{,OnCore}` and the
@@ -906,7 +906,7 @@ gate's own scenario for effect on the live transition — fill the trail to
 `maxDeclassificationAuditEntries` through real authorized downgrades, observe
 `.auditLogCapacityExceeded`, read the status word and a field, drain, declassify
 again — with the post-drain timestamp provably fresh and the pre-epoch collision
-exhibited as the load-bearing negative.  618 assertions / 78 groups overall.
+exhibited as the load-bearing negative.  620 assertions / 78 groups overall.
 
 **Audit cut (same branch).**  A code-first audit of the landing found no
 security defect in any reachable state and no false theorem, and closed seven
@@ -937,6 +937,27 @@ the misconfigured deployment fails closed at two independent layers.  P2s: the
 `k = 8` onto `k = 0` in release builds), and the enforcement boundary's
 `.auditRead` entry names the live `auditReadFromCore` rather than the inner
 caller-supplied-domain query.
+
+**PR #870 round-2 cut (v0.33.44).**  One further Codex finding, valid: the
+"no audit reader by default" claim was silent about capability provisioning —
+with `auditMonitorClearance = none` but a boot-provisioned readable
+`.auditTrail` capability, the live `.auditRead` served that capability a
+partial-reader view, so the claim was false in exactly the deployment shape
+that provisions one (the acceptance witness's capability conjunct covered only
+an ordinary `.object` shape).  Closed by making the claim true:
+`auditReadFromCore` opens with a configuration gate — no validated monitor
+clearance ⇒ `.illegalAuthority` before any subject is resolved
+(`auditRead_unconfigured_denied`; `misconfiguredDeployment_cannot_read`) — the
+same error as the drain's monitor gate, so refusal causes stay
+indistinguishable, and partial readers are unchanged in *configured*
+deployments.  The validated clearance is thereby the facility's single on/off
+switch — the SM9.B "single configured privileged-reader gate" direction
+realised on the read side.  At the arm:
+`dispatchWithCapChecked_auditRead_default_denied` and the universal
+`unconfiguredDeployment_audit_never_succeeds` (no capability whatsoever makes
+an audit syscall succeed unconfigured), now the acceptance witness's first
+conjunct.  `auditRead_gates_are_three` → `auditRead_gates_are_four`;
+`SyscallReturnAbiSuite` §10f is the full-ABI witness.
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|

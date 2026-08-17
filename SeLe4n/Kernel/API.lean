@@ -2237,7 +2237,12 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
                   -- misconfigured deployment (a clearance that does not
                   -- dominate every subject label) has no monitor at all —
                   -- no epoch, no global identities — rather than a monitor
-                  -- with blind spots.
+                  -- with blind spots.  Round 2: the validated clearance is
+                  -- also the read facility's on/off switch — the transition
+                  -- refuses outright when it is `none`
+                  -- (`auditRead_unconfigured_denied`), so a boot-provisioned
+                  -- audit capability cannot open a reader the deployment's
+                  -- configuration never did.
                   match auditReadFromCore (liftLegacyContext ctx)
                       (validatedAuditMonitorClearance ctx)
                       (determineExecutingCore st tid) op st with
@@ -4152,23 +4157,87 @@ theorem dispatchWithCapChecked_auditDrain_default_denied
     auditDrain_unconfigured_denied (liftLegacyContext ctx) (determineExecutingCore st tid)
       args.count st]
 
+/-- **WS-SM SM9.A.10 (PR #870 round 2)**: an unconfigured deployment cannot
+read — the `.auditRead` sibling of `dispatchWithCapChecked_auditDrain_default_denied`,
+and the arm-level witness of the reviewer's exact scenario: a boot-provisioned
+`.auditTrail` capability with the `.read` right, a well-formed operation, and no
+configured monitor clearance.  The refusal comes from the transition's own
+configuration gate (`auditRead_unconfigured_denied`), not from the capability
+checks the capability was provisioned to pass. -/
+theorem dispatchWithCapChecked_auditRead_default_denied
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (cap : Capability)
+    (args : Architecture.SyscallArgDecode.AuditReadArgs) (op : AuditReadOp)
+    (st : SystemState)
+    (hSyscall : decoded.syscallId = .auditRead)
+    (hTarget : cap.target = .auditTrail)
+    (hArgs : Architecture.SyscallArgDecode.decodeAuditReadArgs decoded = .ok args)
+    (hOp : decodeAuditReadOp args.opcode args.index args.chunk = some op)
+    (hDefault : ctx.auditMonitorClearance = none) :
+    dispatchWithCapChecked ctx decoded tid gate cap st = .error .illegalAuthority := by
+  rw [dispatchWithCapChecked_auditRead_delegates ctx decoded tid gate cap args op st
+    hSyscall hTarget hArgs hOp,
+    validatedAuditMonitorClearance_none ctx hDefault,
+    auditRead_unconfigured_denied (liftLegacyContext ctx) (determineExecutingCore st tid)
+      op st]
+
+/-- **WS-SM SM9.A.9 (PR #870 round 2, the universal half of the acceptance
+witness)**: in an unconfigured deployment, **no capability whatsoever makes an
+audit syscall succeed** — not an ordinary object capability (rejected by the
+target gate), and not a boot-provisioned full-rights `.auditTrail` capability
+either (the transition's configuration gate refuses the read, the monitor gate
+refuses the drain).  Capability provisioning is an axis the labeling context
+cannot see, so a claim quantified over a *particular* capability shape would be
+silent about exactly the deployment that provisions one; this one is quantified
+over the capability. -/
+theorem unconfiguredDeployment_audit_never_succeeds
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (cap : Capability) (st st' : SystemState)
+    (hSyscall : decoded.syscallId = .auditRead ∨ decoded.syscallId = .auditDrain)
+    (hNoMonitor : ctx.auditMonitorClearance = none) :
+    dispatchWithCapChecked ctx decoded tid gate cap st ≠ .ok ((), st') := by
+  intro hOk
+  unfold dispatchWithCapChecked dispatchCapabilityOnly at hOk
+  rcases hSyscall with h | h <;> rw [h, validatedAuditMonitorClearance_none ctx hNoMonitor] at hOk
+  · simp only [auditRead_unconfigured_denied] at hOk
+    split at hOk
+    · exact absurd hOk (by simp)
+    · split at hOk
+      · exact absurd hOk (by simp)
+      · split at hOk
+        · exact absurd hOk (by simp)
+        · exact absurd hOk (by simp)
+  · simp only [auditDrain_unconfigured_denied] at hOk
+    split at hOk
+    · exact absurd hOk (by simp)
+    · split at hOk
+      · exact absurd hOk (by simp)
+      · exact absurd hOk (by simp)
+
 /-- **WS-SM SM9.A.9 (the acceptance witness): an unconfigured deployment has no
 audit reader at all.**
 
-Four facts, in one place, because "no audit reader by default" is a claim about
-their conjunction rather than about any one of them — and every one of the four
+Five facts, in one place, because "no audit reader by default" is a claim about
+their conjunction rather than about any one of them — and every one of the five
 is a **conjunct**, not a citation, so none can drift out from under the claim:
 
-1. an ordinary capability — the shape every thread holds to its own TCB — is
-   **rejected** on both audit syscalls, so the reader is not reachable by right
-   alone (the v0.32.97 confused-deputy class);
-2. audit authority cannot be **forged** by minting — the kernel's capability
+1. with **any** capability — including a boot-provisioned full-rights audit
+   capability, the shape capability provisioning can install without the
+   labeling context's knowledge — **neither audit syscall can succeed**: the
+   read is refused by the transition's own configuration gate
+   (`auditRead_unconfigured_denied`), the drain by the monitor gate (PR #870
+   round 2; before it, this claim was silent about provisioned capabilities
+   and false of them);
+2. an ordinary capability — the shape every thread holds to its own TCB — is
+   **rejected** on both audit syscalls with `.invalidCapability`, so the reader
+   is not reachable by right alone (the v0.32.97 confused-deputy class);
+3. audit authority cannot be **forged** by minting — the kernel's capability
    derivation path preserves targets — so a deployment holds an audit
    capability exactly where its boot/CSpace layer put one (discharged by
    `mintDerivedCap_no_audit_forgery`, whose home is the mint);
-3. with no configured monitor clearance nothing may **drain**, so the trail
+4. with no configured monitor clearance nothing may **drain**, so the trail
    cannot be emptied by a caller that merely holds a capability; and
-4. a read-only audit capability provably lacks the drain's right, so a
+5. a read-only audit capability provably lacks the drain's right, so a
    monitoring deployment can hand out a reader that cannot remove evidence.
 
 Stated over the *checked* dispatch, since that is the only path the audit
@@ -4179,6 +4248,8 @@ theorem unconfiguredDeployment_has_no_audit_reader
     (st : SystemState)
     (hSyscall : decoded.syscallId = .auditRead ∨ decoded.syscallId = .auditDrain)
     (hNoMonitor : ctx.auditMonitorClearance = none) :
+    (∀ (anyCap : Capability) (st' : SystemState),
+      dispatchWithCapChecked ctx decoded tid gate anyCap st ≠ .ok ((), st')) ∧
     dispatchWithCapChecked ctx decoded tid gate
         { target := .object oid, rights := AccessRightSet.ofList AccessRight.all,
           badge := none } st = .error .invalidCapability ∧
@@ -4190,7 +4261,10 @@ theorem unconfiguredDeployment_has_no_audit_reader
         c count st =
       .error .illegalAuthority ∧
     Capability.auditTrailRead.hasRight .write = false := by
-  refine ⟨dispatchWithCapChecked_audit_rejects_non_audit_capability ctx decoded tid gate _ oid st
+  refine ⟨fun anyCap st' =>
+      unconfiguredDeployment_audit_never_succeeds ctx decoded tid gate anyCap st st'
+        hSyscall hNoMonitor,
+    dispatchWithCapChecked_audit_rejects_non_audit_capability ctx decoded tid gate _ oid st
       hSyscall rfl,
     fun parent rights badge child hMint hChild =>
       mintDerivedCap_no_audit_forgery parent rights badge child hMint hChild,

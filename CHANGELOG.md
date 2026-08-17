@@ -1,3 +1,50 @@
+## v0.33.44 — PR #870 round 2: the read side gated on the configured monitor clearance
+
+One further Codex finding, valid.  The "an unconfigured deployment has no
+audit reader" claim was silent about **capability provisioning**, an axis
+the labeling context cannot see: with `auditMonitorClearance = none` but a
+boot-provisioned readable `.auditTrail` capability, the live `.auditRead`
+served that capability a partial-reader view — the acceptance witness's
+capability conjunct covered only an ordinary `.object` shape — so the claim
+was false in exactly the deployment shape that provisions one.  Closed per
+the implement-the-improvement rule by making the claim true rather than
+narrowing it:
+
+- `auditReadFromCore` opens with a **configuration gate**: no validated
+  monitor clearance ⇒ `.illegalAuthority` before any subject is resolved
+  (`auditRead_unconfigured_denied`, for every caller, operation and state;
+  `misconfiguredDeployment_cannot_read` the validated composition).  The
+  refusal error matches the drain's monitor gate, so a probing caller
+  cannot distinguish "feature off" from "not a monitor".  Partial readers
+  are unchanged where they belong — in *configured* deployments
+  (`auditReadWord` keys monitor mode on the caller, not the gate).  The
+  validated clearance is thereby the facility's single on/off switch, the
+  SM9.B "single configured privileged-reader gate" direction realised on
+  the read side.
+- At the arm: `dispatchWithCapChecked_auditRead_default_denied` (the
+  reviewer's exact scenario — provisioned capability, `.read` right,
+  well-formed operation, unconfigured) and the universal
+  `unconfiguredDeployment_audit_never_succeeds` — **no capability
+  whatsoever makes an audit syscall succeed in an unconfigured
+  deployment** — which becomes the acceptance witness's first conjunct
+  (five facts, the capability half now quantified over the capability).
+- `auditRead_gates_are_three` → `auditRead_gates_are_four` (the read-side
+  configuration gate joins the CC-8 rationale); Tier-3 forbids the
+  undercounting name's return and pins the four new theorems.
+- Evidence: `SmpInformationFlowSuite` 618 → 620 assertions (module 129 →
+  131 declarations, all anchored; the §9.7 misconfigured probe upgraded
+  from "generation reads 0" to the refusal, with the reviewer's scenario
+  and its configured positive control beside it);
+  `SyscallReturnAbiSuite` §10f is the full-ABI witness — the same
+  provisioned capability and trusted subject §10a serves, refused
+  unconfigured with the trail untouched; the phase fixture's unconfigured
+  line now reports the read refusal beside the drain's, which before this
+  round it could not (the read succeeded).
+
+Zero sorry/axiom (1057 environment constants swept across the three
+modified modules); per-core routing gate green with zero exceptions;
+trace byte-identical.
+
 ## v0.33.43 — SM9.A audit cut + PR #870 review: ten findings closed by code, none by prose
 
 A code-first audit of the v0.33.42 landing, documentation distrusted by

@@ -2905,6 +2905,17 @@ run_check "INVARIANT" rg -n '^theorem auditDrain_preserves_proofLayerInvariantBu
 # unconfigured deployment has no reader at all and keeps the cliff.
 run_check "INVARIANT" rg -n 'auditMonitorClearance : Option SecurityDomain := none' SeLe4n/Kernel/InformationFlow/Policy.lean
 run_check "INVARIANT" rg -n '^theorem auditDrain_unconfigured_denied' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+# PR #870 round 2: the READ side is deny-by-default too — the configuration
+# gate refuses every caller when no validated monitor clearance is configured,
+# so a boot-provisioned `.auditTrail` capability opens nothing (capability
+# provisioning is an axis the labeling context cannot see).  A misconfigured
+# clearance validates to `none` and is refused identically.  The gate
+# inventory is `auditRead_gates_are_four`; the pre-round-2 three-gate name
+# undercounts and must not return.
+run_check "INVARIANT" rg -n '^theorem auditRead_unconfigured_denied' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem misconfiguredDeployment_cannot_read' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditRead_gates_are_four' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_negative_check "INVARIANT" rg -n 'auditRead_gates_are_three' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 
 # SM9.A.4a: the reader-visibility discipline.  The clause set is a TOTAL
 # FUNCTION on `ReadableStructure`, not a list — a `mem_all` over a
@@ -2976,6 +2987,11 @@ run_check "INVARIANT" rg -n '^theorem auditReadFromCore_toUInt64_lossless' SeLe4
 # that bypasses the flow gate, and an unconfigured deployment has no reader.
 run_check "INVARIANT" rg -n '^theorem dispatchWithCap_auditRead_denied' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem unconfiguredDeployment_has_no_audit_reader' SeLe4n/Kernel/API.lean
+# PR #870 round 2: the arm-level read refusal and the universal half of the
+# acceptance witness — no capability whatsoever makes an audit syscall succeed
+# in an unconfigured deployment.
+run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_auditRead_default_denied' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem unconfiguredDeployment_audit_never_succeeds' SeLe4n/Kernel/API.lean
 
 # SM9.A.11 / SM9.A.12 / SM9.A.13: the registries.  Enforcement boundary,
 # lock sets, the frozen-ops classifier, and the per-core routing gate — which

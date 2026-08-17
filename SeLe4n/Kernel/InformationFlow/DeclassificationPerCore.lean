@@ -2607,20 +2607,27 @@ carries information *without* authorization.  What the reader *is* owed is an
 observation relation describing what it can see, which §14 supplies and
 `auditRead_no_channel` is stated over.
 
-The three gates, as one checkable statement: a capability that does not target
-the audit trail is rejected outright; an unconfigured deployment has no monitor,
-so no caller may drain; and a caller that is not the monitor sees no epoch. -/
-theorem auditRead_gates_are_three (ctx : LabelingContext) (oid : SeLe4n.ObjId)
-    (reader : SecurityDomain) (c : CoreId) (count : Nat) (st : SystemState)
-    (epoch : Nat) :
+The four gates, as one checkable statement: a capability that does not target
+the audit trail is rejected outright; an unconfigured deployment has no reader
+— the live entry refuses every operation before resolving a subject (PR #870
+round 2, `auditRead_unconfigured_denied`); an unconfigured deployment has no
+monitor, so no caller may drain; and a caller that is not the monitor sees no
+epoch.  The fourth conjunct's `auditReadWord … none` is the *model query* at a
+non-monitor clearance — deliberately ungated, which is why the second conjunct
+is stated at the live entry rather than the word. -/
+theorem auditRead_gates_are_four (ctx : LabelingContext) (oid : SeLe4n.ObjId)
+    (reader : SecurityDomain) (c : CoreId) (count : Nat) (op : AuditReadOp)
+    (st : SystemState) (epoch : Nat) :
     extractAuditAuthority
         { target := .object oid, rights := AccessRightSet.ofList AccessRight.all,
           badge := none } = .error .invalidCapability ∧
+    auditReadFromCore (liftLegacyContext ctx) none c op st = .error .illegalAuthority ∧
     auditDrainVisiblePrefix (liftLegacyContext ctx) none c count st = .error .illegalAuthority ∧
     auditReadWord (liftLegacyContext ctx) none reader
         { st with declassificationAuditEpoch := epoch } .status =
       auditReadWord (liftLegacyContext ctx) none reader st .status :=
   ⟨extractAuditAuthority_rejects_non_audit_capability oid,
+   auditRead_unconfigured_denied (liftLegacyContext ctx) c op st,
    auditDrain_unconfigured_denied (liftLegacyContext ctx) c count st,
    auditReadStatus_partial_hides_generation (liftLegacyContext ctx) none reader st epoch rfl⟩
 

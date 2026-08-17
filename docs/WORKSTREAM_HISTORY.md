@@ -117,13 +117,13 @@ lock sets two universal reads each; cross-core inventory 26 → 28 with an
 **empty** write set for both, which the confinement theorems prove; the
 per-core routing gate passes with **zero** allowlisted exceptions.
 
-**Evidence.**  `tests/SmpInformationFlowSuite.lean` §9.1–§9.8 (618 assertions /
+**Evidence.**  `tests/SmpInformationFlowSuite.lean` §9.1–§9.8 (620 assertions /
 78 groups overall), every group with a load-bearing negative, and §9.8 is the
 plan's own acceptance gate run for effect on the live transition: fill the
 trail to 256 through real authorized downgrades, observe
 `.auditLogCapacityExceeded`, read the status word and a field, drain, declassify
 again — with the post-drain timestamp provably fresh and the pre-epoch
-collision exhibited as the load-bearing negative.  §1.10 anchors all 129
+collision exhibited as the load-bearing negative.  §1.10 anchors all 131
 `AuditRead.lean` declarations by set difference.  `tests/SyscallReturnAbiSuite.lean`
 §10 is the end-to-end ABI witness that the returned word is the *selected* one.
 
@@ -162,6 +162,34 @@ shift made `k = 8` alias `k = 0` in release builds), and the enforcement
 boundary's `.auditRead` entry names `auditReadFromCore` — the live entry point
 whose subject-resolution seam the boundary exists to audit — rather than the
 inner query that takes a caller-supplied reader domain.
+
+**The PR #870 round-2 cut (v0.33.44).**  One further finding, valid: the
+"no audit reader by default" claim was silent about capability provisioning —
+an axis the labeling context cannot see.  With `auditMonitorClearance = none`
+but a boot-provisioned readable `.auditTrail` capability, the live
+`.auditRead` served that capability a partial-reader view (the acceptance
+witness's capability conjunct covered only an ordinary `.object` shape), so
+the claim was false in exactly the deployment shape that provisions one.
+Closed by making the claim true rather than narrowing it: `auditReadFromCore`
+opens with a configuration gate — no validated monitor clearance ⇒
+`.illegalAuthority` before any subject is resolved
+(`auditRead_unconfigured_denied`, for every caller, operation and state;
+`misconfiguredDeployment_cannot_read` the validated composition) — the same
+error as the drain's monitor gate, so refusal causes stay indistinguishable,
+and partial readers are unchanged in *configured* deployments (`auditReadWord`
+keys monitor mode on the caller, not the gate).  The validated clearance is
+thereby the facility's single on/off switch, the SM9.B direction realised on
+the read side.  At the arm: `dispatchWithCapChecked_auditRead_default_denied`
+(the reviewer's exact scenario) and the universal
+`unconfiguredDeployment_audit_never_succeeds` — no capability whatsoever makes
+an audit syscall succeed in an unconfigured deployment — now the acceptance
+witness's first conjunct, quantified over the capability.
+`auditRead_gates_are_three` becomes `auditRead_gates_are_four`.  Suite 618 →
+620 assertions; module 129 → 131 declarations, all anchored;
+`SyscallReturnAbiSuite` §10f is the full-ABI witness (the same provisioned
+capability and trusted subject §10a serves, refused unconfigured with the
+trail untouched); the phase fixture's unconfigured line now reports the read
+refusal beside the drain's.
 
 **What SM9.A does not do** (SM9.B/SM9.C/SM9.D, per the plan): refused
 declassifications are still unrecorded, there is no data-carrying

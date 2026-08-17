@@ -725,8 +725,16 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      have _ld := @SeLe4n.Kernel.syscallDelegates_auditDrain
      have _ll := @SeLe4n.Kernel.auditReadFromCore_toUInt64_lossless
      -- Fail-closed by default: an unconfigured deployment has NO audit reader,
-     -- which keeps the 256-entry cliff as the conservative default.
+     -- which keeps the 256-entry cliff as the conservative default.  PR #870
+     -- round 2 made this hold against capability provisioning too: the read
+     -- transition's own configuration gate refuses every caller when no
+     -- validated monitor clearance is configured, and the acceptance witness
+     -- carries the universal no-success conjunct over ANY capability.
      have _u := @SeLe4n.Kernel.unconfiguredDeployment_has_no_audit_reader
+     have _ur := @SeLe4n.Kernel.auditRead_unconfigured_denied
+     have _mr := @SeLe4n.Kernel.misconfiguredDeployment_cannot_read
+     have _rd := @SeLe4n.Kernel.dispatchWithCapChecked_auditRead_default_denied
+     have _ns := @SeLe4n.Kernel.unconfiguredDeployment_audit_never_succeeds
      have _n := @SeLe4n.Kernel.dispatchWithCap_auditRead_denied
      -- Both syscalls are in the ABI and value-returning.
      decide (SeLe4n.Model.SyscallId.auditRead.toNat = 31
