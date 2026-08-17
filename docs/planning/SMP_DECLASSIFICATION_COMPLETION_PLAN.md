@@ -869,7 +869,7 @@ their registries).  SM9.A.4a alone is a relation with congruence lemmas — see
 §3.4a — which is why the split is structural rather than a convenience.
 
 **Landing record.**  All fifteen sub-tasks landed in one cut.  The pure reader
-is the production leaf `InformationFlow/AuditRead.lean` (131 declarations,
+is the production leaf `InformationFlow/AuditRead.lean` (145 declarations,
 axiom-clean), placed **below** the projection layer so the live syscall arms
 consume it without pulling the SM8.A/B non-interference closure into the
 dispatch path — which is why `auditDrain_preserves_projection{,OnCore}` and the
@@ -906,7 +906,7 @@ gate's own scenario for effect on the live transition — fill the trail to
 `maxDeclassificationAuditEntries` through real authorized downgrades, observe
 `.auditLogCapacityExceeded`, read the status word and a field, drain, declassify
 again — with the post-drain timestamp provably fresh and the pre-epoch collision
-exhibited as the load-bearing negative.  620 assertions / 78 groups overall.
+exhibited as the load-bearing negative.  622 assertions / 78 groups overall.
 
 **Audit cut (same branch).**  A code-first audit of the landing found no
 security defect in any reachable state and no false theorem, and closed seven
@@ -958,6 +958,23 @@ realised on the read side.  At the arm:
 an audit syscall succeed unconfigured), now the acceptance witness's first
 conjunct.  `auditRead_gates_are_three` → `auditRead_gates_are_four`;
 `SyscallReturnAbiSuite` §10f is the full-ABI witness.
+
+**PR #870 round-3 cut (v0.33.45).**  One further P1 finding, valid: the
+visibility filter was source-only while an entry also exports `dstDomain` (the
+target object's own domain) and `targetObject` — so an authorized
+incomparable-pair downgrade handed a source-side partial reader an object
+identity its projection redacts.  Closed with the conjunction filter
+`auditEntryVisibleTo`, the position-independent refutation
+`auditLogVisibleTo_hides_undominated_destination`, the scenario theorem
+`incomparableDowngrade_hidden_from_source_reader`, the producer invariant
+`auditTrailDestinationsAreTargetDomains` and its capstone
+`auditVisibleEntry_target_domain_flows` (a visible entry's target object is
+one whose own domain flows to the reader — `capTargetObservable`'s own
+discipline), and the object half of the dominance chain
+(`auditMonitorDominatesObjects`, `validatedAuditMonitorClearance_dominates_objects`,
+`auditDrain_requires_full_dominance_of_labeling`) discharged by the same
+four-label validation.  Monitor views and all fixtures unchanged; suite 622
+assertions, module 145 declarations.
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|

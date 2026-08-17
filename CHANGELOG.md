@@ -1,3 +1,55 @@
+## v0.33.45 — PR #870 round 3: audit visibility filters on every disclosed domain
+
+One further Codex finding, P1, valid.  `auditLogVisibleTo` filtered on the
+**source** domain alone, while an entry also exports `dstDomain` — which the
+producer sets to the *target object's own domain* — and `targetObject`, an
+identity the projection layer classifies by exactly that domain
+(`capTargetObservable` redacts an object whose domain the observer cannot
+see).  For a policy-authorized downgrade between **incomparable** labels —
+`{low, trusted} → {high, untrusted}`, the one base flow the legacy lattice
+denies and hence exactly the pair a declassification policy exists to
+authorize (reachable since the v0.33.8 faithful-lift fix) — a partial reader
+at the source label passed the filter reflexively and was served the
+destination domain and the identity of an object its own projection redacts.
+Closed by making the reader cleared for **everything the entry discloses**:
+
+- `auditEntryVisibleTo` is the filter's predicate — the conjunction of
+  source-flows-to-reader and destination-flows-to-reader — with
+  `auditLogVisibleTo_cleared_{src,dst}` the projections and
+  `auditLogVisibleTo_hides_undominated_destination` the refutation: an entry
+  whose destination the reader is not cleared for is in **no** position of
+  its view.  `incomparableDowngrade_hidden_from_source_reader` is the
+  reviewer's exact scenario as a theorem; its load-bearing conjunct is that
+  the SOURCE still flows to that reader — precisely the fact a source-only
+  filter reads as sufficient.
+- `auditTrailDestinationsAreTargetDomains` is the new producer-established,
+  drain-preserved trail invariant (the destination IS the target's domain),
+  and `auditVisibleEntry_target_domain_flows` the capstone: a visible
+  entry's target object is one whose own domain flows to the reader — the
+  same condition `capTargetObservable` applies before revealing an object
+  identity anywhere else in the model.
+- The dominance chain gains its **object** half —
+  `auditMonitorDominatesObjects`, `auditMonitorAuthorized_dominates_objects`,
+  `liftLegacyContext_objectDomain_embedded`,
+  `validatedAuditMonitorClearance_dominates_objects` — because an entry's
+  destination is an object domain, so subject dominance alone no longer
+  implies a monitor sees the whole trail.  The **same** four-label validation
+  discharges both halves (object domains land in the same embedded range),
+  so the live path owes no new configuration.
+  `auditDrain_requires_full_dominance_of_subjects` is renamed
+  `_of_labeling` with both halves consumed; Tier-3 forbids the source-only
+  name's return and pins the seven new theorems.
+- Monitor views, the drain's destruction guard, the fixture counts and the
+  golden trace are all **unchanged** — a validated monitor dominates every
+  embedded label, so the destination conjunct never hides anything from it.
+
+Evidence: `SmpInformationFlowSuite` 620 → 622 assertions (module 131 → 145
+declarations, all anchored by set difference; §9.1 gains the
+incomparable-pair scenario with the load-bearing negative that its source
+still flows to the reader).  Zero sorry/axiom (1073 environment constants
+swept); per-core routing gate green with zero exceptions; trace
+byte-identical.
+
 ## v0.33.44 — PR #870 round 2: the read side gated on the configured monitor clearance
 
 One further Codex finding, valid.  The "an unconfigured deployment has no

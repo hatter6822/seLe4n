@@ -2861,7 +2861,7 @@ plus the golden trace verified byte-for-byte.
 
 ### Layer 3 under SMP — the audit trail's reader (WS-SM SM9.A)
 
-`InformationFlow/AuditRead.lean` (**production**, 131 declarations,
+`InformationFlow/AuditRead.lean` (**production**, 145 declarations,
 axiom-clean).  SM8.C.8 mounted a durable, bounded, **fail-closed** trail that
 nothing could read, so a deployment performing
 `maxDeclassificationAuditEntries = 256` authorized downgrades stopped being able
@@ -2874,7 +2874,15 @@ to exclude — so the fix is a reader and a drain, not a softer bound.
   `auditLogVisibleTo_hidden_insert` shows that inserting an entry the reader
   cannot see leaves its view *literally identical*.  Under a sparse global index
   the reader's indices would shift around a hidden entry, telling it both that
-  one exists and where.
+  one exists and where.  Since PR #870 round 3 the filter is the **conjunction**
+  `auditEntryVisibleTo` — the reader must be cleared for the source *and* the
+  destination, because an entry also exports `dstDomain` (the target object's
+  own domain) and `targetObject`: a source-only filter served an authorized
+  incomparable-pair downgrade's destination and object identity to a reader
+  whose projection redacts them
+  (`incomparableDowngrade_hidden_from_source_reader` keeps the leak refuted,
+  and `auditVisibleEntry_target_domain_flows` aligns the audit view with
+  `capTargetObservable`'s object-identity discipline).
 * **The persistent timestamp epoch** (SM9.A.1a), sequenced **before** drain
   because drain is unsound without it.  `timestamp := log.length` reuses a
   timestamp after any prefix removal — drain 1 from `[0,1,2]`, append, and the
@@ -2945,7 +2953,7 @@ capability-only); lock sets two universal reads each; cross-core inventory
 26 → 28 with an **empty** write set for both, proven rather than asserted; the
 per-core routing gate passes with zero allowlisted exceptions.
 
-Runtime coverage: §9.1–§9.8 of the same suite (554 → 620 assertions across
+Runtime coverage: §9.1–§9.8 of the same suite (554 → 622 assertions across
 seventy-eight groups), every group with a load-bearing negative.  §9.8 is the
 plan's own acceptance gate, run for effect on the live transition: fill the
 trail to 256 through real authorized downgrades, observe

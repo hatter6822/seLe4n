@@ -117,13 +117,13 @@ lock sets two universal reads each; cross-core inventory 26 → 28 with an
 **empty** write set for both, which the confinement theorems prove; the
 per-core routing gate passes with **zero** allowlisted exceptions.
 
-**Evidence.**  `tests/SmpInformationFlowSuite.lean` §9.1–§9.8 (620 assertions /
+**Evidence.**  `tests/SmpInformationFlowSuite.lean` §9.1–§9.8 (622 assertions /
 78 groups overall), every group with a load-bearing negative, and §9.8 is the
 plan's own acceptance gate run for effect on the live transition: fill the
 trail to 256 through real authorized downgrades, observe
 `.auditLogCapacityExceeded`, read the status word and a field, drain, declassify
 again — with the post-drain timestamp provably fresh and the pre-epoch
-collision exhibited as the load-bearing negative.  §1.10 anchors all 131
+collision exhibited as the load-bearing negative.  §1.10 anchors all 145
 `AuditRead.lean` declarations by set difference.  `tests/SyscallReturnAbiSuite.lean`
 §10 is the end-to-end ABI witness that the returned word is the *selected* one.
 
@@ -190,6 +190,31 @@ witness's first conjunct, quantified over the capability.
 capability and trusted subject §10a serves, refused unconfigured with the
 trail untouched); the phase fixture's unconfigured line now reports the read
 refusal beside the drain's.
+
+**The PR #870 round-3 cut (v0.33.45).**  One further P1 finding, valid:
+`auditLogVisibleTo` filtered on the source alone, while an entry also exports
+`dstDomain` — the target object's own domain — and `targetObject`, an identity
+the projection classifies by exactly that domain.  For a policy-authorized
+downgrade between incomparable labels ({low, trusted} → {high, untrusted}, the
+one base flow the legacy lattice denies and hence exactly the pair a
+declassification policy exists to authorize), a partial reader at the source
+label passed the filter reflexively and was served the destination domain and
+an object identity its own projection redacts.  Closed by making the filter
+the conjunction `auditEntryVisibleTo` (source AND destination flow to the
+reader), with `auditLogVisibleTo_hides_undominated_destination` the refutation
+at every position, `incomparableDowngrade_hidden_from_source_reader` the
+reviewer's scenario as a theorem, and `auditVisibleEntry_target_domain_flows`
+the capstone: under the new producer-established invariant
+`auditTrailDestinationsAreTargetDomains`, a visible entry's target object is
+one whose own domain flows to the reader — the same condition
+`capTargetObservable` applies before revealing an object identity anywhere
+else in the model.  The dominance chain gains its object half
+(`auditMonitorDominatesObjects`, `validatedAuditMonitorClearance_dominates_objects`)
+discharged by the same four-label validation, and
+`auditDrain_requires_full_dominance_of_subjects` becomes `_of_labeling` with
+both halves consumed.  Monitor views, the drain guard and all fixtures are
+unchanged.  Suite 620 → 622 assertions; module 131 → 145 declarations, all
+anchored.
 
 **What SM9.A does not do** (SM9.B/SM9.C/SM9.D, per the plan): refused
 declassifications are still unrecorded, there is no data-carrying

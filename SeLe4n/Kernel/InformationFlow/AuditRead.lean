@@ -97,11 +97,34 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId)
 -- §1  SM9.A.1 — the clearance-filtered, re-indexed visible view
 -- ============================================================================
 
+/-- WS-SM SM9.A.1 (PR #870 round 3): **is `reader` cleared for everything entry
+`e` discloses?**
+
+An entry does not only name its source.  It also records `dstDomain` — which
+the producer sets to the *target object's own domain*
+(`dstDomain := ctx.objectDomainOf targetId`) — and `targetObject`, an object
+identity the projection layer classifies by exactly that domain
+(`capTargetObservable` redacts an object whose domain the observer's clearance
+does not admit).  A source-only filter therefore leaks: for a policy-authorized
+downgrade between **incomparable** labels — the `{low, trusted} →
+{high, untrusted}` pair `legacyLattice` makes expressible — a partial reader at
+the source label would be handed the destination domain and the identity of an
+object its own projection redacts.  So visibility is the **conjunction**: the
+reader must be cleared to receive from the source *and* from the destination.
+`incomparableDowngrade_hidden_from_source_reader` keeps the leak refuted, and
+`auditVisibleEntry_target_domain_flows` is the capstone aligning the audit view
+with the projection's own object-identity discipline. -/
+def auditEntryVisibleTo (ctx : GenericLabelingContext) (reader : SecurityDomain)
+    (e : DeclassificationEvent) : Bool :=
+  ctx.policy.canFlow e.srcDomain reader && ctx.policy.canFlow e.dstDomain reader
+
 /-- WS-SM SM9.A.1: **what a reader at domain `reader` may see of a trail.**
 
-An entry records a release *of* `srcDomain`'s information, so the clearance that
-justifies reading it is the clearance to receive from `srcDomain`: the filter
-keeps exactly the entries whose source the reader dominates.
+An entry records a release of `srcDomain`'s information *into* `dstDomain`'s
+object, so the clearance that justifies reading it is the clearance to receive
+from **both** (`auditEntryVisibleTo` — PR #870 round 3; the filter was
+source-only before that cut, which leaked the destination side of an
+incomparable-pair downgrade).
 
 `List.filter`, so the result is a genuine **sublist in the original order** and
 is re-indexed from `0` — not a sparse view of the global trail.  That is the
@@ -110,7 +133,7 @@ the entries between two visible ones, and `auditLogVisibleTo_hidden_insert` says
 inserting an entry it cannot see leaves its view literally unchanged. -/
 def auditLogVisibleTo (ctx : GenericLabelingContext) (reader : SecurityDomain)
     (log : DeclassificationAuditLog) : DeclassificationAuditLog :=
-  log.filter (fun e => ctx.policy.canFlow e.srcDomain reader)
+  log.filter (auditEntryVisibleTo ctx reader)
 
 /-- WS-SM SM9.A.1: the empty trail is empty in every view. -/
 @[simp] theorem auditLogVisibleTo_nil (ctx : GenericLabelingContext)
@@ -131,20 +154,52 @@ theorem auditLogVisibleTo_length_le (ctx : GenericLabelingContext)
   (auditLogVisibleTo_sublist ctx reader log).length_le
 
 /-- WS-SM SM9.A.1: membership in the view is membership in the trail **and**
-clearance — the characterisation every downstream proof travels along. -/
+clearance for both disclosed domains — the characterisation every downstream
+proof travels along. -/
 theorem mem_auditLogVisibleTo_iff (ctx : GenericLabelingContext)
     (reader : SecurityDomain) (log : DeclassificationAuditLog)
     (e : DeclassificationEvent) :
     e ∈ auditLogVisibleTo ctx reader log ↔
-      e ∈ log ∧ ctx.policy.canFlow e.srcDomain reader = true := by
+      e ∈ log ∧ auditEntryVisibleTo ctx reader e = true := by
   simp [auditLogVisibleTo, List.mem_filter]
 
-/-- WS-SM SM9.A.1: a visible entry is one the reader is cleared for. -/
+/-- WS-SM SM9.A.1: a visible entry is one the reader is cleared for — both
+disclosed domains at once. -/
 theorem auditLogVisibleTo_cleared (ctx : GenericLabelingContext)
     (reader : SecurityDomain) (log : DeclassificationAuditLog)
     {e : DeclassificationEvent} (h : e ∈ auditLogVisibleTo ctx reader log) :
-    ctx.policy.canFlow e.srcDomain reader = true :=
+    auditEntryVisibleTo ctx reader e = true :=
   ((mem_auditLogVisibleTo_iff ctx reader log e).mp h).2
+
+/-- WS-SM SM9.A.1: the source projection — a visible entry's source flows to the
+reader. -/
+theorem auditLogVisibleTo_cleared_src (ctx : GenericLabelingContext)
+    (reader : SecurityDomain) (log : DeclassificationAuditLog)
+    {e : DeclassificationEvent} (h : e ∈ auditLogVisibleTo ctx reader log) :
+    ctx.policy.canFlow e.srcDomain reader = true :=
+  (Bool.and_eq_true_iff.mp (auditLogVisibleTo_cleared ctx reader log h)).1
+
+/-- WS-SM SM9.A.1 (PR #870 round 3, **the destination projection**): a visible
+entry's destination flows to the reader too — the half a source-only filter did
+not have, and the reason an audit reader can no longer recover an object
+identity its projection redacts. -/
+theorem auditLogVisibleTo_cleared_dst (ctx : GenericLabelingContext)
+    (reader : SecurityDomain) (log : DeclassificationAuditLog)
+    {e : DeclassificationEvent} (h : e ∈ auditLogVisibleTo ctx reader log) :
+    ctx.policy.canFlow e.dstDomain reader = true :=
+  (Bool.and_eq_true_iff.mp (auditLogVisibleTo_cleared ctx reader log h)).2
+
+/-- WS-SM SM9.A.1 (PR #870 round 3, **the leak refuted, negatively**): an entry
+whose destination does not flow to the reader is in **no** position of that
+reader's view, wherever it sits in the trail. -/
+theorem auditLogVisibleTo_hides_undominated_destination (ctx : GenericLabelingContext)
+    (reader : SecurityDomain) (log : DeclassificationAuditLog)
+    (e : DeclassificationEvent)
+    (hDst : ctx.policy.canFlow e.dstDomain reader = false) :
+    e ∉ auditLogVisibleTo ctx reader log := by
+  intro hMem
+  exact absurd (auditLogVisibleTo_cleared_dst ctx reader log hMem)
+    (by simp [hDst])
 
 /-- WS-SM SM9.A.1: the view distributes over append — the half
 `auditRead_stable_under_append` (SM9.A.5) is built from. -/
@@ -166,7 +221,7 @@ mitigating it. -/
 theorem auditLogVisibleTo_hidden_insert (ctx : GenericLabelingContext)
     (reader : SecurityDomain) (pre post : DeclassificationAuditLog)
     (e : DeclassificationEvent)
-    (hHidden : ctx.policy.canFlow e.srcDomain reader = false) :
+    (hHidden : auditEntryVisibleTo ctx reader e = false) :
     auditLogVisibleTo ctx reader (pre ++ e :: post) =
       auditLogVisibleTo ctx reader (pre ++ post) := by
   simp [auditLogVisibleTo, List.filter_append, hHidden]
@@ -179,8 +234,7 @@ not its core, not what it has read before).  The formal content of "the visible
 view is a function of the reader's clearance". -/
 theorem auditLogVisibleTo_determined_by_clearance (ctx : GenericLabelingContext)
     (r₁ r₂ : SecurityDomain) (log : DeclassificationAuditLog)
-    (hAgree : ∀ e ∈ log, ctx.policy.canFlow e.srcDomain r₁ =
-      ctx.policy.canFlow e.srcDomain r₂) :
+    (hAgree : ∀ e ∈ log, auditEntryVisibleTo ctx r₁ e = auditEntryVisibleTo ctx r₂ e) :
     auditLogVisibleTo ctx r₁ log = auditLogVisibleTo ctx r₂ log := by
   unfold auditLogVisibleTo
   exact List.filter_congr (fun e he => by rw [hAgree e he])
@@ -193,14 +247,41 @@ view, so a reader handed its own view learns nothing further. -/
       auditLogVisibleTo ctx reader log := by
   simp [auditLogVisibleTo, List.filter_filter]
 
-/-- WS-SM SM9.A.1: a reader dominating **every** source in the trail sees all of
+/-- WS-SM SM9.A.1: a reader cleared for **every** entry in the trail sees all of
 it.  The bridge between the clearance filter and the drain's full-dominance
 requirement (§5). -/
 theorem auditLogVisibleTo_eq_self (ctx : GenericLabelingContext)
     (reader : SecurityDomain) (log : DeclassificationAuditLog)
-    (hAll : ∀ e ∈ log, ctx.policy.canFlow e.srcDomain reader = true) :
+    (hAll : ∀ e ∈ log, auditEntryVisibleTo ctx reader e = true) :
     auditLogVisibleTo ctx reader log = log :=
   List.filter_eq_self.mpr hAll
+
+/-- WS-SM SM9.A.1 (PR #870 round 3, **the reviewer's scenario, refuted by
+`decide`**): the one downgrade the legacy lattice denies as a base flow —
+`{low, trusted} → {high, untrusted}` — is exactly a pair a declassification
+policy can authorize, and its recorded entry is **hidden** from a partial
+reader at the source label: the source flows to that reader reflexively, the
+destination does not flow to it at all, and the conjunction refuses.  The
+second conjunct is the load-bearing negative — it is the fact a source-only
+filter ignores, and with it the entry (destination domain, target object
+identity and all) was served to a reader whose projection redacts that very
+object. -/
+theorem incomparableDowngrade_hidden_from_source_reader :
+    ∀ (e : DeclassificationEvent),
+      e.srcDomain = embedLegacyLabel { confidentiality := .low, integrity := .trusted } →
+      e.dstDomain = embedLegacyLabel { confidentiality := .high, integrity := .untrusted } →
+      (DomainFlowPolicy.legacyLattice.canFlow e.srcDomain
+          (embedLegacyLabel { confidentiality := .low, integrity := .trusted }) = true ∧
+       DomainFlowPolicy.legacyLattice.canFlow e.dstDomain
+          (embedLegacyLabel { confidentiality := .low, integrity := .trusted }) = false) ∧
+      ∀ (ctx : GenericLabelingContext), ctx.policy = DomainFlowPolicy.legacyLattice →
+        ∀ log : DeclassificationAuditLog,
+          e ∉ auditLogVisibleTo ctx
+            (embedLegacyLabel { confidentiality := .low, integrity := .trusted }) log := by
+  intro e hSrc hDst
+  refine ⟨⟨by rw [hSrc]; decide, by rw [hDst]; decide⟩, fun ctx hPolicy log => ?_⟩
+  exact auditLogVisibleTo_hides_undominated_destination ctx _ log e
+    (by rw [hPolicy, hDst]; decide)
 
 /-- WS-SM SM9.A.1: the entry a reader's index `i` names, `none` past the end of
 its own view.  Deliberately indexes the **view**, never the trail. -/
@@ -1260,7 +1341,7 @@ theorem auditDrain_returned_length_is_visible (ctx : GenericLabelingContext)
       st.declassificationAuditLog := by
     exact of_decide_eq_true hComplete
   have hAll : ∀ e ∈ st.declassificationAuditLog,
-      ctx.policy.canFlow e.srcDomain reader = true := by
+      auditEntryVisibleTo ctx reader e = true := by
     have hFilter := hView
     unfold auditLogVisibleTo at hFilter
     exact List.filter_eq_self.mp hFilter
@@ -1282,8 +1363,9 @@ theorem auditDrain_returned_length_is_visible (ctx : GenericLabelingContext)
 The bridge from the configuration obligation to the visibility fact: under a
 well-formed configuration (the monitor clearance is a top of the flow policy) a
 caller that passes the gate dominates every domain, hence every recorded
-`srcDomain`, hence its visible view *is* the trail.  This is what makes the
-drain positionally blind — there is no partial-visibility prefix to probe. -/
+`srcDomain` **and** every recorded `dstDomain`, hence its visible view *is* the
+trail.  This is what makes the drain positionally blind — there is no
+partial-visibility prefix to probe. -/
 theorem auditDrain_requires_full_dominance (ctx : GenericLabelingContext)
     (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
     (log : DeclassificationAuditLog)
@@ -1292,8 +1374,10 @@ theorem auditDrain_requires_full_dominance (ctx : GenericLabelingContext)
     (hGate : auditMonitorAuthorized ctx monitorClearance reader = true) :
     auditLogVisibleTo ctx reader log = log :=
   auditLogVisibleTo_eq_self ctx reader log
-    (fun e _ => auditMonitorAuthorized_dominates_all ctx monitorClearance reader hTop hTrans
-      hGate e.srcDomain)
+    (fun e _ => by
+      have hAll := auditMonitorAuthorized_dominates_all ctx monitorClearance reader hTop
+        hTrans hGate
+      simp [auditEntryVisibleTo, hAll e.srcDomain, hAll e.dstDomain])
 
 /-- WS-SM SM9.A.3: **every entry's source is a domain the labeling assigns to
 some subject.**
@@ -1350,6 +1434,74 @@ theorem declassifyObjectFromCore_preserves_trailSources
   · rcases List.mem_singleton.mp hNew with rfl
     exact ⟨tid, rfl⟩
 
+/-- WS-SM SM9.A.3 (PR #870 round 3): **every entry's destination is its own
+target object's domain.**
+
+The destination sibling of `auditTrailSourcesFromLabeling`, and strictly
+sharper: the producer records `dstDomain := ctx.objectDomainOf targetId` for
+the very `targetId` it stores in `targetObject`, so the two fields are not
+merely related — the destination *is* the target's domain.  This is what ties
+the visibility filter's destination conjunct to the projection layer's
+object-identity discipline (`auditVisibleEntry_target_domain_flows`): a reader
+cleared for `dstDomain` is cleared for the disclosed object's own domain, which
+is exactly the condition `capTargetObservable` applies before revealing an
+object identity anywhere else in the model. -/
+def auditTrailDestinationsAreTargetDomains (ctx : GenericLabelingContext)
+    (log : DeclassificationAuditLog) : Prop :=
+  ∀ e ∈ log, e.dstDomain = ctx.objectDomainOf e.targetObject
+
+/-- WS-SM SM9.A.3: removing entries preserves it — the drain direction. -/
+theorem auditTrailDestinationsAreTargetDomains_drop (ctx : GenericLabelingContext)
+    (log : DeclassificationAuditLog) (d : Nat)
+    (h : auditTrailDestinationsAreTargetDomains ctx log) :
+    auditTrailDestinationsAreTargetDomains ctx (log.drop d) :=
+  fun e hMem => h e (List.mem_of_mem_drop hMem)
+
+/-- WS-SM SM9.A.3: the empty trail satisfies it — the boot witness. -/
+@[simp] theorem auditTrailDestinationsAreTargetDomains_nil (ctx : GenericLabelingContext) :
+    auditTrailDestinationsAreTargetDomains ctx [] := by
+  intro e hMem; simp at hMem
+
+/-- WS-SM SM9.A.3: **the live declassification establishes it** — the appended
+event's destination is `ctx.objectDomainOf targetId` for the `targetId` it
+records, by construction. -/
+theorem declassifyObjectFromCore_preserves_trailDestinations
+    (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
+    (c : CoreId) (targetId : SeLe4n.ObjId) (st st' : SystemState)
+    (hDests : auditTrailDestinationsAreTargetDomains ctx st.declassificationAuditLog)
+    (hStep : declassifyObjectFromCore ctx declPolicy c targetId st = .ok ((), st')) :
+    auditTrailDestinationsAreTargetDomains ctx st'.declassificationAuditLog := by
+  obtain ⟨tid, -, hSt'⟩ :=
+    declassifyObjectFromCore_frame_of_ok ctx declPolicy c targetId st st' hStep
+  subst hSt'
+  intro e hMem
+  have hMem' : e ∈ st.declassificationAuditLog ++
+      [declassifyStoreEvent c (ctx.threadDomainOf tid) (ctx.objectDomainOf targetId)
+        targetId st] := hMem
+  rcases List.mem_append.mp hMem' with hOld | hNew
+  · exact hDests e hOld
+  · rcases List.mem_singleton.mp hNew with rfl
+    rfl
+
+/-- WS-SM SM9.A.3 (PR #870 round 3, **the capstone aligning the audit view with
+the projection**): a visible entry's target object is one whose **own domain
+flows to the reader** — the same condition `capTargetObservable` applies before
+revealing an object identity in the projected state.
+
+This is the "structurally establish every exported field is classified by a
+dominated domain" closure: with the destination conjunct in the filter and the
+producer's destination-is-target-domain invariant, an audit reader can never
+use the trail to recover an object identity its own projection redacts. -/
+theorem auditVisibleEntry_target_domain_flows (ctx : GenericLabelingContext)
+    (reader : SecurityDomain) (log : DeclassificationAuditLog)
+    (hDests : auditTrailDestinationsAreTargetDomains ctx log)
+    {e : DeclassificationEvent} (h : e ∈ auditLogVisibleTo ctx reader log) :
+    ctx.policy.canFlow (ctx.objectDomainOf e.targetObject) reader = true := by
+  have hMem := ((mem_auditLogVisibleTo_iff ctx reader log e).mp h).1
+  have hDst := auditLogVisibleTo_cleared_dst ctx reader log h
+  rw [← hDests e hMem]
+  exact hDst
+
 /-- WS-SM SM9.A.3 (**the practically satisfiable dominance obligation**): the
 configured monitor clearance dominates every domain the *labeling* can assign to
 a subject.
@@ -1381,26 +1533,64 @@ theorem auditMonitorAuthorized_dominates_subjects (ctx : GenericLabelingContext)
   intro tid
   exact hTrans _ m reader (hAll tid) hGate
 
-/-- WS-SM SM9.A.3 (**the form a real deployment uses**): under the
-subject-relative obligation, a caller that passes the gate sees **the whole
-trail** — every entry, because every entry's source is a subject domain the
-monitor dominates.
+/-- WS-SM SM9.A.3 (PR #870 round 3): the **object** half of the dominance
+obligation — the configured clearance dominates every domain the labeling can
+assign to an object.
+
+Owed since the visibility filter gained its destination conjunct: an entry's
+`dstDomain` is an *object* domain (`auditTrailDestinationsAreTargetDomains`),
+so subject dominance alone no longer implies the monitor sees the whole trail.
+Configuration-derived exactly as the subject half is. -/
+def auditMonitorDominatesObjects (ctx : GenericLabelingContext)
+    (monitorClearance : Option SecurityDomain) : Prop :=
+  ∃ m, monitorClearance = some m ∧
+    ∀ oid : SeLe4n.ObjId, ctx.policy.canFlow (ctx.objectDomainOf oid) m = true
+
+/-- WS-SM SM9.A.3 (PR #870 round 3): a caller that passes the gate dominates
+every object domain. -/
+theorem auditMonitorAuthorized_dominates_objects (ctx : GenericLabelingContext)
+    (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
+    (hDom : auditMonitorDominatesObjects ctx monitorClearance)
+    (hTrans : ctx.policy.isTransitive)
+    (hGate : auditMonitorAuthorized ctx monitorClearance reader = true) :
+    ∀ oid : SeLe4n.ObjId, ctx.policy.canFlow (ctx.objectDomainOf oid) reader = true := by
+  obtain ⟨m, hm, hAll⟩ := hDom
+  subst hm
+  intro oid
+  exact hTrans _ m reader (hAll oid) hGate
+
+/-- WS-SM SM9.A.3 (**the form a real deployment uses**): under the labeling's
+dominance obligations — subjects for the sources, objects for the
+destinations — a caller that passes the gate sees **the whole trail**: every
+entry's source is a subject domain the monitor dominates, and every entry's
+destination is its target object's domain, which the monitor dominates too.
 
 This is what makes the drain positionally blind on the contexts the live path
-actually carries: there is no partial-visibility prefix to probe. -/
-theorem auditDrain_requires_full_dominance_of_subjects (ctx : GenericLabelingContext)
+actually carries: there is no partial-visibility prefix to probe.  (Named
+`_of_labeling` since PR #870 round 3 — the pre-round form consumed the subject
+half alone, which the destination conjunct in `auditEntryVisibleTo` makes
+insufficient.) -/
+theorem auditDrain_requires_full_dominance_of_labeling (ctx : GenericLabelingContext)
     (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
     (log : DeclassificationAuditLog)
     (hDom : auditMonitorDominatesSubjects ctx monitorClearance)
+    (hDomObj : auditMonitorDominatesObjects ctx monitorClearance)
     (hTrans : ctx.policy.isTransitive)
     (hSources : auditTrailSourcesFromLabeling ctx log)
+    (hDests : auditTrailDestinationsAreTargetDomains ctx log)
     (hGate : auditMonitorAuthorized ctx monitorClearance reader = true) :
     auditLogVisibleTo ctx reader log = log := by
   refine auditLogVisibleTo_eq_self ctx reader log (fun e hMem => ?_)
   obtain ⟨tid, hTid⟩ := hSources e hMem
-  rw [hTid]
-  exact auditMonitorAuthorized_dominates_subjects ctx monitorClearance reader hDom hTrans
-    hGate tid
+  have hSrc : ctx.policy.canFlow e.srcDomain reader = true := by
+    rw [hTid]
+    exact auditMonitorAuthorized_dominates_subjects ctx monitorClearance reader hDom hTrans
+      hGate tid
+  have hDst : ctx.policy.canFlow e.dstDomain reader = true := by
+    rw [hDests e hMem]
+    exact auditMonitorAuthorized_dominates_objects ctx monitorClearance reader hDomObj hTrans
+      hGate e.targetObject
+  simp [auditEntryVisibleTo, hSrc, hDst]
 
 
 -- ============================================================================
@@ -1423,13 +1613,18 @@ The obligation is not decidable for an arbitrary `GenericLabelingContext`
 `liftLegacyContext ctx`, whose `threadDomainOf` is
 `embedLegacyLabel ∘ ctx.threadLabelOf` — every subject domain the live kernel
 can ever assign is one of the **four** embedded labels
-(`liftLegacyContext_threadDomain_embedded`).  Over four labels the obligation
-is a four-conjunct `Bool`, so the fix is the project's enforce-it-structurally
-pattern: the live arms consume `validatedAuditMonitorClearance`, which returns
-the configured clearance only when it dominates all four embedded labels and
-**`none` otherwise** — a misconfigured deployment behaves exactly like an
-unconfigured one, which is the fail-closed posture SM8.C established for the
-declassification policy itself.
+(`liftLegacyContext_threadDomain_embedded`), and — PR #870 round 3 — so is
+every *object* domain (`liftLegacyContext_objectDomain_embedded`), which the
+visibility filter's destination conjunct made load-bearing.  Over four labels
+the obligation is a four-conjunct `Bool`, so the fix is the project's
+enforce-it-structurally pattern: the live arms consume
+`validatedAuditMonitorClearance`, which returns the configured clearance only
+when it dominates all four embedded labels and **`none` otherwise** — a
+misconfigured deployment behaves exactly like an unconfigured one, which is
+the fail-closed posture SM8.C established for the declassification policy
+itself.  One four-label check discharges **both** dominance halves
+(`validatedAuditMonitorClearance_dominates_subjects` / `_dominates_objects`),
+because subject and object domains land in the same embedded range.
 
 The drain's `auditDrainViewComplete` guard (§5) stays alongside it as defense
 in depth: validation closes the hole for the live context by construction, and
@@ -1457,6 +1652,17 @@ theorem liftLegacyContext_threadDomain_embedded (ctx : LabelingContext)
     ∃ l ∈ legacySubjectLabels,
       (liftLegacyContext ctx).threadDomainOf tid = embedLegacyLabel l :=
   ⟨ctx.threadLabelOf tid, mem_legacySubjectLabels _, rfl⟩
+
+/-- WS-SM SM9.A.3 (PR #870 round 3): **every object domain the live context can
+assign is an embedded legacy label too** — `liftLegacyContext`'s
+`objectDomainOf` is `embedLegacyLabel ∘ objectLabelOf`, so the four-label
+validation covers the destination conjunct exactly as it covers the source
+one. -/
+theorem liftLegacyContext_objectDomain_embedded (ctx : LabelingContext)
+    (oid : SeLe4n.ObjId) :
+    ∃ l ∈ legacySubjectLabels,
+      (liftLegacyContext ctx).objectDomainOf oid = embedLegacyLabel l :=
+  ⟨ctx.objectLabelOf oid, mem_legacySubjectLabels _, rfl⟩
 
 /-- WS-SM SM9.A.3 (PR #870 review, **the validated clearance**): the configured
 audit-monitor clearance, admitted only when it dominates every legacy subject
@@ -1506,20 +1712,43 @@ theorem validatedAuditMonitorClearance_dominates_subjects (ctx : LabelingContext
       exact List.all_eq_true.mp hAll l hl
     · exact absurd hVal (by simp)
 
+/-- WS-SM SM9.A.3 (PR #870 round 3): validation discharges the **object** half
+of the obligation too — the destination conjunct's dominance, from the same
+four-label check, because object domains land in the same embedded range as
+subject domains. -/
+theorem validatedAuditMonitorClearance_dominates_objects (ctx : LabelingContext)
+    (m : SecurityDomain)
+    (hVal : validatedAuditMonitorClearance ctx = some m) :
+    auditMonitorDominatesObjects (liftLegacyContext ctx) (some m) := by
+  unfold validatedAuditMonitorClearance at hVal
+  split at hVal
+  · exact absurd hVal (by simp)
+  · rename_i m' hEqCfg
+    split at hVal
+    · rename_i hAll
+      obtain rfl : m' = m := Option.some.inj hVal
+      refine ⟨m', rfl, fun oid => ?_⟩
+      obtain ⟨l, hl, hEq⟩ := liftLegacyContext_objectDomain_embedded ctx oid
+      rw [hEq]
+      exact List.all_eq_true.mp hAll l hl
+    · exact absurd hVal (by simp)
+
 /-- WS-SM SM9.A.3 (**the live-path visibility fact, unconditional**): under a
 validated clearance, a gate-passing caller sees **the whole trail** — every
-hypothesis of the dominance bridge discharged by construction: dominance from
-validation, transitivity from `legacyLattice_wellFormed`, sources from the
-producer's own invariant. -/
+hypothesis of the dominance bridge discharged by construction: both dominance
+halves from validation, transitivity from `legacyLattice_wellFormed`, sources
+and destinations from the producer's own invariants. -/
 theorem auditDrain_validated_view_complete (ctx : LabelingContext)
     (m reader : SecurityDomain) (log : DeclassificationAuditLog)
     (hVal : validatedAuditMonitorClearance ctx = some m)
     (hSources : auditTrailSourcesFromLabeling (liftLegacyContext ctx) log)
+    (hDests : auditTrailDestinationsAreTargetDomains (liftLegacyContext ctx) log)
     (hGate : auditMonitorAuthorized (liftLegacyContext ctx) (some m) reader = true) :
     auditLogVisibleTo (liftLegacyContext ctx) reader log = log :=
-  auditDrain_requires_full_dominance_of_subjects (liftLegacyContext ctx) (some m) reader log
+  auditDrain_requires_full_dominance_of_labeling (liftLegacyContext ctx) (some m) reader log
     (validatedAuditMonitorClearance_dominates_subjects ctx m hVal)
-    DomainFlowPolicy.legacyLattice_wellFormed.2 hSources hGate
+    (validatedAuditMonitorClearance_dominates_objects ctx m hVal)
+    DomainFlowPolicy.legacyLattice_wellFormed.2 hSources hDests hGate
 
 /-- WS-SM SM9.A.3 (PR #870 review, **the misconfiguration witness**): a
 deployment that names embedded `low` as its monitor clearance validates to

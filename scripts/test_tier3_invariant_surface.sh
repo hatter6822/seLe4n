@@ -2890,11 +2890,13 @@ run_check "INVARIANT" rg -n '^theorem observerScopedGeneration_not_mountable' Se
 # SM9.A.3: drain under the §3.4 dominance gate.  A partial-visibility prefix
 # drain reveals the POSITIONS of hidden entries and repeated drains enumerate
 # the hidden layout, so drain is authorized only for a caller dominating every
-# recorded source — and the gate is derived from the CONFIGURATION, never from
-# the rows the trail currently holds (drain a trail to `[]` and a rows-derived
-# predicate goes vacuously true exactly where it matters).
+# recorded source AND destination (PR #870 round 3 — the bridge is
+# `_of_labeling`, both halves) — and the gate is derived from the
+# CONFIGURATION, never from the rows the trail currently holds (drain a trail
+# to `[]` and a rows-derived predicate goes vacuously true exactly where it
+# matters).
 run_check "INVARIANT" rg -n '^def auditDrainVisiblePrefix' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem auditDrain_requires_full_dominance_of_subjects' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditDrain_requires_full_dominance_of_labeling' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 run_check "INVARIANT" rg -n '^theorem auditDrain_partial_reader_drains_nothing' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 run_check "INVARIANT" rg -n '^theorem auditMonitorGate_is_configuration_derived' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 run_check "INVARIANT" rg -n '^theorem auditMonitorGate_records_derived_unsound' SeLe4n/Kernel/InformationFlow/AuditRead.lean
@@ -2916,6 +2918,20 @@ run_check "INVARIANT" rg -n '^theorem auditRead_unconfigured_denied' SeLe4n/Kern
 run_check "INVARIANT" rg -n '^theorem misconfiguredDeployment_cannot_read' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 run_check "INVARIANT" rg -n '^theorem auditRead_gates_are_four' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 run_negative_check "INVARIANT" rg -n 'auditRead_gates_are_three' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+# PR #870 round 3: visibility filters on EVERY disclosed domain — the filter's
+# predicate is the source/destination conjunction, an entry whose destination
+# the reader is not cleared for is in no position of its view, and a visible
+# entry's target object is one whose own domain flows to the reader (the same
+# discipline `capTargetObservable` applies in the projection).  The retired
+# source-only dominance bridge must not return.
+run_check "INVARIANT" rg -n '^def auditEntryVisibleTo' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditLogVisibleTo_cleared_dst' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditLogVisibleTo_hides_undominated_destination' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem incomparableDowngrade_hidden_from_source_reader' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditVisibleEntry_target_domain_flows' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditDrain_requires_full_dominance_of_labeling' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem validatedAuditMonitorClearance_dominates_objects' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_negative_check "INVARIANT" rg -n 'auditDrain_requires_full_dominance_of_subjects' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 
 # SM9.A.4a: the reader-visibility discipline.  The clause set is a TOTAL
 # FUNCTION on `ReadableStructure`, not a list — a `mem_all` over a

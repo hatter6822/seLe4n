@@ -2543,7 +2543,7 @@ theorem lowEquivalent_does_not_determine_visible_view :
     { (default : SystemState) with
       declassificationAuditLog := [auditTimestampWitness 0] }, ?_, ?_⟩
   · exact (declassificationAuditLog_write_preserves_projection _ _ default _).symm
-  · simp [auditLogVisibleTo, DomainFlowPolicy.allowAll]
+  · simp [auditLogVisibleTo, auditEntryVisibleTo, DomainFlowPolicy.allowAll]
 
 -- ============================================================================
 -- §15  SM9.A.4b — the reader opens no channel

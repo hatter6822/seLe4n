@@ -670,7 +670,14 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      true)
   assertBool "SM9.A: drain under the configuration-derived dominance gate"
     (have _d := @SeLe4n.Kernel.auditDrainVisiblePrefix
-     have _fd := @SeLe4n.Kernel.auditDrain_requires_full_dominance_of_subjects
+     have _fd := @SeLe4n.Kernel.auditDrain_requires_full_dominance_of_labeling
+     -- PR #870 round 3: visibility filters on BOTH disclosed domains, so an
+     -- audit reader can never recover an object identity its projection
+     -- redacts; the destination is the target object's own domain.
+     have _dv := @SeLe4n.Kernel.auditEntryVisibleTo
+     have _dh := @SeLe4n.Kernel.auditLogVisibleTo_hides_undominated_destination
+     have _di := @SeLe4n.Kernel.incomparableDowngrade_hidden_from_source_reader
+     have _dt := @SeLe4n.Kernel.auditVisibleEntry_target_domain_flows
      have _pr := @SeLe4n.Kernel.auditDrain_partial_reader_drains_nothing
      have _cl := @SeLe4n.Kernel.auditDrain_fully_clears_for_dominating_reader
      -- The gate is derived from the CONFIGURATION, never from the rows the

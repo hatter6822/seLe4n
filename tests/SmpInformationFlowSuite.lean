@@ -1287,19 +1287,24 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 -- ============================================================================
 --
 -- `InformationFlow/AuditRead.lean` (production).  Every one of the module's
--- 131 declarations is anchored, on SM8.A's set-difference discipline: a symbol
+-- 145 declarations is anchored, on SM8.A's set-difference discipline: a symbol
 -- renamed or deleted fails Tier 3 rather than quietly leaving the surface.
+#check @auditEntryVisibleTo
 #check @auditLogVisibleTo
 #check @auditLogVisibleTo_nil
 #check @auditLogVisibleTo_sublist
 #check @auditLogVisibleTo_length_le
 #check @mem_auditLogVisibleTo_iff
 #check @auditLogVisibleTo_cleared
+#check @auditLogVisibleTo_cleared_src
+#check @auditLogVisibleTo_cleared_dst
+#check @auditLogVisibleTo_hides_undominated_destination
 #check @auditLogVisibleTo_append
 #check @auditLogVisibleTo_hidden_insert
 #check @auditLogVisibleTo_determined_by_clearance
 #check @auditLogVisibleTo_idempotent
 #check @auditLogVisibleTo_eq_self
+#check @incomparableDowngrade_hidden_from_source_reader
 #check @auditVisibleEntry?
 #check @auditVisibleEntry?_mem
 #check @auditMonitorAuthorized
@@ -1375,9 +1380,16 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @auditTrailSourcesFromLabeling_drop
 #check @auditTrailSourcesFromLabeling_nil
 #check @declassifyObjectFromCore_preserves_trailSources
+#check @auditTrailDestinationsAreTargetDomains
+#check @auditTrailDestinationsAreTargetDomains_drop
+#check @auditTrailDestinationsAreTargetDomains_nil
+#check @declassifyObjectFromCore_preserves_trailDestinations
+#check @auditVisibleEntry_target_domain_flows
 #check @auditMonitorDominatesSubjects
+#check @auditMonitorDominatesObjects
+#check @auditMonitorAuthorized_dominates_objects
 #check @auditMonitorAuthorized_dominates_subjects
-#check @auditDrain_requires_full_dominance_of_subjects
+#check @auditDrain_requires_full_dominance_of_labeling
 #check @auditDrain_preserves_auditLogBounded
 #check @auditDrain_preserves_wellFormed_at_epoch
 #check @auditDrain_monotone_epoch
@@ -1414,9 +1426,11 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @legacySubjectLabels
 #check @mem_legacySubjectLabels
 #check @liftLegacyContext_threadDomain_embedded
+#check @liftLegacyContext_objectDomain_embedded
 #check @validatedAuditMonitorClearance
 #check @validatedAuditMonitorClearance_none
 #check @validatedAuditMonitorClearance_dominates_subjects
+#check @validatedAuditMonitorClearance_dominates_objects
 #check @auditDrain_validated_view_complete
 #check @validatedAuditMonitorClearance_misconfigured_low
 #check @misconfiguredDeployment_cannot_drain
@@ -2034,13 +2048,25 @@ example (gctx : GenericLabelingContext) (reader : SecurityDomain)
 
 -- SM9.A.1: **the no-gap-leak property.**  The view is a function of the
 -- reader's clearance alone, so two trails a reader cannot distinguish give it
--- literally the same view — hidden entries leave no index gap behind.
+-- literally the same view — hidden entries leave no index gap behind.  The
+-- hiding predicate is the round-3 conjunction: an entry is hidden when the
+-- reader is not cleared for EITHER disclosed domain.
 example (gctx : GenericLabelingContext) (reader : SecurityDomain)
     (pre post : DeclassificationAuditLog) (e : DeclassificationEvent)
-    (hHidden : gctx.policy.canFlow e.srcDomain reader = false) :
+    (hHidden : auditEntryVisibleTo gctx reader e = false) :
     auditLogVisibleTo gctx reader (pre ++ e :: post)
       = auditLogVisibleTo gctx reader (pre ++ post) :=
   auditLogVisibleTo_hidden_insert gctx reader pre post e hHidden
+
+-- SM9.A.1 (PR #870 round 3): an entry whose DESTINATION the reader is not
+-- cleared for is in no position of that reader's view — the half a source-only
+-- filter did not have, and what stops an audit capability from recovering an
+-- object identity the projection redacts.
+example (gctx : GenericLabelingContext) (reader : SecurityDomain)
+    (log : DeclassificationAuditLog) (e : DeclassificationEvent)
+    (hDst : gctx.policy.canFlow e.dstDomain reader = false) :
+    e ∉ auditLogVisibleTo gctx reader log :=
+  auditLogVisibleTo_hides_undominated_destination gctx reader log e hDst
 
 -- SM9.A.2: the chunk protocol reconstructs an arbitrary-length `Nat` field
 -- exactly.  Unconditional on the accepted domain — a fixed low/high pair would
@@ -2083,16 +2109,20 @@ example (gctx : GenericLabelingContext) (monitorClearance : Option SecurityDomai
 
 -- SM9.A.3: **drain requires full dominance.**  A caller that qualifies sees the
 -- whole trail, so a prefix drain never removes an entry the caller could not
--- read — which is what would reveal the positions of the hidden ones.
+-- read — which is what would reveal the positions of the hidden ones.  Since
+-- PR #870 round 3 the bridge consumes BOTH labeling halves: subjects for the
+-- sources, objects for the destinations.
 example (gctx : GenericLabelingContext) (monitorClearance : Option SecurityDomain)
     (reader : SecurityDomain) (log : DeclassificationAuditLog)
     (hDom : auditMonitorDominatesSubjects gctx monitorClearance)
+    (hDomObj : auditMonitorDominatesObjects gctx monitorClearance)
     (hTrans : gctx.policy.isTransitive)
     (hSources : auditTrailSourcesFromLabeling gctx log)
+    (hDests : auditTrailDestinationsAreTargetDomains gctx log)
     (hGate : auditMonitorAuthorized gctx monitorClearance reader = true) :
     auditLogVisibleTo gctx reader log = log :=
-  auditDrain_requires_full_dominance_of_subjects gctx monitorClearance reader log
-    hDom hTrans hSources hGate
+  auditDrain_requires_full_dominance_of_labeling gctx monitorClearance reader log
+    hDom hDomObj hTrans hSources hDests hGate
 
 -- SM9.A.1a / SM9.A.3: **the timestamp a drain leaves free is genuinely free.**
 -- This is why the epoch is a mounted field: under `timestamp := log.length` the
@@ -7343,6 +7373,30 @@ private def runAuditVisibleViewChecks : IO Unit := do
     (decide (auditHiddenEntry ∈ auditMixedTrail) &&
      !(decide (auditHiddenEntry ∈
         auditLogVisibleTo auditGenericCtx auditPartialReader auditMixedTrail)))
+  -- PR #870 round 3: **the incomparable-pair downgrade** — the one base flow
+  -- the legacy lattice denies, hence exactly the shape a declassification
+  -- policy exists to authorize.  Its recorded entry names a DESTINATION the
+  -- source-side reader is not cleared for, and the destination is the target
+  -- object's own domain — an object identity that reader's projection
+  -- redacts.  A source-only filter served this entry; the conjunction hides
+  -- it from every position, while the monitor (cleared for both ends) still
+  -- sees it.
+  let sourceReader : SecurityDomain :=
+    embedLegacyLabel { confidentiality := .low, integrity := .trusted }
+  let incomparableEntry : DeclassificationEvent :=
+    auditEntry sourceReader
+      (embedLegacyLabel { confidentiality := .high, integrity := .untrusted })
+      lowNotification 3 c0
+  assertBool "an incomparable-pair downgrade is HIDDEN from the source-side reader"
+    (!(decide (incomparableEntry ∈ auditLogVisibleTo auditGenericCtx sourceReader
+        (auditMixedTrail ++ [incomparableEntry]))) &&
+     decide (incomparableEntry ∈ auditLogVisibleTo auditGenericCtx auditMonitorReader
+        (auditMixedTrail ++ [incomparableEntry])))
+  assertBool "NEGATIVE: its SOURCE flows to that reader — a source-only filter would have served the entry, destination and object identity included"
+    (decide (DomainFlowPolicy.legacyLattice.canFlow incomparableEntry.srcDomain
+        sourceReader = true) &&
+     decide (DomainFlowPolicy.legacyLattice.canFlow incomparableEntry.dstDomain
+        sourceReader = false))
 
 /-- §9.2  SM9.A.2 — the chunk protocol, and what it refuses. -/
 private def runAuditChunkProtocolChecks : IO Unit := do
