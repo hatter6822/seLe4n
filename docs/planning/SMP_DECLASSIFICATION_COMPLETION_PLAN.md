@@ -861,7 +861,7 @@ from hidden state is dominating-reader-only or exported opaquely.
 
 Sizes: **T** trivial, **S** small, **M** medium, **L** large, **XL** very large.
 
-### SM9.A — The audit trail reader (5-6 PRs, 15 sub-tasks)
+### SM9.A — The audit trail reader (15 sub-tasks)
 
 Ships as **two PRs' worth of work at minimum**: SM9.A.1-.A.5 (the pure reader
 plus its observation relation) and SM9.A.6-.A.13 (the ABI, the live arms and
@@ -889,7 +889,7 @@ their registries).  SM9.A.4a alone is a relation with congruence lemmas — see
 **Acceptance**: a monitor reads every entry it is cleared for and drains the
 trail; the 256-entry cliff is gone.
 
-### SM9.B — Refusal auditing (3-4 PRs, 10 sub-tasks)
+### SM9.B — Refusal auditing (10 sub-tasks)
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
@@ -929,7 +929,7 @@ cannot displace an authorized-downgrade entry*.
 - Outside `ObservableState`, with the clearance gate of SM9.A applying to the
   ledger too.
 
-### SM9.C — Data-carrying declassification (4-5 PRs, 10 sub-tasks)
+### SM9.C — Data-carrying declassification (10 sub-tasks)
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
@@ -944,7 +944,7 @@ cannot displace an authorized-downgrade entry*.
 | SM9.C.8 | Live arm + ABI: `SyscallId.declassifySignal`, count 33→34, both Rust mirrors, conformance, `sele4n-sys`, enforcement boundary 42→43 / 57→58, lock-set inventory; **and its `RefusalSeamClass` arm (§3.1) supplied**, which the total classification forces as part of adding the syscall, so its refusals reach the SM9.B seam rather than bypassing it | ~14 files (§5) | L |
 | SM9.C.9 | `syscallDelegates_declassifySignal`; per-core routing gate; cross-core NI inventory entry | `Kernel/API.lean`, `NonInterferenceCrossCore.lean` | M |
 
-### SM9.D — Causal declassification provenance (6-9 PRs, 19 sub-tasks)
+### SM9.D — Causal declassification provenance (19 sub-tasks)
 
 The phase's largest sub-phase, and the reason the calendar estimate moved.  §3.6
 records why declassification-only edges cannot do this job.  Sequenced in four
@@ -974,7 +974,7 @@ and its consequences (D.14–D.18).
 | SM9.D.17 | Lock sets and write sets: the propagation writes sit inside existing transitions, so declared footprints and `permittedKinds` grow with them; inventory counts | `Concurrency/Locks/*` | L |
 | SM9.D.18 | NI carriage: propagation is projection-invisible, but every touched transition's write set moves, so `observableSlotsConfinedToCores` proofs and the cross-core inventory need the new frames | `InformationFlow/NonInterference{PerCore,CrossCore}.lean` | L |
 
-### SM9.E — Tests + closure (3-4 PRs, 7 sub-tasks)
+### SM9.E — Tests + closure (7 sub-tasks)
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
