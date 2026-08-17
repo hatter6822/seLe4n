@@ -1478,6 +1478,13 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @auditReadFromCore_crossCoreNonInterference
 #check @auditDrainVisiblePrefix_confinedToCores
 #check @auditDrainVisiblePrefix_crossCoreNonInterference
+-- PR #870 round 4: the DISPATCH-level composition the inventory maps the two
+-- audit entries to — transition plus the WS-RA return-frame staging, which is
+-- the state the checked dispatch actually commits.
+#check @auditReadDispatch_confinedToCores
+#check @auditReadDispatch_crossCoreNonInterference
+#check @auditDrainDispatch_confinedToCores
+#check @auditDrainDispatch_crossCoreNonInterference
 
 -- SM9.A.9 / SM9.A.10 — the dedicated capability target and the live arms.
 #check @extractAuditAuthority
@@ -2224,6 +2231,42 @@ example (gctx : GenericLabelingContext) (c : CoreId) (op : AuditReadOp)
 -- name is in scope: it discharges the acceptance witness's first conjunct
 -- (`unconfiguredDeployment_has_no_audit_reader`), and the arm-level runtime
 -- witness runs through the public dispatch in `SyscallReturnAbiSuite` §10.
+
+-- SM9.A.10 (PR #870 round 4): the live `.auditRead` arm's FULL post-state —
+-- transition plus the staged return frame — is invisible on every core.  The
+-- state named here is exactly the one the delegates equation exhibits for the
+-- success arm, so the inventory's `.auditReadDispatch` entry covers what the
+-- dispatch commits, not a prefix of it.
+example (ctx : LabelingContext) (observer : IfObserver)
+    (gctx : GenericLabelingContext) (monitorClearance : Option SecurityDomain)
+    (executingCore : CoreId) (op : AuditReadOp) (st : SystemState) (w : Nat)
+    (st' : SystemState) (tid : SeLe4n.ThreadId)
+    (frame : Architecture.SyscallReturnFrame) (c : CoreId)
+    (hStep : auditReadFromCore gctx monitorClearance executingCore op st = .ok (w, st'))
+    (hShared : sharedViewUnchanged ctx observer st
+      (Architecture.writeReturnFrameToTcb st' tid frame)) :
+    projectStateOnCore ctx observer
+        (Architecture.writeReturnFrameToTcb st' tid frame) c
+      = projectStateOnCore ctx observer st c :=
+  auditReadDispatch_crossCoreNonInterference ctx observer gctx monitorClearance
+    executingCore op st w st' tid frame c hStep hShared
+
+-- SM9.A.10 (PR #870 round 4): the drain's dispatch-level dual — trail dropped,
+-- epoch advanced, length staged, and still invisible on every core.
+example (ctx : LabelingContext) (observer : IfObserver)
+    (gctx : GenericLabelingContext) (monitorClearance : Option SecurityDomain)
+    (executingCore : CoreId) (count : Nat) (st : SystemState) (n : Nat)
+    (st' : SystemState) (tid : SeLe4n.ThreadId)
+    (frame : Architecture.SyscallReturnFrame) (c : CoreId)
+    (hStep : auditDrainVisiblePrefix gctx monitorClearance executingCore count st
+      = .ok (n, st'))
+    (hShared : sharedViewUnchanged ctx observer st
+      (Architecture.writeReturnFrameToTcb st' tid frame)) :
+    projectStateOnCore ctx observer
+        (Architecture.writeReturnFrameToTcb st' tid frame) c
+      = projectStateOnCore ctx observer st c :=
+  auditDrainDispatch_crossCoreNonInterference ctx observer gctx monitorClearance
+    executingCore count st n st' tid frame c hStep hShared
 
 -- SM9.A.10: the word the live arm hands to `writeReturnFrameToTcb` survives the
 -- `UInt64` narrowing — without which a read could silently return a truncation.

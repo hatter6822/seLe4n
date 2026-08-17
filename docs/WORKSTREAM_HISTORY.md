@@ -216,6 +216,20 @@ both halves consumed.  Monitor views, the drain guard and all fixtures are
 unchanged.  Suite 620 → 622 assertions; module 131 → 145 declarations, all
 anchored.
 
+**The PR #870 round-4 cut (v0.33.46).**  One further P2 finding, valid: the
+cross-core inventory mapped its two audit entries to NI theorems for the
+inner transitions, while the checked dispatch continues past them and stages
+the returned word into the caller's TCB — the inventory's only word-returning
+arms, so a citation stopping at the transition would stay green if the
+staging seam drifted onto something an observer reads.  Closed by the
+dispatch-level composition theorems
+(`auditReadDispatch_crossCoreNonInterference`,
+`auditDrainDispatch_crossCoreNonInterference`, with their `_confinedToCores`
+halves riding the WS-RA `writeReturnFrameToTcb_{scheduler,machine}_eq`
+frames), stated over exactly the post-state the delegates equations exhibit;
+the `niName!` mappings are re-pointed and Tier-3 forbids the transition-only
+mappings' return.
+
 **What SM9.A does not do** (SM9.B/SM9.C/SM9.D, per the plan): refused
 declassifications are still unrecorded, there is no data-carrying
 declassification on the notification path, and the laundering detector is still

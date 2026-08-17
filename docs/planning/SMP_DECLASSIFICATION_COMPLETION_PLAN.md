@@ -976,6 +976,15 @@ discipline), and the object half of the dominance chain
 four-label validation.  Monitor views and all fixtures unchanged; suite 622
 assertions, module 145 declarations.
 
+**PR #870 round-4 cut (v0.33.46).**  One further P2 finding, valid: the
+cross-core inventory's audit entries cited the inner transitions while the
+dispatch also stages the returned word into the caller's TCB (the inventory's
+only word-returning arms).  Closed by the dispatch-level composition
+`auditReadDispatch_crossCoreNonInterference` /
+`auditDrainDispatch_crossCoreNonInterference` over exactly the post-state the
+delegates equations exhibit, `niName!` re-pointed, Tier-3 forbidding the
+transition-only mappings' return.
+
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
 | SM9.A.1 | `auditLogVisibleTo ctx L` + `_sublist` / `_reindexed` / `_length_le`; the no-gap-leak theorem (the visible view is a function of the reader's clearance alone) | new production leaf `InformationFlow/AuditRead.lean` | M |

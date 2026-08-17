@@ -1,3 +1,39 @@
+## v0.33.46 — PR #870 round 4: the inventory's audit entries cover the committed state
+
+One further Codex finding, P2, valid.  The cross-core inventory mapped
+`.auditReadDispatch` / `.auditDrainDispatch` to non-interference theorems
+for the inner transitions (`auditReadFromCore`,
+`auditDrainVisiblePrefix`), while the checked dispatch continues past
+them on success and stages the returned word into the caller's TCB via
+`writeReturnFrameToTcb` — and these are the inventory's only
+word-returning arms, so a citation stopping at the transition would stay
+green if the staging seam drifted onto something an observer reads.
+This is the round-5 live-entry rule ("a live entry must name the
+function the dispatch calls, not one it is built from"), applied to the
+staging stage the delegates equations make explicit.
+
+- New dispatch-level composition theorems in
+  `NonInterferenceCrossCore.lean`:
+  `auditReadDispatch_{confinedToCores,crossCoreNonInterference}` and
+  `auditDrainDispatch_{confinedToCores,crossCoreNonInterference}` —
+  stated over exactly the post-state the delegates equations exhibit
+  (transition result fed through `writeReturnFrameToTcb`; the dispatch
+  itself is `private` to `API.lean`, and the inventory's existing
+  delegation-proof entries tie the composition to the arm).  Confinement
+  composes from the WS-RA frames
+  `writeReturnFrameToTcb_{scheduler,machine}_eq`; the staged frame lands
+  in `registerContext`, which WS-H12c strips from every projection.
+- The inventory's `niName!` mappings re-pointed to the composition
+  theorems; Tier-3 pins the new names and mappings positively and
+  forbids the transition-only mappings' return.  The transition-level
+  theorems remain (still true, still anchored) — the arms' citations no
+  longer stop at them.
+
+Theorems, anchors and prose only — no transition changed.  Suite at 622
+assertions with two new elaboration examples applying the compositions;
+axiom-clean (962 environment constants on the module); trace
+byte-identical.
+
 ## v0.33.45 — PR #870 round 3: audit visibility filters on every disclosed domain
 
 One further Codex finding, P1, valid.  `auditLogVisibleTo` filtered on the

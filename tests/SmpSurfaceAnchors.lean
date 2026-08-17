@@ -678,6 +678,11 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      have _dh := @SeLe4n.Kernel.auditLogVisibleTo_hides_undominated_destination
      have _di := @SeLe4n.Kernel.incomparableDowngrade_hidden_from_source_reader
      have _dt := @SeLe4n.Kernel.auditVisibleEntry_target_domain_flows
+     -- PR #870 round 4: the cross-core inventory's audit entries map to the
+     -- DISPATCH-level composition (transition plus return-frame staging);
+     -- those theorems live in `NonInterferenceCrossCore`, outside this file's
+     -- import set, and are anchored in `SmpInformationFlowSuite` §1.10 with
+     -- Tier-3 pinning the `niName!` mappings both positively and negatively.
      have _pr := @SeLe4n.Kernel.auditDrain_partial_reader_drains_nothing
      have _cl := @SeLe4n.Kernel.auditDrain_fully_clears_for_dominating_reader
      -- The gate is derived from the CONFIGURATION, never from the rows the

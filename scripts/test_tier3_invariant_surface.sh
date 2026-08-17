@@ -3008,6 +3008,16 @@ run_check "INVARIANT" rg -n '^theorem unconfiguredDeployment_has_no_audit_reader
 # in an unconfigured deployment.
 run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_auditRead_default_denied' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem unconfiguredDeployment_audit_never_succeeds' SeLe4n/Kernel/API.lean
+# PR #870 round 4: the cross-core inventory's audit entries map to the
+# DISPATCH-level composition — transition plus WS-RA return-frame staging,
+# the state the checked dispatch actually commits.  The transition-only
+# mapping must not return.
+run_check "INVARIANT" rg -n '^theorem auditReadDispatch_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem auditDrainDispatch_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n 'niName! auditReadDispatch_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n 'niName! auditDrainDispatch_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_negative_check "INVARIANT" rg -n 'niName! auditReadFromCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_negative_check "INVARIANT" rg -n 'niName! auditDrainVisiblePrefix_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 
 # SM9.A.11 / SM9.A.12 / SM9.A.13: the registries.  Enforcement boundary,
 # lock sets, the frozen-ops classifier, and the per-core routing gate — which

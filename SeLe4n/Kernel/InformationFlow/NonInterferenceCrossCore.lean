@@ -4713,6 +4713,93 @@ theorem auditDrainVisiblePrefix_crossCoreNonInterference
     (auditDrainVisiblePrefix_confinedToCores gctx monitorClearance executingCore count st n st'
       hStep) hShared
 
+/-- SM9.A.10 (PR #870 round 4): the live `.auditRead` arm's **full** effect —
+the transition *and* the WS-RA return-frame staging.
+
+The checked dispatch does not stop at `auditReadFromCore`: on success it
+writes the returned word into the caller's TCB
+(`Architecture.writeReturnFrameToTcb`, per the delegates equation
+`dispatchWithCapChecked_auditRead_delegates`), and an inventory entry citing
+only the transition would stay green if that second stage drifted onto
+something an observer reads.  The staging write touches no scheduler slot and
+no machine register bank (`writeReturnFrameToTcb_scheduler_eq` /
+`_machine_eq`), so the composed step is confined to no core at all — exactly
+as the transition alone is. -/
+theorem auditReadDispatch_confinedToCores
+    (gctx : GenericLabelingContext) (monitorClearance : Option SecurityDomain)
+    (executingCore : CoreId) (op : AuditReadOp) (st : SystemState) (w : Nat)
+    (st' : SystemState) (tid : SeLe4n.ThreadId)
+    (frame : Architecture.SyscallReturnFrame)
+    (hStep : auditReadFromCore gctx monitorClearance executingCore op st = .ok (w, st')) :
+    observableSlotsConfinedToCores st
+      (Architecture.writeReturnFrameToTcb st' tid frame) [] := by
+  have hEq := auditReadFromCore_frame gctx monitorClearance executingCore op st w st' hStep
+  subst hEq
+  exact observableSlotsConfinedToCores_nil_of_framed
+    ⟨Architecture.writeReturnFrameToTcb_scheduler_eq st' tid frame,
+     Architecture.writeReturnFrameToTcb_machine_eq st' tid frame⟩
+
+/-- SM9.A.10 (PR #870 round 4, **the live `.auditRead` arm's post-state,
+cross-core**): the state the checked dispatch actually commits — transition
+plus staged return frame — is invisible on every core.
+
+This is the theorem the inventory maps `.auditReadDispatch` to.  The staged
+frame lands in the caller TCB's `registerContext`, which WS-H12c strips from
+every projection, so the shared-view premise is exactly as dischargeable for
+the composed step as for the bare transition
+(`writeReturnFrameToTcb_preserves_projection` is the whole-projection form). -/
+theorem auditReadDispatch_crossCoreNonInterference
+    (ctx : LabelingContext) (observer : IfObserver) (gctx : GenericLabelingContext)
+    (monitorClearance : Option SecurityDomain) (executingCore : CoreId)
+    (op : AuditReadOp) (st : SystemState) (w : Nat) (st' : SystemState)
+    (tid : SeLe4n.ThreadId) (frame : Architecture.SyscallReturnFrame) (c : CoreId)
+    (hStep : auditReadFromCore gctx monitorClearance executingCore op st = .ok (w, st'))
+    (hShared : sharedViewUnchanged ctx observer st
+      (Architecture.writeReturnFrameToTcb st' tid frame)) :
+    projectStateOnCore ctx observer (Architecture.writeReturnFrameToTcb st' tid frame) c
+      = projectStateOnCore ctx observer st c :=
+  crossCoreNonInterference_ofCores ctx observer (by simp)
+    (auditReadDispatch_confinedToCores gctx monitorClearance executingCore op st w st'
+      tid frame hStep) hShared
+
+/-- SM9.A.10 (PR #870 round 4): the live `.auditDrain` arm's **full** effect —
+the drain *and* the staged new-visible-length word
+(`dispatchWithCapChecked_auditDrain_delegates` is the arm-level equation). -/
+theorem auditDrainDispatch_confinedToCores
+    (gctx : GenericLabelingContext) (monitorClearance : Option SecurityDomain)
+    (executingCore : CoreId) (count : Nat) (st : SystemState) (n : Nat)
+    (st' : SystemState) (tid : SeLe4n.ThreadId)
+    (frame : Architecture.SyscallReturnFrame)
+    (hStep : auditDrainVisiblePrefix gctx monitorClearance executingCore count st
+      = .ok (n, st')) :
+    observableSlotsConfinedToCores st
+      (Architecture.writeReturnFrameToTcb st' tid frame) [] := by
+  obtain ⟨hSt', -, -⟩ := auditDrain_frame gctx monitorClearance executingCore count st n st'
+    hStep
+  subst hSt'
+  exact observableSlotsConfinedToCores_nil_of_framed
+    ⟨Architecture.writeReturnFrameToTcb_scheduler_eq _ tid frame,
+     Architecture.writeReturnFrameToTcb_machine_eq _ tid frame⟩
+
+/-- SM9.A.10 (PR #870 round 4, **the live `.auditDrain` arm's post-state,
+cross-core**): the committed state — trail dropped, epoch advanced, length
+staged — is invisible on every core.  The theorem the inventory maps
+`.auditDrainDispatch` to. -/
+theorem auditDrainDispatch_crossCoreNonInterference
+    (ctx : LabelingContext) (observer : IfObserver) (gctx : GenericLabelingContext)
+    (monitorClearance : Option SecurityDomain) (executingCore : CoreId) (count : Nat)
+    (st : SystemState) (n : Nat) (st' : SystemState)
+    (tid : SeLe4n.ThreadId) (frame : Architecture.SyscallReturnFrame) (c : CoreId)
+    (hStep : auditDrainVisiblePrefix gctx monitorClearance executingCore count st
+      = .ok (n, st'))
+    (hShared : sharedViewUnchanged ctx observer st
+      (Architecture.writeReturnFrameToTcb st' tid frame)) :
+    projectStateOnCore ctx observer (Architecture.writeReturnFrameToTcb st' tid frame) c
+      = projectStateOnCore ctx observer st c :=
+  crossCoreNonInterference_ofCores ctx observer (by simp)
+    (auditDrainDispatch_confinedToCores gctx monitorClearance executingCore count st n st'
+      tid frame hStep) hShared
+
 /-- SM8.B.2: the cross-core transitions this module instantiates
 `crossCoreNonInterference` at, one per SM6 sub-phase that has one.
 
@@ -4881,10 +4968,16 @@ def crossCoreNiTheorem : CrossCoreTransition → String
       niName! lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_crossCoreNonInterference
   | .declassifyDispatch =>
       niName! declassifyObjectFromCore_crossCoreNonInterference
+  -- PR #870 round 4: the two audit entries map to the DISPATCH-level
+  -- composition — transition PLUS return-frame staging — because these are
+  -- the inventory's only word-returning arms: the checked dispatch continues
+  -- past the transition and writes the returned word into the caller's TCB,
+  -- and a citation stopping at the transition would stay green if that stage
+  -- drifted onto something an observer reads.
   | .auditReadDispatch =>
-      niName! auditReadFromCore_crossCoreNonInterference
+      niName! auditReadDispatch_crossCoreNonInterference
   | .auditDrainDispatch =>
-      niName! auditDrainVisiblePrefix_crossCoreNonInterference
+      niName! auditDrainDispatch_crossCoreNonInterference
 
 theorem crossCoreNiTheorem_count : CrossCoreTransition.all.length = 28 := by rfl
 
