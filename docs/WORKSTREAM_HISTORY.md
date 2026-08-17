@@ -117,15 +117,32 @@ lock sets two universal reads each; cross-core inventory 26 → 28 with an
 **empty** write set for both, which the confinement theorems prove; the
 per-core routing gate passes with **zero** allowlisted exceptions.
 
-**Evidence.**  `tests/SmpInformationFlowSuite.lean` §9.1–§9.8 (607 assertions /
+**Evidence.**  `tests/SmpInformationFlowSuite.lean` §9.1–§9.8 (612 assertions /
 78 groups overall), every group with a load-bearing negative, and §9.8 is the
 plan's own acceptance gate run for effect on the live transition: fill the
 trail to 256 through real authorized downgrades, observe
 `.auditLogCapacityExceeded`, read the status word and a field, drain, declassify
 again — with the post-drain timestamp provably fresh and the pre-epoch
-collision exhibited as the load-bearing negative.  §1.10 anchors all 113
+collision exhibited as the load-bearing negative.  §1.10 anchors all 117
 `AuditRead.lean` declarations by set difference.  `tests/SyscallReturnAbiSuite.lean`
 §10 is the end-to-end ABI witness that the returned word is the *selected* one.
+
+**The audit cut.**  A code-first audit of the landing (documentation
+distrusted by instruction) found **no security defect in any reachable state
+and no false theorem**, and closed seven findings, each by code where code was
+the honest direction: the drain's boundary-narrowing witnesses; the retry
+bracket lifted to the `UInt64` words a caller actually holds
+(`auditReadFromCore_bracketed_detects_drain_u64` — the composition from
+register equality to the model conclusion had lived in a docstring's argument);
+the acceptance witness strengthened to the four-fact conjunction its docstring
+promised; a genuine `u128` overflow in `sele4n-sys`'s `audit_fold_chunks` on
+malformed input (panic in debug, silent wrap in release — in the monitor's own
+toolkit), closed by a radix guard; the RA.D.1 wrapper sweep given a
+completeness tripwire over `SyscallId::COUNT`; the reader's fail-closed arms
+witnessed at runtime; and two docstrings corrected in the direction the
+mathematics forces (one described claim was *false* rather than unproven —
+`lowEquivalent` cannot determine an invisible current thread's domain — and no
+code change can implement a false statement).
 
 **What SM9.A does not do** (SM9.B/SM9.C/SM9.D, per the plan): refused
 declassifications are still unrecorded, there is no data-carrying

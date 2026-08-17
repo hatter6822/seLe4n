@@ -71,9 +71,12 @@ A draft chunked `status` as well.  That trades *aliasing after ~2^55 drains* for
 *tearing on the very first interleaved one*: a drain landing between two chunk
 calls yields a generation assembled from two different states, corresponding to
 no generation that ever existed.  So `status` returns in one call with both
-components structurally bounded, and the retry theorem carries an explicit
-`noGenerationWrap` premise rather than a silent assumption — a premise that is
-written down is the honest form of a bound that cannot be made unconditional.
+components structurally bounded, and the wrap concern lives at exactly one
+place: `auditStatusWord_fits` carries the explicit `generation < 2^55` premise
+(there is no wrap inside the model, whose words are `Nat`), and the boundary
+**refuses** rather than wraps above `2^64` (`auditReadFromCore_word_fits`) — a
+premise that is written down is the honest form of a bound that cannot be made
+unconditional.
 
 ## What this module deliberately does not do
 
@@ -651,9 +654,14 @@ traded *aliasing after ~2^55 drains* for *tearing on the very first one*
 (`auditStatusSplitRead_tears`).
 
 So `status` returns in one call with both components structurally bounded: the
-visible length by `maxDeclassificationAuditEntries`, and the generation by an
-explicitly **stated** `noGenerationWrap` premise on the retry theorem.  A premise
-that is written down is the honest form of a bound that cannot be made
+visible length by `maxDeclassificationAuditEntries`, and the generation by the
+explicitly **stated** `generation < 2^55` premise on `auditStatusWord_fits`.
+The bracket theorem itself (`auditRead_bracketed_detects_drain`) needs no wrap
+premise — the model's words are `Nat`, where no wrap exists — and the `UInt64`
+boundary **refuses** rather than wraps (`auditReadFromCore_word_fits`), so
+caller-observed equality of two accepted words implies model-level equality
+(`auditReadFromCore_toUInt64_lossless` is the injectivity half).  A premise that
+is written down is the honest form of a bound that cannot be made
 unconditional. -/
 
 /-- WS-SM SM9.A.2: the low field of the status word — nine bits, which holds
@@ -1395,6 +1403,47 @@ theorem auditDrain_fully_clears_for_dominating_reader (ctx : GenericLabelingCont
       st.declassificationAuditEpoch + st.declassificationAuditLog.length
     simp only [hMin]
 
+/-- WS-SM SM9.A.3: the returned length never exceeds the pre-state trail's —
+unconditional, since the drain only removes. -/
+theorem auditDrain_returned_length_le (ctx : GenericLabelingContext)
+    (monitorClearance : Option SecurityDomain) (c : CoreId) (count : Nat)
+    (st : SystemState) (n : Nat) (st' : SystemState)
+    (hStep : auditDrainVisiblePrefix ctx monitorClearance c count st = .ok (n, st')) :
+    n ≤ st.declassificationAuditLog.length := by
+  obtain ⟨-, hn, -⟩ := auditDrain_frame ctx monitorClearance c count st n st' hStep
+  omega
+
+/-- WS-SM SM9.A.3 (**the drain's boundary-narrowing witness**): under the
+mounted capacity bound the returned length fits the 64-bit return register,
+so the `.auditDrain` arm's `Nat → UInt64` conversion is lossless.
+
+The read side carries this as `auditReadFromCore_word_fits` /
+`_toUInt64_lossless`; without this theorem the drain's narrowing was justified
+only by an argument living outside the tree — the asymmetry the audit of this
+phase found.  Unlike the read, no runtime guard is needed: the bound is the
+16th `proofLayerInvariantBundle` conjunct, held in every reachable state. -/
+theorem auditDrain_returned_length_fits (ctx : GenericLabelingContext)
+    (monitorClearance : Option SecurityDomain) (c : CoreId) (count : Nat)
+    (st : SystemState) (n : Nat) (st' : SystemState)
+    (hBounded : auditLogBounded st.declassificationAuditLog)
+    (hStep : auditDrainVisiblePrefix ctx monitorClearance c count st = .ok (n, st')) :
+    n < 2 ^ 64 := by
+  have hLe := auditDrain_returned_length_le ctx monitorClearance c count st n st' hStep
+  unfold auditLogBounded maxDeclassificationAuditEntries at hBounded
+  omega
+
+/-- WS-SM SM9.A.3: the consumer-facing form — the length the `.auditDrain` arm
+stages survives the boundary conversion exactly. -/
+theorem auditDrain_returned_length_toUInt64_lossless (ctx : GenericLabelingContext)
+    (monitorClearance : Option SecurityDomain) (c : CoreId) (count : Nat)
+    (st : SystemState) (n : Nat) (st' : SystemState)
+    (hBounded : auditLogBounded st.declassificationAuditLog)
+    (hStep : auditDrainVisiblePrefix ctx monitorClearance c count st = .ok (n, st')) :
+    n.toUInt64.toNat = n := by
+  have hFits := auditDrain_returned_length_fits ctx monitorClearance c count st n st'
+    hBounded hStep
+  simpa using Nat.mod_eq_of_lt hFits
+
 /-- WS-SM SM9.A.3 (**the load-bearing negative**): a partially-cleared caller
 drains **nothing** — not a prefix, not one entry.
 
@@ -1509,12 +1558,12 @@ theorem auditRead_stable_under_append (ctx : GenericLabelingContext)
 means an unchanged epoch and an unchanged visible length — so no drain
 intervened between the two observations.
 
-The `noGenerationWrap` premise is the visible length's bound plus the
-generation's, both stated rather than assumed: the visible length is within
-capacity by the mounted invariant, and the epoch is below `2^55` by a premise
-that cannot be discharged, because it is an unbounded monotone counter.  A
-premise written down is the honest form of a bound that cannot be made
-unconditional. -/
+Stated over the model's `Nat` words, where no wrap exists, so no wrap premise
+appears here; what makes the statement usable by a real caller — which compares
+the `UInt64` words it received — is that the boundary refuses any word at or
+above `2^64` (`auditReadFromCore_word_fits`), so on everything a caller can
+ever hold, `UInt64` equality coincides with the `Nat` equality this theorem
+consumes (`auditReadFromCore_toUInt64_lossless`). -/
 theorem auditRead_bracketed_detects_drain (ctx : GenericLabelingContext)
     (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
     (st₁ st₂ : SystemState)
@@ -1771,6 +1820,45 @@ theorem auditReadFromCore_value (ctx : GenericLabelingContext)
     · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
       exact hStep.1 ▸ hRead
     · exact absurd hStep (by simp)
+
+/-- WS-SM SM9.A.5 (**the bracket, at the words the caller actually holds**): a
+monitor that reads `status` twice through the live entry point and observes the
+**same `UInt64`** may conclude an unchanged visible length — and, being the
+monitor, an unchanged epoch — so no drain intervened.
+
+`auditRead_bracketed_detects_drain` is the model-level statement over `Nat`
+words, where no wrap exists; a real caller compares the 64-bit registers it
+received, and the composition from register equality back to the model-level
+conclusion used to live only in a docstring's argument.  This theorem *is* that
+composition: `auditReadFromCore_word_fits` puts both accepted words below
+`2^64`, where `toUInt64` is injective, so register equality is model equality
+and the model bracket applies.  The two reads may come from different cores —
+the protocol's real shape, one subject observing twice from wherever it runs. -/
+theorem auditReadFromCore_bracketed_detects_drain_u64 (ctx : GenericLabelingContext)
+    (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
+    (c₁ c₂ : CoreId) (st₁ st₂ : SystemState) (w₁ w₂ : Nat) (r₁ r₂ : SystemState)
+    (hBounded₁ : auditLogBounded st₁.declassificationAuditLog)
+    (hBounded₂ : auditLogBounded st₂.declassificationAuditLog)
+    (hReader₁ : auditReaderDomain ctx st₁ c₁ = some reader)
+    (hReader₂ : auditReaderDomain ctx st₂ c₂ = some reader)
+    (hStep₁ : auditReadFromCore ctx monitorClearance c₁ .status st₁ = .ok (w₁, r₁))
+    (hStep₂ : auditReadFromCore ctx monitorClearance c₂ .status st₂ = .ok (w₂, r₂))
+    (hObs : w₁.toUInt64 = w₂.toUInt64) :
+    (auditLogVisibleTo ctx reader st₁.declassificationAuditLog).length =
+      (auditLogVisibleTo ctx reader st₂.declassificationAuditLog).length ∧
+    (auditMonitorAuthorized ctx monitorClearance reader = true →
+      st₁.declassificationAuditEpoch = st₂.declassificationAuditEpoch) := by
+  have hL₁ := auditReadFromCore_toUInt64_lossless ctx monitorClearance c₁ .status st₁ w₁ r₁
+    hStep₁
+  have hL₂ := auditReadFromCore_toUInt64_lossless ctx monitorClearance c₂ .status st₂ w₂ r₂
+    hStep₂
+  have hEq : w₁ = w₂ := by rw [← hL₁, ← hL₂, hObs]
+  have hv₁ := auditReadFromCore_value ctx monitorClearance c₁ .status st₁ reader w₁ r₁
+    hReader₁ hStep₁
+  have hv₂ := auditReadFromCore_value ctx monitorClearance c₂ .status st₂ reader w₂ r₂
+    hReader₂ hStep₂
+  exact auditRead_bracketed_detects_drain ctx monitorClearance reader st₁ st₂
+    hBounded₁ hBounded₂ (by rw [hv₁, hv₂, hEq])
 
 
 end SeLe4n.Kernel

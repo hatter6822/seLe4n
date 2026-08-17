@@ -1,3 +1,80 @@
+## v0.33.43 — SM9.A audit cut: seven findings closed by code, none by prose
+
+A code-first audit of the v0.33.42 landing, documentation distrusted by
+instruction.  Verdict: **no security defect in any reachable state, no
+false theorem** — the gates fail closed, the chunk arithmetic is exact,
+the drain's dominance bridge and the epoch discipline hold as stated.
+Seven findings, and the closure discipline mattered as much as the
+findings: where a docstring described something better than the code,
+the code was raised to it; prose was corrected only where the described
+claim was mathematically false and no code could implement it.
+
+**The drain's boundary narrowing gets its witnesses.**  The read side
+carries `auditReadFromCore_word_fits` / `_toUInt64_lossless`; the
+drain's `n.toUInt64` losslessness was an argument living outside the
+tree.  `auditDrain_returned_length_le` (unconditional),
+`_fits` and `_toUInt64_lossless` (under the mounted capacity bound,
+which is why no runtime guard is owed) close the asymmetry.
+
+**The retry bracket, at the words the caller actually holds.**
+`auditRead_bracketed_detects_drain` is model-level — it compares `Nat`
+words, while a real caller compares the `UInt64` registers it received —
+and the composition from register equality back to the model conclusion
+lived in a docstring's argument.
+`auditReadFromCore_bracketed_detects_drain_u64` *is* that composition:
+two accepted status words equal as `UInt64` imply an unchanged visible
+length and (for the monitor) an unchanged epoch, the two reads on
+possibly different cores — the protocol's real shape.  The positive dual
+is demonstrated at runtime: a drain moves the monitor's status word at
+the `UInt64` it holds.
+
+**The acceptance witness now carries all four facts.**
+`unconfiguredDeployment_has_no_audit_reader`'s docstring promised a
+four-fact conjunction while the statement carried three and cited the
+fourth — the doc described a *stronger* theorem, so per the
+implement-the-improvement rule the theorem gained the
+mint-unforgeability conjunct, discharged by
+`mintDerivedCap_no_audit_forgery`.
+
+**A genuine defect in the monitor's own toolkit.**  `sele4n-sys`'s
+`audit_fold_chunks` could overflow `u128` on malformed input: a chunk
+`>= 2^32` — which the kernel never emits — at position 3 makes
+`chunk * 2^96` exceed `u128::MAX`, a panic in debug builds and a
+silently wrong fold in release.  Closed by a radix guard returning
+`None`, with a regression witness pinning both boundary sides and that
+the maximal well-formed input folds to exactly `2^128 - 1`.
+
+**The wrapper sweep can no longer be skipped silently.**  The RA.D.1
+sweep drives every real `sele4n-sys` wrapper against the real HAL
+prefilter minima, but was itself a hand-maintained list — the very shape
+whose drift it exists to prevent.  It now records every syscall
+discriminant it drives and asserts all `SyscallId::COUNT` were hit, so
+a 34th syscall without a wrapper or without a sweep entry is a named
+failure.
+
+**The fail-closed arms are witnessed at runtime.**  §9.3 now drives
+`.auditFieldTooLarge` through `auditReadWord` at the 2^128 bound — with
+the load-bearing contrast that a *partial* reader's view-local identity
+for the same entry still exports — plus the chunk-past-width refusal and
+the live entry point's 2^64 guard refusing rather than wrapping.
+
+**Two docstrings corrected in the direction the mathematics forces.**
+The `noGenerationWrap` premise is attributed to its real home
+(`auditStatusWord_fits`; the bracket over `Nat` needs no wrap premise,
+which is *stronger* than the described shape), and
+`auditReadFromCore_no_channel`'s "equivalent states resolve equivalent
+readers" is replaced by the truth that the resolution is a necessary
+hypothesis: `lowEquivalent` compares projections, and a projection does
+not determine the domain of a current thread the observer cannot see —
+the described claim was false rather than unproven, and no code change
+can implement a false statement.
+
+Suite 607 → 612 assertions / 78 groups; `AuditRead.lean` 113 → 117
+declarations, all anchored by set difference; Rust workspace green with
+the hardened sweep and fold; trace byte-identical.
+
+Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §4 SM9.A
+
 ## v0.33.42 — WS-SM SM9.A: the declassification audit trail's reader, and the 256-entry cliff it closes
 
 SM8.C.8 mounted a durable, bounded, **fail-closed** declassification

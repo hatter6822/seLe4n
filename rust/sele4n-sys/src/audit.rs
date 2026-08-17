@@ -166,14 +166,24 @@ pub const fn audit_status_generation(status: u64) -> u64 {
 /// says the fold recovers the value **exactly** over the domain the reader
 /// accepts.
 ///
-/// Returns `None` if more chunks are supplied than the reader can export, since
-/// beyond that width the value would not have been exported at all.
+/// Returns `None` if more chunks are supplied than the reader can export
+/// (beyond that width the value would not have been exported at all), **or**
+/// if any chunk is at or above the radix.  The kernel never emits a chunk
+/// `>= 2^32` — each is `v / 2^(32i) % 2^32` — so an out-of-radix chunk is
+/// malformed input, and refusing it is what keeps the accumulation provably
+/// in-range: with every chunk below the radix the folded value is at most
+/// `2^128 - 1`, where an unvalidated `u64` chunk at position 3 would overflow
+/// `u128` (panic in debug, silent wrap in release — a silently wrong value,
+/// which is exactly what this module must never hand a monitor).
 pub fn audit_fold_chunks(chunks: &[u64]) -> Option<u128> {
     if chunks.len() as u64 > MAX_AUDIT_FIELD_CHUNKS {
         return None;
     }
     let mut value: u128 = 0;
     for (i, chunk) in chunks.iter().enumerate() {
+        if (*chunk as u128) >= AUDIT_FIELD_CHUNK_MODULUS {
+            return None;
+        }
         value += (*chunk as u128) * AUDIT_FIELD_CHUNK_MODULUS.pow(i as u32);
     }
     Some(value)
@@ -292,6 +302,31 @@ mod tests {
     fn fold_chunks_refuses_over_width() {
         let too_many = [0u64; (MAX_AUDIT_FIELD_CHUNKS as usize) + 1];
         assert_eq!(audit_fold_chunks(&too_many), None);
+    }
+
+    /// The fold refuses an out-of-radix chunk — the SM9.A audit's regression
+    /// witness.  The kernel never emits a chunk `>= 2^32`, so such input is
+    /// malformed, and before the radix guard the position-3 multiplication
+    /// `chunk * 2^96` overflowed `u128` on it: a panic in debug builds, a
+    /// silently wrong fold in release — in a monitor's own toolkit.
+    #[test]
+    fn fold_chunks_refuses_out_of_radix_chunk() {
+        // The overflow shape itself: u64::MAX at position 3.
+        assert_eq!(audit_fold_chunks(&[0, 0, 0, u64::MAX]), None);
+        // The boundary from both sides: 2^32 is refused, 2^32 - 1 folds.
+        assert_eq!(audit_fold_chunks(&[1u64 << 32]), None);
+        assert_eq!(
+            audit_fold_chunks(&[(1u64 << 32) - 1]),
+            Some((1u128 << 32) - 1)
+        );
+        // The maximal well-formed input folds to exactly 2^128 - 1 = u128::MAX
+        // — the accumulation stays in range once every chunk is below the
+        // radix, and the reader's export bound is tight against it.
+        let max_chunk = (1u64 << 32) - 1;
+        assert_eq!(
+            audit_fold_chunks(&[max_chunk, max_chunk, max_chunk, max_chunk]),
+            Some(u128::MAX)
+        );
     }
 
     /// The status word's two components decode independently — the Rust side of

@@ -1287,7 +1287,7 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 -- ============================================================================
 --
 -- `InformationFlow/AuditRead.lean` (production).  Every one of the module's
--- 113 declarations is anchored, on SM8.A's set-difference discipline: a symbol
+-- 117 declarations is anchored, on SM8.A's set-difference discipline: a symbol
 -- renamed or deleted fails Tier 3 rather than quietly leaving the surface.
 #check @auditLogVisibleTo
 #check @auditLogVisibleTo_nil
@@ -1402,6 +1402,10 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @auditReadFromCore_word_fits
 #check @auditReadFromCore_toUInt64_lossless
 #check @auditReadFromCore_value
+#check @auditReadFromCore_bracketed_detects_drain_u64
+#check @auditDrain_returned_length_le
+#check @auditDrain_returned_length_fits
+#check @auditDrain_returned_length_toUInt64_lossless
 
 -- SM9.A.1a — the persistent timestamp epoch (`AuditRecord.lean`, moved down
 -- below `Model/State` so the production drain can state its preservation).
@@ -7410,6 +7414,49 @@ private def runAuditReaderClassChecks : IO Unit := do
         auditMonitorReader auditMixedState (.coreAndTrust 2) with
      | .error _ => false
      | .ok _ => true)
+  -- The fail-closed width, exercised AT THE READER rather than at the pure
+  -- count function: an entry whose exported field is at the 2^128 bound is
+  -- REFUSED with `.auditFieldTooLarge` on both the count and the chunk arms.
+  -- (Constructible only by fixture — `auditFieldBound_unreachable_in_kernel`
+  -- is the arithmetic that no kernel-produced trail reaches it — but a
+  -- fail-closed arm no test drives is an arm whose failure mode is
+  -- unwitnessed.)
+  let hugeState : SystemState :=
+    { niState with declassificationAuditLog :=
+        [{ auditVisibleEntryFirst with timestamp := 2 ^ 128 }] }
+  assertBool "NEGATIVE: a field at the exported width is REFUSED at the reader, not truncated"
+    ((match auditReadWord auditGenericCtx auditMonitorLabeling.auditMonitorClearance
+        auditMonitorReader hugeState (.fieldChunkCount 0 .timestamp) with
+      | .error e => decide (e = KernelError.auditFieldTooLarge)
+      | .ok _ => false) &&
+     (match auditReadWord auditGenericCtx auditMonitorLabeling.auditMonitorClearance
+        auditMonitorReader hugeState (.field 0 .timestamp 0) with
+      | .error e => decide (e = KernelError.auditFieldTooLarge)
+      | .ok _ => false))
+  -- …and the SAME entry read by a PARTIAL reader succeeds, because its
+  -- identity is the view-local index — the two-class rule doing real work on
+  -- the fail-closed boundary itself.
+  assertBool "…while a partial reader's view-local identity for it still exports"
+    (match auditReadWord auditGenericCtx auditMonitorLabeling.auditMonitorClearance
+        auditPartialReader hugeState (.field 0 .timestamp 0) with
+     | .ok v => decide (v = 0)
+     | .error _ => false)
+  -- A chunk index past the field's width is refused — the third fail-closed
+  -- arm, distinct from an index past the view.
+  assertBool "NEGATIVE: a chunk past the field's width is refused"
+    (match auditReadWord auditGenericCtx auditMonitorLabeling.auditMonitorClearance
+        auditMonitorReader auditMixedState (.field 0 .srcDomain 1) with
+     | .error e => decide (e = KernelError.invalidArgument)
+     | .ok _ => false)
+  -- The live entry point's 2^64 guard, exercised for effect: at an epoch that
+  -- pushes the status word past the return register, `auditReadFromCore`
+  -- REFUSES rather than letting `toUInt64` silently wrap.  Core 1 runs the
+  -- monitor, so without the guard this call would have returned a truncation.
+  assertBool "NEGATIVE: the 2^64 boundary guard refuses rather than wraps"
+    (match auditReadFromCore auditGenericCtx auditMonitorLabeling.auditMonitorClearance c1
+        .status { auditMixedState with declassificationAuditEpoch := 2 ^ 64 } with
+     | .error e => decide (e = KernelError.auditFieldTooLarge)
+     | .ok _ => false)
 
 /-- §9.4  SM9.A / plan §3.4 — the single privileged-reader gate. -/
 private def runAuditMonitorGateChecks : IO Unit := do
@@ -7471,6 +7518,21 @@ private def runAuditDrainChecks : IO Unit := do
      | .ok (n, st) =>
          decide (n = 0) && decide (st.declassificationAuditLog = []) &&
          decide (st.declassificationAuditEpoch = 3))
+  -- The retry bracket, demonstrated at the words the caller actually holds: a
+  -- drain between two live status reads moves the UInt64 the monitor receives
+  -- (the epoch component), so a bracketed read sequence detects it from its
+  -- registers alone.  `auditReadFromCore_bracketed_detects_drain_u64` is the
+  -- converse — unchanged registers mean no drain — and this is the positive
+  -- half that keeps its premises demonstrably satisfiable.
+  assertBool "a drain moves the monitor's status word at the UInt64 the caller holds"
+    (match auditReadFromCore auditGenericCtx auditMonitorLabeling.auditMonitorClearance c1
+        .status auditMixedState, drainOnMonitor with
+     | .ok (w0, _), .ok (_, stAfter) =>
+         (match auditReadFromCore auditGenericCtx auditMonitorLabeling.auditMonitorClearance c1
+             .status stAfter with
+          | .ok (w1, _) => decide (w0.toUInt64 ≠ w1.toUInt64)
+          | .error _ => false)
+     | _, _ => false)
   -- The load-bearing negative: a partially-cleared caller drains NOTHING — not
   -- a prefix, not one entry.  A partial-visibility prefix drain would reveal the
   -- positions of hidden entries, and repeated drains would enumerate the layout.

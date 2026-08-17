@@ -639,7 +639,7 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
   -- SM8.C shipped a durable, bounded, fail-closed trail that nothing could
   -- read, so a deployment performing `maxDeclassificationAuditEntries`
   -- authorized downgrades stopped being able to declassify at all.  These are
-  -- the headline names of the read side; the full 113-symbol surface is
+  -- the headline names of the read side; the full 117-symbol surface is
   -- anchored in `tests/SmpInformationFlowSuite.lean` §1.10.
   assertBool "SM9.A: the clearance-filtered view, the chunk protocol and the atomic status word"
     (have _v := @SeLe4n.Kernel.auditLogVisibleTo

@@ -2567,9 +2567,16 @@ theorem auditRead_no_channel (ctx : LabelingContext) (observer : IfObserver)
   exact auditRead_determined_by_view (liftLegacyContext ctx) monitorClearance reader s₁ s₂ op
     hView hEpoch
 
-/-- WS-SM SM9.A.4b: the same for the live entry point — the clearance it
-resolves is a property of the state, so equivalent states resolve equivalent
-readers and return the same word. -/
+/-- WS-SM SM9.A.4b: the same for the live entry point.
+
+The equal reader resolution (`hReader₁`/`hReader₂`) is a **hypothesis**, not a
+consequence of the equivalence: `auditObservationalEquivalence` carries
+`lowEquivalent`, which compares *projections*, and a projection does not
+determine the domain of a current thread the observer cannot see — so two
+equivalent states can genuinely resolve different readers on a core running a
+subject above the observer's clearance.  The theorem says what is true: at
+whatever clearance the state resolves, the returned word is a function of that
+clearance's visible view alone. -/
 theorem auditReadFromCore_no_channel (ctx : LabelingContext) (observer : IfObserver)
     (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
     (c : CoreId) (s₁ s₂ : SystemState) (op : AuditReadOp)

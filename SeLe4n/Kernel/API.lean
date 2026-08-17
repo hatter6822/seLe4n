@@ -4141,14 +4141,16 @@ theorem dispatchWithCapChecked_auditDrain_default_denied
 audit reader at all.**
 
 Four facts, in one place, because "no audit reader by default" is a claim about
-their conjunction rather than about any one of them:
+their conjunction rather than about any one of them — and every one of the four
+is a **conjunct**, not a citation, so none can drift out from under the claim:
 
 1. an ordinary capability — the shape every thread holds to its own TCB — is
    **rejected** on both audit syscalls, so the reader is not reachable by right
    alone (the v0.32.97 confused-deputy class);
-2. audit authority cannot be **forged** by minting, so a deployment holds one
-   exactly where its boot/CSpace layer put one
-   (`mintDerivedCap_no_audit_forgery`);
+2. audit authority cannot be **forged** by minting — the kernel's capability
+   derivation path preserves targets — so a deployment holds an audit
+   capability exactly where its boot/CSpace layer put one (discharged by
+   `mintDerivedCap_no_audit_forgery`, whose home is the mint);
 3. with no configured monitor clearance nothing may **drain**, so the trail
    cannot be emptied by a caller that merely holds a capability; and
 4. a read-only audit capability provably lacks the drain's right, so a
@@ -4165,11 +4167,18 @@ theorem unconfiguredDeployment_has_no_audit_reader
     dispatchWithCapChecked ctx decoded tid gate
         { target := .object oid, rights := AccessRightSet.ofList AccessRight.all,
           badge := none } st = .error .invalidCapability ∧
+    (∀ (parent : NonNullCap) (rights : AccessRightSet) (badge : Option SeLe4n.Badge)
+        (child : Capability),
+      mintDerivedCap parent rights badge = .ok child → child.target = .auditTrail →
+        parent.val.target = .auditTrail) ∧
     auditDrainVisiblePrefix (liftLegacyContext ctx) ctx.auditMonitorClearance c count st =
       .error .illegalAuthority ∧
     Capability.auditTrailRead.hasRight .write = false := by
   refine ⟨dispatchWithCapChecked_audit_rejects_non_audit_capability ctx decoded tid gate _ oid st
-      hSyscall rfl, ?_, Capability.auditTrailRead_cannot_drain.2⟩
+      hSyscall rfl,
+    fun parent rights badge child hMint hChild =>
+      mintDerivedCap_no_audit_forgery parent rights badge child hMint hChild,
+    ?_, Capability.auditTrailRead_cannot_drain.2⟩
   rw [hNoMonitor]
   exact auditDrain_unconfigured_denied (liftLegacyContext ctx) c count st
 

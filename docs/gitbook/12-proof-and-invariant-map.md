@@ -2861,7 +2861,7 @@ plus the golden trace verified byte-for-byte.
 
 ### Layer 3 under SMP — the audit trail's reader (WS-SM SM9.A)
 
-`InformationFlow/AuditRead.lean` (**production**, 113 declarations,
+`InformationFlow/AuditRead.lean` (**production**, 117 declarations,
 axiom-clean).  SM8.C.8 mounted a durable, bounded, **fail-closed** trail that
 nothing could read, so a deployment performing
 `maxDeclassificationAuditEntries = 256` authorized downgrades stopped being able
@@ -2936,7 +2936,7 @@ capability-only); lock sets two universal reads each; cross-core inventory
 26 → 28 with an **empty** write set for both, proven rather than asserted; the
 per-core routing gate passes with zero allowlisted exceptions.
 
-Runtime coverage: §9.1–§9.8 of the same suite (554 → 607 assertions across
+Runtime coverage: §9.1–§9.8 of the same suite (554 → 612 assertions across
 seventy-eight groups), every group with a load-bearing negative.  §9.8 is the
 plan's own acceptance gate, run for effect on the live transition: fill the
 trail to 256 through real authorized downgrades, observe

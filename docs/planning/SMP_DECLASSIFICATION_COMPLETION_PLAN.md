@@ -869,7 +869,7 @@ their registries).  SM9.A.4a alone is a relation with congruence lemmas — see
 §3.4a — which is why the split is structural rather than a convenience.
 
 **Landing record.**  All fifteen sub-tasks landed in one cut.  The pure reader
-is the production leaf `InformationFlow/AuditRead.lean` (113 declarations,
+is the production leaf `InformationFlow/AuditRead.lean` (117 declarations,
 axiom-clean), placed **below** the projection layer so the live syscall arms
 consume it without pulling the SM8.A/B non-interference closure into the
 dispatch path — which is why `auditDrain_preserves_projection{,OnCore}` and the
@@ -906,7 +906,24 @@ gate's own scenario for effect on the live transition — fill the trail to
 `maxDeclassificationAuditEntries` through real authorized downgrades, observe
 `.auditLogCapacityExceeded`, read the status word and a field, drain, declassify
 again — with the post-drain timestamp provably fresh and the pre-epoch collision
-exhibited as the load-bearing negative.  607 assertions / 78 groups overall.
+exhibited as the load-bearing negative.  612 assertions / 78 groups overall.
+
+**Audit cut (same branch).**  A code-first audit of the landing found no
+security defect in any reachable state and no false theorem, and closed seven
+findings — each by code where code was the honest direction: the drain's
+boundary-narrowing witnesses (`auditDrain_returned_length_le` / `_fits` /
+`_toUInt64_lossless`); the retry bracket lifted to the `UInt64` words a caller
+actually holds (`auditReadFromCore_bracketed_detects_drain_u64`, with the
+positive dual demonstrated at runtime); the acceptance witness strengthened to
+the four-fact conjunction its docstring promised (the mint-unforgeability
+conjunct discharged by `mintDerivedCap_no_audit_forgery`); a genuine `u128`
+overflow in `sele4n-sys`'s `audit_fold_chunks` on malformed input, closed by a
+radix guard with a boundary-pinning regression witness; the RA.D.1 wrapper
+sweep given a completeness tripwire over `SyscallId::COUNT` so the next syscall
+cannot skip it silently; the reader's fail-closed arms witnessed at runtime
+(the 2^128 field bound through `auditReadWord`, the chunk-past-width refusal,
+the live 2^64 guard refusing rather than wrapping); and two docstrings
+corrected in the direction the mathematics forces.
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|

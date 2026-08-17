@@ -1987,14 +1987,27 @@ fn return_frame_roundtrip_per_shape() {
 /// (`tcb_bind_notification` / `tcb_unbind_notification` /
 /// `mint_reply_cap` were implemented for exactly this sweep; they had
 /// been callable only via hand-encoded requests).
+///
+/// The SM9.A audit hardened the coverage claim from prose into a
+/// tripwire: the sweep records every syscall id it drove and asserts at
+/// the end that all `SyscallId::COUNT` discriminants were hit.  Without
+/// it the sweep is a hand-maintained list — the very shape whose drift
+/// this test exists to prevent — and the NEXT syscall could skip the
+/// sweep silently, exactly as `SchedContextBind`/`SchedContextUnbind`
+/// once skipped the table this test replaced.
 #[test]
 fn wrapper_lengths_clear_prefilter_minimums() {
+    use core::cell::RefCell;
     use sele4n_abi::trap::host_capture;
+
+    // The completeness tripwire: every discriminant the ABI defines must
+    // be driven through a real wrapper at least once in this sweep.
+    let covered: RefCell<[bool; SyscallId::COUNT]> = RefCell::new([false; SyscallId::COUNT]);
 
     // Sequential call-then-read pairs on one thread; the capture slots
     // are process-global, and no other test in this binary invokes a
     // wrapper (the xval tests encode requests without invoking).
-    fn assert_clears(name: &str, sid: SyscallId) {
+    let assert_clears = |name: &str, sid: SyscallId| {
         let regs = host_capture::last_request();
         assert_eq!(
             regs[6],
@@ -2012,7 +2025,8 @@ fn wrapper_lengths_clear_prefilter_minimums() {
              minimum {min} — the wrapper is unreachable on hardware",
             mi.length()
         );
-    }
+        covered.borrow_mut()[sid.to_u64() as usize] = true;
+    };
 
     let cap = CPtr::from(1u64);
     let empty = sele4n_sys::ipc::IpcMessage::empty(0);
@@ -2118,4 +2132,17 @@ fn wrapper_lengths_clear_prefilter_minimums() {
     assert_clears("audit_read", SyscallId::AuditRead);
     let _ = sele4n_sys::audit::audit_drain(cap, 1);
     assert_clears("audit_drain", SyscallId::AuditDrain);
+
+    // The tripwire fires here: a syscall added without joining this sweep
+    // (or without a `sele4n-sys` wrapper at all) is a missing discriminant,
+    // named by number so the failure identifies the absentee.
+    let covered = covered.borrow();
+    for i in 0..SyscallId::COUNT {
+        assert!(
+            covered[i],
+            "syscall discriminant {i} ({:?}) was never driven through a real wrapper — \
+             either its wrapper is missing or this sweep was not extended",
+            SyscallId::from_u64(i as u64)
+        );
+    }
 }
