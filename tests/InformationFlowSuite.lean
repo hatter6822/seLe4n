@@ -744,7 +744,7 @@ def runInformationFlowChecks : IO Unit := do
     ((SeLe4n.Kernel.enforcementBoundary.filter (fun c =>
       match c with | .readOnly _ => true | _ => false)).length > 0)
 
-  -- 42 classified ops: 40 prior + auditReadWord and auditDrainVisiblePrefix
+  -- 42 classified ops: 40 prior + auditReadFromCore and auditDrainVisiblePrefix
   -- (WS-SM SM9.A.11 — the declassification trail's reader and drain, both
   -- capability-only because the authority they check is the dedicated
   -- `CapTarget.auditTrail`, never a right), on top of withLockSet (WS-SM

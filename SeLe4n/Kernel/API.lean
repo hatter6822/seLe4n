@@ -2233,7 +2233,13 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
               match decodeAuditReadOp args.opcode args.index args.chunk with
               | none => .error .invalidSyscallArgument
               | some op =>
-                  match auditReadFromCore (liftLegacyContext ctx) ctx.auditMonitorClearance
+                  -- PR #870 review (P1): the VALIDATED clearance, so a
+                  -- misconfigured deployment (a clearance that does not
+                  -- dominate every subject label) has no monitor at all —
+                  -- no epoch, no global identities — rather than a monitor
+                  -- with blind spots.
+                  match auditReadFromCore (liftLegacyContext ctx)
+                      (validatedAuditMonitorClearance ctx)
                       (determineExecutingCore st tid) op st with
                   | .error e => .error e
                   | .ok (w, st') =>
@@ -2259,7 +2265,13 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
           match decodeAuditDrainArgs decoded with
           | .error e => .error e
           | .ok args =>
-              match auditDrainVisiblePrefix (liftLegacyContext ctx) ctx.auditMonitorClearance
+              -- PR #870 review (P1): the VALIDATED clearance — a misconfigured
+              -- deployment cannot drain, exactly as an unconfigured one cannot
+              -- (`misconfiguredDeployment_cannot_drain`); the transition's own
+              -- `auditDrainViewComplete` guard is the defense in depth behind
+              -- it.
+              match auditDrainVisiblePrefix (liftLegacyContext ctx)
+                  (validatedAuditMonitorClearance ctx)
                   (determineExecutingCore st tid) args.count st with
               | .error e => .error e
               | .ok (n, st') =>
@@ -3364,7 +3376,7 @@ theorem dispatchArm_auditRead_matches_returnShape
     (hTarget : cap.target = .auditTrail)
     (hArgs : Architecture.SyscallArgDecode.decodeAuditReadArgs decoded = .ok args)
     (hOp : decodeAuditReadOp args.opcode args.index args.chunk = some op)
-    (hRead : auditReadFromCore (liftLegacyContext ctx) ctx.auditMonitorClearance
+    (hRead : auditReadFromCore (liftLegacyContext ctx) (validatedAuditMonitorClearance ctx)
       (determineExecutingCore st tid) op st = .ok (w, st'))
     (hTcb : st'.getTcb? tid = some tcb)
     (hObjInv : st'.objects.invExt) :
@@ -3391,7 +3403,8 @@ theorem dispatchArm_auditDrain_matches_returnShape
     (hSyscall : decoded.syscallId = .auditDrain)
     (hTarget : cap.target = .auditTrail)
     (hArgs : Architecture.SyscallArgDecode.decodeAuditDrainArgs decoded = .ok args)
-    (hDrain : auditDrainVisiblePrefix (liftLegacyContext ctx) ctx.auditMonitorClearance
+    (hDrain : auditDrainVisiblePrefix (liftLegacyContext ctx)
+      (validatedAuditMonitorClearance ctx)
       (determineExecutingCore st tid) args.count st = .ok (n, st'))
     (hTcb : st'.getTcb? tid = some tcb)
     (hObjInv : st'.objects.invExt) :
@@ -4055,7 +4068,7 @@ theorem dispatchWithCapChecked_auditRead_delegates
     (hArgs : Architecture.SyscallArgDecode.decodeAuditReadArgs decoded = .ok args)
     (hOp : decodeAuditReadOp args.opcode args.index args.chunk = some op) :
     dispatchWithCapChecked ctx decoded tid gate cap st =
-      (match auditReadFromCore (liftLegacyContext ctx) ctx.auditMonitorClearance
+      (match auditReadFromCore (liftLegacyContext ctx) (validatedAuditMonitorClearance ctx)
           (determineExecutingCore st tid) op st with
        | .error e => .error e
        | .ok (w, st') =>
@@ -4075,7 +4088,8 @@ theorem dispatchWithCapChecked_auditDrain_delegates
     (hTarget : cap.target = .auditTrail)
     (hArgs : Architecture.SyscallArgDecode.decodeAuditDrainArgs decoded = .ok args) :
     dispatchWithCapChecked ctx decoded tid gate cap st =
-      (match auditDrainVisiblePrefix (liftLegacyContext ctx) ctx.auditMonitorClearance
+      (match auditDrainVisiblePrefix (liftLegacyContext ctx)
+          (validatedAuditMonitorClearance ctx)
           (determineExecutingCore st tid) args.count st with
        | .error e => .error e
        | .ok (n, st') =>
@@ -4133,7 +4147,8 @@ theorem dispatchWithCapChecked_auditDrain_default_denied
     (hDefault : ctx.auditMonitorClearance = none) :
     dispatchWithCapChecked ctx decoded tid gate cap st = .error .illegalAuthority := by
   rw [dispatchWithCapChecked_auditDrain_delegates ctx decoded tid gate cap args st
-    hSyscall hTarget hArgs, hDefault,
+    hSyscall hTarget hArgs,
+    validatedAuditMonitorClearance_none ctx hDefault,
     auditDrain_unconfigured_denied (liftLegacyContext ctx) (determineExecutingCore st tid)
       args.count st]
 
@@ -4171,7 +4186,8 @@ theorem unconfiguredDeployment_has_no_audit_reader
         (child : Capability),
       mintDerivedCap parent rights badge = .ok child → child.target = .auditTrail →
         parent.val.target = .auditTrail) ∧
-    auditDrainVisiblePrefix (liftLegacyContext ctx) ctx.auditMonitorClearance c count st =
+    auditDrainVisiblePrefix (liftLegacyContext ctx) (validatedAuditMonitorClearance ctx)
+        c count st =
       .error .illegalAuthority ∧
     Capability.auditTrailRead.hasRight .write = false := by
   refine ⟨dispatchWithCapChecked_audit_rejects_non_audit_capability ctx decoded tid gate _ oid st
@@ -4179,7 +4195,7 @@ theorem unconfiguredDeployment_has_no_audit_reader
     fun parent rights badge child hMint hChild =>
       mintDerivedCap_no_audit_forgery parent rights badge child hMint hChild,
     ?_, Capability.auditTrailRead_cannot_drain.2⟩
-  rw [hNoMonitor]
+  rw [validatedAuditMonitorClearance_none ctx hNoMonitor]
   exact auditDrain_unconfigured_denied (liftLegacyContext ctx) c count st
 
 /-- **The live `.tcbSuspend` arm routes to `suspendThreadOnCore`.**  Capability-only,
@@ -4573,7 +4589,7 @@ def syscallDelegates : SyscallId → Prop
         Architecture.SyscallArgDecode.decodeAuditReadArgs decoded = .ok args →
         decodeAuditReadOp args.opcode args.index args.chunk = some op →
         dispatchWithCapChecked ctx decoded tid gate cap st =
-          (match auditReadFromCore (liftLegacyContext ctx) ctx.auditMonitorClearance
+          (match auditReadFromCore (liftLegacyContext ctx) (validatedAuditMonitorClearance ctx)
               (determineExecutingCore st tid) op st with
            | .error e => .error e
            | .ok (w, st') =>
@@ -4587,7 +4603,8 @@ def syscallDelegates : SyscallId → Prop
         cap.target = .auditTrail →
         Architecture.SyscallArgDecode.decodeAuditDrainArgs decoded = .ok args →
         dispatchWithCapChecked ctx decoded tid gate cap st =
-          (match auditDrainVisiblePrefix (liftLegacyContext ctx) ctx.auditMonitorClearance
+          (match auditDrainVisiblePrefix (liftLegacyContext ctx)
+              (validatedAuditMonitorClearance ctx)
               (determineExecutingCore st tid) args.count st with
            | .error e => .error e
            | .ok (n, st') =>

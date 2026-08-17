@@ -1427,7 +1427,7 @@ v0.13.5 gap closure (3 theorems + 1 bridge):
 **M-07 — Enforcement boundary specification:**
 
 - `EnforcementClass` inductive (`policyGated`/`capabilityOnly`/`readOnly`),
-- `enforcementBoundary` — exhaustive 42-entry classification table (12 policy-gated, 26 capability-only, 4 read-only; count pinned by `enforcementBoundaryExtended_count`; Z8-M added 3 SchedContext, D1 added 2 thread lifecycle, D2 added 2 priority management, D3 added 1 IPC buffer, AC4-D added 3 VSpace/service capability-only operations, WS-SM SM8.C added the live declassification entry point (policy-gated), WS-SM SM8.E.3 added the SM3 two-phase-locking bracket `withLockSet` (capability-only), WS-SM SM9.A.11 added the two audit-trail readers `auditReadWord` / `auditDrainVisiblePrefix` (capability-only — authority is the dedicated `CapTarget.auditTrail`, never a right)),
+- `enforcementBoundary` — exhaustive 42-entry classification table (12 policy-gated, 26 capability-only, 4 read-only; count pinned by `enforcementBoundaryExtended_count`; Z8-M added 3 SchedContext, D1 added 2 thread lifecycle, D2 added 2 priority management, D3 added 1 IPC buffer, AC4-D added 3 VSpace/service capability-only operations, WS-SM SM8.C added the live declassification entry point (policy-gated), WS-SM SM8.E.3 added the SM3 two-phase-locking bracket `withLockSet` (capability-only), WS-SM SM9.A.11 added the two audit-trail readers `auditReadFromCore` / `auditDrainVisiblePrefix` (capability-only — authority is the dedicated `CapTarget.auditTrail`, never a right)),
 - `enforcementBoundaryExtended` — definitional alias of `enforcementBoundary` (W2-G, previously duplicate list),
 - `enforcementBoundaryExtended_eq_canonical` — element-wise equality proof (W2-G),
 - `enforcementBoundaryComplete_counts` — compile-time count witness (11+18+4=33, V6-F/Z8-M/D1/D2/D3/AC4-D),
@@ -2861,7 +2861,7 @@ plus the golden trace verified byte-for-byte.
 
 ### Layer 3 under SMP — the audit trail's reader (WS-SM SM9.A)
 
-`InformationFlow/AuditRead.lean` (**production**, 117 declarations,
+`InformationFlow/AuditRead.lean` (**production**, 129 declarations,
 axiom-clean).  SM8.C.8 mounted a durable, bounded, **fail-closed** trail that
 nothing could read, so a deployment performing
 `maxDeclassificationAuditEntries = 256` authorized downgrades stopped being able
@@ -2936,7 +2936,7 @@ capability-only); lock sets two universal reads each; cross-core inventory
 26 → 28 with an **empty** write set for both, proven rather than asserted; the
 per-core routing gate passes with zero allowlisted exceptions.
 
-Runtime coverage: §9.1–§9.8 of the same suite (554 → 612 assertions across
+Runtime coverage: §9.1–§9.8 of the same suite (554 → 618 assertions across
 seventy-eight groups), every group with a load-bearing negative.  §9.8 is the
 plan's own acceptance gate, run for effect on the live transition: fill the
 trail to 256 through real authorized downgrades, observe

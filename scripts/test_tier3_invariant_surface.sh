@@ -2980,12 +2980,15 @@ run_check "INVARIANT" rg -n '^theorem unconfiguredDeployment_has_no_audit_reader
 # SM9.A.11 / SM9.A.12 / SM9.A.13: the registries.  Enforcement boundary,
 # lock sets, the frozen-ops classifier, and the per-core routing gate — which
 # passes with ZERO allowlisted exceptions.
-run_check "INVARIANT" rg -n 'capabilityOnly "auditReadWord"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
+# PR #870 review: the boundary label is the LIVE entry point (the subject-resolution
+# seam), never the inner query that takes a caller-supplied reader domain.
+run_check "INVARIANT" rg -n 'capabilityOnly "auditReadFromCore"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
+run_negative_check "INVARIANT" rg -n 'capabilityOnly "auditReadWord"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_check "INVARIANT" rg -n 'capabilityOnly "auditDrainVisiblePrefix"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore.length = 57' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^def lockSet_auditRead' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^def lockSet_auditDrain' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '"auditReadWord": "auditReadFromCore"' scripts/per_core_routing_aliases.json
+run_check "INVARIANT" rg -n 'auditReadFromCore#inert' scripts/per_core_routing_aliases.json
 run_check "INVARIANT" rg -n 'SeLe4n\.Kernel\.InformationFlow\.AuditRead' scripts/check_module_axioms.py
 # The two audit readers join the cross-core inventory with an EMPTY write set:
 # they take an executing core (the reader's clearance is resolved from the

@@ -117,13 +117,13 @@ lock sets two universal reads each; cross-core inventory 26 → 28 with an
 **empty** write set for both, which the confinement theorems prove; the
 per-core routing gate passes with **zero** allowlisted exceptions.
 
-**Evidence.**  `tests/SmpInformationFlowSuite.lean` §9.1–§9.8 (612 assertions /
+**Evidence.**  `tests/SmpInformationFlowSuite.lean` §9.1–§9.8 (618 assertions /
 78 groups overall), every group with a load-bearing negative, and §9.8 is the
 plan's own acceptance gate run for effect on the live transition: fill the
 trail to 256 through real authorized downgrades, observe
 `.auditLogCapacityExceeded`, read the status word and a field, drain, declassify
 again — with the post-drain timestamp provably fresh and the pre-epoch
-collision exhibited as the load-bearing negative.  §1.10 anchors all 117
+collision exhibited as the load-bearing negative.  §1.10 anchors all 129
 `AuditRead.lean` declarations by set difference.  `tests/SyscallReturnAbiSuite.lean`
 §10 is the end-to-end ABI witness that the returned word is the *selected* one.
 
@@ -143,6 +143,25 @@ witnessed at runtime; and two docstrings corrected in the direction the
 mathematics forces (one described claim was *false* rather than unproven —
 `lowEquivalent` cannot determine an invisible current thread's domain — and no
 code change can implement a false statement).
+
+**The PR #870 review cut.**  Codex raised three findings, all valid.  The P1
+is the substantive one: the monitor gate checked that the caller dominates the
+configured clearance and nothing ever checked that the clearance dominates the
+subjects — the dominance obligation existed only as an unused hypothesis, so a
+deployment configuring embedded `low` as its clearance minted "monitors" with
+blind spots.  Closed at both layers: the live arms now consume
+`validatedAuditMonitorClearance` (decidable on the live path, because every
+subject domain `liftLegacyContext` can assign is one of the four embedded
+labels; a non-dominating clearance validates to `none`, so a misconfigured
+deployment IS the unconfigured one), and the drain gains the destruction guard
+`auditDrainViewComplete` — the caller must see every entry it is about to
+delete, which is the direction a records-derived predicate is *sound* in, and
+which makes `auditDrain_returned_length_is_visible` unconditional on success.
+The two P2s: `audit_basis_byte_of_chunk` returns `Option<u8>` (the masked
+shift made `k = 8` alias `k = 0` in release builds), and the enforcement
+boundary's `.auditRead` entry names `auditReadFromCore` — the live entry point
+whose subject-resolution seam the boundary exists to audit — rather than the
+inner query that takes a caller-supplied reader domain.
 
 **What SM9.A does not do** (SM9.B/SM9.C/SM9.D, per the plan): refused
 declassifications are still unrecorded, there is no data-carrying

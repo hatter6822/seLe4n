@@ -1,4 +1,4 @@
-## v0.33.43 — SM9.A audit cut: seven findings closed by code, none by prose
+## v0.33.43 — SM9.A audit cut + PR #870 review: ten findings closed by code, none by prose
 
 A code-first audit of the v0.33.42 landing, documentation distrusted by
 instruction.  Verdict: **no security defect in any reachable state, no
@@ -72,6 +72,49 @@ can implement a false statement.
 Suite 607 → 612 assertions / 78 groups; `AuditRead.lean` 113 → 117
 declarations, all anchored by set difference; Rust workspace green with
 the hardened sweep and fold; trace byte-identical.
+
+**PR #870 review (Codex, three findings — closed in the same cut).**
+
+*P1 — the dominance obligation is enforced, not assumed.*  The monitor
+gate checked that the caller dominates the configured clearance, and
+nothing ever checked that the clearance dominates the subjects: the
+obligation existed only as an unused hypothesis, so configuring embedded
+`low` as the clearance minted "monitors" with blind spots — readers of
+the global epoch counting entries they cannot see, drainers of evidence
+they cannot see, the global length in the return value.  Closed at both
+layers.  Configuration: the live arms consume
+`validatedAuditMonitorClearance` — decidable on the live path, because
+every subject domain `liftLegacyContext` can assign is one of the four
+embedded labels — which returns the clearance only when it dominates all
+four and `none` otherwise, so a misconfigured deployment IS the
+unconfigured one and the previously-unused dominance hypothesis is
+discharged by construction.  Transition, as defense in depth for
+arbitrary contexts: the drain gains the `auditDrainViewComplete`
+destruction guard — the caller must see every entry it is about to
+delete.  Records-derived is sound in this direction (restricting
+destruction by records only ever narrows it; the §2 unsoundness is about
+granting identity), and with the guard the drain's return value is
+provably the caller's own view length
+(`auditDrain_returned_length_is_visible`), unconditional on success.
+
+*P2 — `audit_basis_byte_of_chunk` returns `Option<u8>`.*  The unguarded
+shift was undefined at `k >= 8`: a debug panic, and in release the
+masked shift made `k = 8` alias `k = 0`, handing the consumer a wrong
+byte as though it were part of the recorded designation.  Same repair
+`audit_fold_chunks` received for its radix; the alias is pinned
+negatively in the regression test.
+
+*P2 — the enforcement boundary names the live entry point.*  The
+`.auditRead` entry was labelled `auditReadWord`, the inner query that
+takes a caller-supplied reader domain, so coverage would have stayed
+green had the live subject-resolution seam drifted onto exactly the
+confused-clearance shape it exists to prevent.  The entry and
+`syscallIdToEnforcementName` now name `auditReadFromCore`, the
+routing-gate alias is retired, and a Tier-3 negative anchor forbids the
+helper's return.
+
+Suite 612 -> 618 assertions; `AuditRead.lean` 117 -> 129 declarations,
+all anchored.
 
 Refs: docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md §4 SM9.A
 

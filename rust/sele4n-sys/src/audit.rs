@@ -189,11 +189,29 @@ pub fn audit_fold_chunks(chunks: &[u64]) -> Option<u128> {
     Some(value)
 }
 
-/// Extract one byte from a basis-designation chunk (`k < 4`), little-endian.
-/// Mirrors Lean's `auditBasisByteOfChunk`.
+/// Number of designation bytes per exported chunk.  Mirrors Lean's
+/// `auditDesignationBytesPerChunk`.
+pub const AUDIT_DESIGNATION_BYTES_PER_CHUNK: u32 = 4;
+
+/// Extract one byte from a basis-designation chunk, little-endian.  Mirrors
+/// Lean's `auditBasisByteOfChunk`.
+///
+/// Returns `None` for `k >= 4` — the PR #870 review's finding: the kernel
+/// packs exactly four bytes per chunk, so a larger `k` is out of contract, and
+/// the unguarded shift it used to perform was undefined at `k >= 8` (a panic
+/// in debug builds; in release the shift count is masked, so `k = 8` behaved
+/// like `k = 0` and handed the consumer a byte from the wrong position as if
+/// it were part of the recorded designation).  Encoding the documented
+/// invariant in the return type is the same repair `audit_fold_chunks`
+/// received for its radix: malformed coordinates are refused, never folded
+/// into a plausible-looking value.
 #[inline]
-pub const fn audit_basis_byte_of_chunk(chunk: u64, k: u32) -> u8 {
-    ((chunk >> (8 * k)) & 0xFF) as u8
+pub const fn audit_basis_byte_of_chunk(chunk: u64, k: u32) -> Option<u8> {
+    if k >= AUDIT_DESIGNATION_BYTES_PER_CHUNK {
+        None
+    } else {
+        Some(((chunk >> (8 * k)) & 0xFF) as u8)
+    }
 }
 
 /// Drain a prefix of the declassification audit trail, returning the new
@@ -340,14 +358,23 @@ mod tests {
         }
     }
 
-    /// Basis-designation bytes extract in the order the kernel packed them.
+    /// Basis-designation bytes extract in the order the kernel packed them —
+    /// and an out-of-contract byte index is refused, not aliased.  The PR #870
+    /// review's regression witness: before the guard, `k = 8` was a masked
+    /// shift in release builds and returned byte 0 as though it were byte 8.
     #[test]
     fn basis_chunk_byte_extraction() {
         let chunk: u64 = 0x44_33_22_11;
-        assert_eq!(audit_basis_byte_of_chunk(chunk, 0), 0x11);
-        assert_eq!(audit_basis_byte_of_chunk(chunk, 1), 0x22);
-        assert_eq!(audit_basis_byte_of_chunk(chunk, 2), 0x33);
-        assert_eq!(audit_basis_byte_of_chunk(chunk, 3), 0x44);
+        assert_eq!(audit_basis_byte_of_chunk(chunk, 0), Some(0x11));
+        assert_eq!(audit_basis_byte_of_chunk(chunk, 1), Some(0x22));
+        assert_eq!(audit_basis_byte_of_chunk(chunk, 2), Some(0x33));
+        assert_eq!(audit_basis_byte_of_chunk(chunk, 3), Some(0x44));
+        // The boundary from both sides, and the exact alias the masked shift
+        // produced: k = 8 must NOT decode as k = 0.
+        assert_eq!(audit_basis_byte_of_chunk(chunk, 4), None);
+        assert_eq!(audit_basis_byte_of_chunk(chunk, 8), None);
+        assert_ne!(audit_basis_byte_of_chunk(chunk, 8), Some(0x11));
+        assert_eq!(audit_basis_byte_of_chunk(chunk, u32::MAX), None);
     }
 
     /// The two audit syscalls carry different required rights, which is what

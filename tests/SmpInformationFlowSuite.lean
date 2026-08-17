@@ -1287,7 +1287,7 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 -- ============================================================================
 --
 -- `InformationFlow/AuditRead.lean` (production).  Every one of the module's
--- 117 declarations is anchored, on SM8.A's set-difference discipline: a symbol
+-- 129 declarations is anchored, on SM8.A's set-difference discipline: a symbol
 -- renamed or deleted fails Tier 3 rather than quietly leaving the surface.
 #check @auditLogVisibleTo
 #check @auditLogVisibleTo_nil
@@ -1406,6 +1406,18 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @auditDrain_returned_length_le
 #check @auditDrain_returned_length_fits
 #check @auditDrain_returned_length_toUInt64_lossless
+#check @auditDrainViewComplete
+#check @auditDrain_denied_for_incomplete_view
+#check @auditDrain_returned_length_is_visible
+#check @legacySubjectLabels
+#check @mem_legacySubjectLabels
+#check @liftLegacyContext_threadDomain_embedded
+#check @validatedAuditMonitorClearance
+#check @validatedAuditMonitorClearance_none
+#check @validatedAuditMonitorClearance_dominates_subjects
+#check @auditDrain_validated_view_complete
+#check @validatedAuditMonitorClearance_misconfigured_low
+#check @misconfiguredDeployment_cannot_drain
 
 -- SM9.A.1a — the persistent timestamp epoch (`AuditRecord.lean`, moved down
 -- below `Model/State` so the production drain can state its preservation).
@@ -7479,6 +7491,27 @@ private def runAuditMonitorGateChecks : IO Unit := do
         = auditMonitorGate auditGenericCtx auditMonitorLabeling.auditMonitorClearance
           { niState with declassificationAuditLog := auditMixedTrail,
                          declassificationAuditEpoch := 999 } c)))
+  -- PR #870 review (P1): the VALIDATED clearance.  The configured trusted
+  -- clearance survives validation; a clearance of embedded LOW — which every
+  -- low subject reflexively dominates, the review's exploit shape — validates
+  -- to NONE, so a misconfigured deployment is the unconfigured one.
+  assertBool "a dominating clearance survives validation; a non-dominating one is refused"
+    (decide (validatedAuditMonitorClearance auditMonitorLabeling
+       = auditMonitorLabeling.auditMonitorClearance) &&
+     decide (validatedAuditMonitorClearance
+       { auditMonitorLabeling with
+         auditMonitorClearance := some auditPartialReader } = none))
+  -- The load-bearing negative for the P1 itself: under the RAW low clearance a
+  -- low subject passes the reflexive gate — which is exactly why the live arms
+  -- must consume the validated form instead.
+  assertBool "NEGATIVE: the raw low clearance admits a low reader; validation is what refuses it"
+    (decide (auditMonitorAuthorized auditGenericCtx (some auditPartialReader)
+       auditPartialReader = true) &&
+     decide (auditMonitorAuthorized auditGenericCtx
+       (validatedAuditMonitorClearance
+         { auditMonitorLabeling with
+           auditMonitorClearance := some auditPartialReader })
+       auditPartialReader = false))
   -- The load-bearing negative, and the whole reason the gate is configuration:
   -- a rows-derived dominance predicate is VACUOUSLY TRUE on a drained-empty
   -- trail, so it would reclassify a partial reader as a fully-dominating
@@ -7518,6 +7551,36 @@ private def runAuditDrainChecks : IO Unit := do
      | .ok (n, st) =>
          decide (n = 0) && decide (st.declassificationAuditLog = []) &&
          decide (st.declassificationAuditEpoch = 3))
+  -- PR #870 review (P1), the destruction guard at the transition itself: under
+  -- the RAW low clearance, core 0's public subject passes the reflexive
+  -- monitor gate — the review's exploit shape — and before the guard it would
+  -- have deleted the trusted-sourced entry it cannot see and read the global
+  -- length off the return value.  The drain now refuses outright.
+  assertBool "NEGATIVE: a gate-passing caller with blind spots drains NOTHING"
+    (decide (auditMonitorAuthorized auditGenericCtx (some auditPartialReader)
+       auditPartialReader = true) &&
+     decide (auditDrainViewComplete auditGenericCtx auditMixedState c0 = false) &&
+     (match auditDrainVisiblePrefix auditGenericCtx (some auditPartialReader) c0 99
+        auditMixedState with
+      | .ok _ => false
+      | .error e => decide (e = KernelError.illegalAuthority)))
+  -- …and the same call with the blind spot REMOVED proceeds: visibility is the
+  -- deciding input, not the caller's identity.
+  assertBool "…while the same caller drains a trail it fully sees"
+    (match auditDrainVisiblePrefix auditGenericCtx (some auditPartialReader) c0 99
+        { niState with declassificationAuditLog :=
+            [auditVisibleEntryFirst, auditVisibleEntryLast] } with
+     | .error _ => false
+     | .ok (n, st) => decide (n = 0) && decide (st.declassificationAuditLog = []))
+  -- The returned length is the caller's OWN new visible length — on success
+  -- the two coincide by the guard, so the return value cannot leak a hidden
+  -- entry's existence even in a misconfigured deployment.
+  assertBool "the drain's return value is the caller's own new visible length"
+    (match drainOnMonitor with
+     | .error _ => false
+     | .ok (n, st) =>
+         decide (n = (auditLogVisibleTo auditGenericCtx auditMonitorReader
+           st.declassificationAuditLog).length))
   -- The retry bracket, demonstrated at the words the caller actually holds: a
   -- drain between two live status reads moves the UInt64 the monitor receives
   -- (the epoch component), so a bracketed read sequence detects it from its
@@ -7650,6 +7713,23 @@ private def runAuditLiveArmChecks : IO Unit := do
      | .ok (_, st) => decide (st.declassificationAuditLog = auditMixedTrail) &&
                       decide (st.declassificationAuditEpoch =
                         auditMixedState.declassificationAuditEpoch))
+  -- PR #870 review (P1): the LIVE arms consume the VALIDATED clearance.  Under
+  -- a misconfigured low clearance even core 1's trusted subject — who passes
+  -- the RAW reflexive gate — is a monitor no longer: its status generation
+  -- reads 0 and its drain is refused, at exactly the inputs the delegation
+  -- theorems prove the dispatch arms supply.
+  let misconfigured : LabelingContext :=
+    { auditMonitorLabeling with auditMonitorClearance := some auditPartialReader }
+  assertBool "NEGATIVE: a misconfigured deployment has no monitor at the live arm's inputs"
+    (decide (validatedAuditMonitorClearance misconfigured = none) &&
+     (match auditReadFromCore (liftLegacyContext misconfigured)
+        (validatedAuditMonitorClearance misconfigured) c1 .status auditMixedState with
+      | .ok (w, _) => decide (auditStatusGeneration w = 0)
+      | .error _ => false) &&
+     (match auditDrainVisiblePrefix (liftLegacyContext misconfigured)
+        (validatedAuditMonitorClearance misconfigured) c1 99 auditMixedState with
+      | .ok _ => false
+      | .error e => decide (e = KernelError.illegalAuthority)))
 
 
 /-- §9.8  The SM9.A acceptance gate — **the 256-entry cliff, end to end.**

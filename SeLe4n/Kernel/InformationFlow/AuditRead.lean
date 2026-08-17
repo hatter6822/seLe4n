@@ -1125,18 +1125,52 @@ monitor clearance is not a top of its flow policy cannot drain, and the
 leaky drain is worse than an un-drainable trail — but it is a real constraint,
 and it belongs in the shipped documentation. -/
 
+/-- WS-SM SM9.A.3 (**the destruction guard**, PR #870 review): does the caller
+core `c` is running **see the whole trail**?
+
+`false` on an idle core.  This is the decidable, per-operation half of the
+drain's authority: it restricts *destruction* by what the caller can see, which
+is the direction a records-derived predicate is **sound** in.  §2's
+`auditMonitorGate_records_derived_unsound` is about the opposite direction —
+granting *identity* (the epoch) from records — where draining the records
+widens the grant; here draining the records can only ever *narrow* what a
+future drain may touch, and on the empty trail the vacuous `true` guards an
+operation that removes nothing.
+
+Under a **validated** clearance (`LabelingContext.validatedAuditMonitorClearance`)
+this is provably always `true` for a gate-passing caller
+(`auditDrain_validated_view_complete`), so the live path never observes the
+refusal; the guard is what makes the fail-closed claim hold for *arbitrary*
+contexts rather than only for well-configured ones. -/
+def auditDrainViewComplete (ctx : GenericLabelingContext) (st : SystemState)
+    (c : CoreId) : Bool :=
+  match auditReaderDomain ctx st c with
+  | none => false
+  | some reader =>
+      decide (auditLogVisibleTo ctx reader st.declassificationAuditLog =
+        st.declassificationAuditLog)
+
 /-- WS-SM SM9.A.3: **drain a prefix of the trail.**
 
-Gated on the configured monitor clearance (§2).  Removes `min count length`
-entries and advances the epoch by exactly that many, so surviving timestamps
-keep their identities and the next append cannot reuse one
-(`auditDrain_next_timestamp_fresh`).  Returns the new trail length, which for a
-qualifying caller *is* its new visible length
-(`auditDrain_requires_full_dominance`). -/
+Two gates, both fail-closed with the same error so a refused caller cannot
+tell which one refused it: the configured monitor clearance (§2), and — the
+PR #870 review's destruction guard — the caller must **see every entry** it is
+about to delete (`auditDrainViewComplete`).  The second gate is what closes the
+misconfigured-deployment hole at the transition itself: a "monitor" whose
+clearance does not dominate every subject can neither destroy the entries it
+cannot see nor learn the global length from the return value, because the drain
+refuses outright rather than proceeding over its blind spots.
+
+Removes `min count length` entries and advances the epoch by exactly that many,
+so surviving timestamps keep their identities and the next append cannot reuse
+one (`auditDrain_next_timestamp_fresh`).  Returns the new trail length, which
+for any caller the guard admits **is** its own new visible length
+(`auditDrain_returned_length_is_visible` — no longer conditional on an operator
+obligation). -/
 def auditDrainVisiblePrefix (ctx : GenericLabelingContext)
     (monitorClearance : Option SecurityDomain) (c : CoreId) (count : Nat) : Kernel Nat :=
   fun st =>
-    if auditMonitorGate ctx monitorClearance st c then
+    if auditMonitorGate ctx monitorClearance st c && auditDrainViewComplete ctx st c then
       let removed := min count st.declassificationAuditLog.length
       .ok (st.declassificationAuditLog.length - removed,
            { st with
@@ -1165,7 +1199,8 @@ theorem auditDrain_unconfigured_denied (ctx : GenericLabelingContext)
 
 /-- WS-SM SM9.A.3 (**the frame**): a successful drain writes the trail and the
 epoch and **nothing else** — not the object store, not the scheduler, not a
-single SM7 memory-model field. -/
+single SM7 memory-model field — and passed **both** gates: the configured
+clearance and the destruction guard. -/
 theorem auditDrain_frame (ctx : GenericLabelingContext)
     (monitorClearance : Option SecurityDomain) (c : CoreId) (count : Nat)
     (st : SystemState) (n : Nat) (st' : SystemState)
@@ -1176,13 +1211,71 @@ theorem auditDrain_frame (ctx : GenericLabelingContext)
       declassificationAuditEpoch :=
         st.declassificationAuditEpoch + min count st.declassificationAuditLog.length } ∧
     n = st.declassificationAuditLog.length - min count st.declassificationAuditLog.length ∧
-    auditMonitorGate ctx monitorClearance st c = true := by
+    (auditMonitorGate ctx monitorClearance st c = true ∧
+     auditDrainViewComplete ctx st c = true) := by
   unfold auditDrainVisiblePrefix at hStep
   split at hStep
   · rename_i hGate
     simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-    exact ⟨hStep.2.symm, hStep.1.symm, hGate⟩
+    exact ⟨hStep.2.symm, hStep.1.symm, by simpa using hGate⟩
   · exact absurd hStep (by simp)
+
+/-- WS-SM SM9.A.3 (**the destruction guard, fail-closed** — PR #870 review):
+a gate-passing caller whose view is **incomplete** drains nothing.
+
+This is the misconfigured-deployment case made harmless at the transition: a
+deployment whose configured clearance does not dominate every subject can have
+gate-passing callers with blind spots, and before this guard such a caller
+would have destroyed the entries it cannot see and read the global length off
+the return value.  Now it is refused outright, with the same error as a
+non-monitor so the refusal does not even distinguish the two causes. -/
+theorem auditDrain_denied_for_incomplete_view (ctx : GenericLabelingContext)
+    (monitorClearance : Option SecurityDomain) (c : CoreId) (count : Nat)
+    (st : SystemState)
+    (hIncomplete : auditDrainViewComplete ctx st c = false) :
+    auditDrainVisiblePrefix ctx monitorClearance c count st = .error .illegalAuthority := by
+  unfold auditDrainVisiblePrefix
+  rw [hIncomplete, Bool.and_false]
+  rfl
+
+/-- WS-SM SM9.A.3 (**the return value is the caller's own view length** —
+PR #870 review): on success the returned length is the length of the caller's
+own post-drain visible view, not merely of the global trail.
+
+Before the destruction guard this held only under the operator obligation; now
+it is unconditional on success, because the guard admits exactly the callers
+for which the two coincide — so the return value cannot leak a hidden entry's
+existence even in a misconfigured deployment. -/
+theorem auditDrain_returned_length_is_visible (ctx : GenericLabelingContext)
+    (monitorClearance : Option SecurityDomain) (c : CoreId) (count : Nat)
+    (st : SystemState) (n : Nat) (st' : SystemState) (reader : SecurityDomain)
+    (hReader : auditReaderDomain ctx st c = some reader)
+    (hStep : auditDrainVisiblePrefix ctx monitorClearance c count st = .ok (n, st')) :
+    n = (auditLogVisibleTo ctx reader st'.declassificationAuditLog).length := by
+  obtain ⟨hSt', hn, -, hComplete⟩ :=
+    auditDrain_frame ctx monitorClearance c count st n st' hStep
+  unfold auditDrainViewComplete at hComplete
+  rw [hReader] at hComplete
+  have hView : auditLogVisibleTo ctx reader st.declassificationAuditLog =
+      st.declassificationAuditLog := by
+    exact of_decide_eq_true hComplete
+  have hAll : ∀ e ∈ st.declassificationAuditLog,
+      ctx.policy.canFlow e.srcDomain reader = true := by
+    have hFilter := hView
+    unfold auditLogVisibleTo at hFilter
+    exact List.filter_eq_self.mp hFilter
+  subst hSt'
+  have hViewPost : auditLogVisibleTo ctx reader
+      (st.declassificationAuditLog.drop
+        (min count st.declassificationAuditLog.length)) =
+      st.declassificationAuditLog.drop
+        (min count st.declassificationAuditLog.length) :=
+    auditLogVisibleTo_eq_self ctx reader _
+      (fun e hMem => hAll e (List.mem_of_mem_drop hMem))
+  show n = (auditLogVisibleTo ctx reader
+    (st.declassificationAuditLog.drop
+      (min count st.declassificationAuditLog.length))).length
+  rw [hViewPost, List.length_drop, hn]
 
 /-- WS-SM SM9.A.3: **a qualifying caller sees the whole trail.**
 
@@ -1308,6 +1401,150 @@ theorem auditDrain_requires_full_dominance_of_subjects (ctx : GenericLabelingCon
   rw [hTid]
   exact auditMonitorAuthorized_dominates_subjects ctx monitorClearance reader hDom hTrans
     hGate tid
+
+
+-- ============================================================================
+-- §5b  SM9.A.3 / PR #870 review — the VALIDATED clearance
+-- ============================================================================
+
+/-! ## The dominance obligation, enforced structurally on the live path
+
+The PR #870 review's P1 finding: `auditMonitorAuthorized` checks that the
+caller dominates the configured clearance, and **nothing ever checked that the
+clearance dominates the subjects** — `auditMonitorDominatesSubjects` existed
+only as a hypothesis on theorems, so a deployment that configured a non-top
+clearance (say, embedded `low`) minted "monitors" with blind spots: readers of
+the global epoch that counts entries they cannot see, and drainers of evidence
+they cannot see.
+
+The obligation is not decidable for an arbitrary `GenericLabelingContext`
+(`threadDomainOf` quantifies over an unbounded `ThreadId` space).  But the
+**live path** never carries an arbitrary context: the dispatch arms run
+`liftLegacyContext ctx`, whose `threadDomainOf` is
+`embedLegacyLabel ∘ ctx.threadLabelOf` — every subject domain the live kernel
+can ever assign is one of the **four** embedded labels
+(`liftLegacyContext_threadDomain_embedded`).  Over four labels the obligation
+is a four-conjunct `Bool`, so the fix is the project's enforce-it-structurally
+pattern: the live arms consume `validatedAuditMonitorClearance`, which returns
+the configured clearance only when it dominates all four embedded labels and
+**`none` otherwise** — a misconfigured deployment behaves exactly like an
+unconfigured one, which is the fail-closed posture SM8.C established for the
+declassification policy itself.
+
+The drain's `auditDrainViewComplete` guard (§5) stays alongside it as defense
+in depth: validation closes the hole for the live context by construction, and
+the guard closes it at the transition for **any** context. -/
+
+/-- WS-SM SM9.A.3 (PR #870 review): the four legacy security labels — the
+entire subject-label space of the live kernel. -/
+def legacySubjectLabels : List SecurityLabel :=
+  [{ confidentiality := .low,  integrity := .untrusted },
+   { confidentiality := .low,  integrity := .trusted },
+   { confidentiality := .high, integrity := .untrusted },
+   { confidentiality := .high, integrity := .trusted }]
+
+/-- WS-SM SM9.A.3: the enumeration is complete — `cases` over the two
+two-valued fields. -/
+theorem mem_legacySubjectLabels (l : SecurityLabel) : l ∈ legacySubjectLabels := by
+  obtain ⟨c, i⟩ := l
+  cases c <;> cases i <;> decide
+
+/-- WS-SM SM9.A.3: **every subject domain the live context can assign is an
+embedded legacy label.**  The range fact that makes the dominance obligation
+decidable on the live path. -/
+theorem liftLegacyContext_threadDomain_embedded (ctx : LabelingContext)
+    (tid : SeLe4n.ThreadId) :
+    ∃ l ∈ legacySubjectLabels,
+      (liftLegacyContext ctx).threadDomainOf tid = embedLegacyLabel l :=
+  ⟨ctx.threadLabelOf tid, mem_legacySubjectLabels _, rfl⟩
+
+/-- WS-SM SM9.A.3 (PR #870 review, **the validated clearance**): the configured
+audit-monitor clearance, admitted only when it dominates every legacy subject
+label under the live policy — `none` otherwise.
+
+This is what the live `.auditRead` / `.auditDrain` arms consume in place of the
+raw `LabelingContext.auditMonitorClearance`.  A deployment that configures a
+non-dominating clearance therefore has **no monitor at all**: nothing reads a
+global identity, nothing reads the epoch, nothing drains — exactly the
+unconfigured deployment's posture, rather than a "monitor" with blind spots. -/
+def validatedAuditMonitorClearance (ctx : LabelingContext) : Option SecurityDomain :=
+  match ctx.auditMonitorClearance with
+  | none => none
+  | some m =>
+      if legacySubjectLabels.all (fun l =>
+          DomainFlowPolicy.legacyLattice.canFlow (embedLegacyLabel l) m) then
+        some m
+      else
+        none
+
+/-- WS-SM SM9.A.3: an unconfigured deployment validates to unconfigured. -/
+@[simp] theorem validatedAuditMonitorClearance_none (ctx : LabelingContext)
+    (h : ctx.auditMonitorClearance = none) :
+    validatedAuditMonitorClearance ctx = none := by
+  unfold validatedAuditMonitorClearance
+  rw [h]
+
+/-- WS-SM SM9.A.3 (**validation discharges the obligation**): a clearance that
+survives validation dominates every subject domain the live context can
+assign — the hypothesis `auditDrain_requires_full_dominance_of_subjects` and
+`auditMonitorAuthorized_dominates_subjects` consume, now a theorem about the
+live configuration rather than an operator's promise. -/
+theorem validatedAuditMonitorClearance_dominates_subjects (ctx : LabelingContext)
+    (m : SecurityDomain)
+    (hVal : validatedAuditMonitorClearance ctx = some m) :
+    auditMonitorDominatesSubjects (liftLegacyContext ctx) (some m) := by
+  unfold validatedAuditMonitorClearance at hVal
+  split at hVal
+  · exact absurd hVal (by simp)
+  · rename_i m' hEqCfg
+    split at hVal
+    · rename_i hAll
+      obtain rfl : m' = m := Option.some.inj hVal
+      refine ⟨m', rfl, fun tid => ?_⟩
+      obtain ⟨l, hl, hEq⟩ := liftLegacyContext_threadDomain_embedded ctx tid
+      rw [hEq]
+      exact List.all_eq_true.mp hAll l hl
+    · exact absurd hVal (by simp)
+
+/-- WS-SM SM9.A.3 (**the live-path visibility fact, unconditional**): under a
+validated clearance, a gate-passing caller sees **the whole trail** — every
+hypothesis of the dominance bridge discharged by construction: dominance from
+validation, transitivity from `legacyLattice_wellFormed`, sources from the
+producer's own invariant. -/
+theorem auditDrain_validated_view_complete (ctx : LabelingContext)
+    (m reader : SecurityDomain) (log : DeclassificationAuditLog)
+    (hVal : validatedAuditMonitorClearance ctx = some m)
+    (hSources : auditTrailSourcesFromLabeling (liftLegacyContext ctx) log)
+    (hGate : auditMonitorAuthorized (liftLegacyContext ctx) (some m) reader = true) :
+    auditLogVisibleTo (liftLegacyContext ctx) reader log = log :=
+  auditDrain_requires_full_dominance_of_subjects (liftLegacyContext ctx) (some m) reader log
+    (validatedAuditMonitorClearance_dominates_subjects ctx m hVal)
+    DomainFlowPolicy.legacyLattice_wellFormed.2 hSources hGate
+
+/-- WS-SM SM9.A.3 (PR #870 review, **the misconfiguration witness**): a
+deployment that names embedded `low` as its monitor clearance validates to
+`none` — the misconfigured deployment IS the unconfigured one, fail-closed.
+
+`{high, trusted}` does not flow to `{low, untrusted}` (confidentiality would
+descend), so the four-label check refuses, and with it every consumer: no
+epoch, no global identities, no drain. -/
+theorem validatedAuditMonitorClearance_misconfigured_low (ctx : LabelingContext) :
+    validatedAuditMonitorClearance
+        { ctx with
+          auditMonitorClearance := some (embedLegacyLabel SecurityLabel.publicLabel) }
+      = none := rfl
+
+/-- WS-SM SM9.A.3 (PR #870 review, **the fail-closed closure at the arm's
+inputs**): under a misconfigured clearance the drain is refused for every
+caller on every state — because the live arm consumes the VALIDATED clearance,
+and a misconfigured one validates to `none`. -/
+theorem misconfiguredDeployment_cannot_drain (ctx : LabelingContext)
+    (c : CoreId) (count : Nat) (st : SystemState)
+    (hMis : validatedAuditMonitorClearance ctx = none) :
+    auditDrainVisiblePrefix (liftLegacyContext ctx) (validatedAuditMonitorClearance ctx)
+        c count st = .error .illegalAuthority := by
+  rw [hMis]
+  exact auditDrain_unconfigured_denied (liftLegacyContext ctx) c count st
 
 /-- WS-SM SM9.A.3: a drain never grows the trail, so the capacity bound rides
 it unconditionally. -/
@@ -1457,7 +1694,7 @@ theorem auditDrain_partial_reader_drains_nothing (ctx : GenericLabelingContext)
     (hPartial : auditMonitorAuthorized ctx monitorClearance reader = false) :
     ¬ ∃ n st', auditDrainVisiblePrefix ctx monitorClearance c count st = .ok (n, st') := by
   rintro ⟨n, st', hStep⟩
-  obtain ⟨-, -, hGate⟩ := auditDrain_frame ctx monitorClearance c count st n st' hStep
+  obtain ⟨-, -, hGate, -⟩ := auditDrain_frame ctx monitorClearance c count st n st' hStep
   unfold auditMonitorGate at hGate
   rw [hReader] at hGate
   simp only [hPartial] at hGate

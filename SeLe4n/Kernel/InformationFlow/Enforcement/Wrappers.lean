@@ -303,7 +303,16 @@ def enforcementBoundary : List EnforcementClass :=
   -- (`extractAuditAuthority`), *not* a right on an arbitrary capability — the
   -- v0.32.97 confused-deputy class — with `.read` and `.write` as the second
   -- gate so a monitoring deployment can hand out a reader that cannot drain.
-  , .capabilityOnly "auditReadWord"
+  --
+  -- PR #870 review (P2): the reader's entry is `auditReadFromCore` — the LIVE
+  -- entry point the `.auditRead` arm calls, whose subject-resolution seam
+  -- (the reader's clearance read off the running thread, never off an operand)
+  -- is precisely what the boundary exists to audit.  Its first cut named the
+  -- inner query `auditReadWord`, which takes a caller-supplied reader domain —
+  -- so the coverage checks would have stayed green had the live seam drifted
+  -- onto exactly the confused-clearance shape the entry point exists to
+  -- prevent.  The drain's label was the live entry from the start.
+  , .capabilityOnly "auditReadFromCore"
   , .capabilityOnly "auditDrainVisiblePrefix"
   -- WS-SM SM8.E.3: the SM3 two-phase-locking bracket, promoted here from the
   -- separate per-core list SM8.B introduced.  **Capability-only**, and for the
@@ -366,7 +375,7 @@ def syscallIdToEnforcementName : SyscallId → String
   | .mintReplyCap          => "mintReplyCapWithCdt"
   | .vspaceUnifyInstruction => "vspaceUnifyInstructionPage"
   | .declassify            => "declassifyObjectFromCore"
-  | .auditRead             => "auditReadWord"
+  | .auditRead             => "auditReadFromCore"
   | .auditDrain            => "auditDrainVisiblePrefix"
 
 /-- AC4-D: Check whether every SyscallId maps to an operation name present in

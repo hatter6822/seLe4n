@@ -869,7 +869,7 @@ their registries).  SM9.A.4a alone is a relation with congruence lemmas — see
 §3.4a — which is why the split is structural rather than a convenience.
 
 **Landing record.**  All fifteen sub-tasks landed in one cut.  The pure reader
-is the production leaf `InformationFlow/AuditRead.lean` (117 declarations,
+is the production leaf `InformationFlow/AuditRead.lean` (129 declarations,
 axiom-clean), placed **below** the projection layer so the live syscall arms
 consume it without pulling the SM8.A/B non-interference closure into the
 dispatch path — which is why `auditDrain_preserves_projection{,OnCore}` and the
@@ -906,7 +906,7 @@ gate's own scenario for effect on the live transition — fill the trail to
 `maxDeclassificationAuditEntries` through real authorized downgrades, observe
 `.auditLogCapacityExceeded`, read the status word and a field, drain, declassify
 again — with the post-drain timestamp provably fresh and the pre-epoch collision
-exhibited as the load-bearing negative.  612 assertions / 78 groups overall.
+exhibited as the load-bearing negative.  618 assertions / 78 groups overall.
 
 **Audit cut (same branch).**  A code-first audit of the landing found no
 security defect in any reachable state and no false theorem, and closed seven
@@ -924,6 +924,19 @@ cannot skip it silently; the reader's fail-closed arms witnessed at runtime
 (the 2^128 field bound through `auditReadWord`, the chunk-past-width refusal,
 the live 2^64 guard refusing rather than wrapping); and two docstrings
 corrected in the direction the mathematics forces.
+
+**PR #870 review cut.**  Three Codex findings, all closed by code.  P1: the
+dominance obligation was an unused hypothesis — the live arms now consume
+`validatedAuditMonitorClearance` (a non-dominating clearance validates to
+`none`; decidable because the live context's subject domains are the four
+embedded labels), and the drain gains the `auditDrainViewComplete` destruction
+guard, refusing any caller that cannot see the whole trail — so the §3.4
+operator obligation became a machine-checked property of the configuration and
+the misconfigured deployment fails closed at two independent layers.  P2s: the
+`sele4n-sys` byte extractor returns `Option<u8>` (the masked shift aliased
+`k = 8` onto `k = 0` in release builds), and the enforcement boundary's
+`.auditRead` entry names the live `auditReadFromCore` rather than the inner
+caller-supplied-domain query.
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
