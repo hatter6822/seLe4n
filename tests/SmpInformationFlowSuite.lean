@@ -1468,7 +1468,7 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @lowEquivalent_does_not_determine_visible_view
 #check @auditRead_no_channel
 #check @auditReadFromCore_no_channel
-#check @auditRead_gates_are_four
+#check @auditRead_gates_are_five
 #check @auditDrain_preserves_projectionOnCore
 #check @auditDrain_perCore_NI
 #check @auditReadFromCore_perCore_NI
@@ -1529,11 +1529,28 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @Architecture.SyscallArgDecode.encodeAuditDrainArgs
 #check @Architecture.SyscallArgDecode.decodeAuditDrainArgs_roundtrip
 
+-- PR #870 round 6 — the drain-signal channel's receiver excluded from the
+-- live facility, the channel kept exhibited at the model reader, and the
+-- flow-closure that makes every surviving observation an authorized flow.
+#check @auditReadFromCore_partial_reader_denied
+#check @auditReadFromCore_ok_is_monitor
+#check @auditDrain_moves_partial_readers_status
+#check @auditReadFromCore_observer_dominates_subjects
+
 -- SM9.A.11 / SM9.A.12 — enforcement boundary and lock sets.
 #check @Concurrency.lockSet_auditRead
 #check @Concurrency.lockSet_auditDrain
 #check @Concurrency.lockSet_consistent_auditRead
 #check @Concurrency.lockSet_consistent_auditDrain
+-- PR #870 round 6 — the committed dispatch's caller-TCB staging write is a
+-- declared `.write` member of every word-returning footprint, by name, and
+-- the audit pair join the §6b size family + §6c aggregate the plan's
+-- SM9.A.12 row already claimed.
+#check @Concurrency.lockSet_auditRead_staging_write_mem
+#check @Concurrency.lockSet_auditDrain_staging_write_mem
+#check @Concurrency.lockSet_serviceQuery_staging_write_mem
+-- (`lockSet_auditRead_size_le` / `_auditDrain_size_le` are anchored in
+-- `DeadlockFreedomSuite`, whose import set carries the §6b size family.)
 
 -- ============================================================================
 -- §2  Elaboration-time examples: each headline theorem applied
@@ -7366,6 +7383,15 @@ read={match auditReadFromCore auditGenericCtx none c1 .status auditMixedState wi
   | .ok _ => "ok" | .error e => s!"{reprStr e}"} \
 drain={match auditDrainVisiblePrefix auditGenericCtx none c1 3 auditMixedState with
   | .ok _ => "ok" | .error e => s!"{reprStr e}"}"
+    -- PR #870 round 6: the live facility is MONITOR-ONLY.  Core 0's public
+    -- subject is refused the live read while the model filter still computes
+    -- its two-entry view — the drain-signal channel's receiver is excluded at
+    -- the entry, not by emptying the filter.
+  , s!"[smp-information-flow] audit live partial reader (round 6): \
+read={match auditReadFromCore auditGenericCtx auditMonitorLabeling.auditMonitorClearance c0
+    .status auditMixedState with
+  | .ok _ => "ok" | .error e => s!"{reprStr e}"} \
+model view len={(auditLogVisibleTo auditGenericCtx auditPartialReader auditMixedTrail).length}"
     -- The ABI surface: two syscalls, both value-returning, both classified.
   , s!"[smp-information-flow] audit ABI: auditRead={SyscallId.auditRead.toNat} \
 auditDrain={SyscallId.auditDrain.toNat} syscalls={SyscallId.count} \
@@ -7829,16 +7855,29 @@ private def runAuditLiveArmChecks : IO Unit := do
     (decide (decodeAuditReadOp auditReadOpcodeCount 0 0 = none) &&
      decide (decodeAuditReadOp 9999 0 0 = none))
   -- The live entry point resolves the reader's clearance from the running
-  -- subject, so a caller cannot name its own.
-  assertBool "the live entry reads at the RUNNING subject's clearance"
-    (match auditReadFromCore auditGenericCtx auditMonitorLabeling.auditMonitorClearance c1
-        .status auditMixedState,
-      auditReadFromCore auditGenericCtx auditMonitorLabeling.auditMonitorClearance c0
+  -- subject, so a caller cannot name its own — and (PR #870 round 6) serves
+  -- MONITORS ONLY: core 1's trusted subject reads its full view, core 0's
+  -- public subject is refused outright, with the same error as every other
+  -- authority refusal.  Before round 6 core 0 was served a two-entry
+  -- partial view, which is the receiver of the drain-signal channel §9.9
+  -- exhibits.
+  assertBool "the live entry reads at the RUNNING subject's clearance — and serves monitors only"
+    ((match auditReadFromCore auditGenericCtx auditMonitorLabeling.auditMonitorClearance c1
         .status auditMixedState with
-     | .ok (wMonitor, _), .ok (wPartial, _) =>
-         decide (auditStatusVisibleLength wMonitor = 3) &&
-         decide (auditStatusVisibleLength wPartial = 2)
-     | _, _ => false)
+      | .ok (wMonitor, _) => decide (auditStatusVisibleLength wMonitor = 3)
+      | .error _ => false) &&
+     (match auditReadFromCore auditGenericCtx auditMonitorLabeling.auditMonitorClearance c0
+        .status auditMixedState with
+      | .ok _ => false
+      | .error e => decide (e = KernelError.illegalAuthority)))
+  -- The load-bearing negative for the exclusion: the MODEL reader at the same
+  -- partial clearance still computes a two-entry view — the refusal is the
+  -- entry's monitor gate doing work, not the filter emptying.
+  assertBool "NEGATIVE: the model reader still serves that clearance a 2-entry view — the entry's gate is what refuses"
+    (match auditReadWord auditGenericCtx auditMonitorLabeling.auditMonitorClearance
+        auditPartialReader auditMixedState .status with
+     | .ok w => decide (auditStatusVisibleLength w = 2)
+     | .error _ => false)
   assertBool "NEGATIVE: an idle core cannot read — there is no subject whose clearance selects a view"
     (match auditReadFromCore auditGenericCtx auditMonitorLabeling.auditMonitorClearance c2
         .status auditMixedState with
@@ -7987,19 +8026,19 @@ private def runAuditCapacityCliffChecks : IO Unit := do
       assertBool "NEGATIVE: the PRE-EPOCH rule would have stamped this entry 0 — a reused timestamp"
         (decide (drainedState.declassificationAuditLog.length = 0) &&
          decide (fullState.declassificationAuditLog.any (fun e => decide (e.timestamp = 0))))
-      -- A partial reader is refused at every step of this story: it cannot
-      -- drain, and its own view of the drained trail is empty rather than a
-      -- window onto what the monitor removed.
-      assertBool "NEGATIVE: a partial reader could not have performed any of this"
+      -- A partial reader is refused at every step of this story: it can
+      -- neither drain nor — since PR #870 round 6 — read at all through the
+      -- live entry, with the same error for both, so nothing in the cliff's
+      -- recovery is observable below the monitor.
+      assertBool "NEGATIVE: a partial reader could not have performed — or observed — any of this"
         ((match auditDrainVisiblePrefix ctx auditMonitorLabeling.auditMonitorClearance c0
             maxDeclassificationAuditEntries fullState with
           | .ok _ => false
           | .error e => decide (e = KernelError.illegalAuthority)) &&
          (match auditReadFromCore ctx auditMonitorLabeling.auditMonitorClearance c0
             .status fullState with
-          | .error _ => false
-          | .ok (w, _) => decide (auditStatusVisibleLength w = 0) &&
-                          decide (auditStatusGeneration w = 0)))
+          | .ok _ => false
+          | .error e => decide (e = KernelError.illegalAuthority)))
       -- …and an UNCONFIGURED deployment keeps the cliff, which is the
       -- conservative default rather than an oversight.
       assertBool "NEGATIVE: an unconfigured deployment still has the cliff — no monitor, no drain"
@@ -8008,6 +8047,89 @@ private def runAuditCapacityCliffChecks : IO Unit := do
             maxDeclassificationAuditEntries fullState with
          | .ok _ => false
          | .error e => decide (e = KernelError.illegalAuthority))
+
+/-- §9.9  PR #870 round 6 — the drain-signal channel, and its exclusion.
+
+A monitor's drain removes entries a partial reader can see, so that reader's
+visible length moves at the monitor's choice — one bit per drain, from the
+fully-dominating monitor to a lower subject, exactly the signal §4c hides the
+drain generation to remove.  The length is a second carrier of the same bit
+(it rides `status` and the `.invalidArgument` boundary of every indexed read),
+so the closure is exclusion: the live entry serves monitors only, and every
+surviving reader is one the policy clears for every subject's activity — the
+monitor's drains included. -/
+private def runAuditDrainSignalChecks : IO Unit := do
+  IO.println "--- §9.9 PR #870 round 6: the drain-signal channel is receiver-free ---"
+  -- THE CHANNEL, computed at the model reader: the monitor drains one entry
+  -- (the first — public-sourced, an entry the partial reader sees), and the
+  -- partial clearance's model status word moves.  A monitor choosing whether
+  -- the drained prefix holds a visible entry transmits a bit per drain.
+  let drained := auditDrainVisiblePrefix auditGenericCtx
+    auditMonitorLabeling.auditMonitorClearance c1 1 auditMixedState
+  assertBool "a monitor's drain MOVES the partial clearance's model status word — the bit"
+    (match drained,
+       auditReadWord auditGenericCtx auditMonitorLabeling.auditMonitorClearance
+         auditPartialReader auditMixedState .status with
+     | .ok (_, stAfter), .ok wBefore =>
+         (match auditReadWord auditGenericCtx auditMonitorLabeling.auditMonitorClearance
+             auditPartialReader stAfter .status with
+          | .ok wAfter =>
+              decide (auditStatusVisibleLength wBefore = 2) &&
+              decide (auditStatusVisibleLength wAfter = 1) &&
+              decide (wBefore ≠ wAfter)
+          | .error _ => false)
+     | _, _ => false)
+  -- THE EXCLUSION: the live entry refuses that receiver — before the drain and
+  -- after it — so the bit has nowhere to land on the live path.
+  assertBool "the live entry refuses the channel's receiver, before AND after the drain"
+    ((match auditReadFromCore auditGenericCtx auditMonitorLabeling.auditMonitorClearance c0
+        .status auditMixedState with
+      | .ok _ => false
+      | .error e => decide (e = KernelError.illegalAuthority)) &&
+     (match drained with
+      | .error _ => false
+      | .ok (_, stAfter) =>
+          match auditReadFromCore auditGenericCtx auditMonitorLabeling.auditMonitorClearance c0
+              .status stAfter with
+          | .ok _ => false
+          | .error e => decide (e = KernelError.illegalAuthority)))
+  -- The refusal class is the SAME as an unconfigured deployment's, so being
+  -- refused as a non-monitor reveals nothing a caller does not already know.
+  assertBool "…with the same error as an unconfigured deployment — the refusal reveals nothing"
+    (match auditReadFromCore auditGenericCtx none c0 .status auditMixedState,
+       auditReadFromCore auditGenericCtx auditMonitorLabeling.auditMonitorClearance c0
+         .status auditMixedState with
+     | .error e₁, .error e₂ => decide (e₁ = e₂)
+     | _, _ => false)
+  -- THE POSITIVE CONTROL: the monitor reads on both sides of its own drain —
+  -- exclusion removed the channel's receiver, not the facility.
+  assertBool "the monitor still reads on both sides of its own drain"
+    ((match auditReadFromCore auditGenericCtx auditMonitorLabeling.auditMonitorClearance c1
+        .status auditMixedState with
+      | .ok _ => true
+      | .error _ => false) &&
+     (match drained with
+      | .error _ => false
+      | .ok (_, stAfter) =>
+          match auditReadFromCore auditGenericCtx auditMonitorLabeling.auditMonitorClearance c1
+              .status stAfter with
+          | .ok _ => true
+          | .error _ => false))
+  -- THE FLOW CLOSURE, computed: every embedded subject label flows to the
+  -- monitor clearance, so whatever a surviving live reader observes of another
+  -- subject's activity — the monitor's drains included — is a flow the policy
+  -- already authorizes (`auditReadFromCore_observer_dominates_subjects`).
+  assertBool "every subject domain flows to the surviving reader — observed drains are authorized flows"
+    (legacySubjectLabels.all (fun l =>
+      DomainFlowPolicy.legacyLattice.canFlow (embedLegacyLabel l) auditMonitorDomain))
+  -- NEGATIVE: exclusion is the entry's monitor gate, not an emptied filter —
+  -- the model reader still serves the partial clearance, which is what makes
+  -- `auditDrain_moves_partial_readers_status` statable at all.
+  assertBool "NEGATIVE: the model reader still serves the partial clearance — the gate, not the filter, refuses"
+    (match auditReadWord auditGenericCtx auditMonitorLabeling.auditMonitorClearance
+        auditPartialReader auditMixedState .status with
+     | .ok _ => true
+     | .error _ => false)
 
 def runSmpInformationFlowChecks : IO Unit := do
   IO.println "WS-SM SM8.A / SM8.B / SM8.C / SM8.D / SM8.E — per-core observable state, \
@@ -8090,6 +8212,7 @@ non-interference, declassification audit, fine-lock information flow and phase c
   runAuditEpochChecks
   runAuditLiveArmChecks
   runAuditCapacityCliffChecks
+  runAuditDrainSignalChecks
   runInformationFlowTraceFixtureCheck
   IO.println "===================================="
   IO.println ("All SM8.A per-core observable-state, SM8.B non-interference, " ++

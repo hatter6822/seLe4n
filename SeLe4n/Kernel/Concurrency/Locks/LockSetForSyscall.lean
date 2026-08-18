@@ -145,9 +145,11 @@ def lockSetForSyscall (sid : SyscallId) (callerTid targetTid : ThreadId)
   | .declassify
   -- WS-SM SM9.A.12: the audit reader and the drain are undeclared here for the
   -- same reason as every other arm — the declared-footprint bracket is SM3.C.9
-  -- work, not SM9.A work — and note that declaring them would buy little: their
-  -- per-object footprints (`lockSet_auditRead` / `lockSet_auditDrain`) are two
-  -- *read* locks, since neither transition writes an object at all.
+  -- work, not SM9.A work.  Their per-object footprints (`lockSet_auditRead` /
+  -- `lockSet_auditDrain`) carry the caller TCB in **write** mode (PR #870
+  -- round 6): the transitions write no object, but the committed dispatch
+  -- stages the returned word into the caller's TCB via WS-RA's
+  -- `writeReturnFrameToTcb`, and a footprint covers the committed dispatch.
   | .auditRead | .auditDrain => none
 
 /-- **WS-SM SM3.C.9**: the `tcbSuspend` arm is wired to the resolver.

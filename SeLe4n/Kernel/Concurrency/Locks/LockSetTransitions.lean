@@ -628,40 +628,69 @@ def lockSet_declassify (callerTid : ThreadId) (cnodeRootObjId : ObjId) : LockSet
 
 /-! ## Audit-trail access (2 transitions)
 
-WS-SM SM9.A.12.  The reader's and the drain's whole state effect is on
-`SystemState` fields — the trail and its epoch — exactly like `.declassify`'s,
-so their per-object footprints are the two universal reads and nothing more.
+WS-SM SM9.A.12.  The *transitions'* whole state effect is on `SystemState`
+fields — the trail and its epoch — exactly like `.declassify`'s.  But a
+declared footprint covers the **committed dispatch**, not the inner transition
+alone (PR #870 round 6, the round-4 rule applied to the lock domain): both
+audit syscalls are `.word`-shaped, so on success their arms continue into
+WS-RA's `writeReturnFrameToTcb`, which **writes the caller's TCB**
+(`registerContext` — the staged return frame).  The caller lock is therefore
+`.write`; declaring it `.read` would let another TCB writer run concurrently
+with the staging write once SM3.C.9 starts consuming these footprints.  The
+CNode stays `.read` (capability resolution only).
 
-The **read** taking `.read` on the caller's TCB is not a formality: the reader's
-clearance is the running subject's domain, so the TCB is genuinely read.  The
-**drain** takes the same two reads rather than a write anywhere, because the
-object store is untouched: draining a prefix of a `SystemState` list writes no
-object.  That the drain nevertheless requires the `.write` *right* on the audit
-capability is a separate gate (`syscallRequiredRight`) and deliberately so —
-rights bound what a capability holder may do, lock sets bound what the
-transition touches, and conflating them is how a footprint stops being honest. -/
+The drain additionally requires the `.write` *right* on the audit capability —
+a separate gate (`syscallRequiredRight`) and deliberately so: rights bound what
+a capability holder may do, lock sets bound what the committed dispatch
+touches, and conflating them is how a footprint stops being honest. -/
 
 /-- WS-SM SM9.A.12: `lockSet` for `auditRead`.
 
-Both locks are **read** mode: the caller TCB resolves the reader's clearance,
-the CNode resolves the audit capability, and the transition writes nothing at
-all — it is a pure query over `declassificationAuditLog`. -/
+Caller TCB **write** (PR #870 round 6): the transition is a pure query over
+`declassificationAuditLog`, but the arm stages the returned word into the
+caller's TCB via `writeReturnFrameToTcb` — a genuine TCB write the committed
+dispatch performs on every success (`lockSet_auditRead_staging_write_mem` ties
+it to the footprint by name).  CNode **read** for capability resolution. -/
 def lockSet_auditRead (callerTid : ThreadId) (cnodeRootObjId : ObjId) : LockSet :=
   lockSetOfList
-    [(tcbLock callerTid, .read),
+    [(tcbLock callerTid, .write),
      (cnodeLock cnodeRootObjId, .read)]
 
 /-- WS-SM SM9.A.12: `lockSet` for `auditDrain`.
 
-Identical to the reader's, and identical for a reason worth stating rather than
-leaving to inspection: a drain writes `declassificationAuditLog` and
-`declassificationAuditEpoch`, both `SystemState` fields, and **no object**.  A
-`.write` lock on the caller's TCB would over-declare a footprint the transition
-does not have. -/
+Identical to the reader's: the transition writes `declassificationAuditLog` and
+`declassificationAuditEpoch` — both `SystemState` fields, **no object** — and
+the arm then stages the returned length into the caller's TCB
+(`writeReturnFrameToTcb`), which is the caller-TCB write the `.write` mode
+declares (PR #870 round 6; `lockSet_auditDrain_staging_write_mem`). -/
 def lockSet_auditDrain (callerTid : ThreadId) (cnodeRootObjId : ObjId) : LockSet :=
   lockSetOfList
-    [(tcbLock callerTid, .read),
+    [(tcbLock callerTid, .write),
      (cnodeLock cnodeRootObjId, .read)]
+
+/-- WS-SM SM9.A.12 (PR #870 round 6): the staging write is **in** the declared
+footprint — `(tcbLock callerTid, .write)` is a member of the reader's lock set,
+by name, so a cut that reverts the caller lock to `.read` stops elaborating
+here rather than silently under-declaring the committed dispatch's writes. -/
+theorem lockSet_auditRead_staging_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) :
+    (tcbLock callerTid, AccessMode.write)
+      ∈ (lockSet_auditRead callerTid cnodeRootObjId).pairs := by
+  unfold lockSet_auditRead lockSetOfList
+  simp only [List.foldl]
+  exact LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+    (by simp [LockSet.insertOrMerge])
+
+/-- WS-SM SM9.A.12 (PR #870 round 6): the drain's staging write is in its
+declared footprint. -/
+theorem lockSet_auditDrain_staging_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) :
+    (tcbLock callerTid, AccessMode.write)
+      ∈ (lockSet_auditDrain callerTid cnodeRootObjId).pairs := by
+  unfold lockSet_auditDrain lockSetOfList
+  simp only [List.foldl]
+  exact LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+    (by simp [LockSet.insertOrMerge])
 
 /-! ## Service syscalls (3 transitions)
 
@@ -707,13 +736,30 @@ def lockSet_serviceRevoke (callerTid : ThreadId)
 
 `lookupServiceByCap epId` folds over `serviceRegistry`; it does NOT
 read `st.objects[epId]?` (the lookup is by cap-target ObjId match
-within the registry, not by object dereference).  Per-object lock
-footprint: caller TCB + CNode. -/
+within the registry, not by object dereference).
+
+Caller TCB **write** (PR #870 round 6): `.serviceQuery` is `.word`-shaped, so
+on success its arm stages the resolved `ServiceId` into the caller's TCB via
+WS-RA's `writeReturnFrameToTcb` — the same committed-dispatch caller write the
+audit pair declares, present since the WS-RA staging landed (v0.33.37) and
+fixed with them (`lockSet_serviceQuery_staging_write_mem`).  CNode **read**
+for capability resolution. -/
 def lockSet_serviceQuery (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) : LockSet :=
   lockSetOfList
-    [(tcbLock callerTid, .read),
+    [(tcbLock callerTid, .write),
      (cnodeLock cnodeRootObjId, .read)]
+
+/-- WS-SM SM3.B.3 (PR #870 round 6): `.serviceQuery`'s staging write is in its
+declared footprint — the sibling of `lockSet_auditRead_staging_write_mem`. -/
+theorem lockSet_serviceQuery_staging_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) :
+    (tcbLock callerTid, AccessMode.write)
+      ∈ (lockSet_serviceQuery callerTid cnodeRootObjId).pairs := by
+  unfold lockSet_serviceQuery lockSetOfList
+  simp only [List.foldl]
+  exact LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+    (by simp [LockSet.insertOrMerge])
 
 /-! ## SchedContext syscalls (3 transitions) -/
 

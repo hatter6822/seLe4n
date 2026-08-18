@@ -130,6 +130,10 @@ open SeLe4n.Kernel.Concurrency
 #check @size_le_2
 #check @size_le_3
 #check @size_le_4
+-- PR #870 round 6: the audit pair join the §6b size family and the §6c
+-- aggregate (the plan's SM9.A.12 row claimed both; the landing had neither).
+#check @lockSet_auditRead_size_le
+#check @lockSet_auditDrain_size_le
 #check @lockSetTransitions_within_bound
 
 /-! ## SM3.D.6 — KernelOperation + contention-sensitive WCRT -/

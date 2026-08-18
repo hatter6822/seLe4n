@@ -21,8 +21,11 @@
 //!    thread holding any readable capability, which in practice is every
 //!    thread (its own TCB suffices);
 //! 2. the right — `read` for the reader, `write` for the drain; and
-//! 3. for the drain and for global entry identities, the deployment's
-//!    configured audit-monitor clearance.
+//! 3. the deployment's configured audit-monitor clearance, which the calling
+//!    subject must dominate.  Since PR #870 round 6 this gates **every** live
+//!    read, not only the drain and the global identities: a partial reader's
+//!    visible length moves under a monitor's drain — a one-bit-per-drain
+//!    downward signal — so the live facility is monitor-only.
 //!
 //! An unconfigured deployment mints no audit capability and names no monitor,
 //! so it has no audit reader at all.
@@ -53,9 +56,10 @@ pub const AUDIT_READ_OPCODE_COUNT: u64 = 12;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u64)]
 pub enum AuditReadOpcode {
-    /// Visible length, and — for the configured monitor only — the drain
-    /// generation.  One call, because a split read of the two components can
-    /// assemble a pair that corresponds to no state at all.
+    /// Visible length and the drain generation (every live caller is the
+    /// configured monitor since PR #870 round 6).  One call, because a split
+    /// read of the two components can assemble a pair that corresponds to no
+    /// state at all.
     Status = 0,
     /// Chunk count for the entry's source domain.
     SrcDomainChunks = 1,
@@ -63,8 +67,10 @@ pub enum AuditReadOpcode {
     DstDomainChunks = 2,
     /// Chunk count for the entry's target object id.
     TargetObjectChunks = 3,
-    /// Chunk count for the entry's timestamp (a view-local index for a partial
-    /// reader; the global identity for the configured monitor).
+    /// Chunk count for the entry's timestamp — the global identity, since
+    /// every live caller is the configured monitor (the kernel's model-level
+    /// partial-reader class, which would see a view-local index instead, is
+    /// refused at the live entry since PR #870 round 6).
     TimestampChunks = 4,
     /// One chunk of the entry's source domain.
     SrcDomain = 5,
@@ -120,7 +126,13 @@ pub const AUDIT_STATUS_LENGTH_SLOTS: u64 = 512;
 ///
 /// * `InvalidCapability` — the capability does not target the audit trail.
 ///   This is the gate that makes the reader unreachable by right alone.
-/// * `IllegalAuthority` — the capability does not carry `read`.
+/// * `IllegalAuthority` — the capability does not carry `read`; **or** the
+///   deployment has no validated audit-monitor clearance configured; **or**
+///   the calling subject is not the configured monitor (PR #870 round 6 —
+///   the live facility is monitor-only, since a partial reader's visible
+///   length would move under a monitor's drain, a one-bit-per-drain downward
+///   signal).  The three causes share one error deliberately, so a refused
+///   caller cannot tell "feature off" from "not a monitor".
 /// * `IllegalState` — the executing core is running no thread, so there is no
 ///   subject whose clearance would select a view.
 /// * `InvalidArgument` — the index is past the end of the caller's own view, or
@@ -152,10 +164,12 @@ pub const fn audit_status_visible_length(status: u64) -> u64 {
     status % AUDIT_STATUS_LENGTH_SLOTS
 }
 
-/// Decode the status word's drain generation.  Always `0` for a caller that is
-/// not the configured audit monitor — a partial reader is told nothing about
-/// how many entries have been drained, because that count includes entries it
-/// cannot see.
+/// Decode the status word's drain generation.  Every status word the live
+/// syscall returns is a monitor's (PR #870 round 6 — non-monitor callers are
+/// refused outright), so this field carries the global drain epoch on every
+/// successful read.  The kernel's model-level reader zeroes it for a
+/// non-monitor clearance (Lean's `auditReadStatus_partial_hides_generation`),
+/// which is why the decoder is total rather than monitor-conditional.
 #[inline]
 pub const fn audit_status_generation(status: u64) -> u64 {
     status / AUDIT_STATUS_LENGTH_SLOTS

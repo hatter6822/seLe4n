@@ -2861,7 +2861,7 @@ plus the golden trace verified byte-for-byte.
 
 ### Layer 3 under SMP — the audit trail's reader (WS-SM SM9.A)
 
-`InformationFlow/AuditRead.lean` (**production**, 145 declarations,
+`InformationFlow/AuditRead.lean` (**production**, 152 declarations,
 axiom-clean).  SM8.C.8 mounted a durable, bounded, **fail-closed** trail that
 nothing could read, so a deployment performing
 `maxDeclassificationAuditEntries = 256` authorized downgrades stopped being able
@@ -2905,13 +2905,20 @@ to exclude — so the fix is a reader and a drain, not a softer bound.
 * **`status` is one read.**  Chunking it traded aliasing for tearing on the
   first interleaved drain: `auditReadStatus_atomic` is the property,
   `auditStatusSplitRead_tears` the witness for the rejected design.
-* **Two reader classes.**  A partial reader gets **view-local** indices and
-  provably learns nothing of the global position
+* **Two reader classes — the partial one model-level.**  A partial reader gets
+  **view-local** indices and provably learns nothing of the global position
   (`auditRead_hides_global_position`); a fully-dominating monitor gets **global**
   identities so it can correlate across drains.  The per-observer drain token
   the first design specified is unbuildable — labels are an unbounded `Nat`, so
   there is no finite family to key state by
-  (`observerScopedGeneration_not_mountable`).
+  (`observerScopedGeneration_not_mountable`).  Since PR #870 round 6 the
+  **live** entry serves monitors only: a monitor's drain moves a partial
+  reader's visible length — one bit per drain, the signal hiding the drain
+  generation was meant to remove — so the receiver is excluded
+  (`auditReadFromCore_partial_reader_denied`), the channel stays exhibited
+  (`auditDrain_moves_partial_readers_status`), and every surviving reader
+  dominates every subject domain
+  (`auditReadFromCore_observer_dominates_subjects`).
 * **Drain requires full dominance** (SM9.A.3).  A partial-visibility prefix
   drain reveals the *positions* of hidden entries and repeated drains enumerate
   the hidden layout.  The gate is derived from the **configuration**, never from
@@ -2949,12 +2956,15 @@ to exclude — so the fix is a reader and a drain, not a softer bound.
   (`misconfiguredDeployment_cannot_read`).
 
 Registries: enforcement boundary 40 → 42 canonical and 55 → 57 per-core (both
-capability-only); lock sets two universal reads each; cross-core inventory
+capability-only); lock sets caller-TCB **write** + CNode read each (PR #870
+round 6 — the arms' `writeReturnFrameToTcb` staging is a committed-dispatch
+caller write, tied to each footprint by `lockSet_*_staging_write_mem`, with
+`.serviceQuery` fixed alongside); cross-core inventory
 26 → 28 with an **empty** write set for both, proven rather than asserted; the
 per-core routing gate passes with zero allowlisted exceptions.
 
-Runtime coverage: §9.1–§9.8 of the same suite (554 → 622 assertions across
-seventy-eight groups), every group with a load-bearing negative.  §9.8 is the
+Runtime coverage: §9.1–§9.9 of the same suite (554 → 629 assertions across
+seventy-nine groups), every group with a load-bearing negative.  §9.8 is the
 plan's own acceptance gate, run for effect on the live transition: fill the
 trail to 256 through real authorized downgrades, observe
 `.auditLogCapacityExceeded`, read, drain, declassify again — with the post-drain

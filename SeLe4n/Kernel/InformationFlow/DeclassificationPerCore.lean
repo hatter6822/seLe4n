@@ -2597,25 +2597,33 @@ theorem auditReadFromCore_no_channel (ctx : LabelingContext) (observer : IfObser
   exact Except.ok.inj (hv₁.symm.trans hv₂)
 
 /-- WS-SM SM9.A.4b (**why this is not an eighth covert channel**): the reader is
-capability-gated, right-gated and clearance-filtered — an *authorized, audited*
-read rather than an unauthorized information path.
+capability-gated, right-gated, monitor-gated and clearance-filtered — an
+*authorized, audited* read rather than an unauthorized information path.
 
 Registering a CC-8 would cost a `CovertChannelId` constructor, four total-match
 tables, a witness theorem, five numeric theorems, Tier-3 anchors and a
 golden-fixture line, and it is **not owed**: a covert channel is a path that
 carries information *without* authorization.  What the reader *is* owed is an
 observation relation describing what it can see, which §14 supplies and
-`auditRead_no_channel` is stated over.
+`auditRead_no_channel` is stated over.  PR #870 round 6 is what makes the
+"without authorization" clause exhaustive: a *partial* live reader would have
+received the monitor's drains through its own visible length — a
+monitor-to-subject bit per drain no policy authorized
+(`auditDrain_moves_partial_readers_status` keeps it exhibited) — so the live
+entry now serves only callers for whom every subject's activity is an
+authorized flow (`auditReadFromCore_observer_dominates_subjects`).
 
-The four gates, as one checkable statement: a capability that does not target
+The five gates, as one checkable statement: a capability that does not target
 the audit trail is rejected outright; an unconfigured deployment has no reader
 — the live entry refuses every operation before resolving a subject (PR #870
 round 2, `auditRead_unconfigured_denied`); an unconfigured deployment has no
-monitor, so no caller may drain; and a caller that is not the monitor sees no
-epoch.  The fourth conjunct's `auditReadWord … none` is the *model query* at a
-non-monitor clearance — deliberately ungated, which is why the second conjunct
-is stated at the live entry rather than the word. -/
-theorem auditRead_gates_are_four (ctx : LabelingContext) (oid : SeLe4n.ObjId)
+monitor, so no caller may drain; a caller that is not the monitor sees no
+epoch; and — PR #870 round 6 — a resolved subject the monitor gate refuses is
+not a live reader at all.  The fourth conjunct's `auditReadWord … none` is the
+*model query* at a non-monitor clearance — deliberately ungated, which is why
+the second and fifth conjuncts are stated at the live entry rather than the
+word. -/
+theorem auditRead_gates_are_five (ctx : LabelingContext) (oid : SeLe4n.ObjId)
     (reader : SecurityDomain) (c : CoreId) (count : Nat) (op : AuditReadOp)
     (st : SystemState) (epoch : Nat) :
     extractAuditAuthority
@@ -2623,13 +2631,21 @@ theorem auditRead_gates_are_four (ctx : LabelingContext) (oid : SeLe4n.ObjId)
           badge := none } = .error .invalidCapability ∧
     auditReadFromCore (liftLegacyContext ctx) none c op st = .error .illegalAuthority ∧
     auditDrainVisiblePrefix (liftLegacyContext ctx) none c count st = .error .illegalAuthority ∧
-    auditReadWord (liftLegacyContext ctx) none reader
+    (auditReadWord (liftLegacyContext ctx) none reader
         { st with declassificationAuditEpoch := epoch } .status =
-      auditReadWord (liftLegacyContext ctx) none reader st .status :=
+      auditReadWord (liftLegacyContext ctx) none reader st .status) ∧
+    (∀ (m : SecurityDomain) (st' : SystemState),
+      auditReaderDomain (liftLegacyContext ctx) st' c = some reader →
+      auditMonitorAuthorized (liftLegacyContext ctx) (some m) reader = false →
+      auditReadFromCore (liftLegacyContext ctx) (some m) c op st'
+        = .error .illegalAuthority) :=
   ⟨extractAuditAuthority_rejects_non_audit_capability oid,
    auditRead_unconfigured_denied (liftLegacyContext ctx) c op st,
    auditDrain_unconfigured_denied (liftLegacyContext ctx) c count st,
-   auditReadStatus_partial_hides_generation (liftLegacyContext ctx) none reader st epoch rfl⟩
+   auditReadStatus_partial_hides_generation (liftLegacyContext ctx) none reader st epoch rfl,
+   fun m st' hReader hPartial =>
+     auditReadFromCore_partial_reader_denied (liftLegacyContext ctx) m c op st' reader
+       hReader hPartial⟩
 
 /-- WS-SM SM9.A.4b: the drain's own per-core non-interference — it writes the
 trail and the epoch, and no observer on any core reads either. -/

@@ -2275,7 +2275,14 @@ run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle_setDeclassificat
 run_check "INVARIANT" rg -n '^theorem declassificationAuditLog_write_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 run_check "INVARIANT" rg -n '^theorem freeze_preserves_declassificationAuditLog' SeLe4n/Model/FrozenState.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatform_declassificationAuditLog_eq' SeLe4n/Platform/Boot.lean
-run_negative_check "INVARIANT" rg -n 'declassificationAuditLog := log.drop|declassificationAuditLog := log.tail' SeLe4n
+# Scoped to the PRODUCER surface (PR #870 round 6): the forbidden arm is a
+# recorder that truncates instead of failing closed, and it can only live in
+# the record/producer modules.  The authorized remover (`AuditRead.lean`'s
+# drain) and theorem statements about the drained shape
+# (`auditDrain_moves_partial_readers_status`) legitimately spell a dropped
+# trail, so a repo-wide pattern would forbid statements about the very
+# operation the phase ships.
+run_negative_check "INVARIANT" rg -n 'declassificationAuditLog := log.drop|declassificationAuditLog := log.tail' SeLe4n/Kernel/InformationFlow/AuditRecord.lean SeLe4n/Kernel/InformationFlow/Declassification.lean SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 # SM8.C.5: the flat rendering is NOT injective, so the trust bit ships as data.
 run_check "INVARIANT" rg -n '^structure RenderedDeclassificationBasis' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
 run_check "INVARIANT" rg -n '^theorem render_not_injective' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
@@ -2912,12 +2919,14 @@ run_check "INVARIANT" rg -n '^theorem auditDrain_unconfigured_denied' SeLe4n/Ker
 # so a boot-provisioned `.auditTrail` capability opens nothing (capability
 # provisioning is an axis the labeling context cannot see).  A misconfigured
 # clearance validates to `none` and is refused identically.  The gate
-# inventory is `auditRead_gates_are_four`; the pre-round-2 three-gate name
-# undercounts and must not return.
+# inventory is `auditRead_gates_are_five` (round 6 added the monitor gate at
+# the live entry); the undercounting three- and four-gate names must not
+# return.
 run_check "INVARIANT" rg -n '^theorem auditRead_unconfigured_denied' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 run_check "INVARIANT" rg -n '^theorem misconfiguredDeployment_cannot_read' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem auditRead_gates_are_four' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem auditRead_gates_are_five' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 run_negative_check "INVARIANT" rg -n 'auditRead_gates_are_three' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_negative_check "INVARIANT" rg -n 'auditRead_gates_are_four' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 # PR #870 round 3: visibility filters on EVERY disclosed domain — the filter's
 # predicate is the source/destination conjunction, an entry whose destination
 # the reader is not cleared for is in no position of its view, and a visible
@@ -3031,6 +3040,23 @@ run_check "INVARIANT" rg -n 'niName! auditDrainDispatch_crossCoreNonInterference
 run_negative_check "INVARIANT" rg -n 'niName! auditReadFromCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_negative_check "INVARIANT" rg -n 'niName! auditDrainVisiblePrefix_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 
+# PR #870 round 6: the live facility is MONITOR-ONLY.  A monitor's drain moves
+# a partial reader's visible length — one bit per drain from the dominating
+# monitor to a lower subject, the very signal hiding the drain generation was
+# meant to remove — so the live entry excludes the receiver: a resolved
+# subject the monitor gate refuses is refused the read.  The channel stays
+# exhibited at the model reader, and every surviving live reader dominates
+# every subject domain, so an observed drain is an authorized flow.  The
+# retracted round-2 sentence (partial readers live in configured deployments)
+# must not return.
+run_check "INVARIANT" rg -n 'if auditMonitorAuthorized ctx monitorClearance reader then' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditReadFromCore_partial_reader_denied' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditReadFromCore_ok_is_monitor' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditDrain_moves_partial_readers_status' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditReadFromCore_observer_dominates_subjects' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^  runAuditDrainSignalChecks' tests/SmpInformationFlowSuite.lean
+run_prose_negative_check "INVARIANT" rg -n 'Partial readers are unchanged where they belong' SeLe4n/
+
 # SM9.A.11 / SM9.A.12 / SM9.A.13: the registries.  Enforcement boundary,
 # lock sets, the frozen-ops classifier, and the per-core routing gate — which
 # passes with ZERO allowlisted exceptions.
@@ -3042,6 +3068,19 @@ run_check "INVARIANT" rg -n 'capabilityOnly "auditDrainVisiblePrefix"' SeLe4n/Ke
 run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore.length = 57' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^def lockSet_auditRead' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^def lockSet_auditDrain' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+# PR #870 round 6 (the lock domain): a declared footprint covers the COMMITTED
+# dispatch — both audit arms and `.serviceQuery` stage their returned word into
+# the caller's TCB via `writeReturnFrameToTcb`, so the caller lock is `.write`,
+# tied to each footprint by name; the audit pair join the §6b size family and
+# the §6c aggregate (which the plan's SM9.A.12 row claimed at landing).  The
+# retracted sentence arguing a caller write lock "would over-declare a
+# footprint" must not return.
+run_check "INVARIANT" rg -n '^theorem lockSet_auditRead_staging_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_auditDrain_staging_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_serviceQuery_staging_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_auditRead_size_le' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_auditDrain_size_le' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+run_prose_negative_check "INVARIANT" rg -n 'would over-declare a footprint' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n 'auditReadFromCore#inert' scripts/per_core_routing_aliases.json
 run_check "INVARIANT" rg -n 'SeLe4n\.Kernel\.InformationFlow\.AuditRead' scripts/check_module_axioms.py
 # The two audit readers join the cross-core inventory with an EMPTY write set:

@@ -2342,7 +2342,11 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
   --
   -- The reader's clearance is not an operand: `auditReadFromCore` reads it off
   -- the subject the executing core is running.  A caller that could name its own
-  -- clearance could read the whole trail.
+  -- clearance could read the whole trail.  Since PR #870 round 6 the transition
+  -- also refuses a resolved subject the monitor gate refuses — the live
+  -- facility is monitor-only, because a partial reader's visible length moves
+  -- under a monitor's drain (a one-bit-per-drain downward signal;
+  -- `auditReadFromCore_partial_reader_denied` / `auditDrain_moves_partial_readers_status`).
   --
   -- **The result is written into the caller's return register.**  Without this
   -- the reader would gate correctly, compute correctly and hand back the

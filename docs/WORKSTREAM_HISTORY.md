@@ -117,8 +117,8 @@ lock sets two universal reads each; cross-core inventory 26 → 28 with an
 **empty** write set for both, which the confinement theorems prove; the
 per-core routing gate passes with **zero** allowlisted exceptions.
 
-**Evidence.**  `tests/SmpInformationFlowSuite.lean` §9.1–§9.8 (622 assertions /
-78 groups overall), every group with a load-bearing negative, and §9.8 is the
+**Evidence.**  `tests/SmpInformationFlowSuite.lean` §9.1–§9.9 (629 assertions /
+79 groups overall), every group with a load-bearing negative, and §9.8 is the
 plan's own acceptance gate run for effect on the live transition: fill the
 trail to 256 through real authorized downgrades, observe
 `.auditLogCapacityExceeded`, read the status word and a field, drain, declassify
@@ -245,6 +245,46 @@ are the composed-path witnesses; the delegates/default-denied/return-shape
 families gain the `hRight` premise; `SyscallReturnAbiSuite` §10g/§10h pin the
 exact error frames at the ABI seam, with the pre-round `.illegalAuthority`
 answer as the load-bearing negative.
+
+**The PR #870 round-6 cut (v0.33.49).**  Two further findings, both valid.
+**(P1) The drain signalled to partial readers** — the round that closes the
+reader-class design.  Round 2 had left partial readers live in *configured*
+deployments, and that coexists with the drain only by opening the very
+channel the module's §4c forbids: a monitor's drain removes entries a partial
+reader can see, so that reader's **visible length** moves at the monitor's
+choice — one bit per drain, from the fully-dominating monitor to a lower
+subject, with the length riding both the `status` word and the
+`.invalidArgument` boundary of every indexed read.  Hiding the drain
+generation (the §4c design) narrowed the alphabet, not the channel.  No drain
+preserves every partial view (deletion is its purpose; per-observer state is
+unbuildable; universally-invisible-prefix drains re-open the capacity cliff),
+so the closure is exclusion: **the live facility is monitor-only** —
+`auditReadFromCore` gains the monitor gate after subject resolution and
+refuses a non-monitor with the same `.illegalAuthority` as every other
+authority refusal (`auditReadFromCore_partial_reader_denied`;
+`_ok_is_monitor` the success characterisation).  The partial class survives
+as the model layer (its §4b/§4c theorems record what such a reader *would*
+learn), the channel stays exhibited
+(`auditDrain_moves_partial_readers_status`), and
+`auditReadFromCore_observer_dominates_subjects` is the flow closure: a
+surviving live reader dominates every subject domain, so an observed drain is
+an authorized flow.  `auditRead_gates_are_four` → `auditRead_gates_are_five`;
+suite §9.9 runs the channel, the exclusion, the refusal-class
+indistinguishability and the flow closure for effect; the golden trace gains
+the monitor-only observable.  **(P2) The audit lock sets under-declared the
+committed dispatch** — the round-4 rule transposed to the lock domain.  Both
+audit arms stage their returned word into the caller's TCB
+(`writeReturnFrameToTcb`), so declaring the caller lock `.read` — with a
+docstring arguing `.write` would over-declare — under-declared exactly the
+write SM3.C.9's future consumers must exclude against.  Caller TCB is now
+`.write` in `lockSet_auditRead` / `lockSet_auditDrain` and in
+`lockSet_serviceQuery` (the same staging-write class, live since WS-RA
+v0.33.37; a sweep of every staging site found every other target already
+`.write`), each tied to its footprint by name
+(`lockSet_*_staging_write_mem`); the audit pair join the §6b size family and
+the §6c aggregate (`lockSetTransitions_within_bound`, 27 → 29 conjuncts with
+its stale "26" corrected) — which the plan's SM9.A.12 row had recorded as
+done at landing without the code existing.
 
 **What SM9.A does not do** (SM9.B/SM9.C/SM9.D, per the plan): refused
 declassifications are still unrecorded, there is no data-carrying

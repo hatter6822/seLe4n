@@ -668,6 +668,24 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      -- unbounded `Nat`, so there is no finite family to key state by.
      have _nm := @SeLe4n.Kernel.observerScopedGeneration_not_mountable
      true)
+  assertBool "SM9.A (PR #870 round 6): the live facility is monitor-only — the drain-signal channel is receiver-free"
+    (-- The channel that forced the exclusion, kept exhibited at the model
+     -- reader: a monitor's drain moves a non-monitor clearance's status word,
+     -- one bit per drain, and hiding the generation leaves the length as a
+     -- second carrier of the same bit.
+     have _ch := @SeLe4n.Kernel.auditDrain_moves_partial_readers_status
+     -- The exclusion at the live entry, its success characterisation, and the
+     -- flow closure: every surviving reader dominates every subject domain,
+     -- so an observed drain is an authorized flow.
+     have _pd := @SeLe4n.Kernel.auditReadFromCore_partial_reader_denied
+     have _om := @SeLe4n.Kernel.auditReadFromCore_ok_is_monitor
+     have _od := @SeLe4n.Kernel.auditReadFromCore_observer_dominates_subjects
+     -- The committed dispatch's caller-TCB staging write is a declared
+     -- `.write` member of every word-returning footprint, by name.
+     have _wr := @SeLe4n.Kernel.Concurrency.lockSet_auditRead_staging_write_mem
+     have _wd := @SeLe4n.Kernel.Concurrency.lockSet_auditDrain_staging_write_mem
+     have _wq := @SeLe4n.Kernel.Concurrency.lockSet_serviceQuery_staging_write_mem
+     true)
   assertBool "SM9.A: drain under the configuration-derived dominance gate"
     (have _d := @SeLe4n.Kernel.auditDrainVisiblePrefix
      have _fd := @SeLe4n.Kernel.auditDrain_requires_full_dominance_of_labeling

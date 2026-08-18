@@ -995,11 +995,54 @@ the rights check into the arms after the target check;
 `dispatchSyscallChecked_audit_right_checked_second` are the composed-path
 witnesses and `SyscallReturnAbiSuite` §10g/§10h the exact-error ABI probes.
 
+**PR #870 round-6 cut (v0.33.49).**  Two further findings, both valid.  **(P1)
+The drain signalled to partial readers.**  Round 2 left partial readers live
+in *configured* deployments, and that coexists with the drain only by opening
+the very channel the module's own §4c forbids: a monitor's drain removes
+entries a partial reader can see, so that reader's visible length moves at the
+monitor's choice — one bit per drain, from the fully-dominating monitor to a
+lower subject, with the length riding both the `status` word and the
+`.invalidArgument` boundary of every indexed read (hiding the drain generation
+narrowed the alphabet, not the channel).  A drain that preserves every partial
+view is not constructible — deletion is the drain's purpose, no per-observer
+state is mountable (`observerScopedGeneration_not_mountable`), and a drain
+restricted to universally-invisible prefixes re-opens the 256-entry cliff for
+any trail holding a low-sourced entry — so the closure is the reviewer's
+second route: **the live facility is monitor-only.**  `auditReadFromCore`
+refuses a resolved subject the monitor gate refuses, with the same
+`.illegalAuthority` as every other authority refusal
+(`auditReadFromCore_partial_reader_denied`; `auditReadFromCore_ok_is_monitor`
+the success characterisation).  The partial class survives as the **model
+layer** (`auditReadWord` still keys on the caller; its §4b/§4c theorems record
+what such a reader *would* learn), the channel stays exhibited
+(`auditDrain_moves_partial_readers_status` — a cut re-admitting partial
+readers must confront it), and the flow closure
+`auditReadFromCore_observer_dominates_subjects` makes every surviving
+observation an authorized flow: a validated live reader dominates every
+subject domain, the draining monitor's included.  `auditRead_gates_are_four`
+→ `auditRead_gates_are_five`; suite §9.9 runs the channel and its exclusion
+for effect; the golden trace gains the monitor-only observable.  **(P2) The
+audit lock sets under-declared the committed dispatch.**  Both audit arms
+stage their returned word into the caller's TCB (`writeReturnFrameToTcb`), so
+the caller lock declared `.read` — with a docstring arguing that `.write`
+would over-declare — was the round-4 finding transposed to the lock domain:
+the footprint covered the transition, not the state the dispatch commits.
+The caller TCB is now `.write` in `lockSet_auditRead` / `lockSet_auditDrain`
+— and in `lockSet_serviceQuery`, the same staging-write class live since
+WS-RA (v0.33.37), surfaced by sweeping every staging site (every other
+staging target already carried `.write`) — each tied to its footprint by name
+(`lockSet_auditRead_staging_write_mem` / `_auditDrain_` / `_serviceQuery_`).
+The audit pair also join the §6b size family and the §6c aggregate
+(`lockSet_auditRead_size_le` / `_auditDrain_size_le`;
+`lockSetTransitions_within_bound` 27 → 29 conjuncts, its miscounted "26"
+corrected), which the SM9.A.12 row below had claimed at landing without the
+code existing.
+
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
 | SM9.A.1 | `auditLogVisibleTo ctx L` + `_sublist` / `_reindexed` / `_length_le`; the no-gap-leak theorem (the visible view is a function of the reader's clearance alone) | new production leaf `InformationFlow/AuditRead.lean` | M |
 | SM9.A.1a | **The persistent timestamp epoch** (§3.4) — `SystemState.declassificationAuditEpoch`, `timestamp := epoch + log.length`, well-formedness generalised to `auditTimestampsFrom epoch log` (the `start`-parameterised lemma already exists) with the 0-anchored form as the boot instance; both identification theorems generalised; the three `_preserves_wellFormed` theorems restated; full §6 mount carriage (freeze required field, `OffSchedulerAgrees`, four boot frames, `storeObject` frame, `…_write_preserves_projection`); the corrected "well-formed throughout" contract.  **Sequenced before SM9.A.3 — drain is unsound without it** | `Model/State.lean`, `Model/{FrozenState,FreezeProofs}.lean`, `Platform/Boot.lean`, `InformationFlow/{Declassification,DeclassificationPerCore}.lean` | L |
-| SM9.A.2 | `AuditReadOp` — **fused with `ReadableStructure`** (§3.7: each operation names the structure it reads) + `all` / `mem_all` / `all_nodup` + `auditReadOp_structure_total`; the §3.3 **arbitrary-length chunk protocol** (`fieldChunkCount w`, `field w chunkIndex`) over all four unbounded fields **and over the basis designation** (exporting the trust bit alone collapses every `integratorOverride`); `maxAuditFieldChunks` with fail-closed `.auditFieldTooLarge`, since the chunk *coordinates* are themselves single words and "total for any `Nat`" was false; `auditReadField_reconstructs` (unconditional on the accepted domain) + `auditReadBasis_reconstructs_designation` (`auditReadWord_fits_payload` retired with the bit-63 encoding — WS-RA v0.33.37, §3.3); **single-call `status`** with both components structurally bounded + `auditReadStatus_atomic` (chunking `status` traded aliasing for tearing on the first interleaved drain); the **two reader classes** — `auditReadIndex_is_view_local` and `auditRead_hides_global_position` for a partial reader, `dominatingReader_sees_global_identity` so a monitor can still correlate across drains, plus `observerScopedGeneration_not_mountable` | same | XL |
+| SM9.A.2 | `AuditReadOp` — **fused with `ReadableStructure`** (§3.7: each operation names the structure it reads) + `all` / `mem_all` / `all_nodup` + `auditReadOp_structure_total`; the §3.3 **arbitrary-length chunk protocol** (`fieldChunkCount w`, `field w chunkIndex`) over all four unbounded fields **and over the basis designation** (exporting the trust bit alone collapses every `integratorOverride`); `maxAuditFieldChunks` with fail-closed `.auditFieldTooLarge`, since the chunk *coordinates* are themselves single words and "total for any `Nat`" was false; `auditReadField_reconstructs` (unconditional on the accepted domain) + `auditReadBasis_reconstructs_designation` (`auditReadWord_fits_payload` retired with the bit-63 encoding — WS-RA v0.33.37, §3.3); **single-call `status`** with both components structurally bounded + `auditReadStatus_atomic` (chunking `status` traded aliasing for tearing on the first interleaved drain); the **two reader classes** — `auditReadIndex_is_view_local` and `auditRead_hides_global_position` for a partial reader, `dominatingReader_sees_global_identity` so a monitor can still correlate across drains, plus `observerScopedGeneration_not_mountable` (the partial class is the **model layer** since round 6 — the live entry serves monitors only, see the round-6 cut) | same | XL |
 | SM9.A.3 | `auditDrainVisiblePrefix` under the §3.4 dominance gate, advancing the SM9.A.1a epoch; `auditDrain_requires_full_dominance`, `_preserves_auditLogBounded`, `_preserves_wellFormed_at_epoch`, `_monotone_generation`, `_monotone_epoch`, `_fully_clears_for_dominating_reader`, and the negative that a partially-cleared caller drains nothing | same | M |
 | SM9.A.4a | **`auditObservationalEquivalence ctx L`** (§3.4a option b, §3.7 discipline): the clause set is a **total function on `ReadableStructure`**, not a list — a `mem_all` over a hand-maintained type cannot force a new structure to join it (`readableStructure_list_gate_insufficient` refutes that design), whereas a missing case in a total function is a compile error; `auditObservationalEquivalence_clause_total`; clauses for the trail **and** the refusal ledger; reflexivity / symmetry / transitivity; the congruence lemmas carrying it through every writer of a readable structure; the negative that plain `lowEquivalent` does **not** imply equal visible views | `InformationFlow/DeclassificationPerCore.lean` (staged) | XL |
 | SM9.A.4b | The flow argument over that relation: the reader is a function of the visible view alone, so it opens no channel; the **not-CC-8** argument stated once | same | L |
@@ -1010,7 +1053,7 @@ witnesses and `SyscallReturnAbiSuite` §10g/§10h the exact-error ABI probes.
 | SM9.A.9 | **`CapTarget.auditTrail`** constructor + `extractAuditAuthority` (§3.3): the total-match consequences across `Capability`'s `Repr`/`DecidableEq`/well-formedness, the frozen mirror, and every existing `CapTarget` match; the mint path (which boot/CSpace layer creates one); the negative that a non-`.auditTrail` capability carrying `.read` is rejected, and the acceptance witness that an unconfigured deployment has **no** audit reader | `Model/Object/{Types,Structures}.lean`, `Model/FrozenState.lean`, `Platform/Boot.lean` | XL |
 | SM9.A.10 | Live arms in `dispatchWithCapChecked` gated on `extractAuditAuthority` **then** `syscallRequiredRight`; **each arm writes its result into the caller's return register** (the selected word for `.auditRead`, the new visible length for `.auditDrain`) via WS-RA's `writeReturnFrameToTcb` — without which the reader computes correctly and hands back the caller's own preloaded `x0`; unchecked arms fail closed; `syscallDelegates_auditRead` / `_auditDrain` + an end-to-end `syscallDispatchFromAbi` assertion that the returned word is the *selected* one | `Kernel/API.lean` | XL |
 | SM9.A.11 | Enforcement boundary 40→42 canonical, 55→57 per-core; `syscallIdToEnforcementName{,PerCore}`; completeness + class-match re-decided | `Enforcement/Wrappers.lean`, `CovertChannelPerCore.lean` | M |
-| SM9.A.12 | Lock sets: `lockSet_auditRead` (universal reads), `lockSet_auditDrain`; `permittedKinds`; inventory counts 103→105; `_size_le` + deadlock aggregate | `Concurrency/Locks/{LockSetTransitions,LockSetForSyscall,LockSetInventory,Deadlock,DeadlockInventory}.lean` | M |
+| SM9.A.12 | Lock sets: `lockSet_auditRead` / `lockSet_auditDrain` (caller TCB **write** since round 6 — the arm's `writeReturnFrameToTcb` staging is a committed-dispatch caller write; CNode read); `permittedKinds`; inventory counts 103→105; `_size_le` + deadlock aggregate (delivered at round 6, with the staging-write membership witnesses) | `Concurrency/Locks/{LockSetTransitions,LockSetForSyscall,LockSetInventory,Deadlock,DeadlockInventory}.lean` | M |
 | SM9.A.13 | Frozen-ops classifier arm + count; per-core routing gate registration | `Kernel/FrozenOps/Operations.lean`, `scripts/per_core_routing_aliases.json` | S |
 
 **Acceptance**: a monitor reads every entry it is cleared for and drains the

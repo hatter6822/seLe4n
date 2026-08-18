@@ -33,14 +33,15 @@ This module is the read side, and everything in it is shaped by one question —
    **not** a predicate over the rows the trail currently holds — see
    `auditMonitorGate_records_derived_unsound`.
 
-## Two classes of reader
+## Two classes of reader — and why only one of them is live
 
-|                        | Partial reader             | Fully-dominating monitor |
+|                        | Partial reader (model)     | Fully-dominating monitor |
 |------------------------|----------------------------|--------------------------|
 | Entry identity         | **view-local index**       | **global timestamp**     |
 | `status` generation    | none (always `0`)          | the global epoch         |
 | Drain                  | refused                    | permitted                |
 | Retry guarantee        | none promised              | `auditRead_stable_under_append` |
+| Live `.auditRead`      | **refused** (round 6)      | served                   |
 
 The split is forced.  A `DeclassificationEvent`'s timestamp is its *global*
 position, so handing it to a partial reader tells that reader how many entries
@@ -48,6 +49,23 @@ preceded the one it can see — hidden ones included.  But exporting view-local
 indices to *everyone* breaks the other side: a monitor correlating an event with
 an archived predecessor needs an identity that survives a drain.  So the
 protocol gives each reader the identity its clearance justifies.
+
+**And the partial class stops at the model** (PR #870 round 6).  Appends are
+information-flow clean for a partial reader — an entry joins its view only when
+the *writing subject's* domain flows to it — but a **drain** is the monitor's
+action, and deleting a visible entry moves that reader's visible length at the
+monitor's choice: one bit per drain, from the fully-dominating monitor to a
+lower subject, the very signal §4c hides the generation to remove.  A drain
+that preserves every partial view is not constructible (deletion is the drain's
+purpose, `observerScopedGeneration_not_mountable` rules out per-observer state,
+and restricting drains to universally-invisible prefixes re-opens the capacity
+cliff), so the live entry point serves **monitors only**
+(`auditReadFromCore_partial_reader_denied`) and every surviving reader is one
+the policy clears for every subject's activity — the monitor's drains
+included (`auditReadFromCore_observer_dominates_subjects`).  The partial
+class's theorems remain as the record of what such a reader *would* learn, and
+`auditDrain_moves_partial_readers_status` keeps the channel that forced the
+exclusion exhibited.
 
 ## Why the reader chunks
 
@@ -938,7 +956,10 @@ no information it did not already supply.
 A fully-dominating monitor gets the global timestamp, and needs it: the identity
 must survive a drain for an archived predecessor to be correlatable at all.  The
 two-class rule lives here, in one place, rather than being spread across the
-read arms. -/
+read arms.  (Model layer since PR #870 round 6: the live entry serves monitors
+only, so `isMonitor = false` is reachable through `auditReadWord` alone — the
+class records what a partial reader *would* learn, and that even then it could
+not count hidden entries.) -/
 def auditExportedFieldValue (isMonitor : Bool) (index : Nat)
     (e : DeclassificationEvent) : AuditReadField → Nat
   | .srcDomain => e.srcDomain.id
@@ -1962,10 +1983,12 @@ The kernel stays simple; the protocol gets a theorem.
 For a **monitor**, `status` brackets a read sequence: the epoch it returns moves
 only on a drain, so an unchanged status means no drain intervened and every
 index the reader used still names the entry it named.  For a **partial reader**
-no retry guarantee is promised — it gets no generation at all (§4c), which is
-the price of not being able to count hidden entries, and it is stated rather
-than papered over: a partial reader is a monitoring convenience and the trail's
-consumer of record is the monitor. -/
+no retry protocol exists at all: since PR #870 round 6 the live entry refuses
+it outright (`auditReadFromCore_partial_reader_denied`) — a reader whose view a
+monitor's drain can move is a reader the drain signals to — so the partial-class
+stability theorems below quantify over the *model* reader, recording what such
+a caller would have been promised.  The trail's consumer of record is the
+monitor. -/
 
 /-- WS-SM SM9.A.5: **appending does not disturb an existing index.**
 
@@ -2199,17 +2222,37 @@ opted into.  The gate makes the validated clearance the facility's one on/off
 switch (the SM9.B direction: a single *configured* privileged-reader gate), and
 the refusal is `.illegalAuthority` — the same error the drain's monitor gate
 returns — so a probing caller cannot distinguish "feature off" from "not a
-monitor".  Partial readers are unchanged where they belong: in a *configured*
-deployment, a caller below the monitor clearance still gets the view-local
-filtered view (`auditReadWord` keys monitor mode on the caller, not on the
-gate).  The live arm passes `validatedAuditMonitorClearance`, so a
+monitor".  The live arm passes `validatedAuditMonitorClearance`, so a
 *misconfigured* deployment — a clearance that fails dominance validation — is
 refused identically (`misconfiguredDeployment_cannot_read`).
 
-Fails closed four ways: an unconfigured deployment has no reader
-(`.illegalAuthority`), an idle core has no subject (`.illegalState`), an index
-outside the caller's own view or a chunk past a field's width is
-`.invalidArgument`, and a value too wide to export is `.auditFieldTooLarge`.
+**The live facility is monitor-only** (PR #870 review, round 6): after the
+subject is resolved, a caller the monitor gate refuses is refused the *read*,
+with the same `.illegalAuthority` as every other refusal cause.  Round 2 left
+partial readers live in configured deployments, and that coexists with the
+drain only by opening the channel §4c forbids: a monitor's drain removes
+entries a partial reader can see, so that reader's visible length moves at the
+monitor's choice — one bit per drain, from the fully-dominating monitor to a
+lower subject, exactly the signal hiding the generation was meant to remove
+(`auditDrain_moves_partial_readers_status` keeps the channel exhibited; hiding
+the epoch narrows the *alphabet*, not the channel).  Making the drain preserve
+every partial view instead is not available: a drain's purpose is deletion, no
+per-observer state is mountable (`observerScopedGeneration_not_mountable`), and
+a drain restricted to universally-invisible prefixes re-opens the 256-entry
+cliff for any trail with a low-sourced entry.  So the partial class survives as
+the **model layer** (`auditReadWord` still keys on the caller, and its §4b/§4c
+theorems record what such a reader *would* learn), while the live syscall
+serves only callers for whom every recorded subject's activity — the monitor's
+drains included — is an authorized flow
+(`auditReadFromCore_observer_dominates_subjects`).
+
+Fails closed five ways: an unconfigured deployment has no reader
+(`.illegalAuthority`), an idle core has no subject (`.illegalState`), a
+resolved subject below the monitor clearance is not a live reader
+(`.illegalAuthority` again — indistinguishable from the other authority
+refusals), an index outside the caller's own view or a chunk past a field's
+width is `.invalidArgument`, and a value too wide to export is
+`.auditFieldTooLarge`.
 
 **The `2 ^ 64` guard is not decoration.**  The boundary hands the word back
 through a 64-bit register, and `Nat.toUInt64` *truncates*.  Every arm but
@@ -2226,9 +2269,11 @@ def auditReadFromCore (ctx : GenericLabelingContext)
         match auditReaderDomain ctx st c with
         | none => .error .illegalState
         | some reader =>
-            match auditReadWord ctx monitorClearance reader st op with
-            | .error e => .error e
-            | .ok w => if w < 2 ^ 64 then .ok (w, st) else .error .auditFieldTooLarge
+            if auditMonitorAuthorized ctx monitorClearance reader then
+              match auditReadWord ctx monitorClearance reader st op with
+              | .error e => .error e
+              | .ok w => if w < 2 ^ 64 then .ok (w, st) else .error .auditFieldTooLarge
+            else .error .illegalAuthority
 
 /-- WS-SM SM9.A.10 (PR #870 round 2): **an unconfigured deployment cannot read
 at all** — the deny-by-default posture the drain has had since landing
@@ -2279,11 +2324,13 @@ theorem auditReadFromCore_frame (ctx : GenericLabelingContext)
   · split at hStep
     · exact absurd hStep (by simp)
     · split at hStep
-      · exact absurd hStep (by simp)
       · split at hStep
-        · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-          exact hStep.2.symm
         · exact absurd hStep (by simp)
+        · split at hStep
+          · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+            exact hStep.2.symm
+          · exact absurd hStep (by simp)
+      · exact absurd hStep (by simp)
 
 /-- WS-SM SM9.A.10: **every word the reader returns fits the return register.**
 
@@ -2301,13 +2348,15 @@ theorem auditReadFromCore_word_fits (ctx : GenericLabelingContext)
   · split at hStep
     · exact absurd hStep (by simp)
     · split at hStep
-      · exact absurd hStep (by simp)
-      · rename_i hFits
-        split at hStep
-        · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-          rename_i hLt
-          exact hStep.1 ▸ hLt
+      · split at hStep
         · exact absurd hStep (by simp)
+        · rename_i hFits
+          split at hStep
+          · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+            rename_i hLt
+            exact hStep.1 ▸ hLt
+          · exact absurd hStep (by simp)
+      · exact absurd hStep (by simp)
 
 /-- WS-SM SM9.A.10: the returned word survives the boundary conversion — the
 consumer-facing form of `auditReadFromCore_word_fits`. -/
@@ -2336,12 +2385,124 @@ theorem auditReadFromCore_value (ctx : GenericLabelingContext)
   | some m =>
     simp only [auditReadFromCore, hReader] at hStep
     split at hStep
-    · exact absurd hStep (by simp)
-    · rename_i v hRead
-      split at hStep
-      · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-        exact hStep.1 ▸ hRead
+    · split at hStep
       · exact absurd hStep (by simp)
+      · rename_i v hRead
+        split at hStep
+        · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          exact hStep.1 ▸ hRead
+        · exact absurd hStep (by simp)
+    · exact absurd hStep (by simp)
+
+/-- WS-SM SM9.A.10 (PR #870 round 6, **the exclusion**): a resolved subject the
+monitor gate refuses is refused the read — with the same error as an
+unconfigured deployment and a non-monitor drain, so the refusal reveals nothing
+a caller does not already know.
+
+This is what closes the drain-signal channel at the live entry: the model-level
+partial reader (`auditReadWord` at a non-monitor clearance) would observe its
+visible length move under a monitor's drain
+(`auditDrain_moves_partial_readers_status`), and the length rides both the
+`status` word and the `.invalidArgument` boundary of every indexed
+sub-operation, so hiding the generation alone leaves the one-bit-per-drain
+signal §4c forbids.  Excluding the receiver removes the channel rather than
+narrowing it. -/
+theorem auditReadFromCore_partial_reader_denied (ctx : GenericLabelingContext)
+    (m : SecurityDomain) (c : CoreId) (op : AuditReadOp) (st : SystemState)
+    (reader : SecurityDomain)
+    (hReader : auditReaderDomain ctx st c = some reader)
+    (hPartial : auditMonitorAuthorized ctx (some m) reader = false) :
+    auditReadFromCore ctx (some m) c op st = .error .illegalAuthority := by
+  simp [auditReadFromCore, hReader, hPartial]
+
+/-- WS-SM SM9.A.10 (PR #870 round 6): **every successful live read's observer is
+a gate-passing monitor.**  The success-side characterisation of the exclusion —
+the form the flow-closure theorem below and the NI inventory consume. -/
+theorem auditReadFromCore_ok_is_monitor (ctx : GenericLabelingContext)
+    (monitorClearance : Option SecurityDomain) (c : CoreId) (op : AuditReadOp)
+    (st : SystemState) (w : Nat) (st' : SystemState) (reader : SecurityDomain)
+    (hReader : auditReaderDomain ctx st c = some reader)
+    (hStep : auditReadFromCore ctx monitorClearance c op st = .ok (w, st')) :
+    auditMonitorAuthorized ctx monitorClearance reader = true := by
+  cases monitorClearance with
+  | none => exact absurd (auditRead_unconfigured_denied ctx c op st ▸ hStep) (by simp)
+  | some m =>
+    simp only [auditReadFromCore, hReader] at hStep
+    split at hStep
+    · rename_i hGate
+      exact hGate
+    · exact absurd hStep (by simp)
+
+/-- WS-SM SM9.A.10 (PR #870 round 6, **the channel, kept exhibited**): a
+monitor's drain **moves a non-monitor reader's model-level status word** — the
+reader's visible length drops when the drained prefix holds an entry it can
+see, so a monitor choosing whether to include one transmits a bit per drain to
+that reader.
+
+The receiver is the *model* reader (`auditReadWord` at a non-monitor
+clearance): the live entry refuses that caller outright
+(`auditReadFromCore_partial_reader_denied`), which is what makes this a
+refuted design rather than a live channel.  Kept as a theorem so a cut that
+re-admits partial readers to the live path must confront it — hiding the drain
+generation (§4c) does **not** discharge it, because the length is a second
+carrier of the same bit.  The drained shape is exactly `auditDrain_frame`'s
+committed post-state: the trail's `drop` and the epoch advanced by the count
+removed. -/
+theorem auditDrain_moves_partial_readers_status :
+    ∃ (ctx : GenericLabelingContext) (monitorClearance : Option SecurityDomain)
+      (reader : SecurityDomain) (log : DeclassificationAuditLog)
+      (removed epoch w₁ w₂ : Nat),
+      auditMonitorAuthorized ctx monitorClearance reader = false ∧
+      auditReadWord ctx monitorClearance reader
+          { (default : SystemState) with
+            declassificationAuditLog := log,
+            declassificationAuditEpoch := epoch } .status = .ok w₁ ∧
+      auditReadWord ctx monitorClearance reader
+          { (default : SystemState) with
+            declassificationAuditLog := log.drop removed,
+            declassificationAuditEpoch := epoch + removed } .status = .ok w₂ ∧
+      w₁ ≠ w₂ := by
+  refine ⟨{ policy := DomainFlowPolicy.linearOrder
+            objectDomainOf := fun _ => SecurityDomain.lowest
+            threadDomainOf := fun _ => SecurityDomain.lowest
+            endpointDomainOf := fun _ => SecurityDomain.lowest
+            serviceDomainOf := fun _ => SecurityDomain.lowest },
+          some ⟨3⟩, ⟨0⟩,
+          [{ auditTimestampWitness 0 with srcDomain := ⟨0⟩, dstDomain := ⟨0⟩ }],
+          1, 0, _, _, by decide, rfl, rfl, by decide⟩
+
+/-- WS-SM SM9.A.10 (PR #870 round 6, **the flow closure**): under the validated
+clearance the live path consumes, a surviving reader dominates **every subject
+domain** — so every subject's observable activity, the monitor's own drains
+included, is a flow the policy already authorizes into that reader.
+
+This is the formal content of "the drain-signal channel has no forbidden
+receiver": the drain is performed by a running subject, and whatever a live
+audit reader learns of it is a `subjectDomain → reader` flow this theorem
+admits.  Composes the round-6 success characterisation with the round-1
+validation (`validatedAuditMonitorClearance_dominates_subjects`) and the
+lattice's transitivity. -/
+theorem auditReadFromCore_observer_dominates_subjects (ctx : LabelingContext)
+    (c : CoreId) (op : AuditReadOp) (st : SystemState) (w : Nat) (st' : SystemState)
+    (reader : SecurityDomain)
+    (hReader : auditReaderDomain (liftLegacyContext ctx) st c = some reader)
+    (hStep : auditReadFromCore (liftLegacyContext ctx) (validatedAuditMonitorClearance ctx)
+      c op st = .ok (w, st')) :
+    ∀ tid : SeLe4n.ThreadId,
+      (liftLegacyContext ctx).policy.canFlow
+        ((liftLegacyContext ctx).threadDomainOf tid) reader = true := by
+  cases hVal : validatedAuditMonitorClearance ctx with
+  | none =>
+      rw [hVal] at hStep
+      exact absurd (auditRead_unconfigured_denied (liftLegacyContext ctx) c op st ▸ hStep)
+        (by simp)
+  | some m =>
+      rw [hVal] at hStep
+      have hMon := auditReadFromCore_ok_is_monitor (liftLegacyContext ctx) (some m) c op st
+        w st' reader hReader hStep
+      exact auditMonitorAuthorized_dominates_subjects (liftLegacyContext ctx) (some m) reader
+        (validatedAuditMonitorClearance_dominates_subjects ctx m hVal)
+        DomainFlowPolicy.legacyLattice_wellFormed.2 hMon
 
 /-- WS-SM SM9.A.5 (**the bracket, at the words the caller actually holds**): a
 monitor that reads `status` twice through the live entry point and observes the

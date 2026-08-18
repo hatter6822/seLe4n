@@ -1,3 +1,70 @@
+## v0.33.49 — PR #870 round 6: the drain-signal channel closed by exclusion; lock footprints cover the committed dispatch
+
+Two further Codex findings, one P1 and one P2, both valid.
+
+**(P1) The drain signalled to partial readers — the live facility is now
+monitor-only.**  Round 2 left partial readers live in *configured*
+deployments, and that coexists with the drain only by opening the very
+channel the module's own §4c forbids: a monitor's drain removes entries a
+partial reader can see, so that reader's **visible length** moves at the
+monitor's choice — one bit per drain, from the fully-dominating monitor to
+a lower subject, with the length riding both the `status` word and the
+`.invalidArgument` boundary of every indexed read.  Hiding the drain
+generation narrowed the alphabet, not the channel.  No drain preserves
+every partial view (deletion is the drain's purpose; per-observer state is
+unbuildable, `observerScopedGeneration_not_mountable`; a drain restricted
+to universally-invisible prefixes re-opens the 256-entry cliff), so the
+closure is exclusion:
+
+- `auditReadFromCore` gains the **monitor gate** after subject resolution
+  — a resolved subject the gate refuses is refused the read, with the same
+  `.illegalAuthority` as the unconfigured and non-monitor-drain refusals,
+  so the refusal class reveals nothing
+  (`auditReadFromCore_partial_reader_denied`;
+  `auditReadFromCore_ok_is_monitor` the success characterisation).
+- The partial class survives as the **model layer** (`auditReadWord` still
+  keys on the caller; its §4b/§4c theorems record what such a reader
+  *would* learn), and the channel that forced the exclusion stays
+  exhibited: `auditDrain_moves_partial_readers_status` — a cut re-admitting
+  partial readers to the live path must confront it.
+- The flow closure `auditReadFromCore_observer_dominates_subjects`: under
+  the validated clearance a surviving live reader dominates **every**
+  subject domain, so every observed activity — the monitor's drains
+  included — is a flow the policy already authorizes.
+- `auditRead_gates_are_four` → `auditRead_gates_are_five` (the fifth gate
+  is the exclusion; Tier-3 forbids both undercounting names);
+  `SmpInformationFlowSuite` §9.9 runs the channel, the exclusion, the
+  refusal-class indistinguishability and the flow closure for effect
+  (suite 622 → 629 assertions / 79 groups); the golden trace gains the
+  monitor-only observable; the `sele4n-sys` wrapper contracts updated.
+
+**(P2) The audit lock sets under-declared the committed dispatch.**  Both
+audit arms stage their returned word into the caller's TCB
+(`writeReturnFrameToTcb`), so declaring the caller lock `.read` — with a
+docstring arguing `.write` "would over-declare" — was the round-4 rule
+unapplied to the lock domain: a footprint covers the state the dispatch
+commits, and once SM3.C.9 consumes these footprints a `.read` caller lock
+would admit a concurrent TCB writer during the staging write.
+
+- Caller TCB **write** in `lockSet_auditRead` / `lockSet_auditDrain` — and
+  in `lockSet_serviceQuery`, the same staging-write class live since WS-RA
+  (v0.33.37), surfaced by sweeping every `writeReturnFrameToTcb` /
+  `stageDeliveredMessage` / `stageWokenDelivery` site (every other staging
+  target already carried `.write`).
+- Each staging write tied to its footprint by name:
+  `lockSet_auditRead_staging_write_mem` / `_auditDrain_` /
+  `_serviceQuery_` — a revert to `.read` stops elaborating rather than
+  silently under-declaring.
+- The audit pair join the §6b size family and the §6c aggregate
+  (`lockSet_auditRead_size_le` / `_auditDrain_size_le`;
+  `lockSetTransitions_within_bound` 27 → 29 conjuncts, its stale "26"
+  corrected in the docstring and the deadlock-inventory label) — which the
+  plan's SM9.A.12 row had recorded as done at landing without the code
+  existing; the row now matches the tree.
+
+Kind-consistency, ordering and inventory counts are untouched (the flip is
+mode-only, on constructor-distinct keys); trace byte-identical; axiom-clean.
+
 ## v0.33.48 — CI fix: the round-5 ordering theorems state their resolution through the typed accessors
 
 The v0.33.47 push failed the Tier-0 AK7 cascade monotonicity gate:
